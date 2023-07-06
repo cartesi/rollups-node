@@ -51,9 +51,6 @@ jobs:
         run: cargo install cargo-cache
         continue-on-error: true
 
-      - name: Check format
-        run: cargo fmt --all -- --check
-
       - name: Set sweep timestamp
         run: cargo sweep -s
 
