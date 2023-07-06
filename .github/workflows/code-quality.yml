@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Offchain code quality assessment
+on:
+  push:
+    paths:
+      - '.github/workflows/code-quality.yml'
+      - 'offchain/**'
+jobs:
+  assess-offchain-code-quality:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_REGISTRIES_CARTESI_INDEX: https://github.com/cartesi/crates-index
+    defaults:
+      run:
+        working-directory: offchain
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          token: ${{ secrets.CI_TOKEN }}
+
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            offchain/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Install protoc
+        run: sudo apt update && sudo apt install -y protobuf-compiler libprotobuf-dev
+
+      - name: Update rust
+        run: rustup update
+
+      - name: Install cargo-machete
+        run: cargo install cargo-machete
+
+      - name: Analyze dependencies
+        run: cargo machete .
+        continue-on-error: true
+
+      - name: Check format
+        run: cargo fmt --all -- --check
+
+      - name: Run linter
+        run: cargo clippy
