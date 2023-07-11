@@ -1,8 +1,8 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-///! This module contains functions to convert from gRPC types to
-///! rollups-events types
+//! This module contains functions to convert from gRPC types to
+//! rollups-events types
 use grpc_interfaces::cartesi_machine::Hash;
 use grpc_interfaces::cartesi_server_manager::{
     Address, OutputEnum, OutputValidityProof, Proof,

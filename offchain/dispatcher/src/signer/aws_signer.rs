@@ -88,18 +88,18 @@ impl Signer for AwsSigner {
         &self,
         message: &TypedTransaction,
     ) -> Result<Signature, Self::Error> {
-        inner_aws_signer_call!(&self, sign_transaction, message)
+        inner_aws_signer_call!(self, sign_transaction, message)
     }
 
     async fn sign_typed_data<T: Eip712 + Send + Sync>(
         &self,
         payload: &T,
     ) -> Result<Signature, Self::Error> {
-        inner_aws_signer_call!(&self, sign_typed_data, payload)
+        inner_aws_signer_call!(self, sign_typed_data, payload)
     }
 
     fn address(&self) -> Address {
-        self.address.clone()
+        self.address
     }
 
     fn chain_id(&self) -> u64 {
@@ -111,7 +111,7 @@ impl Signer for AwsSigner {
             key_id: self.key_id.clone(),
             chain_id: chain_id.into(),
             region: self.region.clone(),
-            address: self.address.clone(),
+            address: self.address,
         }
     }
 }

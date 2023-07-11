@@ -10,19 +10,10 @@ use async_trait::async_trait;
 
 use self::rollups_broker::BrokerFacadeError;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct RollupStatus {
     pub inputs_sent_count: u64,
     pub last_event_is_finish_epoch: bool,
-}
-
-impl Default for RollupStatus {
-    fn default() -> Self {
-        RollupStatus {
-            inputs_sent_count: 0,
-            last_event_is_finish_epoch: false,
-        }
-    }
 }
 
 #[async_trait]

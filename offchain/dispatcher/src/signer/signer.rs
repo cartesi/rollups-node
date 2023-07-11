@@ -50,7 +50,7 @@ impl ConditionalSigner {
                 const DEFAULT_ACCOUNT_INDEX: u32 = 0;
                 let index = account_index.unwrap_or(DEFAULT_ACCOUNT_INDEX);
                 let wallet = MnemonicBuilder::<English>::default()
-                    .phrase(mnemonic.clone().as_str())
+                    .phrase(mnemonic.as_str())
                     .index(index)
                     .context(LocalWalletSnafu)?
                     .build()

@@ -39,7 +39,7 @@ impl MachineSnapshotsFixture {
 
     /// Return the path of directory that contains the snapshots
     pub fn path(&self) -> &Path {
-        &self.dir.path()
+        self.dir.path()
     }
 
     /// Check whether the given snapshot is the latest
@@ -67,7 +67,7 @@ impl MachineSnapshotsFixture {
         );
 
         tracing::trace!("checking whether the other snapshots were deleted");
-        let dir_iterator = fs::read_dir(&self.path()).unwrap();
+        let dir_iterator = fs::read_dir(self.path()).unwrap();
         for entry in dir_iterator {
             let path = entry.unwrap().path();
             assert!(

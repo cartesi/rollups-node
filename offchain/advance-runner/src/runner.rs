@@ -146,7 +146,7 @@ impl<Snap: SnapshotManager + std::fmt::Debug + 'static> Runner<Snap> {
 
         let event = self
             .broker
-            .consume_input(&last_id)
+            .consume_input(last_id)
             .await
             .context(ConsumeInputSnafu)?;
         tracing::trace!("input event consumed from broker");

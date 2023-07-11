@@ -51,9 +51,9 @@ where
 
     tokio::spawn(async { wait_for_signal(shutdown_tx).await });
 
-    Ok(start_server(server_address, server, shutdown_rx)
+    start_server(server_address, server, shutdown_rx)
         .await
-        .context(TonicSnafu)?)
+        .context(TonicSnafu)
 }
 
 type ServerProvider = Provider<RetryClient<Http>>;

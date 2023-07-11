@@ -21,7 +21,7 @@ pub use redacted::{RedactedUrl, Url};
 
 pub mod indexer;
 
-pub const INITIAL_ID: &'static str = "0";
+pub const INITIAL_ID: &str = "0";
 
 /// The `BrokerConnection` enum implements the `ConnectionLike` trait
 /// to satisfy the `AsyncCommands` trait bounds.

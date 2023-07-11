@@ -61,7 +61,7 @@ fn respond(
     response_tx: oneshot::Sender<Result<InspectStateResponse, InspectError>>,
     response: Result<InspectStateResponse, InspectError>,
 ) {
-    if let Err(_) = response_tx.send(response) {
+    if response_tx.send(response).is_err() {
         log::warn!("failed to respond inspect request (client dropped)");
     }
 }

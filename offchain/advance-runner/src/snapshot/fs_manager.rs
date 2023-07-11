@@ -89,7 +89,7 @@ impl SnapshotManager for FSSnapshotManager {
 
         let path = fs::read_link(&self.config.snapshot_latest)
             .context(ReadLinkSnafu)?;
-        ensure!(path.is_dir(), BrokenLinkSnafu { path: path.clone() });
+        ensure!(path.is_dir(), BrokenLinkSnafu { path });
         tracing::trace!(?path, "followed latest link");
 
         path.try_into()
@@ -131,7 +131,7 @@ impl SnapshotManager for FSSnapshotManager {
         ensure!(
             snapshot.path.parent() == Some(snapshot_dir),
             WrongDirSnafu {
-                path: snapshot.path.clone()
+                path: snapshot.path
             }
         );
         let (epoch, processed_input_count) = decode_filename(&snapshot.path)?;
@@ -143,7 +143,7 @@ impl SnapshotManager for FSSnapshotManager {
         ensure!(
             snapshot.path.is_dir(),
             NotFoundSnafu {
-                path: snapshot.path.clone()
+                path: snapshot.path
             }
         );
 
@@ -172,7 +172,7 @@ impl SnapshotManager for FSSnapshotManager {
                     path: latest.clone()
                 }
             );
-            fs::remove_file(&latest).context(SetLatestSnafu {
+            fs::remove_file(latest).context(SetLatestSnafu {
                 path: latest.clone(),
             })?;
             tracing::trace!("deleted previous latest symlink");
@@ -188,7 +188,7 @@ impl SnapshotManager for FSSnapshotManager {
 
         // delete other snapshots
         for path in snapshots.iter() {
-            fs::remove_dir_all(&path)
+            fs::remove_dir_all(path)
                 .context(RemoveSnafu { path: path.clone() })?;
         }
         tracing::trace!("deleted previous snapshots");
@@ -204,14 +204,13 @@ fn encode_filename(epoch: u64, processed_input_count: u64) -> String {
 fn decode_filename(path: &Path) -> Result<(u64, u64), FSSnapshotError> {
     let file_name = path
         .file_name()
-        .map(|file_name| file_name.to_str())
-        .flatten()
+        .and_then(|file_name| file_name.to_str())
         .context(DirNameSnafu {
-            path: path.to_owned(),
-        })?;
+        path: path.to_owned(),
+    })?;
     tracing::trace!(file_name, "got snapshot file name");
 
-    let parts: Vec<_> = file_name.split("_").collect();
+    let parts: Vec<_> = file_name.split('_').collect();
     ensure!(
         parts.len() == 2,
         DirNameSnafu {

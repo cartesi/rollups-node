@@ -53,7 +53,7 @@ impl<'de, const N: usize> Deserialize<'de> for HexArray<N> {
         D: Deserializer<'de>,
     {
         let string_data = String::deserialize(deserializer)?;
-        let vec_data = hex::decode(&string_data).map_err(|e| {
+        let vec_data = hex::decode(string_data).map_err(|e| {
             serde::de::Error::custom(format!("fail to decode hex ({})", e))
         })?;
         let data = vec_data
@@ -134,7 +134,7 @@ impl<'de> Deserialize<'de> for Payload {
         D: Deserializer<'de>,
     {
         let string_data = String::deserialize(deserializer)?;
-        let data = base64_engine.decode(&string_data).map_err(|e| {
+        let data = base64_engine.decode(string_data).map_err(|e| {
             serde::de::Error::custom(format!("fail to decode base64 ({})", e))
         })?;
         Ok(Payload::new(data))
