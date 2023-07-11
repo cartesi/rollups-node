@@ -5,6 +5,7 @@ use snafu::Snafu;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub(super)))]
+#[allow(clippy::enum_variant_names)]
 pub enum ServerManagerError {
     #[snafu(display("failed to connect to server-manager"))]
     ConnectionError { source: tonic::transport::Error },

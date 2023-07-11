@@ -9,6 +9,7 @@ use url::ParseError;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub(crate)))]
+#[allow(clippy::enum_variant_names)]
 pub enum StateServerError {
     #[snafu(display("tonic error"))]
     TonicError { source: TonicError },

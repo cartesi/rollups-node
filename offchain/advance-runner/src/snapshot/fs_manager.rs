@@ -10,6 +10,7 @@ use super::config::FSManagerConfig;
 use super::{Snapshot, SnapshotManager};
 
 #[derive(Debug, Snafu)]
+#[allow(clippy::enum_variant_names)]
 pub enum FSSnapshotError {
     #[snafu(display("failed to follow latest symlink"))]
     ReadLinkError { source: std::io::Error },
