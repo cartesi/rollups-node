@@ -1,0 +1,2 @@
+# This avoids warning `large_enum_variant` on `pub enum MachineOneof`, built from grpc-interfaces.
+enum-variant-size-threshold = 2500

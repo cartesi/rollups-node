@@ -58,6 +58,7 @@ pub struct AuthEnvCLIConfig {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum AuthConfig {
     Mnemonic {
         mnemonic: String,
