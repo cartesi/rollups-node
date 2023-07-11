@@ -220,7 +220,7 @@ fn send_response<U>(tx: oneshot::Sender<U>, response: U)
 where
     U: std::fmt::Debug + Send + Sync,
 {
-    if let Err(_) = tx.send(response) {
+    if tx.send(response).is_err() {
         tracing::warn!("failed to send response (channel dropped)");
     }
 }

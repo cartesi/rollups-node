@@ -157,7 +157,7 @@ impl Cursor {
     /// Decode cursor from base64 String
     pub fn decode(value: &str) -> Result<Cursor, Error> {
         let bytes = base64_engine
-            .decode(&value)
+            .decode(value)
             .context(DecodeBase64CursorSnafu)?;
         let offset = std::str::from_utf8(&bytes)
             .context(DecodeUTF8CursorSnafu)?

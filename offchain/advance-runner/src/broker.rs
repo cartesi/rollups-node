@@ -67,7 +67,7 @@ impl BrokerFacade {
             return Ok(INITIAL_ID.to_owned());
         } else {
             // This won't underflow because we know the epoch is not 0
-            epoch = epoch - 1;
+            epoch -= 1;
         }
 
         tracing::trace!(epoch, "searching for finish epoch input event");
@@ -107,7 +107,7 @@ impl BrokerFacade {
         loop {
             let result = self
                 .client
-                .consume_blocking(&self.inputs_stream, &last_id)
+                .consume_blocking(&self.inputs_stream, last_id)
                 .await;
             if matches!(result, Err(BrokerError::ConsumeTimeout)) {
                 tracing::trace!("consume timed out, retrying");

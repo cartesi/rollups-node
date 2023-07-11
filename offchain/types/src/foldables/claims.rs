@@ -126,8 +126,7 @@ async fn fetch_history<M1: Middleware + 'static, M2: Middleware + 'static>(
     previous_dapp_claims: &HashMap<Arc<Address>, Arc<DAppClaims>>,
 ) -> Result<Arc<HashMap<Arc<Address>, Arc<DAppClaims>>>, FoldableError> {
     use contracts::history::*;
-    let contract =
-        History::new(contract_address.clone(), Arc::clone(&provider));
+    let contract = History::new(*contract_address, Arc::clone(&provider));
 
     let mut dapp_claims = previous_dapp_claims.clone();
 

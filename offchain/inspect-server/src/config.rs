@@ -136,7 +136,7 @@ fn load_config_file<T: Default + serde::de::DeserializeOwned>(
 ) -> Result<T, ConfigError> {
     match config_file {
         Some(config) => {
-            let s = std::fs::read_to_string(&config).context(FileSnafu)?;
+            let s = std::fs::read_to_string(config).context(FileSnafu)?;
 
             let file_config: T = toml::from_str(&s).context(ParseSnafu)?;
 

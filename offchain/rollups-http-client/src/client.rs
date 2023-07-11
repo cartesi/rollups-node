@@ -31,8 +31,7 @@ pub async fn send_voucher(rollup_http_server_addr: &str, voucher: Voucher) {
             let id_response = serde_json::from_slice::<IndexResponse>(
                 &hyper::body::to_bytes(res)
                     .await
-                    .expect("error in voucher in response handling")
-                    .to_vec(),
+                    .expect("error in voucher in response handling"),
             );
             tracing::debug!("voucher generated: {:?}", &id_response);
         }
@@ -59,8 +58,7 @@ pub async fn send_notice(rollup_http_server_addr: &str, notice: Notice) {
             let id_response = serde_json::from_slice::<IndexResponse>(
                 &hyper::body::to_bytes(res)
                     .await
-                    .expect("error in notice id response handling")
-                    .to_vec(),
+                    .expect("error in notice id response handling"),
             );
             tracing::debug!("notice generated: {:?}", &id_response);
         }

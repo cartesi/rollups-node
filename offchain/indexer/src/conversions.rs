@@ -1,9 +1,9 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-///! Convert from rollups-events types to rollups-data types.
-///! This code cannot use the From trait because both types are defined in
-///! external crates.
+//! Convert from rollups-events types to rollups-data types.
+//! This code cannot use the From trait because both types are defined in
+//! external crates.
 use chrono::naive::NaiveDateTime;
 
 use rollups_events::{

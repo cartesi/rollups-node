@@ -225,7 +225,7 @@ impl Repository {
 
 /// Generate a boxed query from an input query filter
 impl InputQueryFilter {
-    fn to_query<'a>(&'a self) -> schema::inputs::BoxedQuery<'a, Pg> {
+    fn to_query(&self) -> schema::inputs::BoxedQuery<'_, Pg> {
         use schema::inputs::dsl;
         let mut query = dsl::inputs.into_boxed();
         if let Some(other) = self.index_greater_than {
@@ -242,7 +242,7 @@ impl InputQueryFilter {
 macro_rules! impl_output_filter_to_query {
     ($filter: ty, $table: ident) => {
         impl $filter {
-            fn to_query<'a>(&'a self) -> schema::$table::BoxedQuery<'a, Pg> {
+            fn to_query(&self) -> schema::$table::BoxedQuery<'_, Pg> {
                 use schema::$table::dsl;
                 let mut query = dsl::$table.into_boxed();
                 if let Some(other) = self.input_index {

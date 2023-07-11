@@ -1,8 +1,8 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-///! For more information about each type, see the GraphQL API definition in
-///! `offchain/graphql-server/schema.graphql`
+//! For more information about each type, see the GraphQL API definition in
+//! `offchain/graphql-server/schema.graphql`
 use serde::{Deserialize, Serialize};
 
 use crate::{rollups_stream::decl_broker_stream, Address, Hash, Payload};

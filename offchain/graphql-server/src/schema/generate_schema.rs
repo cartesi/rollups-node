@@ -24,7 +24,7 @@ fn main() {
     match write!(graphql_schema_file, "{}", graphql_schema) {
         Ok(_) => {}
         Err(e) => {
-            eprintln!("Error writing schema to file {}", e.to_string());
+            eprintln!("Error writing schema to file {}", e);
         }
     }
 }

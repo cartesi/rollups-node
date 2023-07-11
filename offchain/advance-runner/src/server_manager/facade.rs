@@ -187,7 +187,7 @@ impl ServerManagerFacade {
         grpc_call!(self, advance_state, {
             let input_metadata = InputMetadata {
                 msg_sender: Some(Address {
-                    data: input_metadata.msg_sender.inner().clone().into(),
+                    data: (*input_metadata.msg_sender.inner()).into(),
                 }),
                 block_number: input_metadata.block_number,
                 timestamp: input_metadata.timestamp,

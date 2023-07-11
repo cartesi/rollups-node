@@ -97,7 +97,7 @@ impl BrokerFacade {
     #[tracing::instrument(level = "trace", skip_all)]
     async fn claim(
         &self,
-        id: &String,
+        id: &str,
     ) -> Result<Option<Event<RollupsClaim>>, BrokerFacadeError> {
         let mut broker = self.broker.lock().await;
         let event = broker
@@ -297,7 +297,7 @@ fn build_next_input(
     let data = RollupsData::AdvanceStateInput(RollupsAdvanceStateInput {
         metadata,
         payload: input.payload.clone().into(),
-        tx_hash: (*input.tx_hash).0.into(),
+        tx_hash: input.tx_hash.0.into(),
     });
 
     RollupsInput {

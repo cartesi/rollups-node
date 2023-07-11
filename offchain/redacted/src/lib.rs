@@ -70,7 +70,7 @@ impl fmt::Debug for RedactedUrl {
             }
         })
         .and_then(|_| {
-            if let Some(_) = url.password() {
+            if url.password().is_some() {
                 url.set_password(Some("***"))
             } else {
                 Ok(())

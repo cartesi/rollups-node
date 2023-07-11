@@ -22,7 +22,7 @@ impl RepositoryConfig {
         Redacted::new(format!(
             "postgres://{}:{}@{}:{}/{}",
             urlencoding::encode(&self.user),
-            urlencoding::encode(&self.password.inner()),
+            urlencoding::encode(self.password.inner()),
             urlencoding::encode(&self.hostname),
             self.port,
             urlencoding::encode(&self.db)
@@ -64,7 +64,7 @@ impl From<RepositoryCLIConfig> for RepositoryConfig {
             if cli_config.postgres_password.is_some() {
                 panic!("Both `postgres_password` and `postgres_password_file` arguments are set");
             }
-            match std::fs::read_to_string(&filename) {
+            match std::fs::read_to_string(filename) {
                 Ok(password) => password,
                 Err(e) => {
                     panic!("Failed to read password from file: {:?}", e);

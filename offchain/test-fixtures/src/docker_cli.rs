@@ -10,7 +10,7 @@ pub fn build(dockerfile: &str, tag: &str, build_args: &[(&str, &str)]) {
         .collect();
     let mut args = vec!["build", "-f", dockerfile, "-t", tag];
     for build_arg in build_args.iter() {
-        args.push(&build_arg);
+        args.push(build_arg);
     }
     args.push(".");
     docker_run(&args);

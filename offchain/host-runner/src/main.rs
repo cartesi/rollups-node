@@ -78,7 +78,7 @@ async fn main() {
     if let Err(e) = controller.shutdown().await.await {
         tracing::error!("failed to shutdown controller ({})", e);
     }
-    if let Err(_) = grpc_shutdown_tx.send(()) {
+    if grpc_shutdown_tx.send(()).is_err() {
         tracing::error!("failed to send the shutdown signal to grpc");
     }
     if let Err(e) = grpc_service.await {

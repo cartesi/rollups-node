@@ -152,7 +152,7 @@ impl ServerManager for ServerManagerService {
     ) -> Result<Response<FinishEpochResponse>, Status> {
         let request = request.into_inner();
         tracing::info!("received finish_epoch with id={}", request.session_id);
-        if request.storage_directory != "" {
+        if !request.storage_directory.is_empty() {
             tracing::warn!("ignoring storage_directory parameter");
         }
         let response = self
@@ -269,7 +269,7 @@ impl SessionManager {
         processed_input_count: u64,
         controller: Controller,
     ) -> Result<(), Status> {
-        if session_id == "" {
+        if session_id.is_empty() {
             return Err(Status::invalid_argument("session id is empty"));
         }
         let mut entry = self.entry.lock().await;
@@ -305,7 +305,7 @@ impl SessionManager {
     }
 
     async fn try_del_session(&self, request_id: &String) -> Result<(), Status> {
-        self.try_get_session(&request_id)
+        self.try_get_session(request_id)
             .await?
             .try_lock()
             .or(Err(Status::aborted("concurrent call in session")))?
@@ -675,7 +675,7 @@ impl Epoch {
         self.state = EpochState::Finished;
 
         let machine_state_hash = GrpcHash {
-            data: vec![0 as u8; HASH_SIZE],
+            data: vec![0_u8; HASH_SIZE],
         };
         let mut proofs: Vec<GrpcProof> = vec![];
         let index = Token::Int(U256::from(epoch_index));
@@ -893,7 +893,7 @@ impl Epoch {
         &self,
         processed_input_count_within_epoch: u64,
     ) -> Result<(), Status> {
-        if self.get_num_processed_inputs_within_epoch() as u64
+        if self.get_num_processed_inputs_within_epoch()
             != processed_input_count_within_epoch
         {
             Err(Status::invalid_argument(format!(

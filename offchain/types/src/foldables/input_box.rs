@@ -154,8 +154,7 @@ async fn fetch_all_new_inputs<
     block_opt: Option<Block>, // TODO: Option<Arc<Block>>,
 ) -> Result<Vec<Input>, FoldableError> {
     use contracts::input_box::*;
-    let contract =
-        InputBox::new(contract_address.clone(), Arc::clone(&provider));
+    let contract = InputBox::new(*contract_address, Arc::clone(&provider));
 
     // Retrieve `InputAdded` events
     let inputs_futures: Vec<_> = contract
