@@ -477,6 +477,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "authority-claimer"
+version = "1.0.0"
+dependencies = [
+ "async-trait",
+ "clap",
+ "eth-tx-manager",
+ "ethers",
+ "http-server",
+ "rollups-events",
+ "rusoto_core",
+ "serde",
+ "serde_json",
+ "snafu",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "auto_impl"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

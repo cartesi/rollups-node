@@ -13,6 +13,9 @@ pub use prometheus_client::metrics::counter::Counter as CounterRef;
 pub use prometheus_client::metrics::family::Family as FamilyRef;
 // End of metrics to re-export.
 
+// Re-exporting hyper error.
+pub use hyper::Error as HttpServerError;
+
 use axum::{routing::get, Router};
 use prometheus_client::encoding::text::encode;
 use std::{

@@ -5,7 +5,7 @@ use clap::{
     value_parser, Arg, Command, CommandFactory, FromArgMatches, Parser,
 };
 
-#[derive(Debug, Parser)]
+#[derive(Debug, Clone, Parser)]
 pub struct HttpServerConfig {
     pub(crate) port: u16,
 }
@@ -13,6 +13,9 @@ pub struct HttpServerConfig {
 impl HttpServerConfig {
     /// Returns the HTTP server config and the app's config after parsing
     /// it from the command line and/or environment variables.
+    ///
+    /// The parameter `service` must be a lowercase string that
+    /// uses underlines as spaces.
     ///
     /// The parametric type `C` must be a struct that derives `Parser`.
     pub fn parse<C: CommandFactory + FromArgMatches>(
