@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "advance-runner",
+  "authority-claimer",
   "contracts",
   "data",
   "dispatcher",
@@ -47,6 +48,7 @@ eth-state-fold-types = "0.7"
 eth-state-fold = "0.7"
 eth-state-server-lib = "0.7"
 eth-tx-manager = "0.10"
+ethers = "1.0"
 ethers-signers = "1.0"
 futures = "0.3"
 futures-util = "0.3"
