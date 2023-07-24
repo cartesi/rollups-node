@@ -48,4 +48,4 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run linter
-        run: cargo clippy
+        run: cargo clippy -- -A clippy::module_inception -A clippy::new_ret_no_self
