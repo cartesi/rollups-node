@@ -1,13 +1,17 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
+use rollups_events::{Hash, HASH_SIZE};
 use snafu::{ensure, OptionExt, ResultExt, Snafu};
 use std::collections::HashSet;
-use std::fs;
+use std::fs::{self, File};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use super::config::FSManagerConfig;
 use super::{Snapshot, SnapshotManager};
+
+const HASH_FILE: &str = "hash";
 
 #[derive(Debug, Snafu)]
 #[allow(clippy::enum_variant_names)]
@@ -64,6 +68,18 @@ pub enum FSSnapshotError {
 
     #[snafu(display("failed to set latest symlink ({})", path.display()))]
     SetLatestError {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("failed to open hash file for snapshot ({})", path.display()))]
+    OpenHashError {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("failed to read hash file for snapshot ({})", path.display()))]
+    ReadHashError {
         path: PathBuf,
         source: std::io::Error,
     },
@@ -195,6 +211,28 @@ impl SnapshotManager for FSSnapshotManager {
         tracing::trace!("deleted previous snapshots");
 
         Ok(())
+    }
+
+    /// Reads the binary contents of the hash file in snapshot's directory
+    /// and converts them to a `Hash`. It assumes the file was created correctly
+    /// and makes no checks in this regard.
+    #[tracing::instrument(level = "trace", skip_all)]
+    async fn get_template_hash(
+        &self,
+        snapshot: &Snapshot,
+    ) -> Result<Hash, FSSnapshotError> {
+        let path = snapshot.path.join(HASH_FILE);
+        tracing::trace!(?path, "opening hash file at");
+        let file = File::open(path.clone())
+            .context(OpenHashSnafu { path: path.clone() })?;
+
+        let mut buffer = [0_u8; HASH_SIZE];
+        let bytes = file
+            .take(HASH_SIZE as u64)
+            .read(&mut buffer)
+            .context(ReadHashSnafu { path: path.clone() })?;
+        tracing::trace!("read {bytes} bytes from file");
+        Ok(Hash::new(buffer))
     }
 }
 
@@ -524,5 +562,52 @@ mod tests {
             fs::read_link(&state.tempdir.path().join("latest")).unwrap(),
             state.tempdir.path().join("2_2"),
         );
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_it_gets_snapshot_hash() {
+        let state = TestState::setup();
+        let path = state.create_snapshot("0_0");
+        let hash_path = path.join(HASH_FILE);
+        let hash = [
+            160, 170, 75, 88, 113, 141, 144, 31, 252, 78, 159, 6, 79, 114, 6,
+            16, 196, 49, 44, 208, 62, 83, 66, 97, 4, 151, 159, 105, 124, 85,
+            51, 87,
+        ];
+        fs::write(hash_path, hash).expect("should write hash to file");
+
+        let snap = Snapshot {
+            epoch: 0,
+            processed_input_count: 0,
+            path,
+        };
+
+        assert_eq!(
+            state
+                .manager
+                .get_template_hash(&snap)
+                .await
+                .expect("get template hash should work"),
+            Hash::new(hash)
+        );
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_it_fails_to_get_hash_when_hash_file_does_not_exist() {
+        let state = TestState::setup();
+        let path = state.create_snapshot("0_0");
+        let snap = Snapshot {
+            epoch: 0,
+            processed_input_count: 0,
+            path,
+        };
+
+        let err = state
+            .manager
+            .get_template_hash(&snap)
+            .await
+            .expect_err("get template hash should fail");
+
+        assert!(matches!(err, FSSnapshotError::OpenHashError { .. }))
     }
 }

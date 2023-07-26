@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use super::{Snapshot, SnapshotManager};
+use rollups_events::Hash;
 
 #[derive(Debug)]
 pub struct SnapshotDisabled {}
@@ -40,5 +41,13 @@ impl SnapshotManager for SnapshotDisabled {
     ) -> Result<(), SnapshotDisabledError> {
         tracing::trace!("snapshots disabled; ignoring");
         Ok(())
+    }
+
+    async fn get_template_hash(
+        &self,
+        _: &Snapshot,
+    ) -> Result<Hash, SnapshotDisabledError> {
+        tracing::trace!("snapshots disabled; returning default");
+        Ok(Hash::default())
     }
 }
