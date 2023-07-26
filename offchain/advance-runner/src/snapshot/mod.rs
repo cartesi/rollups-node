@@ -1,14 +1,15 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
+use rollups_events::Hash;
 use std::path::PathBuf;
 
 pub mod config;
 pub mod disabled;
 pub mod fs_manager;
 
-/// Cartesi Machine snapshot description
-#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
+/// A path to a Cartesi Machine snapshot and its metadata
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Snapshot {
     pub path: PathBuf,
     pub epoch: u64,
@@ -31,4 +32,10 @@ pub trait SnapshotManager {
 
     /// Set the most recent snapshot
     async fn set_latest(&self, snapshot: Snapshot) -> Result<(), Self::Error>;
+
+    /// Get the snapshot's template hash
+    async fn get_template_hash(
+        &self,
+        snapshot: &Snapshot,
+    ) -> Result<Hash, Self::Error>;
 }
