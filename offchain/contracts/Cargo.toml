@@ -5,10 +5,10 @@ version = "1.0.0"
 edition = "2021"
 
 [dependencies]
-state-fold-types = { workspace = true, features = ["ethers"] }
+state-fold-types = { path = "../state-fold-types", features = ["ethers"] }
 
 [build-dependencies]
-state-fold-types = { workspace = true, features = ["ethers"] }
+state-fold-types = { path = "../state-fold-types", features = ["ethers"] }
 
 [package.metadata.cargo-machete]
 ignored = ["state-fold-types"]

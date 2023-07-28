@@ -6,14 +6,14 @@ edition = "2021"
 
 [dependencies]
 contracts = { path = "../contracts" }
+state-fold = { path = "../state-fold" }
+state-fold-types = { path = "../state-fold-types", features = ["ethers"] }
 
 anyhow.workspace = true
 async-trait.workspace = true
 futures.workspace = true
 im = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["rc"] }
-state-fold.workspace = true
-state-fold-types = { workspace = true, features = ["ethers"] }
 
 [dev-dependencies]
 serde_json.workspace = true

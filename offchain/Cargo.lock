@@ -1123,7 +1123,7 @@ checksum = "245097e9a4535ee1e3e3931fcfcd55a796a44c643e8596ff6566d68f09b87bbc"
 name = "contracts"
 version = "1.0.0"
 dependencies = [
- "state-fold",
+ "state-fold-types",
 ]
 
 [[package]]
@@ -1499,6 +1499,7 @@ dependencies = [
  "serial_test",
  "snafu",
  "state-fold",
+ "state-fold-types",
  "test-fixtures",
  "testcontainers",
  "tokio",
@@ -4843,6 +4844,7 @@ dependencies = [
  "serde",
  "snafu",
  "state-fold",
+ "state-fold-types",
  "tokio",
  "tonic 0.8.3",
  "tracing",
@@ -5552,6 +5554,7 @@ dependencies = [
  "serde",
  "serde_json",
  "state-fold",
+ "state-fold-types",
 ]
 
 [[package]]

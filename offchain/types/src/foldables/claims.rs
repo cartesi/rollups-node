@@ -3,7 +3,7 @@
 
 use crate::{FoldableError, UserData};
 
-use state_fold::{
+use state_fold::state_fold::{
     utils as fold_utils, FoldMiddleware, Foldable, StateFoldEnvironment,
     SyncMiddleware,
 };
