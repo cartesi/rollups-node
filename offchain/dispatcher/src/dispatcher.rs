@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use rollups_events::{Address, DAppMetadata};
-use state_client_lib::StateServer;
+use state_fold::state_client_lib::StateServer;
 use state_fold_types::{Block, BlockStreamItem};
 use tokio_stream::StreamExt;
 use tracing::{error, info, instrument, trace, warn};

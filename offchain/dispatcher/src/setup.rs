@@ -3,7 +3,7 @@
 
 use rollups_events::DAppMetadata;
 use snafu::ResultExt;
-use state_client_lib::{
+use state_fold::state_client_lib::{
     config::SCConfig, error::StateServerError, BlockServer,
     GrpcStateFoldClient, StateServer,
 };

@@ -260,7 +260,7 @@ dependencies = [
  "test-log",
  "testcontainers",
  "tokio",
- "tonic 0.9.2",
+ "tonic",
  "tracing",
  "tracing-subscriber",
  "uuid 1.4.0",
@@ -1504,7 +1504,7 @@ dependencies = [
  "testcontainers",
  "tokio",
  "tokio-stream",
- "tonic 0.8.3",
+ "tonic",
  "tracing",
  "tracing-subscriber",
  "tracing-test",
@@ -2330,7 +2330,7 @@ dependencies = [
  "serde_json",
  "snafu",
  "state-fold-types",
- "tonic 0.9.2",
+ "tonic",
  "tonic-build",
 ]
 
@@ -2442,7 +2442,7 @@ dependencies = [
  "sha3",
  "snafu",
  "tokio",
- "tonic 0.9.2",
+ "tonic",
  "tonic-health",
  "tracing",
  "tracing-subscriber",
@@ -2743,7 +2743,7 @@ dependencies = [
  "snafu",
  "tokio",
  "toml 0.7.6",
- "tonic 0.9.2",
+ "tonic",
  "tonic-build",
  "tracing",
  "uuid 1.4.0",
@@ -4802,7 +4802,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "toml 0.5.11",
- "tonic 0.9.2",
+ "tonic",
  "tonic-build",
  "tonic-health",
  "tracing",
@@ -4846,7 +4846,7 @@ dependencies = [
  "state-fold",
  "state-fold-types",
  "tokio",
- "tonic 0.8.3",
+ "tonic",
  "tracing",
  "tracing-subscriber",
  "types",
@@ -5014,7 +5014,7 @@ dependencies = [
  "tempfile",
  "testcontainers",
  "tokio",
- "tonic 0.9.2",
+ "tonic",
  "tracing",
  "users",
 ]
@@ -5297,38 +5297,6 @@ dependencies = [
 
 [[package]]
 name = "tonic"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f219fad3b929bef19b1f86fbc0358d35daed8f2cac972037ac0dc10bbb8d5fb"
-dependencies = [
- "async-stream",
- "async-trait",
- "axum",
- "base64 0.13.1",
- "bytes",
- "futures-core",
- "futures-util",
- "h2",
- "http",
- "http-body",
- "hyper",
- "hyper-timeout",
- "percent-encoding",
- "pin-project",
- "prost",
- "prost-derive",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tower",
- "tower-layer",
- "tower-service",
- "tracing",
- "tracing-futures",
-]
-
-[[package]]
-name = "tonic"
 version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3082666a3a6433f7f511c7192923fa1fe07c69332d3c6a2e6bb040b569199d5a"
@@ -5378,7 +5346,7 @@ dependencies = [
  "prost",
  "tokio",
  "tokio-stream",
- "tonic 0.9.2",
+ "tonic",
 ]
 
 [[package]]

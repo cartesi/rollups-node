@@ -13,6 +13,8 @@ contracts = { path = "../contracts" }
 http-server = { path = "../http-server" }
 rollups-events = { path = "../rollups-events" }
 types = { path = "../types" }
+state-fold = { path = "../state-fold" }
+state-fold-types = { path = "../state-fold-types", features = ["ethers"] }
 
 async-trait.workspace = true
 axum.workspace = true
@@ -28,11 +30,9 @@ rusoto_sts.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 snafu.workspace = true
-state-client-lib.workspace = true
-state-fold-types = { workspace = true, features = ["ethers"] }
 tokio = { workspace = true, features = ["sync", "macros", "rt-multi-thread"] }
 tokio-stream.workspace = true
-tonic = "0.8" # TODO: the state-fold still uses this version
+tonic.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tracing.workspace = true
 url.workspace = true

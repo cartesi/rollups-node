@@ -8,7 +8,9 @@ use eth_tx_manager::{
 };
 use http_server::HttpServerConfig;
 use snafu::{ResultExt, Snafu};
-use state_client_lib::config::{Error as SCError, SCConfig, SCEnvCLIConfig};
+use state_fold::state_client_lib::config::{
+    Error as SCError, SCConfig, SCEnvCLIConfig,
+};
 use std::{fs::File, io::BufReader, path::PathBuf};
 
 use rollups_events::{BrokerCLIConfig, BrokerConfig};

@@ -3,7 +3,7 @@
 
 use axum::http::uri::InvalidUri;
 use snafu::Snafu;
-use state_client_lib::error::StateServerError;
+use state_fold::state_client_lib::error::StateServerError;
 use std::net::AddrParseError;
 use tonic::transport::Error as TonicError;
 
