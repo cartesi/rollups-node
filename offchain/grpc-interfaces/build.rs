@@ -8,12 +8,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &[
                 "../../grpc-interfaces/versioning.proto",
                 "../../grpc-interfaces/server-manager.proto",
+                "../../grpc-interfaces/state-fold-server.proto",
             ],
             &["../../grpc-interfaces"],
         )?;
     println!("cargo:rerun-if-changed=../../grpc-interfaces/versioning.proto");
     println!(
         "cargo:rerun-if-changed=../../grpc-interfaces/server-manager.proto"
+    );
+    println!(
+        "cargo:rerun-if-changed=../../grpc-interfaces/state-fold-server.proto"
     );
     println!("cargo:rerun-if-changed=build.rs");
     Ok(())

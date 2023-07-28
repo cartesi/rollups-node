@@ -1,0 +1,39 @@
+[package]
+name = "state-fold"
+license = "Apache-2.0"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+grpc-interfaces = { path = "../grpc-interfaces" }
+state-fold-test = { path = "../state-fold-test" }
+state-fold-types = { path = "../state-fold-types" }
+
+anyhow.workspace = true
+async-recursion = "1"
+async-stream = "0.3"
+async-trait.workspace = true
+clap = { workspace = true, features = ["derive", "env"] }
+ethers = { workspace = true, features = ["ws", "abigen", "rustls"] }
+ethabi.workspace = true
+futures.workspace = true
+hex.workspace = true
+proc-macro2 = "1"
+prost.workspace = true
+quote = "1"
+serde.workspace = true
+serde_json.workspace = true
+snafu = "0.7"
+tokio = { workspace = true, features = ["sync", "macros", "signal"] }
+tokio-stream.workspace = true
+toml = "0.5.8"
+tonic.workspace = true
+tonic-health.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+matches = "0.1"
+
+[build-dependencies]
+tonic-build.workspace = true

@@ -1,0 +1,20 @@
+[package]
+name = "state-fold-test"
+license = "Apache-2.0"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+state-fold-types = { path = "../state-fold-types" }
+
+hex.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+tokio = { version = "^1.5", features = ["sync"] }
+
+[build-dependencies]
+state-fold-types = { path = "../state-fold-types", features = ["ethers"] }
+
+serde_json.workspace = true
+anyhow.workspace = true
+proc-macro2 = "1"

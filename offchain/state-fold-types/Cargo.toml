@@ -1,0 +1,17 @@
+[package]
+name = "state-fold-types"
+license = "Apache-2.0"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+ethers = { workspace = true, optional = true, features = ["ws", "abigen", "rustls"] }
+ethabi.workspace = true
+proc-macro2 = "1"
+quote = "1"
+serde.workspace = true
+serde_json.workspace = true
+snafu.workspace = true
+toml = "0.5.8"
+
