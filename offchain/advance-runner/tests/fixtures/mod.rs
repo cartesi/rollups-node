@@ -68,7 +68,7 @@ impl AdvanceRunnerFixture {
 
         let dapp_metadata = DAppMetadata {
             chain_id,
-            dapp_address,
+            dapp_address: dapp_address.clone(),
         };
 
         let broker_config = BrokerConfig {
@@ -85,6 +85,9 @@ impl AdvanceRunnerFixture {
                 snapshot_latest: snapshot_dir
                     .expect("Should have a Path")
                     .join("latest"),
+                validation_enabled: false,
+                provider_http_endpoint: None,
+                dapp_address,
             })
         } else {
             SnapshotConfig::Disabled

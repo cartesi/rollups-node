@@ -1,7 +1,6 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-use rollups_events::Hash;
 use std::path::PathBuf;
 
 pub mod config;
@@ -14,6 +13,15 @@ pub struct Snapshot {
     pub path: PathBuf,
     pub epoch: u64,
     pub processed_input_count: u64,
+}
+
+impl Snapshot {
+    /// Verifies if this is the template snapshot. The template snapshot is a
+    /// Cartesi Machine snapshot taken right after its creation and before it
+    /// processes any inputs
+    pub fn is_template(&self) -> bool {
+        self.epoch == 0 && self.processed_input_count == 0
+    }
 }
 
 #[async_trait::async_trait]
@@ -33,9 +41,7 @@ pub trait SnapshotManager {
     /// Set the most recent snapshot
     async fn set_latest(&self, snapshot: Snapshot) -> Result<(), Self::Error>;
 
-    /// Get the snapshot's template hash
-    async fn get_template_hash(
-        &self,
-        snapshot: &Snapshot,
-    ) -> Result<Hash, Self::Error>;
+    /// Compares `Snapshot`'s hash with the template hash stored on-chain,
+    /// failing if they don't match
+    async fn validate(&self, snapshot: &Snapshot) -> Result<(), Self::Error>;
 }

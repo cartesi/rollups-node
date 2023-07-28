@@ -16,6 +16,7 @@ pub use error::AdvanceRunnerError;
 
 mod broker;
 pub mod config;
+mod dapp_contract;
 mod error;
 pub mod runner;
 mod server_manager;

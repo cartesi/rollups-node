@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use super::{Snapshot, SnapshotManager};
-use rollups_events::Hash;
 
 #[derive(Debug)]
 pub struct SnapshotDisabled {}
@@ -17,7 +16,7 @@ impl SnapshotManager for SnapshotDisabled {
 
     /// Get the most recent snapshot
     #[tracing::instrument(level = "trace", skip_all)]
-    async fn get_latest(&self) -> Result<Snapshot, SnapshotDisabledError> {
+    async fn get_latest(&self) -> Result<Snapshot, Self::Error> {
         tracing::trace!("snapshots disabled; returning default");
         Ok(Default::default())
     }
@@ -28,26 +27,21 @@ impl SnapshotManager for SnapshotDisabled {
         &self,
         _: u64,
         _: u64,
-    ) -> Result<Snapshot, SnapshotDisabledError> {
+    ) -> Result<Snapshot, Self::Error> {
         tracing::trace!("snapshots disabled; returning default");
         Ok(Default::default())
     }
 
     /// Set the most recent snapshot
     #[tracing::instrument(level = "trace", skip_all)]
-    async fn set_latest(
-        &self,
-        _: Snapshot,
-    ) -> Result<(), SnapshotDisabledError> {
+    async fn set_latest(&self, _: Snapshot) -> Result<(), Self::Error> {
         tracing::trace!("snapshots disabled; ignoring");
         Ok(())
     }
 
-    async fn get_template_hash(
-        &self,
-        _: &Snapshot,
-    ) -> Result<Hash, SnapshotDisabledError> {
-        tracing::trace!("snapshots disabled; returning default");
-        Ok(Hash::default())
+    #[tracing::instrument(level = "trace", skip_all)]
+    async fn validate(&self, _: &Snapshot) -> Result<(), Self::Error> {
+        tracing::trace!("snapshots disabled; ignoring");
+        Ok(())
     }
 }

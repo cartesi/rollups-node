@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added authority claimer service to support reader mode
 - Added support to `POST` *inspect state* requests
+- Added snapshot validation. The node will now check whether the snapshot's template hash matches the one stored in the blockchain
 
 ### Changed
 
