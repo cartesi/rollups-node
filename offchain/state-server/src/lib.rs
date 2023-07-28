@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use snafu::ResultExt;
-use state_fold::{Foldable, StateFoldEnvironment};
-use state_fold_types::ethers::providers::{
-    Http, HttpRateLimitRetryPolicy, Provider, RetryClient,
-};
-use state_server_lib::{
+use state_fold::state_fold::{Foldable, StateFoldEnvironment};
+use state_fold::state_server_lib::{
     config,
     grpc_server::StateServer,
     utils::{start_server, wait_for_signal},
+};
+use state_fold_types::ethers::providers::{
+    Http, HttpRateLimitRetryPolicy, Provider, RetryClient,
 };
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
@@ -80,7 +80,7 @@ fn create_provider(
 fn create_env(
     config: &config::StateServerConfig,
     provider: Arc<ServerProvider>,
-    block_archive: Arc<block_history::BlockArchive<ServerProvider>>,
+    block_archive: Arc<state_fold::block_history::BlockArchive<ServerProvider>>,
 ) -> Result<
     Arc<StateFoldEnvironment<ServerProvider, Mutex<UserData>>>,
     StateServerError,
@@ -102,9 +102,11 @@ fn create_env(
 async fn create_block_subscriber(
     config: &config::StateServerConfig,
     provider: Arc<ServerProvider>,
-) -> Result<Arc<block_history::BlockSubscriber<ServerProvider>>, StateServerError>
-{
-    let block_subscriber = block_history::BlockSubscriber::start(
+) -> Result<
+    Arc<state_fold::block_history::BlockSubscriber<ServerProvider>>,
+    StateServerError,
+> {
+    let block_subscriber = state_fold::block_history::BlockSubscriber::start(
         Arc::clone(&provider),
         config.block_history.ws_endpoint.to_owned(),
         config.block_history.block_timeout,

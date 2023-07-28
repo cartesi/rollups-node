@@ -12,7 +12,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt().with_env_filter(filter).init();
 
     let config =
-        state_server_lib::config::StateServerConfig::initialize_from_args()?;
+    state_fold::state_server_lib::config::StateServerConfig::initialize_from_args()?;
 
     tracing::info!(?config, "starting state server");
 

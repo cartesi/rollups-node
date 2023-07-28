@@ -1,8 +1,8 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-use block_history::BlockArchiveError;
 use snafu::Snafu;
+use state_fold::block_history::BlockArchiveError;
 use state_fold_types::ethers::providers::{Http, RetryClient};
 use tonic::transport::Error as TonicError;
 use url::ParseError;
