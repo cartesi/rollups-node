@@ -29,12 +29,15 @@ impl AdvanceRunnerConfig {
     pub fn parse() -> Result<Self, ConfigError> {
         let cli_config = CLIConfig::parse();
         let broker_config = cli_config.broker_cli_config.into();
-        let dapp_metadata = cli_config.dapp_metadata_cli_config.into();
+        let dapp_metadata: DAppMetadata =
+            cli_config.dapp_metadata_cli_config.into();
         let server_manager_config =
             ServerManagerConfig::parse_from_cli(cli_config.sm_cli_config);
-        let snapshot_config =
-            SnapshotConfig::parse_from_cli(cli_config.snapshot_cli_config)
-                .context(SnapshotConfigSnafu)?;
+        let snapshot_config = SnapshotConfig::new(
+            cli_config.snapshot_cli_config,
+            dapp_metadata.dapp_address.clone(),
+        )
+        .context(SnapshotConfigSnafu)?;
         let backoff_max_elapsed_duration =
             Duration::from_millis(cli_config.backoff_max_elapsed_duration);
         let healthcheck_port = cli_config.healthcheck_port;

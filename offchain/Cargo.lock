@@ -247,7 +247,9 @@ dependencies = [
  "async-trait",
  "backoff",
  "clap",
+ "contracts",
  "env_logger",
+ "ethers",
  "grpc-interfaces",
  "hex",
  "http-health-check",
@@ -264,6 +266,7 @@ dependencies = [
  "tonic",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid 1.4.1",
 ]
 

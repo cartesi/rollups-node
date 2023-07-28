@@ -18,3 +18,4 @@ macro_rules! contract {
 contract!(input_box);
 contract!(authority);
 contract!(history);
+contract!(cartesi_dapp);

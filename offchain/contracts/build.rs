@@ -17,12 +17,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let tempdir = tempfile::tempdir()?;
     let tarball = tempdir.path().join("rollups.tgz");
     download_contracts(&tarball)?;
-    unzip_contracts(&tarball, &tempdir.path())?;
+    unzip_contracts(&tarball, tempdir.path())?;
 
     let contracts = vec![
         ("inputs", "InputBox", "input_box.rs"),
         ("consensus/authority", "Authority", "authority.rs"),
         ("history", "History", "history.rs"),
+        ("dapp", "CartesiDApp", "cartesi_dapp.rs"),
     ];
     for (contract_path, contract_name, bindings_file_name) in contracts {
         let source_path = path(tempdir.path(), contract_path, contract_name);

@@ -8,6 +8,8 @@ use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use crate::dapp_contract::DappContractError;
+
 use super::config::FSManagerConfig;
 use super::{Snapshot, SnapshotManager};
 
@@ -83,6 +85,12 @@ pub enum FSSnapshotError {
         path: PathBuf,
         source: std::io::Error,
     },
+
+    #[snafu(display("failed to call the dapp contract"))]
+    OnchainError { source: DappContractError },
+
+    #[snafu(display("snapshot hash does not match its on-chain counterpart"))]
+    HashMismatchError,
 }
 
 #[derive(Debug)]
@@ -213,26 +221,27 @@ impl SnapshotManager for FSSnapshotManager {
         Ok(())
     }
 
-    /// Reads the binary contents of the hash file in snapshot's directory
-    /// and converts them to a `Hash`. It assumes the file was created correctly
-    /// and makes no checks in this regard.
     #[tracing::instrument(level = "trace", skip_all)]
-    async fn get_template_hash(
-        &self,
-        snapshot: &Snapshot,
-    ) -> Result<Hash, FSSnapshotError> {
-        let path = snapshot.path.join(HASH_FILE);
-        tracing::trace!(?path, "opening hash file at");
-        let file = File::open(path.clone())
-            .context(OpenHashSnafu { path: path.clone() })?;
+    async fn validate(&self, snapshot: &Snapshot) -> Result<(), Self::Error> {
+        if self.config.validation_enabled {
+            let offchain_hash = snapshot.get_hash().await?;
 
-        let mut buffer = [0_u8; HASH_SIZE];
-        let bytes = file
-            .take(HASH_SIZE as u64)
-            .read(&mut buffer)
-            .context(ReadHashSnafu { path: path.clone() })?;
-        tracing::trace!("read {bytes} bytes from file");
-        Ok(Hash::new(buffer))
+            let onchain_hash = crate::dapp_contract::get_template_hash(
+                &self.config.dapp_address,
+                self.config.provider_http_endpoint.clone().unwrap(),
+            )
+            .await
+            .context(OnchainSnafu)?;
+
+            if offchain_hash == onchain_hash {
+                Ok(())
+            } else {
+                Err(FSSnapshotError::HashMismatchError)
+            }
+        } else {
+            tracing::trace!("snapshot validation disabled, accepting snapshot");
+            Ok(())
+        }
     }
 }
 
@@ -272,13 +281,34 @@ fn decode_filename(path: &Path) -> Result<(u64, u64), FSSnapshotError> {
 impl TryFrom<PathBuf> for Snapshot {
     type Error = FSSnapshotError;
 
-    fn try_from(path: PathBuf) -> Result<Snapshot, FSSnapshotError> {
+    fn try_from(path: PathBuf) -> Result<Snapshot, Self::Error> {
         let (epoch, processed_input_count) = decode_filename(&path)?;
         Ok(Snapshot {
             path,
             epoch,
             processed_input_count,
         })
+    }
+}
+
+impl Snapshot {
+    /// Reads the binary contents of the hash file in snapshot's directory
+    /// and converts them to a `Hash`. It assumes the file was created correctly
+    /// and makes no checks in this regard.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub async fn get_hash(&self) -> Result<Hash, FSSnapshotError> {
+        let path = self.path.join(HASH_FILE);
+        tracing::trace!(?path, "opening hash file at");
+        let file = File::open(path.clone())
+            .context(OpenHashSnafu { path: path.clone() })?;
+
+        let mut buffer = [0_u8; HASH_SIZE];
+        let bytes = file
+            .take(HASH_SIZE as u64)
+            .read(&mut buffer)
+            .context(ReadHashSnafu { path: path.clone() })?;
+        tracing::trace!("read {bytes} bytes from file");
+        Ok(Hash::new(buffer))
     }
 }
 
@@ -302,6 +332,9 @@ mod tests {
             let config = FSManagerConfig {
                 snapshot_dir,
                 snapshot_latest,
+                validation_enabled: false,
+                provider_http_endpoint: None,
+                dapp_address: Default::default(),
             };
             let manager = FSSnapshotManager::new(config);
             Self { tempdir, manager }
@@ -583,11 +616,7 @@ mod tests {
         };
 
         assert_eq!(
-            state
-                .manager
-                .get_template_hash(&snap)
-                .await
-                .expect("get template hash should work"),
+            snap.get_hash().await.expect("get hash should work"),
             Hash::new(hash)
         );
     }
@@ -602,12 +631,7 @@ mod tests {
             path,
         };
 
-        let err = state
-            .manager
-            .get_template_hash(&snap)
-            .await
-            .expect_err("get template hash should fail");
-
+        let err = snap.get_hash().await.expect_err("get hash should fail");
         assert!(matches!(err, FSSnapshotError::OpenHashError { .. }))
     }
 }
