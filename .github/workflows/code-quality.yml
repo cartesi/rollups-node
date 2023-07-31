@@ -38,6 +38,7 @@ jobs:
 
       - name: Install cargo-machete
         run: cargo install cargo-machete
+        continue-on-error: true
 
       - name: Analyze dependencies
         run: cargo machete .
