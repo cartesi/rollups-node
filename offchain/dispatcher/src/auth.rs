@@ -58,14 +58,13 @@ pub struct AuthEnvCLIConfig {
 }
 
 #[derive(Debug, Clone)]
-#[allow(clippy::upper_case_acronyms)]
 pub enum AuthConfig {
     Mnemonic {
         mnemonic: String,
         account_index: Option<u32>,
     },
 
-    AWS {
+    Aws {
         key_id: String,
         region: Region,
     },
@@ -95,7 +94,7 @@ impl AuthConfig {
                 (Some(key_id), Some(region)) => {
                     let region = Region::from_str(&region)
                         .context(InvalidRegionSnafu)?;
-                    Ok(AuthConfig::AWS { key_id, region })
+                    Ok(AuthConfig::Aws { key_id, region })
                 }
             }
         }

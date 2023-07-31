@@ -58,7 +58,7 @@ impl ConditionalSigner {
                     .with_chain_id(chain_id);
                 Ok(ConditionalSigner::LocalWallet(wallet))
             }
-            AuthConfig::AWS { key_id, region } => {
+            AuthConfig::Aws { key_id, region } => {
                 AwsSigner::new(key_id, chain_id, region)
                     .await
                     .map(ConditionalSigner::AwsSigner)
