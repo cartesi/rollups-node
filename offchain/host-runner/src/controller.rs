@@ -134,7 +134,7 @@ struct Service {
 impl Service {
     fn new(data: SharedStateData) -> Self {
         Self {
-            state: IdleState::new(data),
+            state: Box::new(IdleState::new(data)),
         }
     }
 
@@ -271,8 +271,8 @@ struct IdleState {
 }
 
 impl IdleState {
-    fn new(data: SharedStateData) -> Box<dyn State> {
-        Box::new(Self { data })
+    fn new(data: SharedStateData) -> Self {
+        Self { data }
     }
 }
 
@@ -285,7 +285,7 @@ impl State for IdleState {
                 tracing::debug!("received finish request; changing state to fetch request");
                 tracing::debug!("request: {:?}", request);
                 let (_, response_tx) = request.into_inner();
-                Some(FetchRequestState::new(self.data, response_tx))
+                Some(Box::new(FetchRequestState::new(self.data, response_tx)))
             }
             Some(request) = self.data.voucher_rx.recv() => {
                 Service::handle_invalid(request, self, "voucher")
@@ -322,11 +322,11 @@ impl FetchRequestState {
         finish_response_tx: oneshot::Sender<
             Result<RollupRequest, ControllerError>,
         >,
-    ) -> Box<dyn State> {
-        Box::new(Self {
+    ) -> Self {
+        Self {
             data,
             finish_response_tx,
-        })
+        }
     }
 }
 
@@ -339,7 +339,7 @@ impl State for FetchRequestState {
                 tracing::debug!("fetch request timed out; setting state to idle");
                 let timeout_err = ControllerError::FetchRequestTimeout;
                 send_response(self.finish_response_tx, Err(timeout_err));
-                Some(IdleState::new(self.data))
+                Some(Box::new(IdleState::new(self.data)))
             }
             Some(request) = self.data.inspect_rx.recv() => {
                 tracing::debug!("received inspect request; setting state to inspect");
@@ -347,7 +347,7 @@ impl State for FetchRequestState {
                 let (inspect_request, inspect_response_tx) = request.into_inner();
                 let rollup_request = RollupRequest::InspectState(inspect_request);
                 send_response(self.finish_response_tx, Ok(rollup_request));
-                Some(InspectState::new(self.data, inspect_response_tx))
+                Some(Box::new(InspectState::new(self.data, inspect_response_tx)))
             }
             Some(request) = self.data.advance_rx.recv() => {
                 tracing::debug!("received advance request; setting state to advance");
@@ -355,7 +355,7 @@ impl State for FetchRequestState {
                 let (advance_request, advance_response_tx) = request.into_inner();
                 let rollup_request = RollupRequest::AdvanceState(advance_request);
                 send_response(self.finish_response_tx, Ok(rollup_request));
-                Some(AdvanceState::new(self.data, advance_response_tx))
+                Some(Box::new(AdvanceState::new(self.data, advance_response_tx)))
             }
             Some(request) = self.data.finish_rx.recv() => {
                 tracing::debug!("received finish request; terminating previous finish request");
@@ -363,7 +363,7 @@ impl State for FetchRequestState {
                 let timeout_err = ControllerError::FetchRequestTimeout;
                 send_response(self.finish_response_tx, Err(timeout_err));
                 let (_, response_tx) = request.into_inner();
-                Some(FetchRequestState::new(self.data, response_tx))
+                Some(Box::new(FetchRequestState::new(self.data, response_tx)))
             }
             Some(request) = self.data.voucher_rx.recv() => {
                 Service::handle_invalid(request, self, "voucher")
@@ -399,12 +399,12 @@ impl InspectState {
     fn new(
         data: SharedStateData,
         inspect_response_tx: oneshot::Sender<InspectResult>,
-    ) -> Box<dyn State> {
-        Box::new(Self {
+    ) -> Self {
+        Self {
             data,
             inspect_response_tx,
             reports: vec![],
-        })
+        }
     }
 }
 
@@ -422,7 +422,7 @@ impl State for InspectState {
                     FinishStatus::Reject => InspectResult::rejected(self.reports),
                 };
                 send_response(self.inspect_response_tx, result);
-                Some(FetchRequestState::new(self.data, response_tx))
+                Some(Box::new(FetchRequestState::new(self.data, response_tx)))
             }
             Some(request) = self.data.report_rx.recv() => {
                 tracing::debug!("received report request");
@@ -440,7 +440,7 @@ impl State for InspectState {
                 let result = InspectResult::exception(self.reports, exception);
                 send_response(self.inspect_response_tx, result);
                 send_response(exception_response_tx, Ok(()));
-                Some(IdleState::new(self.data))
+                Some(Box::new(IdleState::new(self.data)))
             }
             Some(request) = self.data.voucher_rx.recv() => {
                 Service::handle_invalid(request, self, "voucher")
@@ -472,14 +472,14 @@ impl AdvanceState {
     fn new(
         data: SharedStateData,
         advance_response_tx: oneshot::Sender<AdvanceResult>,
-    ) -> Box<dyn State> {
-        Box::new(Self {
+    ) -> Self {
+        Self {
             data,
             advance_response_tx,
             vouchers: vec![],
             notices: vec![],
             reports: vec![],
-        })
+        }
     }
 }
 
@@ -507,7 +507,7 @@ impl State for AdvanceState {
                     },
                 };
                 send_response(self.advance_response_tx, result);
-                Some(FetchRequestState::new(self.data, response_tx))
+                Some(Box::new(FetchRequestState::new(self.data, response_tx)))
             }
             Some(request) = self.data.voucher_rx.recv() => {
                 tracing::debug!("received voucher request");
@@ -546,7 +546,7 @@ impl State for AdvanceState {
                 );
                 send_response(self.advance_response_tx, result);
                 send_response(exception_response_tx, Ok(()));
-                Some(IdleState::new(self.data))
+                Some(Box::new(IdleState::new(self.data)))
             }
             Some(request) = self.data.shutdown_rx.recv() => {
                 Service::shutdown(request)

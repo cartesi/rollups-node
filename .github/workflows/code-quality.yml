@@ -44,8 +44,8 @@ jobs:
         run: cargo machete .
         continue-on-error: true
 
-      - name: Check format
+      - name: Check code format
         run: cargo fmt --all -- --check
 
       - name: Run linter
-        run: cargo clippy -- -A clippy::module_inception -A clippy::new_ret_no_self
+        run: cargo clippy -- -A clippy::module_inception
