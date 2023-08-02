@@ -31,9 +31,9 @@ impl SyncInspect {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn test_error_when_server_manager_is_down() {
+async fn test_get_error_when_server_manager_is_down() {
     let inspect_server = InspectServerWrapper::start().await;
-    let (status, message) = send_request("hello")
+    let (status, message) = send_get_request("hello")
         .await
         .expect_err("failed to obtain response");
     assert_eq!(status, StatusCode::BAD_GATEWAY);
@@ -46,9 +46,9 @@ async fn test_error_when_server_manager_is_down() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn test_it_succeeds_after_server_manager_starts() {
+async fn test_get_succeeds_after_server_manager_starts() {
     let inspect_server = InspectServerWrapper::start().await;
-    let (status, _) = send_request("hello")
+    let (status, _) = send_get_request("hello")
         .await
         .expect_err("failed to obtain response");
     assert_eq!(status, StatusCode::BAD_GATEWAY);
@@ -59,7 +59,7 @@ async fn test_it_succeeds_after_server_manager_starts() {
         .send(MockInspectResponse::default())
         .await
         .expect("failed to send response");
-    send_request("hello")
+    send_get_request("hello")
         .await
         .expect("failed to obtain response");
     server_manager.stop().await;
@@ -68,14 +68,14 @@ async fn test_it_succeeds_after_server_manager_starts() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn test_it_handle_concurrent_inspect_requests() {
+async fn test_get_it_handle_concurrent_inspect_requests() {
     let (mock, response_tx) = SyncInspect::setup();
     let state = TestState::setup(mock).await;
     // Send multiple concurrent requests
     let handlers: Vec<_> = (0..QUEUE_SIZE)
         .map(|_| {
             tokio::spawn(async {
-                send_request("hello")
+                send_get_request("hello")
                     .await
                     .expect("failed to obtain response");
             })
@@ -99,7 +99,7 @@ async fn test_it_handle_concurrent_inspect_requests() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn test_it_returns_error_when_queue_is_full() {
+async fn test_get_it_returns_error_when_queue_is_full() {
     let (mock, response_tx) = SyncInspect::setup();
     let state = TestState::setup(mock).await;
     // Send concurrent requests to overflow the queue.
@@ -107,7 +107,113 @@ async fn test_it_returns_error_when_queue_is_full() {
     // imediatelly consumed and removed from the queue.
     let mut handlers = FuturesUnordered::new();
     for _ in 0..(QUEUE_SIZE + 2) {
-        handlers.push(tokio::spawn(send_request("hello")));
+        handlers.push(tokio::spawn(send_get_request("hello")));
+    }
+    // Poll the handlers to find the overflow error
+    let (status, message) = handlers
+        .next()
+        .await
+        .expect("failed to poll")
+        .expect("failed to join handler")
+        .expect_err("failed to receive error");
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        message,
+        String::from("Failed to inspect state: no available capacity")
+    );
+    // Add the responses to the queue
+    for _ in 0..(QUEUE_SIZE + 1) {
+        response_tx
+            .send(MockInspectResponse::default())
+            .await
+            .expect("failed to send response");
+    }
+    // Wait for responses so we don't have zombie threads
+    while let Some(handler) = handlers.next().await {
+        let _ = handler.expect("failed to join handler");
+    }
+    state.teardown().await;
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_post_error_when_server_manager_is_down() {
+    let inspect_server = InspectServerWrapper::start().await;
+    let (status, message) = send_get_request("hello")
+        .await
+        .expect_err("failed to obtain response");
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert_eq!(
+        &message,
+        "Failed to connect to server manager: transport error"
+    );
+    inspect_server.stop().await;
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_post_succeeds_after_server_manager_starts() {
+    let inspect_server = InspectServerWrapper::start().await;
+    let (status, _) = send_post_request("hello")
+        .await
+        .expect_err("failed to obtain response");
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    let (mock, response_tx) = SyncInspect::setup();
+    let server_manager = MockServerManagerWrapper::start(mock).await;
+    // Add response to queue before sending request
+    response_tx
+        .send(MockInspectResponse::default())
+        .await
+        .expect("failed to send response");
+    send_post_request("hello")
+        .await
+        .expect("failed to obtain response");
+    server_manager.stop().await;
+    inspect_server.stop().await;
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_post_it_handle_concurrent_inspect_requests() {
+    let (mock, response_tx) = SyncInspect::setup();
+    let state = TestState::setup(mock).await;
+    // Send multiple concurrent requests
+    let handlers: Vec<_> = (0..QUEUE_SIZE)
+        .map(|_| {
+            tokio::spawn(async {
+                send_post_request("hello")
+                    .await
+                    .expect("failed to obtain response");
+            })
+        })
+        .collect();
+    // Wait until the requests arrive in the inspect-server
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    // Add the responses to the queue
+    for _ in 0..QUEUE_SIZE {
+        response_tx
+            .send(MockInspectResponse::default())
+            .await
+            .expect("failed to send response");
+    }
+    // Check the responses
+    for handler in handlers {
+        handler.await.expect("failed to wait handler");
+    }
+    state.teardown().await;
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_post_it_returns_error_when_queue_is_full() {
+    let (mock, response_tx) = SyncInspect::setup();
+    let state = TestState::setup(mock).await;
+    // Send concurrent requests to overflow the queue.
+    // We need to 2 extra requests to overflow the queue because the first message will be
+    // imediatelly consumed and removed from the queue.
+    let mut handlers = FuturesUnordered::new();
+    for _ in 0..(QUEUE_SIZE + 2) {
+        handlers.push(tokio::spawn(send_post_request("hello")));
     }
     // Poll the handlers to find the overflow error
     let (status, message) = handlers
