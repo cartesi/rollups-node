@@ -251,14 +251,46 @@ impl<T: MockInspect> ServerManager for MockServerManager<T> {
     }
 }
 
-/// Send an inspect-state request to the inspect server.
+/// Send an inspect-state request to the inspect server via GET.
 /// If the status code is 200, return the HttpInspectResponse.
 /// Else, return the status code and the error message.
-pub async fn send_request(
+pub async fn send_get_request(
     payload: &str,
 ) -> Result<HttpInspectResponse, (StatusCode, String)> {
     let url = format!("http://{}/inspect/{}", INSPECT_SERVER_ADDRESS, payload);
-    let response = reqwest::get(url).await.expect("failed to send inspect");
+    let response = reqwest::get(url)
+        .await
+        .expect("failed to send inspect via GET");
+    let status = response.status();
+    if status == 200 {
+        let response = response
+            .json::<HttpInspectResponse>()
+            .await
+            .expect("failed to decode json response");
+        Ok(response)
+    } else {
+        let message = response
+            .text()
+            .await
+            .expect("failed to obtain response body");
+        Err((status, message))
+    }
+}
+
+/// Send an inspect-state request to the inspect server via POST.
+/// If the status code is 200, return the HttpInspectResponse.
+/// Else, return the status code and the error message.
+pub async fn send_post_request(
+    payload: &str,
+) -> Result<HttpInspectResponse, (StatusCode, String)> {
+    let url = format!("http://{}/inspect", INSPECT_SERVER_ADDRESS);
+    let client = reqwest::Client::new();
+    let response = client
+        .post(url)
+        .body(String::from(payload))
+        .send()
+        .await
+        .expect("failed to send inspect via POST");
     let status = response.status();
     if status == 200 {
         let response = response

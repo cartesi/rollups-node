@@ -14,20 +14,29 @@ use crate::inspect::{
     CompletionStatus, InspectClient, InspectStateResponse, Report,
 };
 
+// (2^20 - 64) bytes, which is the length of the RX buffer minus metadata
+pub const CARTESI_MACHINE_RX_BUFFER_LIMIT: usize = 1_048_512;
+
 pub fn create(
     config: &InspectServerConfig,
     inspect_client: InspectClient,
 ) -> std::io::Result<Server> {
-    let inspect_path = config.inspect_path_prefix.clone() + "/{payload:.*}";
+    let inspect_path = config.inspect_path_prefix.clone();
+    let inspect_get_path = inspect_path.clone() + "/{payload:.*}";
     let server = HttpServer::new(move || {
         let cors = Cors::permissive();
         App::new()
             .app_data(web::Data::new(inspect_client.clone()))
+            .app_data(web::PayloadConfig::new(CARTESI_MACHINE_RX_BUFFER_LIMIT))
             .wrap(middleware::Logger::default())
             .wrap(cors)
             .service(
+                web::resource(inspect_get_path.clone())
+                    .route(web::get().to(inspect_get)),
+            )
+            .service(
                 web::resource(inspect_path.clone())
-                    .route(web::get().to(inspect)),
+                    .route(web::post().to(inspect_post)),
             )
     })
     .bind(config.inspect_server_address.clone())?
@@ -35,7 +44,7 @@ pub fn create(
     Ok(server)
 }
 
-async fn inspect(
+async fn inspect_get(
     request: HttpRequest,
     payload: web::Path<String>,
     inspect_client: web::Data<InspectClient>,
@@ -46,6 +55,15 @@ async fn inspect(
     }
     let payload = payload.as_bytes().to_vec();
     let response = inspect_client.inspect(payload).await?;
+    let http_response = HttpInspectResponse::from(response);
+    Ok(HttpResponse::Ok().json(http_response))
+}
+
+async fn inspect_post(
+    payload: web::Bytes,
+    inspect_client: web::Data<InspectClient>,
+) -> actix_web::error::Result<impl Responder> {
+    let response = inspect_client.inspect(payload.to_vec()).await?;
     let http_response = HttpInspectResponse::from(response);
     Ok(HttpResponse::Ok().json(http_response))
 }
