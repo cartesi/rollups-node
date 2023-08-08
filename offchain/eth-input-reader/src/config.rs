@@ -16,18 +16,15 @@ use types::deployment_files::{
     rollups_deployment::{RollupsDeployment, RollupsDeploymentJson},
 };
 
-#[derive(Parser)]
+#[derive(Clone, Parser)]
 #[command(name = "rd_config")]
-#[command(about = "Configuration for dispatcher")]
-pub struct DispatcherEnvCLIConfig {
+#[command(about = "Configuration for rollups eth-input-reader")]
+pub struct EthInputReaderEnvCLIConfig {
     #[command(flatten)]
     pub sc_config: SCEnvCLIConfig,
 
     #[command(flatten)]
     pub broker_config: BrokerCLIConfig,
-
-    #[command(flatten)]
-    pub log_config: LogEnvCliConfig,
 
     /// Path to file with deployment json of dapp
     #[arg(long, env, default_value = "./dapp_deployment.json")]
@@ -37,7 +34,7 @@ pub struct DispatcherEnvCLIConfig {
     #[arg(long, env, default_value = "./rollups_deployment.json")]
     pub rd_rollups_deployment_file: PathBuf,
 
-    /// Duration of rollups epoch in seconds, for which dispatcher will make claims.
+    /// Duration of rollups epoch in seconds, for which eth-input-reader will make claims.
     #[arg(long, env, default_value = "604800")]
     pub rd_epoch_duration: u64,
 
@@ -47,10 +44,9 @@ pub struct DispatcherEnvCLIConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct DispatcherConfig {
+pub struct EthInputReaderConfig {
     pub sc_config: SCConfig,
     pub broker_config: BrokerConfig,
-    pub log_config: LogConfig,
 
     pub dapp_deployment: DappDeployment,
     pub rollups_deployment: RollupsDeployment,
@@ -84,42 +80,50 @@ pub enum Error {
 
 #[derive(Debug)]
 pub struct Config {
-    pub dispatcher_config: DispatcherConfig,
+    pub eth_input_reader_config: EthInputReaderConfig,
     pub http_server_config: HttpServerConfig,
 }
 
 impl Config {
     pub fn initialize() -> Result<Self, Error> {
-        let (http_server_config, dispatcher_config) =
-            HttpServerConfig::parse::<DispatcherEnvCLIConfig>("dispatcher");
+        let (http_server_config, eth_input_reader_config) =
+            HttpServerConfig::parse::<EthInputReaderEnvCLIConfig>(
+                "eth_input_reader",
+            );
 
-        let sc_config = SCConfig::initialize(dispatcher_config.sc_config)
+        let sc_config = SCConfig::initialize(eth_input_reader_config.sc_config)
             .context(StateClientSnafu)?;
 
-        let log_config = LogConfig::initialize(dispatcher_config.log_config);
+        let tx_config =
+            TxManagerConfig::initialize(eth_input_reader_config.tx_config)
+                .context(TxManagerSnafu)?;
 
-        let path = dispatcher_config.rd_dapp_deployment_file;
+        let path = eth_input_reader_config.rd_dapp_deployment_file;
         let dapp_deployment: DappDeployment = read_json(path)?;
 
-        let path = dispatcher_config.rd_rollups_deployment_file;
+        let path = eth_input_reader_config.rd_rollups_deployment_file;
         let rollups_deployment = read_json::<RollupsDeploymentJson>(path)
             .map(RollupsDeployment::from)?;
 
-        let broker_config = BrokerConfig::from(dispatcher_config.broker_config);
+        let broker_config =
+            BrokerConfig::from(eth_input_reader_config.broker_config);
 
-        let dispatcher_config = DispatcherConfig {
+        assert!(
+            sc_config.default_confirmations < tx_config.default_confirmations,
+            "`state-client confirmations` has to be less than `tx-manager confirmations,`"
+        );
+
+        let eth_input_reader_config = EthInputReaderConfig {
             sc_config,
             broker_config,
-            log_config,
-
             dapp_deployment,
             rollups_deployment,
-            epoch_duration: dispatcher_config.rd_epoch_duration,
-            chain_id: dispatcher_config.chain_id,
+            epoch_duration: eth_input_reader_config.rd_epoch_duration,
+            priority: Priority::Normal,
         };
 
         Ok(Config {
-            dispatcher_config,
+            eth_input_reader_config,
             http_server_config,
         })
     }

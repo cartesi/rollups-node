@@ -9,11 +9,13 @@ use tracing::{error, instrument, trace, warn};
 use types::foldables::authority::rollups::{RollupsInitialState, RollupsState};
 
 use crate::{
-    config::DispatcherConfig,
-    drivers::{machine::MachineDriver, Context},
-    error::{BrokerSnafu, DispatcherError, StateServerSnafu},
-    machine::{rollups_broker::BrokerFacade, BrokerReceive, BrokerSend},
-    metrics::DispatcherMetrics,
+    config::EthInputReaderConfig,
+    error::{BrokerSnafu, EthInputReaderError, StateServerSnafu},
+    machine::{
+        driver::MachineDriver, rollups_broker::BrokerFacade, BrokerReceive,
+        BrokerSend, Context,
+    },
+    metrics::EthInputReaderMetrics,
     setup::{create_block_subscription, create_context, create_state_server},
 };
 
@@ -21,10 +23,10 @@ use snafu::{whatever, ResultExt};
 
 #[instrument(level = "trace", skip_all)]
 pub async fn start(
-    config: DispatcherConfig,
-    metrics: DispatcherMetrics,
-) -> Result<(), DispatcherError> {
-    trace!("Setting up dispatcher");
+    config: EthInputReaderConfig,
+    metrics: EthInputReaderMetrics,
+) -> Result<(), EthInputReaderError> {
+    info!("Setting up eth-input-reader with config: {:?}", config);
 
     let dapp_metadata = DAppMetadata {
         chain_id: config.chain_id,
@@ -61,7 +63,7 @@ pub async fn start(
         input_box_address: config.rollups_deployment.input_box_address,
     };
 
-    trace!("Starting dispatcher...");
+    trace!("Starting eth-input-reader...");
     loop {
         match block_subscription.next().await {
             Some(Ok(BlockStreamItem::NewBlock(b))) => {
@@ -124,7 +126,7 @@ async fn process_block(
     machine_driver: &mut MachineDriver,
 
     broker: &(impl BrokerSend + BrokerReceive),
-) -> Result<(), DispatcherError> {
+) -> Result<(), EthInputReaderError> {
     trace!("Querying rollup state");
     let state = state_server
         .query_state(initial_state, block.hash)

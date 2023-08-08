@@ -3,7 +3,7 @@
 
 use crate::{
     machine::{rollups_broker::BrokerFacadeError, BrokerSend, BrokerStatus},
-    metrics::DispatcherMetrics,
+    metrics::EthInputReaderMetrics,
 };
 
 use rollups_events::DAppMetadata;
@@ -20,7 +20,7 @@ pub struct Context {
     epoch_length: u64,
 
     dapp_metadata: DAppMetadata,
-    metrics: DispatcherMetrics,
+    metrics: EthInputReaderMetrics,
 }
 
 impl Context {
@@ -29,7 +29,7 @@ impl Context {
         epoch_length: u64,
         broker: &impl BrokerStatus,
         dapp_metadata: DAppMetadata,
-        metrics: DispatcherMetrics,
+        metrics: EthInputReaderMetrics,
     ) -> Result<Self, BrokerFacadeError> {
         let status = broker.status().await?;
 
@@ -112,7 +112,8 @@ impl Context {
 
 #[cfg(test)]
 mod private_tests {
-    use crate::{drivers::mock, metrics::DispatcherMetrics};
+    use crate::machine::mock;
+    use crate::metrics::EthInputReaderMetrics;
 
     use super::{Context, DAppMetadata};
 
@@ -131,7 +132,7 @@ mod private_tests {
             genesis_timestamp,
             epoch_length,
             dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
+            metrics: EthInputReaderMetrics::default(),
         }
     }
 
@@ -182,7 +183,7 @@ mod private_tests {
             genesis_timestamp: 0,
             epoch_length: 5,
             dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
+            metrics: EthInputReaderMetrics::default(),
         };
         assert!(!context.should_finish_epoch(4));
     }
@@ -196,7 +197,7 @@ mod private_tests {
             genesis_timestamp: 0,
             epoch_length: 5,
             dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
+            metrics: EthInputReaderMetrics::default(),
         };
         assert!(!context.should_finish_epoch(4));
     }
@@ -210,7 +211,7 @@ mod private_tests {
             genesis_timestamp: 0,
             epoch_length: 5,
             dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
+            metrics: EthInputReaderMetrics::default(),
         };
         assert!(context.should_finish_epoch(5));
     }
@@ -224,7 +225,7 @@ mod private_tests {
             genesis_timestamp: 0,
             epoch_length: 5,
             dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
+            metrics: EthInputReaderMetrics::default(),
         };
         assert!(!context.should_finish_epoch(5));
     }
@@ -242,7 +243,7 @@ mod private_tests {
             genesis_timestamp: 0,
             epoch_length: 5,
             dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
+            metrics: EthInputReaderMetrics::default(),
         };
         let broker = mock::Broker::new(vec![], vec![]);
         let timestamp = 6;
@@ -262,7 +263,7 @@ mod private_tests {
             genesis_timestamp: 5,
             epoch_length: 5,
             dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
+            metrics: EthInputReaderMetrics::default(),
         };
         let broker = mock::Broker::new(vec![], vec![]);
         let _ = context.finish_epoch(0, &broker).await;
@@ -279,7 +280,7 @@ mod private_tests {
             genesis_timestamp: 0,
             epoch_length: 5,
             dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
+            metrics: EthInputReaderMetrics::default(),
         };
         let broker = mock::Broker::with_finish_epoch_error();
         let result = context.finish_epoch(6, &broker).await;
@@ -295,9 +296,11 @@ mod private_tests {
 #[cfg(test)]
 mod public_tests {
     use crate::{
-        drivers::mock::{self, Broker, SendInteraction},
-        machine::RollupStatus,
-        metrics::DispatcherMetrics,
+        machine::{
+            mock::{self, Broker, SendInteraction},
+            RollupStatus,
+        },
+        metrics::EthInputReaderMetrics,
     };
 
     use super::{Context, DAppMetadata};
@@ -322,7 +325,7 @@ mod public_tests {
             epoch_length,
             &broker,
             DAppMetadata::default(),
-            DispatcherMetrics::default(),
+            EthInputReaderMetrics::default(),
         )
         .await;
         assert!(result.is_ok());
@@ -343,7 +346,7 @@ mod public_tests {
             7331,
             &broker,
             DAppMetadata::default(),
-            DispatcherMetrics::default(),
+            EthInputReaderMetrics::default(),
         )
         .await;
         assert!(result.is_err());
@@ -363,7 +366,7 @@ mod public_tests {
             genesis_timestamp: 0,              // ignored
             epoch_length: 0,                   // ignored
             dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
+            metrics: EthInputReaderMetrics::default(),
         };
         assert_eq!(context.inputs_sent_count(), inputs_sent_count);
     }
@@ -381,7 +384,7 @@ mod public_tests {
             genesis_timestamp: 0,
             epoch_length: 4,
             dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
+            metrics: EthInputReaderMetrics::default(),
         };
         let broker = mock::Broker::new(vec![], vec![]);
         let result = context.finish_epoch_if_needed(4, &broker).await;
@@ -399,7 +402,7 @@ mod public_tests {
             genesis_timestamp: 0,
             epoch_length: 2,
             dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
+            metrics: EthInputReaderMetrics::default(),
         };
         let broker = mock::Broker::new(vec![], vec![]);
         let result = context.finish_epoch_if_needed(3, &broker).await;
@@ -416,7 +419,7 @@ mod public_tests {
             genesis_timestamp: 0,
             epoch_length: 4,
             dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
+            metrics: EthInputReaderMetrics::default(),
         };
         let broker = mock::Broker::with_finish_epoch_error();
         let result = context.finish_epoch_if_needed(4, &broker).await;
@@ -437,7 +440,7 @@ mod public_tests {
             genesis_timestamp: 0, // ignored
             epoch_length: 0,      // ignored
             dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
+            metrics: EthInputReaderMetrics::default(),
         };
         let input = mock::new_input(2);
         let broker = mock::Broker::new(vec![], vec![]);
@@ -459,7 +462,7 @@ mod public_tests {
             genesis_timestamp: 0, // ignored
             epoch_length: 0,      // ignored
             dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
+            metrics: EthInputReaderMetrics::default(),
         };
         let broker = mock::Broker::with_enqueue_input_error();
         let result = context.enqueue_input(&mock::new_input(2), &broker).await;

@@ -11,7 +11,7 @@ use crate::machine;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub(crate)))]
-pub enum DispatcherError {
+pub enum EthInputReaderError {
     #[snafu(display("http server error"))]
     HttpServerError { source: hyper::Error },
 
