@@ -5,7 +5,7 @@ members = [
   "authority-claimer",
   "contracts",
   "data",
-  "dispatcher",
+  "eth-input-reader",
   "graphql-server",
   "grpc-interfaces",
   "host-runner",

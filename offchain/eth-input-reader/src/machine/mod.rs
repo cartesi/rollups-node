@@ -1,8 +1,15 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
+pub mod context;
+pub mod driver;
 pub mod rollups_broker;
 
+#[cfg(test)]
+mod mock;
+
+pub use context::Context;
+pub use driver::MachineDriver;
 use rollups_events::RollupsClaim;
 use types::foldables::input_box::Input;
 

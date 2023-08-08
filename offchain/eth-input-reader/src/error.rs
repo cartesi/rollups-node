@@ -7,11 +7,11 @@ use snafu::Snafu;
 use std::net::AddrParseError;
 use tonic::transport::Error as TonicError;
 
-use crate::{machine, sender};
+use crate::machine;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub(crate)))]
-pub enum DispatcherError {
+pub enum EthInputReaderError {
     #[snafu(display("http server error"))]
     HttpServerError { source: hyper::Error },
 
@@ -31,9 +31,6 @@ pub enum DispatcherError {
 
     #[snafu(display("state server error"))]
     StateServerError { source: StateServerError },
-
-    #[snafu(display("sender error"))]
-    SenderError { source: sender::SenderError },
 
     #[snafu(whatever, display("{message}"))]
     Whatever {

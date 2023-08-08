@@ -1,11 +1,11 @@
 [package]
-name = "dispatcher"
-edition.workspace = true
-license.workspace = true
-version.workspace = true
+name = "eth-input-reader"
+license = "Apache-2.0"
+version = "1.0.0"
+edition = "2021"
 
 [[bin]]
-name = "cartesi-rollups-dispatcher"
+name = "cartesi-rollups-eth-input-reader"
 path = "src/main.rs"
 
 [dependencies]

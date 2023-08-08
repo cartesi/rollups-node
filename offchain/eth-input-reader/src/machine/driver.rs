@@ -3,7 +3,7 @@
 
 use super::Context;
 
-use crate::machine::{rollups_broker::BrokerFacadeError, BrokerSend};
+use super::{rollups_broker::BrokerFacadeError, BrokerSend};
 
 use eth_state_fold_types::{ethereum_types::Address, Block};
 use types::foldables::input_box::{DAppInputBox, Input, InputBox};
@@ -99,12 +99,11 @@ mod tests {
     use std::sync::Arc;
 
     use crate::{
-        drivers::{
+        machine::{
             mock::{self, SendInteraction},
-            Context,
+            Context, RollupStatus,
         },
-        machine::RollupStatus,
-        metrics::DispatcherMetrics,
+        metrics::EthInputReaderMetrics,
     };
 
     use super::MachineDriver;
@@ -124,7 +123,7 @@ mod tests {
             5,
             &broker,
             DAppMetadata::default(),
-            DispatcherMetrics::default(),
+            EthInputReaderMetrics::default(),
         )
         .await
         .unwrap(); // zero indexed!
@@ -233,7 +232,7 @@ mod tests {
             5,
             &broker,
             DAppMetadata::default(),
-            DispatcherMetrics::default(),
+            EthInputReaderMetrics::default(),
         )
         .await
         .unwrap(); // zero indexed!
@@ -310,7 +309,7 @@ mod tests {
             5,
             &broker,
             DAppMetadata::default(),
-            DispatcherMetrics::default(),
+            EthInputReaderMetrics::default(),
         )
         .await
         .unwrap(); // zero indexed!
@@ -392,7 +391,7 @@ mod tests {
             5,
             &broker,
             DAppMetadata::default(),
-            DispatcherMetrics::default(),
+            EthInputReaderMetrics::default(),
         )
         .await
         .unwrap(); // zero indexed!

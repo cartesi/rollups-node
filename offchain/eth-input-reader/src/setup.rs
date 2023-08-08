@@ -13,14 +13,13 @@ use tonic::transport::Channel;
 use types::foldables::authority::{RollupsInitialState, RollupsState};
 
 use crate::{
-    config::DispatcherConfig,
-    drivers::Context,
+    config::EthInputReaderConfig,
     error::{
-        BrokerSnafu, ChannelSnafu, ConnectSnafu, DispatcherError,
+        BrokerSnafu, ChannelSnafu, ConnectSnafu, EthInputReaderError,
         StateServerSnafu,
     },
-    machine::BrokerStatus,
-    metrics::DispatcherMetrics,
+    machine::{BrokerStatus, Context},
+    metrics::EthInputReaderMetrics,
 };
 
 const BUFFER_LEN: usize = 256;
@@ -30,7 +29,7 @@ pub async fn create_state_server(
 ) -> Result<
     impl StateServer<InitialState = RollupsInitialState, State = RollupsState>
         + BlockServer,
-    DispatcherError,
+    EthInputReaderError,
 > {
     let channel = Channel::from_shared(config.grpc_endpoint.to_owned())
         .context(ChannelSnafu)?
@@ -48,7 +47,7 @@ pub async fn create_block_subscription(
     impl Stream<Item = Result<BlockStreamItem, StateServerError>>
         + Send
         + std::marker::Unpin,
-    DispatcherError,
+    EthInputReaderError,
 > {
     let s = client
         .subscribe_blocks(confirmations)
@@ -74,12 +73,12 @@ pub async fn create_block_subscription(
 }
 
 pub async fn create_context(
-    config: &DispatcherConfig,
+    config: &EthInputReaderConfig,
     block_server: &impl BlockServer,
     broker: &impl BrokerStatus,
     dapp_metadata: DAppMetadata,
-    metrics: DispatcherMetrics,
-) -> Result<Context, DispatcherError> {
+    metrics: EthInputReaderMetrics,
+) -> Result<Context, EthInputReaderError> {
     let genesis_timestamp: u64 = block_server
         .query_block(config.dapp_deployment.deploy_block_hash)
         .await

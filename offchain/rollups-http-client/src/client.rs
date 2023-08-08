@@ -133,7 +133,7 @@ pub async fn send_finish_request(
             }
         }
     };
-    // Reconstruct http dispatcher finish target endpoint
+    // Reconstruct http eth-input-reader finish target endpoint
     let rollup_http_server_endpoint =
         format!("{}/finish", rollup_http_server_addr);
     tracing::debug!(
