@@ -9,6 +9,8 @@ eth-state-fold-types = { workspace = true, features = ["ethers"] }
 
 [build-dependencies]
 eth-state-fold-types = { workspace = true, features = ["ethers"] }
+tempfile.workspace = true
+snafu.workspace = true
 
 [package.metadata.cargo-machete]
 ignored = ["eth-state-fold-types"]

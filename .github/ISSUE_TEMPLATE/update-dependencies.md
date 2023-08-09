@@ -6,13 +6,11 @@ labels: chore
 assignees: ''
 ---
 
-## 📚 Context
-
-On-chain or Off-chain?
-
 ## 📈 Subtasks
 
-- [ ] Update major versions in `Cargo.toml` and/or `packages.json`.
+- [ ] Update major versions in `Cargo.toml`.
 - [ ] If an update requires major work, create the corresponding issue.
-- [ ] Update the dependencies in the lock file (`Cargo.lock` and/or `yarn.lock`).
+- [ ] Update the dependencies in `Cargo.lock`.
+- [ ] Update Cartesi dependencies and update README.
+- [ ] Update Rust base docker image.
 - [ ] Verify whether everything is working as expected.

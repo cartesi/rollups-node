@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - Removed configurable inspect-server path prefix
+- Remove on-chain code from the node repository
 
 ## [1.0.2] 2023-09-12
 

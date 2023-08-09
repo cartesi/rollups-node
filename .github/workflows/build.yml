@@ -65,44 +65,10 @@ jobs:
       - name: Run tests
         run: cargo test
 
-  test_onchain:
-    runs-on: ubuntu-22.04
-    needs: test
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: recursive
-
-      - uses: actions/setup-node@v3
-        with:
-          node-version: "16"
-
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: nightly-d369d2486f85576eec4ca41d277391dfdae21ba7
-
-      - name: Install dependencies
-        run: yarn
-        working-directory: onchain/rollups
-
-      - name: Build contracts
-        run: yarn build
-        working-directory: onchain/rollups
-
-      - name: Generate proofs
-        run: yarn proofs:setup
-        working-directory: onchain/rollups
-
-      - name: Run tests
-        run: yarn test
-        working-directory: onchain/rollups
-
   build_docker:
     runs-on: ubuntu-22.04
     needs:
       - test
-      - test_onchain
     steps:
       - uses: actions/checkout@v3
         with:
@@ -199,28 +165,4 @@ jobs:
     with:
       target: host-runner
       image-name: rollups-host-runner
-    secrets: inherit
-
-  hardhat:
-    needs: build_docker
-    uses: ./.github/workflows/docker.yml
-    with:
-      target: hardhat
-      image-name: rollups-hardhat
-    secrets: inherit
-
-  cli:
-    needs: build_docker
-    uses: ./.github/workflows/docker.yml
-    with:
-      target: cli
-      image-name: rollups-cli
-    secrets: inherit
-
-  deployments:
-    needs: build_docker
-    uses: ./.github/workflows/docker.yml
-    with:
-      target: deployments
-      image-name: rollups-deployments
     secrets: inherit

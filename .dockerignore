@@ -1,5 +1,2 @@
 .git
 **/target/
-**/node_modules/
-onchain/rollups/artifacts
-onchain/rollups/cache

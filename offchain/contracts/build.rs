@@ -1,50 +1,84 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-use eth_state_fold_types::contract;
+use snafu::prelude::*;
+use std::error::Error;
 use std::fs::File;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::str;
 
-macro_rules! path {
-    ($contract_file: expr, $contract_name: expr) => {
-        match $contract_name {
-            "ERC20" => "../../onchain/rollups/abi/@openzeppelin/contracts/token/ERC20/ERC20.sol/ERC20.json".to_owned(),
-            _ => format!("../../onchain/rollups/abi/contracts/{}.sol/{}.json", $contract_file, $contract_name),
-        }
-    };
-}
+use eth_state_fold_types::contract;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+const ROLLUPS_CONTRACTS_URL: &str =
+    "https://registry.npmjs.org/@cartesi/rollups/-/rollups-1.0.1.tgz";
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let tempdir = tempfile::tempdir()?;
+    let tarball = tempdir.path().join("rollups.tgz");
+    download_contracts(&tarball)?;
+    unzip_contracts(&tarball, &tempdir.path())?;
+
     let contracts = vec![
-        ("InputBox", "inputs/InputBox", "input_box.rs"),
-        ("Authority", "consensus/authority/Authority", "authority.rs"),
-        ("History", "history/History", "history.rs"),
-        // ("CartesiDApp", "dapp/CartesiDApp", "cartesi_dapp.rs"),
-        // (
-        //     "CartesiDAppFactory",
-        //     "dapp/CartesiDAppFactory",
-        //     "dapp_factory.rs",
-        // ),
-        // ("ERC20", "ERC20", "erc20_contract.rs"),
+        ("inputs", "InputBox", "input_box.rs"),
+        ("consensus/authority", "Authority", "authority.rs"),
+        ("history", "History", "history.rs"),
     ];
-
-    for (contract_name, file, bindings_file_name) in contracts {
-        let source_path = path!(file, contract_name);
-        let output_path = format!(
-            "{}/{}",
-            std::env::var("OUT_DIR").unwrap(),
-            bindings_file_name
-        );
-
-        println!("cargo:rerun-if-changed={}", source_path);
-        println!("cargo:rerun-if-changed={}", output_path);
-
+    for (contract_path, contract_name, bindings_file_name) in contracts {
+        let source_path = path(tempdir.path(), contract_path, contract_name);
+        let output_path: PathBuf =
+            [&std::env::var("OUT_DIR").unwrap(), bindings_file_name]
+                .iter()
+                .collect();
         let source = File::open(&source_path)?;
         let output = File::create(&output_path)?;
-
         contract::write(contract_name, source, output)?;
     }
 
     println!("cargo:rerun-if-changed=build.rs");
-
     Ok(())
+}
+
+fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), snafu::Whatever> {
+    let output = Command::new(cmd)
+        .args(args)
+        .output()
+        .whatever_context("failed to execute command")?;
+    if !output.status.success() {
+        let err = str::from_utf8(&output.stderr)
+            .whatever_context("failed to convert string")?;
+        whatever!("{} exited with error: {}", cmd, err);
+    }
+    Ok(())
+}
+
+fn download_contracts(output: &Path) -> Result<(), snafu::Whatever> {
+    run_cmd(
+        "curl",
+        &[
+            ROLLUPS_CONTRACTS_URL,
+            "-o",
+            output.to_str().expect("failed to convert path"),
+        ],
+    )
+}
+
+fn unzip_contracts(file: &Path, target: &Path) -> Result<(), snafu::Whatever> {
+    run_cmd(
+        "tar",
+        &[
+            "zxf",
+            file.to_str().expect("failed to convert path"),
+            "-C",
+            target.to_str().expect("failed to convert path"),
+        ],
+    )
+}
+
+fn path(basedir: &Path, contract_path: &str, contract_name: &str) -> PathBuf {
+    basedir
+        .join("package/export/artifacts/contracts")
+        .join(contract_path)
+        .join(format!("{}.sol", contract_name))
+        .join(format!("{}.json", contract_name))
 }

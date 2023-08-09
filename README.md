@@ -1,231 +1,26 @@
-# Cartesi Rollups
+# Cartesi Node Reference Implementation
 
-This repository contains the on-chain and off-chain pieces that are used to deploy, launch and interact with Cartesi Rollups DApps. The code presented here is work in progress, continuously being improved and updated.
+The [Cartesi Node](https://docs.cartesi.io/cartesi-rollups/main-concepts/#cartesi-nodes) is the part of the [Cartesi Rollups Framework](https://docs.cartesi.io/cartesi-rollups/overview/) responsible for handling the communication between the on-chain smart contracts and the [Cartesi Machine](https://docs.cartesi.io/machine/intro/).
 
-## Table of contents
+The Cartesi Rollups machine and smart contracts live in fundamentally different environments.
+This creates the need for the node that manages and controls the communication between the blockchain and the machine.
+As such, the node is responsible for first reading data from Cartesi smart contracts, then sending them to the machine to be processed, and finally publishing their results back to the blockchain.
 
-- [Documentation](#documentation)
-- [Experimenting](#experimenting)
-- [Talk with us](#talk-with-us)
-- [Contributing](#contributing)
-- [Setting up](#setting-up)
-- [Testing](#testing)
-- [License](#license)
+The node can be used by anyone who's interested in the rollups state of affairs.
+We divide interested users into two roles, which run different types of nodes: readers and validators.
 
-## Documentation
-
-Check the [official Cartesi Rollups documentation website](https://docs.cartesi.io/cartesi-rollups/overview/).
-
-## On-chain Rollups
-
-Designed to mediate the relationship between the off-chain components with other smart contracts and externally owned accounts. It is composed by several modules, each with clear responsibilities and well-defined interfaces. The modules are depicted in the diagram below. The yellow boxes correspond to the core contracts, and the blue boxes correspond to externally-owned accounts (EOAs) or other contracts.
-
-```mermaid
-graph TD
-    classDef core fill:#ffe95a,color:#000
-    classDef external fill:#85b4ff,color:#000
-    classDef hasLink text-decoration: underline
-
-    InputBox[Input Box]:::core
-    CartesiDApp[Cartesi DApp]:::core
-    CartesiDAppFactory[Cartesi DApp Factory]:::core
-    EtherPortal[Ether Portal]:::core
-    ERC20Portal[ERC-20 Portal]:::core
-    ERC721Portal[ERC-721 Portal]:::core
-    ERC1155SinglePortal[ERC-1155 Single Transfer Portal]:::core
-    ERC1155BatchPortal[ERC-1155 Batch Transfer Portal]:::core
-    DAppAddressRelay[DApp Address Relay]:::core
-    Consensus:::external
-    
-    ERC20[Any ERC-20 token]:::external
-    ERC721[Any ERC-721 token]:::external
-    ERC1155[Any ERC-1155 token]:::external
-    DAppOwner[Cartesi DApp Owner]:::external
-    Anyone1[Anyone]:::external
-    Anyone2[Anyone]:::external
-    Anyone3[Anyone]:::external
-
-    Anyone1 -- executeVoucher --> CartesiDApp
-    Anyone1 -. validateNotice .-> CartesiDApp
-    Anyone1 -- newApplication --> CartesiDAppFactory
-    DAppOwner -- migrateToConsensus ---> CartesiDApp
-    CartesiDApp -. getClaim .-> Consensus
-    CartesiDApp -- withdrawEther --> CartesiDApp
-    CartesiDAppFactory == creates ==> CartesiDApp
-    Anyone2 -- addInput -------> InputBox
-    Anyone2 -- depositEther ---> EtherPortal
-    EtherPortal -- "Ether transfer" ----> Anyone3
-    EtherPortal -- addInput -----> InputBox
-    Anyone2 -- depositERC20Tokens ---> ERC20Portal
-    ERC20Portal -- transferFrom ----> ERC20
-    ERC20Portal -- addInput -----> InputBox
-    Anyone2 -- depositERC721Token ---> ERC721Portal
-    ERC721Portal -- safeTransferFrom ----> ERC721
-    ERC721Portal -- addInput -----> InputBox
-    Anyone2 -- depositSingleERC1155Token ---> ERC1155SinglePortal
-    ERC1155SinglePortal -- safeTransferFrom ----> ERC1155
-    ERC1155SinglePortal -- addInput -----> InputBox
-    Anyone2 -- depositBatchERC1155Token ---> ERC1155BatchPortal
-    ERC1155BatchPortal -- safeBatchTransferFrom ----> ERC1155
-    ERC1155BatchPortal -- addInput -----> InputBox
-    Anyone2 -- relayDAppAddress ---> DAppAddressRelay
-    DAppAddressRelay -- addInput -----> InputBox
-
-    class ERC20,ERC721,ERC1155 hasLink
-    click ERC20 href "https://eips.ethereum.org/EIPS/eip-20"
-    click ERC721 href "https://eips.ethereum.org/EIPS/eip-721"
-    click ERC1155 href "https://eips.ethereum.org/EIPS/eip-1155"
-```
-
-## Input Box
-
-This module is the one responsible for receiving inputs from users that want to interact with DApps. For each DApp, the module keeps an append-only list of hashes. Each hash is derived from the input and some metadata, such as the input sender, and the block timestamp. All the data needed to recontstruct a hash is available forever on-chain. As a result, one does not need to trust data providers in order to sync the off-chain machine with the latest input. Note that this module is completely permissionless, and we leave the off-chain machine to judge whether an input is valid or not.
-
-## Cartesi DApp
-
-A Cartesi DApp contract, just like any other contract on Ethereum, has a unique address. With this address, a DApp can hold ownership over digital assets on the base layer like Ether, ERC-20 tokens, and NFTs. In the next sections, we'll explain how DApps are able to receive assets through portals, and perform arbitrary message calls, such as asset transfers, through vouchers.
-
-Since there is no access control to execute a voucher, the caller must also provide a proof that such voucher was generated by the off-chain machine. This proof is checked on-chain against a claim, that is provided by the DApp's consensus. Therefore, a DApp must trust its consensus to only provide valid claims. However, if the consensus goes inactive or rogue, the DApp owner can migrate to a new consensus. In summary, DApp users must trust the DApp owner to choose a trustworthy consensus.
-
-## Cartesi DApp Factory
-
-The Cartesi DApp Factory allows anyone to deploy Cartesi DApp contracts with a simple function call, costing only 3.5% more gas than deploying the DApp contract directly. It also provides greater convenience to the deployer, and security to users and validators, as they know the bytecode could not have been altered maliciously.
-
-## Portals
-
-Portals, as the name suggests, are used to safely teleport assets from the base layer to the execution layer. It works in the following way. First, for some types of assets, the user has to allow the portal to deduct the asset(s) from their account. Second, the user tells the portal to transfer the asset(s) from their account to some DApp's account. The portal then adds an input to the DApp's input box to inform the machine of the transfer that just took place in the base layer. Finally, the off-chain machine is made aware of the transfer through the input sent by the portal. Note that the machine must know the address of the portal beforehand in order to validate such input.
-
-The DApp developer can choose to do whatever they want with this information. For example, they might choose to create a wallet for each user in the execution layer, where assets can be managed at a much lower cost through inputs that are understood by the Linux logic. In this sense, one could think of the DApp contract as a wallet, owned by the off-chain machine. Anyone can deposit assets there but only the DApp—through vouchers—can decide on withdrawals.
-
-The withdrawal process is quite simple from the user's perspective. Typically, the user would first send an input to the DApp requesting the withdrawal, which would then get processed and interpreted off-chain. If all goes well, the machine should generate a voucher that, once executed, transfers the asset(s) to the rightful recipient.
-
-Currently, we support the following types of assets:
-
-- [Ether](https://ethereum.org/en/eth/) (ETH)
-- [ERC-20](https://ethereum.org/en/developers/docs/standards/tokens/erc-20/) (Fungible tokens)
-- [ERC-721](https://ethereum.org/en/developers/docs/standards/tokens/erc-721/) (Non-fungible tokens)
-- [ERC-1155](https://ethereum.org/en/developers/docs/standards/tokens/erc-1155/) (Multi-tokens)
-
-### Input encodings for deposits
-
-As explained above, in order to teleport assets from the base layer to the execution layer, the portals add inputs to the DApp's input box, which will then need to be interpreted and validated by the off-chain machine. To do that, the machine will need to understand and decode each input's payload.
-
-The input payloads for deposits are always specified as packed ABI-encoded parameters, as detailed below:
-
-| Asset | Payload |
-| :- | :- |
-| Ether | `address sender, uint256 value, bytes execLayerData` |
-| ERC-20 | `bool success, address token, address sender, uint256 amount, bytes execLayerData` |
-| ERC-721 | `address token, address sender, uint256 tokenId, bytes data` `*` |
-| ERC-1155 (single) | `address token, address sender, uint256 tokenId, uint256 value, bytes data` `*`|
-| ERC-1155 (batch) | `address token, address sender, bytes data` `**` |
-
-**`*`** The ERC-721 and ERC-1155 (single) `data` fields correspond to the standard (unpacked) ABI-encoding of: `bytes baseLayerData, bytes execLayerData`
-
-**`**`** The ERC-1155 (batch) `data` field corresponds to the standard (unpacked) ABI-encoding of: `uint256[] tokenIds, uint256[] values, bytes baseLayerData, bytes execLayerData`
-
-As an example, the deposit of 100 Wei (of Ether) sent by address `0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266` with data `0xabcd` would result in the following input payload:
-
-```
-0xf39fd6e51aad88f6f4ce6ab8827279cfffb922660000000000000000000000000000000000000000000000000000000000000064abcd
-```
-
-## Vouchers
-
-Vouchers allow DApps in the execution layer to interact with contracts in the base layer through message calls. They are emitted by the off-chain machine, and executed by anyone in the base layer. Each voucher is composed of a destination address and a payload. In the case of vouchers destined to Solidity contracts, the payload generally encodes a function call.
-
-A voucher can only be executed once the DApp's consensus submits a claim containing it. They can be executed in any order. Although the DApp contract is indifferent to the content of the voucher being executed, it enforces some sanity checks before allowing its execution. First, it checks whether the voucher has been successfully executed already. Second, it ensures that the voucher has been emitted by the off-chain machine, by requiring a validity proof.
-
-Because of their generality, vouchers can be used in a wide range of applications: from withdrawing funds to providing liquidity in a DeFi protocol. Typically, DApps use vouchers to withdraw assets. Below, we show how vouchers can be used to withdraw several types of assets. You can find more information about a particular function by clicking on the :page_facing_up: emoji near it.
-
-| Asset | Destination | Function signature |
-| :- | :- |  :- |
-| Ether | DApp contract | `withdrawEther(address,uint256)` [:page_facing_up:](./onchain/rollups/contracts/dapp/CartesiDApp.sol) |
-| ERC-20 | Token contract | `transfer(address,uint256)` [:page_facing_up:](https://eips.ethereum.org/EIPS/eip-20#methods) |
-| ERC-20 | Token contract | `transferFrom(address,address,uint256)` [:page_facing_up:](https://eips.ethereum.org/EIPS/eip-20#methods) [^1] |
-| ERC-721 | Token contract | `safeTransferFrom(address,address,uint256)` [:page_facing_up:](https://eips.ethereum.org/EIPS/eip-721#specification) |
-| ERC-721 | Token contract | `safeTransferFrom(address,address,uint256,bytes)` [:page_facing_up:](https://eips.ethereum.org/EIPS/eip-721#specification) [^2] |
-| ERC-1155 | Token contract | `safeTransferFrom(address,address,uint256,uint256,data)` [:page_facing_up:](https://eips.ethereum.org/EIPS/eip-1155#specification) |
-| ERC-1155 | Token contract | `safeBatchTransferFrom(address,address,uint256[],uint256[],data)` [:page_facing_up:](https://eips.ethereum.org/EIPS/eip-1155#specification) [^3] |
-
-Please note that the voucher payload should be encoded according to the [Ethereum ABI specification for calling contract functions](https://docs.soliditylang.org/en/v0.8.19/abi-spec.html). As such, it should start with the first four bytes of the Keccak-256 hash of the function signature string (as given in the table above), followed by the ABI-encoded parameter values.
-
-As an example, the voucher for a simple ERC-20 transfer (2nd line in the table above) to address `0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266` with amount 100 should specify the following payload:
-
-```
-0xa9059cbb000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb922660000000000000000000000000000000000000000000000000000000000000064
-```
-
-[^1]: If the DApp owns the tokens, prefer to use `transfer(address,uint256)`
-[^2]: If no data is being passed as argument, prefer to use `safeTransferFrom(address,address,uint256)`
-[^3]: If only one token is being transferred, prefer to use `safeTransferFrom(address,address,uint256,uint256,data)`
-
-## DApp Address Relay
-
-In the previous section, we showed how vouchers can be used to withdraw different types of assets. Most of those vouchers contain the address of the DApp contract, either as the destination address or as a function argument. So, the off-chain machine needs to "know" the DApp contract address at some point. If the off-chain machine knew the DApp contract address from the beginning, it would create a cyclical dependency between the initial machine state hash (also called "template hash") and the DApp contract address. This is due to the fact that the address of a DApp contract depends on its construction arguments, which include the template hash; and that the template hash is the Merkle root of the machine address space, which includes the DApp contract address.
-
-This "chicken-and-egg" problem is circumvented by a very small permissionless contract in the base layer, the DApp Address Relay ([source](./onchain/rollups/contracts/relays/DAppAddressRelay.sol)). Its only job is to add an input to a DApp's input box with the DApp contract address. The off-chain machine then decodes this input and stores the address somewhere for future use. Just like in the case of portals, the machine must also know the address of the relay in order to validate the origin of the input.
-
-## Notices
-
-Notices are informational statements that can be proved by contracts in the base layer. They're emitted by the off-chain machine and contain a payload, in bytes. DApp developers are free to explore different use cases for notices, their generality and negligible cost of emission makes them a powerful tool to assist integration between DApps and contracts or even other DApps. Similar to vouchers, notices can only be proved once they've been finalized on-chain and if they're accompanied by a validity proof. A chess DApp could, for example, emit a notice informing the underlying blockchain of the winner of a tournament. While that information is not necessarily "actionable", it could be used by other applications for different purposes.
-
-## Consensus
-
-This module is responsible for providing valid claims to DApps after reaching some form of consensus. The module's interface aims to be as generic as possible to accomodate any consensus model, since there are plenty to choose from. The way claims are encoded and stored is abstracted entirely by the interface. Implementation-wise, this is left to a History contract.
-
-The only type of consensus that is currently implemented by Cartesi is called Authority. It is owned by a single address, who has complete power over the consensus. It is arguably the simplest consensus to implement, although quite vulnerable.
-
-## History
-
-The sole purpose of this module is to store claims and to allow them to be retrieved later. Just as with the consensus interface, we leave much of the details open for the implementation to define.
-
-Our only implementation of history stores claims in a very simple manner: each claim is composed of an epoch hash and a range of input indices. Each DApp has its own append-only list of claims, where ranges don't overlap, and come one after the other. As a result, one cannot overwrite past claims, or skip inputs, or claim in a non-linear order.
-
-## Dispute Resolution
-
-Disputes occur when two validators claim different state updates to the same epoch. Because of the deterministic nature of our virtual machine and the fact that the inputs that constitute an epoch are agreed upon beforehand, conflicting claims imply dishonest behavior. When a conflict occurs, the module that mediates the interactions between both validators is the dispute resolution.
-
-The code for rollups dispute resolution is not being published yet, but a big part of it is available on the Cartesi Rollups SDK, using the [Arbitration dlib](https://github.com/cartesi/arbitration-dlib/)
-
-## Off-chain Rollups
-
-The Rollups machine and the smart contracts live in fundamentally different environments. This creates the need for a middleware that manages and controls the communication between the blockchain and the machine.
-As such, the middleware is responsible for first reading data from our smart contracts, then sending them to the machine to be processed, and finally publishing their results back to the blockchain.
-
-The middleware can be used by anyone who's interested in the rollups state of affairs. We divide interested users into two roles, which run different types of nodes: readers and validators.
-
-Reader nodes are only interested in advancing their off-chain machine. They consume information from the blockchain but do not bother to enforce state updates, trusting that validators will ensure the validity of all on-chain state updates.
+Reader nodes are only interested in advancing their off-chain machine.
+They consume information from the blockchain but do not bother to enforce state updates, trusting that validators will ensure the validity of all on-chain state updates.
 
 Validators, on the other hand, have more responsibility: they not only watch the blockchain but also fight to ensure that the blockchain will only accept valid state updates.
 
-For more information, refer to the [Off-chain documentation](./offchain/README.md).
-
-## Experimenting
-
-To get a taste on how to use Cartesi to develop your DApp, check the following resources:
-See Cartesi Rollups in action with the Simple Echo Examples in [C++](https://github.com/cartesi/rollups-examples/tree/main/echo-cpp), [JavaScript](https://github.com/cartesi/rollups-examples/tree/main/echo-js), [Lua](https://github.com/cartesi/rollups-examples/tree/main/echo-lua), [Rust](https://github.com/cartesi/rollups-examples/tree/main/echo-rust) and [Python](https://github.com/cartesi/rollups-examples/tree/main/echo-python).
-To have a glimpse on how to develop your DApp locally using your favorite IDE and tools check our Host Environment in the [Rollups Examples](https://github.com/cartesi/rollups-examples) repository.
-
-## Talk with us
-
-If you're interested in developing with Cartesi, working with the team, or hanging out in our community, don't forget to [join us on Discord and follow along](https://discordapp.com/invite/Pt2NrnS).
-
-Want to stay up to date? Make sure to join our [announcements channel on Telegram](https://t.me/CartesiAnnouncements) or [follow our Twitter](https://twitter.com/cartesiproject).
-
-## Contributing
-
-Thank you for your interest in Cartesi! Head over to our [Contributing Guidelines](CONTRIBUTING.md) for instructions on how to sign our Contributors Agreement and get started with Cartesi!
-
-Please note we have a [Code of Conduct](CODE_OF_CONDUCT.md), please follow it in all your interactions with the project.
-
-## Setting up
+## Getting Started
 
 ### Cloning submodules
 
-In order to also clone submodules like `grpc-interfaces` and `forge-std`, you need to run the following command.
+Before building and running any of the inner projects, you should download the submodules with:
 
-```sh
+```shell
 git submodule update --init --recursive
 ```
 
@@ -237,40 +32,116 @@ To build the Rollups Docker images, run the following command.
 docker buildx bake --load
 ```
 
-### Compiling the on-chain code
+### Rust
 
-In order to install dependencies for the on-chain code, you'll need `yarn`. See the [Yarn documentation](https://classic.yarnpkg.com/en/docs/install) for instructions on how to install `yarn` on your system. Once you have `yarn` installed on your system, you can install the necessary dependencies and build the on-chain code by running the following commands.
+All projects comprising the Cartesi Node require Rust to be executed.
+To install it, follow the [instructions](https://www.rust-lang.org/tools/install) from the Rust website.
 
-```sh
-cd onchain/rollups
-yarn
-yarn build
+### Dependencies
+
+The Cartesi Node depends on the following components:
+
+| Component | Version |
+|---|---|
+| Cartesi Machine SDK | [v0.16.2](https://github.com/cartesi/machine-emulator/releases/tag/v0.16.2) |
+| Cartesi OpenAPI Interfaces | [v0.6.0](https://github.com/cartesi/openapi-interfaces/releases/tag/v0.6.0) |
+| Cartesi Rollups Contracts | [v1.0.1](https://github.com/cartesi/rollups/releases/tag/v1.0.1) |
+| Cartesi Server Manager | [v0.8.2](https://github.com/cartesi/server-manager/releases/tag/v0.8.2) |
+
+### Running
+
+To run any of the inner projects, execute the command:
+
+```shell
+cargo run
 ```
 
-### Compiling the off-chain code
+Some of the inner projects may have additional run instructions.
+Refer to their own documentation for more details.
 
-The off-chain code is written in Rust. For that, you'll need `cargo`. See the [Rust documentation](https://doc.rust-lang.org/cargo/getting-started/installation.html) for instructions on how to install `cargo` on your system.
+## Configuration
 
-```sh
-cd offchain
-cargo build
+It is possible to configure the behavior of any of the projects by passing CLI arguments and using environment variables.
+Execute the following command to check the available options for each project:
+
+```shell
+cargo run -- -h
 ```
 
-## Testing
+### Redis TLS Configuration
 
-Once you've setup the repository, you can test the different pieces that compose Cartesi Rollups individually.
+To connect the Broker to a Redis server via TLS, the server's URL must use the `rediss://` scheme (with two "s"es).
+This is currently the only way to tell `Broker` to use a TLS connection.
 
-### Testing the on-chain code
+## Tests
 
-In order to run the on-chain tests, you'll also need `forge`. Please consult the [Foundry documentation](https://book.getfoundry.sh/getting-started/installation) for installation instructions. In case you already have `forge` on your machine, then please make sure you have the latest version. Furthermore, you'll also need to generate Merkle proofs for output validation tests. Please carefully read [this README](./onchain/rollups/test/foundry/dapp/helper) for further instructions. Once everything is properly set up, you can test the on-chain code by running the following commands.
+To run the tests available in any of the projects, execute the command:
 
-```sh
-cd onchain/rollups
-yarn test
+```shell
+cargo test
 ```
+
+## Architecture Overview
+
+The Cartesi Node is an event-based solution that may be depicted as follows:
+
+![Node architecture diagram](./docs/node-architecture.drawio.svg)
+
+The **Broker** is a Redis-based message broker that mediates the transferring of *Inputs*, *Outputs* and *Claims* between the Cartesi Node components.
+For details specific to the Broker and the available event streams, refer to the [Rollups Events project](./offchain/rollups-events/README.md).
+
+The [**State-fold Server**](./offchain/state-server/README.md) is the component responsible for tracking blockchain state changes and deriving *Inputs* from them to be processed.
+
+The [**Dispatcher**](./offchain/dispatcher/README.md) is the component that messages *Inputs* via the **Broker** to be processed elsewhere and submits *Claims* to the blockchain.
+
+The [**Advance Runner**](./offchain/advance-runner/README.md) is the one responsible for relaying *Inputs* to the **Server Manager** to be processed by the underlying DApp running in the embedded **Cartesi Machine**.
+The **Advance Runner** obtains the resulting **Outputs** and **Claims** from the **Server Manager** and adds them to the **Broker**.
+
+The [**Indexer**](./offchain/indexer/README.md) consumes all *Inputs* and *Outputs* transferred by the **Broker** and store them in a **PostgreSQL** database for later querying via a **GraphQL Server** instance.
+
+The [**Inspect Server**](./offchain/inspect-server/README.md) is responsible for the processing of *Inspect* requests via HTTP.
+
+## Workflows
+
+The Cartesi Node may act as a *User* (aka *Reader*) or *Validator* Node, hence performing different roles, which may be represented by different workflows.
+
+### Reader Flow
+
+In the Reader Flow, any *Input* read from the blockchain by the **State-fold Server** is received by the **Dispatcher** and relayed to the **Broker** through an input-specific stream.
+The *Input* is eventually consumed by the **Advance Runner** and used to advance the state of the **Server Manager**, thus generating an *Advance* request to be processed by the underlying DApp.
+
+After finishing the processing, the DApp may generate a number of *Outputs*, which are eventually retrieved by the **Advance Runner** and fed back into the **Broker** through an output-specific stream.
+
+*Inputs* and *Outputs* are consumed from their respective streams by the **Indexer** and stored in a **PostgreSQL** database and may be queried by the DApp **Frontend** via a **GraphQL Server** instance.
+
+### Validator Flow
+
+The Validator Flow may only be performed by *Validator* nodes.
+It complements the Reader Flow by generating *Claims* at the end of *Epochs*, which are generated by the **Server Manager**, and sent to the **Broker** by the **Advance Runner** through a claims-specific stream to be eventually consumed by the **Dispatcher** for being submitted to the blockchain.
+
+### Inspect Data Flow
+
+Every *Inspect* request sent by the **Frontend** via the Rollups HTTP API is captured by the **Inspect Server** and forwarded to the **Server Manager**, which queries the state of the underlying DApp via *Inspect* requests.
+
+Every request results in an *Inspect Response* that is returned to the **Inspect Server**, which sends it back to the **Frontend**.
+
+## Host mode
+
+The Cartesi Node may operate in a so-called *Host mode* when deployed locally for development purposes.
+
+In this case, the overall topology is very similar to the one presented in the [Architecture Overview](#architecture-overview) as depicted below.
+
+![Host mode architecture diagram](./docs/host-architecture.drawio.svg)
+
+The main difference is that the **Server Manager** is not present and, there's no **Cartesi Machine** available as a result.
+Their features are emulated by the **Host Runner**, which interacts with the **DApp Backend** being executed locally in the *host* to perform the Cartesi Node [workflows](#workflows).
+
+## Contributing
+
+Thank you for your interest in Cartesi! Head over to our [Contributing Guidelines](CONTRIBUTING.md) for instructions on how to sign our Contributors Agreement and get started with Cartesi!
+
+Please note we have a [Code of Conduct](CODE_OF_CONDUCT.md), please follow it in all your interactions with the project.
 
 ## License
 
 Note: This component currently has dependencies that are licensed under the GNU GPL, version 3, and so you should treat this component as a whole as being under the GPL version 3. But all Cartesi-written code in this component is licensed under the Apache License, version 2, or a compatible permissive license, and can be used independently under the Apache v2 license. After this component is rewritten, the entire component will be released under the Apache v2 license.
-The arbitration d-lib repository and all contributions are licensed under
-[GPL 3](https://www.gnu.org/licenses/gpl-3.0.en.html). Please review our [COPYING](COPYING) file.

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 # syntax=docker.io/docker/dockerfile:1.4
+
 # deps install
 FROM rust:1.71.0-bookworm AS chef
 
@@ -21,7 +22,7 @@ FROM chef AS builder
 
 RUN <<EOF
 DEBIAN_FRONTEND="noninteractive" apt-get update
-DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends cmake libprotobuf-dev protobuf-compiler
+DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends cmake libprotobuf-dev protobuf-compiler curl
 EOF
 
 WORKDIR /usr/src/app/offchain
@@ -32,6 +33,11 @@ WORKDIR /usr/src/app/offchain
 COPY . /usr/src/app
 
 RUN cargo build --release
+
+RUN mkdir -p /opt/cartesi/share/deployments
+RUN curl "https://registry.npmjs.org/@cartesi/rollups/-/rollups-1.0.1.tgz" -o /tmp/rollups.tgz && \
+    tar zxf /tmp/rollups.tgz -C /tmp && \
+    cp /tmp/package/export/abi/* /opt/cartesi/share/deployments
 
 # define runtime image
 FROM debian:bookworm-20230814-slim as runtime
@@ -70,7 +76,7 @@ DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends ca-c
 rm -rf /var/lib/apt/lists/*
 EOF
 COPY --from=builder /usr/src/app/offchain/target/release/cartesi-rollups-dispatcher /opt/cartesi/bin/cartesi-rollups-dispatcher
-COPY onchain/rollups/export/abi /opt/cartesi/share/deployments/
+COPY --from=builder /opt/cartesi/share/deployments /opt/cartesi/share/deployments
 USER cartesi
 ENTRYPOINT ["/opt/cartesi/bin/cartesi-rollups-dispatcher"]
 
@@ -103,8 +109,3 @@ FROM runtime AS host_runner
 COPY --from=builder /usr/src/app/offchain/target/release/cartesi-rollups-host-runner /opt/cartesi/bin/cartesi-rollups-host-runner
 USER cartesi
 ENTRYPOINT ["/opt/cartesi/bin/cartesi-rollups-host-runner"]
-
-FROM scratch AS deployments
-
-WORKDIR /opt/cartesi/share/deployments
-COPY onchain/rollups/export/abi .
