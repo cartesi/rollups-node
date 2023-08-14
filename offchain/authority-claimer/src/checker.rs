@@ -6,11 +6,10 @@ use rollups_events::RollupsClaim;
 use snafu::Snafu;
 use std::fmt::Debug;
 
-/// The `DuplicateChecker` checks if a given claim was already submitted
-/// to the blockchain.
+/// The `DuplicateChecker` checks if a given claim was already submitted to the blockchain.
 #[async_trait]
 pub trait DuplicateChecker: Debug {
-    type Error: snafu::Error;
+    type Error: snafu::Error + 'static;
 
     async fn is_duplicated_rollups_claim(
         &self,
@@ -26,24 +25,24 @@ pub trait DuplicateChecker: Debug {
 pub struct DefaultDuplicateChecker;
 
 #[derive(Debug, Snafu)]
-pub enum DefaultDuplicateCheckerError {
+pub enum DuplicateCheckerError {
     Todo,
 }
 
 impl DefaultDuplicateChecker {
-    pub fn new() -> Result<Self, DefaultDuplicateCheckerError> {
+    pub fn new() -> Result<Self, DuplicateCheckerError> {
         todo!()
     }
 }
 
 #[async_trait]
 impl DuplicateChecker for DefaultDuplicateChecker {
-    type Error = DefaultDuplicateCheckerError;
+    type Error = DuplicateCheckerError;
 
     async fn is_duplicated_rollups_claim(
         &self,
         _rollups_claim: &RollupsClaim,
     ) -> Result<bool, Self::Error> {
-        todo!()
+        Err(DuplicateCheckerError::Todo)
     }
 }

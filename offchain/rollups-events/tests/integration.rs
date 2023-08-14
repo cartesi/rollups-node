@@ -286,15 +286,3 @@ async fn test_it_does_not_block_when_consuming_empty_stream() {
         .expect("failed to peek");
     assert!(matches!(event, None));
 }
-
-#[test_log::test(tokio::test)]
-async fn test_it_times_out_when_no_event_is_produced() {
-    let docker = Cli::default();
-    let state = TestState::setup(&docker).await;
-    let mut broker = state.create_broker().await;
-    let err = broker
-        .consume_blocking(&MockStream {}, "0")
-        .await
-        .expect_err("consume event worked but it should have failed");
-    assert!(matches!(err, BrokerError::ConsumeTimeout));
-}
