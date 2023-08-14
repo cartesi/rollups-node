@@ -23,3 +23,9 @@ serde_json.workspace = true
 snafu.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tracing.workspace = true
+
+[dev-dependencies]
+test-fixtures = { path = "../test-fixtures" }
+
+backoff = { workspace = true, features = ["tokio"] }
+testcontainers.workspace = true

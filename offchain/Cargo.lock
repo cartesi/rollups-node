@@ -474,6 +474,7 @@ name = "authority-claimer"
 version = "1.1.0"
 dependencies = [
  "async-trait",
+ "backoff",
  "clap",
  "eth-tx-manager",
  "http-server",
@@ -483,6 +484,8 @@ dependencies = [
  "serde",
  "serde_json",
  "snafu",
+ "test-fixtures",
+ "testcontainers",
  "tokio",
  "tracing",
 ]

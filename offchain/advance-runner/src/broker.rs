@@ -103,18 +103,11 @@ impl BrokerFacade {
         last_id: &str,
     ) -> Result<Event<RollupsInput>> {
         tracing::trace!(last_id, "consuming rollups input event");
-
-        loop {
-            let result = self
-                .client
-                .consume_blocking(&self.inputs_stream, last_id)
-                .await;
-            if matches!(result, Err(BrokerError::ConsumeTimeout)) {
-                tracing::trace!("consume timed out, retrying");
-            } else {
-                return result.context(BrokerInternalSnafu);
-            }
-        }
+        let result = self
+            .client
+            .consume_blocking(&self.inputs_stream, last_id)
+            .await;
+        return result.context(BrokerInternalSnafu);
     }
 
     /// Produce the rollups claim if it isn't in the stream yet

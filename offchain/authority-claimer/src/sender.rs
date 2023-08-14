@@ -13,12 +13,12 @@ use crate::metrics::AuthorityClaimerMetrics;
 /// It should wait for N blockchain confirmations.
 #[async_trait]
 pub trait TransactionSender: Sized + Debug {
-    type Error: snafu::Error;
+    type Error: snafu::Error + 'static;
 
-    /// The `send_rollups_claim` function consumes the `TransactionSender`
-    /// object and then returns it to avoid that processes use the transaction
-    /// sender concurrently.
-    async fn send_rollups_claim(
+    /// The `send_rollups_claim_transaction` function consumes the
+    /// `TransactionSender` object and then returns it to avoid
+    /// that processes use the transaction sender concurrently.
+    async fn send_rollups_claim_transaction(
         self,
         rollups_claim: RollupsClaim,
     ) -> Result<Self, Self::Error>;
@@ -32,7 +32,7 @@ pub trait TransactionSender: Sized + Debug {
 pub struct DefaultTransactionSender;
 
 #[derive(Debug, Snafu)]
-pub enum DefaultTransactionSenderError {
+pub enum TransactionSenderError {
     Todo,
 }
 
@@ -40,19 +40,19 @@ impl DefaultTransactionSender {
     pub fn new(
         _dapp_metadata: DAppMetadata,
         _metrics: AuthorityClaimerMetrics,
-    ) -> Result<Self, DefaultTransactionSenderError> {
+    ) -> Result<Self, TransactionSenderError> {
         todo!()
     }
 }
 
 #[async_trait]
 impl TransactionSender for DefaultTransactionSender {
-    type Error = DefaultTransactionSenderError;
+    type Error = TransactionSenderError;
 
-    async fn send_rollups_claim(
+    async fn send_rollups_claim_transaction(
         self,
         _rollups_claim: RollupsClaim,
     ) -> Result<Self, Self::Error> {
-        todo!()
+        Err(TransactionSenderError::Todo)
     }
 }
