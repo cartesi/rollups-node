@@ -1,22 +1,20 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-use eth_state_client_lib::StateServer;
-use eth_state_fold_types::{Block, BlockStreamItem};
+use eth_state_fold::Foldable;
+use eth_state_fold_types::BlockStreamItem;
 use rollups_events::{Address, DAppMetadata};
+use std::sync::Arc;
 use tokio_stream::StreamExt;
 use tracing::{error, info, instrument, trace, warn};
-use types::foldables::authority::rollups::{RollupsInitialState, RollupsState};
+use types::foldables::input_box::{InputBox, InputBoxInitialState};
 
 use crate::{
     config::EthInputReaderConfig,
-    error::{BrokerSnafu, EthInputReaderError, StateServerSnafu},
-    machine::{
-        driver::MachineDriver, rollups_broker::BrokerFacade, BrokerReceive,
-        BrokerSend, Context,
-    },
+    error::{BrokerSnafu, EthInputReaderError},
+    machine::{driver::MachineDriver, rollups_broker::BrokerFacade},
     metrics::EthInputReaderMetrics,
-    setup::{create_block_subscription, create_context, create_state_server},
+    setup::create_environment,
 };
 
 use snafu::{whatever, ResultExt};
@@ -29,19 +27,9 @@ pub async fn start(
     info!("Setting up eth-input-reader with config: {:?}", config);
 
     let dapp_metadata = DAppMetadata {
-        chain_id: config.tx_config.chain_id,
+        chain_id: config.chain_id,
         dapp_address: Address::new(config.dapp_deployment.dapp_address.into()),
     };
-
-    trace!("Creating state-server connection");
-    let state_server = create_state_server(&config.sc_config).await?;
-
-    trace!("Starting block subscription with confirmations");
-    let mut block_subscription = create_block_subscription(
-        &state_server,
-        config.sc_config.default_confirmations,
-    )
-    .await?;
 
     trace!("Creating broker connection");
     let broker =
@@ -49,18 +37,18 @@ pub async fn start(
             .await
             .context(BrokerSnafu)?;
 
-    trace!("Creating context");
-    let mut context =
-        create_context(&config, &state_server, &broker, dapp_metadata, metrics)
-            .await?;
+    trace!("Creating block subscription, environment and context");
+    let (mut block_subscription, env, mut context) =
+        create_environment(&config, &broker, dapp_metadata, metrics).await?;
 
     trace!("Creating machine driver and blockchain driver");
-    let mut machine_driver =
+    let machine_driver =
         MachineDriver::new(config.dapp_deployment.dapp_address);
 
-    let initial_state = RollupsInitialState {
-        history_address: config.rollups_deployment.history_address,
-        input_box_address: config.rollups_deployment.input_box_address,
+    let initial_state = InputBoxInitialState {
+        input_box_address: Arc::new(
+            config.rollups_deployment.input_box_address,
+        ),
     };
 
     trace!("Starting eth-input-reader...");
@@ -74,15 +62,18 @@ pub async fn start(
                     b.hash,
                     b.parent_hash
                 );
-                process_block(
-                    &b,
-                    &state_server,
-                    &initial_state,
-                    &mut context,
-                    &mut machine_driver,
-                    &broker,
-                )
-                .await?
+
+                trace!("Querying rollup state");
+                let state =
+                    InputBox::get_state_for_block(&initial_state, b, &env)
+                        .await
+                        .expect("should get state");
+
+                trace!("Reacting to state with `machine_driver`");
+                machine_driver
+                    .react(&mut context, &state.block, &state.state, &broker)
+                    .await
+                    .context(BrokerSnafu)?;
             }
 
             Some(Ok(BlockStreamItem::Reorg(bs))) => {
@@ -109,36 +100,4 @@ pub async fn start(
             }
         }
     }
-}
-
-#[instrument(level = "trace", skip_all)]
-#[allow(clippy::too_many_arguments)]
-async fn process_block(
-    block: &Block,
-
-    state_server: &impl StateServer<
-        InitialState = RollupsInitialState,
-        State = RollupsState,
-    >,
-    initial_state: &RollupsInitialState,
-
-    context: &mut Context,
-    machine_driver: &mut MachineDriver,
-
-    broker: &(impl BrokerSend + BrokerReceive),
-) -> Result<(), EthInputReaderError> {
-    trace!("Querying rollup state");
-    let state = state_server
-        .query_state(initial_state, block.hash)
-        .await
-        .context(StateServerSnafu)?;
-
-    // Drive machine
-    trace!("Reacting to state with `machine_driver`");
-    machine_driver
-        .react(context, &state.block, &state.state.input_box, broker)
-        .await
-        .context(BrokerSnafu)?;
-
-    Ok(())
 }
