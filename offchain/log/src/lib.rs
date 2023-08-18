@@ -10,7 +10,7 @@ pub mod built_info {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
 
-#[derive(Debug, Parser)]
+#[derive(Debug, Parser, Clone)]
 #[command(name = "log_config")]
 pub struct LogEnvCliConfig {
     #[arg(long, env, default_value = "false")]

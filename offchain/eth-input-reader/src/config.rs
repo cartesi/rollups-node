@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use clap::Parser;
-use eth_state_client_lib::config::{
-    Error as SCError, SCConfig, SCEnvCLIConfig,
-};
+use eth_block_history::config::{BHConfig, BHEnvCLIConfig};
+use eth_state_fold::config::{SFConfig, SFEnvCLIConfig};
 use http_server::HttpServerConfig;
 use log::{LogConfig, LogEnvCliConfig};
 use snafu::{ResultExt, Snafu};
@@ -21,44 +20,54 @@ use types::deployment_files::{
 #[command(about = "Configuration for rollups eth-input-reader")]
 pub struct EthInputReaderEnvCLIConfig {
     #[command(flatten)]
-    pub sc_config: SCEnvCLIConfig,
+    pub broker_config: BrokerCLIConfig,
 
     #[command(flatten)]
-    pub broker_config: BrokerCLIConfig,
+    pub sf_config: SFEnvCLIConfig,
+
+    #[command(flatten)]
+    pub bh_config: BHEnvCLIConfig,
+
+    #[command(flatten)]
+    pub log_config: LogEnvCliConfig,
 
     /// Path to file with deployment json of dapp
     #[arg(long, env, default_value = "./dapp_deployment.json")]
-    pub rd_dapp_deployment_file: PathBuf,
+    pub dapp_deployment_file: PathBuf,
 
     /// Path to file with deployment json of rollups
     #[arg(long, env, default_value = "./rollups_deployment.json")]
-    pub rd_rollups_deployment_file: PathBuf,
+    pub rollups_deployment_file: PathBuf,
 
-    /// Duration of rollups epoch in seconds, for which eth-input-reader will make claims.
+    /// Duration of rollups epoch in seconds, for which eth-input-reader will read
     #[arg(long, env, default_value = "604800")]
-    pub rd_epoch_duration: u64,
+    pub epoch_duration: u64,
 
     /// Chain ID
     #[arg(long, env)]
     pub chain_id: u64,
+
+    /// Depth on the blockchain the reader will be listening to
+    #[arg(long, env, default_value = "12")]
+    pub subscription_depth: usize,
 }
 
 #[derive(Clone, Debug)]
 pub struct EthInputReaderConfig {
-    pub sc_config: SCConfig,
     pub broker_config: BrokerConfig,
+    pub sf_config: SFConfig,
+    pub bh_config: BHConfig,
+    pub log_config: LogConfig,
 
     pub dapp_deployment: DappDeployment,
     pub rollups_deployment: RollupsDeployment,
     pub epoch_duration: u64,
     pub chain_id: u64,
+    pub subscription_depth: usize,
 }
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(display("StateClient configuration error: {}", source))]
-    StateClientError { source: SCError },
-
     #[snafu(display("Json read file error ({})", path.display()))]
     JsonReadFileError {
         path: PathBuf,
@@ -76,6 +85,9 @@ pub enum Error {
 
     #[snafu(display("Rollups json parse error"))]
     RollupsJsonParseError { source: serde_json::Error },
+
+    #[snafu(display("Configuration missing chain_id"))]
+    MissingChainId,
 }
 
 #[derive(Debug)]
@@ -91,35 +103,33 @@ impl Config {
                 "eth_input_reader",
             );
 
-        let sc_config = SCConfig::initialize(eth_input_reader_config.sc_config)
-            .context(StateClientSnafu)?;
+        let sf_config = SFConfig::initialize(eth_input_reader_config.sf_config);
 
-        let tx_config =
-            TxManagerConfig::initialize(eth_input_reader_config.tx_config)
-                .context(TxManagerSnafu)?;
+        let bh_config = BHConfig::initialize(eth_input_reader_config.bh_config);
 
-        let path = eth_input_reader_config.rd_dapp_deployment_file;
+        let log_config =
+            LogConfig::initialize(eth_input_reader_config.log_config);
+
+        let path = eth_input_reader_config.dapp_deployment_file;
         let dapp_deployment: DappDeployment = read_json(path)?;
 
-        let path = eth_input_reader_config.rd_rollups_deployment_file;
+        let path = eth_input_reader_config.rollups_deployment_file;
         let rollups_deployment = read_json::<RollupsDeploymentJson>(path)
             .map(RollupsDeployment::from)?;
 
         let broker_config =
             BrokerConfig::from(eth_input_reader_config.broker_config);
 
-        assert!(
-            sc_config.default_confirmations < tx_config.default_confirmations,
-            "`state-client confirmations` has to be less than `tx-manager confirmations,`"
-        );
-
         let eth_input_reader_config = EthInputReaderConfig {
-            sc_config,
             broker_config,
+            sf_config,
+            bh_config,
+            log_config,
             dapp_deployment,
             rollups_deployment,
-            epoch_duration: eth_input_reader_config.rd_epoch_duration,
-            priority: Priority::Normal,
+            epoch_duration: eth_input_reader_config.epoch_duration,
+            chain_id: eth_input_reader_config.chain_id,
+            subscription_depth: eth_input_reader_config.subscription_depth,
         };
 
         Ok(Config {

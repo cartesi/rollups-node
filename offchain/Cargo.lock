@@ -1650,9 +1650,9 @@ dependencies = [
  "axum",
  "backoff",
  "clap",
- "eth-state-client-lib",
+ "eth-block-history",
+ "eth-state-fold",
  "eth-state-fold-types",
- "futures",
  "http-server",
  "hyper",
  "im",
@@ -1670,6 +1670,7 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tracing",
+ "tracing-subscriber",
  "tracing-test",
  "types",
  "url",
@@ -1695,24 +1696,6 @@ dependencies = [
  "sha3",
  "thiserror",
  "uuid 0.8.2",
-]
-
-[[package]]
-name = "eth-state-client-lib"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e40b8c77c0518287f68c2d5fbe9f291aa0787404345fc92796c7ec3ec4ee3a3b"
-dependencies = [
- "async-trait",
- "clap",
- "eth-state-fold-types",
- "eth-state-server-common",
- "serde",
- "serde_json",
- "snafu",
- "tokio",
- "tokio-stream",
- "tonic",
 ]
 
 [[package]]
@@ -1746,44 +1729,6 @@ dependencies = [
  "serde_json",
  "snafu",
  "toml 0.5.11",
-]
-
-[[package]]
-name = "eth-state-server-common"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "589cfcf2bb4c3531e7e6bc08e9d00ba874773b3111445c02ab220692db3e3725"
-dependencies = [
- "anyhow",
- "eth-state-fold-types",
- "prost",
- "serde",
- "serde_json",
- "snafu",
- "tonic",
- "tonic-build",
-]
-
-[[package]]
-name = "eth-state-server-lib"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f0141b54e46461538cec27aa45757a679cab0bd0e7c26fa27bfc3b7001488f1"
-dependencies = [
- "clap",
- "eth-block-history",
- "eth-state-fold",
- "eth-state-fold-types",
- "eth-state-server-common",
- "futures",
- "serde",
- "serde_json",
- "snafu",
- "tokio",
- "tokio-stream",
- "tonic",
- "tonic-health",
- "tracing",
 ]
 
 [[package]]
@@ -4959,25 +4904,6 @@ checksum = "67cf02bbac7a337dc36e4f5a693db6c21e7863f45070f7064577eb4367a3212b"
 dependencies = [
  "base64ct",
  "der",
-]
-
-[[package]]
-name = "state-server"
-version = "1.2.0"
-dependencies = [
- "clap",
- "eth-block-history",
- "eth-state-fold",
- "eth-state-fold-types",
- "eth-state-server-lib",
- "log 1.2.0",
- "serde",
- "snafu",
- "tokio",
- "tonic",
- "tracing",
- "types",
- "url",
 ]
 
 [[package]]

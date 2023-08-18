@@ -346,7 +346,7 @@ pub enum BrokerError {
     InvalidPayload { source: serde_json::Error },
 }
 
-#[derive(Debug, Parser)]
+#[derive(Debug, Parser, Clone)]
 #[command(name = "broker")]
 pub struct BrokerCLIConfig {
     /// Redis address

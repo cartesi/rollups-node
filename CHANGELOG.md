@@ -71,14 +71,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed timestamp in GraphQL API
 - Fixed BigInt in GraphQL API
+- Added authority claimer service to support reader mode
+- Added `CHAIN_ID` environment variable to `eth-input-reader`
 
 ### Changed
 
 - Renamed `dispatcher` service to `eth-input-reader`
+- Replaced the state-server with the state-fold library in the `eth-input-reader`
+- Moved `SF_*` and `BH_*` environment variables from `state-server` config to the `eth-input-reader`
 
 ### Removed
 
+- Removed the state-server from the node
 - Removed claiming functionality from `eth-input-reader`
+- Removed `SS_MAX_DECODING_MESSAGE_SIZE` environment variable from eth-input-reader because it doesn't use gRPC anymore
 
 ## [1.0.0] 2023-08-22
 

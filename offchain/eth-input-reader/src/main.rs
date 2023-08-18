@@ -5,11 +5,11 @@
 // NOTE: doesn't support changing epoch_duration in the middle of things.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let filter = EnvFilter::builder()
-        .with_default_directive(LevelFilter::INFO.into())
-        .from_env_lossy();
-    tracing_subscriber::fmt().with_env_filter(filter).init();
-
     let config = eth_input_reader::config::Config::initialize()?;
+
+    log::configure(&config.eth_input_reader_config.log_config);
+
+    log::log_service_start(&config, "Eth Input Reader");
+
     eth_input_reader::run(config).await.map_err(|e| e.into())
 }

@@ -18,9 +18,9 @@ async-trait.workspace = true
 axum.workspace = true
 backoff = { workspace = true, features = ["tokio"] }
 clap = { workspace = true, features = ["derive", "env"] }
-eth-state-client-lib.workspace = true
+eth-block-history.workspace = true
+eth-state-fold.workspace = true
 eth-state-fold-types = { workspace = true, features = ["ethers"] }
-futures.workspace = true
 hyper.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -40,3 +40,4 @@ redis.workspace = true
 serial_test.workspace = true
 testcontainers.workspace = true
 tracing-test = { workspace = true, features = ["no-env-filter"] }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }

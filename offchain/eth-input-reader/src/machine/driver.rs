@@ -5,7 +5,8 @@ use super::Context;
 
 use super::{rollups_broker::BrokerFacadeError, BrokerSend};
 
-use eth_state_fold_types::{ethereum_types::Address, Block};
+use eth_state_fold_types::ethers::types::Address;
+use eth_state_fold_types::Block;
 use types::foldables::input_box::{DAppInputBox, Input, InputBox};
 
 use tracing::{debug, instrument, trace};
