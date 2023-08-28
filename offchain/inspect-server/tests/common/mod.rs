@@ -86,7 +86,6 @@ impl InspectServerWrapper {
             server_manager_address: SERVER_MANAGER_ADDRESS.to_string(),
             session_id: SESSION_ID.to_string(),
             queue_size: QUEUE_SIZE,
-            inspect_path_prefix: String::from("/inspect"),
             healthcheck_port: 0,
         };
 

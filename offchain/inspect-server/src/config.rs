@@ -7,7 +7,7 @@
 /// take precedence over same parameter from file configuration.
 use clap::Parser;
 use serde::Deserialize;
-use snafu::{whatever, ResultExt, Snafu};
+use snafu::{ResultExt, Snafu};
 
 #[derive(Debug, Snafu)]
 pub enum ConfigError {
@@ -30,7 +30,6 @@ pub struct InspectServerConfig {
     pub server_manager_address: String,
     pub session_id: String,
     pub queue_size: usize,
-    pub inspect_path_prefix: String,
     pub healthcheck_port: u16,
 }
 
@@ -47,10 +46,6 @@ pub struct CLIConfig {
     /// Server manager session id
     #[arg(long, env)]
     session_id: Option<String>,
-
-    /// Path prefix for the inspect server URL
-    #[arg(long, env)]
-    inspect_path_prefix: Option<String>,
 
     /// Queue size for concurrent inspect requests
     #[arg(long, env)]
@@ -94,19 +89,11 @@ impl From<CLIConfig> for InspectServerConfig {
             .or(file_config.queue_size)
             .unwrap_or(100);
 
-        let inspect_path_prefix: String = cli_config
-            .inspect_path_prefix
-            .or(file_config.inspect_path_prefix)
-            .map(check_path_prefix)
-            .unwrap_or(Ok(String::from("/inspect")))
-            .expect("invalid inspect path");
-
         Self {
             inspect_server_address,
             server_manager_address,
             session_id,
             queue_size,
-            inspect_path_prefix,
             healthcheck_port: cli_config.healthcheck_port,
         }
     }
@@ -118,16 +105,6 @@ struct FileConfig {
     server_manager_address: Option<String>,
     session_id: Option<String>,
     queue_size: Option<usize>,
-    inspect_path_prefix: Option<String>,
-}
-
-fn check_path_prefix(prefix: String) -> Result<String, ConfigError> {
-    let re = regex::Regex::new(r"^/[a-z]+$").unwrap();
-    if re.is_match(&prefix) {
-        Ok(prefix)
-    } else {
-        whatever!("invalid path prefix, it should be in the format `/[a-z]+`.");
-    }
 }
 
 fn load_config_file<T: Default + serde::de::DeserializeOwned>(
