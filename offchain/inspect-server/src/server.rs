@@ -21,8 +21,6 @@ pub fn create(
     config: &InspectServerConfig,
     inspect_client: InspectClient,
 ) -> std::io::Result<Server> {
-    let inspect_path = config.inspect_path_prefix.clone();
-    let inspect_get_path = inspect_path.clone() + "/{payload:.*}";
     let server = HttpServer::new(move || {
         let cors = Cors::permissive();
         App::new()
@@ -30,20 +28,15 @@ pub fn create(
             .app_data(web::PayloadConfig::new(CARTESI_MACHINE_RX_BUFFER_LIMIT))
             .wrap(middleware::Logger::default())
             .wrap(cors)
-            .service(
-                web::resource(inspect_get_path.clone())
-                    .route(web::get().to(inspect_get)),
-            )
-            .service(
-                web::resource(inspect_path.clone())
-                    .route(web::post().to(inspect_post)),
-            )
+            .service(inspect_get)
+            .service(inspect_post)
     })
     .bind(config.inspect_server_address.clone())?
     .run();
     Ok(server)
 }
 
+#[actix_web::get("/inspect/{payload:.*}")]
 async fn inspect_get(
     request: HttpRequest,
     payload: web::Path<String>,
@@ -59,6 +52,7 @@ async fn inspect_get(
     Ok(HttpResponse::Ok().json(http_response))
 }
 
+#[actix_web::post("/inspect")]
 async fn inspect_post(
     payload: web::Bytes,
     inspect_client: web::Data<InspectClient>,
