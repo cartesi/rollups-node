@@ -14,8 +14,8 @@ use crate::inspect::{
     CompletionStatus, InspectClient, InspectStateResponse, Report,
 };
 
-// (2^20 - 64) bytes, which is the length of the RX buffer minus metadata
-pub const CARTESI_MACHINE_RX_BUFFER_LIMIT: usize = 1_048_512;
+// 2^20 bytes, which is the length of the RX buffer
+pub const CARTESI_MACHINE_RX_BUFFER_LIMIT: usize = 1_048_576;
 
 pub fn create(
     config: &InspectServerConfig,
