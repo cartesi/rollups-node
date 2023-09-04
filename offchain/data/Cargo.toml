@@ -9,10 +9,9 @@ redacted = { path = "../redacted" }
 
 backoff.workspace = true
 base64.workspace = true
-chrono.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 diesel_migrations.workspace = true
-diesel = { workspace = true, features = ["postgres", "chrono", "r2d2"]}
+diesel = { workspace = true, features = ["postgres", "r2d2"]}
 snafu.workspace = true
 tracing.workspace = true
 urlencoding.workspace = true

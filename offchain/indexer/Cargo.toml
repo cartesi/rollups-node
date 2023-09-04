@@ -14,7 +14,6 @@ http-health-check = { path = "../http-health-check" }
 rollups-data = { path = "../data" }
 rollups-events = { path = "../rollups-events" }
 
-chrono.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 snafu.workspace = true
 tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }

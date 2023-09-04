@@ -13,6 +13,7 @@ use rollups_events::{
     RollupsVoucher,
 };
 use serial_test::serial;
+use std::time::UNIX_EPOCH;
 use test_fixtures::{BrokerFixture, RepositoryFixture};
 use testcontainers::clients::Cli;
 use tokio::task::JoinHandle;
@@ -169,22 +170,6 @@ async fn indexer_does_not_override_existing_input() {
     let _second_input = state.produce_input_in_broker(0).await;
     let input_read = state.get_input_from_database(&original_input).await;
     assert_input_eq(&original_input, &input_read);
-}
-
-#[test_log::test(tokio::test)]
-#[serial]
-async fn indexer_ignores_invalid_timestamp() {
-    let docker = Cli::default();
-    let state = TestState::setup(&docker).await;
-
-    let invalid_timestamp = i64::MAX as u64;
-    let mut input_sent = state
-        .produce_input_in_broker_with_timestamp(0, invalid_timestamp)
-        .await;
-    // Indexer's behavior for invalid timestamps is to set them to 0.
-    input_sent.metadata.timestamp = 0;
-    let input_read = state.get_input_from_database(&input_sent).await;
-    assert_input_eq(&input_sent, &input_read);
 }
 
 #[test_log::test(tokio::test)]
@@ -476,7 +461,11 @@ fn assert_input_eq(input_sent: &RollupsAdvanceStateInput, input_read: &Input) {
         input_sent.metadata.block_number
     );
     assert_eq!(
-        input_read.timestamp.timestamp_millis() as u64,
+        input_read
+            .timestamp
+            .duration_since(UNIX_EPOCH)
+            .expect("failed to get time")
+            .as_secs(),
         input_sent.metadata.timestamp
     );
     assert_eq!(&input_read.payload, input_sent.payload.inner());

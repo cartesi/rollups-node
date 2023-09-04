@@ -4,7 +4,7 @@
 //! Convert from rollups-events types to rollups-data types.
 //! This code cannot use the From trait because both types are defined in
 //! external crates.
-use chrono::naive::NaiveDateTime;
+use std::time::{Duration, UNIX_EPOCH};
 
 use rollups_events::{
     RollupsAdvanceStateInput, RollupsNotice, RollupsOutputEnum, RollupsProof,
@@ -14,18 +14,7 @@ use rollups_events::{
 use rollups_data::{Input, Notice, OutputEnum, Proof, Report, Voucher};
 
 pub fn convert_input(input: RollupsAdvanceStateInput) -> Input {
-    let timestamp = match NaiveDateTime::from_timestamp_millis(
-        input.metadata.timestamp as i64,
-    ) {
-        Some(timestamp) => timestamp,
-        None => {
-            tracing::warn!(
-                input.metadata.timestamp,
-                "failed to parse timestamp"
-            );
-            Default::default()
-        }
-    };
+    let timestamp = UNIX_EPOCH + Duration::from_secs(input.metadata.timestamp);
     Input {
         index: input.metadata.input_index as i32,
         msg_sender: input.metadata.msg_sender.into_inner().into(),

@@ -5,6 +5,7 @@ use juniper::{
     graphql_object, DefaultScalarValue, FieldError, FieldResult,
     GraphQLInputObject, GraphQLObject,
 };
+use std::time::UNIX_EPOCH;
 
 use rollups_data::Repository;
 use rollups_data::{
@@ -212,7 +213,13 @@ impl Input {
         description = "Timestamp associated with the input submission, as defined by the base layer's block in which it was recorded"
     )]
     fn timestamp(&self) -> i64 {
-        self.timestamp.timestamp()
+        match self.timestamp.duration_since(UNIX_EPOCH) {
+            Ok(duration) => duration.as_secs() as i64,
+            Err(e) => {
+                tracing::warn!("failed to parse timestamp ({})", e);
+                0
+            }
+        }
     }
 
     #[graphql(
