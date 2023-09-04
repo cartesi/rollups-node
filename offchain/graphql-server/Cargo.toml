@@ -32,6 +32,5 @@ tracing.workspace = true
 test-fixtures = { path = "../test-fixtures" }
 
 awc.workspace = true
-chrono.workspace = true
 serial_test.workspace = true
 testcontainers.workspace = true

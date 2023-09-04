@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use backoff::ExponentialBackoffBuilder;
-use chrono::NaiveDateTime;
 use diesel::pg::Pg;
 use diesel::{
     sql_query, Connection, PgConnection, QueryableByName, RunQueryDsl,
@@ -14,7 +13,7 @@ use rollups_data::{
     Report, Repository, RepositoryConfig, Voucher,
 };
 use serial_test::serial;
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 use test_fixtures::DataFixture;
 use testcontainers::clients::Cli;
 
@@ -69,7 +68,7 @@ pub fn insert_test_input(repo: &Repository) {
         msg_sender: "msg-sender".as_bytes().to_vec(),
         tx_hash: "tx-hash".as_bytes().to_vec(),
         block_number: 0,
-        timestamp: NaiveDateTime::from_timestamp_millis(1676489717).unwrap(),
+        timestamp: UNIX_EPOCH + Duration::from_secs(1676489717),
         payload: "input-0".as_bytes().to_vec(),
     };
 
@@ -83,7 +82,7 @@ pub fn create_input() -> Input {
         msg_sender: "msg-sender".as_bytes().to_vec(),
         tx_hash: "tx-hash".as_bytes().to_vec(),
         block_number: 0,
-        timestamp: NaiveDateTime::from_timestamp_millis(1676489717).unwrap(),
+        timestamp: UNIX_EPOCH + Duration::from_secs(1676489717),
         payload: "input-0".as_bytes().to_vec(),
     }
 }
@@ -582,7 +581,7 @@ fn test_pagination_macro() {
         msg_sender: "msg-sender".as_bytes().to_vec(),
         tx_hash: "tx-hash".as_bytes().to_vec(),
         block_number: 0,
-        timestamp: NaiveDateTime::from_timestamp_millis(1676489717).unwrap(),
+        timestamp: UNIX_EPOCH + Duration::from_secs(1676489717),
         payload: "input-1".as_bytes().to_vec(),
     };
 

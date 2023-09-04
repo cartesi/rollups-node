@@ -19,7 +19,7 @@ pub struct Input {
     pub msg_sender: Vec<u8>,
     pub tx_hash: Vec<u8>,
     pub block_number: i64,
-    pub timestamp: chrono::NaiveDateTime,
+    pub timestamp: std::time::SystemTime,
     pub payload: Vec<u8>,
 }
 

@@ -4,12 +4,11 @@
 use actix_web::dev::ServerHandle;
 use actix_web::rt::spawn;
 use awc::{Client, ClientRequest};
-use chrono::naive::NaiveDateTime;
 use graphql_server::{http, schema::Context};
 use rollups_data::{Input, Notice, Proof, Report, Repository, Voucher};
 use std::fs::read_to_string;
 use std::str::from_utf8;
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 use test_fixtures::RepositoryFixture;
 use testcontainers::clients::Cli;
 use tokio::sync::oneshot;
@@ -40,8 +39,7 @@ impl TestState<'_> {
             msg_sender: "msg-sender".as_bytes().to_vec(),
             tx_hash: "tx-hash".as_bytes().to_vec(),
             block_number: 0,
-            timestamp: NaiveDateTime::from_timestamp_millis(1676489717)
-                .unwrap(),
+            timestamp: UNIX_EPOCH + Duration::from_secs(1676489717),
             payload: "input-0".as_bytes().to_vec(),
         };
 
@@ -131,8 +129,7 @@ impl TestState<'_> {
             msg_sender: "msg-sender".as_bytes().to_vec(),
             tx_hash: "tx-hash".as_bytes().to_vec(),
             block_number: 0,
-            timestamp: NaiveDateTime::from_timestamp_millis(1676489717)
-                .unwrap(),
+            timestamp: UNIX_EPOCH + Duration::from_secs(1676489717),
             payload: "input-0".as_bytes().to_vec(),
         };
 
