@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added authority claimer service to support reader mode
 - Added support to `POST` *inspect state* requests
 
+## [1.0.1] 2023-09-06
+
 ### Fixed
 
 - Fixed timestamp in GraphQL API
@@ -244,6 +246,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Specific ERC-20 Portal
 - Deprecated mock contracts
 
+[Unreleased]: https://github.com/cartesi/rollups/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/cartesi/rollups/releases/tag/v1.0.1
 [1.0.0]: https://github.com/cartesi/rollups/releases/tag/v1.0.0
 [0.9.1]: https://github.com/cartesi/rollups/releases/tag/v0.9.1
 [0.9.0]: https://github.com/cartesi/rollups/releases/tag/v0.9.0
