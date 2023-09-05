@@ -25,8 +25,6 @@ mod snapshot;
 pub async fn run(
     config: AdvanceRunnerConfig,
 ) -> Result<(), AdvanceRunnerError> {
-    tracing::info!(?config, "starting advance runner");
-
     let health_handle = http_health_check::start(config.healthcheck_port);
     let advance_runner_handle = start_advance_runner(config);
     tokio::select! {

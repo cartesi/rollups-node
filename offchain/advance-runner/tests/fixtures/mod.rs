@@ -10,6 +10,7 @@ use grpc_interfaces::cartesi_machine::{
     ConcurrencyConfig, MachineRuntimeConfig,
 };
 use grpc_interfaces::cartesi_server_manager::{CyclesConfig, DeadlineConfig};
+use log::LogConfig;
 use rollups_events::{Address, BrokerEndpoint};
 use std::cell::RefCell;
 use std::path::Path;
@@ -98,6 +99,7 @@ impl AdvanceRunnerFixture {
             snapshot_config,
             backoff_max_elapsed_duration,
             healthcheck_port: 0,
+            log_config: LogConfig::default(),
         };
         let handler = RefCell::new(Some(start_advance_runner(config.clone())));
         Self { config, handler }

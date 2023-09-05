@@ -33,8 +33,6 @@ where
     <F as Foldable>::InitialState: serde::de::DeserializeOwned,
     F: serde::ser::Serialize,
 {
-    tracing::trace!("Starting rollups state-server with config `{:?}`", config);
-
     let provider = create_provider(&config)?;
     let block_subscriber =
         create_block_subscriber(&config, Arc::clone(&provider)).await?;

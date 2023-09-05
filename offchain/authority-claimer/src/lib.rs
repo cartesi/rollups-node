@@ -22,8 +22,6 @@ use crate::{
 };
 
 pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
-    tracing::info!(?config, "starting authority-claimer");
-
     // Creating the metrics and health server.
     let metrics = AuthorityClaimerMetrics::new();
     let http_server_handle =

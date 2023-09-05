@@ -3,16 +3,16 @@
 
 use clap::Parser;
 
-use inspect_server::config::CLIConfig;
+use inspect_server::{config::CLIConfig, InspectServerConfig};
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info"),
-    )
-    .target(env_logger::fmt::Target::Stdout)
-    .init();
-    let config = CLIConfig::parse().into();
+    let config: InspectServerConfig = CLIConfig::parse().into();
+
+    log::configure(&config.log_config);
+
+    info!(?config, "Starting Inspect Server");
 
     inspect_server::run(config).await.map_err(|e| e.into())
 }

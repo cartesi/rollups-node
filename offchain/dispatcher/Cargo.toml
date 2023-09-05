@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 contracts = { path = "../contracts" }
 http-server = { path = "../http-server" }
+log = { path = "../log" }
 rollups-events = { path = "../rollups-events" }
 types = { path = "../types" }
 

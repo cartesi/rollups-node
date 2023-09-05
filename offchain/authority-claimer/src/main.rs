@@ -3,18 +3,17 @@
 
 use authority_claimer::config::Config;
 use std::error::Error;
-use tracing_subscriber::filter::{EnvFilter, LevelFilter};
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // Settin up the logging environment.
-    let env_filter = EnvFilter::builder()
-        .with_default_directive(LevelFilter::INFO.into())
-        .from_env_lossy();
-    tracing_subscriber::fmt().with_env_filter(env_filter).init();
-
     // Getting the configuration.
-    let config = Config::new().map_err(Box::new)?;
+    let config: Config = Config::new().map_err(Box::new)?;
+
+    // Setting up the logging environment.
+    log::configure(&config.authority_claimer_config.log_config);
+
+    info!(?config, "Starting Authority Claimer");
 
     authority_claimer::run(config).await
 }

@@ -15,8 +15,6 @@ pub mod schema;
 
 #[tracing::instrument(level = "trace", skip_all)]
 pub async fn run(config: GraphQLConfig) -> Result<(), GraphQLServerError> {
-    tracing::info!(?config, "starting graphql http service");
-
     let repository = rollups_data::Repository::new(config.repository_config)
         .expect("failed to connect to database");
     let context = Context::new(repository);

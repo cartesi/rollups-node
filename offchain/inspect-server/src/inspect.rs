@@ -46,7 +46,7 @@ impl InspectClient {
                 message: e.to_string(),
             });
         } else {
-            log::debug!("inspect request added to the queue");
+            tracing::debug!("inspect request added to the queue");
         }
         response_rx.await.expect("handle_inspect never fails")
     }
@@ -62,7 +62,7 @@ fn respond(
     response: Result<InspectStateResponse, InspectError>,
 ) {
     if response_tx.send(response).is_err() {
-        log::warn!("failed to respond inspect request (client dropped)");
+        tracing::warn!("failed to respond inspect request (client dropped)");
     }
 }
 
@@ -90,7 +90,7 @@ async fn handle_inspect(
                     query_payload: request.payload,
                 };
 
-                log::debug!(
+                tracing::debug!(
                     "calling grpc inspect_state request={:?} request_id={}",
                     grpc_request,
                     request_id
@@ -101,7 +101,7 @@ async fn handle_inspect(
                     .insert("request-id", request_id.parse().unwrap());
                 let grpc_response = client.inspect_state(grpc_request).await;
 
-                log::debug!("got grpc response from inspect_state response={:?} request_id={}", grpc_response, request_id);
+                tracing::debug!("got grpc response from inspect_state response={:?} request_id={}", grpc_response, request_id);
 
                 let response = grpc_response
                     .map(|result| result.into_inner())
