@@ -11,6 +11,7 @@ test = false
 
 [dependencies]
 http-health-check = { path = "../http-health-check" }
+log = { path = "../log" }
 rollups-data = { path = "../data" }
 rollups-events = { path = "../rollups-events" }
 

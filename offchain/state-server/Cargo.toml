@@ -9,8 +9,10 @@ name = "cartesi-rollups-state-server"
 path = "src/main.rs"
 
 [dependencies]
+log = { path = "../log" }
 types = { path = "../types" }
 
+clap = { workspace = true, features = ["derive", "env"] }
 eth-block-history.workspace = true
 eth-state-fold-types.workspace = true
 eth-state-fold.workspace = true

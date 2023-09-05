@@ -6,6 +6,7 @@
 /// Command-line parameters take precedence over environment variables and environment variables
 /// take precedence over same parameter from file configuration.
 use clap::Parser;
+use log::{LogConfig, LogEnvCliConfig};
 use serde::Deserialize;
 use snafu::{ResultExt, Snafu};
 
@@ -26,6 +27,7 @@ pub enum ConfigError {
 }
 #[derive(Debug)]
 pub struct InspectServerConfig {
+    pub log_config: LogConfig,
     pub inspect_server_address: String,
     pub server_manager_address: String,
     pub session_id: String,
@@ -35,6 +37,9 @@ pub struct InspectServerConfig {
 
 #[derive(Parser)]
 pub struct CLIConfig {
+    #[command(flatten)]
+    pub log_config: LogEnvCliConfig,
+
     /// HTTP address for the inspect server
     #[arg(long, env)]
     inspect_server_address: Option<String>,
@@ -90,6 +95,7 @@ impl From<CLIConfig> for InspectServerConfig {
             .unwrap_or(100);
 
         Self {
+            log_config: cli_config.log_config.into(),
             inspect_server_address,
             server_manager_address,
             session_id,

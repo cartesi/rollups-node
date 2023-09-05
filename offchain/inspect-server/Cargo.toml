@@ -10,13 +10,12 @@ path = "src/main.rs"
 
 [dependencies]
 http-health-check = { path = "../http-health-check" }
+log = { path = "../log" }
 
 actix-cors.workspace = true
 actix-web.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
-env_logger.workspace = true
 hex.workspace = true
-log.workspace = true
 prost.workspace = true
 regex.workspace = true
 serde = { workspace = true, features = ["rc", "derive"] }
@@ -25,6 +24,7 @@ tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
 toml.workspace = true
 tonic.workspace = true
 tracing.workspace = true
+tracing-actix-web.workspace = true
 uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]

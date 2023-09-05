@@ -3,10 +3,11 @@
 
 use actix_cors::Cors;
 use actix_web::{
-    dev::Server, error, middleware, web, App, HttpRequest, HttpResponse,
-    HttpServer, Responder,
+    dev::Server, error, web, App, HttpRequest, HttpResponse, HttpServer,
+    Responder,
 };
 use serde::{Deserialize, Serialize};
+use tracing_actix_web::TracingLogger;
 
 use crate::config::InspectServerConfig;
 use crate::error::InspectError;
@@ -26,7 +27,7 @@ pub fn create(
         App::new()
             .app_data(web::Data::new(inspect_client.clone()))
             .app_data(web::PayloadConfig::new(CARTESI_MACHINE_RX_BUFFER_LIMIT))
-            .wrap(middleware::Logger::default())
+            .wrap(TracingLogger::default())
             .wrap(cors)
             .service(inspect_get)
             .service(inspect_post)
@@ -101,7 +102,10 @@ fn convert_status(status: i32) -> String {
     } else if status == CompletionStatus::PayloadLengthLimitExceeded as i32 {
         String::from("PayloadLengthLimitExceeded")
     } else {
-        log::error!("Invalid status received from server-manager: {}", status);
+        tracing::error!(
+            "Invalid status received from server-manager: {}",
+            status
+        );
         String::from("Unknown")
     }
 }
@@ -125,7 +129,7 @@ fn hex_encode(payload: Vec<u8>) -> String {
 
 impl From<InspectError> for error::Error {
     fn from(e: InspectError) -> error::Error {
-        log::warn!("{}", e.to_string());
+        tracing::warn!("{}", e.to_string());
         match e {
             InspectError::FailedToConnect { .. } => {
                 error::ErrorBadGateway(e.to_string())

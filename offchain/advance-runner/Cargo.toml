@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 grpc-interfaces = { path = "../grpc-interfaces" }
 http-health-check = { path = "../http-health-check" }
+log = { path = "../log" }
 rollups-events = { path = "../rollups-events" }
 
 async-trait.workspace = true

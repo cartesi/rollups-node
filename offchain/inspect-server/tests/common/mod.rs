@@ -5,6 +5,7 @@
 
 use actix_web::dev::ServerHandle;
 use inspect_server::config::InspectServerConfig;
+use log::LogConfig;
 pub use reqwest::StatusCode;
 use std::sync::Arc;
 use tokio::sync::{oneshot, Notify};
@@ -40,10 +41,6 @@ pub struct TestState {
 impl TestState {
     /// Start the inspect-server and the mock-server-manager
     pub async fn setup(mock: impl MockInspect) -> Self {
-        let _ = env_logger::builder()
-            .filter_level(log::LevelFilter::Debug)
-            .is_test(true)
-            .try_init();
         let server_manager = MockServerManagerWrapper::start(mock).await;
         let inspect_server = InspectServerWrapper::start().await;
         Self {
@@ -87,6 +84,7 @@ impl InspectServerWrapper {
             session_id: SESSION_ID.to_string(),
             queue_size: QUEUE_SIZE,
             healthcheck_port: 0,
+            log_config: LogConfig::default(),
         };
 
         let inspect_client = InspectClient::new(&inspect_server_config);

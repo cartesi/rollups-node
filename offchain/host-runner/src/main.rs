@@ -12,14 +12,14 @@ mod merkle_tree;
 mod model;
 mod proofs;
 
-use clap::Parser;
 use futures_util::FutureExt;
 use std::sync::{atomic::AtomicBool, atomic::Ordering, Arc};
 use std::time::Duration;
 use tokio::sync::oneshot;
-use tracing_subscriber::filter::{EnvFilter, LevelFilter};
+use tracing::info;
 
-use config::Config;
+use clap::Parser;
+use config::{CLIConfig, Config};
 use controller::Controller;
 
 fn log_result<T, E: std::error::Error>(name: &str, result: Result<T, E>) {
@@ -32,13 +32,11 @@ fn log_result<T, E: std::error::Error>(name: &str, result: Result<T, E>) {
 
 #[actix_web::main]
 async fn main() {
-    let filter = EnvFilter::builder()
-        .with_default_directive(LevelFilter::INFO.into())
-        .from_env_lossy();
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    let config: Config = CLIConfig::parse().into();
 
-    let config = Config::parse();
-    tracing::info!("{:#?}", config);
+    log::configure(&config.log_config);
+
+    info!(?config, "Starting Host Runner");
 
     let controller =
         Controller::new(Duration::from_millis(config.finish_timeout));

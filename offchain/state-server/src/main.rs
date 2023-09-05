@@ -1,22 +1,18 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
-
-use eth_state_server_lib::config::StateServerConfig;
-use tracing_subscriber::filter::{EnvFilter, LevelFilter};
+mod config;
+use config::Config;
 use types::foldables::authority::rollups::RollupsState;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let filter = EnvFilter::builder()
-        .with_default_directive(LevelFilter::INFO.into())
-        .from_env_lossy();
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    let config: Config = Config::initialize_from_args()?;
 
-    let config = StateServerConfig::initialize_from_args()?;
+    log::configure(&config.log_config);
 
-    tracing::info!(?config, "starting state server");
+    tracing::info!(?config, "Starting State Server");
 
-    state_server::run_server::<RollupsState>(config)
+    state_server::run_server::<RollupsState>(config.state_server_config)
         .await
         .map_err(|e| e.into())
 }

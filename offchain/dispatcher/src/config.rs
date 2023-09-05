@@ -10,6 +10,7 @@ use eth_tx_manager::{
     Priority,
 };
 use http_server::HttpServerConfig;
+use log::{LogConfig, LogEnvCliConfig};
 use snafu::{ResultExt, Snafu};
 use std::{fs::File, io::BufReader, path::PathBuf};
 
@@ -37,6 +38,9 @@ pub struct DispatcherEnvCLIConfig {
     #[command(flatten)]
     pub auth_config: AuthEnvCLIConfig,
 
+    #[command(flatten)]
+    pub log_config: LogEnvCliConfig,
+
     /// Path to file with deployment json of dapp
     #[arg(long, env, default_value = "./dapp_deployment.json")]
     pub rd_dapp_deployment_file: PathBuf,
@@ -56,6 +60,7 @@ pub struct DispatcherConfig {
     pub tx_config: TxManagerConfig,
     pub broker_config: BrokerConfig,
     pub auth_config: AuthConfig,
+    pub log_config: LogConfig,
 
     pub dapp_deployment: DappDeployment,
     pub rollups_deployment: RollupsDeployment,
@@ -114,6 +119,8 @@ impl Config {
         let auth_config = AuthConfig::initialize(dispatcher_config.auth_config)
             .context(AuthSnafu)?;
 
+        let log_config = LogConfig::initialize(dispatcher_config.log_config);
+
         let path = dispatcher_config.rd_dapp_deployment_file;
         let dapp_deployment: DappDeployment = read_json(path)?;
 
@@ -133,6 +140,7 @@ impl Config {
             tx_config,
             broker_config,
             auth_config,
+            log_config,
 
             dapp_deployment,
             rollups_deployment,

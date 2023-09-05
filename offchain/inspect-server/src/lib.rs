@@ -15,7 +15,6 @@ pub mod server;
 
 #[tracing::instrument(level = "trace", skip_all)]
 pub async fn run(config: InspectServerConfig) -> Result<(), InspectError> {
-    log::info!("starting inspect server with {:?}", config);
     let health_handle = http_health_check::start(config.healthcheck_port);
     let inspect_client = InspectClient::new(&config);
     let inspect_server =

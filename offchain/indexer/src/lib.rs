@@ -13,7 +13,6 @@ mod indexer;
 
 #[tracing::instrument(level = "trace", skip_all)]
 pub async fn run(config: IndexerConfig) -> Result<(), IndexerError> {
-    tracing::info!(?config, "starting indexer");
     let health_handle = http_health_check::start(config.healthcheck_port);
     let indexer_handle = indexer::Indexer::start(config);
     tokio::select! {

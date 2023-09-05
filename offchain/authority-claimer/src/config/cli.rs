@@ -6,6 +6,7 @@ use eth_tx_manager::{
     config::{TxEnvCLIConfig as TxManagerCLIConfig, TxManagerConfig},
     Priority,
 };
+use log::{LogConfig, LogEnvCliConfig};
 use rollups_events::{BrokerCLIConfig, BrokerConfig};
 use rusoto_core::Region;
 use snafu::ResultExt;
@@ -37,6 +38,9 @@ pub(crate) struct AuthorityClaimerCLI {
     #[command(flatten)]
     broker_config: BrokerCLIConfig,
 
+    #[command(flatten)]
+    pub log_config: LogEnvCliConfig,
+
     /// Path to a file with the deployment json of the dapp
     #[arg(long, env, default_value = "./dapp_deployment.json")]
     dapp_deployment_file: PathBuf,
@@ -61,11 +65,14 @@ impl TryFrom<AuthorityClaimerCLI> for AuthorityClaimerConfig {
         let dapp_address = dapp_deployment.dapp_address;
         let dapp_deploy_block_hash = dapp_deployment.dapp_deploy_block_hash;
 
+        let log_config = LogConfig::initialize(cli_config.log_config);
+
         Ok(AuthorityClaimerConfig {
             tx_manager_config,
             tx_signing_config,
             tx_manager_priority: Priority::Normal,
             broker_config,
+            log_config,
             dapp_address,
             dapp_deploy_block_hash,
         })
