@@ -1,6 +1,6 @@
 {
     "name": "@cartesi/rollups-cli",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Rollups CLI",
     "main": "dist/cli.js",
     "repository": "https://github.com/cartesi/rollups",
