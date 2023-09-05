@@ -22,7 +22,8 @@ pub enum RollupsGraphQLScalarValue {
 #[graphql_scalar(name = "BigInt")]
 impl GraphQLScalar for i64 {
     fn resolve(&self) -> Value {
-        Value::scalar(*self)
+        // Convert to string because some clients can't handle 64 bits integers
+        Value::scalar(self.to_string())
     }
 
     fn from_input_value(v: &juniper::InputValue) -> Option<i64> {
@@ -120,33 +121,21 @@ impl<'de> serde::de::Visitor<'de> for RollupsGraphQLScalarValueVisitor {
     where
         E: serde::de::Error,
     {
-        if value <= i32::max_value() as i64 {
-            self.visit_i32(value as i32)
-        } else {
-            Ok(RollupsGraphQLScalarValue::BigInt(value))
-        }
+        Ok(RollupsGraphQLScalarValue::BigInt(value))
     }
 
     fn visit_u32<E>(self, value: u32) -> Result<RollupsGraphQLScalarValue, E>
     where
         E: serde::de::Error,
     {
-        if value <= i32::max_value() as u32 {
-            self.visit_i32(value as i32)
-        } else {
-            self.visit_u64(value as u64)
-        }
+        self.visit_i32(value as i32)
     }
 
     fn visit_u64<E>(self, value: u64) -> Result<RollupsGraphQLScalarValue, E>
     where
         E: serde::de::Error,
     {
-        if value <= i64::MAX as u64 {
-            self.visit_i64(value as i64)
-        } else {
-            Ok(RollupsGraphQLScalarValue::Float(value as f64))
-        }
+        self.visit_i64(value as i64)
     }
 
     fn visit_f64<E>(self, value: f64) -> Result<RollupsGraphQLScalarValue, E> {
