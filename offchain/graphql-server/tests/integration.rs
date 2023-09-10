@@ -393,6 +393,18 @@ async fn query_reports() {
 
 #[actix_web::test]
 #[serial_test::serial]
+async fn query_with_variables() {
+    let docker = Cli::default();
+    let test = TestState::setup(&docker).await;
+    test.populate_database().await;
+
+    let body = post_query_request("variables.json").await;
+    assert_from_body(body, "variables.json");
+    test.server.stop().await;
+}
+
+#[actix_web::test]
+#[serial_test::serial]
 async fn query_input() {
     let docker = Cli::default();
     let test = TestState::setup(&docker).await;
