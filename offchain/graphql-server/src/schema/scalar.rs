@@ -121,21 +121,33 @@ impl<'de> serde::de::Visitor<'de> for RollupsGraphQLScalarValueVisitor {
     where
         E: serde::de::Error,
     {
-        Ok(RollupsGraphQLScalarValue::BigInt(value))
+        if value <= i32::max_value() as i64 {
+            self.visit_i32(value as i32)
+        } else {
+            Ok(RollupsGraphQLScalarValue::BigInt(value))
+        }
     }
 
     fn visit_u32<E>(self, value: u32) -> Result<RollupsGraphQLScalarValue, E>
     where
         E: serde::de::Error,
     {
-        self.visit_i32(value as i32)
+        if value <= i32::max_value() as u32 {
+            self.visit_i32(value as i32)
+        } else {
+            self.visit_u64(value as u64)
+        }
     }
 
     fn visit_u64<E>(self, value: u64) -> Result<RollupsGraphQLScalarValue, E>
     where
         E: serde::de::Error,
     {
-        self.visit_i64(value as i64)
+        if value <= i64::MAX as u64 {
+            self.visit_i64(value as i64)
+        } else {
+            Ok(RollupsGraphQLScalarValue::Float(value as f64))
+        }
     }
 
     fn visit_f64<E>(self, value: f64) -> Result<RollupsGraphQLScalarValue, E> {
