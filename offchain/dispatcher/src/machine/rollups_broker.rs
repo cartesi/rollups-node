@@ -164,13 +164,13 @@ impl BrokerSend for BrokerFacade {
         input_index: u64,
         input: &Input,
     ) -> Result<(), BrokerFacadeError> {
-        tracing::info!(?input_index, ?input, "enqueueing input");
+        tracing::trace!(?input_index, ?input, "enqueueing input");
 
         let mut broker = self.broker.lock().await;
         let status = self.broker_status(&mut broker).await?;
 
         let event = build_next_input(input, &status);
-        tracing::trace!(?event, "producing input event");
+        tracing::info!(?event, "producing input event");
 
         input_sanity_check!(event, input_index);
 

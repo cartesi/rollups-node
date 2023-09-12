@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated state-fold libraries to version 0.8
 - Added `SS_MAX_DECODING_MESSAGE_SIZE` to state-server and dispatcher with 100MB default
 - Added `MAX_DECODING_MESSAGE_SIZE` to advance runner with 100MB default
+- Improved node log for large inputs
 
 ### Fixed
 

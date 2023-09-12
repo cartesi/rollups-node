@@ -10,6 +10,8 @@ use std::fmt::Write;
 pub const ADDRESS_SIZE: usize = 20;
 pub const HASH_SIZE: usize = 32;
 
+const PAYLOAD_DEBUG_MAX_LEN: usize = 100;
+
 /// A binary array that is converted to a hex string when serialized
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub struct HexArray<const N: usize>([u8; N]);
@@ -143,7 +145,18 @@ impl<'de> Deserialize<'de> for Payload {
 
 impl std::fmt::Debug for Payload {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", base64_engine.encode(self.inner()))
+        let len = self.inner().len();
+        if len > PAYLOAD_DEBUG_MAX_LEN {
+            let slice = &self.inner().as_slice()[0..PAYLOAD_DEBUG_MAX_LEN];
+            write!(
+                f,
+                "{}...[total: {} bytes]",
+                base64_engine.encode(slice),
+                len
+            )
+        } else {
+            write!(f, "{}", base64_engine.encode(self.inner()))
+        }
     }
 }
 
