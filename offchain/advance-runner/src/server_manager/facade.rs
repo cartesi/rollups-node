@@ -102,7 +102,8 @@ impl ServerManagerFacade {
                 .map_err(Error::transient)
         })
         .await
-        .context(ConnectionSnafu)?;
+        .context(ConnectionSnafu)?
+        .max_decoding_message_size(config.max_decoding_message_size);
 
         Ok(Self {
             client,

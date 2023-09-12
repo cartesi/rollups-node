@@ -56,6 +56,7 @@ impl AdvanceRunnerFixture {
 
         let server_manager_config = ServerManagerConfig {
             server_manager_endpoint,
+            max_decoding_message_size: 100 * 1024 * 1024,
             session_id,
             pending_inputs_sleep_duration: 1000,
             pending_inputs_max_retries: 10,
