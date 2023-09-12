@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.2] 2023-09-11
 
+### Changed
+
+- Updated state-fold libraries to version 0.8
+- Added `SS_MAX_DECODING_MESSAGE_SIZE` to state-server and dispatcher with 100MB default
+
 ### Fixed
 
 - Fixed integer coercion when reading variables in GraphQL API

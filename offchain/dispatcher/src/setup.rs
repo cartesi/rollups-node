@@ -38,7 +38,7 @@ pub async fn create_state_server(
         .await
         .context(ConnectSnafu)?;
 
-    Ok(GrpcStateFoldClient::new_from_channel(channel))
+    Ok(GrpcStateFoldClient::new_from_channel(channel, config))
 }
 
 pub async fn create_block_subscription(

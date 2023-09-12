@@ -46,12 +46,11 @@ where
 
     let server = StateServer::<_, _, F>::new(block_subscriber, env);
 
-    let server_address = config.server_address;
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
     tokio::spawn(async { wait_for_signal(shutdown_tx).await });
 
-    start_server(server_address, server, shutdown_rx)
+    start_server(&config, server, shutdown_rx)
         .await
         .context(TonicSnafu)
 }
