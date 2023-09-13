@@ -7,11 +7,11 @@ use uuid::Uuid;
 
 use crate::config::InspectServerConfig;
 use crate::error::InspectError;
-use crate::grpc::server_manager::{
+
+use grpc_interfaces::cartesi_server_manager::{
     server_manager_client::ServerManagerClient, InspectStateRequest,
 };
-
-pub use crate::grpc::server_manager::{
+pub use grpc_interfaces::cartesi_server_manager::{
     CompletionStatus, InspectStateResponse, Report,
 };
 

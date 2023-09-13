@@ -9,7 +9,6 @@ pub use inspect::InspectClient;
 
 pub mod config;
 mod error;
-pub mod grpc;
 pub mod inspect;
 pub mod server;
 

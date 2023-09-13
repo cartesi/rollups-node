@@ -9,6 +9,7 @@ name = "cartesi-rollups-inspect-server"
 path = "src/main.rs"
 
 [dependencies]
+grpc-interfaces = { path = "../grpc-interfaces" }
 http-health-check = { path = "../http-health-check" }
 log = { path = "../log" }
 
@@ -16,8 +17,6 @@ actix-cors.workspace = true
 actix-web.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 hex.workspace = true
-prost.workspace = true
-regex.workspace = true
 serde = { workspace = true, features = ["rc", "derive"] }
 snafu.workspace = true
 tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
@@ -31,9 +30,3 @@ uuid = { workspace = true, features = ["v4"] }
 futures.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 serial_test.workspace = true
-
-[build-dependencies]
-tonic-build.workspace = true
-
-[package.metadata.cargo-machete]
-ignored = ["prost"]

@@ -12,8 +12,8 @@ use tokio::sync::{oneshot, Notify};
 use tokio::task::JoinHandle;
 use tonic::{transport::Server, Request, Response, Status};
 
-use inspect_server::grpc::cartesi_machine::Void;
-use inspect_server::grpc::server_manager::{
+use grpc_interfaces::cartesi_machine::Void;
+use grpc_interfaces::cartesi_server_manager::{
     server_manager_server::{ServerManager, ServerManagerServer},
     AdvanceStateRequest, DeleteEpochRequest, EndSessionRequest,
     FinishEpochRequest, FinishEpochResponse, GetEpochStatusRequest,
@@ -21,8 +21,9 @@ use inspect_server::grpc::server_manager::{
     GetStatusResponse, InspectStateRequest, InspectStateResponse,
     StartSessionRequest, StartSessionResponse,
 };
-pub use inspect_server::grpc::server_manager::{CompletionStatus, Report};
-use inspect_server::grpc::versioning::GetVersionResponse;
+pub use grpc_interfaces::cartesi_server_manager::{CompletionStatus, Report};
+use grpc_interfaces::versioning::GetVersionResponse;
+
 use inspect_server::inspect::InspectClient;
 use inspect_server::server::HttpInspectResponse;
 
