@@ -26,7 +26,6 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 snafu.workspace = true
 tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tracing.workspace = true
 
 [dev-dependencies]

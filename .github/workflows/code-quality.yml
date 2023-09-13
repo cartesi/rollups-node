@@ -42,7 +42,6 @@ jobs:
 
       - name: Analyze dependencies
         run: cargo machete .
-        continue-on-error: true
 
       - name: Check code format
         run: cargo fmt --all -- --check

@@ -17,11 +17,9 @@ rollups-events = { path = "../rollups-events" }
 async-trait.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 eth-tx-manager.workspace = true
-ethers.workspace = true
 rusoto_core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 snafu.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tracing.workspace = true

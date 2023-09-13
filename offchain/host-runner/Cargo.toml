@@ -28,7 +28,6 @@ tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
 tonic.workspace = true
 tonic-health.workspace = true
 tracing.workspace = true
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
 rollups-http-client = { path = "../rollups-http-client" }

@@ -21,6 +21,5 @@ serde.workspace = true
 snafu.workspace = true
 tokio = { workspace = true, features = ["macros", "sync", "rt-multi-thread"] }
 tonic.workspace = true
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tracing.workspace = true
 url.workspace = true

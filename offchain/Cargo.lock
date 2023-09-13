@@ -487,7 +487,6 @@ dependencies = [
  "async-trait",
  "clap",
  "eth-tx-manager",
- "ethers",
  "http-server",
  "log 1.1.0",
  "rollups-events",
@@ -497,7 +496,6 @@ dependencies = [
  "snafu",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -1539,7 +1537,6 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tracing",
- "tracing-subscriber",
  "tracing-test",
  "types",
  "url",
@@ -2441,7 +2438,6 @@ dependencies = [
  "testcontainers",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -2576,7 +2572,6 @@ dependencies = [
  "tonic",
  "tonic-health",
  "tracing",
- "tracing-subscriber",
  "tracing-test",
 ]
 
@@ -3102,7 +3097,6 @@ name = "log"
 version = "1.1.0"
 dependencies = [
  "clap",
- "tracing",
  "tracing-subscriber",
 ]
 
@@ -4903,7 +4897,6 @@ dependencies = [
  "tokio",
  "tonic",
  "tracing",
- "tracing-subscriber",
  "types",
  "url",
 ]

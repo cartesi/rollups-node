@@ -24,7 +24,6 @@ sha3 = { workspace = true, features = ["std"] }
 snafu.workspace = true
 tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
 tonic.workspace = true
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tracing.workspace = true
 url.workspace = true
 uuid = { workspace = true, features = ["v4"] }
@@ -37,3 +36,4 @@ rand.workspace = true
 tempfile.workspace = true
 test-log = { workspace = true, features = ["trace"] }
 testcontainers.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
