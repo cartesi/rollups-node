@@ -6,15 +6,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .protoc_arg("--experimental_allow_proto3_optional")
         .compile(
             &[
-                "../../grpc-interfaces/versioning.proto",
-                "../../grpc-interfaces/server-manager.proto",
+                "./grpc-interfaces/versioning.proto",
+                "./grpc-interfaces/server-manager.proto",
             ],
-            &["../../grpc-interfaces"],
+            &["./grpc-interfaces"],
         )?;
-    println!("cargo:rerun-if-changed=../../grpc-interfaces/versioning.proto");
-    println!(
-        "cargo:rerun-if-changed=../../grpc-interfaces/server-manager.proto"
-    );
+    println!("cargo:rerun-if-changed=./grpc-interfaces/versioning.proto");
+    println!("cargo:rerun-if-changed=./grpc-interfaces/server-manager.proto");
     println!("cargo:rerun-if-changed=build.rs");
     Ok(())
 }
