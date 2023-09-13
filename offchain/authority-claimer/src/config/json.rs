@@ -19,6 +19,34 @@ pub(crate) struct DappDeployment {
     pub dapp_deploy_block_hash: Hash,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct RollupsDeploymentJson {
+    contracts: RollupsDeployment,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct RollupsDeployment {
+    #[serde(rename = "History")]
+    pub history_address: Address,
+
+    #[serde(rename = "Authority")]
+    pub authority_address: Address,
+
+    #[serde(rename = "InputBox")]
+    pub input_box_address: Address,
+}
+
+impl From<RollupsDeploymentJson> for RollupsDeployment {
+    fn from(r: RollupsDeploymentJson) -> Self {
+        let contracts = r.contracts;
+        Self {
+            history_address: contracts.history_address,
+            authority_address: contracts.authority_address,
+            input_box_address: contracts.input_box_address,
+        }
+    }
+}
+
 pub(crate) fn read_json_file<T: DeserializeOwned>(
     path: PathBuf,
 ) -> Result<T, AuthorityClaimerConfigError> {

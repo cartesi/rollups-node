@@ -14,6 +14,8 @@ use log::LogConfig;
 use rollups_events::{Address, BrokerConfig, Hash};
 use rusoto_core::Region;
 
+use crate::auth::AuthConfig;
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub authority_claimer_config: AuthorityClaimerConfig,
@@ -25,8 +27,10 @@ pub struct AuthorityClaimerConfig {
     pub tx_manager_config: TxManagerConfig,
     pub tx_signing_config: TxSigningConfig,
     pub tx_manager_priority: Priority,
+    pub auth_config: AuthConfig,
     pub broker_config: BrokerConfig,
     pub log_config: LogConfig,
+    pub authority_address: Address,
     pub dapp_address: Address,
     pub dapp_deploy_block_hash: Hash,
 }

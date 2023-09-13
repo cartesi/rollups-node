@@ -6,6 +6,8 @@ use rusoto_core::region::ParseRegionError;
 use snafu::Snafu;
 use std::path::PathBuf;
 
+use crate::auth::AuthError;
+
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub(crate)))]
 pub enum AuthorityClaimerConfigError {
@@ -14,6 +16,9 @@ pub enum AuthorityClaimerConfigError {
 
     #[snafu(display("TxSigning configuration error"))]
     TxSigningError { source: TxSigningConfigError },
+
+    #[snafu(display("Auth configuration error: {}", source))]
+    AuthError { source: AuthError },
 
     #[snafu(display("Read file error ({})", path.display()))]
     ReadFileError {

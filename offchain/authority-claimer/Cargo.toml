@@ -10,22 +10,32 @@ path = "src/main.rs"
 test = false
 
 [dependencies]
+contracts = { path = "../contracts" }
 http-server = { path = "../http-server" }
 log = { path = "../log" }
 rollups-events = { path = "../rollups-events" }
+types = { path = "../types" }
 
 async-trait.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
+ethabi.workspace = true
+ethers.workspace = true
+ethers-signers = { workspace = true, features = ["aws"] }
 eth-tx-manager.workspace = true
 rusoto_core.workspace = true
+rusoto_kms.workspace = true
+rusoto_sts.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 snafu.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tracing.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 test-fixtures = { path = "../test-fixtures" }
 
 backoff = { workspace = true, features = ["tokio"] }
+serial_test.workspace = true
 testcontainers.workspace = true
+tracing-test = { workspace = true, features = ["no-env-filter"] }

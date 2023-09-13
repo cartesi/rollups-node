@@ -12,12 +12,17 @@ use rusoto_core::Region;
 use snafu::ResultExt;
 use std::{fs, path::PathBuf, str::FromStr};
 
+use crate::auth::{AuthConfig, AuthEnvCLIConfig};
 use crate::config::{
     error::{
-        AuthorityClaimerConfigError, InvalidRegionSnafu, MnemonicFileSnafu,
-        TxManagerSnafu, TxSigningConfigError, TxSigningSnafu,
+        AuthSnafu, AuthorityClaimerConfigError, InvalidRegionSnafu,
+        MnemonicFileSnafu, TxManagerSnafu, TxSigningConfigError,
+        TxSigningSnafu,
     },
-    json::{read_json_file, DappDeployment},
+    json::{
+        read_json_file, DappDeployment, RollupsDeployment,
+        RollupsDeploymentJson,
+    },
     AuthorityClaimerConfig, TxSigningConfig,
 };
 
@@ -41,9 +46,16 @@ pub(crate) struct AuthorityClaimerCLI {
     #[command(flatten)]
     pub log_config: LogEnvCliConfig,
 
+    #[command(flatten)]
+    pub auth_config: AuthEnvCLIConfig,
+
     /// Path to a file with the deployment json of the dapp
     #[arg(long, env, default_value = "./dapp_deployment.json")]
     dapp_deployment_file: PathBuf,
+
+    /// Path to file with deployment json of rollups
+    #[arg(long, env, default_value = "./rollups_deployment.json")]
+    pub rollups_deployment_file: PathBuf,
 }
 
 impl TryFrom<AuthorityClaimerCLI> for AuthorityClaimerConfig {
@@ -60,19 +72,30 @@ impl TryFrom<AuthorityClaimerCLI> for AuthorityClaimerConfig {
 
         let broker_config = BrokerConfig::from(cli_config.broker_config);
 
+        let auth_config = AuthConfig::initialize(cli_config.auth_config)
+            .context(AuthSnafu)?;
+
         let dapp_deployment =
             read_json_file::<DappDeployment>(cli_config.dapp_deployment_file)?;
         let dapp_address = dapp_deployment.dapp_address;
         let dapp_deploy_block_hash = dapp_deployment.dapp_deploy_block_hash;
 
         let log_config = LogConfig::initialize(cli_config.log_config);
+        let rollups_deployment = read_json_file::<RollupsDeploymentJson>(
+            cli_config.rollups_deployment_file,
+        )
+        .map(RollupsDeployment::from)?;
+
+        let authority_address = rollups_deployment.authority_address;
 
         Ok(AuthorityClaimerConfig {
             tx_manager_config,
             tx_signing_config,
             tx_manager_priority: Priority::Normal,
+            auth_config,
             broker_config,
             log_config,
+            authority_address,
             dapp_address,
             dapp_deploy_block_hash,
         })
