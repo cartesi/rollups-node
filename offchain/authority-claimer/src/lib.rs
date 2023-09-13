@@ -1,12 +1,14 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
+pub mod auth;
 pub mod checker;
 pub mod claimer;
 pub mod config;
 pub mod listener;
 pub mod metrics;
 pub mod sender;
+pub mod signer;
 
 #[cfg(test)]
 mod broker_mock;
@@ -50,7 +52,7 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
     // Creating the transaction sender.
     trace!("Creating the transaction sender");
     let transaction_sender =
-        DefaultTransactionSender::new(dapp_metadata, metrics)?;
+        DefaultTransactionSender::new(config.clone(), dapp_metadata, metrics)?;
 
     // Creating the claimer loop.
     let claimer = DefaultClaimer::new(
