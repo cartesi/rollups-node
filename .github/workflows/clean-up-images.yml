@@ -1,9 +1,12 @@
-name: Remove docker images for stale/closed PR(s).
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Clean-up Docker images
+
 on:
   pull_request:
     branches:
       - main
     types: [closed]
+
 jobs:
   cleanup:
     name: Cleanup ghcr.io/cartesi/${{ matrix.image }}:pr-${{ github.event.number }} image

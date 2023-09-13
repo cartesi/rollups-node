@@ -1,15 +1,15 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-name: Offchain code quality assessment
+name: Assess Rust code quality
+
 on:
   push:
     paths:
       - '.github/workflows/code-quality.yml'
       - 'offchain/**'
+
 jobs:
-  assess-offchain-code-quality:
+  assess-rust-code-quality:
     runs-on: ubuntu-latest
-    env:
-      CARGO_REGISTRIES_CARTESI_INDEX: https://github.com/cartesi/crates-index
     defaults:
       run:
         working-directory: offchain

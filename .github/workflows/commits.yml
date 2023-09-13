@@ -1,10 +1,11 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: Conventional commit check
+
 on: [push]
+
 jobs:
   commit_messages:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -21,5 +22,4 @@ jobs:
         uses: leafo/gh-actions-lua@v10
 
       - name: Check scopes
-        run: |
-          lua .github/.check_scopes.lua
+        run: lua .github/.check_scopes.lua
