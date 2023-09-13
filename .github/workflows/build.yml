@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-name: Build
+name: Build and test
+
 on:
   pull_request:
   push:
@@ -7,18 +8,20 @@ on:
       - v*
     branches:
       - main
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
 permissions:
   packages: write
   id-token: write
   contents: read
+
 jobs:
   test:
     runs-on: ubuntu-22.04
     env:
-      CARGO_REGISTRIES_CARTESI_INDEX: https://github.com/cartesi/crates-index
       RUSTFLAGS: -D warnings -C debuginfo=0
     defaults:
       run:
@@ -78,9 +81,20 @@ jobs:
         id: docker_meta
         uses: docker/metadata-action@v4
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: |
+            name=ghcr.io/cartesi/rollups-node
+            name=docker.io/cartesi/rollups-node,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
           tags: |
-            type=sha,format=long
+            type=semver,pattern={{version}}
+            type=ref,event=branch
+            type=ref,event=pr
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v2
@@ -90,7 +104,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: depot/setup-action@v1
-      - name: Build docker images
+      - name: Build and push docker image
         id: docker_build
         uses: depot/bake-action@v1
         with:
@@ -98,71 +112,7 @@ jobs:
             ./docker-bake.hcl
             ${{ steps.docker_meta.outputs.bake-file }}
             ./docker-bake.platforms.hcl
-          targets: deps
+          targets: rollups-node
           push: true
           project: ${{ vars.DEPOT_PROJECT }}
-
-      - uses: snok/container-retention-policy@v1
-        with:
-          image-names: rollups
-          cut-off: one second ago UTC
-          timestamp-to-use: updated_at
-          account-type: org
-          org-name: ${{ github.repository_owner }}
-          token: ${{ secrets.GHCR_TOKEN }}
-
-  dispatcher:
-    needs: build_docker
-    uses: ./.github/workflows/docker.yml
-    with:
-      target: dispatcher
-      image-name: rollups-dispatcher
-    secrets: inherit
-
-  state_server:
-    needs: build_docker
-    uses: ./.github/workflows/docker.yml
-    with:
-      target: state-server
-      image-name: rollups-state-server
-    secrets: inherit
-
-  graphql_server:
-    needs: build_docker
-    uses: ./.github/workflows/docker.yml
-    with:
-      target: graphql-server
-      image-name: rollups-graphql-server
-    secrets: inherit
-
-  indexer:
-    needs: build_docker
-    uses: ./.github/workflows/docker.yml
-    with:
-      target: indexer
-      image-name: rollups-indexer
-    secrets: inherit
-
-  inspect_server:
-    needs: build_docker
-    uses: ./.github/workflows/docker.yml
-    with:
-      target: inspect-server
-      image-name: rollups-inspect-server
-    secrets: inherit
-
-  advance_runner:
-    needs: build_docker
-    uses: ./.github/workflows/docker.yml
-    with:
-      target: advance-runner
-      image-name: rollups-advance-runner
-    secrets: inherit
-
-  host_runner:
-    needs: build_docker
-    uses: ./.github/workflows/docker.yml
-    with:
-      target: host-runner
-      image-name: rollups-host-runner
-    secrets: inherit
+          workdir: build

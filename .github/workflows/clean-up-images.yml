@@ -16,13 +16,7 @@ jobs:
     strategy:
       matrix:
         image:
-          - rollups-advance-runner
-          - rollups-dispatcher
-          - rollups-graphql-server
-          - rollups-host-runner
-          - rollups-indexer
-          - rollups-inspect-server
-          - rollups-state-server
+          - rollups-node
     steps:
       - uses: vlaurin/action-ghcr-prune@v0.5.0
         with:

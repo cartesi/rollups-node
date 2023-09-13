@@ -24,13 +24,9 @@ Before building and running any of the inner projects, you should download the s
 git submodule update --init --recursive
 ```
 
-### Building the Docker images
+### Building the Docker image
 
-To build the Rollups Docker images, run the following command.
-
-```
-docker buildx bake --load
-```
+To more information on how to build the rollups-node docker image, see the [build directory](./build/README.md).
 
 ### Rust
 

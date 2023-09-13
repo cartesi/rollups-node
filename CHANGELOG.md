@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added authority claimer service to support reader mode
 - Added support to `POST` *inspect state* requests
 - Added snapshot validation. The node will now check whether the snapshot's template hash matches the one stored in the blockchain
+- Added `cartesi/rollups-node` docker image with all node binaries
 
 ### Changed
 
@@ -21,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Removed configurable inspect-server path prefix
 - Remove on-chain code from the node repository
+- Removed `advance-runner`, `dispatcher`, `graphql-server`, `host-runner`, `inspect-server`, `indexer`, and `state-server` docker images
 
 ## [1.0.2] 2023-09-12
 
