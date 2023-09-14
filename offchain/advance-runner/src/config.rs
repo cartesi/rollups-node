@@ -62,7 +62,9 @@ pub enum ConfigError {
     SnapshotConfigError { source: SnapshotConfigError },
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
+#[command(name = "advance_runner_config")]
+#[command(about = "Configuration for advance-runner")]
 struct CLIConfig {
     #[command(flatten)]
     sm_cli_config: ServerManagerCLIConfig,

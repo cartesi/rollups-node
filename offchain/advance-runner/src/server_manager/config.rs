@@ -66,8 +66,8 @@ impl ServerManagerConfig {
     }
 }
 
-#[derive(Parser, Debug)]
-#[command(name = "server-manager")]
+#[derive(Debug, Parser)]
+#[command(name = "server_manager_config")]
 pub struct ServerManagerCLIConfig {
     /// Server-manager gRPC endpoint
     #[arg(long, env, default_value = "http://127.0.0.1:5001")]

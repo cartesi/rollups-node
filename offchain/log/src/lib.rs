@@ -1,9 +1,8 @@
 use clap::Parser;
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
-#[derive(Clone, Parser, Debug)]
+#[derive(Debug, Parser)]
 #[command(name = "log_config")]
-#[command(about = "Configuration for Logs")]
 pub struct LogEnvCliConfig {
     #[arg(long, env, default_value = "false")]
     pub log_enable_timestamp: bool,

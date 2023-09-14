@@ -4,7 +4,6 @@
 use clap::Parser;
 
 use indexer::{CLIConfig, IndexerConfig};
-use log;
 use tracing::info;
 
 #[tokio::main]

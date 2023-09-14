@@ -36,6 +36,8 @@ pub struct InspectServerConfig {
 }
 
 #[derive(Parser)]
+#[command(name = "inspect_server_config")]
+#[command(about = "Configuration for inspect-server")]
 pub struct CLIConfig {
     #[command(flatten)]
     pub log_config: LogEnvCliConfig,

@@ -30,7 +30,7 @@ impl RepositoryConfig {
     }
 }
 
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 pub struct RepositoryCLIConfig {
     #[arg(long, env, default_value = "postgres")]
     postgres_user: String,
