@@ -15,6 +15,8 @@ pub struct GraphQLConfig {
 }
 
 #[derive(Parser)]
+#[command(name = "graphql_server_config")]
+#[command(about = "Configuration for graphql-server")]
 pub struct CLIConfig {
     #[command(flatten)]
     repository_config: RepositoryCLIConfig,

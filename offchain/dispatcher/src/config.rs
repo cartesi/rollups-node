@@ -22,9 +22,9 @@ use types::deployment_files::{
 
 use crate::auth::{AuthConfig, AuthEnvCLIConfig, AuthError};
 
-#[derive(Clone, Parser)]
+#[derive(Parser)]
 #[command(name = "rd_config")]
-#[command(about = "Configuration for rollups dispatcher")]
+#[command(about = "Configuration for dispatcher")]
 pub struct DispatcherEnvCLIConfig {
     #[command(flatten)]
     pub sc_config: SCEnvCLIConfig,

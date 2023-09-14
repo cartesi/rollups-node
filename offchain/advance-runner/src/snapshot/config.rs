@@ -70,7 +70,7 @@ pub enum SnapshotConfigError {
     NoProviderEndpointError {},
 }
 
-#[derive(Parser, Debug)]
+#[derive(Clone, Parser, Debug)]
 #[command(name = "snapshot")]
 pub struct SnapshotCLIConfig {
     /// If set to false, disables snapshots. Enabled by default

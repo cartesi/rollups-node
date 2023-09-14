@@ -25,9 +25,9 @@ use crate::config::{
 // AuthorityClaimerCLI
 // ------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Parser)]
-#[command(name = "rd_config")]
-#[command(about = "Configuration for rollups authority claimer")]
+#[derive(Parser)]
+#[command(name = "authority_claimer_config")]
+#[command(about = "Configuration for authority-claimer")]
 pub(crate) struct AuthorityClaimerCLI {
     #[command(flatten)]
     tx_manager_config: TxManagerCLIConfig,
@@ -83,9 +83,8 @@ impl TryFrom<AuthorityClaimerCLI> for AuthorityClaimerConfig {
 // TxSigningConfig
 // ------------------------------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Parser)]
+#[derive(Debug, Parser)]
 #[command(name = "tx_signing_config")]
-#[command(about = "Configuration for signing transactions")]
 pub(crate) struct TxSigningCLIConfig {
     /// Signer mnemonic, overrides `tx_signing_mnemonic_file` and `tx_signing_aws_kms_*`
     #[arg(long, env)]

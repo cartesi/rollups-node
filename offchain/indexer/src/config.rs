@@ -19,6 +19,8 @@ pub struct IndexerConfig {
 }
 
 #[derive(Parser)]
+#[command(name = "indexer_config")]
+#[command(about = "Configuration for indexer")]
 pub struct CLIConfig {
     #[command(flatten)]
     repository_config: RepositoryCLIConfig,

@@ -4,9 +4,9 @@ use eth_state_server_lib::config::{
 };
 use log::{LogConfig, LogEnvCliConfig};
 
-#[derive(Debug, Clone, Parser)]
+#[derive(Parser)]
 #[command(name = "state_server_config")]
-#[command(about = "Configuration for state-fold state-server")]
+#[command(about = "Configuration for state-server")]
 pub struct EnvCLIConfig {
     #[command(flatten)]
     pub state_server_config: StateServerEnvCLIConfig,

@@ -18,7 +18,9 @@ pub struct Config {
     pub healthcheck_port: u16,
 }
 
-#[derive(Parser, Clone, Debug)]
+#[derive(Parser)]
+#[command(name = "host_runner_config")]
+#[command(about = "Configuration for host-runner")]
 pub struct CLIConfig {
     /// Logs Config
     #[command(flatten)]
