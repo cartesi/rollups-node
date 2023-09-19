@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - Removed configurable inspect-server path prefix
-- Remove on-chain code from the node repository
+- Removed on-chain code from the node repository
 - Removed `advance-runner`, `dispatcher`, `graphql-server`, `host-runner`, `inspect-server`, `indexer`, and `state-server` docker images
 
 ## [1.0.2] 2023-09-12
