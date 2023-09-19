@@ -17,9 +17,3 @@ jobs:
         uses: cocogitto/cocogitto-action@v3
         with:
           check-latest-tag-only: true
-
-      - name: Install Lua
-        uses: leafo/gh-actions-lua@v10
-
-      - name: Check scopes
-        run: lua .github/.check_scopes.lua

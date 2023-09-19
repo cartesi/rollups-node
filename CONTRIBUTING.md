@@ -89,11 +89,8 @@ If there's a breaking change in this commit, add a `!` to the end of the type, e
 
 #### Scope
 
-For information on the scopes of this repository, check the [scopes](.github/.scopes.txt) file for the full list of acceptable scopes.
-
 The scope is optional, although highly recommended.
-However, if you choose to add a scope, it **must** be one of the listed on the file.
-
+It should describe which part of the repository you are changing; for instance, the module name.
 
 #### Subject
 
