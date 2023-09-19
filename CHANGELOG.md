@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Standardized log libraries and configuration
+- Moved GraphQL schema generation to the CI. Now it is distributed as a Github artifact
 
 ### Removed
 
