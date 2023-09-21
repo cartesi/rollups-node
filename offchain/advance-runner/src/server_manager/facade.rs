@@ -3,8 +3,8 @@
 
 use backoff::{future::retry, Error, ExponentialBackoff};
 use rollups_events::{
-    InputMetadata as RollupsInputMetadata, Payload, RollupsClaim,
-    RollupsNotice, RollupsOutput, RollupsReport, RollupsVoucher,
+    InputMetadata as RollupsInputMetadata, Payload, RollupsAdvanceResult,
+    RollupsClaim, RollupsNotice, RollupsOutput, RollupsReport, RollupsVoucher,
 };
 use snafu::{OptionExt, ResultExt};
 use std::path::Path;
@@ -23,7 +23,8 @@ use grpc_interfaces::cartesi_server_manager::{
 use super::claim::compute_epoch_hash;
 use super::config::ServerManagerConfig;
 use super::conversions::{
-    convert_address, convert_hash, convert_proof, get_field,
+    convert_address, convert_completion_status, convert_hash, convert_proof,
+    get_field,
 };
 use super::error::{
     ConnectionSnafu, EmptyEpochSnafu, InvalidProcessedInputSnafu,
@@ -222,6 +223,13 @@ impl ServerManagerFacade {
         tracing::trace!("getting outputs");
 
         let mut outputs = vec![];
+
+        let status = convert_completion_status(processed_input.status());
+        let result = RollupsAdvanceResult {
+            input_index: current_input_index,
+            status,
+        };
+        outputs.push(RollupsOutput::AdvanceResult(result));
 
         for (index, report) in processed_input.reports.into_iter().enumerate() {
             let report = RollupsReport {

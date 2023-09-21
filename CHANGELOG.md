@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support to `POST` *inspect state* requests
 - Added snapshot validation. The node will now check whether the snapshot's template hash matches the one stored in the blockchain
 - Added `cartesi/rollups-node` docker image with all node binaries
+- Added completion status to GraphQL API
 
 ### Changed
 

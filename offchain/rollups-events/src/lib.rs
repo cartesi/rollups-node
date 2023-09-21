@@ -19,8 +19,8 @@ pub use rollups_inputs::{
     RollupsInputsStream,
 };
 pub use rollups_outputs::{
-    RollupsNotice, RollupsOutput, RollupsOutputEnum,
-    RollupsOutputValidityProof, RollupsOutputsStream, RollupsProof,
-    RollupsReport, RollupsVoucher,
+    RollupsAdvanceResult, RollupsCompletionStatus, RollupsNotice,
+    RollupsOutput, RollupsOutputEnum, RollupsOutputValidityProof,
+    RollupsOutputsStream, RollupsProof, RollupsReport, RollupsVoucher,
 };
 pub use rollups_stream::{DAppMetadata, DAppMetadataCLIConfig};

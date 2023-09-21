@@ -9,8 +9,8 @@ use diesel::{
 use redacted::Redacted;
 use rollups_data::Connection as PaginationConnection;
 use rollups_data::{
-    Cursor, Edge, Error, Input, InputQueryFilter, Notice, PageInfo, Proof,
-    Report, Repository, RepositoryConfig, Voucher,
+    CompletionStatus, Cursor, Edge, Error, Input, InputQueryFilter, Notice,
+    PageInfo, Proof, Report, Repository, RepositoryConfig, Voucher,
 };
 use serial_test::serial;
 use std::time::{Duration, UNIX_EPOCH};
@@ -70,6 +70,7 @@ pub fn insert_test_input(repo: &Repository) {
         block_number: 0,
         timestamp: UNIX_EPOCH + Duration::from_secs(1676489717),
         payload: "input-0".as_bytes().to_vec(),
+        status: CompletionStatus::Accepted,
     };
 
     repo.insert_input(input)
@@ -84,6 +85,7 @@ pub fn create_input() -> Input {
         block_number: 0,
         timestamp: UNIX_EPOCH + Duration::from_secs(1676489717),
         payload: "input-0".as_bytes().to_vec(),
+        status: CompletionStatus::Accepted,
     }
 }
 
@@ -174,6 +176,26 @@ fn test_get_input_error() {
         input_error,
         Error::ItemNotFound { item_type } if item_type == "input"
     ));
+}
+
+#[test]
+#[serial]
+fn test_update_input_status() {
+    let docker = Cli::default();
+    let test = TestState::setup(&docker);
+    let repo = test.get_repository();
+
+    let mut input = create_input();
+    input.status = CompletionStatus::Unprocessed;
+
+    repo.insert_input(input.clone())
+        .expect("Failed to insert input");
+    repo.update_input_status(0, CompletionStatus::Accepted)
+        .expect("Failed to update input status");
+
+    let get_input = repo.get_input(0).expect("Failed to get input");
+
+    assert_eq!(get_input.status, CompletionStatus::Accepted);
 }
 
 #[test]
@@ -583,6 +605,7 @@ fn test_pagination_macro() {
         block_number: 0,
         timestamp: UNIX_EPOCH + Duration::from_secs(1676489717),
         payload: "input-1".as_bytes().to_vec(),
+        status: CompletionStatus::Accepted,
     };
 
     repo.insert_input(input0.clone())

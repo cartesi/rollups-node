@@ -4,7 +4,7 @@
 use backoff::ExponentialBackoff;
 use diesel::pg::{Pg, PgConnection};
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
-use diesel::{insert_into, prelude::*};
+use diesel::{insert_into, prelude::*, update};
 use snafu::ResultExt;
 use std::sync::Arc;
 
@@ -13,8 +13,8 @@ use super::error::{DatabaseConnectionSnafu, DatabaseSnafu, Error};
 use super::pagination::{Connection, Pagination};
 use super::schema;
 use super::types::{
-    Input, InputQueryFilter, Notice, NoticeQueryFilter, OutputEnum, Proof,
-    Report, ReportQueryFilter, Voucher, VoucherQueryFilter,
+    CompletionStatus, Input, InputQueryFilter, Notice, NoticeQueryFilter,
+    OutputEnum, Proof, Report, ReportQueryFilter, Voucher, VoucherQueryFilter,
 };
 
 pub const POOL_CONNECTION_SIZE: u32 = 3;
@@ -219,6 +219,25 @@ impl Repository {
             proof.output_index,
             proof.input_index
         );
+        Ok(())
+    }
+}
+
+/// Update operations
+impl Repository {
+    pub fn update_input_status(
+        &self,
+        input_index: i32,
+        status: CompletionStatus,
+    ) -> Result<(), Error> {
+        use schema::inputs;
+        let mut conn = self.conn()?;
+        update(inputs::table)
+            .filter(inputs::dsl::index.eq(input_index))
+            .set(inputs::status.eq(status))
+            .execute(&mut conn)
+            .context(DatabaseSnafu)?;
+        tracing::trace!("Set {:?} status to input {}", status, input_index);
         Ok(())
     }
 }

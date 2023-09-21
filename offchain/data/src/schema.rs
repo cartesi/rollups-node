@@ -2,11 +2,18 @@
 
 pub mod sql_types {
     #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "CompletionStatus"))]
+    pub struct CompletionStatus;
+
+    #[derive(diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "OutputEnum"))]
     pub struct OutputEnum;
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::CompletionStatus;
+
     inputs (index) {
         index -> Int4,
         msg_sender -> Bytea,
@@ -14,6 +21,7 @@ diesel::table! {
         block_number -> Int8,
         timestamp -> Timestamp,
         payload -> Bytea,
+        status -> CompletionStatus,
     }
 }
 

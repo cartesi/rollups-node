@@ -15,6 +15,6 @@ pub use migrations::{run_migrations, MigrationError};
 pub use pagination::{Connection, Cursor, Edge, PageInfo};
 pub use repository::Repository;
 pub use types::{
-    Input, InputQueryFilter, Notice, NoticeQueryFilter, OutputEnum, Proof,
-    Report, ReportQueryFilter, Voucher, VoucherQueryFilter,
+    CompletionStatus, Input, InputQueryFilter, Notice, NoticeQueryFilter,
+    OutputEnum, Proof, Report, ReportQueryFilter, Voucher, VoucherQueryFilter,
 };

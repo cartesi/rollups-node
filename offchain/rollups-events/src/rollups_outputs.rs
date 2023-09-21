@@ -12,10 +12,29 @@ decl_broker_stream!(RollupsOutputsStream, RollupsOutput, "rollups-outputs");
 /// Cartesi  output
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum RollupsOutput {
+    AdvanceResult(RollupsAdvanceResult),
     Voucher(RollupsVoucher),
     Notice(RollupsNotice),
     Report(RollupsReport),
     Proof(RollupsProof),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RollupsAdvanceResult {
+    pub input_index: u64,
+    pub status: RollupsCompletionStatus,
+}
+
+/// Based on CompletionStatus from the server-manager gRPC interface
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RollupsCompletionStatus {
+    Accepted,
+    Rejected,
+    Exception,
+    MachineHalted,
+    CycleLimitExceeded,
+    TimeLimitExceeded,
+    PayloadLengthLimitExceeded,
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]

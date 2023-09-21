@@ -5,7 +5,9 @@ use actix_web::dev::ServerHandle;
 use actix_web::rt::spawn;
 use awc::{Client, ClientRequest};
 use graphql_server::{http, schema::Context};
-use rollups_data::{Input, Notice, Proof, Report, Repository, Voucher};
+use rollups_data::{
+    CompletionStatus, Input, Notice, Proof, Report, Repository, Voucher,
+};
 use std::fs::read_to_string;
 use std::str::from_utf8;
 use std::time::{Duration, UNIX_EPOCH};
@@ -41,6 +43,7 @@ impl TestState<'_> {
             block_number: 0,
             timestamp: UNIX_EPOCH + Duration::from_secs(1676489717),
             payload: "input-0".as_bytes().to_vec(),
+            status: CompletionStatus::Accepted,
         };
 
         let notice = Notice {
@@ -131,6 +134,7 @@ impl TestState<'_> {
             block_number: 0,
             timestamp: UNIX_EPOCH + Duration::from_secs(1676489717),
             payload: "input-0".as_bytes().to_vec(),
+            status: CompletionStatus::Accepted,
         };
 
         let notice0 = Notice {

@@ -2,16 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use juniper::{
-    graphql_object, DefaultScalarValue, FieldError, FieldResult,
+    graphql_object, DefaultScalarValue, FieldError, FieldResult, GraphQLEnum,
     GraphQLInputObject, GraphQLObject,
 };
 use std::time::UNIX_EPOCH;
 
 use rollups_data::Repository;
 use rollups_data::{
-    Connection, Edge, Input, InputQueryFilter, Notice, NoticeQueryFilter,
-    OutputEnum, PageInfo as DbPageInfo, Proof, Report, ReportQueryFilter,
-    Voucher, VoucherQueryFilter,
+    CompletionStatus as DbCompletionStatus, Connection, Edge, Input,
+    InputQueryFilter, Notice, NoticeQueryFilter, OutputEnum,
+    PageInfo as DbPageInfo, Proof, Report, ReportQueryFilter, Voucher,
+    VoucherQueryFilter,
 };
 
 use super::scalar::RollupsGraphQLScalarValue;
@@ -193,6 +194,41 @@ impl Query {
     }
 }
 
+#[derive(GraphQLEnum)]
+enum CompletionStatus {
+    Unprocessed,
+    Accepted,
+    Rejected,
+    Exception,
+    MachineHalted,
+    CycleLimitExceeded,
+    TimeLimitExceeded,
+    PayloadLengthLimitExceeded,
+}
+
+impl From<DbCompletionStatus> for CompletionStatus {
+    fn from(status: DbCompletionStatus) -> CompletionStatus {
+        match status {
+            DbCompletionStatus::Unprocessed => CompletionStatus::Unprocessed,
+            DbCompletionStatus::Accepted => CompletionStatus::Accepted,
+            DbCompletionStatus::Rejected => CompletionStatus::Rejected,
+            DbCompletionStatus::Exception => CompletionStatus::Exception,
+            DbCompletionStatus::MachineHalted => {
+                CompletionStatus::MachineHalted
+            }
+            DbCompletionStatus::CycleLimitExceeded => {
+                CompletionStatus::CycleLimitExceeded
+            }
+            DbCompletionStatus::TimeLimitExceeded => {
+                CompletionStatus::TimeLimitExceeded
+            }
+            DbCompletionStatus::PayloadLengthLimitExceeded => {
+                CompletionStatus::PayloadLengthLimitExceeded
+            }
+        }
+    }
+}
+
 #[graphql_object(
     context = Context,
     Scalar = RollupsGraphQLScalarValue,
@@ -202,6 +238,11 @@ impl Input {
     #[graphql(description = "Input index starting from genesis")]
     fn index(&self) -> i32 {
         self.index
+    }
+
+    #[graphql(description = "Status of the input")]
+    fn status(&self) -> CompletionStatus {
+        self.status.into()
     }
 
     #[graphql(description = "Address responsible for submitting the input")]

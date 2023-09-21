@@ -5,11 +5,12 @@
 //! rollups-events types
 use grpc_interfaces::cartesi_machine::Hash;
 use grpc_interfaces::cartesi_server_manager::{
-    Address, OutputEnum, OutputValidityProof, Proof,
+    Address, CompletionStatus, OutputEnum, OutputValidityProof, Proof,
 };
 use rollups_events::{
-    Address as RollupsAddress, Hash as RollupsHash, Payload, RollupsOutputEnum,
-    RollupsOutputValidityProof, RollupsProof, ADDRESS_SIZE, HASH_SIZE,
+    Address as RollupsAddress, Hash as RollupsHash, Payload,
+    RollupsCompletionStatus, RollupsOutputEnum, RollupsOutputValidityProof,
+    RollupsProof, ADDRESS_SIZE, HASH_SIZE,
 };
 
 use super::error::ServerManagerError;
@@ -32,6 +33,29 @@ macro_rules! get_field {
 
 // Export the get_field macro for other modules to use
 pub(super) use get_field;
+
+/// Convert gRPC completion status to broker equivalent
+pub fn convert_completion_status(
+    status: CompletionStatus,
+) -> RollupsCompletionStatus {
+    match status {
+        CompletionStatus::Accepted => RollupsCompletionStatus::Accepted,
+        CompletionStatus::Rejected => RollupsCompletionStatus::Rejected,
+        CompletionStatus::Exception => RollupsCompletionStatus::Exception,
+        CompletionStatus::MachineHalted => {
+            RollupsCompletionStatus::MachineHalted
+        }
+        CompletionStatus::CycleLimitExceeded => {
+            RollupsCompletionStatus::CycleLimitExceeded
+        }
+        CompletionStatus::TimeLimitExceeded => {
+            RollupsCompletionStatus::TimeLimitExceeded
+        }
+        CompletionStatus::PayloadLengthLimitExceeded => {
+            RollupsCompletionStatus::PayloadLengthLimitExceeded
+        }
+    }
+}
 
 /// Convert gRPC hash to broker equivalent
 pub fn convert_hash(hash: Hash) -> Result<RollupsHash, ServerManagerError> {

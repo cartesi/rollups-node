@@ -111,6 +111,10 @@ fn store_output(
     output: RollupsOutput,
 ) -> Result<(), rollups_data::Error> {
     match output {
+        RollupsOutput::AdvanceResult(result) => repository.update_input_status(
+            result.input_index as i32,
+            convert_status(result.status),
+        ),
         RollupsOutput::Voucher(voucher) => {
             repository.insert_voucher(convert_voucher(voucher))
         }

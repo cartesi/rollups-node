@@ -7,11 +7,33 @@
 use std::time::{Duration, UNIX_EPOCH};
 
 use rollups_events::{
-    RollupsAdvanceStateInput, RollupsNotice, RollupsOutputEnum, RollupsProof,
-    RollupsReport, RollupsVoucher,
+    RollupsAdvanceStateInput, RollupsCompletionStatus, RollupsNotice,
+    RollupsOutputEnum, RollupsProof, RollupsReport, RollupsVoucher,
 };
 
-use rollups_data::{Input, Notice, OutputEnum, Proof, Report, Voucher};
+use rollups_data::{
+    CompletionStatus, Input, Notice, OutputEnum, Proof, Report, Voucher,
+};
+
+pub fn convert_status(status: RollupsCompletionStatus) -> CompletionStatus {
+    match status {
+        RollupsCompletionStatus::Accepted => CompletionStatus::Accepted,
+        RollupsCompletionStatus::Rejected => CompletionStatus::Rejected,
+        RollupsCompletionStatus::Exception => CompletionStatus::Exception,
+        RollupsCompletionStatus::MachineHalted => {
+            CompletionStatus::MachineHalted
+        }
+        RollupsCompletionStatus::CycleLimitExceeded => {
+            CompletionStatus::CycleLimitExceeded
+        }
+        RollupsCompletionStatus::TimeLimitExceeded => {
+            CompletionStatus::TimeLimitExceeded
+        }
+        RollupsCompletionStatus::PayloadLengthLimitExceeded => {
+            CompletionStatus::PayloadLengthLimitExceeded
+        }
+    }
+}
 
 pub fn convert_input(input: RollupsAdvanceStateInput) -> Input {
     let timestamp = UNIX_EPOCH + Duration::from_secs(input.metadata.timestamp);
@@ -22,6 +44,7 @@ pub fn convert_input(input: RollupsAdvanceStateInput) -> Input {
         block_number: input.metadata.block_number as i64,
         timestamp,
         payload: input.payload.into_inner(),
+        status: CompletionStatus::Unprocessed,
     }
 }
 

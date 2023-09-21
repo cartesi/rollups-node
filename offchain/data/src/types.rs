@@ -8,9 +8,65 @@ use diesel::{AsExpression, Insertable, Queryable, QueryableByName};
 use std::io::Write;
 
 use super::schema::{
-    inputs, notices, proofs, reports, sql_types::OutputEnum as SQLOutputEnum,
-    vouchers,
+    inputs, notices, proofs, reports,
+    sql_types::CompletionStatus as SQLCompletionStatus,
+    sql_types::OutputEnum as SQLOutputEnum, vouchers,
 };
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, FromSqlRow, AsExpression)]
+#[diesel(sql_type = SQLCompletionStatus)]
+pub enum CompletionStatus {
+    Unprocessed,
+    Accepted,
+    Rejected,
+    Exception,
+    MachineHalted,
+    CycleLimitExceeded,
+    TimeLimitExceeded,
+    PayloadLengthLimitExceeded,
+}
+
+impl ToSql<SQLCompletionStatus, Pg> for CompletionStatus {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        match *self {
+            CompletionStatus::Unprocessed => out.write_all(b"Unprocessed")?,
+            CompletionStatus::Accepted => out.write_all(b"Accepted")?,
+            CompletionStatus::Rejected => out.write_all(b"Rejected")?,
+            CompletionStatus::Exception => out.write_all(b"Exception")?,
+            CompletionStatus::MachineHalted => {
+                out.write_all(b"MachineHalted")?
+            }
+            CompletionStatus::CycleLimitExceeded => {
+                out.write_all(b"CycleLimitExceeded")?
+            }
+            CompletionStatus::TimeLimitExceeded => {
+                out.write_all(b"TimeLimitExceeded")?
+            }
+            CompletionStatus::PayloadLengthLimitExceeded => {
+                out.write_all(b"PayloadLengthLimitExceeded")?
+            }
+        }
+        Ok(IsNull::No)
+    }
+}
+
+impl FromSql<SQLCompletionStatus, Pg> for CompletionStatus {
+    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
+        match bytes.as_bytes() {
+            b"Unprocessed" => Ok(CompletionStatus::Unprocessed),
+            b"Accepted" => Ok(CompletionStatus::Accepted),
+            b"Rejected" => Ok(CompletionStatus::Rejected),
+            b"Exception" => Ok(CompletionStatus::Exception),
+            b"MachineHalted" => Ok(CompletionStatus::MachineHalted),
+            b"CycleLimitExceeded" => Ok(CompletionStatus::CycleLimitExceeded),
+            b"TimeLimitExceeded" => Ok(CompletionStatus::TimeLimitExceeded),
+            b"PayloadLengthLimitExceeded" => {
+                Ok(CompletionStatus::PayloadLengthLimitExceeded)
+            }
+            _ => Err("Unrecognized enum variant".into()),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Insertable, PartialEq, Queryable, QueryableByName)]
 #[diesel(table_name = inputs)]
@@ -21,6 +77,7 @@ pub struct Input {
     pub block_number: i64,
     pub timestamp: std::time::SystemTime,
     pub payload: Vec<u8>,
+    pub status: CompletionStatus,
 }
 
 #[derive(Clone, Debug, Insertable, PartialEq, Queryable, QueryableByName)]
