@@ -6,8 +6,9 @@ package main
 import "github.com/spf13/cobra"
 
 var reader = &cobra.Command{
-	Use:   "reader",
-	Short: "Starts the node in reader mode",
+	Use:                   "reader",
+	Short:                 "Starts the node in reader mode",
+	DisableFlagsInUseLine: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		println("TODO")
 	},

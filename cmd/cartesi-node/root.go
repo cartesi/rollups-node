@@ -6,13 +6,13 @@ package main
 import "github.com/spf13/cobra"
 
 var rootCmd = &cobra.Command{
-	Use: "cartesi-node [reader|validator|full|no-backend]",
-	Run: func(cmd *cobra.Command, args []string) { cmd.Usage() },
+	Use:                   "cartesi-node",
+	CompletionOptions:     cobra.CompletionOptions{HiddenDefaultCmd: true},
+	DisableFlagsInUseLine: true,
 }
 
 func init() {
 	rootCmd.AddCommand(reader)
 	rootCmd.AddCommand(validator)
-	rootCmd.AddCommand(full)
 	rootCmd.AddCommand(noBackend)
 }
