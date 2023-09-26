@@ -86,7 +86,7 @@ impl TryFrom<AuthorityClaimerCLI> for AuthorityClaimerConfig {
         )
         .map(RollupsDeployment::from)?;
 
-        let authority_address = rollups_deployment.authority_address;
+        let authority_address = rollups_deployment.authority_address.address;
 
         Ok(AuthorityClaimerConfig {
             tx_manager_config,

@@ -20,6 +20,11 @@ pub(crate) struct DappDeployment {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct RollupsDappDeployment {
+    pub address: Address,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct RollupsDeploymentJson {
     contracts: RollupsDeployment,
 }
@@ -27,13 +32,13 @@ pub struct RollupsDeploymentJson {
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct RollupsDeployment {
     #[serde(rename = "History")]
-    pub history_address: Address,
+    pub history_address: RollupsDappDeployment,
 
     #[serde(rename = "Authority")]
-    pub authority_address: Address,
+    pub authority_address: RollupsDappDeployment,
 
     #[serde(rename = "InputBox")]
-    pub input_box_address: Address,
+    pub input_box_address: RollupsDappDeployment,
 }
 
 impl From<RollupsDeploymentJson> for RollupsDeployment {

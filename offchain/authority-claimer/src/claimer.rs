@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use async_trait::async_trait;
-use rollups_events::{Address, RollupsClaim};
+use rollups_events::Address;
 use snafu::ResultExt;
 use std::fmt::Debug;
 use tracing::{info, trace};
@@ -32,7 +32,7 @@ pub enum ClaimerError<
     D: DuplicateChecker,
     T: TransactionSender,
 > {
-    #[snafu(display("duplicated claim error"))]
+    #[snafu(display("broker listener error"))]
     BrokerListenerError { source: B::Error },
 
     #[snafu(display("duplicated claim error"))]
@@ -49,20 +49,29 @@ pub enum ClaimerError<
 /// The `DefaultClaimer` must be injected with a
 /// `BrokerListener`, a `DuplicateChecker` and a `TransactionSender`.
 #[derive(Debug)]
-pub struct AbstractClaimer<D: DuplicateChecker, T: TransactionSender> {
+pub struct DefaultClaimer<
+    B: BrokerListener,
+    D: DuplicateChecker,
+    T: TransactionSender,
+> {
     dapp_address: Address,
+    broker_listener: B,
     duplicate_checker: D,
     transaction_sender: T,
 }
 
-impl<D: DuplicateChecker, T: TransactionSender> AbstractClaimer<D, T> {
+impl<B: BrokerListener, D: DuplicateChecker, T: TransactionSender>
+    DefaultClaimer<B, D, T>
+{
     pub fn new(
         dapp_address: Address,
+        broker_listener: B,
         duplicate_checker: D,
         transaction_sender: T,
     ) -> Self {
         Self {
             dapp_address,
+            broker_listener,
             duplicate_checker,
             transaction_sender,
         }
@@ -90,7 +99,10 @@ where
 
             let is_duplicated_rollups_claim = self
                 .duplicate_checker
-                .is_duplicated_rollups_claim(&rollups_claim)
+                .is_duplicated_rollups_claim(
+                    self.dapp_address.clone(),
+                    &rollups_claim,
+                )
                 .await
                 .context(DuplicatedClaimSnafu)?;
             if is_duplicated_rollups_claim {
@@ -101,21 +113,12 @@ where
             info!("Sending a new rollups claim");
             self.transaction_sender = self
                 .transaction_sender
-                .send_rollups_claim_transaction(rollups_claim)
+                .send_rollups_claim_transaction(
+                    self.dapp_address.clone(),
+                    rollups_claim,
+                )
                 .await
                 .context(TransactionSenderSnafu)?
         }
-
-        info!("Sending a new rollups claim");
-        self.transaction_sender = self
-            .transaction_sender
-            .send_rollups_claim_transaction(
-                self.dapp_address.clone(),
-                rollups_claim,
-            )
-            .await
-            .context(TransactionSenderSnafu)?;
-
-        Ok(self)
     }
 }
