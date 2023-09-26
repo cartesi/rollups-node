@@ -54,7 +54,11 @@ impl<'de, const N: usize> Deserialize<'de> for HexArray<N> {
     where
         D: Deserializer<'de>,
     {
-        let string_data = String::deserialize(deserializer)?;
+        let mut string_data = String::deserialize(deserializer)?;
+        // The hex crate doesn't decode '0x' at the start, so we treat the value before decoding
+        if string_data[..2].eq("0x") {
+            string_data.drain(..2);
+        }
         let vec_data = hex::decode(string_data).map_err(|e| {
             serde::de::Error::custom(format!("fail to decode hex ({})", e))
         })?;
@@ -183,7 +187,7 @@ mod tests {
 
     #[test]
     fn fail_to_deserialized_invalid_array() {
-        assert!(serde_json::from_str::<Hash>("\".\"")
+        assert!(serde_json::from_str::<Hash>("\"....\"")
             .unwrap_err()
             .to_string()
             .contains("fail to decode hex"));

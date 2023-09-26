@@ -33,29 +33,35 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         http_server::start(config.http_server_config, metrics.clone().into());
 
     let config = config.authority_claimer_config;
-    let dapp_address = config.dapp_address;
     let dapp_metadata = DAppMetadata {
         chain_id: config.tx_manager_config.chain_id,
-        dapp_address,
+        dapp_address: config.dapp_address.clone(),
     };
 
     // Creating the broker listener.
     trace!("Creating the broker listener");
-    let broker_listener =
-        DefaultBrokerListener::new(config.broker_config, dapp_metadata.clone())
-            .await?;
+    let broker_listener = DefaultBrokerListener::new(
+        config.broker_config.clone(),
+        dapp_metadata.clone(),
+    )
+    .await?;
 
     // Creating the duplicate checker.
     trace!("Creating the duplicate checker");
-    let duplicate_checker = DefaultDuplicateChecker::new()?;
+    let duplicate_checker = DefaultDuplicateChecker::new(
+        config.tx_manager_config.provider_http_endpoint.clone(),
+        config.authority_address.clone(),
+    )?;
 
     // Creating the transaction sender.
     trace!("Creating the transaction sender");
     let transaction_sender =
-        DefaultTransactionSender::new(config.clone(), dapp_metadata, metrics)?;
+        DefaultTransactionSender::new(config.clone(), dapp_metadata, metrics)
+            .await?;
 
     // Creating the claimer loop.
     let claimer = DefaultClaimer::new(
+        config.dapp_address.clone(),
         broker_listener,
         duplicate_checker,
         transaction_sender,

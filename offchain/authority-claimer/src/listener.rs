@@ -64,6 +64,8 @@ impl BrokerListener for DefaultBrokerListener {
             .await
             .context(BrokerSnafu)?;
 
+        self.last_claim_id = event.id;
+
         Ok(event.payload)
     }
 }
