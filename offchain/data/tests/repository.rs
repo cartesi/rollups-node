@@ -6,15 +6,18 @@ use diesel::pg::Pg;
 use diesel::{
     sql_query, Connection, PgConnection, QueryableByName, RunQueryDsl,
 };
-use redacted::Redacted;
 use rollups_data::Connection as PaginationConnection;
 use rollups_data::{
     CompletionStatus, Cursor, Edge, Error, Input, InputQueryFilter, Notice,
-    PageInfo, Proof, Report, Repository, RepositoryConfig, Voucher,
+    PageInfo, Proof, RedactedUrl, Report, Repository, RepositoryConfig, Url,
+    Voucher,
 };
 use serial_test::serial;
+use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::time::{Duration, UNIX_EPOCH};
 use test_fixtures::DataFixture;
+use test_log::test;
 use testcontainers::clients::Cli;
 
 const BACKOFF_DURATION: u64 = 120000;
@@ -36,12 +39,19 @@ impl TestState<'_> {
             )))
             .build();
 
+        let redacted_endpoint = Some(RedactedUrl::new(
+            Url::parse(&format!(
+                "postgres://{}:{}@{}:{}/{}",
+                self.data.user,
+                self.data.password,
+                self.data.hostname,
+                self.data.port,
+                self.data.db,
+            ))
+            .expect("failed to generate Postgres endpoint"),
+        ));
         Repository::new(RepositoryConfig {
-            user: self.data.user.clone(),
-            password: Redacted::new(self.data.password.clone()),
-            hostname: self.data.hostname.clone(),
-            port: self.data.port.clone(),
-            db: self.data.db.clone(),
+            redacted_endpoint,
             connection_pool_size: 3,
             backoff,
         })
@@ -110,18 +120,79 @@ fn test_fail_to_create_repository() {
         .with_max_elapsed_time(Some(Duration::from_millis(2000)))
         .build();
 
+    let redacted_endpoint = Some(RedactedUrl::new(
+        Url::parse(&format!(
+            "postgres://{}:{}@{}:{}/{}",
+            "Err",
+            test.data.password,
+            test.data.hostname,
+            test.data.port,
+            test.data.db,
+        ))
+        .expect("failed to generate Postgres endpoint"),
+    ));
     let err = Repository::new(RepositoryConfig {
-        user: "Err".to_string(),
-        password: Redacted::new(test.data.password.clone()),
-        hostname: test.data.hostname.clone(),
-        port: test.data.port.clone(),
-        db: test.data.db.clone(),
+        redacted_endpoint,
         connection_pool_size: 3,
         backoff,
     })
     .expect_err("Repository::new should fail");
 
     assert!(matches!(err, Error::DatabaseConnectionError { source: _ }));
+}
+
+#[test]
+#[serial]
+fn test_postgres_file_configuration() {
+    let docker = Cli::default();
+    let test = TestState::setup(&docker);
+
+    // Create Postgres pgpass file
+    let tempdir = tempfile::tempdir().expect("failed to create tempdir");
+    let pgpass_path =
+        tempdir.path().join("pgpass").to_string_lossy().to_string();
+    tracing::info!("Storing pgpass to {}", pgpass_path);
+    {
+        let mut pgpass = std::fs::File::create(&pgpass_path)
+            .expect("failed to create pgpass");
+        // Set permission to 600
+        let metadata =
+            pgpass.metadata().expect("failed to get pgpass metadata");
+        let mut permissions = metadata.permissions();
+        permissions.set_mode(0o600);
+        pgpass
+            .set_permissions(permissions)
+            .expect("failed to set pgpass permissions");
+        // Write pgpass contents
+        write!(
+            &mut pgpass,
+            "{}:{}:{}:{}:{}\n",
+            test.data.hostname,
+            test.data.port,
+            test.data.db,
+            test.data.user,
+            test.data.password
+        )
+        .expect("failed to write pgpass");
+    }
+
+    // Set Postgres environment variables
+    std::env::set_var("PGPASSFILE", pgpass_path);
+    std::env::set_var("PGHOST", test.data.hostname);
+    std::env::set_var("PGPORT", test.data.port.to_string());
+    std::env::set_var("PGDATABASE", test.data.db);
+    std::env::set_var("PGUSER", test.data.user);
+
+    // Connect to postgres using pgpass file
+    let backoff = ExponentialBackoffBuilder::new()
+        .with_max_elapsed_time(Some(Duration::from_millis(100)))
+        .build();
+    Repository::new(RepositoryConfig {
+        redacted_endpoint: None,
+        connection_pool_size: 3,
+        backoff,
+    })
+    .expect("failed to create repository");
 }
 
 #[test]

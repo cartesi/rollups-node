@@ -34,7 +34,7 @@ impl Repository {
             Pool::builder()
                 .max_size(POOL_CONNECTION_SIZE)
                 .build(ConnectionManager::<PgConnection>::new(
-                    config.endpoint().into_inner(),
+                    config.endpoint(),
                 ))
                 .map_err(backoff::Error::transient)
         })

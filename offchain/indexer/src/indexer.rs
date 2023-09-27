@@ -25,8 +25,7 @@ impl Indexer {
     pub async fn start(config: IndexerConfig) -> Result<(), IndexerError> {
         tracing::info!("running database migrations");
         let endpoint = config.repository_config.endpoint();
-        rollups_data::run_migrations(&endpoint.into_inner())
-            .context(MigrationsSnafu)?;
+        rollups_data::run_migrations(&endpoint).context(MigrationsSnafu)?;
 
         tracing::info!("runned migrations; connecting to DB");
         let repository = tokio::task::spawn_blocking(|| {

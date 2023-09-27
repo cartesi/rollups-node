@@ -3,77 +3,62 @@
 
 use backoff::{ExponentialBackoff, ExponentialBackoffBuilder};
 use clap::Parser;
-pub use redacted::Redacted;
+pub use redacted::{RedactedUrl, Url};
 use std::time::Duration;
 
 #[derive(Debug)]
 pub struct RepositoryConfig {
-    pub user: String,
-    pub password: Redacted<String>,
-    pub hostname: String,
-    pub port: u16,
-    pub db: String,
+    pub redacted_endpoint: Option<RedactedUrl>,
     pub connection_pool_size: u32,
     pub backoff: ExponentialBackoff,
 }
 
 impl RepositoryConfig {
-    pub fn endpoint(&self) -> Redacted<String> {
-        Redacted::new(format!(
-            "postgres://{}:{}@{}:{}/{}",
-            urlencoding::encode(&self.user),
-            urlencoding::encode(self.password.inner()),
-            urlencoding::encode(&self.hostname),
-            self.port,
-            urlencoding::encode(&self.db)
-        ))
+    /// Get the string with the endpoint if it is set, otherwise return an empty string
+    pub fn endpoint(&self) -> String {
+        match &self.redacted_endpoint {
+            None => String::from(""),
+            Some(endpoint) => endpoint.inner().to_string(),
+        }
     }
 }
 
 #[derive(Debug, Parser)]
 pub struct RepositoryCLIConfig {
-    #[arg(long, env, default_value = "postgres")]
-    postgres_user: String,
-
+    /// Postgres endpoint in the format 'postgres://user:password@hostname:port/database'.
+    ///
+    /// If not set, or set to empty string, will defer the behaviour to the Pg driver.
+    /// See: https://www.postgresql.org/docs/current/libpq-envars.html
+    ///
+    /// It is also possible to set the endpoint without a password and load it from Postgres'
+    /// passfile.
+    /// See: https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-PASSFILE
     #[arg(long, env)]
-    postgres_password: Option<String>,
+    postgres_endpoint: Option<String>,
 
-    #[arg(long, env)]
-    postgres_password_file: Option<String>,
-
-    #[arg(long, env, default_value = "127.0.0.1")]
-    postgres_hostname: String,
-
-    #[arg(long, env, default_value_t = 5432)]
-    postgres_port: u16,
-
-    #[arg(long, env, default_value = "postgres")]
-    postgres_db: String,
-
+    /// Number of connections to the database
     #[arg(long, env, default_value_t = 3)]
     postgres_connection_pool_size: u32,
 
+    /// Max elapsed time for timeout
     #[arg(long, env, default_value = "120000")]
     postgres_backoff_max_elapsed_duration: u64,
 }
 
 impl From<RepositoryCLIConfig> for RepositoryConfig {
     fn from(cli_config: RepositoryCLIConfig) -> RepositoryConfig {
-        let password = if let Some(filename) = cli_config.postgres_password_file
-        {
-            if cli_config.postgres_password.is_some() {
-                panic!("Both `postgres_password` and `postgres_password_file` arguments are set");
-            }
-            match std::fs::read_to_string(filename) {
-                Ok(password) => password,
-                Err(e) => {
-                    panic!("Failed to read password from file: {:?}", e);
+        let redacted_endpoint = match cli_config.postgres_endpoint {
+            None => None,
+            Some(endpoint) => {
+                if endpoint == "" {
+                    None
+                } else {
+                    Some(RedactedUrl::new(
+                        Url::parse(endpoint.as_str())
+                            .expect("failed to parse Postgres URL"),
+                    ))
                 }
             }
-        } else {
-            cli_config
-                .postgres_password
-                .expect("Database Postgres password was not provided")
         };
         let connection_pool_size = cli_config.postgres_connection_pool_size;
         let backoff_max_elapsed_duration = Duration::from_millis(
@@ -83,11 +68,7 @@ impl From<RepositoryCLIConfig> for RepositoryConfig {
             .with_max_elapsed_time(Some(backoff_max_elapsed_duration))
             .build();
         RepositoryConfig {
-            user: cli_config.postgres_user,
-            password: Redacted::new(password),
-            hostname: cli_config.postgres_hostname,
-            port: cli_config.postgres_port,
-            db: cli_config.postgres_db,
+            redacted_endpoint,
             connection_pool_size,
             backoff,
         }

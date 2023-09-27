@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use backoff::ExponentialBackoffBuilder;
-use rollups_data::{Redacted, Repository, RepositoryConfig};
+use rollups_data::{RedactedUrl, Repository, RepositoryConfig, Url};
 use std::time::Duration;
 use testcontainers::clients::Cli;
 
@@ -68,12 +68,19 @@ impl RepositoryFixture<'_> {
 
 fn create_repository_config(postgres_port: u16) -> RepositoryConfig {
     use crate::data::*;
+    let redacted_endpoint = Some(RedactedUrl::new(
+        Url::parse(&format!(
+            "postgres://{}:{}@{}:{}/{}",
+            POSTGRES_USER,
+            POSTGRES_PASSWORD,
+            POSTGRES_HOST,
+            postgres_port,
+            POSTGRES_DB,
+        ))
+        .expect("failed to generate Postgres endpoint"),
+    ));
     RepositoryConfig {
-        user: POSTGRES_USER.to_owned(),
-        password: Redacted::new(POSTGRES_PASSWORD.to_owned()),
-        hostname: POSTGRES_HOST.to_owned(),
-        port: postgres_port,
-        db: POSTGRES_DB.to_owned(),
+        redacted_endpoint,
         connection_pool_size: 1,
         backoff: Default::default(),
     }

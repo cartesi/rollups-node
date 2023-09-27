@@ -9,7 +9,7 @@ mod repository;
 mod schema;
 mod types;
 
-pub use config::{Redacted, RepositoryCLIConfig, RepositoryConfig};
+pub use config::{RedactedUrl, RepositoryCLIConfig, RepositoryConfig, Url};
 pub use error::Error;
 pub use migrations::{run_migrations, MigrationError};
 pub use pagination::{Connection, Cursor, Edge, PageInfo};
