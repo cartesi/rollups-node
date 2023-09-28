@@ -1664,9 +1664,9 @@ dependencies = [
 
 [[package]]
 name = "eth-block-history"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fb4e05414a4f20ab3007e2a75b57e2b0d265aaf56a51fe19a143c88b4d098ab"
+checksum = "dca058dc4a095167fc361462a1361f6cfa91dd9431d034ed989218ed5f71acf9"
 dependencies = [
  "async-stream",
  "clap",
@@ -1701,9 +1701,9 @@ dependencies = [
 
 [[package]]
 name = "eth-state-client-lib"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "617ffb8c2b3badd2cb6a6a90d5cb1e955cf4454dd4fb4aab5d473b6d2d7a99c5"
+checksum = "e40b8c77c0518287f68c2d5fbe9f291aa0787404345fc92796c7ec3ec4ee3a3b"
 dependencies = [
  "async-trait",
  "clap",
@@ -1719,9 +1719,9 @@ dependencies = [
 
 [[package]]
 name = "eth-state-fold"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42eb0e90cfc8f3bf84f7d11586280a60f986f4959cda4582d94862f4c2a4d77a"
+checksum = "a0f1ac68e0b96efc11f7a9f60450dbfb14e987edd35553fd64989b57bfa53813"
 dependencies = [
  "async-recursion",
  "async-trait",
@@ -1735,9 +1735,9 @@ dependencies = [
 
 [[package]]
 name = "eth-state-fold-types"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27b4cc78d8409a9fc6bd8daf6ce836c82892ea0e2bd97be9618e2b03a06af7ea"
+checksum = "5194f4eca643c2654aedd175fd99b0d21a5bac8b49f72681aaa33e4f792d5c49"
 dependencies = [
  "anyhow",
  "ethabi",
@@ -1752,9 +1752,9 @@ dependencies = [
 
 [[package]]
 name = "eth-state-server-common"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d8c4f4a51a4d85e77bd2a6e25df040e10eed2d6a5e358cbf2319d78fbed8512"
+checksum = "589cfcf2bb4c3531e7e6bc08e9d00ba874773b3111445c02ab220692db3e3725"
 dependencies = [
  "anyhow",
  "eth-state-fold-types",
@@ -1768,9 +1768,9 @@ dependencies = [
 
 [[package]]
 name = "eth-state-server-lib"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b3e3627417bca327446dafce660e342e5ca5eb25440b8af7358ba1e15ea276a"
+checksum = "4f0141b54e46461538cec27aa45757a679cab0bd0e7c26fa27bfc3b7001488f1"
 dependencies = [
  "clap",
  "eth-block-history",

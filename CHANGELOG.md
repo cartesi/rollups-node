@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standardized log libraries and configuration
 - Moved GraphQL schema generation to the CI. Now it is distributed as a Github artifact
 - Replace `POSTGRES_*` environment variables with `POSTGRES_ENDPOINT`
+- Allow negative numbers in `SF_QUERY_LIMIT_ERROR_CODES` state-fold configuration
 - Bumped Rust Version to 1.72.1
 
 ### Removed
@@ -27,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed configurable inspect-server path prefix
 - Removed on-chain code from the node repository
 - Removed `advance-runner`, `dispatcher`, `graphql-server`, `host-runner`, `inspect-server`, `indexer`, and `state-server` docker images
+
+### Fixed
+- Parse `SF_GENESIS_BLOCK` config correctly as decimal
+- Setting `SF_CONCURRENT_EVENTS_FETCH` to `0` no longer silently halts the system, and instead use this configuration as _additional_ concurrent events, as documented
 
 ## [1.0.2] 2023-09-12
 
