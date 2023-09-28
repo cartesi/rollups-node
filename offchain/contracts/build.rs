@@ -11,7 +11,7 @@ use std::str;
 use eth_state_fold_types::contract;
 
 const ROLLUPS_CONTRACTS_URL: &str =
-    "https://registry.npmjs.org/@cartesi/rollups/-/rollups-1.0.1.tgz";
+    "https://registry.npmjs.org/@cartesi/rollups/-/rollups-1.0.2.tgz";
 
 fn main() -> Result<(), Box<dyn Error>> {
     let tempdir = tempfile::tempdir()?;
