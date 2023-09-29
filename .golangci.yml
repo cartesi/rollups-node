@@ -1,0 +1,13 @@
+linters:
+  enable:
+    - exhaustive
+    - goconst
+    - godox
+    - gofmt
+    - gomnd
+    - lll
+    - misspell
+linters-settings:
+  lll:
+    line-length: 100
+    tab-width: 4
