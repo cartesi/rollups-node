@@ -78,6 +78,15 @@ jobs:
           path: offchain/schema.graphql
           if-no-files-found: error
 
+      - name: Install Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Run Go tests
+        working-directory: ${{ github.workspace }}
+        run: go test ./...
+
   build_docker:
     runs-on: ubuntu-22.04
     needs:
