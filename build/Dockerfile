@@ -4,12 +4,16 @@
 # syntax=docker.io/docker/dockerfile:1.4
 
 ARG RUST_VERSION=1.72.1
+ARG GO_VERSION=1.21.1
 ARG SERVER_MANAGER_VERSION=0.8.2
 ARG ROLLUPS_CONTRACTS_VERSION=1.0.2
 
 ARG BASE_PATH=/opt/cartesi
 ARG RUST_BUILD_PATH=${BASE_PATH}/src/rollups-node/offchain
 ARG DEPLOYMENT_PATH=${BASE_PATH}/share/deployments
+ARG GO_BASE_PATH=/go
+ARG GO_BUILD_PATH=${GO_BASE_PATH}/rollups-node
+ARG GO_BIN_PATH=${GO_BASE_PATH}/bin
 ARG RUNTIME_DIR=/var/opt/cartesi
 
 #
@@ -70,6 +74,15 @@ COPY ./.git ../
 RUN cargo build --release
 
 #
+# Go build
+#
+FROM golang:${GO_VERSION}-bookworm as go-builder
+ARG GO_BUILD_PATH
+WORKDIR ${GO_BUILD_PATH}
+COPY . .
+RUN go install -ldflags "-s -w" ./cmd/cartesi-node
+
+#
 # Runtime
 #
 FROM cartesi/server-manager:${SERVER_MANAGER_VERSION} as rollups-node
@@ -92,6 +105,10 @@ WORKDIR ${BASE_PATH}/bin
 ARG RUST_BUILD_PATH
 COPY --from=rust-builder ${RUST_BUILD_PATH}/target/release/cartesi-rollups-* .
 ENV PATH="${BASE_PATH}/bin:${PATH}"
+
+# Copy Go binary
+ARG GO_BIN_PATH
+COPY --from=go-builder ${GO_BIN_PATH}/cartesi-node .
 
 # Setup runtime dir
 ARG RUNTIME_DIR
