@@ -243,7 +243,7 @@ checksum = "f26201604c87b1e01bd3d98f8d5d9a8fcbb815e8cedb41ffccbeb4bf593a35fe"
 
 [[package]]
 name = "advance-runner"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "async-trait",
  "backoff",
@@ -254,7 +254,7 @@ dependencies = [
  "grpc-interfaces",
  "hex",
  "http-health-check",
- "log 1.1.0",
+ "log 1.2.0",
  "rand 0.8.5",
  "rollups-events",
  "sha3",
@@ -471,14 +471,14 @@ dependencies = [
 
 [[package]]
 name = "authority-claimer"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "async-trait",
  "backoff",
  "clap",
  "eth-tx-manager",
  "http-server",
- "log 1.1.0",
+ "log 1.2.0",
  "rollups-events",
  "rusoto_core",
  "serde",
@@ -1133,7 +1133,7 @@ checksum = "245097e9a4535ee1e3e3931fcfcd55a796a44c643e8596ff6566d68f09b87bbc"
 
 [[package]]
 name = "contracts"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "eth-state-fold-types",
  "snafu",
@@ -1484,7 +1484,7 @@ dependencies = [
 
 [[package]]
 name = "dispatcher"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -1499,7 +1499,7 @@ dependencies = [
  "http-server",
  "hyper",
  "im",
- "log 1.1.0",
+ "log 1.2.0",
  "rand 0.8.5",
  "redis",
  "rollups-events",
@@ -2398,7 +2398,7 @@ dependencies = [
 
 [[package]]
 name = "graphql-server"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "actix-cors",
  "actix-web",
@@ -2407,7 +2407,7 @@ dependencies = [
  "hex",
  "http-health-check",
  "juniper",
- "log 1.1.0",
+ "log 1.2.0",
  "rollups-data",
  "serde",
  "serde_json",
@@ -2432,7 +2432,7 @@ dependencies = [
 
 [[package]]
 name = "grpc-interfaces"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "prost",
  "tonic",
@@ -2527,7 +2527,7 @@ dependencies = [
 
 [[package]]
 name = "host-runner"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "actix-web",
  "async-trait",
@@ -2538,7 +2538,7 @@ dependencies = [
  "grpc-interfaces",
  "hex",
  "http-health-check",
- "log 1.1.0",
+ "log 1.2.0",
  "mockall",
  "rand 0.8.5",
  "reqwest",
@@ -2578,7 +2578,7 @@ dependencies = [
 
 [[package]]
 name = "http-health-check"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "axum",
  "hyper",
@@ -2588,7 +2588,7 @@ dependencies = [
 
 [[package]]
 name = "http-server"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "axum",
  "clap",
@@ -2784,13 +2784,13 @@ checksum = "ce23b50ad8242c51a442f3ff322d56b02f08852c77e4c0b4d3fd684abc89c683"
 
 [[package]]
 name = "indexer"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "backoff",
  "clap",
  "env_logger",
  "http-health-check",
- "log 1.1.0",
+ "log 1.2.0",
  "rand 0.8.5",
  "rollups-data",
  "rollups-events",
@@ -2836,7 +2836,7 @@ dependencies = [
 
 [[package]]
 name = "inspect-server"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "actix-cors",
  "actix-web",
@@ -2845,7 +2845,7 @@ dependencies = [
  "grpc-interfaces",
  "hex",
  "http-health-check",
- "log 1.1.0",
+ "log 1.2.0",
  "reqwest",
  "serde",
  "serial_test",
@@ -3078,7 +3078,7 @@ checksum = "b5e6163cb8c49088c2c36f57875e58ccd8c87c7427f7fbd50ea6710b2f3f2e8f"
 
 [[package]]
 name = "log"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "clap",
  "tracing-subscriber",
@@ -3939,7 +3939,7 @@ dependencies = [
 
 [[package]]
 name = "redacted"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "url",
 ]
@@ -4146,7 +4146,7 @@ dependencies = [
 
 [[package]]
 name = "rollups-data"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "backoff",
  "base64 0.21.4",
@@ -4167,7 +4167,7 @@ dependencies = [
 
 [[package]]
 name = "rollups-events"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "backoff",
  "base64 0.21.4",
@@ -4189,7 +4189,7 @@ dependencies = [
 
 [[package]]
 name = "rollups-http-client"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "hyper",
  "serde",
@@ -4867,14 +4867,14 @@ dependencies = [
 
 [[package]]
 name = "state-server"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "clap",
  "eth-block-history",
  "eth-state-fold",
  "eth-state-fold-types",
  "eth-state-server-lib",
- "log 1.1.0",
+ "log 1.2.0",
  "serde",
  "snafu",
  "tokio",
@@ -5032,7 +5032,7 @@ checksum = "3369f5ac52d5eb6ab48c6b4ffdc8efbcad6b89c765749064ba298f2c68a16a76"
 
 [[package]]
 name = "test-fixtures"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "backoff",
@@ -5579,7 +5579,7 @@ checksum = "42ff0bf0c66b8238c6f3b578df37d0b7848e55df8577b3f74f92a69acceeb825"
 
 [[package]]
 name = "types"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
