@@ -1,3 +1,6 @@
+// (c) Cartesi and individual authors (see AUTHORS)
+// SPDX-License-Identifier: Apache-2.0 (see LICENSE)
+
 package services
 
 import (
@@ -19,13 +22,12 @@ func TestGraphQLService(t *testing.T) {
 		exit := make(chan error)
 
 		go func() {
-			<-time.After(100 * time.Millisecond)
 			if err := service.Start(ctx); err != nil {
 				exit <- err
 			}
 		}()
 
-		<-time.After(200 * time.Millisecond)
+		<-time.After(100 * time.Millisecond)
 		cancel()
 
 		err := <-exit
@@ -40,7 +42,6 @@ func TestGraphQLService(t *testing.T) {
 func setupEnvVars() {
 	abs, _ := filepath.Abs("../../../offchain/target/debug")
 	os.Setenv("PATH", abs)
-	os.Setenv("POSTGRES_PASSWORD", "pw")
 }
 
 func assertExitErrorWasCausedBy(err *exec.ExitError, signal syscall.Signal) bool {

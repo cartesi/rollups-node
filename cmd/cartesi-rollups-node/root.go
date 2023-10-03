@@ -6,7 +6,7 @@ package main
 import "github.com/spf13/cobra"
 
 var rootCmd = &cobra.Command{
-	Use:                   "cartesi-node",
+	Use:                   "cartesi-rollups-node",
 	CompletionOptions:     cobra.CompletionOptions{HiddenDefaultCmd: true},
 	DisableFlagsInUseLine: true,
 }
