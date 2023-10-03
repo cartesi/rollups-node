@@ -6,8 +6,8 @@ package main
 import "github.com/spf13/cobra"
 
 var noBackend = &cobra.Command{
-	Use:                   "no-backend",
-	Short:                 "Starts the node in no-backend mode",
+	Use:                   "nobackend",
+	Short:                 "Starts the node in nobackend mode",
 	DisableFlagsInUseLine: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		println("TODO")

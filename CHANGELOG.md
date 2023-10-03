@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added `cartesi-rollups-node` Go binary as a single entrypoint to execute all Cartesi Node services
+
 ### Changed
 
 - Added rollups-node version to the logs in all services

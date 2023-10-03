@@ -12,7 +12,7 @@ ARG BASE_PATH=/opt/cartesi
 ARG RUST_BUILD_PATH=${BASE_PATH}/src/rollups-node/offchain
 ARG DEPLOYMENT_PATH=${BASE_PATH}/share/deployments
 ARG GO_BASE_PATH=/go
-ARG GO_BUILD_PATH=${GO_BASE_PATH}/rollups-node
+ARG GO_BUILD_PATH=${GO_BASE_PATH}/cartesi-rollups-node
 ARG GO_BIN_PATH=${GO_BASE_PATH}/bin
 ARG RUNTIME_DIR=/var/opt/cartesi
 
@@ -80,7 +80,7 @@ FROM golang:${GO_VERSION}-bookworm as go-builder
 ARG GO_BUILD_PATH
 WORKDIR ${GO_BUILD_PATH}
 COPY . .
-RUN go install -ldflags "-s -w" ./cmd/cartesi-node
+RUN go install -ldflags "-s -w" ./cmd/cartesi-rollups-node
 
 #
 # Runtime
@@ -108,7 +108,7 @@ ENV PATH="${BASE_PATH}/bin:${PATH}"
 
 # Copy Go binary
 ARG GO_BIN_PATH
-COPY --from=go-builder ${GO_BIN_PATH}/cartesi-node .
+COPY --from=go-builder ${GO_BIN_PATH}/cartesi-rollups-node .
 
 # Setup runtime dir
 ARG RUNTIME_DIR
