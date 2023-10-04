@@ -3,7 +3,6 @@
 
 use authority_claimer::config::Config;
 use std::error::Error;
-use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -13,7 +12,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Setting up the logging environment.
     log::configure(&config.authority_claimer_config.log_config);
 
-    info!(?config, "Starting Authority Claimer");
+    //Log Service info
+    log::log_service_start(&config, "Authority Claimer");
 
     authority_claimer::run(config).await
 }

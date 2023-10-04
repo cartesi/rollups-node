@@ -6,4 +6,8 @@ version.workspace = true
 
 [dependencies]
 clap = { workspace = true, features = ["derive", "env"] }
+tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+[build-dependencies]
+built = { workspace = true, features = ["git2"] }

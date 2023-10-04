@@ -4,7 +4,6 @@
 use clap::Parser;
 
 use indexer::{CLIConfig, IndexerConfig};
-use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -12,6 +11,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::configure(&config.log_config);
 
-    info!(?config, "Starting Indexer");
+    log::log_service_start(&config, "Indexer");
+
     indexer::run(config).await.map_err(|e| e.into())
 }

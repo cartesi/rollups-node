@@ -16,7 +16,6 @@ use futures_util::FutureExt;
 use std::sync::{atomic::AtomicBool, atomic::Ordering, Arc};
 use std::time::Duration;
 use tokio::sync::oneshot;
-use tracing::info;
 
 use clap::Parser;
 use config::{CLIConfig, Config};
@@ -36,7 +35,7 @@ async fn main() {
 
     log::configure(&config.log_config);
 
-    info!(?config, "Starting Host Runner");
+    log::log_service_start(&config, "Host Runner");
 
     let controller =
         Controller::new(Duration::from_millis(config.finish_timeout));

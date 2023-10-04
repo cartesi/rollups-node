@@ -1,5 +1,14 @@
+// (c) Cartesi and individual authors (see AUTHORS)
+// SPDX-License-Identifier: Apache-2.0 (see LICENSE)
+use std::fmt::Debug;
+
 use clap::Parser;
+use tracing::info;
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
+
+pub mod built_info {
+    include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
 
 #[derive(Debug, Parser)]
 #[command(name = "log_config")]
@@ -51,4 +60,12 @@ pub fn configure(config: &LogConfig) {
     } else {
         subscribe_builder.init();
     }
+}
+
+pub fn log_service_start<C: Debug>(config: &C, service_name: &str) {
+    let git_ref = built_info::GIT_HEAD_REF.unwrap_or("N/A");
+    let git_hash = built_info::GIT_COMMIT_HASH.unwrap_or("N/A");
+
+    let message = format!("Starting {service} (version={version}, git ref={git_ref}, git hash={git_hash}) with config {:?}",config, service = service_name, version = built_info::PKG_VERSION, git_ref = git_ref, git_hash = git_hash);
+    info!(message);
 }

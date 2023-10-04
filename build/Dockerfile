@@ -65,6 +65,8 @@ RUN cargo chef cook --release --recipe-path recipe.json
 
 # Build application
 COPY ./offchain/ .
+# needed to log commit hash in runtime
+COPY ./.git ../ 
 RUN cargo build --release
 
 #
