@@ -5,19 +5,25 @@ package services
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/cartesi/rollups-node/internal/pkg/logger"
 )
 
+func setup() {
+	logger.Init("warning", false)
+	setRustBinariesPath()
+}
 func TestGraphQLService(t *testing.T) {
+
 	t.Run("it stops when the context is cancelled", func(t *testing.T) {
+		setup()
 		service := GraphQLService{}
-		setupEnvVars()
 		ctx, cancel := context.WithCancel(context.Background())
 		exit := make(chan error)
 
@@ -33,15 +39,15 @@ func TestGraphQLService(t *testing.T) {
 		err := <-exit
 		exitError, ok := err.(*exec.ExitError)
 		if !ok || !assertExitErrorWasCausedBy(exitError, syscall.SIGTERM) {
-			fmt.Printf("service exited for the wrong reason: %v", err)
+			t.Logf("service exited for the wrong reason: %v", err)
 			t.FailNow()
 		}
 	})
 }
 
-func setupEnvVars() {
-	abs, _ := filepath.Abs("../../../offchain/target/debug")
-	os.Setenv("PATH", abs)
+func setRustBinariesPath() {
+	rustBinPath, _ := filepath.Abs("../../../offchain/target/debug")
+	os.Setenv("PATH", os.Getenv("PATH")+":"+rustBinPath)
 }
 
 func assertExitErrorWasCausedBy(err *exec.ExitError, signal syscall.Signal) bool {

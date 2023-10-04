@@ -8,6 +8,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/cartesi/rollups-node/internal/pkg/logger"
 )
 
 // A service that runs in the background endlessly until the context is canceled
@@ -26,7 +28,7 @@ const DefaultServiceTimeout = 15 * time.Second
 // it will try to stop the remaining services or timeout if they take too long
 func Run(services []Service) {
 	if len(services) == 0 {
-		panic("there are no services to run")
+		logger.Error.Panic("there are no services to run")
 	}
 
 	// start services
@@ -37,10 +39,10 @@ func Run(services []Service) {
 		go func() {
 			if err := service.Start(ctx); err != nil {
 				msg := "main: service '%v' exited with error: %v\n"
-				fmt.Printf(msg, service.String(), err)
+				logger.Error.Printf(msg, service.String(), err)
 			} else {
 				msg := "main: service '%v' exited successfully\n"
-				fmt.Printf(msg, service.String())
+				logger.Info.Printf(msg, service.String())
 			}
 			exit <- struct{}{}
 		}()
@@ -62,8 +64,8 @@ func Run(services []Service) {
 
 	select {
 	case <-wait:
-		fmt.Println("main: all services exited")
+		logger.Info.Println("main: all services were shutdown")
 	case <-time.After(DefaultServiceTimeout):
-		fmt.Println("main: exited after timeout")
+		logger.Warning.Println("main: exited after timeout")
 	}
 }
