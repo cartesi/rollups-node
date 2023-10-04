@@ -50,7 +50,7 @@ impl From<RepositoryCLIConfig> for RepositoryConfig {
         let redacted_endpoint = match cli_config.postgres_endpoint {
             None => None,
             Some(endpoint) => {
-                if endpoint == "" {
+                if endpoint.is_empty() {
                     None
                 } else {
                     Some(RedactedUrl::new(

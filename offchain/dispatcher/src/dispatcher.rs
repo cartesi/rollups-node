@@ -25,7 +25,7 @@ pub async fn start(
     config: DispatcherConfig,
     metrics: DispatcherMetrics,
 ) -> Result<(), DispatcherError> {
-    info!("Setting up dispatcher with config: {:?}", config);
+    info!("Setting up dispatcher");
 
     let dapp_metadata = DAppMetadata {
         chain_id: config.tx_config.chain_id,
