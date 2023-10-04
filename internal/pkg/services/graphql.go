@@ -5,10 +5,11 @@ package services
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"syscall"
+
+	"github.com/cartesi/rollups-node/internal/pkg/logger"
 )
 
 const (
@@ -29,10 +30,10 @@ func (g GraphQLService) Start(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
-		fmt.Printf("%v: %v\n", g.String(), ctx.Err())
+		logger.Debug.Printf("%v: %v\n", g.String(), ctx.Err())
 		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
 			msg := "%v: failed to send SIGTERM to %v\n"
-			fmt.Printf(msg, g.String(), binaryName)
+			logger.Error.Printf(msg, g.String(), binaryName)
 		}
 	}()
 

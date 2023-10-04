@@ -5,10 +5,16 @@ package main
 
 import (
 	"os"
+
+	"github.com/cartesi/rollups-node/internal/logger"
 )
 
 func main() {
+	logLevel := os.Getenv("CARTESI_LOG_LEVEL")
+	_, enableTimestamp := os.LookupEnv("CARTESI_LOG_ENABLE_TIMESTAMP")
+	logger.Init(logLevel, enableTimestamp)
+
 	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
+		logger.Error.Panic(err)
 	}
 }
