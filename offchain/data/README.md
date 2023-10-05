@@ -42,8 +42,8 @@ echo "export DATABASE_URL=postgres://postgres:pw@localhost:5432/postgres" > .env
 
 ## Perform database migrations
 
-Follow the commands bellow to perform the migration.
-This procedure create the tables in PostgreSQL also generate the file `src/schema.rs`.
+Follow the commands below to perform the migration.
+This procedure creates the tables in PostgreSQL and also generates the file `src/schema.rs`.
 
 ```sh
 diesel migration run
@@ -52,7 +52,7 @@ diesel migration run
 ## Modifying the database schema
 
 To modify the database schema, you should edit the files in the `migration` dir.
-To more detail follow the instructions in [the diesel site](https://diesel.rs).
+For more details, please follow the instructions on [the diesel site](https://diesel.rs).
 
 ## Test
 
