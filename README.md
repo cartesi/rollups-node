@@ -1,6 +1,6 @@
 # Cartesi Node Reference Implementation
 
-The [Cartesi Node](https://docs.cartesi.io/cartesi-rollups/main-concepts/#cartesi-nodes) is the part of the [Cartesi Rollups Framework](https://docs.cartesi.io/cartesi-rollups/overview/) responsible for handling the communication between the on-chain smart contracts and the [Cartesi Machine](https://docs.cartesi.io/machine/intro/).
+The [Cartesi Node](https://docs.cartesi.io/cartesi-rollups/main-concepts/#cartesi-nodes) is the part of the [Cartesi Rollups Framework](https://docs.cartesi.io/cartesi-rollups/overview/) that is responsible for handling the communication between the on-chain smart contracts and the [Cartesi Machine](https://docs.cartesi.io/machine/intro/).
 
 The Cartesi Rollups machine and smart contracts live in fundamentally different environments.
 This creates the need for the node that manages and controls the communication between the blockchain and the machine.
@@ -26,7 +26,7 @@ git submodule update --init --recursive
 
 ### Building the Docker image
 
-To more information on how to build the rollups-node docker image, see the [build directory](./build/README.md).
+For more information on how to build the rollups-node docker image, see the [build directory](./build/README.md).
 
 ### Rust
 
@@ -93,7 +93,7 @@ The [**Dispatcher**](./offchain/dispatcher/README.md) is the component that mess
 The [**Advance Runner**](./offchain/advance-runner/README.md) is the one responsible for relaying *Inputs* to the **Server Manager** to be processed by the underlying DApp running in the embedded **Cartesi Machine**.
 The **Advance Runner** obtains the resulting **Outputs** and **Claims** from the **Server Manager** and adds them to the **Broker**.
 
-The [**Indexer**](./offchain/indexer/README.md) consumes all *Inputs* and *Outputs* transferred by the **Broker** and store them in a **PostgreSQL** database for later querying via a **GraphQL Server** instance.
+The [**Indexer**](./offchain/indexer/README.md) consumes all *Inputs* and *Outputs* transferred by the **Broker** and stores them in a **PostgreSQL** database for later querying via a **GraphQL Server** instance.
 
 The [**Inspect Server**](./offchain/inspect-server/README.md) is responsible for the processing of *Inspect* requests via HTTP.
 
