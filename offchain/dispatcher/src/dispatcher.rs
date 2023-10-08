@@ -5,7 +5,7 @@ use eth_state_client_lib::StateServer;
 use eth_state_fold_types::{Block, BlockStreamItem};
 use rollups_events::{Address, DAppMetadata};
 use tokio_stream::StreamExt;
-use tracing::{error, info, instrument, trace, warn};
+use tracing::{error, instrument, trace, warn};
 use types::foldables::authority::rollups::{RollupsInitialState, RollupsState};
 
 use crate::{
@@ -25,7 +25,7 @@ pub async fn start(
     config: DispatcherConfig,
     metrics: DispatcherMetrics,
 ) -> Result<(), DispatcherError> {
-    info!("Setting up dispatcher");
+    trace!("Setting up dispatcher");
 
     let dapp_metadata = DAppMetadata {
         chain_id: config.tx_config.chain_id,
