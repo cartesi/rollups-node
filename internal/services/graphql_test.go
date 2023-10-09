@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/pkg/logger"
+	"github.com/cartesi/rollups-node/internal/logger"
 )
 
 func setup() {
@@ -46,7 +46,7 @@ func TestGraphQLService(t *testing.T) {
 }
 
 func setRustBinariesPath() {
-	rustBinPath, _ := filepath.Abs("../../../offchain/target/debug")
+	rustBinPath, _ := filepath.Abs("../../offchain/target/debug")
 	os.Setenv("PATH", os.Getenv("PATH")+":"+rustBinPath)
 }
 
