@@ -4,7 +4,7 @@ name: Assess Rust code quality
 on:
   push:
     paths:
-      - '.github/workflows/code-quality.yml'
+      - '.github/workflows/rust-code-quality.yml'
       - 'offchain/**'
 
 jobs:
