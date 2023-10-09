@@ -4,7 +4,7 @@
 package main
 
 import (
-	"github.com/cartesi/rollups-node/internal/pkg/services"
+	"github.com/cartesi/rollups-node/internal/services"
 	"github.com/spf13/cobra"
 )
 

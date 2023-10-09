@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/pkg/logger"
+	"github.com/cartesi/rollups-node/internal/logger"
 )
 
 // A service that runs in the background endlessly until the context is canceled

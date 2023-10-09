@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"syscall"
 
-	"github.com/cartesi/rollups-node/internal/pkg/logger"
+	"github.com/cartesi/rollups-node/internal/logger"
 )
 
 const (
