@@ -30,7 +30,10 @@ func (g GraphQLService) Start(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
 		fmt.Printf("%v: %v\n", g.String(), ctx.Err())
-		cmd.Process.Signal(syscall.SIGTERM)
+		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			msg := "%v: failed to send SIGTERM to %v\n"
+			fmt.Printf(msg, g.String(), binaryName)
+		}
 	}()
 
 	err := cmd.Wait()
