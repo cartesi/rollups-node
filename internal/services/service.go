@@ -1,7 +1,7 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-// Provide mechanisms to start multiple services in the background
+// Package services provides mechanisms to start multiple services in the background
 package services
 
 import (
