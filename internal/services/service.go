@@ -61,11 +61,6 @@ func (s simpleService) String() string {
 	return s.serviceName
 }
 
-var GraphQLServer Service = simpleService{
-	serviceName: "graphql-server",
-	binaryName:  "cartesi-rollups-graphql-server",
-}
-
 // The Run function serves as a very simple supervisor: it will start all the
 // services provided to it and will run until the first of them finishes. Next
 // it will try to stop the remaining services or timeout if they take too long
@@ -112,3 +107,14 @@ func Run(services []Service) {
 		logger.Warning.Println("main: exited after timeout")
 	}
 }
+
+var (
+	GraphQLServer Service = simpleService{
+		serviceName: "graphql-server",
+		binaryName:  "cartesi-rollups-graphql-server",
+	}
+	Indexer Service = simpleService{
+		serviceName: "indexer",
+		binaryName:  "cartesi-rollups-indexer",
+	}
+)
