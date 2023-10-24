@@ -7,6 +7,9 @@ package services
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"syscall"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/logger"
@@ -22,6 +25,46 @@ type Service interface {
 }
 
 const DefaultServiceTimeout = 15 * time.Second
+
+// simpleService implements the context cancelation logic of the Service interface
+type simpleService struct {
+	serviceName string
+	binaryName  string
+}
+
+func (s simpleService) Start(ctx context.Context) error {
+	cmd := exec.Command(s.binaryName)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	go func() {
+		<-ctx.Done()
+		logger.Debug.Printf("%v: %v\n", s.String(), ctx.Err())
+		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			msg := "%v: failed to send SIGTERM to %v\n"
+			logger.Error.Printf(msg, s.String(), s.binaryName)
+		}
+	}()
+
+	err := cmd.Wait()
+	if err != nil && cmd.ProcessState.ExitCode() != int(syscall.SIGTERM) {
+		return err
+	}
+	return nil
+}
+
+func (s simpleService) String() string {
+	return s.serviceName
+}
+
+var GraphQLServer Service = simpleService{
+	serviceName: "graphql-server",
+	binaryName:  "cartesi-rollups-graphql-server",
+}
 
 // The Run function serves as a very simple supervisor: it will start all the
 // services provided to it and will run until the first of them finishes. Next
