@@ -17,9 +17,9 @@ const (
 	binaryName  = "cartesi-rollups-graphql-server"
 )
 
-type GraphQLService struct{}
+type GraphQLServer struct{}
 
-func (g GraphQLService) Start(ctx context.Context) error {
+func (g GraphQLServer) Start(ctx context.Context) error {
 	cmd := exec.Command(binaryName)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
@@ -44,6 +44,6 @@ func (g GraphQLService) Start(ctx context.Context) error {
 	return nil
 }
 
-func (g GraphQLService) String() string {
+func (g GraphQLServer) String() string {
 	return serviceName
 }
