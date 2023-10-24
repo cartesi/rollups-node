@@ -6,6 +6,8 @@ updates:
     schedule:
       interval: "weekly"
     commit-message:
-      prefix: "dependabot"
+      prefix: "ci"
     pull-request-branch-name:
       separator: "/"
+    labels:
+      - "no changelog"
