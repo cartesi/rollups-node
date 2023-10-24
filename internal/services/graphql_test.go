@@ -19,11 +19,12 @@ func setup() {
 	logger.Init("warning", false)
 	setRustBinariesPath()
 }
-func TestGraphQLService(t *testing.T) {
+
+func TestSimpleService(t *testing.T) {
 
 	t.Run("it stops when the context is cancelled", func(t *testing.T) {
 		setup()
-		service := GraphQLService{}
+		service := GraphQLServer{}
 		ctx, cancel := context.WithCancel(context.Background())
 		exit := make(chan error)
 

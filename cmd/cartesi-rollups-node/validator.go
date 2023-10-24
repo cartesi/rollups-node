@@ -17,7 +17,7 @@ var validator = &cobra.Command{
 
 func runValidatorNode(cmd *cobra.Command, args []string) {
 	validatorServices := []services.Service{
-		services.GraphQLService{},
+		services.GraphQLServer,
 	}
 
 	services.Run(validatorServices)
