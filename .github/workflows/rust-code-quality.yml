@@ -4,8 +4,8 @@ name: Assess Rust code quality
 on:
   push:
     paths:
-      - '.github/workflows/rust-code-quality.yml'
-      - 'offchain/**'
+      - ".github/workflows/rust-code-quality.yml"
+      - "offchain/**"
 
 jobs:
   assess-rust-code-quality:
@@ -33,9 +33,6 @@ jobs:
       - name: Install protoc
         run: sudo apt update && sudo apt install -y protobuf-compiler libprotobuf-dev
 
-      - name: Update rust
-        run: rustup update
-
       - name: Install cargo-machete
         run: cargo install cargo-machete
         continue-on-error: true
@@ -43,8 +40,14 @@ jobs:
       - name: Analyze dependencies
         run: cargo machete .
 
+      - name: Install rustfmt
+        run: rustup component add rustfmt
+
       - name: Check code format
         run: cargo fmt --all -- --check
+
+      - name: Install clippy
+        run: rustup component add clippy
 
       - name: Run linter
         run: cargo clippy -- -A clippy::module_inception
