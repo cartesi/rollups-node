@@ -11,10 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added `cartesi-rollups-node` Go binary as a single entrypoint to execute all Cartesi Node services
 - Added `authority-claimer` service
+- Added `CHAIN_ID` environment variable to dispatcher config
 
 ### Changed
 
 - Added rollups-node version to the logs in all services
+- The dispatcher no longer sends claims, this functionality is executed by the authority-claimer
+
+### Removed
+
+- Removed `AUTHORITY` and `TXMANAGER` environment variables from dispatcher config
 
 ## [1.1.0] 2023-10-02
 

@@ -5,10 +5,6 @@ use clap::Parser;
 use eth_state_client_lib::config::{
     Error as SCError, SCConfig, SCEnvCLIConfig,
 };
-use eth_tx_manager::{
-    config::{Error as TxError, TxEnvCLIConfig, TxManagerConfig},
-    Priority,
-};
 use http_server::HttpServerConfig;
 use log::{LogConfig, LogEnvCliConfig};
 use snafu::{ResultExt, Snafu};
@@ -20,8 +16,6 @@ use types::deployment_files::{
     rollups_deployment::{RollupsDeployment, RollupsDeploymentJson},
 };
 
-use crate::auth::{AuthConfig, AuthEnvCLIConfig, AuthError};
-
 #[derive(Parser)]
 #[command(name = "rd_config")]
 #[command(about = "Configuration for dispatcher")]
@@ -30,13 +24,7 @@ pub struct DispatcherEnvCLIConfig {
     pub sc_config: SCEnvCLIConfig,
 
     #[command(flatten)]
-    pub tx_config: TxEnvCLIConfig,
-
-    #[command(flatten)]
     pub broker_config: BrokerCLIConfig,
-
-    #[command(flatten)]
-    pub auth_config: AuthEnvCLIConfig,
 
     #[command(flatten)]
     pub log_config: LogEnvCliConfig,
@@ -52,20 +40,22 @@ pub struct DispatcherEnvCLIConfig {
     /// Duration of rollups epoch in seconds, for which dispatcher will make claims.
     #[arg(long, env, default_value = "604800")]
     pub rd_epoch_duration: u64,
+
+    /// Chain ID
+    #[arg(long, env)]
+    pub chain_id: u64,
 }
 
 #[derive(Clone, Debug)]
 pub struct DispatcherConfig {
     pub sc_config: SCConfig,
-    pub tx_config: TxManagerConfig,
     pub broker_config: BrokerConfig,
-    pub auth_config: AuthConfig,
     pub log_config: LogConfig,
 
     pub dapp_deployment: DappDeployment,
     pub rollups_deployment: RollupsDeployment,
     pub epoch_duration: u64,
-    pub priority: Priority,
+    pub chain_id: u64,
 }
 
 #[derive(Debug, Snafu)]
@@ -73,17 +63,11 @@ pub enum Error {
     #[snafu(display("StateClient configuration error: {}", source))]
     StateClientError { source: SCError },
 
-    #[snafu(display("TxManager configuration error: {}", source))]
-    TxManagerError { source: TxError },
-
     #[snafu(display("Json read file error ({})", path.display()))]
     JsonReadFileError {
         path: PathBuf,
         source: std::io::Error,
     },
-
-    #[snafu(display("Auth configuration error: {}", source))]
-    AuthError { source: AuthError },
 
     #[snafu(display("Json parse error ({})", path.display()))]
     JsonParseError {
@@ -112,13 +96,6 @@ impl Config {
         let sc_config = SCConfig::initialize(dispatcher_config.sc_config)
             .context(StateClientSnafu)?;
 
-        let tx_config =
-            TxManagerConfig::initialize(dispatcher_config.tx_config)
-                .context(TxManagerSnafu)?;
-
-        let auth_config = AuthConfig::initialize(dispatcher_config.auth_config)
-            .context(AuthSnafu)?;
-
         let log_config = LogConfig::initialize(dispatcher_config.log_config);
 
         let path = dispatcher_config.rd_dapp_deployment_file;
@@ -130,22 +107,15 @@ impl Config {
 
         let broker_config = BrokerConfig::from(dispatcher_config.broker_config);
 
-        assert!(
-            sc_config.default_confirmations < tx_config.default_confirmations,
-            "`state-client confirmations` has to be less than `tx-manager confirmations,`"
-        );
-
         let dispatcher_config = DispatcherConfig {
             sc_config,
-            tx_config,
             broker_config,
-            auth_config,
             log_config,
 
             dapp_deployment,
             rollups_deployment,
             epoch_duration: dispatcher_config.rd_epoch_duration,
-            priority: Priority::Normal,
+            chain_id: dispatcher_config.chain_id,
         };
 
         Ok(Config {

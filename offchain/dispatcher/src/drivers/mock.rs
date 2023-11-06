@@ -14,64 +14,16 @@ use std::{
     ops::{Deref, DerefMut},
     sync::{Arc, Mutex},
 };
-use types::foldables::{
-    claims::{Claim, DAppClaims, History},
-    input_box::{DAppInputBox, Input, InputBox},
-};
+use types::foldables::input_box::{DAppInputBox, Input, InputBox};
 
-use crate::{
-    machine::{
-        rollups_broker::BrokerFacadeError, BrokerReceive, BrokerSend,
-        BrokerStatus, RollupStatus,
-    },
-    sender::SenderError,
+use crate::machine::{
+    rollups_broker::BrokerFacadeError, BrokerReceive, BrokerSend, BrokerStatus,
+    RollupStatus,
 };
 
 // ------------------------------------------------------------------------------------------------
 // auxiliary functions
 // ------------------------------------------------------------------------------------------------
-
-fn new_claims(n: usize) -> Vec<Claim> {
-    let mut claims = Vec::new();
-    let mut i = 0;
-    claims.resize_with(n, || {
-        let claim = Claim {
-            epoch_hash: H256::random(),
-            start_input_index: i,
-            end_input_index: i,
-            claim_timestamp: i as u64,
-        };
-        i = i + 1;
-        claim
-    });
-    claims
-}
-
-pub fn new_history() -> History {
-    History {
-        history_address: Arc::new(H160::random()),
-        dapp_claims: Arc::new(hashmap! {}),
-    }
-}
-
-pub fn update_history(
-    history: &History,
-    dapp_address: Address,
-    n: usize,
-) -> History {
-    let claims = new_claims(n)
-        .iter()
-        .map(|x| Arc::new(x.clone()))
-        .collect::<Vec<_>>();
-    let claims = Vector::from(claims);
-    let dapp_claims = history
-        .dapp_claims
-        .update(Arc::new(dapp_address), Arc::new(DAppClaims { claims }));
-    History {
-        history_address: history.history_address.clone(),
-        dapp_claims: Arc::new(dapp_claims),
-    }
-}
 
 pub fn new_block(timestamp: u32) -> Block {
     Block {
@@ -258,40 +210,5 @@ impl BrokerSend for Broker {
                 .push(SendInteraction::FinishedEpoch(inputs_sent_count));
             Ok(())
         }
-    }
-}
-
-// ------------------------------------------------------------------------------------------------
-// TxSender
-// ------------------------------------------------------------------------------------------------
-
-#[derive(Debug)]
-pub struct Sender {
-    pub sent_rollups_claims: Mutex<Vec<(Address, RollupsClaim)>>,
-}
-
-impl Sender {
-    pub fn new() -> Self {
-        Self {
-            sent_rollups_claims: Mutex::new(vec![]),
-        }
-    }
-
-    pub fn count(&self) -> usize {
-        self.sent_rollups_claims.lock().unwrap().len()
-    }
-}
-
-#[async_trait]
-impl crate::sender::Sender for Sender {
-    async fn submit_claim(
-        self,
-        dapp_address: Address,
-        rollups_claim: RollupsClaim,
-    ) -> Result<Self, SenderError> {
-        let mut mutex_guard = self.sent_rollups_claims.lock().unwrap();
-        mutex_guard.deref_mut().push((dapp_address, rollups_claim));
-        drop(mutex_guard);
-        Ok(self)
     }
 }

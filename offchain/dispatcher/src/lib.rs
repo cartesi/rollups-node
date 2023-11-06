@@ -4,14 +4,11 @@
 pub mod config;
 pub mod dispatcher;
 pub mod machine;
-pub mod sender;
 
-mod auth;
 mod drivers;
 mod error;
 mod metrics;
 mod setup;
-mod signer;
 
 use config::Config;
 use error::DispatcherError;
