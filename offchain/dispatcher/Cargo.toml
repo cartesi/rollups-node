@@ -9,7 +9,6 @@ name = "cartesi-rollups-dispatcher"
 path = "src/main.rs"
 
 [dependencies]
-contracts = { path = "../contracts" }
 http-server = { path = "../http-server" }
 log = { path = "../log" }
 rollups-events = { path = "../rollups-events" }
@@ -21,13 +20,8 @@ backoff = { workspace = true, features = ["tokio"] }
 clap = { workspace = true, features = ["derive", "env"] }
 eth-state-client-lib.workspace = true
 eth-state-fold-types = { workspace = true, features = ["ethers"] }
-eth-tx-manager.workspace = true
-ethers-signers = { workspace = true, features = ["aws"] }
 futures.workspace = true
 hyper.workspace = true
-rusoto_core.workspace = true
-rusoto_kms.workspace = true
-rusoto_sts.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 snafu.workspace = true
