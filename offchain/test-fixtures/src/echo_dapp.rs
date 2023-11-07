@@ -32,7 +32,7 @@ async fn handle_advance(
         .as_str()
         .ok_or("Missing payload")?;
     tracing::info!("Adding notice");
-    let notice = object! {"payload" => payload.clone()};
+    let notice = object! {"payload" => payload};
     let req = hyper::Request::builder()
         .method(hyper::Method::POST)
         .header(hyper::header::CONTENT_TYPE, "application/json")
@@ -45,7 +45,7 @@ async fn handle_advance(
         .as_str()
         .ok_or("Missing msg_sender")?;
     tracing::info!("Adding voucher");
-    let voucher = object! { "address" => rollup_address.clone(), "payload" => payload.clone()};
+    let voucher = object! { "address" => rollup_address, "payload" => payload};
     let req = hyper::Request::builder()
         .method(hyper::Method::POST)
         .header(hyper::header::CONTENT_TYPE, "application/json")
@@ -67,7 +67,7 @@ async fn handle_inspect(
         .as_str()
         .ok_or("Missing payload")?;
     tracing::info!("Adding report");
-    let report = object! {"payload" => payload.clone()};
+    let report = object! {"payload" => payload};
     let req = hyper::Request::builder()
         .method(hyper::Method::POST)
         .header(hyper::header::CONTENT_TYPE, "application/json")
@@ -90,7 +90,7 @@ impl EchoDAppFixture {
         loop {
             tracing::info!("Sending finish");
 
-            let response = object! {"status" => status.clone()};
+            let response = object! {"status" => status};
             let request = hyper::Request::builder()
                 .method(hyper::Method::POST)
                 .header(hyper::header::CONTENT_TYPE, "application/json")
