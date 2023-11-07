@@ -88,7 +88,7 @@ impl DuplicateChecker for DefaultDuplicateChecker {
         rollups_claim: &RollupsClaim,
     ) -> Result<bool, Self::Error> {
         let proof_context =
-            U256([0, 0, 0, rollups_claim.epoch_index]).encode().into();
+            U256([rollups_claim.epoch_index, 0, 0, 0]).encode().into();
 
         match self
             .authority
