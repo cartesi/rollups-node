@@ -435,7 +435,9 @@ mod broker_facade_tests {
     }
 
     #[tokio::test]
-    #[should_panic(expected = "left: `1`,\n right: `6`")]
+    #[should_panic(
+        expected = "assertion `left == right` failed\n  left: 1\n right: 6"
+    )]
     async fn enqueue_input_assertion_error_1() {
         let docker = Cli::default();
         let (_fixture, broker) = setup(&docker).await;
@@ -443,7 +445,9 @@ mod broker_facade_tests {
     }
 
     #[tokio::test]
-    #[should_panic(expected = "left: `5`,\n right: `6`")]
+    #[should_panic(
+        expected = "assertion `left == right` failed\n  left: 5\n right: 6"
+    )]
     async fn enqueue_input_assertion_error_2() {
         let docker = Cli::default();
         let (_fixture, broker) = setup(&docker).await;
@@ -485,7 +489,9 @@ mod broker_facade_tests {
     }
 
     #[tokio::test]
-    #[should_panic(expected = "left: `0`,\n right: `1`")]
+    #[should_panic(
+        expected = "assertion `left == right` failed\n  left: 0\n right: 1"
+    )]
     async fn finish_epoch_assertion_error() {
         let docker = Cli::default();
         let (_fixture, broker) = setup(&docker).await;
