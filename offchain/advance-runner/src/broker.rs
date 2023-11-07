@@ -107,7 +107,7 @@ impl BrokerFacade {
             .client
             .consume_blocking(&self.inputs_stream, last_id)
             .await;
-        return result.context(BrokerInternalSnafu);
+        result.context(BrokerInternalSnafu)
     }
 
     /// Produce the rollups claim if it isn't in the stream yet

@@ -102,7 +102,7 @@ impl DuplicateChecker for DefaultDuplicateChecker {
             Err(e) => {
                 // If there's an InvalidClaimIndex error, we're asking for an index
                 // bigger than the current one, which means it's a new claim
-                if String::from(e.to_string()).contains("InvalidClaimIndex()") {
+                if e.to_string().contains("InvalidClaimIndex()") {
                     Ok(false)
                 } else {
                     info!("{:?}", e);
