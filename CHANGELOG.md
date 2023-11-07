@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added rollups-node version to the logs in all services
 - The dispatcher no longer sends claims, this functionality is executed by the authority-claimer
 - Bumped Rollups Contracts to 1.1.0
+- Bumped Rust Version to 1.73.0
 
 ### Removed
 
