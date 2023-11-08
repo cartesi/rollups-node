@@ -10,20 +10,17 @@ use log::{LogConfig, LogEnvCliConfig};
 use rollups_events::{BrokerCLIConfig, BrokerConfig};
 use rusoto_core::Region;
 use snafu::ResultExt;
-use std::{fs, path::PathBuf, str::FromStr};
+use std::{fs, str::FromStr};
+use types::blockchain_config::BlockchainCLIConfig;
 
 use crate::auth::{AuthConfig, AuthEnvCLIConfig};
 use crate::config::{
     error::{
-        AuthSnafu, AuthorityClaimerConfigError, InvalidRegionSnafu,
-        MnemonicFileSnafu, TxManagerSnafu, TxSigningConfigError,
-        TxSigningSnafu,
+        AuthSnafu, AuthorityClaimerConfigError, BlockchainSnafu,
+        InvalidRegionSnafu, MnemonicFileSnafu, TxManagerSnafu,
+        TxSigningConfigError, TxSigningSnafu,
     },
-    json::{
-        read_json_file, DappDeployment, RollupsDeployment,
-        RollupsDeploymentJson,
-    },
-    AuthorityClaimerConfig, TxSigningConfig,
+    AuthorityClaimerConfig, BlockchainConfig, TxSigningConfig,
 };
 
 // ------------------------------------------------------------------------------------------------
@@ -35,13 +32,13 @@ use crate::config::{
 #[command(about = "Configuration for authority-claimer")]
 pub(crate) struct AuthorityClaimerCLI {
     #[command(flatten)]
-    tx_manager_config: TxManagerCLIConfig,
+    pub tx_manager_config: TxManagerCLIConfig,
 
     #[command(flatten)]
-    tx_signing_config: TxSigningCLIConfig,
+    pub tx_signing_config: TxSigningCLIConfig,
 
     #[command(flatten)]
-    broker_config: BrokerCLIConfig,
+    pub broker_config: BrokerCLIConfig,
 
     #[command(flatten)]
     pub log_config: LogEnvCliConfig,
@@ -49,13 +46,8 @@ pub(crate) struct AuthorityClaimerCLI {
     #[command(flatten)]
     pub auth_config: AuthEnvCLIConfig,
 
-    /// Path to a file with the deployment json of the dapp
-    #[arg(long, env, default_value = "./dapp_deployment.json")]
-    dapp_deployment_file: PathBuf,
-
-    /// Path to file with deployment json of rollups
-    #[arg(long, env, default_value = "./rollups_deployment.json")]
-    pub rollups_deployment_file: PathBuf,
+    #[command(flatten)]
+    pub blockchain_config: BlockchainCLIConfig,
 }
 
 impl TryFrom<AuthorityClaimerCLI> for AuthorityClaimerConfig {
@@ -72,38 +64,29 @@ impl TryFrom<AuthorityClaimerCLI> for AuthorityClaimerConfig {
 
         let broker_config = BrokerConfig::from(cli_config.broker_config);
 
+        let log_config = LogConfig::initialize(cli_config.log_config);
+
         let auth_config = AuthConfig::initialize(cli_config.auth_config)
             .context(AuthSnafu)?;
 
-        let dapp_deployment =
-            read_json_file::<DappDeployment>(cli_config.dapp_deployment_file)?;
-        let dapp_address = dapp_deployment.dapp_address;
-        let dapp_deploy_block_hash = dapp_deployment.dapp_deploy_block_hash;
-
-        let log_config = LogConfig::initialize(cli_config.log_config);
-        let rollups_deployment = read_json_file::<RollupsDeploymentJson>(
-            cli_config.rollups_deployment_file,
-        )
-        .map(RollupsDeployment::from)?;
-
-        let authority_address = rollups_deployment.authority_address.address;
+        let blockchain_config =
+            BlockchainConfig::try_from(cli_config.blockchain_config)
+                .context(BlockchainSnafu)?;
 
         Ok(AuthorityClaimerConfig {
             tx_manager_config,
             tx_signing_config,
             tx_manager_priority: Priority::Normal,
-            auth_config,
             broker_config,
             log_config,
-            authority_address,
-            dapp_address,
-            dapp_deploy_block_hash,
+            auth_config,
+            blockchain_config,
         })
     }
 }
 
 // ------------------------------------------------------------------------------------------------
-// TxSigningConfig
+// TxSigningCLIConfig
 // ------------------------------------------------------------------------------------------------
 
 #[derive(Debug, Parser)]
@@ -152,7 +135,7 @@ impl TryFrom<TxSigningCLIConfig> for TxSigningConfig {
         } else {
             match (cli.tx_signing_aws_kms_key_id, cli.tx_signing_aws_kms_region)
             {
-                (None, _) => Err(TxSigningConfigError::MissingConfiguration),
+                (None, _) => Err(TxSigningConfigError::AuthConfigMissing),
                 (Some(_), None) => Err(TxSigningConfigError::MissingRegion),
                 (Some(key_id), Some(region)) => {
                     let region = Region::from_str(&region)

@@ -487,8 +487,6 @@ dependencies = [
  "rusoto_core",
  "rusoto_kms",
  "rusoto_sts",
- "serde",
- "serde_json",
  "serial_test",
  "snafu",
  "test-fixtures",
@@ -1532,8 +1530,6 @@ dependencies = [
  "rand 0.8.5",
  "redis",
  "rollups-events",
- "serde",
- "serde_json",
  "serial_test",
  "snafu",
  "test-fixtures",
@@ -1544,7 +1540,6 @@ dependencies = [
  "tracing",
  "tracing-test",
  "types",
- "url",
 ]
 
 [[package]]
@@ -5648,13 +5643,16 @@ version = "1.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "clap",
  "contracts",
  "eth-state-fold",
  "eth-state-fold-types",
  "futures",
  "im",
+ "rollups-events",
  "serde",
  "serde_json",
+ "snafu",
 ]
 
 [[package]]

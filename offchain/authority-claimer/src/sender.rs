@@ -196,10 +196,12 @@ impl DefaultTransactionSender {
         let authority = {
             let (provider, _mock) = Provider::mocked();
             let provider = Arc::new(provider);
-            Authority::new(
-                H160(config.authority_address.inner().to_owned()),
-                provider,
-            )
+            let address: H160 = config
+                .blockchain_config
+                .authority_address
+                .into_inner()
+                .into();
+            Authority::new(address, provider)
         };
 
         Ok(Self {

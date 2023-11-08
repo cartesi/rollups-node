@@ -4,7 +4,7 @@
 use eth_tx_manager::config::Error as TxManagerConfigError;
 use rusoto_core::region::ParseRegionError;
 use snafu::Snafu;
-use std::path::PathBuf;
+use types::blockchain_config::BlockchainConfigError;
 
 use crate::auth::AuthError;
 
@@ -17,27 +17,18 @@ pub enum AuthorityClaimerConfigError {
     #[snafu(display("TxSigning configuration error"))]
     TxSigningError { source: TxSigningConfigError },
 
-    #[snafu(display("Auth configuration error: {}", source))]
+    #[snafu(display("Auth configuration error"))]
     AuthError { source: AuthError },
 
-    #[snafu(display("Read file error ({})", path.display()))]
-    ReadFileError {
-        path: PathBuf,
-        source: std::io::Error,
-    },
-
-    #[snafu(display("Json parse error ({})", path.display()))]
-    JsonParseError {
-        path: PathBuf,
-        source: serde_json::Error,
-    },
+    #[snafu(display("Blockchain configuration error"))]
+    BlockchainError { source: BlockchainConfigError },
 }
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub(crate)))]
 pub enum TxSigningConfigError {
     #[snafu(display("Missing auth configuration"))]
-    MissingConfiguration,
+    AuthConfigMissing,
 
     #[snafu(display("Could not read mnemonic file at path `{}`", path,))]
     MnemonicFileError {

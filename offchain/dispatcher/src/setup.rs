@@ -5,7 +5,7 @@ use eth_state_client_lib::{
     config::SCConfig, error::StateServerError, BlockServer,
     GrpcStateFoldClient, StateServer,
 };
-use eth_state_fold_types::BlockStreamItem;
+use eth_state_fold_types::{ethereum_types::H256, BlockStreamItem};
 use rollups_events::DAppMetadata;
 use snafu::ResultExt;
 use tokio_stream::{Stream, StreamExt};
@@ -80,8 +80,15 @@ pub async fn create_context(
     dapp_metadata: DAppMetadata,
     metrics: DispatcherMetrics,
 ) -> Result<Context, DispatcherError> {
+    let dapp_deploy_block_hash = H256(
+        config
+            .blockchain_config
+            .dapp_deploy_block_hash
+            .clone()
+            .into_inner(),
+    );
     let genesis_timestamp: u64 = block_server
-        .query_block(config.dapp_deployment.deploy_block_hash)
+        .query_block(dapp_deploy_block_hash)
         .await
         .context(StateServerSnafu)?
         .timestamp

@@ -3,7 +3,6 @@
 
 mod cli;
 mod error;
-mod json;
 
 pub use error::{AuthorityClaimerConfigError, TxSigningConfigError};
 
@@ -11,8 +10,9 @@ use cli::AuthorityClaimerCLI;
 use eth_tx_manager::{config::TxManagerConfig, Priority};
 use http_server::HttpServerConfig;
 use log::LogConfig;
-use rollups_events::{Address, BrokerConfig, Hash};
+use rollups_events::BrokerConfig;
 use rusoto_core::Region;
+use types::blockchain_config::BlockchainConfig;
 
 use crate::auth::AuthConfig;
 
@@ -30,9 +30,7 @@ pub struct AuthorityClaimerConfig {
     pub auth_config: AuthConfig,
     pub broker_config: BrokerConfig,
     pub log_config: LogConfig,
-    pub authority_address: Address,
-    pub dapp_address: Address,
-    pub dapp_deploy_block_hash: Hash,
+    pub blockchain_config: BlockchainConfig,
 }
 
 #[derive(Debug, Clone)]
