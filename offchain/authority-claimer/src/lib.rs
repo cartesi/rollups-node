@@ -10,9 +10,6 @@ pub mod metrics;
 pub mod sender;
 pub mod signer;
 
-#[cfg(test)]
-mod broker_mock;
-
 use config::Config;
 use rollups_events::DAppMetadata;
 use snafu::Error;
