@@ -8,13 +8,11 @@ use eth_state_client_lib::config::{
 use http_server::HttpServerConfig;
 use log::{LogConfig, LogEnvCliConfig};
 use snafu::{ResultExt, Snafu};
-use std::{fs::File, io::BufReader, path::PathBuf};
+use types::blockchain_config::{
+    BlockchainCLIConfig, BlockchainConfig, BlockchainConfigError,
+};
 
 use rollups_events::{BrokerCLIConfig, BrokerConfig};
-use types::deployment_files::{
-    dapp_deployment::DappDeployment,
-    rollups_deployment::{RollupsDeployment, RollupsDeploymentJson},
-};
 
 #[derive(Parser)]
 #[command(name = "rd_config")]
@@ -29,13 +27,8 @@ pub struct DispatcherEnvCLIConfig {
     #[command(flatten)]
     pub log_config: LogEnvCliConfig,
 
-    /// Path to file with deployment json of dapp
-    #[arg(long, env, default_value = "./dapp_deployment.json")]
-    pub rd_dapp_deployment_file: PathBuf,
-
-    /// Path to file with deployment json of rollups
-    #[arg(long, env, default_value = "./rollups_deployment.json")]
-    pub rd_rollups_deployment_file: PathBuf,
+    #[command(flatten)]
+    pub blockchain_config: BlockchainCLIConfig,
 
     /// Duration of rollups epoch in seconds, for which dispatcher will make claims.
     #[arg(long, env, default_value = "604800")]
@@ -51,35 +44,19 @@ pub struct DispatcherConfig {
     pub sc_config: SCConfig,
     pub broker_config: BrokerConfig,
     pub log_config: LogConfig,
+    pub blockchain_config: BlockchainConfig,
 
-    pub dapp_deployment: DappDeployment,
-    pub rollups_deployment: RollupsDeployment,
     pub epoch_duration: u64,
     pub chain_id: u64,
 }
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(display("StateClient configuration error: {}", source))]
+    #[snafu(display("StateClient configuration error"))]
     StateClientError { source: SCError },
 
-    #[snafu(display("Json read file error ({})", path.display()))]
-    JsonReadFileError {
-        path: PathBuf,
-        source: std::io::Error,
-    },
-
-    #[snafu(display("Json parse error ({})", path.display()))]
-    JsonParseError {
-        path: PathBuf,
-        source: serde_json::Error,
-    },
-
-    #[snafu(display("Rollups json read file error"))]
-    RollupsJsonReadFileError { source: std::io::Error },
-
-    #[snafu(display("Rollups json parse error"))]
-    RollupsJsonParseError { source: serde_json::Error },
+    #[snafu(display("Blockchain configuration error"))]
+    BlockchainError { source: BlockchainConfigError },
 }
 
 #[derive(Debug)]
@@ -98,12 +75,9 @@ impl Config {
 
         let log_config = LogConfig::initialize(dispatcher_config.log_config);
 
-        let path = dispatcher_config.rd_dapp_deployment_file;
-        let dapp_deployment: DappDeployment = read_json(path)?;
-
-        let path = dispatcher_config.rd_rollups_deployment_file;
-        let rollups_deployment = read_json::<RollupsDeploymentJson>(path)
-            .map(RollupsDeployment::from)?;
+        let blockchain_config =
+            BlockchainConfig::try_from(dispatcher_config.blockchain_config)
+                .context(BlockchainSnafu)?;
 
         let broker_config = BrokerConfig::from(dispatcher_config.broker_config);
 
@@ -111,9 +85,7 @@ impl Config {
             sc_config,
             broker_config,
             log_config,
-
-            dapp_deployment,
-            rollups_deployment,
+            blockchain_config,
             epoch_duration: dispatcher_config.rd_epoch_duration,
             chain_id: dispatcher_config.chain_id,
         };
@@ -123,14 +95,4 @@ impl Config {
             http_server_config,
         })
     }
-}
-
-fn read_json<T>(path: PathBuf) -> Result<T, Error>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let file =
-        File::open(&path).context(JsonReadFileSnafu { path: path.clone() })?;
-    let reader = BufReader::new(file);
-    serde_json::from_reader(reader).context(JsonParseSnafu { path })
 }

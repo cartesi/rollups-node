@@ -3,7 +3,7 @@
 
 use eth_state_client_lib::StateServer;
 use eth_state_fold_types::{Block, BlockStreamItem};
-use rollups_events::{Address, DAppMetadata};
+use rollups_events::DAppMetadata;
 use tokio_stream::StreamExt;
 use tracing::{error, instrument, trace, warn};
 use types::foldables::authority::rollups::{RollupsInitialState, RollupsState};
@@ -28,7 +28,7 @@ pub async fn start(
 
     let dapp_metadata = DAppMetadata {
         chain_id: config.chain_id,
-        dapp_address: Address::new(config.dapp_deployment.dapp_address.into()),
+        dapp_address: config.blockchain_config.dapp_address.clone(),
     };
 
     trace!("Creating state-server connection");
@@ -47,19 +47,40 @@ pub async fn start(
             .await
             .context(BrokerSnafu)?;
 
-    trace!("Creating context");
-    let mut context =
-        create_context(&config, &state_server, &broker, dapp_metadata, metrics)
-            .await?;
-
     trace!("Creating machine driver and blockchain driver");
-    let mut machine_driver =
-        MachineDriver::new(config.dapp_deployment.dapp_address);
+    let mut machine_driver = MachineDriver::new(
+        config
+            .blockchain_config
+            .dapp_address
+            .clone()
+            .into_inner()
+            .into(),
+    );
 
     let initial_state = RollupsInitialState {
-        history_address: config.rollups_deployment.history_address,
-        input_box_address: config.rollups_deployment.input_box_address,
+        history_address: config
+            .blockchain_config
+            .history_address
+            .clone()
+            .into_inner()
+            .into(),
+        input_box_address: config
+            .blockchain_config
+            .input_box_address
+            .clone()
+            .into_inner()
+            .into(),
     };
+
+    trace!("Creating context");
+    let mut context = create_context(
+        &(config.clone()),
+        &state_server,
+        &broker,
+        dapp_metadata,
+        metrics,
+    )
+    .await?;
 
     trace!("Starting dispatcher...");
     loop {

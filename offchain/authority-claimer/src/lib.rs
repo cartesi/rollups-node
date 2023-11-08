@@ -32,7 +32,7 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let config = config.authority_claimer_config;
     let dapp_metadata = DAppMetadata {
         chain_id: config.tx_manager_config.chain_id,
-        dapp_address: config.dapp_address.clone(),
+        dapp_address: config.blockchain_config.dapp_address.clone(),
     };
 
     // Creating the broker listener.
@@ -47,7 +47,7 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
     trace!("Creating the duplicate checker");
     let duplicate_checker = DefaultDuplicateChecker::new(
         config.tx_manager_config.provider_http_endpoint.clone(),
-        config.authority_address.clone(),
+        config.blockchain_config.authority_address.clone(),
     )?;
 
     // Creating the transaction sender.
@@ -58,7 +58,7 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
 
     // Creating the claimer loop.
     let claimer = DefaultClaimer::new(
-        config.dapp_address.clone(),
+        config.blockchain_config.dapp_address.clone(),
         broker_listener,
         duplicate_checker,
         transaction_sender,

@@ -25,8 +25,6 @@ eth-tx-manager.workspace = true
 rusoto_core.workspace = true
 rusoto_kms.workspace = true
 rusoto_sts.workspace = true
-serde.workspace = true
-serde_json.workspace = true
 snafu.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tracing.workspace = true
