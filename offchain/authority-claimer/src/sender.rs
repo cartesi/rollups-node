@@ -181,7 +181,7 @@ impl DefaultTransactionSender {
         let chain: Chain = (&config.tx_manager_config).into();
 
         let conditional_signer =
-            ConditionalSigner::new(chain.id, &config.auth_config)
+            ConditionalSigner::new(chain.id, &config.tx_signing_config)
                 .await
                 .context(SignerSnafu)?;
 

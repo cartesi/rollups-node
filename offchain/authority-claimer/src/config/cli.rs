@@ -13,12 +13,11 @@ use snafu::ResultExt;
 use std::{fs, str::FromStr};
 use types::blockchain_config::BlockchainCLIConfig;
 
-use crate::auth::{AuthConfig, AuthEnvCLIConfig};
 use crate::config::{
     error::{
-        AuthSnafu, AuthorityClaimerConfigError, BlockchainSnafu,
-        InvalidRegionSnafu, MnemonicFileSnafu, TxManagerSnafu,
-        TxSigningConfigError, TxSigningSnafu,
+        AuthorityClaimerConfigError, BlockchainSnafu, InvalidRegionSnafu,
+        MnemonicFileSnafu, TxManagerSnafu, TxSigningConfigError,
+        TxSigningSnafu,
     },
     AuthorityClaimerConfig, BlockchainConfig, TxSigningConfig,
 };
@@ -44,9 +43,6 @@ pub(crate) struct AuthorityClaimerCLI {
     pub log_config: LogEnvCliConfig,
 
     #[command(flatten)]
-    pub auth_config: AuthEnvCLIConfig,
-
-    #[command(flatten)]
     pub blockchain_config: BlockchainCLIConfig,
 }
 
@@ -66,9 +62,6 @@ impl TryFrom<AuthorityClaimerCLI> for AuthorityClaimerConfig {
 
         let log_config = LogConfig::initialize(cli_config.log_config);
 
-        let auth_config = AuthConfig::initialize(cli_config.auth_config)
-            .context(AuthSnafu)?;
-
         let blockchain_config =
             BlockchainConfig::try_from(cli_config.blockchain_config)
                 .context(BlockchainSnafu)?;
@@ -79,7 +72,6 @@ impl TryFrom<AuthorityClaimerCLI> for AuthorityClaimerConfig {
             tx_manager_priority: Priority::Normal,
             broker_config,
             log_config,
-            auth_config,
             blockchain_config,
         })
     }
