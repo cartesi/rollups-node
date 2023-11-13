@@ -14,8 +14,6 @@ use rollups_events::BrokerConfig;
 use rusoto_core::Region;
 use types::blockchain_config::BlockchainConfig;
 
-use crate::auth::AuthConfig;
-
 #[derive(Debug, Clone)]
 pub struct Config {
     pub authority_claimer_config: AuthorityClaimerConfig,
@@ -27,7 +25,6 @@ pub struct AuthorityClaimerConfig {
     pub tx_manager_config: TxManagerConfig,
     pub tx_signing_config: TxSigningConfig,
     pub tx_manager_priority: Priority,
-    pub auth_config: AuthConfig,
     pub broker_config: BrokerConfig,
     pub log_config: LogConfig,
     pub blockchain_config: BlockchainConfig,

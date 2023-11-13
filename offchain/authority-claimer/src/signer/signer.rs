@@ -14,7 +14,7 @@ use ethers::{
 };
 use snafu::{ResultExt, Snafu};
 
-use crate::{auth::AuthConfig, signer::aws_signer::AwsSigner};
+use crate::{config::TxSigningConfig, signer::aws_signer::AwsSigner};
 
 /// The `ConditionalSigner` is implementing conditional dispatch (instead of
 /// dynamic dispatch) by hand for objects that implement the `Sender` trait.
@@ -40,10 +40,10 @@ pub enum ConditionalSignerError {
 impl ConditionalSigner {
     pub async fn new(
         chain_id: u64,
-        auth_config: &AuthConfig,
+        tx_signing_config: &TxSigningConfig,
     ) -> Result<Self, ConditionalSignerError> {
-        match auth_config.clone() {
-            AuthConfig::Mnemonic {
+        match tx_signing_config.clone() {
+            TxSigningConfig::Mnemonic {
                 mnemonic,
                 account_index,
             } => {
@@ -58,7 +58,7 @@ impl ConditionalSigner {
                     .with_chain_id(chain_id);
                 Ok(ConditionalSigner::LocalWallet(wallet))
             }
-            AuthConfig::Aws { key_id, region } => {
+            TxSigningConfig::Aws { key_id, region } => {
                 AwsSigner::new(key_id, chain_id, region)
                     .await
                     .map(ConditionalSigner::AwsSigner)
@@ -154,7 +154,7 @@ mod tests {
     };
     use ethers_signers::Signer;
 
-    use crate::{auth::AuthConfig, signer::ConditionalSigner};
+    use crate::{config::TxSigningConfig, signer::ConditionalSigner};
 
     // --------------------------------------------------------------------------------------------
     // new
@@ -190,11 +190,11 @@ mod tests {
         "indoor dish desk flag debris potato excuse depart ticket judge file exit";
 
     async fn local_wallet_conditional_signer() -> ConditionalSigner {
-        let auth_config = AuthConfig::Mnemonic {
+        let tx_signing_config = TxSigningConfig::Mnemonic {
             mnemonic: MNEMONIC.to_string(),
             account_index: Some(1),
         };
-        ConditionalSigner::new(CHAIN_ID, &auth_config)
+        ConditionalSigner::new(CHAIN_ID, &tx_signing_config)
             .await
             .unwrap()
     }

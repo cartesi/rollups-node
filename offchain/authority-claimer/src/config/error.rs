@@ -6,8 +6,6 @@ use rusoto_core::region::ParseRegionError;
 use snafu::Snafu;
 use types::blockchain_config::BlockchainConfigError;
 
-use crate::auth::AuthError;
-
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub(crate)))]
 pub enum AuthorityClaimerConfigError {
@@ -16,9 +14,6 @@ pub enum AuthorityClaimerConfigError {
 
     #[snafu(display("TxSigning configuration error"))]
     TxSigningError { source: TxSigningConfigError },
-
-    #[snafu(display("Auth configuration error"))]
-    AuthError { source: AuthError },
 
     #[snafu(display("Blockchain configuration error"))]
     BlockchainError { source: BlockchainConfigError },
