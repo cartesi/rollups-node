@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `cartesi-rollups-cli` binary to help develop and debug the Cartesi Rollups node
+
+## [1.2.0]
+
+### Added
+
 - Added `DAPP_ADDRESS`, `DAPP_DEPLOY_BLOCK_HASH`, `HISTORY_ADDRESS`, `AUTHORITY_ADDRESS`, and
   `INPUT_BOX_ADDRESS` env vars to the dispatcher and the authority claimer.
   These are optional and will overwrite the values from the dapp and rollups deployment files.
