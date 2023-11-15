@@ -1,5 +1,6 @@
-.vscode
-.env
-.DS_Store
-build/deployments
 **/.idea/
+.DS_Store
+.env
+.vscode
+build/deployments
+build/fake-service
