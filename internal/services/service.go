@@ -1,12 +1,12 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-// Package services provides mechanisms to start multiple services in the background
+// Package services provides mechanisms to start multiple services in the
+// background
 package services
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"syscall"
@@ -15,24 +15,16 @@ import (
 	"github.com/cartesi/rollups-node/internal/logger"
 )
 
-// A service that runs in the background endlessly until the context is canceled
-type Service interface {
-	fmt.Stringer
-
-	// Start a service that will run until completion or until the context is
-	// canceled
-	Start(ctx context.Context) error
-}
-
 const DefaultServiceTimeout = 15 * time.Second
 
-// simpleService implements the context cancelation logic of the Service interface
-type simpleService struct {
-	serviceName string
-	binaryName  string
+type Service struct {
+	name       string
+	binaryName string
 }
 
-func (s simpleService) Start(ctx context.Context) error {
+// Start will execute a binary and wait for its completion or until the context
+// is canceled
+func (s Service) Start(ctx context.Context) error {
 	cmd := exec.Command(s.binaryName)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
@@ -46,7 +38,7 @@ func (s simpleService) Start(ctx context.Context) error {
 		logger.Debug.Printf("%v: %v\n", s.String(), ctx.Err())
 		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
 			msg := "%v: failed to send SIGTERM to %v\n"
-			logger.Error.Printf(msg, s.String(), s.binaryName)
+			logger.Error.Printf(msg, s.String(), s.name)
 		}
 	}()
 
@@ -57,8 +49,8 @@ func (s simpleService) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s simpleService) String() string {
-	return s.serviceName
+func (s Service) String() string {
+	return s.name
 }
 
 // The Run function serves as a very simple supervisor: it will start all the
@@ -109,12 +101,12 @@ func Run(services []Service) {
 }
 
 var (
-	GraphQLServer Service = simpleService{
-		serviceName: "graphql-server",
-		binaryName:  "cartesi-rollups-graphql-server",
+	GraphQLServer Service = Service{
+		name:       "graphql-server",
+		binaryName: "cartesi-rollups-graphql-server",
 	}
-	Indexer Service = simpleService{
-		serviceName: "indexer",
-		binaryName:  "cartesi-rollups-indexer",
+	Indexer Service = Service{
+		name:       "indexer",
+		binaryName: "cartesi-rollups-indexer",
 	}
 )

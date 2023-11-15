@@ -20,13 +20,13 @@ func setup() {
 	setRustBinariesPath()
 }
 
-func TestSimpleService(t *testing.T) {
+func TestService(t *testing.T) {
 
 	t.Run("it stops when the context is cancelled", func(t *testing.T) {
 		setup()
-		service := simpleService{
-			serviceName: "graphql-server",
-			binaryName:  "cartesi-rollups-graphql-server",
+		service := Service{
+			name:       "graphql-server",
+			binaryName: "cartesi-rollups-graphql-server",
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		exit := make(chan error)
