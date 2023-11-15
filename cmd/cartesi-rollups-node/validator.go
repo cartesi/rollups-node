@@ -17,8 +17,13 @@ var validator = &cobra.Command{
 
 func runValidatorNode(cmd *cobra.Command, args []string) {
 	validatorServices := []services.Service{
+		services.StateServer, // must be initialized before Dispatcher
+		services.AdvanceRunner,
+		services.AuthorityClaimer,
 		services.GraphQLServer,
 		services.Indexer,
+		services.InspectServer,
+		services.Dispatcher,
 	}
 
 	services.Run(validatorServices)

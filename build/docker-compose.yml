@@ -2,7 +2,8 @@ version: "3.9"
 
 name: rollups-node
 services:
-  rollups-node:
+  node:
+    image: "cartesi/rollups-node:devel"
     build:
       context: ..
       dockerfile: build/Dockerfile
@@ -11,6 +12,7 @@ services:
     entrypoint: ["cartesi-rollups-node", "validator"]
     ports:
       - "4000:4000"
+      - "5005:5005"
     depends_on:
       hardhat:
         condition: service_healthy
@@ -28,6 +30,30 @@ services:
       RUST_LOG: info
       CARTESI_LOG_LEVEL: info
       POSTGRES_ENDPOINT: postgres://postgres:password@database:5432/postgres
+      CHAIN_ID: 31337 # dispacher + indexer
+
+      #Advance Runner
+      SERVER_MANAGER_ENDPOINT: http://server_manager:5001
+      PROVIDER_HTTP_ENDPOINT: http://hardhat:8545
+      SESSION_ID: default_rollups_id
+      SNAPSHOT_DIR: /var/opt/cartesi/machine-snapshots
+      SNAPSHOT_LATEST: /var/opt/cartesi/machine-snapshots/latest
+
+      #Authority Claimer
+      AUTHORITY_CLAIMER_HTTP_SERVER_PORT: 8085
+      TX_PROVIDER_HTTP_ENDPOINT: http://hardhat:8545
+      TX_CHAIN_ID: 31337
+      TX_CHAIN_IS_LEGACY: ${TX_LEGACY:-false}
+      TX_DEFAULT_CONFIRMATIONS: 2
+      TX_SIGNING_MNEMONIC: "test test test test test test test test test test test junk"
+
+      #Dispatcher
+      DISPATCHER_HTTP_SERVER_PORT: 8081
+      DAPP_DEPLOYMENT_FILE: /deployments/localhost/dapp.json
+      ROLLUPS_DEPLOYMENT_FILE: /opt/cartesi/share/deployments/localhost.json
+      RD_EPOCH_DURATION: 86400
+      SC_GRPC_ENDPOINT: http://0.0.0.0:50051
+      SC_DEFAULT_CONFIRMATIONS: 1
 
       #GraphQL Server
       GRAPHQL_HEALTHCHECK_PORT: 8082
@@ -38,7 +64,19 @@ services:
       INDEXER_HEALTHCHECK_PORT: 8083
       DAPP_CONTRACT_ADDRESS_FILE: /deployments/localhost/dapp.json
       REDIS_ENDPOINT: redis://redis:6379
-      CHAIN_ID: 31337
+
+      #Inspect Server
+      INSPECT_SERVER_HEALTHCHECK_PORT: 8084
+      INSPECT_SERVER_ADDRESS: 0.0.0.0:5005
+      SERVER_MANAGER_ADDRESS: server_manager:5001
+
+      #State Server
+      SS_SERVER_ADDRESS: 0.0.0.0:50051
+      SF_GENESIS_BLOCK: 0x1
+      SF_SAFETY_MARGIN: 1
+      BH_HTTP_ENDPOINT: http://hardhat:8545
+      BH_WS_ENDPOINT: ws://hardhat:8545
+      BH_BLOCK_TIMEOUT: 8
 
     volumes:
       - machine:/var/opt/cartesi/machine-snapshots
