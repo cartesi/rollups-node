@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/suite"
@@ -27,6 +28,7 @@ type EthUtilSuite struct {
 	devNet testcontainers.Container
 	client *ethclient.Client
 	signer Signer
+	book   *addresses.Book
 }
 
 func (s *EthUtilSuite) SetupTest() {
@@ -44,6 +46,8 @@ func (s *EthUtilSuite) SetupTest() {
 
 	s.signer, err = NewMnemonicSigner(s.ctx, s.client, FoundryMnemonic, 0)
 	s.Require().Nil(err)
+
+	s.book = addresses.GetTestBook()
 }
 
 func (s *EthUtilSuite) TearDownTest() {
@@ -53,11 +57,10 @@ func (s *EthUtilSuite) TearDownTest() {
 }
 
 func (s *EthUtilSuite) TestAddInput() {
-	dappAddress := common.HexToAddress("0xfafafafafafafafafafafafafafafafafafafafa")
 	sender := common.HexToAddress("f39fd6e51aad88f6f4ce6ab8827279cfffb92266")
 	payload := common.Hex2Bytes("deadbeef")
 
-	inputIndex, err := AddInput(s.ctx, s.client, s.signer, dappAddress, payload)
+	inputIndex, err := AddInput(s.ctx, s.client, s.book, s.signer, payload)
 	if !s.Nil(err) {
 		s.logDevnetOutput()
 		s.T().FailNow()
@@ -65,7 +68,7 @@ func (s *EthUtilSuite) TestAddInput() {
 
 	s.Require().Equal(0, inputIndex)
 
-	event, err := GetInputFromInputBox(s.client, dappAddress, inputIndex)
+	event, err := GetInputFromInputBox(s.client, s.book, inputIndex)
 	s.Require().Nil(err)
 	s.Require().Equal(sender, event.Sender)
 	s.Require().Equal(payload, event.Input)

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/cartesi/rollups-node/pkg/contracts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -38,35 +39,36 @@ type Signer interface {
 func AddInput(
 	ctx context.Context,
 	client *ethclient.Client,
+	book *addresses.Book,
 	signer Signer,
-	dappAddress common.Address,
 	input []byte,
 ) (int, error) {
-	inputBox, err := contracts.NewInputBox(contracts.InputBoxAddress, client)
+	inputBox, err := contracts.NewInputBox(book.InputBox, client)
 	if err != nil {
 		return 0, fmt.Errorf("failed to connect to InputBox contract: %v", err)
 	}
 	receipt, err := sendTransaction(
 		ctx, client, signer, big.NewInt(0), GasLimit,
 		func(txOpts *bind.TransactOpts) (*types.Transaction, error) {
-			return inputBox.AddInput(txOpts, dappAddress, input)
+			return inputBox.AddInput(txOpts, book.CartesiDApp, input)
 		},
 	)
 	if err != nil {
 		return 0, err
 	}
-	return getInputIndex(ctx, client, inputBox, receipt)
+	return getInputIndex(ctx, client, book, inputBox, receipt)
 }
 
 // Get input index in the transaction by looking at the event logs.
 func getInputIndex(
 	ctx context.Context,
 	client *ethclient.Client,
+	book *addresses.Book,
 	inputBox *contracts.InputBox,
 	receipt *types.Receipt,
 ) (int, error) {
 	for _, log := range receipt.Logs {
-		if log.Address != contracts.InputBoxAddress {
+		if log.Address != book.InputBox {
 			continue
 		}
 		inputAdded, err := inputBox.ParseInputAdded(*log)
@@ -84,16 +86,16 @@ func getInputIndex(
 // Return the event with the input sender and payload.
 func GetInputFromInputBox(
 	client *ethclient.Client,
-	dappAddress common.Address,
+	book *addresses.Book,
 	inputIndex int,
 ) (*contracts.InputBoxInputAdded, error) {
-	inputBox, err := contracts.NewInputBox(contracts.InputBoxAddress, client)
+	inputBox, err := contracts.NewInputBox(book.InputBox, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to InputBox contract: %v", err)
 	}
 	it, err := inputBox.FilterInputAdded(
 		nil,
-		[]common.Address{dappAddress},
+		[]common.Address{book.CartesiDApp},
 		[]*big.Int{big.NewInt(int64(inputIndex))},
 	)
 	if err != nil {
