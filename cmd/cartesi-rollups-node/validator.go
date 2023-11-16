@@ -21,5 +21,5 @@ func runValidatorNode(cmd *cobra.Command, args []string) {
 		services.Indexer,
 	}
 
-	services.Run(validatorServices)
+	services.Run(cmd.Context(), validatorServices)
 }
