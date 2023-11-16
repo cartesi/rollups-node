@@ -37,13 +37,15 @@ func (s Service) Start(ctx context.Context) error {
 		<-ctx.Done()
 		logger.Debug.Printf("%v: %v\n", s.String(), ctx.Err())
 		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
-			msg := "%v: failed to send SIGTERM to %v\n"
-			logger.Error.Printf(msg, s.String(), s.name)
+			msg := "failed to send SIGTERM to %v: %v\n"
+			logger.Warning.Printf(msg, s.name, err)
 		}
 	}()
 
 	err := cmd.Wait()
-	if err != nil && cmd.ProcessState.ExitCode() != int(syscall.SIGTERM) {
+	exitCode := cmd.ProcessState.ExitCode()
+	signal := cmd.ProcessState.Sys().(syscall.WaitStatus).Signal()
+	if err != nil && exitCode != 0 && signal != syscall.SIGTERM {
 		return err
 	}
 	return nil
