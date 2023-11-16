@@ -56,13 +56,13 @@ func (s Service) String() string {
 // The Run function serves as a very simple supervisor: it will start all the
 // services provided to it and will run until the first of them finishes. Next
 // it will try to stop the remaining services or timeout if they take too long
-func Run(services []Service) {
+func Run(ctx context.Context, services []Service) {
 	if len(services) == 0 {
 		logger.Error.Panic("there are no services to run")
 	}
 
 	// start services
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	exit := make(chan struct{})
 	for _, service := range services {
 		service := service
