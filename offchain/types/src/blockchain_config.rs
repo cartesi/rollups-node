@@ -52,12 +52,12 @@ pub struct BlockchainCLIConfig {
     pub input_box_address: Option<String>,
 
     /// Path to a file with the deployment json of the dapp
-    #[arg(long, env, default_value = "./dapp_deployment.json")]
-    pub dapp_deployment_file: PathBuf,
+    #[arg(long, env)]
+    pub dapp_deployment_file: Option<PathBuf>,
 
     /// Path to file with deployment json of the rollups
-    #[arg(long, env, default_value = "./rollups_deployment.json")]
-    pub rollups_deployment_file: PathBuf,
+    #[arg(long, env)]
+    pub rollups_deployment_file: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug)]
@@ -76,61 +76,78 @@ fn deserialize<T: DeserializeOwned>(
         .context(JsonDeserializeSnafu)
 }
 
-fn env_or_file<T: DeserializeOwned>(
-    env_value: Option<String>,
-    file_value: Option<T>,
-    name: &str,
-) -> Result<T, BlockchainConfigError> {
-    if let Some(s) = env_value {
-        deserialize(s)
-    } else if let Some(value) = file_value {
-        Ok(value)
-    } else {
-        Err(BlockchainConfigError::MissingConfig {
-            name: name.to_string(),
-        })
-    }
+macro_rules! check_missing {
+    ($var_name: ident) => {
+        match $var_name {
+            Some(v) => v,
+            None => {
+                return Err(BlockchainConfigError::MissingConfig {
+                    name: stringify!($var_name).to_string(),
+                })
+            }
+        }
+    };
 }
 
 impl TryFrom<BlockchainCLIConfig> for BlockchainConfig {
     type Error = BlockchainConfigError;
 
     fn try_from(cli: BlockchainCLIConfig) -> Result<Self, Self::Error> {
-        // read the files
-        let dapp: Contract = read(cli.dapp_deployment_file)?;
-        let rollups: RollupsDeployment = read(cli.rollups_deployment_file)?;
-
         // try to get the values from the environment values
-        // default to the files
-        let dapp_address =
-            env_or_file(cli.dapp_address, dapp.address, "dapp_address")?;
-        let dapp_deploy_block_hash = env_or_file(
-            cli.dapp_deploy_block_hash,
-            dapp.block_hash,
-            "dapp_deploy_block_hash",
-        )?;
-        let history_address = env_or_file(
-            cli.history_address,
-            rollups.contracts.history.address,
-            "history_address",
-        )?;
-        let authority_address = env_or_file(
-            cli.authority_address,
-            rollups.contracts.authority.address,
-            "authority_address",
-        )?;
-        let input_box_address = env_or_file(
-            cli.input_box_address,
-            rollups.contracts.input_box.address,
-            "input_box_address",
-        )?;
+        let mut dapp_address =
+            cli.dapp_address.map(deserialize::<Address>).transpose()?;
+        let mut dapp_deploy_block_hash = cli
+            .dapp_deploy_block_hash
+            .map(deserialize::<Hash>)
+            .transpose()?;
+        let mut history_address = cli
+            .history_address
+            .map(deserialize::<Address>)
+            .transpose()?;
+        let mut authority_address = cli
+            .authority_address
+            .map(deserialize::<Address>)
+            .transpose()?;
+        let mut input_box_address = cli
+            .input_box_address
+            .map(deserialize::<Address>)
+            .transpose()?;
+
+        // read files and replace values if they are not set
+        if let Some(file) =
+            cli.dapp_deployment_file.map(read::<Contract>).transpose()?
+        {
+            dapp_address = dapp_address.or(file.address);
+            dapp_deploy_block_hash = dapp_deploy_block_hash.or(file.block_hash);
+        }
+        if let Some(file) = cli
+            .rollups_deployment_file
+            .map(read::<RollupsDeployment>)
+            .transpose()?
+        {
+            history_address = history_address.or(file
+                .contracts
+                .history
+                .map(|c| c.address)
+                .flatten());
+            authority_address = authority_address.or(file
+                .contracts
+                .authority
+                .map(|c| c.address)
+                .flatten());
+            input_box_address = input_box_address.or(file
+                .contracts
+                .input_box
+                .map(|c| c.address)
+                .flatten());
+        }
 
         Ok(BlockchainConfig {
-            dapp_address,
-            dapp_deploy_block_hash,
-            history_address,
-            authority_address,
-            input_box_address,
+            dapp_address: check_missing!(dapp_address),
+            dapp_deploy_block_hash: check_missing!(dapp_deploy_block_hash),
+            history_address: check_missing!(history_address),
+            authority_address: check_missing!(authority_address),
+            input_box_address: check_missing!(input_box_address),
         })
     }
 }
@@ -147,13 +164,13 @@ struct Contract {
 #[derive(Clone, Debug, Deserialize)]
 struct RollupsContracts {
     #[serde(rename = "History")]
-    history: Contract,
+    history: Option<Contract>,
 
     #[serde(rename = "Authority")]
-    authority: Contract,
+    authority: Option<Contract>,
 
     #[serde(rename = "InputBox")]
-    input_box: Contract,
+    input_box: Option<Contract>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -207,8 +224,17 @@ mod tests {
 
         let deployment: RollupsDeployment = serde_json::from_str(data).unwrap();
 
-        assert_eq!(deployment.contracts.history.address, history_address);
-        assert_eq!(deployment.contracts.authority.address, authority_address);
-        assert_eq!(deployment.contracts.input_box.address, input_box_address);
+        assert_eq!(
+            deployment.contracts.history.unwrap().address,
+            history_address
+        );
+        assert_eq!(
+            deployment.contracts.authority.unwrap().address,
+            authority_address
+        );
+        assert_eq!(
+            deployment.contracts.input_box.unwrap().address,
+            input_box_address
+        );
     }
 }
