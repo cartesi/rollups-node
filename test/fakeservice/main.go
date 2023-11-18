@@ -2,9 +2,13 @@
 // as a binary to test the services.Service struct
 package main
 
-import "net/http"
+import (
+	"net/http"
+	"os"
+)
 
 func main() {
-	err := http.ListenAndServe(":8090", nil)
+	addr := os.Getenv("SERVICE_ADDRESS")
+	err := http.ListenAndServe(addr, nil)
 	panic(err)
 }

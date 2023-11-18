@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -34,28 +35,25 @@ type Service struct {
 // Start will execute a binary and wait for its completion or until the context
 // is canceled
 func (s Service) Start(ctx context.Context) error {
-	cmd := exec.Command(s.binaryName)
+	cmd := exec.CommandContext(ctx, s.binaryName)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
-
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-
-	go func() {
-		<-ctx.Done()
-		logger.Debug.Printf("%v: %v\n", s.String(), ctx.Err())
-		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+	cmd.Cancel = func() error {
+		err := cmd.Process.Signal(syscall.SIGTERM)
+		if err != nil {
 			msg := "failed to send SIGTERM to %v: %v\n"
 			logger.Warning.Printf(msg, s.name, err)
 		}
-	}()
-
-	err := cmd.Wait()
-	exitCode := cmd.ProcessState.ExitCode()
-	signal := cmd.ProcessState.Sys().(syscall.WaitStatus).Signal()
-	if err != nil && exitCode != 0 && signal != syscall.SIGTERM {
 		return err
+	}
+	err := cmd.Run()
+	if err != nil {
+		exitCode := cmd.ProcessState.ExitCode()
+		signal := cmd.ProcessState.Sys().(syscall.WaitStatus).Signal()
+		if exitCode != 0 && signal != syscall.SIGTERM {
+			// only return error if the service exits for reason other than shutdown
+			return err
+		}
 	}
 	return nil
 }
@@ -64,19 +62,20 @@ func (s Service) Start(ctx context.Context) error {
 //
 // A service is considered ready when it is possible to establish a connection
 // to its healthcheck endpoint.
-func (s Service) Ready(ctx context.Context) error {
+func (s Service) Ready(ctx context.Context, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	for {
+		conn, err := net.Dial("tcp", fmt.Sprintf("0.0.0.0:%s", s.healthcheckPort))
+		if err == nil {
+			logger.Debug.Printf("%s is ready\n", s.name)
+			conn.Close()
+			return nil
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		default:
-			conn, err := net.Dial("tcp", fmt.Sprintf("0.0.0.0:%s", s.healthcheckPort))
-			if err == nil {
-				logger.Debug.Printf("%s is ready\n", s.name)
-				conn.Close()
-				return nil
-			}
-			time.Sleep(DefaultDialInterval)
+		case <-time.After(DefaultDialInterval):
 		}
 	}
 }
@@ -94,12 +93,16 @@ func Run(ctx context.Context, services []Service) {
 	}
 
 	// start services
-	startedServicesCount := 0
 	ctx, cancel := context.WithCancel(ctx)
-	exit := make(chan struct{}, len(services))
+	defer cancel()
+	var wg sync.WaitGroup
 	for _, service := range services {
 		service := service
+		wg.Add(1)
 		go func() {
+			// cancel the context when one of the services finish
+			defer cancel()
+			defer wg.Done()
 			if err := service.Start(ctx); err != nil {
 				msg := "main: service '%v' exited with error: %v\n"
 				logger.Error.Printf(msg, service.String(), err)
@@ -107,35 +110,26 @@ func Run(ctx context.Context, services []Service) {
 				msg := "main: service '%v' exited successfully\n"
 				logger.Info.Printf(msg, service.String())
 			}
-			exit <- struct{}{}
 		}()
 
 		// wait for service to be ready or stop all services if it times out
-		readyCtx, readyCancel := context.WithTimeout(ctx, DefaultServiceTimeout)
-		defer readyCancel()
-		if err := service.Ready(readyCtx); err != nil {
+		if err := service.Ready(ctx, DefaultServiceTimeout); err != nil {
+			cancel()
 			msg := "main: service '%v' failed to be ready with error: %v. Exiting\n"
 			logger.Error.Printf(msg, service.name, err)
-			exit <- struct{}{}
 			break
 		}
-		startedServicesCount++
 	}
 
-	// wait for first service to exit
-	<-exit
+	// wait until the context is canceled
+	<-ctx.Done()
 
-	// send stop message to all other services and wait for them to finish
-	// or timeout
+	// wait for the services to finish or timeout
 	wait := make(chan struct{})
 	go func() {
-		cancel()
-		for i := 0; i < startedServicesCount; i++ {
-			<-exit
-		}
+		wg.Wait()
 		wait <- struct{}{}
 	}()
-
 	select {
 	case <-wait:
 		logger.Info.Println("main: all services were shutdown")

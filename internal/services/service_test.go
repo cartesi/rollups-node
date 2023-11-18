@@ -5,7 +5,6 @@ package services
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,34 +19,36 @@ func setup() {
 	buildFakeService()
 }
 
+const (
+	servicePort   = "55555"
+	serviceAdress = "0.0.0.0:" + servicePort
+)
+
 func TestService(t *testing.T) {
 	setup()
 
 	t.Run("it stops when the context is cancelled", func(t *testing.T) {
 		service := Service{
-			name:       "fake-service",
-			binaryName: "fake-service",
+			name:            "fake-service",
+			binaryName:      "fake-service",
+			healthcheckPort: servicePort,
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		startErr := make(chan error)
-		success := make(chan struct{})
+		// start service in goroutine
+		result := make(chan error)
 		go func() {
-			if err := service.Start(ctx); err != nil {
-				startErr <- err
-			}
-			success <- struct{}{}
+			result <- service.Start(ctx)
 		}()
 
-		<-time.After(100 * time.Millisecond)
-		cancel()
+		// wait for a little
+		time.Sleep(100 * time.Millisecond)
 
-		select {
-		case err := <-startErr:
+		// shutdown
+		cancel()
+		if err := <-result; err != nil {
 			t.Errorf("service exited for the wrong reason: %v", err)
-		case <-success:
-			return
 		}
 	})
 
@@ -55,36 +56,26 @@ func TestService(t *testing.T) {
 		service := Service{
 			name:            "fake-service",
 			binaryName:      "fake-service",
-			healthcheckPort: "0000", //wrong port
+			healthcheckPort: "0000", // wrong port
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		startErr := make(chan error, 1)
+		// start service in goroutine
+		result := make(chan error, 1)
 		go func() {
-			if err := service.Start(ctx); err != nil {
-				startErr <- err
-			}
+			result <- service.Start(ctx)
 		}()
 
-		readyErr := make(chan error, 1)
-		success := make(chan struct{}, 1)
-		timeoutCtx, timeoutCancel := context.WithTimeout(ctx, 1*time.Second)
-		defer timeoutCancel()
-		go func() {
-			if err := service.Ready(timeoutCtx); err == nil {
-				readyErr <- fmt.Errorf("expected service to timeout")
-			}
-			success <- struct{}{}
-		}()
+		// expect timeout because of wrong port
+		if err := service.Ready(ctx, 500*time.Millisecond); err == nil {
+			t.Errorf("expected service to timeout")
+		}
 
-		select {
-		case err := <-startErr:
-			t.Errorf("service failed to start: %v", err)
-		case err := <-readyErr:
-			t.Error(err)
-		case <-success:
-			return
+		// shutdown
+		cancel()
+		if err := <-result; err != nil {
+			t.Errorf("service exited for the wrong reason: %v", err)
 		}
 	})
 
@@ -92,36 +83,26 @@ func TestService(t *testing.T) {
 		service := Service{
 			name:            "fake-service",
 			binaryName:      "fake-service",
-			healthcheckPort: "8090",
+			healthcheckPort: servicePort,
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		startErr := make(chan error, 1)
+		// start service in goroutine
+		result := make(chan error)
 		go func() {
-			if err := service.Start(ctx); err != nil {
-				startErr <- err
-			}
+			result <- service.Start(ctx)
 		}()
 
-		readyErr := make(chan error, 1)
-		success := make(chan struct{}, 1)
-		timeoutCtx, timeoutCancel := context.WithTimeout(ctx, 5*time.Second)
-		defer timeoutCancel()
-		go func() {
-			if err := service.Ready(timeoutCtx); err != nil {
-				readyErr <- err
-			}
-			success <- struct{}{}
-		}()
+		// wait for service to be ready
+		if err := service.Ready(ctx, 500*time.Millisecond); err != nil {
+			t.Errorf("service timed out")
+		}
 
-		select {
-		case err := <-startErr:
-			t.Errorf("service failed to start: %v", err)
-		case err := <-readyErr:
-			t.Errorf("service wasn't ready in time. %v", err)
-		case <-success:
-			return
+		// shutdown
+		cancel()
+		if err := <-result; err != nil {
+			t.Errorf("service exited for the wrong reason: %v", err)
 		}
 	})
 }
@@ -141,4 +122,5 @@ func buildFakeService() {
 
 	execPath := filepath.Join(rootDir, "build")
 	os.Setenv("PATH", os.Getenv("PATH")+":"+execPath)
+	os.Setenv("SERVICE_ADDRESS", serviceAdress)
 }
