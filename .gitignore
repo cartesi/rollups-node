@@ -3,3 +3,4 @@
 .DS_Store
 build/deployments
 **/.idea/
+build/devnet/anvil_state.json
