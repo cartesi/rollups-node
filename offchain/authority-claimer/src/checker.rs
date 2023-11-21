@@ -67,13 +67,6 @@ pub enum DuplicateCheckerError {
         latest
     ))]
     DepthTooHigh { depth: u64, latest: u64 },
-
-    #[snafu(display(
-        "Previous block `{}` higher than latest block `{}`",
-        previous,
-        latest
-    ))]
-    PreviousTooHigh { previous: u64, latest: u64 },
 }
 
 impl DefaultDuplicateChecker {
@@ -140,13 +133,14 @@ impl DefaultDuplicateChecker {
         ensure!(depth <= latest, DepthTooHighSnafu { depth, latest });
         let latest = latest - depth;
 
-        ensure!(
-            self.next_block_to_read <= latest,
-            PreviousTooHighSnafu {
-                previous: self.next_block_to_read,
+        if latest < self.next_block_to_read {
+            trace!(
+                "nothing to read; next block is {}, but current block is {}",
+                self.next_block_to_read,
                 latest
-            }
-        );
+            );
+            return Ok(());
+        }
 
         let dapp_address = H160(self.dapp_address.inner().to_owned());
         let topic = ValueOrArray::Value(Some(dapp_address.into()));
