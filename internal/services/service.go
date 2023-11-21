@@ -7,6 +7,8 @@ package services
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"sync"
@@ -16,11 +18,19 @@ import (
 	"github.com/cartesi/rollups-node/internal/logger"
 )
 
-const DefaultServiceTimeout = 15 * time.Second
+const (
+	DefaultServiceTimeout = 15 * time.Second
+	DefaultDialInterval   = 100 * time.Millisecond
+)
 
 type Service struct {
-	name       string
-	binaryName string
+	name            string
+	binaryName      string
+	healthcheckPort string
+}
+
+func NewService(name, binaryName, healthcheckPort string) Service {
+	return Service{name, binaryName, healthcheckPort}
 }
 
 // Start will execute a binary and wait for its completion or until the context
@@ -47,6 +57,28 @@ func (s Service) Start(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// Ready blocks until the service is ready or the context is canceled.
+//
+// A service is considered ready when it is possible to establish a connection
+// to its healthcheck endpoint.
+func (s Service) Ready(ctx context.Context, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	for {
+		conn, err := net.Dial("tcp", fmt.Sprintf("0.0.0.0:%s", s.healthcheckPort))
+		if err == nil {
+			logger.Debug.Printf("%s is ready\n", s.name)
+			conn.Close()
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(DefaultDialInterval):
+		}
+	}
 }
 
 func (s Service) String() string {
@@ -80,6 +112,14 @@ func Run(ctx context.Context, services []Service) {
 				logger.Info.Printf(msg, service.String())
 			}
 		}()
+
+		// wait for service to be ready or stop all services if it times out
+		if err := service.Ready(ctx, DefaultServiceTimeout); err != nil {
+			cancel()
+			msg := "main: service '%v' failed to be ready with error: %v. Exiting\n"
+			logger.Error.Printf(msg, service.name, err)
+			break
+		}
 	}
 
 	// wait until the context is canceled
@@ -98,14 +138,3 @@ func Run(ctx context.Context, services []Service) {
 		logger.Warning.Println("main: exited after a timeout")
 	}
 }
-
-var (
-	GraphQLServer Service = Service{
-		name:       "graphql-server",
-		binaryName: "cartesi-rollups-graphql-server",
-	}
-	Indexer Service = Service{
-		name:       "indexer",
-		binaryName: "cartesi-rollups-indexer",
-	}
-)

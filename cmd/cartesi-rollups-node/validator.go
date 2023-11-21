@@ -4,6 +4,7 @@
 package main
 
 import (
+	"github.com/cartesi/rollups-node/internal/node"
 	"github.com/cartesi/rollups-node/internal/services"
 	"github.com/spf13/cobra"
 )
@@ -16,10 +17,5 @@ var validator = &cobra.Command{
 }
 
 func runValidatorNode(cmd *cobra.Command, args []string) {
-	validatorServices := []services.Service{
-		services.GraphQLServer,
-		services.Indexer,
-	}
-
-	services.Run(cmd.Context(), validatorServices)
+	services.Run(cmd.Context(), node.ValidatorServices)
 }
