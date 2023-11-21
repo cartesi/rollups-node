@@ -28,6 +28,7 @@ pub struct AuthorityClaimerConfig {
     pub broker_config: BrokerConfig,
     pub log_config: LogConfig,
     pub blockchain_config: BlockchainConfig,
+    pub genesis_block: u64,
 }
 
 #[derive(Debug, Clone)]

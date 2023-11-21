@@ -47,8 +47,11 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let duplicate_checker = DefaultDuplicateChecker::new(
         config.tx_manager_config.provider_http_endpoint.clone(),
         config.blockchain_config.history_address.clone(),
+        config.blockchain_config.dapp_address.clone(),
         config.tx_manager_config.default_confirmations,
-    )?;
+        config.genesis_block,
+    )
+    .await?;
 
     // Creating the transaction sender.
     trace!("Creating the transaction sender");

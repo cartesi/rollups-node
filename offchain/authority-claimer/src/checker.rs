@@ -18,7 +18,6 @@ use std::sync::Arc;
 use tracing::trace;
 use url::{ParseError, Url};
 
-const GENESIS_BLOCK: u64 = 1;
 const MAX_RETRIES: u32 = 10;
 const INITIAL_BACKOFF: u64 = 1000;
 
@@ -29,7 +28,6 @@ pub trait DuplicateChecker: Debug {
 
     async fn is_duplicated_rollups_claim(
         &mut self,
-        dapp_address: Address,
         rollups_claim: &RollupsClaim,
     ) -> Result<bool, Self::Error>;
 }
@@ -42,6 +40,7 @@ pub trait DuplicateChecker: Debug {
 pub struct DefaultDuplicateChecker {
     provider: Arc<Provider<RetryClient<Http>>>,
     history: History<Provider<RetryClient<Http>>>,
+    dapp_address: Address,
     claims: Vec<Claim>,
     confirmations: usize,
     next_block_to_read: u64,
@@ -68,13 +67,22 @@ pub enum DuplicateCheckerError {
         latest
     ))]
     DepthTooHigh { depth: u64, latest: u64 },
+
+    #[snafu(display(
+        "Previous block `{}` higher than latest block `{}`",
+        previous,
+        latest
+    ))]
+    PreviousTooHigh { previous: u64, latest: u64 },
 }
 
 impl DefaultDuplicateChecker {
-    pub fn new(
+    pub async fn new(
         http_endpoint: String,
         history_address: Address,
+        dapp_address: Address,
         confirmations: usize,
+        genesis_block: u64,
     ) -> Result<Self, DuplicateCheckerError> {
         let http = Http::new(Url::parse(&http_endpoint).context(ParseSnafu)?);
         let retry_client = RetryClient::new(
@@ -88,13 +96,16 @@ impl DefaultDuplicateChecker {
             H160(history_address.inner().to_owned()),
             provider.clone(),
         );
-        Ok(Self {
+        let mut checker = Self {
             provider,
             history,
+            dapp_address,
             claims: Vec::new(),
             confirmations,
-            next_block_to_read: GENESIS_BLOCK,
-        })
+            next_block_to_read: genesis_block,
+        };
+        checker.update_claims().await?;
+        Ok(checker)
     }
 }
 
@@ -104,10 +115,9 @@ impl DuplicateChecker for DefaultDuplicateChecker {
 
     async fn is_duplicated_rollups_claim(
         &mut self,
-        dapp_address: Address,
         rollups_claim: &RollupsClaim,
     ) -> Result<bool, Self::Error> {
-        self.update_claims(dapp_address).await?;
+        self.update_claims().await?;
         Ok(self.claims.iter().any(|read_claim| {
             &read_claim.epoch_hash == rollups_claim.epoch_hash.inner()
                 && read_claim.first_index == rollups_claim.first_index
@@ -117,37 +127,35 @@ impl DuplicateChecker for DefaultDuplicateChecker {
 }
 
 impl DefaultDuplicateChecker {
-    async fn update_claims(
-        &mut self,
-        dapp_address: Address,
-    ) -> Result<(), DuplicateCheckerError> {
+    async fn update_claims(&mut self) -> Result<(), DuplicateCheckerError> {
         let depth = self.confirmations as u64;
 
-        let current_block = self
+        let latest = self
             .provider
             .get_block_number()
             .await
             .context(ProviderSnafu)?
             .as_u64();
 
+        ensure!(depth <= latest, DepthTooHighSnafu { depth, latest });
+        let latest = latest - depth;
+
         ensure!(
-            depth <= current_block,
-            DepthTooHighSnafu {
-                depth: depth,
-                latest: current_block
+            self.next_block_to_read <= latest,
+            PreviousTooHighSnafu {
+                previous: self.next_block_to_read,
+                latest
             }
         );
 
-        let block_number = current_block - depth;
-
-        let dapp_address = H160(dapp_address.inner().to_owned());
+        let dapp_address = H160(self.dapp_address.inner().to_owned());
         let topic = ValueOrArray::Value(Some(dapp_address.into()));
 
         let mut claims: Vec<_> = self
             .history
             .new_claim_to_history_filter()
             .from_block(self.next_block_to_read)
-            .to_block(block_number)
+            .to_block(latest)
             .topic1(topic)
             .query()
             .await
@@ -156,12 +164,17 @@ impl DefaultDuplicateChecker {
             .map(|event| event.claim)
             .collect();
 
+        trace!(
+            "read new claims {:?} from block {} to {}",
+            claims,
+            self.next_block_to_read,
+            latest
+        );
         if !claims.is_empty() {
-            trace!("read new claims {:?}", claims);
             self.claims.append(&mut claims);
         }
 
-        self.next_block_to_read = block_number + 1;
+        self.next_block_to_read = latest + 1;
 
         Ok(())
     }

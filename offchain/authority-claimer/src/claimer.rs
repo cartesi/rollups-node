@@ -99,10 +99,7 @@ where
 
             let is_duplicated_rollups_claim = self
                 .duplicate_checker
-                .is_duplicated_rollups_claim(
-                    self.dapp_address.clone(),
-                    &rollups_claim,
-                )
+                .is_duplicated_rollups_claim(&rollups_claim)
                 .await
                 .context(DuplicatedClaimSnafu)?;
             if is_duplicated_rollups_claim {

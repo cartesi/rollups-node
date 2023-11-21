@@ -44,6 +44,10 @@ pub(crate) struct AuthorityClaimerCLI {
 
     #[command(flatten)]
     pub blockchain_config: BlockchainCLIConfig,
+
+    /// Genesis block for reading blockchain events
+    #[arg(long, env, default_value_t = 1)]
+    pub genesis_block: u64,
 }
 
 impl TryFrom<AuthorityClaimerCLI> for AuthorityClaimerConfig {
@@ -73,6 +77,7 @@ impl TryFrom<AuthorityClaimerCLI> for AuthorityClaimerConfig {
             broker_config,
             log_config,
             blockchain_config,
+            genesis_block: cli_config.genesis_block,
         })
     }
 }
