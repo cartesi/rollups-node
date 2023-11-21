@@ -6,9 +6,7 @@ package services
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"syscall"
 	"testing"
 	"time"
 
@@ -29,22 +27,21 @@ func TestService(t *testing.T) {
 			binaryName: "cartesi-rollups-graphql-server",
 		}
 		ctx, cancel := context.WithCancel(context.Background())
-		exit := make(chan error)
+		defer cancel()
 
+		// start service in goroutine
+		result := make(chan error)
 		go func() {
-			if err := service.Start(ctx); err != nil {
-				exit <- err
-			}
+			result <- service.Start(ctx)
 		}()
 
-		<-time.After(100 * time.Millisecond)
-		cancel()
+		// wait for a while
+		time.Sleep(100 * time.Millisecond)
 
-		err := <-exit
-		exitError, ok := err.(*exec.ExitError)
-		if !ok || !assertExitErrorWasCausedBy(exitError, syscall.SIGTERM) {
-			t.Logf("service exited for the wrong reason: %v", err)
-			t.FailNow()
+		//shutdown
+		cancel()
+		if err := <-result; err != nil {
+			t.Errorf("service exited for the wrong reason: %v", err)
 		}
 	})
 }
@@ -52,9 +49,4 @@ func TestService(t *testing.T) {
 func setRustBinariesPath() {
 	rustBinPath, _ := filepath.Abs("../../offchain/target/debug")
 	os.Setenv("PATH", os.Getenv("PATH")+":"+rustBinPath)
-}
-
-func assertExitErrorWasCausedBy(err *exec.ExitError, signal syscall.Signal) bool {
-	status := err.Sys().(syscall.WaitStatus)
-	return status.Signal() == signal
 }
