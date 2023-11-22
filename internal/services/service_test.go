@@ -5,6 +5,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,132 +13,130 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/logger"
+	"github.com/stretchr/testify/suite"
 )
 
-const (
-	servicePort   = "44444"
-	serviceAdress = "0.0.0.0:" + servicePort
-)
+type ServiceTestSuite struct {
+	suite.Suite
+	tmpDir      string
+	servicePort int
+}
 
-var tmpDir string
-
-func setup() {
+func (s *ServiceTestSuite) SetupSuite() {
 	logger.Init("warning", false)
-	buildFakeService()
+	s.buildFakeService()
+	s.servicePort = 55555
 }
 
-func tearDown() {
-	deleteTempDir()
-}
-
-func TestService(t *testing.T) {
-	setup()
-
-	t.Run("it stops when the context is cancelled", func(t *testing.T) {
-		service := Service{
-			name:            "fake-service",
-			binaryName:      "fake-service",
-			healthcheckPort: servicePort,
-		}
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		// start service in goroutine
-		result := make(chan error)
-		go func() {
-			result <- service.Start(ctx)
-		}()
-
-		time.Sleep(100 * time.Millisecond)
-
-		// shutdown
-		cancel()
-		if err := <-result; err != nil {
-			t.Errorf("service exited for the wrong reason: %v", err)
-		}
-	})
-
-	t.Run("it stops when timeout is reached and it isn't ready yet", func(t *testing.T) {
-		service := Service{
-			name:            "fake-service",
-			binaryName:      "fake-service",
-			healthcheckPort: "0000", // wrong port
-		}
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		// start service in goroutine
-		result := make(chan error, 1)
-		go func() {
-			result <- service.Start(ctx)
-		}()
-
-		// expect timeout because of wrong port
-		if err := service.Ready(ctx, 500*time.Millisecond); err == nil {
-			t.Errorf("expected service to timeout")
-		}
-
-		// shutdown
-		cancel()
-		if err := <-result; err != nil {
-			t.Errorf("service exited for the wrong reason: %v", err)
-		}
-	})
-
-	t.Run("it becomes ready soon after being started", func(t *testing.T) {
-		service := Service{
-			name:            "fake-service",
-			binaryName:      "fake-service",
-			healthcheckPort: servicePort,
-		}
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		// start service in goroutine
-		result := make(chan error)
-		go func() {
-			result <- service.Start(ctx)
-		}()
-
-		// wait for service to be ready
-		if err := service.Ready(ctx, 500*time.Millisecond); err != nil {
-			t.Errorf("service timed out")
-		}
-
-		// shutdown
-		cancel()
-		if err := <-result; err != nil {
-			t.Errorf("service exited for the wrong reason: %v", err)
-		}
-	})
-
-	tearDown()
-}
-
-// Builds the fake-service binary and adds it to PATH
-func buildFakeService() {
-	temporaryDir, err := os.MkdirTemp("", "")
+func (s *ServiceTestSuite) TearDownSuite() {
+	err := os.RemoveAll(s.tmpDir)
 	if err != nil {
 		panic(err)
 	}
-	tmpDir = temporaryDir
+}
+
+func (s *ServiceTestSuite) SetupTest() {
+	s.servicePort++
+	serviceAdress := "0.0.0.0:" + fmt.Sprint(s.servicePort)
+	os.Setenv("SERVICE_ADDRESS", serviceAdress)
+}
+
+// Service should stop when context is cancelled
+func (s *ServiceTestSuite) TestServiceStops() {
+	service := Service{
+		name:            "fake-service",
+		binaryName:      "fake-service",
+		healthcheckPort: fmt.Sprint(s.servicePort),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// start service in goroutine
+	result := make(chan error)
+	go func() {
+		result <- service.Start(ctx)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+
+	// shutdown
+	cancel()
+	err := <-result
+	s.Nil(err, "service exited for the wrong reason: %v", err)
+}
+
+// Service should stop if timeout is reached and it isn't ready yet
+func (s *ServiceTestSuite) TestServiceTimeout() {
+	service := Service{
+		name:            "fake-service",
+		binaryName:      "fake-service",
+		healthcheckPort: "0000", // wrong port
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// start service in goroutine
+	result := make(chan error, 1)
+	go func() {
+		result <- service.Start(ctx)
+	}()
+
+	// expect timeout because of wrong port
+	err := service.Ready(ctx, 500*time.Millisecond)
+	s.NotNil(err, "expected service to timeout")
+
+	// shutdown
+	cancel()
+	s.Nil(<-result, "service exited for the wrong reason: %v", err)
+}
+
+// Service should be ready soon after starting
+func (s *ServiceTestSuite) TestServiceReady() {
+	service := Service{
+		name:            "fake-service",
+		binaryName:      "fake-service",
+		healthcheckPort: fmt.Sprint(s.servicePort),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// start service in goroutine
+	result := make(chan error)
+	go func() {
+		result <- service.Start(ctx)
+	}()
+
+	// wait for service to be ready
+	err := service.Ready(ctx, 1*time.Second)
+	s.Nil(err, "service timed out")
+
+	// shutdown
+	cancel()
+	s.Nil(<-result, "service exited for the wrong reason: %v", err)
+}
+
+// Builds the fake-service binary and adds it to PATH
+func (s *ServiceTestSuite) buildFakeService() {
+	tempDir, err := os.MkdirTemp("", "")
+	if err != nil {
+		panic(err)
+	}
+	s.tmpDir = tempDir
 
 	cmd := exec.Command(
 		"go",
 		"build",
 		"-o",
-		filepath.Join(tmpDir, "fake-service"),
+		filepath.Join(s.tmpDir, "fake-service"),
 		"fakeservice/main.go",
 	)
 	if err := cmd.Run(); err != nil {
 		panic(err)
 	}
-	os.Setenv("PATH", os.Getenv("PATH")+":"+tmpDir)
+
+	os.Setenv("PATH", os.Getenv("PATH")+":"+s.tmpDir)
 }
 
-func deleteTempDir() {
-	err := os.RemoveAll(tmpDir)
-	if err != nil {
-		panic(err)
-	}
+func TestServiceSuite(t *testing.T) {
+	suite.Run(t, new(ServiceTestSuite))
 }
