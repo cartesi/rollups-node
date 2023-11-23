@@ -29,14 +29,6 @@ type __getInputInput struct {
 // GetIndex returns __getInputInput.Index, and is useful for accessing the field via an interface.
 func (v *__getInputInput) GetIndex() int { return v.Index }
 
-// __getInputsInput is used internally by genqlient
-type __getInputsInput struct {
-	First int `json:"first"`
-}
-
-// GetFirst returns __getInputsInput.First, and is useful for accessing the field via an interface.
-func (v *__getInputsInput) GetFirst() int { return v.First }
-
 // getInputInput includes the requested fields of the GraphQL type Input.
 // The GraphQL type's documentation follows.
 //
@@ -207,8 +199,8 @@ func getInput(
 
 // The query or mutation executed by getInputs.
 const getInputs_Operation = `
-query getInputs ($first: Int!) {
-	inputs(first: $first) {
+query getInputs {
+	inputs {
 		edges {
 			node {
 				index
@@ -226,14 +218,10 @@ query getInputs ($first: Int!) {
 func getInputs(
 	ctx context.Context,
 	client graphql.Client,
-	first int,
 ) (*getInputsResponse, error) {
 	req := &graphql.Request{
 		OpName: "getInputs",
 		Query:  getInputs_Operation,
-		Variables: &__getInputsInput{
-			First: first,
-		},
 	}
 	var err error
 
