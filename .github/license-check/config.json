@@ -4,7 +4,8 @@
     "exclude": [
       "offchain/target/**",
       "offchain/data/src/schema.rs",
-      "pkg/contracts/*.go"
+      "pkg/contracts/*.go",
+      "pkg/readerclient/generated.go"
     ],
     "license": ".github/license-check/header.txt"
   }

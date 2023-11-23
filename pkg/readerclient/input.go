@@ -21,7 +21,7 @@ type Input struct {
 	Status CompletionStatus `json:"status"`
 	// Address responsible for submitting the input
 	MsgSender common.Address `json:"msgSender"`
-	// Timestamp associated with the input submission, as defined by the base layer's block in which it was recorded
+	// Timestamp of the input submission, defined by the base layer's block where it was recorded
 	Timestamp time.Duration `json:"timestamp"`
 	// Number of the base layer block in which the input was recorded
 	BlockNumber uint64 `json:"blockNumber"`
@@ -69,75 +69,51 @@ func GetInput(
 	client graphql.Client,
 	index int,
 ) (*Input, error) {
-	resp, err := getInput(ctx, client, int(index))
+	resp, err := getInput(ctx, client, index)
 	if err != nil {
 		return nil, err
 	}
 
-	timestamp, err := strconv.ParseUint(resp.Input.Timestamp, 0, 64)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse timestamp: %v", err)
-	}
-
-	blocknumber, err := strconv.ParseUint(resp.Input.BlockNumber, 0, 64)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse block number: %v", err)
-	}
-	payload, err := hexutil.Decode(resp.Input.Payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode payload to bytes: %v", err)
-	}
-
-	input := Input{
+	input, err := newInput(
 		resp.Input.Index,
 		resp.Input.Status,
-		common.HexToAddress(resp.Input.MsgSender),
-		time.Duration(timestamp),
-		blocknumber,
-		payload,
-	}
+		resp.Input.MsgSender,
+		resp.Input.Timestamp,
+		resp.Input.BlockNumber,
+		resp.Input.Payload,
+	)
 
-	return &input, err
+	return input, err
 }
 
+// GetInputs returns multiple inputs ordered by index
 func GetInputs(
 	ctx context.Context,
 	client graphql.Client,
-	first int,
 ) ([]Input, error) {
 
 	var inputs []Input
 
-	resp, err := getInputs(ctx, client, int(first))
+	resp, err := getInputs(ctx, client)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, edge := range resp.Inputs.Edges {
 
-		timestamp, err := strconv.ParseUint(edge.Node.Timestamp, 0, 64)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse timestamp: %v", err)
-		}
-		blocknumber, err := strconv.ParseUint(edge.Node.BlockNumber, 0, 64)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse block number: %v", err)
-		}
-		payload, err := hexutil.Decode(edge.Node.Payload)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode payload to bytes: %v", err)
-		}
-
-		input := Input{
+		input, err := newInput(
 			edge.Node.Index,
 			edge.Node.Status,
-			common.HexToAddress(edge.Node.MsgSender),
-			time.Duration(timestamp),
-			blocknumber,
-			payload,
+			edge.Node.MsgSender,
+			edge.Node.Timestamp,
+			edge.Node.BlockNumber,
+			edge.Node.Payload,
+		)
+		if err != nil {
+			return nil, err
 		}
 
-		inputs = append(inputs, input)
+		inputs = append(inputs, *input)
 	}
 
 	return inputs, err

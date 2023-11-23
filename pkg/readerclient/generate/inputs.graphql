@@ -1,0 +1,14 @@
+query getInputs {
+  inputs {
+    edges {
+      node {
+        index
+        status
+        msgSender
+        timestamp
+        blockNumber
+        payload
+      }
+    }
+  }
+}
