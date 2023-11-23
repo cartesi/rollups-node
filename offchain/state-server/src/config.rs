@@ -1,3 +1,6 @@
+// (c) Cartesi and individual authors (see AUTHORS)
+// SPDX-License-Identifier: Apache-2.0 (see LICENSE)
+
 use clap::Parser;
 use eth_state_server_lib::config::{
     Result, StateServerConfig, StateServerEnvCLIConfig,
