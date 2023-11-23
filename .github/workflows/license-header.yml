@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Check license header
+
+on:
+  push:
+    paths:
+      - ".github/workflows/license-header.yml"
+      - ".github/license-check"
+      - "cmd/**"
+      - "internal/**"
+      - "offchain/**"
+jobs:
+  check-copyright:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          
+      - uses: viperproject/check-license-header@v2
+        with:
+          path: ./
+          config: .github/license-check/config.json

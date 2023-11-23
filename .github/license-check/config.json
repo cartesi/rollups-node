@@ -1,0 +1,11 @@
+[
+  {
+    "include": ["**/*.go", "**/*.rs"],
+    "exclude": [
+      "offchain/target/**",
+      "offchain/data/src/schema.rs",
+      "pkg/contracts/*.go"
+    ],
+    "license": ".github/license-check/header.txt"
+  }
+]
