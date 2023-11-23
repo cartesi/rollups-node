@@ -1,5 +1,5 @@
-// Copyright (c) Gabriel de Quadros Ligneul
-// SPDX-License-Identifier: MIT (see LICENSE)
+// (c) Cartesi and individual authors (see AUTHORS)
+// SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 package ethutil
 
