@@ -1,0 +1,10 @@
+query getInput($index: Int!) {
+  input(index: $index) {
+    index
+    status
+    msgSender
+    timestamp
+    blockNumber
+    payload
+  }
+}

@@ -4,6 +4,7 @@
 package root
 
 import (
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/send"
 	"github.com/spf13/cobra"
 )
@@ -17,4 +18,5 @@ Cartesi Rollups node.`,
 
 func init() {
 	Cmd.AddCommand(send.Cmd)
+	Cmd.AddCommand(read.Cmd)
 }
