@@ -7,8 +7,6 @@ services:
     build:
       context: ..
       dockerfile: build/Dockerfile
-      tags:
-        - "cartesi/rollups-node:devel"
     entrypoint: ["cartesi-rollups-node", "validator"]
     ports:
       - "4000:4000"
@@ -20,8 +18,8 @@ services:
         condition: service_completed_successfully
       hardhat_set_interval:
         condition: service_completed_successfully
-      server_manager:
-        condition: service_healthy
+      machine_snapshot_setup:
+        condition: service_completed_successfully
       database:
         condition: service_healthy
       redis:
@@ -34,13 +32,13 @@ services:
 
       #Advance Runner
       ADVANCE_RUNNER_HEALTHCHECK_PORT: 8080
-      SERVER_MANAGER_ENDPOINT: http://server_manager:5001
+      SERVER_MANAGER_ENDPOINT: http://0.0.0.0:5001
       PROVIDER_HTTP_ENDPOINT: http://hardhat:8545
       SESSION_ID: default_rollups_id
       SNAPSHOT_DIR: /var/opt/cartesi/machine-snapshots
       SNAPSHOT_LATEST: /var/opt/cartesi/machine-snapshots/latest
 
-      #Authority Claimer
+      # Authority Claimer
       AUTHORITY_CLAIMER_HTTP_SERVER_PORT: 8085
       TX_PROVIDER_HTTP_ENDPOINT: http://hardhat:8545
       TX_CHAIN_ID: 31337
@@ -48,7 +46,7 @@ services:
       TX_DEFAULT_CONFIRMATIONS: 2
       TX_SIGNING_MNEMONIC: "test test test test test test test test test test test junk"
 
-      #Dispatcher
+      # Dispatcher
       DISPATCHER_HTTP_SERVER_PORT: 8081
       DAPP_DEPLOYMENT_FILE: /deployments/localhost/dapp.json
       ROLLUPS_DEPLOYMENT_FILE: /opt/cartesi/share/deployments/localhost.json
@@ -56,28 +54,33 @@ services:
       SC_GRPC_ENDPOINT: http://0.0.0.0:50051
       SC_DEFAULT_CONFIRMATIONS: 1
 
-      #GraphQL Server
+      # GraphQL Server
       GRAPHQL_HEALTHCHECK_PORT: 8082
       GRAPHQL_HOST: "0.0.0.0"
       GRAPHQL_PORT: "4000"
 
-      #Indexer
+      # Indexer
       INDEXER_HEALTHCHECK_PORT: 8083
       DAPP_CONTRACT_ADDRESS_FILE: /deployments/localhost/dapp.json
       REDIS_ENDPOINT: redis://redis:6379
 
-      #Inspect Server
+      # Inspect Server
       INSPECT_SERVER_HEALTHCHECK_PORT: 8084
       INSPECT_SERVER_ADDRESS: 0.0.0.0:5005
-      SERVER_MANAGER_ADDRESS: server_manager:5001
+      SERVER_MANAGER_ADDRESS: 0.0.0.0:5001
 
-      #State Server
+      # State Server
       SS_SERVER_ADDRESS: 0.0.0.0:50051
       SF_GENESIS_BLOCK: 0x1
       SF_SAFETY_MARGIN: 1
       BH_HTTP_ENDPOINT: http://hardhat:8545
       BH_WS_ENDPOINT: ws://hardhat:8545
       BH_BLOCK_TIMEOUT: 8
+
+      # Server Manager
+      MANAGER_ADDRESS: http://0.0.0.0:5001
+      SERVER_MANAGER_LOG_LEVEL: warning
+      REMOTE_CARTESI_MACHINE_LOG_LEVEL: info
 
     volumes:
       - machine:/var/opt/cartesi/machine-snapshots
@@ -113,8 +116,8 @@ services:
     depends_on:
       hardhat:
         condition: service_healthy
-      server_manager:
-        condition: service_healthy
+      machine_snapshot_setup:
+        condition: service_completed_successfully
     command:
       [
         "create",
@@ -164,23 +167,13 @@ services:
         "http://hardhat:8545",
       ]
 
-  server_manager:
+  machine_snapshot_setup:
+    image: cartesi/rollups-machine:devel
     build:
       context: ..
       dockerfile: build/machine.Dockerfile
-    restart: always
-    ports:
-      - "5001:5001"
-    healthcheck:
-      test: ["CMD-SHELL", 'bash -c ''echo "" > /dev/tcp/127.0.0.1/5001;''']
-      interval: 10s
-      timeout: 5s
-      retries: 5
     volumes:
       - machine:/var/opt/cartesi/machine-snapshots
-    environment:
-      - SERVER_MANAGER_LOG_LEVEL=warning
-      - REMOTE_CARTESI_MACHINE_LOG_LEVEL=info
 
   database:
     image: postgres:13-alpine

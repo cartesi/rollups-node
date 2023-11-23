@@ -24,19 +24,24 @@ const (
 )
 
 type Service struct {
-	name            string
-	binaryName      string
+	// name identifies the service
+	name string
+	// healthcheckPort is a port used to verify if the service is ready
 	healthcheckPort string
+	// path to the service binary
+	path string
+	// args to the service binary
+	args []string
 }
 
-func NewService(name, binaryName, healthcheckPort string) Service {
-	return Service{name, binaryName, healthcheckPort}
+func NewService(name, healthcheckPort, path string, args ...string) Service {
+	return Service{name, healthcheckPort, path, args}
 }
 
 // Start will execute a binary and wait for its completion or until the context
 // is canceled
 func (s Service) Start(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, s.binaryName)
+	cmd := exec.CommandContext(ctx, s.path, s.args...)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	cmd.Cancel = func() error {

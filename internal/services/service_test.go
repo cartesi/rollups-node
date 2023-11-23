@@ -45,7 +45,7 @@ func (s *ServiceTestSuite) SetupTest() {
 func (s *ServiceTestSuite) TestServiceStops() {
 	service := Service{
 		name:            "fake-service",
-		binaryName:      "fake-service",
+		path:            "fake-service",
 		healthcheckPort: fmt.Sprint(s.servicePort),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -69,7 +69,7 @@ func (s *ServiceTestSuite) TestServiceStops() {
 func (s *ServiceTestSuite) TestServiceTimeout() {
 	service := Service{
 		name:            "fake-service",
-		binaryName:      "fake-service",
+		path:            "fake-service",
 		healthcheckPort: "0000", // wrong port
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -94,7 +94,7 @@ func (s *ServiceTestSuite) TestServiceTimeout() {
 func (s *ServiceTestSuite) TestServiceReady() {
 	service := Service{
 		name:            "fake-service",
-		binaryName:      "fake-service",
+		path:            "fake-service",
 		healthcheckPort: fmt.Sprint(s.servicePort),
 	}
 	ctx, cancel := context.WithCancel(context.Background())

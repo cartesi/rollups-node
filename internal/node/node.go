@@ -13,51 +13,63 @@ import (
 	"github.com/cartesi/rollups-node/internal/services"
 )
 
+const (
+	serverManagerPort    = "5001"
+	serverManagerAddress = "0.0.0.0:" + serverManagerPort
+)
+
 var ValidatorServices = []services.Service{
-	StateServer,
+	StateServer, // must start before Dispatcher
 	AdvanceRunner,
 	AuthorityClaimer,
 	Dispatcher,
 	GraphQLServer,
 	Indexer,
 	InspectServer,
+	ServerManager,
 }
 
 var (
 	AdvanceRunner = services.NewService(
 		"advance-runner",
-		"cartesi-rollups-advance-runner",
 		healthcheckPort("advance-runner"),
+		"cartesi-rollups-advance-runner",
 	)
 	AuthorityClaimer = services.NewService(
 		"authority-claimer",
-		"cartesi-rollups-authority-claimer",
 		healthcheckPort("authority-claimer"),
+		"cartesi-rollups-authority-claimer",
 	)
 	Dispatcher = services.NewService(
 		"dispatcher",
-		"cartesi-rollups-dispatcher",
 		healthcheckPort("dispatcher"),
+		"cartesi-rollups-dispatcher",
 	)
 	GraphQLServer = services.NewService(
 		"graphql-server",
-		"cartesi-rollups-graphql-server",
 		healthcheckPort("graphql"),
+		"cartesi-rollups-graphql-server",
 	)
 	Indexer = services.NewService(
 		"indexer",
-		"cartesi-rollups-indexer",
 		healthcheckPort("indexer"),
+		"cartesi-rollups-indexer",
 	)
 	InspectServer = services.NewService(
 		"inspect-server",
-		"cartesi-rollups-inspect-server",
 		healthcheckPort("inspect-server"),
+		"cartesi-rollups-inspect-server",
 	)
 	StateServer = services.NewService(
 		"state-server",
-		"cartesi-rollups-state-server",
 		stateServerHealthcheckPort(),
+		"cartesi-rollups-state-server",
+	)
+	ServerManager = services.NewService(
+		"server-manager",
+		serverManagerPort,
+		"server-manager",
+		"--manager-address="+serverManagerAddress,
 	)
 )
 

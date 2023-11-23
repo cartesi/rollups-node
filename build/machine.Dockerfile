@@ -1,7 +1,7 @@
 # (c) Cartesi and individual authors (see AUTHORS)
 # SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-FROM cartesi/server-manager:0.8.2 as build-server-stage
+FROM cartesi/server-manager:0.8.2 as build-machine-stage
 
 USER root
 
@@ -23,8 +23,13 @@ RUN cartesi-machine \
     --store=$SNAPSHOT_DIR \
     -- "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --verbose=1"
 
-FROM cartesi/server-manager:0.8.2 as server-stage
+FROM debian:bookworm-20230725-slim as machine-stage
 
-WORKDIR /opt/cartesi/bin
-COPY --from=build-server-stage --chown=cartesi:cartesi /tmp/dapp-bin /var/opt/cartesi/machine-snapshots/0_0
+RUN addgroup --system --gid 102 cartesi && \
+    adduser --system --uid 102 --ingroup cartesi --disabled-login --no-create-home --home /nonexistent --gecos "cartesi user" --shell /bin/false cartesi
+
+COPY --from=build-machine-stage --chown=cartesi:cartesi /tmp/dapp-bin /var/opt/cartesi/machine-snapshots/0_0
 RUN ln -s /var/opt/cartesi/machine-snapshots/0_0 /var/opt/cartesi/machine-snapshots/latest
+
+WORKDIR /var/opt/cartesi/machine-snapshots
+ENTRYPOINT [ "/bin/bash" ]
