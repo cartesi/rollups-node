@@ -1,0 +1,34 @@
+name: Assess code quality
+
+on: push
+
+jobs:
+  assess-code-quality:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Check conventional commit
+        uses: cocogitto/cocogitto-action@v3
+        id: conventional_commit_check
+        with:
+          check-latest-tag-only: true
+
+      - name: Check license header
+        uses: viperproject/check-license-header@v2
+        with:
+          path: ./
+          config: .github/license-check/config.json
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version-file: "go.mod"
+
+      - name: Run Go Linter
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.54.2
