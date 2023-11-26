@@ -66,7 +66,7 @@ fn respond(
     }
 }
 
-/// Loop that answers requests comming from inspect_rx.
+/// Loop that answers requests coming from inspect_rx.
 async fn handle_inspect(
     address: String,
     session_id: String,
