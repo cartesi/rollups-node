@@ -122,12 +122,10 @@ mod tests {
         let mut context = Context::new(
             0,
             5,
-            &broker,
             DAppMetadata::default(),
             DispatcherMetrics::default(),
-        )
-        .await
-        .unwrap(); // zero indexed!
+            rollup_status,
+        );
         let machine_driver = MachineDriver::new(H160::random());
         for block_timestamp in input_timestamps {
             let input = mock::new_input(block_timestamp);
@@ -231,12 +229,10 @@ mod tests {
         let mut context = Context::new(
             0,
             5,
-            &broker,
             DAppMetadata::default(),
             DispatcherMetrics::default(),
-        )
-        .await
-        .unwrap(); // zero indexed!
+            rollup_status,
+        );
         let machine_driver = MachineDriver::new(H160::random());
         let dapp_input_box = types::foldables::input_box::DAppInputBox {
             inputs: input_timestamps
@@ -308,12 +304,10 @@ mod tests {
         let mut context = Context::new(
             0,
             5,
-            &broker,
             DAppMetadata::default(),
             DispatcherMetrics::default(),
-        )
-        .await
-        .unwrap(); // zero indexed!
+            rollup_status,
+        );
 
         let dapp_address = H160::random();
         let machine_driver = MachineDriver::new(dapp_address);
@@ -390,12 +384,10 @@ mod tests {
         let mut context = Context::new(
             0,
             5,
-            &broker,
             DAppMetadata::default(),
             DispatcherMetrics::default(),
-        )
-        .await
-        .unwrap(); // zero indexed!
+            rollup_status,
+        );
         let block = mock::new_block(5);
         let input_box = mock::new_input_box();
         let machine_driver = MachineDriver::new(H160::random());

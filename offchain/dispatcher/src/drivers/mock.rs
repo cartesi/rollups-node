@@ -113,12 +113,6 @@ impl Broker {
         broker
     }
 
-    pub fn with_status_error() -> Self {
-        let mut broker = Self::default();
-        broker.status_error = true;
-        broker
-    }
-
     pub fn with_enqueue_input_error() -> Self {
         let mut broker = Self::default();
         broker.enqueue_input_error = true;

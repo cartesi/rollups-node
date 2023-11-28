@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use crate::{
-    machine::{rollups_broker::BrokerFacadeError, BrokerSend, BrokerStatus},
+    machine::{rollups_broker::BrokerFacadeError, BrokerSend, RollupStatus},
     metrics::DispatcherMetrics,
 };
 
@@ -24,16 +24,14 @@ pub struct Context {
 }
 
 impl Context {
-    pub async fn new(
+    pub fn new(
         genesis_timestamp: u64,
         epoch_length: u64,
-        broker: &impl BrokerStatus,
         dapp_metadata: DAppMetadata,
         metrics: DispatcherMetrics,
-    ) -> Result<Self, BrokerFacadeError> {
-        let status = broker.status().await?;
-
-        Ok(Self {
+        status: RollupStatus,
+    ) -> Self {
+        Self {
             inputs_sent_count: status.inputs_sent_count,
             last_event_is_finish_epoch: status.last_event_is_finish_epoch,
             last_timestamp: genesis_timestamp,
@@ -41,7 +39,7 @@ impl Context {
             epoch_length,
             dapp_metadata,
             metrics,
-        })
+        }
     }
 
     pub fn inputs_sent_count(&self) -> u64 {
@@ -295,7 +293,7 @@ mod private_tests {
 #[cfg(test)]
 mod public_tests {
     use crate::{
-        drivers::mock::{self, Broker, SendInteraction},
+        drivers::mock::{self, SendInteraction},
         machine::RollupStatus,
         metrics::DispatcherMetrics,
     };
@@ -316,37 +314,19 @@ mod public_tests {
             inputs_sent_count,
             last_event_is_finish_epoch,
         };
-        let broker = Broker::new(vec![rollup_status], vec![]);
-        let result = Context::new(
+        let context = Context::new(
             genesis_timestamp,
             epoch_length,
-            &broker,
             DAppMetadata::default(),
             DispatcherMetrics::default(),
-        )
-        .await;
-        assert!(result.is_ok());
-        let context = result.unwrap();
+            rollup_status,
+        );
         assert_eq!(context.genesis_timestamp, genesis_timestamp);
         assert_eq!(context.inputs_sent_count, inputs_sent_count);
         assert_eq!(
             context.last_event_is_finish_epoch,
             last_event_is_finish_epoch
         );
-    }
-
-    #[tokio::test]
-    async fn new_broker_error() {
-        let broker = Broker::with_status_error();
-        let result = Context::new(
-            1337,
-            7331,
-            &broker,
-            DAppMetadata::default(),
-            DispatcherMetrics::default(),
-        )
-        .await;
-        assert!(result.is_err());
     }
 
     // --------------------------------------------------------------------------------------------

@@ -7,7 +7,7 @@ use eth_state_client_lib::{
 };
 use eth_state_fold_types::{ethereum_types::H256, BlockStreamItem};
 use rollups_events::DAppMetadata;
-use snafu::ResultExt;
+use snafu::{ensure, ResultExt};
 use tokio_stream::{Stream, StreamExt};
 use tonic::transport::Channel;
 use types::foldables::authority::{RollupsInitialState, RollupsState};
@@ -16,8 +16,8 @@ use crate::{
     config::DispatcherConfig,
     drivers::Context,
     error::{
-        BrokerSnafu, ChannelSnafu, ConnectSnafu, DispatcherError,
-        StateServerSnafu,
+        BrokerSnafu, ChannelSnafu, ConnectSnafu, DirtyBrokerSnafu,
+        DispatcherError, StateServerSnafu,
     },
     machine::BrokerStatus,
     metrics::DispatcherMetrics,
@@ -94,15 +94,20 @@ pub async fn create_context(
         .timestamp
         .as_u64();
     let epoch_length = config.epoch_duration;
+
+    let status = broker.status().await.context(BrokerSnafu)?;
+
+    // The dispatcher doesn't work properly if there are inputs in the broker from a previous run.
+    // Hence, we make sure that the broker is in a clean state before starting.
+    ensure!(status.inputs_sent_count == 0, DirtyBrokerSnafu);
+
     let context = Context::new(
         genesis_timestamp,
         epoch_length,
-        broker,
         dapp_metadata,
         metrics,
-    )
-    .await
-    .context(BrokerSnafu)?;
+        status,
+    );
 
     Ok(context)
 }

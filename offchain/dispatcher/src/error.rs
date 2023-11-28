@@ -32,6 +32,9 @@ pub enum DispatcherError {
     #[snafu(display("state server error"))]
     StateServerError { source: StateServerError },
 
+    #[snafu(display("can't start dispatcher with dirty broker"))]
+    DirtyBrokerError {},
+
     #[snafu(whatever, display("{message}"))]
     Whatever {
         message: String,
