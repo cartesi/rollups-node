@@ -7,6 +7,7 @@ ARG RUST_VERSION=1.74.0
 ARG GO_VERSION=1.21.1
 ARG SERVER_MANAGER_VERSION=0.8.2
 ARG ROLLUPS_CONTRACTS_VERSION=1.1.0
+ARG MACHINE_EMULATOR_VERSION=0.15.2
 
 ARG BASE_PATH=/opt/cartesi
 ARG RUST_BUILD_PATH=${BASE_PATH}/src/rollups-node/offchain
@@ -14,6 +15,44 @@ ARG GO_BASE_PATH=/go
 ARG GO_BUILD_PATH=${GO_BASE_PATH}/cartesi-rollups-node
 ARG GO_BIN_PATH=${GO_BASE_PATH}/bin
 ARG RUNTIME_DIR=/var/opt/cartesi
+ARG MACHINE_SNAPSHOT_PATH=/var/opt/cartesi/machine-snapshots
+
+#
+# Machine snapshot generation
+#
+FROM cartesi/machine-emulator:${MACHINE_EMULATOR_VERSION} as machine-snapshot-build
+
+USER root
+
+# Install system dependencies
+RUN apt update && \
+    apt install -y wget
+
+# Download rootfs, linux and rom
+ENV IMAGES_PATH /usr/share/cartesi-machine/images
+RUN wget -O ${IMAGES_PATH}/rootfs.ext2 https://github.com/cartesi/image-rootfs/releases/download/v0.18.0/rootfs-v0.18.0.ext2 && \
+    wget -O ${IMAGES_PATH}/linux.bin https://github.com/cartesi/image-kernel/releases/download/v0.17.0/linux-5.15.63-ctsi-2-v0.17.0.bin && \
+    wget -O ${IMAGES_PATH}/rom.bin https://github.com/cartesi/machine-emulator-rom/releases/download/v0.17.0/rom-v0.17.0.bin
+
+# Generate snapshot with echo and store it
+ENV SNAPSHOT_DIR=/tmp/dapp-bin
+RUN cartesi-machine \
+    --ram-length=128Mi \
+    --rollup \
+    --store=$SNAPSHOT_DIR \
+    -- "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --verbose=1"
+
+FROM debian:bookworm-slim as machine-snapshot
+
+RUN addgroup --system --gid 102 cartesi && \
+    adduser --system --uid 102 --ingroup cartesi --disabled-login --no-create-home --home /nonexistent --gecos "cartesi user" --shell /bin/false cartesi
+
+ARG MACHINE_SNAPSHOT_PATH
+COPY --from=machine-snapshot-build --chown=cartesi:cartesi /tmp/dapp-bin ${MACHINE_SNAPSHOT_PATH}/0_0
+RUN ln -s ${MACHINE_SNAPSHOT_PATH}/0_0 ${MACHINE_SNAPSHOT_PATH}/latest
+
+WORKDIR ${MACHINE_SNAPSHOT_PATH}
+CMD [ "/bin/bash" ]
 
 #
 # Cargo chef
