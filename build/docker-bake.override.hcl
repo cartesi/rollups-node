@@ -12,3 +12,7 @@ variable "DOCKER_ORGANIZATION" {
 target "rollups-node" {
   tags = ["${DOCKER_ORGANIZATION}/rollups-node:${TAG}"]
 }
+
+target "machine-snapshot" {
+  tags = ["${DOCKER_ORGANIZATION}/rollups-machine-snapshot:${TAG}"]
+}

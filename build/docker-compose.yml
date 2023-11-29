@@ -168,10 +168,7 @@ services:
       ]
 
   machine_snapshot_setup:
-    image: cartesi/rollups-machine:devel
-    build:
-      context: ..
-      dockerfile: build/machine.Dockerfile
+    image: cartesi/rollups-machine-snapshot:devel
     volumes:
       - machine:/var/opt/cartesi/machine-snapshots
 
