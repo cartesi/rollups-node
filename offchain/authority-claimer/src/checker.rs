@@ -67,6 +67,18 @@ pub enum DuplicateCheckerError {
         latest
     ))]
     DepthTooHigh { depth: u64, latest: u64 },
+
+    #[snafu(display(
+        "Claim mismatch; blockchain expects [{}, ?], but got claim with [{}, {}]",
+        expected_first_index,
+        claim_first_index,
+        claim_last_index
+    ))]
+    ClaimMismatch {
+        expected_first_index: u128,
+        claim_first_index: u128,
+        claim_last_index: u128,
+    },
 }
 
 impl DefaultDuplicateChecker {
@@ -111,11 +123,25 @@ impl DuplicateChecker for DefaultDuplicateChecker {
         rollups_claim: &RollupsClaim,
     ) -> Result<bool, Self::Error> {
         self.update_claims().await?;
-        Ok(self.claims.iter().any(|read_claim| {
-            &read_claim.epoch_hash == rollups_claim.epoch_hash.inner()
-                && read_claim.first_index == rollups_claim.first_index
-                && read_claim.last_index == rollups_claim.last_index
-        }))
+        let expected_first_index = match self.claims.last() {
+            Some(claim) => claim.last_index + 1,
+            None => 0,
+        };
+        if rollups_claim.first_index == expected_first_index {
+            // This claim is the one the blockchain expects, so it is not considered duplicate.
+            Ok(false)
+        } else if rollups_claim.last_index < expected_first_index {
+            // This claim is already on the blockchain.
+            Ok(true)
+        } else {
+            // This claim is not on blockchain, but it isn't the one blockchain expects.
+            // If this happens, there is a bug on the dispatcher.
+            Err(DuplicateCheckerError::ClaimMismatch {
+                expected_first_index,
+                claim_first_index: rollups_claim.first_index,
+                claim_last_index: rollups_claim.last_index,
+            })
+        }
     }
 }
 
