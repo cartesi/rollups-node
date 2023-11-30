@@ -10,29 +10,10 @@ ARG ROLLUPS_CONTRACTS_VERSION=1.1.0
 
 ARG BASE_PATH=/opt/cartesi
 ARG RUST_BUILD_PATH=${BASE_PATH}/src/rollups-node/offchain
-ARG DEPLOYMENT_PATH=${BASE_PATH}/share/deployments
 ARG GO_BASE_PATH=/go
 ARG GO_BUILD_PATH=${GO_BASE_PATH}/cartesi-rollups-node
 ARG GO_BIN_PATH=${GO_BASE_PATH}/bin
 ARG RUNTIME_DIR=/var/opt/cartesi
-
-#
-# On-chain deployment files
-#
-FROM debian:bookworm-slim as deployment-download
-
-# Download deployment files from npm
-WORKDIR /tmp/deployment
-ARG ROLLUPS_CONTRACTS_VERSION
-ADD https://registry.npmjs.org/@cartesi/rollups/-/rollups-${ROLLUPS_CONTRACTS_VERSION}.tgz .
-COPY ./build/shasumfile .
-RUN sha256sum -c shasumfile
-RUN tar zxf rollups-${ROLLUPS_CONTRACTS_VERSION}.tgz
-
-FROM scratch as deployment
-ARG DEPLOYMENT_PATH
-WORKDIR ${DEPLOYMENT_PATH}
-COPY --from=deployment-download /tmp/deployment/package/export/abi/* .
 
 #
 # Cargo chef
@@ -93,11 +74,6 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 ca-certificates curl
 RUN rm -rf /var/lib/apt/lists/*
-
-# Copy deployment files
-ARG DEPLOYMENT_PATH
-WORKDIR ${DEPLOYMENT_PATH}
-COPY --from=deployment ${DEPLOYMENT_PATH}/*.json .
 
 # Copy Rust binaries
 ARG BASE_PATH
