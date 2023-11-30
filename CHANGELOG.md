@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `cartesi-rollups-node` Go binary as a single entrypoint to execute all Cartesi Node services
 - Added `authority-claimer` service
 - Added `CHAIN_ID` environment variable to dispatcher config
+- Added redis-tools to rollups-node Docker image
 
 ### Changed
 
