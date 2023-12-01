@@ -7,6 +7,7 @@ schema: ../../api/graphql/reader.graphql
 operations:
 - generate/input.graphql
 - generate/inputs.graphql
+- generate/notice.graphql
 generated: generated.go
 package: readerclient
 
