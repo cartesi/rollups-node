@@ -1,0 +1,22 @@
+query getNotice($noticeIndex: Int!, $inputIndex: Int!) {
+  notice(noticeIndex: $noticeIndex, inputIndex: $inputIndex) {
+    index
+    payload
+    proof {
+      validity {
+        inputIndexWithinEpoch
+        outputIndexWithinInput
+        outputHashesRootHash
+        vouchersEpochRootHash
+        noticesEpochRootHash
+        machineStateHash
+        outputHashInOutputHashesSiblings
+        outputHashesInEpochSiblings
+      }
+      context
+    }
+    input {
+      index
+    }
+  }
+}
