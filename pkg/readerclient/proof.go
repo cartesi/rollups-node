@@ -55,6 +55,12 @@ func newProof(
 		outputHashOutputSiblings []hexutil.Bytes
 		outputHashEpochSiblings  []hexutil.Bytes
 	)
+
+	// This tests if there's a proof, else it returns nil
+	if len(outputHashesRootHash) == 0 {
+		return nil, nil
+	}
+
 	outputHash, err := hexutil.Decode(outputHashesRootHash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode OutputHashesRootHash to bytes: %v", err)

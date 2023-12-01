@@ -7,6 +7,7 @@ import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/input"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/inputs"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/notice"
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/notices"
 	"github.com/spf13/cobra"
 )
 
@@ -19,4 +20,5 @@ func init() {
 	Cmd.AddCommand(input.Cmd)
 	Cmd.AddCommand(inputs.Cmd)
 	Cmd.AddCommand(notice.Cmd)
+	Cmd.AddCommand(notices.Cmd)
 }

@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `cartesi-rollups-node` Go binary as a single entrypoint to execute all Cartesi Node services
 - Added unified configuration for the Node with a new set of environment variables.
 - Added `cartesi-rollups-cli` binary to help develop and debug the Cartesi Rollups node
-- Added read input to `cartesi-rollups-cli`
+- Added read input and read notice to `cartesi-rollups-cli`
 
 ### Changed
 

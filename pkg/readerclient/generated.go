@@ -29,6 +29,26 @@ type __getInputInput struct {
 // GetIndex returns __getInputInput.Index, and is useful for accessing the field via an interface.
 func (v *__getInputInput) GetIndex() int { return v.Index }
 
+// __getInputNoticesInput is used internally by genqlient
+type __getInputNoticesInput struct {
+	InputIndex int `json:"inputIndex"`
+}
+
+// GetInputIndex returns __getInputNoticesInput.InputIndex, and is useful for accessing the field via an interface.
+func (v *__getInputNoticesInput) GetInputIndex() int { return v.InputIndex }
+
+// __getNoticeInput is used internally by genqlient
+type __getNoticeInput struct {
+	NoticeIndex int `json:"noticeIndex"`
+	InputIndex  int `json:"inputIndex"`
+}
+
+// GetNoticeIndex returns __getNoticeInput.NoticeIndex, and is useful for accessing the field via an interface.
+func (v *__getNoticeInput) GetNoticeIndex() int { return v.NoticeIndex }
+
+// GetInputIndex returns __getNoticeInput.InputIndex, and is useful for accessing the field via an interface.
+func (v *__getNoticeInput) GetInputIndex() int { return v.InputIndex }
+
 // getInputInput includes the requested fields of the GraphQL type Input.
 // The GraphQL type's documentation follows.
 //
@@ -65,6 +85,174 @@ func (v *getInputInput) GetBlockNumber() string { return v.BlockNumber }
 
 // GetPayload returns getInputInput.Payload, and is useful for accessing the field via an interface.
 func (v *getInputInput) GetPayload() string { return v.Payload }
+
+// getInputNoticesInput includes the requested fields of the GraphQL type Input.
+// The GraphQL type's documentation follows.
+//
+// Request submitted to the application to advance its state
+type getInputNoticesInput struct {
+	// Input index starting from genesis
+	Index int `json:"index"`
+	// Get notices from this particular input with support for pagination
+	Notices getInputNoticesInputNoticesNoticeConnection `json:"notices"`
+}
+
+// GetIndex returns getInputNoticesInput.Index, and is useful for accessing the field via an interface.
+func (v *getInputNoticesInput) GetIndex() int { return v.Index }
+
+// GetNotices returns getInputNoticesInput.Notices, and is useful for accessing the field via an interface.
+func (v *getInputNoticesInput) GetNotices() getInputNoticesInputNoticesNoticeConnection {
+	return v.Notices
+}
+
+// getInputNoticesInputNoticesNoticeConnection includes the requested fields of the GraphQL type NoticeConnection.
+// The GraphQL type's documentation follows.
+//
+// Pagination result
+type getInputNoticesInputNoticesNoticeConnection struct {
+	// Pagination entries returned for the current page
+	Edges []getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdge `json:"edges"`
+}
+
+// GetEdges returns getInputNoticesInputNoticesNoticeConnection.Edges, and is useful for accessing the field via an interface.
+func (v *getInputNoticesInputNoticesNoticeConnection) GetEdges() []getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdge {
+	return v.Edges
+}
+
+// getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdge includes the requested fields of the GraphQL type NoticeEdge.
+// The GraphQL type's documentation follows.
+//
+// Pagination entry
+type getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdge struct {
+	// Node instance
+	Node getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice `json:"node"`
+}
+
+// GetNode returns getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdge.Node, and is useful for accessing the field via an interface.
+func (v *getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdge) GetNode() getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice {
+	return v.Node
+}
+
+// getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice includes the requested fields of the GraphQL type Notice.
+// The GraphQL type's documentation follows.
+//
+// Informational statement that can be validated in the base layer blockchain
+type getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice struct {
+	// Notice index within the context of the input that produced it
+	Index int `json:"index"`
+	// Notice data as a payload in Ethereum hex binary format, starting with '0x'
+	Payload string `json:"payload"`
+	// Proof object that allows this notice to be validated by the base layer blockchain
+	Proof getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProof `json:"proof"`
+}
+
+// GetIndex returns getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice.Index, and is useful for accessing the field via an interface.
+func (v *getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice) GetIndex() int {
+	return v.Index
+}
+
+// GetPayload returns getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice.Payload, and is useful for accessing the field via an interface.
+func (v *getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice) GetPayload() string {
+	return v.Payload
+}
+
+// GetProof returns getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice.Proof, and is useful for accessing the field via an interface.
+func (v *getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice) GetProof() getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProof {
+	return v.Proof
+}
+
+// getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProof includes the requested fields of the GraphQL type Proof.
+// The GraphQL type's documentation follows.
+//
+// Data that can be used as proof to validate notices and execute vouchers on the base layer blockchain
+type getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProof struct {
+	// Validity proof for an output
+	Validity getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof `json:"validity"`
+	// Data that allows the validity proof to be contextualized within submitted claims, given as a payload in Ethereum hex binary format, starting with '0x'
+	Context string `json:"context"`
+}
+
+// GetValidity returns getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProof.Validity, and is useful for accessing the field via an interface.
+func (v *getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProof) GetValidity() getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof {
+	return v.Validity
+}
+
+// GetContext returns getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProof.Context, and is useful for accessing the field via an interface.
+func (v *getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProof) GetContext() string {
+	return v.Context
+}
+
+// getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof includes the requested fields of the GraphQL type OutputValidityProof.
+// The GraphQL type's documentation follows.
+//
+// Validity proof for an output
+type getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof struct {
+	// Local input index within the context of the related epoch
+	InputIndexWithinEpoch int `json:"inputIndexWithinEpoch"`
+	// Output index within the context of the input that produced it
+	OutputIndexWithinInput int `json:"outputIndexWithinInput"`
+	// Merkle root of all output hashes of the related input, given in Ethereum hex binary format (32 bytes), starting with '0x'
+	OutputHashesRootHash string `json:"outputHashesRootHash"`
+	// Merkle root of all voucher hashes of the related epoch, given in Ethereum hex binary format (32 bytes), starting with '0x'
+	VouchersEpochRootHash string `json:"vouchersEpochRootHash"`
+	// Merkle root of all notice hashes of the related epoch, given in Ethereum hex binary format (32 bytes), starting with '0x'
+	NoticesEpochRootHash string `json:"noticesEpochRootHash"`
+	// Hash of the machine state claimed for the related epoch, given in Ethereum hex binary format (32 bytes), starting with '0x'
+	MachineStateHash string `json:"machineStateHash"`
+	// Proof that this output hash is in the output-hashes merkle tree. This array of siblings is bottom-up ordered (from the leaf to the root). Each hash is given in Ethereum hex binary format (32 bytes), starting with '0x'.
+	OutputHashInOutputHashesSiblings []string `json:"outputHashInOutputHashesSiblings"`
+	// Proof that this output-hashes root hash is in epoch's output merkle tree. This array of siblings is bottom-up ordered (from the leaf to the root). Each hash is given in Ethereum hex binary format (32 bytes), starting with '0x'.
+	OutputHashesInEpochSiblings []string `json:"outputHashesInEpochSiblings"`
+}
+
+// GetInputIndexWithinEpoch returns getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof.InputIndexWithinEpoch, and is useful for accessing the field via an interface.
+func (v *getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof) GetInputIndexWithinEpoch() int {
+	return v.InputIndexWithinEpoch
+}
+
+// GetOutputIndexWithinInput returns getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof.OutputIndexWithinInput, and is useful for accessing the field via an interface.
+func (v *getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof) GetOutputIndexWithinInput() int {
+	return v.OutputIndexWithinInput
+}
+
+// GetOutputHashesRootHash returns getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof.OutputHashesRootHash, and is useful for accessing the field via an interface.
+func (v *getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof) GetOutputHashesRootHash() string {
+	return v.OutputHashesRootHash
+}
+
+// GetVouchersEpochRootHash returns getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof.VouchersEpochRootHash, and is useful for accessing the field via an interface.
+func (v *getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof) GetVouchersEpochRootHash() string {
+	return v.VouchersEpochRootHash
+}
+
+// GetNoticesEpochRootHash returns getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof.NoticesEpochRootHash, and is useful for accessing the field via an interface.
+func (v *getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof) GetNoticesEpochRootHash() string {
+	return v.NoticesEpochRootHash
+}
+
+// GetMachineStateHash returns getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof.MachineStateHash, and is useful for accessing the field via an interface.
+func (v *getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof) GetMachineStateHash() string {
+	return v.MachineStateHash
+}
+
+// GetOutputHashInOutputHashesSiblings returns getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof.OutputHashInOutputHashesSiblings, and is useful for accessing the field via an interface.
+func (v *getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof) GetOutputHashInOutputHashesSiblings() []string {
+	return v.OutputHashInOutputHashesSiblings
+}
+
+// GetOutputHashesInEpochSiblings returns getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof.OutputHashesInEpochSiblings, and is useful for accessing the field via an interface.
+func (v *getInputNoticesInputNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof) GetOutputHashesInEpochSiblings() []string {
+	return v.OutputHashesInEpochSiblings
+}
+
+// getInputNoticesResponse is returned by getInputNotices on success.
+type getInputNoticesResponse struct {
+	// Get input based on its identifier
+	Input getInputNoticesInput `json:"input"`
+}
+
+// GetInput returns getInputNoticesResponse.Input, and is useful for accessing the field via an interface.
+func (v *getInputNoticesResponse) GetInput() getInputNoticesInput { return v.Input }
 
 // getInputResponse is returned by getInput on success.
 type getInputResponse struct {
@@ -280,12 +468,180 @@ func (v *getNoticeNoticeProofValidityOutputValidityProof) GetOutputHashesInEpoch
 
 // getNoticeResponse is returned by getNotice on success.
 type getNoticeResponse struct {
-	// Get notice based on its index
+	// Get a notice based on its index
 	Notice getNoticeNotice `json:"notice"`
 }
 
 // GetNotice returns getNoticeResponse.Notice, and is useful for accessing the field via an interface.
 func (v *getNoticeResponse) GetNotice() getNoticeNotice { return v.Notice }
+
+// getNoticesNoticesNoticeConnection includes the requested fields of the GraphQL type NoticeConnection.
+// The GraphQL type's documentation follows.
+//
+// Pagination result
+type getNoticesNoticesNoticeConnection struct {
+	// Pagination entries returned for the current page
+	Edges []getNoticesNoticesNoticeConnectionEdgesNoticeEdge `json:"edges"`
+}
+
+// GetEdges returns getNoticesNoticesNoticeConnection.Edges, and is useful for accessing the field via an interface.
+func (v *getNoticesNoticesNoticeConnection) GetEdges() []getNoticesNoticesNoticeConnectionEdgesNoticeEdge {
+	return v.Edges
+}
+
+// getNoticesNoticesNoticeConnectionEdgesNoticeEdge includes the requested fields of the GraphQL type NoticeEdge.
+// The GraphQL type's documentation follows.
+//
+// Pagination entry
+type getNoticesNoticesNoticeConnectionEdgesNoticeEdge struct {
+	// Node instance
+	Node getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice `json:"node"`
+}
+
+// GetNode returns getNoticesNoticesNoticeConnectionEdgesNoticeEdge.Node, and is useful for accessing the field via an interface.
+func (v *getNoticesNoticesNoticeConnectionEdgesNoticeEdge) GetNode() getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice {
+	return v.Node
+}
+
+// getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice includes the requested fields of the GraphQL type Notice.
+// The GraphQL type's documentation follows.
+//
+// Informational statement that can be validated in the base layer blockchain
+type getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice struct {
+	// Notice index within the context of the input that produced it
+	Index int `json:"index"`
+	// Notice data as a payload in Ethereum hex binary format, starting with '0x'
+	Payload string `json:"payload"`
+	// Proof object that allows this notice to be validated by the base layer blockchain
+	Proof getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProof `json:"proof"`
+	// Input whose processing produced the notice
+	Input getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeInput `json:"input"`
+}
+
+// GetIndex returns getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice.Index, and is useful for accessing the field via an interface.
+func (v *getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice) GetIndex() int { return v.Index }
+
+// GetPayload returns getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice.Payload, and is useful for accessing the field via an interface.
+func (v *getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice) GetPayload() string {
+	return v.Payload
+}
+
+// GetProof returns getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice.Proof, and is useful for accessing the field via an interface.
+func (v *getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice) GetProof() getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProof {
+	return v.Proof
+}
+
+// GetInput returns getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice.Input, and is useful for accessing the field via an interface.
+func (v *getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNotice) GetInput() getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeInput {
+	return v.Input
+}
+
+// getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeInput includes the requested fields of the GraphQL type Input.
+// The GraphQL type's documentation follows.
+//
+// Request submitted to the application to advance its state
+type getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeInput struct {
+	// Input index starting from genesis
+	Index int `json:"index"`
+}
+
+// GetIndex returns getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeInput.Index, and is useful for accessing the field via an interface.
+func (v *getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeInput) GetIndex() int {
+	return v.Index
+}
+
+// getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProof includes the requested fields of the GraphQL type Proof.
+// The GraphQL type's documentation follows.
+//
+// Data that can be used as proof to validate notices and execute vouchers on the base layer blockchain
+type getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProof struct {
+	// Validity proof for an output
+	Validity getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof `json:"validity"`
+	// Data that allows the validity proof to be contextualized within submitted claims, given as a payload in Ethereum hex binary format, starting with '0x'
+	Context string `json:"context"`
+}
+
+// GetValidity returns getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProof.Validity, and is useful for accessing the field via an interface.
+func (v *getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProof) GetValidity() getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof {
+	return v.Validity
+}
+
+// GetContext returns getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProof.Context, and is useful for accessing the field via an interface.
+func (v *getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProof) GetContext() string {
+	return v.Context
+}
+
+// getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof includes the requested fields of the GraphQL type OutputValidityProof.
+// The GraphQL type's documentation follows.
+//
+// Validity proof for an output
+type getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof struct {
+	// Local input index within the context of the related epoch
+	InputIndexWithinEpoch int `json:"inputIndexWithinEpoch"`
+	// Output index within the context of the input that produced it
+	OutputIndexWithinInput int `json:"outputIndexWithinInput"`
+	// Merkle root of all output hashes of the related input, given in Ethereum hex binary format (32 bytes), starting with '0x'
+	OutputHashesRootHash string `json:"outputHashesRootHash"`
+	// Merkle root of all voucher hashes of the related epoch, given in Ethereum hex binary format (32 bytes), starting with '0x'
+	VouchersEpochRootHash string `json:"vouchersEpochRootHash"`
+	// Merkle root of all notice hashes of the related epoch, given in Ethereum hex binary format (32 bytes), starting with '0x'
+	NoticesEpochRootHash string `json:"noticesEpochRootHash"`
+	// Hash of the machine state claimed for the related epoch, given in Ethereum hex binary format (32 bytes), starting with '0x'
+	MachineStateHash string `json:"machineStateHash"`
+	// Proof that this output hash is in the output-hashes merkle tree. This array of siblings is bottom-up ordered (from the leaf to the root). Each hash is given in Ethereum hex binary format (32 bytes), starting with '0x'.
+	OutputHashInOutputHashesSiblings []string `json:"outputHashInOutputHashesSiblings"`
+	// Proof that this output-hashes root hash is in epoch's output merkle tree. This array of siblings is bottom-up ordered (from the leaf to the root). Each hash is given in Ethereum hex binary format (32 bytes), starting with '0x'.
+	OutputHashesInEpochSiblings []string `json:"outputHashesInEpochSiblings"`
+}
+
+// GetInputIndexWithinEpoch returns getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof.InputIndexWithinEpoch, and is useful for accessing the field via an interface.
+func (v *getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof) GetInputIndexWithinEpoch() int {
+	return v.InputIndexWithinEpoch
+}
+
+// GetOutputIndexWithinInput returns getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof.OutputIndexWithinInput, and is useful for accessing the field via an interface.
+func (v *getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof) GetOutputIndexWithinInput() int {
+	return v.OutputIndexWithinInput
+}
+
+// GetOutputHashesRootHash returns getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof.OutputHashesRootHash, and is useful for accessing the field via an interface.
+func (v *getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof) GetOutputHashesRootHash() string {
+	return v.OutputHashesRootHash
+}
+
+// GetVouchersEpochRootHash returns getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof.VouchersEpochRootHash, and is useful for accessing the field via an interface.
+func (v *getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof) GetVouchersEpochRootHash() string {
+	return v.VouchersEpochRootHash
+}
+
+// GetNoticesEpochRootHash returns getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof.NoticesEpochRootHash, and is useful for accessing the field via an interface.
+func (v *getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof) GetNoticesEpochRootHash() string {
+	return v.NoticesEpochRootHash
+}
+
+// GetMachineStateHash returns getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof.MachineStateHash, and is useful for accessing the field via an interface.
+func (v *getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof) GetMachineStateHash() string {
+	return v.MachineStateHash
+}
+
+// GetOutputHashInOutputHashesSiblings returns getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof.OutputHashInOutputHashesSiblings, and is useful for accessing the field via an interface.
+func (v *getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof) GetOutputHashInOutputHashesSiblings() []string {
+	return v.OutputHashInOutputHashesSiblings
+}
+
+// GetOutputHashesInEpochSiblings returns getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof.OutputHashesInEpochSiblings, and is useful for accessing the field via an interface.
+func (v *getNoticesNoticesNoticeConnectionEdgesNoticeEdgeNodeNoticeProofValidityOutputValidityProof) GetOutputHashesInEpochSiblings() []string {
+	return v.OutputHashesInEpochSiblings
+}
+
+// getNoticesResponse is returned by getNotices on success.
+type getNoticesResponse struct {
+	// Get notices with support for pagination
+	Notices getNoticesNoticesNoticeConnection `json:"notices"`
+}
+
+// GetNotices returns getNoticesResponse.Notices, and is useful for accessing the field via an interface.
+func (v *getNoticesResponse) GetNotices() getNoticesNoticesNoticeConnection { return v.Notices }
 
 // The query or mutation executed by getInput.
 const getInput_Operation = `
@@ -316,6 +672,62 @@ func getInput(
 	var err error
 
 	var data getInputResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
+
+// The query or mutation executed by getInputNotices.
+const getInputNotices_Operation = `
+query getInputNotices ($inputIndex: Int!) {
+	input(index: $inputIndex) {
+		index
+		notices {
+			edges {
+				node {
+					index
+					payload
+					proof {
+						validity {
+							inputIndexWithinEpoch
+							outputIndexWithinInput
+							outputHashesRootHash
+							vouchersEpochRootHash
+							noticesEpochRootHash
+							machineStateHash
+							outputHashInOutputHashesSiblings
+							outputHashesInEpochSiblings
+						}
+						context
+					}
+				}
+			}
+		}
+	}
+}
+`
+
+func getInputNotices(
+	ctx context.Context,
+	client graphql.Client,
+	inputIndex int,
+) (*getInputNoticesResponse, error) {
+	req := &graphql.Request{
+		OpName: "getInputNotices",
+		Query:  getInputNotices_Operation,
+		Variables: &__getInputNoticesInput{
+			InputIndex: inputIndex,
+		},
+	}
+	var err error
+
+	var data getInputNoticesResponse
 	resp := &graphql.Response{Data: &data}
 
 	err = client.MakeRequest(
@@ -410,6 +822,58 @@ func getNotice(
 	var err error
 
 	var data getNoticeResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
+
+// The query or mutation executed by getNotices.
+const getNotices_Operation = `
+query getNotices {
+	notices {
+		edges {
+			node {
+				index
+				payload
+				proof {
+					validity {
+						inputIndexWithinEpoch
+						outputIndexWithinInput
+						outputHashesRootHash
+						vouchersEpochRootHash
+						noticesEpochRootHash
+						machineStateHash
+						outputHashInOutputHashesSiblings
+						outputHashesInEpochSiblings
+					}
+					context
+				}
+				input {
+					index
+				}
+			}
+		}
+	}
+}
+`
+
+func getNotices(
+	ctx context.Context,
+	client graphql.Client,
+) (*getNoticesResponse, error) {
+	req := &graphql.Request{
+		OpName: "getNotices",
+		Query:  getNotices_Operation,
+	}
+	var err error
+
+	var data getNoticesResponse
 	resp := &graphql.Response{Data: &data}
 
 	err = client.MakeRequest(
