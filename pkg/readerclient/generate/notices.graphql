@@ -1,0 +1,26 @@
+query getNotices {
+  notices {
+    edges {
+      node {
+        index
+        payload
+        proof {
+          validity {
+            inputIndexWithinEpoch
+            outputIndexWithinInput
+            outputHashesRootHash
+            vouchersEpochRootHash
+            noticesEpochRootHash
+            machineStateHash
+            outputHashInOutputHashesSiblings
+            outputHashesInEpochSiblings
+          }
+          context
+        }
+        input {
+          index
+        }
+      }
+    }
+  }
+}

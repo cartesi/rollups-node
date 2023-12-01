@@ -19,14 +19,14 @@ type Notice struct {
 	// Notice data as a payload in Ethereum hex binary format, starting with '0x'
 	Payload hexutil.Bytes `json:"payload"`
 	// Proof object that allows this notice to be validated by the base layer blockchain
-	Proof Proof `json:"proof"`
+	Proof *Proof `json:"proof"`
 }
 
 func newNotice(
 	index int,
 	inputIndex int,
 	payload string,
-	proof Proof,
+	proof *Proof,
 ) (*Notice, error) {
 	convPayload, err := hexutil.Decode(payload)
 	if err != nil {
@@ -159,12 +159,15 @@ func GetNotice(
 		resp.Notice.Proof.Validity.OutputHashesInEpochSiblings,
 		resp.Notice.Proof.Context,
 	)
+	if err != nil {
+		return nil, err
+	}
 
 	notice, err := newNotice(
 		resp.Notice.Index,
 		resp.Notice.Input.Index,
 		resp.Notice.Payload,
-		*proof,
+		proof,
 	)
 
 	return notice, err

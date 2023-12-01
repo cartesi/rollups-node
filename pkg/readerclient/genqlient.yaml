@@ -8,6 +8,8 @@ operations:
 - generate/input.graphql
 - generate/inputs.graphql
 - generate/notice.graphql
+- generate/notices.graphql
+- generate/input_notices.graphql
 generated: generated.go
 package: readerclient
 

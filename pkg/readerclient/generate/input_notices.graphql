@@ -1,0 +1,26 @@
+query getInputNotices($inputIndex: Int!) {
+  input(index: $inputIndex) {
+    index
+    notices {
+      edges {
+        node{
+          index
+          payload
+          proof {
+            validity {
+              inputIndexWithinEpoch
+              outputIndexWithinInput
+              outputHashesRootHash
+              vouchersEpochRootHash
+              noticesEpochRootHash
+              machineStateHash
+              outputHashInOutputHashesSiblings
+              outputHashesInEpochSiblings
+            }
+            context
+          }
+        }
+      }
+    }
+  }
+}
