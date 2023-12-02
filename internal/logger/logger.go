@@ -6,17 +6,15 @@
 // Error and Warning write to [os.Stderr] and Info and Debug write to [os.Stdout]. If Debug is set
 // as the default level, all logs include file and line number data.
 //
-// The package can be configured with two environment variables:
-//
-// CARTESI_LOG_LEVEL: defines the main log level. [Info] is the default.
-// CARTESI_LOG_ENABLE_TIMESTAMP: a flag that adds date and time information to the log entries.
-// It is disabled by default.
+// The configuration of the log comes from the config package.
 package logger
 
 import (
 	"io"
 	"log"
 	"os"
+
+	"github.com/cartesi/rollups-node/internal/config"
 )
 
 var (
@@ -26,9 +24,9 @@ var (
 	Debug   *log.Logger
 )
 
-func Init(logLevel string, enableTimestamp bool) {
+func init() {
 	var flags int
-	if enableTimestamp {
+	if config.GetLogTimestamp() {
 		flags |= log.Ldate | log.Ltime
 	}
 
@@ -37,16 +35,16 @@ func Init(logLevel string, enableTimestamp bool) {
 	Info = log.New(os.Stdout, "INFO ", flags)
 	Debug = log.New(os.Stdout, "DEBUG ", flags)
 
-	switch logLevel {
-	case "error":
+	switch config.GetLogLevel() {
+	case config.LogLevelError:
 		Warning.SetOutput(io.Discard)
 		fallthrough
-	case "warning":
+	case config.LogLevelWarning:
 		Info.SetOutput(io.Discard)
 		fallthrough
-	case "info":
+	case config.LogLevelInfo:
 		Debug.SetOutput(io.Discard)
-	case "debug":
+	case config.LogLevelDebug:
 		flags |= log.Llongfile
 		Error.SetFlags(flags)
 		Warning.SetFlags(flags)

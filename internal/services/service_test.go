@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/logger"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -23,7 +22,6 @@ type ServiceTestSuite struct {
 }
 
 func (s *ServiceTestSuite) SetupSuite() {
-	logger.Init("warning", false)
 	s.buildFakeService()
 	s.servicePort = 55555
 }
@@ -44,9 +42,9 @@ func (s *ServiceTestSuite) SetupTest() {
 // Service should stop when context is cancelled
 func (s *ServiceTestSuite) TestServiceStops() {
 	service := Service{
-		name:            "fake-service",
-		path:            "fake-service",
-		healthcheckPort: fmt.Sprint(s.servicePort),
+		Name:            "fake-service",
+		Path:            "fake-service",
+		HealthcheckPort: s.servicePort,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -68,9 +66,9 @@ func (s *ServiceTestSuite) TestServiceStops() {
 // Service should stop if timeout is reached and it isn't ready yet
 func (s *ServiceTestSuite) TestServiceTimeout() {
 	service := Service{
-		name:            "fake-service",
-		path:            "fake-service",
-		healthcheckPort: "0000", // wrong port
+		Name:            "fake-service",
+		Path:            "fake-service",
+		HealthcheckPort: 0, // wrong port
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -93,9 +91,9 @@ func (s *ServiceTestSuite) TestServiceTimeout() {
 // Service should be ready soon after starting
 func (s *ServiceTestSuite) TestServiceReady() {
 	service := Service{
-		name:            "fake-service",
-		path:            "fake-service",
-		healthcheckPort: fmt.Sprint(s.servicePort),
+		Name:            "fake-service",
+		Path:            "fake-service",
+		HealthcheckPort: s.servicePort,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

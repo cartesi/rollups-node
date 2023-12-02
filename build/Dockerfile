@@ -111,7 +111,7 @@ USER root
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 ca-certificates curl redis-tools
+    libpq5 ca-certificates curl redis-tools redis
 RUN rm -rf /var/lib/apt/lists/*
 
 # Copy Rust binaries
@@ -132,4 +132,4 @@ RUN chown cartesi:cartesi ${RUNTIME_DIR}
 WORKDIR ${RUNTIME_DIR}
 
 USER cartesi
-CMD ["/bin/bash"]
+CMD ["cartesi-rollups-node"]

@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -23,32 +22,45 @@ const (
 	DefaultDialInterval   = 100 * time.Millisecond
 )
 
-type Service struct {
-	// name identifies the service
-	name string
-	// healthcheckPort is a port used to verify if the service is ready
-	healthcheckPort string
-	// path to the service binary
-	path string
-	// args to the service binary
-	args []string
+type serviceLogger struct {
+	Name string
 }
 
-func NewService(name, healthcheckPort, path string, args ...string) Service {
-	return Service{name, healthcheckPort, path, args}
+func (l serviceLogger) Write(data []byte) (int, error) {
+	logger.Info.Printf("%v: %v", l.Name, string(data))
+	return len(data), nil
+}
+
+type Service struct {
+
+	// Name that identifies the service.
+	Name string
+
+	// Port used to verify if the service is ready.
+	HealthcheckPort int
+
+	// Path to the service binary.
+	Path string
+
+	// Args to the service binary.
+	Args []string
+
+	// Environment variables.
+	Env []string
 }
 
 // Start will execute a binary and wait for its completion or until the context
 // is canceled
 func (s Service) Start(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, s.path, s.args...)
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
+	cmd := exec.CommandContext(ctx, s.Path, s.Args...)
+	cmd.Env = s.Env
+	cmd.Stderr = serviceLogger{s.Name}
+	cmd.Stdout = serviceLogger{s.Name}
 	cmd.Cancel = func() error {
 		err := cmd.Process.Signal(syscall.SIGTERM)
 		if err != nil {
 			msg := "failed to send SIGTERM to %v: %v\n"
-			logger.Warning.Printf(msg, s.name, err)
+			logger.Warning.Printf(msg, s.Name, err)
 		}
 		return err
 	}
@@ -72,9 +84,9 @@ func (s Service) Ready(ctx context.Context, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	for {
-		conn, err := net.Dial("tcp", fmt.Sprintf("0.0.0.0:%s", s.healthcheckPort))
+		conn, err := net.Dial("tcp", fmt.Sprintf("0.0.0.0:%v", s.HealthcheckPort))
 		if err == nil {
-			logger.Debug.Printf("%s is ready\n", s.name)
+			logger.Debug.Printf("%s is ready\n", s.Name)
 			conn.Close()
 			return nil
 		}
@@ -87,7 +99,7 @@ func (s Service) Ready(ctx context.Context, timeout time.Duration) error {
 }
 
 func (s Service) String() string {
-	return s.name
+	return s.Name
 }
 
 // The Run function serves as a very simple supervisor: it will start all the
@@ -122,7 +134,7 @@ func Run(ctx context.Context, services []Service) {
 		if err := service.Ready(ctx, DefaultServiceTimeout); err != nil {
 			cancel()
 			msg := "main: service '%v' failed to be ready with error: %v. Exiting\n"
-			logger.Error.Printf(msg, service.name, err)
+			logger.Error.Printf(msg, service.Name, err)
 			break
 		}
 	}

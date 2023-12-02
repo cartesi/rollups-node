@@ -50,8 +50,6 @@ func init() {
 }
 
 func run(cmd *cobra.Command, args []string) {
-	logger.Init("info", true)
-
 	payload, err := hexutil.Decode(hexPayload)
 	cobra.CheckErr(err)
 

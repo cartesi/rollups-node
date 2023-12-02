@@ -2,6 +2,93 @@
 # SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 #
+# Logging
+#
+
+[LOG_LEVEL]
+default = "info" 
+go-type = "LogLevel"
+
+[LOG_TIMESTAMP]
+default = "false" 
+go-type = "bool"
+
+#
+# Feature flags
+#
+
+[FEATURE_HOST_MODE]
+default = "false"
+go-type = "bool"
+
+[FEATURE_READER_MODE]
+default = "false"
+go-type = "bool"
+
+#
+# Rollups
+#
+
+[EPOCH_DURATION]
+default = "86400" # 1 day in seconds
+go-type = "Duration"
+
+#
+# Blockchain
+#
+
+[BLOCKCHAIN_ID]
+go-type = "int"
+
+[BLOCKCHAIN_HTTP_ENDPOINT]
+go-type = "string"
+
+[BLOCKCHAIN_WS_ENDPOINT]
+go-type = "string"
+
+[BLOCKCHAIN_IS_LEGACY]
+default = "false"
+go-type = "bool"
+
+[BLOCKCHAIN_GENESIS_BLOCK]
+default = "1"
+go-type = "int64"
+
+[BLOCKCHAIN_READ_DEPTH]
+default = "10"
+go-type = "int"
+
+[BLOCKCHAIN_BLOCK_TIMEOUT]
+default = "60"
+go-type = "int"
+
+#
+# Contracts deployment
+#
+
+[CONTRACTS_DAPP_ADDRESS]
+go-type = "string"
+
+[CONTRACTS_DAPP_DEPLOYMENT_BLOCK_NUMBER]
+go-type = "string"
+
+[CONTRACTS_HISTORY_ADDRESS]
+go-type = "string"
+
+[CONTRACTS_AUTHORITY_ADDRESS]
+go-type = "string"
+
+[CONTRACTS_INPUT_BOX_ADDRESS]
+go-type = "string"
+
+#
+# Snapshot
+#
+
+[SNAPSHOT_DIR]
+go-type = "string"
+
+#
 # Auth
 #
 
@@ -27,39 +114,6 @@ go-type = "string"
 export = false
 
 #
-# Logging
-#
-
-[LOG_LEVEL]
-default = "warning" 
-go-type = "LogLevel"
-
-[LOG_ENABLE_TIMESTAMP]
-default = "false" 
-go-type = "bool"
-
-[LOG_ENABLE_COLOR]
-default = "true" 
-go-type = "bool"
-
-#
-# Broker
-#
-
-[BROKER_ENDPOINT]
-default = "redis://redis:6379" 
-go-type = "string"
-
-[BROKER_CLUSTER_ENDPOINTS]
-go-type = "string"
-
-[BROKER_CONSUME_TIMEOUT]
-go-type = "string"
-
-[BROKER_BACKOFF_MAX_ELAPSED_DURATION]
-go-type = "string"
-
-#
 # Postgres
 #
 
@@ -67,150 +121,10 @@ go-type = "string"
 default = ""
 go-type = "string"
 
-[POSTGRES_CONNECTION_POOL_SIZE]
-default = "3"
+#
+# HTTP server
+#
+
+[HTTP_PORT]
+default = "8080"
 go-type = "int"
-
-#
-# Rollups
-#
-
-[EPOCH_DURATION]
-default = "604800" # 1 week in seconds
-go-type = "Duration"
-
-#
-# Deployment
-#
-
-[DAPP_ADDRESS]
-go-type = "string"
-
-[DAPP_BLOCK_HASH]
-go-type = "string"
-
-[HISTORY_ADDRESS]
-go-type = "string"
-
-[AUTHORITY_ADDRESS]
-go-type = "string"
-
-[INPUT_BOX_ADDRESS]
-default = "TODO"
-go-type = "string"
-
-#
-# State Fold
-#
-
-[STATE_FOLD_SAFETY_MARGIN]
-default = "20"
-go-type = "int"
-
-[STATE_FOLD_BLOCK_TIMEOUT]
-go-type = "Duration"
-
-[STATE_FOLD_CONCURRENT_EVENTS_FETCH]
-go-type = "string"
-
-[STATE_FOLD_QUERY_LIMIT_ERROR_CODES]
-go-type = "string"
-
-#
-# Blockchain
-#
-
-[CHAIN_ID]
-go-type = "int"
-
-[CHAIN_IS_LEGACY]
-default = "false"
-go-type = "bool"
-
-[BLOCKCHAIN_PROVIDER_ENDPOINT]
-go-type = "string"
-
-[BLOCKCHAIN_GENESIS_BLOCK]
-default = "0"
-go-type = "int64"
-
-[BLOCKCHAIN_DEFAULT_CONFIRMATIONS]
-default = "10"
-go-type = "int"
-
-#
-# Health Check Ports
-#
-
-[INDEXER_HEALTHCHECK_PORT]
-go-type = "int"
-
-[INSPECT_SERVER_HEALTHCHECK_PORT]
-go-type = "int"
-
-[GRAPHQL_HEALTHCHECK_PORT]
-go-type = "int"
-
-[ADVANCE_RUNNER_HEALTHCHECK_PORT]
-go-type = "int"
-
-#
-# GraphQL
-#
-
-[GRAPHQL_PORT]
-default = "4000"
-go-type = "int"
-
-#
-# Authority Claimer
-#
-
-[AUTHORITY_CLAIMER_PORT]
-go-type = "int"
-
-[TRANSACTION_MANAGER_DATABASE_PATH]
-go-type = "string"
-
-#
-# Inspect Server
-#
-
-[INSPECT_SERVER_PORT]
-default = "5005"
-go-type = "int"
-export = false
-
-[INSPECT_SERVER_QUEUE_SIZE]
-go-type = "int"
-
-[INSPECT_SERVER_CONFIG_PATH]
-go-type = "string"
-
-[SERVER_MANAGER_ENDPOINT]
-go-type = "string"
-
-#
-# State Server
-#
-
-[STATE_SERVER_ENDPOINT]
-go-type = "string"
-
-[STATE_SERVER_MAX_DECODING_MESSAGE_SIZE]
-go-type = "string"
-
-#
-# Snapshot
-#
-
-[SNAPSHOT_ENABLED]
-default = "true"
-go-type = "bool"
-
-[SNAPSHOT_DIR]
-go-type = "string"
-
-[SNAPSHOT_LATEST]
-go-type = "string"
-

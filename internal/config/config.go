@@ -51,18 +51,6 @@ var (
 // Custom GETs
 // ------------------------------------------------------------------------------------------------
 
-func GetServerManagerSessionId() string {
-	return "default_session_id"
-}
-
-func GetInspectServerEndpoint() string {
-	port, ok := getInspectServerPort()
-	if !ok {
-		fail("invalid port")
-	}
-	return fmt.Sprintf("0.0.0.0:%d", port)
-}
-
 func GetAuth() Auth {
 	// getting the (optional) account index
 	index, _ := getAuthMnemonicAccountIndex()
@@ -100,6 +88,10 @@ const prefix = "CARTESI_"
 var cache struct {
 	sync.Mutex
 	values map[string]string
+}
+
+func init() {
+	cache.values = make(map[string]string)
 }
 
 // Reads the value of an environment variable (loads from a cached value when possible).
@@ -166,6 +158,6 @@ func get[T any](name, defaultValue string, hasDefault bool, parser func(string) 
 }
 
 func fail(s string, v ...any) {
-	fmt.Fprintf(os.Stderr, s, v...)
+	fmt.Fprintf(os.Stderr, s+"\n", v...)
 	os.Exit(1)
 }

@@ -14,126 +14,68 @@ type (
 	Duration = time.Duration
 )
 
-func getAuthMnemonicFile() (string, bool) {
-	return getOptional("AUTH_MNEMONIC_FILE", "", false, toString)
-}
-
-func GetHistoryAddress() string { return get("HISTORY_ADDRESS", "", false, toString) }
-
-func getAuthMnemonicAccountIndex() (int, bool) {
-	return getOptional("AUTH_MNEMONIC_ACCOUNT_INDEX", "0", true, toInt)
-}
-
-func GetDappBlockHash() string { return get("DAPP_BLOCK_HASH", "", false, toString) }
-
-func GetIndexerHealthcheckPort() int { return get("INDEXER_HEALTHCHECK_PORT", "", false, toInt) }
-
-func GetAuthorityAddress() string { return get("AUTHORITY_ADDRESS", "", false, toString) }
-
-func GetStateFoldConcurrentEventsFetch() string {
-	return get("STATE_FOLD_CONCURRENT_EVENTS_FETCH", "", false, toString)
-}
-
-func GetBrokerClusterEndpoints() string { return get("BROKER_CLUSTER_ENDPOINTS", "", false, toString) }
-
-func GetAdvanceRunnerHealthcheckPort() int {
-	return get("ADVANCE_RUNNER_HEALTHCHECK_PORT", "", false, toInt)
-}
-
-func GetStateServerMaxDecodingMessageSize() string {
-	return get("STATE_SERVER_MAX_DECODING_MESSAGE_SIZE", "", false, toString)
-}
-
-func GetBlockchainDefaultConfirmations() int {
-	return get("BLOCKCHAIN_DEFAULT_CONFIRMATIONS", "10", true, toInt)
-}
-
-func GetStateFoldSafetyMargin() int { return get("STATE_FOLD_SAFETY_MARGIN", "20", true, toInt) }
-
-func GetServerManagerEndpoint() string { return get("SERVER_MANAGER_ENDPOINT", "", false, toString) }
-
-func GetPostgresEndpoint() string { return get("POSTGRES_ENDPOINT", "", true, toString) }
-
-func GetBrokerConsumeTimeout() string { return get("BROKER_CONSUME_TIMEOUT", "", false, toString) }
-
-func GetSnapshotLatest() string { return get("SNAPSHOT_LATEST", "", false, toString) }
-
-func getInspectServerPort() (int, bool) {
-	return getOptional("INSPECT_SERVER_PORT", "5005", true, toInt)
-}
-
-func GetBrokerBackoffMaxElapsedDuration() string {
-	return get("BROKER_BACKOFF_MAX_ELAPSED_DURATION", "", false, toString)
-}
-
-func GetBlockchainGenesisBlock() int64 { return get("BLOCKCHAIN_GENESIS_BLOCK", "0", true, toInt64) }
-
-func GetLogEnableColor() bool { return get("LOG_ENABLE_COLOR", "true", true, toBool) }
-
-func GetEpochDuration() Duration { return get("EPOCH_DURATION", "604800", true, toDuration) }
-
-func GetSnapshotEnabled() bool { return get("SNAPSHOT_ENABLED", "true", true, toBool) }
-
-func GetLogEnableTimestamp() bool { return get("LOG_ENABLE_TIMESTAMP", "false", true, toBool) }
-
-func GetPostgresConnectionPoolSize() int {
-	return get("POSTGRES_CONNECTION_POOL_SIZE", "3", true, toInt)
-}
-
-func GetChainId() int { return get("CHAIN_ID", "", false, toInt) }
-
-func GetSnapshotDir() string { return get("SNAPSHOT_DIR", "", false, toString) }
-
-func GetInputBoxAddress() string { return get("INPUT_BOX_ADDRESS", "TODO", true, toString) }
-
-func GetGraphqlHealthcheckPort() int { return get("GRAPHQL_HEALTHCHECK_PORT", "", false, toInt) }
-
-func GetChainIsLegacy() bool { return get("CHAIN_IS_LEGACY", "false", true, toBool) }
-
-func GetInspectServerQueueSize() int { return get("INSPECT_SERVER_QUEUE_SIZE", "", false, toInt) }
-
-func GetInspectServerConfigPath() string {
-	return get("INSPECT_SERVER_CONFIG_PATH", "", false, toString)
-}
-
-func GetStateFoldBlockTimeout() Duration {
-	return get("STATE_FOLD_BLOCK_TIMEOUT", "", false, toDuration)
+func getAuthAwsKmsKeyId() (string, bool) {
+	return getOptional("AUTH_AWS_KMS_KEY_ID", "", false, toString)
 }
 
 func getAuthAwsKmsRegion() (string, bool) {
 	return getOptional("AUTH_AWS_KMS_REGION", "", false, toString)
 }
 
-func GetStateServerEndpoint() string { return get("STATE_SERVER_ENDPOINT", "", false, toString) }
-
-func GetBrokerEndpoint() string { return get("BROKER_ENDPOINT", "redis://redis:6379", true, toString) }
-
-func GetTransactionManagerDatabasePath() string {
-	return get("TRANSACTION_MANAGER_DATABASE_PATH", "", false, toString)
-}
-
-func GetLogLevel() LogLevel { return get("LOG_LEVEL", "warning", true, toLogLevel) }
-
-func GetBlockchainProviderEndpoint() string {
-	return get("BLOCKCHAIN_PROVIDER_ENDPOINT", "", false, toString)
-}
-
 func getAuthMnemonic() (string, bool) { return getOptional("AUTH_MNEMONIC", "", false, toString) }
 
-func GetStateFoldQueryLimitErrorCodes() string {
-	return get("STATE_FOLD_QUERY_LIMIT_ERROR_CODES", "", false, toString)
+func getAuthMnemonicAccountIndex() (int, bool) {
+	return getOptional("AUTH_MNEMONIC_ACCOUNT_INDEX", "0", true, toInt)
 }
 
-func GetDappAddress() string { return get("DAPP_ADDRESS", "", false, toString) }
-
-func GetGraphqlPort() int { return get("GRAPHQL_PORT", "4000", true, toInt) }
-
-func GetAuthorityClaimerPort() int { return get("AUTHORITY_CLAIMER_PORT", "", false, toInt) }
-
-func getAuthAwsKmsKeyId() (string, bool) {
-	return getOptional("AUTH_AWS_KMS_KEY_ID", "", false, toString)
+func getAuthMnemonicFile() (string, bool) {
+	return getOptional("AUTH_MNEMONIC_FILE", "", false, toString)
 }
 
-func GetInspectServerHealthcheckPort() int {
-	return get("INSPECT_SERVER_HEALTHCHECK_PORT", "", false, toInt)
+func GetBlockchainBlockTimeout() int { return get("BLOCKCHAIN_BLOCK_TIMEOUT", "60", true, toInt) }
+
+func GetBlockchainGenesisBlock() int64 { return get("BLOCKCHAIN_GENESIS_BLOCK", "1", true, toInt64) }
+
+func GetBlockchainHttpEndpoint() string { return get("BLOCKCHAIN_HTTP_ENDPOINT", "", false, toString) }
+
+func GetBlockchainId() int { return get("BLOCKCHAIN_ID", "", false, toInt) }
+
+func GetBlockchainIsLegacy() bool { return get("BLOCKCHAIN_IS_LEGACY", "false", true, toBool) }
+
+func GetBlockchainReadDepth() int { return get("BLOCKCHAIN_READ_DEPTH", "10", true, toInt) }
+
+func GetBlockchainWsEndpoint() string { return get("BLOCKCHAIN_WS_ENDPOINT", "", false, toString) }
+
+func GetContractsAuthorityAddress() string {
+	return get("CONTRACTS_AUTHORITY_ADDRESS", "", false, toString)
 }
+
+func GetContractsDappAddress() string { return get("CONTRACTS_DAPP_ADDRESS", "", false, toString) }
+
+func GetContractsDappDeploymentBlockNumber() string {
+	return get("CONTRACTS_DAPP_DEPLOYMENT_BLOCK_NUMBER", "", false, toString)
+}
+
+func GetContractsHistoryAddress() string {
+	return get("CONTRACTS_HISTORY_ADDRESS", "", false, toString)
+}
+
+func GetContractsInputBoxAddress() string {
+	return get("CONTRACTS_INPUT_BOX_ADDRESS", "", false, toString)
+}
+
+func GetEpochDuration() Duration { return get("EPOCH_DURATION", "86400", true, toDuration) }
+
+func GetFeatureHostMode() bool { return get("FEATURE_HOST_MODE", "false", true, toBool) }
+
+func GetFeatureReaderMode() bool { return get("FEATURE_READER_MODE", "false", true, toBool) }
+
+func GetHttpPort() int { return get("HTTP_PORT", "8080", true, toInt) }
+
+func GetLogLevel() LogLevel { return get("LOG_LEVEL", "info", true, toLogLevel) }
+
+func GetLogTimestamp() bool { return get("LOG_TIMESTAMP", "false", true, toBool) }
+
+func GetPostgresEndpoint() string { return get("POSTGRES_ENDPOINT", "", true, toString) }
+
+func GetSnapshotDir() string { return get("SNAPSHOT_DIR", "", false, toString) }
