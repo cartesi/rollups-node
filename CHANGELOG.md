@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `cartesi-rollups-cli` binary to help develop and debug the Cartesi Rollups node
 - Added read input to `cartesi-rollups-cli`
 
+### Changed
+
+- Replaced `DAPP_DEPLOY_BLOCK_HASH` with `DAPP_DEPLOYMENT_BLOCK_NUMBER`.
+
 ## [1.2.0]
 
 ### Added

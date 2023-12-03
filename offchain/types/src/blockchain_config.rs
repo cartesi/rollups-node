@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use clap::{command, Parser};
-use rollups_events::{Address, Hash};
+use rollups_events::Address;
 use serde::{de::DeserializeOwned, Deserialize};
 use snafu::{ResultExt, Snafu};
 use std::{fs::File, io::BufReader, path::PathBuf};
@@ -35,9 +35,9 @@ pub struct BlockchainCLIConfig {
     #[arg(long, env)]
     pub dapp_address: Option<String>,
 
-    /// DApp deploy block hash
+    /// DApp deployment block number
     #[arg(long, env)]
-    pub dapp_deploy_block_hash: Option<String>,
+    pub dapp_deployment_block_number: Option<u64>,
 
     /// History contract address
     #[arg(long, env)]
@@ -63,7 +63,7 @@ pub struct BlockchainCLIConfig {
 #[derive(Clone, Debug)]
 pub struct BlockchainConfig {
     pub dapp_address: Address,
-    pub dapp_deploy_block_hash: Hash,
+    pub dapp_deployment_block_number: u64,
     pub history_address: Address,
     pub authority_address: Address,
     pub input_box_address: Address,
@@ -96,10 +96,7 @@ impl TryFrom<BlockchainCLIConfig> for BlockchainConfig {
         // try to get the values from the environment values
         let mut dapp_address =
             cli.dapp_address.map(deserialize::<Address>).transpose()?;
-        let mut dapp_deploy_block_hash = cli
-            .dapp_deploy_block_hash
-            .map(deserialize::<Hash>)
-            .transpose()?;
+        let mut dapp_deployment_block_number = cli.dapp_deployment_block_number;
         let mut history_address = cli
             .history_address
             .map(deserialize::<Address>)
@@ -118,7 +115,8 @@ impl TryFrom<BlockchainCLIConfig> for BlockchainConfig {
             cli.dapp_deployment_file.map(read::<Contract>).transpose()?
         {
             dapp_address = dapp_address.or(file.address);
-            dapp_deploy_block_hash = dapp_deploy_block_hash.or(file.block_hash);
+            dapp_deployment_block_number =
+                dapp_deployment_block_number.or(file.block_number);
         }
         if let Some(file) = cli
             .rollups_deployment_file
@@ -144,7 +142,9 @@ impl TryFrom<BlockchainCLIConfig> for BlockchainConfig {
 
         Ok(BlockchainConfig {
             dapp_address: check_missing!(dapp_address),
-            dapp_deploy_block_hash: check_missing!(dapp_deploy_block_hash),
+            dapp_deployment_block_number: check_missing!(
+                dapp_deployment_block_number
+            ),
             history_address: check_missing!(history_address),
             authority_address: check_missing!(authority_address),
             input_box_address: check_missing!(input_box_address),
@@ -157,8 +157,8 @@ struct Contract {
     #[serde(rename = "address")]
     address: Option<Address>,
 
-    #[serde(rename = "blockHash")]
-    block_hash: Option<Hash>,
+    #[serde(rename = "blockNumber")]
+    block_number: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
