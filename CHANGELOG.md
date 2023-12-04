@@ -5,10 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.0] 2023-12-04
+## [Unreleased]
 
 ### Added
 
+- Added `cartesi-rollups-node` Go binary as a single entrypoint to execute all Cartesi Node services
 - Added unified configuration for the Node with a new set of environment variables.
 - Added `cartesi-rollups-cli` binary to help develop and debug the Cartesi Rollups node
 
@@ -19,7 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `DAPP_ADDRESS`, `DAPP_DEPLOY_BLOCK_HASH`, `HISTORY_ADDRESS`, `AUTHORITY_ADDRESS`, and
   `INPUT_BOX_ADDRESS` env vars to the dispatcher and the authority claimer.
   These are optional and will overwrite the values from the dapp and rollups deployment files.
-- Added `cartesi-rollups-node` Go binary as a single entrypoint to execute all Cartesi Node services
 - Added `authority-claimer` service
 - Added `CHAIN_ID` environment variable to dispatcher config
 - Added redis-tools to rollups-node Docker image
