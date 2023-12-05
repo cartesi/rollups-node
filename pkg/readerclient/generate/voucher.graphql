@@ -1,0 +1,23 @@
+query getVoucher($voucherIndex: Int!, $inputIndex: Int!) {
+  voucher(voucherIndex: $voucherIndex, inputIndex: $inputIndex) {
+    index
+    payload
+    destination
+    proof {
+      validity {
+        inputIndexWithinEpoch
+        outputIndexWithinInput
+        outputHashesRootHash
+        vouchersEpochRootHash
+        noticesEpochRootHash
+        machineStateHash
+        outputHashInOutputHashesSiblings
+        outputHashesInEpochSiblings
+      }
+      context
+    }
+    input {
+      index
+    }
+  }
+}
