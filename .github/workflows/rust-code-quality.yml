@@ -5,7 +5,7 @@ on:
   push:
     paths:
       - '.github/workflows/rust-code-quality.yml'
-      - 'offchain/**'
+      - 'offchain/**.rs'
 
 jobs:
   assess-rust-code-quality:
