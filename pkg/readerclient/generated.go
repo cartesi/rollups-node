@@ -49,6 +49,18 @@ func (v *__getNoticeInput) GetNoticeIndex() int { return v.NoticeIndex }
 // GetInputIndex returns __getNoticeInput.InputIndex, and is useful for accessing the field via an interface.
 func (v *__getNoticeInput) GetInputIndex() int { return v.InputIndex }
 
+// __getVoucherInput is used internally by genqlient
+type __getVoucherInput struct {
+	VoucherIndex int `json:"voucherIndex"`
+	InputIndex   int `json:"inputIndex"`
+}
+
+// GetVoucherIndex returns __getVoucherInput.VoucherIndex, and is useful for accessing the field via an interface.
+func (v *__getVoucherInput) GetVoucherIndex() int { return v.VoucherIndex }
+
+// GetInputIndex returns __getVoucherInput.InputIndex, and is useful for accessing the field via an interface.
+func (v *__getVoucherInput) GetInputIndex() int { return v.InputIndex }
+
 // getInputInput includes the requested fields of the GraphQL type Input.
 // The GraphQL type's documentation follows.
 //
@@ -643,6 +655,141 @@ type getNoticesResponse struct {
 // GetNotices returns getNoticesResponse.Notices, and is useful for accessing the field via an interface.
 func (v *getNoticesResponse) GetNotices() getNoticesNoticesNoticeConnection { return v.Notices }
 
+// getVoucherResponse is returned by getVoucher on success.
+type getVoucherResponse struct {
+	// Get a voucher based on its index
+	Voucher getVoucherVoucher `json:"voucher"`
+}
+
+// GetVoucher returns getVoucherResponse.Voucher, and is useful for accessing the field via an interface.
+func (v *getVoucherResponse) GetVoucher() getVoucherVoucher { return v.Voucher }
+
+// getVoucherVoucher includes the requested fields of the GraphQL type Voucher.
+// The GraphQL type's documentation follows.
+//
+// Representation of a transaction that can be carried out on the base layer blockchain, such as a transfer of assets
+type getVoucherVoucher struct {
+	// Voucher index within the context of the input that produced it
+	Index int `json:"index"`
+	// Transaction payload in Ethereum hex binary format, starting with '0x'
+	Payload string `json:"payload"`
+	// Transaction destination address in Ethereum hex binary format (20 bytes), starting with '0x'
+	Destination string `json:"destination"`
+	// Proof object that allows this voucher to be validated and executed on the base layer blockchain
+	Proof getVoucherVoucherProof `json:"proof"`
+	// Input whose processing produced the voucher
+	Input getVoucherVoucherInput `json:"input"`
+}
+
+// GetIndex returns getVoucherVoucher.Index, and is useful for accessing the field via an interface.
+func (v *getVoucherVoucher) GetIndex() int { return v.Index }
+
+// GetPayload returns getVoucherVoucher.Payload, and is useful for accessing the field via an interface.
+func (v *getVoucherVoucher) GetPayload() string { return v.Payload }
+
+// GetDestination returns getVoucherVoucher.Destination, and is useful for accessing the field via an interface.
+func (v *getVoucherVoucher) GetDestination() string { return v.Destination }
+
+// GetProof returns getVoucherVoucher.Proof, and is useful for accessing the field via an interface.
+func (v *getVoucherVoucher) GetProof() getVoucherVoucherProof { return v.Proof }
+
+// GetInput returns getVoucherVoucher.Input, and is useful for accessing the field via an interface.
+func (v *getVoucherVoucher) GetInput() getVoucherVoucherInput { return v.Input }
+
+// getVoucherVoucherInput includes the requested fields of the GraphQL type Input.
+// The GraphQL type's documentation follows.
+//
+// Request submitted to the application to advance its state
+type getVoucherVoucherInput struct {
+	// Input index starting from genesis
+	Index int `json:"index"`
+}
+
+// GetIndex returns getVoucherVoucherInput.Index, and is useful for accessing the field via an interface.
+func (v *getVoucherVoucherInput) GetIndex() int { return v.Index }
+
+// getVoucherVoucherProof includes the requested fields of the GraphQL type Proof.
+// The GraphQL type's documentation follows.
+//
+// Data that can be used as proof to validate notices and execute vouchers on the base layer blockchain
+type getVoucherVoucherProof struct {
+	// Validity proof for an output
+	Validity getVoucherVoucherProofValidityOutputValidityProof `json:"validity"`
+	// Data that allows the validity proof to be contextualized within submitted claims, given as a payload in Ethereum hex binary format, starting with '0x'
+	Context string `json:"context"`
+}
+
+// GetValidity returns getVoucherVoucherProof.Validity, and is useful for accessing the field via an interface.
+func (v *getVoucherVoucherProof) GetValidity() getVoucherVoucherProofValidityOutputValidityProof {
+	return v.Validity
+}
+
+// GetContext returns getVoucherVoucherProof.Context, and is useful for accessing the field via an interface.
+func (v *getVoucherVoucherProof) GetContext() string { return v.Context }
+
+// getVoucherVoucherProofValidityOutputValidityProof includes the requested fields of the GraphQL type OutputValidityProof.
+// The GraphQL type's documentation follows.
+//
+// Validity proof for an output
+type getVoucherVoucherProofValidityOutputValidityProof struct {
+	// Local input index within the context of the related epoch
+	InputIndexWithinEpoch int `json:"inputIndexWithinEpoch"`
+	// Output index within the context of the input that produced it
+	OutputIndexWithinInput int `json:"outputIndexWithinInput"`
+	// Merkle root of all output hashes of the related input, given in Ethereum hex binary format (32 bytes), starting with '0x'
+	OutputHashesRootHash string `json:"outputHashesRootHash"`
+	// Merkle root of all voucher hashes of the related epoch, given in Ethereum hex binary format (32 bytes), starting with '0x'
+	VouchersEpochRootHash string `json:"vouchersEpochRootHash"`
+	// Merkle root of all notice hashes of the related epoch, given in Ethereum hex binary format (32 bytes), starting with '0x'
+	NoticesEpochRootHash string `json:"noticesEpochRootHash"`
+	// Hash of the machine state claimed for the related epoch, given in Ethereum hex binary format (32 bytes), starting with '0x'
+	MachineStateHash string `json:"machineStateHash"`
+	// Proof that this output hash is in the output-hashes merkle tree. This array of siblings is bottom-up ordered (from the leaf to the root). Each hash is given in Ethereum hex binary format (32 bytes), starting with '0x'.
+	OutputHashInOutputHashesSiblings []string `json:"outputHashInOutputHashesSiblings"`
+	// Proof that this output-hashes root hash is in epoch's output merkle tree. This array of siblings is bottom-up ordered (from the leaf to the root). Each hash is given in Ethereum hex binary format (32 bytes), starting with '0x'.
+	OutputHashesInEpochSiblings []string `json:"outputHashesInEpochSiblings"`
+}
+
+// GetInputIndexWithinEpoch returns getVoucherVoucherProofValidityOutputValidityProof.InputIndexWithinEpoch, and is useful for accessing the field via an interface.
+func (v *getVoucherVoucherProofValidityOutputValidityProof) GetInputIndexWithinEpoch() int {
+	return v.InputIndexWithinEpoch
+}
+
+// GetOutputIndexWithinInput returns getVoucherVoucherProofValidityOutputValidityProof.OutputIndexWithinInput, and is useful for accessing the field via an interface.
+func (v *getVoucherVoucherProofValidityOutputValidityProof) GetOutputIndexWithinInput() int {
+	return v.OutputIndexWithinInput
+}
+
+// GetOutputHashesRootHash returns getVoucherVoucherProofValidityOutputValidityProof.OutputHashesRootHash, and is useful for accessing the field via an interface.
+func (v *getVoucherVoucherProofValidityOutputValidityProof) GetOutputHashesRootHash() string {
+	return v.OutputHashesRootHash
+}
+
+// GetVouchersEpochRootHash returns getVoucherVoucherProofValidityOutputValidityProof.VouchersEpochRootHash, and is useful for accessing the field via an interface.
+func (v *getVoucherVoucherProofValidityOutputValidityProof) GetVouchersEpochRootHash() string {
+	return v.VouchersEpochRootHash
+}
+
+// GetNoticesEpochRootHash returns getVoucherVoucherProofValidityOutputValidityProof.NoticesEpochRootHash, and is useful for accessing the field via an interface.
+func (v *getVoucherVoucherProofValidityOutputValidityProof) GetNoticesEpochRootHash() string {
+	return v.NoticesEpochRootHash
+}
+
+// GetMachineStateHash returns getVoucherVoucherProofValidityOutputValidityProof.MachineStateHash, and is useful for accessing the field via an interface.
+func (v *getVoucherVoucherProofValidityOutputValidityProof) GetMachineStateHash() string {
+	return v.MachineStateHash
+}
+
+// GetOutputHashInOutputHashesSiblings returns getVoucherVoucherProofValidityOutputValidityProof.OutputHashInOutputHashesSiblings, and is useful for accessing the field via an interface.
+func (v *getVoucherVoucherProofValidityOutputValidityProof) GetOutputHashInOutputHashesSiblings() []string {
+	return v.OutputHashInOutputHashesSiblings
+}
+
+// GetOutputHashesInEpochSiblings returns getVoucherVoucherProofValidityOutputValidityProof.OutputHashesInEpochSiblings, and is useful for accessing the field via an interface.
+func (v *getVoucherVoucherProofValidityOutputValidityProof) GetOutputHashesInEpochSiblings() []string {
+	return v.OutputHashesInEpochSiblings
+}
+
 // The query or mutation executed by getInput.
 const getInput_Operation = `
 query getInput ($index: Int!) {
@@ -874,6 +1021,61 @@ func getNotices(
 	var err error
 
 	var data getNoticesResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
+
+// The query or mutation executed by getVoucher.
+const getVoucher_Operation = `
+query getVoucher ($voucherIndex: Int!, $inputIndex: Int!) {
+	voucher(voucherIndex: $voucherIndex, inputIndex: $inputIndex) {
+		index
+		payload
+		destination
+		proof {
+			validity {
+				inputIndexWithinEpoch
+				outputIndexWithinInput
+				outputHashesRootHash
+				vouchersEpochRootHash
+				noticesEpochRootHash
+				machineStateHash
+				outputHashInOutputHashesSiblings
+				outputHashesInEpochSiblings
+			}
+			context
+		}
+		input {
+			index
+		}
+	}
+}
+`
+
+func getVoucher(
+	ctx context.Context,
+	client graphql.Client,
+	voucherIndex int,
+	inputIndex int,
+) (*getVoucherResponse, error) {
+	req := &graphql.Request{
+		OpName: "getVoucher",
+		Query:  getVoucher_Operation,
+		Variables: &__getVoucherInput{
+			VoucherIndex: voucherIndex,
+			InputIndex:   inputIndex,
+		},
+	}
+	var err error
+
+	var data getVoucherResponse
 	resp := &graphql.Response{Data: &data}
 
 	err = client.MakeRequest(
