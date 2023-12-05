@@ -11,6 +11,8 @@ operations:
 - generate/notices.graphql
 - generate/input_notices.graphql
 - generate/voucher.graphql
+- generate/vouchers.graphql
+- generate/input_vouchers.graphql
 generated: generated.go
 package: readerclient
 

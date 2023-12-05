@@ -8,19 +8,20 @@ import (
 	"fmt"
 
 	"github.com/Khan/genqlient/graphql"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 type Voucher struct {
-	// Notice index within the context of the input that produced it
+	// Voucher index within the context of the input that produced it
 	Index int `json:"index"`
-	// Input whose processing produced the notice
+	// Input whose processing produced the voucher
 	InputIndex int `json:"inputIndex"`
 	// Transaction destination address in Ethereum hex binary format (20 bytes), starting with '0x'
-	Destination string `json:"destination"`
-	// Notice data as a payload in Ethereum hex binary format, starting with '0x'
+	Destination common.Address `json:"destination"`
+	// Voucher data as a payload in Ethereum hex binary format, starting with '0x'
 	Payload hexutil.Bytes `json:"payload"`
-	// Proof object that allows this notice to be validated by the base layer blockchain
+	// Proof object that allows this voucher to be validated by the base layer blockchain
 	Proof *Proof `json:"proof"`
 }
 
@@ -39,7 +40,7 @@ func newVoucher(
 	voucher := Voucher{
 		index,
 		inputIndex,
-		destination,
+		common.HexToAddress(destination),
 		convPayload,
 		proof,
 	}

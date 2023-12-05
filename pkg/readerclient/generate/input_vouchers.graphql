@@ -1,0 +1,27 @@
+query getInputVouchers($inputIndex: Int!) {
+  input(index: $inputIndex) {
+    index
+    vouchers {
+      edges {
+        node{
+          index
+          payload
+          destination
+          proof {
+            validity {
+              inputIndexWithinEpoch
+              outputIndexWithinInput
+              outputHashesRootHash
+              vouchersEpochRootHash
+              noticesEpochRootHash
+              machineStateHash
+              outputHashInOutputHashesSiblings
+              outputHashesInEpochSiblings
+            }
+            context
+          }
+        }
+      }
+    }
+  }
+}
