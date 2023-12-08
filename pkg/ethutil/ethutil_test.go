@@ -93,14 +93,7 @@ func TestEthUtilSuite(t *testing.T) {
 // This image starts an anvil node with the Rollups contracts already deployed.
 func newDevNetContainer(ctx context.Context) (testcontainers.Container, error) {
 	req := testcontainers.ContainerRequest{
-		Image: "sunodo/devnet:1.1.1",
-		Cmd: []string{
-			"anvil",
-			"--block-time",
-			"1",
-			"--load-state",
-			"/usr/share/sunodo/anvil_state.json",
-		},
+		Image: "cartesi/rollups-devnet:devel",
 		Env: map[string]string{
 			"ANVIL_IP_ADDR": "0.0.0.0",
 		},

@@ -16,6 +16,8 @@ ARG GO_BUILD_PATH=${GO_BASE_PATH}/cartesi-rollups-node
 ARG GO_BIN_PATH=${GO_BASE_PATH}/bin
 ARG RUNTIME_DIR=/var/opt/cartesi
 ARG MACHINE_SNAPSHOT_PATH=/var/opt/cartesi/machine-snapshots
+ARG DEVNET_SHARE_PATH=/usr/share/devnet
+ARG ANVIL_IP_ADDR=0.0.0.0
 
 #
 # Machine snapshot generation
@@ -51,6 +53,42 @@ RUN ln -s ${MACHINE_SNAPSHOT_PATH}/0_0 ${MACHINE_SNAPSHOT_PATH}/latest
 
 WORKDIR ${MACHINE_SNAPSHOT_PATH}
 CMD [ "/bin/bash" ]
+
+#
+# Devnet generation stage
+#
+FROM ghcr.io/foundry-rs/foundry:latest as devnet
+
+RUN apk add --no-cache \
+    bash \
+    curl \
+    jq
+
+ARG RUNTIME_DIR
+WORKDIR ${RUNTIME_DIR}
+COPY scripts scripts
+
+ARG DEVNET_SHARE_PATH
+WORKDIR ${DEVNET_SHARE_PATH}
+
+# Copy machine snapshot hash
+ARG MACHINE_SNAPSHOT_PATH
+COPY --from=machine-snapshot ${MACHINE_SNAPSHOT_PATH}/0_0/hash 0_0_hash
+
+# Generate devnet
+ENV ANVIL_IP_ADDR="${ANVIL_IP_ADDR}"
+RUN ${RUNTIME_DIR}/scripts/devnet/gen-devnet.sh \
+    -t 0_0_hash
+
+# Install utilities
+RUN ln -s ${RUNTIME_DIR}/scripts/devnet/lib/anvil_net_listening.sh \
+    /usr/local/bin/anvil_net_listening.sh
+
+HEALTHCHECK --interval=10s --timeout=1s --retries=5 \
+  CMD anvil_net_listening.sh
+
+ENTRYPOINT ["anvil"]
+CMD ["--block-time", "5", "--load-state" , "/usr/share/devnet/anvil_state.json"]
 
 #
 # Cargo chef
@@ -96,7 +134,7 @@ RUN cargo chef cook --release --recipe-path recipe.json
 # Build application
 COPY ./offchain/ .
 # needed to log commit hash in runtime
-COPY ./.git ../ 
+COPY ./.git ../
 RUN cargo build --release
 
 #

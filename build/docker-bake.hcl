@@ -6,7 +6,7 @@ target "docker-platforms" {}
 
 group "default" {
   targets = [
-    "rollups-node", "machine-snapshot"
+    "rollups-node", "machine-snapshot", "devnet"
   ]
 }
 
@@ -21,5 +21,12 @@ target "machine-snapshot" {
   inherits    = ["docker-platforms"]
   dockerfile  = "./build/Dockerfile"
   target      = "machine-snapshot"
+  context     = ".."
+}
+
+target "devnet" {
+  inherits    = ["docker-platforms"]
+  dockerfile  = "./build/Dockerfile"
+  target      = "devnet"
   context     = ".."
 }

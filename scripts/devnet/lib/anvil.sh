@@ -1,21 +1,18 @@
 #!/usr/bin/env bash
 # (c) Cartesi and individual authors (see AUTHORS)
 # SPDX-License-Identifier: Apache-2.0 (see LICENSE)
+anvil_lib_dir="$( cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEVNET_ANVIL_STATE_INTERVAL=5
+DEVNET_ANVIL_TIMEOUT=$(expr $DEVNET_ANVIL_STATE_INTERVAL + 10)
+readonly anvil_lib_dir DEVNET_ANVIL_STATE_INTERVAL DEVNET_ANVIL_TIMEOUT
 
-readonly DEVNET_ANVIL_IP="0.0.0.0"
-readonly DEVNET_ANVIL_TIMEOUT=3
+ANVIL_IP_ADDR=${ANVIL_IP_ADDR:-"0.0.0.0"}
 
 _is_anvil_up() {
     local -n ready=$1
 
-    local result="$(
-        curl -X \
-            POST \
-            -s \
-            -H 'Content-Type: application/json' \
-            -d '{"jsonrpc":"2.0","id":"1","method":"net_listening","params":[]}' \
-            "http://$DEVNET_ANVIL_IP:8545"
-    )"
+    local result
+    result=$("$anvil_lib_dir"/anvil_net_listening.sh)
 
     ready="false"
     if [[ -n "$result" ]]; then
@@ -36,13 +33,14 @@ anvil_up() {
     fi
 
     anvil \
-        --host $DEVNET_ANVIL_IP \
+        --host "$ANVIL_IP_ADDR" \
         --dump-state "$anvil_state_file" \
-        > /dev/null &
+        --state-interval "$DEVNET_ANVIL_STATE_INTERVAL" \
+        --silent &
     local pid=$!
 
+    sleep "$DEVNET_ANVIL_TIMEOUT"
     # check if anvil is up
-    sleep $DEVNET_ANVIL_TIMEOUT
     _is_anvil_up is_up
     if [[ "$is_up" != "true" ]]; then
         err "anvil has not started"
@@ -55,9 +53,8 @@ anvil_up() {
 anvil_down() {
     local anvil_pid="$1"
 
-    verbose "waiting $DEVNET_ANVIL_TIMEOUT seconds before killing anvil..."
-    sleep $DEVNET_ANVIL_TIMEOUT
     kill "$anvil_pid"
-    check_error $? "failed to kill anvil"
+    wait "$anvil_pid"
+    check_error "$?" "failed to kill anvil"
     verbose "killed anvil (pid=$anvil_pid)"
 }
