@@ -126,5 +126,5 @@ go-type = "string"
 #
 
 [HTTP_PORT]
-default = "8080"
+default = "10000"
 go-type = "int"

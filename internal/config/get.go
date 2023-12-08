@@ -70,7 +70,7 @@ func GetFeatureHostMode() bool { return get("FEATURE_HOST_MODE", "false", true, 
 
 func GetFeatureReaderMode() bool { return get("FEATURE_READER_MODE", "false", true, toBool) }
 
-func GetHttpPort() int { return get("HTTP_PORT", "8080", true, toInt) }
+func GetHttpPort() int { return get("HTTP_PORT", "10000", true, toInt) }
 
 func GetLogLevel() LogLevel { return get("LOG_LEVEL", "info", true, toLogLevel) }
 
