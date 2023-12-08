@@ -18,8 +18,9 @@ ROLLUPS_CONTRACTS_VERSION="1.1.0"
 DEVNET_RPC_URL="http://localhost:8545"
 DEVNET_FOUNDRY_ACCOUNT_0_ADDRESS="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 DEVNET_FOUNDRY_ACCOUNT_0_PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-# keccak256("salt")
-DEVNET_DEFAULT_SALT="0xa05e334153147e75f3f416139b5109d1179cb56fef6a4ecb4c4cbc92a7c37b70"
+# Salt is the same as hardhat's create2Salt
+# See https://github.com/wighawag/hardhat-deploy/blob/a611466906282969cee601e4f6cd53438fefa2b3/src/helpers.ts#L559
+DEVNET_DEFAULT_SALT="0x0000000000000000000000000000000000000000000000000000000000000000"
 readonly ROLLUPS_CONTRACTS_VERSION \
     DEVNET_RPC_URL \
     DEVNET_FOUNDRY_ACCOUNT_0_ADDRESS \
@@ -70,8 +71,7 @@ finish() {
 
     if [ -n "$work_dir" ]; then
         rm -rf "$work_dir"
-        check_error $? "failed to remove $work_dir"
-        verbose "removing $work_dir"
+        check_error $? "failed to remove workdir $work_dir"
     fi
 
     if [[ -n "$anvil_pid" ]]; then
@@ -187,9 +187,9 @@ deploy_relay() {
 ################################################################################
 # Create DApp factories
 create_factories() {
-    local -n dapp_factory_addr="$1"
-    shift
     local -n auth_hist_factory_addr="$1"
+    shift
+    local -n dapp_factory_addr="$1"
     shift
 
     local contract="src/dapp/CartesiDAppFactory.sol"
@@ -245,16 +245,16 @@ create_factories() {
 create_dapp() {
     local -n ret="$1"
     shift
-    factory_addr="$1"
+    local auth_hist_factory_addr="$1"
     shift
-    dapp_factory_addr="$1"
+    local dapp_factory_addr="$1"
     shift
 
     local addresses
     contract_create \
         addresses \
         block_number \
-        "$factory_addr" \
+        "$auth_hist_factory_addr" \
         "newAuthorityHistoryPair(address,bytes32)(address,address)" \
             "$DEVNET_FOUNDRY_ACCOUNT_0_ADDRESS" \
             "$DEVNET_DEFAULT_SALT"
@@ -325,12 +325,12 @@ trap finish EXIT ERR
 log "starting devnet creation"
 work_dir=$(mktemp -d)
 readonly work_dir
-check_error $? "faile to create temp dir"
-verbose "created $work_dir"
+check_error $? "failed to create temp dir"
+verbose "created work dir at $work_dir"
 
 anvil_pid=""
 anvil_up \
-    anvil_pid\
+    anvil_pid \
     "$devnet_anvil_state_file"
 check_error $? "failed to start anvil"
 log "started anvil (pid=$anvil_pid)"
@@ -341,13 +341,14 @@ forge_prepare \
 log "prepared forge environment"
 
 deploy_libraries
+
 deploy_portals
 deploy_relay
 log "deployed contracts"
 
 create_factories \
-    dapp_factory_address \
-    auth_hist_factory_address
+    auth_hist_factory_address \
+    dapp_factory_address
 log "created factories"
 
 create_dapp \

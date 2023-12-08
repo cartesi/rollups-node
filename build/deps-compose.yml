@@ -3,57 +3,18 @@ version: "3.9"
 name: rollups-node
 services:
   devnet:
-    image: sunodo/devnet:1.1.1
-    command:
-      [
-        "anvil",
-        "--block-time",
-        "${BLOCK_TIME:-5}",
-        "--load-state",
-        "/usr/share/sunodo/anvil_state.json",
-      ]
+    image: cartesi/rollups-devnet:devel
     ports:
       - 8545:8545
-    healthcheck:
-      test: ["CMD", "eth_isready"]
-      interval: 10s
-      timeout: 1s
-      retries: 5
     environment:
       ANVIL_IP_ADDR: 0.0.0.0
     volumes:
-      - blockchain-data:/usr/share/sunodo
+      - blockchain-data:/usr/share/devnet
 
   machine_snapshot_setup:
     image: cartesi/rollups-machine-snapshot:devel
     volumes:
       - machine:/var/opt/cartesi/machine-snapshots
-
-  dapp_deployer:
-    image: cartesi/rollups-cli:1.0.2
-    restart: on-failure
-    depends_on:
-      devnet:
-        condition: service_started
-      machine_snapshot_setup:
-        condition: service_completed_successfully
-    command:
-      [
-        "create",
-        "--rpc",
-        "http://devnet:8545",
-        "--deploymentFile",
-        "/usr/share/sunodo/localhost.json",
-        "--mnemonic",
-        "test test test test test test test test test test test junk",
-        "--templateHashFile",
-        "/var/opt/cartesi/machine-snapshots/0_0/hash",
-        "--outputFile",
-        "/usr/share/sunodo/dapp.json",
-      ]
-    volumes:
-      - machine:/var/opt/cartesi/machine-snapshots:ro
-      - blockchain-data:/usr/share/sunodo
 
   database:
     image: postgres:13-alpine
