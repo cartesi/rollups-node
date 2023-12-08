@@ -11,8 +11,6 @@ services:
     depends_on:
       devnet:
         condition: service_healthy
-      dapp_deployer:
-        condition: service_completed_successfully
       machine_snapshot_setup:
         condition: service_completed_successfully
       database:
