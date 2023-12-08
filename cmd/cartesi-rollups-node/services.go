@@ -264,6 +264,9 @@ func newRedis() services.Service {
 	s.HealthcheckPort = getPort(portOffsetRedis)
 	s.Path = "redis-server"
 	s.Args = append(s.Args, "--port", fmt.Sprint(getPort(portOffsetRedis)))
+	// Disable persistence with --save and --appendonly config
+	s.Args = append(s.Args, "--save", "")
+	s.Args = append(s.Args, "--appendonly", "no")
 	return s
 }
 
