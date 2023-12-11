@@ -14,6 +14,8 @@ operations:
 - generate/vouchers.graphql
 - generate/input_vouchers.graphql
 - generate/report.graphql
+- generate/reports.graphql
+- generate/input_reports.graphql
 
 generated: generated.go
 package: readerclient

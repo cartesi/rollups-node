@@ -37,6 +37,14 @@ type __getInputNoticesInput struct {
 // GetInputIndex returns __getInputNoticesInput.InputIndex, and is useful for accessing the field via an interface.
 func (v *__getInputNoticesInput) GetInputIndex() int { return v.InputIndex }
 
+// __getInputReportsInput is used internally by genqlient
+type __getInputReportsInput struct {
+	InputIndex int `json:"inputIndex"`
+}
+
+// GetInputIndex returns __getInputReportsInput.InputIndex, and is useful for accessing the field via an interface.
+func (v *__getInputReportsInput) GetInputIndex() int { return v.InputIndex }
+
 // __getInputVouchersInput is used internally by genqlient
 type __getInputVouchersInput struct {
 	InputIndex int `json:"inputIndex"`
@@ -285,6 +293,83 @@ type getInputNoticesResponse struct {
 
 // GetInput returns getInputNoticesResponse.Input, and is useful for accessing the field via an interface.
 func (v *getInputNoticesResponse) GetInput() getInputNoticesInput { return v.Input }
+
+// getInputReportsInput includes the requested fields of the GraphQL type Input.
+// The GraphQL type's documentation follows.
+//
+// Request submitted to the application to advance its state
+type getInputReportsInput struct {
+	// Input index starting from genesis
+	Index int `json:"index"`
+	// Get reports from this particular input with support for pagination
+	Reports getInputReportsInputReportsReportConnection `json:"reports"`
+}
+
+// GetIndex returns getInputReportsInput.Index, and is useful for accessing the field via an interface.
+func (v *getInputReportsInput) GetIndex() int { return v.Index }
+
+// GetReports returns getInputReportsInput.Reports, and is useful for accessing the field via an interface.
+func (v *getInputReportsInput) GetReports() getInputReportsInputReportsReportConnection {
+	return v.Reports
+}
+
+// getInputReportsInputReportsReportConnection includes the requested fields of the GraphQL type ReportConnection.
+// The GraphQL type's documentation follows.
+//
+// Pagination result
+type getInputReportsInputReportsReportConnection struct {
+	// Pagination entries returned for the current page
+	Edges []getInputReportsInputReportsReportConnectionEdgesReportEdge `json:"edges"`
+}
+
+// GetEdges returns getInputReportsInputReportsReportConnection.Edges, and is useful for accessing the field via an interface.
+func (v *getInputReportsInputReportsReportConnection) GetEdges() []getInputReportsInputReportsReportConnectionEdgesReportEdge {
+	return v.Edges
+}
+
+// getInputReportsInputReportsReportConnectionEdgesReportEdge includes the requested fields of the GraphQL type ReportEdge.
+// The GraphQL type's documentation follows.
+//
+// Pagination entry
+type getInputReportsInputReportsReportConnectionEdgesReportEdge struct {
+	// Node instance
+	Node getInputReportsInputReportsReportConnectionEdgesReportEdgeNodeReport `json:"node"`
+}
+
+// GetNode returns getInputReportsInputReportsReportConnectionEdgesReportEdge.Node, and is useful for accessing the field via an interface.
+func (v *getInputReportsInputReportsReportConnectionEdgesReportEdge) GetNode() getInputReportsInputReportsReportConnectionEdgesReportEdgeNodeReport {
+	return v.Node
+}
+
+// getInputReportsInputReportsReportConnectionEdgesReportEdgeNodeReport includes the requested fields of the GraphQL type Report.
+// The GraphQL type's documentation follows.
+//
+// Application log or diagnostic information
+type getInputReportsInputReportsReportConnectionEdgesReportEdgeNodeReport struct {
+	// Report index within the context of the input that produced it
+	Index int `json:"index"`
+	// Report data as a payload in Ethereum hex binary format, starting with '0x'
+	Payload string `json:"payload"`
+}
+
+// GetIndex returns getInputReportsInputReportsReportConnectionEdgesReportEdgeNodeReport.Index, and is useful for accessing the field via an interface.
+func (v *getInputReportsInputReportsReportConnectionEdgesReportEdgeNodeReport) GetIndex() int {
+	return v.Index
+}
+
+// GetPayload returns getInputReportsInputReportsReportConnectionEdgesReportEdgeNodeReport.Payload, and is useful for accessing the field via an interface.
+func (v *getInputReportsInputReportsReportConnectionEdgesReportEdgeNodeReport) GetPayload() string {
+	return v.Payload
+}
+
+// getInputReportsResponse is returned by getInputReports on success.
+type getInputReportsResponse struct {
+	// Get input based on its identifier
+	Input getInputReportsInput `json:"input"`
+}
+
+// GetInput returns getInputReportsResponse.Input, and is useful for accessing the field via an interface.
+func (v *getInputReportsResponse) GetInput() getInputReportsInput { return v.Input }
 
 // getInputResponse is returned by getInput on success.
 type getInputResponse struct {
@@ -893,6 +978,83 @@ type getReportResponse struct {
 // GetReport returns getReportResponse.Report, and is useful for accessing the field via an interface.
 func (v *getReportResponse) GetReport() getReportReport { return v.Report }
 
+// getReportsReportsReportConnection includes the requested fields of the GraphQL type ReportConnection.
+// The GraphQL type's documentation follows.
+//
+// Pagination result
+type getReportsReportsReportConnection struct {
+	// Pagination entries returned for the current page
+	Edges []getReportsReportsReportConnectionEdgesReportEdge `json:"edges"`
+}
+
+// GetEdges returns getReportsReportsReportConnection.Edges, and is useful for accessing the field via an interface.
+func (v *getReportsReportsReportConnection) GetEdges() []getReportsReportsReportConnectionEdgesReportEdge {
+	return v.Edges
+}
+
+// getReportsReportsReportConnectionEdgesReportEdge includes the requested fields of the GraphQL type ReportEdge.
+// The GraphQL type's documentation follows.
+//
+// Pagination entry
+type getReportsReportsReportConnectionEdgesReportEdge struct {
+	// Node instance
+	Node getReportsReportsReportConnectionEdgesReportEdgeNodeReport `json:"node"`
+}
+
+// GetNode returns getReportsReportsReportConnectionEdgesReportEdge.Node, and is useful for accessing the field via an interface.
+func (v *getReportsReportsReportConnectionEdgesReportEdge) GetNode() getReportsReportsReportConnectionEdgesReportEdgeNodeReport {
+	return v.Node
+}
+
+// getReportsReportsReportConnectionEdgesReportEdgeNodeReport includes the requested fields of the GraphQL type Report.
+// The GraphQL type's documentation follows.
+//
+// Application log or diagnostic information
+type getReportsReportsReportConnectionEdgesReportEdgeNodeReport struct {
+	// Report index within the context of the input that produced it
+	Index int `json:"index"`
+	// Report data as a payload in Ethereum hex binary format, starting with '0x'
+	Payload string `json:"payload"`
+	// Input whose processing produced the report
+	Input getReportsReportsReportConnectionEdgesReportEdgeNodeReportInput `json:"input"`
+}
+
+// GetIndex returns getReportsReportsReportConnectionEdgesReportEdgeNodeReport.Index, and is useful for accessing the field via an interface.
+func (v *getReportsReportsReportConnectionEdgesReportEdgeNodeReport) GetIndex() int { return v.Index }
+
+// GetPayload returns getReportsReportsReportConnectionEdgesReportEdgeNodeReport.Payload, and is useful for accessing the field via an interface.
+func (v *getReportsReportsReportConnectionEdgesReportEdgeNodeReport) GetPayload() string {
+	return v.Payload
+}
+
+// GetInput returns getReportsReportsReportConnectionEdgesReportEdgeNodeReport.Input, and is useful for accessing the field via an interface.
+func (v *getReportsReportsReportConnectionEdgesReportEdgeNodeReport) GetInput() getReportsReportsReportConnectionEdgesReportEdgeNodeReportInput {
+	return v.Input
+}
+
+// getReportsReportsReportConnectionEdgesReportEdgeNodeReportInput includes the requested fields of the GraphQL type Input.
+// The GraphQL type's documentation follows.
+//
+// Request submitted to the application to advance its state
+type getReportsReportsReportConnectionEdgesReportEdgeNodeReportInput struct {
+	// Input index starting from genesis
+	Index int `json:"index"`
+}
+
+// GetIndex returns getReportsReportsReportConnectionEdgesReportEdgeNodeReportInput.Index, and is useful for accessing the field via an interface.
+func (v *getReportsReportsReportConnectionEdgesReportEdgeNodeReportInput) GetIndex() int {
+	return v.Index
+}
+
+// getReportsResponse is returned by getReports on success.
+type getReportsResponse struct {
+	// Get reports with support for pagination
+	Reports getReportsReportsReportConnection `json:"reports"`
+}
+
+// GetReports returns getReportsResponse.Reports, and is useful for accessing the field via an interface.
+func (v *getReportsResponse) GetReports() getReportsReportsReportConnection { return v.Reports }
+
 // getVoucherResponse is returned by getVoucher on success.
 type getVoucherResponse struct {
 	// Get a voucher based on its index
@@ -1301,6 +1463,49 @@ func getInputNotices(
 	return &data, err
 }
 
+// The query or mutation executed by getInputReports.
+const getInputReports_Operation = `
+query getInputReports ($inputIndex: Int!) {
+	input(index: $inputIndex) {
+		index
+		reports {
+			edges {
+				node {
+					index
+					payload
+				}
+			}
+		}
+	}
+}
+`
+
+func getInputReports(
+	ctx context.Context,
+	client graphql.Client,
+	inputIndex int,
+) (*getInputReportsResponse, error) {
+	req := &graphql.Request{
+		OpName: "getInputReports",
+		Query:  getInputReports_Operation,
+		Variables: &__getInputReportsInput{
+			InputIndex: inputIndex,
+		},
+	}
+	var err error
+
+	var data getInputReportsResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
+
 // The query or mutation executed by getInputVouchers.
 const getInputVouchers_Operation = `
 query getInputVouchers ($inputIndex: Int!) {
@@ -1534,6 +1739,45 @@ func getReport(
 	var err error
 
 	var data getReportResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
+
+// The query or mutation executed by getReports.
+const getReports_Operation = `
+query getReports {
+	reports {
+		edges {
+			node {
+				index
+				payload
+				input {
+					index
+				}
+			}
+		}
+	}
+}
+`
+
+func getReports(
+	ctx context.Context,
+	client graphql.Client,
+) (*getReportsResponse, error) {
+	req := &graphql.Request{
+		OpName: "getReports",
+		Query:  getReports_Operation,
+	}
+	var err error
+
+	var data getReportsResponse
 	resp := &graphql.Response{Data: &data}
 
 	err = client.MakeRequest(
