@@ -31,7 +31,23 @@ func (l serviceLogger) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-type Service struct {
+type Service interface {
+	fmt.Stringer
+
+	// Start will execute a binary and wait for its completion or until the context
+	// is canceled
+	Start(ctx context.Context) error
+
+	// Ready blocks until the service is ready or the context is canceled.
+	//
+	// A service is considered ready when it is possible to establish a connection
+	// to its healthcheck endpoint.
+	Ready(ctx context.Context, timeout time.Duration) error
+}
+
+// A service that executes a binary located at Path. Implements service.Service
+// and fmt.Stringer
+type BinaryService struct {
 
 	// Name that identifies the service.
 	Name string
@@ -49,9 +65,7 @@ type Service struct {
 	Env []string
 }
 
-// Start will execute a binary and wait for its completion or until the context
-// is canceled
-func (s Service) Start(ctx context.Context) error {
+func (s BinaryService) Start(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, s.Path, s.Args...)
 	cmd.Env = s.Env
 	cmd.Stderr = serviceLogger{s.Name}
@@ -76,11 +90,7 @@ func (s Service) Start(ctx context.Context) error {
 	return nil
 }
 
-// Ready blocks until the service is ready or the context is canceled.
-//
-// A service is considered ready when it is possible to establish a connection
-// to its healthcheck endpoint.
-func (s Service) Ready(ctx context.Context, timeout time.Duration) error {
+func (s BinaryService) Ready(ctx context.Context, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	for {
@@ -98,7 +108,7 @@ func (s Service) Ready(ctx context.Context, timeout time.Duration) error {
 	}
 }
 
-func (s Service) String() string {
+func (s BinaryService) String() string {
 	return s.Name
 }
 
@@ -123,10 +133,10 @@ func Run(ctx context.Context, services []Service) {
 			defer wg.Done()
 			if err := service.Start(ctx); err != nil {
 				msg := "main: service '%v' exited with error: %v\n"
-				logger.Error.Printf(msg, service.String(), err)
+				logger.Error.Printf(msg, service, err)
 			} else {
 				msg := "main: service '%v' exited successfully\n"
-				logger.Info.Printf(msg, service.String())
+				logger.Info.Printf(msg, service)
 			}
 		}()
 
@@ -134,7 +144,7 @@ func Run(ctx context.Context, services []Service) {
 		if err := service.Ready(ctx, DefaultServiceTimeout); err != nil {
 			cancel()
 			msg := "main: service '%v' failed to be ready with error: %v. Exiting\n"
-			logger.Error.Printf(msg, service.Name, err)
+			logger.Error.Printf(msg, service, err)
 			break
 		}
 	}

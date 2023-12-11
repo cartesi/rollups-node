@@ -56,7 +56,7 @@ func getRustLog(rustModule string) string {
 }
 
 func newAdvanceRunner() services.Service {
-	var s services.Service
+	var s services.BinaryService
 	s.Name = "advance-runner"
 	s.HealthcheckPort = getPort(portOffsetAdvanceRunner)
 	s.Path = "cartesi-rollups-advance-runner"
@@ -92,7 +92,7 @@ func newAdvanceRunner() services.Service {
 }
 
 func newAuthorityClaimer() services.Service {
-	var s services.Service
+	var s services.BinaryService
 	s.Name = "authority-claimer"
 	s.HealthcheckPort = getPort(portOffsetAuthorityClaimer)
 	s.Path = "cartesi-rollups-authority-claimer"
@@ -143,7 +143,7 @@ func newAuthorityClaimer() services.Service {
 }
 
 func newDispatcher() services.Service {
-	var s services.Service
+	var s services.BinaryService
 	s.Name = "dispatcher"
 	s.HealthcheckPort = getPort(portOffsetDispatcher)
 	s.Path = "cartesi-rollups-dispatcher"
@@ -178,7 +178,7 @@ func newDispatcher() services.Service {
 }
 
 func newGraphQLServer() services.Service {
-	var s services.Service
+	var s services.BinaryService
 	s.Name = "graphql-server"
 	s.HealthcheckPort = getPort(portOffsetGraphQLHealthcheck)
 	s.Path = "cartesi-rollups-graphql-server"
@@ -197,7 +197,7 @@ func newGraphQLServer() services.Service {
 }
 
 func newHostRunner() services.Service {
-	var s services.Service
+	var s services.BinaryService
 	s.Name = "host-runner"
 	s.HealthcheckPort = getPort(portOffsetHostRunnerHealthcheck)
 	s.Path = "cartesi-rollups-host-runner"
@@ -217,7 +217,7 @@ func newHostRunner() services.Service {
 }
 
 func newIndexer() services.Service {
-	var s services.Service
+	var s services.BinaryService
 	s.Name = "indexer"
 	s.HealthcheckPort = getPort(portOffsetIndexer)
 	s.Path = "cartesi-rollups-indexer"
@@ -239,7 +239,7 @@ func newIndexer() services.Service {
 }
 
 func newInspectServer() services.Service {
-	var s services.Service
+	var s services.BinaryService
 	s.Name = "inspect-server"
 	s.HealthcheckPort = getPort(portOffsetInspectHealthcheck)
 	s.Path = "cartesi-rollups-inspect-server"
@@ -259,7 +259,7 @@ func newInspectServer() services.Service {
 }
 
 func newRedis() services.Service {
-	var s services.Service
+	var s services.BinaryService
 	s.Name = "redis"
 	s.HealthcheckPort = getPort(portOffsetRedis)
 	s.Path = "redis-server"
@@ -271,7 +271,7 @@ func newRedis() services.Service {
 }
 
 func newServerManager() services.Service {
-	var s services.Service
+	var s services.BinaryService
 	s.Name = "server-manager"
 	s.HealthcheckPort = getPort(portOffsetServerManager)
 	s.Path = "server-manager"
@@ -287,7 +287,7 @@ func newServerManager() services.Service {
 }
 
 func newStateServer() services.Service {
-	var s services.Service
+	var s services.BinaryService
 	s.Name = "state-server"
 	s.HealthcheckPort = getPort(portOffsetStateServer)
 	s.Path = "cartesi-rollups-state-server"
