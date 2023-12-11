@@ -79,7 +79,7 @@ jobs:
           if-no-files-found: error
 
       - name: Install Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
 
