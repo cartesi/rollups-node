@@ -57,6 +57,18 @@ func (v *__getNoticeInput) GetNoticeIndex() int { return v.NoticeIndex }
 // GetInputIndex returns __getNoticeInput.InputIndex, and is useful for accessing the field via an interface.
 func (v *__getNoticeInput) GetInputIndex() int { return v.InputIndex }
 
+// __getReportInput is used internally by genqlient
+type __getReportInput struct {
+	ReportIndex int `json:"reportIndex"`
+	InputIndex  int `json:"inputIndex"`
+}
+
+// GetReportIndex returns __getReportInput.ReportIndex, and is useful for accessing the field via an interface.
+func (v *__getReportInput) GetReportIndex() int { return v.ReportIndex }
+
+// GetInputIndex returns __getReportInput.InputIndex, and is useful for accessing the field via an interface.
+func (v *__getReportInput) GetInputIndex() int { return v.InputIndex }
+
 // __getVoucherInput is used internally by genqlient
 type __getVoucherInput struct {
 	VoucherIndex int `json:"voucherIndex"`
@@ -838,6 +850,49 @@ type getNoticesResponse struct {
 // GetNotices returns getNoticesResponse.Notices, and is useful for accessing the field via an interface.
 func (v *getNoticesResponse) GetNotices() getNoticesNoticesNoticeConnection { return v.Notices }
 
+// getReportReport includes the requested fields of the GraphQL type Report.
+// The GraphQL type's documentation follows.
+//
+// Application log or diagnostic information
+type getReportReport struct {
+	// Report index within the context of the input that produced it
+	Index int `json:"index"`
+	// Report data as a payload in Ethereum hex binary format, starting with '0x'
+	Payload string `json:"payload"`
+	// Input whose processing produced the report
+	Input getReportReportInput `json:"input"`
+}
+
+// GetIndex returns getReportReport.Index, and is useful for accessing the field via an interface.
+func (v *getReportReport) GetIndex() int { return v.Index }
+
+// GetPayload returns getReportReport.Payload, and is useful for accessing the field via an interface.
+func (v *getReportReport) GetPayload() string { return v.Payload }
+
+// GetInput returns getReportReport.Input, and is useful for accessing the field via an interface.
+func (v *getReportReport) GetInput() getReportReportInput { return v.Input }
+
+// getReportReportInput includes the requested fields of the GraphQL type Input.
+// The GraphQL type's documentation follows.
+//
+// Request submitted to the application to advance its state
+type getReportReportInput struct {
+	// Input index starting from genesis
+	Index int `json:"index"`
+}
+
+// GetIndex returns getReportReportInput.Index, and is useful for accessing the field via an interface.
+func (v *getReportReportInput) GetIndex() int { return v.Index }
+
+// getReportResponse is returned by getReport on success.
+type getReportResponse struct {
+	// Get a report based on its index
+	Report getReportReport `json:"report"`
+}
+
+// GetReport returns getReportResponse.Report, and is useful for accessing the field via an interface.
+func (v *getReportResponse) GetReport() getReportReport { return v.Report }
+
 // getVoucherResponse is returned by getVoucher on success.
 type getVoucherResponse struct {
 	// Get a voucher based on its index
@@ -1438,6 +1493,47 @@ func getNotices(
 	var err error
 
 	var data getNoticesResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
+
+// The query or mutation executed by getReport.
+const getReport_Operation = `
+query getReport ($reportIndex: Int!, $inputIndex: Int!) {
+	report(reportIndex: $reportIndex, inputIndex: $inputIndex) {
+		index
+		payload
+		input {
+			index
+		}
+	}
+}
+`
+
+func getReport(
+	ctx context.Context,
+	client graphql.Client,
+	reportIndex int,
+	inputIndex int,
+) (*getReportResponse, error) {
+	req := &graphql.Request{
+		OpName: "getReport",
+		Query:  getReport_Operation,
+		Variables: &__getReportInput{
+			ReportIndex: reportIndex,
+			InputIndex:  inputIndex,
+		},
+	}
+	var err error
+
+	var data getReportResponse
 	resp := &graphql.Response{Data: &data}
 
 	err = client.MakeRequest(
