@@ -39,6 +39,67 @@ func newReport(
 	return &report, err
 }
 
+// Get multiple reports from graphql.
+func GetReports(
+	ctx context.Context,
+	client graphql.Client,
+) ([]Report, error) {
+
+	var reports []Report
+
+	resp, err := getReports(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, edge := range resp.Reports.Edges {
+
+		report, err := newReport(
+			edge.Node.Index,
+			edge.Node.Input.Index,
+			edge.Node.Payload,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		reports = append(reports, *report)
+	}
+
+	return reports, err
+}
+
+// Get multiple reports from GraphQL for the given input index.
+func GetInputReports(
+	ctx context.Context,
+	client graphql.Client,
+	inputIndex int,
+) ([]Report, error) {
+
+	var reports []Report
+
+	resp, err := getInputReports(ctx, client, inputIndex)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, edge := range resp.Input.Reports.Edges {
+
+		report, err := newReport(
+			edge.Node.Index,
+			resp.Input.Index,
+			edge.Node.Payload,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		reports = append(reports, *report)
+	}
+
+	return reports, err
+}
+
 // Get report from GraphQL given the input and report indices.
 func GetReport(
 	ctx context.Context,

@@ -1,0 +1,13 @@
+query getInputReports($inputIndex: Int!) {
+  input(index: $inputIndex) {
+    index
+    reports {
+      edges {
+        node{
+          index
+          payload
+        }
+      }
+    }
+  }
+}

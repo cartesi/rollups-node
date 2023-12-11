@@ -9,6 +9,7 @@ import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/notice"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/notices"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/report"
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/reports"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/voucher"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/vouchers"
 
@@ -28,4 +29,5 @@ func init() {
 	Cmd.AddCommand(voucher.Cmd)
 	Cmd.AddCommand(vouchers.Cmd)
 	Cmd.AddCommand(report.Cmd)
+	Cmd.AddCommand(reports.Cmd)
 }

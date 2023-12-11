@@ -1,0 +1,13 @@
+query getReports {
+  reports {
+    edges {
+      node {
+        index
+        payload
+        input {
+          index
+        }
+      }
+    }
+  }
+}
