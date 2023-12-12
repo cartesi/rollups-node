@@ -187,7 +187,7 @@ func newGraphQLServer() services.Service {
 	s.Env = append(s.Env, getRustLog("graphql_server"))
 	s.Env = append(s.Env,
 		fmt.Sprintf("POSTGRES_ENDPOINT=%v", config.GetPostgresEndpoint()))
-	s.Env = append(s.Env, "GRAPHQL_HOST=127.0.0.1")
+	s.Env = append(s.Env, "GRAPHQL_HOST=0.0.0.0")
 	s.Env = append(s.Env,
 		fmt.Sprintf("GRAPHQL_PORT=%v", getPort(portOffsetGraphQLServer)))
 	s.Env = append(s.Env,
@@ -207,7 +207,7 @@ func newHostRunner() services.Service {
 	s.Env = append(s.Env, "GRPC_SERVER_MANAGER_ADDRESS=127.0.0.1")
 	s.Env = append(s.Env,
 		fmt.Sprintf("GRPC_SERVER_MANAGER_PORT=%v", getPort(portOffsetServerManager)))
-	s.Env = append(s.Env, "HTTP_ROLLUP_SERVER_ADDRESS=127.0.0.1")
+	s.Env = append(s.Env, "HTTP_ROLLUP_SERVER_ADDRESS=0.0.0.0")
 	s.Env = append(s.Env,
 		fmt.Sprintf("HTTP_ROLLUP_SERVER_PORT=%v", getPort(portOffsetHostRunnerRollups)))
 	s.Env = append(s.Env,
@@ -247,7 +247,7 @@ func newInspectServer() services.Service {
 	s.Env = append(s.Env, "LOG_ENABLE_COLOR=false")
 	s.Env = append(s.Env, getRustLog("inspect_server"))
 	s.Env = append(s.Env,
-		fmt.Sprintf("INSPECT_SERVER_ADDRESS=127.0.0.1:%v", getPort(portOffsetInspectServer)))
+		fmt.Sprintf("INSPECT_SERVER_ADDRESS=0.0.0.0:%v", getPort(portOffsetInspectServer)))
 	s.Env = append(s.Env,
 		fmt.Sprintf("SERVER_MANAGER_ADDRESS=127.0.0.1:%v", getPort(portOffsetServerManager)))
 	s.Env = append(s.Env,

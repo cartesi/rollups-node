@@ -5,8 +5,8 @@ services:
   node:
     image: "cartesi/rollups-node:devel"
     ports:
-      - "10003:4000"
-      - "10007:5005"
+      - "10004:10004" # GraphQL Server
+      - "10009:10009" # Inspect Server
     restart: always
     depends_on:
       devnet:
