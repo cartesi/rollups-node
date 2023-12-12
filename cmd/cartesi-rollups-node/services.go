@@ -29,6 +29,7 @@ const (
 	portOffsetRedis
 	portOffsetServerManager
 	portOffsetStateServer
+	portHealthService
 )
 
 // Get the port of the given service.
@@ -309,4 +310,11 @@ func newStateServer() services.Service {
 		fmt.Sprintf("SS_SERVER_ADDRESS=127.0.0.1:%v", getPort(portOffsetStateServer)))
 	s.Env = append(s.Env, os.Environ()...)
 	return s
+}
+
+func newHealthService() services.Service {
+	return services.HealthService{
+		Addr: "0.0.0.0",
+		Port: getPort(portHealthService),
+	}
 }
