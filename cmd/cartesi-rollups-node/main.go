@@ -38,5 +38,7 @@ func main() {
 	s = append(s, newDispatcher())    // Depends on the state server
 	s = append(s, newInspectServer()) // Depends on the server-manager/host-runner
 
+	s = append(s, newHealthService())
+
 	services.Run(context.Background(), s)
 }

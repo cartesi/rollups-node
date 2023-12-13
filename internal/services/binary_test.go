@@ -41,7 +41,7 @@ func (s *ServiceTestSuite) SetupTest() {
 
 // Service should stop when context is cancelled
 func (s *ServiceTestSuite) TestServiceStops() {
-	service := Service{
+	service := BinaryService{
 		Name:            "fake-service",
 		Path:            "fake-service",
 		HealthcheckPort: s.servicePort,
@@ -65,7 +65,7 @@ func (s *ServiceTestSuite) TestServiceStops() {
 
 // Service should stop if timeout is reached and it isn't ready yet
 func (s *ServiceTestSuite) TestServiceTimeout() {
-	service := Service{
+	service := BinaryService{
 		Name:            "fake-service",
 		Path:            "fake-service",
 		HealthcheckPort: 0, // wrong port
@@ -90,7 +90,7 @@ func (s *ServiceTestSuite) TestServiceTimeout() {
 
 // Service should be ready soon after starting
 func (s *ServiceTestSuite) TestServiceReady() {
-	service := Service{
+	service := BinaryService{
 		Name:            "fake-service",
 		Path:            "fake-service",
 		HealthcheckPort: s.servicePort,

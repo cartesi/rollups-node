@@ -8,10 +8,7 @@ package services
 import (
 	"context"
 	"fmt"
-	"net"
-	"os/exec"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/logger"
@@ -31,75 +28,18 @@ func (l serviceLogger) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-type Service struct {
+type Service interface {
+	fmt.Stringer
 
-	// Name that identifies the service.
-	Name string
+	// Start will execute a binary and wait for its completion or until the context
+	// is canceled
+	Start(ctx context.Context) error
 
-	// Port used to verify if the service is ready.
-	HealthcheckPort int
-
-	// Path to the service binary.
-	Path string
-
-	// Args to the service binary.
-	Args []string
-
-	// Environment variables.
-	Env []string
-}
-
-// Start will execute a binary and wait for its completion or until the context
-// is canceled
-func (s Service) Start(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, s.Path, s.Args...)
-	cmd.Env = s.Env
-	cmd.Stderr = serviceLogger{s.Name}
-	cmd.Stdout = serviceLogger{s.Name}
-	cmd.Cancel = func() error {
-		err := cmd.Process.Signal(syscall.SIGTERM)
-		if err != nil {
-			msg := "failed to send SIGTERM to %v: %v\n"
-			logger.Warning.Printf(msg, s.Name, err)
-		}
-		return err
-	}
-	err := cmd.Run()
-	if err != nil {
-		exitCode := cmd.ProcessState.ExitCode()
-		signal := cmd.ProcessState.Sys().(syscall.WaitStatus).Signal()
-		if exitCode != 0 && signal != syscall.SIGTERM {
-			// only return error if the service exits for reason other than shutdown
-			return err
-		}
-	}
-	return nil
-}
-
-// Ready blocks until the service is ready or the context is canceled.
-//
-// A service is considered ready when it is possible to establish a connection
-// to its healthcheck endpoint.
-func (s Service) Ready(ctx context.Context, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	for {
-		conn, err := net.Dial("tcp", fmt.Sprintf("0.0.0.0:%v", s.HealthcheckPort))
-		if err == nil {
-			logger.Debug.Printf("%s is ready\n", s.Name)
-			conn.Close()
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(DefaultDialInterval):
-		}
-	}
-}
-
-func (s Service) String() string {
-	return s.Name
+	// Ready blocks until the service is ready or the context is canceled.
+	//
+	// A service is considered ready when it is possible to establish a connection
+	// to its healthcheck endpoint.
+	Ready(ctx context.Context, timeout time.Duration) error
 }
 
 // The Run function serves as a very simple supervisor: it will start all the
@@ -123,10 +63,10 @@ func Run(ctx context.Context, services []Service) {
 			defer wg.Done()
 			if err := service.Start(ctx); err != nil {
 				msg := "main: service '%v' exited with error: %v\n"
-				logger.Error.Printf(msg, service.String(), err)
+				logger.Error.Printf(msg, service, err)
 			} else {
 				msg := "main: service '%v' exited successfully\n"
-				logger.Info.Printf(msg, service.String())
+				logger.Info.Printf(msg, service)
 			}
 		}()
 
@@ -134,7 +74,7 @@ func Run(ctx context.Context, services []Service) {
 		if err := service.Ready(ctx, DefaultServiceTimeout); err != nil {
 			cancel()
 			msg := "main: service '%v' failed to be ready with error: %v. Exiting\n"
-			logger.Error.Printf(msg, service.Name, err)
+			logger.Error.Printf(msg, service, err)
 			break
 		}
 	}
