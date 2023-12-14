@@ -27,6 +27,12 @@ type Input struct {
 	BlockNumber uint64 `json:"blockNumber"`
 	// Input payload in Ethereum hex binary format, starting with '0x'
 	Payload hexutil.Bytes `json:"payload"`
+	// Notices from this particular input
+	Notices []Notice `json:"notices"`
+	// Vouchers from this particular input
+	Vouchers []Voucher `json:"vouchers"`
+	// Reports from this particular input
+	Reports []Report `json:"reports"`
 }
 
 func newInput(
@@ -36,6 +42,9 @@ func newInput(
 	timestamp string,
 	blockNumber string,
 	payload string,
+	notices []Notice,
+	vouchers []Voucher,
+	reports []Report,
 ) (*Input, error) {
 	convTimestamp, err := strconv.ParseUint(timestamp, 0, 64)
 	if err != nil {
@@ -58,6 +67,9 @@ func newInput(
 		time.Duration(convTimestamp),
 		convBlockNumber,
 		convPayload,
+		notices,
+		vouchers,
+		reports,
 	}
 
 	return &input, err
@@ -74,6 +86,85 @@ func GetInput(
 		return nil, err
 	}
 
+	var notices []Notice
+	var vouchers []Voucher
+	var reports []Report
+
+	for _, edge := range resp.Input.Notices.Edges {
+
+		proof, err := newProof(
+			edge.Node.Proof.Validity.InputIndexWithinEpoch,
+			edge.Node.Proof.Validity.OutputIndexWithinInput,
+			edge.Node.Proof.Validity.OutputHashesRootHash,
+			edge.Node.Proof.Validity.VouchersEpochRootHash,
+			edge.Node.Proof.Validity.NoticesEpochRootHash,
+			edge.Node.Proof.Validity.MachineStateHash,
+			edge.Node.Proof.Validity.OutputHashInOutputHashesSiblings,
+			edge.Node.Proof.Validity.OutputHashesInEpochSiblings,
+			edge.Node.Proof.Context,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		notice, err := newNotice(
+			edge.Node.Index,
+			resp.Input.Index,
+			edge.Node.Payload,
+			proof,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		notices = append(notices, *notice)
+	}
+
+	for _, edge := range resp.Input.Vouchers.Edges {
+
+		proof, err := newProof(
+			edge.Node.Proof.Validity.InputIndexWithinEpoch,
+			edge.Node.Proof.Validity.OutputIndexWithinInput,
+			edge.Node.Proof.Validity.OutputHashesRootHash,
+			edge.Node.Proof.Validity.VouchersEpochRootHash,
+			edge.Node.Proof.Validity.NoticesEpochRootHash,
+			edge.Node.Proof.Validity.MachineStateHash,
+			edge.Node.Proof.Validity.OutputHashInOutputHashesSiblings,
+			edge.Node.Proof.Validity.OutputHashesInEpochSiblings,
+			edge.Node.Proof.Context,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		voucher, err := newVoucher(
+			edge.Node.Index,
+			resp.Input.Index,
+			edge.Node.Destination,
+			edge.Node.Payload,
+			proof,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		vouchers = append(vouchers, *voucher)
+	}
+
+	for _, edge := range resp.Input.Reports.Edges {
+
+		report, err := newReport(
+			edge.Node.Index,
+			resp.Input.Index,
+			edge.Node.Payload,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		reports = append(reports, *report)
+	}
+
 	input, err := newInput(
 		resp.Input.Index,
 		resp.Input.Status,
@@ -81,6 +172,9 @@ func GetInput(
 		resp.Input.Timestamp,
 		resp.Input.BlockNumber,
 		resp.Input.Payload,
+		notices,
+		vouchers,
+		reports,
 	)
 
 	return input, err
@@ -99,15 +193,97 @@ func GetInputs(
 		return nil, err
 	}
 
-	for _, edge := range resp.Inputs.Edges {
+	for _, inputEdge := range resp.Inputs.Edges {
+
+		var notices []Notice
+		var vouchers []Voucher
+		var reports []Report
+
+		for _, edge := range inputEdge.Node.Notices.Edges {
+
+			proof, err := newProof(
+				edge.Node.Proof.Validity.InputIndexWithinEpoch,
+				edge.Node.Proof.Validity.OutputIndexWithinInput,
+				edge.Node.Proof.Validity.OutputHashesRootHash,
+				edge.Node.Proof.Validity.VouchersEpochRootHash,
+				edge.Node.Proof.Validity.NoticesEpochRootHash,
+				edge.Node.Proof.Validity.MachineStateHash,
+				edge.Node.Proof.Validity.OutputHashInOutputHashesSiblings,
+				edge.Node.Proof.Validity.OutputHashesInEpochSiblings,
+				edge.Node.Proof.Context,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			notice, err := newNotice(
+				edge.Node.Index,
+				inputEdge.Node.Index,
+				edge.Node.Payload,
+				proof,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			notices = append(notices, *notice)
+		}
+
+		for _, edge := range inputEdge.Node.Vouchers.Edges {
+
+			proof, err := newProof(
+				edge.Node.Proof.Validity.InputIndexWithinEpoch,
+				edge.Node.Proof.Validity.OutputIndexWithinInput,
+				edge.Node.Proof.Validity.OutputHashesRootHash,
+				edge.Node.Proof.Validity.VouchersEpochRootHash,
+				edge.Node.Proof.Validity.NoticesEpochRootHash,
+				edge.Node.Proof.Validity.MachineStateHash,
+				edge.Node.Proof.Validity.OutputHashInOutputHashesSiblings,
+				edge.Node.Proof.Validity.OutputHashesInEpochSiblings,
+				edge.Node.Proof.Context,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			voucher, err := newVoucher(
+				edge.Node.Index,
+				inputEdge.Node.Index,
+				edge.Node.Destination,
+				edge.Node.Payload,
+				proof,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			vouchers = append(vouchers, *voucher)
+		}
+
+		for _, edge := range inputEdge.Node.Reports.Edges {
+
+			report, err := newReport(
+				edge.Node.Index,
+				inputEdge.Node.Index,
+				edge.Node.Payload,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			reports = append(reports, *report)
+		}
 
 		input, err := newInput(
-			edge.Node.Index,
-			edge.Node.Status,
-			edge.Node.MsgSender,
-			edge.Node.Timestamp,
-			edge.Node.BlockNumber,
-			edge.Node.Payload,
+			inputEdge.Node.Index,
+			inputEdge.Node.Status,
+			inputEdge.Node.MsgSender,
+			inputEdge.Node.Timestamp,
+			inputEdge.Node.BlockNumber,
+			inputEdge.Node.Payload,
+			notices,
+			vouchers,
+			reports,
 		)
 		if err != nil {
 			return nil, err
