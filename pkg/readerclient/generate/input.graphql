@@ -6,5 +6,56 @@ query getInput($index: Int!) {
     timestamp
     blockNumber
     payload
+    notices {
+      edges {
+        node {
+          index
+          payload
+          proof {
+            validity {
+              inputIndexWithinEpoch
+              outputIndexWithinInput
+              outputHashesRootHash
+              vouchersEpochRootHash
+              noticesEpochRootHash
+              machineStateHash
+              outputHashInOutputHashesSiblings
+              outputHashesInEpochSiblings
+            }
+            context
+          }
+        }
+      }
+    }
+    vouchers {
+      edges {
+        node {
+          index
+          payload
+          destination
+          proof {
+            validity {
+              inputIndexWithinEpoch
+              outputIndexWithinInput
+              outputHashesRootHash
+              vouchersEpochRootHash
+              noticesEpochRootHash
+              machineStateHash
+              outputHashInOutputHashesSiblings
+              outputHashesInEpochSiblings
+            }
+            context
+          }
+        }
+      }
+    }
+    reports {
+      edges {
+        node {
+          index
+          payload
+        }
+      }
+    }
   }
 }
