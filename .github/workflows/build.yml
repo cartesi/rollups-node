@@ -83,6 +83,20 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
+      - uses: depot/setup-action@v1
+
+      - name: Build and load devnet image
+        uses: depot/bake-action@v1
+        with:
+          files: |
+            ./docker-bake.hcl
+            ./docker-bake.override.hcl
+            ./docker-bake.platforms.hcl
+          targets: rollups-devnet
+          project: ${{ vars.DEPOT_PROJECT }}
+          workdir: build
+          load: true
+
       - name: Run Go tests
         working-directory: ${{ github.workspace }}
         run: go test ./...
