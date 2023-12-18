@@ -22,14 +22,14 @@ func main() {
 	s = append(s, newStateServer())
 
 	// Start either the server manager or host runner
-	if config.GetFeatureHostMode() {
+	if config.GetCartesiFeatureHostMode() {
 		s = append(s, newHostRunner())
 	} else {
 		s = append(s, newServerManager())
 	}
 
 	// Enable claimer if reader mode is disabled
-	if !config.GetFeatureReaderMode() {
+	if !config.GetCartesiFeatureReaderMode() {
 		s = append(s, newAuthorityClaimer())
 	}
 

@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/logger"
+	"github.com/cartesi/rollups-node/internal/config"
 )
 
 const (
@@ -28,7 +28,7 @@ type serviceLogger struct {
 }
 
 func (l serviceLogger) Write(data []byte) (int, error) {
-	logger.Info.Printf("%v: %v", l.Name, string(data))
+	config.InfoLogger.Printf("%v: %v", l.Name, string(data))
 	return len(data), nil
 }
 
@@ -61,7 +61,7 @@ func (s Service) Start(ctx context.Context) error {
 		err := cmd.Process.Signal(syscall.SIGTERM)
 		if err != nil {
 			msg := "failed to send SIGTERM to %v: %v\n"
-			logger.Warning.Printf(msg, s.Name, err)
+			config.WarningLogger.Printf(msg, s.Name, err)
 		}
 		return err
 	}
@@ -84,7 +84,7 @@ func (s Service) Ready(ctx context.Context, timeout time.Duration) error {
 	for {
 		conn, err := net.Dial("tcp", fmt.Sprintf("0.0.0.0:%v", s.HealthcheckPort))
 		if err == nil {
-			logger.Debug.Printf("%s is ready\n", s.Name)
+			config.DebugLogger.Printf("%s is ready\n", s.Name)
 			conn.Close()
 			return nil
 		}
@@ -105,7 +105,7 @@ func (s Service) String() string {
 // it will try to stop the remaining services or timeout if they take too long
 func Run(ctx context.Context, services []Service) {
 	if len(services) == 0 {
-		logger.Error.Panic("there are no services to run")
+		config.ErrorLogger.Panic("there are no services to run")
 	}
 
 	// start services
@@ -121,10 +121,10 @@ func Run(ctx context.Context, services []Service) {
 			defer wg.Done()
 			if err := service.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				msg := "main: service '%v' exited with error: %v\n"
-				logger.Error.Printf(msg, service.String(), err)
+				config.ErrorLogger.Printf(msg, service.String(), err)
 			} else {
 				msg := "main: service '%v' exited successfully\n"
-				logger.Info.Printf(msg, service.String())
+				config.InfoLogger.Printf(msg, service.String())
 			}
 		}()
 
@@ -132,7 +132,7 @@ func Run(ctx context.Context, services []Service) {
 		if err := service.Ready(ctx, DefaultServiceTimeout); err != nil {
 			cancel()
 			msg := "main: service '%v' failed to be ready with error: %v. Exiting\n"
-			logger.Error.Printf(msg, service.Name, err)
+			config.ErrorLogger.Printf(msg, service.Name, err)
 			break
 		}
 	}
@@ -148,8 +148,8 @@ func Run(ctx context.Context, services []Service) {
 	}()
 	select {
 	case <-wait:
-		logger.Info.Println("main: all services were shutdown")
+		config.InfoLogger.Println("main: all services were shutdown")
 	case <-time.After(DefaultServiceTimeout):
-		logger.Warning.Println("main: exited after a timeout")
+		config.WarningLogger.Println("main: exited after a timeout")
 	}
 }

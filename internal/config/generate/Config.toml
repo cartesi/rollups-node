@@ -5,126 +5,210 @@
 # Logging
 #
 
-[LOG_LEVEL]
+[logging.CARTESI_LOG_LEVEL]
 default = "info" 
 go-type = "LogLevel"
+description = """
+One of "debug", "info", "warning", "error"."""
 
-[LOG_TIMESTAMP]
+[logging.CARTESI_LOG_TIMESTAMP]
 default = "false" 
 go-type = "bool"
+description = """
+If set to true, the node will print the timestamp when logging."""
 
 #
-# Feature flags
+# Features
 #
 
-[FEATURE_HOST_MODE]
+[features.CARTESI_FEATURE_HOST_MODE]
 default = "false"
 go-type = "bool"
+description = """
+If set to true the node will run in host mode.
 
-[FEATURE_READER_MODE]
+In host mode, computations will not be performed by the cartesi machine.
+You should only use host mode for development and debugging!"""
+
+[features.CARTESI_FEATURE_READER_MODE]
 default = "false"
 go-type = "bool"
+description = """
+If set to true the node will run in reader mode.
+
+In reader mode, the node does not make claims."""
 
 #
 # Rollups
 #
 
-[EPOCH_DURATION]
+[rollups.CARTESI_EPOCH_DURATION]
 default = "86400" # 1 day in seconds
 go-type = "Duration"
+description = """
+Duration of a rollups epoch in seconds.
+
+At the end of each epoch, the node will send claims to the blockchain."""
 
 #
 # Blockchain
 #
 
-[BLOCKCHAIN_ID]
+[blockchain.CARTESI_BLOCKCHAIN_ID]
 go-type = "int"
+description = """
+An unique identifier representing a blockchain network."""
 
-[BLOCKCHAIN_HTTP_ENDPOINT]
+[blockchain.CARTESI_BLOCKCHAIN_HTTP_ENDPOINT]
 go-type = "string"
+description = """
+HTTP endpoint for the blockchain RPC provider."""
 
-[BLOCKCHAIN_WS_ENDPOINT]
+[blockchain.CARTESI_BLOCKCHAIN_WS_ENDPOINT]
 go-type = "string"
+description = """
+WebSocket endpoint for the blockchain RPC provider."""
 
-[BLOCKCHAIN_IS_LEGACY]
+[blockchain.CARTESI_BLOCKCHAIN_IS_LEGACY]
 default = "false"
 go-type = "bool"
+description = """
+If set to true the node will send transactions using the legacy gas fee model
+(instead of EIP-1559)."""
 
-[BLOCKCHAIN_GENESIS_BLOCK]
+[blockchain.CARTESI_BLOCKCHAIN_GENESIS_BLOCK]
 default = "1"
 go-type = "int64"
+description = """
+The node will begin to read blockchain events from this block."""
 
-[BLOCKCHAIN_READ_DEPTH]
+[blockchain.CARTESI_BLOCKCHAIN_FINALITY_OFFSET]
 default = "10"
 go-type = "int"
+description = """
+The node assumes that blocks offseted by N from the current block have reached finality
+(N is the read depth)."""
 
-[BLOCKCHAIN_BLOCK_TIMEOUT]
+[blockchain.CARTESI_BLOCKCHAIN_BLOCK_TIMEOUT]
 default = "60"
 go-type = "int"
+description = """
+Block subscription timeout in seconds."""
 
 #
-# Contracts deployment
+# Contracts
 #
 
-[CONTRACTS_DAPP_ADDRESS]
+[contracts.CARTESI_CONTRACTS_DAPP_ADDRESS]
 go-type = "string"
+description = """
+Address of the DApp's contract."""
 
-[CONTRACTS_DAPP_DEPLOYMENT_BLOCK_NUMBER]
+[contracts.CARTESI_CONTRACTS_DAPP_DEPLOYMENT_BLOCK_NUMBER]
 go-type = "string"
+description = """
+Block in which the DApp's contract was deployed."""
 
-[CONTRACTS_HISTORY_ADDRESS]
+[contracts.CARTESI_CONTRACTS_HISTORY_ADDRESS]
 go-type = "string"
+description = """
+Address of the History contract."""
 
-[CONTRACTS_AUTHORITY_ADDRESS]
+[contracts.CARTESI_CONTRACTS_AUTHORITY_ADDRESS]
 go-type = "string"
+description = """
+Address of the Authority contract."""
 
-[CONTRACTS_INPUT_BOX_ADDRESS]
+[contracts.CARTESI_CONTRACTS_INPUT_BOX_ADDRESS]
 go-type = "string"
+description = """
+Address of the InputBox contract."""
 
 #
 # Snapshot
 #
 
-[SNAPSHOT_DIR]
+[snapshot.CARTESI_SNAPSHOT_DIR]
 go-type = "string"
+description = """
+Path to the directory of the cartesi-machine snapshots."""
 
 #
 # Auth
 #
 
-[AUTH_MNEMONIC]
+[auth.CARTESI_AUTH_MNEMONIC]
 go-type = "string"
 export = false
+redact = true
+description = """
+The node will use the private key generated from this mnemonic to sign transactions.
 
-[AUTH_MNEMONIC_FILE]
+Overrides AUTH_MNEMONIC_FILE and AUTH_AWS_KMS_*."""
+
+[auth.CARTESI_AUTH_MNEMONIC_FILE]
 go-type = "string"
 export = false
+redact = true
+description = """
+The node will use the private key generated from the mnemonic contained in this file
+to sign transactions.
 
-[AUTH_MNEMONIC_ACCOUNT_INDEX]
+Overrides AUTH_AWS_KMS_*."""
+
+[auth.CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX]
 default = "0"
 go-type = "int"
 export = false
+redact = true
+description = """
+When using mnemonics to sign transactions,
+the node will use this account index to generate the private key."""
 
-[AUTH_AWS_KMS_KEY_ID]
+[auth.CARTESI_AUTH_AWS_KMS_KEY_ID]
 go-type = "string"
 export = false
+redact = true
+description = """
+If set, the node will use the AWS KMS service with this key ID to sign transactions.
 
-[AUTH_AWS_KMS_REGION]
+Must be set alongside AUTH_AWS_KMS_REGION."""
+
+[auth.CARTESI_AUTH_AWS_KMS_REGION]
 go-type = "string"
 export = false
+redact = true
+description = """
+An AWS KMS Region.
+
+Must be set alongside AUTH_AWS_KMS_KEY_ID."""
 
 #
 # Postgres
 #
 
-[POSTGRES_ENDPOINT]
+[postgres.CARTESI_POSTGRES_ENDPOINT]
 default = ""
 go-type = "string"
+redact = true
+description = """
+Postgres endpoint in the 'postgres://user:password@hostname:port/database' format.
+          
+If not set, or set to empty string, will defer the behaviour to the PG driver.
+See [this](https://www.postgresql.org/docs/current/libpq-envars.html) for more information.
+          
+It is also possible to set the endpoint without a password and load it from Postgres' passfile.
+See [this](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-PASSFILE)
+for more information."""
 
 #
-# HTTP server
+# HTTP
 #
 
-[HTTP_PORT]
+[http.CARTESI_HTTP_PORT]
 default = "10000"
 go-type = "int"
+description = """
+HTTP port for the node.
+The node will also use the 20 ports after this one for internal services."""
+
