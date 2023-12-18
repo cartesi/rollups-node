@@ -33,7 +33,7 @@ const (
 
 // Get the port of the given service.
 func getPort(offset portOffset) int {
-	return config.GetHttpPort() + int(offset)
+	return config.GetCartesiHttpPort() + int(offset)
 }
 
 const serverManagerSessionId = "default_session_id"
@@ -41,7 +41,7 @@ const serverManagerSessionId = "default_session_id"
 // Create the RUST_LOG variable using the config log level.
 // If the log level is set to debug, set tracing log for the given rust module.
 func getRustLog(rustModule string) string {
-	switch config.GetLogLevel() {
+	switch config.GetCartesiLogLevel() {
 	case config.LogLevelDebug:
 		return fmt.Sprintf("RUST_LOG=info,%v=trace", rustModule)
 	case config.LogLevelInfo:
@@ -71,21 +71,21 @@ func newAdvanceRunner() services.Service {
 	s.Env = append(s.Env,
 		fmt.Sprintf("REDIS_ENDPOINT=redis://127.0.0.1:%v", getPort(portOffsetRedis)))
 	s.Env = append(s.Env,
-		fmt.Sprintf("CHAIN_ID=%v", config.GetBlockchainId()))
+		fmt.Sprintf("CHAIN_ID=%v", config.GetCartesiBlockchainId()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("DAPP_CONTRACT_ADDRESS=%v", config.GetContractsDappAddress()))
+		fmt.Sprintf("DAPP_CONTRACT_ADDRESS=%v", config.GetCartesiContractsDappAddress()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("PROVIDER_HTTP_ENDPOINT=%v", config.GetBlockchainHttpEndpoint()))
+		fmt.Sprintf("PROVIDER_HTTP_ENDPOINT=%v", config.GetCartesiBlockchainHttpEndpoint()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("ADVANCE_RUNNER_HEALTHCHECK_PORT=%v", getPort(portOffsetAdvanceRunner)))
-	if config.GetFeatureHostMode() {
+	if config.GetCartesiFeatureHostMode() {
 		s.Env = append(s.Env, "SNAPSHOT_ENABLED=false")
 		s.Env = append(s.Env, "SNAPSHOT_VALIDATION_ENABLED=false")
 	} else {
 		s.Env = append(s.Env,
-			fmt.Sprintf("SNAPSHOT_DIR=%v", config.GetSnapshotDir()))
+			fmt.Sprintf("SNAPSHOT_DIR=%v", config.GetCartesiSnapshotDir()))
 		s.Env = append(s.Env,
-			fmt.Sprintf("SNAPSHOT_LATEST=%v/latest", config.GetSnapshotDir()))
+			fmt.Sprintf("SNAPSHOT_LATEST=%v/latest", config.GetCartesiSnapshotDir()))
 	}
 	s.Env = append(s.Env, os.Environ()...)
 	return s
@@ -100,28 +100,28 @@ func newAuthorityClaimer() services.Service {
 	s.Env = append(s.Env, "LOG_ENABLE_COLOR=false")
 	s.Env = append(s.Env, getRustLog("authority_claimer"))
 	s.Env = append(s.Env,
-		fmt.Sprintf("TX_PROVIDER_HTTP_ENDPOINT=%v", config.GetBlockchainHttpEndpoint()))
+		fmt.Sprintf("TX_PROVIDER_HTTP_ENDPOINT=%v", config.GetCartesiBlockchainHttpEndpoint()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("TX_CHAIN_ID=%v", config.GetBlockchainId()))
+		fmt.Sprintf("TX_CHAIN_ID=%v", config.GetCartesiBlockchainId()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("TX_CHAIN_IS_LEGACY=%v", config.GetBlockchainIsLegacy()))
+		fmt.Sprintf("TX_CHAIN_IS_LEGACY=%v", config.GetCartesiBlockchainIsLegacy()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("TX_DEFAULT_CONFIRMATIONS=%v", config.GetBlockchainReadDepth()))
+		fmt.Sprintf("TX_DEFAULT_CONFIRMATIONS=%v", config.GetCartesiBlockchainFinalityOffset()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("REDIS_ENDPOINT=redis://127.0.0.1:%v", getPort(portOffsetRedis)))
 	s.Env = append(s.Env,
-		fmt.Sprintf("DAPP_ADDRESS=%v", config.GetContractsDappAddress()))
+		fmt.Sprintf("DAPP_ADDRESS=%v", config.GetCartesiContractsDappAddress()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("DAPP_DEPLOYMENT_BLOCK_NUMBER=%v",
-			config.GetContractsDappDeploymentBlockNumber()))
+			config.GetCartesiContractsDappDeploymentBlockNumber()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("HISTORY_ADDRESS=%v", config.GetContractsHistoryAddress()))
+		fmt.Sprintf("HISTORY_ADDRESS=%v", config.GetCartesiContractsHistoryAddress()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("AUTHORITY_ADDRESS=%v", config.GetContractsAuthorityAddress()))
+		fmt.Sprintf("AUTHORITY_ADDRESS=%v", config.GetCartesiContractsAuthorityAddress()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("INPUT_BOX_ADDRESS=%v", config.GetContractsInputBoxAddress()))
+		fmt.Sprintf("INPUT_BOX_ADDRESS=%v", config.GetCartesiContractsInputBoxAddress()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("GENESIS_BLOCK=%v", config.GetBlockchainGenesisBlock()))
+		fmt.Sprintf("GENESIS_BLOCK=%v", config.GetCartesiBlockchainGenesisBlock()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("AUTHORITY_CLAIMER_HTTP_SERVER_PORT=%v", getPort(portOffsetAuthorityClaimer)))
 	switch auth := config.GetAuth().(type) {
@@ -153,24 +153,24 @@ func newDispatcher() services.Service {
 	s.Env = append(s.Env,
 		fmt.Sprintf("SC_GRPC_ENDPOINT=http://127.0.0.1:%v", getPort(portOffsetStateServer)))
 	s.Env = append(s.Env,
-		fmt.Sprintf("SC_DEFAULT_CONFIRMATIONS=%v", config.GetBlockchainReadDepth()))
+		fmt.Sprintf("SC_DEFAULT_CONFIRMATIONS=%v", config.GetCartesiBlockchainFinalityOffset()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("REDIS_ENDPOINT=redis://127.0.0.1:%v", getPort(portOffsetRedis)))
 	s.Env = append(s.Env,
-		fmt.Sprintf("DAPP_ADDRESS=%v", config.GetContractsDappAddress()))
+		fmt.Sprintf("DAPP_ADDRESS=%v", config.GetCartesiContractsDappAddress()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("DAPP_DEPLOYMENT_BLOCK_NUMBER=%v",
-			config.GetContractsDappDeploymentBlockNumber()))
+			config.GetCartesiContractsDappDeploymentBlockNumber()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("HISTORY_ADDRESS=%v", config.GetContractsHistoryAddress()))
+		fmt.Sprintf("HISTORY_ADDRESS=%v", config.GetCartesiContractsHistoryAddress()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("AUTHORITY_ADDRESS=%v", config.GetContractsAuthorityAddress()))
+		fmt.Sprintf("AUTHORITY_ADDRESS=%v", config.GetCartesiContractsAuthorityAddress()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("INPUT_BOX_ADDRESS=%v", config.GetContractsInputBoxAddress()))
+		fmt.Sprintf("INPUT_BOX_ADDRESS=%v", config.GetCartesiContractsInputBoxAddress()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("RD_EPOCH_DURATION=%v", int(config.GetEpochDuration().Seconds())))
+		fmt.Sprintf("RD_EPOCH_DURATION=%v", int(config.GetCartesiEpochDuration().Seconds())))
 	s.Env = append(s.Env,
-		fmt.Sprintf("CHAIN_ID=%v", config.GetBlockchainId()))
+		fmt.Sprintf("CHAIN_ID=%v", config.GetCartesiBlockchainId()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("DISPATCHER_HTTP_SERVER_PORT=%v", getPort(portOffsetDispatcher)))
 	s.Env = append(s.Env, os.Environ()...)
@@ -186,7 +186,7 @@ func newGraphQLServer() services.Service {
 	s.Env = append(s.Env, "LOG_ENABLE_COLOR=false")
 	s.Env = append(s.Env, getRustLog("graphql_server"))
 	s.Env = append(s.Env,
-		fmt.Sprintf("POSTGRES_ENDPOINT=%v", config.GetPostgresEndpoint()))
+		fmt.Sprintf("POSTGRES_ENDPOINT=%v", config.GetCartesiPostgresEndpoint()))
 	s.Env = append(s.Env, "GRAPHQL_HOST=0.0.0.0")
 	s.Env = append(s.Env,
 		fmt.Sprintf("GRAPHQL_PORT=%v", getPort(portOffsetGraphQLServer)))
@@ -225,11 +225,11 @@ func newIndexer() services.Service {
 	s.Env = append(s.Env, "LOG_ENABLE_COLOR=false")
 	s.Env = append(s.Env, getRustLog("indexer"))
 	s.Env = append(s.Env,
-		fmt.Sprintf("POSTGRES_ENDPOINT=%v", config.GetPostgresEndpoint()))
+		fmt.Sprintf("POSTGRES_ENDPOINT=%v", config.GetCartesiPostgresEndpoint()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("CHAIN_ID=%v", config.GetBlockchainId()))
+		fmt.Sprintf("CHAIN_ID=%v", config.GetCartesiBlockchainId()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("DAPP_CONTRACT_ADDRESS=%v", config.GetContractsDappAddress()))
+		fmt.Sprintf("DAPP_CONTRACT_ADDRESS=%v", config.GetCartesiContractsDappAddress()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("REDIS_ENDPOINT=redis://127.0.0.1:%v", getPort(portOffsetRedis)))
 	s.Env = append(s.Env,
@@ -278,7 +278,7 @@ func newServerManager() services.Service {
 	s.Args = append(s.Args,
 		fmt.Sprintf("--manager-address=127.0.0.1:%v", getPort(portOffsetServerManager)))
 	s.Env = append(s.Env, "REMOTE_CARTESI_MACHINE_LOG_LEVEL=info")
-	if config.GetLogLevel() == config.LogLevelDebug {
+	if config.GetCartesiLogLevel() == config.LogLevelDebug {
 		s.Env = append(s.Env, "SERVER_MANAGER_LOG_LEVEL=info")
 	} else {
 		s.Env = append(s.Env, "SERVER_MANAGER_LOG_LEVEL=warning")
@@ -296,15 +296,15 @@ func newStateServer() services.Service {
 	s.Env = append(s.Env, getRustLog("state_server"))
 	s.Env = append(s.Env, "SF_CONCURRENT_EVENTS_FETCH=1")
 	s.Env = append(s.Env,
-		fmt.Sprintf("SF_GENESIS_BLOCK=%v", config.GetBlockchainGenesisBlock()))
+		fmt.Sprintf("SF_GENESIS_BLOCK=%v", config.GetCartesiBlockchainGenesisBlock()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("SF_SAFETY_MARGIN=%v", config.GetBlockchainReadDepth()))
+		fmt.Sprintf("SF_SAFETY_MARGIN=%v", config.GetCartesiBlockchainFinalityOffset()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("BH_WS_ENDPOINT=%v", config.GetBlockchainWsEndpoint()))
+		fmt.Sprintf("BH_WS_ENDPOINT=%v", config.GetCartesiBlockchainWsEndpoint()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("BH_HTTP_ENDPOINT=%v", config.GetBlockchainHttpEndpoint()))
+		fmt.Sprintf("BH_HTTP_ENDPOINT=%v", config.GetCartesiBlockchainHttpEndpoint()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("BLOCKCHAIN_BLOCK_TIMEOUT=%v", config.GetBlockchainBlockTimeout()))
+		fmt.Sprintf("BLOCKCHAIN_BLOCK_TIMEOUT=%v", config.GetCartesiBlockchainBlockTimeout()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("SS_SERVER_ADDRESS=127.0.0.1:%v", getPort(portOffsetStateServer)))
 	s.Env = append(s.Env, os.Environ()...)

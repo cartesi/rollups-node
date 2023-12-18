@@ -14,68 +14,127 @@ type (
 	Duration = time.Duration
 )
 
-func getAuthAwsKmsKeyId() (string, bool) {
-	return getOptional("AUTH_AWS_KMS_KEY_ID", "", false, toString)
+func getCartesiAuthAwsKmsKeyId() (string, bool) {
+	v, ok := getOptional("CARTESI_AUTH_AWS_KMS_KEY_ID", "", false, true, toString)
+	return v, ok
 }
 
-func getAuthAwsKmsRegion() (string, bool) {
-	return getOptional("AUTH_AWS_KMS_REGION", "", false, toString)
+func getCartesiAuthAwsKmsRegion() (string, bool) {
+	v, ok := getOptional("CARTESI_AUTH_AWS_KMS_REGION", "", false, true, toString)
+	return v, ok
 }
 
-func getAuthMnemonic() (string, bool) { return getOptional("AUTH_MNEMONIC", "", false, toString) }
-
-func getAuthMnemonicAccountIndex() (int, bool) {
-	return getOptional("AUTH_MNEMONIC_ACCOUNT_INDEX", "0", true, toInt)
+func getCartesiAuthMnemonic() (string, bool) {
+	v, ok := getOptional("CARTESI_AUTH_MNEMONIC", "", false, true, toString)
+	return v, ok
 }
 
-func getAuthMnemonicFile() (string, bool) {
-	return getOptional("AUTH_MNEMONIC_FILE", "", false, toString)
+func getCartesiAuthMnemonicAccountIndex() (int, bool) {
+	v, ok := getOptional("CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX", "0", true, true, toInt)
+	return v, ok
 }
 
-func GetBlockchainBlockTimeout() int { return get("BLOCKCHAIN_BLOCK_TIMEOUT", "60", true, toInt) }
-
-func GetBlockchainGenesisBlock() int64 { return get("BLOCKCHAIN_GENESIS_BLOCK", "1", true, toInt64) }
-
-func GetBlockchainHttpEndpoint() string { return get("BLOCKCHAIN_HTTP_ENDPOINT", "", false, toString) }
-
-func GetBlockchainId() int { return get("BLOCKCHAIN_ID", "", false, toInt) }
-
-func GetBlockchainIsLegacy() bool { return get("BLOCKCHAIN_IS_LEGACY", "false", true, toBool) }
-
-func GetBlockchainReadDepth() int { return get("BLOCKCHAIN_READ_DEPTH", "10", true, toInt) }
-
-func GetBlockchainWsEndpoint() string { return get("BLOCKCHAIN_WS_ENDPOINT", "", false, toString) }
-
-func GetContractsAuthorityAddress() string {
-	return get("CONTRACTS_AUTHORITY_ADDRESS", "", false, toString)
+func getCartesiAuthMnemonicFile() (string, bool) {
+	v, ok := getOptional("CARTESI_AUTH_MNEMONIC_FILE", "", false, true, toString)
+	return v, ok
 }
 
-func GetContractsDappAddress() string { return get("CONTRACTS_DAPP_ADDRESS", "", false, toString) }
-
-func GetContractsDappDeploymentBlockNumber() string {
-	return get("CONTRACTS_DAPP_DEPLOYMENT_BLOCK_NUMBER", "", false, toString)
+func GetCartesiBlockchainBlockTimeout() int {
+	v := get("CARTESI_BLOCKCHAIN_BLOCK_TIMEOUT", "60", true, false, toInt)
+	return v
 }
 
-func GetContractsHistoryAddress() string {
-	return get("CONTRACTS_HISTORY_ADDRESS", "", false, toString)
+func GetCartesiBlockchainFinalityOffset() int {
+	v := get("CARTESI_BLOCKCHAIN_FINALITY_OFFSET", "10", true, false, toInt)
+	return v
 }
 
-func GetContractsInputBoxAddress() string {
-	return get("CONTRACTS_INPUT_BOX_ADDRESS", "", false, toString)
+func GetCartesiBlockchainGenesisBlock() int64 {
+	v := get("CARTESI_BLOCKCHAIN_GENESIS_BLOCK", "1", true, false, toInt64)
+	return v
 }
 
-func GetEpochDuration() Duration { return get("EPOCH_DURATION", "86400", true, toDuration) }
+func GetCartesiBlockchainHttpEndpoint() string {
+	v := get("CARTESI_BLOCKCHAIN_HTTP_ENDPOINT", "", false, false, toString)
+	return v
+}
 
-func GetFeatureHostMode() bool { return get("FEATURE_HOST_MODE", "false", true, toBool) }
+func GetCartesiBlockchainId() int {
+	v := get("CARTESI_BLOCKCHAIN_ID", "", false, false, toInt)
+	return v
+}
 
-func GetFeatureReaderMode() bool { return get("FEATURE_READER_MODE", "false", true, toBool) }
+func GetCartesiBlockchainIsLegacy() bool {
+	v := get("CARTESI_BLOCKCHAIN_IS_LEGACY", "false", true, false, toBool)
+	return v
+}
 
-func GetHttpPort() int { return get("HTTP_PORT", "10000", true, toInt) }
+func GetCartesiBlockchainWsEndpoint() string {
+	v := get("CARTESI_BLOCKCHAIN_WS_ENDPOINT", "", false, false, toString)
+	return v
+}
 
-func GetLogLevel() LogLevel { return get("LOG_LEVEL", "info", true, toLogLevel) }
+func GetCartesiContractsAuthorityAddress() string {
+	v := get("CARTESI_CONTRACTS_AUTHORITY_ADDRESS", "", false, false, toString)
+	return v
+}
 
-func GetLogTimestamp() bool { return get("LOG_TIMESTAMP", "false", true, toBool) }
+func GetCartesiContractsDappAddress() string {
+	v := get("CARTESI_CONTRACTS_DAPP_ADDRESS", "", false, false, toString)
+	return v
+}
 
-func GetPostgresEndpoint() string { return get("POSTGRES_ENDPOINT", "", true, toString) }
+func GetCartesiContractsDappDeploymentBlockNumber() string {
+	v := get("CARTESI_CONTRACTS_DAPP_DEPLOYMENT_BLOCK_NUMBER", "", false, false, toString)
+	return v
+}
 
-func GetSnapshotDir() string { return get("SNAPSHOT_DIR", "", false, toString) }
+func GetCartesiContractsHistoryAddress() string {
+	v := get("CARTESI_CONTRACTS_HISTORY_ADDRESS", "", false, false, toString)
+	return v
+}
+
+func GetCartesiContractsInputBoxAddress() string {
+	v := get("CARTESI_CONTRACTS_INPUT_BOX_ADDRESS", "", false, false, toString)
+	return v
+}
+
+func GetCartesiFeatureHostMode() bool {
+	v := get("CARTESI_FEATURE_HOST_MODE", "false", true, false, toBool)
+	return v
+}
+
+func GetCartesiFeatureReaderMode() bool {
+	v := get("CARTESI_FEATURE_READER_MODE", "false", true, false, toBool)
+	return v
+}
+
+func GetCartesiHttpPort() int {
+	v := get("CARTESI_HTTP_PORT", "10000", true, false, toInt)
+	return v
+}
+
+func GetCartesiLogLevel() LogLevel {
+	v := get("CARTESI_LOG_LEVEL", "info", true, false, toLogLevel)
+	return v
+}
+
+func GetCartesiLogTimestamp() bool {
+	v := get("CARTESI_LOG_TIMESTAMP", "false", true, false, toBool)
+	return v
+}
+
+func GetCartesiPostgresEndpoint() string {
+	v := get("CARTESI_POSTGRES_ENDPOINT", "", true, true, toString)
+	return v
+}
+
+func GetCartesiEpochDuration() Duration {
+	v := get("CARTESI_EPOCH_DURATION", "86400", true, false, toDuration)
+	return v
+}
+
+func GetCartesiSnapshotDir() string {
+	v := get("CARTESI_SNAPSHOT_DIR", "", false, false, toString)
+	return v
+}
