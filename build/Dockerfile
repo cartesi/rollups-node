@@ -57,12 +57,23 @@ CMD [ "/bin/bash" ]
 #
 # Devnet generation stage
 #
-FROM ghcr.io/foundry-rs/foundry:latest as devnet
+FROM debian:bookworm-slim as rollups-devnet
 
-RUN apk add --no-cache \
-    bash \
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
     curl \
-    jq
+    git \
+    jq \
+    wget \
+    xxd
+
+# Install foundry
+RUN curl -L https://foundry.paradigm.xyz | bash
+ENV PATH="~/.foundry/bin:${PATH}"
+RUN bash -c foundryup
+RUN ln -s ~/.foundry/bin/anvil /usr/local/bin/anvil
 
 ARG RUNTIME_DIR
 WORKDIR ${RUNTIME_DIR}

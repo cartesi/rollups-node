@@ -17,6 +17,6 @@ target "machine-snapshot" {
   tags = ["${DOCKER_ORGANIZATION}/rollups-machine-snapshot:${TAG}"]
 }
 
-target "devnet" {
+target "rollups-devnet" {
   tags = ["${DOCKER_ORGANIZATION}/rollups-devnet:${TAG}"]
 }
