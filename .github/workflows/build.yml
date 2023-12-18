@@ -149,7 +149,7 @@ jobs:
         run: sed -e '0,/^##[^#]/d' -e '/^##[^#]/,$d' -i CHANGELOG.md
 
       - name: Download GraphQL schema
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: graphql-schema
 
