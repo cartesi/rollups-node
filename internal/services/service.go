@@ -7,6 +7,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os/exec"
@@ -64,16 +65,13 @@ func (s Service) Start(ctx context.Context) error {
 		}
 		return err
 	}
+
 	err := cmd.Run()
-	if err != nil {
-		exitCode := cmd.ProcessState.ExitCode()
-		signal := cmd.ProcessState.Sys().(syscall.WaitStatus).Signal()
-		if exitCode != 0 && signal != syscall.SIGTERM {
-			// only return error if the service exits for reason other than shutdown
-			return err
-		}
+
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
-	return nil
+	return err
 }
 
 // Ready blocks until the service is ready or the context is canceled.
@@ -121,7 +119,7 @@ func Run(ctx context.Context, services []Service) {
 			// cancel the context when one of the services finish
 			defer cancel()
 			defer wg.Done()
-			if err := service.Start(ctx); err != nil {
+			if err := service.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				msg := "main: service '%v' exited with error: %v\n"
 				logger.Error.Printf(msg, service.String(), err)
 			} else {

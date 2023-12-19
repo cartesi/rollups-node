@@ -60,7 +60,7 @@ func (s *ServiceTestSuite) TestServiceStops() {
 	// shutdown
 	cancel()
 	err := <-result
-	s.Nil(err, "service exited for the wrong reason: %v", err)
+	s.ErrorIs(err, context.Canceled, "service exited for the wrong reason: %v", err)
 }
 
 // Service should stop if timeout is reached and it isn't ready yet
@@ -85,7 +85,8 @@ func (s *ServiceTestSuite) TestServiceTimeout() {
 
 	// shutdown
 	cancel()
-	s.Nil(<-result, "service exited for the wrong reason: %v", err)
+	err = <-result
+	s.ErrorIs(err, context.Canceled, "service exited for the wrong reason: %v", err)
 }
 
 // Service should be ready soon after starting
@@ -110,7 +111,22 @@ func (s *ServiceTestSuite) TestServiceReady() {
 
 	// shutdown
 	cancel()
-	s.Nil(<-result, "service exited for the wrong reason: %v", err)
+	err = <-result
+	s.ErrorIs(err, context.Canceled, "service exited for the wrong reason: %v", err)
+}
+
+// Service should fail to start if its executable is not found in $PATH
+func (s *ServiceTestSuite) TestServiceFailsToStartIfNotInPath() {
+	service := Service{
+		Name:            "fake-service",
+		Path:            "wrong-path",
+		HealthcheckPort: s.servicePort,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := service.Start(ctx)
+	s.ErrorIs(err, exec.ErrNotFound, "service exited for the wrong reason: %v", err)
 }
 
 // Builds the fake-service binary and adds it to PATH
