@@ -18,6 +18,9 @@ const (
 	DefaultPollInterval = 100 * time.Millisecond
 )
 
+// CommandService encapsulates the execution of an executable via exec.Command.
+// It assumes the executable accepts TCP connections at HealthcheckPort,
+// which it uses to determine if it is ready or not.
 type CommandService struct {
 
 	// Name that identifies the service.
