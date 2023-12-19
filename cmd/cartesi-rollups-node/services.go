@@ -310,3 +310,10 @@ func newStateServer() services.CommandService {
 	s.Env = append(s.Env, os.Environ()...)
 	return s
 }
+
+func newSupervisorService(s []services.Service) services.SupervisorService {
+	return services.SupervisorService{
+		Name:     "rollups-node",
+		Services: s,
+	}
+}

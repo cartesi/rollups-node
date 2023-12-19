@@ -39,8 +39,7 @@ func (s *CommandServiceSuite) SetupTest() {
 	os.Setenv("SERVICE_ADDRESS", serviceAdress)
 }
 
-// Service should stop when context is cancelled
-func (s *CommandServiceSuite) TestItStops() {
+func (s *CommandServiceSuite) TestItStopsWhenContextIsCancelled() {
 	service := CommandService{
 		Name:            "fake-service",
 		Path:            "fake-service",
@@ -60,11 +59,11 @@ func (s *CommandServiceSuite) TestItStops() {
 	select {
 	case err := <-result:
 		s.FailNow("service failed to start", err)
-	case <-time.After(100 * time.Millisecond):
+	case <-ready:
 	}
 
-	// shutdown
 	cancel()
+
 	err := <-result
 	s.ErrorIs(err, context.Canceled, "service exited for the wrong reason: %v", err)
 }
@@ -79,7 +78,7 @@ func (s *CommandServiceSuite) TestItTimesOut() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// start service in goroutine
+	// start service in goroutine˝
 	result := make(chan error)
 	ready := make(chan struct{})
 	go func() {
@@ -91,35 +90,12 @@ func (s *CommandServiceSuite) TestItTimesOut() {
 	case <-ready:
 		s.FailNow("service should have timed out")
 	case <-time.After(2 * time.Second):
-	}
-}
-
-// Service should be ready soon after starting
-func (s *CommandServiceSuite) TestItBecomesReady() {
-	service := CommandService{
-		Name:            "fake-service",
-		Path:            "fake-service",
-		HealthcheckPort: s.servicePort,
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// start service in goroutine
-	result := make(chan error)
-	ready := make(chan struct{})
-	go func() {
-		result <- service.Start(ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-	case <-time.After(3 * time.Second):
 		cancel()
-		s.FailNow("service timed out")
+		err := <-result
+		s.ErrorIs(err, context.Canceled, "service exited for the wrong reason: %v", err)
 	}
 }
 
-// Service should fail to start if its executable is not found in $PATH
 func (s *CommandServiceSuite) TestItFailsToStartIfExecutableNotInPath() {
 	service := CommandService{
 		Name:            "fake-service",
