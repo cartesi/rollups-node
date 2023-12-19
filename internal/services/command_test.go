@@ -15,33 +15,33 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-type ServiceTestSuite struct {
+type CommandServiceSuite struct {
 	suite.Suite
 	tmpDir      string
 	servicePort int
 }
 
-func (s *ServiceTestSuite) SetupSuite() {
+func (s *CommandServiceSuite) SetupSuite() {
 	s.buildFakeService()
 	s.servicePort = 55555
 }
 
-func (s *ServiceTestSuite) TearDownSuite() {
+func (s *CommandServiceSuite) TearDownSuite() {
 	err := os.RemoveAll(s.tmpDir)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func (s *ServiceTestSuite) SetupTest() {
+func (s *CommandServiceSuite) SetupTest() {
 	s.servicePort++
 	serviceAdress := "0.0.0.0:" + fmt.Sprint(s.servicePort)
 	os.Setenv("SERVICE_ADDRESS", serviceAdress)
 }
 
 // Service should stop when context is cancelled
-func (s *ServiceTestSuite) TestServiceStops() {
-	service := Service{
+func (s *CommandServiceSuite) TestItStops() {
+	service := CommandService{
 		Name:            "fake-service",
 		Path:            "fake-service",
 		HealthcheckPort: s.servicePort,
@@ -64,8 +64,8 @@ func (s *ServiceTestSuite) TestServiceStops() {
 }
 
 // Service should stop if timeout is reached and it isn't ready yet
-func (s *ServiceTestSuite) TestServiceTimeout() {
-	service := Service{
+func (s *CommandServiceSuite) TestItTimesOut() {
+	service := CommandService{
 		Name:            "fake-service",
 		Path:            "fake-service",
 		HealthcheckPort: 0, // wrong port
@@ -90,8 +90,8 @@ func (s *ServiceTestSuite) TestServiceTimeout() {
 }
 
 // Service should be ready soon after starting
-func (s *ServiceTestSuite) TestServiceReady() {
-	service := Service{
+func (s *CommandServiceSuite) TestItBecomesReady() {
+	service := CommandService{
 		Name:            "fake-service",
 		Path:            "fake-service",
 		HealthcheckPort: s.servicePort,
@@ -116,8 +116,8 @@ func (s *ServiceTestSuite) TestServiceReady() {
 }
 
 // Service should fail to start if its executable is not found in $PATH
-func (s *ServiceTestSuite) TestServiceFailsToStartIfNotInPath() {
-	service := Service{
+func (s *CommandServiceSuite) TestItFailsToStartIfExecutableNotInPath() {
+	service := CommandService{
 		Name:            "fake-service",
 		Path:            "wrong-path",
 		HealthcheckPort: s.servicePort,
@@ -130,7 +130,7 @@ func (s *ServiceTestSuite) TestServiceFailsToStartIfNotInPath() {
 }
 
 // Builds the fake-service binary and adds it to PATH
-func (s *ServiceTestSuite) buildFakeService() {
+func (s *CommandServiceSuite) buildFakeService() {
 	tempDir, err := os.MkdirTemp("", "")
 	if err != nil {
 		panic(err)
@@ -151,6 +151,6 @@ func (s *ServiceTestSuite) buildFakeService() {
 	os.Setenv("PATH", os.Getenv("PATH")+":"+s.tmpDir)
 }
 
-func TestServiceSuite(t *testing.T) {
-	suite.Run(t, new(ServiceTestSuite))
+func TestCommandService(t *testing.T) {
+	suite.Run(t, new(CommandServiceSuite))
 }
