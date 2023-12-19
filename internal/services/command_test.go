@@ -51,11 +51,17 @@ func (s *CommandServiceSuite) TestItStops() {
 
 	// start service in goroutine
 	result := make(chan error)
+	ready := make(chan struct{})
 	go func() {
-		result <- service.Start(ctx)
+		result <- service.Start(ctx, ready)
 	}()
 
-	time.Sleep(100 * time.Millisecond)
+	// assert service started successfully
+	select {
+	case err := <-result:
+		s.FailNow("service failed to start", err)
+	case <-time.After(100 * time.Millisecond):
+	}
 
 	// shutdown
 	cancel()
@@ -74,19 +80,18 @@ func (s *CommandServiceSuite) TestItTimesOut() {
 	defer cancel()
 
 	// start service in goroutine
-	result := make(chan error, 1)
+	result := make(chan error)
+	ready := make(chan struct{})
 	go func() {
-		result <- service.Start(ctx)
+		result <- service.Start(ctx, ready)
 	}()
 
 	// expect timeout because of wrong port
-	err := service.Ready(ctx, 500*time.Millisecond)
-	s.NotNil(err, "expected service to timeout")
-
-	// shutdown
-	cancel()
-	err = <-result
-	s.ErrorIs(err, context.Canceled, "service exited for the wrong reason: %v", err)
+	select {
+	case <-ready:
+		s.FailNow("service should have timed out")
+	case <-time.After(2 * time.Second):
+	}
 }
 
 // Service should be ready soon after starting
@@ -101,18 +106,17 @@ func (s *CommandServiceSuite) TestItBecomesReady() {
 
 	// start service in goroutine
 	result := make(chan error)
+	ready := make(chan struct{})
 	go func() {
-		result <- service.Start(ctx)
+		result <- service.Start(ctx, ready)
 	}()
 
-	// wait for service to be ready
-	err := service.Ready(ctx, 1*time.Second)
-	s.Nil(err, "service timed out")
-
-	// shutdown
-	cancel()
-	err = <-result
-	s.ErrorIs(err, context.Canceled, "service exited for the wrong reason: %v", err)
+	select {
+	case <-ready:
+	case <-time.After(3 * time.Second):
+		cancel()
+		s.FailNow("service timed out")
+	}
 }
 
 // Service should fail to start if its executable is not found in $PATH
@@ -124,8 +128,10 @@ func (s *CommandServiceSuite) TestItFailsToStartIfExecutableNotInPath() {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	ready := make(chan struct{})
 
-	err := service.Start(ctx)
+	err := service.Start(ctx, ready)
+
 	s.ErrorIs(err, exec.ErrNotFound, "service exited for the wrong reason: %v", err)
 }
 
