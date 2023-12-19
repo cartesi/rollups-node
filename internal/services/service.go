@@ -40,6 +40,7 @@ func Run(ctx context.Context, services []Service) {
 	ready := make(chan struct{})
 
 	// start services
+Loop:
 	for _, service := range services {
 		service := service
 		wg.Add(1)
@@ -58,11 +59,11 @@ func Run(ctx context.Context, services []Service) {
 		select {
 		case <-ready:
 		case <-ctx.Done():
-			break
+			break Loop
 		case <-time.After(DefaultServiceTimeout):
 			cancel()
 			config.ErrorLogger.Printf("main: service '%v' timed out\n", service)
-			break
+			break Loop
 		}
 	}
 
