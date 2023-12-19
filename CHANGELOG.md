@@ -42,6 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `AUTHORITY` and `TXMANAGER` environment variables from dispatcher config
 - Removed deployment files from rollups-node Docker image
 
+### Fixed
+
+- Fixed broken links and email addresses in the contribution guidelines
+
 ## [1.1.0] 2023-10-02
 
 ### Added
