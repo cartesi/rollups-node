@@ -14,6 +14,10 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 )
 
+const (
+	DefaultPollInterval = 100 * time.Millisecond
+)
+
 type CommandService struct {
 
 	// Name that identifies the service.
@@ -32,7 +36,7 @@ type CommandService struct {
 	Env []string
 }
 
-func (s CommandService) Start(ctx context.Context) error {
+func (s CommandService) Start(ctx context.Context, ready chan<- struct{}) error {
 	cmd := exec.CommandContext(ctx, s.Path, s.Args...)
 	cmd.Env = s.Env
 	cmd.Stderr = commandLogger{s.Name}
@@ -45,6 +49,7 @@ func (s CommandService) Start(ctx context.Context) error {
 		}
 		return err
 	}
+	go s.pollTcp(ctx, ready)
 	err := cmd.Run()
 
 	if ctx.Err() != nil {
@@ -53,20 +58,22 @@ func (s CommandService) Start(ctx context.Context) error {
 	return err
 }
 
-func (s CommandService) Ready(ctx context.Context, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+// Blocks until the service is ready or the context is canceled.
+func (s CommandService) pollTcp(ctx context.Context, ready chan<- struct{}) {
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	for {
 		conn, err := net.Dial("tcp", fmt.Sprintf("0.0.0.0:%v", s.HealthcheckPort))
 		if err == nil {
 			config.DebugLogger.Printf("%s is ready\n", s)
 			conn.Close()
-			return nil
+			ready <- struct{}{}
+			return
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(DefaultDialInterval):
+			return
+		case <-time.After(DefaultPollInterval):
 		}
 	}
 }

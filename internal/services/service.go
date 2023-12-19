@@ -17,21 +17,13 @@ import (
 
 const (
 	DefaultServiceTimeout = 15 * time.Second
-	DefaultDialInterval   = 100 * time.Millisecond
 )
 
 type Service interface {
 	fmt.Stringer
 
-	// Start will execute a binary and wait for its completion or until the context
-	// is canceled
-	Start(ctx context.Context) error
-
-	// Ready blocks until the service is ready or the context is canceled.
-	//
-	// A service is considered ready when it is possible to establish a connection
-	// to its healthcheck endpoint.
-	Ready(ctx context.Context, timeout time.Duration) error
+	// Starts a service and sends a message to the channel when ready
+	Start(ctx context.Context, ready chan<- struct{}) error
 }
 
 // The Run function serves as a very simple supervisor: it will start all the
@@ -42,10 +34,12 @@ func Run(ctx context.Context, services []Service) {
 		config.ErrorLogger.Panic("there are no services to run")
 	}
 
-	// start services
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var wg sync.WaitGroup
+	ready := make(chan struct{})
+
+	// start services
 	for _, service := range services {
 		service := service
 		wg.Add(1)
@@ -53,22 +47,29 @@ func Run(ctx context.Context, services []Service) {
 			// cancel the context when one of the services finish
 			defer cancel()
 			defer wg.Done()
-			if err := service.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
+
+			err := service.Start(ctx, ready)
+			if err != nil && !errors.Is(err, context.Canceled) {
 				msg := "main: service '%v' exited with error: %v\n"
 				config.InfoLogger.Printf(msg, service, err)
 			}
 		}()
 
-		// wait for service to be ready or stop all services if it times out
-		if err := service.Ready(ctx, DefaultServiceTimeout); err != nil {
+		select {
+		case <-ready:
+		case <-ctx.Done():
+			break
+		case <-time.After(DefaultServiceTimeout):
 			cancel()
-			msg := "main: service '%v' failed to be ready with error: %v. Exiting\n"
-			config.ErrorLogger.Printf(msg, service, err)
+			config.ErrorLogger.Printf("main: service '%v' timed out\n", service)
 			break
 		}
 	}
 
-	// wait until the context is canceled
+	// wait for context to be done
+	if ctx.Err() == nil {
+		config.InfoLogger.Printf("main: all services have started")
+	}
 	<-ctx.Done()
 
 	// wait for the services to finish or timeout
