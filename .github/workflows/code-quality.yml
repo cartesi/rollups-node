@@ -32,3 +32,6 @@ jobs:
         uses: golangci/golangci-lint-action@v3
         with:
           version: v1.54.2
+
+      - name: Check auto generated files
+        run: make
