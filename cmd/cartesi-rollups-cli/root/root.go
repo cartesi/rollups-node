@@ -19,4 +19,5 @@ Cartesi Rollups node.`,
 func init() {
 	Cmd.AddCommand(send.Cmd)
 	Cmd.AddCommand(read.Cmd)
+	Cmd.DisableAutoGenTag = true
 }
