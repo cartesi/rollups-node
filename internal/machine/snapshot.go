@@ -12,11 +12,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cartesi/rollups-node/internal/logger"
+	"github.com/cartesi/rollups-node/internal/config"
 )
 
 func runCommand(name string, args ...string) error {
-	logger.Info.Printf("%v %v", name, strings.Join(args, " "))
+	config.InfoLogger.Printf("%v %v", name, strings.Join(args, " "))
 	cmd := exec.Command(name, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -69,7 +69,7 @@ func Save(sourceDockerImage string, destDir string, tempContainerName string) er
 	defer func() {
 		err := runCommand("docker", "rm", tempContainerName)
 		if err != nil {
-			logger.Error.Printf("Error trying to delete %v: %v", tempContainerName, err)
+			config.ErrorLogger.Printf("Error trying to delete %v: %v", tempContainerName, err)
 		}
 	}()
 
@@ -98,7 +98,8 @@ func Save(sourceDockerImage string, destDir string, tempContainerName string) er
 		return err
 	}
 
-	logger.Info.Printf("Cartesi machine snapshot from %v saved to %v", sourceDockerImage, destDir)
+	config.InfoLogger.Printf("Cartesi machine snapshot from %v saved to %v",
+		sourceDockerImage, destDir)
 	return nil
 
 }
