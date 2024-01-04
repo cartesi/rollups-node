@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 // This binary generates part of the node documentation automatically.
-// It should be executed from the project root dir with: `go run ./cmd/gen-docs`.
+
+//go:generate go run .
 package main
 
 import (
@@ -17,7 +18,7 @@ func main() {
 }
 
 func generateCartesiRollupsCliDocs() {
-	err := doc.GenMarkdownTree(root.Cmd, "./docs")
+	err := doc.GenMarkdownTree(root.Cmd, "../../docs")
 	if err != nil {
 		log.Fatalf("failed to gen cartesi-rollups-cli docs: %v", err)
 	}
