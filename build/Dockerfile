@@ -24,15 +24,11 @@ FROM cartesi/machine-emulator:${MACHINE_EMULATOR_VERSION} as machine-snapshot-bu
 
 USER root
 
-# Install system dependencies
-RUN apt update && \
-    apt install -y wget
-
 # Download rootfs, linux and rom
-ENV IMAGES_PATH /usr/share/cartesi-machine/images
-RUN wget -O ${IMAGES_PATH}/rootfs.ext2 https://github.com/cartesi/image-rootfs/releases/download/v0.18.0/rootfs-v0.18.0.ext2 && \
-    wget -O ${IMAGES_PATH}/linux.bin https://github.com/cartesi/image-kernel/releases/download/v0.17.0/linux-5.15.63-ctsi-2-v0.17.0.bin && \
-    wget -O ${IMAGES_PATH}/rom.bin https://github.com/cartesi/machine-emulator-rom/releases/download/v0.17.0/rom-v0.17.0.bin
+WORKDIR /usr/share/cartesi-machine/images/
+ADD https://github.com/cartesi/image-rootfs/releases/download/v0.18.0/rootfs-v0.18.0.ext2 rootfs.ext2
+ADD https://github.com/cartesi/image-kernel/releases/download/v0.17.0/linux-5.15.63-ctsi-2-v0.17.0.bin linux.bin
+ADD https://github.com/cartesi/machine-emulator-rom/releases/download/v0.17.0/rom-v0.17.0.bin rom.bin
 
 # Generate snapshot with echo and store it
 ENV SNAPSHOT_DIR=/tmp/dapp-bin
