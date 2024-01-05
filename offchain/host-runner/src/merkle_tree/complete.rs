@@ -299,7 +299,7 @@ mod tests {
     }
 
     #[test]
-    fn test_it_works_propertly_when_created_with_all_leaves() {
+    fn test_it_works_properly_when_created_with_all_leaves() {
         let leaves = vec![Hash::from([0xFF; HASH_SIZE]); 8];
         let tree = Tree::new_from_leaves(3, 0, 0, leaves).unwrap();
         assert_eq!(tree.get_level(0).unwrap().len(), 8);
@@ -313,7 +313,7 @@ mod tests {
     }
 
     #[test]
-    fn test_it_works_propertly_when_created_with_odd_number_of_leaves() {
+    fn test_it_works_properly_when_created_with_odd_number_of_leaves() {
         let leaves = vec![Hash::from([0xFF; HASH_SIZE]); 3];
         let tree = Tree::new_from_leaves(3, 0, 0, leaves).unwrap();
         assert_eq!(tree.get_level(0).unwrap().len(), 3);
