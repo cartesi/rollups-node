@@ -61,7 +61,6 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
 
     // Creating the claimer loop.
     let claimer = DefaultClaimer::new(
-        config.blockchain_config.dapp_address.clone(),
         broker_listener,
         duplicate_checker,
         transaction_sender,

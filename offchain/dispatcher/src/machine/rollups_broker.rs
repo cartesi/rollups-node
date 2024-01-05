@@ -107,6 +107,10 @@ impl BrokerFacade {
 
         tracing::trace!(?event, "consumed event");
 
+        let event = event.map(|e| Event {
+            id: e.id,
+            payload: e.payload.1,
+        });
         Ok(event)
     }
 }

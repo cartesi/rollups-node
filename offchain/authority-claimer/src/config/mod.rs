@@ -27,7 +27,7 @@ pub struct AuthorityClaimerConfig {
     pub tx_manager_priority: Priority,
     pub broker_config: BrokerConfig,
     pub log_config: LogConfig,
-    pub blockchain_config: BlockchainConfig,
+    blockchain_config: BlockchainConfig,
     pub genesis_block: u64,
 }
 

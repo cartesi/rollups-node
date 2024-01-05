@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use rollups_events::{
-    Broker, BrokerConfig, BrokerError, DAppMetadata, Event, RollupsClaim,
-    RollupsClaimsStream, RollupsData, RollupsInput, RollupsInputsStream,
-    RollupsOutput, RollupsOutputsStream, INITIAL_ID,
+    Address, Broker, BrokerConfig, BrokerError, DAppMetadata, Event,
+    RollupsClaim, RollupsClaimsStream, RollupsData, RollupsInput,
+    RollupsInputsStream, RollupsOutput, RollupsOutputsStream, INITIAL_ID,
 };
 use snafu::{ResultExt, Snafu};
 
@@ -29,6 +29,7 @@ pub enum BrokerFacadeError {
 pub type Result<T> = std::result::Result<T, BrokerFacadeError>;
 
 pub struct BrokerFacade {
+    dapp_address: Address,
     client: Broker,
     inputs_stream: RollupsInputsStream,
     outputs_stream: RollupsOutputsStream,
@@ -42,11 +43,13 @@ impl BrokerFacade {
         dapp_metadata: DAppMetadata,
     ) -> Result<Self> {
         tracing::trace!(?config, "connecting to broker");
+        let dapp_address = dapp_metadata.dapp_address.clone();
+        let client = Broker::new(config).await.context(BrokerInternalSnafu)?;
         let inputs_stream = RollupsInputsStream::new(&dapp_metadata);
         let outputs_stream = RollupsOutputsStream::new(&dapp_metadata);
         let claims_stream = RollupsClaimsStream::new(&dapp_metadata);
-        let client = Broker::new(config).await.context(BrokerInternalSnafu)?;
         Ok(Self {
+            dapp_address,
             client,
             inputs_stream,
             outputs_stream,
@@ -130,7 +133,7 @@ impl BrokerFacade {
         let claim_produced = match result {
             Some(event) => {
                 tracing::trace!(?event, "got last claim produced");
-                rollups_claim.epoch_index <= event.payload.epoch_index
+                rollups_claim.epoch_index <= event.payload.1.epoch_index
             }
             None => {
                 tracing::trace!("no claims in the stream");
@@ -139,8 +142,9 @@ impl BrokerFacade {
         };
 
         if !claim_produced {
+            let payload = (self.dapp_address.clone(), rollups_claim);
             self.client
-                .produce(&self.claims_stream, rollups_claim)
+                .produce(&self.claims_stream, payload)
                 .await
                 .context(BrokerInternalSnafu)?;
         }
@@ -337,9 +341,10 @@ mod tests {
             .produce_rollups_claim(rollups_claim.clone())
             .await
             .unwrap();
+        let dapp_address = state.fixture.dapp_address().clone();
         assert_eq!(
             state.fixture.consume_all_claims().await,
-            vec![rollups_claim]
+            vec![(dapp_address, rollups_claim)]
         );
     }
 
@@ -369,9 +374,13 @@ mod tests {
             .produce_rollups_claim(rollups_claim1.clone())
             .await
             .unwrap();
+        let dapp_address = state.fixture.dapp_address().clone();
         assert_eq!(
             state.fixture.consume_all_claims().await,
-            vec![rollups_claim0, rollups_claim1]
+            vec![
+                (dapp_address.clone(), rollups_claim0),
+                (dapp_address.clone(), rollups_claim1)
+            ]
         );
     }
 }

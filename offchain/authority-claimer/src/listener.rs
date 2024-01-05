@@ -3,7 +3,7 @@
 
 use async_trait::async_trait;
 use rollups_events::{
-    Broker, BrokerConfig, BrokerError, DAppMetadata, RollupsClaim,
+    Address, Broker, BrokerConfig, BrokerError, DAppMetadata, RollupsClaim,
     RollupsClaimsStream, INITIAL_ID,
 };
 use snafu::ResultExt;
@@ -15,7 +15,7 @@ pub trait BrokerListener: Debug {
     type Error: snafu::Error + 'static;
 
     /// Listen to claims
-    async fn listen(&mut self) -> Result<RollupsClaim, Self::Error>;
+    async fn listen(&mut self) -> Result<(Address, RollupsClaim), Self::Error>;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -56,7 +56,7 @@ impl DefaultBrokerListener {
 impl BrokerListener for DefaultBrokerListener {
     type Error = BrokerListenerError;
 
-    async fn listen(&mut self) -> Result<RollupsClaim, Self::Error> {
+    async fn listen(&mut self) -> Result<(Address, RollupsClaim), Self::Error> {
         tracing::trace!("Waiting for claim with id {}", self.last_claim_id);
         let event = self
             .broker
