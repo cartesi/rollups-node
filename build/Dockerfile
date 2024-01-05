@@ -40,8 +40,10 @@ RUN cartesi-machine \
 
 FROM debian:bookworm-slim as machine-snapshot
 
-RUN addgroup --system --gid 102 cartesi && \
-    adduser --system --uid 102 --ingroup cartesi --disabled-login --no-create-home --home /nonexistent --gecos "cartesi user" --shell /bin/false cartesi
+RUN <<EOF
+addgroup --system \--gid 102 cartesi
+adduser --system --uid 102 --ingroup cartesi --disabled-login --no-create-home --home /nonexistent --gecos "cartesi user" --shell /bin/false cartesi
+EOF
 
 ARG MACHINE_SNAPSHOT_PATH
 COPY --from=machine-snapshot-build --chown=cartesi:cartesi /tmp/dapp-bin ${MACHINE_SNAPSHOT_PATH}/0_0
@@ -55,8 +57,10 @@ CMD [ "/bin/bash" ]
 #
 FROM rust:${RUST_VERSION}-bookworm AS rust-chef
 
-RUN rustup component add rustfmt
-RUN cargo install cargo-chef
+RUN <<EOF
+rustup component add rustfmt
+cargo install cargo-chef
+EOF
 
 # The workdir will be inherited by the following Rust images
 ARG RUST_BUILD_PATH
@@ -76,8 +80,14 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM rust-chef as rust-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        cmake libprotobuf-dev protobuf-compiler curl
+RUN <<EOF
+apt-get update
+apt-get install -y --no-install-recommends \
+    cmake \
+    curl \
+    libprotobuf-dev \
+    protobuf-compiler
+EOF
 
 # Build dependencies with cargo chef
 COPY --from=rust-planner ${RUST_BUILD_PATH}/recipe.json .
@@ -106,9 +116,16 @@ FROM cartesi/server-manager:${SERVER_MANAGER_VERSION} as rollups-node
 USER root
 
 ARG DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 ca-certificates curl redis-tools redis
-RUN rm -rf /var/lib/apt/lists/*
+RUN <<EOF
+apt-get update
+apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    libpq5 \
+    redis \
+    redis-tools
+rm -rf /var/lib/apt/lists/*
+EOF
 
 # Copy Rust binaries
 ARG BASE_PATH
@@ -123,8 +140,10 @@ COPY --from=go-builder ${GO_BIN_PATH}/cartesi-rollups-node .
 
 # Setup runtime dir
 ARG RUNTIME_DIR
-RUN mkdir -p ${RUNTIME_DIR}
-RUN chown cartesi:cartesi ${RUNTIME_DIR}
+RUN <<EOF
+mkdir -p ${RUNTIME_DIR}
+chown cartesi:cartesi ${RUNTIME_DIR}
+EOF
 WORKDIR ${RUNTIME_DIR}
 
 USER cartesi
