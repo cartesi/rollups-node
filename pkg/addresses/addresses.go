@@ -33,15 +33,15 @@ type Book struct {
 // Get the addresses for the test environment.
 func GetTestBook() *Book {
 	return &Book{
-		CartesiDAppFactory:  common.HexToAddress("0x7122cd1221C20892234186facfE8615e6743Ab02"),
-		DAppAddressRelay:    common.HexToAddress("0xF5DE34d6BbC0446E2a45719E718efEbaaE179daE"),
-		ERC1155BatchPortal:  common.HexToAddress("0xedB53860A6B52bbb7561Ad596416ee9965B055Aa"),
-		ERC1155SinglePortal: common.HexToAddress("0x7CFB0193Ca87eB6e48056885E026552c3A941FC4"),
-		ERC20Portal:         common.HexToAddress("0x9C21AEb2093C32DDbC53eEF24B873BDCd1aDa1DB"),
-		ERC721Portal:        common.HexToAddress("0x237F8DD094C0e47f4236f12b4Fa01d6Dae89fb87"),
-		EtherPortal:         common.HexToAddress("0xFfdbe43d4c855BF7e0f105c400A50857f53AB044"),
-		InputBox:            common.HexToAddress("0x59b22D57D4f067708AB0c00552767405926dc768"),
-		CartesiDApp:         common.HexToAddress("0x70ac08179605AF2D9e75782b8DEcDD3c22aA4D0C"),
+		CartesiDAppFactory:  common.HexToAddress("0x610178dA211FEF7D417bC0e6FeD39F05609AD788"),
+		DAppAddressRelay:    common.HexToAddress("0x8A791620dd6260079BF849Dc5567aDC3F2FdC318"),
+		ERC1155BatchPortal:  common.HexToAddress("0x0165878A594ca255338adfa4d48449f69242Eb8F"),
+		ERC1155SinglePortal: common.HexToAddress("0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6"),
+		ERC20Portal:         common.HexToAddress("0xa513E6E4b8f2a923D98304ec87F64353C4D5C853"),
+		ERC721Portal:        common.HexToAddress("0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"),
+		EtherPortal:         common.HexToAddress("0x5FC8d32690cc91D4c39d9d3abcBD16989F875707"),
+		InputBox:            common.HexToAddress("0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"),
+		CartesiDApp:         common.HexToAddress("0x180763470853cAF642Df79a908F9282c61692A45"),
 	}
 }
 
