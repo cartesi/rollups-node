@@ -1468,7 +1468,7 @@ func (v *getNoticeNoticeProofValidityOutputValidityProof) GetOutputHashesInEpoch
 
 // getNoticeResponse is returned by getNotice on success.
 type getNoticeResponse struct {
-	// Get a notice based on its index
+	// Get notice based on its index
 	Notice getNoticeNotice `json:"notice"`
 }
 
@@ -1679,7 +1679,7 @@ func (v *getReportReportInput) GetIndex() int { return v.Index }
 
 // getReportResponse is returned by getReport on success.
 type getReportResponse struct {
-	// Get a report based on its index
+	// Get report based on its index
 	Report getReportReport `json:"report"`
 }
 
@@ -1765,7 +1765,7 @@ func (v *getReportsResponse) GetReports() getReportsReportsReportConnection { re
 
 // getVoucherResponse is returned by getVoucher on success.
 type getVoucherResponse struct {
-	// Get a voucher based on its index
+	// Get voucher based on its index
 	Voucher getVoucherVoucher `json:"voucher"`
 }
 

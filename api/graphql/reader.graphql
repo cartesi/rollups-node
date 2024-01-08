@@ -31,11 +31,11 @@ type Input {
   blockNumber: BigInt!
   "Input payload in Ethereum hex binary format, starting with '0x'"
   payload: String!
-  "Get a voucher from this particular input given the voucher's index"
+  "Get voucher from this particular input given the voucher's index"
   voucher(index: Int!): Voucher!
-  "Get a notice from this particular input given the notice's index"
+  "Get notice from this particular input given the notice's index"
   notice(index: Int!): Notice!
-  "Get a report from this particular input given the report's index"
+  "Get report from this particular input given the report's index"
   report(index: Int!): Report!
   "Get vouchers from this particular input with support for pagination"
   vouchers(first: Int, last: Int, after: String, before: String): VoucherConnection!
@@ -83,11 +83,11 @@ type Voucher {
 type Query {
   "Get input based on its identifier"
   input(index: Int!): Input!
-  "Get a voucher based on its index"
+  "Get voucher based on its index"
   voucher(voucherIndex: Int!, inputIndex: Int!): Voucher!
-  "Get a notice based on its index"
+  "Get notice based on its index"
   notice(noticeIndex: Int!, inputIndex: Int!): Notice!
-  "Get a report based on its index"
+  "Get report based on its index"
   report(reportIndex: Int!, inputIndex: Int!): Report!
   "Get inputs with support for pagination"
   inputs(first: Int, last: Int, after: String, before: String, where: InputFilter): InputConnection!
@@ -159,10 +159,8 @@ type ReportConnection {
 
 "Filter object to restrict results depending on input properties"
 input InputFilter {
-  "Filter only inputs with index lower than a given value"
-  indexLowerThan: Int
-  "Filter only inputs with index greater than a given value"
-  indexGreaterThan: Int
+  "Filter only inputs with index lower than a given value" indexLowerThan: Int
+  "Filter only inputs with index greater than a given value" indexGreaterThan: Int
 }
 
 scalar BigInt
