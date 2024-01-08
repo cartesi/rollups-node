@@ -52,7 +52,7 @@ impl BrokerFixture<'_> {
             dapp_address: dapp_address.clone(),
         };
         let inputs_stream = RollupsInputsStream::new(&metadata);
-        let claims_stream = RollupsClaimsStream::new(&metadata);
+        let claims_stream = RollupsClaimsStream::new(metadata.chain_id);
         let outputs_stream = RollupsOutputsStream::new(&metadata);
         let config = BrokerConfig {
             redis_endpoint: redis_endpoint.clone(),
@@ -177,7 +177,7 @@ impl BrokerFixture<'_> {
                 .await
                 .expect("failed to get latest claim");
             let epoch_index = match last_claim {
-                Some(event) => event.payload.1.epoch_index + 1,
+                Some(event) => event.payload.epoch_index + 1,
                 None => 0,
             };
             assert_eq!(
@@ -188,17 +188,14 @@ impl BrokerFixture<'_> {
         self.client
             .lock()
             .await
-            .produce(
-                &self.claims_stream,
-                (self.dapp_address.clone(), rollups_claim),
-            )
+            .produce(&self.claims_stream, rollups_claim)
             .await
             .expect("failed to produce claim");
     }
 
     /// Obtain all produced claims
     #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn consume_all_claims(&self) -> Vec<(Address, RollupsClaim)> {
+    pub async fn consume_all_claims(&self) -> Vec<RollupsClaim> {
         tracing::trace!("consuming all rollups-claims events");
         let mut claims = vec![];
         let mut last_id = INITIAL_ID.to_owned();
@@ -219,10 +216,7 @@ impl BrokerFixture<'_> {
     /// Obtain the first n produced claims
     /// Panic in case of timeout
     #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn consume_n_claims(
-        &self,
-        n: usize,
-    ) -> Vec<(Address, RollupsClaim)> {
+    pub async fn consume_n_claims(&self, n: usize) -> Vec<RollupsClaim> {
         tracing::trace!(n, "consuming n rollups-claims events");
         let mut claims = vec![];
         let mut last_id = INITIAL_ID.to_owned();

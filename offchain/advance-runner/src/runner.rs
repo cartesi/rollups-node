@@ -222,7 +222,11 @@ impl<Snap: SnapshotManager + std::fmt::Debug + 'static> Runner<Snap> {
 
         let result = self
             .server_manager
-            .finish_epoch(epoch_index, &snapshot.path)
+            .finish_epoch(
+                self.broker.dapp_address.clone(),
+                epoch_index,
+                &snapshot.path,
+            )
             .await;
         tracing::trace!("finished epoch in server-manager");
 

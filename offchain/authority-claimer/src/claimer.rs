@@ -86,7 +86,7 @@ where
     async fn start(mut self) -> Result<(), Self::Error> {
         trace!("Starting the authority claimer loop");
         loop {
-            let (dapp_address, rollups_claim) = self
+            let rollups_claim = self
                 .broker_listener
                 .listen()
                 .await
@@ -106,7 +106,7 @@ where
             info!("Sending a new rollups claim");
             self.transaction_sender = self
                 .transaction_sender
-                .send_rollups_claim_transaction(dapp_address, rollups_claim)
+                .send_rollups_claim_transaction(rollups_claim)
                 .await
                 .context(TransactionSenderSnafu)?
         }

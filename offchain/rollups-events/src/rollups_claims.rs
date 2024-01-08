@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Address, BrokerStream, DAppMetadata, Hash};
+use crate::{Address, BrokerStream, Hash};
 
 #[derive(Debug)]
 pub struct RollupsClaimsStream {
@@ -11,7 +11,7 @@ pub struct RollupsClaimsStream {
 }
 
 impl BrokerStream for RollupsClaimsStream {
-    type Payload = (Address, RollupsClaim);
+    type Payload = RollupsClaim;
 
     fn key(&self) -> &str {
         &self.key
@@ -19,9 +19,9 @@ impl BrokerStream for RollupsClaimsStream {
 }
 
 impl RollupsClaimsStream {
-    pub fn new(metadata: &DAppMetadata) -> Self {
+    pub fn new(chain_id: u64) -> Self {
         Self {
-            key: format!("{{chain-{}}}:rollups-claim", metadata.chain_id),
+            key: format!("{{chain-{}}}:rollups-claim", chain_id),
         }
     }
 }
@@ -29,6 +29,9 @@ impl RollupsClaimsStream {
 /// Event generated when the Cartesi Rollups epoch finishes
 #[derive(Debug, Default, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RollupsClaim {
+    // DApp address
+    pub dapp_address: Address,
+
     /// Epoch index
     pub epoch_index: u64,
 

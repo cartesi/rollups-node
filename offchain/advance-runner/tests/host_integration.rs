@@ -269,7 +269,7 @@ async fn advance_runner_does_not_generate_duplicate_claim() {
     tracing::info!("getting all claims");
     let produced_claims = state.broker.consume_all_claims().await;
     assert_eq!(produced_claims.len(), 1);
-    assert_eq!(produced_claims[0].1, claim);
+    assert_eq!(produced_claims[0], claim);
 }
 
 #[test_log::test(tokio::test)]

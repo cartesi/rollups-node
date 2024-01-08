@@ -52,10 +52,9 @@ async fn start_advance_runner(
             .context(error::ServerManagerSnafu)?;
     tracing::trace!("connected to the server-manager");
 
-    let broker =
-        BrokerFacade::new(config.broker_config, config.dapp_metadata.clone())
-            .await
-            .context(error::BrokerSnafu)?;
+    let broker = BrokerFacade::new(config.broker_config, config.dapp_metadata)
+        .await
+        .context(error::BrokerSnafu)?;
     tracing::trace!("connected the broker");
 
     match config.snapshot_config {

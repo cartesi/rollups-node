@@ -65,7 +65,7 @@ impl BrokerFacade {
                 Broker::new(config).await.context(BrokerConnectionSnafu)?,
             ),
             inputs_stream: RollupsInputsStream::new(&dapp_metadata),
-            claims_stream: RollupsClaimsStream::new(&dapp_metadata),
+            claims_stream: RollupsClaimsStream::new(dapp_metadata.chain_id),
             last_claim_id: Mutex::new(INITIAL_ID.to_owned()),
         })
     }
@@ -109,7 +109,7 @@ impl BrokerFacade {
 
         let event = event.map(|e| Event {
             id: e.id,
-            payload: e.payload.1,
+            payload: e.payload,
         });
         Ok(event)
     }
@@ -331,9 +331,9 @@ mod broker_facade_tests {
         Block,
     };
     use rollups_events::{
-        BrokerConfig, BrokerEndpoint, DAppMetadata, Hash, InputMetadata,
-        Payload, RedactedUrl, RollupsAdvanceStateInput, RollupsClaim,
-        RollupsData, Url, HASH_SIZE,
+        Address, BrokerConfig, BrokerEndpoint, DAppMetadata, Hash,
+        InputMetadata, Payload, RedactedUrl, RollupsAdvanceStateInput,
+        RollupsClaim, RollupsData, Url, ADDRESS_SIZE, HASH_SIZE,
     };
     use test_fixtures::broker::BrokerFixture;
     use testcontainers::clients::Cli;
@@ -558,6 +558,7 @@ mod broker_facade_tests {
 
         for i in 0..5 {
             let fixture_rollups_claim = RollupsClaim {
+                dapp_address: Address::new([i as u8; ADDRESS_SIZE]),
                 epoch_index: i,
                 epoch_hash: Hash::new([i as u8; HASH_SIZE]),
                 first_index: i as u128,
@@ -654,6 +655,7 @@ mod broker_facade_tests {
         let mut rollups_claims = Vec::new();
         for i in 0..n {
             let rollups_claim = RollupsClaim {
+                dapp_address: fixture.dapp_address().clone(),
                 epoch_index: i,
                 epoch_hash: Hash::new([i as u8; HASH_SIZE]),
                 first_index: i as u128,

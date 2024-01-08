@@ -282,6 +282,7 @@ impl ServerManagerFacade {
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn finish_epoch(
         &mut self,
+        dapp_address: rollups_events::Address,
         epoch_index: u64,
         storage_directory: &Path,
     ) -> Result<(RollupsClaim, Vec<RollupsOutput>)> {
@@ -330,6 +331,7 @@ impl ServerManagerFacade {
         tracing::trace!(?proofs, "got proofs");
 
         let rollups_claim = RollupsClaim {
+            dapp_address,
             epoch_index,
             epoch_hash,
             first_index: first_input.input_index as u128,

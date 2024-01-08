@@ -29,7 +29,7 @@ pub enum BrokerFacadeError {
 pub type Result<T> = std::result::Result<T, BrokerFacadeError>;
 
 pub struct BrokerFacade {
-    dapp_address: Address,
+    pub dapp_address: Address,
     client: Broker,
     inputs_stream: RollupsInputsStream,
     outputs_stream: RollupsOutputsStream,
@@ -47,7 +47,7 @@ impl BrokerFacade {
         let client = Broker::new(config).await.context(BrokerInternalSnafu)?;
         let inputs_stream = RollupsInputsStream::new(&dapp_metadata);
         let outputs_stream = RollupsOutputsStream::new(&dapp_metadata);
-        let claims_stream = RollupsClaimsStream::new(&dapp_metadata);
+        let claims_stream = RollupsClaimsStream::new(dapp_metadata.chain_id);
         Ok(Self {
             dapp_address,
             client,
@@ -133,7 +133,7 @@ impl BrokerFacade {
         let claim_produced = match result {
             Some(event) => {
                 tracing::trace!(?event, "got last claim produced");
-                rollups_claim.epoch_index <= event.payload.1.epoch_index
+                rollups_claim.epoch_index <= event.payload.epoch_index
             }
             None => {
                 tracing::trace!("no claims in the stream");
@@ -142,9 +142,8 @@ impl BrokerFacade {
         };
 
         if !claim_produced {
-            let payload = (self.dapp_address.clone(), rollups_claim);
             self.client
-                .produce(&self.claims_stream, payload)
+                .produce(&self.claims_stream, rollups_claim)
                 .await
                 .context(BrokerInternalSnafu)?;
         }
@@ -177,7 +176,7 @@ mod tests {
     use backoff::ExponentialBackoff;
     use rollups_events::{
         DAppMetadata, Hash, InputMetadata, Payload, RollupsAdvanceStateInput,
-        HASH_SIZE,
+        ADDRESS_SIZE, HASH_SIZE,
     };
     use test_fixtures::BrokerFixture;
     use testcontainers::clients::Cli;
@@ -327,8 +326,9 @@ mod tests {
         let docker = Cli::default();
         let mut state = TestState::setup(&docker).await;
         let rollups_claim = RollupsClaim {
+            dapp_address: Address::new([0xa0; ADDRESS_SIZE]),
             epoch_index: 0,
-            epoch_hash: Hash::new([0xa0; HASH_SIZE]),
+            epoch_hash: Hash::new([0xb0; HASH_SIZE]),
             first_index: 0,
             last_index: 6,
         };
@@ -341,10 +341,9 @@ mod tests {
             .produce_rollups_claim(rollups_claim.clone())
             .await
             .unwrap();
-        let dapp_address = state.fixture.dapp_address().clone();
         assert_eq!(
             state.fixture.consume_all_claims().await,
-            vec![(dapp_address, rollups_claim)]
+            vec![rollups_claim]
         );
     }
 
@@ -353,14 +352,16 @@ mod tests {
         let docker = Cli::default();
         let mut state = TestState::setup(&docker).await;
         let rollups_claim0 = RollupsClaim {
+            dapp_address: Address::new([0xa0; ADDRESS_SIZE]),
             epoch_index: 0,
-            epoch_hash: Hash::new([0xa0; HASH_SIZE]),
+            epoch_hash: Hash::new([0xb0; HASH_SIZE]),
             first_index: 0,
             last_index: 0,
         };
         let rollups_claim1 = RollupsClaim {
+            dapp_address: Address::new([0xa1; ADDRESS_SIZE]),
             epoch_index: 1,
-            epoch_hash: Hash::new([0xa1; HASH_SIZE]),
+            epoch_hash: Hash::new([0xb1; HASH_SIZE]),
             first_index: 1,
             last_index: 1,
         };
@@ -374,13 +375,9 @@ mod tests {
             .produce_rollups_claim(rollups_claim1.clone())
             .await
             .unwrap();
-        let dapp_address = state.fixture.dapp_address().clone();
         assert_eq!(
             state.fixture.consume_all_claims().await,
-            vec![
-                (dapp_address.clone(), rollups_claim0),
-                (dapp_address.clone(), rollups_claim1)
-            ]
+            vec![rollups_claim0, rollups_claim1]
         );
     }
 }
