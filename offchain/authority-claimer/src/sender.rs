@@ -22,7 +22,7 @@ use ethers::{
     signers::Signer,
     types::{Bytes, NameOrAddress, H160},
 };
-use rollups_events::{Address, DAppMetadata, RollupsClaim};
+use rollups_events::{DAppMetadata, RollupsClaim};
 use snafu::{OptionExt, ResultExt, Snafu};
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -47,7 +47,6 @@ pub trait TransactionSender: Sized + Debug {
     /// that processes use the transaction sender concurrently.
     async fn send_rollups_claim_transaction(
         self,
-        dapp_address: Address,
         rollups_claim: RollupsClaim,
     ) -> Result<Self, Self::Error>;
 }
@@ -104,7 +103,7 @@ pub struct DefaultTransactionSender {
     priority: Priority,
     from: ethers::types::Address,
     authority: Authority<Provider<MockProvider>>,
-    dapp_metadata: DAppMetadata,
+    chain_id: u64,
     metrics: AuthorityClaimerMetrics,
 }
 
@@ -175,7 +174,7 @@ async fn create_tx_manager(
 impl DefaultTransactionSender {
     pub async fn new(
         config: AuthorityClaimerConfig,
-        dapp_metadata: DAppMetadata,
+        chain_id: u64,
         metrics: AuthorityClaimerMetrics,
     ) -> Result<Self, TransactionSenderError> {
         let chain: Chain = (&config.tx_manager_config).into();
@@ -197,7 +196,7 @@ impl DefaultTransactionSender {
             let (provider, _mock) = Provider::mocked();
             let provider = Arc::new(provider);
             let address: H160 = config
-                .blockchain_config
+                .contracts_config
                 .authority_address
                 .into_inner()
                 .into();
@@ -210,7 +209,7 @@ impl DefaultTransactionSender {
             priority: config.tx_manager_priority,
             from: conditional_signer.address(),
             authority,
-            dapp_metadata,
+            chain_id,
             metrics,
         })
     }
@@ -222,9 +221,10 @@ impl TransactionSender for DefaultTransactionSender {
 
     async fn send_rollups_claim_transaction(
         self,
-        dapp_address: Address,
         rollups_claim: RollupsClaim,
     ) -> Result<Self, Self::Error> {
+        let dapp_address = rollups_claim.dapp_address.clone();
+
         let transaction = {
             let submittable_claim = SubmittableClaim(
                 H160(dapp_address.inner().to_owned()),
@@ -255,7 +255,10 @@ impl TransactionSender for DefaultTransactionSender {
             .context(TransactionManagerSnafu)?;
         self.metrics
             .claims_sent
-            .get_or_create(&self.dapp_metadata)
+            .get_or_create(&DAppMetadata {
+                chain_id: self.chain_id,
+                dapp_address,
+            })
             .inc();
         trace!("Claim transaction confirmed: `{:?}`", receipt);
 

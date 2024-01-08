@@ -18,13 +18,15 @@ types = { path = "../types" }
 
 async-trait.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
-ethabi.workspace = true
-ethers.workspace = true
-ethers-signers = { workspace = true, features = ["aws"] }
 eth-tx-manager.workspace = true
+ethabi.workspace = true
+ethers-signers = { workspace = true, features = ["aws"] }
+ethers.workspace = true
 rusoto_core.workspace = true
 rusoto_kms.workspace = true
 rusoto_sts.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 snafu.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tracing.workspace = true

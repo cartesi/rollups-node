@@ -40,7 +40,6 @@ pub trait DuplicateChecker: Debug {
 pub struct DefaultDuplicateChecker {
     provider: Arc<Provider<RetryClient<Http>>>,
     history: History<Provider<RetryClient<Http>>>,
-    dapp_address: Address,
     claims: Vec<Claim>,
     confirmations: usize,
     next_block_to_read: u64,
@@ -85,7 +84,6 @@ impl DefaultDuplicateChecker {
     pub async fn new(
         http_endpoint: String,
         history_address: Address,
-        dapp_address: Address,
         confirmations: usize,
         genesis_block: u64,
     ) -> Result<Self, DuplicateCheckerError> {
@@ -101,15 +99,13 @@ impl DefaultDuplicateChecker {
             H160(history_address.inner().to_owned()),
             provider.clone(),
         );
-        let mut checker = Self {
+        let checker = Self {
             provider,
             history,
-            dapp_address,
             claims: Vec::new(),
             confirmations,
             next_block_to_read: genesis_block,
         };
-        checker.update_claims().await?;
         Ok(checker)
     }
 }
@@ -122,7 +118,8 @@ impl DuplicateChecker for DefaultDuplicateChecker {
         &mut self,
         rollups_claim: &RollupsClaim,
     ) -> Result<bool, Self::Error> {
-        self.update_claims().await?;
+        self.update_claims(rollups_claim.dapp_address.clone())
+            .await?;
         let expected_first_index = match self.claims.last() {
             Some(claim) => claim.last_index + 1,
             None => 0,
@@ -146,7 +143,10 @@ impl DuplicateChecker for DefaultDuplicateChecker {
 }
 
 impl DefaultDuplicateChecker {
-    async fn update_claims(&mut self) -> Result<(), DuplicateCheckerError> {
+    async fn update_claims(
+        &mut self,
+        dapp_address: Address,
+    ) -> Result<(), DuplicateCheckerError> {
         let depth = self.confirmations as u64;
 
         let latest = self
@@ -168,7 +168,7 @@ impl DefaultDuplicateChecker {
             return Ok(());
         }
 
-        let dapp_address = H160(self.dapp_address.inner().to_owned());
+        let dapp_address = H160(dapp_address.inner().to_owned());
         let topic = ValueOrArray::Value(Some(dapp_address.into()));
 
         let mut claims: Vec<_> = self

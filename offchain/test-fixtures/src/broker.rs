@@ -52,7 +52,7 @@ impl BrokerFixture<'_> {
             dapp_address: dapp_address.clone(),
         };
         let inputs_stream = RollupsInputsStream::new(&metadata);
-        let claims_stream = RollupsClaimsStream::new(&metadata);
+        let claims_stream = RollupsClaimsStream::new(metadata.chain_id);
         let outputs_stream = RollupsOutputsStream::new(&metadata);
         let config = BrokerConfig {
             redis_endpoint: redis_endpoint.clone(),

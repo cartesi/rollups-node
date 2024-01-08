@@ -4,7 +4,8 @@
 use eth_tx_manager::config::Error as TxManagerConfigError;
 use rusoto_core::region::ParseRegionError;
 use snafu::Snafu;
-use types::blockchain_config::BlockchainConfigError;
+
+use super::ContractsConfigError;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub(crate)))]
@@ -15,8 +16,8 @@ pub enum AuthorityClaimerConfigError {
     #[snafu(display("TxSigning configuration error"))]
     TxSigningError { source: TxSigningConfigError },
 
-    #[snafu(display("Blockchain configuration error"))]
-    BlockchainError { source: BlockchainConfigError },
+    #[snafu(display("Contracts configuration error"))]
+    ContractsError { source: ContractsConfigError },
 }
 
 #[derive(Debug, Snafu)]

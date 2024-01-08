@@ -11,16 +11,17 @@ use rollups_events::{BrokerCLIConfig, BrokerConfig};
 use rusoto_core::Region;
 use snafu::ResultExt;
 use std::{fs, str::FromStr};
-use types::blockchain_config::BlockchainCLIConfig;
 
 use crate::config::{
     error::{
-        AuthorityClaimerConfigError, BlockchainSnafu, InvalidRegionSnafu,
+        AuthorityClaimerConfigError, ContractsSnafu, InvalidRegionSnafu,
         MnemonicFileSnafu, TxManagerSnafu, TxSigningConfigError,
         TxSigningSnafu,
     },
-    AuthorityClaimerConfig, BlockchainConfig, TxSigningConfig,
+    AuthorityClaimerConfig, ContractsConfig, TxSigningConfig,
 };
+
+use super::contracts::ContractsCLIConfig;
 
 // ------------------------------------------------------------------------------------------------
 // AuthorityClaimerCLI
@@ -43,7 +44,7 @@ pub(crate) struct AuthorityClaimerCLI {
     pub log_config: LogEnvCliConfig,
 
     #[command(flatten)]
-    pub blockchain_config: BlockchainCLIConfig,
+    pub contracts_config: ContractsCLIConfig,
 
     /// Genesis block for reading blockchain events
     #[arg(long, env, default_value_t = 1)]
@@ -66,9 +67,9 @@ impl TryFrom<AuthorityClaimerCLI> for AuthorityClaimerConfig {
 
         let log_config = LogConfig::initialize(cli_config.log_config);
 
-        let blockchain_config =
-            BlockchainConfig::try_from(cli_config.blockchain_config)
-                .context(BlockchainSnafu)?;
+        let contracts_config =
+            ContractsConfig::try_from(cli_config.contracts_config)
+                .context(ContractsSnafu)?;
 
         Ok(AuthorityClaimerConfig {
             tx_manager_config,
@@ -76,7 +77,7 @@ impl TryFrom<AuthorityClaimerCLI> for AuthorityClaimerConfig {
             tx_manager_priority: Priority::Normal,
             broker_config,
             log_config,
-            blockchain_config,
+            contracts_config,
             genesis_block: cli_config.genesis_block,
         })
     }

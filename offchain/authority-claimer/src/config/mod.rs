@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 mod cli;
+mod contracts;
 mod error;
 
+pub use contracts::{ContractsConfig, ContractsConfigError};
 pub use error::{AuthorityClaimerConfigError, TxSigningConfigError};
 
 use cli::AuthorityClaimerCLI;
@@ -12,7 +14,6 @@ use http_server::HttpServerConfig;
 use log::LogConfig;
 use rollups_events::BrokerConfig;
 use rusoto_core::Region;
-use types::blockchain_config::BlockchainConfig;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -27,7 +28,7 @@ pub struct AuthorityClaimerConfig {
     pub tx_manager_priority: Priority,
     pub broker_config: BrokerConfig,
     pub log_config: LogConfig,
-    pub blockchain_config: BlockchainConfig,
+    pub contracts_config: ContractsConfig,
     pub genesis_block: u64,
 }
 

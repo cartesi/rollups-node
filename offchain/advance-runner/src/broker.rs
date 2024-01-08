@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use rollups_events::{
-    Broker, BrokerConfig, BrokerError, DAppMetadata, Event, RollupsClaim,
-    RollupsClaimsStream, RollupsData, RollupsInput, RollupsInputsStream,
-    RollupsOutput, RollupsOutputsStream, INITIAL_ID,
+    Address, Broker, BrokerConfig, BrokerError, DAppMetadata, Event,
+    RollupsClaim, RollupsClaimsStream, RollupsData, RollupsInput,
+    RollupsInputsStream, RollupsOutput, RollupsOutputsStream, INITIAL_ID,
 };
 use snafu::{ResultExt, Snafu};
 
@@ -29,6 +29,7 @@ pub enum BrokerFacadeError {
 pub type Result<T> = std::result::Result<T, BrokerFacadeError>;
 
 pub struct BrokerFacade {
+    pub dapp_address: Address,
     client: Broker,
     inputs_stream: RollupsInputsStream,
     outputs_stream: RollupsOutputsStream,
@@ -42,11 +43,13 @@ impl BrokerFacade {
         dapp_metadata: DAppMetadata,
     ) -> Result<Self> {
         tracing::trace!(?config, "connecting to broker");
+        let dapp_address = dapp_metadata.dapp_address.clone();
+        let client = Broker::new(config).await.context(BrokerInternalSnafu)?;
         let inputs_stream = RollupsInputsStream::new(&dapp_metadata);
         let outputs_stream = RollupsOutputsStream::new(&dapp_metadata);
-        let claims_stream = RollupsClaimsStream::new(&dapp_metadata);
-        let client = Broker::new(config).await.context(BrokerInternalSnafu)?;
+        let claims_stream = RollupsClaimsStream::new(dapp_metadata.chain_id);
         Ok(Self {
+            dapp_address,
             client,
             inputs_stream,
             outputs_stream,
@@ -173,7 +176,7 @@ mod tests {
     use backoff::ExponentialBackoff;
     use rollups_events::{
         DAppMetadata, Hash, InputMetadata, Payload, RollupsAdvanceStateInput,
-        HASH_SIZE,
+        ADDRESS_SIZE, HASH_SIZE,
     };
     use test_fixtures::BrokerFixture;
     use testcontainers::clients::Cli;
@@ -323,8 +326,9 @@ mod tests {
         let docker = Cli::default();
         let mut state = TestState::setup(&docker).await;
         let rollups_claim = RollupsClaim {
+            dapp_address: Address::new([0xa0; ADDRESS_SIZE]),
             epoch_index: 0,
-            epoch_hash: Hash::new([0xa0; HASH_SIZE]),
+            epoch_hash: Hash::new([0xb0; HASH_SIZE]),
             first_index: 0,
             last_index: 6,
         };
@@ -348,14 +352,16 @@ mod tests {
         let docker = Cli::default();
         let mut state = TestState::setup(&docker).await;
         let rollups_claim0 = RollupsClaim {
+            dapp_address: Address::new([0xa0; ADDRESS_SIZE]),
             epoch_index: 0,
-            epoch_hash: Hash::new([0xa0; HASH_SIZE]),
+            epoch_hash: Hash::new([0xb0; HASH_SIZE]),
             first_index: 0,
             last_index: 0,
         };
         let rollups_claim1 = RollupsClaim {
+            dapp_address: Address::new([0xa1; ADDRESS_SIZE]),
             epoch_index: 1,
-            epoch_hash: Hash::new([0xa1; HASH_SIZE]),
+            epoch_hash: Hash::new([0xb1; HASH_SIZE]),
             first_index: 1,
             last_index: 1,
         };
