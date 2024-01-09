@@ -24,6 +24,14 @@ Before building and running any of the inner projects, you should download the s
 git submodule update --init --recursive
 ```
 
+### Generating files
+
+All the necessary auto-generated files are already commited to the project; but if you wish to generate them again, you can run the Makefile at the root of the project. Simply run the command:
+
+```shell
+make
+```
+
 ### Building the Docker image
 
 For more information on how to build the rollups-node docker image, see the [build directory](./build/README.md).
