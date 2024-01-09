@@ -4,3 +4,5 @@
 build/deployments
 **/.idea/
 machine-snapshot/**
+deployment.json
+anvil_state.json
