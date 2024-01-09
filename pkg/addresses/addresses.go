@@ -19,20 +19,23 @@ import (
 
 // List of contract addresses.
 type Book struct {
-	CartesiDAppFactory  common.Address
-	DAppAddressRelay    common.Address
-	ERC1155BatchPortal  common.Address
-	ERC1155SinglePortal common.Address
-	ERC20Portal         common.Address
-	ERC721Portal        common.Address
-	EtherPortal         common.Address
-	InputBox            common.Address
-	CartesiDApp         common.Address
+	AuthorityHistoryPairFactory common.Address
+	CartesiDAppFactory          common.Address
+	DAppAddressRelay            common.Address
+	ERC1155BatchPortal          common.Address
+	ERC1155SinglePortal         common.Address
+	ERC20Portal                 common.Address
+	ERC721Portal                common.Address
+	EtherPortal                 common.Address
+	InputBox                    common.Address
+	CartesiDApp                 common.Address
 }
 
 // Get the addresses for the test environment.
 func GetTestBook() *Book {
 	return &Book{
+		AuthorityHistoryPairFactory: common.
+			HexToAddress("0x3890A047Cf9Af60731E80B2105362BbDCD70142D"),
 		CartesiDAppFactory:  common.HexToAddress("0x610178dA211FEF7D417bC0e6FeD39F05609AD788"),
 		DAppAddressRelay:    common.HexToAddress("0x8A791620dd6260079BF849Dc5567aDC3F2FdC318"),
 		ERC1155BatchPortal:  common.HexToAddress("0x0165878A594ca255338adfa4d48449f69242Eb8F"),

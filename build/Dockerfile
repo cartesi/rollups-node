@@ -10,7 +10,7 @@
 ARG BASE_IMAGE
 ARG RUST_VERSION
 ARG GO_VERSION
-ARG FOUNDRY_COMMIT_VERSION
+ARG FOUNDRY_NIGHTLY_VERSION
 ARG SERVER_MANAGER_VERSION
 ARG MACHINE_EMULATOR_VERSION
 ARG ROOTFS_VERSION
@@ -38,6 +38,7 @@ FROM ${BASE_IMAGE} as emulator-base
 
 # Install machine-emulator
 ARG MACHINE_EMULATOR_VERSION
+ARG DEBIAN_FRONTEND=noninteractive
 RUN <<EOF
 set -e
 apt-get update
@@ -64,6 +65,7 @@ adduser --system --uid 102 \
     --shell /bin/false \
     cartesi
 EOF
+
 
 ####################################################################################################
 # TARGET: rollups-node-snapshot
@@ -112,6 +114,7 @@ COPY --from=snapshot-builder --chown=cartesi:cartesi ${SNAPSHOT_BUILD_PATH} ${SN
 # Set dummy command.
 CMD /bin/bash
 
+
 ####################################################################################################
 # TARGET: rollups-node-devnet
 #
@@ -131,16 +134,13 @@ apt-get update
 apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
-    git \
-    jq \
-    wget \
-    xxd
+    git
 EOF
 
 # Install Foundry from downloaded pre-compiled binaries
 ARG FOUNDRY_NIGHTLY_VERSION
 RUN curl -sSL https://github.com/foundry-rs/foundry/releases/download/nightly-${FOUNDRY_NIGHTLY_VERSION}/foundry_nightly_linux_$(dpkg --print-architecture).tar.gz | \
-    tar -zx -C /usr/local/bin
+        tar -zx -C /usr/local/bin
 
 # STAGE: devnet-builder
 #
@@ -149,33 +149,83 @@ FROM devnet-base as devnet-builder
 ARG DEVNET_BUILD_PATH
 WORKDIR ${DEVNET_BUILD_PATH}
 
-# Copy machine snapshot hash.
+# Install system dependencies.
+ARG DEBIAN_FRONTEND=noninteractive
+RUN <<EOF
+set -e
+apt-get update
+apt-get install -y --no-install-recommends \
+    gnupg
+EOF
+
+# Install yarn
+ARG DEBIAN_FRONTEND=noninteractive
+RUN <<EOF
+set -e
+curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add -
+echo "deb https://dl.yarnpkg.com/debian/ stable main" | tee /etc/apt/sources.list.d/yarn.list
+apt-get update
+apt-get install -y --no-install-recommends \
+    nodejs \
+    yarn
+EOF
+
+# Install Go
+ARG GO_VERSION
+RUN curl -sSL https://go.dev/dl/go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz | \
+         tar -zx -C /usr/local
+ENV PATH=$PATH:/usr/local/go/bin
+
+# Copy gen-devnet script and dependencies
+# This should be simplified in the future when `COPY --parents` is made available
+COPY internal/config internal/config
+COPY internal/services internal/services
+COPY pkg/addresses pkg/addresses
+COPY pkg/contracts pkg/contracts
+COPY pkg/ethutil pkg/ethutil
+COPY rollups-contracts rollups-contracts
+COPY cmd/gen-devnet cmd/gen-devnet
+
+# Download external dependencies
+COPY go.mod .
+COPY go.sum .
+RUN go mod download
+
+# Copy machine snapshot hash
 ARG SNAPSHOT_BUILD_PATH
 COPY --from=snapshot-builder ${SNAPSHOT_BUILD_PATH}/hash hash.bin
 
-# Generate Anvil state.
-COPY scripts scripts
-RUN ./scripts/devnet/gen-devnet.sh -v -t hash.bin
+# Generate anvil state
+RUN go run ./cmd/gen-devnet --template-hash-file hash.bin
 
 # STAGE: rollups-node-devnet
 #
-# This stage installs the runtime utilities and copies the anvil state from the builder stage.
+# This stage copies the anvil state from the builder stage and start the local anvil instance.
 FROM devnet-base as rollups-node-devnet
 
-# Copy anvil state file
+# Copy anvil state file and devnet deployment info
 ARG DEVNET_BUILD_PATH
-ENV ANVIL_STATE_PATH=/usr/share/devnet/anvil_state.json
+ARG DEVNET_SHARE_PATH=/usr/share/devnet
+ENV ANVIL_STATE_PATH=${DEVNET_SHARE_PATH}/anvil_state.json
+ENV DEPLOYMENT_JSON_PATH=${DEVNET_SHARE_PATH}/deployment.json
 COPY --from=devnet-builder ${DEVNET_BUILD_PATH}/anvil_state.json ${ANVIL_STATE_PATH}
-
-# Copy healthcheck script.
-COPY scripts/devnet/lib/anvil_net_listening.sh /usr/bin/anvil_net_listening.sh
-HEALTHCHECK --interval=1s --timeout=1s --retries=5 CMD anvil_net_listening.sh
+COPY --from=devnet-builder ${DEVNET_BUILD_PATH}/deployment.json ${DEPLOYMENT_JSON_PATH}
 
 # Make Anvil bind to the external network interface.
 ENV ANVIL_IP_ADDR="0.0.0.0"
+ENV RPC_URL="http://${ANVIL_IP_ADDR}:8545"
+HEALTHCHECK --interval=1s --timeout=1s --retries=5 \
+    CMD curl \
+        -X \
+        POST \
+        -s \
+        -H 'Content-Type: application/json' \
+        -d '{"jsonrpc":"2.0","id":"1","method":"net_listening","params":[]}' \
+        ${RPC_URL}
 
 # Start Anvil.
 CMD anvil --block-time 1 --load-state $ANVIL_STATE_PATH
+
 
 ####################################################################################################
 # TARGET: rollups-node
