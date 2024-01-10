@@ -5,7 +5,6 @@ pub mod context;
 pub mod machine;
 
 pub use context::Context;
-pub use machine::MachineDriver;
 
 #[cfg(test)]
 mod mock;
