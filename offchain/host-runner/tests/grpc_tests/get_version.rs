@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use crate::common::*;
+use grpc_interfaces::versioning::{GetVersionResponse, SemanticVersion};
 
 #[tokio::test]
 #[serial_test::serial]
@@ -15,8 +16,8 @@ async fn test_it_gets_version() {
         .into_inner();
     assert_eq!(
         response,
-        grpc_client::GetVersionResponse {
-            version: Some(grpc_client::SemanticVersion {
+        GetVersionResponse {
+            version: Some(SemanticVersion {
                 major: 0,
                 minor: 2,
                 patch: 0,

@@ -3,7 +3,6 @@
 
 pub use grpc_interfaces::cartesi_machine::*;
 pub use grpc_interfaces::cartesi_server_manager::*;
-pub use grpc_interfaces::versioning::*;
 
 use super::config;
 
