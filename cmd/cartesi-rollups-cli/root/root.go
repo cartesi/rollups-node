@@ -4,6 +4,7 @@
 package root
 
 import (
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/inspect"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/savesnapshot"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/send"
@@ -21,5 +22,6 @@ func init() {
 	Cmd.AddCommand(send.Cmd)
 	Cmd.AddCommand(read.Cmd)
 	Cmd.AddCommand(savesnapshot.Cmd)
+	Cmd.AddCommand(inspect.Cmd)
 	Cmd.DisableAutoGenTag = true
 }

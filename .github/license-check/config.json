@@ -5,7 +5,8 @@
       "offchain/target/**",
       "offchain/data/src/schema.rs",
       "pkg/contracts/*.go",
-      "pkg/readerclient/generated.go"
+      "pkg/readerclient/generated.go",
+      "pkg/inspectclient/generated.go"
     ],
     "license": ".github/license-check/header.txt"
   }
