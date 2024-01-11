@@ -3,7 +3,7 @@
 all: diff
 
 generate:
-	@echo "Generating files in tools.go"
+	@echo "Generating Go files"
 	@go generate -v ./...
 
 cargo:
