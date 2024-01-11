@@ -5,6 +5,8 @@ package main
 
 import (
 	"context"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -15,8 +17,8 @@ func main() {
 	startTime := time.Now()
 	var s []services.Service
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	// add Redis first
 	s = append(s, newRedis())
