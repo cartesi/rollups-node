@@ -20,8 +20,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// add Redis first
-	s = append(s, newRedis())
+	sunodoValidatorEnabled := config.GetCartesiExperimentalSunodoValidatorEnabled()
+	if !sunodoValidatorEnabled {
+		// add Redis first
+		s = append(s, newRedis())
+	}
 
 	// add services without dependencies
 	s = append(s, newGraphQLServer())
@@ -35,8 +38,8 @@ func main() {
 		s = append(s, newServerManager())
 	}
 
-	// enable claimer if reader mode is disabled
-	if !config.GetCartesiFeatureReaderMode() {
+	// enable claimer if reader mode and sunodo validator mode are disabled
+	if !config.GetCartesiFeatureReaderMode() && !sunodoValidatorEnabled {
 		s = append(s, newAuthorityClaimer())
 	}
 

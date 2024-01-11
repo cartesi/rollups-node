@@ -488,6 +488,8 @@ dependencies = [
  "rusoto_core",
  "rusoto_kms",
  "rusoto_sts",
+ "serde",
+ "serde_json",
  "serial_test",
  "snafu",
  "test-fixtures",

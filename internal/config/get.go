@@ -99,6 +99,16 @@ func GetCartesiContractsInputBoxAddress() string {
 	return v
 }
 
+func GetCartesiExperimentalSunodoValidatorEnabled() bool {
+	v := get("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED", "false", true, false, toBool)
+	return v
+}
+
+func GetCartesiExperimentalSunodoValidatorRedisEndpoint() string {
+	v := get("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT", "", false, false, toString)
+	return v
+}
+
 func GetCartesiFeatureHostMode() bool {
 	v := get("CARTESI_FEATURE_HOST_MODE", "false", true, false, toBool)
 	return v

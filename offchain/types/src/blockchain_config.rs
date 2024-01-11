@@ -153,29 +153,29 @@ impl TryFrom<BlockchainCLIConfig> for BlockchainConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-struct Contract {
+pub struct Contract {
     #[serde(rename = "address")]
-    address: Option<Address>,
+    pub address: Option<Address>,
 
     #[serde(rename = "blockNumber")]
-    block_number: Option<u64>,
+    pub block_number: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-struct RollupsContracts {
+pub struct RollupsContracts {
     #[serde(rename = "History")]
-    history: Option<Contract>,
+    pub history: Option<Contract>,
 
     #[serde(rename = "Authority")]
-    authority: Option<Contract>,
+    pub authority: Option<Contract>,
 
     #[serde(rename = "InputBox")]
-    input_box: Option<Contract>,
+    pub input_box: Option<Contract>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-struct RollupsDeployment {
-    contracts: RollupsContracts,
+pub struct RollupsDeployment {
+    pub contracts: RollupsContracts,
 }
 
 fn read<T: DeserializeOwned>(

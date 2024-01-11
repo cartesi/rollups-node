@@ -3,8 +3,8 @@
 
 use async_trait::async_trait;
 use rollups_events::{
-    Broker, BrokerConfig, BrokerError, DAppMetadata, RollupsClaim,
-    RollupsClaimsStream, INITIAL_ID,
+    Broker, BrokerConfig, BrokerError, RollupsClaim, RollupsClaimsStream,
+    INITIAL_ID,
 };
 use snafu::ResultExt;
 use std::fmt::Debug;
@@ -38,11 +38,11 @@ pub enum BrokerListenerError {
 impl DefaultBrokerListener {
     pub async fn new(
         broker_config: BrokerConfig,
-        dapp_metadata: DAppMetadata,
+        chain_id: u64,
     ) -> Result<Self, BrokerError> {
         tracing::trace!("Connecting to the broker ({:?})", broker_config);
         let broker = Broker::new(broker_config).await?;
-        let stream = RollupsClaimsStream::new(&dapp_metadata);
+        let stream = RollupsClaimsStream::new(chain_id);
         let last_claim_id = INITIAL_ID.to_string();
         Ok(Self {
             broker,
@@ -81,8 +81,8 @@ mod tests {
 
     use backoff::ExponentialBackoffBuilder;
     use rollups_events::{
-        BrokerConfig, BrokerEndpoint, BrokerError, DAppMetadata, RedactedUrl,
-        RollupsClaim, Url,
+        BrokerConfig, BrokerEndpoint, BrokerError, RedactedUrl, RollupsClaim,
+        Url,
     };
     use snafu::Snafu;
 
@@ -119,11 +119,8 @@ mod tests {
                 .with_max_elapsed_time(Some(Duration::from_millis(3000)))
                 .build(),
         };
-        let metadata = DAppMetadata {
-            chain_id: fixture.chain_id(),
-            dapp_address: fixture.dapp_address().clone(),
-        };
-        let broker = DefaultBrokerListener::new(config, metadata).await?;
+        let broker =
+            DefaultBrokerListener::new(config, fixture.chain_id()).await?;
         Ok((fixture, broker))
     }
 
