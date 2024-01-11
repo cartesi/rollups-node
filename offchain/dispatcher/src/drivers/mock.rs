@@ -17,8 +17,7 @@ use std::{
 use types::foldables::input_box::{DAppInputBox, Input, InputBox};
 
 use crate::machine::{
-    rollups_broker::BrokerFacadeError, BrokerReceive, BrokerSend, BrokerStatus,
-    RollupStatus,
+    rollups_broker::BrokerFacadeError, BrokerSend, BrokerStatus, RollupStatus,
 };
 
 // ------------------------------------------------------------------------------------------------
@@ -160,16 +159,6 @@ impl BrokerStatus for Broker {
             let mut mutex_guard = self.rollup_statuses.lock().unwrap();
             Ok(mutex_guard.deref_mut().pop_front().unwrap())
         }
-    }
-}
-
-#[async_trait]
-impl BrokerReceive for Broker {
-    async fn next_claim(
-        &self,
-    ) -> Result<Option<RollupsClaim>, BrokerFacadeError> {
-        let mut mutex_guard = self.next_claims.lock().unwrap();
-        Ok(mutex_guard.deref_mut().pop_front())
     }
 }
 

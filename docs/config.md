@@ -109,6 +109,17 @@ Address of the InputBox contract.
 
 * **Type:** `string`
 
+### CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED
+When enabled, the node does not start the authority-claimer service and the Redis server.
+
+* **Type:** `bool`
+* **Default:** `"false"`
+
+### CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT
+External Redis endpoint for the node when running in the experimental sunodo validator mode.
+
+* **Type:** `string`
+
 ### CARTESI_FEATURE_HOST_MODE
 If set to true the node will run in host mode.
 

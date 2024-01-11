@@ -23,6 +23,7 @@ pub struct AdvanceRunnerConfig {
     pub log_config: LogConfig,
     pub backoff_max_elapsed_duration: Duration,
     pub healthcheck_port: u16,
+    pub reader_mode: bool,
 }
 
 impl AdvanceRunnerConfig {
@@ -38,11 +39,15 @@ impl AdvanceRunnerConfig {
             dapp_metadata.dapp_address.clone(),
         )
         .context(SnapshotConfigSnafu)?;
-        let backoff_max_elapsed_duration =
-            Duration::from_millis(cli_config.backoff_max_elapsed_duration);
-        let healthcheck_port = cli_config.healthcheck_port;
 
         let log_config = LogConfig::initialize(cli_config.log_cli_config);
+
+        let backoff_max_elapsed_duration =
+            Duration::from_millis(cli_config.backoff_max_elapsed_duration);
+
+        let healthcheck_port = cli_config.healthcheck_port;
+
+        let reader_mode = cli_config.reader_mode;
 
         Ok(Self {
             server_manager_config,
@@ -52,6 +57,7 @@ impl AdvanceRunnerConfig {
             log_config,
             backoff_max_elapsed_duration,
             healthcheck_port,
+            reader_mode,
         })
     }
 }
@@ -92,4 +98,7 @@ struct CLIConfig {
         default_value_t = 8080
     )]
     pub healthcheck_port: u16,
+
+    #[arg(long, env)]
+    reader_mode: bool,
 }

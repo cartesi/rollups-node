@@ -36,6 +36,15 @@ func getPort(offset portOffset) int {
 	return config.GetCartesiHttpPort() + int(offset)
 }
 
+// Get the redis endpoint based on whether the experimental sunodo validator mode is enabled.
+func getRedisEndpoint() string {
+	if config.GetCartesiExperimentalSunodoValidatorEnabled() {
+		return config.GetCartesiExperimentalSunodoValidatorRedisEndpoint()
+	} else {
+		return fmt.Sprintf("redis://127.0.0.1:%v", getPort(portOffsetRedis))
+	}
+}
+
 const serverManagerSessionId = "default_session_id"
 
 // Create the RUST_LOG variable using the config log level.
@@ -69,7 +78,7 @@ func newAdvanceRunner() services.CommandService {
 	s.Env = append(s.Env,
 		fmt.Sprintf("SESSION_ID=%v", serverManagerSessionId))
 	s.Env = append(s.Env,
-		fmt.Sprintf("REDIS_ENDPOINT=redis://127.0.0.1:%v", getPort(portOffsetRedis)))
+		fmt.Sprintf("REDIS_ENDPOINT=%v", getRedisEndpoint()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("CHAIN_ID=%v", config.GetCartesiBlockchainId()))
 	s.Env = append(s.Env,
@@ -78,6 +87,8 @@ func newAdvanceRunner() services.CommandService {
 		fmt.Sprintf("PROVIDER_HTTP_ENDPOINT=%v", config.GetCartesiBlockchainHttpEndpoint()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("ADVANCE_RUNNER_HEALTHCHECK_PORT=%v", getPort(portOffsetAdvanceRunner)))
+	s.Env = append(s.Env,
+		fmt.Sprintf("READER_MODE=%v", config.GetCartesiFeatureReaderMode()))
 	if config.GetCartesiFeatureHostMode() {
 		s.Env = append(s.Env, "SNAPSHOT_ENABLED=false")
 		s.Env = append(s.Env, "SNAPSHOT_VALIDATION_ENABLED=false")
@@ -108,7 +119,7 @@ func newAuthorityClaimer() services.CommandService {
 	s.Env = append(s.Env,
 		fmt.Sprintf("TX_DEFAULT_CONFIRMATIONS=%v", config.GetCartesiBlockchainFinalityOffset()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("REDIS_ENDPOINT=redis://127.0.0.1:%v", getPort(portOffsetRedis)))
+		fmt.Sprintf("REDIS_ENDPOINT=%v", getRedisEndpoint()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("DAPP_ADDRESS=%v", config.GetCartesiContractsDappAddress()))
 	s.Env = append(s.Env,
@@ -155,7 +166,7 @@ func newDispatcher() services.CommandService {
 	s.Env = append(s.Env,
 		fmt.Sprintf("SC_DEFAULT_CONFIRMATIONS=%v", config.GetCartesiBlockchainFinalityOffset()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("REDIS_ENDPOINT=redis://127.0.0.1:%v", getPort(portOffsetRedis)))
+		fmt.Sprintf("REDIS_ENDPOINT=%v", getRedisEndpoint()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("DAPP_ADDRESS=%v", config.GetCartesiContractsDappAddress()))
 	s.Env = append(s.Env,
@@ -231,7 +242,7 @@ func newIndexer() services.CommandService {
 	s.Env = append(s.Env,
 		fmt.Sprintf("DAPP_CONTRACT_ADDRESS=%v", config.GetCartesiContractsDappAddress()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("REDIS_ENDPOINT=redis://127.0.0.1:%v", getPort(portOffsetRedis)))
+		fmt.Sprintf("REDIS_ENDPOINT=%v", getRedisEndpoint()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("INDEXER_HEALTHCHECK_PORT=%v", getPort(portOffsetIndexer)))
 	s.Env = append(s.Env, os.Environ()...)

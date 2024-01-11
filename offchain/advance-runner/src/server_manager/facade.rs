@@ -84,6 +84,7 @@ macro_rules! grpc_call {
 pub type Result<T> = std::result::Result<T, ServerManagerError>;
 
 pub struct ServerManagerFacade {
+    dapp_address: rollups_events::Address,
     client: ServerManagerClient<Channel>,
     config: ServerManagerConfig,
     backoff: ExponentialBackoff,
@@ -92,6 +93,7 @@ pub struct ServerManagerFacade {
 impl ServerManagerFacade {
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn new(
+        dapp_address: rollups_events::Address,
         config: ServerManagerConfig,
         backoff: ExponentialBackoff,
     ) -> Result<Self> {
@@ -107,6 +109,7 @@ impl ServerManagerFacade {
         .max_decoding_message_size(config.max_decoding_message_size);
 
         Ok(Self {
+            dapp_address,
             client,
             config,
             backoff,
@@ -330,6 +333,7 @@ impl ServerManagerFacade {
         tracing::trace!(?proofs, "got proofs");
 
         let rollups_claim = RollupsClaim {
+            dapp_address: self.dapp_address.clone(),
             epoch_index,
             epoch_hash,
             first_index: first_input.input_index as u128,

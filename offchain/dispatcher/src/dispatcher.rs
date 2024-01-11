@@ -12,7 +12,7 @@ use crate::{
     config::DispatcherConfig,
     drivers::{machine::MachineDriver, Context},
     error::{BrokerSnafu, DispatcherError, StateServerSnafu},
-    machine::{rollups_broker::BrokerFacade, BrokerReceive, BrokerSend},
+    machine::{rollups_broker::BrokerFacade, BrokerSend},
     metrics::DispatcherMetrics,
     setup::{create_block_subscription, create_context, create_state_server},
 };
@@ -144,7 +144,7 @@ async fn process_block(
     context: &mut Context,
     machine_driver: &mut MachineDriver,
 
-    broker: &(impl BrokerSend + BrokerReceive),
+    broker: &impl BrokerSend,
 ) -> Result<(), DispatcherError> {
     trace!("Querying rollup state");
     let state = state_server

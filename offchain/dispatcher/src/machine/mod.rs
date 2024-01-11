@@ -3,7 +3,6 @@
 
 pub mod rollups_broker;
 
-use rollups_events::RollupsClaim;
 use types::foldables::input_box::Input;
 
 use async_trait::async_trait;
@@ -32,11 +31,4 @@ pub trait BrokerSend: std::fmt::Debug {
         &self,
         inputs_sent_count: u64,
     ) -> Result<(), BrokerFacadeError>;
-}
-
-#[async_trait]
-pub trait BrokerReceive: std::fmt::Debug {
-    async fn next_claim(
-        &self,
-    ) -> Result<Option<RollupsClaim>, BrokerFacadeError>;
 }

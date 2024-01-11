@@ -33,6 +33,7 @@ pub struct BrokerFacade {
     inputs_stream: RollupsInputsStream,
     outputs_stream: RollupsOutputsStream,
     claims_stream: RollupsClaimsStream,
+    reader_mode: bool,
 }
 
 impl BrokerFacade {
@@ -40,17 +41,19 @@ impl BrokerFacade {
     pub async fn new(
         config: BrokerConfig,
         dapp_metadata: DAppMetadata,
+        reader_mode: bool,
     ) -> Result<Self> {
         tracing::trace!(?config, "connecting to broker");
+        let client = Broker::new(config).await.context(BrokerInternalSnafu)?;
         let inputs_stream = RollupsInputsStream::new(&dapp_metadata);
         let outputs_stream = RollupsOutputsStream::new(&dapp_metadata);
-        let claims_stream = RollupsClaimsStream::new(&dapp_metadata);
-        let client = Broker::new(config).await.context(BrokerInternalSnafu)?;
+        let claims_stream = RollupsClaimsStream::new(dapp_metadata.chain_id);
         Ok(Self {
             client,
             inputs_stream,
             outputs_stream,
             claims_stream,
+            reader_mode,
         })
     }
 
@@ -116,6 +119,10 @@ impl BrokerFacade {
         &mut self,
         rollups_claim: RollupsClaim,
     ) -> Result<()> {
+        if self.reader_mode {
+            return Ok(());
+        }
+
         tracing::trace!(rollups_claim.epoch_index,
             ?rollups_claim.epoch_hash,
             "producing rollups claim"
@@ -172,8 +179,8 @@ mod tests {
     use super::*;
     use backoff::ExponentialBackoff;
     use rollups_events::{
-        DAppMetadata, Hash, InputMetadata, Payload, RollupsAdvanceStateInput,
-        HASH_SIZE,
+        Address, DAppMetadata, Hash, InputMetadata, Payload,
+        RollupsAdvanceStateInput, ADDRESS_SIZE, HASH_SIZE,
     };
     use test_fixtures::BrokerFixture;
     use testcontainers::clients::Cli;
@@ -196,7 +203,7 @@ mod tests {
                 consume_timeout: 10,
                 backoff,
             };
-            let facade = BrokerFacade::new(config, dapp_metadata)
+            let facade = BrokerFacade::new(config, dapp_metadata, false)
                 .await
                 .expect("failed to create broker facade");
             TestState { fixture, facade }
@@ -323,8 +330,9 @@ mod tests {
         let docker = Cli::default();
         let mut state = TestState::setup(&docker).await;
         let rollups_claim = RollupsClaim {
+            dapp_address: Address::new([0xa0; ADDRESS_SIZE]),
             epoch_index: 0,
-            epoch_hash: Hash::new([0xa0; HASH_SIZE]),
+            epoch_hash: Hash::new([0xb0; HASH_SIZE]),
             first_index: 0,
             last_index: 6,
         };
@@ -348,14 +356,16 @@ mod tests {
         let docker = Cli::default();
         let mut state = TestState::setup(&docker).await;
         let rollups_claim0 = RollupsClaim {
+            dapp_address: Address::new([0xa0; ADDRESS_SIZE]),
             epoch_index: 0,
-            epoch_hash: Hash::new([0xa0; HASH_SIZE]),
+            epoch_hash: Hash::new([0xb0; HASH_SIZE]),
             first_index: 0,
             last_index: 0,
         };
         let rollups_claim1 = RollupsClaim {
+            dapp_address: Address::new([0xa1; ADDRESS_SIZE]),
             epoch_index: 1,
-            epoch_hash: Hash::new([0xa1; HASH_SIZE]),
+            epoch_hash: Hash::new([0xb1; HASH_SIZE]),
             first_index: 1,
             last_index: 1,
         };

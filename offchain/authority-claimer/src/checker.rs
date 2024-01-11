@@ -9,12 +9,12 @@ use ethers::{
     providers::{
         Http, HttpRateLimitRetryPolicy, Middleware, Provider, RetryClient,
     },
-    types::{ValueOrArray, H160},
+    types::H160,
 };
 use rollups_events::{Address, RollupsClaim};
 use snafu::{ensure, ResultExt, Snafu};
-use std::fmt::Debug;
 use std::sync::Arc;
+use std::{collections::HashMap, fmt::Debug};
 use tracing::trace;
 use url::{ParseError, Url};
 
@@ -40,8 +40,7 @@ pub trait DuplicateChecker: Debug {
 pub struct DefaultDuplicateChecker {
     provider: Arc<Provider<RetryClient<Http>>>,
     history: History<Provider<RetryClient<Http>>>,
-    dapp_address: Address,
-    claims: Vec<Claim>,
+    claims: HashMap<Address, Vec<Claim>>,
     confirmations: usize,
     next_block_to_read: u64,
 }
@@ -85,7 +84,6 @@ impl DefaultDuplicateChecker {
     pub async fn new(
         http_endpoint: String,
         history_address: Address,
-        dapp_address: Address,
         confirmations: usize,
         genesis_block: u64,
     ) -> Result<Self, DuplicateCheckerError> {
@@ -104,12 +102,11 @@ impl DefaultDuplicateChecker {
         let mut checker = Self {
             provider,
             history,
-            dapp_address,
-            claims: Vec::new(),
+            claims: HashMap::new(),
             confirmations,
             next_block_to_read: genesis_block,
         };
-        checker.update_claims().await?;
+        checker.update_claims().await?; // to allow failure during instantiation
         Ok(checker)
     }
 }
@@ -123,10 +120,13 @@ impl DuplicateChecker for DefaultDuplicateChecker {
         rollups_claim: &RollupsClaim,
     ) -> Result<bool, Self::Error> {
         self.update_claims().await?;
-        let expected_first_index = match self.claims.last() {
-            Some(claim) => claim.last_index + 1,
-            None => 0,
-        };
+        let expected_first_index = self
+            .claims // HashMap => DappAddress to Vec<Claim>
+            .get(&rollups_claim.dapp_address) // Gets a Option<Vec<Claim>>
+            .map(|claims| claims.last()) // Maps to Option<Option<Claim>>
+            .flatten() // Back to only one Option
+            .map(|claim| claim.last_index + 1) // Maps to a number
+            .unwrap_or(0); // If None, unwrap to 0
         if rollups_claim.first_index == expected_first_index {
             // This claim is the one the blockchain expects, so it is not considered duplicate.
             Ok(false)
@@ -168,34 +168,44 @@ impl DefaultDuplicateChecker {
             return Ok(());
         }
 
-        let dapp_address = H160(self.dapp_address.inner().to_owned());
-        let topic = ValueOrArray::Value(Some(dapp_address.into()));
-
-        let mut claims: Vec<_> = self
+        let new_claims: Vec<(Address, Claim)> = self
             .history
             .new_claim_to_history_filter()
             .from_block(self.next_block_to_read)
             .to_block(latest)
-            .topic1(topic)
             .query()
             .await
             .context(ContractSnafu)?
             .into_iter()
-            .map(|event| event.claim)
+            .map(|e| (Address::new(e.dapp.into()), e.claim))
             .collect();
-
         trace!(
             "read new claims {:?} from block {} to {}",
-            claims,
+            new_claims,
             self.next_block_to_read,
             latest
         );
-        if !claims.is_empty() {
-            self.claims.append(&mut claims);
-        }
+        self.append_claims(new_claims);
 
         self.next_block_to_read = latest + 1;
 
         Ok(())
+    }
+
+    // Appends new claims to the [Address => Vec<Claim>] hashmap cache.
+    fn append_claims(&mut self, new_claims: Vec<(Address, Claim)>) {
+        if new_claims.is_empty() {
+            return;
+        }
+        for (dapp_address, new_claim) in new_claims {
+            match self.claims.get_mut(&dapp_address) {
+                Some(old_claims) => {
+                    old_claims.push(new_claim);
+                }
+                None => {
+                    self.claims.insert(dapp_address, vec![new_claim]);
+                }
+            }
+        }
     }
 }

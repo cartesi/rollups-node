@@ -7,12 +7,12 @@ use tokio::sync::{self, Mutex};
 
 use rollups_events::{
     Broker, BrokerConfig, BrokerError, DAppMetadata, Event, InputMetadata,
-    RollupsAdvanceStateInput, RollupsClaim, RollupsClaimsStream, RollupsData,
-    RollupsInput, RollupsInputsStream, INITIAL_ID,
+    RollupsAdvanceStateInput, RollupsData, RollupsInput, RollupsInputsStream,
+    INITIAL_ID,
 };
 use types::foldables::input_box::Input;
 
-use super::{BrokerReceive, BrokerSend, BrokerStatus, RollupStatus};
+use super::{BrokerSend, BrokerStatus, RollupStatus};
 
 #[derive(Debug, Snafu)]
 pub enum BrokerFacadeError {
@@ -28,9 +28,6 @@ pub enum BrokerFacadeError {
     #[snafu(display("error producing finish-epoch event"))]
     ProduceFinishError { source: BrokerError },
 
-    #[snafu(display("error consuming claim event"))]
-    ConsumeClaimError { source: BrokerError },
-
     #[snafu(whatever, display("{message}"))]
     Whatever {
         message: String,
@@ -43,8 +40,6 @@ pub enum BrokerFacadeError {
 pub struct BrokerFacade {
     broker: Mutex<Broker>,
     inputs_stream: RollupsInputsStream,
-    claims_stream: RollupsClaimsStream,
-    last_claim_id: Mutex<String>,
 }
 
 struct BrokerStreamStatus {
@@ -65,8 +60,6 @@ impl BrokerFacade {
                 Broker::new(config).await.context(BrokerConnectionSnafu)?,
             ),
             inputs_stream: RollupsInputsStream::new(&dapp_metadata),
-            claims_stream: RollupsClaimsStream::new(&dapp_metadata),
-            last_claim_id: Mutex::new(INITIAL_ID.to_owned()),
         })
     }
 
@@ -92,22 +85,6 @@ impl BrokerFacade {
         tracing::trace!(?response, "got response");
 
         Ok(response)
-    }
-
-    #[tracing::instrument(level = "trace", skip_all)]
-    async fn claim(
-        &self,
-        id: &str,
-    ) -> Result<Option<Event<RollupsClaim>>, BrokerFacadeError> {
-        let mut broker = self.broker.lock().await;
-        let event = broker
-            .consume_nonblocking(&self.claims_stream, id)
-            .await
-            .context(ConsumeClaimSnafu)?;
-
-        tracing::trace!(?event, "consumed event");
-
-        Ok(event)
     }
 }
 
@@ -206,25 +183,6 @@ impl BrokerSend for BrokerFacade {
         tracing::trace!(id, "produce event with id");
 
         Ok(())
-    }
-}
-
-#[async_trait]
-impl BrokerReceive for BrokerFacade {
-    #[tracing::instrument(level = "trace", skip_all)]
-    async fn next_claim(
-        &self,
-    ) -> Result<Option<RollupsClaim>, BrokerFacadeError> {
-        let mut last_id = self.last_claim_id.lock().await;
-        tracing::trace!(?last_id, "getting next epoch claim");
-
-        match self.claim(&last_id).await? {
-            Some(event) => {
-                *last_id = event.id.clone();
-                Ok(Some(event.payload))
-            }
-            None => Ok(None),
-        }
     }
 }
 
@@ -328,16 +286,14 @@ mod broker_facade_tests {
     };
     use rollups_events::{
         BrokerConfig, BrokerEndpoint, DAppMetadata, Hash, InputMetadata,
-        Payload, RedactedUrl, RollupsAdvanceStateInput, RollupsClaim,
-        RollupsData, Url, HASH_SIZE,
+        Payload, RedactedUrl, RollupsAdvanceStateInput, RollupsData, Url,
     };
     use test_fixtures::broker::BrokerFixture;
     use testcontainers::clients::Cli;
     use types::foldables::input_box::Input;
 
     use crate::machine::{
-        rollups_broker::BrokerFacadeError, BrokerReceive, BrokerSend,
-        BrokerStatus,
+        rollups_broker::BrokerFacadeError, BrokerSend, BrokerStatus,
     };
 
     use super::BrokerFacade;
@@ -501,77 +457,6 @@ mod broker_facade_tests {
     // NOTE: cannot test result error because the dependency is not injectable.
 
     // --------------------------------------------------------------------------------------------
-    // next_claim
-    // --------------------------------------------------------------------------------------------
-
-    #[tokio::test]
-    async fn next_claim_is_none() {
-        let docker = Cli::default();
-        let (_fixture, broker) = setup(&docker).await;
-        let option = broker
-            .next_claim()
-            .await
-            .expect("'next_claim' function failed");
-        assert!(option.is_none());
-    }
-
-    #[tokio::test]
-    async fn next_claim_is_some() {
-        let docker = Cli::default();
-        let (fixture, broker) = setup(&docker).await;
-
-        let fixture_rollups_claims = produce_claims(&fixture, 1).await;
-        let fixture_rollups_claim = fixture_rollups_claims.first().unwrap();
-        let broker_rollups_claim = broker
-            .next_claim()
-            .await
-            .expect("'next_claim' function failed")
-            .expect("no claims retrieved");
-        assert_eq!(broker_rollups_claim, *fixture_rollups_claim);
-    }
-
-    #[tokio::test]
-    async fn next_claim_is_some_sequential() {
-        let docker = Cli::default();
-        let (fixture, broker) = setup(&docker).await;
-
-        let n = 3;
-        let rollups_claims = produce_claims(&fixture, n).await;
-        for i in 0..n {
-            let rollups_claim = broker
-                .next_claim()
-                .await
-                .expect("'next_claim' function failed")
-                .expect("no claims retrieved");
-            assert_eq!(rollups_claim, rollups_claims[i as usize]);
-        }
-    }
-
-    #[tokio::test]
-    async fn next_claim_is_some_interleaved() {
-        let docker = Cli::default();
-        let (fixture, broker) = setup(&docker).await;
-
-        for i in 0..5 {
-            let fixture_rollups_claim = RollupsClaim {
-                epoch_index: i,
-                epoch_hash: Hash::new([i as u8; HASH_SIZE]),
-                first_index: i as u128,
-                last_index: i as u128,
-            };
-            fixture
-                .produce_rollups_claim(fixture_rollups_claim.clone())
-                .await;
-            let broker_rollups_claim = broker
-                .next_claim()
-                .await
-                .expect("'next_claim' function failed")
-                .expect("no claims retrieved");
-            assert_eq!(fixture_rollups_claim, broker_rollups_claim);
-        }
-    }
-
-    // --------------------------------------------------------------------------------------------
     // auxiliary
     // --------------------------------------------------------------------------------------------
 
@@ -641,23 +526,5 @@ mod broker_facade_tests {
         let _ = fixture
             .produce_input_event(RollupsData::FinishEpoch {})
             .await;
-    }
-
-    async fn produce_claims(
-        fixture: &BrokerFixture<'_>,
-        n: u64,
-    ) -> Vec<RollupsClaim> {
-        let mut rollups_claims = Vec::new();
-        for i in 0..n {
-            let rollups_claim = RollupsClaim {
-                epoch_index: i,
-                epoch_hash: Hash::new([i as u8; HASH_SIZE]),
-                first_index: i as u128,
-                last_index: i as u128,
-            };
-            fixture.produce_rollups_claim(rollups_claim.clone()).await;
-            rollups_claims.push(rollups_claim);
-        }
-        rollups_claims
     }
 }

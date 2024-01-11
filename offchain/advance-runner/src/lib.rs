@@ -46,15 +46,22 @@ async fn start_advance_runner(
         .with_max_elapsed_time(Some(config.backoff_max_elapsed_duration))
         .build();
 
-    let server_manager =
-        ServerManagerFacade::new(config.server_manager_config, backoff)
-            .await
-            .context(error::ServerManagerSnafu)?;
+    let server_manager = ServerManagerFacade::new(
+        config.dapp_metadata.dapp_address.clone(),
+        config.server_manager_config,
+        backoff,
+    )
+    .await
+    .context(error::ServerManagerSnafu)?;
     tracing::trace!("connected to the server-manager");
 
-    let broker = BrokerFacade::new(config.broker_config, config.dapp_metadata)
-        .await
-        .context(error::BrokerSnafu)?;
+    let broker = BrokerFacade::new(
+        config.broker_config,
+        config.dapp_metadata,
+        config.reader_mode,
+    )
+    .await
+    .context(error::BrokerSnafu)?;
     tracing::trace!("connected the broker");
 
     match config.snapshot_config {

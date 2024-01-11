@@ -103,6 +103,7 @@ impl AdvanceRunnerFixture {
             backoff_max_elapsed_duration,
             healthcheck_port: 0,
             log_config: LogConfig::default(),
+            reader_mode: false,
         };
         let handler = RefCell::new(Some(start_advance_runner(config.clone())));
         Self { config, handler }
