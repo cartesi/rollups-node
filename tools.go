@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 //go:build tools
+// +build tools
 
 package main
 
