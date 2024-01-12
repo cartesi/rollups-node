@@ -273,6 +273,7 @@ func newRedis() services.CommandService {
 	// Disable persistence with --save and --appendonly config
 	s.Args = append(s.Args, "--save", "")
 	s.Args = append(s.Args, "--appendonly", "no")
+	s.Env = append(s.Env, os.Environ()...)
 	return s
 }
 
@@ -289,6 +290,7 @@ func newServerManager() services.CommandService {
 	} else {
 		s.Env = append(s.Env, "SERVER_MANAGER_LOG_LEVEL=warning")
 	}
+	s.Env = append(s.Env, os.Environ()...)
 	return s
 }
 
