@@ -48,6 +48,8 @@ func main() {
 	s = append(s, newDispatcher())    // Depends on the state server
 	s = append(s, newInspectServer()) // Depends on the server-manager/host-runner
 
+	s = append(s, newHttpService())
+
 	ready := make(chan struct{}, 1)
 	// logs startup time
 	go func() {

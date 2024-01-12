@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -325,4 +326,18 @@ func newSupervisorService(s []services.Service) services.SupervisorService {
 		Name:     "rollups-node",
 		Services: s,
 	}
+}
+
+func newHttpService() services.HttpService {
+	handler := http.NewServeMux()
+	handler.Handle("/healthz", http.HandlerFunc(healthcheckHandler))
+	return services.HttpService{
+		Name:    "http",
+		Address: fmt.Sprintf("%v:%v", config.GetCartesiHttpAddress(), getPort(portOffsetProxy)),
+		Handler: handler,
+	}
+}
+
+func healthcheckHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
 }
