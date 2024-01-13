@@ -121,11 +121,6 @@ func newAuthorityClaimer() services.CommandService {
 	s.Env = append(s.Env,
 		fmt.Sprintf("REDIS_ENDPOINT=%v", getRedisEndpoint()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("DAPP_ADDRESS=%v", config.GetCartesiContractsDappAddress()))
-	s.Env = append(s.Env,
-		fmt.Sprintf("DAPP_DEPLOYMENT_BLOCK_NUMBER=%v",
-			config.GetCartesiContractsDappDeploymentBlockNumber()))
-	s.Env = append(s.Env,
 		fmt.Sprintf("HISTORY_ADDRESS=%v", config.GetCartesiContractsHistoryAddress()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("AUTHORITY_ADDRESS=%v", config.GetCartesiContractsAuthorityAddress()))
