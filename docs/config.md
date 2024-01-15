@@ -7,121 +7,121 @@ The node is configurable through environment variables.
 
 This file documents the configuration options.
 
-### CARTESI_AUTH_AWS_KMS_KEY_ID
+### `CARTESI_AUTH_AWS_KMS_KEY_ID`
 If set, the node will use the AWS KMS service with this key ID to sign transactions.
 
-Must be set alongside AUTH_AWS_KMS_REGION.
+Must be set alongside `CARTESI_AUTH_AWS_KMS_REGION`.
 
 * **Type:** `string`
 
-### CARTESI_AUTH_AWS_KMS_REGION
+### `CARTESI_AUTH_AWS_KMS_REGION`
 An AWS KMS Region.
 
-Must be set alongside AUTH_AWS_KMS_KEY_ID.
+Must be set alongside `CARTESI_AUTH_AWS_KMS_KEY_ID`.
 
 * **Type:** `string`
 
-### CARTESI_AUTH_MNEMONIC
+### `CARTESI_AUTH_MNEMONIC`
 The node will use the private key generated from this mnemonic to sign transactions.
 
-Overrides AUTH_MNEMONIC_FILE and AUTH_AWS_KMS_*.
+Overrides `CARTESI_AUTH_MNEMONIC_FILE` and `CARTESI_AUTH_AWS_KMS_*`.
 
 * **Type:** `string`
 
-### CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX
+### `CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX`
 When using mnemonics to sign transactions,
 the node will use this account index to generate the private key.
 
 * **Type:** `int`
 * **Default:** `"0"`
 
-### CARTESI_AUTH_MNEMONIC_FILE
+### `CARTESI_AUTH_MNEMONIC_FILE`
 The node will use the private key generated from the mnemonic contained in this file
 to sign transactions.
 
-Overrides AUTH_AWS_KMS_*.
+Overrides `CARTESI_AUTH_AWS_KMS_*`.
 
 * **Type:** `string`
 
-### CARTESI_BLOCKCHAIN_BLOCK_TIMEOUT
+### `CARTESI_BLOCKCHAIN_BLOCK_TIMEOUT`
 Block subscription timeout in seconds.
 
 * **Type:** `int`
 * **Default:** `"60"`
 
-### CARTESI_BLOCKCHAIN_FINALITY_OFFSET
+### `CARTESI_BLOCKCHAIN_FINALITY_OFFSET`
 The node assumes that blocks offseted by N from the current block have reached finality
 (N is the read depth).
 
 * **Type:** `int`
 * **Default:** `"10"`
 
-### CARTESI_BLOCKCHAIN_HTTP_ENDPOINT
+### `CARTESI_BLOCKCHAIN_HTTP_ENDPOINT`
 HTTP endpoint for the blockchain RPC provider.
 
 * **Type:** `string`
 
-### CARTESI_BLOCKCHAIN_ID
+### `CARTESI_BLOCKCHAIN_ID`
 An unique identifier representing a blockchain network.
 
 * **Type:** `int`
 
-### CARTESI_BLOCKCHAIN_IS_LEGACY
+### `CARTESI_BLOCKCHAIN_IS_LEGACY`
 If set to true the node will send transactions using the legacy gas fee model
 (instead of EIP-1559).
 
 * **Type:** `bool`
 * **Default:** `"false"`
 
-### CARTESI_BLOCKCHAIN_WS_ENDPOINT
+### `CARTESI_BLOCKCHAIN_WS_ENDPOINT`
 WebSocket endpoint for the blockchain RPC provider.
 
 * **Type:** `string`
 
-### CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER
+### `CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER`
 The deployment block for the input box contract.
 The node will begin to read blockchain events from this block.
 
 * **Type:** `int64`
 * **Default:** `"1"`
 
-### CARTESI_CONTRACTS_AUTHORITY_ADDRESS
+### `CARTESI_CONTRACTS_AUTHORITY_ADDRESS`
 Address of the Authority contract.
 
 * **Type:** `string`
 
-### CARTESI_CONTRACTS_DAPP_ADDRESS
+### `CARTESI_CONTRACTS_DAPP_ADDRESS`
 Address of the DApp's contract.
 
 * **Type:** `string`
 
-### CARTESI_CONTRACTS_DAPP_DEPLOYMENT_BLOCK_NUMBER
+### `CARTESI_CONTRACTS_DAPP_DEPLOYMENT_BLOCK_NUMBER`
 Block in which the DApp's contract was deployed.
 
 * **Type:** `string`
 
-### CARTESI_CONTRACTS_HISTORY_ADDRESS
+### `CARTESI_CONTRACTS_HISTORY_ADDRESS`
 Address of the History contract.
 
 * **Type:** `string`
 
-### CARTESI_CONTRACTS_INPUT_BOX_ADDRESS
+### `CARTESI_CONTRACTS_INPUT_BOX_ADDRESS`
 Address of the InputBox contract.
 
 * **Type:** `string`
 
-### CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED
+### `CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED`
 When enabled, the node does not start the authority-claimer service and the Redis server.
 
 * **Type:** `bool`
 * **Default:** `"false"`
 
-### CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT
+### `CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT`
 External Redis endpoint for the node when running in the experimental sunodo validator mode.
 
 * **Type:** `string`
 
-### CARTESI_FEATURE_HOST_MODE
+### `CARTESI_FEATURE_HOST_MODE`
 If set to true the node will run in host mode.
 
 In host mode, computations will not be performed by the cartesi machine.
@@ -130,7 +130,7 @@ You should only use host mode for development and debugging!
 * **Type:** `bool`
 * **Default:** `"false"`
 
-### CARTESI_FEATURE_READER_MODE
+### `CARTESI_FEATURE_READER_MODE`
 If set to true the node will run in reader mode.
 
 In reader mode, the node does not make claims.
@@ -138,26 +138,26 @@ In reader mode, the node does not make claims.
 * **Type:** `bool`
 * **Default:** `"false"`
 
-### CARTESI_HTTP_PORT
+### `CARTESI_HTTP_PORT`
 HTTP port for the node.
 The node will also use the 20 ports after this one for internal services.
 
 * **Type:** `int`
 * **Default:** `"10000"`
 
-### CARTESI_LOG_LEVEL
+### `CARTESI_LOG_LEVEL`
 One of "debug", "info", "warning", "error".
 
 * **Type:** `LogLevel`
 * **Default:** `"info"`
 
-### CARTESI_LOG_TIMESTAMP
+### `CARTESI_LOG_TIMESTAMP`
 If set to true, the node will print the timestamp when logging.
 
 * **Type:** `bool`
 * **Default:** `"false"`
 
-### CARTESI_POSTGRES_ENDPOINT
+### `CARTESI_POSTGRES_ENDPOINT`
 Postgres endpoint in the 'postgres://user:password@hostname:port/database' format.
           
 If not set, or set to empty string, will defer the behaviour to the PG driver.
@@ -170,7 +170,7 @@ for more information.
 * **Type:** `string`
 * **Default:** `""`
 
-### CARTESI_EPOCH_DURATION
+### `CARTESI_EPOCH_DURATION`
 Duration of a rollups epoch in seconds.
 
 At the end of each epoch, the node will send claims to the blockchain.
@@ -178,7 +178,7 @@ At the end of each epoch, the node will send claims to the blockchain.
 * **Type:** `Duration`
 * **Default:** `"86400"`
 
-### CARTESI_SNAPSHOT_DIR
+### `CARTESI_SNAPSHOT_DIR`
 Path to the directory of the cartesi-machine snapshots.
 
 * **Type:** `string`
