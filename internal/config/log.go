@@ -24,7 +24,7 @@ func init() {
 func logInit() {
 	var flags int
 	if GetCartesiLogTimestamp() {
-		flags |= log.Ldate | log.Ltime
+		flags = log.LstdFlags
 	}
 
 	ErrorLogger = log.New(os.Stderr, "ERROR ", flags)
