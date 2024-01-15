@@ -13,6 +13,7 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"sync"
@@ -88,6 +89,8 @@ var cache struct {
 	values map[string]string
 }
 
+var configLogger = log.New(os.Stdout, "CONFIG ", log.LstdFlags)
+
 func init() {
 	cache.values = make(map[string]string)
 }
@@ -102,7 +105,7 @@ func read(name string, redact bool) (string, bool) {
 		return s, true
 	} else if s, ok := os.LookupEnv(name); ok {
 		if !redact {
-			InfoLogger.Printf("read %s environment variable: %v", name, s)
+			configLogger.Printf("read %s environment variable: %v", name, s)
 		}
 		cache.values[name] = s
 		return s, true

@@ -43,7 +43,7 @@ func (suite *EnvSuite) TestRead() {
 
 	// mocking the logger
 	var buffer bytes.Buffer
-	InfoLogger = log.New(&buffer, "", 0)
+	configLogger = log.New(&buffer, "", 0)
 
 	name, value := FOO, foo
 
