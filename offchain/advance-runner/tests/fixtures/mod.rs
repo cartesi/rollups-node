@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use advance_runner::config::{
-    AdvanceRunnerConfig, BrokerConfig, DAppMetadata, FSManagerConfig,
-    ServerManagerConfig, SnapshotConfig,
+    AdvanceRunnerConfig, BrokerConfig, DAppMetadata, ServerManagerConfig,
 };
 use advance_runner::AdvanceRunnerError;
 use grpc_interfaces::cartesi_machine::{
@@ -13,7 +12,6 @@ use grpc_interfaces::cartesi_server_manager::{CyclesConfig, DeadlineConfig};
 use log::LogConfig;
 use rollups_events::{Address, BrokerEndpoint};
 use std::cell::RefCell;
-use std::path::Path;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
@@ -29,7 +27,7 @@ impl AdvanceRunnerFixture {
         redis_endpoint: BrokerEndpoint,
         chain_id: u64,
         dapp_address: Address,
-        snapshot_dir: Option<&Path>,
+        snapshot_dir: Option<String>,
     ) -> Self {
         let runtime_config = MachineRuntimeConfig {
             concurrency: Some(ConcurrencyConfig {
@@ -57,6 +55,7 @@ impl AdvanceRunnerFixture {
 
         let server_manager_config = ServerManagerConfig {
             server_manager_endpoint,
+            machine_snapshot_path: snapshot_dir.unwrap_or("".to_owned()),
             max_decoding_message_size: 100 * 1024 * 1024,
             session_id,
             pending_inputs_sleep_duration: 1000,
@@ -77,29 +76,12 @@ impl AdvanceRunnerFixture {
             backoff: Default::default(),
         };
 
-        let snapshot_config = if snapshot_dir.is_some() {
-            SnapshotConfig::FileSystem(FSManagerConfig {
-                snapshot_dir: snapshot_dir
-                    .expect("Should have a Path")
-                    .to_owned(),
-                snapshot_latest: snapshot_dir
-                    .expect("Should have a Path")
-                    .join("latest"),
-                validation_enabled: false,
-                provider_http_endpoint: None,
-                dapp_address,
-            })
-        } else {
-            SnapshotConfig::Disabled
-        };
-
         let backoff_max_elapsed_duration = Duration::from_millis(1);
 
         let config = AdvanceRunnerConfig {
             server_manager_config,
             broker_config,
             dapp_metadata,
-            snapshot_config,
             backoff_max_elapsed_duration,
             healthcheck_port: 0,
             log_config: LogConfig::default(),

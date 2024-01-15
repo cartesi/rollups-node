@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use rollups_events::{
-    Broker, BrokerConfig, BrokerError, DAppMetadata, Event, RollupsClaim,
-    RollupsClaimsStream, RollupsData, RollupsInput, RollupsInputsStream,
-    RollupsOutput, RollupsOutputsStream, INITIAL_ID,
+    Broker, BrokerConfig, BrokerError, DAppMetadata, RollupsClaim,
+    RollupsClaimsStream, RollupsInput, RollupsInputsStream, RollupsOutput,
+    RollupsOutputsStream, INITIAL_ID,
 };
 use snafu::{ResultExt, Snafu};
 
@@ -24,6 +24,13 @@ pub enum BrokerFacadeError {
 
     #[snafu(display("processed event not found in broker"))]
     ProcessedEventNotFound {},
+
+    #[snafu(display(
+        "parent id doesn't match expected={} got={}",
+        expected,
+        got
+    ))]
+    ParentIdMismatchError { expected: String, got: String },
 }
 
 pub type Result<T> = std::result::Result<T, BrokerFacadeError>;
@@ -34,6 +41,7 @@ pub struct BrokerFacade {
     outputs_stream: RollupsOutputsStream,
     claims_stream: RollupsClaimsStream,
     reader_mode: bool,
+    last_id: String,
 }
 
 impl BrokerFacade {
@@ -54,63 +62,28 @@ impl BrokerFacade {
             outputs_stream,
             claims_stream,
             reader_mode,
+            last_id: INITIAL_ID.to_owned(),
         })
-    }
-
-    /// Search the input event stream for the finish epoch event of the previous epoch
-    #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn find_previous_finish_epoch(
-        &mut self,
-        mut epoch: u64,
-    ) -> Result<String> {
-        tracing::trace!(epoch, "getting previous finish epoch");
-
-        if epoch == 0 {
-            tracing::trace!("returning initial id for epoch 0");
-            return Ok(INITIAL_ID.to_owned());
-        } else {
-            // This won't underflow because we know the epoch is not 0
-            epoch -= 1;
-        }
-
-        tracing::trace!(epoch, "searching for finish epoch input event");
-        let mut last_id = INITIAL_ID.to_owned();
-        loop {
-            let event = self
-                .client
-                .consume_nonblocking(&self.inputs_stream, &last_id)
-                .await
-                .context(ConsumeSnafu)?
-                .ok_or(BrokerFacadeError::FindFinishEpochInputError {
-                    epoch,
-                })?;
-            if matches!(
-                event.payload,
-                RollupsInput {
-                    data: RollupsData::FinishEpoch {},
-                    epoch_index,
-                    ..
-                } if epoch_index == epoch
-            ) {
-                tracing::trace!(event_id = last_id, "returning event id");
-                return Ok(event.id);
-            }
-            last_id = event.id;
-        }
     }
 
     /// Consume rollups input event
     #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn consume_input(
-        &mut self,
-        last_id: &str,
-    ) -> Result<Event<RollupsInput>> {
-        tracing::trace!(last_id, "consuming rollups input event");
-        let result = self
+    pub async fn consume_input(&mut self) -> Result<RollupsInput> {
+        tracing::trace!(self.last_id, "consuming rollups input event");
+        let event = self
             .client
-            .consume_blocking(&self.inputs_stream, last_id)
-            .await;
-        result.context(BrokerInternalSnafu)
+            .consume_blocking(&self.inputs_stream, &self.last_id)
+            .await
+            .context(BrokerInternalSnafu)?;
+        if event.payload.parent_id != self.last_id {
+            Err(BrokerFacadeError::ParentIdMismatchError {
+                expected: self.last_id.to_owned(),
+                got: event.payload.parent_id,
+            })
+        } else {
+            self.last_id = event.id;
+            Ok(event.payload)
+        }
     }
 
     /// Produce the rollups claim if it isn't in the stream yet
@@ -180,7 +153,7 @@ mod tests {
     use backoff::ExponentialBackoff;
     use rollups_events::{
         Address, DAppMetadata, Hash, InputMetadata, Payload,
-        RollupsAdvanceStateInput, ADDRESS_SIZE, HASH_SIZE,
+        RollupsAdvanceStateInput, RollupsData, ADDRESS_SIZE, HASH_SIZE,
     };
     use test_fixtures::BrokerFixture;
     use testcontainers::clients::Cli;
@@ -208,54 +181,6 @@ mod tests {
                 .expect("failed to create broker facade");
             TestState { fixture, facade }
         }
-    }
-
-    #[test_log::test(tokio::test)]
-    async fn test_it_finds_previous_finish_of_first_epoch() {
-        let docker = Cli::default();
-        let mut state = TestState::setup(&docker).await;
-        let id = state.facade.find_previous_finish_epoch(0).await.unwrap();
-        assert_eq!(id, INITIAL_ID);
-    }
-
-    #[test_log::test(tokio::test)]
-    async fn test_it_finds_previous_finish_of_nth_epoch() {
-        let docker = Cli::default();
-        let mut state = TestState::setup(&docker).await;
-        let inputs =
-            vec![RollupsData::FinishEpoch {}, RollupsData::FinishEpoch {}];
-        let mut ids = Vec::new();
-        for input in inputs {
-            ids.push(state.fixture.produce_input_event(input).await);
-        }
-        assert_eq!(
-            state.facade.find_previous_finish_epoch(1).await.unwrap(),
-            ids[0]
-        );
-        assert_eq!(
-            state.facade.find_previous_finish_epoch(2).await.unwrap(),
-            ids[1]
-        );
-    }
-
-    #[test_log::test(tokio::test)]
-    async fn test_it_fails_to_find_previous_epoch_when_it_is_missing() {
-        let docker = Cli::default();
-        let mut state = TestState::setup(&docker).await;
-        let inputs =
-            vec![RollupsData::FinishEpoch {}, RollupsData::FinishEpoch {}];
-        let mut ids = Vec::new();
-        for input in inputs {
-            ids.push(state.fixture.produce_input_event(input).await);
-        }
-        assert!(matches!(
-            state
-                .facade
-                .find_previous_finish_epoch(3)
-                .await
-                .unwrap_err(),
-            BrokerFacadeError::FindFinishEpochInputError { epoch: 2 }
-        ));
     }
 
     #[test_log::test(tokio::test)]
@@ -288,40 +213,31 @@ mod tests {
             ids.push(state.fixture.produce_input_event(input.clone()).await);
         }
         assert_eq!(
-            state.facade.consume_input(INITIAL_ID).await.unwrap(),
-            Event {
-                id: ids[0].clone(),
-                payload: RollupsInput {
-                    parent_id: INITIAL_ID.to_owned(),
-                    epoch_index: 0,
-                    inputs_sent_count: 1,
-                    data: inputs[0].clone(),
-                },
-            }
+            state.facade.consume_input().await.unwrap(),
+            RollupsInput {
+                parent_id: INITIAL_ID.to_owned(),
+                epoch_index: 0,
+                inputs_sent_count: 1,
+                data: inputs[0].clone(),
+            },
         );
         assert_eq!(
-            state.facade.consume_input(&ids[0]).await.unwrap(),
-            Event {
-                id: ids[1].clone(),
-                payload: RollupsInput {
-                    parent_id: ids[0].clone(),
-                    epoch_index: 0,
-                    inputs_sent_count: 1,
-                    data: inputs[1].clone(),
-                },
-            }
+            state.facade.consume_input().await.unwrap(),
+            RollupsInput {
+                parent_id: ids[0].clone(),
+                epoch_index: 0,
+                inputs_sent_count: 1,
+                data: inputs[1].clone(),
+            },
         );
         assert_eq!(
-            state.facade.consume_input(&ids[1]).await.unwrap(),
-            Event {
-                id: ids[2].clone(),
-                payload: RollupsInput {
-                    parent_id: ids[1].clone(),
-                    epoch_index: 1,
-                    inputs_sent_count: 2,
-                    data: inputs[2].clone(),
-                },
-            }
+            state.facade.consume_input().await.unwrap(),
+            RollupsInput {
+                parent_id: ids[1].clone(),
+                epoch_index: 1,
+                inputs_sent_count: 2,
+                data: inputs[2].clone(),
+            },
         );
     }
 

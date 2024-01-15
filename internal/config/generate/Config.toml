@@ -139,7 +139,7 @@ The node will begin to read blockchain events from this block."""
 [snapshot.CARTESI_SNAPSHOT_DIR]
 go-type = "string"
 description = """
-Path to the directory of the cartesi-machine snapshots."""
+Path to the directory with the cartesi-machine snapshot that will be loaded by the node."""
 
 #
 # Auth

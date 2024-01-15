@@ -8,16 +8,16 @@ services:
   machine_snapshot_setup:
     image: cartesi/rollups-node-snapshot:devel
     volumes:
-      - machine:/usr/share/cartesi/snapshots
+      - machine:/usr/share/cartesi/snapshot
 
   node:
     depends_on:
       machine_snapshot_setup:
         condition: service_completed_successfully
     environment:
-      CARTESI_SNAPSHOT_DIR: "/usr/share/cartesi/snapshots"
+      CARTESI_SNAPSHOT_DIR: "/usr/share/cartesi/snapshot"
     volumes:
-      - machine:/usr/share/cartesi/snapshots
+      - machine:/usr/share/cartesi/snapshot
 
 volumes:
   machine: {}

@@ -5,9 +5,6 @@ use snafu::Snafu;
 
 use crate::{broker, runner, server_manager};
 
-use crate::snapshot::disabled::SnapshotDisabledError;
-use crate::snapshot::fs_manager::FSSnapshotError;
-
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub(crate)))]
 pub enum AdvanceRunnerError {
@@ -24,13 +21,6 @@ pub enum AdvanceRunnerError {
     #[snafu(display("broker error"))]
     BrokerError { source: broker::BrokerFacadeError },
 
-    #[snafu(display("advance runner error"))]
-    RunnerFSSnapshotError {
-        source: runner::RunnerError<FSSnapshotError>,
-    },
-
-    #[snafu(display("advance runner error"))]
-    RunnerSnapshotDisabledError {
-        source: runner::RunnerError<SnapshotDisabledError>,
-    },
+    #[snafu(display("runner error"))]
+    RunnerError { source: runner::RunnerError },
 }

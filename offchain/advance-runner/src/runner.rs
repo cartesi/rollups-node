@@ -1,18 +1,14 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-use rollups_events::{Event, InputMetadata, RollupsData, RollupsInput};
+use rollups_events::{InputMetadata, RollupsData};
 use snafu::{ResultExt, Snafu};
 
 use crate::broker::{BrokerFacade, BrokerFacadeError};
 use crate::server_manager::{ServerManagerError, ServerManagerFacade};
-use crate::snapshot::SnapshotManager;
 
 #[derive(Debug, Snafu)]
-pub enum RunnerError<SnapError: snafu::Error + 'static> {
-    #[snafu(display("failed to to create session in server-manager"))]
-    CreateSessionError { source: ServerManagerError },
-
+pub enum RunnerError {
     #[snafu(display("failed to send advance-state input to server-manager"))]
     AdvanceError { source: ServerManagerError },
 
@@ -36,139 +32,51 @@ pub enum RunnerError<SnapError: snafu::Error + 'static> {
 
     #[snafu(display("failed to produce outputs in broker"))]
     ProduceOutputsError { source: BrokerFacadeError },
-
-    #[snafu(display("failed to get storage directory"))]
-    GetStorageDirectoryError { source: SnapError },
-
-    #[snafu(display("failed to get latest snapshot"))]
-    GetLatestSnapshotError { source: SnapError },
-
-    #[snafu(display("failed to set latest snapshot"))]
-    SetLatestSnapshotError { source: SnapError },
-
-    #[snafu(display(
-        "parent id doesn't match expected={} got={}",
-        expected,
-        got
-    ))]
-    ParentIdMismatchError { expected: String, got: String },
-
-    #[snafu(display("failed to validate snapshot"))]
-    ValidateSnapshotError { source: SnapError },
 }
 
-type Result<T, SnapError> = std::result::Result<T, RunnerError<SnapError>>;
+type Result<T> = std::result::Result<T, RunnerError>;
 
-pub struct Runner<Snap: SnapshotManager> {
+pub struct Runner {
     server_manager: ServerManagerFacade,
     broker: BrokerFacade,
-    snapshot_manager: Snap,
 }
 
-impl<Snap: SnapshotManager + std::fmt::Debug + 'static> Runner<Snap> {
+impl Runner {
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn start(
         server_manager: ServerManagerFacade,
         broker: BrokerFacade,
-        snapshot_manager: Snap,
-    ) -> Result<(), Snap::Error> {
+    ) -> Result<()> {
         let mut runner = Self {
             server_manager,
             broker,
-            snapshot_manager,
         };
-        let mut last_id = runner.setup().await?;
 
-        tracing::info!(last_id, "starting runner main loop");
+        tracing::info!("starting runner main loop");
         loop {
-            let event = runner.consume_next(&last_id).await?;
+            let event = runner
+                .broker
+                .consume_input()
+                .await
+                .context(ConsumeInputSnafu)?;
             tracing::info!(?event, "consumed input event");
 
-            match event.payload.data {
+            match event.data {
                 RollupsData::AdvanceStateInput(input) => {
                     runner
                         .handle_advance(
-                            event.payload.epoch_index,
-                            event.payload.inputs_sent_count,
+                            event.epoch_index,
+                            event.inputs_sent_count,
                             input.metadata,
                             input.payload.into_inner(),
                         )
                         .await?;
                 }
                 RollupsData::FinishEpoch {} => {
-                    runner
-                        .handle_finish(
-                            event.payload.epoch_index,
-                            event.payload.inputs_sent_count,
-                        )
-                        .await?;
+                    runner.handle_finish(event.epoch_index).await?;
                 }
             }
-
-            last_id = event.id;
-            tracing::info!(last_id, "waiting for the next input event");
-        }
-    }
-
-    #[tracing::instrument(level = "trace", skip_all)]
-    async fn setup(&mut self) -> Result<String, Snap::Error> {
-        tracing::trace!("setting up runner");
-
-        let snapshot = self
-            .snapshot_manager
-            .get_latest()
-            .await
-            .context(GetLatestSnapshotSnafu)?;
-        tracing::info!(?snapshot, "got latest snapshot");
-
-        if snapshot.is_template() {
-            self.snapshot_manager
-                .validate(&snapshot)
-                .await
-                .context(ValidateSnapshotSnafu)?;
-            tracing::info!("template snapshot is valid");
-        }
-
-        let event_id = self
-            .broker
-            .find_previous_finish_epoch(snapshot.epoch)
-            .await
-            .context(FindFinishEpochInputSnafu)?;
-        tracing::trace!(event_id, "found finish epoch input event");
-
-        self.server_manager
-            .start_session(
-                &snapshot.path,
-                snapshot.epoch,
-                snapshot.processed_input_count,
-            )
-            .await
-            .context(CreateSessionSnafu)?;
-
-        Ok(event_id)
-    }
-
-    #[tracing::instrument(level = "trace", skip_all)]
-    async fn consume_next(
-        &mut self,
-        last_id: &str,
-    ) -> Result<Event<RollupsInput>, Snap::Error> {
-        tracing::trace!("consuming next event input");
-
-        let event = self
-            .broker
-            .consume_input(last_id)
-            .await
-            .context(ConsumeInputSnafu)?;
-        tracing::trace!("input event consumed from broker");
-
-        if event.payload.parent_id != last_id {
-            Err(RunnerError::ParentIdMismatchError {
-                expected: last_id.to_owned(),
-                got: event.payload.parent_id,
-            })
-        } else {
-            Ok(event)
+            tracing::info!("waiting for the next input event");
         }
     }
 
@@ -179,7 +87,7 @@ impl<Snap: SnapshotManager + std::fmt::Debug + 'static> Runner<Snap> {
         inputs_sent_count: u64,
         input_metadata: InputMetadata,
         input_payload: Vec<u8>,
-    ) -> Result<(), Snap::Error> {
+    ) -> Result<()> {
         tracing::trace!("handling advance state");
 
         let input_index = inputs_sent_count - 1;
@@ -205,25 +113,10 @@ impl<Snap: SnapshotManager + std::fmt::Debug + 'static> Runner<Snap> {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    async fn handle_finish(
-        &mut self,
-        epoch_index: u64,
-        inputs_sent_count: u64,
-    ) -> Result<(), Snap::Error> {
+    async fn handle_finish(&mut self, epoch_index: u64) -> Result<()> {
         tracing::trace!("handling finish");
 
-        // We add one to the epoch index because the snapshot is for the one after we are closing
-        let snapshot = self
-            .snapshot_manager
-            .get_storage_directory(epoch_index + 1, inputs_sent_count)
-            .await
-            .context(GetStorageDirectorySnafu)?;
-        tracing::trace!(?snapshot, "got storage directory");
-
-        let result = self
-            .server_manager
-            .finish_epoch(epoch_index, &snapshot.path)
-            .await;
+        let result = self.server_manager.finish_epoch(epoch_index).await;
         tracing::trace!("finished epoch in server-manager");
 
         match result {
@@ -248,13 +141,6 @@ impl<Snap: SnapshotManager + std::fmt::Debug + 'static> Runner<Snap> {
                 }
             }
         }
-
-        self.snapshot_manager
-            .set_latest(snapshot)
-            .await
-            .context(SetLatestSnapshotSnafu)?;
-        tracing::trace!("set latest snapshot");
-
         Ok(())
     }
 }

@@ -142,16 +142,17 @@ async fn advance_runner_fails_when_inputs_has_wrong_parent_id() {
     state.broker.produce_raw_input_event(input).await;
 
     tracing::info!("waiting for the advance_runner to exit with error");
-    let _err = state.advance_runner.wait_err().await;
+    let err = state.advance_runner.wait_err().await;
     assert!(matches!(
-        advance_runner::AdvanceRunnerError::RunnerSnapshotDisabledError {
-            source:
-                advance_runner::runner::RunnerError::ParentIdMismatchError {
-                    expected: "0".to_owned(),
-                    got: "invalid".to_owned()
+        err,
+        advance_runner::AdvanceRunnerError::RunnerError {
+            source: advance_runner::RunnerError::ConsumeInputError {
+                source: advance_runner::BrokerFacadeError::ParentIdMismatchError {
+                    expected,
+                    got,
                 }
-        },
-        _err
+            }
+        } if expected == "0".to_owned() && got == "invalid".to_owned()
     ));
 }
 
