@@ -31,6 +31,21 @@ jobs:
         with:
           submodules: recursive
 
+      - uses: depot/setup-action@v1
+      - name: Build dependency images
+        uses: depot/bake-action@v1
+        with:
+          files: |
+            ./docker-bake.hcl
+            ./docker-bake.override.hcl
+            ./docker-bake.platforms.hcl
+          targets: |
+            rollups-node-devnet
+            rollups-node-snapshot
+          project: ${{ vars.DEPOT_PROJECT }}
+          workdir: build
+          load: true
+
       - name: 📦 Install protoc
         run: sudo apt update && sudo apt install -y protobuf-compiler libprotobuf-dev
 
@@ -82,20 +97,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
-
-      - uses: depot/setup-action@v1
-
-      - name: Build and load devnet image
-        uses: depot/bake-action@v1
-        with:
-          files: |
-            ./docker-bake.hcl
-            ./docker-bake.override.hcl
-            ./docker-bake.platforms.hcl
-          targets: rollups-node-devnet
-          project: ${{ vars.DEPOT_PROJECT }}
-          workdir: build
-          load: true
 
       - name: Run Go tests
         working-directory: ${{ github.workspace }}

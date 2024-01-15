@@ -2,13 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use clap::Parser;
-use snafu::{ResultExt, Snafu};
 use std::time::Duration;
 
 use crate::server_manager::ServerManagerCLIConfig;
 pub use crate::server_manager::ServerManagerConfig;
-pub use crate::snapshot::config::{FSManagerConfig, SnapshotConfig};
-use crate::snapshot::config::{SnapshotCLIConfig, SnapshotConfigError};
 use log::{LogConfig, LogEnvCliConfig};
 pub use rollups_events::{
     BrokerCLIConfig, BrokerConfig, DAppMetadata, DAppMetadataCLIConfig,
@@ -19,7 +16,6 @@ pub struct AdvanceRunnerConfig {
     pub server_manager_config: ServerManagerConfig,
     pub broker_config: BrokerConfig,
     pub dapp_metadata: DAppMetadata,
-    pub snapshot_config: SnapshotConfig,
     pub log_config: LogConfig,
     pub backoff_max_elapsed_duration: Duration,
     pub healthcheck_port: u16,
@@ -27,18 +23,13 @@ pub struct AdvanceRunnerConfig {
 }
 
 impl AdvanceRunnerConfig {
-    pub fn parse() -> Result<Self, ConfigError> {
+    pub fn parse() -> Self {
         let cli_config = CLIConfig::parse();
         let broker_config = cli_config.broker_cli_config.into();
         let dapp_metadata: DAppMetadata =
             cli_config.dapp_metadata_cli_config.into();
         let server_manager_config =
             ServerManagerConfig::parse_from_cli(cli_config.sm_cli_config);
-        let snapshot_config = SnapshotConfig::new(
-            cli_config.snapshot_cli_config,
-            dapp_metadata.dapp_address.clone(),
-        )
-        .context(SnapshotConfigSnafu)?;
 
         let log_config = LogConfig::initialize(cli_config.log_cli_config);
 
@@ -49,23 +40,16 @@ impl AdvanceRunnerConfig {
 
         let reader_mode = cli_config.reader_mode;
 
-        Ok(Self {
+        Self {
             server_manager_config,
             broker_config,
             dapp_metadata,
-            snapshot_config,
             log_config,
             backoff_max_elapsed_duration,
             healthcheck_port,
             reader_mode,
-        })
+        }
     }
-}
-
-#[derive(Debug, Snafu)]
-pub enum ConfigError {
-    #[snafu(display("error in snapshot configuration"))]
-    SnapshotConfigError { source: SnapshotConfigError },
 }
 
 #[derive(Parser)]
@@ -80,9 +64,6 @@ struct CLIConfig {
 
     #[command(flatten)]
     dapp_metadata_cli_config: DAppMetadataCLIConfig,
-
-    #[command(flatten)]
-    snapshot_cli_config: SnapshotCLIConfig,
 
     #[command(flatten)]
     pub log_cli_config: LogEnvCliConfig,

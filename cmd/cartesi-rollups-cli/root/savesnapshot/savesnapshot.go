@@ -26,7 +26,7 @@ var (
 
 func init() {
 	Cmd.Flags().StringVar(&sourceDockerImage, "docker-image",
-		"cartesi/rollups-machine-snapshot:devel",
+		"cartesi/rollups-node-snapshot:devel",
 		"Docker image containing the Cartesi Machine snapshot to be used")
 
 	Cmd.Flags().StringVar(&tempContainerName, "temp-container-name", "temp-machine",

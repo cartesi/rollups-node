@@ -93,13 +93,9 @@ func newAdvanceRunner() services.CommandService {
 	if config.GetCartesiFeatureHostMode() || config.GetCartesiFeatureDisableMachineHashCheck() {
 		s.Env = append(s.Env, "SNAPSHOT_VALIDATION_ENABLED=false")
 	}
-	if config.GetCartesiFeatureHostMode() {
-		s.Env = append(s.Env, "SNAPSHOT_ENABLED=false")
-	} else {
+	if !config.GetCartesiFeatureHostMode() {
 		s.Env = append(s.Env,
-			fmt.Sprintf("SNAPSHOT_DIR=%v", config.GetCartesiSnapshotDir()))
-		s.Env = append(s.Env,
-			fmt.Sprintf("SNAPSHOT_LATEST=%v/latest", config.GetCartesiSnapshotDir()))
+			fmt.Sprintf("MACHINE_SNAPSHOT_PATH=%v", config.GetCartesiSnapshotDir()))
 	}
 	s.Env = append(s.Env, os.Environ()...)
 	return s

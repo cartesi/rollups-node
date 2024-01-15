@@ -11,6 +11,7 @@ use grpc_interfaces::cartesi_server_manager::{CyclesConfig, DeadlineConfig};
 #[derive(Debug, Clone)]
 pub struct ServerManagerConfig {
     pub server_manager_endpoint: String,
+    pub machine_snapshot_path: String,
     pub max_decoding_message_size: usize,
     pub session_id: String,
     pub pending_inputs_sleep_duration: u64,
@@ -53,6 +54,7 @@ impl ServerManagerConfig {
 
         Self {
             server_manager_endpoint: cli_config.server_manager_endpoint,
+            machine_snapshot_path: cli_config.machine_snapshot_path,
             max_decoding_message_size: cli_config.max_decoding_message_size,
             session_id: cli_config.session_id,
             pending_inputs_sleep_duration: cli_config
@@ -72,6 +74,10 @@ pub struct ServerManagerCLIConfig {
     /// Server-manager gRPC endpoint
     #[arg(long, env, default_value = "http://127.0.0.1:5001")]
     pub server_manager_endpoint: String,
+
+    /// Path to the machine snapshot
+    #[arg(long, env, default_value = "")]
+    pub machine_snapshot_path: String,
 
     /// Maximum size of a decoded message
     #[arg(long, env, default_value_t = 100 * 1024 * 1024)]

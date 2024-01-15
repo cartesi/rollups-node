@@ -15,7 +15,7 @@ use testcontainers::clients::Cli;
 mod fixtures;
 
 struct TestState<'d> {
-    snapshots: MachineSnapshotsFixture,
+    _snapshots: MachineSnapshotsFixture,
     broker: BrokerFixture<'d>,
     server_manager: ServerManagerFixture<'d>,
     advance_runner: AdvanceRunnerFixture,
@@ -26,18 +26,18 @@ impl TestState<'_> {
         let snapshots = MachineSnapshotsFixture::setup();
         let broker = BrokerFixture::setup(docker).await;
         let server_manager =
-            ServerManagerFixture::setup(docker, snapshots.path()).await;
+            ServerManagerFixture::setup(docker, &snapshots.path()).await;
         let advance_runner = AdvanceRunnerFixture::setup(
             server_manager.endpoint().to_owned(),
             server_manager.session_id().to_owned(),
             broker.redis_endpoint().to_owned(),
             broker.chain_id(),
             broker.dapp_address().to_owned(),
-            Some(snapshots.path()),
+            Some(snapshots.path().to_string_lossy().to_string()),
         )
         .await;
         TestState {
-            snapshots,
+            _snapshots: snapshots,
             broker,
             server_manager,
             advance_runner,
@@ -138,16 +138,17 @@ async fn test_advance_runner_fails_when_inputs_has_wrong_parent_id() {
     state.broker.produce_raw_input_event(input).await;
 
     tracing::info!("waiting for the advance_runner to exit with error");
-    let _err = state.advance_runner.wait_err().await;
+    let err = state.advance_runner.wait_err().await;
     assert!(matches!(
-        advance_runner::AdvanceRunnerError::RunnerSnapshotDisabledError {
-            source:
-                advance_runner::runner::RunnerError::ParentIdMismatchError {
-                    expected: "0".to_owned(),
-                    got: "invalid".to_owned()
+        err,
+        advance_runner::AdvanceRunnerError::RunnerError {
+            source: advance_runner::RunnerError::ConsumeInputError {
+                source: advance_runner::BrokerFacadeError::ParentIdMismatchError {
+                    expected,
+                    got,
                 }
-        },
-        _err
+            }
+        } if expected == "0".to_owned() && got == "invalid".to_owned()
     ));
 }
 
@@ -269,17 +270,6 @@ async fn test_advance_runner_does_not_generate_duplicate_claim() {
     let produced_claims = state.broker.consume_all_claims().await;
     assert_eq!(produced_claims.len(), 1);
     assert_eq!(produced_claims[0].epoch_hash, rollups_claim.epoch_hash);
-}
-
-#[test_log::test(tokio::test)]
-async fn test_advance_runner_stores_snapshot_after_finishing_epoch() {
-    let docker = Cli::default();
-    let state = TestState::setup(&docker).await;
-
-    finish_epoch_and_wait_for_next_input(&state).await;
-
-    tracing::info!("checking the snapshots dir");
-    state.snapshots.assert_latest_snapshot(1, 1);
 }
 
 #[test_log::test(tokio::test)]

@@ -7,20 +7,16 @@ use config::AdvanceRunnerConfig;
 use runner::Runner;
 use server_manager::ServerManagerFacade;
 use snafu::ResultExt;
-use snapshot::{
-    config::SnapshotConfig, disabled::SnapshotDisabled,
-    fs_manager::FSSnapshotManager,
-};
 
+pub use broker::BrokerFacadeError;
 pub use error::AdvanceRunnerError;
+pub use runner::RunnerError;
 
 mod broker;
 pub mod config;
-mod dapp_contract;
 mod error;
 pub mod runner;
 mod server_manager;
-mod snapshot;
 
 #[tracing::instrument(level = "trace", skip_all)]
 pub async fn run(
@@ -64,18 +60,7 @@ async fn start_advance_runner(
     .context(error::BrokerSnafu)?;
     tracing::trace!("connected the broker");
 
-    match config.snapshot_config {
-        SnapshotConfig::FileSystem(fs_manager_config) => {
-            let snapshot_manager = FSSnapshotManager::new(fs_manager_config);
-            Runner::start(server_manager, broker, snapshot_manager)
-                .await
-                .context(error::RunnerFSSnapshotSnafu)
-        }
-        SnapshotConfig::Disabled => {
-            let snapshot_manager = SnapshotDisabled {};
-            Runner::start(server_manager, broker, snapshot_manager)
-                .await
-                .context(error::RunnerSnapshotDisabledSnafu)
-        }
-    }
+    Runner::start(server_manager, broker)
+        .await
+        .context(error::RunnerSnafu)
 }

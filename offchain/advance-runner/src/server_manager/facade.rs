@@ -7,7 +7,6 @@ use rollups_events::{
     RollupsClaim, RollupsNotice, RollupsOutput, RollupsReport, RollupsVoucher,
 };
 use snafu::{OptionExt, ResultExt};
-use std::path::Path;
 use tonic::{transport::Channel, Request};
 use uuid::Uuid;
 
@@ -108,75 +107,67 @@ impl ServerManagerFacade {
         .context(ConnectionSnafu)?
         .max_decoding_message_size(config.max_decoding_message_size);
 
-        Ok(Self {
+        let mut sm_facade = Self {
             dapp_address,
             client,
             config,
             backoff,
-        })
-    }
-
-    #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn start_session(
-        &mut self,
-        machine_directory: &Path,
-        active_epoch_index: u64,
-        processed_input_count: u64,
-    ) -> Result<()> {
-        tracing::trace!(
-            ?machine_directory,
-            active_epoch_index,
-            "starting server-manager session"
-        );
+        };
 
         // If session exists, delete it before creating new one
-        let response = grpc_call!(self, get_status, Void {})?;
-        if response.session_id.contains(&self.config.session_id) {
+        let response = grpc_call!(sm_facade, get_status, Void {})?;
+        if response.session_id.contains(&sm_facade.config.session_id) {
             tracing::warn!("deleting previous server-manager session");
             let session_status = grpc_call!(
-                self,
+                sm_facade,
                 get_session_status,
                 GetSessionStatusRequest {
-                    session_id: self.config.session_id.clone(),
+                    session_id: sm_facade.config.session_id.clone(),
                 }
             )?;
             let active_epoch_index = session_status.active_epoch_index;
-            let processed_input_count_within_epoch =
-                self.wait_for_pending_inputs(active_epoch_index)
-                    .await?
-                    .len() as u64;
+            let processed_input_count_within_epoch = sm_facade
+                .wait_for_pending_inputs(active_epoch_index)
+                .await?
+                .len()
+                as u64;
             grpc_call!(
-                self,
+                sm_facade,
                 finish_epoch,
                 FinishEpochRequest {
-                    session_id: self.config.session_id.clone(),
+                    session_id: sm_facade.config.session_id.clone(),
                     active_epoch_index,
                     processed_input_count_within_epoch,
                     storage_directory: "".to_string(),
                 }
             )?;
             grpc_call!(
-                self,
+                sm_facade,
                 end_session,
                 EndSessionRequest {
-                    session_id: self.config.session_id.clone(),
+                    session_id: sm_facade.config.session_id.clone(),
                 }
             )?;
         }
 
-        grpc_call!(self, start_session, {
+        tracing::trace!("starting server-manager session");
+
+        grpc_call!(sm_facade, start_session, {
             StartSessionRequest {
-                session_id: self.config.session_id.clone(),
-                machine_directory: machine_directory.to_string_lossy().into(),
-                runtime: Some(self.config.runtime_config.clone()),
-                active_epoch_index,
-                processed_input_count,
-                server_cycles: Some(self.config.cycles_config.clone()),
-                server_deadline: Some(self.config.deadline_config.clone()),
+                session_id: sm_facade.config.session_id.clone(),
+                machine_directory: sm_facade
+                    .config
+                    .machine_snapshot_path
+                    .clone(),
+                runtime: Some(sm_facade.config.runtime_config.clone()),
+                active_epoch_index: 0,
+                processed_input_count: 0,
+                server_cycles: Some(sm_facade.config.cycles_config.clone()),
+                server_deadline: Some(sm_facade.config.deadline_config.clone()),
             }
         })?;
 
-        Ok(())
+        Ok(sm_facade)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -286,7 +277,6 @@ impl ServerManagerFacade {
     pub async fn finish_epoch(
         &mut self,
         epoch_index: u64,
-        storage_directory: &Path,
     ) -> Result<(RollupsClaim, Vec<RollupsOutput>)> {
         tracing::trace!(epoch_index, "sending finish epoch");
 
@@ -300,9 +290,7 @@ impl ServerManagerFacade {
                 session_id: self.config.session_id.to_owned(),
                 active_epoch_index: epoch_index,
                 processed_input_count_within_epoch,
-                storage_directory: storage_directory
-                    .to_string_lossy()
-                    .to_string(),
+                storage_directory: "".to_owned(),
             }
         })?;
 

@@ -20,13 +20,13 @@ ARG LINUX_KERNEL_VERSION
 ARG ROM_VERSION
 
 # Build directories.
-ARG MACHINE_SNAPSHOT_BUILD_PATH=/build/machine-snapshot
+ARG SNAPSHOT_BUILD_PATH=/build/snapshot
 ARG DEVNET_BUILD_PATH=/build/devnet
 ARG RUST_BUILD_PATH=/build/rollups-node/rust
 ARG GO_BUILD_PATH=/build/rollups-node/go
 
 # Runtime dir for the cartesi-machine snapshot.
-ARG MACHINE_SNAPSHOT_RUNTIME_PATH=/usr/share/cartesi/snapshots
+ARG SNAPSHOT_RUNTIME_PATH=/usr/share/cartesi/snapshot
 
 ####################################################################################################
 # STAGE: emulator-base
@@ -87,12 +87,12 @@ ADD https://github.com/cartesi/image-kernel/releases/download/v${LINUX_VERSION}/
 ADD https://github.com/cartesi/machine-emulator-rom/releases/download/v${ROM_VERSION}/rom-v${ROM_VERSION}.bin rom.bin
 
 # Generate snapshot with echo and store it.
-ARG MACHINE_SNAPSHOT_BUILD_PATH
-WORKDIR ${MACHINE_SNAPSHOT_BUILD_PATH}
+ARG SNAPSHOT_BUILD_PATH
+WORKDIR /build
 RUN cartesi-machine \
     --ram-length=128Mi \
     --rollup \
-    --store=$MACHINE_SNAPSHOT_BUILD_PATH/snapshot \
+    --store=$SNAPSHOT_BUILD_PATH \
     -- "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --verbose=1"
 
 # STAGE: rollups-node-snapshot
@@ -103,14 +103,10 @@ RUN cartesi-machine \
 FROM emulator-base as rollups-node-snapshot
 
 # Copy image from the builder stage.
-ARG MACHINE_SNAPSHOT_BUILD_PATH
-ARG MACHINE_SNAPSHOT_RUNTIME_PATH
-WORKDIR ${MACHINE_SNAPSHOT_RUNTIME_PATH}
-COPY --from=snapshot-builder --chown=cartesi:cartesi ${MACHINE_SNAPSHOT_BUILD_PATH}/snapshot ./0_0
-RUN <<EOF
-ln -s ${MACHINE_SNAPSHOT_RUNTIME_PATH}/0_0 ${MACHINE_SNAPSHOT_RUNTIME_PATH}/latest
-chown -R cartesi:cartesi ${MACHINE_SNAPSHOT_RUNTIME_PATH}
-EOF
+ARG SNAPSHOT_BUILD_PATH
+ARG SNAPSHOT_RUNTIME_PATH
+WORKDIR ${SNAPSHOT_RUNTIME_PATH}
+COPY --from=snapshot-builder --chown=cartesi:cartesi ${SNAPSHOT_BUILD_PATH} ${SNAPSHOT_RUNTIME_PATH}
 
 # Set dummy command.
 CMD /bin/bash
@@ -156,8 +152,8 @@ ARG DEVNET_BUILD_PATH
 WORKDIR ${DEVNET_BUILD_PATH}
 
 # Copy machine snapshot hash.
-ARG MACHINE_SNAPSHOT_BUILD_PATH
-COPY --from=snapshot-builder ${MACHINE_SNAPSHOT_BUILD_PATH}/snapshot/hash hash.bin
+ARG SNAPSHOT_BUILD_PATH
+COPY --from=snapshot-builder ${SNAPSHOT_BUILD_PATH}/hash hash.bin
 
 # Generate Anvil state.
 COPY scripts scripts

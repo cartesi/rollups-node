@@ -27,7 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed installation paths in the Docker image. Now all the binaries are installed in /usr/bin
   instead of /opt/cartesi/bin.
 - Changed the base Docker image to debian-bookworm instead cartesi/server-manager.
+
+### Removed
+
 - Removed concurrent block fetch in foldable `InputBox`.
+- Removed snapshot-saving feature. Now, the node will always start from the beginning.
 
 ## [1.2.0]
 

@@ -226,7 +226,7 @@ At the end of each epoch, the node will send claims to the blockchain.
 
 ## `CARTESI_SNAPSHOT_DIR`
 
-Path to the directory of the cartesi-machine snapshots.
+Path to the directory with the cartesi-machine snapshot that will be loaded by the node.
 
 * **Type:** `string`
 
