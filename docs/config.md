@@ -56,12 +56,6 @@ The node assumes that blocks offseted by N from the current block have reached f
 * **Type:** `int`
 * **Default:** `"10"`
 
-### CARTESI_BLOCKCHAIN_GENESIS_BLOCK
-The node will begin to read blockchain events from this block.
-
-* **Type:** `int64`
-* **Default:** `"1"`
-
 ### CARTESI_BLOCKCHAIN_HTTP_ENDPOINT
 HTTP endpoint for the blockchain RPC provider.
 
@@ -83,6 +77,13 @@ If set to true the node will send transactions using the legacy gas fee model
 WebSocket endpoint for the blockchain RPC provider.
 
 * **Type:** `string`
+
+### CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER
+The deployment block for the input box contract.
+The node will begin to read blockchain events from this block.
+
+* **Type:** `int64`
+* **Default:** `"1"`
 
 ### CARTESI_CONTRACTS_AUTHORITY_ADDRESS
 Address of the Authority contract.

@@ -127,7 +127,7 @@ func newAuthorityClaimer() services.CommandService {
 	s.Env = append(s.Env,
 		fmt.Sprintf("INPUT_BOX_ADDRESS=%v", config.GetCartesiContractsInputBoxAddress()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("GENESIS_BLOCK=%v", config.GetCartesiBlockchainGenesisBlock()))
+		fmt.Sprintf("GENESIS_BLOCK=%v", config.GetCartesiContractsInputBoxDeploymentBlockNumber()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("AUTHORITY_CLAIMER_HTTP_SERVER_PORT=%v", getPort(portOffsetAuthorityClaimer)))
 	switch auth := config.GetAuth().(type) {
@@ -304,7 +304,8 @@ func newStateServer() services.CommandService {
 	s.Env = append(s.Env, getRustLog("state_server"))
 	s.Env = append(s.Env, "SF_CONCURRENT_EVENTS_FETCH=1")
 	s.Env = append(s.Env,
-		fmt.Sprintf("SF_GENESIS_BLOCK=%v", config.GetCartesiBlockchainGenesisBlock()))
+		fmt.Sprintf("SF_GENESIS_BLOCK=%v",
+			config.GetCartesiContractsInputBoxDeploymentBlockNumber()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("SF_SAFETY_MARGIN=%v", config.GetCartesiBlockchainFinalityOffset()))
 	s.Env = append(s.Env,

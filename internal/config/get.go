@@ -49,11 +49,6 @@ func GetCartesiBlockchainFinalityOffset() int {
 	return v
 }
 
-func GetCartesiBlockchainGenesisBlock() int64 {
-	v := get("CARTESI_BLOCKCHAIN_GENESIS_BLOCK", "1", true, false, toInt64)
-	return v
-}
-
 func GetCartesiBlockchainHttpEndpoint() string {
 	v := get("CARTESI_BLOCKCHAIN_HTTP_ENDPOINT", "", false, false, toString)
 	return v
@@ -71,6 +66,11 @@ func GetCartesiBlockchainIsLegacy() bool {
 
 func GetCartesiBlockchainWsEndpoint() string {
 	v := get("CARTESI_BLOCKCHAIN_WS_ENDPOINT", "", false, false, toString)
+	return v
+}
+
+func GetCartesiContractsInputBoxDeploymentBlockNumber() int64 {
+	v := get("CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER", "1", true, false, toInt64)
 	return v
 }
 
