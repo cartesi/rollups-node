@@ -124,7 +124,7 @@ func (e Env) toFunction() string {
 
 // Generates the documentation entry for the environment variable.
 func (e Env) toDoc() string {
-	s := fmt.Sprintf("### %s\n%s\n\n", e.Name, e.Description)
+	s := fmt.Sprintf("### `%s`\n%s\n\n", e.Name, e.Description)
 	s = fmt.Sprintf("%s* **Type:** `%s`\n", s, e.GoType)
 	if e.Default != nil {
 		s = fmt.Sprintf("%s* **Default:** `\"%s\"`\n", s, *e.Default)

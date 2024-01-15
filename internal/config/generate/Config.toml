@@ -146,7 +146,7 @@ redact = true
 description = """
 The node will use the private key generated from this mnemonic to sign transactions.
 
-Overrides AUTH_MNEMONIC_FILE and AUTH_AWS_KMS_*."""
+Overrides `CARTESI_AUTH_MNEMONIC_FILE` and `CARTESI_AUTH_AWS_KMS_*`."""
 
 [auth.CARTESI_AUTH_MNEMONIC_FILE]
 go-type = "string"
@@ -156,7 +156,7 @@ description = """
 The node will use the private key generated from the mnemonic contained in this file
 to sign transactions.
 
-Overrides AUTH_AWS_KMS_*."""
+Overrides `CARTESI_AUTH_AWS_KMS_*`."""
 
 [auth.CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX]
 default = "0"
@@ -174,7 +174,7 @@ redact = true
 description = """
 If set, the node will use the AWS KMS service with this key ID to sign transactions.
 
-Must be set alongside AUTH_AWS_KMS_REGION."""
+Must be set alongside `CARTESI_AUTH_AWS_KMS_REGION`."""
 
 [auth.CARTESI_AUTH_AWS_KMS_REGION]
 go-type = "string"
@@ -183,7 +183,7 @@ redact = true
 description = """
 An AWS KMS Region.
 
-Must be set alongside AUTH_AWS_KMS_KEY_ID."""
+Must be set alongside `CARTESI_AUTH_AWS_KMS_KEY_ID`."""
 
 #
 # Postgres
