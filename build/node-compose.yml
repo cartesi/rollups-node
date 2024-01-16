@@ -11,13 +11,6 @@ services:
       - "10004:10004" # GraphQL Server
       - "10009:10009" # Inspect Server
     restart: always
-    depends_on:
-      devnet:
-        condition: service_healthy
-      machine_snapshot_setup:
-        condition: service_completed_successfully
-      database:
-        condition: service_healthy
     environment:
       CARTESI_LOG_LEVEL: "info"
       CARTESI_LOG_TIMESTAMP: "true"
@@ -38,5 +31,3 @@ services:
       CARTESI_SNAPSHOT_DIR: "/var/opt/cartesi/machine-snapshots"
       CARTESI_AUTH_MNEMONIC: "test test test test test test test test test test test junk"
       CARTESI_POSTGRES_ENDPOINT: "postgres://postgres:password@database:5432/postgres"
-    volumes:
-      - machine:/var/opt/cartesi/machine-snapshots

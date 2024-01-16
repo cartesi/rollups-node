@@ -28,6 +28,17 @@ services:
     environment:
       - POSTGRES_PASSWORD=password
 
+  node:
+    depends_on:
+      devnet:
+        condition: service_healthy
+      machine_snapshot_setup:
+        condition: service_completed_successfully
+      database:
+        condition: service_healthy
+    volumes:
+      - machine:/var/opt/cartesi/machine-snapshots
+
 volumes:
   blockchain-data: {}
   machine: {}
