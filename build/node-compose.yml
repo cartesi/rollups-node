@@ -3,7 +3,10 @@ version: "3.9"
 name: rollups-node
 services:
   node:
-    image: "cartesi/rollups-node:devel"
+    build:
+      context: ../
+      dockerfile: ./build/Dockerfile
+      target: rollups-node
     ports:
       - "10004:10004" # GraphQL Server
       - "10009:10009" # Inspect Server
