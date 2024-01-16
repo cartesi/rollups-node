@@ -72,7 +72,7 @@ RUN apt-get update && \
 # Install foundry
 RUN curl -L https://foundry.paradigm.xyz | bash
 ENV PATH="~/.foundry/bin:${PATH}"
-RUN bash -c foundryup
+RUN bash -c foundryup -C 24abca6c9133618e0c355842d2be2dd4f36da46d
 RUN ln -s ~/.foundry/bin/anvil /usr/local/bin/anvil
 
 ARG RUNTIME_DIR
