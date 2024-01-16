@@ -66,7 +66,7 @@ Loop:
 		group.Go(func() error {
 			err := service.Start(ctx, serviceReady)
 			if err != nil && !errors.Is(err, context.Canceled) {
-				config.InfoLogger.Printf("%v: %v exited with error. %v", s, service, err)
+				config.ErrorLogger.Printf("%v: %v exited with error. %v", s, service, err)
 			} else {
 				config.InfoLogger.Printf("%v: %v exited successfully\n", s, service)
 			}
@@ -82,7 +82,7 @@ Loop:
 			break Loop
 		// service took too long to become ready
 		case <-time.After(readyTimeout):
-			config.InfoLogger.Printf("%v: %v timed out\n", s, service)
+			config.ErrorLogger.Printf("%v: %v timed out\n", s, service)
 			cancel()
 			serviceTimedOut = true
 			break Loop
