@@ -4,6 +4,7 @@
 package root
 
 import (
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/increasetime"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/inspect"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/savesnapshot"
@@ -23,5 +24,6 @@ func init() {
 	Cmd.AddCommand(read.Cmd)
 	Cmd.AddCommand(savesnapshot.Cmd)
 	Cmd.AddCommand(inspect.Cmd)
+	Cmd.AddCommand(increasetime.Cmd)
 	Cmd.DisableAutoGenTag = true
 }
