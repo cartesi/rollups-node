@@ -109,7 +109,7 @@ func (s *SupervisorServiceSuite) TestItStopsAllServicesWhenContextIsCanceled() {
 
 	select {
 	case err := <-result:
-		s.Assert().ErrorIs(err, context.Canceled)
+		s.ErrorIs(err, context.Canceled)
 		for _, service := range services {
 			mockService := service.(*MockService)
 			mockService.AssertExpectations(s.T())
@@ -158,7 +158,7 @@ func (s *SupervisorServiceSuite) TestItStopsAllServicesIfAServiceStops() {
 
 	select {
 	case err := <-result:
-		s.Assert().ErrorIs(err, mockErr)
+		s.ErrorIs(err, mockErr)
 		for _, service := range services {
 			mockService := service.(*MockService)
 			mockService.AssertExpectations(s.T())
@@ -204,7 +204,7 @@ func (s *SupervisorServiceSuite) TestItStopsCreatingServicesIfAServiceFailsToSta
 
 	select {
 	case err := <-result:
-		s.Assert().ErrorIs(err, mockErr)
+		s.ErrorIs(err, mockErr)
 		last := services[len(services)-1].(*MockService)
 		last.AssertNotCalled(s.T(), "Start", mock.Anything, mock.Anything)
 	case <-time.After(DefaultServiceTimeout):
@@ -252,7 +252,7 @@ func (s *SupervisorServiceSuite) TestItStopsCreatingServicesIfContextIsCanceled(
 
 	select {
 	case err := <-result:
-		s.Assert().ErrorIs(err, context.Canceled)
+		s.ErrorIs(err, context.Canceled)
 		for idx, service := range services {
 			mockService := service.(*MockService)
 			if idx > 1 {
@@ -292,7 +292,7 @@ func (s *SupervisorServiceSuite) TestItTimesOutIfServiceTakesTooLongToBeReady() 
 
 	select {
 	case err := <-result:
-		s.Assert().ErrorIs(err, ServiceTimeoutError)
+		s.ErrorIs(err, ServiceTimeoutError)
 		mock1.AssertCalled(s.T(), "Start", mock.Anything, mock.Anything)
 	case <-ready:
 		s.FailNow("supervisor shouldn't be ready")
@@ -328,7 +328,7 @@ func (s *SupervisorServiceSuite) TestItTimesOutIfServicesTakeTooLongToStop() {
 	cancel()
 
 	err := <-result
-	s.Assert().ErrorIs(err, SupervisorTimeoutError)
+	s.ErrorIs(err, SupervisorTimeoutError)
 }
 
 type MockService struct {
