@@ -3,18 +3,14 @@ version: "3.9"
 name: rollups-node
 services:
   devnet:
-    image: cartesi/rollups-devnet:devel
+    image: cartesi/rollups-node-devnet:devel
     ports:
       - 8545:8545
-    environment:
-      ANVIL_IP_ADDR: 0.0.0.0
-    volumes:
-      - blockchain-data:/usr/share/devnet
 
   machine_snapshot_setup:
-    image: cartesi/rollups-machine-snapshot:devel
+    image: cartesi/rollups-node-snapshot:devel
     volumes:
-      - machine:/var/opt/cartesi/machine-snapshots
+      - machine:/usr/share/cartesi/snapshots
 
   database:
     image: postgres:13-alpine
@@ -29,5 +25,4 @@ services:
       - POSTGRES_PASSWORD=password
 
 volumes:
-  blockchain-data: {}
   machine: {}

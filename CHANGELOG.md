@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Replaced `DAPP_DEPLOY_BLOCK_HASH` with `DAPP_DEPLOYMENT_BLOCK_NUMBER`.
+- Changed installation paths in the Docker image. Now all the binaries are installed in /usr/bin
+  instead of /opt/cartesi/bin.
+- Changed the base Docker image to debian-bookworm instead cartesi/server-manager.
 
 ## [1.2.0]
 

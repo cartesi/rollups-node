@@ -13,10 +13,10 @@ target "rollups-node" {
   tags = ["${DOCKER_ORGANIZATION}/rollups-node:${TAG}"]
 }
 
-target "machine-snapshot" {
-  tags = ["${DOCKER_ORGANIZATION}/rollups-machine-snapshot:${TAG}"]
+target "rollups-node-snapshot" {
+  tags = ["${DOCKER_ORGANIZATION}/rollups-node-snapshot:${TAG}"]
 }
 
-target "rollups-devnet" {
-  tags = ["${DOCKER_ORGANIZATION}/rollups-devnet:${TAG}"]
+target "rollups-node-devnet" {
+  tags = ["${DOCKER_ORGANIZATION}/rollups-node-devnet:${TAG}"]
 }
