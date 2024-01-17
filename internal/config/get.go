@@ -119,6 +119,11 @@ func GetCartesiFeatureReaderMode() bool {
 	return v
 }
 
+func GetCartesiHttpAddress() string {
+	v := get("CARTESI_HTTP_ADDRESS", "127.0.0.1", true, false, toString)
+	return v
+}
+
 func GetCartesiHttpPort() int {
 	v := get("CARTESI_HTTP_PORT", "10000", true, false, toInt)
 	return v

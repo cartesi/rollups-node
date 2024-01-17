@@ -207,6 +207,12 @@ for more information."""
 # HTTP
 #
 
+[http.CARTESI_HTTP_ADDRESS]
+default = "127.0.0.1"
+go-type = "string"
+description = """
+HTTP address for the node."""
+
 [http.CARTESI_HTTP_PORT]
 default = "10000"
 go-type = "int"

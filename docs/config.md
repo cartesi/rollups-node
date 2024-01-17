@@ -138,6 +138,12 @@ In reader mode, the node does not make claims.
 * **Type:** `bool`
 * **Default:** `"false"`
 
+### `CARTESI_HTTP_ADDRESS`
+HTTP address for the node.
+
+* **Type:** `string`
+* **Default:** `"127.0.0.1"`
+
 ### `CARTESI_HTTP_PORT`
 HTTP port for the node.
 The node will also use the 20 ports after this one for internal services.
