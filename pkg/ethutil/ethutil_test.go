@@ -93,10 +93,7 @@ func TestEthUtilSuite(t *testing.T) {
 // This image starts an anvil node with the Rollups contracts already deployed.
 func newDevNetContainer(ctx context.Context) (testcontainers.Container, error) {
 	req := testcontainers.ContainerRequest{
-		Image: "cartesi/rollups-devnet:devel",
-		Env: map[string]string{
-			"ANVIL_IP_ADDR": "0.0.0.0",
-		},
+		Image:        "cartesi/rollups-node-devnet:devel",
 		ExposedPorts: []string{"8545/tcp"},
 		WaitingFor:   wait.ForLog("Listening on 0.0.0.0:8545"),
 	}

@@ -92,7 +92,7 @@ jobs:
             ./docker-bake.hcl
             ./docker-bake.override.hcl
             ./docker-bake.platforms.hcl
-          targets: rollups-devnet
+          targets: rollups-node-devnet
           project: ${{ vars.DEPOT_PROJECT }}
           workdir: build
           load: true
