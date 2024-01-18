@@ -70,7 +70,7 @@ func GetCartesiBlockchainWsEndpoint() string {
 }
 
 func GetCartesiContractsInputBoxDeploymentBlockNumber() int64 {
-	v := get("CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER", "1", true, false, toInt64)
+	v := get("CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER", "", false, false, toInt64)
 	return v
 }
 

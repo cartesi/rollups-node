@@ -119,7 +119,6 @@ description = """
 Address of the InputBox contract."""
 
 [blockchain.CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER]
-default = "1"
 go-type = "int64"
 description = """
 The deployment block for the input box contract.
