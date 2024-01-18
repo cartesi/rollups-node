@@ -203,6 +203,12 @@ RUN go mod download
 COPY . .
 RUN go build -ldflags "-s -w" ./cmd/cartesi-rollups-node
 
+# STAGE: server-manager versioned image alias
+#
+# This stage creates an alias for the server-manager image with a specific version.
+ARG SERVER_MANAGER_VERSION=0.8.2
+FROM cartesi/server-manager:${SERVER_MANAGER_VERSION} as server-manager
+
 # STAGE: rollups-node
 #
 # This stage copies the binaries from the previous stages.
@@ -237,7 +243,7 @@ rm -rf /var/lib/apt/lists/*
 EOF
 
 # Copy server-manager
-COPY --from=cartesi/server-manager:0.8.2 /usr/bin/server-manager /usr/bin/server-manager
+COPY --from=server-manager /usr/bin/server-manager /usr/bin/server-manager
 
 # Copy Rust binaries.
 # Explicitly copy each binary to avoid adding unnecessary files to the runtime image.
