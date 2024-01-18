@@ -10,6 +10,7 @@ ARG RUST_VERSION=1.75.0
 ARG GO_VERSION=1.21.1
 ARG FOUNDRY_VERSION_COMMIT=24abca6c9133618e0c355842d2be2dd4f36da46d
 ARG ROLLUPS_CONTRACTS_VERSION=1.1.0
+ARG SERVER_MANAGER_VERSION=0.8.2
 ARG MACHINE_EMULATOR_VERSION=0.15.2
 
 # Build directories.
@@ -205,8 +206,7 @@ RUN go build -ldflags "-s -w" ./cmd/cartesi-rollups-node
 # STAGE: rollups-node
 #
 # This stage copies the binaries from the previous stages.
-FROM cartesi/machine-emulator:${MACHINE_EMULATOR_VERSION} as rollups-node
-
+FROM debian:bookworm-20240110-slim as rollups-node
 
 # Set user to root because the base image uses a low-privilege user.
 USER root
@@ -225,9 +225,19 @@ apt-get install -y --no-install-recommends \
 rm -rf /var/lib/apt/lists/*
 EOF
 
+# Install machine-emulator
+ARG MACHINE_EMULATOR_VERSION=${MACHINE_EMULATOR_VERSION}
+RUN <<EOF
+apt-get update
+ARCH=$(dpkg --print-architecture)
+curl -fsSL https://github.com/cartesi/machine-emulator/releases/download/v${MACHINE_EMULATOR_VERSION}/cartesi-machine-v${MACHINE_EMULATOR_VERSION}_${ARCH}.deb -o ./cartesi-machine.deb
+apt-get install -y ./cartesi-machine.deb
+rm ./cartesi-machine.deb
+rm -rf /var/lib/apt/lists/*
+EOF
+
 # Copy server-manager
-ARG SERVER_MANAGER_VERSION="0.8.2"
-COPY --from=cartesi/server-manager:$SERVER_MANAGER_VERSION /usr/bin/server-manager /usr/bin/server-manager
+COPY --from=cartesi/server-manager:0.8.2 /usr/bin/server-manager /usr/bin/server-manager
 
 # Copy Rust binaries.
 # Explicitly copy each binary to avoid adding unnecessary files to the runtime image.
@@ -245,6 +255,19 @@ COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-state-server /usr/bin
 # Copy Go binary.
 ARG GO_BUILD_PATH
 COPY --from=go-builder ${GO_BUILD_PATH}/cartesi-rollups-node /usr/bin
+
+# Configure cartesi user and group.
+RUN <<EOF
+addgroup --system --gid 102 cartesi
+adduser --system --uid 102 \
+    --disabled-login \
+    --gecos "cartesi user" \
+    --home /nonexistent \
+    --ingroup cartesi \
+    --no-create-home \
+    --shell /bin/false \
+    cartesi
+EOF
 
 # Setup runtime dir.
 ARG RUNTIME_DIR=/usr/share/rollups-node
