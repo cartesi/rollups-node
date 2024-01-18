@@ -232,7 +232,7 @@ rm -rf /var/lib/apt/lists/*
 EOF
 
 # Install machine-emulator
-ARG MACHINE_EMULATOR_VERSION=${MACHINE_EMULATOR_VERSION}
+ARG MACHINE_EMULATOR_VERSION=0.15.2
 RUN <<EOF
 apt-get update
 ARCH=$(dpkg --print-architecture)
