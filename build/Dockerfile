@@ -181,7 +181,7 @@ HEALTHCHECK --interval=10s --timeout=1s --retries=5 CMD anvil_net_listening.sh
 ENV ANVIL_IP_ADDR="0.0.0.0"
 
 # Start Anvil.
-CMD anvil --block-time 5 --load-state $ANVIL_STATE_PATH
+CMD anvil --block-time 1 --load-state $ANVIL_STATE_PATH
 
 ####################################################################################################
 # TARGET: rollups-node
