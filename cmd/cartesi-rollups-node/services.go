@@ -339,5 +339,6 @@ func newHttpService() services.HttpService {
 }
 
 func healthcheckHandler(w http.ResponseWriter, r *http.Request) {
+	config.DebugLogger.Println("received healthcheck request")
 	w.WriteHeader(http.StatusOK)
 }
