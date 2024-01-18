@@ -1,7 +1,7 @@
 # (c) Cartesi and individual authors (see AUTHORS)
 # SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-# syntax=docker.io/docker/dockerfile:1.4
+# syntax=docker.io/docker/dockerfile:1
 
 # This dockerfile contains multiple stages to build three final targets.
 # The file was split in a section for each final target.
@@ -10,7 +10,6 @@ ARG RUST_VERSION=1.75.0
 ARG GO_VERSION=1.21.1
 ARG FOUNDRY_VERSION_COMMIT=24abca6c9133618e0c355842d2be2dd4f36da46d
 ARG ROLLUPS_CONTRACTS_VERSION=1.1.0
-ARG SERVER_MANAGER_VERSION=0.8.2
 ARG MACHINE_EMULATOR_VERSION=0.15.2
 
 # Build directories.
@@ -206,7 +205,8 @@ RUN go build -ldflags "-s -w" ./cmd/cartesi-rollups-node
 # STAGE: rollups-node
 #
 # This stage copies the binaries from the previous stages.
-FROM cartesi/server-manager:${SERVER_MANAGER_VERSION} as rollups-node
+FROM cartesi/machine-emulator:${MACHINE_EMULATOR_VERSION} as rollups-node
+
 
 # Set user to root because the base image uses a low-privilege user.
 USER root
@@ -218,11 +218,16 @@ apt-get update
 apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    libboost-log1.74.0  \
     libpq5 \
     redis \
     redis-tools
 rm -rf /var/lib/apt/lists/*
 EOF
+
+# Copy server-manager
+ARG SERVER_MANAGER_VERSION="0.8.2"
+COPY --from=cartesi/server-manager:$SERVER_MANAGER_VERSION /usr/bin/server-manager /usr/bin/server-manager
 
 # Copy Rust binaries.
 # Explicitly copy each binary to avoid adding unnecessary files to the runtime image.
