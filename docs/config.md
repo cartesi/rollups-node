@@ -83,7 +83,6 @@ The deployment block for the input box contract.
 The node will begin to read blockchain events from this block.
 
 * **Type:** `int64`
-* **Default:** `"1"`
 
 ### `CARTESI_CONTRACTS_AUTHORITY_ADDRESS`
 Address of the Authority contract.
