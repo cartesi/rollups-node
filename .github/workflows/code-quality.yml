@@ -34,4 +34,4 @@ jobs:
           version: v1.54.2
 
       - name: Check auto generated files
-        run: make
+        run: make check-generate

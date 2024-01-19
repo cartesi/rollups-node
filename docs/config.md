@@ -120,8 +120,16 @@ External Redis endpoint for the node when running in the experimental sunodo val
 
 * **Type:** `string`
 
+### `CARTESI_FEATURE_DISABLE_MACHINE_HASH_CHECK`
+If set to true, the node will *not* check whether the Cartesi machine hash from
+the snapshot matches the hash in the Application contract.
+
+
+* **Type:** `bool`
+* **Default:** `"false"`
+
 ### `CARTESI_FEATURE_HOST_MODE`
-If set to true the node will run in host mode.
+If set to true, the node will run in host mode.
 
 In host mode, computations will not be performed by the cartesi machine.
 You should only use host mode for development and debugging!
@@ -130,7 +138,7 @@ You should only use host mode for development and debugging!
 * **Default:** `"false"`
 
 ### `CARTESI_FEATURE_READER_MODE`
-If set to true the node will run in reader mode.
+If set to true, the node will run in reader mode.
 
 In reader mode, the node does not make claims.
 

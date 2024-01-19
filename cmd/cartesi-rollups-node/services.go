@@ -90,9 +90,11 @@ func newAdvanceRunner() services.CommandService {
 		fmt.Sprintf("ADVANCE_RUNNER_HEALTHCHECK_PORT=%v", getPort(portOffsetAdvanceRunner)))
 	s.Env = append(s.Env,
 		fmt.Sprintf("READER_MODE=%v", config.GetCartesiFeatureReaderMode()))
+	if config.GetCartesiFeatureHostMode() || config.GetCartesiFeatureDisableMachineHashCheck() {
+		s.Env = append(s.Env, "SNAPSHOT_VALIDATION_ENABLED=false")
+	}
 	if config.GetCartesiFeatureHostMode() {
 		s.Env = append(s.Env, "SNAPSHOT_ENABLED=false")
-		s.Env = append(s.Env, "SNAPSHOT_VALIDATION_ENABLED=false")
 	} else {
 		s.Env = append(s.Env,
 			fmt.Sprintf("SNAPSHOT_DIR=%v", config.GetCartesiSnapshotDir()))

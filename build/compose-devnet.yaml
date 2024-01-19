@@ -1,27 +1,19 @@
+# This compose file contains the Anvil devnet container for the node.
+
 version: "3.9"
 
 name: rollups-node
 services:
-  node:
-    image: "cartesi/rollups-node:devel"
+  devnet:
+    image: cartesi/rollups-node-devnet:devel
     ports:
-      - "10000:10000" # Supervisor
-      - "10004:10004" # GraphQL Server
-      - "10009:10009" # Inspect Server
-    restart: always
+      - 8545:8545
+
+  node:
     depends_on:
       devnet:
         condition: service_healthy
-      machine_snapshot_setup:
-        condition: service_completed_successfully
-      database:
-        condition: service_healthy
     environment:
-      CARTESI_LOG_LEVEL: "info"
-      CARTESI_LOG_TIMESTAMP: "false"
-      CARTESI_FEATURE_HOST_MODE: "false"
-      CARTESI_FEATURE_READER_MODE: "false"
-      CARTESI_EPOCH_DURATION: "120"
       CARTESI_BLOCKCHAIN_ID: "31337"
       CARTESI_BLOCKCHAIN_HTTP_ENDPOINT: "http://devnet:8545"
       CARTESI_BLOCKCHAIN_WS_ENDPOINT: "ws://devnet:8545"
@@ -33,9 +25,5 @@ services:
       CARTESI_CONTRACTS_AUTHORITY_ADDRESS: "0xb090149a3cA43000681B74875500854B54355496"
       CARTESI_CONTRACTS_INPUT_BOX_ADDRESS: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
       CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER: "17"
-      CARTESI_SNAPSHOT_DIR: "/usr/share/cartesi/snapshots"
+      CARTESI_EPOCH_DURATION: "120"
       CARTESI_AUTH_MNEMONIC: "test test test test test test test test test test test junk"
-      CARTESI_POSTGRES_ENDPOINT: "postgres://postgres:password@database:5432/postgres"
-      CARTESI_HTTP_ADDRESS: "0.0.0.0"
-    volumes:
-      - machine:/usr/share/cartesi/snapshots
