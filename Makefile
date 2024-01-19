@@ -4,6 +4,7 @@ all: diff
 
 generate:
 	@echo "Generating Go files"
+	@go mod tidy
 	@go generate -v ./...
 
 cargo:
