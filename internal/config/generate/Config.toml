@@ -6,13 +6,13 @@
 #
 
 [logging.CARTESI_LOG_LEVEL]
-default = "info" 
+default = "info"
 go-type = "LogLevel"
 description = """
 One of "debug", "info", "warning", "error"."""
 
 [logging.CARTESI_LOG_TIMESTAMP]
-default = "false" 
+default = "false"
 go-type = "bool"
 description = """
 If set to true, the node will print the timestamp when logging."""
@@ -132,7 +132,6 @@ description = """
 The deployment block for the input box contract.
 The node will begin to read blockchain events from this block."""
 
-
 #
 # Snapshot
 #
@@ -202,10 +201,10 @@ go-type = "string"
 redact = true
 description = """
 Postgres endpoint in the 'postgres://user:password@hostname:port/database' format.
-          
+
 If not set, or set to empty string, will defer the behaviour to the PG driver.
 See [this](https://www.postgresql.org/docs/current/libpq-envars.html) for more information.
-          
+
 It is also possible to set the endpoint without a password and load it from Postgres' passfile.
 See [this](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-PASSFILE)
 for more information."""
@@ -232,7 +231,7 @@ The node will also use the 20 ports after this one for internal services."""
 #
 
 [experimental.CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED]
-default = "false" 
+default = "false"
 go-type = "bool"
 description = """
 When enabled, the node does not start the authority-claimer service and the Redis server."""
