@@ -175,7 +175,7 @@ COPY --from=devnet-builder ${DEVNET_BUILD_PATH}/anvil_state.json ${ANVIL_STATE_P
 
 # Copy healthcheck script.
 COPY scripts/devnet/lib/anvil_net_listening.sh /usr/bin/anvil_net_listening.sh
-HEALTHCHECK --interval=10s --timeout=1s --retries=5 CMD anvil_net_listening.sh
+HEALTHCHECK --interval=1s --timeout=1s --retries=5 CMD anvil_net_listening.sh
 
 # Make Anvil bind to the external network interface.
 ENV ANVIL_IP_ADDR="0.0.0.0"

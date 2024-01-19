@@ -1,0 +1,21 @@
+# This file contains the bare configuration to run the node.
+# This file should be merged with the other compose files to run the node with
+# the desired configuration.
+
+version: "3.9"
+
+name: rollups-node
+services:
+  node:
+    image: "cartesi/rollups-node:devel"
+    ports:
+      - "10000:10000" # Supervisor
+      - "10004:10004" # GraphQL Server
+      - "10009:10009" # Inspect Server
+    environment:
+      CARTESI_LOG_LEVEL: "info"
+      CARTESI_LOG_TIMESTAMP: "false"
+      CARTESI_FEATURE_HOST_MODE: "false"
+      CARTESI_FEATURE_READER_MODE: "false"
+      CARTESI_HTTP_ADDRESS: "0.0.0.0"
+      CARTESI_HTTP_PORT: "10000"

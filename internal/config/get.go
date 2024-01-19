@@ -109,6 +109,11 @@ func GetCartesiExperimentalSunodoValidatorRedisEndpoint() string {
 	return v
 }
 
+func GetCartesiFeatureDisableMachineHashCheck() bool {
+	v := get("CARTESI_FEATURE_DISABLE_MACHINE_HASH_CHECK", "false", true, false, toBool)
+	return v
+}
+
 func GetCartesiFeatureHostMode() bool {
 	v := get("CARTESI_FEATURE_HOST_MODE", "false", true, false, toBool)
 	return v

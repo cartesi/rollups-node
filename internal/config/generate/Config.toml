@@ -25,7 +25,7 @@ If set to true, the node will print the timestamp when logging."""
 default = "false"
 go-type = "bool"
 description = """
-If set to true the node will run in host mode.
+If set to true, the node will run in host mode.
 
 In host mode, computations will not be performed by the cartesi machine.
 You should only use host mode for development and debugging!"""
@@ -34,9 +34,17 @@ You should only use host mode for development and debugging!"""
 default = "false"
 go-type = "bool"
 description = """
-If set to true the node will run in reader mode.
+If set to true, the node will run in reader mode.
 
 In reader mode, the node does not make claims."""
+
+[features.CARTESI_FEATURE_DISABLE_MACHINE_HASH_CHECK]
+default = "false"
+go-type = "bool"
+description = """
+If set to true, the node will *not* check whether the Cartesi machine hash from
+the snapshot matches the hash in the Application contract.
+"""
 
 #
 # Rollups

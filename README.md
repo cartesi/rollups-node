@@ -14,36 +14,9 @@ They consume information from the blockchain but do not bother to enforce state 
 
 Validators, on the other hand, have more responsibility: they not only watch the blockchain but also fight to ensure that the blockchain will only accept valid state updates.
 
-## Getting Started
+## Dependencies
 
-### Cloning submodules
-
-Before building and running any of the inner projects, you should download the submodules with:
-
-```shell
-git submodule update --init --recursive
-```
-
-### Generating files
-
-All the necessary auto-generated files are already commited to the project; but if you wish to generate them again, you can run the Makefile at the root of the project. Simply run the command:
-
-```shell
-make
-```
-
-### Building the Docker image
-
-For more information on how to build the rollups-node docker image, see the [build directory](./build/README.md).
-
-### Rust
-
-All projects comprising the Cartesi Node require Rust to be executed.
-To install it, follow the [instructions](https://www.rust-lang.org/tools/install) from the Rust website.
-
-### Dependencies
-
-The Cartesi Node depends on the following components:
+The Cartesi Node depends on the following Cartesi components:
 
 | Component | Version |
 |---|---|
@@ -52,37 +25,60 @@ The Cartesi Node depends on the following components:
 | Cartesi Rollups Contracts | [v1.1.0](https://github.com/cartesi/rollups-contracts/releases/tag/v1.1.0) |
 | Cartesi Server Manager | [v0.8.2](https://github.com/cartesi/server-manager/releases/tag/v0.8.2) |
 
-### Running
+## Node Configuration
 
-To run any of the inner projects, execute the command:
+The node should be configured exclusively with environment variables.
+Those variables are described at [Node Configuration](./docs/config.md).
 
-```shell
-cargo run
+## Node Development
+
+The recommended way of running the node for Cartesi users and application developers is using [Sunodo](https://docs.sunodo.io).
+This section of the documentation is for developers that want to modify the node source code.
+
+### Cloning submodules
+
+Before building and running the node, you should download the submodules with the command below.
+
+```sh
+make submodules
 ```
 
-Some of the inner projects may have additional run instructions.
-Refer to their own documentation for more details.
+### Generating files
 
-## Configuration
+All the necessary auto-generated files are already commited to the project; but if you wish to generate them again, you can run the command below.
 
-It is possible to configure the behavior of any of the projects by passing CLI arguments and using environment variables.
-Execute the following command to check the available options for each project:
-
-```shell
-cargo run -- -h
+```sh
+make generate
 ```
 
-### Redis TLS Configuration
+### Building the Docker images
 
-To connect the Broker to a Redis server via TLS, the server's URL must use the `rediss://` scheme (with two "s"es).
-This is currently the only way to tell `Broker` to use a TLS connection.
+The easiest way to run the node is using the pre-configured Docker images.
+These images include a development Ethereum node and a test Cartesi application.
+To build those images, run the command below.
 
-## Tests
+```sh
+make docker-build
+```
 
-To run the tests available in any of the projects, execute the command:
+### Running the node with Docker
 
-```shell
-cargo test
+After building the Docker images, you may run the node running the command below.
+This command will run a PostgreSQL database and the development Ethereum node.
+
+```sh
+make docker-run
+```
+
+#### Connecting to Sepolia testnet
+
+It is possible to connect the node to the Sepolia testnet instead of running a local devnet.
+First, you need to set the environment variables `RPC_HTTP_URL` and `RPC_WS_URL` with the URLs of the RPC provider.
+For instance, if you are using Alchemy, the variables should be set to `https://eth-sepolia.g.alchemy.com/v2/$ALCHEMY_API_KEY` and `wss://eth-sepolia.g.alchemy.com/v2/$ALCHEMY_API_KEY`.
+Then, run the command below to run the node.
+
+```sh
+make docker-run-sepolia
 ```
 
 ## Architecture Overview
