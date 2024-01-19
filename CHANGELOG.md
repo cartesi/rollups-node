@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD013 -->
+<!-- markdownlint-disable MD024 -->
 # Changelog
 
 All notable changes to this project will be documented in this file.
@@ -75,8 +77,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `advance-runner`, `dispatcher`, `graphql-server`, `host-runner`, `inspect-server`, `indexer`, and `state-server` docker images
 
 ### Fixed
+
 - Parse `SF_GENESIS_BLOCK` config correctly as decimal
-- Setting `SF_CONCURRENT_EVENTS_FETCH` to `0` no longer silently halts the system, and instead use this configuration as _additional_ concurrent events, as documented
+- Setting `SF_CONCURRENT_EVENTS_FETCH` to `0` no longer silently halts the system, and instead use this configuration as *additional* concurrent events, as documented
 
 ## [1.0.2] 2023-09-12
 
@@ -325,6 +328,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Specific ERC-20 Portal
 - Deprecated mock contracts
 
+<!-- markdownlint-disable MD053 -->
 [Unreleased]: https://github.com/cartesi/rollups-node/releases/tag/v1.2.0...HEAD
 [1.2.0]: https://github.com/cartesi/rollups-node/releases/tag/v1.2.0
 [1.1.0]: https://github.com/cartesi/rollups-node/releases/tag/v1.1.0
