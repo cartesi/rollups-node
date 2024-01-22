@@ -34,7 +34,7 @@ jobs:
       - name: 📦 Install protoc
         run: sudo apt update && sudo apt install -y protobuf-compiler libprotobuf-dev
 
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/
