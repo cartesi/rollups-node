@@ -36,7 +36,7 @@ type Proof struct {
 	OutputHashesInEpochSiblings []hexutil.Bytes `json:"outputHashesInEpochSiblings"`
 	// Data that allows the validity proof to be contextualized within submitted claims,
 	// given as a payload in Ethereum hex binary format, starting with '0x'
-	Context string `json:"context"`
+	Context hexutil.Bytes `json:"context"`
 }
 
 func newProof(
@@ -84,7 +84,10 @@ func newProof(
 	for _, hash := range outputHashInOutputHashesSiblings {
 		tempHash, err := hexutil.Decode(hash)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode MachineStateHash to bytes: %v", err)
+			return nil, fmt.Errorf(
+				"failed to decode outputHashInOutputHashesSiblings to bytes: %v",
+				err,
+			)
 		}
 
 		outputHashOutputSiblings = append(outputHashOutputSiblings, tempHash)
@@ -93,11 +96,20 @@ func newProof(
 	for _, hash := range outputHashesInEpochSiblings {
 		tempHash, err := hexutil.Decode(hash)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode MachineStateHash to bytes: %v", err)
+			return nil, fmt.Errorf(
+				"failed to decode outputHashesInEpochSiblings to bytes: %v",
+				err,
+			)
 		}
 
-		outputHashEpochSiblings = append(outputHashOutputSiblings, tempHash)
+		outputHashEpochSiblings = append(outputHashEpochSiblings, tempHash)
 	}
+
+	contextBytes, err := hexutil.Decode(context)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode Context to bytes: %v", err)
+	}
+
 	proof := Proof{
 		inputIndexWithinEpoch,
 		outputIndexWithinInput,
@@ -107,7 +119,7 @@ func newProof(
 		machineHash,
 		outputHashOutputSiblings,
 		outputHashEpochSiblings,
-		context,
+		contextBytes,
 	}
 
 	return &proof, err
