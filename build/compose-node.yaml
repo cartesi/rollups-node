@@ -10,8 +10,6 @@ services:
     image: "cartesi/rollups-node:devel"
     ports:
       - "10000:10000" # Supervisor
-      - "10004:10004" # GraphQL Server
-      - "10009:10009" # Inspect Server
     environment:
       CARTESI_LOG_LEVEL: "info"
       CARTESI_LOG_TIMESTAMP: "false"

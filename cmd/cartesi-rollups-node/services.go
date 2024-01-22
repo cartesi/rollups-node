@@ -5,7 +5,6 @@ package main
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -32,6 +31,11 @@ const (
 	portOffsetStateServer
 )
 
+const (
+	localhost              = "127.0.0.1"
+	serverManagerSessionId = "default_session_id"
+)
+
 // Get the port of the given service.
 func getPort(offset portOffset) int {
 	return config.GetCartesiHttpPort() + int(offset)
@@ -42,11 +46,9 @@ func getRedisEndpoint() string {
 	if config.GetCartesiExperimentalSunodoValidatorEnabled() {
 		return config.GetCartesiExperimentalSunodoValidatorRedisEndpoint()
 	} else {
-		return fmt.Sprintf("redis://127.0.0.1:%v", getPort(portOffsetRedis))
+		return fmt.Sprintf("redis://%v:%v", localhost, getPort(portOffsetRedis))
 	}
 }
-
-const serverManagerSessionId = "default_session_id"
 
 // Create the RUST_LOG variable using the config log level.
 // If the log level is set to debug, set tracing log for the given rust module.
@@ -74,7 +76,8 @@ func newAdvanceRunner() services.CommandService {
 	s.Env = append(s.Env, "LOG_ENABLE_COLOR=false")
 	s.Env = append(s.Env, getRustLog("advance_runner"))
 	s.Env = append(s.Env,
-		fmt.Sprintf("SERVER_MANAGER_ENDPOINT=http://127.0.0.1:%v",
+		fmt.Sprintf("SERVER_MANAGER_ENDPOINT=http://%v:%v",
+			localhost,
 			getPort(portOffsetServerManager)))
 	s.Env = append(s.Env,
 		fmt.Sprintf("SESSION_ID=%v", serverManagerSessionId))
@@ -156,7 +159,7 @@ func newDispatcher() services.CommandService {
 	s.Env = append(s.Env, "LOG_ENABLE_COLOR=false")
 	s.Env = append(s.Env, getRustLog("dispatcher"))
 	s.Env = append(s.Env,
-		fmt.Sprintf("SC_GRPC_ENDPOINT=http://127.0.0.1:%v", getPort(portOffsetStateServer)))
+		fmt.Sprintf("SC_GRPC_ENDPOINT=http://%v:%v", localhost, getPort(portOffsetStateServer)))
 	s.Env = append(s.Env,
 		fmt.Sprintf("SC_DEFAULT_CONFIRMATIONS=%v", config.GetCartesiBlockchainFinalityOffset()))
 	s.Env = append(s.Env,
@@ -192,7 +195,7 @@ func newGraphQLServer() services.CommandService {
 	s.Env = append(s.Env, getRustLog("graphql_server"))
 	s.Env = append(s.Env,
 		fmt.Sprintf("POSTGRES_ENDPOINT=%v", config.GetCartesiPostgresEndpoint()))
-	s.Env = append(s.Env, "GRAPHQL_HOST=0.0.0.0")
+	s.Env = append(s.Env, fmt.Sprintf("GRAPHQL_HOST=%v", localhost))
 	s.Env = append(s.Env,
 		fmt.Sprintf("GRAPHQL_PORT=%v", getPort(portOffsetGraphQLServer)))
 	s.Env = append(s.Env,
@@ -209,10 +212,10 @@ func newHostRunner() services.CommandService {
 	s.Env = append(s.Env, "LOG_ENABLE_TIMESTAMP=false")
 	s.Env = append(s.Env, "LOG_ENABLE_COLOR=false")
 	s.Env = append(s.Env, getRustLog("host_runner"))
-	s.Env = append(s.Env, "GRPC_SERVER_MANAGER_ADDRESS=127.0.0.1")
+	s.Env = append(s.Env, fmt.Sprintf("GRPC_SERVER_MANAGER_ADDRESS=%v", localhost))
 	s.Env = append(s.Env,
 		fmt.Sprintf("GRPC_SERVER_MANAGER_PORT=%v", getPort(portOffsetServerManager)))
-	s.Env = append(s.Env, "HTTP_ROLLUP_SERVER_ADDRESS=0.0.0.0")
+	s.Env = append(s.Env, fmt.Sprintf("HTTP_ROLLUP_SERVER_ADDRESS=%v", localhost))
 	s.Env = append(s.Env,
 		fmt.Sprintf("HTTP_ROLLUP_SERVER_PORT=%v", getPort(portOffsetHostRunnerRollups)))
 	s.Env = append(s.Env,
@@ -252,9 +255,9 @@ func newInspectServer() services.CommandService {
 	s.Env = append(s.Env, "LOG_ENABLE_COLOR=false")
 	s.Env = append(s.Env, getRustLog("inspect_server"))
 	s.Env = append(s.Env,
-		fmt.Sprintf("INSPECT_SERVER_ADDRESS=0.0.0.0:%v", getPort(portOffsetInspectServer)))
+		fmt.Sprintf("INSPECT_SERVER_ADDRESS=%v:%v", localhost, getPort(portOffsetInspectServer)))
 	s.Env = append(s.Env,
-		fmt.Sprintf("SERVER_MANAGER_ADDRESS=127.0.0.1:%v", getPort(portOffsetServerManager)))
+		fmt.Sprintf("SERVER_MANAGER_ADDRESS=%v:%v", localhost, getPort(portOffsetServerManager)))
 	s.Env = append(s.Env,
 		fmt.Sprintf("SESSION_ID=%v", serverManagerSessionId))
 	s.Env = append(s.Env,
@@ -282,7 +285,7 @@ func newServerManager() services.CommandService {
 	s.HealthcheckPort = getPort(portOffsetServerManager)
 	s.Path = "server-manager"
 	s.Args = append(s.Args,
-		fmt.Sprintf("--manager-address=127.0.0.1:%v", getPort(portOffsetServerManager)))
+		fmt.Sprintf("--manager-address=%v:%v", localhost, getPort(portOffsetServerManager)))
 	s.Env = append(s.Env, "REMOTE_CARTESI_MACHINE_LOG_LEVEL=info")
 	if config.GetCartesiLogLevel() == config.LogLevelDebug {
 		s.Env = append(s.Env, "SERVER_MANAGER_LOG_LEVEL=info")
@@ -314,7 +317,7 @@ func newStateServer() services.CommandService {
 	s.Env = append(s.Env,
 		fmt.Sprintf("BLOCKCHAIN_BLOCK_TIMEOUT=%v", config.GetCartesiBlockchainBlockTimeout()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("SS_SERVER_ADDRESS=127.0.0.1:%v", getPort(portOffsetStateServer)))
+		fmt.Sprintf("SS_SERVER_ADDRESS=%v:%v", localhost, getPort(portOffsetStateServer)))
 	s.Env = append(s.Env, os.Environ()...)
 	return s
 }
@@ -327,16 +330,11 @@ func newSupervisorService(s []services.Service) services.SupervisorService {
 }
 
 func newHttpService() services.HttpService {
-	handler := http.NewServeMux()
-	handler.Handle("/healthz", http.HandlerFunc(healthcheckHandler))
+	addr := fmt.Sprintf("%v:%v", config.GetCartesiHttpAddress(), getPort(portOffsetProxy))
+	handler := newHttpServiceHandler()
 	return services.HttpService{
 		Name:    "http",
-		Address: fmt.Sprintf("%v:%v", config.GetCartesiHttpAddress(), getPort(portOffsetProxy)),
+		Address: addr,
 		Handler: handler,
 	}
-}
-
-func healthcheckHandler(w http.ResponseWriter, r *http.Request) {
-	config.DebugLogger.Println("received healthcheck request")
-	w.WriteHeader(http.StatusOK)
 }

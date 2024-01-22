@@ -24,8 +24,9 @@ func (s HttpService) String() string {
 
 func (s HttpService) Start(ctx context.Context, ready chan<- struct{}) error {
 	server := http.Server{
-		Addr:    s.Address,
-		Handler: s.Handler,
+		Addr:     s.Address,
+		Handler:  s.Handler,
+		ErrorLog: config.ErrorLogger,
 	}
 
 	listener, err := net.Listen("tcp", s.Address)
