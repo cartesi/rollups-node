@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD013 -->
 # Cartesi Node Reference Implementation
 
 The [Cartesi Node](https://docs.cartesi.io/cartesi-rollups/main-concepts/#cartesi-nodes) is the part of the [Cartesi Rollups Framework](https://docs.cartesi.io/cartesi-rollups/overview/) that is responsible for handling the communication between the on-chain smart contracts and the [Cartesi Machine](https://docs.cartesi.io/machine/intro/).

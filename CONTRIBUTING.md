@@ -1,3 +1,4 @@
+<!-- markdownlint-disable -->
 # Contributing to Cartesi
 
 Thank you for your interest in Cartesi!
@@ -165,3 +166,4 @@ We are happy to automate this for you via DocuSign upon request in the Google Fo
 
 When contributing in a deeper manner to this repository, please first discuss the change you wish to make via our 
 [Discord channel here](https://discord.gg/Pt2NrnS), or contact us at info@cartesi.io email before working on the change.
+<!-- markdownlint-enable -->
