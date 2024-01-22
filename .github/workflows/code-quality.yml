@@ -33,5 +33,12 @@ jobs:
         with:
           version: v1.54.2
 
+      - name: Lint Markdown docs
+      - uses: DavidAnson/markdownlint-cli2-action@v15
+        with:
+          globs: |
+            *.md
+            docs/*.md
+
       - name: Check auto generated files
         run: make check-generate
