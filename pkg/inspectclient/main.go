@@ -5,4 +5,4 @@
 // to query the Rollups GraphQL API
 package inspectclient
 
-//go:generate go run github.com/deepmap/oapi-codegen/v2/cmd/oapi-codegen -generate types,client -o generated.go -package inspectclient inspect.yaml
+//go:generate go run github.com/deepmap/oapi-codegen/v2/cmd/oapi-codegen -generate types,client -o generated.go -package inspectclient ../../api/openapi/inspect.yaml
