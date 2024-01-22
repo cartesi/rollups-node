@@ -9,6 +9,7 @@ import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/savesnapshot"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/send"
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/validate"
 	"github.com/spf13/cobra"
 )
 
@@ -25,5 +26,6 @@ func init() {
 	Cmd.AddCommand(savesnapshot.Cmd)
 	Cmd.AddCommand(inspect.Cmd)
 	Cmd.AddCommand(increasetime.Cmd)
+	Cmd.AddCommand(validate.Cmd)
 	Cmd.DisableAutoGenTag = true
 }

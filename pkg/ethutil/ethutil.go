@@ -107,3 +107,27 @@ func GetInputFromInputBox(
 	}
 	return it.Event, nil
 }
+
+// ValidateNotice validates the given notice for the specified Dapp.
+// It returns nil if the notice is valid and an execution-reverted error otherwise.
+func ValidateNotice(
+	ctx context.Context,
+	client *ethclient.Client,
+	book *addresses.Book,
+	notice []byte,
+	proof *contracts.Proof,
+) error {
+
+	dapp, err := contracts.NewCartesiDApp(book.CartesiDApp, client)
+	if err != nil {
+		return fmt.Errorf("failed to connect to CartesiDapp contract: %v", err)
+	}
+
+	response, err := dapp.ValidateNotice(&bind.CallOpts{Context: ctx}, notice, *proof)
+	_ = response
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

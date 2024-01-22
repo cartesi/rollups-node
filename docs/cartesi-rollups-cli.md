@@ -20,4 +20,5 @@ Cartesi Rollups node.
 * [cartesi-rollups-cli read](cartesi-rollups-cli_read.md)	 - Read the node state from the GraphQL API
 * [cartesi-rollups-cli save-snapshot](cartesi-rollups-cli_save-snapshot.md)	 - Saves the testing Cartesi machine snapshot to the designated folder
 * [cartesi-rollups-cli send](cartesi-rollups-cli_send.md)	 - Send a rollups input to the Ethereum node
+* [cartesi-rollups-cli validate](cartesi-rollups-cli_validate.md)	 - Validates a notice
 
