@@ -5695,7 +5695,6 @@ dependencies = [
  "contracts",
  "eth-state-fold",
  "eth-state-fold-types",
- "futures",
  "im",
  "rollups-events",
  "serde",
