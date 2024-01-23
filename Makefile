@@ -55,6 +55,15 @@ docker-run: docker-clean ## Run the node with the anvil devnet
 		-f ./build/compose-node.yaml \
 		up
 
+.PHONY: docker-run-host
+docker-run-host: docker-clean ## Run the node in host mode
+	@docker compose \
+		-f ./build/compose-database.yaml \
+		-f ./build/compose-devnet.yaml \
+		-f ./build/compose-node.yaml \
+		-f ./build/compose-host.yaml \
+		up
+
 .PHONY: docker-run-sepolia
 docker-run-sepolia: docker-clean ## Run the node with the sepolia testnet
 	@if [ ! -n "$$RPC_HTTP_URL" ]; then \
