@@ -157,23 +157,16 @@ async fn fetch_all_new_inputs<
     let contract = InputBox::new(*contract_address, Arc::clone(&provider));
 
     // Retrieve `InputAdded` events
-    let inputs_futures: Vec<_> = contract
+    let input_events = contract
         .input_added_filter()
         .query_with_meta()
         .await
-        .context("Error querying for input added events")?
-        .into_iter()
-        .map(|(e, meta)| Input::build_input(env, e, meta, &block_opt))
-        .collect();
+        .context("Error querying for input added events")?;
 
-    let inputs_results = futures::future::join_all(inputs_futures).await;
-
-    let inputs = {
-        let inputs: Result<Vec<Input>, _> =
-            inputs_results.into_iter().collect();
-
-        inputs?
-    };
+    let mut inputs = Vec::with_capacity(input_events.len());
+    for (event, meta) in input_events {
+        inputs.push(Input::build_input(env, event, meta, &block_opt).await?);
+    }
 
     Ok(inputs)
 }
