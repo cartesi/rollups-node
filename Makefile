@@ -15,6 +15,12 @@ lint: ## Run the linter
 	@echo "Running the linter"
 	@golangci-lint run
 
+.PHONY: md-lint
+md-lint: ## Lint Markdown docs. Each dir has its own .markdownlint.yaml.
+	@echo "Running markdownlint-cli"
+	@docker run -v $$PWD:/workdir ghcr.io/igorshubovych/markdownlint-cli:latest "*.md"
+	@docker run -v $$PWD/docs:/workdir ghcr.io/igorshubovych/markdownlint-cli:latest "*.md"
+
 .PHONY: generate
 generate: ## Generate the file that are commited to the repo
 	@echo "Generating Go files"
@@ -27,7 +33,7 @@ graphql-schema: ## Generate the graphql schema file
 	@mv offchain/schema.graphql api/graphql/reader.graphql
 
 .PHONY: check-generate
-check-generate: generate graphql-schema ## Check whether the generated files are in sync 
+check-generate: generate graphql-schema ## Check whether the generated files are in sync
 	@echo "Checking differences on the repository..."
 	@if git diff --exit-code; then \
 		echo "No differences found."; \
