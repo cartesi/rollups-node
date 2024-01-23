@@ -42,8 +42,8 @@ type CommandService struct {
 func (s CommandService) Start(ctx context.Context, ready chan<- struct{}) error {
 	cmd := exec.CommandContext(ctx, s.Path, s.Args...)
 	cmd.Env = s.Env
-	cmd.Stderr = commandLogger{s.Name}
-	cmd.Stdout = commandLogger{s.Name}
+	cmd.Stderr = newLineWriter(commandLogger{s.Name})
+	cmd.Stdout = newLineWriter(commandLogger{s.Name})
 	cmd.Cancel = func() error {
 		err := cmd.Process.Signal(syscall.SIGTERM)
 		if err != nil {
