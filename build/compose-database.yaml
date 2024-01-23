@@ -5,7 +5,7 @@ version: "3.9"
 name: rollups-node
 services:
   database:
-    image: postgres:13-alpine
+    image: postgres:16-alpine
     ports:
       - 5432:5432
     healthcheck:
