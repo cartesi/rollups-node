@@ -59,6 +59,14 @@ pub async fn start(
     );
 
     let initial_state = InputBoxInitialState {
+        dapp_address: Arc::new(
+            config
+                .blockchain_config
+                .dapp_address
+                .clone()
+                .into_inner()
+                .into(),
+        ),
         input_box_address: Arc::new(
             config
                 .blockchain_config

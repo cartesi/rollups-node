@@ -46,6 +46,7 @@ pub fn new_input(timestamp: u32) -> Input {
 
 pub fn new_input_box() -> InputBox {
     InputBox {
+        dapp_address: Arc::new(H160::random()),
         input_box_address: Arc::new(H160::random()),
         dapp_input_boxes: Arc::new(hashmap! {}),
     }
@@ -65,6 +66,7 @@ pub fn update_input_box(
         .dapp_input_boxes
         .update(Arc::new(dapp_address), Arc::new(DAppInputBox { inputs }));
     InputBox {
+        dapp_address: Arc::new(dapp_address),
         input_box_address: input_box.input_box_address,
         dapp_input_boxes: Arc::new(dapp_input_boxes),
     }

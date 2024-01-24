@@ -25,6 +25,7 @@ use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct InputBoxInitialState {
+    pub dapp_address: Arc<Address>,
     pub input_box_address: Arc<Address>,
 }
 
@@ -44,6 +45,7 @@ pub struct DAppInputBox {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InputBox {
+    pub dapp_address: Arc<Address>,
     pub input_box_address: Arc<Address>,
     pub dapp_input_boxes: Arc<HashMap<Arc<Address>, Arc<DAppInputBox>>>,
 }
@@ -60,6 +62,7 @@ impl Foldable for InputBox {
         env: &StateFoldEnvironment<M, Self::UserData>,
         access: Arc<SyncMiddleware<M>>,
     ) -> Result<Self, Self::Error> {
+        let dapp_address = Arc::clone(&initial_state.dapp_address);
         let input_box_address = Arc::clone(&initial_state.input_box_address);
 
         Ok(Self {
@@ -68,9 +71,11 @@ impl Foldable for InputBox {
                 access,
                 env,
                 &input_box_address,
+                &dapp_address,
                 None,
             )
             .await?,
+            dapp_address,
             input_box_address,
         })
     }
@@ -82,15 +87,16 @@ impl Foldable for InputBox {
         env: &StateFoldEnvironment<M, Self::UserData>,
         access: Arc<FoldMiddleware<M>>,
     ) -> Result<Self, Self::Error> {
+        let dapp_address = Arc::clone(&previous_state.dapp_address);
         let input_box_address = Arc::clone(&previous_state.input_box_address);
 
-        if !(fold_utils::contains_address(
-            &block.logs_bloom,
-            &input_box_address,
-        ) && (fold_utils::contains_topic(
-            &block.logs_bloom,
-            &contracts::input_box::InputAddedFilter::signature(),
-        ))) {
+        if !fold_utils::contains_address(&block.logs_bloom, &input_box_address)
+            || !fold_utils::contains_topic(&block.logs_bloom, &*dapp_address)
+            || !fold_utils::contains_topic(
+                &block.logs_bloom,
+                &contracts::input_box::InputAddedFilter::signature(),
+            )
+        {
             return Ok(previous_state.clone());
         }
 
@@ -100,10 +106,11 @@ impl Foldable for InputBox {
                 access,
                 env,
                 &input_box_address,
+                &dapp_address,
                 None,
             )
             .await?,
-
+            dapp_address,
             input_box_address,
         })
     }
@@ -114,14 +121,20 @@ async fn updated_inputs<M1: Middleware + 'static, M2: Middleware + 'static>(
     provider: Arc<M1>,
     env: &StateFoldEnvironment<M2, <InputBox as Foldable>::UserData>,
     contract_address: &Address,
+    dapp_address: &Address,
     block_opt: Option<Block>, // TODO: Option<Arc<Block>>,
 ) -> Result<Arc<HashMap<Arc<Address>, Arc<DAppInputBox>>>, FoldableError> {
     let mut input_boxes =
         previous_input_boxes.cloned().unwrap_or(HashMap::new());
 
-    let new_inputs =
-        fetch_all_new_inputs(provider, env, contract_address, block_opt)
-            .await?;
+    let new_inputs = fetch_all_new_inputs(
+        provider,
+        env,
+        contract_address,
+        dapp_address,
+        block_opt,
+    )
+    .await?;
 
     for input in new_inputs {
         let dapp = input.dapp.clone();
@@ -151,6 +164,7 @@ async fn fetch_all_new_inputs<
     provider: Arc<M1>,
     env: &StateFoldEnvironment<M2, <InputBox as Foldable>::UserData>,
     contract_address: &Address,
+    dapp_address: &Address,
     block_opt: Option<Block>, // TODO: Option<Arc<Block>>,
 ) -> Result<Vec<Input>, FoldableError> {
     use contracts::input_box::*;
@@ -159,6 +173,7 @@ async fn fetch_all_new_inputs<
     // Retrieve `InputAdded` events
     let input_events = contract
         .input_added_filter()
+        .topic1(*dapp_address)
         .query_with_meta()
         .await
         .context("Error querying for input added events")?;
