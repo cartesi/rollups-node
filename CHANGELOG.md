@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added increase-time command to `cartesi-rollups-cli`
 - Added instructions on how to run the node with Docker.
 - Added validate command to `cartesi-rollups-cli`
+- Added execute command to `cartesi-rollups-cli`
 
 ### Changed
 
