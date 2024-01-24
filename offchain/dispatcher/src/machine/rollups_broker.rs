@@ -10,7 +10,7 @@ use rollups_events::{
     RollupsAdvanceStateInput, RollupsData, RollupsInput, RollupsInputsStream,
     INITIAL_ID,
 };
-use types::foldables::input_box::Input;
+use types::foldables::Input;
 
 use super::{BrokerSend, BrokerStatus, RollupStatus};
 
@@ -290,7 +290,7 @@ mod broker_facade_tests {
     };
     use test_fixtures::broker::BrokerFixture;
     use testcontainers::clients::Cli;
-    use types::foldables::input_box::Input;
+    use types::foldables::Input;
 
     use crate::machine::{
         rollups_broker::BrokerFacadeError, BrokerSend, BrokerStatus,

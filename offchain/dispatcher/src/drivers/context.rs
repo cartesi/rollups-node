@@ -7,7 +7,7 @@ use crate::{
 };
 
 use rollups_events::DAppMetadata;
-use types::foldables::input_box::Input;
+use types::foldables::Input;
 
 #[derive(Debug)]
 pub struct Context {

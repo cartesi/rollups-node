@@ -6,7 +6,7 @@ use super::Context;
 use crate::machine::{rollups_broker::BrokerFacadeError, BrokerSend};
 
 use eth_state_fold_types::{ethereum_types::Address, Block};
-use types::foldables::input_box::{DAppInputBox, Input, InputBox};
+use types::foldables::{DAppInputBox, Input, InputBox};
 
 use tracing::{debug, instrument, trace};
 
@@ -234,7 +234,7 @@ mod tests {
             rollup_status,
         );
         let machine_driver = MachineDriver::new(H160::random());
-        let dapp_input_box = types::foldables::input_box::DAppInputBox {
+        let dapp_input_box = types::foldables::DAppInputBox {
             inputs: input_timestamps
                 .iter()
                 .map(|timestamp| Arc::new(mock::new_input(*timestamp)))

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 mod config;
 use config::Config;
-use types::foldables::authority::rollups::RollupsState;
+use types::foldables::InputBox;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -12,7 +12,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::log_service_start(&config, "State Server");
 
-    state_server::run_server::<RollupsState>(config.state_server_config)
+    state_server::run_server::<InputBox>(config.state_server_config)
         .await
         .map_err(|e| e.into())
 }
