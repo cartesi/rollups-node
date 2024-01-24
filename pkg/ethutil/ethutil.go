@@ -131,3 +131,31 @@ func ValidateNotice(
 
 	return nil
 }
+
+// Executes a voucher given its payload, destination and proof.
+// This function waits until the transaction is added to a block and returns the transaction hash.
+func ExecuteVoucher(
+	ctx context.Context,
+	client *ethclient.Client,
+	book *addresses.Book,
+	signer Signer,
+	voucher []byte,
+	destination *common.Address,
+	proof *contracts.Proof,
+) (*common.Hash, error) {
+	dapp, err := contracts.NewCartesiDApp(book.CartesiDApp, client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to CartesiDapp contract: %v", err)
+	}
+	receipt, err := sendTransaction(
+		ctx, client, signer, big.NewInt(0), GasLimit,
+		func(txOpts *bind.TransactOpts) (*types.Transaction, error) {
+			return dapp.ExecuteVoucher(txOpts, *destination, voucher, *proof)
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &receipt.TxHash, nil
+}

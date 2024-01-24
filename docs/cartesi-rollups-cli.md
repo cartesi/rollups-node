@@ -15,6 +15,7 @@ Cartesi Rollups node.
 
 ### SEE ALSO
 
+* [cartesi-rollups-cli execute](cartesi-rollups-cli_execute.md)	 - Executes a voucher
 * [cartesi-rollups-cli increase-time](cartesi-rollups-cli_increase-time.md)	 - Increases evm time of the current machine
 * [cartesi-rollups-cli inspect](cartesi-rollups-cli_inspect.md)	 - Calls inspect API
 * [cartesi-rollups-cli read](cartesi-rollups-cli_read.md)	 - Read the node state from the GraphQL API
