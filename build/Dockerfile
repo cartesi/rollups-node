@@ -40,6 +40,7 @@ FROM ${BASE_IMAGE} as emulator-base
 # Install machine-emulator
 ARG MACHINE_EMULATOR_VERSION
 RUN <<EOF
+set -e
 apt-get update
 apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -53,6 +54,7 @@ EOF
 
 # Configure cartesi user and group.
 RUN <<EOF
+set -e
 addgroup --system --gid 102 cartesi
 adduser --system --uid 102 \
     --disabled-login \
@@ -125,6 +127,7 @@ FROM ${BASE_IMAGE} as devnet-base
 # Install system dependencies.
 ARG DEBIAN_FRONTEND=noninteractive
 RUN <<EOF
+set -e
 apt-get update
 apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -140,6 +143,7 @@ RUN curl -L https://foundry.paradigm.xyz | bash
 ENV PATH="~/.foundry/bin:${PATH}"
 ARG FOUNDRY_COMMIT_VERSION
 RUN <<EOF
+set -e
 bash -c foundryup -C ${FOUNDRY_COMMIT_VERSION}
 ln -s ~/.foundry/bin/anvil /usr/bin/anvil
 EOF
@@ -192,6 +196,7 @@ FROM rust:${RUST_VERSION}-bookworm AS rust-chef
 ARG RUST_BUILD_PATH
 WORKDIR ${RUST_BUILD_PATH}
 RUN <<EOF
+set -e
 rustup component add rustfmt
 cargo install cargo-chef
 EOF
@@ -212,6 +217,7 @@ FROM rust-chef as rust-builder
 # Install system dependencies.
 ARG DEBIAN_FRONTEND=noninteractive
 RUN <<EOF
+set -e
 apt-get update
 apt-get install -y --no-install-recommends \
     cmake \
@@ -258,6 +264,7 @@ FROM emulator-base as rollups-node
 # Download system dependencies required in runtime.
 ARG DEBIAN_FRONTEND=noninteractive
 RUN <<EOF
+set -e
 apt-get update
 apt-get install -y --no-install-recommends \
     ca-certificates \
