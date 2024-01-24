@@ -14,7 +14,7 @@ use std::{
     ops::{Deref, DerefMut},
     sync::{Arc, Mutex},
 };
-use types::foldables::input_box::{DAppInputBox, Input, InputBox};
+use types::foldables::{DAppInputBox, Input, InputBox};
 
 use crate::machine::{
     rollups_broker::BrokerFacadeError, BrokerSend, BrokerStatus, RollupStatus,

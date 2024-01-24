@@ -3,7 +3,7 @@
 
 pub mod rollups_broker;
 
-use types::foldables::input_box::Input;
+use types::foldables::Input;
 
 use async_trait::async_trait;
 

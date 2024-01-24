@@ -10,7 +10,7 @@ use rollups_events::DAppMetadata;
 use snafu::{ensure, ResultExt};
 use tokio_stream::{Stream, StreamExt};
 use tonic::transport::Channel;
-use types::foldables::authority::{RollupsInitialState, RollupsState};
+use types::foldables::{InputBox, InputBoxInitialState};
 
 use crate::{
     config::DispatcherConfig,
@@ -28,7 +28,7 @@ const BUFFER_LEN: usize = 256;
 pub async fn create_state_server(
     config: &SCConfig,
 ) -> Result<
-    impl StateServer<InitialState = RollupsInitialState, State = RollupsState>
+    impl StateServer<InitialState = InputBoxInitialState, State = InputBox>
         + BlockServer,
     DispatcherError,
 > {

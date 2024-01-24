@@ -4,9 +4,10 @@
 use eth_state_client_lib::StateServer;
 use eth_state_fold_types::{Block, BlockStreamItem};
 use rollups_events::DAppMetadata;
+use std::sync::Arc;
 use tokio_stream::StreamExt;
 use tracing::{error, instrument, trace, warn};
-use types::foldables::authority::rollups::{RollupsInitialState, RollupsState};
+use types::foldables::{InputBox, InputBoxInitialState};
 
 use crate::{
     config::DispatcherConfig,
@@ -57,19 +58,15 @@ pub async fn start(
             .into(),
     );
 
-    let initial_state = RollupsInitialState {
-        history_address: config
-            .blockchain_config
-            .history_address
-            .clone()
-            .into_inner()
-            .into(),
-        input_box_address: config
-            .blockchain_config
-            .input_box_address
-            .clone()
-            .into_inner()
-            .into(),
+    let initial_state = InputBoxInitialState {
+        input_box_address: Arc::new(
+            config
+                .blockchain_config
+                .input_box_address
+                .clone()
+                .into_inner()
+                .into(),
+        ),
     };
 
     trace!("Creating context");
@@ -136,10 +133,10 @@ async fn process_block(
     block: &Block,
 
     state_server: &impl StateServer<
-        InitialState = RollupsInitialState,
-        State = RollupsState,
+        InitialState = InputBoxInitialState,
+        State = InputBox,
     >,
-    initial_state: &RollupsInitialState,
+    initial_state: &InputBoxInitialState,
 
     context: &mut Context,
     machine_driver: &mut MachineDriver,
@@ -155,7 +152,7 @@ async fn process_block(
     // Drive machine
     trace!("Reacting to state with `machine_driver`");
     machine_driver
-        .react(context, &state.block, &state.state.input_box, broker)
+        .react(context, &state.block, &state.state, broker)
         .await
         .context(BrokerSnafu)?;
 
