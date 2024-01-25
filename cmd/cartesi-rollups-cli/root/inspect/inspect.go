@@ -35,7 +35,7 @@ func init() {
 
 	cobra.CheckErr(Cmd.MarkFlagRequired("payload"))
 
-	Cmd.Flags().StringVar(&inspectEndpoint, "inspect-endpoint", "http://0.0.0.0:10009/",
+	Cmd.Flags().StringVar(&inspectEndpoint, "inspect-endpoint", "http://localhost:10000/",
 		"address used to connect to the inspect api")
 }
 

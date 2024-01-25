@@ -16,7 +16,7 @@ cartesi-rollups-cli read voucher --voucher-index 5 --input-index 6
 ### Options
 
 ```
-      --graphql-endpoint string   address used to connect to graphql (default "http://0.0.0.0:4000/graphql")
+      --graphql-endpoint string   address used to connect to graphql (default "http://localhost:10000/graphql")
   -h, --help                      help for voucher
       --input-index int           index of the input
       --voucher-index int         index of the voucher

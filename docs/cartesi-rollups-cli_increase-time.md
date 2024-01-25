@@ -16,7 +16,7 @@ cartesi-rollups-cli increase-time
 ### Options
 
 ```
-      --anvil-endpoint string   anvil address used to send to the request (default "http://0.0.0.0:8545")
+      --anvil-endpoint string   anvil address used to send to the request (default "http://localhost:8545")
   -h, --help                    help for increase-time
       --time int                The amount of time to increase in the evm, in seconds (default 86400)
 ```
