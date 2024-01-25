@@ -44,7 +44,7 @@ func init() {
 
 	cobra.CheckErr(Cmd.MarkFlagRequired("input-index"))
 
-	Cmd.Flags().StringVar(&graphqlEndpoint, "graphql-endpoint", "http://0.0.0.0:10004/graphql",
+	Cmd.Flags().StringVar(&graphqlEndpoint, "graphql-endpoint", "http://localhost:10000/graphql",
 		"address used to connect to graphql")
 
 	Cmd.Flags().StringVar(&ethEndpoint, "eth-endpoint", "http://localhost:8545",

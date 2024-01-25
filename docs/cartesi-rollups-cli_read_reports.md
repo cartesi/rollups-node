@@ -16,7 +16,7 @@ cartesi-rollups-cli read reports
 ### Options
 
 ```
-      --graphql-endpoint string   address used to connect to graphql (default "http://0.0.0.0:4000/graphql")
+      --graphql-endpoint string   address used to connect to graphql (default "http://localhost:10000/graphql")
   -h, --help                      help for reports
       --input-index int           index of the input (default -1)
 ```

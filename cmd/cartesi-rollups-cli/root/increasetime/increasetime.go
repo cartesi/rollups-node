@@ -34,7 +34,7 @@ func init() {
 	Cmd.Flags().IntVar(&time, "time", defaultTime,
 		"The amount of time to increase in the evm, in seconds")
 
-	Cmd.Flags().StringVar(&anvilEndpoint, "anvil-endpoint", "http://0.0.0.0:8545",
+	Cmd.Flags().StringVar(&anvilEndpoint, "anvil-endpoint", "http://localhost:8545",
 		"anvil address used to send to the request")
 }
 

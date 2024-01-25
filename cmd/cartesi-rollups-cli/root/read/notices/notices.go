@@ -31,7 +31,7 @@ func init() {
 	Cmd.Flags().IntVar(&inputIndex, "input-index", -1,
 		"index of the input")
 
-	Cmd.Flags().StringVar(&graphqlEndpoint, "graphql-endpoint", "http://0.0.0.0:4000/graphql",
+	Cmd.Flags().StringVar(&graphqlEndpoint, "graphql-endpoint", "http://localhost:10000/graphql",
 		"address used to connect to graphql")
 }
 

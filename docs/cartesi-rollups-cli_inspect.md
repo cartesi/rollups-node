@@ -17,7 +17,7 @@ cartesi-rollups-cli inspect --payload 0x$(printf "hi" | xxd -p)
 
 ```
   -h, --help                      help for inspect
-      --inspect-endpoint string   address used to connect to the inspect api (default "http://0.0.0.0:10009/")
+      --inspect-endpoint string   address used to connect to the inspect api (default "http://localhost:10000/")
       --payload string            input payload hex-encoded starting with 0x
 ```
 
