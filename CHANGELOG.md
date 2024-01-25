@@ -33,8 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed concurrent block fetch in foldable `InputBox`.
 - Removed snapshot-saving feature. Now, the node will always start from the beginning.
 
-## Fixed
+### Fixed
 
+- Fixed mnemonic leaking through log entries.
 - Fixed high RPC usage by filtering the input added event by the application address.
 
 ## [1.2.0]

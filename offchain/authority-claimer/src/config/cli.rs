@@ -7,6 +7,7 @@ use eth_tx_manager::{
     Priority,
 };
 use log::{LogConfig, LogEnvCliConfig};
+use redacted::Redacted;
 use rollups_events::{BrokerCLIConfig, BrokerConfig};
 use rusoto_core::Region;
 use snafu::ResultExt;
@@ -118,7 +119,7 @@ impl TryFrom<TxSigningCLIConfig> for TxSigningConfig {
         let account_index = cli.tx_signing_mnemonic_account_index;
         if let Some(mnemonic) = cli.tx_signing_mnemonic {
             Ok(TxSigningConfig::Mnemonic {
-                mnemonic,
+                mnemonic: Redacted::new(mnemonic),
                 account_index,
             })
         } else if let Some(path) = cli.tx_signing_mnemonic_file {
@@ -127,7 +128,7 @@ impl TryFrom<TxSigningCLIConfig> for TxSigningConfig {
                 .trim()
                 .to_string();
             Ok(TxSigningConfig::Mnemonic {
-                mnemonic,
+                mnemonic: Redacted::new(mnemonic),
                 account_index,
             })
         } else {

@@ -480,6 +480,7 @@ dependencies = [
  "ethers-signers",
  "http-server",
  "log 1.2.0",
+ "redacted",
  "rollups-events",
  "rusoto_core",
  "rusoto_kms",
