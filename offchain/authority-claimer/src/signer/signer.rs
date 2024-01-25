@@ -50,7 +50,7 @@ impl ConditionalSigner {
                 const DEFAULT_ACCOUNT_INDEX: u32 = 0;
                 let index = account_index.unwrap_or(DEFAULT_ACCOUNT_INDEX);
                 let wallet = MnemonicBuilder::<English>::default()
-                    .phrase(mnemonic.as_str())
+                    .phrase(mnemonic.inner().as_str())
                     .index(index)
                     .context(LocalWalletSnafu)?
                     .build()
@@ -153,6 +153,7 @@ mod tests {
         Address, Eip1559TransactionRequest,
     };
     use ethers_signers::Signer;
+    use redacted::Redacted;
 
     use crate::{config::TxSigningConfig, signer::ConditionalSigner};
 
@@ -191,7 +192,7 @@ mod tests {
 
     async fn local_wallet_conditional_signer() -> ConditionalSigner {
         let tx_signing_config = TxSigningConfig::Mnemonic {
-            mnemonic: MNEMONIC.to_string(),
+            mnemonic: Redacted::new(MNEMONIC.to_string()),
             account_index: Some(1),
         };
         ConditionalSigner::new(CHAIN_ID, &tx_signing_config)

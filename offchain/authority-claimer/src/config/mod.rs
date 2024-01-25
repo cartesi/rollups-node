@@ -12,6 +12,7 @@ use cli::AuthorityClaimerCLI;
 use eth_tx_manager::{config::TxManagerConfig, Priority};
 use http_server::HttpServerConfig;
 use log::LogConfig;
+use redacted::Redacted;
 use rollups_events::BrokerConfig;
 use rusoto_core::Region;
 
@@ -35,7 +36,7 @@ pub struct AuthorityClaimerConfig {
 #[derive(Debug, Clone)]
 pub enum TxSigningConfig {
     Mnemonic {
-        mnemonic: String,
+        mnemonic: Redacted<String>,
         account_index: Option<u32>,
     },
 
