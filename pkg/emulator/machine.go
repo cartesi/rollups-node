@@ -104,6 +104,13 @@ func (machine *Machine) GetRootHash() (*MerkleTreeHash, error) {
 	return hash, nil
 }
 
+func (machine Machine) ReadMCycle() (uint64, error) {
+	var msg *C.char
+	var value C.uint64_t
+	code := C.cm_read_mcycle(machine.c, &value, &msg)
+	return uint64(value), newError(code, msg)
+}
+
 func (machine *Machine) ReplaceMemoryRange(newRange *MemoryRangeConfig) error {
 	var msg *C.char
 	newRangeRef := newRange.makeCRef()
@@ -220,5 +227,18 @@ func (machine *Machine) ReadIFlagsH() (bool, error) {
 func (machine *Machine) SetIFlagsH() error {
 	var msg *C.char
 	code := C.cm_set_iflags_H(machine.c, &msg)
+	return newError(code, msg)
+}
+
+func (machine *Machine) ReadHtifToHostData() (uint64, error) {
+	var msg *C.char
+	var value C.uint64_t
+	code := C.cm_read_htif_tohost_data(machine.c, &value, &msg)
+	return uint64(value), newError(code, msg)
+}
+
+func (machine *Machine) WriteHtifFromHostData(value uint64) error {
+	var msg *C.char
+	code := C.cm_write_htif_fromhost_data(machine.c, C.uint64_t(value), &msg)
 	return newError(code, msg)
 }

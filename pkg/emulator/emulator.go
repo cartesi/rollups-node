@@ -21,35 +21,35 @@ import (
 type ErrorCode int32
 
 const (
-	ErrorCodeOk                   ErrorCode = C.CM_ERROR_OK
-	ErrorCodeInvalidArgument      ErrorCode = C.CM_ERROR_INVALID_ARGUMENT
-	ErrorCodeDomainError          ErrorCode = C.CM_ERROR_DOMAIN_ERROR
-	ErrorCodeLengthError          ErrorCode = C.CM_ERROR_LENGTH_ERROR
-	ErrorCodeOutOfRange           ErrorCode = C.CM_ERROR_OUT_OF_RANGE
-	ErrorCodeLogicError           ErrorCode = C.CM_ERROR_LOGIC_ERROR
-	ErrorCodeBadOptionalAccess    ErrorCode = C.CM_ERROR_BAD_OPTIONAL_ACCESS
-	ErrorCodeRuntimeError         ErrorCode = C.CM_ERROR_RUNTIME_ERROR
-	ErrorCodeRangeError           ErrorCode = C.CM_ERROR_RANGE_ERROR
-	ErrorCodeOverflowError        ErrorCode = C.CM_ERROR_OVERFLOW_ERROR
-	ErrorCodeUnderflowError       ErrorCode = C.CM_ERROR_UNDERFLOW_ERROR
-	ErrorCodeRegexError           ErrorCode = C.CM_ERROR_REGEX_ERROR
-	ErrorCodeSystemIosBaseFailure ErrorCode = C.CM_ERROR_SYSTEM_IOS_BASE_FAILURE
-	ErrorCodeFilesystemError      ErrorCode = C.CM_ERROR_FILESYSTEM_ERROR
-	ErrorCodeAtomicTxError        ErrorCode = C.CM_ERROR_ATOMIC_TX_ERROR
-	ErrorCodeNonexistingLocalTime ErrorCode = C.CM_ERROR_NONEXISTING_LOCAL_TIME
-	ErrorCodeAmbiguousLocalTime   ErrorCode = C.CM_ERROR_AMBIGUOUS_LOCAL_TIME
-	ErrorCodeFormatError          ErrorCode = C.CM_ERROR_FORMAT_ERROR
-	ErrorCodeBadTypeid            ErrorCode = C.CM_ERROR_BAD_TYPEID
-	ErrorCodeBadCast              ErrorCode = C.CM_ERROR_BAD_CAST
-	ErrorCodeBadAnyCast           ErrorCode = C.CM_ERROR_BAD_ANY_CAST
-	ErrorCodeBadWeakPtr           ErrorCode = C.CM_ERROR_BAD_WEAK_PTR
-	ErrorCodeBadFunctionCall      ErrorCode = C.CM_ERROR_BAD_FUNCTION_CALL
-	ErrorCodeBadAlloc             ErrorCode = C.CM_ERROR_BAD_ALLOC
-	ErrorCodeBadArrayNewLength    ErrorCode = C.CM_ERROR_BAD_ARRAY_NEW_LENGTH
-	ErrorCodeBadException         ErrorCode = C.CM_ERROR_BAD_EXCEPTION
-	ErrorCodeBadVariantAccess     ErrorCode = C.CM_ERROR_BAD_VARIANT_ACCESS
-	ErrorCodeException            ErrorCode = C.CM_ERROR_EXCEPTION
-	ErrorCodeUnknown              ErrorCode = C.CM_ERROR_UNKNOWN
+	ErrCodeOk                   ErrorCode = C.CM_ERROR_OK
+	ErrCodeInvalidArgument      ErrorCode = C.CM_ERROR_INVALID_ARGUMENT
+	ErrCodeDomainError          ErrorCode = C.CM_ERROR_DOMAIN_ERROR
+	ErrCodeLengthError          ErrorCode = C.CM_ERROR_LENGTH_ERROR
+	ErrCodeOutOfRange           ErrorCode = C.CM_ERROR_OUT_OF_RANGE
+	ErrCodeLogicError           ErrorCode = C.CM_ERROR_LOGIC_ERROR
+	ErrCodeBadOptionalAccess    ErrorCode = C.CM_ERROR_BAD_OPTIONAL_ACCESS
+	ErrCodeRuntimeError         ErrorCode = C.CM_ERROR_RUNTIME_ERROR
+	ErrCodeRangeError           ErrorCode = C.CM_ERROR_RANGE_ERROR
+	ErrCodeOverflowError        ErrorCode = C.CM_ERROR_OVERFLOW_ERROR
+	ErrCodeUnderflowError       ErrorCode = C.CM_ERROR_UNDERFLOW_ERROR
+	ErrCodeRegexError           ErrorCode = C.CM_ERROR_REGEX_ERROR
+	ErrCodeSystemIosBaseFailure ErrorCode = C.CM_ERROR_SYSTEM_IOS_BASE_FAILURE
+	ErrCodeFilesystemError      ErrorCode = C.CM_ERROR_FILESYSTEM_ERROR
+	ErrCodeAtomicTxError        ErrorCode = C.CM_ERROR_ATOMIC_TX_ERROR
+	ErrCodeNonexistingLocalTime ErrorCode = C.CM_ERROR_NONEXISTING_LOCAL_TIME
+	ErrCodeAmbiguousLocalTime   ErrorCode = C.CM_ERROR_AMBIGUOUS_LOCAL_TIME
+	ErrCodeFormatError          ErrorCode = C.CM_ERROR_FORMAT_ERROR
+	ErrCodeBadTypeid            ErrorCode = C.CM_ERROR_BAD_TYPEID
+	ErrCodeBadCast              ErrorCode = C.CM_ERROR_BAD_CAST
+	ErrCodeBadAnyCast           ErrorCode = C.CM_ERROR_BAD_ANY_CAST
+	ErrCodeBadWeakPtr           ErrorCode = C.CM_ERROR_BAD_WEAK_PTR
+	ErrCodeBadFunctionCall      ErrorCode = C.CM_ERROR_BAD_FUNCTION_CALL
+	ErrCodeBadAlloc             ErrorCode = C.CM_ERROR_BAD_ALLOC
+	ErrCodeBadArrayNewLength    ErrorCode = C.CM_ERROR_BAD_ARRAY_NEW_LENGTH
+	ErrCodeBadException         ErrorCode = C.CM_ERROR_BAD_EXCEPTION
+	ErrCodeBadVariantAccess     ErrorCode = C.CM_ERROR_BAD_VARIANT_ACCESS
+	ErrCodeException            ErrorCode = C.CM_ERROR_EXCEPTION
+	ErrCodeUnknown              ErrorCode = C.CM_ERROR_UNKNOWN
 )
 
 type Error struct {
@@ -57,7 +57,7 @@ type Error struct {
 	Msg  string
 }
 
-func (e *Error) Error() string {
+func (e Error) Error() string {
 	return fmt.Sprintf("cartesi machine error %d (%s)", e.Code, e.Msg)
 }
 

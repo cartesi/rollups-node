@@ -1,7 +1,7 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-package services
+package linewriter
 
 import (
 	"bytes"
@@ -24,7 +24,7 @@ func (w *mockWriter) Write(p []byte) (int, error) {
 type LineWriterSuite struct {
 	suite.Suite
 	mock   *mockWriter
-	writer *lineWriter
+	writer *LineWriter
 }
 
 func TestLineWriterSuite(t *testing.T) {
@@ -33,7 +33,7 @@ func TestLineWriterSuite(t *testing.T) {
 
 func (s *LineWriterSuite) SetupTest() {
 	s.mock = &mockWriter{}
-	s.writer = newLineWriter(s.mock)
+	s.writer = New(s.mock)
 }
 
 func (s *LineWriterSuite) TestItWritesLines() {
