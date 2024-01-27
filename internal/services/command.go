@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/cartesi/rollups-node/internal/linewriter"
 )
 
 const (
@@ -43,8 +45,8 @@ type CommandService struct {
 func (s CommandService) Start(ctx context.Context, ready chan<- struct{}) error {
 	cmd := exec.CommandContext(ctx, s.Path, s.Args...)
 	cmd.Env = s.Env
-	cmd.Stderr = newLineWriter(commandLogger{s.Name})
-	cmd.Stdout = newLineWriter(commandLogger{s.Name})
+	cmd.Stderr = linewriter.New(commandLogger{s.Name})
+	cmd.Stdout = linewriter.New(commandLogger{s.Name})
 	cmd.Cancel = func() error {
 		err := cmd.Process.Signal(syscall.SIGTERM)
 		if err != nil {
