@@ -271,7 +271,8 @@ apt-get install -y --no-install-recommends \
     libpq5 \
     redis \
     libboost-log1.74.0 \
-    redis-tools
+    redis-tools \
+    procps
 rm -rf /var/lib/apt/lists/*
 EOF
 
