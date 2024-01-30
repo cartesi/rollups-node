@@ -279,8 +279,8 @@ func newRedis() services.CommandService {
 	return s
 }
 
-func newServerManager() services.CommandService {
-	var s services.CommandService
+func newServerManager() services.ServerManager {
+	var s services.ServerManager
 	s.Name = "server-manager"
 	s.HealthcheckPort = getPort(portOffsetServerManager)
 	s.Path = "server-manager"
