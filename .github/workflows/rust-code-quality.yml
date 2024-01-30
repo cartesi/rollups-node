@@ -1,11 +1,7 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: Assess Rust code quality
 
-on:
-  push:
-    paths:
-      - '.github/workflows/rust-code-quality.yml'
-      - 'offchain/**.rs'
+on: push
 
 jobs:
   assess-rust-code-quality:
