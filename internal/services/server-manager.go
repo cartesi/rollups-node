@@ -8,12 +8,17 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
 )
 
+// ServerManager is a variation of CommandService used to manually stop
+// the orphaned cartesi-machines left after server-manager exits.
+// For more information, check https://github.com/cartesi/server-manager/issues/18
 type ServerManager struct {
 	// Name that identifies the service.
 	Name string
@@ -38,15 +43,22 @@ func (s ServerManager) Start(ctx context.Context, ready chan<- struct{}) error {
 	cmd.Env = s.Env
 	cmd.Stderr = newLineWriter(commandLogger{s.Name})
 	cmd.Stdout = newLineWriter(commandLogger{s.Name})
+	// Without a delay, cmd.Wait() will block forever waiting for the I/O pipes
+	// to be closed
 	cmd.WaitDelay = waitDelay
 	cmd.Cancel = func() error {
-		err := cmd.Process.Signal(syscall.SIGTERM)
+		err := killChildProcesses(cmd.Process.Pid)
 		if err != nil {
-			msg := "failed to send SIGTERM to %v: %v\n"
-			config.WarningLogger.Printf(msg, s, err)
+			config.WarningLogger.Println(err)
+		}
+
+		err = cmd.Process.Signal(syscall.SIGTERM)
+		if err != nil {
+			config.WarningLogger.Printf("failed to send SIGTERM to %v: %v\n", s, err)
 		}
 		return err
 	}
+
 	go s.pollTcp(ctx, ready)
 	err := cmd.Run()
 
@@ -56,7 +68,7 @@ func (s ServerManager) Start(ctx context.Context, ready chan<- struct{}) error {
 	return err
 }
 
-// Blocks until the service is ready or the context is canceled.
+// Blocks until the service is ready or the context is canceled
 func (s ServerManager) pollTcp(ctx context.Context, ready chan<- struct{}) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -78,4 +90,38 @@ func (s ServerManager) pollTcp(ctx context.Context, ready chan<- struct{}) {
 
 func (s ServerManager) String() string {
 	return s.Name
+}
+
+// Kills all child processes spawned by pid
+func killChildProcesses(pid int) error {
+	children, err := getChildrenPid(pid)
+	if err != nil {
+		return fmt.Errorf("failed to get child processes. %v", err)
+	}
+	for _, child := range children {
+		err = syscall.Kill(child, syscall.SIGKILL)
+		if err != nil {
+			return fmt.Errorf("failed to kill child process: %v. %v\n", child, err)
+		}
+	}
+	return nil
+}
+
+// Returns a list of processes whose parent is ppid
+func getChildrenPid(ppid int) ([]int, error) {
+	output, err := exec.Command("pgrep", "-P", fmt.Sprint(ppid)).CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to exec pgrep: %v: %v", err, string(output))
+	}
+
+	var children []int
+	pids := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, pid := range pids {
+		childPid, err := strconv.Atoi(pid)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse pid: %v", err)
+		}
+		children = append(children, childPid)
+	}
+	return children, nil
 }
