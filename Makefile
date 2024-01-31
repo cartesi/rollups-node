@@ -43,7 +43,7 @@ check-generate: generate graphql-schema ## Check whether the generated files are
 	fi
 
 .PHONY: docker-build
-docker-build: ## Build the docker images using bake
+docker-build: submodules ## Build the docker images using bake
 	@cd build && docker buildx bake --load
 
 .PHONY: docker-run
