@@ -20,7 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
-const rollupsContractsUrl = "https://registry.npmjs.org/@cartesi/rollups/-/rollups-1.1.0.tgz"
+const rollupsContractsUrl = "https://registry.npmjs.org/@cartesi/rollups/-/rollups-1.2.0.tgz"
 const baseContractsPath = "package/export/artifacts/contracts/"
 const bindingPkg = "contracts"
 
