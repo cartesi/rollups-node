@@ -11,34 +11,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added `cartesi-rollups-node` Go binary as a single entrypoint to execute all Cartesi Node services
-- Added unified configuration for the Node with a new set of environment variables.
+- Added unified configuration for the Node with a new set of environment variables;
+  Check `docs/Config.md` for the updated list
 - Added `cartesi-rollups-cli` binary to help develop and debug the Cartesi Rollups node
-- Added read to `cartesi-rollups-cli` for inputs, notices, vouchers and reports
-- Added `Makefile` to auto-generate project files
+- Added `Makefile` to help node developers setup their environment
 - Added experimental sunodo validator mode
-- Added inspect command to `cartesi-rollups-cli`
-- Added increase-time command to `cartesi-rollups-cli`
-- Added instructions on how to run the node with Docker.
-- Added validate command to `cartesi-rollups-cli`
-- Added execute command to `cartesi-rollups-cli`
+- Added instructions on how to run the node with Docker
 
 ### Changed
 
-- Replaced `DAPP_DEPLOY_BLOCK_HASH` with `DAPP_DEPLOYMENT_BLOCK_NUMBER`.
-- Changed installation paths in the Docker image. Now all the binaries are installed in /usr/bin
-  instead of /opt/cartesi/bin.
-- Changed the base Docker image to debian-bookworm instead cartesi/server-manager.
-- Bumped Cartesi Rollups contracts to version 1.2.0.
+- Changed installation paths in the Docker image. Now all the binaries are installed in `/usr/bin`
+  instead of `/opt/cartesi/bin`
+- Changed the base Docker image to debian-bookworm instead cartesi/server-manager
+- Bumped Cartesi Rollups contracts to version 1.2.0
 
 ### Removed
 
-- Removed concurrent block fetch in foldable `InputBox`.
-- Removed snapshot-saving feature. Now, the node will always start from the beginning.
+- Removed concurrent block fetch in foldable `InputBox`
+- Removed snapshot-saving feature. Now, the node will always start from the beginning
 
 ### Fixed
 
-- Fixed mnemonic leaking through log entries.
-- Fixed high RPC usage by filtering the input added event by the application address.
+- Fixed mnemonic leaking through log entries
+- Fixed high RPC usage by filtering the "input added" event by the application address
 
 ## [1.2.0]
 
