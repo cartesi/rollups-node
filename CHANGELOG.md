@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed installation paths in the Docker image. Now all the binaries are installed in /usr/bin
   instead of /opt/cartesi/bin.
 - Changed the base Docker image to debian-bookworm instead cartesi/server-manager.
+- Bumped Cartesi Rollups contracts to version 1.2.0.
 
 ### Removed
 

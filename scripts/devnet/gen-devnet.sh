@@ -14,7 +14,7 @@ readonly script_dir
 
 ################################################################################
 # Configuration
-ROLLUPS_CONTRACTS_VERSION="1.1.0"
+ROLLUPS_CONTRACTS_VERSION="1.2.0"
 DEVNET_RPC_URL="http://localhost:8545"
 DEVNET_FOUNDRY_ACCOUNT_0_ADDRESS="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 DEVNET_FOUNDRY_ACCOUNT_0_PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"

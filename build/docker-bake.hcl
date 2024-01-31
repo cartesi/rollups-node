@@ -21,7 +21,6 @@ target "common" {
     RUST_VERSION              = "1.75.0"
     GO_VERSION                = "1.21.1"
     FOUNDRY_COMMIT_VERSION    = "24abca6c9133618e0c355842d2be2dd4f36da46d"
-    ROLLUPS_CONTRACTS_VERSION = "1.1.0"
     SERVER_MANAGER_VERSION    = "0.8.2"
     MACHINE_EMULATOR_VERSION  = "0.15.2"
     ROOTFS_VERSION            = "0.18.0"
