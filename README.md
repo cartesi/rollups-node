@@ -20,10 +20,10 @@ The Cartesi Node depends on the following Cartesi components:
 
 | Component | Version |
 |---|---|
-| Cartesi Machine SDK | [v0.16.2](https://github.com/cartesi/machine-emulator-sdk/releases/tag/v0.16.2) |
+| Cartesi Machine SDK | [v0.16.3](https://github.com/cartesi/machine-emulator-sdk/releases/tag/v0.16.3) |
 | Cartesi OpenAPI Interfaces | [v0.7.0](https://github.com/cartesi/openapi-interfaces/releases/tag/v0.7.0) |
 | Cartesi Rollups Contracts | [v1.2.0](https://github.com/cartesi/rollups-contracts/releases/tag/v1.2.0) |
-| Cartesi Server Manager | [v0.8.2](https://github.com/cartesi/server-manager/releases/tag/v0.8.2) |
+| Cartesi Server Manager | [v0.8.3](https://github.com/cartesi/server-manager/releases/tag/v0.8.3) |
 
 ## Node Configuration
 
