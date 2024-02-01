@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of `/opt/cartesi/bin`
 - Changed the base Docker image to debian-bookworm instead cartesi/server-manager
 - Bumped Cartesi Rollups contracts to version 1.2.0
+- Bumped Cartesi Emulator SDK to 0.16.3
+- Bumped Server Manager to 0.8.3
 
 ### Removed
 
