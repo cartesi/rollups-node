@@ -1,3 +1,7 @@
 [submodule "grpc-interfaces"]
 	path = offchain/grpc-interfaces/grpc-interfaces
 	url = ../grpc-interfaces.git
+[submodule "rollups-contracts"]
+	path = rollups-contracts
+    url = https://github.com/cartesi/rollups-contracts
+    branch = v1.2.0
