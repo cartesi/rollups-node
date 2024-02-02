@@ -39,7 +39,7 @@ func main() {
 	}
 
 	// enable claimer if reader mode and sunodo validator mode are disabled
-	if !config.GetCartesiFeatureReaderMode() && !sunodoValidatorEnabled {
+	if !config.GetCartesiFeatureDisableClaimer() && !sunodoValidatorEnabled {
 		s = append(s, newAuthorityClaimer())
 	}
 

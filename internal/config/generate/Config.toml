@@ -30,21 +30,18 @@ If set to true, the node will run in host mode.
 In host mode, computations will not be performed by the cartesi machine.
 You should only use host mode for development and debugging!"""
 
-[features.CARTESI_FEATURE_READER_MODE]
+[features.CARTESI_FEATURE_DISABLE_CLAIMER]
 default = "false"
 go-type = "bool"
 description = """
-If set to true, the node will run in reader mode.
-
-In reader mode, the node does not make claims."""
+If set to true, the node will not make claims."""
 
 [features.CARTESI_FEATURE_DISABLE_MACHINE_HASH_CHECK]
 default = "false"
 go-type = "bool"
 description = """
 If set to true, the node will *not* check whether the Cartesi machine hash from
-the snapshot matches the hash in the Application contract.
-"""
+the snapshot matches the hash in the Application contract."""
 
 #
 # Rollups
@@ -101,12 +98,12 @@ Block subscription timeout in seconds."""
 # Contracts
 #
 
-[contracts.CARTESI_CONTRACTS_DAPP_ADDRESS]
+[contracts.CARTESI_CONTRACTS_APPLICATION_ADDRESS]
 go-type = "string"
 description = """
 Address of the DApp's contract."""
 
-[contracts.CARTESI_CONTRACTS_DAPP_DEPLOYMENT_BLOCK_NUMBER]
+[contracts.CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER]
 go-type = "string"
 description = """
 Block in which the DApp's contract was deployed."""

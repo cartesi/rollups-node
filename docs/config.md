@@ -101,21 +101,21 @@ The node will begin to read blockchain events from this block.
 
 * **Type:** `int64`
 
-## `CARTESI_CONTRACTS_AUTHORITY_ADDRESS`
-
-Address of the Authority contract.
-
-* **Type:** `string`
-
-## `CARTESI_CONTRACTS_DAPP_ADDRESS`
+## `CARTESI_CONTRACTS_APPLICATION_ADDRESS`
 
 Address of the DApp's contract.
 
 * **Type:** `string`
 
-## `CARTESI_CONTRACTS_DAPP_DEPLOYMENT_BLOCK_NUMBER`
+## `CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER`
 
 Block in which the DApp's contract was deployed.
+
+* **Type:** `string`
+
+## `CARTESI_CONTRACTS_AUTHORITY_ADDRESS`
+
+Address of the Authority contract.
 
 * **Type:** `string`
 
@@ -144,11 +144,17 @@ External Redis endpoint for the node when running in the experimental sunodo val
 
 * **Type:** `string`
 
+## `CARTESI_FEATURE_DISABLE_CLAIMER`
+
+If set to true, the node will not make claims.
+
+* **Type:** `bool`
+* **Default:** `"false"`
+
 ## `CARTESI_FEATURE_DISABLE_MACHINE_HASH_CHECK`
 
 If set to true, the node will *not* check whether the Cartesi machine hash from
 the snapshot matches the hash in the Application contract.
-
 
 * **Type:** `bool`
 * **Default:** `"false"`
@@ -159,15 +165,6 @@ If set to true, the node will run in host mode.
 
 In host mode, computations will not be performed by the cartesi machine.
 You should only use host mode for development and debugging!
-
-* **Type:** `bool`
-* **Default:** `"false"`
-
-## `CARTESI_FEATURE_READER_MODE`
-
-If set to true, the node will run in reader mode.
-
-In reader mode, the node does not make claims.
 
 * **Type:** `bool`
 * **Default:** `"false"`

@@ -86,13 +86,13 @@ func newAdvanceRunner() services.CommandService {
 	s.Env = append(s.Env,
 		fmt.Sprintf("CHAIN_ID=%v", config.GetCartesiBlockchainId()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("DAPP_CONTRACT_ADDRESS=%v", config.GetCartesiContractsDappAddress()))
+		fmt.Sprintf("DAPP_CONTRACT_ADDRESS=%v", config.GetCartesiContractsApplicationAddress()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("PROVIDER_HTTP_ENDPOINT=%v", config.GetCartesiBlockchainHttpEndpoint()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("ADVANCE_RUNNER_HEALTHCHECK_PORT=%v", getPort(portOffsetAdvanceRunner)))
 	s.Env = append(s.Env,
-		fmt.Sprintf("READER_MODE=%v", config.GetCartesiFeatureReaderMode()))
+		fmt.Sprintf("READER_MODE=%v", config.GetCartesiFeatureDisableClaimer()))
 	if config.GetCartesiFeatureHostMode() || config.GetCartesiFeatureDisableMachineHashCheck() {
 		s.Env = append(s.Env, "SNAPSHOT_VALIDATION_ENABLED=false")
 	}
@@ -165,10 +165,10 @@ func newDispatcher() services.CommandService {
 	s.Env = append(s.Env,
 		fmt.Sprintf("REDIS_ENDPOINT=%v", getRedisEndpoint()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("DAPP_ADDRESS=%v", config.GetCartesiContractsDappAddress()))
+		fmt.Sprintf("DAPP_ADDRESS=%v", config.GetCartesiContractsApplicationAddress()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("DAPP_DEPLOYMENT_BLOCK_NUMBER=%v",
-			config.GetCartesiContractsDappDeploymentBlockNumber()))
+			config.GetCartesiContractsApplicationDeploymentBlockNumber()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("HISTORY_ADDRESS=%v", config.GetCartesiContractsHistoryAddress()))
 	s.Env = append(s.Env,
@@ -237,7 +237,7 @@ func newIndexer() services.CommandService {
 	s.Env = append(s.Env,
 		fmt.Sprintf("CHAIN_ID=%v", config.GetCartesiBlockchainId()))
 	s.Env = append(s.Env,
-		fmt.Sprintf("DAPP_CONTRACT_ADDRESS=%v", config.GetCartesiContractsDappAddress()))
+		fmt.Sprintf("DAPP_CONTRACT_ADDRESS=%v", config.GetCartesiContractsApplicationAddress()))
 	s.Env = append(s.Env,
 		fmt.Sprintf("REDIS_ENDPOINT=%v", getRedisEndpoint()))
 	s.Env = append(s.Env,
