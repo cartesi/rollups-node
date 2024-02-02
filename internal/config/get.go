@@ -74,18 +74,18 @@ func GetCartesiContractsInputBoxDeploymentBlockNumber() int64 {
 	return v
 }
 
+func GetCartesiContractsApplicationAddress() string {
+	v := get("CARTESI_CONTRACTS_APPLICATION_ADDRESS", "", false, false, toString)
+	return v
+}
+
+func GetCartesiContractsApplicationDeploymentBlockNumber() string {
+	v := get("CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER", "", false, false, toString)
+	return v
+}
+
 func GetCartesiContractsAuthorityAddress() string {
 	v := get("CARTESI_CONTRACTS_AUTHORITY_ADDRESS", "", false, false, toString)
-	return v
-}
-
-func GetCartesiContractsDappAddress() string {
-	v := get("CARTESI_CONTRACTS_DAPP_ADDRESS", "", false, false, toString)
-	return v
-}
-
-func GetCartesiContractsDappDeploymentBlockNumber() string {
-	v := get("CARTESI_CONTRACTS_DAPP_DEPLOYMENT_BLOCK_NUMBER", "", false, false, toString)
 	return v
 }
 
@@ -109,6 +109,11 @@ func GetCartesiExperimentalSunodoValidatorRedisEndpoint() string {
 	return v
 }
 
+func GetCartesiFeatureDisableClaimer() bool {
+	v := get("CARTESI_FEATURE_DISABLE_CLAIMER", "false", true, false, toBool)
+	return v
+}
+
 func GetCartesiFeatureDisableMachineHashCheck() bool {
 	v := get("CARTESI_FEATURE_DISABLE_MACHINE_HASH_CHECK", "false", true, false, toBool)
 	return v
@@ -116,11 +121,6 @@ func GetCartesiFeatureDisableMachineHashCheck() bool {
 
 func GetCartesiFeatureHostMode() bool {
 	v := get("CARTESI_FEATURE_HOST_MODE", "false", true, false, toBool)
-	return v
-}
-
-func GetCartesiFeatureReaderMode() bool {
-	v := get("CARTESI_FEATURE_READER_MODE", "false", true, false, toBool)
 	return v
 }
 
