@@ -27,20 +27,89 @@ func main() {
 	config := decodeTOML(data)
 	envs := sortConfig(config)
 
-	var code strings.Builder
-	var doc strings.Builder
-
-	addCodeHeader(&code)
-	addDocHeader(&doc)
-
-	addLine(&doc, "<!-- markdownlint-disable MD012 -->")
 	for _, env := range envs {
 		env.validate()
-		addLine(&code, env.toFunction())
-		addLine(&doc, env.toDoc())
+	}
+	writeDoc(envs)
+	writeCode(envs)
+}
+
+func writeCode(envs []Env) {
+	var code strings.Builder
+
+	addCodeHeader(&code)
+
+	//Validate envs
+	for i := range envs {
+		envs[i].validate()
 	}
 
-	writeToFile("get.go", formatCode(code.String()))
+	//Add get functions
+	for _, env := range envs {
+		addLine(&code, env.toFunction())
+	}
+
+	//Add NodeConfig Struct
+	addLine(&code, "type NodeConfig struct{")
+	for _, env := range envs {
+		if *env.Export {
+			addLine(&code, env.toStructMember())
+		}
+	}
+	addLine(&code, "CartesiAuth                                      Auth")
+	addLine(&code, "}")
+
+	//Add init function from System Environment
+	addLine(&code, "")
+	addLine(&code, "func NewNodeConfigFromEnv() (NodeConfig){")
+	addLine(&code, "nodeConfig := NodeConfig{")
+	for _, env := range envs {
+		if *env.Export {
+			name := toStructMemberName(env.Name)
+			addLine(&code, name+": get"+name+"(),")
+		}
+	}
+	addLine(&code, "}")
+	addLine(&code, "nodeConfig.CartesiAuth = GetAuth()")
+	addLine(&code, "return nodeConfig")
+	addLine(&code, "}")
+
+	//Add init function from Default Values
+	addLine(&code, "")
+	addLine(&code, "func NewtNodeConfigDefault() (NodeConfig){")
+	addLine(&code, "nodeConfig := NodeConfig{}")
+	for _, env := range envs {
+		if *env.Export && env.Default != nil && *env.Default != "" {
+			name := toStructMemberName(env.Name)
+			varName := toVarName(name)
+			errorName := name + "Error"
+			addLine(&code, varName+", "+errorName+" := "+
+				toToFuncName(env.GoType)+`("`+*env.Default+`")`)
+			addLine(&code, "if "+errorName+" != nil {")
+			addLine(&code, "panic("+errorName+")")
+			addLine(&code, "}")
+			addLine(&code, "nodeConfig."+name+" = "+varName)
+
+		}
+	}
+
+	addLine(&code,
+		`nodeConfig.CartesiAuth = AuthMnemonic{Mnemonic: `+
+			`"test test test test test test test test test test test junk", AccountIndex: 0}`)
+	addLine(&code, "return nodeConfig")
+	addLine(&code, "}")
+
+	writeToFile("configstruct.go", formatCode(code.String()))
+}
+
+func writeDoc(envs []Env) {
+	var doc strings.Builder
+
+	addDocHeader(&doc)
+	addLine(&doc, "<!-- markdownlint-disable MD012 -->")
+	for _, env := range envs {
+		addLine(&doc, env.toDoc())
+	}
 	writeToFile("../../docs/config.md", []byte(doc.String()))
 }
 
@@ -92,7 +161,7 @@ func (e *Env) validate() {
 
 // Generates the get function for the environment variable.
 func (e Env) toFunction() string {
-	name := toFunctionName(e.Name)
+	name := toStructMemberName(e.Name)
 	typ := e.GoType
 	get := "get"
 	vars := "v"
@@ -103,16 +172,12 @@ func (e Env) toFunction() string {
 		defaultValue = *e.Default
 	}
 
-	to_ := []rune(e.GoType)
-	to_[0] = unicode.ToUpper(to_[0])
-	to := "to" + string(to_)
+	to := toToFuncName(e.GoType)
 
 	args := fmt.Sprintf(`"%s", "%s", %t, %t, %s`, e.Name, defaultValue, hasDefault, *e.Redact, to)
 
-	if *e.Export {
-		name = "Get" + name
-	} else {
-		name = "get" + name
+	name = "get" + name
+	if !*e.Export {
 		typ = fmt.Sprintf("(%s, bool)", typ)
 		get += "Optional"
 		vars += ", ok"
@@ -121,6 +186,18 @@ func (e Env) toFunction() string {
 	body := fmt.Sprintf("%s := %s(%s)\n", vars, get, args)
 	body += "return " + vars
 	return fmt.Sprintf("func %s() %s { %s }\n", name, typ, body)
+}
+
+// Generates the Config Struct member for the envrionemnt variable.
+func (e Env) toStructMember() string {
+	name := toStructMemberName(e.Name)
+
+	if !*e.Export {
+		name = toVarName(name)
+	}
+
+	return name + " " + e.GoType
+
 }
 
 // Generates the documentation entry for the environment variable.
@@ -134,11 +211,23 @@ func (e Env) toDoc() string {
 }
 
 // Splits the string by "_" and joins each substring with the first letter in upper case.
-func toFunctionName(env string) string {
+func toStructMemberName(env string) string {
 	caser := cases.Title(language.English)
 	words := strings.Split(env, "_")
 	for i, word := range words {
 		words[i] = caser.String(word)
 	}
 	return strings.Join(words, "")
+}
+
+func toVarName(name string) string {
+	name_ := []rune(name)
+	name_[0] = unicode.ToLower(name_[0])
+	return string(name_)
+}
+
+func toToFuncName(goType string) string {
+	to_ := []rune(goType)
+	to_[0] = unicode.ToUpper(to_[0])
+	return "to" + string(to_)
 }

@@ -76,6 +76,7 @@ func addCodeHeader(builder *strings.Builder) {
 	addLine(builder, "")
 
 	addLine(builder, `package config`)
+
 	addLine(builder, `import (`)
 	addLine(builder, `"time"`)
 	addLine(builder, `)`)
@@ -86,6 +87,7 @@ func addCodeHeader(builder *strings.Builder) {
 	addLine(builder, `Duration = time.Duration`)
 	addLine(builder, `)`)
 	addLine(builder, "")
+
 }
 
 func addDocHeader(builder *strings.Builder) {
