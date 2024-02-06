@@ -42,6 +42,10 @@ check-generate: generate graphql-schema ## Check whether the generated files are
 		exit 1; \
 	fi
 
+.PHONY: docker-build-deps
+docker-build-deps: ## Build the dependencies images using bake
+	@cd build && docker buildx bake --load rollups-node-devnet rollups-node-snapshot
+
 .PHONY: docker-build
 docker-build: submodules ## Build the docker images using bake
 	@cd build && docker buildx bake --load
