@@ -4,21 +4,7 @@
 Thank you for your interest in Cartesi!
 We highly appreciate even the smallest of fixes or additions to our project.
 
-
- - [Code of Conduct](#coc)
- - [Basic Contributing Guidelines](#basic)
- - [Commit Message Guidelines](#commit)
- - [Signing the CLA](#cla)
- - [Authors](#authors)
- - [Get in Touch](#touch)
-
-
-## <a name="coc" />Code of Conduct
-
-Help us keep Cartesi an open space for development.
-Please read and follow our [Code of Conduct](./CODE_OF_CONDUCT.md).
-
-## <a name="basic" />Basic Contributing Guidelines
+## Basic Contributing Guidelines
 
 We use the same guidelines for contributing code to any of our repositories, any developers wanting to contribute to Cartesi must create pull requests.
 This process is described in the [GitHub documentation](https://help.github.com/en/articles/creating-a-pull-request).
@@ -31,7 +17,7 @@ Please note the below! We appreciate everyone following the guidelines.
 * Use non-master branches, using a short meaningful description, with words separated by dash (e.g. 'fix-this-bug');
 * All modifications must be made in a pull-request to solicit feedback from other contributors.
 
-## <a name="commit" />Commit Message Format
+## Commit Message Format
 
 We have very precise rules over how our Git commit messages must be formatted, following the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) guideline.
 This format leads to **easier to read commit history**.
@@ -55,7 +41,7 @@ The `footer` is optional.
 The [Commit Message Footer](#commit-footer) format describes what the footer is used for and the structure it must have.
 
 
-### <a name="commit-header" />Commit Message Header
+### Commit Message Header
 
 ```
 <type>(<scope>): <subject>
@@ -103,7 +89,7 @@ Use the subject field to provide a succinct description of the change:
 * Describe what was done, but not how or why. Leave those to the `body`, if needed.
 * Use the imperative, present tense (e.g. "change" not "changed" nor "changes").
 
-### <a name="commit-body" />Commit Message Body
+### Commit Message Body
 
 The body exists to complement anything that you think is needed in the commit message.
 Remember that commit messages are not documentation, and should be kept brief.
@@ -112,7 +98,7 @@ Remember that commit messages are not documentation, and should be kept brief.
 * Describe why and how it was done.
 * Wrap the body at 72 characters.
 
-### <a name="commit-footer" />Commit Message Footer
+### Commit Message Footer
 
 The footer can contain information about breaking changes and deprecations and is also the place to reference GitHub issues and other PRs that this commit closes or is related to.
 For example:
@@ -142,7 +128,7 @@ Breaking Change section should start with the phrase "BREAKING CHANGE: " followe
 Similarly, a Deprecation section should start with "DEPRECATED: " followed by a short description of what is deprecated, a blank line, and a detailed description of the deprecation that also mentions the recommended update path.
 
 
-## <a name="authors" \>Authors
+## Authors
 
 Any contributor who has in the past had at least one pull request for a code change accepted in this repo may submit a pull request to have their name added to the AUTHORS file.
 Submissions to the AUTHORS file should be in the format below:
@@ -156,13 +142,13 @@ It is up to each individual author to decide whether they would like attribution
 Please note that a contributor's decision on whether to seek attribution in an AUTHORS file will have no impact on copyright ownership.
 
 
-## <a name="cla" />Signing the CLA
+## Signing the CLA
 
 Make sure to review our [Contributing License Agreement](https://forms.gle/k3E9ZNkZY6Vy3mkK9), sign and send it to info@cartesi.io with the title of "CLA Signed" before taking part in the project.
 We are happy to automate this for you via DocuSign upon request in the Google Form as well.
 
 
-## <a name="touch" />Get in Touch
+## Get in Touch
 
 When contributing in a deeper manner to this repository, please first discuss the change you wish to make via our 
 [Discord channel here](https://discord.gg/Pt2NrnS), or contact us at info@cartesi.io email before working on the change.
