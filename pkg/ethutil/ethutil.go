@@ -8,6 +8,7 @@ package ethutil
 import (
 	"context"
 	"fmt"
+	"log"
 	"math/big"
 
 	"github.com/cartesi/rollups-node/pkg/addresses"
@@ -44,6 +45,9 @@ func AddInput(
 	input []byte,
 ) (int, error) {
 	inputBox, err := contracts.NewInputBox(book.InputBox, client)
+
+	log.Printf("---->>About to trigger error when sending an input to inputBox %v!", book.InputBox)
+
 	if err != nil {
 		return 0, fmt.Errorf("failed to connect to InputBox contract: %v", err)
 	}

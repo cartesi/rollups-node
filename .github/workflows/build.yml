@@ -60,39 +60,6 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Install cargo sweep
-        run: cargo install cargo-sweep
-        continue-on-error: true
-
-      - name: Install cargo cache
-        run: cargo install cargo-cache
-        continue-on-error: true
-
-      - name: Set sweep timestamp
-        run: cargo sweep -s
-
-      - name: Build binaries and tests
-        run: cargo build --all-targets
-
-      - name: Clean old build files
-        run: cargo sweep -f
-
-      - name: Clean dependencies source files
-        run: cargo cache --autoclean
-
-      - name: Run tests
-        run: cargo test
-
-      - name: Generate GraphQL schema
-        run: ./target/debug/generate-schema
-
-      - name: Upload GraphQL schema
-        uses: actions/upload-artifact@v4
-        with:
-          name: graphql-schema
-          path: offchain/schema.graphql
-          if-no-files-found: error
-
       - name: Install Go
         uses: actions/setup-go@v5
         with:
