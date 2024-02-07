@@ -13,7 +13,6 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"sync"
@@ -21,6 +20,10 @@ import (
 )
 
 //go:generate go run ./generate
+
+func init() {
+	cache.values = make(map[string]string)
+}
 
 // ------------------------------------------------------------------------------------------------
 // Parsing functions
@@ -36,6 +39,21 @@ func toStringFromString(s string) (string, error) {
 
 func toDurationFromSeconds(s string) (time.Duration, error) {
 	return time.ParseDuration(s + "s")
+}
+
+func toLogLevelFromString(s string) (LogLevel, error) {
+	var m = map[string]LogLevel{
+		"debug":   LogLevelDebug,
+		"info":    LogLevelInfo,
+		"warning": LogLevelWarning,
+		"error":   LogLevelError,
+	}
+	if v, ok := m[s]; ok {
+		return v, nil
+	} else {
+		var zeroValue LogLevel
+		return zeroValue, fmt.Errorf(`invalid log level "%s"`, s)
+	}
 }
 
 // Aliases to be used by the generated functions.
@@ -58,26 +76,15 @@ var cache struct {
 	values map[string]string
 }
 
-var configLogger = log.New(os.Stdout, "CONFIG ", log.LstdFlags)
-
-func init() {
-	cache.values = make(map[string]string)
-}
-
 // Reads the value of an environment variable (loads from a cached value when possible).
 // It returns the value read and true if the variable was set,
 // otherwise it returns the empty string and false.
-func read(name string, redact bool) (string, bool) {
+func read(name string) (string, bool) {
 	cache.Lock()
 	defer cache.Unlock()
 	if s, ok := cache.values[name]; ok {
 		return s, true
 	} else if s, ok := os.LookupEnv(name); ok {
-		if !redact {
-			configLogger.Printf("read %s environment variable: %v", name, s)
-		} else {
-			configLogger.Printf("read %s environment variable: ***************", name)
-		}
 		cache.values[name] = s
 		return s, true
 	} else {
@@ -103,14 +110,11 @@ func getOptional[T any](
 	name string,
 	default_ string,
 	hasDefault bool,
-	redact bool,
 	parser func(string) (T, error)) *T {
-
-	if s, ok := read(name, redact); ok {
+	if s, ok := read(name); ok {
 		v := parse(s, parser)
 		return &v
 	}
-
 	if hasDefault {
 		cache.Lock()
 		defer cache.Unlock()
@@ -118,7 +122,6 @@ func getOptional[T any](
 		v := parse(default_, parser)
 		return &v
 	}
-
 	return nil
 }
 
@@ -127,13 +130,11 @@ func get[T any](
 	name string,
 	defaultValue string,
 	hasDefault bool,
-	redact bool,
 	parser func(string) (T, error)) *T {
-	v := getOptional(name, defaultValue, hasDefault, redact, parser)
+	v := getOptional(name, defaultValue, hasDefault, parser)
 	if v == nil {
 		fail("missing required %s env var", name)
 	}
-
 	return v
 }
 

@@ -191,9 +191,9 @@ One of "debug", "info", "warning", "error".
 * **Type:** `LogLevel`
 * **Default:** `"info"`
 
-## `CARTESI_LOG_TIMESTAMP`
+## `CARTESI_LOG_PRETTY`
 
-If set to true, the node will print the timestamp when logging.
+If set to true, the node will add colors to its log output.
 
 * **Type:** `bool`
 * **Default:** `"false"`

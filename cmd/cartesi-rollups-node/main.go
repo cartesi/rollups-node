@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"os/signal"
 	"syscall"
 	"time"
@@ -21,8 +22,10 @@ func main() {
 	defer stop()
 
 	nodeConfig := config.NewNodeConfigFromEnv()
-
 	nodeConfig.Validate()
+
+	config.InitLog(nodeConfig)
+	slog.Info("Starting Cartesi Rollups Node", "config", nodeConfig)
 
 	sunodoValidatorEnabled := nodeConfig.CartesiExperimentalSunodoValidatorEnabled()
 	if !sunodoValidatorEnabled {
@@ -60,7 +63,7 @@ func main() {
 		select {
 		case <-ready:
 			duration := time.Since(startTime)
-			config.InfoLogger.Printf("rollups-node: ready after %s", duration)
+			slog.Info("rollups-node is ready", "startupTime", duration)
 		case <-ctx.Done():
 		}
 	}()
@@ -68,6 +71,6 @@ func main() {
 	// start supervisor
 	supervisor := newSupervisorService(s)
 	if err := supervisor.Start(ctx, ready); err != nil {
-		config.ErrorLogger.Print(err)
+		slog.Error(err.Error())
 	}
 }

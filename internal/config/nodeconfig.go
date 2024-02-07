@@ -7,6 +7,7 @@
 package config
 
 import (
+	"log/slog"
 	"time"
 )
 
@@ -35,7 +36,7 @@ type NodeConfig struct {
 	cartesiHttpAddress                               *string
 	cartesiHttpPort                                  *int
 	cartesiLogLevel                                  *LogLevel
-	cartesiLogTimestamp                              *bool
+	cartesiLogPretty                                 *bool
 	cartesiPostgresEndpoint                          *string
 	cartesiEpochDuration                             *Duration
 	cartesiSnapshotDir                               *string
@@ -263,15 +264,15 @@ func (nodeConfig *NodeConfig) SetCartesiLogLevel(v *LogLevel) {
 	nodeConfig.cartesiLogLevel = v
 }
 
-func (nodeConfig *NodeConfig) CartesiLogTimestamp() bool {
-	if nodeConfig.cartesiLogTimestamp == nil {
-		fail("Missing required CARTESI_LOG_TIMESTAMP env var")
+func (nodeConfig *NodeConfig) CartesiLogPretty() bool {
+	if nodeConfig.cartesiLogPretty == nil {
+		fail("Missing required CARTESI_LOG_PRETTY env var")
 	}
-	return *nodeConfig.cartesiLogTimestamp
+	return *nodeConfig.cartesiLogPretty
 }
 
-func (nodeConfig *NodeConfig) SetCartesiLogTimestamp(v *bool) {
-	nodeConfig.cartesiLogTimestamp = v
+func (nodeConfig *NodeConfig) SetCartesiLogPretty(v *bool) {
+	nodeConfig.cartesiLogPretty = v
 }
 
 func (nodeConfig *NodeConfig) CartesiPostgresEndpoint() string {
@@ -320,30 +321,30 @@ func (nodeConfig *NodeConfig) SetCartesiAuth(v *Auth) {
 
 func NewNodeConfigFromEnv() NodeConfig {
 	nodeConfig := NodeConfig{
-		cartesiBlockchainBlockTimeout:                    getOptional("CARTESI_BLOCKCHAIN_BLOCK_TIMEOUT", "60", true, false, toInt),
-		cartesiBlockchainFinalityOffset:                  getOptional("CARTESI_BLOCKCHAIN_FINALITY_OFFSET", "10", true, false, toInt),
-		cartesiBlockchainHttpEndpoint:                    getOptional("CARTESI_BLOCKCHAIN_HTTP_ENDPOINT", "", false, false, toString),
-		cartesiBlockchainId:                              getOptional("CARTESI_BLOCKCHAIN_ID", "", false, false, toInt),
-		cartesiBlockchainIsLegacy:                        getOptional("CARTESI_BLOCKCHAIN_IS_LEGACY", "false", true, false, toBool),
-		cartesiBlockchainWsEndpoint:                      getOptional("CARTESI_BLOCKCHAIN_WS_ENDPOINT", "", false, false, toString),
-		cartesiContractsInputBoxDeploymentBlockNumber:    getOptional("CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER", "", false, false, toInt64),
-		cartesiContractsApplicationAddress:               getOptional("CARTESI_CONTRACTS_APPLICATION_ADDRESS", "", false, false, toString),
-		cartesiContractsApplicationDeploymentBlockNumber: getOptional("CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER", "", false, false, toString),
-		cartesiContractsAuthorityAddress:                 getOptional("CARTESI_CONTRACTS_AUTHORITY_ADDRESS", "", false, false, toString),
-		cartesiContractsHistoryAddress:                   getOptional("CARTESI_CONTRACTS_HISTORY_ADDRESS", "", false, false, toString),
-		cartesiContractsInputBoxAddress:                  getOptional("CARTESI_CONTRACTS_INPUT_BOX_ADDRESS", "", false, false, toString),
-		cartesiExperimentalSunodoValidatorEnabled:        getOptional("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED", "false", true, false, toBool),
-		cartesiExperimentalSunodoValidatorRedisEndpoint:  getOptional("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT", "", false, false, toString),
-		cartesiFeatureDisableClaimer:                     getOptional("CARTESI_FEATURE_DISABLE_CLAIMER", "false", true, false, toBool),
-		cartesiFeatureDisableMachineHashCheck:            getOptional("CARTESI_FEATURE_DISABLE_MACHINE_HASH_CHECK", "false", true, false, toBool),
-		cartesiFeatureHostMode:                           getOptional("CARTESI_FEATURE_HOST_MODE", "false", true, false, toBool),
-		cartesiHttpAddress:                               getOptional("CARTESI_HTTP_ADDRESS", "127.0.0.1", true, false, toString),
-		cartesiHttpPort:                                  getOptional("CARTESI_HTTP_PORT", "10000", true, false, toInt),
-		cartesiLogLevel:                                  getOptional("CARTESI_LOG_LEVEL", "info", true, false, toLogLevel),
-		cartesiLogTimestamp:                              getOptional("CARTESI_LOG_TIMESTAMP", "false", true, false, toBool),
-		cartesiPostgresEndpoint:                          getOptional("CARTESI_POSTGRES_ENDPOINT", "", true, true, toString),
-		cartesiEpochDuration:                             getOptional("CARTESI_EPOCH_DURATION", "86400", true, false, toDuration),
-		cartesiSnapshotDir:                               getOptional("CARTESI_SNAPSHOT_DIR", "", false, false, toString),
+		cartesiBlockchainBlockTimeout:                    getOptional("CARTESI_BLOCKCHAIN_BLOCK_TIMEOUT", "60", true, toInt),
+		cartesiBlockchainFinalityOffset:                  getOptional("CARTESI_BLOCKCHAIN_FINALITY_OFFSET", "10", true, toInt),
+		cartesiBlockchainHttpEndpoint:                    getOptional("CARTESI_BLOCKCHAIN_HTTP_ENDPOINT", "", false, toString),
+		cartesiBlockchainId:                              getOptional("CARTESI_BLOCKCHAIN_ID", "", false, toInt),
+		cartesiBlockchainIsLegacy:                        getOptional("CARTESI_BLOCKCHAIN_IS_LEGACY", "false", true, toBool),
+		cartesiBlockchainWsEndpoint:                      getOptional("CARTESI_BLOCKCHAIN_WS_ENDPOINT", "", false, toString),
+		cartesiContractsInputBoxDeploymentBlockNumber:    getOptional("CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER", "", false, toInt64),
+		cartesiContractsApplicationAddress:               getOptional("CARTESI_CONTRACTS_APPLICATION_ADDRESS", "", false, toString),
+		cartesiContractsApplicationDeploymentBlockNumber: getOptional("CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER", "", false, toString),
+		cartesiContractsAuthorityAddress:                 getOptional("CARTESI_CONTRACTS_AUTHORITY_ADDRESS", "", false, toString),
+		cartesiContractsHistoryAddress:                   getOptional("CARTESI_CONTRACTS_HISTORY_ADDRESS", "", false, toString),
+		cartesiContractsInputBoxAddress:                  getOptional("CARTESI_CONTRACTS_INPUT_BOX_ADDRESS", "", false, toString),
+		cartesiExperimentalSunodoValidatorEnabled:        getOptional("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED", "false", true, toBool),
+		cartesiExperimentalSunodoValidatorRedisEndpoint:  getOptional("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT", "", false, toString),
+		cartesiFeatureDisableClaimer:                     getOptional("CARTESI_FEATURE_DISABLE_CLAIMER", "false", true, toBool),
+		cartesiFeatureDisableMachineHashCheck:            getOptional("CARTESI_FEATURE_DISABLE_MACHINE_HASH_CHECK", "false", true, toBool),
+		cartesiFeatureHostMode:                           getOptional("CARTESI_FEATURE_HOST_MODE", "false", true, toBool),
+		cartesiHttpAddress:                               getOptional("CARTESI_HTTP_ADDRESS", "127.0.0.1", true, toString),
+		cartesiHttpPort:                                  getOptional("CARTESI_HTTP_PORT", "10000", true, toInt),
+		cartesiLogLevel:                                  getOptional("CARTESI_LOG_LEVEL", "info", true, toLogLevel),
+		cartesiLogPretty:                                 getOptional("CARTESI_LOG_PRETTY", "false", true, toBool),
+		cartesiPostgresEndpoint:                          getOptional("CARTESI_POSTGRES_ENDPOINT", "", true, toString),
+		cartesiEpochDuration:                             getOptional("CARTESI_EPOCH_DURATION", "86400", true, toDuration),
+		cartesiSnapshotDir:                               getOptional("CARTESI_SNAPSHOT_DIR", "", false, toString),
 	}
 	nodeConfig.cartesiAuth, nodeConfig.cartesiAuthError = getAuth()
 	return nodeConfig
@@ -411,11 +412,11 @@ func NewNodeConfig() NodeConfig {
 	}
 	nodeConfig.cartesiLogLevel = &cartesiloglevel
 
-	cartesilogtimestamp, err := toBool("false")
+	cartesilogpretty, err := toBool("false")
 	if err != nil {
 		panic(err)
 	}
-	nodeConfig.cartesiLogTimestamp = &cartesilogtimestamp
+	nodeConfig.cartesiLogPretty = &cartesilogpretty
 
 	cartesiepochduration, err := toDuration("86400")
 	if err != nil {
@@ -430,4 +431,81 @@ func NewNodeConfig() NodeConfig {
 	nodeConfig.cartesiAuth = &auth
 	nodeConfig.cartesiAuthError = nil
 	return nodeConfig
+}
+
+func (c NodeConfig) LogValue() slog.Value {
+	var attrs = make([]slog.Attr, 29)
+	if c.cartesiBlockchainBlockTimeout != nil {
+		attrs = append(attrs, slog.Any("CARTESI_BLOCKCHAIN_BLOCK_TIMEOUT", *c.cartesiBlockchainBlockTimeout))
+	}
+	if c.cartesiBlockchainFinalityOffset != nil {
+		attrs = append(attrs, slog.Any("CARTESI_BLOCKCHAIN_FINALITY_OFFSET", *c.cartesiBlockchainFinalityOffset))
+	}
+	if c.cartesiBlockchainHttpEndpoint != nil {
+		attrs = append(attrs, slog.Any("CARTESI_BLOCKCHAIN_HTTP_ENDPOINT", *c.cartesiBlockchainHttpEndpoint))
+	}
+	if c.cartesiBlockchainId != nil {
+		attrs = append(attrs, slog.Any("CARTESI_BLOCKCHAIN_ID", *c.cartesiBlockchainId))
+	}
+	if c.cartesiBlockchainIsLegacy != nil {
+		attrs = append(attrs, slog.Any("CARTESI_BLOCKCHAIN_IS_LEGACY", *c.cartesiBlockchainIsLegacy))
+	}
+	if c.cartesiBlockchainWsEndpoint != nil {
+		attrs = append(attrs, slog.Any("CARTESI_BLOCKCHAIN_WS_ENDPOINT", *c.cartesiBlockchainWsEndpoint))
+	}
+	if c.cartesiContractsInputBoxDeploymentBlockNumber != nil {
+		attrs = append(attrs, slog.Any("CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER", *c.cartesiContractsInputBoxDeploymentBlockNumber))
+	}
+	if c.cartesiContractsApplicationAddress != nil {
+		attrs = append(attrs, slog.Any("CARTESI_CONTRACTS_APPLICATION_ADDRESS", *c.cartesiContractsApplicationAddress))
+	}
+	if c.cartesiContractsApplicationDeploymentBlockNumber != nil {
+		attrs = append(attrs, slog.Any("CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER", *c.cartesiContractsApplicationDeploymentBlockNumber))
+	}
+	if c.cartesiContractsAuthorityAddress != nil {
+		attrs = append(attrs, slog.Any("CARTESI_CONTRACTS_AUTHORITY_ADDRESS", *c.cartesiContractsAuthorityAddress))
+	}
+	if c.cartesiContractsHistoryAddress != nil {
+		attrs = append(attrs, slog.Any("CARTESI_CONTRACTS_HISTORY_ADDRESS", *c.cartesiContractsHistoryAddress))
+	}
+	if c.cartesiContractsInputBoxAddress != nil {
+		attrs = append(attrs, slog.Any("CARTESI_CONTRACTS_INPUT_BOX_ADDRESS", *c.cartesiContractsInputBoxAddress))
+	}
+	if c.cartesiExperimentalSunodoValidatorEnabled != nil {
+		attrs = append(attrs, slog.Any("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED", *c.cartesiExperimentalSunodoValidatorEnabled))
+	}
+	if c.cartesiExperimentalSunodoValidatorRedisEndpoint != nil {
+		attrs = append(attrs, slog.Any("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT", *c.cartesiExperimentalSunodoValidatorRedisEndpoint))
+	}
+	if c.cartesiFeatureDisableClaimer != nil {
+		attrs = append(attrs, slog.Any("CARTESI_FEATURE_DISABLE_CLAIMER", *c.cartesiFeatureDisableClaimer))
+	}
+	if c.cartesiFeatureDisableMachineHashCheck != nil {
+		attrs = append(attrs, slog.Any("CARTESI_FEATURE_DISABLE_MACHINE_HASH_CHECK", *c.cartesiFeatureDisableMachineHashCheck))
+	}
+	if c.cartesiFeatureHostMode != nil {
+		attrs = append(attrs, slog.Any("CARTESI_FEATURE_HOST_MODE", *c.cartesiFeatureHostMode))
+	}
+	if c.cartesiHttpAddress != nil {
+		attrs = append(attrs, slog.Any("CARTESI_HTTP_ADDRESS", *c.cartesiHttpAddress))
+	}
+	if c.cartesiHttpPort != nil {
+		attrs = append(attrs, slog.Any("CARTESI_HTTP_PORT", *c.cartesiHttpPort))
+	}
+	if c.cartesiLogLevel != nil {
+		attrs = append(attrs, slog.Any("CARTESI_LOG_LEVEL", *c.cartesiLogLevel))
+	}
+	if c.cartesiLogPretty != nil {
+		attrs = append(attrs, slog.Any("CARTESI_LOG_PRETTY", *c.cartesiLogPretty))
+	}
+	if c.cartesiEpochDuration != nil {
+		attrs = append(attrs, slog.Any("CARTESI_EPOCH_DURATION", *c.cartesiEpochDuration))
+	}
+	if c.cartesiSnapshotDir != nil {
+		attrs = append(attrs, slog.Any("CARTESI_SNAPSHOT_DIR", *c.cartesiSnapshotDir))
+	}
+	if c.cartesiAuth != nil {
+		attrs = append(attrs, slog.Any("Auth", *c.cartesiAuth))
+	}
+	return slog.GroupValue(attrs...)
 }

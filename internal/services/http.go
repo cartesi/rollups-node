@@ -6,10 +6,9 @@ package services
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
-
-	"github.com/cartesi/rollups-node/internal/config"
 )
 
 type HttpService struct {
@@ -26,7 +25,7 @@ func (s HttpService) Start(ctx context.Context, ready chan<- struct{}) error {
 	server := http.Server{
 		Addr:     s.Address,
 		Handler:  s.Handler,
-		ErrorLog: config.ErrorLogger,
+		ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError),
 	}
 
 	listener, err := net.Listen("tcp", s.Address)
@@ -34,14 +33,14 @@ func (s HttpService) Start(ctx context.Context, ready chan<- struct{}) error {
 		return err
 	}
 
-	config.InfoLogger.Printf("%v: listening at %v\n", s, listener.Addr())
+	slog.Info("started listening", "service", s, "port", listener.Addr())
 	ready <- struct{}{}
 
 	done := make(chan error, 1)
 	go func() {
 		err := server.Serve(listener)
 		if !errors.Is(err, http.ErrServerClosed) {
-			config.WarningLogger.Printf("%v: %v", s, err)
+			slog.Warn("service exited with error", "service", s, "error", err.Error())
 		}
 		done <- err
 	}()

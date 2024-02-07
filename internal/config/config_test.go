@@ -4,11 +4,8 @@
 package config
 
 import (
-	"bytes"
-	"log"
 	"os"
 	"os/exec"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -28,7 +25,6 @@ func (suite *EnvSuite) TearDownTest() {
 	os.Unsetenv(BAR)
 	os.Unsetenv(BAZ)
 	cache.values = make(map[string]string)
-	logInit(NewNodeConfigFromEnv())
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -41,79 +37,61 @@ func (suite *EnvSuite) TestRead() {
 	cacheLen := len(cache.values)
 	require.Equal(cacheLen, len(cache.values))
 
-	// mocking the logger
-	var buffer bytes.Buffer
-	configLogger = log.New(&buffer, "", 0)
-
 	name, value := FOO, foo
-
 	{ // not initialized
-		s, ok := read(name, false)
+		s, ok := read(name)
 		require.Equal("", s)
 		require.False(ok)
 		require.Equal(cacheLen, len(cache.values))
-		require.Zero(len(getMockedLog(buffer)))
 	}
 	{ // initialized
 		os.Setenv(name, value)
-		s, ok := read(name, false)
+		s, ok := read(name)
 		require.True(ok)
 		require.Equal(value, s)
 		require.Equal(cacheLen+1, len(cache.values))
-		suite.T().Log(buffer.String())
-		require.Equal(1, len(getMockedLog(buffer)))
 	}
 	{ // cached
 		os.Setenv(name, "another foo")
-		s, ok := read(name, false)
+		s, ok := read(name)
 		require.True(ok)
 		require.Equal(value, s)
 		require.Equal(cacheLen+1, len(cache.values))
-		require.Equal(1, len(getMockedLog(buffer)))
-	}
-	{ // redacted
-		os.Setenv(BAR, bar)
-		s, ok := read(BAR, true)
-		require.True(ok)
-		require.Equal(bar, s)
-		require.Equal(cacheLen+2, len(cache.values))
-		require.Equal(2, len(getMockedLog(buffer)))
 	}
 	{ // empty string
 		os.Setenv(BAZ, "")
-		s, ok := read(BAZ, false)
+		s, ok := read(BAZ)
 		require.True(ok)
 		require.Equal("", s)
-		require.Equal(cacheLen+3, len(cache.values))
-		require.Equal(3, len(getMockedLog(buffer)))
+		require.Equal(cacheLen+2, len(cache.values))
 	}
 }
 
 func (suite *EnvSuite) TestGetOptional() {
 	require := suite.Require()
 	{ // not set | not cached | no default
-		v := getOptional[int](FOO, "", false, true, toInt)
+		v := getOptional[int](FOO, "", false, toInt)
 		require.Nil(v)
 	}
 	{ // not set | not cached | has default
-		v := getOptional[int](FOO, "10", true, true, toInt)
+		v := getOptional[int](FOO, "10", true, toInt)
 		require.NotNil(v)
 		require.Equal(10, *v)
 	}
 	{ // not set | cached     | no default
-		v := getOptional[int](FOO, "", false, true, toInt)
+		v := getOptional[int](FOO, "", false, toInt)
 		require.NotNil(v)
 		require.Equal(10, *v)
 	}
 	{ // set     | cached     | has default
 		os.Setenv(FOO, foo)
-		v := getOptional[int](FOO, "20", true, true, toInt)
+		v := getOptional[int](FOO, "20", true, toInt)
 		require.NotNil(v)
 		require.Equal(10, *v)
 	}
 	{ // set     | not cached | no default
 		os.Setenv(BAR, bar)
-		v := getOptional[string](BAR, "", false, true, toString)
+		v := getOptional[string](BAR, "", false, toString)
 		require.NotNil(v)
 		require.Equal(bar, *v)
 	}
@@ -121,13 +99,9 @@ func (suite *EnvSuite) TestGetOptional() {
 
 func (suite *EnvSuite) TestGet() {
 	os.Setenv(FOO, foo)
-	v := get[string](FOO, "", false, true, toString)
+	v := get[string](FOO, "", false, toString)
 	require.Equal(suite.T(), foo, *v)
 }
-
-// func (suite *EnvSuite) TestLogInit() {
-// 	require.Equal(suite.T(), 2, len(cache.values))
-// }
 
 // ------------------------------------------------------------------------------------------------
 // Individual Tests
@@ -147,7 +121,7 @@ func TestParseFail(t *testing.T) {
 func TestGetFail(t *testing.T) {
 	os.Unsetenv(FOO)
 	requireExit(t, "TestGetFail", func() {
-		get[string](FOO, "", false, true, toString)
+		get[string](FOO, "", false, toString)
 	})
 }
 
@@ -177,8 +151,4 @@ func requireExit(t *testing.T, name string, test func()) {
 		return
 	}
 	t.Fatalf("ran with err %v, want exit(1)", err)
-}
-
-func getMockedLog(buffer bytes.Buffer) []string {
-	return strings.Split(buffer.String(), "\n")[1:]
 }

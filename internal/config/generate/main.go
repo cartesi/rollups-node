@@ -139,6 +139,24 @@ func writeCode(envs []Env) {
 	addLine(&code, "return nodeConfig")
 	addLine(&code, "}")
 
+	// Implement slog.LogValuer
+	addLine(&code, "")
+	addLine(&code, "func (c NodeConfig) LogValue() slog.Value {")
+	addLine(&code, "var attrs = make([]slog.Attr, %d)", len(envs))
+	for _, env := range envs {
+		if !*env.Redact {
+			addLine(&code, `if c.%v != nil {`, toVarName(env.Name))
+			addLine(&code,
+				`attrs = append(attrs, slog.Any("%s", *c.%s))`, env.Name, toVarName(env.Name))
+			addLine(&code, "}")
+		}
+	}
+	addLine(&code, `if c.cartesiAuth != nil {`)
+	addLine(&code, `attrs = append(attrs, slog.Any("Auth", *c.cartesiAuth))`)
+	addLine(&code, "}")
+	addLine(&code, "return slog.GroupValue(attrs...)")
+	addLine(&code, "}")
+
 	writeToFile("nodeconfig.go", formatCode(code.String()))
 }
 
@@ -214,7 +232,7 @@ func (e Env) toFunction() string {
 
 	to := toToFuncName(e.GoType)
 
-	args := fmt.Sprintf(`"%s", "%s", %t, %t, %s`, e.Name, defaultValue, hasDefault, *e.Redact, to)
+	args := fmt.Sprintf(`"%s", "%s", %t, %s`, e.Name, defaultValue, hasDefault, to)
 
 	name = "get" + name
 
@@ -236,7 +254,7 @@ func (e Env) toEnvGetCall() string {
 
 	to := toToFuncName(e.GoType)
 
-	args := fmt.Sprintf(`"%s", "%s", %t, %t, %s`, e.Name, defaultValue, hasDefault, *e.Redact, to)
+	args := fmt.Sprintf(`"%s", "%s", %t, %s`, e.Name, defaultValue, hasDefault, to)
 
 	get := "getOptional"
 

@@ -7,26 +7,26 @@
 package config
 
 func getCartesiAuthAwsKmsKeyId() *string {
-	v := getOptional("CARTESI_AUTH_AWS_KMS_KEY_ID", "", false, true, toString)
+	v := getOptional("CARTESI_AUTH_AWS_KMS_KEY_ID", "", false, toString)
 	return v
 }
 
 func getCartesiAuthAwsKmsRegion() *string {
-	v := getOptional("CARTESI_AUTH_AWS_KMS_REGION", "", false, true, toString)
+	v := getOptional("CARTESI_AUTH_AWS_KMS_REGION", "", false, toString)
 	return v
 }
 
 func getCartesiAuthMnemonic() *string {
-	v := getOptional("CARTESI_AUTH_MNEMONIC", "", false, true, toString)
+	v := getOptional("CARTESI_AUTH_MNEMONIC", "", false, toString)
 	return v
 }
 
 func getCartesiAuthMnemonicAccountIndex() *int {
-	v := getOptional("CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX", "0", true, true, toInt)
+	v := getOptional("CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX", "0", true, toInt)
 	return v
 }
 
 func getCartesiAuthMnemonicFile() *string {
-	v := getOptional("CARTESI_AUTH_MNEMONIC_FILE", "", false, true, toString)
+	v := getOptional("CARTESI_AUTH_MNEMONIC_FILE", "", false, toString)
 	return v
 }

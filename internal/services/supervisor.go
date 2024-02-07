@@ -6,9 +6,9 @@ package services
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/config"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -66,9 +66,12 @@ Loop:
 		group.Go(func() error {
 			err := service.Start(ctx, serviceReady)
 			if err != nil && !errors.Is(err, context.Canceled) {
-				config.ErrorLogger.Printf("%v: %v exited with error. %v", s, service, err)
+				slog.Error("service exited with error",
+					"service", service,
+					"error", err.Error(),
+				)
 			} else {
-				config.InfoLogger.Printf("%v: %v exited successfully\n", s, service)
+				slog.Info("service exited successfully", "service", service)
 			}
 			return err
 		})
@@ -76,13 +79,13 @@ Loop:
 		select {
 		// service is ready, move along
 		case <-serviceReady:
-			config.InfoLogger.Printf("%v: %v is ready\n", s, service)
+			slog.Info("service is ready", "service", service)
 		// a service exited with error
 		case <-ctx.Done():
 			break Loop
 		// service took too long to become ready
 		case <-time.After(readyTimeout):
-			config.ErrorLogger.Printf("%v: %v timed out\n", s, service)
+			slog.Error("service timed out", "service", service)
 			cancel()
 			serviceTimedOut = true
 			break Loop
@@ -92,7 +95,7 @@ Loop:
 	// if nothing went wrong while starting services, SupervisorService is ready
 	if ctx.Err() == nil {
 		ready <- struct{}{}
-		config.InfoLogger.Printf("%v: all services are ready\n", s)
+		slog.Info("all services are ready", "service", s.Name)
 	}
 
 	// wait until a service exits with error or the external context is canceled
@@ -106,13 +109,13 @@ Loop:
 
 	select {
 	case err := <-wait:
-		config.InfoLogger.Printf("%v: all services exited", s)
+		slog.Info("all services exited", "service", s.Name)
 		if serviceTimedOut {
 			return ServiceTimeoutError
 		}
 		return err
 	case <-time.After(stopTimeout):
-		config.ErrorLogger.Printf("%v: %v", s, SupervisorTimeoutError)
+		slog.Error("timed out", "service", s.Name, "error", SupervisorTimeoutError)
 		return SupervisorTimeoutError
 	}
 }

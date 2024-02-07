@@ -12,7 +12,7 @@ services:
       - "10000:10000" # Supervisor
     environment:
       CARTESI_LOG_LEVEL: "info"
-      CARTESI_LOG_TIMESTAMP: "false"
+      CARTESI_LOG_PRETTY: "true"
       CARTESI_FEATURE_HOST_MODE: "false"
       CARTESI_FEATURE_DISABLE_CLAIMER: "false"
       CARTESI_HTTP_ADDRESS: "0.0.0.0"

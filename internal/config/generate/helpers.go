@@ -92,6 +92,7 @@ func addCodeHeader(builder *strings.Builder) {
 
 	addLine(builder, `import (`)
 	addLine(builder, `"time"`)
+	addLine(builder, `"log/slog"`)
 	addLine(builder, `)`)
 	addLine(builder, "")
 

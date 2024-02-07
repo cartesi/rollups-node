@@ -4,10 +4,10 @@
 package validate
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/Khan/genqlient/graphql"
-	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/readerclient"
@@ -62,13 +62,13 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 
 	if resp.Proof == nil {
-		config.InfoLogger.Printf("The notice has no associated proof yet.\n")
+		fmt.Println("The notice has no associated proof yet.")
 		os.Exit(0)
 	}
 
 	client, err := ethclient.DialContext(ctx, ethEndpoint)
 	cobra.CheckErr(err)
-	config.InfoLogger.Printf("connected to %v\n", ethEndpoint)
+	fmt.Printf("connected to %v\n", ethEndpoint)
 
 	var book *addresses.Book
 	if addressBookFile != "" {
@@ -80,7 +80,7 @@ func run(cmd *cobra.Command, args []string) {
 
 	proof := readerclient.ConvertToContractProof(resp.Proof)
 
-	config.InfoLogger.Printf("validating notice %d from input %d with address %x\n",
+	fmt.Printf("validating notice %d from input %d with address %x\n",
 		noticeIndex,
 		inputIndex,
 		book.CartesiDApp,
@@ -88,5 +88,5 @@ func run(cmd *cobra.Command, args []string) {
 	err = ethutil.ValidateNotice(ctx, client, book, resp.Payload, proof)
 	cobra.CheckErr(err)
 
-	config.InfoLogger.Printf("The notice is valid!\n")
+	fmt.Println("The notice is valid!")
 }

@@ -11,3 +11,6 @@ linters-settings:
   lll:
     line-length: 100
     tab-width: 4
+  gomnd:
+    ignored-functions:
+      - "^make"

@@ -389,7 +389,7 @@ func newStateServer(nodeConfig config.NodeConfig) services.CommandService {
 
 func newSupervisorService(s []services.Service) services.SupervisorService {
 	return services.SupervisorService{
-		Name:     "rollups-node",
+		Name:     "supervisor",
 		Services: s,
 	}
 }

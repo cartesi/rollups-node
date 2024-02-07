@@ -3,6 +3,8 @@
 
 package config
 
+import "log/slog"
+
 // Auth objects are used to sign transactions.
 type Auth any
 
@@ -16,4 +18,18 @@ type AuthMnemonic struct {
 type AuthAWS struct {
 	KeyID  string
 	Region string
+}
+
+func (a AuthMnemonic) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("Mnemonic", "[REDACTED]"),
+		slog.String("AccountIndex", "[REDACTED]"),
+	)
+}
+
+func (a AuthAWS) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("KeyID", "[REDACTED]"),
+		slog.String("Region", "[REDACTED]"),
+	)
 }

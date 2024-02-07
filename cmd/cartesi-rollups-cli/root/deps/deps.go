@@ -5,10 +5,10 @@ package deps
 
 import (
 	"context"
+	"fmt"
 	"os/signal"
 	"syscall"
 
-	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/deps"
 	"github.com/spf13/cobra"
 )
@@ -55,7 +55,7 @@ func run(cmd *cobra.Command, args []string) {
 	depsContainers, err := deps.Run(ctx, *depsConfig)
 	cobra.CheckErr(err)
 
-	config.InfoLogger.Println("all deps are up")
+	fmt.Println("all deps are up")
 
 	<-ctx.Done()
 

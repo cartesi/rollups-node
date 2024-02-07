@@ -4,7 +4,8 @@
 package send
 
 import (
-	"github.com/cartesi/rollups-node/internal/config"
+	"fmt"
+
 	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -56,7 +57,7 @@ func run(cmd *cobra.Command, args []string) {
 	ctx := cmd.Context()
 	client, err := ethclient.DialContext(ctx, ethEndpoint)
 	cobra.CheckErr(err)
-	config.InfoLogger.Printf("connected to %v", ethEndpoint)
+	fmt.Printf("connected to %v\n", ethEndpoint)
 
 	signer, err := ethutil.NewMnemonicSigner(ctx, client, mnemonic, account)
 	cobra.CheckErr(err)
@@ -69,9 +70,9 @@ func run(cmd *cobra.Command, args []string) {
 		book = addresses.GetTestBook()
 	}
 
-	config.InfoLogger.Printf("sending input to %x", book.CartesiDApp)
+	fmt.Printf("sending input to %x\n", book.CartesiDApp)
 	inputIndex, err := ethutil.AddInput(ctx, client, book, signer, payload)
 	cobra.CheckErr(err)
 
-	config.InfoLogger.Printf("added input with index %v", inputIndex)
+	fmt.Printf("added input with index %v\n", inputIndex)
 }

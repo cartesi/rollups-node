@@ -6,14 +6,13 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/cartesi/rollups-node/internal/config"
 )
 
 // ServerManager is a variation of CommandService used to manually stop
@@ -49,12 +48,12 @@ func (s ServerManager) Start(ctx context.Context, ready chan<- struct{}) error {
 	cmd.Cancel = func() error {
 		err := killChildProcesses(cmd.Process.Pid)
 		if err != nil {
-			config.WarningLogger.Println(err)
+			slog.Warn("failed to kill child processes", "service", s, "error", err.Error())
 		}
 
 		err = cmd.Process.Signal(syscall.SIGTERM)
 		if err != nil {
-			config.WarningLogger.Printf("failed to send SIGTERM to %v: %v\n", s, err)
+			slog.Warn("failed to send SIGTERM", "service", s, "error", err.Error())
 		}
 		return err
 	}
@@ -75,7 +74,7 @@ func (s ServerManager) pollTcp(ctx context.Context, ready chan<- struct{}) {
 	for {
 		conn, err := net.Dial("tcp", fmt.Sprintf("0.0.0.0:%v", s.HealthcheckPort))
 		if err == nil {
-			config.DebugLogger.Printf("%s is ready\n", s)
+			slog.Debug("service is ready", "service", s)
 			conn.Close()
 			ready <- struct{}{}
 			return

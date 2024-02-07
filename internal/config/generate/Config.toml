@@ -11,11 +11,11 @@ go-type = "LogLevel"
 description = """
 One of "debug", "info", "warning", "error"."""
 
-[logging.CARTESI_LOG_TIMESTAMP]
+[logging.CARTESI_LOG_PRETTY]
 default = "false"
 go-type = "bool"
 description = """
-If set to true, the node will print the timestamp when logging."""
+If set to true, the node will add colors to its log output."""
 
 #
 # Features

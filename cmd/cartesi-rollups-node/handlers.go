@@ -5,9 +5,11 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 
 	"github.com/cartesi/rollups-node/internal/config"
 )
@@ -21,7 +23,8 @@ func newHttpServiceHandler(nodeConfig config.NodeConfig) http.Handler {
 		getPort(nodeConfig.CartesiHttpPort(), portOffsetGraphQLServer),
 	)
 	if err != nil {
-		config.ErrorLogger.Fatal(err)
+		slog.Error(err.Error())
+		os.Exit(1)
 	}
 	handler.Handle("/graphql", graphqlProxy)
 
@@ -30,7 +33,8 @@ func newHttpServiceHandler(nodeConfig config.NodeConfig) http.Handler {
 		getPort(nodeConfig.CartesiHttpPort(), portOffsetDispatcher),
 	)
 	if err != nil {
-		config.ErrorLogger.Fatal(err)
+		slog.Error(err.Error())
+		os.Exit(1)
 	}
 	handler.Handle("/metrics", dispatcherProxy)
 
@@ -39,7 +43,8 @@ func newHttpServiceHandler(nodeConfig config.NodeConfig) http.Handler {
 		getPort(nodeConfig.CartesiHttpPort(), portOffsetInspectServer),
 	)
 	if err != nil {
-		config.ErrorLogger.Fatal(err)
+		slog.Error(err.Error())
+		os.Exit(1)
 	}
 	handler.Handle("/inspect", inspectProxy)
 	handler.Handle("/inspect/", inspectProxy)
@@ -50,7 +55,8 @@ func newHttpServiceHandler(nodeConfig config.NodeConfig) http.Handler {
 			getPort(nodeConfig.CartesiHttpPort(), portOffsetHostRunnerRollups),
 		)
 		if err != nil {
-			config.ErrorLogger.Fatal(err)
+			slog.Error(err.Error())
+			os.Exit(1)
 		}
 		handler.Handle("/rollup/", http.StripPrefix("/rollup", hostProxy))
 	}
@@ -58,7 +64,7 @@ func newHttpServiceHandler(nodeConfig config.NodeConfig) http.Handler {
 }
 
 func healthcheckHandler(w http.ResponseWriter, r *http.Request) {
-	config.DebugLogger.Println("received healthcheck request")
+	slog.Debug("received healthcheck request")
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -75,6 +81,6 @@ func newReverseProxy(httpAddress string, port int) (*httputil.ReverseProxy, erro
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(url)
-	proxy.ErrorLog = config.ErrorLogger
+	proxy.ErrorLog = slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)
 	return proxy, nil
 }

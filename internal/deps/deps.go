@@ -6,11 +6,12 @@ package deps
 
 import (
 	"context"
+	"io"
+	"log"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -53,13 +54,6 @@ type DepsContainers struct {
 	waitGroup *sync.WaitGroup
 }
 
-// A dummy Logging to write all Test Containers logs with DEBUG priority
-type debugLogging struct{}
-
-func (debug debugLogging) Printf(format string, v ...interface{}) {
-	config.DebugLogger.Printf(format, v...)
-}
-
 func createHook(containerName string,
 	waitGroup *sync.WaitGroup) []testcontainers.ContainerLifecycleHooks {
 	return []testcontainers.ContainerLifecycleHooks{
@@ -79,7 +73,7 @@ func createHook(containerName string,
 // The returned DepContainers struct can be used to gracefully
 // terminate the containers using the Terminate method
 func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
-	nolog := debugLogging{}
+	noopLogger := log.New(io.Discard, "", 0)
 	var waitGroup sync.WaitGroup
 
 	// wait strategy copied from testcontainers docs
@@ -102,7 +96,7 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 	postgres, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: postgresReq,
 		Started:          true,
-		Logger:           nolog,
+		Logger:           noopLogger,
 	})
 
 	if err != nil {
@@ -124,7 +118,7 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 	devnet, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: devNetReq,
 		Started:          true,
-		Logger:           nolog,
+		Logger:           noopLogger,
 	})
 	if err != nil {
 		return nil, err
