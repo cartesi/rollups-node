@@ -19,7 +19,7 @@ The Cartesi Machine is a deterministic execution environment that runs off-chain
 These two components live in completely decoupled environments, so the Cartesi Rollups framework needs another component to handle the communication between them.
 
 The Cartesi Rollups Node is the middleware that connects the Rollups smart contracts, the application back-end running inside the Cartesi Machine, and the front-end.
-As such, the Node reads the advance-state inputs from the smart contracts, sends those inputs to the Cartesi machine, and stores the computation outputs in a database that the application front-end can later query.
+As such, the Node reads the advance-state inputs from the smart contracts, sends those inputs to the Cartesi Machine, and stores the computation outputs in a database that the application front-end can later query.
 The Node also provides a consensus mechanism so users can validate outputs on-chain.
 
 ## Features
@@ -37,7 +37,7 @@ Once the application back-end processes the input, the Node obtains the outputs 
 Finally, the application front-end reads these outputs from the database.
 
 The Node provides a GraphQL API to read the rollup state for the application front end.
-This API contains the advance-state inputs, the corresponding outputs, and the proofs necessary to validate the outputs on-chain
+This API contains the advance-state inputs, the corresponding outputs, and the proofs necessary to validate the outputs on-chain.
 The [`reader.graphql`](api/graphql/reader.graphql) file contains the schema for this API.
 
 ### Inspect State
@@ -47,8 +47,7 @@ The [`reader.graphql`](api/graphql/reader.graphql) file contains the schema for 
 Besides advance-state inputs, the Cartesi Machine can also process inspect-state inputs.
 By definition, these inputs don't alter the machine's state; instead, they are a mechanism to query the application back-end directly.
 The application front-end sends inspect-state inputs directly to the Rollups Node.
-The Node sends the inputs to the Cartesi machine, obtains the reports, and returns them to the application front-end.
-(Note the inspect-state inputs do not return vouchers and notices.)
+The Node sends the inputs to the Cartesi Machine, obtains the reports, and returns them to the application front-end (note the inspect-state inputs do not return vouchers and notices).
 
 The Node provides a REST API for the application front-end to inspect the Cartesi Machine.
 The [`inspect.yaml`](api/openapi/inspect.yaml) file contains the schema for this API.
@@ -64,7 +63,7 @@ We recommend benchmarking the application back-end before committing to an archi
 The Rollups Node bundles multiple advance-state inputs into an epoch.
 Since the Node only supports the Authority consensus mechanism, it is up to the Node to decide when it should close an epoch.
 Once an epoch is closed, the Node computes a claim for the epoch and submits it to the rollups smart contracts.
-Then, the application front end fetches the proof that a given output is within the closed epoch and uses this proof to validate the output.
+Then, the application front-end fetches the proof that a given output is within the closed epoch and uses this proof to validate the output.
 For instance, the front end may verify whether a notice is valid or execute a voucher.
 
 Only the validator can submit a claim to the Rollups smart contracts.
@@ -74,15 +73,15 @@ The [configuration](#configuration) section describes how to do so.
 
 ### Host Mode
 
-The host mode allows the developer to run the application back-end in the host machine instead of the Cartesi machine.
-[NoNodo][nonodo] replaces this feature, which will be deprecated from the Rollups Node in version 2.0.
+The host mode allows the developer to run the application back-end in the host machine instead of the Cartesi Machine.
+[NoNodo][nonodo] replaces this feature, which will be deprecated in version 2.0 of the Rollups Node.
 
 [nonodo]: https://github.com/gligneul/nonodo#nonodo
 
 ## Running
 
 We recommend application developers use [Sunodo][sunodo-docs] to run the Node.
-Advanced developers who want to change the Node may check the [development](#development) section.
+Advanced developers who want to modify the Node may check the [development](#development) section.
 
 [sunodo-docs]: https://docs.sunodo.io/
 

@@ -20,7 +20,7 @@ make generate
 
 ## Running with Docker
 
-Running the Node with Docker is the fastest way to get started because it only requires Docker.
+Running the Node with Docker is the fastest way to get started because it doesn't require you to install other dependencies.
 
 ### Building the Docker images
 

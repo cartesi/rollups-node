@@ -109,8 +109,8 @@ The following subsections explain how the data flows through the Node.
 Using the State Server, the Dispatcher reads the inputs and publishes them to the inputs stream in the Broker.
 The Advance Runner listens to the inputs stream; as it receives inputs, it sends them to the Server Manager.
 The Server Manager sends the inputs to the Cartesi Machine and obtains the outputs.
-The Advance Runner waits until the Server Manager finishes processing the input, obtains the outputs, and publishes them in the output streams in the Broker.
-The Indexer listens to the input and output streams and stores these events in the Postgres database.
+The Advance Runner waits until the Server Manager finishes processing the input, obtains the outputs, and publishes them in the outputs stream in the Broker.
+The Indexer listens to the inputs and outputs streams and stores these events in the Postgres database.
 
 ### Querying the Rollups State
 
@@ -121,7 +121,7 @@ Each call returns the fetched data in the response.
 
 ### Processing Inspect-State Inputs
 
-The application front end sends an inspect-state request to the Rollups Node.
+The application front-end sends an inspect-state request to the Rollups Node.
 The Rollups Node forwards this request to the Inspect Server.
 The Inspect Server translates this request from HTTP to gRPC, making another request to the Server Manager.
 The Server Manager sends the inspect-state input to the Cartesi Machine and obtains the reports.
@@ -135,7 +135,7 @@ Note that the Node only closes an Epoch if there were advance-state inputs in th
 When it is time to close an epoch, the Dispatcher publishes an event to the inputs stream in the Broker.
 The Advance Runner listens to this event and asks the Server Manager to close the current epoch.
 The Server Manager computes the output proofs and the epoch claim and returns them to the advance runner.
-The Advance Runner publishes the proofs to the outputs streams and the claims to the claims streams on the Broker.
+The Advance Runner publishes the proofs to the outputs stream and the claims to the claims stream on the Broker.
 
 The Authority Claimer listens to the claims stream from the Broker and submits the claim to the Consensus smart contract in the base layer.
 
