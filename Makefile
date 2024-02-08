@@ -18,8 +18,8 @@ lint: ## Run the linter
 .PHONY: md-lint
 md-lint: ## Lint Markdown docs. Each dir has its own .markdownlint.yaml.
 	@echo "Running markdownlint-cli"
-	@docker run -v $$PWD:/workdir ghcr.io/igorshubovych/markdownlint-cli:latest "*.md"
-	@docker run -v $$PWD/docs:/workdir ghcr.io/igorshubovych/markdownlint-cli:latest "*.md"
+	@docker run --rm -v $$PWD:/workdir ghcr.io/igorshubovych/markdownlint-cli:latest "*.md"
+	@docker run --rm -v $$PWD/docs:/workdir ghcr.io/igorshubovych/markdownlint-cli:latest "*.md"
 
 .PHONY: generate
 generate: ## Generate the file that are commited to the repo
