@@ -137,15 +137,10 @@ apt-get install -y --no-install-recommends \
     xxd
 EOF
 
-# Install Foundry.
-RUN curl -L https://foundry.paradigm.xyz | bash
-ENV PATH="~/.foundry/bin:${PATH}"
-ARG FOUNDRY_COMMIT_VERSION
-RUN <<EOF
-set -e
-bash -c foundryup -C ${FOUNDRY_COMMIT_VERSION}
-ln -s ~/.foundry/bin/anvil /usr/bin/anvil
-EOF
+# Install Foundry from downloaded pre-compiled binaries
+ARG FOUNDRY_NIGHTLY_VERSION
+RUN curl -sSL https://github.com/foundry-rs/foundry/releases/download/nightly-${FOUNDRY_NIGHTLY_VERSION}/foundry_nightly_linux_$(dpkg --print-architecture).tar.gz | \
+    tar -zx -C /usr/local/bin
 
 # STAGE: devnet-builder
 #
