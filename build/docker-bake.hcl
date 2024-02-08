@@ -19,7 +19,7 @@ target "common" {
   args       = {
     BASE_IMAGE                = "debian:bookworm-20240110-slim"
     RUST_VERSION              = "1.76.0"
-    GO_VERSION                = "1.21.1"
+    GO_VERSION                = "1.22.0"
     FOUNDRY_NIGHTLY_VERSION   = "293fad73670b7b59ca901c7f2105bf7a29165a90"
     SERVER_MANAGER_VERSION    = "0.8.3"
     MACHINE_EMULATOR_VERSION  = "0.15.3"
