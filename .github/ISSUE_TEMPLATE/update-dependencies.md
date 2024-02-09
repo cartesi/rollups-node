@@ -8,9 +8,19 @@ assignees: ''
 
 ## 📈 Subtasks
 
-- [ ] Update major versions in `Cargo.toml`.
-- [ ] If an update requires major work, create the corresponding issue.
-- [ ] Update the dependencies in `Cargo.lock`.
-- [ ] Update Cartesi dependencies and update README.
-- [ ] Update Rust base docker image.
+- [ ] Cartesi
+    - [ ] Bump Machine Emulator SDK
+    - [ ] Bump Server Manager
+    - [ ] Bump Rollups Contracts
+    - [ ] Update README
+- [ ] Rust
+    - [ ] Bump Node version in `Cargo.toml`.
+    - [ ] Bump major versions in dependencies in `Cargo.toml`.
+    - [ ] Bump minor/patch dependencies with `cargo update`.
+    - [ ] Bump Rust version in Docker image.
+- [ ] Go
+    - [ ] Bump major versions in dependencies in `go.mod`.
+    - [ ] Bump minor/patch dependencies with `go get -u all`.
+    - [ ] Bump Go version in `go.mod`.
+    - [ ] Bump Go version in Docker image.
 - [ ] Verify whether everything is working as expected.
