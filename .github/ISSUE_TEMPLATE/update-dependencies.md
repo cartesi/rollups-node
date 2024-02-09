@@ -23,4 +23,5 @@ assignees: ''
     - [ ] Bump minor/patch dependencies with `go get -u all`.
     - [ ] Bump Go version in `go.mod`.
     - [ ] Bump Go version in Docker image.
+- [ ] Bump Debian version in Docker image.
 - [ ] Verify whether everything is working as expected.
