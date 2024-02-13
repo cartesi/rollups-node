@@ -33,6 +33,9 @@ target "common" {
 target "rollups-node" {
   inherits = ["common"]
   target   = "rollups-node"
+  args       = {
+    ROLLUPS_NODE_VERSION      = "devel"
+  }
 }
 
 target "rollups-node-snapshot" {

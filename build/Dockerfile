@@ -17,6 +17,7 @@ ARG ROOTFS_VERSION
 ARG LINUX_VERSION
 ARG LINUX_KERNEL_VERSION
 ARG ROM_VERSION
+ARG ROLLUPS_NODE_VERSION
 
 # Build directories.
 ARG SNAPSHOT_BUILD_PATH=/build/snapshot
@@ -280,6 +281,7 @@ RUN cargo build --release
 # First it downloads the external dependencies and then it builds the binaries.
 FROM golang:${GO_VERSION}-bookworm as go-builder
 ARG GO_BUILD_PATH
+ARG ROLLUPS_NODE_VERSION
 WORKDIR ${GO_BUILD_PATH}
 
 # Download external dependencies.
@@ -289,7 +291,7 @@ RUN go mod download
 
 # Build application.
 COPY . .
-RUN go build -ldflags "-s -w" ./cmd/cartesi-rollups-node
+RUN go build -ldflags "-s -w -X 'main.buildVersion=${ROLLUPS_NODE_VERSION}'" ./cmd/cartesi-rollups-node
 
 # STAGE: server-manager
 #

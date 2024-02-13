@@ -17,6 +17,12 @@ import (
 	"github.com/mattn/go-isatty"
 )
 
+var (
+	// Should be overridden during the final release build with ldflags
+	// to contain the actual version number
+	buildVersion = "devel"
+)
+
 func main() {
 	startTime := time.Now()
 
@@ -34,7 +40,7 @@ func main() {
 	handler := tint.NewHandler(os.Stdout, opts)
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
-	slog.Info("Starting the Cartesi Rollups Node", "config", config)
+	slog.Info("Starting the Cartesi Rollups Node", "version", buildVersion, "config", config)
 
 	// create the node supervisor
 	supervisor, err := node.Setup(ctx, config)
