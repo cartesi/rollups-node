@@ -56,7 +56,7 @@ func writeCode(envs []Env) {
 			addLine(&code, env.toStructMember())
 		}
 	}
-	addLine(&code, "CartesiAuth                                      Auth")
+	addLine(&code, "CartesiAuth Auth")
 	addLine(&code, "}")
 
 	//Add init function from System Environment
@@ -191,13 +191,10 @@ func (e Env) toFunction() string {
 // Generates the Config Struct member for the envrionemnt variable.
 func (e Env) toStructMember() string {
 	name := toStructMemberName(e.Name)
-
 	if !*e.Export {
 		name = toVarName(name)
 	}
-
 	return name + " " + e.GoType
-
 }
 
 // Generates the documentation entry for the environment variable.
