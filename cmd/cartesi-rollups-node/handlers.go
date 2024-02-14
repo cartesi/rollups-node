@@ -16,19 +16,28 @@ func newHttpServiceHandler(nodeConfig config.NodeConfig) http.Handler {
 	handler := http.NewServeMux()
 	handler.Handle("/healthz", http.HandlerFunc(healthcheckHandler))
 
-	graphqlProxy, err := newReverseProxy(nodeConfig, getPort(nodeConfig, portOffsetGraphQLServer))
+	graphqlProxy, err := newReverseProxy(
+		nodeConfig.CartesiHttpAddress,
+		getPort(nodeConfig.CartesiHttpPort, portOffsetGraphQLServer),
+	)
 	if err != nil {
 		config.ErrorLogger.Fatal(err)
 	}
 	handler.Handle("/graphql", graphqlProxy)
 
-	dispatcherProxy, err := newReverseProxy(nodeConfig, getPort(nodeConfig, portOffsetDispatcher))
+	dispatcherProxy, err := newReverseProxy(
+		nodeConfig.CartesiHttpAddress,
+		getPort(nodeConfig.CartesiHttpPort, portOffsetDispatcher),
+	)
 	if err != nil {
 		config.ErrorLogger.Fatal(err)
 	}
 	handler.Handle("/metrics", dispatcherProxy)
 
-	inspectProxy, err := newReverseProxy(nodeConfig, getPort(nodeConfig, portOffsetInspectServer))
+	inspectProxy, err := newReverseProxy(
+		nodeConfig.CartesiHttpAddress,
+		getPort(nodeConfig.CartesiHttpPort, portOffsetInspectServer),
+	)
 	if err != nil {
 		config.ErrorLogger.Fatal(err)
 	}
@@ -36,8 +45,10 @@ func newHttpServiceHandler(nodeConfig config.NodeConfig) http.Handler {
 	handler.Handle("/inspect/", inspectProxy)
 
 	if nodeConfig.CartesiFeatureHostMode {
-		hostProxy, err := newReverseProxy(nodeConfig,
-			getPort(nodeConfig, portOffsetHostRunnerRollups))
+		hostProxy, err := newReverseProxy(
+			nodeConfig.CartesiHttpAddress,
+			getPort(nodeConfig.CartesiHttpPort, portOffsetHostRunnerRollups),
+		)
 		if err != nil {
 			config.ErrorLogger.Fatal(err)
 		}
@@ -51,10 +62,10 @@ func healthcheckHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func newReverseProxy(nodeConfig config.NodeConfig, port int) (*httputil.ReverseProxy, error) {
+func newReverseProxy(httpAddress string, port int) (*httputil.ReverseProxy, error) {
 	urlStr := fmt.Sprintf(
 		"http://%v:%v/",
-		nodeConfig.CartesiHttpAddress,
+		httpAddress,
 		port,
 	)
 
