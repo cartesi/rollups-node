@@ -99,7 +99,7 @@ func writeCode(envs []Env) {
 	addLine(&code, "return nodeConfig")
 	addLine(&code, "}")
 
-	writeToFile("configstruct.go", formatCode(code.String()))
+	writeToFile("nodeconfig.go", formatCode(code.String()))
 }
 
 func writeDoc(envs []Env) {
