@@ -218,7 +218,7 @@ func NewNodeConfigFromEnv() NodeConfig {
 	return nodeConfig
 }
 
-func NewtNodeConfigDefault() NodeConfig {
+func NewNodeConfig() NodeConfig {
 	nodeConfig := NodeConfig{}
 	cartesiBlockchainBlockTimeout, CartesiBlockchainBlockTimeoutError := toInt("60")
 	if CartesiBlockchainBlockTimeoutError != nil {

@@ -76,7 +76,7 @@ func writeCode(envs []Env) {
 
 	//Add init function from Default Values
 	addLine(&code, "")
-	addLine(&code, "func NewtNodeConfigDefault() (NodeConfig){")
+	addLine(&code, "func NewNodeConfig() (NodeConfig){")
 	addLine(&code, "nodeConfig := NodeConfig{}")
 	for _, env := range envs {
 		if *env.Export && env.Default != nil && *env.Default != "" {
