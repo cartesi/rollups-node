@@ -220,64 +220,64 @@ func NewNodeConfigFromEnv() NodeConfig {
 
 func NewNodeConfig() NodeConfig {
 	nodeConfig := NodeConfig{}
-	cartesiBlockchainBlockTimeout, CartesiBlockchainBlockTimeoutError := toInt("60")
-	if CartesiBlockchainBlockTimeoutError != nil {
-		panic(CartesiBlockchainBlockTimeoutError)
+	cartesiBlockchainBlockTimeout, err := toInt("60")
+	if err != nil {
+		panic(err)
 	}
 	nodeConfig.CartesiBlockchainBlockTimeout = cartesiBlockchainBlockTimeout
-	cartesiBlockchainFinalityOffset, CartesiBlockchainFinalityOffsetError := toInt("10")
-	if CartesiBlockchainFinalityOffsetError != nil {
-		panic(CartesiBlockchainFinalityOffsetError)
+	cartesiBlockchainFinalityOffset, err := toInt("10")
+	if err != nil {
+		panic(err)
 	}
 	nodeConfig.CartesiBlockchainFinalityOffset = cartesiBlockchainFinalityOffset
-	cartesiBlockchainIsLegacy, CartesiBlockchainIsLegacyError := toBool("false")
-	if CartesiBlockchainIsLegacyError != nil {
-		panic(CartesiBlockchainIsLegacyError)
+	cartesiBlockchainIsLegacy, err := toBool("false")
+	if err != nil {
+		panic(err)
 	}
 	nodeConfig.CartesiBlockchainIsLegacy = cartesiBlockchainIsLegacy
-	cartesiExperimentalSunodoValidatorEnabled, CartesiExperimentalSunodoValidatorEnabledError := toBool("false")
-	if CartesiExperimentalSunodoValidatorEnabledError != nil {
-		panic(CartesiExperimentalSunodoValidatorEnabledError)
+	cartesiExperimentalSunodoValidatorEnabled, err := toBool("false")
+	if err != nil {
+		panic(err)
 	}
 	nodeConfig.CartesiExperimentalSunodoValidatorEnabled = cartesiExperimentalSunodoValidatorEnabled
-	cartesiFeatureDisableClaimer, CartesiFeatureDisableClaimerError := toBool("false")
-	if CartesiFeatureDisableClaimerError != nil {
-		panic(CartesiFeatureDisableClaimerError)
+	cartesiFeatureDisableClaimer, err := toBool("false")
+	if err != nil {
+		panic(err)
 	}
 	nodeConfig.CartesiFeatureDisableClaimer = cartesiFeatureDisableClaimer
-	cartesiFeatureDisableMachineHashCheck, CartesiFeatureDisableMachineHashCheckError := toBool("false")
-	if CartesiFeatureDisableMachineHashCheckError != nil {
-		panic(CartesiFeatureDisableMachineHashCheckError)
+	cartesiFeatureDisableMachineHashCheck, err := toBool("false")
+	if err != nil {
+		panic(err)
 	}
 	nodeConfig.CartesiFeatureDisableMachineHashCheck = cartesiFeatureDisableMachineHashCheck
-	cartesiFeatureHostMode, CartesiFeatureHostModeError := toBool("false")
-	if CartesiFeatureHostModeError != nil {
-		panic(CartesiFeatureHostModeError)
+	cartesiFeatureHostMode, err := toBool("false")
+	if err != nil {
+		panic(err)
 	}
 	nodeConfig.CartesiFeatureHostMode = cartesiFeatureHostMode
-	cartesiHttpAddress, CartesiHttpAddressError := toString("127.0.0.1")
-	if CartesiHttpAddressError != nil {
-		panic(CartesiHttpAddressError)
+	cartesiHttpAddress, err := toString("127.0.0.1")
+	if err != nil {
+		panic(err)
 	}
 	nodeConfig.CartesiHttpAddress = cartesiHttpAddress
-	cartesiHttpPort, CartesiHttpPortError := toInt("10000")
-	if CartesiHttpPortError != nil {
-		panic(CartesiHttpPortError)
+	cartesiHttpPort, err := toInt("10000")
+	if err != nil {
+		panic(err)
 	}
 	nodeConfig.CartesiHttpPort = cartesiHttpPort
-	cartesiLogLevel, CartesiLogLevelError := toLogLevel("info")
-	if CartesiLogLevelError != nil {
-		panic(CartesiLogLevelError)
+	cartesiLogLevel, err := toLogLevel("info")
+	if err != nil {
+		panic(err)
 	}
 	nodeConfig.CartesiLogLevel = cartesiLogLevel
-	cartesiLogTimestamp, CartesiLogTimestampError := toBool("false")
-	if CartesiLogTimestampError != nil {
-		panic(CartesiLogTimestampError)
+	cartesiLogTimestamp, err := toBool("false")
+	if err != nil {
+		panic(err)
 	}
 	nodeConfig.CartesiLogTimestamp = cartesiLogTimestamp
-	cartesiEpochDuration, CartesiEpochDurationError := toDuration("86400")
-	if CartesiEpochDurationError != nil {
-		panic(CartesiEpochDurationError)
+	cartesiEpochDuration, err := toDuration("86400")
+	if err != nil {
+		panic(err)
 	}
 	nodeConfig.CartesiEpochDuration = cartesiEpochDuration
 	nodeConfig.CartesiAuth = AuthMnemonic{Mnemonic: "test test test test test test test test test test test junk", AccountIndex: 0}

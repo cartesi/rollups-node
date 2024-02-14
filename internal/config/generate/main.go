@@ -82,11 +82,9 @@ func writeCode(envs []Env) {
 		if *env.Export && env.Default != nil && *env.Default != "" {
 			name := toStructMemberName(env.Name)
 			varName := toVarName(name)
-			errorName := name + "Error"
-			addLine(&code, varName+", "+errorName+" := "+
-				toToFuncName(env.GoType)+`("`+*env.Default+`")`)
-			addLine(&code, "if "+errorName+" != nil {")
-			addLine(&code, "panic("+errorName+")")
+			addLine(&code, varName+", err := "+toToFuncName(env.GoType)+`("`+*env.Default+`")`)
+			addLine(&code, "if err != nil {")
+			addLine(&code, "panic(err)")
 			addLine(&code, "}")
 			addLine(&code, "nodeConfig."+name+" = "+varName)
 
