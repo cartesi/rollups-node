@@ -87,13 +87,12 @@ func writeCode(envs []Env) {
 			addLine(&code, "panic(err)")
 			addLine(&code, "}")
 			addLine(&code, "nodeConfig."+name+" = "+varName)
-
 		}
 	}
-
-	addLine(&code,
-		`nodeConfig.CartesiAuth = AuthMnemonic{Mnemonic: `+
-			`"test test test test test test test test test test test junk", AccountIndex: 0}`)
+	addLine(&code, `nodeConfig.CartesiAuth = AuthMnemonic{`)
+	addLine(&code, `Mnemonic: "test test test test test test test test test test test junk",`)
+	addLine(&code, `AccountIndex: 0,`)
+	addLine(&code, "}")
 	addLine(&code, "return nodeConfig")
 	addLine(&code, "}")
 

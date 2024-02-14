@@ -280,6 +280,9 @@ func NewNodeConfig() NodeConfig {
 		panic(err)
 	}
 	nodeConfig.CartesiEpochDuration = cartesiEpochDuration
-	nodeConfig.CartesiAuth = AuthMnemonic{Mnemonic: "test test test test test test test test test test test junk", AccountIndex: 0}
+	nodeConfig.CartesiAuth = AuthMnemonic{
+		Mnemonic:     "test test test test test test test test test test test junk",
+		AccountIndex: 0,
+	}
 	return nodeConfig
 }
