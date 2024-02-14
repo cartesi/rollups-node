@@ -214,7 +214,7 @@ func NewNodeConfigFromEnv() NodeConfig {
 		CartesiEpochDuration:                             getCartesiEpochDuration(),
 		CartesiSnapshotDir:                               getCartesiSnapshotDir(),
 	}
-	nodeConfig.CartesiAuth = GetAuth()
+	nodeConfig.CartesiAuth = getAuth()
 	return nodeConfig
 }
 

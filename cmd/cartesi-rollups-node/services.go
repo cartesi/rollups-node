@@ -145,7 +145,7 @@ func newAuthorityClaimer(nodeConfig config.NodeConfig) services.CommandService {
 			getPort(nodeConfig.CartesiHttpPort, portOffsetAuthorityClaimer),
 		),
 	)
-	switch auth := config.GetAuth().(type) {
+	switch auth := nodeConfig.CartesiAuth.(type) {
 	case config.AuthMnemonic:
 		s.Env = append(s.Env,
 			fmt.Sprintf("TX_SIGNING_MNEMONIC=%v", auth.Mnemonic))

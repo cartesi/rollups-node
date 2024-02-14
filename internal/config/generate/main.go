@@ -70,7 +70,7 @@ func writeCode(envs []Env) {
 		}
 	}
 	addLine(&code, "}")
-	addLine(&code, "nodeConfig.CartesiAuth = GetAuth()")
+	addLine(&code, "nodeConfig.CartesiAuth = getAuth()")
 	addLine(&code, "return nodeConfig")
 	addLine(&code, "}")
 
