@@ -105,7 +105,7 @@ func getCartesiExperimentalSunodoValidatorEnabled() bool {
 }
 
 func getCartesiExperimentalSunodoValidatorRedisEndpoint() string {
-	v := get("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT", "", false, false, toString)
+	v := get("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT", "", true, false, toString)
 	return v
 }
 
