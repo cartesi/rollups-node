@@ -10,8 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-
-	"github.com/cartesi/rollups-node/internal/config"
 )
 
 const (
@@ -67,7 +65,7 @@ func deployContracts(ctx context.Context, execDir string) error {
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, "RPC_URL="+RPC_URL)
 	cmd.Dir = cmdDir
-	if config.GetCartesiLogLevel() == config.LogLevelDebug {
+	if VerboseLog {
 		cmd.Stdout = os.Stdout
 	}
 	if err := cmd.Run(); err != nil {

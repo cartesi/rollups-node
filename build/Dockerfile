@@ -196,7 +196,7 @@ ARG SNAPSHOT_BUILD_PATH
 COPY --from=snapshot-builder ${SNAPSHOT_BUILD_PATH}/hash hash.bin
 
 # Generate anvil state
-RUN go run ./cmd/gen-devnet --template-hash-file hash.bin
+RUN go run ./cmd/gen-devnet --verbose --template-hash-file hash.bin
 
 # STAGE: rollups-node-devnet
 #
