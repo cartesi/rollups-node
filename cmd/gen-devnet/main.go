@@ -35,6 +35,7 @@ Set CARTESI_LOG_LEVEL to debug for extensive logging.`,
 }
 
 var (
+	VerboseLog           bool
 	anvilStatePath       string
 	deploymentInfoPath   string
 	hashFile             string
@@ -67,6 +68,12 @@ func init() {
 		"d",
 		"./deployment.json",
 		"path for saving the deployment information")
+
+	Cmd.Flags().BoolVarP(&VerboseLog,
+		"verbose",
+		"v",
+		false,
+		"enable verbose logging")
 }
 
 func main() {
@@ -116,6 +123,18 @@ func run(cmd *cobra.Command, args []string) {
 			if err != nil {
 				fmt.Printf("%s: deployment failed. %v\n", CMD_NAME, err)
 				return
+			}
+
+			anvilStatePath, err := filepath.Abs(anvilStatePath)
+			if err != nil {
+				fmt.Printf("%s: unable to get path for %s: %v\n",
+					CMD_NAME,
+					anvilStatePath,
+					err)
+			} else {
+				fmt.Printf("%s: anvil state saved to %s\n",
+					CMD_NAME,
+					anvilStatePath)
 			}
 
 			jsonInfo, err := json.MarshalIndent(depInfo, "", "\t")

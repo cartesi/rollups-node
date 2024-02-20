@@ -112,9 +112,11 @@ func createContracts(ctx context.Context,
 	if err != nil {
 		return contractAddresses, "", fmt.Errorf("command failed %v: %v", castSend.Args, err)
 	}
-	fmt.Printf("deployer: command: %s\n", castSend.Args)
-	fmt.Printf("deployer: output: %s\n", outStrBuilder.String())
 
+	if VerboseLog {
+		fmt.Printf("deployer: command: %s\n", castSend.Args)
+		fmt.Printf("deployer: output: %s\n", outStrBuilder.String())
+	}
 	// Extract blockNumber from JSON output
 	jsonMap := make(map[string](any))
 	err = json.Unmarshal([]byte([]byte(outStrBuilder.String())), &jsonMap)
