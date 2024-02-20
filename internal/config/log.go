@@ -23,7 +23,7 @@ func init() {
 
 func logInit() {
 	var flags int
-	if GetCartesiLogTimestamp() {
+	if getCartesiLogTimestamp() {
 		flags = log.LstdFlags
 	}
 
@@ -32,7 +32,7 @@ func logInit() {
 	InfoLogger = log.New(os.Stdout, "INFO ", flags)
 	DebugLogger = log.New(os.Stdout, "DEBUG ", flags)
 
-	switch GetCartesiLogLevel() {
+	switch getCartesiLogLevel() {
 	case LogLevelError:
 		WarningLogger.SetOutput(io.Discard)
 		fallthrough

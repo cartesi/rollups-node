@@ -52,7 +52,7 @@ var (
 // Custom GETs
 // ------------------------------------------------------------------------------------------------
 
-func GetAuth() Auth {
+func getAuth() Auth {
 	// getting the (optional) account index
 	index, _ := getCartesiAuthMnemonicAccountIndex()
 
