@@ -49,37 +49,6 @@ var (
 )
 
 // ------------------------------------------------------------------------------------------------
-// Custom GETs
-// ------------------------------------------------------------------------------------------------
-
-func getAuth() Auth {
-	// getting the (optional) account index
-	index, _ := getCartesiAuthMnemonicAccountIndex()
-
-	// if the mnemonic is coming from an environment variable
-	if mnemonic, ok := getCartesiAuthMnemonic(); ok {
-		return AuthMnemonic{Mnemonic: mnemonic, AccountIndex: index}
-	}
-
-	// if the mnemonic is coming from a file
-	if file, ok := getCartesiAuthMnemonicFile(); ok {
-		mnemonic, err := os.ReadFile(file)
-		if err != nil {
-			fail("mnemonic file error: %s", err)
-		}
-		return AuthMnemonic{Mnemonic: string(mnemonic), AccountIndex: index}
-	}
-
-	// if we are not using mnemonics, but AWS authentication
-	keyID, ok1 := getCartesiAuthAwsKmsKeyId()
-	region, ok2 := getCartesiAuthAwsKmsRegion()
-	if !ok1 || !ok2 {
-		fail("missing auth environment variables")
-	}
-	return AuthAWS{KeyID: keyID, Region: region}
-}
-
-// ------------------------------------------------------------------------------------------------
 // Get Helpers
 // ------------------------------------------------------------------------------------------------
 
@@ -106,6 +75,8 @@ func read(name string, redact bool) (string, bool) {
 	} else if s, ok := os.LookupEnv(name); ok {
 		if !redact {
 			configLogger.Printf("read %s environment variable: %v", name, s)
+		} else {
+			configLogger.Printf("read %s environment variable: ***************", name)
 		}
 		cache.values[name] = s
 		return s, true
@@ -133,11 +104,11 @@ func getOptional[T any](
 	default_ string,
 	hasDefault bool,
 	redact bool,
-	parser func(string) (T, error)) (T, bool) {
+	parser func(string) (T, error)) *T {
 
 	if s, ok := read(name, redact); ok {
 		v := parse(s, parser)
-		return v, true
+		return &v
 	}
 
 	if hasDefault {
@@ -145,11 +116,10 @@ func getOptional[T any](
 		defer cache.Unlock()
 		cache.values[name] = default_
 		v := parse(default_, parser)
-		return v, true
+		return &v
 	}
 
-	var zeroValue T
-	return zeroValue, false
+	return nil
 }
 
 // Same as getOptional, but fails instead of returning a zero value and false.
@@ -158,9 +128,9 @@ func get[T any](
 	defaultValue string,
 	hasDefault bool,
 	redact bool,
-	parser func(string) (T, error)) T {
-	v, ok := getOptional(name, defaultValue, hasDefault, redact, parser)
-	if !ok {
+	parser func(string) (T, error)) *T {
+	v := getOptional(name, defaultValue, hasDefault, redact, parser)
+	if v == nil {
 		fail("missing required %s env var", name)
 	}
 

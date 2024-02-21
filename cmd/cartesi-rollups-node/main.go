@@ -22,7 +22,9 @@ func main() {
 
 	nodeConfig := config.NewNodeConfigFromEnv()
 
-	sunodoValidatorEnabled := nodeConfig.CartesiExperimentalSunodoValidatorEnabled
+	nodeConfig.Validate()
+
+	sunodoValidatorEnabled := nodeConfig.CartesiExperimentalSunodoValidatorEnabled()
 	if !sunodoValidatorEnabled {
 		// add Redis first
 		s = append(s, newRedis(nodeConfig))
@@ -34,14 +36,14 @@ func main() {
 	s = append(s, newStateServer(nodeConfig))
 
 	// start either the server manager or host runner
-	if nodeConfig.CartesiFeatureHostMode {
+	if nodeConfig.CartesiFeatureHostMode() {
 		s = append(s, newHostRunner(nodeConfig))
 	} else {
 		s = append(s, newServerManager(nodeConfig))
 	}
 
 	// enable claimer if reader mode and sunodo validator mode are disabled
-	if !nodeConfig.CartesiFeatureDisableClaimer && !sunodoValidatorEnabled {
+	if !nodeConfig.CartesiFeatureDisableClaimer() && !sunodoValidatorEnabled {
 		s = append(s, newAuthorityClaimer(nodeConfig))
 	}
 

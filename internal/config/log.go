@@ -18,12 +18,13 @@ var (
 )
 
 func init() {
-	logInit()
+	nodeConfig := NewNodeConfigFromEnv()
+	logInit(nodeConfig)
 }
 
-func logInit() {
+func logInit(nodeConfig NodeConfig) {
 	var flags int
-	if getCartesiLogTimestamp() {
+	if nodeConfig.CartesiLogTimestamp() {
 		flags = log.LstdFlags
 	}
 
@@ -32,7 +33,7 @@ func logInit() {
 	InfoLogger = log.New(os.Stdout, "INFO ", flags)
 	DebugLogger = log.New(os.Stdout, "DEBUG ", flags)
 
-	switch getCartesiLogLevel() {
+	switch nodeConfig.CartesiLogLevel() {
 	case LogLevelError:
 		WarningLogger.SetOutput(io.Discard)
 		fallthrough

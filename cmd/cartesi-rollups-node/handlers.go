@@ -17,8 +17,8 @@ func newHttpServiceHandler(nodeConfig config.NodeConfig) http.Handler {
 	handler.Handle("/healthz", http.HandlerFunc(healthcheckHandler))
 
 	graphqlProxy, err := newReverseProxy(
-		nodeConfig.CartesiHttpAddress,
-		getPort(nodeConfig.CartesiHttpPort, portOffsetGraphQLServer),
+		nodeConfig.CartesiHttpAddress(),
+		getPort(nodeConfig.CartesiHttpPort(), portOffsetGraphQLServer),
 	)
 	if err != nil {
 		config.ErrorLogger.Fatal(err)
@@ -26,8 +26,8 @@ func newHttpServiceHandler(nodeConfig config.NodeConfig) http.Handler {
 	handler.Handle("/graphql", graphqlProxy)
 
 	dispatcherProxy, err := newReverseProxy(
-		nodeConfig.CartesiHttpAddress,
-		getPort(nodeConfig.CartesiHttpPort, portOffsetDispatcher),
+		nodeConfig.CartesiHttpAddress(),
+		getPort(nodeConfig.CartesiHttpPort(), portOffsetDispatcher),
 	)
 	if err != nil {
 		config.ErrorLogger.Fatal(err)
@@ -35,8 +35,8 @@ func newHttpServiceHandler(nodeConfig config.NodeConfig) http.Handler {
 	handler.Handle("/metrics", dispatcherProxy)
 
 	inspectProxy, err := newReverseProxy(
-		nodeConfig.CartesiHttpAddress,
-		getPort(nodeConfig.CartesiHttpPort, portOffsetInspectServer),
+		nodeConfig.CartesiHttpAddress(),
+		getPort(nodeConfig.CartesiHttpPort(), portOffsetInspectServer),
 	)
 	if err != nil {
 		config.ErrorLogger.Fatal(err)
@@ -44,10 +44,10 @@ func newHttpServiceHandler(nodeConfig config.NodeConfig) http.Handler {
 	handler.Handle("/inspect", inspectProxy)
 	handler.Handle("/inspect/", inspectProxy)
 
-	if nodeConfig.CartesiFeatureHostMode {
+	if nodeConfig.CartesiFeatureHostMode() {
 		hostProxy, err := newReverseProxy(
-			nodeConfig.CartesiHttpAddress,
-			getPort(nodeConfig.CartesiHttpPort, portOffsetHostRunnerRollups),
+			nodeConfig.CartesiHttpAddress(),
+			getPort(nodeConfig.CartesiHttpPort(), portOffsetHostRunnerRollups),
 		)
 		if err != nil {
 			config.ErrorLogger.Fatal(err)

@@ -234,7 +234,6 @@ description = """
 When enabled, the node does not start the authority-claimer service and the Redis server."""
 
 [experimental.CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT]
-default = ""
 go-type = "string"
 description = """
 External Redis endpoint for the node when running in the experimental sunodo validator mode."""
