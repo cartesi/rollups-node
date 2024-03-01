@@ -19,7 +19,7 @@ const (
 	DefaultPostgresDockerImage = "postgres:16-alpine"
 	DefaultPostgresPort        = "5432"
 	DefaultPostgresPassword    = "password"
-	DefaultDevnetDockerImage   = "cartesi/rollups-devnet:devel"
+	DefaultDevnetDockerImage   = "cartesi/rollups-node-devnet:devel"
 	DefaultDevnetPort          = "8545"
 
 	numPostgresCheckReadyAttempts = 2
