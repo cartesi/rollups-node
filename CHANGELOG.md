@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `Makefile` to help node developers setup their environment
 - Added experimental sunodo validator mode
 - Added instructions on how to run the node with Docker
+- Added Cartesi Machine C API wrapper
 
 ### Changed
 
