@@ -1,7 +1,7 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-package main
+package node
 
 import (
 	"fmt"
@@ -387,13 +387,6 @@ func newStateServer(nodeConfig config.NodeConfig) services.CommandService {
 	return s
 }
 
-func newSupervisorService(s []services.Service) services.SupervisorService {
-	return services.SupervisorService{
-		Name:     "rollups-node",
-		Services: s,
-	}
-}
-
 func newHttpService(nodeConfig config.NodeConfig) services.HttpService {
 	addr := fmt.Sprintf(
 		"%v:%v",
@@ -406,4 +399,39 @@ func newHttpService(nodeConfig config.NodeConfig) services.HttpService {
 		Address: addr,
 		Handler: handler,
 	}
+}
+
+func NewNodeServices(nodeConfig config.NodeConfig) []services.Service {
+	var s []services.Service
+	sunodoValidatorEnabled := nodeConfig.CartesiExperimentalSunodoValidatorEnabled()
+	if !sunodoValidatorEnabled {
+		// add Redis first
+		s = append(s, newRedis(nodeConfig))
+	}
+
+	// add services without dependencies
+	s = append(s, newGraphQLServer(nodeConfig))
+	s = append(s, newIndexer(nodeConfig))
+	s = append(s, newStateServer(nodeConfig))
+
+	// start either the server manager or host runner
+	if nodeConfig.CartesiFeatureHostMode() {
+		s = append(s, newHostRunner(nodeConfig))
+	} else {
+		s = append(s, newServerManager(nodeConfig))
+	}
+
+	// enable claimer if reader mode and sunodo validator mode are disabled
+	if !nodeConfig.CartesiFeatureDisableClaimer() && !sunodoValidatorEnabled {
+		s = append(s, newAuthorityClaimer(nodeConfig))
+	}
+
+	// add services with dependencies
+	s = append(s, newAdvanceRunner(nodeConfig)) // Depends on the server-manager/host-runner
+	s = append(s, newDispatcher(nodeConfig))    // Depends on the state server
+	s = append(s, newInspectServer(nodeConfig)) // Depends on the server-manager/host-runner
+
+	s = append(s, newHttpService(nodeConfig))
+
+	return s
 }
