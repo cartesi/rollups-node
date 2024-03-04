@@ -143,7 +143,6 @@ When enabled, the node does not start the authority-claimer service and the Redi
 External Redis endpoint for the node when running in the experimental sunodo validator mode.
 
 * **Type:** `string`
-* **Default:** `""`
 
 ## `CARTESI_FEATURE_DISABLE_CLAIMER`
 
