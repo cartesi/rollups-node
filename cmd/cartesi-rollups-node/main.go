@@ -20,6 +20,14 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	if err := validateChainId(
+		ctx,
+		config.GetCartesiBlockchainId(),
+		config.GetCartesiBlockchainHttpEndpoint(),
+	); err != nil {
+		config.ErrorLogger.Fatal(err)
+	}
+
 	sunodoValidatorEnabled := config.GetCartesiExperimentalSunodoValidatorEnabled()
 	if !sunodoValidatorEnabled {
 		// add Redis first
