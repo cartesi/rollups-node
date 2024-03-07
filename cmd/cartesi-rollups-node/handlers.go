@@ -12,31 +12,43 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 )
 
-func newHttpServiceHandler() http.Handler {
+func newHttpServiceHandler(nodeConfig config.NodeConfig) http.Handler {
 	handler := http.NewServeMux()
 	handler.Handle("/healthz", http.HandlerFunc(healthcheckHandler))
 
-	graphqlProxy, err := newReverseProxy(getPort(portOffsetGraphQLServer))
+	graphqlProxy, err := newReverseProxy(
+		nodeConfig.CartesiHttpAddress(),
+		getPort(nodeConfig.CartesiHttpPort(), portOffsetGraphQLServer),
+	)
 	if err != nil {
 		config.ErrorLogger.Fatal(err)
 	}
 	handler.Handle("/graphql", graphqlProxy)
 
-	dispatcherProxy, err := newReverseProxy(getPort(portOffsetDispatcher))
+	dispatcherProxy, err := newReverseProxy(
+		nodeConfig.CartesiHttpAddress(),
+		getPort(nodeConfig.CartesiHttpPort(), portOffsetDispatcher),
+	)
 	if err != nil {
 		config.ErrorLogger.Fatal(err)
 	}
 	handler.Handle("/metrics", dispatcherProxy)
 
-	inspectProxy, err := newReverseProxy(getPort(portOffsetInspectServer))
+	inspectProxy, err := newReverseProxy(
+		nodeConfig.CartesiHttpAddress(),
+		getPort(nodeConfig.CartesiHttpPort(), portOffsetInspectServer),
+	)
 	if err != nil {
 		config.ErrorLogger.Fatal(err)
 	}
 	handler.Handle("/inspect", inspectProxy)
 	handler.Handle("/inspect/", inspectProxy)
 
-	if config.GetCartesiFeatureHostMode() {
-		hostProxy, err := newReverseProxy(getPort(portOffsetHostRunnerRollups))
+	if nodeConfig.CartesiFeatureHostMode() {
+		hostProxy, err := newReverseProxy(
+			nodeConfig.CartesiHttpAddress(),
+			getPort(nodeConfig.CartesiHttpPort(), portOffsetHostRunnerRollups),
+		)
 		if err != nil {
 			config.ErrorLogger.Fatal(err)
 		}
@@ -50,10 +62,10 @@ func healthcheckHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func newReverseProxy(port int) (*httputil.ReverseProxy, error) {
+func newReverseProxy(httpAddress string, port int) (*httputil.ReverseProxy, error) {
 	urlStr := fmt.Sprintf(
 		"http://%v:%v/",
-		config.GetCartesiHttpAddress(),
+		httpAddress,
 		port,
 	)
 

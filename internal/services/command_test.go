@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -134,5 +135,6 @@ func (s *CommandServiceSuite) buildFakeService() {
 }
 
 func TestCommandService(t *testing.T) {
+	config.InitLogFromEnv()
 	suite.Run(t, new(CommandServiceSuite))
 }

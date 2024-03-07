@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/services"
 	"github.com/spf13/cobra"
 )
@@ -84,6 +85,9 @@ func main() {
 }
 
 func run(cmd *cobra.Command, args []string) {
+
+	config.InitLogFromEnv()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

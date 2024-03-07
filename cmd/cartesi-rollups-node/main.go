@@ -20,35 +20,41 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	sunodoValidatorEnabled := config.GetCartesiExperimentalSunodoValidatorEnabled()
+	nodeConfig := config.NewNodeConfigFromEnv()
+
+	nodeConfig.Validate()
+
+	config.InitLog(nodeConfig)
+
+	sunodoValidatorEnabled := nodeConfig.CartesiExperimentalSunodoValidatorEnabled()
 	if !sunodoValidatorEnabled {
 		// add Redis first
-		s = append(s, newRedis())
+		s = append(s, newRedis(nodeConfig))
 	}
 
 	// add services without dependencies
-	s = append(s, newGraphQLServer())
-	s = append(s, newIndexer())
-	s = append(s, newStateServer())
+	s = append(s, newGraphQLServer(nodeConfig))
+	s = append(s, newIndexer(nodeConfig))
+	s = append(s, newStateServer(nodeConfig))
 
 	// start either the server manager or host runner
-	if config.GetCartesiFeatureHostMode() {
-		s = append(s, newHostRunner())
+	if nodeConfig.CartesiFeatureHostMode() {
+		s = append(s, newHostRunner(nodeConfig))
 	} else {
-		s = append(s, newServerManager())
+		s = append(s, newServerManager(nodeConfig))
 	}
 
 	// enable claimer if reader mode and sunodo validator mode are disabled
-	if !config.GetCartesiFeatureDisableClaimer() && !sunodoValidatorEnabled {
-		s = append(s, newAuthorityClaimer())
+	if !nodeConfig.CartesiFeatureDisableClaimer() && !sunodoValidatorEnabled {
+		s = append(s, newAuthorityClaimer(nodeConfig))
 	}
 
 	// add services with dependencies
-	s = append(s, newAdvanceRunner()) // Depends on the server-manager/host-runner
-	s = append(s, newDispatcher())    // Depends on the state server
-	s = append(s, newInspectServer()) // Depends on the server-manager/host-runner
+	s = append(s, newAdvanceRunner(nodeConfig)) // Depends on the server-manager/host-runner
+	s = append(s, newDispatcher(nodeConfig))    // Depends on the state server
+	s = append(s, newInspectServer(nodeConfig)) // Depends on the server-manager/host-runner
 
-	s = append(s, newHttpService())
+	s = append(s, newHttpService(nodeConfig))
 
 	ready := make(chan struct{}, 1)
 	// logs startup time

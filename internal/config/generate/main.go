@@ -14,7 +14,11 @@ import (
 
 // This script will read the Config.toml file and create:
 //
-// - a formatted get.go file, with get functions for each environment variable;
+// - a formatted get.go file, with  get functions for some environment variables;
+//
+// - a formatted nodeconfig.go file with the NodeConfig struct and two init functions:
+// one that initializes it by reading the values from environment variables and another that
+// initializes it with default values;
 //
 // - a config.md file with documentation for the environment variables.
 //
@@ -27,20 +31,125 @@ func main() {
 	config := decodeTOML(data)
 	envs := sortConfig(config)
 
-	var code strings.Builder
-	var doc strings.Builder
-
-	addCodeHeader(&code)
-	addDocHeader(&doc)
-
-	addLine(&doc, "<!-- markdownlint-disable MD012 -->")
-	for _, env := range envs {
-		env.validate()
-		addLine(&code, env.toFunction())
-		addLine(&doc, env.toDoc())
+	//Validate envs
+	for i := range envs {
+		envs[i].validate()
 	}
 
-	writeToFile("get.go", formatCode(code.String()))
+	writeDoc(envs)
+	writeCode(envs)
+}
+
+func writeCode(envs []Env) {
+	var privateGetFunctions strings.Builder
+	addGetHeader(&privateGetFunctions)
+	// //Add get functions
+	for _, env := range envs {
+		if !*env.Export {
+			addLine(&privateGetFunctions, env.toFunction())
+		}
+	}
+	writeToFile("get.go", formatCode(privateGetFunctions.String()))
+
+	var code strings.Builder
+	addCodeHeader(&code)
+	//Add NodeConfig Struct
+	addLine(&code, "type NodeConfig struct{")
+	for _, env := range envs {
+		if *env.Export {
+			addLine(&code, env.toStructMember())
+		}
+	}
+	addLine(&code, "cartesiAuth *Auth")
+	addLine(&code, "cartesiAuthError error")
+	addLine(&code, "}")
+
+	//Add Getters and Setters
+	addLine(&code, "")
+	for _, env := range envs {
+		if *env.Export {
+			name := toTitleCase(env.Name)
+			varName := toVarName(env.Name)
+			//Getter
+			addLine(&code, "func (nodeConfig* NodeConfig) "+name+"() "+env.GoType+" {")
+			addLine(&code, "if nodeConfig."+varName+" == nil {")
+			addLine(&code, `fail("Missing required `+env.Name+` env var")`)
+			addLine(&code, "}")
+			addLine(&code, "return *nodeConfig."+varName)
+			addLine(&code, "}")
+			addLine(&code, "")
+			//Setter
+			addLine(&code, "func (nodeConfig* NodeConfig) Set"+name+"(v *"+env.GoType+") {")
+			addLine(&code, "nodeConfig."+varName+" = v")
+			addLine(&code, "}")
+			addLine(&code, "")
+			addLine(&code, "")
+		}
+	}
+
+	addLine(&code, "func (nodeConfig* NodeConfig) CartesiAuth() Auth {")
+	addLine(&code, "if nodeConfig.cartesiAuth == nil {panic(nodeConfig.cartesiAuthError)}")
+	addLine(&code, "return *nodeConfig.cartesiAuth")
+	addLine(&code, "}")
+	addLine(&code, "")
+
+	addLine(&code, "func (nodeConfig* NodeConfig) SetCartesiAuth(v *Auth) {")
+	addLine(&code, "nodeConfig.cartesiAuth = v")
+	addLine(&code, "}")
+	addLine(&code, "")
+	addLine(&code, "")
+
+	//Add init function from System Environment
+	addLine(&code, "")
+	addLine(&code, "func NewNodeConfigFromEnv() (NodeConfig){")
+	addLine(&code, "nodeConfig := NodeConfig{")
+	for _, env := range envs {
+		if *env.Export {
+			name := toVarName(env.Name)
+			addLine(&code, name+": "+env.toEnvGetCall()+",")
+		}
+	}
+	addLine(&code, "}")
+	addLine(&code, "nodeConfig.cartesiAuth, nodeConfig.cartesiAuthError = getAuth()")
+	addLine(&code, "return nodeConfig")
+	addLine(&code, "}")
+
+	//Add init function from Default Values
+	addLine(&code, "")
+	addLine(&code, "func NewNodeConfig() (NodeConfig){")
+	addLine(&code, "nodeConfig := NodeConfig{}")
+	for _, env := range envs {
+		if *env.Export && env.Default != nil && *env.Default != "" {
+			name := toVarName(env.Name)
+			varName := toVarName(name)
+			addLine(&code, varName+", err := "+toToFuncName(env.GoType)+`("`+*env.Default+`")`)
+			addLine(&code, "if err != nil {")
+			addLine(&code, "panic(err)")
+			addLine(&code, "}")
+			addLine(&code, "nodeConfig."+name+" = &"+varName)
+			addLine(&code, "")
+		}
+	}
+	addLine(&code, `var auth Auth = AuthMnemonic{`)
+	addLine(&code, `Mnemonic: "test test test test test test test test test test test junk",`)
+	addLine(&code, `AccountIndex: 0,`)
+	addLine(&code, "}")
+	addLine(&code, "nodeConfig.cartesiAuth = &auth")
+	addLine(&code, "nodeConfig.cartesiAuthError = nil")
+	addLine(&code, "return nodeConfig")
+	addLine(&code, "}")
+
+	writeToFile("nodeconfig.go", formatCode(code.String()))
+}
+
+func writeDoc(envs []Env) {
+	var doc strings.Builder
+
+	addDocHeader(&doc)
+	addLine(&doc, "<!-- markdownlint-disable MD012 -->")
+	for _, env := range envs {
+		addLine(&doc, env.toDoc())
+	}
 	writeToFile("../../docs/config.md", []byte(doc.String()))
 }
 
@@ -92,7 +201,7 @@ func (e *Env) validate() {
 
 // Generates the get function for the environment variable.
 func (e Env) toFunction() string {
-	name := toFunctionName(e.Name)
+	name := toTitleCase(e.Name)
 	typ := e.GoType
 	get := "get"
 	vars := "v"
@@ -103,24 +212,41 @@ func (e Env) toFunction() string {
 		defaultValue = *e.Default
 	}
 
-	to_ := []rune(e.GoType)
-	to_[0] = unicode.ToUpper(to_[0])
-	to := "to" + string(to_)
+	to := toToFuncName(e.GoType)
 
 	args := fmt.Sprintf(`"%s", "%s", %t, %t, %s`, e.Name, defaultValue, hasDefault, *e.Redact, to)
 
-	if *e.Export {
-		name = "Get" + name
-	} else {
-		name = "get" + name
-		typ = fmt.Sprintf("(%s, bool)", typ)
-		get += "Optional"
-		vars += ", ok"
-	}
+	name = "get" + name
+
+	typ = fmt.Sprintf("*%s", typ)
+	get += "Optional"
 
 	body := fmt.Sprintf("%s := %s(%s)\n", vars, get, args)
 	body += "return " + vars
 	return fmt.Sprintf("func %s() %s { %s }\n", name, typ, body)
+}
+
+func (e Env) toEnvGetCall() string {
+
+	var defaultValue string
+	hasDefault := e.Default != nil
+	if hasDefault {
+		defaultValue = *e.Default
+	}
+
+	to := toToFuncName(e.GoType)
+
+	args := fmt.Sprintf(`"%s", "%s", %t, %t, %s`, e.Name, defaultValue, hasDefault, *e.Redact, to)
+
+	get := "getOptional"
+
+	return fmt.Sprintf("%s(%s)", get, args)
+}
+
+// Generates the Config Struct member for the envrionemnt variable.
+func (e Env) toStructMember() string {
+	name := toVarName(e.Name)
+	return name + " *" + e.GoType
 }
 
 // Generates the documentation entry for the environment variable.
@@ -134,11 +260,24 @@ func (e Env) toDoc() string {
 }
 
 // Splits the string by "_" and joins each substring with the first letter in upper case.
-func toFunctionName(env string) string {
+func toTitleCase(env string) string {
 	caser := cases.Title(language.English)
 	words := strings.Split(env, "_")
 	for i, word := range words {
 		words[i] = caser.String(word)
 	}
 	return strings.Join(words, "")
+}
+
+func toVarName(name string) string {
+	name = toTitleCase(name)
+	name_ := []rune(name)
+	name_[0] = unicode.ToLower(name_[0])
+	return string(name_)
+}
+
+func toToFuncName(goType string) string {
+	to_ := []rune(goType)
+	to_[0] = unicode.ToUpper(to_[0])
+	return "to" + string(to_)
 }
