@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Added verification to ensure CARTESI_BLOCKCHAIN_ID matches the id returned from the Ethereum node
+
 ## Changed
 
 - Changed CARTESI_BLOCKCHAIN_ID type from int to uint64
