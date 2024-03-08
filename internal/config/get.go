@@ -54,8 +54,8 @@ func GetCartesiBlockchainHttpEndpoint() string {
 	return v
 }
 
-func GetCartesiBlockchainId() int {
-	v := get("CARTESI_BLOCKCHAIN_ID", "", false, false, toInt)
+func GetCartesiBlockchainId() uint64 {
+	v := get("CARTESI_BLOCKCHAIN_ID", "", false, false, toUint64)
 	return v
 }
 

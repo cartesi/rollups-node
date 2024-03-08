@@ -78,7 +78,7 @@ HTTP endpoint for the blockchain RPC provider.
 
 An unique identifier representing a blockchain network.
 
-* **Type:** `int`
+* **Type:** `uint64`
 
 ## `CARTESI_BLOCKCHAIN_IS_LEGACY`
 

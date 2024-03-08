@@ -60,7 +60,7 @@ At the end of each epoch, the node will send claims to the blockchain."""
 #
 
 [blockchain.CARTESI_BLOCKCHAIN_ID]
-go-type = "int"
+go-type = "uint64"
 description = """
 An unique identifier representing a blockchain network."""
 
