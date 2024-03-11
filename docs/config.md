@@ -147,6 +147,14 @@ Address of the InputBox contract.
 
 * **Type:** `string`
 
+## `CARTESI_EXPERIMENTAL_SERVER_MANAGER_BYPASS_LOG`
+
+When enabled, prints server-manager output to stdout and stderr directly.
+All other log configurations are ignored.
+
+* **Type:** `bool`
+* **Default:** `"false"`
+
 ## `CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED`
 
 When enabled, the node does not start the authority-claimer service and the Redis server.

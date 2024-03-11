@@ -6,12 +6,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [Unreleased]
 
 ### Added
 
 - Added verification to ensure CARTESI_BLOCKCHAIN_ID matches the id returned from the Ethereum node
 - Added support for CARTESI_AUTH_PRIVATE_KEY and CARTESI_AUTH_PRIVATE_KEY_FILE
+- Added `CARTESI_EXPERIMENTAL_SERVER_MANAGER_BYPASS_LOG` env var to allow `server-manager` output to bypass all log configuration
 
 ## Changed
 

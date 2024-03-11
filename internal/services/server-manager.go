@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -41,8 +42,13 @@ const waitDelay = 200 * time.Millisecond
 func (s ServerManager) Start(ctx context.Context, ready chan<- struct{}) error {
 	cmd := exec.CommandContext(ctx, s.Path, s.Args...)
 	cmd.Env = s.Env
-	cmd.Stderr = newLineWriter(commandLogger{s.Name})
-	cmd.Stdout = newLineWriter(commandLogger{s.Name})
+	if config.GetCartesiExperimentalServerManagerBypassLog() {
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stdout
+	} else {
+		cmd.Stderr = newLineWriter(commandLogger{s.Name})
+		cmd.Stdout = newLineWriter(commandLogger{s.Name})
+	}
 	// Without a delay, cmd.Wait() will block forever waiting for the I/O pipes
 	// to be closed
 	cmd.WaitDelay = waitDelay

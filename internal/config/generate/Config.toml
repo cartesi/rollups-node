@@ -256,3 +256,9 @@ go-type = "string"
 description = """
 External Redis endpoint for the node when running in the experimental sunodo validator mode."""
 
+[experimental.CARTESI_EXPERIMENTAL_SERVER_MANAGER_BYPASS_LOG]
+default = "false"
+go-type = "bool"
+description = """
+When enabled, prints server-manager output to stdout and stderr directly.
+All other log configurations are ignored."""
