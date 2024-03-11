@@ -99,6 +99,11 @@ func GetCartesiContractsInputBoxAddress() string {
 	return v
 }
 
+func GetCartesiExperimentalServerManagerBypassLog() bool {
+	v := get("CARTESI_EXPERIMENTAL_SERVER_MANAGER_BYPASS_LOG", "false", true, false, toBool)
+	return v
+}
+
 func GetCartesiExperimentalSunodoValidatorEnabled() bool {
 	v := get("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED", "false", true, false, toBool)
 	return v
