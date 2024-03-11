@@ -10,19 +10,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added verification to ensure CARTESI_BLOCKCHAIN_ID matches the id returned from the Ethereum node
-- Added support for CARTESI_AUTH_PRIVATE_KEY and CARTESI_AUTH_PRIVATE_KEY_FILE
-  
+- Added verification to ensure `CARTESI_BLOCKCHAIN_ID` matches the id returned from the Ethereum node
+- Added support for `CARTESI_AUTH_PRIVATE_KEY` and `CARTESI_AUTH_PRIVATE_KEY_FILE`
+- Added `CARTESI_AUTH_KIND` environment variable to select the blockchain authetication method
+- Added structured logging with slog. Colored logs can now be enabled with `CARTESI_LOG_PRETTY` environment variable.
+
+### Changed
+
+- Changed `CARTESI_BLOCKCHAIN_ID` type from int to uint64
+- Changed `CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER` type from string to int64.
+- Changed `CARTESI_LOG_LEVEL` option `warning` to `warn`
+
+### Removed
+
+- Removed `CARTESI_EXPERIMENTAL_DISABLE_CONFIG_LOG` and `CARTESI_LOG_TIMESTAMP` environment variables
+
 ## [1.3.1] 2024-03-13
 
 ### Added
 
 - Added `CARTESI_EXPERIMENTAL_SERVER_MANAGER_BYPASS_LOG` env var to allow `server-manager` output to bypass all log configuration
 - Added `CARTESI_EXPERIMENTAL_DISABLE_CONFIG_LOG` env var to disable log entries related to the node's configuration
-
-## Changed
-
-- Changed CARTESI_BLOCKCHAIN_ID type from int to uint64
 
 ## [1.3.0] 2024-02-09
 

@@ -16,6 +16,8 @@ require github.com/BurntSushi/toml v1.3.2
 require (
 	github.com/Khan/genqlient v0.6.0
 	github.com/deepmap/oapi-codegen/v2 v2.1.0
+	github.com/lmittmann/tint v1.0.4
+	github.com/mattn/go-isatty v0.0.20
 	github.com/oapi-codegen/runtime v1.1.1
 	golang.org/x/sync v0.6.0
 	golang.org/x/text v0.14.0

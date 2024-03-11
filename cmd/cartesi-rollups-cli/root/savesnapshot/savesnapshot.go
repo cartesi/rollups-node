@@ -37,8 +37,6 @@ func init() {
 }
 
 func run(cmd *cobra.Command, args []string) {
-
 	err := machine.Save(sourceDockerImage, destDir, tempContainerName)
-
 	cobra.CheckErr(err)
 }
