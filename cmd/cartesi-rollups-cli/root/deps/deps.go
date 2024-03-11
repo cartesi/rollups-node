@@ -5,10 +5,10 @@ package deps
 
 import (
 	"context"
+	"log/slog"
 	"os/signal"
 	"syscall"
 
-	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/deps"
 	"github.com/spf13/cobra"
 )
@@ -48,18 +48,16 @@ func init() {
 }
 
 func run(cmd *cobra.Command, args []string) {
-
 	ctx, cancel := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	depsContainers, err := deps.Run(ctx, *depsConfig)
 	cobra.CheckErr(err)
 
-	config.InfoLogger.Println("all deps are up")
+	slog.Info("All dependencies are up")
 
 	<-ctx.Done()
 
 	err = deps.Terminate(context.Background(), depsContainers)
 	cobra.CheckErr(err)
-
 }

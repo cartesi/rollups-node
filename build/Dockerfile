@@ -178,7 +178,6 @@ ENV PATH=$PATH:/usr/local/go/bin
 
 # Copy gen-devnet script and dependencies
 # This should be simplified in the future when `COPY --parents` is made available
-COPY internal/config internal/config
 COPY internal/services internal/services
 COPY pkg/addresses pkg/addresses
 COPY pkg/contracts pkg/contracts
@@ -225,7 +224,6 @@ HEALTHCHECK --interval=1s --timeout=1s --retries=5 \
 
 # Start Anvil.
 CMD anvil --block-time 1 --load-state $ANVIL_STATE_PATH
-
 
 ####################################################################################################
 # TARGET: rollups-node

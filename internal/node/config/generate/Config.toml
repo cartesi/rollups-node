@@ -9,13 +9,13 @@
 default = "info"
 go-type = "LogLevel"
 description = """
-One of "debug", "info", "warning", "error"."""
+One of "debug", "info", "warn", "error"."""
 
-[logging.CARTESI_LOG_TIMESTAMP]
+[logging.CARTESI_LOG_PRETTY]
 default = "false"
 go-type = "bool"
 description = """
-If set to true, the node will print the timestamp when logging."""
+If set to true, the node will add colors to its log output."""
 
 #
 # Features
@@ -104,7 +104,7 @@ description = """
 Address of the DApp's contract."""
 
 [contracts.CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER]
-go-type = "string"
+go-type = "int64"
 description = """
 Block in which the DApp's contract was deployed."""
 
@@ -142,56 +142,42 @@ Path to the directory with the cartesi-machine snapshot that will be loaded by t
 # Auth
 #
 
+[auth.CARTESI_AUTH_KIND]
+default = "mnemonic"
+go-type = "AuthKind"
+description = """
+One of "private_key", "private_key_file", "mnemonic", "mnemonic_file", "aws"."""
+
+[auth.CARTESI_AUTH_PRIVATE_KEY]
+go-type = "string"
+description = """
+The node will use this private key to sign transactions."""
+
+[auth.CARTESI_AUTH_PRIVATE_KEY_FILE]
+go-type = "string"
+description = """
+The node will use the private key contained in this file to sign transactions."""
+
 [auth.CARTESI_AUTH_MNEMONIC]
 go-type = "string"
-export = false
-redact = true
 description = """
-The node will use the private key generated from this mnemonic to sign transactions.
-
-Overrides `CARTESI_AUTH_MNEMONIC_FILE` and `CARTESI_AUTH_AWS_KMS_*`."""
+The node will use the private key generated from this mnemonic to sign transactions."""
 
 [auth.CARTESI_AUTH_MNEMONIC_FILE]
 go-type = "string"
-export = false
-redact = true
 description = """
 The node will use the private key generated from the mnemonic contained in this file
-to sign transactions.
-
-Overrides `CARTESI_AUTH_AWS_KMS_*`."""
+to sign transactions."""
 
 [auth.CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX]
 default = "0"
 go-type = "int"
-export = false
-redact = true
 description = """
 When using mnemonics to sign transactions,
 the node will use this account index to generate the private key."""
 
-[auth.CARTESI_AUTH_PRIVATE_KEY]
-go-type = "string"
-export = false
-redact = true
-description = """
-The node will use this private key to sign transactions.
-
-Overrides `CARTESI_AUTH_PRIVATE_KEY_FILE`, `CARTESI_AUTH_MNEMONIC`, `CARTESI_AUTH_MNEMONIC_FILE` and `CARTESI_AUTH_AWS_KMS_*`."""
-
-[auth.CARTESI_AUTH_PRIVATE_KEY_FILE]
-go-type = "string"
-export = false
-redact = true
-description = """
-The node will use the private key contained in this file to sign transactions.
-
-Overrides `CARTESI_AUTH_MNEMONIC`, `CARTESI_AUTH_MNEMONIC_FILE` and `CARTESI_AUTH_AWS_KMS_*`."""
-
 [auth.CARTESI_AUTH_AWS_KMS_KEY_ID]
 go-type = "string"
-export = false
-redact = true
 description = """
 If set, the node will use the AWS KMS service with this key ID to sign transactions.
 
@@ -199,8 +185,6 @@ Must be set alongside `CARTESI_AUTH_AWS_KMS_REGION`."""
 
 [auth.CARTESI_AUTH_AWS_KMS_REGION]
 go-type = "string"
-export = false
-redact = true
 description = """
 An AWS KMS Region.
 
@@ -213,7 +197,6 @@ Must be set alongside `CARTESI_AUTH_AWS_KMS_KEY_ID`."""
 [postgres.CARTESI_POSTGRES_ENDPOINT]
 default = ""
 go-type = "string"
-redact = true
 description = """
 Postgres endpoint in the 'postgres://user:password@hostname:port/database' format.
 
@@ -262,10 +245,3 @@ go-type = "bool"
 description = """
 When enabled, prints server-manager output to stdout and stderr directly.
 All other log configurations are ignored."""
-
-[experimental.CARTESI_EXPERIMENTAL_DISABLE_CONFIG_LOG]
-default = "false"
-go-type = "bool"
-redact = true
-description = """
-Disables all log entries related to the node's configuration"""

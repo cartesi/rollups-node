@@ -9,22 +9,22 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
-
-	"github.com/cartesi/rollups-node/internal/config"
 )
 
 const SNAPSHOT_CONTAINER_PATH = "/usr/share/cartesi/snapshot"
 
 func runCommand(name string, args ...string) error {
-	config.InfoLogger.Printf("%v %v", name, strings.Join(args, " "))
+	slog.Debug("Running command", "name", name, "args", strings.Join(args, " "))
 	cmd := exec.Command(name, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("'%v %v' failed with %v: %v",
-			name, strings.Join(args, " "), err, string(output))
+		return fmt.Errorf("'%v %v' failed with %w: %v",
+			name, strings.Join(args, " "), err, string(output),
+		)
 	}
 	return nil
 }
@@ -40,7 +40,7 @@ func Save(sourceDockerImage string, destDir string, tempContainerName string) er
 
 	// Remove previous snapshot dir
 	if fileExists(destDir) {
-		config.InfoLogger.Println("removing previous snapshot")
+		slog.Info("Removing previous snapshot")
 		err := os.RemoveAll(destDir)
 		if err != nil {
 			return err
@@ -56,7 +56,9 @@ func Save(sourceDockerImage string, destDir string, tempContainerName string) er
 	defer func() {
 		err := runCommand("docker", "rm", tempContainerName)
 		if err != nil {
-			config.ErrorLogger.Printf("Error trying to delete %v: %v", tempContainerName, err)
+			slog.Warn("Error trying to delete container",
+				"container", tempContainerName,
+				"error", err)
 		}
 	}()
 
@@ -66,8 +68,8 @@ func Save(sourceDockerImage string, destDir string, tempContainerName string) er
 		return err
 	}
 
-	config.InfoLogger.Printf("Cartesi machine snapshot from %v saved to %v",
-		sourceDockerImage, destDir)
+	slog.Info("Cartesi machine snapshot saved",
+		"docker-image", sourceDockerImage,
+		"destination-dir", destDir)
 	return nil
-
 }

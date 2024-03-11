@@ -12,6 +12,7 @@ The node is configurable through environment variables.
 This file documents the configuration options.
 
 <!-- markdownlint-disable MD012 -->
+
 ## `CARTESI_AUTH_AWS_KMS_KEY_ID`
 
 If set, the node will use the AWS KMS service with this key ID to sign transactions.
@@ -28,11 +29,16 @@ Must be set alongside `CARTESI_AUTH_AWS_KMS_KEY_ID`.
 
 * **Type:** `string`
 
+## `CARTESI_AUTH_KIND`
+
+One of "private_key", "private_key_file", "mnemonic", "mnemonic_file", "aws".
+
+* **Type:** `AuthKind`
+* **Default:** `"mnemonic"`
+
 ## `CARTESI_AUTH_MNEMONIC`
 
 The node will use the private key generated from this mnemonic to sign transactions.
-
-Overrides `CARTESI_AUTH_MNEMONIC_FILE` and `CARTESI_AUTH_AWS_KMS_*`.
 
 * **Type:** `string`
 
@@ -49,23 +55,17 @@ the node will use this account index to generate the private key.
 The node will use the private key generated from the mnemonic contained in this file
 to sign transactions.
 
-Overrides `CARTESI_AUTH_AWS_KMS_*`.
-
 * **Type:** `string`
 
 ## `CARTESI_AUTH_PRIVATE_KEY`
 
 The node will use this private key to sign transactions.
 
-Overrides `CARTESI_AUTH_PRIVATE_KEY_FILE`, `CARTESI_AUTH_MNEMONIC`, `CARTESI_AUTH_MNEMONIC_FILE` and `CARTESI_AUTH_AWS_KMS_*`.
-
 * **Type:** `string`
 
 ## `CARTESI_AUTH_PRIVATE_KEY_FILE`
 
 The node will use the private key contained in this file to sign transactions.
-
-Overrides `CARTESI_AUTH_MNEMONIC`, `CARTESI_AUTH_MNEMONIC_FILE` and `CARTESI_AUTH_AWS_KMS_*`.
 
 * **Type:** `string`
 
@@ -127,7 +127,7 @@ Address of the DApp's contract.
 
 Block in which the DApp's contract was deployed.
 
-* **Type:** `string`
+* **Type:** `int64`
 
 ## `CARTESI_CONTRACTS_AUTHORITY_ADDRESS`
 
@@ -146,13 +146,6 @@ Address of the History contract.
 Address of the InputBox contract.
 
 * **Type:** `string`
-
-## `CARTESI_EXPERIMENTAL_DISABLE_CONFIG_LOG`
-
-Disables all log entries related to the node's configuration
-
-* **Type:** `bool`
-* **Default:** `"false"`
 
 ## `CARTESI_EXPERIMENTAL_SERVER_MANAGER_BYPASS_LOG`
 
@@ -217,14 +210,14 @@ The node will also use the 20 ports after this one for internal services.
 
 ## `CARTESI_LOG_LEVEL`
 
-One of "debug", "info", "warning", "error".
+One of "debug", "info", "warn", "error".
 
 * **Type:** `LogLevel`
 * **Default:** `"info"`
 
-## `CARTESI_LOG_TIMESTAMP`
+## `CARTESI_LOG_PRETTY`
 
-If set to true, the node will print the timestamp when logging.
+If set to true, the node will add colors to its log output.
 
 * **Type:** `bool`
 * **Default:** `"false"`
@@ -257,4 +250,3 @@ At the end of each epoch, the node will send claims to the blockchain.
 Path to the directory with the cartesi-machine snapshot that will be loaded by the node.
 
 * **Type:** `string`
-

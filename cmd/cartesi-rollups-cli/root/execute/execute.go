@@ -4,10 +4,10 @@
 package execute
 
 import (
+	"log/slog"
 	"os"
 
 	"github.com/Khan/genqlient/graphql"
-	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/readerclient"
@@ -70,13 +70,13 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 
 	if resp.Proof == nil {
-		config.InfoLogger.Printf("The voucher has no associated proof yet.\n")
+		slog.Warn("The voucher has no associated proof yet")
 		os.Exit(0)
 	}
 
 	client, err := ethclient.DialContext(ctx, ethEndpoint)
 	cobra.CheckErr(err)
-	config.InfoLogger.Printf("connected to %v\n", ethEndpoint)
+	slog.Info("Connected", "eth-endpoint", ethEndpoint)
 
 	signer, err := ethutil.NewMnemonicSigner(ctx, client, mnemonic, account)
 	cobra.CheckErr(err)
@@ -91,9 +91,10 @@ func run(cmd *cobra.Command, args []string) {
 
 	proof := readerclient.ConvertToContractProof(resp.Proof)
 
-	config.InfoLogger.Printf("executing voucher %d from input %d\n",
-		voucherIndex,
-		inputIndex,
+	slog.Info("Executing voucher",
+		"voucher-index", voucherIndex,
+		"input-index", inputIndex,
+		"application-address", book.CartesiDApp,
 	)
 	txHash, err := ethutil.ExecuteVoucher(
 		ctx,
@@ -106,5 +107,5 @@ func run(cmd *cobra.Command, args []string) {
 	)
 	cobra.CheckErr(err)
 
-	config.InfoLogger.Printf("The voucher was executed! (tx=%v)\n", txHash)
+	slog.Info("Voucher executed", "tx-hash", txHash)
 }
