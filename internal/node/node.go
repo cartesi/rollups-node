@@ -18,6 +18,17 @@ func Setup(ctx context.Context, c config.NodeConfig) (services.Service, error) {
 		return nil, err
 	}
 
+	if !c.FeatureDisableMachineHashCheck {
+		if err := validateMachineHash(
+			ctx,
+			c.SnapshotDir,
+			c.ContractsApplicationAddress,
+			c.BlockchainHttpEndpoint.Value,
+		); err != nil {
+			return nil, err
+		}
+	}
+
 	// create service
 	return newSupervisorService(c), nil
 }

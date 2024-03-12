@@ -9,3 +9,4 @@ services:
       - "10007:10007" # Host Runner Rollup API
     environment:
       CARTESI_FEATURE_HOST_MODE: "true"
+      CARTESI_FEATURE_DISABLE_MACHINE_HASH_CHECK: "true"
