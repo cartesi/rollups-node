@@ -133,6 +133,9 @@ func newAuthorityClaimer() services.CommandService {
 	s.Env = append(s.Env,
 		fmt.Sprintf("AUTHORITY_CLAIMER_HTTP_SERVER_PORT=%v", getPort(portOffsetAuthorityClaimer)))
 	switch auth := config.GetAuth().(type) {
+	case config.AuthPrivateKey:
+		s.Env = append(s.Env,
+			fmt.Sprintf("TX_SIGNING_PRIVATE_KEY=%v", auth.PrivateKey))
 	case config.AuthMnemonic:
 		s.Env = append(s.Env,
 			fmt.Sprintf("TX_SIGNING_MNEMONIC=%v", auth.Mnemonic))

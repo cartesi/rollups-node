@@ -53,6 +53,14 @@ Overrides `CARTESI_AUTH_AWS_KMS_*`.
 
 * **Type:** `string`
 
+## `CARTESI_AUTH_PRIVATE_KEY`
+
+The node will use this private key to sign transactions.
+
+Overrides `CARTESI_AUTH_MNEMONIC`, `CARTESI_AUTH_MNEMONIC_FILE` and `CARTESI_AUTH_AWS_KMS_*`.
+
+* **Type:** `string`
+
 ## `CARTESI_BLOCKCHAIN_BLOCK_TIMEOUT`
 
 Block subscription timeout in seconds.

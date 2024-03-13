@@ -35,6 +35,10 @@ pub struct AuthorityClaimerConfig {
 
 #[derive(Debug, Clone)]
 pub enum TxSigningConfig {
+    PrivateKey {
+        private_key: Redacted<String>,
+    },
+
     Mnemonic {
         mnemonic: Redacted<String>,
         account_index: Option<u32>,

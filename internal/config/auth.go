@@ -6,6 +6,11 @@ package config
 // Auth objects are used to sign transactions.
 type Auth any
 
+// Allows signing through private keys.
+type AuthPrivateKey struct {
+	PrivateKey string
+}
+
 // Allows signing through mnemonics.
 type AuthMnemonic struct {
 	Mnemonic     string
