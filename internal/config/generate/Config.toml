@@ -244,3 +244,10 @@ go-type = "bool"
 description = """
 When enabled, prints server-manager output to stdout and stderr directly.
 All other log configurations are ignored."""
+
+[experimental.CARTESI_EXPERIMENTAL_DISABLE_CONFIG_LOG]
+default = "false"
+go-type = "bool"
+redact = true
+description = """
+Disables all log entries related to the node's configuration"""
