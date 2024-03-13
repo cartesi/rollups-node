@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added `CARTESI_EXPERIMENTAL_SERVER_MANAGER_BYPASS_LOG` env var to allow `server-manager` output to bypass all log configuration
+- Added `CARTESI_EXPERIMENTAL_DISABLE_CONFIG_LOG` env var to disable log entries related to the node's configuration
 
 ## [1.3.0] 2024-02-09
 

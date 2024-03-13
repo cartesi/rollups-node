@@ -131,6 +131,13 @@ Address of the InputBox contract.
 
 * **Type:** `string`
 
+## `CARTESI_EXPERIMENTAL_DISABLE_CONFIG_LOG`
+
+Disables all log entries related to the node's configuration
+
+* **Type:** `bool`
+* **Default:** `"false"`
+
 ## `CARTESI_EXPERIMENTAL_SERVER_MANAGER_BYPASS_LOG`
 
 When enabled, prints server-manager output to stdout and stderr directly.

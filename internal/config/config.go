@@ -13,6 +13,7 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strconv"
@@ -93,6 +94,9 @@ var configLogger = log.New(os.Stdout, "CONFIG ", log.LstdFlags)
 
 func init() {
 	cache.values = make(map[string]string)
+	if GetCartesiExperimentalDisableConfigLog() {
+		configLogger.SetOutput(io.Discard)
+	}
 }
 
 // Reads the value of an environment variable (loads from a cached value when possible).

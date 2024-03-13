@@ -99,6 +99,11 @@ func GetCartesiContractsInputBoxAddress() string {
 	return v
 }
 
+func GetCartesiExperimentalDisableConfigLog() bool {
+	v := get("CARTESI_EXPERIMENTAL_DISABLE_CONFIG_LOG", "false", true, true, toBool)
+	return v
+}
+
 func GetCartesiExperimentalServerManagerBypassLog() bool {
 	v := get("CARTESI_EXPERIMENTAL_SERVER_MANAGER_BYPASS_LOG", "false", true, false, toBool)
 	return v
