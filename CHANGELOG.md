@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added verification to ensure CARTESI_BLOCKCHAIN_ID matches the id returned from the Ethereum node
 - Added support for CARTESI_AUTH_PRIVATE_KEY and CARTESI_AUTH_PRIVATE_KEY_FILE
+  
+## [1.3.1] 2024-03-13
+
+### Added
+
 - Added `CARTESI_EXPERIMENTAL_SERVER_MANAGER_BYPASS_LOG` env var to allow `server-manager` output to bypass all log configuration
 - Added `CARTESI_EXPERIMENTAL_DISABLE_CONFIG_LOG` env var to disable log entries related to the node's configuration
 
@@ -351,7 +356,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deprecated mock contracts
 
 <!-- markdownlint-disable MD053 -->
-[Unreleased]: https://github.com/cartesi/rollups-node/releases/tag/v1.3.0...HEAD
+[Unreleased]: https://github.com/cartesi/rollups-node/releases/tag/v1.3.1...HEAD
+[1.3.1]: https://github.com/cartesi/rollups-node/releases/tag/v1.3.1
 [1.3.0]: https://github.com/cartesi/rollups-node/releases/tag/v1.3.0
 [1.2.0]: https://github.com/cartesi/rollups-node/releases/tag/v1.2.0
 [1.1.0]: https://github.com/cartesi/rollups-node/releases/tag/v1.1.0
