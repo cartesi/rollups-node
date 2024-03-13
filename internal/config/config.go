@@ -59,6 +59,11 @@ var (
 // ------------------------------------------------------------------------------------------------
 
 func GetAuth() Auth {
+	// if private key is coming from an environment variable
+	if privateKey, ok := getCartesiAuthPrivateKey(); ok {
+		return AuthPrivateKey{PrivateKey: privateKey}
+	}
+
 	// getting the (optional) account index
 	index, _ := getCartesiAuthMnemonicAccountIndex()
 

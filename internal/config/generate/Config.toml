@@ -170,6 +170,15 @@ description = """
 When using mnemonics to sign transactions,
 the node will use this account index to generate the private key."""
 
+[auth.CARTESI_AUTH_PRIVATE_KEY]
+go-type = "string"
+export = false
+redact = true
+description = """
+The node will use this private key to sign transactions.
+
+Overrides `CARTESI_AUTH_MNEMONIC`, `CARTESI_AUTH_MNEMONIC_FILE` and `CARTESI_AUTH_AWS_KMS_*`."""
+
 [auth.CARTESI_AUTH_AWS_KMS_KEY_ID]
 go-type = "string"
 export = false

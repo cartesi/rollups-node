@@ -43,6 +43,15 @@ impl ConditionalSigner {
         tx_signing_config: &TxSigningConfig,
     ) -> Result<Self, ConditionalSignerError> {
         match tx_signing_config.clone() {
+            TxSigningConfig::PrivateKey { private_key } => {
+                let wallet = private_key
+                    .inner()
+                    .as_str()
+                    .parse::<LocalWallet>()
+                    .context(LocalWalletSnafu)?
+                    .with_chain_id(chain_id);
+                Ok(ConditionalSigner::LocalWallet(wallet))
+            }
             TxSigningConfig::Mnemonic {
                 mnemonic,
                 account_index,
@@ -162,8 +171,19 @@ mod tests {
     // --------------------------------------------------------------------------------------------
 
     #[tokio::test]
-    async fn new_local_wallet_conditional_signer() {
-        let conditional_signer = local_wallet_conditional_signer().await;
+    async fn new_local_wallet_mnemonic_conditional_signer() {
+        let conditional_signer =
+            local_wallet_mnemonic_conditional_signer().await;
+        assert!(matches!(
+            conditional_signer,
+            ConditionalSigner::LocalWallet(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn new_local_wallet_private_key_conditional_signer() {
+        let conditional_signer =
+            local_wallet_private_key_conditional_signer().await;
         assert!(matches!(
             conditional_signer,
             ConditionalSigner::LocalWallet(_)
@@ -175,8 +195,19 @@ mod tests {
     // --------------------------------------------------------------------------------------------
 
     #[tokio::test]
-    async fn sign_transaction_with_local_wallet_conditional_signer() {
-        let conditional_signer = local_wallet_conditional_signer().await;
+    async fn sign_transaction_with_mnemonic_local_wallet_conditional_signer() {
+        let conditional_signer =
+            local_wallet_mnemonic_conditional_signer().await;
+        let message = eip1559_message();
+        let result = conditional_signer.sign_transaction(&message).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn sign_transaction_with_private_key_local_wallet_conditional_signer()
+    {
+        let conditional_signer =
+            local_wallet_private_key_conditional_signer().await;
         let message = eip1559_message();
         let result = conditional_signer.sign_transaction(&message).await;
         assert!(result.is_ok());
@@ -187,13 +218,25 @@ mod tests {
     // --------------------------------------------------------------------------------------------
 
     const CHAIN_ID: u64 = 1;
+    const PRIVATE_KEY: &str =
+        "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
     const MNEMONIC: &str =
         "indoor dish desk flag debris potato excuse depart ticket judge file exit";
 
-    async fn local_wallet_conditional_signer() -> ConditionalSigner {
+    async fn local_wallet_mnemonic_conditional_signer() -> ConditionalSigner {
         let tx_signing_config = TxSigningConfig::Mnemonic {
             mnemonic: Redacted::new(MNEMONIC.to_string()),
             account_index: Some(1),
+        };
+        ConditionalSigner::new(CHAIN_ID, &tx_signing_config)
+            .await
+            .unwrap()
+    }
+
+    async fn local_wallet_private_key_conditional_signer() -> ConditionalSigner
+    {
+        let tx_signing_config = TxSigningConfig::PrivateKey {
+            private_key: Redacted::new(PRIVATE_KEY.to_string()),
         };
         ConditionalSigner::new(CHAIN_ID, &tx_signing_config)
             .await
