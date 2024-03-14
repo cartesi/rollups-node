@@ -44,6 +44,11 @@ func getCartesiAuthPrivateKey() (string, bool) {
 	return v, ok
 }
 
+func getCartesiAuthPrivateKeyFile() (string, bool) {
+	v, ok := getOptional("CARTESI_AUTH_PRIVATE_KEY_FILE", "", false, true, toString)
+	return v, ok
+}
+
 func GetCartesiBlockchainBlockTimeout() int {
 	v := get("CARTESI_BLOCKCHAIN_BLOCK_TIMEOUT", "60", true, false, toInt)
 	return v

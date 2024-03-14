@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added verification to ensure CARTESI_BLOCKCHAIN_ID matches the id returned from the Ethereum node
-- Added support for CARTESI_AUTH_PRIVATE_KEY
+- Added support for CARTESI_AUTH_PRIVATE_KEY and CARTESI_AUTH_PRIVATE_KEY_FILE
 
 ## Changed
 
