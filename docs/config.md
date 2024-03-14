@@ -57,6 +57,14 @@ Overrides `CARTESI_AUTH_AWS_KMS_*`.
 
 The node will use this private key to sign transactions.
 
+Overrides `CARTESI_AUTH_PRIVATE_KEY_FILE`, `CARTESI_AUTH_MNEMONIC`, `CARTESI_AUTH_MNEMONIC_FILE` and `CARTESI_AUTH_AWS_KMS_*`.
+
+* **Type:** `string`
+
+## `CARTESI_AUTH_PRIVATE_KEY_FILE`
+
+The node will use the private key contained in this file to sign transactions.
+
 Overrides `CARTESI_AUTH_MNEMONIC`, `CARTESI_AUTH_MNEMONIC_FILE` and `CARTESI_AUTH_AWS_KMS_*`.
 
 * **Type:** `string`

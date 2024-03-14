@@ -91,9 +91,13 @@ impl TryFrom<AuthorityClaimerCLI> for AuthorityClaimerConfig {
 #[derive(Debug, Parser)]
 #[command(name = "tx_signing_config")]
 pub(crate) struct TxSigningCLIConfig {
-    /// Signer private key, overrides `tx_signing_mnemonic` , `tx_signing_mnemonic_file` and `tx_signing_aws_kms_*`
+    /// Signer private key, overrides `tx_signing_private_key_file`, `tx_signing_mnemonic` , `tx_signing_mnemonic_file` and `tx_signing_aws_kms_*`
     #[arg(long, env)]
     tx_signing_private_key: Option<String>,
+
+    /// Signer private key file, overrides `tx_signing_mnemonic` , `tx_signing_mnemonic_file` and `tx_signing_aws_kms_*`
+    #[arg(long, env)]
+    tx_signing_private_key_file: Option<String>,
 
     /// Signer mnemonic, overrides `tx_signing_mnemonic_file` and `tx_signing_aws_kms_*`
     #[arg(long, env)]
@@ -122,6 +126,14 @@ impl TryFrom<TxSigningCLIConfig> for TxSigningConfig {
     fn try_from(cli: TxSigningCLIConfig) -> Result<Self, Self::Error> {
         let account_index = cli.tx_signing_mnemonic_account_index;
         if let Some(private_key) = cli.tx_signing_private_key {
+            Ok(TxSigningConfig::PrivateKey {
+                private_key: Redacted::new(private_key),
+            })
+        } else if let Some(path) = cli.tx_signing_private_key_file {
+            let private_key = fs::read_to_string(path.clone())
+                .context(MnemonicFileSnafu { path })?
+                .trim()
+                .to_string();
             Ok(TxSigningConfig::PrivateKey {
                 private_key: Redacted::new(private_key),
             })
