@@ -294,7 +294,7 @@ COPY --from=go-builder ${GO_BUILD_PATH}/cartesi-rollups-node /usr/bin
 # Setup runtime dir.
 ARG RUNTIME_DIR=/usr/share/rollups-node
 WORKDIR ${RUNTIME_DIR}
-RUN chown cartesi:cartesi ${RUNTIME_DIR}
+RUN mkdir -p ${RUNTIME_DIR} && chown cartesi:cartesi ${RUNTIME_DIR}
 
 # Set user to low-privilege.
 USER cartesi
