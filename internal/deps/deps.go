@@ -72,8 +72,7 @@ func (d debugLogging) Printf(format string, v ...interface{}) {
 	slog.Debug(fmt.Sprintf(format, v...))
 }
 
-func createHook(containerName string,
-	waitGroup *sync.WaitGroup) []testcontainers.ContainerLifecycleHooks {
+func createHook(waitGroup *sync.WaitGroup) []testcontainers.ContainerLifecycleHooks {
 	return []testcontainers.ContainerLifecycleHooks{
 		{
 			PostTerminates: []testcontainers.ContainerHook{
@@ -84,7 +83,6 @@ func createHook(containerName string,
 			},
 		},
 	}
-
 }
 
 // Run starts the Node dependencies containers.
@@ -108,7 +106,7 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 		Env: map[string]string{
 			"POSTGRES_PASSWORD": depsConfig.Postgres.Password,
 		},
-		LifecycleHooks: createHook("rollups-node-dep-postgres", &waitGroup),
+		LifecycleHooks: createHook(&waitGroup),
 	}
 
 	postgres, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -130,7 +128,7 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 		Env: map[string]string{
 			"ANVIL_IP_ADDR": "0.0.0.0",
 		},
-		LifecycleHooks: createHook("rollups-node-dep-devnet", &waitGroup),
+		LifecycleHooks: createHook(&waitGroup),
 	}
 
 	devnet, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
