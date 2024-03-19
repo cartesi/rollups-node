@@ -29,8 +29,8 @@ const (
 
 // Struct to hold Node dependencies containers configurations
 type DepsConfig struct {
-	Postgres PostgresConfig
-	Devnet   DevnetConfig
+	Postgres *PostgresConfig
+	Devnet   *DevnetConfig
 }
 
 type PostgresConfig struct {
@@ -38,6 +38,7 @@ type PostgresConfig struct {
 	Port        string
 	Password    string
 }
+
 type DevnetConfig struct {
 	DockerImage string
 	Port        string
@@ -46,12 +47,12 @@ type DevnetConfig struct {
 // Builds a DepsConfig struct with default values
 func NewDefaultDepsConfig() *DepsConfig {
 	return &DepsConfig{
-		PostgresConfig{
+		&PostgresConfig{
 			DefaultPostgresDockerImage,
 			DefaultPostgresPort,
 			DefaultPostgresPassword,
 		},
-		DevnetConfig{
+		&DevnetConfig{
 			DefaultDevnetDockerImage,
 			DefaultDevnetPort,
 		},
@@ -92,58 +93,63 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 	debugLogger := debugLogging{}
 	var waitGroup sync.WaitGroup
 
-	// wait strategy copied from testcontainers docs
-	postgresWaitStrategy := wait.ForLog("database system is ready to accept connections").
-		WithOccurrence(numPostgresCheckReadyAttempts).
-		WithPollInterval(pollInterval)
-
-	postgresReq := testcontainers.ContainerRequest{
-		Image: depsConfig.Postgres.DockerImage,
-		ExposedPorts: []string{strings.Join([]string{
-			depsConfig.Postgres.Port, ":5432/tcp"}, "")},
-		WaitingFor: postgresWaitStrategy,
-		Name:       "rollups-node-dep-postgres",
-		Env: map[string]string{
-			"POSTGRES_PASSWORD": depsConfig.Postgres.Password,
-		},
-		LifecycleHooks: createHook(&waitGroup),
+	containers := []testcontainers.Container{}
+	if depsConfig.Postgres != nil {
+		// wait strategy copied from testcontainers docs
+		postgresWaitStrategy := wait.ForLog("database system is ready to accept connections").
+			WithOccurrence(numPostgresCheckReadyAttempts).
+			WithPollInterval(pollInterval)
+		postgresReq := testcontainers.ContainerRequest{
+			Image: depsConfig.Postgres.DockerImage,
+			ExposedPorts: []string{strings.Join([]string{
+				depsConfig.Postgres.Port, ":5432/tcp"}, "")},
+			WaitingFor: postgresWaitStrategy,
+			Name:       "rollups-node-dep-postgres",
+			Env: map[string]string{
+				"POSTGRES_PASSWORD": depsConfig.Postgres.Password,
+			},
+			LifecycleHooks: createHook(&waitGroup),
+		}
+		postgres, err := testcontainers.GenericContainer(
+			ctx,
+			testcontainers.GenericContainerRequest{
+				ContainerRequest: postgresReq,
+				Started:          true,
+				Logger:           debugLogger,
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+		waitGroup.Add(1)
+		containers = append(containers, postgres)
 	}
 
-	postgres, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: postgresReq,
-		Started:          true,
-		Logger:           debugLogger,
-	})
-
-	if err != nil {
-		return nil, err
+	if depsConfig.Devnet != nil {
+		devNetReq := testcontainers.ContainerRequest{
+			Image:        depsConfig.Devnet.DockerImage,
+			ExposedPorts: []string{strings.Join([]string{depsConfig.Devnet.Port, ":8545/tcp"}, "")},
+			WaitingFor:   wait.ForLog("Listening on 0.0.0.0:8545"),
+			Name:         "rollups-node-dep-devnet",
+			Env: map[string]string{
+				"ANVIL_IP_ADDR": "0.0.0.0",
+			},
+			LifecycleHooks: createHook(&waitGroup),
+		}
+		devnet, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+			ContainerRequest: devNetReq,
+			Started:          true,
+			Logger:           debugLogger,
+		})
+		if err != nil {
+			return nil, err
+		}
+		waitGroup.Add(1)
+		containers = append(containers, devnet)
 	}
-	waitGroup.Add(1)
-
-	devNetReq := testcontainers.ContainerRequest{
-		Image:        depsConfig.Devnet.DockerImage,
-		ExposedPorts: []string{strings.Join([]string{depsConfig.Devnet.Port, ":8545/tcp"}, "")},
-		WaitingFor:   wait.ForLog("Listening on 0.0.0.0:8545"),
-		Name:         "rollups-node-dep-devnet",
-		Env: map[string]string{
-			"ANVIL_IP_ADDR": "0.0.0.0",
-		},
-		LifecycleHooks: createHook(&waitGroup),
+	if len(containers) < 1 {
+		return nil, fmt.Errorf("configuration is empty")
 	}
-
-	devnet, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: devNetReq,
-		Started:          true,
-		Logger:           debugLogger,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	waitGroup.Add(1)
-
-	containers := []testcontainers.Container{postgres, devnet}
-
 	return &DepsContainers{containers, &waitGroup}, nil
 }
 
