@@ -26,23 +26,23 @@ cartesi-rollups-cli run-deps`
 var depsConfig = deps.NewDefaultDepsConfig()
 
 func init() {
-	Cmd.Flags().StringVar(&depsConfig.PostgresDockerImage, "postgres-docker-image",
+	Cmd.Flags().StringVar(&depsConfig.Postgres.DockerImage, "postgres-docker-image",
 		deps.DefaultPostgresDockerImage,
 		"Postgress docker image name")
 
-	Cmd.Flags().StringVar(&depsConfig.PostgresPort, "postgres-mapped-port",
+	Cmd.Flags().StringVar(&depsConfig.Postgres.Port, "postgres-mapped-port",
 		deps.DefaultPostgresPort,
 		"Postgres local listening port number")
 
-	Cmd.Flags().StringVar(&depsConfig.PostgresPassword, "postgres-password",
+	Cmd.Flags().StringVar(&depsConfig.Postgres.Password, "postgres-password",
 		deps.DefaultPostgresPassword,
 		"Postgres password")
 
-	Cmd.Flags().StringVar(&depsConfig.DevnetDockerImage, "devnet-docker-image",
+	Cmd.Flags().StringVar(&depsConfig.Devnet.DockerImage, "devnet-docker-image",
 		deps.DefaultDevnetDockerImage,
 		"Devnet docker image name")
 
-	Cmd.Flags().StringVar(&depsConfig.DevnetPort, "devnet-mapped-port",
+	Cmd.Flags().StringVar(&depsConfig.Devnet.Port, "devnet-mapped-port",
 		deps.DefaultDevnetPort,
 		"devnet local listening port number")
 }

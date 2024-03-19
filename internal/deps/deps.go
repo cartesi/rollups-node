@@ -29,21 +29,32 @@ const (
 
 // Struct to hold Node dependencies containers configurations
 type DepsConfig struct {
-	PostgresDockerImage string
-	PostgresPort        string
-	PostgresPassword    string
-	DevnetDockerImage   string
-	DevnetPort          string
+	Postgres PostgresConfig
+	Devnet   DevnetConfig
+}
+
+type PostgresConfig struct {
+	DockerImage string
+	Port        string
+	Password    string
+}
+type DevnetConfig struct {
+	DockerImage string
+	Port        string
 }
 
 // Builds a DepsConfig struct with default values
 func NewDefaultDepsConfig() *DepsConfig {
 	return &DepsConfig{
-		DefaultPostgresDockerImage,
-		DefaultPostgresPort,
-		DefaultPostgresPassword,
-		DefaultDevnetDockerImage,
-		DefaultDevnetPort,
+		PostgresConfig{
+			DefaultPostgresDockerImage,
+			DefaultPostgresPort,
+			DefaultPostgresPassword,
+		},
+		DevnetConfig{
+			DefaultDevnetDockerImage,
+			DefaultDevnetPort,
+		},
 	}
 }
 
@@ -89,13 +100,13 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 		WithPollInterval(pollInterval)
 
 	postgresReq := testcontainers.ContainerRequest{
-		Image: depsConfig.PostgresDockerImage,
+		Image: depsConfig.Postgres.DockerImage,
 		ExposedPorts: []string{strings.Join([]string{
-			depsConfig.PostgresPort, ":5432/tcp"}, "")},
+			depsConfig.Postgres.Port, ":5432/tcp"}, "")},
 		WaitingFor: postgresWaitStrategy,
 		Name:       "rollups-node-dep-postgres",
 		Env: map[string]string{
-			"POSTGRES_PASSWORD": depsConfig.PostgresPassword,
+			"POSTGRES_PASSWORD": depsConfig.Postgres.Password,
 		},
 		LifecycleHooks: createHook("rollups-node-dep-postgres", &waitGroup),
 	}
@@ -112,8 +123,8 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 	waitGroup.Add(1)
 
 	devNetReq := testcontainers.ContainerRequest{
-		Image:        depsConfig.DevnetDockerImage,
-		ExposedPorts: []string{strings.Join([]string{depsConfig.DevnetPort, ":8545/tcp"}, "")},
+		Image:        depsConfig.Devnet.DockerImage,
+		ExposedPorts: []string{strings.Join([]string{depsConfig.Devnet.Port, ":8545/tcp"}, "")},
 		WaitingFor:   wait.ForLog("Listening on 0.0.0.0:8545"),
 		Name:         "rollups-node-dep-devnet",
 		Env: map[string]string{
