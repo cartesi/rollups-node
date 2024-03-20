@@ -33,9 +33,10 @@ func main() {
 
 	// setup log
 	opts := &tint.Options{
-		Level:     config.LogLevel,
-		AddSource: config.LogLevel == slog.LevelDebug,
-		NoColor:   !config.LogPretty || !isatty.IsTerminal(os.Stdout.Fd()),
+		Level:      config.LogLevel,
+		AddSource:  config.LogLevel == slog.LevelDebug,
+		NoColor:    !config.LogPretty || !isatty.IsTerminal(os.Stdout.Fd()),
+		TimeFormat: "2006-01-02T15:04:05.000", // RFC3339 with milliseconds and without timezone
 	}
 	handler := tint.NewHandler(os.Stdout, opts)
 	logger := slog.New(handler)
