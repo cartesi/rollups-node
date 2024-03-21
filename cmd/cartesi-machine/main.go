@@ -17,7 +17,7 @@ import (
 
 func main() {
 	var machine *emulator.Machine
-	defer machine.Free()
+	defer machine.Delete()
 	var mgr *emulator.RemoteMachineManager
 	defer mgr.Free()
 	var err error

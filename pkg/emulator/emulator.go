@@ -1,16 +1,11 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-// Cartesi Machine C API wrapper
-
 package emulator
 
-/*
-#cgo LDFLAGS: -lcartesi -lcartesi_jsonrpc
-#include "machine-c-api.h"
-#include "jsonrpc-machine-c-api.h"
-#include <stdlib.h>
-*/
+// #cgo LDFLAGS: -lcartesi -lcartesi_jsonrpc
+// #include <stdlib.h>
+// #include "cartesi-machine/jsonrpc-machine-c-api.h"
 import "C"
 
 import (
@@ -18,6 +13,10 @@ import (
 	"fmt"
 	"unsafe"
 )
+
+// ------------------------------------------------------------------------------------------------
+// Error
+// ------------------------------------------------------------------------------------------------
 
 type ErrorCode int32
 
@@ -53,10 +52,6 @@ const (
 	ErrorCodeUnknown              ErrorCode = C.CM_ERROR_UNKNOWN
 )
 
-func isFailure(cerr C.int) bool {
-	return ErrorCode(cerr) != ErrorCodeOk
-}
-
 type Error struct {
 	Code ErrorCode
 	Msg  string
@@ -66,13 +61,17 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("cartesi machine error %d (%s)", e.Code, e.Msg)
 }
 
-func newError(code C.int, message *C.char) error {
-	defer C.cm_delete_cstring(message)
+func newError(code C.int, msg *C.char) error {
+	defer C.cm_delete_cstring(msg)
 	if code != C.CM_ERROR_OK {
-		return &Error{Code: ErrorCode(code), Msg: C.GoString(message)}
+		return &Error{Code: ErrorCode(code), Msg: C.GoString(msg)}
 	}
 	return nil
 }
+
+// ------------------------------------------------------------------------------------------------
+// Types
+// ------------------------------------------------------------------------------------------------
 
 type BreakReason int32
 
@@ -249,9 +248,37 @@ type UarchConfig struct {
 	Ram       UarchRamConfig
 }
 
-////////////////////////////////////////
-// Helpers and utils
-////////////////////////////////////////
+// ------------------------------------------------------------------------------------------------
+// MachineConfig
+// ------------------------------------------------------------------------------------------------
+
+func NewDefaultMachineConfig() *MachineConfig {
+	ref := theirMachineConfigCRef{}
+	defer ref.free()
+	ref.cref = C.cm_new_default_machine_config()
+	return ref.makeGoRef()
+}
+
+func GetDefaultMachineConfig() (*MachineConfig, error) {
+	theirCfg := theirMachineConfigCRef{}
+	defer theirCfg.free()
+	var msg *C.char
+	code := C.cm_get_default_config(&theirCfg.cref, &msg)
+	if err := newError(code, msg); err != nil {
+		return nil, err
+	}
+	return theirCfg.makeGoRef(), nil
+}
+
+// ------------------------------------------------------------------------------------------------
+// Helpers
+// ------------------------------------------------------------------------------------------------
+
+type MerkleTreeHash [32]byte
+
+func (hash *MerkleTreeHash) String() string {
+	return hex.EncodeToString(hash[:])
+}
 
 type ourMemoryRangeConfig struct {
 	cref *C.cm_memory_range_config
@@ -376,7 +403,8 @@ func (config *MachineConfig) makeCRef() (ref *ourMachineConfigCRef) {
 	cFlashDrive := &ref.cref.flash_drive
 	flashDrive := &config.FlashDrive
 	cFlashDrive.count = (C.ulong)(len(*flashDrive))
-	cFlashDrive.entry = (*C.cm_memory_range_config)(C.calloc((C.ulong)(len(*flashDrive)), C.sizeof_cm_memory_range_config))
+	cFlashDrive.entry = (*C.cm_memory_range_config)(C.calloc((C.ulong)(len(*flashDrive)),
+		C.sizeof_cm_memory_range_config))
 	for i, v := range *flashDrive {
 		offset := C.sizeof_cm_memory_range_config * i
 		addr := unsafe.Pointer(uintptr(unsafe.Pointer(cFlashDrive.entry)) + uintptr(offset))
@@ -585,371 +613,4 @@ func makeCString(s *string) *C.char {
 		return nil
 	}
 	return C.CString(*s)
-}
-
-///////////////////////////
-// Public API
-///////////////////////////
-
-func NewDefaultMachineConfig() *MachineConfig {
-	ref := theirMachineConfigCRef{}
-	defer ref.free()
-	ref.cref = C.cm_new_default_machine_config()
-	return ref.makeGoRef()
-}
-
-// a connection to the remote jsonrpc machine manager
-type RemoteMachineManager struct {
-	RemoteAddress string
-	cref          *C.cm_jsonrpc_mg_mgr
-}
-
-// a local or remote machine
-type Machine struct {
-	cref          *C.cm_machine
-	remoteManager *RemoteMachineManager
-}
-
-func (mgr *RemoteMachineManager) Free() {
-	if mgr != nil && mgr.cref != nil {
-		C.cm_delete_jsonrpc_mg_mgr(mgr.cref)
-		mgr.cref = nil
-	}
-}
-
-func (machine *Machine) Free() {
-	if machine == nil || machine.cref == nil {
-		return
-	}
-	C.cm_delete_machine(machine.cref)
-	machine.cref = nil
-}
-
-func (machine *Machine) Store(dir string) error {
-	cDir := C.CString(dir)
-	defer C.free(unsafe.Pointer(cDir))
-	var cerr *C.char
-	if e := C.cm_store(machine.cref, cDir, &cerr); isFailure(e) {
-		return newError(e, cerr)
-	}
-	return nil
-}
-
-func NewMachine(config *MachineConfig, runtime *MachineRuntimeConfig) (*Machine, error) {
-	machine := &Machine{}
-	configRef := config.makeCRef()
-	defer configRef.free()
-	runtimeRef := runtime.makeCRef()
-	defer runtimeRef.free()
-	var cerr *C.char
-	if e := C.cm_create_machine(configRef.cref, runtimeRef.cref, &machine.cref, &cerr); isFailure(e) {
-		return nil, newError(e, cerr)
-	}
-	return machine, nil
-}
-
-func LoadMachine(dir string, runtime *MachineRuntimeConfig) (*Machine, error) {
-	machine := &Machine{}
-	cDir := C.CString(dir)
-	defer C.free(unsafe.Pointer(cDir))
-	runtimeRef := runtime.makeCRef()
-	defer runtimeRef.free()
-	var cerr *C.char
-	if e := C.cm_load_machine(cDir, runtimeRef.cref, &machine.cref, &cerr); isFailure(e) {
-		return nil, newError(e, cerr)
-
-	}
-	return machine, nil
-}
-
-func GetDefaultConfig() (*MachineConfig, error) {
-	theirCfg := theirMachineConfigCRef{}
-	defer theirCfg.free()
-	var cerr *C.char
-	if e := C.cm_get_default_config(&theirCfg.cref, &cerr); isFailure(e) {
-		return nil, newError(e, cerr)
-	}
-	return theirCfg.makeGoRef(), nil
-}
-
-func (m *Machine) Run(mcycleEnd uint64) (BreakReason, error) {
-	var cerr *C.char
-	var creason C.CM_BREAK_REASON
-	if e := C.cm_machine_run(m.cref, C.uint64_t(mcycleEnd), &creason, &cerr); isFailure(e) {
-		return BreakReasonFailed, newError(e, cerr)
-	}
-	return (BreakReason)(creason), nil
-}
-
-func (machine *Machine) GetInitialConfig() (*MachineConfig, error) {
-	theirCfg := theirMachineConfigCRef{}
-	defer theirCfg.free()
-	var cerr *C.char
-	if e := C.cm_get_initial_config(machine.cref, &theirCfg.cref, &cerr); isFailure(e) {
-		return nil, newError(e, cerr)
-	}
-	return theirCfg.makeGoRef(), nil
-}
-
-func (machine *Machine) Destroy() error {
-	var cerr *C.char
-	if e := C.cm_destroy(machine.cref, &cerr); isFailure(e) {
-		return newError(e, cerr)
-	}
-	return nil
-}
-
-func (machine *Machine) ReadCSR(r ProcessorCSR) (uint64, error) {
-	var cval C.uint64_t
-	var cerr *C.char
-	if e := C.cm_read_csr(machine.cref, C.CM_PROC_CSR(r), &cval, &cerr); isFailure(e) {
-		return 0, newError(e, cerr)
-	}
-	return uint64(cval), nil
-}
-
-func (machine *Machine) WriteCSR(r ProcessorCSR, val uint64) error {
-	var cerr *C.char
-	if e := C.cm_write_csr(machine.cref, C.CM_PROC_CSR(r), C.uint64_t(val), &cerr); isFailure(e) {
-		return newError(e, cerr)
-	}
-	return nil
-}
-
-func (machine *Machine) ReadX(i int) (uint64, error) {
-	var cval C.uint64_t
-	var cerr *C.char
-	if e := C.cm_read_x(machine.cref, C.int(i), &cval, &cerr); isFailure(e) {
-		return 0, newError(e, cerr)
-	}
-	return uint64(cval), nil
-}
-
-func (machine *Machine) WriteX(i int, val uint64) error {
-	var cerr *C.char
-	if e := C.cm_write_x(machine.cref, C.int(i), C.uint64_t(val), &cerr); isFailure(e) {
-		return newError(e, cerr)
-	}
-	return nil
-}
-
-func (machine *Machine) ReadF(i int) (uint64, error) {
-	var cval C.uint64_t
-	var cerr *C.char
-	if e := C.cm_read_f(machine.cref, C.int(i), &cval, &cerr); isFailure(e) {
-		return 0, newError(e, cerr)
-	}
-	return uint64(cval), nil
-}
-
-func (machine *Machine) ReadIFlagsX() (bool, error) {
-	var cval C.bool
-	var cerr *C.char
-	if e := C.cm_read_iflags_X(machine.cref, &cval, &cerr); isFailure(e) {
-		return false, newError(e, cerr)
-	}
-	return bool(cval), nil
-}
-
-func (machine *Machine) ResetIFlagsX() error {
-	var cerr *C.char
-	if e := C.cm_reset_iflags_X(machine.cref, &cerr); isFailure(e) {
-		return newError(e, cerr)
-	}
-	return nil
-}
-
-func (machine *Machine) SetIFlagsX() error {
-	var cerr *C.char
-	if e := C.cm_set_iflags_X(machine.cref, &cerr); isFailure(e) {
-		return newError(e, cerr)
-	}
-	return nil
-}
-
-func (machine *Machine) ReadIFlagsY() (bool, error) {
-	var cval C.bool
-	var cerr *C.char
-	if e := C.cm_read_iflags_Y(machine.cref, &cval, &cerr); isFailure(e) {
-		return false, newError(e, cerr)
-	}
-	return bool(cval), nil
-}
-
-func (machine *Machine) ResetIFlagsY() error {
-	var cerr *C.char
-	if e := C.cm_reset_iflags_Y(machine.cref, &cerr); isFailure(e) {
-		return newError(e, cerr)
-	}
-	return nil
-}
-
-func (machine *Machine) SetIFlagsY() error {
-	var cerr *C.char
-	if e := C.cm_set_iflags_Y(machine.cref, &cerr); isFailure(e) {
-		return newError(e, cerr)
-	}
-	return nil
-}
-
-func (machine *Machine) ReadIFlagsH() (bool, error) {
-	var cval C.bool
-	var cerr *C.char
-	if e := C.cm_read_iflags_H(machine.cref, &cval, &cerr); isFailure(e) {
-		return false, newError(e, cerr)
-	}
-	return bool(cval), nil
-}
-
-func (machine *Machine) SetIFlagsH() error {
-	var cerr *C.char
-	if e := C.cm_set_iflags_H(machine.cref, &cerr); isFailure(e) {
-		return newError(e, cerr)
-	}
-	return nil
-}
-
-type MerkleTreeHash [32]byte
-
-func (hash *MerkleTreeHash) String() string {
-	return hex.EncodeToString(hash[:])
-}
-
-func (machine *Machine) GetRootHash() (*MerkleTreeHash, error) {
-	var chash C.cm_hash
-	var cerr *C.char
-	if e := C.cm_get_root_hash(machine.cref, &chash, &cerr); isFailure(e) {
-		return nil, newError(e, cerr)
-	}
-	hash := &MerkleTreeHash{}
-	for i := 0; i < 32; i++ {
-		hash[i] = byte(chash[i])
-	}
-	return hash, nil
-}
-
-func (machine *Machine) WriteF(i int, val uint64) error {
-	var cerr *C.char
-	if e := C.cm_write_f(machine.cref, C.int(i), C.uint64_t(val), &cerr); isFailure(e) {
-		return newError(e, cerr)
-	}
-	return nil
-}
-
-func NewRemoteMachineManager(remoteAddress string) (*RemoteMachineManager, error) {
-	manager := &RemoteMachineManager{RemoteAddress: remoteAddress}
-	cRemoteAddress := C.CString(remoteAddress)
-	defer C.free(unsafe.Pointer(cRemoteAddress))
-	var cerr *C.char
-	if e := C.cm_create_jsonrpc_mg_mgr(cRemoteAddress, &manager.cref, &cerr); isFailure(e) {
-		return nil, newError(e, cerr)
-	}
-	return manager, nil
-}
-
-func (mgr *RemoteMachineManager) Shutdown() error {
-	var cerr *C.char
-	if e := C.cm_jsonrpc_shutdown(mgr.cref, &cerr); isFailure(e) {
-		return newError(e, cerr)
-	}
-	return nil
-}
-
-func (mgr *RemoteMachineManager) Fork() (*string, error) {
-	var cNewAddress *C.char = nil
-	var cerr *C.char
-	if e := C.cm_jsonrpc_fork(mgr.cref, &cNewAddress, &cerr); isFailure(e) {
-		return nil, newError(e, cerr)
-	}
-	newAddress := C.GoString(cNewAddress)
-	C.cm_delete_cstring(cNewAddress)
-	return &newAddress, nil
-}
-
-func (mgr *RemoteMachineManager) NewMachine(config *MachineConfig, runtime *MachineRuntimeConfig) (*Machine, error) {
-	machine := &Machine{remoteManager: mgr}
-	configRef := config.makeCRef()
-	defer configRef.free()
-	runtimeRef := runtime.makeCRef()
-	defer runtimeRef.free()
-	var cerr *C.char
-	if e := C.cm_create_jsonrpc_machine(mgr.cref, configRef.cref, runtimeRef.cref, &machine.cref, &cerr); isFailure(e) {
-		return nil, newError(e, cerr)
-	}
-	return machine, nil
-}
-
-func (mgr *RemoteMachineManager) GetDefaultConfig() (*MachineConfig, error) {
-	theirCfg := theirMachineConfigCRef{}
-	defer theirCfg.free()
-	var cerr *C.char
-	if e := C.cm_jsonrpc_get_default_config(mgr.cref, &theirCfg.cref, &cerr); isFailure(e) {
-		return nil, newError(e, cerr)
-	}
-	return theirCfg.makeGoRef(), nil
-}
-
-func (mgr *RemoteMachineManager) LoadMachine(dir string, runtime *MachineRuntimeConfig) (*Machine, error) {
-	machine := &Machine{remoteManager: mgr}
-	cDir := C.CString(dir)
-	defer C.free(unsafe.Pointer(cDir))
-	runtimeRef := runtime.makeCRef()
-	defer runtimeRef.free()
-	var cerr *C.char
-	if e := C.cm_load_jsonrpc_machine(mgr.cref, cDir, runtimeRef.cref, &machine.cref, &cerr); isFailure(e) {
-		return nil, newError(e, cerr)
-	}
-	return machine, nil
-}
-
-func (mgr *RemoteMachineManager) GetMachine() (*Machine, error) {
-	machine := &Machine{remoteManager: mgr}
-	var cerr *C.char
-	if e := C.cm_get_jsonrpc_machine(mgr.cref, &machine.cref, &cerr); isFailure(e) {
-		return nil, newError(e, cerr)
-	}
-	return machine, nil
-}
-
-func (machine *Machine) WriteMemory(address uint64, data []byte) error {
-	var cerr *C.char
-	if e := C.cm_write_memory(machine.cref, C.uint64_t(address), (*C.uchar)(&data[0]), C.size_t(len(data)), &cerr); isFailure(e) {
-		return newError(e, cerr)
-	}
-	return nil
-}
-
-func (machine *Machine) ReadMemory(address uint64, length uint64) ([]byte, error) {
-	data := make([]byte, length)
-	var cerr *C.char
-	if e := C.cm_read_memory(machine.cref, C.uint64_t(address), (*C.uchar)(&data[0]), C.uint64_t(length), &cerr); isFailure(e) {
-		return nil, newError(e, cerr)
-	}
-	return data, nil
-}
-
-func (machine *Machine) ReplaceMemoryRange(newRange *MemoryRangeConfig) error {
-	newRangeRef := newRange.makeCRef()
-	defer newRangeRef.free()
-	var cerr *C.char
-	if e := C.cm_replace_memory_range(machine.cref, newRangeRef.cref, &cerr); isFailure(e) {
-		return newError(e, cerr)
-	}
-	return nil
-}
-
-func (machine *Machine) Snapshot() error {
-	var cerr *C.char
-	if e := C.cm_snapshot(machine.cref, &cerr); isFailure(e) {
-		return newError(e, cerr)
-	}
-	return nil
-}
-
-func (machine *Machine) Rollback() error {
-	var cerr *C.char
-	if e := C.cm_rollback(machine.cref, &cerr); isFailure(e) {
-		return newError(e, cerr)
-	}
-	return nil
 }
