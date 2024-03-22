@@ -22,6 +22,7 @@ const (
 	DefaultPostgresPassword    = "password"
 	DefaultDevnetDockerImage   = "cartesi/rollups-node-devnet:devel"
 	DefaultDevnetPort          = "8545"
+	DefaultBlockTime           = "1"
 
 	numPostgresCheckReadyAttempts = 2
 	pollInterval                  = 5 * time.Second
@@ -42,6 +43,7 @@ type PostgresConfig struct {
 type DevnetConfig struct {
 	DockerImage string
 	Port        string
+	BlockTime   string
 }
 
 // Builds a DepsConfig struct with default values
@@ -55,6 +57,7 @@ func NewDefaultDepsConfig() *DepsConfig {
 		&DevnetConfig{
 			DefaultDevnetDockerImage,
 			DefaultDevnetPort,
+			DefaultBlockTime,
 		},
 	}
 }
@@ -73,12 +76,20 @@ func (d debugLogging) Printf(format string, v ...interface{}) {
 	slog.Debug(fmt.Sprintf(format, v...))
 }
 
-func createHook(waitGroup *sync.WaitGroup) []testcontainers.ContainerLifecycleHooks {
+func createHook(containerName string,
+	finishedWaitGroup *sync.WaitGroup,
+	startedWaitGroup *sync.WaitGroup) []testcontainers.ContainerLifecycleHooks {
 	return []testcontainers.ContainerLifecycleHooks{
 		{
+			PostStarts: []testcontainers.ContainerHook{
+				func(ctx context.Context, container testcontainers.Container) error {
+					startedWaitGroup.Done()
+					return nil
+				},
+			},
 			PostTerminates: []testcontainers.ContainerHook{
 				func(ctx context.Context, container testcontainers.Container) error {
-					waitGroup.Done()
+					finishedWaitGroup.Done()
 					return nil
 				},
 			},
@@ -90,8 +101,10 @@ func createHook(waitGroup *sync.WaitGroup) []testcontainers.ContainerLifecycleHo
 // The returned DepContainers struct can be used to gracefully
 // terminate the containers using the Terminate method
 func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
+
 	debugLogger := debugLogging{}
-	var waitGroup sync.WaitGroup
+	var finishedWaitGroup sync.WaitGroup
+	var startedWaitGroup sync.WaitGroup
 
 	containers := []testcontainers.Container{}
 	if depsConfig.Postgres != nil {
@@ -99,6 +112,8 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 		postgresWaitStrategy := wait.ForLog("database system is ready to accept connections").
 			WithOccurrence(numPostgresCheckReadyAttempts).
 			WithPollInterval(pollInterval)
+
+		startedWaitGroup.Add(1)
 		postgresReq := testcontainers.ContainerRequest{
 			Image: depsConfig.Postgres.DockerImage,
 			ExposedPorts: []string{strings.Join([]string{
@@ -108,7 +123,8 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 			Env: map[string]string{
 				"POSTGRES_PASSWORD": depsConfig.Postgres.Password,
 			},
-			LifecycleHooks: createHook(&waitGroup),
+			LifecycleHooks: createHook("rollups-node-dep-postgres",
+				&finishedWaitGroup, &startedWaitGroup),
 		}
 		postgres, err := testcontainers.GenericContainer(
 			ctx,
@@ -121,20 +137,21 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 		if err != nil {
 			return nil, err
 		}
-		waitGroup.Add(1)
+		finishedWaitGroup.Add(1)
 		containers = append(containers, postgres)
 	}
 
 	if depsConfig.Devnet != nil {
+		startedWaitGroup.Add(1)
 		devNetReq := testcontainers.ContainerRequest{
 			Image:        depsConfig.Devnet.DockerImage,
 			ExposedPorts: []string{strings.Join([]string{depsConfig.Devnet.Port, ":8545/tcp"}, "")},
-			WaitingFor:   wait.ForLog("Listening on 0.0.0.0:8545"),
+			WaitingFor:   wait.ForLog("Block Number: 21"),
 			Name:         "rollups-node-dep-devnet",
-			Env: map[string]string{
-				"ANVIL_IP_ADDR": "0.0.0.0",
-			},
-			LifecycleHooks: createHook(&waitGroup),
+			Cmd: []string{"anvil", "--block-time",
+				depsConfig.Devnet.BlockTime, "--load-state", "/usr/share/devnet/anvil_state.json"},
+			LifecycleHooks: createHook("rollups-node-dep-devnet",
+				&finishedWaitGroup, &startedWaitGroup),
 		}
 		devnet, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 			ContainerRequest: devNetReq,
@@ -144,13 +161,16 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 		if err != nil {
 			return nil, err
 		}
-		waitGroup.Add(1)
+		finishedWaitGroup.Add(1)
 		containers = append(containers, devnet)
 	}
+
 	if len(containers) < 1 {
 		return nil, fmt.Errorf("configuration is empty")
 	}
-	return &DepsContainers{containers, &waitGroup}, nil
+	startedWaitGroup.Wait()
+
+	return &DepsContainers{containers, &finishedWaitGroup}, nil
 }
 
 // Terminate terminates all dependencies containers. This method waits for all the containers
