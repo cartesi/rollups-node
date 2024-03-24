@@ -1,28 +1,28 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-package services
+package linewriter
 
 import (
 	"bytes"
 	"io"
 )
 
-// lineWriter accumulates the received data in a buffer and writes it to the inner writer when it
+// LineWriter accumulates the received data in a buffer and writes it to the inner writer when it
 // encounters a new line, ignoring empty lines in the process.
-// lineWriter assumes the inner writer does not returns an error.
-type lineWriter struct {
+// LineWriter assumes the inner writer does not returns an error.
+type LineWriter struct {
 	inner  io.Writer
 	buffer bytes.Buffer
 }
 
-func newLineWriter(inner io.Writer) *lineWriter {
-	return &lineWriter{
+func New(inner io.Writer) *LineWriter {
+	return &LineWriter{
 		inner: inner,
 	}
 }
 
-func (w *lineWriter) Write(data []byte) (int, error) {
+func (w *LineWriter) Write(data []byte) (int, error) {
 	_, err := w.buffer.Write(data)
 	if err != nil {
 		// Not possible given bytes.Buffer spec
