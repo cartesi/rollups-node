@@ -44,7 +44,7 @@ func GetTestBook() *Book {
 		ERC721Portal:        common.HexToAddress("0x237F8DD094C0e47f4236f12b4Fa01d6Dae89fb87"),
 		EtherPortal:         common.HexToAddress("0xFfdbe43d4c855BF7e0f105c400A50857f53AB044"),
 		InputBox:            common.HexToAddress("0x59b22D57D4f067708AB0c00552767405926dc768"),
-		CartesiDApp:         common.HexToAddress("0x7FFdf694A877067DE99462A7243b29972D19cf72"),
+		CartesiDApp:         common.HexToAddress("0x7C54E3f7A8070a54223469965A871fB8f6f88c22"),
 	}
 }
 
