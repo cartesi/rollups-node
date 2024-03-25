@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed `CARTESI_BLOCKCHAIN_ID` type from int to uint64
 - Changed `CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER` type from string to int64.
 - Changed `CARTESI_LOG_LEVEL` option `warning` to `warn`
+- Bumped Cartesi Emulator SDK to 0.17.1
+- Bumped Server Manager to 0.9.1
 
 ### Removed
 

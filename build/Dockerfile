@@ -79,23 +79,20 @@ EOF
 # This stage builds the snapshot using the machine emulator as base image.
 FROM emulator-base as snapshot-builder
 
-# Download rootfs, linux and rom.
+# Download rootfs and linux.
 # Add these files to the directories the cartesi-machine expects.
 WORKDIR /usr/share/cartesi-machine/images/
-ARG ROOTFS_VERSION
+ARG TOOLS_VERSION
 ARG LINUX_VERSION
 ARG LINUX_KERNEL_VERSION
-ARG ROM_VERSION
-ADD https://github.com/cartesi/image-rootfs/releases/download/v${ROOTFS_VERSION}/rootfs-v${ROOTFS_VERSION}.ext2 rootfs.ext2
+ADD https://github.com/cartesi/machine-emulator-tools/releases/download/v${TOOLS_VERSION}/rootfs-tools-v${TOOLS_VERSION}.ext2 rootfs.ext2
 ADD https://github.com/cartesi/image-kernel/releases/download/v${LINUX_VERSION}/linux-${LINUX_KERNEL_VERSION}.bin linux.bin
-ADD https://github.com/cartesi/machine-emulator-rom/releases/download/v${ROM_VERSION}/rom-v${ROM_VERSION}.bin rom.bin
 
 # Generate snapshot with echo and store it.
-ARG SNAPSHOT_BUILD_PATH
 WORKDIR /build
+ARG SNAPSHOT_BUILD_PATH
 RUN cartesi-machine \
     --ram-length=128Mi \
-    --rollup \
     --store=$SNAPSHOT_BUILD_PATH \
     -- "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --verbose=1"
 
@@ -313,8 +310,12 @@ apt-get install -y --no-install-recommends \
     curl \
     libpq5 \
     redis \
-    libboost-log1.74.0 \
     redis-tools \
+    libboost-coroutine1.81.0 \
+    libboost-context1.81.0 \
+    libboost-filesystem1.81.0 \
+    libboost-log1.81.0 \
+    libcrypto++8 \
     procps
 rm -rf /var/lib/apt/lists/*
 EOF
