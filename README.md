@@ -95,10 +95,10 @@ The Cartesi Rollups Node depends on the following Cartesi components:
 
 | Component | Version |
 |---|---|
-| Cartesi Machine SDK | [v0.16.3](https://github.com/cartesi/machine-emulator-sdk/releases/tag/v0.16.3) |
+| Cartesi Machine SDK | [v0.17.0](https://github.com/cartesi/machine-emulator-sdk/releases/tag/v0.17.0) |
 | Cartesi OpenAPI Interfaces | [v0.7.1](https://github.com/cartesi/openapi-interfaces/releases/tag/v0.7.1) |
 | Cartesi Rollups Contracts | [v1.2.0](https://github.com/cartesi/rollups-contracts/releases/tag/v1.2.0) |
-| Cartesi Server Manager | [v0.8.3](https://github.com/cartesi/server-manager/releases/tag/v0.8.3) |
+| Cartesi Server Manager | [v0.9.0](https://github.com/cartesi/server-manager/releases/tag/v0.9.0) |
 
 ## Development
 
