@@ -178,10 +178,8 @@ ENV PATH=$PATH:/usr/local/go/bin
 
 # Copy gen-devnet script and dependencies
 # This should be simplified in the future when `COPY --parents` is made available
-COPY internal/services internal/services
-COPY pkg/addresses pkg/addresses
-COPY pkg/contracts pkg/contracts
-COPY pkg/ethutil pkg/ethutil
+COPY internal internal
+COPY pkg pkg
 COPY rollups-contracts rollups-contracts
 COPY cmd/gen-devnet cmd/gen-devnet
 
