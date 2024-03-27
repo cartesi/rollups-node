@@ -24,3 +24,29 @@ type Output struct {
 	// Output data as a blob, starting with '0x'
 	Blob hexutil.Bytes `json:"blob"`
 }
+
+type Epoch struct {
+	StartBlock uint64
+	EndBlock   uint64
+}
+
+type InputRange struct {
+	First uint64
+	Last  uint64
+}
+
+type Claim struct {
+	InputRange InputRange
+	EpochHash  hexutil.Bytes
+}
+
+type Proof struct {
+	InputRange                       InputRange
+	InputIndexWithinEpoch            uint64
+	OutputIndexWithinInput           uint64
+	OutputHashesRootHash             hexutil.Bytes
+	OutputsEpochRootHash             hexutil.Bytes
+	MachineStateHash                 hexutil.Bytes
+	OutputHashInOutputHashesSiblings []hexutil.Bytes
+	OutputHashesInEpochSiblings      []hexutil.Bytes
+}
