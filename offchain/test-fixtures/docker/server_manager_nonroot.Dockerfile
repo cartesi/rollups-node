@@ -1,7 +1,7 @@
 # (c) Cartesi and individual authors (see AUTHORS)
 # SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-FROM cartesi/server-manager:0.8.3
+FROM cartesi/server-manager:0.9.0
 
 ARG user
 ARG group
