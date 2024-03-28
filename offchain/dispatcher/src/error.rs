@@ -1,11 +1,10 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-use axum::http::uri::InvalidUri;
 use eth_state_client_lib::error::StateServerError;
 use snafu::Snafu;
 use std::net::AddrParseError;
-use tonic::transport::Error as TonicError;
+use tonic::{codegen::http::uri::InvalidUri, transport::Error as TonicError};
 
 use crate::machine;
 
@@ -13,7 +12,7 @@ use crate::machine;
 #[snafu(visibility(pub(crate)))]
 pub enum DispatcherError {
     #[snafu(display("http server error"))]
-    HttpServerError { source: hyper::Error },
+    HttpServerError { source: std::io::Error },
 
     #[snafu(display("metrics address error"))]
     MetricsAddressError { source: AddrParseError },

@@ -29,7 +29,7 @@ use std::{
 pub async fn start(
     config: HttpServerConfig,
     registry: Registry,
-) -> Result<(), hyper::Error> {
+) -> Result<(), std::io::Error> {
     let ip = "0.0.0.0".parse().expect("could not parse host address");
     let addr = SocketAddr::new(ip, config.port);
     tracing::info!("Starting HTTP server at {}", addr);
@@ -39,9 +39,8 @@ pub async fn start(
         .route("/healthz", get(|| async { "" }))
         .route("/metrics", get(|| get_metrics(registry)));
 
-    axum::Server::bind(&addr)
-        .serve(router.into_make_service())
-        .await
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    axum::serve(listener, router).await
 }
 
 /// Returns the metrics as a specially encoded string.

@@ -11,7 +11,7 @@ pub enum HealthCheckError {
     ParseAddressError { source: std::net::AddrParseError },
 
     #[snafu(display("http health-check server error"))]
-    HttpServerError { source: hyper::Error },
+    HttpServerError { source: std::io::Error },
 }
 
 #[tracing::instrument(level = "trace", skip_all)]
@@ -21,9 +21,11 @@ pub async fn start(port: u16) -> Result<(), HealthCheckError> {
     let ip = "0.0.0.0".parse().context(ParseAddressSnafu)?;
     let addr = SocketAddr::new(ip, port);
     let app = Router::new().route("/healthz", get(|| async { "" }));
-    let server = axum::Server::bind(&addr).serve(app.into_make_service());
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .context(HttpServerSnafu)?;
 
-    tracing::trace!(address = ?server.local_addr(), "http healthcheck address bound");
+    tracing::trace!(address = ?listener.local_addr(), "http healthcheck address bound");
 
-    server.await.context(HttpServerSnafu)
+    axum::serve(listener, app).await.context(HttpServerSnafu)
 }
