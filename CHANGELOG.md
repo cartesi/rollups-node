@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added verification to ensure the Cartesi Machine snapshot hash matches the template hash from the CartesiDApp contract
 - Added support for `CARTESI_AUTH_PRIVATE_KEY` and `CARTESI_AUTH_PRIVATE_KEY_FILE`
 - Added `CARTESI_AUTH_KIND` environment variable to select the blockchain authetication method
-- Added structured logging with slog. Colored logs can now be enabled with `CARTESI_LOG_PRETTY` environment variable.
+- Added structured logging with slog. Colored logs can now be enabled with `CARTESI_LOG_PRETTY` environment variable
+- Added Rollps end-to-end test using Echo Dapp
 
 ### Changed
 

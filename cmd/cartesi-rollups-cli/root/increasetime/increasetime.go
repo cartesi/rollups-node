@@ -4,12 +4,10 @@
 package increasetime
 
 import (
-	"fmt"
-	"io"
-	"net/http"
-	"strconv"
-	"strings"
+	"context"
+	"log/slog"
 
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/spf13/cobra"
 )
 
@@ -39,24 +37,8 @@ func init() {
 }
 
 func run(cmd *cobra.Command, args []string) {
-	client := &http.Client{}
-	var data = strings.NewReader(`{
-		"id":1337,
-		"jsonrpc":"2.0",
-		"method":"evm_increaseTime",
-		"params":[` + strconv.Itoa(time) + `]
-	}`)
 
-	req, err := http.NewRequest("POST", anvilEndpoint, data)
-	cobra.CheckErr(err)
+	cobra.CheckErr(ethutil.AdvanceDevnetTime(context.Background(), anvilEndpoint, time))
 
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	cobra.CheckErr(err)
-
-	defer resp.Body.Close()
-	bodyText, err := io.ReadAll(resp.Body)
-	cobra.CheckErr(err)
-
-	fmt.Printf("%s\n", bodyText)
+	slog.Info("Ok")
 }
