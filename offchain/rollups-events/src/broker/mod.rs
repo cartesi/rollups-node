@@ -104,7 +104,7 @@ impl Broker {
                         endpoints
                             .iter()
                             .map(|endpoint| endpoint.inner().as_str())
-                            .collect(),
+                            .collect::<Vec<_>>(),
                     )?;
                     tracing::trace!("connecting to Redis Cluster");
                     let connection = client.get_async_connection().await?;

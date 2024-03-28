@@ -9,4 +9,5 @@ axum.workspace = true
 clap = { workspace = true, features = ["derive", "env", "string"] }
 hyper.workspace = true
 prometheus-client.workspace = true
+tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
 tracing.workspace = true

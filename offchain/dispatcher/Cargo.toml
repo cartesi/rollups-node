@@ -15,13 +15,11 @@ rollups-events = { path = "../rollups-events" }
 types = { path = "../types" }
 
 async-trait.workspace = true
-axum.workspace = true
 backoff = { workspace = true, features = ["tokio"] }
 clap = { workspace = true, features = ["derive", "env"] }
 eth-state-client-lib.workspace = true
 eth-state-fold-types = { workspace = true, features = ["ethers"] }
 futures.workspace = true
-hyper.workspace = true
 snafu.workspace = true
 tokio = { workspace = true, features = ["sync", "macros", "rt-multi-thread"] }
 tokio-stream.workspace = true
