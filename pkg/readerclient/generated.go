@@ -2141,29 +2141,29 @@ query getInput ($index: Int!) {
 `
 
 func getInput(
-	ctx context.Context,
-	client graphql.Client,
+	ctx_ context.Context,
+	client_ graphql.Client,
 	index int,
 ) (*getInputResponse, error) {
-	req := &graphql.Request{
+	req_ := &graphql.Request{
 		OpName: "getInput",
 		Query:  getInput_Operation,
 		Variables: &__getInputInput{
 			Index: index,
 		},
 	}
-	var err error
+	var err_ error
 
-	var data getInputResponse
-	resp := &graphql.Response{Data: &data}
+	var data_ getInputResponse
+	resp_ := &graphql.Response{Data: &data_}
 
-	err = client.MakeRequest(
-		ctx,
-		req,
-		resp,
+	err_ = client_.MakeRequest(
+		ctx_,
+		req_,
+		resp_,
 	)
 
-	return &data, err
+	return &data_, err_
 }
 
 // The query or mutation executed by getInputNotices.
@@ -2197,29 +2197,29 @@ query getInputNotices ($inputIndex: Int!) {
 `
 
 func getInputNotices(
-	ctx context.Context,
-	client graphql.Client,
+	ctx_ context.Context,
+	client_ graphql.Client,
 	inputIndex int,
 ) (*getInputNoticesResponse, error) {
-	req := &graphql.Request{
+	req_ := &graphql.Request{
 		OpName: "getInputNotices",
 		Query:  getInputNotices_Operation,
 		Variables: &__getInputNoticesInput{
 			InputIndex: inputIndex,
 		},
 	}
-	var err error
+	var err_ error
 
-	var data getInputNoticesResponse
-	resp := &graphql.Response{Data: &data}
+	var data_ getInputNoticesResponse
+	resp_ := &graphql.Response{Data: &data_}
 
-	err = client.MakeRequest(
-		ctx,
-		req,
-		resp,
+	err_ = client_.MakeRequest(
+		ctx_,
+		req_,
+		resp_,
 	)
 
-	return &data, err
+	return &data_, err_
 }
 
 // The query or mutation executed by getInputReports.
@@ -2240,29 +2240,29 @@ query getInputReports ($inputIndex: Int!) {
 `
 
 func getInputReports(
-	ctx context.Context,
-	client graphql.Client,
+	ctx_ context.Context,
+	client_ graphql.Client,
 	inputIndex int,
 ) (*getInputReportsResponse, error) {
-	req := &graphql.Request{
+	req_ := &graphql.Request{
 		OpName: "getInputReports",
 		Query:  getInputReports_Operation,
 		Variables: &__getInputReportsInput{
 			InputIndex: inputIndex,
 		},
 	}
-	var err error
+	var err_ error
 
-	var data getInputReportsResponse
-	resp := &graphql.Response{Data: &data}
+	var data_ getInputReportsResponse
+	resp_ := &graphql.Response{Data: &data_}
 
-	err = client.MakeRequest(
-		ctx,
-		req,
-		resp,
+	err_ = client_.MakeRequest(
+		ctx_,
+		req_,
+		resp_,
 	)
 
-	return &data, err
+	return &data_, err_
 }
 
 // The query or mutation executed by getInputVouchers.
@@ -2297,29 +2297,29 @@ query getInputVouchers ($inputIndex: Int!) {
 `
 
 func getInputVouchers(
-	ctx context.Context,
-	client graphql.Client,
+	ctx_ context.Context,
+	client_ graphql.Client,
 	inputIndex int,
 ) (*getInputVouchersResponse, error) {
-	req := &graphql.Request{
+	req_ := &graphql.Request{
 		OpName: "getInputVouchers",
 		Query:  getInputVouchers_Operation,
 		Variables: &__getInputVouchersInput{
 			InputIndex: inputIndex,
 		},
 	}
-	var err error
+	var err_ error
 
-	var data getInputVouchersResponse
-	resp := &graphql.Response{Data: &data}
+	var data_ getInputVouchersResponse
+	resp_ := &graphql.Response{Data: &data_}
 
-	err = client.MakeRequest(
-		ctx,
-		req,
-		resp,
+	err_ = client_.MakeRequest(
+		ctx_,
+		req_,
+		resp_,
 	)
 
-	return &data, err
+	return &data_, err_
 }
 
 // The query or mutation executed by getInputs.
@@ -2392,25 +2392,25 @@ query getInputs {
 `
 
 func getInputs(
-	ctx context.Context,
-	client graphql.Client,
+	ctx_ context.Context,
+	client_ graphql.Client,
 ) (*getInputsResponse, error) {
-	req := &graphql.Request{
+	req_ := &graphql.Request{
 		OpName: "getInputs",
 		Query:  getInputs_Operation,
 	}
-	var err error
+	var err_ error
 
-	var data getInputsResponse
-	resp := &graphql.Response{Data: &data}
+	var data_ getInputsResponse
+	resp_ := &graphql.Response{Data: &data_}
 
-	err = client.MakeRequest(
-		ctx,
-		req,
-		resp,
+	err_ = client_.MakeRequest(
+		ctx_,
+		req_,
+		resp_,
 	)
 
-	return &data, err
+	return &data_, err_
 }
 
 // The query or mutation executed by getNotice.
@@ -2440,12 +2440,12 @@ query getNotice ($noticeIndex: Int!, $inputIndex: Int!) {
 `
 
 func getNotice(
-	ctx context.Context,
-	client graphql.Client,
+	ctx_ context.Context,
+	client_ graphql.Client,
 	noticeIndex int,
 	inputIndex int,
 ) (*getNoticeResponse, error) {
-	req := &graphql.Request{
+	req_ := &graphql.Request{
 		OpName: "getNotice",
 		Query:  getNotice_Operation,
 		Variables: &__getNoticeInput{
@@ -2453,18 +2453,18 @@ func getNotice(
 			InputIndex:  inputIndex,
 		},
 	}
-	var err error
+	var err_ error
 
-	var data getNoticeResponse
-	resp := &graphql.Response{Data: &data}
+	var data_ getNoticeResponse
+	resp_ := &graphql.Response{Data: &data_}
 
-	err = client.MakeRequest(
-		ctx,
-		req,
-		resp,
+	err_ = client_.MakeRequest(
+		ctx_,
+		req_,
+		resp_,
 	)
 
-	return &data, err
+	return &data_, err_
 }
 
 // The query or mutation executed by getNotices.
@@ -2498,25 +2498,25 @@ query getNotices {
 `
 
 func getNotices(
-	ctx context.Context,
-	client graphql.Client,
+	ctx_ context.Context,
+	client_ graphql.Client,
 ) (*getNoticesResponse, error) {
-	req := &graphql.Request{
+	req_ := &graphql.Request{
 		OpName: "getNotices",
 		Query:  getNotices_Operation,
 	}
-	var err error
+	var err_ error
 
-	var data getNoticesResponse
-	resp := &graphql.Response{Data: &data}
+	var data_ getNoticesResponse
+	resp_ := &graphql.Response{Data: &data_}
 
-	err = client.MakeRequest(
-		ctx,
-		req,
-		resp,
+	err_ = client_.MakeRequest(
+		ctx_,
+		req_,
+		resp_,
 	)
 
-	return &data, err
+	return &data_, err_
 }
 
 // The query or mutation executed by getReport.
@@ -2533,12 +2533,12 @@ query getReport ($reportIndex: Int!, $inputIndex: Int!) {
 `
 
 func getReport(
-	ctx context.Context,
-	client graphql.Client,
+	ctx_ context.Context,
+	client_ graphql.Client,
 	reportIndex int,
 	inputIndex int,
 ) (*getReportResponse, error) {
-	req := &graphql.Request{
+	req_ := &graphql.Request{
 		OpName: "getReport",
 		Query:  getReport_Operation,
 		Variables: &__getReportInput{
@@ -2546,18 +2546,18 @@ func getReport(
 			InputIndex:  inputIndex,
 		},
 	}
-	var err error
+	var err_ error
 
-	var data getReportResponse
-	resp := &graphql.Response{Data: &data}
+	var data_ getReportResponse
+	resp_ := &graphql.Response{Data: &data_}
 
-	err = client.MakeRequest(
-		ctx,
-		req,
-		resp,
+	err_ = client_.MakeRequest(
+		ctx_,
+		req_,
+		resp_,
 	)
 
-	return &data, err
+	return &data_, err_
 }
 
 // The query or mutation executed by getReports.
@@ -2578,25 +2578,25 @@ query getReports {
 `
 
 func getReports(
-	ctx context.Context,
-	client graphql.Client,
+	ctx_ context.Context,
+	client_ graphql.Client,
 ) (*getReportsResponse, error) {
-	req := &graphql.Request{
+	req_ := &graphql.Request{
 		OpName: "getReports",
 		Query:  getReports_Operation,
 	}
-	var err error
+	var err_ error
 
-	var data getReportsResponse
-	resp := &graphql.Response{Data: &data}
+	var data_ getReportsResponse
+	resp_ := &graphql.Response{Data: &data_}
 
-	err = client.MakeRequest(
-		ctx,
-		req,
-		resp,
+	err_ = client_.MakeRequest(
+		ctx_,
+		req_,
+		resp_,
 	)
 
-	return &data, err
+	return &data_, err_
 }
 
 // The query or mutation executed by getVoucher.
@@ -2627,12 +2627,12 @@ query getVoucher ($voucherIndex: Int!, $inputIndex: Int!) {
 `
 
 func getVoucher(
-	ctx context.Context,
-	client graphql.Client,
+	ctx_ context.Context,
+	client_ graphql.Client,
 	voucherIndex int,
 	inputIndex int,
 ) (*getVoucherResponse, error) {
-	req := &graphql.Request{
+	req_ := &graphql.Request{
 		OpName: "getVoucher",
 		Query:  getVoucher_Operation,
 		Variables: &__getVoucherInput{
@@ -2640,18 +2640,18 @@ func getVoucher(
 			InputIndex:   inputIndex,
 		},
 	}
-	var err error
+	var err_ error
 
-	var data getVoucherResponse
-	resp := &graphql.Response{Data: &data}
+	var data_ getVoucherResponse
+	resp_ := &graphql.Response{Data: &data_}
 
-	err = client.MakeRequest(
-		ctx,
-		req,
-		resp,
+	err_ = client_.MakeRequest(
+		ctx_,
+		req_,
+		resp_,
 	)
 
-	return &data, err
+	return &data_, err_
 }
 
 // The query or mutation executed by getVouchers.
@@ -2686,23 +2686,23 @@ query getVouchers {
 `
 
 func getVouchers(
-	ctx context.Context,
-	client graphql.Client,
+	ctx_ context.Context,
+	client_ graphql.Client,
 ) (*getVouchersResponse, error) {
-	req := &graphql.Request{
+	req_ := &graphql.Request{
 		OpName: "getVouchers",
 		Query:  getVouchers_Operation,
 	}
-	var err error
+	var err_ error
 
-	var data getVouchersResponse
-	resp := &graphql.Response{Data: &data}
+	var data_ getVouchersResponse
+	resp_ := &graphql.Response{Data: &data_}
 
-	err = client.MakeRequest(
-		ctx,
-		req,
-		resp,
+	err_ = client_.MakeRequest(
+		ctx_,
+		req_,
+		resp_,
 	)
 
-	return &data, err
+	return &data_, err_
 }
