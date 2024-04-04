@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added Rollups end-to-end test using Echo Dapp
 
+### Removed
+
+- Removed `advance-runner`, `dispatcher`, `graphql-server`, `host-runner`, `indexer`, `inspect-server`, and `state-server` Rust services
+- Removed support to host mode
+
 ## [1.4.0] 2024-04-09
 
 ### Added

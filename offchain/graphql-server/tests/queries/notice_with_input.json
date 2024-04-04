@@ -1,3 +1,0 @@
-{
-    "query": "{notice(noticeIndex: 0, inputIndex: 0){index, input {index}}}"
-}
