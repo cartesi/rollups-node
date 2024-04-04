@@ -1,6 +1,5 @@
 export CARTESI_LOG_LEVEL="info"
 export CARTESI_LOG_PRETTY="true"
-export CARTESI_FEATURE_HOST_MODE="false"
 export CARTESI_FEATURE_DISABLE_CLAIMER="false"
 export CARTESI_FEATURE_DISABLE_MACHINE_HASH_CHECK="false"
 export CARTESI_EPOCH_DURATION="120"
@@ -23,7 +22,7 @@ export CARTESI_POSTGRES_ENDPOINT="postgres://postgres:password@localhost:5432/po
 export CARTESI_HTTP_ADDRESS="0.0.0.0"
 export CARTESI_HTTP_PORT="10000"
 
-rust_bin_path="$PWD/offchain/target/debug"
+rust_bin_path="$PWD/cmd/authority-claimer/target/debug"
 # Check if the path is already in $PATH
 if [[ ":$PATH:" != *":$rust_bin_path:"* ]]; then
     export PATH=$PATH:$rust_bin_path

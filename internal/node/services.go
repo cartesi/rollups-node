@@ -17,25 +17,11 @@ type portOffset = int
 
 const (
 	portOffsetProxy = iota
-	portOffsetAdvanceRunner
 	portOffsetAuthorityClaimer
-	portOffsetDispatcher
-	portOffsetGraphQLServer
-	portOffsetGraphQLHealthcheck
-	portOffsetHostRunnerHealthcheck
-	portOffsetHostRunnerRollups
-	portOffsetIndexer
-	portOffsetInspectServer
-	portOffsetInspectHealthcheck
 	portOffsetRedis
-	portOffsetServerManager
-	portOffsetStateServer
 )
 
-const (
-	localhost              = "127.0.0.1"
-	serverManagerSessionId = "default_session_id"
-)
+const localhost = "127.0.0.1"
 
 // Get the port of the given service.
 func getPort(c config.NodeConfig, offset portOffset) int {
@@ -66,36 +52,6 @@ func getRustLog(c config.NodeConfig, rustModule string) string {
 	default:
 		panic("impossible")
 	}
-}
-
-func newAdvanceRunner(c config.NodeConfig) services.CommandService {
-	var s services.CommandService
-	s.Name = "advance-runner"
-	s.HealthcheckPort = getPort(c, portOffsetAdvanceRunner)
-	s.Path = "cartesi-rollups-advance-runner"
-	s.Env = append(s.Env, "LOG_ENABLE_TIMESTAMP=false")
-	s.Env = append(s.Env, "LOG_ENABLE_COLOR=false")
-	s.Env = append(s.Env, getRustLog(c, "advance_runner"))
-	s.Env = append(s.Env, fmt.Sprintf("SERVER_MANAGER_ENDPOINT=http://%v:%v",
-		localhost, getPort(c, portOffsetServerManager)))
-	s.Env = append(s.Env, fmt.Sprintf("SESSION_ID=%v", serverManagerSessionId))
-	s.Env = append(s.Env, fmt.Sprintf("REDIS_ENDPOINT=%v", getRedisEndpoint(c)))
-	s.Env = append(s.Env, fmt.Sprintf("CHAIN_ID=%v", c.BlockchainID))
-	s.Env = append(s.Env, fmt.Sprintf("DAPP_CONTRACT_ADDRESS=%v",
-		c.ContractsApplicationAddress))
-	s.Env = append(s.Env, fmt.Sprintf("PROVIDER_HTTP_ENDPOINT=%v",
-		c.BlockchainHttpEndpoint.Value))
-	s.Env = append(s.Env, fmt.Sprintf("ADVANCE_RUNNER_HEALTHCHECK_PORT=%v",
-		getPort(c, portOffsetAdvanceRunner)))
-	s.Env = append(s.Env, fmt.Sprintf("READER_MODE=%v", c.FeatureDisableClaimer))
-	if c.FeatureHostMode || c.FeatureDisableMachineHashCheck {
-		s.Env = append(s.Env, "SNAPSHOT_VALIDATION_ENABLED=false")
-	}
-	if !c.FeatureHostMode {
-		s.Env = append(s.Env, fmt.Sprintf("MACHINE_SNAPSHOT_PATH=%v", c.SnapshotDir))
-	}
-	s.Env = append(s.Env, os.Environ()...)
-	return s
 }
 
 func newAuthorityClaimer(c config.NodeConfig) services.CommandService {
@@ -139,109 +95,6 @@ func newAuthorityClaimer(c config.NodeConfig) services.CommandService {
 	return s
 }
 
-func newDispatcher(c config.NodeConfig) services.CommandService {
-	var s services.CommandService
-	s.Name = "dispatcher"
-	s.HealthcheckPort = getPort(c, portOffsetDispatcher)
-	s.Path = "cartesi-rollups-dispatcher"
-	s.Env = append(s.Env, "LOG_ENABLE_TIMESTAMP=false")
-	s.Env = append(s.Env, "LOG_ENABLE_COLOR=false")
-	s.Env = append(s.Env, getRustLog(c, "dispatcher"))
-	s.Env = append(s.Env, fmt.Sprintf("SC_GRPC_ENDPOINT=http://%v:%v", localhost,
-		getPort(c, portOffsetStateServer)))
-	s.Env = append(s.Env, fmt.Sprintf("SC_DEFAULT_CONFIRMATIONS=%v",
-		c.BlockchainFinalityOffset))
-	s.Env = append(s.Env, fmt.Sprintf("REDIS_ENDPOINT=%v", getRedisEndpoint(c)))
-	s.Env = append(s.Env, fmt.Sprintf("DAPP_ADDRESS=%v", c.ContractsApplicationAddress))
-	s.Env = append(s.Env, fmt.Sprintf("DAPP_DEPLOYMENT_BLOCK_NUMBER=%v",
-		c.ContractsApplicationDeploymentBlockNumber))
-	s.Env = append(s.Env, fmt.Sprintf("HISTORY_ADDRESS=%v", c.ContractsHistoryAddress))
-	s.Env = append(s.Env, fmt.Sprintf("AUTHORITY_ADDRESS=%v", c.ContractsAuthorityAddress))
-	s.Env = append(s.Env, fmt.Sprintf("INPUT_BOX_ADDRESS=%v", c.ContractsInputBoxAddress))
-	s.Env = append(s.Env, fmt.Sprintf("RD_EPOCH_DURATION=%v",
-		int(c.RollupsEpochDuration.Seconds())))
-	s.Env = append(s.Env, fmt.Sprintf("CHAIN_ID=%v", c.BlockchainID))
-	s.Env = append(s.Env, fmt.Sprintf("DISPATCHER_HTTP_SERVER_PORT=%v",
-		getPort(c, portOffsetDispatcher)))
-	s.Env = append(s.Env, os.Environ()...)
-	return s
-}
-
-func newGraphQLServer(c config.NodeConfig) services.CommandService {
-	var s services.CommandService
-	s.Name = "graphql-server"
-	s.HealthcheckPort = getPort(c, portOffsetGraphQLHealthcheck)
-	s.Path = "cartesi-rollups-graphql-server"
-	s.Env = append(s.Env, "LOG_ENABLE_TIMESTAMP=false")
-	s.Env = append(s.Env, "LOG_ENABLE_COLOR=false")
-	s.Env = append(s.Env, getRustLog(c, "graphql_server"))
-	s.Env = append(s.Env, fmt.Sprintf("POSTGRES_ENDPOINT=%v", c.PostgresEndpoint.Value))
-	s.Env = append(s.Env, fmt.Sprintf("GRAPHQL_HOST=%v", localhost))
-	s.Env = append(s.Env, fmt.Sprintf("GRAPHQL_PORT=%v", getPort(c, portOffsetGraphQLServer)))
-	s.Env = append(s.Env, fmt.Sprintf("GRAPHQL_HEALTHCHECK_PORT=%v",
-		getPort(c, portOffsetGraphQLHealthcheck)))
-	s.Env = append(s.Env, os.Environ()...)
-	return s
-}
-
-func newHostRunner(c config.NodeConfig) services.CommandService {
-	var s services.CommandService
-	s.Name = "host-runner"
-	s.HealthcheckPort = getPort(c, portOffsetHostRunnerHealthcheck)
-	s.Path = "cartesi-rollups-host-runner"
-	s.Env = append(s.Env, "LOG_ENABLE_TIMESTAMP=false")
-	s.Env = append(s.Env, "LOG_ENABLE_COLOR=false")
-	s.Env = append(s.Env, getRustLog(c, "host_runner"))
-	s.Env = append(s.Env, fmt.Sprintf("GRPC_SERVER_MANAGER_ADDRESS=%v", localhost))
-	s.Env = append(s.Env, fmt.Sprintf("GRPC_SERVER_MANAGER_PORT=%v",
-		getPort(c, portOffsetServerManager)))
-	s.Env = append(s.Env, fmt.Sprintf("HTTP_ROLLUP_SERVER_ADDRESS=%v", localhost))
-	s.Env = append(s.Env, fmt.Sprintf("HTTP_ROLLUP_SERVER_PORT=%v",
-		getPort(c, portOffsetHostRunnerRollups)))
-	s.Env = append(s.Env, fmt.Sprintf("HOST_RUNNER_HEALTHCHECK_PORT=%v",
-		getPort(c, portOffsetHostRunnerHealthcheck)))
-	s.Env = append(s.Env, os.Environ()...)
-	return s
-}
-
-func newIndexer(c config.NodeConfig) services.CommandService {
-	var s services.CommandService
-	s.Name = "indexer"
-	s.HealthcheckPort = getPort(c, portOffsetIndexer)
-	s.Path = "cartesi-rollups-indexer"
-	s.Env = append(s.Env, "LOG_ENABLE_TIMESTAMP=false")
-	s.Env = append(s.Env, "LOG_ENABLE_COLOR=false")
-	s.Env = append(s.Env, getRustLog(c, "indexer"))
-	s.Env = append(s.Env, fmt.Sprintf("POSTGRES_ENDPOINT=%v", c.PostgresEndpoint.Value))
-	s.Env = append(s.Env, fmt.Sprintf("CHAIN_ID=%v", c.BlockchainID))
-	s.Env = append(s.Env, fmt.Sprintf("DAPP_CONTRACT_ADDRESS=%v",
-		c.ContractsApplicationAddress))
-	s.Env = append(s.Env, fmt.Sprintf("REDIS_ENDPOINT=%v", getRedisEndpoint(c)))
-	s.Env = append(s.Env, fmt.Sprintf("INDEXER_HEALTHCHECK_PORT=%v",
-		getPort(c, portOffsetIndexer)))
-	s.Env = append(s.Env, os.Environ()...)
-	return s
-}
-
-func newInspectServer(c config.NodeConfig) services.CommandService {
-	var s services.CommandService
-	s.Name = "inspect-server"
-	s.HealthcheckPort = getPort(c, portOffsetInspectHealthcheck)
-	s.Path = "cartesi-rollups-inspect-server"
-	s.Env = append(s.Env, "LOG_ENABLE_TIMESTAMP=false")
-	s.Env = append(s.Env, "LOG_ENABLE_COLOR=false")
-	s.Env = append(s.Env, getRustLog(c, "inspect_server"))
-	s.Env = append(s.Env, fmt.Sprintf("INSPECT_SERVER_ADDRESS=%v:%v", localhost,
-		getPort(c, portOffsetInspectServer)))
-	s.Env = append(s.Env, fmt.Sprintf("SERVER_MANAGER_ADDRESS=%v:%v", localhost,
-		getPort(c, portOffsetServerManager)))
-	s.Env = append(s.Env, fmt.Sprintf("SESSION_ID=%v", serverManagerSessionId))
-	s.Env = append(s.Env, fmt.Sprintf("INSPECT_SERVER_HEALTHCHECK_PORT=%v",
-		getPort(c, portOffsetInspectHealthcheck)))
-	s.Env = append(s.Env, os.Environ()...)
-	return s
-}
-
 func newRedis(c config.NodeConfig) services.CommandService {
 	var s services.CommandService
 	s.Name = "redis"
@@ -255,46 +108,6 @@ func newRedis(c config.NodeConfig) services.CommandService {
 	return s
 }
 
-func newServerManager(c config.NodeConfig) services.ServerManager {
-	var s services.ServerManager
-	s.Name = "server-manager"
-	s.HealthcheckPort = getPort(c, portOffsetServerManager)
-	s.Path = "server-manager"
-	s.Args = append(s.Args,
-		fmt.Sprintf("--manager-address=%v:%v", localhost, getPort(c, portOffsetServerManager)))
-	s.Env = append(s.Env, "REMOTE_CARTESI_MACHINE_LOG_LEVEL=info")
-	if c.LogLevel == slog.LevelDebug {
-		s.Env = append(s.Env, "SERVER_MANAGER_LOG_LEVEL=info")
-	} else {
-		s.Env = append(s.Env, "SERVER_MANAGER_LOG_LEVEL=warning")
-	}
-	s.Env = append(s.Env, os.Environ()...)
-	s.BypassLog = c.ExperimentalServerManagerBypassLog
-	return s
-}
-
-func newStateServer(c config.NodeConfig) services.CommandService {
-	var s services.CommandService
-	s.Name = "state-server"
-	s.HealthcheckPort = getPort(c, portOffsetStateServer)
-	s.Path = "cartesi-rollups-state-server"
-	s.Env = append(s.Env, "LOG_ENABLE_TIMESTAMP=false")
-	s.Env = append(s.Env, "LOG_ENABLE_COLOR=false")
-	s.Env = append(s.Env, getRustLog(c, "state_server"))
-	s.Env = append(s.Env, "SF_CONCURRENT_EVENTS_FETCH=1")
-	s.Env = append(s.Env, fmt.Sprintf("SF_GENESIS_BLOCK=%v",
-		c.ContractsInputBoxDeploymentBlockNumber))
-	s.Env = append(s.Env, fmt.Sprintf("SF_SAFETY_MARGIN=%v", c.BlockchainFinalityOffset))
-	s.Env = append(s.Env, fmt.Sprintf("BH_WS_ENDPOINT=%v", c.BlockchainWsEndpoint.Value))
-	s.Env = append(s.Env, fmt.Sprintf("BH_HTTP_ENDPOINT=%v",
-		c.BlockchainHttpEndpoint.Value))
-	s.Env = append(s.Env, fmt.Sprintf("BLOCKCHAIN_BLOCK_TIMEOUT=%v", c.BlockchainBlockTimeout))
-	s.Env = append(s.Env, fmt.Sprintf("SS_SERVER_ADDRESS=%v:%v", localhost,
-		getPort(c, portOffsetStateServer)))
-	s.Env = append(s.Env, os.Environ()...)
-	return s
-}
-
 func newSupervisorService(c config.NodeConfig) services.SupervisorService {
 	var s []services.Service
 
@@ -303,27 +116,10 @@ func newSupervisorService(c config.NodeConfig) services.SupervisorService {
 		s = append(s, newRedis(c))
 	}
 
-	// add services without dependencies
-	s = append(s, newGraphQLServer(c))
-	s = append(s, newIndexer(c))
-	s = append(s, newStateServer(c))
-
-	// start either the server manager or host runner
-	if c.FeatureHostMode {
-		s = append(s, newHostRunner(c))
-	} else {
-		s = append(s, newServerManager(c))
-	}
-
 	// enable claimer if reader mode and sunodo validator mode are disabled
 	if !c.FeatureDisableClaimer && !c.ExperimentalSunodoValidatorEnabled {
 		s = append(s, newAuthorityClaimer(c))
 	}
-
-	// add services with dependencies
-	s = append(s, newAdvanceRunner(c)) // Depends on the server-manager/host-runner
-	s = append(s, newDispatcher(c))    // Depends on the state server
-	s = append(s, newInspectServer(c)) // Depends on the server-manager/host-runner
 
 	s = append(s, newHttpService(c))
 
