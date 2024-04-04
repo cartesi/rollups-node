@@ -1,10 +1,8 @@
 # (c) Cartesi and individual authors (see AUTHORS)
 # SPDX-License-Identifier: Apache-2.0 (see LICENSE)
-
 #
 # Logging
 #
-
 [logging.CARTESI_LOG_LEVEL]
 default = "info"
 go-type = "LogLevel"
@@ -123,7 +121,7 @@ go-type = "string"
 description = """
 Address of the InputBox contract."""
 
-[blockchain.CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER]
+[contracts.CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER]
 go-type = "int64"
 description = """
 The deployment block for the input box contract.
