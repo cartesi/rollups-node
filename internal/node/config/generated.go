@@ -269,18 +269,6 @@ func getBlockchainWsEndpoint() string {
 	return val
 }
 
-func getContractsInputBoxDeploymentBlockNumber() int64 {
-	s, ok := os.LookupEnv("CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER")
-	if !ok {
-		panic("missing env var CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER")
-	}
-	val, err := toInt64(s)
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER: %v", err))
-	}
-	return val
-}
-
 func getContractsApplicationAddress() string {
 	s, ok := os.LookupEnv("CARTESI_CONTRACTS_APPLICATION_ADDRESS")
 	if !ok {
@@ -337,6 +325,18 @@ func getContractsInputBoxAddress() string {
 	val, err := toString(s)
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse CARTESI_CONTRACTS_INPUT_BOX_ADDRESS: %v", err))
+	}
+	return val
+}
+
+func getContractsInputBoxDeploymentBlockNumber() int64 {
+	s, ok := os.LookupEnv("CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER")
+	if !ok {
+		panic("missing env var CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER")
+	}
+	val, err := toInt64(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER: %v", err))
 	}
 	return val
 }

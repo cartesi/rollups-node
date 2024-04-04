@@ -110,13 +110,6 @@ WebSocket endpoint for the blockchain RPC provider.
 
 * **Type:** `string`
 
-## `CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER`
-
-The deployment block for the input box contract.
-The node will begin to read blockchain events from this block.
-
-* **Type:** `int64`
-
 ## `CARTESI_CONTRACTS_APPLICATION_ADDRESS`
 
 Address of the DApp's contract.
@@ -146,6 +139,13 @@ Address of the History contract.
 Address of the InputBox contract.
 
 * **Type:** `string`
+
+## `CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER`
+
+The deployment block for the input box contract.
+The node will begin to read blockchain events from this block.
+
+* **Type:** `int64`
 
 ## `CARTESI_EXPERIMENTAL_SERVER_MANAGER_BYPASS_LOG`
 
