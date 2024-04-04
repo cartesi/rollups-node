@@ -1,6 +1,0 @@
-{
-  "query": "query getInput($inputIndex: Int!) { input(index: $inputIndex) { blockNumber } }",
-  "variables": {
-    "inputIndex": 0
-  }
-}

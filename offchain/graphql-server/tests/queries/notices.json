@@ -1,3 +1,0 @@
-{
-    "query": "{notices(first: 10){totalCount, edges {node {index, payload}}}}"
-}
