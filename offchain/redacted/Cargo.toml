@@ -1,8 +1,0 @@
-[package]
-name = "redacted"
-edition.workspace = true
-license.workspace = true
-version.workspace = true
-
-[dependencies]
-url.workspace = true
