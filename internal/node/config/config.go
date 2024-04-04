@@ -31,7 +31,6 @@ type NodeConfig struct {
 	PostgresEndpoint                         Redacted[string]
 	HttpAddress                              string
 	HttpPort                                 int
-	FeatureHostMode                          bool
 	FeatureDisableClaimer                    bool
 	FeatureDisableMachineHashCheck           bool
 	ExperimentalServerManagerBypassLog       bool
@@ -86,13 +85,10 @@ func FromEnv() NodeConfig {
 	config.ContractsAuthorityAddress = getContractsAuthorityAddress()
 	config.ContractsInputBoxAddress = getContractsInputBoxAddress()
 	config.ContractsInputBoxDeploymentBlockNumber = getContractsInputBoxDeploymentBlockNumber()
-	if !getFeatureHostMode() {
-		config.SnapshotDir = getSnapshotDir()
-	}
+	config.SnapshotDir = getSnapshotDir()
 	config.PostgresEndpoint = Redacted[string]{getPostgresEndpoint()}
 	config.HttpAddress = getHttpAddress()
 	config.HttpPort = getHttpPort()
-	config.FeatureHostMode = getFeatureHostMode()
 	config.FeatureDisableClaimer = getFeatureDisableClaimer()
 	config.FeatureDisableMachineHashCheck = getFeatureDisableMachineHashCheck()
 	config.ExperimentalServerManagerBypassLog = getExperimentalServerManagerBypassLog()

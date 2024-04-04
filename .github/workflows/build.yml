@@ -19,13 +19,13 @@ permissions:
   contents: write
 
 jobs:
-  test:
+  test-rust:
     runs-on: ubuntu-22.04
     env:
       RUSTFLAGS: -D warnings -C debuginfo=0
     defaults:
       run:
-        working-directory: offchain
+        working-directory: cmd/authority-claimer
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,14 +40,10 @@ jobs:
             ./docker-bake.override.hcl
             ./docker-bake.platforms.hcl
           targets: |
-            rollups-node-devnet
             rollups-node-snapshot
           project: ${{ vars.DEPOT_PROJECT }}
           workdir: build
           load: true
-
-      - name: 📦 Install protoc
-        run: sudo apt update && sudo apt install -y protobuf-compiler libprotobuf-dev
 
       - uses: actions/cache@v4
         with:
@@ -56,7 +52,7 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            offchain/target/
+            ./cmd/authority-claimer/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
@@ -83,15 +79,28 @@ jobs:
       - name: Run tests
         run: cargo test
 
-      - name: Generate GraphQL schema
-        run: ./target/debug/generate-schema
-
-      - name: Upload GraphQL schema
-        uses: actions/upload-artifact@v4
+  test-go:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
         with:
-          name: graphql-schema
-          path: offchain/schema.graphql
-          if-no-files-found: error
+          submodules: recursive
+
+      - uses: depot/setup-action@v1
+      - name: Build dependency images
+        uses: depot/bake-action@v1
+        with:
+          files: |
+            ./docker-bake.hcl
+            ./docker-bake.override.hcl
+            ./docker-bake.platforms.hcl
+          targets: |
+            rollups-node-devnet
+            rollups-node-snapshot
+          project: ${{ vars.DEPOT_PROJECT }}
+          workdir: build
+          load: true
+
 
       - name: Install Go
         uses: actions/setup-go@v5
@@ -104,13 +113,13 @@ jobs:
           version: v1.58.2
 
       - name: Run Go tests
-        working-directory: ${{ github.workspace }}
         run: go test ./...
 
-  build_docker:
+  build-docker:
     runs-on: ubuntu-22.04
     needs:
-      - test
+      - test-rust
+      - test-go
     steps:
       - uses: actions/checkout@v4
         with:
@@ -158,8 +167,9 @@ jobs:
           workdir: build
 
   release:
-    needs: [test, build_docker]
     runs-on: ubuntu-22.04
+    needs:
+      - build-docker
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
@@ -169,14 +179,9 @@ jobs:
       - name: Trim CHANGELOG.md
         run: sed -e '0,/^##[^#]/d' -e '/^##[^#]/,$d' -i CHANGELOG.md
 
-      - name: Download GraphQL schema
-        uses: actions/download-artifact@v4
-        with:
-          name: graphql-schema
-
       - name: Publish Github release
         uses: softprops/action-gh-release@v2
         with:
           prerelease: true
           body_path: CHANGELOG.md
-          files: schema.graphql
+          files: api/graphql/reader.graphql

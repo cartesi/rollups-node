@@ -1,3 +1,0 @@
-{
-    "query": "{reports(first: 10){totalCount, edges {node {index, payload}}}}"
-}
