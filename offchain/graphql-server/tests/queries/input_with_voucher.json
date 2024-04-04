@@ -1,3 +1,0 @@
-{
-    "query": "{input(index: 0){index, voucher(index: 0){index}}}"
-}

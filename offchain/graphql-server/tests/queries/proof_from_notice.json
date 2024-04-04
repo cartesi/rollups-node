@@ -1,3 +1,0 @@
-{
-    "query": "{notice(noticeIndex: 0, inputIndex: 0){proof{validity{inputIndexWithinEpoch, outputIndexWithinInput, outputHashesRootHash, vouchersEpochRootHash, noticesEpochRootHash, machineStateHash, outputHashInOutputHashesSiblings, outputHashesInEpochSiblings}}}}"
-}

@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: offchain
+        working-directory: cmd/authority-claimer
 
     steps:
       - uses: actions/checkout@v4
@@ -22,12 +22,9 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            offchain/target/
+            cmd/authority-claimer/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
-
-      - name: Install protoc
-        run: sudo apt update && sudo apt install -y protobuf-compiler libprotobuf-dev
 
       - name: Update rust
         run: rustup update

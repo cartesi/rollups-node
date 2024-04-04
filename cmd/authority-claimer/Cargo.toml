@@ -1,0 +1,54 @@
+[package]
+name = "authority-claimer"
+version = "1.4.0"
+license = "Apache-2.0"
+edition = "2021"
+resolver = "2"
+
+[[bin]]
+name = "cartesi-rollups-authority-claimer"
+path = "src/main.rs"
+test = false
+
+[dependencies]
+async-trait = "0.1"
+axum = "0.7"
+backoff = {version = "0.4", features = ["tokio"]}
+base64 = "0.22"
+clap = {version = "4.5", features = ["string", "derive", "env"]}
+ethabi = "18.0"
+ethers = "1.0"
+ethers-signers = {version = "1.0", features = ["aws"]}
+eth-state-fold = "0.9"
+eth-state-fold-types = {version = "0.9", features = ["ethers"]}
+eth-tx-manager = "0.10"
+hex = "0.4"
+prometheus-client = "0.22"
+redis = {version = "0.25", features = ["streams", "tokio-comp", "connection-manager", "tls-native-tls", "tokio-native-tls-comp", "cluster", "cluster-async"]}
+reqwest = "=0.11.24" # Set specific reqwest version to fix the build
+rusoto_core = "0.48"
+rusoto_kms = "0.48"
+rusoto_sts = "0.48"
+serde = "1.0"
+serde_json = "1.0"
+snafu = "0.8"
+tokio = {version = "1.37", features = ["macros", "rt-multi-thread", "rt"]}
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2.5"
+
+[build-dependencies]
+eth-state-fold-types = {version = "0.9", features = ["ethers"]}
+snafu = "0.8"
+tempfile = "3.10"
+
+[dev-dependencies]
+serial_test = "3.0"
+testcontainers = "0.14"
+tracing-test = {version = "0.2", features = ["no-env-filter"]}
+
+[profile.release]
+strip = true  # Automatically strip symbols from the binary.
+
+[package.metadata.cargo-machete]
+ignored = ["reqwest"]

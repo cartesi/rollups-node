@@ -67,7 +67,6 @@ adduser --system --uid 102 \
     cartesi
 EOF
 
-
 ####################################################################################################
 # TARGET: rollups-node-snapshot
 #
@@ -111,7 +110,6 @@ COPY --from=snapshot-builder --chown=cartesi:cartesi ${SNAPSHOT_BUILD_PATH} ${SN
 
 # Set dummy command.
 CMD /bin/bash
-
 
 ####################################################################################################
 # TARGET: rollups-node-devnet
@@ -243,7 +241,7 @@ EOF
 #
 # This stage prepares the recipe with just the external dependencies.
 FROM rust-chef as rust-prepare
-COPY ./offchain/ .
+COPY ./cmd/authority-claimer/ .
 RUN cargo chef prepare --recipe-path recipe.json
 
 # STAGE: rust-builder
@@ -269,7 +267,7 @@ COPY --from=rust-prepare ${RUST_BUILD_PATH}/recipe.json .
 RUN cargo chef cook --release --recipe-path recipe.json
 
 # Build application.
-COPY ./offchain/ .
+COPY ./cmd/authority-claimer/ .
 RUN cargo build --release
 
 # STAGE: go-builder
@@ -327,14 +325,7 @@ COPY --from=server-manager /usr/bin/server-manager /usr/bin
 # Explicitly copy each binary to avoid adding unnecessary files to the runtime image.
 ARG RUST_BUILD_PATH
 ARG RUST_TARGET=${RUST_BUILD_PATH}/target/release
-COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-advance-runner /usr/bin
 COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-authority-claimer /usr/bin
-COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-dispatcher /usr/bin
-COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-graphql-server /usr/bin
-COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-host-runner /usr/bin
-COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-indexer /usr/bin
-COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-inspect-server /usr/bin
-COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-state-server /usr/bin
 
 # Copy Go binary.
 ARG GO_BUILD_PATH

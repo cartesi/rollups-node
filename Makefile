@@ -27,13 +27,8 @@ generate: ## Generate the file that are commited to the repo
 	@go mod tidy
 	@go generate -v ./...
 
-.PHONY: graphql-schema
-graphql-schema: ## Generate the graphql schema file
-	@cd offchain; cargo run --bin generate-schema
-	@mv offchain/schema.graphql api/graphql/reader.graphql
-
 .PHONY: check-generate
-check-generate: generate graphql-schema ## Check whether the generated files are in sync
+check-generate: generate ## Check whether the generated files are in sync
 	@echo "Checking differences on the repository..."
 	@if git diff --exit-code; then \
 		echo "No differences found."; \
@@ -57,15 +52,6 @@ docker-run: docker-clean ## Run the node with the anvil devnet
 		-f ./build/compose-devnet.yaml \
 		-f ./build/compose-snapshot.yaml \
 		-f ./build/compose-node.yaml \
-		up
-
-.PHONY: docker-run-host
-docker-run-host: docker-clean ## Run the node in host mode
-	@docker compose \
-		-f ./build/compose-database.yaml \
-		-f ./build/compose-devnet.yaml \
-		-f ./build/compose-node.yaml \
-		-f ./build/compose-host.yaml \
 		up
 
 .PHONY: docker-run-sepolia

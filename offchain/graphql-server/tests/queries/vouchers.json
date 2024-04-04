@@ -1,3 +1,0 @@
-{
-    "query": "{vouchers(first: 10){totalCount, edges {node {index, destination, payload}}}}"
-}

@@ -1,3 +1,0 @@
-{
-    "query": "{inputs(first: 10, where: {indexLowerThan: 5}){totalCount, edges {node {index, msgSender, timestamp, blockNumber, payload}}}}"
-}

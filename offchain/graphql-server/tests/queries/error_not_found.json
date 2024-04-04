@@ -1,3 +1,0 @@
-{
-    "query": "{notice(noticeIndex: 1, inputIndex: 0){index, payload}}"
-}

@@ -183,16 +183,6 @@ the snapshot matches the hash in the Application contract.
 * **Type:** `bool`
 * **Default:** `"false"`
 
-## `CARTESI_FEATURE_HOST_MODE`
-
-If set to true, the node will run in host mode.
-
-In host mode, computations will not be performed by the cartesi machine.
-You should only use host mode for development and debugging!
-
-* **Type:** `bool`
-* **Default:** `"false"`
-
 ## `CARTESI_HTTP_ADDRESS`
 
 HTTP address for the node.
