@@ -37,6 +37,9 @@ type ServerManager struct {
 
 	// Bypass the log and write directly to stdout/stderr.
 	BypassLog bool
+
+	// Working Directory
+	WorkDir string
 }
 
 const waitDelay = 200 * time.Millisecond
@@ -44,6 +47,9 @@ const waitDelay = 200 * time.Millisecond
 func (s ServerManager) Start(ctx context.Context, ready chan<- struct{}) error {
 	cmd := exec.CommandContext(ctx, s.Path, s.Args...)
 	cmd.Env = s.Env
+	if s.WorkDir != "" {
+		cmd.Dir = s.WorkDir
+	}
 	if s.BypassLog {
 		cmd.Stderr = os.Stderr
 		cmd.Stdout = os.Stdout

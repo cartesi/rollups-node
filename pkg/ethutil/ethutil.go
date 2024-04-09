@@ -14,8 +14,10 @@ import (
 	"github.com/cartesi/rollups-node/pkg/contracts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 // Gas limit when sending transactions.
@@ -57,6 +59,34 @@ func AddInput(
 		return 0, err
 	}
 	return getInputIndex(ctx, client, book, inputBox, receipt)
+}
+
+// Convenience function to add an input using Foundry Mnemonic
+// This function waits until the transaction is added to a block and return the input index.
+func AddInputUsingFoundryMnemonic(
+	ctx context.Context,
+	blockchainHttpEnpoint string,
+	payload string,
+) (int, error) {
+
+	// Send Input
+	client, err := ethclient.DialContext(ctx, blockchainHttpEnpoint)
+	if err != nil {
+		return 0, err
+	}
+	defer client.Close()
+
+	signer, err := NewMnemonicSigner(ctx, client, FoundryMnemonic, 0)
+	if err != nil {
+		return 0, err
+	}
+	book := addresses.GetTestBook()
+
+	payloadBytes, err := hexutil.Decode(payload)
+	if err != nil {
+		panic(err)
+	}
+	return AddInput(ctx, client, book, signer, payloadBytes)
 }
 
 // Get input index in the transaction by looking at the event logs.
@@ -158,4 +188,33 @@ func ExecuteVoucher(
 	}
 
 	return &receipt.TxHash, nil
+}
+
+// Advances the Devnet timestamp
+func AdvanceDevnetTime(ctx context.Context,
+	blockchainHttpEnpoint string,
+	timeInSeconds int,
+) error {
+	client, err := rpc.DialContext(ctx, blockchainHttpEnpoint)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	return client.CallContext(ctx, nil, "evm_increaseTime", timeInSeconds)
+
+}
+
+// Sets the timestamp for the next block at Devnet
+func SetNextDevnetBlockTimestamp(
+	ctx context.Context,
+	blockchainHttpEnpoint string,
+	timestamp int64,
+) error {
+
+	client, err := rpc.DialContext(ctx, blockchainHttpEnpoint)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	return client.CallContext(ctx, nil, "evm_setNextBlockTimestamp", timestamp)
 }

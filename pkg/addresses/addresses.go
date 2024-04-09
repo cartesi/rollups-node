@@ -29,6 +29,8 @@ type Book struct {
 	EtherPortal                 common.Address
 	InputBox                    common.Address
 	CartesiDApp                 common.Address
+	HistoryAddress              common.Address
+	AuthorityAddress            common.Address
 }
 
 // Get the addresses for the test environment.
@@ -45,6 +47,8 @@ func GetTestBook() *Book {
 		EtherPortal:         common.HexToAddress("0xFfdbe43d4c855BF7e0f105c400A50857f53AB044"),
 		InputBox:            common.HexToAddress("0x59b22D57D4f067708AB0c00552767405926dc768"),
 		CartesiDApp:         common.HexToAddress("0x7C54E3f7A8070a54223469965A871fB8f6f88c22"),
+		HistoryAddress:      common.HexToAddress("0x325272217ae6815b494bF38cED004c5Eb8a7CdA7"),
+		AuthorityAddress:    common.HexToAddress("0x58c93F83fb3304730C95aad2E360cdb88b782010"),
 	}
 }
 

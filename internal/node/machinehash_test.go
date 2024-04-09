@@ -16,8 +16,6 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-const BlockchainHttpEndpoint = "http://0.0.0.0:" + deps.DefaultDevnetPort
-
 type ValidateMachineHashSuite struct {
 	suite.Suite
 }
@@ -52,18 +50,21 @@ func (s *ValidateMachineHashSuite) TestItFailsWhenContextIsCanceled() {
 	s.Require().Nil(err)
 	defer os.RemoveAll(machineDir)
 
-	devnet, err := startDevnet()
+	dependencies, err := startDevnet()
 	s.Require().Nil(err)
 	defer func() {
-		err = deps.Terminate(context.Background(), devnet)
+		err = deps.Terminate(context.Background(), dependencies)
 		s.Nil(err)
 	}()
+
+	blockchainHttpEndpoint, err := dependencies.DevnetEndpoint(context.Background(), "http")
+	s.Require().Nil(err)
 
 	err = validateMachineHash(
 		ctx,
 		machineDir,
 		addresses.GetTestBook().CartesiDApp.String(),
-		BlockchainHttpEndpoint,
+		blockchainHttpEndpoint,
 	)
 	s.NotNil(err)
 	s.ErrorIs(err, context.DeadlineExceeded)
@@ -76,18 +77,21 @@ func (s *ValidateMachineHashSuite) TestItSucceedsWhenHashesAreEqual() {
 	s.Require().Nil(err)
 	defer os.RemoveAll(machineDir)
 
-	devnet, err := startDevnet()
+	dependencies, err := startDevnet()
 	s.Require().Nil(err)
 	defer func() {
-		err = deps.Terminate(context.Background(), devnet)
+		err = deps.Terminate(context.Background(), dependencies)
 		s.Nil(err)
 	}()
+
+	blockchainHttpEndpoint, err := dependencies.DevnetEndpoint(context.Background(), "http")
+	s.Require().Nil(err)
 
 	err = validateMachineHash(
 		ctx,
 		machineDir,
 		addresses.GetTestBook().CartesiDApp.String(),
-		BlockchainHttpEndpoint,
+		blockchainHttpEndpoint,
 	)
 	s.Nil(err)
 }
@@ -132,8 +136,10 @@ func createMachineSnapshot() (string, error) {
 func startDevnet() (*deps.DepsContainers, error) {
 	container, err := deps.Run(context.Background(), deps.DepsConfig{
 		Devnet: &deps.DevnetConfig{
-			DockerImage: deps.DefaultDevnetDockerImage,
-			Port:        deps.DefaultDevnetPort,
+			DockerImage:             deps.DefaultDevnetDockerImage,
+			BlockTime:               deps.DefaultBlockTime,
+			BlockToWaitForOnStartup: deps.DefaultBlockToWaitForOnStartup,
+			Port:                    "",
 		},
 	})
 	if err != nil {

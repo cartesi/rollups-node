@@ -11,7 +11,7 @@ import (
 )
 
 // Setup creates the Node top-level supervisor.
-func Setup(ctx context.Context, c config.NodeConfig) (services.Service, error) {
+func Setup(ctx context.Context, c config.NodeConfig, workDir string) (services.Service, error) {
 	// checks
 	err := validateChainId(ctx, c.BlockchainID, c.BlockchainHttpEndpoint.Value)
 	if err != nil {
@@ -30,5 +30,5 @@ func Setup(ctx context.Context, c config.NodeConfig) (services.Service, error) {
 	}
 
 	// create service
-	return newSupervisorService(c), nil
+	return newSupervisorService(c, workDir), nil
 }

@@ -68,7 +68,7 @@ func getRustLog(c config.NodeConfig, rustModule string) string {
 	}
 }
 
-func newAdvanceRunner(c config.NodeConfig) services.CommandService {
+func newAdvanceRunner(c config.NodeConfig, workDir string) services.CommandService {
 	var s services.CommandService
 	s.Name = "advance-runner"
 	s.HealthcheckPort = getPort(c, portOffsetAdvanceRunner)
@@ -95,10 +95,11 @@ func newAdvanceRunner(c config.NodeConfig) services.CommandService {
 		s.Env = append(s.Env, fmt.Sprintf("MACHINE_SNAPSHOT_PATH=%v", c.SnapshotDir))
 	}
 	s.Env = append(s.Env, os.Environ()...)
+	s.WorkDir = workDir
 	return s
 }
 
-func newAuthorityClaimer(c config.NodeConfig) services.CommandService {
+func newAuthorityClaimer(c config.NodeConfig, workDir string) services.CommandService {
 	var s services.CommandService
 	s.Name = "authority-claimer"
 	s.HealthcheckPort = getPort(c, portOffsetAuthorityClaimer)
@@ -136,10 +137,11 @@ func newAuthorityClaimer(c config.NodeConfig) services.CommandService {
 		panic("invalid auth config")
 	}
 	s.Env = append(s.Env, os.Environ()...)
+	s.WorkDir = workDir
 	return s
 }
 
-func newDispatcher(c config.NodeConfig) services.CommandService {
+func newDispatcher(c config.NodeConfig, workDir string) services.CommandService {
 	var s services.CommandService
 	s.Name = "dispatcher"
 	s.HealthcheckPort = getPort(c, portOffsetDispatcher)
@@ -164,10 +166,11 @@ func newDispatcher(c config.NodeConfig) services.CommandService {
 	s.Env = append(s.Env, fmt.Sprintf("DISPATCHER_HTTP_SERVER_PORT=%v",
 		getPort(c, portOffsetDispatcher)))
 	s.Env = append(s.Env, os.Environ()...)
+	s.WorkDir = workDir
 	return s
 }
 
-func newGraphQLServer(c config.NodeConfig) services.CommandService {
+func newGraphQLServer(c config.NodeConfig, workDir string) services.CommandService {
 	var s services.CommandService
 	s.Name = "graphql-server"
 	s.HealthcheckPort = getPort(c, portOffsetGraphQLHealthcheck)
@@ -181,10 +184,11 @@ func newGraphQLServer(c config.NodeConfig) services.CommandService {
 	s.Env = append(s.Env, fmt.Sprintf("GRAPHQL_HEALTHCHECK_PORT=%v",
 		getPort(c, portOffsetGraphQLHealthcheck)))
 	s.Env = append(s.Env, os.Environ()...)
+	s.WorkDir = workDir
 	return s
 }
 
-func newHostRunner(c config.NodeConfig) services.CommandService {
+func newHostRunner(c config.NodeConfig, workDir string) services.CommandService {
 	var s services.CommandService
 	s.Name = "host-runner"
 	s.HealthcheckPort = getPort(c, portOffsetHostRunnerHealthcheck)
@@ -201,10 +205,11 @@ func newHostRunner(c config.NodeConfig) services.CommandService {
 	s.Env = append(s.Env, fmt.Sprintf("HOST_RUNNER_HEALTHCHECK_PORT=%v",
 		getPort(c, portOffsetHostRunnerHealthcheck)))
 	s.Env = append(s.Env, os.Environ()...)
+	s.WorkDir = workDir
 	return s
 }
 
-func newIndexer(c config.NodeConfig) services.CommandService {
+func newIndexer(c config.NodeConfig, workdir string) services.CommandService {
 	var s services.CommandService
 	s.Name = "indexer"
 	s.HealthcheckPort = getPort(c, portOffsetIndexer)
@@ -220,10 +225,11 @@ func newIndexer(c config.NodeConfig) services.CommandService {
 	s.Env = append(s.Env, fmt.Sprintf("INDEXER_HEALTHCHECK_PORT=%v",
 		getPort(c, portOffsetIndexer)))
 	s.Env = append(s.Env, os.Environ()...)
+	s.WorkDir = workdir
 	return s
 }
 
-func newInspectServer(c config.NodeConfig) services.CommandService {
+func newInspectServer(c config.NodeConfig, workDir string) services.CommandService {
 	var s services.CommandService
 	s.Name = "inspect-server"
 	s.HealthcheckPort = getPort(c, portOffsetInspectHealthcheck)
@@ -239,10 +245,11 @@ func newInspectServer(c config.NodeConfig) services.CommandService {
 	s.Env = append(s.Env, fmt.Sprintf("INSPECT_SERVER_HEALTHCHECK_PORT=%v",
 		getPort(c, portOffsetInspectHealthcheck)))
 	s.Env = append(s.Env, os.Environ()...)
+	s.WorkDir = workDir
 	return s
 }
 
-func newRedis(c config.NodeConfig) services.CommandService {
+func newRedis(c config.NodeConfig, workDir string) services.CommandService {
 	var s services.CommandService
 	s.Name = "redis"
 	s.HealthcheckPort = getPort(c, portOffsetRedis)
@@ -252,10 +259,11 @@ func newRedis(c config.NodeConfig) services.CommandService {
 	s.Args = append(s.Args, "--save", "")
 	s.Args = append(s.Args, "--appendonly", "no")
 	s.Env = append(s.Env, os.Environ()...)
+	s.WorkDir = workDir
 	return s
 }
 
-func newServerManager(c config.NodeConfig) services.ServerManager {
+func newServerManager(c config.NodeConfig, workDir string) services.ServerManager {
 	var s services.ServerManager
 	s.Name = "server-manager"
 	s.HealthcheckPort = getPort(c, portOffsetServerManager)
@@ -270,10 +278,11 @@ func newServerManager(c config.NodeConfig) services.ServerManager {
 	}
 	s.Env = append(s.Env, os.Environ()...)
 	s.BypassLog = c.ExperimentalServerManagerBypassLog
+	s.WorkDir = workDir
 	return s
 }
 
-func newStateServer(c config.NodeConfig) services.CommandService {
+func newStateServer(c config.NodeConfig, workDir string) services.CommandService {
 	var s services.CommandService
 	s.Name = "state-server"
 	s.HealthcheckPort = getPort(c, portOffsetStateServer)
@@ -292,38 +301,39 @@ func newStateServer(c config.NodeConfig) services.CommandService {
 	s.Env = append(s.Env, fmt.Sprintf("SS_SERVER_ADDRESS=%v:%v", localhost,
 		getPort(c, portOffsetStateServer)))
 	s.Env = append(s.Env, os.Environ()...)
+	s.WorkDir = workDir
 	return s
 }
 
-func newSupervisorService(c config.NodeConfig) services.SupervisorService {
+func newSupervisorService(c config.NodeConfig, workDir string) services.SupervisorService {
 	var s []services.Service
 
 	if !c.ExperimentalSunodoValidatorEnabled {
 		// add Redis first
-		s = append(s, newRedis(c))
+		s = append(s, newRedis(c, workDir))
 	}
 
 	// add services without dependencies
-	s = append(s, newGraphQLServer(c))
-	s = append(s, newIndexer(c))
-	s = append(s, newStateServer(c))
+	s = append(s, newGraphQLServer(c, workDir))
+	s = append(s, newIndexer(c, workDir))
+	s = append(s, newStateServer(c, workDir))
 
 	// start either the server manager or host runner
 	if c.FeatureHostMode {
-		s = append(s, newHostRunner(c))
+		s = append(s, newHostRunner(c, workDir))
 	} else {
-		s = append(s, newServerManager(c))
+		s = append(s, newServerManager(c, workDir))
 	}
 
 	// enable claimer if reader mode and sunodo validator mode are disabled
 	if !c.FeatureDisableClaimer && !c.ExperimentalSunodoValidatorEnabled {
-		s = append(s, newAuthorityClaimer(c))
+		s = append(s, newAuthorityClaimer(c, workDir))
 	}
 
 	// add services with dependencies
-	s = append(s, newAdvanceRunner(c)) // Depends on the server-manager/host-runner
-	s = append(s, newDispatcher(c))    // Depends on the state server
-	s = append(s, newInspectServer(c)) // Depends on the server-manager/host-runner
+	s = append(s, newAdvanceRunner(c, workDir)) // Depends on the server-manager/host-runner
+	s = append(s, newDispatcher(c, workDir))    // Depends on the state server
+	s = append(s, newInspectServer(c, workDir)) // Depends on the server-manager/host-runner
 
 	s = append(s, newHttpService(c))
 
