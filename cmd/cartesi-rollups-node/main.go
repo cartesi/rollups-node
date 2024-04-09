@@ -44,7 +44,7 @@ func main() {
 	slog.Info("Starting the Cartesi Rollups Node", "version", buildVersion, "config", config)
 
 	// create the node supervisor
-	supervisor, err := node.Setup(ctx, config)
+	supervisor, err := node.Setup(ctx, config, "")
 	if err != nil {
 		slog.Error("Node exited with an error", "error", err)
 		os.Exit(1)

@@ -38,6 +38,9 @@ type CommandService struct {
 
 	// Environment variables.
 	Env []string
+
+	// Working Directory
+	WorkDir string
 }
 
 func (s CommandService) Start(ctx context.Context, ready chan<- struct{}) error {
@@ -52,6 +55,11 @@ func (s CommandService) Start(ctx context.Context, ready chan<- struct{}) error 
 		}
 		return err
 	}
+
+	if s.WorkDir != "" {
+		cmd.Dir = s.WorkDir
+	}
+
 	go s.pollTcp(ctx, ready)
 	err := cmd.Run()
 

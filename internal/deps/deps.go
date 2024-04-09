@@ -7,6 +7,7 @@ package deps
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"sync"
@@ -17,14 +18,23 @@ import (
 )
 
 const (
-	DefaultPostgresDockerImage = "postgres:16-alpine"
-	DefaultPostgresPort        = "5432"
-	DefaultPostgresPassword    = "password"
-	DefaultDevnetDockerImage   = "cartesi/rollups-node-devnet:devel"
-	DefaultDevnetPort          = "8545"
+	DefaultPostgresDatabase        = "postgres"
+	DefaultPostgresDockerImage     = "postgres:16-alpine"
+	DefaultPostgresPort            = "5432"
+	DefaultPostgresUser            = "postgres"
+	DefaultPostgresPassword        = "password"
+	DefaultDevnetDockerImage       = "cartesi/rollups-node-devnet:devel"
+	DefaultDevnetPort              = "8545"
+	DefaultBlockTime               = "1"
+	DefaultBlockToWaitForOnStartup = "21"
 
 	numPostgresCheckReadyAttempts = 2
 	pollInterval                  = 5 * time.Second
+)
+
+const (
+	postgresKey = iota
+	devnetKey
 )
 
 // Struct to hold Node dependencies containers configurations
@@ -40,8 +50,10 @@ type PostgresConfig struct {
 }
 
 type DevnetConfig struct {
-	DockerImage string
-	Port        string
+	DockerImage             string
+	Port                    string
+	BlockTime               string
+	BlockToWaitForOnStartup string
 }
 
 // Builds a DepsConfig struct with default values
@@ -55,15 +67,72 @@ func NewDefaultDepsConfig() *DepsConfig {
 		&DevnetConfig{
 			DefaultDevnetDockerImage,
 			DefaultDevnetPort,
+			DefaultBlockTime,
+			DefaultBlockToWaitForOnStartup,
 		},
 	}
 }
 
 // Struct to represent the Node dependencies containers
 type DepsContainers struct {
-	containers []testcontainers.Container
+	containers map[int]testcontainers.Container
 	//Literal copies lock value from waitGroup as sync.WaitGroup contains sync.noCopy
 	waitGroup *sync.WaitGroup
+}
+
+func (depContainers *DepsContainers) DevnetLogs(ctx context.Context) (io.ReadCloser, error) {
+	container, ok := depContainers.containers[devnetKey]
+	if !ok {
+		return nil, fmt.Errorf("Container Devnet is not present")
+	}
+	reader, err := container.Logs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("Error retrieving logs from Devnet Container : %w", err)
+	}
+	return reader, nil
+}
+
+func (depContainers *DepsContainers) PostgresLogs(ctx context.Context) (io.ReadCloser, error) {
+	container, ok := depContainers.containers[postgresKey]
+	if !ok {
+		return nil, fmt.Errorf("Container Postgres is not present")
+	}
+	reader, err := container.Logs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("Error retrieving logs from Postgres Container : %w", err)
+	}
+	return reader, nil
+}
+
+func (depContainers *DepsContainers) DevnetEndpoint(
+	ctx context.Context,
+	protocol string,
+) (string, error) {
+	container, ok := depContainers.containers[devnetKey]
+	if !ok {
+		return "", fmt.Errorf("Container Devnet is not present")
+	}
+	endpoint, err := container.Endpoint(ctx, protocol)
+	if err != nil {
+		return "", fmt.Errorf("Error retrieving endpoint from Devnet Container : %w", err)
+	}
+	return endpoint, nil
+}
+
+func (depContainers *DepsContainers) PostgresEndpoint(
+	ctx context.Context,
+	protocol string,
+) (string, error) {
+
+	container, ok := depContainers.containers[postgresKey]
+	if !ok {
+		return "", fmt.Errorf("Container Postgres is not present")
+	}
+	endpoint, err := container.Endpoint(ctx, protocol)
+	if err != nil {
+		return "", fmt.Errorf("Error retrieving endpoint from Postgres Container : %w", err)
+	}
+	return endpoint, nil
 }
 
 // debugLogging implements the testcontainers.Logging interface by printing the log to slog.Debug.
@@ -73,12 +142,13 @@ func (d debugLogging) Printf(format string, v ...interface{}) {
 	slog.Debug(fmt.Sprintf(format, v...))
 }
 
-func createHook(waitGroup *sync.WaitGroup) []testcontainers.ContainerLifecycleHooks {
+func createHook(finishedWaitGroup *sync.WaitGroup) []testcontainers.ContainerLifecycleHooks {
 	return []testcontainers.ContainerLifecycleHooks{
 		{
+
 			PostTerminates: []testcontainers.ContainerHook{
 				func(ctx context.Context, container testcontainers.Container) error {
-					waitGroup.Done()
+					finishedWaitGroup.Done()
 					return nil
 				},
 			},
@@ -90,25 +160,29 @@ func createHook(waitGroup *sync.WaitGroup) []testcontainers.ContainerLifecycleHo
 // The returned DepContainers struct can be used to gracefully
 // terminate the containers using the Terminate method
 func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
-	debugLogger := debugLogging{}
-	var waitGroup sync.WaitGroup
 
-	containers := []testcontainers.Container{}
+	debugLogger := debugLogging{}
+	var finishedWaitGroup sync.WaitGroup
+	containers := make(map[int]testcontainers.Container)
 	if depsConfig.Postgres != nil {
 		// wait strategy copied from testcontainers docs
 		postgresWaitStrategy := wait.ForLog("database system is ready to accept connections").
 			WithOccurrence(numPostgresCheckReadyAttempts).
 			WithPollInterval(pollInterval)
+
+		postgresExposedPorts := "5432/tcp"
+		if depsConfig.Postgres.Port != "" {
+			postgresExposedPorts = strings.Join([]string{
+				depsConfig.Postgres.Port, ":", postgresExposedPorts}, "")
+		}
 		postgresReq := testcontainers.ContainerRequest{
-			Image: depsConfig.Postgres.DockerImage,
-			ExposedPorts: []string{strings.Join([]string{
-				depsConfig.Postgres.Port, ":5432/tcp"}, "")},
-			WaitingFor: postgresWaitStrategy,
-			Name:       "rollups-node-dep-postgres",
+			Image:        depsConfig.Postgres.DockerImage,
+			ExposedPorts: []string{postgresExposedPorts},
+			WaitingFor:   postgresWaitStrategy,
 			Env: map[string]string{
 				"POSTGRES_PASSWORD": depsConfig.Postgres.Password,
 			},
-			LifecycleHooks: createHook(&waitGroup),
+			LifecycleHooks: createHook(&finishedWaitGroup),
 		}
 		postgres, err := testcontainers.GenericContainer(
 			ctx,
@@ -121,20 +195,24 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 		if err != nil {
 			return nil, err
 		}
-		waitGroup.Add(1)
-		containers = append(containers, postgres)
+		finishedWaitGroup.Add(1)
+		containers[postgresKey] = postgres
 	}
 
 	if depsConfig.Devnet != nil {
+
+		devnetExposedPort := "8545/tcp"
+		if depsConfig.Devnet.Port != "" {
+			devnetExposedPort = strings.Join([]string{
+				depsConfig.Devnet.Port, ":", devnetExposedPort}, "")
+		}
 		devNetReq := testcontainers.ContainerRequest{
 			Image:        depsConfig.Devnet.DockerImage,
-			ExposedPorts: []string{strings.Join([]string{depsConfig.Devnet.Port, ":8545/tcp"}, "")},
-			WaitingFor:   wait.ForLog("Listening on 0.0.0.0:8545"),
-			Name:         "rollups-node-dep-devnet",
-			Env: map[string]string{
-				"ANVIL_IP_ADDR": "0.0.0.0",
-			},
-			LifecycleHooks: createHook(&waitGroup),
+			ExposedPorts: []string{devnetExposedPort},
+			WaitingFor:   wait.ForLog("Block Number: " + depsConfig.Devnet.BlockToWaitForOnStartup),
+			Cmd: []string{"anvil", "--block-time",
+				depsConfig.Devnet.BlockTime, "--load-state", "/usr/share/devnet/anvil_state.json"},
+			LifecycleHooks: createHook(&finishedWaitGroup),
 		}
 		devnet, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 			ContainerRequest: devNetReq,
@@ -144,25 +222,27 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 		if err != nil {
 			return nil, err
 		}
-		waitGroup.Add(1)
-		containers = append(containers, devnet)
+		finishedWaitGroup.Add(1)
+		containers[devnetKey] = devnet
 	}
+
 	if len(containers) < 1 {
 		return nil, fmt.Errorf("configuration is empty")
 	}
-	return &DepsContainers{containers, &waitGroup}, nil
+
+	return &DepsContainers{containers: containers,
+		waitGroup: &finishedWaitGroup,
+	}, nil
 }
 
 // Terminate terminates all dependencies containers. This method waits for all the containers
 // to terminate or gives an error if it fails to terminate one of the containers
 func Terminate(ctx context.Context, depContainers *DepsContainers) error {
-
 	for _, depContainer := range depContainers.containers {
 		terr := depContainer.Terminate(ctx)
 		if terr != nil {
 			return terr
 		}
 	}
-	depContainers.waitGroup.Wait()
 	return nil
 }

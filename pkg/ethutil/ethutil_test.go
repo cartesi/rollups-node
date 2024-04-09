@@ -9,12 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/deps"
 	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/suite"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 const testTimeout = 300 * time.Second
@@ -25,7 +24,7 @@ type EthUtilSuite struct {
 	suite.Suite
 	ctx    context.Context
 	cancel context.CancelFunc
-	devNet testcontainers.Container
+	deps   *deps.DepsContainers
 	client *ethclient.Client
 	signer Signer
 	book   *addresses.Book
@@ -35,10 +34,10 @@ func (s *EthUtilSuite) SetupTest() {
 	s.ctx, s.cancel = context.WithTimeout(context.Background(), testTimeout)
 
 	var err error
-	s.devNet, err = newDevNetContainer(s.ctx)
+	s.deps, err = newDevNetContainer(context.Background())
 	s.Require().Nil(err)
 
-	endpoint, err := s.devNet.Endpoint(s.ctx, "ws")
+	endpoint, err := s.deps.DevnetEndpoint(s.ctx, "ws")
 	s.Require().Nil(err)
 
 	s.client, err = ethclient.DialContext(s.ctx, endpoint)
@@ -51,7 +50,7 @@ func (s *EthUtilSuite) SetupTest() {
 }
 
 func (s *EthUtilSuite) TearDownTest() {
-	err := s.devNet.Terminate(s.ctx)
+	err := deps.Terminate(context.Background(), s.deps)
 	s.Nil(err)
 	s.cancel()
 }
@@ -76,7 +75,7 @@ func (s *EthUtilSuite) TestAddInput() {
 
 // Log the output of the given container
 func (s *EthUtilSuite) logDevnetOutput() {
-	reader, err := s.devNet.Logs(s.ctx)
+	reader, err := s.deps.DevnetLogs(s.ctx)
 	s.Require().Nil(err)
 	defer reader.Close()
 
@@ -89,17 +88,20 @@ func TestEthUtilSuite(t *testing.T) {
 	suite.Run(t, new(EthUtilSuite))
 }
 
-// We use the sunodo devnet docker image to test the client.
+// We use the node devnet docker image to test the client.
 // This image starts an anvil node with the Rollups contracts already deployed.
-func newDevNetContainer(ctx context.Context) (testcontainers.Container, error) {
-	req := testcontainers.ContainerRequest{
-		Image:        "cartesi/rollups-node-devnet:devel",
-		ExposedPorts: []string{"8545/tcp"},
-		WaitingFor:   wait.ForLog("Listening on 0.0.0.0:8545"),
+func newDevNetContainer(ctx context.Context) (*deps.DepsContainers, error) {
+
+	container, err := deps.Run(ctx, deps.DepsConfig{
+		Devnet: &deps.DevnetConfig{
+			DockerImage:             deps.DefaultDevnetDockerImage,
+			BlockTime:               deps.DefaultBlockTime,
+			BlockToWaitForOnStartup: deps.DefaultBlockToWaitForOnStartup,
+			Port:                    "",
+		},
+	})
+	if err != nil {
+		return nil, err
 	}
-	genericReq := testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	}
-	return testcontainers.GenericContainer(ctx, genericReq)
+	return container, nil
 }
