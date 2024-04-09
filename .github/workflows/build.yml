@@ -19,6 +19,37 @@ permissions:
   contents: write
 
 jobs:
+  do-basic-checks:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Check conventional commit
+        uses: cocogitto/cocogitto-action@v3
+        id: conventional_commit_check
+        with:
+          check-latest-tag-only: true
+
+      - name: Check license header
+        uses: viperproject/check-license-header@v2
+        with:
+          path: ./
+          config: .github/license-check/config.json
+
+      - name: Check auto generated files
+        run: make check-generate
+
+      - name: Lint Markdown docs
+        uses: DavidAnson/markdownlint-cli2-action@v16
+        with:
+          globs: |
+            *.md
+            docs/*.md
+
   test-rust:
     runs-on: ubuntu-22.04
     env:
@@ -56,6 +87,9 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      - name: Update Rust
+        run: rustup update
+
       - name: Install cargo sweep
         run: cargo install cargo-sweep
         continue-on-error: true
@@ -64,8 +98,21 @@ jobs:
         run: cargo install cargo-cache
         continue-on-error: true
 
+      - name: Install cargo-machete
+        run: cargo install cargo-machete
+        continue-on-error: true
+
       - name: Set sweep timestamp
         run: cargo sweep -s
+
+      - name: Analyze dependencies
+        run: cargo machete .
+
+      - name: Check code format
+        run: cargo fmt --all -- --check
+
+      - name: Run linter
+        run: cargo clippy -- -A clippy::module_inception
 
       - name: Build binaries and tests
         run: cargo build --all-targets
@@ -101,11 +148,15 @@ jobs:
           workdir: build
           load: true
 
-
       - name: Install Go
         uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
+
+      - name: Run Go Linter
+        uses: golangci/golangci-lint-action@v5
+        with:
+          version: v1.54.2
 
       - name: Run Go tests
         run: go test ./...
@@ -113,6 +164,7 @@ jobs:
   build-docker:
     runs-on: ubuntu-22.04
     needs:
+      - do-basic-checks
       - test-rust
       - test-go
     steps:
