@@ -74,7 +74,7 @@ The [configuration](#configuration) section describes how to do so.
 ### Host Mode
 
 The host mode allows the developer to run the application back-end in the host machine instead of the Cartesi Machine.
-[NoNodo][nonodo] replaces this feature, which will be deprecated in version 2.0 of the Rollups Node.
+This feature was deprecated in the Rollups Node 2.0 version; instead, developers should use [NoNodo][nonodo].
 
 [nonodo]: https://github.com/gligneul/nonodo#nonodo
 

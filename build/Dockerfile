@@ -11,7 +11,6 @@ ARG BASE_IMAGE
 ARG RUST_VERSION
 ARG GO_VERSION
 ARG FOUNDRY_NIGHTLY_VERSION
-ARG SERVER_MANAGER_VERSION
 ARG MACHINE_EMULATOR_VERSION
 ARG ROOTFS_VERSION
 ARG LINUX_VERSION
@@ -288,11 +287,6 @@ RUN go mod download
 COPY . .
 RUN go build -ldflags "-s -w -X 'main.buildVersion=${ROLLUPS_NODE_VERSION}'" ./cmd/cartesi-rollups-node
 
-# STAGE: server-manager
-#
-# This stage creates an alias for the server-manager image with a specific version.
-FROM cartesi/server-manager:${SERVER_MANAGER_VERSION} as server-manager
-
 # STAGE: rollups-node
 #
 # This stage copies the binaries from the previous stages.
@@ -317,9 +311,6 @@ apt-get install -y --no-install-recommends \
     procps
 rm -rf /var/lib/apt/lists/*
 EOF
-
-# Copy server-manager.
-COPY --from=server-manager /usr/bin/server-manager /usr/bin
 
 # Copy Rust binaries.
 # Explicitly copy each binary to avoid adding unnecessary files to the runtime image.
