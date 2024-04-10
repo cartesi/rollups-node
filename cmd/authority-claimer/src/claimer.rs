@@ -1,15 +1,14 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-use async_trait::async_trait;
-use snafu::ResultExt;
-use std::fmt::Debug;
-use tracing::{info, trace};
-
 use crate::{
     checker::DuplicateChecker, listener::BrokerListener,
     sender::TransactionSender,
 };
+use async_trait::async_trait;
+use snafu::ResultExt;
+use std::fmt::Debug;
+use tracing::{info, trace};
 
 /// The `Claimer` starts an event loop that waits for claim messages
 /// from the broker, and then sends the claims to the blockchain. It checks to

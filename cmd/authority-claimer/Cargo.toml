@@ -16,7 +16,6 @@ axum = "0.7"
 backoff = {version = "0.4", features = ["tokio"]}
 base64 = "0.22"
 clap = {version = "4.5", features = ["string", "derive", "env"]}
-ethabi = "18.0"
 ethers = "1.0"
 ethers-signers = {version = "1.0", features = ["aws"]}
 eth-state-fold = "0.9"

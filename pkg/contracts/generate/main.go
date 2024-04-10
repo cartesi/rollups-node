@@ -12,49 +12,45 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
-const rollupsContractsUrl = "https://registry.npmjs.org/@cartesi/rollups/-/rollups-1.2.0.tgz"
+const rollupsContractsUrl = "https://registry.npmjs.org/@cartesi/rollups/-/rollups-2.0.0-rc.2.tgz"
 const baseContractsPath = "package/export/artifacts/contracts/"
-const bindingPkg = "contracts"
 
 type contractBinding struct {
 	jsonPath string
 	typeName string
-	outFile  string
 }
 
 var bindings = []contractBinding{
 	{
+		jsonPath: baseContractsPath + "consensus/IConsensus.sol/IConsensus.json",
+		typeName: "IConsensus",
+	},
+	{
+		jsonPath: baseContractsPath + "dapp/Application.sol/Application.json",
+		typeName: "Application",
+	},
+	{
 		jsonPath: baseContractsPath + "inputs/InputBox.sol/InputBox.json",
 		typeName: "InputBox",
-		outFile:  "input_box.go",
 	},
 	{
-		jsonPath: baseContractsPath + "dapp/CartesiDAppFactory.sol/CartesiDAppFactory.json",
-		typeName: "CartesiDAppFactory",
-		outFile:  "cartesi_dapp_factory.go",
+		jsonPath: baseContractsPath + "common/Inputs.sol/Inputs.json",
+		typeName: "Inputs",
 	},
 	{
-		jsonPath: baseContractsPath + "dapp/CartesiDApp.sol/CartesiDApp.json",
-		typeName: "CartesiDApp",
-		outFile:  "cartesi_dapp.go",
-	},
-	{
-		jsonPath: baseContractsPath + "consensus/authority/Authority.sol/Authority.json",
-		typeName: "Authority",
-		outFile:  "authority.go",
-	},
-	{
-		jsonPath: baseContractsPath + "history/History.sol/History.json",
-		typeName: "History",
-		outFile:  "history.go",
+		jsonPath: baseContractsPath + "common/Outputs.sol/Outputs.json",
+		typeName: "Outputs",
 	},
 }
 
@@ -136,9 +132,16 @@ func getAbi(rawJson []byte) []byte {
 	return contents.Abi
 }
 
+// Check whether file exists.
+func fileExists(filePath string) bool {
+	_, err := os.Stat(filePath)
+	return !errors.Is(err, fs.ErrNotExist)
+}
+
 // Generate the Go bindings for the contracts.
 func generateBinding(b contractBinding, content []byte) {
 	var (
+		pkg     = strings.ToLower(b.typeName)
 		sigs    []map[string]string
 		abis    = []string{string(getAbi(content))}
 		bins    = []string{""}
@@ -146,10 +149,22 @@ func generateBinding(b contractBinding, content []byte) {
 		libs    = make(map[string]string)
 		aliases = make(map[string]string)
 	)
-	code, err := bind.Bind(types, abis, bins, sigs, bindingPkg, bind.LangGo, libs, aliases)
+	code, err := bind.Bind(types, abis, bins, sigs, pkg, bind.LangGo, libs, aliases)
 	checkErr("generate binding", err)
+
+	if fileExists(pkg) {
+		err := os.RemoveAll(pkg)
+		checkErr("removing dir", err)
+	}
+
+	const dirMode = 0700
+	err = os.Mkdir(pkg, dirMode)
+	checkErr("creating dir", err)
+
 	const fileMode = 0600
-	err = os.WriteFile(b.outFile, []byte(code), fileMode)
+	filePath := pkg + "/" + pkg + ".go"
+	err = os.WriteFile(filePath, []byte(code), fileMode)
 	checkErr("write binding file", err)
-	log.Print("generated binding ", b.outFile)
+
+	log.Print("generated binding for ", filePath)
 }
