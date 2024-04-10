@@ -70,7 +70,7 @@ func run(cmd *cobra.Command, args []string) {
 		book = addresses.GetTestBook()
 	}
 
-	slog.Info("Sending input", "application-address", book.CartesiDApp)
+	slog.Info("Sending input", "application-address", book.Application)
 	inputIndex, err := ethutil.AddInput(ctx, client, book, signer, payload)
 	cobra.CheckErr(err)
 
