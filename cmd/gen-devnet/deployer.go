@@ -11,7 +11,6 @@ import (
 
 	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
-	"github.com/ethereum/go-ethereum/common"
 )
 
 const (
@@ -41,32 +40,41 @@ func deploy(ctx context.Context,
 // Create a Rollups Application by calling the necessary factories
 func createApplication(ctx context.Context, hash string) (DeploymentInfo, error) {
 	var depInfo DeploymentInfo
+	addressBook := addresses.GetTestBook()
 
-	// Create the Authority/History pair
+	// Create the Authority contract
 	contractAddresses, err := createContracts(ctx,
-		common.Address.Hex(addresses.GetTestBook().AuthorityHistoryPairFactory),
-		"newAuthorityHistoryPair(address,bytes32)(address,address)",
+		addressBook.AuthorityFactory.Hex(),
+		"newAuthority(address,bytes32)(address)",
 		CONTRACT_OWNER_ADDRESS,
 		SALT)
 	if err != nil {
-		return DeploymentInfo{}, fmt.Errorf("could not create authority/history pair: %v", err)
+		return DeploymentInfo{}, fmt.Errorf("could not create authority: %v", err)
 	}
-
 	depInfo.AuthorityAddress = contractAddresses[0]
-	depInfo.HistoryAddress = contractAddresses[1]
+
+	portalAddresses := []string{
+		addressBook.ERC1155BatchPortal.Hex(),
+		addressBook.ERC1155SinglePortal.Hex(),
+		addressBook.ERC20Portal.Hex(),
+		addressBook.ERC721Portal.Hex(),
+		addressBook.EtherPortal.Hex(),
+	}
+	supportedPortals := "[" + strings.Join(portalAddresses, ",") + "]"
 
 	// Create the Application, passing the address of the newly created Authority
 	contractAddresses, err = createContracts(ctx,
-		common.Address.Hex(addresses.GetTestBook().CartesiDAppFactory),
-		"newApplication(address,address,bytes32,bytes32)(address)",
+		addressBook.ApplicationFactory.Hex(),
+		"newApplication(address,address,address[],address,bytes32,bytes32)(address)",
 		depInfo.AuthorityAddress,
+		addressBook.InputBox.Hex(),
+		supportedPortals,
 		CONTRACT_OWNER_ADDRESS,
 		hash,
 		SALT)
 	if err != nil {
 		return DeploymentInfo{}, fmt.Errorf("could not create application: %v", err)
 	}
-
 	depInfo.ApplicationAddress = contractAddresses[0]
 
 	return depInfo, nil

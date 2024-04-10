@@ -1,6 +1,7 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
+use super::aws_credentials::AwsCredentialsProvider;
 use async_trait::async_trait;
 use ethers::{
     signers::{AwsSigner as InnerAwsSigner, AwsSignerError, Signer},
@@ -11,8 +12,6 @@ use ethers::{
 };
 use rusoto_core::{HttpClient, Region};
 use rusoto_kms::KmsClient;
-
-use super::aws_credentials::AwsCredentialsProvider;
 
 /// The `AwsSigner` (re)implements the `Signer` trait for the `InnerAwsSigner`.
 ///

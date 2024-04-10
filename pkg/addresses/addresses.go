@@ -19,36 +19,32 @@ import (
 
 // List of contract addresses.
 type Book struct {
-	AuthorityHistoryPairFactory common.Address
-	CartesiDAppFactory          common.Address
-	DAppAddressRelay            common.Address
-	ERC1155BatchPortal          common.Address
-	ERC1155SinglePortal         common.Address
-	ERC20Portal                 common.Address
-	ERC721Portal                common.Address
-	EtherPortal                 common.Address
-	InputBox                    common.Address
-	CartesiDApp                 common.Address
-	HistoryAddress              common.Address
-	AuthorityAddress            common.Address
+	Application         common.Address
+	ApplicationFactory  common.Address
+	Authority           common.Address
+	AuthorityFactory    common.Address
+	DAppAddressRelay    common.Address
+	ERC1155BatchPortal  common.Address
+	ERC1155SinglePortal common.Address
+	ERC20Portal         common.Address
+	ERC721Portal        common.Address
+	EtherPortal         common.Address
+	InputBox            common.Address
 }
 
 // Get the addresses for the test environment.
 func GetTestBook() *Book {
 	return &Book{
-		AuthorityHistoryPairFactory: common.
-			HexToAddress("0x3890A047Cf9Af60731E80B2105362BbDCD70142D"),
-		CartesiDAppFactory:  common.HexToAddress("0x7122cd1221C20892234186facfE8615e6743Ab02"),
-		DAppAddressRelay:    common.HexToAddress("0xF5DE34d6BbC0446E2a45719E718efEbaaE179daE"),
-		ERC1155BatchPortal:  common.HexToAddress("0xedB53860A6B52bbb7561Ad596416ee9965B055Aa"),
-		ERC1155SinglePortal: common.HexToAddress("0x7CFB0193Ca87eB6e48056885E026552c3A941FC4"),
-		ERC20Portal:         common.HexToAddress("0x9C21AEb2093C32DDbC53eEF24B873BDCd1aDa1DB"),
-		ERC721Portal:        common.HexToAddress("0x237F8DD094C0e47f4236f12b4Fa01d6Dae89fb87"),
-		EtherPortal:         common.HexToAddress("0xFfdbe43d4c855BF7e0f105c400A50857f53AB044"),
-		InputBox:            common.HexToAddress("0x59b22D57D4f067708AB0c00552767405926dc768"),
-		CartesiDApp:         common.HexToAddress("0x7C54E3f7A8070a54223469965A871fB8f6f88c22"),
-		HistoryAddress:      common.HexToAddress("0x325272217ae6815b494bF38cED004c5Eb8a7CdA7"),
-		AuthorityAddress:    common.HexToAddress("0x58c93F83fb3304730C95aad2E360cdb88b782010"),
+		Application:         common.HexToAddress("0xb72c832dDeA10326143831F1E5F1646920C9c990"),
+		ApplicationFactory:  common.HexToAddress("0x39cc8d1faB70F713784032f166aB7Fe3B4801144"),
+		Authority:           common.HexToAddress("0x77e5a5fb18F72b5106621f66C704c006c6dB4578"),
+		AuthorityFactory:    common.HexToAddress("0x5EF4260c72a7A8df752AFF49aC46Ba741754E04a"),
+		ERC1155BatchPortal:  common.HexToAddress("0x83D7fc8A2A2535A17b037598bad23562215a752A"),
+		ERC1155SinglePortal: common.HexToAddress("0x77b5b758f43E789E0858a766934bE08B2CD65feA"),
+		ERC20Portal:         common.HexToAddress("0x8f4b3F53699EDd5374c3374b4Ee1CcA3d23E95Ab"),
+		ERC721Portal:        common.HexToAddress("0xDF9d6F65E9a053FbaFF9eAaf0b522f1b35Dfd05B"),
+		EtherPortal:         common.HexToAddress("0xF03FB966604bF02073b87b4586b3edBC201f73A6"),
+		InputBox:            common.HexToAddress("0xA1b8EB1F13d8D5Db976a653BbDF8972cfD14691C"),
 	}
 }
 

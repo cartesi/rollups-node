@@ -2,10 +2,8 @@
   {
     "include": ["**/*.go", "**/*.rs"],
     "exclude": [
-      "offchain/grpc-interfaces/**",
-      "offchain/target/**",
-      "offchain/data/src/schema.rs",
-      "pkg/contracts/*.go",
+      "cmd/authority-claimer/target/**",
+      "pkg/contracts/**",
       "pkg/readerclient/generated.go",
       "pkg/inspectclient/generated.go",
       "rollups-contracts/**"

@@ -14,8 +14,7 @@ import (
 
 const (
 	LocalBlockchainID                     = 31337
-	LocalApplicationDeploymentBlockNumber = 20
-	LocalInputBoxDeploymentBlockNumber    = 20
+	LocalInputBoxDeploymentBlockNumber = 16
 	LocalHttpAddress                      = "0.0.0.0"
 	LocalHttpPort                         = 10000
 	LocalBlockTimeout                     = 120
@@ -52,9 +51,8 @@ func NewLocalNodeConfig(localPostgresEnpoint string, localBlockchainHttpEndpoint
 	nodeConfig.BlockchainBlockTimeout = LocalBlockTimeout
 
 	//Contracts
-	nodeConfig.ContractsHistoryAddress = book.HistoryAddress.Hex()
-	nodeConfig.ContractsAuthorityAddress = book.AuthorityAddress.Hex()
-	nodeConfig.ContractsApplicationAddress = book.CartesiDApp.Hex()
+	nodeConfig.ContractsApplicationAddress = book.Application.Hex()
+	nodeConfig.ContractsIConsensusAddress = book.Authority.Hex()
 	nodeConfig.ContractsInputBoxAddress = book.InputBox.Hex()
 	nodeConfig.ContractsInputBoxDeploymentBlockNumber = LocalInputBoxDeploymentBlockNumber
 

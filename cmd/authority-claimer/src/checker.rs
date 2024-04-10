@@ -1,8 +1,10 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-use crate::contracts::history::{Claim, History};
-use crate::rollups_events::{Address, RollupsClaim};
+use crate::{
+    contracts::iconsensus::IConsensus,
+    rollups_events::{Address, Hash, RollupsClaim},
+};
 use async_trait::async_trait;
 use ethers::{
     self,
@@ -10,11 +12,10 @@ use ethers::{
     providers::{
         Http, HttpRateLimitRetryPolicy, Middleware, Provider, RetryClient,
     },
-    types::H160,
+    types::{Address as EthersAddress, H160},
 };
 use snafu::{ensure, ResultExt, Snafu};
-use std::sync::Arc;
-use std::{collections::HashMap, fmt::Debug};
+use std::{collections::HashSet, fmt::Debug, sync::Arc};
 use tracing::trace;
 use url::{ParseError, Url};
 
@@ -36,11 +37,20 @@ pub trait DuplicateChecker: Debug {
 // DefaultDuplicateChecker
 // ------------------------------------------------------------------------------------------------
 
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+struct Claim {
+    application: Address,
+    first_index: u64,
+    last_index: u64,
+    epoch_hash: Hash,
+}
+
 #[derive(Debug)]
 pub struct DefaultDuplicateChecker {
     provider: Arc<Provider<RetryClient<Http>>>,
-    history: History<Provider<RetryClient<Http>>>,
-    claims: HashMap<Address, Vec<Claim>>,
+    iconsensus: IConsensus<Provider<RetryClient<Http>>>,
+    from: EthersAddress,
+    claims: HashSet<Claim>,
     confirmations: usize,
     next_block_to_read: u64,
 }
@@ -66,24 +76,13 @@ pub enum DuplicateCheckerError {
         latest
     ))]
     DepthTooHigh { depth: u64, latest: u64 },
-
-    #[snafu(display(
-        "Claim mismatch; blockchain expects [{}, ?], but got claim with [{}, {}]",
-        expected_first_index,
-        claim_first_index,
-        claim_last_index
-    ))]
-    ClaimMismatch {
-        expected_first_index: u128,
-        claim_first_index: u128,
-        claim_last_index: u128,
-    },
 }
 
 impl DefaultDuplicateChecker {
     pub async fn new(
         http_endpoint: String,
-        history_address: Address,
+        iconsensus: Address,
+        from: EthersAddress,
         confirmations: usize,
         genesis_block: u64,
     ) -> Result<Self, DuplicateCheckerError> {
@@ -95,14 +94,15 @@ impl DefaultDuplicateChecker {
             INITIAL_BACKOFF,
         );
         let provider = Arc::new(Provider::new(retry_client));
-        let history = History::new(
-            H160(history_address.inner().to_owned()),
+        let iconsensus = IConsensus::new(
+            H160(iconsensus.inner().to_owned()),
             provider.clone(),
         );
         let mut checker = Self {
             provider,
-            history,
-            claims: HashMap::new(),
+            iconsensus,
+            from,
+            claims: HashSet::new(),
             confirmations,
             next_block_to_read: genesis_block,
         };
@@ -120,27 +120,13 @@ impl DuplicateChecker for DefaultDuplicateChecker {
         rollups_claim: &RollupsClaim,
     ) -> Result<bool, Self::Error> {
         self.update_claims().await?;
-        let expected_first_index = self
-            .claims // HashMap => DappAddress to Vec<Claim>
-            .get(&rollups_claim.dapp_address) // Gets a Option<Vec<Claim>>
-            .and_then(|claims| claims.last()) // Back to only one Option
-            .map(|claim| claim.last_index + 1) // Maps to a number
-            .unwrap_or(0); // If None, unwrap to 0
-        if rollups_claim.first_index == expected_first_index {
-            // This claim is the one the blockchain expects, so it is not considered duplicate.
-            Ok(false)
-        } else if rollups_claim.last_index < expected_first_index {
-            // This claim is already on the blockchain.
-            Ok(true)
-        } else {
-            // This claim is not on blockchain, but it isn't the one blockchain expects.
-            // If this happens, there is a bug on the dispatcher.
-            Err(DuplicateCheckerError::ClaimMismatch {
-                expected_first_index,
-                claim_first_index: rollups_claim.first_index,
-                claim_last_index: rollups_claim.last_index,
-            })
-        }
+        let claim = Claim {
+            application: rollups_claim.dapp_address.clone(),
+            first_index: rollups_claim.first_index as u64,
+            last_index: rollups_claim.last_index as u64,
+            epoch_hash: rollups_claim.epoch_hash.clone(),
+        };
+        Ok(self.claims.contains(&claim))
     }
 }
 
@@ -167,44 +153,33 @@ impl DefaultDuplicateChecker {
             return Ok(());
         }
 
-        let new_claims: Vec<(Address, Claim)> = self
-            .history
-            .new_claim_to_history_filter()
+        let claims = self
+            .iconsensus
+            .claim_submission_filter()
             .from_block(self.next_block_to_read)
             .to_block(latest)
+            .topic1(self.from)
             .query()
             .await
-            .context(ContractSnafu)?
-            .into_iter()
-            .map(|e| (Address::new(e.dapp.into()), e.claim))
-            .collect();
+            .context(ContractSnafu)?;
+
         trace!(
             "read new claims {:?} from block {} to {}",
-            new_claims,
+            claims,
             self.next_block_to_read,
             latest
         );
-        self.append_claims(new_claims);
 
+        for claim_submission in claims.into_iter() {
+            let claim = Claim {
+                application: Address::new(claim_submission.app_contract.into()),
+                first_index: claim_submission.input_range.first_index,
+                last_index: claim_submission.input_range.last_index,
+                epoch_hash: Hash::new(claim_submission.epoch_hash),
+            };
+            self.claims.insert(claim);
+        }
         self.next_block_to_read = latest + 1;
-
         Ok(())
-    }
-
-    // Appends new claims to the [Address => Vec<Claim>] hashmap cache.
-    fn append_claims(&mut self, new_claims: Vec<(Address, Claim)>) {
-        if new_claims.is_empty() {
-            return;
-        }
-        for (dapp_address, new_claim) in new_claims {
-            match self.claims.get_mut(&dapp_address) {
-                Some(old_claims) => {
-                    old_claims.push(new_claim);
-                }
-                None => {
-                    self.claims.insert(dapp_address, vec![new_claim]);
-                }
-            }
-        }
     }
 }

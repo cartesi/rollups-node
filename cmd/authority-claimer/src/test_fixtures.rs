@@ -1,10 +1,13 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-use crate::redacted::{RedactedUrl, Url};
-use crate::rollups_events::{
-    broker::BrokerEndpoint, common::ADDRESS_SIZE, Address, Broker,
-    BrokerConfig, DAppMetadata, RollupsClaim, RollupsClaimsStream, INITIAL_ID,
+use crate::{
+    redacted::{RedactedUrl, Url},
+    rollups_events::{
+        broker::BrokerEndpoint, common::ADDRESS_SIZE, Address, Broker,
+        BrokerConfig, DAppMetadata, RollupsClaim, RollupsClaimsStream,
+        INITIAL_ID,
+    },
 };
 use backoff::ExponentialBackoff;
 use testcontainers::{

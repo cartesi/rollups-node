@@ -78,7 +78,7 @@ Block subscription timeout in seconds.
 
 ## `CARTESI_BLOCKCHAIN_FINALITY_OFFSET`
 
-The node assumes that blocks offseted by N from the current block have reached finality
+The node assumes that blocks offsetted by N from the current block have reached finality
 (N is the read depth).
 
 * **Type:** `int`
@@ -116,15 +116,9 @@ Address of the DApp's contract.
 
 * **Type:** `string`
 
-## `CARTESI_CONTRACTS_AUTHORITY_ADDRESS`
+## `CARTESI_CONTRACTS_ICONSENSUS_ADDRESS`
 
-Address of the Authority contract.
-
-* **Type:** `string`
-
-## `CARTESI_CONTRACTS_HISTORY_ADDRESS`
-
-Address of the History contract.
+Address of the IConsensus contract.
 
 * **Type:** `string`
 

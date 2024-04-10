@@ -6,7 +6,7 @@ package readerclient
 import (
 	"fmt"
 
-	"github.com/cartesi/rollups-node/pkg/contracts"
+	"github.com/cartesi/rollups-node/pkg/contracts/application"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
@@ -126,35 +126,8 @@ func newProof(
 	return &proof, err
 }
 
-func ConvertToContractProof(proof *Proof) *contracts.Proof {
-	var (
-		outputHashOutputSiblings [][32]byte
-		outputHashEpochSiblings  [][32]byte
-	)
-
-	for _, hash := range proof.OutputHashInOutputHashesSiblings {
-		outputHashOutputSiblings = append(outputHashOutputSiblings, [32]byte(hash))
+func ConvertToContractProof(proof *Proof) *application.OutputValidityProof {
+	return &application.OutputValidityProof{
+		// implement this once we have the new GraphQL schema
 	}
-
-	for _, hash := range proof.OutputHashesInEpochSiblings {
-		outputHashEpochSiblings = append(outputHashEpochSiblings, [32]byte(hash))
-	}
-
-	outputValidityProof := contracts.OutputValidityProof{
-		InputIndexWithinEpoch:            uint64(proof.InputIndexWithinEpoch),
-		OutputIndexWithinInput:           uint64(proof.OutputIndexWithinInput),
-		OutputHashesRootHash:             [32]byte(proof.OutputHashesRootHash),
-		VouchersEpochRootHash:            [32]byte(proof.VouchersEpochRootHash),
-		NoticesEpochRootHash:             [32]byte(proof.NoticesEpochRootHash),
-		MachineStateHash:                 [32]byte(proof.MachineStateHash),
-		OutputHashInOutputHashesSiblings: outputHashOutputSiblings,
-		OutputHashesInEpochSiblings:      outputHashEpochSiblings,
-	}
-
-	contractProof := contracts.Proof{
-		Validity: outputValidityProof,
-		Context:  proof.Context,
-	}
-
-	return &contractProof
 }

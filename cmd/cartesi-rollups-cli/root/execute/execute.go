@@ -94,15 +94,14 @@ func run(cmd *cobra.Command, args []string) {
 	slog.Info("Executing voucher",
 		"voucher-index", voucherIndex,
 		"input-index", inputIndex,
-		"application-address", book.CartesiDApp,
+		"application-address", book.Application,
 	)
-	txHash, err := ethutil.ExecuteVoucher(
+	txHash, err := ethutil.ExecuteOutput(
 		ctx,
 		client,
 		book,
 		signer,
 		resp.Payload,
-		&resp.Destination,
 		proof,
 	)
 	cobra.CheckErr(err)

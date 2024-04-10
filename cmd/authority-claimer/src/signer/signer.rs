@@ -1,6 +1,7 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
+use crate::{config::TxSigningConfig, signer::aws_signer::AwsSigner};
 use async_trait::async_trait;
 use ethers::{
     signers::{
@@ -13,8 +14,6 @@ use ethers::{
     },
 };
 use snafu::{ResultExt, Snafu};
-
-use crate::{config::TxSigningConfig, signer::aws_signer::AwsSigner};
 
 /// The `ConditionalSigner` is implementing conditional dispatch (instead of
 /// dynamic dispatch) by hand for objects that implement the `Sender` trait.

@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Bumped Rollups Contracts to 2.0
+
 ### Removed
 
 - Removed `advance-runner`, `dispatcher`, `graphql-server`, `host-runner`, `indexer`, `inspect-server`, and `state-server` Rust services

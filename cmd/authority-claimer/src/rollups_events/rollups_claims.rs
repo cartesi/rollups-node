@@ -1,9 +1,8 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-use serde::{Deserialize, Serialize};
-
 use super::{Address, BrokerStream, Hash};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug)]
 pub struct RollupsClaimsStream {

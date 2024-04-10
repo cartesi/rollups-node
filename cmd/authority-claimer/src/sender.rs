@@ -1,10 +1,15 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-use crate::contracts::{authority::Authority, history::Claim};
-use crate::rollups_events::{DAppMetadata, RollupsClaim};
+use crate::{
+    contracts::iconsensus::{IConsensus, InputRange},
+    metrics::AuthorityClaimerMetrics,
+    rollups_events::{Address, DAppMetadata, RollupsClaim},
+    signer::{ConditionalSigner, ConditionalSignerError},
+};
 use async_trait::async_trait;
 use eth_tx_manager::{
+    config::TxManagerConfig,
     database::FileSystemDatabase as Database,
     gas_oracle::DefaultGasOracle as GasOracle,
     manager::Configuration,
@@ -12,28 +17,18 @@ use eth_tx_manager::{
     transaction::{Priority, Transaction, Value},
     Chain,
 };
-use ethabi::Token;
 use ethers::{
     self,
-    abi::AbiEncode,
     middleware::SignerMiddleware,
     providers::{
         Http, HttpRateLimitRetryPolicy, MockProvider, Provider, RetryClient,
     },
-    signers::Signer,
-    types::{Bytes, NameOrAddress, H160},
+    types::{NameOrAddress, H160},
 };
 use snafu::{OptionExt, ResultExt, Snafu};
-use std::fmt::Debug;
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 use tracing::{info, trace};
 use url::{ParseError, Url};
-
-use crate::{
-    config::AuthorityClaimerConfig,
-    metrics::AuthorityClaimerMetrics,
-    signer::{ConditionalSigner, ConditionalSignerError},
-};
 
 /// The `TransactionSender` sends claims to the blockchain.
 ///
@@ -78,31 +73,13 @@ macro_rules! tx_manager {
     };
 }
 
-struct SubmittableClaim(ethers::types::Address, RollupsClaim);
-
-impl From<SubmittableClaim> for Bytes {
-    fn from(submittable_claim: SubmittableClaim) -> Self {
-        let SubmittableClaim(dapp_address, claim) = submittable_claim;
-        let claim = Claim {
-            epoch_hash: claim.epoch_hash.into_inner(),
-            first_index: claim.first_index,
-            last_index: claim.last_index,
-        };
-        ethers::abi::encode(&[
-            Token::Address(dapp_address),
-            Token::FixedBytes(claim.encode()),
-        ])
-        .into()
-    }
-}
-
 #[derive(Debug)]
 pub struct DefaultTransactionSender {
     tx_manager: TransactionManager,
     confirmations: usize,
     priority: Priority,
     from: ethers::types::Address,
-    authority: Authority<Provider<MockProvider>>,
+    iconsensus: IConsensus<Provider<MockProvider>>,
     chain_id: u64,
     metrics: AuthorityClaimerMetrics,
 }
@@ -149,13 +126,12 @@ fn create_middleware(
 /// Creates the tx-manager instance.
 /// NOTE: tries to re-instantiate the tx-manager only once.
 async fn create_tx_manager(
-    conditional_signer: &ConditionalSigner,
+    conditional_signer: ConditionalSigner,
     provider_url: String,
     database_path: String,
     chain: Chain,
 ) -> Result<TransactionManager, TransactionSenderError> {
-    let middleware =
-        create_middleware(conditional_signer.clone(), provider_url)?;
+    let middleware = create_middleware(conditional_signer, provider_url)?;
     let result = tx_manager!(new, middleware, database_path, chain);
     let tx_manager =
         if let Err(TrasactionManagerError::NonceTooLow { .. }) = result {
@@ -173,42 +149,37 @@ async fn create_tx_manager(
 
 impl DefaultTransactionSender {
     pub async fn new(
-        config: AuthorityClaimerConfig,
+        tx_manager_config: TxManagerConfig,
+        tx_manager_priority: Priority,
+        conditional_signer: ConditionalSigner,
+        iconsensus: Address,
+        from: ethers::types::Address,
         chain_id: u64,
         metrics: AuthorityClaimerMetrics,
     ) -> Result<Self, TransactionSenderError> {
-        let chain: Chain = (&config.tx_manager_config).into();
-
-        let conditional_signer =
-            ConditionalSigner::new(chain.id, &config.tx_signing_config)
-                .await
-                .context(SignerSnafu)?;
+        let chain: Chain = (&tx_manager_config).into();
 
         let tx_manager = create_tx_manager(
-            &conditional_signer,
-            config.tx_manager_config.provider_http_endpoint.clone(),
-            config.tx_manager_config.database_path.clone(),
+            conditional_signer,
+            tx_manager_config.provider_http_endpoint.clone(),
+            tx_manager_config.database_path.clone(),
             chain,
         )
         .await?;
 
-        let authority = {
+        let iconsensus = {
             let (provider, _mock) = Provider::mocked();
             let provider = Arc::new(provider);
-            let address: H160 = config
-                .contracts_config
-                .authority_address
-                .into_inner()
-                .into();
-            Authority::new(address, provider)
+            let address: H160 = iconsensus.into_inner().into();
+            IConsensus::new(address, provider)
         };
 
         Ok(Self {
             tx_manager,
-            confirmations: config.tx_manager_config.default_confirmations,
-            priority: config.tx_manager_priority,
-            from: conditional_signer.address(),
-            authority,
+            confirmations: tx_manager_config.default_confirmations,
+            priority: tx_manager_priority,
+            iconsensus,
+            from,
             chain_id,
             metrics,
         })
@@ -226,13 +197,17 @@ impl TransactionSender for DefaultTransactionSender {
         let dapp_address = rollups_claim.dapp_address.clone();
 
         let transaction = {
-            let submittable_claim = SubmittableClaim(
-                H160(dapp_address.inner().to_owned()),
-                rollups_claim,
-            );
+            let input_range = InputRange {
+                first_index: rollups_claim.first_index as u64,
+                last_index: rollups_claim.last_index as u64,
+            };
             let call = self
-                .authority
-                .submit_claim(submittable_claim.into())
+                .iconsensus
+                .submit_claim(
+                    H160(dapp_address.inner().to_owned()),
+                    input_range,
+                    rollups_claim.epoch_hash.into_inner(),
+                )
                 .from(self.from);
             let to = match call.tx.to().context(InternalEthersSnafu)? {
                 NameOrAddress::Address(a) => *a,
