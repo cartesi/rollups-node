@@ -1,17 +1,18 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-use snafu::prelude::*;
-use std::error::Error;
-use std::fs::File;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::str;
-
 use eth_state_fold_types::contract;
+use snafu::prelude::*;
+use std::{
+    error::Error,
+    fs::File,
+    path::{Path, PathBuf},
+    process::Command,
+    str,
+};
 
 const ROLLUPS_CONTRACTS_URL: &str =
-    "https://registry.npmjs.org/@cartesi/rollups/-/rollups-1.2.0.tgz";
+    "https://registry.npmjs.org/@cartesi/rollups/-/rollups-2.0.0-rc.2.tgz";
 
 fn main() -> Result<(), Box<dyn Error>> {
     let tempdir = tempfile::tempdir()?;
@@ -19,10 +20,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     download_contracts(&tarball)?;
     unzip_contracts(&tarball, tempdir.path())?;
 
-    let contracts = vec![
-        ("consensus/authority", "Authority", "authority.rs"),
-        ("history", "History", "history.rs"),
-    ];
+    let contracts = vec![("consensus", "IConsensus", "iconsensus.rs")];
     for (contract_path, contract_name, bindings_file_name) in contracts {
         let source_path = path(tempdir.path(), contract_path, contract_name);
         let output_path: PathBuf =

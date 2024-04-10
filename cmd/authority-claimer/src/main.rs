@@ -10,7 +10,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let config: Config = Config::new().map_err(Box::new)?;
 
     // Setting up the logging environment.
-    log::configure(&config.authority_claimer_config.log_config);
+    log::configure(&config.log_config);
 
     //Log Service info
     log::log_service_start(&config, "Authority Claimer");

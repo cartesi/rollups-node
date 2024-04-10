@@ -1,7 +1,7 @@
 // Code generated - DO NOT EDIT.
 // This file is a generated binding and any manual changes will be lost.
 
-package contracts
+package inputbox
 
 import (
 	"errors"
@@ -31,7 +31,7 @@ var (
 
 // InputBoxMetaData contains all meta data concerning the InputBox contract.
 var InputBoxMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[],\"name\":\"InputSizeExceedsLimit\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"dapp\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"uint256\",\"name\":\"inputIndex\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"bytes\",\"name\":\"input\",\"type\":\"bytes\"}],\"name\":\"InputAdded\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_dapp\",\"type\":\"address\"},{\"internalType\":\"bytes\",\"name\":\"_input\",\"type\":\"bytes\"}],\"name\":\"addInput\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_dapp\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_index\",\"type\":\"uint256\"}],\"name\":\"getInputHash\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_dapp\",\"type\":\"address\"}],\"name\":\"getNumberOfInputs\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
+	ABI: "[{\"inputs\":[{\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"inputLength\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"maxInputLength\",\"type\":\"uint256\"}],\"name\":\"InputTooLarge\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"uint256\",\"name\":\"index\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"bytes\",\"name\":\"input\",\"type\":\"bytes\"}],\"name\":\"InputAdded\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"internalType\":\"bytes\",\"name\":\"payload\",\"type\":\"bytes\"}],\"name\":\"addInput\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"index\",\"type\":\"uint256\"}],\"name\":\"getInputHash\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"}],\"name\":\"getNumberOfInputs\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
 }
 
 // InputBoxABI is the input ABI used to generate the binding from.
@@ -182,10 +182,10 @@ func (_InputBox *InputBoxTransactorRaw) Transact(opts *bind.TransactOpts, method
 
 // GetInputHash is a free data retrieval call binding the contract method 0x677087c9.
 //
-// Solidity: function getInputHash(address _dapp, uint256 _index) view returns(bytes32)
-func (_InputBox *InputBoxCaller) GetInputHash(opts *bind.CallOpts, _dapp common.Address, _index *big.Int) ([32]byte, error) {
+// Solidity: function getInputHash(address appContract, uint256 index) view returns(bytes32)
+func (_InputBox *InputBoxCaller) GetInputHash(opts *bind.CallOpts, appContract common.Address, index *big.Int) ([32]byte, error) {
 	var out []interface{}
-	err := _InputBox.contract.Call(opts, &out, "getInputHash", _dapp, _index)
+	err := _InputBox.contract.Call(opts, &out, "getInputHash", appContract, index)
 
 	if err != nil {
 		return *new([32]byte), err
@@ -199,24 +199,24 @@ func (_InputBox *InputBoxCaller) GetInputHash(opts *bind.CallOpts, _dapp common.
 
 // GetInputHash is a free data retrieval call binding the contract method 0x677087c9.
 //
-// Solidity: function getInputHash(address _dapp, uint256 _index) view returns(bytes32)
-func (_InputBox *InputBoxSession) GetInputHash(_dapp common.Address, _index *big.Int) ([32]byte, error) {
-	return _InputBox.Contract.GetInputHash(&_InputBox.CallOpts, _dapp, _index)
+// Solidity: function getInputHash(address appContract, uint256 index) view returns(bytes32)
+func (_InputBox *InputBoxSession) GetInputHash(appContract common.Address, index *big.Int) ([32]byte, error) {
+	return _InputBox.Contract.GetInputHash(&_InputBox.CallOpts, appContract, index)
 }
 
 // GetInputHash is a free data retrieval call binding the contract method 0x677087c9.
 //
-// Solidity: function getInputHash(address _dapp, uint256 _index) view returns(bytes32)
-func (_InputBox *InputBoxCallerSession) GetInputHash(_dapp common.Address, _index *big.Int) ([32]byte, error) {
-	return _InputBox.Contract.GetInputHash(&_InputBox.CallOpts, _dapp, _index)
+// Solidity: function getInputHash(address appContract, uint256 index) view returns(bytes32)
+func (_InputBox *InputBoxCallerSession) GetInputHash(appContract common.Address, index *big.Int) ([32]byte, error) {
+	return _InputBox.Contract.GetInputHash(&_InputBox.CallOpts, appContract, index)
 }
 
 // GetNumberOfInputs is a free data retrieval call binding the contract method 0x61a93c87.
 //
-// Solidity: function getNumberOfInputs(address _dapp) view returns(uint256)
-func (_InputBox *InputBoxCaller) GetNumberOfInputs(opts *bind.CallOpts, _dapp common.Address) (*big.Int, error) {
+// Solidity: function getNumberOfInputs(address appContract) view returns(uint256)
+func (_InputBox *InputBoxCaller) GetNumberOfInputs(opts *bind.CallOpts, appContract common.Address) (*big.Int, error) {
 	var out []interface{}
-	err := _InputBox.contract.Call(opts, &out, "getNumberOfInputs", _dapp)
+	err := _InputBox.contract.Call(opts, &out, "getNumberOfInputs", appContract)
 
 	if err != nil {
 		return *new(*big.Int), err
@@ -230,37 +230,37 @@ func (_InputBox *InputBoxCaller) GetNumberOfInputs(opts *bind.CallOpts, _dapp co
 
 // GetNumberOfInputs is a free data retrieval call binding the contract method 0x61a93c87.
 //
-// Solidity: function getNumberOfInputs(address _dapp) view returns(uint256)
-func (_InputBox *InputBoxSession) GetNumberOfInputs(_dapp common.Address) (*big.Int, error) {
-	return _InputBox.Contract.GetNumberOfInputs(&_InputBox.CallOpts, _dapp)
+// Solidity: function getNumberOfInputs(address appContract) view returns(uint256)
+func (_InputBox *InputBoxSession) GetNumberOfInputs(appContract common.Address) (*big.Int, error) {
+	return _InputBox.Contract.GetNumberOfInputs(&_InputBox.CallOpts, appContract)
 }
 
 // GetNumberOfInputs is a free data retrieval call binding the contract method 0x61a93c87.
 //
-// Solidity: function getNumberOfInputs(address _dapp) view returns(uint256)
-func (_InputBox *InputBoxCallerSession) GetNumberOfInputs(_dapp common.Address) (*big.Int, error) {
-	return _InputBox.Contract.GetNumberOfInputs(&_InputBox.CallOpts, _dapp)
+// Solidity: function getNumberOfInputs(address appContract) view returns(uint256)
+func (_InputBox *InputBoxCallerSession) GetNumberOfInputs(appContract common.Address) (*big.Int, error) {
+	return _InputBox.Contract.GetNumberOfInputs(&_InputBox.CallOpts, appContract)
 }
 
 // AddInput is a paid mutator transaction binding the contract method 0x1789cd63.
 //
-// Solidity: function addInput(address _dapp, bytes _input) returns(bytes32)
-func (_InputBox *InputBoxTransactor) AddInput(opts *bind.TransactOpts, _dapp common.Address, _input []byte) (*types.Transaction, error) {
-	return _InputBox.contract.Transact(opts, "addInput", _dapp, _input)
+// Solidity: function addInput(address appContract, bytes payload) returns(bytes32)
+func (_InputBox *InputBoxTransactor) AddInput(opts *bind.TransactOpts, appContract common.Address, payload []byte) (*types.Transaction, error) {
+	return _InputBox.contract.Transact(opts, "addInput", appContract, payload)
 }
 
 // AddInput is a paid mutator transaction binding the contract method 0x1789cd63.
 //
-// Solidity: function addInput(address _dapp, bytes _input) returns(bytes32)
-func (_InputBox *InputBoxSession) AddInput(_dapp common.Address, _input []byte) (*types.Transaction, error) {
-	return _InputBox.Contract.AddInput(&_InputBox.TransactOpts, _dapp, _input)
+// Solidity: function addInput(address appContract, bytes payload) returns(bytes32)
+func (_InputBox *InputBoxSession) AddInput(appContract common.Address, payload []byte) (*types.Transaction, error) {
+	return _InputBox.Contract.AddInput(&_InputBox.TransactOpts, appContract, payload)
 }
 
 // AddInput is a paid mutator transaction binding the contract method 0x1789cd63.
 //
-// Solidity: function addInput(address _dapp, bytes _input) returns(bytes32)
-func (_InputBox *InputBoxTransactorSession) AddInput(_dapp common.Address, _input []byte) (*types.Transaction, error) {
-	return _InputBox.Contract.AddInput(&_InputBox.TransactOpts, _dapp, _input)
+// Solidity: function addInput(address appContract, bytes payload) returns(bytes32)
+func (_InputBox *InputBoxTransactorSession) AddInput(appContract common.Address, payload []byte) (*types.Transaction, error) {
+	return _InputBox.Contract.AddInput(&_InputBox.TransactOpts, appContract, payload)
 }
 
 // InputBoxInputAddedIterator is returned from FilterInputAdded and is used to iterate over the raw logs and unpacked data for InputAdded events raised by the InputBox contract.
@@ -332,49 +332,48 @@ func (it *InputBoxInputAddedIterator) Close() error {
 
 // InputBoxInputAdded represents a InputAdded event raised by the InputBox contract.
 type InputBoxInputAdded struct {
-	Dapp       common.Address
-	InputIndex *big.Int
-	Sender     common.Address
-	Input      []byte
-	Raw        types.Log // Blockchain specific contextual infos
+	AppContract common.Address
+	Index       *big.Int
+	Input       []byte
+	Raw         types.Log // Blockchain specific contextual infos
 }
 
-// FilterInputAdded is a free log retrieval operation binding the contract event 0x6aaa400068bf4ca337265e2a1e1e841f66b8597fd5b452fdc52a44bed28a0784.
+// FilterInputAdded is a free log retrieval operation binding the contract event 0xc05d337121a6e8605c6ec0b72aa29c4210ffe6e5b9cefdd6a7058188a8f66f98.
 //
-// Solidity: event InputAdded(address indexed dapp, uint256 indexed inputIndex, address sender, bytes input)
-func (_InputBox *InputBoxFilterer) FilterInputAdded(opts *bind.FilterOpts, dapp []common.Address, inputIndex []*big.Int) (*InputBoxInputAddedIterator, error) {
+// Solidity: event InputAdded(address indexed appContract, uint256 indexed index, bytes input)
+func (_InputBox *InputBoxFilterer) FilterInputAdded(opts *bind.FilterOpts, appContract []common.Address, index []*big.Int) (*InputBoxInputAddedIterator, error) {
 
-	var dappRule []interface{}
-	for _, dappItem := range dapp {
-		dappRule = append(dappRule, dappItem)
+	var appContractRule []interface{}
+	for _, appContractItem := range appContract {
+		appContractRule = append(appContractRule, appContractItem)
 	}
-	var inputIndexRule []interface{}
-	for _, inputIndexItem := range inputIndex {
-		inputIndexRule = append(inputIndexRule, inputIndexItem)
+	var indexRule []interface{}
+	for _, indexItem := range index {
+		indexRule = append(indexRule, indexItem)
 	}
 
-	logs, sub, err := _InputBox.contract.FilterLogs(opts, "InputAdded", dappRule, inputIndexRule)
+	logs, sub, err := _InputBox.contract.FilterLogs(opts, "InputAdded", appContractRule, indexRule)
 	if err != nil {
 		return nil, err
 	}
 	return &InputBoxInputAddedIterator{contract: _InputBox.contract, event: "InputAdded", logs: logs, sub: sub}, nil
 }
 
-// WatchInputAdded is a free log subscription operation binding the contract event 0x6aaa400068bf4ca337265e2a1e1e841f66b8597fd5b452fdc52a44bed28a0784.
+// WatchInputAdded is a free log subscription operation binding the contract event 0xc05d337121a6e8605c6ec0b72aa29c4210ffe6e5b9cefdd6a7058188a8f66f98.
 //
-// Solidity: event InputAdded(address indexed dapp, uint256 indexed inputIndex, address sender, bytes input)
-func (_InputBox *InputBoxFilterer) WatchInputAdded(opts *bind.WatchOpts, sink chan<- *InputBoxInputAdded, dapp []common.Address, inputIndex []*big.Int) (event.Subscription, error) {
+// Solidity: event InputAdded(address indexed appContract, uint256 indexed index, bytes input)
+func (_InputBox *InputBoxFilterer) WatchInputAdded(opts *bind.WatchOpts, sink chan<- *InputBoxInputAdded, appContract []common.Address, index []*big.Int) (event.Subscription, error) {
 
-	var dappRule []interface{}
-	for _, dappItem := range dapp {
-		dappRule = append(dappRule, dappItem)
+	var appContractRule []interface{}
+	for _, appContractItem := range appContract {
+		appContractRule = append(appContractRule, appContractItem)
 	}
-	var inputIndexRule []interface{}
-	for _, inputIndexItem := range inputIndex {
-		inputIndexRule = append(inputIndexRule, inputIndexItem)
+	var indexRule []interface{}
+	for _, indexItem := range index {
+		indexRule = append(indexRule, indexItem)
 	}
 
-	logs, sub, err := _InputBox.contract.WatchLogs(opts, "InputAdded", dappRule, inputIndexRule)
+	logs, sub, err := _InputBox.contract.WatchLogs(opts, "InputAdded", appContractRule, indexRule)
 	if err != nil {
 		return nil, err
 	}
@@ -406,9 +405,9 @@ func (_InputBox *InputBoxFilterer) WatchInputAdded(opts *bind.WatchOpts, sink ch
 	}), nil
 }
 
-// ParseInputAdded is a log parse operation binding the contract event 0x6aaa400068bf4ca337265e2a1e1e841f66b8597fd5b452fdc52a44bed28a0784.
+// ParseInputAdded is a log parse operation binding the contract event 0xc05d337121a6e8605c6ec0b72aa29c4210ffe6e5b9cefdd6a7058188a8f66f98.
 //
-// Solidity: event InputAdded(address indexed dapp, uint256 indexed inputIndex, address sender, bytes input)
+// Solidity: event InputAdded(address indexed appContract, uint256 indexed index, bytes input)
 func (_InputBox *InputBoxFilterer) ParseInputAdded(log types.Log) (*InputBoxInputAdded, error) {
 	event := new(InputBoxInputAdded)
 	if err := _InputBox.contract.UnpackLog(event, "InputAdded", log); err != nil {

@@ -1,8 +1,10 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-use crate::http_server::{CounterRef, FamilyRef, Registry};
-use crate::rollups_events::DAppMetadata;
+use crate::{
+    http_server::{CounterRef, FamilyRef, Registry},
+    rollups_events::DAppMetadata,
+};
 
 const METRICS_PREFIX: &str = "cartesi_rollups_authority_claimer";
 

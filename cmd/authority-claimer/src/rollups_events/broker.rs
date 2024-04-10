@@ -1,23 +1,19 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
+use crate::redacted::{RedactedUrl, Url};
 use backoff::{future::retry, ExponentialBackoff, ExponentialBackoffBuilder};
 use clap::Parser;
-use redis::aio::{ConnectionLike, ConnectionManager};
-use redis::cluster::ClusterClient;
-use redis::cluster_async::ClusterConnection;
-use redis::streams::{
-    StreamId, StreamRangeReply, StreamReadOptions, StreamReadReply,
-};
 use redis::{
+    aio::{ConnectionLike, ConnectionManager},
+    cluster::ClusterClient,
+    cluster_async::ClusterConnection,
+    streams::{StreamId, StreamRangeReply, StreamReadOptions, StreamReadReply},
     AsyncCommands, Client, Cmd, Pipeline, RedisError, RedisFuture, Value,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use snafu::{ResultExt, Snafu};
-use std::fmt;
-use std::time::Duration;
-
-use crate::redacted::{RedactedUrl, Url};
+use std::{fmt, time::Duration};
 
 pub const INITIAL_ID: &str = "0";
 

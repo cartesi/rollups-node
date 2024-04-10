@@ -92,20 +92,10 @@ go-type = "string"
 description = """
 Address of the DApp's contract."""
 
-[contracts.CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER]
-go-type = "int64"
-description = """
-Block in which the DApp's contract was deployed."""
-
-[contracts.CARTESI_CONTRACTS_HISTORY_ADDRESS]
+[contracts.CARTESI_CONTRACTS_ICONSENSUS_ADDRESS]
 go-type = "string"
 description = """
-Address of the History contract."""
-
-[contracts.CARTESI_CONTRACTS_AUTHORITY_ADDRESS]
-go-type = "string"
-description = """
-Address of the Authority contract."""
+Address of the IConsensus contract."""
 
 [contracts.CARTESI_CONTRACTS_INPUT_BOX_ADDRESS]
 go-type = "string"

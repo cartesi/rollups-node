@@ -1,35 +1,113 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-use super::contracts::ContractsCLIConfig;
-use crate::config::{
-    error::{
-        AuthorityClaimerConfigError, ContractsSnafu, InvalidRegionSnafu,
-        MnemonicFileSnafu, TxManagerSnafu, TxSigningConfigError,
-        TxSigningSnafu,
-    },
-    AuthorityClaimerConfig, ContractsConfig, TxSigningConfig,
+use crate::{
+    log::{LogConfig, LogEnvCliConfig},
+    redacted::Redacted,
+    rollups_events::{Address, BrokerCLIConfig, BrokerConfig},
 };
-use crate::log::{LogConfig, LogEnvCliConfig};
-use crate::redacted::Redacted;
-use crate::rollups_events::{BrokerCLIConfig, BrokerConfig};
 use clap::{command, Parser};
 use eth_tx_manager::{
-    config::{TxEnvCLIConfig as TxManagerCLIConfig, TxManagerConfig},
+    config::{
+        Error as TxManagerConfigError, TxEnvCLIConfig as TxManagerCLIConfig,
+        TxManagerConfig,
+    },
     Priority,
 };
-use rusoto_core::Region;
-use snafu::ResultExt;
+use rusoto_core::{region::ParseRegionError, Region};
+use snafu::{ResultExt, Snafu};
 use std::{fs, str::FromStr};
 
-// ------------------------------------------------------------------------------------------------
-// AuthorityClaimerCLI
-// ------------------------------------------------------------------------------------------------
+#[derive(Debug, Snafu)]
+#[snafu(visibility(pub(crate)))]
+pub enum AuthorityClaimerConfigError {
+    #[snafu(display("TxManager configuration error"))]
+    TxManager { source: TxManagerConfigError },
+
+    #[snafu(display("parse IConsensus address error"))]
+    ParseIConsensusAddress { source: serde_json::Error },
+
+    #[snafu(display("Missing auth configuration"))]
+    AuthConfigMissing,
+
+    #[snafu(display("Could not read mnemonic file at path `{}`", path,))]
+    MnemonicFileError {
+        path: String,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Missing AWS region"))]
+    MissingRegion,
+
+    #[snafu(display("Invalid AWS region"))]
+    InvalidRegion { source: ParseRegionError },
+}
+
+#[derive(Debug, Clone)]
+pub struct Config {
+    pub tx_manager_config: TxManagerConfig,
+    pub tx_signing_config: TxSigningConfig,
+    pub tx_manager_priority: Priority,
+    pub broker_config: BrokerConfig,
+    pub log_config: LogConfig,
+    pub iconsensus_address: Address,
+    pub genesis_block: u64,
+    pub http_server_port: u16,
+}
+
+#[derive(Debug, Clone)]
+pub enum TxSigningConfig {
+    PrivateKey {
+        private_key: Redacted<String>,
+    },
+
+    Mnemonic {
+        mnemonic: Redacted<String>,
+        account_index: Option<u32>,
+    },
+
+    Aws {
+        key_id: String,
+        region: Region,
+    },
+}
+
+impl Config {
+    pub fn new() -> Result<Self, AuthorityClaimerConfigError> {
+        let cli_config = AuthorityClaimerCLI::parse();
+
+        let tx_manager_config =
+            TxManagerConfig::initialize(cli_config.tx_manager_config)
+                .context(TxManagerSnafu)?;
+
+        let tx_signing_config =
+            TxSigningConfig::try_from(cli_config.tx_signing_config)?;
+
+        let broker_config = BrokerConfig::from(cli_config.broker_config);
+
+        let log_config = LogConfig::initialize(cli_config.log_config);
+
+        let iconsensus_address =
+            serde_json::from_str(&cli_config.iconsensus_address)
+                .context(ParseIConsensusAddressSnafu)?;
+
+        Ok(Config {
+            tx_manager_config,
+            tx_signing_config,
+            tx_manager_priority: Priority::Normal,
+            broker_config,
+            log_config,
+            iconsensus_address,
+            genesis_block: cli_config.genesis_block,
+            http_server_port: cli_config.http_server_port,
+        })
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "authority_claimer_config")]
 #[command(about = "Configuration for authority-claimer")]
-pub(crate) struct AuthorityClaimerCLI {
+struct AuthorityClaimerCLI {
     #[command(flatten)]
     pub tx_manager_config: TxManagerCLIConfig,
 
@@ -42,53 +120,22 @@ pub(crate) struct AuthorityClaimerCLI {
     #[command(flatten)]
     pub log_config: LogEnvCliConfig,
 
-    #[command(flatten)]
-    pub contracts_config: ContractsCLIConfig,
+    /// Address of the IConsensus contract
+    #[arg(long, env)]
+    pub iconsensus_address: String,
 
     /// Genesis block for reading blockchain events
     #[arg(long, env, default_value_t = 1)]
     pub genesis_block: u64,
+
+    /// Port of the authority-claimer HTTP server
+    #[arg(long, env, default_value_t = 8080)]
+    pub http_server_port: u16,
 }
-
-impl TryFrom<AuthorityClaimerCLI> for AuthorityClaimerConfig {
-    type Error = AuthorityClaimerConfigError;
-
-    fn try_from(cli_config: AuthorityClaimerCLI) -> Result<Self, Self::Error> {
-        let tx_manager_config =
-            TxManagerConfig::initialize(cli_config.tx_manager_config)
-                .context(TxManagerSnafu)?;
-
-        let tx_signing_config =
-            TxSigningConfig::try_from(cli_config.tx_signing_config)
-                .context(TxSigningSnafu)?;
-
-        let broker_config = BrokerConfig::from(cli_config.broker_config);
-
-        let log_config = LogConfig::initialize(cli_config.log_config);
-
-        let contracts_config =
-            ContractsConfig::try_from(cli_config.contracts_config)
-                .context(ContractsSnafu)?;
-
-        Ok(AuthorityClaimerConfig {
-            tx_manager_config,
-            tx_signing_config,
-            tx_manager_priority: Priority::Normal,
-            broker_config,
-            log_config,
-            contracts_config,
-            genesis_block: cli_config.genesis_block,
-        })
-    }
-}
-
-// ------------------------------------------------------------------------------------------------
-// TxSigningCLIConfig
-// ------------------------------------------------------------------------------------------------
 
 #[derive(Debug, Parser)]
 #[command(name = "tx_signing_config")]
-pub(crate) struct TxSigningCLIConfig {
+struct TxSigningCLIConfig {
     /// Signer private key, overrides `tx_signing_private_key_file`, `tx_signing_mnemonic` , `tx_signing_mnemonic_file` and `tx_signing_aws_kms_*`
     #[arg(long, env)]
     tx_signing_private_key: Option<String>,
@@ -119,7 +166,7 @@ pub(crate) struct TxSigningCLIConfig {
 }
 
 impl TryFrom<TxSigningCLIConfig> for TxSigningConfig {
-    type Error = TxSigningConfigError;
+    type Error = AuthorityClaimerConfigError;
 
     fn try_from(cli: TxSigningCLIConfig) -> Result<Self, Self::Error> {
         let account_index = cli.tx_signing_mnemonic_account_index;
@@ -152,8 +199,12 @@ impl TryFrom<TxSigningCLIConfig> for TxSigningConfig {
         } else {
             match (cli.tx_signing_aws_kms_key_id, cli.tx_signing_aws_kms_region)
             {
-                (None, _) => Err(TxSigningConfigError::AuthConfigMissing),
-                (Some(_), None) => Err(TxSigningConfigError::MissingRegion),
+                (None, _) => {
+                    Err(AuthorityClaimerConfigError::AuthConfigMissing)
+                }
+                (Some(_), None) => {
+                    Err(AuthorityClaimerConfigError::MissingRegion)
+                }
                 (Some(key_id), Some(region)) => {
                     let region = Region::from_str(&region)
                         .context(InvalidRegionSnafu)?;

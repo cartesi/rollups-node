@@ -116,21 +116,9 @@ Address of the DApp's contract.
 
 * **Type:** `string`
 
-## `CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER`
+## `CARTESI_CONTRACTS_ICONSENSUS_ADDRESS`
 
-Block in which the DApp's contract was deployed.
-
-* **Type:** `int64`
-
-## `CARTESI_CONTRACTS_AUTHORITY_ADDRESS`
-
-Address of the Authority contract.
-
-* **Type:** `string`
-
-## `CARTESI_CONTRACTS_HISTORY_ADDRESS`
-
-Address of the History contract.
+Address of the IConsensus contract.
 
 * **Type:** `string`
 

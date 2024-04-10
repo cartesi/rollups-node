@@ -204,7 +204,6 @@ dependencies = [
  "eth-state-fold",
  "eth-state-fold-types",
  "eth-tx-manager",
- "ethabi",
  "ethers",
  "ethers-signers",
  "hex",

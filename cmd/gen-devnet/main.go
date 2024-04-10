@@ -43,11 +43,11 @@ var (
 )
 
 func init() {
-	// Default path based on submodule location for rollups-contracts 1.2
+	// Default path based on submodule location for rollups-contracts 2.0
 	Cmd.Flags().StringVarP(&rollupsContractsPath,
 		"rollups-contracts-hardhat-path",
 		"r",
-		"rollups-contracts/onchain/rollups",
+		"rollups-contracts",
 		"path for the hardhat project used to deploy rollups-contracts")
 
 	Cmd.Flags().StringVarP(&hashFile,

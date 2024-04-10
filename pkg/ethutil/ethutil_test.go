@@ -11,6 +11,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/deps"
 	"github.com/cartesi/rollups-node/pkg/addresses"
+	"github.com/cartesi/rollups-node/pkg/contracts/inputs"
 	"github.com/cartesi/rollups-node/pkg/testutil"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -57,7 +58,7 @@ func (s *EthUtilSuite) TearDownTest() {
 }
 
 func (s *EthUtilSuite) TestAddInput() {
-	sender := common.HexToAddress("f39fd6e51aad88f6f4ce6ab8827279cfffb92266")
+	sender := common.HexToAddress("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266")
 	payload := common.Hex2Bytes("deadbeef")
 
 	inputIndex, err := AddInput(s.ctx, s.client, s.book, s.signer, payload)
@@ -65,13 +66,21 @@ func (s *EthUtilSuite) TestAddInput() {
 		s.logDevnetOutput()
 		s.T().FailNow()
 	}
-
 	s.Require().Equal(0, inputIndex)
 
 	event, err := GetInputFromInputBox(s.client, s.book, inputIndex)
 	s.Require().Nil(err)
-	s.Require().Equal(sender, event.Sender)
-	s.Require().Equal(payload, event.Input)
+
+	inputsABI, err := inputs.InputsMetaData.GetAbi()
+	s.Require().Nil(err)
+	advanceInputABI := inputsABI.Methods["EvmAdvance"]
+	inputArgs := map[string]interface{}{}
+	err = advanceInputABI.Inputs.UnpackIntoMap(inputArgs, event.Input[4:])
+	s.Require().Nil(err)
+
+	s.T().Log(inputArgs)
+	s.Require().Equal(sender, inputArgs["msgSender"])
+	s.Require().Equal(payload, inputArgs["payload"])
 }
 
 // Log the output of the given container

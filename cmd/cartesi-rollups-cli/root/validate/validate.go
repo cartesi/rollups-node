@@ -83,9 +83,9 @@ func run(cmd *cobra.Command, args []string) {
 	slog.Info("Validating notice",
 		"notice-index", noticeIndex,
 		"input-index", inputIndex,
-		"application-address", book.CartesiDApp,
+		"application-address", book.Application,
 	)
-	err = ethutil.ValidateNotice(ctx, client, book, resp.Payload, proof)
+	err = ethutil.ValidateOutput(ctx, client, book, resp.Payload, proof)
 	cobra.CheckErr(err)
 
 	slog.Info("Notice validated")

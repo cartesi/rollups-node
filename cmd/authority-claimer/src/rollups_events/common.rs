@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use base64::{engine::general_purpose::STANDARD as base64_engine, Engine as _};
-use prometheus_client::encoding::EncodeLabelValue;
-use prometheus_client::encoding::LabelValueEncoder;
+use prometheus_client::encoding::{EncodeLabelValue, LabelValueEncoder};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::Write;
 

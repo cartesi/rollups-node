@@ -15,5 +15,4 @@ macro_rules! contract {
     };
 }
 
-contract!(authority);
-contract!(history);
+contract!(iconsensus);
