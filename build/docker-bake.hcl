@@ -21,7 +21,6 @@ target "common" {
     RUST_VERSION              = "1.78.0"
     GO_VERSION                = "1.22.1"
     FOUNDRY_NIGHTLY_VERSION   = "293fad73670b7b59ca901c7f2105bf7a29165a90"
-    SERVER_MANAGER_VERSION    = "0.9.1"
     MACHINE_EMULATOR_VERSION  = "0.16.1"
     TOOLS_VERSION             = "0.14.1"
     LINUX_VERSION             = "0.19.1"

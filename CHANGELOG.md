@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - Removed `advance-runner`, `dispatcher`, `graphql-server`, `host-runner`, `indexer`, `inspect-server`, and `state-server` Rust services
+- Removed `server-manager` from rollups-node Docker image
 - Removed support to host mode
 
 ## [1.5.0] 2024-07-08
