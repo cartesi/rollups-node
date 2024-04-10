@@ -18,14 +18,14 @@ mod types;
 #[cfg(test)]
 mod test_fixtures;
 
-use crate::{
-    checker::DefaultDuplicateChecker,
-    claimer::{Claimer, DefaultClaimer},
-    listener::DefaultBrokerListener,
-    metrics::AuthorityClaimerMetrics,
-    sender::DefaultTransactionSender,
-};
+use checker::DefaultDuplicateChecker;
+use claimer::{Claimer, DefaultClaimer};
 pub use config::Config;
+use ethers::signers::Signer;
+use listener::DefaultBrokerListener;
+use metrics::AuthorityClaimerMetrics;
+use sender::DefaultTransactionSender;
+use signer::ConditionalSigner;
 use snafu::Error;
 use tracing::trace;
 
@@ -33,9 +33,8 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
     // Creating the metrics and health server.
     let metrics = AuthorityClaimerMetrics::new();
     let http_server_handle =
-        http_server::start(config.http_server_config, metrics.clone().into());
+        http_server::start(config.http_server_port, metrics.clone().into());
 
-    let config = config.authority_claimer_config;
     let chain_id = config.tx_manager_config.chain_id;
 
     // Creating the broker listener.
@@ -44,11 +43,17 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         DefaultBrokerListener::new(config.broker_config.clone(), chain_id)
             .await?;
 
+    // Creating the conditional signer.
+    let conditional_signer =
+        ConditionalSigner::new(chain_id, &config.tx_signing_config).await?;
+    let from = conditional_signer.address();
+
     // Creating the duplicate checker.
     trace!("Creating the duplicate checker");
     let duplicate_checker = DefaultDuplicateChecker::new(
         config.tx_manager_config.provider_http_endpoint.clone(),
-        config.contracts_config.history_address.clone(),
+        config.iconsensus_address.clone(),
+        from,
         config.tx_manager_config.default_confirmations,
         config.genesis_block,
     )
@@ -56,9 +61,16 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
 
     // Creating the transaction sender.
     trace!("Creating the transaction sender");
-    let transaction_sender =
-        DefaultTransactionSender::new(config.clone(), chain_id, metrics)
-            .await?;
+    let transaction_sender = DefaultTransactionSender::new(
+        config.tx_manager_config,
+        config.tx_manager_priority,
+        conditional_signer,
+        config.iconsensus_address,
+        from,
+        chain_id,
+        metrics,
+    )
+    .await?;
 
     // Creating the claimer loop.
     let claimer = DefaultClaimer::new(
