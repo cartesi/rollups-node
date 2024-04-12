@@ -6,9 +6,17 @@ submodules: ## Download the git submodules
 	@git submodule update --init --recursive
 
 .PHONY: test
-test: ## Execute the node tests
-	@echo "Running the tests"
+test: unit-test e2e-test ## Execute all tests
+
+.PHONY: unit-test
+unit-test:## Execute unit tests
+	@echo "Running unit tests"
 	@go test ./...
+
+.PHONY: e2e-test
+e2e-test: ## Execute e2e tests
+	@echo "Running end-to-end tests"
+	@go test -count=1 ./test --tags=endtoendtests
 
 .PHONY: lint
 lint: ## Run the linter
