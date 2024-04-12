@@ -109,6 +109,10 @@ Check the [development](docs/development.md) page for more information about dev
 This document covered the features of the Node and its external APIs in a high-level manner.
 Check the [architecture](docs/architecture.md) page for more details about the Node internal components.
 
+## Releasing
+
+Check the [release](docs/release.md) page for more information about the steps to release a version of the Rollups Node.
+
 ## Contributing
 
 Thank you for your interest in Cartesi!
