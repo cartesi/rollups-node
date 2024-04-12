@@ -61,7 +61,6 @@ func NewLocalNodeConfig(localPostgresEnpoint string, localBlockchainHttpEndpoint
 	nodeConfig.HttpPort = LocalHttpPort
 
 	//Features
-	nodeConfig.FeatureHostMode = false
 	nodeConfig.FeatureDisableClaimer = false
 	nodeConfig.FeatureDisableMachineHashCheck = false
 
