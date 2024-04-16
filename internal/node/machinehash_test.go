@@ -12,6 +12,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/deps"
 	"github.com/cartesi/rollups-node/internal/machine"
 	"github.com/cartesi/rollups-node/pkg/addresses"
+	"github.com/cartesi/rollups-node/pkg/testutil"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/suite"
 )
@@ -139,7 +140,7 @@ func startDevnet() (*deps.DepsContainers, error) {
 			DockerImage:             deps.DefaultDevnetDockerImage,
 			BlockTime:               deps.DefaultBlockTime,
 			BlockToWaitForOnStartup: deps.DefaultBlockToWaitForOnStartup,
-			Port:                    "",
+			Port:                    testutil.GetCartesiTestDepsPortRange(),
 		},
 	})
 	if err != nil {

@@ -22,6 +22,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/node"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/readerclient"
+	"github.com/cartesi/rollups-node/pkg/testutil"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -63,12 +64,12 @@ func (s *EchoInputTestSuite) SetupTest() {
 	var depsConfig = deps.DepsConfig{
 		&deps.PostgresConfig{
 			DockerImage: deps.DefaultPostgresDockerImage,
-			Port:        "",
+			Port:        testutil.GetCartesiTestDepsPortRange(),
 			Password:    deps.DefaultPostgresPassword,
 		},
 		&deps.DevnetConfig{
 			DockerImage:             deps.DefaultDevnetDockerImage,
-			Port:                    "",
+			Port:                    testutil.GetCartesiTestDepsPortRange(),
 			BlockTime:               devNetMiningBlockTimeInSeconds,
 			BlockToWaitForOnStartup: deps.DefaultBlockToWaitForOnStartup,
 		},
