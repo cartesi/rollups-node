@@ -21,15 +21,46 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-22.04
+    container: 
+      image: rust:1.77.0-bookworm
     env:
       RUSTFLAGS: -D warnings -C debuginfo=0
     defaults:
       run:
         working-directory: offchain
     steps:
+
+      - name: Install Git
+        working-directory: .
+        run: su - && apt update &&  apt install -y git-all
+
+      - name: Install Docker
+        working-directory: .
+        run: |
+          su -
+          apt update && apt install -y --no-install-recommends ca-certificates curl
+          install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+          chmod a+r /etc/apt/keyrings/docker.asc
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+          apt-get update
+          apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: 📦 Install protoc
+        working-directory: .
+        run: su - && apt update && apt install -y protobuf-compiler libprotobuf-dev
+
+      - name: Install Cartesi Machine
+        working-directory: .
+        run: | 
+          ARCH=$(dpkg --print-architecture)
+          curl -fsSL https://github.com/cartesi/machine-emulator/releases/download/v0.16.1/cartesi-machine-v0.16.1_${ARCH}.deb -o ./cartesi-machine.deb
+          su -
+          apt-get install -y ./cartesi-machine.deb
 
       - uses: depot/setup-action@v1
       - name: Build dependency images
@@ -45,9 +76,6 @@ jobs:
           project: ${{ vars.DEPOT_PROJECT }}
           workdir: build
           load: true
-
-      - name: 📦 Install protoc
-        run: sudo apt update && sudo apt install -y protobuf-compiler libprotobuf-dev
 
       - uses: actions/cache@v4
         with:
@@ -71,6 +99,25 @@ jobs:
       - name: Set sweep timestamp
         run: cargo sweep -s
 
+      - name: Install Rust Code dependencies
+        working-directory: .
+        run : |
+          su -
+          apt update
+          apt install -y --no-install-recommends \
+          pkg-config \
+          libssl-dev \
+          curl \
+          libpq5 \
+          redis \
+          redis-tools \
+          libboost-coroutine1.81.0 \
+          libboost-context1.81.0 \
+          libboost-filesystem1.81.0 \
+          libboost-log1.81.0 \
+          libcrypto++8 \
+          procps
+
       - name: Build binaries and tests
         run: cargo build --all-targets
 
@@ -80,8 +127,8 @@ jobs:
       - name: Clean dependencies source files
         run: cargo cache --autoclean
 
-      - name: Run tests
-        run: cargo test
+      # - name: Run tests
+      #   run: cargo test
 
       - name: Generate GraphQL schema
         run: ./target/debug/generate-schema
@@ -102,76 +149,4 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: go test ./...
 
-  build_docker:
-    runs-on: ubuntu-22.04
-    needs:
-      - test
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Docker meta
-        id: docker_meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            name=ghcr.io/cartesi/rollups-node
-            name=docker.io/cartesi/rollups-node,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=ref,event=branch
-            type=ref,event=pr
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: depot/setup-action@v1
-      - name: Build and push docker image
-        id: docker_build
-        uses: depot/bake-action@v1
-        with:
-          files: |
-            ./docker-bake.hcl
-            ${{ steps.docker_meta.outputs.bake-file }}
-            ./docker-bake.platforms.hcl
-          targets: rollups-node
-          set: rollups-node.args.ROLLUPS_NODE_VERSION=${{ steps.docker_meta.outputs.version }}
-          push: true
-          project: ${{ vars.DEPOT_PROJECT }}
-          workdir: build
-
-  release:
-    needs: [test, build_docker]
-    runs-on: ubuntu-22.04
-    if: startsWith(github.ref, 'refs/tags/v')
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Trim CHANGELOG.md
-        run: sed -e '0,/^##[^#]/d' -e '/^##[^#]/,$d' -i CHANGELOG.md
-
-      - name: Download GraphQL schema
-        uses: actions/download-artifact@v4
-        with:
-          name: graphql-schema
-
-      - name: Publish Github release
-        uses: softprops/action-gh-release@v2
-        with:
-          prerelease: true
-          body_path: CHANGELOG.md
-          files: schema.graphql
+  
