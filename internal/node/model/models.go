@@ -9,7 +9,7 @@ import (
 
 type Input struct {
 	// Input index starting from genesis
-	Index int `json:"index"`
+	Index uint64 `json:"index"`
 	// Status of the input
 	Status string `json:"status"`
 	// Input data as a blob, starting with '0x'
@@ -18,9 +18,9 @@ type Input struct {
 
 type Output struct {
 	// Input whose processing produced the output
-	InputIndex int `json:"inputIndex"`
+	InputIndex uint64 `json:"inputIndex"`
 	// Output index within the context of the input that produced it
-	Index int `json:"index"`
+	Index uint64 `json:"index"`
 	// Output data as a blob, starting with '0x'
 	Blob hexutil.Bytes `json:"blob"`
 }

@@ -106,7 +106,7 @@ func (pg *database) InsertOutput(
 
 func (pg *database) GetInput(
 	ctx context.Context,
-	index int,
+	index uint64,
 ) (*Input, error) {
 	var status string
 	var blob []byte
@@ -126,9 +126,9 @@ func (pg *database) GetInput(
 	}
 
 	input := Input{
-		index,
-		status,
-		blob,
+		Index:  index,
+		Status: status,
+		Blob:   blob,
 	}
 
 	return &input, nil
@@ -137,8 +137,8 @@ func (pg *database) GetInput(
 func (pg *database) GetOutput(
 	ctx context.Context,
 	verifiable bool,
-	inputIndex int,
-	index int,
+	inputIndex uint64,
+	index uint64,
 ) (*Output, error) {
 	var blob []byte
 	var table string
@@ -162,9 +162,9 @@ func (pg *database) GetOutput(
 	}
 
 	output := Output{
-		inputIndex,
-		index,
-		blob,
+		InputIndex: inputIndex,
+		Index:      index,
+		Blob:       blob,
 	}
 
 	return &output, nil
