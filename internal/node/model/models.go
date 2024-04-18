@@ -1,7 +1,7 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-package repository
+package model
 
 import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
