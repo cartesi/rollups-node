@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sync"
 
+	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

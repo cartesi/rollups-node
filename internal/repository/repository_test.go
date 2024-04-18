@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/suite"
 	"github.com/testcontainers/testcontainers-go"
