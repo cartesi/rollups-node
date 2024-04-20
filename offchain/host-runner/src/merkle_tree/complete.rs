@@ -13,7 +13,7 @@ use crate::hash::{Digest, Hash, Hasher};
 
 /// Complete merkle tree
 ///
-/// A merkle tree with any number of non-pristine leaves follwed by a number of pristine leaves.
+/// A merkle tree with any number of non-pristine leaves followed by a number of pristine leaves.
 /// The tree is optimized to store only the hashes that are not pristine.
 #[derive(Debug)]
 pub struct Tree {
