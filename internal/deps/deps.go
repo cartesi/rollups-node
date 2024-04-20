@@ -6,6 +6,7 @@ package deps
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -83,7 +84,7 @@ type DepsContainers struct {
 func (depContainers *DepsContainers) DevnetLogs(ctx context.Context) (io.ReadCloser, error) {
 	container, ok := depContainers.containers[devnetKey]
 	if !ok {
-		return nil, fmt.Errorf("Container Devnet is not present")
+		return nil, errors.New("Container Devnet is not present")
 	}
 	reader, err := container.Logs(ctx)
 	if err != nil {
@@ -95,7 +96,7 @@ func (depContainers *DepsContainers) DevnetLogs(ctx context.Context) (io.ReadClo
 func (depContainers *DepsContainers) PostgresLogs(ctx context.Context) (io.ReadCloser, error) {
 	container, ok := depContainers.containers[postgresKey]
 	if !ok {
-		return nil, fmt.Errorf("Container Postgres is not present")
+		return nil, errors.New("Container Postgres is not present")
 	}
 	reader, err := container.Logs(ctx)
 	if err != nil {
@@ -110,7 +111,7 @@ func (depContainers *DepsContainers) DevnetEndpoint(
 ) (string, error) {
 	container, ok := depContainers.containers[devnetKey]
 	if !ok {
-		return "", fmt.Errorf("Container Devnet is not present")
+		return "", errors.New("Container Devnet is not present")
 	}
 	endpoint, err := container.Endpoint(ctx, protocol)
 	if err != nil {
@@ -126,7 +127,7 @@ func (depContainers *DepsContainers) PostgresEndpoint(
 
 	container, ok := depContainers.containers[postgresKey]
 	if !ok {
-		return "", fmt.Errorf("Container Postgres is not present")
+		return "", errors.New("Container Postgres is not present")
 	}
 	endpoint, err := container.Endpoint(ctx, protocol)
 	if err != nil {
@@ -227,7 +228,7 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 	}
 
 	if len(containers) < 1 {
-		return nil, fmt.Errorf("configuration is empty")
+		return nil, errors.New("configuration is empty")
 	}
 
 	return &DepsContainers{containers: containers,

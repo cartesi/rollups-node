@@ -7,6 +7,7 @@ package ethutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -109,7 +110,7 @@ func getInputIndex(
 		inputIndex := int(inputAdded.InputIndex.Int64())
 		return inputIndex, nil
 	}
-	return 0, fmt.Errorf("input index not found")
+	return 0, errors.New("input index not found")
 }
 
 // Get the given input of the given DApp from the input box.
@@ -133,7 +134,7 @@ func GetInputFromInputBox(
 	}
 	defer it.Close()
 	if !it.Next() {
-		return nil, fmt.Errorf("event not found")
+		return nil, errors.New("event not found")
 	}
 	return it.Event, nil
 }
