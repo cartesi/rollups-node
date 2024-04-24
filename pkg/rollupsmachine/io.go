@@ -1,9 +1,10 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-package machine
+package rollupsmachine
 
 import (
+	"fmt"
 	"math/big"
 	"strings"
 
@@ -12,11 +13,14 @@ import (
 )
 
 type Input struct {
+	ChainId        uint64
+	AppContract    [20]byte
 	Sender         [20]byte
 	BlockNumber    uint64
 	BlockTimestamp uint64
-	Index          uint64
-	Data           []byte
+	// PrevRandao     uint64
+	Index uint64
+	Data  []byte
 }
 
 type Query struct {
@@ -34,41 +38,49 @@ type Notice struct {
 }
 
 func (input Input) Encode() ([]byte, error) {
-	address := common.BytesToAddress(input.Sender[:])
+	chainId := new(big.Int).SetUint64(input.ChainId)
+	appContract := common.BytesToAddress(input.AppContract[:])
+	sender := common.BytesToAddress(input.Sender[:])
 	blockNumber := new(big.Int).SetUint64(input.BlockNumber)
 	blockTimestamp := new(big.Int).SetUint64(input.BlockTimestamp)
+	// prevRandao := new(big.Int).SetUint64(input.PrevRandao)
 	index := new(big.Int).SetUint64(input.Index)
-	return ioABI.Pack("EvmAdvance", address, blockNumber, blockTimestamp, index, input.Data)
+	return ioABI.Pack("EvmAdvance", chainId, appContract, sender, blockNumber, blockTimestamp,
+		index, input.Data)
 }
 
 func (query Query) Encode() ([]byte, error) {
-	return ioABI.Pack("EvmInspect", query.Data)
+	return query.Data, nil
 }
 
-func Decode(payload []byte) (*Voucher, *Notice, error) {
+func decodeArguments(payload []byte) (arguments []any, _ error) {
 	method, err := ioABI.MethodById(payload)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	arguments, err := method.Inputs.Unpack(payload[4:])
+	return method.Inputs.Unpack(payload[4:])
+}
+
+func DecodeOutput(payload []byte) (*Voucher, *Notice, error) {
+	arguments, err := decodeArguments(payload)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	switch len(arguments) {
+	switch length := len(arguments); length {
 	case 1:
-		data := arguments[0].([]byte)
-		return nil, &Notice{Data: data}, nil
+		notice := &Notice{Data: arguments[0].([]byte)}
+		return nil, notice, nil
 	case 3:
 		voucher := &Voucher{
-			Address: [20]byte(arguments[0].([]byte)),
+			Address: [20]byte(arguments[0].(common.Address)),
+			Value:   arguments[1].(*big.Int),
 			Data:    arguments[2].([]byte),
 		}
-		voucher.Value.SetBytes(arguments[1].([]byte))
 		return voucher, nil, nil
 	default:
-		panic(unreachable)
+		return nil, nil, fmt.Errorf("not an output: len(arguments) == %d, should be 1 or 3", length)
 	}
 }
 
@@ -79,16 +91,12 @@ func init() {
         "type" : "function",
         "name" : "EvmAdvance",
         "inputs" : [
+            { "type" : "uint256" },
+            { "type" : "address" },
             { "type" : "address" },
             { "type" : "uint256" },
             { "type" : "uint256" },
             { "type" : "uint256" },
-            { "type" : "bytes"   }
-        ]
-    }, {
-        "type" : "function",
-        "name" : "EvmInspect",
-        "inputs" : [
             { "type" : "bytes"   }
         ]
     }, {

@@ -1,7 +1,7 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-package machine
+package rollupsmachine
 
 import (
 	"fmt"
@@ -15,15 +15,15 @@ import (
 	"github.com/cartesi/rollups-node/pkg/emulator"
 )
 
-type ServerLogLevel string
+type ServerVerbosity string
 
 const (
-	ServerLogLevelTrace ServerLogLevel = "trace"
-	ServerLogLevelDebug ServerLogLevel = "debug"
-	ServerLogLevelInfo  ServerLogLevel = "info"
-	ServerLogLevelWarn  ServerLogLevel = "warn"
-	ServerLogLevelError ServerLogLevel = "error"
-	ServerLogLevelFatal ServerLogLevel = "fatal"
+	ServerVerbosityTrace ServerVerbosity = "trace"
+	ServerVerbosityDebug ServerVerbosity = "debug"
+	ServerVerbosityInfo  ServerVerbosity = "info"
+	ServerVerbosityWarn  ServerVerbosity = "warn"
+	ServerVerbosityError ServerVerbosity = "error"
+	ServerVerbosityFatal ServerVerbosity = "fatal"
 )
 
 // StartServer starts the JSON RPC remote cartesi machine server.
@@ -35,12 +35,7 @@ const (
 // StartServer also redirects the server's stdout and stderr to the provided io.Writers.
 //
 // It returns the server's address.
-func StartServer(
-	verbosity ServerLogLevel,
-	port uint32,
-	stdout io.Writer,
-	stderr io.Writer,
-) (string, error) {
+func StartServer(verbosity ServerVerbosity, port uint32, stdout, stderr io.Writer) (string, error) {
 	// Configures the command's arguments.
 	args := []string{}
 	if verbosity.valid() {
@@ -52,7 +47,6 @@ func StartServer(
 
 	// Creates the command.
 	cmd := exec.Command("jsonrpc-remote-cartesi-machine", args...)
-	slog.Info(cmd.String())
 
 	// Redirects stdout and stderr.
 	intercepter := portIntercepter{
@@ -64,6 +58,7 @@ func StartServer(
 	cmd.Stderr = linewriter.New(intercepter)
 
 	// Starts the server.
+	slog.Info("running", "command", cmd.String())
 	if err := cmd.Start(); err != nil {
 		return "", err
 	}
@@ -83,6 +78,7 @@ func StartServer(
 // Most users of the machine library should not call this function.
 // We recommend using machine.Destroy() instead.
 func StopServer(address string) error {
+	slog.Warn("Trying to stop server", "address", address)
 	remote, err := emulator.NewRemoteMachineManager(address)
 	if err != nil {
 		return err
@@ -93,13 +89,13 @@ func StopServer(address string) error {
 
 // ------------------------------------------------------------------------------------------------
 
-func (logLevel ServerLogLevel) valid() bool {
-	return logLevel == ServerLogLevelTrace ||
-		logLevel == ServerLogLevelDebug ||
-		logLevel == ServerLogLevelInfo ||
-		logLevel == ServerLogLevelWarn ||
-		logLevel == ServerLogLevelError ||
-		logLevel == ServerLogLevelFatal
+func (verbosity ServerVerbosity) valid() bool {
+	return verbosity == ServerVerbosityTrace ||
+		verbosity == ServerVerbosityDebug ||
+		verbosity == ServerVerbosityInfo ||
+		verbosity == ServerVerbosityWarn ||
+		verbosity == ServerVerbosityError ||
+		verbosity == ServerVerbosityFatal
 }
 
 // portIntercepter sends the server's port through the port channel as soon as it reads it.

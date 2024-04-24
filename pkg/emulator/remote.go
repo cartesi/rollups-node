@@ -6,7 +6,9 @@ package emulator
 // #include <stdlib.h>
 // #include "cartesi-machine/jsonrpc-machine-c-api.h"
 import "C"
-import "unsafe"
+import (
+	"unsafe"
+)
 
 // A connection to the remote jsonrpc machine manager.
 type RemoteMachineManager struct {

@@ -19,23 +19,34 @@ func main() {
 	var machine *emulator.Machine
 	defer machine.Delete()
 	var mgr *emulator.RemoteMachineManager
-	defer mgr.Free()
+	defer mgr.Delete()
 	var err error
 	runtimeConfig := &emulator.MachineRuntimeConfig{}
 
 	// Parse command line arguments
 	loadDir := flag.String("load", "", "load machine previously stored in <directory>")
-	storeDir := flag.String("store", "", "store machine to <directory>, where \"%h\" is substituted by the state hash in the directory name")
-	remoteAddress := flag.String("remote-address", "", "use a remote cartesi machine listening to <address> instead of running a local cartesi machine")
-	remoteShutdown := flag.Bool("remote-shutdown", false, "shutdown the remote cartesi machine after the execution")
-	noRemoteCreate := flag.Bool("no-remote-create", false, "use existing cartesi machine in the remote server instead of creating a new one")
-	noRemoteDestroy := flag.Bool("no-remote-destroy", false, "do not destroy the cartesi machine in the remote server after the execution")
-	ramImage := flag.String("ram-image", "", "name of file containing RAM image")
-	dtbImage := flag.String("dtb-image", "", "name of file containing DTB image (default: auto generated flattened device tree)")
-	maxMcycle := flag.Uint64("max-mcycle", math.MaxUint64, "stop at a given mcycle")
-	initialHash := flag.Bool("initial-hash", false, "print initial state hash before running machine")
-	finalHash := flag.Bool("final-hash", false, "print final state hash when done")
-	commandLine := flag.String("command", "", "command to run in the machine")
+	storeDir := flag.String("store", "",
+		"store machine to <directory>, where \"%h\" is substituted by the state hash in the directory name")
+	remoteAddress := flag.String("remote-address", "",
+		"use a remote cartesi machine listening to <address> instead of running a local cartesi machine")
+	remoteShutdown := flag.Bool("remote-shutdown", false,
+		"shutdown the remote cartesi machine after the execution")
+	noRemoteCreate := flag.Bool("no-remote-create", false,
+		"use existing cartesi machine in the remote server instead of creating a new one")
+	noRemoteDestroy := flag.Bool("no-remote-destroy", false,
+		"do not destroy the cartesi machine in the remote server after the execution")
+	ramImage := flag.String("ram-image", "",
+		"name of file containing RAM image")
+	dtbImage := flag.String("dtb-image", "",
+		"name of file containing DTB image (default: auto generated flattened device tree)")
+	maxMcycle := flag.Uint64("max-mcycle", math.MaxUint64,
+		"stop at a given mcycle")
+	initialHash := flag.Bool("initial-hash", false,
+		"print initial state hash before running machine")
+	finalHash := flag.Bool("final-hash", false,
+		"print final state hash when done")
+	commandLine := flag.String("command", "",
+		"command to run in the machine")
 	flag.Parse()
 
 	// Connect to remote server and load/get machine
@@ -124,12 +135,12 @@ func main() {
 
 	// Print initial hash
 	if initialHash != nil && *initialHash {
-		var hash *emulator.MerkleTreeHash
-		if hash, err = machine.GetRootHash(); err != nil {
+		if hash, err := machine.GetRootHash(); err != nil {
 			fmt.Fprintln(os.Stderr, "****** Error getting root hash: ", err)
 			os.Exit(1)
+		} else {
+			fmt.Println("Initial hash: ", hash.String())
 		}
-		fmt.Println("Initial hash: ", hash.String())
 	}
 
 	// Run machine
@@ -160,8 +171,7 @@ func main() {
 
 	// Print final hash
 	if finalHash != nil && *finalHash {
-		var hash *emulator.MerkleTreeHash
-		if hash, err = machine.GetRootHash(); err == nil {
+		if hash, err := machine.GetRootHash(); err == nil {
 			fmt.Println("Final hash:   ", hash.String())
 		}
 	}

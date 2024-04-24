@@ -14,6 +14,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/cartesi/rollups-node/internal/linewriter"
 )
 
 // ServerManager is a variation of CommandService used to manually stop
@@ -48,8 +50,8 @@ func (s ServerManager) Start(ctx context.Context, ready chan<- struct{}) error {
 		cmd.Stderr = os.Stderr
 		cmd.Stdout = os.Stdout
 	} else {
-		cmd.Stderr = newLineWriter(commandLogger{s.Name})
-		cmd.Stdout = newLineWriter(commandLogger{s.Name})
+		cmd.Stderr = linewriter.New(commandLogger{s.Name})
+		cmd.Stdout = linewriter.New(commandLogger{s.Name})
 	}
 	// Without a delay, cmd.Wait() will block forever waiting for the I/O pipes
 	// to be closed

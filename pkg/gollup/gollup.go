@@ -6,12 +6,15 @@ package gollup
 import "github.com/cartesi/rollups-node/pkg/libcmt"
 
 type OutputEmitter interface {
-	SendVoucher(address [20]byte, value []byte, data []byte) error
-	SendNotice(data []byte) error
+	SendVoucher(address [20]byte, value []byte, data []byte) (uint64, error)
+	SendNotice(data []byte) (uint64, error)
+	SendReport(data []byte) error
+	RaiseException(data []byte) error
 }
 
 type ReportEmitter interface {
 	SendReport(data []byte) error
+	RaiseException(data []byte) error
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -67,14 +70,18 @@ func (gollup *Gollup) Run() error {
 
 // ------------------------------------------------------------------------------------------------
 
-func (gollup *Gollup) SendVoucher(address [20]byte, value []byte, data []byte) error {
+func (gollup *Gollup) SendVoucher(address [20]byte, value []byte, data []byte) (uint64, error) {
 	return gollup.rollup.EmitVoucher(address, value, data)
 }
 
-func (gollup *Gollup) SendNotice(data []byte) error {
+func (gollup *Gollup) SendNotice(data []byte) (uint64, error) {
 	return gollup.rollup.EmitNotice(data)
 }
 
 func (gollup *Gollup) SendReport(data []byte) error {
 	return gollup.rollup.EmitReport(data)
+}
+
+func (gollup *Gollup) RaiseException(data []byte) error {
+	return gollup.rollup.EmitException(data)
 }

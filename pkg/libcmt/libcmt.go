@@ -16,8 +16,10 @@ import (
 
 type RequestType = uint8
 
-const AdvanceStateRequest RequestType = C.CMT_IO_REASON_ADVANCE
-const InspectStateRequest RequestType = C.CMT_IO_REASON_INSPECT
+const (
+	AdvanceStateRequest RequestType = C.HTIF_YIELD_REASON_ADVANCE
+	InspectStateRequest RequestType = C.HTIF_YIELD_REASON_INSPECT
+)
 
 type Finish struct {
 	AcceptPreviousRequest    bool
@@ -26,6 +28,8 @@ type Finish struct {
 }
 
 type Input struct {
+	ChainId        uint64
+	AppContract    [20]byte
 	Sender         [20]byte
 	BlockNumber    uint64
 	BlockTimestamp uint64
@@ -54,10 +58,7 @@ func (rollup *Rollup) Destroy() {
 }
 
 func (rollup *Rollup) Finish(accept bool) (*Finish, error) {
-	finish := C.cmt_rollup_finish_t{
-		accept_previous_request: C.bool(accept),
-	}
-
+	finish := C.cmt_rollup_finish_t{accept_previous_request: C.bool(accept)}
 	errno := C.cmt_rollup_finish(rollup.inner, &finish)
 	if err := toError(errno); err != nil {
 		return nil, err
@@ -70,7 +71,8 @@ func (rollup *Rollup) Finish(accept bool) (*Finish, error) {
 	}, nil
 }
 
-func (rollup *Rollup) EmitVoucher(address [20]byte, value []byte, voucher []byte) error {
+// Returns the index.
+func (rollup *Rollup) EmitVoucher(address [20]byte, value []byte, voucher []byte) (uint64, error) {
 	addressLength, addressData := C.uint(20), C.CBytes(address[:])
 	defer C.free(addressData)
 
@@ -80,17 +82,23 @@ func (rollup *Rollup) EmitVoucher(address [20]byte, value []byte, voucher []byte
 	voucherLength, voucherData := C.uint(len(voucher)), C.CBytes(voucher)
 	defer C.free(voucherData)
 
-	return toError(C.cmt_rollup_emit_voucher(rollup.inner,
+	var index C.uint64_t
+	err := toError(C.cmt_rollup_emit_voucher(rollup.inner,
 		addressLength, addressData,
 		valueLength, valueData,
 		voucherLength, voucherData,
+		&index,
 	))
+
+	return uint64(index), err
 }
 
-func (rollup *Rollup) EmitNotice(notice []byte) error {
+func (rollup *Rollup) EmitNotice(notice []byte) (uint64, error) {
 	length, data := C.uint(len(notice)), C.CBytes(notice)
 	defer C.free(data)
-	return toError(C.cmt_rollup_emit_notice(rollup.inner, length, data))
+	var index C.uint64_t
+	err := toError(C.cmt_rollup_emit_notice(rollup.inner, length, data, &index))
+	return uint64(index), err
 }
 
 func (rollup *Rollup) EmitReport(report []byte) error {
@@ -113,17 +121,24 @@ func (rollup *Rollup) ReadAdvanceState() (*Input, error) {
 	}
 	// TODO: should I free inner.data?
 
+	var appContract [20]byte
+	for i, v := range advance.app_contract {
+		appContract[i] = byte(v)
+	}
+
 	var sender [20]byte
-	for i, v := range advance.sender {
+	for i, v := range advance.msg_sender {
 		sender[i] = byte(v)
 	}
 
 	return &Input{
-		Data:           C.GoBytes(advance.data, C.int(advance.length)),
+		ChainId:        uint64(advance.chain_id),
+		AppContract:    [20]byte{}, // TODO
 		Sender:         sender,
 		BlockNumber:    uint64(advance.block_number),
 		BlockTimestamp: uint64(advance.block_timestamp),
 		Index:          uint64(advance.index),
+		Data:           C.GoBytes(advance.payload, C.int(advance.payload_length)),
 	}, nil
 }
 
@@ -135,7 +150,7 @@ func (rollup *Rollup) ReadInspectState() (*Query, error) {
 	}
 	// TODO: should I free query.data?
 
-	return &Query{Data: C.GoBytes(query.data, C.int(query.length))}, nil
+	return &Query{Data: C.GoBytes(query.payload, C.int(query.payload_length))}, nil
 }
 
 func (rollup *Rollup) LoadMerkle(path string) error {

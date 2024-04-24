@@ -84,6 +84,27 @@ const (
 	BreakReasonReachedTargetMcycle  BreakReason = C.CM_BREAK_REASON_REACHED_TARGET_MCYCLE
 )
 
+func (reason BreakReason) String() (s string) {
+	switch reason {
+	case BreakReasonFailed:
+		s = "failed"
+	case BreakReasonHalted:
+		s = "halted"
+	case BreakReasonYieldedManually:
+		s = "yielded manually"
+	case BreakReasonYieldedAutomatically:
+		s = "yielded automatically"
+	case BreakReasonYieldedSoftly:
+		s = "yielded softly"
+	case BreakReasonReachedTargetMcycle:
+		s = "reached target mcycle"
+	default:
+		return "invalid break reason"
+	}
+	return "break reason: " + s
+
+}
+
 type ProcessorCSR int32
 
 const (
@@ -226,10 +247,14 @@ type HtifConfig struct {
 	YieldAutomatic bool
 }
 
+type CmioBufferConfig struct {
+	Shared        bool
+	ImageFilename string
+}
+
 type CmioConfig struct {
-	HsaValue bool
-	RxBuffer MemoryRangeConfig
-	TxBuffer MemoryRangeConfig
+	RxBuffer CmioBufferConfig
+	TxBuffer CmioBufferConfig
 }
 
 type UarchRamConfig struct {
@@ -433,13 +458,8 @@ func (config *MachineConfig) makeCRef() (ref *ourMachineConfigCRef) {
 
 	cCmio := &ref.cref.cmio
 	cmio := &config.Cmio
-	cCmio.has_value = (C.bool)(cmio.HsaValue)
-	cCmio.rx_buffer.start = (C.uint64_t)(cmio.RxBuffer.Start)
-	cCmio.rx_buffer.length = (C.uint64_t)(cmio.RxBuffer.Length)
 	cCmio.rx_buffer.shared = (C.bool)(cmio.RxBuffer.Shared)
 	cCmio.rx_buffer.image_filename = makeCString(&cmio.RxBuffer.ImageFilename)
-	cCmio.tx_buffer.start = (C.uint64_t)(cmio.TxBuffer.Start)
-	cCmio.tx_buffer.length = (C.uint64_t)(cmio.TxBuffer.Length)
 	cCmio.tx_buffer.shared = (C.bool)(cmio.TxBuffer.Shared)
 	cCmio.tx_buffer.image_filename = makeCString(&cmio.TxBuffer.ImageFilename)
 
@@ -578,16 +598,11 @@ func (configCRef *theirMachineConfigCRef) makeGoRef() (cfg *MachineConfig) {
 
 	// CMIO
 	cmio := &cfg.Cmio
-	cmio.HsaValue = (bool)(c.cmio.has_value)
-	cmio.RxBuffer = MemoryRangeConfig{
-		Start:         (uint64)(c.cmio.rx_buffer.start),
-		Length:        (uint64)(c.cmio.rx_buffer.length),
+	cmio.RxBuffer = CmioBufferConfig{
 		Shared:        (bool)(c.cmio.rx_buffer.shared),
 		ImageFilename: C.GoString(c.cmio.rx_buffer.image_filename),
 	}
-	cmio.TxBuffer = MemoryRangeConfig{
-		Start:         (uint64)(c.cmio.tx_buffer.start),
-		Length:        (uint64)(c.cmio.tx_buffer.length),
+	cmio.TxBuffer = CmioBufferConfig{
 		Shared:        (bool)(c.cmio.tx_buffer.shared),
 		ImageFilename: C.GoString(c.cmio.tx_buffer.image_filename),
 	}
