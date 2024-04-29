@@ -1,7 +1,7 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-package validator
+package proofs
 
 import (
 	"context"
@@ -10,9 +10,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-// generateProofs will create the proofs for all Outputs within an Epoch.
-// It returns the proofs and the root hash of the Merkle tree used to generate them
-func generateProofs(
+// Generate will create the proofs for all Outputs within an Epoch
+func Generate(
 	ctx context.Context,
 	inputRange InputRange,
 	machineStateHash Hash,

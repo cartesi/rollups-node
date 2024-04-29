@@ -8,6 +8,7 @@ import (
 	"time"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
+	"github.com/cartesi/rollups-node/internal/proofs"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -150,7 +151,7 @@ func (v Validator) Start(ctx context.Context, ready chan<- struct{}) error {
 			if err != nil {
 				return err
 			}
-			proofs, err := generateProofs(
+			proofs, err := proofs.Generate(
 				ctx,
 				inputRange,
 				machineStateHash,
