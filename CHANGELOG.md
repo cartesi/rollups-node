@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added PostGraphile service
+
 ### Changed
 
 - Bumped Rollups Contracts to 2.0
@@ -44,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added verification to ensure `CARTESI_BLOCKCHAIN_ID` matches the id returned from the Ethereum node
 - Added verification to ensure the Cartesi Machine snapshot hash matches the template hash from the CartesiDApp contract
 - Added support for `CARTESI_AUTH_PRIVATE_KEY` and `CARTESI_AUTH_PRIVATE_KEY_FILE`
-- Added `CARTESI_AUTH_KIND` environment variable to select the blockchain authetication method
+- Added `CARTESI_AUTH_KIND` environment variable to select the blockchain authentication method
 - Added structured logging with slog. Colored logs can now be enabled with `CARTESI_LOG_PRETTY` environment variable
 
 ### Changed
