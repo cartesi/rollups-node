@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/node"
 	"github.com/cartesi/rollups-node/internal/node/config"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/lmittmann/tint"
 	"github.com/mattn/go-isatty"
 )
@@ -42,6 +44,9 @@ func main() {
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
 	slog.Info("Starting the Cartesi Rollups Node", "version", buildVersion, "config", config)
+
+	// run database migrations
+	repository.RunMigrations(fmt.Sprintf("%v?sslmode=disable", config.PostgresEndpoint.Value))
 
 	// create the node supervisor
 	supervisor, err := node.Setup(ctx, config, "")
