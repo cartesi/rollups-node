@@ -5,7 +5,7 @@ use crate::{
     contracts::iconsensus::{IConsensus, InputRange},
     metrics::AuthorityClaimerMetrics,
     rollups_events::{Address, DAppMetadata, RollupsClaim},
-    signer::{ConditionalSigner, ConditionalSignerError},
+    signer::ConditionalSigner,
 };
 use async_trait::async_trait;
 use eth_tx_manager::{
@@ -88,9 +88,6 @@ pub struct DefaultTransactionSender {
 pub enum TransactionSenderError {
     #[snafu(display("Invalid provider URL"))]
     ProviderUrl { source: ParseError },
-
-    #[snafu(display("Failed to initialize the transaction signer"))]
-    Signer { source: ConditionalSignerError },
 
     #[snafu(display("Transaction manager error"))]
     TransactionManager { source: TrasactionManagerError },
