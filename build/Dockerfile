@@ -307,8 +307,12 @@ apt-get install -y --no-install-recommends \
     libboost-filesystem1.81.0 \
     libboost-log1.81.0 \
     libcrypto++8 \
-    procps
+    procps \
+    nodejs \
+    npm
 rm -rf /var/lib/apt/lists/*
+npm install -g postgraphile
+npm install -g --save @graphile-contrib/pg-simplify-inflector
 EOF
 
 # Copy Rust binaries.
