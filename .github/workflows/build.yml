@@ -112,7 +112,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run linter
-        run: cargo clippy -- -A clippy::module_inception
+        run: cargo clippy -- -A clippy::module_inception -A clippy::mixed_attributes_style
 
       - name: Build binaries and tests
         run: cargo build --all-targets
