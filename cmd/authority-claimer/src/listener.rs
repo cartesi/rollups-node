@@ -79,20 +79,12 @@ mod tests {
     };
     use crate::test_fixtures::BrokerFixture;
     use backoff::ExponentialBackoffBuilder;
-    use snafu::Snafu;
     use std::time::Duration;
     use testcontainers::clients::Cli;
 
     // ------------------------------------------------------------------------------------------------
     // Broker Mock
     // ------------------------------------------------------------------------------------------------
-
-    #[derive(Clone, Debug, Snafu)]
-    pub enum MockError {
-        EndError,
-        InternalError,
-        MockError,
-    }
 
     pub async fn setup_broker(
         docker: &Cli,

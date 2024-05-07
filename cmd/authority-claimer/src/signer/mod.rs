@@ -5,4 +5,4 @@ mod aws_credentials;
 mod aws_signer;
 mod signer;
 
-pub use signer::{ConditionalSigner, ConditionalSignerError};
+pub use signer::ConditionalSigner;
