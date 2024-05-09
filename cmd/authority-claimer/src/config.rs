@@ -4,7 +4,7 @@
 use crate::{
     log::{LogConfig, LogEnvCliConfig},
     redacted::Redacted,
-    rollups_events::{Address, BrokerCLIConfig, BrokerConfig},
+    rollups_events::{Address, BrokerCLIConfig, BrokerConfig, HexArrayError},
 };
 use clap::{command, Parser};
 use eth_tx_manager::{
@@ -25,7 +25,7 @@ pub enum AuthorityClaimerConfigError {
     TxManager { source: TxManagerConfigError },
 
     #[snafu(display("parse IConsensus address error"))]
-    ParseIConsensusAddress { source: serde_json::Error },
+    ParseIConsensusAddress { source: HexArrayError },
 
     #[snafu(display("Missing auth configuration"))]
     AuthConfigMissing,
@@ -87,9 +87,10 @@ impl Config {
 
         let log_config = LogConfig::initialize(cli_config.log_config);
 
-        let iconsensus_address =
-            serde_json::from_str(&cli_config.iconsensus_address)
-                .context(ParseIConsensusAddressSnafu)?;
+        let iconsensus_address = cli_config
+            .iconsensus_address
+            .try_into()
+            .context(ParseIConsensusAddressSnafu)?;
 
         Ok(Config {
             tx_manager_config,

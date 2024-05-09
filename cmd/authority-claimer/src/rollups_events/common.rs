@@ -4,6 +4,7 @@
 use base64::{engine::general_purpose::STANDARD as base64_engine, Engine as _};
 use prometheus_client::encoding::{EncodeLabelValue, LabelValueEncoder};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use snafu::{ResultExt, Snafu};
 use std::fmt::Write;
 
 pub const ADDRESS_SIZE: usize = 20;
@@ -39,6 +40,29 @@ impl<const N: usize> From<[u8; N]> for HexArray<N> {
     }
 }
 
+#[derive(Debug, Snafu)]
+pub enum HexArrayError {
+    #[snafu(display("hex decode error"))]
+    HexDecode { source: hex::FromHexError },
+
+    #[snafu(display("incorrect array size"))]
+    ArraySize,
+}
+
+impl<const N: usize> TryFrom<String> for HexArray<N> {
+    type Error = HexArrayError;
+
+    fn try_from(mut string_data: String) -> Result<Self, HexArrayError> {
+        // The hex crate doesn't decode '0x' at the start, so we treat the value before decoding
+        if string_data[..2].eq("0x") {
+            string_data.drain(..2);
+        }
+        let vec_data = hex::decode(string_data).context(HexDecodeSnafu)?;
+        let data = vec_data.try_into().or(Err(HexArrayError::ArraySize))?;
+        Ok(Self::new(data))
+    }
+}
+
 impl<const N: usize> Serialize for HexArray<N> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -53,18 +77,9 @@ impl<'de, const N: usize> Deserialize<'de> for HexArray<N> {
     where
         D: Deserializer<'de>,
     {
-        let mut string_data = String::deserialize(deserializer)?;
-        // The hex crate doesn't decode '0x' at the start, so we treat the value before decoding
-        if string_data[..2].eq("0x") {
-            string_data.drain(..2);
-        }
-        let vec_data = hex::decode(string_data).map_err(|e| {
+        String::deserialize(deserializer)?.try_into().map_err(|e| {
             serde::de::Error::custom(format!("fail to decode hex ({})", e))
-        })?;
-        let data = vec_data
-            .try_into()
-            .or(Err(serde::de::Error::custom("incorrect array size")))?;
-        Ok(Self::new(data))
+        })
     }
 }
 

@@ -10,6 +10,6 @@ pub use broker::{
     Broker, BrokerCLIConfig, BrokerConfig, BrokerError, BrokerStream,
     INITIAL_ID,
 };
-pub use common::{Address, Hash};
+pub use common::{Address, Hash, HexArrayError};
 pub use rollups_claims::{RollupsClaim, RollupsClaimsStream};
 pub use rollups_stream::DAppMetadata;
