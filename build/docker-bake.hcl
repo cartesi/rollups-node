@@ -45,3 +45,10 @@ target "rollups-node-devnet" {
   inherits = ["common"]
   target   = "rollups-node-devnet"
 }
+
+target "rollups-node-ci-base" {
+  inherits = ["common"]
+  target   = "rollups-node-ci-base"
+  dockerfile = "./Dockerfile"
+  context  = "."
+}

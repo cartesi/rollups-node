@@ -126,8 +126,58 @@ jobs:
       - name: Run tests
         run: cargo test
 
+  build-ci-base:
+    runs-on: ubuntu-22.04
+    outputs:
+      output: ${{ steps.export_tag.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+  
+      - name: Docker meta
+        id: docker_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            name=ghcr.io/cartesi/rollups-node-ci-base
+          tags: |
+            type=semver,pattern={{version}}
+            type=ref,event=branch
+            type=ref,event=pr
+  
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+  
+      - uses: depot/setup-action@v1
+      - name: Build and push docker image
+        id: docker_build
+        uses: depot/bake-action@v1
+        with:
+          files: |
+            ./docker-bake.hcl
+            ${{ steps.docker_meta.outputs.bake-file }}
+            ./docker-bake.platforms.hcl
+          targets: rollups-node-ci-base
+          push: true
+          project: ${{ vars.DEPOT_PROJECT }}
+          workdir: build
+      
+      - name: Export Image Tag
+        id : export_tag
+        run : echo "image_tag=${{steps.docker_meta.outputs.version}}" >> "$GITHUB_OUTPUT" 
+      
+      
   test-go:
     runs-on: ubuntu-22.04
+    container: 
+      image: ghcr.io/cartesi/rollups-node-ci-base:${{needs.build-ci-base.outputs.output}}
+    needs:
+      - build-ci-base
     steps:
       - uses: actions/checkout@v4
         with:
@@ -152,6 +202,9 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
+      
+      - name: Fix VCS Go Linter Issue
+        run : git config --global --add safe.directory /__w/rollups-node/rollups-node
 
       - name: Run Go Linter
         uses: golangci/golangci-lint-action@v5
