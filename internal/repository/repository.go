@@ -48,11 +48,11 @@ func (pg *database) InsertInput(
 	input *Input,
 ) error {
 	query := `
-	INSERT INTO inputs 
+	INSERT INTO inputs
 		(index,
 		status,
-		blob) 
-	VALUES 
+		blob)
+	VALUES
 		(@index,
 		@status,
 		@blob)`
@@ -82,11 +82,11 @@ func (pg *database) InsertOutput(
 		table = "reports"
 	}
 	query := fmt.Sprintf(`
-	INSERT INTO %s 
+	INSERT INTO %s
 		(input_index,
 		index,
-		blob) 
-	VALUES 
+		blob)
+	VALUES
 		(@inputIndex,
 		@index,
 		@blob)`, table)
@@ -112,8 +112,8 @@ func (pg *database) GetInput(
 	var blob []byte
 
 	query := `
-	SELECT 
-		blob, 
+	SELECT
+		blob,
 		status
 	FROM
 		inputs
@@ -149,11 +149,11 @@ func (pg *database) GetOutput(
 		table = "reports"
 	}
 	query := fmt.Sprintf(`
-	SELECT 
-		blob 
-	FROM 
-		%s 
-	WHERE 
+	SELECT
+		blob
+	FROM
+		%s
+	WHERE
 		input_index=$1 AND index=$2`, table)
 
 	err := pg.db.QueryRow(ctx, query, inputIndex, index).Scan(&blob)
