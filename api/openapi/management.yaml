@@ -1,0 +1,246 @@
+openapi: 3.0.0
+info:
+  title: Cartesi Rollups Node Management API
+  description: |-
+    This is a management API for the Cartesi Rollups Node. It allows to dynamically add and remove applications managed by the node, or query the list of managed applications.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  version: 1.0.0
+tags:
+  - name: applications
+    description: Cartesi applications
+paths:
+  /applications:
+    get:
+      tags:
+        - applications
+      summary: Fetches list of applications managed by the node
+      description: List of managed applications
+      operationId: getApplications
+      parameters:
+        - name: status
+          in: query
+          description: Filter by application status
+          required: false
+          schema:
+            $ref: "#/components/schemas/ApplicationStatus"
+        - name: offset
+          in: query
+          description: Items to skip for pagination
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          description: Maximum number of items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 100
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedResult"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Application"
+                    required:
+                      - data
+  /applications/{address}:
+    get:
+      tags:
+        - applications
+      summary: Find application by address
+      description: Returns a single application by its address
+      operationId: getApplicationByAddress
+      parameters:
+        - name: address
+          in: path
+          description: Address of application to return
+          required: true
+          schema:
+            $ref: "#/components/schemas/Address"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Application"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags:
+        - applications
+      summary: Adds an application
+      description: Adds an application by its address
+      operationId: addApplication
+      parameters:
+        - name: address
+          in: path
+          description: Application address
+          required: true
+          schema:
+            $ref: "#/components/schemas/Address"
+      requestBody:
+        $ref: "#/components/requestBodies/Application"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Application"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      tags:
+        - applications
+      summary: Deletes an application
+      description: delete an application
+      operationId: deleteApplication
+      parameters:
+        - name: address
+          in: path
+          description: Application address to delete
+          required: true
+          schema:
+            $ref: "#/components/schemas/Address"
+      responses:
+        "202":
+          description: Delete request accepted
+        "204":
+          description: Delete successful
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+components:
+  schemas:
+    PaginatedResult:
+      type: object
+      properties:
+        total_count:
+          type: integer
+        offset:
+          type: integer
+        limit:
+          type: integer
+        data:
+          type: array
+          items: {}
+      required:
+        - total_count
+        - offset
+        - limit
+        - data
+    Address:
+      type: string
+      format: address
+      example: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+      pattern: "^0x([0-9a-fA-F]{40})$"
+    Hash:
+      type: string
+      format: hex
+      pattern: "0x^([0-9a-fA-F]{64})$"
+      example: "0x9a8d6ce861c71b592c236013b5c3fa167501431def4ad86ff59a3b12aa331dfc"
+    ApplicationStatus:
+      type: string
+      description: Application status
+      enum:
+        - downloading
+        - started
+        - starting
+        - stopping
+        - error
+    Application:
+      required:
+        - address
+        - blockNumber
+        - templateHash
+        - snapshotUri
+        - status
+      type: object
+      properties:
+        address:
+          $ref: "#/components/schemas/Address"
+        blockNumber:
+          type: integer
+          example: 456311
+        templateHash:
+          $ref: "#/components/schemas/Hash"
+        snapshotUri:
+          type: string
+          format: uri
+        status:
+          $ref: "#/components/schemas/ApplicationStatus"
+        error:
+          type: string
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        statusCode:
+          type: integer
+      required:
+        - error
+        - message
+        - statusCode
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: The specified resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Request conflict with the current state of the target resource
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  requestBodies:
+    Application:
+      description: Application to be added to the node
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              blockNumber:
+                type: integer
+                example: 456311
+              templateHash:
+                $ref: "#/components/schemas/Hash"
+              snapshotUri:
+                type: string
+                format: uri
+            required:
+              - blockNumber
+              - templateHash
+              - snapshotUri
