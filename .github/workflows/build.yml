@@ -146,7 +146,7 @@ jobs:
             ./docker-bake.hcl
             ${{ steps.docker_meta.outputs.bake-file }}
             ./docker-bake.platforms.hcl
-          targets: rollups-node
+          targets: rollups-node, rollups-node-distroless
           set: rollups-node.args.ROLLUPS_NODE_VERSION=${{ steps.docker_meta.outputs.version }}
           push: true
           project: ${{ vars.DEPOT_PROJECT }}

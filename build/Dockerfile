@@ -350,3 +350,254 @@ USER cartesi
 
 # Set the Go supervisor as the command.
 CMD [ "cartesi-rollups-node" ]
+
+
+####################################################################################################
+# TARGET: rollups-node-distroless
+#
+# This target will build a rollups-node:$TAG-distroless image
+
+# STAGE: distroless-amd64
+#
+# This stage copies the required libraries for amd64 (x86_64).
+#
+FROM scratch AS distroless-amd64
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_bad_optional_access.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_bad_optional_access.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_bad_variant_access.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_bad_variant_access.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_base.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_base.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_city.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_city.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_cord_internal.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_cord_internal.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_cord.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_cord.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_cordz_functions.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_cordz_functions.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_cordz_handle.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_cordz_handle.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_cordz_info.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_cordz_info.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_debugging_internal.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_debugging_internal.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_demangle_internal.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_demangle_internal.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_exponential_biased.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_exponential_biased.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_graphcycles_internal.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_graphcycles_internal.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_hash.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_hash.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_int128.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_int128.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_low_level_hash.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_low_level_hash.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_malloc_internal.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_malloc_internal.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_random_internal_platform.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_random_internal_platform.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_random_internal_pool_urbg.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_random_internal_pool_urbg.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_random_internal_randen_hwaes_impl.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_random_internal_randen_hwaes_impl.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_random_internal_randen_hwaes.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_random_internal_randen_hwaes.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_random_internal_randen_slow.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_random_internal_randen_slow.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_random_internal_randen.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_random_internal_randen.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_random_internal_seed_material.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_random_internal_seed_material.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_random_seed_gen_exception.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_random_seed_gen_exception.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_raw_hash_set.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_raw_hash_set.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_raw_logging_internal.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_raw_logging_internal.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_spinlock_wait.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_spinlock_wait.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_stacktrace.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_stacktrace.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_status.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_status.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_statusor.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_statusor.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_str_format_internal.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_str_format_internal.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_strerror.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_strerror.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_strings_internal.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_strings_internal.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_strings.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_strings.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_symbolize.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_symbolize.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_synchronization.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_synchronization.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_throw_delegate.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_throw_delegate.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_time_zone.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_time_zone.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libabsl_time.so.20220623 /usr/lib/x86_64-linux-gnu/libabsl_time.so.20220623
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libaddress_sorting.so.29 /usr/lib/x86_64-linux-gnu/libaddress_sorting.so.29
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libatomic.so.1 /usr/lib/x86_64-linux-gnu/libatomic.so.1
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libboost_context.so.1.81.0 /usr/lib/x86_64-linux-gnu/libboost_context.so.1.81.0
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libboost_filesystem.so.1.81.0 /usr/lib/x86_64-linux-gnu/libboost_filesystem.so.1.81.0
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libboost_log_setup.so.1.81.0 /usr/lib/x86_64-linux-gnu/libboost_log_setup.so.1.81.0
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libboost_log.so.1.81.0 /usr/lib/x86_64-linux-gnu/libboost_log.so.1.81.0
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libboost_thread.so.1.81.0 /usr/lib/x86_64-linux-gnu/libboost_thread.so.1.81.0
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libc.so.6 /usr/lib/x86_64-linux-gnu/libc.so.6
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libcap.so.2 /usr/lib/x86_64-linux-gnu/libcap.so.2
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libcares.so.2 /usr/lib/x86_64-linux-gnu/libcares.so.2
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libcom_err.so.2 /usr/lib/x86_64-linux-gnu/libcom_err.so.2
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libcrypto.so.3 /usr/lib/x86_64-linux-gnu/libcrypto.so.3
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libcrypto++.so.8 /usr/lib/x86_64-linux-gnu/libcrypto++.so.8
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libffi.so.8 /usr/lib/x86_64-linux-gnu/libffi.so.8
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 /usr/lib/x86_64-linux-gnu/libgcc_s.so.1
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libgcrypt.so.20 /usr/lib/x86_64-linux-gnu/libgcrypt.so.20
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libgmp.so.10 /usr/lib/x86_64-linux-gnu/libgmp.so.10
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libgnutls.so.30 /usr/lib/x86_64-linux-gnu/libgnutls.so.30
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libgpg-error.so.0 /usr/lib/x86_64-linux-gnu/libgpg-error.so.0
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libgpr.so.29 /usr/lib/x86_64-linux-gnu/libgpr.so.29
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libgrpc.so.29 /usr/lib/x86_64-linux-gnu/libgrpc.so.29
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libgrpc++.so.1.51 /usr/lib/x86_64-linux-gnu/libgrpc++.so.1.51
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libgssapi_krb5.so.2 /usr/lib/x86_64-linux-gnu/libgssapi_krb5.so.2
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libhogweed.so.6 /usr/lib/x86_64-linux-gnu/libhogweed.so.6
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libidn2.so.0 /usr/lib/x86_64-linux-gnu/libidn2.so.0
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libjemalloc.so.2 /usr/lib/x86_64-linux-gnu/libjemalloc.so.2
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libk5crypto.so.3 /usr/lib/x86_64-linux-gnu/libk5crypto.so.3
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libkeyutils.so.1 /usr/lib/x86_64-linux-gnu/libkeyutils.so.1
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libkrb5.so.3 /usr/lib/x86_64-linux-gnu/libkrb5.so.3
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libkrb5support.so.0 /usr/lib/x86_64-linux-gnu/libkrb5support.so.0
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/liblber-2.5.so.0 /usr/lib/x86_64-linux-gnu/liblber-2.5.so.0
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libldap-2.5.so.0 /usr/lib/x86_64-linux-gnu/libldap-2.5.so.0
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/liblz4.so.1 /usr/lib/x86_64-linux-gnu/liblz4.so.1
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/liblzf.so.1 /usr/lib/x86_64-linux-gnu/liblzf.so.1
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/liblzma.so.5 /usr/lib/x86_64-linux-gnu/liblzma.so.5
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libm.so.6 /usr/lib/x86_64-linux-gnu/libm.so.6
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libnettle.so.8 /usr/lib/x86_64-linux-gnu/libnettle.so.8
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libp11-kit.so.0 /usr/lib/x86_64-linux-gnu/libp11-kit.so.0
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libpq.so.5 /usr/lib/x86_64-linux-gnu/libpq.so.5
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libprotobuf.so.32 /usr/lib/x86_64-linux-gnu/libprotobuf.so.32
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libre2.so.9 /usr/lib/x86_64-linux-gnu/libre2.so.9
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libresolv.so.2 /usr/lib/x86_64-linux-gnu/libresolv.so.2
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libsasl2.so.2 /usr/lib/x86_64-linux-gnu/libsasl2.so.2
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libssl.so.3 /usr/lib/x86_64-linux-gnu/libssl.so.3
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libstdc++.so.6 /usr/lib/x86_64-linux-gnu/libstdc++.so.6
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libsystemd.so.0 /usr/lib/x86_64-linux-gnu/libsystemd.so.0
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libtasn1.so.6 /usr/lib/x86_64-linux-gnu/libtasn1.so.6
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libunistring.so.2 /usr/lib/x86_64-linux-gnu/libunistring.so.2
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libupb.so.29 /usr/lib/x86_64-linux-gnu/libupb.so.29
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libz.so.1 /usr/lib/x86_64-linux-gnu/libz.so.1
+COPY --from=rollups-node /usr/lib/x86_64-linux-gnu/libzstd.so.1 /usr/lib/x86_64-linux-gnu/libzstd.so.1
+
+# STAGE: distroless-arm64
+#
+# This stage copies the required libraries for arm64 (aarch64).
+#
+FROM scratch AS distroless-arm64
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_bad_optional_access.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_bad_optional_access.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_bad_variant_access.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_bad_variant_access.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_base.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_base.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_city.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_city.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_cord_internal.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_cord_internal.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_cord.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_cord.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_cordz_functions.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_cordz_functions.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_cordz_handle.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_cordz_handle.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_cordz_info.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_cordz_info.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_debugging_internal.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_debugging_internal.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_demangle_internal.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_demangle_internal.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_exponential_biased.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_exponential_biased.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_graphcycles_internal.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_graphcycles_internal.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_hash.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_hash.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_int128.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_int128.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_low_level_hash.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_low_level_hash.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_malloc_internal.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_malloc_internal.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_random_internal_platform.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_random_internal_platform.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_random_internal_pool_urbg.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_random_internal_pool_urbg.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_random_internal_randen_hwaes_impl.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_random_internal_randen_hwaes_impl.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_random_internal_randen_hwaes.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_random_internal_randen_hwaes.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_random_internal_randen_slow.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_random_internal_randen_slow.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_random_internal_randen.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_random_internal_randen.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_random_internal_seed_material.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_random_internal_seed_material.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_random_seed_gen_exception.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_random_seed_gen_exception.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_raw_hash_set.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_raw_hash_set.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_raw_logging_internal.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_raw_logging_internal.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_spinlock_wait.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_spinlock_wait.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_stacktrace.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_stacktrace.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_status.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_status.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_statusor.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_statusor.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_str_format_internal.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_str_format_internal.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_strerror.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_strerror.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_strings_internal.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_strings_internal.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_strings.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_strings.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_symbolize.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_symbolize.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_synchronization.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_synchronization.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_throw_delegate.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_throw_delegate.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_time_zone.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_time_zone.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libabsl_time.so.20220623 /usr/lib/aarch64-linux-gnu/libabsl_time.so.20220623
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libaddress_sorting.so.29 /usr/lib/aarch64-linux-gnu/libaddress_sorting.so.29
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libatomic.so.1 /usr/lib/aarch64-linux-gnu/libatomic.so.1
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libboost_context.so.1.81.0 /usr/lib/aarch64-linux-gnu/libboost_context.so.1.81.0
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libboost_filesystem.so.1.81.0 /usr/lib/aarch64-linux-gnu/libboost_filesystem.so.1.81.0
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libboost_log_setup.so.1.81.0 /usr/lib/aarch64-linux-gnu/libboost_log_setup.so.1.81.0
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libboost_log.so.1.81.0 /usr/lib/aarch64-linux-gnu/libboost_log.so.1.81.0
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libboost_thread.so.1.81.0 /usr/lib/aarch64-linux-gnu/libboost_thread.so.1.81.0
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libc.so.6 /usr/lib/aarch64-linux-gnu/libc.so.6
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libcap.so.2 /usr/lib/aarch64-linux-gnu/libcap.so.2
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libcares.so.2 /usr/lib/aarch64-linux-gnu/libcares.so.2
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libcom_err.so.2 /usr/lib/aarch64-linux-gnu/libcom_err.so.2
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libcrypto.so.3 /usr/lib/aarch64-linux-gnu/libcrypto.so.3
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libcrypto++.so.8 /usr/lib/aarch64-linux-gnu/libcrypto++.so.8
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libffi.so.8 /usr/lib/aarch64-linux-gnu/libffi.so.8
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libgcc_s.so.1 /usr/lib/aarch64-linux-gnu/libgcc_s.so.1
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libgcrypt.so.20 /usr/lib/aarch64-linux-gnu/libgcrypt.so.20
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libgmp.so.10 /usr/lib/aarch64-linux-gnu/libgmp.so.10
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libgnutls.so.30 /usr/lib/aarch64-linux-gnu/libgnutls.so.30
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libgpg-error.so.0 /usr/lib/aarch64-linux-gnu/libgpg-error.so.0
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libgpr.so.29 /usr/lib/aarch64-linux-gnu/libgpr.so.29
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libgrpc.so.29 /usr/lib/aarch64-linux-gnu/libgrpc.so.29
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libgrpc++.so.1.51 /usr/lib/aarch64-linux-gnu/libgrpc++.so.1.51
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libgssapi_krb5.so.2 /usr/lib/aarch64-linux-gnu/libgssapi_krb5.so.2
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libhogweed.so.6 /usr/lib/aarch64-linux-gnu/libhogweed.so.6
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libidn2.so.0 /usr/lib/aarch64-linux-gnu/libidn2.so.0
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libjemalloc.so.2 /usr/lib/aarch64-linux-gnu/libjemalloc.so.2
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libk5crypto.so.3 /usr/lib/aarch64-linux-gnu/libk5crypto.so.3
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libkeyutils.so.1 /usr/lib/aarch64-linux-gnu/libkeyutils.so.1
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libkrb5.so.3 /usr/lib/aarch64-linux-gnu/libkrb5.so.3
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libkrb5support.so.0 /usr/lib/aarch64-linux-gnu/libkrb5support.so.0
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/liblber-2.5.so.0 /usr/lib/aarch64-linux-gnu/liblber-2.5.so.0
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libldap-2.5.so.0 /usr/lib/aarch64-linux-gnu/libldap-2.5.so.0
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/liblz4.so.1 /usr/lib/aarch64-linux-gnu/liblz4.so.1
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/liblzf.so.1 /usr/lib/aarch64-linux-gnu/liblzf.so.1
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/liblzma.so.5 /usr/lib/aarch64-linux-gnu/liblzma.so.5
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libm.so.6 /usr/lib/aarch64-linux-gnu/libm.so.6
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libnettle.so.8 /usr/lib/aarch64-linux-gnu/libnettle.so.8
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libp11-kit.so.0 /usr/lib/aarch64-linux-gnu/libp11-kit.so.0
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libpq.so.5 /usr/lib/aarch64-linux-gnu/libpq.so.5
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libprotobuf.so.32 /usr/lib/aarch64-linux-gnu/libprotobuf.so.32
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libre2.so.9 /usr/lib/aarch64-linux-gnu/libre2.so.9
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libresolv.so.2 /usr/lib/aarch64-linux-gnu/libresolv.so.2
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libsasl2.so.2 /usr/lib/aarch64-linux-gnu/libsasl2.so.2
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libssl.so.3 /usr/lib/aarch64-linux-gnu/libssl.so.3
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libstdc++.so.6 /usr/lib/aarch64-linux-gnu/libstdc++.so.6
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libsystemd.so.0 /usr/lib/aarch64-linux-gnu/libsystemd.so.0
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libtasn1.so.6 /usr/lib/aarch64-linux-gnu/libtasn1.so.6
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libunistring.so.2 /usr/lib/aarch64-linux-gnu/libunistring.so.2
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libupb.so.29 /usr/lib/aarch64-linux-gnu/libupb.so.29
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libz.so.1 /usr/lib/aarch64-linux-gnu/libz.so.1
+COPY --from=rollups-node /usr/lib/aarch64-linux-gnu/libzstd.so.1 /usr/lib/aarch64-linux-gnu/libzstd.so.1
+
+# STAGE: distroless-dependencies
+#
+# This stages acts as intermediary to copy the dependencies for the TARGETARCH architecture.
+#
+FROM distroless-${TARGETARCH} as distroless-dependencies
+
+# STAGE: rollups-node-distroless
+#
+# This is the final stage for the rollups-node:${TAG}-distroless target.
+#
+FROM gcr.io/distroless/base-debian12:nonroot as rollups-node-distroless
+
+# copy $TARGETARCH dependencies
+COPY --from=distroless-dependencies / /
+
+# Copy server-manager
+COPY --from=server-manager /usr/bin/server-manager /usr/bin
+
+# Copy cartesi-rollups-* Rust binaries.
+ARG RUST_BUILD_PATH
+ARG RUST_TARGET=${RUST_BUILD_PATH}/target/release
+COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-authority-claimer /usr/bin
+COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-advance-runner /usr/bin
+COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-authority-claimer /usr/bin
+COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-dispatcher /usr/bin
+COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-graphql-server /usr/bin
+COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-host-runner /usr/bin
+COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-indexer /usr/bin
+COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-inspect-server /usr/bin
+COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-state-server /usr/bin
+
+# Copy server-manager and machine-emulator binaries and dependencies
+COPY --from=rollups-node /usr/bin/cartesi-machine /usr/bin/cartesi-machine
+COPY --from=rollups-node /usr/bin/cartesi-machine-stored-hash /usr/bin/cartesi-machine-stored-hash
+COPY --from=rollups-node /usr/bin/jsonrpc-remote-cartesi-machine /usr/bin/jsonrpc-remote-cartesi-machine
+COPY --from=rollups-node /usr/bin/merkle-tree-hash /usr/bin/merkle-tree-hash
+COPY --from=rollups-node /usr/bin/remote-cartesi-machine /usr/bin/remote-cartesi-machine
+COPY --from=rollups-node /usr/bin/rollup-memory-range /usr/bin/rollup-memory-range
+COPY --from=rollups-node /usr/lib/libcartesi-0.16.so /usr/lib/libcartesi-0.16.so
+COPY --from=rollups-node /usr/lib/libcartesi_grpc-0.16.so /usr/lib/libcartesi_grpc-0.16.so
+COPY --from=rollups-node /usr/lib/libcartesi_jsonrpc-0.16.so /usr/lib/libcartesi_jsonrpc-0.16.so
+
+# Copy Go binary.
+ARG GO_BUILD_PATH
+COPY --from=go-builder ${GO_BUILD_PATH}/cartesi-rollups-node /usr/bin
+
+# Copy redis-server
+COPY --from=rollups-node /usr/bin/redis-server /usr/bin/redis-server
+
+CMD [ "/usr/bin/cartesi-rollups-node" ]
