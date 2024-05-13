@@ -206,7 +206,7 @@ jobs:
         run : git config --global --add safe.directory /__w/rollups-node/rollups-node
 
       - name: Run Go Linter
-        uses: golangci/golangci-lint-action@v5
+        uses: golangci/golangci-lint-action@v6
         with:
           version: v1.54.2
 
