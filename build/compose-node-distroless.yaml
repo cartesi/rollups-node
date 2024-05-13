@@ -1,0 +1,11 @@
+# This file contains the bare configuration to run the node with a distroless
+# image.
+# It should be merged with the other compose files to run the node with
+# the desired configuration.
+
+version: "3.9"
+
+name: rollups-node
+services:
+  node:
+    image: "cartesi/rollups-node-distroless:devel"

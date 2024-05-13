@@ -51,6 +51,14 @@ Then, run the command below to start the Node.
 make docker-run-sepolia
 ```
 
+### Running the distroless node
+
+The distroless image is an image smaller than the regular one, which contains only the node binaries and its dependencies and doesn't come with a shell or package manager.
+
+```sh
+make docker-run-distroless
+```
+
 ## Run Node Natively
 
 This section explains how to run the Rollups Node natively to facilitate development.
