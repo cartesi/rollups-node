@@ -20,14 +20,17 @@ var content embed.FS
 func RunMigrations(postgres_endpoint string) {
 	driver, err := iofs.New(content, "migrations")
 	if err != nil {
-		slog.Error("Unable to use embed files: ", err)
+		slog.Error("Unable to use embed files",
+			"error", err)
 	}
 
 	migrate, err := migrate.NewWithSourceInstance("iofs", driver, postgres_endpoint)
 	if err != nil {
-		slog.Error("Unable to setup migrations: ", err)
+		slog.Error("Unable to setup migrations",
+			"error", err)
 	}
 	if err := migrate.Up(); err != nil {
-		slog.Error("Unable to run migrations: ", err)
+		slog.Error("Unable to run migrations",
+			"error", err)
 	}
 }
