@@ -8,7 +8,6 @@ import (
 	"time"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -32,7 +31,7 @@ type ValidatorRepository interface {
 	GetCurrentEpoch(ctx context.Context) (Epoch, error)
 	// GetMachineStateHash returns the hash of the state of the Cartesi Machine
 	// after processing the input at `inputIndex`
-	GetMachineStateHash(ctx context.Context, inputIndex uint64) (hexutil.Bytes, error)
+	GetMachineStateHash(ctx context.Context, inputIndex uint64) (Hash, error)
 	// GetAllOutputsFromProcessedInputs returns an ordered slice of all outputs
 	// produced by inputs sent between `startBlock` and `endBlock` (inclusive).
 	// If one or more inputs are still unprocessed,
@@ -161,7 +160,10 @@ func (v Validator) Start(ctx context.Context, ready chan<- struct{}) error {
 				return err
 			}
 			outputsEpochRootHash := proofs[0].OutputsEpochRootHash
-			epochHash := crypto.Keccak256(outputsEpochRootHash, machineStateHash)
+			epochHash := crypto.Keccak256Hash(
+				outputsEpochRootHash.Bytes(),
+				machineStateHash.Bytes(),
+			)
 			claim := &Claim{InputRange: inputRange, EpochHash: epochHash}
 			if err = v.repo.FinishEpochTransaction(
 				ctx,

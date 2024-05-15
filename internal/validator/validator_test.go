@@ -11,7 +11,6 @@ import (
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -158,7 +157,7 @@ func (s *ValidatorSuite) TestItFinishesAnEpochWithOutputs() {
 	).Return([]Output{{InputIndex: uint64(0), Index: uint64(0), Blob: []byte{}}}, nil)
 
 	s.repo.Unset("GetMachineStateHash")
-	genericData := common.Hex2Bytes("0xdeadbeef")
+	genericData := common.HexToHash("0xdeadbeef")
 	s.repo.On("GetMachineStateHash", mock.Anything, uint64(0)).Return(genericData, nil)
 
 	validator := NewValidator(s.repo, epochDuration, inputBoxDeploymentBlock)
@@ -176,9 +175,10 @@ func (s *ValidatorSuite) TestItFinishesAnEpochWithOutputs() {
 		case err := <-errChannel:
 			s.Require().ErrorIs(err, stop, "unexpected failure")
 
+			epochHash := crypto.Keccak256Hash(genericData.Bytes(), genericData.Bytes())
 			expectedClaim := &Claim{
 				InputRange: InputRange{First: uint64(0), Last: uint64(0)},
-				EpochHash:  crypto.Keccak256(genericData, genericData),
+				EpochHash:  epochHash,
 			}
 			expectedProofs := []Proof{{OutputsEpochRootHash: genericData}}
 			s.repo.AssertCalled(
@@ -211,7 +211,7 @@ func newMockRepository() *MockRepository {
 		"GetMachineStateHash",
 		mock.Anything,
 		mock.Anything,
-	).Return(common.Hex2Bytes("0xdeadbeef"), nil)
+	).Return(common.HexToHash("0xdeadbeef"), nil)
 	repo.On(
 		"GetAllOutputsFromProcessedInputs",
 		mock.Anything,
@@ -252,9 +252,9 @@ func (m *MockRepository) GetCurrentEpoch(ctx context.Context) (Epoch, error) {
 func (m *MockRepository) GetMachineStateHash(
 	ctx context.Context,
 	inputIndex uint64,
-) (hexutil.Bytes, error) {
+) (Hash, error) {
 	args := m.Called(ctx, inputIndex)
-	return args.Get(0).([]byte), args.Error(1)
+	return args.Get(0).(Hash), args.Error(1)
 }
 
 func (m *MockRepository) GetAllOutputsFromProcessedInputs(
