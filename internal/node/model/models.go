@@ -4,8 +4,12 @@
 package model
 
 import (
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
+
+type Hash = common.Hash
+type Address = common.Address
 
 type Input struct {
 	// Input index starting from genesis
@@ -37,16 +41,16 @@ type InputRange struct {
 
 type Claim struct {
 	InputRange InputRange
-	EpochHash  hexutil.Bytes
+	EpochHash  Hash
 }
 
 type Proof struct {
 	InputRange                       InputRange
 	InputIndexWithinEpoch            uint64
 	OutputIndexWithinInput           uint64
-	OutputHashesRootHash             hexutil.Bytes
-	OutputsEpochRootHash             hexutil.Bytes
-	MachineStateHash                 hexutil.Bytes
-	OutputHashInOutputHashesSiblings []hexutil.Bytes
-	OutputHashesInEpochSiblings      []hexutil.Bytes
+	OutputHashesRootHash             Hash
+	OutputsEpochRootHash             Hash
+	MachineStateHash                 Hash
+	OutputHashInOutputHashesSiblings []Hash
+	OutputHashesInEpochSiblings      []Hash
 }
