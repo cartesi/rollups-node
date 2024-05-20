@@ -23,12 +23,13 @@ const testTimeout = 300 * time.Second
 // go-ethereum's client.
 type EthUtilSuite struct {
 	suite.Suite
-	ctx    context.Context
-	cancel context.CancelFunc
-	deps   *deps.DepsContainers
-	client *ethclient.Client
-	signer Signer
-	book   *addresses.Book
+	ctx      context.Context
+	cancel   context.CancelFunc
+	deps     *deps.DepsContainers
+	client   *ethclient.Client
+	endpoint string
+	signer   Signer
+	book     *addresses.Book
 }
 
 func (s *EthUtilSuite) SetupTest() {
@@ -38,10 +39,10 @@ func (s *EthUtilSuite) SetupTest() {
 	s.deps, err = newDevNetContainer(context.Background())
 	s.Require().Nil(err)
 
-	endpoint, err := s.deps.DevnetEndpoint(s.ctx, "ws")
+	s.endpoint, err = s.deps.DevnetEndpoint(s.ctx, "ws")
 	s.Require().Nil(err)
 
-	s.client, err = ethclient.DialContext(s.ctx, endpoint)
+	s.client, err = ethclient.DialContext(s.ctx, s.endpoint)
 	s.Require().Nil(err)
 
 	s.signer, err = NewMnemonicSigner(s.ctx, s.client, FoundryMnemonic, 0)
@@ -74,6 +75,13 @@ func (s *EthUtilSuite) TestAddInput() {
 	s.Require().Equal(payload, event.Input)
 }
 
+func (s *EthUtilSuite) TestMineNewBlock() {
+	blockNumber, err := MineNewBlock(s.ctx, s.endpoint)
+	s.Require().Nil(err)
+	s.Require().Equal(uint64(22), blockNumber)
+
+}
+
 // Log the output of the given container
 func (s *EthUtilSuite) logDevnetOutput() {
 	reader, err := s.deps.DevnetLogs(s.ctx)
@@ -96,8 +104,8 @@ func newDevNetContainer(ctx context.Context) (*deps.DepsContainers, error) {
 	container, err := deps.Run(ctx, deps.DepsConfig{
 		Devnet: &deps.DevnetConfig{
 			DockerImage:             deps.DefaultDevnetDockerImage,
-			BlockTime:               deps.DefaultBlockTime,
-			BlockToWaitForOnStartup: deps.DefaultBlockToWaitForOnStartup,
+			BlockTime:               deps.DefaultDevnetBlockTime,
+			BlockToWaitForOnStartup: deps.DefaultDevnetBlockToWaitForOnStartup,
 			Port:                    testutil.GetCartesiTestDepsPortRange(),
 		},
 	})

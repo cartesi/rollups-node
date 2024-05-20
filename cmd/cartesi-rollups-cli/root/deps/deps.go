@@ -51,8 +51,12 @@ func init() {
 		"Devnet local listening port number")
 
 	Cmd.Flags().StringVar(&depsConfig.Devnet.BlockTime, "devnet-block-time",
-		deps.DefaultBlockTime,
+		deps.DefaultDevnetBlockTime,
 		"Devnet mining block time")
+
+	Cmd.Flags().BoolVar(&depsConfig.Devnet.NoMining, "devnet-no-mining",
+		deps.DefaultDevnetNoMining,
+		"Devnet disable mining")
 
 	Cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "verbose logs")
 }
