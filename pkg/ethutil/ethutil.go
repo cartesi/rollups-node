@@ -66,12 +66,12 @@ func AddInput(
 // This function waits until the transaction is added to a block and return the input index.
 func AddInputUsingFoundryMnemonic(
 	ctx context.Context,
-	blockchainHttpEnpoint string,
+	blockchainHttpEndpoint string,
 	payload string,
 ) (int, error) {
 
 	// Send Input
-	client, err := ethclient.DialContext(ctx, blockchainHttpEnpoint)
+	client, err := ethclient.DialContext(ctx, blockchainHttpEndpoint)
 	if err != nil {
 		return 0, err
 	}
@@ -184,10 +184,10 @@ func ExecuteOutput(
 
 // Advances the Devnet timestamp
 func AdvanceDevnetTime(ctx context.Context,
-	blockchainHttpEnpoint string,
+	blockchainHttpEndpoint string,
 	timeInSeconds int,
 ) error {
-	client, err := rpc.DialContext(ctx, blockchainHttpEnpoint)
+	client, err := rpc.DialContext(ctx, blockchainHttpEndpoint)
 	if err != nil {
 		return err
 	}
