@@ -199,14 +199,36 @@ func AdvanceDevnetTime(ctx context.Context,
 // Sets the timestamp for the next block at Devnet
 func SetNextDevnetBlockTimestamp(
 	ctx context.Context,
-	blockchainHttpEnpoint string,
+	blockchainHttpEndpoint string,
 	timestamp int64,
 ) error {
 
-	client, err := rpc.DialContext(ctx, blockchainHttpEnpoint)
+	client, err := rpc.DialContext(ctx, blockchainHttpEndpoint)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 	return client.CallContext(ctx, nil, "evm_setNextBlockTimestamp", timestamp)
+}
+
+// Mines a new block
+func MineNewBlock(
+	ctx context.Context,
+	blockchainHttpEndpoint string,
+) (uint64, error) {
+	client, err := rpc.DialContext(ctx, blockchainHttpEndpoint)
+	if err != nil {
+		return 0, err
+	}
+	defer client.Close()
+	err = client.CallContext(ctx, nil, "evm_mine")
+	if err != nil {
+		return 0, err
+	}
+	ethClient, err := ethclient.DialContext(ctx, blockchainHttpEndpoint)
+	if err != nil {
+		return 0, err
+	}
+	defer ethClient.Close()
+	return ethClient.BlockNumber(ctx)
 }

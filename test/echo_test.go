@@ -71,7 +71,7 @@ func (s *EchoInputTestSuite) SetupTest() {
 			DockerImage:             deps.DefaultDevnetDockerImage,
 			Port:                    testutil.GetCartesiTestDepsPortRange(),
 			BlockTime:               devNetMiningBlockTimeInSeconds,
-			BlockToWaitForOnStartup: deps.DefaultBlockToWaitForOnStartup,
+			BlockToWaitForOnStartup: deps.DefaultDevnetBlockToWaitForOnStartup,
 		},
 	}
 
