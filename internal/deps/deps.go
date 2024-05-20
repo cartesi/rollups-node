@@ -18,15 +18,16 @@ import (
 )
 
 const (
-	DefaultPostgresDatabase        = "postgres"
-	DefaultPostgresDockerImage     = "postgres:16-alpine"
-	DefaultPostgresPort            = "5432"
-	DefaultPostgresUser            = "postgres"
-	DefaultPostgresPassword        = "password"
-	DefaultDevnetDockerImage       = "cartesi/rollups-node-devnet:devel"
-	DefaultDevnetPort              = "8545"
-	DefaultBlockTime               = "1"
-	DefaultBlockToWaitForOnStartup = "21"
+	DefaultPostgresDatabase              = "postgres"
+	DefaultPostgresDockerImage           = "postgres:16-alpine"
+	DefaultPostgresPort                  = "5432"
+	DefaultPostgresUser                  = "postgres"
+	DefaultPostgresPassword              = "password"
+	DefaultDevnetDockerImage             = "cartesi/rollups-node-devnet:devel"
+	DefaultDevnetPort                    = "8545"
+	DefaultDevnetBlockTime               = "1"
+	DefaultDevnetBlockToWaitForOnStartup = "21"
+	DefaultDevnetNoMining                = false
 
 	numPostgresCheckReadyAttempts = 2
 	pollInterval                  = 5 * time.Second
@@ -54,6 +55,7 @@ type DevnetConfig struct {
 	Port                    string
 	BlockTime               string
 	BlockToWaitForOnStartup string
+	NoMining                bool
 }
 
 // Builds a DepsConfig struct with default values
@@ -67,8 +69,9 @@ func NewDefaultDepsConfig() *DepsConfig {
 		&DevnetConfig{
 			DefaultDevnetDockerImage,
 			DefaultDevnetPort,
-			DefaultBlockTime,
-			DefaultBlockToWaitForOnStartup,
+			DefaultDevnetBlockTime,
+			DefaultDevnetBlockToWaitForOnStartup,
+			DefaultDevnetNoMining,
 		},
 	}
 }
@@ -206,12 +209,25 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 			devnetExposedPort = strings.Join([]string{
 				depsConfig.Devnet.Port, ":", devnetExposedPort}, "")
 		}
+		cmd := []string{
+			"anvil",
+			"--load-state",
+			"/usr/share/devnet/anvil_state.json",
+		}
+		var waitStrategy *wait.LogStrategy
+		if depsConfig.Devnet.NoMining {
+			cmd = append(cmd, "--no-mining")
+			waitStrategy = wait.ForLog("net_listening")
+		} else {
+			cmd = append(cmd, "--block-time",
+				depsConfig.Devnet.BlockTime)
+			waitStrategy = wait.ForLog("Block Number: " + depsConfig.Devnet.BlockToWaitForOnStartup)
+		}
 		devNetReq := testcontainers.ContainerRequest{
-			Image:        depsConfig.Devnet.DockerImage,
-			ExposedPorts: []string{devnetExposedPort},
-			WaitingFor:   wait.ForLog("Block Number: " + depsConfig.Devnet.BlockToWaitForOnStartup),
-			Cmd: []string{"anvil", "--block-time",
-				depsConfig.Devnet.BlockTime, "--load-state", "/usr/share/devnet/anvil_state.json"},
+			Image:          depsConfig.Devnet.DockerImage,
+			ExposedPorts:   []string{devnetExposedPort},
+			WaitingFor:     waitStrategy,
+			Cmd:            cmd,
 			LifecycleHooks: createHook(&finishedWaitGroup),
 		}
 		devnet, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{

@@ -18,6 +18,7 @@ Cartesi Rollups node.
 * [cartesi-rollups-cli execute](cartesi-rollups-cli_execute.md)	 - Executes a voucher
 * [cartesi-rollups-cli increase-time](cartesi-rollups-cli_increase-time.md)	 - Increases evm time of the current machine
 * [cartesi-rollups-cli inspect](cartesi-rollups-cli_inspect.md)	 - Calls inspect API
+* [cartesi-rollups-cli mine](cartesi-rollups-cli_mine.md)	 - Mine a new block
 * [cartesi-rollups-cli read](cartesi-rollups-cli_read.md)	 - Read the node state from the GraphQL API
 * [cartesi-rollups-cli run-deps](cartesi-rollups-cli_run-deps.md)	 - Run node dependencies with Docker
 * [cartesi-rollups-cli save-snapshot](cartesi-rollups-cli_save-snapshot.md)	 - Saves the testing Cartesi machine snapshot to the designated folder
