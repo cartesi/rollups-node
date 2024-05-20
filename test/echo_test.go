@@ -29,7 +29,7 @@ import (
 const (
 	payload                        = "0xdeadbeef"
 	maxReadInputAttempts           = 10
-	blockTimestampinSeconds        = 7000000000
+	blockTimestampInSeconds        = 7000000000
 	testTimeout                    = 300 * time.Second
 	devNetAdvanceTimeInSeconds     = 120
 	devNetMiningBlockTimeInSeconds = "2"
@@ -53,7 +53,7 @@ func (s *EchoInputTestSuite) SetupTest() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 
-	// Create Tempdir
+	// Create tempdir
 	tempDir, err := os.MkdirTemp("", "echo-test")
 	s.Require().Nil(err)
 	snapshotDir := path.Join(tempDir, "machine-snapshot")
@@ -79,10 +79,10 @@ func (s *EchoInputTestSuite) SetupTest() {
 	s.Require().Nil(err)
 
 	// Capture endpoints
-	postgressEndpoint, err := depsContainers.PostgresEndpoint(ctx, "postgres")
+	postgresEndpoint, err := depsContainers.PostgresEndpoint(ctx, "postgres")
 	s.Require().Nil(err)
 
-	postgresUrl, err := url.Parse(postgressEndpoint)
+	postgresUrl, err := url.Parse(postgresEndpoint)
 	s.Require().Nil(err)
 
 	postgresUrl.User = url.UserPassword(deps.DefaultPostgresUser, deps.DefaultPostgresPassword)
@@ -95,8 +95,8 @@ func (s *EchoInputTestSuite) SetupTest() {
 
 	s.blockchainHttpEndpoint = devnetHttpEndpoint
 
-	// Fix the Blochain timestamp. Must be "in the future"
-	err = ethutil.SetNextDevnetBlockTimestamp(ctx, devnetHttpEndpoint, blockTimestampinSeconds)
+	// Fix the Blockchain timestamp. Must be "in the future"
+	err = ethutil.SetNextDevnetBlockTimestamp(ctx, devnetHttpEndpoint, blockTimestampInSeconds)
 	s.Require().Nil(err)
 
 	// Run Node Service

@@ -24,8 +24,8 @@ const (
 	LocalEpochDurationInSeconds        = 240
 )
 
-func NewLocalNodeConfig(localPostgresEnpoint string, localBlockchainHttpEndpoint string,
-	localBlockchainWsEnpoint string, snapshotDir string) config.NodeConfig {
+func NewLocalNodeConfig(localPostgresEndpoint string, localBlockchainHttpEndpoint string,
+	localBlockchainWsEndpoint string, snapshotDir string) config.NodeConfig {
 
 	var nodeConfig config.NodeConfig
 
@@ -37,18 +37,18 @@ func NewLocalNodeConfig(localPostgresEnpoint string, localBlockchainHttpEndpoint
 
 	//Postgres
 	nodeConfig.PostgresEndpoint =
-		config.Redacted[string]{Value: localPostgresEnpoint}
+		config.Redacted[string]{Value: localPostgresEndpoint}
 
 	//Epoch
 	nodeConfig.RollupsEpochDuration, _ =
 		time.ParseDuration(fmt.Sprintf("%ds", LocalEpochDurationInSeconds))
 
-	//Blochain
+	//Blockchain
 	nodeConfig.BlockchainID = LocalBlockchainID
 	nodeConfig.BlockchainHttpEndpoint =
 		config.Redacted[string]{Value: localBlockchainHttpEndpoint}
 	nodeConfig.BlockchainWsEndpoint =
-		config.Redacted[string]{Value: localBlockchainWsEnpoint}
+		config.Redacted[string]{Value: localBlockchainWsEndpoint}
 	nodeConfig.BlockchainIsLegacy = false
 	nodeConfig.BlockchainFinalityOffset = LocalFinalityOffset
 	nodeConfig.BlockchainBlockTimeout = LocalBlockTimeout

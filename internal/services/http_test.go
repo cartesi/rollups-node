@@ -109,7 +109,7 @@ func (s *HttpServiceSuite) TestItRespondsOngoingRequestsAfterContextIsClosed() {
 	select {
 	case <-ready:
 	case <-time.After(DefaultServiceTimeout):
-		s.FailNow("timed out wating for HttpService to be ready")
+		s.FailNow("timed out waiting for HttpService to be ready")
 	}
 
 	clientResult := make(chan ClientResult, 1)
