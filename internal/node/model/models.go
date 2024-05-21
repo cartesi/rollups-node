@@ -8,6 +8,8 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
+const HashLength = common.HashLength
+
 type (
 	Hash                  = common.Hash
 	Address               = common.Address
