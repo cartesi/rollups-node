@@ -6,6 +6,7 @@ on:
     types: [opened, synchronize, reopened, labeled, unlabeled]
     branches:
       - main
+      - next/2.0
 
 jobs:
   check-changelog:
