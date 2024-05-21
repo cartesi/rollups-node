@@ -104,58 +104,6 @@ RUN <<EOF
 EOF
 
 # =============================================================================
-# STAGE: emulator-devel
-#
-# - Install libarchive13 (setup -- required by xgenext2fs).
-# - Install libcmt.
-# - Install xgenext2fs.
-# =============================================================================
-
-FROM emulator AS emulator-devel
-
-ARG MACHINE_TOOLS_VERSION
-ARG MACHINE_XGENEXT2FS_VERSION
-ARG DEBIAN_FRONTEND=noninteractive
-
-# Install libarchive13 (setup -- required by xgenext2fs).
-RUN <<EOF
-    set -e
-    apt-get update
-    apt-get install -y --no-install-recommends libarchive13
-EOF
-
-# Install libcmt (cartesi/machine-emulator-tools).
-RUN <<EOF
-    set -e
-    URL=https://github.com/cartesi/machine-emulator-tools/releases/download
-    VERSION=v${MACHINE_TOOLS_VERSION}
-    ARTIFACT=libcmt-${VERSION}-dev.deb
-    curl -fsSL ${URL}/${VERSION}/${ARTIFACT} -o ./libcmt.deb
-    apt-get install -y ./libcmt.deb
-    rm ./libcmt.deb
-    mv /usr/riscv64-linux-gnu/include/libcmt /usr/include/
-    mv /usr/riscv64-linux-gnu/lib/libcmt.a /usr/lib/
-    rm -rf /usr/riscv64-linux-gnu
-EOF
-
-# Install xgenext2fs (cartesi/genext2fs).
-RUN <<EOF
-    set -e
-    URL=https://github.com/cartesi/genext2fs/releases/download
-    VERSION=v${MACHINE_XGENEXT2FS_VERSION}
-    ARCH=$(dpkg --print-architecture)
-    ARTIFACT=xgenext2fs_${ARCH}.deb
-    curl -fsSL ${URL}/${VERSION}/${ARTIFACT} -o ./xgenext2fs.deb
-    apt-get install -y ./xgenext2fs.deb
-    rm ./xgenext2fs.deb
-EOF
-
-# Clean up.
-RUN <<EOF
-    rm -rf /var/lib/apt/lists/*
-EOF
-
-# =============================================================================
 # STAGE: rollups-node-ci
 #
 # This stage prepares the CI image.
@@ -165,7 +113,7 @@ EOF
 # - Install docker.
 # =============================================================================
 
-FROM emulator-devel AS rollups-node-ci
+FROM emulator AS rollups-node-ci
 
 # Install git and build-essential (setup).
 RUN <<EOF
