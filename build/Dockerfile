@@ -107,6 +107,7 @@ EOF
 # STAGE: emulator-devel
 #
 # - Install libarchive13 (setup -- required by xgenext2fs).
+# - Install gcc-12-riscv64-linux-gnu (setup -- required to compile libcmt applications).
 # - Install libcmt.
 # - Install xgenext2fs.
 # =============================================================================
@@ -122,6 +123,7 @@ RUN <<EOF
     set -e
     apt-get update
     apt-get install -y --no-install-recommends libarchive13
+    apt-get install -y gcc-12-riscv64-linux-gnu
 EOF
 
 # Install libcmt (cartesi/machine-emulator-tools).
@@ -133,9 +135,6 @@ RUN <<EOF
     curl -fsSL ${URL}/${VERSION}/${ARTIFACT} -o ./libcmt.deb
     apt-get install -y ./libcmt.deb
     rm ./libcmt.deb
-    mv /usr/riscv64-linux-gnu/include/libcmt /usr/include/
-    mv /usr/riscv64-linux-gnu/lib/libcmt.a /usr/lib/
-    rm -rf /usr/riscv64-linux-gnu
 EOF
 
 # Install xgenext2fs (cartesi/genext2fs).

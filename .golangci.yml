@@ -14,3 +14,7 @@ linters-settings:
   mnd:
     ignored-functions:
       - "^make"
+issues:
+  exclude-files:
+    - test/libcmt/libcmt.go
+    - test/gollup/gollup.go
