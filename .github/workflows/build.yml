@@ -208,7 +208,7 @@ jobs:
       - name: Run Go Linter
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.54.2
+          version: v1.58.2
 
       - name: Run Go tests
         run: go test ./...
