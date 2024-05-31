@@ -150,35 +150,32 @@ func cleanupRedisStreams(cfg nodePreStartConfig) error {
 	err := retry.Do(
 		func() error {
 			// Clean inputs and outputs streams
-			rdb := redis.NewClient(&redis.Options{
-				Addr:     cfg.redisEndpoint.Host,
-				Password: cfg.redisEndpoint.User.String(),
-				DB:       0, // use default DB
-			})
-
-			_, err := rdb.Ping(ctx).Result()
-			if err != nil {
-				log.Fatalln("ERR: Redis connection failed: ", err, "")
+			if opt, err := redis.ParseURL(cfg.redisEndpoint.String()); err != nil {
 				return err
-			}
+			} else {
+				rdb := redis.NewClient(opt)
+				defer rdb.Close()
+				_, err := rdb.Ping(ctx).Result()
+				if err != nil {
+					log.Fatalln("ERR: Redis connection failed: ", err, "")
+					return err
+				}
 
-			defer rdb.Close()
+				var INPUTS_STREAM = fmt.Sprintf("{chain-%s:dapp-%s}:rollups-inputs", cfg.chainID, cfg.contractAddress[2:])
+				var OUTPUTS_STREAM = fmt.Sprintf("{chain-%s:dapp-%s}:rollups-outputs", cfg.chainID, cfg.contractAddress[2:])
 
-			var INPUTS_STREAM = fmt.Sprintf("{chain-%s:dapp-%s}:rollups-inputs", cfg.chainID, cfg.contractAddress[2:])
-			var OUTPUTS_STREAM = fmt.Sprintf("{chain-%s:dapp-%s}:rollups-outputs", cfg.chainID, cfg.contractAddress[2:])
+				_, err = rdb.Do(ctx, "DEL", INPUTS_STREAM).Result()
+				if err != nil {
+					return err
+				}
 
-			_, err = rdb.Do(ctx, "DEL", INPUTS_STREAM).Result()
-			if err != nil {
-				return err
-			}
-
-			_, err = rdb.Do(ctx, "DEL", OUTPUTS_STREAM).Result()
-			if err != nil {
-				return err
+				_, err = rdb.Do(ctx, "DEL", OUTPUTS_STREAM).Result()
+				if err != nil {
+					return err
+				}
 			}
 
 			log.Println("REDIS: Cleaned inputs and outputs streams.")
-
 			return nil
 		},
 	)
