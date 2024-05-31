@@ -144,8 +144,8 @@ func cleanupRedisStreams(cfg nodePreStartConfig) error {
 
 			defer rdb.Close()
 
-			var INPUTS_STREAM = fmt.Sprintf("{chain-%s:dapp-%s}:rollups-inputs", cfg.chainID, cfg.contractAddress)
-			var OUTPUTS_STREAM = fmt.Sprintf("{chain-%s:dapp-%s}:rollups-outputs", cfg.chainID, cfg.contractAddress)
+			var INPUTS_STREAM = fmt.Sprintf("{chain-%s:dapp-%s}:rollups-inputs", cfg.chainID, cfg.contractAddress[2:])
+			var OUTPUTS_STREAM = fmt.Sprintf("{chain-%s:dapp-%s}:rollups-outputs", cfg.chainID, cfg.contractAddress[2:])
 
 			_, err = rdb.Do(ctx, "DEL", INPUTS_STREAM).Result()
 			if err != nil {
