@@ -41,7 +41,9 @@ func createPostgresDB(cfg nodePreStartConfig) error {
 				return err
 			}
 
-			var dbName = fmt.Sprintf("chain-%s-%s", cfg.chainID, cfg.contractAddress)
+			// TODO: move to a different naming like $chainID_$contractAddress in the future
+			// dbName := fmt.Sprintf("%s_%s", cfg.chainID, cfg.contractAddress)
+			var dbName = cfg.contractAddress
 			row := db.QueryRow("SELECT 1 FROM pg_database WHERE datname=$1", dbName)
 			if err := row.Scan(); errors.Is(err, sql.ErrNoRows) {
 				// Database does not exist, create it
