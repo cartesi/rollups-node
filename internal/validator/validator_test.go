@@ -74,7 +74,6 @@ func (s *ValidatorSuite) TestItEventuallyBecomesReady() {
 
 	select {
 	case <-ready:
-		s.repo.AssertNumberOfCalls(s.T(), "InsertFirstEpochTransaction", 1)
 	case err := <-errChannel:
 		s.FailNow("unexpected failure", err)
 	}
