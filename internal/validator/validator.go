@@ -42,19 +42,6 @@ type ValidatorRepository interface {
 		endBlock uint64,
 		timeout *time.Duration,
 	) ([]Output, error)
-	// InsertFirstEpochTransaction performs a database transaction
-	// containing two operations:
-	//
-	// 1. Inserts a new Epoch
-	//
-	// 2. Updates the current Epoch to the newly created Epoch
-	//
-	// This should only be called once to set up the first Epoch in the database.
-	// If there's a current Epoch already, this call will have no effect
-	InsertFirstEpochTransaction(
-		ctx context.Context,
-		epoch Epoch,
-	) error
 	// FinishEmptyEpochTransaction performs a database transaction
 	// containing two operations:
 	//
@@ -89,14 +76,6 @@ func (v Validator) String() string {
 }
 
 func (v Validator) Start(ctx context.Context, ready chan<- struct{}) error {
-	// create and attempt to insert the first epoch
-	epoch := Epoch{
-		StartBlock: v.inputBoxDeploymentBlock,
-		EndBlock:   v.inputBoxDeploymentBlock + v.epochDuration,
-	}
-	if err := v.repo.InsertFirstEpochTransaction(ctx, epoch); err != nil {
-		return err
-	}
 	ready <- struct{}{}
 
 	ticker := time.NewTicker(TICK_INTERVAL)
