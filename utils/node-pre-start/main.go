@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	redis "github.com/redis/go-redis/v9"
 
@@ -19,17 +18,25 @@ import (
 )
 
 type nodePreStartConfig struct {
-	chainID                string
-	contractAddress        string
-	postgresEndpoint       *url.URL
-	sunodoValidatorEnabled bool
-	redisEndpoint          *url.URL
+	chainID                         string
+	contractAddress                 string
+	postgresEndpoint                *url.URL
+	sunodoValidatorEnabled          bool
+	redisEndpoint                   *url.URL
+	sunodoFlyPostgresSQLSSLDisabled bool
 }
 
 func createPostgresDB(cfg nodePreStartConfig) error {
 	err := retry.Do(
 		func() error {
-			db, err := sqlx.Connect("postgres", cfg.postgresEndpoint.String())
+			params := ""
+			if cfg.sunodoFlyPostgresSQLSSLDisabled {
+				params = "sslmode=disable"
+			} else {
+				params = ""
+			}
+			_postgresEndpoint := fmt.Sprintf("%s://%s@%s/%s?%s", cfg.postgresEndpoint.Scheme, cfg.postgresEndpoint.User, cfg.postgresEndpoint.Host, "postgres", params)
+			db, err := sql.Open("postgres", _postgresEndpoint)
 			if err != nil {
 				log.Println("ERR: POSTGRESQL: can't connect: ", err, "")
 				return err
@@ -70,6 +77,17 @@ func createPostgresDB(cfg nodePreStartConfig) error {
 
 func loadConfig() (nodePreStartConfig, error) {
 	var cfg = nodePreStartConfig{}
+
+	// sunodo fly config
+	_sunodoFlyPostgresSQLSSLDisabled, exists := os.LookupEnv("SUNODO_FLY_POSTGRES_SQL_SSL_DISABLED")
+	if exists {
+		if sunodoFlyPostgresSQLSSLDisabled, err := strconv.ParseBool(_sunodoFlyPostgresSQLSSLDisabled); err != nil {
+			cfg.sunodoFlyPostgresSQLSSLDisabled = sunodoFlyPostgresSQLSSLDisabled
+		}
+	} else {
+		cfg.sunodoFlyPostgresSQLSSLDisabled = true
+	}
+	log.Printf("CONFIG: SUNODO_FLY_POSTGRES_SQL_SSL_DISABLED=%t", cfg.sunodoFlyPostgresSQLSSLDisabled)
 
 	// global configuration
 	chainID, exists := os.LookupEnv("CARTESI_BLOCKCHAIN_ID")
