@@ -110,14 +110,14 @@ func (pg *database) InsertInput(
 		(index,
 		status,
 		blob,
-		blockNumber,
-		machineStateHash)
+		block_number,
+		machine_state_hash)
 	VALUES
 		(@index,
 		@status,
 		@blob,
-		@block_number,
-		@machine_state_hash)`
+		@blockNumber,
+		@machineStateHash)`
 	args := pgx.NamedArgs{
 		"index":            input.Index,
 		"status":           input.Status,
@@ -159,38 +159,6 @@ func (pg *database) InsertOutput(
 		"inputIndex": output.InputIndex,
 		"index":      output.Index,
 		"blob":       output.Blob,
-	}
-	_, err := pg.db.Exec(ctx, query, args)
-	if err != nil {
-		return fmt.Errorf("unable to insert row: %w\n", err)
-	}
-
-	return nil
-}
-
-func (pg *database) InsertNodeState(
-	ctx context.Context,
-	finalizedBlock uint64,
-	deploymentBlock uint64,
-	epochDuration uint64,
-	currentEpoch uint64,
-) error {
-	query := `
-	INSERT INTO node_state
-		(most_recently_finalized_block,
-		input_box_deployment_block,
-		epoch_duration,
-		current_epoch)
-	VALUES
-		(@finalizedBlock,
-		@deploymentBlock,
-		@epochDuration,
-		@currentEpoch)`
-	args := pgx.NamedArgs{
-		"finalizedBlock":  finalizedBlock,
-		"deploymentBlock": deploymentBlock,
-		"epochDuration":   epochDuration,
-		"currentEpoch":    currentEpoch,
 	}
 	_, err := pg.db.Exec(ctx, query, args)
 	if err != nil {
