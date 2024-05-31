@@ -5,6 +5,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -26,10 +27,10 @@ var (
 
 func Connect(
 	ctx context.Context,
-	postgres_endpoint string,
+	postgresEndpoint string,
 ) (*database, error) {
 	pgOnce.Do(func() {
-		dbpool, err := pgxpool.New(ctx, postgres_endpoint)
+		dbpool, err := pgxpool.New(ctx, postgresEndpoint)
 		if err != nil {
 			pgError = fmt.Errorf("unable to create connection pool: %w\n", err)
 		}
@@ -110,17 +111,17 @@ func (pg *database) InsertInput(
 		(index,
 		status,
 		blob,
-		blockNumber,
-		machineStateHash)
+		block_number,
+		machine_state_hash)
 	VALUES
 		(@index,
 		@status,
 		@blob,
-		@block_number,
-		@machine_state_hash)`
+		@blockNumber,
+		@machineStateHash)`
 	args := pgx.NamedArgs{
 		"index":            input.Index,
-		"status":           input.Status,
+		"status":           input.CompletionStatus,
 		"blob":             input.Blob,
 		"blockNumber":      input.BlockNumber,
 		"machineStateHash": input.MachineStateHash,
@@ -168,41 +169,10 @@ func (pg *database) InsertOutput(
 	return nil
 }
 
-func (pg *database) InsertNodeState(
-	ctx context.Context,
-	finalizedBlock uint64,
-	deploymentBlock uint64,
-	epochDuration uint64,
-	currentEpoch uint64,
-) error {
-	query := `
-	INSERT INTO node_state
-		(most_recently_finalized_block,
-		input_box_deployment_block,
-		epoch_duration,
-		current_epoch)
-	VALUES
-		(@finalizedBlock,
-		@deploymentBlock,
-		@epochDuration,
-		@currentEpoch)`
-	args := pgx.NamedArgs{
-		"finalizedBlock":  finalizedBlock,
-		"deploymentBlock": deploymentBlock,
-		"epochDuration":   epochDuration,
-		"currentEpoch":    currentEpoch,
-	}
-	_, err := pg.db.Exec(ctx, query, args)
-	if err != nil {
-		return fmt.Errorf("unable to insert row: %w\n", err)
-	}
-
-	return nil
-}
-
 func (pg *database) InsertClaim(
 	ctx context.Context,
 	claim *Claim,
+	epochStartBlock uint64,
 ) error {
 	query := `
 	INSERT INTO claims
@@ -221,7 +191,7 @@ func (pg *database) InsertClaim(
 		@applicationAddress)`
 	args := pgx.NamedArgs{
 		"id":                 claim.Id,
-		"epoch":              claim.Epoch,
+		"epoch":              epochStartBlock,
 		"firstInputIndex":    claim.InputRange.First,
 		"lastInputIndex":     claim.InputRange.Last,
 		"epochHash":          claim.EpochHash,
@@ -238,6 +208,7 @@ func (pg *database) InsertClaim(
 func (pg *database) InsertProof(
 	ctx context.Context,
 	proof *Proof,
+	claimId uint64,
 ) error {
 	query := `
 	INSERT INTO proofs 
@@ -263,7 +234,7 @@ func (pg *database) InsertProof(
 
 	args := pgx.NamedArgs{
 		"input_index":                      proof.InputIndex,
-		"claim_id":                         proof.ClaimId,
+		"claim_id":                         claimId,
 		"inputIndexWithinEpoch":            proof.InputIndexWithinEpoch,
 		"outputIndexWithinInput":           proof.OutputIndexWithinInput,
 		"outputHashesRootHash":             proof.OutputHashesRootHash,
@@ -283,9 +254,9 @@ func (pg *database) InsertProof(
 func (pg *database) GetInput(
 	ctx context.Context,
 	index uint64,
-) *Input {
+) (*Input, error) {
 	var (
-		status      Status
+		status      InputCompletionStatus
 		blob        []byte
 		blockNumber uint64
 		machineHash Hash
@@ -304,19 +275,22 @@ func (pg *database) GetInput(
 
 	err := pg.db.QueryRow(ctx, query, index).Scan(&blob, &status, &blockNumber, &machineHash)
 	if err != nil {
-		slog.Info(fmt.Sprintf("QueryRow failed: %v\n", err), "service", "repository")
-		return nil
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("GetInput returned no rows", "service", "repository")
+			return nil, nil
+		}
+		return nil, fmt.Errorf("GetInput QueryRow failed: %v\n", err)
 	}
 
 	input := Input{
 		Index:            index,
-		Status:           status,
+		CompletionStatus: status,
 		Blob:             blob,
 		BlockNumber:      blockNumber,
 		MachineStateHash: machineHash,
 	}
 
-	return &input
+	return &input, nil
 }
 
 func (pg *database) GetOutput(
@@ -324,7 +298,7 @@ func (pg *database) GetOutput(
 	verifiable bool,
 	inputIndex uint64,
 	index uint64,
-) *Output {
+) (*Output, error) {
 	var blob []byte
 	var table string
 
@@ -343,8 +317,11 @@ func (pg *database) GetOutput(
 
 	err := pg.db.QueryRow(ctx, query, inputIndex, index).Scan(&blob)
 	if err != nil {
-		slog.Info(fmt.Sprintf("QueryRow failed: %v\n", err), "service", "repository")
-		return nil
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("GetOutput returned no rows", "service", "repository")
+			return nil, nil
+		}
+		return nil, fmt.Errorf("GetOutput QueryRow failed: %v\n", err)
 	}
 
 	output := Output{
@@ -353,16 +330,15 @@ func (pg *database) GetOutput(
 		Blob:       blob,
 	}
 
-	return &output
+	return &output, nil
 }
 
 func (pg *database) GetProof(
 	ctx context.Context,
 	inputIndex uint64,
 	outputIndex uint64,
-) *Proof {
+) (*Proof, error) {
 	var (
-		claimId                          uint64
 		firstInput                       uint64
 		lastInput                        uint64
 		inputIndexWithinEpoch            uint64
@@ -376,7 +352,6 @@ func (pg *database) GetProof(
 
 	query := `
 	SELECT
-		c.id,
 		c.first_input_index,
 		c.last_input_index,
 		p.input_index_within_epoch,
@@ -396,7 +371,6 @@ func (pg *database) GetProof(
 		p.input_index=$1 AND p.output_index_within_input=$2`
 
 	err := pg.db.QueryRow(ctx, query, inputIndex, outputIndex).Scan(
-		&claimId,
 		&firstInput,
 		&lastInput,
 		&inputIndexWithinEpoch,
@@ -408,8 +382,11 @@ func (pg *database) GetProof(
 		&outputHashesInEpochSiblings,
 	)
 	if err != nil {
-		slog.Info(fmt.Sprintf("QueryRow failed: %v\n", err), "service", "repository")
-		return nil
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("GetProof returned no rows", "service", "repository")
+			return nil, nil
+		}
+		return nil, fmt.Errorf("GetProof QueryRow failed: %v\n", err)
 	}
 
 	inputRange := InputRange{
@@ -419,7 +396,6 @@ func (pg *database) GetProof(
 
 	proof := Proof{
 		InputIndex:                       inputIndex,
-		ClaimId:                          claimId,
 		InputRange:                       inputRange,
 		InputIndexWithinEpoch:            inputIndexWithinEpoch,
 		OutputIndexWithinInput:           outputIndexWithinInput,
@@ -430,15 +406,14 @@ func (pg *database) GetProof(
 		OutputHashesInEpochSiblings:      outputHashesInEpochSiblings,
 	}
 
-	return &proof
+	return &proof, nil
 }
 
 func (pg *database) GetClaim(
 	ctx context.Context,
 	index uint64,
-) *Claim {
+) (*Claim, error) {
 	var (
-		epoch      uint64
 		first      uint64
 		last       uint64
 		epochHash  Hash
@@ -447,7 +422,6 @@ func (pg *database) GetClaim(
 
 	query := `
 	SELECT
-		epoch,
 		first_input_index,
 		last_input_index,
 		epoch_hash,
@@ -457,10 +431,13 @@ func (pg *database) GetClaim(
 	WHERE
 		id=$1`
 
-	err := pg.db.QueryRow(ctx, query, index).Scan(&epoch, &first, &last, &epochHash, &appAddress)
+	err := pg.db.QueryRow(ctx, query, index).Scan(&first, &last, &epochHash, &appAddress)
 	if err != nil {
-		slog.Info(fmt.Sprintf("QueryRow failed: %v\n", err), "service", "repository")
-		return nil
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("GetClaim returned no rows", "service", "repository")
+			return nil, nil
+		}
+		return nil, fmt.Errorf("GetClaim QueryRow failed: %v\n", err)
 	}
 
 	inputRange := InputRange{
@@ -470,11 +447,10 @@ func (pg *database) GetClaim(
 
 	claim := Claim{
 		Id:         index,
-		Epoch:      epoch,
 		InputRange: inputRange,
 		EpochHash:  epochHash,
 		AppAddress: appAddress,
 	}
 
-	return &claim
+	return &claim, nil
 }
