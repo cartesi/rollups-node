@@ -85,7 +85,7 @@ impl From<InspectStateResponse> for HttpInspectResponse {
 }
 
 fn convert_status(status: i32) -> String {
-    // Unfortunaly, the gRPC interface uses i32 instead of a Enum type,
+    // Unfortunately, the gRPC interface uses i32 instead of a Enum type,
     // so it is clearer to use if-else instead of match.
     if status == CompletionStatus::Accepted as i32 {
         String::from("Accepted")

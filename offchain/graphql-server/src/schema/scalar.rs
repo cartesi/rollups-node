@@ -1,7 +1,7 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 //
-// Parts of the code (BigInt scalar implementatation) is licenced
+// Parts of the code (BigInt scalar implementation) is licenced
 // under BSD 2-Clause Copyright (c) 2016, Magnus Hallin
 
 use juniper::parser::{ParseError, ScalarToken, Token};
