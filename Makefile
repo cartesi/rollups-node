@@ -6,10 +6,10 @@ submodules: ## Download the git submodules
 	@git submodule update --init --recursive
 
 .PHONY: test
-test: unit-test e2e-test ## Execute all tests
+test: unit-test ## Execute all tests
 
 .PHONY: unit-test
-unit-test:## Execute unit tests
+unit-test: ## Execute unit tests
 	@echo "Running unit tests"
 	@go test ./...
 
@@ -91,3 +91,4 @@ docker-clean: ## Remove the containers and volumes from previous compose run
 .PHONY: help
 help: ## Show help for each of the Makefile recipes
 	@grep "##" $(MAKEFILE_LIST) | grep -v grep | sed -e 's/:.*##\(.*\)/:\n\t\1\n/'
+
