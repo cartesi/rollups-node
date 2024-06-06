@@ -17,22 +17,23 @@ target "common" {
   dockerfile = "./build/Dockerfile"
   context    = ".."
   args       = {
-    BASE_IMAGE                = "debian:bookworm-20240311-slim"
-    RUST_VERSION              = "1.78.0"
-    GO_VERSION                = "1.22.1"
-    FOUNDRY_NIGHTLY_VERSION   = "293fad73670b7b59ca901c7f2105bf7a29165a90"
-    MACHINE_EMULATOR_VERSION  = "0.16.1"
-    TOOLS_VERSION             = "0.14.1"
-    LINUX_VERSION             = "0.19.1"
-    LINUX_KERNEL_VERSION      = "6.5.9-ctsi-1-v0.19.1"
+    BASE_IMAGE                   = "debian:bookworm-20240311-slim"
+    RUST_VERSION                 = "1.78.0"
+    GO_VERSION                   = "1.22.1"
+    FOUNDRY_NIGHTLY_VERSION      = "293fad73670b7b59ca901c7f2105bf7a29165a90"
+    MACHINE_EMULATOR_VERSION     = "0.17.0"
+    MACHINE_TOOLS_VERSION        = "0.15.0"
+    MACHINE_IMAGE_KERNEL_VERSION = "0.20.0" 
+    MACHINE_KERNEL_VERSION       = "6.5.13" 
+    MACHINE_XGENEXT2FS_VERSION   = "1.5.6" 
   }
 }
 
 target "rollups-node" {
   inherits = ["common"]
   target   = "rollups-node"
-  args       = {
-    ROLLUPS_NODE_VERSION      = "devel"
+  args     = {
+    ROLLUPS_NODE_VERSION = "devel"
   }
 }
 
@@ -46,9 +47,9 @@ target "rollups-node-devnet" {
   target   = "rollups-node-devnet"
 }
 
-target "rollups-node-ci-base" {
-  inherits = ["common"]
-  target   = "rollups-node-ci-base"
+target "rollups-node-ci" {
+  inherits   = ["common"]
+  target     = "rollups-node-ci"
   dockerfile = "./Dockerfile"
-  context  = "."
+  context    = "."
 }
