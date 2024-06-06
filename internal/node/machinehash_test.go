@@ -116,8 +116,7 @@ func mockMachineDir(hash string) (string, error) {
 	return temp, nil
 }
 
-// Generates a new Cartesi Machine snapshot in a temporary directory and returns
-// its path
+// Generates a new Cartesi Machine snapshot in a temporary directory and returns its path
 func createMachineSnapshot() (string, error) {
 	tmpDir, err := os.MkdirTemp("", "")
 	if err != nil {

@@ -140,7 +140,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            name=ghcr.io/cartesi/rollups-node-ci-base
+            name=ghcr.io/cartesi/rollups-node-ci
           tags: |
             type=semver,pattern={{version}}
             type=ref,event=branch
@@ -162,7 +162,7 @@ jobs:
             ./docker-bake.hcl
             ${{ steps.docker_meta.outputs.bake-file }}
             ./docker-bake.platforms.hcl
-          targets: rollups-node-ci-base
+          targets: rollups-node-ci
           push: true
           project: ${{ vars.DEPOT_PROJECT }}
           workdir: build
@@ -174,7 +174,7 @@ jobs:
   test-go:
     runs-on: ubuntu-22.04
     container:
-      image: ghcr.io/cartesi/rollups-node-ci-base:${{needs.build-ci-base.outputs.output}}
+      image: ghcr.io/cartesi/rollups-node-ci:${{needs.build-ci-base.outputs.output}}
     needs:
       - build-ci-base
     steps:
