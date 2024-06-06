@@ -35,7 +35,7 @@ type Book struct {
 // Get the addresses for the test environment.
 func GetTestBook() *Book {
 	return &Book{
-		Application:         common.HexToAddress("0xb72c832dDeA10326143831F1E5F1646920C9c990"),
+		Application:         common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		ApplicationFactory:  common.HexToAddress("0x39cc8d1faB70F713784032f166aB7Fe3B4801144"),
 		Authority:           common.HexToAddress("0x77e5a5fb18F72b5106621f66C704c006c6dB4578"),
 		AuthorityFactory:    common.HexToAddress("0x5EF4260c72a7A8df752AFF49aC46Ba741754E04a"),
