@@ -116,12 +116,6 @@ Address of the DApp's contract.
 
 * **Type:** `string`
 
-## `CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER`
-
-Block in which the DApp's contract was deployed.
-
-* **Type:** `int64`
-
 ## `CARTESI_CONTRACTS_AUTHORITY_ADDRESS`
 
 Address of the Authority contract.
@@ -236,14 +230,14 @@ for more information.
 * **Type:** `string`
 * **Default:** `""`
 
-## `CARTESI_EPOCH_DURATION`
+## `CARTESI_EPOCH_LENGTH`
 
-Duration of a rollups epoch in seconds.
+Length of a rollups epoch in blocks.
 
 At the end of each epoch, the node will send claims to the blockchain.
 
-* **Type:** `Duration`
-* **Default:** `"86400"`
+* **Type:** `uint64`
+* **Default:** `"7200"`
 
 ## `CARTESI_SNAPSHOT_DIR`
 

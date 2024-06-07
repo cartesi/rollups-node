@@ -281,18 +281,6 @@ func getContractsApplicationAddress() string {
 	return val
 }
 
-func getContractsApplicationDeploymentBlockNumber() int64 {
-	s, ok := os.LookupEnv("CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER")
-	if !ok {
-		panic("missing env var CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER")
-	}
-	val, err := toInt64(s)
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER: %v", err))
-	}
-	return val
-}
-
 func getContractsAuthorityAddress() string {
 	s, ok := os.LookupEnv("CARTESI_CONTRACTS_AUTHORITY_ADDRESS")
 	if !ok {
@@ -473,14 +461,14 @@ func getPostgresEndpoint() string {
 	return val
 }
 
-func getEpochDuration() Duration {
-	s, ok := os.LookupEnv("CARTESI_EPOCH_DURATION")
+func getEpochLength() uint64 {
+	s, ok := os.LookupEnv("CARTESI_EPOCH_LENGTH")
 	if !ok {
-		s = "86400"
+		s = "7200"
 	}
-	val, err := toDuration(s)
+	val, err := toUint64(s)
 	if err != nil {
-		panic(fmt.Sprintf("failed to parse CARTESI_EPOCH_DURATION: %v", err))
+		panic(fmt.Sprintf("failed to parse CARTESI_EPOCH_LENGTH: %v", err))
 	}
 	return val
 }

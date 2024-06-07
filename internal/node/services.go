@@ -155,13 +155,12 @@ func newDispatcher(c config.NodeConfig, workDir string) services.CommandService 
 		c.BlockchainFinalityOffset))
 	s.Env = append(s.Env, fmt.Sprintf("REDIS_ENDPOINT=%v", getRedisEndpoint(c)))
 	s.Env = append(s.Env, fmt.Sprintf("DAPP_ADDRESS=%v", c.ContractsApplicationAddress))
-	s.Env = append(s.Env, fmt.Sprintf("DAPP_DEPLOYMENT_BLOCK_NUMBER=%v",
-		c.ContractsApplicationDeploymentBlockNumber))
+	s.Env = append(s.Env, fmt.Sprintf("INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER=%v",
+		c.ContractsInputBoxDeploymentBlockNumber))
 	s.Env = append(s.Env, fmt.Sprintf("HISTORY_ADDRESS=%v", c.ContractsHistoryAddress))
 	s.Env = append(s.Env, fmt.Sprintf("AUTHORITY_ADDRESS=%v", c.ContractsAuthorityAddress))
 	s.Env = append(s.Env, fmt.Sprintf("INPUT_BOX_ADDRESS=%v", c.ContractsInputBoxAddress))
-	s.Env = append(s.Env, fmt.Sprintf("RD_EPOCH_DURATION=%v",
-		int(c.RollupsEpochDuration.Seconds())))
+	s.Env = append(s.Env, fmt.Sprintf("RD_EPOCH_LENGTH=%v", c.RollupsEpochLength))
 	s.Env = append(s.Env, fmt.Sprintf("CHAIN_ID=%v", c.BlockchainID))
 	s.Env = append(s.Env, fmt.Sprintf("DISPATCHER_HTTP_SERVER_PORT=%v",
 		getPort(c, portOffsetDispatcher)))

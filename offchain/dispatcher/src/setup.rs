@@ -80,15 +80,14 @@ pub async fn create_context(
     dapp_metadata: DAppMetadata,
     metrics: DispatcherMetrics,
 ) -> Result<Context, DispatcherError> {
-    let dapp_deployment_block_number =
-        U64::from(config.blockchain_config.dapp_deployment_block_number);
-    let genesis_timestamp: u64 = block_server
-        .query_block(dapp_deployment_block_number)
+    let input_box_deployment_block_number =
+        U64::from(config.blockchain_config.input_box_deployment_block_number);
+    let genesis_block = block_server
+        .query_block(input_box_deployment_block_number)
         .await
         .context(StateServerSnafu)?
-        .timestamp
+        .number
         .as_u64();
-    let epoch_length = config.epoch_duration;
 
     let status = broker.status().await.context(BrokerSnafu)?;
 
@@ -97,11 +96,10 @@ pub async fn create_context(
     ensure!(status.inputs_sent_count == 0, DirtyBrokerSnafu);
 
     let context = Context::new(
-        genesis_timestamp,
-        epoch_length,
+        genesis_block,
+        config.epoch_length,
         dapp_metadata,
         metrics,
-        status,
     );
 
     Ok(context)

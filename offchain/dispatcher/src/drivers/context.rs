@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use crate::{
-    machine::{rollups_broker::BrokerFacadeError, BrokerSend, RollupStatus},
+    machine::{rollups_broker::BrokerFacadeError, BrokerSend},
     metrics::DispatcherMetrics,
 };
 
@@ -11,48 +11,50 @@ use types::foldables::Input;
 
 #[derive(Debug)]
 pub struct Context {
-    inputs_sent_count: u64,
-    last_event_is_finish_epoch: bool,
-    last_timestamp: u64,
+    inputs_sent: u64,
+    last_input_epoch: Option<u64>,
+    last_finished_epoch: Option<u64>,
 
     // constants
-    genesis_timestamp: u64,
+    genesis_block: u64,
     epoch_length: u64,
 
+    // metrics
     dapp_metadata: DAppMetadata,
     metrics: DispatcherMetrics,
 }
 
 impl Context {
     pub fn new(
-        genesis_timestamp: u64,
+        genesis_block: u64,
         epoch_length: u64,
         dapp_metadata: DAppMetadata,
         metrics: DispatcherMetrics,
-        status: RollupStatus,
     ) -> Self {
+        assert!(epoch_length > 0);
         Self {
-            inputs_sent_count: status.inputs_sent_count,
-            last_event_is_finish_epoch: status.last_event_is_finish_epoch,
-            last_timestamp: genesis_timestamp,
-            genesis_timestamp,
+            inputs_sent: 0,
+            last_input_epoch: None,
+            last_finished_epoch: None,
+            genesis_block,
             epoch_length,
             dapp_metadata,
             metrics,
         }
     }
 
-    pub fn inputs_sent_count(&self) -> u64 {
-        self.inputs_sent_count
+    pub fn inputs_sent(&self) -> u64 {
+        self.inputs_sent
     }
 
     pub async fn finish_epoch_if_needed(
         &mut self,
-        event_timestamp: u64,
+        block_number: u64,
         broker: &impl BrokerSend,
     ) -> Result<(), BrokerFacadeError> {
-        if self.should_finish_epoch(event_timestamp) {
-            self.finish_epoch(event_timestamp, broker).await?;
+        let epoch = self.calculate_epoch(block_number);
+        if self.should_finish_epoch(epoch) {
+            self.finish_epoch(broker).await?;
         }
         Ok(())
     }
@@ -62,98 +64,147 @@ impl Context {
         input: &Input,
         broker: &impl BrokerSend,
     ) -> Result<(), BrokerFacadeError> {
-        broker.enqueue_input(self.inputs_sent_count, input).await?;
+        let input_block_number = input.block_added.number.as_u64();
+        self.finish_epoch_if_needed(input_block_number, broker)
+            .await?;
+
+        broker.enqueue_input(self.inputs_sent, input).await?;
+
         self.metrics
             .advance_inputs_sent
             .get_or_create(&self.dapp_metadata)
             .inc();
-        self.inputs_sent_count += 1;
-        self.last_event_is_finish_epoch = false;
+
+        self.inputs_sent += 1;
+
+        let input_epoch = self.calculate_epoch(input_block_number);
+        self.last_finished_epoch.map(|last_finished_epoch| {
+            // Asserting that the calculated epoch comes after the last finished epoch.
+            // (If last_finished_epoch == None then we don't need the assertion.)
+            assert!(input_epoch > last_finished_epoch)
+        });
+        self.last_input_epoch = Some(input_epoch);
+
         Ok(())
     }
 }
 
 impl Context {
-    fn calculate_epoch(&self, timestamp: u64) -> u64 {
-        assert!(timestamp >= self.genesis_timestamp);
-        (timestamp - self.genesis_timestamp) / self.epoch_length
+    fn calculate_epoch(&self, block_number: u64) -> u64 {
+        assert!(block_number >= self.genesis_block);
+        (block_number - self.genesis_block) / self.epoch_length
     }
 
-    // This logic works because we call this function with `event_timestamp` being equal to the
-    // timestamp of each individual input, rather than just the latest from the blockchain.
-    fn should_finish_epoch(&self, event_timestamp: u64) -> bool {
-        if self.inputs_sent_count == 0 || self.last_event_is_finish_epoch {
-            false
-        } else {
-            let current_epoch = self.calculate_epoch(self.last_timestamp);
-            let event_epoch = self.calculate_epoch(event_timestamp);
-            event_epoch > current_epoch
+    fn should_finish_epoch(&self, epoch: u64) -> bool {
+        // Being (last_input_epoch >= last_finished_epoch) a structural invariant.
+        // Being the current epoch the epoch of the last input.
+        //
+        // If last_finished_epoch is None and last_input_epoch is None,
+        // then there are no inputs by definition and the current epoch is empty.
+        //
+        // If last_finished_epoch is Some(x) and last_input_epoch is Some(x),
+        // then an epoch was finished and the last enqueued input belongs to that epoch;
+        // meaning that any subsequent epochs (which includes the current one) are empty.
+        //
+        // If last_finished_epoch is Some(x) and last_input_epoch is Some(y), or
+        // If last_finished_epoch is None    and last_input_epoch is Some(_), then
+        // the current epoch is not empty by definition and by the structural invariant.
+        //
+        // The state in which last_finished_epoch is Some(_) and last_input_epoch is None is
+        // impossible (by the structural invariant).
+        if self.last_finished_epoch == self.last_input_epoch {
+            return false; // if the current epoch is empty
         }
+
+        if epoch == self.last_input_epoch.unwrap() {
+            return false; // if the current epoch is still not over
+        }
+
+        epoch > self.last_finished_epoch.unwrap_or(0)
     }
 
     async fn finish_epoch(
         &mut self,
-        event_timestamp: u64,
         broker: &impl BrokerSend,
     ) -> Result<(), BrokerFacadeError> {
-        assert!(event_timestamp >= self.genesis_timestamp);
-        broker.finish_epoch(self.inputs_sent_count).await?;
+        // Asserting that there are inputs in the current epoch.
+        assert!(
+            match (self.last_input_epoch, self.last_finished_epoch) {
+                (Some(input_epoch), Some(finished_epoch)) => input_epoch > finished_epoch,
+                (Some(_), None) => true, // Consider input_epoch greater than None
+                (None, _) => false,      // None is never greater than any value
+            },
+            "Assertion failed: last_input_epoch should be greater than last_finished_epoch"
+        );
+
+        broker.finish_epoch(self.inputs_sent).await?;
         self.metrics
             .finish_epochs_sent
             .get_or_create(&self.dapp_metadata)
             .inc();
-        self.last_timestamp = event_timestamp;
-        self.last_event_is_finish_epoch = true;
+
+        self.last_finished_epoch = self.last_input_epoch;
         Ok(())
     }
 }
 
 #[cfg(test)]
-mod private_tests {
+mod tests {
+    use std::collections::VecDeque;
+
+    use crate::drivers::mock::Event;
+    use rollups_events::DAppMetadata;
+    use serial_test::serial;
+
     use crate::{drivers::mock, metrics::DispatcherMetrics};
 
-    use super::{Context, DAppMetadata};
+    use super::Context;
 
-    // --------------------------------------------------------------------------------------------
-    // calculate_epoch_for
-    // --------------------------------------------------------------------------------------------
-
-    fn new_context_for_calculate_epoch_test(
-        genesis_timestamp: u64,
-        epoch_length: u64,
-    ) -> Context {
-        Context {
-            inputs_sent_count: 0,
-            last_event_is_finish_epoch: false,
-            last_timestamp: 0,
-            genesis_timestamp,
-            epoch_length,
-            dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
+    impl Default for Context {
+        fn default() -> Self {
+            Context::new(
+                /* genesis_block */ 0,
+                /* epoch_length */ 10,
+                /* dapp_metadata */ DAppMetadata::default(),
+                /* metrics */ DispatcherMetrics::default(),
+            )
         }
     }
 
+    // --------------------------------------------------------------------------------------------
+    // calculate_epoch
+    // --------------------------------------------------------------------------------------------
+
     #[test]
     fn calculate_epoch_with_zero_genesis() {
-        let epoch_length = 3;
-        let context = new_context_for_calculate_epoch_test(0, epoch_length);
-        let n = 10;
+        let mut context = Context::default();
+        context.genesis_block = 0;
+        context.epoch_length = 10;
+
+        let number_of_epochs = 10;
         let mut tested = 0;
-        for epoch in 0..n {
-            let x = epoch * epoch_length;
-            let y = (epoch + 1) * epoch_length;
-            for i in x..y {
-                assert_eq!(context.calculate_epoch(i), epoch);
+        for current_epoch in 0..number_of_epochs {
+            let block_lower_bound = current_epoch * context.epoch_length;
+            let block_upper_bound = (current_epoch + 1) * context.epoch_length;
+            for i in block_lower_bound..block_upper_bound {
+                assert_eq!(context.calculate_epoch(i), current_epoch);
                 tested += 1;
             }
         }
-        assert_eq!(tested, n * epoch_length);
-        assert_eq!(context.calculate_epoch(9), 3);
+
+        assert_eq!(tested, number_of_epochs * context.epoch_length);
+        assert_eq!(
+            context.calculate_epoch(context.epoch_length * number_of_epochs),
+            context.epoch_length
+        );
     }
 
     #[test]
     fn calculate_epoch_with_offset_genesis() {
-        let context = new_context_for_calculate_epoch_test(2, 2);
+        let mut context = Context::default();
+        context.genesis_block = 2;
+        context.epoch_length = 2;
+
         assert_eq!(context.calculate_epoch(2), 0);
         assert_eq!(context.calculate_epoch(3), 0);
         assert_eq!(context.calculate_epoch(4), 1);
@@ -163,68 +214,119 @@ mod private_tests {
 
     #[test]
     #[should_panic]
-    fn calculate_epoch_invalid() {
-        new_context_for_calculate_epoch_test(4, 3).calculate_epoch(2);
+    fn calculate_epoch_should_panic_because_block_came_before_genesis() {
+        let mut context = Context::default();
+        context.genesis_block = 4;
+        context.epoch_length = 4;
+        context.calculate_epoch(2);
     }
 
     // --------------------------------------------------------------------------------------------
-    // should_finish_epoch
+    // should_finish_epoch -- first epoch
     // --------------------------------------------------------------------------------------------
 
     #[test]
-    fn should_not_finish_epoch_because_of_time() {
-        let context = Context {
-            inputs_sent_count: 1,
-            last_event_is_finish_epoch: false,
-            last_timestamp: 3,
-            genesis_timestamp: 0,
-            epoch_length: 5,
-            dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
-        };
-        assert!(!context.should_finish_epoch(4));
+    fn should_finish_the_first_epoch() {
+        let mut context = Context::default();
+        context.inputs_sent = 1;
+        context.last_input_epoch = Some(0);
+        context.last_finished_epoch = None;
+        let epoch = context.calculate_epoch(10);
+        assert_eq!(context.should_finish_epoch(epoch), true);
     }
 
     #[test]
-    fn should_not_finish_epoch_because_of_zero_inputs() {
-        let context = Context {
-            inputs_sent_count: 1,
-            last_event_is_finish_epoch: false,
-            last_timestamp: 3,
-            genesis_timestamp: 0,
-            epoch_length: 5,
-            dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
-        };
-        assert!(!context.should_finish_epoch(4));
+    fn should_finish_the_first_epoch_after_several_blocks() {
+        let mut context = Context::default();
+        context.inputs_sent = 110;
+        context.last_input_epoch = Some(9);
+        context.last_finished_epoch = None;
+        let epoch = context.calculate_epoch(100);
+        assert_eq!(context.should_finish_epoch(epoch), true);
     }
 
     #[test]
-    fn should_finish_epoch_because_of_time() {
-        let context = Context {
-            inputs_sent_count: 1,
-            last_event_is_finish_epoch: false,
-            last_timestamp: 3,
-            genesis_timestamp: 0,
-            epoch_length: 5,
-            dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
-        };
-        assert!(context.should_finish_epoch(5));
+    fn should_not_finish_an_empty_first_epoch() {
+        let mut context = Context::default();
+        context.inputs_sent = 0;
+        context.last_input_epoch = None;
+        context.last_finished_epoch = None;
+        let epoch = context.calculate_epoch(10);
+        assert_eq!(context.should_finish_epoch(epoch), false);
     }
 
     #[test]
-    fn should_finish_epoch_because_last_event_is_finish_epoch() {
-        let context = Context {
-            inputs_sent_count: 1,
-            last_event_is_finish_epoch: true,
-            last_timestamp: 3,
-            genesis_timestamp: 0,
-            epoch_length: 5,
-            dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
-        };
-        assert!(!context.should_finish_epoch(5));
+    fn should_not_finish_a_very_late_empty_first_epoch() {
+        let mut context = Context::default();
+        context.inputs_sent = 0;
+        context.last_input_epoch = None;
+        context.last_finished_epoch = None;
+        let epoch = context.calculate_epoch(2340);
+        assert_eq!(context.should_finish_epoch(epoch), false);
+    }
+
+    #[test]
+    fn should_not_finish_a_timely_first_epoch() {
+        let mut context = Context::default();
+        context.inputs_sent = 1;
+        context.last_input_epoch = Some(0);
+        context.last_finished_epoch = None;
+        let epoch = context.calculate_epoch(9);
+        assert_eq!(context.should_finish_epoch(epoch), false);
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // should_finish_epoch -- other epochs
+    // --------------------------------------------------------------------------------------------
+
+    #[test]
+    fn should_finish_epoch() {
+        let mut context = Context::default();
+        context.inputs_sent = 42;
+        context.last_input_epoch = Some(4);
+        context.last_finished_epoch = Some(3);
+        let epoch = context.calculate_epoch(54);
+        assert_eq!(context.should_finish_epoch(epoch), true);
+    }
+
+    #[test]
+    fn should_finish_epoch_by_a_lot() {
+        let mut context = Context::default();
+        context.inputs_sent = 142;
+        context.last_input_epoch = Some(15);
+        context.last_finished_epoch = Some(2);
+        let epoch = context.calculate_epoch(190);
+        assert_eq!(context.should_finish_epoch(epoch), true);
+    }
+
+    #[test]
+    fn should_not_finish_an_empty_epoch() {
+        let mut context = Context::default();
+        context.inputs_sent = 120;
+        context.last_input_epoch = Some(9);
+        context.last_finished_epoch = Some(9);
+        let epoch = context.calculate_epoch(105);
+        assert_eq!(context.should_finish_epoch(epoch), false);
+    }
+
+    #[test]
+    fn should_not_finish_a_very_late_empty_epoch() {
+        let mut context = Context::default();
+        context.inputs_sent = 120;
+        context.last_input_epoch = Some(15);
+        context.last_finished_epoch = Some(15);
+        let epoch = context.calculate_epoch(1000);
+        assert_eq!(context.should_finish_epoch(epoch), false);
+    }
+
+    #[test]
+    fn should_not_finish_a_timely_epoch() {
+        let mut context = Context::default();
+        context.inputs_sent = 230;
+        context.last_input_epoch = Some(11);
+        context.last_finished_epoch = Some(10);
+        let epoch = context.calculate_epoch(110);
+        assert_eq!(context.should_finish_epoch(epoch), false);
     }
 
     // --------------------------------------------------------------------------------------------
@@ -233,72 +335,33 @@ mod private_tests {
 
     #[tokio::test]
     async fn finish_epoch_ok() {
-        let mut context = Context {
-            inputs_sent_count: 0,
-            last_event_is_finish_epoch: false,
-            last_timestamp: 3,
-            genesis_timestamp: 0,
-            epoch_length: 5,
-            dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
-        };
-        let broker = mock::Broker::new(vec![], vec![]);
-        let timestamp = 6;
-        let result = context.finish_epoch(timestamp, &broker).await;
-        assert!(result.is_ok());
-        assert_eq!(context.last_timestamp, timestamp);
-        assert!(context.last_event_is_finish_epoch);
-    }
+        let mut context = Context::default();
+        context.inputs_sent = 1;
+        context.last_input_epoch = Some(0);
+        context.last_finished_epoch = None;
 
-    #[tokio::test]
-    #[should_panic]
-    async fn finish_epoch_invalid() {
-        let mut context = Context {
-            inputs_sent_count: 0,
-            last_event_is_finish_epoch: false,
-            last_timestamp: 6,
-            genesis_timestamp: 5,
-            epoch_length: 5,
-            dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
-        };
         let broker = mock::Broker::new(vec![], vec![]);
-        let _ = context.finish_epoch(0, &broker).await;
+        let result = context.finish_epoch(&broker).await;
+        assert!(result.is_ok());
+        assert_eq!(context.inputs_sent, 1);
+        assert_eq!(context.last_input_epoch, Some(0));
+        assert_eq!(context.last_finished_epoch, Some(0));
     }
 
     #[tokio::test]
     async fn finish_epoch_broker_error() {
-        let last_timestamp = 3;
-        let last_event_is_finish_epoch = false;
-        let mut context = Context {
-            inputs_sent_count: 0,
-            last_event_is_finish_epoch,
-            last_timestamp,
-            genesis_timestamp: 0,
-            epoch_length: 5,
-            dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
-        };
+        let mut context = Context::default();
+        context.inputs_sent = 1;
+        context.last_input_epoch = Some(0);
+        context.last_finished_epoch = None;
+
         let broker = mock::Broker::with_finish_epoch_error();
-        let result = context.finish_epoch(6, &broker).await;
+        let result = context.finish_epoch(&broker).await;
         assert!(result.is_err());
-        assert_eq!(context.last_timestamp, last_timestamp);
-        assert_eq!(
-            context.last_event_is_finish_epoch,
-            last_event_is_finish_epoch
-        );
+        assert_eq!(context.inputs_sent, 1);
+        assert_eq!(context.last_input_epoch, Some(0));
+        assert_eq!(context.last_finished_epoch, None);
     }
-}
-
-#[cfg(test)]
-mod public_tests {
-    use crate::{
-        drivers::mock::{self, SendInteraction},
-        machine::RollupStatus,
-        metrics::DispatcherMetrics,
-    };
-
-    use super::{Context, DAppMetadata};
 
     // --------------------------------------------------------------------------------------------
     // new
@@ -306,26 +369,29 @@ mod public_tests {
 
     #[tokio::test]
     async fn new_ok() {
-        let genesis_timestamp = 42;
+        let genesis_block = 42;
         let epoch_length = 24;
-        let inputs_sent_count = 150;
-        let last_event_is_finish_epoch = true;
-        let rollup_status = RollupStatus {
-            inputs_sent_count,
-            last_event_is_finish_epoch,
-        };
+
         let context = Context::new(
-            genesis_timestamp,
+            genesis_block,
             epoch_length,
             DAppMetadata::default(),
             DispatcherMetrics::default(),
-            rollup_status,
         );
-        assert_eq!(context.genesis_timestamp, genesis_timestamp);
-        assert_eq!(context.inputs_sent_count, inputs_sent_count);
-        assert_eq!(
-            context.last_event_is_finish_epoch,
-            last_event_is_finish_epoch
+
+        assert_eq!(context.genesis_block, genesis_block);
+        assert_eq!(context.epoch_length, epoch_length);
+        assert_eq!(context.dapp_metadata, DAppMetadata::default());
+    }
+
+    #[test]
+    #[should_panic]
+    fn new_should_panic_because_epoch_length_is_zero() {
+        Context::new(
+            0,
+            0,
+            DAppMetadata::default(),
+            DispatcherMetrics::default(),
         );
     }
 
@@ -335,17 +401,10 @@ mod public_tests {
 
     #[test]
     fn inputs_sent_count() {
-        let inputs_sent_count = 42;
-        let context = Context {
-            inputs_sent_count,
-            last_event_is_finish_epoch: false, // ignored
-            last_timestamp: 0,                 // ignored
-            genesis_timestamp: 0,              // ignored
-            epoch_length: 0,                   // ignored
-            dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
-        };
-        assert_eq!(context.inputs_sent_count(), inputs_sent_count);
+        let number_of_inputs_sent = 42;
+        let mut context = Context::default();
+        context.inputs_sent = number_of_inputs_sent;
+        assert_eq!(context.inputs_sent(), number_of_inputs_sent);
     }
 
     // --------------------------------------------------------------------------------------------
@@ -354,52 +413,40 @@ mod public_tests {
 
     #[tokio::test]
     async fn finish_epoch_if_needed_true() {
-        let mut context = Context {
-            inputs_sent_count: 1,
-            last_event_is_finish_epoch: false,
-            last_timestamp: 2,
-            genesis_timestamp: 0,
-            epoch_length: 4,
-            dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
-        };
+        let mut context = Context::default();
+        context.inputs_sent = 9;
+        context.last_input_epoch = Some(0);
+        context.last_finished_epoch = None;
+
         let broker = mock::Broker::new(vec![], vec![]);
-        let result = context.finish_epoch_if_needed(4, &broker).await;
+        let result = context.finish_epoch_if_needed(12, &broker).await;
         assert!(result.is_ok());
-        broker
-            .assert_send_interactions(vec![SendInteraction::FinishedEpoch(1)]);
+        broker.assert_state(vec![
+            Event::FinishEpoch(0), //
+        ]);
     }
 
     #[tokio::test]
     async fn finish_epoch_if_needed_false() {
-        let mut context = Context {
-            inputs_sent_count: 0,
-            last_event_is_finish_epoch: false,
-            last_timestamp: 2,
-            genesis_timestamp: 0,
-            epoch_length: 2,
-            dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
-        };
+        let mut context = Context::default();
+        context.inputs_sent = 9;
+        context.last_input_epoch = Some(0);
+        context.last_finished_epoch = None;
+
         let broker = mock::Broker::new(vec![], vec![]);
-        let result = context.finish_epoch_if_needed(3, &broker).await;
+        let result = context.finish_epoch_if_needed(9, &broker).await;
         assert!(result.is_ok());
-        broker.assert_send_interactions(vec![]);
+        broker.assert_state(vec![]);
     }
 
     #[tokio::test]
     async fn finish_epoch_if_needed_broker_error() {
-        let mut context = Context {
-            inputs_sent_count: 1,
-            last_event_is_finish_epoch: false,
-            last_timestamp: 2,
-            genesis_timestamp: 0,
-            epoch_length: 4,
-            dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
-        };
+        let mut context = Context::default();
+        context.inputs_sent = 9;
+        context.last_input_epoch = Some(0);
+        context.last_finished_epoch = None;
         let broker = mock::Broker::with_finish_epoch_error();
-        let result = context.finish_epoch_if_needed(4, &broker).await;
+        let result = context.finish_epoch_if_needed(28, &broker).await;
         assert!(result.is_err());
     }
 
@@ -409,40 +456,234 @@ mod public_tests {
 
     #[tokio::test]
     async fn enqueue_input_ok() {
-        let inputs_sent_count = 42;
-        let mut context = Context {
-            inputs_sent_count,
-            last_event_is_finish_epoch: true,
-            last_timestamp: 0,    // ignored
-            genesis_timestamp: 0, // ignored
-            epoch_length: 0,      // ignored
-            dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
-        };
-        let input = mock::new_input(2);
+        let number_of_inputs_sent = 42;
+        let last_input_epoch = Some(1);
+        let last_finished_epoch = None;
+
+        let mut context = Context::default();
+        context.inputs_sent = number_of_inputs_sent;
+        context.last_input_epoch = last_input_epoch;
+        context.last_finished_epoch = last_finished_epoch;
+
+        let input = mock::new_input(22);
         let broker = mock::Broker::new(vec![], vec![]);
         let result = context.enqueue_input(&input, &broker).await;
         assert!(result.is_ok());
-        assert_eq!(context.inputs_sent_count, inputs_sent_count + 1);
-        assert!(!context.last_event_is_finish_epoch);
-        broker.assert_send_interactions(vec![SendInteraction::EnqueuedInput(
-            inputs_sent_count,
-        )]);
+
+        assert_eq!(context.inputs_sent, number_of_inputs_sent + 1);
+        assert_eq!(context.last_input_epoch, Some(2));
+        assert_eq!(context.last_finished_epoch, Some(1));
+
+        broker.assert_state(vec![
+            Event::FinishEpoch(0),
+            Event::Input(number_of_inputs_sent),
+        ]);
     }
 
     #[tokio::test]
     async fn enqueue_input_broker_error() {
-        let mut context = Context {
-            inputs_sent_count: 42,
-            last_event_is_finish_epoch: true,
-            last_timestamp: 0,    // ignored
-            genesis_timestamp: 0, // ignored
-            epoch_length: 0,      // ignored
-            dapp_metadata: DAppMetadata::default(),
-            metrics: DispatcherMetrics::default(),
-        };
+        let mut context = Context::default();
         let broker = mock::Broker::with_enqueue_input_error();
-        let result = context.enqueue_input(&mock::new_input(2), &broker).await;
+        let result = context.enqueue_input(&mock::new_input(82), &broker).await;
         assert!(result.is_err());
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // deterministic behavior
+    // --------------------------------------------------------------------------------------------
+
+    #[derive(Clone)]
+    struct Case {
+        input_blocks: Vec<u64>,
+        epoch_length: u64,
+        last_block: u64,
+        expected: Vec<Event>,
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn deterministic_behavior() {
+        let cases: Vec<Case> = vec![
+            Case {
+                input_blocks: vec![],
+                epoch_length: 2,
+                last_block: 100,
+                expected: vec![],
+            },
+            Case {
+                input_blocks: vec![0, 1, 4, 5],
+                epoch_length: 2,
+                last_block: 10,
+                expected: vec![
+                    Event::Input(0),
+                    Event::Input(1),
+                    Event::FinishEpoch(0),
+                    Event::Input(2),
+                    Event::Input(3),
+                    Event::FinishEpoch(1),
+                ],
+            },
+            Case {
+                input_blocks: vec![0, 0, 0, 7, 7],
+                epoch_length: 2,
+                last_block: 10,
+                expected: vec![
+                    Event::Input(0),
+                    Event::Input(1),
+                    Event::Input(2),
+                    Event::FinishEpoch(0),
+                    Event::Input(3),
+                    Event::Input(4),
+                    Event::FinishEpoch(1),
+                ],
+            },
+            Case {
+                input_blocks: vec![0, 2],
+                epoch_length: 2,
+                last_block: 4,
+                expected: vec![
+                    Event::Input(0),
+                    Event::FinishEpoch(0),
+                    Event::Input(1),
+                    Event::FinishEpoch(1),
+                ],
+            },
+            Case {
+                input_blocks: vec![1, 2, 4],
+                epoch_length: 2,
+                last_block: 6,
+                expected: vec![
+                    Event::Input(0),
+                    Event::FinishEpoch(0),
+                    Event::Input(1),
+                    Event::FinishEpoch(1),
+                    Event::Input(2),
+                    Event::FinishEpoch(2),
+                ],
+            },
+            Case {
+                input_blocks: vec![0, 1, 1, 2, 3, 4, 5, 5, 5, 6, 7],
+                epoch_length: 2,
+                last_block: 7,
+                expected: vec![
+                    Event::Input(0),
+                    Event::Input(1),
+                    Event::Input(2),
+                    Event::FinishEpoch(0),
+                    Event::Input(3),
+                    Event::Input(4),
+                    Event::FinishEpoch(1),
+                    Event::Input(5),
+                    Event::Input(6),
+                    Event::Input(7),
+                    Event::Input(8),
+                    Event::FinishEpoch(2),
+                    Event::Input(9),
+                    Event::Input(10),
+                ],
+            },
+            Case {
+                input_blocks: vec![0, 5, 9],
+                epoch_length: 2,
+                last_block: 10,
+                expected: vec![
+                    Event::Input(0),
+                    Event::FinishEpoch(0),
+                    Event::Input(1),
+                    Event::FinishEpoch(1),
+                    Event::Input(2),
+                    Event::FinishEpoch(2),
+                ],
+            },
+        ];
+        for (i, case) in cases.iter().enumerate() {
+            println!("Testing case {}.", i);
+            test_deterministic_case(case.clone()).await;
+        }
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // auxiliary
+    // --------------------------------------------------------------------------------------------
+
+    async fn test_deterministic_case(case: Case) {
+        let broker1 = create_state_as_inputs_are_being_received(
+            case.epoch_length,
+            case.input_blocks.clone(),
+            case.last_block,
+        )
+        .await;
+        let broker2 = create_state_by_receiving_all_inputs_at_once(
+            case.epoch_length,
+            case.input_blocks.clone(),
+            case.last_block,
+        )
+        .await;
+        broker1.assert_state(case.expected.clone());
+        broker2.assert_state(case.expected.clone());
+    }
+
+    async fn create_state_as_inputs_are_being_received(
+        epoch_length: u64,
+        input_blocks: Vec<u64>,
+        last_block: u64,
+    ) -> mock::Broker {
+        println!("================================================");
+        println!("one_block_at_a_time:");
+
+        let mut input_blocks: VecDeque<_> = input_blocks.into();
+        let mut current_input_block = input_blocks.pop_front();
+
+        let mut context = Context::default();
+        context.epoch_length = epoch_length;
+        let broker = mock::Broker::new(vec![], vec![]);
+
+        for block in 0..=last_block {
+            while let Some(input_block) = current_input_block {
+                if block == input_block {
+                    println!("\tenqueue_input(input_block: {})", block);
+                    let input = mock::new_input(block);
+                    let result = context.enqueue_input(&input, &broker).await;
+                    assert!(result.is_ok());
+
+                    current_input_block = input_blocks.pop_front();
+                } else {
+                    break;
+                }
+            }
+
+            println!("\tfinish_epoch_if_needed(block: {})\n", block);
+            let result = context.finish_epoch_if_needed(block, &broker).await;
+            assert!(result.is_ok());
+        }
+
+        broker
+    }
+
+    async fn create_state_by_receiving_all_inputs_at_once(
+        epoch_length: u64,
+        input_blocks: Vec<u64>,
+        last_block: u64,
+    ) -> mock::Broker {
+        println!("all_inputs_at_once:");
+
+        let mut context = Context::default();
+        context.epoch_length = epoch_length;
+        let broker = mock::Broker::new(vec![], vec![]);
+
+        for block in input_blocks {
+            println!("\tenqueue_input(input_block: {})\n", block);
+            let input = mock::new_input(block);
+            let result = context.enqueue_input(&input, &broker).await;
+            assert!(result.is_ok());
+        }
+
+        println!("\tfinish_epoch_if_needed(last_block: {})", last_block);
+        let result = context.finish_epoch_if_needed(last_block, &broker).await;
+        assert!(result.is_ok());
+
+        println!("================================================");
+
+        broker
     }
 }

@@ -13,32 +13,31 @@ import (
 // NodeConfig contains all the Node variables.
 // See the corresponding environment variable for the variable documentation.
 type NodeConfig struct {
-	LogLevel                                  LogLevel
-	LogPretty                                 bool
-	RollupsEpochDuration                      Duration
-	BlockchainID                              uint64
-	BlockchainHttpEndpoint                    Redacted[string]
-	BlockchainWsEndpoint                      Redacted[string]
-	BlockchainIsLegacy                        bool
-	BlockchainFinalityOffset                  int
-	BlockchainBlockTimeout                    int
-	ContractsApplicationAddress               string
-	ContractsApplicationDeploymentBlockNumber int64
-	ContractsHistoryAddress                   string
-	ContractsAuthorityAddress                 string
-	ContractsInputBoxAddress                  string
-	ContractsInputBoxDeploymentBlockNumber    int64
-	SnapshotDir                               string
-	PostgresEndpoint                          Redacted[string]
-	HttpAddress                               string
-	HttpPort                                  int
-	FeatureHostMode                           bool
-	FeatureDisableClaimer                     bool
-	FeatureDisableMachineHashCheck            bool
-	ExperimentalServerManagerBypassLog        bool
-	ExperimentalSunodoValidatorEnabled        bool
-	ExperimentalSunodoValidatorRedisEndpoint  string
-	Auth                                      Auth
+	LogLevel                                 LogLevel
+	LogPretty                                bool
+	RollupsEpochLength                       uint64
+	BlockchainID                             uint64
+	BlockchainHttpEndpoint                   Redacted[string]
+	BlockchainWsEndpoint                     Redacted[string]
+	BlockchainIsLegacy                       bool
+	BlockchainFinalityOffset                 int
+	BlockchainBlockTimeout                   int
+	ContractsApplicationAddress              string
+	ContractsHistoryAddress                  string
+	ContractsAuthorityAddress                string
+	ContractsInputBoxAddress                 string
+	ContractsInputBoxDeploymentBlockNumber   int64
+	SnapshotDir                              string
+	PostgresEndpoint                         Redacted[string]
+	HttpAddress                              string
+	HttpPort                                 int
+	FeatureHostMode                          bool
+	FeatureDisableClaimer                    bool
+	FeatureDisableMachineHashCheck           bool
+	ExperimentalServerManagerBypassLog       bool
+	ExperimentalSunodoValidatorEnabled       bool
+	ExperimentalSunodoValidatorRedisEndpoint string
+	Auth                                     Auth
 }
 
 // Auth is used to sign transactions.
@@ -75,7 +74,7 @@ func FromEnv() NodeConfig {
 	var config NodeConfig
 	config.LogLevel = getLogLevel()
 	config.LogPretty = getLogPretty()
-	config.RollupsEpochDuration = getEpochDuration()
+	config.RollupsEpochLength = getEpochLength()
 	config.BlockchainID = getBlockchainId()
 	config.BlockchainHttpEndpoint = Redacted[string]{getBlockchainHttpEndpoint()}
 	config.BlockchainWsEndpoint = Redacted[string]{getBlockchainWsEndpoint()}
@@ -83,8 +82,6 @@ func FromEnv() NodeConfig {
 	config.BlockchainFinalityOffset = getBlockchainFinalityOffset()
 	config.BlockchainBlockTimeout = getBlockchainBlockTimeout()
 	config.ContractsApplicationAddress = getContractsApplicationAddress()
-	config.ContractsApplicationDeploymentBlockNumber =
-		getContractsApplicationDeploymentBlockNumber()
 	config.ContractsHistoryAddress = getContractsHistoryAddress()
 	config.ContractsAuthorityAddress = getContractsAuthorityAddress()
 	config.ContractsInputBoxAddress = getContractsInputBoxAddress()
