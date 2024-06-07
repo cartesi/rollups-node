@@ -85,6 +85,16 @@ docker-run-sepolia: docker-clean ## Run the node with the sepolia testnet
 		-f ./build/compose-sepolia.yaml \
 		up
 
+.PHONY: docker-run-distroless
+docker-run-distroless: docker-clean ## Run the node distroless image with the anvil devnet
+	@docker compose \
+		-f ./build/compose-database.yaml \
+		-f ./build/compose-devnet.yaml \
+		-f ./build/compose-snapshot.yaml \
+		-f ./build/compose-node.yaml \
+		-f ./build/compose-node-distroless.yaml \
+		up
+
 .PHONY: docker-clean
 docker-clean: ## Remove the containers and volumes from previous compose run
 	@docker compose \

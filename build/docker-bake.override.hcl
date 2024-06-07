@@ -20,3 +20,7 @@ target "rollups-node-snapshot" {
 target "rollups-node-devnet" {
   tags = ["${DOCKER_ORGANIZATION}/rollups-node-devnet:${TAG}"]
 }
+
+target "rollups-node-distroless" {
+  tags = ["${DOCKER_ORGANIZATION}/rollups-node-distroless:${TAG}"]
+}
