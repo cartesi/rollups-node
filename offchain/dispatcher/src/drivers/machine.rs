@@ -6,9 +6,9 @@ use super::Context;
 use crate::machine::{rollups_broker::BrokerFacadeError, BrokerSend};
 
 use eth_state_fold_types::{ethereum_types::Address, Block};
-use types::foldables::{DAppInputBox, Input, InputBox};
+use types::foldables::{DAppInputBox, InputBox};
 
-use tracing::{debug, instrument, trace};
+use tracing::{debug, instrument};
 
 pub struct MachineDriver {
     dapp_address: Address,
@@ -27,21 +27,17 @@ impl MachineDriver {
         input_box: &InputBox,
         broker: &impl BrokerSend,
     ) -> Result<(), BrokerFacadeError> {
-        let dapp_input_box =
-            match input_box.dapp_input_boxes.get(&self.dapp_address) {
-                None => {
-                    debug!("No inputs for dapp {}", self.dapp_address);
-                    return Ok(());
-                }
+        match input_box.dapp_input_boxes.get(&self.dapp_address) {
+            None => {
+                debug!("No inputs for dapp {}", self.dapp_address);
+            }
+            Some(dapp_input_box) => {
+                self.process_inputs(context, dapp_input_box, broker).await?
+            }
+        };
 
-                Some(d) => d,
-            };
-
-        self.process_inputs(context, dapp_input_box, broker).await?;
-
-        context
-            .finish_epoch_if_needed(block.timestamp.as_u64(), broker)
-            .await?;
+        let block = block.number.as_u64();
+        context.finish_epoch_if_needed(block, broker).await?;
 
         Ok(())
     }
@@ -57,36 +53,16 @@ impl MachineDriver {
     ) -> Result<(), BrokerFacadeError> {
         tracing::trace!(
             "Last input sent to machine manager `{}`, current input `{}`",
-            context.inputs_sent_count(),
+            context.inputs_sent(),
             dapp_input_box.inputs.len()
         );
 
-        let input_slice = dapp_input_box
-            .inputs
-            .skip(context.inputs_sent_count() as usize);
+        let input_slice =
+            dapp_input_box.inputs.skip(context.inputs_sent() as usize);
 
         for input in input_slice {
-            self.process_input(context, &input, broker).await?;
+            context.enqueue_input(&input, broker).await?;
         }
-
-        Ok(())
-    }
-
-    #[instrument(level = "trace", skip_all)]
-    async fn process_input(
-        &self,
-        context: &mut Context,
-        input: &Input,
-        broker: &impl BrokerSend,
-    ) -> Result<(), BrokerFacadeError> {
-        let input_timestamp = input.block_added.timestamp.as_u64();
-        trace!(?context, ?input_timestamp);
-
-        context
-            .finish_epoch_if_needed(input_timestamp, broker)
-            .await?;
-
-        context.enqueue_input(input, broker).await?;
 
         Ok(())
     }
@@ -94,126 +70,46 @@ impl MachineDriver {
 
 #[cfg(test)]
 mod tests {
-    use eth_state_fold_types::{ethereum_types::H160, Block};
-    use rollups_events::DAppMetadata;
     use std::sync::Arc;
+
+    use eth_state_fold_types::ethereum_types::H160;
+    use rollups_events::DAppMetadata;
+    use types::foldables::InputBox;
 
     use crate::{
         drivers::{
-            mock::{self, SendInteraction},
+            machine::MachineDriver,
+            mock::{self, Broker},
             Context,
         },
         machine::RollupStatus,
         metrics::DispatcherMetrics,
     };
 
-    use super::MachineDriver;
-
-    // --------------------------------------------------------------------------------------------
-    // process_input
-    // --------------------------------------------------------------------------------------------
-
-    async fn test_process_input(
-        rollup_status: RollupStatus,
-        input_timestamps: Vec<u32>,
-        expected: Vec<SendInteraction>,
-    ) {
-        let broker = mock::Broker::new(vec![rollup_status], Vec::new());
-        let mut context = Context::new(
-            0,
-            5,
+    fn new_context1(
+        genesis_block: u64,
+        epoch_length: u64,
+        inputs_sent: u64,
+        last_input_epoch: Option<u64>,
+        last_finished_epoch: Option<u64>,
+    ) -> Context {
+        Context::new(
+            genesis_block,
+            epoch_length,
             DAppMetadata::default(),
             DispatcherMetrics::default(),
-            rollup_status,
-        );
-        let machine_driver = MachineDriver::new(H160::random());
-        for block_timestamp in input_timestamps {
-            let input = mock::new_input(block_timestamp);
-            let result = machine_driver
-                .process_input(&mut context, &input, &broker)
-                .await;
-            assert!(result.is_ok());
-        }
-
-        broker.assert_send_interactions(expected);
+            inputs_sent,
+            last_input_epoch,
+            last_finished_epoch,
+        )
     }
 
-    #[tokio::test]
-    async fn process_input_right_before_finish_epoch() {
-        let rollup_status = RollupStatus {
-            inputs_sent_count: 0,
-            last_event_is_finish_epoch: false,
-        };
-        let input_timestamps = vec![4];
-        let send_interactions = vec![SendInteraction::EnqueuedInput(0)];
-        test_process_input(rollup_status, input_timestamps, send_interactions)
-            .await;
-    }
-
-    #[tokio::test]
-    async fn process_input_at_finish_epoch() {
-        let rollup_status = RollupStatus {
-            inputs_sent_count: 1,
-            last_event_is_finish_epoch: false,
-        };
-        let input_timestamps = vec![5];
-        let send_interactions = vec![
-            SendInteraction::FinishedEpoch(1),
-            SendInteraction::EnqueuedInput(1),
-        ];
-        test_process_input(rollup_status, input_timestamps, send_interactions)
-            .await;
-    }
-
-    #[tokio::test]
-    async fn process_input_last_event_is_finish_epoch() {
-        let rollup_status = RollupStatus {
-            inputs_sent_count: 0,
-            last_event_is_finish_epoch: true,
-        };
-        let input_timestamps = vec![5];
-        let send_interactions = vec![SendInteraction::EnqueuedInput(0)];
-        test_process_input(rollup_status, input_timestamps, send_interactions)
-            .await;
-    }
-
-    #[tokio::test]
-    async fn process_input_after_finish_epoch() {
-        let rollup_status = RollupStatus {
-            inputs_sent_count: 3,
-            last_event_is_finish_epoch: false,
-        };
-        let input_timestamps = vec![6, 7];
-        let send_interactions = vec![
-            SendInteraction::FinishedEpoch(3),
-            SendInteraction::EnqueuedInput(3),
-            SendInteraction::EnqueuedInput(4),
-        ];
-        test_process_input(rollup_status, input_timestamps, send_interactions)
-            .await;
-    }
-
-    #[tokio::test]
-    async fn process_input_crossing_two_epochs() {
-        let rollup_status = RollupStatus {
-            inputs_sent_count: 0,
-            last_event_is_finish_epoch: false,
-        };
-        let input_timestamps = vec![3, 4, 5, 6, 7, 9, 10, 11];
-        let send_interactions = vec![
-            SendInteraction::EnqueuedInput(0),
-            SendInteraction::EnqueuedInput(1),
-            SendInteraction::FinishedEpoch(2),
-            SendInteraction::EnqueuedInput(2),
-            SendInteraction::EnqueuedInput(3),
-            SendInteraction::EnqueuedInput(4),
-            SendInteraction::EnqueuedInput(5),
-            SendInteraction::FinishedEpoch(6),
-            SendInteraction::EnqueuedInput(6),
-            SendInteraction::EnqueuedInput(7),
-        ];
-        test_process_input(rollup_status, input_timestamps, send_interactions)
-            .await;
+    fn new_context2(
+        inputs_sent: u64,
+        last_input_epoch: Option<u64>,
+        last_finished_epoch: Option<u64>,
+    ) -> Context {
+        new_context1(0, 10, inputs_sent, last_input_epoch, last_finished_epoch)
     }
 
     // --------------------------------------------------------------------------------------------
@@ -221,23 +117,19 @@ mod tests {
     // --------------------------------------------------------------------------------------------
 
     async fn test_process_inputs(
-        rollup_status: RollupStatus,
-        input_timestamps: Vec<u32>,
-        expected: Vec<SendInteraction>,
+        mut context: Context,
+        input_blocks: Vec<u64>,
+        expected: Vec<mock::Event>,
     ) {
+        let rollup_status = RollupStatus {
+            inputs_sent_count: context.inputs_sent(),
+        };
         let broker = mock::Broker::new(vec![rollup_status], Vec::new());
-        let mut context = Context::new(
-            0,
-            5,
-            DAppMetadata::default(),
-            DispatcherMetrics::default(),
-            rollup_status,
-        );
         let machine_driver = MachineDriver::new(H160::random());
         let dapp_input_box = types::foldables::DAppInputBox {
-            inputs: input_timestamps
+            inputs: input_blocks
                 .iter()
-                .map(|timestamp| Arc::new(mock::new_input(*timestamp)))
+                .map(|block| Arc::new(mock::new_input(*block)))
                 .collect::<Vec<_>>()
                 .into(),
         };
@@ -246,48 +138,36 @@ mod tests {
             .await;
         assert!(result.is_ok());
 
-        broker.assert_send_interactions(expected);
+        broker.assert_state(expected);
     }
 
     #[tokio::test]
-    async fn test_process_inputs_without_skipping() {
-        let rollup_status = RollupStatus {
-            inputs_sent_count: 0,
-            last_event_is_finish_epoch: false,
-        };
-        let input_timestamps = vec![1, 2, 3, 4];
-        let send_interactions = vec![
-            SendInteraction::EnqueuedInput(0),
-            SendInteraction::EnqueuedInput(1),
-            SendInteraction::EnqueuedInput(2),
-            SendInteraction::EnqueuedInput(3),
+    async fn test_process_inputs_without_skipping_inputs() {
+        let context = new_context2(0, None, None);
+        let input_blocks = vec![0, 1, 2, 3];
+        let expected = vec![
+            mock::Event::Input(0),
+            mock::Event::Input(1),
+            mock::Event::Input(2),
+            mock::Event::Input(3),
         ];
-        test_process_inputs(rollup_status, input_timestamps, send_interactions)
-            .await;
+        test_process_inputs(context, input_blocks, expected).await;
     }
 
     #[tokio::test]
-    async fn process_inputs_with_some_skipping() {
-        let rollup_status = RollupStatus {
-            inputs_sent_count: 3,
-            last_event_is_finish_epoch: false,
-        };
-        let input_timestamps = vec![1, 2, 3, 4];
-        let send_interactions = vec![SendInteraction::EnqueuedInput(3)];
-        test_process_inputs(rollup_status, input_timestamps, send_interactions)
-            .await;
+    async fn process_inputs_with_some_skipped_inputs() {
+        let context = new_context2(2, Some(0), None);
+        let input_blocks = vec![0, 1, 2, 3];
+        let expected = vec![mock::Event::Input(2), mock::Event::Input(3)];
+        test_process_inputs(context, input_blocks, expected).await;
     }
 
     #[tokio::test]
-    async fn process_inputs_skipping_all() {
-        let rollup_status = RollupStatus {
-            inputs_sent_count: 4,
-            last_event_is_finish_epoch: false,
-        };
-        let input_timestamps = vec![1, 2, 3, 4];
-        let send_interactions = vec![];
-        test_process_inputs(rollup_status, input_timestamps, send_interactions)
-            .await;
+    async fn process_inputs_skipping_all_inputs() {
+        let context = new_context2(4, Some(0), None);
+        let input_blocks = vec![0, 1, 2, 3];
+        let expected = vec![];
+        test_process_inputs(context, input_blocks, expected).await;
     }
 
     // --------------------------------------------------------------------------------------------
@@ -295,123 +175,236 @@ mod tests {
     // --------------------------------------------------------------------------------------------
 
     async fn test_react(
-        block: Block,
-        rollup_status: RollupStatus,
-        input_timestamps: Vec<u32>,
-        expected: Vec<SendInteraction>,
-    ) {
-        let broker = mock::Broker::new(vec![rollup_status], Vec::new());
-        let mut context = Context::new(
-            0,
-            5,
-            DAppMetadata::default(),
-            DispatcherMetrics::default(),
-            rollup_status,
-        );
-
+        block: u64,
+        mut context: Context,
+        broker: Option<Broker>,
+        input_box: Option<InputBox>,
+        input_blocks: Vec<u64>,
+        expected: Vec<mock::Event>,
+    ) -> (Context, Broker, InputBox) {
+        let rollup_status = RollupStatus {
+            inputs_sent_count: context.inputs_sent(),
+        };
+        let broker = broker
+            .unwrap_or(mock::Broker::new(vec![rollup_status], Vec::new()));
         let dapp_address = H160::random();
         let machine_driver = MachineDriver::new(dapp_address);
 
-        let input_box = mock::new_input_box();
+        let input_box = input_box.unwrap_or(mock::new_input_box());
         let input_box =
-            mock::update_input_box(input_box, dapp_address, input_timestamps);
+            mock::update_input_box(input_box, dapp_address, input_blocks);
 
         let result = machine_driver
-            .react(&mut context, &block, &input_box, &broker)
+            .react(&mut context, &mock::new_block(block), &input_box, &broker)
             .await;
         assert!(result.is_ok());
 
-        broker.assert_send_interactions(expected);
+        broker.assert_state(expected);
+
+        (context, broker, input_box)
     }
 
     #[tokio::test]
     async fn react_without_finish_epoch() {
-        let block = mock::new_block(3);
-        let rollup_status = RollupStatus {
-            inputs_sent_count: 0,
-            last_event_is_finish_epoch: false,
-        };
-        let input_timestamps = vec![1, 2];
-        let send_interactions = vec![
-            SendInteraction::EnqueuedInput(0),
-            SendInteraction::EnqueuedInput(1),
-        ];
-        test_react(block, rollup_status, input_timestamps, send_interactions)
-            .await;
+        let block = 3;
+        let context = new_context2(0, None, None);
+        let input_blocks = vec![1, 2];
+        let expected = vec![mock::Event::Input(0), mock::Event::Input(1)];
+        test_react(block, context, None, None, input_blocks, expected).await;
     }
 
     #[tokio::test]
     async fn react_with_finish_epoch() {
-        let block = mock::new_block(5);
-        let rollup_status = RollupStatus {
-            inputs_sent_count: 0,
-            last_event_is_finish_epoch: false,
-        };
-        let input_timestamps = vec![1, 2];
-        let send_interactions = vec![
-            SendInteraction::EnqueuedInput(0),
-            SendInteraction::EnqueuedInput(1),
-            SendInteraction::FinishedEpoch(2),
+        let block = 10;
+        let context = new_context2(0, None, None);
+        let input_blocks = vec![1, 2];
+        let expected = vec![
+            mock::Event::Input(0),
+            mock::Event::Input(1),
+            mock::Event::Finish,
         ];
-        test_react(block, rollup_status, input_timestamps, send_interactions)
-            .await;
+        test_react(block, context, None, None, input_blocks, expected).await;
     }
 
     #[tokio::test]
     async fn react_with_internal_finish_epoch() {
-        let block = mock::new_block(5);
-        let rollup_status = RollupStatus {
-            inputs_sent_count: 0,
-            last_event_is_finish_epoch: false,
-        };
-        let input_timestamps = vec![4, 5];
-        let send_interactions = vec![
-            SendInteraction::EnqueuedInput(0),
-            SendInteraction::FinishedEpoch(1),
-            SendInteraction::EnqueuedInput(1),
+        let block = 14;
+        let context = new_context2(0, None, None);
+        let input_blocks = vec![9, 10];
+        let expected = vec![
+            mock::Event::Input(0),
+            mock::Event::Finish,
+            mock::Event::Input(1),
         ];
-        test_react(block, rollup_status, input_timestamps, send_interactions)
-            .await;
+        test_react(block, context, None, None, input_blocks, expected).await;
     }
 
     #[tokio::test]
     async fn react_without_inputs() {
-        let rollup_status = RollupStatus {
-            inputs_sent_count: 0,
-            last_event_is_finish_epoch: false,
-        };
-        let broker = mock::Broker::new(vec![rollup_status], Vec::new());
-        let mut context = Context::new(
-            0,
-            5,
-            DAppMetadata::default(),
-            DispatcherMetrics::default(),
-            rollup_status,
-        );
-        let block = mock::new_block(5);
-        let input_box = mock::new_input_box();
-        let machine_driver = MachineDriver::new(H160::random());
-        let result = machine_driver
-            .react(&mut context, &block, &input_box, &broker)
-            .await;
-        assert!(result.is_ok());
-        broker.assert_send_interactions(vec![]);
+        let block = 10;
+        let context = new_context2(0, None, None);
+        let input_blocks = vec![];
+        let expected = vec![];
+        test_react(block, context, None, None, input_blocks, expected).await;
+    }
+
+    // NOTE: this test shows we DON'T close the epoch after the first input!
+    #[tokio::test]
+    async fn react_with_inputs_after_first_epoch_length() {
+        let block = 20;
+        let context = new_context2(0, None, None);
+        let input_blocks = vec![14, 16, 18, 20];
+        let expected = vec![
+            mock::Event::Input(0),
+            mock::Event::Input(1),
+            mock::Event::Input(2),
+            mock::Event::Finish,
+            mock::Event::Input(3),
+        ];
+        test_react(block, context, None, None, input_blocks, expected).await;
     }
 
     #[tokio::test]
-    async fn react_with_inputs_after_first_epoch_length() {
-        let block = mock::new_block(5);
-        let rollup_status = RollupStatus {
-            inputs_sent_count: 0,
-            last_event_is_finish_epoch: false,
-        };
-        let input_timestamps = vec![7, 8];
-        let send_interactions = vec![
-            SendInteraction::EnqueuedInput(0),
-            SendInteraction::FinishedEpoch(1),
-            SendInteraction::EnqueuedInput(1),
+    async fn react_is_deterministic() {
+        let final_expected = vec![
+            mock::Event::Input(0),
+            mock::Event::Finish,
+            mock::Event::Input(1),
+            mock::Event::Input(2),
+            mock::Event::Input(3),
+            mock::Event::Input(4),
+            mock::Event::Input(5),
+            mock::Event::Input(6),
+            mock::Event::Input(7),
+            mock::Event::Input(8),
+            mock::Event::Input(9),
+            mock::Event::Finish,
+            mock::Event::Input(10),
+            mock::Event::Input(11),
+            mock::Event::Input(12),
+            mock::Event::Input(13),
+            mock::Event::Input(14),
+            mock::Event::Input(15),
+            mock::Event::Finish,
+            mock::Event::Input(16),
+            mock::Event::Input(17),
+            mock::Event::Input(18),
         ];
-        test_react(block, rollup_status, input_timestamps, send_interactions)
+
+        {
+            // original
+            let block1 = 3100;
+            let block2 = 6944;
+
+            let context = new_context1(0, 1000, 0, None, None);
+
+            let input_blocks1 = vec![
+                56, //
+                //
+                1078, //
+                1091, //
+                1159, //
+                1204, //
+                1227, //
+                1280, //
+                1298, //
+                1442, //
+                1637, //
+                //
+                2827, //
+                2881, //
+                2883, //
+                2887, //
+                2891, //
+                2934, //
+            ];
+            let mut input_blocks2 = input_blocks1.clone();
+            input_blocks2.append(&mut vec![
+                6160, //
+                6864, //
+                6944, //
+            ]);
+
+            let expected1 = vec![
+                mock::Event::Input(0),
+                mock::Event::Finish,
+                mock::Event::Input(1),
+                mock::Event::Input(2),
+                mock::Event::Input(3),
+                mock::Event::Input(4),
+                mock::Event::Input(5),
+                mock::Event::Input(6),
+                mock::Event::Input(7),
+                mock::Event::Input(8),
+                mock::Event::Input(9),
+                mock::Event::Finish,
+                mock::Event::Input(10),
+                mock::Event::Input(11),
+                mock::Event::Input(12),
+                mock::Event::Input(13),
+                mock::Event::Input(14),
+                mock::Event::Input(15),
+                mock::Event::Finish,
+            ];
+
+            let (context, broker, input_box) = test_react(
+                block1,
+                context,
+                None,
+                None,
+                input_blocks1,
+                expected1,
+            )
             .await;
+
+            test_react(
+                block2,
+                context,
+                Some(broker),
+                Some(input_box),
+                input_blocks2,
+                final_expected.clone(),
+            )
+            .await;
+        }
+
+        {
+            // reconstruction
+            let block = 6944;
+            let context = new_context1(0, 1000, 0, None, None);
+            let input_blocks = vec![
+                56, //
+                //
+                1078, //
+                1091, //
+                1159, //
+                1204, //
+                1227, //
+                1280, //
+                1298, //
+                1442, //
+                1637, //
+                //
+                2827, //
+                2881, //
+                2883, //
+                2887, //
+                2891, //
+                2934, //
+                //
+                6160, //
+                6864, //
+                6944, //
+            ];
+            test_react(
+                block,
+                context,
+                None,
+                None,
+                input_blocks,
+                final_expected,
+            )
+            .await;
+        }
     }
 }

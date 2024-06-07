@@ -188,18 +188,8 @@ impl BrokerSend for BrokerFacade {
 
 impl From<RollupsInput> for RollupStatus {
     fn from(payload: RollupsInput) -> Self {
-        let inputs_sent_count = payload.inputs_sent_count;
-
-        match payload.data {
-            RollupsData::AdvanceStateInput { .. } => RollupStatus {
-                inputs_sent_count,
-                last_event_is_finish_epoch: false,
-            },
-
-            RollupsData::FinishEpoch { .. } => RollupStatus {
-                inputs_sent_count,
-                last_event_is_finish_epoch: true,
-            },
+        RollupStatus {
+            inputs_sent_count: payload.inputs_sent_count,
         }
     }
 }
@@ -330,7 +320,6 @@ mod broker_facade_tests {
         let (_fixture, broker) = setup(&docker).await;
         let status = broker.status().await.expect("'status' function failed");
         assert_eq!(status.inputs_sent_count, 0);
-        assert!(!status.last_event_is_finish_epoch);
     }
 
     #[tokio::test]
@@ -340,7 +329,6 @@ mod broker_facade_tests {
         produce_advance_state_inputs(&fixture, 1).await;
         let status = broker.status().await.expect("'status' function failed");
         assert_eq!(status.inputs_sent_count, 1);
-        assert!(!status.last_event_is_finish_epoch);
     }
 
     #[tokio::test]
@@ -350,28 +338,6 @@ mod broker_facade_tests {
         produce_advance_state_inputs(&fixture, 10).await;
         let status = broker.status().await.expect("'status' function failed");
         assert_eq!(status.inputs_sent_count, 10);
-        assert!(!status.last_event_is_finish_epoch);
-    }
-
-    #[tokio::test]
-    async fn status_is_finish_epoch() {
-        let docker = Cli::default();
-        let (fixture, broker) = setup(&docker).await;
-        produce_finish_epoch_input(&fixture).await;
-        let status = broker.status().await.expect("'status' function failed");
-        assert_eq!(status.inputs_sent_count, 0);
-        assert!(status.last_event_is_finish_epoch);
-    }
-
-    #[tokio::test]
-    async fn status_inputs_with_finish_epoch() {
-        let docker = Cli::default();
-        let (fixture, broker) = setup(&docker).await;
-        produce_advance_state_inputs(&fixture, 5).await;
-        produce_finish_epoch_input(&fixture).await;
-        let status = broker.status().await.expect("'status' function failed");
-        assert_eq!(status.inputs_sent_count, 5);
-        assert!(status.last_event_is_finish_epoch);
     }
 
     // --------------------------------------------------------------------------------------------

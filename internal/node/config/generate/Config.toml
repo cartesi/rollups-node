@@ -45,11 +45,11 @@ the snapshot matches the hash in the Application contract."""
 # Rollups
 #
 
-[rollups.CARTESI_EPOCH_DURATION]
-default = "86400" # 1 day in seconds
-go-type = "Duration"
+[rollups.CARTESI_EPOCH_LENGTH_IN_BLOCKS]
+default = "7200" # 1 day (average) in blocks (considering one block is mined every 12 seconds)
+go-type = "uint64"
 description = """
-Duration of a rollups epoch in seconds.
+Length of a rollups epoch in blocks.
 
 At the end of each epoch, the node will send claims to the blockchain."""
 

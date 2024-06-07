@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added Rollups end-to-end test using Echo Dapp
 
+### Fixed
+
+- Fixed a bug that caused a `authority_claimer::ClaimMismatch` error when reprocessing inputs after a reboot.
+
+### Changed
+
+- Changed the dispatcher to close epochs based on block numbers instead of block timestamps.
+- **BREAKING**: replaced `CARTESI_EPOCH_DURATION` with `CARTESI_EPOCH_LENGTH_IN_BLOCKS` to match the new epoch algorithm, and set its default value to 7200 (1 day worth of blocks, in average, considering one block is mined every 12 seconds).
+
 ## [1.4.0] 2024-04-09
 
 ### Added

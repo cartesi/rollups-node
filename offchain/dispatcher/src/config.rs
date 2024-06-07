@@ -30,8 +30,8 @@ pub struct DispatcherEnvCLIConfig {
     #[command(flatten)]
     pub blockchain_config: BlockchainCLIConfig,
 
-    /// Duration of rollups epoch in seconds, for which dispatcher will make claims.
-    #[arg(long, env, default_value = "604800")]
+    /// Duration of rollups epoch in blocks, for which dispatcher will make claims.
+    #[arg(long, env, default_value = "7200")]
     pub rd_epoch_duration: u64,
 
     /// Chain ID

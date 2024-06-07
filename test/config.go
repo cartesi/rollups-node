@@ -5,9 +5,7 @@
 package endtoendtests
 
 import (
-	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/cartesi/rollups-node/internal/node/config"
 	"github.com/cartesi/rollups-node/pkg/addresses"
@@ -22,7 +20,7 @@ const (
 	LocalHttpPort                         = 10000
 	LocalBlockTimeout                     = 120
 	LocalFinalityOffset                   = 1
-	LocalEpochDurationInSeconds           = 240
+	LocalEpochDurationInSeconds           = 20
 )
 
 func NewLocalNodeConfig(localPostgresEnpoint string, localBlockchainHttpEndpoint string,
@@ -41,8 +39,7 @@ func NewLocalNodeConfig(localPostgresEnpoint string, localBlockchainHttpEndpoint
 		config.Redacted[string]{Value: localPostgresEnpoint}
 
 	//Epoch
-	nodeConfig.RollupsEpochDuration, _ =
-		time.ParseDuration(fmt.Sprintf("%ds", LocalEpochDurationInSeconds))
+	nodeConfig.RollupsEpochLengthInBlocks = LocalEpochDurationInSeconds
 
 	//Blochain
 	nodeConfig.BlockchainID = LocalBlockchainID
