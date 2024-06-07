@@ -14,7 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Changed the dispatcher to close epochs based on block numbers instead of block timestamps.
+- **BREAKING**: changed the dispatcher to use the `CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER` environment variable instead of `CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER`.
+- **BREAKING**: replaced the environment variable `CARTESI_EPOCH_DURATION` with `CARTESI_EPOCH_LENGTH` to match the new epoch algorithm, and set its default value to 7200 (1 day worth of blocks, considering one block is mined every 12 seconds).
+- **BREAKING**: replaced the internal environment variable `RD_EPOCH_DURATION` with `RD_EPOCH_LENGTH` to match the new epoch algorithm, and also set its default value to 7200.
 - Bumped Rust Version to 1.78.0
+
+### Removed
+
+- Removed `CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER` environment variable.
 
 ## [1.4.0] 2024-04-09
 

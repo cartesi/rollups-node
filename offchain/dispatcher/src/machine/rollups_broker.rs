@@ -69,7 +69,24 @@ impl BrokerFacade {
         broker: &mut sync::MutexGuard<'_, Broker>,
     ) -> Result<BrokerStreamStatus, BrokerFacadeError> {
         let event = self.peek(broker).await?;
-        Ok(event.into())
+
+        let old_epoch_index = event
+            .clone()
+            .map(|event| event.payload.epoch_index)
+            .unwrap_or(0);
+
+        // The epoch gets incremented inside this ".into()"!
+        // Check From<Event<RollupsInput>> for BrokerStreamStatus
+        let status: BrokerStreamStatus = event.into();
+
+        // Asserting that the epoch_index is continuous.
+        let new_epoch_index = status.epoch_number;
+        assert!(
+            new_epoch_index == old_epoch_index
+                || new_epoch_index == old_epoch_index + 1
+        );
+
+        Ok(status)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -188,18 +205,8 @@ impl BrokerSend for BrokerFacade {
 
 impl From<RollupsInput> for RollupStatus {
     fn from(payload: RollupsInput) -> Self {
-        let inputs_sent_count = payload.inputs_sent_count;
-
-        match payload.data {
-            RollupsData::AdvanceStateInput { .. } => RollupStatus {
-                inputs_sent_count,
-                last_event_is_finish_epoch: false,
-            },
-
-            RollupsData::FinishEpoch { .. } => RollupStatus {
-                inputs_sent_count,
-                last_event_is_finish_epoch: true,
-            },
+        RollupStatus {
+            inputs_sent_count: payload.inputs_sent_count,
         }
     }
 }
@@ -219,7 +226,7 @@ impl From<Event<RollupsInput>> for BrokerStreamStatus {
 
             RollupsData::FinishEpoch { .. } => Self {
                 id,
-                epoch_number: epoch_index + 1,
+                epoch_number: epoch_index + 1, // Epoch number being incremented!
                 status: payload.into(),
             },
         }
@@ -330,7 +337,6 @@ mod broker_facade_tests {
         let (_fixture, broker) = setup(&docker).await;
         let status = broker.status().await.expect("'status' function failed");
         assert_eq!(status.inputs_sent_count, 0);
-        assert!(!status.last_event_is_finish_epoch);
     }
 
     #[tokio::test]
@@ -340,7 +346,6 @@ mod broker_facade_tests {
         produce_advance_state_inputs(&fixture, 1).await;
         let status = broker.status().await.expect("'status' function failed");
         assert_eq!(status.inputs_sent_count, 1);
-        assert!(!status.last_event_is_finish_epoch);
     }
 
     #[tokio::test]
@@ -350,28 +355,6 @@ mod broker_facade_tests {
         produce_advance_state_inputs(&fixture, 10).await;
         let status = broker.status().await.expect("'status' function failed");
         assert_eq!(status.inputs_sent_count, 10);
-        assert!(!status.last_event_is_finish_epoch);
-    }
-
-    #[tokio::test]
-    async fn status_is_finish_epoch() {
-        let docker = Cli::default();
-        let (fixture, broker) = setup(&docker).await;
-        produce_finish_epoch_input(&fixture).await;
-        let status = broker.status().await.expect("'status' function failed");
-        assert_eq!(status.inputs_sent_count, 0);
-        assert!(status.last_event_is_finish_epoch);
-    }
-
-    #[tokio::test]
-    async fn status_inputs_with_finish_epoch() {
-        let docker = Cli::default();
-        let (fixture, broker) = setup(&docker).await;
-        produce_advance_state_inputs(&fixture, 5).await;
-        produce_finish_epoch_input(&fixture).await;
-        let status = broker.status().await.expect("'status' function failed");
-        assert_eq!(status.inputs_sent_count, 5);
-        assert!(status.last_event_is_finish_epoch);
     }
 
     // --------------------------------------------------------------------------------------------

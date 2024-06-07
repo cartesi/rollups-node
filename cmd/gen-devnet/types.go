@@ -7,5 +7,4 @@ type DeploymentInfo struct {
 	AuthorityAddress   string `json:"CARTESI_CONTRACTS_AUTHORITY_ADDRESS"`
 	HistoryAddress     string `json:"CARTESI_CONTRACTS_HISTORY_ADDRESS"`
 	ApplicationAddress string `json:"CARTESI_CONTRACTS_APPLICATION_ADDRESS"`
-	BlockNumber        string `json:"CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER"`
 }

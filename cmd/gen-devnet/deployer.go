@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -44,7 +43,7 @@ func createApplication(ctx context.Context, hash string) (DeploymentInfo, error)
 	var depInfo DeploymentInfo
 
 	// Create the Authority/History pair
-	contractAddresses, _, err := createContracts(ctx,
+	contractAddresses, err := createContracts(ctx,
 		common.Address.Hex(addresses.GetTestBook().AuthorityHistoryPairFactory),
 		"newAuthorityHistoryPair(address,bytes32)(address,address)",
 		CONTRACT_OWNER_ADDRESS,
@@ -57,7 +56,7 @@ func createApplication(ctx context.Context, hash string) (DeploymentInfo, error)
 	depInfo.HistoryAddress = contractAddresses[1]
 
 	// Create the Application, passing the address of the newly created Authority
-	contractAddresses, blockNumber, err := createContracts(ctx,
+	contractAddresses, err = createContracts(ctx,
 		common.Address.Hex(addresses.GetTestBook().CartesiDAppFactory),
 		"newApplication(address,address,bytes32,bytes32)(address)",
 		depInfo.AuthorityAddress,
@@ -69,7 +68,6 @@ func createApplication(ctx context.Context, hash string) (DeploymentInfo, error)
 	}
 
 	depInfo.ApplicationAddress = contractAddresses[0]
-	depInfo.BlockNumber = blockNumber
 
 	return depInfo, nil
 }
@@ -80,7 +78,7 @@ func createApplication(ctx context.Context, hash string) (DeploymentInfo, error)
 //
 // Warning: a second call to a contract with the same arguments will fail.
 func createContracts(ctx context.Context,
-	args ...string) ([]string, string, error) {
+	args ...string) ([]string, error) {
 	commonArgs := []string{"--rpc-url", RPC_URL}
 	commonArgs = append(commonArgs, args...)
 
@@ -94,7 +92,7 @@ func createContracts(ctx context.Context,
 	castCall.Stdout = &outStrBuilder
 	err := castCall.Run()
 	if err != nil {
-		return contractAddresses, "", fmt.Errorf("command failed %v: %v", castCall.Args, err)
+		return contractAddresses, fmt.Errorf("command failed %v: %v", castCall.Args, err)
 	}
 	contractAddresses = strings.Fields(outStrBuilder.String())
 
@@ -110,20 +108,13 @@ func createContracts(ctx context.Context,
 	castSend.Stdout = &outStrBuilder
 	err = castSend.Run()
 	if err != nil {
-		return contractAddresses, "", fmt.Errorf("command failed %v: %v", castSend.Args, err)
+		return contractAddresses, fmt.Errorf("command failed %v: %v", castSend.Args, err)
 	}
 
 	if VerboseLog {
 		fmt.Printf("deployer: command: %s\n", castSend.Args)
 		fmt.Printf("deployer: output: %s\n", outStrBuilder.String())
 	}
-	// Extract blockNumber from JSON output
-	jsonMap := make(map[string](any))
-	err = json.Unmarshal([]byte([]byte(outStrBuilder.String())), &jsonMap)
-	if err != nil {
-		return contractAddresses, "", fmt.Errorf("failed to extract block number, %s", err.Error())
-	}
-	blockNumber := jsonMap["blockNumber"].(string)
 
-	return contractAddresses, blockNumber, nil
+	return contractAddresses, nil
 }
