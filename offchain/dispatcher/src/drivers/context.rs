@@ -51,6 +51,7 @@ impl Context {
         event_timestamp: u64,
         broker: &impl BrokerSend,
     ) -> Result<(), BrokerFacadeError> {
+        println!("input_tm: {}", event_timestamp);
         if self.should_finish_epoch(event_timestamp) {
             self.finish_epoch(event_timestamp, broker).await?;
         }

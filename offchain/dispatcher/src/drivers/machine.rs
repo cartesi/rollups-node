@@ -39,6 +39,7 @@ impl MachineDriver {
 
         self.process_inputs(context, dapp_input_box, broker).await?;
 
+        println!("block.timestamp: {:?}", block.timestamp.as_u64());
         context
             .finish_epoch_if_needed(block.timestamp.as_u64(), broker)
             .await?;
@@ -96,6 +97,7 @@ impl MachineDriver {
 mod tests {
     use eth_state_fold_types::{ethereum_types::H160, Block};
     use rollups_events::DAppMetadata;
+    use serial_test::serial;
     use std::sync::Arc;
 
     use crate::{
@@ -302,8 +304,8 @@ mod tests {
     ) {
         let broker = mock::Broker::new(vec![rollup_status], Vec::new());
         let mut context = Context::new(
-            0,
-            5,
+            1716392210,
+            86400,
             DAppMetadata::default(),
             DispatcherMetrics::default(),
             rollup_status,
@@ -413,5 +415,119 @@ mod tests {
         ];
         test_react(block, rollup_status, input_timestamps, send_interactions)
             .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn react_bug_buster_original() {
+        let block = mock::new_block(1716774006);
+        let rollup_status = RollupStatus {
+            inputs_sent_count: 0,
+            last_event_is_finish_epoch: false,
+        };
+        let input_timestamps = vec![
+            1716495424, //
+            1716514994, //
+            1716550722, //
+            1716551814, //
+            1716552408, //
+            1716558302, //
+            1716558322, //
+            1716564194, //
+            1716564306, //
+            1716564696, //
+            1716568314, //
+            1716568652, //
+            1716569100, //
+            1716569136, //
+            1716578858, //
+            1716578948, //
+        ];
+        let expected = vec![
+            SendInteraction::EnqueuedInput(0),
+            SendInteraction::FinishedEpoch(1),
+            SendInteraction::EnqueuedInput(1),
+            SendInteraction::EnqueuedInput(2),
+            SendInteraction::EnqueuedInput(3),
+            SendInteraction::EnqueuedInput(4),
+            SendInteraction::EnqueuedInput(5),
+            SendInteraction::EnqueuedInput(6),
+            SendInteraction::EnqueuedInput(7),
+            SendInteraction::EnqueuedInput(8),
+            SendInteraction::EnqueuedInput(9),
+            SendInteraction::FinishedEpoch(10),
+            SendInteraction::EnqueuedInput(10),
+            SendInteraction::EnqueuedInput(11),
+            SendInteraction::EnqueuedInput(12),
+            SendInteraction::EnqueuedInput(13),
+            SendInteraction::EnqueuedInput(14),
+            SendInteraction::EnqueuedInput(15),
+            SendInteraction::FinishedEpoch(16),
+        ];
+        test_react(block, rollup_status, input_timestamps, expected).await;
+
+        let block2 = mock::new_block(1716858268);
+        let input_timestamps2 = vec![1716858268];
+        let expected2 = vec![
+            SendInteraction::EnqueuedInput(0),
+            SendInteraction::FinishedEpoch(1),
+        ];
+        test_react(block2, rollup_status, input_timestamps2, expected2).await
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn react_bug_buster_reconstruction() {
+        let block = mock::new_block(1716859860);
+        let rollup_status = RollupStatus {
+            inputs_sent_count: 0,
+            last_event_is_finish_epoch: false,
+        };
+        let input_timestamps = vec![
+            1716495424, //
+            1716514994, //
+            1716550722, //
+            1716551814, //
+            1716552408, //
+            1716558302, //
+            1716558322, //
+            1716564194, //
+            1716564306, //
+            1716564696, //
+            1716568314, //
+            1716568652, //
+            1716569100, //
+            1716569136, //
+            1716578858, //
+            1716578948, //
+            1716858268, // extra
+            1716858428, // extra
+            1716859860, // extra
+        ];
+        let expected = vec![
+            SendInteraction::EnqueuedInput(0),
+            SendInteraction::FinishedEpoch(1),
+            SendInteraction::EnqueuedInput(1),
+            SendInteraction::EnqueuedInput(2),
+            SendInteraction::EnqueuedInput(3),
+            SendInteraction::EnqueuedInput(4),
+            SendInteraction::EnqueuedInput(5),
+            SendInteraction::EnqueuedInput(6),
+            SendInteraction::EnqueuedInput(7),
+            SendInteraction::EnqueuedInput(8),
+            SendInteraction::EnqueuedInput(9),
+            SendInteraction::FinishedEpoch(10),
+            SendInteraction::EnqueuedInput(10),
+            SendInteraction::EnqueuedInput(11),
+            SendInteraction::EnqueuedInput(12),
+            SendInteraction::EnqueuedInput(13),
+            SendInteraction::EnqueuedInput(14),
+            SendInteraction::EnqueuedInput(15),
+            SendInteraction::FinishedEpoch(16),
+            SendInteraction::EnqueuedInput(16),
+            SendInteraction::EnqueuedInput(17),
+            SendInteraction::EnqueuedInput(18),
+        ];
+        test_react(block, rollup_status, input_timestamps, expected).await;
     }
 }

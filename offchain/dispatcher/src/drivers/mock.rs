@@ -140,13 +140,17 @@ impl Broker {
         assert_eq!(
             self.send_interactions_len(),
             expected.len(),
-            "{:?}",
-            self.send_interactions
+            "\n{:?}\n{:?}",
+            self.send_interactions.lock().unwrap().deref(),
+            expected
         );
         println!("Send interactions:");
         for (i, expected) in expected.iter().enumerate() {
             let send_interaction = self.get_send_interaction(i);
-            println!("{:?} - {:?}", send_interaction, expected);
+            println!(
+                "index: {:?} => {:?} - {:?}",
+                i, send_interaction, expected
+            );
             assert_eq!(send_interaction, *expected);
         }
     }
