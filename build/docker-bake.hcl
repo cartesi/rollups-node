@@ -9,6 +9,7 @@ group "default" {
     "rollups-node",
     "rollups-node-snapshot",
     "rollups-node-devnet",
+    "rollups-node-distroless"
   ]
 }
 
@@ -43,4 +44,9 @@ target "rollups-node-snapshot" {
 target "rollups-node-devnet" {
   inherits = ["common"]
   target   = "rollups-node-devnet"
+}
+
+target "rollups-node-distroless" {
+  inherits = ["common"]
+  target   = "rollups-node-distroless"
 }
