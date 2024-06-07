@@ -13,8 +13,8 @@ type (
 
 const (
 	// type
-	YieldAutomatic = C.HTIF_YIELD_CMD_AUTOMATIC_DEF
-	YieldManual    = C.HTIF_YIELD_CMD_MANUAL_DEF
+	YieldAutomatic HtifYieldType = C.HTIF_YIELD_CMD_AUTOMATIC_DEF
+	YieldManual    HtifYieldType = C.HTIF_YIELD_CMD_MANUAL_DEF
 
 	// NOTE: these do not form an enum (e.g., automatic-progress == manual-accepted).
 
