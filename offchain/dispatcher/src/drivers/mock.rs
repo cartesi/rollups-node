@@ -24,21 +24,21 @@ use crate::machine::{
 // auxiliary functions
 // ------------------------------------------------------------------------------------------------
 
-pub fn new_block(timestamp: u32) -> Block {
+pub fn new_block(number: u64) -> Block {
     Block {
         hash: H256::random(),
-        number: 0.into(),
+        number: number.into(),
         parent_hash: H256::random(),
-        timestamp: timestamp.into(),
+        timestamp: 0.into(),
         logs_bloom: Bloom::default(),
     }
 }
 
-pub fn new_input(timestamp: u32) -> Input {
+pub fn new_input(block: u64) -> Input {
     Input {
         sender: Arc::new(H160::random()),
         payload: vec![],
-        block_added: Arc::new(new_block(timestamp)),
+        block_added: Arc::new(new_block(block)),
         dapp: Arc::new(H160::random()),
         tx_hash: Arc::new(H256::default()),
     }
@@ -55,11 +55,11 @@ pub fn new_input_box() -> InputBox {
 pub fn update_input_box(
     input_box: InputBox,
     dapp_address: Address,
-    timestamps: Vec<u32>,
+    blocks: Vec<u64>,
 ) -> InputBox {
-    let inputs = timestamps
+    let inputs = blocks
         .iter()
-        .map(|timestamp| Arc::new(new_input(*timestamp)))
+        .map(|block| Arc::new(new_input(*block)))
         .collect::<Vec<_>>();
     let inputs = Vector::from(inputs);
     let dapp_input_boxes = input_box
@@ -77,16 +77,16 @@ pub fn update_input_box(
 // ------------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SendInteraction {
-    EnqueuedInput(u64),
-    FinishedEpoch(u64),
+pub enum Event {
+    Input(u64), // input index
+    Finish,
 }
 
 #[derive(Debug)]
 pub struct Broker {
     pub rollup_statuses: Mutex<VecDeque<RollupStatus>>,
     pub next_claims: Mutex<VecDeque<RollupsClaim>>,
-    pub send_interactions: Mutex<Vec<SendInteraction>>,
+    pub events: Mutex<Vec<Event>>,
     status_error: bool,
     enqueue_input_error: bool,
     finish_epoch_error: bool,
@@ -97,7 +97,7 @@ impl Broker {
         Self {
             rollup_statuses: Mutex::new(VecDeque::new()),
             next_claims: Mutex::new(VecDeque::new()),
-            send_interactions: Mutex::new(Vec::new()),
+            events: Mutex::new(Vec::new()),
             status_error: false,
             enqueue_input_error: false,
             finish_epoch_error: false,
@@ -126,28 +126,29 @@ impl Broker {
         broker
     }
 
-    fn send_interactions_len(&self) -> usize {
-        let mutex_guard = self.send_interactions.lock().unwrap();
+    fn events_len(&self) -> usize {
+        let mutex_guard = self.events.lock().unwrap();
         mutex_guard.deref().len()
     }
 
-    fn get_send_interaction(&self, i: usize) -> SendInteraction {
-        let mutex_guard = self.send_interactions.lock().unwrap();
+    fn get_event(&self, i: usize) -> Event {
+        let mutex_guard = self.events.lock().unwrap();
         mutex_guard.deref().get(i).unwrap().clone()
     }
 
-    pub fn assert_send_interactions(&self, expected: Vec<SendInteraction>) {
+    pub fn assert_state(&self, expected: Vec<Event>) {
         assert_eq!(
-            self.send_interactions_len(),
+            self.events_len(),
             expected.len(),
-            "{:?}",
-            self.send_interactions
+            "\n{:?}\n{:?}",
+            self.events.lock().unwrap().deref(),
+            expected
         );
-        println!("Send interactions:");
+        println!("Events:");
         for (i, expected) in expected.iter().enumerate() {
-            let send_interaction = self.get_send_interaction(i);
-            println!("{:?} - {:?}", send_interaction, expected);
-            assert_eq!(send_interaction, *expected);
+            let event = self.get_event(i);
+            println!("index: {:?} => {:?} - {:?}", i, event, expected);
+            assert_eq!(event, *expected);
         }
     }
 }
@@ -174,25 +175,18 @@ impl BrokerSend for Broker {
         if self.enqueue_input_error {
             whatever!("enqueue_input error")
         } else {
-            let mut mutex_guard = self.send_interactions.lock().unwrap();
-            mutex_guard
-                .deref_mut()
-                .push(SendInteraction::EnqueuedInput(input_index));
+            let mut mutex_guard = self.events.lock().unwrap();
+            mutex_guard.deref_mut().push(Event::Input(input_index));
             Ok(())
         }
     }
 
-    async fn finish_epoch(
-        &self,
-        inputs_sent_count: u64,
-    ) -> Result<(), BrokerFacadeError> {
+    async fn finish_epoch(&self, _: u64) -> Result<(), BrokerFacadeError> {
         if self.finish_epoch_error {
             whatever!("finish_epoch error")
         } else {
-            let mut mutex_guard = self.send_interactions.lock().unwrap();
-            mutex_guard
-                .deref_mut()
-                .push(SendInteraction::FinishedEpoch(inputs_sent_count));
+            let mut mutex_guard = self.events.lock().unwrap();
+            mutex_guard.deref_mut().push(Event::Finish);
             Ok(())
         }
     }

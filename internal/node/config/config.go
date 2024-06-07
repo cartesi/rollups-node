@@ -15,7 +15,7 @@ import (
 type NodeConfig struct {
 	LogLevel                                  LogLevel
 	LogPretty                                 bool
-	RollupsEpochDuration                      Duration
+	RollupsEpochLengthInBlocks                uint64
 	BlockchainID                              uint64
 	BlockchainHttpEndpoint                    Redacted[string]
 	BlockchainWsEndpoint                      Redacted[string]
@@ -75,7 +75,7 @@ func FromEnv() NodeConfig {
 	var config NodeConfig
 	config.LogLevel = getLogLevel()
 	config.LogPretty = getLogPretty()
-	config.RollupsEpochDuration = getEpochDuration()
+	config.RollupsEpochLengthInBlocks = getEpochLengthInBlocks()
 	config.BlockchainID = getBlockchainId()
 	config.BlockchainHttpEndpoint = Redacted[string]{getBlockchainHttpEndpoint()}
 	config.BlockchainWsEndpoint = Redacted[string]{getBlockchainWsEndpoint()}
