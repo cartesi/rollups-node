@@ -26,6 +26,8 @@ tokio-stream.workspace = true
 tonic.workspace = true
 tracing.workspace = true
 
+chrono = "0.4.38"
+
 [dev-dependencies]
 test-fixtures = { path = "../test-fixtures" }
 

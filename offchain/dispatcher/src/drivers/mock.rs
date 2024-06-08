@@ -11,6 +11,7 @@ use rollups_events::RollupsClaim;
 use snafu::whatever;
 use std::{
     collections::VecDeque,
+    fmt,
     ops::{Deref, DerefMut},
     sync::{Arc, Mutex},
 };
@@ -82,6 +83,15 @@ pub enum SendInteraction {
     FinishedEpoch(u64),
 }
 
+impl fmt::Display for SendInteraction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SendInteraction::EnqueuedInput(i) => write!(f, "Input  {:?}", i),
+            SendInteraction::FinishedEpoch(i) => write!(f, "FINISH {:?}", i),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Broker {
     pub rollup_statuses: Mutex<VecDeque<RollupStatus>>,
@@ -137,20 +147,39 @@ impl Broker {
     }
 
     pub fn assert_send_interactions(&self, expected: Vec<SendInteraction>) {
-        assert_eq!(
-            self.send_interactions_len(),
-            expected.len(),
-            "\n{:?}\n{:?}",
-            self.send_interactions.lock().unwrap().deref(),
-            expected
-        );
-        println!("Send interactions:");
+        let debug_string = {
+            let mut actuals = self
+                .send_interactions
+                .lock()
+                .unwrap()
+                .clone()
+                .into_iter()
+                .map(|x| x.to_string())
+                .collect::<VecDeque<_>>();
+            let mut expecteds = expected
+                .clone()
+                .into_iter()
+                .map(|x| x.to_string())
+                .collect::<VecDeque<_>>();
+            let mut s = "ACTUALS\t\tEXPECTED".to_string();
+            while !(actuals.is_empty() && expecteds.is_empty()) {
+                s = format!(
+                    "{}\n{}\t{}",
+                    s,
+                    actuals.pop_front().unwrap_or("---".to_string()),
+                    expecteds.pop_front().unwrap_or("---".to_string())
+                );
+            }
+            s
+        };
+
+        println!("--------------------------");
+        println!("Send interactions: \n{}", debug_string);
+        println!("--------------------------");
+
+        assert_eq!(self.send_interactions_len(), expected.len());
         for (i, expected) in expected.iter().enumerate() {
             let send_interaction = self.get_send_interaction(i);
-            println!(
-                "index: {:?} => {:?} - {:?}",
-                i, send_interaction, expected
-            );
             assert_eq!(send_interaction, *expected);
         }
     }

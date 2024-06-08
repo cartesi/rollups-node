@@ -6,8 +6,16 @@ use crate::{
     metrics::DispatcherMetrics,
 };
 
+use chrono::DateTime;
 use rollups_events::DAppMetadata;
 use types::foldables::Input;
+
+pub fn timestamp_to_string(timestamp: u64) -> String {
+    return DateTime::from_timestamp(timestamp as i64, 0)
+        .unwrap()
+        .format("dia %d/%m %H:%M:%S")
+        .to_string();
+}
 
 #[derive(Debug)]
 pub struct Context {
@@ -31,6 +39,7 @@ impl Context {
         metrics: DispatcherMetrics,
         status: RollupStatus,
     ) -> Self {
+        println!("Genesis: {}", timestamp_to_string(genesis_timestamp));
         Self {
             inputs_sent_count: status.inputs_sent_count,
             last_event_is_finish_epoch: status.last_event_is_finish_epoch,
@@ -51,10 +60,10 @@ impl Context {
         event_timestamp: u64,
         broker: &impl BrokerSend,
     ) -> Result<(), BrokerFacadeError> {
-        println!("input_tm: {}", event_timestamp);
         if self.should_finish_epoch(event_timestamp) {
             self.finish_epoch(event_timestamp, broker).await?;
         }
+        println!("input: {}", timestamp_to_string(event_timestamp));
         Ok(())
     }
 
@@ -103,8 +112,16 @@ impl Context {
             .finish_epochs_sent
             .get_or_create(&self.dapp_metadata)
             .inc();
+        let old_timestamp = self.last_timestamp;
         self.last_timestamp = event_timestamp;
         self.last_event_is_finish_epoch = true;
+
+        println!(
+            "Finish epoch! ({}) ({})",
+            timestamp_to_string(old_timestamp),
+            timestamp_to_string(self.last_timestamp)
+        );
+
         Ok(())
     }
 }
