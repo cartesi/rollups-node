@@ -52,12 +52,14 @@ impl MachineDriver {
         let last_input =
             self.process_inputs(context, dapp_input_box, broker).await?;
 
-        context
-            .finish_epoch_if_needed(
-                last_input.block_added.timestamp.as_u64(),
-                broker,
-            )
-            .await?;
+        if let Some(last_input) = last_input {
+            context
+                .finish_epoch_if_needed(
+                    last_input.block_added.timestamp.as_u64(),
+                    broker,
+                )
+                .await?;
+        }
 
         Ok(())
     }
@@ -70,7 +72,7 @@ impl MachineDriver {
         context: &mut Context,
         dapp_input_box: &DAppInputBox,
         broker: &impl BrokerSend,
-    ) -> Result<Arc<Input>, BrokerFacadeError> {
+    ) -> Result<Option<Arc<Input>>, BrokerFacadeError> {
         tracing::trace!(
             "Last input sent to machine manager `{}`, current input `{}`",
             context.inputs_sent_count(),
@@ -81,7 +83,7 @@ impl MachineDriver {
             .inputs
             .skip(context.inputs_sent_count() as usize);
 
-        let last_input = input_slice.last().cloned().unwrap();
+        let last_input = input_slice.last().cloned();
 
         for input in input_slice {
             self.process_input(context, &input, broker).await?;
