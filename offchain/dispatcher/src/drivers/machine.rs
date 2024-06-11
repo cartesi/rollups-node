@@ -1,8 +1,6 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-use std::sync::Arc;
-
 use super::Context;
 
 use crate::{
@@ -49,15 +47,12 @@ impl MachineDriver {
                 Some(d) => d,
             };
 
-        let last_input =
+        let last_input_timestamp =
             self.process_inputs(context, dapp_input_box, broker).await?;
 
-        if let Some(last_input) = last_input {
+        if let Some(last_input_timestamp) = last_input_timestamp {
             context
-                .finish_epoch_if_needed(
-                    last_input.block_added.timestamp.as_u64(),
-                    broker,
-                )
+                .finish_epoch_if_needed(last_input_timestamp, broker)
                 .await?;
         }
 
@@ -72,7 +67,7 @@ impl MachineDriver {
         context: &mut Context,
         dapp_input_box: &DAppInputBox,
         broker: &impl BrokerSend,
-    ) -> Result<Option<Arc<Input>>, BrokerFacadeError> {
+    ) -> Result<Option<u64>, BrokerFacadeError> {
         tracing::trace!(
             "Last input sent to machine manager `{}`, current input `{}`",
             context.inputs_sent_count(),
@@ -83,13 +78,17 @@ impl MachineDriver {
             .inputs
             .skip(context.inputs_sent_count() as usize);
 
-        let last_input = input_slice.last().cloned();
-
-        for input in input_slice {
-            self.process_input(context, &input, broker).await?;
+        if input_slice.is_empty() {
+            return Ok(None);
         }
 
-        Ok(last_input)
+        let mut last_input_timestamp: u64 = 0;
+        for input in input_slice {
+            self.process_input(context, &input, broker).await?;
+            last_input_timestamp = input.block_added.timestamp.as_u64();
+        }
+
+        Ok(Some(last_input_timestamp))
     }
 
     #[instrument(level = "trace", skip_all)]
