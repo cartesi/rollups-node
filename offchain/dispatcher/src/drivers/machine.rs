@@ -37,6 +37,16 @@ impl MachineDriver {
         );
         println!("---");
 
+        // 1 day = 5760 blocks
+        //
+        // map [epoch] => inputs
+        //
+        // [0] => 1, 2
+        // [1] => ...
+        // [1] => ...
+        // [2] => 3
+        // [3] => 4, 5
+
         let dapp_input_box =
             match input_box.dapp_input_boxes.get(&self.dapp_address) {
                 None => {
@@ -44,7 +54,7 @@ impl MachineDriver {
                     return Ok(());
                 }
 
-                Some(d) => d,
+                Some(dapp_input_box) => dapp_input_box,
             };
 
         let last_input_timestamp =
