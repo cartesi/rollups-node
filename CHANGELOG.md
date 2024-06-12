@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Bumped Rollups Contracts to 2.0
+- Normalized boolean configuration parameters (`CARTESI_LEGACY_BLOCKCHAIN_ENABLED`, `CARTESI_FEATURE_CLAIMER_ENABLED`, `CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED`, `CARTESI_EXPERIMENTAL_SERVER_MANAGER_LOG_BYPASS_ENABLED` and `CARTESI_LOG_PRETTY_ENABLED`) and adjusted their logic accordingly
 
 ### Removed
 

@@ -245,18 +245,6 @@ func getBlockchainId() uint64 {
 	return val
 }
 
-func getBlockchainIsLegacy() bool {
-	s, ok := os.LookupEnv("CARTESI_BLOCKCHAIN_IS_LEGACY")
-	if !ok {
-		s = "false"
-	}
-	val, err := toBool(s)
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse CARTESI_BLOCKCHAIN_IS_LEGACY: %v", err))
-	}
-	return val
-}
-
 func getBlockchainWsEndpoint() string {
 	s, ok := os.LookupEnv("CARTESI_BLOCKCHAIN_WS_ENDPOINT")
 	if !ok {
@@ -265,6 +253,18 @@ func getBlockchainWsEndpoint() string {
 	val, err := toString(s)
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse CARTESI_BLOCKCHAIN_WS_ENDPOINT: %v", err))
+	}
+	return val
+}
+
+func getLegacyBlockchainEnabled() bool {
+	s, ok := os.LookupEnv("CARTESI_LEGACY_BLOCKCHAIN_ENABLED")
+	if !ok {
+		s = "false"
+	}
+	val, err := toBool(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_LEGACY_BLOCKCHAIN_ENABLED: %v", err))
 	}
 	return val
 }
@@ -317,14 +317,14 @@ func getContractsInputBoxDeploymentBlockNumber() int64 {
 	return val
 }
 
-func getExperimentalServerManagerBypassLog() bool {
-	s, ok := os.LookupEnv("CARTESI_EXPERIMENTAL_SERVER_MANAGER_BYPASS_LOG")
+func getExperimentalServerManagerLogBypassEnabled() bool {
+	s, ok := os.LookupEnv("CARTESI_EXPERIMENTAL_SERVER_MANAGER_LOG_BYPASS_ENABLED")
 	if !ok {
 		s = "false"
 	}
 	val, err := toBool(s)
 	if err != nil {
-		panic(fmt.Sprintf("failed to parse CARTESI_EXPERIMENTAL_SERVER_MANAGER_BYPASS_LOG: %v", err))
+		panic(fmt.Sprintf("failed to parse CARTESI_EXPERIMENTAL_SERVER_MANAGER_LOG_BYPASS_ENABLED: %v", err))
 	}
 	return val
 }
@@ -353,26 +353,26 @@ func getExperimentalSunodoValidatorRedisEndpoint() string {
 	return val
 }
 
-func getFeatureDisableClaimer() bool {
-	s, ok := os.LookupEnv("CARTESI_FEATURE_DISABLE_CLAIMER")
+func getFeatureClaimerEnabled() bool {
+	s, ok := os.LookupEnv("CARTESI_FEATURE_CLAIMER_ENABLED")
 	if !ok {
-		s = "false"
+		s = "true"
 	}
 	val, err := toBool(s)
 	if err != nil {
-		panic(fmt.Sprintf("failed to parse CARTESI_FEATURE_DISABLE_CLAIMER: %v", err))
+		panic(fmt.Sprintf("failed to parse CARTESI_FEATURE_CLAIMER_ENABLED: %v", err))
 	}
 	return val
 }
 
-func getFeatureDisableMachineHashCheck() bool {
-	s, ok := os.LookupEnv("CARTESI_FEATURE_DISABLE_MACHINE_HASH_CHECK")
+func getFeatureMachineHashCheckEnabled() bool {
+	s, ok := os.LookupEnv("CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED")
 	if !ok {
-		s = "false"
+		s = "true"
 	}
 	val, err := toBool(s)
 	if err != nil {
-		panic(fmt.Sprintf("failed to parse CARTESI_FEATURE_DISABLE_MACHINE_HASH_CHECK: %v", err))
+		panic(fmt.Sprintf("failed to parse CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED: %v", err))
 	}
 	return val
 }
@@ -413,14 +413,14 @@ func getLogLevel() LogLevel {
 	return val
 }
 
-func getLogPretty() bool {
-	s, ok := os.LookupEnv("CARTESI_LOG_PRETTY")
+func getLogPrettyEnabled() bool {
+	s, ok := os.LookupEnv("CARTESI_LOG_PRETTY_ENABLED")
 	if !ok {
 		s = "false"
 	}
 	val, err := toBool(s)
 	if err != nil {
-		panic(fmt.Sprintf("failed to parse CARTESI_LOG_PRETTY: %v", err))
+		panic(fmt.Sprintf("failed to parse CARTESI_LOG_PRETTY_ENABLED: %v", err))
 	}
 	return val
 }

@@ -18,7 +18,7 @@ func Setup(ctx context.Context, c config.NodeConfig, workDir string) (services.S
 		return nil, err
 	}
 
-	if !c.FeatureDisableMachineHashCheck {
+	if c.FeatureMachineHashCheckEnabled {
 		if err := validateMachineHash(
 			ctx,
 			c.SnapshotDir,

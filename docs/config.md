@@ -96,19 +96,19 @@ An unique identifier representing a blockchain network.
 
 * **Type:** `uint64`
 
-## `CARTESI_BLOCKCHAIN_IS_LEGACY`
+## `CARTESI_BLOCKCHAIN_WS_ENDPOINT`
+
+WebSocket endpoint for the blockchain RPC provider.
+
+* **Type:** `string`
+
+## `CARTESI_LEGACY_BLOCKCHAIN_ENABLED`
 
 If set to true the node will send transactions using the legacy gas fee model
 (instead of EIP-1559).
 
 * **Type:** `bool`
 * **Default:** `"false"`
-
-## `CARTESI_BLOCKCHAIN_WS_ENDPOINT`
-
-WebSocket endpoint for the blockchain RPC provider.
-
-* **Type:** `string`
 
 ## `CARTESI_CONTRACTS_APPLICATION_ADDRESS`
 
@@ -135,7 +135,7 @@ The node will begin to read blockchain events from this block.
 
 * **Type:** `int64`
 
-## `CARTESI_EXPERIMENTAL_SERVER_MANAGER_BYPASS_LOG`
+## `CARTESI_EXPERIMENTAL_SERVER_MANAGER_LOG_BYPASS_ENABLED`
 
 When enabled, prints server-manager output to stdout and stderr directly.
 All other log configurations are ignored.
@@ -156,20 +156,20 @@ External Redis endpoint for the node when running in the experimental sunodo val
 
 * **Type:** `string`
 
-## `CARTESI_FEATURE_DISABLE_CLAIMER`
+## `CARTESI_FEATURE_CLAIMER_ENABLED`
 
-If set to true, the node will not make claims.
+If set to false, the node will not make claims.
 
 * **Type:** `bool`
-* **Default:** `"false"`
+* **Default:** `"true"`
 
-## `CARTESI_FEATURE_DISABLE_MACHINE_HASH_CHECK`
+## `CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED`
 
-If set to true, the node will *not* check whether the Cartesi machine hash from
+If set to false, the node will *not* check whether the Cartesi machine hash from
 the snapshot matches the hash in the Application contract.
 
 * **Type:** `bool`
-* **Default:** `"false"`
+* **Default:** `"true"`
 
 ## `CARTESI_HTTP_ADDRESS`
 
@@ -193,7 +193,7 @@ One of "debug", "info", "warn", "error".
 * **Type:** `LogLevel`
 * **Default:** `"info"`
 
-## `CARTESI_LOG_PRETTY`
+## `CARTESI_LOG_PRETTY_ENABLED`
 
 If set to true, the node will add colors to its log output.
 

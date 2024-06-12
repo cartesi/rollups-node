@@ -13,29 +13,29 @@ import (
 // NodeConfig contains all the Node variables.
 // See the corresponding environment variable for the variable documentation.
 type NodeConfig struct {
-	LogLevel                                 LogLevel
-	LogPretty                                bool
-	RollupsEpochLength                       uint64
-	BlockchainID                             uint64
-	BlockchainHttpEndpoint                   Redacted[string]
-	BlockchainWsEndpoint                     Redacted[string]
-	BlockchainIsLegacy                       bool
-	BlockchainFinalityOffset                 int
-	BlockchainBlockTimeout                   int
-	ContractsApplicationAddress              string
-	ContractsIConsensusAddress               string
-	ContractsInputBoxAddress                 string
-	ContractsInputBoxDeploymentBlockNumber   int64
-	SnapshotDir                              string
-	PostgresEndpoint                         Redacted[string]
-	HttpAddress                              string
-	HttpPort                                 int
-	FeatureDisableClaimer                    bool
-	FeatureDisableMachineHashCheck           bool
-	ExperimentalServerManagerBypassLog       bool
-	ExperimentalSunodoValidatorEnabled       bool
-	ExperimentalSunodoValidatorRedisEndpoint string
-	Auth                                     Auth
+	LogLevel                                  LogLevel
+	LogPrettyEnabled                          bool
+	RollupsEpochLength                        uint64
+	BlockchainID                              uint64
+	BlockchainHttpEndpoint                    Redacted[string]
+	BlockchainWsEndpoint                      Redacted[string]
+	LegacyBlockchainEnabled                   bool
+	BlockchainFinalityOffset                  int
+	BlockchainBlockTimeout                    int
+	ContractsApplicationAddress               string
+	ContractsIConsensusAddress                string
+	ContractsInputBoxAddress                  string
+	ContractsInputBoxDeploymentBlockNumber    int64
+	SnapshotDir                               string
+	PostgresEndpoint                          Redacted[string]
+	HttpAddress                               string
+	HttpPort                                  int
+	FeatureClaimerEnabled                     bool
+	FeatureMachineHashCheckEnabled            bool
+	ExperimentalServerManagerLogBypassEnabled bool
+	ExperimentalSunodoValidatorEnabled        bool
+	ExperimentalSunodoValidatorRedisEndpoint  string
+	Auth                                      Auth
 }
 
 // Auth is used to sign transactions.
@@ -71,12 +71,12 @@ func (r Redacted[T]) String() string {
 func FromEnv() NodeConfig {
 	var config NodeConfig
 	config.LogLevel = getLogLevel()
-	config.LogPretty = getLogPretty()
+	config.LogPrettyEnabled = getLogPrettyEnabled()
 	config.RollupsEpochLength = getEpochLength()
 	config.BlockchainID = getBlockchainId()
 	config.BlockchainHttpEndpoint = Redacted[string]{getBlockchainHttpEndpoint()}
 	config.BlockchainWsEndpoint = Redacted[string]{getBlockchainWsEndpoint()}
-	config.BlockchainIsLegacy = getBlockchainIsLegacy()
+	config.LegacyBlockchainEnabled = getLegacyBlockchainEnabled()
 	config.BlockchainFinalityOffset = getBlockchainFinalityOffset()
 	config.BlockchainBlockTimeout = getBlockchainBlockTimeout()
 	config.ContractsApplicationAddress = getContractsApplicationAddress()
@@ -87,15 +87,16 @@ func FromEnv() NodeConfig {
 	config.PostgresEndpoint = Redacted[string]{getPostgresEndpoint()}
 	config.HttpAddress = getHttpAddress()
 	config.HttpPort = getHttpPort()
-	config.FeatureDisableClaimer = getFeatureDisableClaimer()
-	config.FeatureDisableMachineHashCheck = getFeatureDisableMachineHashCheck()
-	config.ExperimentalServerManagerBypassLog = getExperimentalServerManagerBypassLog()
+	config.FeatureClaimerEnabled = getFeatureClaimerEnabled()
+	config.FeatureMachineHashCheckEnabled = getFeatureMachineHashCheckEnabled()
+	config.ExperimentalServerManagerLogBypassEnabled =
+		getExperimentalServerManagerLogBypassEnabled()
 	config.ExperimentalSunodoValidatorEnabled = getExperimentalSunodoValidatorEnabled()
 	if getExperimentalSunodoValidatorEnabled() {
 		config.ExperimentalSunodoValidatorRedisEndpoint =
 			getExperimentalSunodoValidatorRedisEndpoint()
 	}
-	if !getFeatureDisableClaimer() && !getExperimentalSunodoValidatorEnabled() {
+	if getFeatureClaimerEnabled() && !getExperimentalSunodoValidatorEnabled() {
 		config.Auth = authFromEnv()
 	}
 	return config
