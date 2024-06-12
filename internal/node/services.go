@@ -66,7 +66,7 @@ func newAuthorityClaimer(c config.NodeConfig, workDir string) services.CommandSe
 	s.Env = append(s.Env, fmt.Sprintf("TX_PROVIDER_HTTP_ENDPOINT=%v",
 		c.BlockchainHttpEndpoint.Value))
 	s.Env = append(s.Env, fmt.Sprintf("TX_CHAIN_ID=%v", c.BlockchainID))
-	s.Env = append(s.Env, fmt.Sprintf("TX_CHAIN_IS_LEGACY=%v", c.BlockchainIsLegacy))
+	s.Env = append(s.Env, fmt.Sprintf("TX_CHAIN_IS_LEGACY=%v", c.LegacyBlockchainEnabled))
 	s.Env = append(s.Env, fmt.Sprintf("TX_DEFAULT_CONFIRMATIONS=%v",
 		c.BlockchainFinalityOffset))
 	s.Env = append(s.Env, fmt.Sprintf("REDIS_ENDPOINT=%v", getRedisEndpoint(c)))
@@ -118,8 +118,8 @@ func newSupervisorService(c config.NodeConfig, workDir string) services.Supervis
 		s = append(s, newRedis(c, workDir))
 	}
 
-	// enable claimer if reader mode and sunodo validator mode are disabled
-	if !c.FeatureDisableClaimer && !c.ExperimentalSunodoValidatorEnabled {
+	// enable claimer if reader mode and sunodo validator mode are not enabled
+	if c.FeatureClaimerEnabled && !c.ExperimentalSunodoValidatorEnabled {
 		s = append(s, newAuthorityClaimer(c, workDir))
 	}
 
