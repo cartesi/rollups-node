@@ -33,7 +33,7 @@ func NewLocalNodeConfig(localPostgresEndpoint string, localBlockchainHttpEndpoin
 
 	//Log
 	nodeConfig.LogLevel = slog.LevelInfo
-	nodeConfig.LogPretty = false
+	nodeConfig.LogPrettyEnabled = false
 
 	//Postgres
 	nodeConfig.PostgresEndpoint =
@@ -49,7 +49,7 @@ func NewLocalNodeConfig(localPostgresEndpoint string, localBlockchainHttpEndpoin
 		config.Redacted[string]{Value: localBlockchainHttpEndpoint}
 	nodeConfig.BlockchainWsEndpoint =
 		config.Redacted[string]{Value: localBlockchainWsEndpoint}
-	nodeConfig.BlockchainIsLegacy = false
+	nodeConfig.LegacyBlockchainEnabled = false
 	nodeConfig.BlockchainFinalityOffset = LocalFinalityOffset
 	nodeConfig.BlockchainBlockTimeout = LocalBlockTimeout
 
@@ -64,8 +64,8 @@ func NewLocalNodeConfig(localPostgresEndpoint string, localBlockchainHttpEndpoin
 	nodeConfig.HttpPort = LocalHttpPort
 
 	//Features
-	nodeConfig.FeatureDisableClaimer = false
-	nodeConfig.FeatureDisableMachineHashCheck = false
+	nodeConfig.FeatureClaimerEnabled = true
+	nodeConfig.FeatureMachineHashCheckEnabled = true
 
 	//Experimental
 	nodeConfig.ExperimentalSunodoValidatorEnabled = false
