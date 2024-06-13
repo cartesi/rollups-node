@@ -31,6 +31,14 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Download machine-emulator development artifacts
+        working-directory: ${{ github.workspace }}
+        run: |
+          sudo apt update && sudo apt install -y libarchive-tools
+          mkdir ./downloads
+          curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -L "https://api.github.com/repos/cartesi/machine-emulator/actions/artifacts/1430730423/zip" | bsdtar -xf - -C ./downloads
+          curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -L "https://api.github.com/repos/cartesi/machine-emulator-tools/actions/artifacts/1431104434/zip" | bsdtar -xf - -C ./downloads
+
       - uses: depot/setup-action@v1
       - name: Build dependency images
         uses: depot/bake-action@v1
@@ -110,6 +118,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Download machine-emulator development artifacts
+        working-directory: ${{ github.workspace }}
+        run: |
+          sudo apt update && sudo apt install -y libarchive-tools
+          mkdir ./downloads
+          curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -L "https://api.github.com/repos/cartesi/machine-emulator/actions/artifacts/1430730423/zip" | bsdtar -xf - -C ./downloads
+          curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -L "https://api.github.com/repos/cartesi/machine-emulator-tools/actions/artifacts/1431104434/zip" | bsdtar -xf - -C ./downloads
 
       - name: Docker meta
         id: docker_meta

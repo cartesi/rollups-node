@@ -40,17 +40,19 @@ FROM ${BASE_IMAGE} as emulator-base
 # Install machine-emulator
 ARG MACHINE_EMULATOR_VERSION
 ARG DEBIAN_FRONTEND=noninteractive
+COPY downloads/cartesi-machine-v${MACHINE_EMULATOR_VERSION}_*.deb /tmp/
 RUN <<EOF
 set -e
 apt-get update
 apt-get install -y --no-install-recommends \
     ca-certificates \
-    curl
-ARCH=$(dpkg --print-architecture)
-curl -fsSL https://github.com/cartesi/machine-emulator/releases/download/v${MACHINE_EMULATOR_VERSION}/cartesi-machine-v${MACHINE_EMULATOR_VERSION}_${ARCH}.deb -o ./cartesi-machine.deb
-apt-get install -y ./cartesi-machine.deb
-rm ./cartesi-machine.deb
-rm -rf /var/lib/apt/lists/*
+    curl \
+    /tmp/cartesi-machine-v${MACHINE_EMULATOR_VERSION}_$(dpkg --print-architecture).deb
+# ARCH=$(dpkg --print-architecture)
+# curl -fsSL https://github.com/cartesi/machine-emulator/releases/download/v${MACHINE_EMULATOR_VERSION}/cartesi-machine-v${MACHINE_EMULATOR_VERSION}_${ARCH}.deb -o ./cartesi-machine.deb
+# apt-get install -y ./cartesi-machine.deb
+# rm ./cartesi-machine.deb
+rm -rf /var/lib/apt/lists/* /tmp/cartesi-machine*.deb
 EOF
 
 # Configure cartesi user and group.
@@ -85,7 +87,8 @@ WORKDIR /usr/share/cartesi-machine/images/
 ARG TOOLS_VERSION
 ARG LINUX_VERSION
 ARG LINUX_KERNEL_VERSION
-ADD https://github.com/cartesi/machine-emulator-tools/releases/download/v${TOOLS_VERSION}/rootfs-tools-v${TOOLS_VERSION}.ext2 rootfs.ext2
+COPY downloads/rootfs-tools-v${TOOLS_VERSION}.ext2 rootfs.ext2
+# ADD https://github.com/cartesi/machine-emulator-tools/releases/download/v${TOOLS_VERSION}/rootfs-tools-v${TOOLS_VERSION}.ext2 rootfs.ext2
 ADD https://github.com/cartesi/image-kernel/releases/download/v${LINUX_VERSION}/linux-${LINUX_KERNEL_VERSION}.bin linux.bin
 
 # Generate snapshot with echo and store it.
