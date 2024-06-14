@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -143,7 +144,7 @@ func (t *Tree) calculateRootHash() {
 // the Merkle proof for the leaf.
 //
 // If the index is out of bounds, the method returns an error.
-func (t *Tree) SiblingsOfLeaf(index uint) ([]Hash, error) {
+func (t *Tree) SiblingsOfLeaf(index uint64) ([]Hash, error) {
 	if uint64(index) >= maxLeaves(t.height) {
 		return nil, errors.New("merkle: index out of bounds")
 	}
@@ -156,6 +157,12 @@ func (t *Tree) SiblingsOfLeaf(index uint) ([]Hash, error) {
 		siblings = append(siblings, t.node(level, siblingIndex))
 	}
 	return siblings, nil
+}
+
+//TODO: validate this
+func (t *Tree) Clear() {
+	t.nodes = slices.Delete(t.nodes, 0, len(t.nodes)-1)
+	t.nodes[0] = make([]Hash, 1) // sets the pristine node as the root
 }
 
 // node returns the node at the specified level and index.
