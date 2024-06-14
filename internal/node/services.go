@@ -158,6 +158,7 @@ func newPostgraphileService(c config.NodeConfig, workDir string) services.Comman
 	s.Args = append(s.Args, "--legacy-relations", "omit")
 	s.Args = append(s.Args, "--connection", fmt.Sprintf("%v", c.PostgresEndpoint.Value))
 	s.Args = append(s.Args, "--schema", "public")
+	s.Args = append(s.Args, "--host", "0.0.0.0")
 	s.Args = append(s.Args, "--port", fmt.Sprint(getPort(c, portOffsetPostgraphile)))
 	s.Env = append(s.Env, os.Environ()...)
 	s.WorkDir = workDir
