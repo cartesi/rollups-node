@@ -468,8 +468,8 @@ RUN <<EOF
         nodejs \
         npm
     rm -rf /var/lib/apt/lists/*
-    npm install -g postgraphile
-    npm install -g --save @graphile-contrib/pg-simplify-inflector
+    npm install -g postgraphile@4.13
+    npm install -g --save @graphile-contrib/pg-simplify-inflector@6.1
 EOF
 
 # Copy Rust binaries.
