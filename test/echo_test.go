@@ -153,8 +153,6 @@ func (s *EchoInputTestSuite) TestSendInput() {
 	// Check input was correctly added to the blockchain
 	s.Require().Equal(0, inputIndex)
 
-	s.Require().Nil(ethutil.AdvanceDevnetTime(s.ctx, s.blockchainHttpEndpoint, devNetAdvanceTimeInSeconds))
-
 	// Get Input with vouchers and proofs
 	graphQlClient := graphql.NewClient(graphqlEndpoint, nil)
 	var input *readerclient.Input

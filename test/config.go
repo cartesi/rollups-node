@@ -20,7 +20,7 @@ const (
 	LocalHttpPort                         = 10000
 	LocalBlockTimeout                     = 120
 	LocalFinalityOffset                   = 1
-	LocalEpochDurationInSeconds           = 20
+	LocalEpochLengthInBlocks              = 5
 )
 
 func NewLocalNodeConfig(localPostgresEnpoint string, localBlockchainHttpEndpoint string,
@@ -39,7 +39,7 @@ func NewLocalNodeConfig(localPostgresEnpoint string, localBlockchainHttpEndpoint
 		config.Redacted[string]{Value: localPostgresEnpoint}
 
 	//Epoch
-	nodeConfig.RollupsEpochLengthInBlocks = LocalEpochDurationInSeconds
+	nodeConfig.RollupsEpochLengthInBlocks = LocalEpochLengthInBlocks
 
 	//Blochain
 	nodeConfig.BlockchainID = LocalBlockchainID
