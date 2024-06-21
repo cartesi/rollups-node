@@ -5,11 +5,13 @@ package send
 
 import (
 	"log/slog"
+	"os"
 
 	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/lmittmann/tint"
 	"github.com/spf13/cobra"
 )
 
@@ -29,6 +31,7 @@ var (
 	account         uint32
 	hexPayload      string
 	addressBookFile string
+	verbose         bool
 )
 
 func init() {
@@ -48,9 +51,22 @@ func init() {
 
 	Cmd.Flags().StringVar(&addressBookFile, "address-book", "",
 		"if set, load the address book from the given file; else, use test addresses")
+
+	Cmd.Flags().BoolVar(&verbose, "verbose", false,
+		"If set, prints all debug logs")
 }
 
 func run(cmd *cobra.Command, args []string) {
+
+	if verbose {
+		opts := &tint.Options{
+			Level: slog.LevelDebug,
+		}
+		handler := tint.NewHandler(os.Stdout, opts)
+		logger := slog.New(handler)
+		slog.SetDefault(logger)
+	}
+
 	payload, err := hexutil.Decode(hexPayload)
 	cobra.CheckErr(err)
 
@@ -75,4 +91,11 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 
 	slog.Info("Input added", "input-index", inputIndex)
+
+	if verbose {
+		inputAddedEvent, err := ethutil.GetInputFromInputBox(client, book, inputIndex)
+		cobra.CheckErr(err)
+		slog.Debug("Input added", "event", inputAddedEvent)
+	}
+
 }
