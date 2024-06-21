@@ -125,6 +125,7 @@ func newSupervisorService(c config.NodeConfig, workDir string) services.Supervis
 
 	s = append(s, newHttpService(c))
 	s = append(s, newPostgraphileService(c, workDir))
+	//s = append(s, newInputReaderService(c, client, source, repo))
 
 	supervisor := services.SupervisorService{
 		Name:     "rollups-node",
@@ -164,3 +165,16 @@ func newPostgraphileService(c config.NodeConfig, workDir string) services.Comman
 	s.WorkDir = workDir
 	return s
 }
+
+// func newInputReaderService(c config.NodeConfig, client inputreader.EthClient, inputSource inputreader.InputSource, repo inputreader.InputReaderRepository) services.Service {
+
+// 	return inputreader.NewInputReader(
+// 		client,
+// 		inputSource,
+// 		repo,
+// 		common.HexToAddress(c.ContractsInputBoxAddress),
+// 		uint64(c.ContractsInputBoxDeploymentBlockNumber),
+// 		common.HexToAddress(c.ContractsApplicationAddress),
+// 	)
+
+// }
