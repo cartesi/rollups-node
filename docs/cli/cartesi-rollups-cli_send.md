@@ -22,6 +22,7 @@ cartesi-rollups-cli send --payload 0x$(printf "hi" | xxd -p)
   -h, --help                  help for send
       --mnemonic string       mnemonic used to sign the transaction (default "test test test test test test test test test test test junk")
       --payload string        input payload hex-encoded starting with 0x
+      --verbose               If set, prints all debug logs
 ```
 
 ### SEE ALSO
