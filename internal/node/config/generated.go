@@ -473,14 +473,14 @@ func getPostgresEndpoint() string {
 	return val
 }
 
-func getEpochDuration() Duration {
-	s, ok := os.LookupEnv("CARTESI_EPOCH_DURATION")
+func getEpochLengthInBlocks() uint64 {
+	s, ok := os.LookupEnv("CARTESI_EPOCH_LENGTH_IN_BLOCKS")
 	if !ok {
-		s = "86400"
+		s = "7200"
 	}
-	val, err := toDuration(s)
+	val, err := toUint64(s)
 	if err != nil {
-		panic(fmt.Sprintf("failed to parse CARTESI_EPOCH_DURATION: %v", err))
+		panic(fmt.Sprintf("failed to parse CARTESI_EPOCH_LENGTH_IN_BLOCKS: %v", err))
 	}
 	return val
 }

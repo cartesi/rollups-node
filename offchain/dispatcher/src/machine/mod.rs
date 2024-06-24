@@ -12,7 +12,6 @@ use self::rollups_broker::BrokerFacadeError;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RollupStatus {
     pub inputs_sent_count: u64,
-    pub last_event_is_finish_epoch: bool,
 }
 
 #[async_trait]

@@ -236,14 +236,14 @@ for more information.
 * **Type:** `string`
 * **Default:** `""`
 
-## `CARTESI_EPOCH_DURATION`
+## `CARTESI_EPOCH_LENGTH_IN_BLOCKS`
 
-Duration of a rollups epoch in seconds.
+Length of a rollups epoch in blocks.
 
 At the end of each epoch, the node will send claims to the blockchain.
 
-* **Type:** `Duration`
-* **Default:** `"86400"`
+* **Type:** `uint64`
+* **Default:** `"7200"`
 
 ## `CARTESI_SNAPSHOT_DIR`
 

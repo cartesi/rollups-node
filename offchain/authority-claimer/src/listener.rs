@@ -84,18 +84,10 @@ mod tests {
         BrokerConfig, BrokerEndpoint, BrokerError, RedactedUrl, RollupsClaim,
         Url,
     };
-    use snafu::Snafu;
 
     // ------------------------------------------------------------------------------------------------
     // Broker Mock
     // ------------------------------------------------------------------------------------------------
-
-    #[derive(Clone, Debug, Snafu)]
-    pub enum MockError {
-        EndError,
-        InternalError,
-        MockError,
-    }
 
     pub async fn setup_broker(
         docker: &Cli,
