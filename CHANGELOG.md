@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added Rollups end-to-end test using Echo Dapp
 
+### Changed
+
+- Bumped Rust Version to 1.78.0
+
 ## [1.4.0] 2024-04-09
 
 ### Added
