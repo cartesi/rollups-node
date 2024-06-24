@@ -5,6 +5,7 @@ use clap::Parser;
 use log::{LogConfig, LogEnvCliConfig};
 
 const DEFAULT_ADDRESS: &str = "0.0.0.0";
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub log_config: LogConfig,
