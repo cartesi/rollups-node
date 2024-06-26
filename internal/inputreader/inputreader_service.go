@@ -14,6 +14,7 @@ import (
 // Service to manage InputReader lifecycle
 type InputReaderService struct {
 	blockchainHttpEndpoint string
+	blockchainWsEndpoint   string
 	postgresEndpoint       string
 	inputBoxAddress        common.Address
 	inputBoxBlockNumber    uint64
@@ -22,6 +23,7 @@ type InputReaderService struct {
 
 func NewInputReaderService(
 	blockchainHttpEndpoint string,
+	blockchainWsEndpoint string,
 	postgresEndpoint string,
 	inputBoxAddress common.Address,
 	inputBoxBlockNumber uint64,
@@ -29,6 +31,7 @@ func NewInputReaderService(
 ) InputReaderService {
 	return InputReaderService{
 		blockchainHttpEndpoint: blockchainHttpEndpoint,
+		blockchainWsEndpoint:   blockchainWsEndpoint,
 		postgresEndpoint:       postgresEndpoint,
 		inputBoxAddress:        inputBoxAddress,
 		inputBoxBlockNumber:    inputBoxBlockNumber,
@@ -48,10 +51,16 @@ func (s InputReaderService) Start(
 	}
 
 	client, err := ethclient.DialContext(ctx, s.blockchainHttpEndpoint)
-
 	if err != nil {
 		return err
 	}
+	defer client.Close()
+
+	wsClient, err := ethclient.DialContext(ctx, s.blockchainWsEndpoint)
+	if err != nil {
+		return err
+	}
+	defer wsClient.Close()
 
 	inputBoxWrapper, err := NewInputBoxInputSource(s.inputBoxAddress, client)
 
@@ -61,6 +70,7 @@ func (s InputReaderService) Start(
 
 	reader := newInputReader(
 		client,
+		wsClient,
 		inputBoxWrapper,
 		db,
 		s.inputBoxAddress,

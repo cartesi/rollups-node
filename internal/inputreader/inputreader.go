@@ -20,6 +20,7 @@ import (
 // InputReader reads inputs from the blockchain
 type InputReader struct {
 	client              EthClient
+	wsClient            EthClient
 	inputSource         InputSource
 	repository          InputReaderRepository
 	inputBoxAddress     common.Address
@@ -69,6 +70,7 @@ func (r InputReader) String() string {
 // Creates a new InputReader.
 func newInputReader(
 	client EthClient,
+	wsClient EthClient,
 	inputSource InputSource,
 	repository InputReaderRepository,
 	inputBoxAddress common.Address,
@@ -77,6 +79,7 @@ func newInputReader(
 ) InputReader {
 	return InputReader{
 		client:              client,
+		wsClient:            wsClient,
 		inputSource:         inputSource,
 		repository:          repository,
 		inputBoxAddress:     inputBoxAddress,
@@ -188,7 +191,7 @@ func (r InputReader) watchForNewInputs(
 	ready chan<- struct{},
 ) error {
 	headers := make(chan *types.Header)
-	sub, err := r.client.SubscribeNewHead(ctx, headers)
+	sub, err := r.wsClient.SubscribeNewHead(ctx, headers)
 	if err != nil {
 		return fmt.Errorf("could not start subscription: %v", err)
 	}

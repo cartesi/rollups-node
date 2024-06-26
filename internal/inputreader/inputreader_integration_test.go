@@ -9,14 +9,17 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"testing"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/deps"
 	"github.com/cartesi/rollups-node/internal/machine"
+	"github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/testutil"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -26,6 +29,21 @@ const (
 	testTimeout             = 300 * time.Second
 )
 
+type IntegrationTestRepository interface {
+	InputReaderRepository
+	GetInput(
+		ctx context.Context,
+		index uint64,
+	) (*model.Input, error)
+	SetupDatabaseState(
+		ctx context.Context,
+		deploymentBlock uint64,
+		epochDuration uint64,
+		currentEpoch uint64,
+	) error
+	Close()
+}
+
 type InputReaderIntegrationTestSuite struct {
 	suite.Suite
 	containers             *deps.DepsContainers
@@ -33,11 +51,16 @@ type InputReaderIntegrationTestSuite struct {
 	cancel                 context.CancelFunc
 	serviceErr             chan error
 	blockchainHttpEndpoint string
+	db                     IntegrationTestRepository
+}
+
+func TestInputReaderIntegrationSuite(t *testing.T) {
+	suite.Run(t, new(InputReaderIntegrationTestSuite))
 }
 
 func (s *InputReaderIntegrationTestSuite) SetupTest() {
 
-	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	s.ctx, s.cancel = context.WithTimeout(context.Background(), testTimeout)
 
 	// Create tempdir
 	tempDir, err := os.MkdirTemp("", "echo-test")
@@ -61,11 +84,12 @@ func (s *InputReaderIntegrationTestSuite) SetupTest() {
 		},
 	}
 
-	depsContainers, err := deps.Run(ctx, depsConfig)
+	depsContainers, err := deps.Run(s.ctx, depsConfig)
 	s.Require().Nil(err)
+	s.containers = depsContainers
 
 	// Capture endpoints
-	postgresEndpoint, err := depsContainers.PostgresEndpoint(ctx, "postgres")
+	postgresEndpoint, err := depsContainers.PostgresEndpoint(s.ctx, "postgres")
 	s.Require().Nil(err)
 
 	postgresUrl, err := url.Parse(postgresEndpoint)
@@ -74,35 +98,40 @@ func (s *InputReaderIntegrationTestSuite) SetupTest() {
 	postgresUrl.User = url.UserPassword(deps.DefaultPostgresUser, deps.DefaultPostgresPassword)
 	postgresUrl = postgresUrl.JoinPath(deps.DefaultPostgresDatabase)
 
-	devnetHttpEndpoint, err := depsContainers.DevnetEndpoint(ctx, "http")
+	devnetHttpEndpoint, err := depsContainers.DevnetEndpoint(s.ctx, "http")
+	s.Require().Nil(err)
+
+	devnetWsEndpoint, err := depsContainers.DevnetEndpoint(s.ctx, "ws")
 	s.Require().Nil(err)
 
 	s.blockchainHttpEndpoint = devnetHttpEndpoint
 
 	// Fix the Blockchain timestamp. Must be "in the future"
-	err = ethutil.SetNextDevnetBlockTimestamp(ctx, devnetHttpEndpoint, blockTimestampInSeconds)
+	err = ethutil.SetNextDevnetBlockTimestamp(s.ctx, devnetHttpEndpoint, blockTimestampInSeconds)
 	s.Require().Nil(err)
 
-	// Setup the database
 	// run database migrations
 	repository.RunMigrations(fmt.Sprintf("%v?sslmode=disable", postgresUrl))
 
+	// Setup the database
+	s.db, err = repository.Connect(s.ctx, fmt.Sprintf("%v?sslmode=disable", postgresUrl))
+	s.Require().Nil(err)
+	err = s.db.SetupDatabaseState(s.ctx, 1, 1, 1)
+	s.Require().Nil(err)
+
+	// Setup Input Reader Service
 	book := addresses.GetTestBook()
 
-	inputReaderService := NewInputReaderService(devnetHttpEndpoint, postgresEndpoint, book.InputBox, uint64(0x10), book.Application)
+	inputReaderService := NewInputReaderService(devnetHttpEndpoint, devnetWsEndpoint, postgresEndpoint, book.InputBox, uint64(0x10), book.Application)
 
 	ready := make(chan struct{}, 1)
 	serviceErr := make(chan error, 1)
 
-	// Configure Suite for tear down
-	s.containers = depsContainers
-	s.ctx = ctx
-	s.cancel = cancel
 	s.serviceErr = serviceErr
 
 	//Start Service
 	go func() {
-		err := inputReaderService.Start(ctx, ready)
+		err := inputReaderService.Start(s.ctx, ready)
 		if err != nil {
 			serviceErr <- err
 		}
@@ -110,7 +139,7 @@ func (s *InputReaderIntegrationTestSuite) SetupTest() {
 
 	select {
 	case err := <-serviceErr:
-		s.Require().Nil(err)
+		s.FailNow("Unexpected error", err)
 	case <-ready:
 		break
 	}
@@ -119,19 +148,34 @@ func (s *InputReaderIntegrationTestSuite) SetupTest() {
 
 func (s *InputReaderIntegrationTestSuite) TearDownTest() {
 
-	// Stop Node services
-	s.cancel()
+	// Stop Input Reader
+	if s.cancel != nil {
+		s.cancel()
+	}
+
+	if s.db != nil {
+		s.db.Close()
+	}
 
 	// Terminate deps
-	ctx := context.Background()
-	err := deps.Terminate(ctx, s.containers)
-	s.Require().Nil(err)
+	if s.containers != nil {
+		ctx := context.Background()
+		err := deps.Terminate(ctx, s.containers)
+		s.Require().Nil(err)
+	}
 
 }
 
 func (s *InputReaderIntegrationTestSuite) TestAddInput() {
 
-	receipt, err := ethutil.AddInputUsingFoundryMnemonic(s.ctx, s.blockchainHttpEndpoint, payload)
+	book := addresses.GetTestBook()
+
+	// Send Input
+	client, err := ethclient.DialContext(s.ctx, s.blockchainHttpEndpoint)
+	s.Require().Nil(err)
+	defer client.Close()
+
+	receipt, err := ethutil.AddInputUsingFoundryMnemonic(s.ctx, client, book, payload)
 	s.Require().Nil(err)
 	s.Require().NotNil(receipt)
 
@@ -139,9 +183,11 @@ func (s *InputReaderIntegrationTestSuite) TestAddInput() {
 	s.Require().Nil(err)
 
 	index, err := ethutil.GetInputIndex(s.ctx, client, book, receipt)
-	s.Require().Equal(0, index)
+	s.Require().Equal(uint64(0), index)
 
-	// Check input was correctly added to the blockchain
-	s.Require().Equal(0, receipt)
+	input, err := s.db.GetInput(s.ctx, uint64(index))
+	s.Require().Nil(err)
+
+	s.Require().NotNil(input)
 
 }

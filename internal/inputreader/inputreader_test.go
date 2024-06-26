@@ -68,6 +68,7 @@ type InputReaderSuite struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 	client      *MockEthClient
+	wsClient    *MockEthClient
 	inputBox    *MockInputBox
 	repository  *MockRepository
 	inputReader *InputReader
@@ -106,10 +107,12 @@ func (s *InputReaderSuite) TearDownSuite() {
 func (s *InputReaderSuite) SetupTest() {
 
 	s.client = newMockEthClient()
+	s.wsClient = s.client
 	s.inputBox = newMockInputBox(s)
 	s.repository = newMockRepository()
 	inputReader := newInputReader(
 		s.client,
+		s.wsClient,
 		s.inputBox,
 		s.repository,
 		common.MaxAddress,
@@ -235,6 +238,7 @@ func (s *InputReaderSuite) TestItReadsAllPastInputs() {
 	// Set finalized block
 	inputReader := newInputReader(
 		s.client,
+		s.wsClient,
 		s.inputBox,
 		s.repository,
 		common.MaxAddress,
@@ -289,6 +293,7 @@ func (s *InputReaderSuite) TestItReadsInputsFromNewBlocks() {
 	client.NewHeaders = []*types.Header{&header1}
 	client.WaitGroup = &waitGroup
 	inputReader := newInputReader(
+		&client,
 		&client,
 		s.inputBox,
 		s.repository,
@@ -390,6 +395,7 @@ func (s *InputReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 
 	inputReader := newInputReader(
 		s.client,
+		s.client,
 		s.inputBox,
 		s.repository,
 		common.MaxAddress,
@@ -469,6 +475,7 @@ func (s *InputReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 func (s *InputReaderSuite) TestItStartsWhenInputBoxBlockIsTheMostRecentlyFinalizedBlock() {
 
 	inputReader := newInputReader(
+		s.client,
 		s.client,
 		s.inputBox,
 		s.repository,
