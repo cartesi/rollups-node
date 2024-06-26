@@ -71,8 +71,10 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	slog.Info("Sending input", "application-address", book.Application)
-	inputIndex, err := ethutil.AddInput(ctx, client, book, signer, payload)
+	receipt, err := ethutil.AddInput(ctx, client, book, signer, payload)
 	cobra.CheckErr(err)
+
+	inputIndex, err := ethutil.GetInputIndex(ctx, client, book, receipt)
 
 	slog.Info("Input added", "input-index", inputIndex)
 }

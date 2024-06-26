@@ -45,10 +45,10 @@ func AddInput(
 	book *addresses.Book,
 	signer Signer,
 	input []byte,
-) (int, error) {
+) (*types.Receipt, error) {
 	inputBox, err := inputbox.NewInputBox(book.InputBox, client)
 	if err != nil {
-		return 0, fmt.Errorf("failed to connect to InputBox contract: %v", err)
+		return nil, fmt.Errorf("failed to connect to InputBox contract: %v", err)
 	}
 	receipt, err := sendTransaction(
 		ctx, client, signer, big.NewInt(0), GasLimit,
@@ -57,9 +57,9 @@ func AddInput(
 		},
 	)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return getInputIndex(ctx, client, book, inputBox, receipt)
+	return receipt, nil
 }
 
 // Convenience function to add an input using Foundry Mnemonic
@@ -68,18 +68,18 @@ func AddInputUsingFoundryMnemonic(
 	ctx context.Context,
 	blockchainHttpEndpoint string,
 	payload string,
-) (int, error) {
+) (*types.Receipt, error) {
 
 	// Send Input
 	client, err := ethclient.DialContext(ctx, blockchainHttpEndpoint)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer client.Close()
 
 	signer, err := NewMnemonicSigner(ctx, client, FoundryMnemonic, 0)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	book := addresses.GetTestBook()
 
@@ -91,14 +91,17 @@ func AddInputUsingFoundryMnemonic(
 }
 
 // Get input index in the transaction by looking at the event logs.
-func getInputIndex(
+func GetInputIndex(
 	ctx context.Context,
 	client *ethclient.Client,
 	book *addresses.Book,
-	inputBox *inputbox.InputBox,
 	receipt *types.Receipt,
 ) (int, error) {
 	for _, log := range receipt.Logs {
+		inputBox, err := inputbox.NewInputBox(book.InputBox, client)
+		if err != nil {
+			return 0, fmt.Errorf("failed to connect to InputBox contract: %v", err)
+		}
 		if log.Address != book.InputBox {
 			continue
 		}
