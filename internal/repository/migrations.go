@@ -6,6 +6,7 @@ package repository
 import (
 	"embed"
 	_ "embed"
+	"errors"
 	"log/slog"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -24,13 +25,15 @@ func RunMigrations(postgres_endpoint string) {
 			"error", err)
 	}
 
-	migrate, err := migrate.NewWithSourceInstance("iofs", driver, postgres_endpoint)
+	migration, err := migrate.NewWithSourceInstance("iofs", driver, postgres_endpoint)
 	if err != nil {
 		slog.Error("Unable to setup migrations",
 			"error", err)
 	}
-	if err := migrate.Up(); err != nil {
-		slog.Error("Unable to run migrations",
-			"error", err)
+	if err := migration.Up(); err != nil {
+		if !errors.Is(err, migrate.ErrNoChange) {
+			slog.Error("Unable to run migrations",
+				"error", err)
+		}
 	}
 }
