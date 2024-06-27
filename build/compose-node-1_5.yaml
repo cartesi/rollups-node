@@ -1,0 +1,21 @@
+# This file contains the bare configuration to run the node.
+# This file should be merged with the other compose files to run the node with
+# the desired configuration.
+
+version: "3.9"
+
+name: rollups-node
+services:
+  node:
+    image: "ghcr.io/cartesi/rollups-node:pr-445"
+    ports:
+      - "10000:10000" # Supervisor
+    environment:
+      CARTESI_LOG_LEVEL: "info"
+      CARTESI_LOG_PRETTY: "true"
+      CARTESI_FEATURE_HOST_MODE: "false"
+      CARTESI_FEATURE_DISABLE_CLAIMER: "false"
+      CARTESI_HTTP_ADDRESS: "0.0.0.0"
+      CARTESI_HTTP_PORT: "10000"
+      CARTESI_EPOCH_LENGTH_IN_BLOCKS: "10"
+      CARTESI_CONTRACTS_HISTORY_ADDRESS: "0xce5f9be3a409dfbff2ecea8a1e861b66d7ec927c"

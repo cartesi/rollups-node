@@ -219,7 +219,7 @@ HEALTHCHECK --interval=1s --timeout=1s --retries=5 \
         ${RPC_URL}
 
 # Start Anvil.
-CMD anvil --block-time 1 --load-state $ANVIL_STATE_PATH
+CMD anvil --block-time 1 --state $ANVIL_STATE_PATH --steps-tracing
 
 ####################################################################################################
 # TARGET: rollups-node
