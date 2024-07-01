@@ -11,7 +11,7 @@ services:
     ports:
       - "10000:10000" # Supervisor
     environment:
-      CARTESI_LOG_LEVEL: "info"
+      CARTESI_LOG_LEVEL: "debug"
       CARTESI_LOG_PRETTY: "true"
       CARTESI_FEATURE_HOST_MODE: "false"
       CARTESI_FEATURE_DISABLE_CLAIMER: "false"

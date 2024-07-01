@@ -87,7 +87,9 @@ impl Context {
 
 impl Context {
     fn calculate_epoch(&self, block_number: u64) -> u64 {
-        assert!(block_number >= self.genesis_block);
+        assert!(block_number >= self.genesis_block,
+                "assert failed (input_block_number >= self.genesis_block), block_number = {}, self.genesis_block = {}",
+                block_number, self.genesis_block);
         (block_number - self.genesis_block) / self.epoch_length
     }
 
