@@ -66,22 +66,15 @@ func AddInput(
 // This function waits until the transaction is added to a block and return the input index.
 func AddInputUsingFoundryMnemonic(
 	ctx context.Context,
-	blockchainHttpEndpoint string,
+	client *ethclient.Client,
+	book *addresses.Book,
 	payload string,
 ) (*types.Receipt, error) {
-
-	// Send Input
-	client, err := ethclient.DialContext(ctx, blockchainHttpEndpoint)
-	if err != nil {
-		return nil, err
-	}
-	defer client.Close()
 
 	signer, err := NewMnemonicSigner(ctx, client, FoundryMnemonic, 0)
 	if err != nil {
 		return nil, err
 	}
-	book := addresses.GetTestBook()
 
 	payloadBytes, err := hexutil.Decode(payload)
 	if err != nil {
@@ -96,7 +89,7 @@ func GetInputIndex(
 	client *ethclient.Client,
 	book *addresses.Book,
 	receipt *types.Receipt,
-) (int, error) {
+) (uint64, error) {
 	for _, log := range receipt.Logs {
 		inputBox, err := inputbox.NewInputBox(book.InputBox, client)
 		if err != nil {
@@ -110,7 +103,7 @@ func GetInputIndex(
 			return 0, fmt.Errorf("failed to parse input added event: %v", err)
 		}
 		// We assume that int will fit all dapp inputs
-		inputIndex := int(inputAdded.Index.Int64())
+		inputIndex := inputAdded.Index.Uint64()
 		return inputIndex, nil
 	}
 	return 0, fmt.Errorf("input index not found")
@@ -121,7 +114,7 @@ func GetInputIndex(
 func GetInputFromInputBox(
 	client *ethclient.Client,
 	book *addresses.Book,
-	inputIndex int,
+	inputIndex uint64,
 ) (*inputbox.InputBoxInputAdded, error) {
 	inputBox, err := inputbox.NewInputBox(book.InputBox, client)
 	if err != nil {

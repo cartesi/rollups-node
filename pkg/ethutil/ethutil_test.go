@@ -62,12 +62,19 @@ func (s *EthUtilSuite) TestAddInput() {
 	sender := common.HexToAddress("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266")
 	payload := common.Hex2Bytes("deadbeef")
 
-	inputIndex, err := AddInput(s.ctx, s.client, s.book, s.signer, payload)
+	receipt, err := AddInput(s.ctx, s.client, s.book, s.signer, payload)
 	if !s.Nil(err) {
 		s.logDevnetOutput()
 		s.T().FailNow()
 	}
-	s.Require().Equal(0, inputIndex)
+	s.Require().NotNil(receipt)
+
+	inputIndex, err := GetInputIndex(s.ctx, s.client, s.book, receipt)
+	if !s.Nil(err) {
+		s.logDevnetOutput()
+		s.T().FailNow()
+	}
+	s.Require().Equal(int64(0), inputIndex)
 
 	event, err := GetInputFromInputBox(s.client, s.book, inputIndex)
 	s.Require().Nil(err)
