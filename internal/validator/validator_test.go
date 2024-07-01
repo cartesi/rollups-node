@@ -174,10 +174,9 @@ func (s *ValidatorSuite) TestItFinishesAnEpochWithOutputs() {
 		case err := <-errChannel:
 			s.Require().ErrorIs(err, stop, "unexpected failure")
 
-			epochHash := crypto.Keccak256Hash(genericData.Bytes(), genericData.Bytes())
 			expectedClaim := &Claim{
 				InputRange: InputRange{First: uint64(0), Last: uint64(0)},
-				EpochHash:  epochHash,
+				EpochHash:  crypto.Keccak256Hash(genericData[:], genericData[:]),
 			}
 			expectedProofs := []Proof{{OutputsEpochRootHash: genericData}}
 			s.repo.AssertCalled(

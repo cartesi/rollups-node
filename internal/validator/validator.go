@@ -140,8 +140,8 @@ func (v Validator) Start(ctx context.Context, ready chan<- struct{}) error {
 			}
 			outputsEpochRootHash := proofs[0].OutputsEpochRootHash
 			epochHash := crypto.Keccak256Hash(
-				outputsEpochRootHash.Bytes(),
-				machineStateHash.Bytes(),
+				outputsEpochRootHash[:],
+				machineStateHash[:],
 			)
 			claim := &Claim{InputRange: inputRange, EpochHash: epochHash}
 			if err = v.repo.FinishEpochTransaction(
