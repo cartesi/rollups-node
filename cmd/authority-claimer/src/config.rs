@@ -4,7 +4,7 @@
 use crate::{
     log::{LogConfig, LogEnvCliConfig},
     redacted::Redacted,
-    rollups_events::{Address, BrokerCLIConfig, BrokerConfig, HexArrayError},
+    rollups_events::{Address, HexArrayError},
 };
 use clap::{command, Parser};
 use eth_tx_manager::{
@@ -48,7 +48,6 @@ pub struct Config {
     pub tx_manager_config: TxManagerConfig,
     pub tx_signing_config: TxSigningConfig,
     pub tx_manager_priority: Priority,
-    pub broker_config: BrokerConfig,
     pub log_config: LogConfig,
     pub iconsensus_address: Address,
     pub genesis_block: u64,
@@ -83,8 +82,6 @@ impl Config {
         let tx_signing_config =
             TxSigningConfig::try_from(cli_config.tx_signing_config)?;
 
-        let broker_config = BrokerConfig::from(cli_config.broker_config);
-
         let log_config = LogConfig::initialize(cli_config.log_config);
 
         let iconsensus_address = cli_config
@@ -96,7 +93,6 @@ impl Config {
             tx_manager_config,
             tx_signing_config,
             tx_manager_priority: Priority::Normal,
-            broker_config,
             log_config,
             iconsensus_address,
             genesis_block: cli_config.genesis_block,
@@ -114,9 +110,6 @@ struct AuthorityClaimerCLI {
 
     #[command(flatten)]
     pub tx_signing_config: TxSigningCLIConfig,
-
-    #[command(flatten)]
-    pub broker_config: BrokerCLIConfig,
 
     #[command(flatten)]
     pub log_config: LogEnvCliConfig,

@@ -6,7 +6,6 @@ mod claimer;
 mod config;
 mod contracts;
 mod http_server;
-mod listener;
 pub mod log;
 mod metrics;
 mod redacted;
@@ -15,9 +14,6 @@ mod rollups_events;
 mod sender;
 mod signer;
 mod types;
-
-#[cfg(test)]
-mod test_fixtures;
 
 use checker::DefaultDuplicateChecker;
 use claimer::{Claimer, DefaultClaimer};
