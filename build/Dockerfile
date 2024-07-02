@@ -422,8 +422,6 @@ RUN <<EOF
         ca-certificates \
         curl \
         libpq5 \
-        redis \
-        redis-tools \
         libboost-coroutine1.81.0 \
         libboost-context1.81.0 \
         libboost-filesystem1.81.0 \

@@ -38,6 +38,7 @@ fn redacts_debug_fmt() {
 #[derive(Clone)]
 pub struct RedactedUrl(Url);
 
+#[allow(dead_code)]
 impl RedactedUrl {
     pub fn new(url: Url) -> Self {
         Self(url)

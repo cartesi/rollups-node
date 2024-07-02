@@ -21,24 +21,12 @@ type portOffset = int
 const (
 	portOffsetProxy = iota
 	portOffsetAuthorityClaimer
-	portOffsetRedis
 	portOffsetPostgraphile
 )
-
-const localhost = "127.0.0.1"
 
 // Get the port of the given service.
 func getPort(c config.NodeConfig, offset portOffset) int {
 	return c.HttpPort + int(offset)
-}
-
-// Get the redis endpoint based on whether the experimental sunodo validator mode is enabled.
-func getRedisEndpoint(c config.NodeConfig) string {
-	if c.ExperimentalSunodoValidatorEnabled {
-		return c.ExperimentalSunodoValidatorRedisEndpoint
-	} else {
-		return fmt.Sprintf("redis://%v:%v", localhost, getPort(c, portOffsetRedis))
-	}
 }
 
 // Create the RUST_LOG variable using the config log level.
@@ -99,31 +87,12 @@ func newAuthorityClaimer(c config.NodeConfig, workDir string) services.CommandSe
 	return s
 }
 
-func newRedis(c config.NodeConfig, workDir string) services.CommandService {
-	var s services.CommandService
-	s.Name = "redis"
-	s.HealthcheckPort = getPort(c, portOffsetRedis)
-	s.Path = "redis-server"
-	s.Args = append(s.Args, "--port", fmt.Sprint(getPort(c, portOffsetRedis)))
-	// Disable persistence with --save and --appendonly config
-	s.Args = append(s.Args, "--save", "")
-	s.Args = append(s.Args, "--appendonly", "no")
-	s.Env = append(s.Env, os.Environ()...)
-	s.WorkDir = workDir
-	return s
-}
-
 func newSupervisorService(
 	c config.NodeConfig,
 	workDir string,
 	database *repository.Database,
 ) services.SupervisorService {
 	var s []services.Service
-
-	if !c.ExperimentalSunodoValidatorEnabled {
-		// add Redis first
-		s = append(s, newRedis(c, workDir))
-	}
 
 	// enable claimer if reader mode and sunodo validator mode are not enabled
 	if c.FeatureClaimerEnabled && !c.ExperimentalSunodoValidatorEnabled {

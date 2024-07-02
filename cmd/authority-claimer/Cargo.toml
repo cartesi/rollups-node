@@ -13,7 +13,6 @@ test = false
 [dependencies]
 async-trait = "0.1"
 axum = "0.7"
-backoff = {version = "0.4", features = ["tokio"]}
 base64 = "0.22"
 clap = {version = "4.5", features = ["string", "derive", "env"]}
 ethers = "1.0"
@@ -23,7 +22,6 @@ eth-state-fold-types = {version = "0.9", features = ["ethers"]}
 eth-tx-manager = "0.10"
 hex = "0.4"
 prometheus-client = "0.22"
-redis = {version = "0.25", features = ["streams", "tokio-comp", "connection-manager", "tls-native-tls", "tokio-native-tls-comp", "cluster", "cluster-async"]}
 reqwest = "=0.11.24" # Set specific reqwest version to fix the build
 rusoto_core = "0.48"
 rusoto_kms = "0.48"
