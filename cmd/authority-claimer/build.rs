@@ -12,7 +12,7 @@ use std::{
 };
 
 const ROLLUPS_CONTRACTS_URL: &str =
-    "https://registry.npmjs.org/@cartesi/rollups/-/rollups-2.0.0-rc.2.tgz";
+    "https://registry.npmjs.org/@cartesi/rollups/-/rollups-2.0.0-rc.6.tgz";
 
 fn main() -> Result<(), Box<dyn Error>> {
     let tempdir = tempfile::tempdir()?;

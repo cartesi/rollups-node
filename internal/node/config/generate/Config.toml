@@ -117,11 +117,6 @@ go-type = "string"
 description = """
 Address of the DApp's contract."""
 
-[contracts.CARTESI_CONTRACTS_ICONSENSUS_ADDRESS]
-go-type = "string"
-description = """
-Address of the IConsensus contract."""
-
 [contracts.CARTESI_CONTRACTS_INPUT_BOX_ADDRESS]
 go-type = "string"
 description = """

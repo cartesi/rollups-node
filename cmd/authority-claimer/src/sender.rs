@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use crate::{
-    contracts::iconsensus::{IConsensus, InputRange},
+    contracts::iconsensus::IConsensus,
     metrics::AuthorityClaimerMetrics,
     rollups_events::{Address, DAppMetadata, RollupsClaim},
     signer::ConditionalSigner,
@@ -20,10 +20,8 @@ use eth_tx_manager::{
 use ethers::{
     self,
     middleware::SignerMiddleware,
-    providers::{
-        Http, HttpRateLimitRetryPolicy, MockProvider, Provider, RetryClient,
-    },
-    types::{NameOrAddress, H160},
+    providers::{Http, HttpRateLimitRetryPolicy, Provider, RetryClient},
+    types::{NameOrAddress, H160, H256, U256},
 };
 use snafu::{OptionExt, ResultExt, Snafu};
 use std::{fmt::Debug, sync::Arc};
@@ -43,7 +41,8 @@ pub trait TransactionSender: Sized + Debug {
     async fn send_rollups_claim_transaction(
         self,
         rollups_claim: RollupsClaim,
-    ) -> Result<Self, Self::Error>;
+        iconsensus: Address,
+    ) -> Result<(H256, Self), Self::Error>;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -79,7 +78,6 @@ pub struct DefaultTransactionSender {
     confirmations: usize,
     priority: Priority,
     from: ethers::types::Address,
-    iconsensus: IConsensus<Provider<MockProvider>>,
     chain_id: u64,
     metrics: AuthorityClaimerMetrics,
 }
@@ -149,7 +147,6 @@ impl DefaultTransactionSender {
         tx_manager_config: TxManagerConfig,
         tx_manager_priority: Priority,
         conditional_signer: ConditionalSigner,
-        iconsensus: Address,
         from: ethers::types::Address,
         chain_id: u64,
         metrics: AuthorityClaimerMetrics,
@@ -164,18 +161,10 @@ impl DefaultTransactionSender {
         )
         .await?;
 
-        let iconsensus = {
-            let (provider, _mock) = Provider::mocked();
-            let provider = Arc::new(provider);
-            let address: H160 = iconsensus.into_inner().into();
-            IConsensus::new(address, provider)
-        };
-
         Ok(Self {
             tx_manager,
             confirmations: tx_manager_config.default_confirmations,
             priority: tx_manager_priority,
-            iconsensus,
             from,
             chain_id,
             metrics,
@@ -190,20 +179,23 @@ impl TransactionSender for DefaultTransactionSender {
     async fn send_rollups_claim_transaction(
         self,
         rollups_claim: RollupsClaim,
-    ) -> Result<Self, Self::Error> {
+        iconsensus: Address,
+    ) -> Result<(H256, Self), Self::Error> {
         let dapp_address = rollups_claim.dapp_address.clone();
 
+        let iconsensus = {
+            let (provider, _mock) = Provider::mocked();
+            let provider = Arc::new(provider);
+            let address: H160 = iconsensus.into_inner().into();
+            IConsensus::new(address, provider)
+        };
+
         let transaction = {
-            let input_range = InputRange {
-                first_index: rollups_claim.first_index as u64,
-                last_index: rollups_claim.last_index as u64,
-            };
-            let call = self
-                .iconsensus
+            let call = iconsensus
                 .submit_claim(
                     H160(dapp_address.inner().to_owned()),
-                    input_range,
-                    rollups_claim.epoch_hash.into_inner(),
+                    U256([rollups_claim.last_block, 0, 0, 0]),
+                    rollups_claim.output_merkle_root_hash.into_inner(),
                 )
                 .from(self.from);
             let to = match call.tx.to().context(InternalEthersSnafu)? {
@@ -232,8 +224,8 @@ impl TransactionSender for DefaultTransactionSender {
                 dapp_address,
             })
             .inc();
-        trace!("Claim transaction confirmed: `{:?}`", receipt);
+        info!("Claim transaction confirmed: `{:?}`", receipt);
 
-        Ok(Self { tx_manager, ..self })
+        Ok((receipt.transaction_hash, Self { tx_manager, ..self }))
     }
 }

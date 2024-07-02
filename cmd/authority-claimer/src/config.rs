@@ -4,7 +4,7 @@
 use crate::{
     log::{LogConfig, LogEnvCliConfig},
     redacted::Redacted,
-    rollups_events::{Address, BrokerCLIConfig, BrokerConfig, HexArrayError},
+    rollups_events::HexArrayError,
 };
 use clap::{command, Parser};
 use eth_tx_manager::{
@@ -50,7 +50,7 @@ pub struct Config {
     pub tx_manager_priority: Priority,
     pub broker_config: BrokerConfig,
     pub log_config: LogConfig,
-    pub iconsensus_address: Address,
+    pub postgres_endpoint: String,
     pub genesis_block: u64,
     pub http_server_port: u16,
 }
@@ -87,10 +87,7 @@ impl Config {
 
         let log_config = LogConfig::initialize(cli_config.log_config);
 
-        let iconsensus_address = cli_config
-            .iconsensus_address
-            .try_into()
-            .context(ParseIConsensusAddressSnafu)?;
+        let postgres_endpoint = cli_config.postgres_endpoint;
 
         Ok(Config {
             tx_manager_config,
@@ -98,7 +95,7 @@ impl Config {
             tx_manager_priority: Priority::Normal,
             broker_config,
             log_config,
-            iconsensus_address,
+            postgres_endpoint,
             genesis_block: cli_config.genesis_block,
             http_server_port: cli_config.http_server_port,
         })
@@ -121,9 +118,9 @@ struct AuthorityClaimerCLI {
     #[command(flatten)]
     pub log_config: LogEnvCliConfig,
 
-    /// Address of the IConsensus contract
+    /// Postgres endpoint address
     #[arg(long, env)]
-    pub iconsensus_address: String,
+    pub postgres_endpoint: String,
 
     /// Genesis block for reading blockchain events
     #[arg(long, env, default_value_t = 1)]

@@ -10,6 +10,7 @@ mod listener;
 pub mod log;
 mod metrics;
 mod redacted;
+mod repository;
 mod rollups_events;
 mod sender;
 mod signer;
@@ -22,8 +23,8 @@ use checker::DefaultDuplicateChecker;
 use claimer::{Claimer, DefaultClaimer};
 pub use config::Config;
 use ethers::signers::Signer;
-use listener::DefaultBrokerListener;
 use metrics::AuthorityClaimerMetrics;
+use repository::DefaultRepository;
 use sender::DefaultTransactionSender;
 use signer::ConditionalSigner;
 use snafu::Error;
@@ -37,11 +38,9 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
 
     let chain_id = config.tx_manager_config.chain_id;
 
-    // Creating the broker listener.
-    trace!("Creating the broker listener");
-    let broker_listener =
-        DefaultBrokerListener::new(config.broker_config.clone(), chain_id)
-            .await?;
+    // Creating repository.
+    trace!("Creating the repository");
+    let repository = DefaultRepository::new(config.postgres_endpoint)?;
 
     // Creating the conditional signer.
     let conditional_signer =
@@ -52,7 +51,6 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
     trace!("Creating the duplicate checker");
     let duplicate_checker = DefaultDuplicateChecker::new(
         config.tx_manager_config.provider_http_endpoint.clone(),
-        config.iconsensus_address.clone(),
         from,
         config.tx_manager_config.default_confirmations,
         config.genesis_block,
@@ -65,7 +63,6 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         config.tx_manager_config,
         config.tx_manager_priority,
         conditional_signer,
-        config.iconsensus_address,
         from,
         chain_id,
         metrics,
@@ -73,11 +70,8 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
     .await?;
 
     // Creating the claimer loop.
-    let claimer = DefaultClaimer::new(
-        broker_listener,
-        duplicate_checker,
-        transaction_sender,
-    );
+    let claimer =
+        DefaultClaimer::new(repository, duplicate_checker, transaction_sender);
     let claimer_handle = claimer.start();
 
     // Starting the HTTP server and the claimer loop.

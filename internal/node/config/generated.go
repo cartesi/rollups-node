@@ -312,18 +312,6 @@ func getContractsApplicationAddress() string {
 	return val
 }
 
-func getContractsIconsensusAddress() string {
-	s, ok := os.LookupEnv("CARTESI_CONTRACTS_ICONSENSUS_ADDRESS")
-	if !ok {
-		panic("missing env var CARTESI_CONTRACTS_ICONSENSUS_ADDRESS")
-	}
-	val, err := toString(s)
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse CARTESI_CONTRACTS_ICONSENSUS_ADDRESS: %v", err))
-	}
-	return val
-}
-
 func getContractsInputBoxAddress() string {
 	s, ok := os.LookupEnv("CARTESI_CONTRACTS_INPUT_BOX_ADDRESS")
 	if !ok {

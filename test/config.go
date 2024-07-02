@@ -52,7 +52,6 @@ func NewLocalNodeConfig(localPostgresEndpoint string, localBlockchainHttpEndpoin
 
 	//Contracts
 	nodeConfig.ContractsApplicationAddress = book.Application.Hex()
-	nodeConfig.ContractsIConsensusAddress = book.Authority.Hex()
 	nodeConfig.ContractsInputBoxAddress = book.InputBox.Hex()
 	nodeConfig.ContractsInputBoxDeploymentBlockNumber = LocalInputBoxDeploymentBlockNumber
 

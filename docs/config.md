@@ -124,12 +124,6 @@ Address of the DApp's contract.
 
 * **Type:** `string`
 
-## `CARTESI_CONTRACTS_ICONSENSUS_ADDRESS`
-
-Address of the IConsensus contract.
-
-* **Type:** `string`
-
 ## `CARTESI_CONTRACTS_INPUT_BOX_ADDRESS`
 
 Address of the InputBox contract.

@@ -30,6 +30,7 @@ pub trait DuplicateChecker: Debug {
     async fn is_duplicated_rollups_claim(
         &mut self,
         rollups_claim: &RollupsClaim,
+        iconsensus: &Address,
     ) -> Result<bool, Self::Error>;
 }
 
@@ -40,15 +41,13 @@ pub trait DuplicateChecker: Debug {
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 struct Claim {
     application: Address,
-    first_index: u64,
-    last_index: u64,
-    epoch_hash: Hash,
+    last_block: u64,
+    claim_hash: Hash,
 }
 
 #[derive(Debug)]
 pub struct DefaultDuplicateChecker {
     provider: Arc<Provider<RetryClient<Http>>>,
-    iconsensus: IConsensus<Provider<RetryClient<Http>>>,
     from: EthersAddress,
     claims: HashSet<Claim>,
     confirmations: usize,
@@ -81,7 +80,6 @@ pub enum DuplicateCheckerError {
 impl DefaultDuplicateChecker {
     pub async fn new(
         http_endpoint: String,
-        iconsensus: Address,
         from: EthersAddress,
         confirmations: usize,
         genesis_block: u64,
@@ -94,19 +92,13 @@ impl DefaultDuplicateChecker {
             INITIAL_BACKOFF,
         );
         let provider = Arc::new(Provider::new(retry_client));
-        let iconsensus = IConsensus::new(
-            H160(iconsensus.inner().to_owned()),
-            provider.clone(),
-        );
-        let mut checker = Self {
+        let checker = Self {
             provider,
-            iconsensus,
             from,
             claims: HashSet::new(),
             confirmations,
             next_block_to_read: genesis_block,
         };
-        checker.update_claims().await?; // to allow failure during instantiation
         Ok(checker)
     }
 }
@@ -118,20 +110,23 @@ impl DuplicateChecker for DefaultDuplicateChecker {
     async fn is_duplicated_rollups_claim(
         &mut self,
         rollups_claim: &RollupsClaim,
+        iconsensus: &Address,
     ) -> Result<bool, Self::Error> {
-        self.update_claims().await?;
+        self.update_claims(iconsensus).await?;
         let claim = Claim {
             application: rollups_claim.dapp_address.clone(),
-            first_index: rollups_claim.first_index as u64,
-            last_index: rollups_claim.last_index as u64,
-            epoch_hash: rollups_claim.epoch_hash.clone(),
+            last_block: rollups_claim.last_block,
+            claim_hash: rollups_claim.output_merkle_root_hash.clone(),
         };
         Ok(self.claims.contains(&claim))
     }
 }
 
 impl DefaultDuplicateChecker {
-    async fn update_claims(&mut self) -> Result<(), DuplicateCheckerError> {
+    async fn update_claims(
+        &mut self,
+        iconsensus: &Address,
+    ) -> Result<(), DuplicateCheckerError> {
         let depth = self.confirmations as u64;
 
         let latest = self
@@ -153,8 +148,12 @@ impl DefaultDuplicateChecker {
             return Ok(());
         }
 
-        let claims = self
-            .iconsensus
+        let iconsensus = IConsensus::new(
+            H160(iconsensus.inner().to_owned()),
+            self.provider.clone(),
+        );
+
+        let claims = iconsensus
             .claim_submission_filter()
             .from_block(self.next_block_to_read)
             .to_block(latest)
@@ -173,9 +172,10 @@ impl DefaultDuplicateChecker {
         for claim_submission in claims.into_iter() {
             let claim = Claim {
                 application: Address::new(claim_submission.app_contract.into()),
-                first_index: claim_submission.input_range.first_index,
-                last_index: claim_submission.input_range.last_index,
-                epoch_hash: Hash::new(claim_submission.epoch_hash),
+                last_block: claim_submission
+                    .last_processed_block_number
+                    .as_u64(),
+                claim_hash: Hash::new(claim_submission.claim),
             };
             self.claims.insert(claim);
         }

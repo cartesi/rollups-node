@@ -28,9 +28,12 @@ reqwest = "=0.11.24" # Set specific reqwest version to fix the build
 rusoto_core = "0.48"
 rusoto_kms = "0.48"
 rusoto_sts = "0.48"
+sea-query = "0.30.7"
+sea-query-binder = {version="0.5.0", features=["sqlx-postgres"]}
 serde = "1.0"
 serde_json = "1.0"
 snafu = "0.8"
+sqlx = {version="0.7", features=["runtime-async-std", "postgres", "rust_decimal"]}
 tokio = {version = "1.37", features = ["macros", "rt-multi-thread", "rt"]}
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
