@@ -8,8 +8,10 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/cartesi/rollups-node/internal/inputreader"
 	"github.com/cartesi/rollups-node/internal/node/config"
 	"github.com/cartesi/rollups-node/internal/services"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // We use an enum to define the ports of each service and avoid conflicts.
@@ -125,6 +127,7 @@ func newSupervisorService(c config.NodeConfig, workDir string) services.Supervis
 
 	s = append(s, newHttpService(c))
 	s = append(s, newPostgraphileService(c, workDir))
+	s = append(s, newInputReaderService(c))
 
 	supervisor := services.SupervisorService{
 		Name:     "rollups-node",
@@ -163,4 +166,15 @@ func newPostgraphileService(c config.NodeConfig, workDir string) services.Comman
 	s.Env = append(s.Env, os.Environ()...)
 	s.WorkDir = workDir
 	return s
+}
+
+func newInputReaderService(c config.NodeConfig) services.Service {
+	return inputreader.NewInputReaderService(
+		c.BlockchainHttpEndpoint.Value,
+		c.BlockchainWsEndpoint.Value,
+		c.PostgresEndpoint.Value,
+		common.HexToAddress(c.ContractsInputBoxAddress),
+		uint64(c.ContractsInputBoxDeploymentBlockNumber),
+		common.HexToAddress(c.ContractsApplicationAddress),
+	)
 }
