@@ -6,24 +6,21 @@ mod claimer;
 mod config;
 mod contracts;
 mod http_server;
-mod listener;
 pub mod log;
 mod metrics;
 mod redacted;
+mod repository;
 mod rollups_events;
 mod sender;
 mod signer;
 mod types;
 
-#[cfg(test)]
-mod test_fixtures;
-
 use checker::DefaultDuplicateChecker;
 use claimer::{Claimer, DefaultClaimer};
 pub use config::Config;
 use ethers::signers::Signer;
-use listener::DefaultBrokerListener;
 use metrics::AuthorityClaimerMetrics;
+use repository::DefaultRepository;
 use sender::DefaultTransactionSender;
 use signer::ConditionalSigner;
 use snafu::Error;
@@ -37,11 +34,9 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
 
     let chain_id = config.tx_manager_config.chain_id;
 
-    // Creating the broker listener.
-    trace!("Creating the broker listener");
-    let broker_listener =
-        DefaultBrokerListener::new(config.broker_config.clone(), chain_id)
-            .await?;
+    // Creating repository.
+    trace!("Creating the repository");
+    let repository = DefaultRepository::new("".to_string()).await?;
 
     // Creating the conditional signer.
     let conditional_signer =
@@ -73,11 +68,8 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
     .await?;
 
     // Creating the claimer loop.
-    let claimer = DefaultClaimer::new(
-        broker_listener,
-        duplicate_checker,
-        transaction_sender,
-    );
+    let claimer =
+        DefaultClaimer::new(repository, duplicate_checker, transaction_sender);
     let claimer_handle = claimer.start();
 
     // Starting the HTTP server and the claimer loop.
