@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	LocalBlockchainID                  = 31337
+	LocalBlockchainID                  = uint64(31337)
 	LocalInputBoxDeploymentBlockNumber = 16
 	LocalHttpAddress                   = "0.0.0.0"
 	LocalHttpPort                      = 10000
