@@ -230,3 +230,16 @@ func MineNewBlock(
 	defer ethClient.Close()
 	return ethClient.BlockNumber(ctx)
 }
+
+func GetChainId(
+	ctx context.Context,
+	blockchainHttpEndpoint string,
+) (*big.Int, error) {
+	ethClient, err := ethclient.DialContext(ctx, blockchainHttpEndpoint)
+
+	if err != nil {
+		return big.NewInt(0), err
+	}
+	defer ethClient.Close()
+	return ethClient.ChainID(ctx)
+}

@@ -21,7 +21,7 @@ import (
 type Book struct {
 	Application         common.Address
 	ApplicationFactory  common.Address
-	Authority           common.Address
+	IConsensus          common.Address
 	AuthorityFactory    common.Address
 	DAppAddressRelay    common.Address
 	ERC1155BatchPortal  common.Address
@@ -37,7 +37,7 @@ func GetTestBook() *Book {
 	return &Book{
 		Application:         common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		ApplicationFactory:  common.HexToAddress("0x39cc8d1faB70F713784032f166aB7Fe3B4801144"),
-		Authority:           common.HexToAddress("0x77e5a5fb18F72b5106621f66C704c006c6dB4578"),
+		IConsensus:          common.HexToAddress("0x77e5a5fb18F72b5106621f66C704c006c6dB4578"),
 		AuthorityFactory:    common.HexToAddress("0x5EF4260c72a7A8df752AFF49aC46Ba741754E04a"),
 		ERC1155BatchPortal:  common.HexToAddress("0x83D7fc8A2A2535A17b037598bad23562215a752A"),
 		ERC1155SinglePortal: common.HexToAddress("0x77b5b758f43E789E0858a766934bE08B2CD65feA"),
