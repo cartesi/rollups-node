@@ -104,6 +104,21 @@ func (s *RepositorySuite) TestOutputExists() {
 	s.Require().Nil(err)
 }
 
+func (s *RepositorySuite) TestReportExists() {
+	output := Output{
+		Index:      0,
+		InputIndex: 0,
+		Blob:       common.Hex2Bytes("deadbeef"),
+	}
+
+	err := s.database.InsertOutput(s.ctx, false, &output)
+	s.Require().Nil(err)
+
+	response, err := s.database.GetOutput(s.ctx, false, 0, 0)
+	s.Require().Equal(&output, response)
+	s.Require().Nil(err)
+}
+
 func (s *RepositorySuite) TestOutputDoesntExist() {
 	response, err := s.database.GetOutput(s.ctx, false, 1, 1)
 	s.Require().Nil(response)
