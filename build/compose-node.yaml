@@ -12,7 +12,6 @@ services:
       - "10000:10000" # Supervisor
     environment:
       CARTESI_LOG_LEVEL: "info"
-      CARTESI_LOG_PRETTY: "true"
-      CARTESI_FEATURE_DISABLE_CLAIMER: "false"
+      CARTESI_LOG_PRETTY_ENABLED: "true"
       CARTESI_HTTP_ADDRESS: "0.0.0.0"
       CARTESI_HTTP_PORT: "10000"
