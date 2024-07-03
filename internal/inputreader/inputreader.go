@@ -21,7 +21,7 @@ import (
 // InputReader reads inputs from the blockchain
 type InputReader struct {
 	client              EthClient
-	wsClient            EthClient
+	wsClient            EthWsClient
 	inputSource         InputSource
 	repository          InputReaderRepository
 	inputBoxAddress     common.Address
@@ -52,12 +52,17 @@ type InputReaderRepository interface {
 }
 
 // EthClient mimics part of ethclient.Client functions to narrow down the
-// interface needed by the InputReader
+// interface needed by the InputReader, and must be binded to Http enpoint
 type EthClient interface {
 	HeaderByNumber(
 		ctx context.Context,
 		number *big.Int,
 	) (*types.Header, error)
+}
+
+// EthWsClient mimics part of ethclient.Client functions to narrow down the
+// interface needed by the InputReader, and must be binded to WS endpoint
+type EthWsClient interface {
 	SubscribeNewHead(
 		ctx context.Context,
 		ch chan<- *types.Header,
@@ -71,7 +76,7 @@ func (r InputReader) String() string {
 // Creates a new InputReader.
 func newInputReader(
 	client EthClient,
-	wsClient EthClient,
+	wsClient EthWsClient,
 	inputSource InputSource,
 	repository InputReaderRepository,
 	inputBoxAddress common.Address,

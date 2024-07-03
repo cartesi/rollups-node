@@ -593,7 +593,6 @@ func (m *MockSubscription) Err() <-chan error {
 
 // FakeClient
 type FakeWSEhtClient struct {
-	MockEthClient
 	NewHeaders []*types.Header
 	WaitGroup  *sync.WaitGroup
 }
