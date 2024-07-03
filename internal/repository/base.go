@@ -68,11 +68,12 @@ func (pg *database) SetupDatabaseState(
 		input_box_deployment_block,
 		epoch_duration,
 		current_epoch)
-	VALUES
-		(@deploymentBlock,
+	SELECT
+		@deploymentBlock,
 		@deploymentBlock,
 		@epochDuration,
-		@currentEpoch)`
+		@currentEpoch
+	WHERE NOT EXISTS (SELECT * FROM node_state)`
 
 	args := pgx.NamedArgs{
 		"startBlock":      deploymentBlock,
