@@ -69,6 +69,14 @@ type EthWsClient interface {
 	) (ethereum.Subscription, error)
 }
 
+type SubscriptionError struct {
+	Cause error
+}
+
+func (e *SubscriptionError) Error() string {
+	return fmt.Sprintf("Subscription error : %v", e.Cause)
+}
+
 func (r InputReader) String() string {
 	return "input-reader"
 }
@@ -125,7 +133,14 @@ func (r InputReader) Start(
 		}
 	}
 
-	return r.watchForNewInputs(ctx, ready)
+	for {
+		watchForNewInputsError := r.watchForNewInputs(ctx, ready)
+		if _, ok := watchForNewInputsError.(*SubscriptionError); !ok {
+			return watchForNewInputsError
+		}
+		slog.Debug(watchForNewInputsError.Error())
+		slog.Debug("Reconnect...")
+	}
 }
 
 // Fetch the most recent `finalized` header, up to what all inputs should be
@@ -188,7 +203,7 @@ func (r InputReader) readInputs(
 		return err
 	}
 	if len(inputs) > 0 {
-		slog.Debug("all inputs stored successfuly")
+		slog.Debug("all inputs stored successfully")
 	}
 
 	return nil
@@ -213,7 +228,7 @@ func (r InputReader) watchForNewInputs(
 		case <-ctx.Done():
 			return ctx.Err()
 		case err := <-sub.Err():
-			return fmt.Errorf("subscription failed: %v", err)
+			return &SubscriptionError{Cause: err}
 		case <-headers:
 
 			storedMostRecentFinalizedBlockNumber, err := r.repository.

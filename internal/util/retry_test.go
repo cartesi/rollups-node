@@ -12,65 +12,55 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-const (
-	suiteTimeout = 120 * time.Second
-)
-
 type RetrySuite struct {
 	suite.Suite
-	simpleMock *SimpleMock
 }
 
 func TestRetrySuite(t *testing.T) {
 	suite.Run(t, new(RetrySuite))
 }
 
-func (s *RetrySuite) SetupSuite() {
-	s.simpleMock = &SimpleMock{}
-}
+func (s *RetrySuite) SetupSuite()    {}
 func (s *RetrySuite) TearDownSuite() {}
 
 func (s *RetrySuite) TestRetry() {
+	simpleMock := &SimpleMock{}
 
-	s.simpleMock.On(
+	simpleMock.On(
 		"execute",
 		mock.Anything).
 		Once().
 		Return(0, fmt.Errorf("An error"))
 
-	s.simpleMock.On(
+	simpleMock.On(
 		"execute",
 		mock.Anything).
-		Once().
 		Return(0, nil)
 
-	CallFunctionWithRetryPolicy(s.simpleMock.execute, 0, 3, 1*time.Millisecond)
+	_, err := CallFunctionWithRetryPolicy(simpleMock.execute, 0, 3, 1*time.Millisecond)
+	s.Require().Nil(err)
 
-	s.simpleMock.AssertNumberOfCalls(s.T(), "execute", 2)
+	simpleMock.AssertNumberOfCalls(s.T(), "execute", 2)
+
 }
 
 func (s *RetrySuite) TestRetryMaxRetries() {
 
-	s.simpleMock.On(
+	simpleMock := &SimpleMock{}
+	simpleMock.On(
 		"execute",
 		mock.Anything).
 		Return(0, fmt.Errorf("An error"))
 
-	CallFunctionWithRetryPolicy(s.simpleMock.execute, 0, 3, 1*time.Millisecond)
+	_, err := CallFunctionWithRetryPolicy(simpleMock.execute, 0, 3, 1*time.Millisecond)
+	s.Require().NotNil(err)
 
-	s.simpleMock.AssertNumberOfCalls(s.T(), "execute", 4)
+	simpleMock.AssertNumberOfCalls(s.T(), "execute", 4)
+
 }
 
 type SimpleMock struct {
 	mock.Mock
-}
-
-func (m *SimpleMock) Unset(methodName string) {
-	for _, call := range m.ExpectedCalls {
-		if call.Method == methodName {
-			call.Unset()
-		}
-	}
 }
 
 func (m *SimpleMock) execute(

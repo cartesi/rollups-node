@@ -5,10 +5,16 @@ package inputreader
 
 import (
 	"context"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+)
+
+const (
+	maxRetries        = 3
+	delayBetweenCalls = 1 * time.Second
 )
 
 // Service to manage InputReader lifecycle
@@ -45,7 +51,6 @@ func (s InputReaderService) Start(
 ) error {
 
 	db, err := repository.Connect(ctx, s.postgresEndpoint)
-
 	if err != nil {
 		return err
 	}
@@ -63,15 +68,14 @@ func (s InputReaderService) Start(
 	defer wsClient.Close()
 
 	inputBoxWrapper, err := NewInputBoxInputSource(s.inputBoxAddress, client)
-
 	if err != nil {
 		return err
 	}
 
 	reader := newInputReader(
-		client,
-		wsClient,
-		inputBoxWrapper,
+		NewEhtClientWithRetryPolicy(client, maxRetries, delayBetweenCalls),
+		NewEthWsClientWithRetryPolicy(wsClient, maxRetries, delayBetweenCalls),
+		NewInputSourceWithRetryPolicy(inputBoxWrapper, maxRetries, delayBetweenCalls),
 		db,
 		s.inputBoxAddress,
 		s.inputBoxBlockNumber,
