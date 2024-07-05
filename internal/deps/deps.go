@@ -28,7 +28,7 @@ const (
 	DefaultDevnetDockerImage             = "cartesi/rollups-node-devnet:devel"
 	DefaultDevnetPort                    = "8545"
 	DefaultDevnetBlockTime               = "1"
-	DefaultDevnetBlockToWaitForOnStartup = "21"
+	DefaultDevnetBlockToWaitForOnStartup = "17"
 	DefaultDevnetNoMining                = false
 
 	numPostgresCheckReadyAttempts = 2
