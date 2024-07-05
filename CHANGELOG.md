@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added Rollups end-to-end test using Echo Dapp
+- Added upgrade guide for v1.5.0
 
 ### Changed
 
