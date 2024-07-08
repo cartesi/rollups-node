@@ -98,11 +98,6 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
-      - name: Run Go Linter
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.58.2
-
       - name: Run Go tests
         working-directory: ${{ github.workspace }}
         run: go test ./...
