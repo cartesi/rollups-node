@@ -4,13 +4,13 @@ linters:
     - goconst
     - godox
     - gofmt
-    - gomnd
     - lll
+    - mnd
     - misspell
 linters-settings:
   lll:
     line-length: 100
     tab-width: 4
-  gomnd:
+  mnd:
     ignored-functions:
       - "^make"
