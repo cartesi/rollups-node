@@ -29,9 +29,9 @@ jobs:
           go-version-file: "go.mod"
 
       - name: Run Go Linter
-        uses: golangci/golangci-lint-action@v5
+        uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.54.2
+          version: v1.58.2
 
       - name: Lint Markdown docs
         uses: DavidAnson/markdownlint-cli2-action@v16
