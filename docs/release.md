@@ -84,7 +84,7 @@ The announcement should contain:
 
 ## Update/create a maintenance branch
 
-Either create a maintenance branch for any major or minor release and name it as `release/X.Y.x` or update an existing maintenance branch if the release is a patch release.
+Either create a maintenance branch for any major or minor release and name it as `release/X.Y.Z` or update an existing maintenance branch if the release is a patch release.
 
 ## Prepare for the next release
 
