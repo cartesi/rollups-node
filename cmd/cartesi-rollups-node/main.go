@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -13,6 +14,9 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/node"
 	"github.com/cartesi/rollups-node/internal/node/config"
+	. "github.com/cartesi/rollups-node/internal/node/model"
+	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/lmittmann/tint"
 	"github.com/mattn/go-isatty"
 )
@@ -42,6 +46,26 @@ func main() {
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
 	slog.Info("Starting the Cartesi Rollups Node", "version", buildVersion, "config", config)
+
+	// setup database
+	nodePersistentConfig := NodePersistentConfig{
+		DefaultBlock:            DefaultBlockStatusFinalized,
+		InputBoxDeploymentBlock: uint64(config.ContractsInputBoxDeploymentBlockNumber),
+		InputBoxAddress:         common.HexToAddress(config.ContractsInputBoxAddress),
+		ChainId:                 config.BlockchainID,
+		IConsensusAddress:       common.HexToAddress(config.ContractsIConsensusAddress),
+	}
+
+	repository.RunMigrations(fmt.Sprintf("%v?sslmode=disable", config.PostgresEndpoint.Value))
+	database, err := repository.Connect(ctx, config.PostgresEndpoint.Value)
+	if err != nil {
+		slog.Error("Node couldn't connect to the database", "error", err)
+	}
+	err = database.InsertNodeConfig(ctx, &nodePersistentConfig)
+	if err != nil {
+		slog.Error("Node couldn't insert database config", "error", err)
+	}
+	database.Close()
 
 	// create the node supervisor
 	supervisor, err := node.Setup(ctx, config, "")
