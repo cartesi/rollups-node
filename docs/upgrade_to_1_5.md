@@ -26,7 +26,7 @@ Where `BLOCK_TIME` corresponds to the duration it takes to generate a block in t
 >
 > So, `CARTESI_EPOCH_LENGTH = 86400/12 = 7200`
 
-Check the [`CHANGELOG`](./CHANGELOG.md) and the [configuration](./docs/config.md) for more details.
+Check the [`CHANGELOG`](../CHANGELOG.md) and the [Rollups Node configuration](./config.md) for more details.
 
 ## How to upgrade
 
@@ -52,7 +52,7 @@ It is described in the next section.
 ## Steps to replace an Application's _History_
 
 > [!CAUTION]
-> Instances of the [History](https://github.com/cartesi/rollups-contracts/blob/v1.4.0/onchain/rollups/contracts/history/History.sol) contract from [rollups-contracts v1.4.0](https://github.com/cartesi/rollups-contracts/releases/tag/v1.4.0) may be used simultaneously by several applications through their associated _Authority_ instance.
+> Instances of the [History](https://github.com/cartesi/rollups-contracts/blob/v1.2.0/onchain/rollups/contracts/history/History.sol) contract from [rollups-contracts v1.2.0](https://github.com/cartesi/rollups-contracts/releases/tag/v1.2.0) may be used simultaneously by several applications through their associated _Authority_ instance.
 > Application owners must consider that and exercise care when performing the steps listed below.
 
 To keep the application inputs, before performing the upgrade to version `v1.5.0`, proceed as described in the sub-sections below.
@@ -106,6 +106,10 @@ cast send \
 ```
 
 > [!NOTE]
+> `cast send` will fail if the `History` type is not known to `cast` at the time of the execution.
+> In such case, it's safe to replace `History` with `address` as return type to `newHistory()` and perform the call again.
+
+> [!NOTE]
 > A `cast send` command may fail due to a gas [estimation failure](https://github.com/foundry-rs/foundry/issues/3093#issuecomment-1251616792), which can be circumvented by providing gas constraints to the command with parameter `gas-limit` (e.g.,`--gas-limit 7000000`).
 
 ### 2. Replace the _History_
@@ -126,5 +130,6 @@ cast send \
 ```
 
 After the _History_ replacement is complete, one must update `CARTESI_CONTRACTS_HISTORY_ADDRESS` with the new _History_ address in the application configuration and proceed with the upgrade of the Cartesi Rollups Node as usual.
+More details about the release may be found in the [CHANGELOG](../CHANGELOG.md).
 
 Once the Cartesi Rollups Node is started, it will relay all existing inputs to be processed by the application, calculate the new epochs and send the respective claims to the new _History_ as a result, all based on the updated configuration.
