@@ -39,7 +39,7 @@ Once the pull request is approved, merge it and update your local copy of the `m
 Then, create a new tag for the release based on the `main` branch as follows:
 
 ```shell
-git tag -a vX.Y.Z
+git tag -a -s vX.Y.Z
 ```
 
 Make sure to add a message to the tag commit as follows:
