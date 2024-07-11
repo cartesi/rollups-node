@@ -13,13 +13,13 @@ import (
 )
 
 const (
-	LocalBlockchainID                     = 31337
+	LocalBlockchainID                  = 31337
 	LocalInputBoxDeploymentBlockNumber = 16
-	LocalHttpAddress                      = "0.0.0.0"
-	LocalHttpPort                         = 10000
-	LocalBlockTimeout                     = 120
-	LocalFinalityOffset                   = 1
-	LocalEpochLength                      = 5
+	LocalHttpAddress                   = "0.0.0.0"
+	LocalHttpPort                      = 10000
+	LocalBlockTimeout                  = 120
+	LocalFinalityOffset                = 1
+	LocalEpochLength                   = 5
 )
 
 func NewLocalNodeConfig(localPostgresEndpoint string, localBlockchainHttpEndpoint string,
