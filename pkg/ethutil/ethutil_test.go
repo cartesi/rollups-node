@@ -6,6 +6,7 @@ package ethutil
 import (
 	"context"
 	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 )
 
 const testTimeout = 300 * time.Second
+const inputBoxDeploymentBlockNumber = 0x10
 
 // This suite sets up a container running a devnet Ethereum node, and connects to it using
 // go-ethereum's client.
@@ -59,35 +61,62 @@ func (s *EthUtilSuite) TearDownTest() {
 }
 
 func (s *EthUtilSuite) TestAddInput() {
-	sender := common.HexToAddress("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266")
+
+	signer, err := NewMnemonicSigner(s.ctx, s.client, FoundryMnemonic, 0)
+	s.Require().Nil(err)
+
+	sender := signer.Account()
 	payload := common.Hex2Bytes("deadbeef")
 
-	inputIndex, err := AddInput(s.ctx, s.client, s.book, s.signer, payload)
-	if !s.Nil(err) {
+	indexChan := make(chan int)
+	errChan := make(chan error)
+
+	waitGroup := sync.WaitGroup{}
+	waitGroup.Add(1)
+
+	go func() {
+		waitGroup.Done()
+		inputIndex, err := AddInput(s.ctx, s.client, s.book, s.signer, payload)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		indexChan <- inputIndex
+	}()
+
+	waitGroup.Wait()
+	time.Sleep(1 * time.Second)
+	blockNumber, err := MineNewBlock(s.ctx, s.endpoint)
+	s.Require().Nil(err)
+	s.Require().Equal(uint64(inputBoxDeploymentBlockNumber+1), blockNumber)
+
+	select {
+	case err := <-errChan:
 		s.logDevnetOutput()
-		s.T().FailNow()
+		s.Require().FailNow("Unexpected Error", err)
+	case inputIndex := <-indexChan:
+		s.Require().Equal(0, inputIndex)
+
+		event, err := GetInputFromInputBox(s.client, s.book, inputIndex)
+		s.Require().Nil(err)
+
+		inputsABI, err := inputs.InputsMetaData.GetAbi()
+		s.Require().Nil(err)
+		advanceInputABI := inputsABI.Methods["EvmAdvance"]
+		inputArgs := map[string]interface{}{}
+		err = advanceInputABI.Inputs.UnpackIntoMap(inputArgs, event.Input[4:])
+		s.Require().Nil(err)
+
+		s.T().Log(inputArgs)
+		s.Require().Equal(sender, inputArgs["msgSender"])
+		s.Require().Equal(payload, inputArgs["payload"])
 	}
-	s.Require().Equal(0, inputIndex)
-
-	event, err := GetInputFromInputBox(s.client, s.book, inputIndex)
-	s.Require().Nil(err)
-
-	inputsABI, err := inputs.InputsMetaData.GetAbi()
-	s.Require().Nil(err)
-	advanceInputABI := inputsABI.Methods["EvmAdvance"]
-	inputArgs := map[string]interface{}{}
-	err = advanceInputABI.Inputs.UnpackIntoMap(inputArgs, event.Input[4:])
-	s.Require().Nil(err)
-
-	s.T().Log(inputArgs)
-	s.Require().Equal(sender, inputArgs["msgSender"])
-	s.Require().Equal(payload, inputArgs["payload"])
 }
 
 func (s *EthUtilSuite) TestMineNewBlock() {
 	blockNumber, err := MineNewBlock(s.ctx, s.endpoint)
 	s.Require().Nil(err)
-	s.Require().Equal(uint64(22), blockNumber)
+	s.Require().Equal(uint64(inputBoxDeploymentBlockNumber+1), blockNumber)
 
 }
 
@@ -112,10 +141,9 @@ func newDevNetContainer(ctx context.Context) (*deps.DepsContainers, error) {
 
 	container, err := deps.Run(ctx, deps.DepsConfig{
 		Devnet: &deps.DevnetConfig{
-			DockerImage:             deps.DefaultDevnetDockerImage,
-			BlockTime:               deps.DefaultDevnetBlockTime,
-			BlockToWaitForOnStartup: deps.DefaultDevnetBlockToWaitForOnStartup,
-			Port:                    testutil.GetCartesiTestDepsPortRange(),
+			DockerImage: deps.DefaultDevnetDockerImage,
+			NoMining:    true,
+			Port:        testutil.GetCartesiTestDepsPortRange(),
 		},
 	})
 	if err != nil {
