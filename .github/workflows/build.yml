@@ -211,6 +211,8 @@ jobs:
           version: v1.58.2
 
       - name: Run Go tests
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: true
         run: go test ./...
 
   build-docker:
