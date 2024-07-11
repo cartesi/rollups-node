@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/go-connections/nat"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -36,6 +38,11 @@ const (
 const (
 	postgresKey = iota
 	devnetKey
+)
+
+const (
+	postgresContainerPort = "5432/tcp"
+	devnetContainerPort   = "8545/tcp"
 )
 
 // Struct to hold Node dependencies containers configurations
@@ -159,6 +166,24 @@ func createHook(finishedWaitGroup *sync.WaitGroup) []testcontainers.ContainerLif
 	}
 }
 
+func buildPortMap(portSpec string) (nat.PortMap, error) {
+	portMappings, err := nat.ParsePortSpec(portSpec)
+	if err != nil {
+		return nil, err
+	}
+
+	portMap := nat.PortMap{}
+	for _, portMapping := range portMappings {
+		portMap[portMapping.Port] = append(
+			portMap[portMapping.Port],
+			nat.PortBinding{
+				HostIP:   portMapping.Binding.HostIP,
+				HostPort: portMapping.Binding.HostPort,
+			})
+	}
+	return portMap, nil
+}
+
 // Run starts the Node dependencies containers.
 // The returned DepContainers struct can be used to gracefully
 // terminate the containers using the Terminate method
@@ -173,20 +198,30 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 			WithOccurrence(numPostgresCheckReadyAttempts).
 			WithPollInterval(pollInterval)
 
-		postgresExposedPorts := "5432/tcp"
+		postgresPortSpec := postgresContainerPort
 		if depsConfig.Postgres.Port != "" {
-			postgresExposedPorts = strings.Join([]string{
-				depsConfig.Postgres.Port, ":", postgresExposedPorts}, "")
+			postgresPortSpec = strings.Join([]string{
+				depsConfig.Postgres.Port, ":", postgresPortSpec}, "")
 		}
+
+		portMap, err := buildPortMap(postgresPortSpec)
+		if err != nil {
+			return nil, err
+		}
+
 		postgresReq := testcontainers.ContainerRequest{
 			Image:        depsConfig.Postgres.DockerImage,
-			ExposedPorts: []string{postgresExposedPorts},
+			ExposedPorts: []string{postgresContainerPort},
 			WaitingFor:   postgresWaitStrategy,
 			Env: map[string]string{
 				"POSTGRES_PASSWORD": depsConfig.Postgres.Password,
 			},
 			LifecycleHooks: createHook(&finishedWaitGroup),
+			HostConfigModifier: func(hostConfig *container.HostConfig) {
+				hostConfig.PortBindings = portMap
+			},
 		}
+
 		postgres, err := testcontainers.GenericContainer(
 			ctx,
 			testcontainers.GenericContainerRequest{
@@ -204,11 +239,18 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 
 	if depsConfig.Devnet != nil {
 
-		devnetExposedPort := "8545/tcp"
+		devnetPortSpec := devnetContainerPort
 		if depsConfig.Devnet.Port != "" {
-			devnetExposedPort = strings.Join([]string{
-				depsConfig.Devnet.Port, ":", devnetExposedPort}, "")
+			devnetPortSpec = strings.Join([]string{
+				depsConfig.Devnet.Port, ":", devnetPortSpec}, "")
 		}
+
+		portMap, err := buildPortMap(devnetPortSpec)
+
+		if err != nil {
+			return nil, err
+		}
+
 		cmd := []string{
 			"anvil",
 			"--load-state",
@@ -225,11 +267,15 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 		}
 		devNetReq := testcontainers.ContainerRequest{
 			Image:          depsConfig.Devnet.DockerImage,
-			ExposedPorts:   []string{devnetExposedPort},
+			ExposedPorts:   []string{devnetContainerPort},
 			WaitingFor:     waitStrategy,
 			Cmd:            cmd,
 			LifecycleHooks: createHook(&finishedWaitGroup),
+			HostConfigModifier: func(hostConfig *container.HostConfig) {
+				hostConfig.PortBindings = portMap
+			},
 		}
+
 		devnet, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 			ContainerRequest: devNetReq,
 			Started:          true,

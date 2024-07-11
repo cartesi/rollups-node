@@ -16,6 +16,8 @@ require github.com/BurntSushi/toml v1.4.0
 require (
 	github.com/Khan/genqlient v0.7.0
 	github.com/deepmap/oapi-codegen/v2 v2.1.0
+	github.com/docker/docker v27.0.3+incompatible
+	github.com/docker/go-connections v0.5.0
 	github.com/golang-migrate/migrate/v4 v4.17.1
 	github.com/jackc/pgx/v5 v5.6.0
 	github.com/lmittmann/tint v1.0.4
@@ -52,8 +54,6 @@ require (
 	github.com/deckarep/golang-set/v2 v2.6.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
-	github.com/docker/docker v27.0.3+incompatible // indirect
-	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/ethereum/c-kzg-4844 v1.0.2 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
