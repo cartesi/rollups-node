@@ -6,6 +6,9 @@ labels: chore
 assignees: ''
 ---
 
+> [!WARNING]
+> Please, read carefully before submitting an issue.
+
 ## 📈 Subtasks
 
 - [ ] Cartesi

@@ -6,6 +6,9 @@ labels: refactor
 assignees: ''
 ---
 
+> [!WARNING]
+> Please, read carefully before submitting an issue.
+
 ## 📚 Context
 
 What is the problem that you are trying to solve?
