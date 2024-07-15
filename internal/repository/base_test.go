@@ -203,7 +203,7 @@ func (s *RepositorySuite) TestApplicationFailsDuplicateRow() {
 		ContractAddress:    common.HexToAddress("deadbeef"),
 		TemplateHash:       common.HexToHash("deadbeef"),
 		SnapshotURI:        "this/is/a/test",
-		LastProcessedBlock: 0,
+		LastProcessedBlock: 1,
 		EpochLength:        10,
 		Status:             ApplicationStatusRunning,
 	}

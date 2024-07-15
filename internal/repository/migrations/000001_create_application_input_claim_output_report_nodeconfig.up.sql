@@ -9,13 +9,18 @@ CREATE TYPE "ClaimStatus" AS ENUM ('PENDING', 'SUBMITTED', 'FINALIZED');
 
 CREATE TYPE "DefaultBlock" AS ENUM ('FINALIZED', 'LATEST', 'PENDING', 'SAFE');
 
+CREATE FUNCTION public.f_maxuint64()
+  RETURNS NUMERIC(20,0)
+  LANGUAGE sql IMMUTABLE PARALLEL SAFE AS
+'SELECT 18446744073709551615';
+
 CREATE TABLE "application"
 (
     "id" SERIAL,
     "contract_address" BYTEA NOT NULL,
     "template_hash" BYTEA NOT NULL,
     "snapshot_uri" VARCHAR(4096) NOT NULL,
-    "last_processed_block" NUMERIC(20,0) NOT NULL,
+    "last_processed_block" NUMERIC(20,0) NOT NULL CHECK ("last_processed_block" >= 0 AND "last_processed_block" <= f_maxuint64()),
     "status" "ApplicationStatus" NOT NULL,
     "epoch_length" INT NOT NULL,
     CONSTRAINT "application_pkey" PRIMARY KEY ("id"),
@@ -25,9 +30,9 @@ CREATE TABLE "application"
 CREATE TABLE "input"
 (
     "id" BIGSERIAL,
-    "index" NUMERIC(20,0) NOT NULL,
+    "index" NUMERIC(20,0) NOT NULL CHECK ("index" >= 0 AND "index" <= f_maxuint64()),
     "raw_data" BYTEA NOT NULL,
-    "block_number" NUMERIC(20,0) NOT NULL,
+    "block_number" NUMERIC(20,0) NOT NULL CHECK ("block_number" >= 0 AND "block_number" <= f_maxuint64()),
     "status" "InputCompletionStatus" NOT NULL,
     "machine_hash" BYTEA,
     "outputs_hash" BYTEA,
@@ -42,7 +47,7 @@ CREATE INDEX "input_idx" ON "input"("block_number");
 CREATE TABLE "claim"
 (
     "id" BIGSERIAL,
-    "index" NUMERIC(20,0) NOT NULL,
+    "index" NUMERIC(20,0) NOT NULL CHECK ("index" >= 0 AND "index" <= f_maxuint64()),
     "output_merkle_root_hash" BYTEA NOT NULL,
     "transaction_hash" BYTEA,
     "status" "ClaimStatus" NOT NULL,
@@ -55,7 +60,7 @@ CREATE TABLE "claim"
 CREATE TABLE "output"
 (
     "id" BIGSERIAL,
-    "index" NUMERIC(20,0) NOT NULL,
+    "index" NUMERIC(20,0) NOT NULL CHECK ("index" >= 0 AND "index" <= f_maxuint64()),
     "raw_data" BYTEA NOT NULL,
     "hash" BYTEA,
     "output_hashes_siblings" BYTEA[],
@@ -69,7 +74,7 @@ CREATE UNIQUE INDEX "output_idx" ON "output"("index");
 CREATE TABLE "report"
 (
     "id" BIGSERIAL,
-    "index" NUMERIC(20,0) NOT NULL,
+    "index" NUMERIC(20,0) NOT NULL CHECK ("index" >= 0 AND "index" <= f_maxuint64()),
     "raw_data" BYTEA NOT NULL,
     "input_id" BIGINT NOT NULL,
     CONSTRAINT "report_pkey" PRIMARY KEY ("id"),
