@@ -19,17 +19,14 @@ import (
 func CreateProofs(leaves []model.Hash, height uint) (model.Hash, [][]model.Hash, error) {
 	pristineNode := model.Hash{}
 
-	if len(leaves) == 0 {
-		leaves = append(leaves, pristineNode)
-	}
-
 	currentLevel := leaves
 	nextLevel := make([]model.Hash, (len(leaves)+1)/2)
 	siblings := make([][]model.Hash, len(leaves))
 
 	// for each level in the tree, starting from the leaves
-	for levelIdx := 0; levelIdx < int(height); levelIdx++ {
-		calculateSiblings(levelIdx, int(height), currentLevel, siblings, pristineNode)
+	var levelIdx uint
+	for levelIdx = 0; levelIdx < height; levelIdx++ {
+		calculateSiblings(levelIdx, height, currentLevel, siblings, pristineNode)
 		calculateParents(currentLevel, nextLevel, pristineNode)
 
 		aux := currentLevel
@@ -40,19 +37,19 @@ func CreateProofs(leaves []model.Hash, height uint) (model.Hash, [][]model.Hash,
 	}
 
 	// in the end, current level is the root level
-	if len(currentLevel) != 1 {
+	if len(currentLevel) > 1 {
 		return model.Hash{}, nil, errors.New("too many leaves for height")
 	}
 
-	return currentLevel[0], siblings, nil
+	return at(currentLevel, 0, pristineNode), siblings, nil
 }
 
 // calculateSiblings iterates over each leaf and populates the siblings matrix
 // with the appropriate sibling nodes at the current level.
 //
-// If the level is not full, a pristine node is used instead.
+// If the current level has an odd number of nodes a pristine node will be used.
 func calculateSiblings(
-	level, height int,
+	levelIdx, height uint,
 	currentLevel []model.Hash,
 	siblings [][]model.Hash,
 	pristineNode model.Hash,
@@ -67,34 +64,32 @@ func calculateSiblings(
 		// the sibling index is to the left of the parent if leaf index is odd
 		// or to the right if leaf index is even
 		siblingIdx := (idx / 2) ^ 1
-		if level == 0 {
+		if levelIdx == 0 {
 			// in the leaf level, use the leaf index directly
 			siblingIdx = idx ^ 1
 		}
 
-		sibling := pristineNode
-		// if current level is full
-		if siblingIdx < len(currentLevel) {
-			sibling = currentLevel[siblingIdx]
-		}
-		siblings[idx][level] = sibling
+		siblings[idx][levelIdx] = at(currentLevel, uint(siblingIdx), pristineNode)
 	}
 }
 
 // calculateParents computes the parent nodes for the next level in the Merkle
 // tree by hashing their children with the Keccak-256 hash function.
 //
-// If the level is not full, a pristine node is used instead.
+// If the current level has an odd number of nodes a pristine node will be used.
 func calculateParents(currentLevel, nextLevel []model.Hash, pristineNode model.Hash) {
 	// for each parent node
 	for idx := range nextLevel {
 		leftChild := currentLevel[2*idx]
-		rightChild := pristineNode
-		// if current level is full
-		if 2*idx+1 < len(currentLevel) {
-			rightChild = currentLevel[2*idx+1]
-		}
-
+		rightChild := at(currentLevel, uint(2*idx+1), pristineNode)
 		nextLevel[idx] = crypto.Keccak256Hash(leftChild[:], rightChild[:])
+	}
+}
+
+func at(array []model.Hash, index uint, defaultValue model.Hash) model.Hash {
+	if index < uint(len(array)) {
+		return array[index]
+	} else {
+		return defaultValue
 	}
 }

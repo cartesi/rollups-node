@@ -27,8 +27,7 @@ func (s *ComputeProofSuite) TestZeroHeight() {
 		s.Require().Nil(err)
 
 		s.Equal(s.pristine, root)
-		s.Equal(1, len(siblings))
-		s.Equal(0, len(siblings[0]))
+		s.Equal(0, len(siblings))
 	})
 
 	s.Run("one leaf", func() {
@@ -62,9 +61,8 @@ func (s *ComputeProofSuite) TestHeightOne() {
 			crypto.Keccak256Hash(s.pristine[:], s.pristine[:]),
 			root,
 		)
-		s.Equal(height, len(siblings))
-		s.Equal(1, len(siblings[0]))
-		s.Equal(s.pristine, siblings[0][0])
+		s.Equal(0, len(siblings))
+		s.Equal(0, len(siblings))
 	})
 
 	s.Run("one leaf", func() {
