@@ -64,7 +64,7 @@ func (s *ValidateMachineHashSuite) TestItFailsWhenContextIsCanceled() {
 	err = validateMachineHash(
 		ctx,
 		machineDir,
-		addresses.GetTestBook().CartesiDApp.String(),
+		addresses.GetTestBook().Application.String(),
 		blockchainHttpEndpoint,
 	)
 	s.NotNil(err)
@@ -91,7 +91,7 @@ func (s *ValidateMachineHashSuite) TestItSucceedsWhenHashesAreEqual() {
 	err = validateMachineHash(
 		ctx,
 		machineDir,
-		addresses.GetTestBook().CartesiDApp.String(),
+		addresses.GetTestBook().Application.String(),
 		blockchainHttpEndpoint,
 	)
 	s.Nil(err)
@@ -116,8 +116,7 @@ func mockMachineDir(hash string) (string, error) {
 	return temp, nil
 }
 
-// Generates a new Cartesi Machine snapshot in a temporary directory and returns
-// its path
+// Generates a new Cartesi Machine snapshot in a temporary directory and returns its path
 func createMachineSnapshot() (string, error) {
 	tmpDir, err := os.MkdirTemp("", "")
 	if err != nil {
@@ -138,8 +137,8 @@ func startDevnet() (*deps.DepsContainers, error) {
 	container, err := deps.Run(context.Background(), deps.DepsConfig{
 		Devnet: &deps.DevnetConfig{
 			DockerImage:             deps.DefaultDevnetDockerImage,
-			BlockTime:               deps.DefaultBlockTime,
-			BlockToWaitForOnStartup: deps.DefaultBlockToWaitForOnStartup,
+			BlockTime:               deps.DefaultDevnetBlockTime,
+			BlockToWaitForOnStartup: deps.DefaultDevnetBlockToWaitForOnStartup,
 			Port:                    testutil.GetCartesiTestDepsPortRange(),
 		},
 	})

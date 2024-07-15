@@ -6,6 +6,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Added PostGraphile service
+
+### Changed
+
+- Bumped Rollups Contracts to 2.0
+- Normalized boolean configuration parameters (`CARTESI_LEGACY_BLOCKCHAIN_ENABLED`, `CARTESI_FEATURE_CLAIMER_ENABLED`, `CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED`, `CARTESI_EXPERIMENTAL_SERVER_MANAGER_LOG_BYPASS_ENABLED` and `CARTESI_LOG_PRETTY_ENABLED`) and adjusted their logic accordingly
+
+### Removed
+
+- Removed `advance-runner`, `dispatcher`, `graphql-server`, `host-runner`, `indexer`, `inspect-server`, and `state-server` Rust services
+- Removed `server-manager` from rollups-node Docker image
+- Removed support to host mode
+
 ## [1.5.0] 2024-07-08
 
 ### Added
@@ -32,13 +49,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added verification to ensure `CARTESI_BLOCKCHAIN_ID` matches the id returned from the Ethereum node
 - Added verification to ensure the Cartesi Machine snapshot hash matches the template hash from the CartesiDApp contract
 - Added support for `CARTESI_AUTH_PRIVATE_KEY` and `CARTESI_AUTH_PRIVATE_KEY_FILE`
-- Added `CARTESI_AUTH_KIND` environment variable to select the blockchain authetication method
+- Added `CARTESI_AUTH_KIND` environment variable to select the blockchain authentication method
 - Added structured logging with slog. Colored logs can now be enabled with `CARTESI_LOG_PRETTY` environment variable
 
 ### Changed
 
 - Changed `CARTESI_BLOCKCHAIN_ID` type from int to uint64
-- Changed `CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER` type from string to int64.
+- Changed `CARTESI_CONTRACTS_APPLICATION_DEPLOYMENT_BLOCK_NUMBER` type from string to int64
 - Changed `CARTESI_LOG_LEVEL` option `warning` to `warn`
 - Bumped Cartesi Emulator SDK to 0.17.1
 - Bumped Server Manager to 0.9.1

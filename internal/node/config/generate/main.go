@@ -8,7 +8,7 @@
 // - a config.md file with documentation for the environment variables.
 //
 // Each table entry in the toml file translates into an environment variable.
-// In Go, this becomes a map[string](map[string]Env), with the keys of the outter map being topic
+// In Go, this becomes a map[string](map[string]Env), with the keys of the outer map being topic
 // names, and the keys of the inner map being variable names.
 package main
 

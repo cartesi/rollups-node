@@ -9,7 +9,7 @@ go-type = "LogLevel"
 description = """
 One of "debug", "info", "warn", "error"."""
 
-[logging.CARTESI_LOG_PRETTY]
+[logging.CARTESI_LOG_PRETTY_ENABLED]
 default = "false"
 go-type = "bool"
 description = """
@@ -19,26 +19,17 @@ If set to true, the node will add colors to its log output."""
 # Features
 #
 
-[features.CARTESI_FEATURE_HOST_MODE]
-default = "false"
+[features.CARTESI_FEATURE_CLAIMER_ENABLED]
+default = "true"
 go-type = "bool"
 description = """
-If set to true, the node will run in host mode.
+If set to false, the node will not make claims."""
 
-In host mode, computations will not be performed by the cartesi machine.
-You should only use host mode for development and debugging!"""
-
-[features.CARTESI_FEATURE_DISABLE_CLAIMER]
-default = "false"
+[features.CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED]
+default = "true"
 go-type = "bool"
 description = """
-If set to true, the node will not make claims."""
-
-[features.CARTESI_FEATURE_DISABLE_MACHINE_HASH_CHECK]
-default = "false"
-go-type = "bool"
-description = """
-If set to true, the node will *not* check whether the Cartesi machine hash from
+If set to false, the node will *not* check whether the Cartesi machine hash from
 the snapshot matches the hash in the Application contract."""
 
 #
@@ -72,7 +63,7 @@ go-type = "string"
 description = """
 WebSocket endpoint for the blockchain RPC provider."""
 
-[blockchain.CARTESI_BLOCKCHAIN_IS_LEGACY]
+[blockchain.CARTESI_LEGACY_BLOCKCHAIN_ENABLED]
 default = "false"
 go-type = "bool"
 description = """
@@ -83,7 +74,7 @@ If set to true the node will send transactions using the legacy gas fee model
 default = "10"
 go-type = "int"
 description = """
-The node assumes that blocks offseted by N from the current block have reached finality
+The node assumes that blocks offsetted by N from the current block have reached finality
 (N is the read depth)."""
 
 [blockchain.CARTESI_BLOCKCHAIN_BLOCK_TIMEOUT]
@@ -101,15 +92,10 @@ go-type = "string"
 description = """
 Address of the DApp's contract."""
 
-[contracts.CARTESI_CONTRACTS_HISTORY_ADDRESS]
+[contracts.CARTESI_CONTRACTS_ICONSENSUS_ADDRESS]
 go-type = "string"
 description = """
-Address of the History contract."""
-
-[contracts.CARTESI_CONTRACTS_AUTHORITY_ADDRESS]
-go-type = "string"
-description = """
-Address of the Authority contract."""
+Address of the IConsensus contract."""
 
 [contracts.CARTESI_CONTRACTS_INPUT_BOX_ADDRESS]
 go-type = "string"
@@ -232,7 +218,7 @@ go-type = "string"
 description = """
 External Redis endpoint for the node when running in the experimental sunodo validator mode."""
 
-[experimental.CARTESI_EXPERIMENTAL_SERVER_MANAGER_BYPASS_LOG]
+[experimental.CARTESI_EXPERIMENTAL_SERVER_MANAGER_LOG_BYPASS_ENABLED]
 default = "false"
 go-type = "bool"
 description = """

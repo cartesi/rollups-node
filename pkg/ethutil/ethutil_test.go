@@ -6,11 +6,13 @@ package ethutil
 import (
 	"context"
 	"io"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/deps"
 	"github.com/cartesi/rollups-node/pkg/addresses"
+	"github.com/cartesi/rollups-node/pkg/contracts/inputs"
 	"github.com/cartesi/rollups-node/pkg/testutil"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -18,17 +20,19 @@ import (
 )
 
 const testTimeout = 300 * time.Second
+const inputBoxDeploymentBlockNumber = 0x10
 
 // This suite sets up a container running a devnet Ethereum node, and connects to it using
 // go-ethereum's client.
 type EthUtilSuite struct {
 	suite.Suite
-	ctx    context.Context
-	cancel context.CancelFunc
-	deps   *deps.DepsContainers
-	client *ethclient.Client
-	signer Signer
-	book   *addresses.Book
+	ctx      context.Context
+	cancel   context.CancelFunc
+	deps     *deps.DepsContainers
+	client   *ethclient.Client
+	endpoint string
+	signer   Signer
+	book     *addresses.Book
 }
 
 func (s *EthUtilSuite) SetupTest() {
@@ -38,10 +42,10 @@ func (s *EthUtilSuite) SetupTest() {
 	s.deps, err = newDevNetContainer(context.Background())
 	s.Require().Nil(err)
 
-	endpoint, err := s.deps.DevnetEndpoint(s.ctx, "ws")
+	s.endpoint, err = s.deps.DevnetEndpoint(s.ctx, "ws")
 	s.Require().Nil(err)
 
-	s.client, err = ethclient.DialContext(s.ctx, endpoint)
+	s.client, err = ethclient.DialContext(s.ctx, s.endpoint)
 	s.Require().Nil(err)
 
 	s.signer, err = NewMnemonicSigner(s.ctx, s.client, FoundryMnemonic, 0)
@@ -57,21 +61,63 @@ func (s *EthUtilSuite) TearDownTest() {
 }
 
 func (s *EthUtilSuite) TestAddInput() {
-	sender := common.HexToAddress("f39fd6e51aad88f6f4ce6ab8827279cfffb92266")
+
+	signer, err := NewMnemonicSigner(s.ctx, s.client, FoundryMnemonic, 0)
+	s.Require().Nil(err)
+
+	sender := signer.Account()
 	payload := common.Hex2Bytes("deadbeef")
 
-	inputIndex, err := AddInput(s.ctx, s.client, s.book, s.signer, payload)
-	if !s.Nil(err) {
-		s.logDevnetOutput()
-		s.T().FailNow()
-	}
+	indexChan := make(chan int)
+	errChan := make(chan error)
 
-	s.Require().Equal(0, inputIndex)
+	waitGroup := sync.WaitGroup{}
+	waitGroup.Add(1)
 
-	event, err := GetInputFromInputBox(s.client, s.book, inputIndex)
+	go func() {
+		waitGroup.Done()
+		inputIndex, err := AddInput(s.ctx, s.client, s.book, s.signer, payload)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		indexChan <- inputIndex
+	}()
+
+	waitGroup.Wait()
+	time.Sleep(1 * time.Second)
+	blockNumber, err := MineNewBlock(s.ctx, s.endpoint)
 	s.Require().Nil(err)
-	s.Require().Equal(sender, event.Sender)
-	s.Require().Equal(payload, event.Input)
+	s.Require().Equal(uint64(inputBoxDeploymentBlockNumber+1), blockNumber)
+
+	select {
+	case err := <-errChan:
+		s.logDevnetOutput()
+		s.Require().FailNow("Unexpected Error", err)
+	case inputIndex := <-indexChan:
+		s.Require().Equal(0, inputIndex)
+
+		event, err := GetInputFromInputBox(s.client, s.book, inputIndex)
+		s.Require().Nil(err)
+
+		inputsABI, err := inputs.InputsMetaData.GetAbi()
+		s.Require().Nil(err)
+		advanceInputABI := inputsABI.Methods["EvmAdvance"]
+		inputArgs := map[string]interface{}{}
+		err = advanceInputABI.Inputs.UnpackIntoMap(inputArgs, event.Input[4:])
+		s.Require().Nil(err)
+
+		s.T().Log(inputArgs)
+		s.Require().Equal(sender, inputArgs["msgSender"])
+		s.Require().Equal(payload, inputArgs["payload"])
+	}
+}
+
+func (s *EthUtilSuite) TestMineNewBlock() {
+	blockNumber, err := MineNewBlock(s.ctx, s.endpoint)
+	s.Require().Nil(err)
+	s.Require().Equal(uint64(inputBoxDeploymentBlockNumber+1), blockNumber)
+
 }
 
 // Log the output of the given container
@@ -95,10 +141,9 @@ func newDevNetContainer(ctx context.Context) (*deps.DepsContainers, error) {
 
 	container, err := deps.Run(ctx, deps.DepsConfig{
 		Devnet: &deps.DevnetConfig{
-			DockerImage:             deps.DefaultDevnetDockerImage,
-			BlockTime:               deps.DefaultBlockTime,
-			BlockToWaitForOnStartup: deps.DefaultBlockToWaitForOnStartup,
-			Port:                    testutil.GetCartesiTestDepsPortRange(),
+			DockerImage: deps.DefaultDevnetDockerImage,
+			NoMining:    true,
+			Port:        testutil.GetCartesiTestDepsPortRange(),
 		},
 	})
 	if err != nil {

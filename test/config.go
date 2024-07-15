@@ -13,18 +13,17 @@ import (
 )
 
 const (
-	LocalBlockchainID                     = 31337
-	LocalApplicationDeploymentBlockNumber = 20
-	LocalInputBoxDeploymentBlockNumber    = 20
-	LocalHttpAddress                      = "0.0.0.0"
-	LocalHttpPort                         = 10000
-	LocalBlockTimeout                     = 120
-	LocalFinalityOffset                   = 1
-	LocalEpochLength                      = 5
+	LocalBlockchainID                  = 31337
+	LocalInputBoxDeploymentBlockNumber = 16
+	LocalHttpAddress                   = "0.0.0.0"
+	LocalHttpPort                      = 10000
+	LocalBlockTimeout                  = 120
+	LocalFinalityOffset                = 1
+	LocalEpochLength                   = 5
 )
 
-func NewLocalNodeConfig(localPostgresEnpoint string, localBlockchainHttpEndpoint string,
-	localBlockchainWsEnpoint string, snapshotDir string) config.NodeConfig {
+func NewLocalNodeConfig(localPostgresEndpoint string, localBlockchainHttpEndpoint string,
+	localBlockchainWsEndpoint string, snapshotDir string) config.NodeConfig {
 
 	var nodeConfig config.NodeConfig
 
@@ -32,29 +31,28 @@ func NewLocalNodeConfig(localPostgresEnpoint string, localBlockchainHttpEndpoint
 
 	//Log
 	nodeConfig.LogLevel = slog.LevelInfo
-	nodeConfig.LogPretty = false
+	nodeConfig.LogPrettyEnabled = false
 
 	//Postgres
 	nodeConfig.PostgresEndpoint =
-		config.Redacted[string]{Value: localPostgresEnpoint}
+		config.Redacted[string]{Value: localPostgresEndpoint}
 
 	//Epoch
 	nodeConfig.RollupsEpochLength = LocalEpochLength
 
-	//Blochain
+	//Blockchain
 	nodeConfig.BlockchainID = LocalBlockchainID
 	nodeConfig.BlockchainHttpEndpoint =
 		config.Redacted[string]{Value: localBlockchainHttpEndpoint}
 	nodeConfig.BlockchainWsEndpoint =
-		config.Redacted[string]{Value: localBlockchainWsEnpoint}
-	nodeConfig.BlockchainIsLegacy = false
+		config.Redacted[string]{Value: localBlockchainWsEndpoint}
+	nodeConfig.LegacyBlockchainEnabled = false
 	nodeConfig.BlockchainFinalityOffset = LocalFinalityOffset
 	nodeConfig.BlockchainBlockTimeout = LocalBlockTimeout
 
 	//Contracts
-	nodeConfig.ContractsHistoryAddress = book.HistoryAddress.Hex()
-	nodeConfig.ContractsAuthorityAddress = book.AuthorityAddress.Hex()
-	nodeConfig.ContractsApplicationAddress = book.CartesiDApp.Hex()
+	nodeConfig.ContractsApplicationAddress = book.Application.Hex()
+	nodeConfig.ContractsIConsensusAddress = book.Authority.Hex()
 	nodeConfig.ContractsInputBoxAddress = book.InputBox.Hex()
 	nodeConfig.ContractsInputBoxDeploymentBlockNumber = LocalInputBoxDeploymentBlockNumber
 
@@ -63,9 +61,8 @@ func NewLocalNodeConfig(localPostgresEnpoint string, localBlockchainHttpEndpoint
 	nodeConfig.HttpPort = LocalHttpPort
 
 	//Features
-	nodeConfig.FeatureHostMode = false
-	nodeConfig.FeatureDisableClaimer = false
-	nodeConfig.FeatureDisableMachineHashCheck = false
+	nodeConfig.FeatureClaimerEnabled = true
+	nodeConfig.FeatureMachineHashCheckEnabled = true
 
 	//Experimental
 	nodeConfig.ExperimentalSunodoValidatorEnabled = false

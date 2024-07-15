@@ -53,15 +53,15 @@ func copyContracts(ctx context.Context, srcDir string, destDir string) error {
 
 // Deploy rollups-contracts by using its own deployment script
 func deployContracts(ctx context.Context, execDir string) error {
-	cmdDir := execDir + "/rollups"
+	cmdDir := execDir + "/rollups-contracts"
 
-	cmd := exec.CommandContext(ctx, "yarn", "install")
+	cmd := exec.CommandContext(ctx, "pnpm", "install")
 	cmd.Dir = cmdDir
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("command '%v' failed with %v", cmd.String(), err)
 	}
 
-	cmd = exec.CommandContext(ctx, "yarn", "deploy:development")
+	cmd = exec.CommandContext(ctx, "pnpm", "deploy:development")
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, "RPC_URL="+RPC_URL)
 	cmd.Dir = cmdDir

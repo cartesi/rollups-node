@@ -17,6 +17,7 @@ jobs:
       matrix:
         image:
           - rollups-node
+          - rollups-node-ci
     steps:
       - uses: vlaurin/action-ghcr-prune@v0.6.0
         with:

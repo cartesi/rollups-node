@@ -35,8 +35,8 @@ func (s *CommandServiceSuite) TearDownSuite() {
 
 func (s *CommandServiceSuite) SetupTest() {
 	s.servicePort++
-	serviceAdress := "0.0.0.0:" + fmt.Sprint(s.servicePort)
-	os.Setenv("SERVICE_ADDRESS", serviceAdress)
+	serviceAddress := "0.0.0.0:" + fmt.Sprint(s.servicePort)
+	os.Setenv("SERVICE_ADDRESS", serviceAddress)
 }
 
 func (s *CommandServiceSuite) TestItStopsWhenContextIsCancelled() {

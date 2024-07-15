@@ -17,20 +17,10 @@ func newHttpServiceHandler(c config.NodeConfig) http.Handler {
 	handler := http.NewServeMux()
 	handler.Handle("/healthz", http.HandlerFunc(healthcheckHandler))
 
-	graphqlProxy := newReverseProxy(c.HttpAddress, getPort(c, portOffsetGraphQLServer))
+	graphqlProxy := newReverseProxy(c.HttpAddress, getPort(c, portOffsetPostgraphile))
 	handler.Handle("/graphql", graphqlProxy)
+	handler.Handle("/graphiql", graphqlProxy)
 
-	dispatcherProxy := newReverseProxy(c.HttpAddress, getPort(c, portOffsetDispatcher))
-	handler.Handle("/metrics", dispatcherProxy)
-
-	inspectProxy := newReverseProxy(c.HttpAddress, getPort(c, portOffsetInspectServer))
-	handler.Handle("/inspect", inspectProxy)
-	handler.Handle("/inspect/", inspectProxy)
-
-	if c.FeatureHostMode {
-		hostProxy := newReverseProxy(c.HttpAddress, getPort(c, portOffsetHostRunnerRollups))
-		handler.Handle("/rollup/", http.StripPrefix("/rollup", hostProxy))
-	}
 	return handler
 }
 
