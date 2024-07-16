@@ -26,6 +26,12 @@ cartesi-rollups-cli execute --voucher-index 5 --input-index 6
       --voucher-index int         index of the voucher
 ```
 
+### Options inherited from parent commands
+
+```
+  -v, --verbose   verbose output
+```
+
 ### SEE ALSO
 
 * [cartesi-rollups-cli](cartesi-rollups-cli.md)	 - Command line interface for Cartesi Rollups

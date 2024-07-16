@@ -8,6 +8,12 @@ Read the node state from the GraphQL API
   -h, --help   help for read
 ```
 
+### Options inherited from parent commands
+
+```
+  -v, --verbose   verbose output
+```
+
 ### SEE ALSO
 
 * [cartesi-rollups-cli](cartesi-rollups-cli.md)	 - Command line interface for Cartesi Rollups

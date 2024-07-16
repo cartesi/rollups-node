@@ -9,6 +9,12 @@ Database management related commands
   -p, --postgres-endpoint string   Postgres endpoint (default "postgres://postgres:password@localhost:5432/postgres")
 ```
 
+### Options inherited from parent commands
+
+```
+  -v, --verbose   verbose output
+```
+
 ### SEE ALSO
 
 * [cartesi-rollups-cli](cartesi-rollups-cli.md)	 - Command line interface for Cartesi Rollups

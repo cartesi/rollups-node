@@ -21,6 +21,12 @@ cartesi-rollups-cli read input --index 5
       --index int                 index of the input
 ```
 
+### Options inherited from parent commands
+
+```
+  -v, --verbose   verbose output
+```
+
 ### SEE ALSO
 
 * [cartesi-rollups-cli read](cartesi-rollups-cli_read.md)	 - Read the node state from the GraphQL API

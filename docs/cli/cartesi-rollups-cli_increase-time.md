@@ -21,6 +21,12 @@ cartesi-rollups-cli increase-time
       --time int                The amount of time to increase in the evm, in seconds (default 86400)
 ```
 
+### Options inherited from parent commands
+
+```
+  -v, --verbose   verbose output
+```
+
 ### SEE ALSO
 
 * [cartesi-rollups-cli](cartesi-rollups-cli.md)	 - Command line interface for Cartesi Rollups

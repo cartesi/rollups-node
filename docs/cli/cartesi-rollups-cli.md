@@ -10,7 +10,8 @@ Cartesi Rollups node.
 ### Options
 
 ```
-  -h, --help   help for cartesi-rollups-cli
+  -h, --help      help for cartesi-rollups-cli
+  -v, --verbose   verbose output
 ```
 
 ### SEE ALSO

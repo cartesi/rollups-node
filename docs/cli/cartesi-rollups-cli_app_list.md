@@ -23,6 +23,7 @@ cartesi-rollups-cli app list
 
 ```
   -p, --postgres-endpoint string   Postgres endpoint (default "postgres://postgres:password@localhost:5432/postgres")
+  -v, --verbose                    verbose output
 ```
 
 ### SEE ALSO

@@ -24,6 +24,12 @@ cartesi-rollups-cli send --payload 0x$(printf "hi" | xxd -p)
       --payload string        input payload hex-encoded starting with 0x
 ```
 
+### Options inherited from parent commands
+
+```
+  -v, --verbose   verbose output
+```
+
 ### SEE ALSO
 
 * [cartesi-rollups-cli](cartesi-rollups-cli.md)	 - Command line interface for Cartesi Rollups

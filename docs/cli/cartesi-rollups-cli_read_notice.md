@@ -22,6 +22,12 @@ cartesi-rollups-cli read notice --notice-index 5 --input-index 6
       --notice-index int          index of the notice
 ```
 
+### Options inherited from parent commands
+
+```
+  -v, --verbose   verbose output
+```
+
 ### SEE ALSO
 
 * [cartesi-rollups-cli read](cartesi-rollups-cli_read.md)	 - Read the node state from the GraphQL API

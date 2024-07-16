@@ -22,6 +22,12 @@ cartesi-rollups-cli read voucher --voucher-index 5 --input-index 6
       --voucher-index int         index of the voucher
 ```
 
+### Options inherited from parent commands
+
+```
+  -v, --verbose   verbose output
+```
+
 ### SEE ALSO
 
 * [cartesi-rollups-cli read](cartesi-rollups-cli_read.md)	 - Read the node state from the GraphQL API

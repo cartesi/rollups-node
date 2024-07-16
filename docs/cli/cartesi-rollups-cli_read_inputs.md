@@ -20,6 +20,12 @@ cartesi-rollups-cli read inputs
   -h, --help                      help for inputs
 ```
 
+### Options inherited from parent commands
+
+```
+  -v, --verbose   verbose output
+```
+
 ### SEE ALSO
 
 * [cartesi-rollups-cli read](cartesi-rollups-cli_read.md)	 - Read the node state from the GraphQL API

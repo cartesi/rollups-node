@@ -22,6 +22,12 @@ cartesi-rollups-cli save-snapshot
       --temp-container-name string   Name of the temporary container needed to extract the machine snapshot files (default "temp-machine")
 ```
 
+### Options inherited from parent commands
+
+```
+  -v, --verbose   verbose output
+```
+
 ### SEE ALSO
 
 * [cartesi-rollups-cli](cartesi-rollups-cli.md)	 - Command line interface for Cartesi Rollups

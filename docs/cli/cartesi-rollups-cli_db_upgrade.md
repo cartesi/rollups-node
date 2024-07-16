@@ -16,6 +16,7 @@ cartesi-rollups-cli db upgrade [flags]
 
 ```
   -p, --postgres-endpoint string   Postgres endpoint (default "postgres://postgres:password@localhost:5432/postgres")
+  -v, --verbose                    verbose output
 ```
 
 ### SEE ALSO
