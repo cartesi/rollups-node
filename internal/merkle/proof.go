@@ -20,19 +20,13 @@ func CreateProofs(leaves []model.Hash, height uint) (model.Hash, [][]model.Hash,
 	pristineNode := model.Hash{}
 
 	currentLevel := leaves
-	nextLevel := make([]model.Hash, (len(leaves)+1)/2)
 	siblings := make([][]model.Hash, len(leaves))
 
 	// for each level in the tree, starting from the leaves
 	var levelIdx uint
 	for levelIdx = 0; levelIdx < height; levelIdx++ {
 		calculateSiblings(levelIdx, height, currentLevel, siblings, &pristineNode)
-		calculateParents(currentLevel, nextLevel, &pristineNode)
-
-		aux := currentLevel
-		currentLevel = nextLevel
-		// re-slices current level to avoid allocating multiple arrays
-		nextLevel = aux[:(len(currentLevel)+1)/2]
+		currentLevel = parentLevel(currentLevel, &pristineNode)
 		pristineNode = crypto.Keccak256Hash(pristineNode[:], pristineNode[:])
 	}
 
@@ -73,17 +67,25 @@ func calculateSiblings(
 	}
 }
 
-// calculateParents computes the parent nodes for the next level in the Merkle
-// tree by hashing their children with the Keccak-256 hash function.
+// parentLevel calculates the next level in a binary Merkle tree.
 //
-// If the current level has an odd number of nodes a pristine node will be used.
-func calculateParents(currentLevel, nextLevel []model.Hash, pristineNode *model.Hash) {
-	// for each parent node
-	for idx := range nextLevel {
-		leftChild := &currentLevel[2*idx]
-		rightChild := at(currentLevel, uint(2*idx+1), pristineNode)
-		nextLevel[idx] = crypto.Keccak256Hash(leftChild[:], rightChild[:])
+// For each pair of nodes in the current level, it computes their parent node
+// using the Keccak256 hashing algorithm. If level has an odd number of nodes,
+// a pristine node will be used to complete the pair.
+//
+// The parent nodes are stored in the first half of the original level slice.
+//
+// The function returns the parent level by re-slicing the original level slice.
+func parentLevel(level []model.Hash, pristineNode *model.Hash) []model.Hash {
+	// for each pair of nodes in level
+	for idx := 0; idx < len(level); idx += 2 {
+		leftChild := &level[idx]
+		rightChild := at(level, uint(idx+1), pristineNode)
+		// compute the parent node in-place
+		level[idx/2] = crypto.Keccak256Hash(leftChild[:], rightChild[:])
 	}
+	// return the parent level by re-slicing level
+	return level[:(len(level)+1)/2]
 }
 
 // at returns the item at index in the array or the provided default value.
