@@ -36,7 +36,7 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
 
     // Creating repository.
     trace!("Creating the repository");
-    let repository = DefaultRepository::new("".to_string()).await?;
+    let repository = DefaultRepository::new(config.postgres_endpoint).await?;
 
     // Creating the conditional signer.
     let conditional_signer =

@@ -52,6 +52,7 @@ pub struct Config {
     pub iconsensus_address: Address,
     pub genesis_block: u64,
     pub http_server_port: u16,
+    pub postgres_endpoint: String,
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +96,7 @@ impl Config {
             tx_manager_priority: Priority::Normal,
             log_config,
             iconsensus_address,
+            postgres_endpoint: cli_config.postgres_endpoint,
             genesis_block: cli_config.genesis_block,
             http_server_port: cli_config.http_server_port,
         })
@@ -117,6 +119,9 @@ struct AuthorityClaimerCLI {
     /// Address of the IConsensus contract
     #[arg(long, env)]
     pub iconsensus_address: String,
+
+    #[arg(long, env)]
+    pub postgres_endpoint: String,
 
     /// Genesis block for reading blockchain events
     #[arg(long, env, default_value_t = 1)]

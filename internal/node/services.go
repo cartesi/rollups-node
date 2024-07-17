@@ -73,6 +73,7 @@ func newAuthorityClaimer(c config.NodeConfig, workDir string) services.CommandSe
 		c.BlockchainFinalityOffset))
 	s.Env = append(s.Env, fmt.Sprintf("REDIS_ENDPOINT=%v", getRedisEndpoint(c)))
 	s.Env = append(s.Env, fmt.Sprintf("ICONSENSUS_ADDRESS=%v", c.ContractsIConsensusAddress))
+	s.Env = append(s.Env, fmt.Sprintf("POSTGRES_ENDPOINT=%v", c.PostgresEndpoint.Value))
 	s.Env = append(s.Env, fmt.Sprintf("INPUT_BOX_ADDRESS=%v", c.ContractsInputBoxAddress))
 	s.Env = append(s.Env, fmt.Sprintf("GENESIS_BLOCK=%v",
 		c.ContractsInputBoxDeploymentBlockNumber))

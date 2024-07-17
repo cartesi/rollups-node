@@ -40,9 +40,7 @@ pub trait DuplicateChecker: Debug {
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 struct Claim {
     application: Address,
-    first_index: u64,
-    last_index: u64,
-    epoch_hash: Hash,
+    output_merkle_root_hash: Hash,
 }
 
 #[derive(Debug)]
@@ -122,9 +120,9 @@ impl DuplicateChecker for DefaultDuplicateChecker {
         self.update_claims().await?;
         let claim = Claim {
             application: rollups_claim.dapp_address.clone(),
-            first_index: rollups_claim.first_index as u64,
-            last_index: rollups_claim.last_index as u64,
-            epoch_hash: rollups_claim.epoch_hash.clone(),
+            output_merkle_root_hash: rollups_claim
+                .output_merkle_root_hash
+                .clone(),
         };
         Ok(self.claims.contains(&claim))
     }
@@ -173,9 +171,9 @@ impl DefaultDuplicateChecker {
         for claim_submission in claims.into_iter() {
             let claim = Claim {
                 application: Address::new(claim_submission.app_contract.into()),
-                first_index: claim_submission.input_range.first_index,
-                last_index: claim_submission.input_range.last_index,
-                epoch_hash: Hash::new(claim_submission.epoch_hash),
+                output_merkle_root_hash: Hash::new(
+                    claim_submission.claim.into(),
+                ),
             };
             self.claims.insert(claim);
         }

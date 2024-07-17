@@ -96,8 +96,9 @@ where
                 continue;
             }
 
+            let tx_hash;
             info!("Sending a new rollups claim");
-            self.transaction_sender = self
+            (self.transaction_sender, tx_hash) = self
                 .transaction_sender
                 .send_rollups_claim_transaction(rollups_claim.clone())
                 .await
@@ -105,7 +106,7 @@ where
 
             info!("Updating claim data in repository");
             self.repository
-                .update_claim(rollups_claim.dapp_address)
+                .update_claim(rollups_claim.id, tx_hash)
                 .await
                 .context(RepositorySnafu)?;
         }
