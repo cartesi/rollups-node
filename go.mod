@@ -3,10 +3,10 @@ module github.com/cartesi/rollups-node
 go 1.22.5
 
 require (
-	github.com/ethereum/go-ethereum v1.14.6
+	github.com/ethereum/go-ethereum v1.14.7
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.9.0
-	github.com/testcontainers/testcontainers-go v0.30.0
+	github.com/testcontainers/testcontainers-go v0.32.0
 	github.com/tyler-smith/go-bip32 v1.0.0
 	github.com/tyler-smith/go-bip39 v1.1.0
 )
@@ -15,8 +15,8 @@ require github.com/BurntSushi/toml v1.4.0
 
 require (
 	github.com/Khan/genqlient v0.7.0
-	github.com/deepmap/oapi-codegen/v2 v2.1.0
-	github.com/lmittmann/tint v1.0.4
+	github.com/deepmap/oapi-codegen/v2 v2.2.0
+	github.com/lmittmann/tint v1.0.5
 	github.com/mattn/go-isatty v0.0.20
 	github.com/oapi-codegen/runtime v1.1.1
 	golang.org/x/sync v0.7.0
@@ -49,13 +49,13 @@ require (
 	github.com/deckarep/golang-set/v2 v2.6.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
-	github.com/docker/docker v25.0.5+incompatible // indirect
+	github.com/docker/docker v27.0.3+incompatible // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/ethereum/c-kzg-4844 v1.0.2 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
-	github.com/getkin/kin-openapi v0.123.0 // indirect
+	github.com/getkin/kin-openapi v0.124.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
@@ -64,7 +64,7 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
-	github.com/holiman/uint256 v1.2.4 // indirect
+	github.com/holiman/uint256 v1.3.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/invopop/yaml v0.2.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
@@ -73,6 +73,7 @@ require (
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mmcloughlin/addchain v0.4.0 // indirect
+	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/patternmatcher v0.6.0 // indirect
 	github.com/moby/sys/sequential v0.5.0 // indirect
 	github.com/moby/sys/user v0.1.0 // indirect
