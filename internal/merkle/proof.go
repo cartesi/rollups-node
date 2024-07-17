@@ -10,23 +10,32 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-// CreateProofs creates proofs for all the leaves of the binary Merkle tree
-// with the given height. It returns the root hash and the siblings matrix,
-// in bottom-up order.
+// CreateProofs creates proofs for all the leaves of a binary Merkle tree
+// with the given height. It returns the root hash and the siblings matrix
+// encoded as an array, in bottom-up order.
 //
 // If the number of leaves exceeds the capacity for the given height,
 // an error is returned.
-func CreateProofs(leaves []model.Hash, height uint) (model.Hash, [][]model.Hash, error) {
+func CreateProofs(leaves []model.Hash, height uint) (model.Hash, []model.Hash, error) {
 	pristineNode := model.Hash{}
 
 	currentLevel := leaves
-	siblings := make([][]model.Hash, len(leaves))
+	leafCount := uint(len(leaves))
+	siblings := make([]model.Hash, leafCount*height)
 
 	// for each level in the tree, starting from the leaves
-	var levelIdx uint
-	for levelIdx = 0; levelIdx < height; levelIdx++ {
-		calculateSiblings(levelIdx, height, currentLevel, siblings, &pristineNode)
+	for levelIdx := uint(0); levelIdx < height; levelIdx++ {
+		// for each leaf
+		for leafIdx := uint(0); leafIdx < leafCount; leafIdx++ {
+			// calculate its sibling at the current level.
+			// The sibling index is to the left of the parent if leaf index
+			// is odd or to the right if even
+			siblingIdx := (leafIdx >> levelIdx) ^ 1
+			siblings[leafIdx*height+levelIdx] = *at(currentLevel, siblingIdx, &pristineNode)
+		}
+		// calculate the next level
 		currentLevel = parentLevel(currentLevel, &pristineNode)
+		// update the pristine node for the next level
 		pristineNode = crypto.Keccak256Hash(pristineNode[:], pristineNode[:])
 	}
 
@@ -36,35 +45,6 @@ func CreateProofs(leaves []model.Hash, height uint) (model.Hash, [][]model.Hash,
 	}
 
 	return *at(currentLevel, 0, &pristineNode), siblings, nil
-}
-
-// calculateSiblings iterates over each leaf and populates the siblings matrix
-// with the appropriate sibling nodes at the current level.
-//
-// If the current level has an odd number of nodes a pristine node will be used.
-func calculateSiblings(
-	levelIdx, height uint,
-	currentLevel []model.Hash,
-	siblings [][]model.Hash,
-	pristineNode *model.Hash,
-) {
-	// for each leaf
-	for idx := range siblings {
-		// creates the sibling slice if needed
-		if siblings[idx] == nil {
-			siblings[idx] = make([]model.Hash, height)
-		}
-
-		// the sibling index is to the left of the parent if leaf index is odd
-		// or to the right if leaf index is even
-		siblingIdx := (idx / 2) ^ 1
-		if levelIdx == 0 {
-			// in the leaf level, use the leaf index directly
-			siblingIdx = idx ^ 1
-		}
-
-		siblings[idx][levelIdx] = *at(currentLevel, uint(siblingIdx), pristineNode)
-	}
 }
 
 // parentLevel calculates the next level in a binary Merkle tree.

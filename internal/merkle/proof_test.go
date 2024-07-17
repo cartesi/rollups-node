@@ -4,7 +4,10 @@
 package merkle
 
 import (
+	"math"
+	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/ethereum/go-ethereum/common"
@@ -12,21 +15,22 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-type ComputeProofSuite struct {
+type CreateProofsSuite struct {
 	suite.Suite
 	pristine model.Hash
 }
 
-func TestComputeProofSuite(t *testing.T) {
-	suite.Run(t, new(ComputeProofSuite))
+func TestCreateProofsSuite(t *testing.T) {
+	suite.Run(t, new(CreateProofsSuite))
 }
 
-func (s *ComputeProofSuite) TestZeroHeight() {
+func (s *CreateProofsSuite) TestZeroHeight() {
 	s.Run("no leaves", func() {
 		root, siblings, err := CreateProofs(nil, 0)
 		s.Require().Nil(err)
 
 		s.Equal(s.pristine, root)
+		// if there are no leaves, there is nothing to prove
 		s.Equal(0, len(siblings))
 	})
 
@@ -37,22 +41,23 @@ func (s *ComputeProofSuite) TestZeroHeight() {
 		s.Require().Nil(err)
 
 		s.Equal(leaf, root)
-		s.Equal(1, len(siblings))
-		s.Equal(0, len(siblings[0]))
+		s.Equal(0, len(siblings))
 	})
 
 	s.Run("two leafs", func() {
 		leaves := make([]model.Hash, 2)
 
 		_, _, err := CreateProofs(leaves, 0)
+		s.Require().NotNil(err)
 
 		s.ErrorContains(err, "too many leaves for height")
 	})
 }
-func (s *ComputeProofSuite) TestHeightOne() {
+func (s *CreateProofsSuite) TestHeightOne() {
 	height := 1
 	leaf1 := crypto.Keccak256Hash([]byte("Cartesi"))
 	leaf2 := crypto.Keccak256Hash([]byte("Merkle"))
+
 	s.Run("no leaves", func() {
 		root, siblings, err := CreateProofs(nil, uint(height))
 		s.Require().Nil(err)
@@ -61,61 +66,110 @@ func (s *ComputeProofSuite) TestHeightOne() {
 			crypto.Keccak256Hash(s.pristine[:], s.pristine[:]),
 			root,
 		)
-		s.Equal(0, len(siblings))
+
 		s.Equal(0, len(siblings))
 	})
 
 	s.Run("one leaf", func() {
-		root, siblings, err := CreateProofs([]model.Hash{leaf1}, uint(height))
+		leaves := []model.Hash{leaf1}
+
+		root, siblings, err := CreateProofs(leaves, uint(height))
 		s.Require().Nil(err)
 
 		s.Equal(
 			crypto.Keccak256Hash(leaf1[:], s.pristine[:]),
 			root,
 		)
-		s.Equal(height, len(siblings))
-		s.Equal(1, len(siblings[0]))
-		s.Equal(s.pristine, siblings[0][0])
+
+		s.Equal(len(leaves)*height, len(siblings))
+		s.Equal(s.pristine, siblings[0])
+
+		leafSiblings := siblings[0 : 0+height]
+		s.Equal(root, rootFromSiblings(leaf1, 0, leafSiblings))
 	})
 
 	s.Run("two leaves", func() {
 		leaves := []model.Hash{leaf1, leaf2}
+		leavesCopy := make([]model.Hash, len(leaves))
+		copy(leavesCopy, leaves)
 
-		root, siblings, err := CreateProofs(leaves, uint(height))
+		root, siblings, err := CreateProofs(leavesCopy, uint(height))
 		s.Require().Nil(err)
 
 		s.Equal(
 			crypto.Keccak256Hash(leaf1[:], leaf2[:]),
 			root,
 		)
-		s.Equal(len(leaves), len(siblings))
-		for idx := range siblings {
-			s.Equal(height, len(siblings[idx]))
+
+		s.Equal(len(leaves)*height, len(siblings))
+		s.Equal(leaf2, siblings[0*height+0])
+		s.Equal(leaf1, siblings[1*height+0])
+
+		for idx := range leaves {
+			leafSiblings := siblings[idx*height : idx*height+height]
+			s.Equal(root, rootFromSiblings(leaves[idx], idx, leafSiblings))
 		}
-		s.Equal(leaf2, siblings[0][0])
-		s.Equal(leaf1, siblings[1][0])
 	})
 
 	s.Run("three leafs", func() {
 		leaves := make([]model.Hash, 3)
 
 		_, _, err := CreateProofs(leaves, 1)
+		s.Require().NotNil(err)
 
 		s.ErrorContains(err, "too many leaves for height")
 	})
 }
 
-func (s *ComputeProofSuite) TestHeightTwo() {
+func (s *CreateProofsSuite) TestHeightTwo() {
 	height := 2
 	leaf1 := crypto.Keccak256Hash([]byte("Merkle"))
 	leaf2 := crypto.Keccak256Hash([]byte("trees"))
 	leaf3 := crypto.Keccak256Hash([]byte("are"))
 	leaf4 := crypto.Keccak256Hash([]byte("cool"))
 
-	s.Run("two leaves", func() {
-		leaves := []model.Hash{leaf1, leaf2}
+	s.Run("no leaves", func() {
+		root, siblings, err := CreateProofs(nil, uint(height))
+		s.Require().Nil(err)
+
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			root,
+		)
+
+		s.Equal(0, len(siblings))
+	})
+
+	s.Run("one leaf", func() {
+		leaves := []model.Hash{leaf1}
 
 		root, siblings, err := CreateProofs(leaves, uint(height))
+		s.Require().Nil(err)
+
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf1[:], s.pristine[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			root,
+		)
+
+		s.Equal(len(leaves)*height, len(siblings))
+		s.Equal(s.pristine, siblings[0])
+
+		leafSiblings := siblings[0 : 0+height]
+		s.Equal(root, rootFromSiblings(leaf1, 0, leafSiblings))
+	})
+
+	s.Run("two leaves", func() {
+		leaves := []model.Hash{leaf1, leaf2}
+		leavesCopy := make([]model.Hash, len(leaves))
+		copy(leavesCopy, leaves)
+
+		root, siblings, err := CreateProofs(leavesCopy, uint(height))
 		s.Require().Nil(err)
 
 		s.Equal(
@@ -126,20 +180,24 @@ func (s *ComputeProofSuite) TestHeightTwo() {
 			root,
 		)
 
-		s.Equal(len(leaves), len(siblings))
-		for idx := range siblings {
-			s.Equal(height, len(siblings[idx]))
+		s.Equal(len(leaves)*height, len(siblings))
+		s.Equal(leaf2, siblings[0*height])
+		s.Equal(leaf1, siblings[1*height])
+		s.Equal(crypto.Keccak256Hash(s.pristine[:], s.pristine[:]), siblings[0*height+1])
+		s.Equal(crypto.Keccak256Hash(s.pristine[:], s.pristine[:]), siblings[1*height+1])
+
+		for idx := range leaves {
+			leafSiblings := siblings[idx*height : idx*height+height]
+			s.Equal(root, rootFromSiblings(leaves[idx], idx, leafSiblings))
 		}
-		s.Equal(leaf2, siblings[0][0])
-		s.Equal(leaf1, siblings[1][0])
-		s.Equal(crypto.Keccak256Hash(s.pristine[:], s.pristine[:]), siblings[0][1])
-		s.Equal(crypto.Keccak256Hash(s.pristine[:], s.pristine[:]), siblings[1][1])
 	})
 
 	s.Run("three leaves", func() {
 		leaves := []model.Hash{leaf1, leaf2, leaf3}
+		leavesCopy := make([]model.Hash, len(leaves))
+		copy(leavesCopy, leaves)
 
-		root, siblings, err := CreateProofs(leaves, uint(height))
+		root, siblings, err := CreateProofs(leavesCopy, uint(height))
 		s.Require().Nil(err)
 
 		s.Equal(
@@ -150,22 +208,26 @@ func (s *ComputeProofSuite) TestHeightTwo() {
 			root,
 		)
 
-		s.Equal(len(leaves), len(siblings))
-		for idx := range siblings {
-			s.Equal(height, len(siblings[idx]))
+		s.Equal(len(leaves)*height, len(siblings))
+		s.Equal(leaf2, siblings[0*height])
+		s.Equal(leaf1, siblings[1*height])
+		s.Equal(s.pristine, siblings[2*height])
+		s.Equal(crypto.Keccak256Hash(leaf3[:], s.pristine[:]), siblings[0*height+1])
+		s.Equal(crypto.Keccak256Hash(leaf3[:], s.pristine[:]), siblings[1*height+1])
+		s.Equal(crypto.Keccak256Hash(leaf1[:], leaf2[:]), siblings[2*height+1])
+
+		for idx := range leaves {
+			leafSiblings := siblings[idx*height : idx*height+height]
+			s.Equal(root, rootFromSiblings(leaves[idx], idx, leafSiblings))
 		}
-		s.Equal(leaf2, siblings[0][0])
-		s.Equal(leaf1, siblings[1][0])
-		s.Equal(s.pristine, siblings[2][0])
-		s.Equal(crypto.Keccak256Hash(leaf3[:], s.pristine[:]), siblings[0][1])
-		s.Equal(crypto.Keccak256Hash(leaf3[:], s.pristine[:]), siblings[1][1])
-		s.Equal(crypto.Keccak256Hash(leaf1[:], leaf2[:]), siblings[2][1])
 	})
 
 	s.Run("four leaves", func() {
 		leaves := []model.Hash{leaf1, leaf2, leaf3, leaf4}
+		leavesCopy := make([]model.Hash, len(leaves))
+		copy(leavesCopy, leaves)
 
-		root, siblings, err := CreateProofs(leaves, uint(height))
+		root, siblings, err := CreateProofs(leavesCopy, uint(height))
 		s.Require().Nil(err)
 
 		s.Equal(
@@ -176,22 +238,33 @@ func (s *ComputeProofSuite) TestHeightTwo() {
 			root,
 		)
 
-		s.Equal(len(leaves), len(siblings))
-		for idx := range siblings {
-			s.Equal(height, len(siblings[idx]))
+		s.Equal(len(leaves)*height, len(siblings))
+		s.Equal(leaf2, siblings[0*height])
+		s.Equal(leaf1, siblings[1*height])
+		s.Equal(leaf4, siblings[2*height])
+		s.Equal(leaf3, siblings[3*height])
+		s.Equal(crypto.Keccak256Hash(leaf3[:], leaf4[:]), siblings[0*height+1])
+		s.Equal(crypto.Keccak256Hash(leaf3[:], leaf4[:]), siblings[1*height+1])
+		s.Equal(crypto.Keccak256Hash(leaf1[:], leaf2[:]), siblings[2*height+1])
+		s.Equal(crypto.Keccak256Hash(leaf1[:], leaf2[:]), siblings[3*height+1])
+
+		for idx := range leaves {
+			leafSiblings := siblings[idx*height : idx*height+height]
+			s.Equal(root, rootFromSiblings(leaves[idx], idx, leafSiblings))
 		}
-		s.Equal(leaf2, siblings[0][0])
-		s.Equal(leaf1, siblings[1][0])
-		s.Equal(leaf4, siblings[2][0])
-		s.Equal(leaf3, siblings[3][0])
-		s.Equal(crypto.Keccak256Hash(leaf3[:], leaf4[:]), siblings[0][1])
-		s.Equal(crypto.Keccak256Hash(leaf3[:], leaf4[:]), siblings[1][1])
-		s.Equal(crypto.Keccak256Hash(leaf1[:], leaf2[:]), siblings[2][1])
-		s.Equal(crypto.Keccak256Hash(leaf1[:], leaf2[:]), siblings[3][1])
+	})
+
+	s.Run("five leaves", func() {
+		leaves := []model.Hash{leaf1, leaf2, leaf3, leaf4, leaf1}
+
+		_, _, err := CreateProofs(leaves, uint(height))
+		s.Require().NotNil(err)
+
+		s.ErrorContains(err, "too many leaves for height")
 	})
 }
 
-func (s *ComputeProofSuite) TestHeightThree() {
+func (s *CreateProofsSuite) TestHeightThree() {
 	height := 3
 	leaf1 := crypto.Keccak256Hash([]byte("Merkle"))
 	leaf2 := crypto.Keccak256Hash([]byte("trees"))
@@ -200,39 +273,690 @@ func (s *ComputeProofSuite) TestHeightThree() {
 	leaf5 := crypto.Keccak256Hash([]byte("much"))
 	leaf6 := crypto.Keccak256Hash([]byte("fun"))
 	leaf7 := crypto.Keccak256Hash([]byte("wow"))
+	leaf8 := crypto.Keccak256Hash([]byte("!"))
 
-	s.Run("six leaves", func() {
-		leaves := []model.Hash{leaf1, leaf2, leaf3, leaf4, leaf5, leaf6}
+	s.Run("no leaves", func() {
+		root, siblings, err := CreateProofs(nil, uint(height))
+		s.Require().Nil(err)
+
+		expectedRoot := s.pristine
+		for level := 0; level < height; level++ {
+			expectedRoot = crypto.Keccak256Hash(expectedRoot[:], expectedRoot[:])
+		}
+		s.Equal(expectedRoot, root)
+
+		s.Equal(0, len(siblings))
+	})
+
+	s.Run("one leaf", func() {
+		leaves := []model.Hash{leaf1}
 
 		root, siblings, err := CreateProofs(leaves, uint(height))
 		s.Require().Nil(err)
 
 		s.Equal(
-			common.HexToHash("0xfc16527248afe9934764bccf38a45bd6e3bd2fc094ab8649a2c81a6ef9f2c4b2"),
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(
+					crypto.Keccak256Hash(leaf1[:], s.pristine[:]).Bytes(),
+					crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				).Bytes(),
+				crypto.Keccak256Hash(
+					crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+					crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				).Bytes(),
+			),
 			root,
 		)
-		s.Equal(len(leaves), len(siblings))
-		s.Equal(3, len(siblings[0]))
+
+		s.Equal(len(leaves)*height, len(siblings))
+		s.Equal(s.pristine, siblings[0])
+		s.Equal(crypto.Keccak256Hash(s.pristine[:], s.pristine[:]), siblings[1])
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[2],
+		)
+
+		leafSiblings := siblings[0 : 0+height]
+		s.Equal(root, rootFromSiblings(leaf1, 0, leafSiblings))
+	})
+
+	s.Run("two leaves", func() {
+		leaves := []model.Hash{leaf1, leaf2}
+		leavesCopy := make([]model.Hash, len(leaves))
+		copy(leavesCopy, leaves)
+
+		root, siblings, err := CreateProofs(leavesCopy, uint(height))
+		s.Require().Nil(err)
+
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(
+					crypto.Keccak256Hash(leaf1[:], leaf2[:]).Bytes(),
+					crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				).Bytes(),
+				crypto.Keccak256Hash(
+					crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+					crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				).Bytes(),
+			),
+			root,
+		)
+
+		s.Equal(len(leaves)*height, len(siblings))
+		s.Equal(leaf2, siblings[0])
+		s.Equal(leaf1, siblings[1*height])
+		s.Equal(
+			crypto.Keccak256Hash(s.pristine[:], s.pristine[:]),
+			siblings[0*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(s.pristine[:], s.pristine[:]),
+			siblings[1*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[0*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[1*height+2],
+		)
+
+		for idx := range leaves {
+			leafSiblings := siblings[idx*height : idx*height+height]
+			s.Equal(root, rootFromSiblings(leaves[idx], idx, leafSiblings))
+		}
+	})
+
+	s.Run("three leaves", func() {
+		leaves := []model.Hash{leaf1, leaf2, leaf3}
+		leavesCopy := make([]model.Hash, len(leaves))
+		copy(leavesCopy, leaves)
+
+		root, siblings, err := CreateProofs(leavesCopy, uint(height))
+		s.Require().Nil(err)
+
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(
+					crypto.Keccak256Hash(leaf1[:], leaf2[:]).Bytes(),
+					crypto.Keccak256Hash(leaf3[:], s.pristine[:]).Bytes(),
+				).Bytes(),
+				crypto.Keccak256Hash(
+					crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+					crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				).Bytes(),
+			),
+			root,
+		)
+
+		s.Equal(len(leaves)*height, len(siblings))
+		s.Equal(leaf2, siblings[0])
+		s.Equal(leaf1, siblings[1*height])
+		s.Equal(s.pristine, siblings[2*height])
+		s.Equal(
+			crypto.Keccak256Hash(leaf3[:], s.pristine[:]),
+			siblings[0*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf3[:], s.pristine[:]),
+			siblings[1*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf1[:], leaf2[:]),
+			siblings[2*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[0*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[1*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[2*height+2],
+		)
+
+		for idx := range leaves {
+			leafSiblings := siblings[idx*height : idx*height+height]
+			s.Equal(root, rootFromSiblings(leaves[idx], idx, leafSiblings))
+		}
+	})
+
+	s.Run("four leaves", func() {
+		leaves := []model.Hash{leaf1, leaf2, leaf3, leaf4}
+		leavesCopy := make([]model.Hash, len(leaves))
+		copy(leavesCopy, leaves)
+
+		root, siblings, err := CreateProofs(leavesCopy, uint(height))
+		s.Require().Nil(err)
+
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(
+					crypto.Keccak256Hash(leaf1[:], leaf2[:]).Bytes(),
+					crypto.Keccak256Hash(leaf3[:], leaf4[:]).Bytes(),
+				).Bytes(),
+				crypto.Keccak256Hash(
+					crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+					crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				).Bytes(),
+			),
+			root,
+		)
+
+		s.Equal(len(leaves)*height, len(siblings))
+		s.Equal(leaf2, siblings[0])
+		s.Equal(leaf1, siblings[1*height])
+		s.Equal(leaf4, siblings[2*height])
+		s.Equal(leaf3, siblings[3*height])
+		s.Equal(
+			crypto.Keccak256Hash(leaf3[:], leaf4[:]),
+			siblings[0*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf3[:], leaf4[:]),
+			siblings[1*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf1[:], leaf2[:]),
+			siblings[2*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf1[:], leaf2[:]),
+			siblings[3*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[0*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[1*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[2*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[3*height+2],
+		)
+
+		for idx := range leaves {
+			leafSiblings := siblings[idx*height : idx*height+height]
+			s.Equal(root, rootFromSiblings(leaves[idx], idx, leafSiblings))
+		}
+	})
+
+	s.Run("five leaves", func() {
+		leaves := []model.Hash{leaf1, leaf2, leaf3, leaf4, leaf5}
+		leavesCopy := make([]model.Hash, len(leaves))
+		copy(leavesCopy, leaves)
+
+		root, siblings, err := CreateProofs(leavesCopy, uint(height))
+		s.Require().Nil(err)
+
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(
+					crypto.Keccak256Hash(leaf1[:], leaf2[:]).Bytes(),
+					crypto.Keccak256Hash(leaf3[:], leaf4[:]).Bytes(),
+				).Bytes(),
+				crypto.Keccak256Hash(
+					crypto.Keccak256Hash(leaf5[:], s.pristine[:]).Bytes(),
+					crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				).Bytes(),
+			),
+			root,
+		)
+
+		s.Equal(len(leaves)*height, len(siblings))
+		s.Equal(leaf2, siblings[0])
+		s.Equal(leaf1, siblings[1*height])
+		s.Equal(leaf4, siblings[2*height])
+		s.Equal(leaf3, siblings[3*height])
+		s.Equal(s.pristine, siblings[4*height])
+		s.Equal(
+			crypto.Keccak256Hash(leaf3[:], leaf4[:]),
+			siblings[0*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf3[:], leaf4[:]),
+			siblings[1*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf1[:], leaf2[:]),
+			siblings[2*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf1[:], leaf2[:]),
+			siblings[3*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(s.pristine[:], s.pristine[:]),
+			siblings[4*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf5[:], s.pristine[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[0*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf5[:], s.pristine[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[1*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf5[:], s.pristine[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[2*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf5[:], s.pristine[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[3*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf1[:], leaf2[:]).Bytes(),
+				crypto.Keccak256Hash(leaf3[:], leaf4[:]).Bytes(),
+			),
+			siblings[4*height+2],
+		)
+
+		for idx := range leaves {
+			leafSiblings := siblings[idx*height : idx*height+height]
+			s.Equal(root, rootFromSiblings(leaves[idx], idx, leafSiblings))
+		}
+	})
+
+	s.Run("six leaves", func() {
+		leaves := []model.Hash{leaf1, leaf2, leaf3, leaf4, leaf5, leaf6}
+		leavesCopy := make([]model.Hash, len(leaves))
+		copy(leavesCopy, leaves)
+
+		root, siblings, err := CreateProofs(leavesCopy, uint(height))
+		s.Require().Nil(err)
+
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(
+					crypto.Keccak256Hash(leaf1[:], leaf2[:]).Bytes(),
+					crypto.Keccak256Hash(leaf3[:], leaf4[:]).Bytes(),
+				).Bytes(),
+				crypto.Keccak256Hash(
+					crypto.Keccak256Hash(leaf5[:], leaf6[:]).Bytes(),
+					crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+				).Bytes(),
+			),
+			root,
+		)
+
+		s.Equal(len(leaves)*height, len(siblings))
+		s.Equal(leaf2, siblings[0])
+		s.Equal(leaf1, siblings[1*height])
+		s.Equal(leaf4, siblings[2*height])
+		s.Equal(leaf3, siblings[3*height])
+		s.Equal(leaf6, siblings[4*height])
+		s.Equal(leaf5, siblings[5*height])
+		s.Equal(
+			crypto.Keccak256Hash(leaf3[:], leaf4[:]),
+			siblings[0*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf3[:], leaf4[:]),
+			siblings[1*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf1[:], leaf2[:]),
+			siblings[2*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf1[:], leaf2[:]),
+			siblings[3*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(s.pristine[:], s.pristine[:]),
+			siblings[4*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(s.pristine[:], s.pristine[:]),
+			siblings[5*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf5[:], leaf6[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[0*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf5[:], leaf6[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[1*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf5[:], leaf6[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[2*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf5[:], leaf6[:]).Bytes(),
+				crypto.Keccak256Hash(s.pristine[:], s.pristine[:]).Bytes(),
+			),
+			siblings[3*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf1[:], leaf2[:]).Bytes(),
+				crypto.Keccak256Hash(leaf3[:], leaf4[:]).Bytes(),
+			),
+			siblings[4*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf1[:], leaf2[:]).Bytes(),
+				crypto.Keccak256Hash(leaf3[:], leaf4[:]).Bytes(),
+			),
+			siblings[5*height+2],
+		)
+
+		for idx := range leaves {
+			leafSiblings := siblings[idx*height : idx*height+height]
+			s.Equal(root, rootFromSiblings(leaves[idx], idx, leafSiblings))
+		}
 	})
 
 	s.Run("seven leaves", func() {
 		leaves := []model.Hash{leaf1, leaf2, leaf3, leaf4, leaf5, leaf6, leaf7}
+		leavesCopy := make([]model.Hash, len(leaves))
+		copy(leavesCopy, leaves)
 
-		root, siblings, err := CreateProofs(leaves, 3)
+		root, siblings, err := CreateProofs(leavesCopy, uint(height))
 		s.Require().Nil(err)
 
 		s.Equal(
-			common.HexToHash("0x111eeb9da43f29ed8482602b2db72385a2780537e25ef6352d609de59da73ea1"),
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(
+					crypto.Keccak256Hash(leaf1[:], leaf2[:]).Bytes(),
+					crypto.Keccak256Hash(leaf3[:], leaf4[:]).Bytes(),
+				).Bytes(),
+				crypto.Keccak256Hash(
+					crypto.Keccak256Hash(leaf5[:], leaf6[:]).Bytes(),
+					crypto.Keccak256Hash(leaf7[:], s.pristine[:]).Bytes(),
+				).Bytes(),
+			),
 			root,
 		)
-		s.Equal(len(leaves), len(siblings))
-		s.Equal(3, len(siblings[0]))
+
+		s.Equal(len(leaves)*height, len(siblings))
+		s.Equal(leaf2, siblings[0])
+		s.Equal(leaf1, siblings[1*height])
+		s.Equal(leaf4, siblings[2*height])
+		s.Equal(leaf3, siblings[3*height])
+		s.Equal(leaf6, siblings[4*height])
+		s.Equal(leaf5, siblings[5*height])
+		s.Equal(s.pristine, siblings[6*height])
+		s.Equal(
+			crypto.Keccak256Hash(leaf3[:], leaf4[:]),
+			siblings[0*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf3[:], leaf4[:]),
+			siblings[1*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf1[:], leaf2[:]),
+			siblings[2*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf1[:], leaf2[:]),
+			siblings[3*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf7[:], s.pristine[:]),
+			siblings[4*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf7[:], s.pristine[:]),
+			siblings[5*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf5[:], leaf6[:]),
+			siblings[6*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf5[:], leaf6[:]).Bytes(),
+				crypto.Keccak256Hash(leaf7[:], s.pristine[:]).Bytes(),
+			),
+			siblings[0*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf5[:], leaf6[:]).Bytes(),
+				crypto.Keccak256Hash(leaf7[:], s.pristine[:]).Bytes(),
+			),
+			siblings[1*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf5[:], leaf6[:]).Bytes(),
+				crypto.Keccak256Hash(leaf7[:], s.pristine[:]).Bytes(),
+			),
+			siblings[2*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf5[:], leaf6[:]).Bytes(),
+				crypto.Keccak256Hash(leaf7[:], s.pristine[:]).Bytes(),
+			),
+			siblings[3*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf1[:], leaf2[:]).Bytes(),
+				crypto.Keccak256Hash(leaf3[:], leaf4[:]).Bytes(),
+			),
+			siblings[4*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf1[:], leaf2[:]).Bytes(),
+				crypto.Keccak256Hash(leaf3[:], leaf4[:]).Bytes(),
+			),
+			siblings[5*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf1[:], leaf2[:]).Bytes(),
+				crypto.Keccak256Hash(leaf3[:], leaf4[:]).Bytes(),
+			),
+			siblings[6*height+2],
+		)
+
+		for idx := range leaves {
+			leafSiblings := siblings[idx*height : idx*height+height]
+			s.Equal(root, rootFromSiblings(leaves[idx], idx, leafSiblings))
+		}
+	})
+
+	s.Run("eight leaves", func() {
+		leaves := []model.Hash{leaf1, leaf2, leaf3, leaf4, leaf5, leaf6, leaf7, leaf8}
+		leavesCopy := make([]model.Hash, len(leaves))
+		copy(leavesCopy, leaves)
+
+		root, siblings, err := CreateProofs(leavesCopy, uint(height))
+		s.Require().Nil(err)
+
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(
+					crypto.Keccak256Hash(leaf1[:], leaf2[:]).Bytes(),
+					crypto.Keccak256Hash(leaf3[:], leaf4[:]).Bytes(),
+				).Bytes(),
+				crypto.Keccak256Hash(
+					crypto.Keccak256Hash(leaf5[:], leaf6[:]).Bytes(),
+					crypto.Keccak256Hash(leaf7[:], leaf8[:]).Bytes(),
+				).Bytes(),
+			),
+			root,
+		)
+
+		s.Equal(len(leaves)*height, len(siblings))
+		s.Equal(leaf2, siblings[0])
+		s.Equal(leaf1, siblings[1*height])
+		s.Equal(leaf4, siblings[2*height])
+		s.Equal(leaf3, siblings[3*height])
+		s.Equal(leaf6, siblings[4*height])
+		s.Equal(leaf5, siblings[5*height])
+		s.Equal(leaf8, siblings[6*height])
+		s.Equal(leaf7, siblings[7*height])
+		s.Equal(
+			crypto.Keccak256Hash(leaf3[:], leaf4[:]),
+			siblings[0*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf3[:], leaf4[:]),
+			siblings[1*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf1[:], leaf2[:]),
+			siblings[2*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf1[:], leaf2[:]),
+			siblings[3*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf7[:], leaf8[:]),
+			siblings[4*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf7[:], leaf8[:]),
+			siblings[5*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf5[:], leaf6[:]),
+			siblings[6*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(leaf5[:], leaf6[:]),
+			siblings[7*height+1],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf5[:], leaf6[:]).Bytes(),
+				crypto.Keccak256Hash(leaf7[:], leaf8[:]).Bytes(),
+			),
+			siblings[0*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf5[:], leaf6[:]).Bytes(),
+				crypto.Keccak256Hash(leaf7[:], leaf8[:]).Bytes(),
+			),
+			siblings[1*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf5[:], leaf6[:]).Bytes(),
+				crypto.Keccak256Hash(leaf7[:], leaf8[:]).Bytes(),
+			),
+			siblings[2*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf5[:], leaf6[:]).Bytes(),
+				crypto.Keccak256Hash(leaf7[:], leaf8[:]).Bytes(),
+			),
+			siblings[3*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf1[:], leaf2[:]).Bytes(),
+				crypto.Keccak256Hash(leaf3[:], leaf4[:]).Bytes(),
+			),
+			siblings[4*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf1[:], leaf2[:]).Bytes(),
+				crypto.Keccak256Hash(leaf3[:], leaf4[:]).Bytes(),
+			),
+			siblings[5*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf1[:], leaf2[:]).Bytes(),
+				crypto.Keccak256Hash(leaf3[:], leaf4[:]).Bytes(),
+			),
+			siblings[6*height+2],
+		)
+		s.Equal(
+			crypto.Keccak256Hash(
+				crypto.Keccak256Hash(leaf1[:], leaf2[:]).Bytes(),
+				crypto.Keccak256Hash(leaf3[:], leaf4[:]).Bytes(),
+			),
+			siblings[7*height+2],
+		)
+
+		for idx := range leaves {
+			leafSiblings := siblings[idx*height : idx*height+height]
+			s.Equal(root, rootFromSiblings(leaves[idx], idx, leafSiblings))
+		}
 	})
 }
 
-// This test was taken from the libcmt suite
-// as a method to compare both implementations
-func (s *ComputeProofSuite) TestItMatchesMachineImplementation() {
+// This test was taken from the libcmt suite as a method to compare
+// both implementations
+func (s *CreateProofsSuite) TestItMatchesMachineImplementation() {
 	leaves := []model.Hash{
 		crypto.Keccak256Hash([]byte("Cartesi")),
 		crypto.Keccak256Hash([]byte("Merkle")),
@@ -246,4 +970,87 @@ func (s *ComputeProofSuite) TestItMatchesMachineImplementation() {
 		common.HexToHash("0xe8e0477114cb630c4d14eea249eb2c63d84c9c685ddf35d137019e659ae20418"),
 		root,
 	)
+}
+
+func FuzzVerifyProofs(f *testing.F) {
+	f.Add(uint(10), uint(10), uint(5))
+	f.Fuzz(func(t *testing.T, height, leafCount, leafIdx uint) {
+		height = bound(height, 3, 20)
+		leafCount = bound(leafCount, 1, uint(math.Pow(2, float64(height))))
+		leafIdx = bound(leafIdx, 0, leafCount-1)
+		leaves := generateRandomLeaves(leafCount)
+		leavesCopy := make([]model.Hash, len(leaves))
+		copy(leavesCopy, leaves)
+
+		root, siblings, err := CreateProofs(leavesCopy, height)
+		if err != nil {
+			t.Error(err)
+		}
+
+		leafSiblings := siblings[leafIdx*height : leafIdx*height+height]
+		newRoot := rootFromSiblings(leaves[leafIdx], int(leafIdx), leafSiblings)
+		if root != newRoot {
+			t.Errorf("expected: %v, got: %v\n", root, newRoot)
+		}
+
+		newRoot = rootFromSiblings(model.Hash{}, int(leafIdx), leafSiblings)
+		if root == newRoot {
+			t.Errorf("expected root to be different when replacing the leaf")
+		}
+
+		leafSiblings[0] = crypto.Keccak256Hash([]byte("wrong_sibling"))
+		newRoot = rootFromSiblings(leaves[leafIdx], int(leafIdx), leafSiblings)
+		if root == newRoot {
+			t.Errorf("expected root to be different when replacing a sibling")
+		}
+	})
+
+}
+
+// rootFromSiblings returns a Merkle root hash calculated by hashing a leaf with
+// its siblings. It panics if leafIdx is out of bounds.
+func rootFromSiblings(leaf model.Hash, leafIdx int, leafSiblings []common.Hash) model.Hash {
+	root := leaf
+	height := len(leafSiblings)
+	for siblingIdx := uint(0); siblingIdx < uint(height); siblingIdx++ {
+		if leafIdx&1 == 0 {
+			root = crypto.Keccak256Hash(root[:], leafSiblings[siblingIdx][:])
+		} else {
+			root = crypto.Keccak256Hash(leafSiblings[siblingIdx][:], root[:])
+		}
+		leafIdx >>= 1
+	}
+	if leafIdx != 0 {
+		panic("index out of bounds")
+	}
+	return root
+}
+
+// bound ensures n is always between the min and max values, inclusive.
+// If max < min, it panics.
+func bound(n, min, max uint) uint {
+	if max < min {
+		panic("max should be equal or greater than min")
+	}
+	if n < min {
+		return min
+	} else if n > max {
+		return max
+	}
+	return n
+}
+
+// generateRandomLeaves generates random byte slices and hash them with
+// Keccak256 to return leafCount hashes.
+func generateRandomLeaves(leafCount uint) []model.Hash {
+	leaves := make([]model.Hash, leafCount)
+	leaf := model.Hash{}
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	for idx := uint(0); idx < leafCount; idx++ {
+		r.Read(leaf[:])
+		leaves[idx] = crypto.Keccak256Hash(leaf[:])
+	}
+
+	return leaves
 }
