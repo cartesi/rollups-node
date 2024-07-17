@@ -86,6 +86,7 @@ func calculateParents(currentLevel, nextLevel []model.Hash, pristineNode model.H
 	}
 }
 
+// at returns the item at index in the array or the provided default value.
 func at(array []model.Hash, index uint, defaultValue model.Hash) model.Hash {
 	if index < uint(len(array)) {
 		return array[index]
