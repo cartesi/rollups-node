@@ -1,6 +1,6 @@
 module github.com/cartesi/rollups-node
 
-go 1.22.1
+go 1.22.5
 
 require (
 	github.com/ethereum/go-ethereum v1.14.6
