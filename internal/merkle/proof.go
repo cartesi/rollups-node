@@ -26,8 +26,8 @@ func CreateProofs(leaves []model.Hash, height uint) (model.Hash, [][]model.Hash,
 	// for each level in the tree, starting from the leaves
 	var levelIdx uint
 	for levelIdx = 0; levelIdx < height; levelIdx++ {
-		calculateSiblings(levelIdx, height, currentLevel, siblings, pristineNode)
-		calculateParents(currentLevel, nextLevel, pristineNode)
+		calculateSiblings(levelIdx, height, currentLevel, siblings, &pristineNode)
+		calculateParents(currentLevel, nextLevel, &pristineNode)
 
 		aux := currentLevel
 		currentLevel = nextLevel
@@ -41,7 +41,7 @@ func CreateProofs(leaves []model.Hash, height uint) (model.Hash, [][]model.Hash,
 		return model.Hash{}, nil, errors.New("too many leaves for height")
 	}
 
-	return at(currentLevel, 0, pristineNode), siblings, nil
+	return *at(currentLevel, 0, &pristineNode), siblings, nil
 }
 
 // calculateSiblings iterates over each leaf and populates the siblings matrix
@@ -52,7 +52,7 @@ func calculateSiblings(
 	levelIdx, height uint,
 	currentLevel []model.Hash,
 	siblings [][]model.Hash,
-	pristineNode model.Hash,
+	pristineNode *model.Hash,
 ) {
 	// for each leaf
 	for idx := range siblings {
@@ -69,7 +69,7 @@ func calculateSiblings(
 			siblingIdx = idx ^ 1
 		}
 
-		siblings[idx][levelIdx] = at(currentLevel, uint(siblingIdx), pristineNode)
+		siblings[idx][levelIdx] = *at(currentLevel, uint(siblingIdx), pristineNode)
 	}
 }
 
@@ -77,19 +77,19 @@ func calculateSiblings(
 // tree by hashing their children with the Keccak-256 hash function.
 //
 // If the current level has an odd number of nodes a pristine node will be used.
-func calculateParents(currentLevel, nextLevel []model.Hash, pristineNode model.Hash) {
+func calculateParents(currentLevel, nextLevel []model.Hash, pristineNode *model.Hash) {
 	// for each parent node
 	for idx := range nextLevel {
-		leftChild := currentLevel[2*idx]
+		leftChild := &currentLevel[2*idx]
 		rightChild := at(currentLevel, uint(2*idx+1), pristineNode)
 		nextLevel[idx] = crypto.Keccak256Hash(leftChild[:], rightChild[:])
 	}
 }
 
 // at returns the item at index in the array or the provided default value.
-func at(array []model.Hash, index uint, defaultValue model.Hash) model.Hash {
+func at(array []model.Hash, index uint, defaultValue *model.Hash) *model.Hash {
 	if index < uint(len(array)) {
-		return array[index]
+		return &array[index]
 	} else {
 		return defaultValue
 	}
