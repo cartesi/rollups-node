@@ -242,7 +242,7 @@ checksum = "f26201604c87b1e01bd3d98f8d5d9a8fcbb815e8cedb41ffccbeb4bf593a35fe"
 
 [[package]]
 name = "advance-runner"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "backoff",
  "clap",
@@ -250,7 +250,7 @@ dependencies = [
  "grpc-interfaces",
  "hex",
  "http-health-check",
- "log 1.4.0",
+ "log 1.5.0",
  "rand 0.8.5",
  "rollups-events",
  "sha3",
@@ -467,7 +467,7 @@ dependencies = [
 
 [[package]]
 name = "authority-claimer"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "async-trait",
  "backoff",
@@ -478,7 +478,7 @@ dependencies = [
  "ethers",
  "ethers-signers",
  "http-server",
- "log 1.4.0",
+ "log 1.5.0",
  "redacted",
  "rollups-events",
  "rusoto_core",
@@ -1205,7 +1205,7 @@ checksum = "245097e9a4535ee1e3e3931fcfcd55a796a44c643e8596ff6566d68f09b87bbc"
 
 [[package]]
 name = "contracts"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "eth-state-fold-types",
  "snafu 0.8.2",
@@ -1545,7 +1545,7 @@ dependencies = [
 
 [[package]]
 name = "dispatcher"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "async-trait",
  "backoff",
@@ -1555,7 +1555,7 @@ dependencies = [
  "futures",
  "http-server",
  "im",
- "log 1.4.0",
+ "log 1.5.0",
  "rand 0.8.5",
  "redis",
  "rollups-events",
@@ -2451,7 +2451,7 @@ dependencies = [
 
 [[package]]
 name = "graphql-server"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "actix-cors",
  "actix-web",
@@ -2460,7 +2460,7 @@ dependencies = [
  "hex",
  "http-health-check",
  "juniper",
- "log 1.4.0",
+ "log 1.5.0",
  "rollups-data",
  "serde",
  "serde_json",
@@ -2485,7 +2485,7 @@ dependencies = [
 
 [[package]]
 name = "grpc-interfaces"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "prost",
  "tonic",
@@ -2605,7 +2605,7 @@ dependencies = [
 
 [[package]]
 name = "host-runner"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "actix-web",
  "async-trait",
@@ -2616,7 +2616,7 @@ dependencies = [
  "grpc-interfaces",
  "hex",
  "http-health-check",
- "log 1.4.0",
+ "log 1.5.0",
  "mockall",
  "rand 0.8.5",
  "reqwest 0.12.2",
@@ -2690,7 +2690,7 @@ dependencies = [
 
 [[package]]
 name = "http-health-check"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "axum 0.7.5",
  "snafu 0.8.2",
@@ -2700,7 +2700,7 @@ dependencies = [
 
 [[package]]
 name = "http-server"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "axum 0.7.5",
  "clap",
@@ -2954,13 +2954,13 @@ checksum = "ce23b50ad8242c51a442f3ff322d56b02f08852c77e4c0b4d3fd684abc89c683"
 
 [[package]]
 name = "indexer"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "backoff",
  "clap",
  "env_logger",
  "http-health-check",
- "log 1.4.0",
+ "log 1.5.0",
  "rand 0.8.5",
  "rollups-data",
  "rollups-events",
@@ -3006,7 +3006,7 @@ dependencies = [
 
 [[package]]
 name = "inspect-server"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "actix-cors",
  "actix-web",
@@ -3015,7 +3015,7 @@ dependencies = [
  "grpc-interfaces",
  "hex",
  "http-health-check",
- "log 1.4.0",
+ "log 1.5.0",
  "reqwest 0.12.2",
  "serde",
  "serial_test",
@@ -3283,7 +3283,7 @@ checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
 
 [[package]]
 name = "log"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "built",
  "clap",
@@ -4154,7 +4154,7 @@ dependencies = [
 
 [[package]]
 name = "redacted"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "url",
 ]
@@ -4420,7 +4420,7 @@ dependencies = [
 
 [[package]]
 name = "rollups-data"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "backoff",
  "base64 0.22.0",
@@ -4441,7 +4441,7 @@ dependencies = [
 
 [[package]]
 name = "rollups-events"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "backoff",
  "base64 0.22.0",
@@ -4463,7 +4463,7 @@ dependencies = [
 
 [[package]]
 name = "rollups-http-client"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "hyper 0.14.28",
  "serde",
@@ -5158,14 +5158,14 @@ dependencies = [
 
 [[package]]
 name = "state-server"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "clap",
  "eth-block-history",
  "eth-state-fold",
  "eth-state-fold-types",
  "eth-state-server-lib",
- "log 1.4.0",
+ "log 1.5.0",
  "serde",
  "snafu 0.8.2",
  "tokio",
@@ -5346,7 +5346,7 @@ checksum = "3369f5ac52d5eb6ab48c6b4ffdc8efbcad6b89c765749064ba298f2c68a16a76"
 
 [[package]]
 name = "test-fixtures"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "anyhow",
  "backoff",
@@ -5918,7 +5918,7 @@ checksum = "42ff0bf0c66b8238c6f3b578df37d0b7848e55df8577b3f74f92a69acceeb825"
 
 [[package]]
 name = "types"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
