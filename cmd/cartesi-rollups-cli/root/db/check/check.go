@@ -22,8 +22,8 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	defer schemaManager.Close()
 
-	err = schemaManager.ValidateSchemaVersion()
+	version, err := schemaManager.ValidateSchemaVersion()
 	cobra.CheckErr(err)
 
-	fmt.Printf("Database Schema is at the correct version: %d\n", repository.EXPECTED_VERSION)
+	fmt.Printf("Database Schema is at the correct version: %d\n", version)
 }

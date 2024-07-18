@@ -4,7 +4,6 @@ package upgrade
 
 import (
 	"fmt"
-	"log/slog"
 
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/common"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -26,12 +25,8 @@ func run(cmd *cobra.Command, args []string) {
 	err = schemaManager.Upgrade()
 	cobra.CheckErr(err)
 
-	version, err := schemaManager.GetVersion()
+	version, err := schemaManager.ValidateSchemaVersion()
 	cobra.CheckErr(err)
-
-	if repository.EXPECTED_VERSION != version {
-		slog.Warn("Current version is different to expected one")
-	}
 
 	fmt.Printf("Database Schema successfully Updated. Current version is %d\n", version)
 
