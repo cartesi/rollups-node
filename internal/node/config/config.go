@@ -21,6 +21,9 @@ type NodeConfig struct {
 	BlockchainWsEndpoint                      Redacted[string]
 	LegacyBlockchainEnabled                   bool
 	BlockchainFinalityOffset                  int
+	EvmReaderDefaultBlock                     DefaultBlock
+	EvmReaderRetryPolicyMaxRetries            uint64
+	EvmReaderRetryPolicyMaxDelay              Duration
 	BlockchainBlockTimeout                    int
 	ContractsApplicationAddress               string
 	ContractsIConsensusAddress                string
@@ -78,6 +81,9 @@ func FromEnv() NodeConfig {
 	config.BlockchainWsEndpoint = Redacted[string]{getBlockchainWsEndpoint()}
 	config.LegacyBlockchainEnabled = getLegacyBlockchainEnabled()
 	config.BlockchainFinalityOffset = getBlockchainFinalityOffset()
+	config.EvmReaderDefaultBlock = getEvmReaderDefaultBlock()
+	config.EvmReaderRetryPolicyMaxRetries = getEvmReaderRetryPolicyMaxRetries()
+	config.EvmReaderRetryPolicyMaxDelay = getEvmReaderRetryPolicyMaxDelay()
 	config.BlockchainBlockTimeout = getBlockchainBlockTimeout()
 	config.ContractsApplicationAddress = getContractsApplicationAddress()
 	config.ContractsIConsensusAddress = getContractsIconsensusAddress()

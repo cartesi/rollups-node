@@ -118,11 +118,13 @@ func (pg *Database) getAllApplicationsByStatus(
 		application
 	`
 
+	var args []any
 	if criteria != nil {
-		query = query + "WHERE status='" + string(*criteria) + "'"
+		query = query + "WHERE status=$1"
+		args = append(args, string(*criteria))
 	}
 
-	rows, err := pg.db.Query(ctx, query)
+	rows, err := pg.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("Query failed: %v\n", err)
 	}

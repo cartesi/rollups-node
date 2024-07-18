@@ -17,7 +17,7 @@ func CallFunctionWithRetryPolicy[
 ](
 	fn func(A) (R, error),
 	args A,
-	maxRetries uint,
+	maxRetries uint64,
 	maxDelay time.Duration,
 	infoLabel string,
 ) (R, error) {
@@ -25,7 +25,7 @@ func CallFunctionWithRetryPolicy[
 	var lastErr error
 	var lastValue R
 
-	for i := uint(0); i <= maxRetries; i++ {
+	for i := uint64(0); i <= maxRetries; i++ {
 		lastValue, lastErr = fn(args)
 		if lastErr == nil {
 			return lastValue, nil

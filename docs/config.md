@@ -102,6 +102,14 @@ WebSocket endpoint for the blockchain RPC provider.
 
 * **Type:** `string`
 
+## `CARTESI_EVM_READER_DEFAULT_BLOCK`
+
+The default block to be used by EVM Reader when requesting new blocks.
+One of 'latest', 'pending', 'safe', 'finalized'
+
+* **Type:** `DefaultBlock`
+* **Default:** `"finalized"`
+
 ## `CARTESI_LEGACY_BLOCKCHAIN_ENABLED`
 
 If set to true the node will send transactions using the legacy gas fee model
@@ -222,6 +230,20 @@ At the end of each epoch, the node will send claims to the blockchain.
 
 * **Type:** `uint64`
 * **Default:** `"7200"`
+
+## `CARTESI_EVM_READER_RETRY_POLICY_MAX_DELAY`
+
+How seconds the retry policy will wait between retries.
+
+* **Type:** `Duration`
+* **Default:** `"3"`
+
+## `CARTESI_EVM_READER_RETRY_POLICY_MAX_RETRIES`
+
+How many times some functions should be retried after an error.
+
+* **Type:** `uint64`
+* **Default:** `"3"`
 
 ## `CARTESI_SNAPSHOT_DIR`
 

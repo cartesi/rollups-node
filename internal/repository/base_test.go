@@ -77,7 +77,20 @@ func (s *RepositorySuite) SetupDatabase() {
 		Status:             ApplicationStatusRunning,
 	}
 
+	app2 := Application{
+		Id:                 1,
+		ContractAddress:    common.HexToAddress("feadbeef"),
+		TemplateHash:       common.HexToHash("deadbeef"),
+		SnapshotURI:        "this/is/a/test",
+		LastProcessedBlock: 1,
+		EpochLength:        10,
+		Status:             ApplicationStatusNotRunning,
+	}
+
 	err = s.database.InsertApplication(s.ctx, &app)
+	s.Require().Nil(err)
+
+	err = s.database.InsertApplication(s.ctx, &app2)
 	s.Require().Nil(err)
 
 	genericHash := common.HexToHash("deadbeef")

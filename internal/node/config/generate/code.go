@@ -68,11 +68,14 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/cartesi/rollups-node/internal/node/model"
 )
 
 type (
-	Duration = time.Duration
-	LogLevel = slog.Level
+	Duration     = time.Duration
+	LogLevel     = slog.Level
+	DefaultBlock = model.DefaultBlock
 )
 
 // ------------------------------------------------------------------------------------------------
@@ -93,24 +96,24 @@ const (
 // Parsing functions
 // ------------------------------------------------------------------------------------------------
 
-func toInt64FromString(s string) (int64, error) {
+func ToInt64FromString(s string) (int64, error) {
 	return strconv.ParseInt(s, 10, 64)
 }
 
-func toUint64FromString(s string) (uint64, error) {
+func ToUint64FromString(s string) (uint64, error) {
        value, err := strconv.ParseUint(s, 10, 64)
        return value, err
 }
 
-func toStringFromString(s string) (string, error) {
+func ToStringFromString(s string) (string, error) {
 	return s, nil
 }
 
-func toDurationFromSeconds(s string) (time.Duration, error) {
+func ToDurationFromSeconds(s string) (time.Duration, error) {
 	return time.ParseDuration(s + "s")
 }
 
-func toLogLevelFromString(s string) (LogLevel, error) {
+func ToLogLevelFromString(s string) (LogLevel, error) {
 	var m = map[string]LogLevel{
 		"debug": slog.LevelDebug,
 		"info":  slog.LevelInfo,
@@ -125,7 +128,22 @@ func toLogLevelFromString(s string) (LogLevel, error) {
 	}
 }
 
-func toAuthKindFromString(s string) (AuthKind, error) {
+func ToDefaultBlockFromString(s string) (DefaultBlock,error){
+	var m = map[string]DefaultBlock{
+		"latest"   :  model.DefaultBlockStatusLatest,
+		"pending"  :  model.DefaultBlockStatusPending,
+		"safe"     :  model.DefaultBlockStatusSafe,
+		"finalized":  model.DefaultBlockStatusFinalized,
+	}
+	if v, ok := m[s]; ok {
+		return v, nil
+	} else {
+		var zeroValue DefaultBlock
+		return zeroValue, fmt.Errorf("invalid default block '%s'", s)
+	}
+}
+
+func ToAuthKindFromString(s string) (AuthKind, error) {
 	var m = map[string]AuthKind{
 		"private_key":      AuthKindPrivateKeyVar,
 		"private_key_file": AuthKindPrivateKeyFile,
@@ -143,14 +161,15 @@ func toAuthKindFromString(s string) (AuthKind, error) {
 
 // Aliases to be used by the generated functions.
 var (
-	toBool     = strconv.ParseBool
-	toInt      = strconv.Atoi
-	toInt64    = toInt64FromString
-	toUint64   = toUint64FromString
-	toString   = toStringFromString
-	toDuration = toDurationFromSeconds
-	toLogLevel = toLogLevelFromString
-	toAuthKind = toAuthKindFromString
+	toBool         = strconv.ParseBool
+	toInt          = strconv.Atoi
+	toInt64        = ToInt64FromString
+	toUint64       = ToUint64FromString
+	toString       = ToStringFromString
+	toDuration     = ToDurationFromSeconds
+	toLogLevel     = ToLogLevelFromString
+	toAuthKind     = ToAuthKindFromString
+	toDefaultBlock = ToDefaultBlockFromString
 )
 
 // ------------------------------------------------------------------------------------------------

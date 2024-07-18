@@ -37,7 +37,7 @@ func (s *RetrySuite) TestRetry() {
 		mock.Anything).
 		Return(0, nil)
 
-	_, err := CallFunctionWithRetryPolicy(simpleMock.execute, 0, 3, 1*time.Millisecond)
+	_, err := CallFunctionWithRetryPolicy(simpleMock.execute, 0, 3, 1*time.Millisecond, "TEST")
 	s.Require().Nil(err)
 
 	simpleMock.AssertNumberOfCalls(s.T(), "execute", 2)
@@ -52,7 +52,7 @@ func (s *RetrySuite) TestRetryMaxRetries() {
 		mock.Anything).
 		Return(0, fmt.Errorf("An error"))
 
-	_, err := CallFunctionWithRetryPolicy(simpleMock.execute, 0, 3, 1*time.Millisecond)
+	_, err := CallFunctionWithRetryPolicy(simpleMock.execute, 0, 3, 1*time.Millisecond, "TEST")
 	s.Require().NotNil(err)
 
 	simpleMock.AssertNumberOfCalls(s.T(), "execute", 4)

@@ -44,6 +44,18 @@ Length of a rollups epoch in blocks.
 
 At the end of each epoch, the node will send claims to the blockchain."""
 
+[rollups.CARTESI_EVM_READER_RETRY_POLICY_MAX_RETRIES]
+default = "3"
+go-type = "uint64"
+description = """
+How many times some functions should be retried after an error."""
+
+[rollups.CARTESI_EVM_READER_RETRY_POLICY_MAX_DELAY]
+default = "3"
+go-type = "Duration"
+description = """
+How seconds the retry policy will wait between retries."""
+
 #
 # Blockchain
 #
@@ -76,6 +88,13 @@ go-type = "int"
 description = """
 The node assumes that blocks offsetted by N from the current block have reached finality
 (N is the read depth)."""
+
+[blockchain.CARTESI_EVM_READER_DEFAULT_BLOCK]
+default = "finalized"
+go-type = "DefaultBlock"
+description = """
+The default block to be used by EVM Reader when requesting new blocks.
+One of 'latest', 'pending', 'safe', 'finalized'"""
 
 [blockchain.CARTESI_BLOCKCHAIN_BLOCK_TIMEOUT]
 default = "60"
