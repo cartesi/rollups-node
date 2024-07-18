@@ -27,12 +27,14 @@ const examples = `# Run all deps:
 cartesi-rollups-cli run-deps`
 
 var depsConfig = deps.NewDefaultDepsConfig()
+var disablePostgres = false
+var disableDevnet = false
 var verbose = false
 
 func init() {
 	Cmd.Flags().StringVar(&depsConfig.Postgres.DockerImage, "postgres-docker-image",
 		deps.DefaultPostgresDockerImage,
-		"Postgress docker image name")
+		"Postgres docker image name")
 
 	Cmd.Flags().StringVar(&depsConfig.Postgres.Port, "postgres-mapped-port",
 		deps.DefaultPostgresPort,
@@ -58,6 +60,10 @@ func init() {
 		deps.DefaultDevnetNoMining,
 		"Devnet disable mining")
 
+	Cmd.Flags().BoolVar(&disablePostgres, "disable-postgres", false, "Disable Postgres")
+
+	Cmd.Flags().BoolVar(&disableDevnet, "disable-devnet", false, "Disable Devnet")
+
 	Cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "verbose logs")
 }
 
@@ -75,6 +81,14 @@ func run(cmd *cobra.Command, args []string) {
 		handler := tint.NewHandler(os.Stdout, opts)
 		logger := slog.New(handler)
 		slog.SetDefault(logger)
+	}
+
+	if disablePostgres {
+		depsConfig.Postgres = nil
+	}
+
+	if disableDevnet {
+		depsConfig.Devnet = nil
 	}
 
 	depsContainers, err := deps.Run(ctx, *depsConfig)
