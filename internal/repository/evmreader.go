@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (pg *database) InsertInputsAndUpdateLastProcessedBlock(
+func (pg *Database) InsertInputsAndUpdateLastProcessedBlock(
 	ctx context.Context,
 	inputs []Input,
 	blockNumber uint64,
@@ -77,8 +77,22 @@ func (pg *database) InsertInputsAndUpdateLastProcessedBlock(
 	return nil
 }
 
-func (pg *database) GetAllRunningApplications(
+func (pg *Database) GetAllRunningApplications(
 	ctx context.Context,
+) ([]Application, error) {
+	criteria := ApplicationStatusRunning
+	return pg.getAllApplicationsByStatus(ctx, &criteria)
+}
+
+func (pg *Database) GetAllApplications(
+	ctx context.Context,
+) ([]Application, error) {
+	return pg.getAllApplicationsByStatus(ctx, nil)
+}
+
+func (pg *Database) getAllApplicationsByStatus(
+	ctx context.Context,
+	criteria *ApplicationStatus,
 ) ([]Application, error) {
 	var (
 		id                 uint64
@@ -102,10 +116,11 @@ func (pg *database) GetAllRunningApplications(
 		status
 	FROM
 		application
-	WHERE
-		status='RUNNING'
-	ORDER BY
-		id asc`
+	`
+
+	if criteria != nil {
+		query = query + "WHERE status='" + string(*criteria) + "'"
+	}
 
 	rows, err := pg.db.Query(ctx, query)
 	if err != nil {

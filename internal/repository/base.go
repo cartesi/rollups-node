@@ -15,7 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type database struct {
+type Database struct {
 	db *pgxpool.Pool
 }
 
@@ -24,10 +24,10 @@ var ErrInsertRow = errors.New("unable to insert row")
 func Connect(
 	ctx context.Context,
 	postgresEndpoint string,
-) (*database, error) {
+) (*Database, error) {
 	var (
 		pgError    error
-		pgInstance *database
+		pgInstance *Database
 		pgOnce     sync.Once
 	)
 
@@ -37,19 +37,19 @@ func Connect(
 			pgError = fmt.Errorf("unable to create connection pool: %w\n", err)
 		}
 
-		pgInstance = &database{dbpool}
+		pgInstance = &Database{dbpool}
 	})
 
 	return pgInstance, pgError
 }
 
-func (pg *database) Close() {
+func (pg *Database) Close() {
 	if pg != nil {
 		pg.db.Close()
 	}
 }
 
-func (pg *database) InsertNodeConfig(
+func (pg *Database) InsertNodeConfig(
 	ctx context.Context,
 	config *NodePersistentConfig,
 ) error {
@@ -84,7 +84,7 @@ func (pg *database) InsertNodeConfig(
 	return nil
 }
 
-func (pg *database) InsertApplication(
+func (pg *Database) InsertApplication(
 	ctx context.Context,
 	app *Application,
 ) error {
@@ -121,7 +121,7 @@ func (pg *database) InsertApplication(
 	return nil
 }
 
-func (pg *database) InsertInput(
+func (pg *Database) InsertInput(
 	ctx context.Context,
 	input *Input,
 ) error {
@@ -161,7 +161,7 @@ func (pg *database) InsertInput(
 	return nil
 }
 
-func (pg *database) InsertOutput(
+func (pg *Database) InsertOutput(
 	ctx context.Context,
 	output *Output,
 ) error {
@@ -192,7 +192,7 @@ func (pg *database) InsertOutput(
 	return nil
 }
 
-func (pg *database) InsertReport(
+func (pg *Database) InsertReport(
 	ctx context.Context,
 	report *Report,
 ) error {
@@ -220,7 +220,7 @@ func (pg *database) InsertReport(
 	return nil
 }
 
-func (pg *database) InsertClaim(
+func (pg *Database) InsertClaim(
 	ctx context.Context,
 	claim *Claim,
 ) error {
@@ -254,7 +254,7 @@ func (pg *database) InsertClaim(
 	return nil
 }
 
-func (pg *database) GetNodeConfig(
+func (pg *Database) GetNodeConfig(
 	ctx context.Context,
 ) (*NodePersistentConfig, error) {
 	var (
@@ -297,7 +297,7 @@ func (pg *database) GetNodeConfig(
 	return &config, nil
 }
 
-func (pg *database) GetApplication(
+func (pg *Database) GetApplication(
 	ctx context.Context,
 	appAddressKey Address,
 ) (*Application, error) {
@@ -359,7 +359,7 @@ func (pg *database) GetApplication(
 	return &app, nil
 }
 
-func (pg *database) GetInput(
+func (pg *Database) GetInput(
 	ctx context.Context,
 	indexKey uint64,
 	appAddressKey Address,
@@ -427,7 +427,7 @@ func (pg *database) GetInput(
 	return &input, nil
 }
 
-func (pg *database) GetOutput(
+func (pg *Database) GetOutput(
 	ctx context.Context,
 	indexKey uint64,
 	appAddressKey Address,
@@ -491,7 +491,7 @@ func (pg *database) GetOutput(
 	return &output, nil
 }
 
-func (pg *database) GetReport(
+func (pg *Database) GetReport(
 	ctx context.Context,
 	indexKey uint64,
 	appAddressKey Address,
@@ -545,7 +545,7 @@ func (pg *database) GetReport(
 	return &report, nil
 }
 
-func (pg *database) GetClaim(
+func (pg *Database) GetClaim(
 	ctx context.Context,
 	appAddressKey Address,
 	indexKey uint64,

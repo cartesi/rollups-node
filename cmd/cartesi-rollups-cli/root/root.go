@@ -5,6 +5,7 @@ package root
 
 import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/app"
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/db"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/deps"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/execute"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/increasetime"
@@ -35,5 +36,6 @@ func init() {
 	Cmd.AddCommand(execute.Cmd)
 	Cmd.AddCommand(mine.Cmd)
 	Cmd.AddCommand(app.Cmd)
+	Cmd.AddCommand(db.Cmd)
 	Cmd.DisableAutoGenTag = true
 }

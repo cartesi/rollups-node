@@ -14,7 +14,7 @@ import (
 
 const DefaultServiceTimeout = 5 * time.Minute
 
-func (pg *database) GetLastProcessedBlock(
+func (pg *Database) GetLastProcessedBlock(
 	ctx context.Context,
 	appAddress Address,
 ) (uint64, error) {
@@ -40,7 +40,7 @@ func (pg *database) GetLastProcessedBlock(
 	return block, nil
 }
 
-func (pg *database) GetAllOutputsFromProcessedInputs(
+func (pg *Database) GetAllOutputsFromProcessedInputs(
 	ctx context.Context,
 	startBlock uint64,
 	endBlock uint64,
@@ -65,7 +65,7 @@ func (pg *database) GetAllOutputsFromProcessedInputs(
 	}
 }
 
-func (pg *database) getAllOutputsFromProcessedInputs(
+func (pg *Database) getAllOutputsFromProcessedInputs(
 	ctx context.Context,
 	startBlock uint64,
 	endBlock uint64,
@@ -130,7 +130,7 @@ func (pg *database) getAllOutputsFromProcessedInputs(
 	return nil, nil
 }
 
-func (pg *database) FinishEpoch(
+func (pg *Database) FinishEpoch(
 	ctx context.Context,
 	claim *Claim,
 	outputs []Output,

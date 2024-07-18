@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -47,23 +46,40 @@ func main() {
 	slog.SetDefault(logger)
 	slog.Info("Starting the Cartesi Rollups Node", "version", buildVersion, "config", config)
 
+	schemaManager, err := repository.NewSchemaManager(config.PostgresEndpoint.Value)
+	if err != nil {
+		slog.Error("Node exited with an error", "error", err)
+		schemaManager.Close()
+		os.Exit(1)
+	}
+	err = schemaManager.ValidateSchemaVersion()
+	if err != nil {
+		slog.Error("Node exited with an error", "error", err)
+		schemaManager.Close()
+		os.Exit(1)
+	}
+	schemaManager.Close()
+
 	// setup database
 	nodePersistentConfig := NodePersistentConfig{
-		DefaultBlock:            DefaultBlockStatusFinalized,
+		DefaultBlock:            config.EvmReaderDefaultBlock,
 		InputBoxDeploymentBlock: uint64(config.ContractsInputBoxDeploymentBlockNumber),
 		InputBoxAddress:         common.HexToAddress(config.ContractsInputBoxAddress),
 		ChainId:                 config.BlockchainID,
 		IConsensusAddress:       common.HexToAddress(config.ContractsIConsensusAddress),
 	}
 
-	repository.RunMigrations(fmt.Sprintf("%v?sslmode=disable", config.PostgresEndpoint.Value))
 	database, err := repository.Connect(ctx, config.PostgresEndpoint.Value)
 	if err != nil {
 		slog.Error("Node couldn't connect to the database", "error", err)
+		database.Close()
+		os.Exit(1)
 	}
 	err = database.InsertNodeConfig(ctx, &nodePersistentConfig)
 	if err != nil {
 		slog.Error("Node couldn't insert database config", "error", err)
+		database.Close()
+		os.Exit(1)
 	}
 	database.Close()
 

@@ -24,7 +24,7 @@ type RepositorySuite struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	postgres *postgres.PostgresContainer
-	database *database
+	database *Database
 }
 
 func (s *RepositorySuite) SetupSuite() {
@@ -36,7 +36,12 @@ func (s *RepositorySuite) SetupSuite() {
 
 	endpoint, err := s.postgres.ConnectionString(s.ctx, "sslmode=disable")
 	s.Require().Nil(err)
-	RunMigrations(endpoint)
+
+	schemaManager, err := NewSchemaManager(endpoint)
+	s.Require().Nil(err)
+
+	err = schemaManager.Upgrade()
+	s.Require().Nil(err)
 
 	s.database, err = Connect(s.ctx, endpoint)
 	s.Require().Nil(err)
