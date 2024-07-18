@@ -95,7 +95,7 @@ func _waitForTransaction(
 		return nil, fmt.Errorf("failed to get receipt: %v", err)
 	}
 	if receipt.Status == 0 {
-		reason, err := _traceTransaction(ctx, client, tx.Hash())
+		reason, err := _traceTransaction(client, tx.Hash())
 		if err != nil {
 			return nil, fmt.Errorf("transaction failed; failed to get reason: %v", err)
 		}
@@ -107,7 +107,6 @@ func _waitForTransaction(
 // Call the Ethereum node using the RPC client directly because the ethclient struct doesn't have a
 // binding for the trace API. More details in: https://github.com/ethereum/go-ethereum/issues/17341
 func _traceTransaction(
-	ctx context.Context,
 	client *ethclient.Client,
 	hash common.Hash,
 ) (string, error) {

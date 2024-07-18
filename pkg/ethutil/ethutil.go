@@ -59,7 +59,7 @@ func AddInput(
 	if err != nil {
 		return 0, err
 	}
-	return getInputIndex(ctx, client, book, inputBox, receipt)
+	return getInputIndex(book, inputBox, receipt)
 }
 
 // Convenience function to add an input using Foundry Mnemonic
@@ -92,8 +92,6 @@ func AddInputUsingFoundryMnemonic(
 
 // Get input index in the transaction by looking at the event logs.
 func getInputIndex(
-	ctx context.Context,
-	client *ethclient.Client,
 	book *addresses.Book,
 	inputBox *inputbox.InputBox,
 	receipt *types.Receipt,
