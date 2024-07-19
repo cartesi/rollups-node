@@ -19,7 +19,14 @@ type Database struct {
 	db *pgxpool.Pool
 }
 
-var ErrInsertRow = errors.New("unable to insert row")
+var (
+	ErrInsertRow = errors.New("unable to insert row")
+	ErrUpdateRow = errors.New("unable to update row")
+	ErrCopyFrom  = errors.New("unable to COPY FROM")
+
+	ErrBeginTx  = errors.New("unable to begin transaction")
+	ErrCommitTx = errors.New("unable to commit transaction")
+)
 
 func Connect(
 	ctx context.Context,
@@ -141,8 +148,10 @@ func (pg *Database) InsertInput(
 		@blockNumber,
 		@machineHash,
 		@outputsHash,
-		@applicationAddress)`
-
+		@applicationAddress)
+    RETURNING
+        id
+    `
 	args := pgx.NamedArgs{
 		"index":              input.Index,
 		"status":             input.CompletionStatus,
@@ -153,7 +162,7 @@ func (pg *Database) InsertInput(
 		"applicationAddress": input.AppAddress,
 	}
 
-	_, err := pg.db.Exec(ctx, query, args)
+	err := pg.db.QueryRow(ctx, query, args).Scan(&input.Id)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInsertRow, err)
 	}

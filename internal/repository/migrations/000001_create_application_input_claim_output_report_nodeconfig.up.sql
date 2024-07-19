@@ -64,7 +64,7 @@ CREATE TABLE "output"
     CONSTRAINT "output_input_id_fkey" FOREIGN KEY ("input_id") REFERENCES "input"("id")
 );
 
-CREATE UNIQUE INDEX "output_idx" ON "output"("index");
+CREATE INDEX "output_idx" ON "output"("index");
 
 CREATE TABLE "report"
 (
@@ -76,7 +76,7 @@ CREATE TABLE "report"
     CONSTRAINT "report_input_id_fkey" FOREIGN KEY ("input_id") REFERENCES "input"("id")
 );
 
-CREATE UNIQUE INDEX "report_idx" ON "report"("index");
+CREATE INDEX "report_idx" ON "report"("index");
 
 CREATE TABLE "node_config"
 (
