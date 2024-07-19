@@ -4,7 +4,6 @@
 package merkle
 
 import (
-	"math"
 	"math/rand"
 	"testing"
 	"time"
@@ -798,7 +797,7 @@ func FuzzVerifyProofs(f *testing.F) {
 	f.Add(uint(10), uint(10), uint(5))
 	f.Fuzz(func(t *testing.T, height, leafCount, leafIdx uint) {
 		height = bound(height, 3, 20)
-		leafCount = bound(leafCount, 1, uint(math.Pow(2, float64(height))))
+		leafCount = bound(leafCount, 1, 1<<height)
 		leafIdx = bound(leafIdx, 0, leafCount-1)
 		leaves := generateRandomLeaves(leafCount)
 		leavesCopy := make([]model.Hash, len(leaves))
