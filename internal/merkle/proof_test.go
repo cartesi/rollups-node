@@ -794,8 +794,8 @@ func (s *CreateProofsSuite) TestItMatchesMachineImplementation() {
 }
 
 func FuzzVerifyProofs(f *testing.F) {
-	f.Add(uint(10), uint(10), uint(5))
-	f.Fuzz(func(t *testing.T, height, leafCount, leafIdx uint) {
+	f.Add(uint(10), uint(10), uint(5), uint(4))
+	f.Fuzz(func(t *testing.T, height, leafCount, leafIdx, siblingIdx uint) {
 		height = bound(height, 3, 20)
 		leafCount = bound(leafCount, 1, 1<<height)
 		leafIdx = bound(leafIdx, 0, leafCount-1)
@@ -819,7 +819,8 @@ func FuzzVerifyProofs(f *testing.F) {
 			t.Errorf("expected root to be different when replacing the leaf")
 		}
 
-		leafSiblings[0] = crypto.Keccak256Hash([]byte("wrong_sibling"))
+		siblingIdx = bound(siblingIdx, 0, height-1)
+		leafSiblings[siblingIdx] = crypto.Keccak256Hash([]byte("wrong_sibling"))
 		newRoot = rootFromSiblings(leaves[leafIdx], int(leafIdx), leafSiblings)
 		if root == newRoot {
 			t.Errorf("expected root to be different when replacing a sibling")
