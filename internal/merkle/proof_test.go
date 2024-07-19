@@ -1032,12 +1032,7 @@ func bound(n, min, max uint) uint {
 	if max < min {
 		panic("max should be equal or greater than min")
 	}
-	if n < min {
-		return min
-	} else if n > max {
-		return max
-	}
-	return n
+	return min + (n % (1 + max - min))
 }
 
 // generateRandomLeaves generates random byte slices and hash them with
