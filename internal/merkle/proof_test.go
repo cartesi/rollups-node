@@ -814,9 +814,13 @@ func FuzzVerifyProofs(f *testing.F) {
 			t.Errorf("expected: %v, got: %v\n", root, newRoot)
 		}
 
-		newRoot = rootFromSiblings(model.Hash{}, int(leafIdx), leafSiblings)
-		if root == newRoot {
-			t.Errorf("expected root to be different when replacing the leaf")
+		randomLeaf := generateRandomLeaves(1)[0]
+		// safety check to avoid a false positive
+		if leaves[leafIdx] != randomLeaf {
+			newRoot = rootFromSiblings(randomLeaf, int(leafIdx), leafSiblings)
+			if root == newRoot {
+				t.Errorf("expected root to be different when replacing the leaf")
+			}
 		}
 
 		siblingIdx = bound(siblingIdx, 0, height-1)
