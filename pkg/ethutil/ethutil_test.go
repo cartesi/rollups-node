@@ -19,8 +19,8 @@ import (
 
 const testTimeout = 300 * time.Second
 
-// This suite sets up a container running a devnet Ethereum node, and connects to it using
-// go-ethereum's client.
+// This suite sets up a container running a devnet Ethereum node
+// and connects to it using go-ethereum's client.
 type EthUtilSuite struct {
 	suite.Suite
 	ctx      context.Context
@@ -75,11 +75,22 @@ func (s *EthUtilSuite) TestAddInput() {
 	s.Require().Equal(payload, event.Input)
 }
 
-func (s *EthUtilSuite) TestMineNewBlock() {
-	blockNumber, err := MineNewBlock(s.ctx, s.endpoint)
-	s.Require().Nil(err)
-	s.Require().Equal(uint64(22), blockNumber)
+func (s *EthUtilSuite) TestMineOneBlock() {
+	s.mineBlocks(1)
+}
 
+func (s *EthUtilSuite) TestMineAHundredBlocks() {
+	s.mineBlocks(100)
+}
+
+func (s *EthUtilSuite) mineBlocks(numBlocks uint64) {
+	lastBlockNumber, err := s.client.BlockNumber(s.ctx)
+	s.Require().Nil(err)
+	expectedBlockNumber := lastBlockNumber + numBlocks
+
+	blockNumber, err := MineBlocks(s.ctx, s.endpoint, numBlocks, 1)
+	s.Require().Nil(err)
+	s.Require().Equal(expectedBlockNumber, blockNumber)
 }
 
 // Log the output of the given container
