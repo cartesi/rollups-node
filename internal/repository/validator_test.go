@@ -137,7 +137,7 @@ func (s *RepositorySuite) TestGetLastInputOutputHash() {
 	s.Require().Nil(err)
 
 	// should fail
-	hash, err := s.database.GetLastInputOutputHash(s.ctx, epoch.Index, epoch.AppAddress)
+	hash, err := s.database.GetLastInputOutputsHash(s.ctx, epoch.Index, epoch.AppAddress)
 	s.Require().NotNil(err)
 	s.Nil(hash)
 	s.ErrorContains(err, "still being processed")
@@ -153,7 +153,7 @@ func (s *RepositorySuite) TestGetLastInputOutputHash() {
 	s.Require().Nil(err)
 
 	// should fail
-	hash, err = s.database.GetLastInputOutputHash(s.ctx, epoch2.Index, epoch2.AppAddress)
+	hash, err = s.database.GetLastInputOutputsHash(s.ctx, epoch2.Index, epoch2.AppAddress)
 	s.Require().NotNil(err)
 	s.Nil(hash)
 	s.ErrorContains(err, "still being processed")
@@ -181,7 +181,7 @@ func (s *RepositorySuite) TestGetLastInputOutputHash() {
 	input.Id, err = s.database.InsertInput(s.ctx, input)
 	s.Require().Nil(err)
 
-	hash, err = s.database.GetLastInputOutputHash(s.ctx, epoch3.Index, epoch3.AppAddress)
+	hash, err = s.database.GetLastInputOutputsHash(s.ctx, epoch3.Index, epoch3.AppAddress)
 	s.Require().Nil(err)
 	s.Require().NotNil(hash)
 	s.Equal(expectedHash, *hash)

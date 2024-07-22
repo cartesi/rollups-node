@@ -137,10 +137,10 @@ func (pg *Database) GetProcessedEpochs(ctx context.Context, application Address)
 	return results, nil
 }
 
-// GetLastInputOutputHash returns the outputs Merkle tree hash calculated
+// GetLastInputOutputsHash returns the outputs Merkle tree hash calculated
 // by the Cartesi Machine after it processed the last input in the provided
 // epoch.
-func (pg *Database) GetLastInputOutputHash(
+func (pg *Database) GetLastInputOutputsHash(
 	ctx context.Context,
 	epochIndex uint64,
 	appAddress Address,
@@ -190,7 +190,7 @@ func (pg *Database) GetLastInputOutputHash(
 			)
 			return nil, nil
 		}
-		return nil, fmt.Errorf("GetLastInputOutputHash failed: %w", err)
+		return nil, fmt.Errorf("GetLastInputOutputsHash failed: %w", err)
 	}
 	return &outputHash, nil
 }
