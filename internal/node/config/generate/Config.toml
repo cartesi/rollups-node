@@ -56,6 +56,12 @@ go-type = "Duration"
 description = """
 How seconds the retry policy will wait between retries."""
 
+[rollups.CARTESI_VALIDATOR_POLLING_INTERVAL]
+default = "30"
+go-type = "Duration"
+description = """
+How many seconds the node will wait before trying to finish epochs for all applications."""
+
 #
 # Blockchain
 #
