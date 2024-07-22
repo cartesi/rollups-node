@@ -12,6 +12,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/node/config"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/services"
+	"github.com/cartesi/rollups-node/internal/validator"
 )
 
 // We use an enum to define the ports of each service and avoid conflicts.
@@ -132,6 +133,7 @@ func newSupervisorService(
 	s = append(s, newHttpService(c))
 	s = append(s, newPostgraphileService(c, workDir))
 	s = append(s, newEvmReaderService(c, database))
+	s = append(s, newValidatorService(c, database))
 
 	supervisor := services.SupervisorService{
 		Name:     "rollups-node",
@@ -180,5 +182,13 @@ func newEvmReaderService(c config.NodeConfig, database *repository.Database) ser
 		database,
 		c.EvmReaderRetryPolicyMaxRetries,
 		c.EvmReaderRetryPolicyMaxDelay,
+	)
+}
+
+func newValidatorService(c config.NodeConfig, database *repository.Database) services.Service {
+	return validator.NewValidatorService(
+		database,
+		uint64(c.ContractsInputBoxDeploymentBlockNumber),
+		c.ValidatorPollingInterval,
 	)
 }

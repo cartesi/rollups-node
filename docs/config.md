@@ -252,6 +252,13 @@ How many times some functions should be retried after an error.
 * **Type:** `uint64`
 * **Default:** `"3"`
 
+## `CARTESI_VALIDATOR_POLLING_INTERVAL`
+
+How many seconds the node will wait before trying to finish epochs for all applications.
+
+* **Type:** `Duration`
+* **Default:** `"30"`
+
 ## `CARTESI_SNAPSHOT_DIR`
 
 Path to the directory with the cartesi-machine snapshot that will be loaded by the node.
