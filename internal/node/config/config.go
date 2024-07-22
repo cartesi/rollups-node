@@ -40,6 +40,7 @@ type NodeConfig struct {
 	ExperimentalSunodoValidatorEnabled        bool
 	ExperimentalSunodoValidatorRedisEndpoint  string
 	Auth                                      Auth
+	ValidatorPollingInterval                  Duration
 }
 
 // Auth is used to sign transactions.
@@ -107,6 +108,7 @@ func FromEnv() NodeConfig {
 	if getFeatureClaimerEnabled() && !getExperimentalSunodoValidatorEnabled() {
 		config.Auth = authFromEnv()
 	}
+	config.ValidatorPollingInterval = getValidatorPollingInterval()
 	return config
 }
 

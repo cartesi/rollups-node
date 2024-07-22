@@ -516,6 +516,18 @@ func getEvmReaderRetryPolicyMaxRetries() uint64 {
 	return val
 }
 
+func getValidatorPollingInterval() Duration {
+	s, ok := os.LookupEnv("CARTESI_VALIDATOR_POLLING_INTERVAL")
+	if !ok {
+		s = "30"
+	}
+	val, err := toDuration(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_VALIDATOR_POLLING_INTERVAL: %v", err))
+	}
+	return val
+}
+
 func getSnapshotDir() string {
 	s, ok := os.LookupEnv("CARTESI_SNAPSHOT_DIR")
 	if !ok {
