@@ -59,16 +59,16 @@ func CreateProofs(leaves []model.Hash, height uint) (model.Hash, []model.Hash, e
 func parentLevel(level []model.Hash, pristineNode *model.Hash) []model.Hash {
 	// for each pair of nodes in level
 	for idx := 0; idx < len(level); idx += 2 {
-		leftChild := &level[idx]
-		rightChild := at(level, uint(idx+1), pristineNode)
+		leftChild := level[idx][:]
+		rightChild := at(level, uint(idx+1), pristineNode)[:]
 		// compute the parent node in-place
-		level[idx/2] = crypto.Keccak256Hash(leftChild[:], rightChild[:])
+		level[idx/2] = crypto.Keccak256Hash(leftChild, rightChild)
 	}
 	// return the parent level by re-slicing level
 	return level[:(len(level)+1)/2]
 }
 
-// at returns the item at index in the array or the provided default value.
+// at returns a pointer to the item located at index or the default value.
 func at(array []model.Hash, index uint, defaultValue *model.Hash) *model.Hash {
 	if index < uint(len(array)) {
 		return &array[index]
