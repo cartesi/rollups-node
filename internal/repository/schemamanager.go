@@ -79,6 +79,10 @@ func (s *SchemaManager) Upgrade() error {
 	return nil
 }
 
+func (s *SchemaManager) DeleteAll() error {
+	return s.migrate.Down()
+}
+
 func (s *SchemaManager) Close() {
 	source, db := s.migrate.Close()
 	if source != nil {
