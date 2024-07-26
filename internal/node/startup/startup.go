@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/cartesi/rollups-node/internal/node/config"
 	"github.com/cartesi/rollups-node/internal/node/model"
@@ -19,10 +20,23 @@ import (
 )
 
 // Validates the Node Database Schema Version
-func ValidateSchema(postgresEndpoint string) error {
-	schemaManager, err := repository.NewSchemaManager(postgresEndpoint)
-	if err != nil {
-		return err
+func ValidateSchema(config config.NodeConfig) error {
+	var (
+		schemaManager *repository.SchemaManager
+		err           error
+	)
+
+	if strings.Contains(config.BlockchainHttpEndpoint.Value, "devnet") {
+		schemaManager, err = repository.NewSchemaManager(fmt.Sprintf("%v?sslmode=disable", config.PostgresEndpoint.Value))
+		if err != nil {
+			return err
+		}
+		schemaManager.Upgrade()
+	} else {
+		schemaManager, err = repository.NewSchemaManager(config.PostgresEndpoint.Value)
+		if err != nil {
+			return err
+		}
 	}
 	defer schemaManager.Close()
 	err = schemaManager.ValidateSchemaVersion()

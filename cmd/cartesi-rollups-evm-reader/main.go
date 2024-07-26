@@ -132,7 +132,7 @@ func run(cmd *cobra.Command, args []string) {
 	slog.Info("Starting the Cartesi Rollups Node EVM Reader", "version", buildVersion, "config", c)
 
 	// Validate Schema
-	err := startup.ValidateSchema(c.PostgresEndpoint.Value)
+	err := startup.ValidateSchema(c)
 	if err != nil {
 		slog.Error("EVM Reader exited with an error", "error", err)
 		os.Exit(1)
