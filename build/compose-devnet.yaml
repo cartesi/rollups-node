@@ -1,7 +1,5 @@
 # This compose file contains the Anvil devnet container for the node.
 
-version: "3.9"
-
 name: rollups-node
 services:
   devnet:

@@ -1,8 +1,6 @@
 # This compose file contains cartesi-machine test-application snapshot.
 # It creates a dummy container just to create the volume with the snapshot.
 
-version: "3.9"
-
 name: rollups-node
 services:
   machine_snapshot_setup:
