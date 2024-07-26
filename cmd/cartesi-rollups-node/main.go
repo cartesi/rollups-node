@@ -35,7 +35,7 @@ func main() {
 	startup.ConfigLogs(config)
 	slog.Info("Starting the Cartesi Rollups Node", "version", buildVersion, "config", config)
 
-	err := startup.ValidateSchema(config.PostgresEndpoint.Value)
+	err := startup.ValidateSchema(config)
 	if err != nil {
 		slog.Error("Node exited with an error", "error", err)
 		os.Exit(1)

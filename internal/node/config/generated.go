@@ -468,6 +468,18 @@ func getPostgresEndpoint() string {
 	return val
 }
 
+func getPostgresSslmodeEnabled() bool {
+	s, ok := os.LookupEnv("CARTESI_POSTGRES_SSLMODE_ENABLED")
+	if !ok {
+		s = "true"
+	}
+	val, err := toBool(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_POSTGRES_SSLMODE_ENABLED: %v", err))
+	}
+	return val
+}
+
 func getEpochLength() uint64 {
 	s, ok := os.LookupEnv("CARTESI_EPOCH_LENGTH")
 	if !ok {

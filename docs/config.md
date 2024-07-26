@@ -222,6 +222,13 @@ for more information.
 * **Type:** `string`
 * **Default:** `""`
 
+## `CARTESI_POSTGRES_SSLMODE_ENABLED`
+
+When enabled, will connect to postgres database via SSL.
+
+* **Type:** `bool`
+* **Default:** `"true"`
+
 ## `CARTESI_EPOCH_LENGTH`
 
 Length of a rollups epoch in blocks.

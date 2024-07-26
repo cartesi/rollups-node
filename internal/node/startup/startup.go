@@ -19,10 +19,23 @@ import (
 )
 
 // Validates the Node Database Schema Version
-func ValidateSchema(postgresEndpoint string) error {
-	schemaManager, err := repository.NewSchemaManager(postgresEndpoint)
-	if err != nil {
-		return err
+func ValidateSchema(config config.NodeConfig) error {
+	var (
+		schemaManager *repository.SchemaManager
+		err           error
+	)
+
+	if !config.PostgresSslMode {
+		schemaManager, err = repository.NewSchemaManager(
+			fmt.Sprintf("%v?sslmode=disable", config.PostgresEndpoint.Value))
+		if err != nil {
+			return err
+		}
+	} else {
+		schemaManager, err = repository.NewSchemaManager(config.PostgresEndpoint.Value)
+		if err != nil {
+			return err
+		}
 	}
 	defer schemaManager.Close()
 	err = schemaManager.ValidateSchemaVersion()

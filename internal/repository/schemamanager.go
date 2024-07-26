@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	mig "github.com/golang-migrate/migrate/v4"
@@ -39,9 +38,6 @@ func NewSchemaManager(postgresEndpoint string) (*SchemaManager, error) {
 		return nil, err
 	}
 
-	if !strings.Contains(postgresEndpoint, "sslmode=disable") {
-		postgresEndpoint = fmt.Sprintf("%v?sslmode=disable", postgresEndpoint)
-	}
 	migrate, err := mig.NewWithSourceInstance(
 		"iofs",
 		driver,
