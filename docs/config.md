@@ -231,6 +231,13 @@ At the end of each epoch, the node will send claims to the blockchain.
 * **Type:** `uint64`
 * **Default:** `"7200"`
 
+## `CARTESI_EVM_READER_MAX_FETCH_SIZE`
+
+Maximum number of blocks that can be read on each input fetch request.
+
+* **Type:** `uint`
+* **Default:** `"10"`
+
 ## `CARTESI_EVM_READER_RETRY_POLICY_MAX_DELAY`
 
 How seconds the retry policy will wait between retries.

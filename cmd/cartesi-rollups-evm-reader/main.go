@@ -158,6 +158,7 @@ func run(cmd *cobra.Command, args []string) {
 		database,
 		c.EvmReaderRetryPolicyMaxRetries,
 		c.EvmReaderRetryPolicyMaxDelay,
+		c.EvmReaderMaxFetchSize,
 	)
 
 	// logs startup time
