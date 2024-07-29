@@ -26,8 +26,7 @@ var (
 )
 
 const (
-	CMD_NAME                            = "evm-reader"
-	devnetInputBoxDeploymentBlockNumber = uint64(16)
+	CMD_NAME = "evm-reader"
 )
 
 var Cmd = &cobra.Command{
