@@ -13,7 +13,7 @@ The teal boxes represent the internal components which are maintained by the Nod
 The cyan and white boxes represent external components.
 Some external components such as the Redis and Server Manager run inside the node as supervisioned processes.
 On the other hand, the Postgres database and the Ethereum node run outside the Node.
-The person who runs the Rollups Node should set up the unsupervisioned components and pass the corresponding configuration variables to the Node.
+The person who runs the Rollups Node should set up the unsupervised components and pass the corresponding configuration variables to the Node.
 
 ### Node Supervisor
 
