@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use crate::{
-    contracts::iconsensus::{IConsensus, InputRange},
+    contracts::iconsensus::IConsensus,
     metrics::AuthorityClaimerMetrics,
     rollups_events::{Address, DAppMetadata, RollupsClaim},
     signer::ConditionalSigner,
@@ -23,7 +23,7 @@ use ethers::{
     providers::{
         Http, HttpRateLimitRetryPolicy, MockProvider, Provider, RetryClient,
     },
-    types::{NameOrAddress, H160},
+    types::{NameOrAddress, H160, H256},
 };
 use snafu::{OptionExt, ResultExt, Snafu};
 use std::{fmt::Debug, sync::Arc};
@@ -43,7 +43,7 @@ pub trait TransactionSender: Sized + Debug {
     async fn send_rollups_claim_transaction(
         self,
         rollups_claim: RollupsClaim,
-    ) -> Result<Self, Self::Error>;
+    ) -> Result<(Self, H256), Self::Error>;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -190,20 +190,15 @@ impl TransactionSender for DefaultTransactionSender {
     async fn send_rollups_claim_transaction(
         self,
         rollups_claim: RollupsClaim,
-    ) -> Result<Self, Self::Error> {
+    ) -> Result<(Self, H256), Self::Error> {
         let dapp_address = rollups_claim.dapp_address.clone();
 
         let transaction = {
-            let input_range = InputRange {
-                first_index: rollups_claim.first_index as u64,
-                last_index: rollups_claim.last_index as u64,
-            };
             let call = self
                 .iconsensus
                 .submit_claim(
                     H160(dapp_address.inner().to_owned()),
-                    input_range,
-                    rollups_claim.epoch_hash.into_inner(),
+                    rollups_claim.output_merkle_root_hash.into_inner(),
                 )
                 .from(self.from);
             let to = match call.tx.to().context(InternalEthersSnafu)? {
@@ -234,6 +229,6 @@ impl TransactionSender for DefaultTransactionSender {
             .inc();
         trace!("Claim transaction confirmed: `{:?}`", receipt);
 
-        Ok(Self { tx_manager, ..self })
+        Ok((Self { tx_manager, ..self }, receipt.transaction_hash))
     }
 }

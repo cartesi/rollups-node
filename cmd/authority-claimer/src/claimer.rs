@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 use crate::{
-    checker::DuplicateChecker, listener::BrokerListener,
+    checker::DuplicateChecker, repository::Repository,
     sender::TransactionSender,
 };
 use async_trait::async_trait;
@@ -25,13 +25,10 @@ pub trait Claimer: Sized + Debug {
 }
 
 #[derive(Debug, snafu::Snafu)]
-pub enum ClaimerError<
-    B: BrokerListener,
-    D: DuplicateChecker,
-    T: TransactionSender,
-> {
-    #[snafu(display("broker listener error"))]
-    BrokerListener { source: B::Error },
+pub enum ClaimerError<R: Repository, D: DuplicateChecker, T: TransactionSender>
+{
+    #[snafu(display("repository error"))]
+    Repository { source: R::Error },
 
     #[snafu(display("duplicated claim error"))]
     DuplicatedClaim { source: D::Error },
@@ -48,25 +45,25 @@ pub enum ClaimerError<
 /// `BrokerListener`, a `DuplicateChecker` and a `TransactionSender`.
 #[derive(Debug)]
 pub struct DefaultClaimer<
-    B: BrokerListener,
+    R: Repository,
     D: DuplicateChecker,
     T: TransactionSender,
 > {
-    broker_listener: B,
+    repository: R,
     duplicate_checker: D,
     transaction_sender: T,
 }
 
-impl<B: BrokerListener, D: DuplicateChecker, T: TransactionSender>
-    DefaultClaimer<B, D, T>
+impl<R: Repository, D: DuplicateChecker, T: TransactionSender>
+    DefaultClaimer<R, D, T>
 {
     pub fn new(
-        broker_listener: B,
+        repository: R,
         duplicate_checker: D,
         transaction_sender: T,
     ) -> Self {
         Self {
-            broker_listener,
+            repository,
             duplicate_checker,
             transaction_sender,
         }
@@ -74,23 +71,20 @@ impl<B: BrokerListener, D: DuplicateChecker, T: TransactionSender>
 }
 
 #[async_trait]
-impl<B, D, T> Claimer for DefaultClaimer<B, D, T>
+impl<R, D, T> Claimer for DefaultClaimer<R, D, T>
 where
-    B: BrokerListener + Send + Sync + 'static,
+    R: Repository + Send + Sync + 'static,
     D: DuplicateChecker + Send + Sync + 'static,
     T: TransactionSender + Send + 'static,
 {
-    type Error = ClaimerError<B, D, T>;
+    type Error = ClaimerError<R, D, T>;
 
     async fn start(mut self) -> Result<(), Self::Error> {
         trace!("Starting the authority claimer loop");
         loop {
-            let rollups_claim = self
-                .broker_listener
-                .listen()
-                .await
-                .context(BrokerListenerSnafu)?;
-            trace!("Got a claim from the broker: {:?}", rollups_claim);
+            let rollups_claim =
+                self.repository.get_claim().await.context(RepositorySnafu)?;
+            trace!("Got a claim from the repository: {:?}", rollups_claim);
 
             let is_duplicated_rollups_claim = self
                 .duplicate_checker
@@ -102,12 +96,19 @@ where
                 continue;
             }
 
+            let tx_hash;
             info!("Sending a new rollups claim");
-            self.transaction_sender = self
+            (self.transaction_sender, tx_hash) = self
                 .transaction_sender
-                .send_rollups_claim_transaction(rollups_claim)
+                .send_rollups_claim_transaction(rollups_claim.clone())
                 .await
-                .context(TransactionSenderSnafu)?
+                .context(TransactionSenderSnafu)?;
+
+            info!("Updating claim data in repository");
+            self.repository
+                .update_claim(rollups_claim.id, tx_hash)
+                .await
+                .context(RepositorySnafu)?;
         }
     }
 }
