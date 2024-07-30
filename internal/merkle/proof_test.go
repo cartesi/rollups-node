@@ -61,7 +61,7 @@ func (s *CreateProofsSuite) TestZeroHeight() {
 		_, _, err := CreateProofs(leaves, 0)
 		s.Require().NotNil(err)
 
-		s.ErrorContains(err, "too many leaves for height")
+		s.ErrorContains(err, "too many leaves")
 	})
 }
 func (s *CreateProofsSuite) TestHeightOne() {
@@ -125,7 +125,7 @@ func (s *CreateProofsSuite) TestHeightOne() {
 		_, _, err := CreateProofs(leaves, 1)
 		s.Require().NotNil(err)
 
-		s.ErrorContains(err, "too many leaves for height")
+		s.ErrorContains(err, "too many leaves")
 	})
 }
 
@@ -262,7 +262,7 @@ func (s *CreateProofsSuite) TestHeightTwo() {
 		_, _, err := CreateProofs(leaves, uint(height))
 		s.Require().NotNil(err)
 
-		s.ErrorContains(err, "too many leaves for height")
+		s.ErrorContains(err, "too many leaves")
 	})
 }
 

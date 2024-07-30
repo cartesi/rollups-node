@@ -4,7 +4,7 @@
 package merkle
 
 import (
-	"errors"
+	"fmt"
 
 	"github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -41,7 +41,8 @@ func CreateProofs(leaves []model.Hash, height uint) (model.Hash, []model.Hash, e
 
 	// in the end, current level is the root level
 	if len(currentLevel) > 1 {
-		return model.Hash{}, nil, errors.New("too many leaves for height")
+		err := fmt.Errorf("too many leaves [%d] for height [%d]", leafCount, height)
+		return model.Hash{}, nil, err
 	}
 
 	return *at(currentLevel, 0, &pristineNode), siblings, nil
