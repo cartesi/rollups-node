@@ -12,7 +12,7 @@ type (
 	Hash                  = common.Hash
 	Address               = common.Address
 	InputCompletionStatus string
-	ClaimStatus           string
+	EpochStatus           string
 	ApplicationStatus     string
 	DefaultBlock          string
 )
@@ -29,9 +29,13 @@ const (
 )
 
 const (
-	ClaimStatusPending   ClaimStatus = "PENDING"
-	ClaimStatusSubmitted ClaimStatus = "SUBMITTED"
-	ClaimStatusFinalized ClaimStatus = "FINALIZED"
+	EpochStatusReceivingInputs    = "RECEIVING_INPUTS"
+	EpochStatusReceivedLastInput  = "RECEIVED_LAST_INPUT"
+	EpochStatusProcessedAllInputs = "PROCESSED_ALL_INPUTS"
+	EpochStatusCalculatedClaim    = "CALCULATED_CLAIM"
+	EpochStatusSubmittedClaim     = "SUBMITTED_CLAIM"
+	EpochStatusAcceptedClaim      = "ACCEPTED_CLAIM"
+	EpochStatusRejectedClaim      = "REJECTED_CLAIM"
 )
 
 const (
@@ -91,11 +95,13 @@ type Report struct {
 	InputId uint64
 }
 
-type Claim struct {
-	Id                   uint64
-	Index                uint64
-	Status               ClaimStatus
-	OutputMerkleRootHash Hash
-	TransactionHash      *Hash
-	AppAddress           Address
+type Epoch struct {
+	Id              uint64
+	Index           uint64
+	Status          EpochStatus
+	TransactionHash *Hash
+	AppAddress      Address
+	StartBlock      uint64
+	EndBlock        uint64
+	Claim           *Hash
 }
