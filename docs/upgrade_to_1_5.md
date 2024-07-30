@@ -2,7 +2,7 @@
 # Upgrade guide for Cartesi Rollups Node `v1.5.0`
 
 Release `v1.5.0` brings a change in the way the Cartesi Rollups Node closes epochs.
-They are now closed based on block numbers intead of timestamps.
+They are now closed based on block numbers instead of timestamps.
 
 > [!WARNING]
 > This release contains a **BREAKING CHANGE** that fixes issue [#432](https://github.com/cartesi/rollups-node/issues/432), where epochs may be closed wrongly between restarts of the Cartesi Rollups Node, eventually triggering a `ClaimMismatch` error, which causes the Cartesi Rollups Node to abrubtly shut down.
