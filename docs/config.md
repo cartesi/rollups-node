@@ -78,7 +78,7 @@ Block subscription timeout in seconds.
 
 ## `CARTESI_BLOCKCHAIN_FINALITY_OFFSET`
 
-The node assumes that blocks offseted by N from the current block have reached finality
+The node assumes that blocks offsetted by N from the current block have reached finality
 (N is the read depth).
 
 * **Type:** `int`
@@ -92,7 +92,7 @@ HTTP endpoint for the blockchain RPC provider.
 
 ## `CARTESI_BLOCKCHAIN_ID`
 
-An unique identifier representing a blockchain network.
+A unique identifier representing a blockchain network.
 
 * **Type:** `uint64`
 
