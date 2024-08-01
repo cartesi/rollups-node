@@ -225,7 +225,7 @@ The node will also use the 20 ports after this one for internal services."""
 default = "false"
 go-type = "bool"
 description = """
-When enabled, the node does not start the authority-claimer service and the Redis server."""
+When enabled, the node does not start the authority-claimer service and the Redis server, thus not making claims."""
 
 [experimental.CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT]
 go-type = "string"
