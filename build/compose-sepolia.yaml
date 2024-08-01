@@ -3,8 +3,6 @@
 # It is necessary to set the RPC provider URLs in the RPC_*_URL environment variables.
 # Notice the node will run in reader mode, so it doesn't need a Ethereum wallet.
 
-version: "3.9"
-
 name: rollups-node
 services:
   node:

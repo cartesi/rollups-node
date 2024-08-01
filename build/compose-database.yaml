@@ -1,7 +1,5 @@
 # This compose file contains the PostgreSQL database necessary to run the node.
 
-version: "3.9"
-
 name: rollups-node
 services:
   database:

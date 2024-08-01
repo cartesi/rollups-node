@@ -2,8 +2,6 @@
 # This file should be merged with the other compose files to run the node with
 # the desired configuration.
 
-version: "3.9"
-
 name: rollups-node
 services:
   node:
