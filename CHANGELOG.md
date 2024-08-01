@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Disabled the `authority-claimer` when `CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED` is set to `true`.
+
 ## [1.5.0] 2024-07-22
 
 ### Added
