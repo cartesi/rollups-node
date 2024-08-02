@@ -13,7 +13,6 @@ type (
 	Address               = common.Address
 	Bytes                 = hexutil.Bytes
 	InputCompletionStatus string
-	ClaimStatus           string
 	ApplicationStatus     string
 	DefaultBlock          string
 	EpochStatus           string
@@ -28,12 +27,6 @@ const (
 	InputStatusCycleLimitExceeded         InputCompletionStatus = "CYCLE_LIMIT_EXCEEDED"
 	InputStatusTimeLimitExceeded          InputCompletionStatus = "TIME_LIMIT_EXCEEDED"
 	InputStatusPayloadLengthLimitExceeded InputCompletionStatus = "PAYLOAD_LENGTH_LIMIT_EXCEEDED"
-)
-
-const (
-	ClaimStatusPending   ClaimStatus = "PENDING"
-	ClaimStatusSubmitted ClaimStatus = "SUBMITTED"
-	ClaimStatusFinalized ClaimStatus = "FINALIZED"
 )
 
 const (
@@ -112,15 +105,6 @@ type Report struct {
 	Index   uint64
 	RawData Bytes
 	InputId uint64
-}
-
-type Claim struct {
-	Id                   uint64
-	Index                uint64
-	Status               ClaimStatus
-	OutputMerkleRootHash Hash
-	TransactionHash      *Hash
-	AppAddress           Address
 }
 
 type Snapshot struct {

@@ -267,40 +267,6 @@ func (pg *Database) InsertReport(
 	return nil
 }
 
-func (pg *Database) InsertClaim(
-	ctx context.Context,
-	claim *Claim,
-) error {
-	query := `
-	INSERT INTO claim
-		(index,
-		output_merkle_root_hash,
-		transaction_hash,
-		status,
-		application_address)
-	VALUES
-		(@index,
-		@outputMerkleRootHash,
-		@transactionHash,
-		@status,
-		@applicationAddress)`
-
-	args := pgx.NamedArgs{
-		"index":                claim.Index,
-		"outputMerkleRootHash": claim.OutputMerkleRootHash,
-		"transactionHash":      claim.TransactionHash,
-		"status":               claim.Status,
-		"applicationAddress":   claim.AppAddress,
-	}
-
-	_, err := pg.db.Exec(ctx, query, args)
-	if err != nil {
-		return fmt.Errorf("%w: %w", ErrInsertRow, err)
-	}
-
-	return nil
-}
-
 func (pg *Database) InsertSnapshot(
 	ctx context.Context,
 	snapshot *Snapshot,
@@ -688,67 +654,6 @@ func (pg *Database) GetReport(
 
 	return &report, nil
 }
-
-func (pg *Database) GetClaim(
-	ctx context.Context,
-	appAddressKey Address,
-	indexKey uint64,
-) (*Claim, error) {
-	var (
-		id                   uint64
-		index                uint64
-		outputMerkleRootHash Hash
-		transactionHash      *Hash
-		status               ClaimStatus
-		address              Address
-	)
-
-	query := `
-	SELECT
-		id,
-		index,
-		output_merkle_root_hash,
-		transaction_hash,
-		status,
-		application_address
-	FROM
-		claim
-	WHERE
-		application_address=@appAddress and index=@index`
-
-	args := pgx.NamedArgs{
-		"appAddress": appAddressKey,
-		"index":      indexKey,
-	}
-
-	err := pg.db.QueryRow(ctx, query, args).Scan(
-		&id,
-		&index,
-		&outputMerkleRootHash,
-		&transactionHash,
-		&status,
-		&address,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Info("GetClaim returned no rows", "service", "repository")
-			return nil, nil
-		}
-		return nil, fmt.Errorf("GetClaim QueryRow failed: %w\n", err)
-	}
-
-	claim := Claim{
-		Id:                   id,
-		Index:                index,
-		OutputMerkleRootHash: outputMerkleRootHash,
-		TransactionHash:      transactionHash,
-		Status:               status,
-		AppAddress:           address,
-	}
-
-	return &claim, nil
-}
-
 
 func (pg *Database) GetSnapshot(
 	ctx context.Context,
