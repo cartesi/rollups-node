@@ -65,6 +65,13 @@ impl Context {
         broker: &impl BrokerSend,
     ) -> Result<(), BrokerFacadeError> {
         let input_block_number = input.block_added.number.as_u64();
+        let input_epoch = self.calculate_epoch(input_block_number);
+        self.last_finished_epoch.map(|last_finished_epoch| {
+            // Asserting that the calculated epoch comes after the last finished epoch.
+            // (If last_finished_epoch == None then we don't need the assertion.)
+            assert!(input_epoch > last_finished_epoch)
+        });
+
         self.finish_epoch_if_needed(input_block_number, broker)
             .await?;
 
@@ -76,13 +83,6 @@ impl Context {
             .inc();
 
         self.inputs_sent += 1;
-
-        let input_epoch = self.calculate_epoch(input_block_number);
-        self.last_finished_epoch.map(|last_finished_epoch| {
-            // Asserting that the calculated epoch comes after the last finished epoch.
-            // (If last_finished_epoch == None then we don't need the assertion.)
-            assert!(input_epoch > last_finished_epoch)
-        });
         self.last_input_epoch = Some(input_epoch);
 
         Ok(())

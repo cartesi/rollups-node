@@ -185,10 +185,10 @@ impl BrokerSend for BrokerFacade {
         tracing::info!(?inputs_sent_count, "finishing epoch");
 
         let mut broker = self.broker.lock().await;
-        let status = self.broker_status(&mut broker).await?;
+        let status = self.broker_status(&mut broker).await?; // Epoch number gets incremented here!
 
         let event = build_next_finish_epoch(&status);
-        tracing::trace!(?event, "producing finish epoch event");
+        tracing::info!(?event, "producing finish epoch event");
 
         epoch_sanity_check!(event, inputs_sent_count);
 
