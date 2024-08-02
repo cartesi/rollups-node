@@ -26,13 +26,15 @@ func (pg *Database) InsertInputsAndUpdateLastProcessedBlock(
 		status,
 		raw_data,
 		block_number,
-		application_address)
+		application_address,
+		epoch_id)
 	VALUES
 		(@index,
 		@status,
 		@rawData,
 		@blockNumber,
-		@appAddress)`
+		@appAddress,
+		@epochId)`
 
 	query2 := `
 	UPDATE application
@@ -57,21 +59,22 @@ func (pg *Database) InsertInputsAndUpdateLastProcessedBlock(
 			"rawData":     input.RawData,
 			"blockNumber": input.BlockNumber,
 			"appAddress":  input.AppAddress,
+			"epochId":     input.EpochId,
 		}
 		_, err = tx.Exec(ctx, query, inputArgs)
 		if err != nil {
-			return fmt.Errorf("%w: %w", errInsertInputs, err)
+			return errors.Join(errInsertInputs, err, tx.Rollback(ctx))
 		}
 	}
 
 	_, err = tx.Exec(ctx, query2, args)
 	if err != nil {
-		return fmt.Errorf("%w: %w", errInsertInputs, err)
+		return errors.Join(errInsertInputs, err, tx.Rollback(ctx))
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		return fmt.Errorf("%w: %w", errInsertInputs, err)
+		return errors.Join(errInsertInputs, err, tx.Rollback(ctx))
 	}
 
 	return nil
@@ -98,7 +101,6 @@ func (pg *Database) getAllApplicationsByStatus(
 		id                 uint64
 		contractAddress    Address
 		templateHash       Hash
-		snapshotUri        string
 		lastProcessedBlock uint64
 		epochLength        uint64
 		status             ApplicationStatus
@@ -110,7 +112,6 @@ func (pg *Database) getAllApplicationsByStatus(
 		id,
 		contract_address,
 		template_hash,
-		snapshot_uri,
 		last_processed_block,
 		epoch_length,
 		status

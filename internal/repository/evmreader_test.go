@@ -10,21 +10,23 @@ import (
 
 func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlock() {
 	input0 := Input{
-		Id:               5,
+		Id:               6,
 		Index:            5,
 		CompletionStatus: InputStatusNone,
 		RawData:          common.Hex2Bytes("deadbeef"),
 		BlockNumber:      5,
 		AppAddress:       common.HexToAddress("deadbeef"),
+		EpochId:          1,
 	}
 
 	input1 := Input{
-		Id:               6,
+		Id:               7,
 		Index:            6,
 		CompletionStatus: InputStatusNone,
 		RawData:          common.Hex2Bytes("deadbeef"),
 		BlockNumber:      6,
 		AppAddress:       common.HexToAddress("deadbeef"),
+		EpochId:          1,
 	}
 
 	var inputs []Input
@@ -74,6 +76,7 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlockInputAlread
 		RawData:          common.Hex2Bytes("deadbeef"),
 		BlockNumber:      5,
 		AppAddress:       common.HexToAddress("deadbeef"),
+		EpochId:          1,
 	}
 
 	var inputs []Input
@@ -96,6 +99,7 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlockDuplicateIn
 		RawData:          common.Hex2Bytes("deadbeef"),
 		BlockNumber:      7,
 		AppAddress:       common.HexToAddress("deadbeef"),
+		EpochId:          1,
 	}
 
 	input1 := Input{
@@ -105,6 +109,7 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlockDuplicateIn
 		RawData:          common.Hex2Bytes("deadbeef"),
 		BlockNumber:      7,
 		AppAddress:       common.HexToAddress("deadbeef"),
+		EpochId:          1,
 	}
 
 	var inputs []Input
@@ -125,7 +130,6 @@ func (s *RepositorySuite) TestGetAllRunningApplications() {
 		Id:                 1,
 		ContractAddress:    common.HexToAddress("deadbeef"),
 		TemplateHash:       common.HexToHash("deadbeef"),
-		SnapshotURI:        "this/is/a/test",
 		LastProcessedBlock: 1,
 		EpochLength:        10,
 		Status:             ApplicationStatusRunning,

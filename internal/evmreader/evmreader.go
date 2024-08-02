@@ -29,6 +29,7 @@ type (
 	Context              = context.Context
 	Header               = types.Header
 	Subscription         = ethereum.Subscription
+	Epoch                = model.Epoch
 )
 
 // Interface for Input reading
@@ -51,11 +52,20 @@ type EvmReaderRepository interface {
 		appAddress Address,
 	) error
 	GetAllRunningApplications(
-		ctx context.Context,
+		ctx Context,
 	) ([]Application, error)
 	GetNodeConfig(
-		ctx context.Context,
+		ctx Context,
 	) (*NodePersistentConfig, error)
+	GetEpoch(
+		ctx Context,
+		indexKey uint64,
+		appAddressKey Address,
+	) (*Epoch, error)
+	InsertEpoch(
+		ctx Context,
+		epoch *Epoch,
+	) (uint64, error)
 }
 
 // EthClient mimics part of ethclient.Client functions to narrow down the

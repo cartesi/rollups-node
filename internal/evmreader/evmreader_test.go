@@ -8,6 +8,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"sync"
 	"testing"
@@ -673,7 +674,27 @@ func newMockRepository() *MockRepository {
 		mock.Anything,
 		mock.Anything).Return(nil)
 
+	repo.On("GetEpoch",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything).Return(
+		&model.Epoch{
+			Id:              1,
+			Index:           0,
+			FirstBlock:      0,
+			LastBlock:       math.MaxUint64,
+			Status:          model.EpochStatusOpen,
+			AppAddress:      common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+			ClaimHash:       nil,
+			TransactionHash: nil,
+		}, nil)
+
+	repo.On("InsertEpoch",
+		mock.Anything,
+		mock.Anything).Return(1, nil)
+
 	return repo
+
 }
 
 func (m *MockRepository) Unset(methodName string) {
@@ -706,4 +727,21 @@ func (m *MockRepository) GetNodeConfig(
 ) (*NodePersistentConfig, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(*NodePersistentConfig), args.Error(1)
+}
+
+func (m *MockRepository) GetEpoch(
+	ctx Context,
+	index uint64,
+	appAddress Address,
+) (*Epoch, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(*Epoch), args.Error(1)
+}
+
+func (m *MockRepository) InsertEpoch(
+	ctx Context,
+	epoch *Epoch,
+) (uint64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(uint64), args.Error(1)
 }

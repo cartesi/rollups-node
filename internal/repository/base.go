@@ -92,14 +92,12 @@ func (pg *Database) InsertApplication(
 	INSERT INTO application
 		(contract_address,
 		template_hash,
-		snapshot_uri,
 		last_processed_block,
 		epoch_length,
 		status)
 	VALUES
 		(@contractAddress,
 		@templateHash,
-		@snapshotUri,
 		@lastProcessedBlock,
 		@epochLength,
 		@status)`
@@ -107,7 +105,6 @@ func (pg *Database) InsertApplication(
 	args := pgx.NamedArgs{
 		"contractAddress":    app.ContractAddress,
 		"templateHash":       app.TemplateHash,
-		"snapshotUri":        app.SnapshotURI,
 		"lastProcessedBlock": app.LastProcessedBlock,
 		"epochLength":        app.EpochLength,
 		"status":             app.Status,
@@ -119,6 +116,51 @@ func (pg *Database) InsertApplication(
 	}
 
 	return nil
+}
+
+func (pg *Database) InsertEpoch(
+	ctx context.Context,
+	epoch *Epoch,
+) (uint64, error) {
+
+	var id uint64
+
+	query := `
+	INSERT INTO epoch
+		(index,
+		first_block,
+		last_block,
+		transaction_hash,
+		claim_hash,
+		status,
+		application_address)
+	VALUES
+		(@index,
+		@firstBlock,
+		@lastBlock,
+		@transactionHash,
+		@claimHash,
+		@status,
+		@applicationAddress)
+	RETURNING
+		id`
+
+	args := pgx.NamedArgs{
+		"index":              epoch.Index,
+		"firstBlock":         epoch.FirstBlock,
+		"lastBlock":          epoch.LastBlock,
+		"transactionHash":    epoch.TransactionHash,
+		"claimHash":          epoch.ClaimHash,
+		"status":             epoch.Status,
+		"applicationAddress": epoch.AppAddress,
+	}
+
+	err := pg.db.QueryRow(ctx, query, args).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %w", ErrInsertRow, err)
+	}
+
+	return id, nil
 }
 
 func (pg *Database) InsertInput(
@@ -133,7 +175,8 @@ func (pg *Database) InsertInput(
 		block_number,
 		machine_hash,
 		outputs_hash,
-		application_address)
+		application_address,
+		epoch_id)
 	VALUES
 		(@index,
 		@status,
@@ -141,7 +184,8 @@ func (pg *Database) InsertInput(
 		@blockNumber,
 		@machineHash,
 		@outputsHash,
-		@applicationAddress)`
+		@applicationAddress,
+		@epochId)`
 
 	args := pgx.NamedArgs{
 		"index":              input.Index,
@@ -151,6 +195,7 @@ func (pg *Database) InsertInput(
 		"machineHash":        input.MachineHash,
 		"outputsHash":        input.OutputsHash,
 		"applicationAddress": input.AppAddress,
+		"epochId":            input.EpochId,
 	}
 
 	_, err := pg.db.Exec(ctx, query, args)
@@ -254,6 +299,35 @@ func (pg *Database) InsertClaim(
 	return nil
 }
 
+func (pg *Database) InsertSnapshot(
+	ctx context.Context,
+	snapshot *Snapshot,
+) (id uint64, _ error) {
+	query := `
+	INSERT INTO snapshot
+		(input_id,
+		application_address,
+		uri)
+	VALUES
+		(@inputId,
+		@appAddress,
+		@uri)
+	RETURNING id`
+
+	args := pgx.NamedArgs{
+		"inputId":    snapshot.InputId,
+		"appAddress": snapshot.AppAddress,
+		"uri":        snapshot.URI,
+	}
+
+	err := pg.db.QueryRow(ctx, query, args).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %w", ErrInsertRow, err)
+	}
+
+	return id, nil
+}
+
 func (pg *Database) GetNodeConfig(
 	ctx context.Context,
 ) (*NodePersistentConfig, error) {
@@ -305,7 +379,6 @@ func (pg *Database) GetApplication(
 		id                 uint64
 		contractAddress    Address
 		templateHash       Hash
-		snapshotUri        string
 		lastProcessedBlock uint64
 		epochLength        uint64
 		status             ApplicationStatus
@@ -316,7 +389,6 @@ func (pg *Database) GetApplication(
 		id,
 		contract_address,
 		template_hash,
-		snapshot_uri,
 		last_processed_block,
 		epoch_length,
 		status
@@ -333,7 +405,6 @@ func (pg *Database) GetApplication(
 		&id,
 		&contractAddress,
 		&templateHash,
-		&snapshotUri,
 		&lastProcessedBlock,
 		&epochLength,
 		&status,
@@ -350,13 +421,81 @@ func (pg *Database) GetApplication(
 		Id:                 id,
 		ContractAddress:    contractAddress,
 		TemplateHash:       templateHash,
-		SnapshotURI:        snapshotUri,
 		LastProcessedBlock: lastProcessedBlock,
 		EpochLength:        epochLength,
 		Status:             status,
 	}
 
 	return &app, nil
+}
+
+func (pg *Database) GetEpoch(
+	ctx context.Context,
+	indexKey uint64,
+	appAddressKey Address,
+) (*Epoch, error) {
+	var (
+		id                 uint64
+		index              uint64
+		firstBlock         uint64
+		lastBlock          uint64
+		transactionHash    *Hash
+		claimHash          *Hash
+		status             EpochStatus
+		applicationAddress Address
+	)
+
+	query := `
+	SELECT
+		id,
+		index,
+		first_block,
+		last_block,
+		transaction_hash,
+		claim_hash,
+		status,
+		application_address
+	FROM
+		epoch
+	WHERE
+		index=@index AND application_address=@appAddress`
+
+	args := pgx.NamedArgs{
+		"index":      indexKey,
+		"appAddress": appAddressKey,
+	}
+
+	err := pg.db.QueryRow(ctx, query, args).Scan(
+		&id,
+		&index,
+		&firstBlock,
+		&lastBlock,
+		&transactionHash,
+		&claimHash,
+		&status,
+		&applicationAddress,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("GetEpoch returned no rows", "service", "repository")
+			return nil, nil
+		}
+		return nil, fmt.Errorf("GetEpoch QueryRow failed: %w\n", err)
+	}
+
+	epoch := Epoch{
+		Id:              id,
+		Index:           index,
+		FirstBlock:      firstBlock,
+		LastBlock:       lastBlock,
+		TransactionHash: transactionHash,
+		ClaimHash:       claimHash,
+		Status:          status,
+		AppAddress:      applicationAddress,
+	}
+
+	return &epoch, nil
+
 }
 
 func (pg *Database) GetInput(
@@ -373,6 +512,7 @@ func (pg *Database) GetInput(
 		machineHash *Hash
 		outputsHash *Hash
 		appAddress  Address
+		epochId     uint64
 	)
 
 	query := `
@@ -384,11 +524,12 @@ func (pg *Database) GetInput(
 		block_number,
 		machine_hash,
 		outputs_hash,
-		application_address
+		application_address,
+		epoch_id
 	FROM
 		input
 	WHERE
-		index=@index and application_address=@appAddress`
+		index=@index AND application_address=@appAddress`
 
 	args := pgx.NamedArgs{
 		"index":      indexKey,
@@ -404,6 +545,7 @@ func (pg *Database) GetInput(
 		&machineHash,
 		&outputsHash,
 		&appAddress,
+		&epochId,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -422,6 +564,7 @@ func (pg *Database) GetInput(
 		MachineHash:      machineHash,
 		OutputsHash:      outputsHash,
 		AppAddress:       appAddress,
+		EpochId:          epochId,
 	}
 
 	return &input, nil
@@ -456,7 +599,7 @@ func (pg *Database) GetOutput(
 	ON
 		o.input_id=i.id
 	WHERE
-		o.index=@index and i.application_address=@appAddress`
+		o.index=@index AND i.application_address=@appAddress`
 
 	args := pgx.NamedArgs{
 		"index":      indexKey,
@@ -515,7 +658,7 @@ func (pg *Database) GetReport(
 	ON
 		r.input_id=i.id
 	WHERE
-		r.index=@index and i.application_address=@appAddress`
+		r.index=@index AND i.application_address=@appAddress`
 
 	args := pgx.NamedArgs{
 		"index":      indexKey,
@@ -603,4 +746,61 @@ func (pg *Database) GetClaim(
 	}
 
 	return &claim, nil
+}
+
+
+func (pg *Database) GetSnapshot(
+	ctx context.Context,
+	inputIndexKey uint64,
+	appAddressKey Address,
+) (*Snapshot, error) {
+	var (
+		id         uint64
+		inputId    uint64
+		appAddress Address
+		uri        string
+	)
+	query := `
+	SELECT
+		s.id,
+		s.input_id,
+		s.application_address,
+		s.uri
+	FROM
+		snapshot s
+	INNER JOIN
+		input i
+	ON
+		i.id = s.input_id
+	WHERE
+		s.application_address=@appAddress AND i.index=@inputIndex
+	`
+
+	args := pgx.NamedArgs{
+		"inputIndex": inputIndexKey,
+		"appAddress": appAddressKey,
+	}
+	err := pg.db.QueryRow(ctx, query, args).Scan(
+		&id,
+		&inputId,
+		&appAddress,
+		&uri,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("GetSnapshot returned no rows", "service", "repository")
+			return nil, nil
+		}
+		return nil, fmt.Errorf("GetSnapshot QueryRow failed: %w\n", err)
+	}
+
+	snapshot := Snapshot{
+		Id:         id,
+		InputId:    inputId,
+		AppAddress: appAddress,
+		URI:        uri,
+	}
+
+	return &snapshot, nil
+
 }
