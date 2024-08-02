@@ -217,17 +217,6 @@ func (s *RepositorySuite) SetupDatabase() {
 	err = s.database.InsertReport(s.ctx, &report)
 	s.Require().Nil(err)
 
-	claim := Claim{
-		Status:               ClaimStatusPending,
-		Index:                1,
-		OutputMerkleRootHash: genericHash,
-		TransactionHash:      &genericHash,
-		AppAddress:           common.HexToAddress("deadbeef"),
-	}
-
-	err = s.database.InsertClaim(s.ctx, &claim)
-	s.Require().Nil(err)
-
 	snapshot := Snapshot{
 		InputId:    1,
 		AppAddress: app.ContractAddress,

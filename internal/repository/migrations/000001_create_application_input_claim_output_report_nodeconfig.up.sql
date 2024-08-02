@@ -5,8 +5,6 @@ CREATE TYPE "ApplicationStatus" AS ENUM ('RUNNING', 'NOT RUNNING');
 
 CREATE TYPE "InputCompletionStatus" AS ENUM ('NONE', 'ACCEPTED', 'REJECTED', 'EXCEPTION', 'MACHINE_HALTED', 'CYCLE_LIMIT_EXCEEDED', 'TIME_LIMIT_EXCEEDED', 'PAYLOAD_LENGTH_LIMIT_EXCEEDED');
 
-CREATE TYPE "ClaimStatus" AS ENUM ('PENDING', 'SUBMITTED', 'FINALIZED');
-
 CREATE TYPE "DefaultBlock" AS ENUM ('FINALIZED', 'LATEST', 'PENDING', 'SAFE');
 
 CREATE TYPE "EpochStatus" AS ENUM ('OPEN', 'CLOSED', 'PROCESSED_ALL_INPUTS', 'CLAIM_COMPUTED', 'CLAIM_SUBMITTED', 'CLAIM_ACCEPTED', 'CLAIM_REJECTED');
@@ -61,19 +59,6 @@ CREATE TABLE "input"
 );
 
 CREATE INDEX "input_idx" ON "input"("block_number");
-
-CREATE TABLE "claim"
-(
-    "id" BIGSERIAL,
-    "index" NUMERIC(20,0) NOT NULL CHECK ("index" >= 0 AND "index" <= f_maxuint64()),
-    "output_merkle_root_hash" BYTEA NOT NULL,
-    "transaction_hash" BYTEA,
-    "status" "ClaimStatus" NOT NULL,
-    "application_address" BYTEA NOT NULL,
-    CONSTRAINT "claim_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "claim_application_address_fkey" FOREIGN KEY ("application_address") REFERENCES "application"("contract_address"),
-    UNIQUE("index", "application_address")
-);
 
 CREATE TABLE "output"
 (

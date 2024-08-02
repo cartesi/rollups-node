@@ -62,21 +62,6 @@ CREATE OR REPLACE VIEW graphql."reports" AS
     INNER JOIN
         "input" i on r."input_id"=i."id";
 
-CREATE OR REPLACE VIEW graphql."claims" AS
-    SELECT
-        c."index",
-        c."output_merkle_root_hash",
-        c."status",
-        c."application_address",
-        o."index" as "output_index"
-    FROM
-        "claim" c
-    INNER JOIN
-        "application" a ON c."application_address"=a."contract_address"
-    INNER JOIN
-        "input" i ON a."contract_address"=i."application_address"
-    INNER JOIN
-        "output" o ON i."id"=o."input_id";
 
 COMMENT ON VIEW graphql."inputs" is
   E'@foreignKey (application_address) references applications(contract_address)|@fieldName applicationByApplicationAddress\n@foreignKey (epoch_index) references epochs(index)|@fieldName epochByEpochIndex';
@@ -86,9 +71,6 @@ COMMENT ON VIEW graphql."outputs" is
 
 COMMENT ON VIEW graphql."reports" is
   E'@foreignKey (input_index) references inputs(index)|@fieldName inputByInputIndex';
-
-COMMENT ON VIEW graphql."claims" is
-  E'@foreignKey (output_index) references outputs(index)|@fieldName outputByOutputIndex\n@foreignKey (application_address) references applications(contract_address)|@fieldName applicationByApplicationAddress';
 
 COMMENT ON VIEW graphql."epochs" is
   E'@foreignKey (application_address) references applications(contract_address)|@fieldName applicationByApplicationAddress';
