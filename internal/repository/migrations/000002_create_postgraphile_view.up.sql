@@ -8,24 +8,38 @@ CREATE OR REPLACE VIEW graphql."applications" AS
     SELECT
         "contract_address",
         "template_hash",
-        "snapshot_uri",
         "last_processed_block",
         "epoch_length",
         "status"
     FROM
         "application";
 
-CREATE OR REPLACE VIEW graphql."inputs" AS
+CREATE OR REPLACE VIEW graphql."epochs" AS
     SELECT
         "index",
-        "status",
-        "block_number",
-        "raw_data",
-        "machine_hash",
-        "outputs_hash",
-        "application_address"
+        "application_address",
+        "first_block",
+        "last_block",
+        "transaction_hash",
+        "claim_hash",
+        "status"
     FROM
-        "input";
+        "epoch";
+
+CREATE OR REPLACE VIEW graphql."inputs" AS
+    SELECT
+        i."index",
+        i."status",
+        i."block_number",
+        i."raw_data",
+        i."machine_hash",
+        i."outputs_hash",
+        i."application_address",
+        e."index" as "epoch_index"
+    FROM
+        "input" i
+    INNER JOIN
+        "epoch" e on i."epoch_id" = e."id";
 
 CREATE OR REPLACE VIEW graphql."outputs" AS
     SELECT
@@ -65,7 +79,7 @@ CREATE OR REPLACE VIEW graphql."claims" AS
         "output" o ON i."id"=o."input_id";
 
 COMMENT ON VIEW graphql."inputs" is
-  E'@foreignKey (application_address) references applications(contract_address)|@fieldName applicationByApplicationAddress';
+  E'@foreignKey (application_address) references applications(contract_address)|@fieldName applicationByApplicationAddress\n@foreignKey (epoch_index) references epochs(index)|@fieldName epochByEpochIndex';
 
 COMMENT ON VIEW graphql."outputs" is
   E'@foreignKey (input_index) references inputs(index)|@fieldName inputByInputIndex';
@@ -75,3 +89,6 @@ COMMENT ON VIEW graphql."reports" is
 
 COMMENT ON VIEW graphql."claims" is
   E'@foreignKey (output_index) references outputs(index)|@fieldName outputByOutputIndex\n@foreignKey (application_address) references applications(contract_address)|@fieldName applicationByApplicationAddress';
+
+COMMENT ON VIEW graphql."epochs" is
+  E'@foreignKey (application_address) references applications(contract_address)|@fieldName applicationByApplicationAddress';

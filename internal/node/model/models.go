@@ -11,10 +11,12 @@ import (
 type (
 	Hash                  = common.Hash
 	Address               = common.Address
+	Bytes                 = hexutil.Bytes
 	InputCompletionStatus string
 	ClaimStatus           string
 	ApplicationStatus     string
 	DefaultBlock          string
+	EpochStatus           string
 )
 
 const (
@@ -46,6 +48,16 @@ const (
 	DefaultBlockStatusSafe      DefaultBlock = "SAFE"
 )
 
+const (
+	EpochStatusReceivingInputs    EpochStatus = "RECEIVING_INPUTS"
+	EpochStatusReceivedLastInput  EpochStatus = "RECEIVED_LAST_INPUT"
+	EpochStatusProcessedAllInputs EpochStatus = "PROCESSED_ALL_INPUTS"
+	EpochStatusCalculatedClaim    EpochStatus = "CALCULATED_CLAIM"
+	EpochStatusSubmittedClaim     EpochStatus = "SUBMITTED_CLAIM"
+	EpochStatusAcceptedClaim      EpochStatus = "ACCEPTED_CLAIM"
+	EpochStatusRejectedClaim      EpochStatus = "REJECTED_CLAIM"
+)
+
 type NodePersistentConfig struct {
 	DefaultBlock            DefaultBlock
 	InputBoxDeploymentBlock uint64
@@ -58,27 +70,38 @@ type Application struct {
 	Id                 uint64
 	ContractAddress    Address
 	TemplateHash       Hash
-	SnapshotURI        string
 	LastProcessedBlock uint64
 	EpochLength        uint64
 	Status             ApplicationStatus
+}
+
+type Epoch struct {
+	Id              uint64
+	AppAddress      Address
+	Index           uint64
+	FirstBlock      uint64
+	LastBlock       uint64
+	ClaimHash       *Hash
+	TransactionHash *Hash
+	Status          EpochStatus
 }
 
 type Input struct {
 	Id               uint64
 	Index            uint64
 	CompletionStatus InputCompletionStatus
-	RawData          hexutil.Bytes
+	RawData          Bytes
 	BlockNumber      uint64
 	MachineHash      *Hash
 	OutputsHash      *Hash
 	AppAddress       Address
+	EpochId          uint64
 }
 
 type Output struct {
 	Id                   uint64
 	Index                uint64
-	RawData              hexutil.Bytes
+	RawData              Bytes
 	Hash                 *Hash
 	OutputHashesSiblings []Hash
 	InputId              uint64
@@ -87,7 +110,7 @@ type Output struct {
 type Report struct {
 	Id      uint64
 	Index   uint64
-	RawData hexutil.Bytes
+	RawData Bytes
 	InputId uint64
 }
 
@@ -98,4 +121,11 @@ type Claim struct {
 	OutputMerkleRootHash Hash
 	TransactionHash      *Hash
 	AppAddress           Address
+}
+
+type Snapshot struct {
+	Id         uint64
+	InputId    uint64
+	AppAddress Address
+	URI        string
 }

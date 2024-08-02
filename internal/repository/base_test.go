@@ -5,6 +5,7 @@ package repository
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -68,20 +69,16 @@ func (s *RepositorySuite) SetupDatabase() {
 	s.Require().Nil(err)
 
 	app := Application{
-		Id:                 1,
 		ContractAddress:    common.HexToAddress("deadbeef"),
 		TemplateHash:       common.HexToHash("deadbeef"),
-		SnapshotURI:        "this/is/a/test",
 		LastProcessedBlock: 1,
 		EpochLength:        10,
 		Status:             ApplicationStatusRunning,
 	}
 
 	app2 := Application{
-		Id:                 1,
 		ContractAddress:    common.HexToAddress("feadbeef"),
 		TemplateHash:       common.HexToHash("deadbeef"),
-		SnapshotURI:        "this/is/a/test",
 		LastProcessedBlock: 1,
 		EpochLength:        10,
 		Status:             ApplicationStatusNotRunning,
@@ -95,30 +92,77 @@ func (s *RepositorySuite) SetupDatabase() {
 
 	genericHash := common.HexToHash("deadbeef")
 
+	epoch1 := Epoch{
+		Id:              1,
+		Index:           0,
+		FirstBlock:      0,
+		LastBlock:       math.MaxUint64 / 2,
+		AppAddress:      app.ContractAddress,
+		ClaimHash:       nil,
+		TransactionHash: nil,
+		Status:          EpochStatusReceivingInputs,
+	}
+
+	_, err = s.database.InsertEpoch(s.ctx, &epoch1)
+	s.Require().Nil(err)
+
+	epoch2 := Epoch{
+		Id:              2,
+		Index:           1,
+		FirstBlock:      (math.MaxUint64 / 2) + 1,
+		LastBlock:       math.MaxUint64,
+		AppAddress:      app.ContractAddress,
+		ClaimHash:       nil,
+		TransactionHash: nil,
+		Status:          EpochStatusReceivingInputs,
+	}
+
+	_, err = s.database.InsertEpoch(s.ctx, &epoch2)
+	s.Require().Nil(err)
+
 	input1 := Input{
+		Id:               1,
 		Index:            1,
 		CompletionStatus: InputStatusAccepted,
 		RawData:          common.Hex2Bytes("deadbeef"),
 		BlockNumber:      1,
 		MachineHash:      &genericHash,
 		OutputsHash:      &genericHash,
-		AppAddress:       common.HexToAddress("deadbeef"),
+		AppAddress:       app.ContractAddress,
+		EpochId:          1,
 	}
 
 	err = s.database.InsertInput(s.ctx, &input1)
 	s.Require().Nil(err)
 
 	input2 := Input{
+		Id:               2,
 		Index:            2,
 		CompletionStatus: InputStatusNone,
 		RawData:          common.Hex2Bytes("deadbeef"),
 		BlockNumber:      3,
 		MachineHash:      &genericHash,
 		OutputsHash:      &genericHash,
-		AppAddress:       common.HexToAddress("deadbeef"),
+		AppAddress:       app.ContractAddress,
+		EpochId:          1,
 	}
 
 	err = s.database.InsertInput(s.ctx, &input2)
+	s.Require().Nil(err)
+
+	input3 := Input{
+		Id:               3,
+		Index:            3,
+		CompletionStatus: InputStatusAccepted,
+		RawData:          common.Hex2Bytes("deadbeef"),
+		BlockNumber:      (math.MaxUint64 / 2) + 1,
+		MachineHash:      &genericHash,
+		OutputsHash:      &genericHash,
+		AppAddress:       app.ContractAddress,
+		EpochId:          2,
+	}
+
+	err = s.database.InsertInput(s.ctx, &input3)
 	s.Require().Nil(err)
 
 	var siblings []Hash
@@ -128,7 +172,7 @@ func (s *RepositorySuite) SetupDatabase() {
 		Index:                1,
 		InputId:              1,
 		RawData:              common.Hex2Bytes("deadbeef"),
-		OutputHashesSiblings: nil,
+		OutputHashesSiblings: siblings,
 	}
 
 	err = s.database.InsertOutput(s.ctx, &output0)
@@ -138,15 +182,25 @@ func (s *RepositorySuite) SetupDatabase() {
 		Index:                2,
 		InputId:              1,
 		RawData:              common.Hex2Bytes("deadbeef"),
-		OutputHashesSiblings: nil,
+		OutputHashesSiblings: siblings,
 	}
 
 	err = s.database.InsertOutput(s.ctx, &output1)
 	s.Require().Nil(err)
 
-	output3 := Output{
+	output2 := Output{
 		Index:                3,
 		InputId:              2,
+		RawData:              common.Hex2Bytes("deadbeef"),
+		OutputHashesSiblings: siblings,
+	}
+
+	err = s.database.InsertOutput(s.ctx, &output2)
+	s.Require().Nil(err)
+
+	output3 := Output{
+		Index:                4,
+		InputId:              3,
 		RawData:              common.Hex2Bytes("deadbeef"),
 		OutputHashesSiblings: siblings,
 	}
@@ -173,6 +227,15 @@ func (s *RepositorySuite) SetupDatabase() {
 
 	err = s.database.InsertClaim(s.ctx, &claim)
 	s.Require().Nil(err)
+
+	snapshot := Snapshot{
+		InputId:    1,
+		AppAddress: app.ContractAddress,
+		URI:        "/some/path",
+	}
+
+	err = s.database.InsertSnapshot(s.ctx, &snapshot)
+	s.Require().Nil(err)
 }
 
 func (s *RepositorySuite) TestApplicationExists() {
@@ -180,7 +243,6 @@ func (s *RepositorySuite) TestApplicationExists() {
 		Id:                 1,
 		ContractAddress:    common.HexToAddress("deadbeef"),
 		TemplateHash:       common.HexToHash("deadbeef"),
-		SnapshotURI:        "this/is/a/test",
 		LastProcessedBlock: 1,
 		EpochLength:        10,
 		Status:             ApplicationStatusRunning,
@@ -202,7 +264,6 @@ func (s *RepositorySuite) TestApplicationFailsDuplicateRow() {
 		Id:                 1,
 		ContractAddress:    common.HexToAddress("deadbeef"),
 		TemplateHash:       common.HexToHash("deadbeef"),
-		SnapshotURI:        "this/is/a/test",
 		LastProcessedBlock: 1,
 		EpochLength:        10,
 		Status:             ApplicationStatusRunning,
@@ -224,6 +285,7 @@ func (s *RepositorySuite) TestInputExists() {
 		MachineHash:      &genericHash,
 		OutputsHash:      &genericHash,
 		AppAddress:       common.HexToAddress("deadbeef"),
+		EpochId:          1,
 	}
 
 	response, err := s.database.GetInput(s.ctx, 1, common.HexToAddress("deadbeef"))
@@ -351,51 +413,73 @@ func (s *RepositorySuite) TestReportFailsInputDoesntExist() {
 	s.Require().ErrorContains(err, "violates foreign key constraint")
 }
 
-func (s *RepositorySuite) TestClaimExists() {
-	genericHash := common.HexToHash("deadbeef")
+func (s *RepositorySuite) TestEpochExists() {
 
-	claim := Claim{
-		Id:                   1,
-		Status:               ClaimStatusPending,
-		Index:                1,
-		TransactionHash:      &genericHash,
-		OutputMerkleRootHash: common.HexToHash("deadbeef"),
-		AppAddress:           common.HexToAddress("deadbeef"),
+	epoch := Epoch{
+		Id:              1,
+		Status:          EpochStatusReceivingInputs,
+		Index:           0,
+		FirstBlock:      0,
+		LastBlock:       (math.MaxUint64 / 2),
+		TransactionHash: nil,
+		ClaimHash:       nil,
+		AppAddress:      common.HexToAddress("deadbeef"),
 	}
 
-	response, err := s.database.GetClaim(s.ctx, common.HexToAddress("deadbeef"), 1)
-	s.Require().Equal(claim, *response)
+	response, err := s.database.GetEpoch(s.ctx, 0, common.HexToAddress("deadbeef"))
+	s.Require().Equal(epoch, *response)
 	s.Require().Nil(err)
 }
 
-func (s *RepositorySuite) TestClaimDoesntExist() {
-	response, err := s.database.GetClaim(s.ctx, common.HexToAddress("deadbeef"), 0)
+func (s *RepositorySuite) TestEpochDoesntExist() {
+	response, err := s.database.GetEpoch(s.ctx, 3, common.HexToAddress("deadbeef"))
 	s.Require().Nil(response)
 	s.Require().Nil(err)
 }
 
-func (s *RepositorySuite) TestClaimFailsDuplicateRow() {
-	claim := Claim{
-		Status:               ClaimStatusPending,
-		Index:                1,
-		OutputMerkleRootHash: common.HexToHash("deadbeef"),
-		AppAddress:           common.HexToAddress("deadbeef"),
+func (s *RepositorySuite) TestEpochFailsDuplicateRow() {
+	epoch := Epoch{
+		Status:          EpochStatusReceivingInputs,
+		Index:           0,
+		FirstBlock:      0,
+		LastBlock:       math.MaxUint64,
+		TransactionHash: nil,
+		ClaimHash:       nil,
+		AppAddress:      common.HexToAddress("deadbeef"),
 	}
 
-	err := s.database.InsertClaim(s.ctx, &claim)
+	_, err := s.database.InsertEpoch(s.ctx, &epoch)
 	s.Require().ErrorContains(err, "duplicate key value")
 }
 
-func (s *RepositorySuite) TestClaimFailsApplicationDoesntExist() {
-	claim := Claim{
-		Status:               ClaimStatusPending,
-		Index:                2,
-		OutputMerkleRootHash: common.HexToHash("deadbeef"),
-		AppAddress:           common.HexToAddress("deadbeefaaa"),
+func (s *RepositorySuite) TestEpochFailsApplicationDoesntExist() {
+	hash := common.HexToHash("deadbeef")
+	epoch := Epoch{
+		Status:     EpochStatusReceivingInputs,
+		Index:      2,
+		FirstBlock: 0,
+		LastBlock:  math.MaxUint64,
+		ClaimHash:  &hash,
+		AppAddress: common.HexToAddress("deadbeefaaa"),
 	}
 
-	err := s.database.InsertClaim(s.ctx, &claim)
+	_, err := s.database.InsertEpoch(s.ctx, &epoch)
 	s.Require().ErrorContains(err, "violates foreign key constraint")
+}
+
+func (s *RepositorySuite) TestGetSnapshot() {
+
+	expectedSnapshot := Snapshot{
+		Id:         1,
+		InputId:    1,
+		AppAddress: common.HexToAddress("deadbeef"),
+		URI:        "/some/path",
+	}
+
+	actualSnapshot, err := s.database.GetSnapshot(s.ctx, 1, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
+	s.Require().NotNil(actualSnapshot)
+	s.Require().Equal(&expectedSnapshot, actualSnapshot)
 }
 
 func TestRepositorySuite(t *testing.T) {

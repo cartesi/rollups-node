@@ -5,6 +5,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -130,60 +131,89 @@ func (pg *Database) getAllOutputsFromProcessedInputs(
 	return nil, nil
 }
 
-func (pg *Database) FinishEpoch(
+func (pg *Database) SetEpochClaimAndInsertProofsTransaction(
 	ctx context.Context,
-	claim *Claim,
+	epoch Epoch,
 	outputs []Output,
 ) error {
 	query1 := `
-	INSERT INTO claim
-		(index,
-		output_merkle_root_hash,
-		status,
-		application_address)
-	VALUES
-		(@index,
-		@outputMerkleRootHash,
-		@status,
-		@appAddress)`
+	UPDATE epoch
+	SET
+		claim_hash=@claimHash,
+		status=@status
+	WHERE
+	 id=@id`
+
+	args := pgx.NamedArgs{
+		"id":        epoch.Id,
+		"claimHash": epoch.ClaimHash,
+		"status":    EpochStatusCalculatedClaim,
+	}
+
+	tx, err := pg.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to set claim. epoch: '%d' ,error: %w\n", epoch.Index, err)
+	}
+	tag, err := tx.Exec(ctx, query1, args)
+	if err != nil {
+		return errors.Join(
+			fmt.Errorf("unable to set claim. epoch '%d' ,error: %w\n", epoch.Index, err),
+			tx.Rollback(ctx),
+		)
+	}
+	if tag.RowsAffected() != 1 {
+		return errors.Join(
+			fmt.Errorf(
+				"unable to set claim. epoch '%d' , error: no rows affected ",
+				epoch.Index,
+			),
+			tx.Rollback(ctx),
+		)
+	}
 
 	query2 := `
 	UPDATE output
 	SET
 		output_hashes_siblings=@outputHashesSiblings
 	WHERE
-		index=@index`
-
-	args := pgx.NamedArgs{
-		"index":                claim.Index,
-		"status":               ClaimStatusPending,
-		"outputMerkleRootHash": claim.OutputMerkleRootHash,
-		"appAddress":           claim.AppAddress,
-	}
-
-	tx, err := pg.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("unable to finish epoch: %w\n", err)
-	}
-	_, err = tx.Exec(ctx, query1, args)
-	if err != nil {
-		return fmt.Errorf("unable to finish epoch: %w\n", err)
-	}
+		id=@id`
 
 	for _, output := range outputs {
 		outputArgs := pgx.NamedArgs{
 			"outputHashesSiblings": output.OutputHashesSiblings,
-			"index":                output.Index,
+			"id":                   output.Id,
 		}
-		_, err = tx.Exec(ctx, query2, outputArgs)
+		tag, err := tx.Exec(ctx, query2, outputArgs)
 		if err != nil {
-			return fmt.Errorf("unable to finish epoch: %w\n", err)
+			return errors.Join(
+				fmt.Errorf(
+					`unable to set claim. epoch '%d'
+					, error: unable to insert proof for output '%d' %w\n`,
+					epoch.Index, output.Index, err),
+				tx.Rollback(ctx),
+			)
+		}
+		if tag.RowsAffected() != 1 {
+			return errors.Join(
+				fmt.Errorf(
+					`unable to set claim. epoch '%d'
+					, error: no rows affected on output '%d' update`,
+					epoch.Index,
+					output.Index,
+				),
+				tx.Rollback(ctx),
+			)
 		}
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		return fmt.Errorf("unable to finish epoch: %w\n", err)
+		return errors.Join(
+			fmt.Errorf("unable to set claim. epoch '%d', error: %w\n",
+				epoch.Index,
+				err),
+			tx.Rollback(ctx),
+		)
 	}
 
 	return nil
