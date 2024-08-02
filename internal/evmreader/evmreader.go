@@ -187,11 +187,6 @@ func (r *EvmReader) checkForNewInputs(ctx Context) error {
 		r.config.DefaultBlock,
 	)
 	if err != nil {
-		// slog.Error("Error fetching most recent block",
-		// 	"last default block",
-		// 	r.config.DefaultBlock,
-		// 	"error",
-		// 	err)
 		return err
 	}
 	mostRecentBlockNumber := mostRecentHeader.Number.Uint64()
