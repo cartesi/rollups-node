@@ -40,6 +40,14 @@ const (
 // Parsing functions
 // ------------------------------------------------------------------------------------------------
 
+func ToUintFromString(s string) (uint, error) {
+	value, err := strconv.ParseUint(s, 10, 0)
+	if err != nil {
+		return 0, err
+	}
+	return uint(value), nil
+}
+
 func ToInt64FromString(s string) (int64, error) {
 	return strconv.ParseInt(s, 10, 64)
 }
@@ -107,6 +115,7 @@ func ToAuthKindFromString(s string) (AuthKind, error) {
 var (
 	toBool         = strconv.ParseBool
 	toInt          = strconv.Atoi
+	toUint         = ToUintFromString
 	toInt64        = ToInt64FromString
 	toUint64       = ToUint64FromString
 	toString       = ToStringFromString
@@ -476,6 +485,18 @@ func getEpochLength() uint64 {
 	val, err := toUint64(s)
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse CARTESI_EPOCH_LENGTH: %v", err))
+	}
+	return val
+}
+
+func getEvmReaderMaxFetchSize() uint {
+	s, ok := os.LookupEnv("CARTESI_EVM_READER_MAX_FETCH_SIZE")
+	if !ok {
+		s = "10"
+	}
+	val, err := toUint(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_EVM_READER_MAX_FETCH_SIZE: %v", err))
 	}
 	return val
 }

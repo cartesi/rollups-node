@@ -8,6 +8,7 @@ package ethutil
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math/big"
 
 	"github.com/cartesi/rollups-node/pkg/addresses"
@@ -104,6 +105,9 @@ func getInputIndex(
 		if err != nil {
 			return 0, fmt.Errorf("failed to parse input added event: %v", err)
 		}
+
+		slog.Debug("Input added event", "event", inputAdded)
+
 		// We assume that int will fit all dapp inputs
 		inputIndex := int(inputAdded.Index.Int64())
 		return inputIndex, nil

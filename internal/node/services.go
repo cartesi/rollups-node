@@ -180,5 +180,6 @@ func newEvmReaderService(c config.NodeConfig, database *repository.Database) ser
 		database,
 		c.EvmReaderRetryPolicyMaxRetries,
 		c.EvmReaderRetryPolicyMaxDelay,
+		c.EvmReaderMaxFetchSize,
 	)
 }

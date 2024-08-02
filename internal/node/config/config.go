@@ -24,6 +24,7 @@ type NodeConfig struct {
 	EvmReaderDefaultBlock                     DefaultBlock
 	EvmReaderRetryPolicyMaxRetries            uint64
 	EvmReaderRetryPolicyMaxDelay              Duration
+	EvmReaderMaxFetchSize                     uint
 	BlockchainBlockTimeout                    int
 	ContractsApplicationAddress               string
 	ContractsIConsensusAddress                string
@@ -84,6 +85,7 @@ func FromEnv() NodeConfig {
 	config.EvmReaderDefaultBlock = getEvmReaderDefaultBlock()
 	config.EvmReaderRetryPolicyMaxRetries = getEvmReaderRetryPolicyMaxRetries()
 	config.EvmReaderRetryPolicyMaxDelay = getEvmReaderRetryPolicyMaxDelay()
+	config.EvmReaderMaxFetchSize = getEvmReaderMaxFetchSize()
 	config.BlockchainBlockTimeout = getBlockchainBlockTimeout()
 	config.ContractsApplicationAddress = getContractsApplicationAddress()
 	config.ContractsIConsensusAddress = getContractsIconsensusAddress()
