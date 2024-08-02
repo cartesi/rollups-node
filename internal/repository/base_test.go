@@ -63,6 +63,7 @@ func (s *RepositorySuite) SetupDatabase() {
 		InputBoxAddress:         common.HexToAddress("deadbeef"),
 		ChainId:                 1,
 		IConsensusAddress:       common.HexToAddress("deadbeef"),
+		EpochLength:             10,
 	}
 
 	err := s.database.InsertNodeConfig(s.ctx, &config)
@@ -72,7 +73,6 @@ func (s *RepositorySuite) SetupDatabase() {
 		ContractAddress:    common.HexToAddress("deadbeef"),
 		TemplateHash:       common.HexToHash("deadbeef"),
 		LastProcessedBlock: 1,
-		EpochLength:        10,
 		Status:             ApplicationStatusRunning,
 	}
 
@@ -80,7 +80,6 @@ func (s *RepositorySuite) SetupDatabase() {
 		ContractAddress:    common.HexToAddress("feadbeef"),
 		TemplateHash:       common.HexToHash("deadbeef"),
 		LastProcessedBlock: 1,
-		EpochLength:        10,
 		Status:             ApplicationStatusNotRunning,
 	}
 
@@ -233,7 +232,6 @@ func (s *RepositorySuite) TestApplicationExists() {
 		ContractAddress:    common.HexToAddress("deadbeef"),
 		TemplateHash:       common.HexToHash("deadbeef"),
 		LastProcessedBlock: 1,
-		EpochLength:        10,
 		Status:             ApplicationStatusRunning,
 	}
 
@@ -254,7 +252,6 @@ func (s *RepositorySuite) TestApplicationFailsDuplicateRow() {
 		ContractAddress:    common.HexToAddress("deadbeef"),
 		TemplateHash:       common.HexToHash("deadbeef"),
 		LastProcessedBlock: 1,
-		EpochLength:        10,
 		Status:             ApplicationStatusRunning,
 	}
 

@@ -21,7 +21,6 @@ CREATE TABLE "application"
     "template_hash" BYTEA NOT NULL,
     "last_processed_block" NUMERIC(20,0) NOT NULL CHECK ("last_processed_block" >= 0 AND "last_processed_block" <= f_maxuint64()),
     "status" "ApplicationStatus" NOT NULL,
-    "epoch_length" INT NOT NULL,
     CONSTRAINT "application_pkey" PRIMARY KEY ("id"),
     UNIQUE("contract_address")
 );
@@ -103,5 +102,8 @@ CREATE TABLE "node_config"
     "input_box_deployment_block" INT NOT NULL,
     "input_box_address" BYTEA NOT NULL,
     "chain_id" INT NOT NULL,
-    "iconsensus_address" BYTEA NOT NULL
+    "iconsensus_address" BYTEA NOT NULL,
+    "epoch_length" INT NOT NULL
 );
+
+

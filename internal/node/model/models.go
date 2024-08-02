@@ -57,6 +57,7 @@ type NodePersistentConfig struct {
 	InputBoxAddress         Address
 	ChainId                 uint64
 	IConsensusAddress       Address
+	EpochLength             uint64
 }
 
 type Application struct {
@@ -64,7 +65,6 @@ type Application struct {
 	ContractAddress    Address
 	TemplateHash       Hash
 	LastProcessedBlock uint64
-	EpochLength        uint64
 	Status             ApplicationStatus
 }
 

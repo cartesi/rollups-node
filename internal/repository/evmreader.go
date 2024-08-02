@@ -102,7 +102,6 @@ func (pg *Database) getAllApplicationsByStatus(
 		contractAddress    Address
 		templateHash       Hash
 		lastProcessedBlock uint64
-		epochLength        uint64
 		status             ApplicationStatus
 		results            []Application
 	)
@@ -113,7 +112,6 @@ func (pg *Database) getAllApplicationsByStatus(
 		contract_address,
 		template_hash,
 		last_processed_block,
-		epoch_length,
 		status
 	FROM
 		application
@@ -131,16 +129,14 @@ func (pg *Database) getAllApplicationsByStatus(
 	}
 
 	_, err = pgx.ForEachRow(rows,
-		[]any{&id, &contractAddress, &templateHash, &snapshotUri,
-			&lastProcessedBlock, &epochLength, &status},
+		[]any{&id, &contractAddress, &templateHash,
+			&lastProcessedBlock, &status},
 		func() error {
 			app := Application{
 				Id:                 id,
 				ContractAddress:    contractAddress,
 				TemplateHash:       templateHash,
-				SnapshotURI:        snapshotUri,
 				LastProcessedBlock: lastProcessedBlock,
-				EpochLength:        epochLength,
 				Status:             status,
 			}
 			results = append(results, app)
