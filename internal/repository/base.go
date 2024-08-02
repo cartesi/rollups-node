@@ -59,13 +59,15 @@ func (pg *Database) InsertNodeConfig(
 		input_box_deployment_block,
 		input_box_address,
 		chain_id,
-		iconsensus_address)
+		iconsensus_address,
+		epoch_length)
 	SELECT
 		@defaultBlock,
 		@deploymentBlock,
 		@inputBoxAddress,
 		@chainId,
-		@iConsensusAddress
+		@iConsensusAddress,
+		@epochLength
 	WHERE NOT EXISTS (SELECT * FROM node_config)`
 
 	args := pgx.NamedArgs{
@@ -74,6 +76,7 @@ func (pg *Database) InsertNodeConfig(
 		"inputBoxAddress":   config.InputBoxAddress,
 		"chainId":           config.ChainId,
 		"iConsensusAddress": config.IConsensusAddress,
+		"epochLength":       config.EpochLength,
 	}
 
 	_, err := pg.db.Exec(ctx, query, args)
@@ -93,20 +96,17 @@ func (pg *Database) InsertApplication(
 		(contract_address,
 		template_hash,
 		last_processed_block,
-		epoch_length,
 		status)
 	VALUES
 		(@contractAddress,
 		@templateHash,
 		@lastProcessedBlock,
-		@epochLength,
 		@status)`
 
 	args := pgx.NamedArgs{
 		"contractAddress":    app.ContractAddress,
 		"templateHash":       app.TemplateHash,
 		"lastProcessedBlock": app.LastProcessedBlock,
-		"epochLength":        app.EpochLength,
 		"status":             app.Status,
 	}
 
@@ -346,7 +346,6 @@ func (pg *Database) GetApplication(
 		contractAddress    Address
 		templateHash       Hash
 		lastProcessedBlock uint64
-		epochLength        uint64
 		status             ApplicationStatus
 	)
 
@@ -356,7 +355,6 @@ func (pg *Database) GetApplication(
 		contract_address,
 		template_hash,
 		last_processed_block,
-		epoch_length,
 		status
 	FROM
 		application
@@ -372,7 +370,6 @@ func (pg *Database) GetApplication(
 		&contractAddress,
 		&templateHash,
 		&lastProcessedBlock,
-		&epochLength,
 		&status,
 	)
 	if err != nil {
@@ -388,7 +385,6 @@ func (pg *Database) GetApplication(
 		ContractAddress:    contractAddress,
 		TemplateHash:       templateHash,
 		LastProcessedBlock: lastProcessedBlock,
-		EpochLength:        epochLength,
 		Status:             status,
 	}
 

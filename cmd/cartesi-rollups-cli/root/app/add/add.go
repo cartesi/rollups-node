@@ -34,7 +34,6 @@ var (
 	templateHash                  string
 	inputBoxDeploymentBlockNumber uint64
 	snapshotUri                   string
-	epochLength                   uint64
 	status                        string
 )
 
@@ -72,14 +71,6 @@ func init() {
 		"Application snapshot URI",
 	)
 
-	Cmd.Flags().Uint64VarP(
-		&epochLength,
-		"epoch-length",
-		"e",
-		1,
-		"Application epoch length in blocks",
-	)
-
 	Cmd.Flags().StringVarP(
 		&status,
 		"status",
@@ -113,8 +104,6 @@ func run(cmd *cobra.Command, args []string) {
 		ContractAddress:    common.HexToAddress(applicationAddress),
 		TemplateHash:       common.HexToHash(templateHash),
 		LastProcessedBlock: inputBoxDeploymentBlockNumber,
-		SnapshotURI:        snapshotUri,
-		EpochLength:        epochLength,
 		Status:             applicationStatus,
 	}
 

@@ -131,7 +131,6 @@ func (s *RepositorySuite) TestGetAllRunningApplications() {
 		ContractAddress:    common.HexToAddress("deadbeef"),
 		TemplateHash:       common.HexToHash("deadbeef"),
 		LastProcessedBlock: 1,
-		EpochLength:        10,
 		Status:             ApplicationStatusRunning,
 	}
 

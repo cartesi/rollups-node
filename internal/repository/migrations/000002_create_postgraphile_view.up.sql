@@ -9,7 +9,6 @@ CREATE OR REPLACE VIEW graphql."applications" AS
         "contract_address",
         "template_hash",
         "last_processed_block",
-        "epoch_length",
         "status"
     FROM
         "application";
