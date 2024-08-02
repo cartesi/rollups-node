@@ -56,6 +56,10 @@ func init() {
 		deps.DefaultDevnetBlockTime,
 		"Devnet mining block time")
 
+	Cmd.Flags().StringVar(&depsConfig.Devnet.SlotsInAnEpoch, "devnet-slots-in-an-epoch",
+		deps.DefaultSlotsInAnEpoch,
+		"Devnet slots in an epoch")
+
 	Cmd.Flags().BoolVar(&depsConfig.Devnet.NoMining, "devnet-no-mining",
 		deps.DefaultDevnetNoMining,
 		"Devnet disable mining")

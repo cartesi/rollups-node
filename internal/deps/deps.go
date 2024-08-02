@@ -28,6 +28,7 @@ const (
 	DefaultDevnetDockerImage             = "cartesi/rollups-node-devnet:devel"
 	DefaultDevnetPort                    = "8545"
 	DefaultDevnetBlockTime               = "1"
+	DefaultSlotsInAnEpoch                = "1"
 	DefaultDevnetBlockToWaitForOnStartup = "21"
 	DefaultDevnetNoMining                = false
 
@@ -61,6 +62,7 @@ type DevnetConfig struct {
 	DockerImage             string
 	Port                    string
 	BlockTime               string
+	SlotsInAnEpoch          string
 	BlockToWaitForOnStartup string
 	NoMining                bool
 }
@@ -77,6 +79,7 @@ func NewDefaultDepsConfig() *DepsConfig {
 			DefaultDevnetDockerImage,
 			DefaultDevnetPort,
 			DefaultDevnetBlockTime,
+			DefaultSlotsInAnEpoch,
 			DefaultDevnetBlockToWaitForOnStartup,
 			DefaultDevnetNoMining,
 		},
@@ -256,6 +259,14 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 			"--load-state",
 			"/usr/share/devnet/anvil_state.json",
 		}
+
+		if depsConfig.Devnet.SlotsInAnEpoch != "" {
+			cmd = append(cmd,
+				"--slots-in-an-epoch",
+				depsConfig.Devnet.SlotsInAnEpoch,
+			)
+		}
+
 		var waitStrategy *wait.LogStrategy
 		if depsConfig.Devnet.NoMining {
 			cmd = append(cmd, "--no-mining")
