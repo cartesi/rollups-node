@@ -131,7 +131,6 @@ func (s *EvmReaderIntegrationTestSuite) SetupTest() {
 		ContractAddress:    s.applicationAddress,
 		Status:             model.ApplicationStatusRunning,
 		LastProcessedBlock: 0,
-		EpochLength:        64,
 	})
 	s.Require().Nil(err)
 
