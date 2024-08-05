@@ -1,6 +1,8 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
+use std::collections::HashMap;
+
 use backoff::ExponentialBackoff;
 use redis::aio::ConnectionManager;
 use redis::streams::StreamRangeReply;
@@ -11,8 +13,8 @@ use testcontainers::{
 };
 
 use rollups_events::{
-    Broker, BrokerConfig, BrokerEndpoint, BrokerError, BrokerStream,
-    RedactedUrl, Url, INITIAL_ID,
+    Broker, BrokerConfig, BrokerEndpoint, BrokerError, BrokerMultiStream,
+    BrokerStream, RedactedUrl, Url, INITIAL_ID,
 };
 
 const STREAM_KEY: &'static str = "test-stream";
@@ -285,4 +287,134 @@ async fn test_it_does_not_block_when_consuming_empty_stream() {
         .await
         .expect("failed to peek");
     assert!(matches!(event, None));
+}
+
+// ------------------------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct AnotherMockStream {
+    key: String,
+    a: u8,
+    b: u8,
+}
+
+impl AnotherMockStream {
+    fn new(a: u8, b: u8) -> Self {
+        let key = format!("{{a-{}:b-{}}}:{}", a, b, STREAM_KEY);
+        Self { key, a, b }
+    }
+}
+
+impl BrokerStream for AnotherMockStream {
+    type Payload = MockPayload;
+
+    fn key(&self) -> &str {
+        &self.key
+    }
+}
+
+impl BrokerMultiStream for AnotherMockStream {
+    fn from_key(key: String) -> Self {
+        let re = r"^\{a-([^:]+):b-([^}]+)\}:test-stream$".to_string();
+        let re = regex::Regex::new(&re).unwrap();
+        let caps = re.captures(&key).unwrap();
+
+        let a = caps
+            .get(1)
+            .unwrap()
+            .as_str()
+            .to_string()
+            .parse::<u8>()
+            .unwrap();
+        let b = caps
+            .get(2)
+            .unwrap()
+            .as_str()
+            .to_string()
+            .parse::<u8>()
+            .unwrap();
+
+        Self { key, a, b }
+    }
+}
+
+#[test_log::test(tokio::test)]
+async fn test_it_consumes_from_multiple_streams() {
+    let docker = Cli::default();
+    let state = TestState::setup(&docker).await;
+    let mut broker = state.create_broker().await;
+
+    // Creates the map of streams to last-consumed-ids.
+    let mut streams = HashMap::new();
+    let initial_id = INITIAL_ID.to_string();
+    streams.insert(AnotherMockStream::new(1, 2), initial_id.clone());
+    streams.insert(AnotherMockStream::new(3, 4), initial_id.clone());
+    streams.insert(AnotherMockStream::new(5, 6), initial_id.clone());
+
+    // Produces N events for each stream using the broker struct.
+    const N: usize = 3;
+    for stream in streams.keys() {
+        for i in 0..N {
+            let data = format!("{}{}{}", stream.a, stream.b, i);
+            let payload = MockPayload { data };
+            let _ = broker
+                .produce(stream, payload)
+                .await
+                .expect("failed to produce events");
+        }
+    }
+
+    // Consumes all events using the broker struct.
+    let mut counters = HashMap::new();
+    for _ in 0..streams.len() {
+        let streams_and_events = broker
+            .consume_blocking_from_multiple_streams(streams.clone())
+            .await
+            .expect("failed to consume");
+
+        for (stream, event) in streams_and_events {
+            let i = counters
+                .entry(stream.clone())
+                .and_modify(|n| *n += 1)
+                .or_insert(0)
+                .clone();
+
+            // Asserts that the payload is correct.
+            let expected = format!("{}{}{}", stream.a, stream.b, i);
+            assert_eq!(expected, event.payload.data);
+
+            // Updates the map of streams with the last consumed id.
+            let replaced = streams.insert(stream, event.id);
+            // And asserts that the key from the map was indeed overwritten.
+            assert!(replaced.is_some());
+        }
+    }
+
+    // Asserts that N events were consumed from each stream.
+    for counter in counters.values() {
+        assert_eq!(N - 1, *counter);
+    }
+
+    // Gets one of the streams.
+    let stream = streams.clone().into_keys().next().unwrap();
+    let expected_stream = stream.clone();
+
+    // Produces the final event.
+    let data = "final event".to_string();
+    let payload = MockPayload { data };
+    let _ = broker
+        .produce(&stream, payload)
+        .await
+        .expect("failed to produce the final event");
+
+    // Consumes the final event.
+    let mut streams_and_events = broker
+        .consume_blocking_from_multiple_streams(streams)
+        .await
+        .expect("failed to consume the final event");
+    assert_eq!(1, streams_and_events.len());
+    let (final_stream, _) = streams_and_events.pop().unwrap();
+
+    // Asserts that the event came from the correct stream.
+    assert_eq!(expected_stream, final_stream);
 }

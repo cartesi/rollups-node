@@ -127,11 +127,15 @@ impl Runner {
                     .context(ProduceOutputsSnafu)?;
                 tracing::trace!("produced outputs in broker stream");
 
+                let dapp_address = rollups_claim.dapp_address.clone();
                 self.broker
                     .produce_rollups_claim(rollups_claim)
                     .await
                     .context(ProduceClaimSnafu)?;
-                tracing::info!("produced epoch claim in broker stream");
+                tracing::info!(
+                    "produced epoch claim in broker stream for dapp address {:?}",
+                    dapp_address
+                );
             }
             Err(source) => {
                 if let ServerManagerError::EmptyEpochError { .. } = source {

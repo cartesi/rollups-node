@@ -4451,6 +4451,7 @@ dependencies = [
  "prometheus-client",
  "redacted",
  "redis",
+ "regex",
  "serde",
  "serde_json",
  "snafu 0.8.2",

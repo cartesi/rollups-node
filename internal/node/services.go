@@ -117,6 +117,8 @@ func newAuthorityClaimer(c config.NodeConfig, workDir string) services.CommandSe
 	s.Env = append(s.Env, fmt.Sprintf("HISTORY_ADDRESS=%v", c.ContractsHistoryAddress))
 	s.Env = append(s.Env, fmt.Sprintf("AUTHORITY_ADDRESS=%v", c.ContractsAuthorityAddress))
 	s.Env = append(s.Env, fmt.Sprintf("INPUT_BOX_ADDRESS=%v", c.ContractsInputBoxAddress))
+	s.Env = append(s.Env, fmt.Sprintf("DAPP_CONTRACT_ADDRESS=%v",
+		c.ContractsApplicationAddress))
 	s.Env = append(s.Env, fmt.Sprintf("GENESIS_BLOCK=%v",
 		c.ContractsInputBoxDeploymentBlockNumber))
 	s.Env = append(s.Env, fmt.Sprintf("AUTHORITY_CLAIMER_HTTP_SERVER_PORT=%v",

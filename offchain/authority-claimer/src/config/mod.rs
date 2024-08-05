@@ -13,7 +13,7 @@ use eth_tx_manager::{config::TxManagerConfig, Priority};
 use http_server::HttpServerConfig;
 use log::LogConfig;
 use redacted::Redacted;
-use rollups_events::BrokerConfig;
+use rollups_events::{Address, BrokerConfig};
 use rusoto_core::Region;
 
 #[derive(Debug, Clone)]
@@ -30,6 +30,7 @@ pub struct AuthorityClaimerConfig {
     pub broker_config: BrokerConfig,
     pub log_config: LogConfig,
     pub contracts_config: ContractsConfig,
+    pub dapp_address: Option<Address>,
     pub genesis_block: u64,
 }
 

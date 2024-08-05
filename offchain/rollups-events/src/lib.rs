@@ -10,7 +10,8 @@ mod rollups_stream;
 
 pub use broker::{
     indexer, Broker, BrokerCLIConfig, BrokerConfig, BrokerEndpoint,
-    BrokerError, BrokerStream, Event, RedactedUrl, Url, INITIAL_ID,
+    BrokerError, BrokerMultiStream, BrokerStream, Event, RedactedUrl, Url,
+    DAPPS_KEY, INITIAL_ID,
 };
 pub use common::{Address, Hash, Payload, ADDRESS_SIZE, HASH_SIZE};
 pub use rollups_claims::{RollupsClaim, RollupsClaimsStream};
@@ -23,4 +24,6 @@ pub use rollups_outputs::{
     RollupsOutput, RollupsOutputEnum, RollupsOutputValidityProof,
     RollupsOutputsStream, RollupsProof, RollupsReport, RollupsVoucher,
 };
-pub use rollups_stream::{DAppMetadata, DAppMetadataCLIConfig};
+pub use rollups_stream::{
+    parse_stream_with_key, DAppMetadata, DAppMetadataCLIConfig,
+};

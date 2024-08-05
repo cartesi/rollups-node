@@ -4,7 +4,9 @@
 use async_trait::async_trait;
 use snafu::ResultExt;
 use std::fmt::Debug;
-use tracing::{info, trace};
+use tracing::{debug, info};
+
+use rollups_events::Address;
 
 use crate::{
     checker::DuplicateChecker, listener::BrokerListener,
@@ -31,6 +33,9 @@ pub enum ClaimerError<
     D: DuplicateChecker,
     T: TransactionSender,
 > {
+    #[snafu(display("invalid app address {:?}", app_address))]
+    InvalidAppAddress { app_address: Address },
+
     #[snafu(display("broker listener error"))]
     BrokerListenerError { source: B::Error },
 
@@ -84,14 +89,14 @@ where
     type Error = ClaimerError<B, D, T>;
 
     async fn start(mut self) -> Result<(), Self::Error> {
-        trace!("Starting the authority claimer loop");
+        debug!("Starting the authority claimer loop");
         loop {
             let rollups_claim = self
                 .broker_listener
                 .listen()
                 .await
                 .context(BrokerListenerSnafu)?;
-            trace!("Got a claim from the broker: {:?}", rollups_claim);
+            debug!("Got a claim from the broker: {:?}", rollups_claim);
 
             let is_duplicated_rollups_claim = self
                 .duplicate_checker
@@ -99,7 +104,7 @@ where
                 .await
                 .context(DuplicatedClaimSnafu)?;
             if is_duplicated_rollups_claim {
-                trace!("It was a duplicated claim");
+                info!("Duplicate claim detected: {:?}", rollups_claim);
                 continue;
             }
 

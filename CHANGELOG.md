@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added support for the experimental multidapp claimer.
+- Added the `DAPP_CONTRACT_ADDRESS` environment variable to the `authority-claimer`. If let unset, the service instantiates the MultidappClaimer, that reads dapp addresses from Redis.
+
 ### Changed
 
 - Disabled the `authority-claimer` when `CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED` is set to `true`.

@@ -6,6 +6,7 @@ use prometheus_client::encoding::EncodeLabelValue;
 use prometheus_client::encoding::LabelValueEncoder;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::Write;
+use std::str::FromStr;
 
 pub const ADDRESS_SIZE: usize = 20;
 pub const HASH_SIZE: usize = 32;
@@ -13,7 +14,7 @@ pub const HASH_SIZE: usize = 32;
 const PAYLOAD_DEBUG_MAX_LEN: usize = 100;
 
 /// A binary array that is converted to a hex string when serialized
-#[derive(Clone, Hash, Eq, PartialEq)]
+#[derive(Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct HexArray<const N: usize>([u8; N]);
 
 impl<const N: usize> HexArray<N> {
@@ -37,6 +38,14 @@ impl<const N: usize> HexArray<N> {
 impl<const N: usize> From<[u8; N]> for HexArray<N> {
     fn from(data: [u8; N]) -> Self {
         Self::new(data)
+    }
+}
+
+impl<const N: usize> FromStr for HexArray<N> {
+    type Err = serde_json::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        serde_json::from_value(serde_json::Value::String(s.to_string()))
     }
 }
 
@@ -66,6 +75,16 @@ impl<'de, const N: usize> Deserialize<'de> for HexArray<N> {
             .try_into()
             .or(Err(serde::de::Error::custom("incorrect array size")))?;
         Ok(Self::new(data))
+    }
+}
+
+impl<const N: usize> ToString for HexArray<N> {
+    fn to_string(&self) -> String {
+        let s = serde_json::to_string(self).unwrap();
+        let mut chars = s.chars();
+        chars.next();
+        chars.next_back();
+        chars.as_str().to_string()
     }
 }
 
