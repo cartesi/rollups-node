@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- Added support for the experimental multidapp claimer.
+- Added the `DAPP_CONTRACT_ADDRESS` environment variable to the `authority-claimer`. If let unset, the service instantiates the MultidappClaimer, that reads dapp addresses from Redis.
+
 ## [1.5.0] 2024-07-22
 
 ### Added

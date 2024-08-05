@@ -14,14 +14,21 @@ use redis::{
 };
 use serde::{de::DeserializeOwned, Serialize};
 use snafu::{ResultExt, Snafu};
+use std::collections::HashMap;
+use std::convert::identity;
 use std::fmt;
+use std::str::FromStr;
 use std::time::Duration;
 
 pub use redacted::{RedactedUrl, Url};
 
+use crate::Address;
+
 pub mod indexer;
 
 pub const INITIAL_ID: &str = "0";
+const DAPPS_KEY: &str = "experimental-dapp-addresses-config";
+const DAPPS_DIVIDER: &str = ", ";
 
 /// The `BrokerConnection` enum implements the `ConnectionLike` trait
 /// to satisfy the `AsyncCommands` trait bounds.
@@ -280,6 +287,120 @@ impl Broker {
             Ok(None)
         }
     }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    async fn _consume_blocking_from_multiple_streams<S: BrokerMultiStream>(
+        &mut self,
+        streams: &Vec<S>,
+        last_consumed_ids: &Vec<String>,
+    ) -> Result<(S, Event<S::Payload>), BrokerError> {
+        let reply = retry(self.backoff.clone(), || async {
+            let stream_keys: Vec<String> = streams
+                .iter()
+                .map(|stream| stream.key().to_string())
+                .collect();
+
+            let opts = StreamReadOptions::default()
+                .count(1)
+                .block(self.consume_timeout);
+            let reply: StreamReadReply = self
+                .connection
+                .clone()
+                .xread_options(&stream_keys, &last_consumed_ids, &opts)
+                .await?;
+
+            Ok(reply)
+        })
+        .await
+        .context(ConnectionSnafu)?;
+
+        tracing::trace!("checking for timeout");
+        if reply.keys.is_empty() {
+            return Err(BrokerError::ConsumeTimeout);
+        }
+
+        tracing::trace!("checking if any events were received");
+        for mut stream_key in reply.keys {
+            if let Some(event) = stream_key.ids.pop() {
+                tracing::trace!("parsing received event");
+                let stream = S::from_key(stream_key.key);
+                let event = event.try_into()?;
+                return Ok((stream, event));
+            }
+        }
+        return Err(BrokerError::FailedToConsume);
+    }
+
+    /// Consume the next event from one of the streams.
+    ///
+    /// This function blocks until a new event is available in one of the streams,
+    /// and retries whenever a timeout happens instead of returning an error.
+    ///
+    /// To consume the first event for a stream, `last_consumed_id[...]` should be `INITIAL_ID`.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub async fn consume_blocking_from_multiple_streams<
+        S: BrokerMultiStream,
+    >(
+        &mut self,
+        streams: HashMap<S, String>, // streams to last-consumed-ids
+    ) -> Result<(S, Event<S::Payload>), BrokerError> {
+        let (streams, last_consumed_ids): (Vec<_>, Vec<_>) =
+            streams.into_iter().map(identity).unzip();
+
+        loop {
+            let result = self
+                ._consume_blocking_from_multiple_streams(
+                    &streams,
+                    &last_consumed_ids,
+                )
+                .await;
+
+            if let Err(BrokerError::ConsumeTimeout) = result {
+                tracing::trace!("consume timed out, retrying");
+            } else {
+                return result;
+            }
+        }
+    }
+
+    /// Gets the dapp addresses.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub async fn get_dapps(&mut self) -> Result<Vec<Address>, BrokerError> {
+        retry(self.backoff.clone(), || async {
+            tracing::trace!(key = DAPPS_KEY, "getting key");
+            let reply: String = self.connection.clone().get(DAPPS_KEY).await?;
+            if reply.is_empty() {
+                return Ok(vec![]);
+            }
+            Ok(reply
+                .split(DAPPS_DIVIDER)
+                .map(|s| Address::from_str(s).unwrap())
+                .collect::<Vec<_>>())
+        })
+        .await
+        .context(ConnectionSnafu)
+    }
+
+    /// Sets the dapp addresses.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub async fn set_dapps(
+        &mut self,
+        dapp_addresses: Vec<Address>,
+    ) -> Result<(), BrokerError> {
+        tracing::trace!(key = DAPPS_KEY, "setting key");
+        let dapp_addresses: Vec<_> = dapp_addresses
+            .iter()
+            .map(|address| address.to_string())
+            .collect();
+        let dapp_addresses = dapp_addresses.join(DAPPS_DIVIDER);
+        let _: () = self
+            .connection
+            .clone()
+            .set(DAPPS_KEY, dapp_addresses)
+            .await
+            .unwrap();
+        Ok(())
+    }
 }
 
 /// Custom implementation of Debug because ConnectionManager doesn't implement debug
@@ -295,6 +416,10 @@ impl fmt::Debug for Broker {
 pub trait BrokerStream {
     type Payload: Serialize + DeserializeOwned + Clone + Eq + PartialEq;
     fn key(&self) -> &str;
+}
+
+pub trait BrokerMultiStream: BrokerStream {
+    fn from_key(key: String) -> Self;
 }
 
 /// Event that goes through the broker

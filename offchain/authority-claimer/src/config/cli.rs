@@ -6,9 +6,10 @@ use eth_tx_manager::{
     config::{TxEnvCLIConfig as TxManagerCLIConfig, TxManagerConfig},
     Priority,
 };
+use ethers::utils::hex;
 use log::{LogConfig, LogEnvCliConfig};
 use redacted::Redacted;
-use rollups_events::{BrokerCLIConfig, BrokerConfig};
+use rollups_events::{Address, BrokerCLIConfig, BrokerConfig};
 use rusoto_core::Region;
 use snafu::ResultExt;
 use std::{fs, str::FromStr};
@@ -47,6 +48,10 @@ pub(crate) struct AuthorityClaimerCLI {
     #[command(flatten)]
     pub contracts_config: ContractsCLIConfig,
 
+    /// Address of rollups dapp
+    #[arg(long, env)]
+    pub dapp_contract_address: Option<String>,
+
     /// Genesis block for reading blockchain events
     #[arg(long, env, default_value_t = 1)]
     pub genesis_block: u64,
@@ -72,6 +77,17 @@ impl TryFrom<AuthorityClaimerCLI> for AuthorityClaimerConfig {
             ContractsConfig::try_from(cli_config.contracts_config)
                 .context(ContractsSnafu)?;
 
+        let dapp_contract_address: Option<Address> = cli_config
+            .dapp_contract_address
+            .map(|raw_dapp_contract_address| {
+                let address: [u8; 20] =
+                    hex::decode(&raw_dapp_contract_address[2..])
+                        .expect("Dapp json parse error")
+                        .try_into()
+                        .expect("Dapp address with wrong size");
+                address.into()
+            });
+
         Ok(AuthorityClaimerConfig {
             tx_manager_config,
             tx_signing_config,
@@ -79,6 +95,7 @@ impl TryFrom<AuthorityClaimerCLI> for AuthorityClaimerConfig {
             broker_config,
             log_config,
             contracts_config,
+            dapp_address: dapp_contract_address,
             genesis_block: cli_config.genesis_block,
         })
     }
