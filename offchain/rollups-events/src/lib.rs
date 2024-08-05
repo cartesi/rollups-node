@@ -23,4 +23,6 @@ pub use rollups_outputs::{
     RollupsOutput, RollupsOutputEnum, RollupsOutputValidityProof,
     RollupsOutputsStream, RollupsProof, RollupsReport, RollupsVoucher,
 };
-pub use rollups_stream::{DAppMetadata, DAppMetadataCLIConfig};
+pub use rollups_stream::{
+    parse_stream_with_key, DAppMetadata, DAppMetadataCLIConfig,
+};

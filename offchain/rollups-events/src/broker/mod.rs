@@ -14,6 +14,8 @@ use redis::{
 };
 use serde::{de::DeserializeOwned, Serialize};
 use snafu::{ResultExt, Snafu};
+use std::collections::HashMap;
+use std::convert::identity;
 use std::fmt;
 use std::time::Duration;
 
@@ -242,7 +244,6 @@ impl Broker {
             }
         }
     }
-
     /// Consume the next event in stream without blocking
     /// This function returns None if there are no more remaining events.
     /// To consume the first event in the stream, `last_consumed_id` should be `INITIAL_ID`.
@@ -280,6 +281,79 @@ impl Broker {
             Ok(None)
         }
     }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    async fn _consume_blocking_from_multiple_streams<S: BrokerStream>(
+        &mut self,
+        streams: &Vec<S>,
+        last_consumed_ids: &Vec<String>,
+    ) -> Result<(S, Event<S::Payload>), BrokerError> {
+        let reply = retry(self.backoff.clone(), || async {
+            let stream_keys: Vec<String> = streams
+                .iter()
+                .map(|stream| stream.key().to_string())
+                .collect();
+
+            let opts = StreamReadOptions::default()
+                .count(1)
+                .block(self.consume_timeout);
+            let reply: StreamReadReply = self
+                .connection
+                .clone()
+                .xread_options(&stream_keys, &last_consumed_ids, &opts)
+                .await?;
+
+            Ok(reply)
+        })
+        .await
+        .context(ConnectionSnafu)?;
+
+        tracing::trace!("checking for timeout");
+        if reply.keys.is_empty() {
+            return Err(BrokerError::ConsumeTimeout);
+        }
+
+        tracing::trace!("checking if any events were received");
+        for mut stream_key in reply.keys {
+            if let Some(event) = stream_key.ids.pop() {
+                tracing::trace!("parsing received event");
+                let stream = S::from_key(stream_key.key);
+                let event = event.try_into()?;
+                return Ok((stream, event));
+            }
+        }
+        return Err(BrokerError::FailedToConsume);
+    }
+
+    /// Consume the next event from one of the streams.
+    ///
+    /// This function blocks until a new event is available in one of the streams,
+    /// and retries whenever a timeout happens instead of returning an error.
+    ///
+    /// To consume the first event for a stream, `last_consumed_id[...]` should be `INITIAL_ID`.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub async fn consume_blocking_from_multiple_streams<S: BrokerStream>(
+        &mut self,
+        streams: HashMap<S, String>, // streams to last-consumed-ids
+    ) -> Result<(S, Event<S::Payload>), BrokerError> {
+        let (streams, last_consumed_ids): (Vec<_>, Vec<_>) =
+            streams.into_iter().map(identity).unzip();
+
+        loop {
+            let result = self
+                ._consume_blocking_from_multiple_streams(
+                    &streams,
+                    &last_consumed_ids,
+                )
+                .await;
+
+            if let Err(BrokerError::ConsumeTimeout) = result {
+                tracing::trace!("consume timed out, retrying");
+            } else {
+                return result;
+            }
+        }
+    }
 }
 
 /// Custom implementation of Debug because ConnectionManager doesn't implement debug
@@ -295,6 +369,7 @@ impl fmt::Debug for Broker {
 pub trait BrokerStream {
     type Payload: Serialize + DeserializeOwned + Clone + Eq + PartialEq;
     fn key(&self) -> &str;
+    fn from_key(key: String) -> Self;
 }
 
 /// Event that goes through the broker

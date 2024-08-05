@@ -9,7 +9,10 @@ pub mod metrics;
 pub mod sender;
 pub mod signer;
 
-use config::Config;
+use claimer::MultidappClaimer;
+use config::{AuthorityClaimerConfig, Config};
+use listener::MultidappBrokerListener;
+use rollups_events::Address;
 use snafu::Error;
 use tracing::trace;
 
@@ -28,13 +31,43 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         http_server::start(config.http_server_config, metrics.clone().into());
 
     let config = config.authority_claimer_config;
-    let chain_id = config.tx_manager_config.chain_id;
 
+    let claimer = create_default_claimer(metrics, config).await?;
+
+    let claimer_handle = claimer.start();
+
+    // Starting the HTTP server and the claimer loop.
+    tokio::select! {
+        ret = http_server_handle => { ret? }
+        ret = claimer_handle     => { ret? }
+    };
+
+    unreachable!()
+}
+
+async fn create_default_claimer(
+    metrics: AuthorityClaimerMetrics,
+    config: AuthorityClaimerConfig,
+) -> Result<
+    DefaultClaimer<
+        DefaultBrokerListener,
+        DefaultDuplicateChecker,
+        DefaultTransactionSender,
+    >,
+    Box<dyn Error>,
+> {
     // Creating the broker listener.
     trace!("Creating the broker listener");
-    let broker_listener =
-        DefaultBrokerListener::new(config.broker_config.clone(), chain_id)
-            .await?;
+
+    let chain_id = config.tx_manager_config.chain_id;
+    let dapp_address = Address::default(); // TODO
+
+    let broker_listener = DefaultBrokerListener::new(
+        config.broker_config.clone(),
+        chain_id,
+        dapp_address,
+    )
+    .await?;
 
     // Creating the duplicate checker.
     trace!("Creating the duplicate checker");
@@ -52,19 +85,26 @@ pub async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         DefaultTransactionSender::new(config.clone(), chain_id, metrics)
             .await?;
 
-    // Creating the claimer loop.
+    // Creating the claimer.
     let claimer = DefaultClaimer::new(
         broker_listener,
         duplicate_checker,
         transaction_sender,
     );
-    let claimer_handle = claimer.start();
 
-    // Starting the HTTP server and the claimer loop.
-    tokio::select! {
-        ret = http_server_handle => { ret? }
-        ret = claimer_handle     => { ret? }
-    };
+    Ok(claimer)
+}
 
-    unreachable!()
+async fn create_multidapp_claimer(
+    _metrics: AuthorityClaimerMetrics,
+    _config: AuthorityClaimerConfig,
+) -> Result<
+    MultidappClaimer<
+        MultidappBrokerListener,
+        DefaultDuplicateChecker,
+        DefaultTransactionSender,
+    >,
+    Box<dyn Error>,
+> {
+    todo!()
 }
