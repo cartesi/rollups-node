@@ -55,7 +55,7 @@ impl BrokerFacade {
         let client = Broker::new(config).await.context(BrokerInternalSnafu)?;
         let inputs_stream = RollupsInputsStream::new(&dapp_metadata);
         let outputs_stream = RollupsOutputsStream::new(&dapp_metadata);
-        let claims_stream = RollupsClaimsStream::new(dapp_metadata.chain_id);
+        let claims_stream = RollupsClaimsStream::new(&dapp_metadata);
         Ok(Self {
             client,
             inputs_stream,

@@ -9,7 +9,7 @@ use crate::{rollups_stream::decl_broker_stream, Address, Hash, Payload};
 
 decl_broker_stream!(RollupsOutputsStream, RollupsOutput, "rollups-outputs");
 
-/// Cartesi  output
+/// Cartesi output
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum RollupsOutput {
     AdvanceResult(RollupsAdvanceResult),
