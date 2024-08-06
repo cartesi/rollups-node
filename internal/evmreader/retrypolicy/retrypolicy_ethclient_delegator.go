@@ -6,6 +6,7 @@ package retrypolicy
 import (
 	"context"
 	"math/big"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/util/retrypolicy"
@@ -18,13 +19,13 @@ import (
 type EthClientRetryPolicyDelegator struct {
 	delegate          evmreader.EthClient
 	maxRetries        uint64
-	delayBetweenCalls Duration
+	delayBetweenCalls time.Duration
 }
 
 func NewEhtClientWithRetryPolicy(
 	delegate evmreader.EthClient,
 	maxRetries uint64,
-	delayBetweenCalls Duration,
+	delayBetweenCalls time.Duration,
 ) *EthClientRetryPolicyDelegator {
 	return &EthClientRetryPolicyDelegator{
 		delegate:          delegate,
