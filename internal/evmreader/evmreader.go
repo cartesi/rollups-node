@@ -9,7 +9,7 @@ import (
 	"log/slog"
 	"math/big"
 
-	"github.com/cartesi/rollups-node/internal/node/model"
+	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -18,52 +18,38 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-type (
-	Address              = common.Address
-	Application          = model.Application
-	Input                = model.Input
-	DefaultBlock         = model.DefaultBlock
-	NodePersistentConfig = model.NodePersistentConfig
-	InputBoxInputAdded   = inputbox.InputBoxInputAdded
-	FilterOpts           = bind.FilterOpts
-	Context              = context.Context
-	Header               = types.Header
-	Subscription         = ethereum.Subscription
-	Epoch                = model.Epoch
-)
-
 // Interface for Input reading
 type InputSource interface {
 	// Wrapper for FilterInputAdded(), which is automatically generated
 	// by go-ethereum and cannot be used for testing
 	RetrieveInputs(
-		opts *FilterOpts,
-		appContract []Address,
+		opts *bind.FilterOpts,
+		appContract []common.Address,
 		index []*big.Int,
-	) ([]InputBoxInputAdded, error)
+	) ([]inputbox.InputBoxInputAdded, error)
 }
 
 // Interface for the node repository
 type EvmReaderRepository interface {
 	InsertInputsAndUpdateLastProcessedBlock(
-		ctx Context,
+		ctx context.Context,
 		inputs []Input,
 		blockNumber uint64,
-		appAddress Address,
+		appAddress common.Address,
 	) error
 	GetAllRunningApplications(
-		ctx Context,
+		ctx context.Context,
 	) ([]Application, error)
 	GetNodeConfig(
-		ctx Context,
+		ctx context.Context,
 	) (*NodePersistentConfig, error)
 	GetEpoch(
-		ctx Context,
+		ctx context.Context,
 		indexKey uint64,
-		appAddressKey Address,
+		appAddressKey common.Address,
 	) (*Epoch, error)
 	InsertEpoch(
-		ctx Context,
+		ctx context.Context,
 		epoch *Epoch,
 	) (uint64, error)
 }
@@ -72,18 +58,18 @@ type EvmReaderRepository interface {
 // interface needed by the EvmReader. It must be bound to an HTTP endpoint
 type EthClient interface {
 	HeaderByNumber(
-		ctx Context,
+		ctx context.Context,
 		number *big.Int,
-	) (*Header, error)
+	) (*types.Header, error)
 }
 
 // EthWsClient mimics part of ethclient.Client functions to narrow down the
 // interface needed by the EvmReader. It must be bound to a WS endpoint
 type EthWsClient interface {
 	SubscribeNewHead(
-		ctx Context,
-		ch chan<- *Header,
-	) (Subscription, error)
+		ctx context.Context,
+		ch chan<- *types.Header,
+	) (ethereum.Subscription, error)
 }
 
 type SubscriptionError struct {
@@ -144,10 +130,10 @@ func (r *EvmReader) Run(
 // Watch for new blocks and reads new inputs based on the
 // default block configuration, which have not been processed yet.
 func (r *EvmReader) watchForNewBlocks(
-	ctx Context,
+	ctx context.Context,
 	ready chan<- struct{},
 ) error {
-	headers := make(chan *Header)
+	headers := make(chan *types.Header)
 	sub, err := r.wsClient.SubscribeNewHead(ctx, headers)
 	if err != nil {
 		return fmt.Errorf("could not start subscription: %v", err)
@@ -177,7 +163,7 @@ func (r *EvmReader) watchForNewBlocks(
 }
 
 // Check if is there new Inputs for all running Applications
-func (r *EvmReader) checkForNewInputs(ctx Context) error {
+func (r *EvmReader) checkForNewInputs(ctx context.Context) error {
 
 	// Get All Applications
 	apps, err := r.repository.GetAllRunningApplications(ctx)
@@ -255,19 +241,19 @@ func (r *EvmReader) classifyApplicationsByLastProcessedInput(
 // Fetch the most recent header up till the
 // given default block
 func (r *EvmReader) fetchMostRecentHeader(
-	ctx Context,
+	ctx context.Context,
 	defaultBlock DefaultBlock,
 ) (*types.Header, error) {
 
 	var defaultBlockNumber int64
 	switch defaultBlock {
-	case model.DefaultBlockStatusPending:
+	case DefaultBlockStatusPending:
 		defaultBlockNumber = rpc.PendingBlockNumber.Int64()
-	case model.DefaultBlockStatusLatest:
+	case DefaultBlockStatusLatest:
 		defaultBlockNumber = rpc.LatestBlockNumber.Int64()
-	case model.DefaultBlockStatusFinalized:
+	case DefaultBlockStatusFinalized:
 		defaultBlockNumber = rpc.FinalizedBlockNumber.Int64()
-	case model.DefaultBlockStatusSafe:
+	case DefaultBlockStatusSafe:
 		defaultBlockNumber = rpc.SafeBlockNumber.Int64()
 	default:
 		return nil, fmt.Errorf("Default block '%v' not supported", defaultBlock)
@@ -294,9 +280,9 @@ func (r *EvmReader) readInputs(
 	endBlock uint64,
 	apps []Application,
 ) error {
-	filter := []Address{}
+	filter := []common.Address{}
 
-	var inputsMap = make(map[Address][]Input)
+	var inputsMap = make(map[common.Address][]Input)
 	for _, app := range apps {
 		filter = append(filter, app.ContractAddress)
 		inputsMap[app.ContractAddress] = []Input{}
@@ -320,7 +306,7 @@ func (r *EvmReader) readInputs(
 		slog.Debug("received input ", "app", event.AppContract, "index", event.Index)
 		input := Input{
 			Index:            event.Index.Uint64(),
-			CompletionStatus: model.InputStatusNone,
+			CompletionStatus: InputStatusNone,
 			RawData:          event.Input,
 			BlockNumber:      event.Raw.BlockNumber,
 			AppAddress:       event.AppContract,

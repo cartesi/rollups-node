@@ -13,18 +13,14 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-type (
-	EthWsClient = evmreader.EthWsClient
-)
-
 type EthWsClientRetryPolicyDelegator struct {
-	delegate          EthWsClient
+	delegate          evmreader.EthWsClient
 	maxRetries        uint64
 	delayBetweenCalls time.Duration
 }
 
 func NewEthWsClientWithRetryPolicy(
-	delegate EthWsClient,
+	delegate evmreader.EthWsClient,
 	maxRetries uint64,
 	delayBetweenCalls time.Duration,
 ) *EthWsClientRetryPolicyDelegator {

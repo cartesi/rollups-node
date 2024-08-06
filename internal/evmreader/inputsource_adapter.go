@@ -8,20 +8,17 @@ import (
 
 	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
-)
-
-type (
-	InputBox = inputbox.InputBox
 )
 
 // InputBox Wrapper
 type InputSourceAdapter struct {
-	inputbox *InputBox
+	inputbox *inputbox.InputBox
 }
 
 func NewInputSourceAdapter(
-	inputBoxAddress Address,
+	inputBoxAddress common.Address,
 	client *ethclient.Client,
 ) (*InputSourceAdapter, error) {
 	inputbox, err := inputbox.NewInputBox(inputBoxAddress, client)
@@ -35,9 +32,9 @@ func NewInputSourceAdapter(
 
 func (i *InputSourceAdapter) RetrieveInputs(
 	opts *bind.FilterOpts,
-	appContract []Address,
+	appContract []common.Address,
 	index []*big.Int,
-) ([]InputBoxInputAdded, error) {
+) ([]inputbox.InputBoxInputAdded, error) {
 
 	itr, err := i.inputbox.FilterInputAdded(opts, appContract, index)
 	if err != nil {
@@ -45,7 +42,7 @@ func (i *InputSourceAdapter) RetrieveInputs(
 	}
 	defer itr.Close()
 
-	var events []InputBoxInputAdded
+	var events []inputbox.InputBoxInputAdded
 	for itr.Next() {
 		inputAddedEvent := itr.Event
 		events = append(events, *inputAddedEvent)

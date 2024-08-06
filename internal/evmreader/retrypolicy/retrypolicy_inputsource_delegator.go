@@ -14,22 +14,14 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-type (
-	InputSource        = evmreader.InputSource
-	Duration           = time.Duration
-	Address            = common.Address
-	FilterOpts         = bind.FilterOpts
-	InputBoxInputAdded = inputbox.InputBoxInputAdded
-)
-
 type InputSourceWithRetryPolicyDelegator struct {
-	delegate   InputSource
+	delegate   evmreader.InputSource
 	maxRetries uint64
 	delay      time.Duration
 }
 
 func NewInputSourceWithRetryPolicy(
-	delegate InputSource,
+	delegate evmreader.InputSource,
 	maxRetries uint64,
 	delay time.Duration,
 ) *InputSourceWithRetryPolicyDelegator {
@@ -41,8 +33,8 @@ func NewInputSourceWithRetryPolicy(
 }
 
 type retrieveInputsArgs struct {
-	opts        *FilterOpts
-	appContract []Address
+	opts        *bind.FilterOpts
+	appContract []common.Address
 	index       []*big.Int
 }
 
@@ -50,7 +42,7 @@ func (d *InputSourceWithRetryPolicyDelegator) RetrieveInputs(
 	opts *bind.FilterOpts,
 	appContract []common.Address,
 	index []*big.Int,
-) ([]InputBoxInputAdded, error) {
+) ([]inputbox.InputBoxInputAdded, error) {
 	return retrypolicy.CallFunctionWithRetryPolicy(d.retrieveInputs,
 		retrieveInputsArgs{
 			opts:        opts,
@@ -65,7 +57,7 @@ func (d *InputSourceWithRetryPolicyDelegator) RetrieveInputs(
 
 func (d *InputSourceWithRetryPolicyDelegator) retrieveInputs(
 	args retrieveInputsArgs,
-) ([]InputBoxInputAdded, error) {
+) ([]inputbox.InputBoxInputAdded, error) {
 	return d.delegate.RetrieveInputs(
 		args.opts,
 		args.appContract,
