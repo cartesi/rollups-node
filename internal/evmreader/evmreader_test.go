@@ -445,7 +445,7 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 		inputs, ok := obj.([]Input)
 		s.Require().True(ok)
 		s.Assert().Equal(2, len(inputs))
-	}).Return(nil)
+	}).Return([]uint64{}, nil)
 
 	// Start service
 	ready := make(chan struct{}, 1)
@@ -673,7 +673,7 @@ func newMockRepository() *MockRepository {
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
-		mock.Anything).Return(nil)
+		mock.Anything).Return([]uint64{}, nil)
 
 	repo.On("GetEpoch",
 		mock.Anything,
@@ -711,9 +711,9 @@ func (m *MockRepository) InsertInputsAndUpdateLastProcessedBlock(
 	inputs []Input,
 	blockNumber uint64,
 	appAddress common.Address,
-) error {
+) ([]uint64, error) {
 	args := m.Called(ctx, inputs, blockNumber)
-	return args.Error(0)
+	return args.Get(0).([]uint64), args.Error(1)
 }
 
 func (m *MockRepository) GetAllRunningApplications(

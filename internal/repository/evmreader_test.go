@@ -10,7 +10,6 @@ import (
 
 func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlock() {
 	input0 := Input{
-		Id:               6,
 		Index:            5,
 		CompletionStatus: InputStatusNone,
 		RawData:          common.Hex2Bytes("deadbeef"),
@@ -20,7 +19,6 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlock() {
 	}
 
 	input1 := Input{
-		Id:               7,
 		Index:            6,
 		CompletionStatus: InputStatusNone,
 		RawData:          common.Hex2Bytes("deadbeef"),
@@ -29,17 +27,17 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlock() {
 		EpochId:          1,
 	}
 
-	var inputs []Input
-	inputs = append(inputs, input0)
-	inputs = append(inputs, input1)
-
-	err := s.database.InsertInputsAndUpdateLastProcessedBlock(
+	ids, err := s.database.InsertInputsAndUpdateLastProcessedBlock(
 		s.ctx,
-		inputs,
+		[]Input{input0, input1},
 		6,
 		common.HexToAddress("deadbeef"),
 	)
 	s.Require().Nil(err)
+	s.Require().Len(ids, 2)
+
+	input0.Id = ids[0]
+	input1.Id = ids[1]
 
 	response, err := s.database.GetInput(s.ctx, 5, common.HexToAddress("deadbeef"))
 	s.Require().Nil(err)
@@ -52,11 +50,9 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlock() {
 }
 
 func (s *RepositorySuite) TestInsertInputsAndUpdateMostRecentFinalizedBlockEmptyInputs() {
-	var inputs []Input
-
-	err := s.database.InsertInputsAndUpdateLastProcessedBlock(
+	_, err := s.database.InsertInputsAndUpdateLastProcessedBlock(
 		s.ctx,
-		inputs,
+		nil,
 		7,
 		common.HexToAddress("deadbeef"),
 	)
@@ -70,7 +66,6 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateMostRecentFinalizedBlockEmpty
 
 func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlockInputAlreadyExists() {
 	input := Input{
-		Id:               5,
 		Index:            5,
 		CompletionStatus: InputStatusNone,
 		RawData:          common.Hex2Bytes("deadbeef"),
@@ -78,13 +73,9 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlockInputAlread
 		AppAddress:       common.HexToAddress("deadbeef"),
 		EpochId:          1,
 	}
-
-	var inputs []Input
-	inputs = append(inputs, input)
-
-	err := s.database.InsertInputsAndUpdateLastProcessedBlock(
+	_, err := s.database.InsertInputsAndUpdateLastProcessedBlock(
 		s.ctx,
-		inputs,
+		[]Input{input},
 		8,
 		common.HexToAddress("deadbeef"),
 	)
@@ -93,7 +84,6 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlockInputAlread
 
 func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlockDuplicateInput() {
 	input0 := Input{
-		Id:               7,
 		Index:            7,
 		CompletionStatus: InputStatusNone,
 		RawData:          common.Hex2Bytes("deadbeef"),
@@ -103,7 +93,6 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlockDuplicateIn
 	}
 
 	input1 := Input{
-		Id:               7,
 		Index:            7,
 		CompletionStatus: InputStatusNone,
 		RawData:          common.Hex2Bytes("deadbeef"),
@@ -112,13 +101,9 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlockDuplicateIn
 		EpochId:          1,
 	}
 
-	var inputs []Input
-	inputs = append(inputs, input0)
-	inputs = append(inputs, input1)
-
-	err := s.database.InsertInputsAndUpdateLastProcessedBlock(
+	_, err := s.database.InsertInputsAndUpdateLastProcessedBlock(
 		s.ctx,
-		inputs,
+		[]Input{input0, input1},
 		8,
 		common.HexToAddress("deadbeef"),
 	)
@@ -137,4 +122,13 @@ func (s *RepositorySuite) TestGetAllRunningApplications() {
 	response, err := s.database.GetAllRunningApplications(s.ctx)
 	s.Require().Nil(err)
 	s.Require().Equal(app, response[0])
+}
+
+func (s *RepositorySuite) TestGetMostRecentBlock() {
+	var block uint64 = 1
+
+	response, err := s.database.GetLastProcessedBlock(s.ctx, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
+
+	s.Require().Equal(block, response)
 }

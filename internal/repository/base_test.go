@@ -95,7 +95,7 @@ func (s *RepositorySuite) SetupDatabase() {
 		Id:              1,
 		Index:           0,
 		FirstBlock:      0,
-		LastBlock:       math.MaxUint64 / 2,
+		LastBlock:       200,
 		AppAddress:      app.ContractAddress,
 		ClaimHash:       nil,
 		TransactionHash: nil,
@@ -108,7 +108,7 @@ func (s *RepositorySuite) SetupDatabase() {
 	epoch2 := Epoch{
 		Id:              2,
 		Index:           1,
-		FirstBlock:      (math.MaxUint64 / 2) + 1,
+		FirstBlock:      201,
 		LastBlock:       math.MaxUint64,
 		AppAddress:      app.ContractAddress,
 		ClaimHash:       nil,
@@ -120,7 +120,6 @@ func (s *RepositorySuite) SetupDatabase() {
 	s.Require().Nil(err)
 
 	input1 := Input{
-		Id:               1,
 		Index:            1,
 		CompletionStatus: InputStatusAccepted,
 		RawData:          common.Hex2Bytes("deadbeef"),
@@ -131,11 +130,10 @@ func (s *RepositorySuite) SetupDatabase() {
 		EpochId:          1,
 	}
 
-	err = s.database.InsertInput(s.ctx, &input1)
+	input1.Id, err = s.database.InsertInput(s.ctx, &input1)
 	s.Require().Nil(err)
 
 	input2 := Input{
-		Id:               2,
 		Index:            2,
 		CompletionStatus: InputStatusNone,
 		RawData:          common.Hex2Bytes("deadbeef"),
@@ -146,11 +144,10 @@ func (s *RepositorySuite) SetupDatabase() {
 		EpochId:          1,
 	}
 
-	err = s.database.InsertInput(s.ctx, &input2)
+	input2.Id, err = s.database.InsertInput(s.ctx, &input2)
 	s.Require().Nil(err)
 
 	input3 := Input{
-		Id:               3,
 		Index:            3,
 		CompletionStatus: InputStatusAccepted,
 		RawData:          common.Hex2Bytes("deadbeef"),
@@ -161,7 +158,7 @@ func (s *RepositorySuite) SetupDatabase() {
 		EpochId:          2,
 	}
 
-	err = s.database.InsertInput(s.ctx, &input3)
+	input3.Id, err = s.database.InsertInput(s.ctx, &input3)
 	s.Require().Nil(err)
 
 	var siblings []Hash
@@ -174,7 +171,7 @@ func (s *RepositorySuite) SetupDatabase() {
 		OutputHashesSiblings: siblings,
 	}
 
-	err = s.database.InsertOutput(s.ctx, &output0)
+	output0.Id, err = s.database.InsertOutput(s.ctx, &output0)
 	s.Require().Nil(err)
 
 	output1 := Output{
@@ -184,7 +181,7 @@ func (s *RepositorySuite) SetupDatabase() {
 		OutputHashesSiblings: siblings,
 	}
 
-	err = s.database.InsertOutput(s.ctx, &output1)
+	output1.Id, err = s.database.InsertOutput(s.ctx, &output1)
 	s.Require().Nil(err)
 
 	output2 := Output{
@@ -194,7 +191,7 @@ func (s *RepositorySuite) SetupDatabase() {
 		OutputHashesSiblings: siblings,
 	}
 
-	err = s.database.InsertOutput(s.ctx, &output2)
+	output2.Id, err = s.database.InsertOutput(s.ctx, &output2)
 	s.Require().Nil(err)
 
 	output3 := Output{
@@ -204,7 +201,7 @@ func (s *RepositorySuite) SetupDatabase() {
 		OutputHashesSiblings: siblings,
 	}
 
-	err = s.database.InsertOutput(s.ctx, &output3)
+	output3.Id, err = s.database.InsertOutput(s.ctx, &output3)
 	s.Require().Nil(err)
 
 	report := Report{
@@ -295,7 +292,7 @@ func (s *RepositorySuite) TestInputFailsDuplicateRow() {
 		AppAddress:       common.HexToAddress("deadbeef"),
 	}
 
-	err := s.database.InsertInput(s.ctx, &input)
+	_, err := s.database.InsertInput(s.ctx, &input)
 	s.Require().ErrorContains(err, "duplicate key value")
 }
 
@@ -308,7 +305,7 @@ func (s *RepositorySuite) TestInputFailsApplicationDoesntExist() {
 		AppAddress:       common.HexToAddress("deadbeefaaa"),
 	}
 
-	err := s.database.InsertInput(s.ctx, &input)
+	_, err := s.database.InsertInput(s.ctx, &input)
 	s.Require().ErrorContains(err, "violates foreign key constraint")
 }
 
@@ -343,7 +340,7 @@ func (s *RepositorySuite) TestOutputFailsDuplicateRow() {
 		OutputHashesSiblings: nil,
 	}
 
-	err := s.database.InsertOutput(s.ctx, &output)
+	_, err := s.database.InsertOutput(s.ctx, &output)
 	s.Require().ErrorContains(err, "duplicate key value")
 }
 
@@ -355,7 +352,7 @@ func (s *RepositorySuite) TestOutputFailsInputDoesntExist() {
 		OutputHashesSiblings: nil,
 	}
 
-	err := s.database.InsertOutput(s.ctx, &output)
+	_, err := s.database.InsertOutput(s.ctx, &output)
 	s.Require().ErrorContains(err, "violates foreign key constraint")
 }
 
@@ -407,7 +404,7 @@ func (s *RepositorySuite) TestEpochExists() {
 		Status:          EpochStatusOpen,
 		Index:           0,
 		FirstBlock:      0,
-		LastBlock:       (math.MaxUint64 / 2),
+		LastBlock:       200,
 		TransactionHash: nil,
 		ClaimHash:       nil,
 		AppAddress:      common.HexToAddress("deadbeef"),

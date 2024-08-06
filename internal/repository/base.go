@@ -166,7 +166,7 @@ func (pg *Database) InsertEpoch(
 func (pg *Database) InsertInput(
 	ctx context.Context,
 	input *Input,
-) error {
+) (uint64, error) {
 	query := `
 	INSERT INTO input
 		(index,
@@ -185,7 +185,10 @@ func (pg *Database) InsertInput(
 		@machineHash,
 		@outputsHash,
 		@applicationAddress,
-		@epochId)`
+		@epochId)
+	RETURNING
+		id
+	`
 
 	args := pgx.NamedArgs{
 		"index":              input.Index,
@@ -198,18 +201,19 @@ func (pg *Database) InsertInput(
 		"epochId":            input.EpochId,
 	}
 
-	_, err := pg.db.Exec(ctx, query, args)
+	var id uint64
+	err := pg.db.QueryRow(ctx, query, args).Scan(&id)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrInsertRow, err)
+		return 0, errors.Join(ErrInsertRow, err)
 	}
 
-	return nil
+	return id, nil
 }
 
 func (pg *Database) InsertOutput(
 	ctx context.Context,
 	output *Output,
-) error {
+) (uint64, error) {
 	query := `
 	INSERT INTO output
 		(index,
@@ -220,7 +224,10 @@ func (pg *Database) InsertOutput(
 		(@index,
 		@rawData,
 		@outputHashesSiblings,
-		@inputId)`
+		@inputId)
+	RETURNING
+		id
+	`
 
 	args := pgx.NamedArgs{
 		"inputId":              output.InputId,
@@ -229,12 +236,13 @@ func (pg *Database) InsertOutput(
 		"outputHashesSiblings": output.OutputHashesSiblings,
 	}
 
-	_, err := pg.db.Exec(ctx, query, args)
+	var id uint64
+	err := pg.db.QueryRow(ctx, query, args).Scan(&id)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrInsertRow, err)
+		return 0, errors.Join(ErrInsertRow, err)
 	}
 
-	return nil
+	return id, nil
 }
 
 func (pg *Database) InsertReport(
