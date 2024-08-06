@@ -16,6 +16,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -115,7 +116,7 @@ func (s *EvmReaderSuite) SetupTest() {
 		s.wsClient,
 		s.inputBox,
 		s.repository,
-		NodePersistentConfig{
+		model.NodePersistentConfig{
 			DefaultBlock:            model.DefaultBlockStatusLatest,
 			InputBoxDeploymentBlock: 0,
 		},
@@ -170,7 +171,7 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 
 	waitGroup := sync.WaitGroup{}
 	wsClient := FakeWSEhtClient{}
-	wsClient.NewHeaders = []*Header{&header0, &header1}
+	wsClient.NewHeaders = []*types.Header{&header0, &header1}
 	wsClient.WaitGroup = &waitGroup
 	inputReader := NewEvmReader(
 		s.client,
@@ -188,14 +189,14 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 	s.repository.On(
 		"GetAllRunningApplications",
 		mock.Anything,
-	).Return([]Application{{
+	).Return([]model.Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		LastProcessedBlock: 0x00,
 	}}, nil).Once()
 	s.repository.On(
 		"GetAllRunningApplications",
 		mock.Anything,
-	).Return([]Application{{
+	).Return([]model.Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		LastProcessedBlock: 0x11,
 	}}, nil).Once()
@@ -220,7 +221,7 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 
 	// Prepare sequence of inputs
 	s.inputBox.Unset("RetrieveInputs")
-	events_0 := []InputBoxInputAdded{inputAddedEvent0}
+	events_0 := []inputbox.InputBoxInputAdded{inputAddedEvent0}
 	currentMostRecentFinalizedBlockNumber_0 := uint64(0x11)
 	retrieveInputsOpts_0 := bind.FilterOpts{
 		Context: s.ctx,
@@ -234,7 +235,7 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 		mock.Anything,
 	).Return(events_0, nil)
 
-	events_1 := []InputBoxInputAdded{inputAddedEvent1}
+	events_1 := []inputbox.InputBoxInputAdded{inputAddedEvent1}
 	currentMostRecentFinalizedBlockNumber_1 := uint64(0x12)
 	retrieveInputsOpts_1 := bind.FilterOpts{
 		Context: s.ctx,
@@ -278,7 +279,7 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 
 	waitGroup := sync.WaitGroup{}
 	wsClient := FakeWSEhtClient{}
-	wsClient.NewHeaders = []*Header{&header0, &header1}
+	wsClient.NewHeaders = []*types.Header{&header0, &header1}
 	wsClient.WaitGroup = &waitGroup
 	inputReader := NewEvmReader(
 		s.client,
@@ -296,14 +297,14 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 	s.repository.On(
 		"GetAllRunningApplications",
 		mock.Anything,
-	).Return([]Application{{
+	).Return([]model.Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		LastProcessedBlock: 0x00,
 	}}, nil).Once()
 	s.repository.On(
 		"GetAllRunningApplications",
 		mock.Anything,
-	).Return([]Application{{
+	).Return([]model.Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		LastProcessedBlock: 0x11,
 	}}, nil).Once()
@@ -328,7 +329,7 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 
 	// Prepare sequence of inputs
 	s.inputBox.Unset("RetrieveInputs")
-	events_0 := []InputBoxInputAdded{}
+	events_0 := []inputbox.InputBoxInputAdded{}
 	currentMostRecentFinalizedBlockNumber_0 := uint64(0x11)
 	retrieveInputsOpts_0 := bind.FilterOpts{
 		Context: s.ctx,
@@ -342,7 +343,7 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 		mock.Anything,
 	).Return(events_0, nil)
 
-	events_1 := []InputBoxInputAdded{}
+	events_1 := []inputbox.InputBoxInputAdded{}
 	currentMostRecentFinalizedBlockNumber_1 := uint64(0x12)
 	retrieveInputsOpts_1 := bind.FilterOpts{
 		Context: s.ctx,
@@ -386,7 +387,7 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 
 	waitGroup := sync.WaitGroup{}
 	wsClient := FakeWSEhtClient{}
-	wsClient.NewHeaders = []*Header{&header2}
+	wsClient.NewHeaders = []*types.Header{&header2}
 	wsClient.WaitGroup = &waitGroup
 	inputReader := NewEvmReader(
 		s.client,
@@ -428,7 +429,7 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 	s.repository.On(
 		"GetAllRunningApplications",
 		mock.Anything,
-	).Return([]Application{{
+	).Return([]model.Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		LastProcessedBlock: 0x12,
 	}}, nil).Once()
@@ -476,7 +477,7 @@ func (s *EvmReaderSuite) TestItStartsWhenLasProcessedBlockIsTheMostRecentBlock()
 
 	waitGroup := sync.WaitGroup{}
 	wsClient := FakeWSEhtClient{}
-	wsClient.NewHeaders = []*Header{&header2}
+	wsClient.NewHeaders = []*types.Header{&header2}
 	wsClient.WaitGroup = &waitGroup
 	inputReader := NewEvmReader(
 		s.client,
@@ -502,7 +503,7 @@ func (s *EvmReaderSuite) TestItStartsWhenLasProcessedBlockIsTheMostRecentBlock()
 	s.repository.On(
 		"GetAllRunningApplications",
 		mock.Anything,
-	).Return([]Application{{
+	).Return([]model.Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		LastProcessedBlock: 0x11,
 	}}, nil).Once()
@@ -565,17 +566,17 @@ func (m *MockEthClient) Unset(methodName string) {
 func (m *MockEthClient) HeaderByNumber(
 	ctx context.Context,
 	number *big.Int,
-) (*Header, error) {
+) (*types.Header, error) {
 	args := m.Called(ctx, number)
-	return args.Get(0).(*Header), args.Error(1)
+	return args.Get(0).(*types.Header), args.Error(1)
 }
 
 func (m *MockEthClient) SubscribeNewHead(
 	ctx context.Context,
-	ch chan<- *Header,
-) (Subscription, error) {
+	ch chan<- *types.Header,
+) (ethereum.Subscription, error) {
 	args := m.Called(ctx, ch)
-	return args.Get(0).(Subscription), args.Error(1)
+	return args.Get(0).(ethereum.Subscription), args.Error(1)
 }
 
 // Mock ethereum.Subscription
@@ -602,14 +603,14 @@ func (m *MockSubscription) Err() <-chan error {
 
 // FakeClient
 type FakeWSEhtClient struct {
-	NewHeaders []*Header
+	NewHeaders []*types.Header
 	WaitGroup  *sync.WaitGroup
 }
 
 func (f *FakeWSEhtClient) SubscribeNewHead(
-	ctx Context,
-	ch chan<- *Header,
-) (Subscription, error) {
+	ctx context.Context,
+	ch chan<- *types.Header,
+) (ethereum.Subscription, error) {
 	go func() {
 
 		for _, header := range f.NewHeaders {
@@ -630,7 +631,7 @@ type MockInputBox struct {
 func newMockInputBox(s *EvmReaderSuite) *MockInputBox {
 	inputSource := &MockInputBox{}
 
-	events := []InputBoxInputAdded{inputAddedEvent0}
+	events := []inputbox.InputBoxInputAdded{inputAddedEvent0}
 	inputSource.On("RetrieveInputs",
 		mock.Anything,
 		mock.Anything,
@@ -649,12 +650,12 @@ func (m *MockInputBox) Unset(methodName string) {
 }
 
 func (m *MockInputBox) RetrieveInputs(
-	opts *FilterOpts,
-	appContract []Address,
+	opts *bind.FilterOpts,
+	appContract []common.Address,
 	index []*big.Int,
-) ([]InputBoxInputAdded, error) {
+) ([]inputbox.InputBoxInputAdded, error) {
 	args := m.Called(opts, appContract, index)
-	return args.Get(0).([]InputBoxInputAdded), args.Error(1)
+	return args.Get(0).([]inputbox.InputBoxInputAdded), args.Error(1)
 }
 
 // Mock InputReaderRepository
@@ -706,41 +707,41 @@ func (m *MockRepository) Unset(methodName string) {
 }
 
 func (m *MockRepository) InsertInputsAndUpdateLastProcessedBlock(
-	ctx Context,
-	inputs []Input,
+	ctx context.Context,
+	inputs []model.Input,
 	blockNumber uint64,
-	appAddress Address,
+	appAddress common.Address,
 ) error {
 	args := m.Called(ctx, inputs, blockNumber)
 	return args.Error(0)
 }
 
 func (m *MockRepository) GetAllRunningApplications(
-	ctx Context,
-) ([]Application, error) {
+	ctx context.Context,
+) ([]model.Application, error) {
 	args := m.Called(ctx)
-	return args.Get(0).([]Application), args.Error(1)
+	return args.Get(0).([]model.Application), args.Error(1)
 }
 
 func (m *MockRepository) GetNodeConfig(
-	ctx Context,
-) (*NodePersistentConfig, error) {
+	ctx context.Context,
+) (*model.NodePersistentConfig, error) {
 	args := m.Called(ctx)
-	return args.Get(0).(*NodePersistentConfig), args.Error(1)
+	return args.Get(0).(*model.NodePersistentConfig), args.Error(1)
 }
 
 func (m *MockRepository) GetEpoch(
-	ctx Context,
+	ctx context.Context,
 	index uint64,
-	appAddress Address,
-) (*Epoch, error) {
+	appAddress common.Address,
+) (*model.Epoch, error) {
 	args := m.Called(ctx)
-	return args.Get(0).(*Epoch), args.Error(1)
+	return args.Get(0).(*model.Epoch), args.Error(1)
 }
 
 func (m *MockRepository) InsertEpoch(
-	ctx Context,
-	epoch *Epoch,
+	ctx context.Context,
+	epoch *model.Epoch,
 ) (uint64, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(uint64), args.Error(1)
