@@ -45,7 +45,7 @@ func getPort(c config.NodeConfig, offset portOffset) int {
 // Get the redis endpoint based on whether the experimental sunodo validator mode is enabled.
 func getRedisEndpoint(c config.NodeConfig) string {
 	if c.ExperimentalSunodoValidatorEnabled {
-		return c.ExperimentalSunodoValidatorRedisEndpoint
+		return c.ExperimentalSunodoValidatorRedisEndpoint.Value
 	} else {
 		return fmt.Sprintf("redis://%v:%v", localhost, getPort(c, portOffsetRedis))
 	}
