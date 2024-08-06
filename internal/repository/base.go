@@ -123,9 +123,7 @@ func (pg *Database) InsertEpoch(
 	epoch *Epoch,
 ) (uint64, error) {
 
-	var (
-		id uint64
-	)
+	var id uint64
 
 	query := `
 	INSERT INTO epoch

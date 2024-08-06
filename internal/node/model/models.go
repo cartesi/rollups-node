@@ -70,13 +70,13 @@ type Application struct {
 
 type Epoch struct {
 	Id              uint64
-	AppAddress      Address
 	Index           uint64
 	FirstBlock      uint64
 	LastBlock       uint64
 	ClaimHash       *Hash
 	TransactionHash *Hash
 	Status          EpochStatus
+	AppAddress      Address
 }
 
 type Input struct {
@@ -109,7 +109,7 @@ type Report struct {
 
 type Snapshot struct {
 	Id         uint64
+	URI        string
 	InputId    uint64
 	AppAddress Address
-	URI        string
 }

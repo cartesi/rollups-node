@@ -63,18 +63,18 @@ func (pg *Database) InsertInputsAndUpdateLastProcessedBlock(
 		}
 		_, err = tx.Exec(ctx, query, inputArgs)
 		if err != nil {
-			return errors.Join(fmt.Errorf("%w: %w", errInsertInputs, err), tx.Rollback(ctx))
+			return errors.Join(errInsertInputs, err, tx.Rollback(ctx))
 		}
 	}
 
 	_, err = tx.Exec(ctx, query2, args)
 	if err != nil {
-		return errors.Join(fmt.Errorf("%w: %w", errInsertInputs, err), tx.Rollback(ctx))
+		return errors.Join(errInsertInputs, err, tx.Rollback(ctx))
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		return errors.Join(fmt.Errorf("%w: %w", errInsertInputs, err), tx.Rollback(ctx))
+		return errors.Join(errInsertInputs, err, tx.Rollback(ctx))
 	}
 
 	return nil
