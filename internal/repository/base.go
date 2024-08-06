@@ -421,7 +421,7 @@ func (pg *Database) GetEpoch(
 	FROM
 		epoch
 	WHERE
-		index=@index and application_address=@appAddress`
+		index=@index AND application_address=@appAddress`
 
 	args := pgx.NamedArgs{
 		"index":      indexKey,
@@ -492,7 +492,7 @@ func (pg *Database) GetInput(
 	FROM
 		input
 	WHERE
-		index=@index and application_address=@appAddress`
+		index=@index AND application_address=@appAddress`
 
 	args := pgx.NamedArgs{
 		"index":      indexKey,
@@ -562,7 +562,7 @@ func (pg *Database) GetOutput(
 	ON
 		o.input_id=i.id
 	WHERE
-		o.index=@index and i.application_address=@appAddress`
+		o.index=@index AND i.application_address=@appAddress`
 
 	args := pgx.NamedArgs{
 		"index":      indexKey,
@@ -621,7 +621,7 @@ func (pg *Database) GetReport(
 	ON
 		r.input_id=i.id
 	WHERE
-		r.index=@index and i.application_address=@appAddress`
+		r.index=@index AND i.application_address=@appAddress`
 
 	args := pgx.NamedArgs{
 		"index":      indexKey,
@@ -675,7 +675,7 @@ func (pg *Database) GetSnapshot(
 	ON
 		i.id = s.input_id
 	WHERE
-		s.application_address=@appAddress and i.index=@inputIndex
+		s.application_address=@appAddress AND i.index=@inputIndex
 	`
 
 	args := pgx.NamedArgs{
