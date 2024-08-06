@@ -73,3 +73,4 @@ COMMENT ON VIEW graphql."reports" is
 
 COMMENT ON VIEW graphql."epochs" is
   E'@foreignKey (application_address) references applications(contract_address)|@fieldName applicationByApplicationAddress';
+  
