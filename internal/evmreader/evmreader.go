@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math"
 	"math/big"
 
 	"github.com/cartesi/rollups-node/internal/node/model"
@@ -298,34 +297,9 @@ func (r *EvmReader) readInputs(
 	filter := []Address{}
 
 	var inputsMap = make(map[Address][]Input)
-	var epochMap = make(map[Address]Epoch)
 	for _, app := range apps {
 		filter = append(filter, app.ContractAddress)
 		inputsMap[app.ContractAddress] = []Input{}
-
-		// TEMPORARY Get the Default Epoch until epochs are not properly handled
-		epoch, err := r.repository.GetEpoch(ctx, 0, app.ContractAddress)
-		if err != nil {
-			return err
-		}
-		if epoch == nil {
-			// Create a Default Epoch
-			epoch = &model.Epoch{
-				AppAddress: app.ContractAddress,
-				Index:      0,
-				FirstBlock: 0,
-				LastBlock:  math.MaxUint64,
-				Status:     model.EpochStatusReceivingInputs,
-			}
-			epochId, err := r.repository.InsertEpoch(ctx, epoch)
-			if err != nil {
-				return err
-			}
-			epoch.Id = epochId
-
-		}
-		epochMap[app.ContractAddress] = *epoch
-
 	}
 
 	opts := bind.FilterOpts{
@@ -350,7 +324,6 @@ func (r *EvmReader) readInputs(
 			RawData:          event.Input,
 			BlockNumber:      event.Raw.BlockNumber,
 			AppAddress:       event.AppContract,
-			EpochId:          epochMap[event.AppContract].Id,
 		}
 		inputsMap[event.AppContract] = append(inputsMap[event.AppContract], input)
 	}
