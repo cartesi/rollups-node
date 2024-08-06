@@ -43,3 +43,11 @@ func (s *ConfigTestSuite) TestAuthIsNotSetWhenClaimerIsDisabled() {
 	c := FromEnv()
 	assert.Nil(s.T(), c.Auth)
 }
+
+func (s *ConfigTestSuite) TestExperimentalSunodoValidatorRedisEndpointIsRedacted() {
+	os.Setenv("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED", "true")
+	os.Setenv("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT",
+		"redis://username:p@ssw0rd@hostname:9999")
+	c := FromEnv()
+	assert.Equal(s.T(), "[REDACTED]", c.ExperimentalSunodoValidatorRedisEndpoint.String())
+}
