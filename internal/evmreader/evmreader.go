@@ -36,7 +36,7 @@ type EvmReaderRepository interface {
 		inputs []Input,
 		blockNumber uint64,
 		appAddress common.Address,
-	) error
+	) ([]uint64, error)
 	GetAllRunningApplications(
 		ctx context.Context,
 	) ([]Application, error)
@@ -326,7 +326,7 @@ func (r *EvmReader) readInputs(
 				len(inputs),
 			)
 		}
-		err = r.repository.InsertInputsAndUpdateLastProcessedBlock(
+		_, err = r.repository.InsertInputsAndUpdateLastProcessedBlock(
 			ctx,
 			inputs,
 			endBlock,

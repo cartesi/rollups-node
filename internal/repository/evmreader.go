@@ -17,7 +17,7 @@ func (pg *Database) InsertInputsAndUpdateLastProcessedBlock(
 	inputs []Input,
 	blockNumber uint64,
 	contractAddress Address,
-) error {
+) ([]uint64, error) {
 	var errInsertInputs = errors.New("unable to insert inputs")
 
 	query := `
@@ -34,7 +34,10 @@ func (pg *Database) InsertInputsAndUpdateLastProcessedBlock(
 		@rawData,
 		@blockNumber,
 		@appAddress,
-		@epochId)`
+		@epochId)
+	RETURNING
+		id
+	`
 
 	query2 := `
 	UPDATE application
@@ -49,9 +52,13 @@ func (pg *Database) InsertInputsAndUpdateLastProcessedBlock(
 
 	tx, err := pg.db.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("%w: %w", errInsertInputs, err)
+		return nil, errors.Join(errInsertInputs, err)
 	}
 
+	var (
+		id  uint64
+		ids []uint64
+	)
 	for _, input := range inputs {
 		inputArgs := pgx.NamedArgs{
 			"index":       input.Index,
@@ -61,25 +68,28 @@ func (pg *Database) InsertInputsAndUpdateLastProcessedBlock(
 			"appAddress":  input.AppAddress,
 			"epochId":     input.EpochId,
 		}
-		_, err = tx.Exec(ctx, query, inputArgs)
+		err = tx.QueryRow(ctx, query, inputArgs).Scan(&id)
 		if err != nil {
-			return errors.Join(errInsertInputs, err, tx.Rollback(ctx))
+			return nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
 		}
+		ids = append(ids, id)
 	}
 
 	_, err = tx.Exec(ctx, query2, args)
 	if err != nil {
-		return errors.Join(errInsertInputs, err, tx.Rollback(ctx))
+		return nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		return errors.Join(errInsertInputs, err, tx.Rollback(ctx))
+		return nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
 	}
 
-	return nil
+	return ids, nil
 }
 
+// GetAllRunningApplications returns a slice with the applications being
+// actively handled by the node.
 func (pg *Database) GetAllRunningApplications(
 	ctx context.Context,
 ) ([]Application, error) {
@@ -147,4 +157,30 @@ func (pg *Database) getAllApplicationsByStatus(
 	}
 
 	return results, nil
+}
+
+func (pg *Database) GetLastProcessedBlock(
+	ctx context.Context,
+	appAddress Address,
+) (uint64, error) {
+	var block uint64
+
+	query := `
+	SELECT
+		last_processed_block
+	FROM
+		application
+	WHERE
+		contract_address=@address`
+
+	args := pgx.NamedArgs{
+		"address": appAddress,
+	}
+
+	err := pg.db.QueryRow(ctx, query, args).Scan(&block)
+	if err != nil {
+		return 0, fmt.Errorf("QueryRow failed: %v\n", err)
+	}
+
+	return block, nil
 }
