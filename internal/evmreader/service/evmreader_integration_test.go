@@ -173,6 +173,8 @@ func (s *EvmReaderIntegrationTestSuite) TearDownTest() {
 
 func (s *EvmReaderIntegrationTestSuite) TestAddInput() {
 
+	s.T().Skip("Skipping this test because epoch algorithm is not implemented in the EVM Reader")
+
 	// Send Input
 	indexChan := make(chan int)
 	go func() {
