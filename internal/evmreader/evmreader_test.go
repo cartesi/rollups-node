@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/node/model"
+	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -116,8 +116,8 @@ func (s *EvmReaderSuite) SetupTest() {
 		s.wsClient,
 		s.inputBox,
 		s.repository,
-		model.NodePersistentConfig{
-			DefaultBlock:            model.DefaultBlockStatusLatest,
+		NodePersistentConfig{
+			DefaultBlock:            DefaultBlockStatusLatest,
 			InputBoxDeploymentBlock: 0,
 		},
 	)
@@ -178,9 +178,9 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 		&wsClient,
 		s.inputBox,
 		s.repository,
-		model.NodePersistentConfig{
+		NodePersistentConfig{
 			InputBoxDeploymentBlock: 0x10,
-			DefaultBlock:            model.DefaultBlockStatusLatest,
+			DefaultBlock:            DefaultBlockStatusLatest,
 		},
 	)
 
@@ -189,14 +189,14 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 	s.repository.On(
 		"GetAllRunningApplications",
 		mock.Anything,
-	).Return([]model.Application{{
+	).Return([]Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		LastProcessedBlock: 0x00,
 	}}, nil).Once()
 	s.repository.On(
 		"GetAllRunningApplications",
 		mock.Anything,
-	).Return([]model.Application{{
+	).Return([]Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		LastProcessedBlock: 0x11,
 	}}, nil).Once()
@@ -286,9 +286,9 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 		&wsClient,
 		s.inputBox,
 		s.repository,
-		model.NodePersistentConfig{
+		NodePersistentConfig{
 			InputBoxDeploymentBlock: 0x10,
-			DefaultBlock:            model.DefaultBlockStatusLatest,
+			DefaultBlock:            DefaultBlockStatusLatest,
 		},
 	)
 
@@ -297,14 +297,14 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 	s.repository.On(
 		"GetAllRunningApplications",
 		mock.Anything,
-	).Return([]model.Application{{
+	).Return([]Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		LastProcessedBlock: 0x00,
 	}}, nil).Once()
 	s.repository.On(
 		"GetAllRunningApplications",
 		mock.Anything,
-	).Return([]model.Application{{
+	).Return([]Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		LastProcessedBlock: 0x11,
 	}}, nil).Once()
@@ -394,9 +394,9 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 		&wsClient,
 		s.inputBox,
 		s.repository,
-		model.NodePersistentConfig{
+		NodePersistentConfig{
 			InputBoxDeploymentBlock: 0x10,
-			DefaultBlock:            model.DefaultBlockStatusLatest,
+			DefaultBlock:            DefaultBlockStatusLatest,
 		},
 	)
 
@@ -429,7 +429,7 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 	s.repository.On(
 		"GetAllRunningApplications",
 		mock.Anything,
-	).Return([]model.Application{{
+	).Return([]Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		LastProcessedBlock: 0x12,
 	}}, nil).Once()
@@ -440,9 +440,9 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 		mock.Anything,
 		mock.Anything,
 	).Once().Run(func(arguments mock.Arguments) {
-		var inputs []model.Input
+		var inputs []Input
 		obj := arguments.Get(1)
-		inputs, ok := obj.([]model.Input)
+		inputs, ok := obj.([]Input)
 		s.Require().True(ok)
 		s.Assert().Equal(2, len(inputs))
 	}).Return(nil)
@@ -484,9 +484,9 @@ func (s *EvmReaderSuite) TestItStartsWhenLasProcessedBlockIsTheMostRecentBlock()
 		&wsClient,
 		s.inputBox,
 		s.repository,
-		model.NodePersistentConfig{
+		NodePersistentConfig{
 			InputBoxDeploymentBlock: 0x10,
-			DefaultBlock:            model.DefaultBlockStatusLatest,
+			DefaultBlock:            DefaultBlockStatusLatest,
 		},
 	)
 
@@ -503,7 +503,7 @@ func (s *EvmReaderSuite) TestItStartsWhenLasProcessedBlockIsTheMostRecentBlock()
 	s.repository.On(
 		"GetAllRunningApplications",
 		mock.Anything,
-	).Return([]model.Application{{
+	).Return([]Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		LastProcessedBlock: 0x11,
 	}}, nil).Once()
@@ -679,12 +679,12 @@ func newMockRepository() *MockRepository {
 		mock.Anything,
 		mock.Anything,
 		mock.Anything).Return(
-		&model.Epoch{
+		&Epoch{
 			Id:              1,
 			Index:           0,
 			FirstBlock:      0,
 			LastBlock:       math.MaxUint64,
-			Status:          model.EpochStatusOpen,
+			Status:          EpochStatusOpen,
 			AppAddress:      common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 			ClaimHash:       nil,
 			TransactionHash: nil,
@@ -708,7 +708,7 @@ func (m *MockRepository) Unset(methodName string) {
 
 func (m *MockRepository) InsertInputsAndUpdateLastProcessedBlock(
 	ctx context.Context,
-	inputs []model.Input,
+	inputs []Input,
 	blockNumber uint64,
 	appAddress common.Address,
 ) error {
@@ -718,30 +718,30 @@ func (m *MockRepository) InsertInputsAndUpdateLastProcessedBlock(
 
 func (m *MockRepository) GetAllRunningApplications(
 	ctx context.Context,
-) ([]model.Application, error) {
+) ([]Application, error) {
 	args := m.Called(ctx)
-	return args.Get(0).([]model.Application), args.Error(1)
+	return args.Get(0).([]Application), args.Error(1)
 }
 
 func (m *MockRepository) GetNodeConfig(
 	ctx context.Context,
-) (*model.NodePersistentConfig, error) {
+) (*NodePersistentConfig, error) {
 	args := m.Called(ctx)
-	return args.Get(0).(*model.NodePersistentConfig), args.Error(1)
+	return args.Get(0).(*NodePersistentConfig), args.Error(1)
 }
 
 func (m *MockRepository) GetEpoch(
 	ctx context.Context,
 	index uint64,
 	appAddress common.Address,
-) (*model.Epoch, error) {
+) (*Epoch, error) {
 	args := m.Called(ctx)
-	return args.Get(0).(*model.Epoch), args.Error(1)
+	return args.Get(0).(*Epoch), args.Error(1)
 }
 
 func (m *MockRepository) InsertEpoch(
 	ctx context.Context,
-	epoch *model.Epoch,
+	epoch *Epoch,
 ) (uint64, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(uint64), args.Error(1)

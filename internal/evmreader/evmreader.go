@@ -9,7 +9,7 @@ import (
 	"log/slog"
 	"math/big"
 
-	"github.com/cartesi/rollups-node/internal/node/model"
+	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -33,24 +33,24 @@ type InputSource interface {
 type EvmReaderRepository interface {
 	InsertInputsAndUpdateLastProcessedBlock(
 		ctx context.Context,
-		inputs []model.Input,
+		inputs []Input,
 		blockNumber uint64,
 		appAddress common.Address,
 	) error
 	GetAllRunningApplications(
 		ctx context.Context,
-	) ([]model.Application, error)
+	) ([]Application, error)
 	GetNodeConfig(
 		ctx context.Context,
-	) (*model.NodePersistentConfig, error)
+	) (*NodePersistentConfig, error)
 	GetEpoch(
 		ctx context.Context,
 		indexKey uint64,
 		appAddressKey common.Address,
-	) (*model.Epoch, error)
+	) (*Epoch, error)
 	InsertEpoch(
 		ctx context.Context,
-		epoch *model.Epoch,
+		epoch *Epoch,
 	) (uint64, error)
 }
 
@@ -86,7 +86,7 @@ type EvmReader struct {
 	wsClient    EthWsClient
 	inputSource InputSource
 	repository  EvmReaderRepository
-	config      model.NodePersistentConfig
+	config      NodePersistentConfig
 }
 
 func (r *EvmReader) String() string {
@@ -99,7 +99,7 @@ func NewEvmReader(
 	wsClient EthWsClient,
 	inputSource InputSource,
 	repository EvmReaderRepository,
-	config model.NodePersistentConfig,
+	config NodePersistentConfig,
 ) EvmReader {
 	return EvmReader{
 		client:      client,
@@ -228,9 +228,9 @@ func (r *EvmReader) checkForNewInputs(ctx context.Context) error {
 
 // Group Applications that have processed til the same block height
 func (r *EvmReader) classifyApplicationsByLastProcessedInput(
-	apps []model.Application,
-) map[uint64][]model.Application {
-	result := make(map[uint64][]model.Application)
+	apps []Application,
+) map[uint64][]Application {
+	result := make(map[uint64][]Application)
 	for _, app := range apps {
 		result[app.LastProcessedBlock] = append(result[app.LastProcessedBlock], app)
 	}
@@ -242,18 +242,18 @@ func (r *EvmReader) classifyApplicationsByLastProcessedInput(
 // given default block
 func (r *EvmReader) fetchMostRecentHeader(
 	ctx context.Context,
-	defaultBlock model.DefaultBlock,
+	defaultBlock DefaultBlock,
 ) (*types.Header, error) {
 
 	var defaultBlockNumber int64
 	switch defaultBlock {
-	case model.DefaultBlockStatusPending:
+	case DefaultBlockStatusPending:
 		defaultBlockNumber = rpc.PendingBlockNumber.Int64()
-	case model.DefaultBlockStatusLatest:
+	case DefaultBlockStatusLatest:
 		defaultBlockNumber = rpc.LatestBlockNumber.Int64()
-	case model.DefaultBlockStatusFinalized:
+	case DefaultBlockStatusFinalized:
 		defaultBlockNumber = rpc.FinalizedBlockNumber.Int64()
-	case model.DefaultBlockStatusSafe:
+	case DefaultBlockStatusSafe:
 		defaultBlockNumber = rpc.SafeBlockNumber.Int64()
 	default:
 		return nil, fmt.Errorf("Default block '%v' not supported", defaultBlock)
@@ -278,14 +278,14 @@ func (r *EvmReader) readInputs(
 	ctx context.Context,
 	startBlock uint64,
 	endBlock uint64,
-	apps []model.Application,
+	apps []Application,
 ) error {
 	filter := []common.Address{}
 
-	var inputsMap = make(map[common.Address][]model.Input)
+	var inputsMap = make(map[common.Address][]Input)
 	for _, app := range apps {
 		filter = append(filter, app.ContractAddress)
-		inputsMap[app.ContractAddress] = []model.Input{}
+		inputsMap[app.ContractAddress] = []Input{}
 	}
 
 	opts := bind.FilterOpts{
@@ -304,9 +304,9 @@ func (r *EvmReader) readInputs(
 
 	for _, event := range inputsEvents {
 		slog.Debug("received input ", "app", event.AppContract, "index", event.Index)
-		input := model.Input{
+		input := Input{
 			Index:            event.Index.Uint64(),
-			CompletionStatus: model.InputStatusNone,
+			CompletionStatus: InputStatusNone,
 			RawData:          event.Input,
 			BlockNumber:      event.Raw.BlockNumber,
 			AppAddress:       event.AppContract,
