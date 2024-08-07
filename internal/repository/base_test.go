@@ -99,7 +99,7 @@ func (s *RepositorySuite) SetupDatabase() {
 		AppAddress:      app.ContractAddress,
 		ClaimHash:       nil,
 		TransactionHash: nil,
-		Status:          EpochStatusReceivingInputs,
+		Status:          EpochStatusOpen,
 	}
 
 	_, err = s.database.InsertEpoch(s.ctx, &epoch1)
@@ -113,7 +113,7 @@ func (s *RepositorySuite) SetupDatabase() {
 		AppAddress:      app.ContractAddress,
 		ClaimHash:       nil,
 		TransactionHash: nil,
-		Status:          EpochStatusReceivingInputs,
+		Status:          EpochStatusOpen,
 	}
 
 	_, err = s.database.InsertEpoch(s.ctx, &epoch2)
@@ -403,7 +403,7 @@ func (s *RepositorySuite) TestEpochExists() {
 
 	epoch := Epoch{
 		Id:              1,
-		Status:          EpochStatusReceivingInputs,
+		Status:          EpochStatusOpen,
 		Index:           0,
 		FirstBlock:      0,
 		LastBlock:       (math.MaxUint64 / 2),
@@ -425,7 +425,7 @@ func (s *RepositorySuite) TestEpochDoesntExist() {
 
 func (s *RepositorySuite) TestEpochFailsDuplicateRow() {
 	epoch := Epoch{
-		Status:          EpochStatusReceivingInputs,
+		Status:          EpochStatusOpen,
 		Index:           0,
 		FirstBlock:      0,
 		LastBlock:       math.MaxUint64,
@@ -441,7 +441,7 @@ func (s *RepositorySuite) TestEpochFailsDuplicateRow() {
 func (s *RepositorySuite) TestEpochFailsApplicationDoesntExist() {
 	hash := common.HexToHash("deadbeef")
 	epoch := Epoch{
-		Status:     EpochStatusReceivingInputs,
+		Status:     EpochStatusOpen,
 		Index:      2,
 		FirstBlock: 0,
 		LastBlock:  math.MaxUint64,

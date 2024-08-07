@@ -42,13 +42,13 @@ const (
 )
 
 const (
-	EpochStatusReceivingInputs    EpochStatus = "RECEIVING_INPUTS"
-	EpochStatusReceivedLastInput  EpochStatus = "RECEIVED_LAST_INPUT"
+	EpochStatusOpen               EpochStatus = "OPEN"
+	EpochStatusClosed             EpochStatus = "CLOSED"
 	EpochStatusProcessedAllInputs EpochStatus = "PROCESSED_ALL_INPUTS"
-	EpochStatusCalculatedClaim    EpochStatus = "CALCULATED_CLAIM"
-	EpochStatusSubmittedClaim     EpochStatus = "SUBMITTED_CLAIM"
-	EpochStatusAcceptedClaim      EpochStatus = "ACCEPTED_CLAIM"
-	EpochStatusRejectedClaim      EpochStatus = "REJECTED_CLAIM"
+	EpochStatusClaimComputed      EpochStatus = "CLAIM_COMPUTED"
+	EpochStatusClaimSubmitted     EpochStatus = "CLAIM_SUBMITTED"
+	EpochStatusClaimAccepted      EpochStatus = "CLAIM_ACCEPTED"
+	EpochStatusClaimRejected      EpochStatus = "CLAIM_REJECTED"
 )
 
 type NodePersistentConfig struct {

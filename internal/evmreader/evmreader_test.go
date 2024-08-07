@@ -684,7 +684,7 @@ func newMockRepository() *MockRepository {
 			Index:           0,
 			FirstBlock:      0,
 			LastBlock:       math.MaxUint64,
-			Status:          model.EpochStatusReceivingInputs,
+			Status:          model.EpochStatusOpen,
 			AppAddress:      common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 			ClaimHash:       nil,
 			TransactionHash: nil,

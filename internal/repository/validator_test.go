@@ -69,13 +69,13 @@ func (s *RepositorySuite) TestSetEpochClaimAndInsertProofsTransaction() {
 	s.Require().Nil(err)
 
 	expectedEpoch.ClaimHash = &hash
-	expectedEpoch.Status = EpochStatusCalculatedClaim
+	expectedEpoch.Status = EpochStatusClaimComputed
 
 	epoch, err := s.database.GetEpoch(s.ctx, 0, common.HexToAddress("deadbeef"))
 	s.Require().Nil(err)
 
 	epoch.ClaimHash = &hash
-	epoch.Status = EpochStatusCalculatedClaim
+	epoch.Status = EpochStatusClaimComputed
 
 	var outputs []Output
 	outputs = append(outputs, output)
@@ -110,7 +110,7 @@ func (s *RepositorySuite) TestSetEpochClaimAndInsertProofsTransactionRollback() 
 	s.Require().Nil(err)
 
 	epoch.ClaimHash = &hash
-	epoch.Status = EpochStatusCalculatedClaim
+	epoch.Status = EpochStatusClaimComputed
 
 	expectedEpoch, err := s.database.GetEpoch(s.ctx, epoch.Index, common.HexToAddress("deadbeef"))
 	s.Require().Nil(err)

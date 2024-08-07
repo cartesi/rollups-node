@@ -147,7 +147,7 @@ func (pg *Database) SetEpochClaimAndInsertProofsTransaction(
 	args := pgx.NamedArgs{
 		"id":        epoch.Id,
 		"claimHash": epoch.ClaimHash,
-		"status":    EpochStatusCalculatedClaim,
+		"status":    EpochStatusClaimComputed,
 	}
 
 	tx, err := pg.db.Begin(ctx)
