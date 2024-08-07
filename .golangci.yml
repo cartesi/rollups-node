@@ -12,5 +12,5 @@ linters-settings:
     line-length: 100
     tab-width: 4
   mnd:
-    ignored-functions:
-      - "^make"
+    ignored-numbers:
+      - "2"
