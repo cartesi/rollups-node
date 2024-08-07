@@ -35,7 +35,7 @@ ARG SNAPSHOT_RUNTIME_PATH=/usr/share/cartesi/snapshot
 # The result is used as the base for the snapshot and the node targets.
 # We do this instead of using the cartesi/machine-emulator image to have control over the distro
 # used by the base image.
-FROM ${BASE_IMAGE} as emulator-base
+FROM ${BASE_IMAGE} AS emulator-base
 
 # Install machine-emulator
 ARG MACHINE_EMULATOR_VERSION
@@ -77,7 +77,7 @@ EOF
 # STAGE: snapshot-builder
 #
 # This stage builds the snapshot using the machine emulator as base image.
-FROM emulator-base as snapshot-builder
+FROM emulator-base AS snapshot-builder
 
 # Download rootfs and linux.
 # Add these files to the directories the cartesi-machine expects.
@@ -101,7 +101,7 @@ RUN cartesi-machine \
 # This stage copies the image from the builder.
 # We use the emulator as base image so we can easily create a container with a volume shared with
 # the rollups-node container.
-FROM emulator-base as rollups-node-snapshot
+FROM emulator-base AS rollups-node-snapshot
 
 # Copy image from the builder stage.
 ARG SNAPSHOT_BUILD_PATH
@@ -122,7 +122,7 @@ CMD /bin/bash
 # STAGE: devnet-base
 #
 # This stage installs Foundry.
-FROM ${BASE_IMAGE} as devnet-base
+FROM ${BASE_IMAGE} AS devnet-base
 
 # Install system dependencies.
 ARG DEBIAN_FRONTEND=noninteractive
@@ -143,7 +143,7 @@ RUN curl -sSL https://github.com/foundry-rs/foundry/releases/download/nightly-${
 # STAGE: devnet-builder
 #
 # This stage builds the devnet state that will be loaded in Anvil.
-FROM devnet-base as devnet-builder
+FROM devnet-base AS devnet-builder
 ARG DEVNET_BUILD_PATH
 WORKDIR ${DEVNET_BUILD_PATH}
 
@@ -196,7 +196,7 @@ RUN go run ./cmd/gen-devnet --verbose --template-hash-file hash.bin
 # STAGE: rollups-node-devnet
 #
 # This stage copies the anvil state from the builder stage and start the local anvil instance.
-FROM devnet-base as rollups-node-devnet
+FROM devnet-base AS rollups-node-devnet
 
 # Copy anvil state file and devnet deployment info
 ARG DEVNET_BUILD_PATH
@@ -242,7 +242,7 @@ EOF
 # STAGE: rust-prepare
 #
 # This stage prepares the recipe with just the external dependencies.
-FROM rust-chef as rust-prepare
+FROM rust-chef AS rust-prepare
 COPY ./offchain/ .
 RUN cargo chef prepare --recipe-path recipe.json
 
@@ -250,7 +250,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 #
 # This stage builds the Rust binaries.
 # First it builds the external dependencies and then it builds the node binaries.
-FROM rust-chef as rust-builder
+FROM rust-chef AS rust-builder
 
 # Install system dependencies.
 ARG DEBIAN_FRONTEND=noninteractive
@@ -276,7 +276,7 @@ RUN cargo build --release
 #
 # This stage builds the Go binaries.
 # First it downloads the external dependencies and then it builds the binaries.
-FROM golang:${GO_VERSION}-bookworm as go-builder
+FROM golang:${GO_VERSION}-bookworm AS go-builder
 ARG GO_BUILD_PATH
 ARG ROLLUPS_NODE_VERSION
 WORKDIR ${GO_BUILD_PATH}
@@ -293,12 +293,12 @@ RUN go build -ldflags "-s -w -X 'main.buildVersion=${ROLLUPS_NODE_VERSION}'" ./c
 # STAGE: server-manager
 #
 # This stage creates an alias for the server-manager image with a specific version.
-FROM cartesi/server-manager:${SERVER_MANAGER_VERSION} as server-manager
+FROM cartesi/server-manager:${SERVER_MANAGER_VERSION} AS server-manager
 
 # STAGE: rollups-node
 #
 # This stage copies the binaries from the previous stages.
-FROM emulator-base as rollups-node
+FROM emulator-base AS rollups-node
 
 # Download system dependencies required in runtime.
 ARG DEBIAN_FRONTEND=noninteractive
