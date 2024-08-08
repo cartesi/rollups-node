@@ -222,8 +222,9 @@ func (s *RepositorySuite) SetupDatabase() {
 		URI:        "/some/path",
 	}
 
-	err = s.database.InsertSnapshot(s.ctx, &snapshot)
+	id, err := s.database.InsertSnapshot(s.ctx, &snapshot)
 	s.Require().Nil(err)
+	s.Require().Equal(uint64(1), id)
 }
 
 func (s *RepositorySuite) TestApplicationExists() {

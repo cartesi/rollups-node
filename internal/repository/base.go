@@ -268,7 +268,7 @@ func (pg *Database) InsertReport(
 func (pg *Database) InsertSnapshot(
 	ctx context.Context,
 	snapshot *Snapshot,
-) error {
+) (id uint64, _ error) {
 	query := `
 	INSERT INTO snapshot
 		(input_id,
@@ -277,7 +277,8 @@ func (pg *Database) InsertSnapshot(
 	VALUES
 		(@inputId,
 		@appAddress,
-		@uri)`
+		@uri)
+	RETURNING id`
 
 	args := pgx.NamedArgs{
 		"inputId":    snapshot.InputId,
@@ -285,12 +286,12 @@ func (pg *Database) InsertSnapshot(
 		"uri":        snapshot.URI,
 	}
 
-	_, err := pg.db.Exec(ctx, query, args)
+	err := pg.db.QueryRow(ctx, query, args).Scan(&id)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrInsertRow, err)
+		return 0, fmt.Errorf("%w: %w", ErrInsertRow, err)
 	}
 
-	return nil
+	return id, nil
 }
 
 func (pg *Database) GetNodeConfig(
