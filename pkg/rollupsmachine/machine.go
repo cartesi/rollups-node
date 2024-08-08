@@ -8,40 +8,37 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/pkg/emulator"
 )
 
 // Convenient type aliases.
 type (
-	Cycle  = uint64
-	Output = []byte
-	Report = []byte
+	Cycle   = uint64
+	Output  = []byte
+	Report  = []byte
+	Address = [addressLength]byte
+	Hash    = [hashLength]byte
+
+	requestType uint8
 )
 
-type requestType uint8
-
 const (
-	DefaultInc = Cycle(10000000)
-	DefaultMax = Cycle(1000000000)
-
 	advanceStateRequest requestType = 0
 	inspectStateRequest requestType = 1
 
 	maxOutputs = 65536 // 2^16
+
+	addressLength = 20
+	hashLength    = 32
 )
 
-// A RollupsMachine wraps an emulator.Machine and provides five basic functions:
-// Fork, Destroy, Hash, Advance and Inspect.
+// RollupsMachine wraps a CartesiMachine and provides four core functionalities: forking,
+// getting the merkle tree root hash, sending advance-state requests, and sending inspect-state
+// requests.
 type RollupsMachine struct {
-	// For each request, the machine will run in increments of Inc cycles,
-	// for no more than Max cycles.
-	//
-	// If these fields are left undefined,
-	// the machine will use the DefaultInc and DefaultMax values.
-	Inc, Max Cycle
+	inc, max Cycle
 
-	address string
+	address string // address of the server
 
 	inner  *emulator.Machine
 	remote *emulator.RemoteMachineManager
@@ -49,9 +46,13 @@ type RollupsMachine struct {
 
 // Load loads the machine stored at path into the remote server from address.
 // It then checks if the machine is in a valid state to receive advance and inspect requests.
-func Load(path, address string, config *emulator.MachineRuntimeConfig) (*RollupsMachine, error) {
-	// Creates the machine with default values for Inc and Max.
-	machine := &RollupsMachine{Inc: DefaultInc, Max: DefaultMax, address: address}
+//
+// For each request, the machine will run in increments of inc cycles, for no more than max cycles.
+func Load(path, address string,
+	inc, max Cycle,
+	config *emulator.MachineRuntimeConfig,
+) (*RollupsMachine, error) {
+	machine := &RollupsMachine{inc: inc, max: max, address: address}
 
 	// Creates the remote machine manager.
 	remote, err := emulator.NewRemoteMachineManager(address)
@@ -83,7 +84,7 @@ func Load(path, address string, config *emulator.MachineRuntimeConfig) (*Rollups
 		return nil, errors.Join(ErrNotAtManualYield, machine.closeInner())
 	}
 
-	// Ensures that the last request the machine received did not yield and exception.
+	// Ensures that the last request the machine received did not yield an exception.
 	_, err = machine.lastRequestWasAccepted()
 	if err != nil {
 		defer machine.remote.Delete()
@@ -93,10 +94,10 @@ func Load(path, address string, config *emulator.MachineRuntimeConfig) (*Rollups
 	return machine, nil
 }
 
-// Fork forks an existing cartesi machine.
+// Fork forks the rollups machine.
 func (machine *RollupsMachine) Fork() (_ *RollupsMachine, address string, _ error) {
 	// Creates the new machine based on the old machine.
-	newMachine := &RollupsMachine{Inc: machine.Inc, Max: machine.Max}
+	newMachine := &RollupsMachine{inc: machine.inc, max: machine.max}
 
 	// Forks the remote server's process.
 	address, err := machine.remote.Fork()
@@ -124,22 +125,21 @@ func (machine *RollupsMachine) Fork() (_ *RollupsMachine, address string, _ erro
 }
 
 // Hash returns the machine's merkle tree root hash.
-func (machine RollupsMachine) Hash() (model.Hash, error) {
+func (machine RollupsMachine) Hash() (Hash, error) {
 	hash, err := machine.inner.GetRootHash()
 	if err != nil {
 		err := fmt.Errorf("could not get the machine's root hash: %w", err)
-		return model.Hash(hash), errCartesiMachine(err)
+		return hash, errCartesiMachine(err)
 	}
-	return model.Hash(hash), nil
+	return hash, nil
 }
 
 // Advance sends an input to the cartesi machine.
 // It returns a boolean indicating whether or not the request was accepted.
 // It also returns the corresponding outputs, reports, and the hash of the outputs.
-//
 // If the request was not accepted, the function does not return outputs.
-func (machine *RollupsMachine) Advance(input []byte) (bool, []Output, []Report, model.Hash, error) {
-	var outputsHash model.Hash
+func (machine *RollupsMachine) Advance(input []byte) (bool, []Output, []Report, Hash, error) {
+	var outputsHash Hash
 
 	accepted, outputs, reports, err := machine.process(input, advanceStateRequest)
 	if err != nil {
@@ -147,14 +147,14 @@ func (machine *RollupsMachine) Advance(input []byte) (bool, []Output, []Report, 
 	}
 
 	if !accepted {
-		return accepted, nil, reports, model.Hash{}, nil
+		return accepted, nil, reports, Hash{}, nil
 	} else {
 		hashBytes, err := machine.readMemory()
 		if err != nil {
 			err := fmt.Errorf("could not read the outputs' hash from the memory: %w", err)
 			return accepted, outputs, reports, outputsHash, errCartesiMachine(err)
 		}
-		if length := len(hashBytes); length != model.HashLength {
+		if length := len(hashBytes); length != hashLength {
 			err := fmt.Errorf("%w (it has %d bytes)", ErrHashLength, length)
 			return accepted, outputs, reports, outputsHash, err
 		}
@@ -172,9 +172,11 @@ func (machine *RollupsMachine) Inspect(query []byte) (bool, []Report, error) {
 	return accepted, reports, err
 }
 
-// Close destroys the inner cartesi machine, deletes its reference,
-// shutsdown the server, and deletes the server's reference.
+// Close closes the machine.
+// The behavior of Close after the first call is undefined.
 func (machine *RollupsMachine) Close() error {
+	// Destroys the inner cartesi machine, deletes its reference,
+	// shuts down the server, and deletes the server's reference.
 	return errors.Join(machine.closeInner(), machine.closeServer())
 }
 
@@ -191,12 +193,12 @@ func (machine *RollupsMachine) closeInner() error {
 	return err
 }
 
-// closeServer shutsdown the server and deletes its reference.
+// closeServer shuts down the server and deletes its reference.
 func (machine *RollupsMachine) closeServer() error {
 	defer machine.remote.Delete()
 	err := machine.remote.Shutdown()
 	if err != nil {
-		err = fmt.Errorf("could not shutdown the server: %w", err)
+		err = fmt.Errorf("could not shut down the server: %w", err)
 		err = errCartesiMachine(err)
 		err = errors.Join(err, errOrphanServerWithAddress(machine.address))
 	}
@@ -273,7 +275,7 @@ func (machine *RollupsMachine) runAndCollect() ([]Output, []Report, error) {
 		err := fmt.Errorf("could not read the machine's cycle: %w", err)
 		return nil, nil, errCartesiMachine(err)
 	}
-	maxCycle := startingCycle + machine.Max
+	maxCycle := startingCycle + machine.max
 	slog.Debug("runAndCollect",
 		"startingCycle", startingCycle,
 		"maxCycle", maxCycle,
@@ -352,7 +354,7 @@ func (machine *RollupsMachine) run(
 
 	for {
 		// Calculates the increment.
-		increment := min(machine.Inc, maxCycle-currentCycle)
+		increment := min(machine.inc, maxCycle-currentCycle)
 
 		// Returns with an error if the next run would exceed Max cycles.
 		if currentCycle+increment >= maxCycle {

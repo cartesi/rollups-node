@@ -49,13 +49,13 @@ func StartServer(verbosity ServerVerbosity, port uint32, stdout, stderr io.Write
 	cmd := exec.Command("jsonrpc-remote-cartesi-machine", args...)
 
 	// Redirects stdout and stderr.
-	intercepter := portIntercepter{
+	interceptor := portInterceptor{
 		inner: stderr,
 		port:  make(chan uint32),
 		found: new(bool),
 	}
 	cmd.Stdout = stdout
-	cmd.Stderr = linewriter.New(intercepter)
+	cmd.Stderr = linewriter.New(interceptor)
 
 	// Starts the server.
 	slog.Info("running", "command", cmd.String())
@@ -63,8 +63,8 @@ func StartServer(verbosity ServerVerbosity, port uint32, stdout, stderr io.Write
 		return "", err
 	}
 
-	// Waits for the intercepter to write the port to the channel.
-	if actualPort := <-intercepter.port; port == 0 {
+	// Waits for the interceptor to write the port to the channel.
+	if actualPort := <-interceptor.port; port == 0 {
 		port = actualPort
 	} else if port != actualPort {
 		panic(fmt.Sprintf("mismatching ports (%d != %d)", port, actualPort))
@@ -95,23 +95,23 @@ func (verbosity ServerVerbosity) valid() bool {
 		verbosity == ServerVerbosityFatal
 }
 
-// portIntercepter sends the server's port through the port channel as soon as it reads it.
+// portInterceptor sends the server's port through the port channel as soon as it reads it.
 // It then closes the channel and keeps on writing to the inner writer.
 //
 // It expects to be wrapped by a linewriter.LineWriter.
-type portIntercepter struct {
+type portInterceptor struct {
 	inner io.Writer
 	port  chan uint32
 	found *bool
 }
 
-var regex = regexp.MustCompile("initial server bound to port ([0-9]+)")
+var portRegex = regexp.MustCompile("initial server bound to port ([0-9]+)")
 
-func (writer portIntercepter) Write(p []byte) (n int, err error) {
+func (writer portInterceptor) Write(p []byte) (n int, err error) {
 	if *writer.found {
 		return writer.inner.Write(p)
 	} else {
-		matches := regex.FindStringSubmatch(string(p))
+		matches := portRegex.FindStringSubmatch(string(p))
 		if matches != nil {
 			port, err := strconv.ParseUint(matches[1], 10, 32)
 			if err != nil {

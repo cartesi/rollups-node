@@ -10,7 +10,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/node/model"
 )
 
-const unreachable = "internal error: entered unreacheable code"
+const unreachable = "internal error: entered unreachable code"
 
 var (
 	ErrCartesiMachine = errors.New("cartesi machine internal error")

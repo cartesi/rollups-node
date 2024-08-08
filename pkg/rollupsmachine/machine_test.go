@@ -18,6 +18,12 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+// TODO
+const (
+	defaultInc = Cycle(10000000)
+	defaultMax = Cycle(1000000000)
+)
+
 func init() {
 	log.SetFlags(log.Ltime)
 	slog.SetLogLoggerLevel(slog.LevelDebug)
@@ -388,7 +394,7 @@ func (s *CyclesSuite) TestCycleLimitExceeded() {
 	// Exits before calling machine.Run.
 	s.Run("Max=0", func() {
 		require := s.Require()
-		s.machine.Max = 0
+		s.machine.max = 0
 		_, _, _, _, err := s.machine.Advance(s.input)
 		require.Equal(ErrCycleLimitExceeded, err)
 	})
@@ -396,7 +402,7 @@ func (s *CyclesSuite) TestCycleLimitExceeded() {
 	// Runs for exactly one cycle.
 	s.Run("Max=1", func() {
 		require := s.Require()
-		s.machine.Max = 1
+		s.machine.max = 1
 		_, _, _, _, err := s.machine.Advance(s.input)
 		require.Equal(ErrCycleLimitExceeded, err)
 	})
@@ -404,8 +410,8 @@ func (s *CyclesSuite) TestCycleLimitExceeded() {
 	// Calls machine.Run many times.
 	s.Run("Max=100000", func() {
 		require := s.Require()
-		s.machine.Max = 100000
-		s.machine.Inc = 10000
+		s.machine.max = 100000
+		s.machine.inc = 10000
 		_, _, _, _, err := s.machine.Advance(s.input)
 		require.Equal(ErrCycleLimitExceeded, err)
 	})

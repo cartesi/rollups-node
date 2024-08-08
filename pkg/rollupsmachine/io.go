@@ -4,6 +4,7 @@
 package rollupsmachine
 
 import (
+	_ "embed"
 	"fmt"
 	"math/big"
 	"strings"
@@ -12,10 +13,25 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+var (
+	//go:embed abi.json
+	jsonABI string
+
+	ioABI abi.ABI
+)
+
+func init() {
+	var err error
+	ioABI, err = abi.JSON(strings.NewReader(jsonABI))
+	if err != nil {
+		panic(err)
+	}
+}
+
 type Input struct {
 	ChainId        uint64
-	AppContract    [20]byte
-	Sender         [20]byte
+	AppContract    Address
+	Sender         Address
 	BlockNumber    uint64
 	BlockTimestamp uint64
 	// PrevRandao     uint64
@@ -28,7 +44,7 @@ type Query struct {
 }
 
 type Voucher struct {
-	Address [20]byte
+	Address Address
 	Value   *big.Int
 	Data    []byte
 }
@@ -74,50 +90,12 @@ func DecodeOutput(payload []byte) (*Voucher, *Notice, error) {
 		return nil, notice, nil
 	case 3: //nolint:mnd
 		voucher := &Voucher{
-			Address: [20]byte(arguments[0].(common.Address)),
+			Address: Address(arguments[0].(common.Address)),
 			Value:   arguments[1].(*big.Int),
 			Data:    arguments[2].([]byte),
 		}
 		return voucher, nil, nil
 	default:
 		return nil, nil, fmt.Errorf("not an output: len(arguments) == %d, should be 1 or 3", length)
-	}
-}
-
-var ioABI abi.ABI
-
-func init() {
-	json := `[{
-        "type" : "function",
-        "name" : "EvmAdvance",
-        "inputs" : [
-            { "type" : "uint256" },
-            { "type" : "address" },
-            { "type" : "address" },
-            { "type" : "uint256" },
-            { "type" : "uint256" },
-            { "type" : "uint256" },
-            { "type" : "bytes"   }
-        ]
-    }, {
-        "type" : "function",
-        "name" : "Voucher",
-        "inputs" : [
-            { "type" : "address" },
-            { "type" : "uint256" },
-            { "type" : "bytes"   }
-        ]
-    }, {
-        "type" : "function",
-        "name" : "Notice",
-        "inputs" : [
-            { "type" : "bytes"   }
-        ]
-    }]`
-
-	var err error
-	ioABI, err = abi.JSON(strings.NewReader(json))
-	if err != nil {
-		panic(err)
 	}
 }
