@@ -5,9 +5,9 @@ CREATE TYPE "ApplicationStatus" AS ENUM ('RUNNING', 'NOT RUNNING');
 
 CREATE TYPE "InputCompletionStatus" AS ENUM ('NONE', 'ACCEPTED', 'REJECTED', 'EXCEPTION', 'MACHINE_HALTED', 'CYCLE_LIMIT_EXCEEDED', 'TIME_LIMIT_EXCEEDED', 'PAYLOAD_LENGTH_LIMIT_EXCEEDED');
 
-CREATE TYPE "ClaimStatus" AS ENUM ('PENDING', 'SUBMITTED', 'FINALIZED');
-
 CREATE TYPE "DefaultBlock" AS ENUM ('FINALIZED', 'LATEST', 'PENDING', 'SAFE');
+
+CREATE TYPE "EpochStatus" AS ENUM ('OPEN', 'CLOSED', 'PROCESSED_ALL_INPUTS', 'CLAIM_COMPUTED', 'CLAIM_SUBMITTED', 'CLAIM_ACCEPTED', 'CLAIM_REJECTED');
 
 CREATE FUNCTION public.f_maxuint64()
   RETURNS NUMERIC(20,0)
@@ -19,12 +19,25 @@ CREATE TABLE "application"
     "id" SERIAL,
     "contract_address" BYTEA NOT NULL,
     "template_hash" BYTEA NOT NULL,
-    "snapshot_uri" VARCHAR(4096) NOT NULL,
     "last_processed_block" NUMERIC(20,0) NOT NULL CHECK ("last_processed_block" >= 0 AND "last_processed_block" <= f_maxuint64()),
     "status" "ApplicationStatus" NOT NULL,
-    "epoch_length" INT NOT NULL,
     CONSTRAINT "application_pkey" PRIMARY KEY ("id"),
     UNIQUE("contract_address")
+);
+
+CREATE TABLE "epoch"
+(
+    "id" BIGSERIAL,
+    "application_address" BYTEA NOT NULL,
+    "index" BIGINT NOT NULL,
+    "first_block" NUMERIC(20,0) NOT NULL CHECK ("first_block" >= 0 AND "first_block" <= f_maxuint64()),
+    "last_block" NUMERIC(20,0) NOT NULL CHECK ("last_block" >= 0 AND "last_block" <= f_maxuint64()),
+    "claim_hash" BYTEA,
+    "transaction_hash" BYTEA,
+    "status" "EpochStatus" NOT NULL,
+    CONSTRAINT "epoch_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "epoch_application_address_fkey" FOREIGN KEY ("application_address") REFERENCES "application"("contract_address"),
+    UNIQUE ("index","application_address")
 );
 
 CREATE TABLE "input"
@@ -37,25 +50,14 @@ CREATE TABLE "input"
     "machine_hash" BYTEA,
     "outputs_hash" BYTEA,
     "application_address" BYTEA NOT NULL,
+    "epoch_id" BIGINT NOT NULL,
     CONSTRAINT "input_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "input_application_address_fkey" FOREIGN KEY ("application_address") REFERENCES "application"("contract_address"),
+    CONSTRAINT "input_epoch_fkey" FOREIGN KEY ("epoch_id") REFERENCES "epoch"("id"),
     UNIQUE("index", "application_address")
 );
 
 CREATE INDEX "input_idx" ON "input"("block_number");
-
-CREATE TABLE "claim"
-(
-    "id" BIGSERIAL,
-    "index" NUMERIC(20,0) NOT NULL CHECK ("index" >= 0 AND "index" <= f_maxuint64()),
-    "output_merkle_root_hash" BYTEA NOT NULL,
-    "transaction_hash" BYTEA,
-    "status" "ClaimStatus" NOT NULL,
-    "application_address" BYTEA NOT NULL,
-    CONSTRAINT "claim_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "claim_application_address_fkey" FOREIGN KEY ("application_address") REFERENCES "application"("contract_address"),
-    UNIQUE("index", "application_address")
-);
 
 CREATE TABLE "output"
 (
@@ -83,11 +85,26 @@ CREATE TABLE "report"
 
 CREATE UNIQUE INDEX "report_idx" ON "report"("index");
 
+CREATE TABLE "snapshot"
+(
+    "id" BIGSERIAL,
+    "input_id" BIGINT NOT NULL,
+    "application_address" BYTEA NOT NULL,
+    "uri" VARCHAR(4096) NOT NULL,
+    CONSTRAINT "snapshot_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "snapshot_input_id_fkey" FOREIGN KEY ("input_id") REFERENCES "input"("id"),
+    CONSTRAINT "snapshot_application_address_fkey" FOREIGN KEY ("application_address") REFERENCES "application"("contract_address"),
+    UNIQUE("input_id")
+);
+
 CREATE TABLE "node_config"
 (
     "default_block" "DefaultBlock" NOT NULL,
     "input_box_deployment_block" INT NOT NULL,
     "input_box_address" BYTEA NOT NULL,
     "chain_id" INT NOT NULL,
-    "iconsensus_address" BYTEA NOT NULL
+    "iconsensus_address" BYTEA NOT NULL,
+    "epoch_length" INT NOT NULL
 );
+
+

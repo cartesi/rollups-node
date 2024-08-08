@@ -51,7 +51,7 @@ func (s *RepositorySuite) TestGetAllOutputsFromProcessedInputsTimeout() {
 	s.Require().ErrorContains(err, "timeout")
 }
 
-func (s *RepositorySuite) TestFinishEpochTransaction() {
+func (s *RepositorySuite) TestSetEpochClaimAndInsertProofsTransaction() {
 	var siblings []Hash
 	siblings = append(siblings, common.HexToHash("deadbeef"))
 
@@ -63,51 +63,66 @@ func (s *RepositorySuite) TestFinishEpochTransaction() {
 		OutputHashesSiblings: siblings,
 	}
 
-	claim := Claim{
-		Id:                   4,
-		Index:                2,
-		Status:               ClaimStatusPending,
-		OutputMerkleRootHash: common.HexToHash("deadbeef"),
-		AppAddress:           common.HexToAddress("deadbeef"),
-	}
+	hash := common.HexToHash("deadbeef")
+
+	expectedEpoch, err := s.database.GetEpoch(s.ctx, 0, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
+
+	expectedEpoch.ClaimHash = &hash
+	expectedEpoch.Status = EpochStatusClaimComputed
+
+	epoch, err := s.database.GetEpoch(s.ctx, 0, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
+
+	epoch.ClaimHash = &hash
+	epoch.Status = EpochStatusClaimComputed
 
 	var outputs []Output
 	outputs = append(outputs, output)
 
-	err := s.database.FinishEpoch(s.ctx, &claim, outputs)
+	err = s.database.SetEpochClaimAndInsertProofsTransaction(s.ctx, *epoch, outputs)
 	s.Require().Nil(err)
 
-	response0, err := s.database.GetClaim(s.ctx, common.HexToAddress("deadbeef"), 2)
+	actualEpoch, err := s.database.GetEpoch(s.ctx, epoch.Index, common.HexToAddress("deadbeef"))
 	s.Require().Nil(err)
-	s.Require().Equal(claim, *response0)
+	s.Require().Equal(expectedEpoch, actualEpoch)
 
-	response1, err := s.database.GetOutput(s.ctx, 1, common.HexToAddress("deadbeef"))
+	actualOutput, err := s.database.GetOutput(s.ctx, output.Index, common.HexToAddress("deadbeef"))
 	s.Require().Nil(err)
-	s.Require().Equal(output, *response1)
+	s.Require().Equal(output, *actualOutput)
 }
 
-func (s *RepositorySuite) TestFinishEpochTransactionRollback() {
+func (s *RepositorySuite) TestSetEpochClaimAndInsertProofsTransactionRollback() {
 	var siblings []Hash
 	siblings = append(siblings, common.HexToHash("deadbeef"))
 
 	output := Output{
-		Id:                   2,
-		Index:                2,
+		Id:                   5,
+		Index:                4,
 		InputId:              1,
 		RawData:              common.Hex2Bytes("deadbeef"),
 		OutputHashesSiblings: siblings,
 	}
 
-	claim := Claim{
-		Index:                2,
-		Status:               ClaimStatusPending,
-		OutputMerkleRootHash: common.HexToHash("deadbeef"),
-		AppAddress:           common.HexToAddress("deadbeef"),
-	}
+	hash := common.HexToHash("deadbeef")
+
+	epoch, err := s.database.GetEpoch(s.ctx, 1, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
+
+	epoch.ClaimHash = &hash
+	epoch.Status = EpochStatusClaimComputed
+
+	expectedEpoch, err := s.database.GetEpoch(s.ctx, epoch.Index, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
 
 	var outputs []Output
 	outputs = append(outputs, output)
 
-	err := s.database.FinishEpoch(s.ctx, &claim, outputs)
-	s.Require().ErrorContains(err, "unable to finish epoch")
+	err = s.database.SetEpochClaimAndInsertProofsTransaction(s.ctx, *epoch, outputs)
+	s.Require().ErrorContains(err, "unable to set claim")
+
+	actualEpoch, err := s.database.GetEpoch(s.ctx, expectedEpoch.Index, expectedEpoch.AppAddress)
+	s.Require().Nil(err)
+	s.Require().NotNil(actualEpoch)
+	s.Require().Equal(expectedEpoch, actualEpoch)
 }

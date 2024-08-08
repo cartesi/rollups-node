@@ -6,31 +6,26 @@ package retrypolicy
 import (
 	"context"
 	"math/big"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/util/retrypolicy"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-type (
-	EthClient = evmreader.EthClient
-	Header    = types.Header
-	Context   = context.Context
-)
-
 // A EthClient Delegator that
 // calls HeaderByNumber with the retry
 // policy defined by util.RetryFunction
 type EthClientRetryPolicyDelegator struct {
-	delegate          EthClient
+	delegate          evmreader.EthClient
 	maxRetries        uint64
-	delayBetweenCalls Duration
+	delayBetweenCalls time.Duration
 }
 
 func NewEhtClientWithRetryPolicy(
-	delegate EthClient,
+	delegate evmreader.EthClient,
 	maxRetries uint64,
-	delayBetweenCalls Duration,
+	delayBetweenCalls time.Duration,
 ) *EthClientRetryPolicyDelegator {
 	return &EthClientRetryPolicyDelegator{
 		delegate:          delegate,
@@ -40,14 +35,14 @@ func NewEhtClientWithRetryPolicy(
 }
 
 type headerByNumberArgs struct {
-	ctx    Context
+	ctx    context.Context
 	number *big.Int
 }
 
 func (d *EthClientRetryPolicyDelegator) HeaderByNumber(
-	ctx Context,
+	ctx context.Context,
 	number *big.Int,
-) (*Header, error) {
+) (*types.Header, error) {
 
 	return retrypolicy.CallFunctionWithRetryPolicy(d.headerByNumber,
 		headerByNumberArgs{
@@ -63,6 +58,6 @@ func (d *EthClientRetryPolicyDelegator) HeaderByNumber(
 
 func (d *EthClientRetryPolicyDelegator) headerByNumber(
 	args headerByNumberArgs,
-) (*Header, error) {
+) (*types.Header, error) {
 	return d.delegate.HeaderByNumber(args.ctx, args.number)
 }

@@ -17,7 +17,6 @@ cartesi-rollups-cli app add -a 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF -n 10
 
 ```
   -a, --address string               Application contract address
-  -e, --epoch-length uint            Application epoch length in blocks (default 1)
   -h, --help                         help for add
   -n, --inputbox-block-number uint   InputBox deployment block number
   -u, --snapshot-uri string          Application snapshot URI
