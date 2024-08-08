@@ -469,6 +469,19 @@ func (s *RepositorySuite) TestGetSnapshot() {
 	s.Require().Equal(&expectedSnapshot, actualSnapshot)
 }
 
+func (s *RepositorySuite) TestInsertSnapshotFailsSameInputId() {
+
+	snapshot := Snapshot{
+		InputId:    1,
+		AppAddress: common.HexToAddress("feadbeef"),
+		URI:        "/some/path",
+	}
+
+	_, err := s.database.InsertSnapshot(s.ctx, &snapshot)
+	s.Require().ErrorContains(err, "violates unique constraint")
+
+}
+
 func TestRepositorySuite(t *testing.T) {
 	suite.Run(t, new(RepositorySuite))
 }

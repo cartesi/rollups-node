@@ -93,7 +93,8 @@ CREATE TABLE "snapshot"
     "uri" VARCHAR(4096) NOT NULL,
     CONSTRAINT "snapshot_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "snapshot_input_id_fkey" FOREIGN KEY ("input_id") REFERENCES "input"("id"),
-    CONSTRAINT "snapshot_application_address_fkey" FOREIGN KEY ("application_address") REFERENCES "application"("contract_address")
+    CONSTRAINT "snapshot_application_address_fkey" FOREIGN KEY ("application_address") REFERENCES "application"("contract_address"),
+    UNIQUE("input_id")
 );
 
 CREATE TABLE "node_config"
