@@ -80,6 +80,8 @@ func (pg *Database) InsertInputsAndUpdateLastProcessedBlock(
 	return nil
 }
 
+// GetAllRunningApplications returns a slice with the applications being
+// actively handled by the node.
 func (pg *Database) GetAllRunningApplications(
 	ctx context.Context,
 ) ([]Application, error) {

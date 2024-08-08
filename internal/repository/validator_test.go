@@ -126,3 +126,37 @@ func (s *RepositorySuite) TestSetEpochClaimAndInsertProofsTransactionRollback() 
 	s.Require().NotNil(actualEpoch)
 	s.Require().Equal(expectedEpoch, actualEpoch)
 }
+
+func (s *RepositorySuite) TestGetPreviousEpoch() {
+
+	epoch, err := s.database.GetEpoch(s.ctx, 1, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
+
+	previousEpoch, err := s.database.GetPreviousEpoch(s.ctx, epoch)
+	s.Require().Nil(err)
+	s.Require().NotNil(previousEpoch)
+
+}
+
+func (s *RepositorySuite) TestGetPreviousEpochDoesNotExists() {
+
+	epoch, err := s.database.GetEpoch(s.ctx, 0, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
+
+	previousEpoch, err := s.database.GetPreviousEpoch(s.ctx, epoch)
+	s.Require().Nil(err)
+	s.Require().Nil(previousEpoch)
+
+}
+
+func (s *RepositorySuite) TestGetLastInputOutputHash() {
+
+	epoch, err := s.database.GetEpoch(s.ctx, 0, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
+	s.Require().NotNil(epoch)
+
+	hash, err := s.database.GetLastInputOutputHash(s.ctx, epoch)
+	s.Require().Nil(err)
+	s.Require().NotNil(hash)
+
+}

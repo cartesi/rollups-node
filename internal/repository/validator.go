@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
@@ -41,6 +42,9 @@ func (pg *Database) GetLastProcessedBlock(
 	return block, nil
 }
 
+// GetOutputs returns outputs produced by inputs sent to the application
+// between start and end blocks, inclusive. Outputs are in ascending order
+// by index.
 func (pg *Database) GetAllOutputsFromProcessedInputs(
 	ctx context.Context,
 	startBlock uint64,
@@ -131,6 +135,12 @@ func (pg *Database) getAllOutputsFromProcessedInputs(
 	return nil, nil
 }
 
+// SetEpochClaimAndInsertProofsTransaction performs a database transaction
+// containing two operations:
+//
+// 1. Updates an epoch, adding its claim and modifying its status.
+//
+// 2. Updates several outputs with their Keccak256 hash and proof.
 func (pg *Database) SetEpochClaimAndInsertProofsTransaction(
 	ctx context.Context,
 	epoch Epoch,
@@ -217,4 +227,218 @@ func (pg *Database) SetEpochClaimAndInsertProofsTransaction(
 	}
 
 	return nil
+}
+
+// GetProcessedEpochs returns epochs from the application which had all
+// its inputs processed. Epochs are in ascending order by index.
+func (pg *Database) GetProcessedEpochs(ctx context.Context, application Address) ([]*Epoch, error) {
+
+	query := `
+	SELECT
+		id,
+    	application_address,
+        index,
+        first_block,
+		last_block,
+		claim_hash,
+		transaction_hash,
+		status,
+	FROM
+		epoch
+	WHERE
+		application_address=@appAddress and status=@status
+	ORDER BY
+		index asc`
+
+	args := pgx.NamedArgs{
+		"application_address": application,
+		"status":              EpochStatusProcessedAllInputs,
+	}
+
+	rows, err := pg.db.Query(ctx, query, args)
+	if err != nil {
+		return nil, fmt.Errorf("Query failed: %v\n", err)
+	}
+
+	var id, index, firstBlock, lastBlock uint64
+	var claimHash, transactionHash Hash
+	var status string
+	var appAddress Address
+
+	rowCount := 0
+	var results []*Epoch
+	_, err = pgx.ForEachRow(rows,
+		[]any{&id,
+			&appAddress,
+			&index,
+			&firstBlock,
+			&lastBlock,
+			&claimHash,
+			&transactionHash,
+			&status},
+		func() error {
+			rowCount++
+			if status != string(EpochStatusProcessedAllInputs) {
+				epoch := &Epoch{
+					Id:              id,
+					Index:           index,
+					AppAddress:      appAddress,
+					FirstBlock:      firstBlock,
+					LastBlock:       lastBlock,
+					ClaimHash:       &claimHash,
+					TransactionHash: &transactionHash,
+				}
+				results = append(results, epoch)
+			}
+			return nil
+		})
+	if err != nil {
+		return nil, fmt.Errorf("ForEachRow failed: %w\n", err)
+	}
+
+	if len(results) == rowCount {
+		return results, nil
+	}
+
+	return nil, nil
+
+}
+
+// GetPreviousEpoch returns the epoch that ended one block before the start
+// of the current epoch
+func (pg *Database) GetPreviousEpoch(ctx context.Context, currentEpoch *Epoch) (*Epoch, error) {
+
+	if currentEpoch == nil {
+		return nil, fmt.Errorf("currentEpoch cannot be nil")
+	}
+
+	if currentEpoch.FirstBlock == 0 {
+		return nil, nil
+	}
+
+	var (
+		id, index, firstBlock, lastBlock uint64
+		applicationAddress               Address
+		claimHash, transactionHash       *Hash
+		status                           EpochStatus
+	)
+
+	query := `
+	SELECT
+		id,
+    	application_address,
+        index,
+        first_block,
+		last_block,
+		claim_hash,
+		transaction_hash,
+		status
+	FROM
+		epoch
+	WHERE
+		application_address=@appAddress and last_block=@lastBlock
+	ORDER BY
+		index desc`
+
+	args := pgx.NamedArgs{
+		"appAddress": currentEpoch.AppAddress,
+		"lastBlock":  currentEpoch.FirstBlock - 1,
+	}
+
+	err := pg.db.QueryRow(ctx, query, args).Scan(
+		&id,
+		&applicationAddress,
+		&index,
+		&firstBlock,
+		&lastBlock,
+		&transactionHash,
+		&claimHash,
+		&status,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("GetPreviousEpoch returned no rows", "service", "repository")
+			return nil, nil
+		}
+		return nil, fmt.Errorf("GetPreviousEpoch QueryRow failed: %w\n", err)
+	}
+
+	epoch := Epoch{
+		Id:              id,
+		Index:           index,
+		FirstBlock:      firstBlock,
+		LastBlock:       lastBlock,
+		TransactionHash: transactionHash,
+		ClaimHash:       claimHash,
+		Status:          status,
+		AppAddress:      applicationAddress,
+	}
+
+	return &epoch, nil
+
+}
+
+// GetLastInputOutputHash returns the outputs Merkle tree hash calculated
+// by the Cartesi Machine after it processed the last input in the provided
+// epoch.
+func (pg *Database) GetLastInputOutputHash(ctx context.Context, epoch *Epoch) (*Hash, error) {
+
+	//Get Epoch from Database
+	epoch, err := pg.GetEpoch(ctx, epoch.Index, epoch.AppAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	//Check Epoch Status
+	switch epoch.Status {
+	case EpochStatusReceivingInputs:
+		fallthrough
+	case EpochStatusReceivedLastInput:
+		return nil, fmt.Errorf("Epoch '%d' still being processed", epoch.Index)
+	case EpochStatusProcessedAllInputs:
+		fallthrough
+	case EpochStatusCalculatedClaim:
+		fallthrough
+	case EpochStatusSubmittedClaim:
+		fallthrough
+	case EpochStatusAcceptedClaim:
+		fallthrough
+	case EpochStatusRejectedClaim:
+		fallthrough
+	default:
+		break
+	}
+
+	//Get epoch last input
+	query := `
+	SELECT
+		outputs_hash
+	FROM input
+	WHERE
+		epoch_id = @epochId
+	ORDER By
+		index DESC
+	LIMIT 1
+
+	`
+	var outputHash Hash
+
+	args := pgx.NamedArgs{
+		"epochId": epoch.Id,
+	}
+
+	err = pg.db.QueryRow(ctx, query, args).Scan(
+		&outputHash,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("No inputs", "service", "repository", "epoch", epoch.Index)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("GetApplication QueryRow failed: %w\n", err)
+	}
+
+	return &outputHash, nil
+
 }
