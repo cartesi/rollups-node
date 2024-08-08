@@ -1,216 +1,143 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
+// Package rollupsmachine provides the RollupsMachine struct that wraps a
+// cartesimachine.CartesiMachine with rollups-oriented functionalities.
+//
+// Moreover, the Input struct provides a method for encoding payloads, and the DecodeOutput
+// function decodes an output into a voucher or a notice.
 package rollupsmachine
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 
-	"github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/pkg/emulator"
+	"github.com/cartesi/rollups-node/pkg/rollupsmachine/cartesimachine"
+)
+
+const (
+	maxOutputs    = 65536 // 2^16
+	addressLength = 20
+	hashLength    = 32
 )
 
 // Convenient type aliases.
 type (
-	Cycle  = uint64
-	Output = []byte
-	Report = []byte
+	Cycle   = uint64
+	Output  = []byte
+	Report  = []byte
+	Address = [addressLength]byte
+	Hash    = [hashLength]byte
 )
 
-type requestType uint8
-
-const (
-	DefaultInc = Cycle(10000000)
-	DefaultMax = Cycle(1000000000)
-
-	advanceStateRequest requestType = 0
-	inspectStateRequest requestType = 1
-
-	maxOutputs = 65536 // 2^16
-)
-
-// A RollupsMachine wraps an emulator.Machine and provides five basic functions:
-// Fork, Destroy, Hash, Advance and Inspect.
+// RollupsMachine wraps a cartesimachine.CartesiMachine to provide four core features: forking,
+// getting the merkle tree's root hash, sending advance-state requests, and sending inspect-state
+// requests.
+//
+// When processing an advance-state or an inspect-state request, the machine will run in increments
+// of inc cycles, for no more than max cycles.
 type RollupsMachine struct {
-	// For each request, the machine will run in increments of Inc cycles,
-	// for no more than Max cycles.
-	//
-	// If these fields are left undefined,
-	// the machine will use the DefaultInc and DefaultMax values.
-	Inc, Max Cycle
+	inner cartesimachine.CartesiMachine
 
-	address string
-
-	inner  *emulator.Machine
-	remote *emulator.RemoteMachineManager
+	inc, max Cycle
 }
 
-// Load loads the machine stored at path into the remote server from address.
-// It then checks if the machine is in a valid state to receive advance and inspect requests.
-func Load(path, address string, config *emulator.MachineRuntimeConfig) (*RollupsMachine, error) {
-	// Creates the machine with default values for Inc and Max.
-	machine := &RollupsMachine{Inc: DefaultInc, Max: DefaultMax, address: address}
-
-	// Creates the remote machine manager.
-	remote, err := emulator.NewRemoteMachineManager(address)
-	if err != nil {
-		err = fmt.Errorf("could not create the remote machine manager: %w", err)
-		return nil, errCartesiMachine(err)
-	}
-	machine.remote = remote
-
-	// Loads the machine stored at path into the server.
-	// Creates the inner machine reference.
-	inner, err := remote.LoadMachine(path, config)
-	if err != nil {
-		defer machine.remote.Delete()
-		err = fmt.Errorf("could not load the machine: %w", err)
-		return nil, errCartesiMachine(err)
-	}
-	machine.inner = inner
+// New checks if the provided cartesimachine.CartesiMachine is in a valid state to receive advance
+// and inspect requests. If so, New returns a RollupsMachine that wraps the
+// cartesimachine.CartesiMachine.
+func New(inner cartesimachine.CartesiMachine, inc, max Cycle) (*RollupsMachine, error) {
+	machine := &RollupsMachine{inner: inner, inc: inc, max: max}
 
 	// Ensures that the machine is at a manual yield.
-	isAtManualYield, err := machine.inner.ReadIFlagsY()
+	isAtManualYield, err := machine.inner.IsAtManualYield()
 	if err != nil {
-		defer machine.remote.Delete()
-		err = fmt.Errorf("could not read iflagsY: %w", err)
-		return nil, errors.Join(errCartesiMachine(err), machine.closeInner())
+		return nil, err
 	}
 	if !isAtManualYield {
-		defer machine.remote.Delete()
-		return nil, errors.Join(ErrNotAtManualYield, machine.closeInner())
+		return nil, ErrNotAtManualYield
 	}
 
-	// Ensures that the last request the machine received did not yield and exception.
+	// Ensures that the last request the machine received did not yield an exception.
 	_, err = machine.lastRequestWasAccepted()
 	if err != nil {
-		defer machine.remote.Delete()
-		return nil, errors.Join(err, machine.closeInner())
+		return nil, err
 	}
 
 	return machine, nil
 }
 
-// Fork forks an existing cartesi machine.
-func (machine *RollupsMachine) Fork() (_ *RollupsMachine, address string, _ error) {
-	// Creates the new machine based on the old machine.
-	newMachine := &RollupsMachine{Inc: machine.Inc, Max: machine.Max}
-
-	// Forks the remote server's process.
-	address, err := machine.remote.Fork()
+// Fork forks the machine.
+func (machine *RollupsMachine) Fork() (*RollupsMachine, error) {
+	inner, err := machine.inner.Fork()
 	if err != nil {
-		err = fmt.Errorf("could not fork the machine: %w", err)
-		return nil, address, errCartesiMachine(err)
+		return nil, err
 	}
-
-	// Instantiates the new remote machine manager.
-	newMachine.remote, err = emulator.NewRemoteMachineManager(address)
-	if err != nil {
-		err = fmt.Errorf("could not create the new remote machine manager: %w", err)
-		errOrphanServer := errOrphanServerWithAddress(address)
-		return nil, address, errors.Join(errCartesiMachine(err), errOrphanServer)
-	}
-
-	// Gets the inner machine reference from the remote server.
-	newMachine.inner, err = newMachine.remote.GetMachine()
-	if err != nil {
-		err = fmt.Errorf("could not get the machine from the server: %w", err)
-		return nil, address, errors.Join(errCartesiMachine(err), newMachine.closeServer())
-	}
-
-	return newMachine, address, nil
+	return &RollupsMachine{inner: inner, inc: machine.inc, max: machine.max}, nil
 }
 
 // Hash returns the machine's merkle tree root hash.
-func (machine RollupsMachine) Hash() (model.Hash, error) {
-	hash, err := machine.inner.GetRootHash()
-	if err != nil {
-		err := fmt.Errorf("could not get the machine's root hash: %w", err)
-		return model.Hash(hash), errCartesiMachine(err)
-	}
-	return model.Hash(hash), nil
+func (machine RollupsMachine) Hash() (Hash, error) {
+	return machine.inner.ReadHash()
 }
 
-// Advance sends an input to the cartesi machine.
+// Advance sends an input to the machine.
 // It returns a boolean indicating whether or not the request was accepted.
 // It also returns the corresponding outputs, reports, and the hash of the outputs.
-//
-// If the request was not accepted, the function does not return outputs.
-func (machine *RollupsMachine) Advance(input []byte) (bool, []Output, []Report, model.Hash, error) {
-	var outputsHash model.Hash
-
-	accepted, outputs, reports, err := machine.process(input, advanceStateRequest)
+// If the request is not accepted, the function does not return outputs.
+func (machine *RollupsMachine) Advance(input []byte) (bool, []Output, []Report, Hash, error) {
+	accepted, outputs, reports, err := machine.process(input, cartesimachine.AdvanceStateRequest)
 	if err != nil {
-		return accepted, outputs, reports, outputsHash, err
+		return accepted, outputs, reports, Hash{}, err
 	}
 
 	if !accepted {
-		return accepted, nil, reports, model.Hash{}, nil
+		return accepted, nil, reports, Hash{}, nil
 	} else {
-		hashBytes, err := machine.readMemory()
+		hashBytes, err := machine.inner.ReadMemory()
 		if err != nil {
-			err := fmt.Errorf("could not read the outputs' hash from the memory: %w", err)
-			return accepted, outputs, reports, outputsHash, errCartesiMachine(err)
+			err = fmt.Errorf("could not read the outputs' hash: %w", err)
+			return accepted, outputs, reports, Hash{}, err
 		}
-		if length := len(hashBytes); length != model.HashLength {
-			err := fmt.Errorf("%w (it has %d bytes)", ErrHashLength, length)
-			return accepted, outputs, reports, outputsHash, err
+		if length := len(hashBytes); length != hashLength {
+			err = fmt.Errorf("%w (it has %d bytes)", ErrHashLength, length)
+			return accepted, outputs, reports, Hash{}, err
 		}
+		var outputsHash Hash
 		copy(outputsHash[:], hashBytes)
-
 		return accepted, outputs, reports, outputsHash, nil
 	}
 }
 
-// Inspect sends a query to the cartesi machine.
+// Inspect sends a query to the machine.
 // It returns a boolean indicating whether or not the request was accepted
 // It also returns the corresponding reports.
 func (machine *RollupsMachine) Inspect(query []byte) (bool, []Report, error) {
-	accepted, _, reports, err := machine.process(query, inspectStateRequest)
+	accepted, _, reports, err := machine.process(query, cartesimachine.InspectStateRequest)
 	return accepted, reports, err
 }
 
-// Close destroys the inner cartesi machine, deletes its reference,
-// shutsdown the server, and deletes the server's reference.
+// Close closes the inner cartesi machine.
+// It returns nil if the machine has already been closed.
 func (machine *RollupsMachine) Close() error {
-	return errors.Join(machine.closeInner(), machine.closeServer())
+	if machine.inner == nil {
+		return nil
+	}
+	err := machine.inner.Close()
+	machine.inner = nil
+	return err
 }
 
 // ------------------------------------------------------------------------------------------------
 
-// closeInner destroys the machine and deletes its reference.
-func (machine *RollupsMachine) closeInner() error {
-	defer machine.inner.Delete()
-	err := machine.inner.Destroy()
-	if err != nil {
-		err = fmt.Errorf("could not destroy the machine: %w", err)
-		err = errCartesiMachine(err)
-	}
-	return err
-}
-
-// closeServer shutsdown the server and deletes its reference.
-func (machine *RollupsMachine) closeServer() error {
-	defer machine.remote.Delete()
-	err := machine.remote.Shutdown()
-	if err != nil {
-		err = fmt.Errorf("could not shutdown the server: %w", err)
-		err = errCartesiMachine(err)
-		err = errors.Join(err, errOrphanServerWithAddress(machine.address))
-	}
-	return err
-}
-
 // lastRequestWasAccepted returns true if the last request was accepted and false otherwise.
+// It returns the ErrException error if the last request yielded an exception.
 //
 // The machine MUST be at a manual yield when calling this function.
 func (machine *RollupsMachine) lastRequestWasAccepted() (bool, error) {
-	yieldReason, err := machine.readYieldReason()
+	yieldReason, err := machine.inner.ReadYieldReason()
 	if err != nil {
-		err := fmt.Errorf("could not read the yield reason: %w", err)
-		return false, errCartesiMachine(err)
+		return false, err
 	}
 	switch yieldReason { //nolint:exhaustive
 	case emulator.ManualYieldReasonAccepted:
@@ -220,7 +147,7 @@ func (machine *RollupsMachine) lastRequestWasAccepted() (bool, error) {
 	case emulator.ManualYieldReasonException:
 		return false, ErrException
 	default:
-		panic(unreachable)
+		panic(ErrUnreachable)
 	}
 }
 
@@ -231,31 +158,25 @@ func (machine *RollupsMachine) lastRequestWasAccepted() (bool, error) {
 // and leaves the machine in a state ready to receive requests after an execution with no errors.
 func (machine *RollupsMachine) process(
 	request []byte,
-	requestType requestType,
+	requestType cartesimachine.RequestType,
 ) (accepted bool, _ []Output, _ []Report, _ error) {
-	// Writes the request's data.
-	err := machine.inner.WriteMemory(emulator.CmioRxBufferStart, request)
-	if err != nil {
-		err := fmt.Errorf("could not write the request's data to the memory: %w", err)
-		return false, nil, nil, errCartesiMachine(err)
+	if length := uint(len(request)); length > machine.inner.PayloadLengthLimit() {
+		return false, nil, nil, ErrPayloadLengthLimitExceeded
 	}
 
-	// Writes the request's type and length.
-	fromhost := ((uint64(requestType) << 32) | (uint64(len(request)) & 0xffffffff)) //nolint:mnd
-	err = machine.inner.WriteHtifFromHostData(fromhost)
+	// Writes the request.
+	err := machine.inner.WriteRequest(request, requestType)
 	if err != nil {
-		err := fmt.Errorf("could not write HTIF fromhost data: %w", err)
-		return false, nil, nil, errCartesiMachine(err)
+		return false, nil, nil, err
 	}
 
 	// Green-lights the machine to keep running.
-	err = machine.inner.ResetIFlagsY()
+	err = machine.inner.Continue()
 	if err != nil {
-		err := fmt.Errorf("could not reset iflagsY: %w", err)
-		return false, nil, nil, errCartesiMachine(err)
+		return false, nil, nil, err
 	}
 
-	outputs, reports, err := machine.runAndCollect()
+	outputs, reports, err := machine.run()
 	if err != nil {
 		return false, outputs, reports, err
 	}
@@ -265,159 +186,132 @@ func (machine *RollupsMachine) process(
 	return accepted, outputs, reports, err
 }
 
-// runAndCollect runs the machine until it manually yields.
+type yieldType uint8
+
+const (
+	manualYield yieldType = iota
+	automaticYield
+)
+
+// run runs the machine until it manually yields.
 // It returns any collected responses.
-func (machine *RollupsMachine) runAndCollect() ([]Output, []Report, error) {
-	startingCycle, err := machine.readMachineCycle()
+func (machine *RollupsMachine) run() ([]Output, []Report, error) {
+	currentCycle, err := machine.inner.ReadCycle()
 	if err != nil {
-		err := fmt.Errorf("could not read the machine's cycle: %w", err)
-		return nil, nil, errCartesiMachine(err)
+		return nil, nil, err
 	}
-	maxCycle := startingCycle + machine.Max
-	slog.Debug("runAndCollect",
-		"startingCycle", startingCycle,
-		"maxCycle", maxCycle,
-		"leftover", maxCycle-startingCycle)
+
+	limitCycle := currentCycle + machine.max
+	slog.Debug("run",
+		"startingCycle", currentCycle,
+		"limitCycle", limitCycle,
+		"leftover", limitCycle-currentCycle)
 
 	outputs := []Output{}
 	reports := []Report{}
+
 	for {
-		var (
-			breakReason emulator.BreakReason
-			err         error
-		)
-		breakReason, startingCycle, err = machine.run(startingCycle, maxCycle)
+		var yt *yieldType
+		var err error
+
+		// Steps the machine as many times as needed until it manually/automatically yields.
+		for yt == nil {
+			yt, currentCycle, err = machine.step(currentCycle, limitCycle)
+			if err != nil {
+				return outputs, reports, err
+			}
+		}
+
+		// Returns with the responses when the machine manually yields.
+		if *yt == manualYield {
+			return outputs, reports, nil
+		}
+
+		// Asserts the machine yielded automatically.
+		if *yt != automaticYield {
+			panic(ErrUnreachable)
+		}
+
+		yieldReason, err := machine.inner.ReadYieldReason()
 		if err != nil {
 			return outputs, reports, err
-		}
-
-		switch breakReason { //nolint:exhaustive
-		case emulator.BreakReasonYieldedManually:
-			return outputs, reports, nil // returns with the responses
-		case emulator.BreakReasonYieldedAutomatically:
-			break // breaks from the switch to read the outputs/reports
-		default:
-			panic(unreachable)
-		}
-
-		yieldReason, err := machine.readYieldReason()
-		if err != nil {
-			err := fmt.Errorf("could not read the yield reason: %w", err)
-			return outputs, reports, errCartesiMachine(err)
 		}
 
 		switch yieldReason { //nolint:exhaustive
 		case emulator.AutomaticYieldReasonProgress:
 			return outputs, reports, ErrProgress
 		case emulator.AutomaticYieldReasonOutput:
-			output, err := machine.readMemory()
+			output, err := machine.inner.ReadMemory()
 			if err != nil {
-				err := fmt.Errorf("could not read the output from the memory: %w", err)
-				return outputs, reports, errCartesiMachine(err)
+				return outputs, reports, fmt.Errorf("could not read the output: %w", err)
 			}
 			if len(outputs) == maxOutputs {
 				return outputs, reports, ErrOutputsLimitExceeded
 			}
 			outputs = append(outputs, output)
 		case emulator.AutomaticYieldReasonReport:
-			report, err := machine.readMemory()
+			report, err := machine.inner.ReadMemory()
 			if err != nil {
-				err := fmt.Errorf("could not read the report from the memory: %w", err)
-				return outputs, reports, errCartesiMachine(err)
+				return outputs, reports, fmt.Errorf("could not read the report: %w", err)
 			}
 			reports = append(reports, report)
 		default:
-			panic(unreachable)
+			panic(ErrUnreachable)
 		}
 	}
 }
 
-// run runs the machine until it yields.
-//
-// If there are no errors, it returns one of two possible break reasons:
-//   - emulator.BreakReasonYieldedManually
-//   - emulator.BreakReasonYieldedAutomatically
-//
-// Otherwise, it returns one of four possible errors:
-//   - ErrCartesiMachine
-//   - ErrHalted
-//   - ErrSoftYield
-//   - ErrCycleLimitExceeded
-func (machine *RollupsMachine) run(
-	startingCycle Cycle,
-	maxCycle Cycle,
-) (emulator.BreakReason, Cycle, error) {
-	currentCycle := startingCycle
-	slog.Debug("run", "startingCycle", startingCycle, "leftover", maxCycle-startingCycle)
+// step runs the machine for at most machine.inc cycles (or the amount of cycles left to reach
+// limitCycle, whichever is the lowest).
+// It returns the yield type and the machine cycle after the step.
+// If the machine did not manually/automatically yield, the yield type will be nil (meaning step
+// must be called again to complete the computation).
+func (machine *RollupsMachine) step(currentCycle, limitCycle Cycle) (*yieldType, Cycle, error) {
+	startingCycle := currentCycle
 
-	for {
-		// Calculates the increment.
-		increment := min(machine.Inc, maxCycle-currentCycle)
-
-		// Returns with an error if the next run would exceed Max cycles.
-		if currentCycle+increment >= maxCycle {
-			return emulator.BreakReasonReachedTargetMcycle, currentCycle, ErrCycleLimitExceeded
-		}
-
-		// Runs the machine.
-		breakReason, err := machine.inner.Run(currentCycle + increment)
-		if err != nil {
-			assert(breakReason == emulator.BreakReasonFailed, breakReason.String())
-			err := fmt.Errorf("machine run failed: %w", err)
-			return breakReason, currentCycle, errCartesiMachine(err)
-		}
-
-		// Gets the current cycle.
-		currentCycle, err = machine.readMachineCycle()
-		if err != nil {
-			err := fmt.Errorf("could not read the machine's cycle: %w", err)
-			return emulator.BreakReasonFailed, currentCycle, errCartesiMachine(err)
-		}
-		slog.Debug("run", "currentCycle", currentCycle, "leftover", maxCycle-currentCycle)
-
-		switch breakReason {
-		case emulator.BreakReasonFailed:
-			panic(unreachable) // covered above
-		case emulator.BreakReasonHalted:
-			return emulator.BreakReasonHalted, currentCycle, ErrHalted
-		case emulator.BreakReasonYieldedManually, emulator.BreakReasonYieldedAutomatically:
-			return breakReason, currentCycle, nil // returns with the break reason
-		case emulator.BreakReasonYieldedSoftly:
-			return emulator.BreakReasonYieldedSoftly, currentCycle, ErrSoftYield
-		case emulator.BreakReasonReachedTargetMcycle:
-			continue // keeps on running
-		default:
-			panic(unreachable)
-		}
+	// Returns with an error if the next run would exceed limitCycle.
+	if currentCycle >= limitCycle && machine.inc != 0 {
+		return nil, 0, ErrCycleLimitExceeded
 	}
-}
 
-// ------------------------------------------------------------------------------------------------
+	// Calculates the increment.
+	increment := min(machine.inc, limitCycle-currentCycle)
 
-// readMemory reads the machine's memory to retrieve the data from emitted outputs/reports.
-func (machine *RollupsMachine) readMemory() ([]byte, error) {
-	tohost, err := machine.inner.ReadHtifToHostData()
+	// Runs the machine.
+	breakReason, err := machine.inner.Run(currentCycle + increment)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	length := tohost & 0x00000000ffffffff //nolint:mnd
-	return machine.inner.ReadMemory(emulator.CmioTxBufferStart, length)
-}
 
-func (machine *RollupsMachine) readYieldReason() (emulator.HtifYieldReason, error) {
-	value, err := machine.inner.ReadHtifToHostData()
-	return emulator.HtifYieldReason(value >> 32), err //nolint:mnd
-}
+	// Gets the current cycle.
+	currentCycle, err = machine.inner.ReadCycle()
+	if err != nil {
+		return nil, 0, err
+	}
 
-func (machine *RollupsMachine) readMachineCycle() (Cycle, error) {
-	cycle, err := machine.inner.ReadMCycle()
-	return Cycle(cycle), err
-}
+	slog.Debug("step",
+		"startingCycle", startingCycle,
+		"increment", increment,
+		"currentCycle", currentCycle,
+		"leftover", limitCycle-currentCycle,
+		"breakReason", breakReason)
 
-// ------------------------------------------------------------------------------------------------
-
-func assert(condition bool, s string) {
-	if !condition {
-		panic("assertion error: " + s)
+	switch breakReason {
+	case emulator.BreakReasonYieldedManually:
+		yt := manualYield
+		return &yt, currentCycle, nil // returns with the yield type
+	case emulator.BreakReasonYieldedAutomatically:
+		yt := automaticYield
+		return &yt, currentCycle, nil // returns with the yield type
+	case emulator.BreakReasonReachedTargetMcycle:
+		return nil, currentCycle, nil // returns with no yield type
+	case emulator.BreakReasonHalted:
+		return nil, 0, ErrHalted
+	case emulator.BreakReasonYieldedSoftly:
+		return nil, 0, ErrSoftYield
+	case emulator.BreakReasonFailed:
+		fallthrough // covered by inner.Run()
+	default:
+		panic(ErrUnreachable)
 	}
 }

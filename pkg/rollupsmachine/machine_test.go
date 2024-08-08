@@ -4,18 +4,23 @@
 package rollupsmachine
 
 import (
-	"encoding/hex"
-	"fmt"
+	"errors"
 	"log"
 	"log/slog"
 	"os"
 	"testing"
 
 	"github.com/cartesi/rollups-node/pkg/emulator"
+	"github.com/cartesi/rollups-node/pkg/rollupsmachine/cartesimachine"
 	"github.com/cartesi/rollups-node/test/snapshot"
 
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+)
+
+const (
+	defaultInc = Cycle(10000000)
+	defaultMax = Cycle(1000000000)
 )
 
 func init() {
@@ -25,12 +30,8 @@ func init() {
 
 const (
 	cycles          = uint64(1_000_000_000)
-	serverVerbosity = ServerVerbosityInfo
+	serverVerbosity = cartesimachine.ServerVerbosityInfo
 )
-
-func payload(s string) string {
-	return fmt.Sprintf("echo '{ \"payload\": \"0x%s\" }'", hex.EncodeToString([]byte(s)))
-}
 
 // ------------------------------------------------------------------------------------------------
 
@@ -41,30 +42,22 @@ func TestRollupsMachine(t *testing.T) {
 
 type RollupsMachineSuite struct{ suite.Suite }
 
-func (s *RollupsMachineSuite) TestLoad()    { suite.Run(s.T(), new(LoadSuite)) }
+func (s *RollupsMachineSuite) TestNew()     { suite.Run(s.T(), new(NewSuite)) }
 func (s *RollupsMachineSuite) TestFork()    { suite.Run(s.T(), new(ForkSuite)) }
 func (s *RollupsMachineSuite) TestAdvance() { suite.Run(s.T(), new(AdvanceSuite)) }
 func (s *RollupsMachineSuite) TestInspect() { suite.Run(s.T(), new(InspectSuite)) }
-func (s *RollupsMachineSuite) TestCycles()  { suite.Run(s.T(), new(CyclesSuite)) }
 
 // ------------------------------------------------------------------------------------------------
 
-// Missing:
-// - "could not create the remote machine manager"
-// - "could not read iflagsY"
-// - "could not read the yield reason"
-// - machine.Close()
-type LoadSuite struct {
+type NewSuite struct {
 	suite.Suite
 	address string
 
-	acceptSnapshot    *snapshot.Snapshot
-	rejectSnapshot    *snapshot.Snapshot
-	exceptionSnapshot *snapshot.Snapshot
-	noticeSnapshot    *snapshot.Snapshot
+	acceptSnapshot *snapshot.Snapshot
+	rejectSnapshot *snapshot.Snapshot
 }
 
-func (s *LoadSuite) SetupSuite() {
+func (s *NewSuite) SetupSuite() {
 	var (
 		require = s.Require()
 		script  string
@@ -80,86 +73,72 @@ func (s *LoadSuite) SetupSuite() {
 	s.rejectSnapshot, err = snapshot.FromScript(script, cycles)
 	require.Nil(err)
 	require.Equal(emulator.BreakReasonYieldedManually, s.rejectSnapshot.BreakReason)
-
-	script = payload("Paul Atreides") + " | rollup exception"
-	s.exceptionSnapshot, err = snapshot.FromScript(script, cycles)
-	require.Nil(err)
-	require.Equal(emulator.BreakReasonYieldedManually, s.exceptionSnapshot.BreakReason)
-
-	script = payload("Hari Seldon") + " | rollup notice"
-	s.noticeSnapshot, err = snapshot.FromScript(script, cycles)
-	require.Nil(err)
-	require.Equal(emulator.BreakReasonYieldedAutomatically, s.noticeSnapshot.BreakReason)
 }
 
-func (s *LoadSuite) TearDownSuite() {
+func (s *NewSuite) TearDownSuite() {
 	s.acceptSnapshot.Close()
 	s.rejectSnapshot.Close()
-	s.exceptionSnapshot.Close()
-	s.noticeSnapshot.Close()
 }
 
-func (s *LoadSuite) SetupTest() {
-	address, err := StartServer(serverVerbosity, 0, os.Stdout, os.Stderr)
+func (s *NewSuite) SetupTest() {
+	address, err := cartesimachine.StartServer(serverVerbosity, 0, os.Stdout, os.Stderr)
 	s.Require().Nil(err)
 	s.address = address
 }
 
-func (s *LoadSuite) TearDownTest() {
-	err := StopServer(s.address)
+func (s *NewSuite) TearDownTest() {
+	err := cartesimachine.StopServer(s.address)
 	s.Require().Nil(err)
 }
 
-func (s *LoadSuite) TestOkAccept() {
+func (s *NewSuite) TestOkAccept() {
 	require := s.Require()
+
 	config := &emulator.MachineRuntimeConfig{}
-	machine, err := Load(s.acceptSnapshot.Path(), s.address, config)
+	cartesiMachine, err := cartesimachine.Load(s.acceptSnapshot.Path(), s.address, config)
+	require.NotNil(cartesiMachine)
 	require.Nil(err)
-	require.NotNil(machine)
-}
 
-func (s *LoadSuite) TestOkReject() {
-	require := s.Require()
-	config := &emulator.MachineRuntimeConfig{}
-	machine, err := Load(s.rejectSnapshot.Path(), s.address, config)
+	rollupsMachine, err := New(cartesiMachine, defaultInc, defaultMax)
+	require.NotNil(rollupsMachine)
 	require.Nil(err)
-	require.NotNil(machine)
 }
 
-func (s *LoadSuite) TestInvalidAddress() {
+func (s *NewSuite) TestOkReject() {
 	require := s.Require()
+
 	config := &emulator.MachineRuntimeConfig{}
-	machine, err := Load(s.acceptSnapshot.Path(), "invalid-address", config)
-	require.ErrorContains(err, "could not load the machine")
-	require.ErrorIs(err, ErrCartesiMachine)
-	require.Nil(machine)
+	cartesiMachine, err := cartesimachine.Load(s.rejectSnapshot.Path(), s.address, config)
+	require.NotNil(cartesiMachine)
+	require.Nil(err)
+
+	rollupsMachine, err := New(cartesiMachine, defaultInc, defaultMax)
+	require.NotNil(rollupsMachine)
+	require.Nil(err)
 }
 
-func (s *LoadSuite) TestInvalidPath() {
+func (s *NewSuite) TestInvalidAddress() {
 	require := s.Require()
-	config := &emulator.MachineRuntimeConfig{}
-	machine, err := Load("invalid-path", s.address, config)
-	require.ErrorContains(err, "could not load the machine")
-	require.ErrorIs(err, ErrCartesiMachine)
-	require.Nil(machine)
-}
 
-func (s *LoadSuite) TestNotAtManualYield() {
-	require := s.Require()
 	config := &emulator.MachineRuntimeConfig{}
-	machine, err := Load(s.noticeSnapshot.Path(), s.address, config)
+	cartesiMachine, err := cartesimachine.Load(s.acceptSnapshot.Path(), "invalid address", config)
+	require.Nil(cartesiMachine)
 	require.NotNil(err)
-	require.ErrorIs(err, ErrNotAtManualYield)
-	require.Nil(machine)
+
+	require.ErrorContains(err, "could not load the machine")
+	require.ErrorIs(err, cartesimachine.ErrCartesiMachine)
 }
 
-func (s *LoadSuite) TestException() {
+func (s *NewSuite) TestInvalidPath() {
 	require := s.Require()
+
 	config := &emulator.MachineRuntimeConfig{}
-	machine, err := Load(s.exceptionSnapshot.Path(), s.address, config)
+	cartesiMachine, err := cartesimachine.Load("invalid path", s.address, config)
+	require.Nil(cartesiMachine)
 	require.NotNil(err)
-	require.ErrorIs(err, ErrException)
-	require.Nil(machine)
+
+	require.ErrorIs(err, cartesimachine.ErrCartesiMachine)
+	require.ErrorContains(err, "could not load the machine")
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -177,20 +156,27 @@ func (s *ForkSuite) TestOk() {
 	defer func() { require.Nil(snapshot.Close()) }()
 
 	// Starts the server.
-	address, err := StartServer(serverVerbosity, 0, os.Stdout, os.Stderr)
+	address, err := cartesimachine.StartServer(serverVerbosity, 0, os.Stdout, os.Stderr)
 	require.Nil(err)
 
 	// Loads the machine.
-	machine, err := Load(snapshot.Path(), address, &emulator.MachineRuntimeConfig{})
+	cartesiMachine, err := cartesimachine.Load(
+		snapshot.Path(),
+		address,
+		&emulator.MachineRuntimeConfig{})
+	require.NotNil(cartesiMachine)
 	require.Nil(err)
+
+	machine, err := New(cartesiMachine, defaultInc, defaultMax)
 	require.NotNil(machine)
+	require.Nil(err)
 	defer func() { require.Nil(machine.Close()) }()
 
 	// Forks the machine.
-	forkMachine, forkAddress, err := machine.Fork()
+	forkMachine, err := machine.Fork()
 	require.Nil(err)
 	require.NotNil(forkMachine)
-	require.NotEqual(address, forkAddress)
+	require.NotEqual(address, forkMachine.inner.Address())
 	require.Nil(forkMachine.Close())
 }
 
@@ -227,7 +213,7 @@ func (s *AdvanceSuite) TearDownSuite() {
 }
 
 func (s *AdvanceSuite) SetupTest() {
-	address, err := StartServer(serverVerbosity, 0, os.Stdout, os.Stderr)
+	address, err := cartesimachine.StartServer(serverVerbosity, 0, os.Stdout, os.Stderr)
 	s.Require().Nil(err)
 	s.address = address
 }
@@ -236,7 +222,12 @@ func (s *AdvanceSuite) TestEchoLoop() {
 	require := s.Require()
 
 	// Loads the machine.
-	machine, err := Load(s.snapshotEcho.Path(), s.address, &emulator.MachineRuntimeConfig{})
+	config := &emulator.MachineRuntimeConfig{}
+	cartesiMachine, err := cartesimachine.Load(s.snapshotEcho.Path(), s.address, config)
+	require.NotNil(cartesiMachine)
+	require.Nil(err)
+
+	machine, err := New(cartesiMachine, defaultInc, defaultMax)
 	require.Nil(err)
 	require.NotNil(machine)
 	defer func() { require.Nil(machine.Close()) }()
@@ -278,7 +269,12 @@ func (s *AdvanceSuite) TestAcceptRejectException() {
 	defer func() { require.Nil(snapshot.Close()) }()
 
 	// Loads the machine.
-	machine, err := Load(snapshot.Path(), s.address, &emulator.MachineRuntimeConfig{})
+	config := &emulator.MachineRuntimeConfig{}
+	cartesiMachine, err := cartesimachine.Load(snapshot.Path(), s.address, config)
+	require.NotNil(cartesiMachine)
+	require.Nil(err)
+
+	machine, err := New(cartesiMachine, defaultInc, defaultMax)
 	require.Nil(err)
 	require.NotNil(machine)
 	defer func() { require.Nil(machine.Close()) }()
@@ -323,7 +319,12 @@ func (s *AdvanceSuite) TestHalted() {
 	defer func() { require.Nil(snapshot.Close()) }()
 
 	// Loads the machine.
-	machine, err := Load(snapshot.Path(), s.address, &emulator.MachineRuntimeConfig{})
+	config := &emulator.MachineRuntimeConfig{}
+	cartesiMachine, err := cartesimachine.Load(snapshot.Path(), s.address, config)
+	require.NotNil(cartesiMachine)
+	require.Nil(err)
+
+	machine, err := New(cartesiMachine, defaultInc, defaultMax)
 	require.Nil(err)
 	require.NotNil(machine)
 	defer func() { require.Nil(machine.Close()) }()
@@ -335,80 +336,6 @@ func (s *AdvanceSuite) TestHalted() {
 
 	_, _, _, _, err = machine.Advance(encodedInput)
 	require.Equal(ErrHalted, err)
-}
-
-// ------------------------------------------------------------------------------------------------
-
-type CyclesSuite struct {
-	suite.Suite
-	snapshot *snapshot.Snapshot
-	address  string
-	machine  *RollupsMachine
-	input    []byte
-}
-
-func (s *CyclesSuite) SetupSuite() {
-	require := s.Require()
-	script := "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --verbose=1"
-	snapshot, err := snapshot.FromScript(script, cycles)
-	require.Nil(err)
-	require.Equal(emulator.BreakReasonYieldedManually, snapshot.BreakReason)
-	s.snapshot = snapshot
-
-	quote := `"I must not fear. Fear is the mind-killer." -- Dune, Frank Herbert`
-	input, err := Input{Data: []byte(quote)}.Encode()
-	require.Nil(err)
-	s.input = input
-}
-
-func (s *CyclesSuite) TearDownSuite() {
-	s.snapshot.Close()
-}
-
-func (s *CyclesSuite) SetupSubTest() {
-	require := s.Require()
-	var err error
-
-	s.address, err = StartServer(serverVerbosity, 0, os.Stdout, os.Stderr)
-	require.Nil(err)
-
-	s.machine, err = Load(s.snapshot.Path(), s.address, &emulator.MachineRuntimeConfig{})
-	require.Nil(err)
-	require.NotNil(s.machine)
-}
-
-func (s *CyclesSuite) TearDownSubTest() {
-	err := s.machine.Close()
-	s.Require().Nil(err)
-}
-
-// When we send a request to the machine with machine.Max set too low,
-// the function call should return the ErrCycleLimitExceeded error.
-func (s *CyclesSuite) TestCycleLimitExceeded() {
-	// Exits before calling machine.Run.
-	s.Run("Max=0", func() {
-		require := s.Require()
-		s.machine.Max = 0
-		_, _, _, _, err := s.machine.Advance(s.input)
-		require.Equal(ErrCycleLimitExceeded, err)
-	})
-
-	// Runs for exactly one cycle.
-	s.Run("Max=1", func() {
-		require := s.Require()
-		s.machine.Max = 1
-		_, _, _, _, err := s.machine.Advance(s.input)
-		require.Equal(ErrCycleLimitExceeded, err)
-	})
-
-	// Calls machine.Run many times.
-	s.Run("Max=100000", func() {
-		require := s.Require()
-		s.machine.Max = 100000
-		s.machine.Inc = 10000
-		_, _, _, _, err := s.machine.Advance(s.input)
-		require.Equal(ErrCycleLimitExceeded, err)
-	})
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -437,7 +364,7 @@ func (s *InspectSuite) TearDownSuite() {
 }
 
 func (s *InspectSuite) SetupTest() {
-	address, err := StartServer(serverVerbosity, 0, os.Stdout, os.Stderr)
+	address, err := cartesimachine.StartServer(serverVerbosity, 0, os.Stdout, os.Stderr)
 	s.Require().Nil(err)
 	s.address = address
 }
@@ -446,7 +373,12 @@ func (s *InspectSuite) TestEchoLoop() {
 	require := s.Require()
 
 	// Loads the machine.
-	machine, err := Load(s.snapshotEcho.Path(), s.address, &emulator.MachineRuntimeConfig{})
+	config := &emulator.MachineRuntimeConfig{}
+	cartesiMachine, err := cartesimachine.Load(s.snapshotEcho.Path(), s.address, config)
+	require.NotNil(cartesiMachine)
+	require.Nil(err)
+
+	machine, err := New(cartesiMachine, defaultInc, defaultMax)
 	require.Nil(err)
 	require.NotNil(machine)
 	defer func() { require.Nil(machine.Close()) }()
@@ -483,4 +415,789 @@ func expectNotice(t *testing.T, output Output) *Notice {
 	require.Nil(t, voucher)
 	require.NotNil(t, notice)
 	return notice
+}
+
+// ------------------------------------------------------------------------------------------------
+// Unit tests
+// ------------------------------------------------------------------------------------------------
+
+func TestRollupsMachineUnit(t *testing.T) {
+	suite.Run(t, new(UnitSuite))
+}
+
+type UnitSuite struct{ suite.Suite }
+
+func (_ *UnitSuite) newMachines() (*CartesiMachineMock, *RollupsMachine) {
+	mock := new(CartesiMachineMock)
+	machine := &RollupsMachine{inner: mock, inc: defaultInc, max: defaultMax}
+	return mock, machine
+}
+
+func (s *UnitSuite) TestNew() {
+	newCartesiMachine := func() *CartesiMachineMock {
+		mock := new(CartesiMachineMock)
+		mock.IsAtManualYieldReturn = true
+		mock.IsAtManualYieldError = nil
+		mock.ReadYieldReasonReturn = []emulator.HtifYieldReason{emulator.ManualYieldReasonAccepted}
+		mock.ReadYieldReasonError = []error{nil}
+		return mock
+	}
+
+	s.Run("Ok", func() {
+		s.Run("Accepted", func() {
+			require := s.Require()
+			mock := newCartesiMachine()
+
+			machine, err := New(mock, defaultInc, defaultMax)
+			require.Nil(err)
+			require.NotNil(machine)
+		})
+
+		s.Run("Rejected", func() {
+			require := s.Require()
+			mock := newCartesiMachine()
+			mock.ReadYieldReasonReturn = []emulator.HtifYieldReason{
+				emulator.ManualYieldReasonRejected,
+			}
+
+			machine, err := New(mock, defaultInc, defaultMax)
+			require.Nil(err)
+			require.NotNil(machine)
+		})
+	})
+
+	s.Run("CartesiMachineState", func() {
+		s.Run("NotAtManualYield", func() {
+			require := s.Require()
+			mock := newCartesiMachine()
+			mock.IsAtManualYieldReturn = false
+
+			machine, err := New(mock, defaultInc, defaultMax)
+			require.Equal(ErrNotAtManualYield, err)
+			require.Nil(machine)
+		})
+
+		s.Run("Exception", func() {
+			require := s.Require()
+			mock := newCartesiMachine()
+			mock.ReadYieldReasonReturn = []emulator.HtifYieldReason{
+				emulator.ManualYieldReasonException,
+			}
+
+			machine, err := New(mock, defaultInc, defaultMax)
+			require.Equal(ErrException, err)
+			require.Nil(machine)
+		})
+
+		s.Run("Panic", func() {
+			require := s.Require()
+			require.PanicsWithValue(ErrUnreachable, func() {
+				mock := newCartesiMachine()
+				mock.ReadYieldReasonReturn = []emulator.HtifYieldReason{10}
+				_, _ = New(mock, defaultInc, defaultMax)
+			})
+		})
+	})
+
+	s.Run("CartesiMachineError", func() {
+		s.Run("IsAtManualYield", func() {
+			require := s.Require()
+			errIsAtManualYield := errors.New("IsAtManualYield error")
+			mock := newCartesiMachine()
+			mock.IsAtManualYieldError = errIsAtManualYield
+
+			machine, err := New(mock, defaultInc, defaultMax)
+			require.Equal(errIsAtManualYield, err)
+			require.Nil(machine)
+		})
+
+		s.Run("ReadYieldReason", func() {
+			require := s.Require()
+			errReadYieldReason := errors.New("ReadYieldReason error")
+			mock := newCartesiMachine()
+			mock.ReadYieldReasonError = []error{errReadYieldReason}
+
+			machine, err := New(mock, defaultInc, defaultMax)
+			require.Equal(errReadYieldReason, err)
+			require.Nil(machine)
+		})
+	})
+}
+
+func (s *UnitSuite) TestFork() {
+	s.Run("Ok", func() {
+		require := s.Require()
+		forkedMock := new(CartesiMachineMock)
+		mock, machine := s.newMachines()
+		mock.ForkReturn = forkedMock
+		mock.ForkError = nil
+
+		fork, err := machine.Fork()
+		require.Nil(err)
+		require.NotNil(fork)
+		require.Equal(forkedMock, fork.inner)
+		require.Equal(machine.inc, fork.inc)
+		require.Equal(machine.max, fork.max)
+	})
+
+	s.Run("CartesiMachineError", func() {
+		require := s.Require()
+		errFork := errors.New("Fork error")
+		mock, machine := s.newMachines()
+		mock.ForkReturn = new(CartesiMachineMock)
+		mock.ForkError = errFork
+
+		fork, err := machine.Fork()
+		require.Equal(errFork, err)
+		require.Nil(fork)
+	})
+}
+
+func (s *UnitSuite) TestHash() {
+	machineHash := [32]byte{}
+	machineHash[0] = 1
+	machineHash[31] = 1
+
+	s.Run("Ok", func() {
+		require := s.Require()
+		mock, machine := s.newMachines()
+		mock.ReadHashReturn = machineHash
+		mock.ReadHashError = nil
+
+		hash, err := machine.Hash()
+		require.Nil(err)
+		require.Equal(machineHash, hash)
+		require.Equal(uint8(1), hash[0])
+		require.Equal(uint8(1), hash[31])
+		for i := 1; i < 31; i++ {
+			require.Equal(uint8(0), hash[i])
+		}
+	})
+
+	s.Run("CartesiMachineError", func() {
+		require := s.Require()
+		errReadHash := errors.New("ReadHash error")
+		mock, machine := s.newMachines()
+		mock.ReadHashReturn = machineHash
+		mock.ReadHashError = errReadHash
+
+		hash, err := machine.Hash()
+		require.Equal(errReadHash, err)
+		require.Equal(machineHash, hash)
+	})
+}
+
+func (s *UnitSuite) TestAdvance() {
+	s.T().Skip("TODO")
+}
+
+func (s *UnitSuite) TestInspect() {
+	s.T().Skip("TODO")
+}
+
+func (s *UnitSuite) TestClose() {
+	s.Run("Ok", func() {
+		require := s.Require()
+		mock, machine := s.newMachines()
+		mock.CloseError = nil
+
+		err := machine.Close()
+		require.Nil(err)
+		require.Nil(machine.inner)
+	})
+
+	s.Run("Reentry", func() {
+		require := s.Require()
+		mock, machine := s.newMachines()
+		mock.CloseError = nil
+
+		err := machine.Close()
+		require.Nil(err)
+
+		require.NotPanics(func() {
+			err := machine.Close()
+			require.Nil(err)
+		})
+	})
+
+	s.Run("CartesiMachineError", func() {
+		require := s.Require()
+		errClose := errors.New("Close error")
+		mock, machine := s.newMachines()
+		mock.CloseError = errClose
+
+		err := machine.Close()
+		require.Equal(errClose, err)
+	})
+}
+
+func (s *UnitSuite) TestLastRequestWasAccepted() {}
+
+func (s *UnitSuite) TestProcess() {}
+
+func (s *UnitSuite) TestRun() {
+	newMachines := func() (*CartesiMachineMock, *RollupsMachine) {
+		mock, machine := s.newMachines()
+		mock.RunReturn = []emulator.BreakReason{0, emulator.BreakReasonYieldedManually}
+		mock.RunError = []error{nil, nil}
+		mock.ReadCycleError = []error{nil, nil}
+		return mock, machine
+	}
+	var newMachinesONRN func() (*CartesiMachineMock, *RollupsMachine)
+
+	s.Run("Step", func() {
+		s.Run("Once", func() {
+			require := s.Require()
+			mock, machine := newMachines()
+
+			mock.Cycle = 0
+			machine.inc = 2
+			machine.max = 10
+
+			outputs, reports, err := machine.run()
+			require.Nil(err)
+			require.Empty(outputs)
+			require.Empty(reports)
+			require.Equal(uint(1), mock.Steps-1)
+		})
+
+		s.Run("Multiple", func() {
+			require := s.Require()
+			mock, machine := newMachines()
+			mock.RunReturn = []emulator.BreakReason{0,
+				emulator.BreakReasonReachedTargetMcycle,
+				emulator.BreakReasonReachedTargetMcycle,
+				emulator.BreakReasonYieldedManually,
+			}
+			mock.RunError = []error{nil, nil, nil, nil}
+			mock.ReadCycleError = []error{nil, nil, nil, nil}
+
+			mock.Cycle = 10
+			machine.inc = 3
+			machine.max = 8
+
+			outputs, reports, err := machine.run()
+			require.Nil(err)
+			require.Empty(outputs)
+			require.Empty(reports)
+			require.Equal(uint(3), mock.Steps-1)
+		})
+	})
+
+	s.Run("Responses", func() {
+		s.Run("Outputs=1/Reports=0", func() {
+			require := s.Require()
+			mock, machine := newMachines()
+
+			mock.RunReturn = []emulator.BreakReason{0,
+				emulator.BreakReasonYieldedAutomatically,
+				emulator.BreakReasonYieldedManually,
+			}
+			mock.RunError = []error{nil, nil, nil}
+			mock.ReadCycleError = []error{nil, nil, nil}
+
+			mock.ReadYieldReasonReturn = []emulator.HtifYieldReason{
+				emulator.AutomaticYieldReasonOutput,
+			}
+			mock.ReadYieldReasonError = []error{nil}
+			mock.ReadMemoryReturn = [][]byte{[]byte("an output")}
+			mock.ReadMemoryError = []error{nil}
+
+			mock.Cycle = 0
+			machine.inc = 2
+			machine.max = 10
+
+			outputs, reports, err := machine.run()
+			require.Nil(err)
+			require.Len(outputs, 1)
+			require.Empty(reports)
+
+			require.Equal([]byte("an output"), outputs[0])
+
+			require.Equal(uint(2), mock.Steps-1)
+			require.Equal(uint(1), mock.Responses)
+		})
+
+		s.Run("Outputs=0/Reports=1", func() {
+			require := s.Require()
+			mock, machine := newMachines()
+
+			mock.RunReturn = []emulator.BreakReason{0,
+				emulator.BreakReasonYieldedAutomatically,
+				emulator.BreakReasonYieldedManually,
+			}
+			mock.RunError = []error{nil, nil, nil}
+			mock.ReadCycleError = []error{nil, nil, nil}
+
+			mock.ReadYieldReasonReturn = []emulator.HtifYieldReason{
+				emulator.AutomaticYieldReasonReport,
+			}
+			mock.ReadYieldReasonError = []error{nil}
+			mock.ReadMemoryReturn = [][]byte{[]byte("a report")}
+			mock.ReadMemoryError = []error{nil}
+
+			mock.Cycle = 0
+			machine.inc = 2
+			machine.max = 10
+
+			outputs, reports, err := machine.run()
+			require.Nil(err)
+			require.Empty(outputs)
+			require.Len(reports, 1)
+
+			require.Equal([]byte("a report"), reports[0])
+
+			require.Equal(uint(2), mock.Steps-1)
+			require.Equal(uint(1), mock.Responses)
+		})
+
+		newMachinesONRN = func() (*CartesiMachineMock, *RollupsMachine) {
+			mock, machine := newMachines()
+
+			mock.RunReturn = []emulator.BreakReason{0,
+				emulator.BreakReasonYieldedAutomatically,
+				emulator.BreakReasonYieldedAutomatically,
+				emulator.BreakReasonYieldedAutomatically,
+				emulator.BreakReasonYieldedAutomatically,
+				emulator.BreakReasonYieldedAutomatically,
+				emulator.BreakReasonYieldedManually,
+			}
+			mock.RunError = []error{nil, nil, nil, nil, nil, nil, nil}
+			mock.ReadCycleError = []error{nil, nil, nil, nil, nil, nil, nil}
+
+			mock.ReadYieldReasonReturn = []emulator.HtifYieldReason{
+				emulator.AutomaticYieldReasonOutput,
+				emulator.AutomaticYieldReasonReport,
+				emulator.AutomaticYieldReasonOutput,
+				emulator.AutomaticYieldReasonReport,
+				emulator.AutomaticYieldReasonReport,
+			}
+			mock.ReadYieldReasonError = []error{nil, nil, nil, nil, nil}
+			mock.ReadMemoryReturn = [][]byte{
+				[]byte("output 1"),
+				[]byte("report 1"),
+				[]byte("output 2"),
+				[]byte("report 2"),
+				[]byte("report 3"),
+			}
+			mock.ReadMemoryError = []error{nil, nil, nil, nil, nil}
+
+			mock.Cycle = 0
+			machine.inc = 2
+			machine.max = 20
+
+			return mock, machine
+		}
+
+		s.Run("Outputs=N/Reports=N", func() {
+			require := s.Require()
+			mock, machine := newMachinesONRN()
+
+			outputs, reports, err := machine.run()
+			require.Nil(err)
+			require.Len(outputs, 2)
+			require.Len(reports, 3)
+
+			require.Equal([]byte("output 1"), outputs[0])
+			require.Equal([]byte("output 2"), outputs[1])
+			require.Equal([]byte("report 1"), reports[0])
+			require.Equal([]byte("report 2"), reports[1])
+			require.Equal([]byte("report 3"), reports[2])
+
+			require.Equal(uint(6), mock.Steps-1)
+			require.Equal(uint(5), mock.Responses)
+		})
+	})
+
+	s.Run("CycleLimitExceeded", func() {
+		require := s.Require()
+		mock, machine := newMachinesONRN()
+		machine.max = 5
+
+		outputs, reports, err := machine.run()
+		require.Equal(ErrCycleLimitExceeded, err)
+		require.Len(outputs, 2)
+		require.Len(reports, 1)
+
+		require.Equal([]byte("output 1"), outputs[0])
+		require.Equal([]byte("output 2"), outputs[1])
+		require.Equal([]byte("report 1"), reports[0])
+
+		require.Equal(uint(3), mock.Steps-1)
+		require.Equal(uint(3), mock.Responses)
+	})
+}
+
+func (s *UnitSuite) TestStep() {
+	newMachines := func() (*CartesiMachineMock, *RollupsMachine) {
+		mock, machine := s.newMachines()
+		machine.inc = 0
+		machine.max = 0
+		mock.RunReturn = []emulator.BreakReason{emulator.BreakReasonReachedTargetMcycle}
+		mock.RunError = []error{nil}
+		mock.ReadCycleError = []error{nil}
+		return mock, machine
+	}
+
+	s.Run("Cycles", func() {
+		s.Run("Current < Limit", func() {
+			s.Run("Inc == 0", func() {
+				require := s.Require()
+				mock, machine := newMachines()
+
+				currentCycle := uint64(5)
+				limitCycle := uint64(6)
+				machine.inc = 0
+				mock.Cycle = currentCycle
+
+				yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+				require.Nil(err)
+				require.Nil(yt)
+				require.Equal(currentCycle, newCurrentCycle)
+			})
+
+			s.Run("Inc < Leftover", func() {
+				require := s.Require()
+				mock, machine := newMachines()
+
+				currentCycle := uint64(10)
+				limitCycle := uint64(14)
+				machine.inc = 2
+				mock.Cycle = currentCycle
+
+				yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+				require.Nil(err)
+				require.Nil(yt)
+				require.Equal(currentCycle+machine.inc, newCurrentCycle)
+			})
+
+			s.Run("Inc == Leftover", func() {
+				require := s.Require()
+				mock, machine := newMachines()
+
+				currentCycle := uint64(0)
+				limitCycle := uint64(3)
+				machine.inc = 3
+				mock.Cycle = currentCycle
+
+				yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+				require.Nil(err)
+				require.Nil(yt)
+				require.Equal(limitCycle, newCurrentCycle)
+				require.Equal(newCurrentCycle, currentCycle+machine.inc)
+			})
+
+			s.Run("Inc > Leftover", func() {
+				require := s.Require()
+				mock, machine := newMachines()
+
+				currentCycle := uint64(1)
+				limitCycle := uint64(4)
+				machine.inc = 5
+				mock.Cycle = currentCycle
+
+				yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+				require.Nil(err)
+				require.Nil(yt)
+				require.Equal(limitCycle, newCurrentCycle)
+				require.Less(newCurrentCycle, currentCycle+machine.inc)
+			})
+		})
+
+		s.Run("Current == Limit", func() {
+			s.Run("Inc != 0", func() {
+				require := s.Require()
+				mock, machine := newMachines()
+
+				currentCycle := uint64(6)
+				limitCycle := currentCycle
+				machine.inc = 2
+				mock.Cycle = currentCycle
+
+				yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+				require.Equal(ErrCycleLimitExceeded, err)
+				require.Nil(yt)
+				require.Zero(newCurrentCycle)
+			})
+
+			s.Run("Inc == 0", func() {
+				require := s.Require()
+				mock, machine := newMachines()
+
+				currentCycle := uint64(6)
+				limitCycle := currentCycle
+				machine.inc = 0
+				mock.Cycle = currentCycle
+
+				yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+				require.Nil(err)
+				require.Nil(yt)
+				require.Equal(currentCycle, newCurrentCycle)
+			})
+		})
+
+		s.Run("Current > Limit", func() {
+			s.Run("Inc != 0", func() {
+				require := s.Require()
+				mock, machine := newMachines()
+
+				currentCycle := uint64(9)
+				limitCycle := uint64(4)
+				machine.inc = 1
+				mock.Cycle = currentCycle
+
+				yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+				require.Equal(ErrCycleLimitExceeded, err)
+				require.Nil(yt)
+				require.Zero(newCurrentCycle)
+			})
+
+			s.Run("Inc == 0", func() {
+				require := s.Require()
+				mock, machine := newMachines()
+
+				currentCycle := uint64(9)
+				limitCycle := uint64(4)
+				machine.inc = 0
+				mock.Cycle = currentCycle
+
+				yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+				require.Nil(err)
+				require.Nil(yt)
+				require.Equal(currentCycle, newCurrentCycle)
+			})
+		})
+	})
+
+	s.Run("CartesiMachineError", func() {
+		s.Run("Run", func() {
+			require := s.Require()
+			errRun := errors.New("Run error")
+			mock, machine := newMachines()
+			mock.RunError[0] = errRun
+
+			currentCycle := uint64(5)
+			limitCycle := uint64(12)
+			machine.inc = 5
+			mock.Cycle = currentCycle
+
+			yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+			require.Equal(errRun, err)
+			require.Nil(yt)
+			require.Zero(newCurrentCycle)
+		})
+
+		s.Run("ReadCycle", func() {
+			require := s.Require()
+			errReadCycle := errors.New("ReadCycle error")
+			mock, machine := newMachines()
+			mock.ReadCycleError[0] = errReadCycle
+
+			currentCycle := uint64(100)
+			limitCycle := uint64(1000)
+			machine.inc = 100
+			mock.Cycle = currentCycle
+
+			yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+			require.Equal(errReadCycle, err)
+			require.Nil(yt)
+			require.Zero(newCurrentCycle)
+		})
+	})
+
+	s.Run("Panic", func() {
+		s.Run("BreakReasonFailed", func() {
+			require := s.Require()
+			mock, machine := newMachines()
+			mock.RunReturn[0] = emulator.BreakReasonFailed
+
+			currentCycle := uint64(10)
+			limitCycle := uint64(100)
+			machine.inc = 10
+			mock.Cycle = currentCycle
+
+			require.PanicsWithValue(ErrUnreachable, func() {
+				_, _, _ = machine.step(currentCycle, limitCycle)
+			})
+		})
+
+		s.Run("BreakReasonInvalid", func() {
+			require := s.Require()
+			mock, machine := newMachines()
+			mock.RunReturn[0] = 10 // invalid break reason
+
+			currentCycle := uint64(5)
+			limitCycle := uint64(50)
+			machine.inc = 6
+			mock.Cycle = currentCycle
+
+			require.PanicsWithValue(ErrUnreachable, func() {
+				_, _, _ = machine.step(currentCycle, limitCycle)
+			})
+		})
+	})
+
+	s.Run("ManualYield", func() {
+		require := s.Require()
+		mock, machine := newMachines()
+		mock.RunReturn[0] = emulator.BreakReasonYieldedManually
+
+		currentCycle := uint64(3)
+		limitCycle := uint64(17)
+		machine.inc = 9
+		mock.Cycle = currentCycle
+
+		yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+		require.Nil(err)
+		require.NotNil(yt)
+		require.Equal(manualYield, *yt)
+		require.Equal(currentCycle+machine.inc, newCurrentCycle)
+	})
+
+	s.Run("AutomaticYield", func() {
+		require := s.Require()
+		mock, machine := newMachines()
+		mock.RunReturn[0] = emulator.BreakReasonYieldedAutomatically
+
+		currentCycle := uint64(8)
+		limitCycle := uint64(17)
+		machine.inc = 9
+		mock.Cycle = currentCycle
+
+		yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+		require.Nil(err)
+		require.NotNil(yt)
+		require.Equal(automaticYield, *yt)
+		require.Equal(limitCycle, newCurrentCycle)
+	})
+
+	s.Run("Halted", func() {
+		require := s.Require()
+		mock, machine := newMachines()
+		mock.RunReturn[0] = emulator.BreakReasonHalted
+
+		currentCycle := uint64(4)
+		limitCycle := uint64(6)
+		machine.inc = 1
+		mock.Cycle = currentCycle
+
+		yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+		require.Equal(ErrHalted, err)
+		require.Nil(yt)
+		require.Zero(newCurrentCycle)
+	})
+
+	s.Run("SoftYield", func() {
+		require := s.Require()
+		mock, machine := newMachines()
+		mock.RunReturn[0] = emulator.BreakReasonYieldedSoftly
+
+		currentCycle := uint64(3)
+		limitCycle := uint64(8)
+		machine.inc = 4
+		mock.Cycle = currentCycle
+
+		yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+		require.Equal(ErrSoftYield, err)
+		require.Nil(yt)
+		require.Zero(newCurrentCycle)
+	})
+}
+
+// ------------------------------------------------------------------------------------------------
+// Mock
+// ------------------------------------------------------------------------------------------------
+
+type CartesiMachineMock struct {
+	ForkReturn cartesimachine.CartesiMachine
+	ForkError  error
+
+	ContinueError error
+
+	CloseError error
+
+	IsAtManualYieldReturn bool
+	IsAtManualYieldError  error
+
+	ReadHashReturn [32]byte
+	ReadHashError  error
+
+	WriteRequestError error
+
+	AddressReturn string
+
+	Responses             uint
+	ReadYieldReasonReturn []emulator.HtifYieldReason
+	ReadYieldReasonError  []error
+	ReadMemoryReturn      [][]byte
+	ReadMemoryError       []error
+
+	Steps          uint
+	Cycle          uint64
+	RunReturn      []emulator.BreakReason
+	RunError       []error
+	ReadCycleError []error
+}
+
+func (machine *CartesiMachineMock) Fork() (cartesimachine.CartesiMachine, error) {
+	return machine.ForkReturn, machine.ForkError
+}
+
+func (machine *CartesiMachineMock) Continue() error {
+	return machine.ContinueError
+}
+
+func (machine *CartesiMachineMock) Close() error {
+	return machine.CloseError
+}
+
+func (machine *CartesiMachineMock) IsAtManualYield() (bool, error) {
+	return machine.IsAtManualYieldReturn, machine.IsAtManualYieldError
+}
+
+func (machine *CartesiMachineMock) ReadHash() ([32]byte, error) {
+	return machine.ReadHashReturn, machine.ReadHashError
+}
+
+func (machine *CartesiMachineMock) WriteRequest(data []byte, _ cartesimachine.RequestType) error {
+	return machine.WriteRequestError
+}
+
+func (machine *CartesiMachineMock) PayloadLengthLimit() uint {
+	return 100000
+}
+
+func (machine *CartesiMachineMock) Address() string {
+	return machine.AddressReturn
+}
+
+// ------------------------------------------------------------------------------------------------
+
+func (machine *CartesiMachineMock) ReadYieldReason() (emulator.HtifYieldReason, error) {
+	yieldReason := machine.ReadYieldReasonReturn[machine.Responses]
+	err := machine.ReadYieldReasonError[machine.Responses]
+	return yieldReason, err
+}
+
+func (machine *CartesiMachineMock) ReadMemory() ([]byte, error) {
+	bytes := machine.ReadMemoryReturn[machine.Responses]
+	err := machine.ReadMemoryError[machine.Responses]
+	machine.Responses++
+	return bytes, err
+}
+
+// ------------------------------------------------------------------------------------------------
+
+func (machine *CartesiMachineMock) Run(cycle uint64) (emulator.BreakReason, error) {
+	machine.Cycle += cycle - machine.Cycle
+	return machine.RunReturn[machine.Steps], machine.RunError[machine.Steps]
+}
+
+func (machine *CartesiMachineMock) ReadCycle() (uint64, error) {
+	if err := machine.ReadCycleError[machine.Steps]; err != nil {
+		return machine.Cycle, err
+	}
+	cycle, err := machine.Cycle, machine.ReadCycleError[machine.Steps]
+	machine.Steps++
+	return cycle, err
 }

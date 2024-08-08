@@ -4,6 +4,7 @@
 package rollupsmachine
 
 import (
+	_ "embed"
 	"fmt"
 	"math/big"
 	"strings"
@@ -12,10 +13,26 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+var (
+	//go:embed abi.json
+	jsonABI string
+
+	ioABI abi.ABI
+)
+
+func init() {
+	var err error
+	ioABI, err = abi.JSON(strings.NewReader(jsonABI))
+	if err != nil {
+		panic(err)
+	}
+}
+
+// An Input is sent by a advance-state request.
 type Input struct {
 	ChainId        uint64
-	AppContract    [20]byte
-	Sender         [20]byte
+	AppContract    Address
+	Sender         Address
 	BlockNumber    uint64
 	BlockTimestamp uint64
 	// PrevRandao     uint64
@@ -23,20 +40,24 @@ type Input struct {
 	Data  []byte
 }
 
+// A Query is sent by a inspect-state request.
 type Query struct {
 	Data []byte
 }
 
+// A Voucher is a type of machine output.
 type Voucher struct {
-	Address [20]byte
+	Address Address
 	Value   *big.Int
 	Data    []byte
 }
 
+// A Notice is a type of machine output.
 type Notice struct {
 	Data []byte
 }
 
+// Encode encodes an input.
 func (input Input) Encode() ([]byte, error) {
 	chainId := new(big.Int).SetUint64(input.ChainId)
 	appContract := common.BytesToAddress(input.AppContract[:])
@@ -49,19 +70,7 @@ func (input Input) Encode() ([]byte, error) {
 		index, input.Data)
 }
 
-func (query Query) Encode() ([]byte, error) {
-	return query.Data, nil
-}
-
-func decodeArguments(payload []byte) (arguments []any, _ error) {
-	method, err := ioABI.MethodById(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	return method.Inputs.Unpack(payload[4:])
-}
-
+// DecodeOutput decodes an output into either a voucher or a notice.
 func DecodeOutput(payload []byte) (*Voucher, *Notice, error) {
 	arguments, err := decodeArguments(payload)
 	if err != nil {
@@ -74,7 +83,7 @@ func DecodeOutput(payload []byte) (*Voucher, *Notice, error) {
 		return nil, notice, nil
 	case 3: //nolint:mnd
 		voucher := &Voucher{
-			Address: [20]byte(arguments[0].(common.Address)),
+			Address: Address(arguments[0].(common.Address)),
 			Value:   arguments[1].(*big.Int),
 			Data:    arguments[2].([]byte),
 		}
@@ -84,40 +93,13 @@ func DecodeOutput(payload []byte) (*Voucher, *Notice, error) {
 	}
 }
 
-var ioABI abi.ABI
+// ------------------------------------------------------------------------------------------------
 
-func init() {
-	json := `[{
-        "type" : "function",
-        "name" : "EvmAdvance",
-        "inputs" : [
-            { "type" : "uint256" },
-            { "type" : "address" },
-            { "type" : "address" },
-            { "type" : "uint256" },
-            { "type" : "uint256" },
-            { "type" : "uint256" },
-            { "type" : "bytes"   }
-        ]
-    }, {
-        "type" : "function",
-        "name" : "Voucher",
-        "inputs" : [
-            { "type" : "address" },
-            { "type" : "uint256" },
-            { "type" : "bytes"   }
-        ]
-    }, {
-        "type" : "function",
-        "name" : "Notice",
-        "inputs" : [
-            { "type" : "bytes"   }
-        ]
-    }]`
-
-	var err error
-	ioABI, err = abi.JSON(strings.NewReader(json))
+func decodeArguments(payload []byte) (arguments []any, _ error) {
+	method, err := ioABI.MethodById(payload)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
+
+	return method.Inputs.Unpack(payload[4:])
 }

@@ -9,4 +9,7 @@ import "C"
 const (
 	CmioRxBufferStart uint64 = C.PMA_CMIO_RX_BUFFER_START_DEF
 	CmioTxBufferStart uint64 = C.PMA_CMIO_TX_BUFFER_START_DEF
+
+	CmioRxBufferLog2Size uint64 = C.PMA_CMIO_RX_BUFFER_LOG2_SIZE_DEF
+	CmioTxBufferLog2Size uint64 = C.PMA_CMIO_TX_BUFFER_LOG2_SIZE_DEF
 )

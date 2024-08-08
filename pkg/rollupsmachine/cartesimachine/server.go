@@ -1,7 +1,7 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-package rollupsmachine
+package cartesimachine
 
 import (
 	"fmt"
@@ -28,7 +28,7 @@ const (
 
 // StartServer starts a JSON RPC remote cartesi machine server.
 //
-// It configures the server's logging verbosity and initializes its address to localhost:port.
+// It configures the server's logging verbosity and initializes its address to 127.0.0.1:port.
 // If verbosity is an invalid LogLevel, a default value will be used instead.
 // If port is 0, a random valid port will be used instead.
 //
@@ -42,7 +42,7 @@ func StartServer(verbosity ServerVerbosity, port uint32, stdout, stderr io.Write
 		args = append(args, "--log-level="+string(verbosity))
 	}
 	if port != 0 {
-		args = append(args, fmt.Sprintf("--server-address=localhost:%d", port))
+		args = append(args, fmt.Sprintf("--server-address=127.0.0.1:%d", port))
 	}
 
 	// Creates the command.
@@ -70,7 +70,7 @@ func StartServer(verbosity ServerVerbosity, port uint32, stdout, stderr io.Write
 		panic(fmt.Sprintf("mismatching ports (%d != %d)", port, actualPort))
 	}
 
-	return fmt.Sprintf("localhost:%d", port), nil
+	return fmt.Sprintf("127.0.0.1:%d", port), nil
 }
 
 // StopServer shuts down the JSON RPC remote cartesi machine server hosted at address.
@@ -105,7 +105,7 @@ type portInterceptor struct {
 	found *bool
 }
 
-var portRegex = regexp.MustCompile("initial server bound to port ([0-9]+)")
+var portRegex = regexp.MustCompile("remote machine bound to [^:]+:([0-9]+)")
 
 func (writer portInterceptor) Write(p []byte) (n int, err error) {
 	if *writer.found {
