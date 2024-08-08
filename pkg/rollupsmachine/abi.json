@@ -1,0 +1,27 @@
+[{
+    "type" : "function",
+    "name" : "EvmAdvance",
+    "inputs" : [
+        { "type" : "uint256" },
+        { "type" : "address" },
+        { "type" : "address" },
+        { "type" : "uint256" },
+        { "type" : "uint256" },
+        { "type" : "uint256" },
+        { "type" : "bytes"   }
+    ]
+}, {
+    "type" : "function",
+    "name" : "Voucher",
+    "inputs" : [
+        { "type" : "address" },
+        { "type" : "uint256" },
+        { "type" : "bytes"   }
+    ]
+}, {
+    "type" : "function",
+    "name" : "Notice",
+    "inputs" : [
+        { "type" : "bytes"   }
+    ]
+}]
