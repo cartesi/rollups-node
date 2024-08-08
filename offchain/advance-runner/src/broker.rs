@@ -111,6 +111,8 @@ impl BrokerFacade {
             Some(event) => {
                 tracing::trace!(?event, "got last claim produced");
                 rollups_claim.epoch_index <= event.payload.epoch_index
+                    || rollups_claim.first_index != event.payload.last_index + 1
+                    || rollups_claim.last_index < event.payload.last_index
             }
             None => {
                 tracing::trace!("no claims in the stream");
