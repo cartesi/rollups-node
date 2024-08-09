@@ -36,7 +36,7 @@ type NodeConfig struct {
 	FeatureDisableMachineHashCheck           bool
 	ExperimentalServerManagerBypassLog       bool
 	ExperimentalSunodoValidatorEnabled       bool
-	ExperimentalSunodoValidatorRedisEndpoint string
+	ExperimentalSunodoValidatorRedisEndpoint Redacted[string]
 	Auth                                     Auth
 }
 
@@ -93,15 +93,16 @@ func FromEnv() NodeConfig {
 	config.HttpAddress = getHttpAddress()
 	config.HttpPort = getHttpPort()
 	config.FeatureHostMode = getFeatureHostMode()
-	config.FeatureDisableClaimer = getFeatureDisableClaimer()
 	config.FeatureDisableMachineHashCheck = getFeatureDisableMachineHashCheck()
 	config.ExperimentalServerManagerBypassLog = getExperimentalServerManagerBypassLog()
+	config.FeatureDisableClaimer = getFeatureDisableClaimer()
 	config.ExperimentalSunodoValidatorEnabled = getExperimentalSunodoValidatorEnabled()
-	if getExperimentalSunodoValidatorEnabled() {
+	if config.ExperimentalSunodoValidatorEnabled {
 		config.ExperimentalSunodoValidatorRedisEndpoint =
-			getExperimentalSunodoValidatorRedisEndpoint()
+			Redacted[string]{getExperimentalSunodoValidatorRedisEndpoint()}
+		config.FeatureDisableClaimer = true
 	}
-	if !getFeatureDisableClaimer() && !getExperimentalSunodoValidatorEnabled() {
+	if !config.FeatureDisableClaimer && !getExperimentalSunodoValidatorEnabled() {
 		config.Auth = authFromEnv()
 	}
 	return config
