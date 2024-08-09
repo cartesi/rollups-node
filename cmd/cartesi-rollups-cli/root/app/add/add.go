@@ -22,7 +22,7 @@ var Cmd = &cobra.Command{
 }
 
 const examples = `# Adds an application to Rollups Node:
-cartesi-rollups-cli app add -a 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF -n 10`
+cartesi-rollups-cli app add -a 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF -i 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA` //nolint:lll
 
 const (
 	statusRunning    = "running"
@@ -35,6 +35,7 @@ var (
 	inputBoxDeploymentBlockNumber uint64
 	snapshotUri                   string
 	status                        string
+	iConsensusAddress             string
 )
 
 func init() {
@@ -79,6 +80,14 @@ func init() {
 		"Sets the application status",
 	)
 
+	Cmd.Flags().StringVarP(
+		&iConsensusAddress,
+		"iconsensus",
+		"i",
+		"",
+		"Application IConsensus Address",
+	)
+
 	cobra.CheckErr(Cmd.MarkFlagRequired("address"))
 }
 
@@ -105,6 +114,7 @@ func run(cmd *cobra.Command, args []string) {
 		TemplateHash:       common.HexToHash(templateHash),
 		LastProcessedBlock: inputBoxDeploymentBlockNumber,
 		Status:             applicationStatus,
+		IConsensusAddress:  common.HexToAddress(iConsensusAddress),
 	}
 
 	err := cmdcommom.Database.InsertApplication(ctx, &application)

@@ -71,6 +71,7 @@ func (s *RepositorySuite) SetupDatabase() {
 
 	app := Application{
 		ContractAddress:    common.HexToAddress("deadbeef"),
+		IConsensusAddress:  common.HexToAddress("ffffff"),
 		TemplateHash:       common.HexToHash("deadbeef"),
 		LastProcessedBlock: 1,
 		Status:             ApplicationStatusRunning,
@@ -78,6 +79,7 @@ func (s *RepositorySuite) SetupDatabase() {
 
 	app2 := Application{
 		ContractAddress:    common.HexToAddress("feadbeef"),
+		IConsensusAddress:  common.HexToAddress("ffffff"),
 		TemplateHash:       common.HexToHash("deadbeef"),
 		LastProcessedBlock: 1,
 		Status:             ApplicationStatusNotRunning,
@@ -228,6 +230,7 @@ func (s *RepositorySuite) TestApplicationExists() {
 	app := Application{
 		Id:                 1,
 		ContractAddress:    common.HexToAddress("deadbeef"),
+		IConsensusAddress:  common.HexToAddress("ffffff"),
 		TemplateHash:       common.HexToHash("deadbeef"),
 		LastProcessedBlock: 1,
 		Status:             ApplicationStatusRunning,
@@ -248,6 +251,7 @@ func (s *RepositorySuite) TestApplicationFailsDuplicateRow() {
 	app := Application{
 		Id:                 1,
 		ContractAddress:    common.HexToAddress("deadbeef"),
+		IConsensusAddress:  common.HexToAddress("ffffff"),
 		TemplateHash:       common.HexToHash("deadbeef"),
 		LastProcessedBlock: 1,
 		Status:             ApplicationStatusRunning,

@@ -66,6 +66,7 @@ type Application struct {
 	TemplateHash       Hash
 	LastProcessedBlock uint64
 	Status             ApplicationStatus
+	IConsensusAddress  Address
 }
 
 type Epoch struct {

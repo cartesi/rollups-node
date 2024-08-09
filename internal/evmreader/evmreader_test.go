@@ -66,13 +66,14 @@ var (
 
 type EvmReaderSuite struct {
 	suite.Suite
-	ctx        context.Context
-	cancel     context.CancelFunc
-	client     *MockEthClient
-	wsClient   *MockEthClient
-	inputBox   *MockInputBox
-	repository *MockRepository
-	evmReader  *EvmReader
+	ctx             context.Context
+	cancel          context.CancelFunc
+	client          *MockEthClient
+	wsClient        *MockEthClient
+	inputBox        *MockInputBox
+	repository      *MockRepository
+	evmReader       *EvmReader
+	contractFactory *MockEvmReaderContractFactory
 }
 
 func TestEvmReaderSuite(t *testing.T) {
@@ -111,15 +112,15 @@ func (s *EvmReaderSuite) SetupTest() {
 	s.wsClient = s.client
 	s.inputBox = newMockInputBox(s)
 	s.repository = newMockRepository()
+	s.contractFactory = newEmvReaderContractFactory()
 	inputReader := NewEvmReader(
 		s.client,
 		s.wsClient,
 		s.inputBox,
 		s.repository,
-		NodePersistentConfig{
-			DefaultBlock:            DefaultBlockStatusLatest,
-			InputBoxDeploymentBlock: 0,
-		},
+		0,
+		DefaultBlockStatusLatest,
+		s.contractFactory,
 	)
 	s.evmReader = &inputReader
 }
@@ -178,10 +179,9 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 		&wsClient,
 		s.inputBox,
 		s.repository,
-		NodePersistentConfig{
-			InputBoxDeploymentBlock: 0x10,
-			DefaultBlock:            DefaultBlockStatusLatest,
-		},
+		0x10,
+		DefaultBlockStatusLatest,
+		s.contractFactory,
 	)
 
 	// Prepare repository
@@ -191,6 +191,7 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 		mock.Anything,
 	).Return([]Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
 		LastProcessedBlock: 0x00,
 	}}, nil).Once()
 	s.repository.On(
@@ -198,6 +199,7 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 		mock.Anything,
 	).Return([]Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
 		LastProcessedBlock: 0x11,
 	}}, nil).Once()
 
@@ -270,8 +272,87 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 2)
 	s.repository.AssertNumberOfCalls(
 		s.T(),
-		"InsertInputsAndUpdateLastProcessedBlock",
+		"StoreEpochAndInputsTransaction",
 		2,
+	)
+}
+
+func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocksWrongIConsensus() {
+
+	waitGroup := sync.WaitGroup{}
+	wsClient := FakeWSEhtClient{}
+	wsClient.NewHeaders = []*types.Header{&header0, &header1}
+	wsClient.WaitGroup = &waitGroup
+	inputReader := NewEvmReader(
+		s.client,
+		&wsClient,
+		s.inputBox,
+		s.repository,
+		0x10,
+		DefaultBlockStatusLatest,
+		s.contractFactory,
+	)
+
+	// Prepare repository
+	s.repository.Unset("GetAllRunningApplications")
+	s.repository.On(
+		"GetAllRunningApplications",
+		mock.Anything,
+	).Return([]Application{{
+		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		IConsensusAddress:  common.HexToAddress("0xFFFFFFFF"),
+		LastProcessedBlock: 0x00,
+	}}, nil).Once()
+	s.repository.On(
+		"GetAllRunningApplications",
+		mock.Anything,
+	).Return([]Application{{
+		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		IConsensusAddress:  common.HexToAddress("0xFFFFFFFF"),
+		LastProcessedBlock: 0x11,
+	}}, nil).Once()
+
+	// Prepare Client
+	s.client.Unset("HeaderByNumber")
+	s.client.On(
+		"HeaderByNumber",
+		mock.Anything,
+		mock.Anything,
+	).Return(&header0, nil).Once()
+	s.client.On(
+		"HeaderByNumber",
+		mock.Anything,
+		mock.Anything,
+	).Return(&header1, nil).Once()
+	s.client.On(
+		"HeaderByNumber",
+		mock.Anything,
+		mock.Anything,
+	).Return(&header2, nil).Once()
+
+	// Start service
+	ready := make(chan struct{}, 1)
+	errChannel := make(chan error, 1)
+
+	waitGroup.Add(1)
+	go func() {
+		errChannel <- inputReader.Run(s.ctx, ready)
+	}()
+
+	select {
+	case <-ready:
+		break
+	case err := <-errChannel:
+		s.FailNow("unexpected error signal", err)
+	}
+
+	waitGroup.Wait()
+
+	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 0)
+	s.repository.AssertNumberOfCalls(
+		s.T(),
+		"StoreEpochAndInputsTransaction",
+		0,
 	)
 }
 
@@ -286,10 +367,9 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 		&wsClient,
 		s.inputBox,
 		s.repository,
-		NodePersistentConfig{
-			InputBoxDeploymentBlock: 0x10,
-			DefaultBlock:            DefaultBlockStatusLatest,
-		},
+		0x10,
+		DefaultBlockStatusLatest,
+		s.contractFactory,
 	)
 
 	// Prepare repository
@@ -299,6 +379,7 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 		mock.Anything,
 	).Return([]Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
 		LastProcessedBlock: 0x00,
 	}}, nil).Once()
 	s.repository.On(
@@ -306,6 +387,7 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 		mock.Anything,
 	).Return([]Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
 		LastProcessedBlock: 0x11,
 	}}, nil).Once()
 
@@ -378,7 +460,7 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 2)
 	s.repository.AssertNumberOfCalls(
 		s.T(),
-		"InsertInputsAndUpdateLastProcessedBlock",
+		"StoreEpochAndInputsTransaction",
 		2,
 	)
 }
@@ -394,10 +476,9 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 		&wsClient,
 		s.inputBox,
 		s.repository,
-		NodePersistentConfig{
-			InputBoxDeploymentBlock: 0x10,
-			DefaultBlock:            DefaultBlockStatusLatest,
-		},
+		0x10,
+		DefaultBlockStatusLatest,
+		s.contractFactory,
 	)
 
 	// Prepare Client
@@ -431,21 +512,28 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 		mock.Anything,
 	).Return([]Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
 		LastProcessedBlock: 0x12,
 	}}, nil).Once()
-	s.repository.Unset("InsertInputsAndUpdateLastProcessedBlock")
+	s.repository.Unset("StoreEpochAndInputsTransaction")
 	s.repository.On(
-		"InsertInputsAndUpdateLastProcessedBlock",
+		"StoreEpochAndInputsTransaction",
+		mock.Anything,
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
 	).Once().Run(func(arguments mock.Arguments) {
-		var inputs []Input
+		var epochInputMap map[*Epoch][]Input
 		obj := arguments.Get(1)
-		inputs, ok := obj.([]Input)
+		epochInputMap, ok := obj.(map[*Epoch][]Input)
 		s.Require().True(ok)
-		s.Assert().Equal(2, len(inputs))
-	}).Return([]uint64{}, nil)
+		s.Require().Equal(1, len(epochInputMap))
+		for _, inputs := range epochInputMap {
+			s.Require().Equal(2, len(inputs))
+			break
+		}
+
+	}).Return(make(map[uint64]uint64), make(map[uint64][]uint64), nil)
 
 	// Start service
 	ready := make(chan struct{}, 1)
@@ -468,7 +556,7 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 1)
 	s.repository.AssertNumberOfCalls(
 		s.T(),
-		"InsertInputsAndUpdateLastProcessedBlock",
+		"StoreEpochAndInputsTransaction",
 		1,
 	)
 }
@@ -484,10 +572,9 @@ func (s *EvmReaderSuite) TestItStartsWhenLasProcessedBlockIsTheMostRecentBlock()
 		&wsClient,
 		s.inputBox,
 		s.repository,
-		NodePersistentConfig{
-			InputBoxDeploymentBlock: 0x10,
-			DefaultBlock:            DefaultBlockStatusLatest,
-		},
+		0x10,
+		DefaultBlockStatusLatest,
+		s.contractFactory,
 	)
 
 	// Prepare Client
@@ -505,6 +592,7 @@ func (s *EvmReaderSuite) TestItStartsWhenLasProcessedBlockIsTheMostRecentBlock()
 		mock.Anything,
 	).Return([]Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
 		LastProcessedBlock: 0x11,
 	}}, nil).Once()
 
@@ -529,7 +617,7 @@ func (s *EvmReaderSuite) TestItStartsWhenLasProcessedBlockIsTheMostRecentBlock()
 	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 0)
 	s.repository.AssertNumberOfCalls(
 		s.T(),
-		"InsertInputsAndUpdateLastProcessedBlock",
+		"StoreEpochAndInputsTransaction",
 		0,
 	)
 }
@@ -669,11 +757,12 @@ func newMockRepository() *MockRepository {
 	repo.On("GetMostRecentlyFinalizedBlock",
 		mock.Anything,
 		mock.Anything).Return(uint64(0), nil)
-	repo.On("InsertInputsAndUpdateLastProcessedBlock",
+
+	repo.On("StoreEpochAndInputsTransaction",
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
-		mock.Anything).Return([]uint64{}, nil)
+		mock.Anything).Return(make(map[uint64]uint64), make(map[uint64][]uint64), nil)
 
 	repo.On("GetEpoch",
 		mock.Anything,
@@ -706,14 +795,14 @@ func (m *MockRepository) Unset(methodName string) {
 	}
 }
 
-func (m *MockRepository) InsertInputsAndUpdateLastProcessedBlock(
+func (m *MockRepository) StoreEpochAndInputsTransaction(
 	ctx context.Context,
-	inputs []Input,
+	epochInputMap map[*Epoch][]Input,
 	blockNumber uint64,
 	appAddress common.Address,
-) ([]uint64, error) {
-	args := m.Called(ctx, inputs, blockNumber)
-	return args.Get(0).([]uint64), args.Error(1)
+) (epochIndexIdMap map[uint64]uint64, epochIndexInputIdsMap map[uint64][]uint64, err error) {
+	args := m.Called(ctx, epochInputMap, blockNumber, appAddress)
+	return args.Get(0).(map[uint64]uint64), args.Get(1).(map[uint64][]uint64), args.Error(2)
 }
 
 func (m *MockRepository) GetAllRunningApplications(
@@ -745,4 +834,85 @@ func (m *MockRepository) InsertEpoch(
 ) (uint64, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(uint64), args.Error(1)
+}
+
+type MockApplicationContract struct {
+	mock.Mock
+}
+
+func (m *MockApplicationContract) Unset(methodName string) {
+	for _, call := range m.ExpectedCalls {
+		if call.Method == methodName {
+			call.Unset()
+		}
+	}
+}
+
+func (m *MockApplicationContract) GetConsensus(
+	opts *bind.CallOpts,
+) (common.Address, error) {
+	args := m.Called(context.Background())
+	return args.Get(0).(common.Address), args.Error(1)
+}
+
+type MockIConsensusContract struct {
+	mock.Mock
+}
+
+func (m *MockIConsensusContract) GetEpochLength(
+	opts *bind.CallOpts,
+) (*big.Int, error) {
+	args := m.Called(context.Background())
+	return args.Get(0).(*big.Int), args.Error(1)
+}
+
+type MockEvmReaderContractFactory struct {
+	mock.Mock
+}
+
+func (m *MockEvmReaderContractFactory) Unset(methodName string) {
+	for _, call := range m.ExpectedCalls {
+		if call.Method == methodName {
+			call.Unset()
+		}
+	}
+}
+
+func (m *MockEvmReaderContractFactory) NewApplication(
+	Address,
+) (ApplicationContract, error) {
+	args := m.Called(context.Background())
+	return args.Get(0).(ApplicationContract), args.Error(1)
+}
+
+func (m *MockEvmReaderContractFactory) NewIConsensus(
+	Address,
+) (ConsensusContract, error) {
+	args := m.Called(context.Background())
+	return args.Get(0).(ConsensusContract), args.Error(1)
+}
+
+func newEmvReaderContractFactory() *MockEvmReaderContractFactory {
+
+	applicationContract := &MockApplicationContract{}
+
+	applicationContract.On("GetConsensus",
+		mock.Anything,
+	).Return(common.HexToAddress("0xdeadbeef"), nil)
+
+	consensusContract := &MockIConsensusContract{}
+
+	consensusContract.On("GetEpochLength",
+		mock.Anything).Return(big.NewInt(10), nil)
+
+	factory := &MockEvmReaderContractFactory{}
+
+	factory.On("NewApplication",
+		mock.Anything,
+	).Return(applicationContract, nil)
+
+	factory.On("NewIConsensus",
+		mock.Anything).Return(consensusContract, nil)
+
+	return factory
 }

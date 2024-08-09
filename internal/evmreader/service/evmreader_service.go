@@ -71,12 +71,16 @@ func (s EvmReaderService) Start(
 		return err
 	}
 
+	contractFactory := retrypolicy.NewEvmReaderContractFactory(client, s.maxRetries, s.maxDelay)
+
 	reader := evmreader.NewEvmReader(
 		retrypolicy.NewEhtClientWithRetryPolicy(client, s.maxRetries, s.maxDelay),
 		retrypolicy.NewEthWsClientWithRetryPolicy(wsClient, s.maxRetries, s.maxDelay),
 		retrypolicy.NewInputSourceWithRetryPolicy(inputSource, s.maxRetries, s.maxDelay),
 		s.database,
-		*config,
+		config.InputBoxDeploymentBlock,
+		config.DefaultBlock,
+		contractFactory,
 	)
 
 	return reader.Run(ctx, ready)

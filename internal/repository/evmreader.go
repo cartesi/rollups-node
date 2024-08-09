@@ -12,15 +12,48 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (pg *Database) InsertInputsAndUpdateLastProcessedBlock(
+// This method should be called at the end of EVMReader read input cycle
+// In a single transaction it updates or inserts epochs, insert inputs related to each epoch
+// and also updates the last processed block
+func (pg *Database) StoreEpochAndInputsTransaction(
 	ctx context.Context,
-	inputs []Input,
+	epochInputsMap map[*Epoch][]Input,
 	blockNumber uint64,
 	contractAddress Address,
-) ([]uint64, error) {
+) (epochIndexIdMap map[uint64]uint64, epochIndexInputIdsMap map[uint64][]uint64, _ error) {
+
 	var errInsertInputs = errors.New("unable to insert inputs")
 
-	query := `
+	insertEpochQuery := `
+	INSERT INTO epoch
+		(
+    	application_address,
+    	index,
+    	first_block,
+    	last_block,
+    	status
+		)
+	VALUES
+		(
+		@appAddress,
+		@index,
+		@firstBlock,
+		@lastBlock,
+		@status
+		)
+	RETURNING
+		id
+	`
+
+	updateEpochQuery := `
+	UPDATE epoch
+	SET
+		status = @status
+	WHERE
+		id = @id
+	`
+
+	insertInputQuery := `
 	INSERT INTO input
 		(index,
 		status,
@@ -39,53 +72,103 @@ func (pg *Database) InsertInputsAndUpdateLastProcessedBlock(
 		id
 	`
 
-	query2 := `
+	updateLastBlockQuery := `
 	UPDATE application
 	SET last_processed_block = @blockNumber
 	WHERE
 		contract_address=@contractAddress`
 
-	args := pgx.NamedArgs{
+	tx, err := pg.db.Begin(ctx)
+	if err != nil {
+		return nil, nil, errors.Join(errInsertInputs, err)
+	}
+
+	// structures to hold the ids
+	epochIndexIdMap = make(map[uint64]uint64)
+	epochIndexInputIdsMap = make(map[uint64][]uint64)
+
+	for epoch, inputs := range epochInputsMap {
+
+		// Handle epoch
+		var epochId uint64
+
+		actualEpoch, err := pg.GetEpoch(ctx, epoch.Index, epoch.AppAddress)
+		if err != nil {
+			return nil, nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
+		}
+
+		if actualEpoch != nil {
+			// Update epoch status
+			updateEpochArgs := pgx.NamedArgs{
+				"status": epoch.Status,
+				"id":     actualEpoch.Id,
+			}
+
+			tag, err := tx.Exec(ctx, updateEpochQuery, updateEpochArgs)
+			if err != nil {
+				return nil, nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
+			}
+			if tag.RowsAffected() != 1 {
+				return nil, nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
+			}
+			epochId = actualEpoch.Id
+		} else {
+
+			// Insert epoch
+			insertEpochArgs := pgx.NamedArgs{
+				"appAddress": epoch.AppAddress,
+				"index":      epoch.Index,
+				"firstBlock": epoch.FirstBlock,
+				"lastBlock":  epoch.LastBlock,
+				"status":     epoch.Status,
+			}
+			err = tx.QueryRow(ctx, insertEpochQuery, insertEpochArgs).Scan(&epochId)
+			if err != nil {
+				return nil, nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
+			}
+
+		}
+
+		epochIndexIdMap[epoch.Index] = epochId
+
+		var inputId uint64
+
+		// Insert inputs
+		for _, input := range inputs {
+			inputArgs := pgx.NamedArgs{
+				"index":       input.Index,
+				"status":      input.CompletionStatus,
+				"rawData":     input.RawData,
+				"blockNumber": input.BlockNumber,
+				"appAddress":  input.AppAddress,
+				"epochId":     epochId,
+			}
+			err = tx.QueryRow(ctx, insertInputQuery, inputArgs).Scan(&inputId)
+			if err != nil {
+				return nil, nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
+			}
+			epochIndexInputIdsMap[epoch.Index] = append(epochIndexInputIdsMap[epoch.Index], inputId)
+		}
+	}
+
+	// Update last processed block
+	updateLastBlockArgs := pgx.NamedArgs{
 		"blockNumber":     blockNumber,
 		"contractAddress": contractAddress,
 	}
 
-	tx, err := pg.db.Begin(ctx)
+	_, err = tx.Exec(ctx, updateLastBlockQuery, updateLastBlockArgs)
 	if err != nil {
-		return nil, errors.Join(errInsertInputs, err)
+		return nil, nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
 	}
 
-	var (
-		id  uint64
-		ids []uint64
-	)
-	for _, input := range inputs {
-		inputArgs := pgx.NamedArgs{
-			"index":       input.Index,
-			"status":      input.CompletionStatus,
-			"rawData":     input.RawData,
-			"blockNumber": input.BlockNumber,
-			"appAddress":  input.AppAddress,
-			"epochId":     input.EpochId,
-		}
-		err = tx.QueryRow(ctx, query, inputArgs).Scan(&id)
-		if err != nil {
-			return nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
-		}
-		ids = append(ids, id)
-	}
-
-	_, err = tx.Exec(ctx, query2, args)
-	if err != nil {
-		return nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
-	}
-
+	// Commit transaction
 	err = tx.Commit(ctx)
 	if err != nil {
-		return nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
+		return nil, nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
 	}
 
-	return ids, nil
+	return epochIndexIdMap, epochIndexInputIdsMap, nil
 }
 
 // GetAllRunningApplications returns a slice with the applications being
@@ -113,6 +196,7 @@ func (pg *Database) getAllApplicationsByStatus(
 		templateHash       Hash
 		lastProcessedBlock uint64
 		status             ApplicationStatus
+		iConsensusAddress  Address
 		results            []Application
 	)
 
@@ -122,7 +206,8 @@ func (pg *Database) getAllApplicationsByStatus(
 		contract_address,
 		template_hash,
 		last_processed_block,
-		status
+		status,
+		iconsensus_address
 	FROM
 		application
 	`
@@ -140,7 +225,7 @@ func (pg *Database) getAllApplicationsByStatus(
 
 	_, err = pgx.ForEachRow(rows,
 		[]any{&id, &contractAddress, &templateHash,
-			&lastProcessedBlock, &status},
+			&lastProcessedBlock, &status, &iConsensusAddress},
 		func() error {
 			app := Application{
 				Id:                 id,
@@ -148,6 +233,7 @@ func (pg *Database) getAllApplicationsByStatus(
 				TemplateHash:       templateHash,
 				LastProcessedBlock: lastProcessedBlock,
 				Status:             status,
+				IConsensusAddress:  iConsensusAddress,
 			}
 			results = append(results, app)
 			return nil

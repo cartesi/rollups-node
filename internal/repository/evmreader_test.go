@@ -9,13 +9,21 @@ import (
 )
 
 func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlock() {
+
+	epoch0 := Epoch{
+		Index:      0,
+		FirstBlock: 0,
+		LastBlock:  9,
+		AppAddress: common.HexToAddress("deadbeef"),
+		Status:     EpochStatusOpen,
+	}
+
 	input0 := Input{
 		Index:            5,
 		CompletionStatus: InputStatusNone,
 		RawData:          common.Hex2Bytes("deadbeef"),
 		BlockNumber:      5,
 		AppAddress:       common.HexToAddress("deadbeef"),
-		EpochId:          1,
 	}
 
 	input1 := Input{
@@ -24,20 +32,26 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlock() {
 		RawData:          common.Hex2Bytes("deadbeef"),
 		BlockNumber:      6,
 		AppAddress:       common.HexToAddress("deadbeef"),
-		EpochId:          1,
 	}
 
-	ids, err := s.database.InsertInputsAndUpdateLastProcessedBlock(
+	epochInputMap := make(map[*Epoch][]Input)
+
+	epochInputMap[&epoch0] = []Input{input0, input1}
+
+	epochIdMap, epochInputIdMap, err := s.database.StoreEpochAndInputsTransaction(
 		s.ctx,
-		[]Input{input0, input1},
+		epochInputMap,
 		6,
 		common.HexToAddress("deadbeef"),
 	)
 	s.Require().Nil(err)
-	s.Require().Len(ids, 2)
+	s.Require().Len(epochIdMap, 1)
+	s.Require().Len(epochInputIdMap[0], 2)
 
-	input0.Id = ids[0]
-	input1.Id = ids[1]
+	input0.Id = epochInputIdMap[0][0]
+	input0.EpochId = epochIdMap[0]
+	input1.Id = epochInputIdMap[0][1]
+	input1.EpochId = epochIdMap[0]
 
 	response, err := s.database.GetInput(s.ctx, 5, common.HexToAddress("deadbeef"))
 	s.Require().Nil(err)
@@ -50,7 +64,7 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlock() {
 }
 
 func (s *RepositorySuite) TestInsertInputsAndUpdateMostRecentFinalizedBlockEmptyInputs() {
-	_, err := s.database.InsertInputsAndUpdateLastProcessedBlock(
+	_, _, err := s.database.StoreEpochAndInputsTransaction(
 		s.ctx,
 		nil,
 		7,
@@ -65,6 +79,10 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateMostRecentFinalizedBlockEmpty
 }
 
 func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlockInputAlreadyExists() {
+
+	epoch, err := s.database.GetEpoch(s.ctx, 0, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
+
 	input := Input{
 		Index:            5,
 		CompletionStatus: InputStatusNone,
@@ -73,9 +91,12 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlockInputAlread
 		AppAddress:       common.HexToAddress("deadbeef"),
 		EpochId:          1,
 	}
-	_, err := s.database.InsertInputsAndUpdateLastProcessedBlock(
+
+	epochInputMap := make(map[*Epoch][]Input)
+	epochInputMap[epoch] = []Input{input}
+	_, _, err = s.database.StoreEpochAndInputsTransaction(
 		s.ctx,
-		[]Input{input},
+		epochInputMap,
 		8,
 		common.HexToAddress("deadbeef"),
 	)
@@ -83,6 +104,10 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlockInputAlread
 }
 
 func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlockDuplicateInput() {
+
+	epoch, err := s.database.GetEpoch(s.ctx, 0, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
+
 	input0 := Input{
 		Index:            7,
 		CompletionStatus: InputStatusNone,
@@ -100,10 +125,11 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlockDuplicateIn
 		AppAddress:       common.HexToAddress("deadbeef"),
 		EpochId:          1,
 	}
-
-	_, err := s.database.InsertInputsAndUpdateLastProcessedBlock(
+	epochInputMap := make(map[*Epoch][]Input)
+	epochInputMap[epoch] = []Input{input0, input1}
+	_, _, err = s.database.StoreEpochAndInputsTransaction(
 		s.ctx,
-		[]Input{input0, input1},
+		epochInputMap,
 		8,
 		common.HexToAddress("deadbeef"),
 	)
@@ -117,6 +143,7 @@ func (s *RepositorySuite) TestGetAllRunningApplications() {
 		TemplateHash:       common.HexToHash("deadbeef"),
 		LastProcessedBlock: 1,
 		Status:             ApplicationStatusRunning,
+		IConsensusAddress:  common.HexToAddress("ffffff"),
 	}
 
 	response, err := s.database.GetAllRunningApplications(s.ctx)

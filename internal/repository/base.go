@@ -96,18 +96,21 @@ func (pg *Database) InsertApplication(
 		(contract_address,
 		template_hash,
 		last_processed_block,
-		status)
+		status,
+		iconsensus_address)
 	VALUES
 		(@contractAddress,
 		@templateHash,
 		@lastProcessedBlock,
-		@status)`
+		@status,
+		@iConsensusAddress)`
 
 	args := pgx.NamedArgs{
 		"contractAddress":    app.ContractAddress,
 		"templateHash":       app.TemplateHash,
 		"lastProcessedBlock": app.LastProcessedBlock,
 		"status":             app.Status,
+		"iConsensusAddress":  app.IConsensusAddress,
 	}
 
 	_, err := pg.db.Exec(ctx, query, args)
@@ -355,6 +358,7 @@ func (pg *Database) GetApplication(
 		templateHash       Hash
 		lastProcessedBlock uint64
 		status             ApplicationStatus
+		iconsensusAddress  Address
 	)
 
 	query := `
@@ -363,7 +367,8 @@ func (pg *Database) GetApplication(
 		contract_address,
 		template_hash,
 		last_processed_block,
-		status
+		status,
+		iconsensus_address
 	FROM
 		application
 	WHERE
@@ -379,10 +384,13 @@ func (pg *Database) GetApplication(
 		&templateHash,
 		&lastProcessedBlock,
 		&status,
+		&iconsensusAddress,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Info("GetApplication returned no rows", "service", "repository")
+			slog.Info("GetApplication returned no rows",
+				"service", "repository",
+				"app", appAddressKey)
 			return nil, nil
 		}
 		return nil, fmt.Errorf("GetApplication QueryRow failed: %w\n", err)
@@ -394,6 +402,7 @@ func (pg *Database) GetApplication(
 		TemplateHash:       templateHash,
 		LastProcessedBlock: lastProcessedBlock,
 		Status:             status,
+		IConsensusAddress:  iconsensusAddress,
 	}
 
 	return &app, nil
@@ -447,7 +456,10 @@ func (pg *Database) GetEpoch(
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Info("GetEpoch returned no rows", "service", "repository")
+			slog.Info("GetEpoch returned no rows",
+				"service", "repository",
+				"app", appAddressKey,
+				"epoch", indexKey)
 			return nil, nil
 		}
 		return nil, fmt.Errorf("GetEpoch QueryRow failed: %w\n", err)
@@ -519,7 +531,10 @@ func (pg *Database) GetInput(
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Info("GetInput returned no rows", "service", "repository")
+			slog.Info("GetInput returned no rows",
+				"service", "repository",
+				"app", appAddressKey,
+				"index", indexKey)
 			return nil, nil
 		}
 		return nil, fmt.Errorf("GetInput QueryRow failed: %w\n", err)
@@ -586,7 +601,10 @@ func (pg *Database) GetOutput(
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Info("GetOutput returned no rows", "service", "repository")
+			slog.Info("GetOutput returned no rows",
+				"service", "repository",
+				"app", appAddressKey,
+				"index", indexKey)
 			return nil, nil
 		}
 		return nil, fmt.Errorf("GetOutput QueryRow failed: %w\n", err)
@@ -642,7 +660,10 @@ func (pg *Database) GetReport(
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Info("GetReport returned no rows", "service", "repository")
+			slog.Info("GetReport returned no rows",
+				"service", "repository",
+				"app", appAddressKey,
+				"index", indexKey)
 			return nil, nil
 		}
 		return nil, fmt.Errorf("GetReport QueryRow failed: %w\n", err)
@@ -697,7 +718,10 @@ func (pg *Database) GetSnapshot(
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Info("GetSnapshot returned no rows", "service", "repository")
+			slog.Info("GetSnapshot returned no rows",
+				"service", "repository",
+				"app", appAddressKey,
+				"input index", inputIndexKey)
 			return nil, nil
 		}
 		return nil, fmt.Errorf("GetSnapshot QueryRow failed: %w\n", err)
