@@ -62,8 +62,6 @@ func (s *RepositorySuite) SetupDatabase() {
 		InputBoxDeploymentBlock: 1,
 		InputBoxAddress:         common.HexToAddress("deadbeef"),
 		ChainId:                 1,
-		IConsensusAddress:       common.HexToAddress("deadbeef"),
-		EpochLength:             10,
 	}
 
 	err := s.database.InsertNodeConfig(s.ctx, &config)

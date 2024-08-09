@@ -56,8 +56,6 @@ type NodePersistentConfig struct {
 	InputBoxDeploymentBlock uint64
 	InputBoxAddress         Address
 	ChainId                 uint64
-	IConsensusAddress       Address
-	EpochLength             uint64
 }
 
 type Application struct {

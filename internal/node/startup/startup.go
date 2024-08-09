@@ -82,7 +82,6 @@ func SetupNodePersistentConfig(
 			InputBoxDeploymentBlock: uint64(config.ContractsInputBoxDeploymentBlockNumber),
 			InputBoxAddress:         common.HexToAddress(config.ContractsInputBoxAddress),
 			ChainId:                 config.BlockchainID,
-			IConsensusAddress:       common.HexToAddress(config.ContractsIConsensusAddress),
 		}
 		slog.Info(
 			"No persistent config found at the database. Setting it up",

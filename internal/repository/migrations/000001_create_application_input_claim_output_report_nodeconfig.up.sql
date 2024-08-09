@@ -103,9 +103,7 @@ CREATE TABLE "node_config"
     "default_block" "DefaultBlock" NOT NULL,
     "input_box_deployment_block" INT NOT NULL,
     "input_box_address" BYTEA NOT NULL,
-    "chain_id" INT NOT NULL,
-    "iconsensus_address" BYTEA NOT NULL,
-    "epoch_length" INT NOT NULL
+    "chain_id" INT NOT NULL
 );
 
 

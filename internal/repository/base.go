@@ -58,25 +58,19 @@ func (pg *Database) InsertNodeConfig(
 		(default_block,
 		input_box_deployment_block,
 		input_box_address,
-		chain_id,
-		iconsensus_address,
-		epoch_length)
+		chain_id)
 	SELECT
 		@defaultBlock,
 		@deploymentBlock,
 		@inputBoxAddress,
-		@chainId,
-		@iConsensusAddress,
-		@epochLength
+		@chainId
 	WHERE NOT EXISTS (SELECT * FROM node_config)`
 
 	args := pgx.NamedArgs{
-		"defaultBlock":      config.DefaultBlock,
-		"deploymentBlock":   config.InputBoxDeploymentBlock,
-		"inputBoxAddress":   config.InputBoxAddress,
-		"chainId":           config.ChainId,
-		"iConsensusAddress": config.IConsensusAddress,
-		"epochLength":       config.EpochLength,
+		"defaultBlock":    config.DefaultBlock,
+		"deploymentBlock": config.InputBoxDeploymentBlock,
+		"inputBoxAddress": config.InputBoxAddress,
+		"chainId":         config.ChainId,
 	}
 
 	_, err := pg.db.Exec(ctx, query, args)
@@ -309,11 +303,10 @@ func (pg *Database) GetNodeConfig(
 	ctx context.Context,
 ) (*NodePersistentConfig, error) {
 	var (
-		defaultBlock      DefaultBlock
-		deploymentBlock   uint64
-		inputBoxAddress   Address
-		chainId           uint64
-		iConsensusAddress Address
+		defaultBlock    DefaultBlock
+		deploymentBlock uint64
+		inputBoxAddress Address
+		chainId         uint64
 	)
 
 	query := `
@@ -321,8 +314,7 @@ func (pg *Database) GetNodeConfig(
 		default_block,
 		input_box_deployment_block,
 		input_box_address,
-		chain_id,
-		iconsensus_address
+		chain_id
 	FROM
 		node_config`
 
@@ -331,7 +323,6 @@ func (pg *Database) GetNodeConfig(
 		&deploymentBlock,
 		&inputBoxAddress,
 		&chainId,
-		&iConsensusAddress,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("GetNodeConfig QueryRow failed: %w\n", err)
@@ -342,7 +333,6 @@ func (pg *Database) GetNodeConfig(
 		InputBoxDeploymentBlock: deploymentBlock,
 		InputBoxAddress:         inputBoxAddress,
 		ChainId:                 chainId,
-		IConsensusAddress:       iConsensusAddress,
 	}
 
 	return &config, nil
