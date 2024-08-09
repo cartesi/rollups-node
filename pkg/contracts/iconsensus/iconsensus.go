@@ -29,15 +29,9 @@ var (
 	_ = abi.ConvertType
 )
 
-// InputRange is an auto generated low-level Go binding around an user-defined struct.
-type InputRange struct {
-	FirstIndex uint64
-	LastIndex  uint64
-}
-
 // IConsensusMetaData contains all meta data concerning the IConsensus contract.
 var IConsensusMetaData = &bind.MetaData{
-	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"components\":[{\"internalType\":\"uint64\",\"name\":\"firstIndex\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"lastIndex\",\"type\":\"uint64\"}],\"indexed\":false,\"internalType\":\"structInputRange\",\"name\":\"inputRange\",\"type\":\"tuple\"},{\"indexed\":false,\"internalType\":\"bytes32\",\"name\":\"epochHash\",\"type\":\"bytes32\"}],\"name\":\"ClaimAcceptance\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"submitter\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"components\":[{\"internalType\":\"uint64\",\"name\":\"firstIndex\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"lastIndex\",\"type\":\"uint64\"}],\"indexed\":false,\"internalType\":\"structInputRange\",\"name\":\"inputRange\",\"type\":\"tuple\"},{\"indexed\":false,\"internalType\":\"bytes32\",\"name\":\"epochHash\",\"type\":\"bytes32\"}],\"name\":\"ClaimSubmission\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"components\":[{\"internalType\":\"uint64\",\"name\":\"firstIndex\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"lastIndex\",\"type\":\"uint64\"}],\"internalType\":\"structInputRange\",\"name\":\"inputRange\",\"type\":\"tuple\"}],\"name\":\"getEpochHash\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"epochHash\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"components\":[{\"internalType\":\"uint64\",\"name\":\"firstIndex\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"lastIndex\",\"type\":\"uint64\"}],\"internalType\":\"structInputRange\",\"name\":\"inputRange\",\"type\":\"tuple\"},{\"internalType\":\"bytes32\",\"name\":\"epochHash\",\"type\":\"bytes32\"}],\"name\":\"submitClaim\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
+	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"lastProcessedBlockNumber\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"bytes32\",\"name\":\"claim\",\"type\":\"bytes32\"}],\"name\":\"ClaimAcceptance\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"submitter\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"lastProcessedBlockNumber\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"bytes32\",\"name\":\"claim\",\"type\":\"bytes32\"}],\"name\":\"ClaimSubmission\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"getEpochLength\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"lastProcessedBlockNumber\",\"type\":\"uint256\"},{\"internalType\":\"bytes32\",\"name\":\"claim\",\"type\":\"bytes32\"}],\"name\":\"submitClaim\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"internalType\":\"bytes32\",\"name\":\"claim\",\"type\":\"bytes32\"}],\"name\":\"wasClaimAccepted\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
 }
 
 // IConsensusABI is the input ABI used to generate the binding from.
@@ -186,56 +180,87 @@ func (_IConsensus *IConsensusTransactorRaw) Transact(opts *bind.TransactOpts, me
 	return _IConsensus.Contract.contract.Transact(opts, method, params...)
 }
 
-// GetEpochHash is a free data retrieval call binding the contract method 0xc1f59afc.
+// GetEpochLength is a free data retrieval call binding the contract method 0xcfe8a73b.
 //
-// Solidity: function getEpochHash(address appContract, (uint64,uint64) inputRange) view returns(bytes32 epochHash)
-func (_IConsensus *IConsensusCaller) GetEpochHash(opts *bind.CallOpts, appContract common.Address, inputRange InputRange) ([32]byte, error) {
+// Solidity: function getEpochLength() view returns(uint256)
+func (_IConsensus *IConsensusCaller) GetEpochLength(opts *bind.CallOpts) (*big.Int, error) {
 	var out []interface{}
-	err := _IConsensus.contract.Call(opts, &out, "getEpochHash", appContract, inputRange)
+	err := _IConsensus.contract.Call(opts, &out, "getEpochLength")
 
 	if err != nil {
-		return *new([32]byte), err
+		return *new(*big.Int), err
 	}
 
-	out0 := *abi.ConvertType(out[0], new([32]byte)).(*[32]byte)
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
 
 	return out0, err
 
 }
 
-// GetEpochHash is a free data retrieval call binding the contract method 0xc1f59afc.
+// GetEpochLength is a free data retrieval call binding the contract method 0xcfe8a73b.
 //
-// Solidity: function getEpochHash(address appContract, (uint64,uint64) inputRange) view returns(bytes32 epochHash)
-func (_IConsensus *IConsensusSession) GetEpochHash(appContract common.Address, inputRange InputRange) ([32]byte, error) {
-	return _IConsensus.Contract.GetEpochHash(&_IConsensus.CallOpts, appContract, inputRange)
+// Solidity: function getEpochLength() view returns(uint256)
+func (_IConsensus *IConsensusSession) GetEpochLength() (*big.Int, error) {
+	return _IConsensus.Contract.GetEpochLength(&_IConsensus.CallOpts)
 }
 
-// GetEpochHash is a free data retrieval call binding the contract method 0xc1f59afc.
+// GetEpochLength is a free data retrieval call binding the contract method 0xcfe8a73b.
 //
-// Solidity: function getEpochHash(address appContract, (uint64,uint64) inputRange) view returns(bytes32 epochHash)
-func (_IConsensus *IConsensusCallerSession) GetEpochHash(appContract common.Address, inputRange InputRange) ([32]byte, error) {
-	return _IConsensus.Contract.GetEpochHash(&_IConsensus.CallOpts, appContract, inputRange)
+// Solidity: function getEpochLength() view returns(uint256)
+func (_IConsensus *IConsensusCallerSession) GetEpochLength() (*big.Int, error) {
+	return _IConsensus.Contract.GetEpochLength(&_IConsensus.CallOpts)
 }
 
-// SubmitClaim is a paid mutator transaction binding the contract method 0x866b85fa.
+// WasClaimAccepted is a free data retrieval call binding the contract method 0x9618f35b.
 //
-// Solidity: function submitClaim(address appContract, (uint64,uint64) inputRange, bytes32 epochHash) returns()
-func (_IConsensus *IConsensusTransactor) SubmitClaim(opts *bind.TransactOpts, appContract common.Address, inputRange InputRange, epochHash [32]byte) (*types.Transaction, error) {
-	return _IConsensus.contract.Transact(opts, "submitClaim", appContract, inputRange, epochHash)
+// Solidity: function wasClaimAccepted(address appContract, bytes32 claim) view returns(bool)
+func (_IConsensus *IConsensusCaller) WasClaimAccepted(opts *bind.CallOpts, appContract common.Address, claim [32]byte) (bool, error) {
+	var out []interface{}
+	err := _IConsensus.contract.Call(opts, &out, "wasClaimAccepted", appContract, claim)
+
+	if err != nil {
+		return *new(bool), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
+
+	return out0, err
+
 }
 
-// SubmitClaim is a paid mutator transaction binding the contract method 0x866b85fa.
+// WasClaimAccepted is a free data retrieval call binding the contract method 0x9618f35b.
 //
-// Solidity: function submitClaim(address appContract, (uint64,uint64) inputRange, bytes32 epochHash) returns()
-func (_IConsensus *IConsensusSession) SubmitClaim(appContract common.Address, inputRange InputRange, epochHash [32]byte) (*types.Transaction, error) {
-	return _IConsensus.Contract.SubmitClaim(&_IConsensus.TransactOpts, appContract, inputRange, epochHash)
+// Solidity: function wasClaimAccepted(address appContract, bytes32 claim) view returns(bool)
+func (_IConsensus *IConsensusSession) WasClaimAccepted(appContract common.Address, claim [32]byte) (bool, error) {
+	return _IConsensus.Contract.WasClaimAccepted(&_IConsensus.CallOpts, appContract, claim)
 }
 
-// SubmitClaim is a paid mutator transaction binding the contract method 0x866b85fa.
+// WasClaimAccepted is a free data retrieval call binding the contract method 0x9618f35b.
 //
-// Solidity: function submitClaim(address appContract, (uint64,uint64) inputRange, bytes32 epochHash) returns()
-func (_IConsensus *IConsensusTransactorSession) SubmitClaim(appContract common.Address, inputRange InputRange, epochHash [32]byte) (*types.Transaction, error) {
-	return _IConsensus.Contract.SubmitClaim(&_IConsensus.TransactOpts, appContract, inputRange, epochHash)
+// Solidity: function wasClaimAccepted(address appContract, bytes32 claim) view returns(bool)
+func (_IConsensus *IConsensusCallerSession) WasClaimAccepted(appContract common.Address, claim [32]byte) (bool, error) {
+	return _IConsensus.Contract.WasClaimAccepted(&_IConsensus.CallOpts, appContract, claim)
+}
+
+// SubmitClaim is a paid mutator transaction binding the contract method 0x6470af00.
+//
+// Solidity: function submitClaim(address appContract, uint256 lastProcessedBlockNumber, bytes32 claim) returns()
+func (_IConsensus *IConsensusTransactor) SubmitClaim(opts *bind.TransactOpts, appContract common.Address, lastProcessedBlockNumber *big.Int, claim [32]byte) (*types.Transaction, error) {
+	return _IConsensus.contract.Transact(opts, "submitClaim", appContract, lastProcessedBlockNumber, claim)
+}
+
+// SubmitClaim is a paid mutator transaction binding the contract method 0x6470af00.
+//
+// Solidity: function submitClaim(address appContract, uint256 lastProcessedBlockNumber, bytes32 claim) returns()
+func (_IConsensus *IConsensusSession) SubmitClaim(appContract common.Address, lastProcessedBlockNumber *big.Int, claim [32]byte) (*types.Transaction, error) {
+	return _IConsensus.Contract.SubmitClaim(&_IConsensus.TransactOpts, appContract, lastProcessedBlockNumber, claim)
+}
+
+// SubmitClaim is a paid mutator transaction binding the contract method 0x6470af00.
+//
+// Solidity: function submitClaim(address appContract, uint256 lastProcessedBlockNumber, bytes32 claim) returns()
+func (_IConsensus *IConsensusTransactorSession) SubmitClaim(appContract common.Address, lastProcessedBlockNumber *big.Int, claim [32]byte) (*types.Transaction, error) {
+	return _IConsensus.Contract.SubmitClaim(&_IConsensus.TransactOpts, appContract, lastProcessedBlockNumber, claim)
 }
 
 // IConsensusClaimAcceptanceIterator is returned from FilterClaimAcceptance and is used to iterate over the raw logs and unpacked data for ClaimAcceptance events raised by the IConsensus contract.
@@ -307,15 +332,15 @@ func (it *IConsensusClaimAcceptanceIterator) Close() error {
 
 // IConsensusClaimAcceptance represents a ClaimAcceptance event raised by the IConsensus contract.
 type IConsensusClaimAcceptance struct {
-	AppContract common.Address
-	InputRange  InputRange
-	EpochHash   [32]byte
-	Raw         types.Log // Blockchain specific contextual infos
+	AppContract              common.Address
+	LastProcessedBlockNumber *big.Int
+	Claim                    [32]byte
+	Raw                      types.Log // Blockchain specific contextual infos
 }
 
-// FilterClaimAcceptance is a free log retrieval operation binding the contract event 0x4e068a6b8ed35e6ee03244135874f91ccebb5cd1f3a258a6dc2ad0ebd2988476.
+// FilterClaimAcceptance is a free log retrieval operation binding the contract event 0xd3e4892959c6ddb27e02bcaaebc0c1898d0f677b7360bf80339f10a8717957d3.
 //
-// Solidity: event ClaimAcceptance(address indexed appContract, (uint64,uint64) inputRange, bytes32 epochHash)
+// Solidity: event ClaimAcceptance(address indexed appContract, uint256 lastProcessedBlockNumber, bytes32 claim)
 func (_IConsensus *IConsensusFilterer) FilterClaimAcceptance(opts *bind.FilterOpts, appContract []common.Address) (*IConsensusClaimAcceptanceIterator, error) {
 
 	var appContractRule []interface{}
@@ -330,9 +355,9 @@ func (_IConsensus *IConsensusFilterer) FilterClaimAcceptance(opts *bind.FilterOp
 	return &IConsensusClaimAcceptanceIterator{contract: _IConsensus.contract, event: "ClaimAcceptance", logs: logs, sub: sub}, nil
 }
 
-// WatchClaimAcceptance is a free log subscription operation binding the contract event 0x4e068a6b8ed35e6ee03244135874f91ccebb5cd1f3a258a6dc2ad0ebd2988476.
+// WatchClaimAcceptance is a free log subscription operation binding the contract event 0xd3e4892959c6ddb27e02bcaaebc0c1898d0f677b7360bf80339f10a8717957d3.
 //
-// Solidity: event ClaimAcceptance(address indexed appContract, (uint64,uint64) inputRange, bytes32 epochHash)
+// Solidity: event ClaimAcceptance(address indexed appContract, uint256 lastProcessedBlockNumber, bytes32 claim)
 func (_IConsensus *IConsensusFilterer) WatchClaimAcceptance(opts *bind.WatchOpts, sink chan<- *IConsensusClaimAcceptance, appContract []common.Address) (event.Subscription, error) {
 
 	var appContractRule []interface{}
@@ -372,9 +397,9 @@ func (_IConsensus *IConsensusFilterer) WatchClaimAcceptance(opts *bind.WatchOpts
 	}), nil
 }
 
-// ParseClaimAcceptance is a log parse operation binding the contract event 0x4e068a6b8ed35e6ee03244135874f91ccebb5cd1f3a258a6dc2ad0ebd2988476.
+// ParseClaimAcceptance is a log parse operation binding the contract event 0xd3e4892959c6ddb27e02bcaaebc0c1898d0f677b7360bf80339f10a8717957d3.
 //
-// Solidity: event ClaimAcceptance(address indexed appContract, (uint64,uint64) inputRange, bytes32 epochHash)
+// Solidity: event ClaimAcceptance(address indexed appContract, uint256 lastProcessedBlockNumber, bytes32 claim)
 func (_IConsensus *IConsensusFilterer) ParseClaimAcceptance(log types.Log) (*IConsensusClaimAcceptance, error) {
 	event := new(IConsensusClaimAcceptance)
 	if err := _IConsensus.contract.UnpackLog(event, "ClaimAcceptance", log); err != nil {
@@ -453,16 +478,16 @@ func (it *IConsensusClaimSubmissionIterator) Close() error {
 
 // IConsensusClaimSubmission represents a ClaimSubmission event raised by the IConsensus contract.
 type IConsensusClaimSubmission struct {
-	Submitter   common.Address
-	AppContract common.Address
-	InputRange  InputRange
-	EpochHash   [32]byte
-	Raw         types.Log // Blockchain specific contextual infos
+	Submitter                common.Address
+	AppContract              common.Address
+	LastProcessedBlockNumber *big.Int
+	Claim                    [32]byte
+	Raw                      types.Log // Blockchain specific contextual infos
 }
 
-// FilterClaimSubmission is a free log retrieval operation binding the contract event 0x940326476a755934b6ae9d2b36ffcf1f447c3a8223f6d9f8a796b54fbfcce582.
+// FilterClaimSubmission is a free log retrieval operation binding the contract event 0xf5a28e07a1b89d1ca3f9a2a7ef16bd650503a4791baf2e70dc401c21ee505f0a.
 //
-// Solidity: event ClaimSubmission(address indexed submitter, address indexed appContract, (uint64,uint64) inputRange, bytes32 epochHash)
+// Solidity: event ClaimSubmission(address indexed submitter, address indexed appContract, uint256 lastProcessedBlockNumber, bytes32 claim)
 func (_IConsensus *IConsensusFilterer) FilterClaimSubmission(opts *bind.FilterOpts, submitter []common.Address, appContract []common.Address) (*IConsensusClaimSubmissionIterator, error) {
 
 	var submitterRule []interface{}
@@ -481,9 +506,9 @@ func (_IConsensus *IConsensusFilterer) FilterClaimSubmission(opts *bind.FilterOp
 	return &IConsensusClaimSubmissionIterator{contract: _IConsensus.contract, event: "ClaimSubmission", logs: logs, sub: sub}, nil
 }
 
-// WatchClaimSubmission is a free log subscription operation binding the contract event 0x940326476a755934b6ae9d2b36ffcf1f447c3a8223f6d9f8a796b54fbfcce582.
+// WatchClaimSubmission is a free log subscription operation binding the contract event 0xf5a28e07a1b89d1ca3f9a2a7ef16bd650503a4791baf2e70dc401c21ee505f0a.
 //
-// Solidity: event ClaimSubmission(address indexed submitter, address indexed appContract, (uint64,uint64) inputRange, bytes32 epochHash)
+// Solidity: event ClaimSubmission(address indexed submitter, address indexed appContract, uint256 lastProcessedBlockNumber, bytes32 claim)
 func (_IConsensus *IConsensusFilterer) WatchClaimSubmission(opts *bind.WatchOpts, sink chan<- *IConsensusClaimSubmission, submitter []common.Address, appContract []common.Address) (event.Subscription, error) {
 
 	var submitterRule []interface{}
@@ -527,9 +552,9 @@ func (_IConsensus *IConsensusFilterer) WatchClaimSubmission(opts *bind.WatchOpts
 	}), nil
 }
 
-// ParseClaimSubmission is a log parse operation binding the contract event 0x940326476a755934b6ae9d2b36ffcf1f447c3a8223f6d9f8a796b54fbfcce582.
+// ParseClaimSubmission is a log parse operation binding the contract event 0xf5a28e07a1b89d1ca3f9a2a7ef16bd650503a4791baf2e70dc401c21ee505f0a.
 //
-// Solidity: event ClaimSubmission(address indexed submitter, address indexed appContract, (uint64,uint64) inputRange, bytes32 epochHash)
+// Solidity: event ClaimSubmission(address indexed submitter, address indexed appContract, uint256 lastProcessedBlockNumber, bytes32 claim)
 func (_IConsensus *IConsensusFilterer) ParseClaimSubmission(log types.Log) (*IConsensusClaimSubmission, error) {
 	event := new(IConsensusClaimSubmission)
 	if err := _IConsensus.contract.UnpackLog(event, "ClaimSubmission", log); err != nil {

@@ -29,27 +29,15 @@ var (
 	_ = abi.ConvertType
 )
 
-// InputRange is an auto generated low-level Go binding around an user-defined struct.
-type InputRange struct {
-	FirstIndex uint64
-	LastIndex  uint64
-}
-
 // OutputValidityProof is an auto generated low-level Go binding around an user-defined struct.
 type OutputValidityProof struct {
-	InputRange                       InputRange
-	InputIndexWithinEpoch            uint64
-	OutputIndexWithinInput           uint64
-	OutputHashesRootHash             [32]byte
-	OutputsEpochRootHash             [32]byte
-	MachineStateHash                 [32]byte
-	OutputHashInOutputHashesSiblings [][32]byte
-	OutputHashesInEpochSiblings      [][32]byte
+	OutputIndex          uint64
+	OutputHashesSiblings [][32]byte
 }
 
 // ApplicationMetaData contains all meta data concerning the Application contract.
 var ApplicationMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[{\"internalType\":\"contractIConsensus\",\"name\":\"consensus\",\"type\":\"address\"},{\"internalType\":\"contractIInputBox\",\"name\":\"inputBox\",\"type\":\"address\"},{\"internalType\":\"contractIPortal[]\",\"name\":\"portals\",\"type\":\"address[]\"},{\"internalType\":\"address\",\"name\":\"initialOwner\",\"type\":\"address\"},{\"internalType\":\"bytes32\",\"name\":\"templateHash\",\"type\":\"bytes32\"}],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"inputs\":[],\"name\":\"IncorrectEpochHash\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"IncorrectOutputHashesRootHash\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"IncorrectOutputsEpochRootHash\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"inputIndex\",\"type\":\"uint256\"},{\"components\":[{\"internalType\":\"uint64\",\"name\":\"firstIndex\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"lastIndex\",\"type\":\"uint64\"}],\"internalType\":\"structInputRange\",\"name\":\"inputRange\",\"type\":\"tuple\"}],\"name\":\"InputIndexOutOfRange\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"bytes\",\"name\":\"output\",\"type\":\"bytes\"}],\"name\":\"OutputNotExecutable\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"bytes\",\"name\":\"output\",\"type\":\"bytes\"}],\"name\":\"OutputNotReexecutable\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"}],\"name\":\"OwnableInvalidOwner\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"OwnableUnauthorizedAccount\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"ReentrancyGuardReentrantCall\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"contractIConsensus\",\"name\":\"newConsensus\",\"type\":\"address\"}],\"name\":\"NewConsensus\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"uint64\",\"name\":\"inputIndex\",\"type\":\"uint64\"},{\"indexed\":false,\"internalType\":\"uint64\",\"name\":\"outputIndexWithinInput\",\"type\":\"uint64\"},{\"indexed\":false,\"internalType\":\"bytes\",\"name\":\"output\",\"type\":\"bytes\"}],\"name\":\"OutputExecuted\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"bytes\",\"name\":\"output\",\"type\":\"bytes\"},{\"components\":[{\"components\":[{\"internalType\":\"uint64\",\"name\":\"firstIndex\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"lastIndex\",\"type\":\"uint64\"}],\"internalType\":\"structInputRange\",\"name\":\"inputRange\",\"type\":\"tuple\"},{\"internalType\":\"uint64\",\"name\":\"inputIndexWithinEpoch\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"outputIndexWithinInput\",\"type\":\"uint64\"},{\"internalType\":\"bytes32\",\"name\":\"outputHashesRootHash\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32\",\"name\":\"outputsEpochRootHash\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32\",\"name\":\"machineStateHash\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32[]\",\"name\":\"outputHashInOutputHashesSiblings\",\"type\":\"bytes32[]\"},{\"internalType\":\"bytes32[]\",\"name\":\"outputHashesInEpochSiblings\",\"type\":\"bytes32[]\"}],\"internalType\":\"structOutputValidityProof\",\"name\":\"proof\",\"type\":\"tuple\"}],\"name\":\"executeOutput\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getConsensus\",\"outputs\":[{\"internalType\":\"contractIConsensus\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getInputBox\",\"outputs\":[{\"internalType\":\"contractIInputBox\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getPortals\",\"outputs\":[{\"internalType\":\"contractIPortal[]\",\"name\":\"\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getTemplateHash\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"contractIConsensus\",\"name\":\"newConsensus\",\"type\":\"address\"}],\"name\":\"migrateToConsensus\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"uint256[]\",\"name\":\"\",\"type\":\"uint256[]\"},{\"internalType\":\"uint256[]\",\"name\":\"\",\"type\":\"uint256[]\"},{\"internalType\":\"bytes\",\"name\":\"\",\"type\":\"bytes\"}],\"name\":\"onERC1155BatchReceived\",\"outputs\":[{\"internalType\":\"bytes4\",\"name\":\"\",\"type\":\"bytes4\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"\",\"type\":\"bytes\"}],\"name\":\"onERC1155Received\",\"outputs\":[{\"internalType\":\"bytes4\",\"name\":\"\",\"type\":\"bytes4\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"\",\"type\":\"bytes\"}],\"name\":\"onERC721Received\",\"outputs\":[{\"internalType\":\"bytes4\",\"name\":\"\",\"type\":\"bytes4\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"renounceOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes4\",\"name\":\"interfaceId\",\"type\":\"bytes4\"}],\"name\":\"supportsInterface\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes\",\"name\":\"output\",\"type\":\"bytes\"},{\"components\":[{\"components\":[{\"internalType\":\"uint64\",\"name\":\"firstIndex\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"lastIndex\",\"type\":\"uint64\"}],\"internalType\":\"structInputRange\",\"name\":\"inputRange\",\"type\":\"tuple\"},{\"internalType\":\"uint64\",\"name\":\"inputIndexWithinEpoch\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"outputIndexWithinInput\",\"type\":\"uint64\"},{\"internalType\":\"bytes32\",\"name\":\"outputHashesRootHash\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32\",\"name\":\"outputsEpochRootHash\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32\",\"name\":\"machineStateHash\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32[]\",\"name\":\"outputHashInOutputHashesSiblings\",\"type\":\"bytes32[]\"},{\"internalType\":\"bytes32[]\",\"name\":\"outputHashesInEpochSiblings\",\"type\":\"bytes32[]\"}],\"internalType\":\"structOutputValidityProof\",\"name\":\"proof\",\"type\":\"tuple\"}],\"name\":\"validateOutput\",\"outputs\":[],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"inputIndex\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"outputIndexWithinInput\",\"type\":\"uint256\"}],\"name\":\"wasOutputExecuted\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"stateMutability\":\"payable\",\"type\":\"receive\"}]",
+	ABI: "[{\"inputs\":[{\"internalType\":\"contractIConsensus\",\"name\":\"consensus\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"initialOwner\",\"type\":\"address\"},{\"internalType\":\"bytes32\",\"name\":\"templateHash\",\"type\":\"bytes32\"}],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"claim\",\"type\":\"bytes32\"}],\"name\":\"ClaimNotAccepted\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"InvalidOutputHashesSiblingsArrayLength\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"bytes\",\"name\":\"output\",\"type\":\"bytes\"}],\"name\":\"OutputNotExecutable\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"bytes\",\"name\":\"output\",\"type\":\"bytes\"}],\"name\":\"OutputNotReexecutable\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"}],\"name\":\"OwnableInvalidOwner\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"OwnableUnauthorizedAccount\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"ReentrancyGuardReentrantCall\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"contractIConsensus\",\"name\":\"newConsensus\",\"type\":\"address\"}],\"name\":\"NewConsensus\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"uint64\",\"name\":\"outputIndex\",\"type\":\"uint64\"},{\"indexed\":false,\"internalType\":\"bytes\",\"name\":\"output\",\"type\":\"bytes\"}],\"name\":\"OutputExecuted\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"bytes\",\"name\":\"output\",\"type\":\"bytes\"},{\"components\":[{\"internalType\":\"uint64\",\"name\":\"outputIndex\",\"type\":\"uint64\"},{\"internalType\":\"bytes32[]\",\"name\":\"outputHashesSiblings\",\"type\":\"bytes32[]\"}],\"internalType\":\"structOutputValidityProof\",\"name\":\"proof\",\"type\":\"tuple\"}],\"name\":\"executeOutput\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getConsensus\",\"outputs\":[{\"internalType\":\"contractIConsensus\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getTemplateHash\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"contractIConsensus\",\"name\":\"newConsensus\",\"type\":\"address\"}],\"name\":\"migrateToConsensus\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"uint256[]\",\"name\":\"\",\"type\":\"uint256[]\"},{\"internalType\":\"uint256[]\",\"name\":\"\",\"type\":\"uint256[]\"},{\"internalType\":\"bytes\",\"name\":\"\",\"type\":\"bytes\"}],\"name\":\"onERC1155BatchReceived\",\"outputs\":[{\"internalType\":\"bytes4\",\"name\":\"\",\"type\":\"bytes4\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"\",\"type\":\"bytes\"}],\"name\":\"onERC1155Received\",\"outputs\":[{\"internalType\":\"bytes4\",\"name\":\"\",\"type\":\"bytes4\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"\",\"type\":\"bytes\"}],\"name\":\"onERC721Received\",\"outputs\":[{\"internalType\":\"bytes4\",\"name\":\"\",\"type\":\"bytes4\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"renounceOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes4\",\"name\":\"interfaceId\",\"type\":\"bytes4\"}],\"name\":\"supportsInterface\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes\",\"name\":\"output\",\"type\":\"bytes\"},{\"components\":[{\"internalType\":\"uint64\",\"name\":\"outputIndex\",\"type\":\"uint64\"},{\"internalType\":\"bytes32[]\",\"name\":\"outputHashesSiblings\",\"type\":\"bytes32[]\"}],\"internalType\":\"structOutputValidityProof\",\"name\":\"proof\",\"type\":\"tuple\"}],\"name\":\"validateOutput\",\"outputs\":[],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"outputHash\",\"type\":\"bytes32\"},{\"components\":[{\"internalType\":\"uint64\",\"name\":\"outputIndex\",\"type\":\"uint64\"},{\"internalType\":\"bytes32[]\",\"name\":\"outputHashesSiblings\",\"type\":\"bytes32[]\"}],\"internalType\":\"structOutputValidityProof\",\"name\":\"proof\",\"type\":\"tuple\"}],\"name\":\"validateOutputHash\",\"outputs\":[],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"outputIndex\",\"type\":\"uint256\"}],\"name\":\"wasOutputExecuted\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"stateMutability\":\"payable\",\"type\":\"receive\"}]",
 }
 
 // ApplicationABI is the input ABI used to generate the binding from.
@@ -229,68 +217,6 @@ func (_Application *ApplicationCallerSession) GetConsensus() (common.Address, er
 	return _Application.Contract.GetConsensus(&_Application.CallOpts)
 }
 
-// GetInputBox is a free data retrieval call binding the contract method 0x00aace9a.
-//
-// Solidity: function getInputBox() view returns(address)
-func (_Application *ApplicationCaller) GetInputBox(opts *bind.CallOpts) (common.Address, error) {
-	var out []interface{}
-	err := _Application.contract.Call(opts, &out, "getInputBox")
-
-	if err != nil {
-		return *new(common.Address), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
-
-	return out0, err
-
-}
-
-// GetInputBox is a free data retrieval call binding the contract method 0x00aace9a.
-//
-// Solidity: function getInputBox() view returns(address)
-func (_Application *ApplicationSession) GetInputBox() (common.Address, error) {
-	return _Application.Contract.GetInputBox(&_Application.CallOpts)
-}
-
-// GetInputBox is a free data retrieval call binding the contract method 0x00aace9a.
-//
-// Solidity: function getInputBox() view returns(address)
-func (_Application *ApplicationCallerSession) GetInputBox() (common.Address, error) {
-	return _Application.Contract.GetInputBox(&_Application.CallOpts)
-}
-
-// GetPortals is a free data retrieval call binding the contract method 0x108e8c1d.
-//
-// Solidity: function getPortals() view returns(address[])
-func (_Application *ApplicationCaller) GetPortals(opts *bind.CallOpts) ([]common.Address, error) {
-	var out []interface{}
-	err := _Application.contract.Call(opts, &out, "getPortals")
-
-	if err != nil {
-		return *new([]common.Address), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new([]common.Address)).(*[]common.Address)
-
-	return out0, err
-
-}
-
-// GetPortals is a free data retrieval call binding the contract method 0x108e8c1d.
-//
-// Solidity: function getPortals() view returns(address[])
-func (_Application *ApplicationSession) GetPortals() ([]common.Address, error) {
-	return _Application.Contract.GetPortals(&_Application.CallOpts)
-}
-
-// GetPortals is a free data retrieval call binding the contract method 0x108e8c1d.
-//
-// Solidity: function getPortals() view returns(address[])
-func (_Application *ApplicationCallerSession) GetPortals() ([]common.Address, error) {
-	return _Application.Contract.GetPortals(&_Application.CallOpts)
-}
-
 // GetTemplateHash is a free data retrieval call binding the contract method 0x61b12c66.
 //
 // Solidity: function getTemplateHash() view returns(bytes32)
@@ -384,9 +310,9 @@ func (_Application *ApplicationCallerSession) SupportsInterface(interfaceId [4]b
 	return _Application.Contract.SupportsInterface(&_Application.CallOpts, interfaceId)
 }
 
-// ValidateOutput is a free data retrieval call binding the contract method 0x4dcea155.
+// ValidateOutput is a free data retrieval call binding the contract method 0xe88d39c0.
 //
-// Solidity: function validateOutput(bytes output, ((uint64,uint64),uint64,uint64,bytes32,bytes32,bytes32,bytes32[],bytes32[]) proof) view returns()
+// Solidity: function validateOutput(bytes output, (uint64,bytes32[]) proof) view returns()
 func (_Application *ApplicationCaller) ValidateOutput(opts *bind.CallOpts, output []byte, proof OutputValidityProof) error {
 	var out []interface{}
 	err := _Application.contract.Call(opts, &out, "validateOutput", output, proof)
@@ -399,26 +325,55 @@ func (_Application *ApplicationCaller) ValidateOutput(opts *bind.CallOpts, outpu
 
 }
 
-// ValidateOutput is a free data retrieval call binding the contract method 0x4dcea155.
+// ValidateOutput is a free data retrieval call binding the contract method 0xe88d39c0.
 //
-// Solidity: function validateOutput(bytes output, ((uint64,uint64),uint64,uint64,bytes32,bytes32,bytes32,bytes32[],bytes32[]) proof) view returns()
+// Solidity: function validateOutput(bytes output, (uint64,bytes32[]) proof) view returns()
 func (_Application *ApplicationSession) ValidateOutput(output []byte, proof OutputValidityProof) error {
 	return _Application.Contract.ValidateOutput(&_Application.CallOpts, output, proof)
 }
 
-// ValidateOutput is a free data retrieval call binding the contract method 0x4dcea155.
+// ValidateOutput is a free data retrieval call binding the contract method 0xe88d39c0.
 //
-// Solidity: function validateOutput(bytes output, ((uint64,uint64),uint64,uint64,bytes32,bytes32,bytes32,bytes32[],bytes32[]) proof) view returns()
+// Solidity: function validateOutput(bytes output, (uint64,bytes32[]) proof) view returns()
 func (_Application *ApplicationCallerSession) ValidateOutput(output []byte, proof OutputValidityProof) error {
 	return _Application.Contract.ValidateOutput(&_Application.CallOpts, output, proof)
 }
 
-// WasOutputExecuted is a free data retrieval call binding the contract method 0x24523192.
+// ValidateOutputHash is a free data retrieval call binding the contract method 0x08eb89ab.
 //
-// Solidity: function wasOutputExecuted(uint256 inputIndex, uint256 outputIndexWithinInput) view returns(bool)
-func (_Application *ApplicationCaller) WasOutputExecuted(opts *bind.CallOpts, inputIndex *big.Int, outputIndexWithinInput *big.Int) (bool, error) {
+// Solidity: function validateOutputHash(bytes32 outputHash, (uint64,bytes32[]) proof) view returns()
+func (_Application *ApplicationCaller) ValidateOutputHash(opts *bind.CallOpts, outputHash [32]byte, proof OutputValidityProof) error {
 	var out []interface{}
-	err := _Application.contract.Call(opts, &out, "wasOutputExecuted", inputIndex, outputIndexWithinInput)
+	err := _Application.contract.Call(opts, &out, "validateOutputHash", outputHash, proof)
+
+	if err != nil {
+		return err
+	}
+
+	return err
+
+}
+
+// ValidateOutputHash is a free data retrieval call binding the contract method 0x08eb89ab.
+//
+// Solidity: function validateOutputHash(bytes32 outputHash, (uint64,bytes32[]) proof) view returns()
+func (_Application *ApplicationSession) ValidateOutputHash(outputHash [32]byte, proof OutputValidityProof) error {
+	return _Application.Contract.ValidateOutputHash(&_Application.CallOpts, outputHash, proof)
+}
+
+// ValidateOutputHash is a free data retrieval call binding the contract method 0x08eb89ab.
+//
+// Solidity: function validateOutputHash(bytes32 outputHash, (uint64,bytes32[]) proof) view returns()
+func (_Application *ApplicationCallerSession) ValidateOutputHash(outputHash [32]byte, proof OutputValidityProof) error {
+	return _Application.Contract.ValidateOutputHash(&_Application.CallOpts, outputHash, proof)
+}
+
+// WasOutputExecuted is a free data retrieval call binding the contract method 0x71891db0.
+//
+// Solidity: function wasOutputExecuted(uint256 outputIndex) view returns(bool)
+func (_Application *ApplicationCaller) WasOutputExecuted(opts *bind.CallOpts, outputIndex *big.Int) (bool, error) {
+	var out []interface{}
+	err := _Application.contract.Call(opts, &out, "wasOutputExecuted", outputIndex)
 
 	if err != nil {
 		return *new(bool), err
@@ -430,37 +385,37 @@ func (_Application *ApplicationCaller) WasOutputExecuted(opts *bind.CallOpts, in
 
 }
 
-// WasOutputExecuted is a free data retrieval call binding the contract method 0x24523192.
+// WasOutputExecuted is a free data retrieval call binding the contract method 0x71891db0.
 //
-// Solidity: function wasOutputExecuted(uint256 inputIndex, uint256 outputIndexWithinInput) view returns(bool)
-func (_Application *ApplicationSession) WasOutputExecuted(inputIndex *big.Int, outputIndexWithinInput *big.Int) (bool, error) {
-	return _Application.Contract.WasOutputExecuted(&_Application.CallOpts, inputIndex, outputIndexWithinInput)
+// Solidity: function wasOutputExecuted(uint256 outputIndex) view returns(bool)
+func (_Application *ApplicationSession) WasOutputExecuted(outputIndex *big.Int) (bool, error) {
+	return _Application.Contract.WasOutputExecuted(&_Application.CallOpts, outputIndex)
 }
 
-// WasOutputExecuted is a free data retrieval call binding the contract method 0x24523192.
+// WasOutputExecuted is a free data retrieval call binding the contract method 0x71891db0.
 //
-// Solidity: function wasOutputExecuted(uint256 inputIndex, uint256 outputIndexWithinInput) view returns(bool)
-func (_Application *ApplicationCallerSession) WasOutputExecuted(inputIndex *big.Int, outputIndexWithinInput *big.Int) (bool, error) {
-	return _Application.Contract.WasOutputExecuted(&_Application.CallOpts, inputIndex, outputIndexWithinInput)
+// Solidity: function wasOutputExecuted(uint256 outputIndex) view returns(bool)
+func (_Application *ApplicationCallerSession) WasOutputExecuted(outputIndex *big.Int) (bool, error) {
+	return _Application.Contract.WasOutputExecuted(&_Application.CallOpts, outputIndex)
 }
 
-// ExecuteOutput is a paid mutator transaction binding the contract method 0xdbe1a6eb.
+// ExecuteOutput is a paid mutator transaction binding the contract method 0x33137b76.
 //
-// Solidity: function executeOutput(bytes output, ((uint64,uint64),uint64,uint64,bytes32,bytes32,bytes32,bytes32[],bytes32[]) proof) returns()
+// Solidity: function executeOutput(bytes output, (uint64,bytes32[]) proof) returns()
 func (_Application *ApplicationTransactor) ExecuteOutput(opts *bind.TransactOpts, output []byte, proof OutputValidityProof) (*types.Transaction, error) {
 	return _Application.contract.Transact(opts, "executeOutput", output, proof)
 }
 
-// ExecuteOutput is a paid mutator transaction binding the contract method 0xdbe1a6eb.
+// ExecuteOutput is a paid mutator transaction binding the contract method 0x33137b76.
 //
-// Solidity: function executeOutput(bytes output, ((uint64,uint64),uint64,uint64,bytes32,bytes32,bytes32,bytes32[],bytes32[]) proof) returns()
+// Solidity: function executeOutput(bytes output, (uint64,bytes32[]) proof) returns()
 func (_Application *ApplicationSession) ExecuteOutput(output []byte, proof OutputValidityProof) (*types.Transaction, error) {
 	return _Application.Contract.ExecuteOutput(&_Application.TransactOpts, output, proof)
 }
 
-// ExecuteOutput is a paid mutator transaction binding the contract method 0xdbe1a6eb.
+// ExecuteOutput is a paid mutator transaction binding the contract method 0x33137b76.
 //
-// Solidity: function executeOutput(bytes output, ((uint64,uint64),uint64,uint64,bytes32,bytes32,bytes32,bytes32[],bytes32[]) proof) returns()
+// Solidity: function executeOutput(bytes output, (uint64,bytes32[]) proof) returns()
 func (_Application *ApplicationTransactorSession) ExecuteOutput(output []byte, proof OutputValidityProof) (*types.Transaction, error) {
 	return _Application.Contract.ExecuteOutput(&_Application.TransactOpts, output, proof)
 }
@@ -815,15 +770,14 @@ func (it *ApplicationOutputExecutedIterator) Close() error {
 
 // ApplicationOutputExecuted represents a OutputExecuted event raised by the Application contract.
 type ApplicationOutputExecuted struct {
-	InputIndex             uint64
-	OutputIndexWithinInput uint64
-	Output                 []byte
-	Raw                    types.Log // Blockchain specific contextual infos
+	OutputIndex uint64
+	Output      []byte
+	Raw         types.Log // Blockchain specific contextual infos
 }
 
-// FilterOutputExecuted is a free log retrieval operation binding the contract event 0xd39d8e3e610251d36b5464d9cabbd8fa8319fe6cff76941ce041ecf04669726f.
+// FilterOutputExecuted is a free log retrieval operation binding the contract event 0xcad1f361c6e84664e892230291c8e8eb9555683e0a6a5ce8ea7b204ac0ac3676.
 //
-// Solidity: event OutputExecuted(uint64 inputIndex, uint64 outputIndexWithinInput, bytes output)
+// Solidity: event OutputExecuted(uint64 outputIndex, bytes output)
 func (_Application *ApplicationFilterer) FilterOutputExecuted(opts *bind.FilterOpts) (*ApplicationOutputExecutedIterator, error) {
 
 	logs, sub, err := _Application.contract.FilterLogs(opts, "OutputExecuted")
@@ -833,9 +787,9 @@ func (_Application *ApplicationFilterer) FilterOutputExecuted(opts *bind.FilterO
 	return &ApplicationOutputExecutedIterator{contract: _Application.contract, event: "OutputExecuted", logs: logs, sub: sub}, nil
 }
 
-// WatchOutputExecuted is a free log subscription operation binding the contract event 0xd39d8e3e610251d36b5464d9cabbd8fa8319fe6cff76941ce041ecf04669726f.
+// WatchOutputExecuted is a free log subscription operation binding the contract event 0xcad1f361c6e84664e892230291c8e8eb9555683e0a6a5ce8ea7b204ac0ac3676.
 //
-// Solidity: event OutputExecuted(uint64 inputIndex, uint64 outputIndexWithinInput, bytes output)
+// Solidity: event OutputExecuted(uint64 outputIndex, bytes output)
 func (_Application *ApplicationFilterer) WatchOutputExecuted(opts *bind.WatchOpts, sink chan<- *ApplicationOutputExecuted) (event.Subscription, error) {
 
 	logs, sub, err := _Application.contract.WatchLogs(opts, "OutputExecuted")
@@ -870,9 +824,9 @@ func (_Application *ApplicationFilterer) WatchOutputExecuted(opts *bind.WatchOpt
 	}), nil
 }
 
-// ParseOutputExecuted is a log parse operation binding the contract event 0xd39d8e3e610251d36b5464d9cabbd8fa8319fe6cff76941ce041ecf04669726f.
+// ParseOutputExecuted is a log parse operation binding the contract event 0xcad1f361c6e84664e892230291c8e8eb9555683e0a6a5ce8ea7b204ac0ac3676.
 //
-// Solidity: event OutputExecuted(uint64 inputIndex, uint64 outputIndexWithinInput, bytes output)
+// Solidity: event OutputExecuted(uint64 outputIndex, bytes output)
 func (_Application *ApplicationFilterer) ParseOutputExecuted(log types.Log) (*ApplicationOutputExecuted, error) {
 	event := new(ApplicationOutputExecuted)
 	if err := _Application.contract.UnpackLog(event, "OutputExecuted", log); err != nil {

@@ -16,11 +16,12 @@ import (
 )
 
 const (
-	CMD_NAME        = "gen-devnet"
-	ANVIL_IP_ADDR   = "0.0.0.0"
-	ANVIL_HTTP_PORT = "8545"
-	RPC_URL         = "http://" + ANVIL_IP_ADDR + ":" + ANVIL_HTTP_PORT
-	USER_FILE_MODE  = 0664
+	CMD_NAME             = "gen-devnet"
+	ANVIL_IP_ADDR        = "0.0.0.0"
+	ANVIL_HTTP_PORT      = "8545"
+	RPC_URL              = "http://" + ANVIL_IP_ADDR + ":" + ANVIL_HTTP_PORT
+	USER_FILE_MODE       = 0664
+	DEFAULT_EPOCH_LENGTH = 10
 )
 
 var Cmd = &cobra.Command{
@@ -40,6 +41,7 @@ var (
 	deploymentInfoPath   string
 	hashFile             string
 	rollupsContractsPath string
+	epochLength          uint64
 )
 
 func init() {
@@ -74,6 +76,12 @@ func init() {
 		"v",
 		false,
 		"enable verbose logging")
+
+	epochLength = *Cmd.Flags().Uint64P(
+		"epoch-length",
+		"e",
+		DEFAULT_EPOCH_LENGTH,
+		"")
 }
 
 func main() {
@@ -119,7 +127,7 @@ func run(cmd *cobra.Command, args []string) {
 
 		select {
 		case <-ready:
-			depInfo, err := deploy(ctx, rollupsContractsPath, hash)
+			depInfo, err := deploy(ctx, rollupsContractsPath, hash, epochLength)
 			if err != nil {
 				fmt.Printf("%s: deployment failed. %v\n", CMD_NAME, err)
 				return
