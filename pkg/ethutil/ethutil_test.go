@@ -20,7 +20,7 @@ import (
 )
 
 const testTimeout = 300 * time.Second
-const inputBoxDeploymentBlockNumber = 0x10
+const inputBoxDeploymentBlockNumber = 0x0F
 
 // This suite sets up a container running a devnet Ethereum node, and connects to it using
 // go-ethereum's client.

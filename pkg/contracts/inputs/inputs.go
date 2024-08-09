@@ -31,7 +31,7 @@ var (
 
 // InputsMetaData contains all meta data concerning the Inputs contract.
 var InputsMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"chainId\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"msgSender\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"blockNumber\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"blockTimestamp\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"index\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"payload\",\"type\":\"bytes\"}],\"name\":\"EvmAdvance\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
+	ABI: "[{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"chainId\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"msgSender\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"blockNumber\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"blockTimestamp\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"prevRandao\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"index\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"payload\",\"type\":\"bytes\"}],\"name\":\"EvmAdvance\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
 }
 
 // InputsABI is the input ABI used to generate the binding from.
@@ -180,23 +180,23 @@ func (_Inputs *InputsTransactorRaw) Transact(opts *bind.TransactOpts, method str
 	return _Inputs.Contract.contract.Transact(opts, method, params...)
 }
 
-// EvmAdvance is a paid mutator transaction binding the contract method 0xcc7dee1f.
+// EvmAdvance is a paid mutator transaction binding the contract method 0x415bf363.
 //
-// Solidity: function EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 index, bytes payload) returns()
-func (_Inputs *InputsTransactor) EvmAdvance(opts *bind.TransactOpts, chainId *big.Int, appContract common.Address, msgSender common.Address, blockNumber *big.Int, blockTimestamp *big.Int, index *big.Int, payload []byte) (*types.Transaction, error) {
-	return _Inputs.contract.Transact(opts, "EvmAdvance", chainId, appContract, msgSender, blockNumber, blockTimestamp, index, payload)
+// Solidity: function EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload) returns()
+func (_Inputs *InputsTransactor) EvmAdvance(opts *bind.TransactOpts, chainId *big.Int, appContract common.Address, msgSender common.Address, blockNumber *big.Int, blockTimestamp *big.Int, prevRandao *big.Int, index *big.Int, payload []byte) (*types.Transaction, error) {
+	return _Inputs.contract.Transact(opts, "EvmAdvance", chainId, appContract, msgSender, blockNumber, blockTimestamp, prevRandao, index, payload)
 }
 
-// EvmAdvance is a paid mutator transaction binding the contract method 0xcc7dee1f.
+// EvmAdvance is a paid mutator transaction binding the contract method 0x415bf363.
 //
-// Solidity: function EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 index, bytes payload) returns()
-func (_Inputs *InputsSession) EvmAdvance(chainId *big.Int, appContract common.Address, msgSender common.Address, blockNumber *big.Int, blockTimestamp *big.Int, index *big.Int, payload []byte) (*types.Transaction, error) {
-	return _Inputs.Contract.EvmAdvance(&_Inputs.TransactOpts, chainId, appContract, msgSender, blockNumber, blockTimestamp, index, payload)
+// Solidity: function EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload) returns()
+func (_Inputs *InputsSession) EvmAdvance(chainId *big.Int, appContract common.Address, msgSender common.Address, blockNumber *big.Int, blockTimestamp *big.Int, prevRandao *big.Int, index *big.Int, payload []byte) (*types.Transaction, error) {
+	return _Inputs.Contract.EvmAdvance(&_Inputs.TransactOpts, chainId, appContract, msgSender, blockNumber, blockTimestamp, prevRandao, index, payload)
 }
 
-// EvmAdvance is a paid mutator transaction binding the contract method 0xcc7dee1f.
+// EvmAdvance is a paid mutator transaction binding the contract method 0x415bf363.
 //
-// Solidity: function EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 index, bytes payload) returns()
-func (_Inputs *InputsTransactorSession) EvmAdvance(chainId *big.Int, appContract common.Address, msgSender common.Address, blockNumber *big.Int, blockTimestamp *big.Int, index *big.Int, payload []byte) (*types.Transaction, error) {
-	return _Inputs.Contract.EvmAdvance(&_Inputs.TransactOpts, chainId, appContract, msgSender, blockNumber, blockTimestamp, index, payload)
+// Solidity: function EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload) returns()
+func (_Inputs *InputsTransactorSession) EvmAdvance(chainId *big.Int, appContract common.Address, msgSender common.Address, blockNumber *big.Int, blockTimestamp *big.Int, prevRandao *big.Int, index *big.Int, payload []byte) (*types.Transaction, error) {
+	return _Inputs.Contract.EvmAdvance(&_Inputs.TransactOpts, chainId, appContract, msgSender, blockNumber, blockTimestamp, prevRandao, index, payload)
 }

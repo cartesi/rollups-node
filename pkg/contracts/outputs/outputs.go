@@ -31,7 +31,7 @@ var (
 
 // OutputsMetaData contains all meta data concerning the Outputs contract.
 var OutputsMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[{\"internalType\":\"bytes\",\"name\":\"payload\",\"type\":\"bytes\"}],\"name\":\"Notice\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"destination\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"payload\",\"type\":\"bytes\"}],\"name\":\"Voucher\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
+	ABI: "[{\"inputs\":[{\"internalType\":\"address\",\"name\":\"destination\",\"type\":\"address\"},{\"internalType\":\"bytes\",\"name\":\"payload\",\"type\":\"bytes\"}],\"name\":\"DelegateCallVoucher\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes\",\"name\":\"payload\",\"type\":\"bytes\"}],\"name\":\"Notice\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"destination\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"value\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"payload\",\"type\":\"bytes\"}],\"name\":\"Voucher\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
 }
 
 // OutputsABI is the input ABI used to generate the binding from.
@@ -178,6 +178,27 @@ func (_Outputs *OutputsTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.
 // Transact invokes the (paid) contract method with params as input values.
 func (_Outputs *OutputsTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
 	return _Outputs.Contract.contract.Transact(opts, method, params...)
+}
+
+// DelegateCallVoucher is a paid mutator transaction binding the contract method 0x10321e8b.
+//
+// Solidity: function DelegateCallVoucher(address destination, bytes payload) returns()
+func (_Outputs *OutputsTransactor) DelegateCallVoucher(opts *bind.TransactOpts, destination common.Address, payload []byte) (*types.Transaction, error) {
+	return _Outputs.contract.Transact(opts, "DelegateCallVoucher", destination, payload)
+}
+
+// DelegateCallVoucher is a paid mutator transaction binding the contract method 0x10321e8b.
+//
+// Solidity: function DelegateCallVoucher(address destination, bytes payload) returns()
+func (_Outputs *OutputsSession) DelegateCallVoucher(destination common.Address, payload []byte) (*types.Transaction, error) {
+	return _Outputs.Contract.DelegateCallVoucher(&_Outputs.TransactOpts, destination, payload)
+}
+
+// DelegateCallVoucher is a paid mutator transaction binding the contract method 0x10321e8b.
+//
+// Solidity: function DelegateCallVoucher(address destination, bytes payload) returns()
+func (_Outputs *OutputsTransactorSession) DelegateCallVoucher(destination common.Address, payload []byte) (*types.Transaction, error) {
+	return _Outputs.Contract.DelegateCallVoucher(&_Outputs.TransactOpts, destination, payload)
 }
 
 // Notice is a paid mutator transaction binding the contract method 0xc258d6e5.
