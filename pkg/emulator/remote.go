@@ -12,7 +12,7 @@ import (
 
 // A connection to the remote jsonrpc machine manager.
 type RemoteMachineManager struct {
-	c *C.cm_jsonrpc_mg_mgr
+	c *C.cm_jsonrpc_mgr
 
 	Address string
 }
@@ -22,13 +22,13 @@ func NewRemoteMachineManager(address string) (*RemoteMachineManager, error) {
 	cRemoteAddress := C.CString(address)
 	defer C.free(unsafe.Pointer(cRemoteAddress))
 	var msg *C.char
-	code := C.cm_create_jsonrpc_mg_mgr(cRemoteAddress, &manager.c, &msg)
+	code := C.cm_create_jsonrpc_mgr(cRemoteAddress, &manager.c, &msg)
 	return manager, newError(code, msg)
 }
 
 func (remote *RemoteMachineManager) Delete() {
 	if remote.c != nil {
-		C.cm_delete_jsonrpc_mg_mgr(remote.c)
+		C.cm_delete_jsonrpc_mgr(remote.c)
 		remote.c = nil
 	}
 }

@@ -46,6 +46,7 @@ func (s *RollupsMachineSuite) TestNew()     { suite.Run(s.T(), new(NewSuite)) }
 func (s *RollupsMachineSuite) TestFork()    { suite.Run(s.T(), new(ForkSuite)) }
 func (s *RollupsMachineSuite) TestAdvance() { suite.Run(s.T(), new(AdvanceSuite)) }
 func (s *RollupsMachineSuite) TestInspect() { suite.Run(s.T(), new(InspectSuite)) }
+func (s *RollupsMachineSuite) TestUnit()    { suite.Run(s.T(), new(UnitSuite)) }
 
 // ------------------------------------------------------------------------------------------------
 
@@ -97,7 +98,7 @@ func (s *NewSuite) TestOkAccept() {
 	config := &emulator.MachineRuntimeConfig{}
 	cartesiMachine, err := cartesimachine.Load(s.acceptSnapshot.Path(), s.address, config)
 	require.NotNil(cartesiMachine)
-	require.Nil(err)
+	require.Nil(err, "%v", err)
 
 	rollupsMachine, err := New(cartesiMachine, defaultInc, defaultMax)
 	require.NotNil(rollupsMachine)
@@ -421,10 +422,6 @@ func expectNotice(t *testing.T, output Output) *Notice {
 // Unit tests
 // ------------------------------------------------------------------------------------------------
 
-func TestRollupsMachineUnit(t *testing.T) {
-	suite.Run(t, new(UnitSuite))
-}
-
 type UnitSuite struct{ suite.Suite }
 
 func (_ *UnitSuite) newMachines() (*CartesiMachineMock, *RollupsMachine) {
@@ -631,9 +628,13 @@ func (s *UnitSuite) TestClose() {
 	})
 }
 
-func (s *UnitSuite) TestLastRequestWasAccepted() {}
+func (s *UnitSuite) TestLastRequestWasAccepted() {
+	s.T().Skip("TODO")
+}
 
-func (s *UnitSuite) TestProcess() {}
+func (s *UnitSuite) TestProcess() {
+	s.T().Skip("TODO")
+}
 
 func (s *UnitSuite) TestRun() {
 	newMachines := func() (*CartesiMachineMock, *RollupsMachine) {

@@ -16,7 +16,7 @@ import (
 
 var (
 	imagesPath = "/usr/share/cartesi-machine/images/"
-	address    = "localhost:8081"
+	address    = "127.0.0.1:8081"
 )
 
 func init() {

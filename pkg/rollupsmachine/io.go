@@ -35,9 +35,9 @@ type Input struct {
 	Sender         Address
 	BlockNumber    uint64
 	BlockTimestamp uint64
-	// PrevRandao     uint64
-	Index uint64
-	Data  []byte
+	PrevRandao     uint64
+	Index          uint64
+	Data           []byte
 }
 
 // A Query is sent by a inspect-state request.
@@ -64,10 +64,10 @@ func (input Input) Encode() ([]byte, error) {
 	sender := common.BytesToAddress(input.Sender[:])
 	blockNumber := new(big.Int).SetUint64(input.BlockNumber)
 	blockTimestamp := new(big.Int).SetUint64(input.BlockTimestamp)
-	// prevRandao := new(big.Int).SetUint64(input.PrevRandao)
+	prevRandao := new(big.Int).SetUint64(input.PrevRandao)
 	index := new(big.Int).SetUint64(input.Index)
 	return ioABI.Pack("EvmAdvance", chainId, appContract, sender, blockNumber, blockTimestamp,
-		index, input.Data)
+		prevRandao, index, input.Data)
 }
 
 // DecodeOutput decodes an output into either a voucher or a notice.

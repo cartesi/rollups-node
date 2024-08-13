@@ -39,7 +39,7 @@ type Book struct {
 func GetTestBook() *Book {
 	return &Book{
 		Application: common.HexToAddress(
-			"0x00D13Ee2EB6D14eD8A2CA9DAD09D3345F95bE731"),
+			"0x1b0FAD42f016a9EBa358c7491A67fa1fAE82912A"),
 		ApplicationFactory: common.HexToAddress(
 			"0xA1DA32BF664109D62208a1cb0d69aACc6a484873"),
 		Authority: common.HexToAddress(
