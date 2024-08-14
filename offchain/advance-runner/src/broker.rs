@@ -117,7 +117,10 @@ impl BrokerFacade {
         let should_enqueue_claim = match last_claim_event {
             Some(event) => {
                 let last_claim = event.payload;
-                tracing::trace!(?last_claim, "got last claim from Redis");
+                tracing::trace!(
+                    ?last_claim,
+                    "got last claim from broker stream"
+                );
                 let should_enqueue_claim =
                     rollups_claim.epoch_index > last_claim.epoch_index;
 

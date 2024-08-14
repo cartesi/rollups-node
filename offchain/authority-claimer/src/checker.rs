@@ -127,14 +127,16 @@ impl DuplicateChecker for DefaultDuplicateChecker {
             .flatten() // Back to only one Option
             .map(|claim| claim.last_index + 1) // Maps to a number
             .unwrap_or(0); // If None, unwrap to 0
+        tracing::debug!("checking duplicate claim: expected_first_index={}, rollups_claim={:?}",
+                        expected_first_index, rollups_claim);
         if rollups_claim.first_index == expected_first_index {
-            // This claim is the one the blockchain expects, so it is not considered duplicate.
+            // This claim is the one the blockchain expects, so it is not considered a duplicate.
             Ok(false)
         } else if rollups_claim.last_index < expected_first_index {
             // This claim is already on the blockchain.
             Ok(true)
         } else {
-            // This claim is not on blockchain, but it isn't the one blockchain expects.
+            // This claim is not on the blockchain, but it isn't the one the blockchain expects.
             // If this happens, there is a bug on the dispatcher.
             Err(DuplicateCheckerError::ClaimMismatch {
                 expected_first_index,

@@ -125,13 +125,13 @@ impl Runner {
                     .produce_outputs(proofs)
                     .await
                     .context(ProduceOutputsSnafu)?;
-                tracing::trace!("produced outputs in broker");
+                tracing::trace!("produced outputs in broker stream");
 
                 self.broker
                     .produce_rollups_claim(rollups_claim)
                     .await
                     .context(ProduceClaimSnafu)?;
-                tracing::info!("produced epoch claim");
+                tracing::info!("produced epoch claim in broker stream");
             }
             Err(source) => {
                 if let ServerManagerError::EmptyEpochError { .. } = source {
