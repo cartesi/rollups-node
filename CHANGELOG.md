@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Redacted the contents of `CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT`.
+- server-manager tainted session errors logged on inspect-server.
+- Improved dispatcher logs.
 
 ## [1.5.0] 2024-07-22
 
