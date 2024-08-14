@@ -9,6 +9,7 @@ group "default" {
     "rollups-node",
     "rollups-node-snapshot",
     "rollups-node-devnet",
+    "rollups-node-cli",
   ]
 }
 
@@ -32,6 +33,14 @@ target "common" {
 target "rollups-node" {
   inherits = ["common"]
   target   = "rollups-node"
+  args     = {
+    ROLLUPS_NODE_VERSION = "devel"
+  }
+}
+
+target "rollups-node-cli" {
+  inherits = ["common"]
+  target   = "rollups-node-cli"
   args     = {
     ROLLUPS_NODE_VERSION = "devel"
   }

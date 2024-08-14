@@ -13,6 +13,10 @@ target "rollups-node" {
   tags = ["${DOCKER_ORGANIZATION}/rollups-node:${TAG}"]
 }
 
+target "rollups-node-cli" {
+  tags = ["${DOCKER_ORGANIZATION}/rollups-node-cli:${TAG}"]
+}
+
 target "rollups-node-snapshot" {
   tags = ["${DOCKER_ORGANIZATION}/rollups-node-snapshot:${TAG}"]
 }

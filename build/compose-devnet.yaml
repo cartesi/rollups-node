@@ -7,6 +7,13 @@ services:
     ports:
       - 8545:8545
 
+  cli:
+    depends_on:
+      database:
+        condition: service_healthy
+    image: cartesi/rollups-node-cli:devel
+    command: cartesi-rollups-cli db upgrade -p postgres://postgres:password@database:5432/postgres?sslmode=disable
+
   node:
     depends_on:
       devnet:
@@ -25,3 +32,4 @@ services:
       CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED: "false"
       CARTESI_AUTH_KIND: "mnemonic"
       CARTESI_AUTH_MNEMONIC: "test test test test test test test test test test test junk"
+      CARTESI_POSTGRES_SSLMODE_ENABLED: "false"

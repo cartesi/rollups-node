@@ -435,6 +435,23 @@ RUN go mod download
 # Build application.
 COPY . .
 RUN go build -ldflags "-s -w -X 'main.buildVersion=${ROLLUPS_NODE_VERSION}'" ./cmd/cartesi-rollups-node
+RUN go build -ldflags "-s -w -X 'main.buildVersion=${ROLLUPS_NODE_VERSION}'" ./cmd/cartesi-rollups-cli
+
+# =============================================================================
+# STAGE: rollups-node-cli
+#
+# This stage prepares the cli docker image.
+# =============================================================================
+
+FROM golang:${GO_VERSION}-bookworm AS rollups-node-cli
+ARG GO_BUILD_PATH
+WORKDIR ${GO_BUILD_PATH}
+
+# Copy Go binary.
+COPY --from=go-builder ${GO_BUILD_PATH}/cartesi-rollups-cli /usr/bin
+
+# Set the cli as the command.
+CMD [ "cartesi-rollups-cli" ]
 
 # =============================================================================
 # STAGE: rollups-node
