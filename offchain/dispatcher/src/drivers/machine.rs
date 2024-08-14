@@ -53,7 +53,7 @@ impl MachineDriver {
         broker: &impl BrokerSend,
     ) -> Result<(), BrokerFacadeError> {
         tracing::trace!(
-            "Last input sent to machine manager `{}`, current input `{}`",
+            "Last input sent to advance-runner: `{}`; current input: `{}`",
             context.inputs_sent(),
             dapp_input_box.inputs.len()
         );
