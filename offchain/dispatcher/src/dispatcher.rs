@@ -6,7 +6,7 @@ use eth_state_fold_types::{Block, BlockStreamItem};
 use rollups_events::DAppMetadata;
 use std::sync::Arc;
 use tokio_stream::StreamExt;
-use tracing::{error, instrument, trace, warn};
+use tracing::{error, info, instrument, trace, warn};
 use types::foldables::{InputBox, InputBoxInitialState};
 
 use crate::{
@@ -92,12 +92,8 @@ pub async fn start(
         match block_subscription.next().await {
             Some(Ok(BlockStreamItem::NewBlock(b))) => {
                 // Normal operation, react on newest block.
-                trace!(
-                    "Received block number {} and hash {:?}, parent: {:?}",
-                    b.number,
-                    b.hash,
-                    b.parent_hash
-                );
+                info!("Received block number {}", b.number);
+                trace!("Block hash {:?}, parent: {:?}", b.hash, b.parent_hash);
                 process_block(
                     &b,
                     &state_server,
