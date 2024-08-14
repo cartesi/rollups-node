@@ -134,7 +134,9 @@ impl Context {
                 (Some(_), None) => true, // Consider input_epoch greater than None
                 (None, _) => false,      // None is never greater than any value
             },
-            "Assertion failed: last_input_epoch should be greater than last_finished_epoch"
+            "cannot finish epoch: last_input_epoch ({:?}) is not greater than last_finished_epoch ({:?})",
+            self.last_input_epoch,
+            self.last_finished_epoch
         );
 
         broker.finish_epoch(self.inputs_sent).await?;
