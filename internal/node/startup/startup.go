@@ -70,7 +70,7 @@ func SetupNodePersistentConfig(
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf(
-				"Could not retrieve persistent config from Database. Error %v",
+				"Could not retrieve persistent config from Database. %w",
 				err,
 			)
 		}
