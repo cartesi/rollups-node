@@ -1,15 +1,19 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-use tokio::sync::{mpsc, oneshot};
-use tonic::Request;
+use tokio::sync::{
+    mpsc,
+    oneshot::{self},
+};
+use tonic::{transport::Channel, Code, Request, Response, Status};
 use uuid::Uuid;
 
 use crate::config::InspectServerConfig;
 use crate::error::InspectError;
 
 use grpc_interfaces::cartesi_server_manager::{
-    server_manager_client::ServerManagerClient, InspectStateRequest,
+    server_manager_client::ServerManagerClient, GetSessionStatusRequest,
+    GetSessionStatusResponse, InspectStateRequest,
 };
 pub use grpc_interfaces::cartesi_server_manager::{
     CompletionStatus, InspectStateResponse, Report,
@@ -99,17 +103,72 @@ async fn handle_inspect(
                 grpc_request
                     .metadata_mut()
                     .insert("request-id", request_id.parse().unwrap());
-                let grpc_response = client.inspect_state(grpc_request).await;
+                let inspect_response = client.inspect_state(grpc_request).await;
 
-                tracing::debug!("got grpc response from inspect_state response={:?} request_id={}", grpc_response, request_id);
+                tracing::debug!("got grpc response from inspect_state response={:?} request_id={}",
+                                inspect_response, request_id);
 
-                let response = grpc_response
-                    .map(|result| result.into_inner())
-                    .map_err(|e| InspectError::InspectFailed {
-                        message: e.message().to_string(),
-                    });
+                let response = if inspect_response.is_ok() {
+                    Ok(inspect_response.unwrap().into_inner())
+                } else {
+                    // The server-manager does not inform the session tainted reason.
+                    // Trying to get it from the session's status.
+                    let message = handle_inspect_error(
+                        inspect_response.unwrap_err(),
+                        session_id.clone(),
+                        &mut client,
+                    )
+                    .await;
+                    Err(InspectError::InspectFailed { message })
+                };
                 respond(request.response_tx, response);
             }
         }
     }
+}
+
+async fn get_session_status(
+    session_id: String,
+    client: &mut ServerManagerClient<Channel>,
+) -> Result<Response<GetSessionStatusResponse>, Status> {
+    let session_id = session_id.clone();
+    let mut status_request =
+        Request::new(GetSessionStatusRequest { session_id });
+    let request_id = Uuid::new_v4().to_string();
+    status_request
+        .metadata_mut()
+        .insert("request-id", request_id.parse().unwrap());
+    client.get_session_status(status_request).await
+}
+
+async fn handle_inspect_error(
+    status: Status,
+    session_id: String,
+    client: &mut ServerManagerClient<Channel>,
+) -> String {
+    let mut message = status.message().to_string();
+
+    // If the session was previously tainted, the server-manager replies if with code DataLoss.
+    // Trying to recover the reason for the session tainted from the session's status.
+    // If not available, we return the original status error message.
+    if status.code() == Code::DataLoss {
+        let status_response = get_session_status(session_id, client).await;
+        if status_response.is_err() {
+            let err = status_response.unwrap_err().message().to_string();
+            tracing::error!("get-session-status error: {:?}", err);
+        } else {
+            let status_response = status_response.unwrap();
+            let status_response = status_response.get_ref();
+            let taint_status = status_response.taint_status.clone();
+            if let Some(taint_status) = taint_status {
+                message = format!(
+                    "Server manager session was tainted: {} ({})",
+                    taint_status.error_code, taint_status.error_message
+                );
+                tracing::error!(message);
+            }
+        }
+    }
+
+    message
 }
