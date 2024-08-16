@@ -38,7 +38,7 @@ If set to true, the node will not generate any claims."""
 default = "false"
 go-type = "bool"
 description = """
-If set to true, the node will not make claims."""
+If set to true, the authority-claimer service is disabled."""
 
 [features.CARTESI_FEATURE_DISABLE_MACHINE_HASH_CHECK]
 default = "false"
@@ -231,7 +231,8 @@ The node will also use the 20 ports after this one for internal services."""
 default = "false"
 go-type = "bool"
 description = """
-When enabled, the node does not start the authority-claimer service and the Redis server, thus not making claims."""
+When enabled, the node does not start Redis.
+It must be configured with an external Redis endpoint."""
 
 [experimental.CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT]
 go-type = "string"

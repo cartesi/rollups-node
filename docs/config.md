@@ -151,7 +151,8 @@ All other log configurations are ignored.
 
 ## `CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED`
 
-When enabled, the node does not start the authority-claimer service and the Redis server, thus not making claims.
+When enabled, the node does not start Redis.
+It must be configured with an external Redis endpoint.
 
 * **Type:** `bool`
 * **Default:** `"false"`
@@ -164,7 +165,7 @@ External Redis endpoint for the node when running in the experimental sunodo val
 
 ## `CARTESI_FEATURE_DISABLE_CLAIMER`
 
-If set to true, the node will not make claims.
+If set to true, the authority-claimer service is disabled.
 
 * **Type:** `bool`
 * **Default:** `"false"`

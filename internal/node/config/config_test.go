@@ -31,13 +31,6 @@ func TestConfigTest(t *testing.T) {
 	suite.Run(t, new(ConfigTestSuite))
 }
 
-func (s *ConfigTestSuite) TestExperimentalSunodoValidatorModeDisablesClaimer() {
-	os.Setenv("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED", "true")
-	os.Setenv("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT", "redis://")
-	c := FromEnv()
-	assert.Equal(s.T(), true, c.FeatureDisableClaimer)
-}
-
 func (s *ConfigTestSuite) TestAuthIsNotSetWhenClaimerIsDisabled() {
 	os.Setenv("CARTESI_FEATURE_DISABLE_CLAIMER", "true")
 	c := FromEnv()
@@ -45,9 +38,13 @@ func (s *ConfigTestSuite) TestAuthIsNotSetWhenClaimerIsDisabled() {
 }
 
 func (s *ConfigTestSuite) TestExperimentalSunodoValidatorRedisEndpointIsRedacted() {
+	enableSunodoValidatorMode()
+	c := FromEnv()
+	assert.Equal(s.T(), "[REDACTED]", c.ExperimentalSunodoValidatorRedisEndpoint.String())
+}
+
+func enableSunodoValidatorMode() {
 	os.Setenv("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED", "true")
 	os.Setenv("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT",
 		"redis://username:p@ssw0rd@hostname:9999")
-	c := FromEnv()
-	assert.Equal(s.T(), "[REDACTED]", c.ExperimentalSunodoValidatorRedisEndpoint.String())
 }
