@@ -103,7 +103,8 @@ func FromEnv() NodeConfig {
 		config.ExperimentalSunodoValidatorRedisEndpoint =
 			Redacted[string]{getExperimentalSunodoValidatorRedisEndpoint()}
 	}
-	if !config.FeatureDisableClaimer && !getExperimentalSunodoValidatorEnabled() {
+	// Authentication is only available when the claimer is enabled
+	if !config.FeatureDisableClaimer {
 		config.Auth = authFromEnv()
 	}
 	return config
