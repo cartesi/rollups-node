@@ -32,6 +32,7 @@ type NodeConfig struct {
 	HttpAddress                              string
 	HttpPort                                 int
 	FeatureHostMode                          bool
+	FeatureReaderModeEnabled                 bool
 	FeatureDisableClaimer                    bool
 	FeatureDisableMachineHashCheck           bool
 	ExperimentalServerManagerBypassLog       bool
@@ -96,6 +97,7 @@ func FromEnv() NodeConfig {
 	config.FeatureDisableMachineHashCheck = getFeatureDisableMachineHashCheck()
 	config.ExperimentalServerManagerBypassLog = getExperimentalServerManagerBypassLog()
 	config.FeatureDisableClaimer = getFeatureDisableClaimer()
+	config.FeatureReaderModeEnabled = getFeatureReaderModeEnabled()
 	config.ExperimentalSunodoValidatorEnabled = getExperimentalSunodoValidatorEnabled()
 	if config.ExperimentalSunodoValidatorEnabled {
 		config.ExperimentalSunodoValidatorRedisEndpoint =

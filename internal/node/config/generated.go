@@ -401,6 +401,18 @@ func getFeatureHostMode() bool {
 	return val
 }
 
+func getFeatureReaderModeEnabled() bool {
+	s, ok := os.LookupEnv("CARTESI_FEATURE_READER_MODE_ENABLED")
+	if !ok {
+		s = "false"
+	}
+	val, err := toBool(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_FEATURE_READER_MODE_ENABLED: %v", err))
+	}
+	return val
+}
+
 func getHttpAddress() string {
 	s, ok := os.LookupEnv("CARTESI_HTTP_ADDRESS")
 	if !ok {

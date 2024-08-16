@@ -28,6 +28,12 @@ If set to true, the node will run in host mode.
 In host mode, computations will not be performed by the cartesi machine.
 You should only use host mode for development and debugging!"""
 
+[features.CARTESI_FEATURE_READER_MODE_ENABLED]
+default = "false"
+go-type = "bool"
+description = """
+If set to true, the node will not generate any claims."""
+
 [features.CARTESI_FEATURE_DISABLE_CLAIMER]
 default = "false"
 go-type = "bool"

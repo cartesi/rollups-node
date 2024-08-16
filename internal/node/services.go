@@ -87,7 +87,7 @@ func newAdvanceRunner(c config.NodeConfig, workDir string) services.CommandServi
 		c.BlockchainHttpEndpoint.Value))
 	s.Env = append(s.Env, fmt.Sprintf("ADVANCE_RUNNER_HEALTHCHECK_PORT=%v",
 		getPort(c, portOffsetAdvanceRunner)))
-	s.Env = append(s.Env, fmt.Sprintf("READER_MODE=%v", c.FeatureDisableClaimer))
+	s.Env = append(s.Env, fmt.Sprintf("READER_MODE=%v", c.FeatureReaderModeEnabled))
 	if c.FeatureHostMode || c.FeatureDisableMachineHashCheck {
 		s.Env = append(s.Env, "SNAPSHOT_VALIDATION_ENABLED=false")
 	}

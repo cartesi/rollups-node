@@ -187,6 +187,13 @@ You should only use host mode for development and debugging!
 * **Type:** `bool`
 * **Default:** `"false"`
 
+## `CARTESI_FEATURE_READER_MODE_ENABLED`
+
+If set to true, the node will not generate any claims.
+
+* **Type:** `bool`
+* **Default:** `"false"`
+
 ## `CARTESI_HTTP_ADDRESS`
 
 HTTP address for the node.
