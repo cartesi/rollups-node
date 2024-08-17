@@ -40,6 +40,12 @@ var inputAddedEvent2JsonBytes []byte
 //go:embed testdata/input_added_event_3.json
 var inputAddedEvent3JsonBytes []byte
 
+//go:embed testdata/input_added_event_4.json
+var inputAddedEvent4JsonBytes []byte
+
+//go:embed testdata/input_added_event_5.json
+var inputAddedEvent5JsonBytes []byte
+
 //go:embed testdata/header_0.json
 var header0JsonBytes []byte
 
@@ -49,10 +55,14 @@ var header1JsonBytes []byte
 //go:embed testdata/header_2.json
 var header2JsonBytes []byte
 
+//go:embed testdata/header_3.json
+var header3JsonBytes []byte
+
 var (
 	header0 = types.Header{}
 	header1 = types.Header{}
 	header2 = types.Header{}
+	header3 = types.Header{}
 
 	block0 = types.Block{}
 
@@ -60,6 +70,8 @@ var (
 	inputAddedEvent1 = inputbox.InputBoxInputAdded{}
 	inputAddedEvent2 = inputbox.InputBoxInputAdded{}
 	inputAddedEvent3 = inputbox.InputBoxInputAdded{}
+	inputAddedEvent4 = inputbox.InputBoxInputAdded{}
+	inputAddedEvent5 = inputbox.InputBoxInputAdded{}
 
 	subscription0 = newMockSubscription()
 )
@@ -88,6 +100,8 @@ func (s *EvmReaderSuite) SetupSuite() {
 	s.Require().Nil(err)
 	err = json.Unmarshal(header2JsonBytes, &header2)
 	s.Require().Nil(err)
+	err = json.Unmarshal(header3JsonBytes, &header3)
+	s.Require().Nil(err)
 
 	block0 = *types.NewBlockWithHeader(&header0)
 
@@ -98,6 +112,10 @@ func (s *EvmReaderSuite) SetupSuite() {
 	err = json.Unmarshal(inputAddedEvent2JsonBytes, &inputAddedEvent2)
 	s.Require().Nil(err)
 	err = json.Unmarshal(inputAddedEvent3JsonBytes, &inputAddedEvent3)
+	s.Require().Nil(err)
+	err = json.Unmarshal(inputAddedEvent4JsonBytes, &inputAddedEvent4)
+	s.Require().Nil(err)
+	err = json.Unmarshal(inputAddedEvent5JsonBytes, &inputAddedEvent5)
 	s.Require().Nil(err)
 }
 
@@ -120,6 +138,7 @@ func (s *EvmReaderSuite) SetupTest() {
 			DefaultBlock:            DefaultBlockStatusLatest,
 			InputBoxDeploymentBlock: 0,
 		},
+		10,
 	)
 	s.evmReader = &inputReader
 }
@@ -182,6 +201,7 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 			InputBoxDeploymentBlock: 0x10,
 			DefaultBlock:            DefaultBlockStatusLatest,
 		},
+		10,
 	)
 
 	// Prepare repository
@@ -290,6 +310,7 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 			InputBoxDeploymentBlock: 0x10,
 			DefaultBlock:            DefaultBlockStatusLatest,
 		},
+		10,
 	)
 
 	// Prepare repository
@@ -398,6 +419,7 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 			InputBoxDeploymentBlock: 0x10,
 			DefaultBlock:            DefaultBlockStatusLatest,
 		},
+		10,
 	)
 
 	// Prepare Client
@@ -488,6 +510,7 @@ func (s *EvmReaderSuite) TestItStartsWhenLasProcessedBlockIsTheMostRecentBlock()
 			InputBoxDeploymentBlock: 0x10,
 			DefaultBlock:            DefaultBlockStatusLatest,
 		},
+		10,
 	)
 
 	// Prepare Client
@@ -531,6 +554,255 @@ func (s *EvmReaderSuite) TestItStartsWhenLasProcessedBlockIsTheMostRecentBlock()
 		s.T(),
 		"InsertInputsAndUpdateLastProcessedBlock",
 		0,
+	)
+}
+
+func (s *EvmReaderSuite) TestItReadsInputsInSmallerBatches() {
+
+	waitGroup := sync.WaitGroup{}
+	wsClient := FakeWSEhtClient{}
+	wsClient.NewHeaders = []*Header{&header2}
+	wsClient.WaitGroup = &waitGroup
+	inputReader := NewEvmReader(
+		s.client,
+		&wsClient,
+		s.inputBox,
+		s.repository,
+		model.NodePersistentConfig{
+			InputBoxDeploymentBlock: 0x10,
+			DefaultBlock:            model.DefaultBlockStatusLatest,
+		},
+		2,
+	)
+
+	// Prepare Client
+	s.client.Unset("HeaderByNumber")
+	s.client.On(
+		"HeaderByNumber",
+		mock.Anything,
+		mock.Anything,
+	).Return(&header3, nil).Once()
+
+	// Prepare sequence of inputs
+	// Batch 0x11 - 0x12
+	s.inputBox.Unset("RetrieveInputs")
+	events_0 := []inputbox.InputBoxInputAdded{inputAddedEvent0, inputAddedEvent1}
+	currentMostRecentFinalizedBlockNumber_0 := uint64(0x12)
+	retrieveInputsOpts_0 := bind.FilterOpts{
+		Context: s.ctx,
+		Start:   0x11,
+		End:     &currentMostRecentFinalizedBlockNumber_0,
+	}
+	s.inputBox.On(
+		"RetrieveInputs",
+		&retrieveInputsOpts_0,
+		mock.Anything,
+		mock.Anything,
+	).Return(events_0, nil)
+
+	// Batch 0x13 - 0x14
+	events_1 := []inputbox.InputBoxInputAdded{inputAddedEvent2, inputAddedEvent3}
+	currentMostRecentFinalizedBlockNumber_1 := uint64(0x14)
+	retrieveInputsOpts_1 := bind.FilterOpts{
+		Context: s.ctx,
+		Start:   0x13,
+		End:     &currentMostRecentFinalizedBlockNumber_1,
+	}
+	s.inputBox.On(
+		"RetrieveInputs",
+		&retrieveInputsOpts_1,
+		mock.Anything,
+		mock.Anything,
+	).Return(events_1, nil)
+
+	// Batch 0x15 - 0x16
+	events_2 := []inputbox.InputBoxInputAdded{inputAddedEvent2, inputAddedEvent3}
+	currentMostRecentFinalizedBlockNumber_2 := uint64(0x16)
+	retrieveInputsOpts_2 := bind.FilterOpts{
+		Context: s.ctx,
+		Start:   0x15,
+		End:     &currentMostRecentFinalizedBlockNumber_2,
+	}
+	s.inputBox.On(
+		"RetrieveInputs",
+		&retrieveInputsOpts_2,
+		mock.Anything,
+		mock.Anything,
+	).Return(events_2, nil)
+
+	// Prepare Repo
+	s.repository.Unset("GetAllRunningApplications")
+	s.repository.On(
+		"GetAllRunningApplications",
+		mock.Anything,
+	).Return([]Application{{
+		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		LastProcessedBlock: 0x10,
+	}}, nil).Once()
+
+	// Start service
+	ready := make(chan struct{}, 1)
+	errChannel := make(chan error, 1)
+
+	waitGroup.Add(1)
+	go func() {
+		errChannel <- inputReader.Run(s.ctx, ready)
+	}()
+
+	select {
+	case <-ready:
+		break
+	case err := <-errChannel:
+		s.FailNow("unexpected error signal", err)
+	}
+
+	waitGroup.Wait()
+
+	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 3)
+	s.repository.AssertNumberOfCalls(
+		s.T(),
+		"InsertInputsAndUpdateLastProcessedBlock",
+		3,
+	)
+}
+
+func (s *EvmReaderSuite) TestItReadsInputsInSmallerBatchesWithError() {
+
+	waitGroup := sync.WaitGroup{}
+	wsClient := FakeWSEhtClient{}
+	wsClient.NewHeaders = []*Header{&header2}
+	wsClient.WaitGroup = &waitGroup
+	inputReader := NewEvmReader(
+		s.client,
+		&wsClient,
+		s.inputBox,
+		s.repository,
+		model.NodePersistentConfig{
+			InputBoxDeploymentBlock: 0x10,
+			DefaultBlock:            model.DefaultBlockStatusLatest,
+		},
+		2,
+	)
+
+	// Prepare Client
+	s.client.Unset("HeaderByNumber")
+	s.client.On(
+		"HeaderByNumber",
+		mock.Anything,
+		mock.Anything,
+	).Return(&header3, nil).Once()
+
+	// Prepare sequence of inputs
+	// Batch 0x11 - 0x12 for application 0x2E663fe9aE92275242406A185AA4fC8174339D3E
+	s.inputBox.Unset("RetrieveInputs")
+	events_0 := []inputbox.InputBoxInputAdded{inputAddedEvent0, inputAddedEvent1}
+	currentMostRecentFinalizedBlockNumber_0 := uint64(0x12)
+	retrieveInputsOpts_0 := bind.FilterOpts{
+		Context: s.ctx,
+		Start:   0x11,
+		End:     &currentMostRecentFinalizedBlockNumber_0,
+	}
+	s.inputBox.On(
+		"RetrieveInputs",
+		&retrieveInputsOpts_0,
+		[]common.Address{common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E")},
+		mock.Anything,
+	).Return(events_0, nil)
+
+	// Batch 0x13 - 0x14 for application 0x2E663fe9aE92275242406A185AA4fC8174339D3E with error
+	currentMostRecentFinalizedBlockNumber_1 := uint64(0x14)
+	retrieveInputsOpts_1 := bind.FilterOpts{
+		Context: s.ctx,
+		Start:   0x13,
+		End:     &currentMostRecentFinalizedBlockNumber_1,
+	}
+	s.inputBox.On(
+		"RetrieveInputs",
+		&retrieveInputsOpts_1,
+		[]common.Address{common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E")},
+		mock.Anything,
+	).Return([]inputbox.InputBoxInputAdded{}, fmt.Errorf("An error"))
+
+	// Batch 0x12 - 0x13 for application 0xFFFF3fe9aE92275242406A185AA4fC817433EEEE"
+	currentMostRecentFinalizedBlockNumber_2 := uint64(0x13)
+	retrieveInputsOpts_2 := bind.FilterOpts{
+		Context: s.ctx,
+		Start:   0x12,
+		End:     &currentMostRecentFinalizedBlockNumber_2,
+	}
+	s.inputBox.On(
+		"RetrieveInputs",
+		&retrieveInputsOpts_2,
+		[]common.Address{common.HexToAddress("0xFFFF3fe9aE92275242406A185AA4fC817433EEEE")},
+		mock.Anything,
+	).Return([]inputbox.InputBoxInputAdded{}, nil)
+
+	// Batch 0x14 - 0x15 for application 0xFFFF3fe9aE92275242406A185AA4fC817433EEEE"
+	currentMostRecentFinalizedBlockNumber_3 := uint64(0x15)
+	retrieveInputsOpts_3 := bind.FilterOpts{
+		Context: s.ctx,
+		Start:   0x14,
+		End:     &currentMostRecentFinalizedBlockNumber_3,
+	}
+	s.inputBox.On(
+		"RetrieveInputs",
+		&retrieveInputsOpts_3,
+		[]common.Address{common.HexToAddress("0xFFFF3fe9aE92275242406A185AA4fC817433EEEE")},
+		mock.Anything,
+	).Return([]inputbox.InputBoxInputAdded{}, nil)
+
+	// Batch 0x16 - 0x17 for application 0xFFFF3fe9aE92275242406A185AA4fC817433EEEE"
+	currentMostRecentFinalizedBlockNumber_4 := uint64(0x16)
+	retrieveInputsOpts_4 := bind.FilterOpts{
+		Context: s.ctx,
+		Start:   0x16,
+		End:     &currentMostRecentFinalizedBlockNumber_4,
+	}
+	s.inputBox.On(
+		"RetrieveInputs",
+		&retrieveInputsOpts_4,
+		[]common.Address{common.HexToAddress("0xFFFF3fe9aE92275242406A185AA4fC817433EEEE")},
+		mock.Anything,
+	).Return([]inputbox.InputBoxInputAdded{}, nil)
+
+	// Prepare Repo
+	s.repository.Unset("GetAllRunningApplications")
+	s.repository.On(
+		"GetAllRunningApplications",
+		mock.Anything,
+	).Return([]Application{
+		{
+			ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+			LastProcessedBlock: 0x10,
+		},
+		{
+			ContractAddress:    common.HexToAddress("0xFFFF3fe9aE92275242406A185AA4fC817433EEEE"),
+			LastProcessedBlock: 0x11,
+		}}, nil).Once()
+
+	// Start service
+	ready := make(chan struct{}, 1)
+	errChannel := make(chan error, 1)
+
+	waitGroup.Add(1)
+	go func() {
+		errChannel <- inputReader.Run(s.ctx, ready)
+	}()
+
+	select {
+	case <-ready:
+		break
+	case err := <-errChannel:
+		s.FailNow("unexpected error signal", err)
+	}
+
+	waitGroup.Wait()
+
+	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 5)
+	s.repository.AssertNumberOfCalls(
+		s.T(),
+		"InsertInputsAndUpdateLastProcessedBlock",
+		4,
 	)
 }
 

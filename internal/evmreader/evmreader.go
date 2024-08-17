@@ -82,11 +82,12 @@ func (e *SubscriptionError) Error() string {
 
 // EvmReader reads inputs from the blockchain
 type EvmReader struct {
-	client      EthClient
-	wsClient    EthWsClient
-	inputSource InputSource
-	repository  EvmReaderRepository
-	config      NodePersistentConfig
+	client       EthClient
+	wsClient     EthWsClient
+	inputSource  InputSource
+	repository   EvmReaderRepository
+	config       NodePersistentConfig
+	maxFetchSize uint
 }
 
 func (r *EvmReader) String() string {
@@ -100,13 +101,15 @@ func NewEvmReader(
 	inputSource InputSource,
 	repository EvmReaderRepository,
 	config NodePersistentConfig,
+	maxFetchSize uint,
 ) EvmReader {
 	return EvmReader{
-		client:      client,
-		wsClient:    wsClient,
-		inputSource: inputSource,
-		repository:  repository,
-		config:      config,
+		client:       client,
+		wsClient:     wsClient,
+		inputSource:  inputSource,
+		repository:   repository,
+		config:       config,
+		maxFetchSize: maxFetchSize,
 	}
 }
 
@@ -173,6 +176,17 @@ func (r *EvmReader) checkForNewInputs(ctx context.Context) error {
 
 	groupedApps := r.classifyApplicationsByLastProcessedInput(apps)
 
+	step := uint64(r.maxFetchSize)
+
+	mostRecentHeader, err := r.fetchMostRecentHeader(
+		ctx,
+		r.config.DefaultBlock,
+	)
+	if err != nil {
+		return err
+	}
+	mostRecentBlockNumber := mostRecentHeader.Number.Uint64()
+
 	for lastProcessedBlock, apps := range groupedApps {
 
 		// Safeguard: Only check blocks starting from the block where the InputBox
@@ -181,42 +195,39 @@ func (r *EvmReader) checkForNewInputs(ctx context.Context) error {
 			lastProcessedBlock = r.config.InputBoxDeploymentBlock - 1
 		}
 
-		currentMostRecentFinalizedHeader, err := r.fetchMostRecentHeader(
-			ctx,
-			r.config.DefaultBlock,
-		)
-		if err != nil {
-			slog.Error("Error fetching most recent block",
-				"last default block",
-				r.config.DefaultBlock,
-				"error",
-				err)
-			continue
-		}
-		currentMostRecentFinalizedBlockNumber := currentMostRecentFinalizedHeader.Number.Uint64()
+		if mostRecentBlockNumber > lastProcessedBlock {
 
-		if currentMostRecentFinalizedBlockNumber > lastProcessedBlock {
+			// Check block range and split requests
+			start := lastProcessedBlock + 1
+			end := uint64(0)
+			for ; start <= mostRecentBlockNumber; start = start + step {
 
-			err = r.readInputs(ctx,
-				lastProcessedBlock+1,
-				currentMostRecentFinalizedBlockNumber,
-				apps,
-			)
-			if err != nil {
-				slog.Error("Error reading inputs",
-					"start",
-					lastProcessedBlock+1,
-					"end",
-					currentMostRecentFinalizedBlockNumber,
-					"error",
-					err)
-				continue
+				end = start + step - 1
+
+				if end > mostRecentBlockNumber {
+					end = mostRecentBlockNumber
+				}
+				err = r.readInputs(ctx,
+					start,
+					end,
+					apps,
+				)
+				if err != nil {
+					slog.Error("Error reading inputs",
+						"start",
+						start,
+						"end",
+						end,
+						"error",
+						err)
+					break
+				}
 			}
-		} else if lastProcessedBlock < currentMostRecentFinalizedBlockNumber {
+		} else if lastProcessedBlock < mostRecentBlockNumber {
 			slog.Warn(
 				"current most recent block is lower than the last processed one",
 				"most recent block",
-				currentMostRecentFinalizedBlockNumber,
+				mostRecentBlockNumber,
 				"last processed",
 				lastProcessedBlock,
 			)

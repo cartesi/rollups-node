@@ -56,6 +56,12 @@ go-type = "Duration"
 description = """
 How seconds the retry policy will wait between retries."""
 
+[rollups.CARTESI_EVM_READER_MAX_FETCH_SIZE]
+default = "10"
+go-type = "uint"
+description = """
+Maximum number of blocks that can be read on each input fetch request."""
+
 #
 # Blockchain
 #

@@ -26,6 +26,7 @@ type EvmReaderService struct {
 	database               *repository.Database
 	maxRetries             uint64
 	maxDelay               time.Duration
+	maxFetchSize           uint
 }
 
 func NewEvmReaderService(
@@ -34,6 +35,7 @@ func NewEvmReaderService(
 	database *repository.Database,
 	maxRetries uint64,
 	maxDelay time.Duration,
+	maxFetchSize uint,
 ) EvmReaderService {
 	return EvmReaderService{
 		blockchainHttpEndpoint: blockchainHttpEndpoint,
@@ -41,6 +43,7 @@ func NewEvmReaderService(
 		database:               database,
 		maxRetries:             maxRetries,
 		maxDelay:               maxDelay,
+		maxFetchSize:           maxFetchSize,
 	}
 }
 
@@ -77,6 +80,7 @@ func (s EvmReaderService) Start(
 		retrypolicy.NewInputSourceWithRetryPolicy(inputSource, s.maxRetries, s.maxDelay),
 		s.database,
 		*config,
+		s.maxFetchSize,
 	)
 
 	return reader.Run(ctx, ready)

@@ -26,8 +26,7 @@ var (
 )
 
 const (
-	CMD_NAME                            = "evm-reader"
-	devnetInputBoxDeploymentBlockNumber = uint64(16)
+	CMD_NAME = "evm-reader"
 )
 
 var Cmd = &cobra.Command{
@@ -158,6 +157,7 @@ func run(cmd *cobra.Command, args []string) {
 		database,
 		c.EvmReaderRetryPolicyMaxRetries,
 		c.EvmReaderRetryPolicyMaxDelay,
+		c.EvmReaderMaxFetchSize,
 	)
 
 	// logs startup time
