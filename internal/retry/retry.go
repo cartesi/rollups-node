@@ -1,7 +1,7 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-package retrypolicy
+package retry
 
 import (
 	"log/slog"
@@ -26,6 +26,12 @@ func CallFunctionWithRetryPolicy[
 	var lastValue R
 
 	for i := uint64(0); i <= maxRetries; i++ {
+
+		if i != 0 {
+			slog.Info("Retry Policy: Retrying...", "delay", maxDelay)
+			time.Sleep(maxDelay)
+		}
+
 		lastValue, lastErr = fn(args)
 		if lastErr == nil {
 			return lastValue, nil
@@ -36,9 +42,7 @@ func CallFunctionWithRetryPolicy[
 			infoLabel,
 			"error",
 			lastErr.Error())
-		slog.Info("Retry Policy: Retrying...", "delay", maxDelay)
 
-		time.Sleep(maxDelay)
 	}
 	return lastValue, lastErr
 

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/evmreader"
-	"github.com/cartesi/rollups-node/internal/util/retrypolicy"
+	"github.com/cartesi/rollups-node/internal/retry"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/core/types"
 )
@@ -41,7 +41,7 @@ func (d *EthWsClientRetryPolicyDelegator) SubscribeNewHead(
 	ch chan<- *types.Header,
 ) (ethereum.Subscription, error) {
 
-	return retrypolicy.CallFunctionWithRetryPolicy(
+	return retry.CallFunctionWithRetryPolicy(
 		d.subscribeNewHead,
 		subscribeNewHeadArgs{
 			ctx: ctx,

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/evmreader"
-	"github.com/cartesi/rollups-node/internal/util/retrypolicy"
+	"github.com/cartesi/rollups-node/internal/retry"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -37,7 +37,7 @@ func NewApplicationWithRetryPolicy(
 func (d *ApplicationRetryPolicyDelegator) GetConsensus(
 	opts *bind.CallOpts,
 ) (common.Address, error) {
-	return retrypolicy.CallFunctionWithRetryPolicy(d.getConsensus,
+	return retry.CallFunctionWithRetryPolicy(d.getConsensus,
 		getConsensusArgs{
 			opts: opts,
 		},

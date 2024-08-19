@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/evmreader"
-	"github.com/cartesi/rollups-node/internal/util/retrypolicy"
+	"github.com/cartesi/rollups-node/internal/retry"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
@@ -41,7 +41,7 @@ func (d *ConsensusRetryPolicyDelegator) GetEpochLength(
 	opts *bind.CallOpts,
 ) (*big.Int, error) {
 
-	return retrypolicy.CallFunctionWithRetryPolicy(d.getEpochLength,
+	return retry.CallFunctionWithRetryPolicy(d.getEpochLength,
 		getEpochLengthArgs{
 			opts: opts,
 		},

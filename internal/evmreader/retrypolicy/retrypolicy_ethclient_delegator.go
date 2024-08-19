@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/evmreader"
-	"github.com/cartesi/rollups-node/internal/util/retrypolicy"
+	"github.com/cartesi/rollups-node/internal/retry"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -44,7 +44,7 @@ func (d *EthClientRetryPolicyDelegator) HeaderByNumber(
 	number *big.Int,
 ) (*types.Header, error) {
 
-	return retrypolicy.CallFunctionWithRetryPolicy(d.headerByNumber,
+	return retry.CallFunctionWithRetryPolicy(d.headerByNumber,
 		headerByNumberArgs{
 			ctx:    ctx,
 			number: number,

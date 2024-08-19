@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/evmreader"
-	"github.com/cartesi/rollups-node/internal/util/retrypolicy"
+	"github.com/cartesi/rollups-node/internal/retry"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -43,7 +43,7 @@ func (d *InputSourceWithRetryPolicyDelegator) RetrieveInputs(
 	appContract []common.Address,
 	index []*big.Int,
 ) ([]inputbox.InputBoxInputAdded, error) {
-	return retrypolicy.CallFunctionWithRetryPolicy(d.retrieveInputs,
+	return retry.CallFunctionWithRetryPolicy(d.retrieveInputs,
 		retrieveInputsArgs{
 			opts:        opts,
 			appContract: appContract,
