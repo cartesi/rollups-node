@@ -12,12 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added support for the experimental multidapp claimer.
 - Added the `DAPP_CONTRACT_ADDRESS` environment variable to the `authority-claimer`. If let unset, the service instantiates the MultidappClaimer, that reads dapp addresses from Redis.
+- Added `READER_MODE_ENABLED` environment variable to control whether the node generate claims or not.
 
 ### Changed
 
 - Redacted the contents of `CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT`.
-- server-manager tainted session errors logged on inspect-server.
-- Improved dispatcher logs.
+- Logged server-manager tainted session errors on advance-runner and inspect-server.
+- Adjusted dispatcher, advance-runner and authority-claimer logs.
 
 ## [1.5.0] 2024-07-22
 
