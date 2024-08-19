@@ -378,7 +378,7 @@ func (pg *Database) GetApplication(
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Info("GetApplication returned no rows",
+			slog.Debug("GetApplication returned no rows",
 				"service", "repository",
 				"app", appAddressKey)
 			return nil, nil
@@ -446,7 +446,7 @@ func (pg *Database) GetEpoch(
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Info("GetEpoch returned no rows",
+			slog.Debug("GetEpoch returned no rows",
 				"service", "repository",
 				"app", appAddressKey,
 				"epoch", indexKey)
@@ -521,7 +521,7 @@ func (pg *Database) GetInput(
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Info("GetInput returned no rows",
+			slog.Debug("GetInput returned no rows",
 				"service", "repository",
 				"app", appAddressKey,
 				"index", indexKey)
@@ -591,7 +591,7 @@ func (pg *Database) GetOutput(
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Info("GetOutput returned no rows",
+			slog.Debug("GetOutput returned no rows",
 				"service", "repository",
 				"app", appAddressKey,
 				"index", indexKey)
@@ -650,7 +650,7 @@ func (pg *Database) GetReport(
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Info("GetReport returned no rows",
+			slog.Debug("GetReport returned no rows",
 				"service", "repository",
 				"app", appAddressKey,
 				"index", indexKey)
@@ -708,7 +708,7 @@ func (pg *Database) GetSnapshot(
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Info("GetSnapshot returned no rows",
+			slog.Debug("GetSnapshot returned no rows",
 				"service", "repository",
 				"app", appAddressKey,
 				"input index", inputIndexKey)
