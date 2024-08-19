@@ -193,6 +193,7 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 	var finishedWaitGroup sync.WaitGroup
 	containers := make(map[int]testcontainers.Container)
 	if depsConfig.Postgres != nil {
+		slog.Info("Starting up Postgres")
 		// wait strategy copied from testcontainers docs
 		postgresWaitStrategy := wait.ForLog("database system is ready to accept connections").
 			WithOccurrence(numPostgresCheckReadyAttempts).
@@ -238,7 +239,7 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 	}
 
 	if depsConfig.Devnet != nil {
-
+		slog.Info("Starting up Devnet")
 		devnetPortSpec := devnetContainerPort
 		if depsConfig.Devnet.Port != "" {
 			devnetPortSpec = strings.Join([]string{
