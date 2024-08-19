@@ -70,7 +70,7 @@ fn respond(
     }
 }
 
-/// Loop that answers requests comming from inspect_rx.
+/// Loop that answers requests coming from inspect_rx.
 async fn handle_inspect(
     address: String,
     session_id: String,
@@ -148,7 +148,7 @@ async fn handle_inspect_error(
 ) -> String {
     let mut message = status.message().to_string();
 
-    // If the session was previously tainted, the server-manager replies if with code DataLoss.
+    // If the session was previously tainted, the server-manager replies it with code DataLoss.
     // Trying to recover the reason for the session tainted from the session's status.
     // If not available, we return the original status error message.
     if status.code() == Code::DataLoss {
