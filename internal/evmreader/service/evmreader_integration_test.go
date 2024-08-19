@@ -193,10 +193,29 @@ func (s *EvmReaderIntegrationTestSuite) TestAddInput() {
 	s.Require().Equal(uint64(0x10), blockNumber)
 
 	index := <-indexChan
-	// Wait a little so EvmReader can process the Input sent ( make it a polling? )
+	// Wait a little so EvmReader can process the Input sent ( make it polling? )
 	time.Sleep(5 * time.Second)
 	input, err := s.db.GetInput(s.ctx, uint64(index), s.applicationAddress)
 	s.Require().Nil(err)
 	s.Require().NotNil(input)
+
+	epoch, err := s.db.GetEpoch(s.ctx, 1, input.AppAddress)
+	s.Require().Nil(err)
+	s.Require().NotNil(epoch)
+	s.Require().Equal(model.EpochStatusOpen, epoch.Status)
+
+	// Mine four more blocks
+	for i := 0; i < 4; i++ {
+		blockNumber, err = ethutil.MineNewBlock(s.ctx, s.blockchainHttpEndpoint)
+		s.Require().Nil(err)
+		s.Require().Equal(uint64(0x11+i), blockNumber)
+	}
+
+	// Wait a little so EvmReader can process ( make it polling? )
+	time.Sleep(5 * time.Second)
+	epoch, err = s.db.GetEpoch(s.ctx, 1, input.AppAddress)
+	s.Require().Nil(err)
+	s.Require().NotNil(epoch)
+	s.Require().Equal(model.EpochStatusClosed, epoch.Status)
 
 }
