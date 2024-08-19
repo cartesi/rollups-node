@@ -180,7 +180,7 @@ impl ServerManagerFacade {
     ) -> Result<Vec<RollupsOutput>> {
         tracing::trace!("sending advance-state input to server-manager");
 
-        grpc_call!(self, advance_state, {
+        let response = grpc_call!(self, advance_state, {
             let input_metadata = InputMetadata {
                 msg_sender: Some(Address {
                     data: (*input_metadata.msg_sender.inner()).into(),
@@ -197,7 +197,9 @@ impl ServerManagerFacade {
                 input_metadata: Some(input_metadata),
                 input_payload: input_payload.clone(),
             }
-        })?;
+        });
+
+        self.handle_advance_state_error(response).await?;
 
         tracing::trace!("waiting until the input is processed");
 
@@ -269,6 +271,77 @@ impl ServerManagerFacade {
         tracing::trace!(?outputs, "got outputs from epoch status");
 
         Ok(outputs)
+    }
+
+    /// Handle response to advance-state request
+    #[tracing::instrument(level = "trace", skip_all)]
+    async fn handle_advance_state_error(
+        &mut self,
+        response: Result<grpc_interfaces::cartesi_machine::Void>,
+    ) -> Result<()> {
+        if response.is_ok() {
+            return Ok(());
+        }
+
+        // Capture server-manager error for advance-state request
+        // to try to get the reason for a possible tainted session error.
+        let err = response.unwrap_err();
+
+        let err: ServerManagerError = match err {
+            ServerManagerError::MethodCallError {
+                method,
+                request_id,
+                source,
+            } => {
+                // Original error message to be reported by default.
+                let mut message = source.message().to_string();
+                // The server-manager signals with code Dataloss when the session has been previously tainted.
+                if source.code() == tonic::Code::DataLoss {
+                    // Recover the tainted session reason from the session's status.
+                    let status_response = grpc_call!(
+                        self,
+                        get_session_status,
+                        GetSessionStatusRequest {
+                            session_id: self.config.session_id.clone(),
+                        }
+                    );
+
+                    if status_response.is_err() {
+                        match status_response.unwrap_err() {
+                            ServerManagerError::MethodCallError {
+                                method: _,
+                                request_id: _,
+                                source,
+                            } => {
+                                tracing::error!(
+                                    "get-session-status error: {:?}",
+                                    source.message()
+                                );
+                            }
+                            _ => (),
+                        }
+                    } else {
+                        let status_response = status_response.unwrap();
+                        let taint_status = status_response.taint_status.clone();
+                        if let Some(taint_status) = taint_status {
+                            message = format!(
+                                "Server manager session was tainted: {} ({})",
+                                taint_status.error_code,
+                                taint_status.error_message
+                            );
+                            tracing::error!(message);
+                        }
+                    }
+                }
+                ServerManagerError::MethodCallError {
+                    method,
+                    request_id,
+                    source: tonic::Status::new(source.code(), message),
+                }
+            }
+            _ => err,
+        };
+        Err(err)
     }
 
     /// Send a finish-epoch request to the server-manager
@@ -367,5 +440,17 @@ impl ServerManagerFacade {
         );
 
         Err(ServerManagerError::PendingInputsExceededError {})
+    }
+}
+
+#[tracing::instrument(level = "trace", skip_all)]
+fn get_advance_state_error_message(err: &ServerManagerError) -> Option<String> {
+    match err {
+        ServerManagerError::MethodCallError {
+            method: _,
+            request_id: _,
+            source,
+        } => Some(source.message().to_string()),
+        _ => None,
     }
 }
