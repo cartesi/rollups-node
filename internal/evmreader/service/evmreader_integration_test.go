@@ -130,6 +130,7 @@ func (s *EvmReaderIntegrationTestSuite) SetupTest() {
 	err = s.db.InsertApplication(s.ctx, &model.Application{
 		ContractAddress:    s.applicationAddress,
 		Status:             model.ApplicationStatusRunning,
+		IConsensusAddress:  book.Authority,
 		LastProcessedBlock: 0,
 	})
 	s.Require().Nil(err)
