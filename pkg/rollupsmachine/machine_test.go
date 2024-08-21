@@ -177,7 +177,7 @@ func (s *ForkSuite) TestOk() {
 	forkMachine, err := machine.Fork()
 	require.Nil(err)
 	require.NotNil(forkMachine)
-	require.NotEqual(address, forkMachine.inner.Address())
+	require.NotEqual(address, forkMachine.(*rollupsMachine).inner.Address())
 	require.Nil(forkMachine.Close())
 }
 
@@ -424,9 +424,9 @@ func expectNotice(t *testing.T, output Output) *Notice {
 
 type UnitSuite struct{ suite.Suite }
 
-func (_ *UnitSuite) newMachines() (*CartesiMachineMock, *RollupsMachine) {
+func (_ *UnitSuite) newMachines() (*CartesiMachineMock, *rollupsMachine) {
 	mock := new(CartesiMachineMock)
-	machine := &RollupsMachine{inner: mock, inc: defaultInc, max: defaultMax}
+	machine := &rollupsMachine{inner: mock, inc: defaultInc, max: defaultMax}
 	return mock, machine
 }
 
@@ -532,9 +532,9 @@ func (s *UnitSuite) TestFork() {
 		fork, err := machine.Fork()
 		require.Nil(err)
 		require.NotNil(fork)
-		require.Equal(forkedMock, fork.inner)
-		require.Equal(machine.inc, fork.inc)
-		require.Equal(machine.max, fork.max)
+		require.Equal(forkedMock, fork.(*rollupsMachine).inner)
+		require.Equal(machine.inc, fork.(*rollupsMachine).inc)
+		require.Equal(machine.max, fork.(*rollupsMachine).max)
 	})
 
 	s.Run("CartesiMachineError", func() {
@@ -637,14 +637,14 @@ func (s *UnitSuite) TestProcess() {
 }
 
 func (s *UnitSuite) TestRun() {
-	newMachines := func() (*CartesiMachineMock, *RollupsMachine) {
+	newMachines := func() (*CartesiMachineMock, *rollupsMachine) {
 		mock, machine := s.newMachines()
 		mock.RunReturn = []emulator.BreakReason{0, emulator.BreakReasonYieldedManually}
 		mock.RunError = []error{nil, nil}
 		mock.ReadCycleError = []error{nil, nil}
 		return mock, machine
 	}
-	var newMachinesONRN func() (*CartesiMachineMock, *RollupsMachine)
+	var newMachinesONRN func() (*CartesiMachineMock, *rollupsMachine)
 
 	s.Run("Step", func() {
 		s.Run("Once", func() {
@@ -752,7 +752,7 @@ func (s *UnitSuite) TestRun() {
 			require.Equal(uint(1), mock.Responses)
 		})
 
-		newMachinesONRN = func() (*CartesiMachineMock, *RollupsMachine) {
+		newMachinesONRN = func() (*CartesiMachineMock, *rollupsMachine) {
 			mock, machine := newMachines()
 
 			mock.RunReturn = []emulator.BreakReason{0,
@@ -830,7 +830,7 @@ func (s *UnitSuite) TestRun() {
 }
 
 func (s *UnitSuite) TestStep() {
-	newMachines := func() (*CartesiMachineMock, *RollupsMachine) {
+	newMachines := func() (*CartesiMachineMock, *rollupsMachine) {
 		mock, machine := s.newMachines()
 		machine.inc = 0
 		machine.max = 0

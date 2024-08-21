@@ -26,6 +26,7 @@ const (
 	InputStatusRejected                   InputCompletionStatus = "REJECTED"
 	InputStatusException                  InputCompletionStatus = "EXCEPTION"
 	InputStatusMachineHalted              InputCompletionStatus = "MACHINE_HALTED"
+	InputStatusOutputsLimitExceeded       InputCompletionStatus = "OUTPUTS_LIMIT_EXCEEDED"
 	InputStatusCycleLimitExceeded         InputCompletionStatus = "CYCLE_LIMIT_EXCEEDED"
 	InputStatusTimeLimitExceeded          InputCompletionStatus = "TIME_LIMIT_EXCEEDED"
 	InputStatusPayloadLengthLimitExceeded InputCompletionStatus = "PAYLOAD_LENGTH_LIMIT_EXCEEDED"

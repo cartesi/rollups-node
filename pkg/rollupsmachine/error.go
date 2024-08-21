@@ -17,8 +17,8 @@ var (
 	ErrHalted                     = errors.New("machine halted")
 	ErrProgress                   = errors.New("machine yielded progress")
 	ErrSoftYield                  = errors.New("machine yielded softly")
-	ErrCycleLimitExceeded         = errors.New("cycle limit exceeded")
 	ErrOutputsLimitExceeded       = errors.New("outputs limit exceeded")
+	ErrCycleLimitExceeded         = errors.New("cycle limit exceeded")
 	ErrPayloadLengthLimitExceeded = errors.New("payload length limit exceeded")
 
 	// Load

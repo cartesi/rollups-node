@@ -1,11 +1,8 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-// Package rollupsmachine provides the RollupsMachine struct that wraps a
-// cartesimachine.CartesiMachine with rollups-oriented functionalities.
-//
-// Moreover, the Input struct provides a method for encoding payloads, and the DecodeOutput
-// function decodes an output into a voucher or a notice.
+// Package rollupsmachine provides the RollupsMachine type, the Input type, and the DecodeOutput
+// function.
 package rollupsmachine
 
 import (
@@ -31,23 +28,50 @@ type (
 	Hash    = [hashLength]byte
 )
 
-// RollupsMachine wraps a cartesimachine.CartesiMachine to provide four core features: forking,
-// getting the merkle tree's root hash, sending advance-state requests, and sending inspect-state
-// requests.
+// The RollupsMachine interface covers the four core rollups-oriented functionalities of a cartesi
+// machine: forking, getting the merkle tree's root hash, sending advance-state requests, and
+// sending inspect-state requests.
+type RollupsMachine interface {
+	// Fork forks the machine.
+	Fork() (RollupsMachine, error)
+
+	// Hash returns the machine's merkle tree root hash.
+	Hash() (Hash, error)
+
+	// Advance sends an input to the machine.
+	// It returns a boolean indicating whether or not the request was accepted.
+	// It also returns the corresponding outputs, reports, and the hash of the outputs.
+	// In case the request is not accepted, the function does not return outputs.
+	Advance(input []byte) (bool, []Output, []Report, Hash, error)
+
+	// Inspect sends a query to the machine.
+	// It returns a boolean indicating whether or not the request was accepted
+	// It also returns the corresponding reports.
+	Inspect(query []byte) (bool, []Report, error)
+
+	// Close closes the inner cartesi machine.
+	// It returns nil if the machine has already been closed.
+	Close() error
+}
+
+// ------------------------------------------------------------------------------------------------
+
+// rollupsMachine implements the RollupsMachine interface by wrapping a
+// cartesimachine.CartesiMachine.
 //
 // When processing an advance-state or an inspect-state request, the machine will run in increments
 // of inc cycles, for no more than max cycles.
-type RollupsMachine struct {
+type rollupsMachine struct {
 	inner cartesimachine.CartesiMachine
 
 	inc, max Cycle
 }
 
-// New checks if the provided cartesimachine.CartesiMachine is in a valid state to receive advance
-// and inspect requests. If so, New returns a RollupsMachine that wraps the
+// New checks if the provided cartesimachine.CartesiMachine is in a valid state to receive
+// advance and inspect requests. If so, New returns a rollupsMachine that wraps the
 // cartesimachine.CartesiMachine.
-func New(inner cartesimachine.CartesiMachine, inc, max Cycle) (*RollupsMachine, error) {
-	machine := &RollupsMachine{inner: inner, inc: inc, max: max}
+func New(inner cartesimachine.CartesiMachine, inc, max Cycle) (RollupsMachine, error) {
+	machine := &rollupsMachine{inner: inner, inc: inc, max: max}
 
 	// Ensures that the machine is at a manual yield.
 	isAtManualYield, err := machine.inner.IsAtManualYield()
@@ -67,25 +91,19 @@ func New(inner cartesimachine.CartesiMachine, inc, max Cycle) (*RollupsMachine, 
 	return machine, nil
 }
 
-// Fork forks the machine.
-func (machine *RollupsMachine) Fork() (*RollupsMachine, error) {
+func (machine *rollupsMachine) Fork() (RollupsMachine, error) {
 	inner, err := machine.inner.Fork()
 	if err != nil {
 		return nil, err
 	}
-	return &RollupsMachine{inner: inner, inc: machine.inc, max: machine.max}, nil
+	return &rollupsMachine{inner: inner, inc: machine.inc, max: machine.max}, nil
 }
 
-// Hash returns the machine's merkle tree root hash.
-func (machine RollupsMachine) Hash() (Hash, error) {
+func (machine rollupsMachine) Hash() (Hash, error) {
 	return machine.inner.ReadHash()
 }
 
-// Advance sends an input to the machine.
-// It returns a boolean indicating whether or not the request was accepted.
-// It also returns the corresponding outputs, reports, and the hash of the outputs.
-// If the request is not accepted, the function does not return outputs.
-func (machine *RollupsMachine) Advance(input []byte) (bool, []Output, []Report, Hash, error) {
+func (machine *rollupsMachine) Advance(input []byte) (bool, []Output, []Report, Hash, error) {
 	accepted, outputs, reports, err := machine.process(input, cartesimachine.AdvanceStateRequest)
 	if err != nil {
 		return accepted, outputs, reports, Hash{}, err
@@ -109,17 +127,12 @@ func (machine *RollupsMachine) Advance(input []byte) (bool, []Output, []Report, 
 	}
 }
 
-// Inspect sends a query to the machine.
-// It returns a boolean indicating whether or not the request was accepted
-// It also returns the corresponding reports.
-func (machine *RollupsMachine) Inspect(query []byte) (bool, []Report, error) {
+func (machine *rollupsMachine) Inspect(query []byte) (bool, []Report, error) {
 	accepted, _, reports, err := machine.process(query, cartesimachine.InspectStateRequest)
 	return accepted, reports, err
 }
 
-// Close closes the inner cartesi machine.
-// It returns nil if the machine has already been closed.
-func (machine *RollupsMachine) Close() error {
+func (machine *rollupsMachine) Close() error {
 	if machine.inner == nil {
 		return nil
 	}
@@ -134,7 +147,7 @@ func (machine *RollupsMachine) Close() error {
 // It returns the ErrException error if the last request yielded an exception.
 //
 // The machine MUST be at a manual yield when calling this function.
-func (machine *RollupsMachine) lastRequestWasAccepted() (bool, error) {
+func (machine *rollupsMachine) lastRequestWasAccepted() (bool, error) {
 	yieldReason, err := machine.inner.ReadYieldReason()
 	if err != nil {
 		return false, err
@@ -156,7 +169,7 @@ func (machine *RollupsMachine) lastRequestWasAccepted() (bool, error) {
 //
 // It expects the machine to be ready to receive requests before execution,
 // and leaves the machine in a state ready to receive requests after an execution with no errors.
-func (machine *RollupsMachine) process(
+func (machine *rollupsMachine) process(
 	request []byte,
 	requestType cartesimachine.RequestType,
 ) (accepted bool, _ []Output, _ []Report, _ error) {
@@ -195,7 +208,7 @@ const (
 
 // run runs the machine until it manually yields.
 // It returns any collected responses.
-func (machine *RollupsMachine) run() ([]Output, []Report, error) {
+func (machine *rollupsMachine) run() ([]Output, []Report, error) {
 	currentCycle, err := machine.inner.ReadCycle()
 	if err != nil {
 		return nil, nil, err
@@ -266,7 +279,7 @@ func (machine *RollupsMachine) run() ([]Output, []Report, error) {
 // It returns the yield type and the machine cycle after the step.
 // If the machine did not manually/automatically yield, the yield type will be nil (meaning step
 // must be called again to complete the computation).
-func (machine *RollupsMachine) step(currentCycle, limitCycle Cycle) (*yieldType, Cycle, error) {
+func (machine *rollupsMachine) step(currentCycle, limitCycle Cycle) (*yieldType, Cycle, error) {
 	startingCycle := currentCycle
 
 	// Returns with an error if the next run would exceed limitCycle.
