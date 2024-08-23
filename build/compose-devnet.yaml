@@ -18,6 +18,8 @@ services:
     depends_on:
       devnet:
         condition: service_healthy
+      cli:
+        condition: service_completed_successfully
     environment:
       CARTESI_BLOCKCHAIN_ID: "31337"
       CARTESI_BLOCKCHAIN_HTTP_ENDPOINT: "http://devnet:8545"
