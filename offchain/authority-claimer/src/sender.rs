@@ -260,7 +260,7 @@ impl TransactionSender for DefaultTransactionSender {
                 dapp_address,
             })
             .inc();
-        trace!("Claim transaction confirmed: `{:?}`", receipt);
+        info!("Claim transaction confirmed: `{:?}`", receipt);
 
         Ok(Self { tx_manager, ..self })
     }
