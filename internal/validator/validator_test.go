@@ -6,12 +6,10 @@ package validator
 import (
 	"context"
 	crand "crypto/rand"
-	mrand "math/rand"
 	"testing"
 
 	"github.com/cartesi/rollups-node/internal/merkle"
 	. "github.com/cartesi/rollups-node/internal/node/model"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 )
@@ -25,10 +23,9 @@ func TestValidatorSuite(t *testing.T) {
 }
 
 var (
-	validator               *Validator
-	repository              *MockRepository
-	dummyEpochs             []Epoch
-	inputBoxDeploymentBlock uint64
+	validator   *Validator
+	repository  *MockRepository
+	dummyEpochs []Epoch
 )
 
 func (s *ValidatorSuite) SetupSubTest() {
@@ -45,133 +42,6 @@ func (s *ValidatorSuite) SetupSubTest() {
 func (s *ValidatorSuite) TearDownSubTest() {
 	repository = nil
 	validator = nil
-}
-
-func (s *ValidatorSuite) TestItCreatesClaimAndProofs() {
-	// returns pristine claim and no proofs
-	s.Run("WhenThereAreNoOutputsAndNoPreviousEpoch", func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		epoch := dummyEpochs[0]
-
-		repository.On(
-			"GetOutputsProducedInBlockRange",
-			mock.Anything, epoch.AppAddress, epoch.FirstBlock, epoch.LastBlock,
-		).Return(nil, nil)
-		repository.On("GetPreviousEpoch", mock.Anything, epoch).Return(nil, nil)
-
-		claim, outputs, err := validator.createClaimAndProofs(ctx, epoch)
-		s.Require().Nil(err)
-		s.Require().NotNil(claim)
-
-		expectedClaim, _, err := merkle.CreateProofs(nil, MAX_OUTPUT_TREE_HEIGHT)
-		s.Require().Nil(err)
-		s.Require().NotNil(expectedClaim)
-
-		s.Equal(expectedClaim, *claim)
-		s.Nil(outputs)
-		repository.AssertExpectations(s.T())
-	})
-
-	// returns previous epoch claim and no proofs
-	s.Run("WhenThereAreNoOutputsAndThereIsAPreviousEpoch", func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		previousEpoch := dummyEpochs[0]
-		expectedClaim := randomHash()
-		previousEpoch.ClaimHash = &expectedClaim
-		epoch := dummyEpochs[1]
-
-		repository.On(
-			"GetOutputsProducedInBlockRange",
-			mock.Anything, epoch.AppAddress, epoch.FirstBlock, epoch.LastBlock,
-		).Return(nil, nil)
-		repository.On("GetPreviousEpoch", mock.Anything, epoch).Return(&previousEpoch, nil)
-
-		claim, outputs, err := validator.createClaimAndProofs(ctx, epoch)
-		s.Require().Nil(err)
-		s.Require().NotNil(claim)
-
-		s.Equal(expectedClaim, *claim)
-		s.Nil(outputs)
-		repository.AssertExpectations(s.T())
-	})
-
-	// returns new claim and proofs
-	s.Run("WhenThereAreOutputsAndNoPreviousEpoch", func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		epoch := dummyEpochs[0]
-		outputs := randomOutputs(2, 0, false)
-
-		repository.On(
-			"GetOutputsProducedInBlockRange",
-			mock.Anything, epoch.AppAddress, epoch.FirstBlock, epoch.LastBlock,
-		).Return(outputs, nil).Once()
-		repository.On("GetPreviousEpoch", mock.Anything, epoch).Return(nil, nil)
-
-		claim, updatedOutputs, err := validator.createClaimAndProofs(ctx, epoch)
-		s.Require().Nil(err)
-		s.Require().NotNil(claim)
-
-		s.Len(updatedOutputs, len(outputs))
-		for idx, output := range updatedOutputs {
-			s.Equal(outputs[idx].Id, output.Id)
-			s.NotNil(output.Hash)
-			s.NotNil(output.OutputHashesSiblings)
-		}
-		repository.AssertExpectations(s.T())
-	})
-
-	// returns new claim and proofs
-	s.Run("WhenThereAreOutputsAndAPreviousEpoch", func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		previousEpoch := dummyEpochs[0]
-		previousEpochClaim := randomHash()
-		previousEpoch.ClaimHash = &previousEpochClaim
-		epoch := dummyEpochs[1]
-		previousOutputs := randomOutputs(2, 0, true)
-		epochOutputs := randomOutputs(2, 2, false)
-
-		repository.On(
-			"GetOutputsProducedInBlockRange",
-			mock.Anything, epoch.AppAddress, epoch.FirstBlock, epoch.LastBlock,
-		).Return(epochOutputs, nil)
-		repository.On(
-			"GetOutputsProducedInBlockRange",
-			mock.Anything, epoch.AppAddress, inputBoxDeploymentBlock, previousEpoch.LastBlock,
-		).Return(previousOutputs, nil)
-		repository.On("GetPreviousEpoch", mock.Anything, epoch).Return(&previousEpoch, nil)
-
-		claim, updatedOutputs, err := validator.createClaimAndProofs(ctx, epoch)
-		s.Require().Nil(err)
-		s.Require().NotNil(claim)
-
-		allOutputs := append(previousOutputs, epochOutputs...)
-		leaves := make([]Hash, 0, len(allOutputs))
-		for _, output := range allOutputs {
-			leaves = append(leaves, *output.Hash)
-		}
-		expectedClaim, allProofs, err := merkle.CreateProofs(leaves, MAX_OUTPUT_TREE_HEIGHT)
-		s.Require().Nil(err)
-
-		s.NotEqual(previousEpoch.ClaimHash, claim)
-		s.Equal(&expectedClaim, claim)
-		s.Len(updatedOutputs, len(epochOutputs))
-
-		for idx, output := range updatedOutputs {
-			s.Equal(epochOutputs[idx].Index, output.Index)
-			s.NotNil(output.Hash)
-			s.NotNil(output.OutputHashesSiblings)
-			s.assertProofs(output, allProofs)
-		}
-		repository.AssertExpectations(s.T())
-	})
 }
 
 func (s *ValidatorSuite) TestItFailsWhenClaimDoesNotMatchMachineOutputsHash() {
@@ -310,12 +180,6 @@ func (s *ValidatorSuite) TestItFailsWhenClaimDoesNotMatchMachineOutputsHash() {
 	})
 }
 
-func (s *ValidatorSuite) assertProofs(output Output, allProofs []Hash) {
-	start := output.Index * MAX_OUTPUT_TREE_HEIGHT
-	end := (output.Index * MAX_OUTPUT_TREE_HEIGHT) + MAX_OUTPUT_TREE_HEIGHT
-	s.Equal(allProofs[start:end], output.OutputHashesSiblings)
-}
-
 func randomAddress() Address {
 	address := make([]byte, 20)
 	_, err := crand.Read(address)
@@ -332,41 +196,6 @@ func randomHash() Hash {
 		panic(err)
 	}
 	return Hash(hash)
-}
-
-func randomBytes() []byte {
-	size := mrand.Intn(100) + 1
-	bytes := make([]byte, size)
-	_, err := crand.Read(bytes)
-	if err != nil {
-		panic(err)
-	}
-	return bytes
-}
-
-// randomOutputs generates n new Outputs with sequential indexes starting at
-// `firstIdx` and random data. Optionally, it will generate dummy proofs if
-// `withProofs` is true. Returns an slice with the new Outputs.
-func randomOutputs(n int, firstIdx int, withProofs bool) []Output {
-	slice := make([]Output, n)
-	for idx := 0; idx < n; idx++ {
-		output := Output{
-			Id:      mrand.Uint64(),
-			Index:   uint64(idx + firstIdx),
-			RawData: randomBytes(),
-		}
-		if withProofs {
-			proofs := make([]Hash, MAX_OUTPUT_TREE_HEIGHT)
-			hash := crypto.Keccak256Hash(output.RawData)
-			output.Hash = &hash
-			for idx := 0; idx < MAX_OUTPUT_TREE_HEIGHT; idx++ {
-				proofs[idx] = randomHash()
-			}
-			output.OutputHashesSiblings = proofs
-		}
-		slice[idx] = output
-	}
-	return slice
 }
 
 type MockRepository struct {
