@@ -7,6 +7,7 @@ use crate::{
 };
 
 use rollups_events::DAppMetadata;
+use tracing::info;
 use types::foldables::Input;
 
 #[derive(Debug)]
@@ -146,6 +147,10 @@ impl Context {
             .inc();
 
         self.last_finished_epoch = self.last_input_epoch;
+        info!(
+            "sent finish_epoch event for epoch {:?}",
+            self.last_finished_epoch
+        );
         Ok(())
     }
 }
