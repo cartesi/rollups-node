@@ -4,5 +4,11 @@
 build/deployments
 **/.idea/
 machine-snapshot/**
-deployment.json
-anvil_state.json
+/deployment.json
+/anvil_state.json
+/cartesi-rollups-authority-claimer
+/cartesi-rollups-cli
+/cartesi-rollups-evm-reader
+/cartesi-rollups-node
+/cartesi-rollups-advancer
+/cartesi-rollups-validator
