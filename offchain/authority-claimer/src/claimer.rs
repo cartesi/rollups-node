@@ -96,7 +96,7 @@ where
                 .listen()
                 .await
                 .context(BrokerListenerSnafu)?;
-            debug!("Got a claim from the broker: {:?}", rollups_claim);
+            info!("Received claim from the broker: {:?}", rollups_claim);
 
             let is_duplicated_rollups_claim = self
                 .duplicate_checker
@@ -108,7 +108,7 @@ where
                 continue;
             }
 
-            info!("Sending a new rollups claim");
+            info!("Sending a new rollups claim transaction");
             self.transaction_sender = self
                 .transaction_sender
                 .send_rollups_claim_transaction(rollups_claim)
