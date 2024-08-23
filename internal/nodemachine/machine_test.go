@@ -11,6 +11,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/pkg/rollupsmachine"
+	"github.com/cartesi/rollups-node/pkg/rollupsmachine/cartesimachine"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -24,7 +25,7 @@ func (s *NodeMachineSuite) TestNew() {
 	s.Run("Ok", func() {
 		require := s.Require()
 		inner := &MockRollupsMachine{}
-		machine, err := New(inner, decisecond, centisecond, 3)
+		machine, err := New(inner, 0, decisecond, centisecond, 3)
 		require.Nil(err)
 		require.NotNil(machine)
 	})
@@ -32,7 +33,7 @@ func (s *NodeMachineSuite) TestNew() {
 	s.Run("ErrInvalidAdvanceTimeout", func() {
 		require := s.Require()
 		inner := &MockRollupsMachine{}
-		machine, err := New(inner, -1, centisecond, 3)
+		machine, err := New(inner, 0, -1, centisecond, 3)
 		require.Error(err)
 		require.Nil(machine)
 		require.Equal(ErrInvalidAdvanceTimeout, err)
@@ -41,7 +42,7 @@ func (s *NodeMachineSuite) TestNew() {
 	s.Run("ErrInvalidInspectTimeout", func() {
 		require := s.Require()
 		inner := &MockRollupsMachine{}
-		machine, err := New(inner, decisecond, -500, 3)
+		machine, err := New(inner, 0, decisecond, -500, 3)
 		require.Error(err)
 		require.Nil(machine)
 		require.Equal(ErrInvalidInspectTimeout, err)
@@ -50,7 +51,7 @@ func (s *NodeMachineSuite) TestNew() {
 	s.Run("ErrInvalidMaxConcurrentInspects", func() {
 		require := s.Require()
 		inner := &MockRollupsMachine{}
-		machine, err := New(inner, decisecond, centisecond, 0)
+		machine, err := New(inner, 0, decisecond, centisecond, 0)
 		require.Error(err)
 		require.Nil(machine)
 		require.Equal(ErrInvalidMaxConcurrentInspects, err)
@@ -63,7 +64,7 @@ func (s *NodeMachineSuite) TestAdvance() {
 			require := s.Require()
 			_, fork, machine := s.setupAdvance()
 
-			res, err := machine.Advance(context.Background(), []byte{})
+			res, err := machine.Advance(context.Background(), []byte{}, 10)
 			require.Nil(err)
 			require.NotNil(res)
 
@@ -72,7 +73,8 @@ func (s *NodeMachineSuite) TestAdvance() {
 			require.Equal(expectedOutputs, res.Outputs)
 			require.Equal(expectedReports1, res.Reports)
 			require.Equal(newHash(1), res.OutputsHash)
-			require.Equal(newHash(2), res.MachineHash)
+			require.Equal(newHash(2), *res.MachineHash)
+			require.Equal(uint64(10), machine.lastInputIndex)
 		})
 
 		s.Run("Reject", func() {
@@ -80,7 +82,7 @@ func (s *NodeMachineSuite) TestAdvance() {
 			_, fork, machine := s.setupAdvance()
 			fork.AdvanceAcceptedReturn = false
 
-			res, err := machine.Advance(context.Background(), []byte{})
+			res, err := machine.Advance(context.Background(), []byte{}, 15)
 			require.Nil(err)
 			require.NotNil(res)
 
@@ -89,8 +91,53 @@ func (s *NodeMachineSuite) TestAdvance() {
 			require.Equal(expectedOutputs, res.Outputs)
 			require.Equal(expectedReports1, res.Reports)
 			require.Equal(newHash(1), res.OutputsHash)
-			require.Equal(newHash(0), res.MachineHash)
+			require.Nil(res.MachineHash)
+			require.Equal(uint64(15), machine.lastInputIndex)
 		})
+
+		testSoftError := func(name string, err error, status model.InputCompletionStatus) {
+			s.Run(name, func() {
+				require := s.Require()
+				inner, fork, machine := s.setupAdvance()
+				fork.AdvanceError = err
+				fork.CloseError, inner.CloseError = inner.CloseError, fork.CloseError
+
+				res, err := machine.Advance(context.Background(), []byte{}, 20)
+				require.Nil(err)
+				require.NotNil(res)
+
+				require.Equal(status, res.Status)
+				require.Equal(expectedOutputs, res.Outputs)
+				require.Equal(expectedReports1, res.Reports)
+				require.Equal(newHash(1), res.OutputsHash)
+				require.Nil(res.MachineHash)
+				require.Equal(uint64(20), machine.lastInputIndex)
+			})
+		}
+
+		testSoftError("Exception",
+			rollupsmachine.ErrException,
+			model.InputStatusException)
+
+		testSoftError("Halted",
+			rollupsmachine.ErrHalted,
+			model.InputStatusMachineHalted)
+
+		testSoftError("OutputsLimit",
+			rollupsmachine.ErrOutputsLimitExceeded,
+			model.InputStatusOutputsLimitExceeded)
+
+		testSoftError("CycleLimit",
+			rollupsmachine.ErrCycleLimitExceeded,
+			model.InputStatusCycleLimitExceeded)
+
+		testSoftError("TimeLimit",
+			cartesimachine.ErrTimedOut,
+			model.InputStatusTimeLimitExceeded)
+
+		testSoftError("PayloadLengthLimit",
+			rollupsmachine.ErrPayloadLengthLimitExceeded,
+			model.InputStatusPayloadLengthLimitExceeded)
 	})
 
 	s.Run("Error", func() {
@@ -100,70 +147,77 @@ func (s *NodeMachineSuite) TestAdvance() {
 			errFork := errors.New("Fork error")
 			inner.ForkError = errFork
 
-			res, err := machine.Advance(context.Background(), []byte{})
+			res, err := machine.Advance(context.Background(), []byte{}, 35)
 			require.Error(err)
 			require.Nil(res)
 			require.Equal(errFork, err)
+			require.Equal(uint64(5), machine.lastInputIndex)
 		})
 
 		s.Run("Advance", func() {
 			require := s.Require()
-			_, fork, machine := s.setupAdvance()
+			inner, fork, machine := s.setupAdvance()
 			errAdvance := errors.New("Advance error")
 			fork.AdvanceError = errAdvance
-			fork.CloseError = nil
+			fork.CloseError, inner.CloseError = inner.CloseError, fork.CloseError
 
-			res, err := machine.Advance(context.Background(), []byte{})
+			res, err := machine.Advance(context.Background(), []byte{}, 36)
 			require.Error(err)
 			require.Nil(res)
 			require.ErrorIs(err, errAdvance)
 			require.NotErrorIs(err, errUnreachable)
+			require.Equal(uint64(5), machine.lastInputIndex)
 		})
 
 		s.Run("AdvanceAndClose", func() {
 			require := s.Require()
-			_, fork, machine := s.setupAdvance()
+			inner, fork, machine := s.setupAdvance()
 			errAdvance := errors.New("Advance error")
 			errClose := errors.New("Close error")
 			fork.AdvanceError = errAdvance
 			fork.CloseError = errClose
+			inner.CloseError = nil
 
-			res, err := machine.Advance(context.Background(), []byte{})
+			res, err := machine.Advance(context.Background(), []byte{}, 37)
 			require.Error(err)
 			require.Nil(res)
 			require.ErrorIs(err, errAdvance)
 			require.ErrorIs(err, errClose)
 			require.NotErrorIs(err, errUnreachable)
+			require.Equal(uint64(5), machine.lastInputIndex)
 		})
 
 		s.Run("Hash", func() {
 			require := s.Require()
-			_, fork, machine := s.setupAdvance()
+			inner, fork, machine := s.setupAdvance()
 			errHash := errors.New("Hash error")
 			fork.HashError = errHash
-			fork.CloseError = nil
+			fork.CloseError, inner.CloseError = inner.CloseError, fork.CloseError
 
-			res, err := machine.Advance(context.Background(), []byte{})
+			res, err := machine.Advance(context.Background(), []byte{}, 38)
 			require.Error(err)
 			require.Nil(res)
 			require.ErrorIs(err, errHash)
 			require.NotErrorIs(err, errUnreachable)
+			require.Equal(uint64(5), machine.lastInputIndex)
 		})
 
 		s.Run("HashAndClose", func() {
 			require := s.Require()
-			_, fork, machine := s.setupAdvance()
+			inner, fork, machine := s.setupAdvance()
 			errHash := errors.New("Hash error")
 			errClose := errors.New("Close error")
 			fork.HashError = errHash
 			fork.CloseError = errClose
+			inner.CloseError = nil
 
-			res, err := machine.Advance(context.Background(), []byte{})
+			res, err := machine.Advance(context.Background(), []byte{}, 39)
 			require.Error(err)
 			require.Nil(res)
 			require.ErrorIs(err, errHash)
 			require.ErrorIs(err, errClose)
 			require.NotErrorIs(err, errUnreachable)
+			require.Equal(uint64(5), machine.lastInputIndex)
 		})
 
 		s.Run("Close", func() {
@@ -173,11 +227,12 @@ func (s *NodeMachineSuite) TestAdvance() {
 				errClose := errors.New("Close error")
 				inner.CloseError = errClose
 
-				res, err := machine.Advance(context.Background(), []byte{})
+				res, err := machine.Advance(context.Background(), []byte{}, 40)
 				require.Error(err)
 				require.NotNil(res)
 				require.ErrorIs(err, errClose)
 				require.NotErrorIs(err, errUnreachable)
+				require.Equal(uint64(40), machine.lastInputIndex)
 			})
 
 			s.Run("Fork", func() {
@@ -187,13 +242,19 @@ func (s *NodeMachineSuite) TestAdvance() {
 				fork.AdvanceError = rollupsmachine.ErrException
 				fork.CloseError = errClose
 
-				res, err := machine.Advance(context.Background(), []byte{})
+				res, err := machine.Advance(context.Background(), []byte{}, 41)
 				require.Error(err)
 				require.NotNil(res)
 				require.ErrorIs(err, errClose)
 				require.NotErrorIs(err, errUnreachable)
+				require.Equal(uint64(41), machine.lastInputIndex)
 			})
 		})
+	})
+
+	s.Run("Concurrency", func() {
+		// Two Advances cannot be active concurrently.
+		s.T().Skip("TODO")
 	})
 }
 
@@ -208,6 +269,7 @@ func (s *NodeMachineSuite) TestInspect() {
 			require.NotNil(res)
 
 			require.NotSame(fork, machine.inner)
+			require.Equal(uint64(55), res.InputIndex)
 			require.True(res.Accepted)
 			require.Equal(expectedReports2, res.Reports)
 			require.Nil(res.Error)
@@ -223,28 +285,41 @@ func (s *NodeMachineSuite) TestInspect() {
 			require.NotNil(res)
 
 			require.NotSame(fork, machine.inner)
+			require.Equal(uint64(55), res.InputIndex)
 			require.False(res.Accepted)
 			require.Equal(expectedReports2, res.Reports)
 			require.Nil(res.Error)
 		})
 	})
 
-	s.Run("Semaphore", func() {
-	})
-
 	s.Run("Error", func() {
 		s.Run("Acquire", func() {
+			s.T().Skip("TODO")
 		})
+
 		s.Run("Fork", func() {
+			s.T().Skip("TODO")
 		})
+
 		s.Run("Inspect", func() {
+			s.T().Skip("TODO")
 		})
+
 		s.Run("Close", func() {
+			s.T().Skip("TODO")
 		})
 	})
+
+	s.Run("Concurrency", func() {
+		// At most N Inspects can be active concurrently.
+		s.T().Skip("TODO")
+	})
+
 }
 
 func (s *NodeMachineSuite) TestClose() {
+	// No Advances and/or Inspects can be active concurrently to Close.
+	s.T().Skip("TODO")
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -270,7 +345,7 @@ var (
 
 func (s *NodeMachineSuite) setupAdvance() (*MockRollupsMachine, *MockRollupsMachine, *NodeMachine) {
 	inner := &MockRollupsMachine{}
-	machine, err := New(inner, decisecond, centisecond, 3)
+	machine, err := New(inner, 5, decisecond, centisecond, 3)
 	s.Require().Nil(err)
 
 	fork := &MockRollupsMachine{}
@@ -310,7 +385,7 @@ func (s *NodeMachineSuite) setupAdvance() (*MockRollupsMachine, *MockRollupsMach
 
 func (s *NodeMachineSuite) setupInspect() (*MockRollupsMachine, *MockRollupsMachine, *NodeMachine) {
 	inner := &MockRollupsMachine{}
-	machine, err := New(inner, decisecond, centisecond, 3)
+	machine, err := New(inner, 55, decisecond, centisecond, 3)
 	s.Require().Nil(err)
 
 	fork := &MockRollupsMachine{}
@@ -380,15 +455,15 @@ type MockRollupsMachine struct {
 	CloseError error
 }
 
-func (machine *MockRollupsMachine) Fork() (rollupsmachine.RollupsMachine, error) {
+func (machine *MockRollupsMachine) Fork(_ context.Context) (rollupsmachine.RollupsMachine, error) {
 	return machine.ForkReturn, machine.ForkError
 }
 
-func (machine *MockRollupsMachine) Hash() (rollupsmachine.Hash, error) {
+func (machine *MockRollupsMachine) Hash(_ context.Context) (rollupsmachine.Hash, error) {
 	return machine.HashReturn, machine.HashError
 }
 
-func (machine *MockRollupsMachine) Advance(input []byte) (
+func (machine *MockRollupsMachine) Advance(_ context.Context, input []byte) (
 	bool, []rollupsmachine.Output, []rollupsmachine.Report, rollupsmachine.Hash, error,
 ) {
 	return machine.AdvanceAcceptedReturn,
@@ -398,10 +473,12 @@ func (machine *MockRollupsMachine) Advance(input []byte) (
 		machine.AdvanceError
 }
 
-func (machine *MockRollupsMachine) Inspect(query []byte) (bool, []rollupsmachine.Report, error) {
+func (machine *MockRollupsMachine) Inspect(_ context.Context,
+	query []byte,
+) (bool, []rollupsmachine.Report, error) {
 	return machine.InspectAcceptedReturn, machine.InspectReportsReturn, machine.InspectError
 }
 
-func (machine *MockRollupsMachine) Close() error {
+func (machine *MockRollupsMachine) Close(_ context.Context) error {
 	return machine.CloseError
 }

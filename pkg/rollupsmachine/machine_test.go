@@ -4,6 +4,7 @@
 package rollupsmachine
 
 import (
+	"context"
 	"errors"
 	"log"
 	"log/slog"
@@ -94,35 +95,41 @@ func (s *NewSuite) TearDownTest() {
 
 func (s *NewSuite) TestOkAccept() {
 	require := s.Require()
+	ctx := context.Background()
 
 	config := &emulator.MachineRuntimeConfig{}
-	cartesiMachine, err := cartesimachine.Load(s.acceptSnapshot.Path(), s.address, config)
+	path := s.acceptSnapshot.Path()
+	cartesiMachine, err := cartesimachine.Load(ctx, path, s.address, config)
 	require.NotNil(cartesiMachine)
 	require.Nil(err, "%v", err)
 
-	rollupsMachine, err := New(cartesiMachine, defaultInc, defaultMax)
+	rollupsMachine, err := New(ctx, cartesiMachine, defaultInc, defaultMax)
 	require.NotNil(rollupsMachine)
 	require.Nil(err)
 }
 
 func (s *NewSuite) TestOkReject() {
 	require := s.Require()
+	ctx := context.Background()
 
 	config := &emulator.MachineRuntimeConfig{}
-	cartesiMachine, err := cartesimachine.Load(s.rejectSnapshot.Path(), s.address, config)
+	path := s.rejectSnapshot.Path()
+	cartesiMachine, err := cartesimachine.Load(ctx, path, s.address, config)
 	require.NotNil(cartesiMachine)
 	require.Nil(err)
 
-	rollupsMachine, err := New(cartesiMachine, defaultInc, defaultMax)
+	rollupsMachine, err := New(ctx, cartesiMachine, defaultInc, defaultMax)
 	require.NotNil(rollupsMachine)
 	require.Nil(err)
 }
 
 func (s *NewSuite) TestInvalidAddress() {
 	require := s.Require()
+	ctx := context.Background()
 
 	config := &emulator.MachineRuntimeConfig{}
-	cartesiMachine, err := cartesimachine.Load(s.acceptSnapshot.Path(), "invalid address", config)
+	path := s.acceptSnapshot.Path()
+	cartesiMachine, err := cartesimachine.Load(ctx, path, "invalid address", config)
 	require.Nil(cartesiMachine)
 	require.NotNil(err)
 
@@ -132,9 +139,10 @@ func (s *NewSuite) TestInvalidAddress() {
 
 func (s *NewSuite) TestInvalidPath() {
 	require := s.Require()
+	ctx := context.Background()
 
 	config := &emulator.MachineRuntimeConfig{}
-	cartesiMachine, err := cartesimachine.Load("invalid path", s.address, config)
+	cartesiMachine, err := cartesimachine.Load(ctx, "invalid path", s.address, config)
 	require.Nil(cartesiMachine)
 	require.NotNil(err)
 
@@ -148,6 +156,7 @@ type ForkSuite struct{ suite.Suite }
 
 func (s *ForkSuite) TestOk() {
 	require := s.Require()
+	ctx := context.Background()
 
 	// Creates the snapshot.
 	script := "while true; do rollup accept; done"
@@ -162,23 +171,24 @@ func (s *ForkSuite) TestOk() {
 
 	// Loads the machine.
 	cartesiMachine, err := cartesimachine.Load(
+		ctx,
 		snapshot.Path(),
 		address,
 		&emulator.MachineRuntimeConfig{})
 	require.NotNil(cartesiMachine)
 	require.Nil(err)
 
-	machine, err := New(cartesiMachine, defaultInc, defaultMax)
+	machine, err := New(ctx, cartesiMachine, defaultInc, defaultMax)
 	require.NotNil(machine)
 	require.Nil(err)
-	defer func() { require.Nil(machine.Close()) }()
+	defer func() { require.Nil(machine.Close(ctx)) }()
 
 	// Forks the machine.
-	forkMachine, err := machine.Fork()
+	forkMachine, err := machine.Fork(ctx)
 	require.Nil(err)
 	require.NotNil(forkMachine)
 	require.NotEqual(address, forkMachine.(*rollupsMachine).inner.Address())
-	require.Nil(forkMachine.Close())
+	require.Nil(forkMachine.Close(ctx))
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -221,17 +231,18 @@ func (s *AdvanceSuite) SetupTest() {
 
 func (s *AdvanceSuite) TestEchoLoop() {
 	require := s.Require()
+	ctx := context.Background()
 
 	// Loads the machine.
 	config := &emulator.MachineRuntimeConfig{}
-	cartesiMachine, err := cartesimachine.Load(s.snapshotEcho.Path(), s.address, config)
+	cartesiMachine, err := cartesimachine.Load(ctx, s.snapshotEcho.Path(), s.address, config)
 	require.NotNil(cartesiMachine)
 	require.Nil(err)
 
-	machine, err := New(cartesiMachine, defaultInc, defaultMax)
+	machine, err := New(ctx, cartesiMachine, defaultInc, defaultMax)
 	require.Nil(err)
 	require.NotNil(machine)
-	defer func() { require.Nil(machine.Close()) }()
+	defer func() { require.Nil(machine.Close(ctx)) }()
 
 	// Encodes the input.
 	input := Input{Data: []byte("Ender Wiggin")}
@@ -239,7 +250,7 @@ func (s *AdvanceSuite) TestEchoLoop() {
 	require.Nil(err)
 
 	// Sends the advance-state request.
-	accepted, outputs, reports, outputsHash, err := machine.Advance(encodedInput)
+	accepted, outputs, reports, outputsHash, err := machine.Advance(ctx, encodedInput)
 	require.Nil(err)
 	require.True(accepted)
 	require.Len(outputs, 4)
@@ -258,6 +269,7 @@ func (s *AdvanceSuite) TestEchoLoop() {
 
 func (s *AdvanceSuite) TestAcceptRejectException() {
 	require := s.Require()
+	ctx := context.Background()
 
 	// Creates the snapshot.
 	script := `rollup accept
@@ -271,14 +283,14 @@ func (s *AdvanceSuite) TestAcceptRejectException() {
 
 	// Loads the machine.
 	config := &emulator.MachineRuntimeConfig{}
-	cartesiMachine, err := cartesimachine.Load(snapshot.Path(), s.address, config)
+	cartesiMachine, err := cartesimachine.Load(ctx, snapshot.Path(), s.address, config)
 	require.NotNil(cartesiMachine)
 	require.Nil(err)
 
-	machine, err := New(cartesiMachine, defaultInc, defaultMax)
+	machine, err := New(ctx, cartesiMachine, defaultInc, defaultMax)
 	require.Nil(err)
 	require.NotNil(machine)
-	defer func() { require.Nil(machine.Close()) }()
+	defer func() { require.Nil(machine.Close(ctx)) }()
 
 	// Encodes the input.
 	input := Input{Data: []byte("Shai-Hulud")}
@@ -286,7 +298,7 @@ func (s *AdvanceSuite) TestAcceptRejectException() {
 	require.Nil(err)
 
 	{ // Accept.
-		accepted, outputs, reports, outputsHash, err := machine.Advance(encodedInput)
+		accepted, outputs, reports, outputsHash, err := machine.Advance(ctx, encodedInput)
 		require.Nil(err)
 		require.True(accepted)
 		require.Empty(outputs)
@@ -295,7 +307,7 @@ func (s *AdvanceSuite) TestAcceptRejectException() {
 	}
 
 	{ // Reject.
-		accepted, outputs, reports, outputsHash, err := machine.Advance(encodedInput)
+		accepted, outputs, reports, outputsHash, err := machine.Advance(ctx, encodedInput)
 		require.Nil(err)
 		require.False(accepted)
 		require.Nil(outputs)
@@ -304,13 +316,14 @@ func (s *AdvanceSuite) TestAcceptRejectException() {
 	}
 
 	{ // Exception
-		_, _, _, _, err := machine.Advance(encodedInput)
+		_, _, _, _, err := machine.Advance(ctx, encodedInput)
 		require.Equal(ErrException, err)
 	}
 }
 
 func (s *AdvanceSuite) TestHalted() {
 	require := s.Require()
+	ctx := context.Background()
 
 	// Creates the snapshot.
 	script := `rollup accept; echo "Done"`
@@ -321,21 +334,21 @@ func (s *AdvanceSuite) TestHalted() {
 
 	// Loads the machine.
 	config := &emulator.MachineRuntimeConfig{}
-	cartesiMachine, err := cartesimachine.Load(snapshot.Path(), s.address, config)
+	cartesiMachine, err := cartesimachine.Load(ctx, snapshot.Path(), s.address, config)
 	require.NotNil(cartesiMachine)
 	require.Nil(err)
 
-	machine, err := New(cartesiMachine, defaultInc, defaultMax)
+	machine, err := New(ctx, cartesiMachine, defaultInc, defaultMax)
 	require.Nil(err)
 	require.NotNil(machine)
-	defer func() { require.Nil(machine.Close()) }()
+	defer func() { require.Nil(machine.Close(ctx)) }()
 
 	// Encodes the input.
 	input := Input{Data: []byte("Fremen")}
 	encodedInput, err := input.Encode()
 	require.Nil(err)
 
-	_, _, _, _, err = machine.Advance(encodedInput)
+	_, _, _, _, err = machine.Advance(ctx, encodedInput)
 	require.Equal(ErrHalted, err)
 }
 
@@ -372,22 +385,23 @@ func (s *InspectSuite) SetupTest() {
 
 func (s *InspectSuite) TestEchoLoop() {
 	require := s.Require()
+	ctx := context.Background()
 
 	// Loads the machine.
 	config := &emulator.MachineRuntimeConfig{}
-	cartesiMachine, err := cartesimachine.Load(s.snapshotEcho.Path(), s.address, config)
+	cartesiMachine, err := cartesimachine.Load(ctx, s.snapshotEcho.Path(), s.address, config)
 	require.NotNil(cartesiMachine)
 	require.Nil(err)
 
-	machine, err := New(cartesiMachine, defaultInc, defaultMax)
+	machine, err := New(ctx, cartesiMachine, defaultInc, defaultMax)
 	require.Nil(err)
 	require.NotNil(machine)
-	defer func() { require.Nil(machine.Close()) }()
+	defer func() { require.Nil(machine.Close(ctx)) }()
 
 	query := []byte("Bene Gesserit")
 
 	// Sends the inspect-state request.
-	accepted, reports, err := machine.Inspect(query)
+	accepted, reports, err := machine.Inspect(ctx, query)
 	require.Nil(err)
 	require.True(accepted)
 	require.Len(reports, 7)
@@ -431,6 +445,7 @@ func (_ *UnitSuite) newMachines() (*CartesiMachineMock, *rollupsMachine) {
 }
 
 func (s *UnitSuite) TestNew() {
+	ctx := context.Background()
 	newCartesiMachine := func() *CartesiMachineMock {
 		mock := new(CartesiMachineMock)
 		mock.IsAtManualYieldReturn = true
@@ -445,7 +460,7 @@ func (s *UnitSuite) TestNew() {
 			require := s.Require()
 			mock := newCartesiMachine()
 
-			machine, err := New(mock, defaultInc, defaultMax)
+			machine, err := New(ctx, mock, defaultInc, defaultMax)
 			require.Nil(err)
 			require.NotNil(machine)
 		})
@@ -457,7 +472,7 @@ func (s *UnitSuite) TestNew() {
 				emulator.ManualYieldReasonRejected,
 			}
 
-			machine, err := New(mock, defaultInc, defaultMax)
+			machine, err := New(ctx, mock, defaultInc, defaultMax)
 			require.Nil(err)
 			require.NotNil(machine)
 		})
@@ -469,7 +484,7 @@ func (s *UnitSuite) TestNew() {
 			mock := newCartesiMachine()
 			mock.IsAtManualYieldReturn = false
 
-			machine, err := New(mock, defaultInc, defaultMax)
+			machine, err := New(ctx, mock, defaultInc, defaultMax)
 			require.Equal(ErrNotAtManualYield, err)
 			require.Nil(machine)
 		})
@@ -481,7 +496,7 @@ func (s *UnitSuite) TestNew() {
 				emulator.ManualYieldReasonException,
 			}
 
-			machine, err := New(mock, defaultInc, defaultMax)
+			machine, err := New(ctx, mock, defaultInc, defaultMax)
 			require.Equal(ErrException, err)
 			require.Nil(machine)
 		})
@@ -491,7 +506,7 @@ func (s *UnitSuite) TestNew() {
 			require.PanicsWithValue(ErrUnreachable, func() {
 				mock := newCartesiMachine()
 				mock.ReadYieldReasonReturn = []emulator.HtifYieldReason{10}
-				_, _ = New(mock, defaultInc, defaultMax)
+				_, _ = New(ctx, mock, defaultInc, defaultMax)
 			})
 		})
 	})
@@ -503,7 +518,7 @@ func (s *UnitSuite) TestNew() {
 			mock := newCartesiMachine()
 			mock.IsAtManualYieldError = errIsAtManualYield
 
-			machine, err := New(mock, defaultInc, defaultMax)
+			machine, err := New(ctx, mock, defaultInc, defaultMax)
 			require.Equal(errIsAtManualYield, err)
 			require.Nil(machine)
 		})
@@ -514,7 +529,7 @@ func (s *UnitSuite) TestNew() {
 			mock := newCartesiMachine()
 			mock.ReadYieldReasonError = []error{errReadYieldReason}
 
-			machine, err := New(mock, defaultInc, defaultMax)
+			machine, err := New(ctx, mock, defaultInc, defaultMax)
 			require.Equal(errReadYieldReason, err)
 			require.Nil(machine)
 		})
@@ -522,6 +537,8 @@ func (s *UnitSuite) TestNew() {
 }
 
 func (s *UnitSuite) TestFork() {
+	ctx := context.Background()
+
 	s.Run("Ok", func() {
 		require := s.Require()
 		forkedMock := new(CartesiMachineMock)
@@ -529,7 +546,7 @@ func (s *UnitSuite) TestFork() {
 		mock.ForkReturn = forkedMock
 		mock.ForkError = nil
 
-		fork, err := machine.Fork()
+		fork, err := machine.Fork(ctx)
 		require.Nil(err)
 		require.NotNil(fork)
 		require.Equal(forkedMock, fork.(*rollupsMachine).inner)
@@ -544,13 +561,15 @@ func (s *UnitSuite) TestFork() {
 		mock.ForkReturn = new(CartesiMachineMock)
 		mock.ForkError = errFork
 
-		fork, err := machine.Fork()
+		fork, err := machine.Fork(ctx)
 		require.Equal(errFork, err)
 		require.Nil(fork)
 	})
 }
 
 func (s *UnitSuite) TestHash() {
+	ctx := context.Background()
+
 	machineHash := [32]byte{}
 	machineHash[0] = 1
 	machineHash[31] = 1
@@ -561,7 +580,7 @@ func (s *UnitSuite) TestHash() {
 		mock.ReadHashReturn = machineHash
 		mock.ReadHashError = nil
 
-		hash, err := machine.Hash()
+		hash, err := machine.Hash(ctx)
 		require.Nil(err)
 		require.Equal(machineHash, hash)
 		require.Equal(uint8(1), hash[0])
@@ -578,7 +597,7 @@ func (s *UnitSuite) TestHash() {
 		mock.ReadHashReturn = machineHash
 		mock.ReadHashError = errReadHash
 
-		hash, err := machine.Hash()
+		hash, err := machine.Hash(ctx)
 		require.Equal(errReadHash, err)
 		require.Equal(machineHash, hash)
 	})
@@ -593,12 +612,14 @@ func (s *UnitSuite) TestInspect() {
 }
 
 func (s *UnitSuite) TestClose() {
+	ctx := context.Background()
+
 	s.Run("Ok", func() {
 		require := s.Require()
 		mock, machine := s.newMachines()
 		mock.CloseError = nil
 
-		err := machine.Close()
+		err := machine.Close(ctx)
 		require.Nil(err)
 		require.Nil(machine.inner)
 	})
@@ -608,11 +629,11 @@ func (s *UnitSuite) TestClose() {
 		mock, machine := s.newMachines()
 		mock.CloseError = nil
 
-		err := machine.Close()
+		err := machine.Close(ctx)
 		require.Nil(err)
 
 		require.NotPanics(func() {
-			err := machine.Close()
+			err := machine.Close(ctx)
 			require.Nil(err)
 		})
 	})
@@ -623,7 +644,7 @@ func (s *UnitSuite) TestClose() {
 		mock, machine := s.newMachines()
 		mock.CloseError = errClose
 
-		err := machine.Close()
+		err := machine.Close(ctx)
 		require.Equal(errClose, err)
 	})
 }
@@ -637,6 +658,8 @@ func (s *UnitSuite) TestProcess() {
 }
 
 func (s *UnitSuite) TestRun() {
+	ctx := context.Background()
+
 	newMachines := func() (*CartesiMachineMock, *rollupsMachine) {
 		mock, machine := s.newMachines()
 		mock.RunReturn = []emulator.BreakReason{0, emulator.BreakReasonYieldedManually}
@@ -655,7 +678,7 @@ func (s *UnitSuite) TestRun() {
 			machine.inc = 2
 			machine.max = 10
 
-			outputs, reports, err := machine.run()
+			outputs, reports, err := machine.run(ctx)
 			require.Nil(err)
 			require.Empty(outputs)
 			require.Empty(reports)
@@ -677,7 +700,7 @@ func (s *UnitSuite) TestRun() {
 			machine.inc = 3
 			machine.max = 8
 
-			outputs, reports, err := machine.run()
+			outputs, reports, err := machine.run(ctx)
 			require.Nil(err)
 			require.Empty(outputs)
 			require.Empty(reports)
@@ -708,7 +731,7 @@ func (s *UnitSuite) TestRun() {
 			machine.inc = 2
 			machine.max = 10
 
-			outputs, reports, err := machine.run()
+			outputs, reports, err := machine.run(ctx)
 			require.Nil(err)
 			require.Len(outputs, 1)
 			require.Empty(reports)
@@ -741,7 +764,7 @@ func (s *UnitSuite) TestRun() {
 			machine.inc = 2
 			machine.max = 10
 
-			outputs, reports, err := machine.run()
+			outputs, reports, err := machine.run(ctx)
 			require.Nil(err)
 			require.Empty(outputs)
 			require.Len(reports, 1)
@@ -794,7 +817,7 @@ func (s *UnitSuite) TestRun() {
 			require := s.Require()
 			mock, machine := newMachinesONRN()
 
-			outputs, reports, err := machine.run()
+			outputs, reports, err := machine.run(ctx)
 			require.Nil(err)
 			require.Len(outputs, 2)
 			require.Len(reports, 3)
@@ -815,7 +838,7 @@ func (s *UnitSuite) TestRun() {
 		mock, machine := newMachinesONRN()
 		machine.max = 5
 
-		outputs, reports, err := machine.run()
+		outputs, reports, err := machine.run(ctx)
 		require.Equal(ErrCycleLimitExceeded, err)
 		require.Len(outputs, 2)
 		require.Len(reports, 1)
@@ -830,6 +853,8 @@ func (s *UnitSuite) TestRun() {
 }
 
 func (s *UnitSuite) TestStep() {
+	ctx := context.Background()
+
 	newMachines := func() (*CartesiMachineMock, *rollupsMachine) {
 		mock, machine := s.newMachines()
 		machine.inc = 0
@@ -851,7 +876,7 @@ func (s *UnitSuite) TestStep() {
 				machine.inc = 0
 				mock.Cycle = currentCycle
 
-				yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+				yt, newCurrentCycle, err := machine.step(ctx, currentCycle, limitCycle)
 				require.Nil(err)
 				require.Nil(yt)
 				require.Equal(currentCycle, newCurrentCycle)
@@ -866,7 +891,7 @@ func (s *UnitSuite) TestStep() {
 				machine.inc = 2
 				mock.Cycle = currentCycle
 
-				yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+				yt, newCurrentCycle, err := machine.step(ctx, currentCycle, limitCycle)
 				require.Nil(err)
 				require.Nil(yt)
 				require.Equal(currentCycle+machine.inc, newCurrentCycle)
@@ -881,7 +906,7 @@ func (s *UnitSuite) TestStep() {
 				machine.inc = 3
 				mock.Cycle = currentCycle
 
-				yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+				yt, newCurrentCycle, err := machine.step(ctx, currentCycle, limitCycle)
 				require.Nil(err)
 				require.Nil(yt)
 				require.Equal(limitCycle, newCurrentCycle)
@@ -897,7 +922,7 @@ func (s *UnitSuite) TestStep() {
 				machine.inc = 5
 				mock.Cycle = currentCycle
 
-				yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+				yt, newCurrentCycle, err := machine.step(ctx, currentCycle, limitCycle)
 				require.Nil(err)
 				require.Nil(yt)
 				require.Equal(limitCycle, newCurrentCycle)
@@ -915,7 +940,7 @@ func (s *UnitSuite) TestStep() {
 				machine.inc = 2
 				mock.Cycle = currentCycle
 
-				yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+				yt, newCurrentCycle, err := machine.step(ctx, currentCycle, limitCycle)
 				require.Equal(ErrCycleLimitExceeded, err)
 				require.Nil(yt)
 				require.Zero(newCurrentCycle)
@@ -930,7 +955,7 @@ func (s *UnitSuite) TestStep() {
 				machine.inc = 0
 				mock.Cycle = currentCycle
 
-				yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+				yt, newCurrentCycle, err := machine.step(ctx, currentCycle, limitCycle)
 				require.Nil(err)
 				require.Nil(yt)
 				require.Equal(currentCycle, newCurrentCycle)
@@ -947,7 +972,7 @@ func (s *UnitSuite) TestStep() {
 				machine.inc = 1
 				mock.Cycle = currentCycle
 
-				yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+				yt, newCurrentCycle, err := machine.step(ctx, currentCycle, limitCycle)
 				require.Equal(ErrCycleLimitExceeded, err)
 				require.Nil(yt)
 				require.Zero(newCurrentCycle)
@@ -962,7 +987,7 @@ func (s *UnitSuite) TestStep() {
 				machine.inc = 0
 				mock.Cycle = currentCycle
 
-				yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+				yt, newCurrentCycle, err := machine.step(ctx, currentCycle, limitCycle)
 				require.Nil(err)
 				require.Nil(yt)
 				require.Equal(currentCycle, newCurrentCycle)
@@ -982,7 +1007,7 @@ func (s *UnitSuite) TestStep() {
 			machine.inc = 5
 			mock.Cycle = currentCycle
 
-			yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+			yt, newCurrentCycle, err := machine.step(ctx, currentCycle, limitCycle)
 			require.Equal(errRun, err)
 			require.Nil(yt)
 			require.Zero(newCurrentCycle)
@@ -999,7 +1024,7 @@ func (s *UnitSuite) TestStep() {
 			machine.inc = 100
 			mock.Cycle = currentCycle
 
-			yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+			yt, newCurrentCycle, err := machine.step(ctx, currentCycle, limitCycle)
 			require.Equal(errReadCycle, err)
 			require.Nil(yt)
 			require.Zero(newCurrentCycle)
@@ -1018,7 +1043,7 @@ func (s *UnitSuite) TestStep() {
 			mock.Cycle = currentCycle
 
 			require.PanicsWithValue(ErrUnreachable, func() {
-				_, _, _ = machine.step(currentCycle, limitCycle)
+				_, _, _ = machine.step(ctx, currentCycle, limitCycle)
 			})
 		})
 
@@ -1033,7 +1058,7 @@ func (s *UnitSuite) TestStep() {
 			mock.Cycle = currentCycle
 
 			require.PanicsWithValue(ErrUnreachable, func() {
-				_, _, _ = machine.step(currentCycle, limitCycle)
+				_, _, _ = machine.step(ctx, currentCycle, limitCycle)
 			})
 		})
 	})
@@ -1048,7 +1073,7 @@ func (s *UnitSuite) TestStep() {
 		machine.inc = 9
 		mock.Cycle = currentCycle
 
-		yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+		yt, newCurrentCycle, err := machine.step(ctx, currentCycle, limitCycle)
 		require.Nil(err)
 		require.NotNil(yt)
 		require.Equal(manualYield, *yt)
@@ -1065,7 +1090,7 @@ func (s *UnitSuite) TestStep() {
 		machine.inc = 9
 		mock.Cycle = currentCycle
 
-		yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+		yt, newCurrentCycle, err := machine.step(ctx, currentCycle, limitCycle)
 		require.Nil(err)
 		require.NotNil(yt)
 		require.Equal(automaticYield, *yt)
@@ -1082,7 +1107,7 @@ func (s *UnitSuite) TestStep() {
 		machine.inc = 1
 		mock.Cycle = currentCycle
 
-		yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+		yt, newCurrentCycle, err := machine.step(ctx, currentCycle, limitCycle)
 		require.Equal(ErrHalted, err)
 		require.Nil(yt)
 		require.Zero(newCurrentCycle)
@@ -1098,7 +1123,7 @@ func (s *UnitSuite) TestStep() {
 		machine.inc = 4
 		mock.Cycle = currentCycle
 
-		yt, newCurrentCycle, err := machine.step(currentCycle, limitCycle)
+		yt, newCurrentCycle, err := machine.step(ctx, currentCycle, limitCycle)
 		require.Equal(ErrSoftYield, err)
 		require.Nil(yt)
 		require.Zero(newCurrentCycle)
@@ -1140,27 +1165,30 @@ type CartesiMachineMock struct {
 	ReadCycleError []error
 }
 
-func (machine *CartesiMachineMock) Fork() (cartesimachine.CartesiMachine, error) {
+func (machine *CartesiMachineMock) Fork(_ context.Context) (cartesimachine.CartesiMachine, error) {
 	return machine.ForkReturn, machine.ForkError
 }
 
-func (machine *CartesiMachineMock) Continue() error {
+func (machine *CartesiMachineMock) Continue(_ context.Context) error {
 	return machine.ContinueError
 }
 
-func (machine *CartesiMachineMock) Close() error {
+func (machine *CartesiMachineMock) Close(_ context.Context) error {
 	return machine.CloseError
 }
 
-func (machine *CartesiMachineMock) IsAtManualYield() (bool, error) {
+func (machine *CartesiMachineMock) IsAtManualYield(_ context.Context) (bool, error) {
 	return machine.IsAtManualYieldReturn, machine.IsAtManualYieldError
 }
 
-func (machine *CartesiMachineMock) ReadHash() ([32]byte, error) {
+func (machine *CartesiMachineMock) ReadHash(_ context.Context) ([32]byte, error) {
 	return machine.ReadHashReturn, machine.ReadHashError
 }
 
-func (machine *CartesiMachineMock) WriteRequest(data []byte, _ cartesimachine.RequestType) error {
+func (machine *CartesiMachineMock) WriteRequest(_ context.Context,
+	data []byte,
+	_ cartesimachine.RequestType,
+) error {
 	return machine.WriteRequestError
 }
 
@@ -1174,13 +1202,15 @@ func (machine *CartesiMachineMock) Address() string {
 
 // ------------------------------------------------------------------------------------------------
 
-func (machine *CartesiMachineMock) ReadYieldReason() (emulator.HtifYieldReason, error) {
+func (machine *CartesiMachineMock) ReadYieldReason(
+	_ context.Context,
+) (emulator.HtifYieldReason, error) {
 	yieldReason := machine.ReadYieldReasonReturn[machine.Responses]
 	err := machine.ReadYieldReasonError[machine.Responses]
 	return yieldReason, err
 }
 
-func (machine *CartesiMachineMock) ReadMemory() ([]byte, error) {
+func (machine *CartesiMachineMock) ReadMemory(_ context.Context) ([]byte, error) {
 	bytes := machine.ReadMemoryReturn[machine.Responses]
 	err := machine.ReadMemoryError[machine.Responses]
 	machine.Responses++
@@ -1189,12 +1219,14 @@ func (machine *CartesiMachineMock) ReadMemory() ([]byte, error) {
 
 // ------------------------------------------------------------------------------------------------
 
-func (machine *CartesiMachineMock) Run(cycle uint64) (emulator.BreakReason, error) {
+func (machine *CartesiMachineMock) Run(_ context.Context,
+	cycle uint64,
+) (emulator.BreakReason, error) {
 	machine.Cycle += cycle - machine.Cycle
 	return machine.RunReturn[machine.Steps], machine.RunError[machine.Steps]
 }
 
-func (machine *CartesiMachineMock) ReadCycle() (uint64, error) {
+func (machine *CartesiMachineMock) ReadCycle(_ context.Context) (uint64, error) {
 	if err := machine.ReadCycleError[machine.Steps]; err != nil {
 		return machine.Cycle, err
 	}

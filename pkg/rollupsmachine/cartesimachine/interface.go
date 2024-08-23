@@ -5,7 +5,11 @@
 // library. It provides an implementation for that interface using the emulator package.
 package cartesimachine
 
-import "github.com/cartesi/rollups-node/pkg/emulator"
+import (
+	"context"
+
+	"github.com/cartesi/rollups-node/pkg/emulator"
+)
 
 type (
 	RequestType uint8
@@ -13,17 +17,17 @@ type (
 )
 
 type CartesiMachine interface {
-	Fork() (CartesiMachine, error)
-	Continue() error
-	Run(until uint64) (emulator.BreakReason, error)
-	Close() error
+	Fork(context.Context) (CartesiMachine, error)
+	Continue(context.Context) error
+	Run(_ context.Context, until uint64) (emulator.BreakReason, error)
+	Close(context.Context) error
 
-	IsAtManualYield() (bool, error)
-	ReadYieldReason() (emulator.HtifYieldReason, error)
-	ReadHash() ([32]byte, error)
-	ReadCycle() (uint64, error)
-	ReadMemory() ([]byte, error)
-	WriteRequest([]byte, RequestType) error
+	IsAtManualYield(context.Context) (bool, error)
+	ReadYieldReason(context.Context) (emulator.HtifYieldReason, error)
+	ReadHash(context.Context) ([32]byte, error)
+	ReadCycle(context.Context) (uint64, error)
+	ReadMemory(context.Context) ([]byte, error)
+	WriteRequest(context.Context, []byte, RequestType) error
 
 	PayloadLengthLimit() uint
 	Address() string

@@ -6,6 +6,7 @@
 package rollupsmachine
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
@@ -33,25 +34,25 @@ type (
 // sending inspect-state requests.
 type RollupsMachine interface {
 	// Fork forks the machine.
-	Fork() (RollupsMachine, error)
+	Fork(context.Context) (RollupsMachine, error)
 
 	// Hash returns the machine's merkle tree root hash.
-	Hash() (Hash, error)
+	Hash(context.Context) (Hash, error)
 
 	// Advance sends an input to the machine.
 	// It returns a boolean indicating whether or not the request was accepted.
 	// It also returns the corresponding outputs, reports, and the hash of the outputs.
 	// In case the request is not accepted, the function does not return outputs.
-	Advance(input []byte) (bool, []Output, []Report, Hash, error)
+	Advance(_ context.Context, input []byte) (bool, []Output, []Report, Hash, error)
 
 	// Inspect sends a query to the machine.
 	// It returns a boolean indicating whether or not the request was accepted
 	// It also returns the corresponding reports.
-	Inspect(query []byte) (bool, []Report, error)
+	Inspect(_ context.Context, query []byte) (bool, []Report, error)
 
 	// Close closes the inner cartesi machine.
 	// It returns nil if the machine has already been closed.
-	Close() error
+	Close(context.Context) error
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -70,11 +71,14 @@ type rollupsMachine struct {
 // New checks if the provided cartesimachine.CartesiMachine is in a valid state to receive
 // advance and inspect requests. If so, New returns a rollupsMachine that wraps the
 // cartesimachine.CartesiMachine.
-func New(inner cartesimachine.CartesiMachine, inc, max Cycle) (RollupsMachine, error) {
+func New(ctx context.Context,
+	inner cartesimachine.CartesiMachine,
+	inc, max Cycle,
+) (RollupsMachine, error) {
 	machine := &rollupsMachine{inner: inner, inc: inc, max: max}
 
 	// Ensures that the machine is at a manual yield.
-	isAtManualYield, err := machine.inner.IsAtManualYield()
+	isAtManualYield, err := machine.inner.IsAtManualYield(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +87,7 @@ func New(inner cartesimachine.CartesiMachine, inc, max Cycle) (RollupsMachine, e
 	}
 
 	// Ensures that the last request the machine received did not yield an exception.
-	_, err = machine.lastRequestWasAccepted()
+	_, err = machine.lastRequestWasAccepted(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -91,20 +95,24 @@ func New(inner cartesimachine.CartesiMachine, inc, max Cycle) (RollupsMachine, e
 	return machine, nil
 }
 
-func (machine *rollupsMachine) Fork() (RollupsMachine, error) {
-	inner, err := machine.inner.Fork()
+func (machine *rollupsMachine) Fork(ctx context.Context) (RollupsMachine, error) {
+	inner, err := machine.inner.Fork(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return &rollupsMachine{inner: inner, inc: machine.inc, max: machine.max}, nil
 }
 
-func (machine rollupsMachine) Hash() (Hash, error) {
-	return machine.inner.ReadHash()
+func (machine rollupsMachine) Hash(ctx context.Context) (Hash, error) {
+	return machine.inner.ReadHash(ctx)
 }
 
-func (machine *rollupsMachine) Advance(input []byte) (bool, []Output, []Report, Hash, error) {
-	accepted, outputs, reports, err := machine.process(input, cartesimachine.AdvanceStateRequest)
+func (machine *rollupsMachine) Advance(
+	ctx context.Context,
+	input []byte,
+) (bool, []Output, []Report, Hash, error) {
+	requestType := cartesimachine.AdvanceStateRequest
+	accepted, outputs, reports, err := machine.process(ctx, input, requestType)
 	if err != nil {
 		return accepted, outputs, reports, Hash{}, err
 	}
@@ -112,7 +120,7 @@ func (machine *rollupsMachine) Advance(input []byte) (bool, []Output, []Report, 
 	if !accepted {
 		return accepted, nil, reports, Hash{}, nil
 	} else {
-		hashBytes, err := machine.inner.ReadMemory()
+		hashBytes, err := machine.inner.ReadMemory(ctx)
 		if err != nil {
 			err = fmt.Errorf("could not read the outputs' hash: %w", err)
 			return accepted, outputs, reports, Hash{}, err
@@ -127,16 +135,16 @@ func (machine *rollupsMachine) Advance(input []byte) (bool, []Output, []Report, 
 	}
 }
 
-func (machine *rollupsMachine) Inspect(query []byte) (bool, []Report, error) {
-	accepted, _, reports, err := machine.process(query, cartesimachine.InspectStateRequest)
+func (machine *rollupsMachine) Inspect(ctx context.Context, query []byte) (bool, []Report, error) {
+	accepted, _, reports, err := machine.process(ctx, query, cartesimachine.InspectStateRequest)
 	return accepted, reports, err
 }
 
-func (machine *rollupsMachine) Close() error {
+func (machine *rollupsMachine) Close(ctx context.Context) error {
 	if machine.inner == nil {
 		return nil
 	}
-	err := machine.inner.Close()
+	err := machine.inner.Close(ctx)
 	machine.inner = nil
 	return err
 }
@@ -147,8 +155,8 @@ func (machine *rollupsMachine) Close() error {
 // It returns the ErrException error if the last request yielded an exception.
 //
 // The machine MUST be at a manual yield when calling this function.
-func (machine *rollupsMachine) lastRequestWasAccepted() (bool, error) {
-	yieldReason, err := machine.inner.ReadYieldReason()
+func (machine *rollupsMachine) lastRequestWasAccepted(ctx context.Context) (bool, error) {
+	yieldReason, err := machine.inner.ReadYieldReason(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -170,6 +178,7 @@ func (machine *rollupsMachine) lastRequestWasAccepted() (bool, error) {
 // It expects the machine to be ready to receive requests before execution,
 // and leaves the machine in a state ready to receive requests after an execution with no errors.
 func (machine *rollupsMachine) process(
+	ctx context.Context,
 	request []byte,
 	requestType cartesimachine.RequestType,
 ) (accepted bool, _ []Output, _ []Report, _ error) {
@@ -178,23 +187,23 @@ func (machine *rollupsMachine) process(
 	}
 
 	// Writes the request.
-	err := machine.inner.WriteRequest(request, requestType)
+	err := machine.inner.WriteRequest(ctx, request, requestType)
 	if err != nil {
 		return false, nil, nil, err
 	}
 
 	// Green-lights the machine to keep running.
-	err = machine.inner.Continue()
+	err = machine.inner.Continue(ctx)
 	if err != nil {
 		return false, nil, nil, err
 	}
 
-	outputs, reports, err := machine.run()
+	outputs, reports, err := machine.run(ctx)
 	if err != nil {
 		return false, outputs, reports, err
 	}
 
-	accepted, err = machine.lastRequestWasAccepted()
+	accepted, err = machine.lastRequestWasAccepted(ctx)
 
 	return accepted, outputs, reports, err
 }
@@ -208,8 +217,8 @@ const (
 
 // run runs the machine until it manually yields.
 // It returns any collected responses.
-func (machine *rollupsMachine) run() ([]Output, []Report, error) {
-	currentCycle, err := machine.inner.ReadCycle()
+func (machine *rollupsMachine) run(ctx context.Context) ([]Output, []Report, error) {
+	currentCycle, err := machine.inner.ReadCycle(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -229,7 +238,7 @@ func (machine *rollupsMachine) run() ([]Output, []Report, error) {
 
 		// Steps the machine as many times as needed until it manually/automatically yields.
 		for yt == nil {
-			yt, currentCycle, err = machine.step(currentCycle, limitCycle)
+			yt, currentCycle, err = machine.step(ctx, currentCycle, limitCycle)
 			if err != nil {
 				return outputs, reports, err
 			}
@@ -245,7 +254,7 @@ func (machine *rollupsMachine) run() ([]Output, []Report, error) {
 			panic(ErrUnreachable)
 		}
 
-		yieldReason, err := machine.inner.ReadYieldReason()
+		yieldReason, err := machine.inner.ReadYieldReason(ctx)
 		if err != nil {
 			return outputs, reports, err
 		}
@@ -254,7 +263,7 @@ func (machine *rollupsMachine) run() ([]Output, []Report, error) {
 		case emulator.AutomaticYieldReasonProgress:
 			return outputs, reports, ErrProgress
 		case emulator.AutomaticYieldReasonOutput:
-			output, err := machine.inner.ReadMemory()
+			output, err := machine.inner.ReadMemory(ctx)
 			if err != nil {
 				return outputs, reports, fmt.Errorf("could not read the output: %w", err)
 			}
@@ -263,7 +272,7 @@ func (machine *rollupsMachine) run() ([]Output, []Report, error) {
 			}
 			outputs = append(outputs, output)
 		case emulator.AutomaticYieldReasonReport:
-			report, err := machine.inner.ReadMemory()
+			report, err := machine.inner.ReadMemory(ctx)
 			if err != nil {
 				return outputs, reports, fmt.Errorf("could not read the report: %w", err)
 			}
@@ -279,7 +288,10 @@ func (machine *rollupsMachine) run() ([]Output, []Report, error) {
 // It returns the yield type and the machine cycle after the step.
 // If the machine did not manually/automatically yield, the yield type will be nil (meaning step
 // must be called again to complete the computation).
-func (machine *rollupsMachine) step(currentCycle, limitCycle Cycle) (*yieldType, Cycle, error) {
+func (machine *rollupsMachine) step(ctx context.Context,
+	currentCycle Cycle,
+	limitCycle Cycle,
+) (*yieldType, Cycle, error) {
 	startingCycle := currentCycle
 
 	// Returns with an error if the next run would exceed limitCycle.
@@ -291,13 +303,13 @@ func (machine *rollupsMachine) step(currentCycle, limitCycle Cycle) (*yieldType,
 	increment := min(machine.inc, limitCycle-currentCycle)
 
 	// Runs the machine.
-	breakReason, err := machine.inner.Run(currentCycle + increment)
+	breakReason, err := machine.inner.Run(ctx, currentCycle+increment)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	// Gets the current cycle.
-	currentCycle, err = machine.inner.ReadCycle()
+	currentCycle, err = machine.inner.ReadCycle(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
