@@ -10,16 +10,20 @@ import (
 	"net/http/httputil"
 	"net/url"
 
+	"github.com/cartesi/rollups-node/internal/inspect"
 	"github.com/cartesi/rollups-node/internal/node/config"
 )
 
-func newHttpServiceHandler(c config.NodeConfig) http.Handler {
+func newHttpServiceHandler(c config.NodeConfig, i *inspect.Inspector) http.Handler {
 	handler := http.NewServeMux()
 	handler.Handle("/healthz", http.HandlerFunc(healthcheckHandler))
 
 	graphqlProxy := newReverseProxy(c.HttpAddress, getPort(c, portOffsetPostgraphile))
 	handler.Handle("/graphql", graphqlProxy)
 	handler.Handle("/graphiql", graphqlProxy)
+
+	handler.Handle("/inspect/{dapp}", http.Handler(i))
+	handler.Handle("/inspect/{dapp}/{payload}", http.Handler(i))
 
 	return handler
 }

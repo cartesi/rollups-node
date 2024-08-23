@@ -4,11 +4,14 @@
 package node
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
 
 	evmreaderservice "github.com/cartesi/rollups-node/internal/evmreader/service"
+	"github.com/cartesi/rollups-node/internal/inspect"
+	"github.com/cartesi/rollups-node/internal/node/advancer/machines"
 	"github.com/cartesi/rollups-node/internal/node/config"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/services"
@@ -99,7 +102,9 @@ func newSupervisorService(
 		s = append(s, newAuthorityClaimer(c, workDir))
 	}
 
-	s = append(s, newHttpService(c))
+	inspector := newInspectorService(c, database)
+
+	s = append(s, newHttpService(c, inspector))
 	s = append(s, newPostgraphileService(c, workDir))
 	s = append(s, newEvmReaderService(c, database))
 	s = append(s, newValidatorService(c, database))
@@ -111,9 +116,29 @@ func newSupervisorService(
 	return supervisor
 }
 
-func newHttpService(c config.NodeConfig) services.HttpService {
+func newInspectorService(c config.NodeConfig, database *repository.Database) *inspect.Inspector {
+	// initialize machines for inspect
+	repo := &repository.MachineRepository{Database: database}
+
+	machines, err := machines.Load(context.Background(), repo, c.MachineServerVerbosity)
+	if err != nil {
+		slog.Error("failed to load the machines", "error", err)
+		os.Exit(1)
+	}
+	defer machines.Close()
+
+	inspector, err := inspect.New(machines)
+	if err != nil {
+		slog.Error("failed to create the inspector", "error", err)
+		os.Exit(1)
+	}
+
+	return inspector
+}
+
+func newHttpService(c config.NodeConfig, i *inspect.Inspector) services.HttpService {
 	addr := fmt.Sprintf("%v:%v", c.HttpAddress, getPort(c, portOffsetProxy))
-	handler := newHttpServiceHandler(c)
+	handler := newHttpServiceHandler(c, i)
 	return services.HttpService{
 		Name:    "http",
 		Address: addr,
