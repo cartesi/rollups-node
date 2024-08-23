@@ -1,2 +1,9 @@
 .git*
 **/target/
+.gitignore
+cartesi-rollups-authority-claimer
+cartesi-rollups-cli
+cartesi-rollups-evm-reader
+cartesi-rollups-node
+cartesi-rollups-advancer
+cartesi-rollups-validator

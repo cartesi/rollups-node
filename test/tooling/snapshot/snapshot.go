@@ -23,7 +23,7 @@ const ramLength = 64 << 20
 var ImagesPath = "/usr/share/cartesi-machine/images/"
 
 func init() {
-	if value, ok := os.LookupEnv("TESTS_IMAGES_PATH"); ok {
+	if value, ok := os.LookupEnv("CARTESI_TEST_MACHINE_IMAGES_PATH"); ok {
 		ImagesPath = value
 	}
 }
