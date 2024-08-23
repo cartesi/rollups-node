@@ -41,7 +41,7 @@ impl DefaultBrokerListener {
         chain_id: u64,
         dapp_address: Address,
     ) -> Result<Self, BrokerError> {
-        tracing::trace!("Connecting to the broker ({:?})", broker_config);
+        tracing::info!("Connecting to the broker ({:?})", broker_config);
         let broker = Broker::new(broker_config).await?;
         let dapp_metadata = DAppMetadata {
             chain_id,
@@ -94,7 +94,7 @@ impl MultidappBrokerListener {
         broker_config: BrokerConfig,
         chain_id: u64,
     ) -> Result<Self, BrokerError> {
-        tracing::trace!(
+        tracing::info!(
             "Connecting to the broker ({:?}) on multidapp mode",
             broker_config
         );
