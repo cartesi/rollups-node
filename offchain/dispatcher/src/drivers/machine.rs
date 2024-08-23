@@ -37,7 +37,7 @@ impl MachineDriver {
         };
 
         let block_number = block.number.as_u64();
-        tracing::debug!("reacting to standalone block {}", block_number);
+        tracing::info!("received block {}", block_number);
         context.finish_epoch_if_needed(block_number, broker).await?;
 
         Ok(())
