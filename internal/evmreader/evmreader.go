@@ -302,7 +302,9 @@ func (r *EvmReader) readAndStoreInputs(
 		// Get App EpochLength
 		err := r.addAppEpochLengthIntoCache(app)
 		if err != nil {
-			slog.Error("Error adding epoch length into cache", "app", app.ContractAddress)
+			slog.Error("Error adding epoch length into cache",
+				"app", app.ContractAddress,
+				"error", err)
 			continue
 		}
 
