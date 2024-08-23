@@ -20,7 +20,7 @@ var (
 )
 
 func init() {
-	if value, hasValue := os.LookupEnv("NODE_TEST_MACHINE_IMAGES_PATH"); hasValue {
+	if value, hasValue := os.LookupEnv("CARTESI_TEST_MACHINE_IMAGES_PATH"); hasValue {
 		imagesPath = value
 	}
 }

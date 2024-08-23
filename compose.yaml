@@ -1,0 +1,80 @@
+services:
+  ethereum_provider:
+    image: cartesi/rollups-node-devnet:devel
+    networks:
+      - devnet
+    ports:
+      - 8545:8545
+
+  database:
+    image: postgres:16-alpine
+    shm_size: 128mb
+    networks:
+      - devnet
+    ports:
+      - 5432:5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres || exit 1"]
+      interval: 1s
+      timeout: 1s
+      retries: 5
+    environment:
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: rollupsdb
+
+  graphql_server:
+    image: graphile/postgraphile:4.14.0
+    command: >-
+      postgraphile
+      --retry-on-init-fail
+      --dynamic-json
+      --no-setof-functions-contain-nulls
+      --no-ignore-rbac
+      --enable-query-batching
+      --enhance-graphiql
+      --extended-errors errcode
+      --append-plugins @graphile-contrib/pg-simplify-inflector
+      --legacy-relations omit
+      --connection postgres://postgres:password@database:5432/rollupsdb?sslmode=disable
+      --schema graphql
+      --host 0.0.0.0
+      --port 10002
+    depends_on:
+      database:
+        condition: service_healthy
+      node:
+        condition: service_healthy
+    networks:
+      - devnet
+    ports:
+      - "10002:10002" # postgraphile
+
+  node:
+    image: cartesi/rollups-node:devel
+    command: cartesi-rollups-node --initdb
+    depends_on:
+      database:
+        condition: service_healthy
+      ethereum_provider:
+        condition: service_healthy
+    volumes:
+      - node_data:/var/lib/cartesi-rollups-node/data
+    networks:
+      - devnet
+    ports:
+      - "10000:10000" # Supervisor
+    environment:
+      CARTESI_LOG_LEVEL: "info"
+      CARTESI_BLOCKCHAIN_HTTP_ENDPOINT: "http://ethereum_provider:8545"
+      CARTESI_BLOCKCHAIN_WS_ENDPOINT: "ws://ethereum_provider:8545"
+      CARTESI_BLOCKCHAIN_ID: "31337"
+      CARTESI_CONTRACTS_INPUT_BOX_ADDRESS: "0x593E5BCf894D6829Dd26D0810DA7F064406aebB6"
+      CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER: "10"
+      CARTESI_AUTH_MNEMONIC: "test test test test test test test test test test test junk"
+      CARTESI_POSTGRES_ENDPOINT: "postgres://postgres:password@database:5432/rollupsdb?sslmode=disable"
+
+volumes:
+  node_data:
+
+networks:
+  devnet:
