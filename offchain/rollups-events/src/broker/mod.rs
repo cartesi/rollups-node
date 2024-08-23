@@ -376,12 +376,24 @@ impl Broker {
             let mut dapp_addresses: Vec<Address> = vec![];
             for value in reply {
                 let normalized = value.to_lowercase();
-                let dapp_address = Address::from_str(&normalized).unwrap();
-                if dapp_addresses.contains(&dapp_address) {
-                    let _: () =
-                        self.connection.clone().srem(DAPPS_KEY, value).await?;
-                } else {
-                    dapp_addresses.push(dapp_address);
+                let dapp_address = Address::from_str(&normalized);
+                match dapp_address {
+                    Ok(dapp_address) => {
+                        if dapp_addresses.contains(&dapp_address) {
+                            let _: () = self
+                                .connection
+                                .clone()
+                                .srem(DAPPS_KEY, value)
+                                .await?;
+                        } else {
+                            dapp_addresses.push(dapp_address);
+                        }
+                    }
+                    Err(message) => tracing::info!(
+                        "Error while parsing DApp address {:?}: {}",
+                        normalized,
+                        message,
+                    ),
                 }
             }
 
