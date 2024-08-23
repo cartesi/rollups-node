@@ -7,7 +7,7 @@ use rollups_events::{
     RollupsClaimsStream, INITIAL_ID,
 };
 use snafu::ResultExt;
-use std::{collections::HashMap, fmt::Debug};
+use std::{collections::HashMap, collections::HashSet, fmt::Debug};
 
 /// The `BrokerListener` listens for new claims from the broker.
 #[async_trait]
@@ -119,11 +119,22 @@ impl MultidappBrokerListener {
         // Gets the dapps from the broker.
         let dapps = self.broker.get_dapps().await.context(BrokerSnafu)?;
         assert!(!dapps.is_empty());
-        tracing::info!(
-            "Got the following dapps from key \"{}\": {:?}",
-            rollups_events::DAPPS_KEY,
-            dapps
-        );
+        {
+            // Logging if the dapps changed.
+            let old_dapps: HashSet<Address> = self
+                .streams
+                .iter()
+                .map(|(stream, _)| stream.dapp_address.clone())
+                .collect();
+            let new_dapps = HashSet::from_iter(dapps.clone());
+            if old_dapps != new_dapps {
+                tracing::info!(
+                    "Updated list of dapp addresses from key \"{}\": {:?}",
+                    rollups_events::DAPPS_KEY,
+                    new_dapps
+                );
+            }
+        }
 
         // Converts dapps to streams.
         let streams: Vec<_> = dapps
