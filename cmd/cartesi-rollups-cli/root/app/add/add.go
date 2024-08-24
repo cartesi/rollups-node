@@ -89,6 +89,7 @@ func init() {
 	)
 
 	cobra.CheckErr(Cmd.MarkFlagRequired("address"))
+	cobra.CheckErr(Cmd.MarkFlagRequired("iconsensus"))
 }
 
 func run(cmd *cobra.Command, args []string) {
