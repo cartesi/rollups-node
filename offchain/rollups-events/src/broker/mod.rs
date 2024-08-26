@@ -380,11 +380,10 @@ impl Broker {
                 match dapp_address {
                     Ok(dapp_address) => {
                         if dapp_addresses.contains(&dapp_address) {
-                            let _: () = self
-                                .connection
-                                .clone()
-                                .srem(DAPPS_KEY, value)
-                                .await?;
+                            tracing::info!(
+                                "Ignored duplicate DApp address {:?}",
+                                value,
+                            )
                         } else {
                             dapp_addresses.push(dapp_address);
                         }
