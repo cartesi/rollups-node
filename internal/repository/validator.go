@@ -240,8 +240,8 @@ func (pg *Database) GetPreviousEpoch(ctx context.Context, currentEpoch Epoch) (*
 		&index,
 		&firstBlock,
 		&lastBlock,
-		&transactionHash,
 		&claimHash,
+		&transactionHash,
 		&status,
 	)
 	if err != nil {
