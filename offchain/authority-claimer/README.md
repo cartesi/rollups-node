@@ -17,13 +17,22 @@ All dapps must share the same History contract and the same chain ID.
 Instead of using evironment variables,
     the claimer will get the list of application addresses from Redis,
     through the `experimental-dapp-addresses-config` key.
-This key holds a Redis Set value.
-You must use commands such as SADD and SREM to manipulate the list of addresses.
-Addresses are encoded as hex strings without the leading `"0x"`.
-Redis values are case sensitive, so addresses must be in lowercase format.
-Example address value: `"0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"`.
+This key holds a [Redis Set](https://redis.io/docs/latest/develop/data-types/sets/) value.
+You must use commands such as [`SADD`](https://redis.io/docs/latest/commands/sadd/) and [`SREM`]https://redis.io/docs/latest/commands/srem/() to manipulate the set of addresses.
 
-You may rewrite the list of addresses at any time,
+Application addresses must be encoded as hex strings.
+The prefix `0x` is ignored by the `authority-claimer` when loading applications adresses.
+However, it's advised to use it as a matter of convention.
+Example address value: `"0x0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"`.
+
+> [!NOTE]
+> Duplicate addresses as well as malformed addresses are detected and logged.
+
+> [!TIP]
+> Application addresses are case insensitive even though Redis values are not.
+> So, even though `"0x00000000000000000000000000000000deadbeef"` and `"0x00000000000000000000000000000000DeadBeef"` may belong to the same Redis Set, they are considered to be the same application address and one of them will be identified as a duplicate.
+
+You may update the contents of `experimental-dapp-addresses-config` at any time,
     the claimer will adjust accordingly.
-The list of addresses can be empty at any time,
-    the claimer will wait until an application address is added to the set to resume operations.
+The set of addresses may be emptied at any time as well,
+    the claimer will wait until an application address is added to the set before resuming operations.
