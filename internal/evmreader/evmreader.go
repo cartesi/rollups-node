@@ -163,7 +163,7 @@ func (r *EvmReader) watchForNewBlocks(ctx context.Context, ready chan<- struct{}
 // Check if is there new Inputs for all running Applications
 func (r *EvmReader) checkForNewInputs(ctx context.Context) error {
 
-	slog.Info("Checking for new inputs")
+	slog.Debug("Checking for new inputs")
 
 	// Get All Applications
 	apps, err := r.repository.GetAllRunningApplications(ctx)
@@ -411,7 +411,6 @@ func (r *EvmReader) readAndStoreInputs(
 			}
 		}
 
-		// Store everything
 		_, _, err = r.repository.StoreEpochAndInputsTransaction(
 			ctx,
 			epochInputMap,
@@ -426,12 +425,19 @@ func (r *EvmReader) readAndStoreInputs(
 			continue
 		}
 
-		slog.Info("Inputs and epochs stored successfully",
-			"app", address,
-			"start-block", startBlock,
-			"end-block", endBlock,
-			"total inputs", len(inputs),
-		)
+		// Store everything
+		if len(epochInputMap) > 0 {
+
+			slog.Debug("Inputs and epochs stored successfully",
+				"app", address,
+				"start-block", startBlock,
+				"end-block", endBlock,
+				"total epochs", len(epochInputMap),
+				"total inputs", len(inputs),
+			)
+		} else {
+			slog.Debug("No inputs or epochs to store")
+		}
 
 	}
 
@@ -529,11 +535,6 @@ func (r *EvmReader) readInputsFromBlockchain(
 	appsAddresses []Address,
 	startBlock, endBlock uint64,
 ) (map[Address][]*Input, error) {
-
-	slog.Info("Reading inputs",
-		"apps", appsAddresses,
-		"start", startBlock,
-		"end", endBlock)
 
 	// Initialize app input map
 	var appInputsMap = make(map[Address][]*Input)
