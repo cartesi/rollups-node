@@ -26,31 +26,22 @@ func (pg *Database) StoreEpochAndInputsTransaction(
 
 	insertEpochQuery := `
 	INSERT INTO epoch
-		(
-    	application_address,
-    	index,
-    	first_block,
-    	last_block,
-    	status
-		)
+		(application_address,
+		index,
+		first_block,
+		last_block,
+		status)
 	VALUES
-		(
-		@appAddress,
+		(@appAddress,
 		@index,
 		@firstBlock,
 		@lastBlock,
-		@status
-		)
+		@status)
+	ON CONFLICT (index,application_address)
+	DO UPDATE
+		set status=@status
 	RETURNING
 		id
-	`
-
-	updateEpochQuery := `
-	UPDATE epoch
-	SET
-		status = @status
-	WHERE
-		id = @id
 	`
 
 	insertInputQuery := `
@@ -74,7 +65,8 @@ func (pg *Database) StoreEpochAndInputsTransaction(
 
 	updateLastBlockQuery := `
 	UPDATE application
-	SET last_processed_block = @blockNumber
+	SET
+		last_processed_block = @blockNumber
 	WHERE
 		contract_address=@contractAddress`
 
@@ -89,44 +81,21 @@ func (pg *Database) StoreEpochAndInputsTransaction(
 
 	for epoch, inputs := range epochInputsMap {
 
-		// Handle epoch
+		// try to insert epoch
+		// Insert epoch
 		var epochId uint64
+		insertEpochArgs := pgx.NamedArgs{
+			"appAddress": epoch.AppAddress,
+			"index":      epoch.Index,
+			"firstBlock": epoch.FirstBlock,
+			"lastBlock":  epoch.LastBlock,
+			"status":     epoch.Status,
+			"id":         epoch.Id,
+		}
+		err := tx.QueryRow(ctx, insertEpochQuery, insertEpochArgs).Scan(&epochId)
 
-		actualEpoch, err := pg.GetEpoch(ctx, epoch.Index, epoch.AppAddress)
 		if err != nil {
 			return nil, nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
-		}
-
-		if actualEpoch != nil {
-			// Update epoch status
-			updateEpochArgs := pgx.NamedArgs{
-				"status": epoch.Status,
-				"id":     actualEpoch.Id,
-			}
-
-			tag, err := tx.Exec(ctx, updateEpochQuery, updateEpochArgs)
-			if err != nil {
-				return nil, nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
-			}
-			if tag.RowsAffected() != 1 {
-				return nil, nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
-			}
-			epochId = actualEpoch.Id
-		} else {
-
-			// Insert epoch
-			insertEpochArgs := pgx.NamedArgs{
-				"appAddress": epoch.AppAddress,
-				"index":      epoch.Index,
-				"firstBlock": epoch.FirstBlock,
-				"lastBlock":  epoch.LastBlock,
-				"status":     epoch.Status,
-			}
-			err = tx.QueryRow(ctx, insertEpochQuery, insertEpochArgs).Scan(&epochId)
-			if err != nil {
-				return nil, nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
-			}
-
 		}
 
 		epochIndexIdMap[epoch.Index] = epochId

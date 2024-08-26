@@ -327,79 +327,89 @@ func (r *EvmReader) readAndStoreInputs(
 	}
 
 	// Index Inputs into epochs and handle epoch finalization
-INDEX_APP_INPUTS_LOOP:
 	for address, inputs := range appInputsMap {
 
 		epochLength := r.epochLengthCache[address]
 
-		//Get this round's first and last Epochs indexes
-		firstEpochIndex := calculateEpochIndex(epochLength, startBlock)
-		lastEpochIndex := calculateEpochIndex(epochLength, endBlock)
-
-		// Initialize this run's epochs
-		epochsByIndex, err := r.getOrBuildEpochs(ctx,
-			firstEpochIndex,
-			lastEpochIndex,
-			address,
-			epochLength)
+		// Retrieves last open epoch from DB
+		currentEpoch, err := r.repository.GetEpoch(ctx,
+			calculateEpochIndex(epochLength, startBlock), address)
 		if err != nil {
-			slog.Error("Error building epoch cache",
+			slog.Error("Error retrieving existing current epoch",
 				"app", address,
 				"error", err,
 			)
 			continue
 		}
 
-		// Initialize epochs inputs map
-		var epochInputMap = make(map[*Epoch][]Input)
-		for _, epoch := range epochsByIndex {
-			epochInputMap[epoch] = []Input{}
+		// Check current epoch status
+		if currentEpoch != nil && currentEpoch.Status != EpochStatusOpen {
+			slog.Error("Current epoch is not open",
+				"app", address,
+				"epoch-index", currentEpoch.Index,
+				"status", currentEpoch.Status,
+			)
+			continue
 		}
 
+		// Initialize epochs inputs map
+		var epochInputMap = make(map[*Epoch][]Input)
+
 		// Index Inputs into epochs
-		lastIndexedInputEpochIndex := firstEpochIndex
 		for _, input := range inputs {
 
 			inputEpochIndex := calculateEpochIndex(epochLength, input.BlockNumber)
 
-			slog.Info("Indexing new Input",
+			// If input belongs into a new epoch, close the previous known one
+			if currentEpoch != nil && currentEpoch.Index != inputEpochIndex {
+				currentEpoch.Status = EpochStatusClosed
+				slog.Info("Closing epoch",
+					"app", currentEpoch.AppAddress,
+					"epoch-index", currentEpoch.Index,
+					"start", currentEpoch.FirstBlock,
+					"end", currentEpoch.LastBlock)
+				// Add it to inputMap, so it will be stored
+				epochInputMap[currentEpoch] = []Input{}
+				currentEpoch = nil
+			}
+			if currentEpoch == nil {
+				currentEpoch = &Epoch{
+					Index:      inputEpochIndex,
+					FirstBlock: inputEpochIndex * epochLength,
+					LastBlock:  (inputEpochIndex * epochLength) + epochLength - 1,
+					Status:     EpochStatusOpen,
+					AppAddress: address,
+				}
+			}
+
+			slog.Info("Indexing new Input into epoch",
 				"app", address,
 				"index", input.Index,
 				"block", input.BlockNumber,
-				"epoch", inputEpochIndex)
+				"epoch-index", inputEpochIndex)
 
-			// If input belongs into a new epoch, close the previous ones
-			if lastIndexedInputEpochIndex != inputEpochIndex {
-				closeEpochs(epochsByIndex, lastIndexedInputEpochIndex, inputEpochIndex, false)
+			currentInputs, ok := epochInputMap[currentEpoch]
+			if !ok {
+				currentInputs = []Input{}
 			}
-
-			// Check current epoch status
-			currentEpoch := epochsByIndex[inputEpochIndex]
-			if currentEpoch.Status != EpochStatusOpen {
-				slog.Error("Received input but epoch is not open",
-					"app", address,
-					"epoch", inputEpochIndex,
-					"status", currentEpoch.Status,
-					"input", input.Index,
-					"block", input.BlockNumber,
-				)
-				continue INDEX_APP_INPUTS_LOOP
-			}
-
-			// Index input into the current epoch
-			epochInputMap[currentEpoch] = append(epochInputMap[currentEpoch], *input)
-			lastIndexedInputEpochIndex = inputEpochIndex
+			epochInputMap[currentEpoch] = append(currentInputs, *input)
 
 		}
 
-		// Indexed all inputs. Close all the previous epochs
-		shouldCloseLastEpoch := (endBlock == epochsByIndex[lastEpochIndex].LastBlock)
-		closeEpochs(
-			epochsByIndex,
-			lastIndexedInputEpochIndex,
-			lastEpochIndex,
-			shouldCloseLastEpoch,
-		)
+		// Indexed all inputs. Check if it is time to close this epoch
+		if currentEpoch != nil && endBlock >= currentEpoch.LastBlock {
+			currentEpoch.Status = EpochStatusClosed
+			slog.Info("Closing epoch",
+				"app", currentEpoch.AppAddress,
+				"epoch-index", currentEpoch.Index,
+				"start", currentEpoch.FirstBlock,
+				"end", currentEpoch.LastBlock)
+			// Add to inputMap so it is stored
+			_, ok := epochInputMap[currentEpoch]
+			if !ok {
+				epochInputMap[currentEpoch] = []Input{}
+			}
+		}
 
 		// Store everything
 		_, _, err = r.repository.StoreEpochAndInputsTransaction(
@@ -461,43 +471,6 @@ func (r *EvmReader) addAppEpochLengthIntoCache(app Application) error {
 	}
 
 	return nil
-}
-
-// Read epochs from database or build new ones if needed
-func (r *EvmReader) getOrBuildEpochs(
-	ctx context.Context,
-	firstEpochIndex, lastEpochIndex uint64,
-	appAddress common.Address,
-	epochLength uint64,
-) (map[uint64]*Epoch, error) {
-
-	epochsByIndex := make(map[uint64]*Epoch)
-	for i := firstEpochIndex; i <= lastEpochIndex; i++ {
-
-		//Check if it exists in DB
-		epoch, err := r.repository.GetEpoch(ctx, i, appAddress)
-		if err != nil {
-			return nil, errors.Join(
-				fmt.Errorf("error retrieving epoch %d", i),
-				err,
-			)
-		}
-		// Create if needed
-		if epoch == nil {
-			firstBlock := i * epochLength
-			epoch = &Epoch{
-				Index:      i,
-				FirstBlock: firstBlock,
-				LastBlock:  firstBlock + epochLength - 1,
-				Status:     EpochStatusOpen,
-				AppAddress: appAddress,
-			}
-		}
-
-		epochsByIndex[i] = epoch
-
-	}
-	return epochsByIndex, nil
 }
 
 // Retrieve ConsensusContract for a given Application
@@ -603,30 +576,6 @@ func (r *EvmReader) readInputsFromBlockchain(
 // Calculates the epoch index given the input block number
 func calculateEpochIndex(epochLength uint64, blockNumber uint64) uint64 {
 	return blockNumber / epochLength
-}
-
-// closeEpochs closes all epochs within the given index interval, except for the last.
-// If `includeLastEpoch` is true, the last one is included.
-func closeEpochs(
-	epochsByIndex map[uint64]*Epoch,
-	firstEpochIndex uint64,
-	lastEpochIndex uint64,
-	includeLastEpoch bool,
-) {
-
-	lastIndex := lastEpochIndex
-	if includeLastEpoch {
-		lastIndex = lastIndex + 1
-	}
-	for i := firstEpochIndex; i < lastIndex; i++ {
-		epoch := epochsByIndex[i]
-		slog.Info("Closing epoch",
-			"app", epoch.AppAddress,
-			"epoch", i,
-			"start", epoch.FirstBlock,
-			"end", epoch.LastBlock)
-		epoch.Status = EpochStatusClosed
-	}
 }
 
 func appToAddresses(apps []Application) []Address {

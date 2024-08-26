@@ -41,6 +41,8 @@ CREATE TABLE "epoch"
     UNIQUE ("index","application_address")
 );
 
+CREATE INDEX "epoch_idx" ON "epoch"("index");
+
 CREATE TABLE "input"
 (
     "id" BIGSERIAL,

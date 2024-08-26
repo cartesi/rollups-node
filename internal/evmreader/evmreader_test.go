@@ -8,7 +8,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"math"
 	"math/big"
 	"sync"
 	"testing"
@@ -766,13 +765,41 @@ func newMockRepository() *MockRepository {
 
 	repo.On("GetEpoch",
 		mock.Anything,
-		mock.Anything,
+		uint64(0),
 		mock.Anything).Return(
 		&Epoch{
 			Id:              1,
 			Index:           0,
 			FirstBlock:      0,
-			LastBlock:       math.MaxUint64,
+			LastBlock:       9,
+			Status:          EpochStatusOpen,
+			AppAddress:      common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+			ClaimHash:       nil,
+			TransactionHash: nil,
+		}, nil)
+	repo.On("GetEpoch",
+		mock.Anything,
+		uint64(1),
+		mock.Anything).Return(
+		&Epoch{
+			Id:              2,
+			Index:           1,
+			FirstBlock:      10,
+			LastBlock:       19,
+			Status:          EpochStatusOpen,
+			AppAddress:      common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+			ClaimHash:       nil,
+			TransactionHash: nil,
+		}, nil)
+	repo.On("GetEpoch",
+		mock.Anything,
+		uint64(2),
+		mock.Anything).Return(
+		&Epoch{
+			Id:              3,
+			Index:           2,
+			FirstBlock:      20,
+			LastBlock:       29,
 			Status:          EpochStatusOpen,
 			AppAddress:      common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 			ClaimHash:       nil,
@@ -824,7 +851,7 @@ func (m *MockRepository) GetEpoch(
 	index uint64,
 	appAddress common.Address,
 ) (*Epoch, error) {
-	args := m.Called(ctx)
+	args := m.Called(ctx, index, appAddress)
 	return args.Get(0).(*Epoch), args.Error(1)
 }
 
