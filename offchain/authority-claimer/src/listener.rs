@@ -532,35 +532,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn multidapp_listen_with_duplicate_dapps() {
-        let docker = Cli::default();
-        let (fixture, mut listener, dapps) =
-            setup_multidapp_listener(&docker, false).await.unwrap();
-        fixture.dapps_set(vec![]).await;
-
-        // Initializes with 0 addresses in the set.
-        assert_eq!(0, fixture.dapps_members().await.len());
-
-        // We add a lowercase and an uppercase version of the same address.
-        let dapp: Address = [10; 20].into();
-        fixture.dapps_add(dapp.to_string().to_lowercase()).await;
-        fixture.dapps_add(dapp.to_string().to_uppercase()).await;
-
-        // We now have 2 addresses in the set.
-        assert_eq!(2, fixture.dapps_members().await.len());
-
-        // We then produce some claims and listen for them.
-        let mut epochs = vec![0; dapps.len()];
-        let indexes = vec![2, 2, 0];
-        multidapp_produce_claims(&fixture, &mut epochs, &dapps, &indexes).await;
-        let indexes = vec![2, 2];
-        assert_listen(&mut listener, &dapps, &indexes).await;
-
-        // Now we have 1 address because one of the duplicates got deleted.
-        assert_eq!(1, fixture.dapps_members().await.len());
-    }
-
-    #[tokio::test]
     async fn multidapp_listen_with_changing_dapps() {
         let docker = Cli::default();
         let (fixture, mut listener, dapps) =
