@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS "input";
 DROP TABLE IF EXISTS "epoch";
 DROP TABLE IF EXISTS "application";
 
+DROP FUNCTION IF EXISTS "f_maxuint64";
 
 DROP TYPE IF EXISTS "InputCompletionStatus";
 DROP TYPE IF EXISTS "ApplicationStatus";
