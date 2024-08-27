@@ -3,11 +3,10 @@
 package upgrade
 
 import (
-	"fmt"
 	"log/slog"
 
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/common"
-	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/repository/schema"
 	"github.com/spf13/cobra"
 )
 
@@ -18,21 +17,15 @@ var Cmd = &cobra.Command{
 }
 
 func run(cmd *cobra.Command, args []string) {
-
-	schemaManager, err := repository.NewSchemaManager(common.PostgresEndpoint)
+	schema, err := schema.New(common.PostgresEndpoint)
 	cobra.CheckErr(err)
-	defer schemaManager.Close()
+	defer schema.Close()
 
-	err = schemaManager.Upgrade()
-	cobra.CheckErr(err)
-
-	version, err := schemaManager.GetVersion()
+	err = schema.Upgrade()
 	cobra.CheckErr(err)
 
-	if repository.EXPECTED_VERSION != version {
-		slog.Warn("Current version is different to expected one")
-	}
+	version, err := schema.ValidateVersion()
+	cobra.CheckErr(err)
 
-	fmt.Printf("Database Schema successfully Updated. Current version is %d\n", version)
-
+	slog.Info("Database Schema successfully Updated.", "version", version)
 }

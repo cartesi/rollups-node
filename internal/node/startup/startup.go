@@ -12,6 +12,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/node/config"
 	"github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/repository/schema"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/jackc/pgx/v5"
 	"github.com/lmittmann/tint"
@@ -20,31 +21,19 @@ import (
 
 // Validates the Node Database Schema Version
 func ValidateSchema(config config.NodeConfig) error {
-	var (
-		schemaManager *repository.SchemaManager
-		err           error
-	)
-
-	if !config.PostgresSslMode {
-		schemaManager, err = repository.NewSchemaManager(
-			fmt.Sprintf("%v?sslmode=disable", config.PostgresEndpoint.Value))
-		if err != nil {
-			return err
-		}
-	} else {
-		schemaManager, err = repository.NewSchemaManager(config.PostgresEndpoint.Value)
-		if err != nil {
-			return err
-		}
+	endpoint := config.PostgresEndpoint.Value
+	if config.PostgresSslMode {
+		endpoint += "?sslmode=disable"
 	}
-	defer schemaManager.Close()
-	err = schemaManager.ValidateSchemaVersion()
+
+	schema, err := schema.New(endpoint)
 	if err != nil {
 		return err
 	}
+	defer schema.Close()
 
-	return nil
-
+	_, err = schema.ValidateVersion()
+	return err
 }
 
 // Configure the node logs
