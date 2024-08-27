@@ -20,17 +20,16 @@ import (
 )
 
 const (
-	DefaultPostgresDatabase              = "postgres"
-	DefaultPostgresDockerImage           = "postgres:16-alpine"
-	DefaultPostgresPort                  = "5432"
-	DefaultPostgresUser                  = "postgres"
-	DefaultPostgresPassword              = "password"
-	DefaultDevnetDockerImage             = "cartesi/rollups-node-devnet:devel"
-	DefaultDevnetPort                    = "8545"
-	DefaultDevnetBlockTime               = "1"
-	DefaultSlotsInAnEpoch                = "1"
-	DefaultDevnetBlockToWaitForOnStartup = "21"
-	DefaultDevnetNoMining                = false
+	DefaultPostgresDatabase    = "postgres"
+	DefaultPostgresDockerImage = "postgres:16-alpine"
+	DefaultPostgresPort        = "5432"
+	DefaultPostgresUser        = "postgres"
+	DefaultPostgresPassword    = "password"
+	DefaultDevnetDockerImage   = "cartesi/rollups-node-devnet:devel"
+	DefaultDevnetPort          = "8545"
+	DefaultDevnetBlockTime     = "1"
+	DefaultSlotsInAnEpoch      = "1"
+	DefaultDevnetNoMining      = false
 
 	numPostgresCheckReadyAttempts = 2
 	pollInterval                  = 5 * time.Second
@@ -63,7 +62,6 @@ type DevnetConfig struct {
 	Port                    string
 	BlockTime               string
 	BlockFinalizationOffset string
-	BlockToWaitForOnStartup string
 	NoMining                bool
 }
 
@@ -80,7 +78,6 @@ func NewDefaultDepsConfig() *DepsConfig {
 			DefaultDevnetPort,
 			DefaultDevnetBlockTime,
 			DefaultSlotsInAnEpoch,
-			DefaultDevnetBlockToWaitForOnStartup,
 			DefaultDevnetNoMining,
 		},
 	}
@@ -275,7 +272,7 @@ func Run(ctx context.Context, depsConfig DepsConfig) (*DepsContainers, error) {
 		} else {
 			cmd = append(cmd, "--block-time",
 				depsConfig.Devnet.BlockTime)
-			waitStrategy = wait.ForLog("Block Number: " + depsConfig.Devnet.BlockToWaitForOnStartup)
+			waitStrategy = wait.ForLog("Listening on 0.0.0.0:8545")
 		}
 		devNetReq := testcontainers.ContainerRequest{
 			Image:          depsConfig.Devnet.DockerImage,
