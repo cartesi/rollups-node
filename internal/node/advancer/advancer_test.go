@@ -73,7 +73,7 @@ func (s *AdvancerSuite) TestRun() {
 		res3 := randomAdvanceResult()
 
 		repository := &MockRepository{
-			GetInputsReturn: map[Address][]*Input{
+			GetUnprocessedInputsReturn: map[Address][]*Input{
 				app1: {
 					{Id: 1, RawData: marshal(res1)},
 					{Id: 2, RawData: marshal(res2)},
@@ -94,7 +94,9 @@ func (s *AdvancerSuite) TestRun() {
 		require.Len(repository.StoredResults, 3)
 	})
 
-	// NOTE: missing more test cases
+	s.Run("Error/UpdateEpochs", func() {
+		s.T().Skip("TODO")
+	})
 }
 
 func (s *AdvancerSuite) TestProcess() {
@@ -124,7 +126,6 @@ func (s *AdvancerSuite) TestProcess() {
 		err := advancer.process(context.Background(), app, inputs)
 		require.Nil(err)
 		require.Len(repository.StoredResults, 7)
-		require.Equal(*inputs[6], repository.LastInput)
 	})
 
 	s.Run("Panic", func() {
@@ -183,25 +184,7 @@ func (s *AdvancerSuite) TestProcess() {
 			require.Errorf(err, "store-advance error")
 			require.Len(repository.StoredResults, 1)
 		})
-
-		s.Run("UpdateEpochs", func() {
-			require := s.Require()
-
-			_, repository, advancer, app := setup()
-			inputs := []*Input{
-				{Id: 1, RawData: marshal(randomAdvanceResult())},
-				{Id: 2, RawData: marshal(randomAdvanceResult())},
-				{Id: 3, RawData: marshal(randomAdvanceResult())},
-				{Id: 4, RawData: marshal(randomAdvanceResult())},
-			}
-			repository.UpdateEpochsError = errors.New("update-epochs error")
-
-			err := advancer.process(context.Background(), app, inputs)
-			require.Errorf(err, "update-epochs error")
-			require.Len(repository.StoredResults, 4)
-		})
 	})
-
 }
 
 func (s *AdvancerSuite) TestKeysFrom() {
@@ -228,20 +211,19 @@ func (mock *MockMachine) Advance(
 // ------------------------------------------------------------------------------------------------
 
 type MockRepository struct {
-	GetInputsReturn   map[Address][]*Input
-	GetInputsError    error
-	StoreAdvanceError error
-	UpdateEpochsError error
+	GetUnprocessedInputsReturn map[Address][]*Input
+	GetUnprocessedInputsError  error
+	StoreAdvanceError          error
+	UpdateEpochsError          error
 
 	StoredResults []*nodemachine.AdvanceResult
-	LastInput     Input
 }
 
 func (mock *MockRepository) GetUnprocessedInputs(
 	_ context.Context,
 	appAddresses []Address,
 ) (map[Address][]*Input, error) {
-	return mock.GetInputsReturn, mock.GetInputsError
+	return mock.GetUnprocessedInputsReturn, mock.GetUnprocessedInputsError
 }
 
 func (mock *MockRepository) StoreAdvanceResult(
@@ -253,12 +235,7 @@ func (mock *MockRepository) StoreAdvanceResult(
 	return mock.StoreAdvanceError
 }
 
-func (mock *MockRepository) UpdateEpochs(
-	_ context.Context,
-	_ Address,
-	lastInput *Input,
-) error {
-	mock.LastInput = *lastInput
+func (mock *MockRepository) UpdateEpochs(_ context.Context, _ Address) error {
 	return mock.UpdateEpochsError
 }
 

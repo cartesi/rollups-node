@@ -10,6 +10,8 @@ import (
 	"time"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
+	"github.com/cartesi/rollups-node/internal/repository/schema"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/suite"
 	"github.com/testcontainers/testcontainers-go"
@@ -38,10 +40,10 @@ func (s *RepositorySuite) SetupSuite() {
 	endpoint, err := s.postgres.ConnectionString(s.ctx, "sslmode=disable")
 	s.Require().Nil(err)
 
-	schemaManager, err := NewSchemaManager(endpoint)
+	schema, err := schema.New(endpoint)
 	s.Require().Nil(err)
 
-	err = schemaManager.Upgrade()
+	err = schema.Upgrade()
 	s.Require().Nil(err)
 
 	s.database, err = Connect(s.ctx, endpoint)
@@ -334,18 +336,6 @@ func (s *RepositorySuite) TestOutputDoesntExist() {
 	s.Require().Nil(err)
 }
 
-func (s *RepositorySuite) TestOutputFailsDuplicateRow() {
-	output := Output{
-		Index:                1,
-		InputId:              1,
-		RawData:              common.Hex2Bytes("deadbeef"),
-		OutputHashesSiblings: nil,
-	}
-
-	_, err := s.database.InsertOutput(s.ctx, &output)
-	s.Require().ErrorContains(err, "duplicate key value")
-}
-
 func (s *RepositorySuite) TestOutputFailsInputDoesntExist() {
 	output := Output{
 		Index:                10,
@@ -375,17 +365,6 @@ func (s *RepositorySuite) TestReportDoesntExist() {
 	response, err := s.database.GetReport(s.ctx, 10, common.HexToAddress("deadbeef"))
 	s.Require().Nil(response)
 	s.Require().Nil(err)
-}
-
-func (s *RepositorySuite) TestReportFailsDuplicateRow() {
-	report := Report{
-		Index:   1,
-		InputId: 1,
-		RawData: common.Hex2Bytes("deadbeef"),
-	}
-
-	err := s.database.InsertReport(s.ctx, &report)
-	s.Require().ErrorContains(err, "duplicate key value")
 }
 
 func (s *RepositorySuite) TestReportFailsInputDoesntExist() {

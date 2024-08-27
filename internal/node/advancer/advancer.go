@@ -67,6 +67,14 @@ func (advancer *Advancer) Step(ctx context.Context) error {
 		}
 	}
 
+	// Updates the status of the epochs.
+	for _, app := range apps {
+		err := advancer.repository.UpdateEpochs(ctx, app)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -99,11 +107,7 @@ func (advancer *Advancer) process(ctx context.Context, app Address, inputs []*In
 		}
 	}
 
-	// Updates the status of the epochs based on the last processed input.
-	lastInput := inputs[len(inputs)-1]
-	err := advancer.repository.UpdateEpochs(ctx, app, lastInput)
-
-	return err
+	return nil
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -114,7 +118,7 @@ type Repository interface {
 
 	StoreAdvanceResult(context.Context, *Input, *nodemachine.AdvanceResult) error
 
-	UpdateEpochs(_ context.Context, app Address, lastInput *Input) error
+	UpdateEpochs(_ context.Context, app Address) error
 }
 
 // A map of application addresses to machines.

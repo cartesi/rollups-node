@@ -19,7 +19,14 @@ type Database struct {
 	db *pgxpool.Pool
 }
 
-var ErrInsertRow = errors.New("unable to insert row")
+var (
+	ErrInsertRow = errors.New("unable to insert row")
+	ErrUpdateRow = errors.New("unable to update row")
+	ErrCopyFrom  = errors.New("unable to COPY FROM")
+
+	ErrBeginTx  = errors.New("unable to begin transaction")
+	ErrCommitTx = errors.New("unable to commit transaction")
+)
 
 func Connect(
 	ctx context.Context,
@@ -119,7 +126,6 @@ func (pg *Database) InsertEpoch(
 	ctx context.Context,
 	epoch *Epoch,
 ) (uint64, error) {
-
 	var id uint64
 
 	query := `
@@ -140,7 +146,8 @@ func (pg *Database) InsertEpoch(
 		@status,
 		@applicationAddress)
 	RETURNING
-		id`
+		id
+    `
 
 	args := pgx.NamedArgs{
 		"index":              epoch.Index,
@@ -283,7 +290,9 @@ func (pg *Database) InsertSnapshot(
 		(@inputId,
 		@appAddress,
 		@uri)
-	RETURNING id`
+	RETURNING
+        id
+    `
 
 	args := pgx.NamedArgs{
 		"inputId":    snapshot.InputId,
