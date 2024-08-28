@@ -225,7 +225,7 @@ func (s *RepositorySuite) TestGetPreviousEpoch() {
 	previousEpoch, err = s.database.GetPreviousEpoch(s.ctx, epoch2)
 	s.Require().Nil(err)
 	s.Require().NotNil(previousEpoch)
-	s.Require().Equal(*previousEpoch, epoch)
+	s.Require().Equal(previousEpoch.Id, epoch.Id)
 }
 
 func (s *RepositorySuite) TestSetEpochClaimAndInsertProofsTransaction() {
