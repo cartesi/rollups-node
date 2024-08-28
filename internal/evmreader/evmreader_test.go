@@ -223,11 +223,11 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 	// Prepare sequence of inputs
 	s.inputBox.Unset("RetrieveInputs")
 	events_0 := []inputbox.InputBoxInputAdded{inputAddedEvent0}
-	currentMostRecentFinalizedBlockNumber_0 := uint64(0x11)
+	mostRecentBlockNumber_0 := uint64(0x11)
 	retrieveInputsOpts_0 := bind.FilterOpts{
 		Context: s.ctx,
 		Start:   0x10,
-		End:     &currentMostRecentFinalizedBlockNumber_0,
+		End:     &mostRecentBlockNumber_0,
 	}
 	s.inputBox.On(
 		"RetrieveInputs",
@@ -237,11 +237,11 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 	).Return(events_0, nil)
 
 	events_1 := []inputbox.InputBoxInputAdded{inputAddedEvent1}
-	currentMostRecentFinalizedBlockNumber_1 := uint64(0x12)
+	mostRecentBlockNumber_1 := uint64(0x12)
 	retrieveInputsOpts_1 := bind.FilterOpts{
 		Context: s.ctx,
 		Start:   0x12,
-		End:     &currentMostRecentFinalizedBlockNumber_1,
+		End:     &mostRecentBlockNumber_1,
 	}
 	s.inputBox.On(
 		"RetrieveInputs",
@@ -411,11 +411,11 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 	// Prepare sequence of inputs
 	s.inputBox.Unset("RetrieveInputs")
 	events_0 := []inputbox.InputBoxInputAdded{}
-	currentMostRecentFinalizedBlockNumber_0 := uint64(0x11)
+	mostRecentBlockNumber_0 := uint64(0x11)
 	retrieveInputsOpts_0 := bind.FilterOpts{
 		Context: s.ctx,
 		Start:   0x10,
-		End:     &currentMostRecentFinalizedBlockNumber_0,
+		End:     &mostRecentBlockNumber_0,
 	}
 	s.inputBox.On(
 		"RetrieveInputs",
@@ -425,11 +425,11 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 	).Return(events_0, nil)
 
 	events_1 := []inputbox.InputBoxInputAdded{}
-	currentMostRecentFinalizedBlockNumber_1 := uint64(0x12)
+	mostRecentBlockNumber_1 := uint64(0x12)
 	retrieveInputsOpts_1 := bind.FilterOpts{
 		Context: s.ctx,
 		Start:   0x12,
-		End:     &currentMostRecentFinalizedBlockNumber_1,
+		End:     &mostRecentBlockNumber_1,
 	}
 	s.inputBox.On(
 		"RetrieveInputs",
@@ -491,11 +491,11 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 	// Prepare sequence of inputs
 	s.inputBox.Unset("RetrieveInputs")
 	events_2 := []inputbox.InputBoxInputAdded{inputAddedEvent2, inputAddedEvent3}
-	currentMostRecentFinalizedBlockNumber_2 := uint64(0x13)
+	mostRecentBlockNumber_2 := uint64(0x13)
 	retrieveInputsOpts_2 := bind.FilterOpts{
 		Context: s.ctx,
 		Start:   0x13,
-		End:     &currentMostRecentFinalizedBlockNumber_2,
+		End:     &mostRecentBlockNumber_2,
 	}
 	s.inputBox.On(
 		"RetrieveInputs",
@@ -752,10 +752,6 @@ type MockRepository struct {
 
 func newMockRepository() *MockRepository {
 	repo := &MockRepository{}
-
-	repo.On("GetMostRecentlyFinalizedBlock",
-		mock.Anything,
-		mock.Anything).Return(uint64(0), nil)
 
 	repo.On("StoreEpochAndInputsTransaction",
 		mock.Anything,

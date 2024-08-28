@@ -188,7 +188,7 @@ func (r *EvmReader) checkForNewInputs(ctx context.Context) error {
 			lastProcessedBlock = r.inputBoxDeploymentBlock - 1
 		}
 
-		currentMostRecentFinalizedHeader, err := r.fetchMostRecentHeader(
+		mostRecentHeader, err := r.fetchMostRecentHeader(
 			ctx,
 			r.defaultBlock,
 		)
@@ -198,42 +198,42 @@ func (r *EvmReader) checkForNewInputs(ctx context.Context) error {
 				"error", err)
 			continue
 		}
-		currentMostRecentFinalizedBlockNumber := currentMostRecentFinalizedHeader.Number.Uint64()
+		mostRecentBlockNumber := mostRecentHeader.Number.Uint64()
 
-		if currentMostRecentFinalizedBlockNumber > lastProcessedBlock {
+		if mostRecentBlockNumber > lastProcessedBlock {
 
 			slog.Info("Checking inputs for applications",
 				"apps", appAddresses,
 				"last processed block", lastProcessedBlock,
-				"most recent block", currentMostRecentFinalizedBlockNumber,
+				"most recent block", mostRecentBlockNumber,
 			)
 
 			err = r.readAndStoreInputs(ctx,
 				lastProcessedBlock+1,
-				currentMostRecentFinalizedBlockNumber,
+				mostRecentBlockNumber,
 				apps,
 			)
 			if err != nil {
 				slog.Error("Error reading inputs",
 					"apps", appAddresses,
 					"last processed block", lastProcessedBlock,
-					"most recent block", currentMostRecentFinalizedBlockNumber,
+					"most recent block", mostRecentBlockNumber,
 					"error", err,
 				)
 				continue
 			}
-		} else if currentMostRecentFinalizedBlockNumber < lastProcessedBlock {
+		} else if mostRecentBlockNumber < lastProcessedBlock {
 			slog.Warn(
-				"Current most recent block is lower than the last processed one",
+				"Most recent block is lower than the last processed one",
 				"apps", appAddresses,
 				"last processed block", lastProcessedBlock,
-				"most recent block", currentMostRecentFinalizedBlockNumber,
+				"most recent block", mostRecentBlockNumber,
 			)
 		} else {
 			slog.Info("Already checked the most recent blocks",
 				"apps", appAddresses,
 				"last processed block", lastProcessedBlock,
-				"most recent block", currentMostRecentFinalizedBlockNumber,
+				"most recent block", mostRecentBlockNumber,
 			)
 		}
 	}
