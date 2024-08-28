@@ -198,11 +198,6 @@ func (pg *Database) GetLastInputOutputsHash(
 // GetPreviousEpoch returns the epoch that ended one block before the start
 // of the current epoch
 func (pg *Database) GetPreviousEpoch(ctx context.Context, currentEpoch Epoch) (*Epoch, error) {
-	if currentEpoch.FirstBlock == 0 {
-		// if this is the first epoch, there is nothing to return
-		return nil, nil
-	}
-
 	query := `
 	SELECT
 		id,
@@ -216,7 +211,7 @@ func (pg *Database) GetPreviousEpoch(ctx context.Context, currentEpoch Epoch) (*
 	FROM
 		epoch
 	WHERE
-		application_address=@appAddress AND last_block=@lastBlock
+		application_address=@appAddress AND index < @index
 	ORDER BY
 		index DESC
 	LIMIT 1
@@ -224,7 +219,7 @@ func (pg *Database) GetPreviousEpoch(ctx context.Context, currentEpoch Epoch) (*
 
 	args := pgx.NamedArgs{
 		"appAddress": currentEpoch.AppAddress,
-		"lastBlock":  currentEpoch.FirstBlock - 1,
+		"index":      currentEpoch.Index,
 	}
 
 	var (
@@ -245,6 +240,9 @@ func (pg *Database) GetPreviousEpoch(ctx context.Context, currentEpoch Epoch) (*
 		&status,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("GetPreviousEpoch failed: %w", err)
 	}
 
