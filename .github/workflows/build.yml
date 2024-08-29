@@ -66,10 +66,6 @@ jobs:
 
   do-basic-checks:
     runs-on: ubuntu-22.04
-    container:
-      image: ghcr.io/cartesi/rollups-node-ci:${{needs.build-ci-base.outputs.output}}
-    needs:
-      - build-ci-base
     steps:
       - uses: actions/checkout@v4
         with:
@@ -89,15 +85,37 @@ jobs:
           path: ./
           config: .github/license-check/config.json
 
-      - name: Check auto generated files
-        run: make check-generate
-
       - name: Lint Markdown docs
         uses: DavidAnson/markdownlint-cli2-action@v16
         with:
           globs: |
             *.md
             docs/*.md
+
+  check-generated-files:
+    runs-on: ubuntu-22.04
+    container:
+      image: ghcr.io/cartesi/rollups-node-ci:${{needs.build-ci-base.outputs.output}}
+    needs:
+      - build-ci-base
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Fix VCS Issue
+        run : git config --global --add safe.directory /__w/rollups-node/rollups-node
+      
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+            go-version-file: 'go.mod'
+        
+      - name: Check auto generated files
+        run: make check-generate
+
 
   test-rust:
     runs-on: ubuntu-22.04
