@@ -239,8 +239,8 @@ func (v *Validator) createClaimAndProofs(
 			if previousOutputs[idx].Hash == nil {
 				// should never happen
 				return nil, nil, fmt.Errorf(
-					"missing hash of output %d of epoch %d",
-					previousOutputs[idx].Index, epoch.Index,
+					"missing hash of output %d from input %d",
+					previousOutputs[idx].Index, previousOutputs[idx].InputId,
 				)
 			}
 			leaves = append(leaves, *previousOutputs[idx].Hash)
