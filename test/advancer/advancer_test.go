@@ -124,7 +124,7 @@ func populate(database *repository.Database) (*Application, []*Epoch, []*Input, 
 		Status:             "RUNNING",
 	}
 
-	err := database.InsertApplication(ctx, app)
+	_, err := database.InsertApplication(ctx, app)
 	if err != nil {
 		return nil, nil, nil, err
 	}

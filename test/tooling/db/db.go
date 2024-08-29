@@ -22,7 +22,7 @@ const (
 )
 
 func Setup(ctx context.Context) (string, error) {
-	endpoint, ok := os.LookupEnv("TEST_POSTGRES_ENDPOINT")
+	endpoint, ok := os.LookupEnv("TESTS_POSTGRES_ENDPOINT")
 	if !ok {
 		container, err := SetupContainer(ctx)
 		if err != nil {

@@ -19,17 +19,34 @@ import (
 func TestAdvancerRepository(t *testing.T) {
 	ctx := context.Background()
 
-	endpoint, err := db.Setup(ctx)
-	require.Nil(t, err)
+	t.Run("GetAppData", func(t *testing.T) {
+		require := require.New(t)
 
-	database, err := Connect(ctx, endpoint)
-	require.Nil(t, err)
-	require.NotNil(t, database)
+		endpoint, err := db.Setup(ctx)
+		require.Nil(err)
 
-	app, _, _, err := populate(database)
-	require.Nil(t, err)
+		database, err := Connect(ctx, endpoint)
+		require.Nil(err)
+		require.NotNil(database)
 
-	repository := &AdvancerRepository{Database: database}
+		apps, _, _, _, err := populate2(database)
+		require.Nil(err)
+		repository := &AdvancerRepository{Database: database}
+
+		res, err := repository.GetAppData(ctx)
+		require.Nil(err)
+		require.Len(res, 2)
+
+		appData1, appData2 := res[0], res[1]
+
+		require.Equal(apps[1].ContractAddress, appData2.AppAddress)
+		require.Equal(uint64(6), *appData2.InputIndex)
+		require.Equal("path/to/snapshot/2", appData2.SnapshotPath)
+
+		require.Equal(apps[2].ContractAddress, appData1.AppAddress)
+		require.Nil(appData1.InputIndex)
+		require.Equal("path/to/template/uri/2", appData1.SnapshotPath)
+	})
 
 	t.Run("GetUnprocessedInputs", func(t *testing.T) {
 		t.Skip("TODO")
@@ -41,6 +58,17 @@ func TestAdvancerRepository(t *testing.T) {
 
 	t.Run("UpdateEpochs", func(t *testing.T) {
 		require := require.New(t)
+
+		endpoint, err := db.Setup(ctx)
+		require.Nil(err)
+
+		database, err := Connect(ctx, endpoint)
+		require.Nil(err)
+		require.NotNil(database)
+
+		app, _, _, err := populate1(database)
+		require.Nil(err)
+		repository := &AdvancerRepository{Database: database}
 
 		err = repository.UpdateEpochs(ctx, app.ContractAddress)
 		require.Nil(err)
@@ -70,7 +98,7 @@ func TestAdvancerRepository(t *testing.T) {
 
 // ------------------------------------------------------------------------------------------------
 
-func populate(database *Database) (*Application, []*Epoch, []*Input, error) {
+func populate1(database *Database) (*Application, []*Epoch, []*Input, error) {
 	ctx := context.Background()
 
 	app := &Application{
@@ -81,7 +109,7 @@ func populate(database *Database) (*Application, []*Epoch, []*Input, error) {
 		Status:             "RUNNING",
 	}
 
-	err := database.InsertApplication(ctx, app)
+	_, err := database.InsertApplication(ctx, app)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -160,4 +188,124 @@ func populate(database *Database) (*Application, []*Epoch, []*Input, error) {
 	}
 
 	return app, epochs, inputs, nil
+}
+
+// ------------------------------------------------------------------------------------------------
+
+func populate2(database *Database) ([]*Application, []*Epoch, []*Input, []*Snapshot, error) {
+	ctx := context.Background()
+
+	apps := []*Application{{
+		ContractAddress: common.HexToAddress("dead"),
+		TemplateUri:     "path/to/template/uri/0",
+		Status:          ApplicationStatusNotRunning,
+	}, {
+		ContractAddress: common.HexToAddress("beef"),
+		TemplateUri:     "path/to/template/uri/1",
+		Status:          ApplicationStatusRunning,
+	}, {
+		ContractAddress: common.HexToAddress("bead"),
+		TemplateUri:     "path/to/template/uri/2",
+		Status:          ApplicationStatusRunning,
+	}}
+	if err := database.InsertApps(ctx, apps); err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	epochs := []*Epoch{{
+		Index:      0,
+		Status:     EpochStatusClosed,
+		AppAddress: apps[1].ContractAddress,
+	}, {
+		Index:      1,
+		Status:     EpochStatusClosed,
+		AppAddress: apps[1].ContractAddress,
+	}, {
+		Status:     EpochStatusClosed,
+		AppAddress: apps[2].ContractAddress,
+	}}
+	err := database.InsertEpochs(ctx, epochs)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	inputs := []*Input{{
+		Index:            0,
+		CompletionStatus: InputStatusAccepted,
+		RawData:          []byte("first"),
+		AppAddress:       apps[1].ContractAddress,
+		EpochId:          epochs[0].Id,
+	}, {
+		Index:            6,
+		CompletionStatus: InputStatusAccepted,
+		RawData:          []byte("second"),
+		AppAddress:       apps[1].ContractAddress,
+		EpochId:          epochs[1].Id,
+	}}
+	err = database.InsertInputs(ctx, inputs)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	snapshots := []*Snapshot{{
+		URI:        "path/to/snapshot/1",
+		InputId:    inputs[0].Id,
+		AppAddress: apps[1].ContractAddress,
+	}, {
+		URI:        "path/to/snapshot/2",
+		InputId:    inputs[1].Id,
+		AppAddress: apps[1].ContractAddress,
+	}}
+	err = database.InsertSnapshots(ctx, snapshots)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	return apps, epochs, inputs, snapshots, nil
+}
+
+// ------------------------------------------------------------------------------------------------
+
+func (pg *Database) InsertApps(ctx context.Context, apps []*Application) error {
+	var err error
+	for _, app := range apps {
+		app.Id, err = pg.InsertApplication(ctx, app)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (pg *Database) InsertEpochs(ctx context.Context, epochs []*Epoch) error {
+	var err error
+	for _, epoch := range epochs {
+		epoch.Id, err = pg.InsertEpoch(ctx, epoch)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (pg *Database) InsertInputs(ctx context.Context, inputs []*Input) error {
+	var err error
+	for _, input := range inputs {
+		input.Id, err = pg.InsertInput(ctx, input)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (pg *Database) InsertSnapshots(ctx context.Context, snapshots []*Snapshot) error {
+	var err error
+	for _, snapshot := range snapshots {
+		snapshot.Id, err = pg.InsertSnapshot(ctx, snapshot)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

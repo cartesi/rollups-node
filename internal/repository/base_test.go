@@ -85,10 +85,10 @@ func (s *RepositorySuite) SetupDatabase() {
 		Status:             ApplicationStatusNotRunning,
 	}
 
-	err = s.database.InsertApplication(s.ctx, &app)
+	_, err = s.database.InsertApplication(s.ctx, &app)
 	s.Require().Nil(err)
 
-	err = s.database.InsertApplication(s.ctx, &app2)
+	_, err = s.database.InsertApplication(s.ctx, &app2)
 	s.Require().Nil(err)
 
 	genericHash := common.HexToHash("deadbeef")
@@ -257,7 +257,7 @@ func (s *RepositorySuite) TestApplicationFailsDuplicateRow() {
 		Status:             ApplicationStatusRunning,
 	}
 
-	err := s.database.InsertApplication(s.ctx, &app)
+	_, err := s.database.InsertApplication(s.ctx, &app)
 	s.Require().ErrorContains(err, "duplicate key value")
 }
 

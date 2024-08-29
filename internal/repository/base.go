@@ -91,35 +91,41 @@ func (pg *Database) InsertNodeConfig(
 func (pg *Database) InsertApplication(
 	ctx context.Context,
 	app *Application,
-) error {
+) (id uint64, _ error) {
 	query := `
 	INSERT INTO application
 		(contract_address,
 		template_hash,
+		template_uri,
 		last_processed_block,
 		status,
 		iconsensus_address)
 	VALUES
 		(@contractAddress,
 		@templateHash,
+		@templateUri,
 		@lastProcessedBlock,
 		@status,
-		@iConsensusAddress)`
+		@iConsensusAddress)
+	RETURNING
+		id
+    `
 
 	args := pgx.NamedArgs{
 		"contractAddress":    app.ContractAddress,
 		"templateHash":       app.TemplateHash,
+		"templateUri":        app.TemplateUri,
 		"lastProcessedBlock": app.LastProcessedBlock,
 		"status":             app.Status,
 		"iConsensusAddress":  app.IConsensusAddress,
 	}
 
-	_, err := pg.db.Exec(ctx, query, args)
+	err := pg.db.QueryRow(ctx, query, args).Scan(&id)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrInsertRow, err)
+		return 0, fmt.Errorf("%w: %w", ErrInsertRow, err)
 	}
 
-	return nil
+	return id, nil
 }
 
 func (pg *Database) InsertEpoch(

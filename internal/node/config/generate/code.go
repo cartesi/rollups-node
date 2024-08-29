@@ -100,6 +100,16 @@ func ToInt64FromString(s string) (int64, error) {
 	return strconv.ParseInt(s, 10, 64)
 }
 
+func ToUint8FromString(s string) (uint8, error) {
+       value, err := strconv.ParseUint(s, 10, 8)
+       return uint8(value), err
+}
+
+func ToUint32FromString(s string) (uint32, error) {
+       value, err := strconv.ParseUint(s, 10, 32)
+       return uint32(value), err
+}
+
 func ToUint64FromString(s string) (uint64, error) {
        value, err := strconv.ParseUint(s, 10, 64)
        return value, err
@@ -164,6 +174,8 @@ var (
 	toBool         = strconv.ParseBool
 	toInt          = strconv.Atoi
 	toInt64        = ToInt64FromString
+	toUint8        = ToUint8FromString
+	toUint32       = ToUint32FromString
 	toUint64       = ToUint64FromString
 	toString       = ToStringFromString
 	toDuration     = ToDurationFromSeconds

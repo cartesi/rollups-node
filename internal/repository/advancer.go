@@ -18,6 +18,45 @@ var ErrAdvancerRepository = errors.New("advancer repository error")
 
 type AdvancerRepository struct{ *Database }
 
+type AppData struct {
+	AppAddress   Address
+	InputIndex   *uint64
+	SnapshotPath string
+}
+
+func (repo *AdvancerRepository) GetAppData(ctx context.Context) ([]*AppData, error) {
+	query := `
+        SELECT DISTINCT ON (address)
+            a.contract_address AS address,
+            i.index,
+            COALESCE(s.uri, a.template_uri)
+        FROM          application AS a
+            LEFT JOIN snapshot    AS s ON (a.contract_address = s.application_address)
+            LEFT JOIN input       AS i ON (s.input_id = i.id)
+        WHERE     a.status = 'RUNNING'
+        ORDER BY  address, i.index DESC
+    `
+	rows, err := repo.db.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("%w (failed querying applications): %w", ErrAdvancerRepository, err)
+	}
+
+	res := []*AppData{}
+	var row AppData
+
+	scans := []any{&row.AppAddress, &row.InputIndex, &row.SnapshotPath}
+	_, err = pgx.ForEachRow(rows, scans, func() error {
+		row := row
+		res = append(res, &row)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w (failed reading rows): %w", ErrAdvancerRepository, err)
+	}
+
+	return res, nil
+}
+
 func (repo *AdvancerRepository) GetUnprocessedInputs(
 	ctx context.Context,
 	apps []Address,

@@ -22,6 +22,12 @@ const ramLength = 64 << 20
 // It can be redefined in case the files are not in the default folder.
 var ImagesPath = "/usr/share/cartesi-machine/images/"
 
+func init() {
+	if value, ok := os.LookupEnv("TESTS_IMAGES_PATH"); ok {
+		ImagesPath = value
+	}
+}
+
 type Snapshot struct {
 	id   string // an unique id used to avoid name clashing
 	temp string // path to the temporary directory containing snapshot relevant files
