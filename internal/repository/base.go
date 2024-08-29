@@ -215,11 +215,13 @@ func (pg *Database) InsertOutput(
 	INSERT INTO output
 		(index,
 		raw_data,
+		hash,
 		output_hashes_siblings,
 		input_id)
 	VALUES
 		(@index,
 		@rawData,
+		@hash,
 		@outputHashesSiblings,
 		@inputId)
 	RETURNING
@@ -230,6 +232,7 @@ func (pg *Database) InsertOutput(
 		"inputId":              output.InputId,
 		"index":                output.Index,
 		"rawData":              output.RawData,
+		"hash":                 output.Hash,
 		"outputHashesSiblings": output.OutputHashesSiblings,
 	}
 
