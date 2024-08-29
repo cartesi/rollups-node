@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/node/advancer/machines"
 	"github.com/cartesi/rollups-node/internal/node/advancer/poller"
 	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/internal/nodemachine"
@@ -24,19 +25,19 @@ var (
 )
 
 type Advancer struct {
-	machines   Machines
-	repository Repository
+	machines Machines
+	repo     Repository
 }
 
 // New instantiates a new Advancer.
-func New(machines Machines, repository Repository) (*Advancer, error) {
+func New(machines Machines, repo Repository) (*Advancer, error) {
 	if machines == nil {
 		return nil, ErrInvalidMachines
 	}
-	if repository == nil {
+	if repo == nil {
 		return nil, ErrInvalidRepository
 	}
-	return &Advancer{machines: machines, repository: repository}, nil
+	return &Advancer{machines: machines, repo: repo}, nil
 }
 
 // Poller instantiates a new poller.Poller using the Advancer.
@@ -49,11 +50,11 @@ func (advancer *Advancer) Poller(pollingInterval time.Duration) (*poller.Poller,
 // runs them through the cartesi machine,
 // and updates the repository with the ouputs.
 func (advancer *Advancer) Step(ctx context.Context) error {
-	apps := keysFrom(advancer.machines)
+	apps := advancer.machines.Keys()
 
 	// Gets the unprocessed inputs (of all apps) from the repository.
 	slog.Info("advancer: getting unprocessed inputs")
-	inputs, err := advancer.repository.GetUnprocessedInputs(ctx, apps)
+	inputs, err := advancer.repo.GetUnprocessedInputs(ctx, apps)
 	if err != nil {
 		return err
 	}
@@ -69,7 +70,7 @@ func (advancer *Advancer) Step(ctx context.Context) error {
 
 	// Updates the status of the epochs.
 	for _, app := range apps {
-		err := advancer.repository.UpdateEpochs(ctx, app)
+		err := advancer.repo.UpdateEpochs(ctx, app)
 		if err != nil {
 			return err
 		}
@@ -81,8 +82,8 @@ func (advancer *Advancer) Step(ctx context.Context) error {
 // process sequentially processes inputs from the the application.
 func (advancer *Advancer) process(ctx context.Context, app Address, inputs []*Input) error {
 	// Asserts that the app has an associated machine.
-	machine, ok := advancer.machines[app]
-	if !ok {
+	machine := advancer.machines.GetAdvanceMachine(app)
+	if machine == nil {
 		panic(fmt.Errorf("%w %s", ErrNoApp, app.String()))
 	}
 
@@ -101,7 +102,7 @@ func (advancer *Advancer) process(ctx context.Context, app Address, inputs []*In
 		}
 
 		// Stores the result in the database.
-		err = advancer.repository.StoreAdvanceResult(ctx, input, res)
+		err = advancer.repo.StoreAdvanceResult(ctx, input, res)
 		if err != nil {
 			return err
 		}
@@ -121,22 +122,7 @@ type Repository interface {
 	UpdateEpochs(_ context.Context, app Address) error
 }
 
-// A map of application addresses to machines.
-type Machines = map[Address]Machine
-
-type Machine interface {
-	Advance(_ context.Context, input []byte, index uint64) (*nodemachine.AdvanceResult, error)
-}
-
-// ------------------------------------------------------------------------------------------------
-
-// keysFrom returns a slice with the keysFrom of a map.
-func keysFrom[K comparable, V any](m map[K]V) []K {
-	keys := make([]K, len(m))
-	i := 0
-	for k := range m {
-		keys[i] = k
-		i++
-	}
-	return keys
+type Machines interface {
+	GetAdvanceMachine(Address) machines.AdvanceMachine
+	Keys() []Address
 }
