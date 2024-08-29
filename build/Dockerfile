@@ -375,6 +375,28 @@ ARG GO_BUILD_PATH
 ARG ROLLUPS_NODE_VERSION
 WORKDIR ${GO_BUILD_PATH}
 
+ARG MACHINE_EMULATOR_VERSION
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install ca-certificates and curl (setup).
+RUN <<EOF
+    set -e
+    apt-get update
+    apt-get install -y --no-install-recommends ca-certificates curl
+EOF
+
+# Install the cartesi-machine (cartesi/machine-emulator).
+RUN <<EOF
+    set -e
+    URL=https://github.com/cartesi/machine-emulator/releases/download
+    VERSION=v${MACHINE_EMULATOR_VERSION}
+    ARCH=$(dpkg --print-architecture)
+    ARTIFACT=cartesi-machine-${VERSION}_${ARCH}.deb
+    curl -fsSL ${URL}/${VERSION}/${ARTIFACT} -o ./cartesi-machine.deb
+    apt-get install -y ./cartesi-machine.deb
+    rm ./cartesi-machine.deb
+EOF
+
 # Download external dependencies.
 COPY go.mod .
 COPY go.sum .
