@@ -34,9 +34,17 @@ CREATE TABLE "application"
     "id" SERIAL,
     "contract_address" BYTEA NOT NULL,
     "template_hash" BYTEA NOT NULL,
+    "template_uri" VARCHAR(4096) NOT NULL,
     "last_processed_block" NUMERIC(20,0) NOT NULL CHECK ("last_processed_block" >= 0 AND "last_processed_block" <= f_maxuint64()),
     "status" "ApplicationStatus" NOT NULL,
     "iconsensus_address" BYTEA NOT NULL,
+    -- Temporary -------------------------------------
+    "machine_inc_cycles"              BIGINT NOT NULL,
+    "machine_max_cycles"              BIGINT NOT NULL,
+    "machine_advance_timeout"         INT    NOT NULL,
+    "machine_inspect_timeout"         INT    NOT NULL,
+    "machine_max_concurrent_inspects" INT    NOT NULL,
+    --------------------------------------------------
     CONSTRAINT "application_pkey" PRIMARY KEY ("id"),
     UNIQUE("contract_address")
 );
