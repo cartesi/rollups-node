@@ -44,6 +44,16 @@ func ToInt64FromString(s string) (int64, error) {
 	return strconv.ParseInt(s, 10, 64)
 }
 
+func ToUint8FromString(s string) (uint8, error) {
+	value, err := strconv.ParseUint(s, 10, 8)
+	return uint8(value), err
+}
+
+func ToUint32FromString(s string) (uint32, error) {
+	value, err := strconv.ParseUint(s, 10, 32)
+	return uint32(value), err
+}
+
 func ToUint64FromString(s string) (uint64, error) {
 	value, err := strconv.ParseUint(s, 10, 64)
 	return value, err
@@ -108,6 +118,8 @@ var (
 	toBool         = strconv.ParseBool
 	toInt          = strconv.Atoi
 	toInt64        = ToInt64FromString
+	toUint8        = ToUint8FromString
+	toUint32       = ToUint32FromString
 	toUint64       = ToUint64FromString
 	toString       = ToStringFromString
 	toDuration     = ToDurationFromSeconds
@@ -468,6 +480,18 @@ func getPostgresSslmodeEnabled() bool {
 	return val
 }
 
+func getAdvancerPollingInterval() Duration {
+	s, ok := os.LookupEnv("CARTESI_ADVANCER_POLLING_INTERVAL")
+	if !ok {
+		s = "30"
+	}
+	val, err := toDuration(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_ADVANCER_POLLING_INTERVAL: %v", err))
+	}
+	return val
+}
+
 func getEpochLength() uint64 {
 	s, ok := os.LookupEnv("CARTESI_EPOCH_LENGTH")
 	if !ok {
@@ -504,6 +528,18 @@ func getEvmReaderRetryPolicyMaxRetries() uint64 {
 	return val
 }
 
+func getMaxConcurrentInspects() uint8 {
+	s, ok := os.LookupEnv("CARTESI_MAX_CONCURRENT_INSPECTS")
+	if !ok {
+		s = "10"
+	}
+	val, err := toUint8(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_MAX_CONCURRENT_INSPECTS: %v", err))
+	}
+	return val
+}
+
 func getValidatorPollingInterval() Duration {
 	s, ok := os.LookupEnv("CARTESI_VALIDATOR_POLLING_INTERVAL")
 	if !ok {
@@ -524,6 +560,66 @@ func getSnapshotDir() string {
 	val, err := toString(s)
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse CARTESI_SNAPSHOT_DIR: %v", err))
+	}
+	return val
+}
+
+func getMachineAdvanceTimeout() Duration {
+	s, ok := os.LookupEnv("CARTESI_MACHINE_ADVANCE_TIMEOUT")
+	if !ok {
+		s = "60"
+	}
+	val, err := toDuration(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_MACHINE_ADVANCE_TIMEOUT: %v", err))
+	}
+	return val
+}
+
+func getMachineIncCycles() uint64 {
+	s, ok := os.LookupEnv("CARTESI_MACHINE_INC_CYCLES")
+	if !ok {
+		s = "50000000"
+	}
+	val, err := toUint64(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_MACHINE_INC_CYCLES: %v", err))
+	}
+	return val
+}
+
+func getMachineInspectTimeout() Duration {
+	s, ok := os.LookupEnv("CARTESI_MACHINE_INSPECT_TIMEOUT")
+	if !ok {
+		s = "10"
+	}
+	val, err := toDuration(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_MACHINE_INSPECT_TIMEOUT: %v", err))
+	}
+	return val
+}
+
+func getMachineMaxCycles() uint64 {
+	s, ok := os.LookupEnv("CARTESI_MACHINE_MAX_CYCLES")
+	if !ok {
+		s = "5000000000"
+	}
+	val, err := toUint64(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_MACHINE_MAX_CYCLES: %v", err))
+	}
+	return val
+}
+
+func getMachineServerVerbosity() string {
+	s, ok := os.LookupEnv("CARTESI_MACHINE_SERVER_VERBOSITY")
+	if !ok {
+		s = "info"
+	}
+	val, err := toString(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_MACHINE_SERVER_VERBOSITY: %v", err))
 	}
 	return val
 }

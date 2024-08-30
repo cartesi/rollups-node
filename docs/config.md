@@ -223,6 +223,13 @@ When enabled, will connect to postgres database via SSL.
 * **Type:** `bool`
 * **Default:** `"true"`
 
+## `CARTESI_ADVANCER_POLLING_INTERVAL`
+
+How many seconds the node will wait before querying the database for new inputs.
+
+* **Type:** `Duration`
+* **Default:** `"30"`
+
 ## `CARTESI_EPOCH_LENGTH`
 
 Length of a rollups epoch in blocks.
@@ -234,7 +241,7 @@ At the end of each epoch, the node will send claims to the blockchain.
 
 ## `CARTESI_EVM_READER_RETRY_POLICY_MAX_DELAY`
 
-How seconds the retry policy will wait between retries.
+How many seconds the retry policy will wait between retries.
 
 * **Type:** `Duration`
 * **Default:** `"3"`
@@ -245,6 +252,13 @@ How many times some functions should be retried after an error.
 
 * **Type:** `uint64`
 * **Default:** `"3"`
+
+## `CARTESI_MAX_CONCURRENT_INSPECTS`
+
+Maximum number of inspect-state requests that can be concurrently active.
+
+* **Type:** `uint8`
+* **Default:** `"10"`
 
 ## `CARTESI_VALIDATOR_POLLING_INTERVAL`
 
@@ -258,3 +272,38 @@ How many seconds the node will wait before trying to finish epochs for all appli
 Path to the directory with the cartesi-machine snapshot that will be loaded by the node.
 
 * **Type:** `string`
+
+## `CARTESI_MACHINE_ADVANCE_TIMEOUT`
+
+TODO.
+
+* **Type:** `Duration`
+* **Default:** `"60"`
+
+## `CARTESI_MACHINE_INC_CYCLES`
+
+TODO.
+
+* **Type:** `uint64`
+* **Default:** `"50000000"`
+
+## `CARTESI_MACHINE_INSPECT_TIMEOUT`
+
+TODO.
+
+* **Type:** `Duration`
+* **Default:** `"10"`
+
+## `CARTESI_MACHINE_MAX_CYCLES`
+
+TODO.
+
+* **Type:** `uint64`
+* **Default:** `"5000000000"`
+
+## `CARTESI_MACHINE_SERVER_VERBOSITY`
+
+TODO.
+
+* **Type:** `string`
+* **Default:** `"info"`
