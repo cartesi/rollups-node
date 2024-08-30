@@ -139,8 +139,15 @@ func (v *Validator) validateApplication(ctx context.Context, app Application) er
 			)
 		}
 
+		if machineClaim == nil {
+			return fmt.Errorf(
+				"inconsistent state: machine claim for epoch %v of application %v was not found",
+				epoch.Index, epoch.AppAddress,
+			)
+		}
+
 		// ...and compare it to the hash calculated by the Validator
-		if machineClaim != nil && *machineClaim != *claim {
+		if *machineClaim != *claim {
 			return fmt.Errorf(
 				"validator claim does not match machine claim for epoch %v of application %v",
 				epoch.Index, epoch.AppAddress,
