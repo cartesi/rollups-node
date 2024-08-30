@@ -19,7 +19,14 @@ type Database struct {
 	db *pgxpool.Pool
 }
 
-var ErrInsertRow = errors.New("unable to insert row")
+var (
+	ErrInsertRow = errors.New("unable to insert row")
+	ErrUpdateRow = errors.New("unable to update row")
+	ErrCopyFrom  = errors.New("unable to COPY FROM")
+
+	ErrBeginTx  = errors.New("unable to begin transaction")
+	ErrCommitTx = errors.New("unable to commit transaction")
+)
 
 func Connect(
 	ctx context.Context,
@@ -84,11 +91,12 @@ func (pg *Database) InsertNodeConfig(
 func (pg *Database) InsertApplication(
 	ctx context.Context,
 	app *Application,
-) error {
+) (uint64, error) {
 	query := `
 	INSERT INTO application
 		(contract_address,
 		template_hash,
+		template_uri,
 		last_processed_block,
 		last_claim_check_block,
 		last_output_check_block,
@@ -97,15 +105,20 @@ func (pg *Database) InsertApplication(
 	VALUES
 		(@contractAddress,
 		@templateHash,
+		@templateUri,
 		@lastProcessedBlock,
 		@lastClaimCheckBlock,
 		@lastOutputCheckBlock,
 		@status,
-		@iConsensusAddress)`
+		@iConsensusAddress)
+    RETURNING
+        id
+    `
 
 	args := pgx.NamedArgs{
 		"contractAddress":      app.ContractAddress,
 		"templateHash":         app.TemplateHash,
+		"templateUri":          app.TemplateUri,
 		"lastProcessedBlock":   app.LastProcessedBlock,
 		"lastClaimCheckBlock":  app.LastClaimCheckBlock,
 		"lastOutputCheckBlock": app.LastOutputCheckBlock,
@@ -113,12 +126,13 @@ func (pg *Database) InsertApplication(
 		"iConsensusAddress":    app.IConsensusAddress,
 	}
 
-	_, err := pg.db.Exec(ctx, query, args)
+	var id uint64
+	err := pg.db.QueryRow(ctx, query, args).Scan(&id)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrInsertRow, err)
+		return 0, fmt.Errorf("%w: %w", ErrInsertRow, err)
 	}
 
-	return nil
+	return id, nil
 }
 
 func (pg *Database) InsertEpoch(
@@ -295,7 +309,9 @@ func (pg *Database) InsertSnapshot(
 		(@inputId,
 		@appAddress,
 		@uri)
-	RETURNING id`
+	RETURNING
+        id
+    `
 
 	args := pgx.NamedArgs{
 		"inputId":    snapshot.InputId,
@@ -358,6 +374,7 @@ func (pg *Database) GetApplication(
 		id                   uint64
 		contractAddress      Address
 		templateHash         Hash
+		templateUri          string
 		lastProcessedBlock   uint64
 		lastClaimCheckBlock  uint64
 		lastOutputCheckBlock uint64
@@ -370,6 +387,7 @@ func (pg *Database) GetApplication(
 		id,
 		contract_address,
 		template_hash,
+		template_uri,
 		last_processed_block,
 		last_claim_check_block,
 		last_output_check_block,
@@ -388,6 +406,7 @@ func (pg *Database) GetApplication(
 		&id,
 		&contractAddress,
 		&templateHash,
+		&templateUri,
 		&lastProcessedBlock,
 		&lastClaimCheckBlock,
 		&lastOutputCheckBlock,
@@ -408,6 +427,7 @@ func (pg *Database) GetApplication(
 		Id:                   id,
 		ContractAddress:      contractAddress,
 		TemplateHash:         templateHash,
+		TemplateUri:          templateUri,
 		LastProcessedBlock:   lastProcessedBlock,
 		LastClaimCheckBlock:  lastClaimCheckBlock,
 		LastOutputCheckBlock: lastOutputCheckBlock,

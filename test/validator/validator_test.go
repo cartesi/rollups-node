@@ -102,7 +102,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
 			ContractAddress: common.BytesToAddress([]byte("deadbeef")),
 			Status:          model.ApplicationStatusRunning,
 		}
-		err := s.database.InsertApplication(s.ctx, app)
+		_, err := s.database.InsertApplication(s.ctx, app)
 		s.Require().Nil(err)
 
 		epoch := &model.Epoch{
@@ -151,7 +151,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 			ContractAddress: common.BytesToAddress([]byte("deadbeef")),
 			Status:          model.ApplicationStatusRunning,
 		}
-		err := s.database.InsertApplication(s.ctx, app)
+		_, err := s.database.InsertApplication(s.ctx, app)
 		s.Require().Nil(err)
 
 		// insert the first epoch with a claim
@@ -225,7 +225,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			ContractAddress: common.BytesToAddress([]byte("deadbeef")),
 			Status:          model.ApplicationStatusRunning,
 		}
-		err := s.database.InsertApplication(s.ctx, app)
+		_, err := s.database.InsertApplication(s.ctx, app)
 		s.Require().Nil(err)
 
 		epoch := &model.Epoch{
@@ -297,7 +297,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			ContractAddress: common.BytesToAddress([]byte("deadbeef")),
 			Status:          model.ApplicationStatusRunning,
 		}
-		err := s.database.InsertApplication(s.ctx, app)
+		_, err := s.database.InsertApplication(s.ctx, app)
 		s.Require().Nil(err)
 
 		firstEpoch := &model.Epoch{

@@ -72,6 +72,7 @@ func (s *RepositorySuite) SetupDatabase() {
 		ContractAddress:    common.HexToAddress("deadbeef"),
 		IConsensusAddress:  common.HexToAddress("ffffff"),
 		TemplateHash:       common.HexToHash("deadbeef"),
+		TemplateUri:        "path/to/template/uri/0",
 		LastProcessedBlock: 1,
 		Status:             ApplicationStatusRunning,
 	}
@@ -80,14 +81,15 @@ func (s *RepositorySuite) SetupDatabase() {
 		ContractAddress:    common.HexToAddress("feadbeef"),
 		IConsensusAddress:  common.HexToAddress("ffffff"),
 		TemplateHash:       common.HexToHash("deadbeef"),
+		TemplateUri:        "path/to/template/uri/0",
 		LastProcessedBlock: 1,
 		Status:             ApplicationStatusNotRunning,
 	}
 
-	err = s.database.InsertApplication(s.ctx, &app)
+	_, err = s.database.InsertApplication(s.ctx, &app)
 	s.Require().Nil(err)
 
-	err = s.database.InsertApplication(s.ctx, &app2)
+	_, err = s.database.InsertApplication(s.ctx, &app2)
 	s.Require().Nil(err)
 
 	genericHash := common.HexToHash("deadbeef")
@@ -245,6 +247,7 @@ func (s *RepositorySuite) TestApplicationExists() {
 		ContractAddress:    common.HexToAddress("deadbeef"),
 		IConsensusAddress:  common.HexToAddress("ffffff"),
 		TemplateHash:       common.HexToHash("deadbeef"),
+		TemplateUri:        "path/to/template/uri/0",
 		LastProcessedBlock: 1,
 		Status:             ApplicationStatusRunning,
 	}
@@ -266,11 +269,12 @@ func (s *RepositorySuite) TestApplicationFailsDuplicateRow() {
 		ContractAddress:    common.HexToAddress("deadbeef"),
 		IConsensusAddress:  common.HexToAddress("ffffff"),
 		TemplateHash:       common.HexToHash("deadbeef"),
+		TemplateUri:        "path/to/template/uri/0",
 		LastProcessedBlock: 1,
 		Status:             ApplicationStatusRunning,
 	}
 
-	err := s.database.InsertApplication(s.ctx, &app)
+	_, err := s.database.InsertApplication(s.ctx, &app)
 	s.Require().ErrorContains(err, "duplicate key value")
 }
 

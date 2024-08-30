@@ -2,7 +2,7 @@ linters:
   enable:
     - exhaustive
     - goconst
-    - godox
+    #- godox
     - gofmt
     - lll
     - mnd
