@@ -20,9 +20,8 @@ import (
 )
 
 // Validates the Node Database Schema Version
-func ValidateSchema(config config.NodeConfig) error {
-	endpoint := config.PostgresEndpoint.Value
-	if config.PostgresSslMode {
+func ValidateSchema(endpoint string, sslMode bool) error {
+	if sslMode {
 		endpoint += "?sslmode=disable"
 	}
 
@@ -37,11 +36,11 @@ func ValidateSchema(config config.NodeConfig) error {
 }
 
 // Configure the node logs
-func ConfigLogs(config config.NodeConfig) {
+func ConfigLogs(logLevel slog.Level, logPrettyEnabled bool) {
 	opts := &tint.Options{
-		Level:      config.LogLevel,
-		AddSource:  config.LogLevel == slog.LevelDebug,
-		NoColor:    !config.LogPrettyEnabled || !isatty.IsTerminal(os.Stdout.Fd()),
+		Level:      logLevel,
+		AddSource:  logLevel == slog.LevelDebug,
+		NoColor:    !logPrettyEnabled || !isatty.IsTerminal(os.Stdout.Fd()),
 		TimeFormat: "2006-01-02T15:04:05.000", // RFC3339 with milliseconds and without timezone
 	}
 	handler := tint.NewHandler(os.Stdout, opts)
