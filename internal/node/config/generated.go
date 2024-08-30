@@ -468,6 +468,18 @@ func getPostgresSslEnabled() bool {
 	return val
 }
 
+func getAdvancerPollingInterval() Duration {
+	s, ok := os.LookupEnv("CARTESI_ADVANCER_POLLING_INTERVAL")
+	if !ok {
+		s = "30"
+	}
+	val, err := toDuration(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_ADVANCER_POLLING_INTERVAL: %v", err))
+	}
+	return val
+}
+
 func getEpochLength() uint64 {
 	s, ok := os.LookupEnv("CARTESI_EPOCH_LENGTH")
 	if !ok {
@@ -524,6 +536,18 @@ func getSnapshotDir() string {
 	val, err := toString(s)
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse CARTESI_SNAPSHOT_DIR: %v", err))
+	}
+	return val
+}
+
+func getMachineServerVerbosity() string {
+	s, ok := os.LookupEnv("CARTESI_MACHINE_SERVER_VERBOSITY")
+	if !ok {
+		s = "info"
+	}
+	val, err := toString(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_MACHINE_SERVER_VERBOSITY: %v", err))
 	}
 	return val
 }

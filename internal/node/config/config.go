@@ -8,6 +8,8 @@ package config
 import (
 	"fmt"
 	"os"
+
+	"github.com/cartesi/rollups-node/pkg/rollupsmachine/cartesimachine"
 )
 
 // NodeConfig contains all the Node variables.
@@ -39,7 +41,10 @@ type NodeConfig struct {
 	ExperimentalSunodoValidatorEnabled        bool
 	ExperimentalSunodoValidatorRedisEndpoint  string
 	Auth                                      Auth
+	AdvancerPollingInterval                   Duration
 	ValidatorPollingInterval                  Duration
+	// Temporary
+	MachineServerVerbosity cartesimachine.ServerVerbosity
 }
 
 // Auth is used to sign transactions.
@@ -106,7 +111,10 @@ func FromEnv() NodeConfig {
 	if getFeatureClaimerEnabled() && !getExperimentalSunodoValidatorEnabled() {
 		config.Auth = authFromEnv()
 	}
+	config.AdvancerPollingInterval = getAdvancerPollingInterval()
 	config.ValidatorPollingInterval = getValidatorPollingInterval()
+	// Temporary.
+	config.MachineServerVerbosity = cartesimachine.ServerVerbosity(getMachineServerVerbosity())
 	return config
 }
 
