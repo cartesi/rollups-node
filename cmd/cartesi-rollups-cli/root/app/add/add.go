@@ -118,7 +118,7 @@ func run(cmd *cobra.Command, args []string) {
 		IConsensusAddress:  common.HexToAddress(iConsensusAddress),
 	}
 
-	err := cmdcommom.Database.InsertApplication(ctx, &application)
+	_, err := cmdcommom.Database.InsertApplication(ctx, &application)
 	cobra.CheckErr(err)
 	fmt.Printf("Application %v successfully added\n", application.ContractAddress)
 }
