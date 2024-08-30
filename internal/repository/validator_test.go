@@ -24,7 +24,7 @@ func (s *RepositorySuite) TestGetOutputsProducedInBlockRange() {
 		TemplateHash:    common.BytesToHash([]byte("template")),
 		Status:          ApplicationStatusRunning,
 	}
-	err = s.database.InsertApplication(s.ctx, &app)
+	_, err = s.database.InsertApplication(s.ctx, &app)
 	s.Require().Nil(err)
 
 	epoch := Epoch{
@@ -77,7 +77,7 @@ func (s *RepositorySuite) TestGetProcessedEpochs() {
 		TemplateHash:    common.BytesToHash([]byte("template")),
 		Status:          ApplicationStatusRunning,
 	}
-	err := s.database.InsertApplication(s.ctx, &app)
+	_, err := s.database.InsertApplication(s.ctx, &app)
 	s.Require().Nil(err)
 
 	// no epochs, should return nothing
@@ -123,7 +123,7 @@ func (s *RepositorySuite) TestGetLastInputOutputHash() {
 		TemplateHash:    common.BytesToHash([]byte("template")),
 		Status:          ApplicationStatusRunning,
 	}
-	err := s.database.InsertApplication(s.ctx, &app)
+	_, err := s.database.InsertApplication(s.ctx, &app)
 	s.Require().Nil(err)
 
 	epoch := Epoch{
@@ -193,7 +193,7 @@ func (s *RepositorySuite) TestGetPreviousEpoch() {
 		TemplateHash:    common.BytesToHash([]byte("template")),
 		Status:          ApplicationStatusRunning,
 	}
-	err := s.database.InsertApplication(s.ctx, app)
+	_, err := s.database.InsertApplication(s.ctx, app)
 	s.Require().Nil(err)
 
 	epoch := Epoch{
@@ -234,7 +234,7 @@ func (s *RepositorySuite) TestSetEpochClaimAndInsertProofsTransaction() {
 		TemplateHash:    common.BytesToHash([]byte("template")),
 		Status:          ApplicationStatusRunning,
 	}
-	err := s.database.InsertApplication(s.ctx, &app)
+	_, err := s.database.InsertApplication(s.ctx, &app)
 	s.Require().Nil(err)
 
 	epoch := Epoch{
@@ -321,7 +321,7 @@ func (s *RepositorySuite) TestSetEpochClaimAndInsertProofsTransactionRollback() 
 		TemplateHash:    common.BytesToHash([]byte("template")),
 		Status:          ApplicationStatusRunning,
 	}
-	err := s.database.InsertApplication(s.ctx, &app)
+	_, err := s.database.InsertApplication(s.ctx, &app)
 	s.Require().Nil(err)
 
 	epoch := Epoch{
