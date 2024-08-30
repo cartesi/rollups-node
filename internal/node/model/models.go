@@ -69,6 +69,13 @@ type Application struct {
 	LastProcessedBlock uint64
 	Status             ApplicationStatus
 	IConsensusAddress  Address
+	// Temporary ------------------------------------
+	MachineIncCycles             uint64
+	MachineMaxCycles             uint64
+	MachineAdvanceTimeout        uint32
+	MachineInspectTimeout        uint32
+	MachineMaxConcurrentInspects uint32
+	// ----------------------------------------------
 }
 
 type Epoch struct {
