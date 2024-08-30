@@ -99,7 +99,7 @@ func (repo *MachineRepository) GetUnprocessedInputs(
         SELECT   id, application_address, raw_data
         FROM     input
         WHERE    status = 'NONE'
-        AND      application_address IN %s 
+        AND      application_address IN %s
         ORDER BY index ASC, application_address
     `, addressesToSqlInValues(apps)) // NOTE: not sanitized
 	rows, err := repo.db.Query(ctx, query)

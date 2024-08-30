@@ -157,3 +157,26 @@ func authFromEnv() Auth {
 		panic("invalid auth kind")
 	}
 }
+
+// ------------------------------------------------------------------------------------------------
+
+type AdvancerConfig struct {
+	LogLevel                LogLevel
+	LogPrettyEnabled        bool
+	PostgresEndpoint        Redacted[string]
+	PostgresSslMode         bool
+	AdvancerPollingInterval Duration
+	MachineServerVerbosity  cartesimachine.ServerVerbosity
+}
+
+func GetAdvancerConfig() AdvancerConfig {
+	var config AdvancerConfig
+	config.LogLevel = getLogLevel()
+	config.LogPrettyEnabled = getLogPrettyEnabled()
+	config.PostgresEndpoint = Redacted[string]{getPostgresEndpoint()}
+	config.PostgresSslMode = getPostgresSslEnabled()
+	config.AdvancerPollingInterval = getAdvancerPollingInterval()
+	// Temporary.
+	config.MachineServerVerbosity = cartesimachine.ServerVerbosity(getMachineServerVerbosity())
+	return config
+}

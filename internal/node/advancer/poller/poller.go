@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync/atomic"
 	"time"
 )
 
@@ -17,10 +16,9 @@ type Service interface {
 }
 
 type Poller struct {
-	name       string
-	service    Service
-	shouldStop atomic.Bool
-	ticker     *time.Ticker
+	name    string
+	service Service
+	ticker  *time.Ticker
 }
 
 var ErrInvalidPollingInterval = errors.New("polling interval must be greater than zero")
@@ -33,10 +31,8 @@ func New(name string, service Service, pollingInterval time.Duration) (*Poller, 
 	return &Poller{name: name, service: service, ticker: ticker}, nil
 }
 
-func (poller *Poller) Start(ctx context.Context, ready chan<- struct{}) error {
-	ready <- struct{}{}
-
-	slog.Debug(fmt.Sprintf("%s poller started", poller.name))
+func (poller *Poller) Start(ctx context.Context) error {
+	slog.Debug(fmt.Sprintf("%s: poller started", poller.name))
 
 	for {
 		// Runs the service's inner routine.
@@ -45,19 +41,13 @@ func (poller *Poller) Start(ctx context.Context, ready chan<- struct{}) error {
 			return err
 		}
 
-		// Checks if the service was ordered to stop.
-		if poller.shouldStop.Load() {
-			poller.shouldStop.Store(false)
-			slog.Debug(fmt.Sprintf("%s poller stopped", poller.name))
+		// Waits for the polling interval to elapse (or for the context to be canceled).
+		select {
+		case <-poller.ticker.C:
+			continue
+		case <-ctx.Done():
+			poller.ticker.Stop()
 			return nil
 		}
-
-		// Waits for the polling interval to elapse.
-		<-poller.ticker.C
 	}
-}
-
-// Stop orders the service to stop, which will happen before the next poll.
-func (poller *Poller) Stop() {
-	poller.shouldStop.Store(true)
 }
