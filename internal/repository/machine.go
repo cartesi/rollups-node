@@ -45,7 +45,6 @@ func (repo *MachineRepository) GetMachineConfigurations(
 		return nil, fmt.Errorf("%w (failed querying applications): %w", ErrAdvancerRepository, err)
 	}
 
-	// TODO: missing machine config fields
 	res := []*machines.MachineConfig{}
 	var row machines.MachineConfig
 
@@ -76,14 +75,14 @@ func (repo *MachineRepository) GetProcessedInputs(
 	app Address,
 	index uint64,
 ) ([]*Input, error) {
-	query := fmt.Sprintf(`
+	query := `
         SELECT   id, index, status, raw_data
         FROM     input
         WHERE    application_address = @applicationAddress
         AND      index >= @index
         AND      status != 'NONE'
         ORDER BY index ASC
-    `)
+    `
 	args := pgx.NamedArgs{
 		"applicationAddress": app,
 		"index":              index,

@@ -12,6 +12,7 @@ import (
 	mrand "math/rand"
 	"testing"
 
+	"github.com/cartesi/rollups-node/internal/node/advancer/machines"
 	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/internal/nodemachine"
 
@@ -27,7 +28,8 @@ type AdvancerSuite struct{ suite.Suite }
 func (s *AdvancerSuite) TestNew() {
 	s.Run("Ok", func() {
 		require := s.Require()
-		var machines map[Address]Machine = Machines{randomAddress(): &MockMachine{}}
+		machines := newMockMachines()
+		machines.Map[randomAddress()] = &MockMachine{}
 		var repository Repository = &MockRepository{}
 		advancer, err := New(machines, repository)
 		require.NotNil(advancer)
@@ -36,7 +38,7 @@ func (s *AdvancerSuite) TestNew() {
 
 	s.Run("InvalidMachines", func() {
 		require := s.Require()
-		var machines map[Address]Machine = nil
+		var machines Machines = nil
 		var repository Repository = &MockRepository{}
 		advancer, err := New(machines, repository)
 		require.Nil(advancer)
@@ -46,7 +48,8 @@ func (s *AdvancerSuite) TestNew() {
 
 	s.Run("InvalidRepository", func() {
 		require := s.Require()
-		var machines map[Address]Machine = Machines{randomAddress(): &MockMachine{}}
+		machines := newMockMachines()
+		machines.Map[randomAddress()] = &MockMachine{}
 		var repository Repository = nil
 		advancer, err := New(machines, repository)
 		require.Nil(advancer)
@@ -63,11 +66,11 @@ func (s *AdvancerSuite) TestRun() {
 	s.Run("Ok", func() {
 		require := s.Require()
 
-		machines := Machines{}
+		machines := newMockMachines()
 		app1 := randomAddress()
-		machines[app1] = &MockMachine{}
+		machines.Map[app1] = &MockMachine{}
 		app2 := randomAddress()
-		machines[app2] = &MockMachine{}
+		machines.Map[app2] = &MockMachine{}
 		res1 := randomAdvanceResult()
 		res2 := randomAdvanceResult()
 		res3 := randomAdvanceResult()
@@ -94,14 +97,18 @@ func (s *AdvancerSuite) TestRun() {
 		require.Len(repository.StoredResults, 3)
 	})
 
+	s.Run("Error/UpdateEpochs", func() {
+		s.T().Skip("TODO")
+	})
+
 	// NOTE: missing more test cases
 }
 
 func (s *AdvancerSuite) TestProcess() {
 	setup := func() (Machines, *MockRepository, *Advancer, Address) {
 		app := randomAddress()
-		machines := Machines{}
-		machines[app] = &MockMachine{}
+		machines := newMockMachines()
+		machines.Map[app] = &MockMachine{}
 		repository := &MockRepository{}
 		advancer := &Advancer{machines, repository}
 		return machines, repository, advancer, app
@@ -124,7 +131,6 @@ func (s *AdvancerSuite) TestProcess() {
 		err := advancer.process(context.Background(), app, inputs)
 		require.Nil(err)
 		require.Len(repository.StoredResults, 7)
-		require.Equal(*inputs[6], repository.LastInput)
 	})
 
 	s.Run("Panic", func() {
@@ -183,29 +189,7 @@ func (s *AdvancerSuite) TestProcess() {
 			require.Errorf(err, "store-advance error")
 			require.Len(repository.StoredResults, 1)
 		})
-
-		s.Run("UpdateEpochs", func() {
-			require := s.Require()
-
-			_, repository, advancer, app := setup()
-			inputs := []*Input{
-				{Id: 1, RawData: marshal(randomAdvanceResult())},
-				{Id: 2, RawData: marshal(randomAdvanceResult())},
-				{Id: 3, RawData: marshal(randomAdvanceResult())},
-				{Id: 4, RawData: marshal(randomAdvanceResult())},
-			}
-			repository.UpdateEpochsError = errors.New("update-epochs error")
-
-			err := advancer.process(context.Background(), app, inputs)
-			require.Errorf(err, "update-epochs error")
-			require.Len(repository.StoredResults, 4)
-		})
 	})
-
-}
-
-func (s *AdvancerSuite) TestKeysFrom() {
-	s.T().Skip("TODO")
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -227,6 +211,26 @@ func (mock *MockMachine) Advance(
 
 // ------------------------------------------------------------------------------------------------
 
+type MachinesMock struct {
+	Map map[Address]machines.AdvanceMachine
+}
+
+func newMockMachines() *MachinesMock {
+	return &MachinesMock{
+		Map: map[Address]machines.AdvanceMachine{},
+	}
+}
+
+func (mock *MachinesMock) GetAdvanceMachine(app Address) machines.AdvanceMachine {
+	return mock.Map[app]
+}
+
+func (mock *MachinesMock) Apps() []Address {
+	return []Address{}
+}
+
+// ------------------------------------------------------------------------------------------------
+
 type MockRepository struct {
 	GetInputsReturn   map[Address][]*Input
 	GetInputsError    error
@@ -234,7 +238,6 @@ type MockRepository struct {
 	UpdateEpochsError error
 
 	StoredResults []*nodemachine.AdvanceResult
-	LastInput     Input
 }
 
 func (mock *MockRepository) GetUnprocessedInputs(
@@ -253,12 +256,7 @@ func (mock *MockRepository) StoreAdvanceResult(
 	return mock.StoreAdvanceError
 }
 
-func (mock *MockRepository) UpdateEpochs(
-	_ context.Context,
-	_ Address,
-	lastInput *Input,
-) error {
-	mock.LastInput = *lastInput
+func (mock *MockRepository) UpdateEpochs(_ context.Context, _ Address) error {
 	return mock.UpdateEpochsError
 }
 

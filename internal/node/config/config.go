@@ -32,7 +32,7 @@ type NodeConfig struct {
 	ContractsInputBoxDeploymentBlockNumber    int64
 	SnapshotDir                               string
 	PostgresEndpoint                          Redacted[string]
-	PostgresSslDisabled                       bool
+	PostgresSslMode                           bool
 	HttpAddress                               string
 	HttpPort                                  int
 	FeatureClaimerEnabled                     bool
@@ -96,7 +96,7 @@ func FromEnv() NodeConfig {
 	config.ContractsInputBoxDeploymentBlockNumber = getContractsInputBoxDeploymentBlockNumber()
 	config.SnapshotDir = getSnapshotDir()
 	config.PostgresEndpoint = Redacted[string]{getPostgresEndpoint()}
-	config.PostgresSslDisabled = !getPostgresSslEnabled()
+	config.PostgresSslMode = getPostgresSslEnabled()
 	config.HttpAddress = getHttpAddress()
 	config.HttpPort = getHttpPort()
 	config.FeatureClaimerEnabled = getFeatureClaimerEnabled()
@@ -156,4 +156,27 @@ func authFromEnv() Auth {
 	default:
 		panic("invalid auth kind")
 	}
+}
+
+// ------------------------------------------------------------------------------------------------
+
+type AdvancerConfig struct {
+	LogLevel                LogLevel
+	LogPrettyEnabled        bool
+	PostgresEndpoint        Redacted[string]
+	PostgresSslMode         bool
+	AdvancerPollingInterval Duration
+	MachineServerVerbosity  cartesimachine.ServerVerbosity
+}
+
+func GetAdvancerConfig() AdvancerConfig {
+	var config AdvancerConfig
+	config.LogLevel = getLogLevel()
+	config.LogPrettyEnabled = getLogPrettyEnabled()
+	config.PostgresEndpoint = Redacted[string]{getPostgresEndpoint()}
+	config.PostgresSslMode = getPostgresSslEnabled()
+	config.AdvancerPollingInterval = getAdvancerPollingInterval()
+	// Temporary.
+	config.MachineServerVerbosity = cartesimachine.ServerVerbosity(getMachineServerVerbosity())
+	return config
 }

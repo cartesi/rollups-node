@@ -136,7 +136,7 @@ func (m *Machines) Delete(app Address) *nm.NodeMachine {
 // Apps returns the addresses of the applications for which there are machines.
 func (m *Machines) Apps() []Address {
 	m.mutex.RLock()
-	defer m.mutex.Unlock()
+	defer m.mutex.RUnlock()
 
 	keys := make([]Address, len(m.machines))
 	i := 0
@@ -163,7 +163,7 @@ func (m *Machines) Close() error {
 
 func (m *Machines) getMachine(app Address) *nm.NodeMachine {
 	m.mutex.RLock()
-	defer m.mutex.Unlock()
+	defer m.mutex.RUnlock()
 	return m.machines[app]
 }
 
