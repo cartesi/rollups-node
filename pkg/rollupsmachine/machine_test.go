@@ -13,7 +13,7 @@ import (
 
 	"github.com/cartesi/rollups-node/pkg/emulator"
 	"github.com/cartesi/rollups-node/pkg/rollupsmachine/cartesimachine"
-	"github.com/cartesi/rollups-node/test/snapshot"
+	"github.com/cartesi/rollups-node/test/tooling/snapshot"
 
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
