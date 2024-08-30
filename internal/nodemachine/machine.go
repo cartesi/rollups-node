@@ -34,7 +34,7 @@ type AdvanceResult struct {
 }
 
 type InspectResult struct {
-	InputIndex uint64
+	InputIndex *uint64
 	Accepted   bool
 	Reports    [][]byte
 	Error      error
@@ -44,7 +44,8 @@ type NodeMachine struct {
 	inner rollupsmachine.RollupsMachine
 
 	// Index of the last Input that was processed.
-	lastInputIndex uint64
+	// Can be nil if no inputs were processed.
+	lastInputIndex *uint64
 
 	// How long a call to inner.Advance or inner.Inspect can take.
 	advanceTimeout, inspectTimeout time.Duration
@@ -68,7 +69,7 @@ type NodeMachine struct {
 
 func New(
 	inner rollupsmachine.RollupsMachine,
-	inputIndex uint64,
+	inputIndex *uint64,
 	advanceTimeout time.Duration,
 	inspectTimeout time.Duration,
 	maxConcurrentInspects uint8,
@@ -148,14 +149,14 @@ func (machine *NodeMachine) Advance(ctx context.Context,
 		// Replaces the current machine with the fork and updates lastInputIndex.
 		machine.mutex.HLock()
 		machine.inner = fork
-		machine.lastInputIndex = index
+		machine.lastInputIndex = &index
 		machine.mutex.Unlock()
 	} else {
 		// Closes the forked machine.
 		err = fork.Close(ctx)
 		// Updates lastInputIndex.
 		machine.mutex.HLock()
-		machine.lastInputIndex = index
+		machine.lastInputIndex = &index
 		machine.mutex.Unlock()
 	}
 

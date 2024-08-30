@@ -54,7 +54,13 @@ How many times some functions should be retried after an error."""
 default = "3"
 go-type = "Duration"
 description = """
-How seconds the retry policy will wait between retries."""
+How many seconds the retry policy will wait between retries."""
+
+[rollups.CARTESI_ADVANCER_POLLING_INTERVAL]
+default = "30"
+go-type = "Duration"
+description = """
+How many seconds the node will wait before querying the database for new inputs."""
 
 [rollups.CARTESI_VALIDATOR_POLLING_INTERVAL]
 default = "30"
@@ -250,3 +256,13 @@ go-type = "bool"
 description = """
 When enabled, prints server-manager output to stdout and stderr directly.
 All other log configurations are ignored."""
+
+#
+# Temporary
+#
+
+[temp.CARTESI_MACHINE_SERVER_VERBOSITY]
+default = "info"
+go-type = "string"
+description = """
+TODO."""
