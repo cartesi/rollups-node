@@ -1,70 +1,81 @@
 # Cartesi Rollups Node
 
-This page assumes the reader knows the concepts of Cartesi Rollups.
-The Cartesi Rollups [documentation page][rollups-docs] is an excellent place to learn these concepts.
+> [!NOTE]
+> This page assumes the reader has a good understanding about Cartesi Rollups.
+> The Cartesi Rollups [documentation page][rollups-docs] is an excellent place to learn the concepts related to the framework.
 
 [rollups-docs]: https://docs.cartesi.io/cartesi-rollups/overview/
 
 ## Introduction
 
-![Overview](docs/images/overview.svg)
+![Overview](docs/images/overview.svg "Cartesi Rollups Framework Topology")
 
-The diagram above presents the topology of the Cartesi Rollups framework.
-In this diagram, the white box is an EVM-compatible blockchain, such as Ethereum.
-The blue boxes are the major Cartesi components in the Cartesi Rollups framework.
+The diagram above show an overview of the topology of the Cartesi Rollups framework.
+The white box on the left represents an EVM-compatible blockchain, such as Ethereum.
+The blue boxes are the major Cartesi components used in the framework.
 The black boxes are the components of the application built on top of Cartesi Rollups.
 
 The Cartesi Rollups Contracts run in the base layer and are responsible for settlement, consensus, and data availability.
 The Cartesi Machine is a deterministic execution environment that runs off-chain.
-These two components live in completely decoupled environments, so the Cartesi Rollups framework needs another component to handle the communication between them.
+Both components live in completely decoupled environments, so the framework defines another component to handle the communication between them, the Cartesi Rollups Node (_Node_).
 
-The Cartesi Rollups Node is the middleware that connects the Rollups smart contracts, the application back-end running inside the Cartesi Machine, and the front-end.
-As such, the Node reads the advance-state inputs from the smart contracts, sends those inputs to the Cartesi Machine, and stores the computation outputs in a database that the application front-end can later query.
+> [!NOTE]
+> In this documentation, the term _Node_ is used to refer to the Cartesi Rollups Node.
+
+The Node is the _middleware_ that connects the Cartesi Rollups smart contracts, the application back-end running inside the Cartesi Machine, and the application front-end.
+As such, the Node reads `advance-state` inputs from the smart contracts, sends those inputs to the Cartesi Machine, and stores the computation outputs in a database for the application front-end later query them.
 The Node also provides a consensus mechanism so users can validate outputs on-chain.
 
 ## Features
 
 This section delves into the Node features in more detail.
 
-### Advance State
+### Advance state
 
-![Advance State](docs/images/advance.svg)
+![Advance State](docs/images/advance.svg "Data flow for `advance-state` inputs")
 
 The diagram above presents the data flow for advancing the rollup state.
-First, the application front-end adds an advance-state input to the `InputBox` smart contract in the base layer.
-The Node watches the events emitted by this contract, reads the input, and sends it to the application back-end running inside the Cartesi Machine.
-Once the application back-end processes the input, the Node obtains the outputs (vouchers, notices, and reports) and stores them in a database.
+First, the application front-end adds an `advance-state` input to the `InputBox` smart contract in the base layer.
+The Node watches the events emitted by this contract, reads each associated input and sends it to the application back-end running inside the Cartesi Machine.
+Once the application back-end processes the input, the Node stores the resulting outputs and reports in a database.
 Finally, the application front-end reads these outputs from the database.
 
-The Node provides a GraphQL API to read the rollup state for the application front end.
-This API contains the advance-state inputs, the corresponding outputs, and the proofs necessary to validate the outputs on-chain.
-The [`reader.graphql`](api/graphql/reader.graphql) file contains the schema for this API.
+> [!IMPORTANT]
+> The Node provides a GraphQL API that may be used by the application front end to read the rollup state.
+> This API contains the `advance-state` inputs, the corresponding outputs, and the proofs necessary to validate the outputs on-chain.
+> The [`reader.graphql`](api/graphql/reader.graphql) file contains the schema for this API.
 
 ### Inspect State
 
-![Inspect State](docs/images/inspect.svg)
+![Inspect State](docs/images/inspect.svg "Data flow for `ispect-state` inputs")
 
-Besides advance-state inputs, the Cartesi Machine can also process inspect-state inputs.
+Besides `advance-state` inputs, the Cartesi Machine can also process `inspect-state` inputs.
 By definition, these inputs don't alter the machine's state; instead, they are a mechanism to query the application back-end directly.
-The application front-end sends inspect-state inputs directly to the Rollups Node.
-The Node sends the inputs to the Cartesi Machine, obtains the reports, and returns them to the application front-end (note the inspect-state inputs do not return vouchers and notices).
+
+The application front-end sends `inspect-state` inputs directly to the Node.
+The Node passes the inputs to the Cartesi Machine, obtains the reports and returns them to the application front-end (note the `inspect-state` inputs do not return outputs).
 
 The Node provides a REST API for the application front-end to inspect the Cartesi Machine.
-The [`inspect.yaml`](api/openapi/inspect.yaml) file contains the schema for this API.
+Its schema is defined at file [`inspect.yaml`](api/openapi/inspect.yaml).
 
-It is worth noting that the current version of the Rollups Node can only process one input at a time, be it advance-state or inspect-state.
-So, be cautious of using inspect-state inputs if your application has specific scalability requirements.
-We recommend benchmarking the application back-end before committing to an architecture that relies on inspect-state inputs.
+> [!TIP]
+> The Node can process multiple inputs concurrently at a time, being them `advance-state` or `inspect-state`.
+> However, the amount of concurrent processess is limited, based upon resources available in the deployment enviroment.
+> Make sure to configure the Node accordingly. For more information, refer to the [Configuration](./docs/config.md) page.
+
+> [!CAUTION]
+> Be cautious when using `inspect-state` inputs if your application has specific scalability requirements.
+> We strongly recommend benchmarking the application back-end before committing to an architecture that relies on `inspect-state` inputs.
 
 ### Validate
 
-![Validate](docs/images/validate.svg)
+![Validate](docs/images/validate.svg "Input validation data flow")
 
-The Rollups Node bundles multiple advance-state inputs into an epoch.
-Since the Node only supports the Authority consensus mechanism, it is up to the Node to decide when it should close an epoch.
-Once an epoch is closed, the Node computes a claim for the epoch and submits it to the rollups smart contracts.
-Then, the application front-end fetches the proof that a given output is within the closed epoch and uses this proof to validate the output.
-For instance, the front end may verify whether a notice is valid or execute a voucher.
+The Node bundles multiple `advance-state` inputs into an _epoch_.
+Currently, the Node only supports the Authority consensus mechanism, it is the Node that decides when it should close an epoch.
+Once an epoch is closed, the Node computes a claim for the epoch and submits it to the Rollups Smart Contracts.
+Then, the application front-end fetches the proof corresponding to a given output from a closed epoch and uses it to validate the output.
+For instance, the front end may verify whether a notice is valid or execute an output.
 
 Only the validator can submit a claim to the Rollups smart contracts.
 The application developer decides who is the validator when deploying the application contract to the base layer.
@@ -80,18 +91,18 @@ This feature was deprecated in the Rollups Node 2.0 version; instead, developers
 
 ## Running
 
-We recommend application developers use [Sunodo][sunodo-docs] to run the Node.
+We recommend application developers to use [Sunodo][sunodo-docs] to run the Node.
 Advanced developers who want to modify the Node may check the [development](#development) section.
 
 [sunodo-docs]: https://docs.sunodo.io/
 
 ### Configuration
 
-The Rollups Node should be configured exclusively with environment variables, which are described at [Node Configuration](docs/config.md) page.
+The Node should be configured exclusively with environment variables, which are described at [Node Configuration](docs/config.md) page.
 
 ## Dependencies
 
-The Cartesi Rollups Node depends on the following Cartesi components:
+The Node depends on the following Cartesi components:
 
 | Component | Version |
 |---|---|
@@ -102,16 +113,16 @@ The Cartesi Rollups Node depends on the following Cartesi components:
 
 ## Development
 
-Check the [development](docs/development.md) page for more information about developing the Rollups Node.
+Check the [development](docs/development.md) page for more information about setting up a local development environment for the Node.
 
 ### Internal architecture
 
-This document covered the features of the Node and its external APIs in a high-level manner.
+This document provides only a high-level overview of features available in the Node and its external APIs.
 Check the [architecture](docs/architecture.md) page for more details about the Node internal components.
 
 ## Releasing
 
-Check the [release](docs/release.md) page for more information about the steps to release a version of the Rollups Node.
+Check the [release](docs/release.md) page for more information about the steps to release a version of the Node.
 
 ## Contributing
 

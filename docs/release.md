@@ -84,9 +84,4 @@ The announcement should contain:
 
 ## Update/create a maintenance branch
 
-Either create a maintenance branch for any major or minor release and name it as `release/X.Y.Z` or update an existing maintenance branch if the release is a patch release.
-
-## Prepare for the next release
-
-Last but not least, prepare the [`CHANGELOG`](../CHANGELOG.md) for the next release by creating a new heading (`## [Unreleased]`) in the beginning of the document.
-Create a pull request based on the `main` branch and merge it once it's approved.
+Whenever there's a need to maintain a previous version of the software while the `main` branch is being updated for the current version, proceed with the creation of a maintenance branch for that release and name it as `release/X.Y.Z`.
