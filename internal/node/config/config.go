@@ -30,7 +30,7 @@ type NodeConfig struct {
 	ContractsInputBoxDeploymentBlockNumber    int64
 	SnapshotDir                               string
 	PostgresEndpoint                          Redacted[string]
-	PostgresSslMode                           bool
+	PostgresSslDisabled                       bool
 	HttpAddress                               string
 	HttpPort                                  int
 	FeatureClaimerEnabled                     bool
@@ -91,7 +91,7 @@ func FromEnv() NodeConfig {
 	config.ContractsInputBoxDeploymentBlockNumber = getContractsInputBoxDeploymentBlockNumber()
 	config.SnapshotDir = getSnapshotDir()
 	config.PostgresEndpoint = Redacted[string]{getPostgresEndpoint()}
-	config.PostgresSslMode = getPostgresSslmodeEnabled()
+	config.PostgresSslDisabled = !getPostgresSslEnabled()
 	config.HttpAddress = getHttpAddress()
 	config.HttpPort = getHttpPort()
 	config.FeatureClaimerEnabled = getFeatureClaimerEnabled()

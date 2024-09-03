@@ -216,7 +216,7 @@ for more information.
 * **Type:** `string`
 * **Default:** `""`
 
-## `CARTESI_POSTGRES_SSLMODE_ENABLED`
+## `CARTESI_POSTGRES_SSL_ENABLED`
 
 When enabled, will connect to postgres database via SSL.
 

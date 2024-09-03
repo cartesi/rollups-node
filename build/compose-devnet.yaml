@@ -34,4 +34,4 @@ services:
       CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED: "false"
       CARTESI_AUTH_KIND: "mnemonic"
       CARTESI_AUTH_MNEMONIC: "test test test test test test test test test test test junk"
-      CARTESI_POSTGRES_SSLMODE_ENABLED: "false"
+      CARTESI_POSTGRES_SSL_ENABLED: "false"

@@ -22,7 +22,7 @@ import (
 // Validates the Node Database Schema Version
 func ValidateSchema(config config.NodeConfig) error {
 	endpoint := config.PostgresEndpoint.Value
-	if config.PostgresSslMode {
+	if config.PostgresSslDisabled {
 		endpoint += "?sslmode=disable"
 	}
 

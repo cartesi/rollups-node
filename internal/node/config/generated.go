@@ -456,14 +456,14 @@ func getPostgresEndpoint() string {
 	return val
 }
 
-func getPostgresSslmodeEnabled() bool {
-	s, ok := os.LookupEnv("CARTESI_POSTGRES_SSLMODE_ENABLED")
+func getPostgresSslEnabled() bool {
+	s, ok := os.LookupEnv("CARTESI_POSTGRES_SSL_ENABLED")
 	if !ok {
 		s = "true"
 	}
 	val, err := toBool(s)
 	if err != nil {
-		panic(fmt.Sprintf("failed to parse CARTESI_POSTGRES_SSLMODE_ENABLED: %v", err))
+		panic(fmt.Sprintf("failed to parse CARTESI_POSTGRES_SSL_ENABLED: %v", err))
 	}
 	return val
 }

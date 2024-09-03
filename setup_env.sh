@@ -19,7 +19,7 @@ export CARTESI_AUTH_MNEMONIC="test test test test test test test test test test 
 export CARTESI_POSTGRES_ENDPOINT="postgres://postgres:password@localhost:5432/postgres"
 export CARTESI_HTTP_ADDRESS="0.0.0.0"
 export CARTESI_HTTP_PORT="10000"
-export CARTESI_POSTGRES_SSLMODE_ENABLED="false"
+export CARTESI_POSTGRES_SSL_ENABLED="false"
 
 rust_bin_path="$PWD/cmd/authority-claimer/target/debug"
 # Check if the path is already in $PATH

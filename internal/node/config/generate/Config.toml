@@ -206,7 +206,7 @@ It is also possible to set the endpoint without a password and load it from Post
 See [this](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-PASSFILE)
 for more information."""
 
-[postgres.CARTESI_POSTGRES_SSLMODE_ENABLED]
+[postgres.CARTESI_POSTGRES_SSL_ENABLED]
 default = "true"
 go-type = "bool"
 description = """
