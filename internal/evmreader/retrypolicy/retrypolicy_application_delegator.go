@@ -8,6 +8,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/retry"
+	"github.com/cartesi/rollups-node/pkg/contracts/application"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -36,6 +37,17 @@ func (d *ApplicationRetryPolicyDelegator) GetConsensus(opts *bind.CallOpts,
 		opts,
 		d.maxRetries,
 		d.delayBetweenCalls,
-		"Consensus::GetEpochLength",
+		"Application::GetConsensus",
+	)
+}
+
+func (d *ApplicationRetryPolicyDelegator) RetrieveOutputExecutionEvents(
+	opts *bind.FilterOpts,
+) ([]*application.ApplicationOutputExecuted, error) {
+	return retry.CallFunctionWithRetryPolicy(d.delegate.RetrieveOutputExecutionEvents,
+		opts,
+		d.maxRetries,
+		d.delayBetweenCalls,
+		"Application::RetrieveOutputExecutionEvents",
 	)
 }

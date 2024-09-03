@@ -38,6 +38,7 @@ CREATE TABLE "application"
     "status" "ApplicationStatus" NOT NULL,
     "iconsensus_address" BYTEA NOT NULL,
     "last_claim_check_block" NUMERIC(20,0) NOT NULL CHECK ("last_claim_check_block" >= 0 AND "last_claim_check_block" <= f_maxuint64()),
+    "last_output_check_block" NUMERIC(20,0) NOT NULL CHECK ("last_output_check_block" >= 0 AND "last_output_check_block" <= f_maxuint64()),
     CONSTRAINT "application_pkey" PRIMARY KEY ("id"),
     UNIQUE("contract_address")
 );
@@ -87,6 +88,7 @@ CREATE TABLE "output"
     "hash" BYTEA,
     "output_hashes_siblings" BYTEA[],
     "input_id" BIGINT NOT NULL,
+    "transaction_hash" BYTEA,
     CONSTRAINT "output_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "output_input_id_fkey" FOREIGN KEY ("input_id") REFERENCES "input"("id")
 );

@@ -11,6 +11,7 @@ import (
 	"math/big"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
+	appcontract "github.com/cartesi/rollups-node/pkg/contracts/application"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
 	"github.com/ethereum/go-ethereum"
@@ -47,6 +48,12 @@ type EvmReaderRepository interface {
 		claims []*Epoch,
 		mostRecentBlockNumber uint64,
 	) error
+	GetOutput(
+		ctx context.Context, indexKey uint64, appAddressKey Address,
+	) (*Output, error)
+	UpdateOutputExecutionTransaction(
+		ctx context.Context, app Address, executedOutputs []*Output, blockNumber uint64,
+	) error
 }
 
 // EthClient mimics part of ethclient.Client functions to narrow down the
@@ -71,6 +78,9 @@ type ConsensusContract interface {
 
 type ApplicationContract interface {
 	GetConsensus(opts *bind.CallOpts) (Address, error)
+	RetrieveOutputExecutionEvents(
+		opts *bind.FilterOpts,
+	) ([]*appcontract.ApplicationOutputExecuted, error)
 }
 
 type ContractFactory interface {
@@ -93,7 +103,8 @@ type application struct {
 	consensusContract   ConsensusContract
 }
 
-// EvmReader reads Input Added and Claim Submitted events from the blockchain
+// EvmReader reads Input Added, Claim Submitted and
+// Output Executed events from the blockchain
 type EvmReader struct {
 	client                  EthClient
 	wsClient                EthWsClient
@@ -212,6 +223,8 @@ func (r *EvmReader) watchForNewBlocks(ctx context.Context, ready chan<- struct{}
 			r.checkForNewInputs(ctx, apps, mostRecentBlockNumber)
 
 			r.checkForClaimStatus(ctx, apps, mostRecentBlockNumber)
+
+			r.checkForOutputExecution(ctx, apps, mostRecentBlockNumber)
 
 		}
 	}

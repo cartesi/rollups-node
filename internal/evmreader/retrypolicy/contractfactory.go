@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/evmreader"
-	"github.com/cartesi/rollups-node/pkg/contracts/application"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
@@ -40,7 +39,7 @@ func (f *EvmReaderContractFactory) NewApplication(
 
 	// Building a contract does not fail due to network errors.
 	// No need to retry this operation
-	applicationContract, err := application.NewApplication(address, f.ethClient)
+	applicationContract, err := evmreader.NewApplicationContractAdapter(address, f.ethClient)
 	if err != nil {
 		return nil, err
 	}

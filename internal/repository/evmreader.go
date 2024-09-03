@@ -164,14 +164,15 @@ func (pg *Database) getAllApplicationsByStatus(
 	criteria *ApplicationStatus,
 ) ([]Application, error) {
 	var (
-		id                  uint64
-		contractAddress     Address
-		templateHash        Hash
-		lastProcessedBlock  uint64
-		lastClaimCheckBlock uint64
-		status              ApplicationStatus
-		iConsensusAddress   Address
-		results             []Application
+		id                   uint64
+		contractAddress      Address
+		templateHash         Hash
+		lastProcessedBlock   uint64
+		lastClaimCheckBlock  uint64
+		lastOutputCheckBlock uint64
+		status               ApplicationStatus
+		iConsensusAddress    Address
+		results              []Application
 	)
 
 	query := `
@@ -181,6 +182,7 @@ func (pg *Database) getAllApplicationsByStatus(
 		template_hash,
 		last_processed_block,
 		last_claim_check_block,
+		last_output_check_block,
 		status,
 		iconsensus_address
 	FROM
@@ -199,16 +201,18 @@ func (pg *Database) getAllApplicationsByStatus(
 
 	_, err = pgx.ForEachRow(rows,
 		[]any{&id, &contractAddress, &templateHash,
-			&lastProcessedBlock, &lastClaimCheckBlock, &status, &iConsensusAddress},
+			&lastProcessedBlock, &lastClaimCheckBlock, &lastOutputCheckBlock,
+			&status, &iConsensusAddress},
 		func() error {
 			app := Application{
-				Id:                  id,
-				ContractAddress:     contractAddress,
-				TemplateHash:        templateHash,
-				LastProcessedBlock:  lastProcessedBlock,
-				LastClaimCheckBlock: lastClaimCheckBlock,
-				Status:              status,
-				IConsensusAddress:   iConsensusAddress,
+				Id:                   id,
+				ContractAddress:      contractAddress,
+				TemplateHash:         templateHash,
+				LastProcessedBlock:   lastProcessedBlock,
+				LastClaimCheckBlock:  lastClaimCheckBlock,
+				LastOutputCheckBlock: lastOutputCheckBlock,
+				Status:               status,
+				IConsensusAddress:    iConsensusAddress,
 			}
 			results = append(results, app)
 			return nil
@@ -372,6 +376,72 @@ func (pg *Database) UpdateEpochs(
 	err = tx.Commit(ctx)
 	if err != nil {
 		return errors.Join(errUpdateEpochs, err, tx.Rollback(ctx))
+	}
+
+	return nil
+}
+
+func (pg *Database) UpdateOutputExecutionTransaction(
+	ctx context.Context,
+	app Address,
+	executedOutputs []*Output,
+	blockNumber uint64,
+) error {
+
+	var errUpdateOutputs = errors.New("unable to update outputs")
+
+	tx, err := pg.db.Begin(ctx)
+	if err != nil {
+		return errors.Join(errUpdateOutputs, err)
+	}
+
+	updateOutputQuery := `
+	UPDATE output
+	SET
+		transaction_hash = @hash
+	WHERE
+		id = @id
+	`
+
+	for _, output := range executedOutputs {
+		updateOutputArgs := pgx.NamedArgs{
+			"hash": output.TransactionHash,
+			"id":   output.Id,
+		}
+
+		tag, err := tx.Exec(ctx, updateOutputQuery, updateOutputArgs)
+		if err != nil {
+			return errors.Join(errUpdateOutputs, err, tx.Rollback(ctx))
+		}
+		if tag.RowsAffected() != 1 {
+			return errors.Join(errUpdateOutputs,
+				fmt.Errorf("no rows affected when updating output %d from app %s",
+					output.Index, app),
+				tx.Rollback(ctx))
+		}
+	}
+
+	// Update last processed block
+	updateLastBlockQuery := `
+	UPDATE application
+	SET last_output_check_block = @blockNumber
+	WHERE
+		contract_address=@contractAddress`
+
+	updateLastBlockArgs := pgx.NamedArgs{
+		"blockNumber":     blockNumber,
+		"contractAddress": app,
+	}
+
+	_, err = tx.Exec(ctx, updateLastBlockQuery, updateLastBlockArgs)
+	if err != nil {
+		return errors.Join(errUpdateOutputs, err, tx.Rollback(ctx))
+	}
+
+	// Commit transaction
+	err = tx.Commit(ctx)
+	if err != nil {
+		return errors.Join(errUpdateOutputs, err, tx.Rollback(ctx))
 	}
 
 	return nil

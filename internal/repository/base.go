@@ -91,6 +91,7 @@ func (pg *Database) InsertApplication(
 		template_hash,
 		last_processed_block,
 		last_claim_check_block,
+		last_output_check_block,
 		status,
 		iconsensus_address)
 	VALUES
@@ -98,16 +99,18 @@ func (pg *Database) InsertApplication(
 		@templateHash,
 		@lastProcessedBlock,
 		@lastClaimCheckBlock,
+		@lastOutputCheckBlock,
 		@status,
 		@iConsensusAddress)`
 
 	args := pgx.NamedArgs{
-		"contractAddress":     app.ContractAddress,
-		"templateHash":        app.TemplateHash,
-		"lastProcessedBlock":  app.LastProcessedBlock,
-		"lastClaimCheckBlock": app.LastClaimCheckBlock,
-		"status":              app.Status,
-		"iConsensusAddress":   app.IConsensusAddress,
+		"contractAddress":      app.ContractAddress,
+		"templateHash":         app.TemplateHash,
+		"lastProcessedBlock":   app.LastProcessedBlock,
+		"lastClaimCheckBlock":  app.LastClaimCheckBlock,
+		"lastOutputCheckBlock": app.LastOutputCheckBlock,
+		"status":               app.Status,
+		"iConsensusAddress":    app.IConsensusAddress,
 	}
 
 	_, err := pg.db.Exec(ctx, query, args)
@@ -220,13 +223,15 @@ func (pg *Database) InsertOutput(
 		raw_data,
 		hash,
 		output_hashes_siblings,
-		input_id)
+		input_id,
+		transaction_hash)
 	VALUES
 		(@index,
 		@rawData,
 		@hash,
 		@outputHashesSiblings,
-		@inputId)
+		@inputId,
+		@transactionHash)
 	RETURNING
 		id
 	`
@@ -237,6 +242,7 @@ func (pg *Database) InsertOutput(
 		"rawData":              output.RawData,
 		"hash":                 output.Hash,
 		"outputHashesSiblings": output.OutputHashesSiblings,
+		"transactionHash":      output.TransactionHash,
 	}
 
 	var id uint64
@@ -349,13 +355,14 @@ func (pg *Database) GetApplication(
 	appAddressKey Address,
 ) (*Application, error) {
 	var (
-		id                  uint64
-		contractAddress     Address
-		templateHash        Hash
-		lastProcessedBlock  uint64
-		lastClaimCheckBlock uint64
-		status              ApplicationStatus
-		iconsensusAddress   Address
+		id                   uint64
+		contractAddress      Address
+		templateHash         Hash
+		lastProcessedBlock   uint64
+		lastClaimCheckBlock  uint64
+		lastOutputCheckBlock uint64
+		status               ApplicationStatus
+		iconsensusAddress    Address
 	)
 
 	query := `
@@ -365,6 +372,7 @@ func (pg *Database) GetApplication(
 		template_hash,
 		last_processed_block,
 		last_claim_check_block,
+		last_output_check_block,
 		status,
 		iconsensus_address
 	FROM
@@ -382,6 +390,7 @@ func (pg *Database) GetApplication(
 		&templateHash,
 		&lastProcessedBlock,
 		&lastClaimCheckBlock,
+		&lastOutputCheckBlock,
 		&status,
 		&iconsensusAddress,
 	)
@@ -396,13 +405,14 @@ func (pg *Database) GetApplication(
 	}
 
 	app := Application{
-		Id:                  id,
-		ContractAddress:     contractAddress,
-		TemplateHash:        templateHash,
-		LastProcessedBlock:  lastProcessedBlock,
-		LastClaimCheckBlock: lastClaimCheckBlock,
-		Status:              status,
-		IConsensusAddress:   iconsensusAddress,
+		Id:                   id,
+		ContractAddress:      contractAddress,
+		TemplateHash:         templateHash,
+		LastProcessedBlock:   lastProcessedBlock,
+		LastClaimCheckBlock:  lastClaimCheckBlock,
+		LastOutputCheckBlock: lastOutputCheckBlock,
+		Status:               status,
+		IConsensusAddress:    iconsensusAddress,
 	}
 
 	return &app, nil
@@ -567,6 +577,7 @@ func (pg *Database) GetOutput(
 		hash                 *Hash
 		outputHashesSiblings []Hash
 		inputId              uint64
+		transactionHash      *Hash
 	)
 
 	query := `
@@ -576,7 +587,8 @@ func (pg *Database) GetOutput(
 		o.raw_data,
 		o.hash,
 		o.output_hashes_siblings,
-		o.input_id
+		o.input_id,
+		o.transaction_hash
 	FROM
 		output o
 	INNER JOIN
@@ -598,6 +610,7 @@ func (pg *Database) GetOutput(
 		&hash,
 		&outputHashesSiblings,
 		&inputId,
+		&transactionHash,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -617,6 +630,7 @@ func (pg *Database) GetOutput(
 		Hash:                 hash,
 		OutputHashesSiblings: outputHashesSiblings,
 		InputId:              inputId,
+		TransactionHash:      transactionHash,
 	}
 
 	return &output, nil

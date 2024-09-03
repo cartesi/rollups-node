@@ -45,6 +45,7 @@ CREATE OR REPLACE VIEW graphql."outputs" AS
         o."index",
         o."raw_data",
         o."output_hashes_siblings",
+        o."transaction_hash",
         i."index" as "input_index"
     FROM
         "output" o

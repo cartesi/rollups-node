@@ -13,6 +13,7 @@ import (
 	"time"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
+	appcontract "github.com/cartesi/rollups-node/pkg/contracts/application"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
 	"github.com/ethereum/go-ethereum"
@@ -449,6 +450,28 @@ func newMockRepository() *MockRepository {
 		mock.Anything,
 	).Return(nil)
 
+	repo.On("UpdateOutputExecutionTransaction",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+		mock.Anything).Return(nil)
+
+	outputHash := common.HexToHash("0xAABBCCDDEE")
+	repo.On("GetOutput",
+		mock.Anything,
+		0,
+		common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E")).Return(
+		&Output{
+			Id:                   1,
+			Index:                0,
+			RawData:              common.Hex2Bytes("0xdeadbeef"),
+			Hash:                 &outputHash,
+			InputId:              1,
+			OutputHashesSiblings: nil,
+			TransactionHash:      nil,
+		},
+	)
+
 	return repo
 
 }
@@ -617,6 +640,24 @@ func (m *MockRepository) UpdateEpochs(ctx context.Context,
 	return args.Error(0)
 }
 
+func (m *MockRepository) GetOutput(
+	ctx context.Context, indexKey uint64, appAddressKey Address,
+) (*Output, error) {
+	args := m.Called(ctx, indexKey, appAddressKey)
+	obj := args.Get(0)
+	if obj == nil {
+		return nil, args.Error(1)
+	}
+	return obj.(*Output), args.Error(1)
+}
+
+func (m *MockRepository) UpdateOutputExecutionTransaction(
+	ctx context.Context, app Address, executedOutputs []*Output, blockNumber uint64,
+) error {
+	args := m.Called(ctx, app, executedOutputs, blockNumber)
+	return args.Error(0)
+}
+
 type MockApplicationContract struct {
 	mock.Mock
 }
@@ -634,6 +675,13 @@ func (m *MockApplicationContract) GetConsensus(
 ) (common.Address, error) {
 	args := m.Called(opts)
 	return args.Get(0).(common.Address), args.Error(1)
+}
+
+func (m *MockApplicationContract) RetrieveOutputExecutionEvents(
+	opts *bind.FilterOpts,
+) ([]*appcontract.ApplicationOutputExecuted, error) {
+	args := m.Called(opts)
+	return args.Get(0).([]*appcontract.ApplicationOutputExecuted), args.Error(1)
 }
 
 type MockIConsensusContract struct {
@@ -687,6 +735,9 @@ func newEmvReaderContractFactory() *MockEvmReaderContractFactory {
 	applicationContract.On("GetConsensus",
 		mock.Anything,
 	).Return(common.HexToAddress("0xdeadbeef"), nil)
+
+	applicationContract.On("RetrieveOutputExecutionEvents",
+		mock.Anything).Return([]*appcontract.ApplicationOutputExecuted{}, nil)
 
 	consensusContract := &MockIConsensusContract{}
 

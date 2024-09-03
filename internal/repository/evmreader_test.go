@@ -203,3 +203,28 @@ func (s *RepositorySuite) TestUpdateEpochs() {
 	s.Require().Equal(uint64(499), application.LastClaimCheckBlock)
 
 }
+
+func (s *RepositorySuite) TestUpdateOutputExecutionTransaction() {
+	output, err := s.database.GetOutput(s.ctx, 1, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
+	s.Require().NotNil(output)
+
+	var executedOutputs []*Output
+	hash := common.HexToHash("0xAABBCCDD")
+	output.TransactionHash = &hash
+
+	executedOutputs = append(executedOutputs, output)
+
+	err = s.database.UpdateOutputExecutionTransaction(
+		s.ctx, common.HexToAddress("deadbeef"), executedOutputs, 854758)
+	s.Require().Nil(err)
+
+	actualOutput, err := s.database.GetOutput(s.ctx, 1, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
+	s.Require().Equal(output, actualOutput)
+
+	application, err := s.database.GetApplication(s.ctx, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
+	s.Require().Equal(uint64(854758), application.LastOutputCheckBlock)
+
+}
