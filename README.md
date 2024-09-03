@@ -82,13 +82,6 @@ The application developer decides who is the validator when deploying the applic
 If you want to run the Node but aren't the application's validator, you may turn off the feature that submits the claims.
 The [configuration](#configuration) section describes how to do so.
 
-### Host Mode
-
-The host mode allows the developer to run the application back-end in the host machine instead of the Cartesi Machine.
-This feature was deprecated in the Rollups Node 2.0 version; instead, developers should use [NoNodo][nonodo].
-
-[nonodo]: https://github.com/gligneul/nonodo#nonodo
-
 ## Running
 
 We recommend application developers to use [Sunodo][sunodo-docs] to run the Node.
