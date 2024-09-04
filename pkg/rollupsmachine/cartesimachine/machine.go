@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/cartesi/rollups-node/pkg/emulator"
 )
@@ -20,299 +21,268 @@ const (
 var (
 	ErrCartesiMachine = errors.New("cartesi machine internal error")
 
-	ErrTimedOut = errors.New("cartesi machine operation timed out")
+	ErrTainted  = errors.New("cartesi machine tainted")
 	ErrCanceled = errors.New("cartesi machine operation canceled")
 
 	ErrOrphanServer = errors.New("cartesi machine server was left orphan")
 )
 
-type cartesiMachine struct {
+type Timeouts struct {
+	AdvanceRun time.Duration // For running the machine for an advance-state request.
+	InspectRun time.Duration // For running the machine for an inspect-state request.
+	Create     time.Duration // For instantiating a new machine (be it with a Load or a Fork).
+	Store      time.Duration // For storing a machine.
+	Fast       time.Duration // For fast machine operations.
+}
+
+type machine struct {
 	inner  *emulator.Machine
 	server *emulator.RemoteMachineManager
 
-	address string // address of the JSON RPC remote cartesi machine server
+	tainted bool
+
+	timeouts Timeouts
+	address  string // Address of the JSON RPC remote cartesi machine server.
 }
+
+// ------------------------------------------------------------------------------------------------
 
 // Load loads the machine stored at path into the remote server from address.
 func Load(ctx context.Context,
 	path string,
 	address string,
+	timeouts Timeouts,
 	config *emulator.MachineRuntimeConfig,
 ) (CartesiMachine, error) {
-	machine := &cartesiMachine{address: address}
+	m := &machine{address: address, timeouts: timeouts}
 
-	if err := checkContext(ctx); err != nil {
-		return nil, err
-	}
-
-	// Creates the server machine manager (the server's manager).
-	server, err := emulator.NewRemoteMachineManager(address)
+	// Creates the manager for the server.
+	server, err := newRemoteMachineManager(ctx, timeouts, address)
 	if err != nil {
-		err = fmt.Errorf("could not create the remote machine manager: %w", err)
-		return nil, errCartesiMachine(err)
-	}
-	machine.server = server
-
-	if err := checkContext(ctx); err != nil {
-		machine.server.Delete()
+		err = fmt.Errorf("failed to create the remote machine manager: %w", err)
 		return nil, err
 	}
+	m.server = server
 
 	// Loads the machine stored at path into the server.
-	inner, err := server.LoadMachine(path, config)
+	inner, err := m.load(ctx, path, config)
 	if err != nil {
-		defer machine.server.Delete()
-		err = fmt.Errorf("could not load the machine: %w", err)
-		return nil, errCartesiMachine(err)
+		if m.server != nil {
+			m.server.Delete()
+		}
+		return nil, fmt.Errorf("failed to load the machine: %w", err)
 	}
-	machine.inner = inner
+	m.inner = inner
 
-	return machine, nil
+	return m, nil
 }
 
-// Fork forks the machine.
-//
-// When Fork returns with the ErrOrphanServer error, it also returns with a non-nil CartesiMachine
-// that can be used to retrieve the orphan server's address.
-func (machine *cartesiMachine) Fork(ctx context.Context) (CartesiMachine, error) {
-	newMachine := new(cartesiMachine)
+// ------------------------------------------------------------------------------------------------
 
-	if err := checkContext(ctx); err != nil {
-		return nil, err
+// Fork forks the machine.
+func (m *machine) Fork(ctx context.Context) (CartesiMachine, error) {
+	if m.tainted {
+		return nil, ErrTainted
 	}
 
+	newMachine := &machine{timeouts: m.timeouts}
+
 	// Forks the server.
-	address, err := machine.server.Fork()
+	address, err := m.fork(ctx)
 	if err != nil {
-		err = fmt.Errorf("could not fork the machine: %w", err)
-		return nil, errCartesiMachine(err)
+		return nil, fmt.Errorf("failed to fork the machine: %w", err)
 	}
 	newMachine.address = address
 
 	// Instantiates the new remote machine manager.
-	server, err := emulator.NewRemoteMachineManager(address)
+	server, err := newRemoteMachineManager(ctx, m.timeouts, newMachine.address)
 	if err != nil {
-		err = fmt.Errorf("could not create the new remote machine manager: %w", err)
-		errOrphanServer := errOrphanServerWithAddress(address)
-		return newMachine, errors.Join(ErrCartesiMachine, err, errOrphanServer)
+		err = fmt.Errorf("failed to create the new remote machine manager: %w", err)
+		return nil, errors.Join(err, errOrphanServerWithAddress(newMachine.address))
 	}
 	newMachine.server = server
 
 	// Gets the inner machine reference from the server.
-	inner, err := newMachine.server.GetMachine()
+	inner, err := newMachine.getMachine(ctx)
 	if err != nil {
-		err = fmt.Errorf("could not get the machine from the server: %w", err)
-		return newMachine, errors.Join(ErrCartesiMachine, err, newMachine.closeServer())
+		if !errors.Is(err, ErrTainted) {
+			err = errors.Join(err, newMachine.shutdown(ctx)) // NOTE
+		}
+		return nil, fmt.Errorf("failed to get the machine from the server: %w", err)
 	}
 	newMachine.inner = inner
 
 	return newMachine, nil
 }
 
-func (machine *cartesiMachine) Run(ctx context.Context,
-	until uint64,
-) (emulator.BreakReason, error) {
-	if err := checkContext(ctx); err != nil {
-		return -1, err
+func (m *machine) Continue(ctx context.Context) error {
+	if m.tainted {
+		return ErrTainted
 	}
 
-	breakReason, err := machine.inner.Run(until)
+	err := m.resetIFlagsY(ctx)
 	if err != nil {
-		assert(breakReason == emulator.BreakReasonFailed, breakReason.String())
-		err = fmt.Errorf("machine run failed: %w", err)
-		return breakReason, errCartesiMachine(err)
+		return fmt.Errorf("failed to reset iflagsY: %w", err)
 	}
+
+	return nil
+}
+
+func (m *machine) AdvanceRun(ctx context.Context, until uint64) (emulator.BreakReason, error) {
+	if m.tainted {
+		return -1, ErrTainted
+	}
+
+	breakReason, err := m.run(ctx, until, m.timeouts.AdvanceRun)
+	if err != nil {
+		return -1, fmt.Errorf("failed to run (advance): %w", err)
+	}
+
 	return breakReason, nil
 }
 
-func (machine *cartesiMachine) IsAtManualYield(ctx context.Context) (bool, error) {
-	if err := checkContext(ctx); err != nil {
-		return false, err
+func (m *machine) InspectRun(ctx context.Context, until uint64) (emulator.BreakReason, error) {
+	if m.tainted {
+		return -1, ErrTainted
 	}
 
-	iflagsY, err := machine.inner.ReadIFlagsY()
+	breakReason, err := m.run(ctx, until, m.timeouts.InspectRun)
 	if err != nil {
-		err = fmt.Errorf("could not read iflagsY: %w", err)
-		return iflagsY, errCartesiMachine(err)
+		return -1, fmt.Errorf("failed to run (inspect): %w", err)
 	}
+
+	return breakReason, nil
+}
+
+// Close closes the cartesi machine. It also shuts down the remote cartesi machine server.
+func (m *machine) Close(ctx context.Context) error {
+	if m.tainted {
+		return ErrTainted
+	}
+
+	m.inner.Delete()
+	m.inner = nil
+
+	err := m.shutdown(ctx)
+	if err != nil {
+		err = fmt.Errorf("could not shut down the server: %w", err)
+		err = errors.Join(err, errOrphanServerWithAddress(m.address))
+	}
+	m.server.Delete()
+	m.server = nil
+
+	return err
+}
+
+// ------------------------------------------------------------------------------------------------
+
+func (m *machine) IsAtManualYield(ctx context.Context) (bool, error) {
+	if m.tainted {
+		return false, ErrTainted
+	}
+
+	iflagsY, err := m.readIFlagsY(ctx)
+	if err != nil {
+		return iflagsY, fmt.Errorf("failed to read the yield type: %w", err)
+	}
+
 	return iflagsY, nil
 }
 
-func (machine *cartesiMachine) ReadYieldReason(
-	ctx context.Context,
-) (emulator.HtifYieldReason, error) {
-	if err := checkContext(ctx); err != nil {
-		return 0, err
+func (m *machine) ReadYieldReason(ctx context.Context) (emulator.HtifYieldReason, error) {
+	if m.tainted {
+		return 0, ErrTainted
 	}
 
-	tohost, err := machine.readHtifToHostData()
+	tohost, err := m.readHtifToHostData(ctx)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to read the yield reason from HTIF tohost: %w", err)
 	}
+
 	yieldReason := tohost >> 32 //nolint:mnd
 	return emulator.HtifYieldReason(yieldReason), nil
 }
 
-func (machine *cartesiMachine) ReadHash(ctx context.Context) ([32]byte, error) {
-	if err := checkContext(ctx); err != nil {
-		return [32]byte{}, err
+func (m *machine) ReadHash(ctx context.Context) ([32]byte, error) {
+	if m.tainted {
+		return [32]byte{}, ErrTainted
 	}
 
-	hash, err := machine.inner.GetRootHash()
+	hash, err := m.getRootHash(ctx)
 	if err != nil {
-		err := fmt.Errorf("could not get the machine's root hash: %w", err)
-		return hash, errCartesiMachine(err)
+		return [32]byte{}, fmt.Errorf("failed to get the machine's root hash: %w", err)
 	}
+
 	return hash, nil
 }
 
-func (machine *cartesiMachine) ReadMemory(ctx context.Context) ([]byte, error) {
-	if err := checkContext(ctx); err != nil {
-		return []byte{}, err
+func (m *machine) ReadCycle(ctx context.Context) (uint64, error) {
+	if m.tainted {
+		return 0, ErrTainted
 	}
 
-	tohost, err := machine.readHtifToHostData()
+	cycle, err := m.readMCycle(ctx)
 	if err != nil {
-		return nil, err
+		return 0, fmt.Errorf("could not read the machine's current cycle: %w", err)
+	}
+
+	return cycle, nil
+}
+
+func (m *machine) ReadMemory(ctx context.Context) ([]byte, error) {
+	if m.tainted {
+		return []byte{}, ErrTainted
+	}
+
+	tohost, err := m.readHtifToHostData(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the length from HTIF tohost: %w", err)
 	}
 	length := tohost & 0x00000000ffffffff //nolint:mnd
 
-	if err := checkContext(ctx); err != nil {
-		return []byte{}, err
-	}
-
-	read, err := machine.inner.ReadMemory(emulator.CmioTxBufferStart, length)
+	data, err := m.readMemory(ctx, length)
 	if err != nil {
-		err := fmt.Errorf("could not read from the memory: %w", err)
-		return nil, errCartesiMachine(err)
+		return nil, fmt.Errorf("failed to read the memory: %w", err)
 	}
 
-	return read, nil
+	return data, nil
 }
 
-func (machine *cartesiMachine) WriteRequest(ctx context.Context,
-	data []byte,
-	type_ RequestType,
-) error {
-	if err := checkContext(ctx); err != nil {
-		return err
+func (m *machine) WriteRequest(ctx context.Context, data []byte, type_ RequestType) error {
+	if m.tainted {
+		return ErrTainted
 	}
 
 	// Writes the request's data.
-	err := machine.inner.WriteMemory(emulator.CmioRxBufferStart, data)
+	err := m.writeMemory(ctx, data)
 	if err != nil {
-		err := fmt.Errorf("could not write to the memory: %w", err)
-		return errCartesiMachine(err)
-	}
-
-	if err := checkContext(ctx); err != nil {
-		return err
+		return fmt.Errorf("failed to write to the memory: %w", err)
 	}
 
 	// Writes the request's type and length.
 	fromhost := ((uint64(type_) << 32) | (uint64(len(data)) & 0xffffffff)) //nolint:mnd
-	err = machine.inner.WriteHtifFromHostData(fromhost)
+	err = m.writeHtifFromHostData(ctx, fromhost)
 	if err != nil {
-		err := fmt.Errorf("could not write HTIF fromhost data: %w", err)
-		return errCartesiMachine(err)
+		return fmt.Errorf("failed to write the length to HTIF fromhost: %w", err)
 	}
 
 	return nil
 }
 
-func (machine *cartesiMachine) Continue(ctx context.Context) error {
-	if err := checkContext(ctx); err != nil {
-		return err
-	}
+// ------------------------------------------------------------------------------------------------
 
-	err := machine.inner.ResetIFlagsY()
-	if err != nil {
-		err = fmt.Errorf("could not reset iflagsY: %w", err)
-		return errCartesiMachine(err)
-	}
-	return nil
-}
-
-func (machine *cartesiMachine) ReadCycle(ctx context.Context) (uint64, error) {
-	if err := checkContext(ctx); err != nil {
-		return 0, err
-	}
-
-	cycle, err := machine.inner.ReadMCycle()
-	if err != nil {
-		err = fmt.Errorf("could not read the machine's current cycle: %w", err)
-		return cycle, errCartesiMachine(err)
-	}
-	return cycle, nil
-}
-
-func (machine cartesiMachine) PayloadLengthLimit() uint {
+func (m machine) PayloadLengthLimit() uint {
 	expo := float64(emulator.CmioRxBufferLog2Size)
-	var payloadLengthLimit = uint(math.Pow(2, expo)) //nolint:mnd
+	payloadLengthLimit := uint(math.Pow(2, expo)) //nolint:mnd
 	return payloadLengthLimit
 }
 
-func (machine cartesiMachine) Address() string {
-	return machine.address
-}
-
-// Close closes the cartesi machine. It also shuts down the remote cartesi machine server.
-func (machine *cartesiMachine) Close(ctx context.Context) error {
-	if err := checkContext(ctx); err != nil {
-		return err
-	}
-
-	machine.inner.Delete()
-	machine.inner = nil
-	return machine.closeServer()
+func (m machine) Address() string {
+	return m.address
 }
 
 // ------------------------------------------------------------------------------------------------
-
-// closeServer shuts down the server and deletes its reference.
-func (machine *cartesiMachine) closeServer() error {
-	err := machine.server.Shutdown()
-	if err != nil {
-		err = fmt.Errorf("could not shut down the server: %w", err)
-		err = errors.Join(errCartesiMachine(err), errOrphanServerWithAddress(machine.address))
-	}
-	machine.server.Delete()
-	machine.server = nil
-	return err
-}
-
-func (machine *cartesiMachine) readHtifToHostData() (uint64, error) {
-	tohost, err := machine.inner.ReadHtifToHostData()
-	if err != nil {
-		err = fmt.Errorf("could not read HTIF tohost data: %w", err)
-		return tohost, errCartesiMachine(err)
-	}
-	return tohost, nil
-}
-
-// ------------------------------------------------------------------------------------------------
-
-func errCartesiMachine(err error) error {
-	return errors.Join(ErrCartesiMachine, err)
-}
 
 func errOrphanServerWithAddress(address string) error {
 	return fmt.Errorf("%w at address %s", ErrOrphanServer, address)
-}
-
-func checkContext(ctx context.Context) error {
-	err := ctx.Err()
-	if err == context.DeadlineExceeded {
-		return ErrTimedOut
-	} else if err == context.Canceled {
-		return ErrCanceled
-	} else {
-		return err
-	}
-}
-
-func assert(condition bool, s string) {
-	if !condition {
-		panic("assertion error: " + s)
-	}
 }

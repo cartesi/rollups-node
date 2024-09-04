@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/cartesi/rollups-node/pkg/emulator"
 	"github.com/cartesi/rollups-node/pkg/rollupsmachine/cartesimachine"
@@ -55,6 +56,21 @@ type RollupsMachine interface {
 	Close(context.Context) error
 }
 
+type TimeoutConfig struct {
+	AdvanceStep time.Duration // For stepping the machine for an advance-state request.
+	InspectStep time.Duration // For stepping the machine for an inspect-state request.
+	Machine     time.Duration // For instantiating a new machine (be it a Load or a Fork).
+	Store       time.Duration // For storing a machine.
+	Fast        time.Duration // For fast machine operations.
+}
+
+type CycleConfig struct {
+	AdvanceInc Cycle
+	AdvanceMax Cycle
+	InspectInc Cycle
+	InspectMax Cycle
+}
+
 // ------------------------------------------------------------------------------------------------
 
 // rollupsMachine implements the RollupsMachine interface by wrapping a
@@ -63,9 +79,9 @@ type RollupsMachine interface {
 // When processing an advance-state or an inspect-state request, the machine will run in increments
 // of inc cycles, for no more than max cycles.
 type rollupsMachine struct {
-	inner cartesimachine.CartesiMachine
-
-	inc, max Cycle
+	inner    cartesimachine.CartesiMachine
+	timeouts TimeoutConfig
+	cycles   CycleConfig
 }
 
 // New checks if the provided cartesimachine.CartesiMachine is in a valid state to receive
@@ -73,12 +89,20 @@ type rollupsMachine struct {
 // cartesimachine.CartesiMachine.
 func New(ctx context.Context,
 	inner cartesimachine.CartesiMachine,
-	inc, max Cycle,
+	cycles CycleConfig,
+	timeouts TimeoutConfig,
 ) (RollupsMachine, error) {
-	machine := &rollupsMachine{inner: inner, inc: inc, max: max}
+	machine := &rollupsMachine{
+		inner:    inner,
+		timeouts: timeouts,
+		cycles:   cycles,
+	}
+
+	fastCtx, cancel := context.WithTimeout(ctx, machine.timeouts.Fast)
+	defer cancel()
 
 	// Ensures that the machine is at a manual yield.
-	isAtManualYield, err := machine.inner.IsAtManualYield(ctx)
+	isAtManualYield, err := machine.inner.IsAtManualYield(fastCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -96,11 +120,14 @@ func New(ctx context.Context,
 }
 
 func (machine *rollupsMachine) Fork(ctx context.Context) (RollupsMachine, error) {
+	ctx, cancel := context.WithTimeout(ctx, machine.timeouts.Machine)
+	defer cancel()
+
 	inner, err := machine.inner.Fork(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &rollupsMachine{inner: inner, inc: machine.inc, max: machine.max}, nil
+	return &rollupsMachine{inner: inner, timeouts: machine.timeouts, cycles: machine.cycles}, nil
 }
 
 func (machine rollupsMachine) Hash(ctx context.Context) (Hash, error) {
@@ -156,7 +183,10 @@ func (machine *rollupsMachine) Close(ctx context.Context) error {
 //
 // The machine MUST be at a manual yield when calling this function.
 func (machine *rollupsMachine) lastRequestWasAccepted(ctx context.Context) (bool, error) {
-	yieldReason, err := machine.inner.ReadYieldReason(ctx)
+	fastCtx, cancel := context.WithTimeout(ctx, machine.timeouts.Fast)
+	defer cancel()
+
+	yieldReason, err := machine.inner.ReadYieldReason(fastCtx)
 	if err != nil {
 		return false, err
 	}

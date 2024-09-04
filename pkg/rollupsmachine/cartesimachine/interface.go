@@ -11,15 +11,13 @@ import (
 	"github.com/cartesi/rollups-node/pkg/emulator"
 )
 
-type (
-	RequestType uint8
-	YieldReason uint8
-)
+type RequestType uint8
 
 type CartesiMachine interface {
 	Fork(context.Context) (CartesiMachine, error)
 	Continue(context.Context) error
-	Run(_ context.Context, until uint64) (emulator.BreakReason, error)
+	AdvanceRun(_ context.Context, until uint64) (emulator.BreakReason, error)
+	InspectRun(_ context.Context, until uint64) (emulator.BreakReason, error)
 	Close(context.Context) error
 
 	IsAtManualYield(context.Context) (bool, error)
