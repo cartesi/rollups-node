@@ -98,7 +98,7 @@ func run(cmd *cobra.Command, args []string) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	c := config.FromEnv()
+	c := config.EvmReaderConfigFromEnv()
 
 	// Override configs
 	if verbose {
@@ -114,6 +114,9 @@ func run(cmd *cobra.Command, args []string) {
 		evmReaderDefaultBlock, err := config.ToDefaultBlockFromString(defaultBlock)
 		cobra.CheckErr(err)
 		c.EvmReaderDefaultBlock = evmReaderDefaultBlock
+	}
+	if inputBoxAddress != "" {
+		c.ContractsInputBoxAddress = inputBoxAddress
 	}
 
 	// setup log

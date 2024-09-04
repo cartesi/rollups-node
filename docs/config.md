@@ -135,7 +135,7 @@ Address of the InputBox contract.
 The deployment block for the input box contract.
 The node will begin to read blockchain events from this block.
 
-* **Type:** `int64`
+* **Type:** `uint64`
 
 ## `CARTESI_EXPERIMENTAL_SERVER_MANAGER_LOG_BYPASS_ENABLED`
 

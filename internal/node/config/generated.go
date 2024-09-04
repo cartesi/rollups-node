@@ -324,12 +324,12 @@ func getContractsInputBoxAddress() string {
 	return val
 }
 
-func getContractsInputBoxDeploymentBlockNumber() int64 {
+func getContractsInputBoxDeploymentBlockNumber() uint64 {
 	s, ok := os.LookupEnv("CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER")
 	if !ok {
 		panic("missing env var CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER")
 	}
-	val, err := toInt64(s)
+	val, err := toUint64(s)
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER: %v", err))
 	}

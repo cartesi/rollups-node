@@ -29,33 +29,35 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	config := config.FromEnv()
+	c := config.FromEnv()
 
 	// setup log
-	startup.ConfigLogs(config.LogLevel, config.LogPrettyEnabled)
-	slog.Info("Starting the Cartesi Rollups Node", "version", buildVersion, "config", config)
+	startup.ConfigLogs(c.LogLevel, c.LogPrettyEnabled)
+	slog.Info("Starting the Cartesi Rollups Node", "version", buildVersion, "config", c)
 
-	err := startup.ValidateSchema(config.PostgresEndpoint.Value, config.PostgresSslDisabled)
+	err := startup.ValidateSchema(c.PostgresEndpoint.Value, c.PostgresSslDisabled)
 	if err != nil {
 		slog.Error("Node exited with an error", "error", err)
 		os.Exit(1)
 	}
 
-	database, err := repository.Connect(ctx, config.PostgresEndpoint.Value)
+	database, err := repository.Connect(ctx, c.PostgresEndpoint.Value)
 	if err != nil {
 		slog.Error("Node couldn't connect to the database", "error", err)
 		os.Exit(1)
 	}
 	defer database.Close()
 
-	_, err = startup.SetupNodePersistentConfig(ctx, database, config)
+	_, err = startup.SetupNodePersistentConfig(ctx, database, c.EvmReaderDefaultBlock,
+		c.ContractsInputBoxAddress, uint64(c.ContractsInputBoxDeploymentBlockNumber),
+		c.BlockchainID)
 	if err != nil {
 		slog.Error("Node exited with an error", "error", err)
 		os.Exit(1)
 	}
 
 	// create the node supervisor
-	supervisor, err := node.Setup(ctx, config, "", database)
+	supervisor, err := node.Setup(ctx, c, "", database)
 	if err != nil {
 		slog.Error("Node exited with an error", "error", err)
 		os.Exit(1)
