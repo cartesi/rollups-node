@@ -239,6 +239,13 @@ At the end of each epoch, the node will send claims to the blockchain.
 * **Type:** `uint64`
 * **Default:** `"7200"`
 
+## `CARTESI_EVMREADER_POLLING_INTERVAL`
+
+How many seconds the node will wait before fetching new blocks.
+
+* **Type:** `Duration`
+* **Default:** `"1"`
+
 ## `CARTESI_EVM_READER_RETRY_POLICY_MAX_DELAY`
 
 How many seconds the retry policy will wait between retries.

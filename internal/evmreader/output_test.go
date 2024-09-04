@@ -6,7 +6,6 @@ package evmreader
 import (
 	"context"
 	"errors"
-	"time"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
 	appcontract "github.com/cartesi/rollups-node/pkg/contracts/application"
@@ -18,12 +17,9 @@ import (
 
 func (s *EvmReaderSuite) TestOutputExecution() {
 
-	wsClient := FakeWSEhtClient{}
-
 	//New EVM Reader
 	evmReader := NewEvmReader(
 		s.client,
-		&wsClient,
 		s.inputBox,
 		s.repository,
 		0x10,
@@ -107,24 +103,11 @@ func (s *EvmReaderSuite) TestOutputExecution() {
 		mock.Anything,
 	).Return(&header1, nil).Once()
 
-	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-
-	go func() {
-		errChannel <- evmReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
-	}
-
-	wsClient.fireNewHead(&header0)
-	wsClient.fireNewHead(&header1)
-	time.Sleep(1 * time.Second)
+	//Run 2 steps
+	err := evmReader.Step(s.ctx)
+	s.Require().Nil(err)
+	err = evmReader.Step(s.ctx)
+	s.Require().Nil(err)
 
 	s.repository.AssertNumberOfCalls(
 		s.T(),
@@ -150,10 +133,8 @@ func (s *EvmReaderSuite) TestReadOutputExecution() {
 	).Return(applicationContract, nil)
 
 	//New EVM Reader
-	wsClient := FakeWSEhtClient{}
 	evmReader := NewEvmReader(
 		s.client,
-		&wsClient,
 		s.inputBox,
 		s.repository,
 		0x00,
@@ -235,23 +216,9 @@ func (s *EvmReaderSuite) TestReadOutputExecution() {
 		mock.Anything,
 	).Return(&header0, nil).Once()
 
-	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-
-	go func() {
-		errChannel <- evmReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
-	}
-
-	wsClient.fireNewHead(&header0)
-	time.Sleep(1 * time.Second)
+	// Run 1 step
+	err := evmReader.Step(s.ctx)
+	s.Require().Nil(err)
 
 	s.repository.AssertNumberOfCalls(
 		s.T(),
@@ -269,11 +236,8 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 		appAddress := common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E")
 
 		// Contract Factory
-
 		applicationContract := &MockApplicationContract{}
-
 		contractFactory := newEmvReaderContractFactory()
-
 		contractFactory.Unset("NewApplication")
 		contractFactory.On("NewApplication",
 			mock.Anything,
@@ -281,12 +245,10 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 
 		//New EVM Reader
 		client := newMockEthClient()
-		wsClient := FakeWSEhtClient{}
 		inputBox := newMockInputBox()
 		repository := newMockRepository()
 		evmReader := NewEvmReader(
 			client,
-			&wsClient,
 			inputBox,
 			repository,
 			0x00,
@@ -348,23 +310,8 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 			mock.Anything,
 		).Return(&header0, nil).Once()
 
-		// Start service
-		ready := make(chan struct{}, 1)
-		errChannel := make(chan error, 1)
-
-		go func() {
-			errChannel <- evmReader.Run(ctx, ready)
-		}()
-
-		select {
-		case <-ready:
-			break
-		case err := <-errChannel:
-			s.FailNow("unexpected error signal", err)
-		}
-
-		wsClient.fireNewHead(&header0)
-		time.Sleep(1 * time.Second)
+		err := evmReader.Step(ctx)
+		s.Require().Nil(err)
 
 		s.repository.AssertNumberOfCalls(
 			s.T(),
@@ -393,12 +340,10 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 
 		//New EVM Reader
 		client := newMockEthClient()
-		wsClient := FakeWSEhtClient{}
 		inputBox := newMockInputBox()
 		repository := newMockRepository()
 		evmReader := NewEvmReader(
 			client,
-			&wsClient,
 			inputBox,
 			repository,
 			0x00,
@@ -465,23 +410,8 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 			mock.Anything,
 		).Return(&header0, nil).Once()
 
-		// Start service
-		ready := make(chan struct{}, 1)
-		errChannel := make(chan error, 1)
-
-		go func() {
-			errChannel <- evmReader.Run(ctx, ready)
-		}()
-
-		select {
-		case <-ready:
-			break
-		case err := <-errChannel:
-			s.FailNow("unexpected error signal", err)
-		}
-
-		wsClient.fireNewHead(&header0)
-		time.Sleep(1 * time.Second)
+		err := evmReader.Step(ctx)
+		s.Require().Nil(err)
 
 		repository.AssertNumberOfCalls(
 			s.T(),
@@ -510,12 +440,10 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 
 		//New EVM Reader
 		client := newMockEthClient()
-		wsClient := FakeWSEhtClient{}
 		inputBox := newMockInputBox()
 		repository := newMockRepository()
 		evmReader := NewEvmReader(
 			client,
-			&wsClient,
 			inputBox,
 			repository,
 			0x00,
@@ -587,23 +515,8 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 			mock.Anything,
 		).Return(&header0, nil).Once()
 
-		// Start service
-		ready := make(chan struct{}, 1)
-		errChannel := make(chan error, 1)
-
-		go func() {
-			errChannel <- evmReader.Run(ctx, ready)
-		}()
-
-		select {
-		case <-ready:
-			break
-		case err := <-errChannel:
-			s.FailNow("unexpected error signal", err)
-		}
-
-		wsClient.fireNewHead(&header0)
-		time.Sleep(1 * time.Second)
+		err := evmReader.Step(ctx)
+		s.Require().Nil(err)
 
 		repository.AssertNumberOfCalls(
 			s.T(),

@@ -68,6 +68,13 @@ go-type = "Duration"
 description = """
 How many seconds the node will wait before trying to finish epochs for all applications."""
 
+[rollups.CARTESI_EVMREADER_POLLING_INTERVAL]
+default = "1"
+go-type = "Duration"
+description = """
+How many seconds the node will wait before fetching new blocks."""
+
+
 #
 # Blockchain
 #

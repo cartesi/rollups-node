@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/node/advancer/machines"
-	"github.com/cartesi/rollups-node/internal/node/advancer/poller"
 	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/internal/nodemachine"
+	"github.com/cartesi/rollups-node/internal/services/poller"
 )
 
 var (

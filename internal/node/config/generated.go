@@ -492,6 +492,18 @@ func getEpochLength() uint64 {
 	return val
 }
 
+func getEvmreaderPollingInterval() Duration {
+	s, ok := os.LookupEnv("CARTESI_EVMREADER_POLLING_INTERVAL")
+	if !ok {
+		s = "1"
+	}
+	val, err := toDuration(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_EVMREADER_POLLING_INTERVAL: %v", err))
+	}
+	return val
+}
+
 func getEvmReaderRetryPolicyMaxDelay() Duration {
 	s, ok := os.LookupEnv("CARTESI_EVM_READER_RETRY_POLICY_MAX_DELAY")
 	if !ok {

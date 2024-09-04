@@ -4,8 +4,6 @@
 package evmreader
 
 import (
-	"time"
-
 	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -15,11 +13,8 @@ import (
 
 func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 
-	wsClient := FakeWSEhtClient{}
-
 	evmReader := NewEvmReader(
 		s.client,
-		&wsClient,
 		s.inputBox,
 		s.repository,
 		0x10,
@@ -94,24 +89,11 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 		mock.Anything,
 	).Return(events_1, nil)
 
-	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-
-	go func() {
-		errChannel <- evmReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
-	}
-
-	wsClient.fireNewHead(&header0)
-	wsClient.fireNewHead(&header1)
-	time.Sleep(time.Second)
+	// Run 2 steps
+	err := evmReader.Step(s.ctx)
+	s.Require().Nil(err)
+	err = evmReader.Step(s.ctx)
+	s.Require().Nil(err)
 
 	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 2)
 	s.repository.AssertNumberOfCalls(
@@ -123,11 +105,8 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 
 func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 
-	wsClient := FakeWSEhtClient{}
-
 	evmReader := NewEvmReader(
 		s.client,
-		&wsClient,
 		s.inputBox,
 		s.repository,
 		0x10,
@@ -202,24 +181,11 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 		mock.Anything,
 	).Return(events_1, nil)
 
-	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-
-	go func() {
-		errChannel <- evmReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
-	}
-
-	wsClient.fireNewHead(&header0)
-	wsClient.fireNewHead(&header1)
-	time.Sleep(time.Second)
+	// Run 2 steps
+	err := evmReader.Step(s.ctx)
+	s.Require().Nil(err)
+	err = evmReader.Step(s.ctx)
+	s.Require().Nil(err)
 
 	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 2)
 	s.repository.AssertNumberOfCalls(
@@ -231,11 +197,8 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 
 func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 
-	wsClient := FakeWSEhtClient{}
-
-	inputReader := NewEvmReader(
+	evmReader := NewEvmReader(
 		s.client,
-		&wsClient,
 		s.inputBox,
 		s.repository,
 		0x10,
@@ -297,24 +260,9 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 
 	}).Return(make(map[uint64]uint64), make(map[uint64][]uint64), nil)
 
-	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-
-	go func() {
-		errChannel <- inputReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
-	}
-
-	wsClient.fireNewHead(&header2)
-	// Give a time for
-	time.Sleep(1 * time.Second)
+	// Run 1 step
+	err := evmReader.Step(s.ctx)
+	s.Require().Nil(err)
 
 	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 1)
 	s.repository.AssertNumberOfCalls(
@@ -326,10 +274,8 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 
 func (s *EvmReaderSuite) TestItStartsWhenLasProcessedBlockIsTheMostRecentBlock() {
 
-	wsClient := FakeWSEhtClient{}
-	inputReader := NewEvmReader(
+	evmReader := NewEvmReader(
 		s.client,
-		&wsClient,
 		s.inputBox,
 		s.repository,
 		0x10,
@@ -356,23 +302,9 @@ func (s *EvmReaderSuite) TestItStartsWhenLasProcessedBlockIsTheMostRecentBlock()
 		LastProcessedBlock: 0x11,
 	}}, nil).Once()
 
-	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-
-	go func() {
-		errChannel <- inputReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
-	}
-
-	wsClient.fireNewHead(&header2)
-	time.Sleep(1 * time.Second)
+	// Run 1 setp
+	err := evmReader.Step(s.ctx)
+	s.Require().Nil(err)
 
 	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 0)
 	s.repository.AssertNumberOfCalls(

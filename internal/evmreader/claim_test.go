@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"time"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
@@ -18,12 +17,9 @@ import (
 
 func (s *EvmReaderSuite) TestNoClaimsAcceptance() {
 
-	wsClient := FakeWSEhtClient{}
-
 	//New EVM Reader
 	evmReader := NewEvmReader(
 		s.client,
-		&wsClient,
 		s.inputBox,
 		s.repository,
 		0x10,
@@ -104,30 +100,12 @@ func (s *EvmReaderSuite) TestNoClaimsAcceptance() {
 		mock.Anything,
 		mock.Anything,
 	).Return(&header1, nil).Once()
-	s.client.On(
-		"HeaderByNumber",
-		mock.Anything,
-		mock.Anything,
-	).Return(&header2, nil).Once()
 
-	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-
-	go func() {
-		errChannel <- evmReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
-	}
-
-	wsClient.fireNewHead(&header0)
-	wsClient.fireNewHead(&header1)
-	time.Sleep(1 * time.Second)
+	// Run 2 steps
+	err := evmReader.Step(s.ctx)
+	s.Require().Nil(err)
+	err = evmReader.Step(s.ctx)
+	s.Require().Nil(err)
 
 	s.repository.AssertNumberOfCalls(
 		s.T(),
@@ -153,10 +131,9 @@ func (s *EvmReaderSuite) TestReadClaimAcceptance() {
 	).Return(consensusContract, nil)
 
 	//New EVM Reader
-	wsClient := FakeWSEhtClient{}
+
 	evmReader := NewEvmReader(
 		s.client,
-		&wsClient,
 		s.inputBox,
 		s.repository,
 		0x00,
@@ -261,23 +238,9 @@ func (s *EvmReaderSuite) TestReadClaimAcceptance() {
 		mock.Anything,
 	).Return(&header0, nil).Once()
 
-	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-
-	go func() {
-		errChannel <- evmReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
-	}
-
-	wsClient.fireNewHead(&header0)
-	time.Sleep(10 * time.Second)
+	//Run 1 step
+	err := evmReader.Step(s.ctx)
+	s.Require().Nil(err)
 
 	s.repository.AssertNumberOfCalls(
 		s.T(),
@@ -296,11 +259,8 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 		appAddress := common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E")
 
 		// Contract Factory
-
 		consensusContract := &MockIConsensusContract{}
-
 		contractFactory := newEmvReaderContractFactory()
-
 		contractFactory.Unset("NewIConsensus")
 		contractFactory.On("NewIConsensus",
 			mock.Anything,
@@ -308,12 +268,10 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 
 		//New EVM Reader
 		client := newMockEthClient()
-		wsClient := FakeWSEhtClient{}
 		inputBox := newMockInputBox()
 		repository := newMockRepository()
 		evmReader := NewEvmReader(
 			client,
-			&wsClient,
 			inputBox,
 			repository,
 			0x00,
@@ -409,23 +367,8 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			mock.Anything,
 		).Return(&header0, nil).Once()
 
-		// Start service
-		ready := make(chan struct{}, 1)
-		errChannel := make(chan error, 1)
-
-		go func() {
-			errChannel <- evmReader.Run(ctx, ready)
-		}()
-
-		select {
-		case <-ready:
-			break
-		case err := <-errChannel:
-			s.FailNow("unexpected error signal", err)
-		}
-
-		wsClient.fireNewHead(&header0)
-		time.Sleep(1 * time.Second)
+		err := evmReader.Step(ctx)
+		s.Require().Nil(err)
 
 		repository.AssertNumberOfCalls(
 			s.T(),
@@ -455,12 +398,10 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 
 		//New EVM Reader
 		client := newMockEthClient()
-		wsClient := FakeWSEhtClient{}
 		inputBox := newMockInputBox()
 		repository := newMockRepository()
 		evmReader := NewEvmReader(
 			client,
-			&wsClient,
 			inputBox,
 			repository,
 			0x00,
@@ -556,23 +497,8 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			mock.Anything,
 		).Return(&header0, nil).Once()
 
-		// Start service
-		ready := make(chan struct{}, 1)
-		errChannel := make(chan error, 1)
-
-		go func() {
-			errChannel <- evmReader.Run(ctx, ready)
-		}()
-
-		select {
-		case <-ready:
-			break
-		case err := <-errChannel:
-			s.FailNow("unexpected error signal", err)
-		}
-
-		wsClient.fireNewHead(&header0)
-		time.Sleep(1 * time.Second)
+		err := evmReader.Step(ctx)
+		s.Require().Nil(err)
 
 		repository.AssertNumberOfCalls(
 			s.T(),
@@ -602,12 +528,10 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 
 		//New EVM Reader
 		client := newMockEthClient()
-		wsClient := FakeWSEhtClient{}
 		inputBox := newMockInputBox()
 		repository := newMockRepository()
 		evmReader := NewEvmReader(
 			client,
-			&wsClient,
 			inputBox,
 			repository,
 			0x00,
@@ -616,7 +540,6 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 		)
 
 		// Prepare Claims Acceptance Events
-
 		claimEvent0 := &iconsensus.IConsensusClaimAcceptance{
 			AppContract:              appAddress,
 			LastProcessedBlockNumber: big.NewInt(3),
@@ -697,23 +620,8 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			mock.Anything,
 		).Return(&header0, nil).Once()
 
-		// Start service
-		ready := make(chan struct{}, 1)
-		errChannel := make(chan error, 1)
-
-		go func() {
-			errChannel <- evmReader.Run(ctx, ready)
-		}()
-
-		select {
-		case <-ready:
-			break
-		case err := <-errChannel:
-			s.FailNow("unexpected error signal", err)
-		}
-
-		wsClient.fireNewHead(&header0)
-		time.Sleep(1 * time.Second)
+		err := evmReader.Step(ctx)
+		s.Require().Nil(err)
 
 		repository.AssertNumberOfCalls(
 			s.T(),

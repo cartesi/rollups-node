@@ -43,6 +43,7 @@ type NodeConfig struct {
 	Auth                                      Auth
 	AdvancerPollingInterval                   Duration
 	ValidatorPollingInterval                  Duration
+	EvmReaderPollingInterval                  Duration
 	// Temporary
 	MachineServerVerbosity cartesimachine.ServerVerbosity
 }
@@ -115,6 +116,7 @@ func FromEnv() NodeConfig {
 	config.ValidatorPollingInterval = getValidatorPollingInterval()
 	// Temporary.
 	config.MachineServerVerbosity = cartesimachine.ServerVerbosity(getMachineServerVerbosity())
+	config.EvmReaderPollingInterval = getEvmreaderPollingInterval()
 	return config
 }
 
