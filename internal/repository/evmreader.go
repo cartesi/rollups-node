@@ -60,8 +60,7 @@ func (pg *Database) StoreEpochAndInputsTransaction(
 		@appAddress,
 		@epochId)
 	RETURNING
-		id
-	`
+		id`
 
 	updateLastBlockQuery := `
 	UPDATE application
@@ -178,12 +177,11 @@ func (pg *Database) getAllApplicationsByStatus(
 		status,
 		iconsensus_address
 	FROM
-		application
-	`
+		application`
 
 	var args []any
 	if criteria != nil {
-		query = query + "WHERE status=$1"
+		query = query + " WHERE status=$1"
 		args = append(args, string(*criteria))
 	}
 

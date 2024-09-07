@@ -47,8 +47,7 @@ func (i *InputSourceAdapter) RetrieveInputs(
 		inputAddedEvent := itr.Event
 		events = append(events, *inputAddedEvent)
 	}
-	err = itr.Error()
-	if err != nil {
+	if err = itr.Error(); err != nil {
 		return nil, err
 	}
 	return events, nil

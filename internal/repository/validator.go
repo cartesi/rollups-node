@@ -23,7 +23,7 @@ func (pg *Database) GetOutputsProducedInBlockRange(
 	endBlock uint64,
 ) ([]Output, error) {
 	query := `
-	SELECT 
+	SELECT
 		o.id,
 		o.index,
 		o.raw_data,
@@ -89,9 +89,9 @@ func (pg *Database) GetProcessedEpochs(ctx context.Context, application Address)
 		claim_hash,
 		transaction_hash,
 		status
-	FROM 
+	FROM
 		epoch
-	WHERE 
+	WHERE
 		application_address=@appAddress AND status=@status
 	ORDER BY
 		index ASC`
@@ -167,7 +167,7 @@ func (pg *Database) GetLastInputOutputsHash(
 	query := `
 	SELECT
 		outputs_hash
-	FROM 
+	FROM
 		input
 	WHERE
 		epoch_id = @id
@@ -274,7 +274,7 @@ func (pg *Database) SetEpochClaimAndInsertProofsTransaction(
 	SET
 		claim_hash=@claimHash,
 		status=@status
-	WHERE 
+	WHERE
 		id = @id
 	`
 
@@ -303,12 +303,12 @@ func (pg *Database) SetEpochClaimAndInsertProofsTransaction(
 	}
 
 	query2 := `
-	UPDATE 	
+	UPDATE
 		output
-	SET 	
+	SET
 		hash = @hash,
 		output_hashes_siblings = @outputHashesSiblings
-	WHERE	
+	WHERE
 	id = @id
 	`
 
