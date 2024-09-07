@@ -18,10 +18,6 @@ type ApplicationRetryPolicyDelegator struct {
 	delayBetweenCalls time.Duration
 }
 
-type getConsensusArgs struct {
-	opts *bind.CallOpts
-}
-
 func NewApplicationWithRetryPolicy(
 	delegate evmreader.ApplicationContract,
 	maxRetries uint64,
@@ -34,21 +30,12 @@ func NewApplicationWithRetryPolicy(
 	}
 }
 
-func (d *ApplicationRetryPolicyDelegator) GetConsensus(
-	opts *bind.CallOpts,
+func (d *ApplicationRetryPolicyDelegator) GetConsensus(opts *bind.CallOpts,
 ) (common.Address, error) {
-	return retry.CallFunctionWithRetryPolicy(d.getConsensus,
-		getConsensusArgs{
-			opts: opts,
-		},
+	return retry.CallFunctionWithRetryPolicy(d.delegate.GetConsensus,
+		opts,
 		d.maxRetries,
 		d.delayBetweenCalls,
 		"Consensus::GetEpochLength",
 	)
-}
-
-func (d *ApplicationRetryPolicyDelegator) getConsensus(
-	args getConsensusArgs,
-) (common.Address, error) {
-	return d.delegate.GetConsensus(args.opts)
 }

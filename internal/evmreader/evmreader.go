@@ -4,19 +4,17 @@
 package evmreader
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math/big"
-	"slices"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
+	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 )
@@ -25,7 +23,7 @@ import (
 type InputSource interface {
 	// Wrapper for FilterInputAdded(), which is automatically generated
 	// by go-ethereum and cannot be used for testing
-	RetrieveInputs(opts *bind.FilterOpts, appContract []common.Address, index []*big.Int,
+	RetrieveInputs(opts *bind.FilterOpts, appAddresses []Address, index []*big.Int,
 	) ([]inputbox.InputBoxInputAdded, error)
 }
 
@@ -39,6 +37,16 @@ type EvmReaderRepository interface {
 	GetAllRunningApplications(ctx context.Context) ([]Application, error)
 	GetNodeConfig(ctx context.Context) (*NodePersistentConfig, error)
 	GetEpoch(ctx context.Context, indexKey uint64, appAddressKey Address) (*Epoch, error)
+	GetEpochsWithOpenClaims(
+		ctx context.Context,
+		app Address,
+		lastBlock uint64,
+	) ([]*Epoch, error)
+	UpdateEpochs(ctx context.Context,
+		app Address,
+		claims []*Epoch,
+		mostRecentBlockNumber uint64,
+	) error
 }
 
 // EthClient mimics part of ethclient.Client functions to narrow down the
@@ -55,6 +63,10 @@ type EthWsClient interface {
 
 type ConsensusContract interface {
 	GetEpochLength(opts *bind.CallOpts) (*big.Int, error)
+	RetrieveClaimAcceptanceEvents(
+		opts *bind.FilterOpts,
+		appAddresses []Address,
+	) ([]*iconsensus.IConsensusClaimAcceptance, error)
 }
 
 type ApplicationContract interface {
@@ -74,7 +86,14 @@ func (e *SubscriptionError) Error() string {
 	return fmt.Sprintf("Subscription error : %v", e.Cause)
 }
 
-// EvmReader reads inputs from the blockchain
+// Internal struct to hold application and it's contracts together
+type application struct {
+	Application
+	applicationContract ApplicationContract
+	consensusContract   ConsensusContract
+}
+
+// EvmReader reads Input Added and Claim Submitted events from the blockchain
 type EvmReader struct {
 	client                  EthClient
 	wsClient                EthWsClient
@@ -128,7 +147,7 @@ func (r *EvmReader) Run(ctx context.Context, ready chan<- struct{}) error {
 	}
 }
 
-// Watch for new blocks and reads new inputs based on the
+// watchForNewBlocks watches for new blocks and reads new inputs based on the
 // default block configuration, which have not been processed yet.
 func (r *EvmReader) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) error {
 	headers := make(chan *types.Header)
@@ -147,113 +166,58 @@ func (r *EvmReader) watchForNewBlocks(ctx context.Context, ready chan<- struct{}
 		case err := <-sub.Err():
 			return &SubscriptionError{Cause: err}
 		case <-headers:
+
 			// Every time a new block arrives
-			err = r.checkForNewInputs(ctx)
+
+			// Get All Applications
+			runningApps, err := r.repository.GetAllRunningApplications(ctx)
 			if err != nil {
-				slog.Error("Error checking for new inputs",
+				slog.Error("Error retrieving running applications",
 					"error",
 					err,
 				)
-			}
-
-		}
-	}
-}
-
-// Check if is there new Inputs for all running Applications
-func (r *EvmReader) checkForNewInputs(ctx context.Context) error {
-
-	slog.Debug("Checking for new inputs")
-
-	// Get All Applications
-	apps, err := r.repository.GetAllRunningApplications(ctx)
-	if err != nil {
-		return err
-	}
-
-	if len(apps) == 0 {
-		slog.Info("No running applications")
-		return nil
-	}
-
-	groupedApps := r.classifyApplicationsByLastProcessedInput(apps)
-
-	for lastProcessedBlock, apps := range groupedApps {
-
-		appAddresses := appToAddresses(apps)
-
-		// Safeguard: Only check blocks starting from the block where the InputBox
-		// contract was deployed as Inputs can be added to that same block
-		if lastProcessedBlock < r.inputBoxDeploymentBlock {
-			lastProcessedBlock = r.inputBoxDeploymentBlock - 1
-		}
-
-		mostRecentHeader, err := r.fetchMostRecentHeader(
-			ctx,
-			r.defaultBlock,
-		)
-		if err != nil {
-			slog.Error("Error fetching most recent block",
-				"default block", r.defaultBlock,
-				"error", err)
-			continue
-		}
-		mostRecentBlockNumber := mostRecentHeader.Number.Uint64()
-
-		if mostRecentBlockNumber > lastProcessedBlock {
-
-			slog.Info("Checking inputs for applications",
-				"apps", appAddresses,
-				"last processed block", lastProcessedBlock,
-				"most recent block", mostRecentBlockNumber,
-			)
-
-			err = r.readAndStoreInputs(ctx,
-				lastProcessedBlock+1,
-				mostRecentBlockNumber,
-				apps,
-			)
-			if err != nil {
-				slog.Error("Error reading inputs",
-					"apps", appAddresses,
-					"last processed block", lastProcessedBlock,
-					"most recent block", mostRecentBlockNumber,
-					"error", err,
-				)
 				continue
 			}
-		} else if mostRecentBlockNumber < lastProcessedBlock {
-			slog.Warn(
-				"Most recent block is lower than the last processed one",
-				"apps", appAddresses,
-				"last processed block", lastProcessedBlock,
-				"most recent block", mostRecentBlockNumber,
+
+			// Build Contracts
+			var apps []application
+			for _, app := range runningApps {
+				applicationContract, consensusContract, err := r.getAppContracts(app)
+				if err != nil {
+					slog.Error("Error retrieving application contracts", "app", app, "error", err)
+					continue
+				}
+				apps = append(apps, application{Application: app,
+					applicationContract: applicationContract,
+					consensusContract:   consensusContract})
+			}
+
+			if len(apps) == 0 {
+				slog.Info("No correctly configured applications running")
+				continue
+			}
+
+			mostRecentHeader, err := r.fetchMostRecentHeader(
+				ctx,
+				r.defaultBlock,
 			)
-		} else {
-			slog.Info("Already checked the most recent blocks",
-				"apps", appAddresses,
-				"last processed block", lastProcessedBlock,
-				"most recent block", mostRecentBlockNumber,
-			)
+			if err != nil {
+				slog.Error("Error fetching most recent block",
+					"default block", r.defaultBlock,
+					"error", err)
+				continue
+			}
+			mostRecentBlockNumber := mostRecentHeader.Number.Uint64()
+
+			r.checkForNewInputs(ctx, apps, mostRecentBlockNumber)
+
+			r.checkForClaimStatus(ctx, apps, mostRecentBlockNumber)
+
 		}
 	}
-
-	return nil
 }
 
-// Group Applications that have processed til the same block height
-func (r *EvmReader) classifyApplicationsByLastProcessedInput(
-	apps []Application,
-) map[uint64][]Application {
-	result := make(map[uint64][]Application)
-	for _, app := range apps {
-		result[app.LastProcessedBlock] = append(result[app.LastProcessedBlock], app)
-	}
-
-	return result
-}
-
-// Fetch the most recent header up till the
+// fetchMostRecentHeader fetches the most recent header up till the
 // given default block
 func (r *EvmReader) fetchMostRecentHeader(
 	ctx context.Context,
@@ -288,202 +252,13 @@ func (r *EvmReader) fetchMostRecentHeader(
 	return header, nil
 }
 
-// Read and store inputs from the InputSource given specific filter options.
-func (r *EvmReader) readAndStoreInputs(
-	ctx context.Context,
-	startBlock uint64,
-	endBlock uint64,
-	apps []Application,
-) error {
-	appsToProcess := []common.Address{}
-
-	for _, app := range apps {
-
-		// Get App EpochLength
-		err := r.addAppEpochLengthIntoCache(app)
-		if err != nil {
-			slog.Error("Error adding epoch length into cache",
-				"app", app.ContractAddress,
-				"error", err)
-			continue
-		}
-
-		appsToProcess = append(appsToProcess, app.ContractAddress)
-
-	}
-
-	if len(appsToProcess) == 0 {
-		slog.Warn("No valid running applications")
-		return nil
-	}
-
-	// Retrieve Inputs from blockchain
-	appInputsMap, err := r.readInputsFromBlockchain(ctx, appsToProcess, startBlock, endBlock)
-	if err != nil {
-		return fmt.Errorf("failed to read inputs from block %v to block %v. %w",
-			startBlock,
-			endBlock,
-			err)
-	}
-
-	// Index Inputs into epochs and handle epoch finalization
-	for address, inputs := range appInputsMap {
-
-		epochLength := r.epochLengthCache[address]
-
-		// Retrieves last open epoch from DB
-		currentEpoch, err := r.repository.GetEpoch(ctx,
-			calculateEpochIndex(epochLength, startBlock), address)
-		if err != nil {
-			slog.Error("Error retrieving existing current epoch",
-				"app", address,
-				"error", err,
-			)
-			continue
-		}
-
-		// Check current epoch status
-		if currentEpoch != nil && currentEpoch.Status != EpochStatusOpen {
-			slog.Error("Current epoch is not open",
-				"app", address,
-				"epoch-index", currentEpoch.Index,
-				"status", currentEpoch.Status,
-			)
-			continue
-		}
-
-		// Initialize epochs inputs map
-		var epochInputMap = make(map[*Epoch][]Input)
-
-		// Index Inputs into epochs
-		for _, input := range inputs {
-
-			inputEpochIndex := calculateEpochIndex(epochLength, input.BlockNumber)
-
-			// If input belongs into a new epoch, close the previous known one
-			if currentEpoch != nil && currentEpoch.Index != inputEpochIndex {
-				currentEpoch.Status = EpochStatusClosed
-				slog.Info("Closing epoch",
-					"app", currentEpoch.AppAddress,
-					"epoch-index", currentEpoch.Index,
-					"start", currentEpoch.FirstBlock,
-					"end", currentEpoch.LastBlock)
-				// Add it to inputMap, so it will be stored
-				epochInputMap[currentEpoch] = []Input{}
-				currentEpoch = nil
-			}
-			if currentEpoch == nil {
-				currentEpoch = &Epoch{
-					Index:      inputEpochIndex,
-					FirstBlock: inputEpochIndex * epochLength,
-					LastBlock:  (inputEpochIndex * epochLength) + epochLength - 1,
-					Status:     EpochStatusOpen,
-					AppAddress: address,
-				}
-			}
-
-			slog.Info("Indexing new Input into epoch",
-				"app", address,
-				"index", input.Index,
-				"block", input.BlockNumber,
-				"epoch-index", inputEpochIndex)
-
-			currentInputs, ok := epochInputMap[currentEpoch]
-			if !ok {
-				currentInputs = []Input{}
-			}
-			epochInputMap[currentEpoch] = append(currentInputs, *input)
-
-		}
-
-		// Indexed all inputs. Check if it is time to close this epoch
-		if currentEpoch != nil && endBlock >= currentEpoch.LastBlock {
-			currentEpoch.Status = EpochStatusClosed
-			slog.Info("Closing epoch",
-				"app", currentEpoch.AppAddress,
-				"epoch-index", currentEpoch.Index,
-				"start", currentEpoch.FirstBlock,
-				"end", currentEpoch.LastBlock)
-			// Add to inputMap so it is stored
-			_, ok := epochInputMap[currentEpoch]
-			if !ok {
-				epochInputMap[currentEpoch] = []Input{}
-			}
-		}
-
-		_, _, err = r.repository.StoreEpochAndInputsTransaction(
-			ctx,
-			epochInputMap,
-			endBlock,
-			address,
-		)
-		if err != nil {
-			slog.Error("Error storing inputs and epochs",
-				"app", address,
-				"error", err,
-			)
-			continue
-		}
-
-		// Store everything
-		if len(epochInputMap) > 0 {
-
-			slog.Debug("Inputs and epochs stored successfully",
-				"app", address,
-				"start-block", startBlock,
-				"end-block", endBlock,
-				"total epochs", len(epochInputMap),
-				"total inputs", len(inputs),
-			)
-		} else {
-			slog.Debug("No inputs or epochs to store")
-		}
-
-	}
-
-	return nil
-}
-
-// Checks the epoch length cache and read epoch length from IConsensus
-// and add it to the cache if needed
-func (r *EvmReader) addAppEpochLengthIntoCache(app Application) error {
-
-	epochLength, ok := r.epochLengthCache[app.ContractAddress]
-	if !ok {
-
-		consensus, err := r.getIConsensus(app)
-		if err != nil {
-			return errors.Join(
-				fmt.Errorf("error retrieving IConsensus contract for app: %s",
-					app.ContractAddress),
-				err)
-		}
-
-		epochLength, err = r.getEpochLengthFromContract(consensus)
-		if err != nil {
-			return errors.Join(
-				fmt.Errorf("error retrieving epoch length from contracts for app %s",
-					app.ContractAddress),
-				err)
-		}
-		r.epochLengthCache[app.ContractAddress] = epochLength
-		slog.Info("Got epoch length from IConsensus",
-			"app", app.ContractAddress,
-			"epoch length", epochLength)
-	} else {
-		slog.Debug("Got epoch length from cache",
-			"app", app.ContractAddress,
-			"epoch length", epochLength)
-	}
-
-	return nil
-}
-
-// Retrieve ConsensusContract for a given Application
-func (r *EvmReader) getIConsensus(app Application) (ConsensusContract, error) {
+// getAppContracts retrieves the ApplicationContract and ConsensusContract for a given Application.
+// Also validates if IConsensus configuration matches the blockchain registered one
+func (r *EvmReader) getAppContracts(app Application,
+) (ApplicationContract, ConsensusContract, error) {
 	applicationContract, err := r.contractFactory.NewApplication(app.ContractAddress)
 	if err != nil {
-		return nil, errors.Join(
+		return nil, nil, errors.Join(
 			fmt.Errorf("error building application contract"),
 			err,
 		)
@@ -491,14 +266,14 @@ func (r *EvmReader) getIConsensus(app Application) (ConsensusContract, error) {
 	}
 	consensusAddress, err := applicationContract.GetConsensus(nil)
 	if err != nil {
-		return nil, errors.Join(
+		return nil, nil, errors.Join(
 			fmt.Errorf("error retrieving application consensus"),
 			err,
 		)
 	}
 
 	if app.IConsensusAddress != consensusAddress {
-		return nil,
+		return nil, nil,
 			fmt.Errorf("IConsensus addresses do not match. Deployed: %s. Configured: %s",
 				consensusAddress,
 				app.IConsensusAddress)
@@ -506,96 +281,11 @@ func (r *EvmReader) getIConsensus(app Application) (ConsensusContract, error) {
 
 	consensus, err := r.contractFactory.NewIConsensus(consensusAddress)
 	if err != nil {
-		return nil, errors.Join(
+		return nil, nil, errors.Join(
 			fmt.Errorf("error building consensus contract"),
 			err,
 		)
 
 	}
-	return consensus, nil
-}
-
-// Reads the application epoch length given it's consesus contract
-func (r *EvmReader) getEpochLengthFromContract(consensus ConsensusContract) (uint64, error) {
-
-	epochLengthRaw, err := consensus.GetEpochLength(nil)
-	if err != nil {
-		return 0, errors.Join(
-			fmt.Errorf("error retrieving application epoch length"),
-			err,
-		)
-	}
-
-	return epochLengthRaw.Uint64(), nil
-}
-
-// Read inputs from the blockchain ordered by Input index
-func (r *EvmReader) readInputsFromBlockchain(
-	ctx context.Context,
-	appsAddresses []Address,
-	startBlock, endBlock uint64,
-) (map[Address][]*Input, error) {
-
-	// Initialize app input map
-	var appInputsMap = make(map[Address][]*Input)
-	for _, appsAddress := range appsAddresses {
-		appInputsMap[appsAddress] = []*Input{}
-	}
-
-	opts := bind.FilterOpts{
-		Context: ctx,
-		Start:   startBlock,
-		End:     &endBlock,
-	}
-	inputsEvents, err := r.inputSource.RetrieveInputs(&opts, appsAddresses, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// Order inputs as order is not enforced by RetrieveInputs method nor the APIs
-	for _, event := range inputsEvents {
-		slog.Debug("Received input",
-			"app", event.AppContract,
-			"index", event.Index,
-			"block", event.Raw.BlockNumber)
-		input := &Input{
-			Index:            event.Index.Uint64(),
-			CompletionStatus: InputStatusNone,
-			RawData:          event.Input,
-			BlockNumber:      event.Raw.BlockNumber,
-			AppAddress:       event.AppContract,
-		}
-
-		// Insert Sorted
-		appInputsMap[event.AppContract] = insertSorted(appInputsMap[event.AppContract], input)
-	}
-	return appInputsMap, nil
-}
-
-// Util functions
-
-// Calculates the epoch index given the input block number
-func calculateEpochIndex(epochLength uint64, blockNumber uint64) uint64 {
-	return blockNumber / epochLength
-}
-
-func appToAddresses(apps []Application) []Address {
-	var addresses []Address
-	for _, app := range apps {
-		addresses = append(addresses, app.ContractAddress)
-	}
-	return addresses
-}
-
-// insertSorted inserts the received input in the slice at the position defined
-// by its index property.
-func insertSorted(inputs []*Input, input *Input) []*Input {
-	// Insert Sorted
-	i, _ := slices.BinarySearchFunc(
-		inputs,
-		input,
-		func(a, b *Input) int {
-			return cmp.Compare(a.Index, b.Index)
-		})
-	return slices.Insert(inputs, i, input)
+	return applicationContract, consensus, nil
 }

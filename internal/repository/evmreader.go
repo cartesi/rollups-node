@@ -12,6 +12,13 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+var (
+	errInsertInputs           = errors.New("unable to insert inputs")
+	errUpdateEpochs           = errors.New("unable to update epochs status")
+	errGetEpochWithOpenClaims = errors.New("failed to get epochs with open claims")
+	errGetAllApplications     = errors.New("failed to get Applications")
+)
+
 // This method should be called at the end of EVMReader read input cycle
 // In a single transaction it updates or inserts epochs, insert inputs related to each epoch
 // and also updates the last processed block
@@ -21,8 +28,6 @@ func (pg *Database) StoreEpochAndInputsTransaction(
 	blockNumber uint64,
 	contractAddress Address,
 ) (epochIndexIdMap map[uint64]uint64, epochIndexInputIdsMap map[uint64][]uint64, _ error) {
-
-	var errInsertInputs = errors.New("unable to insert inputs")
 
 	insertEpochQuery := `
 	INSERT INTO epoch
@@ -159,13 +164,14 @@ func (pg *Database) getAllApplicationsByStatus(
 	criteria *ApplicationStatus,
 ) ([]Application, error) {
 	var (
-		id                 uint64
-		contractAddress    Address
-		templateHash       Hash
-		lastProcessedBlock uint64
-		status             ApplicationStatus
-		iConsensusAddress  Address
-		results            []Application
+		id                  uint64
+		contractAddress     Address
+		templateHash        Hash
+		lastProcessedBlock  uint64
+		lastClaimCheckBlock uint64
+		status              ApplicationStatus
+		iConsensusAddress   Address
+		results             []Application
 	)
 
 	query := `
@@ -174,6 +180,7 @@ func (pg *Database) getAllApplicationsByStatus(
 		contract_address,
 		template_hash,
 		last_processed_block,
+		last_claim_check_block,
 		status,
 		iconsensus_address
 	FROM
@@ -187,26 +194,27 @@ func (pg *Database) getAllApplicationsByStatus(
 
 	rows, err := pg.db.Query(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("Query failed: %v\n", err)
+		return nil, errors.Join(errGetAllApplications, err)
 	}
 
 	_, err = pgx.ForEachRow(rows,
 		[]any{&id, &contractAddress, &templateHash,
-			&lastProcessedBlock, &status, &iConsensusAddress},
+			&lastProcessedBlock, &lastClaimCheckBlock, &status, &iConsensusAddress},
 		func() error {
 			app := Application{
-				Id:                 id,
-				ContractAddress:    contractAddress,
-				TemplateHash:       templateHash,
-				LastProcessedBlock: lastProcessedBlock,
-				Status:             status,
-				IConsensusAddress:  iConsensusAddress,
+				Id:                  id,
+				ContractAddress:     contractAddress,
+				TemplateHash:        templateHash,
+				LastProcessedBlock:  lastProcessedBlock,
+				LastClaimCheckBlock: lastClaimCheckBlock,
+				Status:              status,
+				IConsensusAddress:   iConsensusAddress,
 			}
 			results = append(results, app)
 			return nil
 		})
 	if err != nil {
-		return nil, fmt.Errorf("ForEachRow failed: %w\n", err)
+		return nil, errors.Join(errGetAllApplications, err)
 	}
 
 	return results, nil
@@ -232,8 +240,139 @@ func (pg *Database) GetLastProcessedBlock(
 
 	err := pg.db.QueryRow(ctx, query, args).Scan(&block)
 	if err != nil {
-		return 0, fmt.Errorf("QueryRow failed: %v\n", err)
+		return 0, fmt.Errorf("GetLastProcessedBlock failed: %w", err)
 	}
 
 	return block, nil
+}
+
+// GetEpochsWithOpenClaims retrieves all Epochs that have EpochStatusClaimSubmitted
+// status and LastBlock LastBlock less than or equals 'block'
+func (pg *Database) GetEpochsWithOpenClaims(
+	ctx context.Context,
+	app Address,
+	block uint64,
+) ([]*Epoch, error) {
+	query := `
+	SELECT
+		id,
+		application_address,
+		index,
+		first_block,
+		last_block,
+		claim_hash,
+		transaction_hash,
+		status
+	FROM
+		epoch
+	WHERE
+		application_address=@appAddress AND status=@status AND last_block <= @block
+	ORDER BY
+		index ASC`
+
+	args := pgx.NamedArgs{
+		"appAddress": app,
+		"status":     EpochStatusClaimSubmitted,
+		"block":      block,
+	}
+
+	rows, err := pg.db.Query(ctx, query, args)
+	if err != nil {
+		return nil, errors.Join(errGetEpochWithOpenClaims, err)
+	}
+
+	var (
+		id, index, firstBlock, lastBlock uint64
+		appAddress                       Address
+		claimHash, transactionHash       *Hash
+		status                           string
+		results                          []*Epoch
+	)
+
+	scans := []any{
+		&id, &appAddress, &index, &firstBlock, &lastBlock, &claimHash, &transactionHash, &status,
+	}
+	_, err = pgx.ForEachRow(rows, scans, func() error {
+		epoch := &Epoch{
+			Id:              id,
+			Index:           index,
+			AppAddress:      appAddress,
+			FirstBlock:      firstBlock,
+			LastBlock:       lastBlock,
+			ClaimHash:       claimHash,
+			TransactionHash: transactionHash,
+			Status:          EpochStatus(status),
+		}
+		results = append(results, epoch)
+		return nil
+	})
+	if err != nil {
+		return nil, errors.Join(errGetEpochWithOpenClaims, err)
+	}
+	return results, nil
+}
+
+// UpdateEpochs update given Epochs status
+// and given application LastClaimCheckBlockNumber on a single transaction
+func (pg *Database) UpdateEpochs(
+	ctx context.Context,
+	app Address,
+	claims []*Epoch,
+	lastClaimCheckBlock uint64,
+) error {
+
+	updateEpochQuery := `
+	UPDATE epoch
+	SET
+		status = @status
+	WHERE
+		id = @id`
+
+	tx, err := pg.db.Begin(ctx)
+	if err != nil {
+		return errors.Join(errUpdateEpochs, err)
+	}
+
+	for _, claim := range claims {
+		updateClaimArgs := pgx.NamedArgs{
+			"status": claim.Status,
+			"id":     claim.Id,
+		}
+
+		tag, err := tx.Exec(ctx, updateEpochQuery, updateClaimArgs)
+		if err != nil {
+			return errors.Join(errUpdateEpochs, err, tx.Rollback(ctx))
+		}
+		if tag.RowsAffected() != 1 {
+			return errors.Join(errUpdateEpochs,
+				fmt.Errorf("no row affected when updating claim %d", claim.Index),
+				tx.Rollback(ctx))
+		}
+	}
+
+	// Update last processed block
+	updateLastBlockQuery := `
+	UPDATE application
+	SET
+		last_claim_check_block = @blockNumber
+	WHERE
+		contract_address=@contractAddress`
+
+	updateLastBlockArgs := pgx.NamedArgs{
+		"blockNumber":     lastClaimCheckBlock,
+		"contractAddress": app,
+	}
+
+	_, err = tx.Exec(ctx, updateLastBlockQuery, updateLastBlockArgs)
+	if err != nil {
+		return errors.Join(errUpdateEpochs, err, tx.Rollback(ctx))
+	}
+
+	// Commit transaction
+	err = tx.Commit(ctx)
+	if err != nil {
+		return errors.Join(errUpdateEpochs, err, tx.Rollback(ctx))
+	}
+
+	return nil
 }

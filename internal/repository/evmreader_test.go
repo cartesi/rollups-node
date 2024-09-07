@@ -159,3 +159,47 @@ func (s *RepositorySuite) TestGetMostRecentBlock() {
 
 	s.Require().Equal(block, response)
 }
+
+func (s *RepositorySuite) TestGetEpochsWithOpenClaims() {
+	response, err := s.database.GetEpochsWithOpenClaims(
+		s.ctx, common.HexToAddress("deadbeef"), 300)
+
+	s.Require().Nil(err)
+	s.Require().NotNil(response)
+	s.Require().Equal(1, len(response))
+
+	epoch, err := s.database.GetEpoch(s.ctx, 2, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
+
+	s.Require().Equal(epoch, response[0])
+}
+
+func (s *RepositorySuite) TestUpdateEpochs() {
+
+	claim, err := s.database.GetEpoch(s.ctx, 2, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
+	s.Require().NotNil(claim)
+
+	s.Require().Equal(EpochStatusClaimSubmitted, claim.Status)
+	claim.Status = EpochStatusClaimAccepted
+
+	claims := []*Epoch{claim}
+
+	err = s.database.UpdateEpochs(
+		s.ctx,
+		common.HexToAddress("deadbeef"),
+		claims,
+		499,
+	)
+	s.Require().Nil(err)
+
+	claim, err = s.database.GetEpoch(s.ctx, 2, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
+	s.Require().NotNil(claim)
+	s.Require().Equal(EpochStatusClaimAccepted, claim.Status)
+
+	application, err := s.database.GetApplication(s.ctx, common.HexToAddress("deadbeef"))
+	s.Require().Nil(err)
+	s.Require().Equal(uint64(499), application.LastClaimCheckBlock)
+
+}

@@ -9,11 +9,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
-	"sync"
 	"testing"
 	"time"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
+	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -109,7 +109,7 @@ func (s *EvmReaderSuite) SetupTest() {
 
 	s.client = newMockEthClient()
 	s.wsClient = s.client
-	s.inputBox = newMockInputBox(s)
+	s.inputBox = newMockInputBox()
 	s.repository = newMockRepository()
 	s.contractFactory = newEmvReaderContractFactory()
 	inputReader := NewEvmReader(
@@ -167,130 +167,41 @@ func (s *EvmReaderSuite) TestItFailsToSubscribeForNewInputsOnStart() {
 	s.client.AssertNumberOfCalls(s.T(), "SubscribeNewHead", 1)
 }
 
-func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
+func (s *EvmReaderSuite) TestItWrongIConsensus() {
 
-	waitGroup := sync.WaitGroup{}
+	consensusContract := &MockIConsensusContract{}
+
+	contractFactory := newEmvReaderContractFactory()
+
+	contractFactory.Unset("NewIConsensus")
+	contractFactory.On("NewIConsensus",
+		mock.Anything,
+	).Return(consensusContract, nil)
+
 	wsClient := FakeWSEhtClient{}
-	wsClient.NewHeaders = []*types.Header{&header0, &header1}
-	wsClient.WaitGroup = &waitGroup
-	inputReader := NewEvmReader(
+
+	evmReader := NewEvmReader(
 		s.client,
 		&wsClient,
 		s.inputBox,
 		s.repository,
 		0x10,
 		DefaultBlockStatusLatest,
-		s.contractFactory,
+		contractFactory,
 	)
 
-	// Prepare repository
-	s.repository.Unset("GetAllRunningApplications")
-	s.repository.On(
-		"GetAllRunningApplications",
-		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
-		LastProcessedBlock: 0x00,
-	}}, nil).Once()
-	s.repository.On(
-		"GetAllRunningApplications",
-		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
-		LastProcessedBlock: 0x11,
-	}}, nil).Once()
-
-	// Prepare Client
-	s.client.Unset("HeaderByNumber")
-	s.client.On(
-		"HeaderByNumber",
-		mock.Anything,
-		mock.Anything,
-	).Return(&header0, nil).Once()
-	s.client.On(
-		"HeaderByNumber",
-		mock.Anything,
-		mock.Anything,
-	).Return(&header1, nil).Once()
-	s.client.On(
-		"HeaderByNumber",
-		mock.Anything,
-		mock.Anything,
-	).Return(&header2, nil).Once()
-
-	// Prepare sequence of inputs
-	s.inputBox.Unset("RetrieveInputs")
-	events_0 := []inputbox.InputBoxInputAdded{inputAddedEvent0}
-	mostRecentBlockNumber_0 := uint64(0x11)
-	retrieveInputsOpts_0 := bind.FilterOpts{
-		Context: s.ctx,
-		Start:   0x10,
-		End:     &mostRecentBlockNumber_0,
-	}
-	s.inputBox.On(
-		"RetrieveInputs",
-		&retrieveInputsOpts_0,
-		mock.Anything,
-		mock.Anything,
-	).Return(events_0, nil)
-
-	events_1 := []inputbox.InputBoxInputAdded{inputAddedEvent1}
-	mostRecentBlockNumber_1 := uint64(0x12)
-	retrieveInputsOpts_1 := bind.FilterOpts{
-		Context: s.ctx,
-		Start:   0x12,
-		End:     &mostRecentBlockNumber_1,
-	}
-	s.inputBox.On(
-		"RetrieveInputs",
-		&retrieveInputsOpts_1,
-		mock.Anything,
-		mock.Anything,
-	).Return(events_1, nil)
-
-	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-
-	waitGroup.Add(1)
-	go func() {
-		errChannel <- inputReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
+	// Prepare consensus
+	claimEvent0 := &iconsensus.IConsensusClaimAcceptance{
+		AppContract:              common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		LastProcessedBlockNumber: big.NewInt(3),
+		Claim:                    common.HexToHash("0xdeadbeef"),
 	}
 
-	waitGroup.Wait()
-
-	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 2)
-	s.repository.AssertNumberOfCalls(
-		s.T(),
-		"StoreEpochAndInputsTransaction",
-		2,
-	)
-}
-
-func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocksWrongIConsensus() {
-
-	waitGroup := sync.WaitGroup{}
-	wsClient := FakeWSEhtClient{}
-	wsClient.NewHeaders = []*types.Header{&header0, &header1}
-	wsClient.WaitGroup = &waitGroup
-	inputReader := NewEvmReader(
-		s.client,
-		&wsClient,
-		s.inputBox,
-		s.repository,
-		0x10,
-		DefaultBlockStatusLatest,
-		s.contractFactory,
-	)
+	claimEvents := []*iconsensus.IConsensusClaimAcceptance{claimEvent0}
+	consensusContract.On("RetrieveClaimAcceptanceEvents",
+		mock.Anything,
+		mock.Anything,
+	).Return(claimEvents, nil).Once()
 
 	// Prepare repository
 	s.repository.Unset("GetAllRunningApplications")
@@ -302,14 +213,6 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocksWrongIConsensus() {
 		IConsensusAddress:  common.HexToAddress("0xFFFFFFFF"),
 		LastProcessedBlock: 0x00,
 	}}, nil).Once()
-	s.repository.On(
-		"GetAllRunningApplications",
-		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-		IConsensusAddress:  common.HexToAddress("0xFFFFFFFF"),
-		LastProcessedBlock: 0x11,
-	}}, nil).Once()
 
 	// Prepare Client
 	s.client.Unset("HeaderByNumber")
@@ -318,24 +221,13 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocksWrongIConsensus() {
 		mock.Anything,
 		mock.Anything,
 	).Return(&header0, nil).Once()
-	s.client.On(
-		"HeaderByNumber",
-		mock.Anything,
-		mock.Anything,
-	).Return(&header1, nil).Once()
-	s.client.On(
-		"HeaderByNumber",
-		mock.Anything,
-		mock.Anything,
-	).Return(&header2, nil).Once()
 
 	// Start service
 	ready := make(chan struct{}, 1)
 	errChannel := make(chan error, 1)
 
-	waitGroup.Add(1)
 	go func() {
-		errChannel <- inputReader.Run(s.ctx, ready)
+		errChannel <- evmReader.Run(s.ctx, ready)
 	}()
 
 	select {
@@ -345,278 +237,22 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocksWrongIConsensus() {
 		s.FailNow("unexpected error signal", err)
 	}
 
-	waitGroup.Wait()
+	wsClient.fireNewHead(&header0)
+	time.Sleep(time.Second)
 
+	// Should not advance input processing
 	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 0)
 	s.repository.AssertNumberOfCalls(
 		s.T(),
 		"StoreEpochAndInputsTransaction",
 		0,
 	)
-}
 
-func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
-
-	waitGroup := sync.WaitGroup{}
-	wsClient := FakeWSEhtClient{}
-	wsClient.NewHeaders = []*types.Header{&header0, &header1}
-	wsClient.WaitGroup = &waitGroup
-	inputReader := NewEvmReader(
-		s.client,
-		&wsClient,
-		s.inputBox,
-		s.repository,
-		0x10,
-		DefaultBlockStatusLatest,
-		s.contractFactory,
-	)
-
-	// Prepare repository
-	s.repository.Unset("GetAllRunningApplications")
-	s.repository.On(
-		"GetAllRunningApplications",
-		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
-		LastProcessedBlock: 0x00,
-	}}, nil).Once()
-	s.repository.On(
-		"GetAllRunningApplications",
-		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
-		LastProcessedBlock: 0x11,
-	}}, nil).Once()
-
-	// Prepare Client
-	s.client.Unset("HeaderByNumber")
-	s.client.On(
-		"HeaderByNumber",
-		mock.Anything,
-		mock.Anything,
-	).Return(&header0, nil).Once()
-	s.client.On(
-		"HeaderByNumber",
-		mock.Anything,
-		mock.Anything,
-	).Return(&header1, nil).Once()
-	s.client.On(
-		"HeaderByNumber",
-		mock.Anything,
-		mock.Anything,
-	).Return(&header2, nil).Once()
-
-	// Prepare sequence of inputs
-	s.inputBox.Unset("RetrieveInputs")
-	events_0 := []inputbox.InputBoxInputAdded{}
-	mostRecentBlockNumber_0 := uint64(0x11)
-	retrieveInputsOpts_0 := bind.FilterOpts{
-		Context: s.ctx,
-		Start:   0x10,
-		End:     &mostRecentBlockNumber_0,
-	}
-	s.inputBox.On(
-		"RetrieveInputs",
-		&retrieveInputsOpts_0,
-		mock.Anything,
-		mock.Anything,
-	).Return(events_0, nil)
-
-	events_1 := []inputbox.InputBoxInputAdded{}
-	mostRecentBlockNumber_1 := uint64(0x12)
-	retrieveInputsOpts_1 := bind.FilterOpts{
-		Context: s.ctx,
-		Start:   0x12,
-		End:     &mostRecentBlockNumber_1,
-	}
-	s.inputBox.On(
-		"RetrieveInputs",
-		&retrieveInputsOpts_1,
-		mock.Anything,
-		mock.Anything,
-	).Return(events_1, nil)
-
-	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-
-	waitGroup.Add(1)
-	go func() {
-		errChannel <- inputReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
-	}
-
-	waitGroup.Wait()
-
-	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 2)
+	// Should not advance claim acceptance processing
+	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveClaimAcceptanceEvents", 0)
 	s.repository.AssertNumberOfCalls(
 		s.T(),
-		"StoreEpochAndInputsTransaction",
-		2,
-	)
-}
-
-func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
-
-	waitGroup := sync.WaitGroup{}
-	wsClient := FakeWSEhtClient{}
-	wsClient.NewHeaders = []*types.Header{&header2}
-	wsClient.WaitGroup = &waitGroup
-	inputReader := NewEvmReader(
-		s.client,
-		&wsClient,
-		s.inputBox,
-		s.repository,
-		0x10,
-		DefaultBlockStatusLatest,
-		s.contractFactory,
-	)
-
-	// Prepare Client
-	s.client.Unset("HeaderByNumber")
-	s.client.On(
-		"HeaderByNumber",
-		mock.Anything,
-		mock.Anything,
-	).Return(&header2, nil).Once()
-
-	// Prepare sequence of inputs
-	s.inputBox.Unset("RetrieveInputs")
-	events_2 := []inputbox.InputBoxInputAdded{inputAddedEvent2, inputAddedEvent3}
-	mostRecentBlockNumber_2 := uint64(0x13)
-	retrieveInputsOpts_2 := bind.FilterOpts{
-		Context: s.ctx,
-		Start:   0x13,
-		End:     &mostRecentBlockNumber_2,
-	}
-	s.inputBox.On(
-		"RetrieveInputs",
-		&retrieveInputsOpts_2,
-		mock.Anything,
-		mock.Anything,
-	).Return(events_2, nil)
-
-	// Prepare Repo
-	s.repository.Unset("GetAllRunningApplications")
-	s.repository.On(
-		"GetAllRunningApplications",
-		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
-		LastProcessedBlock: 0x12,
-	}}, nil).Once()
-	s.repository.Unset("StoreEpochAndInputsTransaction")
-	s.repository.On(
-		"StoreEpochAndInputsTransaction",
-		mock.Anything,
-		mock.Anything,
-		mock.Anything,
-		mock.Anything,
-	).Once().Run(func(arguments mock.Arguments) {
-		var epochInputMap map[*Epoch][]Input
-		obj := arguments.Get(1)
-		epochInputMap, ok := obj.(map[*Epoch][]Input)
-		s.Require().True(ok)
-		s.Require().Equal(1, len(epochInputMap))
-		for _, inputs := range epochInputMap {
-			s.Require().Equal(2, len(inputs))
-			break
-		}
-
-	}).Return(make(map[uint64]uint64), make(map[uint64][]uint64), nil)
-
-	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-
-	waitGroup.Add(1)
-	go func() {
-		errChannel <- inputReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
-	}
-
-	waitGroup.Wait()
-
-	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 1)
-	s.repository.AssertNumberOfCalls(
-		s.T(),
-		"StoreEpochAndInputsTransaction",
-		1,
-	)
-}
-
-func (s *EvmReaderSuite) TestItStartsWhenLasProcessedBlockIsTheMostRecentBlock() {
-
-	waitGroup := sync.WaitGroup{}
-	wsClient := FakeWSEhtClient{}
-	wsClient.NewHeaders = []*types.Header{&header2}
-	wsClient.WaitGroup = &waitGroup
-	inputReader := NewEvmReader(
-		s.client,
-		&wsClient,
-		s.inputBox,
-		s.repository,
-		0x10,
-		DefaultBlockStatusLatest,
-		s.contractFactory,
-	)
-
-	// Prepare Client
-	s.client.Unset("HeaderByNumber")
-	s.client.On(
-		"HeaderByNumber",
-		mock.Anything,
-		mock.Anything,
-	).Return(&header0, nil).Once()
-
-	// Prepare Repo
-	s.repository.Unset("GetAllRunningApplications")
-	s.repository.On(
-		"GetAllRunningApplications",
-		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
-		LastProcessedBlock: 0x11,
-	}}, nil).Once()
-
-	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-
-	waitGroup.Add(1)
-	go func() {
-		errChannel <- inputReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
-	}
-
-	waitGroup.Wait()
-
-	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 0)
-	s.repository.AssertNumberOfCalls(
-		s.T(),
-		"StoreEpochAndInputsTransaction",
+		"UpdateEpochs",
 		0,
 	)
 }
@@ -690,24 +326,19 @@ func (m *MockSubscription) Err() <-chan error {
 
 // FakeClient
 type FakeWSEhtClient struct {
-	NewHeaders []*types.Header
-	WaitGroup  *sync.WaitGroup
+	ch chan<- *types.Header
 }
 
 func (f *FakeWSEhtClient) SubscribeNewHead(
 	ctx context.Context,
 	ch chan<- *types.Header,
 ) (ethereum.Subscription, error) {
-	go func() {
-
-		for _, header := range f.NewHeaders {
-			ch <- header
-		}
-		//Give some time to headers to be processed
-		time.Sleep(1 * time.Second)
-		f.WaitGroup.Done()
-	}()
+	f.ch = ch
 	return newMockSubscription(), nil
+}
+
+func (f *FakeWSEhtClient) fireNewHead(header *types.Header) {
+	f.ch <- header
 }
 
 // Mock inputbox.InputBox
@@ -715,7 +346,7 @@ type MockInputBox struct {
 	mock.Mock
 }
 
-func newMockInputBox(s *EvmReaderSuite) *MockInputBox {
+func newMockInputBox() *MockInputBox {
 	inputSource := &MockInputBox{}
 
 	events := []inputbox.InputBoxInputAdded{inputAddedEvent0}
@@ -806,7 +437,108 @@ func newMockRepository() *MockRepository {
 		mock.Anything,
 		mock.Anything).Return(1, nil)
 
+	repo.On("GetEpochsWithOpenClaims",
+		mock.Anything,
+		mock.Anything,
+	).Return([]Epoch{}, nil)
+
+	repo.On("UpdateEpochs",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+	).Return(nil)
+
 	return repo
+
+}
+
+func (s *EvmReaderSuite) TestIndexApps() {
+
+	s.Run("Ok", func() {
+		apps := []application{
+			{Application: Application{LastProcessedBlock: 23}},
+			{Application: Application{LastProcessedBlock: 22}},
+			{Application: Application{LastProcessedBlock: 21}},
+			{Application: Application{LastProcessedBlock: 23}},
+		}
+
+		keyByProcessedBlock := func(a application) uint64 {
+			return a.LastProcessedBlock
+		}
+
+		indexApps := indexApps(keyByProcessedBlock, apps)
+
+		s.Require().Equal(3, len(indexApps))
+		apps, ok := indexApps[23]
+		s.Require().True(ok)
+		s.Require().Equal(2, len(apps))
+	})
+
+	s.Run("whenIndexAppsArrayEmpty", func() {
+		apps := []application{}
+
+		keyByProcessedBlock := func(a application) uint64 {
+			return a.LastProcessedBlock
+		}
+
+		indexApps := indexApps(keyByProcessedBlock, apps)
+
+		s.Require().Equal(0, len(indexApps))
+	})
+
+	s.Run("whenIndexAppsArray", func() {
+		apps := []application{}
+
+		keyByProcessedBlock := func(a application) uint64 {
+			return a.LastProcessedBlock
+		}
+
+		indexApps := indexApps(keyByProcessedBlock, apps)
+
+		s.Require().Equal(0, len(indexApps))
+	})
+
+	s.Run("whenIndexByEmptyKey", func() {
+		apps := []application{
+			{Application: Application{LastProcessedBlock: 23}},
+			{Application: Application{LastProcessedBlock: 22}},
+			{Application: Application{LastProcessedBlock: 21}},
+			{Application: Application{LastProcessedBlock: 23}},
+		}
+
+		keyByIConsensus := func(a application) ConsensusContract {
+			return a.consensusContract
+		}
+
+		indexApps := indexApps(keyByIConsensus, apps)
+
+		s.Require().Equal(1, len(indexApps))
+		apps, ok := indexApps[nil]
+		s.Require().True(ok)
+		s.Require().Equal(4, len(apps))
+	})
+
+	s.Run("whenUsesWrongKey", func() {
+		apps := []application{
+			{Application: Application{LastProcessedBlock: 23}},
+			{Application: Application{LastProcessedBlock: 22}},
+			{Application: Application{LastProcessedBlock: 21}},
+			{Application: Application{LastProcessedBlock: 23}},
+		}
+
+		keyByProcessedBlock := func(a application) uint64 {
+			return a.LastProcessedBlock
+		}
+
+		indexApps := indexApps(keyByProcessedBlock, apps)
+
+		s.Require().Equal(3, len(indexApps))
+		apps, ok := indexApps[0]
+		s.Require().False(ok)
+		s.Require().Nil(apps)
+
+	})
 
 }
 
@@ -848,7 +580,11 @@ func (m *MockRepository) GetEpoch(
 	appAddress common.Address,
 ) (*Epoch, error) {
 	args := m.Called(ctx, index, appAddress)
-	return args.Get(0).(*Epoch), args.Error(1)
+	obj := args.Get(0)
+	if obj == nil {
+		return nil, args.Error(1)
+	}
+	return obj.(*Epoch), args.Error(1)
 }
 
 func (m *MockRepository) InsertEpoch(
@@ -857,6 +593,28 @@ func (m *MockRepository) InsertEpoch(
 ) (uint64, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(uint64), args.Error(1)
+}
+
+func (m *MockRepository) GetEpochsWithOpenClaims(
+	ctx context.Context,
+	app Address,
+	lastBlock uint64,
+) ([]*Epoch, error) {
+	args := m.Called(ctx, app, lastBlock)
+	obj := args.Get(0)
+	if obj == nil {
+		return nil, args.Error(1)
+	}
+	return obj.([]*Epoch), args.Error(1)
+
+}
+func (m *MockRepository) UpdateEpochs(ctx context.Context,
+	app Address,
+	epochs []*Epoch,
+	mostRecentBlockNumber uint64,
+) error {
+	args := m.Called(ctx, epochs, mostRecentBlockNumber)
+	return args.Error(0)
 }
 
 type MockApplicationContract struct {
@@ -874,7 +632,7 @@ func (m *MockApplicationContract) Unset(methodName string) {
 func (m *MockApplicationContract) GetConsensus(
 	opts *bind.CallOpts,
 ) (common.Address, error) {
-	args := m.Called(context.Background())
+	args := m.Called(opts)
 	return args.Get(0).(common.Address), args.Error(1)
 }
 
@@ -885,8 +643,15 @@ type MockIConsensusContract struct {
 func (m *MockIConsensusContract) GetEpochLength(
 	opts *bind.CallOpts,
 ) (*big.Int, error) {
-	args := m.Called(context.Background())
+	args := m.Called(opts)
 	return args.Get(0).(*big.Int), args.Error(1)
+}
+
+func (m *MockIConsensusContract) RetrieveClaimAcceptanceEvents(
+	opts *bind.FilterOpts, appAddresses []common.Address,
+) ([]*iconsensus.IConsensusClaimAcceptance, error) {
+	args := m.Called(opts, appAddresses)
+	return args.Get(0).([]*iconsensus.IConsensusClaimAcceptance), args.Error(1)
 }
 
 type MockEvmReaderContractFactory struct {
@@ -927,6 +692,11 @@ func newEmvReaderContractFactory() *MockEvmReaderContractFactory {
 
 	consensusContract.On("GetEpochLength",
 		mock.Anything).Return(big.NewInt(10), nil)
+
+	consensusContract.On("RetrieveClaimAcceptanceEvents",
+		mock.Anything,
+		mock.Anything,
+	).Return([]*iconsensus.IConsensusClaimAcceptance{}, nil)
 
 	factory := &MockEvmReaderContractFactory{}
 

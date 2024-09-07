@@ -37,6 +37,7 @@ CREATE TABLE "application"
     "last_processed_block" NUMERIC(20,0) NOT NULL CHECK ("last_processed_block" >= 0 AND "last_processed_block" <= f_maxuint64()),
     "status" "ApplicationStatus" NOT NULL,
     "iconsensus_address" BYTEA NOT NULL,
+    "last_claim_check_block" NUMERIC(20,0) NOT NULL CHECK ("last_claim_check_block" >= 0 AND "last_claim_check_block" <= f_maxuint64()),
     CONSTRAINT "application_pkey" PRIMARY KEY ("id"),
     UNIQUE("contract_address")
 );
@@ -57,6 +58,7 @@ CREATE TABLE "epoch"
 );
 
 CREATE INDEX "epoch_idx" ON "epoch"("index");
+CREATE INDEX "epoch_last_block_idx" ON "epoch"("last_block");
 
 CREATE TABLE "input"
 (

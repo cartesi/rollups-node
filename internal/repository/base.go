@@ -90,21 +90,24 @@ func (pg *Database) InsertApplication(
 		(contract_address,
 		template_hash,
 		last_processed_block,
+		last_claim_check_block,
 		status,
 		iconsensus_address)
 	VALUES
 		(@contractAddress,
 		@templateHash,
 		@lastProcessedBlock,
+		@lastClaimCheckBlock,
 		@status,
 		@iConsensusAddress)`
 
 	args := pgx.NamedArgs{
-		"contractAddress":    app.ContractAddress,
-		"templateHash":       app.TemplateHash,
-		"lastProcessedBlock": app.LastProcessedBlock,
-		"status":             app.Status,
-		"iConsensusAddress":  app.IConsensusAddress,
+		"contractAddress":     app.ContractAddress,
+		"templateHash":        app.TemplateHash,
+		"lastProcessedBlock":  app.LastProcessedBlock,
+		"lastClaimCheckBlock": app.LastClaimCheckBlock,
+		"status":              app.Status,
+		"iConsensusAddress":   app.IConsensusAddress,
 	}
 
 	_, err := pg.db.Exec(ctx, query, args)
@@ -346,12 +349,13 @@ func (pg *Database) GetApplication(
 	appAddressKey Address,
 ) (*Application, error) {
 	var (
-		id                 uint64
-		contractAddress    Address
-		templateHash       Hash
-		lastProcessedBlock uint64
-		status             ApplicationStatus
-		iconsensusAddress  Address
+		id                  uint64
+		contractAddress     Address
+		templateHash        Hash
+		lastProcessedBlock  uint64
+		lastClaimCheckBlock uint64
+		status              ApplicationStatus
+		iconsensusAddress   Address
 	)
 
 	query := `
@@ -360,6 +364,7 @@ func (pg *Database) GetApplication(
 		contract_address,
 		template_hash,
 		last_processed_block,
+		last_claim_check_block,
 		status,
 		iconsensus_address
 	FROM
@@ -376,6 +381,7 @@ func (pg *Database) GetApplication(
 		&contractAddress,
 		&templateHash,
 		&lastProcessedBlock,
+		&lastClaimCheckBlock,
 		&status,
 		&iconsensusAddress,
 	)
@@ -390,12 +396,13 @@ func (pg *Database) GetApplication(
 	}
 
 	app := Application{
-		Id:                 id,
-		ContractAddress:    contractAddress,
-		TemplateHash:       templateHash,
-		LastProcessedBlock: lastProcessedBlock,
-		Status:             status,
-		IConsensusAddress:  iconsensusAddress,
+		Id:                  id,
+		ContractAddress:     contractAddress,
+		TemplateHash:        templateHash,
+		LastProcessedBlock:  lastProcessedBlock,
+		LastClaimCheckBlock: lastClaimCheckBlock,
+		Status:              status,
+		IConsensusAddress:   iconsensusAddress,
 	}
 
 	return &app, nil

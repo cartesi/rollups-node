@@ -96,7 +96,7 @@ func (s *RepositorySuite) SetupDatabase() {
 		Id:              1,
 		Index:           0,
 		FirstBlock:      0,
-		LastBlock:       200,
+		LastBlock:       99,
 		AppAddress:      app.ContractAddress,
 		ClaimHash:       nil,
 		TransactionHash: nil,
@@ -109,8 +109,8 @@ func (s *RepositorySuite) SetupDatabase() {
 	epoch2 := Epoch{
 		Id:              2,
 		Index:           1,
-		FirstBlock:      201,
-		LastBlock:       math.MaxUint64,
+		FirstBlock:      100,
+		LastBlock:       199,
 		AppAddress:      app.ContractAddress,
 		ClaimHash:       nil,
 		TransactionHash: nil,
@@ -118,6 +118,20 @@ func (s *RepositorySuite) SetupDatabase() {
 	}
 
 	_, err = s.database.InsertEpoch(s.ctx, &epoch2)
+	s.Require().Nil(err)
+
+	epoch3 := Epoch{
+		Id:              3,
+		Index:           2,
+		FirstBlock:      200,
+		LastBlock:       299,
+		AppAddress:      app.ContractAddress,
+		ClaimHash:       nil,
+		TransactionHash: nil,
+		Status:          EpochStatusClaimSubmitted,
+	}
+
+	_, err = s.database.InsertEpoch(s.ctx, &epoch3)
 	s.Require().Nil(err)
 
 	input1 := Input{
@@ -384,7 +398,7 @@ func (s *RepositorySuite) TestEpochExists() {
 		Status:          EpochStatusOpen,
 		Index:           0,
 		FirstBlock:      0,
-		LastBlock:       200,
+		LastBlock:       99,
 		TransactionHash: nil,
 		ClaimHash:       nil,
 		AppAddress:      common.HexToAddress("deadbeef"),

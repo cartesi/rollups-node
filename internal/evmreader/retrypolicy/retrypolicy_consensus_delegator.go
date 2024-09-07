@@ -9,7 +9,9 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/retry"
+	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // A Consensus Delegator that
@@ -33,18 +35,12 @@ func NewConsensusWithRetryPolicy(
 	}
 }
 
-type getEpochLengthArgs struct {
-	opts *bind.CallOpts
-}
-
 func (d *ConsensusRetryPolicyDelegator) GetEpochLength(
 	opts *bind.CallOpts,
 ) (*big.Int, error) {
 
-	return retry.CallFunctionWithRetryPolicy(d.getEpochLength,
-		getEpochLengthArgs{
-			opts: opts,
-		},
+	return retry.CallFunctionWithRetryPolicy(d.delegate.GetEpochLength,
+		opts,
 		d.maxRetries,
 		d.delayBetweenCalls,
 		"Consensus::GetEpochLength",
@@ -52,8 +48,25 @@ func (d *ConsensusRetryPolicyDelegator) GetEpochLength(
 
 }
 
-func (d *ConsensusRetryPolicyDelegator) getEpochLength(
-	args getEpochLengthArgs,
-) (*big.Int, error) {
-	return d.delegate.GetEpochLength(args.opts)
+type retrieveClaimAcceptedEventsArgs struct {
+	opts         *bind.FilterOpts
+	appAddresses []common.Address
+}
+
+func (d *ConsensusRetryPolicyDelegator) RetrieveClaimAcceptanceEvents(
+	opts *bind.FilterOpts,
+	appAddresses []common.Address,
+) ([]*iconsensus.IConsensusClaimAcceptance, error) {
+	return retry.CallFunctionWithRetryPolicy(d.retrieveClaimAcceptanceEvents,
+		retrieveClaimAcceptedEventsArgs{
+			opts:         opts,
+			appAddresses: appAddresses,
+		}, d.maxRetries,
+		d.delayBetweenCalls,
+		"Consensus::RetrieveClaimAcceptedEvents")
+}
+
+func (d *ConsensusRetryPolicyDelegator) retrieveClaimAcceptanceEvents(
+	args retrieveClaimAcceptedEventsArgs) ([]*iconsensus.IConsensusClaimAcceptance, error) {
+	return d.delegate.RetrieveClaimAcceptanceEvents(args.opts, args.appAddresses)
 }

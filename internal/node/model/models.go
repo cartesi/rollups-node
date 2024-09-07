@@ -62,13 +62,14 @@ type NodePersistentConfig struct {
 }
 
 type Application struct {
-	Id                 uint64
-	ContractAddress    Address
-	TemplateHash       Hash
-	TemplateUri        string
-	LastProcessedBlock uint64
-	Status             ApplicationStatus
-	IConsensusAddress  Address
+	Id                  uint64
+	ContractAddress     Address
+	TemplateHash        Hash
+	TemplateUri         string
+	LastProcessedBlock  uint64
+	LastClaimCheckBlock uint64
+	Status              ApplicationStatus
+	IConsensusAddress   Address
 }
 
 type Epoch struct {
