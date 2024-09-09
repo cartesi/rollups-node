@@ -54,11 +54,15 @@ func init() {
 
 	Cmd.Flags().StringVar(&depsConfig.Devnet.BlockTime, "devnet-block-time",
 		deps.DefaultDevnetBlockTime,
-		"Devnet mining block time")
+		"Devnet mining block time in seconds when 'interval mining' is enabled.")
 
 	Cmd.Flags().BoolVar(&depsConfig.Devnet.NoMining, "devnet-no-mining",
 		deps.DefaultDevnetNoMining,
-		"Devnet disable mining")
+		"Disable Devnet 'auto/interval mining'.")
+
+	Cmd.Flags().StringVar(&depsConfig.Devnet.BlockFinalizationOffset, "devnet-finalization-offset",
+		deps.DefaultSlotsInAnEpoch,
+		"Devnet finalization block offset in blocks")
 
 	Cmd.Flags().BoolVar(&disablePostgres, "disable-postgres", false, "Disable Postgres")
 

@@ -21,7 +21,7 @@ target "common" {
     BASE_IMAGE                   = "debian:bookworm-20240311-slim"
     RUST_VERSION                 = "1.78.0"
     GO_VERSION                   = "1.22.1"
-    FOUNDRY_NIGHTLY_VERSION      = "293fad73670b7b59ca901c7f2105bf7a29165a90"
+    FOUNDRY_NIGHTLY_VERSION      = "626221f5ef44b4af950a08e09bd714650d9eb77d"
     MACHINE_EMULATOR_VERSION     = "0.18.1"
     MACHINE_TOOLS_VERSION        = "0.16.1"
     MACHINE_IMAGE_KERNEL_VERSION = "0.20.0"

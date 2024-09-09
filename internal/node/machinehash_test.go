@@ -136,10 +136,9 @@ func createMachineSnapshot() (string, error) {
 func startDevnet() (*deps.DepsContainers, error) {
 	container, err := deps.Run(context.Background(), deps.DepsConfig{
 		Devnet: &deps.DevnetConfig{
-			DockerImage:             deps.DefaultDevnetDockerImage,
-			BlockTime:               deps.DefaultDevnetBlockTime,
-			BlockToWaitForOnStartup: deps.DefaultDevnetBlockToWaitForOnStartup,
-			Port:                    testutil.GetCartesiTestDepsPortRange(),
+			DockerImage: deps.DefaultDevnetDockerImage,
+			BlockTime:   deps.DefaultDevnetBlockTime,
+			Port:        testutil.GetCartesiTestDepsPortRange(),
 		},
 	})
 	if err != nil {
