@@ -51,7 +51,8 @@ func init() {
 	Cmd.Flags().StringVarP(&postgresEndpoint, "postgres-endpoint", "p", "", "Postgres endpoint")
 	Cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose logging")
 
-	Cmd.MarkFlagRequired("input-box-block-number")
+	err := Cmd.MarkFlagRequired("input-box-block-number")
+	cobra.CheckErr(err)
 }
 
 func main() {
