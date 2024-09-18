@@ -1,6 +1,9 @@
 .PHONY: all
 all: help
 
+export PATH:=$(PATH):$(PWD)/emulator/usr/bin
+export LD_LIBRARY_PATH:=$(PWD)/emulator/usr/lib
+
 .PHONY: submodules
 submodules: ## Download the git submodules
 	@git submodule update --init --recursive

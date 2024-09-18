@@ -20,7 +20,7 @@ const ramLength = 64 << 20
 
 // ImagesPath is the path to the folder containing the linux.bin and rootfs.ext2 files.
 // It can be redefined in case the files are not in the default folder.
-var ImagesPath = "/usr/share/cartesi-machine/images/"
+var ImagesPath = "../../" //"/usr/share/cartesi-machine/images/"
 
 func init() {
 	if value, ok := os.LookupEnv("TESTS_IMAGES_PATH"); ok {

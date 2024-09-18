@@ -6,7 +6,8 @@
 // (mainly machine-c-api.h and jsonrpc-machine-c-api.h).
 package emulator
 
-// #cgo LDFLAGS: -lcartesi -lcartesi_jsonrpc
+// #cgo CFLAGS: -I${SRCDIR}/../../emulator/usr/include
+// #cgo LDFLAGS: -L${SRCDIR}/../../emulator/usr/lib -lcartesi -lcartesi_jsonrpc
 // #include <stdlib.h>
 // #include "cartesi-machine/jsonrpc-machine-c-api.h"
 import "C"

@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	imagesPath = "/usr/share/cartesi-machine/images/"
+	imagesPath = "../../"
 	address    = "127.0.0.1:8081"
 )
 
