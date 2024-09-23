@@ -1,6 +1,6 @@
 [package]
 name = "authority-claimer"
-version = "1.4.0"
+version = "2.0.0"
 license = "Apache-2.0"
 edition = "2021"
 resolver = "2"
@@ -17,8 +17,6 @@ base64 = "0.22"
 clap = {version = "4.5", features = ["string", "derive", "env"]}
 ethers = "1.0"
 ethers-signers = {version = "1.0", features = ["aws"]}
-eth-state-fold = "0.9"
-eth-state-fold-types = {version = "0.9", features = ["ethers"]}
 eth-tx-manager = "0.10"
 hex = "0.4"
 prometheus-client = "0.22"
@@ -38,13 +36,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2.5"
 
 [build-dependencies]
-eth-state-fold-types = {version = "0.9", features = ["ethers"]}
-snafu = "0.8"
-tempfile = "3.10"
+ethers = "1.0"
 
 [dev-dependencies]
 serial_test = "3.0"
-testcontainers = "0.14"
 tracing-test = {version = "0.2", features = ["no-env-filter"]}
 
 [profile.release]

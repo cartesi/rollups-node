@@ -16,7 +16,7 @@ use tracing::{info, trace};
 /// see if the claim is duplicated before sending.
 ///
 /// It uses three injected traits, `BrokerListener`, `DuplicateChecker`, and
-/// `TransactionSender`, to, respectivelly, listen for messages, check for
+/// `TransactionSender`, to, respectively, listen for messages, check for
 /// duplicated claims, and send claims to the blockchain.
 #[async_trait]
 pub trait Claimer: Sized + Debug {
