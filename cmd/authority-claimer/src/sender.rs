@@ -55,7 +55,7 @@ type Middleware =
 type TransactionManager =
     eth_tx_manager::TransactionManager<Middleware, GasOracle, Database, Time>;
 
-type TrasactionManagerError =
+type TransactionManagerError =
     eth_tx_manager::Error<Middleware, GasOracle, Database>;
 
 /// Instantiates the tx-manager calling `new` or `force_new`.
@@ -88,7 +88,7 @@ pub enum TransactionSenderError {
     ProviderUrl { source: ParseError },
 
     #[snafu(display("Transaction manager error"))]
-    TransactionManager { source: TrasactionManagerError },
+    TransactionManager { source: TransactionManagerError },
 
     #[snafu(display("Internal ethers-rs error: tx `to` should not be null"))]
     InternalEthers,
@@ -129,7 +129,7 @@ async fn create_tx_manager(
     let middleware = create_middleware(conditional_signer, provider_url)?;
     let result = tx_manager!(new, middleware, database_path, chain);
     let tx_manager =
-        if let Err(TrasactionManagerError::NonceTooLow { .. }) = result {
+        if let Err(TransactionManagerError::NonceTooLow { .. }) = result {
             info!("Nonce too low! Clearing the tx-manager database.");
             tx_manager!(force_new, middleware, database_path, chain)
                 .context(TransactionManagerSnafu)?
