@@ -13,7 +13,6 @@ mod repository;
 mod rollups_events;
 mod sender;
 mod signer;
-mod types;
 
 use checker::DefaultDuplicateChecker;
 use claimer::{Claimer, DefaultClaimer};
