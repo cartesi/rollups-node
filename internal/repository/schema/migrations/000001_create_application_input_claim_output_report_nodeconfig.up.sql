@@ -41,13 +41,6 @@ CREATE TABLE "application"
     "last_claim_check_block" NUMERIC(20,0) NOT NULL CHECK ("last_claim_check_block" >= 0 AND "last_claim_check_block" <= f_maxuint64()),
     "last_output_check_block" NUMERIC(20,0) NOT NULL CHECK ("last_output_check_block" >= 0 AND "last_output_check_block" <= f_maxuint64()),
 
-    -- Temporary -------------------------------------
-    "machine_inc_cycles"              BIGINT NOT NULL,
-    "machine_max_cycles"              BIGINT NOT NULL,
-    "machine_advance_timeout"         INT    NOT NULL,
-    "machine_inspect_timeout"         INT    NOT NULL,
-    "machine_max_concurrent_inspects" INT    NOT NULL,
-    --------------------------------------------------
     CONSTRAINT "application_pkey" PRIMARY KEY ("id"),
     UNIQUE("contract_address")
 );

@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/internal/nodemachine"
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/cartesi/rollups-node/internal/node/advancer/machines"
 
@@ -24,49 +26,26 @@ type MachineRepository struct{ *Database }
 func (repo *MachineRepository) GetMachineConfigurations(
 	ctx context.Context,
 ) ([]*machines.MachineConfig, error) {
-	query := `
-        SELECT DISTINCT ON (address)
-            a.contract_address AS address,
-            i.index,
-            a.machine_inc_cycles,
-            a.machine_max_cycles,
-            a.machine_advance_timeout,
-            a.machine_inspect_timeout,
-            a.machine_max_concurrent_inspects,
-            COALESCE(s.uri, a.template_uri)
-        FROM          application AS a
-            LEFT JOIN snapshot    AS s ON (a.contract_address = s.application_address)
-            LEFT JOIN input       AS i ON (s.input_id = i.id)
-        WHERE     a.status = 'RUNNING'
-        ORDER BY  address, i.index DESC
-    `
-	rows, err := repo.db.Query(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("%w (failed querying applications): %w", ErrAdvancerRepository, err)
-	}
-
-	res := []*machines.MachineConfig{}
-	var row machines.MachineConfig
-
-	scans := []any{
-		&row.AppAddress,
-		&row.SnapshotInputIndex,
-		&row.IncCycles,
-		&row.MaxCycles,
-		&row.AdvanceTimeout,
-		&row.InspectTimeout,
-		&row.MaxConcurrentInspects,
-		&row.SnapshotPath,
-	}
-	_, err = pgx.ForEachRow(rows, scans, func() error {
-		row := row
-		res = append(res, &row)
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("%w (failed reading rows): %w", ErrAdvancerRepository, err)
-	}
-
+	var myInt6 uint64 = 6
+	res := []*machines.MachineConfig{{
+		AppAddress:            common.BytesToAddress([]byte("\xbe\xad")),
+		SnapshotPath:          "path/to/template/uri/2",
+		SnapshotInputIndex:    nil,
+		IncCycles:             0,
+		MaxCycles:             0,
+		AdvanceTimeout:        time.Duration(0),
+		InspectTimeout:        time.Duration(0),
+		MaxConcurrentInspects: 0,
+	}, {
+		AppAddress:            common.BytesToAddress([]byte("\xbe\xef")),
+		SnapshotPath:          "path/to/snapshot/2",
+		SnapshotInputIndex:    &myInt6,
+		IncCycles:             0,
+		MaxCycles:             0,
+		AdvanceTimeout:        time.Duration(0),
+		InspectTimeout:        time.Duration(0),
+		MaxConcurrentInspects: 0,
+	}}
 	return res, nil
 }
 

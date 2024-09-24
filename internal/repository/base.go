@@ -101,12 +101,7 @@ func (pg *Database) InsertApplication(
 		last_claim_check_block,
 		last_output_check_block,
 		status,
-		iconsensus_address,
-        machine_inc_cycles,
-        machine_max_cycles,
-        machine_advance_timeout,
-        machine_inspect_timeout,
-        machine_max_concurrent_inspects)
+		iconsensus_address)
 	VALUES
 		(@contractAddress,
 		@templateHash,
@@ -115,30 +110,20 @@ func (pg *Database) InsertApplication(
 		@lastClaimCheckBlock,
 		@lastOutputCheckBlock,
 		@status,
-		@iConsensusAddress,
-        @machineIncCycles,
-        @machineMaxCycles,
-        @machineAdvanceTimeout,
-        @machineInspectTimeout,
-        @machineMaxConcurrentInspects)
+		@iConsensusAddress)
     RETURNING
         id
     `
 
 	args := pgx.NamedArgs{
-		"contractAddress":              app.ContractAddress,
-		"templateHash":                 app.TemplateHash,
-		"templateUri":                  app.TemplateUri,
-		"lastProcessedBlock":           app.LastProcessedBlock,
-		"lastClaimCheckBlock":          app.LastClaimCheckBlock,
-		"lastOutputCheckBlock":         app.LastOutputCheckBlock,
-		"status":                       app.Status,
-		"iConsensusAddress":            app.IConsensusAddress,
-		"machineIncCycles":             app.MachineIncCycles,
-		"machineMaxCycles":             app.MachineMaxCycles,
-		"machineAdvanceTimeout":        app.MachineAdvanceTimeout,
-		"machineInspectTimeout":        app.MachineInspectTimeout,
-		"machineMaxConcurrentInspects": app.MachineMaxConcurrentInspects,
+		"contractAddress":      app.ContractAddress,
+		"templateHash":         app.TemplateHash,
+		"templateUri":          app.TemplateUri,
+		"lastProcessedBlock":   app.LastProcessedBlock,
+		"lastClaimCheckBlock":  app.LastClaimCheckBlock,
+		"lastOutputCheckBlock": app.LastOutputCheckBlock,
+		"status":               app.Status,
+		"iConsensusAddress":    app.IConsensusAddress,
 	}
 
 	var id uint64
