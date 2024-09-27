@@ -118,11 +118,6 @@ Block subscription timeout in seconds."""
 # Contracts
 #
 
-[contracts.CARTESI_CONTRACTS_APPLICATION_ADDRESS]
-go-type = "string"
-description = """
-Address of the DApp's contract."""
-
 [contracts.CARTESI_CONTRACTS_INPUT_BOX_ADDRESS]
 go-type = "string"
 description = """
@@ -139,6 +134,7 @@ The node will begin to read blockchain events from this block."""
 #
 
 [snapshot.CARTESI_SNAPSHOT_DIR]
+default = "/var/lib/cartesi-rollups-node/snapshots"
 go-type = "string"
 description = """
 Path to the directory with the cartesi-machine snapshot that will be loaded by the node."""
@@ -211,12 +207,6 @@ See [this](https://www.postgresql.org/docs/current/libpq-envars.html) for more i
 It is also possible to set the endpoint without a password and load it from Postgres' passfile.
 See [this](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-PASSFILE)
 for more information."""
-
-[postgres.CARTESI_POSTGRES_SSL_ENABLED]
-default = "true"
-go-type = "bool"
-description = """
-When enabled, will connect to postgres database via SSL."""
 
 #
 # HTTP
