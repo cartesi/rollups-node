@@ -30,6 +30,21 @@ EOF
 USER cartesi
 
 # =============================================================================
+# STAGE: contracts-artifacts
+#
+# - Generate the contracts artifacts.
+# =============================================================================
+
+FROM node:20-slim AS contracts-artifacts
+
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
+COPY rollups-contracts /build/rollups-contracts
+WORKDIR /build/rollups-contracts
+RUN pnpm install --frozen-lockfile && pnpm export
+
+# =============================================================================
 # STAGE: rust-installer
 #
 # - Install rust and cargo-chef.
@@ -85,8 +100,10 @@ FROM rust-installer AS rust-builder
 COPY --from=rust-prepare ${RUST_BUILD_PATH}/recipe.json .
 RUN cargo chef cook --release --recipe-path recipe.json
 
+COPY --chown=cartesi:cartesi ./cmd/authority-claimer/ .
+COPY --from=contracts-artifacts /build/rollups-contracts/export/artifacts ${RUST_BUILD_PATH}/../../rollups-contracts/export/artifacts
+
 # Build application.
-COPY ./cmd/authority-claimer/ .
 RUN cargo build --release
 
 # =============================================================================
@@ -144,8 +161,11 @@ RUN cd ${GO_BUILD_PATH}/rollups-node && go mod download
 FROM go-prepare AS go-builder
 
 ARG GO_BUILD_PATH
+
 # Build application.
 COPY --chown=cartesi:cartesi . ${GO_BUILD_PATH}/rollups-node/
+COPY --from=contracts-artifacts /build/rollups-contracts/export/artifacts ${GO_BUILD_PATH}/rollups-node/rollups-contracts/export/artifacts
+
 RUN cd ${GO_BUILD_PATH}/rollups-node && make build-go
 
 # =============================================================================
