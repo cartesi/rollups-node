@@ -118,12 +118,6 @@ If set to true the node will send transactions using the legacy gas fee model
 * **Type:** `bool`
 * **Default:** `"false"`
 
-## `CARTESI_CONTRACTS_APPLICATION_ADDRESS`
-
-Address of the DApp's contract.
-
-* **Type:** `string`
-
 ## `CARTESI_CONTRACTS_INPUT_BOX_ADDRESS`
 
 Address of the InputBox contract.
@@ -216,13 +210,6 @@ for more information.
 * **Type:** `string`
 * **Default:** `""`
 
-## `CARTESI_POSTGRES_SSL_ENABLED`
-
-When enabled, will connect to postgres database via SSL.
-
-* **Type:** `bool`
-* **Default:** `"true"`
-
 ## `CARTESI_ADVANCER_POLLING_INTERVAL`
 
 How many seconds the node will wait before querying the database for new inputs.
@@ -265,6 +252,7 @@ How many seconds the node will wait before trying to finish epochs for all appli
 Path to the directory with the cartesi-machine snapshot that will be loaded by the node.
 
 * **Type:** `string`
+* **Default:** `"/var/lib/cartesi-rollups-node/snapshots"`
 
 ## `CARTESI_MACHINE_SERVER_VERBOSITY`
 

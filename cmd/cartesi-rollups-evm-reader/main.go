@@ -26,8 +26,7 @@ var (
 )
 
 const (
-	CMD_NAME                            = "evm-reader"
-	devnetInputBoxDeploymentBlockNumber = uint64(16)
+	CMD_NAME = "evm-reader"
 )
 
 var Cmd = &cobra.Command{
@@ -132,7 +131,7 @@ func run(cmd *cobra.Command, args []string) {
 	slog.Info("Starting the Cartesi Rollups Node EVM Reader", "version", buildVersion, "config", c)
 
 	// Validate Schema
-	err := startup.ValidateSchema(c.PostgresEndpoint.Value, c.PostgresSslDisabled)
+	err := startup.ValidateSchema(c.PostgresEndpoint.Value)
 	if err != nil {
 		slog.Error("EVM Reader exited with an error", "error", err)
 		os.Exit(1)

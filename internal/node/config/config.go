@@ -27,12 +27,10 @@ type NodeConfig struct {
 	EvmReaderRetryPolicyMaxRetries            uint64
 	EvmReaderRetryPolicyMaxDelay              Duration
 	BlockchainBlockTimeout                    int
-	ContractsApplicationAddress               string
 	ContractsInputBoxAddress                  string
 	ContractsInputBoxDeploymentBlockNumber    int64
 	SnapshotDir                               string
 	PostgresEndpoint                          Redacted[string]
-	PostgresSslDisabled                       bool
 	HttpAddress                               string
 	HttpPort                                  int
 	FeatureClaimerEnabled                     bool
@@ -91,12 +89,10 @@ func FromEnv() NodeConfig {
 	config.EvmReaderRetryPolicyMaxRetries = getEvmReaderRetryPolicyMaxRetries()
 	config.EvmReaderRetryPolicyMaxDelay = getEvmReaderRetryPolicyMaxDelay()
 	config.BlockchainBlockTimeout = getBlockchainBlockTimeout()
-	config.ContractsApplicationAddress = getContractsApplicationAddress()
 	config.ContractsInputBoxAddress = getContractsInputBoxAddress()
 	config.ContractsInputBoxDeploymentBlockNumber = getContractsInputBoxDeploymentBlockNumber()
 	config.SnapshotDir = getSnapshotDir()
 	config.PostgresEndpoint = Redacted[string]{getPostgresEndpoint()}
-	config.PostgresSslDisabled = !getPostgresSslEnabled()
 	config.HttpAddress = getHttpAddress()
 	config.HttpPort = getHttpPort()
 	config.FeatureClaimerEnabled = getFeatureClaimerEnabled()
@@ -174,7 +170,6 @@ func GetAdvancerConfig() AdvancerConfig {
 	config.LogLevel = getLogLevel()
 	config.LogPrettyEnabled = getLogPrettyEnabled()
 	config.PostgresEndpoint = Redacted[string]{getPostgresEndpoint()}
-	config.PostgresSslMode = getPostgresSslEnabled()
 	config.AdvancerPollingInterval = getAdvancerPollingInterval()
 	// Temporary.
 	config.MachineServerVerbosity = cartesimachine.ServerVerbosity(getMachineServerVerbosity())
