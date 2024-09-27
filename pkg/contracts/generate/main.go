@@ -9,22 +9,18 @@
 package main
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"encoding/json"
 	"errors"
-	"io"
 	"io/fs"
 	"log"
-	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
-const rollupsContractsUrl = "https://registry.npmjs.org/@cartesi/rollups/-/rollups-2.0.0-rc.6.tgz"
-const baseContractsPath = "package/export/artifacts/contracts/"
+const baseContractsPath = "../../rollups-contracts/export/artifacts/contracts/"
 
 type contractBinding struct {
 	jsonPath string
@@ -55,16 +51,11 @@ var bindings = []contractBinding{
 }
 
 func main() {
-	contractsZip := downloadContracts(rollupsContractsUrl)
-	defer contractsZip.Close()
-	contractsTar := unzip(contractsZip)
-	defer contractsTar.Close()
-
 	files := make(map[string]bool)
 	for _, b := range bindings {
 		files[b.jsonPath] = true
 	}
-	contents := readFilesFromTar(contractsTar, files)
+	contents := readFilesFromDir(files)
 
 	for _, b := range bindings {
 		content := contents[b.jsonPath]
@@ -82,42 +73,18 @@ func checkErr(context string, err any) {
 	}
 }
 
-// Download the contracts from rollupsContractsUrl.
-// Return the buffer with the contracts.
-func downloadContracts(url string) io.ReadCloser {
-	log.Print("downloading contracts from ", url)
-	response, err := http.Get(url)
-	checkErr("download tgz", err)
-	if response.StatusCode != http.StatusOK {
-		response.Body.Close()
-		log.Fatal("invalid status: ", response.Status)
-	}
-	return response.Body
-}
-
-// Decompress the buffer with the contracts.
-func unzip(r io.Reader) io.ReadCloser {
-	log.Print("unziping contracts")
-	gzipReader, err := gzip.NewReader(r)
-	checkErr("unziping", err)
-	return gzipReader
-}
-
-// Read the required files from the tar.
+// Read the required files from the directory.
 // Return a map with the file contents.
-func readFilesFromTar(r io.Reader, files map[string]bool) map[string][]byte {
+func readFilesFromDir(files map[string]bool) map[string][]byte {
 	contents := make(map[string][]byte)
-	tarReader := tar.NewReader(r)
-	for {
-		header, err := tarReader.Next()
-		if err == io.EOF {
-			break // End of archive
+	for fileName := range files {
+		fileFullPath, err := filepath.Abs(fileName)
+		if err != nil {
+			log.Fatal(err)
 		}
-		checkErr("read tar", err)
-		if files[header.Name] {
-			contents[header.Name], err = io.ReadAll(tarReader)
-			checkErr("read tar", err)
-		}
+		data, err := os.ReadFile(fileFullPath)
+		checkErr("read file", err)
+		contents[fileName] = data
 	}
 	return contents
 }
