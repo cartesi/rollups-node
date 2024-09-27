@@ -24,7 +24,6 @@ type portOffset = int
 const (
 	portOffsetProxy = iota
 	portOffsetAuthorityClaimer
-	portOffsetPostgraphile
 )
 
 // Get the port of the given service.
@@ -105,7 +104,6 @@ func newSupervisorService(
 	inspector := newInspectorService(c, database)
 
 	s = append(s, newHttpService(c, inspector))
-	s = append(s, newPostgraphileService(c, workDir))
 	s = append(s, newEvmReaderService(c, database))
 	s = append(s, newValidatorService(c, database))
 
@@ -144,29 +142,6 @@ func newHttpService(c config.NodeConfig, i *inspect.Inspector) services.HttpServ
 		Address: addr,
 		Handler: handler,
 	}
-}
-
-func newPostgraphileService(c config.NodeConfig, workDir string) services.CommandService {
-	var s services.CommandService
-	s.Name = "postgraphile"
-	s.HealthcheckPort = getPort(c, portOffsetPostgraphile)
-	s.Path = "postgraphile"
-	s.Args = append(s.Args, "--retry-on-init-fail")
-	s.Args = append(s.Args, "--dynamic-json")
-	s.Args = append(s.Args, "--no-setof-functions-contain-nulls")
-	s.Args = append(s.Args, "--no-ignore-rbac")
-	s.Args = append(s.Args, "--enable-query-batching")
-	s.Args = append(s.Args, "--enhance-graphiql")
-	s.Args = append(s.Args, "--extended-errors", "errcode")
-	s.Args = append(s.Args, "--append-plugins", "@graphile-contrib/pg-simplify-inflector")
-	s.Args = append(s.Args, "--legacy-relations", "omit")
-	s.Args = append(s.Args, "--connection", fmt.Sprintf("%v", c.PostgresEndpoint.Value))
-	s.Args = append(s.Args, "--schema", "graphql")
-	s.Args = append(s.Args, "--host", "0.0.0.0")
-	s.Args = append(s.Args, "--port", fmt.Sprint(getPort(c, portOffsetPostgraphile)))
-	s.Env = append(s.Env, os.Environ()...)
-	s.WorkDir = workDir
-	return s
 }
 
 func newEvmReaderService(c config.NodeConfig, database *repository.Database) services.Service {
