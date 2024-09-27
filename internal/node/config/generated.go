@@ -300,18 +300,6 @@ func getLegacyBlockchainEnabled() bool {
 	return val
 }
 
-func getContractsApplicationAddress() string {
-	s, ok := os.LookupEnv("CARTESI_CONTRACTS_APPLICATION_ADDRESS")
-	if !ok {
-		panic("missing env var CARTESI_CONTRACTS_APPLICATION_ADDRESS")
-	}
-	val, err := toString(s)
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse CARTESI_CONTRACTS_APPLICATION_ADDRESS: %v", err))
-	}
-	return val
-}
-
 func getContractsInputBoxAddress() string {
 	s, ok := os.LookupEnv("CARTESI_CONTRACTS_INPUT_BOX_ADDRESS")
 	if !ok {
@@ -456,18 +444,6 @@ func getPostgresEndpoint() string {
 	return val
 }
 
-func getPostgresSslEnabled() bool {
-	s, ok := os.LookupEnv("CARTESI_POSTGRES_SSL_ENABLED")
-	if !ok {
-		s = "true"
-	}
-	val, err := toBool(s)
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse CARTESI_POSTGRES_SSL_ENABLED: %v", err))
-	}
-	return val
-}
-
 func getAdvancerPollingInterval() Duration {
 	s, ok := os.LookupEnv("CARTESI_ADVANCER_POLLING_INTERVAL")
 	if !ok {
@@ -531,7 +507,7 @@ func getValidatorPollingInterval() Duration {
 func getSnapshotDir() string {
 	s, ok := os.LookupEnv("CARTESI_SNAPSHOT_DIR")
 	if !ok {
-		panic("missing env var CARTESI_SNAPSHOT_DIR")
+		s = "/var/lib/cartesi-rollups-node/snapshots"
 	}
 	val, err := toString(s)
 	if err != nil {

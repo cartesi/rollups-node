@@ -51,7 +51,6 @@ func NewLocalNodeConfig(localPostgresEndpoint string, localBlockchainHttpEndpoin
 	nodeConfig.BlockchainBlockTimeout = LocalBlockTimeout
 
 	//Contracts
-	nodeConfig.ContractsApplicationAddress = book.Application.Hex()
 	nodeConfig.ContractsInputBoxAddress = book.InputBox.Hex()
 	nodeConfig.ContractsInputBoxDeploymentBlockNumber = LocalInputBoxDeploymentBlockNumber
 
