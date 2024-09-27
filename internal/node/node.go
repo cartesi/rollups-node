@@ -24,17 +24,6 @@ func Setup(
 		return nil, err
 	}
 
-	if c.FeatureMachineHashCheckEnabled {
-		if err := validateMachineHash(
-			ctx,
-			c.SnapshotDir,
-			c.ContractsApplicationAddress,
-			c.BlockchainHttpEndpoint.Value,
-		); err != nil {
-			return nil, err
-		}
-	}
-
 	// create service
 	return newSupervisorService(c, workDir, database), nil
 }

@@ -39,8 +39,8 @@ func main() {
 	}
 }
 
-func getDatabase(ctx context.Context, endpoint string, sslMode bool) (*repository.Database, error) {
-	err := startup.ValidateSchema(endpoint, sslMode)
+func getDatabase(ctx context.Context, endpoint string) (*repository.Database, error) {
+	err := startup.ValidateSchema(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("invalid database schema: %w", err)
 	}
@@ -62,7 +62,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	slog.Info("Starting the Cartesi Rollups Node Advancer", "version", buildVersion, "config", c)
 
-	database, err := getDatabase(ctx, c.PostgresEndpoint.Value, c.PostgresSslMode)
+	database, err := getDatabase(ctx, c.PostgresEndpoint.Value)
 	if err != nil {
 		return err
 	}
