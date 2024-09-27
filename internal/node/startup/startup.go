@@ -20,10 +20,7 @@ import (
 )
 
 // Validates the Node Database Schema Version
-func ValidateSchema(endpoint string, sslMode bool) error {
-	if sslMode {
-		endpoint += "?sslmode=disable"
-	}
+func ValidateSchema(endpoint string) error {
 
 	schema, err := schema.New(endpoint)
 	if err != nil {
