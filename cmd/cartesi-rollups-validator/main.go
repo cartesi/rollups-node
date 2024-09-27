@@ -86,7 +86,7 @@ func run(cmd *cobra.Command, args []string) {
 	slog.Info("Starting the Cartesi Rollups Node Validator", "version", buildVersion, "config", c)
 
 	// Validate Schema
-	err := startup.ValidateSchema(c.PostgresEndpoint.Value, c.PostgresSslDisabled)
+	err := startup.ValidateSchema(c.PostgresEndpoint.Value)
 	if err != nil {
 		slog.Error("failed to validate database schema", "error", err)
 		os.Exit(1)
