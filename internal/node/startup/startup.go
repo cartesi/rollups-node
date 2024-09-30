@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/cartesi/rollups-node/internal/node/config"
 	"github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/schema"
@@ -20,8 +19,9 @@ import (
 )
 
 // Validates the Node Database Schema Version
-func ValidateSchema(endpoint string, sslMode bool) error {
-	if sslMode {
+func ValidateSchema(endpoint string, sslModeDisable bool) error {
+
+	if sslModeDisable {
 		endpoint += "?sslmode=disable"
 	}
 
@@ -52,7 +52,11 @@ func ConfigLogs(logLevel slog.Level, logPrettyEnabled bool) {
 func SetupNodePersistentConfig(
 	ctx context.Context,
 	database *repository.Database,
-	config config.NodeConfig,
+	evmReaderDefaultBlock model.DefaultBlock,
+	inputBoxAddress string,
+	inputBoxDeploymentBlock uint64,
+	blockChainId uint64,
+
 ) (*model.NodePersistentConfig, error) {
 	nodePersistentConfig, err := database.GetNodeConfig(ctx)
 	if err != nil {
@@ -66,10 +70,10 @@ func SetupNodePersistentConfig(
 
 	if nodePersistentConfig == nil {
 		nodePersistentConfig = &model.NodePersistentConfig{
-			DefaultBlock:            config.EvmReaderDefaultBlock,
-			InputBoxDeploymentBlock: uint64(config.ContractsInputBoxDeploymentBlockNumber),
-			InputBoxAddress:         common.HexToAddress(config.ContractsInputBoxAddress),
-			ChainId:                 config.BlockchainID,
+			DefaultBlock:            evmReaderDefaultBlock,
+			InputBoxDeploymentBlock: inputBoxDeploymentBlock,
+			InputBoxAddress:         common.HexToAddress(inputBoxAddress),
+			ChainId:                 blockChainId,
 		}
 		slog.Info(
 			"No persistent config found at the database. Setting it up",

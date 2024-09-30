@@ -29,7 +29,7 @@ type NodeConfig struct {
 	BlockchainBlockTimeout                    int
 	ContractsApplicationAddress               string
 	ContractsInputBoxAddress                  string
-	ContractsInputBoxDeploymentBlockNumber    int64
+	ContractsInputBoxDeploymentBlockNumber    uint64
 	SnapshotDir                               string
 	PostgresEndpoint                          Redacted[string]
 	PostgresSslDisabled                       bool
@@ -43,6 +43,7 @@ type NodeConfig struct {
 	Auth                                      Auth
 	AdvancerPollingInterval                   Duration
 	ValidatorPollingInterval                  Duration
+	EvmReaderPollingInterval                  Duration
 	// Temporary
 	MachineServerVerbosity cartesimachine.ServerVerbosity
 }
@@ -115,6 +116,7 @@ func FromEnv() NodeConfig {
 	config.ValidatorPollingInterval = getValidatorPollingInterval()
 	// Temporary.
 	config.MachineServerVerbosity = cartesimachine.ServerVerbosity(getMachineServerVerbosity())
+	config.EvmReaderPollingInterval = getEvmreaderPollingInterval()
 	return config
 }
 
@@ -179,4 +181,38 @@ func GetAdvancerConfig() AdvancerConfig {
 	// Temporary.
 	config.MachineServerVerbosity = cartesimachine.ServerVerbosity(getMachineServerVerbosity())
 	return config
+}
+
+// EVM Reader
+
+type EvmReaderConfig struct {
+	LogLevel                               LogLevel
+	LogPrettyEnabled                       bool
+	PostgresEndpoint                       Redacted[string]
+	PostgresSslDisabled                    bool
+	BlockchainHttpEndpoint                 Redacted[string]
+	BlockchainID                           uint64
+	ContractsInputBoxAddress               string
+	ContractsInputBoxDeploymentBlockNumber uint64
+	EvmReaderDefaultBlock                  DefaultBlock
+	EvmReaderRetryPolicyMaxRetries         uint64
+	EvmReaderRetryPolicyMaxDelay           Duration
+	EvmReaderPollingInterval               Duration
+}
+
+func EvmReaderConfigFromEnv() EvmReaderConfig {
+	return EvmReaderConfig{
+		LogLevel:                               getLogLevel(),
+		LogPrettyEnabled:                       getLogPrettyEnabled(),
+		PostgresEndpoint:                       Redacted[string]{getPostgresEndpoint()},
+		PostgresSslDisabled:                    !getPostgresSslEnabled(),
+		ContractsInputBoxAddress:               getContractsInputBoxAddress(),
+		ContractsInputBoxDeploymentBlockNumber: getContractsInputBoxDeploymentBlockNumber(),
+		BlockchainID:                           getBlockchainId(),
+		BlockchainHttpEndpoint:                 Redacted[string]{getBlockchainHttpEndpoint()},
+		EvmReaderDefaultBlock:                  getEvmReaderDefaultBlock(),
+		EvmReaderRetryPolicyMaxRetries:         getEvmReaderRetryPolicyMaxRetries(),
+		EvmReaderRetryPolicyMaxDelay:           getEvmReaderRetryPolicyMaxDelay(),
+		EvmReaderPollingInterval:               getEvmreaderPollingInterval(),
+	}
 }

@@ -7,7 +7,6 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
-	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -16,7 +15,6 @@ import (
 	appcontract "github.com/cartesi/rollups-node/pkg/contracts/application"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -60,8 +58,6 @@ var (
 	inputAddedEvent1 = inputbox.InputBoxInputAdded{}
 	inputAddedEvent2 = inputbox.InputBoxInputAdded{}
 	inputAddedEvent3 = inputbox.InputBoxInputAdded{}
-
-	subscription0 = newMockSubscription()
 )
 
 type EvmReaderSuite struct {
@@ -69,7 +65,6 @@ type EvmReaderSuite struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
 	client          *MockEthClient
-	wsClient        *MockEthClient
 	inputBox        *MockInputBox
 	repository      *MockRepository
 	evmReader       *EvmReader
@@ -109,65 +104,21 @@ func (s *EvmReaderSuite) TearDownSuite() {
 func (s *EvmReaderSuite) SetupTest() {
 
 	s.client = newMockEthClient()
-	s.wsClient = s.client
 	s.inputBox = newMockInputBox()
 	s.repository = newMockRepository()
 	s.contractFactory = newEmvReaderContractFactory()
-	inputReader := NewEvmReader(
+	s.evmReader = NewEvmReader(
 		s.client,
-		s.wsClient,
 		s.inputBox,
 		s.repository,
 		0,
 		DefaultBlockStatusLatest,
 		s.contractFactory,
 	)
-	s.evmReader = &inputReader
+
 }
 
-// Service tests
-func (s *EvmReaderSuite) TestItStopsWhenContextIsCanceled() {
-	ctx, cancel := context.WithCancel(s.ctx)
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-	go func() {
-		errChannel <- s.evmReader.Run(ctx, ready)
-	}()
-	cancel()
-
-	err := <-errChannel
-	s.Require().Equal(context.Canceled, err, "stopped for the wrong reason")
-}
-
-func (s *EvmReaderSuite) TestItEventuallyBecomesReady() {
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-	go func() {
-		errChannel <- s.evmReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-	case err := <-errChannel:
-		s.FailNow("unexpected failure", err)
-	}
-}
-
-func (s *EvmReaderSuite) TestItFailsToSubscribeForNewInputsOnStart() {
-	s.client.Unset("SubscribeNewHead")
-	emptySubscription := &MockSubscription{}
-	s.client.On(
-		"SubscribeNewHead",
-		mock.Anything,
-		mock.Anything,
-	).Return(emptySubscription, fmt.Errorf("expected failure"))
-
-	s.Require().ErrorContains(
-		s.evmReader.Run(s.ctx, make(chan struct{}, 1)),
-		"expected failure")
-	s.client.AssertNumberOfCalls(s.T(), "SubscribeNewHead", 1)
-}
-
+// Evm tests
 func (s *EvmReaderSuite) TestItWrongIConsensus() {
 
 	consensusContract := &MockIConsensusContract{}
@@ -179,11 +130,8 @@ func (s *EvmReaderSuite) TestItWrongIConsensus() {
 		mock.Anything,
 	).Return(consensusContract, nil)
 
-	wsClient := FakeWSEhtClient{}
-
 	evmReader := NewEvmReader(
 		s.client,
-		&wsClient,
 		s.inputBox,
 		s.repository,
 		0x10,
@@ -223,23 +171,9 @@ func (s *EvmReaderSuite) TestItWrongIConsensus() {
 		mock.Anything,
 	).Return(&header0, nil).Once()
 
-	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-
-	go func() {
-		errChannel <- evmReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
-	}
-
-	wsClient.fireNewHead(&header0)
-	time.Sleep(time.Second)
+	// Run
+	err := evmReader.Step(s.ctx)
+	s.Require().Nil(err)
 
 	// Should not advance input processing
 	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 0)
@@ -271,11 +205,6 @@ func newMockEthClient() *MockEthClient {
 		mock.Anything,
 	).Return(&header0, nil)
 
-	client.On("SubscribeNewHead",
-		mock.Anything,
-		mock.Anything,
-	).Return(subscription0, nil)
-
 	return client
 }
 
@@ -293,53 +222,6 @@ func (m *MockEthClient) HeaderByNumber(
 ) (*types.Header, error) {
 	args := m.Called(ctx, number)
 	return args.Get(0).(*types.Header), args.Error(1)
-}
-
-func (m *MockEthClient) SubscribeNewHead(
-	ctx context.Context,
-	ch chan<- *types.Header,
-) (ethereum.Subscription, error) {
-	args := m.Called(ctx, ch)
-	return args.Get(0).(ethereum.Subscription), args.Error(1)
-}
-
-// Mock ethereum.Subscription
-type MockSubscription struct {
-	mock.Mock
-}
-
-func newMockSubscription() *MockSubscription {
-	sub := &MockSubscription{}
-
-	sub.On("Unsubscribe").Return()
-	sub.On("Err").Return(make(<-chan error))
-
-	return sub
-}
-
-func (m *MockSubscription) Unsubscribe() {
-}
-
-func (m *MockSubscription) Err() <-chan error {
-	args := m.Called()
-	return args.Get(0).(<-chan error)
-}
-
-// FakeClient
-type FakeWSEhtClient struct {
-	ch chan<- *types.Header
-}
-
-func (f *FakeWSEhtClient) SubscribeNewHead(
-	ctx context.Context,
-	ch chan<- *types.Header,
-) (ethereum.Subscription, error) {
-	f.ch = ch
-	return newMockSubscription(), nil
-}
-
-func (f *FakeWSEhtClient) fireNewHead(header *types.Header) {
-	f.ch <- header
 }
 
 // Mock inputbox.InputBox

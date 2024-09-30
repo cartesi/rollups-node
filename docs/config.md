@@ -135,7 +135,7 @@ Address of the InputBox contract.
 The deployment block for the input box contract.
 The node will begin to read blockchain events from this block.
 
-* **Type:** `int64`
+* **Type:** `uint64`
 
 ## `CARTESI_EXPERIMENTAL_SERVER_MANAGER_LOG_BYPASS_ENABLED`
 
@@ -238,6 +238,13 @@ At the end of each epoch, the node will send claims to the blockchain.
 
 * **Type:** `uint64`
 * **Default:** `"7200"`
+
+## `CARTESI_EVMREADER_POLLING_INTERVAL`
+
+How many seconds the node will wait before fetching new blocks.
+
+* **Type:** `Duration`
+* **Default:** `"1"`
 
 ## `CARTESI_EVM_READER_RETRY_POLICY_MAX_DELAY`
 

@@ -14,7 +14,6 @@ import (
 	appcontract "github.com/cartesi/rollups-node/pkg/contracts/application"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -62,12 +61,6 @@ type EthClient interface {
 	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
 }
 
-// EthWsClient mimics part of ethclient.Client functions to narrow down the
-// interface needed by the EvmReader. It must be bound to a WS endpoint
-type EthWsClient interface {
-	SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error)
-}
-
 type ConsensusContract interface {
 	GetEpochLength(opts *bind.CallOpts) (*big.Int, error)
 	RetrieveClaimAcceptanceEvents(
@@ -107,7 +100,6 @@ type application struct {
 // Output Executed events from the blockchain
 type EvmReader struct {
 	client                  EthClient
-	wsClient                EthWsClient
 	inputSource             InputSource
 	repository              EvmReaderRepository
 	contractFactory         ContractFactory
@@ -123,111 +115,73 @@ func (r *EvmReader) String() string {
 // Creates a new EvmReader
 func NewEvmReader(
 	client EthClient,
-	wsClient EthWsClient,
 	inputSource InputSource,
 	repository EvmReaderRepository,
 	inputBoxDeploymentBlock uint64,
 	defaultBlock DefaultBlock,
 	contractFactory ContractFactory,
-) EvmReader {
-	return EvmReader{
+) *EvmReader {
+	return &EvmReader{
 		client:                  client,
-		wsClient:                wsClient,
 		inputSource:             inputSource,
 		repository:              repository,
 		inputBoxDeploymentBlock: inputBoxDeploymentBlock,
 		defaultBlock:            defaultBlock,
 		contractFactory:         contractFactory,
+		epochLengthCache:        make(map[Address]uint64),
 	}
 }
 
-func (r *EvmReader) Run(ctx context.Context, ready chan<- struct{}) error {
+func (r *EvmReader) Step(ctx context.Context) error {
 
-	// Initialize epochLength cache
-	r.epochLengthCache = make(map[Address]uint64)
-
-	for {
-		err := r.watchForNewBlocks(ctx, ready)
-		// If the error is a SubscriptionError, re run watchForNewBlocks
-		// that it will restart the websocket subscription
-		if _, ok := err.(*SubscriptionError); !ok {
-			return err
-		}
-		slog.Error(err.Error())
-		slog.Info("Restarting subscription")
-	}
-}
-
-// watchForNewBlocks watches for new blocks and reads new inputs based on the
-// default block configuration, which have not been processed yet.
-func (r *EvmReader) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) error {
-	headers := make(chan *types.Header)
-	sub, err := r.wsClient.SubscribeNewHead(ctx, headers)
+	// Get All Applications
+	runningApps, err := r.repository.GetAllRunningApplications(ctx)
 	if err != nil {
-		return fmt.Errorf("could not start subscription: %v", err)
+		slog.Error("Error retrieving running applications for new inputs",
+			"error",
+			err,
+		)
+		return nil
 	}
-	slog.Info("Subscribed to new block events")
-	ready <- struct{}{}
-	defer sub.Unsubscribe()
 
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case err := <-sub.Err():
-			return &SubscriptionError{Cause: err}
-		case <-headers:
-
-			// Every time a new block arrives
-
-			// Get All Applications
-			runningApps, err := r.repository.GetAllRunningApplications(ctx)
-			if err != nil {
-				slog.Error("Error retrieving running applications",
-					"error",
-					err,
-				)
-				continue
-			}
-
-			// Build Contracts
-			var apps []application
-			for _, app := range runningApps {
-				applicationContract, consensusContract, err := r.getAppContracts(app)
-				if err != nil {
-					slog.Error("Error retrieving application contracts", "app", app, "error", err)
-					continue
-				}
-				apps = append(apps, application{Application: app,
-					applicationContract: applicationContract,
-					consensusContract:   consensusContract})
-			}
-
-			if len(apps) == 0 {
-				slog.Info("No correctly configured applications running")
-				continue
-			}
-
-			mostRecentHeader, err := r.fetchMostRecentHeader(
-				ctx,
-				r.defaultBlock,
-			)
-			if err != nil {
-				slog.Error("Error fetching most recent block",
-					"default block", r.defaultBlock,
-					"error", err)
-				continue
-			}
-			mostRecentBlockNumber := mostRecentHeader.Number.Uint64()
-
-			r.checkForNewInputs(ctx, apps, mostRecentBlockNumber)
-
-			r.checkForClaimStatus(ctx, apps, mostRecentBlockNumber)
-
-			r.checkForOutputExecution(ctx, apps, mostRecentBlockNumber)
-
+	// Build Contracts
+	var apps []application
+	for _, app := range runningApps {
+		applicationContract, consensusContract, err := r.getAppContracts(app)
+		if err != nil {
+			slog.Error("Error retrieving application contracts", "app", app, "error", err)
+			continue
 		}
+		apps = append(apps, application{Application: app,
+			applicationContract: applicationContract,
+			consensusContract:   consensusContract})
 	}
+
+	if len(apps) == 0 {
+		slog.Info("No correctly configured applications running")
+		return nil
+	}
+
+	mostRecentHeader, err := r.fetchMostRecentHeader(
+		ctx,
+		r.defaultBlock,
+	)
+	if err != nil {
+		slog.Error("Error fetching most recent block",
+			"default block", r.defaultBlock,
+			"error", err)
+		return nil
+	}
+	mostRecentBlockNumber := mostRecentHeader.Number.Uint64()
+
+	r.checkForNewInputs(ctx, apps, mostRecentBlockNumber)
+
+	r.checkForClaimStatus(ctx, apps, mostRecentBlockNumber)
+
+	r.checkForOutputExecution(ctx, apps, mostRecentBlockNumber)
+
+	return nil
+
 }
 
 // fetchMostRecentHeader fetches the most recent header up till the

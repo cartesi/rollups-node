@@ -40,7 +40,6 @@ var (
 	defaultBlock                  string
 	postgresEndpoint              string
 	blockchainHttpEndpoint        string
-	blockchainWsEndpoint          string
 	inputBoxAddress               string
 	inputBoxDeploymentBlockNumber uint64
 	verbose                       bool
@@ -66,12 +65,6 @@ func init() {
 		"b",
 		"",
 		"Blockchain HTTP Endpoint")
-
-	Cmd.Flags().StringVarP(&blockchainWsEndpoint,
-		"blockchain-ws-endpoint",
-		"w",
-		"",
-		"Blockchain WS Endpoint")
 
 	Cmd.Flags().StringVarP(&inputBoxAddress,
 		"inputbox-address",
@@ -105,7 +98,7 @@ func run(cmd *cobra.Command, args []string) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	c := config.FromEnv()
+	c := config.EvmReaderConfigFromEnv()
 
 	// Override configs
 	if verbose {
@@ -117,13 +110,13 @@ func run(cmd *cobra.Command, args []string) {
 	if blockchainHttpEndpoint != "" {
 		c.BlockchainHttpEndpoint = config.Redacted[string]{Value: blockchainHttpEndpoint}
 	}
-	if blockchainWsEndpoint != "" {
-		c.BlockchainWsEndpoint = config.Redacted[string]{Value: blockchainWsEndpoint}
-	}
 	if defaultBlock != "" {
 		evmReaderDefaultBlock, err := config.ToDefaultBlockFromString(defaultBlock)
 		cobra.CheckErr(err)
 		c.EvmReaderDefaultBlock = evmReaderDefaultBlock
+	}
+	if inputBoxAddress != "" {
+		c.ContractsInputBoxAddress = inputBoxAddress
 	}
 
 	// setup log
@@ -145,7 +138,14 @@ func run(cmd *cobra.Command, args []string) {
 	}
 	defer database.Close()
 
-	_, err = startup.SetupNodePersistentConfig(ctx, database, c)
+	_, err = startup.SetupNodePersistentConfig(
+		ctx,
+		database,
+		c.EvmReaderDefaultBlock,
+		c.ContractsInputBoxAddress,
+		c.ContractsInputBoxDeploymentBlockNumber,
+		c.BlockchainID,
+	)
 	if err != nil {
 		slog.Error("EVM Reader couldn't connect to the database", "error", err)
 		os.Exit(1)
@@ -154,10 +154,10 @@ func run(cmd *cobra.Command, args []string) {
 	// create EVM Reader Service
 	service := service.NewEvmReaderService(
 		c.BlockchainHttpEndpoint.Value,
-		c.BlockchainWsEndpoint.Value,
 		database,
 		c.EvmReaderRetryPolicyMaxRetries,
 		c.EvmReaderRetryPolicyMaxDelay,
+		c.EvmReaderPollingInterval,
 	)
 
 	// logs startup time

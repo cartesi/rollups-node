@@ -172,10 +172,10 @@ func newPostgraphileService(c config.NodeConfig, workDir string) services.Comman
 func newEvmReaderService(c config.NodeConfig, database *repository.Database) services.Service {
 	return evmreaderservice.NewEvmReaderService(
 		c.BlockchainHttpEndpoint.Value,
-		c.BlockchainWsEndpoint.Value,
 		database,
 		c.EvmReaderRetryPolicyMaxRetries,
 		c.EvmReaderRetryPolicyMaxDelay,
+		c.EvmReaderPollingInterval,
 	)
 }
 

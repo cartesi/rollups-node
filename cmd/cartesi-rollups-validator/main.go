@@ -28,28 +28,31 @@ var (
 		Long:  "Runs Validator in standalone mode",
 		Run:   run,
 	}
-	inputBoxDeploymentBlockNumber int64
-	pollingInterval               int64
+	inputBoxDeploymentBlockNumber uint64
+	pollingInterval               uint64
 	postgresEndpoint              string
 	verbose                       bool
 )
 
 func init() {
-	Cmd.Flags().Int64VarP(&inputBoxDeploymentBlockNumber,
+	Cmd.Flags().Uint64VarP(&inputBoxDeploymentBlockNumber,
 		"inputbox-block-number",
 		"n",
-		-1,
+		0,
 		"Input Box deployment block number",
 	)
-	Cmd.Flags().Int64VarP(
+	Cmd.Flags().Uint64VarP(
 		&pollingInterval,
 		"polling-interval",
 		"",
-		-1,
+		0,
 		"the amount of seconds to wait before trying to finish epochs for all applications",
 	)
 	Cmd.Flags().StringVarP(&postgresEndpoint, "postgres-endpoint", "p", "", "Postgres endpoint")
 	Cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose logging")
+
+	err := Cmd.MarkFlagRequired("input-box-block-number")
+	cobra.CheckErr(err)
 }
 
 func main() {
@@ -68,7 +71,7 @@ func run(cmd *cobra.Command, args []string) {
 	c := config.FromEnv()
 
 	// Override configs
-	if inputBoxDeploymentBlockNumber >= 0 {
+	if inputBoxDeploymentBlockNumber > 0 {
 		c.ContractsInputBoxDeploymentBlockNumber = inputBoxDeploymentBlockNumber
 	}
 	if pollingInterval > 0 {
@@ -99,7 +102,8 @@ func run(cmd *cobra.Command, args []string) {
 	}
 	defer database.Close()
 
-	_, err = startup.SetupNodePersistentConfig(ctx, database, c)
+	_, err = startup.SetupNodePersistentConfig(ctx, database, c.EvmReaderDefaultBlock,
+		c.ContractsInputBoxAddress, c.ContractsInputBoxDeploymentBlockNumber, c.BlockchainID)
 	if err != nil {
 		slog.Error("configuration error", "error", err)
 		os.Exit(1)
