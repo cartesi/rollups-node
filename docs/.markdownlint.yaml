@@ -1,7 +1,0 @@
-# Configuration related to docs generated automatically
-# by https://pkg.go.dev/github.com/spf13/cobra/doc.
-MD010: false
-MD012: false
-MD013: false
-MD040: false
-MD041: false
