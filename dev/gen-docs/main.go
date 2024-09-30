@@ -18,7 +18,7 @@ func main() {
 }
 
 func generateCartesiRollupsCliDocs() {
-	err := doc.GenMarkdownTree(root.Cmd, "../../docs/cli")
+	err := doc.GenMarkdownTree(root.Cmd, "docs/cli")
 	if err != nil {
 		log.Fatalf("failed to gen cartesi-rollups-cli docs: %v", err)
 	}
