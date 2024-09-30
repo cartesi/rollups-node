@@ -118,7 +118,7 @@ $(ROLLUPS_CONTRACTS_ABI_BASEDIR):
 # Clean
 # =============================================================================
 
-clean: clean-go clean-rust clean-contracts clean-devnet-files clean-dapps ## Clean all artifacts
+clean: clean-go clean-rust clean-contracts clean-docs clean-devnet-files clean-dapps ## Clean all artifacts
 
 clean-go: ## Clean Go artifacts
 	@echo "Cleaning Go artifacts"
@@ -132,6 +132,10 @@ clean-rust: ## Clean Rust artifacts
 clean-contracts: ## Clean contract artifacts
 	@echo "Cleaning contract artifacts"
 	@cd rollups-contracts && rm -rf artifacts cache export/artifacts node_modules src && git checkout .
+
+clean-docs: ## Clean the documentation
+	@echo "Cleaning the documentation"
+	@rm -rf docs/cli docs/node docs/evm-reader docs/advancer docs/validator
 
 clean-devnet-files: ## Clean the devnet files
 	@echo "Cleaning devnet files"
