@@ -9,10 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/deps"
 	"github.com/cartesi/rollups-node/internal/machine"
 	"github.com/cartesi/rollups-node/pkg/addresses"
-	"github.com/cartesi/rollups-node/pkg/testutil"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/suite"
 )
@@ -51,21 +49,11 @@ func (s *ValidateMachineHashSuite) TestItFailsWhenContextIsCanceled() {
 	s.Require().Nil(err)
 	defer os.RemoveAll(machineDir)
 
-	dependencies, err := startDevnet()
-	s.Require().Nil(err)
-	defer func() {
-		err = deps.Terminate(context.Background(), dependencies)
-		s.Nil(err)
-	}()
-
-	blockchainHttpEndpoint, err := dependencies.DevnetEndpoint(context.Background(), "http")
-	s.Require().Nil(err)
-
 	err = validateMachineHash(
 		ctx,
 		machineDir,
 		addresses.GetTestBook().Application.String(),
-		blockchainHttpEndpoint,
+		"http://127.0.0.1:8545", // FIXME get this from environment
 	)
 	s.NotNil(err)
 	s.ErrorIs(err, context.DeadlineExceeded)
@@ -78,21 +66,11 @@ func (s *ValidateMachineHashSuite) TestItSucceedsWhenHashesAreEqual() {
 	s.Require().Nil(err)
 	defer os.RemoveAll(machineDir)
 
-	dependencies, err := startDevnet()
-	s.Require().Nil(err)
-	defer func() {
-		err = deps.Terminate(context.Background(), dependencies)
-		s.Nil(err)
-	}()
-
-	blockchainHttpEndpoint, err := dependencies.DevnetEndpoint(context.Background(), "http")
-	s.Require().Nil(err)
-
 	err = validateMachineHash(
 		ctx,
 		machineDir,
 		addresses.GetTestBook().Application.String(),
-		blockchainHttpEndpoint,
+		"http://127.0.0.1:8545", // FIXME get this from environment
 	)
 	s.Nil(err)
 }
@@ -122,28 +100,8 @@ func createMachineSnapshot() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err = machine.Save(
-		"cartesi/rollups-node-snapshot:devel",
-		tmpDir,
-		"snapshotTemp",
-	); err != nil {
+	if err = machine.Save(tmpDir); err != nil {
 		return "", err
 	}
 	return tmpDir, nil
-}
-
-// Starts a devnet in a Docker container with the default parameters
-func startDevnet() (*deps.DepsContainers, error) {
-	container, err := deps.Run(context.Background(), deps.DepsConfig{
-		Devnet: &deps.DevnetConfig{
-			DockerImage:             deps.DefaultDevnetDockerImage,
-			BlockTime:               deps.DefaultDevnetBlockTime,
-			BlockToWaitForOnStartup: deps.DefaultDevnetBlockToWaitForOnStartup,
-			Port:                    testutil.GetCartesiTestDepsPortRange(),
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-	return container, nil
 }

@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/Khan/genqlient/graphql"
-	"github.com/cartesi/rollups-node/internal/deps"
 	"github.com/cartesi/rollups-node/internal/machine"
 	"github.com/cartesi/rollups-node/internal/node"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
@@ -38,7 +37,6 @@ const (
 
 type EchoInputTestSuite struct {
 	suite.Suite
-	containers             *deps.DepsContainers
 	ctx                    context.Context
 	cancel                 context.CancelFunc
 	tempDir                string

@@ -7,16 +7,15 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/deps"
 	"github.com/cartesi/rollups-node/internal/merkle"
 	"github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/schema"
 	"github.com/cartesi/rollups-node/internal/validator"
-	"github.com/cartesi/rollups-node/pkg/testutil"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/suite"
@@ -28,7 +27,6 @@ type ValidatorRepositoryIntegrationSuite struct {
 	suite.Suite
 	ctx         context.Context
 	cancel      context.CancelFunc
-	containers  *deps.DepsContainers
 	validator   *validator.Validator
 	database    *repository.Database
 	databaseURL *url.URL
@@ -42,25 +40,13 @@ func TestValidatorRepositoryIntegration(t *testing.T) {
 func (s *ValidatorRepositoryIntegrationSuite) SetupSuite() {
 	s.ctx, s.cancel = context.WithTimeout(context.Background(), testTimeout)
 
-	var depsConfig = deps.DepsConfig{
-		Postgres: &deps.PostgresConfig{
-			DockerImage: deps.DefaultPostgresDockerImage,
-			Port:        testutil.GetCartesiTestDepsPortRange(),
-			Password:    deps.DefaultPostgresPassword,
-		},
-	}
-
 	var err error
-	s.containers, err = deps.Run(s.ctx, depsConfig)
-	s.Require().Nil(err)
 
 	// build database URL
-	postgresEndpoint, err := s.containers.PostgresEndpoint(s.ctx, "postgres")
-	s.Require().Nil(err)
+	postgresEndpoint, ok := os.LookupEnv("CARTESI_TESTS_POSTGRES_ENDPOINT")
+	s.Require().True(ok)
 	s.databaseURL, err = url.Parse(postgresEndpoint)
 	s.Require().Nil(err)
-	s.databaseURL.User = url.UserPassword(deps.DefaultPostgresUser, deps.DefaultPostgresPassword)
-	s.databaseURL = s.databaseURL.JoinPath(deps.DefaultPostgresDatabase)
 }
 
 func (s *ValidatorRepositoryIntegrationSuite) SetupSubTest() {
@@ -90,10 +76,8 @@ func (s *ValidatorRepositoryIntegrationSuite) TearDownSubTest() {
 }
 
 func (s *ValidatorRepositoryIntegrationSuite) TearDownSuite() {
+	// TODO reset database and anvil
 	s.cancel()
-
-	err := deps.Terminate(context.Background(), s.containers)
-	s.Require().Nil(err)
 }
 
 func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
@@ -336,7 +320,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		firstEpoch.Id, err = s.database.InsertEpoch(s.ctx, firstEpoch)
 		s.Require().Nil(err)
 
-		// update input with its epoch id and OuputsHash and insert it in the db
+		// update input with its epoch id and OutputsHash and insert it in the db
 		firstInput.EpochId = firstEpoch.Id
 		firstInput.OutputsHash = &firstEpochClaim
 		firstInput.Id, err = s.database.InsertInput(s.ctx, firstInput)
