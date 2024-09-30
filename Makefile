@@ -185,10 +185,13 @@ escape: ## Run go escape analysis
 	@echo "Running go escape analysis"
 	go build -gcflags="-m -m" ./...
 
-md-lint: ## Lint Markdown docs. Each dir has its own .markdownlint.yaml.
-	@echo "Running markdownlint-cli"
-	@docker run --rm -v $$PWD:/workdir ghcr.io/igorshubovych/markdownlint-cli:latest "*.md"
-	@docker run --rm -v $$PWD/docs:/workdir ghcr.io/igorshubovych/markdownlint-cli:latest "*.md"
+# =============================================================================
+# Docs
+# =============================================================================
+
+docs: ## Generate the documentation
+	@echo "Generating documentation"
+	@go run $(GO_BUILD_PARAMS) dev/gen-docs/main.go
 
 # =============================================================================
 # Docker
@@ -248,4 +251,4 @@ shutdown-compose: ## Remove the containers and volumes from previous compose run
 help: ## Show help for each of the Makefile recipes
 	@grep "##" $(MAKEFILE_LIST) | grep -v grep | sed -e 's/:.*##\(.*\)/:\n\t\1\n/'
 
-.PHONY: build build-go build-rust clean clean-go clean-rust test unit-test-go unit-test-rust e2e-test lint fmt vet escape md-lint devnet image run-with-compose shutdown-compose help
+.PHONY: build build-go build-rust clean clean-go clean-rust test unit-test-go unit-test-rust e2e-test lint fmt vet escape md-lint devnet image run-with-compose shutdown-compose help docs
