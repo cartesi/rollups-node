@@ -8,19 +8,31 @@ package main
 
 import (
 	"log"
+	"os"
 
-	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root"
+	advancer_root "github.com/cartesi/rollups-node/cmd/cartesi-rollups-advancer/root"
+	cli_root "github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root"
+	evmreader_root "github.com/cartesi/rollups-node/cmd/cartesi-rollups-evm-reader/root"
+	validator_root "github.com/cartesi/rollups-node/cmd/cartesi-rollups-validator/root"
+	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 )
 
 func main() {
-	generateCartesiRollupsCliDocs()
+	generateDocs("cli", cli_root.Cmd)
+	generateDocs("evm-reader", evmreader_root.Cmd)
+	generateDocs("advancer", advancer_root.Cmd)
+	generateDocs("validator", validator_root.Cmd)
 }
 
-func generateCartesiRollupsCliDocs() {
-	err := doc.GenMarkdownTree(root.Cmd, "docs/cli")
-	if err != nil {
-		log.Fatalf("failed to gen cartesi-rollups-cli docs: %v", err)
+func generateDocs(suffix string, cmd *cobra.Command) {
+	dir := "docs/" + suffix
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Fatalf("failed to create directory %s: %v", dir, err)
 	}
-	log.Print("generated docs for cartesi-rollups-cli")
+	err := doc.GenMarkdownTree(cmd, dir)
+	if err != nil {
+		log.Fatalf("failed to gen %s docs: %v", suffix, err)
+	}
+	log.Printf("generated docs for %s", suffix)
 }
