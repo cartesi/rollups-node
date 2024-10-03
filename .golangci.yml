@@ -9,7 +9,7 @@ linters:
     - misspell
 linters-settings:
   lll:
-    line-length: 100
+    line-length: 120
     tab-width: 4
   mnd:
     ignored-functions:
