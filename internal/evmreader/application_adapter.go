@@ -4,7 +4,7 @@
 package evmreader
 
 import (
-	appcontract "github.com/cartesi/rollups-node/pkg/contracts/application"
+	appcontract "github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -12,14 +12,14 @@ import (
 
 // IConsensus Wrapper
 type ApplicationContractAdapter struct {
-	application *appcontract.Application
+	application *appcontract.IApplication
 }
 
 func NewApplicationContractAdapter(
 	appAddress common.Address,
 	client *ethclient.Client,
 ) (*ApplicationContractAdapter, error) {
-	applicationContract, err := appcontract.NewApplication(appAddress, client)
+	applicationContract, err := appcontract.NewIApplication(appAddress, client)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +34,7 @@ func (a *ApplicationContractAdapter) GetConsensus(opts *bind.CallOpts) (common.A
 
 func (a *ApplicationContractAdapter) RetrieveOutputExecutionEvents(
 	opts *bind.FilterOpts,
-) ([]*appcontract.ApplicationOutputExecuted, error) {
+) ([]*appcontract.IApplicationOutputExecuted, error) {
 
 	itr, err := a.application.FilterOutputExecuted(opts)
 	if err != nil {
@@ -42,7 +42,7 @@ func (a *ApplicationContractAdapter) RetrieveOutputExecutionEvents(
 	}
 	defer itr.Close()
 
-	var events []*appcontract.ApplicationOutputExecuted
+	var events []*appcontract.IApplicationOutputExecuted
 	for itr.Next() {
 		outputExecutedEvent := itr.Event
 		events = append(events, outputExecutedEvent)

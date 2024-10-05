@@ -11,7 +11,7 @@ import (
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
-	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
+	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 )
@@ -90,7 +90,7 @@ func (s *EvmReaderSuite) TestNoClaimsAcceptance() {
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
-	).Return([]inputbox.InputBoxInputAdded{}, nil)
+	).Return([]iinputbox.IInputBoxInputAdded{}, nil)
 
 	// Prepare Client
 	s.client.Unset("HeaderByNumber")
@@ -251,7 +251,7 @@ func (s *EvmReaderSuite) TestReadClaimAcceptance() {
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
-	).Return([]inputbox.InputBoxInputAdded{}, nil)
+	).Return([]iinputbox.IInputBoxInputAdded{}, nil)
 
 	// Prepare Client
 	s.client.Unset("HeaderByNumber")
@@ -399,7 +399,7 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,
-		).Return([]inputbox.InputBoxInputAdded{}, nil)
+		).Return([]iinputbox.IInputBoxInputAdded{}, nil)
 
 		// Prepare Client
 		client.Unset("HeaderByNumber")
@@ -546,7 +546,7 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,
-		).Return([]inputbox.InputBoxInputAdded{}, nil)
+		).Return([]iinputbox.IInputBoxInputAdded{}, nil)
 
 		// Prepare Client
 		client.Unset("HeaderByNumber")
@@ -687,7 +687,7 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,
-		).Return([]inputbox.InputBoxInputAdded{}, nil)
+		).Return([]iinputbox.IInputBoxInputAdded{}, nil)
 
 		// Prepare Client
 		client.Unset("HeaderByNumber")
