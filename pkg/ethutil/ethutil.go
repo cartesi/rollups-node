@@ -11,8 +11,8 @@ import (
 	"math/big"
 
 	"github.com/cartesi/rollups-node/pkg/addresses"
-	"github.com/cartesi/rollups-node/pkg/contracts/application"
-	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
+	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -43,17 +43,18 @@ func AddInput(
 	ctx context.Context,
 	client *ethclient.Client,
 	book *addresses.Book,
+	application common.Address,
 	signer Signer,
 	input []byte,
 ) (int, error) {
-	inputBox, err := inputbox.NewInputBox(book.InputBox, client)
+	inputBox, err := iinputbox.NewIInputBox(book.InputBox, client)
 	if err != nil {
 		return 0, fmt.Errorf("failed to connect to InputBox contract: %v", err)
 	}
 	receipt, err := sendTransaction(
 		ctx, client, signer, big.NewInt(0), GasLimit,
 		func(txOpts *bind.TransactOpts) (*types.Transaction, error) {
-			return inputBox.AddInput(txOpts, book.Application, input)
+			return inputBox.AddInput(txOpts, application, input)
 		},
 	)
 	if err != nil {
@@ -81,19 +82,24 @@ func AddInputUsingFoundryMnemonic(
 	if err != nil {
 		return 0, err
 	}
-	book := addresses.GetTestBook()
+	book, err := addresses.GetBookFromFile("deployment.json") // FIXME
+	if err != nil {
+		return 0, err
+	}
+
+	appAddr := common.HexToAddress("0x0000000000000000000000000000000000000000") // FIXME
 
 	payloadBytes, err := hexutil.Decode(payload)
 	if err != nil {
 		panic(err)
 	}
-	return AddInput(ctx, client, book, signer, payloadBytes)
+	return AddInput(ctx, client, book, appAddr, signer, payloadBytes)
 }
 
 // Get input index in the transaction by looking at the event logs.
 func getInputIndex(
 	book *addresses.Book,
-	inputBox *inputbox.InputBox,
+	inputBox *iinputbox.IInputBox,
 	receipt *types.Receipt,
 ) (int, error) {
 	for _, log := range receipt.Logs {
@@ -116,15 +122,16 @@ func getInputIndex(
 func GetInputFromInputBox(
 	client *ethclient.Client,
 	book *addresses.Book,
+	application common.Address,
 	inputIndex int,
-) (*inputbox.InputBoxInputAdded, error) {
-	inputBox, err := inputbox.NewInputBox(book.InputBox, client)
+) (*iinputbox.IInputBoxInputAdded, error) {
+	inputBox, err := iinputbox.NewIInputBox(book.InputBox, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to InputBox contract: %v", err)
 	}
 	it, err := inputBox.FilterInputAdded(
 		nil,
-		[]common.Address{book.Application},
+		[]common.Address{application},
 		[]*big.Int{big.NewInt(int64(inputIndex))},
 	)
 	if err != nil {
@@ -143,10 +150,11 @@ func ValidateOutput(
 	ctx context.Context,
 	client *ethclient.Client,
 	book *addresses.Book,
+	appAddr common.Address,
 	output []byte,
-	proof *application.OutputValidityProof,
+	proof *iapplication.OutputValidityProof,
 ) error {
-	app, err := application.NewApplication(book.Application, client)
+	app, err := iapplication.NewIApplication(appAddr, client)
 	if err != nil {
 		return fmt.Errorf("failed to connect to CartesiDapp contract: %v", err)
 	}
@@ -159,11 +167,12 @@ func ExecuteOutput(
 	ctx context.Context,
 	client *ethclient.Client,
 	book *addresses.Book,
+	appAddr common.Address,
 	signer Signer,
 	output []byte,
-	proof *application.OutputValidityProof,
+	proof *iapplication.OutputValidityProof,
 ) (*common.Hash, error) {
-	app, err := application.NewApplication(book.Application, client)
+	app, err := iapplication.NewIApplication(appAddr, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to CartesiDapp contract: %v", err)
 	}

@@ -9,7 +9,7 @@ import (
 	"os"
 	"path"
 
-	"github.com/cartesi/rollups-node/pkg/contracts/application"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -69,7 +69,7 @@ func getTemplateHash(
 	if err != nil {
 		return "", fmt.Errorf("get template hash: %w", err)
 	}
-	cartesiApplication, err := application.NewApplicationCaller(
+	cartesiApplication, err := iapplication.NewIApplicationCaller(
 		common.HexToAddress(applicationAddress),
 		client,
 	)
