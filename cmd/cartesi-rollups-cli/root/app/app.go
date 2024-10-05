@@ -5,6 +5,7 @@ package app
 
 import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/app/add"
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/app/deploy"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/app/list"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/common"
 	"github.com/spf13/cobra"
@@ -22,10 +23,11 @@ func init() {
 		&common.PostgresEndpoint,
 		"postgres-endpoint",
 		"p",
-		"postgres://postgres:password@localhost:5432/postgres",
+		"postgres://postgres:password@localhost:5432/rollupsdb?sslmode=disable",
 		"Postgres endpoint",
 	)
 
 	Cmd.AddCommand(add.Cmd)
+	Cmd.AddCommand(deploy.Cmd)
 	Cmd.AddCommand(list.Cmd)
 }
