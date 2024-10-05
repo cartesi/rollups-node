@@ -170,6 +170,10 @@ applications/echo-dapp: ## Create echo-dapp test application
 	@mkdir -p applications
 	@cartesi-machine --ram-length=128Mi --store=applications/echo-dapp --final-hash -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --verbose=1
 
+deploy-echo-dapp: ## Deploy echo-dapp test application
+	@echo "Deploying echo-dapp test application"
+	@./cartesi-rollups-cli app deploy -t applications/echo-dapp/ -v
+
 # =============================================================================
 # Static Analysis
 # =============================================================================
