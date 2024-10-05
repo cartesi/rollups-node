@@ -13,9 +13,9 @@ import (
 	"time"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
-	appcontract "github.com/cartesi/rollups-node/pkg/contracts/application"
+	appcontract "github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
-	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
+	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -56,10 +56,10 @@ var (
 
 	block0 = types.Block{}
 
-	inputAddedEvent0 = inputbox.InputBoxInputAdded{}
-	inputAddedEvent1 = inputbox.InputBoxInputAdded{}
-	inputAddedEvent2 = inputbox.InputBoxInputAdded{}
-	inputAddedEvent3 = inputbox.InputBoxInputAdded{}
+	inputAddedEvent0 = iinputbox.IInputBoxInputAdded{}
+	inputAddedEvent1 = iinputbox.IInputBoxInputAdded{}
+	inputAddedEvent2 = iinputbox.IInputBoxInputAdded{}
+	inputAddedEvent3 = iinputbox.IInputBoxInputAdded{}
 
 	subscription0 = newMockSubscription()
 )
@@ -350,7 +350,7 @@ type MockInputBox struct {
 func newMockInputBox() *MockInputBox {
 	inputSource := &MockInputBox{}
 
-	events := []inputbox.InputBoxInputAdded{inputAddedEvent0}
+	events := []iinputbox.IInputBoxInputAdded{inputAddedEvent0}
 	inputSource.On("RetrieveInputs",
 		mock.Anything,
 		mock.Anything,
@@ -372,9 +372,9 @@ func (m *MockInputBox) RetrieveInputs(
 	opts *bind.FilterOpts,
 	appContract []common.Address,
 	index []*big.Int,
-) ([]inputbox.InputBoxInputAdded, error) {
+) ([]iinputbox.IInputBoxInputAdded, error) {
 	args := m.Called(opts, appContract, index)
-	return args.Get(0).([]inputbox.InputBoxInputAdded), args.Error(1)
+	return args.Get(0).([]iinputbox.IInputBoxInputAdded), args.Error(1)
 }
 
 // Mock InputReaderRepository
@@ -679,9 +679,9 @@ func (m *MockApplicationContract) GetConsensus(
 
 func (m *MockApplicationContract) RetrieveOutputExecutionEvents(
 	opts *bind.FilterOpts,
-) ([]*appcontract.ApplicationOutputExecuted, error) {
+) ([]*appcontract.IApplicationOutputExecuted, error) {
 	args := m.Called(opts)
-	return args.Get(0).([]*appcontract.ApplicationOutputExecuted), args.Error(1)
+	return args.Get(0).([]*appcontract.IApplicationOutputExecuted), args.Error(1)
 }
 
 type MockIConsensusContract struct {
@@ -737,7 +737,7 @@ func newEmvReaderContractFactory() *MockEvmReaderContractFactory {
 	).Return(common.HexToAddress("0xdeadbeef"), nil)
 
 	applicationContract.On("RetrieveOutputExecutionEvents",
-		mock.Anything).Return([]*appcontract.ApplicationOutputExecuted{}, nil)
+		mock.Anything).Return([]*appcontract.IApplicationOutputExecuted{}, nil)
 
 	consensusContract := &MockIConsensusContract{}
 
