@@ -11,9 +11,9 @@ import (
 	"math/big"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
-	appcontract "github.com/cartesi/rollups-node/pkg/contracts/application"
+	appcontract "github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
-	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
+	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -25,7 +25,7 @@ type InputSource interface {
 	// Wrapper for FilterInputAdded(), which is automatically generated
 	// by go-ethereum and cannot be used for testing
 	RetrieveInputs(opts *bind.FilterOpts, appAddresses []Address, index []*big.Int,
-	) ([]inputbox.InputBoxInputAdded, error)
+	) ([]iinputbox.IInputBoxInputAdded, error)
 }
 
 // Interface for the node repository
@@ -80,7 +80,7 @@ type ApplicationContract interface {
 	GetConsensus(opts *bind.CallOpts) (Address, error)
 	RetrieveOutputExecutionEvents(
 		opts *bind.FilterOpts,
-	) ([]*appcontract.ApplicationOutputExecuted, error)
+	) ([]*appcontract.IApplicationOutputExecuted, error)
 }
 
 type ContractFactory interface {
