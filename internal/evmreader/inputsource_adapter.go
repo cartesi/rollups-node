@@ -6,7 +6,7 @@ package evmreader
 import (
 	"math/big"
 
-	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
+	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -14,14 +14,14 @@ import (
 
 // InputBox Wrapper
 type InputSourceAdapter struct {
-	inputbox *inputbox.InputBox
+	inputbox *iinputbox.IInputBox
 }
 
 func NewInputSourceAdapter(
 	inputBoxAddress common.Address,
 	client *ethclient.Client,
 ) (*InputSourceAdapter, error) {
-	inputbox, err := inputbox.NewInputBox(inputBoxAddress, client)
+	inputbox, err := iinputbox.NewIInputBox(inputBoxAddress, client)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +34,7 @@ func (i *InputSourceAdapter) RetrieveInputs(
 	opts *bind.FilterOpts,
 	appContract []common.Address,
 	index []*big.Int,
-) ([]inputbox.InputBoxInputAdded, error) {
+) ([]iinputbox.IInputBoxInputAdded, error) {
 
 	itr, err := i.inputbox.FilterInputAdded(opts, appContract, index)
 	if err != nil {
@@ -42,7 +42,7 @@ func (i *InputSourceAdapter) RetrieveInputs(
 	}
 	defer itr.Close()
 
-	var events []inputbox.InputBoxInputAdded
+	var events []iinputbox.IInputBoxInputAdded
 	for itr.Next() {
 		inputAddedEvent := itr.Event
 		events = append(events, *inputAddedEvent)

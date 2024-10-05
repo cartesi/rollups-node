@@ -8,7 +8,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/retry"
-	"github.com/cartesi/rollups-node/pkg/contracts/application"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -43,7 +43,7 @@ func (d *ApplicationRetryPolicyDelegator) GetConsensus(opts *bind.CallOpts,
 
 func (d *ApplicationRetryPolicyDelegator) RetrieveOutputExecutionEvents(
 	opts *bind.FilterOpts,
-) ([]*application.ApplicationOutputExecuted, error) {
+) ([]*iapplication.IApplicationOutputExecuted, error) {
 	return retry.CallFunctionWithRetryPolicy(d.delegate.RetrieveOutputExecutionEvents,
 		opts,
 		d.maxRetries,
