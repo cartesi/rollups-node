@@ -6,7 +6,7 @@ package readerclient
 import (
 	"fmt"
 
-	"github.com/cartesi/rollups-node/pkg/contracts/application"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
@@ -126,8 +126,8 @@ func newProof(
 	return &proof, err
 }
 
-func ConvertToContractProof(proof *Proof) *application.OutputValidityProof {
-	return &application.OutputValidityProof{
+func ConvertToContractProof(proof *Proof) *iapplication.OutputValidityProof {
+	return &iapplication.OutputValidityProof{
 		// implement this once we have the new GraphQL schema
 	}
 }

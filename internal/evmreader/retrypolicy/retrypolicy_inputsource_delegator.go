@@ -9,7 +9,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/retry"
-	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
+	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -42,7 +42,7 @@ func (d *InputSourceWithRetryPolicyDelegator) RetrieveInputs(
 	opts *bind.FilterOpts,
 	appContract []common.Address,
 	index []*big.Int,
-) ([]inputbox.InputBoxInputAdded, error) {
+) ([]iinputbox.IInputBoxInputAdded, error) {
 	return retry.CallFunctionWithRetryPolicy(d.retrieveInputs,
 		retrieveInputsArgs{
 			opts:        opts,
@@ -57,7 +57,7 @@ func (d *InputSourceWithRetryPolicyDelegator) RetrieveInputs(
 
 func (d *InputSourceWithRetryPolicyDelegator) retrieveInputs(
 	args retrieveInputsArgs,
-) ([]inputbox.InputBoxInputAdded, error) {
+) ([]iinputbox.IInputBoxInputAdded, error) {
 	return d.delegate.RetrieveInputs(
 		args.opts,
 		args.appContract,

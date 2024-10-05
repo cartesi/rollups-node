@@ -9,8 +9,8 @@ import (
 	"time"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
-	appcontract "github.com/cartesi/rollups-node/pkg/contracts/application"
-	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
+	appcontract "github.com/cartesi/rollups-node/pkg/contracts/iapplication"
+	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/mock"
@@ -92,7 +92,7 @@ func (s *EvmReaderSuite) TestOutputExecution() {
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
-	).Return([]inputbox.InputBoxInputAdded{}, nil)
+	).Return([]iinputbox.IInputBoxInputAdded{}, nil)
 
 	// Prepare Client
 	s.client.Unset("HeaderByNumber")
@@ -162,7 +162,7 @@ func (s *EvmReaderSuite) TestReadOutputExecution() {
 	)
 
 	// Prepare Output Executed Events
-	outputExecution0 := &appcontract.ApplicationOutputExecuted{
+	outputExecution0 := &appcontract.IApplicationOutputExecuted{
 		OutputIndex: 1,
 		Output:      common.Hex2Bytes("AABBCCDDEE"),
 		Raw: types.Log{
@@ -170,7 +170,7 @@ func (s *EvmReaderSuite) TestReadOutputExecution() {
 		},
 	}
 
-	outputExecutionEvents := []*appcontract.ApplicationOutputExecuted{outputExecution0}
+	outputExecutionEvents := []*appcontract.IApplicationOutputExecuted{outputExecution0}
 	applicationContract.On("RetrieveOutputExecutionEvents",
 		mock.Anything,
 	).Return(outputExecutionEvents, nil).Once()
@@ -225,7 +225,7 @@ func (s *EvmReaderSuite) TestReadOutputExecution() {
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
-	).Return([]inputbox.InputBoxInputAdded{}, nil)
+	).Return([]iinputbox.IInputBoxInputAdded{}, nil)
 
 	// Prepare Client
 	s.client.Unset("HeaderByNumber")
@@ -296,7 +296,7 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 
 		applicationContract.On("RetrieveOutputExecutionEvents",
 			mock.Anything,
-		).Return([]*appcontract.ApplicationOutputExecuted{}, errors.New("No outputs for you"))
+		).Return([]*appcontract.IApplicationOutputExecuted{}, errors.New("No outputs for you"))
 
 		applicationContract.On("GetConsensus",
 			mock.Anything,
@@ -338,7 +338,7 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,
-		).Return([]inputbox.InputBoxInputAdded{}, nil)
+		).Return([]iinputbox.IInputBoxInputAdded{}, nil)
 
 		// Prepare Client
 		client.Unset("HeaderByNumber")
@@ -407,7 +407,7 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 		)
 
 		// Prepare Output Executed Events
-		outputExecution0 := &appcontract.ApplicationOutputExecuted{
+		outputExecution0 := &appcontract.IApplicationOutputExecuted{
 			OutputIndex: 1,
 			Output:      common.Hex2Bytes("AABBCCDDEE"),
 			Raw: types.Log{
@@ -415,7 +415,7 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 			},
 		}
 
-		outputExecutionEvents := []*appcontract.ApplicationOutputExecuted{outputExecution0}
+		outputExecutionEvents := []*appcontract.IApplicationOutputExecuted{outputExecution0}
 		applicationContract.On("RetrieveOutputExecutionEvents",
 			mock.Anything,
 		).Return(outputExecutionEvents, nil).Once()
@@ -455,7 +455,7 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,
-		).Return([]inputbox.InputBoxInputAdded{}, nil)
+		).Return([]iinputbox.IInputBoxInputAdded{}, nil)
 
 		// Prepare Client
 		client.Unset("HeaderByNumber")
@@ -524,7 +524,7 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 		)
 
 		// Prepare Output Executed Events
-		outputExecution0 := &appcontract.ApplicationOutputExecuted{
+		outputExecution0 := &appcontract.IApplicationOutputExecuted{
 			OutputIndex: 1,
 			Output:      common.Hex2Bytes("AABBCCDDEE"),
 			Raw: types.Log{
@@ -532,7 +532,7 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 			},
 		}
 
-		outputExecutionEvents := []*appcontract.ApplicationOutputExecuted{outputExecution0}
+		outputExecutionEvents := []*appcontract.IApplicationOutputExecuted{outputExecution0}
 		applicationContract.On("RetrieveOutputExecutionEvents",
 			mock.Anything,
 		).Return(outputExecutionEvents, nil).Once()
@@ -577,7 +577,7 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,
-		).Return([]inputbox.InputBoxInputAdded{}, nil)
+		).Return([]iinputbox.IInputBoxInputAdded{}, nil)
 
 		// Prepare Client
 		client.Unset("HeaderByNumber")

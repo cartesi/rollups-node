@@ -1,7 +1,7 @@
 // Code generated - DO NOT EDIT.
 // This file is a generated binding and any manual changes will be lost.
 
-package inputbox
+package iinputbox
 
 import (
 	"errors"
@@ -29,113 +29,113 @@ var (
 	_ = abi.ConvertType
 )
 
-// InputBoxMetaData contains all meta data concerning the InputBox contract.
-var InputBoxMetaData = &bind.MetaData{
+// IInputBoxMetaData contains all meta data concerning the IInputBox contract.
+var IInputBoxMetaData = &bind.MetaData{
 	ABI: "[{\"inputs\":[{\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"inputLength\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"maxInputLength\",\"type\":\"uint256\"}],\"name\":\"InputTooLarge\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"uint256\",\"name\":\"index\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"bytes\",\"name\":\"input\",\"type\":\"bytes\"}],\"name\":\"InputAdded\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"internalType\":\"bytes\",\"name\":\"payload\",\"type\":\"bytes\"}],\"name\":\"addInput\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"index\",\"type\":\"uint256\"}],\"name\":\"getInputHash\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"appContract\",\"type\":\"address\"}],\"name\":\"getNumberOfInputs\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
 }
 
-// InputBoxABI is the input ABI used to generate the binding from.
-// Deprecated: Use InputBoxMetaData.ABI instead.
-var InputBoxABI = InputBoxMetaData.ABI
+// IInputBoxABI is the input ABI used to generate the binding from.
+// Deprecated: Use IInputBoxMetaData.ABI instead.
+var IInputBoxABI = IInputBoxMetaData.ABI
 
-// InputBox is an auto generated Go binding around an Ethereum contract.
-type InputBox struct {
-	InputBoxCaller     // Read-only binding to the contract
-	InputBoxTransactor // Write-only binding to the contract
-	InputBoxFilterer   // Log filterer for contract events
+// IInputBox is an auto generated Go binding around an Ethereum contract.
+type IInputBox struct {
+	IInputBoxCaller     // Read-only binding to the contract
+	IInputBoxTransactor // Write-only binding to the contract
+	IInputBoxFilterer   // Log filterer for contract events
 }
 
-// InputBoxCaller is an auto generated read-only Go binding around an Ethereum contract.
-type InputBoxCaller struct {
+// IInputBoxCaller is an auto generated read-only Go binding around an Ethereum contract.
+type IInputBoxCaller struct {
 	contract *bind.BoundContract // Generic contract wrapper for the low level calls
 }
 
-// InputBoxTransactor is an auto generated write-only Go binding around an Ethereum contract.
-type InputBoxTransactor struct {
+// IInputBoxTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type IInputBoxTransactor struct {
 	contract *bind.BoundContract // Generic contract wrapper for the low level calls
 }
 
-// InputBoxFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
-type InputBoxFilterer struct {
+// IInputBoxFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type IInputBoxFilterer struct {
 	contract *bind.BoundContract // Generic contract wrapper for the low level calls
 }
 
-// InputBoxSession is an auto generated Go binding around an Ethereum contract,
+// IInputBoxSession is an auto generated Go binding around an Ethereum contract,
 // with pre-set call and transact options.
-type InputBoxSession struct {
-	Contract     *InputBox         // Generic contract binding to set the session for
+type IInputBoxSession struct {
+	Contract     *IInputBox        // Generic contract binding to set the session for
 	CallOpts     bind.CallOpts     // Call options to use throughout this session
 	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
 }
 
-// InputBoxCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// IInputBoxCallerSession is an auto generated read-only Go binding around an Ethereum contract,
 // with pre-set call options.
-type InputBoxCallerSession struct {
-	Contract *InputBoxCaller // Generic contract caller binding to set the session for
-	CallOpts bind.CallOpts   // Call options to use throughout this session
+type IInputBoxCallerSession struct {
+	Contract *IInputBoxCaller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts    // Call options to use throughout this session
 }
 
-// InputBoxTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// IInputBoxTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
 // with pre-set transact options.
-type InputBoxTransactorSession struct {
-	Contract     *InputBoxTransactor // Generic contract transactor binding to set the session for
-	TransactOpts bind.TransactOpts   // Transaction auth options to use throughout this session
+type IInputBoxTransactorSession struct {
+	Contract     *IInputBoxTransactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts    // Transaction auth options to use throughout this session
 }
 
-// InputBoxRaw is an auto generated low-level Go binding around an Ethereum contract.
-type InputBoxRaw struct {
-	Contract *InputBox // Generic contract binding to access the raw methods on
+// IInputBoxRaw is an auto generated low-level Go binding around an Ethereum contract.
+type IInputBoxRaw struct {
+	Contract *IInputBox // Generic contract binding to access the raw methods on
 }
 
-// InputBoxCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
-type InputBoxCallerRaw struct {
-	Contract *InputBoxCaller // Generic read-only contract binding to access the raw methods on
+// IInputBoxCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type IInputBoxCallerRaw struct {
+	Contract *IInputBoxCaller // Generic read-only contract binding to access the raw methods on
 }
 
-// InputBoxTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
-type InputBoxTransactorRaw struct {
-	Contract *InputBoxTransactor // Generic write-only contract binding to access the raw methods on
+// IInputBoxTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type IInputBoxTransactorRaw struct {
+	Contract *IInputBoxTransactor // Generic write-only contract binding to access the raw methods on
 }
 
-// NewInputBox creates a new instance of InputBox, bound to a specific deployed contract.
-func NewInputBox(address common.Address, backend bind.ContractBackend) (*InputBox, error) {
-	contract, err := bindInputBox(address, backend, backend, backend)
+// NewIInputBox creates a new instance of IInputBox, bound to a specific deployed contract.
+func NewIInputBox(address common.Address, backend bind.ContractBackend) (*IInputBox, error) {
+	contract, err := bindIInputBox(address, backend, backend, backend)
 	if err != nil {
 		return nil, err
 	}
-	return &InputBox{InputBoxCaller: InputBoxCaller{contract: contract}, InputBoxTransactor: InputBoxTransactor{contract: contract}, InputBoxFilterer: InputBoxFilterer{contract: contract}}, nil
+	return &IInputBox{IInputBoxCaller: IInputBoxCaller{contract: contract}, IInputBoxTransactor: IInputBoxTransactor{contract: contract}, IInputBoxFilterer: IInputBoxFilterer{contract: contract}}, nil
 }
 
-// NewInputBoxCaller creates a new read-only instance of InputBox, bound to a specific deployed contract.
-func NewInputBoxCaller(address common.Address, caller bind.ContractCaller) (*InputBoxCaller, error) {
-	contract, err := bindInputBox(address, caller, nil, nil)
+// NewIInputBoxCaller creates a new read-only instance of IInputBox, bound to a specific deployed contract.
+func NewIInputBoxCaller(address common.Address, caller bind.ContractCaller) (*IInputBoxCaller, error) {
+	contract, err := bindIInputBox(address, caller, nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	return &InputBoxCaller{contract: contract}, nil
+	return &IInputBoxCaller{contract: contract}, nil
 }
 
-// NewInputBoxTransactor creates a new write-only instance of InputBox, bound to a specific deployed contract.
-func NewInputBoxTransactor(address common.Address, transactor bind.ContractTransactor) (*InputBoxTransactor, error) {
-	contract, err := bindInputBox(address, nil, transactor, nil)
+// NewIInputBoxTransactor creates a new write-only instance of IInputBox, bound to a specific deployed contract.
+func NewIInputBoxTransactor(address common.Address, transactor bind.ContractTransactor) (*IInputBoxTransactor, error) {
+	contract, err := bindIInputBox(address, nil, transactor, nil)
 	if err != nil {
 		return nil, err
 	}
-	return &InputBoxTransactor{contract: contract}, nil
+	return &IInputBoxTransactor{contract: contract}, nil
 }
 
-// NewInputBoxFilterer creates a new log filterer instance of InputBox, bound to a specific deployed contract.
-func NewInputBoxFilterer(address common.Address, filterer bind.ContractFilterer) (*InputBoxFilterer, error) {
-	contract, err := bindInputBox(address, nil, nil, filterer)
+// NewIInputBoxFilterer creates a new log filterer instance of IInputBox, bound to a specific deployed contract.
+func NewIInputBoxFilterer(address common.Address, filterer bind.ContractFilterer) (*IInputBoxFilterer, error) {
+	contract, err := bindIInputBox(address, nil, nil, filterer)
 	if err != nil {
 		return nil, err
 	}
-	return &InputBoxFilterer{contract: contract}, nil
+	return &IInputBoxFilterer{contract: contract}, nil
 }
 
-// bindInputBox binds a generic wrapper to an already deployed contract.
-func bindInputBox(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := InputBoxMetaData.GetAbi()
+// bindIInputBox binds a generic wrapper to an already deployed contract.
+func bindIInputBox(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := IInputBoxMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
@@ -146,46 +146,46 @@ func bindInputBox(address common.Address, caller bind.ContractCaller, transactor
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (_InputBox *InputBoxRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
-	return _InputBox.Contract.InputBoxCaller.contract.Call(opts, result, method, params...)
+func (_IInputBox *IInputBoxRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _IInputBox.Contract.IInputBoxCaller.contract.Call(opts, result, method, params...)
 }
 
 // Transfer initiates a plain transaction to move funds to the contract, calling
 // its default method if one is available.
-func (_InputBox *InputBoxRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
-	return _InputBox.Contract.InputBoxTransactor.contract.Transfer(opts)
+func (_IInputBox *IInputBoxRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _IInputBox.Contract.IInputBoxTransactor.contract.Transfer(opts)
 }
 
 // Transact invokes the (paid) contract method with params as input values.
-func (_InputBox *InputBoxRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
-	return _InputBox.Contract.InputBoxTransactor.contract.Transact(opts, method, params...)
+func (_IInputBox *IInputBoxRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _IInputBox.Contract.IInputBoxTransactor.contract.Transact(opts, method, params...)
 }
 
 // Call invokes the (constant) contract method with params as input values and
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (_InputBox *InputBoxCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
-	return _InputBox.Contract.contract.Call(opts, result, method, params...)
+func (_IInputBox *IInputBoxCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _IInputBox.Contract.contract.Call(opts, result, method, params...)
 }
 
 // Transfer initiates a plain transaction to move funds to the contract, calling
 // its default method if one is available.
-func (_InputBox *InputBoxTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
-	return _InputBox.Contract.contract.Transfer(opts)
+func (_IInputBox *IInputBoxTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _IInputBox.Contract.contract.Transfer(opts)
 }
 
 // Transact invokes the (paid) contract method with params as input values.
-func (_InputBox *InputBoxTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
-	return _InputBox.Contract.contract.Transact(opts, method, params...)
+func (_IInputBox *IInputBoxTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _IInputBox.Contract.contract.Transact(opts, method, params...)
 }
 
 // GetInputHash is a free data retrieval call binding the contract method 0x677087c9.
 //
 // Solidity: function getInputHash(address appContract, uint256 index) view returns(bytes32)
-func (_InputBox *InputBoxCaller) GetInputHash(opts *bind.CallOpts, appContract common.Address, index *big.Int) ([32]byte, error) {
+func (_IInputBox *IInputBoxCaller) GetInputHash(opts *bind.CallOpts, appContract common.Address, index *big.Int) ([32]byte, error) {
 	var out []interface{}
-	err := _InputBox.contract.Call(opts, &out, "getInputHash", appContract, index)
+	err := _IInputBox.contract.Call(opts, &out, "getInputHash", appContract, index)
 
 	if err != nil {
 		return *new([32]byte), err
@@ -200,23 +200,23 @@ func (_InputBox *InputBoxCaller) GetInputHash(opts *bind.CallOpts, appContract c
 // GetInputHash is a free data retrieval call binding the contract method 0x677087c9.
 //
 // Solidity: function getInputHash(address appContract, uint256 index) view returns(bytes32)
-func (_InputBox *InputBoxSession) GetInputHash(appContract common.Address, index *big.Int) ([32]byte, error) {
-	return _InputBox.Contract.GetInputHash(&_InputBox.CallOpts, appContract, index)
+func (_IInputBox *IInputBoxSession) GetInputHash(appContract common.Address, index *big.Int) ([32]byte, error) {
+	return _IInputBox.Contract.GetInputHash(&_IInputBox.CallOpts, appContract, index)
 }
 
 // GetInputHash is a free data retrieval call binding the contract method 0x677087c9.
 //
 // Solidity: function getInputHash(address appContract, uint256 index) view returns(bytes32)
-func (_InputBox *InputBoxCallerSession) GetInputHash(appContract common.Address, index *big.Int) ([32]byte, error) {
-	return _InputBox.Contract.GetInputHash(&_InputBox.CallOpts, appContract, index)
+func (_IInputBox *IInputBoxCallerSession) GetInputHash(appContract common.Address, index *big.Int) ([32]byte, error) {
+	return _IInputBox.Contract.GetInputHash(&_IInputBox.CallOpts, appContract, index)
 }
 
 // GetNumberOfInputs is a free data retrieval call binding the contract method 0x61a93c87.
 //
 // Solidity: function getNumberOfInputs(address appContract) view returns(uint256)
-func (_InputBox *InputBoxCaller) GetNumberOfInputs(opts *bind.CallOpts, appContract common.Address) (*big.Int, error) {
+func (_IInputBox *IInputBoxCaller) GetNumberOfInputs(opts *bind.CallOpts, appContract common.Address) (*big.Int, error) {
 	var out []interface{}
-	err := _InputBox.contract.Call(opts, &out, "getNumberOfInputs", appContract)
+	err := _IInputBox.contract.Call(opts, &out, "getNumberOfInputs", appContract)
 
 	if err != nil {
 		return *new(*big.Int), err
@@ -231,41 +231,41 @@ func (_InputBox *InputBoxCaller) GetNumberOfInputs(opts *bind.CallOpts, appContr
 // GetNumberOfInputs is a free data retrieval call binding the contract method 0x61a93c87.
 //
 // Solidity: function getNumberOfInputs(address appContract) view returns(uint256)
-func (_InputBox *InputBoxSession) GetNumberOfInputs(appContract common.Address) (*big.Int, error) {
-	return _InputBox.Contract.GetNumberOfInputs(&_InputBox.CallOpts, appContract)
+func (_IInputBox *IInputBoxSession) GetNumberOfInputs(appContract common.Address) (*big.Int, error) {
+	return _IInputBox.Contract.GetNumberOfInputs(&_IInputBox.CallOpts, appContract)
 }
 
 // GetNumberOfInputs is a free data retrieval call binding the contract method 0x61a93c87.
 //
 // Solidity: function getNumberOfInputs(address appContract) view returns(uint256)
-func (_InputBox *InputBoxCallerSession) GetNumberOfInputs(appContract common.Address) (*big.Int, error) {
-	return _InputBox.Contract.GetNumberOfInputs(&_InputBox.CallOpts, appContract)
+func (_IInputBox *IInputBoxCallerSession) GetNumberOfInputs(appContract common.Address) (*big.Int, error) {
+	return _IInputBox.Contract.GetNumberOfInputs(&_IInputBox.CallOpts, appContract)
 }
 
 // AddInput is a paid mutator transaction binding the contract method 0x1789cd63.
 //
 // Solidity: function addInput(address appContract, bytes payload) returns(bytes32)
-func (_InputBox *InputBoxTransactor) AddInput(opts *bind.TransactOpts, appContract common.Address, payload []byte) (*types.Transaction, error) {
-	return _InputBox.contract.Transact(opts, "addInput", appContract, payload)
+func (_IInputBox *IInputBoxTransactor) AddInput(opts *bind.TransactOpts, appContract common.Address, payload []byte) (*types.Transaction, error) {
+	return _IInputBox.contract.Transact(opts, "addInput", appContract, payload)
 }
 
 // AddInput is a paid mutator transaction binding the contract method 0x1789cd63.
 //
 // Solidity: function addInput(address appContract, bytes payload) returns(bytes32)
-func (_InputBox *InputBoxSession) AddInput(appContract common.Address, payload []byte) (*types.Transaction, error) {
-	return _InputBox.Contract.AddInput(&_InputBox.TransactOpts, appContract, payload)
+func (_IInputBox *IInputBoxSession) AddInput(appContract common.Address, payload []byte) (*types.Transaction, error) {
+	return _IInputBox.Contract.AddInput(&_IInputBox.TransactOpts, appContract, payload)
 }
 
 // AddInput is a paid mutator transaction binding the contract method 0x1789cd63.
 //
 // Solidity: function addInput(address appContract, bytes payload) returns(bytes32)
-func (_InputBox *InputBoxTransactorSession) AddInput(appContract common.Address, payload []byte) (*types.Transaction, error) {
-	return _InputBox.Contract.AddInput(&_InputBox.TransactOpts, appContract, payload)
+func (_IInputBox *IInputBoxTransactorSession) AddInput(appContract common.Address, payload []byte) (*types.Transaction, error) {
+	return _IInputBox.Contract.AddInput(&_IInputBox.TransactOpts, appContract, payload)
 }
 
-// InputBoxInputAddedIterator is returned from FilterInputAdded and is used to iterate over the raw logs and unpacked data for InputAdded events raised by the InputBox contract.
-type InputBoxInputAddedIterator struct {
-	Event *InputBoxInputAdded // Event containing the contract specifics and raw log
+// IInputBoxInputAddedIterator is returned from FilterInputAdded and is used to iterate over the raw logs and unpacked data for InputAdded events raised by the IInputBox contract.
+type IInputBoxInputAddedIterator struct {
+	Event *IInputBoxInputAdded // Event containing the contract specifics and raw log
 
 	contract *bind.BoundContract // Generic contract to use for unpacking event data
 	event    string              // Event name to use for unpacking event data
@@ -279,7 +279,7 @@ type InputBoxInputAddedIterator struct {
 // Next advances the iterator to the subsequent event, returning whether there
 // are any more events found. In case of a retrieval or parsing error, false is
 // returned and Error() can be queried for the exact failure.
-func (it *InputBoxInputAddedIterator) Next() bool {
+func (it *IInputBoxInputAddedIterator) Next() bool {
 	// If the iterator failed, stop iterating
 	if it.fail != nil {
 		return false
@@ -288,7 +288,7 @@ func (it *InputBoxInputAddedIterator) Next() bool {
 	if it.done {
 		select {
 		case log := <-it.logs:
-			it.Event = new(InputBoxInputAdded)
+			it.Event = new(IInputBoxInputAdded)
 			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
 				it.fail = err
 				return false
@@ -303,7 +303,7 @@ func (it *InputBoxInputAddedIterator) Next() bool {
 	// Iterator still in progress, wait for either a data or an error event
 	select {
 	case log := <-it.logs:
-		it.Event = new(InputBoxInputAdded)
+		it.Event = new(IInputBoxInputAdded)
 		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
 			it.fail = err
 			return false
@@ -319,19 +319,19 @@ func (it *InputBoxInputAddedIterator) Next() bool {
 }
 
 // Error returns any retrieval or parsing error occurred during filtering.
-func (it *InputBoxInputAddedIterator) Error() error {
+func (it *IInputBoxInputAddedIterator) Error() error {
 	return it.fail
 }
 
 // Close terminates the iteration process, releasing any pending underlying
 // resources.
-func (it *InputBoxInputAddedIterator) Close() error {
+func (it *IInputBoxInputAddedIterator) Close() error {
 	it.sub.Unsubscribe()
 	return nil
 }
 
-// InputBoxInputAdded represents a InputAdded event raised by the InputBox contract.
-type InputBoxInputAdded struct {
+// IInputBoxInputAdded represents a InputAdded event raised by the IInputBox contract.
+type IInputBoxInputAdded struct {
 	AppContract common.Address
 	Index       *big.Int
 	Input       []byte
@@ -341,7 +341,7 @@ type InputBoxInputAdded struct {
 // FilterInputAdded is a free log retrieval operation binding the contract event 0xc05d337121a6e8605c6ec0b72aa29c4210ffe6e5b9cefdd6a7058188a8f66f98.
 //
 // Solidity: event InputAdded(address indexed appContract, uint256 indexed index, bytes input)
-func (_InputBox *InputBoxFilterer) FilterInputAdded(opts *bind.FilterOpts, appContract []common.Address, index []*big.Int) (*InputBoxInputAddedIterator, error) {
+func (_IInputBox *IInputBoxFilterer) FilterInputAdded(opts *bind.FilterOpts, appContract []common.Address, index []*big.Int) (*IInputBoxInputAddedIterator, error) {
 
 	var appContractRule []interface{}
 	for _, appContractItem := range appContract {
@@ -352,17 +352,17 @@ func (_InputBox *InputBoxFilterer) FilterInputAdded(opts *bind.FilterOpts, appCo
 		indexRule = append(indexRule, indexItem)
 	}
 
-	logs, sub, err := _InputBox.contract.FilterLogs(opts, "InputAdded", appContractRule, indexRule)
+	logs, sub, err := _IInputBox.contract.FilterLogs(opts, "InputAdded", appContractRule, indexRule)
 	if err != nil {
 		return nil, err
 	}
-	return &InputBoxInputAddedIterator{contract: _InputBox.contract, event: "InputAdded", logs: logs, sub: sub}, nil
+	return &IInputBoxInputAddedIterator{contract: _IInputBox.contract, event: "InputAdded", logs: logs, sub: sub}, nil
 }
 
 // WatchInputAdded is a free log subscription operation binding the contract event 0xc05d337121a6e8605c6ec0b72aa29c4210ffe6e5b9cefdd6a7058188a8f66f98.
 //
 // Solidity: event InputAdded(address indexed appContract, uint256 indexed index, bytes input)
-func (_InputBox *InputBoxFilterer) WatchInputAdded(opts *bind.WatchOpts, sink chan<- *InputBoxInputAdded, appContract []common.Address, index []*big.Int) (event.Subscription, error) {
+func (_IInputBox *IInputBoxFilterer) WatchInputAdded(opts *bind.WatchOpts, sink chan<- *IInputBoxInputAdded, appContract []common.Address, index []*big.Int) (event.Subscription, error) {
 
 	var appContractRule []interface{}
 	for _, appContractItem := range appContract {
@@ -373,7 +373,7 @@ func (_InputBox *InputBoxFilterer) WatchInputAdded(opts *bind.WatchOpts, sink ch
 		indexRule = append(indexRule, indexItem)
 	}
 
-	logs, sub, err := _InputBox.contract.WatchLogs(opts, "InputAdded", appContractRule, indexRule)
+	logs, sub, err := _IInputBox.contract.WatchLogs(opts, "InputAdded", appContractRule, indexRule)
 	if err != nil {
 		return nil, err
 	}
@@ -383,8 +383,8 @@ func (_InputBox *InputBoxFilterer) WatchInputAdded(opts *bind.WatchOpts, sink ch
 			select {
 			case log := <-logs:
 				// New log arrived, parse the event and forward to the user
-				event := new(InputBoxInputAdded)
-				if err := _InputBox.contract.UnpackLog(event, "InputAdded", log); err != nil {
+				event := new(IInputBoxInputAdded)
+				if err := _IInputBox.contract.UnpackLog(event, "InputAdded", log); err != nil {
 					return err
 				}
 				event.Raw = log
@@ -408,9 +408,9 @@ func (_InputBox *InputBoxFilterer) WatchInputAdded(opts *bind.WatchOpts, sink ch
 // ParseInputAdded is a log parse operation binding the contract event 0xc05d337121a6e8605c6ec0b72aa29c4210ffe6e5b9cefdd6a7058188a8f66f98.
 //
 // Solidity: event InputAdded(address indexed appContract, uint256 indexed index, bytes input)
-func (_InputBox *InputBoxFilterer) ParseInputAdded(log types.Log) (*InputBoxInputAdded, error) {
-	event := new(InputBoxInputAdded)
-	if err := _InputBox.contract.UnpackLog(event, "InputAdded", log); err != nil {
+func (_IInputBox *IInputBoxFilterer) ParseInputAdded(log types.Log) (*IInputBoxInputAdded, error) {
+	event := new(IInputBoxInputAdded)
+	if err := _IInputBox.contract.UnpackLog(event, "InputAdded", log); err != nil {
 		return nil, err
 	}
 	event.Raw = log
