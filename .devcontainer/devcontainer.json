@@ -22,11 +22,13 @@
 	"features": {
 		"ghcr.io/devcontainers/features/rust:1": {
 			"profile": "default",
+			"version": "1.81.0",
 			"targets": "x86_64-unknown-linux-gnu,riscv64gc-unknown-linux-gnu"
 		},
 		"ghcr.io/devcontainers/features/go:1": {
 			"version": "1.22.1"
-		}
+		},
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {}
 	},
 
 	// Configure tool-specific properties.
@@ -52,8 +54,10 @@
 	// "shutdownAction": "none",
 
 	// Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "go version && rustc --version && cargo --version"
+	// "postCreateCommand": "go version && rustc --version && cargo --version"
 
 	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
-	// "remoteUser": "root"
+	"remoteUser": "root"
+	// "containerUser": "calindra",
+	// "updateRemoteUserUID": false
 }
