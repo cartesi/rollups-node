@@ -1,0 +1,83 @@
+volumes:
+  postgres-data:
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      # Ensure that the variables in .env match the same variables in devcontainer.json
+      - .env
+
+    volumes:
+      - ../..:/workspaces:cached
+
+    # Overrides default command so things don't shut down after the process ends.
+    command: sleep infinity
+
+    # Runs app on the same network as the database container, allows "forwardPorts" in devcontainer.json function.
+    network_mode: service:db
+
+    # Use "forwardPorts" in **devcontainer.json** to forward an app port locally.
+    # (Adding the "ports" property to this file will not forward from a Codespace.)
+
+  db:
+    image: postgres:16-alpine
+    shm_size: 128mb
+    restart: unless-stopped
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    env_file:
+      # Ensure that the variables in .env match the same variables in devcontainer.json
+      - .env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres || exit 1"]
+      interval: 1s
+      timeout: 1s
+      retries: 5
+
+    # Add "forwardPorts": ["5432"] to **devcontainer.json** to forward PostgreSQL locally.
+    # (Adding the "ports" property to this file will not forward from a Codespace.)
+
+  # graphql_server:
+  #   image: graphile/postgraphile:4.14.0
+  #   command: >-
+  #     postgraphile
+  #     --retry-on-init-fail
+  #     --dynamic-json
+  #     --no-setof-functions-contain-nulls
+  #     --no-ignore-rbac
+  #     --enable-query-batching
+  #     --enhance-graphiql
+  #     --extended-errors errcode
+  #     --append-plugins @graphile-contrib/pg-simplify-inflector
+  #     --legacy-relations omit
+  #     --connection postgres://postgres:password@database:5432/rollupsdb?sslmode=disable
+  #     --schema graphql
+  #     --host 0.0.0.0
+  #     --port 10002
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #     node:
+  #       condition: service_healthy
+  #   env_file:
+  #     - .env
+
+  # node:
+  #   image: cartesi/rollups-node:devel
+  #   command: cartesi-rollups-node --initdb
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #     ethereum_provider:
+  #       condition: service_healthy
+  #   volumes:
+  #     - node_data:/var/lib/cartesi-rollups-node/data
+  #   networks:
+  #     - devnet
+  #   ports:
+  #     - "10000:10000" # Supervisor
+  #   env_file:
+  #     - .env
