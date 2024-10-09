@@ -5,6 +5,7 @@
 package endtoendtests
 
 import (
+	"log"
 	"log/slog"
 
 	"github.com/cartesi/rollups-node/internal/node/config"
@@ -27,7 +28,10 @@ func NewLocalNodeConfig(localPostgresEndpoint string, localBlockchainHttpEndpoin
 
 	var nodeConfig config.NodeConfig
 
-	book := addresses.GetTestBook()
+	book, err := addresses.GetBookFromFile("deployment.json")
+	if err != nil {
+		log.Fatalf("failed to load address book: %v", err)
+	}
 
 	//Log
 	nodeConfig.LogLevel = slog.LevelInfo

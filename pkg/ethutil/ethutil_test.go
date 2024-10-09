@@ -5,10 +5,13 @@ package ethutil
 
 import (
 	"context"
+	"os"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/machine"
+	"github.com/cartesi/rollups-node/internal/node/config"
 	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputs"
 	"github.com/ethereum/go-ethereum/common"
@@ -17,23 +20,26 @@ import (
 )
 
 const testTimeout = 300 * time.Second
-const inputBoxDeploymentBlockNumber = 0x0F
 
 // This suite sets up a container running a devnet Ethereum node, and connects to it using
 // go-ethereum's client.
 type EthUtilSuite struct {
 	suite.Suite
-	ctx      context.Context
-	cancel   context.CancelFunc
-	client   *ethclient.Client
-	endpoint string
-	signer   Signer
-	book     *addresses.Book
-	appAddr  common.Address
+	ctx        context.Context
+	cancel     context.CancelFunc
+	client     *ethclient.Client
+	endpoint   string
+	signer     Signer
+	book       *addresses.Book
+	appAddr    common.Address
+	machineDir string
+	cleanup    func()
 }
 
 func (s *EthUtilSuite) SetupTest() {
 	s.ctx, s.cancel = context.WithTimeout(context.Background(), testTimeout)
+
+	s.endpoint = config.GetBlockchainHttpEndpoint()
 
 	var err error
 	s.client, err = ethclient.DialContext(s.ctx, s.endpoint)
@@ -42,14 +48,22 @@ func (s *EthUtilSuite) SetupTest() {
 	s.signer, err = NewMnemonicSigner(s.ctx, s.client, FoundryMnemonic, 0)
 	s.Require().Nil(err)
 
-	s.book, err = addresses.GetBookFromFile("deployment.json") // FIXME
+	s.book, err = addresses.GetBookFromFile("../../deployment.json") // FIXME
 	s.Require().Nil(err)
 
-	s.appAddr = common.HexToAddress("0x0000000000000000000000000000000000000000") // FIXME
+	s.machineDir, err = machine.CreateDefaultMachineSnapshot()
+	s.Require().Nil(err)
+
+	templateHash, err := machine.ReadHash(s.machineDir)
+	s.Require().Nil(err)
+
+	s.appAddr, s.cleanup, err = CreateAnvilSnapshotAndDeployApp(s.ctx, templateHash)
+	s.Require().Nil(err)
 }
 
 func (s *EthUtilSuite) TearDownTest() {
-	// TODO revert anvil snapshot
+	os.RemoveAll(s.machineDir)
+	s.cleanup()
 	s.cancel()
 }
 
@@ -79,9 +93,8 @@ func (s *EthUtilSuite) TestAddInput() {
 
 	waitGroup.Wait()
 	time.Sleep(1 * time.Second)
-	blockNumber, err := MineNewBlock(s.ctx, s.endpoint)
+	_, err = MineNewBlock(s.ctx, s.endpoint)
 	s.Require().Nil(err)
-	s.Require().Equal(uint64(inputBoxDeploymentBlockNumber+1), blockNumber)
 
 	select {
 	case err := <-errChan:
@@ -106,9 +119,11 @@ func (s *EthUtilSuite) TestAddInput() {
 }
 
 func (s *EthUtilSuite) TestMineNewBlock() {
+	prevBlockNumber, err := s.client.BlockNumber(s.ctx)
+	s.Require().Nil(err)
 	blockNumber, err := MineNewBlock(s.ctx, s.endpoint)
 	s.Require().Nil(err)
-	s.Require().Equal(uint64(inputBoxDeploymentBlockNumber+1), blockNumber)
+	s.Require().Equal(prevBlockNumber+1, blockNumber)
 
 }
 

@@ -198,7 +198,7 @@ func (machine *NodeMachine) Inspect(ctx context.Context, query []byte) (*Inspect
 func (machine *NodeMachine) Close() error {
 	ctx := context.Background()
 
-	// Makes sure no thread is acessing the machine before closing it.
+	// Makes sure no thread is accessing the machine before closing it.
 	machine.concurrentAdvances.Lock()
 	defer machine.concurrentAdvances.Unlock()
 	for i := 0; i < int(machine.maxConcurrentInspects); i++ {
