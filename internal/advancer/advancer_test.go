@@ -12,7 +12,7 @@ import (
 	mrand "math/rand"
 	"testing"
 
-	"github.com/cartesi/rollups-node/internal/node/advancer/machines"
+	"github.com/cartesi/rollups-node/internal/advancer/machines"
 	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/internal/nodemachine"
 
