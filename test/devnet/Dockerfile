@@ -47,7 +47,7 @@ COPY rollups-contracts /opt/cartesi/rollups-contracts
 RUN <<EOF
     set -e
     cd /opt/cartesi/rollups-contracts
-    anvil --block-time 1 --preserve-historical-states --dump-state=anvil_state.json > anvil.log 2>&1 &
+    anvil --preserve-historical-states --dump-state=anvil_state.json > anvil.log 2>&1 &
     ANVIL_PID=$!
     pnpm install
     if ! pnpm run deploy:development; then
@@ -56,9 +56,18 @@ RUN <<EOF
         exit 1
     fi
     cd deployments/localhost
-    jq -c -n --argjson chainId $(cat .chainId) '[inputs | { (input_filename | gsub(".*/|[.]json$"; "")) : .address }] | add | .chainId = $chainId' *.json > ../../deployment.json
+    jq -c -n --argjson chainId $(cat .chainId) '[inputs | { (input_filename | gsub(".*/|[.]json$"; "")) : .address }] | add | .ChainId = $chainId' *.json > ../../deployment.json
     kill -15 ${ANVIL_PID}
-    timeout 30s wait ${ANVIL_PID} || kill -9 ${ANVIL_PID}
+    elapsed=0
+    TIMEOUT=30
+    while kill -0 ${ANVIL_PID} 2>/dev/null; do
+	if [ $elapsed -ge $TIMEOUT ]; then
+	    echo "Error:  Anvil state dump timed out after ${TIMEOUT} seconds" >&2
+	    exit 1
+	fi
+	sleep 1
+	elapsed=$((elapsed + 1))
+    done
 EOF
 
 # =============================================================================

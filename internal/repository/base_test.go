@@ -6,12 +6,11 @@ package repository
 import (
 	"context"
 	"math"
-	"os"
 	"testing"
 	"time"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
-	"github.com/cartesi/rollups-node/internal/repository/schema"
+	"github.com/cartesi/rollups-node/test/tooling/db"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/suite"
 )
@@ -30,13 +29,10 @@ func (s *RepositorySuite) SetupSuite() {
 	s.ctx, s.cancel = context.WithTimeout(context.Background(), testTimeout)
 
 	var err error
-	endpoint, ok := os.LookupEnv("CARTESI_TESTS_POSTGRES_ENDPOINT")
-	s.Require().True(ok)
-
-	schema, err := schema.New(endpoint)
+	endpoint, err := db.GetPostgresTestEndpoint()
 	s.Require().Nil(err)
 
-	err = schema.Upgrade()
+	err = db.SetupTestPostgres(endpoint)
 	s.Require().Nil(err)
 
 	s.database, err = Connect(s.ctx, endpoint)
@@ -46,7 +42,6 @@ func (s *RepositorySuite) SetupSuite() {
 }
 
 func (s *RepositorySuite) TearDownSuite() {
-	// TODO delete test database
 	s.cancel()
 }
 
