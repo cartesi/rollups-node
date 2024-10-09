@@ -77,51 +77,51 @@ func (r Redacted[T]) String() string {
 // FromEnv loads the config from environment variables.
 func FromEnv() NodeConfig {
 	var config NodeConfig
-	config.LogLevel = getLogLevel()
-	config.LogPrettyEnabled = getLogPrettyEnabled()
-	config.RollupsEpochLength = getEpochLength()
-	config.BlockchainID = getBlockchainId()
-	config.BlockchainHttpEndpoint = Redacted[string]{getBlockchainHttpEndpoint()}
-	config.BlockchainWsEndpoint = Redacted[string]{getBlockchainWsEndpoint()}
-	config.LegacyBlockchainEnabled = getLegacyBlockchainEnabled()
-	config.BlockchainFinalityOffset = getBlockchainFinalityOffset()
-	config.EvmReaderDefaultBlock = getEvmReaderDefaultBlock()
-	config.EvmReaderRetryPolicyMaxRetries = getEvmReaderRetryPolicyMaxRetries()
-	config.EvmReaderRetryPolicyMaxDelay = getEvmReaderRetryPolicyMaxDelay()
-	config.BlockchainBlockTimeout = getBlockchainBlockTimeout()
-	config.ContractsInputBoxAddress = getContractsInputBoxAddress()
-	config.ContractsInputBoxDeploymentBlockNumber = getContractsInputBoxDeploymentBlockNumber()
-	config.SnapshotDir = getSnapshotDir()
-	config.PostgresEndpoint = Redacted[string]{getPostgresEndpoint()}
-	config.HttpAddress = getHttpAddress()
-	config.HttpPort = getHttpPort()
-	config.FeatureClaimerEnabled = getFeatureClaimerEnabled()
-	config.FeatureMachineHashCheckEnabled = getFeatureMachineHashCheckEnabled()
+	config.LogLevel = GetLogLevel()
+	config.LogPrettyEnabled = GetLogPrettyEnabled()
+	config.RollupsEpochLength = GetEpochLength()
+	config.BlockchainID = GetBlockchainId()
+	config.BlockchainHttpEndpoint = Redacted[string]{GetBlockchainHttpEndpoint()}
+	config.BlockchainWsEndpoint = Redacted[string]{GetBlockchainWsEndpoint()}
+	config.LegacyBlockchainEnabled = GetLegacyBlockchainEnabled()
+	config.BlockchainFinalityOffset = GetBlockchainFinalityOffset()
+	config.EvmReaderDefaultBlock = GetEvmReaderDefaultBlock()
+	config.EvmReaderRetryPolicyMaxRetries = GetEvmReaderRetryPolicyMaxRetries()
+	config.EvmReaderRetryPolicyMaxDelay = GetEvmReaderRetryPolicyMaxDelay()
+	config.BlockchainBlockTimeout = GetBlockchainBlockTimeout()
+	config.ContractsInputBoxAddress = GetContractsInputBoxAddress()
+	config.ContractsInputBoxDeploymentBlockNumber = GetContractsInputBoxDeploymentBlockNumber()
+	config.SnapshotDir = GetSnapshotDir()
+	config.PostgresEndpoint = Redacted[string]{GetPostgresEndpoint()}
+	config.HttpAddress = GetHttpAddress()
+	config.HttpPort = GetHttpPort()
+	config.FeatureClaimerEnabled = GetFeatureClaimerEnabled()
+	config.FeatureMachineHashCheckEnabled = GetFeatureMachineHashCheckEnabled()
 	config.ExperimentalServerManagerLogBypassEnabled =
-		getExperimentalServerManagerLogBypassEnabled()
-	config.ExperimentalSunodoValidatorEnabled = getExperimentalSunodoValidatorEnabled()
-	if getExperimentalSunodoValidatorEnabled() {
+		GetExperimentalServerManagerLogBypassEnabled()
+	config.ExperimentalSunodoValidatorEnabled = GetExperimentalSunodoValidatorEnabled()
+	if GetExperimentalSunodoValidatorEnabled() {
 		config.ExperimentalSunodoValidatorRedisEndpoint =
-			getExperimentalSunodoValidatorRedisEndpoint()
+			GetExperimentalSunodoValidatorRedisEndpoint()
 	}
-	if getFeatureClaimerEnabled() && !getExperimentalSunodoValidatorEnabled() {
+	if GetFeatureClaimerEnabled() && !GetExperimentalSunodoValidatorEnabled() {
 		config.Auth = authFromEnv()
 	}
-	config.AdvancerPollingInterval = getAdvancerPollingInterval()
-	config.ValidatorPollingInterval = getValidatorPollingInterval()
+	config.AdvancerPollingInterval = GetAdvancerPollingInterval()
+	config.ValidatorPollingInterval = GetValidatorPollingInterval()
 	// Temporary.
-	config.MachineServerVerbosity = cartesimachine.ServerVerbosity(getMachineServerVerbosity())
+	config.MachineServerVerbosity = cartesimachine.ServerVerbosity(GetMachineServerVerbosity())
 	return config
 }
 
 func authFromEnv() Auth {
-	switch getAuthKind() {
+	switch GetAuthKind() {
 	case AuthKindPrivateKeyVar:
 		return AuthPrivateKey{
-			PrivateKey: Redacted[string]{getAuthPrivateKey()},
+			PrivateKey: Redacted[string]{GetAuthPrivateKey()},
 		}
 	case AuthKindPrivateKeyFile:
-		path := getAuthPrivateKeyFile()
+		path := GetAuthPrivateKeyFile()
 		privateKey, err := os.ReadFile(path)
 		if err != nil {
 			panic(fmt.Sprintf("failed to read private-key file: %v", err))
@@ -131,23 +131,23 @@ func authFromEnv() Auth {
 		}
 	case AuthKindMnemonicVar:
 		return AuthMnemonic{
-			Mnemonic:     Redacted[string]{getAuthMnemonic()},
-			AccountIndex: Redacted[int]{getAuthMnemonicAccountIndex()},
+			Mnemonic:     Redacted[string]{GetAuthMnemonic()},
+			AccountIndex: Redacted[int]{GetAuthMnemonicAccountIndex()},
 		}
 	case AuthKindMnemonicFile:
-		path := getAuthMnemonicFile()
+		path := GetAuthMnemonicFile()
 		mnemonic, err := os.ReadFile(path)
 		if err != nil {
 			panic(fmt.Sprintf("failed to read mnemonic file: %v", err))
 		}
 		return AuthMnemonic{
 			Mnemonic:     Redacted[string]{string(mnemonic)},
-			AccountIndex: Redacted[int]{getAuthMnemonicAccountIndex()},
+			AccountIndex: Redacted[int]{GetAuthMnemonicAccountIndex()},
 		}
 	case AuthKindAWS:
 		return AuthAWS{
-			KeyID:  Redacted[string]{getAuthAwsKmsKeyId()},
-			Region: Redacted[string]{getAuthAwsKmsRegion()},
+			KeyID:  Redacted[string]{GetAuthAwsKmsKeyId()},
+			Region: Redacted[string]{GetAuthAwsKmsRegion()},
 		}
 	default:
 		panic("invalid auth kind")
@@ -167,11 +167,11 @@ type AdvancerConfig struct {
 
 func GetAdvancerConfig() AdvancerConfig {
 	var config AdvancerConfig
-	config.LogLevel = getLogLevel()
-	config.LogPrettyEnabled = getLogPrettyEnabled()
-	config.PostgresEndpoint = Redacted[string]{getPostgresEndpoint()}
-	config.AdvancerPollingInterval = getAdvancerPollingInterval()
+	config.LogLevel = GetLogLevel()
+	config.LogPrettyEnabled = GetLogPrettyEnabled()
+	config.PostgresEndpoint = Redacted[string]{GetPostgresEndpoint()}
+	config.AdvancerPollingInterval = GetAdvancerPollingInterval()
 	// Temporary.
-	config.MachineServerVerbosity = cartesimachine.ServerVerbosity(getMachineServerVerbosity())
+	config.MachineServerVerbosity = cartesimachine.ServerVerbosity(GetMachineServerVerbosity())
 	return config
 }

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
-	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
+	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
@@ -66,7 +66,7 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 
 	// Prepare sequence of inputs
 	s.inputBox.Unset("RetrieveInputs")
-	events_0 := []inputbox.InputBoxInputAdded{inputAddedEvent0}
+	events_0 := []iinputbox.IInputBoxInputAdded{inputAddedEvent0}
 	mostRecentBlockNumber_0 := uint64(0x11)
 	retrieveInputsOpts_0 := bind.FilterOpts{
 		Context: s.ctx,
@@ -80,7 +80,7 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 		mock.Anything,
 	).Return(events_0, nil)
 
-	events_1 := []inputbox.InputBoxInputAdded{inputAddedEvent1}
+	events_1 := []iinputbox.IInputBoxInputAdded{inputAddedEvent1}
 	mostRecentBlockNumber_1 := uint64(0x12)
 	retrieveInputsOpts_1 := bind.FilterOpts{
 		Context: s.ctx,
@@ -174,7 +174,7 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 
 	// Prepare sequence of inputs
 	s.inputBox.Unset("RetrieveInputs")
-	events_0 := []inputbox.InputBoxInputAdded{}
+	events_0 := []iinputbox.IInputBoxInputAdded{}
 	mostRecentBlockNumber_0 := uint64(0x11)
 	retrieveInputsOpts_0 := bind.FilterOpts{
 		Context: s.ctx,
@@ -188,7 +188,7 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 		mock.Anything,
 	).Return(events_0, nil)
 
-	events_1 := []inputbox.InputBoxInputAdded{}
+	events_1 := []iinputbox.IInputBoxInputAdded{}
 	mostRecentBlockNumber_1 := uint64(0x12)
 	retrieveInputsOpts_1 := bind.FilterOpts{
 		Context: s.ctx,
@@ -253,7 +253,7 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 
 	// Prepare sequence of inputs
 	s.inputBox.Unset("RetrieveInputs")
-	events_2 := []inputbox.InputBoxInputAdded{inputAddedEvent2, inputAddedEvent3}
+	events_2 := []iinputbox.IInputBoxInputAdded{inputAddedEvent2, inputAddedEvent3}
 	mostRecentBlockNumber_2 := uint64(0x13)
 	retrieveInputsOpts_2 := bind.FilterOpts{
 		Context: s.ctx,

@@ -11,11 +11,12 @@ import (
 	"math/big"
 
 	"github.com/cartesi/rollups-node/pkg/addresses"
-	"github.com/cartesi/rollups-node/pkg/contracts/application"
-	"github.com/cartesi/rollups-node/pkg/contracts/inputbox"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplicationfactory"
+	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
+	"github.com/cartesi/rollups-node/pkg/contracts/iselfhostedapplicationfactory"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -37,23 +38,78 @@ type Signer interface {
 	Account() common.Address
 }
 
+func DeploySelfHostedApplication(
+	ctx context.Context,
+	client *ethclient.Client,
+	signer Signer,
+	shAppFactoryAddr common.Address,
+	ownerAddr common.Address,
+	templateHash string,
+	salt string,
+) (common.Address, error) {
+	var appAddr common.Address
+	templateHashBytes := common.Hex2Bytes(templateHash)
+	saltBytes := common.Hex2Bytes(salt)
+
+	factory, err := iselfhostedapplicationfactory.NewISelfHostedApplicationFactory(shAppFactoryAddr, client)
+	if err != nil {
+		return appAddr, fmt.Errorf("Failed to instantiate contract: %v", err)
+	}
+
+	receipt, err := sendTransaction(
+		ctx, client, signer, big.NewInt(0), GasLimit,
+		func(txOpts *bind.TransactOpts) (*types.Transaction, error) {
+			return factory.DeployContracts(txOpts, ownerAddr, big.NewInt(10), ownerAddr, toBytes32(templateHashBytes), toBytes32(saltBytes))
+		},
+	)
+	if err != nil {
+		return appAddr, err
+	}
+	// Parse logs to get the address of the new application contract
+	contractABI, err := iapplicationfactory.IApplicationFactoryMetaData.GetAbi()
+	if err != nil {
+		return appAddr, fmt.Errorf("Failed to parse IApplicationFactory ABI: %v", err)
+	}
+
+	// Look for the specific event in the receipt logs
+	for _, vLog := range receipt.Logs {
+		event := struct {
+			Consensus    common.Address
+			AppOwner     common.Address
+			TemplateHash [32]byte
+			AppContract  common.Address
+		}{}
+
+		// Parse log for ApplicationCreated event
+		err := contractABI.UnpackIntoInterface(&event, "ApplicationCreated", vLog.Data)
+		if err != nil {
+			continue // Skip logs that don't match
+		}
+
+		return event.AppContract, nil
+	}
+
+	return appAddr, fmt.Errorf("Failed to find ApplicationCreated event in receipt logs")
+}
+
 // Add input to the input box for the given DApp address.
 // This function waits until the transaction is added to a block and return the input index.
 func AddInput(
 	ctx context.Context,
 	client *ethclient.Client,
 	book *addresses.Book,
+	application common.Address,
 	signer Signer,
 	input []byte,
 ) (int, error) {
-	inputBox, err := inputbox.NewInputBox(book.InputBox, client)
+	inputBox, err := iinputbox.NewIInputBox(book.InputBox, client)
 	if err != nil {
 		return 0, fmt.Errorf("failed to connect to InputBox contract: %v", err)
 	}
 	receipt, err := sendTransaction(
 		ctx, client, signer, big.NewInt(0), GasLimit,
 		func(txOpts *bind.TransactOpts) (*types.Transaction, error) {
-			return inputBox.AddInput(txOpts, book.Application, input)
+			return inputBox.AddInput(txOpts, application, input)
 		},
 	)
 	if err != nil {
@@ -62,38 +118,10 @@ func AddInput(
 	return getInputIndex(book, inputBox, receipt)
 }
 
-// Convenience function to add an input using Foundry Mnemonic
-// This function waits until the transaction is added to a block and return the input index.
-func AddInputUsingFoundryMnemonic(
-	ctx context.Context,
-	blockchainHttpEndpoint string,
-	payload string,
-) (int, error) {
-
-	// Send Input
-	client, err := ethclient.DialContext(ctx, blockchainHttpEndpoint)
-	if err != nil {
-		return 0, err
-	}
-	defer client.Close()
-
-	signer, err := NewMnemonicSigner(ctx, client, FoundryMnemonic, 0)
-	if err != nil {
-		return 0, err
-	}
-	book := addresses.GetTestBook()
-
-	payloadBytes, err := hexutil.Decode(payload)
-	if err != nil {
-		panic(err)
-	}
-	return AddInput(ctx, client, book, signer, payloadBytes)
-}
-
 // Get input index in the transaction by looking at the event logs.
 func getInputIndex(
 	book *addresses.Book,
-	inputBox *inputbox.InputBox,
+	inputBox *iinputbox.IInputBox,
 	receipt *types.Receipt,
 ) (int, error) {
 	for _, log := range receipt.Logs {
@@ -116,15 +144,16 @@ func getInputIndex(
 func GetInputFromInputBox(
 	client *ethclient.Client,
 	book *addresses.Book,
+	application common.Address,
 	inputIndex int,
-) (*inputbox.InputBoxInputAdded, error) {
-	inputBox, err := inputbox.NewInputBox(book.InputBox, client)
+) (*iinputbox.IInputBoxInputAdded, error) {
+	inputBox, err := iinputbox.NewIInputBox(book.InputBox, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to InputBox contract: %v", err)
 	}
 	it, err := inputBox.FilterInputAdded(
 		nil,
-		[]common.Address{book.Application},
+		[]common.Address{application},
 		[]*big.Int{big.NewInt(int64(inputIndex))},
 	)
 	if err != nil {
@@ -143,10 +172,11 @@ func ValidateOutput(
 	ctx context.Context,
 	client *ethclient.Client,
 	book *addresses.Book,
+	appAddr common.Address,
 	output []byte,
-	proof *application.OutputValidityProof,
+	proof *iapplication.OutputValidityProof,
 ) error {
-	app, err := application.NewApplication(book.Application, client)
+	app, err := iapplication.NewIApplication(appAddr, client)
 	if err != nil {
 		return fmt.Errorf("failed to connect to CartesiDapp contract: %v", err)
 	}
@@ -159,11 +189,12 @@ func ExecuteOutput(
 	ctx context.Context,
 	client *ethclient.Client,
 	book *addresses.Book,
+	appAddr common.Address,
 	signer Signer,
 	output []byte,
-	proof *application.OutputValidityProof,
+	proof *iapplication.OutputValidityProof,
 ) (*common.Hash, error) {
-	app, err := application.NewApplication(book.Application, client)
+	app, err := iapplication.NewIApplication(appAddr, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to CartesiDapp contract: %v", err)
 	}
@@ -229,4 +260,14 @@ func MineNewBlock(
 	}
 	defer ethClient.Close()
 	return ethClient.BlockNumber(ctx)
+}
+
+func toBytes32(data []byte) [32]byte {
+	var arr [32]byte
+	if len(data) > 32 {
+		copy(arr[:], data[:32])
+	} else {
+		copy(arr[:], data)
+	}
+	return arr
 }

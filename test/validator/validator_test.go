@@ -5,17 +5,14 @@ package validator
 
 import (
 	"context"
-	"fmt"
-	"net/url"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/merkle"
 	"github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/internal/repository/schema"
 	"github.com/cartesi/rollups-node/internal/validator"
+	"github.com/cartesi/rollups-node/test/tooling/db"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/suite"
@@ -25,12 +22,11 @@ const testTimeout = 300 * time.Second
 
 type ValidatorRepositoryIntegrationSuite struct {
 	suite.Suite
-	ctx         context.Context
-	cancel      context.CancelFunc
-	validator   *validator.Validator
-	database    *repository.Database
-	databaseURL *url.URL
-	schema      *schema.Schema
+	ctx              context.Context
+	cancel           context.CancelFunc
+	validator        *validator.Validator
+	database         *repository.Database
+	postgresEndpoint string
 }
 
 func TestValidatorRepositoryIntegration(t *testing.T) {
@@ -41,36 +37,27 @@ func (s *ValidatorRepositoryIntegrationSuite) SetupSuite() {
 	s.ctx, s.cancel = context.WithTimeout(context.Background(), testTimeout)
 
 	var err error
-
 	// build database URL
-	postgresEndpoint, ok := os.LookupEnv("CARTESI_TESTS_POSTGRES_ENDPOINT")
-	s.Require().True(ok)
-	s.databaseURL, err = url.Parse(postgresEndpoint)
+	s.postgresEndpoint, err = db.GetPostgresTestEndpoint()
+	s.Require().Nil(err)
+
+	err = db.SetupTestPostgres(s.postgresEndpoint)
 	s.Require().Nil(err)
 }
 
 func (s *ValidatorRepositoryIntegrationSuite) SetupSubTest() {
 	var err error
-	s.database, err = repository.Connect(s.ctx, s.databaseURL.String())
-	s.Require().Nil(err)
-
-	s.schema, err = schema.New(
-		fmt.Sprintf("%v?sslmode=disable", s.databaseURL.String()),
-	)
+	s.database, err = repository.Connect(s.ctx, s.postgresEndpoint)
 	s.Require().Nil(err)
 
 	s.validator = validator.NewValidator(s.database, 0)
 
-	err = s.schema.Upgrade()
+	err = db.SetupTestPostgres(s.postgresEndpoint)
 	s.Require().Nil(err)
 }
 
 func (s *ValidatorRepositoryIntegrationSuite) TearDownSubTest() {
 	s.validator = nil
-
-	err := s.schema.Downgrade()
-	s.Require().Nil(err)
-	s.schema.Close()
 
 	s.database.Close()
 }

@@ -48,7 +48,7 @@ func (advancer *Advancer) Poller(pollingInterval time.Duration) (*poller.Poller,
 // Step steps the Advancer for one processing cycle.
 // It gets unprocessed inputs from the repository,
 // runs them through the cartesi machine,
-// and updates the repository with the ouputs.
+// and updates the repository with the outputs.
 func (advancer *Advancer) Step(ctx context.Context) error {
 	apps := advancer.machines.Apps()
 

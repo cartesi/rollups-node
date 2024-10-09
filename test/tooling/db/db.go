@@ -4,28 +4,22 @@
 package db
 
 import (
-	"context"
 	"fmt"
 	"os"
 
 	"github.com/cartesi/rollups-node/internal/repository/schema"
 )
 
-func Setup(ctx context.Context) (string, error) {
-	endpoint, ok := os.LookupEnv("CARTESI_TESTS_POSTGRES_ENDPOINT")
+func GetPostgresTestEndpoint() (string, error) {
+	endpoint, ok := os.LookupEnv("CARTESI_TEST_POSTGRES_ENDPOINT")
 	if !ok {
-		return "", fmt.Errorf("environment variable CARTESI_TESTS_POSTGRES_ENDPOINT not set")
+		return "", fmt.Errorf("environment variable CARTESI_TEST_POSTGRES_ENDPOINT not set")
 	}
-
-	err := SetupSchema(endpoint)
-	if err != nil {
-		return "", err
-	}
-
 	return endpoint, nil
 }
 
-func SetupSchema(endpoint string) error {
+func SetupTestPostgres(endpoint string) error {
+
 	schema, err := schema.New(endpoint)
 	if err != nil {
 		return err

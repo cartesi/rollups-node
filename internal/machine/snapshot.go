@@ -57,3 +57,14 @@ func Save(destDir string) error {
 		"destination-dir", destDir)
 	return nil
 }
+
+func CreateDefaultMachineSnapshot() (string, error) {
+	tmpDir, err := os.MkdirTemp("", "")
+	if err != nil {
+		return "", err
+	}
+	if err = Save(tmpDir); err != nil {
+		return "", err
+	}
+	return tmpDir, nil
+}

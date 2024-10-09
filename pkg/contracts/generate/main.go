@@ -29,16 +29,28 @@ type contractBinding struct {
 
 var bindings = []contractBinding{
 	{
+		jsonPath: baseContractsPath + "consensus/authority/IAuthorityFactory.sol/IAuthorityFactory.json",
+		typeName: "IAuthorityFactory",
+	},
+	{
 		jsonPath: baseContractsPath + "consensus/IConsensus.sol/IConsensus.json",
 		typeName: "IConsensus",
 	},
 	{
-		jsonPath: baseContractsPath + "dapp/Application.sol/Application.json",
-		typeName: "Application",
+		jsonPath: baseContractsPath + "dapp/IApplication.sol/IApplication.json",
+		typeName: "IApplication",
 	},
 	{
-		jsonPath: baseContractsPath + "inputs/InputBox.sol/InputBox.json",
-		typeName: "InputBox",
+		jsonPath: baseContractsPath + "dapp/IApplicationFactory.sol/IApplicationFactory.json",
+		typeName: "IApplicationFactory",
+	},
+	{
+		jsonPath: baseContractsPath + "dapp/ISelfHostedApplicationFactory.sol/ISelfHostedApplicationFactory.json",
+		typeName: "ISelfHostedApplicationFactory",
+	},
+	{
+		jsonPath: baseContractsPath + "inputs/IInputBox.sol/IInputBox.json",
+		typeName: "IInputBox",
 	},
 	{
 		jsonPath: baseContractsPath + "common/Inputs.sol/Inputs.json",

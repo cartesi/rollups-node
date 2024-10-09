@@ -84,7 +84,7 @@ env:
 # =============================================================================
 # Artifacts
 # =============================================================================
-cartesi-rollups-node cartesi-rollups-cli cartesi-rollups-evm-reader cartesi-rollups-advancer cartesi-rollups-validator:
+$(GO_ARTIFACTS):
 	@echo "Building Go artifact $@"
 	go build $(GO_BUILD_PARAMS) ./cmd/$@
 
@@ -97,7 +97,8 @@ tidy-go:
 
 generate: $(ROLLUPS_CONTRACTS_ABI_BASEDIR) ## Generate the file that are committed to the repo
 	@echo "Generating Go files"
-	@go generate ./...
+	@go mod tidy
+	@go generate -v ./...
 
 check-generate: generate ## Check whether the generated files are in sync
 	@echo "Checking differences on the repository..."
@@ -108,120 +109,50 @@ check-generate: generate ## Check whether the generated files are in sync
 		exit 1; \
 	fi
 
-contracts: $(ROLLUPS_CONTRACTS_ABI_BASEDIR) ## Export the rollups-contracts artifacts
+.PHONY: docker-build-deps
+docker-build-deps: ## Build the dependencies images using bake
+	@cd build && docker buildx bake --load rollups-node-devnet rollups-node-snapshot
 
-$(ROLLUPS_CONTRACTS_ABI_BASEDIR):
-	@echo "Exporting rollups-contracts artifacts"
-	@cd rollups-contracts && pnpm install && pnpm export
+.PHONY: docker-build
+docker-build: submodules ## Build the docker images using bake
+	@cd build && docker buildx bake --load
 
-# =============================================================================
-# Clean
-# =============================================================================
+.PHONY: docker-run
+docker-run: docker-clean ## Run the node with the anvil devnet
+	@docker compose \
+		-f ./build/compose-database.yaml \
+		-f ./build/compose-devnet.yaml \
+		-f ./build/compose-snapshot.yaml \
+		-f ./build/compose-node.yaml \
+		up
 
-clean: clean-go clean-rust clean-contracts clean-docs ## Clean all artifacts
+.PHONY: docker-run-sepolia
+docker-run-sepolia: docker-clean ## Run the node with the sepolia testnet
+	@if [ ! -n "$$RPC_HTTP_URL" ]; then \
+		echo "RPC_HTTP_URL was not set"; \
+		exit 1; \
+	fi
+	@if [ ! -n "$$RPC_WS_URL" ]; then \
+		echo "RPC_WS_URL was not set"; \
+		exit 1; \
+	fi
+	@docker compose \
+		-f ./build/compose-database.yaml \
+		-f ./build/compose-snapshot.yaml \
+		-f ./build/compose-node.yaml \
+		-f ./build/compose-sepolia.yaml \
+		up
 
-clean-go: ## Clean Go artifacts
-	@echo "Cleaning Go artifacts"
-	@go clean -i -r -cache
-	@rm -f $(GO_ARTIFACTS)
+.PHONY: docker-clean
+docker-clean: ## Remove the containers and volumes from previous compose run
+	@docker compose \
+		-f ./build/compose-database.yaml \
+		-f ./build/compose-devnet.yaml \
+		-f ./build/compose-snapshot.yaml \
+		-f ./build/compose-node.yaml \
+		down -v
 
-clean-rust: ## Clean Rust artifacts
-	@echo "Cleaning Rust artifacts"
-	@cd cmd/authority-claimer && cargo clean
-
-clean-contracts: ## Clean contract artifacts
-	@echo "Cleaning contract artifacts"
-	@cd rollups-contracts && rm -rf artifacts cache export/artifacts node_modules src && git checkout .
-
-clean-docs: ## Clean the documentation
-	@echo "Cleaning the documentation"
-	@rm -rf docs/cli docs/node docs/evm-reader docs/advancer docs/validator
-# =============================================================================
-# Tests
-# =============================================================================
-test: unit-test-go unit-test-rust ## Execute all tests
-
-unit-test-go: ## Execute go unit tests
-	@echo "Running go unit tests"
-	@go test $(GO_BUILD_PARAMS) $(GO_TEST_PACKAGES)
-
-unit-test-rust: ## Execute unit tests
-	@echo "Running rust unit tests"
-	@cd cmd/authority-claimer && cargo test
-
-e2e-test: ## Execute e2e tests
-	@echo "Running end-to-end tests"
-	@go test -count=1 ./test --tags=endtoendtests
-
-# =============================================================================
-# Static Analysis
-# =============================================================================
-lint: ## Run the linter
-	@echo "Running the linter"
-	@golangci-lint run ./...
-
-fmt: ## Run go fmt
-	@echo "Running go fmt"
-	@go fmt ./...
-
-vet: ## Run go vet
-	@echo "Running go vet"
-	@go vet ./...
-
-escape: ## Run go escape analysis
-	@echo "Running go escape analysis"
-	go build -gcflags="-m -m" ./...
-
-# =============================================================================
-# Docs
-# =============================================================================
-
-docs: ## Generate the documentation
-	@echo "Generating documentation"
-	@go run $(GO_BUILD_PARAMS) dev/gen-docs/main.go
-
-# =============================================================================
-# Docker
-# =============================================================================
-devnet: ## Build docker devnet image
-	@docker build -t cartesi/rollups-node-devnet:$(IMAGE_TAG) -f test/devnet/Dockerfile .
-
-image: ## Build the docker images using bake
-	@docker build -t cartesi/rollups-node:$(IMAGE_TAG) .
-
-run-with-compose: ## Run the node with the anvil devnet
-	@docker compose up
-
-run-devnet: ## Run the anvil devnet docker container
-	@docker run --rm --name devnet -p 8545:8545 -d cartesi/rollups-node-devnet:$(IMAGE_TAG)
-
-copy-devnet-files: ## Copy the devnet files to the host
-	@docker cp devnet:/usr/share/devnet/deployment.json deployment.json
-	@docker cp devnet:/usr/share/devnet/anvil_state.json anvil_state.json
-
-run-postgres: ## Run the PostgreSQL 16 docker container
-	@docker run --rm --name postgres -p 5432:5432 -d -e POSTGRES_PASSWORD=password -e POSTGRES_DB=rollupsdb -v $(CURDIR)/test/postgres/init-test-db.sh:/docker-entrypoint-initdb.d/init-test-db.sh postgres:16-alpine
-
-run-postgraphile: ## Run the GraphQL server docker container
-	@docker run --rm --name postgraphile -p 10002:10002 -d --init \
-		graphile/postgraphile:4.14.0 \
-		--retry-on-init-fail \
-		--dynamic-json \
-		--no-setof-functions-contain-nulls \
-		--no-ignore-rbac \
-		--enable-query-batching \
-		--enhance-graphiql \
-		--extended-errors errcode \
-		--legacy-relations omit \
-		--connection "postgres://postgres:password@host.docker.internal:5432/rollupsdb?sslmode=disable" \
-		--schema graphql \
-		--host "0.0.0.0" \
-		--port 10002
-#		--append-plugins @graphile-contrib/pg-simplify-inflector \
-
-shutdown-compose: ## Remove the containers and volumes from previous compose run
-	@docker compose down -v
-
+.PHONY: help
 help: ## Show help for each of the Makefile recipes
 	@grep "##" $(MAKEFILE_LIST) | grep -v grep | sed -e 's/:.*##\(.*\)/:\n\t\1\n/'
 

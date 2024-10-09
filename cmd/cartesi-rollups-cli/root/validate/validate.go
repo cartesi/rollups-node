@@ -11,6 +11,7 @@ import (
 	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/readerclient"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
 )
@@ -50,8 +51,8 @@ func init() {
 	Cmd.Flags().StringVar(&ethEndpoint, "eth-endpoint", "http://localhost:8545",
 		"ethereum node JSON-RPC endpoint")
 
-	Cmd.Flags().StringVar(&addressBookFile, "address-book", "",
-		"if set, load the address book from the given file; else, use test addresses")
+	Cmd.Flags().StringVar(&addressBookFile, "address-book", "deployment.json",
+		"if set, load the address book from the given file; else from deployment.json")
 }
 
 func run(cmd *cobra.Command, args []string) {
@@ -74,18 +75,18 @@ func run(cmd *cobra.Command, args []string) {
 	if addressBookFile != "" {
 		book, err = addresses.GetBookFromFile(addressBookFile)
 		cobra.CheckErr(err)
-	} else {
-		book = addresses.GetTestBook()
 	}
 
 	proof := readerclient.ConvertToContractProof(resp.Proof)
 
+	appAddr := common.HexToAddress("0x0000000000000000000000000000000000000000") // FIXME
+
 	slog.Info("Validating notice",
 		"notice-index", noticeIndex,
 		"input-index", inputIndex,
-		"application-address", book.Application,
+		"application-address", appAddr,
 	)
-	err = ethutil.ValidateOutput(ctx, client, book, resp.Payload, proof)
+	err = ethutil.ValidateOutput(ctx, client, book, appAddr, resp.Payload, proof)
 	cobra.CheckErr(err)
 
 	slog.Info("Notice validated")

@@ -11,6 +11,7 @@ import (
 	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/readerclient"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
 )
@@ -58,8 +59,8 @@ func init() {
 	Cmd.Flags().Uint32Var(&account, "account", 0,
 		"account index used to sign the transaction (default: 0)")
 
-	Cmd.Flags().StringVar(&addressBookFile, "address-book", "",
-		"if set, load the address book from the given file; else, use test addresses")
+	Cmd.Flags().StringVar(&addressBookFile, "address-book", "deployment.json",
+		"if set, load the address book from the given file; else from deployment.json")
 }
 
 func run(cmd *cobra.Command, args []string) {
@@ -85,21 +86,21 @@ func run(cmd *cobra.Command, args []string) {
 	if addressBookFile != "" {
 		book, err = addresses.GetBookFromFile(addressBookFile)
 		cobra.CheckErr(err)
-	} else {
-		book = addresses.GetTestBook()
 	}
 
 	proof := readerclient.ConvertToContractProof(resp.Proof)
 
+	appAddr := common.HexToAddress("0x0000000000000000000000000000000000000000") // FIXME
+
 	slog.Info("Executing voucher",
 		"voucher-index", voucherIndex,
 		"input-index", inputIndex,
-		"application-address", book.Application,
-	)
+		"application-address", appAddr)
 	txHash, err := ethutil.ExecuteOutput(
 		ctx,
 		client,
 		book,
+		appAddr,
 		signer,
 		resp.Payload,
 		proof,
