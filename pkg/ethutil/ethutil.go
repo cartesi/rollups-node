@@ -210,6 +210,31 @@ func ExecuteOutput(
 	return &receipt.TxHash, nil
 }
 
+// Retrieves the template hash from the application contract. Returns it as a
+// hex string or an error
+func GetTemplateHash(
+	ctx context.Context,
+	applicationAddress common.Address,
+	ethereumProvider string,
+) (string, error) {
+	client, err := ethclient.DialContext(ctx, ethereumProvider)
+	if err != nil {
+		return "", fmt.Errorf("get template hash failed to connect: %w", err)
+	}
+	cartesiApplication, err := iapplication.NewIApplicationCaller(
+		applicationAddress,
+		client,
+	)
+	if err != nil {
+		return "", fmt.Errorf("get template hash failed to instantiate binding: %w", err)
+	}
+	hash, err := cartesiApplication.GetTemplateHash(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return "", fmt.Errorf("get template hash failed to call contract method: %w", err)
+	}
+	return common.Bytes2Hex(hash[:]), nil
+}
+
 func toBytes32(data []byte) [32]byte {
 	var arr [32]byte
 	if len(data) > 32 {

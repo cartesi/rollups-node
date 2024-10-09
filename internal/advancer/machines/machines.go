@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"os"
 	"sync"
-	"time"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
 
@@ -19,17 +18,6 @@ import (
 	rm "github.com/cartesi/rollups-node/pkg/rollupsmachine"
 	cm "github.com/cartesi/rollups-node/pkg/rollupsmachine/cartesimachine"
 )
-
-type MachineConfig struct {
-	AppAddress            Address
-	SnapshotPath          string
-	SnapshotInputIndex    *uint64
-	IncCycles             uint64
-	MaxCycles             uint64
-	AdvanceTimeout        time.Duration
-	InspectTimeout        time.Duration
-	MaxConcurrentInspects uint8
-}
 
 type Repository interface {
 	// GetMachineConfigurations retrieves a machine configuration for each application.
@@ -181,6 +169,8 @@ func createMachine(ctx context.Context,
 	verbosity cm.ServerVerbosity,
 	config *MachineConfig,
 ) (*nm.NodeMachine, error) {
+	slog.Info("creating machine", "application", config.AppAddress,
+		"template-path", config.SnapshotPath, "service", "advancer")
 	// Starts the server.
 	address, err := cm.StartServer(verbosity, 0, os.Stdout, os.Stderr)
 	if err != nil {
@@ -197,8 +187,8 @@ func createMachine(ctx context.Context,
 	// Creates a RollupsMachine from the CartesiMachine.
 	rollupsMachine, err := rm.New(ctx,
 		cartesiMachine,
-		config.IncCycles,
-		config.MaxCycles)
+		config.AdvanceIncCycles,
+		config.AdvanceMaxCycles)
 	if err != nil {
 		return nil, errors.Join(err, cartesiMachine.Close(ctx))
 	}
@@ -206,8 +196,8 @@ func createMachine(ctx context.Context,
 	// Creates a NodeMachine from the RollupsMachine.
 	nodeMachine, err := nm.New(rollupsMachine,
 		config.SnapshotInputIndex,
-		config.AdvanceTimeout,
-		config.InspectTimeout,
+		config.AdvanceMaxDeadline,
+		config.InspectMaxDeadline,
 		config.MaxConcurrentInspects)
 	if err != nil {
 		return nil, errors.Join(err, rollupsMachine.Close(ctx))
@@ -229,12 +219,17 @@ func catchUp(ctx context.Context,
 		firstInputIndexToProcess = *snapshotInputIndex + 1
 	}
 
+	slog.Info("catching up unprocessed inputs", "application", app, "service", "advancer")
+
 	inputs, err := repo.GetProcessedInputs(ctx, app, firstInputIndexToProcess)
 	if err != nil {
 		return err
 	}
 
 	for _, input := range inputs {
+		// FIXME epoch id to epoch index
+		slog.Info("advancing", "application", app, "epochId", input.EpochId,
+			"input-index", input.Index, "service", "advancer")
 		_, err := machine.Advance(ctx, input.RawData, input.Index)
 		if err != nil {
 			return err

@@ -111,10 +111,9 @@ func (pg *Database) InsertApplication(
 		@lastOutputCheckBlock,
 		@status,
 		@iConsensusAddress)
-    RETURNING
-        id
-    `
-
+	RETURNING
+		id
+	`
 	args := pgx.NamedArgs{
 		"contractAddress":      app.ContractAddress,
 		"templateHash":         app.TemplateHash,
@@ -126,10 +125,33 @@ func (pg *Database) InsertApplication(
 		"iConsensusAddress":    app.IConsensusAddress,
 	}
 
-	var id uint64
-	err := pg.db.QueryRow(ctx, query, args).Scan(&id)
+	execParametersQuery := `
+	INSERT INTO execution_parameters
+		(application_id)
+	VALUES
+		(@applicationId)
+	`
+
+	tx, err := pg.db.Begin(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("%w: %w", ErrInsertRow, err)
+		return 0, errors.Join(ErrBeginTx, err)
+	}
+
+	var id uint64
+	err = tx.QueryRow(ctx, query, args).Scan(&id)
+	if err != nil {
+		return 0, errors.Join(ErrInsertRow, err, tx.Rollback(ctx))
+	}
+
+	args = pgx.NamedArgs{"applicationId": id}
+	_, err = tx.Exec(ctx, execParametersQuery, args)
+	if err != nil {
+		return 0, errors.Join(ErrInsertRow, err, tx.Rollback(ctx))
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return 0, errors.Join(ErrCommitTx, tx.Rollback(ctx))
 	}
 
 	return id, nil

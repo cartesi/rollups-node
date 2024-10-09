@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/machine"
+	"github.com/cartesi/rollups-node/internal/advancer/snapshot"
 	"github.com/cartesi/rollups-node/internal/node/config"
 	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputs"
@@ -51,13 +51,13 @@ func (s *EthUtilSuite) SetupTest() {
 	s.book, err = addresses.GetBookFromFile("../../deployment.json") // FIXME
 	s.Require().Nil(err)
 
-	s.machineDir, err = machine.CreateDefaultMachineSnapshot()
+	s.machineDir, err = snapshot.CreateDefaultMachineSnapshot()
 	s.Require().Nil(err)
 
-	templateHash, err := machine.ReadHash(s.machineDir)
+	templateHash, err := snapshot.ReadHash(s.machineDir)
 	s.Require().Nil(err)
 
-	s.appAddr, s.cleanup, err = CreateAnvilSnapshotAndDeployApp(s.ctx, templateHash)
+	s.appAddr, s.cleanup, err = CreateAnvilSnapshotAndDeployApp(s.ctx, s.endpoint, templateHash)
 	s.Require().Nil(err)
 }
 

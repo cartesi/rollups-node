@@ -8,16 +8,15 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/cartesi/rollups-node/internal/node/config"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-func CreateAnvilSnapshotAndDeployApp(ctx context.Context, templateHash string) (common.Address, func(), error) {
+func CreateAnvilSnapshotAndDeployApp(ctx context.Context, blockchainHttpEndpoint string, templateHash string) (common.Address, func(), error) {
 	var contractAddr common.Address
 	// Connect to Anvil (replace with appropriate RPC URL)
-	client, err := ethclient.Dial(config.GetBlockchainHttpEndpoint())
+	client, err := ethclient.Dial(blockchainHttpEndpoint)
 	if err != nil {
 		return contractAddr, nil, fmt.Errorf("failed to connect to Anvil: %w", err)
 	}
