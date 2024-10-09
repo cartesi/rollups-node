@@ -20,7 +20,7 @@ func init() {
 		&common.PostgresEndpoint,
 		"postgres-endpoint",
 		"p",
-		"postgres://postgres:password@localhost:5432/postgres",
+		"postgres://postgres:password@localhost:5432/rollupsdb?sslmode=disable",
 		"Postgres endpoint",
 	)
 
