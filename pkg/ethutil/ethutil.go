@@ -12,13 +12,13 @@ import (
 
 	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplicationfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
+	"github.com/cartesi/rollups-node/pkg/contracts/iselfhostedapplicationfactory"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/rpc"
 )
 
 // Gas limit when sending transactions.
@@ -35,6 +35,60 @@ type Signer interface {
 
 	// Get the account address of the signer.
 	Account() common.Address
+}
+
+func DeploySelfHostedApplication(
+	ctx context.Context,
+	client *ethclient.Client,
+	signer Signer,
+	shAppFactoryAddr common.Address,
+	ownerAddr common.Address,
+	templateHash string,
+	salt string,
+) (common.Address, error) {
+	var appAddr common.Address
+	templateHashBytes := common.Hex2Bytes(templateHash)
+	saltBytes := common.Hex2Bytes(salt)
+
+	factory, err := iselfhostedapplicationfactory.NewISelfHostedApplicationFactory(shAppFactoryAddr, client)
+	if err != nil {
+		return appAddr, fmt.Errorf("Failed to instantiate contract: %v", err)
+	}
+
+	receipt, err := sendTransaction(
+		ctx, client, signer, big.NewInt(0), GasLimit,
+		func(txOpts *bind.TransactOpts) (*types.Transaction, error) {
+			return factory.DeployContracts(txOpts, ownerAddr, big.NewInt(10), ownerAddr, toBytes32(templateHashBytes), toBytes32(saltBytes))
+		},
+	)
+	if err != nil {
+		return appAddr, err
+	}
+	// Parse logs to get the address of the new application contract
+	contractABI, err := iapplicationfactory.IApplicationFactoryMetaData.GetAbi()
+	if err != nil {
+		return appAddr, fmt.Errorf("Failed to parse IApplicationFactory ABI: %v", err)
+	}
+
+	// Look for the specific event in the receipt logs
+	for _, vLog := range receipt.Logs {
+		event := struct {
+			Consensus    common.Address
+			AppOwner     common.Address
+			TemplateHash [32]byte
+			AppContract  common.Address
+		}{}
+
+		// Parse log for ApplicationCreated event
+		err := contractABI.UnpackIntoInterface(&event, "ApplicationCreated", vLog.Data)
+		if err != nil {
+			continue // Skip logs that don't match
+		}
+
+		return event.AppContract, nil
+	}
+
+	return appAddr, fmt.Errorf("Failed to find ApplicationCreated event in receipt logs")
 }
 
 // Add input to the input box for the given DApp address.
@@ -61,39 +115,6 @@ func AddInput(
 		return 0, err
 	}
 	return getInputIndex(book, inputBox, receipt)
-}
-
-// Convenience function to add an input using Foundry Mnemonic
-// This function waits until the transaction is added to a block and return the input index.
-func AddInputUsingFoundryMnemonic(
-	ctx context.Context,
-	blockchainHttpEndpoint string,
-	payload string,
-) (int, error) {
-
-	// Send Input
-	client, err := ethclient.DialContext(ctx, blockchainHttpEndpoint)
-	if err != nil {
-		return 0, err
-	}
-	defer client.Close()
-
-	signer, err := NewMnemonicSigner(ctx, client, FoundryMnemonic, 0)
-	if err != nil {
-		return 0, err
-	}
-	book, err := addresses.GetBookFromFile("deployment.json") // FIXME
-	if err != nil {
-		return 0, err
-	}
-
-	appAddr := common.HexToAddress("0x0000000000000000000000000000000000000000") // FIXME
-
-	payloadBytes, err := hexutil.Decode(payload)
-	if err != nil {
-		panic(err)
-	}
-	return AddInput(ctx, client, book, appAddr, signer, payloadBytes)
 }
 
 // Get input index in the transaction by looking at the event logs.
@@ -189,53 +210,12 @@ func ExecuteOutput(
 	return &receipt.TxHash, nil
 }
 
-// Advances the Devnet timestamp
-func AdvanceDevnetTime(ctx context.Context,
-	blockchainHttpEndpoint string,
-	timeInSeconds int,
-) error {
-	client, err := rpc.DialContext(ctx, blockchainHttpEndpoint)
-	if err != nil {
-		return err
+func toBytes32(data []byte) [32]byte {
+	var arr [32]byte
+	if len(data) > 32 {
+		copy(arr[:], data[:32])
+	} else {
+		copy(arr[:], data)
 	}
-	defer client.Close()
-	return client.CallContext(ctx, nil, "evm_increaseTime", timeInSeconds)
-
-}
-
-// Sets the timestamp for the next block at Devnet
-func SetNextDevnetBlockTimestamp(
-	ctx context.Context,
-	blockchainHttpEndpoint string,
-	timestamp int64,
-) error {
-
-	client, err := rpc.DialContext(ctx, blockchainHttpEndpoint)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-	return client.CallContext(ctx, nil, "evm_setNextBlockTimestamp", timestamp)
-}
-
-// Mines a new block
-func MineNewBlock(
-	ctx context.Context,
-	blockchainHttpEndpoint string,
-) (uint64, error) {
-	client, err := rpc.DialContext(ctx, blockchainHttpEndpoint)
-	if err != nil {
-		return 0, err
-	}
-	defer client.Close()
-	err = client.CallContext(ctx, nil, "evm_mine")
-	if err != nil {
-		return 0, err
-	}
-	ethClient, err := ethclient.DialContext(ctx, blockchainHttpEndpoint)
-	if err != nil {
-		return 0, err
-	}
-	defer ethClient.Close()
-	return ethClient.BlockNumber(ctx)
+	return arr
 }

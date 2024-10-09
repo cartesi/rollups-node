@@ -36,7 +36,7 @@ func NewMnemonicSigner(
 	if err != nil {
 		return nil, fmt.Errorf("get chain id: %v", err)
 	}
-	privateKey, err := mnemonicToPrivateKey(mnemonic, accountIndex)
+	privateKey, err := MnemonicToPrivateKey(mnemonic, accountIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +60,7 @@ func (s *MnemonicSigner) Account() common.Address {
 
 // Create the private key from mnemonic and account index based on the BIP44 standard.
 // For more info on BIP44, see https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki
-func mnemonicToPrivateKey(mnemonic string, accountIndex uint32) (*ecdsa.PrivateKey, error) {
+func MnemonicToPrivateKey(mnemonic string, accountIndex uint32) (*ecdsa.PrivateKey, error) {
 	seed := bip39.NewSeed(mnemonic, "")
 
 	masterKey, err := bip32.NewMasterKey(seed)

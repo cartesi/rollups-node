@@ -8,6 +8,7 @@ import (
 
 	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
@@ -21,14 +22,15 @@ var Cmd = &cobra.Command{
 }
 
 const examples = `# Send the string "hi" encoded as hex:
-cartesi-rollups-cli send --payload 0x$(printf "hi" | xxd -p)`
+cartesi-rollups-cli send --address 0x00000000000000000000 --payload 0x$(printf "hi" | xxd -p)`
 
 var (
-	ethEndpoint     string
-	mnemonic        string
-	account         uint32
-	hexPayload      string
-	addressBookFile string
+	ethEndpoint        string
+	mnemonic           string
+	account            uint32
+	hexPayload         string
+	addressBookFile    string
+	applicationAddress string
 )
 
 func init() {
@@ -41,13 +43,15 @@ func init() {
 	Cmd.Flags().Uint32Var(&account, "account", 0,
 		"account index used to sign the transaction (default: 0)")
 
+	Cmd.Flags().StringVarP(&applicationAddress, "address", "a", "", "Application contract address")
+	cobra.CheckErr(Cmd.MarkFlagRequired("address"))
+
 	Cmd.Flags().StringVar(&hexPayload, "payload", "",
 		"input payload hex-encoded starting with 0x")
-
 	cobra.CheckErr(Cmd.MarkFlagRequired("payload"))
 
-	Cmd.Flags().StringVar(&addressBookFile, "address-book", "",
-		"if set, load the address book from the given file; else, use test addresses")
+	Cmd.Flags().StringVar(&addressBookFile, "address-book", "deployment.json",
+		"if set, load the address book from the given file; else from deployment.json")
 }
 
 func run(cmd *cobra.Command, args []string) {
@@ -66,12 +70,12 @@ func run(cmd *cobra.Command, args []string) {
 	if addressBookFile != "" {
 		book, err = addresses.GetBookFromFile(addressBookFile)
 		cobra.CheckErr(err)
-	} else {
-		book = addresses.GetTestBook()
 	}
 
-	slog.Info("Sending input", "application-address", book.Application)
-	inputIndex, err := ethutil.AddInput(ctx, client, book, signer, payload)
+	appAddr := common.HexToAddress(applicationAddress)
+
+	slog.Info("Sending input", "application-address", appAddr)
+	inputIndex, err := ethutil.AddInput(ctx, client, book, appAddr, signer, payload)
 	cobra.CheckErr(err)
 
 	slog.Info("Input added", "input-index", inputIndex)
