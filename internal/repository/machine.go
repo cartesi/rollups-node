@@ -26,25 +26,15 @@ func (repo *MachineRepository) GetMachineConfigurations(
 	ctx context.Context,
 ) ([]*machines.MachineConfig, error) {
 	// TODO: Fetch from db and Rework tables. ref. backup/feature/advancer-repository
-	var myInt6 uint64 = 6
 	res := []*machines.MachineConfig{{
-		AppAddress:            common.BytesToAddress([]byte("\xbe\xad")),
-		SnapshotPath:          "path/to/template/uri/2",
+		AppAddress:            common.HexToAddress("0xD81aA03CBbA5236F6554592B33060706017FAec6"),
+		SnapshotPath:          "applications/echo-dapp",
 		SnapshotInputIndex:    nil,
-		IncCycles:             0,
-		MaxCycles:             0,
-		AdvanceTimeout:        time.Duration(0),
-		InspectTimeout:        time.Duration(0),
-		MaxConcurrentInspects: 0,
-	}, {
-		AppAddress:            common.BytesToAddress([]byte("\xbe\xef")),
-		SnapshotPath:          "path/to/snapshot/2",
-		SnapshotInputIndex:    &myInt6,
-		IncCycles:             0,
-		MaxCycles:             0,
-		AdvanceTimeout:        time.Duration(0),
-		InspectTimeout:        time.Duration(0),
-		MaxConcurrentInspects: 0,
+		IncCycles:             1234234214124,
+		MaxCycles:             1234234214124,
+		AdvanceTimeout:        time.Duration(60000),
+		InspectTimeout:        time.Duration(60000),
+		MaxConcurrentInspects: 10,
 	}}
 	return res, nil
 }
