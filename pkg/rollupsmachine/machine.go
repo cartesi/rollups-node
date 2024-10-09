@@ -172,7 +172,7 @@ func (machine *rollupsMachine) lastRequestWasAccepted(ctx context.Context) (bool
 	}
 }
 
-// process processes a request, be it an avance-state or an inspect-state request.
+// process processes a request, be it an advance-state or an inspect-state request.
 // It returns the accepted state and any collected responses.
 //
 // It expects the machine to be ready to receive requests before execution,
