@@ -22,7 +22,11 @@ func TestMachineRepository(t *testing.T) {
 	t.Run("GetMachineConfigurations", func(t *testing.T) {
 		require := require.New(t)
 
-		endpoint, err := db.Setup(ctx)
+		var err error
+		endpoint, err := db.GetPostgresTestEndpoint()
+		require.Nil(err)
+
+		err = db.SetupTestPostgres(endpoint)
 		require.Nil(err)
 
 		database, err := Connect(ctx, endpoint)
@@ -63,7 +67,11 @@ func TestMachineRepository(t *testing.T) {
 	t.Run("UpdateEpochs", func(t *testing.T) {
 		require := require.New(t)
 
-		endpoint, err := db.Setup(ctx)
+		var err error
+		endpoint, err := db.GetPostgresTestEndpoint()
+		require.Nil(err)
+
+		err = db.SetupTestPostgres(endpoint)
 		require.Nil(err)
 
 		database, err := Connect(ctx, endpoint)

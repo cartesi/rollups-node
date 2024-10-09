@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
 // Package machine provides mechanisms to handle Cartesi Machine Snapshots
-// to run Node locally for development and tests
+// for development and tests
 package machine
 
 import (
@@ -36,7 +36,7 @@ func fileExists(filePath string) bool {
 	return !errors.Is(err, fs.ErrNotExist)
 }
 
-func Save(sourceDockerImage string, destDir string, tempContainerName string) error {
+func Save(destDir string) error {
 
 	// Remove previous snapshot dir
 	if fileExists(destDir) {
@@ -47,29 +47,24 @@ func Save(sourceDockerImage string, destDir string, tempContainerName string) er
 		}
 	}
 
-	// Copy machine snapshot from Docker Container
-	err := runCommand("docker", "create", "--name", tempContainerName, sourceDockerImage)
+	err := runCommand("cartesi-machine", "--ram-length=128Mi", "--store="+destDir,
+		"--", "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --verbose=1")
 	if err != nil {
 		return err
 	}
 
-	defer func() {
-		err := runCommand("docker", "rm", tempContainerName)
-		if err != nil {
-			slog.Warn("Error trying to delete container",
-				"container", tempContainerName,
-				"error", err)
-		}
-	}()
-
-	fromDir := fmt.Sprintf("%v:%v", tempContainerName, SNAPSHOT_CONTAINER_PATH)
-	err = runCommand("docker", "cp", fromDir, destDir)
-	if err != nil {
-		return err
-	}
-
-	slog.Info("Cartesi machine snapshot saved",
-		"docker-image", sourceDockerImage,
+	slog.Info("Cartesi machine snapshot saved on",
 		"destination-dir", destDir)
 	return nil
+}
+
+func CreateDefaultMachineSnapshot() (string, error) {
+	tmpDir, err := os.MkdirTemp("", "")
+	if err != nil {
+		return "", err
+	}
+	if err = Save(tmpDir); err != nil {
+		return "", err
+	}
+	return tmpDir, nil
 }
