@@ -177,7 +177,7 @@ var (
 // ------------------------------------------------------------------------------------------------
 
 {{range .}}
-func get{{toFunctionName .Name}}() {{.GoType}} {
+func Get{{toFunctionName .Name}}() {{.GoType}} {
 	s, ok := os.LookupEnv("{{.Name}}")
 	if !ok {
 		{{- if .Default}}

@@ -120,7 +120,7 @@ var (
 // Getters
 // ------------------------------------------------------------------------------------------------
 
-func getAuthAwsKmsKeyId() string {
+func GetAuthAwsKmsKeyId() string {
 	s, ok := os.LookupEnv("CARTESI_AUTH_AWS_KMS_KEY_ID")
 	if !ok {
 		panic("missing env var CARTESI_AUTH_AWS_KMS_KEY_ID")
@@ -132,7 +132,7 @@ func getAuthAwsKmsKeyId() string {
 	return val
 }
 
-func getAuthAwsKmsRegion() string {
+func GetAuthAwsKmsRegion() string {
 	s, ok := os.LookupEnv("CARTESI_AUTH_AWS_KMS_REGION")
 	if !ok {
 		panic("missing env var CARTESI_AUTH_AWS_KMS_REGION")
@@ -144,7 +144,7 @@ func getAuthAwsKmsRegion() string {
 	return val
 }
 
-func getAuthKind() AuthKind {
+func GetAuthKind() AuthKind {
 	s, ok := os.LookupEnv("CARTESI_AUTH_KIND")
 	if !ok {
 		s = "mnemonic"
@@ -156,7 +156,7 @@ func getAuthKind() AuthKind {
 	return val
 }
 
-func getAuthMnemonic() string {
+func GetAuthMnemonic() string {
 	s, ok := os.LookupEnv("CARTESI_AUTH_MNEMONIC")
 	if !ok {
 		panic("missing env var CARTESI_AUTH_MNEMONIC")
@@ -168,7 +168,7 @@ func getAuthMnemonic() string {
 	return val
 }
 
-func getAuthMnemonicAccountIndex() int {
+func GetAuthMnemonicAccountIndex() int {
 	s, ok := os.LookupEnv("CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX")
 	if !ok {
 		s = "0"
@@ -180,7 +180,7 @@ func getAuthMnemonicAccountIndex() int {
 	return val
 }
 
-func getAuthMnemonicFile() string {
+func GetAuthMnemonicFile() string {
 	s, ok := os.LookupEnv("CARTESI_AUTH_MNEMONIC_FILE")
 	if !ok {
 		panic("missing env var CARTESI_AUTH_MNEMONIC_FILE")
@@ -192,7 +192,7 @@ func getAuthMnemonicFile() string {
 	return val
 }
 
-func getAuthPrivateKey() string {
+func GetAuthPrivateKey() string {
 	s, ok := os.LookupEnv("CARTESI_AUTH_PRIVATE_KEY")
 	if !ok {
 		panic("missing env var CARTESI_AUTH_PRIVATE_KEY")
@@ -204,7 +204,7 @@ func getAuthPrivateKey() string {
 	return val
 }
 
-func getAuthPrivateKeyFile() string {
+func GetAuthPrivateKeyFile() string {
 	s, ok := os.LookupEnv("CARTESI_AUTH_PRIVATE_KEY_FILE")
 	if !ok {
 		panic("missing env var CARTESI_AUTH_PRIVATE_KEY_FILE")
@@ -216,7 +216,7 @@ func getAuthPrivateKeyFile() string {
 	return val
 }
 
-func getBlockchainBlockTimeout() int {
+func GetBlockchainBlockTimeout() int {
 	s, ok := os.LookupEnv("CARTESI_BLOCKCHAIN_BLOCK_TIMEOUT")
 	if !ok {
 		s = "60"
@@ -228,7 +228,7 @@ func getBlockchainBlockTimeout() int {
 	return val
 }
 
-func getBlockchainFinalityOffset() int {
+func GetBlockchainFinalityOffset() int {
 	s, ok := os.LookupEnv("CARTESI_BLOCKCHAIN_FINALITY_OFFSET")
 	if !ok {
 		s = "10"
@@ -240,7 +240,7 @@ func getBlockchainFinalityOffset() int {
 	return val
 }
 
-func getBlockchainHttpEndpoint() string {
+func GetBlockchainHttpEndpoint() string {
 	s, ok := os.LookupEnv("CARTESI_BLOCKCHAIN_HTTP_ENDPOINT")
 	if !ok {
 		panic("missing env var CARTESI_BLOCKCHAIN_HTTP_ENDPOINT")
@@ -252,7 +252,7 @@ func getBlockchainHttpEndpoint() string {
 	return val
 }
 
-func getBlockchainId() uint64 {
+func GetBlockchainId() uint64 {
 	s, ok := os.LookupEnv("CARTESI_BLOCKCHAIN_ID")
 	if !ok {
 		panic("missing env var CARTESI_BLOCKCHAIN_ID")
@@ -264,7 +264,7 @@ func getBlockchainId() uint64 {
 	return val
 }
 
-func getBlockchainWsEndpoint() string {
+func GetBlockchainWsEndpoint() string {
 	s, ok := os.LookupEnv("CARTESI_BLOCKCHAIN_WS_ENDPOINT")
 	if !ok {
 		panic("missing env var CARTESI_BLOCKCHAIN_WS_ENDPOINT")
@@ -276,7 +276,7 @@ func getBlockchainWsEndpoint() string {
 	return val
 }
 
-func getEvmReaderDefaultBlock() DefaultBlock {
+func GetEvmReaderDefaultBlock() DefaultBlock {
 	s, ok := os.LookupEnv("CARTESI_EVM_READER_DEFAULT_BLOCK")
 	if !ok {
 		s = "finalized"
@@ -288,7 +288,7 @@ func getEvmReaderDefaultBlock() DefaultBlock {
 	return val
 }
 
-func getLegacyBlockchainEnabled() bool {
+func GetLegacyBlockchainEnabled() bool {
 	s, ok := os.LookupEnv("CARTESI_LEGACY_BLOCKCHAIN_ENABLED")
 	if !ok {
 		s = "false"
@@ -300,7 +300,7 @@ func getLegacyBlockchainEnabled() bool {
 	return val
 }
 
-func getContractsInputBoxAddress() string {
+func GetContractsInputBoxAddress() string {
 	s, ok := os.LookupEnv("CARTESI_CONTRACTS_INPUT_BOX_ADDRESS")
 	if !ok {
 		panic("missing env var CARTESI_CONTRACTS_INPUT_BOX_ADDRESS")
@@ -312,7 +312,7 @@ func getContractsInputBoxAddress() string {
 	return val
 }
 
-func getContractsInputBoxDeploymentBlockNumber() int64 {
+func GetContractsInputBoxDeploymentBlockNumber() int64 {
 	s, ok := os.LookupEnv("CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER")
 	if !ok {
 		panic("missing env var CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER")
@@ -324,7 +324,7 @@ func getContractsInputBoxDeploymentBlockNumber() int64 {
 	return val
 }
 
-func getExperimentalServerManagerLogBypassEnabled() bool {
+func GetExperimentalServerManagerLogBypassEnabled() bool {
 	s, ok := os.LookupEnv("CARTESI_EXPERIMENTAL_SERVER_MANAGER_LOG_BYPASS_ENABLED")
 	if !ok {
 		s = "false"
@@ -336,7 +336,7 @@ func getExperimentalServerManagerLogBypassEnabled() bool {
 	return val
 }
 
-func getExperimentalSunodoValidatorEnabled() bool {
+func GetExperimentalSunodoValidatorEnabled() bool {
 	s, ok := os.LookupEnv("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED")
 	if !ok {
 		s = "false"
@@ -348,7 +348,7 @@ func getExperimentalSunodoValidatorEnabled() bool {
 	return val
 }
 
-func getExperimentalSunodoValidatorRedisEndpoint() string {
+func GetExperimentalSunodoValidatorRedisEndpoint() string {
 	s, ok := os.LookupEnv("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT")
 	if !ok {
 		panic("missing env var CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT")
@@ -360,7 +360,7 @@ func getExperimentalSunodoValidatorRedisEndpoint() string {
 	return val
 }
 
-func getFeatureClaimerEnabled() bool {
+func GetFeatureClaimerEnabled() bool {
 	s, ok := os.LookupEnv("CARTESI_FEATURE_CLAIMER_ENABLED")
 	if !ok {
 		s = "true"
@@ -372,7 +372,7 @@ func getFeatureClaimerEnabled() bool {
 	return val
 }
 
-func getFeatureMachineHashCheckEnabled() bool {
+func GetFeatureMachineHashCheckEnabled() bool {
 	s, ok := os.LookupEnv("CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED")
 	if !ok {
 		s = "true"
@@ -384,7 +384,7 @@ func getFeatureMachineHashCheckEnabled() bool {
 	return val
 }
 
-func getHttpAddress() string {
+func GetHttpAddress() string {
 	s, ok := os.LookupEnv("CARTESI_HTTP_ADDRESS")
 	if !ok {
 		s = "127.0.0.1"
@@ -396,7 +396,7 @@ func getHttpAddress() string {
 	return val
 }
 
-func getHttpPort() int {
+func GetHttpPort() int {
 	s, ok := os.LookupEnv("CARTESI_HTTP_PORT")
 	if !ok {
 		s = "10000"
@@ -408,7 +408,7 @@ func getHttpPort() int {
 	return val
 }
 
-func getLogLevel() LogLevel {
+func GetLogLevel() LogLevel {
 	s, ok := os.LookupEnv("CARTESI_LOG_LEVEL")
 	if !ok {
 		s = "info"
@@ -420,7 +420,7 @@ func getLogLevel() LogLevel {
 	return val
 }
 
-func getLogPrettyEnabled() bool {
+func GetLogPrettyEnabled() bool {
 	s, ok := os.LookupEnv("CARTESI_LOG_PRETTY_ENABLED")
 	if !ok {
 		s = "false"
@@ -432,7 +432,7 @@ func getLogPrettyEnabled() bool {
 	return val
 }
 
-func getPostgresEndpoint() string {
+func GetPostgresEndpoint() string {
 	s, ok := os.LookupEnv("CARTESI_POSTGRES_ENDPOINT")
 	if !ok {
 		s = ""
@@ -444,7 +444,7 @@ func getPostgresEndpoint() string {
 	return val
 }
 
-func getAdvancerPollingInterval() Duration {
+func GetAdvancerPollingInterval() Duration {
 	s, ok := os.LookupEnv("CARTESI_ADVANCER_POLLING_INTERVAL")
 	if !ok {
 		s = "30"
@@ -456,7 +456,7 @@ func getAdvancerPollingInterval() Duration {
 	return val
 }
 
-func getEpochLength() uint64 {
+func GetEpochLength() uint64 {
 	s, ok := os.LookupEnv("CARTESI_EPOCH_LENGTH")
 	if !ok {
 		s = "7200"
@@ -468,7 +468,7 @@ func getEpochLength() uint64 {
 	return val
 }
 
-func getEvmReaderRetryPolicyMaxDelay() Duration {
+func GetEvmReaderRetryPolicyMaxDelay() Duration {
 	s, ok := os.LookupEnv("CARTESI_EVM_READER_RETRY_POLICY_MAX_DELAY")
 	if !ok {
 		s = "3"
@@ -480,7 +480,7 @@ func getEvmReaderRetryPolicyMaxDelay() Duration {
 	return val
 }
 
-func getEvmReaderRetryPolicyMaxRetries() uint64 {
+func GetEvmReaderRetryPolicyMaxRetries() uint64 {
 	s, ok := os.LookupEnv("CARTESI_EVM_READER_RETRY_POLICY_MAX_RETRIES")
 	if !ok {
 		s = "3"
@@ -492,7 +492,7 @@ func getEvmReaderRetryPolicyMaxRetries() uint64 {
 	return val
 }
 
-func getValidatorPollingInterval() Duration {
+func GetValidatorPollingInterval() Duration {
 	s, ok := os.LookupEnv("CARTESI_VALIDATOR_POLLING_INTERVAL")
 	if !ok {
 		s = "30"
@@ -504,7 +504,7 @@ func getValidatorPollingInterval() Duration {
 	return val
 }
 
-func getSnapshotDir() string {
+func GetSnapshotDir() string {
 	s, ok := os.LookupEnv("CARTESI_SNAPSHOT_DIR")
 	if !ok {
 		s = "/var/lib/cartesi-rollups-node/snapshots"
@@ -516,7 +516,7 @@ func getSnapshotDir() string {
 	return val
 }
 
-func getMachineServerVerbosity() string {
+func GetMachineServerVerbosity() string {
 	s, ok := os.LookupEnv("CARTESI_MACHINE_SERVER_VERBOSITY")
 	if !ok {
 		s = "info"

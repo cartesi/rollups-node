@@ -14,7 +14,7 @@ func testKey(t *testing.T, mnemonic string, account uint32, expected string) {
 	expectedKey, err := crypto.HexToECDSA(expected)
 	require.Nil(t, err)
 
-	key, err := mnemonicToPrivateKey(mnemonic, account)
+	key, err := MnemonicToPrivateKey(mnemonic, account)
 	require.Nil(t, err)
 	require.Equal(t, expectedKey, key)
 }

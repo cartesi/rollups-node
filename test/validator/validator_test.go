@@ -5,18 +5,14 @@ package validator
 
 import (
 	"context"
-	"fmt"
-	"net/url"
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/deps"
 	"github.com/cartesi/rollups-node/internal/merkle"
 	"github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/internal/repository/schema"
 	"github.com/cartesi/rollups-node/internal/validator"
-	"github.com/cartesi/rollups-node/pkg/testutil"
+	"github.com/cartesi/rollups-node/test/tooling/db"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/suite"
@@ -26,13 +22,11 @@ const testTimeout = 300 * time.Second
 
 type ValidatorRepositoryIntegrationSuite struct {
 	suite.Suite
-	ctx         context.Context
-	cancel      context.CancelFunc
-	containers  *deps.DepsContainers
-	validator   *validator.Validator
-	database    *repository.Database
-	databaseURL *url.URL
-	schema      *schema.Schema
+	ctx              context.Context
+	cancel           context.CancelFunc
+	validator        *validator.Validator
+	database         *repository.Database
+	postgresEndpoint string
 }
 
 func TestValidatorRepositoryIntegration(t *testing.T) {
@@ -42,58 +36,35 @@ func TestValidatorRepositoryIntegration(t *testing.T) {
 func (s *ValidatorRepositoryIntegrationSuite) SetupSuite() {
 	s.ctx, s.cancel = context.WithTimeout(context.Background(), testTimeout)
 
-	var depsConfig = deps.DepsConfig{
-		Postgres: &deps.PostgresConfig{
-			DockerImage: deps.DefaultPostgresDockerImage,
-			Port:        testutil.GetCartesiTestDepsPortRange(),
-			Password:    deps.DefaultPostgresPassword,
-		},
-	}
-
 	var err error
-	s.containers, err = deps.Run(s.ctx, depsConfig)
+	// build database URL
+	s.postgresEndpoint, err = db.GetPostgresTestEndpoint()
 	s.Require().Nil(err)
 
-	// build database URL
-	postgresEndpoint, err := s.containers.PostgresEndpoint(s.ctx, "postgres")
+	err = db.SetupTestPostgres(s.postgresEndpoint)
 	s.Require().Nil(err)
-	s.databaseURL, err = url.Parse(postgresEndpoint)
-	s.Require().Nil(err)
-	s.databaseURL.User = url.UserPassword(deps.DefaultPostgresUser, deps.DefaultPostgresPassword)
-	s.databaseURL = s.databaseURL.JoinPath(deps.DefaultPostgresDatabase)
 }
 
 func (s *ValidatorRepositoryIntegrationSuite) SetupSubTest() {
 	var err error
-	s.database, err = repository.Connect(s.ctx, s.databaseURL.String())
-	s.Require().Nil(err)
-
-	s.schema, err = schema.New(
-		fmt.Sprintf("%v?sslmode=disable", s.databaseURL.String()),
-	)
+	s.database, err = repository.Connect(s.ctx, s.postgresEndpoint)
 	s.Require().Nil(err)
 
 	s.validator = validator.NewValidator(s.database, 0)
 
-	err = s.schema.Upgrade()
+	err = db.SetupTestPostgres(s.postgresEndpoint)
 	s.Require().Nil(err)
 }
 
 func (s *ValidatorRepositoryIntegrationSuite) TearDownSubTest() {
 	s.validator = nil
 
-	err := s.schema.Downgrade()
-	s.Require().Nil(err)
-	s.schema.Close()
-
 	s.database.Close()
 }
 
 func (s *ValidatorRepositoryIntegrationSuite) TearDownSuite() {
+	// TODO reset database and anvil
 	s.cancel()
-
-	err := deps.Terminate(context.Background(), s.containers)
-	s.Require().Nil(err)
 }
 
 func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
@@ -336,7 +307,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		firstEpoch.Id, err = s.database.InsertEpoch(s.ctx, firstEpoch)
 		s.Require().Nil(err)
 
-		// update input with its epoch id and OuputsHash and insert it in the db
+		// update input with its epoch id and OutputsHash and insert it in the db
 		firstInput.EpochId = firstEpoch.Id
 		firstInput.OutputsHash = &firstEpochClaim
 		firstInput.Id, err = s.database.InsertInput(s.ctx, firstInput)

@@ -10,12 +10,9 @@ import (
 	"time"
 
 	. "github.com/cartesi/rollups-node/internal/node/model"
-	"github.com/cartesi/rollups-node/internal/repository/schema"
+	"github.com/cartesi/rollups-node/test/tooling/db"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/suite"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 const testTimeout = 300 * time.Second
@@ -25,7 +22,6 @@ type RepositorySuite struct {
 	suite.Suite
 	ctx      context.Context
 	cancel   context.CancelFunc
-	postgres *postgres.PostgresContainer
 	database *Database
 }
 
@@ -33,16 +29,10 @@ func (s *RepositorySuite) SetupSuite() {
 	s.ctx, s.cancel = context.WithTimeout(context.Background(), testTimeout)
 
 	var err error
-	s.postgres, err = newPostgresContainer(s.ctx)
+	endpoint, err := db.GetPostgresTestEndpoint()
 	s.Require().Nil(err)
 
-	endpoint, err := s.postgres.ConnectionString(s.ctx, "sslmode=disable")
-	s.Require().Nil(err)
-
-	schema, err := schema.New(endpoint)
-	s.Require().Nil(err)
-
-	err = schema.Upgrade()
+	err = db.SetupTestPostgres(endpoint)
 	s.Require().Nil(err)
 
 	s.database, err = Connect(s.ctx, endpoint)
@@ -52,8 +42,6 @@ func (s *RepositorySuite) SetupSuite() {
 }
 
 func (s *RepositorySuite) TearDownSuite() {
-	err := s.postgres.Terminate(s.ctx)
-	s.Nil(err)
 	s.cancel()
 }
 
@@ -479,26 +467,4 @@ func (s *RepositorySuite) TestInsertSnapshotFailsSameInputId() {
 
 func TestRepositorySuite(t *testing.T) {
 	suite.Run(t, new(RepositorySuite))
-}
-
-// We use the postgres alpine docker image to test the repository.
-func newPostgresContainer(ctx context.Context) (*postgres.PostgresContainer, error) {
-	dbName := "postgres"
-	dbUser := "postgres"
-	dbPassword := "password"
-
-	// Start the postgres container
-	container, err := postgres.Run(
-		ctx,
-		"postgres:16-alpine",
-		postgres.WithDatabase(dbName),
-		postgres.WithUsername(dbUser),
-		postgres.WithPassword(dbPassword),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(5*time.Second)),
-	)
-
-	return container, err
 }
