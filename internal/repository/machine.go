@@ -8,12 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
-	"github.com/cartesi/rollups-node/internal/node/advancer/machines"
 	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/internal/nodemachine"
-	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -24,29 +21,76 @@ type MachineRepository struct{ *Database }
 
 func (repo *MachineRepository) GetMachineConfigurations(
 	ctx context.Context,
-) ([]*machines.MachineConfig, error) {
-	// TODO: Fetch from db and Rework tables. ref. backup/feature/advancer-repository
-	var myInt6 uint64 = 6
-	res := []*machines.MachineConfig{{
-		AppAddress:            common.BytesToAddress([]byte("\xbe\xad")),
-		SnapshotPath:          "path/to/template/uri/2",
-		SnapshotInputIndex:    nil,
-		IncCycles:             0,
-		MaxCycles:             0,
-		AdvanceTimeout:        time.Duration(0),
-		InspectTimeout:        time.Duration(0),
-		MaxConcurrentInspects: 0,
-	}, {
-		AppAddress:            common.BytesToAddress([]byte("\xbe\xef")),
-		SnapshotPath:          "path/to/snapshot/2",
-		SnapshotInputIndex:    &myInt6,
-		IncCycles:             0,
-		MaxCycles:             0,
-		AdvanceTimeout:        time.Duration(0),
-		InspectTimeout:        time.Duration(0),
-		MaxConcurrentInspects: 0,
-	}}
-	return res, nil
+) ([]*MachineConfig, error) {
+	// Query string to fetch application and execution parameters for "running" applications
+	query := `
+		SELECT
+			a.contract_address,
+			a.template_uri,
+			e.advance_inc_cycles,
+			e.advance_max_cycles,
+			e.inspect_inc_cycles,
+			e.inspect_max_cycles,
+			e.advance_inc_deadline,
+			e.advance_max_deadline,
+			e.inspect_inc_deadline,
+			e.inspect_max_deadline,
+			e.load_deadline,
+			e.store_deadline,
+			e.fast_deadline,
+			e.max_concurrent_inspects
+		FROM application a
+		INNER JOIN execution_parameters e
+			ON a.id = e.application_id
+		WHERE a.status = 'RUNNING';
+	`
+
+	// Prepare the result slice
+	var machineConfigs []*MachineConfig
+
+	// Execute the query
+	rows, err := repo.db.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer rows.Close()
+
+	// Iterate over the result rows
+	for rows.Next() {
+		var mc MachineConfig
+
+		// Scan the database values into the MachineConfig struct fields
+		err := rows.Scan(
+			&mc.AppAddress,            // contract_address
+			&mc.SnapshotPath,          // template_uri
+			&mc.AdvanceIncCycles,      // advance_inc_cycles
+			&mc.AdvanceMaxCycles,      // advance_max_cycles
+			&mc.InspectIncCycles,      // inspect_inc_cycles
+			&mc.InspectMaxCycles,      // inspect_max_cycles
+			&mc.AdvanceIncDeadline,    // advance_inc_deadline
+			&mc.AdvanceMaxDeadline,    // advance_max_deadline
+			&mc.InspectIncDeadline,    // inspect_inc_deadline
+			&mc.InspectMaxDeadline,    // inspect_max_deadline
+			&mc.LoadDeadline,          // load_deadline
+			&mc.StoreDeadline,         // store_deadline
+			&mc.FastDeadline,          // fast_deadline
+			&mc.MaxConcurrentInspects, // max_concurrent_inspects
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		// Append the result to the slice
+		machineConfigs = append(machineConfigs, &mc)
+	}
+
+	// Check if any error occurred during iteration
+	if rows.Err() != nil {
+		return nil, fmt.Errorf("row iteration error: %w", rows.Err())
+	}
+
+	// Return the result slice
+	return machineConfigs, nil
 }
 
 func (repo *MachineRepository) GetProcessedInputs(

@@ -35,17 +35,29 @@ func TestMachineRepository(t *testing.T) {
 
 		apps, _, _, _, err := populate2(database)
 		require.Nil(err)
+		require.Len(apps, 3)
+
 		repository := &MachineRepository{Database: database}
 
+		// only running apps
 		res, err := repository.GetMachineConfigurations(ctx)
 		require.Nil(err)
 		require.Len(res, 2)
 
-		config1, config2 := res[0], res[1]
+		var config1, config2 *MachineConfig
+		for _, config := range res {
+			if config.AppAddress == apps[1].ContractAddress {
+				config2 = config
+			} else if config.AppAddress == apps[2].ContractAddress {
+				config1 = config
+			}
+		}
+		require.NotNil(config1)
+		require.NotNil(config2)
 
 		require.Equal(apps[1].ContractAddress, config2.AppAddress)
-		require.Equal(uint64(6), *config2.SnapshotInputIndex)
-		require.Equal("path/to/snapshot/2", config2.SnapshotPath)
+		require.Nil(config2.SnapshotInputIndex)
+		require.Equal("path/to/template/uri/1", config2.SnapshotPath)
 
 		require.Equal(apps[2].ContractAddress, config1.AppAddress)
 		require.Nil(config1.SnapshotInputIndex)
