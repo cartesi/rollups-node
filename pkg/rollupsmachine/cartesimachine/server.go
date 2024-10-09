@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/cartesi/rollups-node/internal/linewriter"
+	"github.com/cartesi/rollups-node/internal/services/linewriter"
 	"github.com/cartesi/rollups-node/pkg/emulator"
 )
 

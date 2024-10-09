@@ -3,7 +3,7 @@
 
 // Package machine provides mechanisms to handle Cartesi Machine Snapshots
 // for development and tests
-package machine
+package snapshot
 
 import (
 	"errors"
@@ -12,7 +12,10 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path"
 	"strings"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 const SNAPSHOT_CONTAINER_PATH = "/usr/share/cartesi/snapshot"
@@ -67,4 +70,21 @@ func CreateDefaultMachineSnapshot() (string, error) {
 		return "", err
 	}
 	return tmpDir, nil
+}
+
+// Reads the Cartesi Machine hash from machineDir. Returns it as a hex string or
+// an error
+func ReadHash(machineDir string) (string, error) {
+	path := path.Join(machineDir, "hash")
+	hash, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read hash: %w", err)
+	} else if len(hash) != common.HashLength {
+		return "", fmt.Errorf(
+			"read hash: wrong size; expected %v bytes but read %v",
+			common.HashLength,
+			len(hash),
+		)
+	}
+	return common.Bytes2Hex(hash), nil
 }

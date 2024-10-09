@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/linewriter"
+	"github.com/cartesi/rollups-node/internal/services/linewriter"
 )
 
 const (
