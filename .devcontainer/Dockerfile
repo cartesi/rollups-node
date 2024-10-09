@@ -24,8 +24,11 @@ RUN <<EOF
     git clone https://github.com/cartesi/machine-emulator-sdk.git --branch v0.19.0 --recurse-submodules
 EOF
 
+# ENV PREFIX /workspace/rollups-node/emulator-install
+
 # RUN <<EOF
-#     make -C machine-emulator-sdk toolchain
+#     cd machine-emulator-sdk/emulator
+#     make install PREFIX=$PREFIX
 # EOF
 
 # [Optional] Uncomment the next lines to use go get to install anything else you need
