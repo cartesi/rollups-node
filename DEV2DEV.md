@@ -1,16 +1,26 @@
+# Dev 2 Dev
+
 ```bash
 git checkout feature/new-build
 git submodule update --init --recursive
 
+# to fix
+# fatal: No url found for submodule path 'offchain/grpc-interfaces/grpc-interfaces' in .gitmodules
+# run:
+git rm --cached offchain/grpc-interfaces/grpc-interfaces
+
 # download machine emulator header files
 git submodule add https://github.com/cartesi/machine-emulator-sdk.git
-git checkout v0.19.0
+
 cd machine-emulator-sdk
+git checkout v0.19.0
+# output
+# HEAD is now at afaade1 feat!: Bump solidity-step to v0.12.1
+
 make toolchain
 
 sudo apt update
 sudo apt install libslirp-dev
-sudo apt install libboost-all-dev
 sudo apt install liblua5.4-dev
 # sudo apt install libboost-all-dev
 # or
@@ -114,4 +124,67 @@ RUN apt-get install -y --no-install-recommends --allow-downgrades \
     rm -rf /var/lib/apt/lists/* /tmp/${TOOLS_DEB}
 COPY --chown=root:root --from=cross-builder /tmp/build-extra/benchmarks/whetstone /usr/bin/
 COPY --chown=root:root --from=cross-builder /tmp/build-extra/benchmarks/dhrystone /usr/bin/
+```
+
+## Marcelo's instructions
+
+### Build the Machine Emulator
+
+```bash
+cd machine-emulator-sdk/emulator
+
+# choose a folder to install
+make install PREFIX=/YOUR-WORKSPACE/rollups-node/emulator-install
+```
+
+Example:
+
+```bash
+make install PREFIX=/Users/oshiro/calindra/cartesi/rollups-node/emulator-install
+```
+
+### Build the node
+
+```bash
+cd /YOUR-WORKSPACE/rollups-node
+PREFIX=/YOUR-WORKSPACE/rollups-node/emulator-install make 
+```
+
+Example:
+
+```bash
+PREFIX=/Users/oshiro/calindra/cartesi/rollups-node/emulator-install make 
+```
+
+### Build the anvil devnet
+
+```bash
+make devnet
+```
+
+### Run the evm-reader
+
+Configure the environment
+
+```bash
+eval `make env`
+```
+
+Run the db and anvil:
+
+```bash
+make run-postgres
+make run-devnet
+```
+
+Restore the database:
+
+```bash
+./cartesi-rollups-cli db upgrade -p "postgres://postgres:password@localhost:5432/rollupsdb?sslmode=disable"
+```
+
+Run the evm-advancer:
+
+```bash
+./cartesi-rollups-evm-reader
 ```
