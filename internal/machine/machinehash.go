@@ -1,7 +1,7 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-package node
+package machine
 
 import (
 	"context"
@@ -17,17 +17,17 @@ import (
 
 // Validates if the hash from the Cartesi Machine at machineDir matches the template hash onchain.
 // It returns an error if it doesn't.
-func validateMachineHash(
+func ValidateMachineHash(
 	ctx context.Context,
 	machineDir string,
-	applicationAddress string,
+	applicationAddress common.Address,
 	ethereumNodeAddr string,
 ) error {
-	offchainHash, err := readHash(machineDir)
+	offchainHash, err := ReadHash(machineDir)
 	if err != nil {
 		return err
 	}
-	onchainHash, err := getTemplateHash(ctx, applicationAddress, ethereumNodeAddr)
+	onchainHash, err := GetTemplateHash(ctx, applicationAddress, ethereumNodeAddr)
 	if err != nil {
 		return err
 	}
@@ -43,7 +43,7 @@ func validateMachineHash(
 
 // Reads the Cartesi Machine hash from machineDir. Returns it as a hex string or
 // an error
-func readHash(machineDir string) (string, error) {
+func ReadHash(machineDir string) (string, error) {
 	path := path.Join(machineDir, "hash")
 	hash, err := os.ReadFile(path)
 	if err != nil {
@@ -60,25 +60,25 @@ func readHash(machineDir string) (string, error) {
 
 // Retrieves the template hash from the application contract. Returns it as a
 // hex string or an error
-func getTemplateHash(
+func GetTemplateHash(
 	ctx context.Context,
-	applicationAddress string,
-	ethereumNodeAddr string,
+	applicationAddress common.Address,
+	ethereumProvider string,
 ) (string, error) {
-	client, err := ethclient.DialContext(ctx, ethereumNodeAddr)
+	client, err := ethclient.DialContext(ctx, ethereumProvider)
 	if err != nil {
-		return "", fmt.Errorf("get template hash: %w", err)
+		return "", fmt.Errorf("get template hash failed to connect: %w", err)
 	}
 	cartesiApplication, err := iapplication.NewIApplicationCaller(
-		common.HexToAddress(applicationAddress),
+		applicationAddress,
 		client,
 	)
 	if err != nil {
-		return "", fmt.Errorf("get template hash: %w", err)
+		return "", fmt.Errorf("get template hash failed to instantiate binding: %w", err)
 	}
 	hash, err := cartesiApplication.GetTemplateHash(&bind.CallOpts{Context: ctx})
 	if err != nil {
-		return "", fmt.Errorf("get template hash: %w", err)
+		return "", fmt.Errorf("get template hash failed to call contract method: %w", err)
 	}
 	return common.Bytes2Hex(hash[:]), nil
 }

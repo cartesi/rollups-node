@@ -35,18 +35,18 @@ func main() {
 	startup.ConfigLogs(config.LogLevel, config.LogPrettyEnabled)
 	slog.Info("Starting the Cartesi Rollups Node", "version", buildVersion, "config", config)
 
-	err := startup.ValidateSchema(config.PostgresEndpoint.Value)
-	if err != nil {
-		slog.Error("Node exited with an error", "error", err)
-		os.Exit(1)
-	}
-
 	database, err := repository.Connect(ctx, config.PostgresEndpoint.Value)
 	if err != nil {
 		slog.Error("Node couldn't connect to the database", "error", err)
 		os.Exit(1)
 	}
 	defer database.Close()
+
+	err = startup.ValidateSchema(config.PostgresEndpoint.Value)
+	if err != nil {
+		slog.Error("Node exited with an error", "error", err)
+		os.Exit(1)
+	}
 
 	_, err = startup.SetupNodePersistentConfig(ctx, database, config)
 	if err != nil {

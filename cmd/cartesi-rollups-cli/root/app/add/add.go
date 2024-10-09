@@ -16,7 +16,7 @@ import (
 
 var Cmd = &cobra.Command{
 	Use:     "add",
-	Short:   "Adds a new application",
+	Short:   "Add an existing application to the node",
 	Example: examples,
 	Run:     run,
 }
