@@ -6,7 +6,7 @@ package main
 import (
 	"os"
 
-	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root"
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-validator/root"
 )
 
 func main() {

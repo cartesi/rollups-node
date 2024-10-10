@@ -4,6 +4,8 @@
 package model
 
 import (
+	"time"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
@@ -59,6 +61,17 @@ type NodePersistentConfig struct {
 	InputBoxDeploymentBlock uint64
 	InputBoxAddress         Address
 	ChainId                 uint64
+}
+
+type MachineConfig struct {
+	AppAddress            Address
+	SnapshotPath          string
+	SnapshotInputIndex    *uint64
+	IncCycles             uint64
+	MaxCycles             uint64
+	AdvanceTimeout        time.Duration
+	InspectTimeout        time.Duration
+	MaxConcurrentInspects uint8
 }
 
 type Application struct {

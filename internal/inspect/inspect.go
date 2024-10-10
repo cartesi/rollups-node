@@ -12,7 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/cartesi/rollups-node/internal/node/advancer/machines"
+	"github.com/cartesi/rollups-node/internal/advancer/machines"
 	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/internal/nodemachine"
 	"github.com/ethereum/go-ethereum/common"
