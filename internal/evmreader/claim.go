@@ -114,7 +114,7 @@ func (r *EvmReader) readAndUpdateClaims(
 						"error", err)
 					continue APP_LOOP
 				}
-				if len(previousEpochs) > 0 {
+				if len(previousEpochs) == 0 { // FIXME review this condition
 					slog.Error("Application got 'not accepted' claims. It is in an invalid state",
 						"app", app)
 					continue APP_LOOP
