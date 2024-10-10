@@ -8,6 +8,7 @@ RUN <<EOF
     apt-get update
     apt-get install -y --no-install-recommends \
         git \
+        bash-completion \
         build-essential \
         libslirp-dev \
         libboost-all-dev \
