@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/node/advancer/machines"
 	. "github.com/cartesi/rollups-node/internal/node/model"
 	"github.com/cartesi/rollups-node/internal/nodemachine"
 	"github.com/ethereum/go-ethereum/common"
@@ -24,16 +23,16 @@ type MachineRepository struct{ *Database }
 
 func (repo *MachineRepository) GetMachineConfigurations(
 	ctx context.Context,
-) ([]*machines.MachineConfig, error) {
+) ([]*MachineConfig, error) {
 	// TODO: Fetch from db and Rework tables. ref. backup/feature/advancer-repository
-	res := []*machines.MachineConfig{{
+	res := []*MachineConfig{{
 		AppAddress:            common.HexToAddress("0xD81aA03CBbA5236F6554592B33060706017FAec6"),
 		SnapshotPath:          "applications/echo-dapp",
 		SnapshotInputIndex:    nil,
 		IncCycles:             1234234214124,
 		MaxCycles:             1234234214124,
-		AdvanceTimeout:        time.Duration(60000),
-		InspectTimeout:        time.Duration(60000),
+		AdvanceTimeout:        time.Duration(60000000),
+		InspectTimeout:        time.Duration(60000000),
 		MaxConcurrentInspects: 10,
 	}}
 	return res, nil

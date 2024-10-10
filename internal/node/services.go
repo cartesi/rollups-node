@@ -9,9 +9,9 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/cartesi/rollups-node/internal/advancer/machines"
 	evmreaderservice "github.com/cartesi/rollups-node/internal/evmreader/service"
 	"github.com/cartesi/rollups-node/internal/inspect"
-	"github.com/cartesi/rollups-node/internal/node/advancer/machines"
 	"github.com/cartesi/rollups-node/internal/node/config"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/services"

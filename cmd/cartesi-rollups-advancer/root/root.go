@@ -10,8 +10,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/cartesi/rollups-node/internal/node/advancer"
-	"github.com/cartesi/rollups-node/internal/node/advancer/machines"
+	"github.com/cartesi/rollups-node/internal/advancer"
+	"github.com/cartesi/rollups-node/internal/advancer/machines"
 	"github.com/cartesi/rollups-node/internal/node/config"
 	"github.com/cartesi/rollups-node/internal/node/startup"
 	"github.com/cartesi/rollups-node/internal/repository"
