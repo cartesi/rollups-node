@@ -25,12 +25,12 @@ apt-get update && apt-get install -yq \
     && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/*
 EOF
 
-RUN <<EOF
-  rustup toolchain install 1.81.0-x86_64-unknown-linux-gnu 1.81.0-riscv64gc-unknown-linux-gnu
-  rustup toolchain default 1.81.0-x86_64-unknown-linux-gnu
-EOF
-
 # Create the gitpod user. UID must be 33333.
 RUN useradd -l -u 33333 -G sudo -md /home/gitpod -s /bin/bash -p gitpod gitpod
 
 USER gitpod
+
+RUN <<EOF
+  rustup toolchain install 1.81.0-x86_64-unknown-linux-gnu
+  rustup toolchain add 1.81.0-riscv64gc-unknown-linux-gnu
+EOF
