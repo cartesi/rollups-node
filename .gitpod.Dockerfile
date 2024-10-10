@@ -26,12 +26,12 @@ apt-get update && apt-get install -yq \
     && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/*
 EOF
 
+RUN sudo npm i -g node-ovsx-sign
+
 # Create the gitpod user. UID must be 33333.
 RUN useradd -l -u 33333 -G sudo -md /home/gitpod -s /bin/bash -p gitpod gitpod
 
 USER gitpod
-
-RUN npm i -g node-ovsx-sign
 
 RUN <<EOF
   rustup toolchain install 1.81.0-x86_64-unknown-linux-gnu
