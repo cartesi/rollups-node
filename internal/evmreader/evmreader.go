@@ -38,7 +38,7 @@ type EvmReaderRepository interface {
 	GetAllRunningApplications(ctx context.Context) ([]Application, error)
 	GetNodeConfig(ctx context.Context) (*NodePersistentConfig, error)
 	GetEpoch(ctx context.Context, indexKey uint64, appAddressKey Address) (*Epoch, error)
-	GetEpochsWithOpenClaims(
+	GetPreviousEpochsWithOpenClaims(
 		ctx context.Context,
 		app Address,
 		lastBlock uint64,

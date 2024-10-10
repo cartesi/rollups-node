@@ -10,13 +10,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/evmreader/retrypolicy"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
-)
-
-type (
-	Address = common.Address
-	Context = context.Context
 )
 
 // Service to manage InputReader lifecycle
@@ -34,8 +28,8 @@ func NewEvmReaderService(
 	database *repository.Database,
 	maxRetries uint64,
 	maxDelay time.Duration,
-) EvmReaderService {
-	return EvmReaderService{
+) *EvmReaderService {
+	return &EvmReaderService{
 		blockchainHttpEndpoint: blockchainHttpEndpoint,
 		blockchainWsEndpoint:   blockchainWsEndpoint,
 		database:               database,
@@ -44,8 +38,8 @@ func NewEvmReaderService(
 	}
 }
 
-func (s EvmReaderService) Start(
-	ctx Context,
+func (s *EvmReaderService) Start(
+	ctx context.Context,
 	ready chan<- struct{},
 ) error {
 
@@ -86,6 +80,6 @@ func (s EvmReaderService) Start(
 	return reader.Run(ctx, ready)
 }
 
-func (s EvmReaderService) String() string {
+func (s *EvmReaderService) String() string {
 	return "evm-reader"
 }
