@@ -22,6 +22,7 @@ apt-get update && apt-get install -yq \
     libc6-dev-riscv64-cross \
     wget \
     patch \
+    npm \
     && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/*
 EOF
 
@@ -29,6 +30,8 @@ EOF
 RUN useradd -l -u 33333 -G sudo -md /home/gitpod -s /bin/bash -p gitpod gitpod
 
 USER gitpod
+
+RUN npm i -g node-ovsx-sign
 
 RUN <<EOF
   rustup toolchain install 1.81.0-x86_64-unknown-linux-gnu
