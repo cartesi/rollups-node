@@ -250,9 +250,9 @@ func (pg *Database) GetLastProcessedBlock(
 	return block, nil
 }
 
-// GetEpochsWithOpenClaims retrieves all Epochs that have EpochStatusClaimSubmitted
-// status and LastBlock LastBlock less than or equals 'block'
-func (pg *Database) GetEpochsWithOpenClaims(
+// GetPreviousEpochsWithOpenClaims retrieves all Epochs that have EpochStatusClaimSubmitted
+// status and LastBlock less than 'block'
+func (pg *Database) GetPreviousEpochsWithOpenClaims(
 	ctx context.Context,
 	app Address,
 	block uint64,
@@ -270,7 +270,7 @@ func (pg *Database) GetEpochsWithOpenClaims(
 	FROM
 		epoch
 	WHERE
-		application_address=@appAddress AND status=@status AND last_block <= @block
+		application_address=@appAddress AND status=@status AND last_block < @block
 	ORDER BY
 		index ASC`
 

@@ -438,7 +438,7 @@ func newMockRepository() *MockRepository {
 		mock.Anything,
 		mock.Anything).Return(1, nil)
 
-	repo.On("GetEpochsWithOpenClaims",
+	repo.On("GetPreviousEpochsWithOpenClaims",
 		mock.Anything,
 		mock.Anything,
 	).Return([]Epoch{}, nil)
@@ -618,7 +618,7 @@ func (m *MockRepository) InsertEpoch(
 	return args.Get(0).(uint64), args.Error(1)
 }
 
-func (m *MockRepository) GetEpochsWithOpenClaims(
+func (m *MockRepository) GetPreviousEpochsWithOpenClaims(
 	ctx context.Context,
 	app Address,
 	lastBlock uint64,

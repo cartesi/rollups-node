@@ -160,8 +160,8 @@ func (s *RepositorySuite) TestGetMostRecentBlock() {
 	s.Require().Equal(block, response)
 }
 
-func (s *RepositorySuite) TestGetEpochsWithOpenClaims() {
-	response, err := s.database.GetEpochsWithOpenClaims(
+func (s *RepositorySuite) TestGetPreviousEpochsWithOpenClaims() {
+	response, err := s.database.GetPreviousEpochsWithOpenClaims(
 		s.ctx, common.HexToAddress("deadbeef"), 300)
 
 	s.Require().Nil(err)
