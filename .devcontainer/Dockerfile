@@ -17,6 +17,8 @@ RUN <<EOF
         libc6-dev-riscv64-cross \
         wget \
         patch \
+        libssl-dev \
+        pkg-config \
         && rm -rf /var/lib/apt/lists/*
 EOF
 
