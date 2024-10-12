@@ -43,7 +43,7 @@ func (r *EvmReader) checkForNewInputs(
 				"most recent block", mostRecentBlockNumber,
 			)
 
-			err := r.readAndStoreInputs(ctx,
+			err := r.ReadAndStoreInputs(ctx,
 				lastProcessedBlock+1,
 				mostRecentBlockNumber,
 				apps,
@@ -74,13 +74,15 @@ func (r *EvmReader) checkForNewInputs(
 	}
 }
 
-// readAndStoreInputs reads, inputs from the InputSource given specific filter options, indexes
+type TypeExportApplication = application
+
+// ReadAndStoreInputs reads, inputs from the InputSource given specific filter options, indexes
 // them into epochs and store the indexed inputs and epochs
-func (r *EvmReader) readAndStoreInputs(
+func (r *EvmReader) ReadAndStoreInputs(
 	ctx context.Context,
 	startBlock uint64,
 	endBlock uint64,
-	apps []application,
+	apps []TypeExportApplication,
 ) error {
 	appsToProcess := []common.Address{}
 
@@ -120,7 +122,7 @@ func (r *EvmReader) readAndStoreInputs(
 
 		// Retrieves last open epoch from DB
 		currentEpoch, err := r.repository.GetEpoch(ctx,
-			calculateEpochIndex(epochLength, startBlock), address)
+			CalculateEpochIndex(epochLength, startBlock), address)
 		if err != nil {
 			slog.Error("Error retrieving existing current epoch",
 				"app", address,
@@ -145,7 +147,7 @@ func (r *EvmReader) readAndStoreInputs(
 		// Index Inputs into epochs
 		for _, input := range inputs {
 
-			inputEpochIndex := calculateEpochIndex(epochLength, input.BlockNumber)
+			inputEpochIndex := CalculateEpochIndex(epochLength, input.BlockNumber)
 
 			// If input belongs into a new epoch, close the previous known one
 			if currentEpoch != nil && currentEpoch.Index != inputEpochIndex {
@@ -238,7 +240,7 @@ func (r *EvmReader) addAppEpochLengthIntoCache(app application) error {
 	epochLength, ok := r.epochLengthCache[app.ContractAddress]
 	if !ok {
 
-		epochLength, err := getEpochLength(app.consensusContract)
+		epochLength, err := getEpochLength(app.ConsensusContract)
 		if err != nil {
 			return errors.Join(
 				fmt.Errorf("error retrieving epoch length from contracts for app %s",

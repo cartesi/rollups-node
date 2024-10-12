@@ -100,7 +100,7 @@ func (e *SubscriptionError) Error() string {
 type application struct {
 	Application
 	applicationContract ApplicationContract
-	consensusContract   ConsensusContract
+	ConsensusContract
 }
 
 // EvmReader reads Input Added, Claim Submitted and
@@ -130,7 +130,7 @@ func NewEvmReader(
 	defaultBlock DefaultBlock,
 	contractFactory ContractFactory,
 ) EvmReader {
-	return EvmReader{
+	evmReader := EvmReader{
 		client:                  client,
 		wsClient:                wsClient,
 		inputSource:             inputSource,
@@ -139,13 +139,12 @@ func NewEvmReader(
 		defaultBlock:            defaultBlock,
 		contractFactory:         contractFactory,
 	}
+	// Initialize epochLength cache
+	evmReader.epochLengthCache = make(map[Address]uint64)
+	return evmReader
 }
 
 func (r *EvmReader) Run(ctx context.Context, ready chan<- struct{}) error {
-
-	// Initialize epochLength cache
-	r.epochLengthCache = make(map[Address]uint64)
-
 	for {
 		err := r.watchForNewBlocks(ctx, ready)
 		// If the error is a SubscriptionError, re run watchForNewBlocks
@@ -193,14 +192,14 @@ func (r *EvmReader) watchForNewBlocks(ctx context.Context, ready chan<- struct{}
 			// Build Contracts
 			var apps []application
 			for _, app := range runningApps {
-				applicationContract, consensusContract, err := r.getAppContracts(app)
+				applicationContract, consensusContract, err := r.GetAppContracts(app)
 				if err != nil {
 					slog.Error("Error retrieving application contracts", "app", app, "error", err)
 					continue
 				}
 				apps = append(apps, application{Application: app,
 					applicationContract: applicationContract,
-					consensusContract:   consensusContract})
+					ConsensusContract:   consensusContract})
 			}
 
 			if len(apps) == 0 {
@@ -265,9 +264,9 @@ func (r *EvmReader) fetchMostRecentHeader(
 	return header, nil
 }
 
-// getAppContracts retrieves the ApplicationContract and ConsensusContract for a given Application.
+// GetAppContracts retrieves the ApplicationContract and ConsensusContract for a given Application.
 // Also validates if IConsensus configuration matches the blockchain registered one
-func (r *EvmReader) getAppContracts(app Application,
+func (r *EvmReader) GetAppContracts(app Application,
 ) (ApplicationContract, ConsensusContract, error) {
 	applicationContract, err := r.contractFactory.NewApplication(app.ContractAddress)
 	if err != nil {
@@ -301,4 +300,8 @@ func (r *EvmReader) getAppContracts(app Application,
 
 	}
 	return applicationContract, consensus, nil
+}
+
+func (r *EvmReader) GetEpochLengthCache(a Address) uint64 {
+	return r.epochLengthCache[a]
 }

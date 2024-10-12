@@ -226,6 +226,28 @@ HTTP port for the node.
 The node will also use the 20 ports after this one for internal services."""
 
 #
+# Espresso
+#
+
+[espresso.ESPRESSO_BASE_URL]
+default = ""
+go-type = "string"
+description = """
+Espresso base url."""
+
+[espresso.ESPRESSO_STARTING_BLOCK]
+default = "0"
+go-type = "uint64"
+description = """
+Espresso starting block."""
+
+[espresso.ESPRESSO_NAMESPACE]
+default = "0"
+go-type = "uint64"
+description = """
+Espresso namespace."""
+
+#
 # Temporary
 #
 

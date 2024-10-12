@@ -81,7 +81,7 @@ func (r *EvmReader) readAndUpdateClaims(
 		// All apps shares the same IConsensus
 		// If there is a key on indexApps, there is at least one
 		// application in the referred application slice
-		consensusContract := apps[0].consensusContract
+		consensusContract := apps[0].ConsensusContract
 
 		// Retrieve Claim Acceptance Events from blockchain
 		appClaimAcceptanceEventMap, err := r.readClaimsAcceptance(
@@ -122,7 +122,7 @@ func (r *EvmReader) readAndUpdateClaims(
 
 				// Get the Epoch for the current Claim Acceptance Event
 				epoch, err := r.repository.GetEpoch(
-					ctx, calculateEpochIndex(
+					ctx, CalculateEpochIndex(
 						r.epochLengthCache[app],
 						claimAcceptance.LastProcessedBlockNumber.Uint64()),
 					app)
