@@ -34,7 +34,7 @@ PREFIX ?= /usr
 endif
 
 # Go artifacts
-GO_ARTIFACTS := cartesi-rollups-node cartesi-rollups-cli cartesi-rollups-evm-reader cartesi-rollups-advancer cartesi-rollups-validator cartesi-rollups-claimer
+GO_ARTIFACTS := cartesi-rollups-node cartesi-rollups-cli cartesi-rollups-evm-reader cartesi-rollups-advancer cartesi-rollups-validator cartesi-rollups-claimer cartesi-rollups-espresso-reader
 
 # fixme(vfusco): path on all oses
 CGO_CFLAGS:= -I$(PREFIX)/include
@@ -79,6 +79,9 @@ env:
 	@echo export CARTESI_TEST_POSTGRES_ENDPOINT="postgres://test_user:password@localhost:5432/test_rollupsdb?sslmode=disable"
 	@echo export CARTESI_TEST_MACHINE_IMAGES_PATH=\"$(CARTESI_TEST_MACHINE_IMAGES_PATH)\"
 	@echo export PATH=$(CURDIR):$$PATH
+	@echo export ESPRESSO_BASE_URL="https://query.decaf.testnet.espresso.network/v0"
+	@echo export ESPRESSO_STARTING_BLOCK="132500"
+	@echo export ESPRESSO_NAMESPACE="55555"
 
 # =============================================================================
 # Artifacts
