@@ -10,9 +10,9 @@ import (
 	. "github.com/cartesi/rollups-node/internal/model"
 )
 
-// calculateEpochIndex calculates the epoch index given the input block number
+// CalculateEpochIndex calculates the epoch index given the input block number
 // and epoch length
-func calculateEpochIndex(epochLength uint64, blockNumber uint64) uint64 {
+func CalculateEpochIndex(epochLength uint64, blockNumber uint64) uint64 {
 	return blockNumber / epochLength
 }
 

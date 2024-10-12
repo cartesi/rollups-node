@@ -531,7 +531,7 @@ func (s *EvmReaderSuite) TestIndexApps() {
 		}
 
 		keyByIConsensus := func(a application) ConsensusContract {
-			return a.consensusContract
+			return a.ConsensusContract
 		}
 
 		indexApps := indexApps(keyByIConsensus, apps)

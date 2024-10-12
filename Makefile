@@ -34,7 +34,7 @@ CLAIMER := cmd/authority-claimer/target/$(BUILD_TYPE)/cartesi-rollups-authority-
 RUST_ARTIFACTS := $(CLAIMER)
 
 # Go artifacts
-GO_ARTIFACTS := cartesi-rollups-node cartesi-rollups-cli cartesi-rollups-evm-reader cartesi-rollups-advancer cartesi-rollups-validator
+GO_ARTIFACTS := cartesi-rollups-node cartesi-rollups-cli cartesi-rollups-evm-reader cartesi-rollups-advancer cartesi-rollups-validator cartesi-rollups-espresso-reader
 
 # fixme(vfusco): path on all oses
 CGO_CFLAGS:= -I$(PREFIX)/include
@@ -71,16 +71,19 @@ env:
 	@echo export CGO_CFLAGS=\"$(CGO_CFLAGS)\"
 	@echo export CGO_LDFLAGS=\"$(CGO_LDFLAGS)\"
 	@echo export CARTESI_LOG_LEVEL="info"
-	@echo export CARTESI_BLOCKCHAIN_HTTP_ENDPOINT="http://localhost:8545"
-	@echo export CARTESI_BLOCKCHAIN_WS_ENDPOINT="ws://localhost:8545"
-	@echo export CARTESI_BLOCKCHAIN_ID="31337"
+	@echo export CARTESI_BLOCKCHAIN_HTTP_ENDPOINT="https://sepolia.infura.io/v3/8e466a0d8b9f4b598520dced6518b811"
+	@echo export CARTESI_BLOCKCHAIN_WS_ENDPOINT="wss://sepolia.infura.io/ws/v3/8e466a0d8b9f4b598520dced6518b811"
+	@echo export CARTESI_BLOCKCHAIN_ID="11155111"
 	@echo export CARTESI_CONTRACTS_INPUT_BOX_ADDRESS="0x593E5BCf894D6829Dd26D0810DA7F064406aebB6"
-	@echo export CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER="10"
+	@echo export CARTESI_CONTRACTS_INPUT_BOX_DEPLOYMENT_BLOCK_NUMBER="6850934"
 	@echo export CARTESI_AUTH_MNEMONIC=\"test test test test test test test test test test test junk\"
 	@echo export CARTESI_POSTGRES_ENDPOINT="postgres://postgres:password@localhost:5432/rollupsdb?sslmode=disable"
 	@echo export CARTESI_TEST_POSTGRES_ENDPOINT="postgres://test_user:password@localhost:5432/test_rollupsdb?sslmode=disable"
 	@echo export CARTESI_TEST_MACHINE_IMAGES_PATH=\"$(CARTESI_TEST_MACHINE_IMAGES_PATH)\"
 	@echo export PATH=$(CURDIR):$$PATH
+	@echo export ESPRESSO_BASE_URL="https://query.decaf.testnet.espresso.network/v0"
+	@echo export ESPRESSO_STARTING_BLOCK="132500"
+	@echo export ESPRESSO_NAMESPACE="55555"
 
 # =============================================================================
 # Artifacts
@@ -229,7 +232,7 @@ copy-devnet-files deployment.json: ## Copy the devnet files to the host
 	@docker cp devnet:/usr/share/devnet/anvil_state.json anvil_state.json
 
 run-postgres: ## Run the PostgreSQL 16 docker container
-	@docker run --rm --name postgres -p 5432:5432 -d -e POSTGRES_PASSWORD=password -e POSTGRES_DB=rollupsdb -v $(CURDIR)/test/postgres/init-test-db.sh:/docker-entrypoint-initdb.d/init-test-db.sh postgres:16-alpine
+	@docker run --rm --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=password -e POSTGRES_DB=rollupsdb -v $(CURDIR)/test/postgres/init-test-db.sh:/docker-entrypoint-initdb.d/init-test-db.sh postgres:16-alpine
 
 run-postgraphile: ## Run the GraphQL server docker container
 	@docker run --rm --name postgraphile -p 10004:10004 -d --init \

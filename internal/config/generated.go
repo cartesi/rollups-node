@@ -324,6 +324,42 @@ func GetContractsInputBoxDeploymentBlockNumber() int64 {
 	return val
 }
 
+func GetBaseUrl() string {
+	s, ok := os.LookupEnv("ESPRESSO_BASE_URL")
+	if !ok {
+		s = ""
+	}
+	val, err := toString(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse ESPRESSO_BASE_URL: %v", err))
+	}
+	return val
+}
+
+func GetNamespace() uint64 {
+	s, ok := os.LookupEnv("ESPRESSO_NAMESPACE")
+	if !ok {
+		s = "0"
+	}
+	val, err := toUint64(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse ESPRESSO_NAMESPACE: %v", err))
+	}
+	return val
+}
+
+func GetStartingBlock() uint64 {
+	s, ok := os.LookupEnv("ESPRESSO_STARTING_BLOCK")
+	if !ok {
+		s = "0"
+	}
+	val, err := toUint64(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse ESPRESSO_STARTING_BLOCK: %v", err))
+	}
+	return val
+}
+
 func GetFeatureClaimerEnabled() bool {
 	s, ok := os.LookupEnv("CARTESI_FEATURE_CLAIMER_ENABLED")
 	if !ok {
