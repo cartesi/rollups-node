@@ -6,8 +6,8 @@ package deploy
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math/big"
 	"os"
 	"strings"
@@ -42,8 +42,10 @@ const (
 )
 
 var (
-	owner                string
+	applicationOwner     string
+	authorityOwner       string
 	templatePath         string
+	templateHash         string
 	status               string
 	iConsensusAddr       string
 	appFactoryAddr       string
@@ -54,15 +56,24 @@ var (
 	salt                 string
 	inputBoxBlockNumber  uint64
 	epochLength          uint64
+	printAsJSON          bool
 )
 
 func init() {
 	Cmd.Flags().StringVarP(
-		&owner,
-		"owner",
+		&applicationOwner,
+		"app-owner",
 		"o",
 		"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
 		"Application owner",
+	)
+
+	Cmd.Flags().StringVarP(
+		&authorityOwner,
+		"authority-owner",
+		"O",
+		"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+		"Authority owner",
 	)
 
 	Cmd.Flags().StringVarP(
@@ -73,6 +84,14 @@ func init() {
 		"Application template URI",
 	)
 	cobra.CheckErr(Cmd.MarkFlagRequired("template-path"))
+
+	Cmd.Flags().StringVarP(
+		&templateHash,
+		"template-hash",
+		"H",
+		"",
+		"Application template hash. If not provided, it will be read from the template URI",
+	)
 
 	Cmd.Flags().StringVarP(
 		&status,
@@ -112,6 +131,7 @@ func init() {
 	Cmd.Flags().StringVar(&salt, "salt", "0000000000000000000000000000000000000000000000000000000000000000", "salt")
 	Cmd.Flags().Uint64VarP(&inputBoxBlockNumber, "inputbox-block-number", "n", 0, "InputBox deployment block number")
 	Cmd.Flags().Uint64VarP(&epochLength, "epoch-length", "e", 10, "Consensus Epoch length")
+	Cmd.Flags().BoolVarP(&printAsJSON, "print-json", "j", false, "Prints the application data as JSON")
 }
 
 func run(cmd *cobra.Command, args []string) {
@@ -128,23 +148,26 @@ func run(cmd *cobra.Command, args []string) {
 	case statusNotRunning:
 		applicationStatus = model.ApplicationStatusNotRunning
 	default:
-		slog.Error("Invalid application status", "status", status)
+		fmt.Fprintf(os.Stderr, "Invalid application status: %s\n", status)
 		os.Exit(1)
 	}
 
-	templateHash, err := snapshot.ReadHash(templatePath)
-	if err != nil {
-		slog.Error("Read machine template hash failed", "error", err)
-		os.Exit(1)
+	if templateHash == "" {
+		var err error
+		templateHash, err = snapshot.ReadHash(templatePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Read machine template hash failed: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	var consensusAddr common.Address
 	var err error
 	if iConsensusAddr == "" {
 		authorityFactoryAddress := common.HexToAddress(authorityFactoryAddr)
-		consensusAddr, err = deployAuthority(ctx, owner, authorityFactoryAddress, epochLength, salt)
+		consensusAddr, err = deployAuthority(ctx, authorityOwner, authorityFactoryAddress, epochLength, salt)
 		if err != nil {
-			slog.Error("Authoriy contract creation failed", "error", err)
+			fmt.Fprintf(os.Stderr, "Authoriy contract creation failed: %v\n", err)
 			os.Exit(1)
 		}
 	} else {
@@ -152,9 +175,9 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	applicationFactoryAddress := common.HexToAddress(appFactoryAddr)
-	appAddr, err := deployApplication(ctx, owner, applicationFactoryAddress, consensusAddr, templateHash, salt)
+	appAddr, err := deployApplication(ctx, applicationOwner, applicationFactoryAddress, consensusAddr, templateHash, salt)
 	if err != nil {
-		slog.Error("Application contract creation failed", "error", err)
+		fmt.Fprintf(os.Stderr, "Application contract creation failed: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -169,7 +192,17 @@ func run(cmd *cobra.Command, args []string) {
 
 	_, err = cmdcommom.Database.InsertApplication(ctx, &application)
 	cobra.CheckErr(err)
-	fmt.Printf("Application %v successfully added\n", appAddr)
+
+	if printAsJSON {
+		jsonData, err := json.Marshal(application)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error marshalling application to JSON: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(string(jsonData))
+	} else {
+		fmt.Printf("Application %v successfully added\n", application.ContractAddress)
+	}
 }
 
 // FIXME remove this
@@ -211,7 +244,9 @@ func deployApplication(
 		return common.Address{}, fmt.Errorf("Transaction failed: %v", err)
 	}
 
-	fmt.Printf("Transaction submitted: %s\n", tx.Hash().Hex())
+	if !printAsJSON {
+		fmt.Printf("Transaction submitted: %s\n", tx.Hash().Hex())
+	}
 
 	// Wait for the transaction to be mined
 	receipt, err := bind.WaitMined(context.Background(), client, tx)
@@ -220,7 +255,9 @@ func deployApplication(
 	}
 
 	if receipt.Status == 1 {
-		fmt.Println("Transaction successful!")
+		if !printAsJSON {
+			fmt.Println("Transaction successful!")
+		}
 	} else {
 		return common.Address{}, fmt.Errorf("Transaction failed!")
 	}
@@ -246,7 +283,9 @@ func deployApplication(
 			continue // Skip logs that don't match
 		}
 
-		fmt.Printf("New Application contract deployed at address: %s\n", event.AppContract.Hex())
+		if !printAsJSON {
+			fmt.Printf("New Application contract deployed at address: %s\n", event.AppContract.Hex())
+		}
 		return event.AppContract, nil
 	}
 
@@ -287,7 +326,9 @@ func deployAuthority(
 		return common.Address{}, fmt.Errorf("Transaction failed: %v", err)
 	}
 
-	fmt.Printf("Transaction submitted: %s\n", tx.Hash().Hex())
+	if !printAsJSON {
+		fmt.Printf("Transaction submitted: %s\n", tx.Hash().Hex())
+	}
 
 	// Wait for the transaction to be mined
 	receipt, err := bind.WaitMined(context.Background(), client, tx)
@@ -296,7 +337,9 @@ func deployAuthority(
 	}
 
 	if receipt.Status == 1 {
-		fmt.Println("Transaction successful!")
+		if !printAsJSON {
+			fmt.Println("Transaction successful!")
+		}
 	} else {
 		return common.Address{}, fmt.Errorf("Transaction failed!")
 	}
@@ -319,7 +362,9 @@ func deployAuthority(
 			continue // Skip logs that don't match
 		}
 
-		fmt.Printf("New Authority contract deployed at address: %s\n", event.Authority.Hex())
+		if !printAsJSON {
+			fmt.Printf("New Authority contract deployed at address: %s\n", event.Authority.Hex())
+		}
 		return event.Authority, nil
 	}
 
@@ -363,7 +408,7 @@ func getAuth(ctx context.Context, client *ethclient.Client) (*bind.TransactOpts,
 func toBytes32(data []byte) [32]byte {
 	var arr [32]byte
 	if len(data) != 32 {
-		slog.Error(fmt.Sprintf("Invalid length: expected 32 bytes, got %d bytes", len(data)))
+		fmt.Fprintf(os.Stderr, "Invalid length: expected 32 bytes, got %d bytes", len(data))
 		os.Exit(1)
 	}
 	copy(arr[:], data)

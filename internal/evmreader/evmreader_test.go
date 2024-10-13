@@ -641,7 +641,7 @@ func (m *MockRepository) UpdateEpochs(ctx context.Context,
 }
 
 func (m *MockRepository) GetOutput(
-	ctx context.Context, indexKey uint64, appAddressKey Address,
+	ctx context.Context, appAddressKey Address, indexKey uint64,
 ) (*Output, error) {
 	args := m.Called(ctx, indexKey, appAddressKey)
 	obj := args.Get(0)

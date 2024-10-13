@@ -4,7 +4,8 @@
 package list
 
 import (
-	"log/slog"
+	"encoding/json"
+	"fmt"
 
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/common"
 	"github.com/spf13/cobra"
@@ -29,7 +30,7 @@ func run(cmd *cobra.Command, args []string) {
 
 	applications, err := common.Database.GetAllApplications(ctx)
 	cobra.CheckErr(err)
-	for index, app := range applications {
-		slog.Info("Application", "index", index, "app", app)
-	}
+	result, err := json.MarshalIndent(applications, "", "    ")
+	cobra.CheckErr(err)
+	fmt.Println(string(result))
 }

@@ -49,7 +49,7 @@ type EvmReaderRepository interface {
 		mostRecentBlockNumber uint64,
 	) error
 	GetOutput(
-		ctx context.Context, indexKey uint64, appAddressKey Address,
+		ctx context.Context, appAddressKey Address, indexKey uint64,
 	) (*Output, error)
 	UpdateOutputExecutionTransaction(
 		ctx context.Context, app Address, executedOutputs []*Output, blockNumber uint64,

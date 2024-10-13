@@ -80,7 +80,7 @@ func (r *EvmReader) readAndUpdateOutputs(
 	for _, event := range outputExecutedEvents {
 
 		// Compare output to check it is the correct one
-		output, err := r.repository.GetOutput(ctx, event.OutputIndex, app.ContractAddress)
+		output, err := r.repository.GetOutput(ctx, app.ContractAddress, event.OutputIndex)
 		if err != nil {
 			slog.Error("Error retrieving output",
 				"app", app.ContractAddress, "index", event.OutputIndex, "error", err)

@@ -300,14 +300,14 @@ func (s *RepositorySuite) TestSetEpochClaimAndInsertProofsTransaction() {
 	s.Equal(expectedClaim, *updatedClaim.ClaimHash)
 	s.Equal(EpochStatusClaimComputed, updatedClaim.Status)
 
-	updatedOutput1, err := s.database.GetOutput(s.ctx, 100, input.AppAddress)
+	updatedOutput1, err := s.database.GetOutput(s.ctx, input.AppAddress, 100)
 	s.Require().Nil(err)
 	s.Require().NotNil(updatedOutput1)
 	s.Require().NotNil(updatedOutput1.Hash)
 	s.Equal(expectedHash1, *updatedOutput1.Hash)
 	s.Equal(expectedSiblings1, updatedOutput1.OutputHashesSiblings)
 
-	updatedOutput2, err := s.database.GetOutput(s.ctx, 101, input.AppAddress)
+	updatedOutput2, err := s.database.GetOutput(s.ctx, input.AppAddress, 101)
 	s.Require().Nil(err)
 	s.Require().NotNil(updatedOutput2)
 	s.Require().NotNil(updatedOutput2.Hash)

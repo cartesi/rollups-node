@@ -281,13 +281,13 @@ func (s *RepositorySuite) TestInputExists() {
 		EpochId:          1,
 	}
 
-	response, err := s.database.GetInput(s.ctx, 1, common.HexToAddress("deadbeef"))
+	response, err := s.database.GetInput(s.ctx, common.HexToAddress("deadbeef"), 1)
 	s.Require().Equal(&input, response)
 	s.Require().Nil(err)
 }
 
 func (s *RepositorySuite) TestInputDoesntExist() {
-	response, err := s.database.GetInput(s.ctx, 10, common.HexToAddress("deadbeef"))
+	response, err := s.database.GetInput(s.ctx, common.HexToAddress("deadbeef"), 10)
 	s.Require().Nil(response)
 	s.Require().Nil(err)
 }
@@ -330,13 +330,13 @@ func (s *RepositorySuite) TestOutputExists() {
 		OutputHashesSiblings: siblings,
 	}
 
-	response, err := s.database.GetOutput(s.ctx, 1, common.HexToAddress("deadbeef"))
+	response, err := s.database.GetOutput(s.ctx, common.HexToAddress("deadbeef"), 1)
 	s.Require().Equal(&output, response)
 	s.Require().Nil(err)
 }
 
 func (s *RepositorySuite) TestOutputDoesntExist() {
-	response, err := s.database.GetOutput(s.ctx, 10, common.HexToAddress("deadbeef"))
+	response, err := s.database.GetOutput(s.ctx, common.HexToAddress("deadbeef"), 10)
 	s.Require().Nil(response)
 	s.Require().Nil(err)
 }
@@ -361,13 +361,13 @@ func (s *RepositorySuite) TestReportExists() {
 		RawData: common.Hex2Bytes("deadbeef"),
 	}
 
-	response, err := s.database.GetReport(s.ctx, 1, common.HexToAddress("deadbeef"))
+	response, err := s.database.GetReport(s.ctx, common.HexToAddress("deadbeef"), 1)
 	s.Require().Equal(&report, response)
 	s.Require().Nil(err)
 }
 
 func (s *RepositorySuite) TestReportDoesntExist() {
-	response, err := s.database.GetReport(s.ctx, 10, common.HexToAddress("deadbeef"))
+	response, err := s.database.GetReport(s.ctx, common.HexToAddress("deadbeef"), 10)
 	s.Require().Nil(response)
 	s.Require().Nil(err)
 }

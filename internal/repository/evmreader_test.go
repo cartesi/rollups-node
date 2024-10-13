@@ -53,7 +53,7 @@ func (s *RepositorySuite) TestInsertInputsAndUpdateLastProcessedBlock() {
 	input1.Id = epochInputIdMap[0][1]
 	input1.EpochId = epochIdMap[0]
 
-	response, err := s.database.GetInput(s.ctx, 5, common.HexToAddress("deadbeef"))
+	response, err := s.database.GetInput(s.ctx, common.HexToAddress("deadbeef"), 5)
 	s.Require().Nil(err)
 	s.Require().Equal(&input0, response)
 
@@ -141,6 +141,7 @@ func (s *RepositorySuite) TestGetAllRunningApplications() {
 		Id:                 1,
 		ContractAddress:    common.HexToAddress("deadbeef"),
 		TemplateHash:       common.HexToHash("deadbeef"),
+		TemplateUri:        "path/to/template/uri/0",
 		LastProcessedBlock: 1,
 		Status:             ApplicationStatusRunning,
 		IConsensusAddress:  common.HexToAddress("ffffff"),
@@ -205,7 +206,7 @@ func (s *RepositorySuite) TestUpdateEpochs() {
 }
 
 func (s *RepositorySuite) TestUpdateOutputExecutionTransaction() {
-	output, err := s.database.GetOutput(s.ctx, 1, common.HexToAddress("deadbeef"))
+	output, err := s.database.GetOutput(s.ctx, common.HexToAddress("deadbeef"), 1)
 	s.Require().Nil(err)
 	s.Require().NotNil(output)
 
@@ -219,7 +220,7 @@ func (s *RepositorySuite) TestUpdateOutputExecutionTransaction() {
 		s.ctx, common.HexToAddress("deadbeef"), executedOutputs, 854758)
 	s.Require().Nil(err)
 
-	actualOutput, err := s.database.GetOutput(s.ctx, 1, common.HexToAddress("deadbeef"))
+	actualOutput, err := s.database.GetOutput(s.ctx, common.HexToAddress("deadbeef"), 1)
 	s.Require().Nil(err)
 	s.Require().Equal(output, actualOutput)
 

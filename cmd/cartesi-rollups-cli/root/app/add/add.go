@@ -4,11 +4,11 @@
 package add
 
 import (
+	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 
-	cmdcommom "github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/common"
+	cmdcommon "github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/common"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/spf13/cobra"
@@ -31,11 +31,12 @@ const (
 
 var (
 	applicationAddress            string
+	templatePath                  string
 	templateHash                  string
 	inputBoxDeploymentBlockNumber uint64
-	snapshotUri                   string
 	status                        string
 	iConsensusAddress             string
+	printAsJSON                   bool
 )
 
 func init() {
@@ -47,13 +48,32 @@ func init() {
 		"",
 		"Application contract address",
 	)
+	cobra.CheckErr(Cmd.MarkFlagRequired("address"))
+
+	Cmd.Flags().StringVarP(
+		&iConsensusAddress,
+		"iconsensus",
+		"i",
+		"",
+		"Application IConsensus Address",
+	)
+	cobra.CheckErr(Cmd.MarkFlagRequired("iconsensus"))
+
+	Cmd.Flags().StringVarP(
+		&templatePath,
+		"template-path",
+		"t",
+		"",
+		"Application template URI",
+	)
+	cobra.CheckErr(Cmd.MarkFlagRequired("template-path"))
 
 	Cmd.Flags().StringVarP(
 		&templateHash,
 		"template-hash",
-		"t",
+		"H",
 		"",
-		"Application template hash",
+		"Application template hash. If not provided, it will be read from the template URI",
 	)
 
 	Cmd.Flags().Uint64VarP(
@@ -65,14 +85,6 @@ func init() {
 	)
 
 	Cmd.Flags().StringVarP(
-		&snapshotUri,
-		"snapshot-uri",
-		"u",
-		"",
-		"Application snapshot URI",
-	)
-
-	Cmd.Flags().StringVarP(
 		&status,
 		"status",
 		"s",
@@ -80,22 +92,19 @@ func init() {
 		"Sets the application status",
 	)
 
-	Cmd.Flags().StringVarP(
-		&iConsensusAddress,
-		"iconsensus",
-		"i",
-		"",
-		"Application IConsensus Address",
+	Cmd.Flags().BoolVarP(
+		&printAsJSON,
+		"print-json",
+		"j",
+		false,
+		"Prints the application data as JSON",
 	)
-
-	cobra.CheckErr(Cmd.MarkFlagRequired("address"))
-	cobra.CheckErr(Cmd.MarkFlagRequired("iconsensus"))
 }
 
 func run(cmd *cobra.Command, args []string) {
 	ctx := cmd.Context()
 
-	if cmdcommom.Database == nil {
+	if cmdcommon.Database == nil {
 		panic("Database was not initialized")
 	}
 
@@ -106,19 +115,30 @@ func run(cmd *cobra.Command, args []string) {
 	case statusNotRunning:
 		applicationStatus = model.ApplicationStatusNotRunning
 	default:
-		slog.Error("Invalid application status", "status", status)
+		fmt.Fprintf(os.Stderr, "Invalid application status: %s\n", status)
 		os.Exit(1)
 	}
 
 	application := model.Application{
 		ContractAddress:    common.HexToAddress(applicationAddress),
+		TemplateUri:        templatePath,
 		TemplateHash:       common.HexToHash(templateHash),
 		LastProcessedBlock: inputBoxDeploymentBlockNumber,
 		Status:             applicationStatus,
 		IConsensusAddress:  common.HexToAddress(iConsensusAddress),
 	}
 
-	_, err := cmdcommom.Database.InsertApplication(ctx, &application)
+	_, err := cmdcommon.Database.InsertApplication(ctx, &application)
 	cobra.CheckErr(err)
-	fmt.Printf("Application %v successfully added\n", application.ContractAddress)
+
+	if printAsJSON {
+		jsonData, err := json.Marshal(application)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error marshalling application to JSON: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(string(jsonData))
+	} else {
+		fmt.Printf("Application %v successfully added\n", application.ContractAddress)
+	}
 }

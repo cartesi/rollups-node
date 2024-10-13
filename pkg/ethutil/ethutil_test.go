@@ -75,7 +75,7 @@ func (s *EthUtilSuite) TestAddInput() {
 	sender := signer.Account()
 	payload := common.Hex2Bytes("deadbeef")
 
-	indexChan := make(chan int)
+	indexChan := make(chan uint64)
 	errChan := make(chan error)
 
 	waitGroup := sync.WaitGroup{}
@@ -83,7 +83,7 @@ func (s *EthUtilSuite) TestAddInput() {
 
 	go func() {
 		waitGroup.Done()
-		inputIndex, err := AddInput(s.ctx, s.client, s.book, s.appAddr, s.signer, payload)
+		inputIndex, _, err := AddInput(s.ctx, s.client, s.book, s.appAddr, s.signer, payload)
 		if err != nil {
 			errChan <- err
 			return
@@ -100,7 +100,7 @@ func (s *EthUtilSuite) TestAddInput() {
 	case err := <-errChan:
 		s.Require().FailNow("Unexpected Error", err)
 	case inputIndex := <-indexChan:
-		s.Require().Equal(0, inputIndex)
+		s.Require().Equal(uint64(0), inputIndex)
 
 		event, err := GetInputFromInputBox(s.client, s.book, s.appAddr, inputIndex)
 		s.Require().Nil(err)
