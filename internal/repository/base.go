@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository/schema"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -28,6 +30,31 @@ var (
 	ErrCommitTx = errors.New("unable to commit transaction")
 )
 
+func ValidateSchema(endpoint string) error {
+
+	schema, err := schema.New(endpoint)
+	if err != nil {
+		return err
+	}
+	defer schema.Close()
+
+	_, err = schema.ValidateVersion()
+	return err
+}
+
+// FIXME: improve this
+func ValidateSchemaWithRetry(endpoint string, maxRetries int, delay time.Duration) error {
+	var err error
+	for i := 0; i < maxRetries; i++ {
+		err = ValidateSchema(endpoint)
+		if err == nil {
+			return nil
+		}
+		time.Sleep(delay)
+	}
+	return fmt.Errorf("failed to validate schema after %d attempts: %w", maxRetries, err)
+}
+
 func Connect(
 	ctx context.Context,
 	postgresEndpoint string,
@@ -38,10 +65,16 @@ func Connect(
 		pgOnce     sync.Once
 	)
 
+	pgError = ValidateSchemaWithRetry(postgresEndpoint, 5, 3*time.Second) // FIXME: get from config
+	if pgError != nil {
+		return nil, fmt.Errorf("unable to validate database schema version: %w\n", pgError)
+	}
+
 	pgOnce.Do(func() {
 		dbpool, err := pgxpool.New(ctx, postgresEndpoint)
 		if err != nil {
 			pgError = fmt.Errorf("unable to create connection pool: %w\n", err)
+			return
 		}
 
 		pgInstance = &Database{dbpool}
@@ -460,6 +493,64 @@ func (pg *Database) GetApplication(
 	return &app, nil
 }
 
+func (pg *Database) GetEpochs(ctx context.Context, application Address) ([]Epoch, error) {
+	query := `
+	SELECT
+		id,
+		application_address,
+		index,
+		first_block,
+		last_block,
+		claim_hash,
+		transaction_hash,
+		status
+	FROM
+		epoch
+	WHERE
+		application_address=@appAddress
+	ORDER BY
+		index ASC`
+
+	args := pgx.NamedArgs{
+		"appAddress": application,
+	}
+
+	rows, err := pg.db.Query(ctx, query, args)
+	if err != nil {
+		return nil, fmt.Errorf("GetProcessedEpochs failed: %w", err)
+	}
+
+	var (
+		id, index, firstBlock, lastBlock uint64
+		appAddress                       Address
+		claimHash, transactionHash       *Hash
+		status                           string
+		results                          []Epoch
+	)
+
+	scans := []any{
+		&id, &appAddress, &index, &firstBlock, &lastBlock, &claimHash, &transactionHash, &status,
+	}
+	_, err = pgx.ForEachRow(rows, scans, func() error {
+		epoch := Epoch{
+			Id:              id,
+			Index:           index,
+			AppAddress:      appAddress,
+			FirstBlock:      firstBlock,
+			LastBlock:       lastBlock,
+			ClaimHash:       claimHash,
+			TransactionHash: transactionHash,
+			Status:          EpochStatus(status),
+		}
+		results = append(results, epoch)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("GetProcessedEpochs failed: %w", err)
+	}
+	return results, nil
+}
+
 func (pg *Database) GetEpoch(
 	ctx context.Context,
 	indexKey uint64,
@@ -532,10 +623,43 @@ func (pg *Database) GetEpoch(
 
 }
 
+func (pg *Database) GetInputs(
+	ctx context.Context,
+	app Address,
+) ([]*Input, error) {
+	query := `
+	SELECT   id, index, status, raw_data, epoch_id
+	FROM     input
+	WHERE    application_address = @applicationAddress
+	ORDER BY index ASC
+	`
+	args := pgx.NamedArgs{
+		"applicationAddress": app,
+	}
+	rows, err := pg.db.Query(ctx, query, args)
+	if err != nil {
+		return nil, fmt.Errorf("%w (failed querying inputs): %w", ErrAdvancerRepository, err)
+	}
+
+	res := []*Input{}
+	var input Input
+	scans := []any{&input.Id, &input.Index, &input.CompletionStatus, &input.RawData, &input.EpochId}
+	_, err = pgx.ForEachRow(rows, scans, func() error {
+		input := input
+		res = append(res, &input)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w (failed reading input rows): %w", ErrAdvancerRepository, err)
+	}
+
+	return res, nil
+}
+
 func (pg *Database) GetInput(
 	ctx context.Context,
-	indexKey uint64,
 	appAddressKey Address,
+	indexKey uint64,
 ) (*Input, error) {
 	var (
 		id          uint64
@@ -607,10 +731,128 @@ func (pg *Database) GetInput(
 	return &input, nil
 }
 
+func (pg *Database) GetOutputs(
+	ctx context.Context,
+	application Address,
+) ([]Output, error) {
+	query := `
+	SELECT
+		o.id,
+		o.index,
+		o.raw_data,
+		o.hash,
+		o.output_hashes_siblings,
+		o.input_id
+	FROM
+		output o
+	INNER JOIN
+		input i
+	ON
+		o.input_id=i.id
+	WHERE
+		i.application_address=@appAddress
+	ORDER BY
+		o.index ASC
+	`
+
+	args := pgx.NamedArgs{"appAddress": application}
+	rows, err := pg.db.Query(ctx, query, args)
+	if err != nil {
+		return nil, fmt.Errorf("GetOutputs failed: %w", err)
+	}
+
+	var (
+		id, index, inputId   uint64
+		rawData              []byte
+		hash                 *Hash
+		outputHashesSiblings []Hash
+		outputs              []Output
+	)
+	scans := []any{&id, &index, &rawData, &hash, &outputHashesSiblings, &inputId}
+	_, err = pgx.ForEachRow(rows, scans, func() error {
+		output := Output{
+			Id:                   id,
+			Index:                index,
+			RawData:              rawData,
+			Hash:                 hash,
+			OutputHashesSiblings: outputHashesSiblings,
+			InputId:              inputId,
+		}
+		outputs = append(outputs, output)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("GetOutputs failed: %w", err)
+	}
+	return outputs, nil
+}
+
+func (pg *Database) GetOutputsByInputIndex(
+	ctx context.Context,
+	application Address,
+	inputIndex uint64,
+) ([]Output, error) {
+	query := `
+	SELECT
+		o.id,
+		o.index,
+		o.raw_data,
+		o.hash,
+		o.output_hashes_siblings,
+		o.input_id
+	FROM
+		output o
+	INNER JOIN
+		input i
+	ON
+		o.input_id=i.id
+	WHERE
+		i.application_address=@appAddress
+	AND
+		i.index=@inputIndex
+	ORDER BY
+		o.index ASC
+	`
+
+	args := pgx.NamedArgs{
+		"appAddress": application,
+		"inputIndex": inputIndex,
+	}
+	rows, err := pg.db.Query(ctx, query, args)
+	if err != nil {
+		return nil, fmt.Errorf("GetOutputs failed: %w", err)
+	}
+
+	var (
+		id, index, inputId   uint64
+		rawData              []byte
+		hash                 *Hash
+		outputHashesSiblings []Hash
+		outputs              []Output
+	)
+	scans := []any{&id, &index, &rawData, &hash, &outputHashesSiblings, &inputId}
+	_, err = pgx.ForEachRow(rows, scans, func() error {
+		output := Output{
+			Id:                   id,
+			Index:                index,
+			RawData:              rawData,
+			Hash:                 hash,
+			OutputHashesSiblings: outputHashesSiblings,
+			InputId:              inputId,
+		}
+		outputs = append(outputs, output)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("GetOutputs failed: %w", err)
+	}
+	return outputs, nil
+}
+
 func (pg *Database) GetOutput(
 	ctx context.Context,
-	indexKey uint64,
 	appAddressKey Address,
+	indexKey uint64,
 ) (*Output, error) {
 	var (
 		id                   uint64
@@ -678,10 +920,124 @@ func (pg *Database) GetOutput(
 	return &output, nil
 }
 
+func (pg *Database) GetReports(
+	ctx context.Context,
+	appAddressKey Address,
+) ([]Report, error) {
+	var (
+		id      uint64
+		index   uint64
+		rawData []byte
+		inputId uint64
+		reports []Report
+	)
+	query := `
+	SELECT
+		r.id,
+		r.index,
+		r.raw_data,
+		r.input_id
+	FROM
+		report r
+	INNER JOIN
+		input i
+	ON
+		r.input_id=i.id
+	WHERE
+		i.application_address=@appAddress
+	ORDER BY
+		r.index ASC`
+
+	args := pgx.NamedArgs{
+		"appAddress": appAddressKey,
+	}
+	rows, err := pg.db.Query(ctx, query, args)
+	if err != nil {
+		return nil, fmt.Errorf("GetReports failed: %w", err)
+	}
+
+	scans := []any{&id, &index, &rawData, &inputId}
+	_, err = pgx.ForEachRow(rows, scans, func() error {
+		report := Report{
+			Id:      id,
+			Index:   index,
+			RawData: rawData,
+			InputId: inputId,
+		}
+
+		reports = append(reports, report)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("GetReports failed: %w", err)
+	}
+
+	return reports, nil
+}
+
+func (pg *Database) GetReportsByInputIndex(
+	ctx context.Context,
+	appAddressKey Address,
+	inputIndex uint64,
+) ([]Report, error) {
+	var (
+		id      uint64
+		index   uint64
+		rawData []byte
+		inputId uint64
+		reports []Report
+	)
+	query := `
+	SELECT
+		r.id,
+		r.index,
+		r.raw_data,
+		r.input_id
+	FROM
+		report r
+	INNER JOIN
+		input i
+	ON
+		r.input_id=i.id
+	WHERE
+		i.application_address=@appAddress
+	AND
+		i.index=@inputIndex
+	ORDER BY
+		r.index ASC`
+
+	args := pgx.NamedArgs{
+		"appAddress": appAddressKey,
+		"inputIndex": inputIndex,
+	}
+	rows, err := pg.db.Query(ctx, query, args)
+	if err != nil {
+		return nil, fmt.Errorf("GetReports failed: %w", err)
+	}
+
+	scans := []any{&id, &index, &rawData, &inputId}
+	_, err = pgx.ForEachRow(rows, scans, func() error {
+		report := Report{
+			Id:      id,
+			Index:   index,
+			RawData: rawData,
+			InputId: inputId,
+		}
+
+		reports = append(reports, report)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("GetReports failed: %w", err)
+	}
+
+	return reports, nil
+}
+
 func (pg *Database) GetReport(
 	ctx context.Context,
-	indexKey uint64,
 	appAddressKey Address,
+	indexKey uint64,
 ) (*Report, error) {
 	var (
 		id      uint64

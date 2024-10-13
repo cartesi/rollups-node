@@ -4,13 +4,12 @@
 package validate
 
 import (
-	"log/slog"
+	"fmt"
 	"os"
 
-	"github.com/Khan/genqlient/graphql"
-	"github.com/cartesi/rollups-node/pkg/addresses"
+	cmdcommon "github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/common"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
-	"github.com/cartesi/rollups-node/pkg/readerclient"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
@@ -21,73 +20,73 @@ var Cmd = &cobra.Command{
 	Short:   "Validates a notice",
 	Example: examples,
 	Run:     run,
+	PreRun:  cmdcommon.Setup,
 }
 
 const examples = `# Validates notice 5 from input 6:
 cartesi-rollups-cli validate --notice-index 5 --input-index 6`
 
 var (
-	noticeIndex     int
-	inputIndex      int
-	graphqlEndpoint string
-	ethEndpoint     string
-	addressBookFile string
+	outputIndex uint64
+	ethEndpoint string
 )
 
 func init() {
-	Cmd.Flags().IntVar(&noticeIndex, "notice-index", 0,
-		"index of the notice")
+	Cmd.Flags().StringVarP(
+		&cmdcommon.ApplicationAddress,
+		"address",
+		"a",
+		"",
+		"Application contract address",
+	)
+	cobra.CheckErr(Cmd.MarkFlagRequired("address"))
 
-	cobra.CheckErr(Cmd.MarkFlagRequired("notice-index"))
+	Cmd.Flags().StringVarP(
+		&cmdcommon.PostgresEndpoint,
+		"postgres-endpoint",
+		"p",
+		"postgres://postgres:password@localhost:5432/rollupsdb?sslmode=disable",
+		"Postgres endpoint",
+	)
 
-	Cmd.Flags().IntVar(&inputIndex, "input-index", 0,
-		"index of the input")
-
-	cobra.CheckErr(Cmd.MarkFlagRequired("input-index"))
-
-	Cmd.Flags().StringVar(&graphqlEndpoint, "graphql-endpoint", "http://localhost:10000/graphql",
-		"address used to connect to graphql")
+	Cmd.Flags().Uint64Var(&outputIndex, "output-index", 0,
+		"index of the output")
+	cobra.CheckErr(Cmd.MarkFlagRequired("output-index"))
 
 	Cmd.Flags().StringVar(&ethEndpoint, "eth-endpoint", "http://localhost:8545",
 		"ethereum node JSON-RPC endpoint")
 
-	Cmd.Flags().StringVar(&addressBookFile, "address-book", "deployment.json",
-		"if set, load the address book from the given file; else from deployment.json")
 }
 
 func run(cmd *cobra.Command, args []string) {
 	ctx := cmd.Context()
-	graphqlClient := graphql.NewClient(graphqlEndpoint, nil)
+	if cmdcommon.Database == nil {
+		panic("Database was not initialized")
+	}
 
-	resp, err := readerclient.GetNotice(ctx, graphqlClient, noticeIndex, inputIndex)
+	application := common.HexToAddress(cmdcommon.ApplicationAddress)
+
+	output, err := cmdcommon.Database.GetOutput(ctx, application, outputIndex)
 	cobra.CheckErr(err)
 
-	if resp.Proof == nil {
-		slog.Warn("The notice has no associated proof yet")
+	if len(output.OutputHashesSiblings) == 0 {
+		fmt.Fprint(os.Stderr, "The voucher has no associated proof yet\n")
 		os.Exit(0)
 	}
 
 	client, err := ethclient.DialContext(ctx, ethEndpoint)
 	cobra.CheckErr(err)
-	slog.Info("Connected", "eth-endpoint", ethEndpoint)
 
-	var book *addresses.Book
-	if addressBookFile != "" {
-		book, err = addresses.GetBookFromFile(addressBookFile)
-		cobra.CheckErr(err)
-	}
-
-	proof := readerclient.ConvertToContractProof(resp.Proof)
-
-	appAddr := common.HexToAddress("0x0000000000000000000000000000000000000000") // FIXME
-
-	slog.Info("Validating notice",
-		"notice-index", noticeIndex,
-		"input-index", inputIndex,
-		"application-address", appAddr,
+	fmt.Printf("Validating output app: %v output_index: %v\n", application, outputIndex)
+	err = ethutil.ValidateOutput(
+		ctx,
+		client,
+		application,
+		outputIndex,
+		output.RawData,
+		output.OutputHashesSiblings,
 	)
-	err = ethutil.ValidateOutput(ctx, client, book, appAddr, resp.Payload, proof)
 	cobra.CheckErr(err)
 
-	slog.Info("Notice validated")
+	fmt.Println("Output validated!")
 }

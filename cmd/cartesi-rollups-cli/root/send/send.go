@@ -4,7 +4,7 @@
 package send
 
 import (
-	"log/slog"
+	"fmt"
 
 	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
@@ -61,7 +61,6 @@ func run(cmd *cobra.Command, args []string) {
 	ctx := cmd.Context()
 	client, err := ethclient.DialContext(ctx, ethEndpoint)
 	cobra.CheckErr(err)
-	slog.Info("Connected", "eth-endpoint", ethEndpoint)
 
 	signer, err := ethutil.NewMnemonicSigner(ctx, client, mnemonic, account)
 	cobra.CheckErr(err)
@@ -74,9 +73,8 @@ func run(cmd *cobra.Command, args []string) {
 
 	appAddr := common.HexToAddress(applicationAddress)
 
-	slog.Info("Sending input", "application-address", appAddr)
-	inputIndex, err := ethutil.AddInput(ctx, client, book, appAddr, signer, payload)
+	inputIndex, blockNumber, err := ethutil.AddInput(ctx, client, book, appAddr, signer, payload)
 	cobra.CheckErr(err)
 
-	slog.Info("Input added", "input-index", inputIndex)
+	fmt.Printf("Input sent to app at %s. Index: %d BlockNumber: %d\n", appAddr, inputIndex, blockNumber)
 }

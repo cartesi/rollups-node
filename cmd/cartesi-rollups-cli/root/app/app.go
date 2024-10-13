@@ -4,9 +4,9 @@
 package app
 
 import (
-	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/app/add"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/app/deploy"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/app/list"
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/app/register"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/common"
 	"github.com/spf13/cobra"
 )
@@ -27,7 +27,7 @@ func init() {
 		"Postgres endpoint",
 	)
 
-	Cmd.AddCommand(add.Cmd)
+	Cmd.AddCommand(register.Cmd)
 	Cmd.AddCommand(deploy.Cmd)
 	Cmd.AddCommand(list.Cmd)
 }

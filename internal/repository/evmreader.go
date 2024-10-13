@@ -167,6 +167,7 @@ func (pg *Database) getAllApplicationsByStatus(
 		id                   uint64
 		contractAddress      Address
 		templateHash         Hash
+		templateUri          string
 		lastProcessedBlock   uint64
 		lastClaimCheckBlock  uint64
 		lastOutputCheckBlock uint64
@@ -180,6 +181,7 @@ func (pg *Database) getAllApplicationsByStatus(
 		id,
 		contract_address,
 		template_hash,
+		template_uri,
 		last_processed_block,
 		last_claim_check_block,
 		last_output_check_block,
@@ -200,7 +202,7 @@ func (pg *Database) getAllApplicationsByStatus(
 	}
 
 	_, err = pgx.ForEachRow(rows,
-		[]any{&id, &contractAddress, &templateHash,
+		[]any{&id, &contractAddress, &templateHash, &templateUri,
 			&lastProcessedBlock, &lastClaimCheckBlock, &lastOutputCheckBlock,
 			&status, &iConsensusAddress},
 		func() error {
@@ -208,6 +210,7 @@ func (pg *Database) getAllApplicationsByStatus(
 				Id:                   id,
 				ContractAddress:      contractAddress,
 				TemplateHash:         templateHash,
+				TemplateUri:          templateUri,
 				LastProcessedBlock:   lastProcessedBlock,
 				LastClaimCheckBlock:  lastClaimCheckBlock,
 				LastOutputCheckBlock: lastOutputCheckBlock,

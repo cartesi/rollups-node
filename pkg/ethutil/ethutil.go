@@ -100,10 +100,10 @@ func AddInput(
 	application common.Address,
 	signer Signer,
 	input []byte,
-) (int, error) {
+) (uint64, uint64, error) {
 	inputBox, err := iinputbox.NewIInputBox(book.InputBox, client)
 	if err != nil {
-		return 0, fmt.Errorf("failed to connect to InputBox contract: %v", err)
+		return 0, 0, fmt.Errorf("failed to connect to InputBox contract: %v", err)
 	}
 	receipt, err := sendTransaction(
 		ctx, client, signer, big.NewInt(0), GasLimit,
@@ -112,9 +112,10 @@ func AddInput(
 		},
 	)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	return getInputIndex(book, inputBox, receipt)
+	index, err := getInputIndex(book, inputBox, receipt)
+	return index, receipt.BlockNumber.Uint64(), nil
 }
 
 // Get input index in the transaction by looking at the event logs.
@@ -122,7 +123,7 @@ func getInputIndex(
 	book *addresses.Book,
 	inputBox *iinputbox.IInputBox,
 	receipt *types.Receipt,
-) (int, error) {
+) (uint64, error) {
 	for _, log := range receipt.Logs {
 		if log.Address != book.InputBox {
 			continue
@@ -131,9 +132,8 @@ func getInputIndex(
 		if err != nil {
 			return 0, fmt.Errorf("failed to parse input added event: %v", err)
 		}
-		// We assume that int will fit all dapp inputs
-		inputIndex := int(inputAdded.Index.Int64())
-		return inputIndex, nil
+		// We assume that uint64 will fit all dapp inputs for now
+		return inputAdded.Index.Uint64(), nil
 	}
 	return 0, fmt.Errorf("input index not found")
 }
@@ -144,7 +144,7 @@ func GetInputFromInputBox(
 	client *ethclient.Client,
 	book *addresses.Book,
 	application common.Address,
-	inputIndex int,
+	inputIndex uint64,
 ) (*iinputbox.IInputBoxInputAdded, error) {
 	inputBox, err := iinputbox.NewIInputBox(book.InputBox, client)
 	if err != nil {
@@ -153,7 +153,7 @@ func GetInputFromInputBox(
 	it, err := inputBox.FilterInputAdded(
 		nil,
 		[]common.Address{application},
-		[]*big.Int{big.NewInt(int64(inputIndex))},
+		[]*big.Int{new(big.Int).SetUint64(inputIndex)},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to filter input added: %v", err)
@@ -170,16 +170,25 @@ func GetInputFromInputBox(
 func ValidateOutput(
 	ctx context.Context,
 	client *ethclient.Client,
-	book *addresses.Book,
 	appAddr common.Address,
+	index uint64,
 	output []byte,
-	proof *iapplication.OutputValidityProof,
+	outputHashesSiblings []common.Hash,
 ) error {
+	proof := iapplication.OutputValidityProof{
+		OutputIndex:          index,
+		OutputHashesSiblings: make([][32]byte, len(outputHashesSiblings)),
+	}
+
+	for i, hash := range outputHashesSiblings {
+		copy(proof.OutputHashesSiblings[i][:], hash[:])
+	}
+
 	app, err := iapplication.NewIApplication(appAddr, client)
 	if err != nil {
 		return fmt.Errorf("failed to connect to CartesiDapp contract: %v", err)
 	}
-	return app.ValidateOutput(&bind.CallOpts{Context: ctx}, output, *proof)
+	return app.ValidateOutput(&bind.CallOpts{Context: ctx}, output, proof)
 }
 
 // Executes a voucher given its payload, destination and proof.
@@ -187,12 +196,22 @@ func ValidateOutput(
 func ExecuteOutput(
 	ctx context.Context,
 	client *ethclient.Client,
-	book *addresses.Book,
 	appAddr common.Address,
 	signer Signer,
+	index uint64,
 	output []byte,
-	proof *iapplication.OutputValidityProof,
+	outputHashesSiblings []common.Hash,
 ) (*common.Hash, error) {
+
+	proof := iapplication.OutputValidityProof{
+		OutputIndex:          index,
+		OutputHashesSiblings: make([][32]byte, len(outputHashesSiblings)),
+	}
+
+	for i, hash := range outputHashesSiblings {
+		copy(proof.OutputHashesSiblings[i][:], hash[:])
+	}
+
 	app, err := iapplication.NewIApplication(appAddr, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to CartesiDapp contract: %v", err)
@@ -200,7 +219,7 @@ func ExecuteOutput(
 	receipt, err := sendTransaction(
 		ctx, client, signer, big.NewInt(0), GasLimit,
 		func(txOpts *bind.TransactOpts) (*types.Transaction, error) {
-			return app.ExecuteOutput(txOpts, output, *proof)
+			return app.ExecuteOutput(txOpts, output, proof)
 		},
 	)
 	if err != nil {

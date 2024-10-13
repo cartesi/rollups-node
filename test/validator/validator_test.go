@@ -252,7 +252,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		// claim is the expected new claim
 		s.Equal(expectedClaim, *updatedEpoch.ClaimHash)
 
-		updatedOutput, err := s.database.GetOutput(s.ctx, output.Index, app.ContractAddress)
+		updatedOutput, err := s.database.GetOutput(s.ctx, app.ContractAddress, output.Index)
 		s.Require().Nil(err)
 		s.Require().NotNil(updatedOutput)
 		s.Require().NotNil(updatedOutput.Hash)
@@ -385,8 +385,8 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 
 		updatedSecondOutput, err := s.database.GetOutput(
 			s.ctx,
-			secondOutput.Index,
 			app.ContractAddress,
+			secondOutput.Index,
 		)
 		s.Require().Nil(err)
 		s.Require().NotNil(updatedSecondOutput)

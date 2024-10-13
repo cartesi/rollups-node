@@ -3,7 +3,7 @@
 package check
 
 import (
-	"log/slog"
+	"fmt"
 
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/common"
 	"github.com/cartesi/rollups-node/internal/repository/schema"
@@ -24,5 +24,5 @@ func run(cmd *cobra.Command, args []string) {
 	version, err := schema.ValidateVersion()
 	cobra.CheckErr(err)
 
-	slog.Info("Database Schema is at the correct version.", "version", version)
+	fmt.Printf("Database Schema is at the correct version: %d", version)
 }

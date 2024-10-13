@@ -1,7 +1,7 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-package reports
+package outputs
 
 import (
 	"encoding/json"
@@ -15,26 +15,26 @@ import (
 )
 
 var Cmd = &cobra.Command{
-	Use:     "reports",
-	Short:   "Reads reports. If an input index is specified, reads all reports from that input",
+	Use:     "outputs",
+	Short:   "Reads outputs. If an input index is specified, reads all outputs from that input",
 	Example: examples,
 	Run:     run,
 }
 
-const examples = `# Read all reports:
-cartesi-rollups-cli read reports -a 0x000000000000000000000000000000000`
+const examples = `# Read all notices:
+cartesi-rollups-cli read outputs -a 0x000000000000000000000000000000000`
 
 var (
+	outputIndex uint64
 	inputIndex  uint64
-	reportIndex uint64
 )
 
 func init() {
 	Cmd.Flags().Uint64Var(&inputIndex, "input-index", 0,
-		"index of the input")
+		"filter by input index")
 
-	Cmd.Flags().Uint64Var(&reportIndex, "report-index", 0,
-		"index of the report")
+	Cmd.Flags().Uint64Var(&outputIndex, "output-index", 0,
+		"filter by output index")
 }
 
 func run(cmd *cobra.Command, args []string) {
@@ -47,24 +47,24 @@ func run(cmd *cobra.Command, args []string) {
 	application := common.HexToAddress(cmdcommon.ApplicationAddress)
 
 	var result []byte
-	if cmd.Flags().Changed("report-index") {
+	if cmd.Flags().Changed("output-index") {
 		if cmd.Flags().Changed("input-index") {
 			fmt.Fprintf(os.Stderr, "Error: Only one of 'output-index' or 'input-index' can be used at a time.\n")
 			os.Exit(1)
 		}
-		reports, err := cmdcommon.Database.GetReport(ctx, application, reportIndex)
+		outputs, err := cmdcommon.Database.GetOutput(ctx, application, outputIndex)
 		cobra.CheckErr(err)
-		result, err = json.MarshalIndent(reports, "", "    ")
+		result, err = json.MarshalIndent(outputs, "", "    ")
 		cobra.CheckErr(err)
 	} else if cmd.Flags().Changed("input-index") {
-		reports, err := cmdcommon.Database.GetReportsByInputIndex(ctx, application, inputIndex)
+		outputs, err := cmdcommon.Database.GetOutputsByInputIndex(ctx, application, inputIndex)
 		cobra.CheckErr(err)
-		result, err = json.MarshalIndent(reports, "", "    ")
+		result, err = json.MarshalIndent(outputs, "", "    ")
 		cobra.CheckErr(err)
 	} else {
-		reports, err := cmdcommon.Database.GetReports(ctx, application)
+		outputs, err := cmdcommon.Database.GetOutputs(ctx, application)
 		cobra.CheckErr(err)
-		result, err = json.MarshalIndent(reports, "", "    ")
+		result, err = json.MarshalIndent(outputs, "", "    ")
 		cobra.CheckErr(err)
 	}
 

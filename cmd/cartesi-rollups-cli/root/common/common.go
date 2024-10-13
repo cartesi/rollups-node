@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	PostgresEndpoint string
-	Database         *repository.Database
+	PostgresEndpoint   string
+	ApplicationAddress string
+	Database           *repository.Database
 )
 
 func Setup(cmd *cobra.Command, args []string) {
