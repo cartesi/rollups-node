@@ -31,9 +31,9 @@ const (
 
 var (
 	applicationAddress            string
+	templatePath                  string
 	templateHash                  string
 	inputBoxDeploymentBlockNumber uint64
-	snapshotUri                   string
 	status                        string
 	iConsensusAddress             string
 )
@@ -47,13 +47,32 @@ func init() {
 		"",
 		"Application contract address",
 	)
+	cobra.CheckErr(Cmd.MarkFlagRequired("address"))
+
+	Cmd.Flags().StringVarP(
+		&iConsensusAddress,
+		"iconsensus",
+		"i",
+		"",
+		"Application IConsensus Address",
+	)
+	cobra.CheckErr(Cmd.MarkFlagRequired("iconsensus"))
+
+	Cmd.Flags().StringVarP(
+		&templatePath,
+		"template-path",
+		"t",
+		"",
+		"Application template URI",
+	)
+	cobra.CheckErr(Cmd.MarkFlagRequired("template-path"))
 
 	Cmd.Flags().StringVarP(
 		&templateHash,
 		"template-hash",
-		"t",
+		"H",
 		"",
-		"Application template hash",
+		"Application template hash. If not provided, it will be read from the template URI",
 	)
 
 	Cmd.Flags().Uint64VarP(
@@ -65,31 +84,12 @@ func init() {
 	)
 
 	Cmd.Flags().StringVarP(
-		&snapshotUri,
-		"snapshot-uri",
-		"u",
-		"",
-		"Application snapshot URI",
-	)
-
-	Cmd.Flags().StringVarP(
 		&status,
 		"status",
 		"s",
 		statusRunning,
 		"Sets the application status",
 	)
-
-	Cmd.Flags().StringVarP(
-		&iConsensusAddress,
-		"iconsensus",
-		"i",
-		"",
-		"Application IConsensus Address",
-	)
-
-	cobra.CheckErr(Cmd.MarkFlagRequired("address"))
-	cobra.CheckErr(Cmd.MarkFlagRequired("iconsensus"))
 }
 
 func run(cmd *cobra.Command, args []string) {

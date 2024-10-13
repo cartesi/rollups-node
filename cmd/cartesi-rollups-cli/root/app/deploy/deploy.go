@@ -45,6 +45,7 @@ const (
 var (
 	owner                string
 	templatePath         string
+	templateHash         string
 	status               string
 	iConsensusAddr       string
 	appFactoryAddr       string
@@ -74,6 +75,14 @@ func init() {
 		"Application template URI",
 	)
 	cobra.CheckErr(Cmd.MarkFlagRequired("template-path"))
+
+	Cmd.Flags().StringVarP(
+		&templateHash,
+		"template-hash",
+		"H",
+		"",
+		"Application template hash. If not provided, it will be read from the template URI",
+	)
 
 	Cmd.Flags().StringVarP(
 		&status,
@@ -133,10 +142,13 @@ func run(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	templateHash, err := snapshot.ReadHash(templatePath)
-	if err != nil {
-		slog.Error("Read machine template hash failed", "error", err)
-		os.Exit(1)
+	if templateHash == "" {
+		var err error
+		templateHash, err = snapshot.ReadHash(templatePath)
+		if err != nil {
+			slog.Error("Read machine template hash failed", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	authorityFactoryAddress := common.HexToAddress(authorityFactoryAddr)

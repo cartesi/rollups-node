@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository/schema"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -28,6 +30,31 @@ var (
 	ErrCommitTx = errors.New("unable to commit transaction")
 )
 
+func ValidateSchema(endpoint string) error {
+
+	schema, err := schema.New(endpoint)
+	if err != nil {
+		return err
+	}
+	defer schema.Close()
+
+	_, err = schema.ValidateVersion()
+	return err
+}
+
+// FIXME: improve this
+func ValidateSchemaWithRetry(endpoint string, maxRetries int, delay time.Duration) error {
+	var err error
+	for i := 0; i < maxRetries; i++ {
+		err = ValidateSchema(endpoint)
+		if err == nil {
+			return nil
+		}
+		time.Sleep(delay)
+	}
+	return fmt.Errorf("failed to validate schema after %d attempts: %w", maxRetries, err)
+}
+
 func Connect(
 	ctx context.Context,
 	postgresEndpoint string,
@@ -38,10 +65,16 @@ func Connect(
 		pgOnce     sync.Once
 	)
 
+	pgError = ValidateSchemaWithRetry(postgresEndpoint, 5, 3*time.Second) // FIXME: get from config
+	if pgError != nil {
+		return nil, fmt.Errorf("unable to validate database schema version: %w\n", pgError)
+	}
+
 	pgOnce.Do(func() {
 		dbpool, err := pgxpool.New(ctx, postgresEndpoint)
 		if err != nil {
 			pgError = fmt.Errorf("unable to create connection pool: %w\n", err)
+			return
 		}
 
 		pgInstance = &Database{dbpool}
