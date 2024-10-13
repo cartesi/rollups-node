@@ -4,6 +4,7 @@ package upgrade
 
 import (
 	"log/slog"
+	"time"
 
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/common"
 	"github.com/cartesi/rollups-node/internal/repository/schema"
@@ -17,14 +18,26 @@ var Cmd = &cobra.Command{
 }
 
 func run(cmd *cobra.Command, args []string) {
-	schema, err := schema.New(common.PostgresEndpoint)
-	cobra.CheckErr(err)
-	defer schema.Close()
+	var s *schema.Schema
+	var err error
 
-	err = schema.Upgrade()
+	for i := 0; i < 5; i++ {
+		s, err = schema.New(common.PostgresEndpoint)
+		if err == nil {
+			break
+		}
+		slog.Warn("Connection to database failed. Trying again.", "PostgresEndpoint", common.PostgresEndpoint)
+		if i == 4 {
+			cobra.CheckErr(err)
+		}
+		time.Sleep(5 * time.Second) // wait before retrying
+	}
+	defer s.Close()
+
+	err = s.Upgrade()
 	cobra.CheckErr(err)
 
-	version, err := schema.ValidateVersion()
+	version, err := s.ValidateVersion()
 	cobra.CheckErr(err)
 
 	slog.Info("Database Schema successfully Updated.", "version", version)

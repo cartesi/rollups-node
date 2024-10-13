@@ -32,11 +32,6 @@ var (
 )
 
 func getDatabase(ctx context.Context, endpoint string) (*repository.Database, error) {
-	err := startup.ValidateSchema(endpoint)
-	if err != nil {
-		return nil, fmt.Errorf("invalid database schema: %w", err)
-	}
-
 	database, err := repository.Connect(ctx, endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to the database: %w", err)

@@ -92,6 +92,7 @@ func (advancer *Advancer) process(ctx context.Context, app Address, inputs []*In
 		panic(ErrNoInputs)
 	}
 
+	// FIXME if theres a change in epoch id call update epochs
 	for _, input := range inputs {
 		slog.Info("advancer: processing input", "id", input.Id, "index", input.Index)
 

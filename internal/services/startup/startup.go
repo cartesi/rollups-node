@@ -12,25 +12,11 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/internal/repository/schema"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/jackc/pgx/v5"
 	"github.com/lmittmann/tint"
 	"github.com/mattn/go-isatty"
 )
-
-// Validates the Node Database Schema Version
-func ValidateSchema(endpoint string) error {
-
-	schema, err := schema.New(endpoint)
-	if err != nil {
-		return err
-	}
-	defer schema.Close()
-
-	_, err = schema.ValidateVersion()
-	return err
-}
 
 // Configure the node logs
 func ConfigLogs(logLevel slog.Level, logPrettyEnabled bool) {
