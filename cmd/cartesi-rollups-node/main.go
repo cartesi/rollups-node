@@ -42,12 +42,6 @@ func main() {
 	}
 	defer database.Close()
 
-	err = startup.ValidateSchema(config.PostgresEndpoint.Value)
-	if err != nil {
-		slog.Error("Node exited with an error", "error", err)
-		os.Exit(1)
-	}
-
 	_, err = startup.SetupNodePersistentConfig(ctx, database, config)
 	if err != nil {
 		slog.Error("Node exited with an error", "error", err)
