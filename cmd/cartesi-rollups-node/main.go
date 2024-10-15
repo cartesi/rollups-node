@@ -13,8 +13,8 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/node"
-	"github.com/cartesi/rollups-node/internal/node/startup"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/services/startup"
 )
 
 var (
