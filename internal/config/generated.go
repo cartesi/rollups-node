@@ -120,6 +120,18 @@ var (
 // Getters
 // ------------------------------------------------------------------------------------------------
 
+func GetAuthAwsEndpointUrl() string {
+	s, ok := os.LookupEnv("CARTESI_AUTH_AWS_ENDPOINT_URL")
+	if !ok {
+		panic("missing env var CARTESI_AUTH_AWS_ENDPOINT_URL")
+	}
+	val, err := toString(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_AUTH_AWS_ENDPOINT_URL: %v", err))
+	}
+	return val
+}
+
 func GetAuthAwsKmsKeyId() string {
 	s, ok := os.LookupEnv("CARTESI_AUTH_AWS_KMS_KEY_ID")
 	if !ok {
