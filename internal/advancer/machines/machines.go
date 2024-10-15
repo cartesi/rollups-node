@@ -11,7 +11,7 @@ import (
 	"os"
 	"sync"
 
-	. "github.com/cartesi/rollups-node/internal/node/model"
+	. "github.com/cartesi/rollups-node/internal/model"
 
 	nm "github.com/cartesi/rollups-node/internal/nodemachine"
 	"github.com/cartesi/rollups-node/pkg/emulator"

@@ -9,8 +9,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/cartesi/rollups-node/internal/node/config"
-	"github.com/cartesi/rollups-node/internal/node/model"
+	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/schema"
 	"github.com/ethereum/go-ethereum/common"

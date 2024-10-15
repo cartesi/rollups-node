@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	. "github.com/cartesi/rollups-node/internal/node/model"
+	. "github.com/cartesi/rollups-node/internal/model"
 
 	"github.com/cartesi/rollups-node/pkg/rollupsmachine"
 	"github.com/ethereum/go-ethereum/common"

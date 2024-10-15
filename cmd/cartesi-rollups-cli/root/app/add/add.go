@@ -9,7 +9,7 @@ import (
 	"os"
 
 	cmdcommom "github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/common"
-	"github.com/cartesi/rollups-node/internal/node/model"
+	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/spf13/cobra"
 )

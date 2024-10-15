@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/merkle"
-	"github.com/cartesi/rollups-node/internal/node/model"
+	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/validator"
 	"github.com/cartesi/rollups-node/test/tooling/db"

@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/inspect"
-	"github.com/cartesi/rollups-node/internal/node/config"
 )
 
 func newHttpServiceHandler(c config.NodeConfig, i *inspect.Inspector) http.Handler {
