@@ -8,7 +8,7 @@ import (
 	"context"
 	"log/slog"
 
-	. "github.com/cartesi/rollups-node/internal/node/model"
+	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -105,7 +105,7 @@ func (r *EvmReader) readAndUpdateClaims(
 
 				// Get Previous Epochs with submitted claims, If is there any,
 				// Application is in an invalid State.
-				previousEpochs, err := r.repository.GetEpochsWithOpenClaims(
+				previousEpochs, err := r.repository.GetPreviousEpochsWithOpenClaims(
 					ctx, app, claimAcceptance.LastProcessedBlockNumber.Uint64())
 				if err != nil {
 					slog.Error("Error retrieving previous submitted claims",

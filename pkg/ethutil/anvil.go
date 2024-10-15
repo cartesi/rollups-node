@@ -8,16 +8,15 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/cartesi/rollups-node/internal/node/config"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-func CreateAnvilSnapshotAndDeployApp(ctx context.Context, templateHash string) (common.Address, func(), error) {
+func CreateAnvilSnapshotAndDeployApp(ctx context.Context, blockchainHttpEndpoint string, templateHash string) (common.Address, func(), error) {
 	var contractAddr common.Address
 	// Connect to Anvil (replace with appropriate RPC URL)
-	client, err := ethclient.Dial(config.GetBlockchainHttpEndpoint())
+	client, err := ethclient.Dial(blockchainHttpEndpoint)
 	if err != nil {
 		return contractAddr, nil, fmt.Errorf("failed to connect to Anvil: %w", err)
 	}
@@ -77,4 +76,55 @@ func RevertToAnvilSnapshot(rpcClient *rpc.Client, snapshotID string) error {
 		return fmt.Errorf("failed to revert to snapshot with ID: %s", snapshotID)
 	}
 	return nil
+}
+
+// Advances the Devnet timestamp
+func AdvanceDevnetTime(ctx context.Context,
+	blockchainHttpEndpoint string,
+	timeInSeconds int,
+) error {
+	client, err := rpc.DialContext(ctx, blockchainHttpEndpoint)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	return client.CallContext(ctx, nil, "evm_increaseTime", timeInSeconds)
+
+}
+
+// Sets the timestamp for the next block at Devnet
+func SetNextDevnetBlockTimestamp(
+	ctx context.Context,
+	blockchainHttpEndpoint string,
+	timestamp int64,
+) error {
+
+	client, err := rpc.DialContext(ctx, blockchainHttpEndpoint)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	return client.CallContext(ctx, nil, "evm_setNextBlockTimestamp", timestamp)
+}
+
+// Mines a new block
+func MineNewBlock(
+	ctx context.Context,
+	blockchainHttpEndpoint string,
+) (uint64, error) {
+	client, err := rpc.DialContext(ctx, blockchainHttpEndpoint)
+	if err != nil {
+		return 0, err
+	}
+	defer client.Close()
+	err = client.CallContext(ctx, nil, "evm_mine")
+	if err != nil {
+		return 0, err
+	}
+	ethClient, err := ethclient.DialContext(ctx, blockchainHttpEndpoint)
+	if err != nil {
+		return 0, err
+	}
+	defer ethClient.Close()
+	return ethClient.BlockNumber(ctx)
 }

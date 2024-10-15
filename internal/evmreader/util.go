@@ -7,7 +7,7 @@ import (
 	"cmp"
 	"slices"
 
-	. "github.com/cartesi/rollups-node/internal/node/model"
+	. "github.com/cartesi/rollups-node/internal/model"
 )
 
 // calculateEpochIndex calculates the epoch index given the input block number

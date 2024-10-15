@@ -9,7 +9,7 @@ import (
 	"math/big"
 	"time"
 
-	. "github.com/cartesi/rollups-node/internal/node/model"
+	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/ethereum/go-ethereum/common"
@@ -222,8 +222,8 @@ func (s *EvmReaderSuite) TestReadClaimAcceptance() {
 		mock.Anything,
 		mock.Anything).Return(claim0, nil)
 
-	s.repository.Unset("GetEpochsWithOpenClaims")
-	s.repository.On("GetEpochsWithOpenClaims",
+	s.repository.Unset("GetPreviousEpochsWithOpenClaims")
+	s.repository.On("GetPreviousEpochsWithOpenClaims",
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
@@ -379,8 +379,8 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			mock.Anything,
 			mock.Anything).Return(claim1, nil)
 
-		repository.Unset("GetEpochsWithOpenClaims")
-		repository.On("GetEpochsWithOpenClaims",
+		repository.Unset("GetPreviousEpochsWithOpenClaims")
+		repository.On("GetPreviousEpochsWithOpenClaims",
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,
@@ -526,8 +526,8 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			mock.Anything,
 			mock.Anything).Return(nil, fmt.Errorf("No epoch for you"))
 
-		repository.Unset("GetEpochsWithOpenClaims")
-		repository.On("GetEpochsWithOpenClaims",
+		repository.Unset("GetPreviousEpochsWithOpenClaims")
+		repository.On("GetPreviousEpochsWithOpenClaims",
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,
@@ -667,8 +667,8 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			ClaimHash:  &claim0Hash,
 		}
 
-		repository.Unset("GetEpochsWithOpenClaims")
-		repository.On("GetEpochsWithOpenClaims",
+		repository.Unset("GetPreviousEpochsWithOpenClaims")
+		repository.On("GetPreviousEpochsWithOpenClaims",
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,

@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/node/config"
-	"github.com/cartesi/rollups-node/internal/node/startup"
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/services/startup"
 	"github.com/cartesi/rollups-node/internal/validator"
 	"github.com/spf13/cobra"
 )

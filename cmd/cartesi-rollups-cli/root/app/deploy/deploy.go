@@ -14,8 +14,8 @@ import (
 	"strings"
 
 	cmdcommom "github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/common"
-	"github.com/cartesi/rollups-node/internal/machine"
-	"github.com/cartesi/rollups-node/internal/node/model"
+	"github.com/cartesi/rollups-node/internal/advancer/snapshot"
+	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplicationfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iauthorityfactory"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
@@ -133,7 +133,7 @@ func run(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	templateHash, err := machine.ReadHash(templatePath)
+	templateHash, err := snapshot.ReadHash(templatePath)
 	if err != nil {
 		slog.Error("Read machine template hash failed", "error", err)
 		os.Exit(1)

@@ -19,7 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/rpc"
 )
 
 // Gas limit when sending transactions.
@@ -211,55 +210,39 @@ func ExecuteOutput(
 	return &receipt.TxHash, nil
 }
 
-// Advances the Devnet timestamp
-func AdvanceDevnetTime(ctx context.Context,
-	blockchainHttpEndpoint string,
-	timeInSeconds int,
-) error {
-	client, err := rpc.DialContext(ctx, blockchainHttpEndpoint)
+// Retrieves the template hash from the application contract. Returns it as a
+// hex string or an error
+func GetTemplateHash(
+	ctx context.Context,
+	applicationAddress common.Address,
+	ethereumProvider string,
+) (string, error) {
+	client, err := ethclient.DialContext(ctx, ethereumProvider)
 	if err != nil {
-		return err
+		return "", fmt.Errorf("get template hash failed to connect: %w", err)
 	}
-	defer client.Close()
-	return client.CallContext(ctx, nil, "evm_increaseTime", timeInSeconds)
-
+	cartesiApplication, err := iapplication.NewIApplicationCaller(
+		applicationAddress,
+		client,
+	)
+	if err != nil {
+		return "", fmt.Errorf("get template hash failed to instantiate binding: %w", err)
+	}
+	hash, err := cartesiApplication.GetTemplateHash(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return "", fmt.Errorf("get template hash failed to call contract method: %w", err)
+	}
+	return common.Bytes2Hex(hash[:]), nil
 }
 
-// Sets the timestamp for the next block at Devnet
-func SetNextDevnetBlockTimestamp(
-	ctx context.Context,
-	blockchainHttpEndpoint string,
-	timestamp int64,
-) error {
-
-	client, err := rpc.DialContext(ctx, blockchainHttpEndpoint)
-	if err != nil {
-		return err
+func toBytes32(data []byte) [32]byte {
+	var arr [32]byte
+	if len(data) > 32 {
+		copy(arr[:], data[:32])
+	} else {
+		copy(arr[:], data)
 	}
-	defer client.Close()
-	return client.CallContext(ctx, nil, "evm_setNextBlockTimestamp", timestamp)
-}
-
-// Mines a new block
-func MineNewBlock(
-	ctx context.Context,
-	blockchainHttpEndpoint string,
-) (uint64, error) {
-	client, err := rpc.DialContext(ctx, blockchainHttpEndpoint)
-	if err != nil {
-		return 0, err
-	}
-	defer client.Close()
-	err = client.CallContext(ctx, nil, "evm_mine")
-	if err != nil {
-		return 0, err
-	}
-	ethClient, err := ethclient.DialContext(ctx, blockchainHttpEndpoint)
-	if err != nil {
-		return 0, err
-	}
-	defer ethClient.Close()
-	return ethClient.BlockNumber(ctx)
+	return arr
 }
 
 func toBytes32(data []byte) [32]byte {

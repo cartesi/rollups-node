@@ -7,6 +7,7 @@ DROP TABLE IF EXISTS "report";
 DROP TABLE IF EXISTS "output";
 DROP TABLE IF EXISTS "input";
 DROP TABLE IF EXISTS "epoch";
+DROP TABLE IF EXISTS "execution_parameters";
 DROP TABLE IF EXISTS "application";
 
 DROP FUNCTION IF EXISTS "f_maxuint64";

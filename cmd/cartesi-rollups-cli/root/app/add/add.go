@@ -9,7 +9,7 @@ import (
 	"os"
 
 	cmdcommom "github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/common"
-	"github.com/cartesi/rollups-node/internal/node/model"
+	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/spf13/cobra"
 )
@@ -31,9 +31,9 @@ const (
 
 var (
 	applicationAddress            string
+	templatePath                  string
 	templateHash                  string
 	inputBoxDeploymentBlockNumber uint64
-	snapshotUri                   string
 	status                        string
 	iConsensusAddress             string
 )
@@ -47,11 +47,30 @@ func init() {
 		"",
 		"Application contract address",
 	)
+	cobra.CheckErr(Cmd.MarkFlagRequired("address"))
+
+	Cmd.Flags().StringVarP(
+		&iConsensusAddress,
+		"iconsensus",
+		"i",
+		"",
+		"Application IConsensus Address",
+	)
+	cobra.CheckErr(Cmd.MarkFlagRequired("iconsensus"))
+
+	Cmd.Flags().StringVarP(
+		&templatePath,
+		"template-path",
+		"t",
+		"",
+		"Application template URI",
+	)
+	cobra.CheckErr(Cmd.MarkFlagRequired("template-path"))
 
 	Cmd.Flags().StringVarP(
 		&templateHash,
 		"template-hash",
-		"t",
+		"h",
 		"",
 		"Application template hash",
 	)
@@ -65,31 +84,12 @@ func init() {
 	)
 
 	Cmd.Flags().StringVarP(
-		&snapshotUri,
-		"snapshot-uri",
-		"u",
-		"",
-		"Application snapshot URI",
-	)
-
-	Cmd.Flags().StringVarP(
 		&status,
 		"status",
 		"s",
 		statusRunning,
 		"Sets the application status",
 	)
-
-	Cmd.Flags().StringVarP(
-		&iConsensusAddress,
-		"iconsensus",
-		"i",
-		"",
-		"Application IConsensus Address",
-	)
-
-	cobra.CheckErr(Cmd.MarkFlagRequired("address"))
-	cobra.CheckErr(Cmd.MarkFlagRequired("iconsensus"))
 }
 
 func run(cmd *cobra.Command, args []string) {

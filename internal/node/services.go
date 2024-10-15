@@ -10,9 +10,9 @@ import (
 	"os"
 
 	"github.com/cartesi/rollups-node/internal/advancer/machines"
+	"github.com/cartesi/rollups-node/internal/config"
 	evmreaderservice "github.com/cartesi/rollups-node/internal/evmreader/service"
 	"github.com/cartesi/rollups-node/internal/inspect"
-	"github.com/cartesi/rollups-node/internal/node/config"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/services"
 	"github.com/cartesi/rollups-node/internal/validator"

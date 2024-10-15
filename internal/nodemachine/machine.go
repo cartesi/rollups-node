@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/node/model"
+	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/nodemachine/pmutex"
 	"github.com/cartesi/rollups-node/pkg/rollupsmachine"
 	"github.com/cartesi/rollups-node/pkg/rollupsmachine/cartesimachine"
@@ -51,7 +51,7 @@ type NodeMachine struct {
 	advanceTimeout, inspectTimeout time.Duration
 
 	// Maximum number of concurrent Inspects.
-	maxConcurrentInspects uint8
+	maxConcurrentInspects int64
 
 	// Controls concurrency between Advances and Inspects.
 	// Advances and Inspects can be called concurrently, but Advances have a higher priority than
@@ -72,7 +72,7 @@ func New(
 	inputIndex *uint64,
 	advanceTimeout time.Duration,
 	inspectTimeout time.Duration,
-	maxConcurrentInspects uint8,
+	maxConcurrentInspects int64,
 ) (*NodeMachine, error) {
 	if advanceTimeout < 0 {
 		return nil, ErrInvalidAdvanceTimeout

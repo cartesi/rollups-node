@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/evmreader"
-	"github.com/cartesi/rollups-node/internal/retry"
+	"github.com/cartesi/rollups-node/internal/services/retry"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"

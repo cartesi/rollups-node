@@ -11,7 +11,7 @@ import (
 	"os"
 	"sync"
 
-	. "github.com/cartesi/rollups-node/internal/node/model"
+	. "github.com/cartesi/rollups-node/internal/model"
 
 	nm "github.com/cartesi/rollups-node/internal/nodemachine"
 	"github.com/cartesi/rollups-node/pkg/emulator"
@@ -187,8 +187,8 @@ func createMachine(ctx context.Context,
 	// Creates a RollupsMachine from the CartesiMachine.
 	rollupsMachine, err := rm.New(ctx,
 		cartesiMachine,
-		config.IncCycles,
-		config.MaxCycles)
+		config.AdvanceIncCycles,
+		config.AdvanceMaxCycles)
 	if err != nil {
 		return nil, errors.Join(err, cartesiMachine.Close(ctx))
 	}
@@ -196,8 +196,8 @@ func createMachine(ctx context.Context,
 	// Creates a NodeMachine from the RollupsMachine.
 	nodeMachine, err := nm.New(rollupsMachine,
 		config.SnapshotInputIndex,
-		config.AdvanceTimeout,
-		config.InspectTimeout,
+		config.AdvanceMaxDeadline,
+		config.InspectMaxDeadline,
 		config.MaxConcurrentInspects)
 	if err != nil {
 		return nil, errors.Join(err, rollupsMachine.Close(ctx))
