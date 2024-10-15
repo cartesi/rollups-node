@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/advancer/snapshot"
-	"github.com/cartesi/rollups-node/internal/node/config"
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputs"
 	"github.com/ethereum/go-ethereum/common"

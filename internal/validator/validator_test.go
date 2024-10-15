@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/cartesi/rollups-node/internal/merkle"
-	. "github.com/cartesi/rollups-node/internal/node/model"
+	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 )

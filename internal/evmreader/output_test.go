@@ -8,7 +8,7 @@ import (
 	"errors"
 	"time"
 
-	. "github.com/cartesi/rollups-node/internal/node/model"
+	. "github.com/cartesi/rollups-node/internal/model"
 	appcontract "github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/ethereum/go-ethereum/common"

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/cartesi/rollups-node/internal/node/model"
+	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/test/tooling/db"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/suite"
