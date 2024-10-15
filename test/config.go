@@ -8,7 +8,7 @@ import (
 	"log"
 	"log/slog"
 
-	"github.com/cartesi/rollups-node/internal/node/config"
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
