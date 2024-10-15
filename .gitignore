@@ -12,3 +12,4 @@ machine-snapshot/**
 /cartesi-rollups-node
 /cartesi-rollups-advancer
 /cartesi-rollups-validator
+/cartesi-rollups-template
