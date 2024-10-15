@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/advancer/snapshot"
-	"github.com/cartesi/rollups-node/internal/node/config"
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/suite"

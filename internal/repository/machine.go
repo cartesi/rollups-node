@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	. "github.com/cartesi/rollups-node/internal/node/model"
+	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/nodemachine"
 
 	"github.com/jackc/pgx/v5"

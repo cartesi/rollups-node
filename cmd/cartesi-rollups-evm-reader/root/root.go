@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/evmreader/service"
-	"github.com/cartesi/rollups-node/internal/node/config"
 	"github.com/cartesi/rollups-node/internal/node/startup"
 	"github.com/cartesi/rollups-node/internal/repository"
 
