@@ -118,6 +118,7 @@ type Input struct {
 	OutputsHash      *Hash
 	AppAddress       Address
 	EpochId          uint64
+	TransactionId    Bytes
 }
 
 type Output struct {
