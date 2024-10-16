@@ -91,6 +91,7 @@ CREATE TABLE "input"
     "outputs_hash" BYTEA,
     "application_address" BYTEA NOT NULL,
     "epoch_id" BIGINT NOT NULL,
+    "transaction_id" BYTEA,
     CONSTRAINT "input_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "input_application_address_fkey" FOREIGN KEY ("application_address") REFERENCES "application"("contract_address"),
     CONSTRAINT "input_epoch_fkey" FOREIGN KEY ("epoch_id") REFERENCES "epoch"("id"),
@@ -146,4 +147,10 @@ CREATE TABLE "node_config"
     "chain_id" INT NOT NULL
 );
 
-
+CREATE TABLE "espresso_nonce"
+(
+    "sender_address" BYTEA NOT NULL,
+    "application_address" BYTEA NOT NULL,
+    "nonce" BIGINT NOT NULL,
+    UNIQUE("sender_address", "application_address")
+)

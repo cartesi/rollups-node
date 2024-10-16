@@ -34,6 +34,7 @@ CREATE OR REPLACE VIEW graphql."inputs" AS
         i."machine_hash",
         i."outputs_hash",
         i."application_address",
+        i."transaction_id",
         e."index" as "epoch_index"
     FROM
         "input" i
@@ -62,6 +63,14 @@ CREATE OR REPLACE VIEW graphql."reports" AS
     INNER JOIN
         "input" i on r."input_id"=i."id";
 
+CREATE OR REPLACE VIEW graphql."espresso_nonces" AS
+    SELECT
+        "sender_address",
+        "application_address",
+        "nonce"
+    FROM
+        "espresso_nonce";
+        
 
 COMMENT ON VIEW graphql."inputs" is
   E'@foreignKey (application_address) references applications(contract_address)|@fieldName applicationByApplicationAddress\n@foreignKey (epoch_index) references epochs(index)|@fieldName epochByEpochIndex';

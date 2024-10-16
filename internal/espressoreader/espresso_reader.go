@@ -19,6 +19,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/tidwall/gjson"
 )
 
@@ -102,7 +103,7 @@ func (e *EspressoReader) Run(ctx context.Context) error {
 				//		 	signature,
 				//		 	typedData: btoa(JSON.stringify(typedData)),
 				//		 })
-				msgSender, typedData, _, err := ExtractSigAndData(string(transaction))
+				msgSender, typedData, signature, err := ExtractSigAndData(string(transaction))
 				if err != nil {
 					return err
 				}
@@ -112,8 +113,6 @@ func (e *EspressoReader) Run(ctx context.Context) error {
 				appAddressStr := typedData.Message["app"].(string)
 				appAddress := common.HexToAddress(appAddressStr)
 				slog.Info("Espresso input", "msgSender", msgSender, "nonce", nonce, "payload", payload, "appAddrss", appAddress)
-
-				// TODO: handle nonce updates
 
 				payloadBytes := []byte(payload)
 				if strings.HasPrefix(payload, "0x") {
@@ -153,11 +152,12 @@ func (e *EspressoReader) Run(ctx context.Context) error {
 				}
 				// build input
 				input := model.Input{
-					Index:            55555, // FIXME. There's a constraint (index, appAdress)
+					Index:            55555, // FIXME.
 					CompletionStatus: model.InputStatusNone,
 					RawData:          payloadBytes,
 					BlockNumber:      l1FinalizedCurrentHeight,
 					AppAddress:       appAddress,
+					TransactionId:    crypto.Keccak256(signature),
 				}
 				currentInputs, ok := epochInputMap[currentEpoch]
 				if !ok {
@@ -166,7 +166,7 @@ func (e *EspressoReader) Run(ctx context.Context) error {
 				epochInputMap[currentEpoch] = append(currentInputs, input)
 
 				// Store everything
-				// room for optimization: bundle tx by address to fully utilize `epochInputMap``
+				// future optimization: bundle tx by address to fully utilize `epochInputMap``
 				if len(epochInputMap) > 0 {
 					_, _, err = e.repository.StoreEpochAndInputsTransaction(
 						ctx,
@@ -178,6 +178,13 @@ func (e *EspressoReader) Run(ctx context.Context) error {
 						slog.Error("could not store Espresso input", "err", err)
 						os.Exit(1)
 					}
+				}
+
+				// update nonce
+				err = e.repository.UpdateEspressoNonce(ctx, msgSender, appAddress)
+				if err != nil {
+					slog.Error("could not update Espresso nonce", "err", err)
+					os.Exit(1)
 				}
 			}
 
