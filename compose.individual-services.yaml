@@ -44,6 +44,70 @@ services:
     environment:
       <<: *env
 
+  evmreader:
+    image: cartesi/rollups-node:devel
+    command: cartesi-rollups-evm-reader
+    depends_on:
+      database:
+        condition: service_healthy
+      ethereum_provider:
+        condition: service_healthy
+    networks:
+      - devnet
+    ports:
+      - "10000:10000" # Supervisor
+    environment:
+      <<: *env
+
+  advancer:
+    image: cartesi/rollups-node:devel
+    command: cartesi-rollups-advancer
+    depends_on:
+      database:
+        condition: service_healthy
+      ethereum_provider:
+        condition: service_healthy
+    volumes:
+      - node_data:/var/lib/cartesi-rollups-node/data
+    networks:
+      - devnet
+    ports:
+      - "10001:10001" # Supervisor
+    environment:
+      <<: *env
+
+  validator:
+    image: cartesi/rollups-node:devel
+    command: cartesi-rollups-validator
+    depends_on:
+      database:
+        condition: service_healthy
+    networks:
+      - devnet
+    ports:
+      - "10002:10002" # Supervisor
+    environment:
+      <<: *env
+
+  claimer:
+    image: cartesi/rollups-node:devel
+    command: cartesi-rollups-authority-claimer
+    depends_on:
+      database:
+        condition: service_healthy
+      ethereum_provider:
+        condition: service_healthy
+    networks:
+      - devnet
+    ports:
+      - "10003:10003" # Supervisor
+    restart: "on-failure"
+    environment:
+      TX_CHAIN_ID: 31337
+      TX_PROVIDER_HTTP_ENDPOINT: http://ethereum_provider:8545
+      TX_SIGNING_MNEMONIC: "test test test test test test test test test test test junk"
+      POSTGRES_ENDPOINT: postgres://postgres:password@database:5432/rollupsdb?sslmode=disable
+
   graphql_server:
     image: graphile/postgraphile:4.14.0
     init: true
@@ -64,29 +128,10 @@ services:
     depends_on:
       database:
         condition: service_healthy
-      node:
-        condition: service_healthy
     networks:
       - devnet
     ports:
       - "10004:10004" # postgraphile
-
-  node:
-    image: cartesi/rollups-node:devel
-    command: cartesi-rollups-node
-    depends_on:
-      database:
-        condition: service_healthy
-      ethereum_provider:
-        condition: service_healthy
-    volumes:
-      - node_data:/var/lib/cartesi-rollups-node/data
-    networks:
-      - devnet
-    ports:
-      - "10001:10001" # Supervisor
-    environment:
-      <<: *env
 
 volumes:
   node_data:
