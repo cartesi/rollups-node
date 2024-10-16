@@ -826,3 +826,78 @@ func (pg *Database) GetSnapshot(
 	return &snapshot, nil
 
 }
+
+func (pg *Database) GetEspressoNonce(
+	ctx context.Context,
+	senderAddress Address,
+	applicationAddress Address,
+) (uint64, error) {
+	var (
+		nonce uint64
+	)
+	query := `
+	SELECT
+		nonce
+	FROM
+		espresso_nonce
+	WHERE
+		sender_address=@senderAddress AND application_address=@applicationAddress
+	`
+
+	args := pgx.NamedArgs{
+		"senderAddress":      senderAddress,
+		"applicationAddress": applicationAddress,
+	}
+	err := pg.db.QueryRow(ctx, query, args).Scan(
+		&nonce,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Debug("GetEspressoNonce returned no rows",
+				"senderAddress", senderAddress,
+				"applicationAddress", applicationAddress)
+			return 0, nil
+		}
+		return 0, fmt.Errorf("GetEspressoNonce QueryRow failed: %w\n", err)
+	}
+
+	return nonce, nil
+}
+
+func (pg *Database) UpdateEspressoNonce(
+	ctx context.Context,
+	senderAddress Address,
+	applicationAddress Address,
+) error {
+	nonce, err := pg.GetEspressoNonce(ctx, senderAddress, applicationAddress)
+	if err != nil {
+		return err
+	}
+	nextNonce := nonce + 1
+
+	query := `
+	INSERT INTO espresso_nonce
+		(sender_address,
+		application_address,
+		nonce)
+	VALUES
+		(@senderAddress,
+		@applicationAddress,
+		@nextNonce)
+	ON CONFLICT (sender_address,application_address)
+	DO UPDATE
+		set nonce=@nextNonce
+	`
+
+	args := pgx.NamedArgs{
+		"senderAddress":      senderAddress,
+		"applicationAddress": applicationAddress,
+		"nextNonce":          nextNonce,
+	}
+	_, err = pg.db.Exec(ctx, query, args)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrUpdateRow, err)
+	}
+
+	return nil
+}

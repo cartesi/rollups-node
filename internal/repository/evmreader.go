@@ -56,14 +56,16 @@ func (pg *Database) StoreEpochAndInputsTransaction(
 		raw_data,
 		block_number,
 		application_address,
-		epoch_id)
+		epoch_id,
+		transaction_id)
 	VALUES
 		(@index,
 		@status,
 		@rawData,
 		@blockNumber,
 		@appAddress,
-		@epochId)
+		@epochId,
+		@transactionId)
 	RETURNING
 		id`
 
@@ -109,12 +111,13 @@ func (pg *Database) StoreEpochAndInputsTransaction(
 		// Insert inputs
 		for _, input := range inputs {
 			inputArgs := pgx.NamedArgs{
-				"index":       input.Index,
-				"status":      input.CompletionStatus,
-				"rawData":     input.RawData,
-				"blockNumber": input.BlockNumber,
-				"appAddress":  input.AppAddress,
-				"epochId":     epochId,
+				"index":         input.Index,
+				"status":        input.CompletionStatus,
+				"rawData":       input.RawData,
+				"blockNumber":   input.BlockNumber,
+				"appAddress":    input.AppAddress,
+				"epochId":       epochId,
+				"transactionId": input.TransactionId,
 			}
 			err = tx.QueryRow(ctx, insertInputQuery, inputArgs).Scan(&inputId)
 			if err != nil {
