@@ -7,11 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 
-	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-espresso-reader/root/nonce"
+	"github.com/EspressoSystems/espresso-sequencer-go/client"
+	"github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/espressoreader"
 	"github.com/cartesi/rollups-node/internal/evmreader"
@@ -38,10 +40,6 @@ var Cmd = &cobra.Command{
 	Short: "Runs Espresso Reader",
 	Long:  `Runs Espresso Reader`,
 	Run:   run,
-}
-
-func init() {
-	Cmd.AddCommand(nonce.Cmd)
 }
 
 func run(cmd *cobra.Command, args []string) {
@@ -127,6 +125,7 @@ func setupEvmReader(ctx context.Context, c config.NodeConfig, database *reposito
 
 func setupNonceHttpServer() {
 	http.HandleFunc("/nonce/{sender}/{dapp}", getNonce)
+	http.HandleFunc("/submit", submit)
 
 	http.ListenAndServe(":3333", nil)
 }
@@ -176,4 +175,24 @@ func process(
 	}
 
 	return nonce
+}
+
+func submit(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Access-Control-Allow-Headers, Origin,Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers")
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		fmt.Printf("could not read body: %s\n", err)
+	}
+	fmt.Println(body)
+	fmt.Println(string(body))
+
+	c := config.FromEnv()
+	client := client.NewClient(c.EspressoBaseUrl)
+	ctx := context.Background()
+	var tx types.Transaction
+	tx.UnmarshalJSON(body)
+	client.SubmitTransaction(ctx, tx)
 }
