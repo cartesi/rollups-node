@@ -5,15 +5,20 @@ package root
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-espresso-reader/root/nonce"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/espressoreader"
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/evmreader/retrypolicy"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/services/startup"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
 )
@@ -33,6 +38,10 @@ var Cmd = &cobra.Command{
 	Short: "Runs Espresso Reader",
 	Long:  `Runs Espresso Reader`,
 	Run:   run,
+}
+
+func init() {
+	Cmd.AddCommand(nonce.Cmd)
 }
 
 func run(cmd *cobra.Command, args []string) {
@@ -65,6 +74,8 @@ func run(cmd *cobra.Command, args []string) {
 	evmReader := setupEvmReader(ctx, c, database)
 
 	espressoReader := espressoreader.NewEspressoReader(c.EspressoBaseUrl, c.EspressoStartingBlock, c.EspressoNamespace, database, evmReader)
+
+	go setupNonceHttpServer()
 
 	if err := espressoReader.Run(ctx); err != nil {
 		slog.Error("EVM Reader exited with an error", "error", err)
@@ -112,4 +123,57 @@ func setupEvmReader(ctx context.Context, c config.NodeConfig, database *reposito
 	)
 
 	return &evmReader
+}
+
+func setupNonceHttpServer() {
+	http.HandleFunc("/nonce/{sender}/{dapp}", getNonce)
+
+	http.ListenAndServe(":3333", nil)
+}
+
+func getNonce(w http.ResponseWriter, r *http.Request) {
+	senderAddress := common.HexToAddress(r.PathValue("sender"))
+	applicationAddress := common.HexToAddress(r.PathValue("dapp"))
+	ctx := context.Background()
+
+	nonce := process(ctx, senderAddress, applicationAddress)
+
+	fmt.Printf("got nonce request\n")
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	err := json.NewEncoder(w).Encode(nonce)
+	if err != nil {
+		slog.Info("Internal server error",
+			"service", "espresso nonce querier",
+			"err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func process(
+	ctx context.Context,
+	senderAddress common.Address,
+	applicationAddress common.Address) uint64 {
+	c := config.FromEnv()
+
+	database, err := repository.Connect(ctx, c.PostgresEndpoint.Value)
+	if err != nil {
+		slog.Error("EVM Reader couldn't connect to the database", "error", err)
+		os.Exit(1)
+	}
+	defer database.Close()
+
+	if database == nil {
+		panic("Database was not initialized")
+	}
+
+	nonce, err := database.GetEspressoNonce(ctx, senderAddress, applicationAddress)
+	if err != nil {
+		slog.Error("failed to get espresso nonce", "error", err)
+		os.Exit(1)
+	}
+
+	return nonce
 }
