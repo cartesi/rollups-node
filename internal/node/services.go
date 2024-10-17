@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/cartesi/rollups-node/internal/advancer/machines"
+	advancerservice "github.com/cartesi/rollups-node/internal/advancer/service"
 	"github.com/cartesi/rollups-node/internal/config"
 	evmreaderservice "github.com/cartesi/rollups-node/internal/evmreader/service"
 	"github.com/cartesi/rollups-node/internal/inspect"
@@ -105,6 +106,7 @@ func newSupervisorService(
 
 	s = append(s, newHttpService(c, inspector))
 	s = append(s, newEvmReaderService(c, database))
+	s = append(s, newAdvancerService(c, database))
 	s = append(s, newValidatorService(c, database))
 
 	supervisor := services.SupervisorService{
@@ -151,6 +153,14 @@ func newEvmReaderService(c config.NodeConfig, database *repository.Database) ser
 		database,
 		c.EvmReaderRetryPolicyMaxRetries,
 		c.EvmReaderRetryPolicyMaxDelay,
+	)
+}
+
+func newAdvancerService(c config.NodeConfig, database *repository.Database) services.Service {
+	return advancerservice.NewAdvancerService(
+		database,
+		c.AdvancerPollingInterval,
+		c.MachineServerVerbosity,
 	)
 }
 
