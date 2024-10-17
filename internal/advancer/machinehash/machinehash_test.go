@@ -11,13 +11,51 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/advancer/snapshot"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/pkg/addresses"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/suite"
 )
 
+const testTimeout = 300 * time.Second
+
 type ValidateMachineHashSuite struct {
 	suite.Suite
+	ctx          context.Context
+	cancel       context.CancelFunc
+	endpoint     string
+	book         *addresses.Book
+	appAddr      common.Address
+	machineDir   string
+	templateHash string
+	cleanup      func()
+}
+
+func (s *ValidateMachineHashSuite) SetupTest() {
+	s.ctx, s.cancel = context.WithTimeout(context.Background(), testTimeout)
+
+	s.endpoint = config.GetBlockchainHttpEndpoint()
+
+	var err error
+	s.book, err = addresses.GetBookFromFile("../../../deployment.json") // FIXME
+	s.Require().Nil(err)
+
+	s.machineDir, err = snapshot.CreateDefaultMachineSnapshot()
+	s.Require().Nil(err)
+
+	s.templateHash, err = snapshot.ReadHash(s.machineDir)
+	s.Require().Nil(err)
+
+	s.appAddr, s.cleanup, err = ethutil.CreateAnvilSnapshotAndDeployApp(s.ctx, s.endpoint, s.book.SelfHostedApplicationFactory, s.templateHash)
+	s.Require().Nil(err)
+}
+
+func (s *ValidateMachineHashSuite) TearDownTest() {
+	os.RemoveAll(s.machineDir)
+	if s.cleanup != nil {
+		s.cleanup()
+	}
+	s.cancel()
 }
 
 func TestValidateMachineHash(t *testing.T) {
@@ -45,96 +83,57 @@ func (s *ValidateMachineHashSuite) TestItFailsWhenHashHasWrongSize() {
 }
 
 func (s *ValidateMachineHashSuite) TestItFailsWhenContextIsCanceled() {
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 1)
 	defer cancel()
 
-	machineDir, err := snapshot.CreateDefaultMachineSnapshot()
-	s.Require().Nil(err)
-	defer os.RemoveAll(machineDir)
-
-	appAddr := common.HexToAddress("0x0000000000000000000000000000000000000000")
-	err = ValidateMachineHash(
+	err := ValidateMachineHash(
 		ctx,
-		machineDir,
-		appAddr,
-		config.GetBlockchainHttpEndpoint(),
+		s.machineDir,
+		s.appAddr,
+		s.endpoint,
 	)
 	s.ErrorIs(err, context.DeadlineExceeded)
 }
 
 func (s *ValidateMachineHashSuite) TestItFailsWhenHttpEndpointIsInvalid() {
-	machineDir, err := snapshot.CreateDefaultMachineSnapshot()
-	s.Require().Nil(err)
-	defer os.RemoveAll(machineDir)
-
-	appAddr := common.HexToAddress("0x0000000000000000000000000000000000000000")
-	err = ValidateMachineHash(
-		context.Background(),
-		machineDir,
-		appAddr,
+	err := ValidateMachineHash(
+		s.ctx,
+		s.machineDir,
+		s.appAddr,
 		"http://invalid-endpoint:8545",
 	)
 	s.ErrorContains(err, "no such host")
 }
 
 func (s *ValidateMachineHashSuite) TestItFailsWhenAppAddressIsInvalid() {
-	machineDir, err := snapshot.CreateDefaultMachineSnapshot()
-	s.Require().Nil(err)
-	defer os.RemoveAll(machineDir)
-
-	ctx := context.Background()
 	appAddr := common.HexToAddress("invalid address")
-	err = ValidateMachineHash(
-		ctx,
-		machineDir,
+	err := ValidateMachineHash(
+		s.ctx,
+		s.machineDir,
 		appAddr,
-		config.GetBlockchainHttpEndpoint(),
+		s.endpoint,
 	)
 	s.ErrorContains(err, "no contract code at given address")
 }
 
 func (s *ValidateMachineHashSuite) TestItFailsWhenAppAddressIsWrong() {
-	machineDir, err := snapshot.CreateDefaultMachineSnapshot()
-	s.Require().Nil(err)
-	defer os.RemoveAll(machineDir)
-
-	templateHash, err := snapshot.ReadHash(machineDir)
-	s.Require().Nil(err)
-
-	ctx := context.Background()
-	_, cleanup, err := ethutil.CreateAnvilSnapshotAndDeployApp(ctx, config.GetBlockchainHttpEndpoint(), templateHash)
-	s.Require().Nil(err)
-	defer cleanup()
-
 	wrongAppAddr := common.HexToAddress("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
-	err = ValidateMachineHash(
-		ctx,
-		machineDir,
+	err := ValidateMachineHash(
+		s.ctx,
+		s.machineDir,
 		wrongAppAddr,
-		config.GetBlockchainHttpEndpoint(),
+		s.endpoint,
 	)
 	s.ErrorContains(err, "no contract code at given address")
 }
 
 func (s *ValidateMachineHashSuite) TestItSucceedsWhenHashesAreEqual() {
-	machineDir, err := snapshot.CreateDefaultMachineSnapshot()
-	s.Require().Nil(err)
-	defer os.RemoveAll(machineDir)
-
-	templateHash, err := snapshot.ReadHash(machineDir)
-	s.Require().Nil(err)
-
-	ctx := context.Background()
-	appAddr, cleanup, err := ethutil.CreateAnvilSnapshotAndDeployApp(ctx, config.GetBlockchainHttpEndpoint(), templateHash)
-	s.Require().Nil(err)
-	defer cleanup()
-
-	err = ValidateMachineHash(
-		ctx,
-		machineDir,
-		appAddr,
-		config.GetBlockchainHttpEndpoint(),
+	err := ValidateMachineHash(
+		s.ctx,
+		s.machineDir,
+		s.appAddr,
+		s.endpoint,
 	)
 	s.Nil(err)
 }
