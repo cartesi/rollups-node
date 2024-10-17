@@ -57,13 +57,15 @@ func (s *EthUtilSuite) SetupTest() {
 	templateHash, err := snapshot.ReadHash(s.machineDir)
 	s.Require().Nil(err)
 
-	s.appAddr, s.cleanup, err = CreateAnvilSnapshotAndDeployApp(s.ctx, s.endpoint, templateHash)
+	s.appAddr, s.cleanup, err = CreateAnvilSnapshotAndDeployApp(s.ctx, s.endpoint, s.book.SelfHostedApplicationFactory, templateHash)
 	s.Require().Nil(err)
 }
 
 func (s *EthUtilSuite) TearDownTest() {
 	os.RemoveAll(s.machineDir)
-	s.cleanup()
+	if s.cleanup != nil {
+		s.cleanup()
+	}
 	s.cancel()
 }
 
