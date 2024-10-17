@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-func CreateAnvilSnapshotAndDeployApp(ctx context.Context, blockchainHttpEndpoint string, templateHash string) (common.Address, func(), error) {
+func CreateAnvilSnapshotAndDeployApp(ctx context.Context, blockchainHttpEndpoint string, factoryAddr common.Address, templateHash string) (common.Address, func(), error) {
 	var contractAddr common.Address
 	// Connect to Anvil (replace with appropriate RPC URL)
 	client, err := ethclient.Dial(blockchainHttpEndpoint)
@@ -33,7 +33,6 @@ func CreateAnvilSnapshotAndDeployApp(ctx context.Context, blockchainHttpEndpoint
 		return contractAddr, nil, fmt.Errorf("failed to create signer: %w", err)
 	}
 
-	factoryAddr := common.HexToAddress("0x0678FAA399F0193Fb9212BE41590316D275b1392") // FIXME get from book
 	owner := signer.Account()
 	salt := "0000000000000000000000000000000000000000000000000000000000000000"
 	// Deploy the application contract
