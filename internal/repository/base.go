@@ -901,3 +901,71 @@ func (pg *Database) UpdateEspressoNonce(
 
 	return nil
 }
+
+func (pg *Database) GetInputIndex(
+	ctx context.Context,
+	applicationAddress Address,
+) (uint64, error) {
+	var (
+		index uint64
+	)
+	query := `
+	SELECT
+		index
+	FROM
+		input_index
+	WHERE
+		application_address=@applicationAddress
+	`
+
+	args := pgx.NamedArgs{
+		"applicationAddress": applicationAddress,
+	}
+	err := pg.db.QueryRow(ctx, query, args).Scan(
+		&index,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Debug("GetInputIndex returned no rows",
+				"applicationAddress", applicationAddress)
+			return 0, nil
+		}
+		return 0, fmt.Errorf("GetInputIndex QueryRow failed: %w\n", err)
+	}
+
+	return index, nil
+}
+
+func (pg *Database) UpdateInputIndex(
+	ctx context.Context,
+	applicationAddress Address,
+) error {
+	index, err := pg.GetInputIndex(ctx, applicationAddress)
+	if err != nil {
+		return err
+	}
+	nextIndex := index + 1
+
+	query := `
+	INSERT INTO input_index
+		(application_address,
+		index)
+	VALUES
+		(@applicationAddress,
+		@nextIndex)
+	ON CONFLICT (application_address)
+	DO UPDATE
+		set index=@nextIndex
+	`
+
+	args := pgx.NamedArgs{
+		"applicationAddress": applicationAddress,
+		"nextIndex":          nextIndex,
+	}
+	_, err = pg.db.Exec(ctx, query, args)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrUpdateRow, err)
+	}
+
+	return nil
+}
