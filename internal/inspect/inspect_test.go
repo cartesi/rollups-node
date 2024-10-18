@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ import (
 
 const TestTimeout = 5 * time.Second
 
-func TestAdvancer(t *testing.T) {
+func TestInspect(t *testing.T) {
 	suite.Run(t, new(InspectSuite))
 }
 
@@ -71,7 +72,7 @@ func (s *InspectSuite) TestGetOk() {
 	defer cancel()
 
 	router := http.NewServeMux()
-	router.Handle("/test/{dapp}/{payload}", inspect)
+	router.Handle("/inspect/{dapp}/{payload}", inspect)
 	service := services.HttpService{Name: "http", Address: s.ServiceAddr, Handler: router}
 
 	result := make(chan error, 1)
@@ -86,10 +87,10 @@ func (s *InspectSuite) TestGetOk() {
 		s.FailNow("timed out waiting for HttpService to be ready")
 	}
 
-	resp, err := http.Get(fmt.Sprintf("http://%v/test/%v/%v",
+	resp, err := http.Get(fmt.Sprintf("http://%v/inspect/%v/%v",
 		s.ServiceAddr,
 		app.Hex(),
-		payload.Hex()))
+		url.PathEscape(string(payload.Bytes()))))
 	if err != nil {
 		s.FailNow(err.Error())
 	}
@@ -97,13 +98,13 @@ func (s *InspectSuite) TestGetOk() {
 }
 
 func (s *InspectSuite) TestGetInvalidPayload() {
-	inspect, app, _ := s.setup()
+	inspect, _, _ := s.setup()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	router := http.NewServeMux()
-	router.Handle("/test/{dapp}/{payload}", inspect)
+	router.Handle("/inspect/{dapp}/{payload}", inspect)
 	service := services.HttpService{Name: "http", Address: s.ServiceAddr, Handler: router}
 
 	result := make(chan error, 1)
@@ -118,14 +119,15 @@ func (s *InspectSuite) TestGetInvalidPayload() {
 		s.FailNow("timed out waiting for HttpService to be ready")
 	}
 
-	resp, _ := http.Get(fmt.Sprintf("http://%v/test/%v/%v",
+	resp, err := http.Get(fmt.Sprintf("http://%v/inspect/%v/test",
 		s.ServiceAddr,
-		app.Hex(),
-		"qwertyuiop"))
-	s.Equal(http.StatusBadRequest, resp.StatusCode)
+		"0x34416D44EffB07Ac0C31DB485733Aee0b5708F54",
+	))
+	s.Require().Nil(err)
+	s.Equal(http.StatusNotFound, resp.StatusCode)
 	buf := new(strings.Builder)
 	io.Copy(buf, resp.Body) //nolint: errcheck
-	s.Require().Contains(buf.String(), "hex string without 0x prefix")
+	s.Require().Contains(buf.String(), "Application not found")
 }
 
 func (s *InspectSuite) TestPostOk() {
@@ -135,7 +137,7 @@ func (s *InspectSuite) TestPostOk() {
 	defer cancel()
 
 	router := http.NewServeMux()
-	router.Handle("/test/{dapp}", inspect)
+	router.Handle("/inspect/{dapp}", inspect)
 	service := services.HttpService{Name: "http", Address: s.ServiceAddr, Handler: router}
 
 	result := make(chan error, 1)
@@ -150,7 +152,7 @@ func (s *InspectSuite) TestPostOk() {
 		s.FailNow("timed out waiting for HttpService to be ready")
 	}
 
-	resp, err := http.Post(fmt.Sprintf("http://%v/test/%v", s.ServiceAddr, app.Hex()),
+	resp, err := http.Post(fmt.Sprintf("http://%v/inspect/%v", s.ServiceAddr, app.Hex()),
 		"application/octet-stream",
 		bytes.NewBuffer(payload.Bytes()))
 	if err != nil {
@@ -180,7 +182,7 @@ func (s *InspectSuite) assertResponse(resp *http.Response, payload string) {
 	if err != nil {
 		s.FailNow("failed to read response body. ", err)
 	}
-	s.Equal(payload, r.Reports[0])
+	s.Equal(payload, r.Reports[0].Payload)
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -195,8 +197,9 @@ func newMockMachines() *MachinesMock {
 	}
 }
 
-func (mock *MachinesMock) GetInspectMachine(app Address) machines.InspectMachine {
-	return mock.Map[app]
+func (mock *MachinesMock) GetInspectMachine(app Address) (machines.InspectMachine, bool) {
+	machine, exists := mock.Map[app]
+	return machine, exists
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -209,12 +212,10 @@ func (mock *MockMachine) Inspect(
 ) (*nodemachine.InspectResult, error) {
 	var res nodemachine.InspectResult
 	var reports [][]byte
-	var index *uint64 = new(uint64)
-	*index = 0
 
 	reports = append(reports, query)
 	res.Accepted = true
-	res.InputIndex = index
+	res.ProcessedInputs = 0
 	res.Error = nil
 	res.Reports = reports
 

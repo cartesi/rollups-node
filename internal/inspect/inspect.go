@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 
 	"github.com/cartesi/rollups-node/internal/advancer/machines"
 	. "github.com/cartesi/rollups-node/internal/model"
@@ -28,11 +29,15 @@ type Inspector struct {
 	machines Machines
 }
 
+type ReportResponse struct {
+	Payload string `json:"payload"`
+}
+
 type InspectResponse struct {
-	Status     string   `json:"status"`
-	Exception  string   `json:"exception"`
-	Reports    []string `json:"reports"`
-	InputIndex uint64   `json:"processed_input_count"`
+	Status          string           `json:"status"`
+	Exception       string           `json:"exception"`
+	Reports         []ReportResponse `json:"reports"`
+	ProcessedInputs uint64           `json:"processed_input_count"`
 }
 
 // New instantiates a new Inspector.
@@ -49,7 +54,7 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		dapp         Address
 		payload      []byte
 		err          error
-		reports      []string
+		reports      []ReportResponse
 		status       string
 		errorMessage string
 	)
@@ -80,7 +85,7 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Missing payload", http.StatusBadRequest)
 			return
 		}
-		payload, err = hexutil.Decode(r.PathValue("payload"))
+		decodedValue, err := url.PathUnescape(r.PathValue("payload"))
 		if err != nil {
 			slog.Info("Internal server error",
 				"service", "inspect",
@@ -88,10 +93,16 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		payload = []byte(decodedValue)
 	}
 
 	result, err := inspect.process(r.Context(), dapp, payload)
 	if err != nil {
+		if errors.Is(err, ErrNoApp) {
+			slog.Error("inspect: Application not found", "address", dapp, "err", err)
+			http.Error(w, "Application not found", http.StatusNotFound)
+			return
+		}
 		slog.Info("Internal server error",
 			"service", "inspect",
 			"err", err)
@@ -100,7 +111,7 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, report := range result.Reports {
-		reports = append(reports, hexutil.Encode(report))
+		reports = append(reports, ReportResponse{Payload: hexutil.Encode(report)})
 	}
 
 	if result.Accepted {
@@ -115,10 +126,10 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := InspectResponse{
-		Status:     status,
-		Exception:  errorMessage,
-		Reports:    reports,
-		InputIndex: *result.InputIndex,
+		Status:          status,
+		Exception:       errorMessage,
+		Reports:         reports,
+		ProcessedInputs: result.ProcessedInputs,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -138,8 +149,8 @@ func (inspect *Inspector) process(
 	app Address,
 	query []byte) (*nodemachine.InspectResult, error) {
 	// Asserts that the app has an associated machine.
-	machine := inspect.machines.GetInspectMachine(app)
-	if machine == nil {
+	machine, exists := inspect.machines.GetInspectMachine(app)
+	if !exists {
 		return nil, fmt.Errorf("%w %s", ErrNoApp, app.String())
 	}
 
@@ -154,7 +165,7 @@ func (inspect *Inspector) process(
 // ------------------------------------------------------------------------------------------------
 
 type Machines interface {
-	GetInspectMachine(app Address) machines.InspectMachine
+	GetInspectMachine(app Address) (machines.InspectMachine, bool)
 }
 
 type Machine interface {

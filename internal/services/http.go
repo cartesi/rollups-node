@@ -17,11 +17,11 @@ type HttpService struct {
 	Handler http.Handler
 }
 
-func (s HttpService) String() string {
+func (s *HttpService) String() string {
 	return s.Name
 }
 
-func (s HttpService) Start(ctx context.Context, ready chan<- struct{}) error {
+func (s *HttpService) Start(ctx context.Context, ready chan<- struct{}) error {
 	server := http.Server{
 		Addr:     s.Address,
 		Handler:  s.Handler,

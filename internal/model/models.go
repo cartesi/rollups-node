@@ -79,9 +79,9 @@ type ExecutionParameters struct {
 }
 
 type MachineConfig struct {
-	AppAddress         Address
-	SnapshotPath       string
-	SnapshotInputIndex *uint64
+	AppAddress      Address
+	SnapshotPath    string
+	ProcessedInputs uint64
 	ExecutionParameters
 }
 
