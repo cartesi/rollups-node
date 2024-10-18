@@ -17,6 +17,8 @@ var (
 	errUpdateEpochs           = errors.New("unable to update epochs status")
 	errGetEpochWithOpenClaims = errors.New("failed to get epochs with open claims")
 	errGetAllApplications     = errors.New("failed to get Applications")
+	errGetInputIndex          = errors.New("failed to get input index")
+	errUpdateInputIndex       = errors.New("failed to update input index")
 )
 
 // This method should be called at the end of EVMReader read input cycle
@@ -109,9 +111,17 @@ func (pg *Database) StoreEpochAndInputsTransaction(
 		var inputId uint64
 
 		// Insert inputs
+		// override input index. For using EVM as a sole DA, this index value remains the same;
+		// for using both EVM and Espresso, this value would be the index combining these 2 sources.
 		for _, input := range inputs {
+			// query input index
+			inputIndex, err := pg.GetInputIndex(ctx, input.AppAddress)
+			if err != nil {
+				return nil, nil, errors.Join(errGetInputIndex, err, tx.Rollback(ctx))
+			}
+
 			inputArgs := pgx.NamedArgs{
-				"index":         input.Index,
+				"index":         inputIndex,
 				"status":        input.CompletionStatus,
 				"rawData":       input.RawData,
 				"blockNumber":   input.BlockNumber,
@@ -123,6 +133,13 @@ func (pg *Database) StoreEpochAndInputsTransaction(
 			if err != nil {
 				return nil, nil, errors.Join(errInsertInputs, err, tx.Rollback(ctx))
 			}
+
+			// update input index
+			err = pg.UpdateInputIndex(ctx, input.AppAddress)
+			if err != nil {
+				return nil, nil, errors.Join(errUpdateInputIndex, err, tx.Rollback(ctx))
+			}
+
 			epochIndexInputIdsMap[epoch.Index] = append(epochIndexInputIdsMap[epoch.Index], inputId)
 		}
 	}

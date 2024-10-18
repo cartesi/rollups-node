@@ -153,4 +153,10 @@ CREATE TABLE "espresso_nonce"
     "application_address" BYTEA NOT NULL,
     "nonce" BIGINT NOT NULL,
     UNIQUE("sender_address", "application_address")
+);
+
+CREATE TABLE "input_index"
+(
+    "application_address" BYTEA PRIMARY KEY,
+    "index" BIGINT NOT NULL
 )
