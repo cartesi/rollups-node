@@ -136,14 +136,14 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 // The interface specification for the client above.
 type ClientInterface interface {
 	// InspectPostWithBody request with any body
-	InspectPostWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	InspectPostWithBody(ctx context.Context, dapp string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// Inspect request
-	Inspect(ctx context.Context, payload string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	Inspect(ctx context.Context, dapp string, payload string, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
-func (c *Client) InspectPostWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewInspectPostRequestWithBody(c.Server, contentType, body)
+func (c *Client) InspectPostWithBody(ctx context.Context, dapp string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewInspectPostRequestWithBody(c.Server, dapp, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -154,8 +154,8 @@ func (c *Client) InspectPostWithBody(ctx context.Context, contentType string, bo
 	return c.Client.Do(req)
 }
 
-func (c *Client) Inspect(ctx context.Context, payload string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewInspectRequest(c.Server, payload)
+func (c *Client) Inspect(ctx context.Context, dapp string, payload string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewInspectRequest(c.Server, dapp, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -167,15 +167,22 @@ func (c *Client) Inspect(ctx context.Context, payload string, reqEditors ...Requ
 }
 
 // NewInspectPostRequestWithBody generates requests for InspectPost with any type of body
-func NewInspectPostRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+func NewInspectPostRequestWithBody(server string, dapp string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "dapp", runtime.ParamLocationPath, dapp)
+	if err != nil {
+		return nil, err
+	}
 
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("inspect")
+	operationPath := fmt.Sprintf("inspect/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -196,12 +203,19 @@ func NewInspectPostRequestWithBody(server string, contentType string, body io.Re
 }
 
 // NewInspectRequest generates requests for Inspect
-func NewInspectRequest(server string, payload string) (*http.Request, error) {
+func NewInspectRequest(server string, dapp string, payload string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "payload", runtime.ParamLocationPath, payload)
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "dapp", runtime.ParamLocationPath, dapp)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "payload", runtime.ParamLocationPath, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +225,7 @@ func NewInspectRequest(server string, payload string) (*http.Request, error) {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("inspect/%s", pathParam0)
+	operationPath := fmt.Sprintf("inspect/%s/%s", pathParam0, pathParam1)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -273,10 +287,10 @@ func WithBaseURL(baseURL string) ClientOption {
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
 	// InspectPostWithBodyWithResponse request with any body
-	InspectPostWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InspectPostResponse, error)
+	InspectPostWithBodyWithResponse(ctx context.Context, dapp string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InspectPostResponse, error)
 
 	// InspectWithResponse request
-	InspectWithResponse(ctx context.Context, payload string, reqEditors ...RequestEditorFn) (*InspectResponse, error)
+	InspectWithResponse(ctx context.Context, dapp string, payload string, reqEditors ...RequestEditorFn) (*InspectResponse, error)
 }
 
 type InspectPostResponse struct {
@@ -324,8 +338,8 @@ func (r InspectResponse) StatusCode() int {
 }
 
 // InspectPostWithBodyWithResponse request with arbitrary body returning *InspectPostResponse
-func (c *ClientWithResponses) InspectPostWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InspectPostResponse, error) {
-	rsp, err := c.InspectPostWithBody(ctx, contentType, body, reqEditors...)
+func (c *ClientWithResponses) InspectPostWithBodyWithResponse(ctx context.Context, dapp string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InspectPostResponse, error) {
+	rsp, err := c.InspectPostWithBody(ctx, dapp, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -333,8 +347,8 @@ func (c *ClientWithResponses) InspectPostWithBodyWithResponse(ctx context.Contex
 }
 
 // InspectWithResponse request returning *InspectResponse
-func (c *ClientWithResponses) InspectWithResponse(ctx context.Context, payload string, reqEditors ...RequestEditorFn) (*InspectResponse, error) {
-	rsp, err := c.Inspect(ctx, payload, reqEditors...)
+func (c *ClientWithResponses) InspectWithResponse(ctx context.Context, dapp string, payload string, reqEditors ...RequestEditorFn) (*InspectResponse, error) {
+	rsp, err := c.Inspect(ctx, dapp, payload, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

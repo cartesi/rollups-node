@@ -25,7 +25,7 @@ func (s *NodeMachineSuite) TestNew() {
 	s.Run("Ok", func() {
 		require := s.Require()
 		inner := &MockRollupsMachine{}
-		machine, err := New(inner, new(uint64), decisecond, centisecond, 3)
+		machine, err := NewNodeMachine(inner, 0, decisecond, centisecond, 3)
 		require.Nil(err)
 		require.NotNil(machine)
 	})
@@ -33,7 +33,7 @@ func (s *NodeMachineSuite) TestNew() {
 	s.Run("ErrInvalidAdvanceTimeout", func() {
 		require := s.Require()
 		inner := &MockRollupsMachine{}
-		machine, err := New(inner, new(uint64), -1, centisecond, 3)
+		machine, err := NewNodeMachine(inner, 0, -1, centisecond, 3)
 		require.Error(err)
 		require.Nil(machine)
 		require.Equal(ErrInvalidAdvanceTimeout, err)
@@ -42,7 +42,7 @@ func (s *NodeMachineSuite) TestNew() {
 	s.Run("ErrInvalidInspectTimeout", func() {
 		require := s.Require()
 		inner := &MockRollupsMachine{}
-		machine, err := New(inner, new(uint64), decisecond, -500, 3)
+		machine, err := NewNodeMachine(inner, 0, decisecond, -500, 3)
 		require.Error(err)
 		require.Nil(machine)
 		require.Equal(ErrInvalidInspectTimeout, err)
@@ -51,7 +51,7 @@ func (s *NodeMachineSuite) TestNew() {
 	s.Run("ErrInvalidMaxConcurrentInspects", func() {
 		require := s.Require()
 		inner := &MockRollupsMachine{}
-		machine, err := New(inner, new(uint64), decisecond, centisecond, 0)
+		machine, err := NewNodeMachine(inner, 0, decisecond, centisecond, 0)
 		require.Error(err)
 		require.Nil(machine)
 		require.Equal(ErrInvalidMaxConcurrentInspects, err)
@@ -64,7 +64,7 @@ func (s *NodeMachineSuite) TestAdvance() {
 			require := s.Require()
 			_, fork, machine := s.setupAdvance()
 
-			res, err := machine.Advance(context.Background(), []byte{}, 10)
+			res, err := machine.Advance(context.Background(), []byte{}, 5)
 			require.Nil(err)
 			require.NotNil(res)
 
@@ -74,7 +74,7 @@ func (s *NodeMachineSuite) TestAdvance() {
 			require.Equal(expectedReports1, res.Reports)
 			require.Equal(newHash(1), res.OutputsHash)
 			require.Equal(newHash(2), *res.MachineHash)
-			require.Equal(pointer[uint64](10), machine.lastInputIndex)
+			require.Equal(uint64(6), machine.processedInputs)
 		})
 
 		s.Run("Reject", func() {
@@ -82,7 +82,7 @@ func (s *NodeMachineSuite) TestAdvance() {
 			_, fork, machine := s.setupAdvance()
 			fork.AdvanceAcceptedReturn = false
 
-			res, err := machine.Advance(context.Background(), []byte{}, 15)
+			res, err := machine.Advance(context.Background(), []byte{}, 5)
 			require.Nil(err)
 			require.NotNil(res)
 
@@ -92,7 +92,7 @@ func (s *NodeMachineSuite) TestAdvance() {
 			require.Equal(expectedReports1, res.Reports)
 			require.Equal(newHash(1), res.OutputsHash)
 			require.Nil(res.MachineHash)
-			require.Equal(pointer[uint64](15), machine.lastInputIndex)
+			require.Equal(uint64(6), machine.processedInputs)
 		})
 
 		testSoftError := func(name string, err error, status model.InputCompletionStatus) {
@@ -102,7 +102,7 @@ func (s *NodeMachineSuite) TestAdvance() {
 				fork.AdvanceError = err
 				fork.CloseError, inner.CloseError = inner.CloseError, fork.CloseError
 
-				res, err := machine.Advance(context.Background(), []byte{}, 20)
+				res, err := machine.Advance(context.Background(), []byte{}, 5)
 				require.Nil(err)
 				require.NotNil(res)
 
@@ -111,7 +111,7 @@ func (s *NodeMachineSuite) TestAdvance() {
 				require.Equal(expectedReports1, res.Reports)
 				require.Equal(newHash(1), res.OutputsHash)
 				require.Nil(res.MachineHash)
-				require.Equal(pointer[uint64](20), machine.lastInputIndex)
+				require.Equal(uint64(6), machine.processedInputs)
 			})
 		}
 
@@ -147,11 +147,11 @@ func (s *NodeMachineSuite) TestAdvance() {
 			errFork := errors.New("Fork error")
 			inner.ForkError = errFork
 
-			res, err := machine.Advance(context.Background(), []byte{}, 35)
+			res, err := machine.Advance(context.Background(), []byte{}, 5)
 			require.Error(err)
 			require.Nil(res)
 			require.Equal(errFork, err)
-			require.Equal(pointer[uint64](5), machine.lastInputIndex)
+			require.Equal(uint64(5), machine.processedInputs)
 		})
 
 		s.Run("Advance", func() {
@@ -161,12 +161,12 @@ func (s *NodeMachineSuite) TestAdvance() {
 			fork.AdvanceError = errAdvance
 			fork.CloseError, inner.CloseError = inner.CloseError, fork.CloseError
 
-			res, err := machine.Advance(context.Background(), []byte{}, 36)
+			res, err := machine.Advance(context.Background(), []byte{}, 5)
 			require.Error(err)
 			require.Nil(res)
 			require.ErrorIs(err, errAdvance)
 			require.NotErrorIs(err, errUnreachable)
-			require.Equal(pointer[uint64](5), machine.lastInputIndex)
+			require.Equal(uint64(5), machine.processedInputs)
 		})
 
 		s.Run("AdvanceAndClose", func() {
@@ -178,13 +178,13 @@ func (s *NodeMachineSuite) TestAdvance() {
 			fork.CloseError = errClose
 			inner.CloseError = nil
 
-			res, err := machine.Advance(context.Background(), []byte{}, 37)
+			res, err := machine.Advance(context.Background(), []byte{}, 5)
 			require.Error(err)
 			require.Nil(res)
 			require.ErrorIs(err, errAdvance)
 			require.ErrorIs(err, errClose)
 			require.NotErrorIs(err, errUnreachable)
-			require.Equal(pointer[uint64](5), machine.lastInputIndex)
+			require.Equal(uint64(5), machine.processedInputs)
 		})
 
 		s.Run("Hash", func() {
@@ -194,12 +194,12 @@ func (s *NodeMachineSuite) TestAdvance() {
 			fork.HashError = errHash
 			fork.CloseError, inner.CloseError = inner.CloseError, fork.CloseError
 
-			res, err := machine.Advance(context.Background(), []byte{}, 38)
+			res, err := machine.Advance(context.Background(), []byte{}, 5)
 			require.Error(err)
 			require.Nil(res)
 			require.ErrorIs(err, errHash)
 			require.NotErrorIs(err, errUnreachable)
-			require.Equal(pointer[uint64](5), machine.lastInputIndex)
+			require.Equal(uint64(5), machine.processedInputs)
 		})
 
 		s.Run("HashAndClose", func() {
@@ -211,13 +211,13 @@ func (s *NodeMachineSuite) TestAdvance() {
 			fork.CloseError = errClose
 			inner.CloseError = nil
 
-			res, err := machine.Advance(context.Background(), []byte{}, 39)
+			res, err := machine.Advance(context.Background(), []byte{}, 5)
 			require.Error(err)
 			require.Nil(res)
 			require.ErrorIs(err, errHash)
 			require.ErrorIs(err, errClose)
 			require.NotErrorIs(err, errUnreachable)
-			require.Equal(pointer[uint64](5), machine.lastInputIndex)
+			require.Equal(uint64(5), machine.processedInputs)
 		})
 
 		s.Run("Close", func() {
@@ -227,12 +227,12 @@ func (s *NodeMachineSuite) TestAdvance() {
 				errClose := errors.New("Close error")
 				inner.CloseError = errClose
 
-				res, err := machine.Advance(context.Background(), []byte{}, 40)
+				res, err := machine.Advance(context.Background(), []byte{}, 5)
 				require.Error(err)
-				require.NotNil(res)
+				require.Nil(res)
 				require.ErrorIs(err, errClose)
 				require.NotErrorIs(err, errUnreachable)
-				require.Equal(pointer[uint64](40), machine.lastInputIndex)
+				require.Equal(uint64(5), machine.processedInputs)
 			})
 
 			s.Run("Fork", func() {
@@ -242,12 +242,12 @@ func (s *NodeMachineSuite) TestAdvance() {
 				fork.AdvanceError = rollupsmachine.ErrException
 				fork.CloseError = errClose
 
-				res, err := machine.Advance(context.Background(), []byte{}, 41)
+				res, err := machine.Advance(context.Background(), []byte{}, 5)
 				require.Error(err)
 				require.NotNil(res)
 				require.ErrorIs(err, errClose)
 				require.NotErrorIs(err, errUnreachable)
-				require.Equal(pointer[uint64](41), machine.lastInputIndex)
+				require.Equal(uint64(6), machine.processedInputs)
 			})
 		})
 	})
@@ -269,7 +269,7 @@ func (s *NodeMachineSuite) TestInspect() {
 			require.NotNil(res)
 
 			require.NotSame(fork, machine.inner)
-			require.Equal(pointer[uint64](55), res.InputIndex)
+			require.Equal(uint64(55), res.ProcessedInputs)
 			require.True(res.Accepted)
 			require.Equal(expectedReports2, res.Reports)
 			require.Nil(res.Error)
@@ -285,7 +285,7 @@ func (s *NodeMachineSuite) TestInspect() {
 			require.NotNil(res)
 
 			require.NotSame(fork, machine.inner)
-			require.Equal(pointer[uint64](55), res.InputIndex)
+			require.Equal(uint64(55), res.ProcessedInputs)
 			require.False(res.Accepted)
 			require.Equal(expectedReports2, res.Reports)
 			require.Nil(res.Error)
@@ -345,8 +345,7 @@ var (
 
 func (s *NodeMachineSuite) setupAdvance() (*MockRollupsMachine, *MockRollupsMachine, *NodeMachine) {
 	inner := &MockRollupsMachine{}
-	inputIndex := uint64(5)
-	machine, err := New(inner, &inputIndex, decisecond, centisecond, 3)
+	machine, err := NewNodeMachine(inner, 5, decisecond, centisecond, 3)
 	s.Require().Nil(err)
 
 	fork := &MockRollupsMachine{}
@@ -386,8 +385,7 @@ func (s *NodeMachineSuite) setupAdvance() (*MockRollupsMachine, *MockRollupsMach
 
 func (s *NodeMachineSuite) setupInspect() (*MockRollupsMachine, *MockRollupsMachine, *NodeMachine) {
 	inner := &MockRollupsMachine{}
-	inputIndex := uint64(55)
-	machine, err := New(inner, &inputIndex, decisecond, centisecond, 3)
+	machine, err := NewNodeMachine(inner, 55, decisecond, centisecond, 3)
 	s.Require().Nil(err)
 
 	fork := &MockRollupsMachine{}
@@ -433,10 +431,6 @@ func newBytes(n byte, size int) []byte {
 		bytes[i] = n
 	}
 	return bytes
-}
-
-func pointer[T any](v T) *T {
-	return &v
 }
 
 // ------------------------------------------------------------------------------------------------

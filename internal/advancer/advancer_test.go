@@ -221,8 +221,9 @@ func newMockMachines() *MachinesMock {
 	}
 }
 
-func (mock *MachinesMock) GetAdvanceMachine(app Address) machines.AdvanceMachine {
-	return mock.Map[app]
+func (mock *MachinesMock) GetAdvanceMachine(app Address) (machines.AdvanceMachine, bool) {
+	machine, exists := mock.Map[app]
+	return machine, exists
 }
 
 func (mock *MachinesMock) Apps() []Address {

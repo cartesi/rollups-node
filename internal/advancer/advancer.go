@@ -82,8 +82,8 @@ func (advancer *Advancer) Step(ctx context.Context) error {
 // process sequentially processes inputs from the the application.
 func (advancer *Advancer) process(ctx context.Context, app Address, inputs []*Input) error {
 	// Asserts that the app has an associated machine.
-	machine := advancer.machines.GetAdvanceMachine(app)
-	if machine == nil {
+	machine, exists := advancer.machines.GetAdvanceMachine(app)
+	if !exists {
 		panic(fmt.Errorf("%w %s", ErrNoApp, app.String()))
 	}
 
@@ -124,7 +124,7 @@ type Repository interface {
 }
 
 type Machines interface {
-	GetAdvanceMachine(app Address) machines.AdvanceMachine
+	GetAdvanceMachine(app Address) (machines.AdvanceMachine, bool)
 	Apps() []Address
 }
 

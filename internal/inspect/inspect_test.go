@@ -195,8 +195,9 @@ func newMockMachines() *MachinesMock {
 	}
 }
 
-func (mock *MachinesMock) GetInspectMachine(app Address) machines.InspectMachine {
-	return mock.Map[app]
+func (mock *MachinesMock) GetInspectMachine(app Address) (machines.InspectMachine, bool) {
+	machine, exists := mock.Map[app]
+	return machine, exists
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -209,12 +210,10 @@ func (mock *MockMachine) Inspect(
 ) (*nodemachine.InspectResult, error) {
 	var res nodemachine.InspectResult
 	var reports [][]byte
-	var index *uint64 = new(uint64)
-	*index = 0
 
 	reports = append(reports, query)
 	res.Accepted = true
-	res.InputIndex = index
+	res.ProcessedInputs = 0
 	res.Error = nil
 	res.Reports = reports
 
