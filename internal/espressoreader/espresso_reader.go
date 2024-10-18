@@ -152,7 +152,6 @@ func (e *EspressoReader) Run(ctx context.Context) error {
 				}
 				// build input
 				input := model.Input{
-					Index:            55555, // FIXME.
 					CompletionStatus: model.InputStatusNone,
 					RawData:          payloadBytes,
 					BlockNumber:      l1FinalizedCurrentHeight,

@@ -48,13 +48,6 @@ func run(cmd *cobra.Command, args []string) {
 	// setup log
 	startup.ConfigLogs(c.LogLevel, c.LogPrettyEnabled)
 
-	// Validate Schema
-	err := startup.ValidateSchema(c.PostgresEndpoint.Value)
-	if err != nil {
-		slog.Error("Espresso Reader exited with an error", "error", err)
-		os.Exit(1)
-	}
-
 	ctx := cmd.Context()
 	database, err := repository.Connect(ctx, c.PostgresEndpoint.Value)
 	if err != nil {

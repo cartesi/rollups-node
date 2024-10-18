@@ -71,6 +71,12 @@ CREATE OR REPLACE VIEW graphql."espresso_nonces" AS
     FROM
         "espresso_nonce";
         
+CREATE OR REPLACE VIEW graphql."input_indexs" AS
+    SELECT
+        "application_address",
+        "index"
+    FROM
+        "input_index";
 
 COMMENT ON VIEW graphql."inputs" is
   E'@foreignKey (application_address) references applications(contract_address)|@fieldName applicationByApplicationAddress\n@foreignKey (epoch_index) references epochs(index)|@fieldName epochByEpochIndex';
