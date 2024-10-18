@@ -29,10 +29,10 @@ type Inspector struct {
 }
 
 type InspectResponse struct {
-	Status     string   `json:"status"`
-	Exception  string   `json:"exception"`
-	Reports    []string `json:"reports"`
-	InputIndex uint64   `json:"processed_input_count"`
+	Status          string   `json:"status"`
+	Exception       string   `json:"exception"`
+	Reports         []string `json:"reports"`
+	ProcessedInputs uint64   `json:"processed_input_count"`
 }
 
 // New instantiates a new Inspector.
@@ -115,10 +115,10 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := InspectResponse{
-		Status:     status,
-		Exception:  errorMessage,
-		Reports:    reports,
-		InputIndex: *result.InputIndex,
+		Status:          status,
+		Exception:       errorMessage,
+		Reports:         reports,
+		ProcessedInputs: result.ProcessedInputs,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

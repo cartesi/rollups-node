@@ -25,11 +25,21 @@ const examples = `# Makes a request with "hi" encoded as hex:
 cartesi-rollups-cli inspect --payload 0x$(printf "hi" | xxd -p)`
 
 var (
-	hexPayload      string
-	inspectEndpoint string
+	applicationAddress string
+	hexPayload         string
+	inspectEndpoint    string
 )
 
 func init() {
+	Cmd.Flags().StringVarP(
+		&applicationAddress,
+		"address",
+		"a",
+		"",
+		"Application contract address",
+	)
+	cobra.CheckErr(Cmd.MarkFlagRequired("address"))
+
 	Cmd.Flags().StringVar(&hexPayload, "payload", "",
 		"input payload hex-encoded starting with 0x")
 
@@ -49,7 +59,7 @@ func run(cmd *cobra.Command, args []string) {
 
 	requestBody := bytes.NewReader(payload)
 
-	response, err := client.InspectPostWithBody(ctx, "application/octet-stream", requestBody)
+	response, err := client.InspectPostWithBody(ctx, applicationAddress, "application/octet-stream", requestBody)
 	cobra.CheckErr(err)
 
 	respBytes, err := io.ReadAll(response.Body)

@@ -209,12 +209,10 @@ func (mock *MockMachine) Inspect(
 ) (*nodemachine.InspectResult, error) {
 	var res nodemachine.InspectResult
 	var reports [][]byte
-	var index *uint64 = new(uint64)
-	*index = 0
 
 	reports = append(reports, query)
 	res.Accepted = true
-	res.InputIndex = index
+	res.ProcessedInputs = 0
 	res.Error = nil
 	res.Reports = reports
 

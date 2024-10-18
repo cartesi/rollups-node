@@ -38,7 +38,8 @@ func (repo *MachineRepository) GetMachineConfigurations(
 			e.load_deadline,
 			e.store_deadline,
 			e.fast_deadline,
-			e.max_concurrent_inspects
+			e.max_concurrent_inspects,
+			0 AS processed_inputs
 		FROM application a
 		INNER JOIN execution_parameters e
 			ON a.id = e.application_id
@@ -75,6 +76,7 @@ func (repo *MachineRepository) GetMachineConfigurations(
 			&mc.StoreDeadline,         // store_deadline
 			&mc.FastDeadline,          // fast_deadline
 			&mc.MaxConcurrentInspects, // max_concurrent_inspects
+			&mc.ProcessedInputs,       // processed_inputs
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
@@ -99,7 +101,7 @@ func (repo *MachineRepository) GetProcessedInputs(
 	index uint64,
 ) ([]*Input, error) {
 	query := `
-	SELECT   id, index, status, raw_data
+	SELECT   id, index, status, raw_data, epoch_id
 	FROM     input
 	WHERE    application_address = @applicationAddress
 	AND      index >= @index
@@ -117,7 +119,7 @@ func (repo *MachineRepository) GetProcessedInputs(
 
 	res := []*Input{}
 	var input Input
-	scans := []any{&input.Id, &input.Index, &input.CompletionStatus, &input.RawData}
+	scans := []any{&input.Id, &input.Index, &input.CompletionStatus, &input.RawData, &input.EpochId}
 	_, err = pgx.ForEachRow(rows, scans, func() error {
 		input := input
 		res = append(res, &input)
@@ -140,19 +142,19 @@ func (repo *MachineRepository) GetUnprocessedInputs(
 	}
 
 	query := fmt.Sprintf(`
-        SELECT   id, application_address, raw_data
-        FROM     input
-        WHERE    status = 'NONE'
-        AND      application_address IN %s
-        ORDER BY index ASC, application_address
-    `, addressesToSqlInValues(apps)) // NOTE: not sanitized
+	SELECT   id, application_address, raw_data, index, epoch_id
+	FROM     input
+	WHERE    status = 'NONE'
+	AND      application_address IN %s
+	ORDER BY index ASC, application_address
+	`, addressesToSqlInValues(apps)) // NOTE: not sanitized
 	rows, err := repo.db.Query(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("%w (failed querying inputs): %w", ErrAdvancerRepository, err)
 	}
 
 	var input Input
-	scans := []any{&input.Id, &input.AppAddress, &input.RawData}
+	scans := []any{&input.Id, &input.AppAddress, &input.RawData, &input.Index, &input.EpochId}
 	_, err = pgx.ForEachRow(rows, scans, func() error {
 		input := input
 		if _, ok := result[input.AppAddress]; ok { //nolint:gosimple
