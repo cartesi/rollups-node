@@ -7,12 +7,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os/signal"
 	"syscall"
 
 	"github.com/cartesi/rollups-node/internal/advancer"
+	"github.com/cartesi/rollups-node/internal/advancer/config"
 	"github.com/cartesi/rollups-node/internal/advancer/machines"
-	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/inspect"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/services/startup"
 
@@ -40,6 +42,11 @@ func getDatabase(ctx context.Context, endpoint string) (*repository.Database, er
 	return database, nil
 }
 
+func healthcheckHandler(w http.ResponseWriter, r *http.Request) {
+	slog.Debug("Advancer received a healthcheck request")
+	w.WriteHeader(http.StatusOK)
+}
+
 func run(cmd *cobra.Command, args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -63,6 +70,11 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 	defer machines.Close()
 
+	inspector, err := inspect.New(machines)
+	if err != nil {
+		return fmt.Errorf("failed to create the inspector: %w", err)
+	}
+
 	advancer, err := advancer.New(machines, repo)
 	if err != nil {
 		return fmt.Errorf("failed to create the advancer: %w", err)
@@ -72,6 +84,23 @@ func run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create the advancer service: %w", err)
 	}
+
+	serveMux := http.NewServeMux()
+	serveMux.Handle("/healthz", http.HandlerFunc(healthcheckHandler))
+	serveMux.Handle("/inspect/{dapp}", http.Handler(inspector))
+	serveMux.Handle("/inspect/{dapp}/{payload}", http.Handler(inspector))
+
+	httpServer := &http.Server{
+		Addr:    fmt.Sprintf("%v:%v", c.HttpAddress, c.HttpPort),
+		Handler: serveMux,
+	}
+
+	go func() {
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("Could not listen on %s: %v\n", httpServer.Addr, err)
+			stop()
+		}
+	}()
 
 	return poller.Start(ctx)
 }

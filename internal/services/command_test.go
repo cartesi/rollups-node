@@ -118,16 +118,20 @@ func (s *CommandServiceSuite) buildFakeService() {
 		panic(err)
 	}
 	s.tmpDir = tempDir
+	binaryPath := filepath.Join(s.tmpDir, "fake-service")
 
 	cmd := exec.Command(
 		"go",
 		"build",
 		"-o",
-		filepath.Join(s.tmpDir, "fake-service"),
+		binaryPath,
 		"fakeservice/main.go",
 	)
 	if err := cmd.Run(); err != nil {
 		panic(err)
+	}
+	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
+		panic("fake-service binary was not created")
 	}
 
 	os.Setenv("PATH", os.Getenv("PATH")+":"+s.tmpDir)

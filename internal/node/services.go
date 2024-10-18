@@ -4,16 +4,14 @@
 package node
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 
-	"github.com/cartesi/rollups-node/internal/advancer/machines"
 	advancerservice "github.com/cartesi/rollups-node/internal/advancer/service"
 	"github.com/cartesi/rollups-node/internal/config"
 	evmreaderservice "github.com/cartesi/rollups-node/internal/evmreader/service"
-	"github.com/cartesi/rollups-node/internal/inspect"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/services"
 	"github.com/cartesi/rollups-node/internal/validator"
@@ -49,7 +47,7 @@ func getRustLog(c config.NodeConfig, rustModule string) string {
 	}
 }
 
-func newAuthorityClaimer(c config.NodeConfig, workDir string) services.CommandService {
+func newAuthorityClaimer(c config.NodeConfig, workDir string) services.Service {
 	var s services.CommandService
 	s.Name = "authority-claimer"
 	s.HealthcheckPort = getPort(c, portOffsetAuthorityClaimer)
@@ -87,61 +85,41 @@ func newAuthorityClaimer(c config.NodeConfig, workDir string) services.CommandSe
 	}
 	s.Env = append(s.Env, os.Environ()...)
 	s.WorkDir = workDir
-	return s
+	return &s
 }
 
 func newSupervisorService(
 	c config.NodeConfig,
 	workDir string,
 	database *repository.Database,
-) services.SupervisorService {
+) *services.SupervisorService {
 	var s []services.Service
 
 	if c.FeatureClaimerEnabled {
 		s = append(s, newAuthorityClaimer(c, workDir))
 	}
 
-	inspector := newInspectorService(c, database)
+	serveMux := http.NewServeMux()
+	serveMux.Handle("/healthz", http.HandlerFunc(healthcheckHandler))
 
-	s = append(s, newHttpService(c, inspector))
+	s = append(s, newHttpService(c, serveMux))
 	s = append(s, newEvmReaderService(c, database))
-	s = append(s, newAdvancerService(c, database))
+	s = append(s, newAdvancerService(c, database, serveMux))
 	s = append(s, newValidatorService(c, database))
 
 	supervisor := services.SupervisorService{
 		Name:     "rollups-node",
 		Services: s,
 	}
-	return supervisor
+	return &supervisor
 }
 
-func newInspectorService(c config.NodeConfig, database *repository.Database) *inspect.Inspector {
-	// initialize machines for inspect
-	repo := &repository.MachineRepository{Database: database}
-
-	machines, err := machines.Load(context.Background(), repo, c.MachineServerVerbosity)
-	if err != nil {
-		slog.Error("failed to load the machines", "error", err)
-		os.Exit(1)
-	}
-	defer machines.Close()
-
-	inspector, err := inspect.New(machines)
-	if err != nil {
-		slog.Error("failed to create the inspector", "error", err)
-		os.Exit(1)
-	}
-
-	return inspector
-}
-
-func newHttpService(c config.NodeConfig, i *inspect.Inspector) services.HttpService {
+func newHttpService(c config.NodeConfig, serveMux *http.ServeMux) services.Service {
 	addr := fmt.Sprintf("%v:%v", c.HttpAddress, getPort(c, portOffsetProxy))
-	handler := newHttpServiceHandler(c, i)
-	return services.HttpService{
+	return &services.HttpService{
 		Name:    "http",
 		Address: addr,
-		Handler: handler,
+		Handler: serveMux,
 	}
 }
 
@@ -155,9 +133,10 @@ func newEvmReaderService(c config.NodeConfig, database *repository.Database) ser
 	)
 }
 
-func newAdvancerService(c config.NodeConfig, database *repository.Database) services.Service {
+func newAdvancerService(c config.NodeConfig, database *repository.Database, serveMux *http.ServeMux) services.Service {
 	return advancerservice.NewAdvancerService(
 		database,
+		serveMux,
 		c.AdvancerPollingInterval,
 		c.MachineServerVerbosity,
 	)

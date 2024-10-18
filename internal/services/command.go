@@ -45,11 +45,11 @@ type CommandService struct {
 	WorkDir string
 }
 
-func (s CommandService) Start(ctx context.Context, ready chan<- struct{}) error {
+func (s *CommandService) Start(ctx context.Context, ready chan<- struct{}) error {
 	cmd := exec.CommandContext(ctx, s.Path, s.Args...)
 	cmd.Env = s.Env
-	cmd.Stderr = linewriter.New(commandLogger{s.Name})
-	cmd.Stdout = linewriter.New(commandLogger{s.Name})
+	cmd.Stderr = linewriter.New(&commandLogger{s.Name})
+	cmd.Stdout = linewriter.New(&commandLogger{s.Name})
 	cmd.Cancel = func() error {
 		err := cmd.Process.Signal(syscall.SIGTERM)
 		if err != nil {
@@ -72,7 +72,7 @@ func (s CommandService) Start(ctx context.Context, ready chan<- struct{}) error 
 }
 
 // Blocks until the service is ready or the context is canceled.
-func (s CommandService) pollTcp(ctx context.Context, ready chan<- struct{}) {
+func (s *CommandService) pollTcp(ctx context.Context, ready chan<- struct{}) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	for {
@@ -91,7 +91,7 @@ func (s CommandService) pollTcp(ctx context.Context, ready chan<- struct{}) {
 	}
 }
 
-func (s CommandService) String() string {
+func (s *CommandService) String() string {
 	return s.Name
 }
 
@@ -101,13 +101,13 @@ type commandLogger struct {
 	Name string
 }
 
-func (l commandLogger) Write(data []byte) (int, error) {
+func (l *commandLogger) Write(data []byte) (int, error) {
 	// If data does has no alphanumeric characters, ignore it.
 	if match := alphanumericRegex.Find(data); match == nil {
 		return 0, nil
 	}
 	msg := strings.TrimSpace(string(data))
-	level := l.logLevelForMessage(msg)
+	level := logLevelForMessage(msg)
 	slog.Log(context.Background(), level, msg, "service", l.Name)
 	return len(msg), nil
 }
@@ -122,7 +122,7 @@ var (
 
 // Uses regular expressions to determine the correct log level. If there is no match,
 // returns slog.LevelInfo
-func (l commandLogger) logLevelForMessage(msg string) slog.Level {
+func logLevelForMessage(msg string) slog.Level {
 	if match := infoRegex.FindString(msg); len(match) > 0 {
 		return slog.LevelInfo
 	} else if match = debugRegex.FindString(msg); len(match) > 0 {
