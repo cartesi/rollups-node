@@ -15,32 +15,29 @@ import (
 // NodeConfig contains all the Node variables.
 // See the corresponding environment variable for the variable documentation.
 type NodeConfig struct {
-	LogLevel                                  LogLevel
-	LogPrettyEnabled                          bool
-	RollupsEpochLength                        uint64
-	BlockchainID                              uint64
-	BlockchainHttpEndpoint                    Redacted[string]
-	BlockchainWsEndpoint                      Redacted[string]
-	LegacyBlockchainEnabled                   bool
-	BlockchainFinalityOffset                  int
-	EvmReaderDefaultBlock                     DefaultBlock
-	EvmReaderRetryPolicyMaxRetries            uint64
-	EvmReaderRetryPolicyMaxDelay              Duration
-	BlockchainBlockTimeout                    int
-	ContractsInputBoxAddress                  string
-	ContractsInputBoxDeploymentBlockNumber    int64
-	SnapshotDir                               string
-	PostgresEndpoint                          Redacted[string]
-	HttpAddress                               string
-	HttpPort                                  int
-	FeatureClaimerEnabled                     bool
-	FeatureMachineHashCheckEnabled            bool
-	ExperimentalServerManagerLogBypassEnabled bool
-	ExperimentalSunodoValidatorEnabled        bool
-	ExperimentalSunodoValidatorRedisEndpoint  string
-	Auth                                      Auth
-	AdvancerPollingInterval                   Duration
-	ValidatorPollingInterval                  Duration
+	LogLevel                               LogLevel
+	LogPrettyEnabled                       bool
+	RollupsEpochLength                     uint64
+	BlockchainID                           uint64
+	BlockchainHttpEndpoint                 Redacted[string]
+	BlockchainWsEndpoint                   Redacted[string]
+	LegacyBlockchainEnabled                bool
+	BlockchainFinalityOffset               int
+	EvmReaderDefaultBlock                  DefaultBlock
+	EvmReaderRetryPolicyMaxRetries         uint64
+	EvmReaderRetryPolicyMaxDelay           Duration
+	BlockchainBlockTimeout                 int
+	ContractsInputBoxAddress               string
+	ContractsInputBoxDeploymentBlockNumber int64
+	SnapshotDir                            string
+	PostgresEndpoint                       Redacted[string]
+	HttpAddress                            string
+	HttpPort                               int
+	FeatureClaimerEnabled                  bool
+	FeatureMachineHashCheckEnabled         bool
+	Auth                                   Auth
+	AdvancerPollingInterval                Duration
+	ValidatorPollingInterval               Duration
 	// Temporary
 	MachineServerVerbosity cartesimachine.ServerVerbosity
 }
@@ -97,14 +94,7 @@ func FromEnv() NodeConfig {
 	config.HttpPort = GetHttpPort()
 	config.FeatureClaimerEnabled = GetFeatureClaimerEnabled()
 	config.FeatureMachineHashCheckEnabled = GetFeatureMachineHashCheckEnabled()
-	config.ExperimentalServerManagerLogBypassEnabled =
-		GetExperimentalServerManagerLogBypassEnabled()
-	config.ExperimentalSunodoValidatorEnabled = GetExperimentalSunodoValidatorEnabled()
-	if GetExperimentalSunodoValidatorEnabled() {
-		config.ExperimentalSunodoValidatorRedisEndpoint =
-			GetExperimentalSunodoValidatorRedisEndpoint()
-	}
-	if GetFeatureClaimerEnabled() && !GetExperimentalSunodoValidatorEnabled() {
+	if config.FeatureClaimerEnabled {
 		config.Auth = authFromEnv()
 	}
 	config.AdvancerPollingInterval = GetAdvancerPollingInterval()
