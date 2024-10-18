@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
@@ -46,7 +48,12 @@ type CommandService struct {
 }
 
 func (s CommandService) Start(ctx context.Context, ready chan<- struct{}) error {
-	cmd := exec.CommandContext(ctx, s.Path, s.Args...)
+	var cmd *exec.Cmd
+	execPath, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	cmd = exec.CommandContext(ctx, filepath.Join(filepath.Dir(execPath), s.Path), s.Args...)
 	cmd.Env = s.Env
 	cmd.Stderr = linewriter.New(commandLogger{s.Name})
 	cmd.Stdout = linewriter.New(commandLogger{s.Name})
@@ -63,7 +70,7 @@ func (s CommandService) Start(ctx context.Context, ready chan<- struct{}) error 
 	}
 
 	go s.pollTcp(ctx, ready)
-	err := cmd.Run()
+	err = cmd.Run()
 
 	if ctx.Err() != nil {
 		return ctx.Err()
