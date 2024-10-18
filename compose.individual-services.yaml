@@ -133,8 +133,52 @@ services:
     ports:
       - "10004:10004" # postgraphile
 
+  template:
+    image: cartesi/rollups-node:devel
+    command: cartesi-rollups-template
+    container_name: template
+    depends_on:
+      database:
+        condition: service_healthy
+    networks:
+      - devnet
+    ports:
+      - "10005:10005" # Supervisor
+    environment:
+      <<: *env
+
+  prometheus:
+    image: prom/prometheus:v2.24.0
+    container_name: prometheus
+    volumes:
+      - ./dev/prometheus/:/etc/prometheus/
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - devnet
+    ports:
+      - "9090:9090"
+    restart: always
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    networks:
+      - devnet
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./dev/grafana/dashboards:/etc/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+
 volumes:
   node_data:
+  prometheus_data:
+  grafana_data:
 
 networks:
   devnet:

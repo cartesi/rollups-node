@@ -21,6 +21,10 @@ import (
 	"time"
 
 	"github.com/lmittmann/tint"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 const (
@@ -42,6 +46,13 @@ type CreateInfo struct {
 	// TODO: your fields go here
 }
 
+/* Service metrics */
+type Metrics struct {
+	tickCount prometheus.Counter
+
+	// TODO: your metrics fields go here
+}
+
 /* Runtime values to run this service. */
 type Service struct {
 	logLevel                 slog.Level
@@ -55,6 +66,7 @@ type Service struct {
 	telemetryServer          *http.Server
 	telemetryServerFunc       func()
 
+	metrics                   Metrics
 	//ci      CreateInfo // maybe needed for reload
 
 	// TODO: your fields go here
@@ -194,7 +206,8 @@ func (s *Service) loop() {
 		case <-s.context.Done():
 			s.Stop(true)
 		case <-s.ticker.C:
-			slog.Info("tick", "service", Name)
+			slog.Info("tick", "service", Name, "tick", s.metrics.tickCount.Desc().String)
+			s.metrics.tickCount.Inc()
 
 			// TODO: you service goes here
 		}
@@ -202,13 +215,13 @@ func (s *Service) loop() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// telemetry checks
+// telemetry (health, metrics)
 ////////////////////////////////////////////////////////////////////////////////
 
-/* Create `/Name/readyz` and `/Name/livez` HTTP endpoints on
+/* Create `/Name/readyz`, `/Name/livez` and `/Name/metrics` HTTP endpoints on
  * addr. Recreate the HTTP server up to maxRetries in case it goes down
- * unexpectedly waiting for retryInterval beteen each attempt. Rounte the
- * endpoints with mux. */
+ * unexpectedly waiting for retryInterval beteen each attempt. Route endpoints
+ * with mux. */
 func (s *Service) StartTelemetryServer(
 	addr string,
 	maxRetries int,
@@ -217,6 +230,13 @@ func (s *Service) StartTelemetryServer(
 ) (*http.Server, func()) {
 	mux.Handle("/"+Name+"/readyz",  http.HandlerFunc(s.ReadyHandler))
 	mux.Handle("/"+Name+"/livez",   http.HandlerFunc(s.AliveHandler))
+	mux.Handle("/"+Name+"/metrics", promhttp.Handler())
+
+	s.metrics.tickCount = promauto.NewCounter(prometheus.CounterOpts{
+		Name: Name + "_tick_total",
+		Help: "total tick",
+	})
+
 	server := &http.Server{
 		Addr:    addr,
 		Handler: mux,
