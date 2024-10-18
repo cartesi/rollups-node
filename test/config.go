@@ -66,9 +66,6 @@ func NewLocalNodeConfig(localPostgresEndpoint string, localBlockchainHttpEndpoin
 	nodeConfig.FeatureClaimerEnabled = true
 	nodeConfig.FeatureMachineHashCheckEnabled = true
 
-	//Experimental
-	nodeConfig.ExperimentalSunodoValidatorEnabled = false
-
 	//Auth
 	nodeConfig.Auth = config.AuthMnemonic{
 		Mnemonic:     config.Redacted[string]{Value: ethutil.FoundryMnemonic},

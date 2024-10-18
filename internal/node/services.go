@@ -97,8 +97,7 @@ func newSupervisorService(
 ) services.SupervisorService {
 	var s []services.Service
 
-	// enable claimer if reader mode and sunodo validator mode are not enabled
-	if c.FeatureClaimerEnabled && !c.ExperimentalSunodoValidatorEnabled {
+	if c.FeatureClaimerEnabled {
 		s = append(s, newAuthorityClaimer(c, workDir))
 	}
 

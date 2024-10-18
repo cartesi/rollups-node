@@ -324,42 +324,6 @@ func GetContractsInputBoxDeploymentBlockNumber() int64 {
 	return val
 }
 
-func GetExperimentalServerManagerLogBypassEnabled() bool {
-	s, ok := os.LookupEnv("CARTESI_EXPERIMENTAL_SERVER_MANAGER_LOG_BYPASS_ENABLED")
-	if !ok {
-		s = "false"
-	}
-	val, err := toBool(s)
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse CARTESI_EXPERIMENTAL_SERVER_MANAGER_LOG_BYPASS_ENABLED: %v", err))
-	}
-	return val
-}
-
-func GetExperimentalSunodoValidatorEnabled() bool {
-	s, ok := os.LookupEnv("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED")
-	if !ok {
-		s = "false"
-	}
-	val, err := toBool(s)
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_ENABLED: %v", err))
-	}
-	return val
-}
-
-func GetExperimentalSunodoValidatorRedisEndpoint() string {
-	s, ok := os.LookupEnv("CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT")
-	if !ok {
-		panic("missing env var CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT")
-	}
-	val, err := toString(s)
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse CARTESI_EXPERIMENTAL_SUNODO_VALIDATOR_REDIS_ENDPOINT: %v", err))
-	}
-	return val
-}
-
 func GetFeatureClaimerEnabled() bool {
 	s, ok := os.LookupEnv("CARTESI_FEATURE_CLAIMER_ENABLED")
 	if !ok {
