@@ -69,7 +69,7 @@ func Load(ctx context.Context, repo Repository, verbosity cm.ServerVerbosity) (*
 		}
 
 		// Advances the machine until it catches up with the state of the database (if necessary).
-		err = catchUp(ctx, repo, config.AppAddress, machine, config.SnapshotInputIndex)
+		err = catchUp(ctx, repo, config.AppAddress, machine, config.ProcessedInputs)
 		if err != nil {
 			err = fmt.Errorf("failed to advance cartesi machine (%v): %w", config, err)
 			errs = errors.Join(errs, err, machine.Close())
@@ -83,12 +83,12 @@ func Load(ctx context.Context, repo Repository, verbosity cm.ServerVerbosity) (*
 }
 
 // GetAdvanceMachine gets the machine associated with the application from the map.
-func (m *Machines) GetAdvanceMachine(app Address) AdvanceMachine {
+func (m *Machines) GetAdvanceMachine(app Address) (AdvanceMachine, bool) {
 	return m.getMachine(app)
 }
 
 // GetInspectMachine gets the machine associated with the application from the map.
-func (m *Machines) GetInspectMachine(app Address) InspectMachine {
+func (m *Machines) GetInspectMachine(app Address) (InspectMachine, bool) {
 	return m.getMachine(app)
 }
 
@@ -149,10 +149,11 @@ func (m *Machines) Close() error {
 
 // ------------------------------------------------------------------------------------------------
 
-func (m *Machines) getMachine(app Address) *nm.NodeMachine {
+func (m *Machines) getMachine(app Address) (*nm.NodeMachine, bool) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	return m.machines[app]
+	machine, exists := m.machines[app]
+	return machine, exists
 }
 
 func closeMachines(machines map[Address]*nm.NodeMachine) (err error) {
@@ -194,8 +195,8 @@ func createMachine(ctx context.Context,
 	}
 
 	// Creates a NodeMachine from the RollupsMachine.
-	nodeMachine, err := nm.New(rollupsMachine,
-		config.SnapshotInputIndex,
+	nodeMachine, err := nm.NewNodeMachine(rollupsMachine,
+		config.ProcessedInputs,
 		config.AdvanceMaxDeadline,
 		config.InspectMaxDeadline,
 		config.MaxConcurrentInspects)
@@ -210,18 +211,12 @@ func catchUp(ctx context.Context,
 	repo Repository,
 	app Address,
 	machine *nm.NodeMachine,
-	snapshotInputIndex *uint64,
+	processedInputs uint64,
 ) error {
-	// A nil index indicates we should start to process inputs from the beginning (index zero).
-	// A non-nil index indicates we should start to process inputs from the next available index.
-	firstInputIndexToProcess := uint64(0)
-	if snapshotInputIndex != nil {
-		firstInputIndexToProcess = *snapshotInputIndex + 1
-	}
 
 	slog.Info("catching up unprocessed inputs", "application", app, "service", "advancer")
 
-	inputs, err := repo.GetProcessedInputs(ctx, app, firstInputIndexToProcess)
+	inputs, err := repo.GetProcessedInputs(ctx, app, processedInputs)
 	if err != nil {
 		return err
 	}

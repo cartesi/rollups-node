@@ -6,27 +6,32 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/advancer"
 	"github.com/cartesi/rollups-node/internal/advancer/machines"
+	"github.com/cartesi/rollups-node/internal/inspect"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/rollupsmachine/cartesimachine"
 )
 
 type AdvancerService struct {
 	database                *repository.Database
+	serveMux                *http.ServeMux
 	AdvancerPollingInterval time.Duration
 	MachineServerVerbosity  cartesimachine.ServerVerbosity
 }
 
 func NewAdvancerService(
 	database *repository.Database,
+	serveMux *http.ServeMux,
 	pollingInterval time.Duration,
 	machineServerVerbosity cartesimachine.ServerVerbosity,
 ) *AdvancerService {
 	return &AdvancerService{
 		database:                database,
+		serveMux:                serveMux,
 		AdvancerPollingInterval: pollingInterval,
 		MachineServerVerbosity:  machineServerVerbosity,
 	}
@@ -49,6 +54,14 @@ func (s *AdvancerService) Start(
 	if err != nil {
 		return fmt.Errorf("failed to create the advancer: %w", err)
 	}
+
+	inspector, err := inspect.New(machines)
+	if err != nil {
+		return fmt.Errorf("failed to create the inspector: %w", err)
+	}
+
+	s.serveMux.Handle("/inspect/{dapp}", http.Handler(inspector))
+	s.serveMux.Handle("/inspect/{dapp}/{payload}", http.Handler(inspector))
 
 	poller, err := advancer.Poller(s.AdvancerPollingInterval)
 	if err != nil {

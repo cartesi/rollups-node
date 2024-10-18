@@ -29,10 +29,10 @@ type Inspector struct {
 }
 
 type InspectResponse struct {
-	Status     string   `json:"status"`
-	Exception  string   `json:"exception"`
-	Reports    []string `json:"reports"`
-	InputIndex uint64   `json:"processed_input_count"`
+	Status          string   `json:"status"`
+	Exception       string   `json:"exception"`
+	Reports         []string `json:"reports"`
+	ProcessedInputs uint64   `json:"processed_input_count"`
 }
 
 // New instantiates a new Inspector.
@@ -92,6 +92,11 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	result, err := inspect.process(r.Context(), dapp, payload)
 	if err != nil {
+		if errors.Is(err, ErrNoApp) {
+			slog.Error("inspect: Application not found", "address", dapp, "err", err)
+			http.Error(w, "Application not found", http.StatusNotFound)
+			return
+		}
 		slog.Info("Internal server error",
 			"service", "inspect",
 			"err", err)
@@ -115,10 +120,10 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := InspectResponse{
-		Status:     status,
-		Exception:  errorMessage,
-		Reports:    reports,
-		InputIndex: *result.InputIndex,
+		Status:          status,
+		Exception:       errorMessage,
+		Reports:         reports,
+		ProcessedInputs: result.ProcessedInputs,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -138,8 +143,8 @@ func (inspect *Inspector) process(
 	app Address,
 	query []byte) (*nodemachine.InspectResult, error) {
 	// Asserts that the app has an associated machine.
-	machine := inspect.machines.GetInspectMachine(app)
-	if machine == nil {
+	machine, exists := inspect.machines.GetInspectMachine(app)
+	if !exists {
 		return nil, fmt.Errorf("%w %s", ErrNoApp, app.String())
 	}
 
@@ -154,7 +159,7 @@ func (inspect *Inspector) process(
 // ------------------------------------------------------------------------------------------------
 
 type Machines interface {
-	GetInspectMachine(app Address) machines.InspectMachine
+	GetInspectMachine(app Address) (machines.InspectMachine, bool)
 }
 
 type Machine interface {

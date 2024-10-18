@@ -56,11 +56,11 @@ func TestMachineRepository(t *testing.T) {
 		require.NotNil(config2)
 
 		require.Equal(apps[1].ContractAddress, config2.AppAddress)
-		require.Nil(config2.SnapshotInputIndex)
+		require.Equal(uint64(1), config2.ProcessedInputs)
 		require.Equal("path/to/template/uri/1", config2.SnapshotPath)
 
 		require.Equal(apps[2].ContractAddress, config1.AppAddress)
-		require.Nil(config1.SnapshotInputIndex)
+		require.Equal(uint64(0), config1.ProcessedInputs)
 		require.Equal("path/to/template/uri/2", config1.SnapshotPath)
 	})
 
@@ -260,7 +260,7 @@ func populate2(database *Database) ([]*Application, []*Epoch, []*Input, []*Snaps
 		AppAddress:       apps[1].ContractAddress,
 		EpochId:          epochs[0].Id,
 	}, {
-		Index:            6,
+		Index:            1,
 		CompletionStatus: InputStatusAccepted,
 		RawData:          []byte("second"),
 		AppAddress:       apps[1].ContractAddress,

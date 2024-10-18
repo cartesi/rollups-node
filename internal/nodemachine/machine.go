@@ -19,6 +19,7 @@ import (
 
 var (
 	ErrInvalidAdvanceTimeout        = errors.New("advance timeout must not be negative")
+	ErrInvalidInputIndex            = errors.New("advance input index must be equal to processed input count")
 	ErrInvalidInspectTimeout        = errors.New("inspect timeout must not be negative")
 	ErrInvalidMaxConcurrentInspects = errors.New("maximum concurrent inspects must not be zero")
 
@@ -34,18 +35,17 @@ type AdvanceResult struct {
 }
 
 type InspectResult struct {
-	InputIndex *uint64
-	Accepted   bool
-	Reports    [][]byte
-	Error      error
+	ProcessedInputs uint64
+	Accepted        bool
+	Reports         [][]byte
+	Error           error
 }
 
 type NodeMachine struct {
 	inner rollupsmachine.RollupsMachine
 
-	// Index of the last Input that was processed.
-	// Can be nil if no inputs were processed.
-	lastInputIndex *uint64
+	// How many inputs were processed by the machine.
+	processedInputs uint64
 
 	// How long a call to inner.Advance or inner.Inspect can take.
 	advanceTimeout, inspectTimeout time.Duration
@@ -67,9 +67,9 @@ type NodeMachine struct {
 	concurrentInspects *semaphore.Weighted
 }
 
-func New(
+func NewNodeMachine(
 	inner rollupsmachine.RollupsMachine,
-	inputIndex *uint64,
+	processedInputs uint64,
 	advanceTimeout time.Duration,
 	inspectTimeout time.Duration,
 	maxConcurrentInspects int64,
@@ -85,7 +85,7 @@ func New(
 	}
 	return &NodeMachine{
 		inner:                 inner,
-		lastInputIndex:        inputIndex,
+		processedInputs:       processedInputs,
 		advanceTimeout:        advanceTimeout,
 		inspectTimeout:        inspectTimeout,
 		maxConcurrentInspects: maxConcurrentInspects,
@@ -108,7 +108,12 @@ func (machine *NodeMachine) Advance(ctx context.Context,
 	// Forks the machine.
 	machine.mutex.HLock()
 	if machine.inner == nil {
+		machine.mutex.Unlock()
 		return nil, ErrClosed
+	}
+	if machine.processedInputs != index {
+		machine.mutex.Unlock()
+		return nil, ErrInvalidInputIndex
 	}
 	fork, err = machine.inner.Fork(ctx)
 	machine.mutex.Unlock()
@@ -144,19 +149,23 @@ func (machine *NodeMachine) Advance(ctx context.Context,
 
 	// If the forked machine is in a valid state:
 	if res.Status == model.InputStatusAccepted || res.Status == model.InputStatusRejected {
-		// Closes the current machine.
-		err = machine.inner.Close(ctx)
 		// Replaces the current machine with the fork and updates lastInputIndex.
 		machine.mutex.HLock()
+		// Closes the current machine.
+		err = machine.inner.Close(ctx)
+		if err != nil {
+			machine.mutex.Unlock()
+			return nil, err
+		}
 		machine.inner = fork
-		machine.lastInputIndex = &index
+		machine.processedInputs++
 		machine.mutex.Unlock()
 	} else {
 		// Closes the forked machine.
 		err = fork.Close(ctx)
 		// Updates lastInputIndex.
 		machine.mutex.HLock()
-		machine.lastInputIndex = &index
+		machine.processedInputs++
 		machine.mutex.Unlock()
 	}
 
@@ -179,7 +188,7 @@ func (machine *NodeMachine) Inspect(ctx context.Context, query []byte) (*Inspect
 		return nil, ErrClosed
 	}
 	fork, err = machine.inner.Fork(ctx)
-	inputIndex := machine.lastInputIndex
+	processedInputs := machine.processedInputs
 	machine.mutex.Unlock()
 	if err != nil {
 		return nil, err
@@ -190,7 +199,7 @@ func (machine *NodeMachine) Inspect(ctx context.Context, query []byte) (*Inspect
 
 	// Sends the inspect-state request to the forked machine.
 	accepted, reports, err := fork.Inspect(inspectCtx, query)
-	res := &InspectResult{InputIndex: inputIndex, Accepted: accepted, Reports: reports, Error: err}
+	res := &InspectResult{ProcessedInputs: processedInputs, Accepted: accepted, Reports: reports, Error: err}
 
 	return res, fork.Close(ctx)
 }
