@@ -191,6 +191,11 @@ An AWS KMS Region.
 
 Must be set alongside `CARTESI_AUTH_AWS_KMS_KEY_ID`."""
 
+[auth.CARTESI_AUTH_AWS_ENDPOINT_URL]
+go-type = "string"
+description = """
+An AWS Endpoint URL."""
+
 #
 # Postgres
 #

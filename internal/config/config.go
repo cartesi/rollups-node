@@ -58,8 +58,9 @@ type AuthMnemonic struct {
 
 // AuthAWS allows signing through AWS services.
 type AuthAWS struct {
-	KeyID  Redacted[string]
-	Region Redacted[string]
+	KeyID       Redacted[string]
+	Region      Redacted[string]
+	EndpointURL Redacted[string]
 }
 
 // Redacted is a wrapper that redacts a given field from the logs.
@@ -94,9 +95,7 @@ func FromEnv() NodeConfig {
 	config.HttpPort = GetHttpPort()
 	config.FeatureClaimerEnabled = GetFeatureClaimerEnabled()
 	config.FeatureMachineHashCheckEnabled = GetFeatureMachineHashCheckEnabled()
-	if config.FeatureClaimerEnabled {
-		config.Auth = authFromEnv()
-	}
+	config.Auth = authFromEnv()
 	config.AdvancerPollingInterval = GetAdvancerPollingInterval()
 	config.ValidatorPollingInterval = GetValidatorPollingInterval()
 	// Temporary.
@@ -136,8 +135,9 @@ func authFromEnv() Auth {
 		}
 	case AuthKindAWS:
 		return AuthAWS{
-			KeyID:  Redacted[string]{GetAuthAwsKmsKeyId()},
-			Region: Redacted[string]{GetAuthAwsKmsRegion()},
+			KeyID:       Redacted[string]{GetAuthAwsKmsKeyId()},
+			Region:      Redacted[string]{GetAuthAwsKmsRegion()},
+			EndpointURL: Redacted[string]{GetAuthAwsEndpointUrl()},
 		}
 	default:
 		panic("invalid auth kind")
