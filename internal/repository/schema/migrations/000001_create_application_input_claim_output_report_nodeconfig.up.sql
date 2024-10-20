@@ -40,6 +40,7 @@ CREATE TABLE "application"
     "iconsensus_address" BYTEA NOT NULL,
     "last_claim_check_block" NUMERIC(20,0) NOT NULL CHECK ("last_claim_check_block" >= 0 AND "last_claim_check_block" <= f_maxuint64()),
     "last_output_check_block" NUMERIC(20,0) NOT NULL CHECK ("last_output_check_block" >= 0 AND "last_output_check_block" <= f_maxuint64()),
+    "updated_at" timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL, -- updated_at is used by high level graphql
     CONSTRAINT "application_pkey" PRIMARY KEY ("id"),
     UNIQUE("contract_address")
 );
@@ -72,6 +73,7 @@ CREATE TABLE "epoch"
     "claim_hash" BYTEA,
     "transaction_hash" BYTEA,
     "status" "EpochStatus" NOT NULL,
+    "updated_at" timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL, -- updated_at is used by high level graphql
     CONSTRAINT "epoch_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "epoch_application_address_fkey" FOREIGN KEY ("application_address") REFERENCES "application"("contract_address"),
     UNIQUE ("index","application_address")
@@ -92,6 +94,7 @@ CREATE TABLE "input"
     "application_address" BYTEA NOT NULL,
     "epoch_id" BIGINT NOT NULL,
     "transaction_id" BYTEA,
+    "updated_at" timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL, -- updated_at is used by high level graphql
     CONSTRAINT "input_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "input_application_address_fkey" FOREIGN KEY ("application_address") REFERENCES "application"("contract_address"),
     CONSTRAINT "input_epoch_fkey" FOREIGN KEY ("epoch_id") REFERENCES "epoch"("id"),
@@ -109,6 +112,7 @@ CREATE TABLE "output"
     "output_hashes_siblings" BYTEA[],
     "input_id" BIGINT NOT NULL,
     "transaction_hash" BYTEA,
+    "updated_at" timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL, -- updated_at is used by high level graphql
     CONSTRAINT "output_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "output_input_id_fkey" FOREIGN KEY ("input_id") REFERENCES "input"("id")
 );
@@ -159,4 +163,38 @@ CREATE TABLE "input_index"
 (
     "application_address" BYTEA PRIMARY KEY,
     "index" BIGINT NOT NULL
-)
+);
+
+-- create trigger to update updated_at timestamp
+
+CREATE FUNCTION trigger_set_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER set_timestamp
+BEFORE
+UPDATE ON application
+FOR EACH ROW
+EXECUTE PROCEDURE trigger_set_timestamp();
+
+CREATE TRIGGER set_timestamp
+BEFORE
+UPDATE ON epoch
+FOR EACH ROW
+EXECUTE PROCEDURE trigger_set_timestamp();
+
+CREATE TRIGGER set_timestamp
+BEFORE
+UPDATE ON input
+FOR EACH ROW
+EXECUTE PROCEDURE trigger_set_timestamp();
+
+CREATE TRIGGER set_timestamp
+BEFORE
+UPDATE ON output
+FOR EACH ROW
+EXECUTE PROCEDURE trigger_set_timestamp();
