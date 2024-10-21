@@ -97,7 +97,7 @@ func (v *Validator) Run(ctx context.Context) error {
 // validateApplication calculates, validates and stores the claim and/or proofs
 // for each processed epoch of the application.
 func (v *Validator) validateApplication(ctx context.Context, app Application) error {
-	slog.Info("starting validation", "application", app.ContractAddress, "service", v)
+	slog.Debug("validator: starting validation", "application", app.ContractAddress)
 	processedEpochs, err := v.repository.GetProcessedEpochs(ctx, app.ContractAddress)
 	if err != nil {
 		return fmt.Errorf(
@@ -107,16 +107,14 @@ func (v *Validator) validateApplication(ctx context.Context, app Application) er
 	}
 
 	for _, epoch := range processedEpochs {
-		slog.Info("started calculating claim",
+		slog.Info("validator: started calculating claim",
 			"epoch index", epoch.Index,
 			"application", app.ContractAddress,
-			"service", v,
 		)
 		claim, outputs, err := v.createClaimAndProofs(ctx, epoch)
-		slog.Info("finished calculating claim",
+		slog.Info("validator: finished calculating claim",
 			"epoch index", epoch.Index,
 			"application", app.ContractAddress,
-			"service", v,
 		)
 		if err != nil {
 			return err
@@ -169,9 +167,8 @@ func (v *Validator) validateApplication(ctx context.Context, app Application) er
 	}
 
 	if len(processedEpochs) == 0 {
-		slog.Info("no processed epochs to validate",
+		slog.Debug("validator: no processed epochs to validate",
 			"application", app.ContractAddress,
-			"service", v,
 		)
 	}
 

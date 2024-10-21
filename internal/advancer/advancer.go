@@ -53,7 +53,7 @@ func (advancer *Advancer) Step(ctx context.Context) error {
 	apps := advancer.machines.Apps()
 
 	// Gets the unprocessed inputs (of all apps) from the repository.
-	slog.Info("advancer: querying for unprocessed inputs")
+	slog.Debug("advancer: querying for unprocessed inputs")
 	inputs, err := advancer.repository.GetUnprocessedInputs(ctx, apps)
 	if err != nil {
 		return err

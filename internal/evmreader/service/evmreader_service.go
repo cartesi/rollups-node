@@ -81,5 +81,5 @@ func (s *EvmReaderService) Start(
 }
 
 func (s *EvmReaderService) String() string {
-	return "evm-reader"
+	return "evmreader"
 }
