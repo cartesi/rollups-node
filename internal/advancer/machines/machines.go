@@ -170,20 +170,26 @@ func createMachine(ctx context.Context,
 	verbosity cm.ServerVerbosity,
 	config *MachineConfig,
 ) (*nm.NodeMachine, error) {
-	slog.Info("creating machine", "application", config.AppAddress,
-		"template-path", config.SnapshotPath, "service", "advancer")
+	slog.Info("advancer: creating machine", "application", config.AppAddress,
+		"template-path", config.SnapshotPath)
+	slog.Debug("advancer: instantiating remote machine server", "application", config.AppAddress)
 	// Starts the server.
 	address, err := cm.StartServer(verbosity, 0, os.Stdout, os.Stderr)
 	if err != nil {
 		return nil, err
 	}
 
+	slog.Debug("advancer: loading machine on server", "application", config.AppAddress,
+		"remote-machine", address, "template-path", config.SnapshotPath)
 	// Creates a CartesiMachine from the snapshot.
 	runtimeConfig := &emulator.MachineRuntimeConfig{}
 	cartesiMachine, err := cm.Load(ctx, config.SnapshotPath, address, runtimeConfig)
 	if err != nil {
 		return nil, errors.Join(err, cm.StopServer(address))
 	}
+
+	slog.Debug("advancer: machine loaded on server", "application", config.AppAddress,
+		"remote-machine", address, "template-path", config.SnapshotPath)
 
 	// Creates a RollupsMachine from the CartesiMachine.
 	rollupsMachine, err := rm.New(ctx,
@@ -214,7 +220,7 @@ func catchUp(ctx context.Context,
 	processedInputs uint64,
 ) error {
 
-	slog.Info("catching up unprocessed inputs", "application", app, "service", "advancer")
+	slog.Info("advancer: catching up unprocessed inputs", "application", app)
 
 	inputs, err := repo.GetProcessedInputs(ctx, app, processedInputs)
 	if err != nil {
@@ -223,8 +229,8 @@ func catchUp(ctx context.Context,
 
 	for _, input := range inputs {
 		// FIXME epoch id to epoch index
-		slog.Info("advancing", "application", app, "epochId", input.EpochId,
-			"input-index", input.Index, "service", "advancer")
+		slog.Info("advancer: advancing", "application", app, "epochId", input.EpochId,
+			"input-index", input.Index)
 		_, err := machine.Advance(ctx, input.RawData, input.Index)
 		if err != nil {
 			return err
