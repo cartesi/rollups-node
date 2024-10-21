@@ -53,7 +53,7 @@ func (advancer *Advancer) Step(ctx context.Context) error {
 	apps := advancer.machines.Apps()
 
 	// Gets the unprocessed inputs (of all apps) from the repository.
-	slog.Info("advancer: querying for unprocessed inputs")
+	slog.Debug("advancer: querying for unprocessed inputs")
 	inputs, err := advancer.repository.GetUnprocessedInputs(ctx, apps)
 	if err != nil {
 		return err
@@ -61,7 +61,7 @@ func (advancer *Advancer) Step(ctx context.Context) error {
 
 	// Processes each set of inputs.
 	for app, inputs := range inputs {
-		slog.Info(fmt.Sprintf("advancer: processing %d input(s) from %v", len(inputs), app))
+		slog.Debug(fmt.Sprintf("advancer: processing %d input(s) from %v", len(inputs), app))
 		err := advancer.process(ctx, app, inputs)
 		if err != nil {
 			return err
@@ -94,7 +94,7 @@ func (advancer *Advancer) process(ctx context.Context, app Address, inputs []*In
 
 	// FIXME if theres a change in epoch id call update epochs
 	for _, input := range inputs {
-		slog.Info("advancer: processing input", "id", input.Id, "index", input.Index)
+		slog.Info("advancer: Processing input", "app", app, "id", input.Id, "index", input.Index)
 
 		// Sends the input to the cartesi machine.
 		res, err := machine.Advance(ctx, input.RawData, input.Index)

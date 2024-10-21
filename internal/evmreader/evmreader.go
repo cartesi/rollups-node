@@ -117,7 +117,7 @@ type EvmReader struct {
 }
 
 func (r *EvmReader) String() string {
-	return "evm-reader"
+	return "evmreader"
 }
 
 // Creates a new EvmReader
@@ -154,7 +154,7 @@ func (r *EvmReader) Run(ctx context.Context, ready chan<- struct{}) error {
 			return err
 		}
 		slog.Error(err.Error())
-		slog.Info("Restarting subscription")
+		slog.Info("evmreader: Restarting subscription")
 	}
 }
 
@@ -166,7 +166,7 @@ func (r *EvmReader) watchForNewBlocks(ctx context.Context, ready chan<- struct{}
 	if err != nil {
 		return fmt.Errorf("could not start subscription: %v", err)
 	}
-	slog.Info("Subscribed to new block events")
+	slog.Info("evmreader: Subscribed to new block events")
 	ready <- struct{}{}
 	defer sub.Unsubscribe()
 
@@ -183,7 +183,7 @@ func (r *EvmReader) watchForNewBlocks(ctx context.Context, ready chan<- struct{}
 			// Get All Applications
 			runningApps, err := r.repository.GetAllRunningApplications(ctx)
 			if err != nil {
-				slog.Error("Error retrieving running applications",
+				slog.Error("evmreader: Error retrieving running applications",
 					"error",
 					err,
 				)
@@ -195,7 +195,7 @@ func (r *EvmReader) watchForNewBlocks(ctx context.Context, ready chan<- struct{}
 			for _, app := range runningApps {
 				applicationContract, consensusContract, err := r.getAppContracts(app)
 				if err != nil {
-					slog.Error("Error retrieving application contracts", "app", app, "error", err)
+					slog.Error("evmreader: Error retrieving application contracts", "app", app, "error", err)
 					continue
 				}
 				apps = append(apps, application{Application: app,
@@ -204,7 +204,7 @@ func (r *EvmReader) watchForNewBlocks(ctx context.Context, ready chan<- struct{}
 			}
 
 			if len(apps) == 0 {
-				slog.Info("No correctly configured applications running")
+				slog.Info("evmreader: No correctly configured applications running")
 				continue
 			}
 
@@ -213,7 +213,7 @@ func (r *EvmReader) watchForNewBlocks(ctx context.Context, ready chan<- struct{}
 				r.defaultBlock,
 			)
 			if err != nil {
-				slog.Error("Error fetching most recent block",
+				slog.Error("evmreader: Error fetching most recent block",
 					"default block", r.defaultBlock,
 					"error", err)
 				continue
