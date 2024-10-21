@@ -116,6 +116,10 @@ $(ROLLUPS_CONTRACTS_ABI_BASEDIR):
 	@echo "Exporting rollups-contracts artifacts"
 	@cd rollups-contracts && pnpm install --frozen-lockfile && pnpm export
 
+migrate: ## Run migration on development database
+	@echo "Running PostgreSQL migration"
+	@go run $(GO_BUILD_PARAMS) dev/migrate/main.go
+
 # =============================================================================
 # Clean
 # =============================================================================
