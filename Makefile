@@ -116,6 +116,10 @@ $(ROLLUPS_CONTRACTS_ABI_BASEDIR):
 	@echo "Exporting rollups-contracts artifacts"
 	@cd rollups-contracts && pnpm install --frozen-lockfile && pnpm export
 
+migrate: ## Run migration on development database
+	@echo "Running PostgreSQL migration"
+	@go run $(GO_BUILD_PARAMS) dev/migrate/main.go
+
 # =============================================================================
 # Clean
 # =============================================================================
@@ -248,6 +252,7 @@ run-postgraphile: ## Run the GraphQL server docker container
 #		--append-plugins @graphile-contrib/pg-simplify-inflector \
 
 start: run-postgres run-devnet ## Start the anvil devnet and PostgreSQL 16 docker containers
+	@$(MAKE) migrate
 
 stop-devnet: ## Stop the anvil devnet docker container
 	@docker stop devnet
