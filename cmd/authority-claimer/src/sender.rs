@@ -25,7 +25,7 @@ use ethers::{
 };
 use snafu::{OptionExt, ResultExt, Snafu};
 use std::{fmt::Debug, sync::Arc};
-use tracing::{info, trace};
+use tracing::{debug, info, trace};
 use url::{ParseError, Url};
 
 /// The `TransactionSender` sends claims to the blockchain.
@@ -224,7 +224,7 @@ impl TransactionSender for DefaultTransactionSender {
                 dapp_address,
             })
             .inc();
-        info!("Claim transaction confirmed: `{:?}`", receipt);
+        debug!("Claim transaction confirmed: `{:?}`", receipt);
 
         Ok((receipt.transaction_hash, Self { tx_manager, ..self }))
     }
