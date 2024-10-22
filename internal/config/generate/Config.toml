@@ -57,13 +57,13 @@ description = """
 How many seconds the retry policy will wait between retries."""
 
 [rollups.CARTESI_ADVANCER_POLLING_INTERVAL]
-default = "30"
+default = "7"
 go-type = "Duration"
 description = """
 How many seconds the node will wait before querying the database for new inputs."""
 
 [rollups.CARTESI_VALIDATOR_POLLING_INTERVAL]
-default = "30"
+default = "7"
 go-type = "Duration"
 description = """
 How many seconds the node will wait before trying to finish epochs for all applications."""
