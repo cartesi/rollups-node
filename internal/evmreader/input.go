@@ -155,8 +155,6 @@ func (r *EvmReader) readAndStoreInputs(
 					"epoch-index", currentEpoch.Index,
 					"start", currentEpoch.FirstBlock,
 					"end", currentEpoch.LastBlock)
-				// Add it to inputMap, so it will be stored
-				epochInputMap[currentEpoch] = []Input{}
 				currentEpoch = nil
 			}
 			if currentEpoch == nil {
@@ -167,6 +165,7 @@ func (r *EvmReader) readAndStoreInputs(
 					Status:     EpochStatusOpen,
 					AppAddress: address,
 				}
+				epochInputMap[currentEpoch] = []Input{}
 			}
 
 			slog.Info("evmreader: Adding new Input into epoch",
