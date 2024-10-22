@@ -176,9 +176,10 @@ func (r *EvmReader) watchForNewBlocks(ctx context.Context, ready chan<- struct{}
 			return ctx.Err()
 		case err := <-sub.Err():
 			return &SubscriptionError{Cause: err}
-		case <-headers:
+		case header := <-headers:
 
 			// Every time a new block arrives
+			slog.Debug("evmreader: New block header received", "blockNumber", header.Number, "blockHash", header.Hash())
 
 			// Get All Applications
 			runningApps, err := r.repository.GetAllRunningApplications(ctx)
@@ -208,23 +209,29 @@ func (r *EvmReader) watchForNewBlocks(ctx context.Context, ready chan<- struct{}
 				continue
 			}
 
-			mostRecentHeader, err := r.fetchMostRecentHeader(
-				ctx,
-				r.defaultBlock,
-			)
-			if err != nil {
-				slog.Error("evmreader: Error fetching most recent block",
-					"default block", r.defaultBlock,
-					"error", err)
-				continue
+			blockNumber := header.Number.Uint64()
+			if r.defaultBlock != DefaultBlockStatusLatest {
+				mostRecentHeader, err := r.fetchMostRecentHeader(
+					ctx,
+					r.defaultBlock,
+				)
+				if err != nil {
+					slog.Error("evmreader: Error fetching most recent block",
+						"default block", r.defaultBlock,
+						"error", err)
+					continue
+				}
+				blockNumber = mostRecentHeader.Number.Uint64()
+
+				slog.Debug(fmt.Sprintf("evmreader: Using block %d and not %d because of commitment policy: %s",
+					mostRecentHeader.Number.Uint64(), header.Number.Uint64(), r.defaultBlock))
 			}
-			mostRecentBlockNumber := mostRecentHeader.Number.Uint64()
 
-			r.checkForNewInputs(ctx, apps, mostRecentBlockNumber)
+			r.checkForNewInputs(ctx, apps, blockNumber)
 
-			r.checkForClaimStatus(ctx, apps, mostRecentBlockNumber)
+			r.checkForClaimStatus(ctx, apps, blockNumber)
 
-			r.checkForOutputExecution(ctx, apps, mostRecentBlockNumber)
+			r.checkForOutputExecution(ctx, apps, blockNumber)
 
 		}
 	}

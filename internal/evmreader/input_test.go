@@ -353,7 +353,7 @@ func (s *EvmReaderSuite) TestItStartsWhenLasProcessedBlockIsTheMostRecentBlock()
 	).Return([]Application{{
 		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
-		LastProcessedBlock: 0x11,
+		LastProcessedBlock: 0x13,
 	}}, nil).Once()
 
 	// Start service
