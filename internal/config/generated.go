@@ -411,7 +411,7 @@ func GetPostgresEndpoint() string {
 func GetAdvancerPollingInterval() Duration {
 	s, ok := os.LookupEnv("CARTESI_ADVANCER_POLLING_INTERVAL")
 	if !ok {
-		s = "30"
+		s = "7"
 	}
 	val, err := toDuration(s)
 	if err != nil {
@@ -459,7 +459,7 @@ func GetEvmReaderRetryPolicyMaxRetries() uint64 {
 func GetValidatorPollingInterval() Duration {
 	s, ok := os.LookupEnv("CARTESI_VALIDATOR_POLLING_INTERVAL")
 	if !ok {
-		s = "30"
+		s = "7"
 	}
 	val, err := toDuration(s)
 	if err != nil {
