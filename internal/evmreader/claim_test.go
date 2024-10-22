@@ -132,7 +132,7 @@ func (s *EvmReaderSuite) TestNoClaimsAcceptance() {
 	s.repository.AssertNumberOfCalls(
 		s.T(),
 		"UpdateEpochs",
-		2,
+		0,
 	)
 
 }
