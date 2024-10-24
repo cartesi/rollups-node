@@ -16,6 +16,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/advancer/machines"
 	"github.com/cartesi/rollups-node/internal/inspect"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/services"
 	"github.com/cartesi/rollups-node/internal/services/startup"
 
 	"github.com/spf13/cobra"
@@ -92,7 +93,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf("%v:%v", c.HttpAddress, c.HttpPort),
-		Handler: serveMux,
+		Handler: services.CorsMiddleware(serveMux),
 	}
 
 	go func() {
