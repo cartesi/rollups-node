@@ -46,17 +46,17 @@ type Metrics struct {
 /* Runtime values to run this service. */
 type Service struct {
 	Name                     string
-	logLevel                 slog.Level
-	ticker                  *time.Ticker
-	context                  context.Context
-	cancel                   context.CancelFunc
-	sighup                   chan os.Signal // SIGHUP to reload
-	sigint                   chan os.Signal // SIGINT to exit gracefully
-	running                  atomic.Bool
-	httpMux                  *http.ServeMux
-	telemetryServer          *http.Server
-	telemetryStart           func()
-	hook                     IServiceHooks
+	LogLevel                 slog.Level
+	Ticker                  *time.Ticker
+	Context                  context.Context
+	Cancel                   context.CancelFunc
+	Sighup                   chan os.Signal // SIGHUP to reload
+	Sigint                   chan os.Signal // SIGINT to exit gracefully
+	Running                  atomic.Bool
+	HTTPMux                  *http.ServeMux
+	TelemetryServer          *http.Server
+	TelemetryStart           func()
+	Hook                     IServiceHooks
 
 	metrics                  Metrics
 }
@@ -75,10 +75,10 @@ func Create(ci CreateInfo, is IServiceHooks, s *Service) error {
 	if is == nil {
 		return ENoIService
 	}
-	s.hook = is
+	s.Hook = is
 
 	// log
-	s.logLevel = map[string]slog.Level {
+	s.LogLevel = map[string]slog.Level {
 		"debug" : slog.LevelDebug,
 		"info"  : slog.LevelInfo,
 		"warn"  : slog.LevelWarn,
@@ -86,11 +86,11 @@ func Create(ci CreateInfo, is IServiceHooks, s *Service) error {
 	}[ci.LogLevel]
 
 	if ci.LogLevel == "" {
-		s.logLevel = slog.LevelDebug
+		s.LogLevel = slog.LevelDebug
 	}
 	opts := &tint.Options{
-		Level:      s.logLevel,
-		AddSource:  s.logLevel == slog.LevelDebug,
+		Level:      s.LogLevel,
+		AddSource:  s.LogLevel == slog.LevelDebug,
 		// RFC3339 with milliseconds and without timezone
 		TimeFormat: "2006-01-02T15:04:05.000",
 	}
@@ -99,28 +99,28 @@ func Create(ci CreateInfo, is IServiceHooks, s *Service) error {
 	slog.SetDefault(logger)
 
 	// ticker
-	if s.ticker == nil {
+	if s.Ticker == nil {
 		if ci.PollInterval == 0 {
 			ci.PollInterval = 1000 * time.Millisecond
 		}
-		s.ticker = time.NewTicker(ci.PollInterval)
+		s.Ticker = time.NewTicker(ci.PollInterval)
 	}
 
 	// cancelation
-	if s.cancel == nil {
+	if s.Cancel == nil {
 		if ci.Context == nil {
 			ci.Context = context.Background()
 		}
-		s.context, s.cancel = context.WithCancel(ci.Context)
+		s.Context, s.Cancel = context.WithCancel(ci.Context)
 	}
 
 	// signal handlers
 	if ci.SignalTrapsCreate {
-		s.sighup = make(chan os.Signal, 1)
-		signal.Notify(s.sighup, syscall.SIGHUP)
+		s.Sighup = make(chan os.Signal, 1)
+		signal.Notify(s.Sighup, syscall.SIGHUP)
 
-		s.sigint = make(chan os.Signal, 1)
-		signal.Notify(s.sigint, syscall.SIGINT)
+		s.Sigint = make(chan os.Signal, 1)
+		signal.Notify(s.Sigint, syscall.SIGINT)
 	}
 
 	// telemetry endpoints
@@ -131,16 +131,16 @@ func Create(ci CreateInfo, is IServiceHooks, s *Service) error {
 		if ci.TelemetryRetryInterval == 0 {
 			ci.TelemetryRetryInterval = 5 * time.Second
 		}
-		s.httpMux = http.NewServeMux()
-		s.telemetryServer, s.telemetryStart =
+		s.HTTPMux = http.NewServeMux()
+		s.TelemetryServer, s.TelemetryStart =
 			s.StartTelemetryServer(ci.TelemetryAddress, 3,
-			ci.TelemetryRetryInterval, s.httpMux)
+			ci.TelemetryRetryInterval, s.HTTPMux)
 	}
 
 	slog.Info("create",
 		"service",   s.Name,
 		"pid",       os.Getpid(),
-		"log-level", s.logLevel)
+		"log-level", s.LogLevel)
 	return nil
 }
 
@@ -150,10 +150,10 @@ func Create(ci CreateInfo, is IServiceHooks, s *Service) error {
 func (s *Service) Start(serve bool) {
 	slog.Info("start", "service", s.Name)
 
-	if (s.telemetryServer != nil) {
-		go s.telemetryStart()
+	if (s.TelemetryServer != nil) {
+		go s.TelemetryStart()
 	}
-	s.running.Store(true)
+	s.Running.Store(true)
 	if serve {
 		s.loop()
 	} else {
@@ -167,12 +167,12 @@ func (s *Service) Start(serve bool) {
 func (s *Service) Stop(force bool) {
 	slog.Info("stop", "service", s.Name, "force", force)
 
-	s.running.Store(false)
-	if (s.telemetryServer != nil) {
-		s.telemetryServer.Close()
+	s.Running.Store(false)
+	if (s.TelemetryServer != nil) {
+		s.TelemetryServer.Close()
 	}
 	if force {
-		s.cancel()
+		s.Cancel()
 	}
 }
 
@@ -180,17 +180,17 @@ func (s *Service) Stop(force bool) {
  * reconfigure a running service. */
 func (s *Service) reload() bool {
 	slog.Info("reload", "service", s.Name)
-	return s.hook.Reload()
+	return s.Hook.Reload()
 }
 
 func (s *Service) ready() bool {
-	ready := s.running.Load() && s.hook.Ready()
+	ready := s.Running.Load() && s.Hook.Ready()
 	slog.Info("checkready", "service", s.Name, "ready", ready)
 	return ready
 }
 
 func (s *Service) alive() bool {
-	alive := s.hook.Alive()
+	alive := s.Hook.Alive()
 	slog.Info("checkalive", "service", s.Name, "alive", alive)
 	return alive
 }
@@ -198,7 +198,7 @@ func (s *Service) alive() bool {
 func (s *Service) tick() {
 	start := time.Now()
 
-	s.hook.Tick()
+	s.Hook.Tick()
 
 	elapsed := time.Since(start)
 	slog.Info("tick",
@@ -211,15 +211,15 @@ func (s *Service) tick() {
 
 func (s *Service) loop() {
 	s.tick()
-	for s.running.Load() {
+	for s.Running.Load() {
 		select {
-		case <-s.sighup:
+		case <-s.Sighup:
 			s.reload()
-		case <-s.sigint:
+		case <-s.Sigint:
 			s.Stop(false)
-		case <-s.context.Done():
+		case <-s.Context.Done():
 			s.Stop(true)
-		case <-s.ticker.C:
+		case <-s.Ticker.C:
 			s.tick()
 		}
 	}
