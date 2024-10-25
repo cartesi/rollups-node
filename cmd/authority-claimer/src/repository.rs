@@ -12,6 +12,7 @@ use sqlx::{
 };
 use std::sync::Arc;
 use std::{fmt::Debug, time::Duration};
+use tokio::time::sleep;
 
 use crate::rollups_events::{Address, Hash, RollupsClaim};
 
@@ -49,11 +50,16 @@ pub enum RepositoryError {
 pub struct DefaultRepository {
     // Connection is not thread-safe, we use a connection pool
     db_pool: Arc<Pool<Postgres>>,
+    // Polling interval in seconds
+    polling_interval: u64,
 }
 
 impl DefaultRepository {
     /// Create database connection pool, wait until database server is available
-    pub fn new(endpoint: String) -> Result<Self, RepositoryError> {
+    pub fn new(
+        endpoint: String,
+        polling_interval: u64,
+    ) -> Result<Self, RepositoryError> {
         let connection = PgPoolOptions::new()
             .acquire_timeout(REPOSITORY_ACQUIRE_TIMEOUT)
             .min_connections(REPOSITORY_MIN_CONNECTIONS)
@@ -62,6 +68,7 @@ impl DefaultRepository {
             .context(DatabaseSqlxSnafu)?;
         Ok(Self {
             db_pool: Arc::new(connection),
+            polling_interval,
         })
     }
 
@@ -132,7 +139,10 @@ impl Repository for DefaultRepository {
                     );
                     break;
                 }
-                None => continue,
+                None => {
+                    sleep(Duration::from_secs(self.polling_interval)).await;
+                    continue;
+                }
             }
         }
 

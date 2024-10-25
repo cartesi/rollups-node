@@ -63,6 +63,7 @@ func newAuthorityClaimer(c config.NodeConfig, workDir string) services.Service {
 		c.BlockchainFinalityOffset))
 	s.Env = append(s.Env, fmt.Sprintf("POSTGRES_ENDPOINT=%v",
 		fmt.Sprintf("%v", c.PostgresEndpoint.Value)))
+	s.Env = append(s.Env, fmt.Sprintf("POLLING_INTERVAL=%v", c.ClaimerPollingInterval.Seconds()))
 	s.Env = append(s.Env, fmt.Sprintf("INPUT_BOX_ADDRESS=%v", c.ContractsInputBoxAddress))
 	s.Env = append(s.Env, fmt.Sprintf("GENESIS_BLOCK=%v",
 		c.ContractsInputBoxDeploymentBlockNumber))

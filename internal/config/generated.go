@@ -420,6 +420,18 @@ func GetAdvancerPollingInterval() Duration {
 	return val
 }
 
+func GetClaimerPollingInterval() Duration {
+	s, ok := os.LookupEnv("CARTESI_CLAIMER_POLLING_INTERVAL")
+	if !ok {
+		s = "7"
+	}
+	val, err := toDuration(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_CLAIMER_POLLING_INTERVAL: %v", err))
+	}
+	return val
+}
+
 func GetEpochLength() uint64 {
 	s, ok := os.LookupEnv("CARTESI_EPOCH_LENGTH")
 	if !ok {
