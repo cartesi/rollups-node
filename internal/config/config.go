@@ -38,6 +38,7 @@ type NodeConfig struct {
 	Auth                                   Auth
 	AdvancerPollingInterval                Duration
 	ValidatorPollingInterval               Duration
+	ClaimerPollingInterval                 Duration
 	// Temporary
 	MachineServerVerbosity cartesimachine.ServerVerbosity
 }
@@ -99,6 +100,7 @@ func FromEnv() NodeConfig {
 	}
 	config.AdvancerPollingInterval = GetAdvancerPollingInterval()
 	config.ValidatorPollingInterval = GetValidatorPollingInterval()
+	config.ClaimerPollingInterval = GetClaimerPollingInterval()
 	// Temporary.
 	config.MachineServerVerbosity = cartesimachine.ServerVerbosity(GetMachineServerVerbosity())
 	return config
