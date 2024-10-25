@@ -50,6 +50,7 @@ pub struct Config {
     pub tx_manager_priority: Priority,
     pub log_config: LogConfig,
     pub postgres_endpoint: String,
+    pub polling_interval: u64,
     pub genesis_block: u64,
     pub http_server_port: u16,
 }
@@ -86,12 +87,15 @@ impl Config {
 
         let postgres_endpoint = cli_config.postgres_endpoint;
 
+        let polling_interval = cli_config.polling_interval;
+
         Ok(Config {
             tx_manager_config,
             tx_signing_config,
             tx_manager_priority: Priority::Normal,
             log_config,
             postgres_endpoint,
+            polling_interval,
             genesis_block: cli_config.genesis_block,
             http_server_port: cli_config.http_server_port,
         })
@@ -114,6 +118,10 @@ struct AuthorityClaimerCLI {
     /// Postgres endpoint address
     #[arg(long, env)]
     pub postgres_endpoint: String,
+
+    /// Dtatabase polling interval
+    #[arg(long, env, default_value_t = 7)]
+    pub polling_interval: u64,
 
     /// Genesis block for reading blockchain events
     #[arg(long, env, default_value_t = 1)]

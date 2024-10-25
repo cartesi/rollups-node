@@ -68,6 +68,12 @@ go-type = "Duration"
 description = """
 How many seconds the node will wait before trying to finish epochs for all applications."""
 
+[rollups.CARTESI_CLAIMER_POLLING_INTERVAL]
+default = "7"
+go-type = "Duration"
+description = """
+How many seconds the node will wait before querying the database for new claims."""
+
 #
 # Blockchain
 #
