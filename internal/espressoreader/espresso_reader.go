@@ -37,7 +37,7 @@ func NewEspressoReader(url string, startingBlock uint64, namespace uint64, repos
 	return EspressoReader{url: url, client: *client, startingBlock: startingBlock, namespace: namespace, repository: repository, evmReader: evmReader}
 }
 
-func (e *EspressoReader) Run(ctx context.Context) error {
+func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 	currentBlockHeight := e.startingBlock
 	if currentBlockHeight == 0 {
 		lastestEspressoBlockHeight, err := e.client.FetchLatestBlockHeight(ctx)
@@ -49,6 +49,8 @@ func (e *EspressoReader) Run(ctx context.Context) error {
 	}
 	previousBlockHeight := currentBlockHeight
 	l1FinalizedPrevHeight := e.getL1FinalizedHeight(previousBlockHeight)
+
+	ready <- struct{}{}
 
 	// main polling loop
 	for {
