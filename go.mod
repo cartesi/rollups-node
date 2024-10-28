@@ -13,6 +13,10 @@ require (
 require github.com/BurntSushi/toml v1.4.0
 
 require (
+	github.com/Khan/genqlient v0.7.0
+	github.com/aws/aws-sdk-go-v2 v1.32.2
+	github.com/aws/aws-sdk-go-v2/config v1.18.45
+	github.com/aws/aws-sdk-go-v2/service/kms v1.37.2
 	github.com/deepmap/oapi-codegen/v2 v2.1.0
 	github.com/golang-migrate/migrate/v4 v4.18.1
 	github.com/jackc/pgx/v5 v5.7.1
@@ -28,6 +32,16 @@ require (
 	github.com/FactomProject/btcutilecc v0.0.0-20130527213604-d3a63a5752ec // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.13.43 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.13.13 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.21 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.21 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/ini v1.3.45 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.9.37 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.15.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.17.3 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.23.2 // indirect
+	github.com/aws/smithy-go v1.22.0 // indirect
 	github.com/bits-and-blooms/bitset v1.14.3 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4 // indirect
 	github.com/consensys/bavard v0.1.22 // indirect
@@ -55,6 +69,7 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/lib/pq v1.10.9 // indirect
