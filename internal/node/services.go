@@ -45,8 +45,11 @@ func newSupervisorService(
 	serveMux := http.NewServeMux()
 	serveMux.Handle("/healthz", http.HandlerFunc(healthcheckHandler))
 
-	// s = append(s, newEvmReaderService(c, database))
-	s = append(s, NewEspressoReaderService(c, database))
+	if c.MainSequencer == "ethereum" {
+		s = append(s, newEvmReaderService(c, database))
+	} else {
+		s = append(s, NewEspressoReaderService(c, database))
+	}
 	s = append(s, newAdvancerService(c, database, serveMux))
 	s = append(s, newValidatorService(c, database))
 	s = append(s, newHttpService(c, serveMux))

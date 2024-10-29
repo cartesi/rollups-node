@@ -504,6 +504,18 @@ func GetValidatorPollingInterval() Duration {
 	return val
 }
 
+func GetSequencer() string {
+	s, ok := os.LookupEnv("MAIN_SEQUENCER")
+	if !ok {
+		s = "espresso"
+	}
+	val, err := toString(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse MAIN_SEQUENCER: %v", err))
+	}
+	return val
+}
+
 func GetSnapshotDir() string {
 	s, ok := os.LookupEnv("CARTESI_SNAPSHOT_DIR")
 	if !ok {
