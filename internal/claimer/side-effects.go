@@ -122,7 +122,7 @@ func (s *Service) updateEpochWithSubmittedClaim(
 	claim *ComputedClaim,
 	txHash Hash,
 ) error {
-	_, err := DBConn.UpdateEpochWithSubmittedClaim(context, claim.EpochID, txHash)
+	err := DBConn.UpdateEpochWithSubmittedClaim(context, claim.EpochID, txHash)
 	if err != nil {
 		s.Logger.Error("UpdateEpochWithSubmittedClaim:failed",
 			"service", s.Name,

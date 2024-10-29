@@ -4,10 +4,8 @@
 # syntax=docker.io/docker/dockerfile:1
 
 ARG EMULATOR_VERSION=0.18.1
-ARG RUST_VERSION=1.78.0
 
 # Build directories.
-ARG RUST_BUILD_PATH=/build/cartesi/rust
 ARG GO_BUILD_PATH=/build/cartesi/go
 
 FROM cartesi/machine-emulator:${EMULATOR_VERSION} AS common-env
@@ -15,7 +13,6 @@ FROM cartesi/machine-emulator:${EMULATOR_VERSION} AS common-env
 USER root
 
 # Re-declare ARGs so they can be used in the RUN block
-ARG RUST_BUILD_PATH
 ARG GO_BUILD_PATH
 
 # Install ca-certificates and curl (setup).
@@ -23,8 +20,8 @@ RUN <<EOF
     set -e
     apt-get update
     apt-get install -y --no-install-recommends ca-certificates curl wget build-essential pkg-config libssl-dev
-    mkdir -p /opt/rust/rustup /opt/go ${RUST_BUILD_PATH} ${GO_BUILD_PATH}/rollups-node
-    chown -R cartesi:cartesi /opt/rust /opt/go ${RUST_BUILD_PATH} ${GO_BUILD_PATH}
+    mkdir -p /opt/go ${GO_BUILD_PATH}/rollups-node
+    chown -R cartesi:cartesi /opt/go ${GO_BUILD_PATH}
 EOF
 
 USER cartesi
@@ -43,68 +40,6 @@ RUN corepack enable
 COPY rollups-contracts /build/rollups-contracts
 WORKDIR /build/rollups-contracts
 RUN pnpm install --frozen-lockfile && pnpm export
-
-# =============================================================================
-# STAGE: rust-installer
-#
-# - Install rust and cargo-chef.
-# =============================================================================
-
-FROM common-env AS rust-installer
-
-# Get Rust
-ENV CARGO_HOME=/opt/rust/cargo
-ENV RUSTUP_HOME=/opt/rust/rustup
-
-RUN <<EOF
-    set -e
-    cd /tmp
-    wget https://github.com/rust-lang/rustup/archive/refs/tags/1.27.0.tar.gz
-    echo "3d331ab97d75b03a1cc2b36b2f26cd0a16d681b79677512603f2262991950ad1  1.27.0.tar.gz" | sha256sum --check
-    tar xzf 1.27.0.tar.gz
-    bash rustup-1.27.0/rustup-init.sh \
-        -y \
-        --no-modify-path \
-        --default-toolchain 1.78 \
-        --component rustfmt \
-        --profile minimal
-    rm -rf 1.27.0*
-    $CARGO_HOME/bin/cargo install cargo-chef
-EOF
-
-ENV PATH="${CARGO_HOME}/bin:${PATH}"
-
-ARG RUST_BUILD_PATH
-WORKDIR ${RUST_BUILD_PATH}
-
-# =============================================================================
-# STAGE: rust-prepare
-#
-# This stage prepares the recipe with just the external dependencies.
-# =============================================================================
-
-FROM rust-installer AS rust-prepare
-COPY ./cmd/authority-claimer/ .
-RUN cargo chef prepare --recipe-path recipe.json
-
-# =============================================================================
-# STAGE: rust-builder
-#
-# This stage builds the Rust binaries. First it builds the external
-# dependencies and then it builds the node binaries.
-# =============================================================================
-
-FROM rust-installer AS rust-builder
-
-# Build external dependencies with cargo chef.
-COPY --from=rust-prepare ${RUST_BUILD_PATH}/recipe.json .
-RUN cargo chef cook --release --recipe-path recipe.json
-
-COPY --chown=cartesi:cartesi ./cmd/authority-claimer/ .
-COPY --from=contracts-artifacts /build/rollups-contracts/export/artifacts ${RUST_BUILD_PATH}/../../rollups-contracts/export/artifacts
-
-# Build application.
-RUN cargo build --release
 
 # =============================================================================
 # STAGE: go-installer
@@ -147,8 +82,8 @@ ENV GOENV=${GO_BUILD_PATH}/.config/go/env
 ENV GOPATH=${GO_BUILD_PATH}/.go
 
 # Download external dependencies.
-COPY go.mod ${GO_BUILD_PATH}/rollups-node/
-COPY go.sum ${GO_BUILD_PATH}/rollups-node/
+COPY --chown=cartesi:cartesi go.mod ${GO_BUILD_PATH}/rollups-node/
+COPY --chown=cartesi:cartesi go.sum ${GO_BUILD_PATH}/rollups-node/
 RUN cd ${GO_BUILD_PATH}/rollups-node && go mod download
 
 # =============================================================================
@@ -198,13 +133,6 @@ RUN <<EOF
     chown -R cartesi:cartesi ${NODE_RUNTIME_DIR}
 EOF
 
-# Copy Rust binaries.
-# Explicitly copy each binary to avoid adding unnecessary files to the runtime
-# image.
-ARG RUST_BUILD_PATH
-ARG RUST_TARGET=${RUST_BUILD_PATH}/target/release
-COPY --from=rust-builder ${RUST_TARGET}/cartesi-rollups-authority-claimer /usr/bin
-
 # Copy Go binary.
 ARG GO_BUILD_PATH
 COPY --from=go-builder ${GO_BUILD_PATH}/rollups-node/cartesi-rollups-* /usr/bin
@@ -215,7 +143,7 @@ USER cartesi
 WORKDIR ${NODE_RUNTIME_DIR}
 
 HEALTHCHECK --interval=1s --timeout=1s --retries=5 \
-    CMD curl -G -f -H 'Content-Type: application/json' http://127.0.0.1:10001/healthz
+    CMD curl -G -f -H 'Content-Type: application/json' http://127.0.0.1:10000/healthz
 
 # Set the Go supervisor as the command.
 CMD [ "cartesi-rollups-node" ]

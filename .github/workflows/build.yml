@@ -116,83 +116,6 @@ jobs:
       - name: Check auto generated files
         run: make check-generate
 
-
-  test-rust:
-    runs-on: ubuntu-22.04
-    env:
-      RUSTFLAGS: -D warnings -C debuginfo=0
-    defaults:
-      run:
-        working-directory: cmd/authority-claimer
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - uses: depot/setup-action@v1
-      - name: Build dependency images
-        uses: depot/bake-action@v1
-        with:
-          files: |
-            ./docker-bake.hcl
-            ./docker-bake.override.hcl
-            ./docker-bake.platforms.hcl
-          targets: |
-            rollups-node-snapshot
-          project: ${{ vars.DEPOT_PROJECT }}
-          workdir: build
-          load: true
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            ./cmd/authority-claimer/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
-
-      - name: Update Rust
-        run: rustup update
-
-      - name: Install cargo sweep
-        run: cargo install cargo-sweep
-        continue-on-error: true
-
-      - name: Install cargo cache
-        run: cargo install cargo-cache
-        continue-on-error: true
-
-      - name: Install cargo-machete
-        run: cargo install cargo-machete
-        continue-on-error: true
-
-      - name: Set sweep timestamp
-        run: cargo sweep -s
-
-      - name: Analyze dependencies
-        run: cargo machete .
-
-      - name: Check code format
-        run: cargo fmt --all -- --check
-
-      - name: Run linter
-        run: cargo clippy -- -A clippy::module_inception -A clippy::mixed_attributes_style
-
-      - name: Build binaries and tests
-        run: cargo build --all-targets
-
-      - name: Clean old build files
-        run: cargo sweep -f
-
-      - name: Clean dependencies source files
-        run: cargo cache --autoclean
-
-      - name: Run tests
-        run: cargo test
-
   test-go:
     runs-on: ubuntu-22.04
     container:
@@ -241,7 +164,6 @@ jobs:
     runs-on: ubuntu-22.04
     needs:
       - do-basic-checks
-      - test-rust
       - test-go
     steps:
       - uses: actions/checkout@v4
