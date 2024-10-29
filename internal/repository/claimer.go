@@ -5,12 +5,16 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
+)
+
+var (
+	ErrNoUpdate = fmt.Errorf("update did not take effect")
 )
 
 type ComputedClaim struct {
@@ -69,7 +73,7 @@ func (pg *Database) UpdateEpochWithSubmittedClaim(
 	ctx context.Context,
 	id uint64,
 	transaction_hash common.Hash,
-) (pgconn.CommandTag, error) {
+) error {
 	query := `
 	UPDATE
 		epoch
@@ -85,5 +89,13 @@ func (pg *Database) UpdateEpochWithSubmittedClaim(
 		"status":           EpochStatusClaimSubmitted,
 		"prevStatus":       EpochStatusClaimComputed,
 	}
-	return pg.db.Exec(ctx, query, args)
+	tag, err := pg.db.Exec(ctx, query, args)
+
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNoUpdate
+	}
+	return nil
 }

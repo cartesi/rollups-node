@@ -29,10 +29,6 @@ else
 PREFIX ?= /usr
 endif
 
-# Rust artifacts
-CLAIMER := cmd/authority-claimer/target/$(BUILD_TYPE)/cartesi-rollups-authority-claimer
-RUST_ARTIFACTS := $(CLAIMER)
-
 # Go artifacts
 GO_ARTIFACTS := cartesi-rollups-node cartesi-rollups-cli cartesi-rollups-evm-reader cartesi-rollups-advancer cartesi-rollups-validator cartesi-rollups-claimer
 
@@ -61,9 +57,7 @@ all: build
 # =============================================================================
 # Build
 # =============================================================================
-build: build-go build-rust ## Build all artifacts
-
-build-rust: $(RUST_ARTIFACTS) ## Build rust artifacts (claimer)
+build: build-go ## Build all artifacts
 
 build-go: $(GO_ARTIFACTS) ## Build Go artifacts (node, cli, evm-reader)
 
@@ -88,11 +82,6 @@ env:
 $(GO_ARTIFACTS):
 	@echo "Building Go artifact $@"
 	go build $(GO_BUILD_PARAMS) ./cmd/$@
-
-$(CLAIMER): | $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
-	@echo "Building Rust artifact $@"
-	@cd cmd/authority-claimer && cargo build $(CARGO_BUILD_PARAMS)
-	@cp cmd/authority-claimer/target/release/cartesi-rollups-authority-claimer .
 
 tidy-go:
 	@go mod tidy
@@ -124,17 +113,12 @@ migrate: ## Run migration on development database
 # Clean
 # =============================================================================
 
-clean: clean-go clean-rust clean-contracts clean-docs clean-devnet-files clean-dapps ## Clean all artifacts
+clean: clean-go clean-contracts clean-docs clean-devnet-files clean-dapps ## Clean all artifacts
 
 clean-go: ## Clean Go artifacts
 	@echo "Cleaning Go artifacts"
 	@go clean -i -r -cache
 	@rm -f $(GO_ARTIFACTS)
-
-clean-rust: ## Clean Rust artifacts
-	@echo "Cleaning Rust artifacts"
-	@cd cmd/authority-claimer && cargo clean
-	@rm -f cartesi-rollups-authority-claimer
 
 clean-contracts: ## Clean contract artifacts
 	@echo "Cleaning contract artifacts"
@@ -155,16 +139,12 @@ clean-dapps: ## Clean the dapps
 # =============================================================================
 # Tests
 # =============================================================================
-test: unit-test-go unit-test-rust ## Execute all tests
+test: unit-test-go ## Execute all tests
 
 unit-test-go: deployment.json ## Execute go unit tests
 	@echo "Running go unit tests"
 	@go clean -testcache
 	@go test -p 1 $(GO_BUILD_PARAMS) $(GO_TEST_PACKAGES)
-
-unit-test-rust: ## Execute unit tests
-	@echo "Running rust unit tests"
-	@cd cmd/authority-claimer && cargo test
 
 e2e-test: ## Execute e2e tests
 	@echo "Running end-to-end tests"
@@ -272,4 +252,4 @@ shutdown-compose: ## Remove the containers and volumes from previous compose run
 help: ## Show help for each of the Makefile recipes
 	@grep "##" $(MAKEFILE_LIST) | grep -v grep | sed -e 's/:.*##\(.*\)/:\n\t\1\n/'
 
-.PHONY: build build-go build-rust clean clean-go clean-rust test unit-test-go unit-test-rust e2e-test lint fmt vet escape md-lint devnet image run-with-compose shutdown-compose help docs $(GO_ARTIFACTS)
+.PHONY: build build-go clean clean-go test unit-test-go e2e-test lint fmt vet escape md-lint devnet image run-with-compose shutdown-compose help docs $(GO_ARTIFACTS)
