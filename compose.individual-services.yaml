@@ -91,7 +91,7 @@ services:
 
   claimer:
     image: cartesi/rollups-node:devel
-    command: cartesi-rollups-authority-claimer
+    command: cartesi-rollups-claimer
     depends_on:
       database:
         condition: service_healthy
@@ -103,10 +103,7 @@ services:
       - "10003:10003" # Supervisor
     restart: "on-failure"
     environment:
-      TX_CHAIN_ID: 31337
-      TX_PROVIDER_HTTP_ENDPOINT: http://ethereum_provider:8545
-      TX_SIGNING_MNEMONIC: "test test test test test test test test test test test junk"
-      POSTGRES_ENDPOINT: postgres://postgres:password@database:5432/rollupsdb?sslmode=disable
+      <<: *env
 
   graphql_server:
     image: graphile/postgraphile:4.14.0
