@@ -40,6 +40,8 @@ func (pg *Database) GetOutputsProducedInBlockRange(
 		i.block_number BETWEEN @startBlock AND @endBlock
 	AND
 		i.application_address=@appAddress
+	AND
+		i.status='ACCEPTED'
 	ORDER BY
 		o.index ASC
 	`

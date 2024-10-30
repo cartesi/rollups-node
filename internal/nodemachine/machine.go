@@ -121,6 +121,16 @@ func (machine *NodeMachine) Advance(ctx context.Context,
 		return nil, err
 	}
 
+	prevMachineHash, err := fork.Hash(ctx)
+	if err != nil {
+		return nil, errors.Join(err, fork.Close(ctx))
+	}
+
+	prevOutputsHash, err := fork.OutputsHash(ctx)
+	if err != nil {
+		return nil, errors.Join(err, fork.Close(ctx))
+	}
+
 	advanceCtx, cancel := context.WithTimeout(ctx, machine.advanceTimeout)
 	defer cancel()
 
@@ -138,17 +148,15 @@ func (machine *NodeMachine) Advance(ctx context.Context,
 		OutputsHash: outputsHash,
 	}
 
-	// Only gets the post-advance machine hash if the request was accepted.
-	if status == model.InputStatusAccepted {
-		hash, err := fork.Hash(ctx)
+	// If the forked machine is in a valid state:
+	if res.Status == model.InputStatusAccepted {
+		// Only gets the post-advance machine hash if the request was accepted.
+		machineHash, err := fork.Hash(ctx)
 		if err != nil {
 			return nil, errors.Join(err, fork.Close(ctx))
 		}
-		res.MachineHash = (*model.Hash)(&hash)
-	}
+		res.MachineHash = (*model.Hash)(&machineHash)
 
-	// If the forked machine is in a valid state:
-	if res.Status == model.InputStatusAccepted || res.Status == model.InputStatusRejected {
 		// Replaces the current machine with the fork and updates lastInputIndex.
 		machine.mutex.HLock()
 		// Closes the current machine.
@@ -161,6 +169,8 @@ func (machine *NodeMachine) Advance(ctx context.Context,
 		machine.processedInputs++
 		machine.mutex.Unlock()
 	} else {
+		res.MachineHash = (*model.Hash)(&prevMachineHash)
+		res.OutputsHash = prevOutputsHash
 		// Closes the forked machine.
 		err = fork.Close(ctx)
 		// Updates lastInputIndex.

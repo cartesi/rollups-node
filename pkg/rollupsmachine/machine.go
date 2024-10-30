@@ -39,6 +39,9 @@ type RollupsMachine interface {
 	// Hash returns the machine's merkle tree root hash.
 	Hash(context.Context) (Hash, error)
 
+	// OutputsHash returns the outputs hash stored in the cmio tx buffer.
+	OutputsHash(context.Context) (Hash, error)
+
 	// Advance sends an input to the machine.
 	// It returns a boolean indicating whether or not the request was accepted.
 	// It also returns the corresponding outputs, reports, and the hash of the outputs.
@@ -103,8 +106,23 @@ func (machine *rollupsMachine) Fork(ctx context.Context) (RollupsMachine, error)
 	return &rollupsMachine{inner: inner, inc: machine.inc, max: machine.max}, nil
 }
 
-func (machine rollupsMachine) Hash(ctx context.Context) (Hash, error) {
+func (machine *rollupsMachine) Hash(ctx context.Context) (Hash, error) {
 	return machine.inner.ReadHash(ctx)
+}
+
+func (machine *rollupsMachine) OutputsHash(ctx context.Context) (Hash, error) {
+	hashBytes, err := machine.inner.ReadMemory(ctx)
+	if err != nil {
+		err = fmt.Errorf("could not read the outputs' hash: %w", err)
+		return Hash{}, err
+	}
+	if length := len(hashBytes); length != hashLength {
+		err = fmt.Errorf("%w (it has %d bytes)", ErrHashLength, length)
+		return Hash{}, err
+	}
+	var outputsHash Hash
+	copy(outputsHash[:], hashBytes)
+	return outputsHash, nil
 }
 
 func (machine *rollupsMachine) Advance(
