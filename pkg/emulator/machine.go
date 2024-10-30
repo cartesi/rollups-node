@@ -122,6 +122,9 @@ func (machine *Machine) ReplaceMemoryRange(newRange *MemoryRangeConfig) error {
 func (machine *Machine) ReadMemory(address, length uint64) ([]byte, error) {
 	var msg *C.char
 	data := make([]byte, length)
+	if length == 0 {
+		return data, nil
+	}
 	code := C.cm_read_memory(machine.c,
 		C.uint64_t(address),
 		(*C.uchar)(unsafe.Pointer(&data[0])),
