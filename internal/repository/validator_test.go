@@ -16,7 +16,7 @@ func (s *RepositorySuite) TestGetOutputsProducedInBlockRange() {
 		1, 3,
 	)
 	s.Require().Nil(err)
-	s.Require().Len(outputs, 3)
+	s.Require().Len(outputs, 2)
 
 	// add an output from another app
 	app := Application{
@@ -65,7 +65,7 @@ func (s *RepositorySuite) TestGetOutputsProducedInBlockRange() {
 		1, 3,
 	)
 	s.Require().Nil(err)
-	s.Require().Len(outputs, 3)
+	s.Require().Len(outputs, 2)
 	for _, output := range outputs {
 		s.NotEqual(newOutput.Id, output.Id)
 	}

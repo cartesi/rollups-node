@@ -79,19 +79,20 @@ func (s *NodeMachineSuite) TestAdvance() {
 
 		s.Run("Reject", func() {
 			require := s.Require()
-			_, fork, machine := s.setupAdvance()
+			inner, fork, machine := s.setupAdvance()
 			fork.AdvanceAcceptedReturn = false
+			fork.CloseError = nil
 
 			res, err := machine.Advance(context.Background(), []byte{}, 5)
 			require.Nil(err)
 			require.NotNil(res)
 
-			require.Same(fork, machine.inner)
+			require.Same(inner, machine.inner)
 			require.Equal(model.InputStatusRejected, res.Status)
 			require.Equal(expectedOutputs, res.Outputs)
 			require.Equal(expectedReports1, res.Reports)
 			require.Equal(newHash(1), res.OutputsHash)
-			require.Nil(res.MachineHash)
+			require.Equal(newHash(2), *res.MachineHash)
 			require.Equal(uint64(6), machine.processedInputs)
 		})
 
@@ -110,7 +111,7 @@ func (s *NodeMachineSuite) TestAdvance() {
 				require.Equal(expectedOutputs, res.Outputs)
 				require.Equal(expectedReports1, res.Reports)
 				require.Equal(newHash(1), res.OutputsHash)
-				require.Nil(res.MachineHash)
+				require.Equal(newHash(2), *res.MachineHash)
 				require.Equal(uint64(6), machine.processedInputs)
 			})
 		}
@@ -461,6 +462,10 @@ func (machine *MockRollupsMachine) Fork(_ context.Context) (rollupsmachine.Rollu
 
 func (machine *MockRollupsMachine) Hash(_ context.Context) (rollupsmachine.Hash, error) {
 	return machine.HashReturn, machine.HashError
+}
+
+func (machine *MockRollupsMachine) OutputsHash(_ context.Context) (rollupsmachine.Hash, error) {
+	return machine.AdvanceHashReturn, machine.HashError
 }
 
 func (machine *MockRollupsMachine) Advance(_ context.Context, input []byte) (
