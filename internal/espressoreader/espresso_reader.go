@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/tidwall/gjson"
@@ -48,7 +51,7 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 		slog.Info("Espresso: starting from latest block height", "lastestEspressoBlockHeight", lastestEspressoBlockHeight)
 	}
 	previousBlockHeight := currentBlockHeight
-	l1FinalizedPrevHeight := e.getL1FinalizedHeight(previousBlockHeight)
+	l1FinalizedPrevHeight, _ := e.getL1FinalizedHeight(previousBlockHeight)
 
 	ready <- struct{}{}
 
@@ -74,7 +77,7 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 
 			//** read inputbox **//
 
-			l1FinalizedCurrentHeight := e.getL1FinalizedHeight(currentBlockHeight)
+			l1FinalizedCurrentHeight, l1FinalizedTimestamp := e.getL1FinalizedHeight(currentBlockHeight)
 			// read L1 if there might be update
 			if l1FinalizedCurrentHeight > l1FinalizedPrevHeight || currentBlockHeight == e.startingBlock {
 				slog.Info("L1 finalized", "from", l1FinalizedPrevHeight, "to", l1FinalizedCurrentHeight)
@@ -124,6 +127,29 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 						return err
 					}
 				}
+				// abi encode payload
+				abiFile, err := os.Open("pkg/rollupsmachine/abi.json")
+				if err != nil {
+					return err
+				}
+				abiObject, err := abi.JSON(abiFile)
+				if err != nil {
+					return err
+				}
+				chainId := &big.Int{}
+				chainId.SetInt64(11155111)
+				l1FinalizedCurrentHeightBig := &big.Int{}
+				l1FinalizedCurrentHeightBig.SetUint64(l1FinalizedCurrentHeight)
+				l1FinalizedTimestampBig := &big.Int{}
+				l1FinalizedTimestampBig.SetUint64(l1FinalizedTimestamp)
+				prevRandao := &big.Int{}
+				prevRandao.SetInt64(0)
+				index := &big.Int{}
+				index.SetInt64(0)
+				payloadAbi, err := abiObject.Pack("EvmAdvance", chainId, appAddress, msgSender, l1FinalizedCurrentHeightBig, l1FinalizedTimestampBig, prevRandao, index, payloadBytes)
+				if err != nil {
+					return err
+				}
 
 				// build epochInputMap
 				// Initialize epochs inputs map
@@ -155,7 +181,7 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 				// build input
 				input := model.Input{
 					CompletionStatus: model.InputStatusNone,
-					RawData:          payloadBytes,
+					RawData:          payloadAbi,
 					BlockNumber:      l1FinalizedCurrentHeight,
 					AppAddress:       appAddress,
 					TransactionId:    crypto.Keccak256(signature),
@@ -210,10 +236,19 @@ func (e *EspressoReader) readEspressoHeader(espressoBlockHeight uint64) string {
 	return string(resBody)
 }
 
-func (e *EspressoReader) getL1FinalizedHeight(espressoBlockHeight uint64) uint64 {
+func (e *EspressoReader) getL1FinalizedHeight(espressoBlockHeight uint64) (uint64, uint64) {
 	espressoHeader := e.readEspressoHeader(espressoBlockHeight)
-	value := gjson.Get(espressoHeader, "fields.l1_finalized.number")
-	return value.Uint()
+
+	l1FinalizedNumber := gjson.Get(espressoHeader, "fields.l1_finalized.number").Uint()
+
+	l1FinalizedTimestampStr := gjson.Get(espressoHeader, "fields.l1_finalized.timestamp").Str
+	l1FinalizedTimestampInt, err := strconv.ParseInt(l1FinalizedTimestampStr[2:], 16, 64)
+	if err != nil {
+		slog.Error("hex to int conversion failed", "err", err)
+		os.Exit(1)
+	}
+	l1FinalizedTimestamp := uint64(l1FinalizedTimestampInt)
+	return l1FinalizedNumber, l1FinalizedTimestamp
 }
 
 //////// evm reader related ////////
