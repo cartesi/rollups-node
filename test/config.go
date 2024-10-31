@@ -41,9 +41,6 @@ func NewLocalNodeConfig(localPostgresEndpoint string, localBlockchainHttpEndpoin
 	nodeConfig.PostgresEndpoint =
 		config.Redacted[string]{Value: localPostgresEndpoint}
 
-	//Epoch
-	nodeConfig.RollupsEpochLength = LocalEpochLength
-
 	//Blockchain
 	nodeConfig.BlockchainID = LocalBlockchainID
 	nodeConfig.BlockchainHttpEndpoint =
