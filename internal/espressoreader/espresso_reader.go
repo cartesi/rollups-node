@@ -22,7 +22,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/tidwall/gjson"
 )
 
@@ -108,7 +107,7 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 				//		 	signature,
 				//		 	typedData: btoa(JSON.stringify(typedData)),
 				//		 })
-				msgSender, typedData, signature, err := ExtractSigAndData(string(transaction))
+				msgSender, typedData, sigHash, err := ExtractSigAndData(string(transaction))
 				if err != nil {
 					slog.Error("failed to extract espresso tx", "error", err)
 					continue
@@ -200,7 +199,7 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 					RawData:          payloadAbi,
 					BlockNumber:      l1FinalizedCurrentHeight,
 					AppAddress:       appAddress,
-					TransactionId:    crypto.Keccak256(signature),
+					TransactionId:    sigHash,
 				}
 				currentInputs, ok := epochInputMap[currentEpoch]
 				if !ok {
