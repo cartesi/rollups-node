@@ -61,7 +61,7 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 		latestBlockHeight, err := e.client.FetchLatestBlockHeight(ctx)
 		if err != nil {
 			slog.Error("failed fetching latest espresso block height", "error", err)
-			return err
+			continue
 		}
 		slog.Info("Espresso:", "latestBlockHeight", latestBlockHeight)
 
@@ -93,7 +93,7 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 			transactions, err := e.client.FetchTransactionsInBlock(ctx, currentBlockHeight, e.namespace)
 			if err != nil {
 				slog.Error("failed fetching espresso tx", "error", err)
-				return err
+				continue
 			}
 
 			numTx := len(transactions.Transactions)
@@ -110,31 +110,46 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 				//		 })
 				msgSender, typedData, signature, err := ExtractSigAndData(string(transaction))
 				if err != nil {
-					return err
+					slog.Error("failed to extract espresso tx", "error", err)
+					continue
 				}
 
-				nonce := typedData.Message["nonce"]
+				nonce := uint64(typedData.Message["nonce"].(float64))
 				payload := typedData.Message["data"].(string)
 				appAddressStr := typedData.Message["app"].(string)
 				appAddress := common.HexToAddress(appAddressStr)
 				slog.Info("Espresso input", "msgSender", msgSender, "nonce", nonce, "payload", payload, "appAddrss", appAddress)
+
+				// validate nonce
+				nonceInDb, err := e.repository.GetEspressoNonce(ctx, msgSender, appAddress)
+				if err != nil {
+					slog.Error("failed to get espresso nonce from db", "error", err)
+					continue
+				}
+				if nonce != nonceInDb {
+					slog.Error("Espresso nonce is incorrect. May be a duplicate tx", "nonce from espresso", nonce, "nonce in db", nonceInDb)
+					continue
+				}
 
 				payloadBytes := []byte(payload)
 				if strings.HasPrefix(payload, "0x") {
 					payload = payload[2:] // remove 0x
 					payloadBytes, err = hex.DecodeString(payload)
 					if err != nil {
-						return err
+						slog.Error("failed to decode hex string", "error", err)
+						continue
 					}
 				}
 				// abi encode payload
 				abiFile, err := os.Open("pkg/rollupsmachine/abi.json")
 				if err != nil {
-					return err
+					slog.Error("failed to open abi file", "error", err)
+					continue
 				}
 				abiObject, err := abi.JSON(abiFile)
 				if err != nil {
-					return err
+					slog.Error("failed to read abi", "error", err)
+					continue
 				}
 				chainId := &big.Int{}
 				chainId.SetInt64(11155111)
@@ -148,7 +163,8 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 				index.SetInt64(0)
 				payloadAbi, err := abiObject.Pack("EvmAdvance", chainId, appAddress, msgSender, l1FinalizedCurrentHeightBig, l1FinalizedTimestampBig, prevRandao, index, payloadBytes)
 				if err != nil {
-					return err
+					slog.Error("failed to abi encode", "error", err)
+					continue
 				}
 
 				// build epochInputMap
@@ -158,13 +174,13 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 				epochLength := e.evmReader.GetEpochLengthCache(appAddress)
 				if epochLength == 0 {
 					slog.Error("could not obtain epoch length", "err", err)
-					os.Exit(1)
+					continue
 				}
 				currentEpoch, err := e.repository.GetEpoch(ctx,
 					epochLength, appAddress)
 				if err != nil {
 					slog.Error("could not obtain current epoch", "err", err)
-					os.Exit(1)
+					continue
 				}
 				// if currect epoch is not nil, assume the epoch is open
 				// espresso inputs do not close epoch
@@ -203,15 +219,15 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 					)
 					if err != nil {
 						slog.Error("could not store Espresso input", "err", err)
-						os.Exit(1)
+						continue
 					}
 				}
 
 				// update nonce
 				err = e.repository.UpdateEspressoNonce(ctx, msgSender, appAddress)
 				if err != nil {
-					slog.Error("could not update Espresso nonce", "err", err)
-					os.Exit(1)
+					slog.Error("!!!could not update Espresso nonce!!!", "err", err)
+					continue
 				}
 			}
 
