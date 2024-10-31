@@ -36,14 +36,6 @@ the snapshot matches the hash in the Application contract."""
 # Rollups
 #
 
-[rollups.CARTESI_EPOCH_LENGTH]
-default = "7200" # 1 day (average) in blocks (considering one block is mined every 12 seconds)
-go-type = "uint64"
-description = """
-Length of a rollups epoch in blocks.
-
-At the end of each epoch, the node will send claims to the blockchain."""
-
 [rollups.CARTESI_EVM_READER_RETRY_POLICY_MAX_RETRIES]
 default = "3"
 go-type = "uint64"
