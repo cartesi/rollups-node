@@ -50,6 +50,12 @@ func (advancer *Advancer) Poller(pollingInterval time.Duration) (*poller.Poller,
 // runs them through the cartesi machine,
 // and updates the repository with the outputs.
 func (advancer *Advancer) Step(ctx context.Context) error {
+	// Dynamically updates the list of machines
+	err := advancer.machines.UpdateMachines(ctx)
+	if err != nil {
+		return err
+	}
+
 	apps := advancer.machines.Apps()
 
 	// Gets the unprocessed inputs (of all apps) from the repository.
@@ -125,6 +131,7 @@ type Repository interface {
 
 type Machines interface {
 	GetAdvanceMachine(app Address) (machines.AdvanceMachine, bool)
+	UpdateMachines(ctx context.Context) error
 	Apps() []Address
 }
 

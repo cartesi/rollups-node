@@ -41,8 +41,10 @@ type InspectMachine interface {
 // Machines is a thread-safe type that manages the pool of cartesi machines being used by the node.
 // It contains a map of applications to machines.
 type Machines struct {
-	mutex    sync.RWMutex
-	machines map[Address]*nm.NodeMachine
+	mutex      sync.RWMutex
+	machines   map[Address]*nm.NodeMachine
+	repository Repository
+	verbosity  cm.ServerVerbosity
 }
 
 // Load initializes the cartesi machines.
@@ -79,7 +81,39 @@ func Load(ctx context.Context, repo Repository, verbosity cm.ServerVerbosity) (*
 		machines[config.AppAddress] = machine
 	}
 
-	return &Machines{machines: machines}, errs
+	return &Machines{machines: machines, repository: repo, verbosity: verbosity}, errs
+}
+
+func (m *Machines) UpdateMachines(ctx context.Context) error {
+	configs, err := m.repository.GetMachineConfigurations(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, config := range configs {
+		if m.Exists(config.AppAddress) {
+			continue
+		}
+
+		machine, err := createMachine(ctx, m.verbosity, config)
+		if err != nil {
+			slog.Error("advancer: Failed to create machine", "app", config.AppAddress, "error", err)
+			continue
+		}
+
+		err = catchUp(ctx, m.repository, config.AppAddress, machine, config.ProcessedInputs)
+		if err != nil {
+			slog.Error("Failed to sync the machine", "app", config.AppAddress, "error", err)
+			machine.Close()
+			continue
+		}
+
+		m.Add(config.AppAddress, machine)
+	}
+
+	m.RemoveAbsent(configs)
+
+	return nil
 }
 
 // GetAdvanceMachine gets the machine associated with the application from the map.
@@ -104,6 +138,30 @@ func (m *Machines) Add(app Address, machine *nm.NodeMachine) bool {
 	} else {
 		m.machines[app] = machine
 		return true
+	}
+}
+
+func (m *Machines) Exists(app Address) bool {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	_, exists := m.machines[app]
+	return exists
+}
+
+func (m *Machines) RemoveAbsent(configs []*MachineConfig) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	configMap := make(map[Address]bool)
+	for _, config := range configs {
+		configMap[config.AppAddress] = true
+	}
+	for address, machine := range m.machines {
+		if !configMap[address] {
+			slog.Info("advancer: Application was disabled, shutting down machine", "application", address)
+			machine.Close()
+			delete(m.machines, address)
+		}
 	}
 }
 
@@ -179,7 +237,7 @@ func createMachine(ctx context.Context,
 		return nil, err
 	}
 
-	slog.Debug("advancer: loading machine on server", "application", config.AppAddress,
+	slog.Info("advancer: loading machine on server", "application", config.AppAddress,
 		"remote-machine", address, "template-path", config.SnapshotPath)
 	// Creates a CartesiMachine from the snapshot.
 	runtimeConfig := &emulator.MachineRuntimeConfig{}

@@ -114,6 +114,7 @@ type EvmReader struct {
 	inputBoxDeploymentBlock uint64
 	defaultBlock            DefaultBlock
 	epochLengthCache        map[Address]uint64
+	hasEnabledApps          bool
 }
 
 func (r *EvmReader) String() string {
@@ -138,6 +139,7 @@ func NewEvmReader(
 		inputBoxDeploymentBlock: inputBoxDeploymentBlock,
 		defaultBlock:            defaultBlock,
 		contractFactory:         contractFactory,
+		hasEnabledApps:          true,
 	}
 }
 
@@ -181,6 +183,7 @@ func (r *EvmReader) watchForNewBlocks(ctx context.Context, ready chan<- struct{}
 			// Every time a new block arrives
 			slog.Debug("evmreader: New block header received", "blockNumber", header.Number, "blockHash", header.Hash())
 
+			slog.Debug("evmreader: Retrieving enabled applications")
 			// Get All Applications
 			runningApps, err := r.repository.GetAllRunningApplications(ctx)
 			if err != nil {
@@ -190,6 +193,18 @@ func (r *EvmReader) watchForNewBlocks(ctx context.Context, ready chan<- struct{}
 				)
 				continue
 			}
+
+			if len(runningApps) == 0 {
+				if r.hasEnabledApps {
+					slog.Info("evmreader: No registered applications enabled")
+				}
+				r.hasEnabledApps = false
+				continue
+			}
+			if !r.hasEnabledApps {
+				slog.Info("evmreader: Found enabled applications")
+			}
+			r.hasEnabledApps = true
 
 			// Build Contracts
 			var apps []application

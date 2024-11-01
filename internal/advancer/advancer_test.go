@@ -226,6 +226,10 @@ func (mock *MachinesMock) GetAdvanceMachine(app Address) (machines.AdvanceMachin
 	return machine, exists
 }
 
+func (m *MachinesMock) UpdateMachines(ctx context.Context) error {
+	return nil // FIXME
+}
+
 func (mock *MachinesMock) Apps() []Address {
 	return []Address{}
 }

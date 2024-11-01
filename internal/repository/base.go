@@ -493,6 +493,39 @@ func (pg *Database) GetApplication(
 	return &app, nil
 }
 
+func (pg *Database) UpdateApplicationStatus(
+	ctx context.Context,
+	appAddressKey Address,
+	newStatus ApplicationStatus,
+) error {
+	query := `
+	UPDATE
+		application
+	SET
+		status = @newStatus
+	WHERE
+		contract_address = @contractAddress`
+
+	args := pgx.NamedArgs{
+		"contractAddress": appAddressKey,
+		"newStatus":       newStatus,
+	}
+
+	commandTag, err := pg.db.Exec(ctx, query, args)
+	if err != nil {
+		return fmt.Errorf("UpdateApplicationStatus Exec failed: %w", err)
+	}
+
+	if commandTag.RowsAffected() == 0 {
+		slog.Debug("UpdateApplicationStatus affected no rows",
+			"service", "repository",
+			"app", appAddressKey)
+		return fmt.Errorf("no application found with contract address: %s", appAddressKey)
+	}
+
+	return nil
+}
+
 func (pg *Database) GetEpochs(ctx context.Context, application Address) ([]Epoch, error) {
 	query := `
 	SELECT
