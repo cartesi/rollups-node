@@ -1,7 +1,12 @@
 ARG EMULATOR_VERSION=0.18.1
-ARG FOUNDRY_NIGHTLY_VERSION=9dbfb2f1115466b28f2697e158131f90df6b2590
+ARG FOUNDRY_NIGHTLY_VERSION=2044faec64f99a21f0e5f0094458a973612d0712
+ARG CONTRACTS_VERSION=2.0.0-rc.12
+ARG DEVNET_BUILD_PATH=/opt/cartesi/rollups-contracts
 
-FROM  cartesi/machine-emulator:${EMULATOR_VERSION} AS devnet-base
+FROM cartesi/machine-emulator:${EMULATOR_VERSION} AS rollups-node-devnet
+ARG FOUNDRY_NIGHTLY_VERSION
+ARG CONTRACTS_VERSION
+ARG DEVNET_BUILD_PATH
 
 USER root
 
@@ -10,82 +15,47 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN <<EOF
     set -e
     apt-get update
-    apt-get install -y --no-install-recommends ca-certificates curl git
+    apt-get install -y --no-install-recommends ca-certificates curl git jq
 EOF
 
 # Install Foundry from downloaded pre-compiled binaries.
 ARG FOUNDRY_NIGHTLY_VERSION
 RUN <<EOF
-    set -ex
+    set -e
     URL=https://github.com/foundry-rs/foundry/releases/download
     VERSION=nightly-${FOUNDRY_NIGHTLY_VERSION}
     ARCH=$(dpkg --print-architecture)
     ARTIFACT=foundry_nightly_linux_${ARCH}.tar.gz
-    curl -sSL ${URL}/${VERSION}/${ARTIFACT} | tar -zx -C /usr/local/bin
+    curl -sSL ${URL}/${VERSION}/${ARTIFACT} -o /tmp/foundry.tar.gz
+    case $ARCH in
+    amd64) echo "c53d77f7f0266ef8bc9daf8d4a8ce39ca5fdce859b5d028b1e55bded7da687e2  /tmp/foundry.tar.gz" | shasum -a 256 --check ;;
+    arm64) echo "5fe5913841c56b79ee5c15aefc2e9730bd6beb07cba0e2112447b822d78b079d  /tmp/foundry.tar.gz" | shasum -a 256 --check ;;
+    esac
+    tar -zxf /tmp/foundry.tar.gz -C /usr/local/bin
 EOF
 
-# =============================================================================
-# STAGE: devnet-deployer
-#
-# This stage builds the devnet state that will be loaded in Anvil.
-# =============================================================================
-
-FROM devnet-base AS devnet-deployer
-
-# Install nodejs & pnpm.
-ENV DEBIAN_FRONTEND=noninteractive
-RUN <<EOF
-    set -e
-    apt-get install -y --no-install-recommends gnupg jq
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    apt-get install -y --no-install-recommends nodejs
-    npm install -g @pnpm/exe
+# Install anvil state file and devnet deployment info.
+RUN mkdir -p ${DEVNET_BUILD_PATH}
+RUN cat <<'EOF' > ${DEVNET_BUILD_PATH}/deployment.jq
+    . as $root | .contracts |
+    reduce to_entries[] as $c (
+        {"name": $root.name, "ChainId": $root.chainId | tonumber};
+        . + {($c.key): ($c.value.address)}
+    )
 EOF
-
-COPY rollups-contracts /opt/cartesi/rollups-contracts
 
 RUN <<EOF
     set -e
-    cd /opt/cartesi/rollups-contracts
-    anvil --preserve-historical-states --dump-state=anvil_state.json > anvil.log 2>&1 &
-    ANVIL_PID=$!
-    pnpm install
-    if ! pnpm run deploy:development; then
-        echo "Failed to deploy contracts"
-        cat anvil.log
-        exit 1
-    fi
-    cd deployments/localhost
-    jq -c -n --argjson chainId $(cat .chainId) '[inputs | { (input_filename | gsub(".*/|[.]json$"; "")) : .address }] | add | .ChainId = $chainId' *.json > ../../deployment.json
-    kill -15 ${ANVIL_PID}
-    elapsed=0
-    TIMEOUT=30
-    while kill -0 ${ANVIL_PID} 2>/dev/null; do
-	if [ $elapsed -ge $TIMEOUT ]; then
-	    echo "Error:  Anvil state dump timed out after ${TIMEOUT} seconds" >&2
-	    exit 1
-	fi
-	sleep 1
-	elapsed=$((elapsed + 1))
-    done
+    URL=https://github.com/cartesi/rollups-contracts/releases/download
+    VERSION=v${CONTRACTS_VERSION}
+    ARTIFACT=rollups-contracts-${CONTRACTS_VERSION}-anvil-nightly-${FOUNDRY_NIGHTLY_VERSION}.tar.gz
+    curl -sSL ${URL}/${VERSION}/${ARTIFACT} -o /tmp/contracts.tar.gz
+    echo "691d229e16b866f97ee5cf27b88573d8434f064a959061c8755e91a048c2a811  /tmp/contracts.tar.gz" | sha256sum --check
+    tar -zxf /tmp/contracts.tar.gz -C ${DEVNET_BUILD_PATH}/
+    mkdir -p /usr/share/devnet
+    jq -cf ${DEVNET_BUILD_PATH}/deployment.jq < ${DEVNET_BUILD_PATH}/localhost.json > /usr/share/devnet/deployment.json
+    mv ${DEVNET_BUILD_PATH}/state.json /usr/share/devnet/anvil_state.json
 EOF
-
-# =============================================================================
-# STAGE: rollups-node-devnet
-#
-# This stage contains the Ethereum node that the rollups node uses for testing.
-# It copies the anvil state from the builder stage and starts the local anvil
-# instance.
-#
-# It also requires the machine-snapshot built in the snapshot-builder stage.
-# =============================================================================
-
-FROM devnet-base AS rollups-node-devnet
-
-# Copy anvil state file and devnet deployment info.
-ARG DEVNET_BUILD_PATH=/opt/cartesi/rollups-contracts
-COPY --from=devnet-deployer ${DEVNET_BUILD_PATH}/anvil_state.json /usr/share/devnet/anvil_state.json
-COPY --from=devnet-deployer ${DEVNET_BUILD_PATH}/deployment.json /usr/share/devnet/deployment.json
 
 HEALTHCHECK --interval=1s --timeout=1s --retries=5 \
 	CMD curl \

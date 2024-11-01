@@ -18,6 +18,10 @@ TARGET_OS?=$(shell uname)
 export TARGET_OS
 
 ROLLUPS_NODE_VERSION := 2.0.0
+CONTRACTS_VERSION := 2.0.0-rc.12
+CONTRACTS_URL:=https://github.com/cartesi/rollups-contracts/releases/download/
+CONTRACTS_ARTIFACT:=rollups-contracts-$(CONTRACTS_VERSION)-artifacts.tar.gz
+CONTRACTS_SHA256:=6d2cd0d5f562342b5171766b0574043a39b8f74b276052b2150cdc26ec7a9fdf
 
 IMAGE_TAG ?= devel
 
@@ -86,7 +90,7 @@ $(GO_ARTIFACTS):
 tidy-go:
 	@go mod tidy
 
-generate: $(ROLLUPS_CONTRACTS_ABI_BASEDIR) ## Generate the file that are committed to the repo
+generate: $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp ## Generate the file that are committed to the repo
 	@echo "Generating Go files"
 	@go generate ./internal/... ./pkg/...
 
@@ -99,11 +103,16 @@ check-generate: generate ## Check whether the generated files are in sync
 		exit 1; \
 	fi
 
-contracts: $(ROLLUPS_CONTRACTS_ABI_BASEDIR) ## Export the rollups-contracts artifacts
+contracts: $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp ## Export the rollups-contracts artifacts
 
-$(ROLLUPS_CONTRACTS_ABI_BASEDIR):
-	@echo "Exporting rollups-contracts artifacts"
-	@cd rollups-contracts && pnpm install --frozen-lockfile && pnpm export
+$(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp:
+	@echo "Downloading rollups-contracts artifacts"
+	@mkdir -p $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
+	@curl -sSL $(CONTRACTS_URL)/v$(CONTRACTS_VERSION)/$(CONTRACTS_ARTIFACT) -o $(CONTRACTS_ARTIFACT)
+	@echo "$(CONTRACTS_SHA256)  $(CONTRACTS_ARTIFACT)" | shasum -a 256 --check > /dev/null
+	@tar -zxf $(CONTRACTS_ARTIFACT) -C $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
+	@touch $@
+	@rm $(CONTRACTS_ARTIFACT)
 
 migrate: ## Run migration on development database
 	@echo "Running PostgreSQL migration"
@@ -122,7 +131,7 @@ clean-go: ## Clean Go artifacts
 
 clean-contracts: ## Clean contract artifacts
 	@echo "Cleaning contract artifacts"
-	@cd rollups-contracts && rm -rf artifacts cache export/artifacts node_modules src && git checkout .
+	@rm -rf rollups-contracts
 
 clean-docs: ## Clean the documentation
 	@echo "Cleaning the documentation"

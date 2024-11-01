@@ -27,21 +27,6 @@ EOF
 USER cartesi
 
 # =============================================================================
-# STAGE: contracts-artifacts
-#
-# - Generate the contracts artifacts.
-# =============================================================================
-
-FROM node:20-slim AS contracts-artifacts
-
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable
-COPY rollups-contracts /build/rollups-contracts
-WORKDIR /build/rollups-contracts
-RUN pnpm install --frozen-lockfile && pnpm export
-
-# =============================================================================
 # STAGE: go-installer
 #
 # This stage installs Go in the /opt directory.
@@ -99,7 +84,6 @@ ARG GO_BUILD_PATH
 
 # Build application.
 COPY --chown=cartesi:cartesi . ${GO_BUILD_PATH}/rollups-node/
-COPY --from=contracts-artifacts /build/rollups-contracts/export/artifacts ${GO_BUILD_PATH}/rollups-node/rollups-contracts/export/artifacts
 
 RUN cd ${GO_BUILD_PATH}/rollups-node && make build-go
 
