@@ -93,6 +93,7 @@ func NewEspressoReaderService(
 		c.EspressoNamespace,
 		c.EvmReaderRetryPolicyMaxRetries,
 		c.EvmReaderRetryPolicyMaxDelay,
+		c.BlockchainID,
 	)
 }
 
@@ -116,19 +117,19 @@ func newValidatorService(c config.NodeConfig, database *repository.Database) ser
 func newClaimerService(c config.NodeConfig, database *repository.Database) services.Service {
 	claimerService := claimerservice.Service{}
 	createInfo := claimerservice.CreateInfo{
-		Auth: c.Auth,
-		DBConn: database,
-		PostgresEndpoint: c.PostgresEndpoint,
+		Auth:                   c.Auth,
+		DBConn:                 database,
+		PostgresEndpoint:       c.PostgresEndpoint,
 		BlockchainHttpEndpoint: c.BlockchainHttpEndpoint,
 		CreateInfo: service.CreateInfo{
-			Name:                 "claimer",
-			PollInterval:         c.ClaimerPollingInterval,
-			Impl:                 &claimerService,
-			ProcOwner: true, // TODO: Remove this after updating supervisor
+			Name:         "claimer",
+			PollInterval: c.ClaimerPollingInterval,
+			Impl:         &claimerService,
+			ProcOwner:    true, // TODO: Remove this after updating supervisor
 			LogLevel: map[slog.Level]string{ // reverse it to string
 				slog.LevelDebug: "debug",
-				slog.LevelInfo: "info",
-				slog.LevelWarn: "warn",
+				slog.LevelInfo:  "info",
+				slog.LevelWarn:  "warn",
 				slog.LevelError: "error",
 			}[c.LogLevel],
 		},

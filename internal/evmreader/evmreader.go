@@ -99,7 +99,7 @@ func (e *SubscriptionError) Error() string {
 // Internal struct to hold application and it's contracts together
 type application struct {
 	Application
-	applicationContract ApplicationContract
+	ApplicationContract
 	ConsensusContract
 }
 
@@ -214,7 +214,7 @@ func (r *EvmReader) watchForNewBlocks(ctx context.Context, ready chan<- struct{}
 					continue
 				}
 				apps = append(apps, application{Application: app,
-					applicationContract: applicationContract,
+					ApplicationContract: applicationContract,
 					ConsensusContract:   consensusContract})
 			}
 
@@ -243,9 +243,9 @@ func (r *EvmReader) watchForNewBlocks(ctx context.Context, ready chan<- struct{}
 
 			r.checkForNewInputs(ctx, apps, blockNumber)
 
-			r.checkForClaimStatus(ctx, apps, blockNumber)
+			r.CheckForClaimStatus(ctx, apps, blockNumber)
 
-			r.checkForOutputExecution(ctx, apps, blockNumber)
+			r.CheckForOutputExecution(ctx, apps, blockNumber)
 
 		}
 	}

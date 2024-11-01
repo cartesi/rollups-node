@@ -32,11 +32,12 @@ type EspressoReader struct {
 	namespace     uint64
 	repository    *repository.Database
 	evmReader     *evmreader.EvmReader
+	chainId       uint64
 }
 
-func NewEspressoReader(url string, startingBlock uint64, namespace uint64, repository *repository.Database, evmReader *evmreader.EvmReader) EspressoReader {
+func NewEspressoReader(url string, startingBlock uint64, namespace uint64, repository *repository.Database, evmReader *evmreader.EvmReader, chainId uint64) EspressoReader {
 	client := client.NewClient(url)
-	return EspressoReader{url: url, client: *client, startingBlock: startingBlock, namespace: namespace, repository: repository, evmReader: evmReader}
+	return EspressoReader{url: url, client: *client, startingBlock: startingBlock, namespace: namespace, repository: repository, evmReader: evmReader, chainId: chainId}
 }
 
 func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
@@ -66,7 +67,7 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 
 		// take a break :)
 		if latestBlockHeight == currentBlockHeight {
-			var delay time.Duration = 800
+			var delay time.Duration = 1000
 			time.Sleep(delay * time.Millisecond)
 			continue
 		}
@@ -74,7 +75,7 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 		for ; currentBlockHeight < latestBlockHeight; currentBlockHeight++ {
 			slog.Info("Espresso:", "currentBlockHeight", currentBlockHeight, "namespace", e.namespace)
 
-			//** read inputbox **//
+			//** read base layer **//
 
 			l1FinalizedCurrentHeight, l1FinalizedTimestamp := e.getL1FinalizedHeight(currentBlockHeight)
 			// read L1 if there might be update
@@ -82,7 +83,16 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 				slog.Info("L1 finalized", "from", l1FinalizedPrevHeight, "to", l1FinalizedCurrentHeight)
 				slog.Info("Fetching InputBox between Espresso blocks", "from", previousBlockHeight, "to", currentBlockHeight)
 
-				e.evmReader.ReadAndStoreInputs(ctx, l1FinalizedPrevHeight, l1FinalizedCurrentHeight, e.getAppsForEvmReader(ctx))
+				apps := e.getAppsForEvmReader(ctx)
+
+				if len(apps) > 0 {
+					// start reading from the block after the prev height
+					e.evmReader.ReadAndStoreInputs(ctx, l1FinalizedPrevHeight+1, l1FinalizedCurrentHeight, apps)
+
+					// check for claim status and output execution
+					e.evmReader.CheckForClaimStatus(ctx, apps, l1FinalizedCurrentHeight)
+					e.evmReader.CheckForOutputExecution(ctx, apps, l1FinalizedCurrentHeight)
+				}
 
 				l1FinalizedPrevHeight = l1FinalizedCurrentHeight
 			}
@@ -117,7 +127,7 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 				payload := typedData.Message["data"].(string)
 				appAddressStr := typedData.Message["app"].(string)
 				appAddress := common.HexToAddress(appAddressStr)
-				slog.Info("Espresso input", "msgSender", msgSender, "nonce", nonce, "payload", payload, "appAddrss", appAddress)
+				slog.Info("Espresso input", "msgSender", msgSender, "nonce", nonce, "payload", payload, "appAddrss", appAddress, "tx-id", sigHash)
 
 				// validate nonce
 				nonceInDb, err := e.repository.GetEspressoNonce(ctx, msgSender, appAddress)
@@ -151,7 +161,7 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 					continue
 				}
 				chainId := &big.Int{}
-				chainId.SetInt64(11155111)
+				chainId.SetInt64(int64(e.chainId))
 				l1FinalizedCurrentHeightBig := &big.Int{}
 				l1FinalizedCurrentHeightBig.SetUint64(l1FinalizedCurrentHeight)
 				l1FinalizedTimestampBig := &big.Int{}
@@ -199,7 +209,7 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 					RawData:          payloadAbi,
 					BlockNumber:      l1FinalizedCurrentHeight,
 					AppAddress:       appAddress,
-					TransactionId:    sigHash,
+					TransactionId:    []byte(sigHash),
 				}
 				currentInputs, ok := epochInputMap[currentEpoch]
 				if !ok {
@@ -281,13 +291,14 @@ func (e *EspressoReader) getAppsForEvmReader(ctx context.Context) []evmreader.Ty
 	// Build Contracts
 	var apps []evmreader.TypeExportApplication
 	for _, app := range runningApps {
-		_, consensusContract, err := e.evmReader.GetAppContracts(app)
+		applicationContract, consensusContract, err := e.evmReader.GetAppContracts(app)
 		if err != nil {
 			slog.Error("Error retrieving application contracts", "app", app, "error", err)
 			continue
 		}
 		apps = append(apps, evmreader.TypeExportApplication{Application: app,
-			ConsensusContract: consensusContract})
+			ApplicationContract: applicationContract,
+			ConsensusContract:   consensusContract})
 	}
 
 	if len(apps) == 0 {

@@ -4,11 +4,8 @@
 package root
 
 import (
-	"context"
 	"log/slog"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -38,8 +35,7 @@ var Cmd = &cobra.Command{
 func run(cmd *cobra.Command, args []string) {
 	startTime := time.Now()
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
+	ctx := cmd.Context()
 
 	c := config.FromEnv()
 
@@ -71,6 +67,7 @@ func run(cmd *cobra.Command, args []string) {
 		c.EspressoNamespace,
 		c.EvmReaderRetryPolicyMaxRetries,
 		c.EvmReaderRetryPolicyMaxDelay,
+		c.BlockchainID,
 	)
 
 	// logs startup time

@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
-func (r *EvmReader) checkForOutputExecution(
+func (r *EvmReader) CheckForOutputExecution(
 	ctx context.Context,
 	apps []application,
 	mostRecentBlockNumber uint64,
@@ -62,7 +62,7 @@ func (r *EvmReader) checkForOutputExecution(
 func (r *EvmReader) readAndUpdateOutputs(
 	ctx context.Context, app application, lastOutputCheck, mostRecentBlockNumber uint64) {
 
-	contract := app.applicationContract
+	contract := app.ApplicationContract
 
 	opts := &bind.FilterOpts{
 		Start: lastOutputCheck + 1,

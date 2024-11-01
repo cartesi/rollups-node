@@ -5,6 +5,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,6 +34,7 @@ type EspressoReaderService struct {
 	EspressoNamespace      uint64
 	maxRetries             uint64
 	maxDelay               time.Duration
+	chainId                uint64
 }
 
 func NewEspressoReaderService(
@@ -44,6 +46,7 @@ func NewEspressoReaderService(
 	EspressoNamespace uint64,
 	maxRetries uint64,
 	maxDelay time.Duration,
+	chainId uint64,
 ) *EspressoReaderService {
 	return &EspressoReaderService{
 		blockchainHttpEndpoint: blockchainHttpEndpoint,
@@ -54,6 +57,7 @@ func NewEspressoReaderService(
 		EspressoNamespace:      EspressoNamespace,
 		maxRetries:             maxRetries,
 		maxDelay:               maxDelay,
+		chainId:                chainId,
 	}
 }
 
@@ -64,7 +68,7 @@ func (s *EspressoReaderService) Start(
 
 	evmReader := s.setupEvmReader(ctx, s.database)
 
-	espressoReader := espressoreader.NewEspressoReader(s.EspressoBaseUrl, s.EspressoStartingBlock, s.EspressoNamespace, s.database, evmReader)
+	espressoReader := espressoreader.NewEspressoReader(s.EspressoBaseUrl, s.EspressoStartingBlock, s.EspressoNamespace, s.database, evmReader, s.chainId)
 
 	go s.setupNonceHttpServer()
 
@@ -141,7 +145,6 @@ func (s *EspressoReaderService) getNonce(w http.ResponseWriter, r *http.Request)
 			"service", "espresso nonce querier",
 			"err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 }
 
@@ -172,6 +175,20 @@ func (s *EspressoReaderService) submit(w http.ResponseWriter, r *http.Request) {
 	client := client.NewClient(s.EspressoBaseUrl)
 	ctx := context.Background()
 	var tx types.Transaction
-	tx.UnmarshalJSON(body)
-	client.SubmitTransaction(ctx, tx)
+	tx.Namespace = s.EspressoNamespace
+	tx.Payload = []byte(base64.StdEncoding.EncodeToString(body))
+	_, err = client.SubmitTransaction(ctx, tx)
+	if err != nil {
+		slog.Error("espresso tx submit error", "err", err)
+		return
+	}
+
+	_, _, sigHash, err := espressoreader.ExtractSigAndData(string(tx.Payload))
+	err = json.NewEncoder(w).Encode(sigHash)
+	if err != nil {
+		slog.Info("Internal server error",
+			"service", "espresso submit endpoint",
+			"err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }

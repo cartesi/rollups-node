@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-func (r *EvmReader) checkForClaimStatus(
+func (r *EvmReader) CheckForClaimStatus(
 	ctx context.Context,
 	apps []application,
 	mostRecentBlockNumber uint64,
