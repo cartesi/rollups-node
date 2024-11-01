@@ -1,4 +1,0 @@
-[submodule "rollups-contracts"]
-	path = rollups-contracts
-    url = https://github.com/cartesi/rollups-contracts
-    branch = v2.0.0-rc.6

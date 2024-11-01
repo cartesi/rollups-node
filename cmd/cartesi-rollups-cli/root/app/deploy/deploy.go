@@ -106,7 +106,7 @@ func init() {
 		&appFactoryAddr,
 		"app-factory",
 		"a",
-		"0x1d4CfBD2622d802A07CeB4C3401Bbb455c9dbdC3",
+		"0xd7d4d184b82b1a4e08f304DDaB0A2A7a301C2620",
 		"Application Factory Address",
 	)
 
