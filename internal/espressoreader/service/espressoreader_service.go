@@ -26,15 +26,16 @@ import (
 
 // Service to manage InputReader lifecycle
 type EspressoReaderService struct {
-	blockchainHttpEndpoint string
-	blockchainWsEndpoint   string
-	database               *repository.Database
-	EspressoBaseUrl        string
-	EspressoStartingBlock  uint64
-	EspressoNamespace      uint64
-	maxRetries             uint64
-	maxDelay               time.Duration
-	chainId                uint64
+	blockchainHttpEndpoint  string
+	blockchainWsEndpoint    string
+	database                *repository.Database
+	EspressoBaseUrl         string
+	EspressoStartingBlock   uint64
+	EspressoNamespace       uint64
+	maxRetries              uint64
+	maxDelay                time.Duration
+	chainId                 uint64
+	inputBoxDeploymentBlock uint64
 }
 
 func NewEspressoReaderService(
@@ -47,17 +48,19 @@ func NewEspressoReaderService(
 	maxRetries uint64,
 	maxDelay time.Duration,
 	chainId uint64,
+	inputBoxDeploymentBlock uint64,
 ) *EspressoReaderService {
 	return &EspressoReaderService{
-		blockchainHttpEndpoint: blockchainHttpEndpoint,
-		blockchainWsEndpoint:   blockchainWsEndpoint,
-		database:               database,
-		EspressoBaseUrl:        EspressoBaseUrl,
-		EspressoStartingBlock:  EspressoStartingBlock,
-		EspressoNamespace:      EspressoNamespace,
-		maxRetries:             maxRetries,
-		maxDelay:               maxDelay,
-		chainId:                chainId,
+		blockchainHttpEndpoint:  blockchainHttpEndpoint,
+		blockchainWsEndpoint:    blockchainWsEndpoint,
+		database:                database,
+		EspressoBaseUrl:         EspressoBaseUrl,
+		EspressoStartingBlock:   EspressoStartingBlock,
+		EspressoNamespace:       EspressoNamespace,
+		maxRetries:              maxRetries,
+		maxDelay:                maxDelay,
+		chainId:                 chainId,
+		inputBoxDeploymentBlock: inputBoxDeploymentBlock,
 	}
 }
 
@@ -68,7 +71,7 @@ func (s *EspressoReaderService) Start(
 
 	evmReader := s.setupEvmReader(ctx, s.database)
 
-	espressoReader := espressoreader.NewEspressoReader(s.EspressoBaseUrl, s.EspressoStartingBlock, s.EspressoNamespace, s.database, evmReader, s.chainId)
+	espressoReader := espressoreader.NewEspressoReader(s.EspressoBaseUrl, s.EspressoStartingBlock, s.EspressoNamespace, s.database, evmReader, s.chainId, s.inputBoxDeploymentBlock)
 
 	go s.setupNonceHttpServer()
 

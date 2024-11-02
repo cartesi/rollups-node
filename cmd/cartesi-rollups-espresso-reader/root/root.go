@@ -68,6 +68,7 @@ func run(cmd *cobra.Command, args []string) {
 		c.EvmReaderRetryPolicyMaxRetries,
 		c.EvmReaderRetryPolicyMaxDelay,
 		c.BlockchainID,
+		uint64(c.ContractsInputBoxDeploymentBlockNumber),
 	)
 
 	// logs startup time

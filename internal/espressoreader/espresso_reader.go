@@ -26,18 +26,19 @@ import (
 )
 
 type EspressoReader struct {
-	url           string
-	client        client.Client
-	startingBlock uint64
-	namespace     uint64
-	repository    *repository.Database
-	evmReader     *evmreader.EvmReader
-	chainId       uint64
+	url                     string
+	client                  client.Client
+	startingBlock           uint64
+	namespace               uint64
+	repository              *repository.Database
+	evmReader               *evmreader.EvmReader
+	chainId                 uint64
+	inputBoxDeploymentBlock uint64
 }
 
-func NewEspressoReader(url string, startingBlock uint64, namespace uint64, repository *repository.Database, evmReader *evmreader.EvmReader, chainId uint64) EspressoReader {
+func NewEspressoReader(url string, startingBlock uint64, namespace uint64, repository *repository.Database, evmReader *evmreader.EvmReader, chainId uint64, inputBoxDeploymentBlock uint64) EspressoReader {
 	client := client.NewClient(url)
-	return EspressoReader{url: url, client: *client, startingBlock: startingBlock, namespace: namespace, repository: repository, evmReader: evmReader, chainId: chainId}
+	return EspressoReader{url: url, client: *client, startingBlock: startingBlock, namespace: namespace, repository: repository, evmReader: evmReader, chainId: chainId, inputBoxDeploymentBlock: inputBoxDeploymentBlock}
 }
 
 func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
@@ -51,7 +52,7 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 		slog.Info("Espresso: starting from latest block height", "lastestEspressoBlockHeight", lastestEspressoBlockHeight)
 	}
 	previousBlockHeight := currentBlockHeight
-	l1FinalizedPrevHeight, _ := e.getL1FinalizedHeight(previousBlockHeight)
+	l1FinalizedPrevHeight := e.inputBoxDeploymentBlock - 1 // because we have a +1 in the loop
 
 	ready <- struct{}{}
 
