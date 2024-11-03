@@ -29,6 +29,7 @@ func (s *EvmReaderSuite) TestNoClaimsAcceptance() {
 		0x10,
 		DefaultBlockStatusLatest,
 		s.contractFactory,
+		false,
 	)
 
 	// Prepare repository
@@ -162,6 +163,7 @@ func (s *EvmReaderSuite) TestReadClaimAcceptance() {
 		0x00,
 		DefaultBlockStatusLatest,
 		contractFactory,
+		false,
 	)
 
 	// Prepare Claims Acceptance Events
@@ -319,6 +321,7 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			0x00,
 			DefaultBlockStatusLatest,
 			contractFactory,
+			false,
 		)
 
 		// Prepare Claims Acceptance Events
@@ -466,6 +469,7 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			0x00,
 			DefaultBlockStatusLatest,
 			contractFactory,
+			false,
 		)
 
 		// Prepare Claims Acceptance Events
@@ -613,6 +617,7 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			0x00,
 			DefaultBlockStatusLatest,
 			contractFactory,
+			false,
 		)
 
 		// Prepare Claims Acceptance Events

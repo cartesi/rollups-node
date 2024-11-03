@@ -25,6 +25,7 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 		0x10,
 		DefaultBlockStatusLatest,
 		s.contractFactory,
+		false,
 	)
 
 	// Prepare repository
@@ -133,6 +134,7 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 		0x10,
 		DefaultBlockStatusLatest,
 		s.contractFactory,
+		false,
 	)
 
 	// Prepare repository
@@ -241,6 +243,7 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 		0x10,
 		DefaultBlockStatusLatest,
 		s.contractFactory,
+		false,
 	)
 
 	// Prepare Client
@@ -335,6 +338,7 @@ func (s *EvmReaderSuite) TestItStartsWhenLasProcessedBlockIsTheMostRecentBlock()
 		0x10,
 		DefaultBlockStatusLatest,
 		s.contractFactory,
+		false,
 	)
 
 	// Prepare Client

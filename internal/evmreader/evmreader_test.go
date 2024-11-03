@@ -121,6 +121,7 @@ func (s *EvmReaderSuite) SetupTest() {
 		0,
 		DefaultBlockStatusLatest,
 		s.contractFactory,
+		false,
 	)
 	s.evmReader = &inputReader
 }
@@ -189,6 +190,7 @@ func (s *EvmReaderSuite) TestItWrongIConsensus() {
 		0x10,
 		DefaultBlockStatusLatest,
 		contractFactory,
+		false,
 	)
 
 	// Prepare consensus

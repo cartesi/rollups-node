@@ -54,6 +54,10 @@ type EvmReaderRepository interface {
 	UpdateOutputExecutionTransaction(
 		ctx context.Context, app Address, executedOutputs []*Output, blockNumber uint64,
 	) error
+	GetInputIndex(
+		ctx context.Context,
+		applicationAddress Address,
+	) (uint64, error)
 }
 
 // EthClient mimics part of ethclient.Client functions to narrow down the
@@ -115,6 +119,7 @@ type EvmReader struct {
 	defaultBlock            DefaultBlock
 	epochLengthCache        map[Address]uint64
 	hasEnabledApps          bool
+	shouldModifyIndex       bool // modify index in raw data if the main sequencer is espresso
 }
 
 func (r *EvmReader) String() string {
@@ -130,6 +135,7 @@ func NewEvmReader(
 	inputBoxDeploymentBlock uint64,
 	defaultBlock DefaultBlock,
 	contractFactory ContractFactory,
+	shouldModifyIndex bool,
 ) EvmReader {
 	evmReader := EvmReader{
 		client:                  client,
@@ -140,6 +146,7 @@ func NewEvmReader(
 		defaultBlock:            defaultBlock,
 		contractFactory:         contractFactory,
 		hasEnabledApps:          true,
+		shouldModifyIndex:       shouldModifyIndex,
 	}
 	// Initialize epochLength cache
 	evmReader.epochLengthCache = make(map[Address]uint64)
@@ -326,4 +333,8 @@ func (r *EvmReader) GetAppContracts(app Application,
 
 func (r *EvmReader) GetEpochLengthCache(a Address) uint64 {
 	return r.epochLengthCache[a]
+}
+
+func (r *EvmReader) GetEthClient() *EthClient {
+	return &r.client
 }

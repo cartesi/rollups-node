@@ -29,6 +29,7 @@ func (s *EvmReaderSuite) TestOutputExecution() {
 		0x10,
 		DefaultBlockStatusLatest,
 		s.contractFactory,
+		false,
 	)
 
 	// Prepare repository
@@ -159,6 +160,7 @@ func (s *EvmReaderSuite) TestReadOutputExecution() {
 		0x00,
 		DefaultBlockStatusLatest,
 		contractFactory,
+		false,
 	)
 
 	// Prepare Output Executed Events
@@ -292,6 +294,7 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 			0x00,
 			DefaultBlockStatusLatest,
 			contractFactory,
+			false,
 		)
 
 		applicationContract.On("RetrieveOutputExecutionEvents",
@@ -404,6 +407,7 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 			0x00,
 			DefaultBlockStatusLatest,
 			contractFactory,
+			false,
 		)
 
 		// Prepare Output Executed Events
@@ -521,6 +525,7 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 			0x00,
 			DefaultBlockStatusLatest,
 			contractFactory,
+			false,
 		)
 
 		// Prepare Output Executed Events

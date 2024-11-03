@@ -75,6 +75,7 @@ func (s *EvmReaderService) Start(
 		config.InputBoxDeploymentBlock,
 		config.DefaultBlock,
 		contractFactory,
+		false,
 	)
 
 	return reader.Run(ctx, ready)

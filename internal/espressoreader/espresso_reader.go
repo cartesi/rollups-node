@@ -80,7 +80,7 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 
 			l1FinalizedCurrentHeight, l1FinalizedTimestamp := e.getL1FinalizedHeight(currentBlockHeight)
 			// read L1 if there might be update
-			if l1FinalizedCurrentHeight > l1FinalizedPrevHeight || currentBlockHeight == e.startingBlock {
+			if l1FinalizedCurrentHeight > l1FinalizedPrevHeight {
 				slog.Info("L1 finalized", "from", l1FinalizedPrevHeight, "to", l1FinalizedCurrentHeight)
 				slog.Info("Fetching InputBox between Espresso blocks", "from", previousBlockHeight, "to", currentBlockHeight)
 
@@ -167,10 +167,16 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 				l1FinalizedCurrentHeightBig.SetUint64(l1FinalizedCurrentHeight)
 				l1FinalizedTimestampBig := &big.Int{}
 				l1FinalizedTimestampBig.SetUint64(l1FinalizedTimestamp)
-				prevRandao := &big.Int{}
-				prevRandao.SetInt64(0)
+				prevRandao, err := readPrevRandao(ctx, l1FinalizedCurrentHeight, e.evmReader.GetEthClient())
+				if err != nil {
+					slog.Error("failed to read prevrandao", "error", err)
+				}
 				index := &big.Int{}
-				index.SetInt64(0)
+				indexUint64, err := e.repository.GetInputIndex(ctx, appAddress)
+				if err != nil {
+					slog.Error("failed to read index", "error", err)
+				}
+				index.SetUint64(indexUint64)
 				payloadAbi, err := abiObject.Pack("EvmAdvance", chainId, appAddress, msgSender, l1FinalizedCurrentHeightBig, l1FinalizedTimestampBig, prevRandao, index, payloadBytes)
 				if err != nil {
 					slog.Error("failed to abi encode", "error", err)
@@ -307,4 +313,14 @@ func (e *EspressoReader) getAppsForEvmReader(ctx context.Context) []evmreader.Ty
 	}
 
 	return apps
+}
+
+func readPrevRandao(ctx context.Context, l1FinalizedCurrentHeight uint64, client *evmreader.EthClient) (*big.Int, error) {
+	header, err := (*client).HeaderByNumber(ctx, big.NewInt(int64(l1FinalizedCurrentHeight)))
+	if err != nil {
+		return &big.Int{}, fmt.Errorf("espresso read block header error: %w", err)
+	}
+	prevRandao := header.MixDigest.Big()
+	slog.Debug("readPrevRandao", "prevRandao", prevRandao, "blockNumber", l1FinalizedCurrentHeight)
+	return prevRandao, nil
 }

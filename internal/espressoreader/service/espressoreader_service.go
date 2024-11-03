@@ -119,6 +119,7 @@ func (s *EspressoReaderService) setupEvmReader(ctx context.Context, database *re
 		config.InputBoxDeploymentBlock,
 		config.DefaultBlock,
 		contractFactory,
+		true,
 	)
 
 	return &evmReader

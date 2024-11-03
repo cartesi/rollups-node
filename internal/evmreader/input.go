@@ -8,8 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/big"
+	"os"
 
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -297,6 +300,13 @@ func (r *EvmReader) readInputsFromBlockchain(
 			TransactionId:    event.Index.Bytes(),
 		}
 
+		if r.shouldModifyIndex == true {
+			modifiedRawData, err := r.modifyIndex(ctx, input.RawData, input.AppAddress)
+			if err == nil {
+				input.RawData = modifiedRawData
+			}
+		}
+
 		// Insert Sorted
 		appInputsMap[event.AppContract] = insertSorted(
 			sortByInputIndex, appInputsMap[event.AppContract], input)
@@ -321,4 +331,59 @@ func getEpochLength(consensus ConsensusContract) (uint64, error) {
 	}
 
 	return epochLengthRaw.Uint64(), nil
+}
+
+func (r *EvmReader) modifyIndex(ctx context.Context, rawData []byte, appAddress common.Address) ([]byte, error) {
+	// load contract ABI
+	abiFile, err := os.Open("pkg/rollupsmachine/abi.json")
+	if err != nil {
+		slog.Error("failed to open abi file", "error", err)
+		return []byte{}, err
+	}
+	abiObject, err := abi.JSON(abiFile)
+	if err != nil {
+		slog.Error("failed to parse abi", "error", err)
+		return []byte{}, err
+	}
+
+	values, err := abiObject.Methods["EvmAdvance"].Inputs.Unpack(rawData[4:])
+	if err != nil {
+		slog.Error("Error unpacking abi", "err", err)
+		return []byte{}, err
+	}
+
+	type EvmAdvance struct {
+		ChainId        *big.Int
+		AppContract    common.Address
+		MsgSender      common.Address
+		BlockNumber    *big.Int
+		BlockTimestamp *big.Int
+		PrevRandao     *big.Int
+		Index          *big.Int
+		Payload        []byte
+	}
+
+	data := EvmAdvance{
+		ChainId:        values[0].(*big.Int),
+		AppContract:    values[1].(common.Address),
+		MsgSender:      values[2].(common.Address),
+		BlockNumber:    values[3].(*big.Int),
+		BlockTimestamp: values[4].(*big.Int),
+		PrevRandao:     values[5].(*big.Int),
+		Index:          values[6].(*big.Int),
+		Payload:        values[7].([]byte),
+	}
+
+	// modify index
+	currentIndex, err := r.repository.GetInputIndex(ctx, appAddress)
+	data.Index = big.NewInt(int64(currentIndex))
+
+	// abi encode again
+	dataAbi, err := abiObject.Pack("EvmAdvance", data.ChainId, data.AppContract, data.MsgSender, data.BlockNumber, data.BlockTimestamp, data.PrevRandao, data.Index, data.Payload)
+	if err != nil {
+		slog.Error("failed to abi encode", "error", err)
+		return []byte{}, err
+	}
+
+	return dataAbi, nil
 }
