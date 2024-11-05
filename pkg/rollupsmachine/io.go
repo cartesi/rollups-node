@@ -103,3 +103,7 @@ func decodeArguments(payload []byte) (arguments []any, _ error) {
 
 	return method.Inputs.Unpack(payload[4:])
 }
+
+func GetAbi() abi.ABI {
+	return ioABI
+}

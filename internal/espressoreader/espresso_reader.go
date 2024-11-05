@@ -20,7 +20,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/cartesi/rollups-node/pkg/rollupsmachine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/tidwall/gjson"
 )
@@ -151,16 +151,7 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 					}
 				}
 				// abi encode payload
-				abiFile, err := os.Open("pkg/rollupsmachine/abi.json")
-				if err != nil {
-					slog.Error("failed to open abi file", "error", err)
-					continue
-				}
-				abiObject, err := abi.JSON(abiFile)
-				if err != nil {
-					slog.Error("failed to read abi", "error", err)
-					continue
-				}
+				abiObject := rollupsmachine.GetAbi()
 				chainId := &big.Int{}
 				chainId.SetInt64(int64(e.chainId))
 				l1FinalizedCurrentHeightBig := &big.Int{}
