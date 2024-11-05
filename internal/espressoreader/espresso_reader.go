@@ -64,7 +64,7 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 			slog.Error("failed fetching latest espresso block height", "error", err)
 			continue
 		}
-		slog.Info("Espresso:", "latestBlockHeight", latestBlockHeight)
+		slog.Debug("Espresso:", "latestBlockHeight", latestBlockHeight)
 
 		// take a break :)
 		if latestBlockHeight == currentBlockHeight {
@@ -74,15 +74,15 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 		}
 
 		for ; currentBlockHeight < latestBlockHeight; currentBlockHeight++ {
-			slog.Info("Espresso:", "currentBlockHeight", currentBlockHeight, "namespace", e.namespace)
+			slog.Debug("Espresso:", "currentBlockHeight", currentBlockHeight, "namespace", e.namespace)
 
 			//** read base layer **//
 
 			l1FinalizedCurrentHeight, l1FinalizedTimestamp := e.getL1FinalizedHeight(currentBlockHeight)
 			// read L1 if there might be update
 			if l1FinalizedCurrentHeight > l1FinalizedPrevHeight {
-				slog.Info("L1 finalized", "from", l1FinalizedPrevHeight, "to", l1FinalizedCurrentHeight)
-				slog.Info("Fetching InputBox between Espresso blocks", "from", previousBlockHeight, "to", currentBlockHeight)
+				slog.Debug("L1 finalized", "from", l1FinalizedPrevHeight, "to", l1FinalizedCurrentHeight)
+				slog.Debug("Fetching InputBox between Espresso blocks", "from", previousBlockHeight, "to", currentBlockHeight)
 
 				apps := e.getAppsForEvmReader(ctx)
 
@@ -107,11 +107,11 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 			}
 
 			numTx := len(transactions.Transactions)
-			slog.Info("Espresso:", "number of tx", numTx)
+			slog.Debug("Espresso:", "number of tx", numTx)
 
 			for i := 0; i < numTx; i++ {
 				transaction := transactions.Transactions[i]
-				slog.Info("Espresso:", "currentBlockHeight", currentBlockHeight)
+				slog.Debug("Espresso:", "currentBlockHeight", currentBlockHeight)
 
 				// assume the following encoding
 				// transaction = JSON.stringify({

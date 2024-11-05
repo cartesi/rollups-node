@@ -158,7 +158,7 @@ func (s *EspressoReaderService) requestNonce(w http.ResponseWriter, r *http.Requ
 	ctx := r.Context()
 	nonce := s.process(ctx, senderAddress, applicationAddress)
 
-	slog.Info("got nonce request", "senderAddress", senderAddress, "applicationAddress", applicationAddress)
+	slog.Debug("got nonce request", "senderAddress", senderAddress, "applicationAddress", applicationAddress)
 
 	nonceResponse := NonceResponse{Nonce: nonce}
 	if err != nil {
@@ -202,7 +202,7 @@ func (s *EspressoReaderService) submit(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("could not read body", "err", err)
 	}
-	slog.Info("got submit request", "request body", string(body))
+	slog.Debug("got submit request", "request body", string(body))
 
 	client := client.NewClient(s.EspressoBaseUrl)
 	ctx := r.Context()
