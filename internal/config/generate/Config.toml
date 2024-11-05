@@ -245,6 +245,12 @@ go-type = "uint64"
 description = """
 Espresso namespace."""
 
+[espresso.ESPRESSO_SREVICE_ENDPOINT]
+default = "localhost:8080"
+go-type = "string"
+description = """
+URL to Espresso nonce and submit service"""
+
 #
 # Sequencer
 #

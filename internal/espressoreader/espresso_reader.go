@@ -211,12 +211,17 @@ func (e *EspressoReader) Run(ctx context.Context, ready chan<- struct{}) error {
 					}
 				}
 				// build input
+				sigHashHexBytes, err := hex.DecodeString(sigHash[2:])
+				if err != nil {
+					slog.Error("could not obtain bytes for tx-id", "err", err)
+					continue
+				}
 				input := model.Input{
 					CompletionStatus: model.InputStatusNone,
 					RawData:          payloadAbi,
 					BlockNumber:      l1FinalizedCurrentHeight,
 					AppAddress:       appAddress,
-					TransactionId:    []byte(sigHash),
+					TransactionId:    sigHashHexBytes,
 				}
 				currentInputs, ok := epochInputMap[currentEpoch]
 				if !ok {

@@ -82,6 +82,7 @@ env:
 	@echo export ESPRESSO_BASE_URL="https://query.decaf.testnet.espresso.network/v0"
 	@echo export ESPRESSO_STARTING_BLOCK="132500"
 	@echo export ESPRESSO_NAMESPACE="55555"
+	@echo export ESPRESSO_SREVICE_ENDPOINT="localhost:8080"
 	@echo export MAIN_SEQUENCER="espresso" # set to either espresso or ethereum
 
 # =============================================================================

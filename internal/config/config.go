@@ -41,6 +41,7 @@ type NodeConfig struct {
 	EspressoBaseUrl                        string
 	EspressoStartingBlock                  uint64
 	EspressoNamespace                      uint64
+	EspressoServiceEndpoint                string
 	MainSequencer                          string
 	// Temporary
 	MachineServerVerbosity cartesimachine.ServerVerbosity
@@ -106,6 +107,7 @@ func FromEnv() NodeConfig {
 	config.EspressoBaseUrl = GetBaseUrl()
 	config.EspressoStartingBlock = GetStartingBlock()
 	config.EspressoNamespace = GetNamespace()
+	config.EspressoServiceEndpoint = GetSreviceEndpoint()
 	config.MainSequencer = GetSequencer()
 	// Temporary.
 	config.MachineServerVerbosity = cartesimachine.ServerVerbosity(GetMachineServerVerbosity())

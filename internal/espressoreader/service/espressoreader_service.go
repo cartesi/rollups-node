@@ -11,7 +11,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/EspressoSystems/espresso-sequencer-go/client"
@@ -36,6 +35,7 @@ type EspressoReaderService struct {
 	maxDelay                time.Duration
 	chainId                 uint64
 	inputBoxDeploymentBlock uint64
+	espressoServiceEndpoint string
 }
 
 func NewEspressoReaderService(
@@ -49,6 +49,7 @@ func NewEspressoReaderService(
 	maxDelay time.Duration,
 	chainId uint64,
 	inputBoxDeploymentBlock uint64,
+	espressoServiceEndpoint string,
 ) *EspressoReaderService {
 	return &EspressoReaderService{
 		blockchainHttpEndpoint:  blockchainHttpEndpoint,
@@ -61,6 +62,7 @@ func NewEspressoReaderService(
 		maxDelay:                maxDelay,
 		chainId:                 chainId,
 		inputBoxDeploymentBlock: inputBoxDeploymentBlock,
+		espressoServiceEndpoint: espressoServiceEndpoint,
 	}
 }
 
@@ -86,27 +88,23 @@ func (s *EspressoReaderService) setupEvmReader(ctx context.Context, database *re
 	client, err := ethclient.DialContext(ctx, s.blockchainHttpEndpoint)
 	if err != nil {
 		slog.Error("eth client http", "error", err)
-		os.Exit(1)
 	}
 	defer client.Close()
 
 	wsClient, err := ethclient.DialContext(ctx, s.blockchainWsEndpoint)
 	if err != nil {
 		slog.Error("eth client ws", "error", err)
-		os.Exit(1)
 	}
 	defer wsClient.Close()
 
 	config, err := database.GetNodeConfig(ctx)
 	if err != nil {
 		slog.Error("db config", "error", err)
-		os.Exit(1)
 	}
 
 	inputSource, err := evmreader.NewInputSourceAdapter(config.InputBoxAddress, client)
 	if err != nil {
 		slog.Error("input source", "error", err)
-		os.Exit(1)
 	}
 
 	contractFactory := retrypolicy.NewEvmReaderContractFactory(client, s.maxRetries, s.maxDelay)
@@ -126,24 +124,51 @@ func (s *EspressoReaderService) setupEvmReader(ctx context.Context, database *re
 }
 
 func (s *EspressoReaderService) setupNonceHttpServer() {
-	http.HandleFunc("/nonce/{sender}/{dapp}", s.getNonce)
+	http.HandleFunc("/nonce", s.requestNonce)
 	http.HandleFunc("/submit", s.submit)
 
-	http.ListenAndServe(":3333", nil)
+	http.ListenAndServe(s.espressoServiceEndpoint, nil)
 }
 
-func (s *EspressoReaderService) getNonce(w http.ResponseWriter, r *http.Request) {
-	senderAddress := common.HexToAddress(r.PathValue("sender"))
-	applicationAddress := common.HexToAddress(r.PathValue("dapp"))
-	ctx := context.Background()
+type NonceRequest struct {
+	// AppContract App contract address
+	AppContract string `json:"app_contract"`
 
+	// MsgSender Message sender address
+	MsgSender string `json:"msg_sender"`
+}
+
+type NonceResponse struct {
+	Nonce uint64 `json:"nonce"`
+}
+
+func (s *EspressoReaderService) requestNonce(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		slog.Error("could not read body", "err", err)
+	}
+	nonceRequest := &NonceRequest{}
+	if err := json.Unmarshal(body, nonceRequest); err != nil {
+		fmt.Println(err)
+	}
+
+	senderAddress := common.HexToAddress(nonceRequest.MsgSender)
+	applicationAddress := common.HexToAddress(nonceRequest.AppContract)
+
+	ctx := r.Context()
 	nonce := s.process(ctx, senderAddress, applicationAddress)
 
-	slog.Info("got nonce request")
+	slog.Info("got nonce request", "senderAddress", senderAddress, "applicationAddress", applicationAddress)
+
+	nonceResponse := NonceResponse{Nonce: nonce}
+	if err != nil {
+		slog.Error("error json marshal nonce response", "err", err)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	err := json.NewEncoder(w).Encode(nonce)
+	w.Header().Set("Access-Control-Allow-Headers", "Access-Control-Allow-Headers, Origin,Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers")
+	err = json.NewEncoder(w).Encode(nonceResponse)
 	if err != nil {
 		slog.Info("Internal server error",
 			"service", "espresso nonce querier",
@@ -159,10 +184,13 @@ func (s *EspressoReaderService) process(
 	nonce, err := s.database.GetEspressoNonce(ctx, senderAddress, applicationAddress)
 	if err != nil {
 		slog.Error("failed to get espresso nonce", "error", err)
-		os.Exit(1)
 	}
 
 	return nonce
+}
+
+type SubmitResponse struct {
+	Id string `json:"id,omitempty"`
 }
 
 func (s *EspressoReaderService) submit(w http.ResponseWriter, r *http.Request) {
@@ -172,12 +200,12 @@ func (s *EspressoReaderService) submit(w http.ResponseWriter, r *http.Request) {
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		fmt.Printf("could not read body: %s\n", err)
+		slog.Error("could not read body", "err", err)
 	}
 	slog.Info("got submit request", "request body", string(body))
 
 	client := client.NewClient(s.EspressoBaseUrl)
-	ctx := context.Background()
+	ctx := r.Context()
 	var tx types.Transaction
 	tx.Namespace = s.EspressoNamespace
 	tx.Payload = []byte(base64.StdEncoding.EncodeToString(body))
@@ -188,7 +216,9 @@ func (s *EspressoReaderService) submit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, _, sigHash, err := espressoreader.ExtractSigAndData(string(tx.Payload))
-	err = json.NewEncoder(w).Encode(sigHash)
+	submitResponse := SubmitResponse{Id: sigHash}
+
+	err = json.NewEncoder(w).Encode(submitResponse)
 	if err != nil {
 		slog.Info("Internal server error",
 			"service", "espresso submit endpoint",
