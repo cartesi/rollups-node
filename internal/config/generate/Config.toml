@@ -245,7 +245,7 @@ go-type = "uint64"
 description = """
 Espresso namespace."""
 
-[espresso.ESPRESSO_SREVICE_ENDPOINT]
+[espresso.ESPRESSO_SERVICE_ENDPOINT]
 default = "localhost:8080"
 go-type = "string"
 description = """

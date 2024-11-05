@@ -107,7 +107,7 @@ func FromEnv() NodeConfig {
 	config.EspressoBaseUrl = GetBaseUrl()
 	config.EspressoStartingBlock = GetStartingBlock()
 	config.EspressoNamespace = GetNamespace()
-	config.EspressoServiceEndpoint = GetSreviceEndpoint()
+	config.EspressoServiceEndpoint = GetServiceEndpoint()
 	config.MainSequencer = GetSequencer()
 	// Temporary.
 	config.MachineServerVerbosity = cartesimachine.ServerVerbosity(GetMachineServerVerbosity())

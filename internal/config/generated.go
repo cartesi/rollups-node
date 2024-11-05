@@ -348,14 +348,14 @@ func GetNamespace() uint64 {
 	return val
 }
 
-func GetSreviceEndpoint() string {
-	s, ok := os.LookupEnv("ESPRESSO_SREVICE_ENDPOINT")
+func GetServiceEndpoint() string {
+	s, ok := os.LookupEnv("ESPRESSO_SERVICE_ENDPOINT")
 	if !ok {
 		s = "localhost:8080"
 	}
 	val, err := toString(s)
 	if err != nil {
-		panic(fmt.Sprintf("failed to parse ESPRESSO_SREVICE_ENDPOINT: %v", err))
+		panic(fmt.Sprintf("failed to parse ESPRESSO_SERVICE_ENDPOINT: %v", err))
 	}
 	return val
 }
