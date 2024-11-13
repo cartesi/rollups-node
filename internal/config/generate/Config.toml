@@ -25,6 +25,12 @@ go-type = "bool"
 description = """
 If set to false, the node will not make claims."""
 
+[features.CARTESI_FEATURE_CLAIMER_SUBMISSION_ENABLED]
+default = "true"
+go-type = "bool"
+description = """
+If set to false, the node will not submit claims."""
+
 [features.CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED]
 default = "true"
 go-type = "bool"

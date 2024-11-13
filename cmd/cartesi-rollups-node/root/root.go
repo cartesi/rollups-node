@@ -30,7 +30,14 @@ var (
 		Long:  "Runs the Cartesi Rollups Node as a single process",
 		RunE:  run,
 	}
+	enableClaimSubmissionOverride bool
 )
+
+func init() {
+	Cmd.Flags().BoolVar(&enableClaimSubmissionOverride,
+		"enable-submission", true,
+		"enable submission in addition to verification.")
+}
 
 func run(cmd *cobra.Command, args []string) error {
 	startTime := time.Now()
@@ -38,6 +45,17 @@ func run(cmd *cobra.Command, args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// hack: change the environment variable according to the command line flag
+	// such that auth only gets loaded when claimer submission is enabled.
+	if cmd.Flags().Lookup("enable-submission").Changed {
+		var value string
+		if enableClaimSubmissionOverride {
+			value = "1"
+		} else {
+			value = "0"
+		}
+		os.Setenv("CARTESI_FEATURE_CLAIMER_SUBMISSION_ENABLED", value)
+	}
 	config := config.FromEnv()
 
 	// setup log

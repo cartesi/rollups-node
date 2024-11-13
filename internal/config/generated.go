@@ -336,6 +336,18 @@ func GetFeatureClaimerEnabled() bool {
 	return val
 }
 
+func GetFeatureClaimerSubmissionEnabled() bool {
+	s, ok := os.LookupEnv("CARTESI_FEATURE_CLAIMER_SUBMISSION_ENABLED")
+	if !ok {
+		s = "true"
+	}
+	val, err := toBool(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_FEATURE_CLAIMER_SUBMISSION_ENABLED: %v", err))
+	}
+	return val
+}
+
 func GetFeatureMachineHashCheckEnabled() bool {
 	s, ok := os.LookupEnv("CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED")
 	if !ok {

@@ -28,6 +28,8 @@ type CreateInfo struct {
 
 	PostgresEndpoint Redacted[string]
 	DBConn           *Database
+
+	EnableSubmission bool
 }
 
 type claimKey struct {
@@ -38,10 +40,11 @@ type claimKey struct {
 type Service struct {
 	service.Service
 
-	DBConn         *Database
-	EthConn        *ethclient.Client
-	Signer         *bind.TransactOpts
-	ClaimsInFlight map[claimKey]Hash // -> txHash
+	submissionEnabled bool
+	DBConn            *Database
+	EthConn           *ethclient.Client
+	Signer            *bind.TransactOpts
+	ClaimsInFlight    map[claimKey]Hash // -> txHash
 }
 
 func Create(ci CreateInfo, s *Service) error {
@@ -52,6 +55,7 @@ func Create(ci CreateInfo, s *Service) error {
 		return err
 	}
 
+	s.submissionEnabled = ci.EnableSubmission
 	if s.EthConn == nil {
 		if ci.EthConn == nil {
 			ci.EthConn, err = ethclient.Dial(ci.BlockchainHttpEndpoint.Value)
@@ -76,7 +80,7 @@ func Create(ci CreateInfo, s *Service) error {
 		s.ClaimsInFlight = map[claimKey]Hash{}
 	}
 
-	if s.Signer == nil {
+	if s.Signer == nil && s.submissionEnabled {
 		if ci.Signer == nil {
 			ci.Signer, err = CreateSignerFromAuth(ci.Auth, s.Context, s.EthConn)
 			if err != nil {
@@ -234,7 +238,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(se SideEffects) error {
 		}
 
 		// submit if not found in the logs (fetch from hash again, can be stale)
-		if claim, ok := computedClaimsMap[key]; ok {
+		if claim, ok := computedClaimsMap[key]; ok && s.submissionEnabled {
 			s.Logger.Info("Submitting claim to blockchain",
 				"app", claim.AppContractAddress,
 				"claim", claim.Hash,

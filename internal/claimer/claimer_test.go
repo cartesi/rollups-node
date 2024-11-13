@@ -80,6 +80,7 @@ func newServiceMock() *ServiceMock {
 			Service: service.Service{
 				Logger: slog.Default(),
 			},
+			submissionEnabled: true,
 		},
 	}
 }
@@ -161,6 +162,45 @@ func TestSubmitNewClaim(t *testing.T) {
 	m.AssertNumberOfCalls(t, "submitClaimToBlockchain", 1)
 	m.AssertNumberOfCalls(t, "updateEpochWithSubmittedClaim", 0)
 }
+
+// Got a claim, don't submit.
+func TestSubmitNewClaimDisabled(t *testing.T) {
+	m := newServiceMock()
+	m.submissionEnabled = false
+
+	newClaimHash := HexToHash("0x01")
+	newClaimTxHash := HexToHash("0x10")
+	newClaim := ComputedClaim{
+		Hash: newClaimHash,
+	}
+	m.ClaimsInFlight = map[claimKey]Hash{}
+	m.On("selectComputedClaims").Return([]ComputedClaim{
+		newClaim,
+	}, nil)
+	m.On("submitClaimToBlockchain", nil, nil, &newClaim).
+		Return(newClaimTxHash, nil)
+
+	itMock := &ClaimSubmissionIteratorMock{}
+	itMock.On("Next").Return(false)
+	itMock.On("Error").Return(nil)
+
+	m.On("enumerateSubmitClaimEventsSince").
+		Return(itMock, &iconsensus.IConsensus{}, nil)
+	m.On("pollTransaction", newClaimTxHash).
+		Return(false, &types.Receipt{}, nil)
+	assert.Equal(t, len(m.ClaimsInFlight), 0)
+
+	err := m.submitClaimsAndUpdateDatabase(m)
+	assert.Nil(t, err)
+
+	assert.Equal(t, len(m.ClaimsInFlight), 0)
+	m.AssertNumberOfCalls(t, "enumerateSubmitClaimEventsSince", 1)
+	m.AssertNumberOfCalls(t, "pollTransaction", 0)
+	m.AssertNumberOfCalls(t, "selectComputedClaims", 1)
+	m.AssertNumberOfCalls(t, "submitClaimToBlockchain", 0)
+	m.AssertNumberOfCalls(t, "updateEpochWithSubmittedClaim", 0)
+}
+
 
 // Query the blockchain for the submitClaim transaction, it may not be ready yet
 func TestClaimInFlightNotReadyDoesNothing(t *testing.T) {

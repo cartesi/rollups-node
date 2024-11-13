@@ -33,6 +33,7 @@ type NodeConfig struct {
 	HttpAddress                            string
 	HttpPort                               int
 	FeatureClaimerEnabled                  bool
+	FeatureClaimerSubmissionEnabled        bool
 	FeatureMachineHashCheckEnabled         bool
 	Auth                                   Auth
 	AdvancerPollingInterval                Duration
@@ -92,8 +93,9 @@ func FromEnv() NodeConfig {
 	config.HttpAddress = GetHttpAddress()
 	config.HttpPort = GetHttpPort()
 	config.FeatureClaimerEnabled = GetFeatureClaimerEnabled()
+	config.FeatureClaimerSubmissionEnabled = GetFeatureClaimerSubmissionEnabled()
 	config.FeatureMachineHashCheckEnabled = GetFeatureMachineHashCheckEnabled()
-	if config.FeatureClaimerEnabled {
+	if config.FeatureClaimerEnabled && config.FeatureClaimerSubmissionEnabled {
 		config.Auth = authFromEnv()
 	}
 	config.AdvancerPollingInterval = GetAdvancerPollingInterval()

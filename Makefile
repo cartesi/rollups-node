@@ -78,6 +78,7 @@ env:
 	@echo export CARTESI_POSTGRES_ENDPOINT="postgres://postgres:password@localhost:5432/rollupsdb?sslmode=disable"
 	@echo export CARTESI_TEST_POSTGRES_ENDPOINT="postgres://test_user:password@localhost:5432/test_rollupsdb?sslmode=disable"
 	@echo export CARTESI_TEST_MACHINE_IMAGES_PATH=\"$(CARTESI_TEST_MACHINE_IMAGES_PATH)\"
+	@echo export CARTESI_FEATURE_CLAIMER_SUBMISSION_ENABLED=true
 	@echo export PATH=$(CURDIR):$$PATH
 
 # =============================================================================
