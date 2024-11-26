@@ -146,24 +146,23 @@ func (s *Service) Stop(bool) []error {
 }
 
 func (s *Service) Tick() []error {
-	err := s.submitClaimsAndUpdateDatabase(s)
-	if err != nil {
-		return []error{err}
-	}
-	return nil
+	return s.submitClaimsAndUpdateDatabase(s)
 }
 
-func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) error {
+func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) []error {
+	errs := []error{}
 	prevClaims, currClaims, err := se.selectClaimPairsPerApp()
 	if err != nil {
-		return err
+		errs = append(errs, err)
+		return errs
 	}
 
 	// check claims in flight
 	for key, txHash := range s.claimsInFlight {
 		ready, receipt, err := se.pollTransaction(txHash)
 		if err != nil {
-			return err
+			errs = append(errs, err)
+			return errs
 		}
 		if !ready {
 			continue
@@ -171,7 +170,8 @@ func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) error {
 		if claim, ok := currClaims[key]; ok {
 			err = se.updateEpochWithSubmittedClaim(&claim, receipt.TxHash)
 			if err != nil {
-				return err
+				errs = append(errs, err)
+				return errs
 			}
 			s.Logger.Info("claimer: Claim submitted",
 				"app", claim.AppContractAddress,
@@ -187,7 +187,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) error {
 	}
 
 	// check computed claims
-	for key, currClaimRow := range currClaims {
+	nextApp: for key, currClaimRow := range currClaims {
 		var ic *iconsensus.IConsensus = nil
 		var prevEvent *claimSubmissionEvent = nil
 		var currEvent *claimSubmissionEvent = nil
@@ -204,21 +204,27 @@ func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) error {
 					"currClaim", currClaimRow,
 					"err", err,
 				)
-				return err
+				delete(currClaims, key)
+				errs = append(errs, err)
+				goto nextApp
 			}
 
 			// if prevClaimRow exists, there must be a matching event
 			ic, prevEvent, currEvent, err =
 				se.findClaimSubmissionEventAndSucc(&prevClaimRow)
 			if err != nil {
-				return err
+				delete(currClaims, key)
+				errs = append(errs, err)
+				goto nextApp
 			}
 			if prevEvent == nil {
 				s.Logger.Error("claimer: missing event",
 					"claim", prevClaimRow,
 					"err", ErrMissingEvent,
 				)
-				return ErrMissingEvent
+				delete(currClaims, key)
+				errs = append(errs, ErrMissingEvent)
+				goto nextApp
 			}
 			if !claimMatchesEvent(&prevClaimRow, prevEvent) {
 				s.Logger.Error("claimer: event mismatch",
@@ -226,14 +232,18 @@ func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) error {
 					"event", prevEvent,
 					"err", ErrEventMismatch,
 				)
-				return ErrEventMismatch
+				delete(currClaims, key)
+				errs = append(errs, ErrEventMismatch)
+				goto nextApp
 			}
 		} else {
 			// first claim
 			ic, currEvent, _, err =
 				se.findClaimSubmissionEventAndSucc(&currClaimRow)
 			if err != nil {
-				return err
+				delete(currClaims, key)
+				errs = append(errs, err)
+				goto nextApp
 			}
 		}
 
@@ -244,18 +254,24 @@ func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) error {
 					"event", currEvent,
 					"err", ErrEventMismatch,
 				)
-				return ErrEventMismatch
+				delete(currClaims, key)
+				errs = append(errs, ErrEventMismatch)
+				goto nextApp
 			}
 			txHash := currEvent.Raw.TxHash
 			err = se.updateEpochWithSubmittedClaim(&currClaimRow, txHash)
 			if err != nil {
-				return err
+				delete(currClaims, key)
+				errs = append(errs, err)
+				goto nextApp
 			}
 			delete(s.claimsInFlight, key)
 		} else if s.submissionEnabled {
 			txHash, err := se.submitClaimToBlockchain(ic, &currClaimRow)
 			if err != nil {
-				return err
+				delete(currClaims, key)
+				errs = append(errs, err)
+				goto nextApp
 			}
 			s.Logger.Info("claimer: Submitting claim to blockchain",
 				"app",        currClaimRow.AppContractAddress,
@@ -265,7 +281,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) error {
 			s.claimsInFlight[currClaimRow.AppContractAddress] = txHash
 		}
 	}
-	return nil
+	return errs
 }
 
 func checkClaimConstraint(c *claimRow) error {

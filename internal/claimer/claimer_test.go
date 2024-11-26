@@ -103,8 +103,8 @@ func TestDoNothing(t *testing.T) {
 	m.On("selectClaimPairsPerApp").
 		Return(prevClaims, currClaims, nil)
 
-	err := m.submitClaimsAndUpdateDatabase(m)
-	assert.Nil(t, err)
+	errs := m.submitClaimsAndUpdateDatabase(m)
+	assert.Equal(t, len(errs), 0)
 }
 
 func TestSubmitFirstClaim(t *testing.T) {
@@ -133,8 +133,8 @@ func TestSubmitFirstClaim(t *testing.T) {
 	m.On("submitClaimToBlockchain", nil, &currClaim).
 		Return(claimTransactionHash, nil)
 
-	err := m.submitClaimsAndUpdateDatabase(m)
-	assert.Nil(t, err)
+	errs := m.submitClaimsAndUpdateDatabase(m)
+	assert.Equal(t, len(errs), 0)
 	assert.Equal(t, len(m.claimsInFlight), 1)
 	m.AssertNumberOfCalls(t, "findClaimSubmissionEventAndSucc", 1)
 	m.AssertNumberOfCalls(t, "pollTransaction", 0)
@@ -181,8 +181,8 @@ func TestSubmitClaimWithAntecessor(t *testing.T) {
 	m.On("submitClaimToBlockchain", nil, &currClaim).
 		Return(claimTransactionHash, nil)
 
-	err := m.submitClaimsAndUpdateDatabase(m)
-	assert.Nil(t, err)
+	errs := m.submitClaimsAndUpdateDatabase(m)
+	assert.Equal(t, len(errs), 0)
 	assert.Equal(t, len(m.claimsInFlight), 1)
 	m.AssertNumberOfCalls(t, "findClaimSubmissionEventAndSucc", 1)
 	m.AssertNumberOfCalls(t, "pollTransaction", 0)
@@ -218,8 +218,8 @@ func TestSkipSubmitFirstClaim(t *testing.T) {
 	m.On("submitClaimToBlockchain", nil, &currClaim).
 		Return(claimTransactionHash, nil)
 
-	err := m.submitClaimsAndUpdateDatabase(m)
-	assert.Nil(t, err)
+	errs := m.submitClaimsAndUpdateDatabase(m)
+	assert.Equal(t, len(errs), 0)
 	assert.Equal(t, len(m.claimsInFlight), 0)
 	m.AssertNumberOfCalls(t, "findClaimSubmissionEventAndSucc", 1)
 	m.AssertNumberOfCalls(t, "pollTransaction", 0)
@@ -267,8 +267,8 @@ func TestSkipSubmitClaimWithAntecessor(t *testing.T) {
 	m.On("submitClaimToBlockchain", nil, &currClaim).
 		Return(claimTransactionHash, nil)
 
-	err := m.submitClaimsAndUpdateDatabase(m)
-	assert.Nil(t, err)
+	errs := m.submitClaimsAndUpdateDatabase(m)
+	assert.Equal(t, len(errs), 0)
 	assert.Equal(t, len(m.claimsInFlight), 0)
 	m.AssertNumberOfCalls(t, "findClaimSubmissionEventAndSucc", 1)
 	m.AssertNumberOfCalls(t, "pollTransaction", 0)
@@ -305,8 +305,8 @@ func TestInFlightCompleted(t *testing.T) {
 	m.On("updateEpochWithSubmittedClaim", &currClaim, txHash).
 		Return(nil)
 
-	err := m.submitClaimsAndUpdateDatabase(m)
-	assert.Nil(t, err)
+	errs := m.submitClaimsAndUpdateDatabase(m)
+	assert.Equal(t, len(errs), 0)
 	assert.Equal(t, len(m.claimsInFlight), 0)
 	m.AssertNumberOfCalls(t, "findClaimSubmissionEventAndSucc", 0)
 	m.AssertNumberOfCalls(t, "pollTransaction", 1)
@@ -342,8 +342,8 @@ func TestUpdateFirstClaim(t *testing.T) {
 	m.On("updateEpochWithSubmittedClaim", &currClaim, currEvent.Raw.TxHash).
 		Return(nil)
 
-	err := m.submitClaimsAndUpdateDatabase(m)
-	assert.Nil(t, err)
+	errs := m.submitClaimsAndUpdateDatabase(m)
+	assert.Equal(t, len(errs), 0)
 	assert.Equal(t, len(m.claimsInFlight), 0)
 	m.AssertNumberOfCalls(t, "findClaimSubmissionEventAndSucc", 1)
 	m.AssertNumberOfCalls(t, "pollTransaction", 0)
@@ -391,8 +391,8 @@ func TestUpdateClaimWithAntecessor(t *testing.T) {
 	m.On("updateEpochWithSubmittedClaim", &currClaim, currEvent.Raw.TxHash).
 		Return(nil)
 
-	err := m.submitClaimsAndUpdateDatabase(m)
-	assert.Nil(t, err)
+	errs := m.submitClaimsAndUpdateDatabase(m)
+	assert.Equal(t, len(errs), 0)
 	assert.Equal(t, len(m.claimsInFlight), 0)
 	m.AssertNumberOfCalls(t, "findClaimSubmissionEventAndSucc", 1)
 	m.AssertNumberOfCalls(t, "pollTransaction", 0)
@@ -444,8 +444,9 @@ func TestSubmitClaimWithAntecessorMismatch(t *testing.T) {
 	m.On("submitClaimToBlockchain", nil, &currClaim).
 		Return(claimTransactionHash, nil)
 
-	err := m.submitClaimsAndUpdateDatabase(m)
-	assert.Equal(t, err, ErrEventMismatch)
+	errs := m.submitClaimsAndUpdateDatabase(m)
+	assert.Equal(t, len(errs), 1)
+	assert.Equal(t, errs[0], ErrEventMismatch)
 }
 
 // !claimMatchesEvent(currClaim, currEvent)
@@ -488,8 +489,9 @@ func TestSubmitClaimWithEventMismatch(t *testing.T) {
 	m.On("updateEpochWithSubmittedClaim", &currClaim, currEvent.Raw.TxHash).
 		Return(nil)
 
-	err := m.submitClaimsAndUpdateDatabase(m)
-	assert.Equal(t, err, ErrEventMismatch)
+	errs := m.submitClaimsAndUpdateDatabase(m)
+	assert.Equal(t, len(errs), 1)
+	assert.Equal(t, errs[0], ErrEventMismatch)
 }
 
 // !checkClaimsConstraint(prevClaim, currClaim)
@@ -531,7 +533,8 @@ func TestSubmitClaimWithAntecessorOutOfOrder(t *testing.T) {
 	m.On("submitClaimToBlockchain", nil, &currClaim).
 		Return(claimTransactionHash, nil)
 
-	err := m.submitClaimsAndUpdateDatabase(m)
-	assert.Equal(t, err, ErrClaimMismatch)
+	errs := m.submitClaimsAndUpdateDatabase(m)
+	assert.Equal(t, len(errs), 1)
+	assert.Equal(t, errs[0], ErrClaimMismatch)
 }
 
