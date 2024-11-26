@@ -240,7 +240,7 @@ func (s *Service) Reload() []error {
 	errs := s.Impl.Reload()
 	elapsed := time.Since(start)
 
-	if errs != nil {
+	if len(errs) > 0 {
 		s.Logger.Error("Reload",
 			"service", s.Name,
 			"duration", elapsed,
@@ -280,16 +280,16 @@ func (s *Service) Stop(force bool) []error {
 	elapsed := time.Since(start)
 
 	s.Running.Store(false)
-	if errs != nil {
+	if len(errs) > 0 {
 		s.Logger.Error("Stop",
-			"force", force,
 			"service", s.Name,
+			"force", force,
 			"duration", elapsed,
 			"error", errs)
 	} else {
 		s.Logger.Info("Stop",
-			"force", force,
 			"service", s.Name,
+			"force", force,
 			"duration", elapsed)
 	}
 	return nil
