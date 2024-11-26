@@ -1,49 +1,89 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
+// Algorithm for the state transition of computed claims. Possible actions are:
+// - update epoch in the database
+// - submit claim to blockchain
+// - transition application to an invalid state
+//
+// 1. On startup of a clean blockchain there are no previous claims nor events.
+//
+//   - This configuration must submit a new computed claim.
+//
+//     2. Some time after the submission, the computed claim shows up as a claimSubmission
+//     event in the blockchain. The claim and event must match.
+//
+//   - This configuration must update the epoch in the database: computed -> submitted
+//
+// 3. After the first epoch, additional checks must be done. Same as (1) otherwise.
+// 3.1. No epoch was skipped:
+//   - previous_claim.last_block < current_claim.first_block
+//
+// 4. After the first epoch, additional checks must be done. Same as (2) otherwise.
+// 4.1. epochs are in order:
+//   - previous_claim.last_block < current_claim.first_block
+//
+// 4.2. There are no events between the epochs
+//   - next(previous_event) == current_event
+//
+// Other cases are errors.
+//
+// | n |      prev     |      curr     | action |
+// |   | claim | event | claim | event |        |
+// |---+-------+-------+-------+-------+--------+
+// | 1 |   .   |   .   |  cc   |   .   | submit |
+// | 2 |   .   |   .   |  cc   |  ce   | update |
+// | 3 |  pc   |  pe   |  cc   |   .   | submit |
+// | 4 |  pc   |  pe   |  cc   |  ce   | update |
 package claimer
 
 import (
 	"context"
 	"fmt"
 
-	. "github.com/cartesi/rollups-node/internal/config"
-	. "github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/service"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	. "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
+
+var (
+	ErrClaimMismatch = fmt.Errorf("claim and antecessor mismatch")
+	ErrEventMismatch = fmt.Errorf("Computed Claim mismatches ClaimSubmission event")
+	ErrMissingEvent = fmt.Errorf("accepted claim has no matching blockchain event")
+)
+
+type address = common.Address
+type hash = common.Hash
+type claimRow = repository.ClaimRow
+type claimSubmissionEvent = iconsensus.IConsensusClaimSubmission
 
 type CreateInfo struct {
 	service.CreateInfo
 
-	Auth Auth
+	Auth config.Auth
 
-	BlockchainHttpEndpoint Redacted[string]
+	BlockchainHttpEndpoint config.Redacted[string]
 	EthConn                *ethclient.Client
 
-	PostgresEndpoint Redacted[string]
-	DBConn           *Database
+	PostgresEndpoint config.Redacted[string]
+	DBConn           *repository.Database
 
 	EnableSubmission bool
-}
-
-type claimKey struct {
-	hash           Hash
-	epochLastBlock uint64
 }
 
 type Service struct {
 	service.Service
 
 	submissionEnabled bool
-	DBConn            *Database
+	DBConn            *repository.Database
 	EthConn           *ethclient.Client
 	TxOpts            *bind.TransactOpts
-	ClaimsInFlight    map[claimKey]Hash // -> txHash
+	claimsInFlight    map[address]hash // -> txHash
 }
 
 func Create(ci CreateInfo, s *Service) error {
@@ -67,7 +107,7 @@ func Create(ci CreateInfo, s *Service) error {
 
 	if s.DBConn == nil {
 		if ci.DBConn == nil {
-			ci.DBConn, err = Connect(s.Context, ci.PostgresEndpoint.Value)
+			ci.DBConn, err = repository.Connect(s.Context, ci.PostgresEndpoint.Value)
 			if err != nil {
 				return err
 			}
@@ -75,8 +115,8 @@ func Create(ci CreateInfo, s *Service) error {
 		s.DBConn = ci.DBConn
 	}
 
-	if s.ClaimsInFlight == nil {
-		s.ClaimsInFlight = map[claimKey]Hash{}
+	if s.claimsInFlight == nil {
+		s.claimsInFlight = map[address]hash{}
 	}
 
 	if s.submissionEnabled && s.TxOpts == nil {
@@ -113,33 +153,14 @@ func (s *Service) Tick() []error {
 	return nil
 }
 
-func computedClaimToKey(c *ComputedClaim) claimKey {
-	return claimKey{
-		hash:           c.Hash,
-		epochLastBlock: c.EpochLastBlock,
-	}
-}
-
-func eventToKey(e *iconsensus.IConsensusClaimSubmission) claimKey {
-	return claimKey{
-		hash:           e.Claim,
-		epochLastBlock: e.LastProcessedBlockNumber.Uint64(),
-	}
-}
-
-func (s *Service) submitClaimsAndUpdateDatabase(se SideEffects) error {
-	claims, err := se.selectComputedClaims()
+func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) error {
+	prevClaims, currClaims, err := se.selectClaimPairsPerApp()
 	if err != nil {
 		return err
 	}
 
-	computedClaimsMap := make(map[claimKey]*ComputedClaim)
-	for i := 0; i < len(claims); i++ {
-		computedClaimsMap[computedClaimToKey(&claims[i])] = &claims[i]
-	}
-
 	// check claims in flight
-	for key, txHash := range s.ClaimsInFlight {
+	for key, txHash := range s.claimsInFlight {
 		ready, receipt, err := se.pollTransaction(txHash)
 		if err != nil {
 			return err
@@ -147,108 +168,149 @@ func (s *Service) submitClaimsAndUpdateDatabase(se SideEffects) error {
 		if !ready {
 			continue
 		}
-
-		if claim, ok := computedClaimsMap[key]; ok {
-			err = se.updateEpochWithSubmittedClaim(
-				s.DBConn,
-				s.Context,
-				claim,
-				receipt.TxHash)
+		if claim, ok := currClaims[key]; ok {
+			err = se.updateEpochWithSubmittedClaim(&claim, receipt.TxHash)
 			if err != nil {
 				return err
 			}
-			delete(s.ClaimsInFlight, key)
-			delete(computedClaimsMap, key)
 			s.Logger.Info("claimer: Claim submitted",
 				"app", claim.AppContractAddress,
-				"claim", claim.Hash,
+				"claim", claim.EpochHash,
 				"last_block", claim.EpochLastBlock,
+				"tx", txHash)
+			delete(currClaims, key)
+		} else {
+			s.Logger.Warn("claimer: expected claim in flight to be in currClaims.",
 				"tx", receipt.TxHash)
 		}
+		delete(s.claimsInFlight, key)
 	}
 
-	// check event logs for the remaining claims, submit if not found
-	for i := 0; i < len(claims); i++ {
-		claimDB := &claims[i]
-		key := computedClaimToKey(claimDB)
-		_, isSelected := computedClaimsMap[key]
-		_, isInFlight := s.ClaimsInFlight[key]
-		if !isSelected || isInFlight {
+	// check computed claims
+	for key, currClaimRow := range currClaims {
+		var ic *iconsensus.IConsensus = nil
+		var prevEvent *claimSubmissionEvent = nil
+		var currEvent *claimSubmissionEvent = nil
+
+		if _, isInFlight := s.claimsInFlight[key]; isInFlight {
 			continue
 		}
 
-		s.Logger.Info("claimer: Checking if there was previous submitted claims",
-			"app", claimDB.AppContractAddress,
-			"claim", claimDB.Hash,
-			"last_block", claimDB.EpochLastBlock,
-		)
-		it, inst, err := se.enumerateSubmitClaimEventsSince(
-			s.EthConn, s.Context,
-			claimDB.AppIConsensusAddress,
-			claimDB.EpochLastBlock+1)
-		if err != nil {
-			return err
-		}
-
-		for it.Next() {
-			event := it.Event()
-			eventKey := eventToKey(event)
-			claim, ok := computedClaimsMap[eventKey]
-
-			if event.LastProcessedBlockNumber.Uint64() > claimDB.EpochLastBlock {
-				// found a newer event than the claim we are processing.
-				s.Logger.Error("claimer: Found a newer event than claim",
-					"app", claimDB.AppContractAddress,
-					"claim", Hash(event.Claim),
-					"claim_last_block", claimDB.EpochLastBlock,
-					"event_last_block", event.LastProcessedBlockNumber.Uint64(),
+		if prevClaimRow, ok := prevClaims[key]; ok {
+			err := checkClaimsConstraint(&prevClaimRow, &currClaimRow)
+			if err != nil {
+				s.Logger.Error("claimer: database mismatch",
+					"prevClaim", prevClaimRow,
+					"currClaim", currClaimRow,
+					"err", err,
 				)
-				return fmt.Errorf("Application in invalid state")
-				// TODO: put the application in an invalid state
+				return err
 			}
-			s.Logger.Debug("claimer: Found previous submitted claim event",
-				"app", claimDB.AppContractAddress,
-				"claim", Hash(event.Claim),
-				"last_block", event.LastProcessedBlockNumber,
-			)
-			if ok {
-				s.Logger.Info("claimer: Claim was previously submitted, updating the database",
-					"app", claimDB.AppContractAddress,
-					"claim", claimDB.Hash,
-					"last_block", claimDB.EpochLastBlock,
-				)
-				err := se.updateEpochWithSubmittedClaim(
-					s.DBConn,
-					s.Context,
-					claim,
-					event.Raw.TxHash)
-				if err != nil {
-					return err
-				}
-				delete(computedClaimsMap, eventKey)
-				break
-			}
-		}
-		if err := it.Error(); err != nil {
-			return err
-		}
 
-		// submit if not found in the logs (fetch from hash again, can be stale)
-		if claim, ok := computedClaimsMap[key]; ok && s.submissionEnabled {
-			s.Logger.Info("claimer: Submitting claim to blockchain",
-				"app", claim.AppContractAddress,
-				"claim", claim.Hash,
-				"last_block", claim.EpochLastBlock,
-			)
-			txHash, err := se.submitClaimToBlockchain(inst, s.TxOpts, claim)
+			// if prevClaimRow exists, there must be a matching event
+			ic, prevEvent, currEvent, err =
+				se.findClaimSubmissionEventAndSucc(&prevClaimRow)
 			if err != nil {
 				return err
 			}
-			s.ClaimsInFlight[key] = txHash
-			delete(computedClaimsMap, key)
+			if prevEvent == nil {
+				s.Logger.Error("claimer: missing event",
+					"claim", prevClaimRow,
+					"err", ErrMissingEvent,
+				)
+				return ErrMissingEvent
+			}
+			if !claimMatchesEvent(&prevClaimRow, prevEvent) {
+				s.Logger.Error("claimer: event mismatch",
+					"claim", prevClaimRow,
+					"event", prevEvent,
+					"err", ErrEventMismatch,
+				)
+				return ErrEventMismatch
+			}
+		} else {
+			// first claim
+			ic, currEvent, _, err =
+				se.findClaimSubmissionEventAndSucc(&currClaimRow)
+			if err != nil {
+				return err
+			}
+		}
+
+		if currEvent != nil {
+			if !claimMatchesEvent(&currClaimRow, currEvent) {
+				s.Logger.Error("claimer: event mismatch",
+					"claim", currClaimRow,
+					"event", currEvent,
+					"err", ErrEventMismatch,
+				)
+				return ErrEventMismatch
+			}
+			txHash := currEvent.Raw.TxHash
+			err = se.updateEpochWithSubmittedClaim(&currClaimRow, txHash)
+			if err != nil {
+				return err
+			}
+			delete(s.claimsInFlight, key)
+		} else if s.submissionEnabled {
+			txHash, err := se.submitClaimToBlockchain(ic, &currClaimRow)
+			if err != nil {
+				return err
+			}
+			s.Logger.Info("claimer: Submitting claim to blockchain",
+				"app",        currClaimRow.AppContractAddress,
+				"claim",      currClaimRow.EpochHash,
+				"last_block", currClaimRow.EpochLastBlock,
+			)
+			s.claimsInFlight[currClaimRow.AppContractAddress] = txHash
 		}
 	}
 	return nil
+}
+
+func checkClaimConstraint(c *claimRow) error {
+	zeroAddress := address{}
+
+	if c.EpochFirstBlock > c.EpochLastBlock {
+		return ErrClaimMismatch
+	}
+	if c.AppIConsensusAddress == zeroAddress {
+		return ErrClaimMismatch
+	}
+	return nil
+}
+
+func checkClaimsConstraint(p *claimRow, c *claimRow) error {
+	var err error
+
+	err = checkClaimConstraint(c)
+	if err != nil {
+		return err
+	}
+	err = checkClaimConstraint(p)
+	if err != nil {
+		return err
+	}
+
+	// p, c consistent
+	if p.AppContractAddress != c.AppContractAddress {
+		return ErrClaimMismatch
+	}
+	if p.EpochLastBlock > c.EpochLastBlock {
+		return ErrClaimMismatch
+	}
+	if p.EpochFirstBlock > c.EpochFirstBlock {
+		return ErrClaimMismatch
+	}
+	if p.EpochIndex > c.EpochIndex {
+		return ErrClaimMismatch
+	}
+	return nil
+}
+
+func claimMatchesEvent(c *claimRow, e *claimSubmissionEvent) bool {
+	return  c.AppContractAddress == e.AppContract &&
+		c.EpochLastBlock == e.LastProcessedBlockNumber.Uint64()
 }
 
 func (s *Service) Start(context context.Context, ready chan<- struct{}) error {

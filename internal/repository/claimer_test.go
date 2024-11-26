@@ -6,9 +6,11 @@ package repository
 import (
 	"context"
 	"testing"
+
 	. "github.com/cartesi/rollups-node/internal/model"
-	"github.com/ethereum/go-ethereum/common"
+	// "github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/test/tooling/db"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,136 +34,228 @@ func setup(t *testing.T, ctx context.Context) (*require.Assertions, *Database, e
 func TestClaimerRepository(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("EmptySelectComputedClaims", func(t *testing.T) {
+	// Must return an empty array for a database with no computed claims
+	t.Run("EmptyArrayOnCleanDB", func(t *testing.T) {
 		require, database, err := setup(t, ctx)
-
-		computedClaims, err := database.SelectComputedClaims(ctx)
 		require.Nil(err)
-		require.Empty(computedClaims)
+
+		computed, err := database.SelectOldestComputedClaimPerApp(ctx)
+		require.Nil(err)
+		require.Empty(computed)
 	})
 
-	t.Run("SelectComputedClaims", func(t *testing.T) {
+	// Check that we select the correct epochs on a "complex" situation.
+	// The query must return 0 or 1 entries per application with the smallest
+	// epoch index and status == 'COMPUTED_CLAIM'.
+	//
+	// Application 0 has 4 epochs, 1 already accepted (with lowest index)
+	// and 3 computed (the candidates to be selected).
+	//
+	// Application 1 has no computed epochs and must not be returned.
+	//
+	// Application 2 has 3 epochs, all computed.
+	//
+	// We expect 2 values on the array.
+	// 1) {index = 1, apps[0], ...}
+	// 2) {index = 2, apps[1], ...}
+	//
+	t.Run("MustRetrieveOldestComputedClaimForEachApp", func(t *testing.T) {
 		require, database, err := setup(t, ctx)
-
-		app := Application{
-			Id:                 1,
-			ContractAddress:    common.HexToAddress("deadbeef"),
-			TemplateHash:       common.HexToHash("deadbeef"),
-			LastProcessedBlock: 1,
-			Status:             ApplicationStatusRunning,
-			IConsensusAddress:  common.HexToAddress("ffffff"),
-		}
-		_, err = database.InsertApplication(ctx, &app)
 		require.Nil(err)
 
-		lastBlock := []uint64{99, 200}
-		epochs := []Epoch{
+		apps := []Application{
 			{
-				Id:              1,
-				Index:           0,
-				FirstBlock:      0,
-				LastBlock:       lastBlock[0],
-				AppAddress:      app.ContractAddress,
+				Id:                 0,
+				ContractAddress:    common.HexToAddress("0"),
+				Status:             ApplicationStatusRunning,
+			}, {
+				Id:                 1,
+				ContractAddress:    common.HexToAddress("1"),
+				Status:             ApplicationStatusRunning,
+			}, {
+				Id:                 2,
+				ContractAddress:    common.HexToAddress("2"),
+				Status:             ApplicationStatusRunning,
+			},
+		}
+		for _, app := range(apps) {
+			_, err = database.InsertApplication(ctx, &app)
+			require.Nil(err)
+		}
+
+		epochs := []Epoch{
+			// epochs of apps[0]
+			{
+				Index:           3, // not this
+				AppAddress:      apps[0].ContractAddress,
 				ClaimHash:       &common.Hash{},
 				TransactionHash: nil,
 				Status:          EpochStatusClaimComputed,
-			},{
-				Id:              2,
-				Index:           1,
-				FirstBlock:      lastBlock[0]+1,
-				LastBlock:       lastBlock[1],
-				AppAddress:      app.ContractAddress,
+			}, {
+				Index:           2, // not this
+				AppAddress:      apps[0].ContractAddress,
+				ClaimHash:       &common.Hash{},
+				TransactionHash: nil,
+				Status:          EpochStatusClaimComputed,
+			}, {
+				Index:           1, // this!
+				AppAddress:      apps[0].ContractAddress,
+				ClaimHash:       &common.Hash{},
+				TransactionHash: nil,
+				Status:          EpochStatusClaimComputed,
+			}, {
+				Index:           0, // not this
+				AppAddress:      apps[0].ContractAddress,
+				ClaimHash:       &common.Hash{},
+				TransactionHash: nil,
+				Status:          EpochStatusClaimAccepted,
+			},
+
+			// epochs of apps[1]
+			{
+				Index:           0,
+				AppAddress:      apps[1].ContractAddress,
+				ClaimHash:       &common.Hash{},
+				TransactionHash: nil,
+				Status:          EpochStatusClaimAccepted,
+			},
+
+			// epochs of apps[2]
+			{
+				Index:           3, // not this
+				AppAddress:      apps[2].ContractAddress,
+				ClaimHash:       &common.Hash{},
+				TransactionHash: nil,
+				Status:          EpochStatusClaimComputed,
+			}, {
+				Index:           2, // this!
+				AppAddress:      apps[2].ContractAddress,
+				ClaimHash:       &common.Hash{},
+				TransactionHash: nil,
+				Status:          EpochStatusClaimComputed,
+			}, {
+				Index:           4, // not this
+				AppAddress:      apps[2].ContractAddress,
 				ClaimHash:       &common.Hash{},
 				TransactionHash: nil,
 				Status:          EpochStatusClaimComputed,
 			},
 		}
-
 		for _, epoch := range(epochs) {
 			_, err = database.InsertEpoch(ctx, &epoch)
 			require.Nil(err)
 		}
 
-		computedClaims, err := database.SelectComputedClaims(ctx)
+		computed, err := database.SelectOldestComputedClaimPerApp(ctx)
 		require.Nil(err)
-		require.Len(computedClaims, 2)
+		require.Len(computed, 2)
 
-		for i, computedClaim := range(computedClaims) {
-			require.Equal(computedClaim.EpochID, epochs[i].Id)
-			require.Equal(computedClaim.Hash, *epochs[i].ClaimHash)
-			require.Equal(computedClaim.AppContractAddress, app.ContractAddress)
-			require.Equal(computedClaim.AppIConsensusAddress, app.IConsensusAddress)
-		}
+		require.Equal(computed[apps[0].ContractAddress].EpochIndex, uint64(1))
+		require.Equal(computed[apps[0].ContractAddress].AppContractAddress,
+			apps[0].ContractAddress)
+
+		require.Equal(computed[apps[2].ContractAddress].EpochIndex, uint64(2))
+		require.Equal(computed[apps[2].ContractAddress].AppContractAddress,
+			apps[2].ContractAddress)
 	})
 
-	t.Run("TestUpdateEpochWithSubmittedClaim", func(t *testing.T) {
+	t.Run("MustRetrieveNewestComputedClaimForEachApp", func(t *testing.T) {
 		require, database, err := setup(t, ctx)
+		require.Nil(err)
 
-		app := Application{
-			Id:                 1,
-			ContractAddress:    common.HexToAddress("deadbeef"),
-			TemplateHash:       common.HexToHash("deadbeef"),
-			LastProcessedBlock: 1,
-			Status:             ApplicationStatusRunning,
-			IConsensusAddress:  common.HexToAddress("ffffff"),
+		apps := []Application{
+			{
+				Id:                 0,
+				ContractAddress:    common.HexToAddress("0"),
+				Status:             ApplicationStatusRunning,
+			}, {
+				Id:                 1,
+				ContractAddress:    common.HexToAddress("1"),
+				Status:             ApplicationStatusRunning,
+			}, {
+				Id:                 2,
+				ContractAddress:    common.HexToAddress("2"),
+				Status:             ApplicationStatusRunning,
+			},
 		}
-		_, err = database.InsertApplication(ctx, &app)
-		require.Nil(err)
-
-		epoch := Epoch{
-			Id:              1,
-			Index:           0,
-			FirstBlock:      0,
-			LastBlock:       100,
-			AppAddress:      app.ContractAddress,
-			ClaimHash:       &common.Hash{},
-			TransactionHash: nil,
-			Status:          EpochStatusClaimComputed,
-		}
-
-		id, err := database.InsertEpoch(ctx, &epoch)
-		require.Nil(err)
-
-		transactionHash := common.HexToHash("0x10")
-		err = database.UpdateEpochWithSubmittedClaim(ctx, id, transactionHash)
-		require.Nil(err)
-
-		updatedEpoch, err := database.GetEpoch(ctx, epoch.Index, epoch.AppAddress)
-		require.Nil(err)
-		require.Equal(updatedEpoch.Status, EpochStatusClaimSubmitted)
-		require.Equal(updatedEpoch.TransactionHash, &transactionHash)
-	})
-
-	t.Run("TestFailUpdateEpochWithSubmittedClaim", func(t *testing.T) {
-		require, database, err := setup(t, ctx)
-
-		app := Application{
-			Id:                 1,
-			ContractAddress:    common.HexToAddress("deadbeef"),
-			TemplateHash:       common.HexToHash("deadbeef"),
-			LastProcessedBlock: 1,
-			Status:             ApplicationStatusRunning,
-			IConsensusAddress:  common.HexToAddress("ffffff"),
-		}
-		_, err = database.InsertApplication(ctx, &app)
-		require.Nil(err)
-
-		transactionHash := common.HexToHash("0x10")
-		epoch := Epoch{
-			Id:              1,
-			Index:           0,
-			FirstBlock:      0,
-			LastBlock:       100,
-			AppAddress:      app.ContractAddress,
-			ClaimHash:       &common.Hash{},
-			TransactionHash: &transactionHash,
-			Status:          EpochStatusClaimSubmitted,
+		for _, app := range(apps) {
+			_, err = database.InsertApplication(ctx, &app)
+			require.Nil(err)
 		}
 
-		id, err := database.InsertEpoch(ctx, &epoch)
-		require.Nil(err)
+		epochs := []Epoch{
+			// epochs of apps[0]
+			{
+				Index:           3, // not this
+				AppAddress:      apps[0].ContractAddress,
+				ClaimHash:       &common.Hash{},
+				TransactionHash: nil,
+				Status:          EpochStatusClaimComputed,
+			}, {
+				Index:           2, // not this
+				AppAddress:      apps[0].ContractAddress,
+				ClaimHash:       &common.Hash{},
+				TransactionHash: nil,
+				Status:          EpochStatusClaimComputed,
+			}, {
+				Index:           1, // this!
+				AppAddress:      apps[0].ContractAddress,
+				ClaimHash:       &common.Hash{},
+				TransactionHash: nil,
+				Status:          EpochStatusClaimAccepted,
+			}, {
+				Index:           0, // not this
+				AppAddress:      apps[0].ContractAddress,
+				ClaimHash:       &common.Hash{},
+				TransactionHash: nil,
+				Status:          EpochStatusClaimAccepted,
+			},
 
-		err = database.UpdateEpochWithSubmittedClaim(ctx, id, transactionHash)
-		require.Equal(err, ErrNoUpdate)
+			// epochs of apps[1]
+			{
+				Index:           0, // not this
+				AppAddress:      apps[1].ContractAddress,
+				ClaimHash:       &common.Hash{},
+				TransactionHash: nil,
+				Status:          EpochStatusClaimComputed,
+			},
+
+			// epochs of apps[2]
+			{
+				Index:           3, // not this
+				AppAddress:      apps[2].ContractAddress,
+				ClaimHash:       &common.Hash{},
+				TransactionHash: nil,
+				Status:          EpochStatusClaimComputed,
+			}, {
+				Index:           2, // this!
+				AppAddress:      apps[2].ContractAddress,
+				ClaimHash:       &common.Hash{},
+				TransactionHash: nil,
+				Status:          EpochStatusClaimAccepted,
+			}, {
+				Index:           4, // not this
+				AppAddress:      apps[2].ContractAddress,
+				ClaimHash:       &common.Hash{},
+				TransactionHash: nil,
+				Status:          EpochStatusClaimComputed,
+			},
+		}
+		for _, epoch := range(epochs) {
+			_, err = database.InsertEpoch(ctx, &epoch)
+			require.Nil(err)
+		}
+
+		accepted, err := database.SelectNewestAcceptedClaimPerApp(ctx)
+		require.Nil(err)
+		require.Len(accepted, 2)
+
+		require.Equal(accepted[apps[0].ContractAddress].EpochIndex, uint64(1))
+		require.Equal(accepted[apps[0].ContractAddress].AppContractAddress,
+			apps[0].ContractAddress)
+
+		require.Equal(accepted[apps[2].ContractAddress].EpochIndex, uint64(2))
+		require.Equal(accepted[apps[2].ContractAddress].AppContractAddress,
+			apps[2].ContractAddress)
 	})
 }

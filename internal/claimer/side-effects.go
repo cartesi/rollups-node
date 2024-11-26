@@ -4,193 +4,142 @@
 package claimer
 
 import (
-	"context"
+	"fmt"
 	"math/big"
 
-	//. "github.com/cartesi/rollups-node/internal/config"
-	. "github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
-
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	. "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-type IClaimSubmissionIterator interface {
-	Next() bool
-	Error() error
-	Event() *iconsensus.IConsensusClaimSubmission
-}
-
-type ClaimSubmissionIterator struct {
-	iterator *iconsensus.IConsensusClaimSubmissionIterator
-}
-
-func (p *ClaimSubmissionIterator) Next() bool {
-	return p.iterator.Next()
-}
-
-func (p *ClaimSubmissionIterator) Error() error {
-	return p.iterator.Error()
-}
-
-func (p *ClaimSubmissionIterator) Event() *iconsensus.IConsensusClaimSubmission {
-	return p.iterator.Event
-}
-
-type SideEffects interface {
-	submitClaimToBlockchain(
-		instance *iconsensus.IConsensus,
-		signer *bind.TransactOpts,
-		claim *ComputedClaim,
-	) (Hash, error)
-
-	selectComputedClaims() ([]ComputedClaim, error)
-
+type sideEffects interface {
+	// database
+	selectClaimPairsPerApp() (
+		map[address]claimRow,
+		map[address]claimRow,
+		error,
+	)
 	updateEpochWithSubmittedClaim(
-		DBConn *Database,
-		context context.Context,
-		claim *ComputedClaim,
-		txHash Hash,
+		claim *claimRow,
+		txHash hash,
 	) error
 
-	enumerateSubmitClaimEventsSince(
-		EthConn *ethclient.Client,
-		context context.Context,
-		appIConsensusAddr Address,
-		epochLastBlock uint64,
+	// blockchain
+	findClaimSubmissionEventAndSucc(
+		claim *claimRow,
 	) (
-		IClaimSubmissionIterator,
 		*iconsensus.IConsensus,
-		error)
-
-	pollTransaction(txHash Hash) (bool, *types.Receipt, error)
+		*claimSubmissionEvent,
+		*claimSubmissionEvent,
+		error,
+	)
+	submitClaimToBlockchain(
+		ic *iconsensus.IConsensus,
+		claim *claimRow,
+	) (
+		hash,
+		error,
+	)
+	pollTransaction(txHash hash) (
+		bool,
+		*types.Receipt,
+		error,
+	)
 }
 
-func (s *Service) submitClaimToBlockchain(
-	instance *iconsensus.IConsensus,
-	signer *bind.TransactOpts,
-	claim *ComputedClaim,
-) (Hash, error) {
-	txHash := Hash{}
-	lastBlockNumber := new(big.Int).SetUint64(claim.EpochLastBlock)
-	tx, err := instance.SubmitClaim(signer, claim.AppContractAddress,
-		lastBlockNumber, claim.Hash)
+func (s *Service) selectClaimPairsPerApp() (
+	map[address]claimRow,
+	map[address]claimRow,
+	error,
+) {
+	computed, accepted, err := s.DBConn.SelectClaimPairsPerApp(s.Context)
 	if err != nil {
-		s.Logger.Error("submitClaimToBlockchain:failed",
-			"service", s.Name,
-			"appContractAddress", claim.AppContractAddress,
-			"claimHash", claim.Hash,
-			"error", err)
-	} else {
-		txHash = tx.Hash()
-		s.Logger.Debug("SubmitClaimToBlockchain:success",
-			"service", s.Name,
-			"appContractAddress", claim.AppContractAddress,
-			"claimHash", claim.Hash,
-			"TxHash", txHash)
-	}
-	return txHash, err
-}
-
-func (s *Service) selectComputedClaims() ([]ComputedClaim, error) {
-	claims, err := s.DBConn.SelectComputedClaims(s.Context)
-	if err != nil {
-		s.Logger.Error("SelectComputedClaims:failed",
+		s.Logger.Error("selectClaimPairsPerApp:failed",
 			"service", s.Name,
 			"error", err)
 	} else {
-		var ids []uint64
-		for _, claim := range claims {
-			ids = append(ids, claim.EpochID)
-		}
-		s.Logger.Debug("SelectComputedClaims:success",
+		s.Logger.Debug("selectClaimPairsPerApp:success",
 			"service", s.Name,
-			"claims", len(claims),
-			"ids", ids,
-			"inFlight", len(s.ClaimsInFlight))
+			"len(computed)", len(computed),
+			"len(accepted)", len(accepted))
 	}
-	return claims, err
+	return accepted, computed, err
 }
 
 /* update the database epoch status to CLAIM_SUBMITTED and add a transaction hash */
 func (s *Service) updateEpochWithSubmittedClaim(
-	DBConn *Database,
-	context context.Context,
-	claim *ComputedClaim,
-	txHash Hash,
+	claim *claimRow,
+	txHash hash,
 ) error {
-	err := DBConn.UpdateEpochWithSubmittedClaim(context, claim.EpochID, txHash)
+	err := s.DBConn.UpdateEpochWithSubmittedClaim(s.Context, claim.EpochID, txHash)
 	if err != nil {
-		s.Logger.Error("UpdateEpochWithSubmittedClaim:failed",
+		s.Logger.Error("updateEpochWithSubmittedClaim:failed",
 			"service", s.Name,
 			"appContractAddress", claim.AppContractAddress,
-			"hash", claim.Hash,
+			"hash", claim.EpochHash,
 			"txHash", txHash,
 			"error", err)
 	} else {
-		s.Logger.Debug("UpdateEpochWithSubmittedClaim:success",
+		s.Logger.Debug("updateEpochWithSubmittedClaim:success",
 			"service", s.Name,
 			"appContractAddress", claim.AppContractAddress,
-			"hash", claim.Hash,
+			"hash", claim.EpochHash,
 			"txHash", txHash)
 	}
 	return err
 }
 
-func (s *Service) enumerateSubmitClaimEventsSince(
-	EthConn *ethclient.Client,
-	context context.Context,
-	appIConsensusAddr Address,
-	epochLastBlock uint64,
+func (s *Service) findClaimSubmissionEventAndSucc(
+	claim *claimRow,
 ) (
-	IClaimSubmissionIterator,
 	*iconsensus.IConsensus,
+	*claimSubmissionEvent,
+	*claimSubmissionEvent,
 	error,
 ) {
-	it, ic, err := s.EnumerateSubmitClaimEventsSince(
-		EthConn, context, appIConsensusAddr, epochLastBlock)
-
+	ic, curr, next, err := s.FindClaimSubmissionEventAndSucc(claim)
 	if err != nil {
-		s.Logger.Error("EnumerateSubmitClaimEventsSince:failed",
+		s.Logger.Error("findClaimSubmissionEventAndSucc:failed",
 			"service", s.Name,
-			"appIConsensusAddr", appIConsensusAddr,
-			"epochLastBlock", epochLastBlock,
+			"claim", claim,
 			"error", err)
 	} else {
-		s.Logger.Debug("EnumerateSubmitClaimEventsSince:success",
+		s.Logger.Debug("findClaimSubmissionEventAndSucc:success",
 			"service", s.Name,
-			"appIConsensusAddr", appIConsensusAddr,
-			"epochLastBlock", epochLastBlock)
+			"claim", claim,
+			"currEvent", curr,
+			"nextEvent", next,
+		)
 	}
-	return it, ic, err
+	return ic, curr, next, err
 }
 
-func (s *Service) EnumerateSubmitClaimEventsSince(
-	EthConn *ethclient.Client,
-	context context.Context,
-	appIConsensusAddr Address,
-	epochLastBlock uint64,
-) (
-	IClaimSubmissionIterator,
-	*iconsensus.IConsensus,
-	error,
-) {
-	ic, err := iconsensus.NewIConsensus(appIConsensusAddr, EthConn)
+func (s *Service) submitClaimToBlockchain(
+	ic *iconsensus.IConsensus,
+	claim *claimRow,
+) (hash, error) {
+	txHash := hash{}
+	lastBlockNumber := new(big.Int).SetUint64(claim.EpochLastBlock)
+	tx, err := ic.SubmitClaim(s.TxOpts, claim.AppContractAddress,
+		lastBlockNumber, claim.EpochHash)
 	if err != nil {
-		return nil, nil, err
+		s.Logger.Error("submitClaimToBlockchain:failed",
+			"service", s.Name,
+			"appContractAddress", claim.AppContractAddress,
+			"claimHash", claim.EpochHash,
+			"error", err)
+	} else {
+		txHash = tx.Hash()
+		s.Logger.Debug("submitClaimToBlockchain:success",
+			"service", s.Name,
+			"appContractAddress", claim.AppContractAddress,
+			"claimHash", claim.EpochHash,
+			"TxHash", txHash)
 	}
-
-	it, err := ic.FilterClaimSubmission(&bind.FilterOpts{
-		Context: context,
-		Start:   epochLastBlock,
-	}, nil, nil)
-
-	return &ClaimSubmissionIterator{iterator: it}, ic, nil
+	return txHash, err
 }
 
-func (s *Service) pollTransaction(txHash Hash) (bool, *types.Receipt, error) {
+func (s *Service) pollTransaction(txHash hash) (bool, *types.Receipt, error) {
 	ready, receipt, err := s.PollTransaction(txHash)
 	if err != nil {
 		s.Logger.Error("PollTransaction:failed",
@@ -212,7 +161,53 @@ func (s *Service) pollTransaction(txHash Hash) (bool, *types.Receipt, error) {
 	return ready, receipt, err
 }
 
-func (s *Service) PollTransaction(txHash Hash) (bool, *types.Receipt, error) {
+// scan the event stream for a claimSubmission event that matches claim.
+// return this event and its successor
+func (s *Service) FindClaimSubmissionEventAndSucc(
+	claim *claimRow,
+) (
+	*iconsensus.IConsensus,
+	*claimSubmissionEvent,
+	*claimSubmissionEvent,
+	error,
+) {
+	ic, err := iconsensus.NewIConsensus(claim.AppIConsensusAddress, s.EthConn)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	it, err := ic.FilterClaimSubmission(&bind.FilterOpts{
+		Context: s.Context,
+		Start:   claim.EpochLastBlock,
+	}, nil, nil)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	for it.Next() {
+		event := it.Event
+		lastBlock := event.LastProcessedBlockNumber.Uint64()
+		if claimMatchesEvent(claim, event) {
+			var succ *claimSubmissionEvent = nil
+			if it.Next() {
+				succ = it.Event
+			}
+			if it.Error() != nil {
+				return nil, nil, nil, it.Error()
+			}
+			return ic, event, succ, nil
+		} else if lastBlock > claim.EpochLastBlock {
+			err = fmt.Errorf("claim not found, searched up to %v", event)
+		}
+	}
+	if it.Error() != nil {
+		return nil, nil, nil, it.Error()
+	}
+	return ic, nil, nil, nil
+}
+
+/* poll a transaction hash for its submission status and receipt */
+func (s *Service) PollTransaction(txHash hash) (bool, *types.Receipt, error) {
 	_, isPending, err := s.EthConn.TransactionByHash(s.Context, txHash)
 	if err != nil || isPending {
 		return false, nil, err

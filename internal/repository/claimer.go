@@ -17,22 +17,34 @@ var (
 	ErrNoUpdate = fmt.Errorf("update did not take effect")
 )
 
-type ComputedClaim struct {
-	Hash                 common.Hash
+type ClaimRow struct {
 	EpochID              uint64
+	EpochIndex           uint64
+	EpochFirstBlock      uint64
+	EpochLastBlock       uint64
+	EpochHash            Hash
 	AppContractAddress   Address
 	AppIConsensusAddress Address
-	EpochLastBlock       uint64
 }
 
-func (pg *Database) SelectComputedClaims(ctx context.Context) ([]ComputedClaim, error) {
+// Retrieve the computed claim of each application with the smallest index.
+// The query may return either 0 or 1 entries per application.
+func (pg *Database) SelectOldestComputedClaimPerApp(ctx context.Context) (
+	map[Address]ClaimRow,
+	error,
+) {
+	// NOTE(mpolitzer): DISTINCT ON is a postgres extension. To implement
+	// this in SQLite there is an alternative using GROUP BY and HAVING
+	// clauses instead.
 	query := `
-	SELECT
+	SELECT DISTINCT ON(application_address)
 		epoch.id,
+		epoch.index,
+		epoch.first_block,
+		epoch.last_block,
 		epoch.claim_hash,
 		application.contract_address,
-		application.iconsensus_address,
-		epoch.last_block
+		application.iconsensus_address
 	FROM
 		epoch
 	INNER JOIN
@@ -40,9 +52,10 @@ func (pg *Database) SelectComputedClaims(ctx context.Context) ([]ComputedClaim, 
 	ON
 		epoch.application_address = application.contract_address
 	WHERE
-		epoch.status = @status
+		epoch.status=@status
 	ORDER BY
-		epoch.application_address ASC, epoch.index ASC`
+		application_address, index ASC;
+	`
 
 	args := pgx.NamedArgs{
 		"status": EpochStatusClaimComputed,
@@ -52,21 +65,100 @@ func (pg *Database) SelectComputedClaims(ctx context.Context) ([]ComputedClaim, 
 		return nil, err
 	}
 
-	var data ComputedClaim
+	var data ClaimRow
 	scans := []any{
 		&data.EpochID,
-		&data.Hash,
+		&data.EpochIndex,
+		&data.EpochFirstBlock,
+		&data.EpochLastBlock,
+		&data.EpochHash,
 		&data.AppContractAddress,
 		&data.AppIConsensusAddress,
-		&data.EpochLastBlock,
 	}
 
-	var results []ComputedClaim
+	results := map[Address]ClaimRow{}
 	_, err = pgx.ForEachRow(rows, scans, func() error {
-		results = append(results, data)
+		results[data.AppContractAddress] = data
 		return nil
 	})
 	return results, err
+}
+
+// Retrieve the newest accepted claim of each application
+func (pg *Database) SelectNewestAcceptedClaimPerApp(ctx context.Context) (
+	map[Address]ClaimRow,
+	error,
+) {
+	query := `
+	SELECT DISTINCT ON(application_address)
+		epoch.id,
+		epoch.index,
+		epoch.first_block,
+		epoch.last_block,
+		epoch.claim_hash,
+		application.contract_address,
+		application.iconsensus_address
+	FROM
+		epoch
+	INNER JOIN
+		application
+	ON
+		epoch.application_address = application.contract_address
+	WHERE
+		epoch.status=@status
+	ORDER BY
+		application_address, index DESC;
+	`
+
+	args := pgx.NamedArgs{
+		"status": EpochStatusClaimAccepted,
+	}
+	rows, err := pg.db.Query(ctx, query, args)
+	if err != nil {
+		return nil, err
+	}
+
+	var data ClaimRow
+	scans := []any{
+		&data.EpochID,
+		&data.EpochIndex,
+		&data.EpochFirstBlock,
+		&data.EpochLastBlock,
+		&data.EpochHash,
+		&data.AppContractAddress,
+		&data.AppIConsensusAddress,
+	}
+
+	results := map[Address]ClaimRow{}
+	_, err = pgx.ForEachRow(rows, scans, func() error {
+		results[data.AppContractAddress] = data
+		return nil
+	})
+	return results, err
+}
+
+func (pg *Database) SelectClaimPairsPerApp(ctx context.Context) (
+	map[Address]ClaimRow,
+	map[Address]ClaimRow,
+	error,
+) {
+	tx, err := pg.db.Begin(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer tx.Commit(ctx)
+
+	computed, err := pg.SelectOldestComputedClaimPerApp(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	accepted, err := pg.SelectNewestAcceptedClaimPerApp(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return computed, accepted, err
 }
 
 func (pg *Database) UpdateEpochWithSubmittedClaim(

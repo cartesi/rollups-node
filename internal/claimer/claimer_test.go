@@ -4,309 +4,534 @@
 package claimer
 
 import (
-	"context"
 	"log/slog"
 	"math/big"
+	"os"
 	"testing"
 
-	. "github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/service"
+	"github.com/lmittmann/tint"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	. "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
-type ServiceMock struct {
+type serviceMock struct {
 	mock.Mock
 	Service
 }
 
-func (m *ServiceMock) submitClaimToBlockchain(
-	instance *iconsensus.IConsensus,
-	signer *bind.TransactOpts,
-	claim *ComputedClaim,
-) (Hash, error) {
-	args := m.Called(nil, nil, claim)
-	return args.Get(0).(Hash), args.Error(1)
-}
-
-func (m *ServiceMock) selectComputedClaims() ([]ComputedClaim, error) {
-	args := m.Called()
-	return args.Get(0).([]ComputedClaim), args.Error(1)
-}
-
-func (m *ServiceMock) updateEpochWithSubmittedClaim(
-	dbConn *Database,
-	context context.Context,
-	claim *ComputedClaim,
-	txHash Hash,
-) error {
-	args := m.Called(nil, nil, claim, txHash)
-	return args.Error(0)
-}
-
-func (m *ServiceMock) enumerateSubmitClaimEventsSince(
-	ethConn *ethclient.Client,
-	context context.Context,
-	appIConsensusAddr Address,
-	epochLastBlock uint64,
-) (
-	IClaimSubmissionIterator,
-	*iconsensus.IConsensus,
+func (m *serviceMock) selectClaimPairsPerApp() (
+	map[address]claimRow,
+	map[address]claimRow,
 	error,
 ) {
 	args := m.Called()
-	return args.Get(0).(IClaimSubmissionIterator),
-		args.Get(1).(*iconsensus.IConsensus),
+	return args.Get(0).(map[address]claimRow),
+		args.Get(1).(map[address]claimRow),
 		args.Error(2)
 }
+func (m *serviceMock) updateEpochWithSubmittedClaim(
+	claim *claimRow,
+	txHash Hash,
+) error {
+	args := m.Called(claim, txHash)
+	return args.Error(0)
+}
 
-func (m *ServiceMock) pollTransaction(txHash Hash) (bool, *types.Receipt, error) {
+func (m *serviceMock) findClaimSubmissionEventAndSucc(
+	claim *claimRow,
+) (
+	*iconsensus.IConsensus,
+	*claimSubmissionEvent,
+	*claimSubmissionEvent,
+	error,
+) {
+	args := m.Called(claim)
+	return args.Get(0).(*iconsensus.IConsensus),
+		args.Get(1).(*claimSubmissionEvent),
+		args.Get(2).(*claimSubmissionEvent),
+		args.Error(3)
+}
+func (m *serviceMock) submitClaimToBlockchain(
+	instance *iconsensus.IConsensus,
+	claim *claimRow,
+) (Hash, error) {
+	args := m.Called(nil, claim)
+	return args.Get(0).(Hash), args.Error(1)
+}
+func (m *serviceMock) pollTransaction(txHash Hash) (bool, *types.Receipt, error) {
 	args := m.Called(txHash)
 	return args.Bool(0),
 		args.Get(1).(*types.Receipt),
 		args.Error(2)
 }
 
-func newServiceMock() *ServiceMock {
-	return &ServiceMock{
+func newServiceMock() *serviceMock {
+	opts := &tint.Options{
+		Level:     slog.LevelDebug,
+		AddSource: true,
+		// RFC3339 with milliseconds and without timezone
+		TimeFormat: "2006-01-02T15:04:05.000",
+	}
+	handler := tint.NewHandler(os.Stdout, opts)
+
+	return &serviceMock{
 		Service: Service{
 			Service: service.Service{
-				Logger: slog.Default(),
+				Logger: slog.New(handler),
 			},
 			submissionEnabled: true,
+			claimsInFlight:    map[address]hash{},
 		},
 	}
 }
 
-type ClaimSubmissionIteratorMock struct {
-	mock.Mock
-}
-
-func (m *ClaimSubmissionIteratorMock) Next() bool {
-	args := m.Called()
-	return args.Bool(0)
-}
-
-func (m *ClaimSubmissionIteratorMock) Error() error {
-	args := m.Called()
-	return args.Error(0)
-}
-
-func (m *ClaimSubmissionIteratorMock) Event() *iconsensus.IConsensusClaimSubmission {
-	args := m.Called()
-	return args.Get(0).(*iconsensus.IConsensusClaimSubmission)
-}
-
 // //////////////////////////////////////////////////////////////////////////////
-// Test
+// Success
 // //////////////////////////////////////////////////////////////////////////////
-
-// Do notghing when there are no claims to process
-func TestEmptySelectComputedClaimsDoesNothing(t *testing.T) {
+func TestDoNothing(t *testing.T) {
 	m := newServiceMock()
-	m.ClaimsInFlight = make(map[claimKey]Hash)
+	prevClaims := map[address]claimRow{}
+	currClaims := map[address]claimRow{}
 
-	m.On("selectComputedClaims").Return([]ComputedClaim{}, nil)
+	m.On("selectClaimPairsPerApp").
+		Return(prevClaims, currClaims, nil)
 
 	err := m.submitClaimsAndUpdateDatabase(m)
 	assert.Nil(t, err)
-
-	m.AssertNumberOfCalls(t, "submitClaimToBlockchain", 0)
-	m.AssertNumberOfCalls(t, "selectComputedClaims", 1)
-	m.AssertNumberOfCalls(t, "updateEpochWithSubmittedClaim", 0)
-	m.AssertNumberOfCalls(t, "enumerateSubmitClaimEventsSince", 0)
-	m.AssertNumberOfCalls(t, "pollTransaction", 0)
 }
 
-// Got a claim.
-// Submit if new (by checking the event logs)
-func TestSubmitNewClaim(t *testing.T) {
+func TestSubmitFirstClaim(t *testing.T) {
 	m := newServiceMock()
-
-	newClaimHash := HexToHash("0x01")
-	newClaimTxHash := HexToHash("0x10")
-	newClaim := ComputedClaim{
-		Hash: newClaimHash,
+	appContractAddress := common.HexToAddress("0x01")
+	claimTransactionHash := common.HexToHash("0x10")
+	currClaim := claimRow{
+		AppContractAddress: appContractAddress,
+		AppIConsensusAddress: appContractAddress,
+		EpochIndex:         3,
+		EpochFirstBlock:    30,
+		EpochLastBlock:     39,
 	}
-	m.ClaimsInFlight = map[claimKey]Hash{}
-	m.On("selectComputedClaims").Return([]ComputedClaim{
-		newClaim,
-	}, nil)
-	m.On("submitClaimToBlockchain", nil, nil, &newClaim).
-		Return(newClaimTxHash, nil)
 
-	itMock := &ClaimSubmissionIteratorMock{}
-	itMock.On("Next").Return(false)
-	itMock.On("Error").Return(nil)
+	var prevEvent *claimSubmissionEvent = nil
+	var currEvent *claimSubmissionEvent = nil
+	prevClaims := map[address]claimRow{}
+	currClaims := map[address]claimRow{
+		appContractAddress: currClaim,
+	}
 
-	m.On("enumerateSubmitClaimEventsSince").
-		Return(itMock, &iconsensus.IConsensus{}, nil)
-	m.On("pollTransaction", newClaimTxHash).
-		Return(false, &types.Receipt{}, nil)
-	assert.Equal(t, len(m.ClaimsInFlight), 0)
+	m.On("selectClaimPairsPerApp").
+		Return(prevClaims, currClaims, nil)
+	m.On("findClaimSubmissionEventAndSucc", &currClaim).
+		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil)
+	m.On("submitClaimToBlockchain", nil, &currClaim).
+		Return(claimTransactionHash, nil)
 
 	err := m.submitClaimsAndUpdateDatabase(m)
 	assert.Nil(t, err)
-
-	assert.Equal(t, len(m.ClaimsInFlight), 1)
-	m.AssertNumberOfCalls(t, "enumerateSubmitClaimEventsSince", 1)
+	assert.Equal(t, len(m.claimsInFlight), 1)
+	m.AssertNumberOfCalls(t, "findClaimSubmissionEventAndSucc", 1)
 	m.AssertNumberOfCalls(t, "pollTransaction", 0)
-	m.AssertNumberOfCalls(t, "selectComputedClaims", 1)
+	m.AssertNumberOfCalls(t, "selectClaimPairsPerApp", 1)
 	m.AssertNumberOfCalls(t, "submitClaimToBlockchain", 1)
 	m.AssertNumberOfCalls(t, "updateEpochWithSubmittedClaim", 0)
 }
 
-// Got a claim, don't submit.
-func TestSubmitNewClaimDisabled(t *testing.T) {
+func TestSubmitClaimWithAntecessor(t *testing.T) {
+	m := newServiceMock()
+	appContractAddress := common.HexToAddress("0x01")
+	claimTransactionHash := common.HexToHash("0x10")
+	prevClaim := claimRow{
+		AppContractAddress: appContractAddress,
+		AppIConsensusAddress: appContractAddress,
+		EpochIndex:         1,
+		EpochFirstBlock:    10,
+		EpochLastBlock:     19,
+	}
+	currClaim := claimRow{
+		AppContractAddress: appContractAddress,
+		AppIConsensusAddress: appContractAddress,
+		EpochIndex:         3,
+		EpochFirstBlock:    30,
+		EpochLastBlock:     39,
+	}
+
+	prevClaims := map[address]claimRow{
+		appContractAddress: prevClaim,
+	}
+	var currEvent *claimSubmissionEvent = nil
+	prevEvent := &claimSubmissionEvent{
+		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.EpochLastBlock),
+		AppContract:              appContractAddress,
+	}
+	currClaims := map[address]claimRow{
+		appContractAddress: currClaim,
+	}
+
+	m.On("selectClaimPairsPerApp").
+		Return(prevClaims, currClaims, nil)
+	m.On("findClaimSubmissionEventAndSucc", &prevClaim).
+		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil)
+	m.On("submitClaimToBlockchain", nil, &currClaim).
+		Return(claimTransactionHash, nil)
+
+	err := m.submitClaimsAndUpdateDatabase(m)
+	assert.Nil(t, err)
+	assert.Equal(t, len(m.claimsInFlight), 1)
+	m.AssertNumberOfCalls(t, "findClaimSubmissionEventAndSucc", 1)
+	m.AssertNumberOfCalls(t, "pollTransaction", 0)
+	m.AssertNumberOfCalls(t, "selectClaimPairsPerApp", 1)
+	m.AssertNumberOfCalls(t, "submitClaimToBlockchain", 1)
+	m.AssertNumberOfCalls(t, "updateEpochWithSubmittedClaim", 0)
+}
+
+func TestSkipSubmitFirstClaim(t *testing.T) {
 	m := newServiceMock()
 	m.submissionEnabled = false
-
-	newClaimHash := HexToHash("0x01")
-	newClaimTxHash := HexToHash("0x10")
-	newClaim := ComputedClaim{
-		Hash: newClaimHash,
+	appContractAddress := common.HexToAddress("0x01")
+	claimTransactionHash := common.HexToHash("0x10")
+	currClaim := claimRow{
+		AppContractAddress: appContractAddress,
+		AppIConsensusAddress: appContractAddress,
+		EpochIndex:         3,
+		EpochFirstBlock:    30,
+		EpochLastBlock:     39,
 	}
-	m.ClaimsInFlight = map[claimKey]Hash{}
-	m.On("selectComputedClaims").Return([]ComputedClaim{
-		newClaim,
-	}, nil)
-	m.On("submitClaimToBlockchain", nil, nil, &newClaim).
-		Return(newClaimTxHash, nil)
 
-	itMock := &ClaimSubmissionIteratorMock{}
-	itMock.On("Next").Return(false)
-	itMock.On("Error").Return(nil)
+	var prevEvent *claimSubmissionEvent = nil
+	var currEvent *claimSubmissionEvent = nil
+	prevClaims := map[address]claimRow{}
+	currClaims := map[address]claimRow{
+		appContractAddress: currClaim,
+	}
 
-	m.On("enumerateSubmitClaimEventsSince").
-		Return(itMock, &iconsensus.IConsensus{}, nil)
-	m.On("pollTransaction", newClaimTxHash).
-		Return(false, &types.Receipt{}, nil)
-	assert.Equal(t, len(m.ClaimsInFlight), 0)
+	m.On("selectClaimPairsPerApp").
+		Return(prevClaims, currClaims, nil)
+	m.On("findClaimSubmissionEventAndSucc", &currClaim).
+		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil)
+	m.On("submitClaimToBlockchain", nil, &currClaim).
+		Return(claimTransactionHash, nil)
 
 	err := m.submitClaimsAndUpdateDatabase(m)
 	assert.Nil(t, err)
-
-	assert.Equal(t, len(m.ClaimsInFlight), 0)
-	m.AssertNumberOfCalls(t, "enumerateSubmitClaimEventsSince", 1)
+	assert.Equal(t, len(m.claimsInFlight), 0)
+	m.AssertNumberOfCalls(t, "findClaimSubmissionEventAndSucc", 1)
 	m.AssertNumberOfCalls(t, "pollTransaction", 0)
-	m.AssertNumberOfCalls(t, "selectComputedClaims", 1)
+	m.AssertNumberOfCalls(t, "selectClaimPairsPerApp", 1)
 	m.AssertNumberOfCalls(t, "submitClaimToBlockchain", 0)
 	m.AssertNumberOfCalls(t, "updateEpochWithSubmittedClaim", 0)
 }
 
-
-// Query the blockchain for the submitClaim transaction, it may not be ready yet
-func TestClaimInFlightNotReadyDoesNothing(t *testing.T) {
+func TestSkipSubmitClaimWithAntecessor(t *testing.T) {
 	m := newServiceMock()
+	m.submissionEnabled = false
+	appContractAddress := common.HexToAddress("0x01")
+	claimTransactionHash := common.HexToHash("0x10")
+	prevClaim := claimRow{
+		AppContractAddress: appContractAddress,
+		AppIConsensusAddress: appContractAddress,
+		EpochIndex:         1,
+		EpochFirstBlock:    10,
+		EpochLastBlock:     19,
+	}
+	currClaim := claimRow{
+		AppContractAddress: appContractAddress,
+		AppIConsensusAddress: appContractAddress,
+		EpochIndex:         3,
+		EpochFirstBlock:    30,
+		EpochLastBlock:     39,
+	}
 
-	claimInFlightHash := HexToHash("0x01")
-	claimInFlightTxHash := HexToHash("0x10")
-	claimInFlight := ComputedClaim{
-		Hash:           claimInFlightHash,
-		EpochLastBlock: 1,
+	prevClaims := map[address]claimRow{
+		appContractAddress: prevClaim,
 	}
-	m.ClaimsInFlight = map[claimKey]Hash{
-		computedClaimToKey(&claimInFlight): claimInFlightTxHash,
+	var currEvent *claimSubmissionEvent = nil
+	prevEvent := &claimSubmissionEvent{
+		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.EpochLastBlock),
+		AppContract:              appContractAddress,
 	}
-	m.On("selectComputedClaims").Return([]ComputedClaim{
-		claimInFlight,
-	}, nil)
-	m.On("pollTransaction", claimInFlightTxHash).
-		Return(false, &types.Receipt{}, nil)
-	assert.Equal(t, len(m.ClaimsInFlight), 1)
+	currClaims := map[address]claimRow{
+		appContractAddress: currClaim,
+	}
+
+	m.On("selectClaimPairsPerApp").
+		Return(prevClaims, currClaims, nil)
+	m.On("findClaimSubmissionEventAndSucc", &prevClaim).
+		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil)
+	m.On("submitClaimToBlockchain", nil, &currClaim).
+		Return(claimTransactionHash, nil)
 
 	err := m.submitClaimsAndUpdateDatabase(m)
 	assert.Nil(t, err)
-
-	assert.Equal(t, len(m.ClaimsInFlight), 1)
-	m.AssertNumberOfCalls(t, "enumerateSubmitClaimEventsSince", 0)
-	m.AssertNumberOfCalls(t, "pollTransaction", 1)
-	m.AssertNumberOfCalls(t, "selectComputedClaims", 1)
+	assert.Equal(t, len(m.claimsInFlight), 0)
+	m.AssertNumberOfCalls(t, "findClaimSubmissionEventAndSucc", 1)
+	m.AssertNumberOfCalls(t, "pollTransaction", 0)
+	m.AssertNumberOfCalls(t, "selectClaimPairsPerApp", 1)
 	m.AssertNumberOfCalls(t, "submitClaimToBlockchain", 0)
 	m.AssertNumberOfCalls(t, "updateEpochWithSubmittedClaim", 0)
 }
 
-// Update ClaimsInFlight and the database when a submitClaim transaction is completed
-func TestUpdateClaimInFlightViaPollTransaction(t *testing.T) {
+func TestInFlightCompleted(t *testing.T) {
 	m := newServiceMock()
+	appContractAddress := common.HexToAddress("0x01")
+	reqHash := common.HexToHash("0x10")
+	txHash := common.HexToHash("0x100")
+	currClaim := claimRow{
+		AppContractAddress: appContractAddress,
+		AppIConsensusAddress: appContractAddress,
+		EpochIndex:         1,
+		EpochFirstBlock:    10,
+		EpochLastBlock:     19,
+	}
+	prevClaims := map[address]claimRow{}
+	currClaims := map[address]claimRow{
+		appContractAddress: currClaim,
+	}
+	m.claimsInFlight[appContractAddress] = reqHash
 
-	claimInFlightHash := HexToHash("0x01")
-	claimInFlightTxHash := HexToHash("0x10")
-	claimInFlight := ComputedClaim{
-		Hash:           claimInFlightHash,
-		EpochLastBlock: 1,
-	}
-	m.ClaimsInFlight = map[claimKey]Hash{
-		computedClaimToKey(&claimInFlight): claimInFlightTxHash,
-	}
-	m.On("selectComputedClaims").Return([]ComputedClaim{
-		claimInFlight,
-	}, nil)
-	m.On("pollTransaction", claimInFlightTxHash).
-		Return(true, &types.Receipt{TxHash: claimInFlightTxHash}, nil)
-	m.On("updateEpochWithSubmittedClaim",
-		nil, nil, &claimInFlight, claimInFlightTxHash).Return(nil)
-	assert.Equal(t, len(m.ClaimsInFlight), 1)
+	m.On("selectClaimPairsPerApp").
+		Return(prevClaims, currClaims, nil)
+	m.On("pollTransaction", reqHash).
+		Return(true, &types.Receipt{
+			ContractAddress: appContractAddress,
+			TxHash: txHash,
+		}, nil)
+	m.On("updateEpochWithSubmittedClaim", &currClaim, txHash).
+		Return(nil)
 
 	err := m.submitClaimsAndUpdateDatabase(m)
 	assert.Nil(t, err)
-
-	assert.Equal(t, len(m.ClaimsInFlight), 0)
-	m.AssertNumberOfCalls(t, "enumerateSubmitClaimEventsSince", 0)
+	assert.Equal(t, len(m.claimsInFlight), 0)
+	m.AssertNumberOfCalls(t, "findClaimSubmissionEventAndSucc", 0)
 	m.AssertNumberOfCalls(t, "pollTransaction", 1)
-	m.AssertNumberOfCalls(t, "selectComputedClaims", 1)
+	m.AssertNumberOfCalls(t, "selectClaimPairsPerApp", 1)
 	m.AssertNumberOfCalls(t, "submitClaimToBlockchain", 0)
 	m.AssertNumberOfCalls(t, "updateEpochWithSubmittedClaim", 1)
 }
 
-// This shouldn't happen normally,
-// but a submitClaim transaction may be on the blockchain but the database not know it.
-// The blockchain is the source of truth in any case.
-// So search for the transaction in the event logs.
-// And if found, update the database.
-func TestUpdateClaimViaEventLog(t *testing.T) {
+func TestUpdateFirstClaim(t *testing.T) {
 	m := newServiceMock()
-
-	existingClaimHash := HexToHash("0x01")
-	existingClaimTxHash := HexToHash("0x10")
-	existingClaim := ComputedClaim{
-		Hash:           existingClaimHash,
-		EpochLastBlock: 10,
+	appContractAddress := common.HexToAddress("0x01")
+	currClaim := claimRow{
+		AppContractAddress: appContractAddress,
+		AppIConsensusAddress: appContractAddress,
+		EpochIndex:         3,
+		EpochFirstBlock:    30,
+		EpochLastBlock:     39,
 	}
-	m.ClaimsInFlight = map[claimKey]Hash{}
-	m.On("selectComputedClaims").Return([]ComputedClaim{
-		existingClaim,
-	}, nil)
-	m.On("updateEpochWithSubmittedClaim",
-		nil, nil, &existingClaim, existingClaimTxHash).Return(nil)
 
-	itMock := &ClaimSubmissionIteratorMock{}
-	itMock.On("Next").Return(true).Once()
-	itMock.On("Error").Return(nil)
-	itMock.On("Event").Return(&iconsensus.IConsensusClaimSubmission{
-		Claim:                    existingClaimHash,
-		LastProcessedBlockNumber: big.NewInt(10),
-		Raw:                      types.Log{TxHash: existingClaimTxHash},
-	}).Once()
-
-	m.On("enumerateSubmitClaimEventsSince").
-		Return(itMock, &iconsensus.IConsensus{}, nil)
-	assert.Equal(t, len(m.ClaimsInFlight), 0)
+	var nilEvent *claimSubmissionEvent = nil
+	currEvent := claimSubmissionEvent{
+		AppContract:              appContractAddress,
+		LastProcessedBlockNumber: new(big.Int).SetUint64(currClaim.EpochLastBlock),
+	}
+	prevClaims := map[address]claimRow{}
+	currClaims := map[address]claimRow{
+		appContractAddress: currClaim,
+	}
+	m.On("selectClaimPairsPerApp").
+		Return(prevClaims, currClaims, nil)
+	m.On("findClaimSubmissionEventAndSucc", &currClaim).
+		Return(&iconsensus.IConsensus{}, &currEvent, nilEvent, nil)
+	m.On("updateEpochWithSubmittedClaim", &currClaim, currEvent.Raw.TxHash).
+		Return(nil)
 
 	err := m.submitClaimsAndUpdateDatabase(m)
 	assert.Nil(t, err)
-
-	assert.Equal(t, len(m.ClaimsInFlight), 0)
-	m.AssertNumberOfCalls(t, "enumerateSubmitClaimEventsSince", 1)
+	assert.Equal(t, len(m.claimsInFlight), 0)
+	m.AssertNumberOfCalls(t, "findClaimSubmissionEventAndSucc", 1)
 	m.AssertNumberOfCalls(t, "pollTransaction", 0)
-	m.AssertNumberOfCalls(t, "selectComputedClaims", 1)
+	m.AssertNumberOfCalls(t, "selectClaimPairsPerApp", 1)
 	m.AssertNumberOfCalls(t, "submitClaimToBlockchain", 0)
 	m.AssertNumberOfCalls(t, "updateEpochWithSubmittedClaim", 1)
 }
+
+func TestUpdateClaimWithAntecessor(t *testing.T) {
+	m := newServiceMock()
+	appContractAddress := common.HexToAddress("0x01")
+	prevClaim := claimRow{
+		AppContractAddress: appContractAddress,
+		AppIConsensusAddress: appContractAddress,
+		EpochIndex:         1,
+		EpochFirstBlock:    10,
+		EpochLastBlock:     19,
+	}
+	currClaim := claimRow{
+		AppContractAddress: appContractAddress,
+		AppIConsensusAddress: appContractAddress,
+		EpochIndex:         3,
+		EpochFirstBlock:    30,
+		EpochLastBlock:     39,
+	}
+
+	prevEvent := claimSubmissionEvent{
+		AppContract:              appContractAddress,
+		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.EpochLastBlock),
+	}
+	currEvent := claimSubmissionEvent{
+		AppContract:              appContractAddress,
+		LastProcessedBlockNumber: new(big.Int).SetUint64(currClaim.EpochLastBlock),
+	}
+	prevClaims := map[address]claimRow{
+		appContractAddress: prevClaim,
+	}
+	currClaims := map[address]claimRow{
+		appContractAddress: currClaim,
+	}
+	m.On("selectClaimPairsPerApp").
+		Return(prevClaims, currClaims, nil)
+	m.On("findClaimSubmissionEventAndSucc", &prevClaim).
+		Return(&iconsensus.IConsensus{}, &prevEvent, &currEvent, nil)
+	m.On("updateEpochWithSubmittedClaim", &currClaim, currEvent.Raw.TxHash).
+		Return(nil)
+
+	err := m.submitClaimsAndUpdateDatabase(m)
+	assert.Nil(t, err)
+	assert.Equal(t, len(m.claimsInFlight), 0)
+	m.AssertNumberOfCalls(t, "findClaimSubmissionEventAndSucc", 1)
+	m.AssertNumberOfCalls(t, "pollTransaction", 0)
+	m.AssertNumberOfCalls(t, "selectClaimPairsPerApp", 1)
+	m.AssertNumberOfCalls(t, "submitClaimToBlockchain", 0)
+	m.AssertNumberOfCalls(t, "updateEpochWithSubmittedClaim", 1)
+}
+
+// //////////////////////////////////////////////////////////////////////////////
+// Failure
+// //////////////////////////////////////////////////////////////////////////////
+
+// !claimMatchesEvent(prevClaim, prevEvent)
+func TestSubmitClaimWithAntecessorMismatch(t *testing.T) {
+	m := newServiceMock()
+	appContractAddress := common.HexToAddress("0x01")
+	claimTransactionHash := common.HexToHash("0x10")
+	prevClaim := claimRow{
+		AppContractAddress: appContractAddress,
+		AppIConsensusAddress: appContractAddress,
+		EpochIndex:         1,
+		EpochFirstBlock:    10,
+		EpochLastBlock:     19,
+	}
+	currClaim := claimRow{
+		AppContractAddress: appContractAddress,
+		AppIConsensusAddress: appContractAddress,
+		EpochIndex:         3,
+		EpochFirstBlock:    30,
+		EpochLastBlock:     39,
+	}
+
+	prevClaims := map[address]claimRow{
+		appContractAddress: prevClaim,
+	}
+	var currEvent *claimSubmissionEvent = nil
+	prevEvent := &claimSubmissionEvent{
+		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.EpochLastBlock + 1),
+		AppContract:              appContractAddress,
+	}
+	currClaims := map[address]claimRow{
+		appContractAddress: currClaim,
+	}
+
+	m.On("selectClaimPairsPerApp").
+		Return(prevClaims, currClaims, nil)
+	m.On("findClaimSubmissionEventAndSucc", &prevClaim).
+		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil)
+	m.On("submitClaimToBlockchain", nil, &currClaim).
+		Return(claimTransactionHash, nil)
+
+	err := m.submitClaimsAndUpdateDatabase(m)
+	assert.Equal(t, err, ErrEventMismatch)
+}
+
+// !claimMatchesEvent(currClaim, currEvent)
+func TestSubmitClaimWithEventMismatch(t *testing.T) {
+	m := newServiceMock()
+	appContractAddress := common.HexToAddress("0x01")
+	prevClaim := claimRow{
+		AppContractAddress: appContractAddress,
+		AppIConsensusAddress: appContractAddress,
+		EpochIndex:         1,
+		EpochFirstBlock:    10,
+		EpochLastBlock:     19,
+	}
+	currClaim := claimRow{
+		AppContractAddress: appContractAddress,
+		AppIConsensusAddress: appContractAddress,
+		EpochIndex:         3,
+		EpochFirstBlock:    30,
+		EpochLastBlock:     39,
+	}
+
+	prevEvent := claimSubmissionEvent{
+		AppContract:              appContractAddress,
+		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.EpochLastBlock),
+	}
+	currEvent := claimSubmissionEvent{
+		AppContract:              appContractAddress,
+		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.EpochLastBlock + 1),
+	}
+	prevClaims := map[address]claimRow{
+		appContractAddress: prevClaim,
+	}
+	currClaims := map[address]claimRow{
+		appContractAddress: currClaim,
+	}
+	m.On("selectClaimPairsPerApp").
+		Return(prevClaims, currClaims, nil)
+	m.On("findClaimSubmissionEventAndSucc", &prevClaim).
+		Return(&iconsensus.IConsensus{}, &prevEvent, &currEvent, nil)
+	m.On("updateEpochWithSubmittedClaim", &currClaim, currEvent.Raw.TxHash).
+		Return(nil)
+
+	err := m.submitClaimsAndUpdateDatabase(m)
+	assert.Equal(t, err, ErrEventMismatch)
+}
+
+// !checkClaimsConstraint(prevClaim, currClaim)
+func TestSubmitClaimWithAntecessorOutOfOrder(t *testing.T) {
+	m := newServiceMock()
+	appContractAddress := common.HexToAddress("0x01")
+	claimTransactionHash := common.HexToHash("0x10")
+	prevClaim := claimRow{
+		AppContractAddress: appContractAddress,
+		AppIConsensusAddress: appContractAddress,
+		EpochIndex:         2,
+		EpochFirstBlock:    20,
+		EpochLastBlock:     29,
+	}
+	currClaim := claimRow{
+		AppContractAddress: appContractAddress,
+		AppIConsensusAddress: appContractAddress,
+		EpochIndex:         1,
+		EpochFirstBlock:    10,
+		EpochLastBlock:     19,
+	}
+
+	prevClaims := map[address]claimRow{
+		appContractAddress: prevClaim,
+	}
+	var currEvent *claimSubmissionEvent = nil
+	prevEvent := &claimSubmissionEvent{
+		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.EpochLastBlock + 1),
+		AppContract:              appContractAddress,
+	}
+	currClaims := map[address]claimRow{
+		appContractAddress: currClaim,
+	}
+
+	m.On("selectClaimPairsPerApp").
+		Return(prevClaims, currClaims, nil)
+	m.On("findClaimSubmissionEventAndSucc", &prevClaim).
+		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil)
+	m.On("submitClaimToBlockchain", nil, &currClaim).
+		Return(claimTransactionHash, nil)
+
+	err := m.submitClaimsAndUpdateDatabase(m)
+	assert.Equal(t, err, ErrClaimMismatch)
+}
+
