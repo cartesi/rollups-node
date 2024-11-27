@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	cfg "github.com/cartesi/rollups-node/internal/evmreader/config"
 	"github.com/cartesi/rollups-node/internal/evmreader/service"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/services/startup"
@@ -97,7 +98,7 @@ func run(cmd *cobra.Command, args []string) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	c := config.FromEnv()
+	c := cfg.GetEVMReaderConfig()
 
 	// Override configs
 	if verbose {
@@ -115,7 +116,7 @@ func run(cmd *cobra.Command, args []string) {
 	if defaultBlock != "" {
 		evmReaderDefaultBlock, err := config.ToDefaultBlockFromString(defaultBlock)
 		cobra.CheckErr(err)
-		c.EvmReaderDefaultBlock = evmReaderDefaultBlock
+		c.DefaultBlock = evmReaderDefaultBlock
 	}
 
 	// setup log
@@ -130,7 +131,7 @@ func run(cmd *cobra.Command, args []string) {
 	}
 	defer database.Close()
 
-	_, err = startup.SetupNodePersistentConfig(ctx, database, c)
+	_, err = startup.SetupNodePersistentConfig(ctx, database, c.ToNodeConfig())
 	if err != nil {
 		slog.Error("EVM Reader couldn't connect to the database", "error", err)
 		os.Exit(1)
@@ -141,8 +142,8 @@ func run(cmd *cobra.Command, args []string) {
 		c.BlockchainHttpEndpoint.Value,
 		c.BlockchainWsEndpoint.Value,
 		database,
-		c.EvmReaderRetryPolicyMaxRetries,
-		c.EvmReaderRetryPolicyMaxDelay,
+		c.RetryPolicyMaxRetries,
+		c.RetryPolicyMaxDelay,
 	)
 
 	// logs startup time
