@@ -26,6 +26,7 @@ var (
 		},
 		EnableSubmission: true,
 		MaxStartupTime:   10 * time.Second,
+		ChunkSize:        50000, // hallf of alchemy limit by default
 	}
 )
 

@@ -74,6 +74,7 @@ type CreateInfo struct {
 	Repository             *repository.Database
 	EnableSubmission       bool
 	MaxStartupTime         time.Duration
+	ChunkSize              uint64
 }
 
 type Service struct {
@@ -84,6 +85,7 @@ type Service struct {
 	EthConn           *ethclient.Client
 	TxOpts            *bind.TransactOpts
 	claimsInFlight    map[address]hash // -> txHash
+	chunkSize         uint64
 }
 
 func (c *CreateInfo) LoadEnv() {
@@ -108,6 +110,7 @@ func Create(c *CreateInfo, s *Service) error {
 	}
 
 	return service.WithTimeout(c.MaxStartupTime, func() error {
+		s.chunkSize = c.ChunkSize
 		s.submissionEnabled = c.EnableSubmission
 		if s.EthConn == nil {
 			if c.EthConn == nil {

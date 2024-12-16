@@ -4,12 +4,17 @@
 package claimer
 
 import (
+	"context"
 	"fmt"
+	"iter"
+	"math"
 	"math/big"
+	"os"
 
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 type sideEffects interface {
@@ -93,7 +98,7 @@ func (s *Service) findClaimSubmissionEventAndSucc(
 	*claimSubmissionEvent,
 	error,
 ) {
-	ic, curr, next, err := s.FindClaimSubmissionEventAndSucc(claim)
+	ic, curr, next, err := s.FindClaimSubmissionEventAndSucc(claim, s.chunkSize)
 	if err != nil {
 		s.Logger.Error("findClaimSubmissionEventAndSucc:failed",
 			"claim", claim,
@@ -150,10 +155,58 @@ func (s *Service) pollTransaction(txHash hash) (bool, *types.Receipt, error) {
 	return ready, receipt, err
 }
 
+func chunkedFindSubmissionEvent(
+	ctx context.Context,
+	ic *iconsensus.IConsensus,
+	client *ethclient.Client,
+	chunk uint64,
+	start uint64,
+	end uint64,
+) (iter.Seq2[*claimSubmissionEvent, error], error) {
+	var err error
+
+	if chunk == 0 || end < start {
+		return nil, os.ErrInvalid
+	}
+	if end == math.MaxUint64 {
+		end, err = client.BlockNumber(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return func(yield func(*claimSubmissionEvent, error) bool) {
+		for start < end {
+			// open range, othewise we get duplicates
+			limit := min(start+chunk-1, end)
+			it, err := ic.FilterClaimSubmission(&bind.FilterOpts{
+				Context: ctx,
+				Start:   start,
+				End:     &limit,
+			}, nil, nil)
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+
+			for it.Next() {
+				yield(it.Event, nil)
+			}
+			if it.Error() != nil {
+				yield(nil, err)
+				return
+			}
+
+			start = limit + 1
+		}
+	}, nil
+}
+
 // scan the event stream for a claimSubmission event that matches claim.
 // return this event and its successor
 func (s *Service) FindClaimSubmissionEventAndSucc(
 	claim *claimRow,
+	chunkSize uint64,
 ) (
 	*iconsensus.IConsensus,
 	*claimSubmissionEvent,
@@ -165,34 +218,32 @@ func (s *Service) FindClaimSubmissionEventAndSucc(
 		return nil, nil, nil, err
 	}
 
-	it, err := ic.FilterClaimSubmission(&bind.FilterOpts{
-		Context: s.Context,
-		Start:   claim.EpochLastBlock,
-	}, nil, nil)
+	it, err := chunkedFindSubmissionEvent(s.Context, ic, s.EthConn,
+		chunkSize, claim.EpochLastBlock, math.MaxUint64)
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	next, stop := iter.Pull2(it)
+	defer stop()
 
-	for it.Next() {
-		event := it.Event
+	for {
+		event, err, ok := next()
+		if err != nil || !ok {
+			return ic, nil, nil, err
+		}
 		lastBlock := event.LastProcessedBlockNumber.Uint64()
+
 		if claimMatchesEvent(claim, event) {
-			var succ *claimSubmissionEvent = nil
-			if it.Next() {
-				succ = it.Event
+			succ, err, ok := next()
+			if err != nil || !ok {
+				return ic, event, nil, err
 			}
-			if it.Error() != nil {
-				return nil, nil, nil, it.Error()
-			}
-			return ic, event, succ, nil
+			return ic, event, succ, err
 		} else if lastBlock > claim.EpochLastBlock {
 			err = fmt.Errorf("claim not found, searched up to %v", event)
+			return nil, nil, nil, err
 		}
 	}
-	if it.Error() != nil {
-		return nil, nil, nil, it.Error()
-	}
-	return ic, nil, nil, nil
 }
 
 /* poll a transaction hash for its submission status and receipt */
