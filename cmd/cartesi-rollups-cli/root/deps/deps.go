@@ -32,7 +32,7 @@ var verbose = false
 func init() {
 	Cmd.Flags().StringVar(&depsConfig.Postgres.DockerImage, "postgres-docker-image",
 		deps.DefaultPostgresDockerImage,
-		"Postgress docker image name")
+		"Postgresql docker image name")
 
 	Cmd.Flags().StringVar(&depsConfig.Postgres.Port, "postgres-mapped-port",
 		deps.DefaultPostgresPort,
