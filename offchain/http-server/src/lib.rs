@@ -23,7 +23,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-/// Starts a HTTP server with two endpoints: /healthz and /metrics.
+/// Starts an HTTP server with two endpoints: /healthz and /metrics.
 ///
 /// The `Registry` parameter is a `prometheus` type used for metric tracking.
 pub async fn start(
