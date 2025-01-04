@@ -205,7 +205,7 @@ async fn test_advance_runner_finishes_epoch_when_it_has_no_inputs() {
     assert_eq!(claims.len(), 0);
 }
 
-/// Send an input, an finish epoch, and another input.
+/// Send an input, a finish epoch, and another input.
 /// After the second input is processed by the server-manager we know
 /// for sure that the advance_runner finished processing the finish epoch.
 /// We can't simply wait for the epoch to be finished because the advance_runner
