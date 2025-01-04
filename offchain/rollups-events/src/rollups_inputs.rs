@@ -33,7 +33,7 @@ pub enum RollupsData {
     /// Input that advances the Cartesi Rollups epoch
     AdvanceStateInput(RollupsAdvanceStateInput),
 
-    /// End of an Cartesi Rollups epoch
+    /// End of a Cartesi Rollups epoch
     FinishEpoch {},
 }
 
