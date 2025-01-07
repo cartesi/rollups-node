@@ -4,8 +4,11 @@
 package root
 
 import (
+	"strings"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/node"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/spf13/cobra"
@@ -24,8 +27,15 @@ var (
 			TelemetryAddress:     ":10000",
 			Impl:                 &nodeService,
 		},
+		NodeConfig: model.NodeConfig[model.NodeConfigValue]{
+			Value: model.NodeConfigValue{
+				DefaultBlock: model.DefaultBlock_Finalized,
+			},
+		},
 		MaxStartupTime: 10 * time.Second,
 	}
+	DefaultBlockString = "finalized"
+	inputBoxAddress    service.EthAddress
 )
 
 var Cmd = &cobra.Command{
@@ -40,6 +50,16 @@ func init() {
 	Cmd.Flags().StringVar(&createInfo.TelemetryAddress,
 		"telemetry-address", createInfo.TelemetryAddress,
 		"telemetry address")
+	Cmd.Flags().StringVarP(&DefaultBlockString,
+		"default-block", "d", DefaultBlockString,
+		`Default block to be used when fetching new blocks.
+		One of 'latest', 'safe', 'pending', 'finalized'`)
+	Cmd.Flags().Var(&inputBoxAddress,
+		"inputbox-address",
+		"Input Box contract address")
+	Cmd.Flags().Uint64VarP(&createInfo.Value.InputBoxDeploymentBlock,
+		"inputbox-block-number", "n", 0,
+		"Input Box deployment block number")
 	Cmd.Flags().Var(&createInfo.LogLevel,
 		"log-level",
 		"log level: debug, info, warn or error")
@@ -55,6 +75,15 @@ func init() {
 }
 
 func run(cmd *cobra.Command, args []string) {
+	if cmd.Flags().Changed("default-block") {
+		var err error
+		createInfo.Value.DefaultBlock, err = config.ToDefaultBlockFromString(DefaultBlockString)
+		cobra.CheckErr(err)
+	}
+	if cmd.Flags().Changed("inputbox-address") {
+		createInfo.Value.InputBoxAddress = strings.ToLower(inputBoxAddress.String())
+	}
+
 	cobra.CheckErr(node.Create(&createInfo, &nodeService))
 	nodeService.CreateDefaultHandlers("")
 	cobra.CheckErr(nodeService.Serve())

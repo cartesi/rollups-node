@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 
 	nm "github.com/cartesi/rollups-node/internal/nodemachine"
 	"github.com/cartesi/rollups-node/pkg/emulator"
@@ -19,33 +20,38 @@ import (
 	cm "github.com/cartesi/rollups-node/pkg/rollupsmachine/cartesimachine"
 )
 
-type Repository interface {
+type MachinesRepository interface {
 	// GetMachineConfigurations retrieves a machine configuration for each application.
-	GetMachineConfigurations(context.Context) ([]*MachineConfig, error)
+	ListApplications(ctx context.Context, f repository.ApplicationFilter, p repository.Pagination) ([]*Application, error)
 
 	// GetProcessedInputs retrieves the processed inputs of an application with indexes greater or
 	// equal to the given input index.
-	GetProcessedInputs(_ context.Context, app Address, index uint64) ([]*Input, error)
+	ListInputs(ctx context.Context, nameOrAddress string, f repository.InputFilter, p repository.Pagination) ([]*Input, error)
 }
 
 // AdvanceMachine masks nodemachine.NodeMachine to only expose methods required by the Advancer.
 type AdvanceMachine interface {
-	Advance(_ context.Context, input []byte, index uint64) (*nm.AdvanceResult, error)
+	Advance(_ context.Context, input []byte, index uint64) (*AdvanceResult, error)
 }
 
 // InspectMachine masks nodemachine.NodeMachine to only expose methods required by the Inspector.
 type InspectMachine interface {
-	Inspect(_ context.Context, query []byte) (*nm.InspectResult, error)
+	Inspect(_ context.Context, query []byte) (*InspectResult, error)
 }
 
 // Machines is a thread-safe type that manages the pool of cartesi machines being used by the node.
 // It contains a map of applications to machines.
 type Machines struct {
 	mutex      sync.RWMutex
-	machines   map[Address]*nm.NodeMachine
-	repository Repository
+	machines   map[int64]*nm.NodeMachine
+	repository MachinesRepository
 	verbosity  cm.ServerVerbosity
 	Logger     *slog.Logger
+}
+
+func getAllRunningApplications(ctx context.Context, mr MachinesRepository) ([]*Application, error) {
+	f := repository.ApplicationFilter{State: Pointer(ApplicationState_Enabled)}
+	return mr.ListApplications(ctx, f, repository.Pagination{})
 }
 
 // Load initializes the cartesi machines.
@@ -55,36 +61,36 @@ type Machines struct {
 // It stores the error to be returned later and continues to initialize the other machines.
 func Load(
 	ctx context.Context,
-	repo Repository,
+	repo MachinesRepository,
 	verbosity cm.ServerVerbosity,
 	logger *slog.Logger,
 ) (*Machines, error) {
-	configs, err := repo.GetMachineConfigurations(ctx)
+	apps, err := getAllRunningApplications(ctx, repo)
 	if err != nil {
 		return nil, err
 	}
 
-	machines := map[Address]*nm.NodeMachine{}
+	machines := map[int64]*nm.NodeMachine{}
 	var errs error
 
-	for _, config := range configs {
+	for _, app := range apps {
 		// Creates the machine.
-		machine, err := createMachine(ctx, verbosity, config, logger)
+		machine, err := createMachine(ctx, verbosity, app, logger)
 		if err != nil {
-			err = fmt.Errorf("failed to create machine from snapshot (%v): %w", config, err)
+			err = fmt.Errorf("failed to create machine from snapshot %s (%s): %w", app.TemplateURI, app.Name, err)
 			errs = errors.Join(errs, err)
 			continue
 		}
 
 		// Advances the machine until it catches up with the state of the database (if necessary).
-		err = catchUp(ctx, repo, config.AppAddress, machine, config.ProcessedInputs, logger)
+		err = catchUp(ctx, repo, app, machine, logger)
 		if err != nil {
-			err = fmt.Errorf("failed to advance cartesi machine (%v): %w", config, err)
+			err = fmt.Errorf("failed to advance cartesi machine (%v): %w", app, err)
 			errs = errors.Join(errs, err, machine.Close())
 			continue
 		}
 
-		machines[config.AppAddress] = machine
+		machines[app.ID] = machine
 	}
 
 	return &Machines{
@@ -96,109 +102,109 @@ func Load(
 }
 
 func (m *Machines) UpdateMachines(ctx context.Context) error {
-	configs, err := m.repository.GetMachineConfigurations(ctx)
+	apps, err := getAllRunningApplications(ctx, m.repository)
 	if err != nil {
 		return err
 	}
 
-	for _, config := range configs {
-		if m.Exists(config.AppAddress) {
+	for _, app := range apps {
+		if m.Exists(app.ID) {
 			continue
 		}
 
-		machine, err := createMachine(ctx, m.verbosity, config, m.Logger)
+		machine, err := createMachine(ctx, m.verbosity, app, m.Logger)
 		if err != nil {
-			m.Logger.Error("Failed to create machine", "app", config.AppAddress, "error", err)
+			m.Logger.Error("Failed to create machine", "application", app.IApplicationAddress, "error", err)
 			continue
 		}
 
-		err = catchUp(ctx, m.repository, config.AppAddress, machine, config.ProcessedInputs, m.Logger)
+		err = catchUp(ctx, m.repository, app, machine, m.Logger)
 		if err != nil {
-			m.Logger.Error("Failed to sync the machine", "app", config.AppAddress, "error", err)
+			m.Logger.Error("Failed to sync the machine", "application", app.IApplicationAddress, "error", err)
 			machine.Close()
 			continue
 		}
 
-		m.Add(config.AppAddress, machine)
+		m.Add(app.ID, machine)
 	}
 
-	m.RemoveAbsent(configs)
+	m.RemoveAbsent(apps)
 
 	return nil
 }
 
 // GetAdvanceMachine gets the machine associated with the application from the map.
-func (m *Machines) GetAdvanceMachine(app Address) (AdvanceMachine, bool) {
-	return m.getMachine(app)
+func (m *Machines) GetAdvanceMachine(appId int64) (AdvanceMachine, bool) {
+	return m.getMachine(appId)
 }
 
 // GetInspectMachine gets the machine associated with the application from the map.
-func (m *Machines) GetInspectMachine(app Address) (InspectMachine, bool) {
-	return m.getMachine(app)
+func (m *Machines) GetInspectMachine(appId int64) (InspectMachine, bool) {
+	return m.getMachine(appId)
 }
 
 // Add maps a new application to a machine.
 // It does nothing if the application is already mapped to some machine.
 // It returns true if it was able to add the machine and false otherwise.
-func (m *Machines) Add(app Address, machine *nm.NodeMachine) bool {
+func (m *Machines) Add(appId int64, machine *nm.NodeMachine) bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	if _, ok := m.machines[app]; ok {
+	if _, ok := m.machines[appId]; ok {
 		return false
 	} else {
-		m.machines[app] = machine
+		m.machines[appId] = machine
 		return true
 	}
 }
 
-func (m *Machines) Exists(app Address) bool {
+func (m *Machines) Exists(appId int64) bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	_, exists := m.machines[app]
+	_, exists := m.machines[appId]
 	return exists
 }
 
-func (m *Machines) RemoveAbsent(configs []*MachineConfig) {
+func (m *Machines) RemoveAbsent(apps []*Application) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	configMap := make(map[Address]bool)
-	for _, config := range configs {
-		configMap[config.AppAddress] = true
+	configMap := make(map[int64]bool)
+	for _, app := range apps {
+		configMap[app.ID] = true
 	}
-	for address, machine := range m.machines {
-		if !configMap[address] {
-			m.Logger.Info("Application was disabled, shutting down machine", "application", address)
+	for id, machine := range m.machines {
+		if !configMap[id] {
+			m.Logger.Info("Application was disabled, shutting down machine", "application", machine.Application.Name)
 			machine.Close()
-			delete(m.machines, address)
+			delete(m.machines, id)
 		}
 	}
 }
 
 // Delete deletes an application from the map.
 // It returns the associated machine, if any.
-func (m *Machines) Delete(app Address) *nm.NodeMachine {
+func (m *Machines) Delete(appId int64) *nm.NodeMachine {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	if machine, ok := m.machines[app]; ok {
+	if machine, ok := m.machines[appId]; ok {
 		return nil
 	} else {
-		delete(m.machines, app)
+		delete(m.machines, appId)
 		return machine
 	}
 }
 
 // Apps returns the addresses of the applications for which there are machines.
-func (m *Machines) Apps() []Address {
+func (m *Machines) Apps() []*Application {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
-	keys := make([]Address, len(m.machines))
+	keys := make([]*Application, len(m.machines))
 	i := 0
-	for k := range m.machines {
-		keys[i] = k
+	for _, v := range m.machines {
+		keys[i] = v.Application
 		i++
 	}
 	return keys
@@ -218,14 +224,14 @@ func (m *Machines) Close() error {
 
 // ------------------------------------------------------------------------------------------------
 
-func (m *Machines) getMachine(app Address) (*nm.NodeMachine, bool) {
+func (m *Machines) getMachine(appId int64) (*nm.NodeMachine, bool) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	machine, exists := m.machines[app]
+	machine, exists := m.machines[appId]
 	return machine, exists
 }
 
-func closeMachines(machines map[Address]*nm.NodeMachine) (err error) {
+func closeMachines(machines map[int64]*nm.NodeMachine) (err error) {
 	for _, machine := range machines {
 		err = errors.Join(err, machine.Close())
 	}
@@ -237,35 +243,36 @@ func closeMachines(machines map[Address]*nm.NodeMachine) (err error) {
 
 func createMachine(ctx context.Context,
 	verbosity cm.ServerVerbosity,
-	config *MachineConfig,
+	app *Application,
 	logger *slog.Logger,
 ) (*nm.NodeMachine, error) {
-	logger.Info("creating machine", "application", config.AppAddress,
-		"template-path", config.SnapshotPath)
-	logger.Debug("instantiating remote machine server", "application", config.AppAddress)
+	appAddress := app.IApplicationAddress.String()
+	logger.Info("creating machine", "application", app.Name, "address", appAddress,
+		"template-path", app.TemplateURI)
+	logger.Debug("instantiating remote machine server", "application", app.Name, "address", appAddress)
 	// Starts the server.
 	address, err := cm.StartServer(logger, verbosity, 0, os.Stdout, os.Stderr)
 	if err != nil {
 		return nil, err
 	}
 
-	logger.Info("loading machine on server", "application", config.AppAddress,
-		"remote-machine", address, "template-path", config.SnapshotPath)
+	logger.Info("loading machine on server", "application", app.Name, "address", appAddress,
+		"remote-machine", address, "template-path", app.TemplateURI)
 	// Creates a CartesiMachine from the snapshot.
 	runtimeConfig := &emulator.MachineRuntimeConfig{}
-	cartesiMachine, err := cm.Load(ctx, config.SnapshotPath, address, runtimeConfig)
+	cartesiMachine, err := cm.Load(ctx, app.TemplateURI, address, runtimeConfig)
 	if err != nil {
 		return nil, errors.Join(err, cm.StopServer(address, logger))
 	}
 
-	logger.Debug("machine loaded on server", "application", config.AppAddress,
-		"remote-machine", address, "template-path", config.SnapshotPath)
+	logger.Debug("machine loaded on server", "application", app.Name, "address", appAddress,
+		"remote-machine", address, "template-path", app.TemplateURI)
 
 	// Creates a RollupsMachine from the CartesiMachine.
 	rollupsMachine, err := rm.New(ctx,
 		cartesiMachine,
-		config.AdvanceIncCycles,
-		config.AdvanceMaxCycles,
+		app.ExecutionParameters.AdvanceIncCycles,
+		app.ExecutionParameters.AdvanceMaxCycles,
 		logger,
 	)
 	if err != nil {
@@ -273,11 +280,13 @@ func createMachine(ctx context.Context,
 	}
 
 	// Creates a NodeMachine from the RollupsMachine.
-	nodeMachine, err := nm.NewNodeMachine(rollupsMachine,
-		config.ProcessedInputs,
-		config.AdvanceMaxDeadline,
-		config.InspectMaxDeadline,
-		config.MaxConcurrentInspects)
+	nodeMachine, err := nm.NewNodeMachine(
+		app,
+		rollupsMachine,
+		0,
+		app.ExecutionParameters.AdvanceMaxDeadline,
+		app.ExecutionParameters.InspectMaxDeadline,
+		app.ExecutionParameters.MaxConcurrentInspects)
 	if err != nil {
 		return nil, errors.Join(err, rollupsMachine.Close(ctx))
 	}
@@ -285,25 +294,38 @@ func createMachine(ctx context.Context,
 	return nodeMachine, err
 }
 
+func getProcessedInputs(ctx context.Context, mr MachinesRepository, appAddress string, index uint64) ([]*Input, error) {
+	f := repository.InputFilter{InputIndex: Pointer(index), NotStatus: Pointer(InputCompletionStatus_None)}
+	return mr.ListInputs(ctx, appAddress, f, repository.Pagination{})
+}
+
 func catchUp(ctx context.Context,
-	repo Repository,
-	app Address,
+	repo MachinesRepository,
+	app *Application,
 	machine *nm.NodeMachine,
-	processedInputs uint64,
 	logger *slog.Logger,
 ) error {
+	appAddress := app.IApplicationAddress.String()
+	logger.Info("catching up processed inputs",
+		"application", app.Name,
+		"address", appAddress,
+		"processed_inputs", app.ProcessedInputs,
+	)
 
-	logger.Info("catching up unprocessed inputs", "app", app)
-
-	inputs, err := repo.GetProcessedInputs(ctx, app, processedInputs)
+	inputs, err := getProcessedInputs(ctx, repo, appAddress, 0)
 	if err != nil {
 		return err
 	}
 
+	if uint64(len(inputs)) != app.ProcessedInputs {
+		errorMsg := fmt.Sprintf("processed inputs do not match: expected %d, got %d", len(inputs), app.ProcessedInputs)
+		logger.Error(errorMsg, "application", app.Name, "address", appAddress)
+		return errors.New(errorMsg)
+	}
+
 	for _, input := range inputs {
-		// FIXME epoch id to epoch index
-		logger.Info("advancing", "app", app, "epochId", input.EpochId,
-			"input_index", input.Index)
+		logger.Info("advancing", "application", app.Name, "address", appAddress,
+			"epochIndex", input.EpochIndex, "input_index", input.Index)
 		_, err := machine.Advance(ctx, input.RawData, input.Index)
 		if err != nil {
 			return err

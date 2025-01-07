@@ -6,12 +6,15 @@ package validator
 import (
 	"context"
 	"log/slog"
+	"math/big"
 	"testing"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/merkle"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/internal/validator"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/cartesi/rollups-node/test/tooling/db"
@@ -27,8 +30,8 @@ type ValidatorRepositoryIntegrationSuite struct {
 	ctx              context.Context
 	cancel           context.CancelFunc
 	validator        validator.Service
-	database         *repository.Database
-	postgresEndpoint string
+	repository       repository.Repository
+	postgresEndpoint config.Redacted[string]
 }
 
 func TestValidatorRepositoryIntegration(t *testing.T) {
@@ -40,34 +43,36 @@ func (s *ValidatorRepositoryIntegrationSuite) SetupSuite() {
 
 	var err error
 	// build database URL
-	s.postgresEndpoint, err = db.GetPostgresTestEndpoint()
+	s.postgresEndpoint.Value, err = db.GetPostgresTestEndpoint()
 	s.Require().Nil(err)
 
-	err = db.SetupTestPostgres(s.postgresEndpoint)
+	err = db.SetupTestPostgres(s.postgresEndpoint.Value)
 	s.Require().Nil(err)
 }
 
 func (s *ValidatorRepositoryIntegrationSuite) SetupSubTest() {
 	var err error
-	s.database, err = repository.Connect(s.ctx, s.postgresEndpoint, service.NewLogger(slog.LevelDebug, true))
+	s.repository, err = factory.NewRepositoryFromConnectionString(s.ctx, s.postgresEndpoint.Value)
 	s.Require().Nil(err)
 
-	err = db.SetupTestPostgres(s.postgresEndpoint)
+	err = db.SetupTestPostgres(s.postgresEndpoint.Value)
 	s.Require().Nil(err)
 
 	c := validator.CreateInfo{
 		CreateInfo: service.CreateInfo{
-			Name: "validator",
-			Impl: &s.validator,
+			Name:     "validator",
+			Impl:     &s.validator,
+			LogLevel: service.LogLevel(slog.LevelDebug),
 		},
-		Repository:     s.database,
+		Repository:     s.repository,
 		MaxStartupTime: 1 * time.Second,
 	}
 	s.Require().Nil(validator.Create(&c, &s.validator))
 }
 
 func (s *ValidatorRepositoryIntegrationSuite) TearDownSubTest() {
-	s.database.Close()
+	// FIXME add close method
+	//s.repository.Close()
 }
 
 func (s *ValidatorRepositoryIntegrationSuite) TearDownSuite() {
@@ -78,47 +83,65 @@ func (s *ValidatorRepositoryIntegrationSuite) TearDownSuite() {
 func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
 	s.Run("WhenThereAreNoOutputsAndNoPreviousEpoch", func() {
 		app := &model.Application{
-			ContractAddress: common.BytesToAddress([]byte("deadbeef")),
-			Status:          model.ApplicationStatusRunning,
+			Name:                "test-app",
+			IApplicationAddress: common.BytesToAddress([]byte("deadbeef")),
+			IConsensusAddress:   common.BytesToAddress([]byte("beadbeef")),
+			TemplateHash:        common.BytesToHash([]byte("template")),
+			TemplateURI:         "/template/path",
+			EpochLength:         10,
+			State:               model.ApplicationState_Enabled,
 		}
-		_, err := s.database.InsertApplication(s.ctx, app)
+		_, err := s.repository.CreateApplication(s.ctx, app)
 		s.Require().Nil(err)
 
-		epoch := &model.Epoch{
-			AppAddress: app.ContractAddress,
-			Status:     model.EpochStatusProcessedAllInputs,
-			FirstBlock: 0,
-			LastBlock:  9,
+		epoch := model.Epoch{
+			ApplicationID: 1,
+			Index:         0,
+			VirtualIndex:  0,
+			Status:        model.EpochStatus_InputsProcessed,
+			FirstBlock:    0,
+			LastBlock:     9,
 		}
-		epoch.Id, err = s.database.InsertEpoch(s.ctx, epoch)
-		s.Require().Nil(err)
 
 		// if there are no outputs and no previous claim,
 		// a pristine claim is expected with no proofs
 		expectedClaim, _, err := merkle.CreateProofs(nil, validator.MAX_OUTPUT_TREE_HEIGHT)
 		s.Require().Nil(err)
 
-		input := &model.Input{
-			AppAddress:       app.ContractAddress,
-			EpochId:          epoch.Id,
-			BlockNumber:      9,
-			RawData:          []byte("data"),
-			OutputsHash:      &expectedClaim,
-			CompletionStatus: model.InputStatusAccepted,
+		input := model.Input{
+			Index:                0,
+			BlockNumber:          9,
+			RawData:              []byte("data"),
+			Status:               model.InputCompletionStatus_Accepted,
+			TransactionReference: common.BigToHash(big.NewInt(0)),
 		}
-		input.Id, err = s.database.InsertInput(s.ctx, input)
+
+		var epochInputMap = make(map[*model.Epoch][]*model.Input)
+		epochInputMap[&epoch] = []*model.Input{&input}
+		err = s.repository.CreateEpochsAndInputs(s.ctx, app.IApplicationAddress.String(), epochInputMap, 10)
+		s.Require().Nil(err)
+
+		// Store the input advance result
+		machinehash1 := crypto.Keccak256Hash([]byte("machine-hash1"))
+		advanceResult := model.AdvanceResult{
+			InputIndex:  input.Index,
+			Status:      model.InputCompletionStatus_Accepted,
+			OutputsHash: expectedClaim,
+			MachineHash: &machinehash1,
+		}
+		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
 
 		err = s.validator.Run(s.ctx)
 		s.Require().Nil(err)
 
-		updatedEpoch, err := s.database.GetEpoch(s.ctx, epoch.Index, epoch.AppAddress)
+		updatedEpoch, err := s.repository.GetEpoch(s.ctx, app.IApplicationAddress.String(), epoch.Index)
 		s.Require().Nil(err)
 		s.Require().NotNil(updatedEpoch)
 		s.Require().NotNil(updatedEpoch.ClaimHash)
 
 		// epoch status was updated
-		s.Equal(model.EpochStatusClaimComputed, updatedEpoch.Status)
+		s.Equal(model.EpochStatus_ClaimComputed, updatedEpoch.Status)
 		// claim is pristine claim
 		s.Equal(expectedClaim, *updatedEpoch.ClaimHash)
 	})
@@ -127,72 +150,100 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
 func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 	s.Run("WhenThereAreNoOutputsAndThereIsAPreviousEpoch", func() {
 		app := &model.Application{
-			ContractAddress: common.BytesToAddress([]byte("deadbeef")),
-			Status:          model.ApplicationStatusRunning,
+			Name:                "test-app",
+			IApplicationAddress: common.BytesToAddress([]byte("deadbeef")),
+			IConsensusAddress:   common.BytesToAddress([]byte("beadbeef")),
+			TemplateHash:        common.BytesToHash([]byte("template")),
+			TemplateURI:         "/template/path",
+			EpochLength:         10,
+			State:               model.ApplicationState_Enabled,
 		}
-		_, err := s.database.InsertApplication(s.ctx, app)
+		_, err := s.repository.CreateApplication(s.ctx, app)
 		s.Require().Nil(err)
 
 		// insert the first epoch with a claim
 		firstEpochClaim := common.BytesToHash([]byte("claim"))
-		firstEpoch := &model.Epoch{
-			AppAddress: app.ContractAddress,
-			Status:     model.EpochStatusClaimComputed,
-			ClaimHash:  &firstEpochClaim,
-			FirstBlock: 0,
-			LastBlock:  9,
+		firstEpoch := model.Epoch{
+			ApplicationID: 1,
+			Index:         0,
+			VirtualIndex:  0,
+			Status:        model.EpochStatus_ClaimComputed,
+			ClaimHash:     &firstEpochClaim,
+			FirstBlock:    0,
+			LastBlock:     9,
 		}
-		firstEpoch.Id, err = s.database.InsertEpoch(s.ctx, firstEpoch)
-		s.Require().Nil(err)
 
 		// we add an input to the epoch because they must have at least one and
 		// because without it the claim hash check will fail
-		firstEpochInput := &model.Input{
-			AppAddress:       app.ContractAddress,
-			EpochId:          firstEpoch.Id,
-			BlockNumber:      9,
-			RawData:          []byte("data"),
-			OutputsHash:      &firstEpochClaim,
-			CompletionStatus: model.InputStatusAccepted,
+		firstEpochInput := model.Input{
+			Index:                0,
+			BlockNumber:          9,
+			RawData:              []byte("data"),
+			Status:               model.InputCompletionStatus_Accepted,
+			TransactionReference: common.BigToHash(big.NewInt(0)),
 		}
-		firstEpochInput.Id, err = s.database.InsertInput(s.ctx, firstEpochInput)
-		s.Require().Nil(err)
 
 		// create the second epoch with no outputs
-		secondEpoch := &model.Epoch{
-			Index:      1,
-			AppAddress: app.ContractAddress,
-			Status:     model.EpochStatusProcessedAllInputs,
-			FirstBlock: 10,
-			LastBlock:  19,
+		secondEpoch := model.Epoch{
+			ApplicationID: 1,
+			Index:         1,
+			VirtualIndex:  1,
+			Status:        model.EpochStatus_InputsProcessed,
+			FirstBlock:    10,
+			LastBlock:     19,
 		}
-		secondEpoch.Id, err = s.database.InsertEpoch(s.ctx, secondEpoch)
+
+		secondEpochInput := model.Input{
+			Index:                1,
+			BlockNumber:          19,
+			RawData:              []byte("data2"),
+			Status:               model.InputCompletionStatus_Accepted,
+			TransactionReference: common.BigToHash(big.NewInt(1)),
+		}
+
+		var epochInputMap = make(map[*model.Epoch][]*model.Input)
+		epochInputMap[&firstEpoch] = []*model.Input{&firstEpochInput}
+		epochInputMap[&secondEpoch] = []*model.Input{&secondEpochInput}
+		err = s.repository.CreateEpochsAndInputs(s.ctx, app.IApplicationAddress.String(), epochInputMap, 20)
 		s.Require().Nil(err)
 
-		secondEpochInput := &model.Input{
-			Index:       1,
-			AppAddress:  app.ContractAddress,
-			EpochId:     secondEpoch.Id,
-			BlockNumber: 19,
-			RawData:     []byte("data2"),
+		// Store the input advance result
+		machinehash1 := crypto.Keccak256Hash([]byte("machine-hash1"))
+		advanceResult := model.AdvanceResult{
+			InputIndex:  firstEpochInput.Index,
+			Status:      model.InputCompletionStatus_Accepted,
+			OutputsHash: firstEpochClaim,
+			MachineHash: &machinehash1,
+		}
+		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
+		s.Require().Nil(err)
+
+		err = s.repository.StoreClaimAndProofs(s.ctx, &firstEpoch, []*model.Output{})
+		s.Require().Nil(err)
+
+		// Store the input advance result
+		machinehash2 := crypto.Keccak256Hash([]byte("machine-hash2"))
+		advanceResult = model.AdvanceResult{
+			InputIndex: secondEpochInput.Index,
+			Status:     model.InputCompletionStatus_Accepted,
 			// since there are no new outputs in the second epoch,
 			// the machine OutputsHash will remain the same
-			OutputsHash:      &firstEpochClaim,
-			CompletionStatus: model.InputStatusAccepted,
+			OutputsHash: firstEpochClaim,
+			MachineHash: &machinehash2,
 		}
-		secondEpochInput.Id, err = s.database.InsertInput(s.ctx, secondEpochInput)
+		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
 
 		err = s.validator.Run(s.ctx)
 		s.Require().Nil(err)
 
-		updatedEpoch, err := s.database.GetEpoch(s.ctx, secondEpoch.Index, secondEpoch.AppAddress)
+		updatedEpoch, err := s.repository.GetEpoch(s.ctx, app.IApplicationAddress.String(), secondEpoch.Index)
 		s.Require().Nil(err)
 		s.Require().NotNil(updatedEpoch)
 		s.Require().NotNil(updatedEpoch.ClaimHash)
 
 		// epoch status was updated
-		s.Equal(model.EpochStatusClaimComputed, updatedEpoch.Status)
+		s.Equal(model.EpochStatus_ClaimComputed, updatedEpoch.Status)
 		// claim is the same from previous epoch
 		s.Equal(firstEpochClaim, *updatedEpoch.ClaimHash)
 	})
@@ -201,28 +252,38 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() {
 	s.Run("WhenThereAreOutputsAndNoPreviousEpoch", func() {
 		app := &model.Application{
-			ContractAddress: common.BytesToAddress([]byte("deadbeef")),
-			Status:          model.ApplicationStatusRunning,
+			Name:                "test-app",
+			IApplicationAddress: common.BytesToAddress([]byte("deadbeef")),
+			IConsensusAddress:   common.BytesToAddress([]byte("beadbeef")),
+			TemplateHash:        common.BytesToHash([]byte("template")),
+			TemplateURI:         "/template/path",
+			EpochLength:         10,
+			State:               model.ApplicationState_Enabled,
 		}
-		_, err := s.database.InsertApplication(s.ctx, app)
+		_, err := s.repository.CreateApplication(s.ctx, app)
 		s.Require().Nil(err)
 
-		epoch := &model.Epoch{
-			AppAddress: app.ContractAddress,
-			Status:     model.EpochStatusProcessedAllInputs,
-			FirstBlock: 0,
-			LastBlock:  9,
+		epoch := model.Epoch{
+			ApplicationID: 1,
+			Index:         0,
+			VirtualIndex:  0,
+			Status:        model.EpochStatus_InputsProcessed,
+			FirstBlock:    0,
+			LastBlock:     9,
 		}
-		epoch.Id, err = s.database.InsertEpoch(s.ctx, epoch)
-		s.Require().Nil(err)
 
-		input := &model.Input{
-			AppAddress:       app.ContractAddress,
-			EpochId:          epoch.Id,
-			BlockNumber:      9,
-			RawData:          []byte("data"),
-			CompletionStatus: model.InputStatusAccepted,
+		input := model.Input{
+			Index:                0,
+			BlockNumber:          9,
+			RawData:              []byte("data"),
+			Status:               model.InputCompletionStatus_Accepted,
+			TransactionReference: common.BigToHash(big.NewInt(0)),
 		}
+
+		var epochInputMap = make(map[*model.Epoch][]*model.Input)
+		epochInputMap[&epoch] = []*model.Input{&input}
+		err = s.repository.CreateEpochsAndInputs(s.ctx, app.IApplicationAddress.String(), epochInputMap, 10)
+		s.Require().Nil(err)
 
 		outputRawData := []byte("output")
 		output := model.Output{RawData: outputRawData}
@@ -230,37 +291,39 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		// calculate the expected claim and proofs
 		expectedOutputHash := crypto.Keccak256Hash(outputRawData)
 		expectedClaim, expectedProofs, err := merkle.CreateProofs(
-			[]model.Hash{expectedOutputHash},
+			[]common.Hash{expectedOutputHash},
 			validator.MAX_OUTPUT_TREE_HEIGHT,
 		)
 		s.Require().Nil(err)
 		s.Require().NotNil(expectedClaim)
 		s.Require().NotNil(expectedProofs)
 
-		// update the input with its OutputsHash and insert it in the db
-		input.OutputsHash = &expectedClaim
-		input.Id, err = s.database.InsertInput(s.ctx, input)
-		s.Require().Nil(err)
-
-		// update the output with its input id and insert it in the db
-		output.InputId = input.Id
-		output.Id, err = s.database.InsertOutput(s.ctx, &output)
+		// Store the input advance result
+		machinehash1 := crypto.Keccak256Hash([]byte("machine-hash1"))
+		advanceResult := model.AdvanceResult{
+			InputIndex:  input.Index,
+			Status:      model.InputCompletionStatus_Accepted,
+			OutputsHash: expectedClaim,
+			Outputs:     [][]byte{outputRawData},
+			MachineHash: &machinehash1,
+		}
+		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
 
 		err = s.validator.Run(s.ctx)
 		s.Require().Nil(err)
 
-		updatedEpoch, err := s.database.GetEpoch(s.ctx, epoch.Index, epoch.AppAddress)
+		updatedEpoch, err := s.repository.GetEpoch(s.ctx, app.IApplicationAddress.String(), epoch.Index)
 		s.Require().Nil(err)
 		s.Require().NotNil(updatedEpoch)
 		s.Require().NotNil(updatedEpoch.ClaimHash)
 
 		// epoch status was updated
-		s.Equal(model.EpochStatusClaimComputed, updatedEpoch.Status)
+		s.Equal(model.EpochStatus_ClaimComputed, updatedEpoch.Status)
 		// claim is the expected new claim
 		s.Equal(expectedClaim, *updatedEpoch.ClaimHash)
 
-		updatedOutput, err := s.database.GetOutput(s.ctx, app.ContractAddress, output.Index)
+		updatedOutput, err := s.repository.GetOutput(s.ctx, app.IApplicationAddress.String(), output.Index)
 		s.Require().Nil(err)
 		s.Require().NotNil(updatedOutput)
 		s.Require().NotNil(updatedOutput.Hash)
@@ -273,128 +336,141 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 
 	s.Run("WhenThereAreOutputsAndAPreviousEpoch", func() {
 		app := &model.Application{
-			ContractAddress: common.BytesToAddress([]byte("deadbeef")),
-			Status:          model.ApplicationStatusRunning,
+			Name:                "test-app",
+			IApplicationAddress: common.BytesToAddress([]byte("deadbeef")),
+			IConsensusAddress:   common.BytesToAddress([]byte("beadbeef")),
+			TemplateHash:        common.BytesToHash([]byte("template")),
+			TemplateURI:         "/template/path",
+			EpochLength:         10,
+			State:               model.ApplicationState_Enabled,
 		}
-		_, err := s.database.InsertApplication(s.ctx, app)
+		_, err := s.repository.CreateApplication(s.ctx, app)
 		s.Require().Nil(err)
 
-		firstEpoch := &model.Epoch{
-			Index:      0,
-			AppAddress: app.ContractAddress,
-			Status:     model.EpochStatusClaimComputed,
-			FirstBlock: 0,
-			LastBlock:  9,
+		firstEpoch := model.Epoch{
+			ApplicationID: 1,
+			Index:         0,
+			VirtualIndex:  0,
+			Status:        model.EpochStatus_ClaimComputed,
+			FirstBlock:    0,
+			LastBlock:     9,
 		}
 
-		firstInput := &model.Input{
-			AppAddress:       app.ContractAddress,
-			EpochId:          firstEpoch.Id,
-			BlockNumber:      9,
-			RawData:          []byte("data"),
-			CompletionStatus: model.InputStatusAccepted,
+		firstInput := model.Input{
+			Index:                0,
+			BlockNumber:          9,
+			RawData:              []byte("data"),
+			Status:               model.InputCompletionStatus_Accepted,
+			TransactionReference: common.BigToHash(big.NewInt(0)),
 		}
+
+		var epochInputMap = make(map[*model.Epoch][]*model.Input)
+		epochInputMap[&firstEpoch] = []*model.Input{&firstInput}
+		err = s.repository.CreateEpochsAndInputs(s.ctx, app.IApplicationAddress.String(), epochInputMap, 10)
+		s.Require().Nil(err)
 
 		firstOutputData := []byte("output1")
 		firstOutputHash := crypto.Keccak256Hash(firstOutputData)
 		firstOutput := model.Output{
-			RawData: firstOutputData,
-			Hash:    &firstOutputHash,
+			InputEpochApplicationID: 1,
+			InputIndex:              firstInput.Index,
+			Index:                   0,
+			RawData:                 firstOutputData,
+			Hash:                    &firstOutputHash,
 		}
 
 		// calculate first epoch claim
 		firstEpochClaim, firstEpochProofs, err := merkle.CreateProofs(
-			[]model.Hash{firstOutputHash},
+			[]common.Hash{firstOutputHash},
 			validator.MAX_OUTPUT_TREE_HEIGHT,
 		)
 		s.Require().Nil(err)
 		s.Require().NotNil(firstEpochClaim)
 
+		machinehash1 := crypto.Keccak256Hash([]byte("machine-hash1"))
+		advanceResult := model.AdvanceResult{
+			InputIndex:  firstInput.Index,
+			Status:      model.InputCompletionStatus_Accepted,
+			OutputsHash: firstEpochClaim,
+			Outputs:     [][]byte{firstOutputData},
+			MachineHash: &machinehash1,
+		}
+		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
+		s.Require().Nil(err)
+
 		// update epoch with its claim and insert it in the db
 		firstEpoch.ClaimHash = &firstEpochClaim
-		firstEpoch.Id, err = s.database.InsertEpoch(s.ctx, firstEpoch)
-		s.Require().Nil(err)
-
-		// update input with its epoch id and OutputsHash and insert it in the db
-		firstInput.EpochId = firstEpoch.Id
-		firstInput.OutputsHash = &firstEpochClaim
-		firstInput.Id, err = s.database.InsertInput(s.ctx, firstInput)
-		s.Require().Nil(err)
-
-		// update output with its input id and insert it in the database
-		firstOutput.InputId = firstInput.Id
 		firstOutput.OutputHashesSiblings = firstEpochProofs
-		firstOutput.Id, err = s.database.InsertOutput(s.ctx, &firstOutput)
+		err = s.repository.StoreClaimAndProofs(s.ctx, &firstEpoch, []*model.Output{&firstOutput})
 		s.Require().Nil(err)
 
 		// setup second epoch
-		secondEpoch := &model.Epoch{
-			Index:      1,
-			AppAddress: app.ContractAddress,
-			Status:     model.EpochStatusProcessedAllInputs,
-			FirstBlock: 10,
-			LastBlock:  19,
+		secondEpoch := model.Epoch{
+			ApplicationID: 1,
+			Index:         1,
+			VirtualIndex:  1,
+			Status:        model.EpochStatus_InputsProcessed,
+			FirstBlock:    10,
+			LastBlock:     19,
 		}
-		secondEpoch.Id, err = s.database.InsertEpoch(s.ctx, secondEpoch)
+
+		secondInput := model.Input{
+			Index:                1,
+			BlockNumber:          19,
+			RawData:              []byte("data2"),
+			Status:               model.InputCompletionStatus_Accepted,
+			TransactionReference: common.BigToHash(big.NewInt(1)),
+		}
+
+		epochInputMap = make(map[*model.Epoch][]*model.Input)
+		epochInputMap[&secondEpoch] = []*model.Input{&secondInput}
+		err = s.repository.CreateEpochsAndInputs(s.ctx, app.IApplicationAddress.String(), epochInputMap, 20)
 		s.Require().Nil(err)
 
-		secondInput := &model.Input{
-			Index:            1,
-			AppAddress:       app.ContractAddress,
-			EpochId:          secondEpoch.Id,
-			BlockNumber:      19,
-			RawData:          []byte("data2"),
-			CompletionStatus: model.InputStatusAccepted,
-		}
-
-		secondOutputData := []byte("output2")
-		secondOutput := model.Output{
-			Index:   1,
-			RawData: secondOutputData,
-		}
-
 		// calculate the expected claim
+		secondOutputData := []byte("output2")
 		secondOutputHash := crypto.Keccak256Hash(secondOutputData)
 		expectedEpochClaim, expectedProofs, err := merkle.CreateProofs(
-			[]model.Hash{firstOutputHash, secondOutputHash},
+			[]common.Hash{firstOutputHash, secondOutputHash},
 			validator.MAX_OUTPUT_TREE_HEIGHT,
 		)
 		s.Require().Nil(err)
 		s.Require().NotNil(expectedEpochClaim)
 		s.Require().NotNil(expectedProofs)
 
-		// update second input with its OutputsHash and insert it in the db
-		secondInput.OutputsHash = &expectedEpochClaim
-		secondInput.Id, err = s.database.InsertInput(s.ctx, secondInput)
-		s.Require().Nil(err)
-
-		// update second output with its input id and insert it in the database
-		secondOutput.InputId = secondInput.Id
-		secondOutput.Id, err = s.database.InsertOutput(s.ctx, &secondOutput)
+		machinehash2 := crypto.Keccak256Hash([]byte("machine-hash2"))
+		advanceResult = model.AdvanceResult{
+			InputIndex:  secondInput.Index,
+			Status:      model.InputCompletionStatus_Accepted,
+			OutputsHash: expectedEpochClaim,
+			Outputs:     [][]byte{secondOutputData},
+			MachineHash: &machinehash2,
+		}
+		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
 
 		err = s.validator.Run(s.ctx)
 		s.Require().Nil(err)
 
-		updatedSecondEpoch, err := s.database.GetEpoch(
+		updatedSecondEpoch, err := s.repository.GetEpoch(
 			s.ctx,
+			app.IApplicationAddress.String(),
 			secondEpoch.Index,
-			secondEpoch.AppAddress,
 		)
 		s.Require().Nil(err)
 		s.Require().NotNil(updatedSecondEpoch)
 		s.Require().NotNil(updatedSecondEpoch.ClaimHash)
 
 		// assert epoch status was changed
-		s.Equal(model.EpochStatusClaimComputed, updatedSecondEpoch.Status)
+		s.Equal(model.EpochStatus_ClaimComputed, updatedSecondEpoch.Status)
 		// assert second epoch claim is a new claim
 		s.NotEqual(firstEpochClaim, *updatedSecondEpoch.ClaimHash)
 		s.Equal(expectedEpochClaim, *updatedSecondEpoch.ClaimHash)
 
-		updatedSecondOutput, err := s.database.GetOutput(
+		updatedSecondOutput, err := s.repository.GetOutput(
 			s.ctx,
-			app.ContractAddress,
-			secondOutput.Index,
+			app.IApplicationAddress.String(),
+			1,
 		)
 		s.Require().Nil(err)
 		s.Require().NotNil(updatedSecondOutput)

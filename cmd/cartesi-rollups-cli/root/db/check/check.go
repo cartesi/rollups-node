@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/common"
-	"github.com/cartesi/rollups-node/internal/repository/schema"
+	"github.com/cartesi/rollups-node/internal/repository/postgres/schema"
 	"github.com/spf13/cobra"
 )
 

@@ -67,7 +67,7 @@ func StartServer(logger *slog.Logger, verbosity ServerVerbosity, port uint32, st
 	if actualPort := <-interceptor.port; port == 0 {
 		port = actualPort
 	} else if port != actualPort {
-		panic(fmt.Sprintf("mismatching ports (%d != %d)", port, actualPort))
+		return "", fmt.Errorf("mismatching ports (%d != %d)", port, actualPort)
 	}
 
 	return fmt.Sprintf("127.0.0.1:%d", port), nil

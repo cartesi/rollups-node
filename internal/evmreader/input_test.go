@@ -20,22 +20,28 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 	s.evmReader.inputBoxDeploymentBlock = 0x10
 
 	// Prepare repository
-	s.repository.Unset("GetAllRunningApplications")
+	s.repository.Unset("ListApplications")
 	s.repository.On(
-		"GetAllRunningApplications",
+		"ListApplications",
 		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
-		LastProcessedBlock: 0x00,
+		mock.Anything,
+		mock.Anything,
+	).Return([]*Application{{
+		IApplicationAddress: common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		IConsensusAddress:   common.HexToAddress("0xdeadbeef"),
+		EpochLength:         10,
+		LastProcessedBlock:  0x00,
 	}}, nil).Once()
 	s.repository.On(
-		"GetAllRunningApplications",
+		"ListApplications",
 		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
-		LastProcessedBlock: 0x11,
+		mock.Anything,
+		mock.Anything,
+	).Return([]*Application{{
+		IApplicationAddress: common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		IConsensusAddress:   common.HexToAddress("0xdeadbeef"),
+		EpochLength:         10,
+		LastProcessedBlock:  0x11,
 	}}, nil).Once()
 
 	// Prepare Client
@@ -108,7 +114,7 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocks() {
 	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 2)
 	s.repository.AssertNumberOfCalls(
 		s.T(),
-		"StoreEpochAndInputsTransaction",
+		"CreateEpochsAndInputs",
 		2,
 	)
 }
@@ -119,22 +125,28 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 	s.evmReader.inputBoxDeploymentBlock = 0x10
 
 	// Prepare repository
-	s.repository.Unset("GetAllRunningApplications")
+	s.repository.Unset("ListApplications")
 	s.repository.On(
-		"GetAllRunningApplications",
+		"ListApplications",
 		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
-		LastProcessedBlock: 0x00,
+		mock.Anything,
+		mock.Anything,
+	).Return([]*Application{{
+		IApplicationAddress: common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		IConsensusAddress:   common.HexToAddress("0xdeadbeef"),
+		EpochLength:         10,
+		LastProcessedBlock:  0x00,
 	}}, nil).Once()
 	s.repository.On(
-		"GetAllRunningApplications",
+		"ListApplications",
 		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
-		LastProcessedBlock: 0x11,
+		mock.Anything,
+		mock.Anything,
+	).Return([]*Application{{
+		IApplicationAddress: common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		IConsensusAddress:   common.HexToAddress("0xdeadbeef"),
+		EpochLength:         10,
+		LastProcessedBlock:  0x11,
 	}}, nil).Once()
 
 	// Prepare Client
@@ -207,7 +219,7 @@ func (s *EvmReaderSuite) TestItUpdatesLastProcessedBlockWhenThereIsNoInputs() {
 	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 2)
 	s.repository.AssertNumberOfCalls(
 		s.T(),
-		"StoreEpochAndInputsTransaction",
+		"CreateEpochsAndInputs",
 		2,
 	)
 }
@@ -244,26 +256,29 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 	).Return(events_2, nil)
 
 	// Prepare Repo
-	s.repository.Unset("GetAllRunningApplications")
+	s.repository.Unset("ListApplications")
 	s.repository.On(
-		"GetAllRunningApplications",
+		"ListApplications",
 		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
-		LastProcessedBlock: 0x12,
+		mock.Anything,
+		mock.Anything,
+	).Return([]*Application{{
+		IApplicationAddress: common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		IConsensusAddress:   common.HexToAddress("0xdeadbeef"),
+		EpochLength:         10,
+		LastProcessedBlock:  0x12,
 	}}, nil).Once()
-	s.repository.Unset("StoreEpochAndInputsTransaction")
+	s.repository.Unset("CreateEpochsAndInputs")
 	s.repository.On(
-		"StoreEpochAndInputsTransaction",
+		"CreateEpochsAndInputs",
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
 	).Once().Run(func(arguments mock.Arguments) {
-		var epochInputMap map[*Epoch][]Input
-		obj := arguments.Get(1)
-		epochInputMap, ok := obj.(map[*Epoch][]Input)
+		var epochInputMap map[*Epoch][]*Input
+		obj := arguments.Get(2)
+		epochInputMap, ok := obj.(map[*Epoch][]*Input)
 		s.Require().True(ok)
 		s.Require().Equal(1, len(epochInputMap))
 		for _, inputs := range epochInputMap {
@@ -271,7 +286,7 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 			break
 		}
 
-	}).Return(make(map[uint64]uint64), make(map[uint64][]uint64), nil)
+	}).Return(nil)
 
 	// Start service
 	ready := make(chan struct{}, 1)
@@ -295,7 +310,7 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 1)
 	s.repository.AssertNumberOfCalls(
 		s.T(),
-		"StoreEpochAndInputsTransaction",
+		"CreateEpochsAndInputs",
 		1,
 	)
 }
@@ -315,14 +330,17 @@ func (s *EvmReaderSuite) TestItStartsWhenLasProcessedBlockIsTheMostRecentBlock()
 	).Return(&header0, nil).Once()
 
 	// Prepare Repo
-	s.repository.Unset("GetAllRunningApplications")
+	s.repository.Unset("ListApplications")
 	s.repository.On(
-		"GetAllRunningApplications",
+		"ListApplications",
 		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-		IConsensusAddress:  common.HexToAddress("0xdeadbeef"),
-		LastProcessedBlock: 0x13,
+		mock.Anything,
+		mock.Anything,
+	).Return([]*Application{{
+		IApplicationAddress: common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		IConsensusAddress:   common.HexToAddress("0xdeadbeef"),
+		EpochLength:         10,
+		LastProcessedBlock:  0x13,
 	}}, nil).Once()
 
 	// Start service
@@ -346,7 +364,7 @@ func (s *EvmReaderSuite) TestItStartsWhenLasProcessedBlockIsTheMostRecentBlock()
 	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 0)
 	s.repository.AssertNumberOfCalls(
 		s.T(),
-		"StoreEpochAndInputsTransaction",
+		"CreateEpochsAndInputs",
 		0,
 	)
 }

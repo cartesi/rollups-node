@@ -43,7 +43,9 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/service"
 
@@ -58,11 +60,6 @@ var (
 	ErrMissingEvent  = fmt.Errorf("accepted claim has no matching blockchain event")
 )
 
-type address = common.Address
-type hash = common.Hash
-type claimRow = repository.ClaimRow
-type claimSubmissionEvent = iconsensus.IConsensusClaimSubmission
-
 type CreateInfo struct {
 	service.CreateInfo
 
@@ -71,7 +68,7 @@ type CreateInfo struct {
 	BlockchainHttpEndpoint config.Redacted[string]
 	EthConn                *ethclient.Client
 	PostgresEndpoint       config.Redacted[string]
-	Repository             *repository.Database
+	Repository             repository.Repository
 	EnableSubmission       bool
 	MaxStartupTime         time.Duration
 }
@@ -80,10 +77,10 @@ type Service struct {
 	service.Service
 
 	submissionEnabled bool
-	Repository        *repository.Database
+	Repository        repository.Repository
 	EthConn           *ethclient.Client
 	TxOpts            *bind.TransactOpts
-	claimsInFlight    map[address]hash // -> txHash
+	claimsInFlight    map[common.Address]common.Hash // -> txHash
 }
 
 func (c *CreateInfo) LoadEnv() {
@@ -120,17 +117,15 @@ func Create(c *CreateInfo, s *Service) error {
 		}
 
 		if s.Repository == nil {
-			if c.Repository == nil {
-				c.Repository, err = repository.Connect(s.Context, c.PostgresEndpoint.Value, s.Logger)
-				if err != nil {
-					return err
-				}
+			c.Repository, err = factory.NewRepositoryFromConnectionString(s.Context, c.PostgresEndpoint.Value)
+			if err != nil {
+				return err
 			}
 			s.Repository = c.Repository
 		}
 
 		if s.claimsInFlight == nil {
-			s.claimsInFlight = map[address]hash{}
+			s.claimsInFlight = map[common.Address]common.Hash{}
 		}
 
 		if s.submissionEnabled && s.TxOpts == nil {
@@ -182,15 +177,15 @@ func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) []error {
 			continue
 		}
 		if claim, ok := currClaims[key]; ok {
-			err = se.updateEpochWithSubmittedClaim(&claim, receipt.TxHash)
+			err = se.updateEpochWithSubmittedClaim(claim, receipt.TxHash)
 			if err != nil {
 				errs = append(errs, err)
 				return errs
 			}
 			s.Logger.Info("Claim submitted",
-				"app", claim.AppContractAddress,
-				"claim", claim.EpochHash,
-				"last_block", claim.EpochLastBlock,
+				"app", claim.IApplicationAddress,
+				"claim_hash", fmt.Sprintf("%x", claim.ClaimHash),
+				"last_block", claim.LastBlock,
 				"tx", txHash)
 			delete(currClaims, key)
 		} else {
@@ -203,15 +198,16 @@ func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) []error {
 	// check computed claims
 	for key, currClaimRow := range currClaims {
 		var ic *iconsensus.IConsensus = nil
-		var prevEvent *claimSubmissionEvent = nil
-		var currEvent *claimSubmissionEvent = nil
+		var prevEvent *iconsensus.IConsensusClaimSubmission = nil
+		var currEvent *iconsensus.IConsensusClaimSubmission = nil
 
 		if _, isInFlight := s.claimsInFlight[key]; isInFlight {
 			continue
 		}
 
-		if prevClaimRow, ok := prevClaims[key]; ok {
-			err := checkClaimsConstraint(&prevClaimRow, &currClaimRow)
+		prevClaimRow, prevExists := prevClaims[key]
+		if prevExists {
+			err := checkClaimsConstraint(prevClaimRow, currClaimRow)
 			if err != nil {
 				s.Logger.Error("database mismatch",
 					"prevClaim", prevClaimRow,
@@ -225,7 +221,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) []error {
 
 			// if prevClaimRow exists, there must be a matching event
 			ic, prevEvent, currEvent, err =
-				se.findClaimSubmissionEventAndSucc(&prevClaimRow)
+				se.findClaimSubmissionEventAndSucc(prevClaimRow)
 			if err != nil {
 				delete(currClaims, key)
 				errs = append(errs, err)
@@ -240,7 +236,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) []error {
 				errs = append(errs, ErrMissingEvent)
 				goto nextApp
 			}
-			if !claimMatchesEvent(&prevClaimRow, prevEvent) {
+			if !claimMatchesEvent(prevClaimRow, prevEvent) {
 				s.Logger.Error("event mismatch",
 					"claim", prevClaimRow,
 					"event", prevEvent,
@@ -253,7 +249,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) []error {
 		} else {
 			// first claim
 			ic, currEvent, _, err =
-				se.findClaimSubmissionEventAndSucc(&currClaimRow)
+				se.findClaimSubmissionEventAndSucc(currClaimRow)
 			if err != nil {
 				delete(currClaims, key)
 				errs = append(errs, err)
@@ -262,7 +258,12 @@ func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) []error {
 		}
 
 		if currEvent != nil {
-			if !claimMatchesEvent(&currClaimRow, currEvent) {
+			s.Logger.Debug("Found ClaimSubmitted Event",
+				"app", currEvent.AppContract,
+				"claim_hash", fmt.Sprintf("%x", currEvent.Claim),
+				"last_block", currEvent.LastProcessedBlockNumber.Uint64(),
+			)
+			if !claimMatchesEvent(currClaimRow, currEvent) {
 				s.Logger.Error("event mismatch",
 					"claim", currClaimRow,
 					"event", currEvent,
@@ -272,46 +273,71 @@ func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) []error {
 				errs = append(errs, ErrEventMismatch)
 				goto nextApp
 			}
+			s.Logger.Debug("Updating claim status to submitted",
+				"app", currClaimRow.IApplicationAddress,
+				"claim_hash", fmt.Sprintf("%x", currClaimRow.ClaimHash),
+				"last_block", currClaimRow.LastBlock,
+			)
 			txHash := currEvent.Raw.TxHash
-			err = se.updateEpochWithSubmittedClaim(&currClaimRow, txHash)
+			err = se.updateEpochWithSubmittedClaim(currClaimRow, txHash)
 			if err != nil {
 				delete(currClaims, key)
 				errs = append(errs, err)
 				goto nextApp
 			}
 			delete(s.claimsInFlight, key)
+			s.Logger.Info("Claim previously submitted",
+				"app", currClaimRow.IApplicationAddress,
+				"claim_hash", fmt.Sprintf("%x", currClaimRow.ClaimHash),
+				"last_block", currClaimRow.LastBlock,
+			)
 		} else if s.submissionEnabled {
-			txHash, err := se.submitClaimToBlockchain(ic, &currClaimRow)
+			if prevClaimRow != nil && prevClaimRow.Status != EpochStatus_ClaimAccepted {
+				s.Logger.Debug("Waiting previous claim to be accepted before submitting new one. Previous:",
+					"app", prevClaimRow.IApplicationAddress,
+					"claim_hash", fmt.Sprintf("%x", prevClaimRow.ClaimHash),
+					"last_block", prevClaimRow.LastBlock,
+				)
+				goto nextApp
+			}
+			s.Logger.Debug("Submitting claim to blockchain",
+				"app", currClaimRow.IApplicationAddress,
+				"claim_hash", fmt.Sprintf("%x", currClaimRow.ClaimHash),
+				"last_block", currClaimRow.LastBlock,
+			)
+			txHash, err := se.submitClaimToBlockchain(ic, currClaimRow)
 			if err != nil {
 				delete(currClaims, key)
 				errs = append(errs, err)
 				goto nextApp
 			}
-			s.Logger.Info("Submitting claim to blockchain",
-				"app", currClaimRow.AppContractAddress,
-				"claim", currClaimRow.EpochHash,
-				"last_block", currClaimRow.EpochLastBlock,
+			s.claimsInFlight[key] = txHash
+		} else {
+			s.Logger.Debug("Claim submission disabled. Doing nothing",
+				"app", currClaimRow.IApplicationAddress,
+				"claim_hash", fmt.Sprintf("%x", currClaimRow.ClaimHash),
+				"last_block", currClaimRow.LastBlock,
 			)
-			s.claimsInFlight[currClaimRow.AppContractAddress] = txHash
+
 		}
 	nextApp:
 	}
 	return errs
 }
 
-func checkClaimConstraint(c *claimRow) error {
-	zeroAddress := address{}
+func checkClaimConstraint(c *ClaimRow) error {
+	zeroAddress := common.Address{}
 
-	if c.EpochFirstBlock > c.EpochLastBlock {
+	if c.FirstBlock > c.LastBlock {
 		return ErrClaimMismatch
 	}
-	if c.AppIConsensusAddress == zeroAddress {
+	if c.IConsensusAddress == zeroAddress {
 		return ErrClaimMismatch
 	}
 	return nil
 }
 
-func checkClaimsConstraint(p *claimRow, c *claimRow) error {
+func checkClaimsConstraint(p *ClaimRow, c *ClaimRow) error {
 	var err error
 
 	err = checkClaimConstraint(c)
@@ -324,24 +350,25 @@ func checkClaimsConstraint(p *claimRow, c *claimRow) error {
 	}
 
 	// p, c consistent
-	if p.AppContractAddress != c.AppContractAddress {
+	if p.IApplicationAddress != c.IApplicationAddress {
 		return ErrClaimMismatch
 	}
-	if p.EpochLastBlock > c.EpochLastBlock {
+	if p.LastBlock > c.LastBlock {
 		return ErrClaimMismatch
 	}
-	if p.EpochFirstBlock > c.EpochFirstBlock {
+	if p.FirstBlock > c.FirstBlock {
 		return ErrClaimMismatch
 	}
-	if p.EpochIndex > c.EpochIndex {
+	if p.Index > c.Index {
 		return ErrClaimMismatch
 	}
 	return nil
 }
 
-func claimMatchesEvent(c *claimRow, e *claimSubmissionEvent) bool {
-	return c.AppContractAddress == e.AppContract &&
-		c.EpochLastBlock == e.LastProcessedBlockNumber.Uint64()
+func claimMatchesEvent(c *ClaimRow, e *iconsensus.IConsensusClaimSubmission) bool {
+	return c.IApplicationAddress == e.AppContract &&
+		*c.ClaimHash == e.Claim &&
+		c.LastBlock == e.LastProcessedBlockNumber.Uint64()
 }
 
 func (s *Service) Start(context context.Context, ready chan<- struct{}) error {

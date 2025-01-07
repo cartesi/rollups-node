@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/cartesi/rollups-node/internal/repository/schema"
+	"github.com/cartesi/rollups-node/internal/repository/postgres/schema"
 )
 
 func GetPostgresTestEndpoint() (string, error) {

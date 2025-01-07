@@ -7,12 +7,11 @@ import (
 	"fmt"
 	"os"
 
-	cmdcommon "github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/common"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
-
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
+
+	cmdcommon "github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/common"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
 var Cmd = &cobra.Command{
@@ -20,13 +19,14 @@ var Cmd = &cobra.Command{
 	Short:   "Executes a voucher",
 	Example: examples,
 	Run:     run,
-	PreRun:  cmdcommon.Setup,
 }
 
 const examples = `# Executes voucher/output with index 5:
-cartesi-rollups-cli execute --output-index 5 -a 0x000000000000000000000000000000000`
+cartesi-rollups-cli execute -n echo-dapp --output-index 5`
 
 var (
+	name        string
+	address     string
 	outputIndex uint64
 	ethEndpoint string
 	mnemonic    string
@@ -35,13 +35,20 @@ var (
 
 func init() {
 	Cmd.Flags().StringVarP(
-		&cmdcommon.ApplicationAddress,
+		&name,
+		"name",
+		"n",
+		"",
+		"Application name",
+	)
+
+	Cmd.Flags().StringVarP(
+		&address,
 		"address",
 		"a",
 		"",
 		"Application contract address",
 	)
-	cobra.CheckErr(Cmd.MarkFlagRequired("address"))
 
 	Cmd.Flags().StringVarP(
 		&cmdcommon.PostgresEndpoint,
@@ -64,24 +71,41 @@ func init() {
 	Cmd.Flags().Uint32Var(&account, "account", 0,
 		"account index used to sign the transaction (default: 0)")
 
+	Cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+		if name == "" && address == "" {
+			return fmt.Errorf("either 'name' or 'address' must be specified")
+		}
+		if name != "" && address != "" {
+			return fmt.Errorf("only one of 'name' or 'address' can be specified")
+		}
+		return cmdcommon.PersistentPreRun(cmd, args)
+	}
 }
 
 func run(cmd *cobra.Command, args []string) {
 	ctx := cmd.Context()
 
-	if cmdcommon.Database == nil {
+	if cmdcommon.Repository == nil {
 		panic("Database was not initialized")
 	}
 
-	application := common.HexToAddress(cmdcommon.ApplicationAddress)
+	var nameOrAddress string
+	if cmd.Flags().Changed("name") {
+		nameOrAddress = name
+	} else if cmd.Flags().Changed("address") {
+		nameOrAddress = address
+	}
 
-	output, err := cmdcommon.Database.GetOutput(ctx, application, outputIndex)
+	output, err := cmdcommon.Repository.GetOutput(ctx, nameOrAddress, outputIndex)
 	cobra.CheckErr(err)
 
 	if output == nil {
 		fmt.Fprintf(os.Stderr, "The voucher/output with index %d was not found in the database\n", outputIndex)
 		os.Exit(1)
 	}
+
+	app, err := cmdcommon.Repository.GetApplication(ctx, nameOrAddress)
+	cobra.CheckErr(err)
 
 	if len(output.OutputHashesSiblings) == 0 {
 		fmt.Fprintf(os.Stderr, "The voucher/output with index %d has no associated proof yet\n", outputIndex)
@@ -94,11 +118,11 @@ func run(cmd *cobra.Command, args []string) {
 	signer, err := ethutil.NewMnemonicSigner(ctx, client, mnemonic, account)
 	cobra.CheckErr(err)
 
-	fmt.Printf("Executing voucher app: %v output_index: %v\n", application, outputIndex)
+	fmt.Printf("Executing voucher app: %v (%v) output_index: %v with account: %v\n", app.Name, app.IApplicationAddress, outputIndex, signer.Account())
 	txHash, err := ethutil.ExecuteOutput(
 		ctx,
 		client,
-		application,
+		app.IApplicationAddress,
 		signer,
 		outputIndex,
 		output.RawData,

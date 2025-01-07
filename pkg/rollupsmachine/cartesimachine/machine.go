@@ -302,9 +302,9 @@ func errOrphanServerWithAddress(address string) error {
 
 func checkContext(ctx context.Context) error {
 	err := ctx.Err()
-	if err == context.DeadlineExceeded {
+	if errors.Is(err, context.DeadlineExceeded) {
 		return ErrTimedOut
-	} else if err == context.Canceled {
+	} else if errors.Is(err, context.Canceled) {
 		return ErrCanceled
 	} else {
 		return err

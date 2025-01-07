@@ -7,40 +7,42 @@ import (
 	"fmt"
 	"math/big"
 
+	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
 type sideEffects interface {
 	// database
 	selectClaimPairsPerApp() (
-		map[address]claimRow,
-		map[address]claimRow,
+		map[common.Address]*ClaimRow,
+		map[common.Address]*ClaimRow,
 		error,
 	)
 	updateEpochWithSubmittedClaim(
-		claim *claimRow,
-		txHash hash,
+		claim *ClaimRow,
+		txHash common.Hash,
 	) error
 
 	// blockchain
 	findClaimSubmissionEventAndSucc(
-		claim *claimRow,
+		claim *ClaimRow,
 	) (
 		*iconsensus.IConsensus,
-		*claimSubmissionEvent,
-		*claimSubmissionEvent,
+		*iconsensus.IConsensusClaimSubmission,
+		*iconsensus.IConsensusClaimSubmission,
 		error,
 	)
 	submitClaimToBlockchain(
 		ic *iconsensus.IConsensus,
-		claim *claimRow,
+		claim *ClaimRow,
 	) (
-		hash,
+		common.Hash,
 		error,
 	)
-	pollTransaction(txHash hash) (
+	pollTransaction(txHash common.Hash) (
 		bool,
 		*types.Receipt,
 		error,
@@ -48,8 +50,8 @@ type sideEffects interface {
 }
 
 func (s *Service) selectClaimPairsPerApp() (
-	map[address]claimRow,
-	map[address]claimRow,
+	map[common.Address]*ClaimRow,
+	map[common.Address]*ClaimRow,
 	error,
 ) {
 	computed, accepted, err := s.Repository.SelectClaimPairsPerApp(s.Context)
@@ -66,31 +68,33 @@ func (s *Service) selectClaimPairsPerApp() (
 
 /* update the database epoch status to CLAIM_SUBMITTED and add a transaction hash */
 func (s *Service) updateEpochWithSubmittedClaim(
-	claim *claimRow,
-	txHash hash,
+	claim *ClaimRow,
+	txHash common.Hash,
 ) error {
-	err := s.Repository.UpdateEpochWithSubmittedClaim(s.Context, claim.EpochID, txHash)
+	err := s.Repository.UpdateEpochWithSubmittedClaim(s.Context, claim.ApplicationID, claim.Index, txHash)
 	if err != nil {
 		s.Logger.Error("updateEpochWithSubmittedClaim:failed",
-			"appContractAddress", claim.AppContractAddress,
-			"hash", claim.EpochHash,
+			"appContractAddress", claim.IApplicationAddress,
+			"hash", claim.ClaimHash,
+			"last_block", claim.LastBlock,
 			"txHash", txHash,
 			"error", err)
 	} else {
 		s.Logger.Debug("updateEpochWithSubmittedClaim:success",
-			"appContractAddress", claim.AppContractAddress,
-			"hash", claim.EpochHash,
+			"appContractAddress", claim.IApplicationAddress,
+			"last_block", claim.LastBlock,
+			"hash", claim.ClaimHash,
 			"txHash", txHash)
 	}
 	return err
 }
 
 func (s *Service) findClaimSubmissionEventAndSucc(
-	claim *claimRow,
+	claim *ClaimRow,
 ) (
 	*iconsensus.IConsensus,
-	*claimSubmissionEvent,
-	*claimSubmissionEvent,
+	*iconsensus.IConsensusClaimSubmission,
+	*iconsensus.IConsensusClaimSubmission,
 	error,
 ) {
 	ic, curr, next, err := s.FindClaimSubmissionEventAndSucc(claim)
@@ -110,28 +114,30 @@ func (s *Service) findClaimSubmissionEventAndSucc(
 
 func (s *Service) submitClaimToBlockchain(
 	ic *iconsensus.IConsensus,
-	claim *claimRow,
-) (hash, error) {
-	txHash := hash{}
-	lastBlockNumber := new(big.Int).SetUint64(claim.EpochLastBlock)
-	tx, err := ic.SubmitClaim(s.TxOpts, claim.AppContractAddress,
-		lastBlockNumber, claim.EpochHash)
+	claim *ClaimRow,
+) (common.Hash, error) {
+	txHash := common.Hash{}
+	lastBlockNumber := new(big.Int).SetUint64(claim.LastBlock)
+	tx, err := ic.SubmitClaim(s.TxOpts, claim.IApplicationAddress,
+		lastBlockNumber, *claim.ClaimHash)
 	if err != nil {
 		s.Logger.Error("submitClaimToBlockchain:failed",
-			"appContractAddress", claim.AppContractAddress,
-			"claimHash", claim.EpochHash,
+			"appContractAddress", claim.IApplicationAddress,
+			"claimHash", *claim.ClaimHash,
+			"last_block", claim.LastBlock,
 			"error", err)
 	} else {
 		txHash = tx.Hash()
 		s.Logger.Debug("submitClaimToBlockchain:success",
-			"appContractAddress", claim.AppContractAddress,
-			"claimHash", claim.EpochHash,
+			"appContractAddress", claim.IApplicationAddress,
+			"claimHash", *claim.ClaimHash,
+			"last_block", claim.LastBlock,
 			"TxHash", txHash)
 	}
 	return txHash, err
 }
 
-func (s *Service) pollTransaction(txHash hash) (bool, *types.Receipt, error) {
+func (s *Service) pollTransaction(txHash common.Hash) (bool, *types.Receipt, error) {
 	ready, receipt, err := s.PollTransaction(txHash)
 	if err != nil {
 		s.Logger.Error("PollTransaction:failed",
@@ -153,22 +159,22 @@ func (s *Service) pollTransaction(txHash hash) (bool, *types.Receipt, error) {
 // scan the event stream for a claimSubmission event that matches claim.
 // return this event and its successor
 func (s *Service) FindClaimSubmissionEventAndSucc(
-	claim *claimRow,
+	claim *ClaimRow,
 ) (
 	*iconsensus.IConsensus,
-	*claimSubmissionEvent,
-	*claimSubmissionEvent,
+	*iconsensus.IConsensusClaimSubmission,
+	*iconsensus.IConsensusClaimSubmission,
 	error,
 ) {
-	ic, err := iconsensus.NewIConsensus(claim.AppIConsensusAddress, s.EthConn)
+	ic, err := iconsensus.NewIConsensus(claim.IConsensusAddress, s.EthConn)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
 	it, err := ic.FilterClaimSubmission(&bind.FilterOpts{
 		Context: s.Context,
-		Start:   claim.EpochLastBlock,
-	}, nil, nil)
+		Start:   claim.LastBlock,
+	}, nil, []common.Address{claim.IApplicationAddress})
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -177,7 +183,7 @@ func (s *Service) FindClaimSubmissionEventAndSucc(
 		event := it.Event
 		lastBlock := event.LastProcessedBlockNumber.Uint64()
 		if claimMatchesEvent(claim, event) {
-			var succ *claimSubmissionEvent = nil
+			var succ *iconsensus.IConsensusClaimSubmission = nil
 			if it.Next() {
 				succ = it.Event
 			}
@@ -185,7 +191,7 @@ func (s *Service) FindClaimSubmissionEventAndSucc(
 				return nil, nil, nil, it.Error()
 			}
 			return ic, event, succ, nil
-		} else if lastBlock > claim.EpochLastBlock {
+		} else if lastBlock > claim.LastBlock {
 			err = fmt.Errorf("claim not found, searched up to %v", event)
 		}
 	}
@@ -196,7 +202,7 @@ func (s *Service) FindClaimSubmissionEventAndSucc(
 }
 
 /* poll a transaction hash for its submission status and receipt */
-func (s *Service) PollTransaction(txHash hash) (bool, *types.Receipt, error) {
+func (s *Service) PollTransaction(txHash common.Hash) (bool, *types.Receipt, error) {
 	_, isPending, err := s.EthConn.TransactionByHash(s.Context, txHash)
 	if err != nil || isPending {
 		return false, nil, err

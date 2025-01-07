@@ -4,6 +4,8 @@
 package read
 
 import (
+	"fmt"
+
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/common"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/epochs"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/inputs"
@@ -14,20 +16,31 @@ import (
 )
 
 var Cmd = &cobra.Command{
-	Use:              "read",
-	Short:            "Read the node state from the database",
-	PersistentPreRun: common.Setup,
+	Use:   "read",
+	Short: "Read the node state from the database",
 }
+
+var (
+	name    string
+	address string
+)
 
 func init() {
 	Cmd.PersistentFlags().StringVarP(
-		&common.ApplicationAddress,
+		&name,
+		"name",
+		"n",
+		"",
+		"Application name",
+	)
+
+	Cmd.PersistentFlags().StringVarP(
+		&address,
 		"address",
 		"a",
 		"",
 		"Application contract address",
 	)
-	cobra.CheckErr(Cmd.MarkPersistentFlagRequired("address"))
 
 	Cmd.PersistentFlags().StringVarP(
 		&common.PostgresEndpoint,
@@ -36,6 +49,16 @@ func init() {
 		"postgres://postgres:password@localhost:5432/rollupsdb?sslmode=disable",
 		"Postgres endpoint",
 	)
+
+	Cmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if name == "" && address == "" {
+			return fmt.Errorf("either 'name' or 'address' must be specified")
+		}
+		if name != "" && address != "" {
+			return fmt.Errorf("only one of 'name' or 'address' can be specified")
+		}
+		return common.PersistentPreRun(cmd, args)
+	}
 
 	Cmd.AddCommand(epochs.Cmd)
 	Cmd.AddCommand(inputs.Cmd)
