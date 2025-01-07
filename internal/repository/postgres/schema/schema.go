@@ -11,15 +11,18 @@ import (
 
 	"github.com/golang-migrate/migrate/v4"
 	mig "github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/pgx"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 //go:embed migrations/*
 var content embed.FS
 
-const ExpectedVersion uint = 2
+const ExpectedVersion uint = 1
 
 type Schema struct {
 	migrate *mig.Migrate
@@ -32,6 +35,26 @@ func New(postgresEndpoint string) (*Schema, error) {
 	}
 
 	migrate, err := mig.NewWithSourceInstance("iofs", driver, postgresEndpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Schema{migrate: migrate}, nil
+}
+
+func NewWithPool(pool *pgxpool.Pool) (*Schema, error) {
+	source, err := iofs.New(content, "migrations")
+	if err != nil {
+		return nil, err
+	}
+
+	db := stdlib.OpenDBFromPool(pool)
+	driver, err := pgx.WithInstance(db, &pgx.Config{})
+	if err != nil {
+		return nil, fmt.Errorf("could not instantiate pgx migrate driver: %v", err)
+	}
+
+	migrate, err := mig.NewWithInstance("iofs", source, "postgres", driver)
 	if err != nil {
 		return nil, err
 	}

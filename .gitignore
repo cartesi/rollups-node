@@ -14,3 +14,4 @@ machine-snapshot/**
 /cartesi-rollups-validator
 /cartesi-rollups-claimer
 /rollups-contracts
+/applications

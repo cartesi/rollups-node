@@ -74,10 +74,10 @@ func ToLogLevelFromString(s string) (LogLevel, error) {
 
 func ToDefaultBlockFromString(s string) (DefaultBlock, error) {
 	var m = map[string]DefaultBlock{
-		"latest":    model.DefaultBlockStatusLatest,
-		"pending":   model.DefaultBlockStatusPending,
-		"safe":      model.DefaultBlockStatusSafe,
-		"finalized": model.DefaultBlockStatusFinalized,
+		"latest":    model.DefaultBlock_Latest,
+		"pending":   model.DefaultBlock_Pending,
+		"safe":      model.DefaultBlock_Safe,
+		"finalized": model.DefaultBlock_Finalized,
 	}
 	if v, ok := m[s]; ok {
 		return v, nil
@@ -320,6 +320,18 @@ func GetFeatureClaimSubmissionEnabled() bool {
 	val, err := toBool(s)
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED: %v", err))
+	}
+	return val
+}
+
+func GetFeatureInputReaderEnabled() bool {
+	s, ok := os.LookupEnv("CARTESI_FEATURE_INPUT_READER_ENABLED")
+	if !ok {
+		s = "true"
+	}
+	val, err := toBool(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_FEATURE_INPUT_READER_ENABLED: %v", err))
 	}
 	return val
 }

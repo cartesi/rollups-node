@@ -17,6 +17,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplicationfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iauthorityfactory"
+	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -34,20 +35,15 @@ var Cmd = &cobra.Command{
 }
 
 const examples = `# Adds an application to Rollups Node:
-cartesi-rollups-cli app deploy -a 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF -i 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA -t applications/echo-dapp` //nolint:lll
-
-const (
-	statusRunning    = "running"
-	statusNotRunning = "not-running"
-)
+cartesi-rollups-cli app deploy -n echo-dapp -a 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF -c 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA -t applications/echo-dapp` //nolint:lll
 
 var (
+	name                 string
 	applicationOwner     string
 	authorityOwner       string
 	templatePath         string
 	templateHash         string
-	status               string
-	iConsensusAddr       string
+	consensusAddr        string
 	appFactoryAddr       string
 	authorityFactoryAddr string
 	rpcURL               string
@@ -56,11 +52,21 @@ var (
 	salt                 string
 	inputBoxBlockNumber  uint64
 	epochLength          uint64
+	disabled             bool
 	printAsJSON          bool
 	noRegister           bool
 )
 
 func init() {
+	Cmd.Flags().StringVarP(
+		&name,
+		"name",
+		"n",
+		"",
+		"Application name",
+	)
+	cobra.CheckErr(Cmd.MarkFlagRequired("name"))
+
 	Cmd.Flags().StringVarP(
 		&applicationOwner,
 		"app-owner",
@@ -94,12 +100,12 @@ func init() {
 		"Application template hash. If not provided, it will be read from the template URI",
 	)
 
-	Cmd.Flags().StringVarP(
-		&status,
-		"status",
-		"s",
-		statusRunning,
-		"Sets the application status",
+	Cmd.Flags().BoolVarP(
+		&disabled,
+		"disabled",
+		"d",
+		false,
+		"Sets the application state to disabled",
 	)
 
 	Cmd.Flags().StringVarP(
@@ -113,25 +119,32 @@ func init() {
 	Cmd.Flags().StringVarP(
 		&authorityFactoryAddr,
 		"authority-factory",
-		"c",
+		"C",
 		"0xB897F7Fe78f220aE34B7FA9493092701a873Ed45",
 		"Authority Factory Address",
 	)
 
 	Cmd.Flags().StringVarP(
-		&iConsensusAddr,
-		"iconsensus",
-		"i",
+		&consensusAddr,
+		"consensus",
+		"c",
 		"",
 		"Application IConsensus Address",
+	)
+
+	Cmd.Flags().Uint64VarP(
+		&epochLength,
+		"epoch-length",
+		"e",
+		10,
+		"Consensus Epoch length. If consensus address is provided, the value will be read from the contract",
 	)
 
 	Cmd.Flags().StringVarP(&rpcURL, "rpc-url", "r", "http://localhost:8545", "Ethereum RPC URL")
 	Cmd.Flags().StringVarP(&privateKey, "private-key", "k", "", "Private key for signing transactions")
 	Cmd.Flags().StringVarP(&mnemonic, "mnemonic", "m", ethutil.FoundryMnemonic, "Mnemonic for signing transactions")
 	Cmd.Flags().StringVar(&salt, "salt", "0000000000000000000000000000000000000000000000000000000000000000", "salt")
-	Cmd.Flags().Uint64VarP(&inputBoxBlockNumber, "inputbox-block-number", "n", 0, "InputBox deployment block number")
-	Cmd.Flags().Uint64VarP(&epochLength, "epoch-length", "e", 10, "Consensus Epoch length")
+	Cmd.Flags().Uint64VarP(&inputBoxBlockNumber, "inputbox-block-number", "i", 0, "InputBox deployment block number")
 	Cmd.Flags().BoolVarP(&printAsJSON, "print-json", "j", false, "Prints the application data as JSON")
 	Cmd.Flags().BoolVar(&noRegister, "no-register", false, "Don't register the application on the node. Only deploy contracts")
 }
@@ -139,19 +152,13 @@ func init() {
 func run(cmd *cobra.Command, args []string) {
 	ctx := cmd.Context()
 
-	if cmdcommom.Database == nil {
+	if cmdcommom.Repository == nil {
 		panic("Database was not initialized")
 	}
 
-	var applicationStatus model.ApplicationStatus
-	switch status {
-	case statusRunning:
-		applicationStatus = model.ApplicationStatusRunning
-	case statusNotRunning:
-		applicationStatus = model.ApplicationStatusNotRunning
-	default:
-		fmt.Fprintf(os.Stderr, "Invalid application status: %s\n", status)
-		os.Exit(1)
+	applicationState := model.ApplicationState_Enabled
+	if disabled {
+		applicationState = model.ApplicationState_Disabled
 	}
 
 	if templateHash == "" {
@@ -163,37 +170,46 @@ func run(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	var consensusAddr common.Address
+	var consensus common.Address
 	var err error
-	if iConsensusAddr == "" {
+	if consensusAddr == "" {
 		authorityFactoryAddress := common.HexToAddress(authorityFactoryAddr)
-		consensusAddr, err = deployAuthority(ctx, authorityOwner, authorityFactoryAddress, epochLength, salt)
+		consensus, err = deployAuthority(ctx, authorityOwner, authorityFactoryAddress, epochLength, salt)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Authoriy contract creation failed: %v\n", err)
 			os.Exit(1)
 		}
 	} else {
-		consensusAddr = common.HexToAddress(iConsensusAddr)
+		consensus = common.HexToAddress(consensusAddr)
+		epochLength, err = getEpochLength(consensus)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to get epoch length from consensus: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	applicationFactoryAddress := common.HexToAddress(appFactoryAddr)
-	appAddr, err := deployApplication(ctx, applicationOwner, applicationFactoryAddress, consensusAddr, templateHash, salt)
+	appAddr, err := deployApplication(ctx, applicationOwner, applicationFactoryAddress, consensus, templateHash, salt)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Application contract creation failed: %v\n", err)
 		os.Exit(1)
 	}
 
 	application := model.Application{
-		ContractAddress:    appAddr,
-		TemplateUri:        templatePath,
-		TemplateHash:       common.HexToHash(templateHash),
-		LastProcessedBlock: inputBoxBlockNumber,
-		Status:             applicationStatus,
-		IConsensusAddress:  consensusAddr,
+		Name:                 name,
+		IApplicationAddress:  appAddr,
+		IConsensusAddress:    consensus,
+		TemplateURI:          templatePath,
+		TemplateHash:         common.HexToHash(templateHash),
+		EpochLength:          epochLength,
+		State:                applicationState,
+		LastProcessedBlock:   inputBoxBlockNumber,
+		LastOutputCheckBlock: inputBoxBlockNumber,
+		LastClaimCheckBlock:  inputBoxBlockNumber,
 	}
 
 	if !noRegister {
-		_, err = cmdcommom.Database.InsertApplication(ctx, &application)
+		_, err = cmdcommom.Repository.CreateApplication(ctx, &application)
 		cobra.CheckErr(err)
 	}
 
@@ -205,7 +221,7 @@ func run(cmd *cobra.Command, args []string) {
 		}
 		fmt.Println(string(jsonData))
 	} else {
-		fmt.Printf("Application %v successfully deployed\n", application.ContractAddress)
+		fmt.Printf("Application %v successfully deployed\n", application.IApplicationAddress)
 	}
 }
 
@@ -411,6 +427,26 @@ func getAuth(ctx context.Context, client *ethclient.Client) (*bind.TransactOpts,
 		}
 	}
 	return auth, nil
+}
+
+func getEpochLength(
+	consensusAddr common.Address,
+) (uint64, error) {
+	client, err := ethclient.Dial(rpcURL)
+	if err != nil {
+		return 0, fmt.Errorf("Failed to connect to the Ethereum client: %v", err)
+	}
+
+	consensus, err := iconsensus.NewIConsensus(consensusAddr, client)
+	if err != nil {
+		return 0, fmt.Errorf("Failed to instantiate contract: %v", err)
+	}
+
+	epochLengthRaw, err := consensus.GetEpochLength(nil)
+	if err != nil {
+		return 0, fmt.Errorf("error retrieving application epoch length: %v", err)
+	}
+	return epochLengthRaw.Uint64(), nil
 }
 
 func toBytes32(data []byte) [32]byte {

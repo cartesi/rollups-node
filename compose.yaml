@@ -44,33 +44,6 @@ services:
     environment:
       <<: *env
 
-  graphql_server:
-    image: graphile/postgraphile:4.14.0
-    init: true
-    command: >-
-      --retry-on-init-fail
-      --dynamic-json
-      --no-setof-functions-contain-nulls
-      --no-ignore-rbac
-      --enable-query-batching
-      --enhance-graphiql
-      --extended-errors errcode
-      --legacy-relations omit
-      --connection postgres://postgres:password@database:5432/rollupsdb?sslmode=disable
-      --schema graphql
-      --host 0.0.0.0
-      --port 10004
-#      --append-plugins @graphile-contrib/pg-simplify-inflector
-    depends_on:
-      database:
-        condition: service_healthy
-      node:
-        condition: service_healthy
-    networks:
-      - devnet
-    ports:
-      - "10004:10004" # postgraphile
-
   node:
     image: cartesi/rollups-node:devel
     command: cartesi-rollups-node

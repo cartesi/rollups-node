@@ -46,7 +46,8 @@
 //			},
 //		}, &s)
 //		if err != nil {
-//			panic(err)
+//			s.Logger.Error("Fatal", "error", err)
+//			os.Exit(1)
 //		}
 //		s.CreateDefaultHandlers("/" + s.Name)
 //		s.Serve()
@@ -274,21 +275,15 @@ func (s *Service) String() string {
 }
 
 func NewLogger(level slog.Level, pretty bool) *slog.Logger {
-	logger := &slog.Logger{}
-	if pretty {
-		opts := &tint.Options{
-			Level:     level,
-			AddSource: level == slog.LevelDebug,
-			// RFC3339 with milliseconds and without timezone
-			TimeFormat: "2006-01-02T15:04:05.000",
-			NoColor:    !pretty,
-		}
-		handler := tint.NewHandler(os.Stdout, opts)
-		logger = slog.New(handler)
-	} else {
-		logger = slog.Default()
+	opts := &tint.Options{
+		Level:     level,
+		AddSource: level == slog.LevelDebug,
+		// RFC3339 with milliseconds and without timezone
+		TimeFormat: "2006-01-02T15:04:05.000",
+		NoColor:    !pretty,
 	}
-	return logger
+	handler := tint.NewHandler(os.Stdout, opts)
+	return slog.New(handler)
 }
 
 func WithTimeout(limit time.Duration, fn func() error) error {

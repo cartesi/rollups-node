@@ -213,7 +213,7 @@ type RemoteMachineSuite struct{ suite.Suite }
 func (s *RemoteMachineSuite) TestNew() {
 	require := s.Require()
 
-	// Launchs the remote server.
+	// Launches the remote server.
 	cmd, serverAddress := launchRemoteServer(s.T())
 	defer func() { require.Nil(cmd.Process.Kill()) }()
 
@@ -251,7 +251,7 @@ func (s *RemoteMachineSuite) TestNew() {
 func (s *RemoteMachineSuite) TestHappyPath() {
 	require := s.Require()
 
-	// Launchs the remote server.
+	// Launches the remote server.
 	cmd, serverAddress := launchRemoteServer(s.T())
 	defer func() { require.Nil(cmd.Process.Kill()) }()
 

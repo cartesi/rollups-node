@@ -12,6 +12,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/rollupsmachine"
 	"github.com/cartesi/rollups-node/pkg/rollupsmachine/cartesimachine"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -24,16 +25,18 @@ type NodeMachineSuite struct{ suite.Suite }
 func (s *NodeMachineSuite) TestNew() {
 	s.Run("Ok", func() {
 		require := s.Require()
+		app := &model.Application{}
 		inner := &MockRollupsMachine{}
-		machine, err := NewNodeMachine(inner, 0, decisecond, centisecond, 3)
+		machine, err := NewNodeMachine(app, inner, 0, decisecond, centisecond, 3)
 		require.Nil(err)
 		require.NotNil(machine)
 	})
 
 	s.Run("ErrInvalidAdvanceTimeout", func() {
 		require := s.Require()
+		app := &model.Application{}
 		inner := &MockRollupsMachine{}
-		machine, err := NewNodeMachine(inner, 0, -1, centisecond, 3)
+		machine, err := NewNodeMachine(app, inner, 0, -1, centisecond, 3)
 		require.Error(err)
 		require.Nil(machine)
 		require.Equal(ErrInvalidAdvanceTimeout, err)
@@ -41,8 +44,9 @@ func (s *NodeMachineSuite) TestNew() {
 
 	s.Run("ErrInvalidInspectTimeout", func() {
 		require := s.Require()
+		app := &model.Application{}
 		inner := &MockRollupsMachine{}
-		machine, err := NewNodeMachine(inner, 0, decisecond, -500, 3)
+		machine, err := NewNodeMachine(app, inner, 0, decisecond, -500, 3)
 		require.Error(err)
 		require.Nil(machine)
 		require.Equal(ErrInvalidInspectTimeout, err)
@@ -50,8 +54,9 @@ func (s *NodeMachineSuite) TestNew() {
 
 	s.Run("ErrInvalidMaxConcurrentInspects", func() {
 		require := s.Require()
+		app := &model.Application{}
 		inner := &MockRollupsMachine{}
-		machine, err := NewNodeMachine(inner, 0, decisecond, centisecond, 0)
+		machine, err := NewNodeMachine(app, inner, 0, decisecond, centisecond, 0)
 		require.Error(err)
 		require.Nil(machine)
 		require.Equal(ErrInvalidMaxConcurrentInspects, err)
@@ -69,7 +74,7 @@ func (s *NodeMachineSuite) TestAdvance() {
 			require.NotNil(res)
 
 			require.Same(fork, machine.inner)
-			require.Equal(model.InputStatusAccepted, res.Status)
+			require.Equal(model.InputCompletionStatus_Accepted, res.Status)
 			require.Equal(expectedOutputs, res.Outputs)
 			require.Equal(expectedReports1, res.Reports)
 			require.Equal(newHash(1), res.OutputsHash)
@@ -88,7 +93,7 @@ func (s *NodeMachineSuite) TestAdvance() {
 			require.NotNil(res)
 
 			require.Same(inner, machine.inner)
-			require.Equal(model.InputStatusRejected, res.Status)
+			require.Equal(model.InputCompletionStatus_Rejected, res.Status)
 			require.Equal(expectedOutputs, res.Outputs)
 			require.Equal(expectedReports1, res.Reports)
 			require.Equal(newHash(1), res.OutputsHash)
@@ -118,27 +123,27 @@ func (s *NodeMachineSuite) TestAdvance() {
 
 		testSoftError("Exception",
 			rollupsmachine.ErrException,
-			model.InputStatusException)
+			model.InputCompletionStatus_Exception)
 
 		testSoftError("Halted",
 			rollupsmachine.ErrHalted,
-			model.InputStatusMachineHalted)
+			model.InputCompletionStatus_MachineHalted)
 
 		testSoftError("OutputsLimit",
 			rollupsmachine.ErrOutputsLimitExceeded,
-			model.InputStatusOutputsLimitExceeded)
+			model.InputCompletionStatus_OutputsLimitExceeded)
 
 		testSoftError("CycleLimit",
 			rollupsmachine.ErrCycleLimitExceeded,
-			model.InputStatusCycleLimitExceeded)
+			model.InputCompletionStatus_CycleLimitExceeded)
 
 		testSoftError("TimeLimit",
 			cartesimachine.ErrTimedOut,
-			model.InputStatusTimeLimitExceeded)
+			model.InputCompletionStatus_TimeLimitExceeded)
 
 		testSoftError("PayloadLengthLimit",
 			rollupsmachine.ErrPayloadLengthLimitExceeded,
-			model.InputStatusPayloadLengthLimitExceeded)
+			model.InputCompletionStatus_PayloadLengthLimitExceeded)
 	})
 
 	s.Run("Error", func() {
@@ -345,8 +350,9 @@ var (
 )
 
 func (s *NodeMachineSuite) setupAdvance() (*MockRollupsMachine, *MockRollupsMachine, *NodeMachine) {
+	app := &model.Application{}
 	inner := &MockRollupsMachine{}
-	machine, err := NewNodeMachine(inner, 5, decisecond, centisecond, 3)
+	machine, err := NewNodeMachine(app, inner, 5, decisecond, centisecond, 3)
 	s.Require().Nil(err)
 
 	fork := &MockRollupsMachine{}
@@ -385,8 +391,9 @@ func (s *NodeMachineSuite) setupAdvance() (*MockRollupsMachine, *MockRollupsMach
 }
 
 func (s *NodeMachineSuite) setupInspect() (*MockRollupsMachine, *MockRollupsMachine, *NodeMachine) {
+	app := &model.Application{}
 	inner := &MockRollupsMachine{}
-	machine, err := NewNodeMachine(inner, 55, decisecond, centisecond, 3)
+	machine, err := NewNodeMachine(app, inner, 55, decisecond, centisecond, 3)
 	s.Require().Nil(err)
 
 	fork := &MockRollupsMachine{}
@@ -418,7 +425,7 @@ const (
 	decisecond  = 100 * time.Millisecond
 )
 
-func newHash(n byte) model.Hash {
+func newHash(n byte) common.Hash {
 	hash := rollupsmachine.Hash{}
 	for i := 0; i < 32; i++ {
 		hash[i] = n

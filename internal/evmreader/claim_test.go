@@ -23,26 +23,33 @@ func (s *EvmReaderSuite) TestNoClaimsAcceptance() {
 	s.evmReader.inputBoxDeploymentBlock = 0x10
 
 	// Prepare repository
-	s.repository.Unset("GetAllRunningApplications")
+	s.repository.Unset("ListApplications")
 	s.repository.On(
-		"GetAllRunningApplications",
+		"ListApplications",
 		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:     common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		mock.Anything,
+		mock.Anything,
+	).Return([]*Application{{
+		IApplicationAddress: common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		IConsensusAddress:   common.HexToAddress("0xdeadbeef"),
+		EpochLength:         10,
 		LastClaimCheckBlock: 0x10,
 	}}, nil).Once()
 	s.repository.On(
-		"GetAllRunningApplications",
+		"ListApplications",
 		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:     common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		mock.Anything,
+		mock.Anything,
+	).Return([]*Application{{
+		IApplicationAddress: common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		IConsensusAddress:   common.HexToAddress("0xdeadbeef"),
+		EpochLength:         10,
 		LastClaimCheckBlock: 0x11,
 	}}, nil).Once()
 
-	s.repository.Unset("UpdateEpochs")
-	s.repository.On("UpdateEpochs",
+	s.repository.Unset("UpdateEpochsClaimAccepted")
+	s.repository.On("UpdateEpochsClaimAccepted",
+		mock.Anything,
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
@@ -58,7 +65,8 @@ func (s *EvmReaderSuite) TestNoClaimsAcceptance() {
 		s.Require().Equal(uint64(17), lastClaimCheck)
 
 	}).Return(nil)
-	s.repository.On("UpdateEpochs",
+	s.repository.On("UpdateEpochsClaimAccepted",
+		mock.Anything,
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
@@ -122,7 +130,7 @@ func (s *EvmReaderSuite) TestNoClaimsAcceptance() {
 
 	s.repository.AssertNumberOfCalls(
 		s.T(),
-		"UpdateEpochs",
+		"UpdateEpochsClaimAccepted",
 		0,
 	)
 
@@ -172,21 +180,27 @@ func (s *EvmReaderSuite) TestReadClaimAcceptance() {
 	).Return(big.NewInt(1), nil).Once()
 
 	// Prepare repository
-	s.repository.Unset("GetAllRunningApplications")
+	s.repository.Unset("ListApplications")
 	s.repository.On(
-		"GetAllRunningApplications",
+		"ListApplications",
 		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:     appAddress,
+		mock.Anything,
+		mock.Anything,
+	).Return([]*Application{{
+		IApplicationAddress: appAddress,
 		IConsensusAddress:   common.HexToAddress("0xdeadbeef"),
+		EpochLength:         10,
 		LastClaimCheckBlock: 0x10,
 	}}, nil).Once()
 	s.repository.On(
-		"GetAllRunningApplications",
+		"ListApplications",
 		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:     appAddress,
+		mock.Anything,
+		mock.Anything,
+	).Return([]*Application{{
+		IApplicationAddress: appAddress,
 		IConsensusAddress:   common.HexToAddress("0xdeadbeef"),
+		EpochLength:         10,
 		LastClaimCheckBlock: 0x11,
 	}}, nil).Once()
 
@@ -195,8 +209,7 @@ func (s *EvmReaderSuite) TestReadClaimAcceptance() {
 		Index:      3,
 		FirstBlock: 3,
 		LastBlock:  3,
-		AppAddress: appAddress,
-		Status:     EpochStatusClaimSubmitted,
+		Status:     EpochStatus_ClaimSubmitted,
 		ClaimHash:  &claim1Hash,
 	}
 
@@ -206,26 +219,28 @@ func (s *EvmReaderSuite) TestReadClaimAcceptance() {
 		mock.Anything,
 		mock.Anything).Return(claim0, nil)
 
-	s.repository.Unset("GetPreviousEpochsWithOpenClaims")
-	s.repository.On("GetPreviousEpochsWithOpenClaims",
+	s.repository.Unset("ListEpochs")
+	s.repository.On("ListEpochs",
+		mock.Anything,
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
 	).Return([]*Epoch{}, nil)
 
-	s.repository.Unset("UpdateEpochs")
-	s.repository.On("UpdateEpochs",
+	s.repository.Unset("UpdateEpochsClaimAccepted")
+	s.repository.On("UpdateEpochsClaimAccepted",
+		mock.Anything,
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
 	).Once().Run(func(arguments mock.Arguments) {
-		obj := arguments.Get(1)
+		obj := arguments.Get(2)
 		claims, ok := obj.([]*Epoch)
 		s.Require().True(ok)
 		s.Require().Equal(1, len(claims))
 		claim0 := claims[0]
 		s.Require().Equal(uint64(3), claim0.LastBlock)
-		s.Require().Equal(EpochStatusClaimAccepted, claim0.Status)
+		s.Require().Equal(EpochStatus_ClaimAccepted, claim0.Status)
 
 	}).Return(nil)
 
@@ -265,7 +280,7 @@ func (s *EvmReaderSuite) TestReadClaimAcceptance() {
 
 	s.repository.AssertNumberOfCalls(
 		s.T(),
-		"UpdateEpochs",
+		"UpdateEpochsClaimAccepted",
 		1,
 	)
 
@@ -324,21 +339,27 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 		).Return(big.NewInt(1), nil).Once()
 
 		// Prepare repository
-		repository.Unset("GetAllRunningApplications")
+		repository.Unset("ListApplications")
 		repository.On(
-			"GetAllRunningApplications",
+			"ListApplications",
 			mock.Anything,
-		).Return([]Application{{
-			ContractAddress:     appAddress,
+			mock.Anything,
+			mock.Anything,
+		).Return([]*Application{{
+			IApplicationAddress: appAddress,
 			IConsensusAddress:   common.HexToAddress("0xdeadbeef"),
+			EpochLength:         10,
 			LastClaimCheckBlock: 0x10,
 		}}, nil).Once()
 		repository.On(
-			"GetAllRunningApplications",
+			"ListApplications",
 			mock.Anything,
-		).Return([]Application{{
-			ContractAddress:     appAddress,
+			mock.Anything,
+			mock.Anything,
+		).Return([]*Application{{
+			IApplicationAddress: appAddress,
 			IConsensusAddress:   common.HexToAddress("0xdeadbeef"),
+			EpochLength:         10,
 			LastClaimCheckBlock: 0x11,
 		}}, nil).Once()
 
@@ -347,8 +368,7 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			Index:      3,
 			FirstBlock: 3,
 			LastBlock:  3,
-			AppAddress: appAddress,
-			Status:     EpochStatusClaimSubmitted,
+			Status:     EpochStatus_ClaimSubmitted,
 			ClaimHash:  &claim1Hash,
 		}
 
@@ -358,15 +378,17 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			mock.Anything,
 			mock.Anything).Return(claim1, nil)
 
-		repository.Unset("GetPreviousEpochsWithOpenClaims")
-		repository.On("GetPreviousEpochsWithOpenClaims",
+		repository.Unset("ListEpochs")
+		repository.On("ListEpochs",
+			mock.Anything,
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,
 		).Return([]*Epoch{}, fmt.Errorf("No previous epochs for you"))
 
-		repository.Unset("UpdateEpochs")
-		repository.On("UpdateEpochs",
+		repository.Unset("UpdateEpochsClaimAccepted")
+		repository.On("UpdateEpochsClaimAccepted",
+			mock.Anything,
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,
@@ -408,7 +430,7 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 
 		repository.AssertNumberOfCalls(
 			s.T(),
-			"UpdateEpochs",
+			"UpdateEpochsClaimAccepted",
 			0,
 		)
 
@@ -443,7 +465,7 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			inputSource:             inputBox,
 			repository:              repository,
 			inputBoxDeploymentBlock: 0x00,
-			defaultBlock:            DefaultBlockStatusLatest,
+			defaultBlock:            DefaultBlock_Latest,
 			contractFactory:         contractFactory,
 			hasEnabledApps:          true,
 		}
@@ -479,21 +501,27 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 		).Return(big.NewInt(1), nil).Once()
 
 		// Prepare repository
-		repository.Unset("GetAllRunningApplications")
+		repository.Unset("ListApplications")
 		repository.On(
-			"GetAllRunningApplications",
+			"ListApplications",
 			mock.Anything,
-		).Return([]Application{{
-			ContractAddress:     appAddress,
+			mock.Anything,
+			mock.Anything,
+		).Return([]*Application{{
+			IApplicationAddress: appAddress,
 			IConsensusAddress:   common.HexToAddress("0xdeadbeef"),
+			EpochLength:         10,
 			LastClaimCheckBlock: 0x10,
 		}}, nil).Once()
 		repository.On(
-			"GetAllRunningApplications",
+			"ListApplications",
 			mock.Anything,
-		).Return([]Application{{
-			ContractAddress:     appAddress,
+			mock.Anything,
+			mock.Anything,
+		).Return([]*Application{{
+			IApplicationAddress: appAddress,
 			IConsensusAddress:   common.HexToAddress("0xdeadbeef"),
+			EpochLength:         10,
 			LastClaimCheckBlock: 0x11,
 		}}, nil).Once()
 
@@ -502,8 +530,7 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			Index:      1,
 			FirstBlock: 1,
 			LastBlock:  1,
-			AppAddress: appAddress,
-			Status:     EpochStatusClaimSubmitted,
+			Status:     EpochStatus_ClaimSubmitted,
 			ClaimHash:  &claim0Hash,
 		}
 
@@ -513,15 +540,17 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			mock.Anything,
 			mock.Anything).Return(nil, fmt.Errorf("No epoch for you"))
 
-		repository.Unset("GetPreviousEpochsWithOpenClaims")
-		repository.On("GetPreviousEpochsWithOpenClaims",
+		repository.Unset("ListEpochs")
+		repository.On("ListEpochs",
+			mock.Anything,
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,
 		).Return([]*Epoch{claim0}, nil)
 
-		repository.Unset("UpdateEpochs")
-		repository.On("UpdateEpochs",
+		repository.Unset("UpdateEpochsClaimAccepted")
+		repository.On("UpdateEpochsClaimAccepted",
+			mock.Anything,
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,
@@ -563,7 +592,7 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 
 		repository.AssertNumberOfCalls(
 			s.T(),
-			"UpdateEpochs",
+			"UpdateEpochsClaimAccepted",
 			0,
 		)
 
@@ -621,21 +650,27 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 		).Return(big.NewInt(1), nil).Once()
 
 		// Prepare repository
-		repository.Unset("GetAllRunningApplications")
+		repository.Unset("ListApplications")
 		repository.On(
-			"GetAllRunningApplications",
+			"ListApplications",
 			mock.Anything,
-		).Return([]Application{{
-			ContractAddress:     appAddress,
+			mock.Anything,
+			mock.Anything,
+		).Return([]*Application{{
+			IApplicationAddress: appAddress,
 			IConsensusAddress:   common.HexToAddress("0xdeadbeef"),
+			EpochLength:         10,
 			LastClaimCheckBlock: 0x10,
 		}}, nil).Once()
 		repository.On(
-			"GetAllRunningApplications",
+			"ListApplications",
 			mock.Anything,
-		).Return([]Application{{
-			ContractAddress:     appAddress,
+			mock.Anything,
+			mock.Anything,
+		).Return([]*Application{{
+			IApplicationAddress: appAddress,
 			IConsensusAddress:   common.HexToAddress("0xdeadbeef"),
+			EpochLength:         10,
 			LastClaimCheckBlock: 0x11,
 		}}, nil).Once()
 
@@ -644,20 +679,21 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 			Index:      1,
 			FirstBlock: 1,
 			LastBlock:  1,
-			AppAddress: appAddress,
-			Status:     EpochStatusClaimSubmitted,
+			Status:     EpochStatus_ClaimSubmitted,
 			ClaimHash:  &claim0Hash,
 		}
 
-		repository.Unset("GetPreviousEpochsWithOpenClaims")
-		repository.On("GetPreviousEpochsWithOpenClaims",
+		repository.Unset("ListEpochs")
+		repository.On("ListEpochs",
+			mock.Anything,
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,
 		).Return([]*Epoch{claim0}, nil)
 
-		repository.Unset("UpdateEpochs")
-		repository.On("UpdateEpochs",
+		repository.Unset("UpdateEpochsClaimAccepted")
+		repository.On("UpdateEpochsClaimAccepted",
+			mock.Anything,
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,
@@ -699,7 +735,7 @@ func (s *EvmReaderSuite) TestCheckClaimFails() {
 
 		repository.AssertNumberOfCalls(
 			s.T(),
-			"UpdateEpochs",
+			"UpdateEpochsClaimAccepted",
 			0,
 		)
 

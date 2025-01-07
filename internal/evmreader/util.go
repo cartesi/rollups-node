@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // calculateEpochIndex calculates the epoch index given the input block number
@@ -17,12 +18,20 @@ func calculateEpochIndex(epochLength uint64, blockNumber uint64) uint64 {
 }
 
 // appsToAddresses
-func appsToAddresses(apps []application) []Address {
-	var addresses []Address
+func appsToAddresses(apps []appContracts) []common.Address {
+	var addresses []common.Address
 	for _, app := range apps {
-		addresses = append(addresses, app.ContractAddress)
+		addresses = append(addresses, app.application.IApplicationAddress)
 	}
 	return addresses
+}
+
+func mapAddressToApp(apps []appContracts) map[common.Address]appContracts {
+	result := make(map[common.Address]appContracts)
+	for _, app := range apps {
+		result[app.application.IApplicationAddress] = app
+	}
+	return result
 }
 
 // sortByInputIndex is a compare function that orders Inputs
@@ -44,11 +53,11 @@ func insertSorted[T any](compare func(a, b *T) int, slice []*T, item *T) []*T {
 
 // Index applications given a key extractor function
 func indexApps[K comparable](
-	keyExtractor func(application) K,
-	apps []application,
-) map[K][]application {
+	keyExtractor func(appContracts) K,
+	apps []appContracts,
+) map[K][]appContracts {
 
-	result := make(map[K][]application)
+	result := make(map[K][]appContracts)
 	for _, item := range apps {
 		key := keyExtractor(item)
 		result[key] = append(result[key], item)

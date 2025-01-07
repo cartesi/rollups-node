@@ -8,12 +8,13 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/model"
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 	appcontract "github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
@@ -121,14 +122,16 @@ func (me *EvmReaderSuite) SetupTest() {
 		inputSource:             me.inputBox,
 		repository:              me.repository,
 		inputBoxDeploymentBlock: 0,
-		defaultBlock:            DefaultBlockStatusLatest,
+		defaultBlock:            DefaultBlock_Latest,
 		contractFactory:         me.contractFactory,
 		hasEnabledApps:          true,
+		inputReaderEnabled:      true,
 	}
 	c := CreateInfo{
 		CreateInfo: service.CreateInfo{
-			Name: "evm-reader",
-			Impl: me.evmReader,
+			Name:     "evm-reader",
+			Impl:     me.evmReader,
+			LogLevel: service.LogLevel(slog.LevelInfo),
 		},
 	}
 	me.Require().NotNil(Create(&c, me.evmReader))
@@ -206,14 +209,17 @@ func (s *EvmReaderSuite) TestItWrongIConsensus() {
 	).Return(claimEvents, nil).Once()
 
 	// Prepare repository
-	s.repository.Unset("GetAllRunningApplications")
+	s.repository.Unset("ListApplications")
 	s.repository.On(
-		"GetAllRunningApplications",
+		"ListApplications",
 		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:    common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-		IConsensusAddress:  common.HexToAddress("0xFFFFFFFF"),
-		LastProcessedBlock: 0x00,
+		mock.Anything,
+		mock.Anything,
+	).Return([]*Application{{
+		IApplicationAddress: common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		IConsensusAddress:   common.HexToAddress("0xFFFFFFFF"),
+		EpochLength:         10,
+		LastProcessedBlock:  0x00,
 	}}, nil).Once()
 
 	// Prepare Client
@@ -254,9 +260,98 @@ func (s *EvmReaderSuite) TestItWrongIConsensus() {
 	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveClaimAcceptanceEvents", 0)
 	s.repository.AssertNumberOfCalls(
 		s.T(),
-		"UpdateEpochs",
+		"UpdateEpochsClaimAccepted",
 		0,
 	)
+}
+
+func (s *EvmReaderSuite) TestIndexApps() {
+
+	s.Run("Ok", func() {
+		apps := []appContracts{
+			{application: &Application{LastProcessedBlock: 23}},
+			{application: &Application{LastProcessedBlock: 22}},
+			{application: &Application{LastProcessedBlock: 21}},
+			{application: &Application{LastProcessedBlock: 23}},
+		}
+
+		keyByProcessedBlock := func(a appContracts) uint64 {
+			return a.application.LastProcessedBlock
+		}
+
+		indexApps := indexApps(keyByProcessedBlock, apps)
+
+		s.Require().Equal(3, len(indexApps))
+		apps, ok := indexApps[23]
+		s.Require().True(ok)
+		s.Require().Equal(2, len(apps))
+	})
+
+	s.Run("whenIndexAppsArrayEmpty", func() {
+		apps := []appContracts{}
+
+		keyByProcessedBlock := func(a appContracts) uint64 {
+			return a.application.LastProcessedBlock
+		}
+
+		indexApps := indexApps(keyByProcessedBlock, apps)
+
+		s.Require().Equal(0, len(indexApps))
+	})
+
+	s.Run("whenIndexAppsArray", func() {
+		apps := []appContracts{}
+
+		keyByProcessedBlock := func(a appContracts) uint64 {
+			return a.application.LastProcessedBlock
+		}
+
+		indexApps := indexApps(keyByProcessedBlock, apps)
+
+		s.Require().Equal(0, len(indexApps))
+	})
+
+	s.Run("whenIndexByEmptyKey", func() {
+		apps := []appContracts{
+			{application: &Application{LastProcessedBlock: 23}},
+			{application: &Application{LastProcessedBlock: 22}},
+			{application: &Application{LastProcessedBlock: 21}},
+			{application: &Application{LastProcessedBlock: 23}},
+		}
+
+		keyByIConsensus := func(a appContracts) ConsensusContract {
+			return a.consensusContract
+		}
+
+		indexApps := indexApps(keyByIConsensus, apps)
+
+		s.Require().Equal(1, len(indexApps))
+		apps, ok := indexApps[nil]
+		s.Require().True(ok)
+		s.Require().Equal(4, len(apps))
+	})
+
+	s.Run("whenUsesWrongKey", func() {
+		apps := []appContracts{
+			{application: &Application{LastProcessedBlock: 23}},
+			{application: &Application{LastProcessedBlock: 22}},
+			{application: &Application{LastProcessedBlock: 21}},
+			{application: &Application{LastProcessedBlock: 23}},
+		}
+
+		keyByProcessedBlock := func(a appContracts) uint64 {
+			return a.application.LastProcessedBlock
+		}
+
+		indexApps := indexApps(keyByProcessedBlock, apps)
+
+		s.Require().Equal(3, len(indexApps))
+		apps, ok := indexApps[0]
+		s.Require().False(ok)
+		s.Require().Nil(apps)
+
+	})
+
 }
 
 // Mock EthClient
@@ -386,72 +481,64 @@ type MockRepository struct {
 func newMockRepository() *MockRepository {
 	repo := &MockRepository{}
 
-	repo.On("StoreEpochAndInputsTransaction",
+	repo.On("CreateEpochsAndInputs",
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
-		mock.Anything).Return(make(map[uint64]uint64), make(map[uint64][]uint64), nil)
+		mock.Anything).Return(nil)
 
 	repo.On("GetEpoch",
 		mock.Anything,
-		uint64(0),
-		mock.Anything).Return(
+		mock.Anything,
+		uint64(0)).Return(
 		&Epoch{
-			Id:              1,
-			Index:           0,
-			FirstBlock:      0,
-			LastBlock:       9,
-			Status:          EpochStatusOpen,
-			AppAddress:      common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-			ClaimHash:       nil,
-			TransactionHash: nil,
+			Index:                0,
+			FirstBlock:           0,
+			LastBlock:            9,
+			Status:               EpochStatus_Open,
+			ClaimHash:            nil,
+			ClaimTransactionHash: nil,
 		}, nil)
 	repo.On("GetEpoch",
 		mock.Anything,
-		uint64(1),
-		mock.Anything).Return(
+		mock.Anything,
+		uint64(1)).Return(
 		&Epoch{
-			Id:              2,
-			Index:           1,
-			FirstBlock:      10,
-			LastBlock:       19,
-			Status:          EpochStatusOpen,
-			AppAddress:      common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-			ClaimHash:       nil,
-			TransactionHash: nil,
+			Index:                1,
+			FirstBlock:           10,
+			LastBlock:            19,
+			Status:               EpochStatus_Open,
+			ClaimHash:            nil,
+			ClaimTransactionHash: nil,
 		}, nil)
 	repo.On("GetEpoch",
 		mock.Anything,
-		uint64(2),
-		mock.Anything).Return(
+		mock.Anything,
+		uint64(2)).Return(
 		&Epoch{
-			Id:              3,
-			Index:           2,
-			FirstBlock:      20,
-			LastBlock:       29,
-			Status:          EpochStatusOpen,
-			AppAddress:      common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-			ClaimHash:       nil,
-			TransactionHash: nil,
+			Index:                2,
+			FirstBlock:           20,
+			LastBlock:            29,
+			Status:               EpochStatus_Open,
+			ClaimHash:            nil,
+			ClaimTransactionHash: nil,
 		}, nil)
 
-	repo.On("InsertEpoch",
+	repo.On("ListEpochs",
 		mock.Anything,
-		mock.Anything).Return(1, nil)
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+	).Return([]*Epoch{}, nil)
 
-	repo.On("GetPreviousEpochsWithOpenClaims",
-		mock.Anything,
-		mock.Anything,
-	).Return([]Epoch{}, nil)
-
-	repo.On("UpdateEpochs",
+	repo.On("UpdateEpochsClaimAccepted",
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
 	).Return(nil)
 
-	repo.On("UpdateOutputExecutionTransaction",
+	repo.On("UpdateOutputsExecution",
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
@@ -460,109 +547,19 @@ func newMockRepository() *MockRepository {
 	outputHash := common.HexToHash("0xAABBCCDDEE")
 	repo.On("GetOutput",
 		mock.Anything,
-		0,
-		common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E")).Return(
+		common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E").String(),
+		0).Return(
 		&Output{
-			Id:                   1,
-			Index:                0,
-			RawData:              common.Hex2Bytes("0xdeadbeef"),
-			Hash:                 &outputHash,
-			InputId:              1,
-			OutputHashesSiblings: nil,
-			TransactionHash:      nil,
+			Index:                    0,
+			RawData:                  common.Hex2Bytes("0xdeadbeef"),
+			Hash:                     &outputHash,
+			InputIndex:               1,
+			OutputHashesSiblings:     nil,
+			ExecutionTransactionHash: nil,
 		},
 	)
 
 	return repo
-
-}
-
-func (s *EvmReaderSuite) TestIndexApps() {
-
-	s.Run("Ok", func() {
-		apps := []application{
-			{Application: Application{LastProcessedBlock: 23}},
-			{Application: Application{LastProcessedBlock: 22}},
-			{Application: Application{LastProcessedBlock: 21}},
-			{Application: Application{LastProcessedBlock: 23}},
-		}
-
-		keyByProcessedBlock := func(a application) uint64 {
-			return a.LastProcessedBlock
-		}
-
-		indexApps := indexApps(keyByProcessedBlock, apps)
-
-		s.Require().Equal(3, len(indexApps))
-		apps, ok := indexApps[23]
-		s.Require().True(ok)
-		s.Require().Equal(2, len(apps))
-	})
-
-	s.Run("whenIndexAppsArrayEmpty", func() {
-		apps := []application{}
-
-		keyByProcessedBlock := func(a application) uint64 {
-			return a.LastProcessedBlock
-		}
-
-		indexApps := indexApps(keyByProcessedBlock, apps)
-
-		s.Require().Equal(0, len(indexApps))
-	})
-
-	s.Run("whenIndexAppsArray", func() {
-		apps := []application{}
-
-		keyByProcessedBlock := func(a application) uint64 {
-			return a.LastProcessedBlock
-		}
-
-		indexApps := indexApps(keyByProcessedBlock, apps)
-
-		s.Require().Equal(0, len(indexApps))
-	})
-
-	s.Run("whenIndexByEmptyKey", func() {
-		apps := []application{
-			{Application: Application{LastProcessedBlock: 23}},
-			{Application: Application{LastProcessedBlock: 22}},
-			{Application: Application{LastProcessedBlock: 21}},
-			{Application: Application{LastProcessedBlock: 23}},
-		}
-
-		keyByIConsensus := func(a application) ConsensusContract {
-			return a.consensusContract
-		}
-
-		indexApps := indexApps(keyByIConsensus, apps)
-
-		s.Require().Equal(1, len(indexApps))
-		apps, ok := indexApps[nil]
-		s.Require().True(ok)
-		s.Require().Equal(4, len(apps))
-	})
-
-	s.Run("whenUsesWrongKey", func() {
-		apps := []application{
-			{Application: Application{LastProcessedBlock: 23}},
-			{Application: Application{LastProcessedBlock: 22}},
-			{Application: Application{LastProcessedBlock: 21}},
-			{Application: Application{LastProcessedBlock: 23}},
-		}
-
-		keyByProcessedBlock := func(a application) uint64 {
-			return a.LastProcessedBlock
-		}
-
-		indexApps := indexApps(keyByProcessedBlock, apps)
-
-		s.Require().Equal(3, len(indexApps))
-		apps, ok := indexApps[0]
-		s.Require().False(ok)
-		s.Require().Nil(apps)
-
-	})
 
 }
 
@@ -574,37 +571,45 @@ func (m *MockRepository) Unset(methodName string) {
 	}
 }
 
-func (m *MockRepository) StoreEpochAndInputsTransaction(
+func (m *MockRepository) CreateEpochAndInputs(
 	ctx context.Context,
-	epochInputMap map[*Epoch][]Input,
+	nameOrAddress string,
+	epochInputMap map[*Epoch][]*Input,
 	blockNumber uint64,
-	appAddress common.Address,
-) (epochIndexIdMap map[uint64]uint64, epochIndexInputIdsMap map[uint64][]uint64, err error) {
-	args := m.Called(ctx, epochInputMap, blockNumber, appAddress)
-	return args.Get(0).(map[uint64]uint64), args.Get(1).(map[uint64][]uint64), args.Error(2)
-}
-
-func (m *MockRepository) GetAllRunningApplications(
-	ctx context.Context,
-) ([]Application, error) {
-	args := m.Called(ctx)
-	return args.Get(0).([]Application), args.Error(1)
-}
-
-func (m *MockRepository) SelectEvmReaderConfig(
-	ctx context.Context,
-	out *model.EvmReaderPersistentConfig,
-) error {
-	args := m.Called(ctx, out)
+) (err error) {
+	args := m.Called(ctx, nameOrAddress, epochInputMap, blockNumber)
 	return args.Error(0)
 }
 
-func (m *MockRepository) GetEpoch(
+func (m *MockRepository) ListApplications(
 	ctx context.Context,
-	index uint64,
-	appAddress common.Address,
-) (*Epoch, error) {
-	args := m.Called(ctx, index, appAddress)
+	f repository.ApplicationFilter,
+	pagination repository.Pagination,
+) ([]*Application, error) {
+	args := m.Called(ctx, f, pagination)
+	return args.Get(0).([]*Application), args.Error(1)
+}
+
+func (m *MockRepository) SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error {
+	args := m.Called(ctx, key, rawJSON)
+	return args.Error(0)
+}
+
+func (m *MockRepository) LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error) {
+	args := m.Called(ctx, key)
+	return args.Get(0).([]byte), args.Get(1).(time.Time), args.Get(2).(time.Time), args.Error(3)
+}
+
+func (m *MockRepository) CreateEpochsAndInputs(
+	ctx context.Context, nameOrAddress string,
+	epochInputMap map[*Epoch][]*Input, blockNumber uint64,
+) error {
+	args := m.Called(ctx, nameOrAddress, epochInputMap, blockNumber)
+	return args.Error(0)
+}
+
+func (m *MockRepository) GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error) {
+	args := m.Called(ctx, nameOrAddress, index)
 	obj := args.Get(0)
 	if obj == nil {
 		return nil, args.Error(1)
@@ -612,40 +617,20 @@ func (m *MockRepository) GetEpoch(
 	return obj.(*Epoch), args.Error(1)
 }
 
-func (m *MockRepository) InsertEpoch(
-	ctx context.Context,
-	epoch *Epoch,
-) (uint64, error) {
-	args := m.Called(ctx)
-	return args.Get(0).(uint64), args.Error(1)
+func (m *MockRepository) ListEpochs(ctx context.Context, nameOrAddress string,
+	f repository.EpochFilter, p repository.Pagination) ([]*Epoch, error) {
+	args := m.Called(ctx, nameOrAddress, f, p)
+	return args.Get(0).([]*Epoch), args.Error(1)
 }
 
-func (m *MockRepository) GetPreviousEpochsWithOpenClaims(
-	ctx context.Context,
-	app Address,
-	lastBlock uint64,
-) ([]*Epoch, error) {
-	args := m.Called(ctx, app, lastBlock)
-	obj := args.Get(0)
-	if obj == nil {
-		return nil, args.Error(1)
-	}
-	return obj.([]*Epoch), args.Error(1)
-
-}
-func (m *MockRepository) UpdateEpochs(ctx context.Context,
-	app Address,
-	epochs []*Epoch,
-	mostRecentBlockNumber uint64,
-) error {
-	args := m.Called(ctx, epochs, mostRecentBlockNumber)
+func (m *MockRepository) UpdateEpochsClaimAccepted(ctx context.Context, nameOrAddress string,
+	epochs []*Epoch, lastClaimCheckBlock uint64) error {
+	args := m.Called(ctx, nameOrAddress, epochs, lastClaimCheckBlock)
 	return args.Error(0)
 }
 
-func (m *MockRepository) GetOutput(
-	ctx context.Context, appAddressKey Address, indexKey uint64,
-) (*Output, error) {
-	args := m.Called(ctx, indexKey, appAddressKey)
+func (m *MockRepository) GetOutput(ctx context.Context, nameOrAddress string, indexKey uint64) (*Output, error) {
+	args := m.Called(ctx, nameOrAddress, indexKey)
 	obj := args.Get(0)
 	if obj == nil {
 		return nil, args.Error(1)
@@ -653,10 +638,9 @@ func (m *MockRepository) GetOutput(
 	return obj.(*Output), args.Error(1)
 }
 
-func (m *MockRepository) UpdateOutputExecutionTransaction(
-	ctx context.Context, app Address, executedOutputs []*Output, blockNumber uint64,
-) error {
-	args := m.Called(ctx, app, executedOutputs, blockNumber)
+func (m *MockRepository) UpdateOutputsExecution(ctx context.Context, nameOrAddress string,
+	executedOutputs []*Output, blockNumber uint64) error {
+	args := m.Called(ctx, nameOrAddress, executedOutputs, blockNumber)
 	return args.Error(0)
 }
 
@@ -717,14 +701,14 @@ func (m *MockEvmReaderContractFactory) Unset(methodName string) {
 }
 
 func (m *MockEvmReaderContractFactory) NewApplication(
-	Address,
+	common.Address,
 ) (ApplicationContract, error) {
 	args := m.Called(context.Background())
 	return args.Get(0).(ApplicationContract), args.Error(1)
 }
 
 func (m *MockEvmReaderContractFactory) NewIConsensus(
-	Address,
+	common.Address,
 ) (ConsensusContract, error) {
 	args := m.Called(context.Background())
 	return args.Get(0).(ConsensusContract), args.Error(1)

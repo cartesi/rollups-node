@@ -15,8 +15,9 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/advancer/machines"
 	. "github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/nodemachine"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/service"
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -46,22 +47,22 @@ func (s *AdvancerSuite) TestRun() {
 		require := s.Require()
 
 		machines := newMockMachines()
-		app1 := randomAddress()
-		machines.Map[app1] = &MockMachine{}
-		app2 := randomAddress()
-		machines.Map[app2] = &MockMachine{}
-		res1 := randomAdvanceResult()
-		res2 := randomAdvanceResult()
-		res3 := randomAdvanceResult()
+		app1 := newMockMachine(1)
+		app2 := newMockMachine(2)
+		machines.Map[1] = *app1
+		machines.Map[2] = *app2
+		res1 := randomAdvanceResult(1)
+		res2 := randomAdvanceResult(2)
+		res3 := randomAdvanceResult(3)
 
 		repository := &MockRepository{
-			GetInputsReturn: map[Address][]*Input{
-				app1: {
-					{Id: 1, RawData: marshal(res1)},
-					{Id: 2, RawData: marshal(res2)},
+			GetInputsReturn: map[common.Address][]*Input{
+				app1.Application.IApplicationAddress: {
+					newInput(app1.Application.ID, 0, 0, marshal(res1)),
+					newInput(app1.Application.ID, 0, 1, marshal(res2)),
 				},
-				app2: {
-					{Id: 5, RawData: marshal(res3)},
+				app2.Application.IApplicationAddress: {
+					newInput(app2.Application.ID, 0, 0, marshal(res3)),
 				},
 			},
 		}
@@ -84,16 +85,16 @@ func (s *AdvancerSuite) TestRun() {
 }
 
 func (s *AdvancerSuite) TestProcess() {
-	setup := func() (IAdvancerMachines, *MockRepository, *Service, Address) {
+	setup := func() (IAdvancerMachines, *MockRepository, *Service, *MockMachine) {
 		require := s.Require()
 
-		app := randomAddress()
 		machines := newMockMachines()
-		machines.Map[app] = &MockMachine{}
+		app1 := newMockMachine(1)
+		machines.Map[1] = *app1
 		repository := &MockRepository{}
 		advancer, err := newMock(machines, repository)
 		require.Nil(err)
-		return machines, repository, advancer, app
+		return machines, repository, advancer, app1
 	}
 
 	s.Run("Ok", func() {
@@ -101,58 +102,56 @@ func (s *AdvancerSuite) TestProcess() {
 
 		_, repository, advancer, app := setup()
 		inputs := []*Input{
-			{Id: 1, RawData: marshal(randomAdvanceResult())},
-			{Id: 2, RawData: marshal(randomAdvanceResult())},
-			{Id: 3, RawData: marshal(randomAdvanceResult())},
-			{Id: 4, RawData: marshal(randomAdvanceResult())},
-			{Id: 5, RawData: marshal(randomAdvanceResult())},
-			{Id: 6, RawData: marshal(randomAdvanceResult())},
-			{Id: 7, RawData: marshal(randomAdvanceResult())},
+			newInput(app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+			newInput(app.Application.ID, 0, 1, marshal(randomAdvanceResult(1))),
+			newInput(app.Application.ID, 0, 2, marshal(randomAdvanceResult(2))),
+			newInput(app.Application.ID, 0, 3, marshal(randomAdvanceResult(3))),
+			newInput(app.Application.ID, 1, 4, marshal(randomAdvanceResult(4))),
+			newInput(app.Application.ID, 1, 5, marshal(randomAdvanceResult(5))),
+			newInput(app.Application.ID, 2, 6, marshal(randomAdvanceResult(6))),
 		}
 
-		err := advancer.process(context.Background(), app, inputs)
+		err := advancer.process(context.Background(), app.Application, inputs)
 		require.Nil(err)
 		require.Len(repository.StoredResults, 7)
 	})
 
-	s.Run("Panic", func() {
-		s.Run("ErrApp", func() {
-			require := s.Require()
-
-			invalidApp := randomAddress()
-			_, _, advancer, _ := setup()
-			inputs := randomInputs(3)
-
-			expected := fmt.Sprintf("%v %v", ErrNoApp, invalidApp)
-			require.PanicsWithError(expected, func() {
-				_ = advancer.process(context.Background(), invalidApp, inputs)
-			})
-		})
-
-		s.Run("ErrInputs", func() {
+	s.Run("Noop", func() {
+		s.Run("NoInputs", func() {
 			require := s.Require()
 
 			_, _, advancer, app := setup()
 			inputs := []*Input{}
 
-			require.PanicsWithValue(ErrNoInputs, func() {
-				_ = advancer.process(context.Background(), app, inputs)
-			})
+			err := advancer.process(context.Background(), app.Application, inputs)
+			require.Nil(err)
 		})
 	})
 
 	s.Run("Error", func() {
+		s.Run("ErrApp", func() {
+			require := s.Require()
+
+			invalidApp := Application{ID: 999}
+			_, _, advancer, _ := setup()
+			inputs := randomInputs(1, 0, 3)
+
+			err := advancer.process(context.Background(), &invalidApp, inputs)
+			expected := fmt.Sprintf("%v %v", ErrNoApp, invalidApp.ID)
+			require.Errorf(err, expected)
+		})
+
 		s.Run("Advance", func() {
 			require := s.Require()
 
 			_, repository, advancer, app := setup()
 			inputs := []*Input{
-				{Id: 1, RawData: marshal(randomAdvanceResult())},
-				{Id: 2, RawData: []byte("advance error")},
-				{Id: 3, RawData: []byte("unreachable")},
+				newInput(app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+				newInput(app.Application.ID, 0, 1, []byte("advance error")),
+				newInput(app.Application.ID, 0, 2, []byte("unreachable")),
 			}
 
-			err := advancer.process(context.Background(), app, inputs)
+			err := advancer.process(context.Background(), app.Application, inputs)
 			require.Errorf(err, "advance error")
 			require.Len(repository.StoredResults, 1)
 		})
@@ -162,12 +161,12 @@ func (s *AdvancerSuite) TestProcess() {
 
 			_, repository, advancer, app := setup()
 			inputs := []*Input{
-				{Id: 1, RawData: marshal(randomAdvanceResult())},
-				{Id: 2, RawData: []byte("unreachable")},
+				newInput(app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+				newInput(app.Application.ID, 0, 1, []byte("unreachable")),
 			}
 			repository.StoreAdvanceError = errors.New("store-advance error")
 
-			err := advancer.process(context.Background(), app, inputs)
+			err := advancer.process(context.Background(), app.Application, inputs)
 			require.Errorf(err, "store-advance error")
 			require.Len(repository.StoredResults, 1)
 		})
@@ -176,14 +175,16 @@ func (s *AdvancerSuite) TestProcess() {
 
 // ------------------------------------------------------------------------------------------------
 
-type MockMachine struct{}
+type MockMachine struct {
+	Application *Application
+}
 
 func (mock *MockMachine) Advance(
 	_ context.Context,
 	input []byte,
 	_ uint64,
-) (*nodemachine.AdvanceResult, error) {
-	var res nodemachine.AdvanceResult
+) (*AdvanceResult, error) {
+	var res AdvanceResult
 	err := json.Unmarshal(input, &res)
 	if err != nil {
 		return nil, errors.New(string(input))
@@ -191,80 +192,98 @@ func (mock *MockMachine) Advance(
 	return &res, nil
 }
 
+func newMockMachine(id int64) *MockMachine {
+	return &MockMachine{
+		Application: &Application{
+			ID:                  id,
+			IApplicationAddress: randomAddress(),
+		},
+	}
+}
+
 // ------------------------------------------------------------------------------------------------
 
 type MachinesMock struct {
-	Map map[Address]machines.AdvanceMachine
+	Map map[int64]MockMachine
 }
 
 func newMockMachines() *MachinesMock {
 	return &MachinesMock{
-		Map: map[Address]machines.AdvanceMachine{},
+		Map: map[int64]MockMachine{},
 	}
 }
 
-func (mock *MachinesMock) GetAdvanceMachine(app Address) (machines.AdvanceMachine, bool) {
-	machine, exists := mock.Map[app]
-	return machine, exists
+func (mock *MachinesMock) GetAdvanceMachine(appID int64) (machines.AdvanceMachine, bool) {
+	machine, exists := mock.Map[appID]
+	return &machine, exists
 }
 
-func (m *MachinesMock) UpdateMachines(ctx context.Context) error {
+func (mock *MachinesMock) UpdateMachines(ctx context.Context) error {
 	return nil // FIXME
 }
 
-func (mock *MachinesMock) Apps() []Address {
-	return []Address{}
+func (mock *MachinesMock) Apps() []*Application {
+	keys := make([]*Application, len(mock.Map))
+	i := 0
+	for _, v := range mock.Map {
+		keys[i] = v.Application
+		i++
+	}
+	return keys
 }
 
 // ------------------------------------------------------------------------------------------------
 
 type MockRepository struct {
-	GetInputsReturn   map[Address][]*Input
+	GetInputsReturn   map[common.Address][]*Input
 	GetInputsError    error
 	StoreAdvanceError error
 	UpdateEpochsError error
 
-	StoredResults []*nodemachine.AdvanceResult
+	StoredResults []*AdvanceResult
 }
 
-func (mock *MockRepository) GetUnprocessedInputs(
-	_ context.Context,
-	appAddresses []Address,
-) (map[Address][]*Input, error) {
-	return mock.GetInputsReturn, mock.GetInputsError
+func (mock *MockRepository) ListInputs(
+	ctx context.Context,
+	nameOrAddress string,
+	f repository.InputFilter,
+	p repository.Pagination,
+) ([]*Input, error) {
+	address := common.HexToAddress(nameOrAddress)
+	return mock.GetInputsReturn[address], mock.GetInputsError
 }
 
 func (mock *MockRepository) StoreAdvanceResult(
 	_ context.Context,
-	input *Input,
-	res *nodemachine.AdvanceResult,
+	appID int64,
+	res *AdvanceResult,
 ) error {
 	mock.StoredResults = append(mock.StoredResults, res)
 	return mock.StoreAdvanceError
 }
 
-func (mock *MockRepository) UpdateClosedEpochs(_ context.Context, _ Address) error {
+func (mock *MockRepository) UpdateEpochsInputsProcessed(_ context.Context, nameOrAddress string) error {
 	return mock.UpdateEpochsError
 }
 
 // ------------------------------------------------------------------------------------------------
 
-func randomAddress() Address {
+func randomAddress() common.Address {
 	address := make([]byte, 20)
 	_, err := crand.Read(address)
 	if err != nil {
 		panic(err)
 	}
-	return Address(address)
+	return common.BytesToAddress(address)
 }
 
-func randomHash() Hash {
+func randomHash() common.Hash {
 	hash := make([]byte, 32)
 	_, err := crand.Read(hash)
 	if err != nil {
 		panic(err)
 	}
-	return Hash(hash)
+	return common.BytesToHash(hash)
 }
 
 func randomBytes() []byte {
@@ -286,28 +305,38 @@ func randomSliceOfBytes() [][]byte {
 	return slice
 }
 
-func randomInputs(size int) []*Input {
+func newInput(appId int64, epochIndex uint64, inputIndex uint64, data []byte) *Input {
+	return &Input{
+		EpochApplicationID: appId,
+		EpochIndex:         epochIndex,
+		Index:              inputIndex,
+		RawData:            data,
+	}
+}
+
+func randomInputs(appId int64, epochIndex uint64, size int) []*Input {
 	slice := make([]*Input, size)
 	for i := 0; i < size; i++ {
-		slice[i] = &Input{Id: uint64(i), RawData: randomBytes()}
+		slice[i] = newInput(appId, epochIndex, uint64(i), randomBytes())
 	}
 	return slice
 
 }
 
-func randomAdvanceResult() *nodemachine.AdvanceResult {
-	res := &nodemachine.AdvanceResult{
-		Status:      InputStatusAccepted,
+func randomAdvanceResult(inputIndex uint64) *AdvanceResult {
+	hash := randomHash()
+	res := &AdvanceResult{
+		InputIndex:  inputIndex,
+		Status:      InputCompletionStatus_Accepted,
 		Outputs:     randomSliceOfBytes(),
 		Reports:     randomSliceOfBytes(),
 		OutputsHash: randomHash(),
-		MachineHash: new(Hash),
+		MachineHash: &hash,
 	}
-	*res.MachineHash = randomHash()
 	return res
 }
 
-func marshal(res *nodemachine.AdvanceResult) []byte {
+func marshal(res *AdvanceResult) []byte {
 	data, err := json.Marshal(*res)
 	if err != nil {
 		panic(err)

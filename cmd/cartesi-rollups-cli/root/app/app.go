@@ -13,9 +13,9 @@ import (
 )
 
 var Cmd = &cobra.Command{
-	Use:              "app",
-	Short:            "Application management related commands",
-	PersistentPreRun: common.Setup,
+	Use:               "app",
+	Short:             "Application management related commands",
+	PersistentPreRunE: common.PersistentPreRun,
 }
 
 func init() {

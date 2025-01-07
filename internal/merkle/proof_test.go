@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/suite"
@@ -16,7 +15,7 @@ import (
 
 type CreateProofsSuite struct {
 	suite.Suite
-	pristine []model.Hash
+	pristine []common.Hash
 }
 
 func TestCreateProofsSuite(t *testing.T) {
@@ -25,7 +24,7 @@ func TestCreateProofsSuite(t *testing.T) {
 
 func (s *CreateProofsSuite) SetupSuite() {
 	maxHeight := 4
-	s.pristine = make([]model.Hash, maxHeight)
+	s.pristine = make([]common.Hash, maxHeight)
 
 	for height := 1; height < maxHeight; height++ {
 		s.pristine[height] = crypto.Keccak256Hash(
@@ -48,7 +47,7 @@ func (s *CreateProofsSuite) TestZeroHeight() {
 	s.Run("one leaf", func() {
 		leaf := crypto.Keccak256Hash([]byte("Cartesi"))
 
-		root, siblings, err := CreateProofs([]model.Hash{leaf}, 0)
+		root, siblings, err := CreateProofs([]common.Hash{leaf}, 0)
 		s.Require().Nil(err)
 
 		s.Equal(leaf, root)
@@ -56,7 +55,7 @@ func (s *CreateProofsSuite) TestZeroHeight() {
 	})
 
 	s.Run("two leaves", func() {
-		leaves := make([]model.Hash, 2)
+		leaves := make([]common.Hash, 2)
 
 		_, _, err := CreateProofs(leaves, 0)
 		s.Require().NotNil(err)
@@ -79,7 +78,7 @@ func (s *CreateProofsSuite) TestHeightOne() {
 	})
 
 	s.Run("one leaf", func() {
-		leaves := []model.Hash{leaf1}
+		leaves := []common.Hash{leaf1}
 
 		root, siblings, err := CreateProofs(leaves, uint(height))
 		s.Require().Nil(err)
@@ -97,8 +96,8 @@ func (s *CreateProofsSuite) TestHeightOne() {
 	})
 
 	s.Run("two leaves", func() {
-		leaves := []model.Hash{leaf1, leaf2}
-		leavesCopy := make([]model.Hash, len(leaves))
+		leaves := []common.Hash{leaf1, leaf2}
+		leavesCopy := make([]common.Hash, len(leaves))
 		copy(leavesCopy, leaves)
 
 		root, siblings, err := CreateProofs(leavesCopy, uint(height))
@@ -120,7 +119,7 @@ func (s *CreateProofsSuite) TestHeightOne() {
 	})
 
 	s.Run("three leaves", func() {
-		leaves := make([]model.Hash, 3)
+		leaves := make([]common.Hash, 3)
 
 		_, _, err := CreateProofs(leaves, 1)
 		s.Require().NotNil(err)
@@ -146,7 +145,7 @@ func (s *CreateProofsSuite) TestHeightTwo() {
 	})
 
 	s.Run("one leaf", func() {
-		leaves := []model.Hash{leaf1}
+		leaves := []common.Hash{leaf1}
 
 		root, siblings, err := CreateProofs(leaves, uint(height))
 		s.Require().Nil(err)
@@ -167,8 +166,8 @@ func (s *CreateProofsSuite) TestHeightTwo() {
 	})
 
 	s.Run("two leaves", func() {
-		leaves := []model.Hash{leaf1, leaf2}
-		leavesCopy := make([]model.Hash, len(leaves))
+		leaves := []common.Hash{leaf1, leaf2}
+		leavesCopy := make([]common.Hash, len(leaves))
 		copy(leavesCopy, leaves)
 
 		root, siblings, err := CreateProofs(leavesCopy, uint(height))
@@ -195,8 +194,8 @@ func (s *CreateProofsSuite) TestHeightTwo() {
 	})
 
 	s.Run("three leaves", func() {
-		leaves := []model.Hash{leaf1, leaf2, leaf3}
-		leavesCopy := make([]model.Hash, len(leaves))
+		leaves := []common.Hash{leaf1, leaf2, leaf3}
+		leavesCopy := make([]common.Hash, len(leaves))
 		copy(leavesCopy, leaves)
 
 		root, siblings, err := CreateProofs(leavesCopy, uint(height))
@@ -225,8 +224,8 @@ func (s *CreateProofsSuite) TestHeightTwo() {
 	})
 
 	s.Run("four leaves", func() {
-		leaves := []model.Hash{leaf1, leaf2, leaf3, leaf4}
-		leavesCopy := make([]model.Hash, len(leaves))
+		leaves := []common.Hash{leaf1, leaf2, leaf3, leaf4}
+		leavesCopy := make([]common.Hash, len(leaves))
 		copy(leavesCopy, leaves)
 
 		root, siblings, err := CreateProofs(leavesCopy, uint(height))
@@ -257,7 +256,7 @@ func (s *CreateProofsSuite) TestHeightTwo() {
 	})
 
 	s.Run("five leaves", func() {
-		leaves := []model.Hash{leaf1, leaf2, leaf3, leaf4, leaf1}
+		leaves := []common.Hash{leaf1, leaf2, leaf3, leaf4, leaf1}
 
 		_, _, err := CreateProofs(leaves, uint(height))
 		s.Require().NotNil(err)
@@ -287,7 +286,7 @@ func (s *CreateProofsSuite) TestHeightThree() {
 	})
 
 	s.Run("one leaf", func() {
-		leaves := []model.Hash{leaf1}
+		leaves := []common.Hash{leaf1}
 
 		root, siblings, err := CreateProofs(leaves, uint(height))
 		s.Require().Nil(err)
@@ -313,8 +312,8 @@ func (s *CreateProofsSuite) TestHeightThree() {
 	})
 
 	s.Run("two leaves", func() {
-		leaves := []model.Hash{leaf1, leaf2}
-		leavesCopy := make([]model.Hash, len(leaves))
+		leaves := []common.Hash{leaf1, leaf2}
+		leavesCopy := make([]common.Hash, len(leaves))
 		copy(leavesCopy, leaves)
 
 		root, siblings, err := CreateProofs(leavesCopy, uint(height))
@@ -346,8 +345,8 @@ func (s *CreateProofsSuite) TestHeightThree() {
 	})
 
 	s.Run("three leaves", func() {
-		leaves := []model.Hash{leaf1, leaf2, leaf3}
-		leavesCopy := make([]model.Hash, len(leaves))
+		leaves := []common.Hash{leaf1, leaf2, leaf3}
+		leavesCopy := make([]common.Hash, len(leaves))
 		copy(leavesCopy, leaves)
 
 		root, siblings, err := CreateProofs(leavesCopy, uint(height))
@@ -382,8 +381,8 @@ func (s *CreateProofsSuite) TestHeightThree() {
 	})
 
 	s.Run("four leaves", func() {
-		leaves := []model.Hash{leaf1, leaf2, leaf3, leaf4}
-		leavesCopy := make([]model.Hash, len(leaves))
+		leaves := []common.Hash{leaf1, leaf2, leaf3, leaf4}
+		leavesCopy := make([]common.Hash, len(leaves))
 		copy(leavesCopy, leaves)
 
 		root, siblings, err := CreateProofs(leavesCopy, uint(height))
@@ -421,8 +420,8 @@ func (s *CreateProofsSuite) TestHeightThree() {
 	})
 
 	s.Run("five leaves", func() {
-		leaves := []model.Hash{leaf1, leaf2, leaf3, leaf4, leaf5}
-		leavesCopy := make([]model.Hash, len(leaves))
+		leaves := []common.Hash{leaf1, leaf2, leaf3, leaf4, leaf5}
+		leavesCopy := make([]common.Hash, len(leaves))
 		copy(leavesCopy, leaves)
 
 		root, siblings, err := CreateProofs(leavesCopy, uint(height))
@@ -496,8 +495,8 @@ func (s *CreateProofsSuite) TestHeightThree() {
 	})
 
 	s.Run("six leaves", func() {
-		leaves := []model.Hash{leaf1, leaf2, leaf3, leaf4, leaf5, leaf6}
-		leavesCopy := make([]model.Hash, len(leaves))
+		leaves := []common.Hash{leaf1, leaf2, leaf3, leaf4, leaf5, leaf6}
+		leavesCopy := make([]common.Hash, len(leaves))
 		copy(leavesCopy, leaves)
 
 		root, siblings, err := CreateProofs(leavesCopy, uint(height))
@@ -580,8 +579,8 @@ func (s *CreateProofsSuite) TestHeightThree() {
 	})
 
 	s.Run("seven leaves", func() {
-		leaves := []model.Hash{leaf1, leaf2, leaf3, leaf4, leaf5, leaf6, leaf7}
-		leavesCopy := make([]model.Hash, len(leaves))
+		leaves := []common.Hash{leaf1, leaf2, leaf3, leaf4, leaf5, leaf6, leaf7}
+		leavesCopy := make([]common.Hash, len(leaves))
 		copy(leavesCopy, leaves)
 
 		root, siblings, err := CreateProofs(leavesCopy, uint(height))
@@ -673,8 +672,8 @@ func (s *CreateProofsSuite) TestHeightThree() {
 	})
 
 	s.Run("eight leaves", func() {
-		leaves := []model.Hash{leaf1, leaf2, leaf3, leaf4, leaf5, leaf6, leaf7, leaf8}
-		leavesCopy := make([]model.Hash, len(leaves))
+		leaves := []common.Hash{leaf1, leaf2, leaf3, leaf4, leaf5, leaf6, leaf7, leaf8}
+		leavesCopy := make([]common.Hash, len(leaves))
 		copy(leavesCopy, leaves)
 
 		root, siblings, err := CreateProofs(leavesCopy, uint(height))
@@ -778,7 +777,7 @@ func (s *CreateProofsSuite) TestHeightThree() {
 // This test was taken from the libcmt suite as a method to compare
 // both implementations
 func (s *CreateProofsSuite) TestItMatchesMachineImplementation() {
-	leaves := []model.Hash{
+	leaves := []common.Hash{
 		crypto.Keccak256Hash([]byte("Cartesi")),
 		crypto.Keccak256Hash([]byte("Merkle")),
 		crypto.Keccak256Hash([]byte("Tree")),
@@ -800,7 +799,7 @@ func FuzzVerifyProofs(f *testing.F) {
 		leafCount = bound(leafCount, 1, 1<<height)
 		leafIdx = bound(leafIdx, 0, leafCount-1)
 		leaves := generateRandomLeaves(leafCount)
-		leavesCopy := make([]model.Hash, len(leaves))
+		leavesCopy := make([]common.Hash, len(leaves))
 		copy(leavesCopy, leaves)
 
 		root, siblings, err := CreateProofs(leavesCopy, height)
@@ -835,7 +834,7 @@ func FuzzVerifyProofs(f *testing.F) {
 
 // rootFromSiblings returns a Merkle root hash calculated by hashing a leaf with
 // its siblings. It panics if leafIdx is out of bounds.
-func rootFromSiblings(leaf model.Hash, leafIdx int, leafSiblings []common.Hash) model.Hash {
+func rootFromSiblings(leaf common.Hash, leafIdx int, leafSiblings []common.Hash) common.Hash {
 	root := leaf
 	height := len(leafSiblings)
 	for siblingIdx := uint(0); siblingIdx < uint(height); siblingIdx++ {
@@ -863,9 +862,9 @@ func bound(n, min, max uint) uint {
 
 // generateRandomLeaves generates random byte slices and hash them with
 // Keccak256 to return leafCount hashes.
-func generateRandomLeaves(leafCount uint) []model.Hash {
-	leaves := make([]model.Hash, leafCount)
-	leaf := model.Hash{}
+func generateRandomLeaves(leafCount uint) []common.Hash {
+	leaves := make([]common.Hash, leafCount)
+	leaf := common.Hash{}
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	for idx := uint(0); idx < leafCount; idx++ {

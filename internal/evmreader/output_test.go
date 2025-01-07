@@ -23,26 +23,32 @@ func (s *EvmReaderSuite) TestOutputExecution() {
 	s.evmReader.inputBoxDeploymentBlock = 0x10
 
 	// Prepare repository
-	s.repository.Unset("GetAllRunningApplications")
+	s.repository.Unset("ListApplications")
 	s.repository.On(
-		"GetAllRunningApplications",
+		"ListApplications",
 		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:      common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		mock.Anything,
+		mock.Anything,
+	).Return([]*Application{{
+		IApplicationAddress:  common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		IConsensusAddress:    common.HexToAddress("0xdeadbeef"),
+		EpochLength:          10,
 		LastOutputCheckBlock: 0x10,
 	}}, nil).Once()
 	s.repository.On(
-		"GetAllRunningApplications",
+		"ListApplications",
 		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:      common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		mock.Anything,
+		mock.Anything,
+	).Return([]*Application{{
+		IApplicationAddress:  common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
 		IConsensusAddress:    common.HexToAddress("0xdeadbeef"),
+		EpochLength:          10,
 		LastOutputCheckBlock: 0x11,
 	}}, nil).Once()
 
-	s.repository.Unset("UpdateOutputExecutionTransaction")
-	s.repository.On("UpdateOutputExecutionTransaction",
+	s.repository.Unset("UpdateOutputsExecution")
+	s.repository.On("UpdateOutputsExecution",
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
@@ -59,7 +65,7 @@ func (s *EvmReaderSuite) TestOutputExecution() {
 		s.Require().Equal(uint64(17), lastOutputCheck)
 
 	}).Return(nil)
-	s.repository.On("UpdateOutputExecutionTransaction",
+	s.repository.On("UpdateOutputsExecution",
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
@@ -119,7 +125,7 @@ func (s *EvmReaderSuite) TestOutputExecution() {
 
 	s.repository.AssertNumberOfCalls(
 		s.T(),
-		"UpdateOutputExecutionTransaction",
+		"UpdateOutputsExecution",
 		2,
 	)
 
@@ -164,13 +170,16 @@ func (s *EvmReaderSuite) TestReadOutputExecution() {
 	).Return(common.HexToAddress("0xdeadbeef"), nil)
 
 	// Prepare repository
-	s.repository.Unset("GetAllRunningApplications")
+	s.repository.Unset("ListApplications")
 	s.repository.On(
-		"GetAllRunningApplications",
+		"ListApplications",
 		mock.Anything,
-	).Return([]Application{{
-		ContractAddress:      appAddress,
+		mock.Anything,
+		mock.Anything,
+	).Return([]*Application{{
+		IApplicationAddress:  appAddress,
 		IConsensusAddress:    common.HexToAddress("0xdeadbeef"),
+		EpochLength:          10,
 		LastOutputCheckBlock: 0x10,
 	}}, nil).Once()
 
@@ -185,8 +194,8 @@ func (s *EvmReaderSuite) TestReadOutputExecution() {
 		mock.Anything,
 		mock.Anything).Return(output, nil)
 
-	s.repository.Unset("UpdateOutputExecutionTransaction")
-	s.repository.On("UpdateOutputExecutionTransaction",
+	s.repository.Unset("UpdateOutputsExecution")
+	s.repository.On("UpdateOutputsExecution",
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
@@ -199,7 +208,7 @@ func (s *EvmReaderSuite) TestReadOutputExecution() {
 		output := outputs[0]
 		s.Require().NotNil(output)
 		s.Require().Equal(uint64(1), output.Index)
-		s.Require().Equal(common.HexToHash("0xdeadbeef"), *output.TransactionHash)
+		s.Require().Equal(common.HexToHash("0xdeadbeef"), *output.ExecutionTransactionHash)
 
 	}).Return(nil)
 
@@ -239,7 +248,7 @@ func (s *EvmReaderSuite) TestReadOutputExecution() {
 
 	s.repository.AssertNumberOfCalls(
 		s.T(),
-		"UpdateOutputExecutionTransaction",
+		"UpdateOutputsExecution",
 		1,
 	)
 
@@ -274,7 +283,7 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 			inputSource:             inputBox,
 			repository:              repository,
 			inputBoxDeploymentBlock: 0x00,
-			defaultBlock:            DefaultBlockStatusLatest,
+			defaultBlock:            DefaultBlock_Latest,
 			contractFactory:         contractFactory,
 			hasEnabledApps:          true,
 		}
@@ -289,13 +298,16 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 		).Return(common.HexToAddress("0xdeadbeef"), nil)
 
 		// Prepare repository
-		repository.Unset("GetAllRunningApplications")
+		repository.Unset("ListApplications")
 		repository.On(
-			"GetAllRunningApplications",
+			"ListApplications",
 			mock.Anything,
-		).Return([]Application{{
-			ContractAddress:      appAddress,
+			mock.Anything,
+			mock.Anything,
+		).Return([]*Application{{
+			IApplicationAddress:  appAddress,
 			IConsensusAddress:    common.HexToAddress("0xdeadbeef"),
+			EpochLength:          10,
 			LastOutputCheckBlock: 0x10,
 		}}, nil).Once()
 
@@ -310,8 +322,8 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 			mock.Anything,
 			mock.Anything).Return(output, nil)
 
-		repository.Unset("UpdateOutputExecutionTransaction")
-		repository.On("UpdateOutputExecutionTransaction",
+		repository.Unset("UpdateOutputsExecution")
+		repository.On("UpdateOutputsExecution",
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,
@@ -354,7 +366,7 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 
 		//s.repository.AssertNumberOfCalls(
 		//	s.T(),
-		//	"UpdateOutputExecutionTransaction",
+		//	"UpdateOutputsExecution",
 		//	0,
 		//)
 
@@ -407,13 +419,16 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 		).Return(common.HexToAddress("0xdeadbeef"), nil)
 
 		// Prepare repository
-		repository.Unset("GetAllRunningApplications")
+		repository.Unset("ListApplications")
 		repository.On(
-			"GetAllRunningApplications",
+			"ListApplications",
 			mock.Anything,
-		).Return([]Application{{
-			ContractAddress:      appAddress,
+			mock.Anything,
+			mock.Anything,
+		).Return([]*Application{{
+			IApplicationAddress:  appAddress,
 			IConsensusAddress:    common.HexToAddress("0xdeadbeef"),
+			EpochLength:          10,
 			LastOutputCheckBlock: 0x10,
 		}}, nil).Once()
 
@@ -423,8 +438,8 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 			mock.Anything,
 			mock.Anything).Return(nil, errors.New("no output for you"))
 
-		repository.Unset("UpdateOutputExecutionTransaction")
-		repository.On("UpdateOutputExecutionTransaction",
+		repository.Unset("UpdateOutputsExecution")
+		repository.On("UpdateOutputsExecution",
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,
@@ -467,7 +482,7 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 
 		repository.AssertNumberOfCalls(
 			s.T(),
-			"UpdateOutputExecutionTransaction",
+			"UpdateOutputsExecution",
 			0,
 		)
 
@@ -520,13 +535,16 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 		).Return(common.HexToAddress("0xdeadbeef"), nil)
 
 		// Prepare repository
-		repository.Unset("GetAllRunningApplications")
+		repository.Unset("ListApplications")
 		repository.On(
-			"GetAllRunningApplications",
+			"ListApplications",
 			mock.Anything,
-		).Return([]Application{{
-			ContractAddress:      appAddress,
+			mock.Anything,
+			mock.Anything,
+		).Return([]*Application{{
+			IApplicationAddress:  appAddress,
 			IConsensusAddress:    common.HexToAddress("0xdeadbeef"),
+			EpochLength:          10,
 			LastOutputCheckBlock: 0x10,
 		}}, nil).Once()
 
@@ -541,8 +559,8 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 			mock.Anything,
 			mock.Anything).Return(output, nil)
 
-		repository.Unset("UpdateOutputExecutionTransaction")
-		repository.On("UpdateOutputExecutionTransaction",
+		repository.Unset("UpdateOutputsExecution")
+		repository.On("UpdateOutputsExecution",
 			mock.Anything,
 			mock.Anything,
 			mock.Anything,
@@ -585,7 +603,7 @@ func (s *EvmReaderSuite) TestCheckOutputFails() {
 
 		repository.AssertNumberOfCalls(
 			s.T(),
-			"UpdateOutputExecutionTransaction",
+			"UpdateOutputsExecution",
 			0,
 		)
 

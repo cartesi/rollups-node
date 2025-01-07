@@ -6,8 +6,6 @@ package rollupsmachine
 import (
 	"errors"
 	"fmt"
-
-	"github.com/cartesi/rollups-node/internal/model"
 )
 
 var (
@@ -25,5 +23,5 @@ var (
 	ErrNotAtManualYield = errors.New("not at manual yield")
 
 	// Advance
-	ErrHashLength = fmt.Errorf("hash does not have exactly %d bytes", model.HashLength)
+	ErrHashLength = fmt.Errorf("hash does not have the exactly number of bytes")
 )
