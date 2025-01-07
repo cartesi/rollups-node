@@ -96,12 +96,12 @@ func DeploySelfHostedApplication(
 func AddInput(
 	ctx context.Context,
 	client *ethclient.Client,
-	book *addresses.Book,
+	inputBoxAddress common.Address,
 	application common.Address,
 	signer Signer,
 	input []byte,
 ) (uint64, uint64, error) {
-	inputBox, err := iinputbox.NewIInputBox(book.InputBox, client)
+	inputBox, err := iinputbox.NewIInputBox(inputBoxAddress, client)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to connect to InputBox contract: %v", err)
 	}
@@ -114,18 +114,18 @@ func AddInput(
 	if err != nil {
 		return 0, 0, err
 	}
-	index, err := getInputIndex(book, inputBox, receipt)
+	index, err := getInputIndex(inputBoxAddress, inputBox, receipt)
 	return index, receipt.BlockNumber.Uint64(), nil
 }
 
 // Get input index in the transaction by looking at the event logs.
 func getInputIndex(
-	book *addresses.Book,
+	inputBoxAddress common.Address,
 	inputBox *iinputbox.IInputBox,
 	receipt *types.Receipt,
 ) (uint64, error) {
 	for _, log := range receipt.Logs {
-		if log.Address != book.InputBox {
+		if log.Address != inputBoxAddress {
 			continue
 		}
 		inputAdded, err := inputBox.ParseInputAdded(*log)

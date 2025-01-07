@@ -6,8 +6,10 @@ package evmreader
 import (
 	"cmp"
 	"context"
+	"strings"
 
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -15,7 +17,7 @@ import (
 
 func (r *Service) checkForClaimStatus(
 	ctx context.Context,
-	apps []application,
+	apps []appContracts,
 	mostRecentBlockNumber uint64,
 ) {
 
@@ -61,9 +63,14 @@ func (r *Service) checkForClaimStatus(
 	}
 }
 
+func getPreviousEpochsWithSubmittedClaims(ctx context.Context, er EvmReaderRepository, appAddress string, block uint64) ([]*Epoch, error) {
+	f := repository.EpochFilter{Status: Pointer(EpochStatus_ClaimSubmitted), BeforeBlock: Pointer(block)}
+	return er.ListEpochs(ctx, appAddress, f, repository.Pagination{})
+}
+
 func (r *Service) readAndUpdateClaims(
 	ctx context.Context,
-	apps []application,
+	apps []appContracts,
 	lastClaimCheck, mostRecentBlockNumber uint64,
 ) {
 
@@ -84,6 +91,7 @@ func (r *Service) readAndUpdateClaims(
 		// If there is a key on indexApps, there is at least one
 		// application in the referred application slice
 		consensusContract := apps[0].consensusContract
+		epochLength := apps[0].application.EpochLength
 
 		// Retrieve Claim Acceptance Events from blockchain
 		appClaimAcceptanceEventMap, err := r.readClaimsAcceptance(
@@ -101,16 +109,16 @@ func (r *Service) readAndUpdateClaims(
 		// Check events against Epochs
 	APP_LOOP:
 		for app, claimAcceptances := range appClaimAcceptanceEventMap {
-
+			appHexAddress := strings.ToLower(app.Hex())
 			for _, claimAcceptance := range claimAcceptances {
 
 				// Get Previous Epochs with submitted claims, If is there any,
 				// Application is in an invalid State.
-				previousEpochs, err := r.repository.GetPreviousEpochsWithOpenClaims(
-					ctx, app, claimAcceptance.LastProcessedBlockNumber.Uint64())
+				previousEpochs, err := getPreviousEpochsWithSubmittedClaims(
+					ctx, r.repository, appHexAddress, claimAcceptance.LastProcessedBlockNumber.Uint64())
 				if err != nil {
 					r.Logger.Error("Error retrieving previous submitted claims",
-						"app", app,
+						"address", app,
 						"block", claimAcceptance.LastProcessedBlockNumber.Uint64(),
 						"error", err)
 					continue APP_LOOP
@@ -124,13 +132,13 @@ func (r *Service) readAndUpdateClaims(
 
 				// Get the Epoch for the current Claim Acceptance Event
 				epoch, err := r.repository.GetEpoch(
-					ctx, calculateEpochIndex(
-						r.epochLengthCache[app],
+					ctx, app.Hex(), calculateEpochIndex(
+						epochLength,
 						claimAcceptance.LastProcessedBlockNumber.Uint64()),
-					app)
+				)
 				if err != nil {
 					r.Logger.Error("Error retrieving Epoch",
-						"app", app,
+						"address", app,
 						"block", claimAcceptance.LastProcessedBlockNumber.Uint64(),
 						"error", err)
 					continue APP_LOOP
@@ -138,44 +146,53 @@ func (r *Service) readAndUpdateClaims(
 
 				// Check Epoch
 				if epoch == nil {
-					r.Logger.Error(
-						"Found claim acceptance event for an unknown epoch. Application is in an invalid state", //nolint:lll
-						"app", app,
-						"claim last block", claimAcceptance.LastProcessedBlockNumber,
-						"hash", claimAcceptance.Claim)
+					if r.inputReaderEnabled {
+						r.Logger.Error(
+							"Found claim acceptance event for an unknown epoch. Application is in an invalid state", //nolint:lll
+							"address", app,
+							"claim last block", claimAcceptance.LastProcessedBlockNumber,
+							"hash", claimAcceptance.Claim)
+					} else {
+						r.Logger.Warn(
+							"Found claim acceptance event for an epoch that does not exist on the database",
+							"address", app,
+							"claim last block", claimAcceptance.LastProcessedBlockNumber,
+						)
+
+					}
 					continue APP_LOOP
 				}
 				if epoch.ClaimHash == nil {
 					r.Logger.Warn(
 						"Found claim acceptance event, but claim hasn't been calculated yet",
-						"app", app,
-						"lastBlock", claimAcceptance.LastProcessedBlockNumber,
+						"address", app,
+						"last_block", claimAcceptance.LastProcessedBlockNumber,
 					)
 					continue APP_LOOP
 				}
 				if claimAcceptance.Claim != *epoch.ClaimHash ||
 					claimAcceptance.LastProcessedBlockNumber.Uint64() != epoch.LastBlock {
 					r.Logger.Error("Accepted Claim does not match actual Claim. Application is in an invalid state", //nolint:lll
-						"app", app,
-						"lastBlock", epoch.LastBlock,
+						"address", app,
+						"last_block", epoch.LastBlock,
 						"hash", epoch.ClaimHash)
 
 					continue APP_LOOP
 				}
-				if epoch.Status == EpochStatusClaimAccepted {
+				if epoch.Status == EpochStatus_ClaimAccepted {
 					r.Logger.Debug("Claim already accepted. Skipping",
-						"app", app,
-						"block", claimAcceptance.LastProcessedBlockNumber.Uint64(),
+						"address", app,
+						"last_block", claimAcceptance.LastProcessedBlockNumber.Uint64(),
 						"claimStatus", epoch.Status,
 						"hash", epoch.ClaimHash)
 					continue
 				}
-				if epoch.Status != EpochStatusClaimSubmitted {
+				if epoch.Status != EpochStatus_ClaimSubmitted {
 					// this happens when running on latest. EvmReader can see the event before
 					// the claim is marked as submitted by the claimer.
 					r.Logger.Debug("Claim status is not submitted. Skipping for now",
-						"app", app,
-						"block", claimAcceptance.LastProcessedBlockNumber.Uint64(),
+						"address", app,
+						"last_block", claimAcceptance.LastProcessedBlockNumber.Uint64(),
 						"claimStatus", epoch.Status,
 						"hash", epoch.ClaimHash)
 					continue APP_LOOP
@@ -183,18 +200,18 @@ func (r *Service) readAndUpdateClaims(
 
 				// Update Epoch claim status
 				r.Logger.Info("Claim Accepted",
-					"app", app,
-					"lastBlock", epoch.LastBlock,
+					"address", app,
+					"epoch_index", epoch.Index,
+					"last_block", epoch.LastBlock,
 					"hash", epoch.ClaimHash,
-					"epoch_id", epoch.Id,
 					"last_claim_check_block", claimAcceptance.Raw.BlockNumber)
 
-				epoch.Status = EpochStatusClaimAccepted
+				epoch.Status = EpochStatus_ClaimAccepted
 				// Store epoch
-				err = r.repository.UpdateEpochs(
-					ctx, app, []*Epoch{epoch}, claimAcceptance.Raw.BlockNumber)
+				err = r.repository.UpdateEpochsClaimAccepted(
+					ctx, appHexAddress, []*Epoch{epoch}, claimAcceptance.Raw.BlockNumber)
 				if err != nil {
-					r.Logger.Error("Error storing claims", "app", app, "error", err)
+					r.Logger.Error("Error storing claims", "address", app, "error", err)
 					continue
 				}
 			}
@@ -232,14 +249,14 @@ func (r *Service) readClaimsAcceptance(
 
 // keyByLastClaimCheck is a LastClaimCheck key extractor function intended
 // to be used with `indexApps` function, see indexApps()
-func keyByLastClaimCheck(app application) uint64 {
-	return app.LastClaimCheckBlock
+func keyByLastClaimCheck(app appContracts) uint64 {
+	return app.application.LastClaimCheckBlock
 }
 
 // keyByIConsensus is a IConsensus address key extractor function intended
 // to be used with `indexApps` function, see indexApps()
-func keyByIConsensus(app application) Address {
-	return app.IConsensusAddress
+func keyByIConsensus(app appContracts) common.Address {
+	return app.application.IConsensusAddress
 }
 
 // sortByLastBlockNumber is a ClaimAcceptance's  by last block number sorting function.

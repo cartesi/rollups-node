@@ -6,7 +6,7 @@ package merkle
 import (
 	"fmt"
 
-	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -16,12 +16,12 @@ import (
 //
 // If the number of leaves exceeds the capacity for the given height,
 // an error is returned.
-func CreateProofs(leaves []model.Hash, height uint) (model.Hash, []model.Hash, error) {
-	pristineNode := model.Hash{}
+func CreateProofs(leaves []common.Hash, height uint) (common.Hash, []common.Hash, error) {
+	pristineNode := common.Hash{}
 
 	currentLevel := leaves
 	leafCount := uint(len(leaves))
-	siblings := make([]model.Hash, leafCount*height)
+	siblings := make([]common.Hash, leafCount*height)
 
 	// for each level in the tree, starting from the leaves
 	for levelIdx := uint(0); levelIdx < height; levelIdx++ {
@@ -47,7 +47,7 @@ func CreateProofs(leaves []model.Hash, height uint) (model.Hash, []model.Hash, e
 	// in the end, current level is the root level
 	if len(currentLevel) > 1 {
 		err := fmt.Errorf("too many leaves [%d] for height [%d]", leafCount, height)
-		return model.Hash{}, nil, err
+		return common.Hash{}, nil, err
 	}
 
 	return *at(currentLevel, 0, &pristineNode), siblings, nil
@@ -62,7 +62,7 @@ func CreateProofs(leaves []model.Hash, height uint) (model.Hash, []model.Hash, e
 // The parent nodes are stored in the first half of the original level slice.
 //
 // The function returns the parent level by re-slicing the original level slice.
-func parentLevel(level []model.Hash, pristineNode *model.Hash) []model.Hash {
+func parentLevel(level []common.Hash, pristineNode *common.Hash) []common.Hash {
 	// for each pair of nodes in level
 	for idx := 0; idx < len(level); idx += 2 {
 		leftChild := level[idx][:]
@@ -75,7 +75,7 @@ func parentLevel(level []model.Hash, pristineNode *model.Hash) []model.Hash {
 }
 
 // at returns a pointer to the item located at index or the default value.
-func at(array []model.Hash, index uint, defaultValue *model.Hash) *model.Hash {
+func at(array []common.Hash, index uint, defaultValue *common.Hash) *common.Hash {
 	if index < uint(len(array)) {
 		return &array[index]
 	} else {

@@ -69,6 +69,7 @@ env:
 	@echo export CGO_CFLAGS=\"$(CGO_CFLAGS)\"
 	@echo export CGO_LDFLAGS=\"$(CGO_LDFLAGS)\"
 	@echo export CARTESI_LOG_LEVEL="info"
+	@echo export CARTESI_EVM_READER_DEFAULT_BLOCK="latest"
 	@echo export CARTESI_BLOCKCHAIN_HTTP_ENDPOINT="http://localhost:8545"
 	@echo export CARTESI_BLOCKCHAIN_WS_ENDPOINT="ws://localhost:8545"
 	@echo export CARTESI_BLOCKCHAIN_ID="31337"
@@ -79,7 +80,7 @@ env:
 	@echo export CARTESI_TEST_POSTGRES_ENDPOINT="postgres://test_user:password@localhost:5432/test_rollupsdb?sslmode=disable"
 	@echo export CARTESI_TEST_MACHINE_IMAGES_PATH=\"$(CARTESI_TEST_MACHINE_IMAGES_PATH)\"
 	@echo export CARTESI_FEATURE_CLAIMER_SUBMISSION_ENABLED=true
-	@echo export PATH=$(CURDIR):$$PATH
+	@echo export PATH=\"$(CURDIR):$$PATH\"
 
 # =============================================================================
 # Artifacts
@@ -118,6 +119,12 @@ $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp:
 migrate: ## Run migration on development database
 	@echo "Running PostgreSQL migration"
 	@go run $(GO_BUILD_PARAMS) dev/migrate/main.go
+
+generate-db: ## Generate repository/db with Jet
+	@echo "Generating internal/repository/postgres/db with jet"
+	@rm -rf internal/repository/postgres/db
+	@go run github.com/go-jet/jet/v2/cmd/jet -dsn=$$CARTESI_POSTGRES_ENDPOINT -schema=public -path=./internal/repository/postgres/db
+	@rm -rf internal/repository/postgres/db/rollupsdb/public/model
 
 # =============================================================================
 # Clean
@@ -169,7 +176,7 @@ applications/echo-dapp: ## Create echo-dapp test application
 
 deploy-echo-dapp: applications/echo-dapp ## Deploy echo-dapp test application
 	@echo "Deploying echo-dapp test application"
-	@./cartesi-rollups-cli app deploy -t applications/echo-dapp/ -v
+	@./cartesi-rollups-cli app deploy -n echo-dapp -t applications/echo-dapp/ -v
 
 # =============================================================================
 # Static Analysis
@@ -210,7 +217,7 @@ image: ## Build the docker images using bake
 run-with-compose: ## Run the node with the anvil devnet
 	@docker compose up
 
-run-devnet: ## Run the anvil devnet docker container
+start-devnet: ## Run the anvil devnet docker container
 	@echo "Starting devnet"
 	@docker run --rm --name devnet -p 8545:8545 -d cartesi/rollups-node-devnet:$(IMAGE_TAG)
 	@$(MAKE) copy-devnet-files
@@ -220,28 +227,11 @@ copy-devnet-files deployment.json: ## Copy the devnet files to the host
 	@docker cp devnet:/usr/share/devnet/deployment.json deployment.json
 	@docker cp devnet:/usr/share/devnet/anvil_state.json anvil_state.json
 
-run-postgres: ## Run the PostgreSQL 16 docker container
+start-postgres: ## Run the PostgreSQL 16 docker container
 	@echo "Starting portgres"
 	@docker run --rm --name postgres -p 5432:5432 -d -e POSTGRES_PASSWORD=password -e POSTGRES_DB=rollupsdb -v $(CURDIR)/test/postgres/init-test-db.sh:/docker-entrypoint-initdb.d/init-test-db.sh postgres:16-alpine
 
-run-postgraphile: ## Run the GraphQL server docker container
-	@docker run --rm --name postgraphile -p 10004:10004 -d --init \
-		graphile/postgraphile:4.14.0 \
-		--retry-on-init-fail \
-		--dynamic-json \
-		--no-setof-functions-contain-nulls \
-		--no-ignore-rbac \
-		--enable-query-batching \
-		--enhance-graphiql \
-		--extended-errors errcode \
-		--legacy-relations omit \
-		--connection "postgres://postgres:password@host.docker.internal:5432/rollupsdb?sslmode=disable" \
-		--schema graphql \
-		--host "0.0.0.0" \
-		--port 10004
-#		--append-plugins @graphile-contrib/pg-simplify-inflector \
-
-start: run-postgres run-devnet ## Start the anvil devnet and PostgreSQL 16 docker containers
+start: start-postgres start-devnet ## Start the anvil devnet and PostgreSQL 16 docker containers
 	@$(MAKE) migrate
 
 stop-devnet: ## Stop the anvil devnet docker container

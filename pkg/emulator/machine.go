@@ -135,6 +135,9 @@ func (machine *Machine) ReadMemory(address, length uint64) ([]byte, error) {
 
 func (machine *Machine) WriteMemory(address uint64, data []byte) error {
 	var msg *C.char
+	if len(data) == 0 {
+		return nil
+	}
 	code := C.cm_write_memory(machine.c,
 		C.uint64_t(address),
 		(*C.uchar)(unsafe.Pointer(&data[0])),

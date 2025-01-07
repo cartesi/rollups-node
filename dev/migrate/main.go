@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/repository/schema"
+	"github.com/cartesi/rollups-node/internal/repository/postgres/schema"
 )
 
 func main() {

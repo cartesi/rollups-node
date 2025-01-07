@@ -4,23 +4,26 @@
 package common
 
 import (
-	"log/slog"
+	"github.com/spf13/cobra"
 
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/spf13/cobra"
+	"github.com/cartesi/rollups-node/internal/repository/factory"
 )
 
 var (
-	PostgresEndpoint   string
-	ApplicationAddress string
-	Database           *repository.Database
+	PostgresEndpoint string
+	Repository       repository.Repository
 )
 
-func Setup(cmd *cobra.Command, args []string) {
+func PersistentPreRun(cmd *cobra.Command, args []string) error {
 
 	ctx := cmd.Context()
 
 	var err error
-	Database, err = repository.Connect(ctx, PostgresEndpoint, slog.Default())
-	cobra.CheckErr(err)
+	Repository, err = factory.NewRepositoryFromConnectionString(ctx, PostgresEndpoint)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

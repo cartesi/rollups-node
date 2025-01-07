@@ -9,13 +9,14 @@ import (
 	"os"
 	"testing"
 
+	"github.com/cartesi/rollups-node/internal/model"
+	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/service"
-	"github.com/lmittmann/tint"
 
 	"github.com/ethereum/go-ethereum/common"
-	. "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/lmittmann/tint"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -27,45 +28,45 @@ type serviceMock struct {
 }
 
 func (m *serviceMock) selectClaimPairsPerApp() (
-	map[address]claimRow,
-	map[address]claimRow,
+	map[common.Address]*ClaimRow,
+	map[common.Address]*ClaimRow,
 	error,
 ) {
 	args := m.Called()
-	return args.Get(0).(map[address]claimRow),
-		args.Get(1).(map[address]claimRow),
+	return args.Get(0).(map[common.Address]*ClaimRow),
+		args.Get(1).(map[common.Address]*ClaimRow),
 		args.Error(2)
 }
 func (m *serviceMock) updateEpochWithSubmittedClaim(
-	claim *claimRow,
-	txHash Hash,
+	claim *ClaimRow,
+	txHash common.Hash,
 ) error {
 	args := m.Called(claim, txHash)
 	return args.Error(0)
 }
 
 func (m *serviceMock) findClaimSubmissionEventAndSucc(
-	claim *claimRow,
+	claim *ClaimRow,
 ) (
 	*iconsensus.IConsensus,
-	*claimSubmissionEvent,
-	*claimSubmissionEvent,
+	*iconsensus.IConsensusClaimSubmission,
+	*iconsensus.IConsensusClaimSubmission,
 	error,
 ) {
 	args := m.Called(claim)
 	return args.Get(0).(*iconsensus.IConsensus),
-		args.Get(1).(*claimSubmissionEvent),
-		args.Get(2).(*claimSubmissionEvent),
+		args.Get(1).(*iconsensus.IConsensusClaimSubmission),
+		args.Get(2).(*iconsensus.IConsensusClaimSubmission),
 		args.Error(3)
 }
 func (m *serviceMock) submitClaimToBlockchain(
 	instance *iconsensus.IConsensus,
-	claim *claimRow,
-) (Hash, error) {
+	claim *ClaimRow,
+) (common.Hash, error) {
 	args := m.Called(nil, claim)
-	return args.Get(0).(Hash), args.Error(1)
+	return args.Get(0).(common.Hash), args.Error(1)
 }
-func (m *serviceMock) pollTransaction(txHash Hash) (bool, *types.Receipt, error) {
+func (m *serviceMock) pollTransaction(txHash common.Hash) (bool, *types.Receipt, error) {
 	args := m.Called(txHash)
 	return args.Bool(0),
 		args.Get(1).(*types.Receipt),
@@ -87,7 +88,7 @@ func newServiceMock() *serviceMock {
 				Logger: slog.New(handler),
 			},
 			submissionEnabled: true,
-			claimsInFlight:    map[address]hash{},
+			claimsInFlight:    map[common.Address]common.Hash{},
 		},
 	}
 }
@@ -97,8 +98,8 @@ func newServiceMock() *serviceMock {
 // //////////////////////////////////////////////////////////////////////////////
 func TestDoNothing(t *testing.T) {
 	m := newServiceMock()
-	prevClaims := map[address]claimRow{}
-	currClaims := map[address]claimRow{}
+	prevClaims := map[common.Address]*ClaimRow{}
+	currClaims := map[common.Address]*ClaimRow{}
 
 	m.On("selectClaimPairsPerApp").
 		Return(prevClaims, currClaims, nil)
@@ -111,19 +112,23 @@ func TestSubmitFirstClaim(t *testing.T) {
 	m := newServiceMock()
 	appContractAddress := common.HexToAddress("0x01")
 	claimTransactionHash := common.HexToHash("0x10")
-	currClaim := claimRow{
-		AppContractAddress:   appContractAddress,
-		AppIConsensusAddress: appContractAddress,
-		EpochIndex:           3,
-		EpochFirstBlock:      30,
-		EpochLastBlock:       39,
+	claimHash := common.HexToHash("0x100")
+	currClaim := ClaimRow{
+		IApplicationAddress: appContractAddress,
+		IConsensusAddress:   appContractAddress,
+		Epoch: Epoch{
+			Index:      3,
+			FirstBlock: 30,
+			LastBlock:  39,
+			ClaimHash:  &claimHash,
+		},
 	}
 
-	var prevEvent *claimSubmissionEvent = nil
-	var currEvent *claimSubmissionEvent = nil
-	prevClaims := map[address]claimRow{}
-	currClaims := map[address]claimRow{
-		appContractAddress: currClaim,
+	var prevEvent *iconsensus.IConsensusClaimSubmission = nil
+	var currEvent *iconsensus.IConsensusClaimSubmission = nil
+	prevClaims := map[common.Address]*ClaimRow{}
+	currClaims := map[common.Address]*ClaimRow{
+		appContractAddress: &currClaim,
 	}
 
 	m.On("selectClaimPairsPerApp").
@@ -147,31 +152,41 @@ func TestSubmitClaimWithAntecessor(t *testing.T) {
 	m := newServiceMock()
 	appContractAddress := common.HexToAddress("0x01")
 	claimTransactionHash := common.HexToHash("0x10")
-	prevClaim := claimRow{
-		AppContractAddress:   appContractAddress,
-		AppIConsensusAddress: appContractAddress,
-		EpochIndex:           1,
-		EpochFirstBlock:      10,
-		EpochLastBlock:       19,
+	claimHash := common.HexToHash("0x100")
+	prevClaimHash := common.HexToHash("0x101")
+	prevClaim := ClaimRow{
+		IApplicationAddress: appContractAddress,
+		IConsensusAddress:   appContractAddress,
+		Epoch: Epoch{
+			Index:      1,
+			FirstBlock: 10,
+			LastBlock:  19,
+			ClaimHash:  &prevClaimHash,
+			Status:     model.EpochStatus_ClaimAccepted,
+		},
 	}
-	currClaim := claimRow{
-		AppContractAddress:   appContractAddress,
-		AppIConsensusAddress: appContractAddress,
-		EpochIndex:           3,
-		EpochFirstBlock:      30,
-		EpochLastBlock:       39,
+	currClaim := ClaimRow{
+		IApplicationAddress: appContractAddress,
+		IConsensusAddress:   appContractAddress,
+		Epoch: Epoch{
+			Index:      3,
+			FirstBlock: 30,
+			LastBlock:  39,
+			ClaimHash:  &claimHash,
+		},
 	}
 
-	prevClaims := map[address]claimRow{
-		appContractAddress: prevClaim,
+	prevClaims := map[common.Address]*ClaimRow{
+		appContractAddress: &prevClaim,
 	}
-	var currEvent *claimSubmissionEvent = nil
-	prevEvent := &claimSubmissionEvent{
-		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.EpochLastBlock),
+	var currEvent *iconsensus.IConsensusClaimSubmission = nil
+	prevEvent := &iconsensus.IConsensusClaimSubmission{
+		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.LastBlock),
 		AppContract:              appContractAddress,
+		Claim:                    *prevClaim.ClaimHash,
 	}
-	currClaims := map[address]claimRow{
-		appContractAddress: currClaim,
+	currClaims := map[common.Address]*ClaimRow{
+		appContractAddress: &currClaim,
 	}
 
 	m.On("selectClaimPairsPerApp").
@@ -196,19 +211,23 @@ func TestSkipSubmitFirstClaim(t *testing.T) {
 	m.submissionEnabled = false
 	appContractAddress := common.HexToAddress("0x01")
 	claimTransactionHash := common.HexToHash("0x10")
-	currClaim := claimRow{
-		AppContractAddress:   appContractAddress,
-		AppIConsensusAddress: appContractAddress,
-		EpochIndex:           3,
-		EpochFirstBlock:      30,
-		EpochLastBlock:       39,
+	claimHash := common.HexToHash("0x100")
+	currClaim := ClaimRow{
+		IApplicationAddress: appContractAddress,
+		IConsensusAddress:   appContractAddress,
+		Epoch: Epoch{
+			Index:      3,
+			FirstBlock: 30,
+			LastBlock:  39,
+			ClaimHash:  &claimHash,
+		},
 	}
 
-	var prevEvent *claimSubmissionEvent = nil
-	var currEvent *claimSubmissionEvent = nil
-	prevClaims := map[address]claimRow{}
-	currClaims := map[address]claimRow{
-		appContractAddress: currClaim,
+	var prevEvent *iconsensus.IConsensusClaimSubmission = nil
+	var currEvent *iconsensus.IConsensusClaimSubmission = nil
+	prevClaims := map[common.Address]*ClaimRow{}
+	currClaims := map[common.Address]*ClaimRow{
+		appContractAddress: &currClaim,
 	}
 
 	m.On("selectClaimPairsPerApp").
@@ -233,31 +252,40 @@ func TestSkipSubmitClaimWithAntecessor(t *testing.T) {
 	m.submissionEnabled = false
 	appContractAddress := common.HexToAddress("0x01")
 	claimTransactionHash := common.HexToHash("0x10")
-	prevClaim := claimRow{
-		AppContractAddress:   appContractAddress,
-		AppIConsensusAddress: appContractAddress,
-		EpochIndex:           1,
-		EpochFirstBlock:      10,
-		EpochLastBlock:       19,
+	claimHash := common.HexToHash("0x100")
+	prevClaimHash := common.HexToHash("0x101")
+	prevClaim := ClaimRow{
+		IApplicationAddress: appContractAddress,
+		IConsensusAddress:   appContractAddress,
+		Epoch: Epoch{
+			Index:      1,
+			FirstBlock: 10,
+			LastBlock:  19,
+			ClaimHash:  &prevClaimHash,
+		},
 	}
-	currClaim := claimRow{
-		AppContractAddress:   appContractAddress,
-		AppIConsensusAddress: appContractAddress,
-		EpochIndex:           3,
-		EpochFirstBlock:      30,
-		EpochLastBlock:       39,
+	currClaim := ClaimRow{
+		IApplicationAddress: appContractAddress,
+		IConsensusAddress:   appContractAddress,
+		Epoch: Epoch{
+			Index:      3,
+			FirstBlock: 30,
+			LastBlock:  39,
+			ClaimHash:  &claimHash,
+		},
 	}
 
-	prevClaims := map[address]claimRow{
-		appContractAddress: prevClaim,
+	prevClaims := map[common.Address]*ClaimRow{
+		appContractAddress: &prevClaim,
 	}
-	var currEvent *claimSubmissionEvent = nil
-	prevEvent := &claimSubmissionEvent{
-		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.EpochLastBlock),
+	var currEvent *iconsensus.IConsensusClaimSubmission = nil
+	prevEvent := &iconsensus.IConsensusClaimSubmission{
+		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.LastBlock),
 		AppContract:              appContractAddress,
+		Claim:                    *prevClaim.ClaimHash,
 	}
-	currClaims := map[address]claimRow{
-		appContractAddress: currClaim,
+	currClaims := map[common.Address]*ClaimRow{
+		appContractAddress: &currClaim,
 	}
 
 	m.On("selectClaimPairsPerApp").
@@ -281,17 +309,21 @@ func TestInFlightCompleted(t *testing.T) {
 	m := newServiceMock()
 	appContractAddress := common.HexToAddress("0x01")
 	reqHash := common.HexToHash("0x10")
-	txHash := common.HexToHash("0x100")
-	currClaim := claimRow{
-		AppContractAddress:   appContractAddress,
-		AppIConsensusAddress: appContractAddress,
-		EpochIndex:           1,
-		EpochFirstBlock:      10,
-		EpochLastBlock:       19,
+	claimHash := common.HexToHash("0x100")
+	txHash := common.HexToHash("0x1000")
+	currClaim := ClaimRow{
+		IApplicationAddress: appContractAddress,
+		IConsensusAddress:   appContractAddress,
+		Epoch: Epoch{
+			Index:      1,
+			FirstBlock: 10,
+			LastBlock:  19,
+			ClaimHash:  &claimHash,
+		},
 	}
-	prevClaims := map[address]claimRow{}
-	currClaims := map[address]claimRow{
-		appContractAddress: currClaim,
+	prevClaims := map[common.Address]*ClaimRow{}
+	currClaims := map[common.Address]*ClaimRow{
+		appContractAddress: &currClaim,
 	}
 	m.claimsInFlight[appContractAddress] = reqHash
 
@@ -318,22 +350,27 @@ func TestInFlightCompleted(t *testing.T) {
 func TestUpdateFirstClaim(t *testing.T) {
 	m := newServiceMock()
 	appContractAddress := common.HexToAddress("0x01")
-	currClaim := claimRow{
-		AppContractAddress:   appContractAddress,
-		AppIConsensusAddress: appContractAddress,
-		EpochIndex:           3,
-		EpochFirstBlock:      30,
-		EpochLastBlock:       39,
+	claimHash := common.HexToHash("0x100")
+	currClaim := ClaimRow{
+		IApplicationAddress: appContractAddress,
+		IConsensusAddress:   appContractAddress,
+		Epoch: Epoch{
+			Index:      3,
+			FirstBlock: 30,
+			LastBlock:  39,
+			ClaimHash:  &claimHash,
+		},
 	}
 
-	var nilEvent *claimSubmissionEvent = nil
-	currEvent := claimSubmissionEvent{
+	var nilEvent *iconsensus.IConsensusClaimSubmission = nil
+	currEvent := iconsensus.IConsensusClaimSubmission{
 		AppContract:              appContractAddress,
-		LastProcessedBlockNumber: new(big.Int).SetUint64(currClaim.EpochLastBlock),
+		LastProcessedBlockNumber: new(big.Int).SetUint64(currClaim.LastBlock),
+		Claim:                    *currClaim.ClaimHash,
 	}
-	prevClaims := map[address]claimRow{}
-	currClaims := map[address]claimRow{
-		appContractAddress: currClaim,
+	prevClaims := map[common.Address]*ClaimRow{}
+	currClaims := map[common.Address]*ClaimRow{
+		appContractAddress: &currClaim,
 	}
 	m.On("selectClaimPairsPerApp").
 		Return(prevClaims, currClaims, nil)
@@ -355,34 +392,44 @@ func TestUpdateFirstClaim(t *testing.T) {
 func TestUpdateClaimWithAntecessor(t *testing.T) {
 	m := newServiceMock()
 	appContractAddress := common.HexToAddress("0x01")
-	prevClaim := claimRow{
-		AppContractAddress:   appContractAddress,
-		AppIConsensusAddress: appContractAddress,
-		EpochIndex:           1,
-		EpochFirstBlock:      10,
-		EpochLastBlock:       19,
+	claimHash := common.HexToHash("0x100")
+	prevClaimHash := common.HexToHash("0x101")
+	prevClaim := ClaimRow{
+		IApplicationAddress: appContractAddress,
+		IConsensusAddress:   appContractAddress,
+		Epoch: Epoch{
+			Index:      1,
+			FirstBlock: 10,
+			LastBlock:  19,
+			ClaimHash:  &prevClaimHash,
+		},
 	}
-	currClaim := claimRow{
-		AppContractAddress:   appContractAddress,
-		AppIConsensusAddress: appContractAddress,
-		EpochIndex:           3,
-		EpochFirstBlock:      30,
-		EpochLastBlock:       39,
+	currClaim := ClaimRow{
+		IApplicationAddress: appContractAddress,
+		IConsensusAddress:   appContractAddress,
+		Epoch: Epoch{
+			Index:      3,
+			FirstBlock: 30,
+			LastBlock:  39,
+			ClaimHash:  &claimHash,
+		},
 	}
 
-	prevEvent := claimSubmissionEvent{
+	prevEvent := iconsensus.IConsensusClaimSubmission{
 		AppContract:              appContractAddress,
-		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.EpochLastBlock),
+		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.LastBlock),
+		Claim:                    *prevClaim.ClaimHash,
 	}
-	currEvent := claimSubmissionEvent{
+	currEvent := iconsensus.IConsensusClaimSubmission{
 		AppContract:              appContractAddress,
-		LastProcessedBlockNumber: new(big.Int).SetUint64(currClaim.EpochLastBlock),
+		LastProcessedBlockNumber: new(big.Int).SetUint64(currClaim.LastBlock),
+		Claim:                    *currClaim.ClaimHash,
 	}
-	prevClaims := map[address]claimRow{
-		appContractAddress: prevClaim,
+	prevClaims := map[common.Address]*ClaimRow{
+		appContractAddress: &prevClaim,
 	}
-	currClaims := map[address]claimRow{
-		appContractAddress: currClaim,
+	currClaims := map[common.Address]*ClaimRow{
+		appContractAddress: &currClaim,
 	}
 	m.On("selectClaimPairsPerApp").
 		Return(prevClaims, currClaims, nil)
@@ -410,31 +457,40 @@ func TestSubmitClaimWithAntecessorMismatch(t *testing.T) {
 	m := newServiceMock()
 	appContractAddress := common.HexToAddress("0x01")
 	claimTransactionHash := common.HexToHash("0x10")
-	prevClaim := claimRow{
-		AppContractAddress:   appContractAddress,
-		AppIConsensusAddress: appContractAddress,
-		EpochIndex:           1,
-		EpochFirstBlock:      10,
-		EpochLastBlock:       19,
+	claimHash := common.HexToHash("0x100")
+	prevClaimHash := common.HexToHash("0x101")
+	prevClaim := ClaimRow{
+		IApplicationAddress: appContractAddress,
+		IConsensusAddress:   appContractAddress,
+		Epoch: Epoch{
+			Index:      1,
+			FirstBlock: 10,
+			LastBlock:  19,
+			ClaimHash:  &prevClaimHash,
+		},
 	}
-	currClaim := claimRow{
-		AppContractAddress:   appContractAddress,
-		AppIConsensusAddress: appContractAddress,
-		EpochIndex:           3,
-		EpochFirstBlock:      30,
-		EpochLastBlock:       39,
+	currClaim := ClaimRow{
+		IApplicationAddress: appContractAddress,
+		IConsensusAddress:   appContractAddress,
+		Epoch: Epoch{
+			Index:      3,
+			FirstBlock: 30,
+			LastBlock:  39,
+			ClaimHash:  &claimHash,
+		},
 	}
 
-	prevClaims := map[address]claimRow{
-		appContractAddress: prevClaim,
+	prevClaims := map[common.Address]*ClaimRow{
+		appContractAddress: &prevClaim,
 	}
-	var currEvent *claimSubmissionEvent = nil
-	prevEvent := &claimSubmissionEvent{
-		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.EpochLastBlock + 1),
+	var currEvent *iconsensus.IConsensusClaimSubmission = nil
+	prevEvent := &iconsensus.IConsensusClaimSubmission{
+		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.LastBlock + 1),
 		AppContract:              appContractAddress,
+		Claim:                    *prevClaim.ClaimHash,
 	}
-	currClaims := map[address]claimRow{
-		appContractAddress: currClaim,
+	currClaims := map[common.Address]*ClaimRow{
+		appContractAddress: &currClaim,
 	}
 
 	m.On("selectClaimPairsPerApp").
@@ -453,34 +509,44 @@ func TestSubmitClaimWithAntecessorMismatch(t *testing.T) {
 func TestSubmitClaimWithEventMismatch(t *testing.T) {
 	m := newServiceMock()
 	appContractAddress := common.HexToAddress("0x01")
-	prevClaim := claimRow{
-		AppContractAddress:   appContractAddress,
-		AppIConsensusAddress: appContractAddress,
-		EpochIndex:           1,
-		EpochFirstBlock:      10,
-		EpochLastBlock:       19,
+	claimHash := common.HexToHash("0x100")
+	prevClaimHash := common.HexToHash("0x101")
+	prevClaim := ClaimRow{
+		IApplicationAddress: appContractAddress,
+		IConsensusAddress:   appContractAddress,
+		Epoch: Epoch{
+			Index:      1,
+			FirstBlock: 10,
+			LastBlock:  19,
+			ClaimHash:  &prevClaimHash,
+		},
 	}
-	currClaim := claimRow{
-		AppContractAddress:   appContractAddress,
-		AppIConsensusAddress: appContractAddress,
-		EpochIndex:           3,
-		EpochFirstBlock:      30,
-		EpochLastBlock:       39,
+	currClaim := ClaimRow{
+		IApplicationAddress: appContractAddress,
+		IConsensusAddress:   appContractAddress,
+		Epoch: Epoch{
+			Index:      3,
+			FirstBlock: 30,
+			LastBlock:  39,
+			ClaimHash:  &claimHash,
+		},
 	}
 
-	prevEvent := claimSubmissionEvent{
+	prevEvent := iconsensus.IConsensusClaimSubmission{
 		AppContract:              appContractAddress,
-		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.EpochLastBlock),
+		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.LastBlock),
+		Claim:                    *prevClaim.ClaimHash,
 	}
-	currEvent := claimSubmissionEvent{
+	currEvent := iconsensus.IConsensusClaimSubmission{
 		AppContract:              appContractAddress,
-		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.EpochLastBlock + 1),
+		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.LastBlock + 1),
+		Claim:                    *currClaim.ClaimHash,
 	}
-	prevClaims := map[address]claimRow{
-		appContractAddress: prevClaim,
+	prevClaims := map[common.Address]*ClaimRow{
+		appContractAddress: &prevClaim,
 	}
-	currClaims := map[address]claimRow{
-		appContractAddress: currClaim,
+	currClaims := map[common.Address]*ClaimRow{
+		appContractAddress: &currClaim,
 	}
 	m.On("selectClaimPairsPerApp").
 		Return(prevClaims, currClaims, nil)
@@ -499,31 +565,40 @@ func TestSubmitClaimWithAntecessorOutOfOrder(t *testing.T) {
 	m := newServiceMock()
 	appContractAddress := common.HexToAddress("0x01")
 	claimTransactionHash := common.HexToHash("0x10")
-	prevClaim := claimRow{
-		AppContractAddress:   appContractAddress,
-		AppIConsensusAddress: appContractAddress,
-		EpochIndex:           2,
-		EpochFirstBlock:      20,
-		EpochLastBlock:       29,
+	claimHash := common.HexToHash("0x100")
+	prevClaimHash := common.HexToHash("0x101")
+	prevClaim := ClaimRow{
+		IApplicationAddress: appContractAddress,
+		IConsensusAddress:   appContractAddress,
+		Epoch: Epoch{
+			Index:      2,
+			FirstBlock: 20,
+			LastBlock:  29,
+			ClaimHash:  &prevClaimHash,
+		},
 	}
-	currClaim := claimRow{
-		AppContractAddress:   appContractAddress,
-		AppIConsensusAddress: appContractAddress,
-		EpochIndex:           1,
-		EpochFirstBlock:      10,
-		EpochLastBlock:       19,
+	currClaim := ClaimRow{
+		IApplicationAddress: appContractAddress,
+		IConsensusAddress:   appContractAddress,
+		Epoch: Epoch{
+			Index:      1,
+			FirstBlock: 10,
+			LastBlock:  19,
+			ClaimHash:  &claimHash,
+		},
 	}
 
-	prevClaims := map[address]claimRow{
-		appContractAddress: prevClaim,
+	prevClaims := map[common.Address]*ClaimRow{
+		appContractAddress: &prevClaim,
 	}
-	var currEvent *claimSubmissionEvent = nil
-	prevEvent := &claimSubmissionEvent{
-		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.EpochLastBlock + 1),
+	var currEvent *iconsensus.IConsensusClaimSubmission = nil
+	prevEvent := &iconsensus.IConsensusClaimSubmission{
+		LastProcessedBlockNumber: new(big.Int).SetUint64(prevClaim.LastBlock + 1),
 		AppContract:              appContractAddress,
+		Claim:                    *prevClaim.ClaimHash,
 	}
-	currClaims := map[address]claimRow{
-		appContractAddress: currClaim,
+	currClaims := map[common.Address]*ClaimRow{
+		appContractAddress: &currClaim,
 	}
 
 	m.On("selectClaimPairsPerApp").

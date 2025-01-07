@@ -4,13 +4,13 @@
 package root
 
 import (
+	"strings"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/service"
-	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/spf13/cobra"
 )
@@ -28,13 +28,15 @@ var (
 			TelemetryAddress:     ":10001",
 			Impl:                 &readerService,
 		},
-		EvmReaderPersistentConfig: model.EvmReaderPersistentConfig{
-			DefaultBlock: model.DefaultBlockStatusSafe,
+		NodeConfig: model.NodeConfig[model.NodeConfigValue]{
+			Value: model.NodeConfigValue{
+				DefaultBlock: model.DefaultBlock_Finalized,
+			},
 		},
 		MaxStartupTime: 10 * time.Second,
 	}
 	inputBoxAddress    service.EthAddress
-	DefaultBlockString = "safe"
+	DefaultBlockString = "finalized"
 )
 
 var Cmd = &cobra.Command{
@@ -77,7 +79,7 @@ func init() {
 	Cmd.Flags().Var(&inputBoxAddress,
 		"inputbox-address",
 		"Input Box contract address")
-	Cmd.Flags().Uint64VarP(&createInfo.InputBoxDeploymentBlock,
+	Cmd.Flags().Uint64VarP(&createInfo.Value.InputBoxDeploymentBlock,
 		"inputbox-block-number", "n", 0,
 		"Input Box deployment block number")
 	Cmd.Flags().DurationVar(&createInfo.MaxStartupTime,
@@ -88,11 +90,11 @@ func init() {
 func run(cmd *cobra.Command, args []string) {
 	if cmd.Flags().Changed("default-block") {
 		var err error
-		createInfo.DefaultBlock, err = config.ToDefaultBlockFromString(DefaultBlockString)
+		createInfo.Value.DefaultBlock, err = config.ToDefaultBlockFromString(DefaultBlockString)
 		cobra.CheckErr(err)
 	}
 	if cmd.Flags().Changed("inputbox-address") {
-		createInfo.InputBoxAddress = common.Address(inputBoxAddress)
+		createInfo.Value.InputBoxAddress = strings.ToLower(inputBoxAddress.String())
 	}
 
 	cobra.CheckErr(evmreader.Create(&createInfo, &readerService))
