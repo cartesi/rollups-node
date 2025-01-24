@@ -115,7 +115,7 @@ type ClaimerRepository interface {
 		map[common.Address]*ClaimRow,
 		error,
 	)
-	SelectClaimPairsPerApp(ctx context.Context) (
+	SelectClaimSubmissionCandidatePairsPerApp(ctx context.Context) (
 		map[common.Address]*ClaimRow,
 		map[common.Address]*ClaimRow,
 		error,

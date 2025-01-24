@@ -71,6 +71,7 @@ type CreateInfo struct {
 	Repository             repository.Repository
 	EnableSubmission       bool
 	MaxStartupTime         time.Duration
+	DefaultBlock           config.DefaultBlock
 }
 
 type Service struct {
@@ -81,6 +82,7 @@ type Service struct {
 	EthConn           *ethclient.Client
 	TxOpts            *bind.TransactOpts
 	claimsInFlight    map[common.Address]common.Hash // -> txHash
+	endBlock          int64
 }
 
 func (c *CreateInfo) LoadEnv() {
@@ -94,6 +96,7 @@ func (c *CreateInfo) LoadEnv() {
 	c.MaxStartupTime = config.GetMaxStartupTime()
 	c.LogLevel = service.LogLevel(config.GetLogLevel())
 	c.LogPretty = config.GetLogPrettyEnabled()
+	c.DefaultBlock = config.GetEvmReaderDefaultBlock()
 }
 
 func Create(c *CreateInfo, s *Service) error {
@@ -134,6 +137,7 @@ func Create(c *CreateInfo, s *Service) error {
 				return err
 			}
 		}
+		s.endBlock, err = GetDefaultBlockValue(c.DefaultBlock)
 		return nil
 	})
 }
@@ -160,7 +164,7 @@ func (s *Service) Tick() []error {
 
 func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) []error {
 	errs := []error{}
-	prevClaims, currClaims, err := se.selectClaimPairsPerApp()
+	prevClaims, currClaims, err := se.selectClaimSubmissionCandidatePairsPerApp()
 	if err != nil {
 		errs = append(errs, err)
 		return errs
@@ -207,7 +211,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) []error {
 
 		prevClaimRow, prevExists := prevClaims[key]
 		if prevExists {
-			err := checkClaimsConstraint(prevClaimRow, currClaimRow)
+			err := checkClaimPairConstraint(prevClaimRow, currClaimRow)
 			if err != nil {
 				s.Logger.Error("database mismatch",
 					"prevClaim", prevClaimRow,
@@ -236,7 +240,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) []error {
 				errs = append(errs, ErrMissingEvent)
 				goto nextApp
 			}
-			if !claimMatchesEvent(prevClaimRow, prevEvent) {
+			if !claimMatchesSubmissionEvent(prevClaimRow, prevEvent) {
 				s.Logger.Error("event mismatch",
 					"claim", prevClaimRow,
 					"event", prevEvent,
@@ -263,7 +267,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) []error {
 				"claim_hash", fmt.Sprintf("%x", currEvent.Claim),
 				"last_block", currEvent.LastProcessedBlockNumber.Uint64(),
 			)
-			if !claimMatchesEvent(currClaimRow, currEvent) {
+			if !claimMatchesSubmissionEvent(currClaimRow, currEvent) {
 				s.Logger.Error("event mismatch",
 					"claim", currClaimRow,
 					"event", currEvent,
@@ -337,7 +341,7 @@ func checkClaimConstraint(c *ClaimRow) error {
 	return nil
 }
 
-func checkClaimsConstraint(p *ClaimRow, c *ClaimRow) error {
+func checkClaimPairConstraint(p *ClaimRow, c *ClaimRow) error {
 	var err error
 
 	err = checkClaimConstraint(c)
@@ -365,7 +369,7 @@ func checkClaimsConstraint(p *ClaimRow, c *ClaimRow) error {
 	return nil
 }
 
-func claimMatchesEvent(c *ClaimRow, e *iconsensus.IConsensusClaimSubmission) bool {
+func claimMatchesSubmissionEvent(c *ClaimRow, e *iconsensus.IConsensusClaimSubmission) bool {
 	return c.IApplicationAddress == e.AppContract &&
 		*c.ClaimHash == e.Claim &&
 		c.LastBlock == e.LastProcessedBlockNumber.Uint64()

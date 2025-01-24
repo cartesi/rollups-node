@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/claimer"
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/spf13/cobra"
 )
@@ -27,6 +28,7 @@ var (
 		EnableSubmission: true,
 		MaxStartupTime:   10 * time.Second,
 	}
+	DefaultBlockString = "finalized"
 )
 
 var Cmd = &cobra.Command{
@@ -59,9 +61,18 @@ func init() {
 	Cmd.Flags().BoolVar(&createInfo.EnableSubmission,
 		"claim-submission", createInfo.EnableSubmission,
 		"enable or disable claim submission (reader mode)")
+	Cmd.Flags().StringVarP(&DefaultBlockString,
+		"default-block", "d", DefaultBlockString,
+		`Default block to be used when fetching new blocks.
+		One of 'latest', 'safe', 'pending', 'finalized'`)
 }
 
 func run(cmd *cobra.Command, args []string) {
+	if cmd.Flags().Changed("default-block") {
+		var err error
+		createInfo.DefaultBlock, err = config.ToDefaultBlockFromString(DefaultBlockString)
+		cobra.CheckErr(err)
+	}
 	cobra.CheckErr(claimer.Create(&createInfo, &claimerService))
 	claimerService.CreateDefaultHandlers("")
 	cobra.CheckErr(claimerService.Serve())
