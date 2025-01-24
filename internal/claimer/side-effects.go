@@ -5,11 +5,14 @@ package claimer
 
 import (
 	"fmt"
+	"iter"
 	"math/big"
 
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 )
@@ -156,6 +159,22 @@ func (s *Service) pollTransaction(txHash common.Hash) (bool, *types.Receipt, err
 	return ready, receipt, err
 }
 
+func unwrapClaimSubmission(
+	ic *iconsensus.IConsensus,
+	pull func() (log *types.Log, err error, ok bool),
+) (
+	*iconsensus.IConsensusClaimSubmission,
+	bool,
+	error,
+) {
+	log, err, ok := pull()
+	if !ok || err != nil {
+		return nil, false, err
+	}
+	ev, err := ic.ParseClaimSubmission(*log)
+	return ev, true, err
+}
+
 // scan the event stream for a claimSubmission event that matches claim.
 // return this event and its successor
 func (s *Service) FindClaimSubmissionEventAndSucc(
@@ -171,34 +190,50 @@ func (s *Service) FindClaimSubmissionEventAndSucc(
 		return nil, nil, nil, err
 	}
 
-	it, err := ic.FilterClaimSubmission(&bind.FilterOpts{
-		Context: s.Context,
-		Start:   claim.LastBlock,
-	}, nil, []common.Address{claim.IApplicationAddress})
+	// filter must match:
+	// - `ClaimSubmission` events
+	// - submitter == nil (any)
+	// - appContract == claim.IApplicationAddress
+	c, err := iconsensus.IConsensusMetaData.GetAbi()
+	topics, err := abi.MakeTopics(
+		[]interface{}{c.Events["ClaimSubmission"].ID},
+		nil,
+		[]interface{}{claim.IApplicationAddress},
+	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	it, err := ethutil.ChunkedFilterLogs(s.Context, s.EthConn, ethereum.FilterQuery{
+		FromBlock: new(big.Int).SetUint64(claim.Epoch.LastBlock),
+		Addresses: []common.Address{claim.IConsensusAddress},
+		Topics: topics,
+	})
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	for it.Next() {
-		event := it.Event
+	// pull events instead of iterating
+	next, stop := iter.Pull2(it)
+	defer stop()
+	for {
+		event, ok, err := unwrapClaimSubmission(ic, next)
+		if !ok || err != nil {
+			return ic, event, nil, err
+		}
 		lastBlock := event.LastProcessedBlockNumber.Uint64()
+
 		if claimMatchesEvent(claim, event) {
-			var succ *iconsensus.IConsensusClaimSubmission = nil
-			if it.Next() {
-				succ = it.Event
+			// found the event, does it has a successor? try to fetch it
+			succ, ok, err := unwrapClaimSubmission(ic, next)
+			if !ok || err != nil {
+				return ic, event, nil, err
 			}
-			if it.Error() != nil {
-				return nil, nil, nil, it.Error()
-			}
-			return ic, event, succ, nil
-		} else if lastBlock > claim.LastBlock {
-			err = fmt.Errorf("claim not found, searched up to %v", event)
+			return ic, event, succ, err
+		} else if lastBlock > claim.Epoch.LastBlock {
+			err = fmt.Errorf("No matching claim, searched up to %v", event)
+			return nil, nil, nil, err
 		}
 	}
-	if it.Error() != nil {
-		return nil, nil, nil, it.Error()
-	}
-	return ic, nil, nil, nil
 }
 
 /* poll a transaction hash for its submission status and receipt */
