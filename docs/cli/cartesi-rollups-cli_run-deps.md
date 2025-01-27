@@ -21,7 +21,7 @@ cartesi-rollups-cli run-deps
       --devnet-mapped-port string      Devnet local listening port number (default "8545")
       --devnet-no-mining               Devnet disable mining
   -h, --help                           help for run-deps
-      --postgres-docker-image string   Postgress docker image name (default "postgres:16-alpine")
+      --postgres-docker-image string   Postgres docker image name (default "postgres:16-alpine")
       --postgres-mapped-port string    Postgres local listening port number (default "5432")
       --postgres-password string       Postgres password (default "password")
   -v, --verbose                        verbose logs
