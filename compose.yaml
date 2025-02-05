@@ -11,6 +11,8 @@ x-env: &env
 services:
   ethereum_provider:
     image: cartesi/rollups-node-devnet:devel
+    build:
+      dockerfile: test/devnet/Dockerfile
     networks:
       - devnet
     ports:
@@ -46,6 +48,8 @@ services:
 
   node:
     image: cartesi/rollups-node:devel
+    build:
+      dockerfile: Dockerfile
     command: cartesi-rollups-node
     depends_on:
       database:
@@ -60,6 +64,36 @@ services:
       - "10001:10001" # Supervisor
     environment:
       <<: *env
+
+  # run the unit tests.
+  # ```
+  # docker compose -f compose.yaml run unit-test
+  # ```
+  unit-test:
+    image: cartesi/rollups-node-test:devel
+    profiles: [unit-test]
+    build:
+      dockerfile: Dockerfile
+      target: go-tester
+    entrypoint: ["sh", "-c"]
+    command: |
+      '
+      set -e
+      psql $CARTESI_POSTGRES_ENDPOINT -f test/postgres/drop-test-db.sql
+      psql $CARTESI_POSTGRES_ENDPOINT -f test/postgres/init-test-db.sql
+      make test
+      '
+    depends_on:
+      database:
+        condition: service_healthy
+      ethereum_provider:
+        condition: service_healthy
+    networks:
+      - devnet
+    restart: "no"
+    environment:
+      <<: *env
+      CARTESI_TEST_POSTGRES_ENDPOINT: postgres://postgres:password@database:5432/test_rollupsdb?sslmode=disable
 
 volumes:
   node_data:
