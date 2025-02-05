@@ -20,13 +20,11 @@ permissions:
 
 jobs:
   build-ci-base:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       output: ${{ steps.export_tag.outputs.image_tag }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Docker meta
         id: docker_meta
@@ -47,25 +45,53 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: depot/setup-action@v1
-      - name: Build and push docker image
-        id: docker_build
-        uses: depot/bake-action@v1
+
+      - name: Build and push devnet image
+        uses: depot/build-push-action@v1
         with:
-          files: |
-            ./docker-bake.hcl
-            ${{ steps.docker_meta.outputs.bake-file }}
-            ./docker-bake.platforms.hcl
-          targets: rollups-node-ci
+          file: test/devnet/Dockerfile
+          context: .
+          platforms: linux/amd64,linux/arm64
+          tags: ghcr.io/cartesi/rollups-node-devnet:${{steps.docker_meta.outputs.version}}
           push: true
+          cache-from: type=gha,scope=debian
+          cache-to: type=gha,mode=max,scope=debian
           project: ${{ vars.DEPOT_PROJECT }}
-          workdir: build
+          token: ${{ secrets.DEPOT_TOKEN }}
+
+      - name: Build and push node image
+        uses: depot/build-push-action@v1
+        with:
+          file: Dockerfile
+          context: .
+          platforms: linux/amd64,linux/arm64
+          tags: ghcr.io/cartesi/rollups-node:${{steps.docker_meta.outputs.version}}
+          push: true
+          cache-from: type=gha,scope=debian
+          cache-to: type=gha,mode=max,scope=debian
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
+
+      - name: Build and push test image
+        uses: depot/build-push-action@v1
+        with:
+          file: Dockerfile
+          context: .
+          target: go-tester
+          platforms: linux/amd64,linux/arm64
+          tags: ghcr.io/cartesi/rollups-node-test:${{steps.docker_meta.outputs.version}}
+          push: true
+          cache-from: type=gha,scope=debian
+          cache-to: type=gha,mode=max,scope=debian
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Export Image Tag
         id : export_tag
         run : echo "image_tag=${{steps.docker_meta.outputs.version}}" >> "$GITHUB_OUTPUT"
 
   do-basic-checks:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -93,82 +119,37 @@ jobs:
             docs/*.md
 
   check-generated-files:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     container:
-      image: ghcr.io/cartesi/rollups-node-ci:${{needs.build-ci-base.outputs.output}}
+      image: ghcr.io/cartesi/rollups-node-test:${{needs.build-ci-base.outputs.output}}
     needs:
       - build-ci-base
     steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
-
-      - name: Fix VCS Issue
-        run : git config --global --add safe.directory /__w/rollups-node/rollups-node
- 
-      - name: Install Go
-        uses: actions/setup-go@v5
-        with:
-            go-version-file: 'go.mod'
-
       - name: Check auto generated files
-        run: make check-generate
+        run: make -C /build/cartesi/go/rollups-node check-generate
 
-  test-go:
-    runs-on: ubuntu-22.04
-    container:
-      image: ghcr.io/cartesi/rollups-node-ci:${{needs.build-ci-base.outputs.output}}
+  unit-test:
+    runs-on: ubuntu-24.04
     needs:
       - build-ci-base
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      - uses: depot/setup-action@v1
-      - name: Build dependency images
-        uses: depot/bake-action@v1
-        with:
-          files: |
-            ./docker-bake.hcl
-            ./docker-bake.override.hcl
-            ./docker-bake.platforms.hcl
-          targets: |
-            rollups-node-devnet
-            rollups-node-snapshot
-          project: ${{ vars.DEPOT_PROJECT }}
-          workdir: build
-          load: true
-
-      - name: Install Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-
-      - name: Fix VCS Go Linter Issue
-        run : git config --global --add safe.directory /__w/rollups-node/rollups-node
-
-      - name: Run Go Linter
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.58.2
-
-      - name: Run Go tests
+      - name: Run unit tests
         env:
-          TESTCONTAINERS_RYUK_DISABLED: true
-        run: go test ./...
+          REPOSITORY: ghcr.io/
+          TAG: ${{needs.build-ci-base.outputs.output}}
+          CARTESI_POSTGRES_ENDPOINT: "postgres://postgres:password@database:5432/rollupsdb?sslmode=disable"
+        run: |
+          docker compose -f compose.yaml -f compose.override-tags.yaml run unit-test
 
   build-docker:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - do-basic-checks
-      - test-go
+      - unit-test
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Docker meta
         id: docker_meta
@@ -197,22 +178,23 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: depot/setup-action@v1
-      - name: Build and push docker image
-        id: docker_build
-        uses: depot/bake-action@v1
+
+      - name: Build and push node image
+        uses: depot/build-push-action@v1
         with:
-          files: |
-            ./docker-bake.hcl
-            ${{ steps.docker_meta.outputs.bake-file }}
-            ./docker-bake.platforms.hcl
-          targets: rollups-node
-          set: rollups-node.args.ROLLUPS_NODE_VERSION=${{ steps.docker_meta.outputs.version }}
+          file: Dockerfile
+          context: .
+          platforms: linux/amd64,linux/arm64
+          tags: ghcr.io/cartesi/rollups-node:${{steps.docker_meta.outputs.version}}
           push: true
+          cache-from: type=gha,scope=debian
+          cache-to: type=gha,mode=max,scope=debian
           project: ${{ vars.DEPOT_PROJECT }}
-          workdir: build
+          token: ${{ secrets.DEPOT_TOKEN }}
+
 
   release:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - build-docker
     if: startsWith(github.ref, 'refs/tags/v')

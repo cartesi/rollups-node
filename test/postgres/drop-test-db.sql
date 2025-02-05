@@ -1,0 +1,2 @@
+DROP DATABASE IF EXISTS test_rollupsdb;
+DROP USER IF EXISTS test_user;

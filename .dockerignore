@@ -1,4 +1,3 @@
-.git*
 **/target/
 .gitignore
 cartesi-rollups-authority-claimer

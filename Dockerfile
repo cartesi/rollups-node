@@ -88,6 +88,49 @@ COPY --chown=cartesi:cartesi . ${GO_BUILD_PATH}/rollups-node/
 RUN cd ${GO_BUILD_PATH}/rollups-node && make build-go
 
 # =============================================================================
+# STAGE: go-tester
+#
+# Gather the dependencies to run the unit-tests
+# =============================================================================
+
+FROM go-builder AS go-tester
+WORKDIR ${GO_BUILD_PATH}/rollups-node
+
+# fetch dependencies
+RUN <<EOF
+    set -e
+    wget -nc -i test/dependencies -P /tmp
+    shasum -ca 256 test/dependencies.sha256
+EOF
+
+# install extra packages and machine-emulator runtime artifacts
+USER root
+ENV CARTESI_IMAGES_PATH=/usr/share/cartesi-machine/images/
+RUN <<EOF
+    set -e
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        git \
+        iproute2 \
+        jq \
+        postgresql-client
+    rm -rf /var/lib/apt/lists/*
+
+    mv /tmp/rootfs-tools-v0.16.1.ext2 ${CARTESI_IMAGES_PATH}rootfs.ext2
+    mv /tmp/linux-6.5.13-ctsi-1-v0.20.0.bin ${CARTESI_IMAGES_PATH}linux.bin
+EOF
+
+# deployment.json is required to run the tests
+USER cartesi
+RUN <<EOF
+    set -e
+    tar -zxf /tmp/rollups-contracts-2.0.0-rc.12-anvil-nightly-2044faec64f99a21f0e5f0094458a973612d0712.tar.gz -C /tmp/
+    jq -cf test/devnet/deployment.jq < /tmp/localhost.json > deployment.json
+    mv /tmp/state.json anvil_state.json
+EOF
+RUN make echo-dapp
+
+# =============================================================================
 # STAGE: rollups-node
 #
 # This stage prepares the final Docker image that will be used in the production
