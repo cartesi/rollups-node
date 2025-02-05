@@ -36,14 +36,7 @@ EOF
 
 # Install anvil state file and devnet deployment info.
 RUN mkdir -p ${DEVNET_BUILD_PATH}
-RUN cat <<'EOF' > ${DEVNET_BUILD_PATH}/deployment.jq
-    . as $root | .contracts |
-    reduce to_entries[] as $c (
-        {"name": $root.name, "ChainId": $root.chainId | tonumber};
-        . + {($c.key): ($c.value.address)}
-    )
-EOF
-
+COPY test/devnet/deployment.jq ${DEVNET_BUILD_PATH}
 RUN <<EOF
     set -e
     URL=https://github.com/cartesi/rollups-contracts/releases/download

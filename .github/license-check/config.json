@@ -3,9 +3,10 @@
     "include": ["**/*.go", "**/*.rs"],
     "exclude": [
       "cmd/authority-claimer/target/**",
+      "internal/repository/postgres/db/**",
       "pkg/contracts/**",
-      "pkg/readerclient/generated.go",
       "pkg/inspectclient/generated.go",
+      "pkg/readerclient/generated.go",
       "rollups-contracts/**"
     ],
     "license": ".github/license-check/header.txt"

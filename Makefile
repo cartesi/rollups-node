@@ -98,7 +98,7 @@ generate: $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp ## Generate the file that are 
 
 check-generate: generate ## Check whether the generated files are in sync
 	@echo "Checking differences on the repository..."
-	@if git diff --exit-code; then \
+	@if git diff --exit-code -- pkg/ internal/; then \
 		echo "No differences found."; \
 	else \
 		echo "ERROR: Differences found in the resulting files."; \

@@ -1,0 +1,15 @@
+# better control of tags
+# ```
+# export REPOSITORY=ghcr.io/
+# export TAG=pr-001
+# docker compose -f compose.yaml -f compose.unit-test.yaml run unit-test
+# ```
+services:
+  ethereum_provider:
+    image: ${REPOSITORY}cartesi/rollups-node-devnet:${TAG}
+  migration:
+    image: ${REPOSITORY}cartesi/rollups-node:${TAG}
+  node:
+    image: ${REPOSITORY}cartesi/rollups-node:${TAG}
+  unit-test:
+    image: ${REPOSITORY}cartesi/rollups-node-test:${TAG}
