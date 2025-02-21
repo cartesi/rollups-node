@@ -1,40 +1,5 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
-
-// Algorithm for the state transition of computed claims. Possible actions are:
-// - update epoch in the database
-// - submit claim to blockchain
-// - transition application to an invalid state
-//
-// 1. On startup of a clean blockchain there are no previous claims nor events.
-//
-//   - This configuration must submit a new computed claim.
-//
-//     2. Some time after the submission, the computed claim shows up as a claimSubmission
-//     event in the blockchain. The claim and event must match.
-//
-//   - This configuration must update the epoch in the database: computed -> submitted
-//
-// 3. After the first epoch, additional checks must be done. Same as (1) otherwise.
-// 3.1. No epoch was skipped:
-//   - previous_claim.last_block < current_claim.first_block
-//
-// 4. After the first epoch, additional checks must be done. Same as (2) otherwise.
-// 4.1. epochs are in order:
-//   - previous_claim.last_block < current_claim.first_block
-//
-// 4.2. There are no events between the epochs
-//   - next(previous_event) == current_event
-//
-// Other cases are errors.
-//
-// | n |      prev     |      curr     | action |
-// |   | claim | event | claim | event |        |
-// |---+-------+-------+-------+-------+--------+
-// | 1 |   .   |   .   |  cc   |   .   | submit |
-// | 2 |   .   |   .   |  cc   |  ce   | update |
-// | 3 |  pc   |  pe   |  cc   |   .   | submit |
-// | 4 |  pc   |  pe   |  cc   |  ce   | update |
 package claimer
 
 import (
@@ -43,6 +8,8 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/fsm"
+	"github.com/cartesi/rollups-node/internal/model"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
@@ -162,6 +129,94 @@ func (s *Service) Tick() []error {
 	return s.submitClaimsAndUpdateDatabase(s)
 }
 
+// state transition engine for claim:computed -> claim:submitted
+type claimSubmission struct {
+	s *Service
+}
+type claimSubmissionState ClaimRow
+type claimSubmissionEvent iconsensus.IConsensusClaimSubmission
+
+func (me *claimSubmission) CheckStateConstraint(
+	state *claimSubmissionState,
+) error {
+	if state.Status == model.EpochStatus_ClaimComputed && state.ClaimHash == nil {
+		me.s.Logger.Error("Constraint violation on ClaimHash", "claim", state)
+		return fsm.ErrStateConstraintViolation
+	}
+	if (state.Status == model.EpochStatus_ClaimSubmitted || state.Status == model.EpochStatus_ClaimAccepted) && state.ClaimTransactionHash == nil {
+		me.s.Logger.Error("Constraint violation on ClaimTransactionHash", "claim", state)
+		return fsm.ErrStateConstraintViolation
+	}
+	if state.IApplicationAddress == (common.Address{}) {
+		me.s.Logger.Error("Constraint violation on IApplicationAddress", "claim", state)
+		return fsm.ErrStateConstraintViolation
+	}
+	return nil
+}
+
+func (me *claimSubmission) CheckStateTransitionConstraint(
+	prev *claimSubmissionState,
+	curr *claimSubmissionState,
+) error {
+	if prev.ApplicationID != curr.ApplicationID {
+		me.s.Logger.Error("Constraint violation on ApplicationID", "prev", prev, "curr", curr)
+		return fsm.ErrStateConstraintViolation
+	}
+	if prev.LastBlock > curr.LastBlock {
+		me.s.Logger.Error("Constraint violation on LastBlock", "prev", prev, "curr", curr)
+		return fsm.ErrStateConstraintViolation
+	}
+	if prev.FirstBlock > curr.FirstBlock {
+		me.s.Logger.Error("Constraint violation on FirstBlock", "prev", prev, "curr", curr)
+		return fsm.ErrStateConstraintViolation
+	}
+	if prev.Index > curr.Index {
+		me.s.Logger.Error("Constraint violation on Index", "prev", prev, "curr", curr)
+		return fsm.ErrStateConstraintViolation
+	}
+	if prev.VirtualIndex+1 != curr.VirtualIndex {
+		me.s.Logger.Error("Constraint violation on VirtualIndex", "prev", prev, "curr", curr)
+		return fsm.ErrStateConstraintViolation
+	}
+	return nil
+}
+
+func (me *claimSubmission) CheckEventConstraint(event *claimSubmissionEvent) error {
+	if event == nil {
+		me.s.Logger.Error("Constraint violation: nil event")
+		return fsm.ErrStateConstraintViolation
+	}
+	return nil
+}
+
+func (me *claimSubmission) CheckEventTransitionConstraint(
+	state *claimSubmissionState,
+	event *claimSubmissionEvent,
+) error {
+	if state.IApplicationAddress != event.AppContract {
+		me.s.Logger.Error("Constraint violation on IApplicationAddress", "state", state, "event", event)
+		return fsm.ErrEventConstraintViolation
+	}
+	if *state.ClaimHash != event.Claim {
+		me.s.Logger.Error("Constraint violation on ClaimHash", "state", state, "event", event)
+		return fsm.ErrEventConstraintViolation
+	}
+	if state.LastBlock != event.LastProcessedBlockNumber.Uint64() {
+		me.s.Logger.Error("Constraint violation on LastBlock", "state", state, "event", event)
+		return fsm.ErrEventConstraintViolation
+	}
+	return nil
+}
+
+func (me *claimSubmission) FetchEventAndSucc(state *claimSubmissionState) (
+	*claimSubmissionEvent,
+	*claimSubmissionEvent,
+	error,
+) {
+	_, prev, curr, err := me.s.FindClaimSubmissionEventAndSucc((*ClaimRow)(state))
+	return (*claimSubmissionEvent)(prev), (*claimSubmissionEvent)(curr), err
+}
+
 func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) []error {
 	errs := []error{}
 	prevClaims, currClaims, err := se.selectClaimSubmissionCandidatePairsPerApp()
@@ -199,180 +254,66 @@ func (s *Service) submitClaimsAndUpdateDatabase(se sideEffects) []error {
 		delete(s.claimsInFlight, key)
 	}
 
-	// check computed claims
-	for key, currClaimRow := range currClaims {
-		var ic *iconsensus.IConsensus = nil
-		var prevEvent *iconsensus.IConsensusClaimSubmission = nil
-		var currEvent *iconsensus.IConsensusClaimSubmission = nil
-
+	// submit/update computed claims
+	for key, currClaim := range currClaims {
+		prevClaim := prevClaims[key]
 		if _, isInFlight := s.claimsInFlight[key]; isInFlight {
 			continue
 		}
 
-		prevClaimRow, prevExists := prevClaims[key]
-		if prevExists {
-			err := checkClaimPairConstraint(prevClaimRow, currClaimRow)
-			if err != nil {
-				s.Logger.Error("database mismatch",
-					"prevClaim", prevClaimRow,
-					"currClaim", currClaimRow,
-					"err", err,
-				)
-				delete(currClaims, key)
-				errs = append(errs, err)
-				goto nextApp
-			}
+		action, _, currEvent, err := fsm.TryTransition(
+			&claimSubmission{s},
+			(*claimSubmissionState)(prevClaim),
+			(*claimSubmissionState)(currClaim),
+		)
 
-			// if prevClaimRow exists, there must be a matching event
-			ic, prevEvent, currEvent, err =
-				se.findClaimSubmissionEventAndSucc(prevClaimRow)
-			if err != nil {
-				delete(currClaims, key)
-				errs = append(errs, err)
-				goto nextApp
-			}
-			if prevEvent == nil {
-				s.Logger.Error("missing event",
-					"claim", prevClaimRow,
-					"err", ErrMissingEvent,
-				)
-				delete(currClaims, key)
-				errs = append(errs, ErrMissingEvent)
-				goto nextApp
-			}
-			if !claimMatchesSubmissionEvent(prevClaimRow, prevEvent) {
-				s.Logger.Error("event mismatch",
-					"claim", prevClaimRow,
-					"event", prevEvent,
-					"err", ErrEventMismatch,
-				)
-				delete(currClaims, key)
-				errs = append(errs, ErrEventMismatch)
-				goto nextApp
-			}
-		} else {
-			// first claim
-			ic, currEvent, _, err =
-				se.findClaimSubmissionEventAndSucc(currClaimRow)
-			if err != nil {
-				delete(currClaims, key)
-				errs = append(errs, err)
-				goto nextApp
-			}
+		// TODO: disable dapp on constraint violation
+
+		if err != nil {
+			errs = append(errs, err)
+			continue
 		}
 
-		if currEvent != nil {
-			s.Logger.Debug("Found ClaimSubmitted Event",
-				"app", currEvent.AppContract,
-				"claim_hash", fmt.Sprintf("%x", currEvent.Claim),
-				"last_block", currEvent.LastProcessedBlockNumber.Uint64(),
-			)
-			if !claimMatchesSubmissionEvent(currClaimRow, currEvent) {
-				s.Logger.Error("event mismatch",
-					"claim", currClaimRow,
-					"event", currEvent,
-					"err", ErrEventMismatch,
+		switch action {
+		case fsm.Submit:
+			if s.submissionEnabled {
+				if prevClaim != nil && prevClaim.Status != EpochStatus_ClaimAccepted {
+					s.Logger.Debug("Waiting previous claim to be accepted before submitting new one. Previous:",
+						"app", prevClaim.IApplicationAddress,
+						"claim_hash", fmt.Sprintf("%x", prevClaim.ClaimHash),
+						"last_block", prevClaim.LastBlock,
+					)
+					continue
+				}
+				ic, err := iconsensus.NewIConsensus(currClaim.IConsensusAddress, s.EthConn)
+				if err != nil {
+					errs = append(errs, err)
+					continue
+				}
+				txHash, err := se.submitClaimToBlockchain(ic, currClaim)
+				if err != nil {
+					errs = append(errs, err)
+					continue
+				}
+				s.claimsInFlight[key] = txHash
+			} else {
+				s.Logger.Debug("Claim submission disabled. Doing nothing",
+					"app", currClaim.IApplicationAddress,
+					"claim_hash", fmt.Sprintf("%x", currClaim.ClaimHash),
+					"last_block", currClaim.LastBlock,
 				)
-				delete(currClaims, key)
-				errs = append(errs, ErrEventMismatch)
-				goto nextApp
 			}
-			s.Logger.Debug("Updating claim status to submitted",
-				"app", currClaimRow.IApplicationAddress,
-				"claim_hash", fmt.Sprintf("%x", currClaimRow.ClaimHash),
-				"last_block", currClaimRow.LastBlock,
-			)
+
+		case fsm.Update:
 			txHash := currEvent.Raw.TxHash
-			err = se.updateEpochWithSubmittedClaim(currClaimRow, txHash)
+			err = se.updateEpochWithSubmittedClaim(currClaim, txHash)
 			if err != nil {
-				delete(currClaims, key)
 				errs = append(errs, err)
-				goto nextApp
+				continue
 			}
-			delete(s.claimsInFlight, key)
-			s.Logger.Info("Claim previously submitted",
-				"app", currClaimRow.IApplicationAddress,
-				"claim_hash", fmt.Sprintf("%x", currClaimRow.ClaimHash),
-				"last_block", currClaimRow.LastBlock,
-			)
-		} else if s.submissionEnabled {
-			if prevClaimRow != nil && prevClaimRow.Status != EpochStatus_ClaimAccepted {
-				s.Logger.Debug("Waiting previous claim to be accepted before submitting new one. Previous:",
-					"app", prevClaimRow.IApplicationAddress,
-					"claim_hash", fmt.Sprintf("%x", prevClaimRow.ClaimHash),
-					"last_block", prevClaimRow.LastBlock,
-				)
-				goto nextApp
-			}
-			s.Logger.Debug("Submitting claim to blockchain",
-				"app", currClaimRow.IApplicationAddress,
-				"claim_hash", fmt.Sprintf("%x", currClaimRow.ClaimHash),
-				"last_block", currClaimRow.LastBlock,
-			)
-			txHash, err := se.submitClaimToBlockchain(ic, currClaimRow)
-			if err != nil {
-				delete(currClaims, key)
-				errs = append(errs, err)
-				goto nextApp
-			}
-			s.claimsInFlight[key] = txHash
-		} else {
-			s.Logger.Debug("Claim submission disabled. Doing nothing",
-				"app", currClaimRow.IApplicationAddress,
-				"claim_hash", fmt.Sprintf("%x", currClaimRow.ClaimHash),
-				"last_block", currClaimRow.LastBlock,
-			)
-
 		}
-	nextApp:
 	}
 	return errs
-}
-
-func checkClaimConstraint(c *ClaimRow) error {
-	zeroAddress := common.Address{}
-
-	if c.FirstBlock > c.LastBlock {
-		return ErrClaimMismatch
-	}
-	if c.IConsensusAddress == zeroAddress {
-		return ErrClaimMismatch
-	}
-	return nil
-}
-
-func checkClaimPairConstraint(p *ClaimRow, c *ClaimRow) error {
-	var err error
-
-	err = checkClaimConstraint(c)
-	if err != nil {
-		return err
-	}
-	err = checkClaimConstraint(p)
-	if err != nil {
-		return err
-	}
-
-	// p, c consistent
-	if p.IApplicationAddress != c.IApplicationAddress {
-		return ErrClaimMismatch
-	}
-	if p.LastBlock > c.LastBlock {
-		return ErrClaimMismatch
-	}
-	if p.FirstBlock > c.FirstBlock {
-		return ErrClaimMismatch
-	}
-	if p.Index > c.Index {
-		return ErrClaimMismatch
-	}
-	return nil
-}
-
-func claimMatchesSubmissionEvent(c *ClaimRow, e *iconsensus.IConsensusClaimSubmission) bool {
-	return c.IApplicationAddress == e.AppContract &&
-		*c.ClaimHash == e.Claim &&
-		c.LastBlock == e.LastProcessedBlockNumber.Uint64()
 }
 
 func (s *Service) Start(context context.Context, ready chan<- struct{}) error {

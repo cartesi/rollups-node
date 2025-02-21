@@ -176,6 +176,12 @@ func unwrapClaimSubmission(
 	return ev, true, err
 }
 
+func claimMatchesSubmissionEvent(c *ClaimRow, e *iconsensus.IConsensusClaimSubmission) bool {
+	return c.IApplicationAddress == e.AppContract &&
+		*c.ClaimHash == e.Claim &&
+		c.LastBlock == e.LastProcessedBlockNumber.Uint64()
+}
+
 // scan the event stream for a claimSubmission event that matches claim.
 // return this event and its successor
 func (s *Service) FindClaimSubmissionEventAndSucc(
