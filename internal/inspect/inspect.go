@@ -14,7 +14,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/advancer/machines"
+	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/services"
 	"github.com/cartesi/rollups-node/pkg/service"
@@ -27,11 +27,7 @@ var (
 )
 
 type IInspectMachines interface {
-	GetInspectMachine(appId int64) (machines.InspectMachine, bool)
-}
-
-type IInspectMachine interface {
-	Inspect(_ context.Context, query []byte) (*InspectResult, error)
+	GetMachine(appId int64) (manager.MachineInstance, bool)
 }
 
 type InspectRepository interface {
@@ -196,7 +192,7 @@ func (inspect *Inspector) process(
 		return nil, fmt.Errorf("%w %s", ErrNoApp, nameOrAddress)
 	}
 	// Asserts that the app has an associated machine.
-	machine, exists := inspect.GetInspectMachine(app.ID)
+	machine, exists := inspect.GetMachine(app.ID)
 	if !exists {
 		return nil, fmt.Errorf("%w %s", ErrNoApp, nameOrAddress)
 	}

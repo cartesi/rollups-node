@@ -1,42 +1,77 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-package nodemachine
+package manager
 
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/manager/pmutex"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/rollupsmachine"
 	"github.com/cartesi/rollups-node/pkg/rollupsmachine/cartesimachine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/suite"
+	"golang.org/x/sync/semaphore"
 )
 
-func TestNodeMachine(t *testing.T) {
-	suite.Run(t, new(NodeMachineSuite))
+func TestMachineInstance(t *testing.T) {
+	suite.Run(t, new(MachineInstanceSuite))
 }
 
-type NodeMachineSuite struct{ suite.Suite }
+type MachineInstanceSuite struct{ suite.Suite }
 
-func (s *NodeMachineSuite) TestNew() {
+func (s *MachineInstanceSuite) TestNewMachineInstance() {
 	s.Run("Ok", func() {
 		require := s.Require()
-		app := &model.Application{}
-		inner := &MockRollupsMachine{}
-		machine, err := NewNodeMachine(app, inner, 0, decisecond, centisecond, 3)
+		app := &model.Application{
+			ExecutionParameters: model.ExecutionParameters{
+				AdvanceMaxDeadline:    decisecond,
+				InspectMaxDeadline:    centisecond,
+				MaxConcurrentInspects: 3,
+			},
+		}
+
+		// Create a test logger
+		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+		// Mock the createMachineRuntime function to avoid actual server creation
+		origCreateMachineRuntime := createMachineRuntime
+		defer func() { createMachineRuntime = origCreateMachineRuntime }()
+
+		mockRuntime := &MockRollupsMachine{}
+		createMachineRuntime = func(ctx context.Context, verbosity MachineLogLevel, app *model.Application,
+			logger *slog.Logger, checkHash bool) (rollupsmachine.RollupsMachine, error) {
+			return mockRuntime, nil
+		}
+
+		machine, err := NewMachineInstance(context.Background(), cartesimachine.MachineLogLevelInfo, app, testLogger, false)
 		require.Nil(err)
 		require.NotNil(machine)
+
+		// Clean up
+		machine.Close()
 	})
 
 	s.Run("ErrInvalidAdvanceTimeout", func() {
 		require := s.Require()
-		app := &model.Application{}
-		inner := &MockRollupsMachine{}
-		machine, err := NewNodeMachine(app, inner, 0, -1, centisecond, 3)
+		app := &model.Application{
+			ExecutionParameters: model.ExecutionParameters{
+				AdvanceMaxDeadline:    -1,
+				InspectMaxDeadline:    centisecond,
+				MaxConcurrentInspects: 3,
+			},
+		}
+		// Create a test logger
+		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+		machine, err := NewMachineInstance(context.Background(), cartesimachine.MachineLogLevelInfo, app, testLogger, false)
 		require.Error(err)
 		require.Nil(machine)
 		require.Equal(ErrInvalidAdvanceTimeout, err)
@@ -44,26 +79,58 @@ func (s *NodeMachineSuite) TestNew() {
 
 	s.Run("ErrInvalidInspectTimeout", func() {
 		require := s.Require()
-		app := &model.Application{}
-		inner := &MockRollupsMachine{}
-		machine, err := NewNodeMachine(app, inner, 0, decisecond, -500, 3)
+		app := &model.Application{
+			ExecutionParameters: model.ExecutionParameters{
+				AdvanceMaxDeadline:    decisecond,
+				InspectMaxDeadline:    -500,
+				MaxConcurrentInspects: 3,
+			},
+		}
+		// Create a test logger
+		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+		machine, err := NewMachineInstance(context.Background(), cartesimachine.MachineLogLevelInfo, app, testLogger, false)
 		require.Error(err)
 		require.Nil(machine)
 		require.Equal(ErrInvalidInspectTimeout, err)
 	})
 
-	s.Run("ErrInvalidMaxConcurrentInspects", func() {
+	s.Run("ErrInvalidConcurrentLimit", func() {
 		require := s.Require()
-		app := &model.Application{}
-		inner := &MockRollupsMachine{}
-		machine, err := NewNodeMachine(app, inner, 0, decisecond, centisecond, 0)
+		app := &model.Application{
+			ExecutionParameters: model.ExecutionParameters{
+				AdvanceMaxDeadline:    decisecond,
+				InspectMaxDeadline:    centisecond,
+				MaxConcurrentInspects: 0,
+			},
+		}
+		// Create a test logger
+		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+		machine, err := NewMachineInstance(context.Background(), cartesimachine.MachineLogLevelInfo, app, testLogger, false)
 		require.Error(err)
 		require.Nil(machine)
-		require.Equal(ErrInvalidMaxConcurrentInspects, err)
+		require.Equal(ErrInvalidConcurrentLimit, err)
+	})
+
+	s.Run("ErrInvalidLogger", func() {
+		require := s.Require()
+		app := &model.Application{
+			ExecutionParameters: model.ExecutionParameters{
+				AdvanceMaxDeadline:    decisecond,
+				InspectMaxDeadline:    centisecond,
+				MaxConcurrentInspects: 3,
+			},
+		}
+
+		machine, err := NewMachineInstance(context.Background(), cartesimachine.MachineLogLevelInfo, app, nil, false)
+		require.Error(err)
+		require.Nil(machine)
+		require.Equal(ErrInvalidLogger, err)
 	})
 }
 
-func (s *NodeMachineSuite) TestAdvance() {
+func (s *MachineInstanceSuite) TestAdvance() {
 	s.Run("Ok", func() {
 		s.Run("Accept", func() {
 			require := s.Require()
@@ -73,7 +140,7 @@ func (s *NodeMachineSuite) TestAdvance() {
 			require.Nil(err)
 			require.NotNil(res)
 
-			require.Same(fork, machine.inner)
+			require.Same(fork, machine.runtime)
 			require.Equal(model.InputCompletionStatus_Accepted, res.Status)
 			require.Equal(expectedOutputs, res.Outputs)
 			require.Equal(expectedReports1, res.Reports)
@@ -92,7 +159,7 @@ func (s *NodeMachineSuite) TestAdvance() {
 			require.Nil(err)
 			require.NotNil(res)
 
-			require.Same(inner, machine.inner)
+			require.Same(inner, machine.runtime)
 			require.Equal(model.InputCompletionStatus_Rejected, res.Status)
 			require.Equal(expectedOutputs, res.Outputs)
 			require.Equal(expectedReports1, res.Reports)
@@ -264,7 +331,7 @@ func (s *NodeMachineSuite) TestAdvance() {
 	})
 }
 
-func (s *NodeMachineSuite) TestInspect() {
+func (s *MachineInstanceSuite) TestInspect() {
 	s.Run("Ok", func() {
 		s.Run("Accept", func() {
 			require := s.Require()
@@ -274,7 +341,7 @@ func (s *NodeMachineSuite) TestInspect() {
 			require.Nil(err)
 			require.NotNil(res)
 
-			require.NotSame(fork, machine.inner)
+			require.NotSame(fork, machine.runtime)
 			require.Equal(uint64(55), res.ProcessedInputs)
 			require.True(res.Accepted)
 			require.Equal(expectedReports2, res.Reports)
@@ -290,7 +357,7 @@ func (s *NodeMachineSuite) TestInspect() {
 			require.Nil(err)
 			require.NotNil(res)
 
-			require.NotSame(fork, machine.inner)
+			require.NotSame(fork, machine.runtime)
 			require.Equal(uint64(55), res.ProcessedInputs)
 			require.False(res.Accepted)
 			require.Equal(expectedReports2, res.Reports)
@@ -300,32 +367,170 @@ func (s *NodeMachineSuite) TestInspect() {
 
 	s.Run("Error", func() {
 		s.Run("Acquire", func() {
-			s.T().Skip("TODO")
+			require := s.Require()
+			_, _, machine := s.setupInspect()
+
+			// Set semaphore to 0 to force acquisition failure
+			machine.inspectSemaphore.TryAcquire(int64(machine.maxConcurrentInspects))
+
+			ctx, cancel := context.WithTimeout(context.Background(), centisecond)
+			defer cancel()
+
+			res, err := machine.Inspect(ctx, []byte{})
+			require.Error(err)
+			require.Nil(res)
+			require.ErrorIs(err, context.DeadlineExceeded)
+
+			// Release the semaphore for cleanup
+			machine.inspectSemaphore.Release(int64(machine.maxConcurrentInspects))
 		})
 
 		s.Run("Fork", func() {
-			s.T().Skip("TODO")
+			require := s.Require()
+			inner, _, machine := s.setupInspect()
+			errFork := errors.New("Fork error")
+			inner.ForkError = errFork
+
+			res, err := machine.Inspect(context.Background(), []byte{})
+			require.Error(err)
+			require.Nil(res)
+			require.Equal(errFork, err)
 		})
 
 		s.Run("Inspect", func() {
-			s.T().Skip("TODO")
+			require := s.Require()
+			_, fork, machine := s.setupInspect()
+			errInspect := errors.New("Inspect error")
+			fork.InspectError = errInspect
+
+			res, err := machine.Inspect(context.Background(), []byte{})
+			require.Nil(err)
+			require.NotNil(res)
+			require.Equal(errInspect, res.Error)
 		})
 
 		s.Run("Close", func() {
-			s.T().Skip("TODO")
+			require := s.Require()
+			_, fork, machine := s.setupInspect()
+			errClose := errors.New("Close error")
+			fork.CloseError = errClose
+
+			res, err := machine.Inspect(context.Background(), []byte{})
+			require.Error(err)
+			require.Nil(res)
+			require.Equal(errClose, err)
 		})
 	})
 
 	s.Run("Concurrency", func() {
-		// At most N Inspects can be active concurrently.
-		s.T().Skip("TODO")
-	})
+		require := s.Require()
+		_, _, machine := s.setupInspect()
 
+		// Test that we can run maxConcurrentInspects inspects concurrently
+		var wg sync.WaitGroup
+		errors := make(chan error, machine.maxConcurrentInspects)
+
+		for range int(machine.maxConcurrentInspects) {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, err := machine.Inspect(context.Background(), []byte{})
+				if err != nil {
+					errors <- err
+				}
+			}()
+		}
+
+		wg.Wait()
+		close(errors)
+
+		// Check if any errors occurred
+		for err := range errors {
+			require.Nil(err, "Concurrent inspect failed: %v", err)
+		}
+	})
 }
 
-func (s *NodeMachineSuite) TestClose() {
-	// No Advances and/or Inspects can be active concurrently to Close.
-	s.T().Skip("TODO")
+func (s *MachineInstanceSuite) TestClose() {
+	s.Run("Ok", func() {
+		require := s.Require()
+		inner, _, machine := s.setupAdvance()
+		inner.CloseError = nil
+
+		err := machine.Close()
+		require.Nil(err)
+		require.Nil(machine.runtime)
+	})
+
+	s.Run("Error", func() {
+		require := s.Require()
+		inner, _, machine := s.setupAdvance()
+		errClose := errors.New("Close error")
+		inner.CloseError = errClose
+
+		err := machine.Close()
+		require.Error(err)
+		require.Equal(errClose, err)
+	})
+
+	s.Run("Concurrency", func() {
+		require := s.Require()
+		inner, _, machine := s.setupAdvance()
+		inner.CloseError = nil
+
+		// Start a goroutine that tries to advance while we're closing
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+
+			// Small delay to ensure Close has a chance to start
+			time.Sleep(centisecond / 2)
+
+			// This should block until Close is done
+			_, err := machine.Advance(context.Background(), []byte{}, 5)
+			require.Error(err)
+			require.Equal(ErrMachineClosed, err)
+		}()
+
+		// Close the machine
+		err := machine.Close()
+		require.Nil(err)
+
+		// Wait for the advance goroutine to finish
+		select {
+		case <-done:
+			// Good, it completed
+		case <-time.After(decisecond):
+			require.Fail("Advance did not complete after Close")
+		}
+	})
+}
+
+// ------------------------------------------------------------------------------------------------
+
+// MockMachineInstance implements the MachineInstance interface for testing
+type MockMachineInstance struct {
+	application *model.Application
+}
+
+func (m *MockMachineInstance) Application() *model.Application {
+	return m.application
+}
+
+func (m *MockMachineInstance) Advance(ctx context.Context, input []byte, index uint64) (*model.AdvanceResult, error) {
+	return nil, nil
+}
+
+func (m *MockMachineInstance) Inspect(ctx context.Context, query []byte) (*model.InspectResult, error) {
+	return nil, nil
+}
+
+func (m *MockMachineInstance) Synchronize(ctx context.Context, repo MachineRepository) error {
+	return nil
+}
+
+func (m *MockMachineInstance) Close() error {
+	return nil
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -349,11 +554,26 @@ var (
 	}
 )
 
-func (s *NodeMachineSuite) setupAdvance() (*MockRollupsMachine, *MockRollupsMachine, *NodeMachine) {
-	app := &model.Application{}
+func (s *MachineInstanceSuite) setupAdvance() (*MockRollupsMachine, *MockRollupsMachine, *MachineInstanceImpl) {
+	app := &model.Application{
+		ExecutionParameters: model.ExecutionParameters{
+			AdvanceMaxDeadline:    decisecond,
+			InspectMaxDeadline:    centisecond,
+			MaxConcurrentInspects: 3,
+		},
+	}
 	inner := &MockRollupsMachine{}
-	machine, err := NewNodeMachine(app, inner, 5, decisecond, centisecond, 3)
-	s.Require().Nil(err)
+	machine := &MachineInstanceImpl{
+		application:           app,
+		runtime:               inner,
+		processedInputs:       5,
+		advanceTimeout:        decisecond,
+		inspectTimeout:        centisecond,
+		maxConcurrentInspects: 3,
+		mutex:                 pmutex.New(),
+		inspectSemaphore:      semaphore.NewWeighted(3),
+		logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
 
 	fork := &MockRollupsMachine{}
 
@@ -390,11 +610,26 @@ func (s *NodeMachineSuite) setupAdvance() (*MockRollupsMachine, *MockRollupsMach
 	return inner, fork, machine
 }
 
-func (s *NodeMachineSuite) setupInspect() (*MockRollupsMachine, *MockRollupsMachine, *NodeMachine) {
-	app := &model.Application{}
+func (s *MachineInstanceSuite) setupInspect() (*MockRollupsMachine, *MockRollupsMachine, *MachineInstanceImpl) {
+	app := &model.Application{
+		ExecutionParameters: model.ExecutionParameters{
+			AdvanceMaxDeadline:    decisecond,
+			InspectMaxDeadline:    centisecond,
+			MaxConcurrentInspects: 3,
+		},
+	}
 	inner := &MockRollupsMachine{}
-	machine, err := NewNodeMachine(app, inner, 55, decisecond, centisecond, 3)
-	s.Require().Nil(err)
+	machine := &MachineInstanceImpl{
+		application:           app,
+		runtime:               inner,
+		processedInputs:       55,
+		advanceTimeout:        decisecond,
+		inspectTimeout:        centisecond,
+		maxConcurrentInspects: 3,
+		mutex:                 pmutex.New(),
+		inspectSemaphore:      semaphore.NewWeighted(3),
+		logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
 
 	fork := &MockRollupsMachine{}
 
@@ -427,7 +662,7 @@ const (
 
 func newHash(n byte) common.Hash {
 	hash := rollupsmachine.Hash{}
-	for i := 0; i < 32; i++ {
+	for i := range 32 {
 		hash[i] = n
 	}
 	return hash
@@ -435,7 +670,7 @@ func newHash(n byte) common.Hash {
 
 func newBytes(n byte, size int) []byte {
 	bytes := make([]byte, size)
-	for i := 0; i < size; i++ {
+	for i := range size {
 		bytes[i] = n
 	}
 	return bytes

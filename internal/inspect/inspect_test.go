@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/advancer/machines"
+	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/services"
 	"github.com/cartesi/rollups-node/pkg/service"
@@ -148,7 +148,7 @@ func (s *InspectSuite) TestPostNoApp() {
 func (s *InspectSuite) setup() (*Inspector, *Application, common.Hash) {
 	m := newMockMachine(1)
 	repo := newMockRepository()
-	repo.apps = append(repo.apps, m.Application)
+	repo.apps = append(repo.apps, m.application)
 	machines := newMockMachines()
 	machines.Map[1] = *m
 	inspect := &Inspector{
@@ -157,7 +157,7 @@ func (s *InspectSuite) setup() (*Inspector, *Application, common.Hash) {
 		Logger:           service.NewLogger(slog.LevelDebug, true),
 	}
 	payload := randomHash()
-	return inspect, m.Application, payload
+	return inspect, m.application, payload
 }
 
 func (s *InspectSuite) assertResponse(resp *http.Response, payload string) {
@@ -185,15 +185,18 @@ func newMockMachines() *MachinesMock {
 	}
 }
 
-func (mock *MachinesMock) GetInspectMachine(appId int64) (machines.InspectMachine, bool) {
+func (mock *MachinesMock) GetMachine(appId int64) (manager.MachineInstance, bool) {
 	machine, exists := mock.Map[appId]
+	if !exists {
+		return nil, false
+	}
 	return &machine, exists
 }
 
 // ------------------------------------------------------------------------------------------------
 
 type MockMachine struct {
-	Application *Application
+	application *Application
 }
 
 func (mock *MockMachine) Inspect(
@@ -212,9 +215,32 @@ func (mock *MockMachine) Inspect(
 	return &res, nil
 }
 
+func (mock *MockMachine) Advance(
+	_ context.Context,
+	input []byte,
+	_ uint64,
+) (*AdvanceResult, error) {
+	// Not used in inspect tests, but needed to satisfy the interface
+	return nil, nil
+}
+
+func (mock *MockMachine) Application() *Application {
+	return mock.application
+}
+
+func (mock *MockMachine) Synchronize(ctx context.Context, repo manager.MachineRepository) error {
+	// Not used in inspect tests, but needed to satisfy the interface
+	return nil
+}
+
+func (mock *MockMachine) Close() error {
+	// Not used in inspect tests, but needed to satisfy the interface
+	return nil
+}
+
 func newMockMachine(id int64) *MockMachine {
 	return &MockMachine{
-		Application: &Application{
+		application: &Application{
 			ID:                  id,
 			IApplicationAddress: randomAddress(),
 			Name:                fmt.Sprintf("app-%v", id),

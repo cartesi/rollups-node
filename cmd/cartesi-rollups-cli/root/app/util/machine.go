@@ -1,9 +1,7 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-// Package machine provides mechanisms to handle Cartesi Machine Snapshots
-// for development and tests
-package snapshot
+package util
 
 import (
 	"fmt"

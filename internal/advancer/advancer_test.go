@@ -12,7 +12,7 @@ import (
 	mrand "math/rand"
 	"testing"
 
-	"github.com/cartesi/rollups-node/internal/advancer/machines"
+	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/service"
@@ -27,10 +27,10 @@ func TestAdvancer(t *testing.T) {
 
 type AdvancerSuite struct{ suite.Suite }
 
-func newMock(m IAdvancerMachines, r IAdvancerRepository) (*Service, error) {
+func newMock(m *MachinesMock, r *MockRepository) (*Service, error) {
 	s := &Service{
-		machines:   m,
-		repository: r,
+		machineManager: m,
+		repository:     r,
 	}
 	serviceArgs := &service.CreateInfo{Name: "advancer", Impl: s}
 	err := service.Create(context.Background(), serviceArgs, &s.Service)
@@ -40,7 +40,7 @@ func newMock(m IAdvancerMachines, r IAdvancerRepository) (*Service, error) {
 	return s, nil
 }
 
-func (s *AdvancerSuite) TestRun() {
+func (s *AdvancerSuite) TestStep() {
 	s.Run("Ok", func() {
 		require := s.Require()
 
@@ -83,7 +83,7 @@ func (s *AdvancerSuite) TestRun() {
 }
 
 func (s *AdvancerSuite) TestProcess() {
-	setup := func() (IAdvancerMachines, *MockRepository, *Service, *MockMachine) {
+	setup := func() (*MachinesMock, *MockRepository, *Service, *MockMachine) {
 		require := s.Require()
 
 		machines := newMockMachines()
@@ -109,7 +109,7 @@ func (s *AdvancerSuite) TestProcess() {
 			newInput(app.Application.ID, 2, 6, marshal(randomAdvanceResult(6))),
 		}
 
-		err := advancer.process(context.Background(), app.Application, inputs)
+		err := advancer.processInputs(context.Background(), app.Application, inputs)
 		require.Nil(err)
 		require.Len(repository.StoredResults, 7)
 	})
@@ -121,7 +121,7 @@ func (s *AdvancerSuite) TestProcess() {
 			_, _, advancer, app := setup()
 			inputs := []*Input{}
 
-			err := advancer.process(context.Background(), app.Application, inputs)
+			err := advancer.processInputs(context.Background(), app.Application, inputs)
 			require.Nil(err)
 		})
 	})
@@ -134,9 +134,9 @@ func (s *AdvancerSuite) TestProcess() {
 			_, _, advancer, _ := setup()
 			inputs := randomInputs(1, 0, 3)
 
-			err := advancer.process(context.Background(), &invalidApp, inputs)
-			expected := fmt.Sprintf("%v %v", ErrNoApp, invalidApp.ID)
-			require.Errorf(err, expected)
+			err := advancer.processInputs(context.Background(), &invalidApp, inputs)
+			expected := fmt.Sprintf("%v: %v", ErrNoApp, invalidApp.ID)
+			require.EqualError(err, expected)
 		})
 
 		s.Run("Advance", func() {
@@ -149,8 +149,9 @@ func (s *AdvancerSuite) TestProcess() {
 				newInput(app.Application.ID, 0, 2, []byte("unreachable")),
 			}
 
-			err := advancer.process(context.Background(), app.Application, inputs)
-			require.Errorf(err, "advance error")
+			err := advancer.processInputs(context.Background(), app.Application, inputs)
+			require.Error(err)
+			require.Contains(err.Error(), "advance error")
 			require.Len(repository.StoredResults, 1)
 		})
 
@@ -164,14 +165,13 @@ func (s *AdvancerSuite) TestProcess() {
 			}
 			repository.StoreAdvanceError = errors.New("store-advance error")
 
-			err := advancer.process(context.Background(), app.Application, inputs)
-			require.Errorf(err, "store-advance error")
+			err := advancer.processInputs(context.Background(), app.Application, inputs)
+			require.Error(err)
+			require.Contains(err.Error(), "store-advance error")
 			require.Len(repository.StoredResults, 1)
 		})
 	})
 }
-
-// ------------------------------------------------------------------------------------------------
 
 type MockMachine struct {
 	Application *Application
@@ -211,16 +211,27 @@ func newMockMachines() *MachinesMock {
 	}
 }
 
-func (mock *MachinesMock) GetAdvanceMachine(appID int64) (machines.AdvanceMachine, bool) {
+func (mock *MachinesMock) GetMachine(appID int64) (manager.MachineInstance, bool) {
 	machine, exists := mock.Map[appID]
-	return &machine, exists
+	if !exists {
+		return nil, false
+	}
+
+	// For testing purposes, we'll create a mock MachineInstance
+	// that has the same Application but delegates the methods to our mock
+	mockInstance := &MockMachineInstance{
+		application: machine.Application,
+		mockMachine: &machine,
+	}
+
+	return mockInstance, true
 }
 
 func (mock *MachinesMock) UpdateMachines(ctx context.Context) error {
-	return nil // FIXME
+	return nil
 }
 
-func (mock *MachinesMock) Apps() []*Application {
+func (mock *MachinesMock) Applications() []*Application {
 	keys := make([]*Application, len(mock.Map))
 	i := 0
 	for _, v := range mock.Map {
@@ -228,6 +239,45 @@ func (mock *MachinesMock) Apps() []*Application {
 		i++
 	}
 	return keys
+}
+
+func (mock *MachinesMock) HasMachine(appID int64) bool {
+	_, exists := mock.Map[appID]
+	return exists
+}
+
+// MockMachineInstance is a test implementation of manager.MachineInstance
+type MockMachineInstance struct {
+	application *Application
+	mockMachine *MockMachine
+}
+
+// Advance implements the AdvanceMachine interface for testing
+func (m *MockMachineInstance) Advance(ctx context.Context, input []byte, index uint64) (*AdvanceResult, error) {
+	return m.mockMachine.Advance(ctx, input, index)
+}
+
+// Inspect implements the InspectMachine interface for testing
+func (m *MockMachineInstance) Inspect(ctx context.Context, query []byte) (*InspectResult, error) {
+	// Not used in advancer tests, but needed to satisfy the interface
+	return nil, nil
+}
+
+// Application returns the application associated with this machine
+func (m *MockMachineInstance) Application() *Application {
+	return m.application
+}
+
+// Synchronize implements the MachineInstance interface for testing
+func (m *MockMachineInstance) Synchronize(ctx context.Context, repo manager.MachineRepository) error {
+	// Not used in advancer tests, but needed to satisfy the interface
+	return nil
+}
+
+// Close implements the MachineInstance interface for testing
+func (m *MockMachineInstance) Close() error {
+	// Not used in advancer tests, but needed to satisfy the interface
+	return nil
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -303,7 +353,7 @@ func randomBytes() []byte {
 func randomSliceOfBytes() [][]byte {
 	size := mrand.Intn(10) + 1
 	slice := make([][]byte, size)
-	for i := 0; i < size; i++ {
+	for i := range size {
 		slice[i] = randomBytes()
 	}
 	return slice
@@ -320,7 +370,7 @@ func newInput(appId int64, epochIndex uint64, inputIndex uint64, data []byte) *I
 
 func randomInputs(appId int64, epochIndex uint64, size int) []*Input {
 	slice := make([]*Input, size)
-	for i := 0; i < size; i++ {
+	for i := range size {
 		slice[i] = newInput(appId, epochIndex, uint64(i), randomBytes())
 	}
 	return slice

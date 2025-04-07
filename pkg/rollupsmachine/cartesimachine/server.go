@@ -4,6 +4,7 @@
 package cartesimachine
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -45,6 +46,10 @@ func ParseMachineLogLevel(level string) (MachineLogLevel, error) {
 	}
 }
 
+var (
+	ErrNilLogger = errors.New("logger must not be nil")
+)
+
 // StartServer starts a JSON RPC remote cartesi machine server.
 //
 // It configures the server's logging verbosity and initializes its address to 127.0.0.1:port.
@@ -55,6 +60,10 @@ func ParseMachineLogLevel(level string) (MachineLogLevel, error) {
 //
 // It returns the server's address.
 func StartServer(logger *slog.Logger, verbosity MachineLogLevel, port uint32, stdout, stderr io.Writer) (string, error) {
+	if logger == nil {
+		return "", ErrNilLogger
+	}
+
 	// Configures the command's arguments.
 	args := []string{}
 	if verbosity.valid() {
@@ -95,6 +104,10 @@ func StartServer(logger *slog.Logger, verbosity MachineLogLevel, port uint32, st
 
 // StopServer shuts down the JSON RPC remote cartesi machine server hosted at address.
 func StopServer(address string, logger *slog.Logger) error {
+	if logger == nil {
+		return ErrNilLogger
+	}
+
 	logger.Info("Stopping server at", "address", address)
 	remote, err := emulator.ConnectServer(address)
 	if err != nil {

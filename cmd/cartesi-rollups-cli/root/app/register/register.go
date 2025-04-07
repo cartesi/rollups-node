@@ -12,7 +12,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/cartesi/rollups-node/internal/advancer/snapshot"
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/app/util"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
@@ -129,7 +129,7 @@ func run(cmd *cobra.Command, args []string) {
 		checkEnabled, err := config.GetFeatureMachineHashCheckEnabled()
 		cobra.CheckErr(err)
 		if checkEnabled {
-			templateHash, err := snapshot.ReadHash(templatePath)
+			templateHash, err := util.ReadHash(templatePath)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Read machine template hash failed: %v\n", err)
 				os.Exit(1)
