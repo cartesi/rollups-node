@@ -10,7 +10,9 @@ import (
 	"errors"
 	"fmt"
 	mrand "math/rand"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
@@ -27,10 +29,10 @@ func TestAdvancer(t *testing.T) {
 
 type AdvancerSuite struct{ suite.Suite }
 
-func newMock(m *MachinesMock, r *MockRepository) (*Service, error) {
+func newMockAdvancerService(machineManager *MockMachineManager, repo *MockRepository) (*Service, error) {
 	s := &Service{
-		machineManager: m,
-		repository:     r,
+		machineManager: machineManager,
+		repository:     repo,
 	}
 	serviceArgs := &service.CreateInfo{Name: "advancer", Impl: s}
 	err := service.Create(context.Background(), serviceArgs, &s.Service)
@@ -40,15 +42,48 @@ func newMock(m *MachinesMock, r *MockRepository) (*Service, error) {
 	return s, nil
 }
 
+func (s *AdvancerSuite) TestServiceInterface() {
+	s.Run("ServiceMethods", func() {
+		require := s.Require()
+
+		machineManager := newMockMachineManager()
+		repository := &MockRepository{}
+		advancer, err := newMockAdvancerService(machineManager, repository)
+		require.NotNil(advancer)
+		require.Nil(err)
+
+		// Test service interface methods
+		require.True(advancer.Alive())
+		require.True(advancer.Ready())
+		require.Empty(advancer.Reload())
+		require.Empty(advancer.Stop(false))
+		require.Equal(advancer.Name, advancer.String())
+
+		// Test Tick method
+		machineManager.Map[1] = *newMockMachine(1)
+		repository.GetInputsReturn = map[common.Address][]*Input{
+			machineManager.Map[1].Application.IApplicationAddress: {},
+		}
+		tickErrors := advancer.Tick()
+		require.Empty(tickErrors)
+
+		// Test Tick with error
+		repository.UpdateEpochsError = errors.New("update epochs error")
+		tickErrors = advancer.Tick()
+		require.NotEmpty(tickErrors)
+		require.Contains(tickErrors[0].Error(), "update epochs error")
+	})
+}
+
 func (s *AdvancerSuite) TestStep() {
 	s.Run("Ok", func() {
 		require := s.Require()
 
-		machines := newMockMachines()
+		machineManager := newMockMachineManager()
 		app1 := newMockMachine(1)
 		app2 := newMockMachine(2)
-		machines.Map[1] = *app1
-		machines.Map[2] = *app2
+		machineManager.Map[1] = *app1
+		machineManager.Map[2] = *app2
 		res1 := randomAdvanceResult(1)
 		res2 := randomAdvanceResult(2)
 		res3 := randomAdvanceResult(3)
@@ -65,7 +100,7 @@ func (s *AdvancerSuite) TestStep() {
 			},
 		}
 
-		advancer, err := newMock(machines, repository)
+		advancer, err := newMockAdvancerService(machineManager, repository)
 		require.NotNil(advancer)
 		require.Nil(err)
 
@@ -76,24 +111,172 @@ func (s *AdvancerSuite) TestStep() {
 	})
 
 	s.Run("Error/UpdateEpochs", func() {
-		s.T().Skip("TODO")
+		require := s.Require()
+
+		machineManager := newMockMachineManager()
+		app1 := newMockMachine(1)
+		machineManager.Map[1] = *app1
+		res1 := randomAdvanceResult(1)
+
+		repository := &MockRepository{
+			GetInputsReturn: map[common.Address][]*Input{
+				app1.Application.IApplicationAddress: {
+					newInput(app1.Application.ID, 0, 0, marshal(res1)),
+				},
+			},
+			UpdateEpochsError: errors.New("update epochs error"),
+		}
+
+		advancer, err := newMockAdvancerService(machineManager, repository)
+		require.NotNil(advancer)
+		require.Nil(err)
+
+		err = advancer.Step(context.Background())
+		require.Error(err)
+		require.Contains(err.Error(), "update epochs error")
 	})
 
-	// NOTE: missing more test cases
+	s.Run("Error/UpdateMachines", func() {
+		require := s.Require()
+
+		machineManager := &MockMachineManager{
+			Map:                 map[int64]MockMachineImpl{},
+			UpdateMachinesError: errors.New("update machines error"),
+		}
+		repository := &MockRepository{}
+
+		advancer, err := newMockAdvancerService(machineManager, repository)
+		require.NotNil(advancer)
+		require.Nil(err)
+
+		err = advancer.Step(context.Background())
+		require.Error(err)
+		require.Contains(err.Error(), "update machines error")
+	})
+
+	s.Run("Error/GetInputs", func() {
+		require := s.Require()
+
+		machineManager := newMockMachineManager()
+		app1 := newMockMachine(1)
+		machineManager.Map[1] = *app1
+
+		repository := &MockRepository{
+			GetInputsError: errors.New("get inputs error"),
+		}
+
+		advancer, err := newMockAdvancerService(machineManager, repository)
+		require.NotNil(advancer)
+		require.Nil(err)
+
+		err = advancer.Step(context.Background())
+		require.Error(err)
+		require.Contains(err.Error(), "get inputs error")
+	})
+
+	s.Run("NoInputs", func() {
+		require := s.Require()
+
+		machineManager := newMockMachineManager()
+		app1 := newMockMachine(1)
+		machineManager.Map[1] = *app1
+
+		repository := &MockRepository{
+			GetInputsReturn: map[common.Address][]*Input{
+				app1.Application.IApplicationAddress: {},
+			},
+		}
+
+		advancer, err := newMockAdvancerService(machineManager, repository)
+		require.NotNil(advancer)
+		require.Nil(err)
+
+		err = advancer.Step(context.Background())
+		require.Nil(err)
+		require.Len(repository.StoredResults, 0)
+	})
+}
+
+func (s *AdvancerSuite) TestGetUnprocessedInputs() {
+	s.Run("Success", func() {
+		require := s.Require()
+
+		app1 := newMockMachine(1)
+		inputs := []*Input{
+			newInput(app1.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+			newInput(app1.Application.ID, 0, 1, marshal(randomAdvanceResult(1))),
+		}
+
+		repository := &MockRepository{
+			GetInputsReturn: map[common.Address][]*Input{
+				app1.Application.IApplicationAddress: inputs,
+			},
+		}
+
+		result, count, err := getUnprocessedInputs(context.Background(), repository, app1.Application.IApplicationAddress.String())
+		require.Nil(err)
+		require.Equal(uint64(2), count)
+		require.Equal(inputs, result)
+	})
+
+	s.Run("Error", func() {
+		require := s.Require()
+
+		app1 := newMockMachine(1)
+		repository := &MockRepository{
+			GetInputsError: errors.New("list inputs error"),
+		}
+
+		_, _, err := getUnprocessedInputs(context.Background(), repository, app1.Application.IApplicationAddress.String())
+		require.Error(err)
+		require.Contains(err.Error(), "list inputs error")
+	})
 }
 
 func (s *AdvancerSuite) TestProcess() {
-	setup := func() (*MachinesMock, *MockRepository, *Service, *MockMachine) {
+	setup := func() (*MockMachineManager, *MockRepository, *Service, *MockMachineImpl) {
 		require := s.Require()
 
-		machines := newMockMachines()
+		machineManager := newMockMachineManager()
 		app1 := newMockMachine(1)
-		machines.Map[1] = *app1
+		machineManager.Map[1] = *app1
 		repository := &MockRepository{}
-		advancer, err := newMock(machines, repository)
+		advancer, err := newMockAdvancerService(machineManager, repository)
 		require.Nil(err)
-		return machines, repository, advancer, app1
+		return machineManager, repository, advancer, app1
 	}
+
+	s.Run("ApplicationStateUpdate", func() {
+		require := s.Require()
+
+		_, repository, advancer, app := setup()
+		inputs := []*Input{
+			newInput(app.Application.ID, 0, 0, []byte("advance error")),
+		}
+
+		// Verify application state is updated on error
+		err := advancer.processInputs(context.Background(), app.Application, inputs)
+		require.Error(err)
+		require.Equal(1, repository.ApplicationStateUpdates)
+		require.Equal(ApplicationState_Inoperable, repository.LastApplicationState)
+		require.NotNil(repository.LastApplicationStateReason)
+		require.Equal("advance error", *repository.LastApplicationStateReason)
+	})
+
+	s.Run("ApplicationStateUpdateError", func() {
+		require := s.Require()
+
+		_, repository, advancer, app := setup()
+		inputs := []*Input{
+			newInput(app.Application.ID, 0, 0, []byte("advance error")),
+		}
+		repository.UpdateApplicationStateError = errors.New("update state error")
+
+		// Verify error is still returned even if application state update fails
+		err := advancer.processInputs(context.Background(), app.Application, inputs)
+		require.Error(err)
+		require.Contains(err.Error(), "advance error")
+	})
 
 	s.Run("Ok", func() {
 		require := s.Require()
@@ -173,15 +356,185 @@ func (s *AdvancerSuite) TestProcess() {
 	})
 }
 
-type MockMachine struct {
-	Application *Application
+// TestContextCancellation tests how the advancer handles context cancellation
+func (s *AdvancerSuite) TestContextCancellation() {
+	s.Run("CancelDuringStep", func() {
+		require := s.Require()
+
+		machineManager := newMockMachineManager()
+		app1 := newMockMachine(1)
+		machineManager.Map[1] = *app1
+
+		// Create a repository that will block until we cancel the context
+		repository := &MockRepository{
+			GetInputsBlock: true,
+		}
+
+		advancer, err := newMockAdvancerService(machineManager, repository)
+		require.NotNil(advancer)
+		require.Nil(err)
+
+		// Create a context that we can cancel
+		ctx, cancel := context.WithCancel(context.Background())
+
+		// Start the Step operation in a goroutine
+		errCh := make(chan error)
+		go func() {
+			errCh <- advancer.Step(ctx)
+		}()
+
+		// Cancel the context after a short delay
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+
+		// Check that the operation was canceled
+		select {
+		case err := <-errCh:
+			require.Error(err)
+			require.ErrorIs(err, context.Canceled)
+		case <-time.After(100 * time.Millisecond):
+			require.Fail("Step operation did not respect context cancellation")
+		}
+	})
+
+	s.Run("CancelDuringProcessInputs", func() {
+		require := s.Require()
+
+		machineManager := newMockMachineManager()
+		app1 := newMockMachine(1)
+		// Create a machine that will block during Advance until we cancel the context
+		app1.AdvanceBlock = true
+		machineManager.Map[1] = *app1
+
+		repository := &MockRepository{}
+		advancer, err := newMockAdvancerService(machineManager, repository)
+		require.NotNil(advancer)
+		require.Nil(err)
+
+		// Create inputs and a context that we can cancel
+		inputs := []*Input{
+			newInput(app1.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+
+		// Start the processInputs operation in a goroutine
+		errCh := make(chan error)
+		go func() {
+			errCh <- advancer.processInputs(ctx, app1.Application, inputs)
+		}()
+
+		// Cancel the context after a short delay
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+
+		// Check that the operation was canceled
+		select {
+		case err := <-errCh:
+			require.Error(err)
+			require.ErrorIs(err, context.Canceled)
+		case <-time.After(100 * time.Millisecond):
+			require.Fail("processInputs operation did not respect context cancellation")
+		}
+	})
 }
 
-func (mock *MockMachine) Advance(
-	_ context.Context,
+// TestLargeNumberOfInputs how the advancer handles large volumes of inputs
+func (s *AdvancerSuite) TestLargeNumberOfInputs() {
+	s.Run("LargeNumberOfInputs", func() {
+		require := s.Require()
+
+		machineManager := newMockMachineManager()
+		app1 := newMockMachine(1)
+		machineManager.Map[1] = *app1
+		repository := &MockRepository{}
+		advancer, err := newMockAdvancerService(machineManager, repository)
+		require.NotNil(advancer)
+		require.Nil(err)
+
+		// Create a large number of inputs
+		const inputCount = 10000
+		inputs := make([]*Input, inputCount)
+		for i := range inputCount {
+			inputs[i] = newInput(app1.Application.ID, 0, uint64(i), marshal(randomAdvanceResult(uint64(i))))
+		}
+
+		// Process the inputs
+		err = advancer.processInputs(context.Background(), app1.Application, inputs)
+		require.Nil(err)
+
+		// Verify all inputs were processed
+		require.Len(repository.StoredResults, inputCount)
+	})
+}
+
+// TestErrorRecovery tests how the advancer recovers from temporary failures
+func (s *AdvancerSuite) TestErrorRecovery() {
+	s.Run("TemporaryRepositoryFailure", func() {
+		require := s.Require()
+
+		machineManager := newMockMachineManager()
+		app1 := newMockMachine(1)
+		machineManager.Map[1] = *app1
+
+		// Repository that fails on first attempt but succeeds on second
+		repository := &MockRepository{
+			StoreAdvanceFailCount: 1,
+		}
+
+		advancer, err := newMockAdvancerService(machineManager, repository)
+		require.NotNil(advancer)
+		require.Nil(err)
+
+		// Create inputs
+		inputs := []*Input{
+			newInput(app1.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+			newInput(app1.Application.ID, 0, 1, marshal(randomAdvanceResult(1))),
+		}
+
+		// First attempt should fail
+		err = advancer.processInputs(context.Background(), app1.Application, inputs)
+		require.Error(err)
+		require.Contains(err.Error(), "temporary failure")
+
+		// Second attempt should succeed
+		err = advancer.processInputs(context.Background(), app1.Application, inputs)
+		require.Nil(err)
+		require.Len(repository.StoredResults, 2)
+	})
+}
+
+type MockMachineImpl struct {
+	Application  *Application
+	AdvanceBlock bool
+	AdvanceError error
+}
+
+func (mock *MockMachineImpl) Advance(
+	ctx context.Context,
 	input []byte,
 	_ uint64,
 ) (*AdvanceResult, error) {
+	// If AdvanceBlock is true, block until context is canceled
+	if mock.AdvanceBlock {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Hour): // Long timeout to ensure we're waiting for cancellation
+			// This should never be reached in tests
+			return nil, errors.New("advance timeout without cancellation")
+		}
+	}
+
+	// Check for context cancellation
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	// If there's a predefined error, return it
+	if mock.AdvanceError != nil {
+		return nil, mock.AdvanceError
+	}
+
 	var res AdvanceResult
 	err := json.Unmarshal(input, &res)
 	if err != nil {
@@ -190,8 +543,8 @@ func (mock *MockMachine) Advance(
 	return &res, nil
 }
 
-func newMockMachine(id int64) *MockMachine {
-	return &MockMachine{
+func newMockMachine(id int64) *MockMachineImpl {
+	return &MockMachineImpl{
 		Application: &Application{
 			ID:                  id,
 			IApplicationAddress: randomAddress(),
@@ -201,17 +554,18 @@ func newMockMachine(id int64) *MockMachine {
 
 // ------------------------------------------------------------------------------------------------
 
-type MachinesMock struct {
-	Map map[int64]MockMachine
+type MockMachineManager struct {
+	Map                 map[int64]MockMachineImpl
+	UpdateMachinesError error
 }
 
-func newMockMachines() *MachinesMock {
-	return &MachinesMock{
-		Map: map[int64]MockMachine{},
+func newMockMachineManager() *MockMachineManager {
+	return &MockMachineManager{
+		Map: map[int64]MockMachineImpl{},
 	}
 }
 
-func (mock *MachinesMock) GetMachine(appID int64) (manager.MachineInstance, bool) {
+func (mock *MockMachineManager) GetMachine(appID int64) (manager.MachineInstance, bool) {
 	machine, exists := mock.Map[appID]
 	if !exists {
 		return nil, false
@@ -221,27 +575,25 @@ func (mock *MachinesMock) GetMachine(appID int64) (manager.MachineInstance, bool
 	// that has the same Application but delegates the methods to our mock
 	mockInstance := &MockMachineInstance{
 		application: machine.Application,
-		mockMachine: &machine,
+		machineImpl: &machine,
 	}
 
 	return mockInstance, true
 }
 
-func (mock *MachinesMock) UpdateMachines(ctx context.Context) error {
-	return nil
+func (mock *MockMachineManager) UpdateMachines(ctx context.Context) error {
+	return mock.UpdateMachinesError
 }
 
-func (mock *MachinesMock) Applications() []*Application {
-	keys := make([]*Application, len(mock.Map))
-	i := 0
+func (mock *MockMachineManager) Applications() []*Application {
+	apps := make([]*Application, 0, len(mock.Map))
 	for _, v := range mock.Map {
-		keys[i] = v.Application
-		i++
+		apps = append(apps, v.Application)
 	}
-	return keys
+	return apps
 }
 
-func (mock *MachinesMock) HasMachine(appID int64) bool {
+func (mock *MockMachineManager) HasMachine(appID int64) bool {
 	_, exists := mock.Map[appID]
 	return exists
 }
@@ -249,15 +601,15 @@ func (mock *MachinesMock) HasMachine(appID int64) bool {
 // MockMachineInstance is a test implementation of manager.MachineInstance
 type MockMachineInstance struct {
 	application *Application
-	mockMachine *MockMachine
+	machineImpl *MockMachineImpl
 }
 
-// Advance implements the AdvanceMachine interface for testing
+// Advance implements the MachineInstance interface for testing
 func (m *MockMachineInstance) Advance(ctx context.Context, input []byte, index uint64) (*AdvanceResult, error) {
-	return m.mockMachine.Advance(ctx, input, index)
+	return m.machineImpl.Advance(ctx, input, index)
 }
 
-// Inspect implements the InspectMachine interface for testing
+// Inspect implements the MachineInstance interface for testing
 func (m *MockMachineInstance) Inspect(ctx context.Context, query []byte) (*InspectResult, error) {
 	// Not used in advancer tests, but needed to satisfy the interface
 	return nil, nil
@@ -285,12 +637,19 @@ func (m *MockMachineInstance) Close() error {
 type MockRepository struct {
 	GetInputsReturn             map[common.Address][]*Input
 	GetInputsError              error
+	GetInputsBlock              bool
 	StoreAdvanceError           error
+	StoreAdvanceFailCount       int
 	UpdateApplicationStateError error
 	UpdateEpochsError           error
 	UpdateEpochsCount           int64
 
-	StoredResults []*AdvanceResult
+	StoredResults              []*AdvanceResult
+	ApplicationStateUpdates    int
+	LastApplicationState       ApplicationState
+	LastApplicationStateReason *string
+
+	mu sync.Mutex
 }
 
 func (mock *MockRepository) ListInputs(
@@ -299,24 +658,63 @@ func (mock *MockRepository) ListInputs(
 	f repository.InputFilter,
 	p repository.Pagination,
 ) ([]*Input, uint64, error) {
+	// Check for context cancellation
+	if ctx.Err() != nil {
+		return nil, 0, ctx.Err()
+	}
+
+	// If GetInputsBlock is true, block until context is canceled
+	if mock.GetInputsBlock {
+		<-ctx.Done()
+		return nil, 0, ctx.Err()
+	}
+
 	address := common.HexToAddress(nameOrAddress)
 	return mock.GetInputsReturn[address], uint64(len(mock.GetInputsReturn[address])), mock.GetInputsError
 }
 
 func (mock *MockRepository) StoreAdvanceResult(
-	_ context.Context,
+	ctx context.Context,
 	appID int64,
 	res *AdvanceResult,
 ) error {
+	// Check for context cancellation
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	// Thread-safe operations
+	mock.mu.Lock()
+	defer mock.mu.Unlock()
+
+	// For temporary failure testing
+	if mock.StoreAdvanceFailCount > 0 {
+		mock.StoreAdvanceFailCount--
+		return errors.New("temporary failure")
+	}
+
 	mock.StoredResults = append(mock.StoredResults, res)
 	return mock.StoreAdvanceError
 }
 
-func (mock *MockRepository) UpdateEpochsInputsProcessed(_ context.Context, nameOrAddress string) (int64, error) {
+func (mock *MockRepository) UpdateEpochsInputsProcessed(ctx context.Context, nameOrAddress string) (int64, error) {
+	// Check for context cancellation
+	if ctx.Err() != nil {
+		return 0, ctx.Err()
+	}
+
 	return mock.UpdateEpochsCount, mock.UpdateEpochsError
 }
 
 func (mock *MockRepository) UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error {
+	// Check for context cancellation
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	mock.ApplicationStateUpdates++
+	mock.LastApplicationState = state
+	mock.LastApplicationStateReason = reason
 	return mock.UpdateApplicationStateError
 }
 
@@ -374,7 +772,6 @@ func randomInputs(appId int64, epochIndex uint64, size int) []*Input {
 		slice[i] = newInput(appId, epochIndex, uint64(i), randomBytes())
 	}
 	return slice
-
 }
 
 func randomAdvanceResult(inputIndex uint64) *AdvanceResult {
