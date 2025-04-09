@@ -21,19 +21,19 @@ jobs:
           fetch-depth: 0
 
       - name: Check conventional commit
-        uses: cocogitto/cocogitto-action@v3
+        uses: cocogitto/cocogitto-action@v3.11
         id: conventional_commit_check
         with:
           check-latest-tag-only: true
 
       - name: Check license header
-        uses: viperproject/check-license-header@v2
+        uses: viperproject/check-license-header@v2.0.3
         with:
           path: ./
           config: .github/license-check/config.json
 
       - name: Lint Markdown docs
-        uses: DavidAnson/markdownlint-cli2-action@v16
+        uses: DavidAnson/markdownlint-cli2-action@v19
         with:
           globs: |
             *.md
@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
         with:
           submodules: recursive
 
@@ -51,7 +51,7 @@ jobs:
         run: echo ROLLUPS_NODE_VERSION=`make version` >> $GITHUB_ENV
 
       - name: Set up Depot CLI
-        uses: depot/setup-action@v1
+        uses: depot/setup-action@v1.6.0
 
       - name: Build rollups-node image (amd64)
         uses: depot/build-push-action@v1
@@ -66,7 +66,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build rollups-node image (arm64)
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@v1.14.0
         with:
           file: Dockerfile
           context: .
@@ -78,7 +78,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build devnet image
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@v1.14.0
         with:
           file: test/devnet/Dockerfile
           context: .
@@ -90,7 +90,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build debian package (amd64)
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@v1.14.0
         with:
           file: Dockerfile
           context: .
@@ -106,7 +106,7 @@ jobs:
         run: make copy-debian-package BUILD_PLATFORM=linux/amd64 DEB_ARCH=amd64 DEB_PACKAGER_IMG=${{ github.repository_owner }}/rollups-node:debian-packager-amd64
 
       - name: Build debian package (arm64)
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@v1.14.0
         with:
           file: Dockerfile
           context: .
@@ -122,7 +122,7 @@ jobs:
         run: make copy-debian-package BUILD_PLATFORM=linux/arm64 DEB_ARCH=arm64 DEB_PACKAGER_IMG=${{ github.repository_owner }}/rollups-node:debian-packager-arm64
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: artifacts
           path: |
@@ -145,10 +145,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Depot CLI
-        uses: depot/setup-action@v1
+        uses: depot/setup-action@v1.6.0
 
       - name: Build rollups-node:tester image
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@v1.14.0
         with:
           file: Dockerfile
           context: .
@@ -161,7 +161,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build devnet image
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@v1.14.0
         with:
           file: test/devnet/Dockerfile
           context: .
@@ -192,10 +192,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v4.2.1
 
       - name: Upload products to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.2.1
         with:
           draft: true
           files: |
