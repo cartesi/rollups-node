@@ -62,8 +62,6 @@ jobs:
           tags:  ${{ github.repository_owner }}/rollups-node:devel-amd64
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           project: ${{ vars.DEPOT_PROJECT }}
           token: ${{ secrets.DEPOT_TOKEN }}
 
@@ -76,8 +74,6 @@ jobs:
           tags:  ${{ github.repository_owner }}/rollups-node:devel-arm64
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           project: ${{ vars.DEPOT_PROJECT }}
           token: ${{ secrets.DEPOT_TOKEN }}
 
@@ -90,8 +86,6 @@ jobs:
           tags: ${{ github.repository_owner }}/rollups-node-devnet:devel
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           project: ${{ vars.DEPOT_PROJECT }}
           token: ${{ secrets.DEPOT_TOKEN }}
 
@@ -105,8 +99,6 @@ jobs:
           tags:  ${{ github.repository_owner }}/rollups-node:debian-packager-amd64
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           project: ${{ vars.DEPOT_PROJECT }}
           token: ${{ secrets.DEPOT_TOKEN }}
 
@@ -123,8 +115,6 @@ jobs:
           tags:  ${{ github.repository_owner }}/rollups-node:debian-packager-arm64
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           project: ${{ vars.DEPOT_PROJECT }}
           token: ${{ secrets.DEPOT_TOKEN }}
 
@@ -167,8 +157,6 @@ jobs:
           tags: ${{ github.repository_owner }}/rollups-node:tester
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           project: ${{ vars.DEPOT_PROJECT }}
           token: ${{ secrets.DEPOT_TOKEN }}
 
@@ -181,8 +169,6 @@ jobs:
           tags: ${{ github.repository_owner }}/rollups-node-devnet:devel
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           project: ${{ vars.DEPOT_PROJECT }}
           token: ${{ secrets.DEPOT_TOKEN }}
 
