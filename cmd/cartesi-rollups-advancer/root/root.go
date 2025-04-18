@@ -72,7 +72,7 @@ func init() {
 
 	Cmd.Flags().StringVar(&machinelogLevel, "machine-log-level", "info",
 		"Remote Machine log level: trace, debug, info, warning, error, fatal")
-	cobra.CheckErr(viper.BindPFlag(config.REMOTE_MACHINE_LOG_LEVEL, Cmd.Flags().Lookup("machine-log-level")))
+	cobra.CheckErr(viper.BindPFlag(config.JSONRPC_MACHINE_LOG_LEVEL, Cmd.Flags().Lookup("machine-log-level")))
 
 	// TODO: validate on preRunE
 	Cmd.PreRunE = func(cmd *cobra.Command, args []string) error {

@@ -11,7 +11,6 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/pkg/rollupsmachine/cartesimachine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -29,7 +28,7 @@ func (s *MachineManagerSuite) TestNewMachineManager() {
 	require := s.Require()
 	repo := &MockMachineRepository{}
 	testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	manager := NewMachineManager(context.Background(), repo, cartesimachine.MachineLogLevelInfo, testLogger, false)
+	manager := NewMachineManager(context.Background(), repo, testLogger, false)
 	require.NotNil(manager)
 	require.Empty(manager.machines)
 	require.Equal(repo, manager.repository)
@@ -66,7 +65,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 
 		// Create manager with a test logger
 		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		manager := NewMachineManager(context.Background(), repo, cartesimachine.MachineLogLevelInfo, testLogger, false)
+		manager := NewMachineManager(context.Background(), repo, testLogger, false)
 
 		// Create a mock factory for testing
 		mockRuntime := &MockRollupsMachine{}
@@ -97,7 +96,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 
 		// Create a test logger
 		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		manager := NewMachineManager(context.Background(), repo, cartesimachine.MachineLogLevelInfo, testLogger, false)
+		manager := NewMachineManager(context.Background(), repo, testLogger, false)
 
 		// Add mock machines
 		app1 := &model.Application{ID: 1, Name: "App1"}
@@ -130,7 +129,7 @@ func (s *MachineManagerSuite) TestGetMachine() {
 	repo.On("GetLastSnapshot", mock.Anything, mock.Anything).
 		Return(nil, nil)
 
-	manager := NewMachineManager(context.Background(), repo, cartesimachine.MachineLogLevelInfo, nil, false)
+	manager := NewMachineManager(context.Background(), repo, nil, false)
 	machine := &MockMachineInstance{application: &model.Application{ID: 1}}
 
 	// Add a machine
@@ -153,7 +152,7 @@ func (s *MachineManagerSuite) TestHasMachine() {
 	repo.On("GetLastSnapshot", mock.Anything, mock.Anything).
 		Return(nil, nil)
 
-	manager := NewMachineManager(context.Background(), repo, cartesimachine.MachineLogLevelInfo, nil, false)
+	manager := NewMachineManager(context.Background(), repo, nil, false)
 	machine := &MockMachineInstance{application: &model.Application{ID: 1}}
 
 	// Add a machine
@@ -173,7 +172,7 @@ func (s *MachineManagerSuite) TestAddMachine() {
 	repo.On("GetLastSnapshot", mock.Anything, mock.Anything).
 		Return(nil, nil)
 
-	manager := NewMachineManager(context.Background(), repo, cartesimachine.MachineLogLevelInfo, nil, false)
+	manager := NewMachineManager(context.Background(), repo, nil, false)
 	machine1 := &MockMachineInstance{application: &model.Application{ID: 1}}
 	machine2 := &MockMachineInstance{application: &model.Application{ID: 2}}
 
@@ -196,7 +195,7 @@ func (s *MachineManagerSuite) TestAddMachine() {
 func (s *MachineManagerSuite) TestRemoveDisabledMachines() {
 	require := s.Require()
 
-	manager := NewMachineManager(context.Background(), nil, cartesimachine.MachineLogLevelInfo, nil, false)
+	manager := NewMachineManager(context.Background(), nil, nil, false)
 
 	// Add machines
 	app1 := &model.Application{ID: 1}
@@ -228,7 +227,7 @@ func (s *MachineManagerSuite) TestApplications() {
 	repo.On("GetLastSnapshot", mock.Anything, mock.Anything).
 		Return(nil, nil)
 
-	manager := NewMachineManager(context.Background(), repo, cartesimachine.MachineLogLevelInfo, nil, false)
+	manager := NewMachineManager(context.Background(), repo, nil, false)
 
 	// Add machines
 	app1 := &model.Application{ID: 1, Name: "App1"}

@@ -13,9 +13,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/manager/pmutex"
 	. "github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/pkg/emulator"
-	"github.com/cartesi/rollups-node/pkg/rollupsmachine"
-	"github.com/cartesi/rollups-node/pkg/rollupsmachine/cartesimachine"
+	"github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/ethereum/go-ethereum/common"
 	"golang.org/x/sync/semaphore"
 )
@@ -33,7 +31,7 @@ var (
 // MachineInstanceImpl represents a running Cartesi machine for an application
 type MachineInstanceImpl struct {
 	application *Application
-	runtime     rollupsmachine.RollupsMachine
+	runtime     machine.Machine
 
 	// How many inputs were processed by the machine
 	processedInputs uint64
@@ -62,18 +60,16 @@ var (
 // NewMachineInstance creates a new machine instance for an application
 func NewMachineInstance(
 	ctx context.Context,
-	verbosity MachineLogLevel,
 	app *Application,
 	logger *slog.Logger,
 	checkHash bool,
 ) (MachineInstance, error) {
-	return NewMachineInstanceWithFactory(ctx, verbosity, app, 0, logger, checkHash, defaultFactory)
+	return NewMachineInstanceWithFactory(ctx, app, 0, logger, checkHash, defaultFactory)
 }
 
 // NewMachineInstanceFromSnapshot creates a new machine instance from a snapshot
 func NewMachineInstanceFromSnapshot(
 	ctx context.Context,
-	verbosity MachineLogLevel,
 	app *Application,
 	logger *slog.Logger,
 	checkHash bool,
@@ -85,13 +81,12 @@ func NewMachineInstanceFromSnapshot(
 		SnapshotPath: snapshotPath,
 		MachineHash:  machineHash,
 	}
-	return NewMachineInstanceWithFactory(ctx, verbosity, app, inputIndex+1, logger, checkHash, factory)
+	return NewMachineInstanceWithFactory(ctx, app, inputIndex+1, logger, checkHash, factory)
 }
 
 // NewMachineInstanceWithFactory creates a new machine instance with a custom factory
 func NewMachineInstanceWithFactory(
 	ctx context.Context,
-	verbosity MachineLogLevel,
 	app *Application,
 	processedInputs uint64,
 	logger *slog.Logger,
@@ -121,7 +116,7 @@ func NewMachineInstanceWithFactory(
 	}
 
 	// Create the machine server and runtime
-	runtime, err := factory.CreateMachineRuntime(ctx, verbosity, app, logger, checkHash)
+	runtime, err := factory.CreateMachineRuntime(ctx, app, logger, checkHash)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrMachineCreation, err)
 	}
@@ -192,7 +187,7 @@ func (m *MachineInstanceImpl) Synchronize(ctx context.Context, repo MachineRepos
 
 // forkForAdvance creates a copy of the machine for advance operations
 // It verifies the input index and returns a forked machine
-func (m *MachineInstanceImpl) forkForAdvance(ctx context.Context, index uint64) (rollupsmachine.RollupsMachine, error) {
+func (m *MachineInstanceImpl) forkForAdvance(ctx context.Context, index uint64) (machine.Machine, error) {
 	m.mutex.HLock()
 	defer m.mutex.Unlock()
 
@@ -215,7 +210,7 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, index u
 	m.advanceMutex.Lock()
 	defer m.advanceMutex.Unlock()
 
-	var fork rollupsmachine.RollupsMachine
+	var fork machine.Machine
 	var err error
 
 	// Fork the machine
@@ -227,12 +222,12 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, index u
 	// Get the machine state before processing
 	prevMachineHash, err := fork.Hash(ctx)
 	if err != nil {
-		return nil, errors.Join(err, fork.Close(ctx))
+		return nil, errors.Join(err, fork.Close())
 	}
 
 	prevOutputsHash, err := fork.OutputsHash(ctx)
 	if err != nil {
-		return nil, errors.Join(err, fork.Close(ctx))
+		return nil, errors.Join(err, fork.Close())
 	}
 
 	// Create a timeout context for the advance operation
@@ -243,7 +238,7 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, index u
 	accepted, outputs, reports, outputsHash, err := fork.Advance(advanceCtx, input)
 	status, err := toInputStatus(accepted, err)
 	if err != nil {
-		return nil, errors.Join(err, fork.Close(ctx))
+		return nil, errors.Join(err, fork.Close())
 	}
 
 	// Create the result
@@ -260,13 +255,13 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, index u
 		// Get the machine hash after processing
 		machineHash, err := fork.Hash(ctx)
 		if err != nil {
-			return nil, errors.Join(err, fork.Close(ctx))
+			return nil, errors.Join(err, fork.Close())
 		}
 		result.MachineHash = (*common.Hash)(&machineHash)
 
 		// Replace the current machine with the fork
 		m.mutex.HLock()
-		if err = m.runtime.Close(ctx); err != nil {
+		if err = m.runtime.Close(); err != nil {
 			m.mutex.Unlock()
 			return nil, err
 		}
@@ -279,7 +274,7 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, index u
 		result.OutputsHash = prevOutputsHash
 
 		// Close the fork since we're not using it
-		err = fork.Close(ctx)
+		err = fork.Close()
 
 		// Update the processed inputs counter
 		m.mutex.HLock()
@@ -292,7 +287,7 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, index u
 
 // forkForInspect creates a copy of the machine for inspect operations
 // It returns the forked machine and the current processed inputs count
-func (m *MachineInstanceImpl) forkForInspect(ctx context.Context) (rollupsmachine.RollupsMachine, uint64, error) {
+func (m *MachineInstanceImpl) forkForInspect(ctx context.Context) (machine.Machine, uint64, error) {
 	m.mutex.LLock()
 	defer m.mutex.Unlock()
 
@@ -340,7 +335,7 @@ func (m *MachineInstanceImpl) Inspect(ctx context.Context, query []byte) (*Inspe
 	}
 
 	// Close the fork
-	closeErr := fork.Close(ctx)
+	closeErr := fork.Close()
 
 	// If there was an error closing the fork, return it directly
 	// as it's more serious than an inspection error
@@ -409,7 +404,7 @@ func (m *MachineInstanceImpl) Close() error {
 		return nil
 	}
 
-	err := m.runtime.Close(ctx)
+	err := m.runtime.Close()
 	m.runtime = nil
 	return err
 }
@@ -418,63 +413,48 @@ func (m *MachineInstanceImpl) Close() error {
 type MachineRuntimeFactory interface {
 	CreateMachineRuntime(
 		ctx context.Context,
-		verbosity MachineLogLevel,
 		app *Application,
 		logger *slog.Logger,
 		checkHash bool,
-	) (rollupsmachine.RollupsMachine, error)
+	) (machine.Machine, error)
 }
 
 // createMachineRuntimeCommon contains the shared logic for creating machine runtimes
 func createMachineRuntimeCommon(
 	ctx context.Context,
-	verbosity MachineLogLevel,
 	app *Application,
 	logger *slog.Logger,
 	checkHash bool,
 	machinePath string,
 	sourceType string,
 	expectedHash common.Hash,
-) (rollupsmachine.RollupsMachine, error) {
+) (machine.Machine, error) {
 	if logger == nil {
 		return nil, ErrInvalidLogger
 	}
 
 	appAddress := app.IApplicationAddress.String()
-	logger.Info(fmt.Sprintf("Creating machine runtime from %s", sourceType),
-		"application", app.Name,
-		"address", appAddress,
-		"path", machinePath)
-
-	// Start the machine server
-	// TODO(mpolitzer): this needs a refactoring to:
-	// - store the `server` state itself (no need to reconnect via address).
-	// - store the server `pid` may be needed to kill misbehaving servers.
-	// - fit the call in the right abstraction layer `emulator` vs `cartesimachine`.
-	server, address, pid, err := emulator.SpawnServer("127.0.0.1:0", app.ExecutionParameters.FastDeadline)
-	if err != nil {
-		return nil, err
-	}
-	_ = server
-	_ = pid
 
 	// Load the machine
-	logger.Info(fmt.Sprintf("Loading machine from %s", sourceType),
+	logger.Info(fmt.Sprintf("Loading machine runtime from %s", sourceType),
 		"application", app.Name,
 		"address", appAddress,
-		"remote-machine", address,
 		"path", machinePath)
 
+	// Create machine configuration
+	config := machine.DefaultConfig(machinePath)
+	config.ExecutionParameters = app.ExecutionParameters
+
 	// Create the machine
-	machine, err := cartesimachine.Load(ctx, machinePath, address, nil, &app.ExecutionParameters)
+	m, err := machine.Load(ctx, logger, config)
 	if err != nil {
-		return nil, errors.Join(err, cartesimachine.StopServer(address, logger, &app.ExecutionParameters))
+		return nil, err
 	}
 
 	logger.Debug(fmt.Sprintf("Machine loaded from %s", sourceType),
 		"application", app.Name,
 		"address", appAddress,
-		"remote-machine", address,
+		"remote-machine", m.Address(),
 		"path", machinePath)
 
 	// Verify the machine hash if required
@@ -483,12 +463,12 @@ func createMachineRuntimeCommon(
 			"application", app.Name,
 			"address", appAddress)
 
-		machineHash, err := machine.ReadHash(ctx)
+		machineHash, err := m.Hash(ctx)
 		if err != nil {
-			return nil, errors.Join(err, cartesimachine.StopServer(address, logger, &app.ExecutionParameters))
+			return nil, errors.Join(err, m.Close())
 		}
 
-		if machineHash != expectedHash {
+		if common.Hash(machineHash) != expectedHash {
 			logger.Error("Machine hash mismatch",
 				"application", app.Name,
 				"address", appAddress,
@@ -497,22 +477,11 @@ func createMachineRuntimeCommon(
 
 			err = fmt.Errorf("machine hash mismatch: expected %s, got %s",
 				expectedHash, machineHash)
-			return nil, errors.Join(err, machine.Close(ctx))
+			return nil, errors.Join(err, m.Close())
 		}
 	}
 
-	// Create the rollups machine
-	runtime, err := rollupsmachine.New(ctx,
-		machine,
-		app.ExecutionParameters.AdvanceIncCycles,
-		app.ExecutionParameters.AdvanceMaxCycles,
-		logger,
-	)
-	if err != nil {
-		return nil, errors.Join(err, machine.Close(ctx))
-	}
-
-	return runtime, nil
+	return m, nil
 }
 
 // DefaultMachineRuntimeFactory is the standard implementation of MachineRuntimeFactory
@@ -521,14 +490,12 @@ type DefaultMachineRuntimeFactory struct{}
 // CreateMachineRuntime creates a new machine runtime for an application
 func (f *DefaultMachineRuntimeFactory) CreateMachineRuntime(
 	ctx context.Context,
-	verbosity MachineLogLevel,
 	app *Application,
 	logger *slog.Logger,
 	checkHash bool,
-) (rollupsmachine.RollupsMachine, error) {
+) (machine.Machine, error) {
 	return createMachineRuntimeCommon(
 		ctx,
-		verbosity,
 		app,
 		logger,
 		checkHash,
@@ -547,11 +514,10 @@ type SnapshotMachineRuntimeFactory struct {
 // CreateMachineRuntime creates a new machine runtime from a snapshot
 func (f *SnapshotMachineRuntimeFactory) CreateMachineRuntime(
 	ctx context.Context,
-	verbosity MachineLogLevel,
 	app *Application,
 	logger *slog.Logger,
 	checkHash bool,
-) (rollupsmachine.RollupsMachine, error) {
+) (machine.Machine, error) {
 	// Determine which hash to check against
 	expectedHash := app.TemplateHash
 	if f.MachineHash != nil {
@@ -560,7 +526,6 @@ func (f *SnapshotMachineRuntimeFactory) CreateMachineRuntime(
 
 	return createMachineRuntimeCommon(
 		ctx,
-		verbosity,
 		app,
 		logger,
 		checkHash,
@@ -583,24 +548,20 @@ func toInputStatus(accepted bool, err error) (status InputCompletionStatus, _ er
 		}
 	}
 
-	if errors.Is(err, cartesimachine.ErrTimedOut) {
-		return InputCompletionStatus_TimeLimitExceeded, nil
-	}
-
 	switch {
-	case errors.Is(err, rollupsmachine.ErrException):
+	case errors.Is(err, machine.ErrException):
 		return InputCompletionStatus_Exception, nil
-	case errors.Is(err, rollupsmachine.ErrHalted):
+	case errors.Is(err, machine.ErrHalted):
 		return InputCompletionStatus_MachineHalted, nil
-	case errors.Is(err, rollupsmachine.ErrOutputsLimitExceeded):
+	case errors.Is(err, machine.ErrOutputsLimitExceeded):
 		return InputCompletionStatus_OutputsLimitExceeded, nil
-	case errors.Is(err, rollupsmachine.ErrCycleLimitExceeded):
+	case errors.Is(err, machine.ErrReachedTargetMcycle):
 		return InputCompletionStatus_CycleLimitExceeded, nil
-	case errors.Is(err, rollupsmachine.ErrPayloadLengthLimitExceeded):
+	case errors.Is(err, machine.ErrPayloadLengthLimitExceeded):
 		return InputCompletionStatus_PayloadLengthLimitExceeded, nil
-	case errors.Is(err, cartesimachine.ErrCartesiMachine),
-		errors.Is(err, rollupsmachine.ErrProgress),
-		errors.Is(err, rollupsmachine.ErrSoftYield):
+	case errors.Is(err, machine.ErrDeadlineExceeded):
+		return InputCompletionStatus_TimeLimitExceeded, nil
+	case errors.Is(err, machine.ErrMachineInternal):
 		fallthrough
 	default:
 		return status, err

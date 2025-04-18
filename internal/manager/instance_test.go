@@ -14,8 +14,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/manager/pmutex"
 	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/pkg/rollupsmachine"
-	"github.com/cartesi/rollups-node/pkg/rollupsmachine/cartesimachine"
+	"github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/suite"
 	"golang.org/x/sync/semaphore"
@@ -29,17 +28,16 @@ type MachineInstanceSuite struct{ suite.Suite }
 
 // MockMachineRuntimeFactory implements MachineRuntimeFactory for testing
 type MockMachineRuntimeFactory struct {
-	RuntimeToReturn rollupsmachine.RollupsMachine
+	RuntimeToReturn machine.Machine
 	ErrorToReturn   error
 }
 
 func (f *MockMachineRuntimeFactory) CreateMachineRuntime(
 	ctx context.Context,
-	verbosity MachineLogLevel,
 	app *model.Application,
 	logger *slog.Logger,
 	checkHash bool,
-) (rollupsmachine.RollupsMachine, error) {
+) (machine.Machine, error) {
 	return f.RuntimeToReturn, f.ErrorToReturn
 }
 
@@ -66,7 +64,6 @@ func (s *MachineInstanceSuite) TestNewMachineInstance() {
 
 		machine, err := NewMachineInstanceWithFactory(
 			context.Background(),
-			cartesimachine.MachineLogLevelInfo,
 			app,
 			0,
 			testLogger,
@@ -95,7 +92,6 @@ func (s *MachineInstanceSuite) TestNewMachineInstance() {
 
 		machine, err := NewMachineInstanceWithFactory(
 			context.Background(),
-			cartesimachine.MachineLogLevelInfo,
 			app,
 			0,
 			testLogger,
@@ -122,7 +118,6 @@ func (s *MachineInstanceSuite) TestNewMachineInstance() {
 
 		machine, err := NewMachineInstanceWithFactory(
 			context.Background(),
-			cartesimachine.MachineLogLevelInfo,
 			app,
 			0,
 			testLogger,
@@ -149,7 +144,6 @@ func (s *MachineInstanceSuite) TestNewMachineInstance() {
 
 		machine, err := NewMachineInstanceWithFactory(
 			context.Background(),
-			cartesimachine.MachineLogLevelInfo,
 			app,
 			0,
 			testLogger,
@@ -174,7 +168,6 @@ func (s *MachineInstanceSuite) TestNewMachineInstance() {
 
 		machine, err := NewMachineInstanceWithFactory(
 			context.Background(),
-			cartesimachine.MachineLogLevelInfo,
 			app,
 			0,
 			nil,
@@ -199,7 +192,6 @@ func (s *MachineInstanceSuite) TestNewMachineInstance() {
 
 		machine, err := NewMachineInstanceWithFactory(
 			context.Background(),
-			cartesimachine.MachineLogLevelInfo,
 			app,
 			0,
 			testLogger,
@@ -271,27 +263,27 @@ func (s *MachineInstanceSuite) TestAdvance() {
 		}
 
 		testSoftError("Exception",
-			rollupsmachine.ErrException,
+			machine.ErrException,
 			model.InputCompletionStatus_Exception)
 
 		testSoftError("Halted",
-			rollupsmachine.ErrHalted,
+			machine.ErrHalted,
 			model.InputCompletionStatus_MachineHalted)
 
 		testSoftError("OutputsLimit",
-			rollupsmachine.ErrOutputsLimitExceeded,
+			machine.ErrOutputsLimitExceeded,
 			model.InputCompletionStatus_OutputsLimitExceeded)
 
-		testSoftError("CycleLimit",
-			rollupsmachine.ErrCycleLimitExceeded,
+		testSoftError("ReachedTargetMcycle",
+			machine.ErrReachedTargetMcycle,
 			model.InputCompletionStatus_CycleLimitExceeded)
 
 		testSoftError("TimeLimit",
-			cartesimachine.ErrTimedOut,
+			machine.ErrDeadlineExceeded,
 			model.InputCompletionStatus_TimeLimitExceeded)
 
 		testSoftError("PayloadLengthLimit",
-			rollupsmachine.ErrPayloadLengthLimitExceeded,
+			machine.ErrPayloadLengthLimitExceeded,
 			model.InputCompletionStatus_PayloadLengthLimitExceeded)
 	})
 
@@ -392,17 +384,17 @@ func (s *MachineInstanceSuite) TestAdvance() {
 
 			s.Run("Fork", func() {
 				require := s.Require()
-				_, fork, machine := s.setupAdvance()
+				_, fork, machineInst := s.setupAdvance()
 				errClose := errors.New("Close error")
-				fork.AdvanceError = rollupsmachine.ErrException
+				fork.AdvanceError = machine.ErrException
 				fork.CloseError = errClose
 
-				res, err := machine.Advance(context.Background(), []byte{}, 5)
+				res, err := machineInst.Advance(context.Background(), []byte{}, 5)
 				require.Error(err)
 				require.NotNil(res)
 				require.ErrorIs(err, errClose)
 				require.NotErrorIs(err, errUnreachable)
-				require.Equal(uint64(6), machine.processedInputs)
+				require.Equal(uint64(6), machineInst.processedInputs)
 			})
 		})
 	})
@@ -663,16 +655,16 @@ func (m *MockMachineInstance) Close() error {
 
 var (
 	errUnreachable  = errors.New("unreachable")
-	expectedOutputs = []rollupsmachine.Output{
+	expectedOutputs = []machine.Output{
 		newBytes(11, 100),
 		newBytes(12, 100),
 		newBytes(13, 100),
 	}
-	expectedReports1 = []rollupsmachine.Report{
+	expectedReports1 = []machine.Report{
 		newBytes(21, 200),
 		newBytes(22, 200),
 	}
-	expectedReports2 = []rollupsmachine.Report{
+	expectedReports2 = []machine.Report{
 		newBytes(31, 300),
 		newBytes(32, 300),
 		newBytes(33, 300),
@@ -689,7 +681,7 @@ func (s *MachineInstanceSuite) setupAdvance() (*MockRollupsMachine, *MockRollups
 		},
 	}
 	inner := &MockRollupsMachine{}
-	machine := &MachineInstanceImpl{
+	machineInst := &MachineInstanceImpl{
 		application:           app,
 		runtime:               inner,
 		processedInputs:       5,
@@ -707,12 +699,12 @@ func (s *MachineInstanceSuite) setupAdvance() (*MockRollupsMachine, *MockRollups
 	inner.CloseError = nil
 
 	fork.AdvanceAcceptedReturn = true
-	fork.AdvanceOutputsReturn = []rollupsmachine.Output{
+	fork.AdvanceOutputsReturn = []machine.Output{
 		newBytes(11, 100),
 		newBytes(12, 100),
 		newBytes(13, 100),
 	}
-	fork.AdvanceReportsReturn = []rollupsmachine.Report{
+	fork.AdvanceReportsReturn = []machine.Report{
 		newBytes(21, 200),
 		newBytes(22, 200),
 	}
@@ -723,7 +715,7 @@ func (s *MachineInstanceSuite) setupAdvance() (*MockRollupsMachine, *MockRollups
 	fork.HashError = nil
 
 	fork.InspectAcceptedReturn = true
-	fork.InspectReportsReturn = []rollupsmachine.Report{
+	fork.InspectReportsReturn = []machine.Report{
 		newBytes(31, 300),
 		newBytes(32, 300),
 		newBytes(33, 300),
@@ -733,7 +725,7 @@ func (s *MachineInstanceSuite) setupAdvance() (*MockRollupsMachine, *MockRollups
 
 	fork.CloseError = errUnreachable
 
-	return inner, fork, machine
+	return inner, fork, machineInst
 }
 
 func (s *MachineInstanceSuite) setupInspect() (*MockRollupsMachine, *MockRollupsMachine, *MachineInstanceImpl) {
@@ -745,7 +737,7 @@ func (s *MachineInstanceSuite) setupInspect() (*MockRollupsMachine, *MockRollups
 		},
 	}
 	inner := &MockRollupsMachine{}
-	machine := &MachineInstanceImpl{
+	machineInst := &MachineInstanceImpl{
 		application:           app,
 		runtime:               inner,
 		processedInputs:       55,
@@ -766,7 +758,7 @@ func (s *MachineInstanceSuite) setupInspect() (*MockRollupsMachine, *MockRollups
 	fork.HashError = errUnreachable
 
 	fork.InspectAcceptedReturn = true
-	fork.InspectReportsReturn = []rollupsmachine.Report{
+	fork.InspectReportsReturn = []machine.Report{
 		newBytes(31, 300),
 		newBytes(32, 300),
 		newBytes(33, 300),
@@ -776,7 +768,7 @@ func (s *MachineInstanceSuite) setupInspect() (*MockRollupsMachine, *MockRollups
 
 	fork.CloseError = nil
 
-	return inner, fork, machine
+	return inner, fork, machineInst
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -787,7 +779,7 @@ const (
 )
 
 func newHash(n byte) common.Hash {
-	hash := rollupsmachine.Hash{}
+	hash := machine.Hash{}
 	for i := range 32 {
 		hash[i] = n
 	}
@@ -805,20 +797,20 @@ func newBytes(n byte, size int) []byte {
 // ------------------------------------------------------------------------------------------------
 
 type MockRollupsMachine struct {
-	ForkReturn rollupsmachine.RollupsMachine
+	ForkReturn machine.Machine
 	ForkError  error
 
-	HashReturn rollupsmachine.Hash
+	HashReturn machine.Hash
 	HashError  error
 
 	AdvanceAcceptedReturn bool
-	AdvanceOutputsReturn  []rollupsmachine.Output
-	AdvanceReportsReturn  []rollupsmachine.Report
-	AdvanceHashReturn     rollupsmachine.Hash
+	AdvanceOutputsReturn  []machine.Output
+	AdvanceReportsReturn  []machine.Report
+	AdvanceHashReturn     machine.Hash
 	AdvanceError          error
 
 	InspectAcceptedReturn bool
-	InspectReportsReturn  []rollupsmachine.Report
+	InspectReportsReturn  []machine.Report
 	InspectError          error
 
 	StoreError error
@@ -826,38 +818,42 @@ type MockRollupsMachine struct {
 	CloseError error
 }
 
-func (machine *MockRollupsMachine) Fork(_ context.Context) (rollupsmachine.RollupsMachine, error) {
-	return machine.ForkReturn, machine.ForkError
+func (m *MockRollupsMachine) Fork(_ context.Context) (machine.Machine, error) {
+	return m.ForkReturn, m.ForkError
 }
 
-func (machine *MockRollupsMachine) Hash(_ context.Context) (rollupsmachine.Hash, error) {
-	return machine.HashReturn, machine.HashError
+func (m *MockRollupsMachine) Hash(_ context.Context) (machine.Hash, error) {
+	return m.HashReturn, m.HashError
 }
 
-func (machine *MockRollupsMachine) OutputsHash(_ context.Context) (rollupsmachine.Hash, error) {
-	return machine.AdvanceHashReturn, machine.HashError
+func (m *MockRollupsMachine) OutputsHash(_ context.Context) (machine.Hash, error) {
+	return m.AdvanceHashReturn, m.HashError
 }
 
-func (machine *MockRollupsMachine) Advance(_ context.Context, input []byte) (
-	bool, []rollupsmachine.Output, []rollupsmachine.Report, rollupsmachine.Hash, error,
+func (m *MockRollupsMachine) Advance(_ context.Context, input []byte) (
+	bool, []machine.Output, []machine.Report, machine.Hash, error,
 ) {
-	return machine.AdvanceAcceptedReturn,
-		machine.AdvanceOutputsReturn,
-		machine.AdvanceReportsReturn,
-		machine.AdvanceHashReturn,
-		machine.AdvanceError
+	return m.AdvanceAcceptedReturn,
+		m.AdvanceOutputsReturn,
+		m.AdvanceReportsReturn,
+		m.AdvanceHashReturn,
+		m.AdvanceError
 }
 
-func (machine *MockRollupsMachine) Inspect(_ context.Context,
+func (m *MockRollupsMachine) Inspect(_ context.Context,
 	query []byte,
-) (bool, []rollupsmachine.Report, error) {
-	return machine.InspectAcceptedReturn, machine.InspectReportsReturn, machine.InspectError
+) (bool, []machine.Report, error) {
+	return m.InspectAcceptedReturn, m.InspectReportsReturn, m.InspectError
 }
 
-func (machine *MockRollupsMachine) Store(_ context.Context, _ string) error {
-	return machine.StoreError
+func (m *MockRollupsMachine) Store(_ context.Context, _ string) error {
+	return m.StoreError
 }
 
-func (machine *MockRollupsMachine) Close(_ context.Context) error {
-	return machine.CloseError
+func (m *MockRollupsMachine) Close() error {
+	return m.CloseError
+}
+
+func (m *MockRollupsMachine) Address() string {
+	return "mock-address"
 }

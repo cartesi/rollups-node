@@ -114,7 +114,7 @@ func init() {
 
 	Cmd.Flags().StringVar(&machinelogLevel, "machine-log-level", "info",
 		"Remote Machine log level: trace, debug, info, warning, error, fatal")
-	cobra.CheckErr(viper.BindPFlag(config.REMOTE_MACHINE_LOG_LEVEL, Cmd.Flags().Lookup("machine-log-level")))
+	cobra.CheckErr(viper.BindPFlag(config.JSONRPC_MACHINE_LOG_LEVEL, Cmd.Flags().Lookup("machine-log-level")))
 
 	Cmd.Flags().Uint64Var(&maxBlockRange, "max-block-range", 0,
 		"Maximum number of blocks in a single query. large queries will be split automatically. Zero for unlimited.")

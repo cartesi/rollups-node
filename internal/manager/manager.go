@@ -38,7 +38,6 @@ type MachineManager struct {
 	mutex      sync.RWMutex
 	machines   map[int64]MachineInstance
 	repository MachineRepository
-	verbosity  MachineLogLevel
 	checkHash  bool
 	logger     *slog.Logger
 }
@@ -47,14 +46,12 @@ type MachineManager struct {
 func NewMachineManager(
 	ctx context.Context,
 	repo MachineRepository,
-	verbosity MachineLogLevel,
 	logger *slog.Logger,
 	checkHash bool,
 ) *MachineManager {
 	return &MachineManager{
 		machines:   map[int64]MachineInstance{},
 		repository: repo,
-		verbosity:  verbosity,
 		checkHash:  checkHash,
 		logger:     logger,
 	}
@@ -107,7 +104,7 @@ func (m *MachineManager) UpdateMachines(ctx context.Context) error {
 			} else {
 				// Create a factory with the snapshot path and machine hash
 				instance, err = NewMachineInstanceFromSnapshot(
-					ctx, m.verbosity, app, m.logger, m.checkHash, *snapshot.SnapshotURI, snapshot.MachineHash, snapshot.Index)
+					ctx, app, m.logger, m.checkHash, *snapshot.SnapshotURI, snapshot.MachineHash, snapshot.Index)
 
 				if err != nil {
 					m.logger.Error("Failed to create machine instance from snapshot",
@@ -154,7 +151,7 @@ func (m *MachineManager) UpdateMachines(ctx context.Context) error {
 		}
 
 		// If we didn't load from a snapshot, create a new machine instance from the template
-		instance, err = NewMachineInstance(ctx, m.verbosity, app, m.logger, m.checkHash)
+		instance, err = NewMachineInstance(ctx, app, m.logger, m.checkHash)
 		if err != nil {
 			m.logger.Error("Failed to create machine instance",
 				"application", app.IApplicationAddress,

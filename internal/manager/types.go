@@ -7,11 +7,7 @@ import (
 	"context"
 
 	. "github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/pkg/rollupsmachine/cartesimachine"
 )
-
-// MachineLogLevel represents the verbosity level for machine logs
-type MachineLogLevel = cartesimachine.MachineLogLevel
 
 // MachineInstance defines the interface for a machine instance
 type MachineInstance interface {

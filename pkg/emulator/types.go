@@ -107,7 +107,7 @@ func (reason BreakReason) String() (s string) {
 
 type (
 	CmioYieldCommand uint8
-	CmioYieldReason  uint8
+	CmioYieldReason  uint16
 )
 
 const (

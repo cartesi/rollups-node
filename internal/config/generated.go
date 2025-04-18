@@ -50,7 +50,7 @@ const (
 	TELEMETRY_ADDRESS                                 = "CARTESI_TELEMETRY_ADDRESS"
 	LOG_COLOR                                         = "CARTESI_LOG_COLOR"
 	LOG_LEVEL                                         = "CARTESI_LOG_LEVEL"
-	REMOTE_MACHINE_LOG_LEVEL                          = "CARTESI_REMOTE_MACHINE_LOG_LEVEL"
+	JSONRPC_MACHINE_LOG_LEVEL                         = "CARTESI_JSONRPC_MACHINE_LOG_LEVEL"
 	ADVANCER_POLLING_INTERVAL                         = "CARTESI_ADVANCER_POLLING_INTERVAL"
 	BLOCKCHAIN_HTTP_MAX_RETRIES                       = "CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES"
 	BLOCKCHAIN_HTTP_RETRY_MAX_WAIT                    = "CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT"
@@ -134,7 +134,7 @@ func SetDefaults() {
 
 	viper.SetDefault(LOG_LEVEL, "info")
 
-	viper.SetDefault(REMOTE_MACHINE_LOG_LEVEL, "info")
+	viper.SetDefault(JSONRPC_MACHINE_LOG_LEVEL, "info")
 
 	viper.SetDefault(ADVANCER_POLLING_INTERVAL, "3")
 
@@ -190,7 +190,7 @@ type AdvancerConfig struct {
 
 	// Remote Cartesi Machine server log level.
 	// One of "trace", "debug", "info", "warning", "error", "fatal".
-	RemoteMachineLogLevel MachineLogLevel `mapstructure:"CARTESI_REMOTE_MACHINE_LOG_LEVEL"`
+	JsonrpcMachineLogLevel string `mapstructure:"CARTESI_JSONRPC_MACHINE_LOG_LEVEL"`
 
 	// How many seconds the node will wait before querying the database for new inputs.
 	AdvancerPollingInterval Duration `mapstructure:"CARTESI_ADVANCER_POLLING_INTERVAL"`
@@ -267,11 +267,11 @@ func LoadAdvancerConfig() (*AdvancerConfig, error) {
 		return nil, fmt.Errorf("CARTESI_LOG_LEVEL is required for the advancer service: %w", err)
 	}
 
-	cfg.RemoteMachineLogLevel, err = GetRemoteMachineLogLevel()
+	cfg.JsonrpcMachineLogLevel, err = GetJsonrpcMachineLogLevel()
 	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_REMOTE_MACHINE_LOG_LEVEL: %w", err)
+		return nil, fmt.Errorf("failed to get CARTESI_JSONRPC_MACHINE_LOG_LEVEL: %w", err)
 	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_REMOTE_MACHINE_LOG_LEVEL is required for the advancer service: %w", err)
+		return nil, fmt.Errorf("CARTESI_JSONRPC_MACHINE_LOG_LEVEL is required for the advancer service: %w", err)
 	}
 
 	cfg.AdvancerPollingInterval, err = GetAdvancerPollingInterval()
@@ -817,7 +817,7 @@ type NodeConfig struct {
 
 	// Remote Cartesi Machine server log level.
 	// One of "trace", "debug", "info", "warning", "error", "fatal".
-	RemoteMachineLogLevel MachineLogLevel `mapstructure:"CARTESI_REMOTE_MACHINE_LOG_LEVEL"`
+	JsonrpcMachineLogLevel string `mapstructure:"CARTESI_JSONRPC_MACHINE_LOG_LEVEL"`
 
 	// How many seconds the node will wait before querying the database for new inputs.
 	AdvancerPollingInterval Duration `mapstructure:"CARTESI_ADVANCER_POLLING_INTERVAL"`
@@ -982,11 +982,11 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("CARTESI_LOG_LEVEL is required for the node service: %w", err)
 	}
 
-	cfg.RemoteMachineLogLevel, err = GetRemoteMachineLogLevel()
+	cfg.JsonrpcMachineLogLevel, err = GetJsonrpcMachineLogLevel()
 	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_REMOTE_MACHINE_LOG_LEVEL: %w", err)
+		return nil, fmt.Errorf("failed to get CARTESI_JSONRPC_MACHINE_LOG_LEVEL: %w", err)
 	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_REMOTE_MACHINE_LOG_LEVEL is required for the node service: %w", err)
+		return nil, fmt.Errorf("CARTESI_JSONRPC_MACHINE_LOG_LEVEL is required for the node service: %w", err)
 	}
 
 	cfg.AdvancerPollingInterval, err = GetAdvancerPollingInterval()
@@ -1155,7 +1155,7 @@ func (c *NodeConfig) ToAdvancerConfig() *AdvancerConfig {
 		TelemetryAddress:               c.TelemetryAddress,
 		LogColor:                       c.LogColor,
 		LogLevel:                       c.LogLevel,
-		RemoteMachineLogLevel:          c.RemoteMachineLogLevel,
+		JsonrpcMachineLogLevel:         c.JsonrpcMachineLogLevel,
 		AdvancerPollingInterval:        c.AdvancerPollingInterval,
 		MaxStartupTime:                 c.MaxStartupTime,
 		SnapshotsDir:                   c.SnapshotsDir,
@@ -1640,17 +1640,17 @@ func GetLogLevel() (LogLevel, error) {
 	return notDefinedLogLevel(), fmt.Errorf("%s: %w", LOG_LEVEL, ErrNotDefined)
 }
 
-// GetRemoteMachineLogLevel returns the value for the environment variable CARTESI_REMOTE_MACHINE_LOG_LEVEL.
-func GetRemoteMachineLogLevel() (MachineLogLevel, error) {
-	s := viper.GetString(REMOTE_MACHINE_LOG_LEVEL)
+// GetJsonrpcMachineLogLevel returns the value for the environment variable CARTESI_JSONRPC_MACHINE_LOG_LEVEL.
+func GetJsonrpcMachineLogLevel() (string, error) {
+	s := viper.GetString(JSONRPC_MACHINE_LOG_LEVEL)
 	if s != "" {
-		v, err := toMachineLogLevel(s)
+		v, err := toString(s)
 		if err != nil {
-			return v, fmt.Errorf("failed to parse %s: %w", REMOTE_MACHINE_LOG_LEVEL, err)
+			return v, fmt.Errorf("failed to parse %s: %w", JSONRPC_MACHINE_LOG_LEVEL, err)
 		}
 		return v, nil
 	}
-	return notDefinedMachineLogLevel(), fmt.Errorf("%s: %w", REMOTE_MACHINE_LOG_LEVEL, ErrNotDefined)
+	return notDefinedstring(), fmt.Errorf("%s: %w", JSONRPC_MACHINE_LOG_LEVEL, ErrNotDefined)
 }
 
 // GetAdvancerPollingInterval returns the value for the environment variable CARTESI_ADVANCER_POLLING_INTERVAL.

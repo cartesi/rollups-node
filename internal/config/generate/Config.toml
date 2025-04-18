@@ -329,9 +329,9 @@ used-by = ["advancer", "node", "cli"]
 # Remote Cartesi Machine
 #
 
-[machine.CARTESI_REMOTE_MACHINE_LOG_LEVEL]
+[machine.CARTESI_JSONRPC_MACHINE_LOG_LEVEL]
 default = "info"
-go-type = "MachineLogLevel"
+go-type = "string"
 description = """
 Remote Cartesi Machine server log level.
 One of "trace", "debug", "info", "warning", "error", "fatal"."""

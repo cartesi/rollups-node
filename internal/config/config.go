@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/pkg/rollupsmachine/cartesimachine"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -31,14 +30,13 @@ func (r Redacted[T]) String() string {
 }
 
 type (
-	URL             = *url.URL
-	Duration        = time.Duration
-	LogLevel        = slog.Level
-	DefaultBlock    = model.DefaultBlock
-	RedactedString  = Redacted[string]
-	RedactedUint    = Redacted[uint32]
-	MachineLogLevel = cartesimachine.MachineLogLevel
-	Address         = common.Address
+	URL            = *url.URL
+	Duration       = time.Duration
+	LogLevel       = slog.Level
+	DefaultBlock   = model.DefaultBlock
+	RedactedString = Redacted[string]
+	RedactedUint   = Redacted[uint32]
+	Address        = common.Address
 )
 
 // ------------------------------------------------------------------------------------------------
@@ -53,6 +51,22 @@ const (
 	AuthKindMnemonicVar
 	AuthKindMnemonicFile
 	AuthKindAWS
+)
+
+// ------------------------------------------------------------------------------------------------
+// JSON-RPC Machine log level
+// ------------------------------------------------------------------------------------------------
+
+// MachineLogLevel represents the verbosity level for machine logs
+type MachineLogLevel string
+
+const (
+	MachineLogLevelTrace MachineLogLevel = "trace"
+	MachineLogLevelDebug MachineLogLevel = "debug"
+	MachineLogLevelInfo  MachineLogLevel = "info"
+	MachineLogLevelWarn  MachineLogLevel = "warn"
+	MachineLogLevelError MachineLogLevel = "error"
+	MachineLogLevelFatal MachineLogLevel = "fatal"
 )
 
 // ------------------------------------------------------------------------------------------------
@@ -95,7 +109,18 @@ func ToLogLevelFromString(s string) (LogLevel, error) {
 }
 
 func ToMachineLogLevelFromString(s string) (MachineLogLevel, error) {
-	return cartesimachine.ParseMachineLogLevel(s)
+	var m = map[string]MachineLogLevel{
+		string(MachineLogLevelTrace): MachineLogLevelTrace,
+		string(MachineLogLevelDebug): MachineLogLevelDebug,
+		string(MachineLogLevelInfo):  MachineLogLevelInfo,
+		string(MachineLogLevelWarn):  MachineLogLevelWarn,
+		string(MachineLogLevelError): MachineLogLevelError,
+		string(MachineLogLevelFatal): MachineLogLevelFatal,
+	}
+	if v, ok := m[s]; ok {
+		return v, nil
+	}
+	return "", fmt.Errorf("invalid remote machine log level")
 }
 
 func ToAddressFromString(s string) (Address, error) {
@@ -210,6 +235,6 @@ var (
 	notDefinedRedactedString  = func() RedactedString { return RedactedString{""} }
 	notDefinedRedactedUint    = func() RedactedUint { return RedactedUint{0} }
 	notDefinedURL             = func() URL { return &url.URL{} }
-	notDefinedMachineLogLevel = func() MachineLogLevel { return cartesimachine.MachineLogLevelInfo }
+	notDefinedMachineLogLevel = func() MachineLogLevel { return MachineLogLevelInfo }
 	notDefinedAddress         = func() Address { return common.Address{} }
 )

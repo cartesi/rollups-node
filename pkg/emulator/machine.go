@@ -313,22 +313,32 @@ func (m *Machine) WriteReg(r RegID, value uint64) error {
 }
 
 // receive_cmio_request
-func (m *Machine) ReceiveCmioRequest() (cmd uint8, reason uint16, data []byte, err error) {
+func (m *Machine) ReceiveCmioRequest() (uint8, uint16, []byte, error) {
 	var cCmd C.uint8_t
 	var cReason C.uint16_t
-
-	// We'll guess some large buffer.
-	// FIXME: should we check the length before?
-	maxBuf := 2 * 1024 * 1024 // nolint: mnd
-	buf := make([]byte, maxBuf)
-	var cLen C.uint64_t = C.uint64_t(maxBuf)
+	var cLen C.uint64_t
+	var data []byte
+	var err error
 
 	m.callCAPI(func() {
+		// This is how the emulator own source code does it,
+		// first call to get the length then allocate and read the data
+		err = newError(C.cm_receive_cmio_request(
+			m.ptr,
+			(*C.uint8_t)(unsafe.Pointer(nil)),
+			(*C.uint16_t)(unsafe.Pointer(nil)),
+			(*C.uint8_t)(unsafe.Pointer(nil)),
+			&cLen,
+		))
+		if err != nil {
+			return
+		}
+		data = make([]byte, cLen)
 		err = newError(C.cm_receive_cmio_request(
 			m.ptr,
 			&cCmd,
 			&cReason,
-			(*C.uint8_t)(unsafe.Pointer(&buf[0])),
+			(*C.uint8_t)(unsafe.Pointer(&data[0])),
 			&cLen,
 		))
 	})
@@ -336,7 +346,7 @@ func (m *Machine) ReceiveCmioRequest() (cmd uint8, reason uint16, data []byte, e
 	if err != nil {
 		return 0, 0, nil, err
 	}
-	return uint8(cCmd), uint16(cReason), buf[:cLen], nil
+	return uint8(cCmd), uint16(cReason), data, nil
 }
 
 // run
