@@ -4,7 +4,6 @@
 package deploy
 
 import (
-	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -18,12 +17,10 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/contracts/dataavailability"
-	"github.com/cartesi/rollups-node/pkg/contracts/iapplicationfactory"
-	"github.com/cartesi/rollups-node/pkg/contracts/iauthorityfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
@@ -154,6 +151,7 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 
 	var consensus common.Address
+	var authorityFactoryAddress common.Address
 	if cmd.Flags().Changed("consensus") {
 		consensus, err = config.ToAddressFromString(consensusAddr)
 		if err != nil {
@@ -167,14 +165,14 @@ func run(cmd *cobra.Command, args []string) {
 		}
 	} else {
 		var owner common.Address
-		authorityFactoryAddress, err := config.GetContractsAuthorityFactoryAddress()
+		authorityFactoryAddress, err = config.GetContractsAuthorityFactoryAddress()
 		cobra.CheckErr(err)
 		if cmd.Flags().Changed("authority-owner") {
 			owner = common.HexToAddress(authorityOwner)
 		} else {
 			owner = txOpts.From
 		}
-		consensus, err = deployAuthority(ctx, client, txOpts, authorityFactoryAddress, owner, epochLength, salt)
+		consensus, err = ethutil.DeployAuthority(ctx, client, txOpts, authorityFactoryAddress, owner, epochLength, salt, printAsJSON)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Authoriy contract creation failed: %v\n", err)
 			os.Exit(1)
@@ -189,7 +187,7 @@ func run(cmd *cobra.Command, args []string) {
 	}
 	appFactoryAddress, err := config.GetContractsApplicationFactoryAddress()
 	cobra.CheckErr(err)
-	appAddr, err := deployApplication(ctx, client, txOpts, appFactoryAddress, consensus, owner, templateHash, encodedDA, salt)
+	appAddr, err := ethutil.DeployApplication(ctx, client, txOpts, appFactoryAddress, consensus, owner, templateHash, encodedDA, salt, printAsJSON)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Application contract creation failed: %v\n", err)
 		os.Exit(1)
@@ -223,7 +221,26 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	if printAsJSON {
-		jsonData, err := json.Marshal(application)
+		deployment := struct {
+			Application               *model.Application `json:"application"`
+			ApplicationFactoryAddress common.Address     `json:"application_factory_address"`
+			Consensus                 common.Address     `json:"consensus_address"`
+			CustomConsensus           bool               `json:"custom_consensus"`
+			AuthorityFactoryAddress   common.Address     `json:"authority_factory_address"`
+			Owner                     common.Address     `json:"owner"`
+			Register                  bool               `json:"register"`
+			Salt                      string             `json:"salt"`
+		}{
+			Application:               &application,
+			ApplicationFactoryAddress: appFactoryAddress,
+			AuthorityFactoryAddress:   authorityFactoryAddress,
+			Consensus:                 consensus,
+			CustomConsensus:           cmd.Flags().Changed("consensus"),
+			Owner:                     owner,
+			Register:                  !noRegister,
+			Salt:                      salt,
+		}
+		jsonData, err := json.MarshalIndent(deployment, "", "  ")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error marshalling application to JSON: %v\n", err)
 			os.Exit(1)
@@ -232,133 +249,6 @@ func run(cmd *cobra.Command, args []string) {
 	} else {
 		fmt.Printf("Application %v successfully deployed\n", application.IApplicationAddress)
 	}
-}
-
-// FIXME move this to ethutil
-func deployApplication(
-	ctx context.Context,
-	client *ethclient.Client,
-	txOpts *bind.TransactOpts,
-	applicationFactoryAddr common.Address,
-	authorityAddr common.Address,
-	owner common.Address,
-	templateHash string,
-	dataAvailability []byte,
-	salt string,
-) (common.Address, error) {
-
-	templateHashBytes, err := hex.DecodeString(templateHash)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("failed to decode template hash: %v", err)
-	}
-	saltBytes, err := hex.DecodeString(salt)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("failed to decode salt: %v", err)
-	}
-
-	factory, err := iapplicationfactory.NewIApplicationFactory(applicationFactoryAddr, client)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("failed to instantiate contract: %v", err)
-	}
-
-	tx, err := factory.NewApplication(txOpts, authorityAddr, owner, toBytes32(templateHashBytes), dataAvailability, toBytes32(saltBytes))
-	if err != nil {
-		return common.Address{}, fmt.Errorf("transaction failed: %v", err)
-	}
-
-	if !printAsJSON {
-		fmt.Printf("Transaction submitted: %s\n", tx.Hash().Hex())
-	}
-
-	// Wait for the transaction to be mined
-	receipt, err := bind.WaitMined(ctx, client, tx)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("failed to wait for transaction mining: %v", err)
-	}
-
-	if receipt.Status == 1 {
-		if !printAsJSON {
-			fmt.Println("Transaction successful!")
-		}
-	} else {
-		return common.Address{}, fmt.Errorf("transaction failed")
-	}
-
-	// Look for the specific event in the receipt logs
-	for _, vLog := range receipt.Logs {
-		// Parse log for ApplicationCreated event
-		event, err := factory.ParseApplicationCreated(*vLog)
-		if err != nil {
-			continue // Skip logs that don't match
-		}
-
-		if !printAsJSON {
-			fmt.Printf("New Application contract deployed at address: %s\n", event.AppContract.Hex())
-		}
-		return event.AppContract, nil
-	}
-
-	return common.Address{}, fmt.Errorf("failed to find ApplicationCreated event in receipt logs")
-}
-
-// FIXME remove this
-func deployAuthority(
-	ctx context.Context,
-	client *ethclient.Client,
-	txOpts *bind.TransactOpts,
-	authorityFactoryAddr common.Address,
-	owner common.Address,
-	epochLength uint64,
-	salt string,
-) (common.Address, error) {
-	saltBytes, err := hex.DecodeString(salt)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("failed to decode salt: %v", err)
-	}
-
-	contract, err := iauthorityfactory.NewIAuthorityFactory(authorityFactoryAddr, client)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("failed to instantiate contract: %v", err)
-	}
-
-	tx, err := contract.NewAuthority0(txOpts, owner, big.NewInt(int64(epochLength)), toBytes32(saltBytes))
-	if err != nil {
-		return common.Address{}, fmt.Errorf("transaction failed: %v", err)
-	}
-
-	if !printAsJSON {
-		fmt.Printf("Transaction submitted: %s\n", tx.Hash().Hex())
-	}
-
-	// Wait for the transaction to be mined
-	receipt, err := bind.WaitMined(ctx, client, tx)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("failed to wait for transaction mining: %v", err)
-	}
-
-	if receipt.Status == 1 {
-		if !printAsJSON {
-			fmt.Println("Transaction successful!")
-		}
-	} else {
-		return common.Address{}, fmt.Errorf("transaction failed")
-	}
-
-	// Look for the specific event in the receipt logs
-	for _, vLog := range receipt.Logs {
-		// Parse log for ApplicationCreated event
-		event, err := contract.ParseAuthorityCreated(*vLog)
-		if err != nil {
-			continue // Skip logs that don't match
-		}
-
-		if !printAsJSON {
-			fmt.Printf("New Authority contract deployed at address: %s\n", event.Authority.Hex())
-		}
-		return event.Authority, nil
-	}
-
-	return common.Address{}, fmt.Errorf("failed to find AuthorityCreated event in receipt logs")
 }
 
 func getEpochLength(

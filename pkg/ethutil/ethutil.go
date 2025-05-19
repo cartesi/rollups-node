@@ -11,10 +11,8 @@ import (
 	"math/big"
 
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
-	"github.com/cartesi/rollups-node/pkg/contracts/iapplicationfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
-	"github.com/cartesi/rollups-node/pkg/contracts/iselfhostedapplicationfactory"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -26,62 +24,6 @@ const GasLimit = 30_000_000
 
 // Dev mnemonic used by Foundry/Anvil.
 const FoundryMnemonic = "test test test test test test test test test test test junk"
-
-func DeploySelfHostedApplication(
-	ctx context.Context,
-	client *ethclient.Client,
-	transactionOpts *bind.TransactOpts,
-	shAppFactoryAddr common.Address,
-	ownerAddr common.Address,
-	templateHash common.Hash,
-	dataAvailability []byte,
-	salt string,
-) (common.Address, error) {
-	var appAddr common.Address
-	if client == nil {
-		return appAddr, fmt.Errorf("DeploySelfHostedApplication: client is nil")
-	}
-
-	saltBytes := common.Hex2Bytes(salt)
-
-	factory, err := iselfhostedapplicationfactory.NewISelfHostedApplicationFactory(shAppFactoryAddr, client)
-	if err != nil {
-		return appAddr, fmt.Errorf("Failed to instantiate contract: %v", err)
-	}
-
-	receipt, err := sendTransaction(
-		ctx, client, transactionOpts, big.NewInt(0), GasLimit,
-		func(txOpts *bind.TransactOpts) (*types.Transaction, error) {
-			return factory.DeployContracts(txOpts, ownerAddr, big.NewInt(10), ownerAddr, templateHash,
-				dataAvailability, toBytes32(saltBytes))
-		},
-	)
-	if err != nil {
-		return appAddr, err
-	}
-
-	appFactoryAddress, err := factory.GetApplicationFactory(nil)
-	if err != nil {
-		return appAddr, err
-	}
-
-	appFactory, err := iapplicationfactory.NewIApplicationFactory(appFactoryAddress, client)
-	if err != nil {
-		return appAddr, err
-	}
-
-	// Look for the specific event in the receipt logs
-	for _, vLog := range receipt.Logs {
-		event, err := appFactory.ParseApplicationCreated(*vLog)
-		if err != nil {
-			continue // Skip logs that don't match
-		}
-
-		return event.AppContract, nil
-	}
-
-	return appAddr, fmt.Errorf("Failed to find ApplicationCreated event in receipt logs")
-}
 
 // Add input to the input box for the given DApp address.
 // This function waits until the transaction is added to a block and return the input index.
