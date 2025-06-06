@@ -18,7 +18,7 @@ Instead of using evironment variables,
     the claimer will get the list of application addresses from Redis,
     through the `experimental-dapp-addresses-config` key.
 This key holds a [Redis Set](https://redis.io/docs/latest/develop/data-types/sets/) value.
-You must use commands such as [`SADD`](https://redis.io/docs/latest/commands/sadd/) and [`SREM`]https://redis.io/docs/latest/commands/srem/() to manipulate the set of addresses.
+You must use commands such as [`SADD`](https://redis.io/docs/latest/commands/sadd/) and [`SREM`](https://redis.io/docs/latest/commands/srem/) to manipulate the set of addresses.
 
 Application addresses must be encoded as hex strings.
 The prefix `0x` is ignored by the `authority-claimer` when loading applications adresses.
