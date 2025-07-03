@@ -18,10 +18,10 @@ TARGET_OS?=$(shell uname)
 export TARGET_OS
 
 ROLLUPS_NODE_VERSION := 2.0.0-alpha.8
-CONTRACTS_VERSION := 2.1.1
-CONTRACTS_URL:=https://github.com/cartesi/rollups-contracts/releases/download/
-CONTRACTS_ARTIFACT:=rollups-contracts-$(CONTRACTS_VERSION)-artifacts.tar.gz
-CONTRACTS_SHA256:=2e7a105d656de2adafad6439a5ff00f35b997aaf27972bd1becc33dea8817861
+ROLLUPS_CONTRACTS_VERSION := 2.1.1
+ROLLUPS_CONTRACTS_URL:=https://github.com/cartesi/rollups-contracts/releases/download/
+ROLLUPS_CONTRACTS_ARTIFACT:=rollups-contracts-$(ROLLUPS_CONTRACTS_VERSION)-artifacts.tar.gz
+ROLLUPS_CONTRACTS_SHA256:=2e7a105d656de2adafad6439a5ff00f35b997aaf27972bd1becc33dea8817861
 
 IMAGE_TAG ?= devel
 
@@ -131,11 +131,11 @@ contracts: $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp ## Export the rollups-contrac
 $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp:
 	@echo "Downloading rollups-contracts artifacts"
 	@mkdir -p $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
-	@curl -sSL $(CONTRACTS_URL)/v$(CONTRACTS_VERSION)/$(CONTRACTS_ARTIFACT) -o $(CONTRACTS_ARTIFACT)
-	@echo "$(CONTRACTS_SHA256)  $(CONTRACTS_ARTIFACT)" | shasum -a 256 --check > /dev/null
-	@tar -zxf $(CONTRACTS_ARTIFACT) -C $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
+	@curl -sSL $(ROLLUPS_CONTRACTS_URL)/v$(ROLLUPS_CONTRACTS_VERSION)/$(ROLLUPS_CONTRACTS_ARTIFACT) -o $(ROLLUPS_CONTRACTS_ARTIFACT)
+	@echo "$(ROLLUPS_CONTRACTS_SHA256)  $(ROLLUPS_CONTRACTS_ARTIFACT)" | shasum -a 256 --check > /dev/null
+	@tar -zxf $(ROLLUPS_CONTRACTS_ARTIFACT) -C $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
 	@touch $@
-	@rm -f $(CONTRACTS_ARTIFACT)
+	@rm -f $(ROLLUPS_CONTRACTS_ARTIFACT)
 
 migrate: ## Run migration on development database
 	@echo "Running PostgreSQL migration"
@@ -160,8 +160,8 @@ clean-go: ## Clean Go artifacts
 
 clean-contracts: ## Clean contract artifacts
 	@echo "Cleaning contract artifacts"
-	@rm -rf rollups-contracts
-	@rm -f $(CONTRACTS_ARTIFACT)
+	@rm -rf $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
+	@rm -f $(ROLLUPS_CONTRACTS_ARTIFACT)
 
 clean-docs: ## Clean the documentation
 	@echo "Cleaning the documentation"
