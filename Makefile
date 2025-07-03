@@ -22,6 +22,10 @@ ROLLUPS_CONTRACTS_VERSION := 2.1.1
 ROLLUPS_CONTRACTS_URL:=https://github.com/cartesi/rollups-contracts/releases/download/
 ROLLUPS_CONTRACTS_ARTIFACT:=rollups-contracts-$(ROLLUPS_CONTRACTS_VERSION)-artifacts.tar.gz
 ROLLUPS_CONTRACTS_SHA256:=2e7a105d656de2adafad6439a5ff00f35b997aaf27972bd1becc33dea8817861
+ROLLUPS_PRT_CONTRACTS_VERSION := 2.0.1
+ROLLUPS_PRT_CONTRACTS_URL:=https://github.com/cartesi/dave/releases/download/
+ROLLUPS_PRT_CONTRACTS_ARTIFACT:=cartesi-rollups-prt-contract-artifacts.tar.gz
+ROLLUPS_PRT_CONTRACTS_SHA256:=8625acd474b0d2ca5613028d0896b72f1b7cdda8a10a889e90e7c68c671006df
 
 IMAGE_TAG ?= devel
 
@@ -74,6 +78,7 @@ endif
 GO_TEST_PACKAGES ?= ./...
 
 ROLLUPS_CONTRACTS_ABI_BASEDIR:= rollups-contracts/
+ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR:= rollups-prt-contracts/
 
 all: build
 
@@ -91,7 +96,7 @@ env:
 	@echo export CARTESI_BLOCKCHAIN_DEFAULT_BLOCK="latest"
 	@echo export CARTESI_BLOCKCHAIN_HTTP_ENDPOINT="http://localhost:8545"
 	@echo export CARTESI_BLOCKCHAIN_WS_ENDPOINT="ws://localhost:8545"
-	@echo export CARTESI_BLOCKCHAIN_ID="13370"
+	@echo export CARTESI_BLOCKCHAIN_ID="31337"
 	@echo export CARTESI_CONTRACTS_INPUT_BOX_ADDRESS="0x1b51e2992A2755Ba4D6F7094032DF91991a0Cfac"
 	@echo export CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS="0x5a3368b30174d389aFd205a46bAd35BBE6709b8a"
 	@echo export CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS="0x26E758238CB6eC5aB70ce0dd52aF2d7b82e1972E"
@@ -113,7 +118,7 @@ $(GO_ARTIFACTS):
 tidy-go:
 	@go mod tidy
 
-generate: $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp ## Generate the file that are committed to the repo
+generate: contracts ## Generate the file that are committed to the repo
 	@echo "Generating Go files"
 	@go generate ./internal/... ./pkg/...
 
@@ -126,7 +131,7 @@ check-generate: generate ## Check whether the generated files are in sync
 		exit 1; \
 	fi
 
-contracts: $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp ## Export the rollups-contracts artifacts
+contracts: $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp $(ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR)/.stamp ## Export the contract artifacts
 
 $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp:
 	@echo "Downloading rollups-contracts artifacts"
@@ -136,6 +141,15 @@ $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp:
 	@tar -zxf $(ROLLUPS_CONTRACTS_ARTIFACT) -C $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
 	@touch $@
 	@rm -f $(ROLLUPS_CONTRACTS_ARTIFACT)
+
+$(ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR)/.stamp:
+	@echo "Downloading rollups-prt-contracts artifacts"
+	@mkdir -p $(ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR)
+	@curl -sSL $(ROLLUPS_PRT_CONTRACTS_URL)/v$(ROLLUPS_PRT_CONTRACTS_VERSION)/$(ROLLUPS_PRT_CONTRACTS_ARTIFACT) -o $(ROLLUPS_PRT_CONTRACTS_ARTIFACT)
+	@echo "$(ROLLUPS_PRT_CONTRACTS_SHA256)  $(ROLLUPS_PRT_CONTRACTS_ARTIFACT)" | shasum -a 256 --check > /dev/null
+	@tar -zxf $(ROLLUPS_PRT_CONTRACTS_ARTIFACT) -C $(ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR)
+	@touch $@
+	@rm $(ROLLUPS_PRT_CONTRACTS_ARTIFACT)
 
 migrate: ## Run migration on development database
 	@echo "Running PostgreSQL migration"
@@ -160,8 +174,8 @@ clean-go: ## Clean Go artifacts
 
 clean-contracts: ## Clean contract artifacts
 	@echo "Cleaning contract artifacts"
-	@rm -rf $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
-	@rm -f $(ROLLUPS_CONTRACTS_ARTIFACT)
+	@rm -rf $(ROLLUPS_CONTRACTS_ABI_BASEDIR) $(ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR)
+	@rm -f $(ROLLUPS_CONTRACTS_ARTIFACT) $(ROLLUPS_PRT_CONTRACTS_ARTIFACT)
 
 clean-docs: ## Clean the documentation
 	@echo "Cleaning the documentation"
