@@ -21,6 +21,7 @@ import (
 )
 
 const rollupsContractsPath = "../../rollups-contracts/"
+const rollupsPrtContractsPath = "../../rollups-prt-contracts/"
 
 type contractBinding struct {
 	jsonPath string
@@ -63,6 +64,18 @@ var bindings = []contractBinding{
 	{
 		jsonPath: rollupsContractsPath + "DataAvailability.sol/DataAvailability.json",
 		typeName: "DataAvailability",
+	},
+	{
+		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/ITournament.sol/ITournament.json",
+		typeName: "ITournament",
+	},
+	{
+		jsonPath: rollupsPrtContractsPath + "cartesi-rollups/contracts/out/IDaveConsensus.sol/IDaveConsensus.json",
+		typeName: "IDaveConsensus",
+	},
+	{
+		jsonPath: rollupsPrtContractsPath + "cartesi-rollups/contracts/out/IDaveAppFactory.sol/IDaveAppFactory.json",
+		typeName: "IDaveAppFactory",
 	},
 }
 
