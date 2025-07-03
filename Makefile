@@ -18,10 +18,10 @@ TARGET_OS?=$(shell uname)
 export TARGET_OS
 
 ROLLUPS_NODE_VERSION := 2.0.0-alpha.8
-CONTRACTS_VERSION := 2.0.0
-CONTRACTS_URL:=https://github.com/cartesi/rollups-contracts/releases/download/
-CONTRACTS_ARTIFACT:=rollups-contracts-$(CONTRACTS_VERSION)-artifacts.tar.gz
-CONTRACTS_SHA256:=7a153b29926857a82e479788cf1e04866a0b8a2cf77ab11a67fe0b3df176cd26
+ROLLUPS_CONTRACTS_VERSION := 2.0.0
+ROLLUPS_CONTRACTS_URL:=https://github.com/cartesi/rollups-contracts/releases/download/
+ROLLUPS_CONTRACTS_ARTIFACT:=rollups-contracts-$(ROLLUPS_CONTRACTS_VERSION)-artifacts.tar.gz
+ROLLUPS_CONTRACTS_SHA256:=7a153b29926857a82e479788cf1e04866a0b8a2cf77ab11a67fe0b3df176cd26
 
 IMAGE_TAG ?= devel
 
@@ -131,11 +131,11 @@ contracts: $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp ## Export the rollups-contrac
 $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp:
 	@echo "Downloading rollups-contracts artifacts"
 	@mkdir -p $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
-	@curl -sSL $(CONTRACTS_URL)/v$(CONTRACTS_VERSION)/$(CONTRACTS_ARTIFACT) -o $(CONTRACTS_ARTIFACT)
-	@echo "$(CONTRACTS_SHA256)  $(CONTRACTS_ARTIFACT)" | shasum -a 256 --check > /dev/null
-	@tar -zxf $(CONTRACTS_ARTIFACT) -C $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
+	@curl -sSL $(ROLLUPS_CONTRACTS_URL)/v$(ROLLUPS_CONTRACTS_VERSION)/$(ROLLUPS_CONTRACTS_ARTIFACT) -o $(ROLLUPS_CONTRACTS_ARTIFACT)
+	@echo "$(ROLLUPS_CONTRACTS_SHA256)  $(ROLLUPS_CONTRACTS_ARTIFACT)" | shasum -a 256 --check > /dev/null
+	@tar -zxf $(ROLLUPS_CONTRACTS_ARTIFACT) -C $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
 	@touch $@
-	@rm $(CONTRACTS_ARTIFACT)
+	@rm $(ROLLUPS_CONTRACTS_ARTIFACT)
 
 migrate: ## Run migration on development database
 	@echo "Running PostgreSQL migration"
@@ -160,7 +160,7 @@ clean-go: ## Clean Go artifacts
 
 clean-contracts: ## Clean contract artifacts
 	@echo "Cleaning contract artifacts"
-	@rm -rf rollups-contracts
+	@rm -rf $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
 
 clean-docs: ## Clean the documentation
 	@echo "Cleaning the documentation"
