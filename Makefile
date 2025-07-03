@@ -22,6 +22,10 @@ ROLLUPS_CONTRACTS_VERSION := 2.0.0
 ROLLUPS_CONTRACTS_URL:=https://github.com/cartesi/rollups-contracts/releases/download/
 ROLLUPS_CONTRACTS_ARTIFACT:=rollups-contracts-$(ROLLUPS_CONTRACTS_VERSION)-artifacts.tar.gz
 ROLLUPS_CONTRACTS_SHA256:=7a153b29926857a82e479788cf1e04866a0b8a2cf77ab11a67fe0b3df176cd26
+ROLLUPS_PRT_CONTRACTS_VERSION := 1.0.1-test
+ROLLUPS_PRT_CONTRACTS_URL:=https://github.com/cartesi/dave/releases/download/
+ROLLUPS_PRT_CONTRACTS_ARTIFACT:=cartesi-rollups-prt-contract-artifacts.tar.gz
+ROLLUPS_PRT_CONTRACTS_SHA256:=ee5d9f05aef9b573932758be281fdabdaa8a2dab49b7b36f6ea52efeb94ece40
 
 IMAGE_TAG ?= devel
 
@@ -74,6 +78,7 @@ endif
 GO_TEST_PACKAGES ?= ./...
 
 ROLLUPS_CONTRACTS_ABI_BASEDIR:= rollups-contracts/
+ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR:= rollups-prt-contracts/
 
 all: build
 
@@ -113,7 +118,7 @@ $(GO_ARTIFACTS):
 tidy-go:
 	@go mod tidy
 
-generate: $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp ## Generate the file that are committed to the repo
+generate: contracts ## Generate the file that are committed to the repo
 	@echo "Generating Go files"
 	@go generate ./internal/... ./pkg/...
 
@@ -126,7 +131,7 @@ check-generate: generate ## Check whether the generated files are in sync
 		exit 1; \
 	fi
 
-contracts: $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp ## Export the rollups-contracts artifacts
+contracts: $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp $(ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR)/.stamp ## Export the contract artifacts
 
 $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp:
 	@echo "Downloading rollups-contracts artifacts"
@@ -136,6 +141,15 @@ $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp:
 	@tar -zxf $(ROLLUPS_CONTRACTS_ARTIFACT) -C $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
 	@touch $@
 	@rm $(ROLLUPS_CONTRACTS_ARTIFACT)
+
+$(ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR)/.stamp:
+	@echo "Downloading rollups-prt-contracts artifacts"
+	@mkdir -p $(ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR)
+	@curl -sSL $(ROLLUPS_PRT_CONTRACTS_URL)/v$(ROLLUPS_PRT_CONTRACTS_VERSION)/$(ROLLUPS_PRT_CONTRACTS_ARTIFACT) -o $(ROLLUPS_PRT_CONTRACTS_ARTIFACT)
+	@echo "$(ROLLUPS_PRT_CONTRACTS_SHA256)  $(ROLLUPS_PRT_CONTRACTS_ARTIFACT)" | shasum -a 256 --check > /dev/null
+	@tar -zxf $(ROLLUPS_PRT_CONTRACTS_ARTIFACT) -C $(ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR)
+	@touch $@
+	@rm $(ROLLUPS_PRT_CONTRACTS_ARTIFACT)
 
 migrate: ## Run migration on development database
 	@echo "Running PostgreSQL migration"
@@ -160,7 +174,7 @@ clean-go: ## Clean Go artifacts
 
 clean-contracts: ## Clean contract artifacts
 	@echo "Cleaning contract artifacts"
-	@rm -rf $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
+	@rm -rf $(ROLLUPS_CONTRACTS_ABI_BASEDIR) $(ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR)
 
 clean-docs: ## Clean the documentation
 	@echo "Cleaning the documentation"

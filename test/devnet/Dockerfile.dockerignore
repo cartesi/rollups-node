@@ -27,3 +27,4 @@ test/validator
 **/*.go
 cartesi-rollups-*
 /rollups-contracts
+/rollups-prt-contracts
