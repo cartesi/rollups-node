@@ -20,7 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
-const baseContractsPath = "../../rollups-contracts/"
+const rollupsContractsPath = "../../rollups-contracts/"
 
 type contractBinding struct {
 	jsonPath string
@@ -29,39 +29,39 @@ type contractBinding struct {
 
 var bindings = []contractBinding{
 	{
-		jsonPath: baseContractsPath + "IAuthorityFactory.sol/IAuthorityFactory.json",
+		jsonPath: rollupsContractsPath + "IAuthorityFactory.sol/IAuthorityFactory.json",
 		typeName: "IAuthorityFactory",
 	},
 	{
-		jsonPath: baseContractsPath + "IConsensus.sol/IConsensus.json",
+		jsonPath: rollupsContractsPath + "IConsensus.sol/IConsensus.json",
 		typeName: "IConsensus",
 	},
 	{
-		jsonPath: baseContractsPath + "IApplication.sol/IApplication.json",
+		jsonPath: rollupsContractsPath + "IApplication.sol/IApplication.json",
 		typeName: "IApplication",
 	},
 	{
-		jsonPath: baseContractsPath + "IApplicationFactory.sol/IApplicationFactory.json",
+		jsonPath: rollupsContractsPath + "IApplicationFactory.sol/IApplicationFactory.json",
 		typeName: "IApplicationFactory",
 	},
 	{
-		jsonPath: baseContractsPath + "ISelfHostedApplicationFactory.sol/ISelfHostedApplicationFactory.json",
+		jsonPath: rollupsContractsPath + "ISelfHostedApplicationFactory.sol/ISelfHostedApplicationFactory.json",
 		typeName: "ISelfHostedApplicationFactory",
 	},
 	{
-		jsonPath: baseContractsPath + "IInputBox.sol/IInputBox.json",
+		jsonPath: rollupsContractsPath + "IInputBox.sol/IInputBox.json",
 		typeName: "IInputBox",
 	},
 	{
-		jsonPath: baseContractsPath + "Inputs.sol/Inputs.json",
+		jsonPath: rollupsContractsPath + "Inputs.sol/Inputs.json",
 		typeName: "Inputs",
 	},
 	{
-		jsonPath: baseContractsPath + "Outputs.sol/Outputs.json",
+		jsonPath: rollupsContractsPath + "Outputs.sol/Outputs.json",
 		typeName: "Outputs",
 	},
 	{
-		jsonPath: baseContractsPath + "DataAvailability.sol/DataAvailability.json",
+		jsonPath: rollupsContractsPath + "DataAvailability.sol/DataAvailability.json",
 		typeName: "DataAvailability",
 	},
 }
