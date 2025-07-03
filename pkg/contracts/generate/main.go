@@ -21,6 +21,7 @@ import (
 )
 
 const rollupsContractsPath = "../../rollups-contracts/"
+const rollupsPrtContractsPath = "../../rollups-prt-contracts/"
 
 type contractBinding struct {
 	jsonPath string
@@ -63,6 +64,38 @@ var bindings = []contractBinding{
 	{
 		jsonPath: rollupsContractsPath + "DataAvailability.sol/DataAvailability.json",
 		typeName: "DataAvailability",
+	},
+	{
+		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/Tournament.sol/Tournament.json",
+		typeName: "Tournament",
+	},
+	{
+		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/LeafTournament.sol/LeafTournament.json",
+		typeName: "LeafTournament",
+	},
+	{
+		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/NonLeafTournament.sol/NonLeafTournament.json",
+		typeName: "NonLeafTournament",
+	},
+	{
+		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/RootTournament.sol/RootTournament.json",
+		typeName: "RootTournament",
+	},
+	{
+		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/NonRootTournament.sol/NonRootTournament.json",
+		typeName: "NonRootTournament",
+	},
+	{
+		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/IMultiLevelTournamentFactory.sol/IMultiLevelTournamentFactory.json",
+		typeName: "IMultiLevelTournamentFactory",
+	},
+	{
+		jsonPath: rollupsPrtContractsPath + "cartesi-rollups/contracts/out/DaveConsensus.sol/DaveConsensus.json",
+		typeName: "DaveConsensus",
+	},
+	{
+		jsonPath: rollupsPrtContractsPath + "cartesi-rollups/contracts/out/DaveConsensusFactory.sol/DaveConsensusFactory.json",
+		typeName: "DaveConsensusFactory",
 	},
 }
 
