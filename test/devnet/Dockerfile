@@ -1,10 +1,10 @@
 ARG FOUNDRY_VERSION=1.4.3
-ARG CONTRACTS_VERSION=2.1.1
+ARG PRT_CONTRACTS_VERSION=2.0.1
 ARG DEVNET_BUILD_PATH=/opt/cartesi/rollups-contracts
 
 FROM debian:bookworm-20250407 AS rollups-node-devnet
 ARG FOUNDRY_VERSION
-ARG CONTRACTS_VERSION
+ARG PRT_CONTRACTS_VERSION
 ARG DEVNET_BUILD_PATH
 
 USER root
@@ -35,11 +35,11 @@ EOF
 RUN <<EOF
     set -e
     mkdir -p ${DEVNET_BUILD_PATH}
-    URL=https://github.com/cartesi/rollups-contracts/releases/download
-    VERSION=v${CONTRACTS_VERSION}
-    ARTIFACT=rollups-contracts-${CONTRACTS_VERSION}-anvil-v${FOUNDRY_VERSION}.tar.gz
+    URL=https://github.com/cartesi/dave/releases/download
+    VERSION=v${PRT_CONTRACTS_VERSION}
+    ARTIFACT=cartesi-rollups-prt-anvil-v${FOUNDRY_VERSION}.tar.gz
     curl -sSL ${URL}/${VERSION}/${ARTIFACT} -o /tmp/contracts.tar.gz
-    echo "a47e69b3f8ca648bb59eef2cd786c62dee1aecad7e51780902d91c193702e8ae  /tmp/contracts.tar.gz" | sha256sum --check
+    echo "f920da3c9e690178cd386f9d5f91a8721a5c7a689b7afdda1c66abb06908d766  /tmp/contracts.tar.gz" | sha256sum --check
     tar -zxf /tmp/contracts.tar.gz -C ${DEVNET_BUILD_PATH}/
     mkdir -p /usr/share/devnet
     cat ${DEVNET_BUILD_PATH}/deployments/31337/*.json | jq -s 'map({ (.contractName): .address }) | add' > /usr/share/devnet/deployment.json
@@ -55,4 +55,4 @@ HEALTHCHECK --interval=1s --timeout=1s --retries=5 \
 	-d '{"jsonrpc":"2.0","id":"1","method":"net_listening","params":[]}' \
 	http://127.0.0.1:8545
 
-CMD ["anvil", "--block-time", "1", "--silent", "--host", "0.0.0.0", "--chain-id", "13370", "--load-state", "/usr/share/devnet/anvil_state.json"]
+CMD ["anvil", "--block-time", "1", "--silent", "--host", "0.0.0.0", "--chain-id", "31337", "--max-persisted-states", "86400", "--load-state", "/usr/share/devnet/anvil_state.json"]
