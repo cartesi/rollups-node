@@ -210,6 +210,13 @@ Address of the SelfHostedApplicationFactory contract. Not required, used only by
 omit = true
 used-by = ["cli"]
 
+[contracts.CARTESI_CONTRACTS_PRT_CONSENSUS_FACTORY_ADDRESS]
+go-type = "Address"
+description = """
+Address of the PRT consensus contract. Not required, used only by the CLI and tests"""
+omit = true
+used-by = ["cli"]
+
 #
 # Snapshot
 #

@@ -38,6 +38,7 @@ const (
 	CONTRACTS_APPLICATION_FACTORY_ADDRESS             = "CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS"
 	CONTRACTS_AUTHORITY_FACTORY_ADDRESS               = "CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS"
 	CONTRACTS_INPUT_BOX_ADDRESS                       = "CARTESI_CONTRACTS_INPUT_BOX_ADDRESS"
+	CONTRACTS_PRT_FACTORY_ADDRESS                     = "CARTESI_CONTRACTS_PRT_FACTORY_ADDRESS"
 	CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS = "CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS"
 	DATABASE_CONNECTION                               = "CARTESI_DATABASE_CONNECTION"
 	FEATURE_CLAIM_SUBMISSION_ENABLED                  = "CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"
@@ -109,6 +110,8 @@ func SetDefaults() {
 	// no default for CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS
 
 	// no default for CARTESI_CONTRACTS_INPUT_BOX_ADDRESS
+
+	// no default for CARTESI_CONTRACTS_PRT_FACTORY_ADDRESS
 
 	// no default for CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS
 
@@ -1474,6 +1477,19 @@ func GetContractsInputBoxAddress() (Address, error) {
 		return v, nil
 	}
 	return notDefinedAddress(), fmt.Errorf("%s: %w", CONTRACTS_INPUT_BOX_ADDRESS, ErrNotDefined)
+}
+
+// GetContractsPrtFactoryAddress returns the value for the environment variable CARTESI_CONTRACTS_PRT_FACTORY_ADDRESS.
+func GetContractsPrtFactoryAddress() (Address, error) {
+	s := viper.GetString(CONTRACTS_PRT_FACTORY_ADDRESS)
+	if s != "" {
+		v, err := toAddress(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", CONTRACTS_PRT_FACTORY_ADDRESS, err)
+		}
+		return v, nil
+	}
+	return notDefinedAddress(), fmt.Errorf("%s: %w", CONTRACTS_PRT_FACTORY_ADDRESS, ErrNotDefined)
 }
 
 // GetContractsSelfHostedApplicationFactoryAddress returns the value for the environment variable CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS.
