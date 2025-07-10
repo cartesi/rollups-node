@@ -37,6 +37,7 @@ const (
 	BLOCKCHAIN_WS_ENDPOINT                            = "CARTESI_BLOCKCHAIN_WS_ENDPOINT"
 	CONTRACTS_APPLICATION_FACTORY_ADDRESS             = "CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS"
 	CONTRACTS_AUTHORITY_FACTORY_ADDRESS               = "CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS"
+	CONTRACTS_DAVE_APP_FACTORY_ADDRESS                = "CARTESI_CONTRACTS_DAVE_APP_FACTORY_ADDRESS"
 	CONTRACTS_INPUT_BOX_ADDRESS                       = "CARTESI_CONTRACTS_INPUT_BOX_ADDRESS"
 	CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS = "CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS"
 	DATABASE_CONNECTION                               = "CARTESI_DATABASE_CONNECTION"
@@ -107,6 +108,8 @@ func SetDefaults() {
 	// no default for CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS
 
 	// no default for CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS
+
+	// no default for CARTESI_CONTRACTS_DAVE_APP_FACTORY_ADDRESS
 
 	// no default for CARTESI_CONTRACTS_INPUT_BOX_ADDRESS
 
@@ -1461,6 +1464,19 @@ func GetContractsAuthorityFactoryAddress() (Address, error) {
 		return v, nil
 	}
 	return notDefinedAddress(), fmt.Errorf("%s: %w", CONTRACTS_AUTHORITY_FACTORY_ADDRESS, ErrNotDefined)
+}
+
+// GetContractsDaveAppFactoryAddress returns the value for the environment variable CARTESI_CONTRACTS_DAVE_APP_FACTORY_ADDRESS.
+func GetContractsDaveAppFactoryAddress() (Address, error) {
+	s := viper.GetString(CONTRACTS_DAVE_APP_FACTORY_ADDRESS)
+	if s != "" {
+		v, err := toAddress(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", CONTRACTS_DAVE_APP_FACTORY_ADDRESS, err)
+		}
+		return v, nil
+	}
+	return notDefinedAddress(), fmt.Errorf("%s: %w", CONTRACTS_DAVE_APP_FACTORY_ADDRESS, ErrNotDefined)
 }
 
 // GetContractsInputBoxAddress returns the value for the environment variable CARTESI_CONTRACTS_INPUT_BOX_ADDRESS.

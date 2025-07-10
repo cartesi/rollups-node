@@ -32,6 +32,8 @@ var (
 	applicationTemplateHashParam     string
 	factoryAddressParam              string
 	executionParametersFileParam     string
+	prtFactoryAddressParam           string
+	deploymentTypePRT                bool
 )
 
 var applicationCmd = &cobra.Command{
@@ -52,7 +54,8 @@ Supported Environment Variables:
   CARTESI_BLOCKCHAIN_HTTP_ENDPOINT                           Blockchain HTTP endpoint
   CARTESI_CONTRACTS_INPUT_BOX_ADDRESS                        Input Box contract address
   CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS              Application Factory address
-  CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS  Self Hosted Application Factory address`,
+  CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS  Self Hosted Application Factory address
+  CARTESI_CONTRACTS_DAVE_APP_FACTORY_ADDRESS                 Dave Application Factory address`,
 }
 
 const applicationExamples = `
@@ -61,6 +64,9 @@ const applicationExamples = `
 
 # deploy an application contract using an existing consensus, then register the application
  - cartesi-rollups-cli deploy application echo-dapp applications/echo-dapp/ --consensus=0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+
+# deploy an application contract with a PRT consensus, then register the application
+ - cli deploy application echo-dapp applications/echo-dapp/ --prt
 
 # deploy but don't register into the database
  - cartesi-rollups-cli deploy application echo-dapp applications/echo-dapp/ --register=false
@@ -76,6 +82,8 @@ func init() {
 		"Consensus address. A new authority consensus will be created if this field is left empty.")
 	applicationCmd.Flags().StringVarP(&factoryAddressParam, "factory", "f", "",
 		"Application factory address. Default value is retrieved from configuration.")
+	applicationCmd.Flags().StringVarP(&prtFactoryAddressParam, "prt-factory", "", "",
+		"PRT Application factory address. Default value is retrieved from configuration.")
 	applicationCmd.Flags().StringVarP(&applicationOwnerAddressParam, "application-owner", "o", "",
 		"Application owner address. If not defined, it will be derived from the auth method.")
 	applicationCmd.Flags().StringVarP(&applicationDataAvailabilityParam, "data-availability", "d", "",
@@ -90,6 +98,8 @@ func init() {
 		"Start processing the application, requires 'register=true'.")
 	applicationCmd.Flags().StringVarP(&authorityOwnerAddressParam, "authority-owner", "O", "",
 		"Authority Owner address. If not defined, it will be derived from the auth method.")
+	applicationCmd.Flags().BoolVarP(&deploymentTypePRT, "prt", "", false,
+		"Deploy a PRT application.")
 
 	origHelpFunc := applicationCmd.HelpFunc()
 	applicationCmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
@@ -146,7 +156,9 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	}
 
 	var deployment ethutil.IApplicationDeployment
-	if deploySelfhosted := !cmd.Flags().Changed("consensus"); deploySelfhosted {
+	if deploymentTypePRT {
+		deployment, err = buildPrtApplicationDeployment(cmd, args)
+	} else if deploySelfhosted := !cmd.Flags().Changed("consensus"); deploySelfhosted {
 		deployment, err = buildSelfhostedApplicationDeployment(ctx, cmd, args, client, txOpts)
 	} else {
 		deployment, err = buildApplicationOnlyDeployment(ctx, cmd, args, client, txOpts)
@@ -235,6 +247,15 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		application.EpochLength = res.Deployment.EpochLength
 		application.DataAvailability = res.Deployment.DataAvailability
 		application.IInputBoxBlock = res.Deployment.IInputBoxBlock
+
+	case *ethutil.PRTApplicationDeploymentResult:
+		application.IApplicationAddress = res.ApplicationAddress
+		application.IConsensusAddress = res.DaveConsensusAddress
+		application.IInputBoxAddress = res.InputBoxAddress
+		application.TemplateHash = res.Deployment.TemplateHash
+		application.EpochLength = res.Deployment.EpochLength
+		application.DataAvailability = res.DataAvailability
+		application.IInputBoxBlock = res.IInputBoxBlock
 	default:
 		panic("unimplemented deployment type\n")
 	}
@@ -444,9 +465,50 @@ func buildApplicationOnlyDeployment(
 		return nil, fmt.Errorf("error input box address has no code: %v", request.InputBoxAddress)
 	}
 
+	request.Salt, err = ethutil.ParseSalt(saltParam)
+	if err != nil {
+		return nil, fmt.Errorf("error on parameter salt: %w", err)
+	}
+
+	request.Verbose = verboseParam
+
 	request.Consensus, request.EpochLength, err = customConsensus(client, applicationConsensusAddressParam)
 	if err != nil {
 		return nil, fmt.Errorf("error on parameter consensus: %w", err)
+	}
+
+	return request, nil
+}
+
+func buildPrtApplicationDeployment(
+	cmd *cobra.Command,
+	args []string,
+) (
+	*ethutil.PRTApplicationDeployment,
+	error,
+) {
+	var err error
+	request := &ethutil.PRTApplicationDeployment{}
+	if !cmd.Flags().Changed("prt-factory") {
+		request.FactoryAddress, err = config.GetContractsDaveAppFactoryAddress()
+	} else {
+		request.FactoryAddress, err = parseHexAddress(factoryAddressParam)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("error on parameter factory: %w", err)
+	}
+
+	if !cmd.Flags().Changed("template-hash") {
+		if len(args) >= 2 { // args[1] is mandatory if `template-hash` was absent
+			request.TemplateHash, err = readHash(args[1])
+		} else {
+			err = fmt.Errorf("missing argument. One of `template-path` or `template-hash` is required")
+		}
+	} else {
+		request.TemplateHash, err = parseHexHash(applicationTemplateHashParam)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("error on parameter template-hash: %w", err)
 	}
 
 	request.Salt, err = ethutil.ParseSalt(saltParam)

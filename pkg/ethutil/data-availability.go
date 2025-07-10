@@ -39,11 +39,6 @@ func DefaultDA(client *ethclient.Client, inputBoxAddress common.Address) (common
 }
 
 func CustomDA(client *ethclient.Client, dataAvailability string) (common.Address, uint64, []byte, error) {
-	parsedAbi, err := dataavailability.DataAvailabilityMetaData.GetAbi()
-	if err != nil {
-		return common.Address{}, 0, nil, fmt.Errorf("failed to get ABI: %w", err)
-	}
-
 	if len(dataAvailability) < 3 || (!strings.HasPrefix(dataAvailability, "0x") && !strings.HasPrefix(dataAvailability, "0X")) {
 		return common.Address{}, 0, nil, fmt.Errorf("data Availability should be an ABI encoded value")
 	}
@@ -54,22 +49,37 @@ func CustomDA(client *ethclient.Client, dataAvailability string) (common.Address
 		return common.Address{}, 0, nil, fmt.Errorf("error parsing Data Availability value: %w", err)
 	}
 
+	inputBoxAddress, inputBoxBlock, err := DecodeDA(client, encodedDA)
+	if err != nil {
+		return common.Address{}, 0, nil, fmt.Errorf("error decoding Data Availability value: %w", err)
+	}
+
+	return inputBoxAddress, inputBoxBlock, encodedDA, nil
+
+}
+
+func DecodeDA(client *ethclient.Client, encodedDA []byte) (common.Address, uint64, error) {
+	parsedAbi, err := dataavailability.DataAvailabilityMetaData.GetAbi()
+	if err != nil {
+		return common.Address{}, 0, fmt.Errorf("failed to get ABI: %w", err)
+	}
+
 	if len(encodedDA) < model.DATA_AVAILABILITY_SELECTOR_SIZE {
-		return common.Address{}, 0, nil, fmt.Errorf("invalid Data Availability")
+		return common.Address{}, 0, fmt.Errorf("invalid Data Availability")
 	}
 
 	method, err := parsedAbi.MethodById(encodedDA[:model.DATA_AVAILABILITY_SELECTOR_SIZE])
 	if err != nil {
-		return common.Address{}, 0, nil, fmt.Errorf("failed to get method by ID: %w", err)
+		return common.Address{}, 0, fmt.Errorf("failed to get method by ID: %w", err)
 	}
 
 	args, err := method.Inputs.Unpack(encodedDA[model.DATA_AVAILABILITY_SELECTOR_SIZE:])
 	if err != nil {
-		return common.Address{}, 0, nil, fmt.Errorf("failed to unpack inputs: %w", err)
+		return common.Address{}, 0, fmt.Errorf("failed to unpack inputs: %w", err)
 	}
 
 	if len(args) == 0 {
-		return common.Address{}, 0, nil, fmt.Errorf("invalid Data Availability. Should at least contain InputBox Address")
+		return common.Address{}, 0, fmt.Errorf("invalid Data Availability. Should at least contain InputBox Address")
 	}
 
 	var inputBoxAddress common.Address
@@ -77,18 +87,18 @@ func CustomDA(client *ethclient.Client, dataAvailability string) (common.Address
 	case common.Address:
 		inputBoxAddress = addr
 	default:
-		return common.Address{}, 0, nil, fmt.Errorf("first argument in Data Availability is not an address (got %T)", args[0])
+		return common.Address{}, 0, fmt.Errorf("first argument in Data Availability is not an address (got %T)", args[0])
 	}
 
 	inputbox, err := iinputbox.NewIInputBox(inputBoxAddress, client)
 	if err != nil {
-		return common.Address{}, 0, nil, fmt.Errorf("failed to create input box instance: %w", err)
+		return common.Address{}, 0, fmt.Errorf("failed to create input box instance: %w", err)
 	}
 
 	inputBoxBlock, err := inputbox.GetDeploymentBlockNumber(nil)
 	if err != nil {
-		return common.Address{}, 0, nil, fmt.Errorf("failed to get deployment block number: %w", err)
+		return common.Address{}, 0, fmt.Errorf("failed to get deployment block number: %w", err)
 	}
 
-	return inputBoxAddress, inputBoxBlock.Uint64(), encodedDA, nil
+	return inputBoxAddress, inputBoxBlock.Uint64(), nil
 }
