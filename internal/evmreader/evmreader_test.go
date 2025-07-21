@@ -377,6 +377,11 @@ func (m *MockInputBox) RetrieveInputs(
 	return args.Get(0).([]iinputbox.IInputBoxInputAdded), args.Error(1)
 }
 
+func (m *MockInputBox) GetNumberOfInputs(opts *bind.CallOpts, appContract common.Address) (*big.Int, error) {
+	args := m.Called(opts, appContract)
+	return args.Get(0).(*big.Int), args.Error(1)
+}
+
 // Mock InputReaderRepository
 type MockRepository struct {
 	mock.Mock
@@ -565,6 +570,11 @@ func (m *MockApplicationContract) RetrieveOutputExecutionEvents(
 ) ([]*iapplication.IApplicationOutputExecuted, error) {
 	args := m.Called(opts)
 	return args.Get(0).([]*iapplication.IApplicationOutputExecuted), args.Error(1)
+}
+
+func (m *MockApplicationContract) GetDeploymentBlockNumber(opts *bind.CallOpts) (*big.Int, error) {
+	args := m.Called(opts)
+	return args.Get(0).(*big.Int), args.Error(1)
 }
 
 type MockAdapterFactory struct {

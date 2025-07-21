@@ -110,3 +110,7 @@ func (i *InputSourceAdapterImpl) RetrieveInputs(
 	}
 	return events, nil
 }
+
+func (i *InputSourceAdapterImpl) GetNumberOfInputs(opts *bind.CallOpts, addr common.Address) (*big.Int, error) {
+	return i.inputbox.GetNumberOfInputs(opts, addr)
+}

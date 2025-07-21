@@ -6,10 +6,22 @@ package evmreader
 import (
 	"bytes"
 	"context"
+	"math/big"
 
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
+
+// Find an appropriate value to start scanning the blockchain for executed outputs of this application.
+// Application deployment block is a safe block to start since this event is emitted by the application contract itself.
+// We use input box block as a fallback.
+func findLastOutputCheckBlock(app *appContracts, mostRecentBlockNumberCallOpts *bind.CallOpts) uint64 {
+	deploymentBlockNumberBig, err := app.applicationContract.GetDeploymentBlockNumber(mostRecentBlockNumberCallOpts)
+	if err != nil {
+		return app.application.IInputBoxBlock - 1
+	}
+	return deploymentBlockNumberBig.Uint64() - 1
+}
 
 func (r *Service) checkForOutputExecution(
 	ctx context.Context,
@@ -21,11 +33,22 @@ func (r *Service) checkForOutputExecution(
 
 	r.Logger.Debug("Checking for new Output Executed Events", "apps", appAddresses)
 
-	for _, app := range apps {
+	mostRecentBlockNumberCallOpts := &bind.CallOpts{
+		BlockNumber: new(big.Int).SetUint64(mostRecentBlockNumber),
+	}
 
-		// Safeguard: Only check blocks starting from the block where the InputBox
-		// contract was deployed as Inputs can be added to that same block
-		lastOutputCheck := max(app.application.LastOutputCheckBlock, app.application.IInputBoxBlock)
+	for _, app := range apps {
+		lastOutputCheck := app.application.LastOutputCheckBlock
+		if lastOutputCheck == 0 { // New application. Find a safe start block to scan for outputs
+			lastOutputCheck = findLastOutputCheckBlock(&app, mostRecentBlockNumberCallOpts)
+			r.Logger.Info("Initializing application output execution sync",
+				"application", app.application.Name,
+				"inputbox_block", app.application.IInputBoxBlock,
+				"next_search_block", lastOutputCheck+1,
+				"current_block", mostRecentBlockNumber,
+			)
+			app.application.LastOutputCheckBlock = lastOutputCheck
+		}
 
 		if mostRecentBlockNumber > lastOutputCheck {
 

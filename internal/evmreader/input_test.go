@@ -4,6 +4,7 @@
 package evmreader
 
 import (
+	"math/big"
 	"time"
 
 	. "github.com/cartesi/rollups-node/internal/model"
@@ -56,6 +57,12 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocksFilteredByDA() {
 	}}, uint64(1), nil).Once()
 
 	s.repository.Unset("UpdateEventLastCheckBlock")
+	s.repository.On("UpdateEventLastCheckBlock",
+		mock.Anything,
+		mock.Anything,
+		MonitoredEvent_InputAdded,
+		mock.Anything,
+	).Once().Return(nil)
 	s.repository.On("UpdateEventLastCheckBlock",
 		mock.Anything,
 		mock.Anything,
@@ -128,6 +135,24 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocksFilteredByDA() {
 		mock.Anything,
 		mock.Anything,
 	).Return(events_1, nil)
+
+	inputBox.Unset("GetNumberOfInputs")
+	inputBox.On(
+		"GetNumberOfInputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(2), nil)
+
+	applicationContract.On(
+		"GetDeploymentBlockNumber",
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(10), nil)
+
+	inputBox.On(
+		"GetNumberOfInputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(0), nil)
 
 	// Start service
 	ready := make(chan struct{}, 1)
@@ -204,6 +229,12 @@ func (s *EvmReaderSuite) TestItUpdatesLastInputCheckBlockWhenThereIsNoInputs() {
 	s.repository.On("UpdateEventLastCheckBlock",
 		mock.Anything,
 		mock.Anything,
+		MonitoredEvent_InputAdded,
+		mock.Anything,
+	).Once().Return(nil)
+	s.repository.On("UpdateEventLastCheckBlock",
+		mock.Anything,
+		mock.Anything,
 		MonitoredEvent_OutputExecuted,
 		mock.Anything,
 	).Once().Return(nil)
@@ -266,6 +297,24 @@ func (s *EvmReaderSuite) TestItUpdatesLastInputCheckBlockWhenThereIsNoInputs() {
 		mock.Anything,
 		mock.Anything,
 	).Return(events_0, nil)
+
+	inputBox.Unset("GetNumberOfInputs")
+	inputBox.On(
+		"GetNumberOfInputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(1), nil)
+
+	applicationContract.On(
+		"GetDeploymentBlockNumber",
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(10), nil)
+
+	inputBox.On(
+		"GetNumberOfInputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(0), nil)
 
 	events_1 := []iinputbox.IInputBoxInputAdded{}
 	mostRecentBlockNumber_1 := uint64(0x12)
@@ -349,6 +398,18 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 		mock.Anything,
 		mock.Anything,
 	).Return(events_2, nil)
+
+	inputBox.Unset("GetNumberOfInputs")
+	inputBox.On(
+		"GetNumberOfInputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(2), nil)
+
+	applicationContract.On(
+		"GetDeploymentBlockNumber",
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(10), nil)
 
 	// Prepare Repo
 	s.repository.Unset("ListApplications")
@@ -443,16 +504,23 @@ func (s *EvmReaderSuite) TestItStartsWhenLasProcessedBlockIsTheMostRecentBlock()
 		mock.Anything,
 		false,
 	).Return([]*Application{{
-		IApplicationAddress: common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-		IConsensusAddress:   common.HexToAddress("0xdeadbeef"),
-		IInputBoxAddress:    common.HexToAddress("0xBa3Cf8fB82E43D370117A0b7296f91ED674E94e3"),
-		DataAvailability:    DataAvailability_InputBox[:],
-		IInputBoxBlock:      0x10,
-		EpochLength:         10,
-		LastInputCheckBlock: 0x13,
+		IApplicationAddress:  common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
+		IConsensusAddress:    common.HexToAddress("0xdeadbeef"),
+		IInputBoxAddress:     common.HexToAddress("0xBa3Cf8fB82E43D370117A0b7296f91ED674E94e3"),
+		DataAvailability:     DataAvailability_InputBox[:],
+		IInputBoxBlock:       0x10,
+		EpochLength:          10,
+		LastInputCheckBlock:  0x13,
+		LastOutputCheckBlock: 0x13,
 	}}, uint64(1), nil).Once()
 
 	s.repository.Unset("UpdateEventLastCheckBlock")
+	s.repository.On("UpdateEventLastCheckBlock",
+		mock.Anything,
+		mock.Anything,
+		MonitoredEvent_InputAdded,
+		mock.Anything,
+	).Once().Return(nil)
 	s.repository.On("UpdateEventLastCheckBlock",
 		mock.Anything,
 		mock.Anything,

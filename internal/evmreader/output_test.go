@@ -39,6 +39,7 @@ func (s *EvmReaderSuite) TestOutputExecution() {
 		DataAvailability:     DataAvailability_InputBox[:],
 		IInputBoxBlock:       0x10,
 		EpochLength:          10,
+		LastInputCheckBlock:  0x01, // don't fast sync inputs
 		LastOutputCheckBlock: 0x10,
 	}}, uint64(1), nil).Once()
 	s.repository.On(

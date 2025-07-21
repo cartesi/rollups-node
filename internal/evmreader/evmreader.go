@@ -57,6 +57,7 @@ type ApplicationContractAdapter interface {
 	RetrieveOutputExecutionEvents(
 		opts *bind.FilterOpts,
 	) ([]*iapplication.IApplicationOutputExecuted, error)
+	GetDeploymentBlockNumber(opts *bind.CallOpts) (*big.Int, error)
 }
 
 // Interface for Input reading
@@ -65,6 +66,7 @@ type InputSourceAdapter interface {
 	// by go-ethereum and cannot be used for testing
 	RetrieveInputs(opts *bind.FilterOpts, appAddresses []common.Address, index []*big.Int,
 	) ([]iinputbox.IInputBoxInputAdded, error)
+	GetNumberOfInputs(opts *bind.CallOpts, appContract common.Address) (*big.Int, error)
 }
 
 type SubscriptionError struct {

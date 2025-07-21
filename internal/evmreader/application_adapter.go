@@ -95,3 +95,7 @@ func (a *ApplicationContractAdapterImpl) RetrieveOutputExecutionEvents(
 	}
 	return events, nil
 }
+
+func (a *ApplicationContractAdapterImpl) GetDeploymentBlockNumber(opts *bind.CallOpts) (*big.Int, error) {
+	return a.application.GetDeploymentBlockNumber(opts)
+}

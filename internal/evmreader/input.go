@@ -7,11 +7,105 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 )
+
+// Find the last block number that should be considered checked when scanning the blockchain
+// for inputs of this application. The next search should start from (lastBlockChecked + 1).
+//
+// The main purpose of this function is to reduce the range of blocks that need to be scanned,
+// avoiding unnecessary lookups. Currently, it is only used when handling new applications.
+//
+// Rules applied in order:
+// 1. Default fallback: the block before the InputBox was deployed.
+// 2. If the application has never received inputs, use the most recent block.
+// 3. If the application has no inputs since its deployment, use the deployment block.
+// 4. Otherwise, return the block before the InputBox deployment (conservative bound).
+//
+// Note: this function returns the *last block checked*, not the first block to search.
+// Example:
+//
+//	lastBlockChecked := findLastInputCheckBlock(...)
+//	nextSearchBlock  := lastBlockChecked + 1
+func findLastInputCheckBlock(app *appContracts, mostRecentBlockNumber uint64, mostRecentBlockNumberCallOpts *bind.CallOpts) uint64 {
+	var noiBig *big.Int
+	var err error
+	blockBeforeInputBox := app.application.IInputBoxBlock - 1
+
+	// find if the application has ever received any input. sync to present if not
+	noiBig, err = app.inputSource.GetNumberOfInputs(
+		mostRecentBlockNumberCallOpts,
+		app.application.IApplicationAddress,
+	)
+	if err != nil {
+		return blockBeforeInputBox
+	}
+	if noiBig.Uint64() == 0 {
+		return mostRecentBlockNumber
+	}
+
+	// find if the application has received an input since its deployment. sync to that block if not
+	// we'll need its deployment block number to do that
+	deploymentBlockNumberBig, err := app.applicationContract.GetDeploymentBlockNumber(mostRecentBlockNumberCallOpts)
+	if err != nil {
+		return blockBeforeInputBox
+	}
+
+	noiBig, err = app.inputSource.GetNumberOfInputs(&bind.CallOpts{
+		BlockNumber: deploymentBlockNumberBig,
+	},
+		app.application.IApplicationAddress,
+	)
+	if err != nil {
+		return blockBeforeInputBox
+	}
+	if noiBig.Uint64() == 0 {
+		return deploymentBlockNumberBig.Uint64()
+	}
+
+	// TODO(mpolitzer): Application has inputs previous to its deployment. We can reduce the number of blocks to scan by
+	// doing a binary search over GetNumberOfInputs and finding the block where 0 -> 1 transition happens. As a simpler,
+	// also correct implementation. We return the first possible block an input could appear on.
+	return blockBeforeInputBox
+}
+
+// initializeNewApplicationInputSync initializes input synchronization for a new application
+// by finding the appropriate starting block and updating the database
+func (r *Service) initializeNewApplicationInputSync(
+	ctx context.Context,
+	app *appContracts,
+	mostRecentBlockNumber uint64,
+	mostRecentBlockNumberCallOpts *bind.CallOpts,
+) (uint64, error) {
+	lastInputCheckBlock := findLastInputCheckBlock(app,
+		mostRecentBlockNumber,
+		mostRecentBlockNumberCallOpts,
+	)
+
+	err := r.repository.UpdateEventLastCheckBlock(ctx, []int64{app.application.ID}, MonitoredEvent_InputAdded, lastInputCheckBlock)
+	if err != nil {
+		r.Logger.Error("Failed to update application LastInputCheckBlock",
+			"application", app.application.Name,
+			"last_input_check_block", lastInputCheckBlock,
+			"error", err,
+		)
+		return 0, err
+	}
+
+	r.Logger.Info("Initializing application input sync",
+		"application", app.application.Name,
+		"inputbox_block", app.application.IInputBoxBlock,
+		"next_search_block", lastInputCheckBlock+1,
+		"current_block", mostRecentBlockNumber,
+	)
+
+	app.application.LastInputCheckBlock = lastInputCheckBlock
+	return lastInputCheckBlock, nil
+}
 
 // checkForNewInputs checks if is there new Inputs for all running Applications
 func (r *Service) checkForNewInputs(
@@ -24,6 +118,10 @@ func (r *Service) checkForNewInputs(
 	}
 
 	r.Logger.Debug("Checking for new inputs")
+
+	mostRecentBlockNumberCallOpts := &bind.CallOpts{
+		BlockNumber: new(big.Int).SetUint64(mostRecentBlockNumber),
+	}
 
 	appsByInputBox := map[common.Address][]appContracts{}
 	for _, app := range applications {
@@ -39,17 +137,23 @@ func (r *Service) checkForNewInputs(
 			"inputbox_address", inputBoxAddress,
 			"most recent block", mostRecentBlockNumber,
 		)
-		appsByLastInputCheckBlock := indexApps(byLastInputCheckBlock, inputBoxApps)
+
+		appsByLastInputCheckBlock := make(map[uint64][]appContracts)
+		for _, app := range inputBoxApps {
+			lastInputCheckBlock := app.application.LastInputCheckBlock
+			if lastInputCheckBlock == 0 { // New application. Find a safe start block to scan for inputs
+				var err error
+				lastInputCheckBlock, err = r.initializeNewApplicationInputSync(ctx, &app,
+					mostRecentBlockNumber, mostRecentBlockNumberCallOpts)
+				if err != nil {
+					continue
+				}
+			}
+			appsByLastInputCheckBlock[lastInputCheckBlock] = append(appsByLastInputCheckBlock[lastInputCheckBlock], app)
+		}
 
 		for lastProcessedBlock, apps := range appsByLastInputCheckBlock {
 			appAddresses := appsToAddresses(apps)
-
-			// Only check blocks starting from the block where the InputBox
-			// contract was deployed as Inputs can be added to that same block
-			inputBoxDeploymentBlock := apps[0].application.IInputBoxBlock
-			if lastProcessedBlock < inputBoxDeploymentBlock {
-				lastProcessedBlock = inputBoxDeploymentBlock - 1
-			}
 
 			if mostRecentBlockNumber > lastProcessedBlock {
 
@@ -75,13 +179,13 @@ func (r *Service) checkForNewInputs(
 				}
 			} else if mostRecentBlockNumber < lastProcessedBlock {
 				r.Logger.Warn(
-					"Not reading inputs: most recent block is lower than the last processed one",
+					"Input search skipped: most recent block is lower than the last processed one",
 					"apps", appAddresses,
 					"last_processed_block", lastProcessedBlock,
 					"most_recent_block", mostRecentBlockNumber,
 				)
 			} else {
-				r.Logger.Info("Not reading inputs: already checked the most recent blocks",
+				r.Logger.Debug("Input search skipped: already checked the most recent block",
 					"apps", appAddresses,
 					"last_processed_block", lastProcessedBlock,
 					"most_recent_block", mostRecentBlockNumber,
@@ -339,9 +443,4 @@ func (r *Service) readInputsFromBlockchain(
 			sortByInputIndex, appInputsMap[event.AppContract], input)
 	}
 	return appInputsMap, nil
-}
-
-// byLastInputCheckBlock key extractor function intended to be used with `indexApps` function
-func byLastInputCheckBlock(app appContracts) uint64 {
-	return app.application.LastInputCheckBlock
 }
