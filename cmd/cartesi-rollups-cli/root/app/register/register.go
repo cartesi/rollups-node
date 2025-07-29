@@ -42,18 +42,19 @@ const examples = `# Adds an application to Rollups Node:
 cartesi-rollups-cli app register -n echo-dapp -a 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF -t applications/echo-dapp`
 
 var (
-	name                   string
-	applicationAddress     string
-	consensusAddress       string
-	templatePath           string
-	templateHash           string
-	epochLength            uint64
-	inputBoxBlockNumber    uint64
-	inputBoxAddressFromEnv bool
-	dataAvailability       string
-	enableMachineHashCheck bool
-	disabled               bool
-	printAsJSON            bool
+	name                         string
+	applicationAddress           string
+	consensusAddress             string
+	templatePath                 string
+	templateHash                 string
+	epochLength                  uint64
+	inputBoxBlockNumber          uint64
+	inputBoxAddressFromEnv       bool
+	dataAvailability             string
+	enableMachineHashCheck       bool
+	disabled                     bool
+	printAsJSON                  bool
+	executionParametersFileParam string
 )
 
 func init() {
@@ -88,6 +89,9 @@ func init() {
 	Cmd.Flags().BoolVarP(&disabled, "disabled", "d", false, "Sets the application state to disabled")
 
 	Cmd.Flags().BoolVarP(&printAsJSON, "print-json", "j", false, "Prints the application data as JSON")
+
+	Cmd.Flags().StringVarP(&executionParametersFileParam, "execution-parameters-file", "", "",
+		"JSON encoded execution parameters of the application. Default values will be used if not defined.")
 
 	Cmd.Flags().BoolVar(&enableMachineHashCheck, "machine-hash-check", true,
 		"Enable or disable machine hash check (DO NOT DISABLE IN PRODUCTION)")
@@ -150,6 +154,22 @@ func run(cmd *cobra.Command, args []string) {
 		}
 	}
 
+	executionParameters := model.ExecutionParameters{}
+	if changed := cmd.Flags().Changed("execution-parameters-file"); changed {
+		filePath := executionParametersFileParam
+		if executionParametersFileParam == "-" {
+			filePath = os.Stdin.Name()
+		}
+		contents, err := os.ReadFile(filePath)
+		cobra.CheckErr(err)
+
+		decoder := json.NewDecoder(strings.NewReader(string(contents)))
+		decoder.DisallowUnknownFields() // Prevent unexpected fields
+		err = decoder.Decode(&executionParameters)
+		cobra.CheckErr(err)
+		cobra.CheckErr(executionParameters.Validate())
+	}
+
 	var consensus common.Address
 	if cmd.Flags().Changed("consensus") {
 		consensus = common.HexToAddress(consensusAddress)
@@ -203,6 +223,19 @@ func run(cmd *cobra.Command, args []string) {
 
 	_, err = repo.CreateApplication(ctx, &application)
 	cobra.CheckErr(err)
+
+	if changed := cmd.Flags().Changed("execution-parameters-file"); changed {
+		retrievedApplication, err := repo.GetApplication(ctx, validName)
+		if err != nil {
+			cobra.CheckErr(fmt.Errorf("failed to retrieve application from the database: %w", err))
+		}
+
+		executionParameters.ApplicationID = retrievedApplication.ID
+		err = repo.UpdateExecutionParameters(ctx, &executionParameters)
+		if err != nil {
+			cobra.CheckErr(fmt.Errorf("failed to update execution parameters: %w", err))
+		}
+	}
 
 	if printAsJSON {
 		jsonData, err := json.Marshal(application)

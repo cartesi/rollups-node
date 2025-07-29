@@ -175,7 +175,6 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		contents, err := os.ReadFile(filePath)
 		cobra.CheckErr(err)
 
-		// TODO: validateParameters after decoding
 		decoder := json.NewDecoder(strings.NewReader(string(contents)))
 		decoder.DisallowUnknownFields() // Prevent unexpected fields
 		err = decoder.Decode(&executionParameters)
