@@ -100,12 +100,14 @@ An unique identifier representing a blockchain network."""
 used-by = ["evmreader", "claimer", "node"]
 
 [blockchain.CARTESI_BLOCKCHAIN_HTTP_ENDPOINT]
+file = true
 go-type = "URL"
 description = """
 HTTP endpoint for the blockchain RPC provider."""
 used-by = ["evmreader", "claimer", "node"]
 
 [blockchain.CARTESI_BLOCKCHAIN_WS_ENDPOINT]
+file = true
 go-type = "URL"
 description = """
 WebSocket endpoint for the blockchain RPC provider."""
@@ -220,31 +222,18 @@ omit = true
 used-by = ["claimer", "node", "cli"]
 
 [auth.CARTESI_AUTH_PRIVATE_KEY]
+file = true
 go-type = "RedactedString"
 description = """
 The node will use this private key to sign transactions."""
 omit = true
 used-by = ["claimer", "node", "cli"]
 
-[auth.CARTESI_AUTH_PRIVATE_KEY_FILE]
-go-type = "string"
-description = """
-The node will use the private key contained in this file to sign transactions."""
-omit = true
-used-by = ["claimer", "node", "cli"]
-
 [auth.CARTESI_AUTH_MNEMONIC]
+file = true
 go-type = "RedactedString"
 description = """
 The node will use the private key generated from this mnemonic to sign transactions."""
-omit = true
-used-by = ["claimer", "node", "cli"]
-
-[auth.CARTESI_AUTH_MNEMONIC_FILE]
-go-type = "string"
-description = """
-The node will use the private key generated from the mnemonic contained in this file
-to sign transactions."""
 omit = true
 used-by = ["claimer", "node", "cli"]
 
@@ -281,6 +270,7 @@ used-by = ["claimer", "node", "cli"]
 
 [database.CARTESI_DATABASE_CONNECTION]
 default = ""
+file = true
 go-type = "URL"
 description = """
 Postgres endpoint in the 'postgres://user:password@hostname:port/database' format (URL).

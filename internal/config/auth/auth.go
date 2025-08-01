@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"os"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -42,44 +41,12 @@ func GetTransactOpts(chainId *big.Int) (*bind.TransactOpts, error) {
 			return nil, err
 		}
 		return bind.NewKeyedTransactorWithChainID(privateKey, chainId)
-	case AuthKindMnemonicFile:
-		mnemonicFile, err := GetAuthMnemonicFile()
-		if err != nil {
-			return nil, err
-		}
-		mnemonic, err := os.ReadFile(mnemonicFile)
-		if err != nil {
-			return nil, err
-		}
-		accountIndex, err := GetAuthMnemonicAccountIndex()
-		if err != nil {
-			return nil, err
-		}
-		privateKey, err := ethutil.MnemonicToPrivateKey(string(mnemonic), accountIndex.Value)
-		if err != nil {
-			return nil, err
-		}
-		return bind.NewKeyedTransactorWithChainID(privateKey, chainId)
 	case AuthKindPrivateKeyVar:
 		privateKey, err := GetAuthPrivateKey()
 		if err != nil {
 			return nil, err
 		}
 		key, err := crypto.HexToECDSA(ethutil.TrimHex(privateKey.Value))
-		if err != nil {
-			return nil, err
-		}
-		return bind.NewKeyedTransactorWithChainID(key, chainId)
-	case AuthKindPrivateKeyFile:
-		privateKeyFile, err := GetAuthPrivateKeyFile()
-		if err != nil {
-			return nil, err
-		}
-		privateKey, err := os.ReadFile(privateKeyFile)
-		if err != nil {
-			return nil, err
-		}
-		key, err := crypto.HexToECDSA(ethutil.TrimHex(string(privateKey)))
 		if err != nil {
 			return nil, err
 		}

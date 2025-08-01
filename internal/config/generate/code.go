@@ -117,6 +117,8 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -131,6 +133,10 @@ func init() {
 const (
 {{ range . -}}
 	{{ toConstName .Name }} = "{{ .Name }}"
+{{ end }}
+	// File variants
+{{ range . -}}
+	{{ if .File -}}{{ toConstName .Name }}_FILE = "{{ .Name }}_FILE"{{ end }}
 {{ end -}}
 )
 
@@ -209,6 +215,16 @@ func (c *NodeConfig) To{{ capitalize $service }}Config() *{{ capitalize $service
 // Get{{ toFieldName .Name }} returns the value for the environment variable {{ .Name }}.
 func Get{{ toFieldName .Name }}() ({{ .GoType }}, error) {
 	s := viper.GetString({{ toConstName .Name }})
+	{{- if .File }}
+	if s == "" {
+		filename := viper.GetString({{toConstName .Name}}_FILE)
+		contents, err := os.ReadFile(filename)
+		if err != nil {
+			return notDefined{{ .GoType }}(), fmt.Errorf("failed to parse %s: %w", {{ toConstName .Name }}_FILE, err)
+		}
+		s = strings.TrimSpace(string(contents))
+	}
+	{{- end }}
 	if s != "" {
 		v, err := {{ toGoFunc .GoType }}(s)
 		if err != nil {

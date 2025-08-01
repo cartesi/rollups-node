@@ -1,14 +1,14 @@
 x-env: &env
   CARTESI_LOG_LEVEL: info
-  CARTESI_BLOCKCHAIN_HTTP_ENDPOINT: http://ethereum_provider:8545
-  CARTESI_BLOCKCHAIN_WS_ENDPOINT: ws://ethereum_provider:8545
+  CARTESI_BLOCKCHAIN_HTTP_ENDPOINT_FILE: /run/secrets/blockchain_http_endpoint
+  CARTESI_BLOCKCHAIN_WS_ENDPOINT_FILE: /run/secrets/blockchain_http_endpoint
   CARTESI_BLOCKCHAIN_ID: 13370
   CARTESI_CONTRACTS_INPUT_BOX_ADDRESS: 0xc70074BDD26d8cF983Ca6A5b89b8db52D5850051
   CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS: 0xC7003566dD09Aa0fC0Ce201aC2769aFAe3BF0051
   CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS: 0xc7006f70875BaDe89032001262A846D3Ee160051
   CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS: 0xc700285Ab555eeB5201BC00CFD4b2CC8DED90051
-  CARTESI_DATABASE_CONNECTION: postgres://postgres:password@database:5432/rollupsdb?sslmode=disable
-  CARTESI_AUTH_MNEMONIC: "test test test test test test test test test test test junk"
+  CARTESI_DATABASE_CONNECTION_FILE: /run/secrets/database_connection
+  CARTESI_AUTH_MNEMONIC_FILE: /run/secrets/auth_mnemonic
 
 services:
   ethereum_provider:
@@ -43,6 +43,8 @@ services:
     networks:
       - devnet
     restart: "no"
+    secrets:
+      - database_connection
     environment:
       <<: *env
 
@@ -58,6 +60,11 @@ services:
       - devnet
     ports:
       - "10001:10001" # Supervisor
+    secrets:
+      - auth_mnemonic
+      - blockchain_http_endpoint
+      - blockchain_ws_endpoint
+      - database_connection
     environment:
       <<: *env
 
@@ -76,6 +83,9 @@ services:
     ports:
       - "10002:10002" # Supervisor
       - "10012:10012" # Inspect Service
+    secrets:
+      - auth_mnemonic
+      - database_connection
     environment:
       <<: *env
 
@@ -89,6 +99,8 @@ services:
       - devnet
     ports:
       - "10003:10003" # Supervisor
+    secrets:
+      - database_connection
     environment:
       <<: *env
 
@@ -104,6 +116,10 @@ services:
       - devnet
     ports:
       - "10004:10004" # Supervisor
+    secrets:
+      - auth_mnemonic
+      - blockchain_http_endpoint
+      - database_connection
     environment:
       <<: *env
 
@@ -118,6 +134,10 @@ services:
     ports:
       - "10005:10005" # Supervisor
       - "10011:10011" # Jsonrpc API service
+    secrets:
+      - auth_mnemonic
+      - blockchain_http_endpoint
+      - database_connection
     environment:
       <<: *env
 volumes:
@@ -125,3 +145,13 @@ volumes:
 
 networks:
   devnet:
+
+secrets:
+  auth_mnemonic:
+    file: test/secrets/auth_mnemonic.txt
+  blockchain_http_endpoint:
+    file: test/secrets/blockchain_http_endpoint.txt
+  blockchain_ws_endpoint:
+    file: test/secrets/blockchain_ws_endpoint.txt
+  database_connection:
+    file: test/secrets/database_connection.txt

@@ -8,6 +8,8 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -25,9 +27,7 @@ const (
 	AUTH_KIND                                         = "CARTESI_AUTH_KIND"
 	AUTH_MNEMONIC                                     = "CARTESI_AUTH_MNEMONIC"
 	AUTH_MNEMONIC_ACCOUNT_INDEX                       = "CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX"
-	AUTH_MNEMONIC_FILE                                = "CARTESI_AUTH_MNEMONIC_FILE"
 	AUTH_PRIVATE_KEY                                  = "CARTESI_AUTH_PRIVATE_KEY"
-	AUTH_PRIVATE_KEY_FILE                             = "CARTESI_AUTH_PRIVATE_KEY_FILE"
 	BLOCKCHAIN_DEFAULT_BLOCK                          = "CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"
 	BLOCKCHAIN_HTTP_ENDPOINT                          = "CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"
 	BLOCKCHAIN_ID                                     = "CARTESI_BLOCKCHAIN_ID"
@@ -59,6 +59,18 @@ const (
 	MAX_STARTUP_TIME                                  = "CARTESI_MAX_STARTUP_TIME"
 	VALIDATOR_POLLING_INTERVAL                        = "CARTESI_VALIDATOR_POLLING_INTERVAL"
 	SNAPSHOTS_DIR                                     = "CARTESI_SNAPSHOTS_DIR"
+
+	// File variants
+
+	AUTH_MNEMONIC_FILE = "CARTESI_AUTH_MNEMONIC_FILE"
+
+	AUTH_PRIVATE_KEY_FILE = "CARTESI_AUTH_PRIVATE_KEY_FILE"
+
+	BLOCKCHAIN_HTTP_ENDPOINT_FILE = "CARTESI_BLOCKCHAIN_HTTP_ENDPOINT_FILE"
+
+	BLOCKCHAIN_WS_ENDPOINT_FILE = "CARTESI_BLOCKCHAIN_WS_ENDPOINT_FILE"
+
+	DATABASE_CONNECTION_FILE = "CARTESI_DATABASE_CONNECTION_FILE"
 )
 
 func SetDefaults() {
@@ -74,11 +86,7 @@ func SetDefaults() {
 
 	viper.SetDefault(AUTH_MNEMONIC_ACCOUNT_INDEX, "0")
 
-	// no default for CARTESI_AUTH_MNEMONIC_FILE
-
 	// no default for CARTESI_AUTH_PRIVATE_KEY
-
-	// no default for CARTESI_AUTH_PRIVATE_KEY_FILE
 
 	viper.SetDefault(BLOCKCHAIN_DEFAULT_BLOCK, "finalized")
 
@@ -1258,6 +1266,14 @@ func GetAuthKind() (AuthKind, error) {
 // GetAuthMnemonic returns the value for the environment variable CARTESI_AUTH_MNEMONIC.
 func GetAuthMnemonic() (RedactedString, error) {
 	s := viper.GetString(AUTH_MNEMONIC)
+	if s == "" {
+		filename := viper.GetString(AUTH_MNEMONIC_FILE)
+		contents, err := os.ReadFile(filename)
+		if err != nil {
+			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", AUTH_MNEMONIC_FILE, err)
+		}
+		s = strings.TrimSpace(string(contents))
+	}
 	if s != "" {
 		v, err := toRedactedString(s)
 		if err != nil {
@@ -1281,22 +1297,17 @@ func GetAuthMnemonicAccountIndex() (RedactedUint, error) {
 	return notDefinedRedactedUint(), fmt.Errorf("%s: %w", AUTH_MNEMONIC_ACCOUNT_INDEX, ErrNotDefined)
 }
 
-// GetAuthMnemonicFile returns the value for the environment variable CARTESI_AUTH_MNEMONIC_FILE.
-func GetAuthMnemonicFile() (string, error) {
-	s := viper.GetString(AUTH_MNEMONIC_FILE)
-	if s != "" {
-		v, err := toString(s)
-		if err != nil {
-			return v, fmt.Errorf("failed to parse %s: %w", AUTH_MNEMONIC_FILE, err)
-		}
-		return v, nil
-	}
-	return notDefinedstring(), fmt.Errorf("%s: %w", AUTH_MNEMONIC_FILE, ErrNotDefined)
-}
-
 // GetAuthPrivateKey returns the value for the environment variable CARTESI_AUTH_PRIVATE_KEY.
 func GetAuthPrivateKey() (RedactedString, error) {
 	s := viper.GetString(AUTH_PRIVATE_KEY)
+	if s == "" {
+		filename := viper.GetString(AUTH_PRIVATE_KEY_FILE)
+		contents, err := os.ReadFile(filename)
+		if err != nil {
+			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", AUTH_PRIVATE_KEY_FILE, err)
+		}
+		s = strings.TrimSpace(string(contents))
+	}
 	if s != "" {
 		v, err := toRedactedString(s)
 		if err != nil {
@@ -1305,19 +1316,6 @@ func GetAuthPrivateKey() (RedactedString, error) {
 		return v, nil
 	}
 	return notDefinedRedactedString(), fmt.Errorf("%s: %w", AUTH_PRIVATE_KEY, ErrNotDefined)
-}
-
-// GetAuthPrivateKeyFile returns the value for the environment variable CARTESI_AUTH_PRIVATE_KEY_FILE.
-func GetAuthPrivateKeyFile() (string, error) {
-	s := viper.GetString(AUTH_PRIVATE_KEY_FILE)
-	if s != "" {
-		v, err := toString(s)
-		if err != nil {
-			return v, fmt.Errorf("failed to parse %s: %w", AUTH_PRIVATE_KEY_FILE, err)
-		}
-		return v, nil
-	}
-	return notDefinedstring(), fmt.Errorf("%s: %w", AUTH_PRIVATE_KEY_FILE, ErrNotDefined)
 }
 
 // GetBlockchainDefaultBlock returns the value for the environment variable CARTESI_BLOCKCHAIN_DEFAULT_BLOCK.
@@ -1336,6 +1334,14 @@ func GetBlockchainDefaultBlock() (DefaultBlock, error) {
 // GetBlockchainHttpEndpoint returns the value for the environment variable CARTESI_BLOCKCHAIN_HTTP_ENDPOINT.
 func GetBlockchainHttpEndpoint() (URL, error) {
 	s := viper.GetString(BLOCKCHAIN_HTTP_ENDPOINT)
+	if s == "" {
+		filename := viper.GetString(BLOCKCHAIN_HTTP_ENDPOINT_FILE)
+		contents, err := os.ReadFile(filename)
+		if err != nil {
+			return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_ENDPOINT_FILE, err)
+		}
+		s = strings.TrimSpace(string(contents))
+	}
 	if s != "" {
 		v, err := toURL(s)
 		if err != nil {
@@ -1388,6 +1394,14 @@ func GetBlockchainSubscriptionTimeout() (uint64, error) {
 // GetBlockchainWsEndpoint returns the value for the environment variable CARTESI_BLOCKCHAIN_WS_ENDPOINT.
 func GetBlockchainWsEndpoint() (URL, error) {
 	s := viper.GetString(BLOCKCHAIN_WS_ENDPOINT)
+	if s == "" {
+		filename := viper.GetString(BLOCKCHAIN_WS_ENDPOINT_FILE)
+		contents, err := os.ReadFile(filename)
+		if err != nil {
+			return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_WS_ENDPOINT_FILE, err)
+		}
+		s = strings.TrimSpace(string(contents))
+	}
 	if s != "" {
 		v, err := toURL(s)
 		if err != nil {
@@ -1453,6 +1467,14 @@ func GetContractsSelfHostedApplicationFactoryAddress() (Address, error) {
 // GetDatabaseConnection returns the value for the environment variable CARTESI_DATABASE_CONNECTION.
 func GetDatabaseConnection() (URL, error) {
 	s := viper.GetString(DATABASE_CONNECTION)
+	if s == "" {
+		filename := viper.GetString(DATABASE_CONNECTION_FILE)
+		contents, err := os.ReadFile(filename)
+		if err != nil {
+			return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", DATABASE_CONNECTION_FILE, err)
+		}
+		s = strings.TrimSpace(string(contents))
+	}
 	if s != "" {
 		v, err := toURL(s)
 		if err != nil {

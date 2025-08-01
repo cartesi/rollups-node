@@ -23,6 +23,9 @@ type Env struct {
 	// If defined omit the field from the generated Config struct
 	Omit bool `toml:"omit"`
 
+	// Configuration also has a "_FILE" variant that should be searched
+	File bool `toml:"file"`
+
 	// List of services that use this environment variable.
 	// Possible values: "advancer", "claimer", "cli", "evm-reader", "jsonrpc-api", "node", "validator"
 	UsedBy []string `toml:"used-by"`
