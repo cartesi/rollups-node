@@ -15,6 +15,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
+	"github.com/cartesi/rollups-node/internal/prt"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/validator"
 
@@ -87,6 +88,11 @@ func createServices(ctx context.Context, c *CreateInfo, s *Service) error {
 	numChildren++
 	go func() {
 		ch <- newClaimer(ctx, c, s)
+	}()
+
+	numChildren++
+	go func() {
+		ch <- newPRT(ctx, c, s)
 	}()
 
 	if c.Config.FeatureJsonrpcApiEnabled {
@@ -190,6 +196,29 @@ func newAdvancer(ctx context.Context, c *CreateInfo, s *Service) service.IServic
 		os.Exit(1)
 	}
 	return advancerService
+}
+
+func newPRT(ctx context.Context, c *CreateInfo, s *Service) service.IService {
+	prtArgs := prt.CreateInfo{
+		CreateInfo: service.CreateInfo{
+			Name:                 "PRT",
+			LogLevel:             c.Config.LogLevel,
+			LogColor:             c.Config.LogColor,
+			EnableSignalHandling: false,
+			TelemetryCreate:      false,
+			PollInterval:         c.Config.PrtPollingInterval,
+			ServeMux:             s.ServeMux,
+		},
+		Repository: c.Repository,
+		Config:     *c.Config.ToPrtConfig(),
+	}
+
+	prtService, err := prt.Create(ctx, &prtArgs)
+	if err != nil {
+		s.Logger.Error("Fatal", "error", err)
+		os.Exit(1)
+	}
+	return prtService
 }
 
 func newValidator(ctx context.Context, c *CreateInfo, s *Service) service.IService {

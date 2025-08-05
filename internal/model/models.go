@@ -18,6 +18,7 @@ import (
 type Application struct {
 	ID                   int64               `sql:"primary_key" json:"-"`
 	Name                 string              `json:"name"`
+	ConsensusType        ConsensusType       `json:"consensus_type"`
 	IApplicationAddress  common.Address      `json:"iapplication_address"`
 	IConsensusAddress    common.Address      `json:"iconsensus_address"`
 	IInputBoxAddress     common.Address      `json:"iinputbox_address"`
@@ -107,6 +108,45 @@ func (e *ApplicationState) Scan(value any) error {
 
 func (e ApplicationState) String() string {
 	return string(e)
+}
+
+type ConsensusType string
+
+const (
+	ConsensusType_Authority ConsensusType = "AUTHORITY"
+	ConsensusType_Prt       ConsensusType = "PRT"
+)
+
+var ConsensusTypeAllValues = []ConsensusType{
+	ConsensusType_Authority,
+	ConsensusType_Prt,
+}
+
+func (c *ConsensusType) Scan(value any) error {
+	var enumValue string
+	switch val := value.(type) {
+	case string:
+		enumValue = val
+	case []byte:
+		enumValue = string(val)
+	default:
+		return errors.New("invalid value for ConsensusType enum. Enum value has to be of type string or []byte")
+	}
+
+	switch enumValue {
+	case "AUTHORITY":
+		*c = ConsensusType_Authority
+	case "PRT":
+		*c = ConsensusType_Prt
+	default:
+		return errors.New("invalid value '" + enumValue + "' for ConsensusType enum")
+	}
+
+	return nil
+}
+
+func (c ConsensusType) String() string {
+	return string(c)
 }
 
 const DATA_AVAILABILITY_SELECTOR_SIZE = 4

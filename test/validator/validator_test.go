@@ -84,6 +84,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
 	s.Run("WhenThereAreNoOutputsAndNoPreviousEpoch", func() {
 		app := &model.Application{
 			Name:                "test-app",
+			ConsensusType:       model.ConsensusType_Authority,
 			IApplicationAddress: common.BytesToAddress([]byte("deadbeef")),
 			IConsensusAddress:   common.BytesToAddress([]byte("beadbeef")),
 			TemplateHash:        common.BytesToHash([]byte("template")),
@@ -150,6 +151,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 	s.Run("WhenThereAreNoOutputsAndThereIsAPreviousEpoch", func() {
 		app := &model.Application{
 			Name:                "test-app",
+			ConsensusType:       model.ConsensusType_Authority,
 			IApplicationAddress: common.BytesToAddress([]byte("deadbeef")),
 			IConsensusAddress:   common.BytesToAddress([]byte("beadbeef")),
 			TemplateHash:        common.BytesToHash([]byte("template")),
@@ -253,6 +255,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 	s.Run("WhenThereAreOutputsAndNoPreviousEpoch", func() {
 		app := &model.Application{
 			Name:                "test-app",
+			ConsensusType:       model.ConsensusType_Authority,
 			IApplicationAddress: common.BytesToAddress([]byte("deadbeef")),
 			IConsensusAddress:   common.BytesToAddress([]byte("beadbeef")),
 			TemplateHash:        common.BytesToHash([]byte("template")),
@@ -340,6 +343,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 	s.Run("WhenThereAreOutputsAndAPreviousEpoch", func() {
 		app := &model.Application{
 			Name:                "test-app",
+			ConsensusType:       model.ConsensusType_Authority,
 			IApplicationAddress: common.BytesToAddress([]byte("deadbeef")),
 			IConsensusAddress:   common.BytesToAddress([]byte("beadbeef")),
 			TemplateHash:        common.BytesToHash([]byte("template")),

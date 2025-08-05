@@ -150,8 +150,12 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		}
 	}
 
+	application := model.Application{}
+	application.ConsensusType = model.ConsensusType_Authority
+
 	var deployment ethutil.IApplicationDeployment
 	if deploymentTypePRT {
+		application.ConsensusType = model.ConsensusType_Prt
 		deployment, err = buildPrtApplicationDeployment(cmd, args, client, txOpts)
 	} else if deploySelfhosted := !cmd.Flags().Changed("consensus"); deploySelfhosted {
 		deployment, err = buildSelfhostedApplicationDeployment(cmd, args, client, txOpts)
@@ -192,8 +196,6 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		fmt.Fprint(os.Stderr, "success\n")
 		fmt.Fprint(os.Stderr, result)
 	}
-
-	application := model.Application{}
 
 	application.Name = applicationName
 	application.TemplateURI = templateURI
@@ -249,7 +251,6 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 			cobra.CheckErr(fmt.Errorf("failed to register application: %w", err))
 		}
 		defer repo.Close()
-
 		_, err = repo.CreateApplication(ctx, &application)
 		if err != nil {
 			cobra.CheckErr(fmt.Errorf("failed to register application: %w", err))

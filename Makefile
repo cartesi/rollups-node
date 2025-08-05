@@ -55,7 +55,7 @@ DOCKER_PLATFORM=--platform $(BUILD_PLATFORM)
 endif
 
 # Go artifacts
-GO_ARTIFACTS := cartesi-rollups-node cartesi-rollups-cli cartesi-rollups-evm-reader cartesi-rollups-advancer cartesi-rollups-validator cartesi-rollups-claimer cartesi-rollups-jsonrpc-api
+GO_ARTIFACTS := cartesi-rollups-node cartesi-rollups-cli cartesi-rollups-evm-reader cartesi-rollups-advancer cartesi-rollups-validator cartesi-rollups-prt cartesi-rollups-claimer cartesi-rollups-jsonrpc-api
 
 # fixme(vfusco): path on all oses
 CGO_CFLAGS:= -I$(PREFIX)/include

@@ -19,3 +19,4 @@ machine-snapshot/**
 /applications
 /test/downloads
 /snapshots
+compose.override.yml

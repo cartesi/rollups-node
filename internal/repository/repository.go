@@ -25,6 +25,7 @@ type Pagination struct {
 type ApplicationFilter struct {
 	State            *ApplicationState
 	DataAvailability *DataAvailabilitySelector
+	ConsensusType    *ConsensusType
 }
 
 type EpochFilter struct {

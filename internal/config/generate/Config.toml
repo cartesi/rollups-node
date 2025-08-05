@@ -8,14 +8,14 @@ default = "info"
 go-type = "LogLevel"
 description = """
 One of "debug", "info", "warn", "error"."""
-used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node"]
+used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "prt"]
 
 [logging.CARTESI_LOG_COLOR]
 default = "true"
 go-type = "bool"
 description = """
 If set to true, the node will add colors to its log output."""
-used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node"]
+used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "prt"]
 
 #
 # Features
@@ -55,7 +55,7 @@ go-type = "bool"
 description = """
 If set to false, the node will *not* check whether the Cartesi machine hash from
 the snapshot matches the hash in the Application contract."""
-used-by = ["advancer", "node", "cli"]
+used-by = ["advancer", "node", "cli", "prt"]
 
 #
 # Rollups
@@ -87,7 +87,17 @@ default = "15"
 go-type = "Duration"
 description = """
 How many seconds the node expects services take initializing before aborting."""
-used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node"]
+used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "prt"]
+
+#
+# PRT (Permissionless Refereed Tournaments)
+
+[rollups.CARTESI_PRT_POLLING_INTERVAL]
+default = "7"
+go-type = "Duration"
+description = """
+How many seconds the PRT service will wait before checking for new tournaments or tournament state changes."""
+used-by = ["prt", "node"]
 
 #
 # Blockchain
@@ -194,7 +204,7 @@ Address of the SelfHostedApplicationFactory contract. Not required, used only by
 omit = true
 used-by = ["cli"]
 
-[contracts.CARTESI_CONTRACTS_PRT_CONSENSUS_FACTORY_ADDRESS]
+[contracts.CARTESI_CONTRACTS_PRT_FACTORY_ADDRESS]
 go-type = "Address"
 description = """
 Address of the PRT consensus contract. Not required, used only by the CLI and tests"""
@@ -210,7 +220,7 @@ default = "/var/lib/cartesi-rollups-node/snapshots"
 go-type = "string"
 description = """
 Path to the directory where the snapshots will be written."""
-used-by = ["advancer", "node"]
+used-by = ["advancer", "node", "prt"]
 
 #
 # Auth
@@ -298,7 +308,7 @@ See [this](https://www.postgresql.org/docs/current/libpq-envars.html) for more i
 It is also possible to set the endpoint without a password and load it from Postgres' passfile.
 See [this](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-PASSFILE)
 for more information."""
-used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "cli"]
+used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "cli", "prt"]
 
 #
 # Telemetry http address
@@ -308,7 +318,7 @@ used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "
 go-type = "string"
 description = """
 HTTP address for telemetry service."""
-used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "cli"]
+used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "cli", "prt"]
 
 #
 # HTTP
@@ -326,7 +336,7 @@ default = ":10012"
 go-type = "string"
 description = """
 HTTP address for inspect."""
-used-by = ["advancer", "node", "cli"]
+used-by = ["advancer", "node", "cli", "prt"]
 
 #
 # Remote Cartesi Machine
@@ -338,4 +348,4 @@ go-type = "MachineLogLevel"
 description = """
 Remote Cartesi Machine server log level.
 One of "trace", "debug", "info", "warning", "error", "fatal"."""
-used-by = ["advancer", "node"]
+used-by = ["advancer", "node", "prt"]

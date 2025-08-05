@@ -58,6 +58,7 @@ const (
 	BLOCKCHAIN_MAX_BLOCK_RANGE                        = "CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"
 	CLAIMER_POLLING_INTERVAL                          = "CARTESI_CLAIMER_POLLING_INTERVAL"
 	MAX_STARTUP_TIME                                  = "CARTESI_MAX_STARTUP_TIME"
+	PRT_POLLING_INTERVAL                              = "CARTESI_PRT_POLLING_INTERVAL"
 	VALIDATOR_POLLING_INTERVAL                        = "CARTESI_VALIDATOR_POLLING_INTERVAL"
 	SNAPSHOTS_DIR                                     = "CARTESI_SNAPSHOTS_DIR"
 )
@@ -140,6 +141,8 @@ func SetDefaults() {
 	viper.SetDefault(CLAIMER_POLLING_INTERVAL, "3")
 
 	viper.SetDefault(MAX_STARTUP_TIME, "15")
+
+	viper.SetDefault(PRT_POLLING_INTERVAL, "7")
 
 	viper.SetDefault(VALIDATOR_POLLING_INTERVAL, "3")
 
@@ -831,6 +834,9 @@ type NodeConfig struct {
 	// How many seconds the node expects services take initializing before aborting.
 	MaxStartupTime Duration `mapstructure:"CARTESI_MAX_STARTUP_TIME"`
 
+	// How many seconds the PRT service will wait before checking for new tournaments or tournament state changes.
+	PrtPollingInterval Duration `mapstructure:"CARTESI_PRT_POLLING_INTERVAL"`
+
 	// How many seconds the node will wait before trying to finish epochs for all applications.
 	ValidatorPollingInterval Duration `mapstructure:"CARTESI_VALIDATOR_POLLING_INTERVAL"`
 
@@ -1029,6 +1035,13 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("CARTESI_MAX_STARTUP_TIME is required for the node service: %w", err)
 	}
 
+	cfg.PrtPollingInterval, err = GetPrtPollingInterval()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_PRT_POLLING_INTERVAL: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_PRT_POLLING_INTERVAL is required for the node service: %w", err)
+	}
+
 	cfg.ValidatorPollingInterval, err = GetValidatorPollingInterval()
 	if err != nil && err != ErrNotDefined {
 		return nil, fmt.Errorf("failed to get CARTESI_VALIDATOR_POLLING_INTERVAL: %w", err)
@@ -1041,6 +1054,138 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_SNAPSHOTS_DIR: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_SNAPSHOTS_DIR is required for the node service: %w", err)
+	}
+
+	return &cfg, nil
+}
+
+// PrtConfig holds configuration values for the prt service.
+type PrtConfig struct {
+
+	// Postgres endpoint in the 'postgres://user:password@hostname:port/database' format (URL).
+	//
+	// If not set, or set to empty string, will defer the behaviour to the PG driver.
+	// See [this](https://www.postgresql.org/docs/current/libpq-envars.html) for more information.
+	//
+	// It is also possible to set the endpoint without a password and load it from Postgres' passfile.
+	// See [this](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-PASSFILE)
+	// for more information.
+	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
+
+	// If set to false, the node will *not* check whether the Cartesi machine hash from
+	// the snapshot matches the hash in the Application contract.
+	FeatureMachineHashCheckEnabled bool `mapstructure:"CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED"`
+
+	// HTTP address for inspect.
+	InspectAddress string `mapstructure:"CARTESI_INSPECT_ADDRESS"`
+
+	// HTTP address for telemetry service.
+	TelemetryAddress string `mapstructure:"CARTESI_TELEMETRY_ADDRESS"`
+
+	// If set to true, the node will add colors to its log output.
+	LogColor bool `mapstructure:"CARTESI_LOG_COLOR"`
+
+	// One of "debug", "info", "warn", "error".
+	LogLevel LogLevel `mapstructure:"CARTESI_LOG_LEVEL"`
+
+	// Remote Cartesi Machine server log level.
+	// One of "trace", "debug", "info", "warning", "error", "fatal".
+	RemoteMachineLogLevel MachineLogLevel `mapstructure:"CARTESI_REMOTE_MACHINE_LOG_LEVEL"`
+
+	// How many seconds the node expects services take initializing before aborting.
+	MaxStartupTime Duration `mapstructure:"CARTESI_MAX_STARTUP_TIME"`
+
+	// How many seconds the PRT service will wait before checking for new tournaments or tournament state changes.
+	PrtPollingInterval Duration `mapstructure:"CARTESI_PRT_POLLING_INTERVAL"`
+
+	// Path to the directory where the snapshots will be written.
+	SnapshotsDir string `mapstructure:"CARTESI_SNAPSHOTS_DIR"`
+}
+
+// LoadPrtConfig reads configuration from environment variables, a config file, and defaults.
+// Priority: command line flags > environment variables > config file > defaults.
+func LoadPrtConfig() (*PrtConfig, error) {
+	SetDefaults()
+
+	// Load config file if specified via --config flag.
+	if cfgFile := viper.GetString("config"); cfgFile != "" {
+		viper.SetConfigFile(cfgFile)
+		if err := viper.ReadInConfig(); err != nil {
+			return nil, fmt.Errorf("error reading config file: %w", err)
+		}
+	}
+
+	var cfg PrtConfig
+	var err error
+
+	cfg.DatabaseConnection, err = GetDatabaseConnection()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_CONNECTION: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_DATABASE_CONNECTION is required for the prt service: %w", err)
+	}
+
+	cfg.FeatureMachineHashCheckEnabled, err = GetFeatureMachineHashCheckEnabled()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED is required for the prt service: %w", err)
+	}
+
+	cfg.InspectAddress, err = GetInspectAddress()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_INSPECT_ADDRESS: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_INSPECT_ADDRESS is required for the prt service: %w", err)
+	}
+
+	cfg.TelemetryAddress, err = GetTelemetryAddress()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_TELEMETRY_ADDRESS: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_TELEMETRY_ADDRESS is required for the prt service: %w", err)
+	}
+
+	cfg.LogColor, err = GetLogColor()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_LOG_COLOR: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_LOG_COLOR is required for the prt service: %w", err)
+	}
+
+	cfg.LogLevel, err = GetLogLevel()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_LOG_LEVEL: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_LOG_LEVEL is required for the prt service: %w", err)
+	}
+
+	cfg.RemoteMachineLogLevel, err = GetRemoteMachineLogLevel()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_REMOTE_MACHINE_LOG_LEVEL: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_REMOTE_MACHINE_LOG_LEVEL is required for the prt service: %w", err)
+	}
+
+	cfg.MaxStartupTime, err = GetMaxStartupTime()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_MAX_STARTUP_TIME: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_MAX_STARTUP_TIME is required for the prt service: %w", err)
+	}
+
+	cfg.PrtPollingInterval, err = GetPrtPollingInterval()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_PRT_POLLING_INTERVAL: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_PRT_POLLING_INTERVAL is required for the prt service: %w", err)
+	}
+
+	cfg.SnapshotsDir, err = GetSnapshotsDir()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_SNAPSHOTS_DIR: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_SNAPSHOTS_DIR is required for the prt service: %w", err)
 	}
 
 	return &cfg, nil
@@ -1204,6 +1349,22 @@ func (c *NodeConfig) ToJsonrpcConfig() *JsonrpcConfig {
 		LogColor:           c.LogColor,
 		LogLevel:           c.LogLevel,
 		MaxStartupTime:     c.MaxStartupTime,
+	}
+}
+
+// ToPrtConfig converts a NodeConfig to a PrtConfig.
+func (c *NodeConfig) ToPrtConfig() *PrtConfig {
+	return &PrtConfig{
+		DatabaseConnection:             c.DatabaseConnection,
+		FeatureMachineHashCheckEnabled: c.FeatureMachineHashCheckEnabled,
+		InspectAddress:                 c.InspectAddress,
+		TelemetryAddress:               c.TelemetryAddress,
+		LogColor:                       c.LogColor,
+		LogLevel:                       c.LogLevel,
+		RemoteMachineLogLevel:          c.RemoteMachineLogLevel,
+		MaxStartupTime:                 c.MaxStartupTime,
+		PrtPollingInterval:             c.PrtPollingInterval,
+		SnapshotsDir:                   c.SnapshotsDir,
 	}
 }
 
@@ -1711,6 +1872,19 @@ func GetMaxStartupTime() (Duration, error) {
 		return v, nil
 	}
 	return notDefinedDuration(), fmt.Errorf("%s: %w", MAX_STARTUP_TIME, ErrNotDefined)
+}
+
+// GetPrtPollingInterval returns the value for the environment variable CARTESI_PRT_POLLING_INTERVAL.
+func GetPrtPollingInterval() (Duration, error) {
+	s := viper.GetString(PRT_POLLING_INTERVAL)
+	if s != "" {
+		v, err := toDuration(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", PRT_POLLING_INTERVAL, err)
+		}
+		return v, nil
+	}
+	return notDefinedDuration(), fmt.Errorf("%s: %w", PRT_POLLING_INTERVAL, ErrNotDefined)
 }
 
 // GetValidatorPollingInterval returns the value for the environment variable CARTESI_VALIDATOR_POLLING_INTERVAL.

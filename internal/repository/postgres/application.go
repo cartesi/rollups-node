@@ -27,6 +27,7 @@ func (r *PostgresRepository) CreateApplication(
 		INSERT(
 			table.Application.Name,
 			table.Application.IapplicationAddress,
+			table.Application.ConsensusType,
 			table.Application.IconsensusAddress,
 			table.Application.IinputboxAddress,
 			table.Application.TemplateHash,
@@ -42,6 +43,7 @@ func (r *PostgresRepository) CreateApplication(
 		VALUES(
 			app.Name,
 			app.IApplicationAddress,
+			app.ConsensusType,
 			app.IConsensusAddress,
 			app.IInputBoxAddress,
 			app.TemplateHash,
@@ -67,7 +69,6 @@ func (r *PostgresRepository) CreateApplication(
 	if err != nil {
 		return 0, errors.Join(fmt.Errorf("unable to create database application: %w", err), tx.Rollback(ctx))
 	}
-
 	sqlStr, args = table.ExecutionParameters.
 		INSERT(
 			table.ExecutionParameters.ApplicationID,
@@ -80,7 +81,6 @@ func (r *PostgresRepository) CreateApplication(
 	if err != nil {
 		return 0, errors.Join(err, tx.Rollback(ctx))
 	}
-
 	err = tx.Commit(ctx)
 	if err != nil {
 		return 0, errors.Join(err, tx.Rollback(ctx))
@@ -104,6 +104,7 @@ func (r *PostgresRepository) GetApplication(
 			table.Application.ID,
 			table.Application.Name,
 			table.Application.IapplicationAddress,
+			table.Application.ConsensusType,
 			table.Application.IconsensusAddress,
 			table.Application.IinputboxAddress,
 			table.Application.TemplateHash,
@@ -151,6 +152,7 @@ func (r *PostgresRepository) GetApplication(
 		&app.ID,
 		&app.Name,
 		&app.IApplicationAddress,
+		&app.ConsensusType,
 		&app.IConsensusAddress,
 		&app.IInputBoxAddress,
 		&app.TemplateHash,
@@ -234,6 +236,7 @@ func (r *PostgresRepository) UpdateApplication(
 		UPDATE(
 			table.Application.Name,
 			table.Application.IapplicationAddress,
+			table.Application.ConsensusType,
 			table.Application.IconsensusAddress,
 			table.Application.IinputboxAddress,
 			table.Application.TemplateHash,
@@ -250,6 +253,7 @@ func (r *PostgresRepository) UpdateApplication(
 		SET(
 			app.Name,
 			app.IApplicationAddress,
+			app.ConsensusType,
 			app.IConsensusAddress,
 			app.IInputBoxAddress,
 			app.TemplateHash,
@@ -431,6 +435,7 @@ func (r *PostgresRepository) ListApplications(
 			table.Application.ID,
 			table.Application.Name,
 			table.Application.IapplicationAddress,
+			table.Application.ConsensusType,
 			table.Application.IconsensusAddress,
 			table.Application.IinputboxAddress,
 			table.Application.TemplateHash,
@@ -480,6 +485,9 @@ func (r *PostgresRepository) ListApplications(
 				table.Application.DataAvailability, postgres.Int(1), postgres.Int(4), // nolint: mnd
 			).EQ(postgres.Bytea(f.DataAvailability[:])))
 	}
+	if f.ConsensusType != nil {
+		conditions = append(conditions, table.Application.ConsensusType.EQ(postgres.NewEnumValue(f.ConsensusType.String())))
+	}
 
 	if len(conditions) > 0 {
 		sel = sel.WHERE(postgres.AND(conditions...))
@@ -514,6 +522,7 @@ func (r *PostgresRepository) ListApplications(
 			&app.ID,
 			&app.Name,
 			&app.IApplicationAddress,
+			&app.ConsensusType,
 			&app.IConsensusAddress,
 			&app.IInputBoxAddress,
 			&app.TemplateHash,

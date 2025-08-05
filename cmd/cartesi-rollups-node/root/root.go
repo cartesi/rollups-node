@@ -32,6 +32,7 @@ var (
 	advancerPollInterval   string
 	validatorPollInterval  string
 	claimerPollInterval    string
+	prtPollInterval        string
 	maxStartupTime         string
 	enableInputReader      bool
 	enableInspect          bool

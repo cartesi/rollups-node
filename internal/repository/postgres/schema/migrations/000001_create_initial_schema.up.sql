@@ -10,6 +10,8 @@ CREATE DOMAIN "data_availability" AS BYTEA CHECK (octet_length(VALUE) >= 4);
 
 CREATE TYPE "ApplicationState" AS ENUM ('ENABLED', 'DISABLED', 'INOPERABLE');
 
+CREATE TYPE "ConsensusType" AS ENUM ('AUTHORITY', 'PRT');
+
 CREATE TYPE "InputCompletionStatus" AS ENUM (
     'NONE',
     'ACCEPTED',
@@ -66,6 +68,7 @@ CREATE TABLE "application"
 (
     "id" SERIAL,
     "name" VARCHAR(4096) UNIQUE NOT NULL CHECK ("name" ~ '^[a-z0-9_-]+$'),
+    "consensus_type" "ConsensusType" NOT NULL,
     "iapplication_address" ethereum_address UNIQUE NOT NULL,
     "iconsensus_address" ethereum_address NOT NULL,
     "iinputbox_address" ethereum_address NOT NULL,
