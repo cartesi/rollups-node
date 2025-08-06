@@ -106,6 +106,20 @@ description = """
 HTTP endpoint for the blockchain RPC provider."""
 used-by = ["evmreader", "claimer", "node"]
 
+[blockchain.CARTESI_BLOCKCHAIN_HTTP_AUTHORIZATION]
+file = true
+go-type = "RedactedString"
+description = """
+Additional security when interacting with providers.
+Specify a Key ':' Value pair to include in the HTTP header with authorization keys.
+Examples:
+ - Alchemy: "Authorization:Bearer ${API_Key}"
+ - Infura:  "Authorization:Basic base64(':' + ${<INFURA-API-KEY-SECRET>})"
+ - Google:  "X-goog-api-key:${API_Key}"
+"""
+omit = true
+used-by = ["evmreader", "claimer", "node"]
+
 [blockchain.CARTESI_BLOCKCHAIN_WS_ENDPOINT]
 file = true
 go-type = "URL"

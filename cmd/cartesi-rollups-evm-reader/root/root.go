@@ -95,9 +95,18 @@ func createEthClient(ctx context.Context, endpoint string, logger *slog.Logger) 
 	rclient.RetryMax = int(cfg.BlockchainHttpMaxRetries)
 	rclient.RetryWaitMin = cfg.BlockchainHttpRetryMinWait
 	rclient.RetryWaitMax = cfg.BlockchainHttpRetryMaxWait
-	clientOption := rpc.WithHTTPClient(rclient.StandardClient())
 
-	rpcClient, err := rpc.DialOptions(ctx, endpoint, clientOption)
+	clientOptions := []rpc.ClientOption{
+		rpc.WithHTTPClient(rclient.StandardClient()),
+	}
+
+	authOpt, err := config.HTTPAuthorizationOption()
+	cobra.CheckErr(err)
+	if authOpt != nil {
+		clientOptions = append(clientOptions, authOpt)
+	}
+
+	rpcClient, err := rpc.DialOptions(ctx, endpoint, clientOptions...)
 	if err != nil {
 		return nil, err
 	}

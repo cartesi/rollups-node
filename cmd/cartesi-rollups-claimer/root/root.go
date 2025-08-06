@@ -111,8 +111,17 @@ func run(cmd *cobra.Command, args []string) {
 	rclient.RetryWaitMin = cfg.BlockchainHttpRetryMinWait
 	rclient.RetryWaitMax = cfg.BlockchainHttpRetryMaxWait
 
-	clientOption := rpc.WithHTTPClient(rclient.StandardClient())
-	rpcClient, err := rpc.DialOptions(ctx, cfg.BlockchainHttpEndpoint.String(), clientOption)
+	clientOptions := []rpc.ClientOption{
+		rpc.WithHTTPClient(rclient.StandardClient()),
+	}
+
+	authOpt, err := config.HTTPAuthorizationOption()
+	cobra.CheckErr(err)
+	if authOpt != nil {
+		clientOptions = append(clientOptions, authOpt)
+	}
+
+	rpcClient, err := rpc.DialOptions(ctx, cfg.BlockchainHttpEndpoint.String(), clientOptions...)
 	cobra.CheckErr(err)
 	createInfo.EthConn = ethclient.NewClient(rpcClient)
 

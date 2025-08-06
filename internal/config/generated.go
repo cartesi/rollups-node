@@ -29,6 +29,7 @@ const (
 	AUTH_MNEMONIC_ACCOUNT_INDEX                       = "CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX"
 	AUTH_PRIVATE_KEY                                  = "CARTESI_AUTH_PRIVATE_KEY"
 	BLOCKCHAIN_DEFAULT_BLOCK                          = "CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"
+	BLOCKCHAIN_HTTP_AUTHORIZATION                     = "CARTESI_BLOCKCHAIN_HTTP_AUTHORIZATION"
 	BLOCKCHAIN_HTTP_ENDPOINT                          = "CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"
 	BLOCKCHAIN_ID                                     = "CARTESI_BLOCKCHAIN_ID"
 	BLOCKCHAIN_LEGACY_ENABLED                         = "CARTESI_BLOCKCHAIN_LEGACY_ENABLED"
@@ -66,7 +67,8 @@ const (
 
 	AUTH_PRIVATE_KEY_FILE = "CARTESI_AUTH_PRIVATE_KEY_FILE"
 
-	BLOCKCHAIN_HTTP_ENDPOINT_FILE = "CARTESI_BLOCKCHAIN_HTTP_ENDPOINT_FILE"
+	BLOCKCHAIN_HTTP_AUTHORIZATION_FILE = "CARTESI_BLOCKCHAIN_HTTP_AUTHORIZATION_FILE"
+	BLOCKCHAIN_HTTP_ENDPOINT_FILE      = "CARTESI_BLOCKCHAIN_HTTP_ENDPOINT_FILE"
 
 	BLOCKCHAIN_WS_ENDPOINT_FILE = "CARTESI_BLOCKCHAIN_WS_ENDPOINT_FILE"
 
@@ -89,6 +91,8 @@ func SetDefaults() {
 	// no default for CARTESI_AUTH_PRIVATE_KEY
 
 	viper.SetDefault(BLOCKCHAIN_DEFAULT_BLOCK, "finalized")
+
+	// no default for CARTESI_BLOCKCHAIN_HTTP_AUTHORIZATION
 
 	// no default for CARTESI_BLOCKCHAIN_HTTP_ENDPOINT
 
@@ -1329,6 +1333,27 @@ func GetBlockchainDefaultBlock() (DefaultBlock, error) {
 		return v, nil
 	}
 	return notDefinedDefaultBlock(), fmt.Errorf("%s: %w", BLOCKCHAIN_DEFAULT_BLOCK, ErrNotDefined)
+}
+
+// GetBlockchainHttpAuthorization returns the value for the environment variable CARTESI_BLOCKCHAIN_HTTP_AUTHORIZATION.
+func GetBlockchainHttpAuthorization() (RedactedString, error) {
+	s := viper.GetString(BLOCKCHAIN_HTTP_AUTHORIZATION)
+	if s == "" {
+		filename := viper.GetString(BLOCKCHAIN_HTTP_AUTHORIZATION_FILE)
+		contents, err := os.ReadFile(filename)
+		if err != nil {
+			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_AUTHORIZATION_FILE, err)
+		}
+		s = strings.TrimSpace(string(contents))
+	}
+	if s != "" {
+		v, err := toRedactedString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_AUTHORIZATION, err)
+		}
+		return v, nil
+	}
+	return notDefinedRedactedString(), fmt.Errorf("%s: %w", BLOCKCHAIN_HTTP_AUTHORIZATION, ErrNotDefined)
 }
 
 // GetBlockchainHttpEndpoint returns the value for the environment variable CARTESI_BLOCKCHAIN_HTTP_ENDPOINT.
