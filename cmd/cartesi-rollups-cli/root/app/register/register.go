@@ -206,6 +206,17 @@ func run(cmd *cobra.Command, args []string) {
 		inputBoxBlockNumber = block.Uint64()
 	}
 
+	// ensure there is a contract deployed at the input box address
+	hasCode, err := hasCodeAt(ctx, *inputBoxAddress)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to probe input box address for contract: %v\n", err)
+		os.Exit(1)
+	}
+	if !hasCode {
+		fmt.Fprintf(os.Stderr, "input box address has no code: %v\n", consensus)
+		os.Exit(1)
+	}
+
 	application := model.Application{
 		Name:                 validName,
 		IApplicationAddress:  address,
@@ -260,6 +271,25 @@ func getTemplateHash(
 		return nil, fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint.Redacted())
 	}
 	return ethutil.GetTemplateHash(ctx, client, appAddress)
+}
+
+func hasCodeAt(
+	ctx context.Context,
+	consensusAddress common.Address,
+) (bool, error) {
+	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
+	if err != nil {
+		return false, fmt.Errorf("failed to get blockchain http endpoint address: %w", err)
+	}
+	client, err := ethclient.Dial(ethEndpoint.String())
+	if err != nil {
+		return false, fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint.Redacted())
+	}
+	bytes, err := client.CodeAt(ctx, consensusAddress, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to retrieve code at consensus address: %s", consensusAddress)
+	}
+	return len(bytes) != 0, nil
 }
 
 func getConsensus(

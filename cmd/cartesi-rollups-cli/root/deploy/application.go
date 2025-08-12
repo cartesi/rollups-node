@@ -4,6 +4,7 @@
 package deploy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -146,9 +147,9 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 
 	var deployment ethutil.IApplicationDeployment
 	if deploySelfhosted := !cmd.Flags().Changed("consensus"); deploySelfhosted {
-		deployment, err = buildSelfhostedApplicationDeployment(cmd, args, client, txOpts)
+		deployment, err = buildSelfhostedApplicationDeployment(ctx, cmd, args, client, txOpts)
 	} else {
-		deployment, err = buildApplicationOnlyDeployment(cmd, args, client, txOpts)
+		deployment, err = buildApplicationOnlyDeployment(ctx, cmd, args, client, txOpts)
 	}
 	cobra.CheckErr(err)
 
@@ -297,6 +298,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 
 // parse args + cmd into a self hosted deployment structure
 func buildSelfhostedApplicationDeployment(
+	ctx context.Context,
 	cmd *cobra.Command,
 	args []string,
 	client *ethclient.Client,
@@ -346,7 +348,8 @@ func buildSelfhostedApplicationDeployment(
 	}
 
 	if !cmd.Flags().Changed("data-availability") {
-		inputBoxAddress, err := config.GetContractsInputBoxAddress()
+		inputBoxAddress := common.Address{}
+		inputBoxAddress, err = config.GetContractsInputBoxAddress()
 		if err != nil {
 			return nil, fmt.Errorf("error on parameter data-availability: %w", err)
 		}
@@ -360,6 +363,15 @@ func buildSelfhostedApplicationDeployment(
 		return nil, fmt.Errorf("error on parameter data-availability: %w", err)
 	}
 
+	// ensure there is a contract deployed at the input box address
+	code, err := client.CodeAt(ctx, request.InputBoxAddress, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to probe input box address for contract: %v\n", err)
+	}
+	if len(code) == 0 {
+		return nil, fmt.Errorf("error input box address has no code: %v", request.InputBoxAddress)
+	}
+
 	request.Salt, err = ethutil.ParseSalt(saltParam)
 	if err != nil {
 		return nil, fmt.Errorf("error on parameter salt: %w", err)
@@ -371,6 +383,7 @@ func buildSelfhostedApplicationDeployment(
 }
 
 func buildApplicationOnlyDeployment(
+	ctx context.Context,
 	cmd *cobra.Command,
 	args []string,
 	client *ethclient.Client,
@@ -419,7 +432,8 @@ func buildApplicationOnlyDeployment(
 	}
 
 	if !cmd.Flags().Changed("data-availability") {
-		inputBoxAddress, err := config.GetContractsInputBoxAddress()
+		inputBoxAddress := common.Address{}
+		inputBoxAddress, err = config.GetContractsInputBoxAddress()
 		if err != nil {
 			return nil, fmt.Errorf("error on parameter data-availability: %w", err)
 		}
@@ -431,6 +445,15 @@ func buildApplicationOnlyDeployment(
 	}
 	if err != nil {
 		return nil, fmt.Errorf("error on parameter data-availability: %w", err)
+	}
+
+	// ensure there is a contract deployed at the input box address
+	code, err := client.CodeAt(ctx, request.InputBoxAddress, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to probe input box address for contract: %v\n", err)
+	}
+	if len(code) == 0 {
+		return nil, fmt.Errorf("error input box address has no code: %v", request.InputBoxAddress)
 	}
 
 	request.Consensus, request.EpochLength, err = customConsensus(client, applicationConsensusAddressParam)
