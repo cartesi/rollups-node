@@ -14,6 +14,7 @@ machine-snapshot/**
 /cartesi-rollups-validator
 /cartesi-rollups-claimer
 /cartesi-rollups-jsonrpc-api
+/cartesi-rollups-prt
 /rollups-contracts
 /rollups-prt-contracts
 /applications

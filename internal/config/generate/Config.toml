@@ -8,14 +8,14 @@ default = "info"
 go-type = "LogLevel"
 description = """
 One of "debug", "info", "warn", "error"."""
-used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node"]
+used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "prt"]
 
 [logging.CARTESI_LOG_COLOR]
 default = "true"
 go-type = "bool"
 description = """
 If set to true, the node will add colors to its log output."""
-used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node"]
+used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "prt"]
 
 #
 # Features
@@ -33,7 +33,7 @@ default = "true"
 go-type = "bool"
 description = """
 If set to false, the node will not submit claims (reader mode)."""
-used-by = ["claimer", "node"]
+used-by = ["claimer", "node", "prt"]
 
 [features.CARTESI_FEATURE_INSPECT_ENABLED]
 default = "true"
@@ -82,12 +82,19 @@ description = """
 How many seconds the node will wait before querying the database for new claims."""
 used-by = ["claimer", "node"]
 
+[rollups.CARTESI_PRT_POLLING_INTERVAL]
+default = "3"
+go-type = "Duration"
+description = """
+How many seconds the node will wait before trying to finish epochs for all applications."""
+used-by = ["prt", "node"]
+
 [rollups.CARTESI_MAX_STARTUP_TIME]
 default = "15"
 go-type = "Duration"
 description = """
 How many seconds the node expects services take initializing before aborting."""
-used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node"]
+used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "prt"]
 
 #
 # Blockchain
@@ -97,14 +104,14 @@ used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node"]
 go-type = "uint64"
 description = """
 An unique identifier representing a blockchain network."""
-used-by = ["evmreader", "claimer", "node"]
+used-by = ["evmreader", "claimer", "node", "prt"]
 
 [blockchain.CARTESI_BLOCKCHAIN_HTTP_ENDPOINT]
 file = true
 go-type = "URL"
 description = """
 HTTP endpoint for the blockchain RPC provider."""
-used-by = ["evmreader", "claimer", "node"]
+used-by = ["evmreader", "claimer", "node", "prt"]
 
 [blockchain.CARTESI_BLOCKCHAIN_HTTP_AUTHORIZATION]
 file = true
@@ -133,7 +140,7 @@ go-type = "bool"
 description = """
 If set to true the node will send transactions using the legacy gas fee model
 (instead of EIP-1559)."""
-used-by = ["claimer", "node", "cli"]
+used-by = ["claimer", "node", "cli", "prt"]
 
 [blockchain.CARTESI_BLOCKCHAIN_DEFAULT_BLOCK]
 default = "finalized"
@@ -141,7 +148,7 @@ go-type = "DefaultBlock"
 description = """
 The default block to be used by EVM Reader and Claimer when requesting new blocks.
 One of 'latest', 'pending', 'safe', 'finalized'"""
-used-by = ["evmreader", "claimer", "node"]
+used-by = ["evmreader", "claimer", "node", "prt"]
 
 [blockchain.CARTESI_BLOCKCHAIN_SUBSCRIPTION_TIMEOUT]
 default = "60"
@@ -155,28 +162,28 @@ default = "4"
 go-type = "uint64"
 description = """
 Maximum number of retry attempts for HTTP blockchain requests after encountering an error."""
-used-by = ["evmreader", "claimer", "node"]
+used-by = ["evmreader", "claimer", "node", "prt"]
 
 [rollups.CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT]
 default = "1"
 go-type = "Duration"
 description = """
 Minimum wait time in seconds for the exponential backoff retry policy. This is the initial delay before the first retry for HTTP blockchain requests."""
-used-by = ["evmreader", "claimer", "node"]
+used-by = ["evmreader", "claimer", "node", "prt"]
 
 [rollups.CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT]
 default = "60"
 go-type = "Duration"
 description = """
 Maximum wait time in seconds for the exponential backoff retry policy. The delay between retries for HTTP blockchain requests will never exceed this value, regardless of the backoff calculation."""
-used-by = ["evmreader", "claimer", "node"]
+used-by = ["evmreader", "claimer", "node", "prt"]
 
 [rollups.CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE]
 default = "0"
 go-type = "uint64"
 description = """
 Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited."""
-used-by = ["evmreader", "claimer", "node"]
+used-by = ["evmreader", "claimer", "node", "prt"]
 
 #
 # Contracts
@@ -226,7 +233,7 @@ default = "/var/lib/cartesi-rollups-node/snapshots"
 go-type = "string"
 description = """
 Path to the directory where the snapshots will be written."""
-used-by = ["advancer", "node"]
+used-by = ["advancer", "node", "prt"]
 
 #
 # Auth
@@ -240,7 +247,7 @@ One of "private_key", "private_key_file", "mnemonic", "mnemonic_file", "aws".
 
 The auth variable for the kind defined here is required. Eg.: CARTESI_AUTH_MNEMONIC"""
 omit = true
-used-by = ["claimer", "node", "cli"]
+used-by = ["claimer", "node", "cli", "prt"]
 
 [auth.CARTESI_AUTH_PRIVATE_KEY]
 file = true
@@ -248,7 +255,7 @@ go-type = "RedactedString"
 description = """
 The node will use this private key to sign transactions."""
 omit = true
-used-by = ["claimer", "node", "cli"]
+used-by = ["claimer", "node", "cli", "prt"]
 
 [auth.CARTESI_AUTH_MNEMONIC]
 file = true
@@ -256,7 +263,7 @@ go-type = "RedactedString"
 description = """
 The node will use the private key generated from this mnemonic to sign transactions."""
 omit = true
-used-by = ["claimer", "node", "cli"]
+used-by = ["claimer", "node", "cli", "prt"]
 
 [auth.CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX]
 default = "0"
@@ -265,7 +272,7 @@ description = """
 When using mnemonics to sign transactions,
 the node will use this account index to generate the private key."""
 omit = true
-used-by = ["claimer", "node", "cli"]
+used-by = ["claimer", "node", "cli", "prt"]
 
 [auth.CARTESI_AUTH_AWS_KMS_KEY_ID]
 go-type = "RedactedString"
@@ -274,7 +281,7 @@ If set, the node will use the AWS KMS service with this key ID to sign transacti
 
 Must be set alongside `CARTESI_AUTH_AWS_KMS_REGION`."""
 omit = true
-used-by = ["claimer", "node", "cli"]
+used-by = ["claimer", "node", "cli", "prt"]
 
 [auth.CARTESI_AUTH_AWS_KMS_REGION]
 go-type = "RedactedString"
@@ -283,7 +290,7 @@ An AWS KMS Region.
 
 Must be set alongside `CARTESI_AUTH_AWS_KMS_KEY_ID`."""
 omit = true
-used-by = ["claimer", "node", "cli"]
+used-by = ["claimer", "node", "cli", "prt"]
 
 #
 # Database
@@ -302,7 +309,7 @@ See [this](https://www.postgresql.org/docs/current/libpq-envars.html) for more i
 It is also possible to set the endpoint without a password and load it from Postgres' passfile.
 See [this](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-PASSFILE)
 for more information."""
-used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "cli"]
+used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "cli", "prt"]
 
 #
 # Telemetry http address
@@ -312,7 +319,7 @@ used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "
 go-type = "string"
 description = """
 HTTP address for telemetry service."""
-used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "cli"]
+used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "cli", "prt"]
 
 #
 # HTTP
