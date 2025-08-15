@@ -55,7 +55,7 @@ DOCKER_PLATFORM=--platform $(BUILD_PLATFORM)
 endif
 
 # Go artifacts
-GO_ARTIFACTS := cartesi-rollups-node cartesi-rollups-cli cartesi-rollups-evm-reader cartesi-rollups-advancer cartesi-rollups-validator cartesi-rollups-claimer cartesi-rollups-jsonrpc-api
+GO_ARTIFACTS := $(addprefix cartesi-rollups-,node cli evm-reader advancer validator claimer jsonrpc-api prt)
 
 # fixme(vfusco): path on all oses
 CGO_CFLAGS:= -I$(PREFIX)/include
@@ -97,7 +97,7 @@ env:
 	@echo export CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS="0xC7003566dD09Aa0fC0Ce201aC2769aFAe3BF0051"
 	@echo export CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS="0xc7006f70875BaDe89032001262A846D3Ee160051"
 	@echo export CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS="0xc700285Ab555eeB5201BC00CFD4b2CC8DED90051"
-	@echo export CARTESI_CONTRACTS_PRT_FACTORY_ADDRESS="0x6e362c9458fE812D4aA796651C64D02C87AbD1cB"
+	@echo export CARTESI_CONTRACTS_PRT_CONSENSUS_FACTORY_ADDRESS="0x6e362c9458fE812D4aA796651C64D02C87AbD1cB"
 	@echo export CARTESI_AUTH_MNEMONIC=\"test test test test test test test test test test test junk\"
 	@echo export CARTESI_DATABASE_CONNECTION="postgres://postgres:password@localhost:5432/rollupsdb?sslmode=disable"
 	@echo export CARTESI_SNAPSHOTS_DIR="snapshots"

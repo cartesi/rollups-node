@@ -52,7 +52,7 @@ Supported Environment Variables:
   CARTESI_CONTRACTS_INPUT_BOX_ADDRESS                        Input Box contract address
   CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS              Application Factory address
   CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS  Self Hosted Application Factory address
-  CARTESI_CONTRACTS_PRT_FACTORY_ADDRESS                      PRT Factory address`,
+  CARTESI_CONTRACTS_PRT_CONSENSUS_FACTORY_ADDRESS            PRT Factory address`,
 }
 
 const applicationExamples = `
@@ -463,7 +463,7 @@ func buildPrtApplicationDeployment(
 	var err error
 	request := &ethutil.PRTApplicationDeployment{}
 	if !cmd.Flags().Changed("prt-factory") {
-		request.FactoryAddress, err = config.GetContractsPrtFactoryAddress()
+		request.FactoryAddress, err = config.GetContractsPrtConsensusFactoryAddress()
 	} else {
 		request.FactoryAddress, err = parseHexAddress(factoryAddressParam)
 	}

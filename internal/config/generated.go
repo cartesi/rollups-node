@@ -37,7 +37,7 @@ const (
 	CONTRACTS_APPLICATION_FACTORY_ADDRESS             = "CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS"
 	CONTRACTS_AUTHORITY_FACTORY_ADDRESS               = "CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS"
 	CONTRACTS_INPUT_BOX_ADDRESS                       = "CARTESI_CONTRACTS_INPUT_BOX_ADDRESS"
-	CONTRACTS_PRT_FACTORY_ADDRESS                     = "CARTESI_CONTRACTS_PRT_FACTORY_ADDRESS"
+	CONTRACTS_PRT_CONSENSUS_FACTORY_ADDRESS           = "CARTESI_CONTRACTS_PRT_CONSENSUS_FACTORY_ADDRESS"
 	CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS = "CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS"
 	DATABASE_CONNECTION                               = "CARTESI_DATABASE_CONNECTION"
 	FEATURE_CLAIM_SUBMISSION_ENABLED                  = "CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"
@@ -58,6 +58,7 @@ const (
 	BLOCKCHAIN_MAX_BLOCK_RANGE                        = "CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"
 	CLAIMER_POLLING_INTERVAL                          = "CARTESI_CLAIMER_POLLING_INTERVAL"
 	MAX_STARTUP_TIME                                  = "CARTESI_MAX_STARTUP_TIME"
+	PRT_POLLING_INTERVAL                              = "CARTESI_PRT_POLLING_INTERVAL"
 	VALIDATOR_POLLING_INTERVAL                        = "CARTESI_VALIDATOR_POLLING_INTERVAL"
 	SNAPSHOTS_DIR                                     = "CARTESI_SNAPSHOTS_DIR"
 )
@@ -99,7 +100,7 @@ func SetDefaults() {
 
 	// no default for CARTESI_CONTRACTS_INPUT_BOX_ADDRESS
 
-	// no default for CARTESI_CONTRACTS_PRT_FACTORY_ADDRESS
+	// no default for CARTESI_CONTRACTS_PRT_CONSENSUS_FACTORY_ADDRESS
 
 	// no default for CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS
 
@@ -140,6 +141,8 @@ func SetDefaults() {
 	viper.SetDefault(CLAIMER_POLLING_INTERVAL, "3")
 
 	viper.SetDefault(MAX_STARTUP_TIME, "15")
+
+	viper.SetDefault(PRT_POLLING_INTERVAL, "3")
 
 	viper.SetDefault(VALIDATOR_POLLING_INTERVAL, "3")
 
@@ -832,6 +835,9 @@ type NodeConfig struct {
 	MaxStartupTime Duration `mapstructure:"CARTESI_MAX_STARTUP_TIME"`
 
 	// How many seconds the node will wait before trying to finish epochs for all applications.
+	PrtPollingInterval Duration `mapstructure:"CARTESI_PRT_POLLING_INTERVAL"`
+
+	// How many seconds the node will wait before trying to finish epochs for all applications.
 	ValidatorPollingInterval Duration `mapstructure:"CARTESI_VALIDATOR_POLLING_INTERVAL"`
 
 	// Path to the directory where the snapshots will be written.
@@ -1029,6 +1035,13 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("CARTESI_MAX_STARTUP_TIME is required for the node service: %w", err)
 	}
 
+	cfg.PrtPollingInterval, err = GetPrtPollingInterval()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_PRT_POLLING_INTERVAL: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_PRT_POLLING_INTERVAL is required for the node service: %w", err)
+	}
+
 	cfg.ValidatorPollingInterval, err = GetValidatorPollingInterval()
 	if err != nil && err != ErrNotDefined {
 		return nil, fmt.Errorf("failed to get CARTESI_VALIDATOR_POLLING_INTERVAL: %w", err)
@@ -1041,6 +1054,198 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_SNAPSHOTS_DIR: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_SNAPSHOTS_DIR is required for the node service: %w", err)
+	}
+
+	return &cfg, nil
+}
+
+// PrtConfig holds configuration values for the prt service.
+type PrtConfig struct {
+
+	// The default block to be used by EVM Reader and Claimer when requesting new blocks.
+	// One of 'latest', 'pending', 'safe', 'finalized'
+	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
+
+	// HTTP endpoint for the blockchain RPC provider.
+	BlockchainHttpEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"`
+
+	// An unique identifier representing a blockchain network.
+	BlockchainId uint64 `mapstructure:"CARTESI_BLOCKCHAIN_ID"`
+
+	// If set to true the node will send transactions using the legacy gas fee model
+	// (instead of EIP-1559).
+	BlockchainLegacyEnabled bool `mapstructure:"CARTESI_BLOCKCHAIN_LEGACY_ENABLED"`
+
+	// Postgres endpoint in the 'postgres://user:password@hostname:port/database' format (URL).
+	//
+	// If not set, or set to empty string, will defer the behaviour to the PG driver.
+	// See [this](https://www.postgresql.org/docs/current/libpq-envars.html) for more information.
+	//
+	// It is also possible to set the endpoint without a password and load it from Postgres' passfile.
+	// See [this](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-PASSFILE)
+	// for more information.
+	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
+
+	// If set to false, the node will not submit claims (reader mode).
+	FeatureClaimSubmissionEnabled bool `mapstructure:"CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"`
+
+	// HTTP address for telemetry service.
+	TelemetryAddress string `mapstructure:"CARTESI_TELEMETRY_ADDRESS"`
+
+	// If set to true, the node will add colors to its log output.
+	LogColor bool `mapstructure:"CARTESI_LOG_COLOR"`
+
+	// One of "debug", "info", "warn", "error".
+	LogLevel LogLevel `mapstructure:"CARTESI_LOG_LEVEL"`
+
+	// Maximum number of retry attempts for HTTP blockchain requests after encountering an error.
+	BlockchainHttpMaxRetries uint64 `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES"`
+
+	// Maximum wait time in seconds for the exponential backoff retry policy. The delay between retries for HTTP blockchain requests will never exceed this value, regardless of the backoff calculation.
+	BlockchainHttpRetryMaxWait Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT"`
+
+	// Minimum wait time in seconds for the exponential backoff retry policy. This is the initial delay before the first retry for HTTP blockchain requests.
+	BlockchainHttpRetryMinWait Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT"`
+
+	// Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited.
+	BlockchainMaxBlockRange uint64 `mapstructure:"CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"`
+
+	// How many seconds the node expects services take initializing before aborting.
+	MaxStartupTime Duration `mapstructure:"CARTESI_MAX_STARTUP_TIME"`
+
+	// How many seconds the node will wait before trying to finish epochs for all applications.
+	PrtPollingInterval Duration `mapstructure:"CARTESI_PRT_POLLING_INTERVAL"`
+
+	// Path to the directory where the snapshots will be written.
+	SnapshotsDir string `mapstructure:"CARTESI_SNAPSHOTS_DIR"`
+}
+
+// LoadPrtConfig reads configuration from environment variables, a config file, and defaults.
+// Priority: command line flags > environment variables > config file > defaults.
+func LoadPrtConfig() (*PrtConfig, error) {
+	SetDefaults()
+
+	// Load config file if specified via --config flag.
+	if cfgFile := viper.GetString("config"); cfgFile != "" {
+		viper.SetConfigFile(cfgFile)
+		if err := viper.ReadInConfig(); err != nil {
+			return nil, fmt.Errorf("error reading config file: %w", err)
+		}
+	}
+
+	var cfg PrtConfig
+	var err error
+
+	cfg.BlockchainDefaultBlock, err = GetBlockchainDefaultBlock()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_DEFAULT_BLOCK: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_DEFAULT_BLOCK is required for the prt service: %w", err)
+	}
+
+	cfg.BlockchainHttpEndpoint, err = GetBlockchainHttpEndpoint()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_ENDPOINT: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_ENDPOINT is required for the prt service: %w", err)
+	}
+
+	cfg.BlockchainId, err = GetBlockchainId()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_ID: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_ID is required for the prt service: %w", err)
+	}
+
+	cfg.BlockchainLegacyEnabled, err = GetBlockchainLegacyEnabled()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_LEGACY_ENABLED: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_LEGACY_ENABLED is required for the prt service: %w", err)
+	}
+
+	cfg.DatabaseConnection, err = GetDatabaseConnection()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_CONNECTION: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_DATABASE_CONNECTION is required for the prt service: %w", err)
+	}
+
+	cfg.FeatureClaimSubmissionEnabled, err = GetFeatureClaimSubmissionEnabled()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED is required for the prt service: %w", err)
+	}
+
+	cfg.TelemetryAddress, err = GetTelemetryAddress()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_TELEMETRY_ADDRESS: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_TELEMETRY_ADDRESS is required for the prt service: %w", err)
+	}
+
+	cfg.LogColor, err = GetLogColor()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_LOG_COLOR: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_LOG_COLOR is required for the prt service: %w", err)
+	}
+
+	cfg.LogLevel, err = GetLogLevel()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_LOG_LEVEL: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_LOG_LEVEL is required for the prt service: %w", err)
+	}
+
+	cfg.BlockchainHttpMaxRetries, err = GetBlockchainHttpMaxRetries()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES is required for the prt service: %w", err)
+	}
+
+	cfg.BlockchainHttpRetryMaxWait, err = GetBlockchainHttpRetryMaxWait()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT is required for the prt service: %w", err)
+	}
+
+	cfg.BlockchainHttpRetryMinWait, err = GetBlockchainHttpRetryMinWait()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT is required for the prt service: %w", err)
+	}
+
+	cfg.BlockchainMaxBlockRange, err = GetBlockchainMaxBlockRange()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE is required for the prt service: %w", err)
+	}
+
+	cfg.MaxStartupTime, err = GetMaxStartupTime()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_MAX_STARTUP_TIME: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_MAX_STARTUP_TIME is required for the prt service: %w", err)
+	}
+
+	cfg.PrtPollingInterval, err = GetPrtPollingInterval()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_PRT_POLLING_INTERVAL: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_PRT_POLLING_INTERVAL is required for the prt service: %w", err)
+	}
+
+	cfg.SnapshotsDir, err = GetSnapshotsDir()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_SNAPSHOTS_DIR: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_SNAPSHOTS_DIR is required for the prt service: %w", err)
 	}
 
 	return &cfg, nil
@@ -1204,6 +1409,28 @@ func (c *NodeConfig) ToJsonrpcConfig() *JsonrpcConfig {
 		LogColor:           c.LogColor,
 		LogLevel:           c.LogLevel,
 		MaxStartupTime:     c.MaxStartupTime,
+	}
+}
+
+// ToPrtConfig converts a NodeConfig to a PrtConfig.
+func (c *NodeConfig) ToPrtConfig() *PrtConfig {
+	return &PrtConfig{
+		BlockchainDefaultBlock:        c.BlockchainDefaultBlock,
+		BlockchainHttpEndpoint:        c.BlockchainHttpEndpoint,
+		BlockchainId:                  c.BlockchainId,
+		BlockchainLegacyEnabled:       c.BlockchainLegacyEnabled,
+		DatabaseConnection:            c.DatabaseConnection,
+		FeatureClaimSubmissionEnabled: c.FeatureClaimSubmissionEnabled,
+		TelemetryAddress:              c.TelemetryAddress,
+		LogColor:                      c.LogColor,
+		LogLevel:                      c.LogLevel,
+		BlockchainHttpMaxRetries:      c.BlockchainHttpMaxRetries,
+		BlockchainHttpRetryMaxWait:    c.BlockchainHttpRetryMaxWait,
+		BlockchainHttpRetryMinWait:    c.BlockchainHttpRetryMinWait,
+		BlockchainMaxBlockRange:       c.BlockchainMaxBlockRange,
+		MaxStartupTime:                c.MaxStartupTime,
+		PrtPollingInterval:            c.PrtPollingInterval,
+		SnapshotsDir:                  c.SnapshotsDir,
 	}
 }
 
@@ -1440,17 +1667,17 @@ func GetContractsInputBoxAddress() (Address, error) {
 	return notDefinedAddress(), fmt.Errorf("%s: %w", CONTRACTS_INPUT_BOX_ADDRESS, ErrNotDefined)
 }
 
-// GetContractsPrtFactoryAddress returns the value for the environment variable CARTESI_CONTRACTS_PRT_FACTORY_ADDRESS.
-func GetContractsPrtFactoryAddress() (Address, error) {
-	s := viper.GetString(CONTRACTS_PRT_FACTORY_ADDRESS)
+// GetContractsPrtConsensusFactoryAddress returns the value for the environment variable CARTESI_CONTRACTS_PRT_CONSENSUS_FACTORY_ADDRESS.
+func GetContractsPrtConsensusFactoryAddress() (Address, error) {
+	s := viper.GetString(CONTRACTS_PRT_CONSENSUS_FACTORY_ADDRESS)
 	if s != "" {
 		v, err := toAddress(s)
 		if err != nil {
-			return v, fmt.Errorf("failed to parse %s: %w", CONTRACTS_PRT_FACTORY_ADDRESS, err)
+			return v, fmt.Errorf("failed to parse %s: %w", CONTRACTS_PRT_CONSENSUS_FACTORY_ADDRESS, err)
 		}
 		return v, nil
 	}
-	return notDefinedAddress(), fmt.Errorf("%s: %w", CONTRACTS_PRT_FACTORY_ADDRESS, ErrNotDefined)
+	return notDefinedAddress(), fmt.Errorf("%s: %w", CONTRACTS_PRT_CONSENSUS_FACTORY_ADDRESS, ErrNotDefined)
 }
 
 // GetContractsSelfHostedApplicationFactoryAddress returns the value for the environment variable CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS.
@@ -1711,6 +1938,19 @@ func GetMaxStartupTime() (Duration, error) {
 		return v, nil
 	}
 	return notDefinedDuration(), fmt.Errorf("%s: %w", MAX_STARTUP_TIME, ErrNotDefined)
+}
+
+// GetPrtPollingInterval returns the value for the environment variable CARTESI_PRT_POLLING_INTERVAL.
+func GetPrtPollingInterval() (Duration, error) {
+	s := viper.GetString(PRT_POLLING_INTERVAL)
+	if s != "" {
+		v, err := toDuration(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", PRT_POLLING_INTERVAL, err)
+		}
+		return v, nil
+	}
+	return notDefinedDuration(), fmt.Errorf("%s: %w", PRT_POLLING_INTERVAL, ErrNotDefined)
 }
 
 // GetValidatorPollingInterval returns the value for the environment variable CARTESI_VALIDATOR_POLLING_INTERVAL.

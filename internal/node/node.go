@@ -15,6 +15,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
+	"github.com/cartesi/rollups-node/internal/prt"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/validator"
 
@@ -259,4 +260,27 @@ func newJsonrpc(ctx context.Context, c *CreateInfo, s *Service) service.IService
 		os.Exit(1)
 	}
 	return jsonrpcService
+}
+
+func newPrt(ctx context.Context, c *CreateInfo, s *Service) service.IService {
+	prtArgs := prt.CreateInfo{
+		CreateInfo: service.CreateInfo{
+			Name:                 "prt",
+			LogLevel:             c.Config.LogLevel,
+			LogColor:             c.Config.LogColor,
+			EnableSignalHandling: false,
+			TelemetryCreate:      false,
+			PollInterval:         c.Config.ValidatorPollingInterval,
+			ServeMux:             s.ServeMux,
+		},
+		Repository: c.Repository,
+		Config:     *c.Config.ToValidatorConfig(),
+	}
+
+	prtService, err := prt.Create(ctx, &prtArgs)
+	if err != nil {
+		s.Logger.Error("Fatal", "error", err)
+		os.Exit(1)
+	}
+	return prtService
 }
