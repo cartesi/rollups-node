@@ -45,7 +45,6 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -58,8 +57,6 @@ var (
 )
 
 type iclaimerRepository interface {
-	ListApplications(ctx context.Context, f repository.ApplicationFilter, p repository.Pagination, descending bool) ([]*model.Application, uint64, error)
-
 	// key is model.Application.ID
 	SelectSubmittedClaimPairsPerApp(ctx context.Context) (
 		map[int64]*model.Epoch,

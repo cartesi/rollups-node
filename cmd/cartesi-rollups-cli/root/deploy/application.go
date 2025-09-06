@@ -174,6 +174,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	application.Name = applicationName
 	application.TemplateURI = templateURI
 	application.State = model.ApplicationState_Disabled
+	application.ConsensusType = model.Consensus_Authority
 	if applicationEnableParam {
 		application.State = model.ApplicationState_Enabled
 	}
@@ -256,6 +257,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		application.EpochLength = res.Deployment.EpochLength
 		application.DataAvailability = res.DataAvailability
 		application.IInputBoxBlock = res.IInputBoxBlock
+		application.ConsensusType = model.Consensus_PRT
 	default:
 		panic("unimplemented deployment type\n")
 	}

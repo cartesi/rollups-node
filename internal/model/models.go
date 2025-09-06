@@ -26,9 +26,11 @@ type Application struct {
 	TemplateURI          string              `json:"-"`
 	EpochLength          uint64              `json:"epoch_length"`
 	DataAvailability     []byte              `json:"data_availability"`
+	ConsensusType        Consensus           `json:"consensus_type"`
 	State                ApplicationState    `json:"state"`
 	Reason               *string             `json:"reason"`
 	IInputBoxBlock       uint64              `json:"iinputbox_block"`
+	LastEpochCheckBlock  uint64              `json:"last_epoch_check_block"`
 	LastInputCheckBlock  uint64              `json:"last_input_check_block"`
 	LastOutputCheckBlock uint64              `json:"last_output_check_block"`
 	ProcessedInputs      uint64              `json:"processed_inputs"`
@@ -51,6 +53,7 @@ func (a *Application) MarshalJSON() ([]byte, error) {
 		*Alias
 		DataAvailability     string `json:"data_availability"`
 		IInputBoxBlock       string `json:"iinputbox_block"`
+		LastEpochCheckBlock  string `json:"last_epoch_check_block"`
 		LastInputCheckBlock  string `json:"last_input_check_block"`
 		LastOutputCheckBlock string `json:"last_output_check_block"`
 		EpochLength          string `json:"epoch_length"`
@@ -59,6 +62,7 @@ func (a *Application) MarshalJSON() ([]byte, error) {
 		Alias:                (*Alias)(a),
 		DataAvailability:     "0x" + hex.EncodeToString(a.DataAvailability),
 		IInputBoxBlock:       fmt.Sprintf("0x%x", a.IInputBoxBlock),
+		LastEpochCheckBlock:  fmt.Sprintf("0x%x", a.LastEpochCheckBlock),
 		LastInputCheckBlock:  fmt.Sprintf("0x%x", a.LastInputCheckBlock),
 		LastOutputCheckBlock: fmt.Sprintf("0x%x", a.LastOutputCheckBlock),
 		EpochLength:          fmt.Sprintf("0x%x", a.EpochLength),
@@ -76,6 +80,7 @@ func (a *Application) UnmarshalJSON(in []byte) error {
 		IInputBoxBlock       string `json:"iinputbox_block"`
 		LastInputCheckBlock  string `json:"last_input_check_block"`
 		LastOutputCheckBlock string `json:"last_output_check_block"`
+		LastEpochCheckBlock  string `json:"last_epoch_check_block"`
 		EpochLength          string `json:"epoch_length"`
 		ProcessedInputs      string `json:"processed_inputs"`
 	}{}
@@ -109,6 +114,11 @@ func (a *Application) UnmarshalJSON(in []byte) error {
 		return err
 	}
 
+	a.LastEpochCheckBlock, err = ParseHexUint64(aux.LastEpochCheckBlock)
+	if err != nil {
+		return err
+	}
+
 	a.EpochLength, err = ParseHexUint64(aux.EpochLength)
 	if err != nil {
 		return err
@@ -120,6 +130,10 @@ func (a *Application) UnmarshalJSON(in []byte) error {
 	}
 
 	return nil
+}
+
+func (a *Application) IsDaveConsensus() bool {
+	return a.ConsensusType == Consensus_PRT
 }
 
 type ApplicationState string
@@ -162,6 +176,49 @@ func (e *ApplicationState) Scan(value any) error {
 }
 
 func (e ApplicationState) String() string {
+	return string(e)
+}
+
+type Consensus string
+
+const (
+	Consensus_Authority Consensus = "AUTHORITY"
+	Consensus_Quorum    Consensus = "QUORUM"
+	Consensus_PRT       Consensus = "PRT"
+)
+
+var ConsensusAllValues = []Consensus{
+	Consensus_Authority,
+	Consensus_Quorum,
+	Consensus_PRT,
+}
+
+func (e *Consensus) Scan(value any) error {
+	var enumValue string
+	switch val := value.(type) {
+	case string:
+		enumValue = val
+	case []byte:
+		enumValue = string(val)
+	default:
+		return errors.New("invalid value for ConsensusType enum. Enum value has to be of type string or []byte")
+	}
+
+	switch enumValue {
+	case "AUTHORITY":
+		*e = Consensus_Authority
+	case "QUORUM":
+		*e = Consensus_Quorum
+	case "PRT":
+		*e = Consensus_PRT
+	default:
+		return errors.New("invalid value '" + enumValue + "' for Consensus enum")
+	}
+
+	return nil
+}
+
+func (e Consensus) String() string {
 	return string(e)
 }
 
@@ -491,16 +548,20 @@ func ParseHexDuration(s string) (time.Duration, error) {
 }
 
 type Epoch struct {
-	ApplicationID        int64        `sql:"primary_key" json:"-"`
-	Index                uint64       `sql:"primary_key" json:"index"`
-	FirstBlock           uint64       `json:"first_block"`
-	LastBlock            uint64       `json:"last_block"`
-	ClaimHash            *common.Hash `json:"claim_hash"`
-	ClaimTransactionHash *common.Hash `json:"claim_transaction_hash"`
-	Status               EpochStatus  `json:"status"`
-	VirtualIndex         uint64       `json:"virtual_index"`
-	CreatedAt            time.Time    `json:"created_at"`
-	UpdatedAt            time.Time    `json:"updated_at"`
+	ApplicationID        int64           `sql:"primary_key" json:"-"`
+	Index                uint64          `sql:"primary_key" json:"index"`
+	FirstBlock           uint64          `json:"first_block"`
+	LastBlock            uint64          `json:"last_block"`
+	InputIndexLowerBound uint64          `json:"input_index_lower_bound"`
+	InputIndexUpperBound uint64          `json:"input_index_upper_bound"`
+	MachineHash          *common.Hash    `json:"machine_hash"`
+	ClaimHash            *common.Hash    `json:"claim_hash"`
+	ClaimTransactionHash *common.Hash    `json:"claim_transaction_hash"`
+	TournamentAddress    *common.Address `json:"tournament_address"`
+	Status               EpochStatus     `json:"status"`
+	VirtualIndex         uint64          `json:"virtual_index"`
+	CreatedAt            time.Time       `json:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at"`
 }
 
 func (e *Epoch) MarshalJSON() ([]byte, error) {
@@ -508,17 +569,21 @@ func (e *Epoch) MarshalJSON() ([]byte, error) {
 	type Alias Epoch
 	// Define a new structure that embeds the alias but overrides the hex fields.
 	aux := &struct {
-		Index        string `json:"index"`
-		FirstBlock   string `json:"first_block"`
-		LastBlock    string `json:"last_block"`
-		VirtualIndex string `json:"virtual_index"`
+		Index                string `json:"index"`
+		FirstBlock           string `json:"first_block"`
+		LastBlock            string `json:"last_block"`
+		InputIndexLowerBound string `json:"input_index_lower_bound"`
+		InputIndexUpperBound string `json:"input_index_upper_bound"`
+		VirtualIndex         string `json:"virtual_index"`
 		*Alias
 	}{
-		Index:        fmt.Sprintf("0x%x", e.Index),
-		FirstBlock:   fmt.Sprintf("0x%x", e.FirstBlock),
-		LastBlock:    fmt.Sprintf("0x%x", e.LastBlock),
-		VirtualIndex: fmt.Sprintf("0x%x", e.VirtualIndex),
-		Alias:        (*Alias)(e),
+		Index:                fmt.Sprintf("0x%x", e.Index),
+		FirstBlock:           fmt.Sprintf("0x%x", e.FirstBlock),
+		LastBlock:            fmt.Sprintf("0x%x", e.LastBlock),
+		InputIndexLowerBound: fmt.Sprintf("0x%x", e.InputIndexLowerBound),
+		InputIndexUpperBound: fmt.Sprintf("0x%x", e.InputIndexUpperBound),
+		VirtualIndex:         fmt.Sprintf("0x%x", e.VirtualIndex),
+		Alias:                (*Alias)(e),
 	}
 	return json.Marshal(aux)
 }
@@ -528,10 +593,12 @@ func (e *Epoch) UnmarshalJSON(in []byte) error {
 	aux := &struct {
 		*Alias
 
-		Index        string `json:"index"`
-		FirstBlock   string `json:"first_block"`
-		LastBlock    string `json:"last_block"`
-		VirtualIndex string `json:"virtual_index"`
+		Index                string `json:"index"`
+		FirstBlock           string `json:"first_block"`
+		LastBlock            string `json:"last_block"`
+		InputIndexLowerBound string `json:"input_index_lower_bound"`
+		InputIndexUpperBound string `json:"input_index_upper_bound"`
+		VirtualIndex         string `json:"virtual_index"`
 	}{}
 
 	var err error
@@ -554,6 +621,16 @@ func (e *Epoch) UnmarshalJSON(in []byte) error {
 	}
 
 	e.LastBlock, err = ParseHexUint64(aux.LastBlock)
+	if err != nil {
+		return err
+	}
+
+	e.InputIndexLowerBound, err = ParseHexUint64(aux.InputIndexLowerBound)
+	if err != nil {
+		return err
+	}
+
+	e.InputIndexUpperBound, err = ParseHexUint64(aux.InputIndexUpperBound)
 	if err != nil {
 		return err
 	}
@@ -911,6 +988,7 @@ const (
 	MonitoredEvent_OutputExecuted MonitoredEvent = "OutputExecuted"
 	MonitoredEvent_ClaimSubmitted MonitoredEvent = "ClaimSubmitted"
 	MonitoredEvent_ClaimAccepted  MonitoredEvent = "ClaimAccepted"
+	MonitoredEvent_EpochSealed    MonitoredEvent = "EpochSealed"
 )
 
 func (e MonitoredEvent) String() string {

@@ -25,6 +25,7 @@ type Pagination struct {
 type ApplicationFilter struct {
 	State            *ApplicationState
 	DataAvailability *DataAvailabilitySelector
+	ConsensusType    *Consensus
 }
 
 type EpochFilter struct {
@@ -69,6 +70,7 @@ type ApplicationRepository interface {
 	GetExecutionParameters(ctx context.Context, applicationID int64) (*ExecutionParameters, error)
 	UpdateExecutionParameters(ctx context.Context, ep *ExecutionParameters) error
 
+	GetEventLastCheckBlock(ctx context.Context, appID int64, event MonitoredEvent) (uint64, error)
 	UpdateEventLastCheckBlock(ctx context.Context, appIDs []int64, event MonitoredEvent, blockNumber uint64) error
 
 	GetLastSnapshot(ctx context.Context, nameOrAddress string) (*Input, error)
@@ -80,10 +82,12 @@ type EpochRepository interface {
 
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	GetLastAcceptedEpochIndex(ctx context.Context, nameOrAddress string) (uint64, error)
+	GetLastNonOpenEpoch(ctx context.Context, nameOrAddress string) (*Epoch, error)
 	GetEpochByVirtualIndex(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 
 	UpdateEpoch(ctx context.Context, nameOrAddress string, e *Epoch) error
-	UpdateEpochsInputsProcessed(ctx context.Context, nameOrAddress string) (int64, error)
+	UpdateEpochStatus(ctx context.Context, nameOrAddress string, e *Epoch) error
+	UpdateEpochsInputsProcessed(ctx context.Context, nameOrAddress string) ([]uint64, error)
 
 	ListEpochs(ctx context.Context, nameOrAddress string, f EpochFilter, p Pagination, descending bool) ([]*Epoch, uint64, error)
 }
@@ -94,6 +98,7 @@ type InputRepository interface {
 	GetLastInput(ctx context.Context, appAddress string, epochIndex uint64) (*Input, error)
 	GetLastProcessedInput(ctx context.Context, appAddress string) (*Input, error)
 	ListInputs(ctx context.Context, nameOrAddress string, f InputFilter, p Pagination, descending bool) ([]*Input, uint64, error)
+	GetNumberOfInputs(ctx context.Context, nameOrAddress string) (uint64, error)
 }
 
 type OutputRepository interface {
@@ -101,6 +106,7 @@ type OutputRepository interface {
 	UpdateOutputsExecution(ctx context.Context, nameOrAddress string, executedOutputs []*Output, blockNumber uint64) error
 	ListOutputs(ctx context.Context, nameOrAddress string, f OutputFilter, p Pagination, descending bool) ([]*Output, uint64, error)
 	GetLastOutputBeforeBlock(ctx context.Context, nameOrAddress string, block uint64) (*Output, error)
+	GetNumberOfExecutedOutputs(ctx context.Context, nameOrAddress string) (uint64, error)
 }
 
 type ReportRepository interface {

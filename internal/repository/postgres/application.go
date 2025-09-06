@@ -34,8 +34,10 @@ func (r *PostgresRepository) CreateApplication(
 			table.Application.TemplateURI,
 			table.Application.EpochLength,
 			table.Application.DataAvailability,
+			table.Application.ConsensusType,
 			table.Application.State,
 			table.Application.IinputboxBlock,
+			table.Application.LastEpochCheckBlock,
 			table.Application.LastInputCheckBlock,
 			table.Application.LastOutputCheckBlock,
 			table.Application.ProcessedInputs,
@@ -49,8 +51,10 @@ func (r *PostgresRepository) CreateApplication(
 			app.TemplateURI,
 			app.EpochLength,
 			app.DataAvailability[:],
+			app.ConsensusType,
 			app.State,
 			app.IInputBoxBlock,
+			app.LastEpochCheckBlock,
 			app.LastInputCheckBlock,
 			app.LastOutputCheckBlock,
 			app.ProcessedInputs,
@@ -147,9 +151,11 @@ func (r *PostgresRepository) GetApplication(
 			table.Application.TemplateURI,
 			table.Application.EpochLength,
 			table.Application.DataAvailability,
+			table.Application.ConsensusType,
 			table.Application.State,
 			table.Application.Reason,
 			table.Application.IinputboxBlock,
+			table.Application.LastEpochCheckBlock,
 			table.Application.LastInputCheckBlock,
 			table.Application.LastOutputCheckBlock,
 			table.Application.ProcessedInputs,
@@ -194,9 +200,11 @@ func (r *PostgresRepository) GetApplication(
 		&app.TemplateURI,
 		&app.EpochLength,
 		&app.DataAvailability,
+		&app.ConsensusType,
 		&app.State,
 		&app.Reason,
 		&app.IInputBoxBlock,
+		&app.LastEpochCheckBlock,
 		&app.LastInputCheckBlock,
 		&app.LastOutputCheckBlock,
 		&app.ProcessedInputs,
@@ -271,9 +279,11 @@ func (r *PostgresRepository) UpdateApplication(
 			table.Application.TemplateURI,
 			table.Application.EpochLength,
 			table.Application.DataAvailability,
+			table.Application.ConsensusType,
 			table.Application.State,
 			table.Application.Reason,
 			table.Application.IinputboxBlock,
+			table.Application.LastEpochCheckBlock,
 			table.Application.LastInputCheckBlock,
 			table.Application.LastOutputCheckBlock,
 			table.Application.ProcessedInputs,
@@ -287,9 +297,11 @@ func (r *PostgresRepository) UpdateApplication(
 			app.TemplateURI,
 			app.EpochLength,
 			app.DataAvailability[:],
+			app.ConsensusType,
 			app.State,
 			app.Reason,
 			app.IInputBoxBlock,
+			app.LastEpochCheckBlock,
 			app.LastInputCheckBlock,
 			app.LastOutputCheckBlock,
 			app.ProcessedInputs,
@@ -324,25 +336,55 @@ func (r *PostgresRepository) UpdateApplicationState(
 	return err
 }
 
+func getColumnForEvent(event model.MonitoredEvent) (postgres.ColumnFloat, error) {
+	switch event {
+	case model.MonitoredEvent_EpochSealed:
+		return table.Application.LastEpochCheckBlock, nil
+	case model.MonitoredEvent_InputAdded:
+		return table.Application.LastInputCheckBlock, nil
+	case model.MonitoredEvent_OutputExecuted:
+		return table.Application.LastOutputCheckBlock, nil
+	default:
+		return nil, fmt.Errorf("invalid monitored event type: %v", event)
+	}
+}
+
+func (r *PostgresRepository) GetEventLastCheckBlock(
+	ctx context.Context,
+	appID int64,
+	event model.MonitoredEvent,
+) (uint64, error) {
+	column, err := getColumnForEvent(event)
+	if err != nil {
+		return 0, err
+	}
+
+	stmt := table.Application.SELECT(column).WHERE(
+		table.Application.ID.EQ(postgres.Int(appID)),
+	)
+
+	sqlStr, args := stmt.Sql()
+	row := r.db.QueryRow(ctx, sqlStr, args...)
+
+	var eventBlock uint64
+	err = row.Scan(&eventBlock)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, repository.ErrNotFound
+	}
+	return eventBlock, err
+}
+
 func (r *PostgresRepository) UpdateEventLastCheckBlock(
 	ctx context.Context,
 	appIDs []int64,
 	event model.MonitoredEvent,
 	blockNumber uint64,
 ) error {
-	var column postgres.ColumnFloat
-	switch event {
-	case model.MonitoredEvent_InputAdded:
-		column = table.Application.LastInputCheckBlock
-	case model.MonitoredEvent_OutputExecuted:
-		column = table.Application.LastOutputCheckBlock
-	case model.MonitoredEvent_ClaimSubmitted:
-		fallthrough
-	case model.MonitoredEvent_ClaimAccepted:
-		fallthrough
-	default:
-		return fmt.Errorf("invalid monitored event type: %v", event)
+	column, err := getColumnForEvent(event)
+	if err != nil {
+		return err
 	}
+
 	if len(appIDs) == 0 {
 		return nil
 	}
@@ -362,7 +404,7 @@ func (r *PostgresRepository) UpdateEventLastCheckBlock(
 		WHERE(table.Application.ID.IN(ids...))
 
 	sqlStr, args := updateStmt.Sql()
-	_, err := r.db.Exec(ctx, sqlStr, args...)
+	_, err = r.db.Exec(ctx, sqlStr, args...)
 	return err
 }
 
@@ -468,9 +510,11 @@ func (r *PostgresRepository) ListApplications(
 			table.Application.TemplateURI,
 			table.Application.EpochLength,
 			table.Application.DataAvailability,
+			table.Application.ConsensusType,
 			table.Application.State,
 			table.Application.Reason,
 			table.Application.IinputboxBlock,
+			table.Application.LastEpochCheckBlock,
 			table.Application.LastInputCheckBlock,
 			table.Application.LastOutputCheckBlock,
 			table.Application.ProcessedInputs,
@@ -510,6 +554,9 @@ func (r *PostgresRepository) ListApplications(
 			postgres.SUBSTR(
 				table.Application.DataAvailability, postgres.Int(1), postgres.Int(4), // nolint: mnd
 			).EQ(postgres.Bytea(f.DataAvailability[:])))
+	}
+	if f.ConsensusType != nil {
+		conditions = append(conditions, table.Application.ConsensusType.EQ(postgres.NewEnumValue(f.ConsensusType.String())))
 	}
 
 	if len(conditions) > 0 {
@@ -551,9 +598,11 @@ func (r *PostgresRepository) ListApplications(
 			&app.TemplateURI,
 			&app.EpochLength,
 			&app.DataAvailability,
+			&app.ConsensusType,
 			&app.State,
 			&app.Reason,
 			&app.IInputBoxBlock,
+			&app.LastEpochCheckBlock,
 			&app.LastInputCheckBlock,
 			&app.LastOutputCheckBlock,
 			&app.ProcessedInputs,

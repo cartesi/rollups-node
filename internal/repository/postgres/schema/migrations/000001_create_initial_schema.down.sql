@@ -35,6 +35,7 @@ DROP TABLE IF EXISTS "application";
 DROP FUNCTION IF EXISTS "update_updated_at_column";
 DROP FUNCTION IF EXISTS "check_hash_siblings";
 
+DROP TYPE IF EXISTS "Consensus";
 DROP TYPE IF EXISTS "SnapshotPolicy";
 DROP TYPE IF EXISTS "EpochStatus";
 DROP TYPE IF EXISTS "DefaultBlock";

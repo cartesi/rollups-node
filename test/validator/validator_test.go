@@ -91,6 +91,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
 			DataAvailability:    model.DataAvailability_InputBox[:],
 			EpochLength:         10,
 			State:               model.ApplicationState_Enabled,
+			ConsensusType:       model.Consensus_Authority,
 		}
 		_, err := s.repository.CreateApplication(s.ctx, app, false)
 		s.Require().Nil(err)
@@ -157,6 +158,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 			DataAvailability:    model.DataAvailability_InputBox[:],
 			EpochLength:         10,
 			State:               model.ApplicationState_Enabled,
+			ConsensusType:       model.Consensus_Authority,
 		}
 		_, err := s.repository.CreateApplication(s.ctx, app, false)
 		s.Require().Nil(err)
@@ -260,6 +262,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			DataAvailability:    model.DataAvailability_InputBox[:],
 			EpochLength:         10,
 			State:               model.ApplicationState_Enabled,
+			ConsensusType:       model.Consensus_Authority,
 		}
 		_, err := s.repository.CreateApplication(s.ctx, app, false)
 		s.Require().Nil(err)
@@ -347,6 +350,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			DataAvailability:    model.DataAvailability_InputBox[:],
 			EpochLength:         10,
 			State:               model.ApplicationState_Enabled,
+			ConsensusType:       model.Consensus_Authority,
 		}
 		_, err := s.repository.CreateApplication(s.ctx, app, false)
 		s.Require().Nil(err)

@@ -382,3 +382,34 @@ func (r *PostgresRepository) ListInputs(
 	}
 	return inputs, total, nil
 }
+
+func (r *PostgresRepository) GetNumberOfInputs(
+	ctx context.Context,
+	nameOrAddress string,
+) (uint64, error) {
+
+	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
+	if err != nil {
+		return 0, err
+	}
+
+	sel := table.Input.
+		SELECT(postgres.COUNT(postgres.STAR)).
+		FROM(
+			table.Input.
+				INNER_JOIN(table.Application,
+					table.Input.EpochApplicationID.EQ(table.Application.ID),
+				),
+		).
+		WHERE(whereClause)
+
+	sqlStr, args := sel.Sql()
+	row := r.db.QueryRow(ctx, sqlStr, args...)
+
+	var count uint64
+	err = row.Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}

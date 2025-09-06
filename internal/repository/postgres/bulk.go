@@ -293,10 +293,12 @@ func updateEpochClaim(
 
 	updStmt := table.Epoch.
 		UPDATE(
+			table.Epoch.MachineHash,
 			table.Epoch.ClaimHash,
 			table.Epoch.Status,
 		).
 		SET(
+			e.MachineHash,
 			e.ClaimHash,
 			postgres.NewEnumValue(model.EpochStatus_ClaimComputed.String()),
 		).

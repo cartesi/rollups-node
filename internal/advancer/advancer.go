@@ -33,7 +33,7 @@ type AdvancerRepository interface {
 	ListInputs(ctx context.Context, nameOrAddress string, f repository.InputFilter, p repository.Pagination, descending bool) ([]*Input, uint64, error)
 	GetLastInput(ctx context.Context, appAddress string, epochIndex uint64) (*Input, error)
 	StoreAdvanceResult(ctx context.Context, appID int64, ar *AdvanceResult) error
-	UpdateEpochsInputsProcessed(ctx context.Context, nameOrAddress string) (int64, error)
+	UpdateEpochsInputsProcessed(ctx context.Context, nameOrAddress string) ([]uint64, error)
 	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	UpdateInputSnapshotURI(ctx context.Context, appId int64, inputIndex uint64, snapshotURI string) error
@@ -174,12 +174,12 @@ func (s *Service) Step(ctx context.Context) error {
 		}
 
 		// Update epochs to mark inputs as processed
-		rows, err := s.repository.UpdateEpochsInputsProcessed(ctx, appAddress)
+		updatedEpochIndexes, err := s.repository.UpdateEpochsInputsProcessed(ctx, appAddress)
 		if err != nil {
 			return err
 		}
-		if rows > 0 {
-			s.Logger.Info("Epochs updated to Inputs Processed", "application", app.Name, "count", rows)
+		for _, epochIndex := range updatedEpochIndexes {
+			s.Logger.Info("Epoch updated to Inputs Processed", "application", app.Name, "epoch_index", epochIndex)
 		}
 	}
 

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/lmittmann/tint"
@@ -27,16 +26,6 @@ import (
 
 type claimerRepositoryMock struct {
 	mock.Mock
-}
-
-func (m *claimerRepositoryMock) ListApplications(
-	ctx context.Context,
-	f repository.ApplicationFilter,
-	pagination repository.Pagination,
-	descending bool,
-) ([]*model.Application, uint64, error) {
-	args := m.Called(ctx, f, pagination, descending)
-	return args.Get(0).([]*model.Application), args.Get(1).(uint64), args.Error(2)
 }
 
 func (m *claimerRepositoryMock) SelectSubmittedClaimPairsPerApp(ctx context.Context) (

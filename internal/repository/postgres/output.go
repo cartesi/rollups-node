@@ -342,3 +342,34 @@ func (r *PostgresRepository) GetLastOutputBeforeBlock(
 	}
 	return &out, nil
 }
+
+func (r *PostgresRepository) GetNumberOfExecutedOutputs(
+	ctx context.Context,
+	nameOrAddress string,
+) (uint64, error) {
+
+	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
+	if err != nil {
+		return 0, err
+	}
+
+	sel := table.Output.
+		SELECT(postgres.COUNT(postgres.STAR)).
+		FROM(
+			table.Output.
+				INNER_JOIN(table.Application,
+					table.Output.InputEpochApplicationID.EQ(table.Application.ID),
+				),
+		).
+		WHERE(whereClause.AND(table.Output.ExecutionTransactionHash.IS_NOT_NULL()))
+
+	sqlStr, args := sel.Sql()
+	row := r.db.QueryRow(ctx, sqlStr, args...)
+
+	var count uint64
+	err = row.Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}

@@ -562,6 +562,9 @@
 					"data_availability": {
 						"$ref": "#/components/schemas/ByteArray"
 					},
+					"consensus_type": {
+						"$ref": "#/components/schemas/Consensus"
+					},
 					"state": {
 						"$ref": "#/components/schemas/ApplicationState"
 					},
@@ -569,6 +572,9 @@
 						"type": "string"
 					},
 					"iinputbox_block": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"last_epoch_check_block": {
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
 					"last_input_check_block": {
@@ -639,12 +645,26 @@
 					"last_block": {
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
+					"input_index_lower_bound": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"input_index_upper_bound": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"machine_hash": {
+						"$ref": "#/components/schemas/Hash",
+						"nullable": true
+					},
 					"claim_hash": {
 						"$ref": "#/components/schemas/Hash",
 						"nullable": true
 					},
 					"claim_transaction_hash": {
 						"$ref": "#/components/schemas/Hash",
+						"nullable": true
+					},
+					"tournament_address": {
+						"$ref": "#/components/schemas/EthereumAddress",
 						"nullable": true
 					},
 					"status": {
@@ -1068,6 +1088,14 @@
 					"ENABLED",
 					"DISABLED",
 					"INOPERABLE"
+				]
+			},
+			"Consensus": {
+				"type": "string",
+				"enum": [
+					"AUTHORITY",
+					"QUORUM",
+					"PRT"
 				]
 			},
 			"EthereumAddress": {

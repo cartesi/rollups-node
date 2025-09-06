@@ -245,6 +245,10 @@ deploy-exception-dapp: applications/exception-dapp ## Deploy exception-dapp test
 	@echo "Deploying exception-dapp test application"
 	@./cartesi-rollups-cli deploy application exception-dapp applications/exception-dapp/
 
+deploy-prt-echo-dapp: applications/echo-dapp ## Deploy echo-dapp test application
+	@echo "Deploying echo-dapp test application"
+	@./cartesi-rollups-cli deploy application prt-echo-dapp applications/echo-dapp/ --prt
+
 # Temporary test dependencies target while we are not using distribution packages
 DOWNLOADS_DIR = test/downloads
 CARTESI_TEST_MACHINE_IMAGES = $(DOWNLOADS_DIR)/linux.bin

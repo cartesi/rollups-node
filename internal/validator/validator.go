@@ -182,17 +182,33 @@ func (v *Service) validateApplication(ctx context.Context, app *Application) err
 			)
 		}
 
-		if input.OutputsHash == nil {
-			return v.setApplicationInoperable(ctx, app,
-				"inconsistent state: machine claim for epoch %v of application %v was not found",
-				epoch.Index, appAddress)
-		}
+		if !app.IsDaveConsensus() || input != nil {
+			if input.OutputsHash == nil {
+				return v.setApplicationInoperable(ctx, app,
+					"inconsistent state: machine claim for epoch %v of application %v was not found",
+					epoch.Index, appAddress)
+			}
 
-		// ...and compare it to the hash calculated by the Validator
-		if *input.OutputsHash != *claim {
-			return v.setApplicationInoperable(ctx, app,
-				"validator claim does not match machine claim for epoch %v of application %v. Expected: %v, Got %v",
-				epoch.Index, appAddress, *input.OutputsHash, *claim)
+			// ...and compare it to the hash calculated by the Validator
+			if *input.OutputsHash != *claim {
+				return v.setApplicationInoperable(ctx, app,
+					"validator claim does not match machine claim for epoch %v of application %v. Expected: %v, Got %v",
+					epoch.Index, appAddress, *input.OutputsHash, *claim)
+			}
+			epoch.MachineHash = input.MachineHash
+		} else {
+			if epoch.VirtualIndex > 0 {
+				previousEpoch, err := v.repository.GetEpochByVirtualIndex(ctx, appAddress, epoch.VirtualIndex-1)
+				if err != nil {
+					return fmt.Errorf(
+						"failed to get previous epoch for epoch %v (%v) of application %v. %w",
+						epoch.Index, epoch.VirtualIndex, appAddress, err,
+					)
+				}
+				epoch.MachineHash = previousEpoch.MachineHash
+			} else {
+				epoch.MachineHash = &app.TemplateHash
+			}
 		}
 
 		// update the epoch status and its claim

@@ -34,6 +34,8 @@ CREATE TYPE "EpochStatus" AS ENUM (
 
 CREATE TYPE "SnapshotPolicy" AS ENUM ('NONE', 'EVERY_INPUT', 'EVERY_EPOCH');
 
+CREATE TYPE "Consensus" AS ENUM ('AUTHORITY', 'QUORUM', 'PRT');
+
 CREATE FUNCTION "update_updated_at_column"()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -74,8 +76,10 @@ CREATE TABLE "application"
     "template_uri" VARCHAR(4096) NOT NULL,
     "epoch_length" uint64 NOT NULL,
     "data_availability" data_availability NOT NULL,
+    "consensus_type" "Consensus" NOT NULL,
     "state" "ApplicationState" NOT NULL,
     "reason" VARCHAR(4096),
+    "last_epoch_check_block" uint64 NOT NULL,
     "last_input_check_block" uint64 NOT NULL,
     "last_output_check_block" uint64 NOT NULL,
     "processed_inputs" uint64 NOT NULL,
@@ -119,8 +123,12 @@ CREATE TABLE "epoch"
     "index" uint64 NOT NULL,
     "first_block" uint64 NOT NULL,
     "last_block" uint64 NOT NULL,
+    "input_index_lower_bound" uint64 NOT NULL,
+    "input_index_upper_bound" uint64 NOT NULL,
+    "machine_hash" hash,
     "claim_hash" hash,
     "claim_transaction_hash" hash,
+    "tournament_address" ethereum_address,
     "status" "EpochStatus" NOT NULL,
     "virtual_index" uint64 NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),

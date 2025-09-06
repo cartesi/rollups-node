@@ -648,7 +648,7 @@ type MockRepository struct {
 	StoreAdvanceFailCount       int
 	UpdateApplicationStateError error
 	UpdateEpochsError           error
-	UpdateEpochsCount           int64
+	UpdatedEpochs               []uint64
 	GetLastSnapshotReturn       *Input
 	GetLastSnapshotError        error
 
@@ -706,13 +706,13 @@ func (mock *MockRepository) StoreAdvanceResult(
 	return mock.StoreAdvanceError
 }
 
-func (mock *MockRepository) UpdateEpochsInputsProcessed(ctx context.Context, nameOrAddress string) (int64, error) {
+func (mock *MockRepository) UpdateEpochsInputsProcessed(ctx context.Context, nameOrAddress string) ([]uint64, error) {
 	// Check for context cancellation
 	if ctx.Err() != nil {
-		return 0, ctx.Err()
+		return nil, ctx.Err()
 	}
 
-	return mock.UpdateEpochsCount, mock.UpdateEpochsError
+	return mock.UpdatedEpochs, mock.UpdateEpochsError
 }
 
 func (mock *MockRepository) UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error {

@@ -19,8 +19,12 @@ func (r *PostgresRepository) CreateEpoch(
 		table.Epoch.Index,
 		table.Epoch.FirstBlock,
 		table.Epoch.LastBlock,
+		table.Epoch.InputIndexLowerBound,
+		table.Epoch.InputIndexUpperBound,
+		table.Epoch.MachineHash,
 		table.Epoch.ClaimHash,
 		table.Epoch.ClaimTransactionHash,
+		table.Epoch.TournamentAddress,
 		table.Epoch.Status,
 		table.Epoch.VirtualIndex,
 	).VALUES(
@@ -28,8 +32,12 @@ func (r *PostgresRepository) CreateEpoch(
 		e.Index,
 		e.FirstBlock,
 		e.LastBlock,
+		e.InputIndexLowerBound,
+		e.InputIndexUpperBound,
+		e.MachineHash,
 		e.ClaimHash,
 		e.ClaimTransactionHash,
+		e.TournamentAddress,
 		e.Status,
 		e.VirtualIndex,
 	)
@@ -119,4 +127,3 @@ func (r *PostgresRepository) CreateReport(
 	_, err := r.db.Exec(ctx, sqlStr, args...)
 	return err
 }
-
