@@ -33,8 +33,12 @@ func (r *PostgresRepository) CreateEpoch(
 		postgres.RawFloat(fmt.Sprintf("%d", e.Index)),
 		postgres.RawFloat(fmt.Sprintf("%d", e.FirstBlock)),
 		postgres.RawFloat(fmt.Sprintf("%d", e.LastBlock)),
+		postgres.RawFloat(fmt.Sprintf("%d", e.InputIndexLowerBound)),
+		postgres.RawFloat(fmt.Sprintf("%d", e.InputIndexUpperBound)),
+		postgres.Bytea(e.MachineHash),
 		postgres.Bytea(e.ClaimHash),
 		postgres.Bytea(e.ClaimTransactionHash),
+		postgres.Bytea(e.TournamentAddress),
 		postgres.NewEnumValue(e.Status.String()),
 		postgres.RawFloat(fmt.Sprintf("%d", e.VirtualIndex)),
 	).FROM(
@@ -48,8 +52,12 @@ func (r *PostgresRepository) CreateEpoch(
 		table.Epoch.Index,
 		table.Epoch.FirstBlock,
 		table.Epoch.LastBlock,
+		table.Epoch.InputIndexLowerBound,
+		table.Epoch.InputIndexUpperBound,
+		table.Epoch.MachineHash,
 		table.Epoch.ClaimHash,
 		table.Epoch.ClaimTransactionHash,
+		table.Epoch.TournamentAddress,
 		table.Epoch.Status,
 		table.Epoch.VirtualIndex,
 	).QUERY(
@@ -123,6 +131,9 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 		table.Epoch.Index,
 		table.Epoch.FirstBlock,
 		table.Epoch.LastBlock,
+		table.Epoch.InputIndexLowerBound,
+		table.Epoch.InputIndexUpperBound,
+		table.Epoch.TournamentAddress,
 		table.Epoch.Status,
 		table.Epoch.VirtualIndex,
 	)
@@ -152,11 +163,18 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 			return err
 		}
 
+		tournamentAddress := postgres.NULL
+		if epoch.TournamentAddress != nil {
+			tournamentAddress = postgres.Bytea(epoch.TournamentAddress.Bytes())
+		}
 		epochSelectQuery := table.Application.SELECT(
 			table.Application.ID,
 			postgres.RawFloat(fmt.Sprintf("%d", epoch.Index)),
 			postgres.RawFloat(fmt.Sprintf("%d", epoch.FirstBlock)),
 			postgres.RawFloat(fmt.Sprintf("%d", epoch.LastBlock)),
+			postgres.RawFloat(fmt.Sprintf("%d", epoch.InputIndexLowerBound)),
+			postgres.RawFloat(fmt.Sprintf("%d", epoch.InputIndexUpperBound)),
+			tournamentAddress,
 			postgres.NewEnumValue(epoch.Status.String()),
 			postgres.RawFloat(fmt.Sprintf("%d", nextVirtualIndex)),
 		).WHERE(
@@ -237,8 +255,12 @@ func (r *PostgresRepository) GetEpoch(
 			table.Epoch.Index,
 			table.Epoch.FirstBlock,
 			table.Epoch.LastBlock,
+			table.Epoch.InputIndexLowerBound,
+			table.Epoch.InputIndexUpperBound,
+			table.Epoch.MachineHash,
 			table.Epoch.ClaimHash,
 			table.Epoch.ClaimTransactionHash,
+			table.Epoch.TournamentAddress,
 			table.Epoch.Status,
 			table.Epoch.VirtualIndex,
 			table.Epoch.CreatedAt,
@@ -264,8 +286,12 @@ func (r *PostgresRepository) GetEpoch(
 		&ep.Index,
 		&ep.FirstBlock,
 		&ep.LastBlock,
+		&ep.InputIndexLowerBound,
+		&ep.InputIndexUpperBound,
+		&ep.MachineHash,
 		&ep.ClaimHash,
 		&ep.ClaimTransactionHash,
+		&ep.TournamentAddress,
 		&ep.Status,
 		&ep.VirtualIndex,
 		&ep.CreatedAt,
@@ -340,8 +366,12 @@ func (r *PostgresRepository) GetEpochByVirtualIndex(
 			table.Epoch.Index,
 			table.Epoch.FirstBlock,
 			table.Epoch.LastBlock,
+			table.Epoch.InputIndexLowerBound,
+			table.Epoch.InputIndexUpperBound,
+			table.Epoch.MachineHash,
 			table.Epoch.ClaimHash,
 			table.Epoch.ClaimTransactionHash,
+			table.Epoch.TournamentAddress,
 			table.Epoch.Status,
 			table.Epoch.VirtualIndex,
 			table.Epoch.CreatedAt,
@@ -367,8 +397,12 @@ func (r *PostgresRepository) GetEpochByVirtualIndex(
 		&ep.Index,
 		&ep.FirstBlock,
 		&ep.LastBlock,
+		&ep.InputIndexLowerBound,
+		&ep.InputIndexUpperBound,
+		&ep.MachineHash,
 		&ep.ClaimHash,
 		&ep.ClaimTransactionHash,
+		&ep.TournamentAddress,
 		&ep.Status,
 		&ep.VirtualIndex,
 		&ep.CreatedAt,
@@ -396,13 +430,53 @@ func (r *PostgresRepository) UpdateEpoch(
 
 	updStmt := table.Epoch.
 		UPDATE(
+			table.Epoch.MachineHash,
 			table.Epoch.ClaimHash,
 			table.Epoch.ClaimTransactionHash,
 			table.Epoch.Status,
 		).
 		SET(
+			e.MachineHash,
 			e.ClaimHash,
 			e.ClaimTransactionHash,
+			e.Status,
+		).
+		FROM(
+			table.Application,
+		).
+		WHERE(
+			whereClause.
+				AND(table.Epoch.ApplicationID.EQ(table.Application.ID)).
+				AND(table.Epoch.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", e.Index)))),
+		)
+
+	sqlStr, args := updStmt.Sql()
+	cmd, err := r.db.Exec(ctx, sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (r *PostgresRepository) UpdateEpochStatus(
+	ctx context.Context,
+	nameOrAddress string,
+	e *model.Epoch,
+) error {
+
+	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
+	if err != nil {
+		return err
+	}
+
+	updStmt := table.Epoch.
+		UPDATE(
+			table.Epoch.Status,
+		).
+		SET(
 			e.Status,
 		).
 		FROM(
@@ -483,8 +557,12 @@ func (r *PostgresRepository) ListEpochs(
 			table.Epoch.Index,
 			table.Epoch.FirstBlock,
 			table.Epoch.LastBlock,
+			table.Epoch.InputIndexLowerBound,
+			table.Epoch.InputIndexUpperBound,
+			table.Epoch.MachineHash,
 			table.Epoch.ClaimHash,
 			table.Epoch.ClaimTransactionHash,
+			table.Epoch.TournamentAddress,
 			table.Epoch.Status,
 			table.Epoch.VirtualIndex,
 			table.Epoch.CreatedAt,
@@ -539,8 +617,12 @@ func (r *PostgresRepository) ListEpochs(
 			&ep.Index,
 			&ep.FirstBlock,
 			&ep.LastBlock,
+			&ep.InputIndexLowerBound,
+			&ep.InputIndexUpperBound,
+			&ep.MachineHash,
 			&ep.ClaimHash,
 			&ep.ClaimTransactionHash,
+			&ep.TournamentAddress,
 			&ep.Status,
 			&ep.VirtualIndex,
 			&ep.CreatedAt,

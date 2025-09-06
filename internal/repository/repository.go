@@ -25,6 +25,7 @@ type Pagination struct {
 type ApplicationFilter struct {
 	State            *ApplicationState
 	DataAvailability *DataAvailabilitySelector
+	DaveConsensus    *bool
 }
 
 type EpochFilter struct {
@@ -84,6 +85,7 @@ type EpochRepository interface {
 	GetEpochByVirtualIndex(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 
 	UpdateEpoch(ctx context.Context, nameOrAddress string, e *Epoch) error
+	UpdateEpochStatus(ctx context.Context, nameOrAddress string, e *Epoch) error
 	UpdateEpochsInputsProcessed(ctx context.Context, nameOrAddress string) (int64, error)
 
 	ListEpochs(ctx context.Context, nameOrAddress string, f EpochFilter, p Pagination, descending bool) ([]*Epoch, uint64, error)

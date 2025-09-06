@@ -74,7 +74,11 @@ func (r *PostgresRepository) selectOldestClaimPerApp(
 					table.Epoch.ApplicationID.EQ(table.Application.ID),
 				),
 		).
-		WHERE(table.Epoch.Status.EQ(postgres.NewEnumValue(epochStatus.String())).AND(table.Application.State.EQ(postgres.NewEnumValue(model.ApplicationState_Enabled.String())))).
+		WHERE(
+			table.Epoch.Status.EQ(postgres.NewEnumValue(epochStatus.String())).
+				AND(table.Application.State.EQ(postgres.NewEnumValue(model.ApplicationState_Enabled.String()))).
+				AND(table.Application.DaveConsensus.EQ(postgres.Bool(false))),
+		).
 		ORDER_BY(
 			table.Epoch.ApplicationID,
 			table.Epoch.Index.ASC(),
@@ -167,7 +171,10 @@ func (r *PostgresRepository) selectNewestAcceptedClaimPerApp(
 					table.Epoch.ApplicationID.EQ(table.Application.ID),
 				),
 		).
-		WHERE(expr.AND(table.Application.State.EQ(postgres.NewEnumValue(model.ApplicationState_Enabled.String())))).
+		WHERE(
+			expr.AND(table.Application.State.EQ(postgres.NewEnumValue(model.ApplicationState_Enabled.String()))).
+				AND(table.Application.DaveConsensus.EQ(postgres.Bool(false))),
+		).
 		ORDER_BY(
 			table.Epoch.ApplicationID,
 			table.Epoch.Index.DESC(),

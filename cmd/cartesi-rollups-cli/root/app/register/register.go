@@ -52,6 +52,7 @@ var (
 	inputBoxAddressFromEnv       bool
 	dataAvailability             string
 	enableMachineHashCheck       bool
+	applicationTypePRT           bool
 	disabled                     bool
 	printAsJSON                  bool
 	executionParametersFileParam string
@@ -75,7 +76,7 @@ func init() {
 		"Application template hash. (DO NOT USE IN PRODUCTION)\nThis value is retrieved from the application contract",
 	)
 
-	Cmd.Flags().Uint64VarP(&epochLength, "epoch-length", "e", 10, // nolint: mnd
+	Cmd.Flags().Uint64VarP(&epochLength, "epoch-length", "e", 0, // nolint: mnd
 		"Consensus Epoch length. (DO NOT USE IN PRODUCTION)\nThis value is retrieved from the consensus contract",
 	)
 
@@ -96,6 +97,8 @@ func init() {
 	Cmd.Flags().BoolVar(&enableMachineHashCheck, "machine-hash-check", true,
 		"Enable or disable machine hash check (DO NOT DISABLE IN PRODUCTION)")
 	cobra.CheckErr(viper.BindPFlag(config.FEATURE_MACHINE_HASH_CHECK_ENABLED, Cmd.Flags().Lookup("machine-hash-check")))
+
+	Cmd.Flags().BoolVarP(&applicationTypePRT, "prt", "", false, "Register as PRT application.")
 
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
@@ -181,7 +184,7 @@ func run(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	if !cmd.Flags().Changed("epoch-length") {
+	if !cmd.Flags().Changed("epoch-length") && !applicationTypePRT {
 		epochLength, err = getEpochLength(ctx, consensus)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to get epoch length from consensus: %v\n", err)
@@ -226,6 +229,7 @@ func run(cmd *cobra.Command, args []string) {
 		TemplateHash:         parsedTemplateHash,
 		EpochLength:          epochLength,
 		DataAvailability:     encodedDA,
+		DaveConsensus:        applicationTypePRT,
 		State:                applicationState,
 		IInputBoxBlock:       inputBoxBlockNumber,
 		LastInputCheckBlock:  0,

@@ -275,9 +275,11 @@ func (r *Service) readAndStoreInputs(
 						}
 						return errors.New(reason)
 					}
+					currentEpoch.InputIndexUpperBound = input.Index + 1
 				} else {
 					if currentEpoch.Status == EpochStatus_Open {
 						currentEpoch.Status = EpochStatus_Closed
+						currentEpoch.InputIndexUpperBound = input.Index
 						r.Logger.Info("Closing epoch",
 							"application", app.application.Name,
 							"address", address,
@@ -294,10 +296,12 @@ func (r *Service) readAndStoreInputs(
 			}
 			if currentEpoch == nil {
 				currentEpoch = &Epoch{
-					Index:      inputEpochIndex,
-					FirstBlock: inputEpochIndex * epochLength,
-					LastBlock:  (inputEpochIndex * epochLength) + epochLength - 1,
-					Status:     EpochStatus_Open,
+					Index:                inputEpochIndex,
+					FirstBlock:           inputEpochIndex * epochLength,
+					LastBlock:            (inputEpochIndex * epochLength) + epochLength - 1,
+					InputIndexLowerBound: input.Index,
+					InputIndexUpperBound: input.Index + 1,
+					Status:               EpochStatus_Open,
 				}
 				epochInputMap[currentEpoch] = []*Input{}
 			}

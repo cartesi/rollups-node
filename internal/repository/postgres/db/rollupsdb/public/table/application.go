@@ -27,8 +27,10 @@ type applicationTable struct {
 	TemplateURI          postgres.ColumnString
 	EpochLength          postgres.ColumnFloat
 	DataAvailability     postgres.ColumnString
+	DaveConsensus        postgres.ColumnBool
 	State                postgres.ColumnString
 	Reason               postgres.ColumnString
+	LastEpochCheckBlock  postgres.ColumnFloat
 	LastInputCheckBlock  postgres.ColumnFloat
 	LastOutputCheckBlock postgres.ColumnFloat
 	ProcessedInputs      postgres.ColumnFloat
@@ -84,15 +86,17 @@ func newApplicationTableImpl(schemaName, tableName, alias string) applicationTab
 		TemplateURIColumn          = postgres.StringColumn("template_uri")
 		EpochLengthColumn          = postgres.FloatColumn("epoch_length")
 		DataAvailabilityColumn     = postgres.StringColumn("data_availability")
+		DaveConsensusColumn        = postgres.BoolColumn("dave_consensus")
 		StateColumn                = postgres.StringColumn("state")
 		ReasonColumn               = postgres.StringColumn("reason")
+		LastEpochCheckBlockColumn  = postgres.FloatColumn("last_epoch_check_block")
 		LastInputCheckBlockColumn  = postgres.FloatColumn("last_input_check_block")
 		LastOutputCheckBlockColumn = postgres.FloatColumn("last_output_check_block")
 		ProcessedInputsColumn      = postgres.FloatColumn("processed_inputs")
 		CreatedAtColumn            = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn            = postgres.TimestampzColumn("updated_at")
-		allColumns                 = postgres.ColumnList{IDColumn, NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, DataAvailabilityColumn, StateColumn, ReasonColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, ProcessedInputsColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns             = postgres.ColumnList{NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, DataAvailabilityColumn, StateColumn, ReasonColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, ProcessedInputsColumn, CreatedAtColumn, UpdatedAtColumn}
+		allColumns                 = postgres.ColumnList{IDColumn, NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, DataAvailabilityColumn, DaveConsensusColumn, StateColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, ProcessedInputsColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns             = postgres.ColumnList{NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, DataAvailabilityColumn, DaveConsensusColumn, StateColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, ProcessedInputsColumn, CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return applicationTable{
@@ -109,8 +113,10 @@ func newApplicationTableImpl(schemaName, tableName, alias string) applicationTab
 		TemplateURI:          TemplateURIColumn,
 		EpochLength:          EpochLengthColumn,
 		DataAvailability:     DataAvailabilityColumn,
+		DaveConsensus:        DaveConsensusColumn,
 		State:                StateColumn,
 		Reason:               ReasonColumn,
+		LastEpochCheckBlock:  LastEpochCheckBlockColumn,
 		LastInputCheckBlock:  LastInputCheckBlockColumn,
 		LastOutputCheckBlock: LastOutputCheckBlockColumn,
 		ProcessedInputs:      ProcessedInputsColumn,

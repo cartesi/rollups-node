@@ -256,6 +256,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		application.EpochLength = res.ApplicationResult.Deployment.EpochLength
 		application.DataAvailability = res.ApplicationResult.Deployment.DataAvailability
 		application.IInputBoxBlock = res.ApplicationResult.Deployment.IInputBoxBlock
+		application.DaveConsensus = true
 	default:
 		panic("unimplemented deployment type\n")
 	}
