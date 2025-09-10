@@ -230,7 +230,17 @@ func (r *Service) readAndStoreInputs(
 				"address", address)
 			continue
 		}
+
 		epochLength := app.application.EpochLength
+		if epochLength == 0 {
+			reason := "Application has epoch length of zero"
+			r.Logger.Error(reason, "application", app.application.Name, "address", address)
+			err := r.repository.UpdateApplicationState(ctx, app.application.ID, ApplicationState_Inoperable, &reason)
+			if err != nil {
+				r.Logger.Error("failed to update application state to inoperable", "application", app.application.Name, "err", err)
+			}
+			continue
+		}
 
 		// Retrieves last open epoch from DB
 		currentEpoch, err := r.repository.GetEpoch(ctx, address.String(), calculateEpochIndex(epochLength, lastProcessedBlock))
