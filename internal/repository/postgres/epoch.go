@@ -17,50 +17,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (r *PostgresRepository) CreateEpoch(
-	ctx context.Context,
-	nameOrAddress string,
-	e *model.Epoch,
-) error {
-
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return err
-	}
-
-	selectQuery := postgres.SELECT(
-		table.Application.ID,
-		postgres.RawFloat(fmt.Sprintf("%d", e.Index)),
-		postgres.RawFloat(fmt.Sprintf("%d", e.FirstBlock)),
-		postgres.RawFloat(fmt.Sprintf("%d", e.LastBlock)),
-		postgres.Bytea(e.ClaimHash),
-		postgres.Bytea(e.ClaimTransactionHash),
-		postgres.NewEnumValue(e.Status.String()),
-		postgres.RawFloat(fmt.Sprintf("%d", e.VirtualIndex)),
-	).FROM(
-		table.Application,
-	).WHERE(
-		whereClause,
-	)
-
-	insertStmt := table.Epoch.INSERT(
-		table.Epoch.ApplicationID,
-		table.Epoch.Index,
-		table.Epoch.FirstBlock,
-		table.Epoch.LastBlock,
-		table.Epoch.ClaimHash,
-		table.Epoch.ClaimTransactionHash,
-		table.Epoch.Status,
-		table.Epoch.VirtualIndex,
-	).QUERY(
-		selectQuery,
-	)
-
-	sqlStr, args := insertStmt.Sql()
-	_, err = r.db.Exec(ctx, sqlStr, args...)
-	return err
-}
-
 func getEpochNextVirtualIndex(
 	ctx context.Context,
 	tx pgx.Tx,

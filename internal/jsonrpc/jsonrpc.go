@@ -40,6 +40,27 @@ const (
 	JSONRPC_INTERNAL_ERROR     int = -32603
 )
 
+type rpcHandler = func(*Service, http.ResponseWriter, *http.Request, RPCRequest)
+type dispatchTable = map[string]rpcHandler
+
+var jsonrpcHandlers = dispatchTable{
+	"rpc.discover":                      handleDiscover,
+	"cartesi_listApplications":          handleListApplications,
+	"cartesi_getApplication":            handleGetApplication,
+	"cartesi_listEpochs":                handleListEpochs,
+	"cartesi_getEpoch":                  handleGetEpoch,
+	"cartesi_getLastAcceptedEpochIndex": handleGetLastAcceptedEpochIndex,
+	"cartesi_listInputs":                handleListInputs,
+	"cartesi_getInput":                  handleGetInput,
+	"cartesi_getProcessedInputCount":    handleGetProcessedInputCount,
+	"cartesi_listOutputs":               handleListOutputs,
+	"cartesi_getOutput":                 handleGetOutput,
+	"cartesi_listReports":               handleListReports,
+	"cartesi_getReport":                 handleGetReport,
+	"cartesi_getChainId":                handleGetChainId,
+	"cartesi_getNodeVersion":            handleGetNodeVersion,
+}
+
 // -----------------------------------------------------------------------------
 // Dispatching JSON‑RPC methods
 // -----------------------------------------------------------------------------
@@ -59,38 +80,9 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Logger.Info(fmt.Sprintf("Received RPC request: %s", req.Method))
-	switch req.Method {
-	case "rpc.discover":
-		s.handleDiscover(w, r, req)
-	case "cartesi_listApplications":
-		s.handleListApplications(w, r, req)
-	case "cartesi_getApplication":
-		s.handleGetApplication(w, r, req)
-	case "cartesi_listEpochs":
-		s.handleListEpochs(w, r, req)
-	case "cartesi_getEpoch":
-		s.handleGetEpoch(w, r, req)
-	case "cartesi_getLastAcceptedEpochIndex":
-		s.handleGetLastAcceptedEpochIndex(w, r, req)
-	case "cartesi_listInputs":
-		s.handleListInputs(w, r, req)
-	case "cartesi_getInput":
-		s.handleGetInput(w, r, req)
-	case "cartesi_getProcessedInputCount":
-		s.handleGetProcessedInputCount(w, r, req)
-	case "cartesi_listOutputs":
-		s.handleListOutputs(w, r, req)
-	case "cartesi_getOutput":
-		s.handleGetOutput(w, r, req)
-	case "cartesi_listReports":
-		s.handleListReports(w, r, req)
-	case "cartesi_getReport":
-		s.handleGetReport(w, r, req)
-	case "cartesi_getChainId":
-		s.handleGetChainId(w, r, req)
-	case "cartesi_getNodeVersion":
-		s.handleGetNodeVersion(w, req)
-	default:
+	if fn, ok := jsonrpcHandlers[req.Method]; ok {
+		fn(s, w, r, req)
+	} else {
 		s.Logger.Info(fmt.Sprintf("RPC method not found: %s", req.Method))
 		writeRPCError(w, req.ID, JSONRPC_METHOD_NOT_FOUND, "Method not found", nil)
 	}
@@ -101,7 +93,7 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 // -----------------------------------------------------------------------------
 
 // Discovery: return the embedded specification.
-func (s *Service) handleDiscover(w http.ResponseWriter, _ *http.Request, req RPCRequest) {
+func handleDiscover(s *Service, w http.ResponseWriter, _ *http.Request, req RPCRequest) {
 	data, err := discoverSpec.ReadFile("jsonrpc-discover.json")
 	if err != nil {
 		s.Logger.Error("Unable to read jsonrpc-discover content", "err", err)
@@ -117,7 +109,7 @@ func (s *Service) handleDiscover(w http.ResponseWriter, _ *http.Request, req RPC
 	writeRPCResult(w, req.ID, spec)
 }
 
-func (s *Service) handleListApplications(w http.ResponseWriter, r *http.Request, req RPCRequest) {
+func handleListApplications(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
 	var params ListApplicationsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
@@ -170,7 +162,7 @@ func (s *Service) handleListApplications(w http.ResponseWriter, r *http.Request,
 	writeRPCResult(w, req.ID, result)
 }
 
-func (s *Service) handleGetApplication(w http.ResponseWriter, r *http.Request, req RPCRequest) {
+func handleGetApplication(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
 	var params GetApplicationParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
@@ -205,7 +197,7 @@ func (s *Service) handleGetApplication(w http.ResponseWriter, r *http.Request, r
 	writeRPCResult(w, req.ID, result)
 }
 
-func (s *Service) handleListEpochs(w http.ResponseWriter, r *http.Request, req RPCRequest) {
+func handleListEpochs(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
 	var params ListEpochsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
@@ -247,6 +239,11 @@ func (s *Service) handleListEpochs(w http.ResponseWriter, r *http.Request, req R
 		writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
 		return
 	}
+
+	if len(epochs) == 0 && !s.applicationExists(w, r, req, params.Application) {
+		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Application not found", nil)
+		return
+	}
 	if epochs == nil {
 		epochs = []*model.Epoch{}
 	}
@@ -275,6 +272,21 @@ func (s *Service) handleListEpochs(w http.ResponseWriter, r *http.Request, req R
 	writeRPCResult(w, req.ID, result)
 }
 
+func (s *Service) applicationExists(
+	w http.ResponseWriter,
+	r *http.Request,
+	req RPCRequest,
+	validatedNameOrAddress string,
+) bool {
+	app, err := s.repository.GetApplication(r.Context(), validatedNameOrAddress)
+	if err != nil {
+		s.Logger.Error("Unable to retrieve application from repository", "err", err)
+		writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return false
+	}
+	return app != nil
+}
+
 func parseIndex(indexString string, field string) (uint64, error) {
 	if len(indexString) < 3 || (!strings.HasPrefix(indexString, "0x") && !strings.HasPrefix(indexString, "0X")) {
 		return 0, fmt.Errorf("invalid %s: expected hex encoded value", field)
@@ -287,7 +299,7 @@ func parseIndex(indexString string, field string) (uint64, error) {
 	return index, nil
 }
 
-func (s *Service) handleGetEpoch(w http.ResponseWriter, r *http.Request, req RPCRequest) {
+func handleGetEpoch(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
 	var params GetEpochParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
@@ -328,7 +340,7 @@ func (s *Service) handleGetEpoch(w http.ResponseWriter, r *http.Request, req RPC
 	writeRPCResult(w, req.ID, result)
 }
 
-func (s *Service) handleGetLastAcceptedEpochIndex(w http.ResponseWriter, r *http.Request, req RPCRequest) {
+func handleGetLastAcceptedEpochIndex(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
 	var params GetLastAcceptedEpochIndexParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
@@ -363,7 +375,7 @@ func (s *Service) handleGetLastAcceptedEpochIndex(w http.ResponseWriter, r *http
 	writeRPCResult(w, req.ID, result)
 }
 
-func (s *Service) handleListInputs(w http.ResponseWriter, r *http.Request, req RPCRequest) {
+func handleListInputs(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
 	var params ListInputsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
@@ -416,6 +428,10 @@ func (s *Service) handleListInputs(w http.ResponseWriter, r *http.Request, req R
 		writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
 		return
 	}
+	if len(inputs) == 0 && !s.applicationExists(w, r, req, params.Application) {
+		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Application not found", nil)
+		return
+	}
 
 	var resultInputs []*DecodedInput
 	for _, in := range inputs {
@@ -453,7 +469,7 @@ func (s *Service) handleListInputs(w http.ResponseWriter, r *http.Request, req R
 	writeRPCResult(w, req.ID, result)
 }
 
-func (s *Service) handleGetInput(w http.ResponseWriter, r *http.Request, req RPCRequest) {
+func handleGetInput(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
 	var params GetInputParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
@@ -499,7 +515,7 @@ func (s *Service) handleGetInput(w http.ResponseWriter, r *http.Request, req RPC
 	writeRPCResult(w, req.ID, response)
 }
 
-func (s *Service) handleGetProcessedInputCount(w http.ResponseWriter, r *http.Request, req RPCRequest) {
+func handleGetProcessedInputCount(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
 	var params GetApplicationParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
@@ -549,7 +565,7 @@ func ParseOutputType(s string) ([]byte, error) {
 	return b, nil
 }
 
-func (s *Service) handleListOutputs(w http.ResponseWriter, r *http.Request, req RPCRequest) {
+func handleListOutputs(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
 	var params ListOutputsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
@@ -630,6 +646,11 @@ func (s *Service) handleListOutputs(w http.ResponseWriter, r *http.Request, req 
 		}
 		resultOutputs = append(resultOutputs, decoded)
 	}
+
+	if len(resultOutputs) == 0 && !s.applicationExists(w, r, req, params.Application) {
+		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Application not found", nil)
+		return
+	}
 	if resultOutputs == nil {
 		resultOutputs = []*DecodedOutput{}
 	}
@@ -658,7 +679,7 @@ func (s *Service) handleListOutputs(w http.ResponseWriter, r *http.Request, req 
 	writeRPCResult(w, req.ID, result)
 }
 
-func (s *Service) handleGetOutput(w http.ResponseWriter, r *http.Request, req RPCRequest) {
+func handleGetOutput(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
 	var params GetOutputParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
@@ -704,7 +725,7 @@ func (s *Service) handleGetOutput(w http.ResponseWriter, r *http.Request, req RP
 	writeRPCResult(w, req.ID, response)
 }
 
-func (s *Service) handleListReports(w http.ResponseWriter, r *http.Request, req RPCRequest) {
+func handleListReports(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
 	var params ListReportsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
@@ -756,6 +777,11 @@ func (s *Service) handleListReports(w http.ResponseWriter, r *http.Request, req 
 		writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
 		return
 	}
+
+	if len(reports) == 0 && !s.applicationExists(w, r, req, params.Application) {
+		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Application not found", nil)
+		return
+	}
 	if reports == nil {
 		reports = []*model.Report{}
 	}
@@ -784,7 +810,7 @@ func (s *Service) handleListReports(w http.ResponseWriter, r *http.Request, req 
 	writeRPCResult(w, req.ID, result)
 }
 
-func (s *Service) handleGetReport(w http.ResponseWriter, r *http.Request, req RPCRequest) {
+func handleGetReport(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
 	var params GetReportParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
@@ -825,7 +851,7 @@ func (s *Service) handleGetReport(w http.ResponseWriter, r *http.Request, req RP
 	writeRPCResult(w, req.ID, response)
 }
 
-func (s *Service) handleGetChainId(w http.ResponseWriter, r *http.Request, req RPCRequest) {
+func handleGetChainId(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
 
 	config, err := repository.LoadNodeConfig[evmreader.PersistentConfig](r.Context(), s.repository, evmreader.EvmReaderConfigKey)
 	if errors.Is(err, repository.ErrNotFound) {
@@ -847,7 +873,7 @@ func (s *Service) handleGetChainId(w http.ResponseWriter, r *http.Request, req R
 	writeRPCResult(w, req.ID, result)
 }
 
-func (s *Service) handleGetNodeVersion(w http.ResponseWriter, req RPCRequest) {
+func handleGetNodeVersion(s *Service, w http.ResponseWriter, _ *http.Request, req RPCRequest) {
 	result := struct {
 		Data string `json:"data"`
 	}{

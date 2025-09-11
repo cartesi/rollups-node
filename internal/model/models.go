@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 type Application struct {
@@ -64,6 +65,61 @@ func (a *Application) MarshalJSON() ([]byte, error) {
 		ProcessedInputs:      fmt.Sprintf("0x%x", a.ProcessedInputs),
 	}
 	return json.Marshal(aux)
+}
+
+func (a *Application) UnmarshalJSON(in []byte) error {
+	type Alias Application
+	aux := &struct {
+		*Alias
+
+		DataAvailability     string `json:"data_availability"`
+		IInputBoxBlock       string `json:"iinputbox_block"`
+		LastInputCheckBlock  string `json:"last_input_check_block"`
+		LastOutputCheckBlock string `json:"last_output_check_block"`
+		EpochLength          string `json:"epoch_length"`
+		ProcessedInputs      string `json:"processed_inputs"`
+	}{}
+
+	var err error
+
+	if err = json.Unmarshal(in, aux); err != nil {
+		return err
+	}
+
+	*a = Application(*aux.Alias)
+
+	// manually decode the following values as hex instead of the default (base64)
+	a.DataAvailability, err = hexutil.Decode(aux.DataAvailability)
+	if err != nil {
+		return err
+	}
+
+	a.IInputBoxBlock, err = ParseHexUint64(aux.IInputBoxBlock)
+	if err != nil {
+		return err
+	}
+
+	a.LastInputCheckBlock, err = ParseHexUint64(aux.LastInputCheckBlock)
+	if err != nil {
+		return err
+	}
+
+	a.LastOutputCheckBlock, err = ParseHexUint64(aux.LastOutputCheckBlock)
+	if err != nil {
+		return err
+	}
+
+	a.EpochLength, err = ParseHexUint64(aux.EpochLength)
+	if err != nil {
+		return err
+	}
+
+	a.ProcessedInputs, err = ParseHexUint64(aux.ProcessedInputs)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 type ApplicationState string
@@ -467,6 +523,49 @@ func (e *Epoch) MarshalJSON() ([]byte, error) {
 	return json.Marshal(aux)
 }
 
+func (e *Epoch) UnmarshalJSON(in []byte) error {
+	type Alias Epoch
+	aux := &struct {
+		*Alias
+
+		Index        string `json:"index"`
+		FirstBlock   string `json:"first_block"`
+		LastBlock    string `json:"last_block"`
+		VirtualIndex string `json:"virtual_index"`
+	}{}
+
+	var err error
+
+	if err = json.Unmarshal(in, aux); err != nil {
+		return err
+	}
+
+	*e = Epoch(*aux.Alias)
+
+	// manually decode the following values as hex instead of the default (base64)
+	e.Index, err = ParseHexUint64(aux.Index)
+	if err != nil {
+		return err
+	}
+
+	e.FirstBlock, err = ParseHexUint64(aux.FirstBlock)
+	if err != nil {
+		return err
+	}
+
+	e.LastBlock, err = ParseHexUint64(aux.LastBlock)
+	if err != nil {
+		return err
+	}
+
+	e.VirtualIndex, err = ParseHexUint64(aux.VirtualIndex)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 type EpochStatus string
 
 const (
@@ -559,6 +658,46 @@ func (i *Input) MarshalJSON() ([]byte, error) {
 		Alias:       (*Alias)(i),
 	}
 	return json.Marshal(aux)
+}
+
+func (i *Input) UnmarshalJSON(in []byte) error {
+	type Alias Input
+	aux := &struct {
+		EpochIndex  string `json:"epoch_index"`
+		Index       string `json:"index"`
+		BlockNumber string `json:"block_number"`
+		RawData     string `json:"raw_data"`
+		*Alias
+	}{}
+
+	var err error
+	if err = json.Unmarshal(in, aux); err != nil {
+		return err
+	}
+
+	*i = Input(*aux.Alias)
+
+	i.EpochIndex, err = ParseHexUint64(aux.EpochIndex)
+	if err != nil {
+		return fmt.Errorf("error on EpochIndex: %v", err)
+	}
+
+	i.Index, err = ParseHexUint64(aux.Index)
+	if err != nil {
+		return fmt.Errorf("error on Index: %v", err)
+	}
+
+	i.BlockNumber, err = ParseHexUint64(aux.BlockNumber)
+	if err != nil {
+		return fmt.Errorf("error on BlockNumber: %v", err)
+	}
+
+	i.RawData, err = hexutil.Decode(aux.RawData)
+	if err != nil {
+		return fmt.Errorf("error on RawData: %v", err)
+	}
+
+	return nil
 }
 
 type InputCompletionStatus string

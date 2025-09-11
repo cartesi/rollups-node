@@ -75,7 +75,6 @@ type ApplicationRepository interface {
 }
 
 type EpochRepository interface {
-	CreateEpoch(ctx context.Context, nameOrAddress string, e *Epoch) error
 	// FIXME move to BulkOperationsRepository
 	CreateEpochsAndInputs(ctx context.Context, nameOrAddress string, epochInputMap map[*Epoch][]*Input, blockNumber uint64) error
 
@@ -147,6 +146,13 @@ type ClaimerRepository interface {
 	) error
 }
 
+type TestRepository interface {
+	CreateEpoch(ctx context.Context, e *Epoch) error
+	CreateInput(ctx context.Context, inp *Input) error
+	CreateOutput(ctx context.Context, out *Output) error
+	CreateReport(ctx context.Context, report *Report) error
+}
+
 type Repository interface {
 	ApplicationRepository
 	EpochRepository
@@ -156,6 +162,7 @@ type Repository interface {
 	BulkOperationsRepository
 	NodeConfigRepository
 	ClaimerRepository
+	TestRepository
 	Close()
 }
 

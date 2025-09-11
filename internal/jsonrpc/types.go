@@ -253,6 +253,10 @@ type DecodedInput struct {
 
 func DecodeInput(input *model.Input, parsedAbi *abi.ABI) (*DecodedInput, error) {
 	decoded := make(map[string]any)
+	if len(input.RawData) < 4 {
+		return nil, fmt.Errorf("error: input needs at least 4 bytes")
+	}
+
 	err := parsedAbi.Methods["EvmAdvance"].Inputs.UnpackIntoMap(decoded, input.RawData[4:])
 	if err != nil {
 		return &DecodedInput{Input: input}, err

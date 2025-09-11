@@ -242,12 +242,6 @@ func (r *PostgresRepository) GetProcessedInputs(
 
 	stmt := table.Application.
 		SELECT(table.Application.ProcessedInputs).
-		FROM(
-			table.Application.INNER_JOIN(
-				table.ExecutionParameters,
-				table.ExecutionParameters.ApplicationID.EQ(table.Application.ID),
-			),
-		).
 		WHERE(whereClause)
 
 	sqlStr, args := stmt.Sql()
