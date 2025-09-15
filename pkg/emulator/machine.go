@@ -333,7 +333,13 @@ func (m *Machine) ReceiveCmioRequest() (uint8, uint16, []byte, error) {
 		if err != nil {
 			return
 		}
+
+		// guard against empty `data`
+		if cLen == 0 {
+			cLen = 1
+		}
 		data = make([]byte, cLen)
+
 		err = newError(C.cm_receive_cmio_request(
 			m.ptr,
 			&cCmd,
@@ -346,7 +352,7 @@ func (m *Machine) ReceiveCmioRequest() (uint8, uint16, []byte, error) {
 	if err != nil {
 		return 0, 0, nil, err
 	}
-	return uint8(cCmd), uint16(cReason), data, nil
+	return uint8(cCmd), uint16(cReason), data[:cLen], nil
 }
 
 // run
