@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-const PollInterval = 100 * time.Millisecond
+const PollInterval = 500 * time.Millisecond
 
 // Prepare the transaction, send it, and wait for the receipt.
 func sendTransaction(
@@ -58,7 +58,9 @@ func _prepareTransaction(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get gas price: %v", err)
 	}
-	txOpts.Nonce = big.NewInt(int64(nonce))
+	nonceBigInt := &big.Int{}
+	nonceBigInt.SetUint64(nonce)
+	txOpts.Nonce = nonceBigInt
 	txOpts.Value = txValue
 	txOpts.GasLimit = gasLimit
 	txOpts.GasPrice = gasPrice

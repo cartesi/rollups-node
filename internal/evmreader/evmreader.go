@@ -11,16 +11,12 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
-	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
@@ -29,6 +25,7 @@ type EvmReaderRepository interface {
 	ListApplications(ctx context.Context, f repository.ApplicationFilter, p repository.Pagination, descending bool) ([]*Application, uint64, error)
 	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
 	UpdateEventLastCheckBlock(ctx context.Context, appIDs []int64, event MonitoredEvent, blockNumber uint64) error
+	GetEventLastCheckBlock(ctx context.Context, appID int64, event MonitoredEvent) (uint64, error)
 
 	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
@@ -40,10 +37,15 @@ type EvmReaderRepository interface {
 	) error
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter, p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
+	UpdateEpoch(ctx context.Context, nameOrAddress string, e *Epoch) error
+	GetLastNonOpenEpoch(ctx context.Context, nameOrAddress string) (*Epoch, error)
+
+	GetNumberOfInputs(ctx context.Context, nameOrAddress string) (uint64, error)
 
 	// Output execution monitor
 	GetOutput(ctx context.Context, nameOrAddress string, indexKey uint64) (*Output, error)
 	UpdateOutputsExecution(ctx context.Context, nameOrAddress string, executedOutputs []*Output, blockNumber uint64) error
+	GetNumberOfExecutedOutputs(ctx context.Context, nameOrAddress string) (uint64, error)
 }
 
 // EthClientInterface defines the methods we need from ethclient.Client
@@ -51,22 +53,6 @@ type EthClientInterface interface {
 	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
 	SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error)
 	ChainID(ctx context.Context) (*big.Int, error)
-}
-
-type ApplicationContractAdapter interface {
-	RetrieveOutputExecutionEvents(
-		opts *bind.FilterOpts,
-	) ([]*iapplication.IApplicationOutputExecuted, error)
-	GetDeploymentBlockNumber(opts *bind.CallOpts) (*big.Int, error)
-}
-
-// Interface for Input reading
-type InputSourceAdapter interface {
-	// Wrapper for FilterInputAdded(), which is automatically generated
-	// by go-ethereum and cannot be used for testing
-	RetrieveInputs(opts *bind.FilterOpts, appAddresses []common.Address, index []*big.Int,
-	) ([]iinputbox.IInputBoxInputAdded, error)
-	GetNumberOfInputs(opts *bind.CallOpts, appContract common.Address) (*big.Int, error)
 }
 
 type SubscriptionError struct {
@@ -82,6 +68,7 @@ type appContracts struct {
 	application         *Application
 	applicationContract ApplicationContractAdapter
 	inputSource         InputSourceAdapter
+	daveConsensus       DaveConsensusAdapter
 }
 
 func (r *Service) Run(ctx context.Context, ready chan struct{}) error {
@@ -102,6 +89,26 @@ func getAllRunningApplications(ctx context.Context, er EvmReaderRepository) ([]*
 		State: Pointer(ApplicationState_Enabled),
 	}
 	return er.ListApplications(ctx, f, repository.Pagination{}, false)
+}
+
+// setApplicationInoperable marks an application as inoperable with the given reason,
+// logs any error that occurs during the update, and returns an error with the reason.
+func (r *Service) setApplicationInoperable(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
+	reason := fmt.Sprintf(reasonFmt, args...)
+	appAddress := app.IApplicationAddress.String()
+
+	// Log the reason first
+	r.Logger.Error(reason, "application", app.Name, "address", appAddress)
+
+	// Update application state
+	err := r.repository.UpdateApplicationState(ctx, app.ID, ApplicationState_Inoperable, &reason)
+	if err != nil {
+		r.Logger.Error("failed to update application state to inoperable",
+			"application", app.Name,
+			"address", appAddress, "err", err)
+	}
+	// Return the error with the reason
+	return errors.New(reason)
 }
 
 // watchForNewBlocks watches for new blocks and reads new inputs based on the
@@ -151,8 +158,10 @@ func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) 
 
 			// Build Contracts
 			var apps []appContracts
+			var daveConsensusApps []appContracts
+			var iconsensusApps []appContracts
 			for _, app := range runningApps {
-				applicationContract, inputSource, err := r.adapterFactory.CreateAdapters(app, r.client)
+				applicationContract, inputSource, daveConsensus, err := r.adapterFactory.CreateAdapters(app, r.client)
 
 				if err != nil {
 					r.Logger.Error("Error retrieving application contracts", "app", app, "error", err)
@@ -162,9 +171,15 @@ func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) 
 					application:         app,
 					applicationContract: applicationContract,
 					inputSource:         inputSource,
+					daveConsensus:       daveConsensus,
 				}
 
 				apps = append(apps, aContracts)
+				if app.IsDaveConsensus() {
+					daveConsensusApps = append(daveConsensusApps, aContracts)
+				} else {
+					iconsensusApps = append(iconsensusApps, aContracts)
+				}
 			}
 
 			if len(apps) == 0 {
@@ -190,7 +205,9 @@ func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) 
 					mostRecentHeader.Number.Uint64(), header.Number.Uint64(), r.defaultBlock))
 			}
 
-			r.checkForNewInputs(ctx, apps, blockNumber)
+			r.checkForEpochsAndInputs(ctx, daveConsensusApps, blockNumber)
+
+			r.checkForNewInputs(ctx, iconsensusApps, blockNumber)
 
 			r.checkForOutputExecution(ctx, apps, blockNumber)
 
@@ -234,39 +251,53 @@ func (r *Service) fetchMostRecentHeader(
 }
 
 type AdapterFactory interface {
-	CreateAdapters(app *Application, client EthClientInterface) (ApplicationContractAdapter, InputSourceAdapter, error)
+	CreateAdapters(app *Application, client EthClientInterface) (ApplicationContractAdapter, InputSourceAdapter, DaveConsensusAdapter, error)
 }
 
 type DefaultAdapterFactory struct {
 	Filter ethutil.Filter
 }
 
-func (f *DefaultAdapterFactory) CreateAdapters(app *Application, client EthClientInterface) (ApplicationContractAdapter, InputSourceAdapter, error) {
+func (f *DefaultAdapterFactory) CreateAdapters(app *Application, client EthClientInterface) (ApplicationContractAdapter, InputSourceAdapter, DaveConsensusAdapter, error) {
 	if app == nil {
-		return nil, nil, fmt.Errorf("Application reference is nil. Should never happen")
+		return nil, nil, nil, fmt.Errorf("Application reference is nil. Should never happen")
 	}
 
 	// Type assertion to get the concrete client if possible
 	ethClient, ok := client.(*ethclient.Client)
 	if !ok {
-		return nil, nil, fmt.Errorf("client is not an *ethclient.Client, cannot create adapters")
+		return nil, nil, nil, fmt.Errorf("client is not an *ethclient.Client, cannot create adapters")
 	}
 
 	applicationContract, err := NewApplicationContractAdapter(app.IApplicationAddress, ethClient, f.Filter)
 	if err != nil {
-		return nil, nil, errors.Join(
+		return nil, nil, nil, errors.Join(
 			fmt.Errorf("error building application contract"),
 			err,
 		)
 	}
 
-	inputSource, err := NewInputSourceAdapter(app.IInputBoxAddress, ethClient, f.Filter)
-	if err != nil {
-		return nil, nil, errors.Join(
-			fmt.Errorf("error building inputbox contract"),
-			err,
-		)
+	var inputSource InputSourceAdapter
+	if app.HasDataAvailabilitySelector(DataAvailability_InputBox) {
+		inputSource, err = NewInputSourceAdapter(app.IInputBoxAddress, ethClient, f.Filter)
+		if err != nil {
+			return nil, nil, nil, errors.Join(
+				fmt.Errorf("error building inputbox contract"),
+				err,
+			)
+		}
 	}
 
-	return applicationContract, inputSource, nil
+	var daveConsensus DaveConsensusAdapter
+	if app.IsDaveConsensus() {
+		daveConsensus, err = NewDaveConsensusAdapter(app.IConsensusAddress, ethClient, f.Filter)
+		if err != nil {
+			return nil, nil, nil, errors.Join(
+				fmt.Errorf("error building daveconsensus contract"),
+				err,
+			)
+		}
+	}
+
+	return applicationContract, inputSource, daveConsensus, nil
 }

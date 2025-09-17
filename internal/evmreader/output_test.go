@@ -6,57 +6,73 @@ package evmreader
 import (
 	"context"
 	"errors"
+	"math/big"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/config"
 	. "github.com/cartesi/rollups-node/internal/model"
-	appcontract "github.com/cartesi/rollups-node/pkg/contracts/iapplication"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/cartesi/rollups-node/pkg/service"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/mock"
 )
 
-func (s *EvmReaderSuite) TestOutputExecution() {
-	wsClient := FakeWSEhtClient{}
-	s.evmReader.wsClient = &wsClient
+// Prepare Output Executed Events
+var output0 = &Output{
+	Index:   0,
+	RawData: common.Hex2Bytes("AABBCCDDEE"),
+}
+var output1 = &Output{
+	Index:   1,
+	RawData: common.Hex2Bytes("AABBCCDDEE"),
+}
+var outputExecution0 = &iapplication.IApplicationOutputExecuted{
+	OutputIndex: output0.Index,
+	Output:      output0.RawData,
+	Raw: types.Log{
+		TxHash: common.HexToHash("0xdeadbeef"),
+	},
+}
+var outputExecution1 = &iapplication.IApplicationOutputExecuted{
+	OutputIndex: output1.Index,
+	Output:      output1.RawData,
+	Raw: types.Log{
+		TxHash: common.HexToHash("0xbeefbeef"),
+	},
+}
 
-	otherDA := DataAvailability_InputBox
-	otherDA[0]++
+func (s *EvmReaderSuite) setupOutputExecution() {
+	s.applicationContract1.Unset("GetNumberOfExecutedOutputs")
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(0), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(1), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(0), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(1), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(2), nil).Once()
 
-	// Prepare repository
-	s.repository.Unset("ListApplications")
-	s.repository.On(
-		"ListApplications",
+	s.applicationContract1.On("RetrieveOutputExecutionEvents",
 		mock.Anything,
+	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil).Once()
+	s.applicationContract1.On("RetrieveOutputExecutionEvents",
 		mock.Anything,
-		mock.Anything,
-		false,
-	).Return([]*Application{{
-		IApplicationAddress:  common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-		IConsensusAddress:    common.HexToAddress("0xdeadbeef"),
-		IInputBoxAddress:     common.HexToAddress("0xBa3Cf8fB82E43D370117A0b7296f91ED674E94e3"),
-		DataAvailability:     DataAvailability_InputBox[:],
-		IInputBoxBlock:       0x10,
-		EpochLength:          10,
-		LastInputCheckBlock:  0x01, // don't fast sync inputs
-		LastOutputCheckBlock: 0x10,
-	}}, uint64(1), nil).Once()
-	s.repository.On(
-		"ListApplications",
-		mock.Anything,
-		mock.Anything,
-		mock.Anything,
-		false,
-	).Return([]*Application{{
-		IApplicationAddress:  common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E"),
-		IConsensusAddress:    common.HexToAddress("0xdeadbeef"),
-		IInputBoxAddress:     common.HexToAddress("0xBa3Cf8fB82E43D370117A0b7296f91ED674E94e3"),
-		DataAvailability:     otherDA[:],
-		IInputBoxBlock:       0x10,
-		EpochLength:          10,
-		LastOutputCheckBlock: 0x11,
-	}}, uint64(1), nil).Once()
+	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution1}, nil).Once()
 
 	s.repository.Unset("UpdateEventLastCheckBlock")
 	s.repository.On("UpdateEventLastCheckBlock",
@@ -64,47 +80,84 @@ func (s *EvmReaderSuite) TestOutputExecution() {
 		mock.Anything,
 		MonitoredEvent_InputAdded,
 		mock.Anything,
-	).Once().Return(nil)
+	).Return(nil).Times(1)
 	s.repository.On("UpdateEventLastCheckBlock",
 		mock.Anything,
 		mock.Anything,
 		MonitoredEvent_OutputExecuted,
 		mock.Anything,
-	).Once().Return(nil)
-	s.repository.On("UpdateEventLastCheckBlock",
-		mock.Anything,
-		mock.Anything,
-		MonitoredEvent_InputAdded,
-		mock.Anything,
-	).Once().Return(nil)
-	s.repository.On("UpdateEventLastCheckBlock",
-		mock.Anything,
-		mock.Anything,
-		MonitoredEvent_OutputExecuted,
-		mock.Anything,
-	).Once().Return(nil)
+	).Return(nil).Times(6)
 
-	inputBox := newMockInputBox()
+	s.repository.Unset("GetOutput")
+	s.repository.On("GetOutput",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything).Return(output0, nil).Once()
+	s.repository.On("GetOutput",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything).Return(output1, nil).Once()
 
-	inputBox.Unset("RetrieveInputs")
-	inputBox.On("RetrieveInputs",
+	s.repository.Unset("GetNumberOfExecutedOutputs")
+	s.repository.On("GetNumberOfExecutedOutputs",
 		mock.Anything,
 		mock.Anything,
+	).Return(uint64(0), nil).Twice()
+	s.repository.On("GetNumberOfExecutedOutputs",
 		mock.Anything,
-	).Return([]iinputbox.IInputBoxInputAdded{}, nil)
+		mock.Anything,
+	).Return(uint64(1), nil).Once()
+	s.repository.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(uint64(0), nil).Once()
+	s.repository.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(uint64(1), nil).Once()
+	s.repository.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(uint64(0), nil).Once()
 
-	// Prepare Client
-	s.client.Unset("HeaderByNumber")
-	s.client.On(
-		"HeaderByNumber",
+	s.repository.Unset("UpdateOutputsExecution")
+	s.repository.On("UpdateOutputsExecution",
 		mock.Anything,
 		mock.Anything,
-	).Return(&header0, nil).Once()
-	s.client.On(
-		"HeaderByNumber",
 		mock.Anything,
 		mock.Anything,
-	).Return(&header1, nil).Once()
+	).Run(func(arguments mock.Arguments) {
+		obj := arguments.Get(2)
+		outputs, ok := obj.([]*Output)
+		s.Require().True(ok)
+		s.Require().Equal(1, len(outputs))
+		output := outputs[0]
+		s.Require().NotNil(output)
+		s.Require().Equal(uint64(0), output.Index)
+		s.Require().Equal(outputExecution0.Raw.TxHash, *output.ExecutionTransactionHash)
+	}).Return(nil).Once()
+	s.repository.On("UpdateOutputsExecution",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+	).Run(func(arguments mock.Arguments) {
+		obj := arguments.Get(2)
+		outputs, ok := obj.([]*Output)
+		s.Require().True(ok)
+		s.Require().Equal(1, len(outputs))
+		output := outputs[0]
+		s.Require().NotNil(output)
+		s.Require().Equal(uint64(1), output.Index)
+		s.Require().Equal(outputExecution1.Raw.TxHash, *output.ExecutionTransactionHash)
+	}).Return(nil).Once()
+}
+
+func (s *EvmReaderSuite) TestOutputExecution() {
+	wsClient := FakeWSEhtClient{}
+	s.evmReader.wsClient = &wsClient
+
+	s.setupOutputExecution()
 
 	// Start service
 	ready := make(chan struct{}, 1)
@@ -123,67 +176,161 @@ func (s *EvmReaderSuite) TestOutputExecution() {
 
 	wsClient.fireNewHead(&header0)
 	wsClient.fireNewHead(&header1)
+	wsClient.fireNewHead(&header2)
 	time.Sleep(1 * time.Second)
 
-	s.repository.AssertNumberOfCalls(
-		s.T(),
-		"UpdateOutputsExecution",
-		0,
-	)
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 2)
+	s.repository.AssertExpectations(s.T())
+
+	s.inputBox.AssertExpectations(s.T())
+	s.applicationContract1.AssertExpectations(s.T())
+	s.applicationContract2.AssertExpectations(s.T())
+	s.contractFactory.AssertExpectations(s.T())
+	s.client.AssertExpectations(s.T())
 
 }
 
-func (s *EvmReaderSuite) TestReadOutputExecution() {
-
-	appAddress := common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E")
-
-	// Contract Factory
-	applicationContract := &MockApplicationContract{}
-	inputBox := newMockInputBox()
-
-	// Setup adapter factory
-	adapterFactory := newMockAdapterFactory()
-	adapterFactory.Unset("CreateAdapters")
-	adapterFactory.On("CreateAdapters",
-		mock.Anything,
-		mock.Anything,
-	).Return(applicationContract, inputBox, nil)
-
-	//New EVM Reader
+func (s *EvmReaderSuite) TestOutputExecutionOnFinalizedBlocks() {
 	wsClient := FakeWSEhtClient{}
 	s.evmReader.wsClient = &wsClient
-	s.evmReader.adapterFactory = adapterFactory
 
-	// Prepare Output Executed Events
-	outputExecution0 := &appcontract.IApplicationOutputExecuted{
-		OutputIndex: 1,
-		Output:      common.Hex2Bytes("AABBCCDDEE"),
-		Raw: types.Log{
-			TxHash: common.HexToHash("0xdeadbeef"),
-		},
+	s.evmReader.defaultBlock = DefaultBlock_Finalized
+
+	s.client.On("HeaderByNumber",
+		mock.Anything,
+		mock.Anything,
+	).Return(&header0, nil).Once()
+	s.client.On("HeaderByNumber",
+		mock.Anything,
+		mock.Anything,
+	).Return(&header1, nil).Once()
+	s.client.On("HeaderByNumber",
+		mock.Anything,
+		mock.Anything,
+	).Return(&header2, nil).Once()
+
+	s.setupOutputExecution()
+
+	// Start service
+	ready := make(chan struct{}, 1)
+	errChannel := make(chan error, 1)
+
+	go func() {
+		errChannel <- s.evmReader.Run(s.ctx, ready)
+	}()
+
+	select {
+	case <-ready:
+		break
+	case err := <-errChannel:
+		s.FailNow("unexpected error signal", err)
 	}
 
-	outputExecutionEvents := []*appcontract.IApplicationOutputExecuted{outputExecution0}
-	applicationContract.On("RetrieveOutputExecutionEvents",
-		mock.Anything,
-	).Return(outputExecutionEvents, nil).Once()
+	wsClient.fireNewHead(&header3)
+	wsClient.fireNewHead(&header3)
+	wsClient.fireNewHead(&header3)
+	time.Sleep(1 * time.Second)
 
-	// Prepare repository
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 2)
+	s.repository.AssertExpectations(s.T())
+
+	s.inputBox.AssertExpectations(s.T())
+	s.applicationContract1.AssertExpectations(s.T())
+	s.applicationContract2.AssertExpectations(s.T())
+	s.contractFactory.AssertExpectations(s.T())
+	s.client.AssertExpectations(s.T())
+
+}
+
+func (s *EvmReaderSuite) TestCheckOutputFailsWhenRetrieveOutputsFails() {
+	wsClient := FakeWSEhtClient{}
+	s.evmReader.wsClient = &wsClient
+
+	s.setupOutputExecution()
+
+	s.applicationContract1.Unset("RetrieveOutputExecutionEvents")
+	s.applicationContract1.On("RetrieveOutputExecutionEvents",
+		mock.Anything,
+	).Return([]*iapplication.IApplicationOutputExecuted{}, errors.New("No outputs for you")).Times(3)
+
+	// If retrieving outputs fails, it does not update the database and keep scanning the ranges
+	s.applicationContract1.Unset("GetNumberOfExecutedOutputs")
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(0), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(1), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(0), nil).Twice()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(1), nil).Twice()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(0), nil).Twice()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(2), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(1), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(0), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(1), nil).Once()
+
+	apps := copyApplications(applications)
 	s.repository.Unset("ListApplications")
-	s.repository.On(
-		"ListApplications",
+	s.repository.On("ListApplications",
 		mock.Anything,
 		mock.Anything,
 		mock.Anything,
 		false,
-	).Return([]*Application{{
-		IApplicationAddress:  appAddress,
-		IConsensusAddress:    common.HexToAddress("0xdeadbeef"),
-		IInputBoxAddress:     common.HexToAddress("0xBa3Cf8fB82E43D370117A0b7296f91ED674E94e3"),
-		IInputBoxBlock:       0x10,
-		EpochLength:          10,
-		LastOutputCheckBlock: 0x10,
-	}}, uint64(1), nil).Once()
+	).Return(apps, uint64(2), nil).Once()
+
+	apps = copyApplications(applications)
+	apps[0].LastInputCheckBlock = 0x11
+	apps[0].LastOutputCheckBlock = 0x0F
+	apps[1].LastOutputCheckBlock = 0x11
+	s.repository.On("ListApplications",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+		false,
+	).Return(apps, uint64(2), nil).Once()
+
+	apps = copyApplications(applications)
+	apps[0].LastInputCheckBlock = 0x12
+	apps[0].LastOutputCheckBlock = 0x0F
+	apps[1].LastOutputCheckBlock = 0x12
+	s.repository.On("ListApplications",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+		false,
+	).Return(apps, uint64(2), nil).Once()
+
+	s.repository.Unset("GetNumberOfExecutedOutputs")
+	s.repository.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(uint64(0), nil).Times(6)
+
+	s.repository.Unset("GetOutput")
+	s.repository.Unset("UpdateOutputsExecution")
 
 	s.repository.Unset("UpdateEventLastCheckBlock")
 	s.repository.On("UpdateEventLastCheckBlock",
@@ -191,58 +338,13 @@ func (s *EvmReaderSuite) TestReadOutputExecution() {
 		mock.Anything,
 		MonitoredEvent_InputAdded,
 		mock.Anything,
-	).Once().Return(nil)
+	).Return(nil).Times(1)
 	s.repository.On("UpdateEventLastCheckBlock",
 		mock.Anything,
 		mock.Anything,
 		MonitoredEvent_OutputExecuted,
 		mock.Anything,
-	).Once().Return(nil)
-
-	output := &Output{
-		Index:   1,
-		RawData: common.Hex2Bytes("AABBCCDDEE"),
-	}
-
-	s.repository.Unset("GetOutput")
-	s.repository.On("GetOutput",
-		mock.Anything,
-		mock.Anything,
-		mock.Anything).Return(output, nil)
-
-	s.repository.Unset("UpdateOutputsExecution")
-	s.repository.On("UpdateOutputsExecution",
-		mock.Anything,
-		mock.Anything,
-		mock.Anything,
-		mock.Anything,
-	).Once().Run(func(arguments mock.Arguments) {
-		obj := arguments.Get(2)
-		outputs, ok := obj.([]*Output)
-		s.Require().True(ok)
-		s.Require().Equal(1, len(outputs))
-		output := outputs[0]
-		s.Require().NotNil(output)
-		s.Require().Equal(uint64(1), output.Index)
-		s.Require().Equal(common.HexToHash("0xdeadbeef"), *output.ExecutionTransactionHash)
-
-	}).Return(nil)
-
-	//No Inputs
-	inputBox.Unset("RetrieveInputs")
-	inputBox.On("RetrieveInputs",
-		mock.Anything,
-		mock.Anything,
-		mock.Anything,
-	).Return([]iinputbox.IInputBoxInputAdded{}, nil)
-
-	// Prepare Client
-	s.client.Unset("HeaderByNumber")
-	s.client.On(
-		"HeaderByNumber",
-		mock.Anything,
-		mock.Anything,
-	).Return(&header0, nil).Once()
+	).Return(nil).Times(5)
 
 	// Start service
 	ready := make(chan struct{}, 1)
@@ -260,393 +362,361 @@ func (s *EvmReaderSuite) TestReadOutputExecution() {
 	}
 
 	wsClient.fireNewHead(&header0)
+	wsClient.fireNewHead(&header1)
+	wsClient.fireNewHead(&header2)
 	time.Sleep(1 * time.Second)
 
-	s.repository.AssertNumberOfCalls(
-		s.T(),
-		"UpdateOutputsExecution",
-		1,
-	)
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 0)
+	s.repository.AssertExpectations(s.T())
+
+	s.inputBox.AssertExpectations(s.T())
+	s.applicationContract1.AssertExpectations(s.T())
+	s.applicationContract2.AssertExpectations(s.T())
+	s.contractFactory.AssertExpectations(s.T())
+	s.client.AssertExpectations(s.T())
 
 }
 
-func (s *EvmReaderSuite) TestCheckOutputFails() {
-	s.Run("whenRetrieveOutputsFails", func() {
-		ctx := context.Background()
-		//ctx, cancel := context.WithCancel(context.Background())
-		//defer cancel()
+func (s *EvmReaderSuite) TestCheckOutputFailsWhenGetOutputsFails() {
+	wsClient := FakeWSEhtClient{}
+	s.evmReader.wsClient = &wsClient
 
-		appAddress := common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E")
+	s.setupOutputExecution()
 
-		// Contract Factory
-		applicationContract := &MockApplicationContract{}
-		inputBox := newMockInputBox()
+	s.repository.Unset("GetOutput")
+	s.repository.On("GetOutput",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything).Return(nil, errors.New("no output for you")).Times(3)
 
-		// Setup adapter factory
-		adapterFactory := newMockAdapterFactory()
-		adapterFactory.Unset("CreateAdapters")
-		adapterFactory.On("CreateAdapters",
-			mock.Anything,
-			mock.Anything,
-		).Return(applicationContract, inputBox, nil)
+	// If retrieving outputs fails, it does not update the database and keep scanning the ranges
+	s.applicationContract1.Unset("GetNumberOfExecutedOutputs")
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(0), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(1), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(0), nil).Twice()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(1), nil).Twice()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(0), nil).Twice()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(2), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(1), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(0), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(1), nil).Once()
 
-		//New EVM Reader
-		client := newMockEthClient()
-		wsClient := FakeWSEhtClient{}
-		repository := newMockRepository()
-		evmReader := Service{
-			client:             client,
-			wsClient:           &wsClient,
-			repository:         repository,
-			defaultBlock:       DefaultBlock_Latest,
-			adapterFactory:     adapterFactory,
-			hasEnabledApps:     true,
-			inputReaderEnabled: true,
-		}
-		serviceArgs := &service.CreateInfo{Name: "evm-reader", Impl: &evmReader}
-		err := service.Create(ctx, serviceArgs, &evmReader.Service)
-		s.Require().Nil(err)
+	s.applicationContract1.Unset("RetrieveOutputExecutionEvents")
+	s.applicationContract1.On("RetrieveOutputExecutionEvents",
+		mock.Anything,
+	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil).Times(3)
+	s.applicationContract1.On("RetrieveOutputExecutionEvents",
+		mock.Anything,
+	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution1}, nil).Once()
 
-		applicationContract.On("RetrieveOutputExecutionEvents",
-			mock.Anything,
-		).Return([]*appcontract.IApplicationOutputExecuted{}, errors.New("No outputs for you"))
+	apps := copyApplications(applications)
+	s.repository.Unset("ListApplications")
+	s.repository.On("ListApplications",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+		false,
+	).Return(apps, uint64(2), nil).Once()
 
-		// Prepare repository
-		repository.Unset("ListApplications")
-		repository.On(
-			"ListApplications",
-			mock.Anything,
-			mock.Anything,
-			mock.Anything,
-			false,
-		).Return([]*Application{{
-			IApplicationAddress:  appAddress,
-			IConsensusAddress:    common.HexToAddress("0xdeadbeef"),
-			IInputBoxAddress:     common.HexToAddress("0xBa3Cf8fB82E43D370117A0b7296f91ED674E94e3"),
-			IInputBoxBlock:       0x10,
-			EpochLength:          10,
-			LastOutputCheckBlock: 0x10,
-		}}, uint64(1), nil).Once()
+	apps = copyApplications(applications)
+	apps[0].LastInputCheckBlock = 0x11
+	apps[0].LastOutputCheckBlock = 0x0F
+	apps[1].LastOutputCheckBlock = 0x11
+	s.repository.On("ListApplications",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+		false,
+	).Return(apps, uint64(2), nil).Once()
 
-		output := &Output{
-			Index:   1,
-			RawData: common.Hex2Bytes("AABBCCDDEE"),
-		}
+	apps = copyApplications(applications)
+	apps[0].LastInputCheckBlock = 0x12
+	apps[0].LastOutputCheckBlock = 0x0F
+	apps[1].LastOutputCheckBlock = 0x12
+	s.repository.On("ListApplications",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+		false,
+	).Return(apps, uint64(2), nil).Once()
 
-		repository.Unset("GetOutput")
-		repository.On("GetOutput",
-			mock.Anything,
-			mock.Anything,
-			mock.Anything).Return(output, nil)
+	s.repository.Unset("GetNumberOfExecutedOutputs")
+	s.repository.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(uint64(0), nil).Times(6)
 
-		repository.Unset("UpdateOutputsExecution")
-		repository.On("UpdateOutputsExecution",
-			mock.Anything,
-			mock.Anything,
-			mock.Anything,
-			mock.Anything,
-		).Once().Return(nil)
+	s.repository.Unset("UpdateOutputsExecution")
 
-		//No Inputs
-		inputBox.Unset("RetrieveInputs")
-		inputBox.On("RetrieveInputs",
-			mock.Anything,
-			mock.Anything,
-			mock.Anything,
-		).Return([]iinputbox.IInputBoxInputAdded{}, nil)
+	s.repository.Unset("UpdateEventLastCheckBlock")
+	s.repository.On("UpdateEventLastCheckBlock",
+		mock.Anything,
+		mock.Anything,
+		MonitoredEvent_InputAdded,
+		mock.Anything,
+	).Return(nil).Times(1)
+	s.repository.On("UpdateEventLastCheckBlock",
+		mock.Anything,
+		mock.Anything,
+		MonitoredEvent_OutputExecuted,
+		mock.Anything,
+	).Return(nil).Times(5)
 
-		// Prepare Client
-		client.Unset("HeaderByNumber")
-		client.On(
-			"HeaderByNumber",
-			mock.Anything,
-			mock.Anything,
-		).Return(&header0, nil).Once()
+	// Start service
+	ready := make(chan struct{}, 1)
+	errChannel := make(chan error, 1)
 
-		//// Start service
-		//ready := make(chan struct{}, 1)
-		//errChannel := make(chan error, 1)
+	go func() {
+		errChannel <- s.evmReader.Run(s.ctx, ready)
+	}()
 
-		//go func() {
-		//	errChannel <- evmReader.Run(ctx, ready)
-		//}()
+	select {
+	case <-ready:
+		break
+	case err := <-errChannel:
+		s.FailNow("unexpected error signal", err)
+	}
 
-		//select {
-		//case <-ready:
-		//	break
-		//case err := <-errChannel:
-		//	s.FailNow("unexpected error signal", err)
-		//}
+	wsClient.fireNewHead(&header0)
+	wsClient.fireNewHead(&header1)
+	wsClient.fireNewHead(&header2)
+	time.Sleep(1 * time.Second)
 
-		//wsClient.fireNewHead(&header0)
-		//time.Sleep(1 * time.Second)
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 0)
+	s.repository.AssertExpectations(s.T())
 
-		//s.repository.AssertNumberOfCalls(
-		//	s.T(),
-		//	"UpdateOutputsExecution",
-		//	0,
-		//)
+	s.inputBox.AssertExpectations(s.T())
+	s.applicationContract1.AssertExpectations(s.T())
+	s.applicationContract2.AssertExpectations(s.T())
+	s.contractFactory.AssertExpectations(s.T())
+	s.client.AssertExpectations(s.T())
+}
 
-	})
+func (s *EvmReaderSuite) setupOutputMismatchTest() {
+	s.client = newMockEthClient()
+	s.repository = newMockRepository()
+	s.applicationContract1 = newMockApplicationContract()
+	s.inputBox = newMockInputBox()
+	s.contractFactory = newMockAdapterFactory()
 
-	s.Run("whenGetOutputsFails", func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+	s.evmReader = &Service{
+		client:             s.client,
+		wsClient:           s.wsClient,
+		repository:         s.repository,
+		defaultBlock:       DefaultBlock_Latest,
+		adapterFactory:     s.contractFactory,
+		hasEnabledApps:     true,
+		inputReaderEnabled: true,
+	}
 
-		appAddress := common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E")
+	logLevel, err := config.GetLogLevel()
+	s.Require().Nil(err)
 
-		// Contract Factory
-		applicationContract := &MockApplicationContract{}
-		inputBox := newMockInputBox()
+	serviceArgs := &service.CreateInfo{Name: "evm-reader", Impl: s.evmReader, LogLevel: logLevel}
+	err = service.Create(context.Background(), serviceArgs, &s.evmReader.Service)
+	s.Require().Nil(err)
 
-		// Setup adapter factory
-		adapterFactory := newMockAdapterFactory()
-		adapterFactory.Unset("CreateAdapters")
-		adapterFactory.On("CreateAdapters",
-			mock.Anything,
-			mock.Anything,
-		).Return(applicationContract, inputBox, nil)
+	apps := copyApplications(applications)
+	s.repository.On("ListApplications",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+		false,
+	).Return(apps, uint64(2), nil).Once()
 
-		//New EVM Reader
-		client := newMockEthClient()
-		wsClient := FakeWSEhtClient{}
-		repository := newMockRepository()
-		s.evmReader.client = client
-		s.evmReader.wsClient = &wsClient
-		s.evmReader.repository = repository
-		s.evmReader.adapterFactory = adapterFactory
+	apps = copyApplications(applications[1:2])
+	apps[0].LastOutputCheckBlock = 0x11
+	s.repository.On("ListApplications",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+		false,
+	).Return(apps, uint64(1), nil).Once()
 
-		// Prepare Output Executed Events
-		outputExecution0 := &appcontract.IApplicationOutputExecuted{
-			OutputIndex: 1,
-			Output:      common.Hex2Bytes("AABBCCDDEE"),
-			Raw: types.Log{
-				TxHash: common.HexToHash("0xdeadbeef"),
-			},
-		}
+	apps = copyApplications(applications[1:2])
+	apps[0].LastOutputCheckBlock = 0x12
+	s.repository.On("ListApplications",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+		false,
+	).Return(apps, uint64(1), nil).Once()
 
-		outputExecutionEvents := []*appcontract.IApplicationOutputExecuted{outputExecution0}
-		applicationContract.On("RetrieveOutputExecutionEvents",
-			mock.Anything,
-		).Return(outputExecutionEvents, nil).Once()
+	s.repository.On("UpdateEventLastCheckBlock",
+		mock.Anything,
+		mock.Anything,
+		MonitoredEvent_InputAdded,
+		mock.Anything,
+	).Return(nil).Times(1)
+	s.repository.On("UpdateEventLastCheckBlock",
+		mock.Anything,
+		mock.Anything,
+		MonitoredEvent_OutputExecuted,
+		mock.Anything,
+	).Return(nil).Times(5)
 
-		// Prepare repository
-		repository.Unset("ListApplications")
-		repository.On(
-			"ListApplications",
-			mock.Anything,
-			mock.Anything,
-			mock.Anything,
-			false,
-		).Return([]*Application{{
-			IApplicationAddress:  appAddress,
-			IConsensusAddress:    common.HexToAddress("0xdeadbeef"),
-			IInputBoxAddress:     common.HexToAddress("0xBa3Cf8fB82E43D370117A0b7296f91ED674E94e3"),
-			IInputBoxBlock:       0x10,
-			EpochLength:          10,
-			LastOutputCheckBlock: 0x10,
-		}}, uint64(1), nil).Once()
+	s.repository.On("GetNumberOfInputs",
+		mock.Anything,
+		mock.Anything,
+	).Once().Return(uint64(0), nil)
 
-		repository.Unset("UpdateEventLastCheckBlock")
-		repository.On("UpdateEventLastCheckBlock",
-			mock.Anything,
-			mock.Anything,
-			MonitoredEvent_InputAdded,
-			mock.Anything,
-		).Once().Return(nil)
-		repository.On("UpdateEventLastCheckBlock",
-			mock.Anything,
-			mock.Anything,
-			MonitoredEvent_OutputExecuted,
-			mock.Anything,
-		).Once().Return(nil)
+	s.repository.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(uint64(0), nil).Times(4)
 
-		repository.Unset("GetOutput")
-		repository.On("GetOutput",
-			mock.Anything,
-			mock.Anything,
-			mock.Anything).Return(nil, errors.New("no output for you"))
+	s.repository.On("CreateEpochsAndInputs",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+		mock.Anything).Return(nil).Once()
 
-		repository.Unset("UpdateOutputsExecution")
-		repository.On("UpdateOutputsExecution",
-			mock.Anything,
-			mock.Anything,
-			mock.Anything,
-			mock.Anything,
-		).Once().Return(nil)
+	s.repository.On("GetEpoch",
+		mock.Anything,
+		mock.Anything,
+		uint64(0)).Return(nil, nil).Once()
 
-		//No Inputs
-		inputBox.Unset("RetrieveInputs")
-		inputBox.On("RetrieveInputs",
-			mock.Anything,
-			mock.Anything,
-			mock.Anything,
-		).Return([]iinputbox.IInputBoxInputAdded{}, nil)
+	output := &Output{
+		Index:   1,
+		RawData: common.Hex2Bytes("FFBBCCDDEE"),
+	}
+	s.repository.On("GetOutput",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+	).Return(output, nil).Once()
 
-		// Prepare Client
-		client.Unset("HeaderByNumber")
-		client.On(
-			"HeaderByNumber",
-			mock.Anything,
-			mock.Anything,
-		).Return(&header0, nil).Once()
+	s.repository.On("UpdateApplicationState",
+		mock.Anything,
+		applications[0].ID,
+		ApplicationState_Inoperable,
+		mock.Anything,
+	).Return(nil).Once()
 
-		// Start service
-		ready := make(chan struct{}, 1)
-		errChannel := make(chan error, 1)
+	s.applicationContract1.On("GetDeploymentBlockNumber",
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(0x10), nil).Once()
 
-		go func() {
-			errChannel <- s.evmReader.Run(ctx, ready)
-		}()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(0), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(1), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(0), nil).Once()
 
-		select {
-		case <-ready:
-			break
-		case err := <-errChannel:
-			s.FailNow("unexpected error signal", err)
-		}
+	s.applicationContract1.On("RetrieveOutputExecutionEvents",
+		mock.Anything,
+	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil).Once()
 
-		wsClient.fireNewHead(&header0)
-		time.Sleep(1 * time.Second)
+	events0 := []iinputbox.IInputBoxInputAdded{inputAddedEvent0}
+	retrieveInputsOpts0 := bind.FilterOpts{
+		Context: s.ctx,
+		Start:   0x11,
+		End:     Pointer(uint64(0x11)),
+	}
+	s.inputBox.On("RetrieveInputs",
+		&retrieveInputsOpts0,
+		mock.Anything,
+		mock.Anything,
+	).Return(events0, nil).Once()
 
-		repository.AssertNumberOfCalls(
-			s.T(),
-			"UpdateOutputsExecution",
-			0,
-		)
+	s.inputBox.On("GetNumberOfInputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(0), nil).Once()
+	s.inputBox.On("GetNumberOfInputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(1), nil).Once()
+	s.inputBox.On("GetNumberOfInputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(new(big.Int).SetUint64(0), nil).Times(4)
 
-	})
+	s.contractFactory.On("CreateAdapters",
+		mock.Anything,
+		mock.Anything,
+	).Return(s.applicationContract1, s.inputBox, nil).Once()
+	s.contractFactory.On("CreateAdapters",
+		mock.Anything,
+		mock.Anything,
+	).Return(s.applicationContract2, nil, nil).Once()
+	s.contractFactory.On("CreateAdapters",
+		mock.Anything,
+		mock.Anything,
+	).Return(s.applicationContract2, nil, nil).Once()
+	s.contractFactory.On("CreateAdapters",
+		mock.Anything,
+		mock.Anything,
+	).Return(s.applicationContract2, nil, nil).Once()
+}
 
-	s.Run("whenOutputMismatch", func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+func (s *EvmReaderSuite) TestCheckOutputFailsWhenOutputMismatches() {
+	s.setupOutputMismatchTest()
 
-		appAddress := common.HexToAddress("0x2E663fe9aE92275242406A185AA4fC8174339D3E")
+	wsClient := FakeWSEhtClient{}
+	s.evmReader.wsClient = &wsClient
 
-		// Contract Factory
-		applicationContract := &MockApplicationContract{}
-		inputBox := newMockInputBox()
+	// Start service
+	ready := make(chan struct{}, 1)
+	errChannel := make(chan error, 1)
 
-		// Setup adapter factory
-		adapterFactory := newMockAdapterFactory()
-		adapterFactory.Unset("CreateAdapters")
-		adapterFactory.On("CreateAdapters",
-			mock.Anything,
-			mock.Anything,
-		).Return(applicationContract, inputBox, nil)
+	go func() {
+		errChannel <- s.evmReader.Run(s.ctx, ready)
+	}()
 
-		//New EVM Reader
-		client := newMockEthClient()
-		wsClient := FakeWSEhtClient{}
-		repository := newMockRepository()
-		s.evmReader.client = client
-		s.evmReader.wsClient = &wsClient
-		s.evmReader.repository = repository
-		s.evmReader.adapterFactory = adapterFactory
+	select {
+	case <-ready:
+		break
+	case err := <-errChannel:
+		s.FailNow("unexpected error signal", err)
+	}
 
-		// Prepare Output Executed Events
-		outputExecution0 := &appcontract.IApplicationOutputExecuted{
-			OutputIndex: 1,
-			Output:      common.Hex2Bytes("AABBCCDDEE"),
-			Raw: types.Log{
-				TxHash: common.HexToHash("0xdeadbeef"),
-			},
-		}
+	wsClient.fireNewHead(&header0)
+	wsClient.fireNewHead(&header1)
+	wsClient.fireNewHead(&header2)
+	time.Sleep(1 * time.Second)
 
-		outputExecutionEvents := []*appcontract.IApplicationOutputExecuted{outputExecution0}
-		applicationContract.On("RetrieveOutputExecutionEvents",
-			mock.Anything,
-		).Return(outputExecutionEvents, nil).Once()
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 0)
+	s.repository.AssertExpectations(s.T())
 
-		// Prepare repository
-		repository.Unset("ListApplications")
-		repository.On(
-			"ListApplications",
-			mock.Anything,
-			mock.Anything,
-			mock.Anything,
-			false,
-		).Return([]*Application{{
-			IApplicationAddress:  appAddress,
-			IConsensusAddress:    common.HexToAddress("0xdeadbeef"),
-			IInputBoxAddress:     common.HexToAddress("0xBa3Cf8fB82E43D370117A0b7296f91ED674E94e3"),
-			IInputBoxBlock:       0x10,
-			EpochLength:          10,
-			LastOutputCheckBlock: 0x10,
-		}}, uint64(1), nil).Once()
+	s.inputBox.AssertExpectations(s.T())
+	s.applicationContract1.AssertExpectations(s.T())
+	s.applicationContract2.AssertExpectations(s.T())
+	s.contractFactory.AssertExpectations(s.T())
+	s.client.AssertExpectations(s.T())
 
-		output := &Output{
-			Index:   1,
-			RawData: common.Hex2Bytes("FFBBCCDDEE"),
-		}
-
-		repository.Unset("UpdateEventLastCheckBlock")
-		repository.On("UpdateEventLastCheckBlock",
-			mock.Anything,
-			mock.Anything,
-			MonitoredEvent_InputAdded,
-			mock.Anything,
-		).Once().Return(nil)
-		repository.On("UpdateEventLastCheckBlock",
-			mock.Anything,
-			mock.Anything,
-			MonitoredEvent_OutputExecuted,
-			mock.Anything,
-		).Once().Return(nil)
-
-		repository.Unset("GetOutput")
-		repository.On("GetOutput",
-			mock.Anything,
-			mock.Anything,
-			mock.Anything).Return(output, nil)
-
-		repository.Unset("UpdateOutputsExecution")
-		repository.On("UpdateOutputsExecution",
-			mock.Anything,
-			mock.Anything,
-			mock.Anything,
-			mock.Anything,
-		).Once().Return(nil)
-
-		//No Inputs
-		inputBox.Unset("RetrieveInputs")
-		inputBox.On("RetrieveInputs",
-			mock.Anything,
-			mock.Anything,
-			mock.Anything,
-		).Return([]iinputbox.IInputBoxInputAdded{}, nil)
-
-		// Prepare Client
-		client.Unset("HeaderByNumber")
-		client.On(
-			"HeaderByNumber",
-			mock.Anything,
-			mock.Anything,
-		).Return(&header0, nil).Once()
-
-		// Start service
-		ready := make(chan struct{}, 1)
-		errChannel := make(chan error, 1)
-
-		go func() {
-			errChannel <- s.evmReader.Run(ctx, ready)
-		}()
-
-		select {
-		case <-ready:
-			break
-		case err := <-errChannel:
-			s.FailNow("unexpected error signal", err)
-		}
-
-		wsClient.fireNewHead(&header0)
-		time.Sleep(1 * time.Second)
-
-		repository.AssertNumberOfCalls(
-			s.T(),
-			"UpdateOutputsExecution",
-			0,
-		)
-
-	})
 }

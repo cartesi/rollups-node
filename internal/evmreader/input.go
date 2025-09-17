@@ -10,68 +10,10 @@ import (
 	"math/big"
 
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 )
-
-// Find the last block number that should be considered checked when scanning the blockchain
-// for inputs of this application. The next search should start from (lastBlockChecked + 1).
-//
-// The main purpose of this function is to reduce the range of blocks that need to be scanned,
-// avoiding unnecessary lookups. Currently, it is only used when handling new applications.
-//
-// Rules applied in order:
-// 1. Default fallback: the block before the InputBox was deployed.
-// 2. If the application has never received inputs, use the most recent block.
-// 3. If the application has no inputs since its deployment, use the deployment block.
-// 4. Otherwise, return the block before the InputBox deployment (conservative bound).
-//
-// Note: this function returns the *last block checked*, not the first block to search.
-// Example:
-//
-//	lastBlockChecked := findLastInputCheckBlock(...)
-//	nextSearchBlock  := lastBlockChecked + 1
-func findLastInputCheckBlock(app *appContracts, mostRecentBlockNumber uint64, mostRecentBlockNumberCallOpts *bind.CallOpts) uint64 {
-	var noiBig *big.Int
-	var err error
-	blockBeforeInputBox := app.application.IInputBoxBlock - 1
-
-	// find if the application has ever received any input. sync to present if not
-	noiBig, err = app.inputSource.GetNumberOfInputs(
-		mostRecentBlockNumberCallOpts,
-		app.application.IApplicationAddress,
-	)
-	if err != nil {
-		return blockBeforeInputBox
-	}
-	if noiBig.Uint64() == 0 {
-		return mostRecentBlockNumber
-	}
-
-	// find if the application has received an input since its deployment. sync to that block if not
-	// we'll need its deployment block number to do that
-	deploymentBlockNumberBig, err := app.applicationContract.GetDeploymentBlockNumber(mostRecentBlockNumberCallOpts)
-	if err != nil {
-		return blockBeforeInputBox
-	}
-
-	noiBig, err = app.inputSource.GetNumberOfInputs(&bind.CallOpts{
-		BlockNumber: deploymentBlockNumberBig,
-	},
-		app.application.IApplicationAddress,
-	)
-	if err != nil {
-		return blockBeforeInputBox
-	}
-	if noiBig.Uint64() == 0 {
-		return deploymentBlockNumberBig.Uint64()
-	}
-
-	// TODO(mpolitzer): Application has inputs previous to its deployment. We can reduce the number of blocks to scan by
-	// doing a binary search over GetNumberOfInputs and finding the block where 0 -> 1 transition happens. As a simpler,
-	// also correct implementation. We return the first possible block an input could appear on.
-	return blockBeforeInputBox
-}
 
 // initializeNewApplicationInputSync initializes input synchronization for a new application
 // by finding the appropriate starting block and updating the database
@@ -79,12 +21,21 @@ func (r *Service) initializeNewApplicationInputSync(
 	ctx context.Context,
 	app *appContracts,
 	mostRecentBlockNumber uint64,
-	mostRecentBlockNumberCallOpts *bind.CallOpts,
 ) (uint64, error) {
-	lastInputCheckBlock := findLastInputCheckBlock(app,
-		mostRecentBlockNumber,
-		mostRecentBlockNumberCallOpts,
+	r.Logger.Info("Initializing application input sync",
+		"application", app.application.Name,
+		"inputbox_block", app.application.IInputBoxBlock,
+		"current_block", mostRecentBlockNumber,
 	)
+	if app.application.IInputBoxBlock == 0 {
+		r.Logger.Error("Application has no InputBox block number defined",
+			"application", app.application.Name,
+			"inputbox", app.application.IInputBoxAddress,
+			"iinputbox_block", app.application.IInputBoxBlock,
+		)
+		return 0, errors.New("application has no InputBox block number defined")
+	}
+	lastInputCheckBlock := app.application.IInputBoxBlock - 1
 
 	err := r.repository.UpdateEventLastCheckBlock(ctx, []int64{app.application.ID}, MonitoredEvent_InputAdded, lastInputCheckBlock)
 	if err != nil {
@@ -95,10 +46,10 @@ func (r *Service) initializeNewApplicationInputSync(
 		)
 		return 0, err
 	}
-
-	r.Logger.Info("Initializing application input sync",
+	r.Logger.Debug("Application input sync initialized",
 		"application", app.application.Name,
 		"inputbox_block", app.application.IInputBoxBlock,
+		"last_input_check_block", lastInputCheckBlock,
 		"next_search_block", lastInputCheckBlock+1,
 		"current_block", mostRecentBlockNumber,
 	)
@@ -119,10 +70,6 @@ func (r *Service) checkForNewInputs(
 
 	r.Logger.Debug("Checking for new inputs")
 
-	mostRecentBlockNumberCallOpts := &bind.CallOpts{
-		BlockNumber: new(big.Int).SetUint64(mostRecentBlockNumber),
-	}
-
 	appsByInputBox := map[common.Address][]appContracts{}
 	for _, app := range applications {
 		if !app.application.HasDataAvailabilitySelector(DataAvailability_InputBox) {
@@ -135,7 +82,7 @@ func (r *Service) checkForNewInputs(
 	for inputBoxAddress, inputBoxApps := range appsByInputBox {
 		r.Logger.Debug("Checking inputs for applications with the same InputBox",
 			"inputbox_address", inputBoxAddress,
-			"most recent block", mostRecentBlockNumber,
+			"most_recent_block", mostRecentBlockNumber,
 		)
 
 		appsByLastInputCheckBlock := make(map[uint64][]appContracts)
@@ -143,9 +90,13 @@ func (r *Service) checkForNewInputs(
 			lastInputCheckBlock := app.application.LastInputCheckBlock
 			if lastInputCheckBlock == 0 { // New application. Find a safe start block to scan for inputs
 				var err error
-				lastInputCheckBlock, err = r.initializeNewApplicationInputSync(ctx, &app,
-					mostRecentBlockNumber, mostRecentBlockNumberCallOpts)
+				lastInputCheckBlock, err = r.initializeNewApplicationInputSync(ctx, &app, mostRecentBlockNumber)
 				if err != nil {
+					r.Logger.Error("Failed to initialize application input sync",
+						"application", app.application.Name,
+						"most_recent_block", mostRecentBlockNumber,
+						"error", err,
+					)
 					continue
 				}
 			}
@@ -233,12 +184,7 @@ func (r *Service) readAndStoreInputs(
 
 		epochLength := app.application.EpochLength
 		if epochLength == 0 {
-			reason := "Application has epoch length of zero"
-			r.Logger.Error(reason, "application", app.application.Name, "address", address)
-			err := r.repository.UpdateApplicationState(ctx, app.application.ID, ApplicationState_Inoperable, &reason)
-			if err != nil {
-				r.Logger.Error("failed to update application state to inoperable", "application", app.application.Name, "err", err)
-			}
+			_ = r.setApplicationInoperable(ctx, app.application, "Application has epoch length of zero")
 			continue
 		}
 
@@ -272,18 +218,9 @@ func (r *Service) readAndStoreInputs(
 				if currentEpoch.Index == inputEpochIndex {
 					// Input can only be added to open epochs
 					if currentEpoch.Status != EpochStatus_Open {
-						reason := "Received inputs for an epoch that was not open. Should never happen"
-						r.Logger.Error(reason,
-							"application", app.application.Name,
-							"address", address,
-							"epoch_index", currentEpoch.Index,
-							"status", currentEpoch.Status,
-						)
-						err := r.repository.UpdateApplicationState(ctx, app.application.ID, ApplicationState_Inoperable, &reason)
-						if err != nil {
-							r.Logger.Error("failed to update application state to inoperable", "application", app.application.Name, "err", err)
-						}
-						return errors.New(reason)
+						return r.setApplicationInoperable(ctx, app.application,
+							"Received inputs for an epoch that was not open. Should never happen. Epoch %d Status %s, Input %d",
+							currentEpoch.Index, currentEpoch.Status, input.Index)
 					}
 					currentEpoch.InputIndexUpperBound = input.Index + 1
 				} else {
@@ -348,30 +285,29 @@ func (r *Service) readAndStoreInputs(
 			}
 		}
 
-		err = r.repository.CreateEpochsAndInputs(
-			ctx,
-			address.String(),
-			epochInputMap,
-			mostRecentBlockNumber,
-		)
-		if err != nil {
-			r.Logger.Error("Error storing inputs and epochs",
-				"application", app.application.Name,
-				"address", address,
-				"error", err,
-			)
-			continue
-		}
-
 		// Store everything
 		if len(epochInputMap) > 0 {
+			err = r.repository.CreateEpochsAndInputs(
+				ctx,
+				address.String(),
+				epochInputMap,
+				mostRecentBlockNumber,
+			)
+			if err != nil {
+				r.Logger.Error("Error storing inputs and epochs",
+					"application", app.application.Name,
+					"address", address,
+					"error", err,
+				)
+				continue
+			}
 			r.Logger.Debug("Inputs and epochs stored successfully",
 				"application", app.application.Name,
 				"address", address,
-				"start-block", nextSearchBlock,
-				"end-block", mostRecentBlockNumber,
-				"total epochs", len(epochInputMap),
-				"total inputs", len(inputs),
+				"start_block", nextSearchBlock,
+				"end_block", mostRecentBlockNumber,
+				"epoch_count", len(epochInputMap),
+				"input_count", len(inputs),
 			)
 		} else {
 			r.Logger.Debug("No inputs or epochs to store")
@@ -412,7 +348,6 @@ func (r *Service) readAndStoreInputs(
 	return nil
 }
 
-// readInputsFromBlockchain read the inputs from the blockchain ordered by Input index
 func (r *Service) readInputsFromBlockchain(
 	ctx context.Context,
 	apps []appContracts,
@@ -421,40 +356,95 @@ func (r *Service) readInputsFromBlockchain(
 
 	// Initialize app input map
 	var appInputsMap = make(map[common.Address][]*Input)
-	var appsAddresses = []common.Address{}
+
 	for _, app := range apps {
-		appInputsMap[app.application.IApplicationAddress] = []*Input{}
-		appsAddresses = append(appsAddresses, app.application.IApplicationAddress)
-	}
-
-	inputSource := apps[0].inputSource
-	opts := bind.FilterOpts{
-		Context: ctx,
-		Start:   startBlock,
-		End:     &endBlock,
-	}
-	inputsEvents, err := inputSource.RetrieveInputs(&opts, appsAddresses, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// Order inputs as order is not enforced by RetrieveInputs method nor the APIs
-	for _, event := range inputsEvents {
-		r.Logger.Debug("Received input",
-			"address", event.AppContract,
-			"index", event.Index,
-			"block", event.Raw.BlockNumber)
-		input := &Input{
-			Index:                event.Index.Uint64(),
-			Status:               InputCompletionStatus_None,
-			RawData:              event.Input,
-			BlockNumber:          event.Raw.BlockNumber,
-			TransactionReference: common.BigToHash(event.Index),
+		inputs, err := r.fetchApplicationInputs(ctx, app, startBlock, endBlock)
+		if err != nil {
+			r.Logger.Error("Error fetching inputs for application",
+				"application", app.application.Name,
+				"start_block", startBlock,
+				"end_block", endBlock,
+				"error", err.Error(),
+			)
+			continue
 		}
-
-		// Insert Sorted
-		appInputsMap[event.AppContract] = insertSorted(
-			sortByInputIndex, appInputsMap[event.AppContract], input)
+		appInputsMap[app.application.IApplicationAddress] = inputs
 	}
+
 	return appInputsMap, nil
+}
+
+func (r *Service) fetchApplicationInputs(
+	ctx context.Context,
+	app appContracts,
+	startBlock, endBlock uint64,
+) ([]*Input, error) {
+	r.Logger.Debug("Fetching inputs for application",
+		"application", app.application.Name,
+		"start_block", startBlock,
+		"end_block", endBlock,
+	)
+
+	// Define oracle function that returns the number of inputs at a given block
+	oracle := func(ctx context.Context, block uint64) (*big.Int, error) {
+		callOpts := &bind.CallOpts{
+			Context:     ctx,
+			BlockNumber: new(big.Int).SetUint64(block),
+		}
+		numInputs, err := app.inputSource.GetNumberOfInputs(callOpts, app.application.IApplicationAddress)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get number of inputs at block %d: %w", block, err)
+		}
+		return numInputs, nil
+	}
+
+	var sortedInputs []*Input
+	// Define onHit function that accumulates inputs at transition blocks
+	onHit := func(block uint64) error {
+		filterOpts := &bind.FilterOpts{
+			Context: ctx,
+			Start:   block,
+			End:     &block,
+		}
+		inputEvents, err := app.inputSource.RetrieveInputs(
+			filterOpts,
+			[]common.Address{app.application.IApplicationAddress},
+			nil,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to retrieve inputs at block %d: %w", block, err)
+		}
+		for _, event := range inputEvents {
+			input := &Input{
+				Index:                event.Index.Uint64(),
+				Status:               InputCompletionStatus_None,
+				RawData:              event.Input,
+				BlockNumber:          event.Raw.BlockNumber,
+				TransactionReference: event.Raw.TxHash,
+			}
+			sortedInputs = insertSorted(sortByInputIndex, sortedInputs, input)
+		}
+		return nil
+	}
+
+	inputCount, err := r.repository.GetNumberOfInputs(ctx, app.application.IApplicationAddress.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get number of inputs from repository: %w", err)
+	}
+	prevValue := new(big.Int).SetUint64(inputCount)
+
+	// Use FindTransitions to find blocks where inputs were added
+	_, err = ethutil.FindTransitions(ctx, startBlock, endBlock, prevValue, oracle, onHit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to walk input transitions: %w", err)
+	}
+
+	r.Logger.Debug("Fetched inputs for application",
+		"application", app.application.Name,
+		"start_block", startBlock,
+		"end_block", endBlock,
+		"prev_input_count", prevValue.Uint64(),
+		"new_inputs", len(sortedInputs),
+	)
+	return sortedInputs, nil
 }

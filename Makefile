@@ -76,6 +76,24 @@ ifeq ($(BUILD_TYPE),debug)
 endif
 
 GO_TEST_PACKAGES ?= ./...
+GO_TEST_FLAGS ?=
+
+VERBOSE ?=
+ifeq ($(VERBOSE),true)
+	GO_BUILD_PARAMS += -v
+	GO_TEST_FLAGS += -v
+endif
+
+TEST_PATTERN ?=
+ifneq ($(TEST_PATTERN),)
+	GO_TEST_FLAGS += -run $(TEST_PATTERN)
+endif
+
+TEST_PACKAGES ?=
+ifneq ($(TEST_PACKAGES),)
+	GO_TEST_PACKAGES := $(addprefix ./, $(addsuffix /..., $(subst :, ,$(TEST_PACKAGES))))
+endif
+
 
 ROLLUPS_CONTRACTS_ABI_BASEDIR:= rollups-contracts/
 ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR:= rollups-prt-contracts/
@@ -206,7 +224,7 @@ test: unit-test ## Execute all tests
 unit-test: ## Execute go unit tests
 	@echo "Running go unit tests"
 	@go clean -testcache
-	@go test -p 1 $(GO_BUILD_PARAMS) $(GO_TEST_PACKAGES)
+	@go test -p 1 $(GO_BUILD_PARAMS) $(GO_TEST_FLAGS) $(GO_TEST_PACKAGES)
 
 integration-test: ## Execute e2e tests
 	@echo "Running end-to-end tests"

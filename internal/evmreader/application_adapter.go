@@ -17,6 +17,14 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
+type ApplicationContractAdapter interface {
+	RetrieveOutputExecutionEvents(
+		opts *bind.FilterOpts,
+	) ([]*iapplication.IApplicationOutputExecuted, error)
+	GetDeploymentBlockNumber(opts *bind.CallOpts) (*big.Int, error)
+	GetNumberOfExecutedOutputs(opts *bind.CallOpts) (*big.Int, error)
+}
+
 // IApplication Wrapper
 type ApplicationContractAdapterImpl struct {
 	application        *iapplication.IApplication
@@ -98,4 +106,8 @@ func (a *ApplicationContractAdapterImpl) RetrieveOutputExecutionEvents(
 
 func (a *ApplicationContractAdapterImpl) GetDeploymentBlockNumber(opts *bind.CallOpts) (*big.Int, error) {
 	return a.application.GetDeploymentBlockNumber(opts)
+}
+
+func (a *ApplicationContractAdapterImpl) GetNumberOfExecutedOutputs(opts *bind.CallOpts) (*big.Int, error) {
+	return a.application.GetNumberOfExecutedOutputs(opts)
 }

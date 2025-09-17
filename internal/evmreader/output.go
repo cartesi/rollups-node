@@ -6,21 +6,69 @@ package evmreader
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
+	"errors"
+	"fmt"
 	"math/big"
 
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
 // Find an appropriate value to start scanning the blockchain for executed outputs of this application.
 // Application deployment block is a safe block to start since this event is emitted by the application contract itself.
 // We use input box block as a fallback.
-func findLastOutputCheckBlock(app *appContracts, mostRecentBlockNumberCallOpts *bind.CallOpts) uint64 {
-	deploymentBlockNumberBig, err := app.applicationContract.GetDeploymentBlockNumber(mostRecentBlockNumberCallOpts)
-	if err != nil {
-		return app.application.IInputBoxBlock - 1
+func (r *Service) initializeNewApplicationOutputExecutionSync(
+	ctx context.Context,
+	app *appContracts,
+	mostRecentBlockNumber uint64,
+) (uint64, error) {
+	r.Logger.Info("Initializing application output execution sync",
+		"application", app.application.Name,
+		"current_block", mostRecentBlockNumber,
+	)
+	callOpts := &bind.CallOpts{
+		Context:     ctx,
+		BlockNumber: new(big.Int).SetUint64(mostRecentBlockNumber),
 	}
-	return deploymentBlockNumberBig.Uint64() - 1
+	deploymentBlock, err := app.applicationContract.GetDeploymentBlockNumber(callOpts)
+	if err != nil {
+		r.Logger.Error("Error retrieving application deployment block number",
+			"application", app.application.Name,
+			"address", app.application.IApplicationAddress,
+			"error", err,
+		)
+		return 0, err
+	}
+	if deploymentBlock.Sign() <= 0 {
+		r.Logger.Error("Invalid application deployment block number retrieved",
+			"application", app.application.Name,
+			"address", app.application.IApplicationAddress,
+			"block_number", deploymentBlock.Uint64(),
+		)
+		return 0, errors.New("invalid application deployment block number retrieved")
+	}
+
+	lastOutputCheckBlock := deploymentBlock.Uint64() - 1
+	err = r.repository.UpdateEventLastCheckBlock(ctx, []int64{app.application.ID}, MonitoredEvent_OutputExecuted, lastOutputCheckBlock)
+	if err != nil {
+		r.Logger.Error("Failed to update application LastOutputCheckBlock",
+			"application", app.application.Name,
+			"last_output_check_block", lastOutputCheckBlock,
+			"error", err,
+		)
+		return 0, err
+	}
+	r.Logger.Debug("Application output execution sync initialized",
+		"application", app.application.Name,
+		"deployment_block", deploymentBlock.Uint64(),
+		"next_search_block", lastOutputCheckBlock+1,
+		"current_block", mostRecentBlockNumber,
+	)
+	app.application.LastOutputCheckBlock = lastOutputCheckBlock
+	return app.application.LastOutputCheckBlock, nil
 }
 
 func (r *Service) checkForOutputExecution(
@@ -33,28 +81,26 @@ func (r *Service) checkForOutputExecution(
 
 	r.Logger.Debug("Checking for new Output Executed Events", "apps", appAddresses)
 
-	mostRecentBlockNumberCallOpts := &bind.CallOpts{
-		BlockNumber: new(big.Int).SetUint64(mostRecentBlockNumber),
-	}
-
 	for _, app := range apps {
 		lastOutputCheck := app.application.LastOutputCheckBlock
 		if lastOutputCheck == 0 { // New application. Find a safe start block to scan for outputs
-			lastOutputCheck = findLastOutputCheckBlock(&app, mostRecentBlockNumberCallOpts)
-			r.Logger.Info("Initializing application output execution sync",
-				"application", app.application.Name,
-				"inputbox_block", app.application.IInputBoxBlock,
-				"next_search_block", lastOutputCheck+1,
-				"current_block", mostRecentBlockNumber,
-			)
-			app.application.LastOutputCheckBlock = lastOutputCheck
+			var err error
+			lastOutputCheck, err = r.initializeNewApplicationOutputExecutionSync(ctx, &app, mostRecentBlockNumber)
+			if err != nil {
+				r.Logger.Error("Failed to initialize application output execution sync",
+					"application", app.application.Name,
+					"most_recent_block", mostRecentBlockNumber,
+					"error", err,
+				)
+				continue
+			}
 		}
 
 		if mostRecentBlockNumber > lastOutputCheck {
 
 			r.Logger.Debug("Checking output execution for application",
 				"application", app.application.Name, "address", app.application.IApplicationAddress,
-				"last_output_check block", lastOutputCheck,
+				"last_output_check_block", lastOutputCheck,
 				"most_recent_block", mostRecentBlockNumber)
 
 			r.readAndUpdateOutputs(ctx, app, lastOutputCheck, mostRecentBlockNumber)
@@ -67,10 +113,10 @@ func (r *Service) checkForOutputExecution(
 				"most_recent_block", mostRecentBlockNumber,
 			)
 		} else {
-			r.Logger.Warn("Not reading output execution: already checked the most recent blocks",
+			r.Logger.Debug("Not reading output execution: already checked the most recent blocks",
 				"application", app.application.Name, "address", app.application.IApplicationAddress,
-				"last output check block", lastOutputCheck,
-				"most recent block", mostRecentBlockNumber,
+				"last_output_check_block", lastOutputCheck,
+				"most_recent_block", mostRecentBlockNumber,
 			)
 		}
 	}
@@ -80,15 +126,8 @@ func (r *Service) checkForOutputExecution(
 func (r *Service) readAndUpdateOutputs(
 	ctx context.Context, app appContracts, lastOutputCheck, mostRecentBlockNumber uint64) {
 
-	contract := app.applicationContract
-
-	opts := &bind.FilterOpts{
-		Context: ctx,
-		Start:   lastOutputCheck + 1,
-		End:     &mostRecentBlockNumber,
-	}
-
-	outputExecutedEvents, err := contract.RetrieveOutputExecutionEvents(opts)
+	nextSearchBlock := lastOutputCheck + 1
+	outputExecutedEvents, err := r.readOutputExecutionsFromBlockChain(ctx, app, nextSearchBlock, mostRecentBlockNumber)
 	if err != nil {
 		r.Logger.Error("Error reading output events",
 			"application", app.application.Name, "address", app.application.IApplicationAddress,
@@ -117,9 +156,14 @@ func (r *Service) readAndUpdateOutputs(
 		}
 		return
 	}
+	r.Logger.Debug("Found output executed events",
+		"application", app.application.Name,
+		"address", app.application.IApplicationAddress,
+		"output_executed_events", len(outputExecutedEvents),
+	)
 
 	// Should we check the output hash??
-	var executedOutputs []*Output
+	executedOutputs := make([]*Output, 0, len(outputExecutedEvents))
 	for _, event := range outputExecutedEvents {
 
 		// Compare output to check it is the correct one
@@ -140,16 +184,12 @@ func (r *Service) readAndUpdateOutputs(
 		}
 
 		if !bytes.Equal(output.RawData, event.Output) {
-			r.Logger.Debug("Output mismatch",
-				"application", app.application.Name, "address", app.application.IApplicationAddress,
-				"index", event.OutputIndex,
-				"actual", output.RawData,
-				"event's", event.Output)
-
-			r.Logger.Error("Output mismatch. Application is in an invalid state",
-				"application", app.application.Name, "address", app.application.IApplicationAddress,
-				"index", event.OutputIndex)
-
+			_ = r.setApplicationInoperable(ctx, app.application,
+				"Output mismatch. Application is in an invalid state. Output Index %d, raw data %s != event data %s",
+				output.Index,
+				"0x"+hex.EncodeToString(output.RawData),
+				"0x"+hex.EncodeToString(event.Output),
+			)
 			return
 		}
 
@@ -168,4 +208,67 @@ func (r *Service) readAndUpdateOutputs(
 			"error", err)
 	}
 
+}
+
+func (r *Service) readOutputExecutionsFromBlockChain(
+	ctx context.Context,
+	app appContracts,
+	startBlock, endBlock uint64,
+) ([]*iapplication.IApplicationOutputExecuted, error) {
+	r.Logger.Debug("Fetching Output Execution events for application",
+		"application", app.application.Name,
+		"start_block", startBlock,
+		"end_block", endBlock,
+	)
+
+	// Define oracle function that returns the number of output execution events at a given block
+	oracle := func(ctx context.Context, block uint64) (*big.Int, error) {
+		callOpts := &bind.CallOpts{
+			Context:     ctx,
+			BlockNumber: new(big.Int).SetUint64(block),
+		}
+		numInputs, err := app.applicationContract.GetNumberOfExecutedOutputs(callOpts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get number of Executed outputs at block %d: %w", block, err)
+		}
+		return numInputs, nil
+	}
+
+	var executedOutputs []*iapplication.IApplicationOutputExecuted
+	// Define onHit function that accumulates inputs at transition blocks
+	onHit := func(block uint64) error {
+		filterOpts := &bind.FilterOpts{
+			Context: ctx,
+			Start:   block,
+			End:     &block,
+		}
+		execEvents, err := app.applicationContract.RetrieveOutputExecutionEvents(filterOpts)
+		if err != nil {
+			return fmt.Errorf("failed to retrieve inputs at block %d: %w", block, err)
+		}
+		executedOutputs = append(executedOutputs, execEvents...)
+		return nil
+	}
+
+	prevValue := &big.Int{}
+	execCount, err := r.repository.GetNumberOfExecutedOutputs(ctx, app.application.IApplicationAddress.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get number of executed outputs from repository: %w", err)
+	}
+	prevValue.SetUint64(execCount)
+
+	// Use FindTransitions to find blocks where inputs were added
+	_, err = ethutil.FindTransitions(ctx, startBlock, endBlock, prevValue, oracle, onHit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to walk input transitions: %w", err)
+	}
+
+	r.Logger.Debug("Fetched output executed events for application",
+		"application", app.application.Name,
+		"start_block", startBlock,
+		"end_block", endBlock,
+		"prev_executed_output_count", prevValue.Uint64(),
+		"new_executed_outputs", len(executedOutputs),
+	)
+	return executedOutputs, nil
 }
