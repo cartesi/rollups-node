@@ -67,7 +67,7 @@ func (r *Service) checkForOutputExecution(
 				"most_recent_block", mostRecentBlockNumber,
 			)
 		} else {
-			r.Logger.Warn("Not reading output execution: already checked the most recent blocks",
+			r.Logger.Debug("Not reading output execution: already checked the most recent blocks",
 				"application", app.application.Name, "address", app.application.IApplicationAddress,
 				"last output check block", lastOutputCheck,
 				"most recent block", mostRecentBlockNumber,

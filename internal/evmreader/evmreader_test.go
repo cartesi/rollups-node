@@ -536,6 +536,11 @@ func (m *MockRepository) GetOutput(ctx context.Context, nameOrAddress string, in
 	return obj.(*Output), args.Error(1)
 }
 
+func (m *MockRepository) UpdateEpoch(ctx context.Context, nameOrAddress string, e *Epoch) error {
+	args := m.Called(ctx, nameOrAddress, e)
+	return args.Error(0)
+}
+
 func (m *MockRepository) UpdateOutputsExecution(ctx context.Context, nameOrAddress string,
 	executedOutputs []*Output, blockNumber uint64) error {
 	args := m.Called(ctx, nameOrAddress, executedOutputs, blockNumber)
@@ -592,7 +597,7 @@ func (m *MockAdapterFactory) Unset(methodName string) {
 func (m *MockAdapterFactory) CreateAdapters(
 	app *Application,
 	client EthClientInterface,
-) (ApplicationContractAdapter, InputSourceAdapter, error) {
+) (ApplicationContractAdapter, InputSourceAdapter, DaveConsensusAdapter, error) {
 	args := m.Called(app, client)
 
 	// Safely handle nil values to prevent interface conversion panic
@@ -608,7 +613,7 @@ func (m *MockAdapterFactory) CreateAdapters(
 		inputSource = newMockInputBox()
 	}
 
-	return appContract, inputSource, args.Error(2)
+	return appContract, inputSource, nil, args.Error(2)
 }
 
 func newMockAdapterFactory() *MockAdapterFactory {

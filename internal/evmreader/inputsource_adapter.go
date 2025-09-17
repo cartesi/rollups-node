@@ -17,6 +17,15 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
+// Interface for Input reading
+type InputSourceAdapter interface {
+	// Wrapper for FilterInputAdded(), which is automatically generated
+	// by go-ethereum and cannot be used for testing
+	RetrieveInputs(opts *bind.FilterOpts, appAddresses []common.Address, index []*big.Int,
+	) ([]iinputbox.IInputBoxInputAdded, error)
+	GetNumberOfInputs(opts *bind.CallOpts, appContract common.Address) (*big.Int, error)
+}
+
 // InputBox Wrapper
 type InputSourceAdapterImpl struct {
 	inputbox        *iinputbox.IInputBox

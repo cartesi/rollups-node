@@ -17,6 +17,13 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
+type ApplicationContractAdapter interface {
+	RetrieveOutputExecutionEvents(
+		opts *bind.FilterOpts,
+	) ([]*iapplication.IApplicationOutputExecuted, error)
+	GetDeploymentBlockNumber(opts *bind.CallOpts) (*big.Int, error)
+}
+
 // IApplication Wrapper
 type ApplicationContractAdapterImpl struct {
 	application        *iapplication.IApplication
