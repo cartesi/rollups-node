@@ -325,8 +325,8 @@ func (m *Machine) ReceiveCmioRequest() (uint8, uint16, []byte, error) {
 		// first call to get the length then allocate and read the data
 		err = newError(C.cm_receive_cmio_request(
 			m.ptr,
-			(*C.uint8_t)(unsafe.Pointer(nil)),
-			(*C.uint16_t)(unsafe.Pointer(nil)),
+			&cCmd,
+			&cReason,
 			(*C.uint8_t)(unsafe.Pointer(nil)),
 			&cLen,
 		))
@@ -334,13 +334,15 @@ func (m *Machine) ReceiveCmioRequest() (uint8, uint16, []byte, error) {
 			return
 		}
 		data = make([]byte, cLen)
-		err = newError(C.cm_receive_cmio_request(
-			m.ptr,
-			&cCmd,
-			&cReason,
-			(*C.uint8_t)(unsafe.Pointer(&data[0])),
-			&cLen,
-		))
+		if cLen != 0 {
+			err = newError(C.cm_receive_cmio_request(
+				m.ptr,
+				(*C.uint8_t)(unsafe.Pointer(nil)),
+				(*C.uint16_t)(unsafe.Pointer(nil)),
+				(*C.uint8_t)(unsafe.Pointer(&data[0])),
+				&cLen,
+			))
+		}
 	})
 
 	if err != nil {

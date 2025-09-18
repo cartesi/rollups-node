@@ -1024,32 +1024,48 @@ func (s *ImplementationSuite) TestMultipleAutomaticYields() {
 
 	// First automatic yield with output
 	mockBackend.On("Run", uint64(100), mock.AnythingOfType("time.Duration")).Return(YieldedAutomatically, nil).Once()
-	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(50), nil).Once()
+	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(10), nil).Once()
 	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
 		uint8(0), uint16(AutomaticYieldReasonOutput), []byte("output1"), nil).Once()
 
-	// Second automatic yield with report
-	mockBackend.On("Run", uint64(150), mock.AnythingOfType("time.Duration")).Return(YieldedAutomatically, nil).Once()
-	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(75), nil).Once()
+	// Second automatic yield with output
+	mockBackend.On("Run", uint64(110), mock.AnythingOfType("time.Duration")).Return(YieldedAutomatically, nil).Once()
+	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(20), nil).Once()
 	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(AutomaticYieldReasonOutput), []byte("output2"), nil).Once()
+		uint8(0), uint16(AutomaticYieldReasonOutput), []byte(""), nil).Once()
 
-	// Third automatic yield with progress (ignored)
-	mockBackend.On("Run", uint64(175), mock.AnythingOfType("time.Duration")).Return(YieldedAutomatically, nil).Once()
-	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(90), nil).Once()
+	// Third automatic yield with report
+	mockBackend.On("Run", uint64(120), mock.AnythingOfType("time.Duration")).Return(YieldedAutomatically, nil).Once()
+	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(30), nil).Once()
+	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
+		uint8(0), uint16(AutomaticYieldReasonReport), []byte("output2"), nil).Once()
+
+	// Fourth automatic yield with report
+	mockBackend.On("Run", uint64(130), mock.AnythingOfType("time.Duration")).Return(YieldedAutomatically, nil).Once()
+	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(40), nil).Once()
+	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
+		uint8(0), uint16(AutomaticYieldReasonReport), []byte(""), nil).Once()
+
+	// Fifth automatic yield with progress (ignored)
+	mockBackend.On("Run", uint64(140), mock.AnythingOfType("time.Duration")).Return(YieldedAutomatically, nil).Once()
+	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(50), nil).Once()
 	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
 		uint8(0), uint16(AutomaticYieldReasonProgress), []byte("progress"), nil).Once()
 
 	// Final manual yield
-	mockBackend.On("Run", uint64(190), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil).Once()
-	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(100), nil).Once()
+	mockBackend.On("Run", uint64(150), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil).Once()
+	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(60), nil).Once()
 
 	outputs, reports, err := machine.run(ctx, AdvanceStateRequest)
 	require.NoError(err)
+
 	require.Len(outputs, 2)
 	require.Equal([]byte("output1"), outputs[0])
-	require.Equal([]byte("output2"), outputs[1])
-	require.Empty(reports)
+	require.Equal([]byte(""), outputs[1])
+
+	require.Len(reports, 2)
+	require.Equal([]byte("output2"), reports[0])
+	require.Equal([]byte(""), reports[1])
 
 	mockBackend.AssertExpectations(s.T())
 }
