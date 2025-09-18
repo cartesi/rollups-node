@@ -695,6 +695,29 @@ func (s *ImplementationSuite) TestRun() {
 	require.Error(err)
 	require.Contains(err.Error(), "read cycle failed")
 	mockBackend2.AssertExpectations(s.T())
+
+	// Test run with multiple steps
+	mockBackend3 := NewMockBackend()
+	mockBackend3.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
+	mockBackend3.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(ReachedTargetMcycle, nil).Once()
+	mockBackend3.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil).Once()
+
+	machine3 := &machineImpl{
+		backend: mockBackend3,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline:       time.Second * 5,
+			AdvanceMaxCycles:   1000,
+			AdvanceIncCycles:   100,
+			AdvanceIncDeadline: time.Second * 1,
+			AdvanceMaxDeadline: time.Second * 10,
+		},
+	}
+
+	_, _, err = machine3.run(ctx, AdvanceStateRequest)
+	require.NoError(err)
+	mockBackend3.AssertExpectations(s.T())
+
 }
 
 // Test step method
@@ -773,7 +796,7 @@ func (s *ImplementationSuite) TestStep() {
 
 	// Test step already at limit cycle
 	yieldType, cycle, err = machine.step(ctx, 1000, 1000, time.Second)
-	require.ErrorIs(err, ErrReachedTargetMcycle)
+	require.ErrorIs(err, ErrReachedLimitMcycle)
 	require.Nil(yieldType)
 	require.Equal(uint64(0), cycle)
 	mockBackend5.AssertExpectations(s.T())

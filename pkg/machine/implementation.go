@@ -313,7 +313,7 @@ func (m *machineImpl) run(ctx context.Context, reqType requestType) ([]Output, [
 				return outputs, reports, fmt.Errorf("run operation timed out: %w", ErrDeadlineExceeded)
 			}
 			yt, currentCycle, err = m.step(ctx, currentCycle, limitCycle, stepTimeout)
-			if err != nil {
+			if err != nil && err != ErrReachedTargetMcycle {
 				return outputs, reports, err
 			}
 		}
@@ -365,7 +365,7 @@ func (m *machineImpl) step(ctx context.Context,
 
 	// Returns with an error if the next run would exceed limitCycle.
 	if currentCycle >= limitCycle && m.params.AdvanceIncCycles != 0 {
-		return nil, 0, ErrReachedTargetMcycle
+		return nil, 0, ErrReachedLimitMcycle
 	}
 
 	// Calculates the increment.

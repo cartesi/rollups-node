@@ -41,6 +41,7 @@ var (
 	ErrReachedTargetMcycle        = errors.New("machine reached target mcycle")
 	ErrPayloadLengthLimitExceeded = errors.New("payload length limit exceeded")
 	ErrHashLength                 = errors.New("hash does not have the exactly number of bytes")
+	ErrReachedLimitMcycle         = errors.New("machine reached limit mcycle")
 )
 
 // The Machine interface covers the core rollups-oriented functionalities of a cartesi
