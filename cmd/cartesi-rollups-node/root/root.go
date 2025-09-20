@@ -32,6 +32,7 @@ var (
 	advancerPollInterval   string
 	validatorPollInterval  string
 	claimerPollInterval    string
+	prtPollInterval        string
 	maxStartupTime         string
 	enableInputReader      bool
 	enableInspect          bool
@@ -92,6 +93,9 @@ func init() {
 
 	Cmd.Flags().StringVar(&claimerPollInterval, "claimer-poll-interval", "3", "Claimer poll interval")
 	cobra.CheckErr(viper.BindPFlag(config.CLAIMER_POLLING_INTERVAL, Cmd.Flags().Lookup("claimer-poll-interval")))
+
+	Cmd.Flags().StringVar(&prtPollInterval, "prt-poll-interval", "3", "Claimer poll interval")
+	cobra.CheckErr(viper.BindPFlag(config.PRT_POLLING_INTERVAL, Cmd.Flags().Lookup("prt-poll-interval")))
 
 	Cmd.Flags().StringVar(&maxStartupTime, "max-startup-time", "15", "Maximum startup time in seconds")
 	cobra.CheckErr(viper.BindPFlag(config.MAX_STARTUP_TIME, Cmd.Flags().Lookup("max-startup-time")))
@@ -182,6 +186,10 @@ func run(cmd *cobra.Command, args []string) {
 
 	logger = service.NewLogger(cfg.LogLevel, cfg.LogColor).With("service", "claimer")
 	createInfo.ClaimerClient, err = createEthClient(ctx, cfg.BlockchainHttpEndpoint.String(), logger)
+	cobra.CheckErr(err)
+
+	logger = service.NewLogger(cfg.LogLevel, cfg.LogColor).With("service", "prt")
+	createInfo.PrtClient, err = createEthClient(ctx, cfg.BlockchainHttpEndpoint.String(), logger)
 	cobra.CheckErr(err)
 
 	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.String())

@@ -5,12 +5,16 @@ package root
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/prt"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/internal/version"
 	"github.com/cartesi/rollups-node/pkg/service"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/hashicorp/go-retryablehttp"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -25,7 +29,7 @@ var (
 	pollInterval       string
 	maxStartupTime     string
 	telemetryAddress   string
-	cfg                *config.ValidatorConfig
+	cfg                *config.PrtConfig
 )
 
 var Cmd = &cobra.Command{
@@ -50,8 +54,8 @@ func init() {
 		"Database connection string in the URL format\n(eg.: 'postgres://user:password@hostname:port/database') ")
 	cobra.CheckErr(viper.BindPFlag(config.DATABASE_CONNECTION, Cmd.Flags().Lookup("database-connection")))
 
-	Cmd.Flags().StringVar(&pollInterval, "poll-interval", "7", "Poll interval")
-	cobra.CheckErr(viper.BindPFlag(config.VALIDATOR_POLLING_INTERVAL, Cmd.Flags().Lookup("poll-interval")))
+	Cmd.Flags().StringVar(&pollInterval, "poll-interval", "3", "Poll interval")
+	cobra.CheckErr(viper.BindPFlag(config.PRT_POLLING_INTERVAL, Cmd.Flags().Lookup("poll-interval")))
 
 	Cmd.Flags().StringVar(&maxStartupTime, "max-startup-time", "15", "Maximum startup time in seconds")
 	cobra.CheckErr(viper.BindPFlag(config.MAX_STARTUP_TIME, Cmd.Flags().Lookup("max-startup-time")))
@@ -59,12 +63,37 @@ func init() {
 	// TODO: validate on preRunE
 	Cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
 		var err error
-		cfg, err = config.LoadValidatorConfig()
+		cfg, err = config.LoadPrtConfig()
 		if err != nil {
 			return err
 		}
 		return nil
 	}
+}
+
+func createEthClient(ctx context.Context, endpoint string, logger *slog.Logger) (*ethclient.Client, error) {
+	rclient := retryablehttp.NewClient()
+	rclient.Logger = logger
+	rclient.RetryMax = int(cfg.BlockchainHttpMaxRetries)
+	rclient.RetryWaitMin = cfg.BlockchainHttpRetryMinWait
+	rclient.RetryWaitMax = cfg.BlockchainHttpRetryMaxWait
+
+	clientOptions := []rpc.ClientOption{
+		rpc.WithHTTPClient(rclient.StandardClient()),
+	}
+
+	authOpt, err := config.HTTPAuthorizationOption()
+	cobra.CheckErr(err)
+	if authOpt != nil {
+		clientOptions = append(clientOptions, authOpt)
+	}
+
+	rpcClient, err := rpc.DialOptions(ctx, endpoint, clientOptions...)
+	if err != nil {
+		return nil, err
+	}
+
+	return ethclient.NewClient(rpcClient), nil
 }
 
 func run(cmd *cobra.Command, args []string) {
@@ -79,11 +108,16 @@ func run(cmd *cobra.Command, args []string) {
 			EnableSignalHandling: true,
 			TelemetryCreate:      true,
 			TelemetryAddress:     cfg.TelemetryAddress,
-			PollInterval:         cfg.ValidatorPollingInterval,
+			PollInterval:         cfg.PrtPollingInterval,
 		},
 		Config: *cfg,
 	}
+
 	var err error
+	logger := service.NewLogger(cfg.LogLevel, cfg.LogColor).With("service", serviceName)
+	createInfo.EthClient, err = createEthClient(ctx, cfg.BlockchainHttpEndpoint.String(), logger)
+	cobra.CheckErr(err)
+
 	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.String())
 	cobra.CheckErr(err)
 	defer createInfo.Repository.Close()
