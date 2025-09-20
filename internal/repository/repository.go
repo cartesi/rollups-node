@@ -58,6 +58,11 @@ type ReportFilter struct {
 	InputIndex *uint64
 }
 
+type TournamentFilter struct {
+	EpochIndex *uint64
+	Level      *uint64
+}
+
 type ApplicationRepository interface {
 	CreateApplication(ctx context.Context, app *Application) (int64, error)
 	GetApplication(ctx context.Context, nameOrAddress string) (*Application, error)
@@ -111,6 +116,14 @@ type ReportRepository interface {
 	ListReports(ctx context.Context, nameOrAddress string, f ReportFilter, p Pagination, descending bool) ([]*Report, uint64, error)
 }
 
+type TournamentRepository interface {
+	CreateTournament(ctx context.Context, nameOrAddress string, t *Tournament) error
+	UpdateTournament(ctx context.Context, nameOrAddress string, t *Tournament) error
+	GetTournament(ctx context.Context, nameOrAddress string, address string) (*Tournament, error)
+	ListTournaments(ctx context.Context, nameOrAddress string, f TournamentFilter,
+		p Pagination, descending bool) ([]*Tournament, uint64, error)
+}
+
 type BulkOperationsRepository interface {
 	StoreAdvanceResult(ctx context.Context, appId int64, ar *AdvanceResult) error
 	StoreClaimAndProofs(ctx context.Context, epoch *Epoch, outputs []*Output) error
@@ -155,6 +168,7 @@ type Repository interface {
 	InputRepository
 	OutputRepository
 	ReportRepository
+	TournamentRepository
 	BulkOperationsRepository
 	NodeConfigRepository
 	ClaimerRepository

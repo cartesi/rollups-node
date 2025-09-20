@@ -187,7 +187,7 @@ CREATE TABLE "output"
 
 CREATE INDEX "output_raw_data_type_idx" ON "output" ("input_epoch_application_id", substring("raw_data" FROM 1 FOR 4));
 
-CREATE INDEX "output_raw_data_address_idx" ON "output" ("input_epoch_application_id", substring("raw_data" FROM 17 FOR 20)    )
+CREATE INDEX "output_raw_data_address_idx" ON "output" ("input_epoch_application_id", substring("raw_data" FROM 17 FOR 20))
 WHERE SUBSTRING("raw_data" FROM 1 FOR 4) IN (
     E'\\x10321e8b',  -- DelegateCallVoucher
     E'\\x237a816f'   -- Voucher
@@ -221,6 +221,120 @@ CREATE TABLE "node_config"
 
 CREATE TRIGGER "config_set_updated_at" BEFORE UPDATE ON "node_config"
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TABLE "tournaments" (
+  "application_id" INT4 NOT NULL,
+  "epoch_index" uint64 NOT NULL,
+  "address" BYTEA NOT NULL,
+  "parent_tournament_address" BYTEA,
+  "parent_match_id_hash" hash,
+  "max_level" INT NOT NULL CHECK("max_level" >= 0),
+  "level" INT NOT NULL CHECK("level" >= 0),
+  "log2step" INT NOT NULL CHECK("log2step" >= 0),
+  "height" INT NOT NULL CHECK("height" >= 0),
+  "finished_at_block" uint64 DEFAULT 0,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT "tournaments_pkey" PRIMARY KEY ("application_id","epoch_index","address"),
+  CONSTRAINT "tournaments_epoch_fkey"    FOREIGN KEY ("application_id","epoch_index")
+    REFERENCES "epoch"("application_id","index")
+    ON DELETE CASCADE,
+  CONSTRAINT "chk_tournament_root_parent"
+    CHECK (
+      ("level" = 0 AND "parent_tournament_address" IS NULL AND "parent_match_id_hash" IS NULL)
+      OR
+      ("level" > 0 AND "parent_tournament_address" IS NOT NULL AND "parent_match_id_hash" IS NOT NULL)
+    )
+);
+
+CREATE INDEX "tournaments_epoch_idx"
+  ON "tournaments"("application_id","epoch_index");
+
+CREATE UNIQUE INDEX "unique_root_per_epoch_idx"
+  ON "tournaments"("application_id","epoch_index")
+  WHERE "level" = 0;
+
+CREATE INDEX "tournaments_parent_match_nonroot_idx"
+  ON "tournaments"("application_id","epoch_index","parent_tournament_address","parent_match_id_hash")
+  WHERE "level" > 0;
+
+CREATE TRIGGER "tournaments_set_updated_at"
+BEFORE UPDATE ON "tournaments"
+FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TABLE "commitments" (
+  "application_id" INT4 NOT NULL,
+  "epoch_index" uint64 NOT NULL,
+  "tournament_address" BYTEA NOT NULL,
+  "commitment" BYTEA NOT NULL,
+  "final_state_hash" hash NOT NULL,
+  "participant_address" BYTEA NOT NULL,
+  "joined_tx_hash" hash NOT NULL,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT "commitments_pkey"
+    PRIMARY KEY ("application_id","epoch_index","tournament_address","commitment"),
+  CONSTRAINT "commitments_tournament_fkey"
+    FOREIGN KEY ("application_id","epoch_index","tournament_address")
+    REFERENCES "tournaments"("application_id","epoch_index","address")
+    ON DELETE CASCADE
+);
+
+CREATE INDEX "commitments_app_epoch_tournament_idx"
+  ON "commitments"("application_id","epoch_index","tournament_address");
+
+CREATE INDEX "commitments_final_state_idx"
+  ON "commitments"("final_state_hash");
+
+CREATE TRIGGER "commitments_set_updated_at"
+BEFORE UPDATE ON "commitments"
+FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TABLE "matches" (
+  "application_id" INT4 NOT NULL,
+  "epoch_index" uint64 NOT NULL,
+  "tournament_address" BYTEA NOT NULL,
+  "id_hash" hash NOT NULL,   -- keccak256(abi.encode(one,two))
+  "commitment_one" BYTEA NOT NULL,
+  "commitment_two" BYTEA NOT NULL,
+  "winner_commitment" BYTEA,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT "matches_pkey"
+    PRIMARY KEY ("application_id","epoch_index","tournament_address","id_hash"),
+
+  CONSTRAINT "matches_tournament_fkey"
+    FOREIGN KEY ("application_id","epoch_index","tournament_address")
+    REFERENCES "tournaments"("application_id","epoch_index","address")
+    ON DELETE CASCADE,
+
+  CONSTRAINT "matches_one_commitment_fkey"
+    FOREIGN KEY ("application_id","epoch_index","tournament_address","commitment_one")
+    REFERENCES "commitments"("application_id","epoch_index","tournament_address","commitment")
+    ON DELETE RESTRICT,
+
+  CONSTRAINT "matches_two_commitment_fkey"
+    FOREIGN KEY ("application_id","epoch_index","tournament_address","commitment_two")
+    REFERENCES "commitments"("application_id","epoch_index","tournament_address","commitment")
+    ON DELETE RESTRICT
+);
+
+CREATE INDEX "matches_app_epoch_tournament_idx"
+  ON "matches"("application_id","epoch_index","tournament_address");
+
+CREATE UNIQUE INDEX "matches_unique_pair_idx"
+  ON "matches"("application_id","epoch_index","tournament_address","commitment_one","commitment_two");
+
+CREATE TRIGGER "matches_set_updated_at"
+BEFORE UPDATE ON "matches"
+FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+
+ALTER TABLE "tournaments"
+  ADD CONSTRAINT "tournaments_parent_match_fkey"
+  FOREIGN KEY ("application_id","epoch_index","parent_tournament_address","parent_match_id_hash")
+  REFERENCES "matches"("application_id","epoch_index","tournament_address","id_hash")
+  ON DELETE CASCADE;
 
 COMMIT;
 

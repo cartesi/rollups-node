@@ -791,6 +791,45 @@ func (e MonitoredEvent) String() string {
 	return string(e)
 }
 
+type Tournament struct {
+	ApplicationID           int64           `sql:"primary_key" json:"-"`
+	EpochIndex              uint64          `sql:"primary_key" json:"epoch_index"`
+	Address                 common.Address  `sql:"primary_key" json:"address"`
+	ParentTournamentAddress *common.Address `json:"parent_tournament_address"`
+	ParentMatchIDHash       *common.Hash    `json:"parent_match_id_hash"`
+	MaxLevel                uint64          `json:"max_level"`
+	Level                   uint64          `json:"level"`
+	Log2Step                uint64          `json:"log2step"`
+	Height                  uint64          `json:"height"`
+	FinishedAtBlock         uint64          `json:"finished_at_block"`
+	CreatedAt               time.Time       `json:"created_at"`
+	UpdatedAt               time.Time       `json:"updated_at"`
+}
+
+func (t *Tournament) MarshalJSON() ([]byte, error) {
+	// Create an alias to avoid infinite recursion in MarshalJSON.
+	type Alias Tournament
+	// Define a new structure that embeds the alias but overrides the hex fields.
+	aux := &struct {
+		EpochIndex      string `json:"epoch_index"`
+		MaxLevel        string `json:"max_level"`
+		Level           string `json:"level"`
+		Log2Step        string `json:"log2step"`
+		Height          string `json:"height"`
+		FinishedAtBlock string `json:"finished_at_block"`
+		*Alias
+	}{
+		Alias:           (*Alias)(t),
+		EpochIndex:      fmt.Sprintf("0x%x", t.EpochIndex),
+		MaxLevel:        fmt.Sprintf("0x%x", t.MaxLevel),
+		Level:           fmt.Sprintf("0x%x", t.Level),
+		Log2Step:        fmt.Sprintf("0x%x", t.Log2Step),
+		Height:          fmt.Sprintf("0x%x", t.Height),
+		FinishedAtBlock: fmt.Sprintf("0x%x", t.FinishedAtBlock),
+	}
+	return json.Marshal(aux)
+}
+
 func Pointer[T any](v T) *T {
 	return &v
 }

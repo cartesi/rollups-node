@@ -498,6 +498,101 @@
 			}
 		},
 		{
+			"name": "cartesi_listTournaments",
+			"summary": "Retrieve a List of Tournaments",
+			"description": "Returns a paginated list of Tournaments, with options to filter by epoch index or level.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "epoch_index",
+					"description": "Filter tournaments by a specific epoch index (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": false
+				},
+				{
+					"name": "level",
+					"description": "Filter tournaments by level.",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": false
+				},
+				{
+					"name": "limit",
+					"description": "The maximum number of tournaments to return per page.",
+					"schema": {
+						"type": "integer",
+						"minimum": 1,
+						"default": 50
+					},
+					"required": false
+				},
+				{
+					"name": "offset",
+					"description": "The starting point for the list of tournaments to return.",
+					"schema": {
+						"type": "integer",
+						"minimum": 0,
+						"default": 0
+					},
+					"required": false
+				},
+				{
+					"name": "descending",
+					"description": "if true, the list will be sorted in descending order by epoch index.",
+					"schema": {
+						"type": "boolean",
+						"default": false
+					},
+					"required": false
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/TournamentListResult"
+				}
+			}
+		},
+		{
+			"name": "cartesi_getTournament",
+			"summary": "Retrieve a specific tournament",
+			"description": "Retrieves a single tournament from the application using the specified address.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "address",
+					"description": "The address of the tournament (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"required": true
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/TournamentGetResult"
+				}
+			}
+		},
+		{
 			"name": "cartesi_getChainId",
 			"summary": "Get node's chain ID",
 			"description": "Fetches the chain ID that node is operating on.",
@@ -1128,6 +1223,70 @@
 						"$ref": "#/components/schemas/EthereumAddress"
 					}
 				]
+			},
+			"Tournament": {
+				"type": "object",
+				"properties": {
+					"epoch_index": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"address": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"parent_tournament_address": {
+						"$ref": "#/components/schemas/EthereumAddress",
+						"nullable": true
+					},
+					"parent_match_id_hash": {
+						"$ref": "#/components/schemas/Hash",
+						"nullable": true
+					},
+					"max_level": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"level": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"log2step": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"height": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"finished_at_block": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"updated_at": {
+						"type": "string",
+						"format": "date-time"
+					}
+				}
+			},
+			"TournamentListResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"type": "array",
+						"items": {
+							"$ref": "#/components/schemas/Tournament"
+						}
+					},
+					"pagination": {
+						"$ref": "#/components/schemas/Pagination"
+					}
+				}
+			},
+			"TournamentGetResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"$ref": "#/components/schemas/Tournament"
+					}
+				}
 			}
 		}
 	}

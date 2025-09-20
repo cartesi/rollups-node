@@ -231,6 +231,22 @@ type GetReportParams struct {
 	ReportIndex string `json:"report_index"`
 }
 
+// ListTournamentsParams aligns with the OpenRPC specification
+type ListTournamentsParams struct {
+	Application string  `json:"application"`
+	EpochIndex  *string `json:"epoch_index,omitempty"`
+	Level       *string `json:"level,omitempty"`
+	Limit       uint64  `json:"limit"`
+	Offset      uint64  `json:"offset"`
+	Descending  bool    `json:"descending,omitempty"`
+}
+
+// GetTournamentParams aligns with the OpenRPC specification
+type GetTournamentParams struct {
+	Application string `json:"application"`
+	Address     string `json:"address"`
+}
+
 // -----------------------------------------------------------------------------
 // ABI Decoding helpers (provided code)
 // -----------------------------------------------------------------------------

@@ -29,6 +29,8 @@ const (
 	MAX_BODY_SIZE = 1 << 20
 	// Maximum amount of items to list (10,000).
 	LIST_ITEM_LIMIT = 10000
+	// Default amount of item on a list (50)
+	LIST_ITEM_DEFAULT = 50
 )
 
 const (
@@ -86,6 +88,10 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 		s.handleListReports(w, r, req)
 	case "cartesi_getReport":
 		s.handleGetReport(w, r, req)
+	case "cartesi_listTournaments":
+		s.handleListTournaments(w, r, req)
+	case "cartesi_getTournament":
+		s.handleGetTournament(w, r, req)
 	case "cartesi_getChainId":
 		s.handleGetChainId(w, r, req)
 	case "cartesi_getNodeVersion":
@@ -126,7 +132,7 @@ func (s *Service) handleListApplications(w http.ResponseWriter, r *http.Request,
 	}
 	// Use default values if not provided
 	if params.Limit <= 0 {
-		params.Limit = 50
+		params.Limit = LIST_ITEM_DEFAULT
 	}
 	// Cap limit to 10,000.
 	if params.Limit > LIST_ITEM_LIMIT {
@@ -215,7 +221,7 @@ func (s *Service) handleListEpochs(w http.ResponseWriter, r *http.Request, req R
 
 	// Use default values if not provided
 	if params.Limit <= 0 {
-		params.Limit = 50
+		params.Limit = LIST_ITEM_DEFAULT
 	}
 
 	if params.Limit > LIST_ITEM_LIMIT {
@@ -373,7 +379,7 @@ func (s *Service) handleListInputs(w http.ResponseWriter, r *http.Request, req R
 
 	// Use default values if not provided
 	if params.Limit <= 0 {
-		params.Limit = 50
+		params.Limit = LIST_ITEM_DEFAULT
 	}
 
 	if params.Limit > LIST_ITEM_LIMIT {
@@ -559,7 +565,7 @@ func (s *Service) handleListOutputs(w http.ResponseWriter, r *http.Request, req 
 
 	// Use default values if not provided
 	if params.Limit <= 0 {
-		params.Limit = 50
+		params.Limit = LIST_ITEM_DEFAULT
 	}
 
 	if params.Limit > LIST_ITEM_LIMIT {
@@ -714,7 +720,7 @@ func (s *Service) handleListReports(w http.ResponseWriter, r *http.Request, req 
 
 	// Use default values if not provided
 	if params.Limit <= 0 {
-		params.Limit = 50
+		params.Limit = LIST_ITEM_DEFAULT
 	}
 
 	if params.Limit > LIST_ITEM_LIMIT {
@@ -820,6 +826,127 @@ func (s *Service) handleGetReport(w http.ResponseWriter, r *http.Request, req RP
 		Data *model.Report `json:"data"`
 	}{
 		Data: report,
+	}
+
+	writeRPCResult(w, req.ID, response)
+}
+
+func (s *Service) handleListTournaments(w http.ResponseWriter, r *http.Request, req RPCRequest) {
+	var params ListTournamentsParams
+	if err := UnmarshalParams(req.Params, &params); err != nil {
+		s.Logger.Debug("Invalid parameters", "err", err)
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return
+	}
+
+	// Use default values if not provided
+	if params.Limit <= 0 {
+		params.Limit = LIST_ITEM_DEFAULT
+	}
+
+	if params.Limit > LIST_ITEM_LIMIT {
+		params.Limit = LIST_ITEM_LIMIT
+	}
+
+	// Validate application parameter
+	if err := validateNameOrAddress(params.Application); err != nil {
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return
+	}
+
+	// Create tournament filter based on params
+	tournamentFilter := repository.TournamentFilter{}
+	if params.EpochIndex != nil {
+		epochIndex, err := parseIndex(*params.EpochIndex, "epoch_index")
+		if err != nil {
+			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+			return
+		}
+		tournamentFilter.EpochIndex = &epochIndex
+	}
+
+	if params.Level != nil {
+		level, err := parseIndex(*params.Level, "level")
+		if err != nil {
+			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+			return
+		}
+		tournamentFilter.Level = &level
+	}
+
+	tournaments, total, err := s.repository.ListTournaments(r.Context(), params.Application, tournamentFilter, repository.Pagination{
+		Limit:  params.Limit,
+		Offset: params.Offset,
+	}, params.Descending)
+	if err != nil {
+		s.Logger.Error("Unable to retrieve tournaments from repository", "err", err)
+		writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return
+	}
+	if tournaments == nil {
+		tournaments = []*model.Tournament{}
+	}
+
+	// Format response according to spec
+	result := struct {
+		Data       []*model.Tournament `json:"data"`
+		Pagination struct {
+			TotalCount uint64 `json:"total_count"`
+			Limit      uint64 `json:"limit"`
+			Offset     uint64 `json:"offset"`
+		} `json:"pagination"`
+	}{
+		Data: tournaments,
+		Pagination: struct {
+			TotalCount uint64 `json:"total_count"`
+			Limit      uint64 `json:"limit"`
+			Offset     uint64 `json:"offset"`
+		}{
+			TotalCount: total,
+			Limit:      params.Limit,
+			Offset:     params.Offset,
+		},
+	}
+
+	writeRPCResult(w, req.ID, result)
+}
+
+func (s *Service) handleGetTournament(w http.ResponseWriter, r *http.Request, req RPCRequest) {
+	var params GetTournamentParams
+	if err := UnmarshalParams(req.Params, &params); err != nil {
+		s.Logger.Debug("Invalid parameters", "err", err)
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return
+	}
+
+	// Validate application parameter
+	if err := validateNameOrAddress(params.Application); err != nil {
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return
+	}
+
+	// Validate tournament address
+	if _, err := config.ToAddressFromString(params.Address); err != nil {
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err), nil)
+		return
+	}
+
+	tournament, err := s.repository.GetTournament(r.Context(), params.Application, params.Address)
+	if err != nil {
+		s.Logger.Error("Unable to retrieve tournament from repository", "err", err)
+		writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return
+	}
+	if tournament == nil {
+		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Tournament not found", nil)
+		return
+	}
+
+	// Format response according to spec
+	response := struct {
+		Data *model.Tournament `json:"data"`
+	}{
+		Data: tournament,
 	}
 
 	writeRPCResult(w, req.ID, response)
