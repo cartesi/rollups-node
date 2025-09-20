@@ -7,41 +7,614 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
+	"time"
+
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 )
 
-type PrtRepository interface {
-	ListApplications(ctx context.Context, f repository.ApplicationFilter, p repository.Pagination, descending bool) ([]*Application, uint64, error)
+type prtRepository interface {
+	ListApplications(ctx context.Context, f repository.ApplicationFilter,
+		p repository.Pagination, descending bool) ([]*Application, uint64, error)
 	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
+
+	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter,
+		p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
+	UpdateEpoch(ctx context.Context, nameOrAddress string, e *Epoch) error
+	UpdateEpochStatus(ctx context.Context, nameOrAddress string, e *Epoch) error
+
+	CreateTournament(ctx context.Context, nameOrAddress string, t *Tournament) error
+	GetTournament(ctx context.Context, nameOrAddress string, address string) (*Tournament, error)
+	UpdateTournament(ctx context.Context, nameOrAddress string, t *Tournament) error
+	ListTournaments(ctx context.Context, nameOrAddress string, f repository.TournamentFilter,
+		p repository.Pagination, descending bool) ([]*Tournament, uint64, error)
+
+	StoreTournamentEvents(ctx context.Context, appID int64, commitments []*Commitment, matches []*Match,
+		matchAdvanced []*MatchAdvanced, matchDeleted []*Match, lastBlock uint64) error
+
+	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
+	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
 }
 
-func getAllRunningApplications(ctx context.Context, er PrtRepository) ([]*Application, uint64, error) {
-	f := repository.ApplicationFilter{State: Pointer(ApplicationState_Enabled)}
-	return er.ListApplications(ctx, f, repository.Pagination{}, false)
+// EthClientInterface defines the methods we need from ethclient.Client
+type EthClientInterface interface {
+	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
+	ChainID(ctx context.Context) (*big.Int, error)
+}
+
+func getAllRunningApplications(ctx context.Context, r prtRepository) ([]*Application, uint64, error) {
+	f := repository.ApplicationFilter{State: Pointer(ApplicationState_Enabled), ConsensusType: Pointer(Consensus_PRT)}
+	return r.ListApplications(ctx, f, repository.Pagination{}, false)
+}
+
+func getAllClaimComputedEpochs(ctx context.Context, r prtRepository, nameOrAddress string) ([]*Epoch, uint64, error) {
+	f := repository.EpochFilter{Status: Pointer(EpochStatus_ClaimComputed)}
+	return r.ListEpochs(ctx, nameOrAddress, f, repository.Pagination{}, false)
+}
+
+func getAllSubTournaments(
+	ctx context.Context,
+	r prtRepository,
+	nameOrAddress string,
+	epochIndex uint64,
+	tournamentAddress *common.Address,
+	level TournamentLevel,
+) ([]*Tournament, uint64, error) {
+	f := repository.TournamentFilter{EpochIndex: &epochIndex, ParentTournamentAddress: tournamentAddress, Level: (*uint64)(&level)}
+	return r.ListTournaments(ctx, nameOrAddress, f, repository.Pagination{}, false)
 }
 
 // setApplicationInoperable marks an application as inoperable with the given reason,
 // logs any error that occurs during the update, and returns an error with the reason.
-func (v *Service) setApplicationInoperable(ctx context.Context, app *Application, reasonFmt string, args ...interface{}) error {
+func (s *Service) setApplicationInoperable(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
 	reason := fmt.Sprintf(reasonFmt, args...)
 	appAddress := app.IApplicationAddress.String()
 
 	// Log the reason first
-	v.Logger.Error(reason, "application", appAddress)
+	s.Logger.Error(reason, "application", appAddress)
 
 	// Update application state
-	err := v.repository.UpdateApplicationState(ctx, app.ID, ApplicationState_Inoperable, &reason)
+	err := s.repository.UpdateApplicationState(ctx, app.ID, ApplicationState_Inoperable, &reason)
 	if err != nil {
-		v.Logger.Error("failed to update application state to inoperable", "app", appAddress, "err", err)
+		s.Logger.Error("failed to update application state to inoperable", "app", appAddress, "err", err)
 	}
 
 	// Return the error with the reason
 	return errors.New(reason)
 }
 
-func (v *Service) validateApplication(ctx context.Context, app *Application) error {
-	v.Logger.Debug("Starting validation", "application", app.Name)
+func (s *Service) saveTournamentEvents(ctx context.Context, app *Application, epoch *Epoch,
+	tournamentAddress common.Address, events *TournamentEvents, lastBlock uint64) error {
+	commitments := make([]*Commitment, 0, len(events.CommitmentJoined))
+	for _, ev := range events.CommitmentJoined {
+		c := Commitment{
+			ApplicationID:     app.ID,
+			EpochIndex:        epoch.Index,
+			TournamentAddress: tournamentAddress,
+			Commitment:        ev.Commitment,
+			FinalStateHash:    ev.FinalStateHash,
+			SubmitterAddress:  ev.Submitter,
+			BlockNumber:       ev.Raw.BlockNumber,
+			TxHash:            ev.Raw.TxHash,
+		}
+		s.Logger.Info("Found CommitmentJoined event",
+			"application", app.Name,
+			"epoch_index", epoch.Index,
+			"tournament", tournamentAddress.Hex(),
+			"commitment", c.Commitment.String())
+		commitments = append(commitments, &c)
+	}
+
+	matches := make([]*Match, 0, len(events.MatchCreated))
+	for _, ev := range events.MatchCreated {
+		m := Match{
+			ApplicationID:       app.ID,
+			EpochIndex:          epoch.Index,
+			TournamentAddress:   tournamentAddress,
+			IDHash:              ev.MatchIdHash,
+			CommitmentOne:       ev.One,
+			CommitmentTwo:       ev.Two,
+			LeftOfTwo:           ev.LeftOfTwo,
+			BlockNumber:         ev.Raw.BlockNumber,
+			TxHash:              ev.Raw.TxHash,
+			Winner:              WinnerCommitment_NONE,
+			DeletionReason:      MatchDeletionReason_NOT_DELETED,
+			DeletionBlockNumber: 0,
+			DeletionTxHash:      common.Hash{},
+		}
+		s.Logger.Info("Found MatchCreated event",
+			"application", app.Name,
+			"epoch_index", epoch.Index,
+			"tournament", tournamentAddress.Hex(),
+			"id_hash", m.IDHash.String(),
+			"one", m.CommitmentOne.String(),
+			"two", m.CommitmentTwo.String(),
+			"leftOfTwo", m.LeftOfTwo.String())
+		matches = append(matches, &m)
+	}
+
+	matchAdvanced := make([]*MatchAdvanced, 0, len(events.MatchAdvanced))
+	for _, ev := range events.MatchAdvanced {
+		m := &MatchAdvanced{
+			ApplicationID:     app.ID,
+			EpochIndex:        epoch.Index,
+			TournamentAddress: tournamentAddress,
+			IDHash:            ev.MatchIdHash,
+			OtherParent:       ev.OtherParent,
+			LeftNode:          ev.LeftNode,
+			BlockNumber:       ev.Raw.BlockNumber,
+			TxHash:            ev.Raw.TxHash,
+		}
+		s.Logger.Info("Found MatchAdvanced event",
+			"application", app.Name,
+			"epoch_index", epoch.Index,
+			"tournament", tournamentAddress.Hex(),
+			"id_hash", m.IDHash.String(),
+			"other_parent", m.OtherParent.String(),
+			"left_node", m.LeftNode.String())
+		matchAdvanced = append(matchAdvanced, m)
+	}
+
+	matchDeleted := make([]*Match, 0, len(events.MatchDeleted))
+	for _, ev := range events.MatchDeleted {
+		m := Match{
+			ApplicationID:       app.ID,
+			EpochIndex:          epoch.Index,
+			TournamentAddress:   tournamentAddress,
+			IDHash:              ev.MatchIdHash,
+			CommitmentOne:       ev.One,
+			CommitmentTwo:       ev.Two,
+			Winner:              WinnerCommitmentFromUint8(ev.WinnerCommitment),
+			DeletionReason:      MatchDeletionReasonFromUint8(ev.Reason),
+			DeletionBlockNumber: ev.Raw.BlockNumber,
+			DeletionTxHash:      ev.Raw.TxHash,
+		}
+		s.Logger.Info("Found MatchDeleted event",
+			"application", app.Name,
+			"epoch_index", epoch.Index,
+			"tournament", tournamentAddress.Hex(),
+			"id_hash", ((common.Hash)(ev.MatchIdHash)).String(),
+			"one", ((common.Hash)(ev.One)).String(),
+			"two", ((common.Hash)(ev.Two)).String(),
+			"winner", m.Winner.String(),
+			"reason", m.DeletionReason.String(),
+		)
+		matchDeleted = append(matchDeleted, &m)
+	}
+
+	err := s.repository.StoreTournamentEvents(ctx, app.ID, commitments, matches, matchAdvanced, matchDeleted, lastBlock)
+	if err != nil {
+		s.Logger.Error("failed to save tournament events", "application", app.Name,
+			"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
+		return err
+	}
+	return nil
+}
+
+func (s *Service) createTournament(
+	ctx context.Context,
+	app *Application,
+	epoch *Epoch,
+	level TournamentLevel,
+	parentMatchIDHash *common.Hash,
+	parentTournamentAddress *common.Address,
+	tournamentAddress common.Address,
+) (*Tournament, error) {
+	// TODO: use adapters instead of direct contract calls
+	// Type assertion to get the concrete client if possible
+	ethClient, ok := s.client.(*ethclient.Client)
+	if !ok {
+		return nil, fmt.Errorf("client is not an *ethclient.Client, cannot create dave consensus bind")
+	}
+
+	adapter, err := NewITournamentAdapter(tournamentAddress, ethClient, s.filter)
+	if err != nil {
+		s.Logger.Error("failed to create "+level.String()+" tournament adapter", "application", app.Name,
+			"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
+		return nil, err
+	}
+
+	constants, err := adapter.Constants(nil)
+	if err != nil {
+		s.Logger.Error("failed to fetch "+level.String()+" tournament constants", "application", app.Name,
+			"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
+		return nil, err
+	}
+
+	var winnerCommitmentPtr *common.Hash
+	var finalStatePtr *common.Hash
+	finishedAtBlock := uint64(0)
+	if epoch.ClaimTransactionHash != nil {
+		finished, timeFinished, err := adapter.TimeFinished(nil)
+		if err != nil {
+			s.Logger.Error("failed to fetch "+level.String()+" tournament finished at time", "application", app.Name,
+				"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
+			return nil, err
+		}
+		if !finished {
+			s.Logger.Error(level.String()+" tournament should be finished", "application", app.Name,
+				"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
+			return nil, err
+		}
+		finishedAtBlock = timeFinished
+
+		_, winnerCommitment, finalState, err := adapter.Result(nil)
+		if err != nil {
+			s.Logger.Error("failed to fetch "+level.String()+" tournament result", "application", app.Name,
+				"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
+			return nil, err
+		}
+
+		// root tournament with no winner.
+		if level == RootLevel && winnerCommitment == [32]byte{} {
+			return nil, s.setApplicationInoperable(ctx, app,
+				"Epoch %d root tournament %s has finished without winners. Setting application as inoperable.",
+				epoch.Index, tournamentAddress.String())
+		}
+
+		if level == RootLevel && *epoch.Commitment != winnerCommitment {
+			return nil, s.setApplicationInoperable(ctx, app,
+				"Epoch %d has inconsistent commitment between off-chain (%s) and on-chain (%s). Setting application as inoperable.",
+				epoch.Index, epoch.Commitment.String(), hexutil.Encode(winnerCommitment[:]))
+		}
+		winnerCommitmentPtr = new(common.Hash)
+		*winnerCommitmentPtr = winnerCommitment
+
+		finalStatePtr = new(common.Hash)
+		*finalStatePtr = finalState
+	} else {
+		s.Logger.Info("Found open "+level.String()+" tournament", "application", app.Name,
+			"epoch", epoch.Index, "tournament_address", tournamentAddress.String())
+	}
+
+	t := &Tournament{
+		ApplicationID:           app.ID,
+		EpochIndex:              epoch.Index,
+		Address:                 tournamentAddress,
+		ParentMatchIDHash:       parentMatchIDHash,
+		ParentTournamentAddress: parentTournamentAddress,
+		MaxLevel:                constants.MaxLevel,
+		Level:                   constants.Level,
+		Log2Step:                constants.Log2step,
+		Height:                  constants.Height,
+		WinnerCommitment:        winnerCommitmentPtr,
+		FinalStateHash:          finalStatePtr,
+		FinishedAtBlock:         finishedAtBlock,
+	}
+
+	err = s.repository.CreateTournament(ctx, app.IApplicationAddress.Hex(), t)
+	if err != nil {
+		s.Logger.Error("failed to create "+level.String()+" tournament in database", "application", app.Name,
+			"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
+		return nil, err
+	}
+	return t, nil
+}
+
+func (s *Service) updateTournamentIfFinished(
+	ctx context.Context,
+	app *Application,
+	epoch *Epoch,
+	level TournamentLevel,
+	adapter TournamentAdapter,
+	t *Tournament,
+	mostRecentBlock uint64,
+) error {
+	callOpts := &bind.CallOpts{
+		Context:     ctx,
+		BlockNumber: new(big.Int).SetUint64(mostRecentBlock),
+	}
+
+	finished, timeFinished, err := adapter.TimeFinished(callOpts)
+	if err != nil {
+		s.Logger.Error("failed to fetch "+level.String()+" tournament finished at time", "application", app.Name,
+			"epoch", epoch.Index, "tournament_address", t.Address.String(), "error", err)
+		return err
+	}
+	if !finished {
+		return nil
+	}
+	t.FinishedAtBlock = timeFinished
+
+	_, winnerCommitment, finalState, err := adapter.Result(callOpts)
+	if err != nil {
+
+		s.Logger.Error("failed to fetch "+level.String()+" tournament result", "application", app.Name,
+			"epoch", epoch.Index, "tournament_address", t.Address.String(), "error", err)
+		return err
+	}
+
+	// root tournament with no winner.
+	if level == RootLevel && winnerCommitment == [32]byte{} {
+		return s.setApplicationInoperable(ctx, app,
+			"Epoch %d root tournament %s has finished without winners. Setting application as inoperable.",
+			epoch.Index, t.Address.String())
+	}
+
+	if level == RootLevel && *epoch.Commitment != winnerCommitment {
+		return s.setApplicationInoperable(ctx, app, "Epoch %d has inconsistent commitment between off-chain (%s) and on-chain (%s)",
+			epoch.Index, epoch.Commitment.String(), hexutil.Encode(winnerCommitment[:]))
+	}
+	t.WinnerCommitment = new(common.Hash)
+	*t.WinnerCommitment = winnerCommitment
+
+	t.FinalStateHash = new(common.Hash)
+	*t.FinalStateHash = finalState
+
+	return s.repository.UpdateTournament(ctx, app.IApplicationAddress.Hex(), t)
+}
+
+func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentBlock uint64) error {
+	if app.LastTournamentCheckBlock >= mostRecentBlock {
+		s.Logger.Debug("No new blocks since last tournament check", "application", app.Name,
+			"last_tournament_check_block", app.LastTournamentCheckBlock, "most_recent_block", mostRecentBlock)
+		return nil // nothing to do
+	}
+
+	epochs, _, err := getAllClaimComputedEpochs(ctx, s.repository, app.Name)
+	if err != nil {
+		s.Logger.Error("failed to list epochs", "application", app.Name, "error", err)
+		return err
+	}
+	if len(epochs) == 0 {
+		s.Logger.Debug("No epochs with claim computed status", "application", app.Name)
+		return nil // nothing to do
+	}
+
+	// TODO: use adapters instead of direct contract calls
+	// Type assertion to get the concrete client if possible
+	ethClient, ok := s.client.(*ethclient.Client)
+	if !ok {
+		return fmt.Errorf("client is not an *ethclient.Client, cannot create dave consensus bind")
+	}
+
+	consensus, err := idaveconsensus.NewIDaveConsensus(app.IConsensusAddress, ethClient)
+	if err != nil {
+		s.Logger.Error("failed to bind dave consensus contract", "application", app.Name,
+			"consensus_address", app.IConsensusAddress.String(), "error", err)
+		return err
+	}
+
+	for _, epoch := range epochs {
+		if epoch.ClaimTransactionHash == nil { // epoch not claimed on-chain yet
+			err = s.fetchTournamentData(ctx, app, epoch, RootLevel, nil, nil, *epoch.TournamentAddress, mostRecentBlock)
+			if err != nil {
+				s.Logger.Error("failed to fetch root tournament data", "application", app.Name,
+					"epoch", epoch.Index, "tournament", epoch.TournamentAddress.String(), "error", err)
+				return err
+			}
+			break
+		}
+
+		receipt, err := ethClient.TransactionReceipt(ctx, *epoch.ClaimTransactionHash)
+		if err != nil {
+			s.Logger.Error("failed to fetch transaction receipt for epoch", "application", app.Name,
+				"epoch", epoch.Index, "tx", epoch.ClaimTransactionHash, "error", err)
+			return err
+		}
+
+		if receipt.Status != 1 {
+			return fmt.Errorf("EpochSealed transaction hash points to failed transaction")
+		}
+
+		var event *idaveconsensus.IDaveConsensusEpochSealed
+		for _, vLog := range receipt.Logs {
+			event, err = consensus.ParseEpochSealed(*vLog)
+			if err != nil {
+				continue // Skip logs that don't match
+			}
+		}
+		if event == nil {
+			return fmt.Errorf("failed to find EpochSealed event in receipt logs")
+
+		}
+
+		if epoch.Index != event.EpochNumber.Uint64()-1 {
+			return s.setApplicationInoperable(ctx, app, "Epoch %d has inconsistent index between off-chain (%d) and on-chain (%d)",
+				epoch.Index, epoch.Index, event.EpochNumber.Uint64()-1)
+		}
+		if *epoch.MachineHash != event.InitialMachineStateHash {
+			return s.setApplicationInoperable(ctx, app, "Epoch %d has inconsistent machine hash between off-chain (%s) and on-chain (%s)",
+				epoch.Index, epoch.MachineHash.String(), hexutil.Encode(event.InitialMachineStateHash[:]))
+		}
+		if *epoch.ClaimHash != event.OutputsMerkleRoot {
+			return s.setApplicationInoperable(ctx, app, "Epoch %d has inconsistent claim hash between off-chain (%s) and on-chain (%s)",
+				epoch.Index, epoch.ClaimHash.String(), hexutil.Encode(event.OutputsMerkleRoot[:]))
+		}
+
+		err = s.fetchTournamentData(ctx, app, epoch, RootLevel, nil, nil, *epoch.TournamentAddress, mostRecentBlock)
+		if err != nil {
+			s.Logger.Error("failed to fetch tournament data", "application", app.Name,
+				"epoch", epoch.Index, "tournament", epoch.TournamentAddress.String(), "error", err)
+			return err
+		}
+
+		s.Logger.Info("Found finalized epoch. OutputsMerkleRoot matched. Setting claim as accepted",
+			"application", app.Name,
+			"epoch", epoch.Index,
+			"event_block_number", event.Raw.BlockNumber,
+			"claim_hash", fmt.Sprintf("%x", event.OutputsMerkleRoot),
+			"tx", epoch.ClaimTransactionHash,
+		)
+
+		epoch.Status = EpochStatus_ClaimAccepted
+		err = s.repository.UpdateEpochStatus(ctx, app.Name, epoch)
+		if err != nil {
+			s.Logger.Error("failed to update epoch status to claim accepted", "application", app.Name, "epoch", epoch.Index, "error", err)
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) fetchTournamentData(
+	ctx context.Context,
+	app *Application,
+	epoch *Epoch,
+	level TournamentLevel,
+	parentMatchIDHash *common.Hash,
+	parentTournamentAddress *common.Address,
+	tournamentAddress common.Address,
+	mostRecentBlock uint64,
+) error {
+	s.Logger.Debug("Fetching "+level.String()+" tournament data", "application", app.Name, "tournament", tournamentAddress.String())
+	// TODO: use adapters instead of direct contract calls
+	// Type assertion to get the concrete client if possible
+	ethClient, ok := s.client.(*ethclient.Client)
+	if !ok {
+		return fmt.Errorf("client is not an *ethclient.Client, cannot create dave consensus bind")
+	}
+
+	adapter, err := NewITournamentAdapter(tournamentAddress, ethClient, s.filter)
+	if err != nil {
+		s.Logger.Error("failed to create "+level.String()+" tournament adapter", "application", app.Name,
+			"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
+		return err
+	}
+
+	t, err := s.repository.GetTournament(ctx, app.IApplicationAddress.Hex(), tournamentAddress.Hex())
+	if err != nil {
+		s.Logger.Error("failed to load "+level.String()+" tournament from database", "application", app.Name,
+			"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
+		return err
+	}
+	if t == nil {
+		t, err = s.createTournament(ctx, app, epoch, level,
+			parentMatchIDHash, parentTournamentAddress, tournamentAddress)
+		if err != nil {
+			s.Logger.Error("failed to create new "+level.String()+" tournament", "application", app.Name,
+				"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
+			return err
+		}
+	} else if t.FinishedAtBlock == 0 {
+		err = s.updateTournamentIfFinished(ctx, app, epoch, level, adapter, t, mostRecentBlock)
+		if err != nil {
+			s.Logger.Error("failed to check if "+level.String()+" tournament was finished", "application", app.Name,
+				"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
+		}
+		if t.FinishedAtBlock != 0 {
+			s.Logger.Info("Found finished "+level.String()+" tournament", "application", app.Name,
+				"epoch", epoch.Index, "tournament_address", t.Address.String())
+		}
+	}
+
+	nextSearchBlock := max(epoch.LastBlock, app.LastTournamentCheckBlock+1)
+	var endBlock uint64
+	if t.FinishedAtBlock != 0 {
+		if nextSearchBlock > t.FinishedAtBlock {
+			s.Logger.Warn("No new blocks to search for "+level.String()+" tournament events", "application", app.Name,
+				"epoch", epoch.Index, "tournament_address", tournamentAddress.String(),
+				"finished_at_block", t.FinishedAtBlock, "next_search_block", nextSearchBlock)
+			return nil
+		}
+		endBlock = t.FinishedAtBlock
+	} else {
+		endBlock = mostRecentBlock
+	}
+
+	s.Logger.Debug("Searching for "+level.String()+" tournament events", "application", app.Name,
+		"epoch", epoch.Index, "tournament_address", tournamentAddress.String(),
+		"next_search_block", nextSearchBlock, "end_block", endBlock)
+	opts := &bind.FilterOpts{
+		Context: ctx,
+		Start:   nextSearchBlock,
+		End:     &endBlock,
+	}
+
+	events, err := adapter.RetrieveAllEvents(opts)
+	if err != nil {
+		s.Logger.Error("failed to retrieve all events from "+level.String()+" tournament", "application", app.Name,
+			"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
+		return err
+	}
+
+	s.Logger.Debug("Retrieved events for "+level.String()+" tournament", "address", t.Address.String(),
+		"epoch", epoch.Index,
+		"commitmentJoined", len(events.CommitmentJoined),
+		"matchCreated", len(events.MatchCreated),
+		"matchAdvanced", len(events.MatchAdvanced),
+		"matchDeleted", len(events.MatchDeleted),
+		"newInnerTournament", len(events.NewInnerTournament))
+
+	err = s.saveTournamentEvents(ctx, app, epoch, tournamentAddress, events, endBlock)
+	if err != nil {
+		s.Logger.Error("failed to save events for "+level.String()+" tournament", "application", app.Name,
+			"epoch", epoch.Index, "tournament_address", t.Address.String(), "error", err)
+		return err
+	}
+
+	if level == BottomLevel {
+		return nil // no inner tournaments
+	}
+
+	nextLevel := level + 1
+	innerTournaments, _, err := getAllSubTournaments(ctx, s.repository, app.Name, epoch.Index, &tournamentAddress, level+1)
+	if err != nil {
+		s.Logger.Error("failed to list inner tournaments from "+level.String()+" tournament", "application", app.Name,
+			"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
+		return err
+	}
+
+	for _, i := range innerTournaments {
+		s.Logger.Debug("Fetching data for previous open "+nextLevel.String()+" tournament",
+			"parent_match_id_hash", i.ParentMatchIDHash.String(),
+			"parent_tournament_address", i.ParentTournamentAddress.String(),
+			"address", i.Address.String())
+
+		if i.FinishedAtBlock != 0 {
+			s.Logger.Debug("Skipping finished inner tournament", "address", i.Address.String())
+			continue // already finished
+		}
+
+		err = s.fetchTournamentData(ctx, app, epoch, nextLevel, i.ParentMatchIDHash, &tournamentAddress, i.Address, mostRecentBlock)
+		if err != nil {
+			s.Logger.Error("failed to fetch "+nextLevel.String()+" tournament data", "application", app.Name,
+				"tournament", i.Address.String(), "error", err)
+			return err
+		}
+	}
+
+	for _, newInner := range events.NewInnerTournament {
+		hashID := (common.Hash)(newInner.MatchIdHash)
+		childAddress := newInner.ChildTournament
+
+		s.Logger.Info("NewInnerTournament event", "id_hash", hashID.String(), "tournament_address", childAddress.String())
+
+		err = s.fetchTournamentData(ctx, app, epoch, nextLevel, &hashID, &tournamentAddress, childAddress, mostRecentBlock)
+		if err != nil {
+			s.Logger.Error("failed to fetch "+nextLevel.String()+" tournament data", "application", app.Name,
+				"tournament", childAddress.String(), "error", err)
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) validateApplication(ctx context.Context, app *Application) error {
+	s.Logger.Debug("Syncing PTR tournaments", "application", app.Name)
+	// TODO: use adapters instead of direct contract calls
+	// Type assertion to get the concrete client if possible
+	ethClient, ok := s.client.(*ethclient.Client)
+	if !ok {
+		return fmt.Errorf("client is not an *ethclient.Client ")
+	}
+	mostRecentBlock, err := ethClient.BlockNumber(ctx)
+	if err != nil {
+		s.Logger.Error("failed to fetch latest block number", "application", app.Name, "error", err)
+		return err
+	}
+	err = s.checkEpochs(ctx, app, mostRecentBlock)
+	if err != nil {
+		return err
+	}
 	return nil
 }

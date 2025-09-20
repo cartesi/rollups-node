@@ -184,6 +184,10 @@ func run(cmd *cobra.Command, args []string) {
 	createInfo.ClaimerClient, err = createEthClient(ctx, cfg.BlockchainHttpEndpoint.String(), logger)
 	cobra.CheckErr(err)
 
+	logger = service.NewLogger(cfg.LogLevel, cfg.LogColor).With("service", "prt")
+	createInfo.PrtClient, err = createEthClient(ctx, cfg.BlockchainHttpEndpoint.String(), logger)
+	cobra.CheckErr(err)
+
 	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.String())
 	cobra.CheckErr(err)
 	defer createInfo.Repository.Close()

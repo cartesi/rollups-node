@@ -27,6 +27,7 @@ type CreateInfo struct {
 
 	Config config.NodeConfig
 
+	PrtClient      *ethclient.Client
 	ClaimerClient  *ethclient.Client
 	ReaderClient   *ethclient.Client
 	ReaderWSClient *ethclient.Client
@@ -37,7 +38,6 @@ type Service struct {
 	service.Service
 
 	Children   []service.IService
-	Client     *ethclient.Client
 	Repository repository.Repository
 }
 
@@ -88,6 +88,11 @@ func createServices(ctx context.Context, c *CreateInfo, s *Service) error {
 	numChildren++
 	go func() {
 		ch <- newClaimer(ctx, c, s)
+	}()
+
+	numChildren++
+	go func() {
+		ch <- newPrt(ctx, c, s)
 	}()
 
 	if c.Config.FeatureJsonrpcApiEnabled {
@@ -270,11 +275,12 @@ func newPrt(ctx context.Context, c *CreateInfo, s *Service) service.IService {
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
 			TelemetryCreate:      false,
-			PollInterval:         c.Config.ValidatorPollingInterval,
+			PollInterval:         c.Config.PrtPollingInterval,
 			ServeMux:             s.ServeMux,
 		},
+		EthClient:  c.PrtClient,
 		Repository: c.Repository,
-		Config:     *c.Config.ToValidatorConfig(),
+		Config:     *c.Config.ToPrtConfig(),
 	}
 
 	prtService, err := prt.Create(ctx, &prtArgs)
