@@ -101,6 +101,33 @@ func getReportNextIndex(
 	return currentIndex, nil
 }
 
+func getStateHashNextIndex(
+	ctx context.Context,
+	tx pgx.Tx,
+	appID int64,
+	epochIndex uint64,
+) (uint64, error) {
+
+	query := table.StateHashes.SELECT(
+		postgres.COALESCE(
+			postgres.Float(1).ADD(postgres.MAXf(table.StateHashes.Index)),
+			postgres.Float(0),
+		),
+	).WHERE(
+		table.StateHashes.InputEpochApplicationID.EQ(postgres.Int64(appID)).
+			AND(table.StateHashes.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", epochIndex)))),
+	)
+
+	queryStr, args := query.Sql()
+	var currentIndex uint64
+	err := tx.QueryRow(ctx, queryStr, args...).Scan(&currentIndex)
+	if err != nil {
+		err = fmt.Errorf("failed to get the next state hash index: %w", err)
+		return 0, errors.Join(err, tx.Rollback(ctx))
+	}
+	return currentIndex, nil
+}
+
 func insertOutputs(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -170,6 +197,59 @@ func insertReports(
 			data,
 		)
 	}
+
+	sqlStr, args := stmt.Sql()
+	_, err = tx.Exec(ctx, sqlStr, args...)
+	if err != nil {
+		return errors.Join(err, tx.Rollback(ctx))
+	}
+	return nil
+}
+
+func insertStateHashes(
+	ctx context.Context,
+	tx pgx.Tx,
+	appID int64,
+	epochIndex uint64,
+	inputIndex uint64,
+	hashes [][32]byte,
+	machineHash common.Hash,
+	remainingMetaCycles uint64,
+) error {
+
+	nextIndex, err := getStateHashNextIndex(ctx, tx, appID, epochIndex)
+	if err != nil {
+		return err
+	}
+
+	stmt := table.StateHashes.INSERT(
+		table.StateHashes.InputEpochApplicationID,
+		table.StateHashes.EpochIndex,
+		table.StateHashes.InputIndex,
+		table.StateHashes.Index,
+		table.StateHashes.MachineHash,
+		table.StateHashes.Repetitions,
+	)
+
+	for i, h := range hashes {
+		stmt = stmt.VALUES(
+			appID,
+			epochIndex,
+			inputIndex,
+			nextIndex+uint64(i),
+			h[:],
+			1,
+		)
+	}
+
+	stmt = stmt.VALUES(
+		appID,
+		epochIndex,
+		inputIndex,
+		nextIndex+uint64(len(hashes)),
+		machineHash[:],
+		remainingMetaCycles,
+	)
 
 	sqlStr, args := stmt.Sql()
 	_, err = tx.Exec(ctx, sqlStr, args...)
@@ -267,7 +347,14 @@ func (r *PostgresRepository) StoreAdvanceResult(
 		}
 	}
 
-	err = updateInput(ctx, tx, appID, res.InputIndex, res.Status, res.OutputsHash, *res.MachineHash)
+	if res.IsDaveConsensus {
+		err = insertStateHashes(ctx, tx, appID, res.EpochIndex, res.InputIndex, res.Hashes, res.MachineHash, res.RemainingMetaCycles)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = updateInput(ctx, tx, appID, res.InputIndex, res.Status, res.OutputsHash, res.MachineHash)
 	if err != nil {
 		return err
 	}
@@ -295,11 +382,13 @@ func updateEpochClaim(
 		UPDATE(
 			table.Epoch.MachineHash,
 			table.Epoch.ClaimHash,
+			table.Epoch.Commitment,
 			table.Epoch.Status,
 		).
 		SET(
 			e.MachineHash,
 			e.ClaimHash,
+			e.Commitment,
 			postgres.NewEnumValue(model.EpochStatus_ClaimComputed.String()),
 		).
 		WHERE(
@@ -400,26 +489,223 @@ func (r *PostgresRepository) StoreClaimAndProofs(ctx context.Context, epoch *mod
 	return nil
 }
 
-func (r *PostgresRepository) UpdateInputSnapshotURI(ctx context.Context, appId int64, inputIndex uint64, snapshotURI string) error {
-	updStmt := table.Input.
-		UPDATE(
-			table.Input.SnapshotURI,
-		).
-		SET(
-			snapshotURI,
-		).
-		WHERE(
-			table.Input.EpochApplicationID.EQ(postgres.Int64(appId)).
-				AND(table.Input.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", inputIndex)))),
+func insertCommitments(ctx context.Context, tx pgx.Tx, appID int64, commitments []*model.Commitment) error {
+	if len(commitments) < 1 {
+		return nil
+	}
+
+	stmt := table.Commitments.INSERT(
+		table.Commitments.ApplicationID,
+		table.Commitments.EpochIndex,
+		table.Commitments.TournamentAddress,
+		table.Commitments.Commitment,
+		table.Commitments.FinalStateHash,
+		table.Commitments.SubmitterAddress,
+		table.Commitments.BlockNumber,
+		table.Commitments.TxHash,
+	)
+	for _, c := range commitments {
+		stmt = stmt.VALUES(
+			appID,
+			c.EpochIndex,
+			c.TournamentAddress,
+			c.Commitment,
+			c.FinalStateHash,
+			c.SubmitterAddress,
+			c.BlockNumber,
+			c.TxHash,
+		)
+	}
+
+	sqlStr, args := stmt.Sql()
+	_, err := tx.Exec(ctx, sqlStr, args...)
+	if err != nil {
+		return errors.Join(err, tx.Rollback(ctx))
+	}
+	return nil
+}
+
+func insertMatches(ctx context.Context, tx pgx.Tx, appID int64, matches []*model.Match) error {
+	if len(matches) < 1 {
+		return nil
+	}
+
+	stmt := table.Matches.INSERT(
+		table.Matches.ApplicationID,
+		table.Matches.EpochIndex,
+		table.Matches.TournamentAddress,
+		table.Matches.IDHash,
+		table.Matches.CommitmentOne,
+		table.Matches.CommitmentTwo,
+		table.Matches.LeftOfTwo,
+		table.Matches.BlockNumber,
+		table.Matches.TxHash,
+		table.Matches.Winner,
+		table.Matches.DeletionReason,
+		table.Matches.DeletionBlockNumber,
+		table.Matches.DeletionTxHash,
+	)
+	for _, m := range matches {
+		stmt = stmt.VALUES(
+			appID,
+			m.EpochIndex,
+			m.TournamentAddress,
+			m.IDHash,
+			m.CommitmentOne,
+			m.CommitmentTwo,
+			m.LeftOfTwo,
+			m.BlockNumber,
+			m.TxHash,
+			m.Winner,
+			m.DeletionReason,
+			m.DeletionBlockNumber,
+			m.DeletionTxHash,
+		)
+	}
+
+	sqlStr, args := stmt.Sql()
+	_, err := tx.Exec(ctx, sqlStr, args...)
+	if err != nil {
+		return errors.Join(err, tx.Rollback(ctx))
+	}
+	return nil
+}
+
+func insertMatchAdvanced(ctx context.Context, tx pgx.Tx, appID int64, matchAdvanced []*model.MatchAdvanced) error {
+	if len(matchAdvanced) < 1 {
+		return nil
+	}
+
+	stmt := table.MatchAdvances.INSERT(
+		table.MatchAdvances.ApplicationID,
+		table.MatchAdvances.EpochIndex,
+		table.MatchAdvances.TournamentAddress,
+		table.MatchAdvances.IDHash,
+		table.MatchAdvances.OtherParent,
+		table.MatchAdvances.LeftNode,
+		table.MatchAdvances.BlockNumber,
+		table.MatchAdvances.TxHash,
+	)
+	for _, ma := range matchAdvanced {
+		stmt = stmt.VALUES(
+			appID,
+			ma.EpochIndex,
+			ma.TournamentAddress,
+			ma.IDHash,
+			ma.OtherParent,
+			ma.LeftNode,
+			ma.BlockNumber,
+			ma.TxHash,
+		)
+	}
+
+	sqlStr, args := stmt.Sql()
+	_, err := tx.Exec(ctx, sqlStr, args...)
+	if err != nil {
+		return errors.Join(err, tx.Rollback(ctx))
+	}
+	return nil
+}
+
+func updateMatches(ctx context.Context, tx pgx.Tx, appID int64, matches []*model.Match) error {
+	for _, m := range matches {
+		updStmt := table.Matches.UPDATE(
+			table.Matches.Winner,
+			table.Matches.DeletionReason,
+			table.Matches.DeletionBlockNumber,
+			table.Matches.DeletionTxHash,
+		).SET(
+			m.Winner,
+			m.DeletionReason,
+			m.DeletionBlockNumber,
+			m.DeletionTxHash,
+		).WHERE(
+			table.Matches.ApplicationID.EQ(postgres.Int64(appID)).
+				AND(table.Matches.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", m.EpochIndex)))).
+				AND(table.Matches.TournamentAddress.EQ(postgres.Bytea(m.TournamentAddress.Bytes()))).
+				AND(table.Matches.IDHash.EQ(postgres.Bytea(m.IDHash.Bytes()))),
 		)
 
-	sqlStr, args := updStmt.Sql()
-	cmd, err := r.db.Exec(ctx, sqlStr, args...)
+		sqlStr, args := updStmt.Sql()
+		cmd, err := tx.Exec(ctx, sqlStr, args...)
+		if err != nil {
+			return errors.Join(err, tx.Rollback(ctx))
+		}
+		if cmd.RowsAffected() == 0 {
+			return errors.Join(
+				fmt.Errorf("no match found for update: app %d, epoch %d, tournament %s, idHash %s", m.ApplicationID, m.EpochIndex, m.TournamentAddress.Hex(), m.IDHash.Hex()),
+				tx.Rollback(ctx),
+			)
+		}
+	}
+	return nil
+}
+
+func updateLastProcessedBlock(ctx context.Context, tx pgx.Tx, appID int64, lastProcessedBlock uint64) error {
+	lastBlock := postgres.RawFloat(fmt.Sprintf("%d", lastProcessedBlock))
+	appUpdateStmt := table.Application.
+		UPDATE(
+			table.Application.LastTournamentCheckBlock,
+		).
+		SET(
+			lastBlock,
+		).
+		WHERE(postgres.AND(
+			table.Application.ID.EQ(postgres.Int64(appID)),
+			table.Application.LastTournamentCheckBlock.LT(lastBlock),
+		))
+
+	sqlStr, args := appUpdateStmt.Sql()
+	_, err := tx.Exec(ctx, sqlStr, args...)
+	if err != nil {
+		return errors.Join(err, tx.Rollback(ctx))
+	}
+	return nil
+}
+
+func (r *PostgresRepository) StoreTournamentEvents(
+	ctx context.Context,
+	appID int64,
+	commitments []*model.Commitment,
+	matches []*model.Match,
+	matchAdvanced []*model.MatchAdvanced,
+	matchDeleted []*model.Match,
+	lastProcessedBlock uint64,
+) error {
+	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	if cmd.RowsAffected() == 0 {
-		return fmt.Errorf("no input found with appId %d and index %d", appId, inputIndex)
+
+	err = insertCommitments(ctx, tx, appID, commitments)
+	if err != nil {
+		return err
 	}
+
+	err = insertMatches(ctx, tx, appID, matches)
+	if err != nil {
+		return err
+	}
+
+	err = insertMatchAdvanced(ctx, tx, appID, matchAdvanced)
+	if err != nil {
+		return err
+	}
+
+	err = updateMatches(ctx, tx, appID, matchDeleted)
+	if err != nil {
+		return err
+	}
+
+	err = updateLastProcessedBlock(ctx, tx, appID, lastProcessedBlock)
+	if err != nil {
+		return err
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return errors.Join(err, tx.Rollback(ctx))
+	}
+
 	return nil
 }

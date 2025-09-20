@@ -25,6 +25,7 @@ func (r *PostgresRepository) CreateEpoch(
 		table.Epoch.ClaimHash,
 		table.Epoch.ClaimTransactionHash,
 		table.Epoch.TournamentAddress,
+		table.Epoch.Commitment,
 		table.Epoch.Status,
 		table.Epoch.VirtualIndex,
 	).VALUES(
@@ -38,6 +39,7 @@ func (r *PostgresRepository) CreateEpoch(
 		e.ClaimHash,
 		e.ClaimTransactionHash,
 		e.TournamentAddress,
+		e.Commitment,
 		e.Status,
 		e.VirtualIndex,
 	)

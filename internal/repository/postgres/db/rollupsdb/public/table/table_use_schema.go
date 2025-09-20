@@ -11,11 +11,16 @@ package table
 // this method only once at the beginning of the program.
 func UseSchema(schema string) {
 	Application = Application.FromSchema(schema)
+	Commitments = Commitments.FromSchema(schema)
 	Epoch = Epoch.FromSchema(schema)
 	ExecutionParameters = ExecutionParameters.FromSchema(schema)
 	Input = Input.FromSchema(schema)
+	MatchAdvances = MatchAdvances.FromSchema(schema)
+	Matches = Matches.FromSchema(schema)
 	NodeConfig = NodeConfig.FromSchema(schema)
 	Output = Output.FromSchema(schema)
 	Report = Report.FromSchema(schema)
 	SchemaMigrations = SchemaMigrations.FromSchema(schema)
+	StateHashes = StateHashes.FromSchema(schema)
+	Tournaments = Tournaments.FromSchema(schema)
 }

@@ -40,6 +40,7 @@ func (r *PostgresRepository) CreateApplication(
 			table.Application.LastEpochCheckBlock,
 			table.Application.LastInputCheckBlock,
 			table.Application.LastOutputCheckBlock,
+			table.Application.LastTournamentCheckBlock,
 			table.Application.ProcessedInputs,
 		).
 		VALUES(
@@ -50,13 +51,14 @@ func (r *PostgresRepository) CreateApplication(
 			app.TemplateHash,
 			app.TemplateURI,
 			app.EpochLength,
-			app.DataAvailability[:],
+			app.DataAvailability,
 			app.ConsensusType,
 			app.State,
 			app.IInputBoxBlock,
 			app.LastEpochCheckBlock,
 			app.LastInputCheckBlock,
 			app.LastOutputCheckBlock,
+			app.LastTournamentCheckBlock,
 			app.ProcessedInputs,
 		).
 		RETURNING(table.Application.ID)
@@ -158,6 +160,7 @@ func (r *PostgresRepository) GetApplication(
 			table.Application.LastEpochCheckBlock,
 			table.Application.LastInputCheckBlock,
 			table.Application.LastOutputCheckBlock,
+			table.Application.LastTournamentCheckBlock,
 			table.Application.ProcessedInputs,
 			table.Application.CreatedAt,
 			table.Application.UpdatedAt,
@@ -207,6 +210,7 @@ func (r *PostgresRepository) GetApplication(
 		&app.LastEpochCheckBlock,
 		&app.LastInputCheckBlock,
 		&app.LastOutputCheckBlock,
+		&app.LastTournamentCheckBlock,
 		&app.ProcessedInputs,
 		&app.CreatedAt,
 		&app.UpdatedAt,
@@ -286,6 +290,7 @@ func (r *PostgresRepository) UpdateApplication(
 			table.Application.LastEpochCheckBlock,
 			table.Application.LastInputCheckBlock,
 			table.Application.LastOutputCheckBlock,
+			table.Application.LastTournamentCheckBlock,
 			table.Application.ProcessedInputs,
 		).
 		SET(
@@ -296,7 +301,7 @@ func (r *PostgresRepository) UpdateApplication(
 			app.TemplateHash,
 			app.TemplateURI,
 			app.EpochLength,
-			app.DataAvailability[:],
+			app.DataAvailability,
 			app.ConsensusType,
 			app.State,
 			app.Reason,
@@ -304,6 +309,7 @@ func (r *PostgresRepository) UpdateApplication(
 			app.LastEpochCheckBlock,
 			app.LastInputCheckBlock,
 			app.LastOutputCheckBlock,
+			app.LastTournamentCheckBlock,
 			app.ProcessedInputs,
 		).
 		WHERE(table.Application.ID.EQ(postgres.Int(app.ID)))
@@ -344,6 +350,20 @@ func getColumnForEvent(event model.MonitoredEvent) (postgres.ColumnFloat, error)
 		return table.Application.LastInputCheckBlock, nil
 	case model.MonitoredEvent_OutputExecuted:
 		return table.Application.LastOutputCheckBlock, nil
+	case model.MonitoredEvent_CommitmentJoined:
+		fallthrough
+	case model.MonitoredEvent_MatchAdvanced:
+		fallthrough
+	case model.MonitoredEvent_MatchCreated:
+		fallthrough
+	case model.MonitoredEvent_MatchDeleted:
+		fallthrough
+	case model.MonitoredEvent_NewInnerTournament:
+		return table.Application.LastTournamentCheckBlock, nil
+	case model.MonitoredEvent_ClaimSubmitted:
+		fallthrough
+	case model.MonitoredEvent_ClaimAccepted:
+		fallthrough
 	default:
 		return nil, fmt.Errorf("invalid monitored event type: %v", event)
 	}
@@ -517,6 +537,7 @@ func (r *PostgresRepository) ListApplications(
 			table.Application.LastEpochCheckBlock,
 			table.Application.LastInputCheckBlock,
 			table.Application.LastOutputCheckBlock,
+			table.Application.LastTournamentCheckBlock,
 			table.Application.ProcessedInputs,
 			table.Application.CreatedAt,
 			table.Application.UpdatedAt,
@@ -605,6 +626,7 @@ func (r *PostgresRepository) ListApplications(
 			&app.LastEpochCheckBlock,
 			&app.LastInputCheckBlock,
 			&app.LastOutputCheckBlock,
+			&app.LastTournamentCheckBlock,
 			&app.ProcessedInputs,
 			&app.CreatedAt,
 			&app.UpdatedAt,

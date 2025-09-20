@@ -498,6 +498,466 @@
 			}
 		},
 		{
+			"name": "cartesi_listTournaments",
+			"summary": "Retrieve a List of Tournaments",
+			"description": "Returns a paginated list of Tournaments, with options to filter by epoch index or level.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "epoch_index",
+					"description": "Filter tournaments by a specific epoch index (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": false
+				},
+				{
+					"name": "level",
+					"description": "Filter tournaments by level.",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": false
+				},
+				{
+					"name": "parent_tournament_address",
+					"description": "Filter tournaments by parent tournament address (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"required": false
+				},
+				{
+					"name": "parent_match_id_hash",
+					"description": "Filter tournaments by parent match id hash (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"required": false
+				},
+				{
+					"name": "limit",
+					"description": "The maximum number of tournaments to return per page.",
+					"schema": {
+						"type": "integer",
+						"minimum": 1,
+						"default": 50
+					},
+					"required": false
+				},
+				{
+					"name": "offset",
+					"description": "The starting point for the list of tournaments to return.",
+					"schema": {
+						"type": "integer",
+						"minimum": 0,
+						"default": 0
+					},
+					"required": false
+				},
+				{
+					"name": "descending",
+					"description": "if true, the list will be sorted in descending order by epoch index.",
+					"schema": {
+						"type": "boolean",
+						"default": false
+					},
+					"required": false
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/TournamentListResult"
+				}
+			}
+		},
+		{
+			"name": "cartesi_getTournament",
+			"summary": "Retrieve a specific tournament",
+			"description": "Retrieves a single tournament from the application using the specified address.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "address",
+					"description": "The address of the tournament (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"required": true
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/TournamentGetResult"
+				}
+			}
+		},
+		{
+			"name": "cartesi_listCommitments",
+			"summary": "List commitments",
+			"description": "Returns a paginated list of commitments for the specified application. Can filter by epoch index and tournament address.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "epoch_index",
+					"description": "Filter commitments by a specific epoch index (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": false
+				},
+				{
+					"name": "tournament_address",
+					"description": "Filter commitments by tournament address (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"required": false
+				},
+				{
+					"name": "limit",
+					"description": "The maximum number of commitments to return per page.",
+					"schema": {
+						"type": "integer",
+						"minimum": 1,
+						"default": 50
+					},
+					"required": false
+				},
+				{
+					"name": "offset",
+					"description": "The starting point for the list of commitments to return.",
+					"schema": {
+						"type": "integer",
+						"minimum": 0,
+						"default": 0
+					},
+					"required": false
+				},
+				{
+					"name": "descending",
+					"description": "if true, the list will be sorted in descending order by epoch index.",
+					"schema": {
+						"type": "boolean",
+						"default": false
+					},
+					"required": false
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/CommitmentListResult"
+				}
+			}
+		},
+		{
+			"name": "cartesi_getCommitment",
+			"summary": "Get a specific commitment",
+			"description": "Fetches a single commitment by application, epoch index, tournament address and commitment hash.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "epoch_index",
+					"description": "The index of the epoch (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": true
+				},
+				{
+					"name": "tournament_address",
+					"description": "The tournament address (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "commitment",
+					"description": "The commitment hash (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"required": true
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/CommitmentGetResult"
+				}
+			}
+		},
+		{
+			"name": "cartesi_listMatches",
+			"summary": "List matches",
+			"description": "Returns a paginated list of matches for the specified application. Can filter by epoch index and tournament address.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "epoch_index",
+					"description": "Filter matches by a specific epoch index (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": false
+				},
+				{
+					"name": "tournament_address",
+					"description": "Filter matches by tournament address (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"required": false
+				},
+				{
+					"name": "limit",
+					"description": "The maximum number of matches to return per page.",
+					"schema": {
+						"type": "integer",
+						"minimum": 1,
+						"default": 50
+					},
+					"required": false
+				},
+				{
+					"name": "offset",
+					"description": "The starting point for the list of matches to return.",
+					"schema": {
+						"type": "integer",
+						"minimum": 0,
+						"default": 0
+					},
+					"required": false
+				},
+				{
+					"name": "descending",
+					"description": "if true, the list will be sorted in descending order by epoch index.",
+					"schema": {
+						"type": "boolean",
+						"default": false
+					},
+					"required": false
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/MatchListResult"
+				}
+			}
+		},
+		{
+			"name": "cartesi_getMatch",
+			"summary": "Get a specific match",
+			"description": "Fetches a single match by application, epoch index, tournament address and ID hash.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "epoch_index",
+					"description": "The index of the epoch (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": true
+				},
+				{
+					"name": "tournament_address",
+					"description": "The tournament address (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "id_hash",
+					"description": "The ID hash of the match (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"required": true
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/MatchGetResult"
+				}
+			}
+		},
+		{
+			"name": "cartesi_listMatchAdvances",
+			"summary": "List match advances",
+			"description": "Returns a paginated list of match advances for the specified match.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "epoch_index",
+					"description": "Filter match advances by a specific epoch index (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": true
+				},
+				{
+					"name": "tournament_address",
+					"description": "Filter match advances by tournament address (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "id_hash",
+					"description": "The ID hash of the match (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"required": true
+				},
+				{
+					"name": "limit",
+					"description": "The maximum number of match advances to return per page.",
+					"schema": {
+						"type": "integer",
+						"minimum": 1,
+						"default": 50
+					},
+					"required": false
+				},
+				{
+					"name": "offset",
+					"description": "The starting point for the list of match advances to return.",
+					"schema": {
+						"type": "integer",
+						"minimum": 0,
+						"default": 0
+					},
+					"required": false
+				},
+				{
+					"name": "descending",
+					"description": "if true, the list will be sorted in descending order by epoch index.",
+					"schema": {
+						"type": "boolean",
+						"default": false
+					},
+					"required": false
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/MatchAdvancedListResult"
+				}
+			}
+		},
+		{
+			"name": "cartesi_getMatchAdvanced",
+			"summary": "Get a specific match advance",
+			"description": "Fetches a single match advance by application, epoch index, tournament address, ID hash and parent.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "epoch_index",
+					"description": "The index of the epoch (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": true
+				},
+				{
+					"name": "tournament_address",
+					"description": "The tournament address (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "id_hash",
+					"description": "The ID hash of the match advance (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"required": true
+				},
+				{
+					"name": "parent",
+					"description": "The parent hash of the match advance (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"required": true
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/MatchAdvancedGetResult"
+				}
+			}
+		},
+		{
 			"name": "cartesi_getChainId",
 			"summary": "Get node's chain ID",
 			"description": "Fetches the chain ID that node is operating on.",
@@ -583,6 +1043,9 @@
 					"last_output_check_block": {
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
+					"last_tournament_check_block": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
 					"processed_inputs": {
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
@@ -665,6 +1128,10 @@
 					},
 					"tournament_address": {
 						"$ref": "#/components/schemas/EthereumAddress",
+						"nullable": true
+					},
+					"commitment": {
+						"$ref": "#/components/schemas/Hash",
 						"nullable": true
 					},
 					"status": {
@@ -1136,6 +1603,278 @@
 						"$ref": "#/components/schemas/EthereumAddress"
 					}
 				]
+			},
+			"WinnerCommitment": {
+				"type": "string",
+				"enum": [
+					"NONE",
+					"ONE",
+					"TWO"
+				]
+			},
+			"MatchDeletionReason": {
+				"type": "string",
+				"enum": [
+					"STEP",
+					"TIMEOUT",
+					"CHILD_TOURNAMENT",
+					"NOT_DELETED"
+				]
+			},
+			"Tournament": {
+				"type": "object",
+				"properties": {
+					"epoch_index": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"address": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"parent_tournament_address": {
+						"$ref": "#/components/schemas/EthereumAddress",
+						"nullable": true
+					},
+					"parent_match_id_hash": {
+						"$ref": "#/components/schemas/Hash",
+						"nullable": true
+					},
+					"max_level": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"level": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"log2step": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"height": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"winner_commitment": {
+						"$ref": "#/components/schemas/Hash",
+						"nullable": true
+					},
+					"final_state_hash": {
+						"$ref": "#/components/schemas/Hash",
+						"nullable": true
+					},
+					"finished_at_block": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"updated_at": {
+						"type": "string",
+						"format": "date-time"
+					}
+				}
+			},
+			"TournamentListResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"type": "array",
+						"items": {
+							"$ref": "#/components/schemas/Tournament"
+						}
+					},
+					"pagination": {
+						"$ref": "#/components/schemas/Pagination"
+					}
+				}
+			},
+			"TournamentGetResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"$ref": "#/components/schemas/Tournament"
+					}
+				}
+			},
+			"Commitment": {
+				"type": "object",
+				"properties": {
+					"epoch_index": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"tournament_address": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"commitment": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"final_state_hash": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"submitter_address": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"block_number": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"tx_hash": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"updated_at": {
+						"type": "string",
+						"format": "date-time"
+					}
+				}
+			},
+			"CommitmentListResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"type": "array",
+						"items": {
+							"$ref": "#/components/schemas/Commitment"
+						}
+					},
+					"pagination": {
+						"$ref": "#/components/schemas/Pagination"
+					}
+				}
+			},
+			"CommitmentGetResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"$ref": "#/components/schemas/Commitment"
+					}
+				}
+			},
+			"Match": {
+				"type": "object",
+				"properties": {
+					"epoch_index": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"tournament_address": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"id_hash": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"commitment_one": {
+						"$ref": "#/components/schemas/ByteArray"
+					},
+					"commitment_two": {
+						"$ref": "#/components/schemas/ByteArray"
+					},
+					"left_of_two": {
+						"$ref": "#/components/schemas/ByteArray"
+					},
+					"block_number": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"tx_hash": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"winner_commitment": {
+						"$ref": "#/components/schemas/WinnerCommitment"
+					},
+					"deletion_reason": {
+						"$ref": "#/components/schemas/MatchDeletionReason"
+					},
+					"deletion_block_number": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"deletion_tx_hash": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"updated_at": {
+						"type": "string",
+						"format": "date-time"
+					}
+				}
+			},
+			"MatchListResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"type": "array",
+						"items": {
+							"$ref": "#/components/schemas/Match"
+						}
+					},
+					"pagination": {
+						"$ref": "#/components/schemas/Pagination"
+					}
+				}
+			},
+			"MatchGetResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"$ref": "#/components/schemas/Match"
+					}
+				}
+			},
+			"MatchAdvanced": {
+				"type": "object",
+				"properties": {
+					"epoch_index": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"tournament_address": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"id_hash": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"other_parent": {
+						"$ref": "#/components/schemas/ByteArray"
+					},
+					"left_node": {
+						"$ref": "#/components/schemas/ByteArray"
+					},
+					"block_number": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"tx_hash": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"updated_at": {
+						"type": "string",
+						"format": "date-time"
+					}
+				}
+			},
+			"MatchAdvancedListResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"type": "array",
+						"items": {
+							"$ref": "#/components/schemas/MatchAdvanced"
+						}
+					},
+					"pagination": {
+						"$ref": "#/components/schemas/Pagination"
+					}
+				}
+			},
+			"MatchAdvancedGetResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"$ref": "#/components/schemas/MatchAdvanced"
+					}
+				}
 			}
 		}
 	}

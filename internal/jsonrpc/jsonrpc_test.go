@@ -140,7 +140,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(t, ctx, 0, nr)
+			s.newTestApplication(ctx, t, 0, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_getApplication",
@@ -185,7 +185,7 @@ func TestMethod(t *testing.T) {
 
 			// NodeConfig provision
 			nr := uint64(0xdeadbeef)
-			repository.SaveNodeConfig(ctx, s.repository,
+			err := repository.SaveNodeConfig(ctx, s.repository,
 				&model.NodeConfig[evmreader.PersistentConfig]{
 					Key: evmreader.EvmReaderConfigKey,
 					Value: evmreader.PersistentConfig{
@@ -193,6 +193,7 @@ func TestMethod(t *testing.T) {
 					},
 				},
 			)
+			assert.Nil(t, err, "on test case: %v, when saving evm reader config", t.Name())
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -245,7 +246,7 @@ func TestMethod(t *testing.T) {
 			app := uint64(1)
 			nr := uint64(0)
 
-			appID := s.newTestApplication(t, ctx, 0, app)
+			appID := s.newTestApplication(ctx, t, 0, app)
 			err := s.repository.CreateEpoch(ctx, &model.Epoch{
 				ApplicationID:        appID,
 				Index:                nr,
@@ -280,7 +281,7 @@ func TestMethod(t *testing.T) {
 			app := uint64(1)
 			nr := uint64(1)
 
-			appID := s.newTestApplication(t, ctx, 0, app)
+			appID := s.newTestApplication(ctx, t, 0, app)
 			err := s.repository.CreateEpoch(ctx, &model.Epoch{
 				ApplicationID:        appID,
 				Index:                nr,
@@ -345,7 +346,7 @@ func TestMethod(t *testing.T) {
 			app := uint64(2)
 			enr := uint64(1)
 			inr := uint64(0)
-			appID := s.newTestApplication(t, ctx, 0, app)
+			appID := s.newTestApplication(ctx, t, 0, app)
 			err := s.repository.CreateEpoch(ctx, &model.Epoch{
 				ApplicationID: appID,
 				Index:         enr,
@@ -379,7 +380,7 @@ func TestMethod(t *testing.T) {
 			app := uint64(2)
 			enr := uint64(1)
 			inr := uint64(0)
-			appID := s.newTestApplication(t, ctx, 0, app)
+			appID := s.newTestApplication(ctx, t, 0, app)
 			err := s.repository.CreateEpoch(ctx, &model.Epoch{
 				ApplicationID: appID,
 				Index:         enr,
@@ -450,7 +451,7 @@ func TestMethod(t *testing.T) {
 			nr := uint64(0)
 			epochIndex := uint64(0xdeadbeef)
 
-			appID := s.newTestApplication(t, ctx, 0, nr)
+			appID := s.newTestApplication(ctx, t, 0, nr)
 			err := s.repository.CreateEpoch(ctx, &model.Epoch{
 				ApplicationID:        appID,
 				Index:                epochIndex,
@@ -536,7 +537,7 @@ func TestMethod(t *testing.T) {
 			app := uint64(2)
 			enr := uint64(1)
 			inr := uint64(0)
-			appID := s.newTestApplication(t, ctx, 0, app)
+			appID := s.newTestApplication(ctx, t, 0, app)
 			err := s.repository.CreateEpoch(ctx, &model.Epoch{
 				ApplicationID: appID,
 				Index:         enr,
@@ -571,7 +572,7 @@ func TestMethod(t *testing.T) {
 			enr := uint64(1)
 			inr := uint64(1)
 			onr := uint64(0)
-			appID := s.newTestApplication(t, ctx, 0, app)
+			appID := s.newTestApplication(ctx, t, 0, app)
 			err := s.repository.CreateEpoch(ctx, &model.Epoch{
 				ApplicationID: appID,
 				Index:         enr,
@@ -660,7 +661,7 @@ func TestMethod(t *testing.T) {
 
 			app := uint64(1)
 
-			s.newTestApplication(t, ctx, 0, app)
+			s.newTestApplication(ctx, t, 0, app)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_getProcessedInputCount",
@@ -716,7 +717,7 @@ func TestMethod(t *testing.T) {
 			enr := uint64(1)
 			inr := uint64(1)
 			onr := uint64(0)
-			appID := s.newTestApplication(t, ctx, 0, app)
+			appID := s.newTestApplication(ctx, t, 0, app)
 			err := s.repository.CreateEpoch(ctx, &model.Epoch{
 				ApplicationID: appID,
 				Index:         enr,
@@ -802,7 +803,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(t, ctx, 0, nr)
+			s.newTestApplication(ctx, t, 0, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listApplications",
@@ -827,7 +828,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(t, ctx, 0, nr)
+			s.newTestApplication(ctx, t, 0, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listApplications",
@@ -850,7 +851,7 @@ func TestMethod(t *testing.T) {
 			many := uint64(100)
 			limit := uint64(many / 2)
 			for i := range many {
-				s.newTestApplication(t, ctx, 0, i)
+				s.newTestApplication(ctx, t, 0, i)
 			}
 
 			{ // offset == 0, descending = false
@@ -867,7 +868,7 @@ func TestMethod(t *testing.T) {
 
 				resp := testRPCResponse[[]model.Application]{}
 				assert.Nil(t, json.Unmarshal(body, &resp))
-				assert.Equal(t, int(limit), len(resp.Result.Data))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i
 					assert.Equal(t, nr, nameToNumber(resp.Result.Data[i].Name))
@@ -888,7 +889,7 @@ func TestMethod(t *testing.T) {
 
 				resp := testRPCResponse[[]model.Application]{}
 				assert.Nil(t, json.Unmarshal(body, &resp))
-				assert.Equal(t, int(limit), len(resp.Result.Data))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i + 1
 					assert.Equal(t, nr, nameToNumber(resp.Result.Data[i].Name))
@@ -909,7 +910,7 @@ func TestMethod(t *testing.T) {
 
 				resp := testRPCResponse[[]model.Application]{}
 				assert.Nil(t, json.Unmarshal(body, &resp))
-				assert.Equal(t, int(limit), len(resp.Result.Data))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 1
 					assert.Equal(t, nr, nameToNumber(resp.Result.Data[i].Name))
@@ -930,7 +931,7 @@ func TestMethod(t *testing.T) {
 
 				resp := testRPCResponse[[]model.Application]{}
 				assert.Nil(t, json.Unmarshal(body, &resp))
-				assert.Equal(t, int(limit), len(resp.Result.Data))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 2
 					assert.Equal(t, nr, nameToNumber(resp.Result.Data[i].Name))
@@ -971,7 +972,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(t, ctx, 0, nr)
+			s.newTestApplication(ctx, t, 0, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listEpochs",
@@ -991,7 +992,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(t, ctx, 0, nr)
+			s.newTestApplication(ctx, t, 0, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listEpochs",
@@ -1017,7 +1018,7 @@ func TestMethod(t *testing.T) {
 			nr := uint64(1)
 			many := uint64(100)
 			limit := uint64(many / 2)
-			appID := s.newTestApplication(t, ctx, 0, nr)
+			appID := s.newTestApplication(ctx, t, 0, nr)
 			for i := range many {
 				err := s.repository.CreateEpoch(ctx, &model.Epoch{
 					ApplicationID: appID,
@@ -1043,7 +1044,7 @@ func TestMethod(t *testing.T) {
 
 				resp := testRPCResponse[[]model.Epoch]{}
 				assert.Nil(t, json.Unmarshal(body, &resp))
-				assert.Equal(t, int(limit), len(resp.Result.Data))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i
 					assert.Equal(t, nr, resp.Result.Data[i].Index)
@@ -1065,7 +1066,7 @@ func TestMethod(t *testing.T) {
 
 				resp := testRPCResponse[[]model.Epoch]{}
 				assert.Nil(t, json.Unmarshal(body, &resp))
-				assert.Equal(t, int(limit), len(resp.Result.Data))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i + 1
 					assert.Equal(t, nr, resp.Result.Data[i].Index)
@@ -1087,7 +1088,7 @@ func TestMethod(t *testing.T) {
 
 				resp := testRPCResponse[[]model.Epoch]{}
 				assert.Nil(t, json.Unmarshal(body, &resp))
-				assert.Equal(t, int(limit), len(resp.Result.Data))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 1
 					assert.Equal(t, nr, resp.Result.Data[i].Index)
@@ -1109,7 +1110,7 @@ func TestMethod(t *testing.T) {
 
 				resp := testRPCResponse[[]model.Epoch]{}
 				assert.Nil(t, json.Unmarshal(body, &resp))
-				assert.Equal(t, int(limit), len(resp.Result.Data))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 2
 					assert.Equal(t, nr, resp.Result.Data[i].Index)
@@ -1150,7 +1151,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(t, ctx, 0, nr)
+			s.newTestApplication(ctx, t, 0, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listInputs",
@@ -1198,7 +1199,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(t, ctx, 0, nr)
+			s.newTestApplication(ctx, t, 0, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listOutputs",
@@ -1220,7 +1221,7 @@ func TestMethod(t *testing.T) {
 			app := uint64(3)
 			enr := uint64(1)
 			inr := uint64(1)
-			appID := s.newTestApplication(t, ctx, 0, app)
+			appID := s.newTestApplication(ctx, t, 0, app)
 			err := s.repository.CreateEpoch(ctx, &model.Epoch{
 				ApplicationID: appID,
 				Index:         enr,
@@ -1276,7 +1277,7 @@ func TestMethod(t *testing.T) {
 
 				resp := testRPCResponse[[]Result]{}
 				assert.Nil(t, json.Unmarshal(body, &resp))
-				assert.Equal(t, int(limit), len(resp.Result.Data))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i
 					assert.Equal(t, nr, uint64(resp.Result.Data[i].Index))
@@ -1298,7 +1299,7 @@ func TestMethod(t *testing.T) {
 
 				resp := testRPCResponse[[]Result]{}
 				assert.Nil(t, json.Unmarshal(body, &resp))
-				assert.Equal(t, int(limit), len(resp.Result.Data))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i + 1
 					assert.Equal(t, nr, uint64(resp.Result.Data[i].Index))
@@ -1320,7 +1321,7 @@ func TestMethod(t *testing.T) {
 
 				resp := testRPCResponse[[]Result]{}
 				assert.Nil(t, json.Unmarshal(body, &resp))
-				assert.Equal(t, int(limit), len(resp.Result.Data))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 1
 					assert.Equal(t, nr, uint64(resp.Result.Data[i].Index))
@@ -1342,7 +1343,7 @@ func TestMethod(t *testing.T) {
 
 				resp := testRPCResponse[[]Result]{}
 				assert.Nil(t, json.Unmarshal(body, &resp))
-				assert.Equal(t, int(limit), len(resp.Result.Data))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 2
 					assert.Equal(t, nr, uint64(resp.Result.Data[i].Index))
@@ -1383,7 +1384,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(t, ctx, 0, nr)
+			s.newTestApplication(ctx, t, 0, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listReports",
@@ -1405,7 +1406,7 @@ func TestMethod(t *testing.T) {
 			app := uint64(3)
 			enr := uint64(1)
 			inr := uint64(1)
-			appID := s.newTestApplication(t, ctx, 0, app)
+			appID := s.newTestApplication(ctx, t, 0, app)
 			err := s.repository.CreateEpoch(ctx, &model.Epoch{
 				ApplicationID: appID,
 				Index:         enr,
@@ -1459,7 +1460,7 @@ func TestMethod(t *testing.T) {
 
 				resp := testRPCResponse[[]Result]{}
 				assert.Nil(t, json.Unmarshal(body, &resp))
-				assert.Equal(t, int(limit), len(resp.Result.Data))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i
 					assert.Equal(t, nr, uint64(resp.Result.Data[i].Index))
@@ -1481,7 +1482,7 @@ func TestMethod(t *testing.T) {
 
 				resp := testRPCResponse[[]Result]{}
 				assert.Nil(t, json.Unmarshal(body, &resp))
-				assert.Equal(t, int(limit), len(resp.Result.Data))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i + 1
 					assert.Equal(t, nr, uint64(resp.Result.Data[i].Index))
@@ -1503,7 +1504,7 @@ func TestMethod(t *testing.T) {
 
 				resp := testRPCResponse[[]Result]{}
 				assert.Nil(t, json.Unmarshal(body, &resp))
-				assert.Equal(t, int(limit), len(resp.Result.Data))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 1
 					assert.Equal(t, nr, uint64(resp.Result.Data[i].Index))
@@ -1525,13 +1526,28 @@ func TestMethod(t *testing.T) {
 
 				resp := testRPCResponse[[]Result]{}
 				assert.Nil(t, json.Unmarshal(body, &resp))
-				assert.Equal(t, int(limit), len(resp.Result.Data))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 2
 					assert.Equal(t, nr, uint64(resp.Result.Data[i].Index))
 				}
 			}
 		})
+	})
+
+	////////////////////////////////////////////////////////////////////////
+	// Place holder for new tournament data methods
+	////////////////////////////////////////////////////////////////////////
+	t.Run("cartesi_NEW_METHODS", func(_ *testing.T) {
+		// TODO: implement proper tests for tournament data methods
+		testHistogram.inc("cartesi_getTournament")
+		testHistogram.inc("cartesi_listTournaments")
+		testHistogram.inc("cartesi_getCommitment")
+		testHistogram.inc("cartesi_getMatch")
+		testHistogram.inc("cartesi_listMatchAdvances")
+		testHistogram.inc("cartesi_listCommitments")
+		testHistogram.inc("cartesi_listMatches")
+		testHistogram.inc("cartesi_getMatchAdvanced")
 	})
 
 	// tested methods, implemented methods and discover methods must match:
@@ -1542,23 +1558,56 @@ func TestMethod(t *testing.T) {
 	err = json.Unmarshal(data, &schema)
 	assert.Nil(t, err)
 
-	result := hist{
-		"rpc.discover": 1, // +1, because it doesn't show up in the jsonrpc file
-	}
-
+	allMethods := make(map[string]bool)
+	tested := make(map[string]bool)
 	for k := range testHistogram {
-		result.inc(k)
+		allMethods[k] = true
+		tested[k] = true
 	}
 
+	implemented := make(map[string]bool)
 	for k := range jsonrpcHandlers {
-		result.inc(k)
+		allMethods[k] = true
+		implemented[k] = true
 	}
 
+	specified := make(map[string]bool)
 	for _, v := range schema.Methods {
-		result.inc(v.Name)
+		allMethods[v.Name] = true
+		specified[v.Name] = true
 	}
 
-	for k, v := range result {
-		assert.Equal(t, v, 3, "method %v is not: tested && implemented && discovered", k)
+	// Check each method
+	var errors []string
+	for method := range allMethods {
+		hasTest := tested[method]
+		hasImpl := implemented[method]
+		hasSpec := specified[method]
+
+		// All methods must be tested and implemented
+		// rpc.discover is not discovered (not in schema), others must be
+		expectedInSpec := method != "rpc.discover"
+
+		var missing []string
+		if !hasTest {
+			missing = append(missing, "tests")
+		}
+		if !hasImpl {
+			missing = append(missing, "implementation")
+		}
+		if hasSpec != expectedInSpec {
+			if expectedInSpec {
+				missing = append(missing, "specification")
+			} else {
+				missing = append(missing, "should not be in specification")
+			}
+		}
+		if len(missing) > 0 {
+			errors = append(errors, fmt.Sprintf("Method %s is missing: %v", method, missing))
+		}
+	}
+
+	if len(errors) > 0 {
+		t.Errorf("Method coverage issues:\n%s", strings.Join(errors, "\n"))
 	}
 }

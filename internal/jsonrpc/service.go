@@ -72,8 +72,11 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rpc", s.handleRPC)
 	s.server = &http.Server{
-		Addr:    c.Config.JsonrpcApiAddress,
-		Handler: services.CorsMiddleware(mux), // FIXME: add proper cors config
+		Addr:              c.Config.JsonrpcApiAddress,
+		Handler:           services.CorsMiddleware(mux), // FIXME: add proper cors config
+		WriteTimeout:      30 * time.Second,             //nolint: mnd
+		ReadTimeout:       30 * time.Second,             //nolint: mnd
+		ReadHeaderTimeout: 10 * time.Second,             //nolint: mnd
 	}
 
 	return s, nil
@@ -96,9 +99,9 @@ func (s *Service) Tick() []error {
 	return nil
 }
 
-func (s *Service) Stop(force bool) []error {
+func (s *Service) Stop(_ bool) []error {
 	var errs []error
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint: mnd
 	defer cancel()
 	if err := s.server.Shutdown(ctx); err != nil {
 		errs = append(errs, err)
