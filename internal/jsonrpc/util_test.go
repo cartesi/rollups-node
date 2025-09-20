@@ -9,13 +9,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/service"
@@ -46,7 +46,10 @@ func (x *hex64) MarshalJSON() ([]byte, error) {
 
 func (x *hex64) UnmarshalJSON(in []byte) error {
 	var hexString string
-	json.Unmarshal(in, &hexString)
+	err := json.Unmarshal(in, &hexString)
+	if err != nil {
+		return err
+	}
 	hexValue, err := model.ParseHexUint64(hexString)
 	if err != nil {
 		return err
@@ -77,10 +80,13 @@ func newTestService(t *testing.T, name string) *Service {
 	repo, err := factory.NewRepositoryFromConnectionString(ctx, dbTestEndpoint)
 	assert.Nil(t, err)
 
+	logLevel, err := config.GetLogLevel()
+	assert.Nil(t, err)
+
 	ci := CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:     name,
-			LogLevel: slog.LevelDebug,
+			LogLevel: logLevel,
 			LogColor: true,
 		},
 		Repository: repo,
@@ -101,13 +107,14 @@ func numberToName(x uint64) string {
 }
 
 // create an application with mostly stub values.
-func (s *Service) newTestApplication(t *testing.T, ctx context.Context, test, i uint64) int64 {
+func (s *Service) newTestApplication(ctx context.Context, t *testing.T, test, i uint64) int64 {
 	hex := numberToName(i)
 	id, err := s.repository.CreateApplication(ctx, &model.Application{
 		Name:                hex,
 		IApplicationAddress: common.HexToAddress(hex),
 		DataAvailability:    []byte{0x00, 0x00, 0x00, 0x00},
 		State:               model.ApplicationState_Enabled,
+		ConsensusType:       model.Consensus_Authority,
 	}, false)
 	assert.Nil(t, err, "on test case: %v, when creating application: %v", test, i)
 	return id
@@ -133,12 +140,12 @@ func (s *Service) doRequest(t *testing.T, i uint64, reqData []byte) []byte {
 
 // input from ./cartesi-rollups-cli send echo-dapp -y ""
 func emptyInput() []byte {
-	raw, _ := hexutil.Decode("0x415bf363000000000000000000000000000000000000000000000000000000000000343a0000000000000000000000002e662c8a1a6c8008482a41ef6d3b333497e7f956000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266000000000000000000000000000000000000000000000000000000000000000c0000000000000000000000000000000000000000000000000000000068c97fb45a1ab2f3478ee32e84c0a464f70d9da8d470868984ba5f00d9da757bbcee2098000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000")
+	raw, _ := hexutil.Decode("0x415bf363000000000000000000000000000000000000000000000000000000000000343a0000000000000000000000002e662c8a1a6c8008482a41ef6d3b333497e7f956000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266000000000000000000000000000000000000000000000000000000000000000c0000000000000000000000000000000000000000000000000000000068c97fb45a1ab2f3478ee32e84c0a464f70d9da8d470868984ba5f00d9da757bbcee2098000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000") //nolint: lll
 	return raw
 }
 
 // output from ./cartesi-rollups-cli send echo-dapp -y ""
 func emptyVoucher() []byte {
-	raw, _ := hexutil.Decode("0x237a816f000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb9226600000000000000000000000000000000000000000000000000000000deadbeef00000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000")
+	raw, _ := hexutil.Decode("0x237a816f000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb9226600000000000000000000000000000000000000000000000000000000deadbeef00000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000") //nolint: lll
 	return raw
 }

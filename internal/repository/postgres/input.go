@@ -413,3 +413,27 @@ func (r *PostgresRepository) GetNumberOfInputs(
 	}
 	return count, nil
 }
+
+func (r *PostgresRepository) UpdateInputSnapshotURI(ctx context.Context, appId int64, inputIndex uint64, snapshotURI string) error {
+	updStmt := table.Input.
+		UPDATE(
+			table.Input.SnapshotURI,
+		).
+		SET(
+			snapshotURI,
+		).
+		WHERE(
+			table.Input.EpochApplicationID.EQ(postgres.Int64(appId)).
+				AND(table.Input.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", inputIndex)))),
+		)
+
+	sqlStr, args := updStmt.Sql()
+	cmd, err := r.db.Exec(ctx, sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return fmt.Errorf("no input found with appId %d and index %d", appId, inputIndex)
+	}
+	return nil
+}

@@ -135,6 +135,18 @@ func ToAddressFromString(s string) (Address, error) {
 	return common.BytesToAddress(b), nil
 }
 
+func ToHashFromString(s string) (common.Hash, error) {
+	if len(s) < 3 || (!strings.HasPrefix(s, "0x") && !strings.HasPrefix(s, "0X")) {
+		return common.Hash{}, fmt.Errorf("invalid hash '%s'", s)
+	}
+	s = s[2:]
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return common.BytesToHash(b), nil
+}
+
 func ToApplicationNameFromString(s string) (string, error) {
 	if s == "" {
 		return "", fmt.Errorf("application name cannot be empty")

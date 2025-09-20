@@ -210,19 +210,21 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	application := model.Application{
-		Name:                 validName,
-		IApplicationAddress:  address,
-		IConsensusAddress:    consensus,
-		IInputBoxAddress:     *inputBoxAddress,
-		TemplateURI:          templatePath,
-		TemplateHash:         parsedTemplateHash,
-		EpochLength:          epochLength,
-		DataAvailability:     encodedDA,
-		ConsensusType:        consensusType,
-		State:                applicationState,
-		IInputBoxBlock:       inputBoxBlockNumber,
-		LastInputCheckBlock:  0,
-		LastOutputCheckBlock: 0,
+		Name:                     validName,
+		IApplicationAddress:      address,
+		IConsensusAddress:        consensus,
+		IInputBoxAddress:         *inputBoxAddress,
+		TemplateURI:              templatePath,
+		TemplateHash:             parsedTemplateHash,
+		EpochLength:              epochLength,
+		DataAvailability:         encodedDA,
+		ConsensusType:            consensusType,
+		State:                    applicationState,
+		IInputBoxBlock:           inputBoxBlockNumber,
+		LastEpochCheckBlock:      0,
+		LastInputCheckBlock:      0,
+		LastOutputCheckBlock:     0,
+		LastTournamentCheckBlock: 0,
 	}
 
 	// load execution parameters from a file?

@@ -212,6 +212,7 @@ func (r *PostgresRepository) GetEpoch(
 			table.Epoch.MachineHash,
 			table.Epoch.ClaimHash,
 			table.Epoch.ClaimTransactionHash,
+			table.Epoch.Commitment,
 			table.Epoch.TournamentAddress,
 			table.Epoch.Status,
 			table.Epoch.VirtualIndex,
@@ -243,6 +244,7 @@ func (r *PostgresRepository) GetEpoch(
 		&ep.MachineHash,
 		&ep.ClaimHash,
 		&ep.ClaimTransactionHash,
+		&ep.Commitment,
 		&ep.TournamentAddress,
 		&ep.Status,
 		&ep.VirtualIndex,
@@ -323,6 +325,7 @@ func (r *PostgresRepository) GetLastNonOpenEpoch(
 			table.Epoch.ClaimHash,
 			table.Epoch.ClaimTransactionHash,
 			table.Epoch.TournamentAddress,
+			table.Epoch.Commitment,
 			table.Epoch.Status,
 			table.Epoch.VirtualIndex,
 			table.Epoch.CreatedAt,
@@ -356,6 +359,7 @@ func (r *PostgresRepository) GetLastNonOpenEpoch(
 		&ep.ClaimHash,
 		&ep.ClaimTransactionHash,
 		&ep.TournamentAddress,
+		&ep.Commitment,
 		&ep.Status,
 		&ep.VirtualIndex,
 		&ep.CreatedAt,
@@ -392,6 +396,7 @@ func (r *PostgresRepository) GetEpochByVirtualIndex(
 			table.Epoch.MachineHash,
 			table.Epoch.ClaimHash,
 			table.Epoch.ClaimTransactionHash,
+			table.Epoch.Commitment,
 			table.Epoch.TournamentAddress,
 			table.Epoch.Status,
 			table.Epoch.VirtualIndex,
@@ -423,6 +428,7 @@ func (r *PostgresRepository) GetEpochByVirtualIndex(
 		&ep.MachineHash,
 		&ep.ClaimHash,
 		&ep.ClaimTransactionHash,
+		&ep.Commitment,
 		&ep.TournamentAddress,
 		&ep.Status,
 		&ep.VirtualIndex,
@@ -469,6 +475,36 @@ func (r *PostgresRepository) UpdateEpoch(
 			whereClause.
 				AND(table.Epoch.ApplicationID.EQ(table.Application.ID)).
 				AND(table.Epoch.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", e.Index)))),
+		)
+
+	sqlStr, args := updStmt.Sql()
+	cmd, err := r.db.Exec(ctx, sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (r *PostgresRepository) UpdateEpochCommitment(
+	ctx context.Context,
+	appID int64,
+	epochIndex uint64,
+	commitment []byte,
+) error {
+
+	updStmt := table.Epoch.
+		UPDATE(
+			table.Epoch.Commitment,
+		).
+		SET(
+			commitment,
+		).
+		WHERE(
+			table.Epoch.ApplicationID.EQ(postgres.Int64(appID)).
+				AND(table.Epoch.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", epochIndex)))),
 		)
 
 	sqlStr, args := updStmt.Sql()
@@ -630,6 +666,7 @@ func (r *PostgresRepository) ListEpochs(
 			table.Epoch.MachineHash,
 			table.Epoch.ClaimHash,
 			table.Epoch.ClaimTransactionHash,
+			table.Epoch.Commitment,
 			table.Epoch.TournamentAddress,
 			table.Epoch.Status,
 			table.Epoch.VirtualIndex,
@@ -690,6 +727,7 @@ func (r *PostgresRepository) ListEpochs(
 			&ep.MachineHash,
 			&ep.ClaimHash,
 			&ep.ClaimTransactionHash,
+			&ep.Commitment,
 			&ep.TournamentAddress,
 			&ep.Status,
 			&ep.VirtualIndex,

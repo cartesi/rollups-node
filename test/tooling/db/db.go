@@ -22,18 +22,18 @@ func SetupTestPostgres(endpoint string) error {
 
 	schema, err := schema.New(endpoint)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create schema: %w", err)
 	}
 	defer schema.Close()
 
 	err = schema.Downgrade()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to downgrade schema: %w", err)
 	}
 
 	err = schema.Upgrade()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to upgrade schema: %w", err)
 	}
 
 	return nil

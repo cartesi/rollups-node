@@ -3,6 +3,31 @@
 
 BEGIN;
 
+DROP TRIGGER IF EXISTS "state_hashes_set_updated_at" ON "match_advances";
+DROP TABLE IF EXISTS "state_hashes";
+
+DROP TRIGGER IF EXISTS "match_advances_set_updated_at" ON "match_advances";
+DROP INDEX IF EXISTS "match_advances_block_number_idx";
+DROP TABLE IF EXISTS "match_advances";
+
+ALTER TABLE "tournaments" DROP CONSTRAINT "tournaments_parent_match_fkey";
+
+DROP TRIGGER IF EXISTS "matches_set_updated_at" ON "matches";
+DROP INDEX IF EXISTS "matches_unique_pair_idx";
+DROP INDEX IF EXISTS "matches_app_epoch_tournament_idx";
+DROP TABLE IF EXISTS "matches";
+
+DROP TRIGGER IF EXISTS "commitments_set_updated_at" ON "commitments";
+DROP INDEX IF EXISTS "commitments_final_state_idx";
+DROP INDEX IF EXISTS "commitments_app_epoch_tournament_idx";
+DROP TABLE IF EXISTS "commitments";
+
+DROP TRIGGER IF EXISTS "tournaments_set_updated_at" ON "tournaments";
+DROP INDEX IF EXISTS "tournaments_parent_match_nonroot_idx";
+DROP INDEX IF EXISTS "unique_root_per_epoch_idx";
+DROP INDEX IF EXISTS "tournaments_epoch_idx";
+DROP TABLE IF EXISTS "tournaments";
+
 DROP TRIGGER IF EXISTS "node_config_set_updated_at" ON "node_config";
 DROP TABLE IF EXISTS "node_config";
 
@@ -35,6 +60,8 @@ DROP TABLE IF EXISTS "application";
 DROP FUNCTION IF EXISTS "update_updated_at_column";
 DROP FUNCTION IF EXISTS "check_hash_siblings";
 
+DROP TYPE IF EXISTS "WinnerCommitment";
+DROP TYPE IF EXISTS "MatchDeletionReason";
 DROP TYPE IF EXISTS "Consensus";
 DROP TYPE IF EXISTS "SnapshotPolicy";
 DROP TYPE IF EXISTS "EpochStatus";
