@@ -5,30 +5,35 @@ package prt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/merkle"
+	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/service"
-	"github.com/ethereum/go-ethereum/common"
 )
-
-type Service struct {
-	service.Service
-	repository PrtRepository
-
-	// cached constants
-	pristineRootHash    common.Hash
-	pristinePostContext []common.Hash
-}
 
 type CreateInfo struct {
 	service.CreateInfo
-
-	Config config.ValidatorConfig
-
+	Config     config.PrtConfig
 	Repository repository.Repository
+	EthClient  EthClientInterface
+}
+
+type Service struct {
+	service.Service
+	repository        PrtRepository
+	client            EthClientInterface
+	submissionEnabled bool
+}
+
+const PrtConfigKey = "prt"
+
+type PersistentConfig struct {
+	DefaultBlock           DefaultBlock
+	ClaimSubmissionEnabled bool
+	ChainID                uint64
 }
 
 func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
@@ -45,13 +50,34 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		return nil, err
 	}
 
-	s.repository = c.Repository
-	if s.repository == nil {
-		return nil, fmt.Errorf("repository on validator service Create is nil")
+	if c.EthClient == nil {
+		return nil, fmt.Errorf("EthClient on prt service Create is nil")
+	}
+	chainId, err := c.EthClient.ChainID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if chainId.Uint64() != c.Config.BlockchainId {
+		return nil, fmt.Errorf("EthClient chainId mismatch: network %d != provided %d",
+			chainId.Uint64(), c.Config.BlockchainId)
 	}
 
-	s.pristinePostContext = merkle.CreatePostContext()
-	s.pristineRootHash = s.pristinePostContext[merkle.TREE_DEPTH]
+	s.repository = c.Repository
+	if s.repository == nil {
+		return nil, fmt.Errorf("repository on prt service Create is nil")
+	}
+
+	nodeConfig, err := s.setupPersistentConfig(ctx, &c.Config)
+	if err != nil {
+		return nil, err
+	}
+	if chainId.Uint64() != nodeConfig.ChainID {
+		return nil, fmt.Errorf("NodeConfig chainId mismatch: network %d != config %d",
+			chainId.Uint64(), nodeConfig.ChainID)
+	}
+
+	s.client = c.EthClient
+	s.submissionEnabled = nodeConfig.ClaimSubmissionEnabled
 
 	return s, nil
 }
@@ -81,6 +107,35 @@ func (s *Service) Stop(b bool) []error {
 	return nil
 }
 
-func (v *Service) String() string {
-	return v.Name
+func (s *Service) String() string {
+	return s.Name
+}
+
+func (s *Service) setupPersistentConfig(
+	ctx context.Context,
+	c *config.PrtConfig,
+) (*PersistentConfig, error) {
+	config, err := repository.LoadNodeConfig[PersistentConfig](ctx, s.repository, PrtConfigKey)
+	if config == nil && errors.Is(err, repository.ErrNotFound) {
+		nc := NodeConfig[PersistentConfig]{
+			Key: PrtConfigKey,
+			Value: PersistentConfig{
+				DefaultBlock:           c.BlockchainDefaultBlock,
+				ClaimSubmissionEnabled: c.FeatureClaimSubmissionEnabled,
+				ChainID:                c.BlockchainId,
+			},
+		}
+		s.Logger.Info("Initializing PRT persistent config", "config", nc.Value)
+		err = repository.SaveNodeConfig(ctx, s.repository, &nc)
+		if err != nil {
+			return nil, err
+		}
+		return &nc.Value, nil
+	} else if err == nil {
+		s.Logger.Info("PRT service was already configured. Using previous persistent config", "config", config.Value)
+		return &config.Value, nil
+	}
+
+	s.Logger.Error("Could not retrieve persistent config from Database. %w", "error", err)
+	return nil, err
 }

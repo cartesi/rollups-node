@@ -66,28 +66,24 @@ var bindings = []contractBinding{
 		typeName: "DataAvailability",
 	},
 	{
-		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/Tournament.sol/Tournament.json",
-		typeName: "Tournament",
+		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/TopTournament.sol/TopTournament.json",
+		typeName: "TopTournament",
 	},
 	{
-		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/LeafTournament.sol/LeafTournament.json",
-		typeName: "LeafTournament",
+		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/MiddleTournament.sol/MiddleTournament.json",
+		typeName: "MiddleTournament",
 	},
 	{
-		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/NonLeafTournament.sol/NonLeafTournament.json",
-		typeName: "NonLeafTournament",
+		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/BottomTournament.sol/BottomTournament.json",
+		typeName: "BottomTournament",
 	},
 	{
-		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/RootTournament.sol/RootTournament.json",
-		typeName: "RootTournament",
+		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/SingleLevelTournament.sol/SingleLevelTournament.json",
+		typeName: "SingleLevelTournament",
 	},
 	{
-		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/NonRootTournament.sol/NonRootTournament.json",
-		typeName: "NonRootTournament",
-	},
-	{
-		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/IMultiLevelTournamentFactory.sol/IMultiLevelTournamentFactory.json",
-		typeName: "IMultiLevelTournamentFactory",
+		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/ITournamentFactory.sol/ITournamentFactory.json",
+		typeName: "ITournamentFactory",
 	},
 	{
 		jsonPath: rollupsPrtContractsPath + "cartesi-rollups/contracts/out/DaveConsensus.sol/DaveConsensus.json",
