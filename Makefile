@@ -29,6 +29,10 @@ BUILD_TYPE ?= release
 
 ifeq ($(TARGET_OS),Darwin)
 PREFIX ?= /opt/cartesi
+
+ifeq ($(MACOSX_DEPLOYMENT_TARGET),)
+	export MACOSX_DEPLOYMENT_TARGET := $(shell sw_vers -productVersion | sed -E "s/([[:digit:]]+)\.([[:digit:]]+)\..+/\1.\2.0/")
+endif
 else
 PREFIX ?= /usr
 endif
