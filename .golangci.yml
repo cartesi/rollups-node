@@ -6,6 +6,18 @@ linters:
     - lll
     - misspell
     - mnd
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - revive
+    - gocritic
+    - copyloopvar
+    - gosec
+    - nolintlint
+    - prealloc
+#    - depguard
   settings:
     lll:
       line-length: 140
