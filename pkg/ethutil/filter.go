@@ -87,7 +87,7 @@ func queryBlockRangeTooLarge(err error) bool {
 // (From, To) block ranges into multiple smaller calls when it detects the
 // provider rejected the query for this specific reason. Detection is a
 // heuristic and implemented in the function queryBlockRangeTooLarge. It
-// potentially has to be adjusted to accomodate each provider.
+// potentially has to be adjusted to accommodate each provider.
 func (f *Filter) ChunkedFilterLogs(
 	ctx context.Context,
 	client *ethclient.Client,
