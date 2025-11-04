@@ -266,7 +266,7 @@ func (s *ImplementationSuite) TestAdvance() {
 	require.False(accepted)
 	require.Empty(outputs)
 	require.Empty(reports)
-	require.NotEqual(Hash{}, hash)
+	require.Equal(Hash{}, hash)
 	mockBackend2.AssertExpectations(s.T())
 
 	// Test advance with exception
@@ -286,6 +286,7 @@ func (s *ImplementationSuite) TestAdvance() {
 	accepted, outputs, reports, hash, err = machine3.Advance(ctx, input)
 	require.ErrorIs(err, ErrException)
 	require.False(accepted)
+	require.Equal(Hash{}, hash)
 	mockBackend3.AssertExpectations(s.T())
 
 	// Test advance with payload too large

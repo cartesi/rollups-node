@@ -128,19 +128,21 @@ func (m *machineImpl) OutputsHash(ctx context.Context) (Hash, error) {
 
 // Advance sends an input to the machine and processes it
 func (m *machineImpl) Advance(ctx context.Context, input []byte) (bool, []Output, []Report, Hash, error) {
+	outputsHash := Hash{}
+
 	// TODO: return the exception reason
 	accepted, outputs, reports, data, err := m.process(ctx, input, AdvanceStateRequest)
 	if err != nil {
-		return accepted, outputs, reports, Hash{}, err
+		return accepted, outputs, reports, outputsHash, err
 	}
 
-	if length := len(data); length != HashSize {
-		err = fmt.Errorf("%w (it has %d bytes)", ErrHashLength, length)
-		return accepted, outputs, reports, Hash{}, err
+	if accepted {
+		if length := len(data); length != HashSize {
+			err = fmt.Errorf("%w (it has %d bytes)", ErrHashLength, length)
+			return accepted, outputs, reports, outputsHash, err
+		}
+		copy(outputsHash[:], data)
 	}
-
-	var outputsHash Hash
-	copy(outputsHash[:], data)
 	return accepted, outputs, reports, outputsHash, nil
 }
 

@@ -236,6 +236,15 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 			return err
 		}
 
+		s.Logger.Info("Processing input finished",
+			"application", app.Name,
+			"epoch", input.EpochIndex,
+			"index", input.Index,
+			"status", result.Status,
+			"outputs", len(result.Outputs),
+			"reports", len(result.Reports),
+		)
+
 		// Store the result in the database
 		err = s.repository.StoreAdvanceResult(ctx, input.EpochApplicationID, result)
 		if err != nil {

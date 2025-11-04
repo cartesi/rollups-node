@@ -196,16 +196,38 @@ integration-test: ## Execute e2e tests
 	@echo "Running end-to-end tests"
 	@go test -count=1 ./test --tags=endtoendtests
 
-echo-dapp: applications/echo-dapp ## Echo the dapp
+echo-dapp: applications/echo-dapp ## Echo dapp
+
+reject-dapp: applications/reject-dapp ## Reject dapp
+
+exception-dapp: applications/exception-dapp ## Exception dapp
 
 applications/echo-dapp: ## Create echo-dapp test application
 	@echo "Creating echo-dapp test application"
 	@mkdir -p applications
 	@cartesi-machine --ram-length=128Mi --store=applications/echo-dapp --final-hash -- ioctl-echo-loop --vouchers=1 --delegate-call-vouchers=1 --notices=1 --reports=1 --verbose=1
 
+applications/reject-dapp: ## Create reject-dapp test application
+	@echo "Creating reject-dapp test application"
+	@mkdir -p applications
+	@cartesi-machine --ram-length=128Mi --store=applications/reject-dapp --final-hash -- "rollup accept && rollup reject"
+
+applications/exception-dapp: ## Create exception-dapp test application
+	@echo "Creating exception-dapp test application"
+	@mkdir -p applications
+	@cartesi-machine --ram-length=128Mi --store=applications/exception-dapp --final-hash -- "rollup accept && echo '{\"payload\": \"0x7468697320697320612064756d6d7920657863657074696f6e2074657874\"}' | rollup exception"
+
 deploy-echo-dapp: applications/echo-dapp ## Deploy echo-dapp test application
 	@echo "Deploying echo-dapp test application"
 	@./cartesi-rollups-cli deploy application echo-dapp applications/echo-dapp/
+
+deploy-reject-dapp: applications/reject-dapp ## Deploy reject-dapp test application
+	@echo "Deploying reject-dapp test application"
+	@./cartesi-rollups-cli deploy application reject-dapp applications/reject-dapp/
+
+deploy-exception-dapp: applications/exception-dapp ## Deploy exception-dapp test application
+	@echo "Deploying exception-dapp test application"
+	@./cartesi-rollups-cli deploy application exception-dapp applications/exception-dapp/
 
 # Temporary test dependencies target while we are not using distribution packages
 DOWNLOADS_DIR = test/downloads
