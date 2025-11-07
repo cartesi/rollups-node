@@ -48,7 +48,8 @@ func CreateAnvilSnapshotAndDeployApp(ctx context.Context, client *ethclient.Clie
 	// build the self hosted deployment struct
 	selfHostedApplicationFactoryAddress, err := config.GetContractsSelfHostedApplicationFactoryAddress()
 	if err != nil {
-		return zero, nil, fmt.Errorf("failed retrieve self hosted application factory address: %w", err)
+		_ = RevertToAnvilSnapshot(client.Client(), snapshotID)
+		return zero, nil, fmt.Errorf("failed to retrieve self hosted application factory address: %w", err)
 	}
 
 	deployment := &SelfhostedApplicationDeployment{
@@ -61,6 +62,10 @@ func CreateAnvilSnapshotAndDeployApp(ctx context.Context, client *ethclient.Clie
 		Salt:                    [32]byte{},
 	}
 	applicationAddress, _, err := deployment.Deploy(ctx, client, txOpts)
+	if err != nil {
+		_ = RevertToAnvilSnapshot(client.Client(), snapshotID)
+		return zero, nil, fmt.Errorf("failed to deploy self-hosted application: %w", err)
+	}
 
 	// Define a cleanup function to revert to the snapshot
 	cleanup := func() {

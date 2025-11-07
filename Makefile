@@ -18,10 +18,10 @@ TARGET_OS?=$(shell uname)
 export TARGET_OS
 
 ROLLUPS_NODE_VERSION := 2.0.0-alpha.8
-CONTRACTS_VERSION := 2.0.0
+CONTRACTS_VERSION := 2.1.0
 CONTRACTS_URL:=https://github.com/cartesi/rollups-contracts/releases/download/
 CONTRACTS_ARTIFACT:=rollups-contracts-$(CONTRACTS_VERSION)-artifacts.tar.gz
-CONTRACTS_SHA256:=7a153b29926857a82e479788cf1e04866a0b8a2cf77ab11a67fe0b3df176cd26
+CONTRACTS_SHA256:=51f543b9414899dc6217461aec14e840895b494fecf3aafed8db8b791ad4c693
 
 IMAGE_TAG ?= devel
 
@@ -92,10 +92,10 @@ env:
 	@echo export CARTESI_BLOCKCHAIN_HTTP_ENDPOINT="http://localhost:8545"
 	@echo export CARTESI_BLOCKCHAIN_WS_ENDPOINT="ws://localhost:8545"
 	@echo export CARTESI_BLOCKCHAIN_ID="13370"
-	@echo export CARTESI_CONTRACTS_INPUT_BOX_ADDRESS="0xc70074BDD26d8cF983Ca6A5b89b8db52D5850051"
-	@echo export CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS="0xC7003566dD09Aa0fC0Ce201aC2769aFAe3BF0051"
-	@echo export CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS="0xc7006f70875BaDe89032001262A846D3Ee160051"
-	@echo export CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS="0xc700285Ab555eeB5201BC00CFD4b2CC8DED90051"
+	@echo export CARTESI_CONTRACTS_INPUT_BOX_ADDRESS="0x1b51e2992A2755Ba4D6F7094032DF91991a0Cfac"
+	@echo export CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS="0x5a3368b30174d389aFd205a46bAd35BBE6709b8a"
+	@echo export CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS="0x26E758238CB6eC5aB70ce0dd52aF2d7b82e1972E"
+	@echo export CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS="0x870240e83b1181b419f18303D4ccC56574De2931"
 	@echo export CARTESI_AUTH_MNEMONIC=\"test test test test test test test test test test test junk\"
 	@echo export CARTESI_DATABASE_CONNECTION="postgres://postgres:password@localhost:5432/rollupsdb?sslmode=disable"
 	@echo export CARTESI_SNAPSHOTS_DIR="snapshots"
@@ -135,7 +135,7 @@ $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp:
 	@echo "$(CONTRACTS_SHA256)  $(CONTRACTS_ARTIFACT)" | shasum -a 256 --check > /dev/null
 	@tar -zxf $(CONTRACTS_ARTIFACT) -C $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
 	@touch $@
-	@rm $(CONTRACTS_ARTIFACT)
+	@rm -f $(CONTRACTS_ARTIFACT)
 
 migrate: ## Run migration on development database
 	@echo "Running PostgreSQL migration"
@@ -161,6 +161,7 @@ clean-go: ## Clean Go artifacts
 clean-contracts: ## Clean contract artifacts
 	@echo "Cleaning contract artifacts"
 	@rm -rf rollups-contracts
+	@rm -f $(CONTRACTS_ARTIFACT)
 
 clean-docs: ## Clean the documentation
 	@echo "Cleaning the documentation"

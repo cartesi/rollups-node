@@ -1,5 +1,5 @@
-ARG FOUNDRY_VERSION=1.1.0
-ARG CONTRACTS_VERSION=2.0.0
+ARG FOUNDRY_VERSION=1.4.3
+ARG CONTRACTS_VERSION=2.1.0
 ARG DEVNET_BUILD_PATH=/opt/cartesi/rollups-contracts
 
 FROM debian:bookworm-20250407 AS rollups-node-devnet
@@ -25,8 +25,8 @@ RUN <<EOF
     ARTIFACT=foundry_v${FOUNDRY_VERSION}_linux_${ARCH}.tar.gz
     curl -sSL ${URL}/v${FOUNDRY_VERSION}/${ARTIFACT} -o /tmp/foundry.tar.gz
     case $ARCH in
-    amd64) echo "22112a68962e0d1238aad3a33d888f399dfd9b6d9e981d801ffd09cb5357a9a4  /tmp/foundry.tar.gz" | shasum -a 256 --check ;;
-    arm64) echo "ddcde0cd99cc71080d86f44a5d193d4dad089b33902e7278ae0a9dc7ad380d42  /tmp/foundry.tar.gz" | shasum -a 256 --check ;;
+    amd64) echo "325ba04dc5cb41c110723b00ac291f8269f8cd785028299aad8252ef980961a7  /tmp/foundry.tar.gz" | shasum -a 256 --check ;;
+    arm64) echo "209492cb4ebd723d9eac002fa30f41f53c8810105b67d3c32fe8201cf70f89d4  /tmp/foundry.tar.gz" | shasum -a 256 --check ;;
     esac
     tar -zxf /tmp/foundry.tar.gz -C /usr/local/bin
 EOF
@@ -39,7 +39,7 @@ RUN <<EOF
     VERSION=v${CONTRACTS_VERSION}
     ARTIFACT=rollups-contracts-${CONTRACTS_VERSION}-anvil-v${FOUNDRY_VERSION}.tar.gz
     curl -sSL ${URL}/${VERSION}/${ARTIFACT} -o /tmp/contracts.tar.gz
-    echo "0253a02f01f6a3ea31e2d255158fec66051505f93bb8d0ec8812f447cd6ae13b  /tmp/contracts.tar.gz" | sha256sum --check
+    echo "e153daa1c0a690cbff5a83fccf6686648966d18435081a75d1b6b223dbb8449d  /tmp/contracts.tar.gz" | sha256sum --check
     tar -zxf /tmp/contracts.tar.gz -C ${DEVNET_BUILD_PATH}/
     mkdir -p /usr/share/devnet
     cat ${DEVNET_BUILD_PATH}/deployments/*.json | jq -s 'map({ (.contractName): .address }) | add' > /usr/share/devnet/deployment.json
