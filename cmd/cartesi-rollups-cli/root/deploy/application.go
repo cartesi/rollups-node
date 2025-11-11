@@ -68,7 +68,7 @@ const applicationExamples = `
 # deploy and register into the database, but disabled
  - cli deploy application echo-dapp applications/echo-dapp/ --enable=false
 
-# deploy an application without a machine template path (both application-name and template-path may be ommited in this case)
+# deploy an application without a machine template path (both application-name and template-path may be omitted in this case)
  - cli deploy application --template-hash=0x0000000000000000000000000000000000000000000000000000000000000000 --register=false`
 
 func init() {

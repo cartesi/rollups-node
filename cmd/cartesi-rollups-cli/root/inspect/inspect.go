@@ -96,7 +96,10 @@ func run(cmd *cobra.Command, args []string) {
 	nameOrAddress, err := config.ToApplicationNameOrAddressFromString(args[0])
 	cobra.CheckErr(err)
 
-	client, err := inspectclient.NewClient(inspectEndpoint)
+	endpoint, err := config.GetInspectAddress()
+	cobra.CheckErr(err)
+
+	client, err := inspectclient.NewClient(endpoint)
 	cobra.CheckErr(err)
 
 	payload, err := resolvePayload(args)
