@@ -255,14 +255,16 @@ func (r *PostgresRepository) StoreAdvanceResult(
 		return err
 	}
 
-	err = insertOutputs(ctx, tx, appID, res.InputIndex, res.Outputs)
-	if err != nil {
-		return err
-	}
+	if res.Status == model.InputCompletionStatus_Accepted {
+		err = insertOutputs(ctx, tx, appID, res.InputIndex, res.Outputs)
+		if err != nil {
+			return err
+		}
 
-	err = insertReports(ctx, tx, appID, res.InputIndex, res.Reports)
-	if err != nil {
-		return err
+		err = insertReports(ctx, tx, appID, res.InputIndex, res.Reports)
+		if err != nil {
+			return err
+		}
 	}
 
 	err = updateInput(ctx, tx, appID, res.InputIndex, res.Status, res.OutputsHash, *res.MachineHash)

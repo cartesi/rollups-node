@@ -211,7 +211,7 @@ applications/echo-dapp: ## Create echo-dapp test application
 applications/reject-dapp: ## Create reject-dapp test application
 	@echo "Creating reject-dapp test application"
 	@mkdir -p applications
-	@cartesi-machine --ram-length=128Mi --store=applications/reject-dapp --final-hash -- "rollup accept && rollup reject"
+	@cartesi-machine --ram-length=128Mi --store=applications/reject-dapp --final-hash -- "rollup accept && echo '{\"payload\": \"0x726561736f6e20666f722072656a656374696e67\" }' | rollup report && rollup reject"
 
 applications/exception-dapp: ## Create exception-dapp test application
 	@echo "Creating exception-dapp test application"
