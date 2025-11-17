@@ -92,7 +92,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
 			EpochLength:         10,
 			State:               model.ApplicationState_Enabled,
 		}
-		_, err := s.repository.CreateApplication(s.ctx, app)
+		_, err := s.repository.CreateApplication(s.ctx, app, false)
 		s.Require().Nil(err)
 
 		epoch := model.Epoch{
@@ -158,7 +158,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 			EpochLength:         10,
 			State:               model.ApplicationState_Enabled,
 		}
-		_, err := s.repository.CreateApplication(s.ctx, app)
+		_, err := s.repository.CreateApplication(s.ctx, app, false)
 		s.Require().Nil(err)
 
 		// insert the first epoch with a claim
@@ -261,7 +261,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			EpochLength:         10,
 			State:               model.ApplicationState_Enabled,
 		}
-		_, err := s.repository.CreateApplication(s.ctx, app)
+		_, err := s.repository.CreateApplication(s.ctx, app, false)
 		s.Require().Nil(err)
 
 		epoch := model.Epoch{
@@ -348,7 +348,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			EpochLength:         10,
 			State:               model.ApplicationState_Enabled,
 		}
-		_, err := s.repository.CreateApplication(s.ctx, app)
+		_, err := s.repository.CreateApplication(s.ctx, app, false)
 		s.Require().Nil(err)
 
 		firstEpoch := model.Epoch{

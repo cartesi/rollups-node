@@ -154,22 +154,6 @@ func run(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	executionParameters := model.ExecutionParameters{}
-	if changed := cmd.Flags().Changed("execution-parameters-file"); changed {
-		filePath := executionParametersFileParam
-		if executionParametersFileParam == "-" {
-			filePath = os.Stdin.Name()
-		}
-		contents, err := os.ReadFile(filePath)
-		cobra.CheckErr(err)
-
-		decoder := json.NewDecoder(strings.NewReader(string(contents)))
-		decoder.DisallowUnknownFields() // Prevent unexpected fields
-		err = decoder.Decode(&executionParameters)
-		cobra.CheckErr(err)
-		cobra.CheckErr(executionParameters.Validate())
-	}
-
 	var consensus common.Address
 	if cmd.Flags().Changed("consensus") {
 		consensus = common.HexToAddress(consensusAddress)
@@ -232,21 +216,25 @@ func run(cmd *cobra.Command, args []string) {
 		LastOutputCheckBlock: 0,
 	}
 
-	_, err = repo.CreateApplication(ctx, &application)
-	cobra.CheckErr(err)
-
-	if changed := cmd.Flags().Changed("execution-parameters-file"); changed {
-		retrievedApplication, err := repo.GetApplication(ctx, validName)
-		if err != nil {
-			cobra.CheckErr(fmt.Errorf("failed to retrieve application from the database: %w", err))
+	// load execution parameters from a file?
+	withExecutionParameters := cmd.Flags().Changed("execution-parameters-file")
+	if withExecutionParameters {
+		filePath := executionParametersFileParam
+		if executionParametersFileParam == "-" {
+			filePath = os.Stdin.Name()
 		}
+		contents, err := os.ReadFile(filePath)
+		cobra.CheckErr(err)
 
-		executionParameters.ApplicationID = retrievedApplication.ID
-		err = repo.UpdateExecutionParameters(ctx, &executionParameters)
-		if err != nil {
-			cobra.CheckErr(fmt.Errorf("failed to update execution parameters: %w", err))
-		}
+		decoder := json.NewDecoder(strings.NewReader(string(contents)))
+		decoder.DisallowUnknownFields() // Prevent unexpected fields
+		err = decoder.Decode(&application.ExecutionParameters)
+		cobra.CheckErr(err)
+		cobra.CheckErr(application.ExecutionParameters.Validate())
 	}
+
+	_, err = repo.CreateApplication(ctx, &application, withExecutionParameters)
+	cobra.CheckErr(err)
 
 	if printAsJSON {
 		jsonData, err := json.Marshal(application)

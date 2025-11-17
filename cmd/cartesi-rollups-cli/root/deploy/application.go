@@ -159,8 +159,6 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	}
 
 	application := model.Application{}
-	executionParameters := model.ExecutionParameters{}
-
 	application.Name = applicationName
 	application.TemplateURI = templateURI
 	application.State = model.ApplicationState_Disabled
@@ -168,7 +166,9 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		application.State = model.ApplicationState_Enabled
 	}
 
-	if changed := cmd.Flags().Changed("execution-parameters-file"); changed {
+	// load execution parameters from a file?
+	withExecutionParameters := cmd.Flags().Changed("execution-parameters-file")
+	if withExecutionParameters {
 		filePath := executionParametersFileParam
 		if executionParametersFileParam == "-" {
 			filePath = os.Stdin.Name()
@@ -178,9 +178,9 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 
 		decoder := json.NewDecoder(strings.NewReader(string(contents)))
 		decoder.DisallowUnknownFields() // Prevent unexpected fields
-		err = decoder.Decode(&executionParameters)
+		err = decoder.Decode(&application.ExecutionParameters)
 		cobra.CheckErr(err)
-		cobra.CheckErr(executionParameters.Validate())
+		cobra.CheckErr(application.ExecutionParameters.Validate())
 
 		if verboseParam {
 			fmt.Fprintln(os.Stderr, "loading execution parameters...success")
@@ -254,35 +254,23 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		}
 		defer repo.Close()
 
-		_, err = repo.CreateApplication(ctx, &application)
+		_, err = repo.CreateApplication(ctx, &application, withExecutionParameters)
 		if err != nil {
 			cobra.CheckErr(fmt.Errorf("failed to register application: %w", err))
 		}
-
-		// retrieve fields initialized by the database
-		retrievedApplication, err := repo.GetApplication(ctx, applicationName)
 		if verboseParam || !asJsonParam {
-			if err != nil {
-				fmt.Fprint(os.Stderr, "success, but failed to retrieve the database initialized fields. Will display them as placeholders.\n")
-			} else {
-				application = *retrievedApplication
-				fmt.Fprint(os.Stderr, "success\n")
-			}
-		}
-		if changed := cmd.Flags().Changed("execution-parameters-file"); changed {
-			executionParameters.ApplicationID = application.ID
-			err = repo.UpdateExecutionParameters(ctx, &executionParameters)
-			if err != nil {
-				cobra.CheckErr(fmt.Errorf("failed to update execution parameters: %w", err))
-			}
+			fmt.Fprint(os.Stderr, "success\n")
 		}
 
 		if verboseParam || !asJsonParam {
 			if applicationName != "" || verboseParam {
-				fmt.Fprintln(os.Stderr, "\tapplication name:     ", applicationName)
+				fmt.Fprintln(os.Stderr, "\tapplication name:          ", applicationName)
 			}
 			if templateURI != "" || verboseParam {
-				fmt.Fprintln(os.Stderr, "\tapplication path:     ", templateURI)
+				fmt.Fprintln(os.Stderr, "\tapplication path:          ", templateURI)
+			}
+			if withExecutionParameters {
+				fmt.Fprintln(os.Stderr, "\texecution parameters file: ", executionParametersFileParam)
 			}
 		}
 	} else if verboseParam {

@@ -58,7 +58,7 @@ type ReportFilter struct {
 }
 
 type ApplicationRepository interface {
-	CreateApplication(ctx context.Context, app *Application) (int64, error)
+	CreateApplication(ctx context.Context, app *Application, withExecutionParameters bool) (int64, error)
 	GetApplication(ctx context.Context, nameOrAddress string) (*Application, error)
 	GetProcessedInputs(ctx context.Context, nameOrAddress string) (uint64, error)
 	UpdateApplication(ctx context.Context, app *Application) error

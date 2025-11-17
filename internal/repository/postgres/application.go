@@ -21,6 +21,7 @@ import (
 func (r *PostgresRepository) CreateApplication(
 	ctx context.Context,
 	app *model.Application,
+	withExecutionParameters bool,
 ) (int64, error) {
 
 	insertStmt := table.Application.
@@ -68,13 +69,49 @@ func (r *PostgresRepository) CreateApplication(
 		return 0, errors.Join(fmt.Errorf("unable to create database application: %w", err), tx.Rollback(ctx))
 	}
 
-	sqlStr, args = table.ExecutionParameters.
-		INSERT(
-			table.ExecutionParameters.ApplicationID,
-		).
-		VALUES(
-			newID,
-		).Sql()
+	if !withExecutionParameters {
+		sqlStr, args = table.ExecutionParameters.
+			INSERT(
+				table.ExecutionParameters.ApplicationID,
+			).
+			VALUES(
+				newID,
+			).Sql()
+	} else {
+		sqlStr, args = table.ExecutionParameters.
+			INSERT(
+				table.ExecutionParameters.ApplicationID,
+				table.ExecutionParameters.SnapshotPolicy,
+				table.ExecutionParameters.AdvanceIncCycles,
+				table.ExecutionParameters.AdvanceMaxCycles,
+				table.ExecutionParameters.InspectIncCycles,
+				table.ExecutionParameters.InspectMaxCycles,
+				table.ExecutionParameters.AdvanceIncDeadline,
+				table.ExecutionParameters.AdvanceMaxDeadline,
+				table.ExecutionParameters.InspectIncDeadline,
+				table.ExecutionParameters.InspectMaxDeadline,
+				table.ExecutionParameters.LoadDeadline,
+				table.ExecutionParameters.StoreDeadline,
+				table.ExecutionParameters.FastDeadline,
+				table.ExecutionParameters.MaxConcurrentInspects,
+			).
+			VALUES(
+				newID,
+				app.ExecutionParameters.SnapshotPolicy,
+				app.ExecutionParameters.AdvanceIncCycles,
+				app.ExecutionParameters.AdvanceMaxCycles,
+				app.ExecutionParameters.InspectIncCycles,
+				app.ExecutionParameters.InspectMaxCycles,
+				app.ExecutionParameters.AdvanceIncDeadline,
+				app.ExecutionParameters.AdvanceMaxDeadline,
+				app.ExecutionParameters.InspectIncDeadline,
+				app.ExecutionParameters.InspectMaxDeadline,
+				app.ExecutionParameters.LoadDeadline,
+				app.ExecutionParameters.StoreDeadline,
+				app.ExecutionParameters.FastDeadline,
+				app.ExecutionParameters.MaxConcurrentInspects,
+			).Sql()
+	}
 
 	_, err = tx.Exec(ctx, sqlStr, args...)
 	if err != nil {
