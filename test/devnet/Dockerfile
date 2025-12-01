@@ -1,5 +1,5 @@
 ARG FOUNDRY_VERSION=1.4.3
-ARG CONTRACTS_VERSION=2.1.0
+ARG CONTRACTS_VERSION=2.1.1
 ARG DEVNET_BUILD_PATH=/opt/cartesi/rollups-contracts
 
 FROM debian:bookworm-20250407 AS rollups-node-devnet
@@ -39,10 +39,10 @@ RUN <<EOF
     VERSION=v${CONTRACTS_VERSION}
     ARTIFACT=rollups-contracts-${CONTRACTS_VERSION}-anvil-v${FOUNDRY_VERSION}.tar.gz
     curl -sSL ${URL}/${VERSION}/${ARTIFACT} -o /tmp/contracts.tar.gz
-    echo "e153daa1c0a690cbff5a83fccf6686648966d18435081a75d1b6b223dbb8449d  /tmp/contracts.tar.gz" | sha256sum --check
+    echo "a47e69b3f8ca648bb59eef2cd786c62dee1aecad7e51780902d91c193702e8ae  /tmp/contracts.tar.gz" | sha256sum --check
     tar -zxf /tmp/contracts.tar.gz -C ${DEVNET_BUILD_PATH}/
     mkdir -p /usr/share/devnet
-    cat ${DEVNET_BUILD_PATH}/deployments/*.json | jq -s 'map({ (.contractName): .address }) | add' > /usr/share/devnet/deployment.json
+    cat ${DEVNET_BUILD_PATH}/deployments/31337/*.json | jq -s 'map({ (.contractName): .address }) | add' > /usr/share/devnet/deployment.json
     mv ${DEVNET_BUILD_PATH}/state.json /usr/share/devnet/anvil_state.json
 EOF
 

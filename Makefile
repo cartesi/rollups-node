@@ -18,10 +18,10 @@ TARGET_OS?=$(shell uname)
 export TARGET_OS
 
 ROLLUPS_NODE_VERSION := 2.0.0-alpha.8
-CONTRACTS_VERSION := 2.1.0
+CONTRACTS_VERSION := 2.1.1
 CONTRACTS_URL:=https://github.com/cartesi/rollups-contracts/releases/download/
 CONTRACTS_ARTIFACT:=rollups-contracts-$(CONTRACTS_VERSION)-artifacts.tar.gz
-CONTRACTS_SHA256:=51f543b9414899dc6217461aec14e840895b494fecf3aafed8db8b791ad4c693
+CONTRACTS_SHA256:=2e7a105d656de2adafad6439a5ff00f35b997aaf27972bd1becc33dea8817861
 
 IMAGE_TAG ?= devel
 
