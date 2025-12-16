@@ -148,7 +148,7 @@ func run(cmd *cobra.Command, args []string) {
 			snapshotTemplateHash := common.HexToHash(templateHash)
 			if parsedTemplateHash != snapshotTemplateHash {
 				fmt.Fprintf(os.Stderr, "Template hash mismatch: contract has %s but machine has %s\n",
-					contractTemplateHash.Hex(), parsedTemplateHash.Hex())
+					parsedTemplateHash.Hex(), snapshotTemplateHash.Hex())
 				os.Exit(1)
 			}
 		}
