@@ -50,9 +50,14 @@ func (m *MockBackend) ReceiveCmioRequest(timeout time.Duration) (uint8, uint16, 
 	return args.Get(0).(uint8), args.Get(1).(uint16), args.Get(2).([]byte), args.Error(3)
 }
 
-func (m *MockBackend) GetRootHash(timeout time.Duration) ([]byte, error) {
+func (m *MockBackend) GetRootHash(timeout time.Duration) (Hash, error) {
 	args := m.Called(timeout)
-	return args.Get(0).([]byte), args.Error(1)
+	return args.Get(0).(Hash), args.Error(1)
+}
+
+func (m *MockBackend) WriteMemory(address uint64, data []byte, timeout time.Duration) error {
+	args := m.Called(address, data, timeout)
+	return args.Error(0)
 }
 
 func (m *MockBackend) Delete() {
@@ -79,31 +84,38 @@ func (m *MockBackend) CmioRxBufferSize() uint64 {
 	return args.Get(0).(uint64)
 }
 
+func (m *MockBackend) RunAndCollectRootHashes(mcycleEnd uint64, state *HashCollectorState, timeout time.Duration) (reason BreakReason, err error) {
+	args := m.Called(mcycleEnd, state, timeout)
+	return args.Get(0).(BreakReason), args.Error(1)
+}
+
 // Helper functions for setting up common mock scenarios
 
-func randomFakeHash() []byte {
-	data := make([]byte, HashSize)
-	_, _ = rand.Read(data)
-	return data
+func randomFakeHash() Hash {
+	hash := Hash{}
+	_, _ = rand.Read(hash[:])
+	return hash
 }
 
 // SetupAccepted configures the mock for a successful advance/inspect operation
 func (m *MockBackend) SetupAccepted(reqType requestType) {
+	hash := randomFakeHash()
 	m.On("SendCmioResponse", uint16(reqType), mock.Anything, mock.AnythingOfType("time.Duration")).Return(nil)
 	m.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
 	m.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
 	m.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(ManualYieldReasonAccepted), randomFakeHash(), nil)
+		uint8(0), uint16(ManualYieldReasonAccepted), hash[:], nil)
 	m.On("CmioRxBufferSize").Return(uint64(1024))
 }
 
 // SetupRejected configures the mock for a rejected advance/inspect operation
 func (m *MockBackend) SetupRejected(reqType requestType) {
+	hash := randomFakeHash()
 	m.On("SendCmioResponse", uint16(reqType), mock.Anything, mock.AnythingOfType("time.Duration")).Return(nil)
 	m.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
 	m.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
 	m.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(ManualYieldReasonRejected), randomFakeHash(), nil)
+		uint8(0), uint16(ManualYieldReasonRejected), hash[:], nil)
 	m.On("CmioRxBufferSize").Return(uint64(1024))
 }
 
@@ -119,11 +131,12 @@ func (m *MockBackend) SetupException(reqType requestType) {
 
 // SetupForLoad configures the mock for successful machine loading
 func (m *MockBackend) SetupForLoad() {
+	hash := randomFakeHash()
 	m.On("NewMachineRuntimeConfig").Return(`{"concurrency":{"update_merkle_tree":1}}`, nil).Once()
 	m.On("Load", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("time.Duration")).Return(nil).Once()
 	m.On("IsAtManualYield", mock.AnythingOfType("time.Duration")).Return(true, nil).Once()
 	m.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(ManualYieldReasonAccepted), make([]byte, HashSize), nil).Once()
+		uint8(0), uint16(ManualYieldReasonAccepted), hash[:], nil).Once()
 }
 
 // SetupForCleanup configures the mock for cleanup operations
@@ -148,7 +161,7 @@ func (m *MockBackend) SetupNotAtManualYield() {
 }
 
 // SetupForHash configures the mock for successful hash retrieval
-func (m *MockBackend) SetupForHash(hash []byte) {
+func (m *MockBackend) SetupForHash(hash Hash) {
 	m.On("GetRootHash", mock.AnythingOfType("time.Duration")).Return(hash, nil)
 }
 
@@ -159,14 +172,14 @@ func NewMockBackend() *MockBackend {
 
 // MockBackendFactory creates a backend factory that returns the provided mock
 func MockBackendFactory(backend *MockBackend) BackendFactory {
-	return func(address string, timeout time.Duration) (Backend, string, uint32, error) {
+	return func(_ string, _ time.Duration) (Backend, string, uint32, error) {
 		return backend, "127.0.0.1:12345", 12345, nil
 	}
 }
 
 // FailingMockBackendFactory creates a backend factory that always fails
 func FailingMockBackendFactory(err error) BackendFactory {
-	return func(address string, timeout time.Duration) (Backend, string, uint32, error) {
+	return func(_ string, _ time.Duration) (Backend, string, uint32, error) {
 		return nil, "", 0, err
 	}
 }

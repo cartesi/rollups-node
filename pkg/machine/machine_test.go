@@ -214,7 +214,7 @@ func (s *MachineSuite) TestMachineInterface() {
 	require.Equal(Hash{6, 7, 8, 9, 10}, outputsHash)
 
 	// Test Advance
-	accepted, outputs, reports, advanceHash, err := machine.Advance(ctx, []byte("input"))
+	accepted, outputs, reports, _, _, advanceHash, err := machine.Advance(ctx, []byte("input"), false)
 	require.NoError(err)
 	require.True(accepted)
 	require.Len(outputs, 2)
@@ -279,7 +279,7 @@ func (s *MachineSuite) TestMachineInterfaceErrors() {
 	require.Contains(err.Error(), "outputs hash error")
 
 	// Test Advance error
-	_, _, _, _, err = machine.Advance(ctx, []byte("input"))
+	_, _, _, _, _, _, err = machine.Advance(ctx, []byte("input"), false)
 	require.Error(err)
 	require.Contains(err.Error(), "advance error")
 
@@ -310,11 +310,15 @@ type MockMachine struct {
 	OutputsHashReturn Hash
 	OutputsHashError  error
 
-	AdvanceAcceptedReturn bool
-	AdvanceOutputsReturn  []Output
-	AdvanceReportsReturn  []Report
-	AdvanceHashReturn     Hash
-	AdvanceError          error
+	CheckpointHashError error
+
+	AdvanceAcceptedReturn  bool
+	AdvanceOutputsReturn   []Output
+	AdvanceReportsReturn   []Report
+	AdvanceHashesReturn    []Hash
+	AdvanceRemainingReturn uint64
+	AdvanceHashReturn      Hash
+	AdvanceError           error
 
 	InspectAcceptedReturn bool
 	InspectReportsReturn  []Report
@@ -339,12 +343,18 @@ func (m *MockMachine) OutputsHash(_ context.Context) (Hash, error) {
 	return m.OutputsHashReturn, m.OutputsHashError
 }
 
-func (m *MockMachine) Advance(_ context.Context, _ []byte) (
-	bool, []Output, []Report, Hash, error,
+func (m *MockMachine) WriteCheckpointHash(_ context.Context, _ Hash) error {
+	return m.CheckpointHashError
+}
+
+func (m *MockMachine) Advance(_ context.Context, _ []byte, leafs bool) (
+	bool, []Output, []Report, []Hash, uint64, Hash, error,
 ) {
 	return m.AdvanceAcceptedReturn,
 		m.AdvanceOutputsReturn,
 		m.AdvanceReportsReturn,
+		m.AdvanceHashesReturn,
+		m.AdvanceRemainingReturn,
 		m.AdvanceHashReturn,
 		m.AdvanceError
 }

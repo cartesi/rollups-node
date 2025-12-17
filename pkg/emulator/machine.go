@@ -7,6 +7,7 @@
 package emulator
 
 // #include <stdlib.h>
+// #include <string.h>
 // #include "cartesi-machine/machine-c-api.h"
 import "C"
 
@@ -15,6 +16,11 @@ import (
 	"sync"
 	"unsafe"
 )
+
+const HashSize = C.sizeof_cm_hash
+
+// Common type aliases
+type Hash = [HashSize]byte
 
 // -----------------------------------------------------------------------------
 // Machine Methods
@@ -171,22 +177,19 @@ func (m *Machine) GetRegAddress(reg RegID) (uint64, error) {
 }
 
 // get_root_hash
-func (m *Machine) GetRootHash() ([]byte, error) {
-	var hash C.cm_hash
+func (m *Machine) GetRootHash() (Hash, error) {
+	var cHash C.cm_hash
 	var err error
-	var result []byte
 
 	m.callCAPI(func() {
-		err = newError(C.cm_get_root_hash(m.ptr, &hash))
-		if err == nil {
-			result = C.GoBytes(unsafe.Pointer(&hash), 32)
-		}
+		err = newError(C.cm_get_root_hash(m.ptr, &cHash))
 	})
-
 	if err != nil {
-		return nil, err
+		return Hash{}, err
 	}
-	return result, nil
+
+	// Zero-copy: reinterpret C array as Go array
+	return *(*Hash)(unsafe.Pointer(&cHash)), nil
 }
 
 // get_runtime_config

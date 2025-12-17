@@ -132,7 +132,7 @@ func (m *MachineManager) UpdateMachines(ctx context.Context) error {
 							"epoch_index", input.EpochIndex,
 							"input_index", input.Index)
 
-						_, err := instance.Advance(ctx, input.RawData, input.Index)
+						_, err := instance.Advance(ctx, input.RawData, input.EpochIndex, input.Index, false)
 						if err != nil {
 							m.logger.Error("Failed to replay input after snapshot",
 								"application", app.Name,

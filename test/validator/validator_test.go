@@ -124,7 +124,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
 			InputIndex:  input.Index,
 			Status:      model.InputCompletionStatus_Accepted,
 			OutputsHash: pristineRootHash,
-			MachineHash: &machinehash1,
+			MachineHash: machinehash1,
 		}
 		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
@@ -215,7 +215,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 			InputIndex:  firstEpochInput.Index,
 			Status:      model.InputCompletionStatus_Accepted,
 			OutputsHash: firstEpochClaim,
-			MachineHash: &machinehash1,
+			MachineHash: machinehash1,
 		}
 		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
@@ -231,7 +231,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 			// since there are no new outputs in the second epoch,
 			// the machine OutputsHash will remain the same
 			OutputsHash: firstEpochClaim,
-			MachineHash: &machinehash2,
+			MachineHash: machinehash2,
 		}
 		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
@@ -311,7 +311,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			Status:      model.InputCompletionStatus_Accepted,
 			OutputsHash: expectedClaim,
 			Outputs:     [][]byte{outputRawData},
-			MachineHash: &machinehash1,
+			MachineHash: machinehash1,
 		}
 		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
@@ -401,7 +401,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			Status:      model.InputCompletionStatus_Accepted,
 			OutputsHash: firstEpochClaim,
 			Outputs:     [][]byte{firstOutputData},
-			MachineHash: &machinehash1,
+			MachineHash: machinehash1,
 		}
 		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
@@ -452,7 +452,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			Status:      model.InputCompletionStatus_Accepted,
 			OutputsHash: expectedEpochClaim,
 			Outputs:     [][]byte{secondOutputData},
-			MachineHash: &machinehash2,
+			MachineHash: machinehash2,
 		}
 		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)

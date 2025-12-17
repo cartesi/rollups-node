@@ -7,17 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path"
 	"strings"
 
-	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/inspect"
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/pkg/service"
 )
 
 var (
@@ -34,97 +30,12 @@ type AdvancerRepository interface {
 	GetLastInput(ctx context.Context, appAddress string, epochIndex uint64) (*Input, error)
 	StoreAdvanceResult(ctx context.Context, appID int64, ar *AdvanceResult) error
 	UpdateEpochsInputsProcessed(ctx context.Context, nameOrAddress string) ([]uint64, error)
+	UpdateEpochCommitment(ctx context.Context, appID int64, epochIndex uint64, commitment []byte) error
 	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	UpdateInputSnapshotURI(ctx context.Context, appId int64, inputIndex uint64, snapshotURI string) error
 	GetLastSnapshot(ctx context.Context, nameOrAddress string) (*Input, error)
 	GetLastProcessedInput(ctx context.Context, appAddress string) (*Input, error)
-}
-
-// Service is the main advancer service that processes inputs through Cartesi machines
-type Service struct {
-	service.Service
-	snapshotsDir   string
-	repository     AdvancerRepository
-	machineManager manager.MachineProvider
-	inspector      *inspect.Inspector
-	HTTPServer     *http.Server
-	HTTPServerFunc func() error
-}
-
-// CreateInfo contains the configuration for creating an advancer service
-type CreateInfo struct {
-	service.CreateInfo
-	Config     config.AdvancerConfig
-	Repository repository.Repository
-}
-
-// Create initializes a new advancer service
-func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
-	var err error
-	if err = ctx.Err(); err != nil {
-		return nil, err // This returns context.Canceled or context.DeadlineExceeded.
-	}
-
-	s := &Service{}
-	c.Impl = s
-
-	err = service.Create(ctx, &c.CreateInfo, &s.Service)
-	if err != nil {
-		return nil, err
-	}
-
-	s.repository = c.Repository
-	if s.repository == nil {
-		return nil, fmt.Errorf("repository on advancer service Create is nil")
-	}
-
-	// Create the machine manager
-	manager := manager.NewMachineManager(
-		ctx,
-		c.Repository,
-		s.Logger,
-		c.Config.FeatureMachineHashCheckEnabled,
-	)
-	s.machineManager = manager
-
-	// Initialize the inspect service if enabled
-	if c.Config.FeatureInspectEnabled {
-		s.inspector, s.HTTPServer, s.HTTPServerFunc = inspect.NewInspector(
-			c.Repository,
-			manager,
-			c.Config.InspectAddress,
-			c.LogLevel,
-			c.LogColor,
-		)
-	}
-
-	s.snapshotsDir = c.Config.SnapshotsDir
-
-	return s, nil
-}
-
-// Service interface implementation
-func (s *Service) Alive() bool     { return true }
-func (s *Service) Ready() bool     { return true }
-func (s *Service) Reload() []error { return nil }
-func (s *Service) Tick() []error {
-	if err := s.Step(s.Context); err != nil {
-		return []error{err}
-	}
-	return []error{}
-}
-func (s *Service) Stop(b bool) []error {
-	return nil
-}
-func (s *Service) Serve() error {
-	if s.inspector != nil && s.HTTPServerFunc != nil {
-		go s.HTTPServerFunc()
-	}
-	return s.Service.Serve()
-}
-func (s *Service) String() string {
-	return s.Name
 }
 
 // getUnprocessedInputs retrieves inputs that haven't been processed yet
@@ -212,7 +123,7 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 			"index", input.Index)
 
 		// Advance the machine with this input
-		result, err := machine.Advance(ctx, input.RawData, input.Index)
+		result, err := machine.Advance(ctx, input.RawData, input.EpochIndex, input.Index, app.IsDaveConsensus())
 		if err != nil {
 			// If there's an error, mark the application as inoperable
 			s.Logger.Error("Error executing advance",
@@ -235,14 +146,16 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 
 			return err
 		}
-
+		// log advance result hashes
 		s.Logger.Info("Processing input finished",
 			"application", app.Name,
-			"epoch", input.EpochIndex,
-			"index", input.Index,
+			"epoch", result.EpochIndex,
+			"index", result.InputIndex,
 			"status", result.Status,
 			"outputs", len(result.Outputs),
 			"reports", len(result.Reports),
+			"hashes", len(result.Hashes),
+			"remaining_cycles", result.RemainingMetaCycles,
 		)
 
 		// Store the result in the database
@@ -271,13 +184,37 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 	return nil
 }
 
-// handleEpochSnapshotAfterInputProcessed handles the snapshot creation after when an epoch is closed after an input was processed
-func (s *Service) handleEpochSnapshotAfterInputProcessed(ctx context.Context, app *Application) error {
-	// Check if the application has a epoch snapshot policy
-	if app.ExecutionParameters.SnapshotPolicy != SnapshotPolicy_EveryEpoch {
-		return nil
+func (s *Service) isEpochLastInput(ctx context.Context, app *Application, input *Input) (bool, error) {
+	if app == nil || input == nil {
+		return false, fmt.Errorf("application and input must not be nil")
+	}
+	// Get the epoch for this input
+	epoch, err := s.repository.GetEpoch(ctx, app.IApplicationAddress.String(), input.EpochIndex)
+	if err != nil {
+		return false, fmt.Errorf("failed to get epoch: %w", err)
 	}
 
+	// Skip if the epoch is still open
+	if epoch.Status == EpochStatus_Open {
+		return false, nil
+	}
+
+	// Check if this is the last input of the epoch
+	lastInput, err := s.repository.GetLastInput(ctx, app.IApplicationAddress.String(), input.EpochIndex)
+	if err != nil {
+		return false, fmt.Errorf("failed to get last input: %w", err)
+	}
+
+	// If this is the last input and the epoch is closed, return true
+	if lastInput != nil && lastInput.Index == input.Index {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+// handleEpochSnapshotAfterInputProcessed handles the snapshot creation after when an epoch is closed after an input was processed
+func (s *Service) handleEpochSnapshotAfterInputProcessed(ctx context.Context, app *Application) error {
 	// Get the machine instance for this application
 	machine, exists := s.machineManager.GetMachine(app.ID)
 	if !exists {
@@ -290,12 +227,13 @@ func (s *Service) handleEpochSnapshotAfterInputProcessed(ctx context.Context, ap
 		return fmt.Errorf("failed to get last input: %w", err)
 	}
 
-	if lastProcessedInput == nil {
-		return nil
+	// Check if the application has a epoch snapshot policy
+	if lastProcessedInput != nil && app.ExecutionParameters.SnapshotPolicy == SnapshotPolicy_EveryEpoch {
+		// Handle the snapshot
+		return s.handleSnapshot(ctx, app, machine, lastProcessedInput)
 	}
 
-	// Handle the snapshot
-	return s.handleSnapshot(ctx, app, machine, lastProcessedInput)
+	return nil
 }
 
 // handleSnapshot creates a snapshot based on the application's snapshot policy
@@ -314,25 +252,12 @@ func (s *Service) handleSnapshot(ctx context.Context, app *Application, machine 
 
 	// For EVERY_EPOCH policy, check if this is the last input of the epoch
 	if policy == SnapshotPolicy_EveryEpoch {
-		// Get the epoch for this input
-		epoch, err := s.repository.GetEpoch(ctx, app.IApplicationAddress.String(), input.EpochIndex)
-		if err != nil {
-			return fmt.Errorf("failed to get epoch: %w", err)
-		}
-
-		// Skip if the epoch is still open
-		if epoch.Status == EpochStatus_Open {
-			return nil
-		}
-
-		// Check if this is the last input of the epoch
-		lastInput, err := s.repository.GetLastInput(ctx, app.IApplicationAddress.String(), input.EpochIndex)
-		if err != nil {
-			return fmt.Errorf("failed to get last input: %w", err)
-		}
-
 		// If this is the last input and the epoch is closed, create a snapshot
-		if lastInput != nil && lastInput.Index == input.Index {
+		isLastInput, err := s.isEpochLastInput(ctx, app, input)
+		if err != nil {
+			return err
+		}
+		if isLastInput {
 			return s.createSnapshot(ctx, app, machine, input)
 		}
 	}
@@ -364,7 +289,7 @@ func (s *Service) createSnapshot(ctx context.Context, app *Application, machine 
 
 	// Ensure the parent directory exists
 	if _, err := os.Stat(s.snapshotsDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(s.snapshotsDir, 0755); err != nil { // nolint: mnd
+		if err := os.MkdirAll(s.snapshotsDir, 0755); err != nil { //nolint: mnd
 			return fmt.Errorf("failed to create snapshots directory: %w", err)
 		}
 	}
