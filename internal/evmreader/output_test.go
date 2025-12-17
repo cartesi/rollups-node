@@ -527,13 +527,15 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 	s.contractFactory = newMockAdapterFactory()
 
 	s.evmReader = &Service{
-		client:             s.client,
-		wsClient:           s.wsClient,
-		repository:         s.repository,
-		defaultBlock:       DefaultBlock_Latest,
-		adapterFactory:     s.contractFactory,
-		hasEnabledApps:     true,
-		inputReaderEnabled: true,
+		client:                              s.client,
+		wsClient:                            s.wsClient,
+		repository:                          s.repository,
+		defaultBlock:                        DefaultBlock_Latest,
+		adapterFactory:                      s.contractFactory,
+		hasEnabledApps:                      true,
+		inputReaderEnabled:                  true,
+		blockchainMaxRetries:                0,
+		blockchainSubscriptionRetryInterval: time.Second,
 	}
 
 	logLevel, err := config.GetLogLevel()

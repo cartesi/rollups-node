@@ -150,13 +150,6 @@ The default block to be used by EVM Reader and Claimer when requesting new block
 One of 'latest', 'pending', 'safe', 'finalized'"""
 used-by = ["evmreader", "claimer", "node", "prt"]
 
-[blockchain.CARTESI_BLOCKCHAIN_SUBSCRIPTION_TIMEOUT]
-default = "60"
-go-type = "Duration"
-description = """
-Block subscription timeout in seconds."""
-used-by = ["evmreader", "node"]
-
 [rollups.CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES]
 default = "4"
 go-type = "uint64"
