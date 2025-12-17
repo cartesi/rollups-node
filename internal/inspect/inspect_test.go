@@ -219,6 +219,8 @@ func (mock *MockMachine) Advance(
 	_ context.Context,
 	input []byte,
 	_ uint64,
+	_ uint64,
+	_ bool,
 ) (*AdvanceResult, error) {
 	// Not used in inspect tests, but needed to satisfy the interface
 	return nil, nil
@@ -236,6 +238,12 @@ func (mock *MockMachine) Synchronize(ctx context.Context, repo manager.MachineRe
 func (mock *MockMachine) CreateSnapshot(ctx context.Context, processedInputs uint64, path string) error {
 	// Not used in inspect tests, but needed to satisfy the interface
 	return nil
+}
+
+// Retrieves the hash of the current machine state
+func (m *MockMachine) Hash(ctx context.Context) ([32]byte, error) {
+	// Not used in inspect tests, but needed to satisfy the interface
+	return [32]byte{}, nil
 }
 
 func (mock *MockMachine) Close() error {

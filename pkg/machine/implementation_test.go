@@ -102,12 +102,12 @@ func (s *ImplementationSuite) TestHash() {
 
 	hash, err := machine.Hash(ctx)
 	require.NoError(err)
-	require.Equal(expectedHash, hash[:])
+	require.Equal(expectedHash, hash)
 	mockBackend.AssertExpectations(s.T())
 
 	// Test hash with backend error
 	mockBackend2 := NewMockBackend()
-	mockBackend2.On("GetRootHash", mock.AnythingOfType("time.Duration")).Return(([]byte)(nil), errors.New("hash failed"))
+	mockBackend2.On("GetRootHash", mock.AnythingOfType("time.Duration")).Return((Hash)(Hash{}), errors.New("hash failed"))
 	machine2 := &machineImpl{
 		backend: mockBackend2,
 		logger:  s.logger,
@@ -121,27 +121,11 @@ func (s *ImplementationSuite) TestHash() {
 	require.Contains(err.Error(), "could not get the machine's root hash")
 	mockBackend2.AssertExpectations(s.T())
 
-	// Test hash with invalid length
-	mockBackend3 := NewMockBackend()
-	mockBackend3.On("GetRootHash", mock.AnythingOfType("time.Duration")).Return(make([]byte, 16), nil) // Invalid length
-	machine3 := &machineImpl{
-		backend: mockBackend3,
-		logger:  s.logger,
-		params: model.ExecutionParameters{
-			LoadDeadline: time.Second * 5,
-		},
-	}
-	_, err = machine3.Hash(ctx)
-	require.Error(err)
-	require.ErrorIs(err, ErrMachineInternal)
-	require.Contains(err.Error(), "invalid machine root hash length")
-
 	// Test hash with canceled context
 	canceledCtx, cancel := context.WithCancel(ctx)
 	cancel()
 	_, err = machine.Hash(canceledCtx)
 	require.ErrorIs(err, ErrCanceled)
-	mockBackend3.AssertExpectations(s.T())
 }
 
 // Test OutputsHash method
@@ -153,7 +137,7 @@ func (s *ImplementationSuite) TestOutputsHash() {
 	mockBackend := NewMockBackend()
 	expectedHash := randomFakeHash()
 	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(ManualYieldReasonAccepted), expectedHash, nil)
+		uint8(0), uint16(ManualYieldReasonAccepted), expectedHash[:], nil)
 
 	machine := &machineImpl{
 		backend: mockBackend,
@@ -165,7 +149,7 @@ func (s *ImplementationSuite) TestOutputsHash() {
 
 	hash, err := machine.OutputsHash(ctx)
 	require.NoError(err)
-	require.Equal(expectedHash, hash[:])
+	require.Equal(expectedHash, hash)
 	mockBackend.AssertExpectations(s.T())
 
 	// Test outputs hash with rejected request
@@ -239,7 +223,7 @@ func (s *ImplementationSuite) TestAdvance() {
 	}
 
 	input := []byte("test input")
-	accepted, outputs, reports, hash, err := machine.Advance(ctx, input)
+	accepted, outputs, reports, _, _, hash, err := machine.Advance(ctx, input, false)
 	require.NoError(err)
 	require.True(accepted)
 	require.Empty(outputs)
@@ -261,7 +245,7 @@ func (s *ImplementationSuite) TestAdvance() {
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	accepted, outputs, reports, hash, err = machine2.Advance(ctx, input)
+	accepted, outputs, reports, _, _, hash, err = machine2.Advance(ctx, input, false)
 	require.NoError(err)
 	require.False(accepted)
 	require.Empty(outputs)
@@ -283,7 +267,7 @@ func (s *ImplementationSuite) TestAdvance() {
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	accepted, outputs, reports, hash, err = machine3.Advance(ctx, input)
+	accepted, outputs, reports, _, _, hash, err = machine3.Advance(ctx, input, false)
 	require.ErrorIs(err, ErrException)
 	require.False(accepted)
 	require.Equal(Hash{}, hash)
@@ -304,7 +288,7 @@ func (s *ImplementationSuite) TestAdvance() {
 		},
 	}
 	largeInput := make([]byte, 10)
-	_, _, _, _, err = machine4.Advance(ctx, largeInput)
+	_, _, _, _, _, _, err = machine4.Advance(ctx, largeInput, false)
 	require.ErrorIs(err, ErrPayloadLengthLimitExceeded)
 	mockBackend4.AssertExpectations(s.T())
 
@@ -327,7 +311,7 @@ func (s *ImplementationSuite) TestAdvance() {
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	_, _, _, _, err = machine5.Advance(ctx, input)
+	_, _, _, _, _, _, err = machine5.Advance(ctx, input, false)
 	require.Error(err)
 	require.ErrorIs(err, ErrHashLength)
 	mockBackend5.AssertExpectations(s.T())
@@ -560,8 +544,9 @@ func (s *ImplementationSuite) TestHelperMethods() {
 
 	// Test wasLastRequestAccepted
 	mockBackend3 := NewMockBackend()
+	expectedHash3 := randomFakeHash()
 	mockBackend3.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(ManualYieldReasonAccepted), randomFakeHash(), nil)
+		uint8(0), uint16(ManualYieldReasonAccepted), expectedHash3[:], nil)
 	machine3 := &machineImpl{
 		backend: mockBackend3,
 		logger:  s.logger,
@@ -576,8 +561,9 @@ func (s *ImplementationSuite) TestHelperMethods() {
 	mockBackend3.AssertExpectations(s.T())
 
 	mockBackend4 := NewMockBackend()
+	expectedHash4 := randomFakeHash()
 	mockBackend4.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(ManualYieldReasonRejected), randomFakeHash(), nil)
+		uint8(0), uint16(ManualYieldReasonRejected), expectedHash4[:], nil)
 	machine4 := &machineImpl{
 		backend: mockBackend4,
 		logger:  s.logger,
@@ -672,7 +658,7 @@ func (s *ImplementationSuite) TestRun() {
 		},
 	}
 
-	outputs, reports, err := machine.run(ctx, AdvanceStateRequest)
+	outputs, reports, _, _, err := machine.run(ctx, AdvanceStateRequest, false)
 	require.NoError(err)
 	require.Empty(outputs)
 	require.Empty(reports)
@@ -692,7 +678,7 @@ func (s *ImplementationSuite) TestRun() {
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	_, _, err = machine2.run(ctx, AdvanceStateRequest)
+	_, _, _, _, err = machine2.run(ctx, AdvanceStateRequest, false)
 	require.Error(err)
 	require.Contains(err.Error(), "read cycle failed")
 	mockBackend2.AssertExpectations(s.T())
@@ -715,7 +701,7 @@ func (s *ImplementationSuite) TestRun() {
 		},
 	}
 
-	_, _, err = machine3.run(ctx, AdvanceStateRequest)
+	_, _, _, _, err = machine3.run(ctx, AdvanceStateRequest, false)
 	require.NoError(err)
 	mockBackend3.AssertExpectations(s.T())
 
@@ -740,87 +726,87 @@ func (s *ImplementationSuite) TestStep() {
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(150), nil)
 	machine.backend = mockBackend
 
-	yieldType, cycle, err := machine.step(ctx, 100, 1000, time.Second)
+	yieldType, cycle, err := machine.runIncrementInterval(ctx, 100, 1000, nil, time.Second)
 	require.NoError(err)
 	require.NotNil(yieldType)
 	require.Equal(ManualYield, *yieldType)
 	require.Equal(uint64(150), cycle)
 	mockBackend.AssertExpectations(s.T())
 
-	// Test step with automatic yield
+	// Test runIncrementInterval with automatic yield
 	mockBackend2 := NewMockBackend()
 	mockBackend2.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedAutomatically, nil)
 	mockBackend2.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(200), nil)
 	machine.backend = mockBackend2
 
-	yieldType, cycle, err = machine.step(ctx, 100, 1000, time.Second)
+	yieldType, cycle, err = machine.runIncrementInterval(ctx, 100, 1000, nil, time.Second)
 	require.NoError(err)
 	require.NotNil(yieldType)
 	require.Equal(AutomaticYield, *yieldType)
 	require.Equal(uint64(200), cycle)
 	mockBackend2.AssertExpectations(s.T())
 
-	// Test step with soft yield (no yield)
+	// Test runIncrementInterval with soft yield (no yield)
 	mockBackend3 := NewMockBackend()
 	mockBackend3.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedSoftly, nil)
 	mockBackend3.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(150), nil)
 	machine.backend = mockBackend3
 
-	yieldType, cycle, err = machine.step(ctx, 100, 1000, time.Second)
+	yieldType, cycle, err = machine.runIncrementInterval(ctx, 100, 1000, nil, time.Second)
 	require.NoError(err)
 	require.Nil(yieldType)
 	require.Equal(uint64(150), cycle)
 	mockBackend3.AssertExpectations(s.T())
 
-	// Test step with reached target mcycle
+	// Test runIncrementInterval with reached target mcycle
 	mockBackend4 := NewMockBackend()
 	mockBackend4.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(ReachedTargetMcycle, nil)
 	mockBackend4.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(1000), nil)
 	machine.backend = mockBackend4
 
-	yieldType, cycle, err = machine.step(ctx, 100, 1000, time.Second)
+	yieldType, cycle, err = machine.runIncrementInterval(ctx, 100, 1000, nil, time.Second)
 	require.ErrorIs(err, ErrReachedTargetMcycle)
 	require.Nil(yieldType)
 	require.Equal(uint64(1000), cycle)
 	mockBackend4.AssertExpectations(s.T())
 
-	// Test step with halted
+	// Test runIncrementInterval with halted
 	mockBackend5 := NewMockBackend()
 	mockBackend5.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(Halted, nil)
 	mockBackend5.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(500), nil)
 	machine.backend = mockBackend5
 
-	yieldType, cycle, err = machine.step(ctx, 100, 1000, time.Second)
+	yieldType, cycle, err = machine.runIncrementInterval(ctx, 100, 1000, nil, time.Second)
 	require.ErrorIs(err, ErrHalted)
 	require.Nil(yieldType)
 	require.Equal(uint64(500), cycle)
 
-	// Test step already at limit cycle
-	yieldType, cycle, err = machine.step(ctx, 1000, 1000, time.Second)
+	// Test runIncrementInterval already at limit cycle
+	yieldType, cycle, err = machine.runIncrementInterval(ctx, 1000, 1000, nil, time.Second)
 	require.ErrorIs(err, ErrReachedLimitMcycle)
 	require.Nil(yieldType)
 	require.Equal(uint64(0), cycle)
 	mockBackend5.AssertExpectations(s.T())
 
-	// Test step with backend run error
+	// Test runIncrementInterval with backend run error
 	mockBackend6 := NewMockBackend()
 	mockBackend6.On("Run",
 		mock.AnythingOfType("uint64"),
 		mock.AnythingOfType("time.Duration"),
 	).Return(BreakReason(0), errors.New("run failed"))
 	machine.backend = mockBackend6
-	yieldType, _, err = machine.step(ctx, 100, 1000, time.Second)
+	yieldType, _, err = machine.runIncrementInterval(ctx, 100, 1000, nil, time.Second)
 	require.Error(err)
 	require.Contains(err.Error(), "run failed")
 	require.Nil(yieldType)
 	mockBackend6.AssertExpectations(s.T())
 
-	// Test step with read cycle error
+	// Test runIncrementInterval with read cycle error
 	mockBackend7 := NewMockBackend()
 	mockBackend7.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
 	mockBackend7.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), errors.New("read cycle failed"))
 	machine.backend = mockBackend7
-	yieldType, _, err = machine.step(ctx, 100, 1000, time.Second)
+	yieldType, _, err = machine.runIncrementInterval(ctx, 100, 1000, nil, time.Second)
 	require.Error(err)
 	require.Contains(err.Error(), "read cycle failed")
 	require.Nil(yieldType)
@@ -854,7 +840,7 @@ func (s *ImplementationSuite) TestProcess() {
 	}
 
 	input := []byte("test input")
-	accepted, outputs, reports, data, err := machine.process(ctx, input, AdvanceStateRequest)
+	accepted, outputs, reports, _, _, data, err := machine.process(ctx, input, AdvanceStateRequest, false)
 	require.NoError(err)
 	require.True(accepted)
 	require.Empty(outputs)
@@ -876,7 +862,7 @@ func (s *ImplementationSuite) TestProcess() {
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	_, _, _, _, err = machine2.process(ctx, input, AdvanceStateRequest)
+	_, _, _, _, _, _, err = machine2.process(ctx, input, AdvanceStateRequest, false)
 	require.ErrorIs(err, ErrPayloadLengthLimitExceeded)
 	mockBackend2.AssertExpectations(s.T())
 
@@ -899,7 +885,7 @@ func (s *ImplementationSuite) TestProcess() {
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	_, _, _, _, err = machine3.process(ctx, input, AdvanceStateRequest)
+	_, _, _, _, _, _, err = machine3.process(ctx, input, AdvanceStateRequest, false)
 	require.Error(err)
 	require.Contains(err.Error(), "send failed")
 	mockBackend3.AssertExpectations(s.T())
@@ -920,7 +906,7 @@ func (s *ImplementationSuite) TestProcess() {
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	_, _, _, _, err = machine4.process(ctx, input, AdvanceStateRequest)
+	_, _, _, _, _, _, err = machine4.process(ctx, input, AdvanceStateRequest, false)
 	require.Error(err)
 	require.Contains(err.Error(), "read cycle failed")
 	mockBackend4.AssertExpectations(s.T())
@@ -955,7 +941,7 @@ func (s *ImplementationSuite) TestRunWithAutomaticYields() {
 	mockBackend.On("Run", uint64(150), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil).Once()
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(100), nil).Once()
 
-	outputs, reports, err := machine.run(ctx, AdvanceStateRequest)
+	outputs, reports, _, _, err := machine.run(ctx, AdvanceStateRequest, false)
 	require.NoError(err)
 	require.Len(outputs, 1)
 	require.Equal([]byte("test output"), outputs[0])
@@ -993,7 +979,7 @@ func (s *ImplementationSuite) TestRunWithAutomaticYieldsReports() {
 	mockBackend.On("Run", uint64(150), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil).Once()
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(100), nil).Once()
 
-	outputs, reports, err := machine.run(ctx, AdvanceStateRequest)
+	outputs, reports, _, _, err := machine.run(ctx, AdvanceStateRequest, false)
 	require.NoError(err)
 	require.Empty(outputs)
 	require.Len(reports, 1)
@@ -1057,7 +1043,7 @@ func (s *ImplementationSuite) TestMultipleAutomaticYields() {
 	mockBackend.On("Run", uint64(150), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil).Once()
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(60), nil).Once()
 
-	outputs, reports, err := machine.run(ctx, AdvanceStateRequest)
+	outputs, reports, _, _, err := machine.run(ctx, AdvanceStateRequest, false)
 	require.NoError(err)
 
 	require.Len(outputs, 2)

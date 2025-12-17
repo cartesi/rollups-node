@@ -1,0 +1,102 @@
+// (c) Cartesi and individual authors (see AUTHORS)
+// SPDX-License-Identifier: Apache-2.0 (see LICENSE)
+
+package advancer
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+
+	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/inspect"
+	"github.com/cartesi/rollups-node/internal/manager"
+	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/pkg/service"
+)
+
+// Service is the main advancer service that processes inputs through Cartesi machines
+type Service struct {
+	service.Service
+	snapshotsDir   string
+	repository     AdvancerRepository
+	machineManager manager.MachineProvider
+	inspector      *inspect.Inspector
+	HTTPServer     *http.Server
+	HTTPServerFunc func() error
+}
+
+// CreateInfo contains the configuration for creating an advancer service
+type CreateInfo struct {
+	service.CreateInfo
+	Config     config.AdvancerConfig
+	Repository repository.Repository
+}
+
+// Create initializes a new advancer service
+func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
+	var err error
+	if err = ctx.Err(); err != nil {
+		return nil, err // This returns context.Canceled or context.DeadlineExceeded.
+	}
+
+	s := &Service{}
+	c.Impl = s
+
+	err = service.Create(ctx, &c.CreateInfo, &s.Service)
+	if err != nil {
+		return nil, err
+	}
+
+	s.repository = c.Repository
+	if s.repository == nil {
+		return nil, fmt.Errorf("repository on advancer service Create is nil")
+	}
+
+	// Create the machine manager
+	manager := manager.NewMachineManager(
+		ctx,
+		c.Repository,
+		s.Logger,
+		c.Config.FeatureMachineHashCheckEnabled,
+	)
+	s.machineManager = manager
+
+	// Initialize the inspect service if enabled
+	if c.Config.FeatureInspectEnabled {
+		s.inspector, s.HTTPServer, s.HTTPServerFunc = inspect.NewInspector(
+			c.Repository,
+			manager,
+			c.Config.InspectAddress,
+			c.LogLevel,
+			c.LogColor,
+		)
+	}
+
+	s.snapshotsDir = c.Config.SnapshotsDir
+
+	return s, nil
+}
+
+// Service interface implementation
+func (s *Service) Alive() bool     { return true }
+func (s *Service) Ready() bool     { return true }
+func (s *Service) Reload() []error { return nil }
+func (s *Service) Tick() []error {
+	if err := s.Step(s.Context); err != nil {
+		return []error{err}
+	}
+	return []error{}
+}
+func (s *Service) Stop(b bool) []error {
+	return nil
+}
+func (s *Service) Serve() error {
+	if s.inspector != nil && s.HTTPServerFunc != nil {
+		go s.HTTPServerFunc()
+	}
+	return s.Service.Serve()
+}
+func (s *Service) String() string {
+	return s.Name
+}

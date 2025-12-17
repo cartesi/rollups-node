@@ -10,13 +10,15 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/merkle"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	pkgm "github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/cartesi/rollups-node/pkg/service"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 )
 
 type Service struct {
@@ -103,6 +105,7 @@ type ValidatorRepository interface {
 	GetLastInput(ctx context.Context, appAddress string, epochIndex uint64) (*Input, error) // FIXME migrate to list
 	GetEpochByVirtualIndex(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	StoreClaimAndProofs(ctx context.Context, epoch *Epoch, outputs []*Output) error
+	ListStateHashes(ctx context.Context, nameOrAddress string, f repository.StateHashFilter, p repository.Pagination, descending bool) ([]*StateHash, uint64, error)
 }
 
 func getAllRunningApplications(ctx context.Context, er ValidatorRepository) ([]*Application, uint64, error) {
@@ -210,10 +213,17 @@ func (v *Service) validateApplication(ctx context.Context, app *Application) err
 				epoch.MachineHash = &app.TemplateHash
 			}
 		}
-
-		// update the epoch status and its claim
-		epoch.Status = EpochStatus_ClaimComputed
 		epoch.ClaimHash = claim
+
+		commitment, err := v.buildCommitment(ctx, app, epoch)
+		if err != nil {
+			return fmt.Errorf("failed to compute commitment for epoch %v (%v) of application %v. %w",
+				epoch.Index, epoch.VirtualIndex, appAddress, err,
+			)
+		}
+		epoch.Commitment = commitment
+
+		epoch.Status = EpochStatus_ClaimComputed
 
 		// store the epoch and proofs in the database
 		err = v.repository.StoreClaimAndProofs(ctx, epoch, outputs)
@@ -232,6 +242,54 @@ func (v *Service) validateApplication(ctx context.Context, app *Application) err
 	}
 
 	return nil
+}
+
+func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *Epoch) (*common.Hash, error) {
+	if app == nil || epoch == nil {
+		return nil, fmt.Errorf("application or epoch is nil")
+	}
+	if !app.IsDaveConsensus() {
+		return nil, nil
+	}
+	s.Logger.Debug("DaveConsensus: Building commitment for epoch",
+		"application", app.Name,
+		"epoch", epoch.Index)
+
+	builder := merkle.Builder{}
+	inputCount := epoch.InputIndexUpperBound - epoch.InputIndexLowerBound
+	if inputCount > 0 {
+		statesHashes, total, err := s.repository.ListStateHashes(ctx, app.IApplicationAddress.String(),
+			repository.StateHashFilter{EpochIndex: &epoch.Index}, repository.Pagination{}, false)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list state hashes for epoch %d of application %s: %w",
+				epoch.Index, app.Name, err)
+		}
+		if total < inputCount {
+			return nil, fmt.Errorf("not enough state hashes for epoch %d of application %s: expected at least %d, got %d",
+				epoch.Index, app.Name, inputCount, total)
+		}
+		if uint64(len(statesHashes)) != total {
+			return nil, fmt.Errorf("inconsistent number of state hashes for epoch %d of application %s: expected %d, got %d", epoch.Index, app.Name, total, len(statesHashes))
+		}
+		for _, stateHash := range statesHashes {
+			builder.AppendRepeatedUint64(merkle.TreeLeaf(stateHash.MachineHash), stateHash.Repetitions)
+		}
+	}
+
+	remainingInputs := pkgm.InputsPerEpoch - inputCount
+	remainingStrides := remainingInputs << pkgm.Log2StridesPerInput
+	if remainingStrides > 0 {
+		builder.AppendRepeatedUint64(merkle.TreeLeaf(*epoch.MachineHash), remainingStrides)
+	}
+
+	epochCommitmentTree := builder.Build()
+	commitment := epochCommitmentTree.GetRootHash()
+	s.Logger.Info("DaveConsensus: Epoch commitment built",
+		"application", app.Name,
+		"epoch", epoch.Index,
+		"commitment", commitment.String())
+	return &commitment, nil
+
 }
 
 // createClaimAndProofs calculates the claim and proofs for an epoch. It returns
