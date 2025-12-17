@@ -103,6 +103,7 @@ type CreateInfo struct {
 	Impl                 ServiceImpl
 	ServeMux             *http.ServeMux
 	Context              context.Context
+	Cancel               context.CancelFunc
 }
 
 // Service stores runtime information.
@@ -151,7 +152,10 @@ func Create(ctx context.Context, c *CreateInfo, s *Service) error {
 		s.Context = c.Context
 	}
 	if s.Cancel == nil {
-		s.Context, s.Cancel = context.WithCancel(c.Context)
+		if c.Cancel == nil {
+			s.Context, c.Cancel = context.WithCancel(c.Context)
+		}
+		s.Cancel = c.Cancel
 	}
 
 	// ticker
@@ -246,6 +250,7 @@ func (s *Service) Stop(force bool) []error {
 	elapsed := time.Since(start)
 
 	s.Running.Store(false)
+	s.Cancel()
 	if len(errs) > 0 {
 		s.Logger.Error("Stop",
 			"force", force,

@@ -155,6 +155,8 @@ func newEVMReader(ctx context.Context, c *CreateInfo, s *Service) service.IServi
 	readerArgs := evmreader.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 "evm-reader",
+			Context:              s.Context,
+			Cancel:               s.Cancel,
 			LogLevel:             c.Config.LogLevel,
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
@@ -179,6 +181,8 @@ func newAdvancer(ctx context.Context, c *CreateInfo, s *Service) service.IServic
 	advancerArgs := advancer.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 "advancer",
+			Context:              s.Context,
+			Cancel:               s.Cancel,
 			LogLevel:             c.Config.LogLevel,
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
@@ -202,6 +206,8 @@ func newValidator(ctx context.Context, c *CreateInfo, s *Service) service.IServi
 	validatorArgs := validator.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 "validator",
+			Context:              s.Context,
+			Cancel:               s.Cancel,
 			LogLevel:             c.Config.LogLevel,
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
@@ -225,6 +231,8 @@ func newClaimer(ctx context.Context, c *CreateInfo, s *Service) service.IService
 	claimerArgs := claimer.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 "claimer",
+			Context:              s.Context,
+			Cancel:               s.Cancel,
 			LogLevel:             c.Config.LogLevel,
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
@@ -249,6 +257,8 @@ func newJsonrpc(ctx context.Context, c *CreateInfo, s *Service) service.IService
 	jsonrpcArgs := jsonrpc.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 "jsonrpc",
+			Context:              s.Context,
+			Cancel:               s.Cancel,
 			LogLevel:             c.Config.LogLevel,
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
@@ -271,6 +281,8 @@ func newPrt(ctx context.Context, c *CreateInfo, s *Service) service.IService {
 	prtArgs := prt.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 "prt",
+			Context:              s.Context,
+			Cancel:               s.Cancel,
 			LogLevel:             c.Config.LogLevel,
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,

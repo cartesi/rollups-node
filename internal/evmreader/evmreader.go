@@ -72,15 +72,28 @@ type appContracts struct {
 }
 
 func (r *Service) Run(ctx context.Context, ready chan struct{}) error {
-	for {
+	for attempt := uint64(1); ; attempt++ {
 		err := r.watchForNewBlocks(ctx, ready)
-		// If the error is a SubscriptionError, re run watchForNewBlocks
-		// that it will restart the websocket subscription
-		if _, ok := err.(*SubscriptionError); !ok {
+		r.Logger.Error(err.Error())
+
+		if attempt > r.blockchainMaxRetries {
+			r.Logger.Error("Max attempts reached for subscription restart. Exititng",
+				"max_retries", r.blockchainMaxRetries,
+			)
 			return err
 		}
-		r.Logger.Error(err.Error())
-		r.Logger.Info("Restarting subscription")
+
+		r.Logger.Info("Restarting subscription",
+			"attempt", attempt,
+			"remaining", r.blockchainMaxRetries - attempt,
+			"time_between_attempts", r.blockchainSubscriptionRetryInterval,
+		)
+
+		// sleep or cancel
+		select {
+		case <-ctx.Done():
+		case <-time.After(r.blockchainSubscriptionRetryInterval):
+		}
 	}
 }
 

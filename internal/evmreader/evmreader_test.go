@@ -145,13 +145,15 @@ func (s *EvmReaderSuite) SetupTest() {
 	s.contractFactory = newMockAdapterFactory().SetupDefaultBehavior(s.applicationContract1, s.applicationContract2, s.inputBox)
 
 	s.evmReader = &Service{
-		client:             s.client,
-		wsClient:           s.wsClient,
-		repository:         s.repository,
-		defaultBlock:       DefaultBlock_Latest,
-		adapterFactory:     s.contractFactory,
-		hasEnabledApps:     true,
-		inputReaderEnabled: true,
+		client:                              s.client,
+		wsClient:                            s.wsClient,
+		repository:                          s.repository,
+		defaultBlock:                        DefaultBlock_Latest,
+		adapterFactory:                      s.contractFactory,
+		hasEnabledApps:                      true,
+		inputReaderEnabled:                  true,
+		blockchainMaxRetries:                0,
+		blockchainSubscriptionRetryInterval: time.Second,
 	}
 
 	logLevel, err := config.GetLogLevel()

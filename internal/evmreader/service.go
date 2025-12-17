@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	. "github.com/cartesi/rollups-node/internal/model"
@@ -30,14 +31,16 @@ type CreateInfo struct {
 type Service struct {
 	service.Service
 
-	client             EthClientInterface
-	wsClient           EthClientInterface
-	adapterFactory     AdapterFactory
-	repository         EvmReaderRepository
-	chainId            uint64
-	defaultBlock       DefaultBlock
-	hasEnabledApps     bool
-	inputReaderEnabled bool
+	client                              EthClientInterface
+	wsClient                            EthClientInterface
+	adapterFactory                      AdapterFactory
+	repository                          EvmReaderRepository
+	chainId                             uint64
+	defaultBlock                        DefaultBlock
+	hasEnabledApps                      bool
+	inputReaderEnabled                  bool
+	blockchainMaxRetries                uint64
+	blockchainSubscriptionRetryInterval time.Duration
 }
 
 const EvmReaderConfigKey = "evm-reader"
@@ -99,6 +102,8 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		return nil, fmt.Errorf("NodeConfig chainId mismatch: network %d != config %d",
 			chainId.Uint64(), nodeConfig.ChainID)
 	}
+	s.blockchainMaxRetries = c.Config.BlockchainHttpMaxRetries
+	s.blockchainSubscriptionRetryInterval = c.Config.BlockchainHttpRetryMinWait
 
 	s.client = c.EthClient
 	s.wsClient = c.EthWsClient
@@ -140,7 +145,10 @@ func (s *Service) Tick() []error {
 
 func (s *Service) Serve() error {
 	ready := make(chan struct{}, 1)
-	go s.Run(s.Context, ready)
+	go func() {
+		s.Run(s.Context, ready)
+		s.Service.Stop(false)
+	}()
 	return s.Service.Serve()
 }
 
