@@ -343,6 +343,41 @@ start-postgres: ## Run the PostgreSQL 16 docker container
 	@docker run --rm --name postgres -p 5432:5432 -d -e POSTGRES_PASSWORD=password -e POSTGRES_DB=rollupsdb -v $(CURDIR)/test/postgres/init-test-db.sh:/docker-entrypoint-initdb.d/init-test-db.sh postgres:17-alpine
 	@$(MAKE) migrate
 
+################################################################################
+# Protorype PRT (WIP)
+DAVE_ROOT=$(PWD)/dave
+APP_NAME?=honeypot
+DEPLOYMENTS_DIR := "$(DAVE_ROOT)/cartesi-rollups/contracts/deployments/31337"
+ANVIL_KEY_0=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+ANVIL_KEY_7=0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356
+
+# retrive application variables from the database based on APP_NAME
+APP_ADDRESS=$(shell psql $${CARTESI_DATABASE_CONNECTION} -qtc "select iapplication_address from application WHERE name = '$(APP_NAME)';" | lua5.4 -e 'print((io.read("*a"):gsub("\\x", "0x"):gsub("%s+", "")))')
+APP_URI=$(shell psql $${CARTESI_DATABASE_CONNECTION} -qtc "select template_uri from application WHERE name = '$(APP_NAME)';" | lua5.4 -e 'print((io.read("*a"):gsub("%s+", "")))')
+APP_STATE=$(APP_URI)/_state/
+
+APP_KEY=$(ANVIL_KEY_7)
+
+# prototype node expected environment variables
+export WEB3_PRIVATE_KEY=$(ANVIL_KEY_0)
+export DAVE_APP_FACTORY=$(shell jq -j ".DaveAppFactory" deployment.json)
+export INPUT_BOX=$(shell jq -j .InputBox deployment.json)
+export ERC20_PORTAL=$(shell jq -j .ERC20Portal deployment.json)
+export ERC20_TOKEN=$(shell jq -j .TestFungibleToken deployment.json)
+start-prt: deployment.json ## Run the prototype PRT node
+	rm -rf $(APP_STATE) && mkdir -p $(APP_STATE)
+	docker container create --name cp cartesi/rollups-node-devnet:devel
+	docker cp cp:/opt/cartesi/rollups-contracts/deployments/31337/ \
+		$(DAVE_ROOT)/cartesi-rollups/contracts/deployments/;
+	docker container rm cp
+	env \
+		MACHINE_PATH=$(APP_URI) \
+		APP_ADDRESS=$(APP_ADDRESS) \
+		STATE_DIR=$(APP_STATE) \
+		RUST_BACKTRACE=full \
+	$(DAVE_ROOT)/target/debug/cartesi-rollups-prt-node --sleep-duration-seconds 1 pk --web3-private-key $(APP_KEY)
+################################################################################
+
 start: start-postgres start-devnet ## Start the anvil devnet and PostgreSQL 16 docker containers
 
 stop-devnet: ## Stop the anvil devnet docker container
