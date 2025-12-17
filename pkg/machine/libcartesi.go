@@ -5,6 +5,7 @@ package machine
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -16,10 +17,11 @@ type RemoteMachineInterface interface {
 	SetTimeout(timeoutMs int64) error
 	Load(dir string, runtimeConfig string) error
 	Run(mcycleEnd uint64) (emulator.BreakReason, error)
-	GetRootHash() ([]byte, error)
+	GetRootHash() (emulator.Hash, error)
 	ReadReg(reg emulator.RegID) (uint64, error)
 	SendCmioResponse(reason uint16, data []byte) error
 	ReceiveCmioRequest() (uint8, uint16, []byte, error)
+	WriteMemory(address uint64, data []byte) error
 	Store(directory string) error
 	Delete()
 	ForkServer() (*emulator.RemoteMachine, string, uint32, error)
@@ -54,9 +56,9 @@ func (e *LibCartesiBackend) Run(mcycleEnd uint64, timeout time.Duration) (BreakR
 	return BreakReason(br), err
 }
 
-func (e *LibCartesiBackend) GetRootHash(timeout time.Duration) ([]byte, error) {
+func (e *LibCartesiBackend) GetRootHash(timeout time.Duration) (Hash, error) {
 	if err := e.inner.SetTimeout(timeout.Milliseconds()); err != nil {
-		return nil, fmt.Errorf("failed to set operation timeout: %w", err)
+		return Hash{}, fmt.Errorf("failed to set operation timeout: %w", err)
 	}
 	return e.inner.GetRootHash()
 }
@@ -104,6 +106,13 @@ func (e *LibCartesiBackend) Store(directory string, timeout time.Duration) error
 	return e.inner.Store(directory)
 }
 
+func (e *LibCartesiBackend) WriteMemory(address uint64, data []byte, timeout time.Duration) error {
+	if err := e.inner.SetTimeout(timeout.Milliseconds()); err != nil {
+		return fmt.Errorf("failed to set operation timeout: %w", err)
+	}
+	return e.inner.WriteMemory(address, data)
+}
+
 func (e *LibCartesiBackend) Delete() {
 	e.inner.Delete()
 }
@@ -137,4 +146,126 @@ func (e *LibCartesiBackend) NewMachineRuntimeConfig() (string, error) {
 
 func (e *LibCartesiBackend) CmioRxBufferSize() uint64 {
 	return 1 << emulator.CmioRxBufferLog2Size
+}
+
+func (e *LibCartesiBackend) RunAndCollectRootHashes(
+	mcycleEnd uint64,
+	state *HashCollectorState,
+	timeout time.Duration,
+) (reason BreakReason, err error) {
+	if state == nil {
+		return Failed, errors.New("nil state")
+	}
+	if state.Period == 0 {
+		return Failed, errors.New("State.Period must be > 0")
+	}
+
+	// Set up timeout management: calculate absolute deadline if timeout is specified
+	var deadline time.Time
+	hasDeadline := timeout > 0
+	if hasDeadline {
+		deadline = time.Now().Add(timeout)
+	}
+	remaining := func() time.Duration {
+		if !hasDeadline {
+			return 0
+		}
+		d := time.Until(deadline)
+		if d <= 0 {
+			return time.Nanosecond
+		}
+		return d
+	}
+	checkDeadline := func() error {
+		if hasDeadline && time.Now().After(deadline) {
+			return errors.New("runWithRootHashes: deadline exceeded")
+		}
+		return nil
+	}
+
+	if err := checkDeadline(); err != nil {
+		return Failed, err
+	}
+	cur, err := e.ReadMCycle(remaining())
+	if err != nil {
+		return Failed, err
+	}
+
+	collected := (uint64)(0)
+
+	for {
+		if err := checkDeadline(); err != nil {
+			return Failed, err
+		}
+		if cur >= mcycleEnd {
+			// No more cycles to execute
+			return ReachedTargetMcycle, nil
+		}
+
+		// Calculate the next collection point: distance to the next multiple of the period
+		// This ensures we collect hashes at regular intervals aligned with the period
+		var step uint64
+		if r := state.Phase % state.Period; r == 0 {
+			step = state.Period
+		} else {
+			step = state.Period - r
+		}
+
+		nextHashCycle := cur + step
+		target := min(nextHashCycle, mcycleEnd)
+
+		// Run the machine until target cycle or until it yields/halts
+		br, err := e.Run(target, remaining())
+		if err != nil {
+			return Failed, err
+		}
+
+		// Check where we stopped after the run
+		if err := checkDeadline(); err != nil {
+			return Failed, err
+		}
+		pos, err := e.ReadMCycle(remaining())
+		if err != nil {
+			return Failed, err
+		}
+
+		advanced := pos - cur
+		state.Phase = (state.Phase + advanced) % state.Period
+		cur = pos
+
+		// Only collect hash if we reached the exact boundary (pos == nextHashCycle)
+		// This ensures "hash after each complete period", matching the C API behavior
+		// and avoiding duplicate collections if the machine stops early due to yields
+		if pos == nextHashCycle {
+			if err := checkDeadline(); err != nil {
+				return Failed, err
+			}
+			h, err := e.GetRootHash(remaining())
+			if err != nil {
+				return Failed, err
+			}
+
+			state.Hashes = append(state.Hashes, h)
+
+			collected++
+			if state.MaxHashes > 0 && collected >= state.MaxHashes {
+				return YieldedSoftly, nil
+			}
+		}
+
+		switch br {
+		case ReachedTargetMcycle:
+			if cur >= mcycleEnd {
+				return ReachedTargetMcycle, nil
+			}
+		case YieldedManually:
+			return br, nil
+		case YieldedAutomatically, YieldedSoftly, Halted:
+			return br, nil
+		case Failed:
+			return Failed, errors.New("run failed")
+		default:
+			return Failed, errors.New("unknown break reason")
+		}
+	}
 }

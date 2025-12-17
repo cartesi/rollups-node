@@ -12,10 +12,11 @@ import (
 // MachineInstance defines the interface for a machine instance
 type MachineInstance interface {
 	Application() *Application
-	Advance(ctx context.Context, input []byte, index uint64) (*AdvanceResult, error)
+	Advance(ctx context.Context, input []byte, epochIndex uint64, inputIndex uint64, computeHashes bool) (*AdvanceResult, error)
 	Inspect(ctx context.Context, query []byte) (*InspectResult, error)
 	Synchronize(ctx context.Context, repo MachineRepository) error
 	CreateSnapshot(ctx context.Context, processedInputs uint64, path string) error
+	Hash(ctx context.Context) ([32]byte, error)
 	Close() error
 }
 

@@ -573,6 +573,12 @@ func (m *Mockrepo) StoreClaimAndProofs(ctx context.Context, epoch *Epoch, output
 	return args.Error(0)
 }
 
+func (m *Mockrepo) ListStateHashes(ctx context.Context, nameOrAddress string,
+	f repository.StateHashFilter, p repository.Pagination, descending bool) ([]*StateHash, uint64, error) {
+	args := m.Called(ctx, nameOrAddress, f, p, descending)
+	return args.Get(0).([]*StateHash), args.Get(1).(uint64), args.Error(2)
+}
+
 func (m *Mockrepo) UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error {
 	args := m.Called(ctx, appID, state, reason)
 	return args.Error(0)

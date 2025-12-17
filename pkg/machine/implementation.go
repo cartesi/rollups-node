@@ -47,6 +47,34 @@ const (
 // Constants
 const maxOutputs = 65536 // 2^16
 
+const CheckpointAddress uint64 = 0x7ffff000
+
+const (
+	// log2 value of the maximal number of micro instructions that emulates a big instruction
+	Log2UarchSpanToBarch uint64 = 20
+	// log2 value of the maximal number of big instructions that executes an input
+	Log2BarchSpanToInput uint64 = 48
+	// log2 value of the maximal number of inputs that allowed in an epoch
+	Log2InputSpanToEpoch uint64 = 24
+	// gap of each leaf in the commitment tree, should use the same value as ArbitrationConstants.sol:log2step(0)
+	Log2Stride uint64 = 44
+	// log2 value of the maximal number of micro instructions that executes an input
+	Log2UarchSpanToInput uint64 = Log2BarchSpanToInput + Log2UarchSpanToBarch // 68
+
+	UarchSpanToBarch uint64 = (1 << Log2UarchSpanToBarch) - 1 // 1_048_575
+	BarchSpanToInput uint64 = (1 << Log2BarchSpanToInput) - 1 // 281_474_976_710_655
+	InputSpanToEpoch uint64 = (1 << Log2InputSpanToEpoch) - 1 // 16_777_215
+
+	BigStepsInStride   uint64 = 1 << (Log2Stride - Log2UarchSpanToBarch)                        // 16_777_216
+	StrideCountInInput uint64 = 1 << (Log2BarchSpanToInput + Log2UarchSpanToBarch - Log2Stride) // 16_777_216
+
+	StrideCountInEpoch uint64 = 1 << (Log2InputSpanToEpoch + Log2BarchSpanToInput + Log2UarchSpanToBarch - Log2Stride)
+
+	Log2StridesPerInput uint64 = Log2BarchSpanToInput + Log2UarchSpanToBarch - Log2Stride
+
+	InputsPerEpoch uint64 = 1 << Log2InputSpanToEpoch
+)
+
 // machineImpl implements the Machine interface by wrapping an emulator.RemoteMachine
 type machineImpl struct {
 	backend Backend
@@ -83,23 +111,16 @@ func (m *machineImpl) Fork(ctx context.Context) (Machine, error) {
 
 // Hash returns the machine's merkle tree root hash
 func (m *machineImpl) Hash(ctx context.Context) (Hash, error) {
-	hash := Hash{}
 	if err := checkContext(ctx); err != nil {
-		return hash, err
+		return Hash{}, err
 	}
 
-	hashSlice, err := m.backend.GetRootHash(m.params.LoadDeadline)
+	hash, err := m.backend.GetRootHash(m.params.LoadDeadline)
 	if err != nil {
 		err := fmt.Errorf("could not get the machine's root hash: %w", err)
 		return hash, errors.Join(ErrMachineInternal, err)
 	}
 
-	if len(hashSlice) != HashSize {
-		err := fmt.Errorf("invalid machine root hash length: expected 32 bytes, got %d bytes", len(hashSlice))
-		return hash, errors.Join(ErrMachineInternal, err)
-	}
-
-	copy(hash[:], hashSlice)
 	return hash, nil
 }
 
@@ -126,30 +147,42 @@ func (m *machineImpl) OutputsHash(ctx context.Context) (Hash, error) {
 	return outputsHash, nil
 }
 
-// Advance sends an input to the machine and processes it
-func (m *machineImpl) Advance(ctx context.Context, input []byte) (bool, []Output, []Report, Hash, error) {
-	outputsHash := Hash{}
+func (m *machineImpl) WriteCheckpointHash(ctx context.Context, hash Hash) error {
+	if err := checkContext(ctx); err != nil {
+		return err
+	}
 
-	// TODO: return the exception reason
-	accepted, outputs, reports, data, err := m.process(ctx, input, AdvanceStateRequest)
+	err := m.backend.WriteMemory(CheckpointAddress, hash[:], m.params.FastDeadline)
 	if err != nil {
-		return accepted, outputs, reports, outputsHash, err
+		err := fmt.Errorf("could not write checkpoint hash in to machine memory: %w", err)
+		return errors.Join(ErrMachineInternal, err)
+	}
+	return nil
+}
+
+// Advance sends an input to the machine and processes it
+func (m *machineImpl) Advance(ctx context.Context, input []byte, computeHashes bool) (bool, []Output, []Report, []Hash, uint64, Hash, error) {
+	outputsHash := Hash{}
+	// TODO: return the exception reason
+	accepted, outputs, reports, hashes, remaining, data, err := m.process(ctx, input, AdvanceStateRequest, computeHashes)
+	if err != nil {
+		return accepted, outputs, reports, hashes, remaining, outputsHash, err
 	}
 
 	if accepted {
 		if length := len(data); length != HashSize {
 			err = fmt.Errorf("%w (it has %d bytes)", ErrHashLength, length)
-			return accepted, outputs, reports, outputsHash, err
+			return accepted, outputs, reports, hashes, remaining, outputsHash, err
 		}
 		copy(outputsHash[:], data)
 	}
-	return accepted, outputs, reports, outputsHash, nil
+	return accepted, outputs, reports, hashes, remaining, outputsHash, nil
 }
 
 // Inspect sends a query to the machine and returns the results
 func (m *machineImpl) Inspect(ctx context.Context, query []byte) (bool, []Report, error) {
 	// TODO: return the exception reason
-	accepted, _, reports, _, err := m.process(ctx, query, InspectStateRequest)
+	accepted, _, reports, _, _, _, err := m.process(ctx, query, InspectStateRequest, false)
 	return accepted, reports, err
 }
 
@@ -255,41 +288,50 @@ func (m *machineImpl) process(
 	ctx context.Context,
 	request []byte,
 	reqType requestType,
-) (bool, []Output, []Report, []byte, error) {
+	computeHashes bool,
+) (bool, []Output, []Report, []Hash, uint64, []byte, error) {
 	if err := checkContext(ctx); err != nil {
-		return false, nil, nil, nil, err
+		return false, nil, nil, nil, 0, nil, err
 	}
 	// Check payload length limit
 	if length := uint64(len(request)); length > m.backend.CmioRxBufferSize() {
-		return false, nil, nil, nil, ErrPayloadLengthLimitExceeded
+		return false, nil, nil, nil, 0, nil, ErrPayloadLengthLimitExceeded
 	}
 
 	err := m.backend.SendCmioResponse(uint16(reqType), request, m.params.FastDeadline)
 	if err != nil {
-		return false, nil, nil, nil, err
+		return false, nil, nil, nil, 0, nil, err
 	}
 
-	outputs, reports, err := m.run(ctx, reqType)
+	outputs, reports, hashes, remaining, err := m.run(ctx, reqType, computeHashes)
 	if err != nil {
-		return false, outputs, reports, nil, err
+		return false, outputs, reports, nil, 0, nil, err
 	}
 
 	accepted, data, err := m.wasLastRequestAccepted(ctx)
 
-	return accepted, outputs, reports, data, err
+	return accepted, outputs, reports, hashes, remaining, data, err
 }
 
 // run runs the machine until it manually yields.
 // It returns any collected responses.
-func (m *machineImpl) run(ctx context.Context, reqType requestType) ([]Output, []Report, error) {
+func (m *machineImpl) run(ctx context.Context, reqType requestType, computeHashes bool) ([]Output, []Report, []Hash, uint64, error) {
 	startTime := time.Now()
 
 	currentCycle, err := m.readMCycle(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, 0, err
 	}
 
 	limitCycle := currentCycle + m.params.AdvanceMaxCycles
+	stepTimeout := m.params.AdvanceIncDeadline
+	runTimeout := m.params.AdvanceMaxDeadline
+	if reqType == InspectStateRequest {
+		limitCycle = currentCycle + m.params.InspectMaxCycles
+		stepTimeout = m.params.InspectIncDeadline
+		runTimeout = m.params.InspectMaxDeadline
+	}
+
 	m.logger.Debug("run",
 		"startingCycle", currentCycle,
 		"limitCycle", limitCycle,
@@ -298,11 +340,27 @@ func (m *machineImpl) run(ctx context.Context, reqType requestType) ([]Output, [
 	outputs := []Output{}
 	reports := []Report{}
 
-	stepTimeout := m.params.AdvanceIncDeadline
-	runTimeout := m.params.AdvanceMaxDeadline
-	if reqType == InspectStateRequest {
-		stepTimeout = m.params.InspectIncDeadline
-		runTimeout = m.params.InspectMaxDeadline
+	var hashCollectorState *HashCollectorState
+	if computeHashes {
+		hashCollectorState = &HashCollectorState{
+			Period:     BigStepsInStride,
+			Phase:      0,
+			MaxHashes:  0,
+			BundleLog2: 0,
+			Hashes:     []Hash{},
+		}
+	}
+	hashes := func() []Hash {
+		if computeHashes {
+			return hashCollectorState.Hashes
+		}
+		return []Hash{}
+	}
+	remainingMetaCycles := func() uint64 {
+		if computeHashes {
+			return StrideCountInInput - uint64(len(hashCollectorState.Hashes))
+		}
+		return 0
 	}
 
 	for {
@@ -312,17 +370,18 @@ func (m *machineImpl) run(ctx context.Context, reqType requestType) ([]Output, [
 		// Steps the machine as many times as needed until it manually/automatically yields.
 		for yt == nil {
 			if time.Since(startTime) > runTimeout {
-				return outputs, reports, fmt.Errorf("run operation timed out: %w", ErrDeadlineExceeded)
+				werr := fmt.Errorf("run operation timed out: %w", ErrDeadlineExceeded)
+				return outputs, reports, hashes(), remainingMetaCycles(), werr
 			}
-			yt, currentCycle, err = m.step(ctx, currentCycle, limitCycle, stepTimeout)
+			yt, currentCycle, err = m.runIncrementInterval(ctx, currentCycle, limitCycle, hashCollectorState, stepTimeout)
 			if err != nil && err != ErrReachedTargetMcycle {
-				return outputs, reports, err
+				return outputs, reports, hashes(), remainingMetaCycles(), err
 			}
 		}
 
 		// Returns with the responses when the machine manually yields.
 		if *yt == ManualYield {
-			return outputs, reports, nil
+			return outputs, reports, hashes(), remainingMetaCycles(), nil
 		}
 
 		// Asserts the machine yielded automatically.
@@ -333,7 +392,8 @@ func (m *machineImpl) run(ctx context.Context, reqType requestType) ([]Output, [
 
 		_, yieldReason, data, err := m.backend.ReceiveCmioRequest(m.params.FastDeadline)
 		if err != nil {
-			return outputs, reports, fmt.Errorf("could not read output/report: %w", err)
+			werr := fmt.Errorf("could not read output/report: %w", err)
+			return outputs, reports, hashes(), remainingMetaCycles(), werr
 		}
 
 		switch automaticYieldReason(yieldReason) {
@@ -342,7 +402,7 @@ func (m *machineImpl) run(ctx context.Context, reqType requestType) ([]Output, [
 		case AutomaticYieldReasonOutput:
 			// TODO: should we remove this?
 			if len(outputs) == maxOutputs {
-				return outputs, reports, ErrOutputsLimitExceeded
+				return outputs, reports, hashes(), remainingMetaCycles(), ErrOutputsLimitExceeded
 			}
 			outputs = append(outputs, data)
 		case AutomaticYieldReasonReport:
@@ -353,14 +413,15 @@ func (m *machineImpl) run(ctx context.Context, reqType requestType) ([]Output, [
 	}
 }
 
-// step runs the machine for at most machine.inc cycles (or the amount of cycles left to reach
+// runIncrementInterval runs the machine for at most machine.inc cycles (or the amount of cycles left to reach
 // limitCycle, whichever is the lowest).
-// It returns the yield type and the machine cycle after the step.
-// If the machine did not manually/automatically yield, the yield type will be nil (meaning step
+// It returns the yield type and the machine cycle after the increment interval.
+// If the machine did not manually/automatically yield, the yield type will be nil (meaning runIncrementInterval
 // must be called again to complete the computation).
-func (m *machineImpl) step(ctx context.Context,
+func (m *machineImpl) runIncrementInterval(ctx context.Context,
 	currentCycle Cycle,
 	limitCycle Cycle,
+	hashCollectorState *HashCollectorState,
 	timeout time.Duration,
 ) (*yieldType, Cycle, error) {
 	startingCycle := currentCycle
@@ -376,7 +437,7 @@ func (m *machineImpl) step(ctx context.Context,
 	m.logger.Debug("machine step before run", "currentCycle", currentCycle, "increment", increment)
 
 	// Runs the machine.
-	breakReason, err := m.backend.Run(currentCycle+increment, timeout)
+	breakReason, err := m.backend_run(currentCycle+increment, hashCollectorState, timeout)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -412,6 +473,14 @@ func (m *machineImpl) step(ctx context.Context,
 	default:
 		panic("unreachable code: invalid break reason")
 	}
+}
+
+func (m *machineImpl) backend_run(mcycleEnd uint64, hashCollectorState *HashCollectorState, timeout time.Duration) (BreakReason, error) {
+	if hashCollectorState != nil {
+		m.logger.Debug("Running with root hash collection")
+		return m.backend.RunAndCollectRootHashes(mcycleEnd, hashCollectorState, timeout)
+	}
+	return m.backend.Run(mcycleEnd, timeout)
 }
 
 // Helper functions

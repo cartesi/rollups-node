@@ -210,7 +210,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			require := s.Require()
 			_, fork, machine := s.setupAdvance()
 
-			res, err := machine.Advance(context.Background(), []byte{}, 5)
+			res, err := machine.Advance(context.Background(), []byte{}, 0, 5, false)
 			require.Nil(err)
 			require.NotNil(res)
 
@@ -219,7 +219,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			require.Equal(expectedOutputs, res.Outputs)
 			require.Equal(expectedReports1, res.Reports)
 			require.Equal(newHash(1), res.OutputsHash)
-			require.Equal(newHash(2), *res.MachineHash)
+			require.Equal(newHash(2), res.MachineHash)
 			require.Equal(uint64(6), machine.processedInputs)
 		})
 
@@ -229,7 +229,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			fork.AdvanceAcceptedReturn = false
 			fork.CloseError = nil
 
-			res, err := machine.Advance(context.Background(), []byte{}, 5)
+			res, err := machine.Advance(context.Background(), []byte{}, 0, 5, false)
 			require.Nil(err)
 			require.NotNil(res)
 
@@ -238,7 +238,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			require.Equal(expectedOutputs, res.Outputs)
 			require.Equal(expectedReports1, res.Reports)
 			require.Equal(newHash(1), res.OutputsHash)
-			require.Equal(newHash(2), *res.MachineHash)
+			require.Equal(newHash(2), res.MachineHash)
 			require.Equal(uint64(6), machine.processedInputs)
 		})
 
@@ -249,7 +249,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 				fork.AdvanceError = err
 				fork.CloseError, inner.CloseError = inner.CloseError, fork.CloseError
 
-				res, err := machine.Advance(context.Background(), []byte{}, 5)
+				res, err := machine.Advance(context.Background(), []byte{}, 0, 5, false)
 				require.Nil(err)
 				require.NotNil(res)
 
@@ -257,7 +257,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 				require.Equal(expectedOutputs, res.Outputs)
 				require.Equal(expectedReports1, res.Reports)
 				require.Equal(newHash(1), res.OutputsHash)
-				require.Equal(newHash(2), *res.MachineHash)
+				require.Equal(newHash(2), res.MachineHash)
 				require.Equal(uint64(6), machine.processedInputs)
 			})
 		}
@@ -294,7 +294,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			errFork := errors.New("Fork error")
 			inner.ForkError = errFork
 
-			res, err := machine.Advance(context.Background(), []byte{}, 5)
+			res, err := machine.Advance(context.Background(), []byte{}, 0, 5, false)
 			require.Error(err)
 			require.Nil(res)
 			require.Equal(errFork, err)
@@ -308,7 +308,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			fork.AdvanceError = errAdvance
 			fork.CloseError, inner.CloseError = inner.CloseError, fork.CloseError
 
-			res, err := machine.Advance(context.Background(), []byte{}, 5)
+			res, err := machine.Advance(context.Background(), []byte{}, 0, 5, false)
 			require.Error(err)
 			require.Nil(res)
 			require.ErrorIs(err, errAdvance)
@@ -325,7 +325,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			fork.CloseError = errClose
 			inner.CloseError = nil
 
-			res, err := machine.Advance(context.Background(), []byte{}, 5)
+			res, err := machine.Advance(context.Background(), []byte{}, 0, 5, false)
 			require.Error(err)
 			require.Nil(res)
 			require.ErrorIs(err, errAdvance)
@@ -341,7 +341,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			fork.HashError = errHash
 			fork.CloseError, inner.CloseError = inner.CloseError, fork.CloseError
 
-			res, err := machine.Advance(context.Background(), []byte{}, 5)
+			res, err := machine.Advance(context.Background(), []byte{}, 0, 5, false)
 			require.Error(err)
 			require.Nil(res)
 			require.ErrorIs(err, errHash)
@@ -358,7 +358,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			fork.CloseError = errClose
 			inner.CloseError = nil
 
-			res, err := machine.Advance(context.Background(), []byte{}, 5)
+			res, err := machine.Advance(context.Background(), []byte{}, 0, 5, false)
 			require.Error(err)
 			require.Nil(res)
 			require.ErrorIs(err, errHash)
@@ -374,7 +374,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 				errClose := errors.New("Close error")
 				inner.CloseError = errClose
 
-				res, err := machine.Advance(context.Background(), []byte{}, 5)
+				res, err := machine.Advance(context.Background(), []byte{}, 0, 5, false)
 				require.Error(err)
 				require.Nil(res)
 				require.ErrorIs(err, errClose)
@@ -389,7 +389,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 				fork.AdvanceError = machine.ErrException
 				fork.CloseError = errClose
 
-				res, err := machineInst.Advance(context.Background(), []byte{}, 5)
+				res, err := machineInst.Advance(context.Background(), []byte{}, 0, 5, false)
 				require.Error(err)
 				require.NotNil(res)
 				require.ErrorIs(err, errClose)
@@ -601,7 +601,7 @@ func (s *MachineInstanceSuite) TestClose() {
 			time.Sleep(centisecond / 2)
 
 			// This should block until Close is done
-			_, err := machine.Advance(context.Background(), []byte{}, 5)
+			_, err := machine.Advance(context.Background(), []byte{}, 0, 5, false)
 			require.Error(err)
 			require.Equal(ErrMachineClosed, err)
 		}()
@@ -618,37 +618,6 @@ func (s *MachineInstanceSuite) TestClose() {
 			require.Fail("Advance did not complete after Close")
 		}
 	})
-}
-
-// ------------------------------------------------------------------------------------------------
-
-// MockMachineInstance implements the MachineInstance interface for testing
-type MockMachineInstance struct {
-	application *model.Application
-}
-
-func (m *MockMachineInstance) Application() *model.Application {
-	return m.application
-}
-
-func (m *MockMachineInstance) Advance(ctx context.Context, input []byte, index uint64) (*model.AdvanceResult, error) {
-	return nil, nil
-}
-
-func (m *MockMachineInstance) Inspect(ctx context.Context, query []byte) (*model.InspectResult, error) {
-	return nil, nil
-}
-
-func (m *MockMachineInstance) Synchronize(ctx context.Context, repo MachineRepository) error {
-	return nil
-}
-
-func (m *MockMachineInstance) CreateSnapshot(ctx context.Context, processedInputs uint64, path string) error {
-	return nil
-}
-
-func (m *MockMachineInstance) Close() error {
-	return nil
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -803,11 +772,15 @@ type MockRollupsMachine struct {
 	HashReturn machine.Hash
 	HashError  error
 
-	AdvanceAcceptedReturn bool
-	AdvanceOutputsReturn  []machine.Output
-	AdvanceReportsReturn  []machine.Report
-	AdvanceHashReturn     machine.Hash
-	AdvanceError          error
+	CheckpointHashError error
+
+	AdvanceAcceptedReturn  bool
+	AdvanceOutputsReturn   []machine.Output
+	AdvanceReportsReturn   []machine.Report
+	AdvanceLeafsReturn     []machine.Hash
+	AdvanceRemainingReturn uint64
+	AdvanceHashReturn      machine.Hash
+	AdvanceError           error
 
 	InspectAcceptedReturn bool
 	InspectReportsReturn  []machine.Report
@@ -830,12 +803,18 @@ func (m *MockRollupsMachine) OutputsHash(_ context.Context) (machine.Hash, error
 	return m.AdvanceHashReturn, m.HashError
 }
 
-func (m *MockRollupsMachine) Advance(_ context.Context, input []byte) (
-	bool, []machine.Output, []machine.Report, machine.Hash, error,
+func (m *MockRollupsMachine) WriteCheckpointHash(_ context.Context, _ machine.Hash) error {
+	return m.CheckpointHashError
+}
+
+func (m *MockRollupsMachine) Advance(_ context.Context, input []byte, leafs bool) (
+	bool, []machine.Output, []machine.Report, []machine.Hash, uint64, machine.Hash, error,
 ) {
 	return m.AdvanceAcceptedReturn,
 		m.AdvanceOutputsReturn,
 		m.AdvanceReportsReturn,
+		m.AdvanceLeafsReturn,
+		m.AdvanceRemainingReturn,
 		m.AdvanceHashReturn,
 		m.AdvanceError
 }

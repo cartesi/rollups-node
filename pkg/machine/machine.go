@@ -54,12 +54,14 @@ type Machine interface {
 	Hash(ctx context.Context) (Hash, error)
 	// OutputsHash returns the outputs hash stored in the cmio tx buffer.
 	OutputsHash(ctx context.Context) (Hash, error)
+	// WriteCheckpointHash writes the given checkpoint hash to the machine memory.
+	WriteCheckpointHash(ctx context.Context, hash Hash) error
 
 	// Advance sends an input to the machine.
 	// It returns a boolean indicating whether or not the request was accepted.
 	// It also returns the corresponding outputs, reports, and the hash of the outputs.
 	// In case the request is not accepted, the function does not return outputs.
-	Advance(ctx context.Context, input []byte) (bool, []Output, []Report, Hash, error)
+	Advance(ctx context.Context, input []byte, computeHashes bool) (bool, []Output, []Report, []Hash, uint64, Hash, error)
 
 	// Inspect sends a query to the machine.
 	// It returns a boolean indicating whether or not the request was accepted

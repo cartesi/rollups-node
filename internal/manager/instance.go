@@ -5,6 +5,7 @@ package manager
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -175,7 +176,7 @@ func (m *MachineInstanceImpl) Synchronize(ctx context.Context, repo MachineRepos
 			"epoch_index", input.EpochIndex,
 			"input_index", input.Index)
 
-		_, err := m.Advance(ctx, input.RawData, input.Index)
+		_, err := m.Advance(ctx, input.RawData, input.EpochIndex, input.Index, false)
 		if err != nil {
 			return fmt.Errorf("%w: failed to replay input %d: %v",
 				ErrMachineSynchronization, input.Index, err)
@@ -205,7 +206,7 @@ func (m *MachineInstanceImpl) forkForAdvance(ctx context.Context, index uint64) 
 }
 
 // Advance processes an input and advances the machine state
-func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, index uint64) (*AdvanceResult, error) {
+func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIndex uint64, index uint64, computeHashes bool) (*AdvanceResult, error) {
 	// Only one advance can be active at a time
 	m.advanceMutex.Lock()
 	defer m.advanceMutex.Unlock()
@@ -234,8 +235,16 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, index u
 	advanceCtx, cancel := context.WithTimeout(ctx, m.advanceTimeout)
 	defer cancel()
 
+	if computeHashes {
+		// write the checkpoint hash before processing
+		err = fork.WriteCheckpointHash(advanceCtx, prevMachineHash)
+		if err != nil {
+			return nil, errors.Join(err, fork.Close())
+		}
+	}
+
 	// Process the input
-	accepted, outputs, reports, outputsHash, err := fork.Advance(advanceCtx, input)
+	accepted, outputs, reports, hashes, remaining, outputsHash, err := fork.Advance(advanceCtx, input, computeHashes)
 	status, err := toInputStatus(accepted, err)
 	if err != nil {
 		return nil, errors.Join(err, fork.Close())
@@ -243,11 +252,15 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, index u
 
 	// Create the result
 	result := &AdvanceResult{
-		InputIndex:  index,
-		Status:      status,
-		Outputs:     outputs,
-		Reports:     reports,
-		OutputsHash: outputsHash,
+		EpochIndex:          epochIndex,
+		InputIndex:          index,
+		Status:              status,
+		Outputs:             outputs,
+		Reports:             reports,
+		Hashes:              hashes,
+		RemainingMetaCycles: remaining,
+		OutputsHash:         outputsHash,
+		IsDaveConsensus:     computeHashes,
 	}
 
 	// If the input was accepted, update the machine state
@@ -257,7 +270,7 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, index u
 		if err != nil {
 			return nil, errors.Join(err, fork.Close())
 		}
-		result.MachineHash = (*common.Hash)(&machineHash)
+		result.MachineHash = machineHash
 
 		// Replace the current machine with the fork
 		m.mutex.HLock()
@@ -270,7 +283,7 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, index u
 		m.mutex.Unlock()
 	} else {
 		// Use the previous state for rejected inputs
-		result.MachineHash = (*common.Hash)(&prevMachineHash)
+		result.MachineHash = prevMachineHash
 		result.OutputsHash = prevOutputsHash
 
 		// Close the fork since we're not using it
@@ -382,6 +395,34 @@ func (m *MachineInstanceImpl) CreateSnapshot(ctx context.Context, processedInput
 
 	m.logger.Debug("Snapshot created successfully", "path", path)
 	return nil
+}
+
+func (m *MachineInstanceImpl) Hash(ctx context.Context) ([32]byte, error) {
+	// Acquire the advance mutex to ensure no advance operations are in progress
+	m.advanceMutex.Lock()
+	defer m.advanceMutex.Unlock()
+
+	// Acquire a read lock on the machine
+	m.mutex.LLock()
+	defer m.mutex.Unlock()
+
+	if m.runtime == nil {
+		return [32]byte{}, ErrMachineClosed
+	}
+
+	m.logger.Debug("Retrieving machine root hash")
+
+	storeCtx, cancel := context.WithTimeout(ctx, m.application.ExecutionParameters.LoadDeadline)
+	defer cancel()
+
+	hash, err := m.runtime.Hash(storeCtx)
+	if err != nil {
+		m.logger.Error("Failed to retrieve machine root hash", "error", err)
+		return [32]byte{}, err
+	}
+
+	m.logger.Debug("Machine root hash retrieved successfully", "hash", "0x"+hex.EncodeToString(hash[:]))
+	return hash, nil
 }
 
 // Close shuts down the machine instance

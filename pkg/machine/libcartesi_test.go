@@ -98,10 +98,7 @@ func (s *LibCartesiSuite) TestRun() {
 func (s *LibCartesiSuite) TestGetRootHash() {
 	require := s.Require()
 
-	expectedHash := make([]byte, 32)
-	for i := range expectedHash {
-		expectedHash[i] = byte(i)
-	}
+	expectedHash := randomFakeHash()
 
 	// Test successful get root hash
 	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
@@ -126,7 +123,7 @@ func (s *LibCartesiSuite) TestGetRootHash() {
 	s.mockRemoteMachine = new(MockRemoteMachine)
 	s.backend = &LibCartesiBackend{inner: s.mockRemoteMachine}
 	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
-	s.mockRemoteMachine.On("GetRootHash").Return([]byte(nil), errors.New("hash error"))
+	s.mockRemoteMachine.On("GetRootHash").Return(Hash{}, errors.New("hash error"))
 
 	_, err = s.backend.GetRootHash(5 * time.Second)
 	require.Error(err)
@@ -437,9 +434,9 @@ func (m *MockRemoteMachine) Run(mcycleEnd uint64) (emulator.BreakReason, error) 
 	return args.Get(0).(emulator.BreakReason), args.Error(1)
 }
 
-func (m *MockRemoteMachine) GetRootHash() ([]byte, error) {
+func (m *MockRemoteMachine) GetRootHash() (emulator.Hash, error) {
 	args := m.Called()
-	return args.Get(0).([]byte), args.Error(1)
+	return args.Get(0).(Hash), args.Error(1)
 }
 
 func (m *MockRemoteMachine) ReadReg(reg emulator.RegID) (uint64, error) {
@@ -459,6 +456,11 @@ func (m *MockRemoteMachine) ReceiveCmioRequest() (uint8, uint16, []byte, error) 
 
 func (m *MockRemoteMachine) Store(directory string) error {
 	args := m.Called(directory)
+	return args.Error(0)
+}
+
+func (m *MockRemoteMachine) WriteMemory(address uint64, data []byte) error {
+	args := m.Called(address, data)
 	return args.Error(0)
 }
 

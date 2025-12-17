@@ -3,7 +3,10 @@
 
 package machine
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type BreakReason int32
 
@@ -16,6 +19,15 @@ const (
 	ReachedTargetMcycle  BreakReason = 0x5
 )
 
+type HashCollectorState struct {
+	Period     uint64
+	Phase      uint64
+	MaxHashes  uint64
+	BundleLog2 int32
+	Hashes     []Hash
+	BackTree   json.RawMessage
+}
+
 // This Backend interface covers the methods used from the emulator / remote machine server.
 // It is to abstract the emulator package and allow for easier testing and mocking in unit tests.
 type Backend interface {
@@ -23,6 +35,8 @@ type Backend interface {
 	Store(directory string, timeout time.Duration) error
 
 	Run(mcycleEnd uint64, timeout time.Duration) (BreakReason, error)
+	RunAndCollectRootHashes(mcycleEnd uint64, state *HashCollectorState, timeout time.Duration,
+	) (reason BreakReason, err error)
 
 	IsAtManualYield(timeout time.Duration) (bool, error)
 	ReadMCycle(timeout time.Duration) (uint64, error)
@@ -30,7 +44,9 @@ type Backend interface {
 	SendCmioResponse(reason uint16, data []byte, timeout time.Duration) error
 	ReceiveCmioRequest(timeout time.Duration) (cmd uint8, reason uint16, data []byte, err error)
 
-	GetRootHash(timeout time.Duration) ([]byte, error)
+	WriteMemory(address uint64, data []byte, timeout time.Duration) error
+
+	GetRootHash(timeout time.Duration) (Hash, error)
 
 	Delete()
 	ForkServer(timeout time.Duration) (Backend, string, uint32, error)

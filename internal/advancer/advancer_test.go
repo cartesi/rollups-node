@@ -513,6 +513,8 @@ func (mock *MockMachineImpl) Advance(
 	ctx context.Context,
 	input []byte,
 	_ uint64,
+	_ uint64,
+	_ bool,
 ) (*AdvanceResult, error) {
 	// If AdvanceBlock is true, block until context is canceled
 	if mock.AdvanceBlock {
@@ -605,8 +607,8 @@ type MockMachineInstance struct {
 }
 
 // Advance implements the MachineInstance interface for testing
-func (m *MockMachineInstance) Advance(ctx context.Context, input []byte, index uint64) (*AdvanceResult, error) {
-	return m.machineImpl.Advance(ctx, input, index)
+func (m *MockMachineInstance) Advance(ctx context.Context, input []byte, epochIndex uint64, index uint64, leafs bool) (*AdvanceResult, error) {
+	return m.machineImpl.Advance(ctx, input, epochIndex, index, leafs)
 }
 
 // Inspect implements the MachineInstance interface for testing
@@ -632,6 +634,12 @@ func (m *MockMachineInstance) CreateSnapshot(ctx context.Context, processInputs 
 	return nil
 }
 
+// Retrieves the hash of the current machine state
+func (m *MockMachineInstance) Hash(ctx context.Context) ([32]byte, error) {
+	// Not used in advancer tests, but needed to satisfy the interface
+	return [32]byte{}, nil
+}
+
 // Close implements the MachineInstance interface for testing
 func (m *MockMachineInstance) Close() error {
 	// Not used in advancer tests, but needed to satisfy the interface
@@ -649,6 +657,7 @@ type MockRepository struct {
 	UpdateApplicationStateError error
 	UpdateEpochsError           error
 	UpdatedEpochs               []uint64
+	UpdateEpochCommitmentError  error
 	GetLastSnapshotReturn       *Input
 	GetLastSnapshotError        error
 
@@ -704,6 +713,15 @@ func (mock *MockRepository) StoreAdvanceResult(
 
 	mock.StoredResults = append(mock.StoredResults, res)
 	return mock.StoreAdvanceError
+}
+
+func (mock *MockRepository) UpdateEpochCommitment(ctx context.Context, appID int64, epochIndex uint64, commitmen []byte) error {
+	// Check for context cancellation
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	return mock.UpdateEpochCommitmentError
 }
 
 func (mock *MockRepository) UpdateEpochsInputsProcessed(ctx context.Context, nameOrAddress string) ([]uint64, error) {
@@ -849,14 +867,13 @@ func randomInputs(appId int64, epochIndex uint64, size int) []*Input {
 }
 
 func randomAdvanceResult(inputIndex uint64) *AdvanceResult {
-	hash := randomHash()
 	res := &AdvanceResult{
 		InputIndex:  inputIndex,
 		Status:      InputCompletionStatus_Accepted,
 		Outputs:     randomSliceOfBytes(),
 		Reports:     randomSliceOfBytes(),
 		OutputsHash: randomHash(),
-		MachineHash: &hash,
+		MachineHash: randomHash(),
 	}
 	return res
 }

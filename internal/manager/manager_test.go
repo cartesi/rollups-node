@@ -103,9 +103,9 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 		app2 := &model.Application{ID: 2, Name: "App2"}
 		app3 := &model.Application{ID: 3, Name: "App3"}
 
-		mockMachine1 := &MockMachineInstance{application: app1}
-		mockMachine2 := &MockMachineInstance{application: app2}
-		mockMachine3 := &MockMachineInstance{application: app3}
+		mockMachine1 := &DummyMachineInstanceMock{application: app1}
+		mockMachine2 := &DummyMachineInstanceMock{application: app2}
+		mockMachine3 := &DummyMachineInstanceMock{application: app3}
 
 		manager.addMachine(1, mockMachine1)
 		manager.addMachine(2, mockMachine2)
@@ -130,7 +130,7 @@ func (s *MachineManagerSuite) TestGetMachine() {
 		Return(nil, nil)
 
 	manager := NewMachineManager(context.Background(), repo, nil, false)
-	machine := &MockMachineInstance{application: &model.Application{ID: 1}}
+	machine := &DummyMachineInstanceMock{application: &model.Application{ID: 1}}
 
 	// Add a machine
 	manager.addMachine(1, machine)
@@ -153,7 +153,7 @@ func (s *MachineManagerSuite) TestHasMachine() {
 		Return(nil, nil)
 
 	manager := NewMachineManager(context.Background(), repo, nil, false)
-	machine := &MockMachineInstance{application: &model.Application{ID: 1}}
+	machine := &DummyMachineInstanceMock{application: &model.Application{ID: 1}}
 
 	// Add a machine
 	manager.addMachine(1, machine)
@@ -173,8 +173,8 @@ func (s *MachineManagerSuite) TestAddMachine() {
 		Return(nil, nil)
 
 	manager := NewMachineManager(context.Background(), repo, nil, false)
-	machine1 := &MockMachineInstance{application: &model.Application{ID: 1}}
-	machine2 := &MockMachineInstance{application: &model.Application{ID: 2}}
+	machine1 := &DummyMachineInstanceMock{application: &model.Application{ID: 1}}
+	machine2 := &DummyMachineInstanceMock{application: &model.Application{ID: 2}}
 
 	// Add first machine
 	added := manager.addMachine(1, machine1)
@@ -202,9 +202,9 @@ func (s *MachineManagerSuite) TestRemoveDisabledMachines() {
 	app2 := &model.Application{ID: 2}
 	app3 := &model.Application{ID: 3}
 
-	machine1 := &MockMachineInstance{application: app1}
-	machine2 := &MockMachineInstance{application: app2}
-	machine3 := &MockMachineInstance{application: app3}
+	machine1 := &DummyMachineInstanceMock{application: app1}
+	machine2 := &DummyMachineInstanceMock{application: app2}
+	machine3 := &DummyMachineInstanceMock{application: app3}
 
 	manager.addMachine(1, machine1)
 	manager.addMachine(2, machine2)
@@ -233,8 +233,8 @@ func (s *MachineManagerSuite) TestApplications() {
 	app1 := &model.Application{ID: 1, Name: "App1"}
 	app2 := &model.Application{ID: 2, Name: "App2"}
 
-	machine1 := &MockMachineInstance{application: app1}
-	machine2 := &MockMachineInstance{application: app2}
+	machine1 := &DummyMachineInstanceMock{application: app1}
+	machine2 := &DummyMachineInstanceMock{application: app2}
 
 	manager.addMachine(1, machine1)
 	manager.addMachine(2, machine2)
@@ -289,4 +289,39 @@ func (m *MockMachineRepository) GetLastSnapshot(
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*model.Input), args.Error(1)
+}
+
+// ------------------------------------------------------------------------------------------------
+
+// DummyMachineInstanceMock implements the MachineInstance interface for testing
+type DummyMachineInstanceMock struct {
+	application *model.Application
+}
+
+func (m *DummyMachineInstanceMock) Application() *model.Application {
+	return m.application
+}
+
+func (m *DummyMachineInstanceMock) Advance(_ context.Context, _ []byte, _ uint64, _ uint64, _ bool) (*model.AdvanceResult, error) {
+	return nil, nil
+}
+
+func (m *DummyMachineInstanceMock) Inspect(_ context.Context, _ []byte) (*model.InspectResult, error) {
+	return nil, nil
+}
+
+func (m *DummyMachineInstanceMock) Synchronize(_ context.Context, _ MachineRepository) error {
+	return nil
+}
+
+func (m *DummyMachineInstanceMock) CreateSnapshot(_ context.Context, _ uint64, _ string) error {
+	return nil
+}
+
+func (m *DummyMachineInstanceMock) Hash(_ context.Context) ([32]byte, error) {
+	return [32]byte{}, nil
+}
+
+func (m *DummyMachineInstanceMock) Close() error {
+	return nil
 }
