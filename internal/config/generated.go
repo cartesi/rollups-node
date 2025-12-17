@@ -500,7 +500,7 @@ type EvmreaderConfig struct {
 	BlockchainId uint64 `mapstructure:"CARTESI_BLOCKCHAIN_ID"`
 
 	// Block subscription timeout in seconds.
-	BlockchainSubscriptionTimeout uint64 `mapstructure:"CARTESI_BLOCKCHAIN_SUBSCRIPTION_TIMEOUT"`
+	BlockchainSubscriptionTimeout Duration `mapstructure:"CARTESI_BLOCKCHAIN_SUBSCRIPTION_TIMEOUT"`
 
 	// WebSocket endpoint for the blockchain RPC provider.
 	BlockchainWsEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_WS_ENDPOINT"`
@@ -775,7 +775,7 @@ type NodeConfig struct {
 	BlockchainLegacyEnabled bool `mapstructure:"CARTESI_BLOCKCHAIN_LEGACY_ENABLED"`
 
 	// Block subscription timeout in seconds.
-	BlockchainSubscriptionTimeout uint64 `mapstructure:"CARTESI_BLOCKCHAIN_SUBSCRIPTION_TIMEOUT"`
+	BlockchainSubscriptionTimeout Duration `mapstructure:"CARTESI_BLOCKCHAIN_SUBSCRIPTION_TIMEOUT"`
 
 	// WebSocket endpoint for the blockchain RPC provider.
 	BlockchainWsEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_WS_ENDPOINT"`
@@ -1634,16 +1634,16 @@ func GetBlockchainLegacyEnabled() (bool, error) {
 }
 
 // GetBlockchainSubscriptionTimeout returns the value for the environment variable CARTESI_BLOCKCHAIN_SUBSCRIPTION_TIMEOUT.
-func GetBlockchainSubscriptionTimeout() (uint64, error) {
+func GetBlockchainSubscriptionTimeout() (Duration, error) {
 	s := viper.GetString(BLOCKCHAIN_SUBSCRIPTION_TIMEOUT)
 	if s != "" {
-		v, err := toUint64(s)
+		v, err := toDuration(s)
 		if err != nil {
 			return v, fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_SUBSCRIPTION_TIMEOUT, err)
 		}
 		return v, nil
 	}
-	return notDefineduint64(), fmt.Errorf("%s: %w", BLOCKCHAIN_SUBSCRIPTION_TIMEOUT, ErrNotDefined)
+	return notDefinedDuration(), fmt.Errorf("%s: %w", BLOCKCHAIN_SUBSCRIPTION_TIMEOUT, ErrNotDefined)
 }
 
 // GetBlockchainWsEndpoint returns the value for the environment variable CARTESI_BLOCKCHAIN_WS_ENDPOINT.
