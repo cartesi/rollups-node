@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -127,6 +128,54 @@ func TestAppendAndRepeated(t *testing.T) {
 	tree2 := builder.Build()
 
 	assert.Equal(t, tree1, tree2)
+}
+
+func TestBuildRootChildren1(t *testing.T) {
+	p := Proof{
+		Pos:  big.NewInt(1),
+		Node: common.HexToHash("0x01"),
+		Siblings: []common.Hash{
+			common.HexToHash("0x02"),
+		},
+	}
+	rootHash := p.BuildRoot()
+	lhs, rhs, err := p.BuildRootChildren()
+
+	assert.Nil(t, err)
+	assert.Equal(t, rootHash, crypto.Keccak256Hash(lhs[:], rhs[:]))
+}
+
+func TestBuildRootChildren2(t *testing.T) {
+	p := Proof{
+		Pos:  big.NewInt(1),
+		Node: common.HexToHash("0x01"),
+		Siblings: []common.Hash{
+			common.HexToHash("0x02"),
+			common.HexToHash("0x03"),
+		},
+	}
+	rootHash := p.BuildRoot()
+	lhs, rhs, err := p.BuildRootChildren()
+
+	assert.Nil(t, err)
+	assert.Equal(t, rootHash, crypto.Keccak256Hash(lhs[:], rhs[:]))
+}
+
+func TestBuildRootChildren3(t *testing.T) {
+	p := Proof{
+		Pos:  big.NewInt(1),
+		Node: common.HexToHash("0x01"),
+		Siblings: []common.Hash{
+			common.HexToHash("0x02"),
+			common.HexToHash("0x03"),
+			common.HexToHash("0x04"),
+		},
+	}
+	rootHash := p.BuildRoot()
+	lhs, rhs, err := p.BuildRootChildren()
+
+	assert.Nil(t, err)
+	assert.Equal(t, rootHash, crypto.Keccak256Hash(lhs[:], rhs[:]))
 }
 
 // repanicked
