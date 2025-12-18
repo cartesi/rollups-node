@@ -4,6 +4,7 @@
 package merkle
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"slices"
@@ -50,12 +51,48 @@ func (proof *Proof) BuildRoot() common.Hash {
 	return rootHash
 }
 
+func (proof *Proof) BuildRootChildren() (common.Hash, common.Hash, error) {
+	if len(proof.Siblings) == 0 {
+		zero := common.Hash{}
+		return zero, zero, errors.New("Siblings array is empty")
+	}
+	two := big.NewInt(2)
+	height := len(proof.Siblings)
+	childHash := proof.Node
+
+	for i, s := range proof.Siblings[:height-1] {
+
+		// ((pos >> i) % 2) == 0
+		if new(big.Int).Rem(new(big.Int).Rsh(proof.Pos, uint(i)), two).Cmp(zero) == 0 {
+			childHash = crypto.Keccak256Hash(childHash[:], s[:])
+		} else {
+			childHash = crypto.Keccak256Hash(s[:], childHash[:])
+		}
+	}
+
+	// ((pos >> (height-1)) % 2) == 0
+	if new(big.Int).Rem(new(big.Int).Rsh(proof.Pos, uint(height-1)), two).Cmp(zero) == 0 {
+		return childHash, proof.Siblings[height-1], nil
+	} else {
+		return proof.Siblings[height-1], childHash, nil
+	}
+}
+
 func (proof *Proof) VerifyRoot(other common.Hash) bool {
 	return proof.BuildRoot() == other
 }
 
 func (proof *Proof) PushHash(h common.Hash) {
 	proof.Siblings = append(proof.Siblings, h)
+}
+
+func RootChildrenFromProof(leaf common.Hash, siblings []common.Hash, index uint64) (common.Hash, common.Hash, error) {
+	p := &Proof{
+		Pos:      new(big.Int).SetUint64(index),
+		Node:     leaf,
+		Siblings: siblings,
+	}
+	return p.BuildRootChildren()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
