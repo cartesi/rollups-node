@@ -26,11 +26,13 @@ var (
 
 // AdvancerRepository defines the repository interface needed by the Advancer service
 type AdvancerRepository interface {
+	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter, p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
 	ListInputs(ctx context.Context, nameOrAddress string, f repository.InputFilter, p repository.Pagination, descending bool) ([]*Input, uint64, error)
 	GetLastInput(ctx context.Context, appAddress string, epochIndex uint64) (*Input, error)
 	StoreAdvanceResult(ctx context.Context, appID int64, ar *AdvanceResult) error
-	UpdateEpochsInputsProcessed(ctx context.Context, nameOrAddress string) ([]uint64, error)
-	UpdateEpochCommitment(ctx context.Context, appID int64, epochIndex uint64, commitment []byte) error
+	UpdateEpochInputsProcessed(ctx context.Context, nameOrAddress string, epochIndex uint64) error
+	UpdateEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64, proof *OutputsProof) error
+	RepeatPreviousEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64) error
 	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	UpdateInputSnapshotURI(ctx context.Context, appId int64, inputIndex uint64, snapshotURI string) error
@@ -38,9 +40,14 @@ type AdvancerRepository interface {
 	GetLastProcessedInput(ctx context.Context, appAddress string) (*Input, error)
 }
 
+func getUnprocessedEpochs(ctx context.Context, er AdvancerRepository, address string) ([]*Epoch, uint64, error) {
+	f := repository.EpochFilter{Status: []EpochStatus{EpochStatus_Open, EpochStatus_Closed}}
+	return er.ListEpochs(ctx, address, f, repository.Pagination{}, false)
+}
+
 // getUnprocessedInputs retrieves inputs that haven't been processed yet
-func getUnprocessedInputs(ctx context.Context, repo AdvancerRepository, appAddress string) ([]*Input, uint64, error) {
-	f := repository.InputFilter{Status: Pointer(InputCompletionStatus_None)}
+func getUnprocessedInputs(ctx context.Context, repo AdvancerRepository, appAddress string, epochIndex uint64) ([]*Input, uint64, error) {
+	f := repository.InputFilter{Status: Pointer(InputCompletionStatus_None), EpochIndex: &epochIndex}
 	return repo.ListInputs(ctx, appAddress, f, repository.Pagination{}, false)
 }
 
@@ -65,36 +72,64 @@ func (s *Service) Step(ctx context.Context) error {
 	for _, app := range apps {
 		appAddress := app.IApplicationAddress.String()
 
-		err := s.handleEpochSnapshotAfterInputProcessed(ctx, app)
+		epochs, _, err := getUnprocessedEpochs(ctx, s.repository, appAddress)
 		if err != nil {
 			return err
 		}
 
-		// Get unprocessed inputs for this application
-		s.Logger.Debug("Querying for unprocessed inputs", "application", app.Name)
-		inputs, _, err := getUnprocessedInputs(ctx, s.repository, appAddress)
-		if err != nil {
-			return err
-		}
+		for _, epoch := range epochs {
+			// Get unprocessed inputs for this application
+			s.Logger.Debug("Querying for unprocessed inputs", "application", app.Name, "epoch_index", epoch.Index)
+			inputs, _, err := getUnprocessedInputs(ctx, s.repository, appAddress, epoch.Index)
+			if err != nil {
+				return err
+			}
 
-		// Process the inputs
-		s.Logger.Debug("Processing inputs", "application", app.Name, "count", len(inputs))
-		err = s.processInputs(ctx, app, inputs)
-		if err != nil {
-			return err
-		}
+			// Process the inputs
+			s.Logger.Debug("Processing inputs", "application", app.Name, "epoch_index", epoch.Index, "count", len(inputs))
+			err = s.processInputs(ctx, app, inputs)
+			if err != nil {
+				return err
+			}
 
-		// Update epochs to mark inputs as processed
-		updatedEpochIndexes, err := s.repository.UpdateEpochsInputsProcessed(ctx, appAddress)
-		if err != nil {
-			return err
-		}
-		for _, epochIndex := range updatedEpochIndexes {
-			s.Logger.Info("Epoch updated to Inputs Processed", "application", app.Name, "epoch_index", epochIndex)
+			if epoch.Status == EpochStatus_Closed {
+				if allProcessed, perr := s.isAllEpochInputsProcessed(app, epoch); perr == nil && allProcessed {
+					err := s.handleEpochAfterInputsProcessed(ctx, app, epoch)
+					if err != nil {
+						return err
+					}
+
+					// Update epochs to mark inputs as processed
+					err = s.repository.UpdateEpochInputsProcessed(ctx, appAddress, epoch.Index)
+					if err != nil {
+						return err
+					}
+					s.Logger.Info("Epoch updated to Inputs Processed", "application", app.Name, "epoch_index", epoch.Index)
+				} else if perr != nil {
+					return perr
+				} else {
+					break // some inputs were not processed yet, check next time
+				}
+			}
 		}
 	}
 
 	return nil
+}
+
+func (s *Service) isAllEpochInputsProcessed(app *Application, epoch *Epoch) (bool, error) {
+	// epoch has no inputs
+	if epoch.InputIndexLowerBound == epoch.InputIndexUpperBound {
+		return true, nil
+	}
+	machine, exists := s.machineManager.GetMachine(app.ID)
+	if !exists {
+		return false, fmt.Errorf("%w: %d", ErrNoApp, app.ID)
+	}
+	if machine.ProcessedInputs() == epoch.InputIndexUpperBound {
+		return true, nil
+	}
+	return false, nil
 }
 
 // processInputs handles the processing of inputs for an application
@@ -213,24 +248,52 @@ func (s *Service) isEpochLastInput(ctx context.Context, app *Application, input 
 	return false, nil
 }
 
-// handleEpochSnapshotAfterInputProcessed handles the snapshot creation after when an epoch is closed after an input was processed
-func (s *Service) handleEpochSnapshotAfterInputProcessed(ctx context.Context, app *Application) error {
-	// Get the machine instance for this application
-	machine, exists := s.machineManager.GetMachine(app.ID)
-	if !exists {
-		return fmt.Errorf("%w: %d", ErrNoApp, app.ID)
+// handleEpochAfterInputsProcessed handles the snapshot creation after when an epoch is closed after an input was processed
+func (s *Service) handleEpochAfterInputsProcessed(ctx context.Context, app *Application, epoch *Epoch) error {
+	// if epoch has inputs, all data is updated after advance, just check for snapshot
+	if epoch.InputIndexLowerBound != epoch.InputIndexUpperBound {
+		// Get the machine instance for this application
+		machine, exists := s.machineManager.GetMachine(app.ID)
+		if !exists {
+			return fmt.Errorf("%w: %d", ErrNoApp, app.ID)
+		}
+
+		// Check if this is the last processed input
+		lastProcessedInput, err := s.repository.GetLastProcessedInput(ctx, app.IApplicationAddress.String())
+		if err != nil {
+			return fmt.Errorf("failed to get last input: %w", err)
+		}
+
+		// Check if the application has a epoch snapshot policy
+		if lastProcessedInput != nil && app.ExecutionParameters.SnapshotPolicy == SnapshotPolicy_EveryEpoch {
+			// Handle the snapshot
+			return s.handleSnapshot(ctx, app, machine, lastProcessedInput)
+		}
+
+		return nil
 	}
 
-	// Check if this is the last processed input
-	lastProcessedInput, err := s.repository.GetLastProcessedInput(ctx, app.IApplicationAddress.String())
-	if err != nil {
-		return fmt.Errorf("failed to get last input: %w", err)
-	}
-
-	// Check if the application has a epoch snapshot policy
-	if lastProcessedInput != nil && app.ExecutionParameters.SnapshotPolicy == SnapshotPolicy_EveryEpoch {
-		// Handle the snapshot
-		return s.handleSnapshot(ctx, app, machine, lastProcessedInput)
+	// if epoch has no inputs, we need to copy previous epoch Outputs Proof
+	// first epoch we need to get it from the template
+	if epoch.Index == 0 {
+		// Get the machine instance for this application
+		machine, exists := s.machineManager.GetMachine(app.ID)
+		if !exists {
+			return fmt.Errorf("%w: %d", ErrNoApp, app.ID)
+		}
+		outputsProof, err := machine.OutputsProof(ctx, 0)
+		if err != nil {
+			return fmt.Errorf("failed to get outputs proof from machine: %w", err)
+		}
+		err = s.repository.UpdateEpochOutputsProof(ctx, app.ID, epoch.Index, outputsProof)
+		if err != nil {
+			return fmt.Errorf("failed to store outputs proof for epoch 0: %w", err)
+		}
+	} else {
+		err := s.repository.RepeatPreviousEpochOutputsProof(ctx, app.ID, epoch.Index)
+		if err != nil {
+			return fmt.Errorf("failed to repeat previous epoch outputs proof: %w", err)
+		}
 	}
 
 	return nil
@@ -294,17 +357,8 @@ func (s *Service) createSnapshot(ctx context.Context, app *Application, machine 
 		}
 	}
 
-	// Remove previous snapshot if it exists
-	previousSnapshot, err := s.repository.GetLastSnapshot(ctx, app.IApplicationAddress.String())
-	if err != nil {
-		s.Logger.Error("Failed to get previous snapshot",
-			"application", app.Name,
-			"error", err)
-		// Continue even if we can't get the previous snapshot
-	}
-
 	// Create the snapshot
-	err = machine.CreateSnapshot(ctx, input.Index+1, snapshotPath)
+	err := machine.CreateSnapshot(ctx, input.Index+1, snapshotPath)
 	if err != nil {
 		return err
 	}
@@ -316,6 +370,15 @@ func (s *Service) createSnapshot(ctx context.Context, app *Application, machine 
 	err = s.repository.UpdateInputSnapshotURI(ctx, input.EpochApplicationID, input.Index, snapshotPath)
 	if err != nil {
 		return fmt.Errorf("failed to update input snapshot URI: %w", err)
+	}
+
+	// Get previous snapshot if it exists
+	previousSnapshot, err := s.repository.GetLastSnapshot(ctx, app.IApplicationAddress.String())
+	if err != nil {
+		s.Logger.Error("Failed to get previous snapshot",
+			"application", app.Name,
+			"error", err)
+		// Continue even if we can't get the previous snapshot
 	}
 
 	// Remove previous snapshot if it exists

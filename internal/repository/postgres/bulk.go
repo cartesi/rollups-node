@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-jet/jet/v2/postgres"
@@ -18,10 +19,16 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/table"
 )
 
-func encodeSiblings(outputHashesSiblings []common.Hash) ([]byte, error) {
+// byteSliceToHashSlice converts [][32]byte to []common.Hash without copying.
+// This is safe because common.Hash is defined as [32]byte, so the memory layout is identical.
+func byteSliceToHashSlice(b [][32]byte) []common.Hash {
+	return *(*[]common.Hash)(unsafe.Pointer(&b))
+}
+
+func encodeSiblings(siblings []common.Hash) ([]byte, error) {
 	// 1) Make a slice of []byte
-	arr := make([][]byte, 0, len(outputHashesSiblings))
-	for _, h := range outputHashesSiblings {
+	arr := make([][]byte, 0, len(siblings))
+	for _, h := range siblings {
 		// h is [32]byte
 		// we must copy it into a slice of bytes
 		copyH := make([]byte, len(h))
@@ -30,13 +37,13 @@ func encodeSiblings(outputHashesSiblings []common.Hash) ([]byte, error) {
 	}
 
 	// 2) Use pgtype.ByteaArray and call Set with [][]byte
-	var siblings pgtype.ByteaArray
-	if err := siblings.Set(arr); err != nil {
+	var pgSiblings pgtype.ByteaArray
+	if err := pgSiblings.Set(arr); err != nil {
 		return nil, fmt.Errorf("failed to set ByteaArray: %w", err)
 	}
 
 	// 3) Encode it as text (the Postgres array string, e.g. '{\\x...,\\x..., ...}')
-	encoded, err := siblings.EncodeText(nil, nil)
+	encoded, err := pgSiblings.EncodeText(nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode ByteaArray: %w", err)
 	}
@@ -67,8 +74,7 @@ func getOutputNextIndex(
 	var currentIndex uint64
 	err := tx.QueryRow(ctx, queryStr, args...).Scan(&currentIndex)
 	if err != nil {
-		err = fmt.Errorf("failed to get the next output index: %w", err)
-		return 0, errors.Join(err, tx.Rollback(ctx))
+		return 0, fmt.Errorf("failed to get the next output index: %w", err)
 	}
 	return currentIndex, nil
 }
@@ -95,8 +101,7 @@ func getReportNextIndex(
 	var currentIndex uint64
 	err := tx.QueryRow(ctx, queryStr, args...).Scan(&currentIndex)
 	if err != nil {
-		err = fmt.Errorf("failed to get the next report index: %w", err)
-		return 0, errors.Join(err, tx.Rollback(ctx))
+		return 0, fmt.Errorf("failed to get the next report index: %w", err)
 	}
 	return currentIndex, nil
 }
@@ -122,8 +127,7 @@ func getStateHashNextIndex(
 	var currentIndex uint64
 	err := tx.QueryRow(ctx, queryStr, args...).Scan(&currentIndex)
 	if err != nil {
-		err = fmt.Errorf("failed to get the next state hash index: %w", err)
-		return 0, errors.Join(err, tx.Rollback(ctx))
+		return 0, fmt.Errorf("failed to get the next state hash index: %w", err)
 	}
 	return currentIndex, nil
 }
@@ -162,7 +166,7 @@ func insertOutputs(
 	sqlStr, args := stmt.Sql()
 	_, err = tx.Exec(ctx, sqlStr, args...)
 	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
+		return err
 	}
 	return nil
 }
@@ -201,7 +205,7 @@ func insertReports(
 	sqlStr, args := stmt.Sql()
 	_, err = tx.Exec(ctx, sqlStr, args...)
 	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
+		return err
 	}
 	return nil
 }
@@ -254,7 +258,7 @@ func insertStateHashes(
 	sqlStr, args := stmt.Sql()
 	_, err = tx.Exec(ctx, sqlStr, args...)
 	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
+		return err
 	}
 	return nil
 }
@@ -283,6 +287,47 @@ func updateInput(
 		WHERE(
 			table.Input.EpochApplicationID.EQ(postgres.Int64(appID)).
 				AND(table.Input.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", inputIndex)))),
+		)
+
+	sqlStr, args := updStmt.Sql()
+	cmd, err := tx.Exec(ctx, sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func updateEpochOutputsMerkleProof(
+	ctx context.Context,
+	tx pgx.Tx,
+	appID int64,
+	epochIndex uint64,
+	outputsHash common.Hash,
+	outputsHashProof []common.Hash,
+	machineHash common.Hash,
+) error {
+
+	proof, err := encodeSiblings(outputsHashProof)
+	if err != nil {
+		return fmt.Errorf("failed to serialize epoch '%d' OutputsMerkleProof. %w", epochIndex, err)
+	}
+	updStmt := table.Epoch.
+		UPDATE(
+			table.Epoch.OutputsMerkleRoot,
+			table.Epoch.OutputsMerkleProof,
+			table.Epoch.MachineHash,
+		).
+		SET(
+			outputsHash,
+			proof,
+			machineHash,
+		).
+		WHERE(
+			table.Epoch.ApplicationID.EQ(postgres.Int64(appID)).
+				AND(table.Epoch.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", epochIndex)))),
 		)
 
 	sqlStr, args := updStmt.Sql()
@@ -338,30 +383,36 @@ func (r *PostgresRepository) StoreAdvanceResult(
 	if res.Status == model.InputCompletionStatus_Accepted {
 		err = insertOutputs(ctx, tx, appID, res.InputIndex, res.Outputs)
 		if err != nil {
-			return err
+			return errors.Join(err, tx.Rollback(ctx))
 		}
 
 		err = insertReports(ctx, tx, appID, res.InputIndex, res.Reports)
 		if err != nil {
-			return err
+			return errors.Join(err, tx.Rollback(ctx))
 		}
 	}
 
 	if res.IsDaveConsensus {
 		err = insertStateHashes(ctx, tx, appID, res.EpochIndex, res.InputIndex, res.Hashes, res.MachineHash, res.RemainingMetaCycles)
 		if err != nil {
-			return err
+			return errors.Join(err, tx.Rollback(ctx))
 		}
 	}
 
 	err = updateInput(ctx, tx, appID, res.InputIndex, res.Status, res.OutputsHash, res.MachineHash)
 	if err != nil {
-		return err
+		return errors.Join(err, tx.Rollback(ctx))
+	}
+
+	err = updateEpochOutputsMerkleProof(ctx, tx, appID, res.EpochIndex, res.OutputsHash,
+		byteSliceToHashSlice(res.OutputsHashProof), res.MachineHash)
+	if err != nil {
+		return errors.Join(err, tx.Rollback(ctx))
 	}
 
 	err = updateApp(ctx, tx, appID, res.InputIndex)
 	if err != nil {
-		return err
+		return errors.Join(err, tx.Rollback(ctx))
 	}
 
 	err = tx.Commit(ctx)
@@ -378,17 +429,23 @@ func updateEpochClaim(
 	e *model.Epoch,
 ) error {
 
+	commitmentProof, err := encodeSiblings(e.CommitmentProof)
+	if err != nil {
+		return errors.Join(
+			fmt.Errorf("failed to serialize epoch '%d' OutputsMerkleProof. %w", e.Index, err),
+			tx.Rollback(ctx),
+		)
+	}
+
 	updStmt := table.Epoch.
 		UPDATE(
-			table.Epoch.MachineHash,
-			table.Epoch.ClaimHash,
 			table.Epoch.Commitment,
+			table.Epoch.CommitmentProof,
 			table.Epoch.Status,
 		).
 		SET(
-			e.MachineHash,
-			e.ClaimHash,
 			e.Commitment,
+			commitmentProof,
 			postgres.NewEnumValue(model.EpochStatus_ClaimComputed.String()),
 		).
 		WHERE(

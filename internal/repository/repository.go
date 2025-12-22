@@ -29,7 +29,7 @@ type ApplicationFilter struct {
 }
 
 type EpochFilter struct {
-	Status      *EpochStatus
+	Status      []EpochStatus
 	BeforeBlock *uint64
 }
 
@@ -106,10 +106,11 @@ type EpochRepository interface {
 	GetLastNonOpenEpoch(ctx context.Context, nameOrAddress string) (*Epoch, error)
 	GetEpochByVirtualIndex(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 
-	UpdateEpoch(ctx context.Context, nameOrAddress string, e *Epoch) error
+	UpdateEpochClaimTransactionHash(ctx context.Context, nameOrAddress string, e *Epoch) error
 	UpdateEpochStatus(ctx context.Context, nameOrAddress string, e *Epoch) error
-	UpdateEpochsInputsProcessed(ctx context.Context, nameOrAddress string) ([]uint64, error)
-	UpdateEpochCommitment(ctx context.Context, appID int64, epochIndex uint64, commitment []byte) error
+	UpdateEpochInputsProcessed(ctx context.Context, nameOrAddress string, epochIndex uint64) error
+	UpdateEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64, proof *OutputsProof) error
+	RepeatPreviousEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64) error
 
 	ListEpochs(ctx context.Context, nameOrAddress string, f EpochFilter, p Pagination, descending bool) ([]*Epoch, uint64, error)
 }

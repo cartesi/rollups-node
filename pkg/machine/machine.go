@@ -52,8 +52,10 @@ type Machine interface {
 	Fork(ctx context.Context) (Machine, error)
 	// Hash returns the machine's merkle tree root hash.
 	Hash(ctx context.Context) (Hash, error)
-	// OutputsHash returns the outputs hash stored in the cmio tx buffer.
+	// OutputsHash returns the outputs merkle root hash stored in the cmio tx buffer.
 	OutputsHash(ctx context.Context) (Hash, error)
+	// OutputsHashProof returns the proof that the outputs merkle root hash is stored in the cmio tx buffer.
+	OutputsHashProof(ctx context.Context) ([]Hash, error)
 	// WriteCheckpointHash writes the given checkpoint hash to the machine memory.
 	WriteCheckpointHash(ctx context.Context, hash Hash) error
 

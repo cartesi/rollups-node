@@ -135,7 +135,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 			s.Logger.Info("Claim submitted",
 				"app", apps[key].IApplicationAddress,
 				"receipt_block_number", receipt.BlockNumber,
-				"claim_hash", fmt.Sprintf("%x", computedEpoch.ClaimHash),
+				"claim_hash", fmt.Sprintf("%x", computedEpoch.OutputsMerkleRoot),
 				"last_block", computedEpoch.LastBlock,
 				"tx", txHash)
 			delete(computedEpochs, key)
@@ -258,7 +258,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 			}
 			s.Logger.Debug("Updating claim status to submitted",
 				"app", app.IApplicationAddress,
-				"claim_hash", fmt.Sprintf("%x", currEpoch.ClaimHash),
+				"claim_hash", fmt.Sprintf("%x", currEpoch.OutputsMerkleRoot),
 				"last_block", currEpoch.LastBlock,
 			)
 			txHash := currClaimSubmissionEvent.Raw.TxHash
@@ -277,21 +277,21 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 			s.Logger.Info("Claim previously submitted",
 				"app", app.IApplicationAddress,
 				"event_block_number", currClaimSubmissionEvent.Raw.BlockNumber,
-				"claim_hash", fmt.Sprintf("%x", currEpoch.ClaimHash),
+				"claim_hash", fmt.Sprintf("%x", currEpoch.OutputsMerkleRoot),
 				"last_block", currEpoch.LastBlock,
 			)
 		} else if s.submissionEnabled {
 			if prevEpoch != nil && prevEpoch.Status != model.EpochStatus_ClaimAccepted {
 				s.Logger.Debug("Waiting previous claim to be accepted before submitting new one. Previous:",
 					"app", app.IApplicationAddress,
-					"claim_hash", fmt.Sprintf("%x", prevEpoch.ClaimHash),
+					"claim_hash", fmt.Sprintf("%x", prevEpoch.OutputsMerkleRoot),
 					"last_block", prevEpoch.LastBlock,
 				)
 				goto nextApp
 			}
 			s.Logger.Debug("Submitting claim to blockchain",
 				"app", app.IApplicationAddress,
-				"claim_hash", fmt.Sprintf("%x", currEpoch.ClaimHash),
+				"claim_hash", fmt.Sprintf("%x", currEpoch.OutputsMerkleRoot),
 				"last_block", currEpoch.LastBlock,
 			)
 			txHash, err := s.blockchain.submitClaimToBlockchain(ic, app, currEpoch)
@@ -304,7 +304,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 		} else {
 			s.Logger.Debug("Claim submission disabled. Doing nothing",
 				"app", app.IApplicationAddress,
-				"claim_hash", fmt.Sprintf("%x", currEpoch.ClaimHash),
+				"claim_hash", fmt.Sprintf("%x", currEpoch.OutputsMerkleRoot),
 				"last_block", currEpoch.LastBlock,
 			)
 
@@ -409,7 +409,7 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 			}
 			s.Logger.Debug("Updating claim status to accepted",
 				"app", app.IApplicationAddress,
-				"claim_hash", fmt.Sprintf("%x", submittedEpoch.ClaimHash),
+				"claim_hash", fmt.Sprintf("%x", submittedEpoch.OutputsMerkleRoot),
 				"last_block", submittedEpoch.LastBlock,
 			)
 			txHash := currEvent.Raw.TxHash
@@ -482,7 +482,7 @@ func checkEpochConstraint(c *model.Epoch) error {
 		return fmt.Errorf("unexpected epoch state. first_block: %v > last_block: %v", c.FirstBlock, c.LastBlock)
 	}
 	if c.Status == model.EpochStatus_ClaimSubmitted {
-		if c.ClaimHash == nil {
+		if c.OutputsMerkleRoot == nil {
 			return fmt.Errorf("unexpected epoch state. missing claim_hash.")
 		}
 	}
@@ -520,13 +520,13 @@ func checkEpochSequenceConstraint(prevEpoch *model.Epoch, currEpoch *model.Epoch
 
 func claimSubmittedEventMatches(application *model.Application, epoch *model.Epoch, event *iconsensus.IConsensusClaimSubmitted) bool {
 	return application.IApplicationAddress == event.AppContract &&
-		*epoch.ClaimHash == event.OutputsMerkleRoot &&
+		*epoch.OutputsMerkleRoot == event.OutputsMerkleRoot &&
 		epoch.LastBlock == event.LastProcessedBlockNumber.Uint64()
 }
 
 func claimAcceptedEventMatches(application *model.Application, epoch *model.Epoch, event *iconsensus.IConsensusClaimAccepted) bool {
 	return application.IApplicationAddress == event.AppContract &&
-		*epoch.ClaimHash == event.OutputsMerkleRoot &&
+		*epoch.OutputsMerkleRoot == event.OutputsMerkleRoot &&
 		epoch.LastBlock == event.LastProcessedBlockNumber.Uint64()
 }
 

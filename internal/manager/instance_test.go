@@ -33,10 +33,10 @@ type MockMachineRuntimeFactory struct {
 }
 
 func (f *MockMachineRuntimeFactory) CreateMachineRuntime(
-	ctx context.Context,
-	app *model.Application,
-	logger *slog.Logger,
-	checkHash bool,
+	_ context.Context,
+	_ *model.Application,
+	_ *slog.Logger,
+	_ bool,
 ) (machine.Machine, error) {
 	return f.RuntimeToReturn, f.ErrorToReturn
 }
@@ -677,7 +677,7 @@ func (s *MachineInstanceSuite) setupAdvance() (*MockRollupsMachine, *MockRollups
 		newBytes(21, 200),
 		newBytes(22, 200),
 	}
-	fork.AdvanceHashReturn = newHash(1)
+	fork.OutputsHashReturn = newHash(1)
 	fork.AdvanceError = nil
 
 	fork.HashReturn = newHash(2)
@@ -779,7 +779,10 @@ type MockRollupsMachine struct {
 	AdvanceReportsReturn   []machine.Report
 	AdvanceLeafsReturn     []machine.Hash
 	AdvanceRemainingReturn uint64
-	AdvanceHashReturn      machine.Hash
+	OutputsHashReturn      machine.Hash
+	OutputsHashError       error
+	OutputsHashProofReturn []machine.Hash
+	OutputsHashProofError  error
 	AdvanceError           error
 
 	InspectAcceptedReturn bool
@@ -800,14 +803,18 @@ func (m *MockRollupsMachine) Hash(_ context.Context) (machine.Hash, error) {
 }
 
 func (m *MockRollupsMachine) OutputsHash(_ context.Context) (machine.Hash, error) {
-	return m.AdvanceHashReturn, m.HashError
+	return m.OutputsHashReturn, m.HashError
+}
+
+func (m *MockRollupsMachine) OutputsHashProof(_ context.Context) ([]machine.Hash, error) {
+	return m.OutputsHashProofReturn, m.OutputsHashProofError
 }
 
 func (m *MockRollupsMachine) WriteCheckpointHash(_ context.Context, _ machine.Hash) error {
 	return m.CheckpointHashError
 }
 
-func (m *MockRollupsMachine) Advance(_ context.Context, input []byte, leafs bool) (
+func (m *MockRollupsMachine) Advance(_ context.Context, _ []byte, _ bool) (
 	bool, []machine.Output, []machine.Report, []machine.Hash, uint64, machine.Hash, error,
 ) {
 	return m.AdvanceAcceptedReturn,
@@ -815,13 +822,11 @@ func (m *MockRollupsMachine) Advance(_ context.Context, input []byte, leafs bool
 		m.AdvanceReportsReturn,
 		m.AdvanceLeafsReturn,
 		m.AdvanceRemainingReturn,
-		m.AdvanceHashReturn,
+		m.OutputsHashReturn,
 		m.AdvanceError
 }
 
-func (m *MockRollupsMachine) Inspect(_ context.Context,
-	query []byte,
-) (bool, []machine.Report, error) {
+func (m *MockRollupsMachine) Inspect(_ context.Context, _ []byte) (bool, []machine.Report, error) {
 	return m.InspectAcceptedReturn, m.InspectReportsReturn, m.InspectError
 }
 

@@ -143,6 +143,10 @@ func (m *MachineInstanceImpl) Application() *Application {
 	return m.application
 }
 
+func (m *MachineInstanceImpl) ProcessedInputs() uint64 {
+	return m.processedInputs
+}
+
 // Synchronize brings the machine up to date with processed inputs
 func (m *MachineInstanceImpl) Synchronize(ctx context.Context, repo MachineRepository) error {
 	appAddress := m.application.IApplicationAddress.String()
@@ -231,6 +235,11 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 		return nil, errors.Join(err, fork.Close())
 	}
 
+	prevOutputsHashProof, err := fork.OutputsHashProof(ctx)
+	if err != nil {
+		return nil, errors.Join(err, fork.Close())
+	}
+
 	// Create a timeout context for the advance operation
 	advanceCtx, cancel := context.WithTimeout(ctx, m.advanceTimeout)
 	defer cancel()
@@ -259,18 +268,21 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 		Reports:             reports,
 		Hashes:              hashes,
 		RemainingMetaCycles: remaining,
-		OutputsHash:         outputsHash,
 		IsDaveConsensus:     computeHashes,
 	}
 
 	// If the input was accepted, update the machine state
 	if result.Status == InputCompletionStatus_Accepted {
 		// Get the machine hash after processing
-		machineHash, err := fork.Hash(ctx)
+		result.MachineHash, err = fork.Hash(ctx)
 		if err != nil {
 			return nil, errors.Join(err, fork.Close())
 		}
-		result.MachineHash = machineHash
+		result.OutputsHash = outputsHash
+		result.OutputsHashProof, err = fork.OutputsHashProof(ctx)
+		if err != nil {
+			return nil, errors.Join(err, fork.Close())
+		}
 
 		// Replace the current machine with the fork
 		m.mutex.HLock()
@@ -285,6 +297,7 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 		// Use the previous state for rejected inputs
 		result.MachineHash = prevMachineHash
 		result.OutputsHash = prevOutputsHash
+		result.OutputsHashProof = prevOutputsHashProof
 
 		// Close the fork since we're not using it
 		err = fork.Close()
@@ -423,6 +436,51 @@ func (m *MachineInstanceImpl) Hash(ctx context.Context) ([32]byte, error) {
 
 	m.logger.Debug("Machine root hash retrieved successfully", "hash", "0x"+hex.EncodeToString(hash[:]))
 	return hash, nil
+}
+
+func (m *MachineInstanceImpl) OutputsProof(ctx context.Context, processedInputs uint64) (*OutputsProof, error) {
+	// Acquire the advance mutex to ensure no advance operations are in progress
+	m.advanceMutex.Lock()
+	defer m.advanceMutex.Unlock()
+
+	// Acquire a read lock on the machine
+	m.mutex.LLock()
+	defer m.mutex.Unlock()
+
+	if m.runtime == nil {
+		return nil, ErrMachineClosed
+	}
+
+	m.logger.Debug("Retrieving machine hash, outputs merkle root and outputs merkle proof")
+
+	proofCtx, cancel := context.WithTimeout(ctx, m.application.ExecutionParameters.LoadDeadline)
+	defer cancel()
+
+	// Get the machine state before processing
+	machineHash, err := m.runtime.Hash(proofCtx)
+	if err != nil {
+		return nil, errors.Join(err, m.runtime.Close())
+	}
+
+	outputsHash, err := m.runtime.OutputsHash(proofCtx)
+	if err != nil {
+		return nil, errors.Join(err, m.runtime.Close())
+	}
+
+	outputsHashProof, err := m.runtime.OutputsHashProof(proofCtx)
+	if err != nil {
+		return nil, errors.Join(err, m.runtime.Close())
+	}
+
+	proof := &OutputsProof{
+		MachineHash:      machineHash,
+		OutputsHash:      outputsHash,
+		OutputsHashProof: outputsHashProof,
+	}
+
+	m.logger.Debug("Machine machine hash, outputs merkle root and outputs merkle proof retrieved successfully",
+		"hash", "0x"+hex.EncodeToString(machineHash[:]))
+	return proof, nil
 }
 
 // Close shuts down the machine instance

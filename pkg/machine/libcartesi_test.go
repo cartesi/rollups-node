@@ -439,6 +439,11 @@ func (m *MockRemoteMachine) GetRootHash() (emulator.Hash, error) {
 	return args.Get(0).(Hash), args.Error(1)
 }
 
+func (m *MockRemoteMachine) GetProof(address uint64, log2size int32) (string, error) {
+	args := m.Called(address, log2size)
+	return args.Get(0).(string), args.Error(1)
+}
+
 func (m *MockRemoteMachine) ReadReg(reg emulator.RegID) (uint64, error) {
 	args := m.Called(reg)
 	return args.Get(0).(uint64), args.Error(1)

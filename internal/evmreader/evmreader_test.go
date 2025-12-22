@@ -576,7 +576,7 @@ func (m *MockRepository) SetupDefaultBehavior() *MockRepository {
 			FirstBlock:           11,
 			LastBlock:            20,
 			Status:               EpochStatus_Open,
-			ClaimHash:            nil,
+			OutputsMerkleRoot:    nil,
 			ClaimTransactionHash: nil,
 		}, nil).Twice()
 	return m
@@ -642,7 +642,7 @@ func (m *MockRepository) GetOutput(ctx context.Context, nameOrAddress string, in
 	return obj.(*Output), args.Error(1)
 }
 
-func (m *MockRepository) UpdateEpoch(ctx context.Context, nameOrAddress string, e *Epoch) error {
+func (m *MockRepository) UpdateEpochClaimTransactionHash(ctx context.Context, nameOrAddress string, e *Epoch) error {
 	args := m.Called(ctx, nameOrAddress, e)
 	return args.Error(0)
 }

@@ -61,17 +61,17 @@ func (s *AdvancerSuite) TestServiceInterface() {
 
 		// Test Tick method
 		machineManager.Map[1] = *newMockMachine(1)
-		repository.GetInputsReturn = map[common.Address][]*Input{
+		repository.GetEpochsReturn = map[common.Address][]*Epoch{
 			machineManager.Map[1].Application.IApplicationAddress: {},
 		}
 		tickErrors := advancer.Tick()
 		require.Empty(tickErrors)
 
 		// Test Tick with error
-		repository.UpdateEpochsError = errors.New("update epochs error")
+		repository.GetEpochsError = errors.New("list epochs error")
 		tickErrors = advancer.Tick()
 		require.NotEmpty(tickErrors)
-		require.Contains(tickErrors[0].Error(), "update epochs error")
+		require.Contains(tickErrors[0].Error(), "list epochs error")
 	})
 }
 
@@ -89,6 +89,14 @@ func (s *AdvancerSuite) TestStep() {
 		res3 := randomAdvanceResult(3)
 
 		repository := &MockRepository{
+			GetEpochsReturn: map[common.Address][]*Epoch{
+				app1.Application.IApplicationAddress: {
+					&Epoch{Index: 0, Status: EpochStatus_Open},
+				},
+				app2.Application.IApplicationAddress: {
+					&Epoch{Index: 0, Status: EpochStatus_Open},
+				},
+			},
 			GetInputsReturn: map[common.Address][]*Input{
 				app1.Application.IApplicationAddress: {
 					newInput(app1.Application.ID, 0, 0, marshal(res1)),
@@ -119,6 +127,11 @@ func (s *AdvancerSuite) TestStep() {
 		res1 := randomAdvanceResult(1)
 
 		repository := &MockRepository{
+			GetEpochsReturn: map[common.Address][]*Epoch{
+				app1.Application.IApplicationAddress: {
+					&Epoch{Index: 0, Status: EpochStatus_Closed},
+				},
+			},
 			GetInputsReturn: map[common.Address][]*Input{
 				app1.Application.IApplicationAddress: {
 					newInput(app1.Application.ID, 0, 0, marshal(res1)),
@@ -162,6 +175,11 @@ func (s *AdvancerSuite) TestStep() {
 		machineManager.Map[1] = *app1
 
 		repository := &MockRepository{
+			GetEpochsReturn: map[common.Address][]*Epoch{
+				app1.Application.IApplicationAddress: {
+					&Epoch{Index: 0, Status: EpochStatus_Closed},
+				},
+			},
 			GetInputsError: errors.New("get inputs error"),
 		}
 
@@ -213,7 +231,7 @@ func (s *AdvancerSuite) TestGetUnprocessedInputs() {
 			},
 		}
 
-		result, count, err := getUnprocessedInputs(context.Background(), repository, app1.Application.IApplicationAddress.String())
+		result, count, err := getUnprocessedInputs(context.Background(), repository, app1.Application.IApplicationAddress.String(), 0)
 		require.Nil(err)
 		require.Equal(uint64(2), count)
 		require.Equal(inputs, result)
@@ -227,7 +245,7 @@ func (s *AdvancerSuite) TestGetUnprocessedInputs() {
 			GetInputsError: errors.New("list inputs error"),
 		}
 
-		_, _, err := getUnprocessedInputs(context.Background(), repository, app1.Application.IApplicationAddress.String())
+		_, _, err := getUnprocessedInputs(context.Background(), repository, app1.Application.IApplicationAddress.String(), 0)
 		require.Error(err)
 		require.Contains(err.Error(), "list inputs error")
 	})
@@ -367,7 +385,7 @@ func (s *AdvancerSuite) TestContextCancellation() {
 
 		// Create a repository that will block until we cancel the context
 		repository := &MockRepository{
-			GetInputsBlock: true,
+			GetEpochsBlock: true,
 		}
 
 		advancer, err := newMockAdvancerService(machineManager, repository)
@@ -622,6 +640,14 @@ func (m *MockMachineInstance) Application() *Application {
 	return m.application
 }
 
+func (m *MockMachineInstance) ProcessedInputs() uint64 {
+	return 0
+}
+
+func (m *MockMachineInstance) OutputsProof(ctx context.Context, processedInputs uint64) (*OutputsProof, error) {
+	return nil, nil
+}
+
 // Synchronize implements the MachineInstance interface for testing
 func (m *MockMachineInstance) Synchronize(ctx context.Context, repo manager.MachineRepository) error {
 	// Not used in advancer tests, but needed to satisfy the interface
@@ -649,6 +675,9 @@ func (m *MockMachineInstance) Close() error {
 // ------------------------------------------------------------------------------------------------
 
 type MockRepository struct {
+	GetEpochsReturn             map[common.Address][]*Epoch
+	GetEpochsError              error
+	GetEpochsBlock              bool
 	GetInputsReturn             map[common.Address][]*Input
 	GetInputsError              error
 	GetInputsBlock              bool
@@ -656,10 +685,10 @@ type MockRepository struct {
 	StoreAdvanceFailCount       int
 	UpdateApplicationStateError error
 	UpdateEpochsError           error
-	UpdatedEpochs               []uint64
-	UpdateEpochCommitmentError  error
+	UpdateOutputsProofError     error
 	GetLastSnapshotReturn       *Input
 	GetLastSnapshotError        error
+	RepeatOutputsProofError     error
 
 	StoredResults              []*AdvanceResult
 	ApplicationStateUpdates    int
@@ -667,6 +696,28 @@ type MockRepository struct {
 	LastApplicationStateReason *string
 
 	mu sync.Mutex
+}
+
+func (mock *MockRepository) ListEpochs(
+	ctx context.Context,
+	nameOrAddress string,
+	f repository.EpochFilter,
+	p repository.Pagination,
+	descending bool,
+) ([]*Epoch, uint64, error) {
+	// Check for context cancellation
+	if ctx.Err() != nil {
+		return nil, 0, ctx.Err()
+	}
+
+	// If GetEpochsBlock is true, block until context is canceled
+	if mock.GetEpochsBlock {
+		<-ctx.Done()
+		return nil, 0, ctx.Err()
+	}
+
+	address := common.HexToAddress(nameOrAddress)
+	return mock.GetEpochsReturn[address], uint64(len(mock.GetEpochsReturn[address])), mock.GetEpochsError
 }
 
 func (mock *MockRepository) ListInputs(
@@ -715,22 +766,22 @@ func (mock *MockRepository) StoreAdvanceResult(
 	return mock.StoreAdvanceError
 }
 
-func (mock *MockRepository) UpdateEpochCommitment(ctx context.Context, appID int64, epochIndex uint64, commitmen []byte) error {
+func (mock *MockRepository) UpdateEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64, proof *OutputsProof) error {
 	// Check for context cancellation
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
-	return mock.UpdateEpochCommitmentError
+	return mock.UpdateOutputsProofError
 }
 
-func (mock *MockRepository) UpdateEpochsInputsProcessed(ctx context.Context, nameOrAddress string) ([]uint64, error) {
+func (mock *MockRepository) UpdateEpochInputsProcessed(ctx context.Context, nameOrAddress string, epochIndex uint64) error {
 	// Check for context cancellation
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return ctx.Err()
 	}
 
-	return mock.UpdatedEpochs, mock.UpdateEpochsError
+	return mock.UpdateEpochsError
 }
 
 func (mock *MockRepository) UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error {
@@ -810,6 +861,14 @@ func (mock *MockRepository) GetLastSnapshot(ctx context.Context, nameOrAddress s
 	return mock.GetLastSnapshotReturn, mock.GetLastSnapshotError
 }
 
+func (mock *MockRepository) RepeatPreviousEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64) error {
+	// Check for context cancellation
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return mock.RepeatOutputsProofError
+}
+
 // ------------------------------------------------------------------------------------------------
 
 func randomAddress() common.Address {
@@ -868,12 +927,14 @@ func randomInputs(appId int64, epochIndex uint64, size int) []*Input {
 
 func randomAdvanceResult(inputIndex uint64) *AdvanceResult {
 	res := &AdvanceResult{
-		InputIndex:  inputIndex,
-		Status:      InputCompletionStatus_Accepted,
-		Outputs:     randomSliceOfBytes(),
-		Reports:     randomSliceOfBytes(),
-		OutputsHash: randomHash(),
-		MachineHash: randomHash(),
+		InputIndex: inputIndex,
+		Status:     InputCompletionStatus_Accepted,
+		Outputs:    randomSliceOfBytes(),
+		Reports:    randomSliceOfBytes(),
+		OutputsProof: OutputsProof{
+			OutputsHash: randomHash(),
+			MachineHash: randomHash(),
+		},
 	}
 	return res
 }

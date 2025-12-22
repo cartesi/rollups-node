@@ -122,6 +122,7 @@
 			],
 			"result": {
 				"name": "result",
+				"description": "A paginated list of epochs, with the proofs omitted",
 				"schema": {
 					"$ref": "#/components/schemas/EpochListResult"
 				}
@@ -1118,8 +1119,26 @@
 						"$ref": "#/components/schemas/Hash",
 						"nullable": true
 					},
-					"claim_hash": {
+					"outputs_merkle_root": {
 						"$ref": "#/components/schemas/Hash",
+						"nullable": true
+					},
+					"outputs_merkle_proof": {
+						"type": "array",
+						"items": {
+							"$ref": "#/components/schemas/Hash"
+						},
+						"nullable": true
+					},
+					"commitment": {
+						"$ref": "#/components/schemas/Hash",
+						"nullable": true
+					},
+					"commitment_proof": {
+						"type": "array",
+						"items": {
+							"$ref": "#/components/schemas/Hash"
+						},
 						"nullable": true
 					},
 					"claim_transaction_hash": {
@@ -1128,10 +1147,6 @@
 					},
 					"tournament_address": {
 						"$ref": "#/components/schemas/EthereumAddress",
-						"nullable": true
-					},
-					"commitment": {
-						"$ref": "#/components/schemas/Hash",
 						"nullable": true
 					},
 					"status": {

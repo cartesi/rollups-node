@@ -310,6 +310,9 @@ type MockMachine struct {
 	OutputsHashReturn Hash
 	OutputsHashError  error
 
+	OutputsHashProofReturn []Hash
+	OutputsHashProofError  error
+
 	CheckpointHashError error
 
 	AdvanceAcceptedReturn  bool
@@ -343,11 +346,15 @@ func (m *MockMachine) OutputsHash(_ context.Context) (Hash, error) {
 	return m.OutputsHashReturn, m.OutputsHashError
 }
 
+func (m *MockMachine) OutputsHashProof(_ context.Context) ([]Hash, error) {
+	return m.OutputsHashProofReturn, m.OutputsHashProofError
+}
+
 func (m *MockMachine) WriteCheckpointHash(_ context.Context, _ Hash) error {
 	return m.CheckpointHashError
 }
 
-func (m *MockMachine) Advance(_ context.Context, _ []byte, leafs bool) (
+func (m *MockMachine) Advance(_ context.Context, _ []byte, _ bool) (
 	bool, []Output, []Report, []Hash, uint64, Hash, error,
 ) {
 	return m.AdvanceAcceptedReturn,

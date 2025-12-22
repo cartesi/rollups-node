@@ -84,17 +84,17 @@ func (s *Service) Tick() []error {
 	}
 	return errs
 }
-func (s *Service) Stop(b bool) []error {
+func (s *Service) Stop(_ bool) []error {
 	return nil
 }
 
-func (v *Service) String() string {
-	return v.Name
+func (s *Service) String() string {
+	return s.Name
 }
 
 // The maximum height for the Merkle tree of all outputs produced
 // by an application
-const MAX_OUTPUT_TREE_HEIGHT = merkle.TREE_DEPTH
+const MAX_OUTPUT_TREE_HEIGHT = merkle.TREE_DEPTH //nolint: revive
 
 type ValidatorRepository interface {
 	ListApplications(ctx context.Context, f repository.ApplicationFilter, p repository.Pagination, descending bool) ([]*Application, uint64, error)
@@ -114,23 +114,23 @@ func getAllRunningApplications(ctx context.Context, er ValidatorRepository) ([]*
 }
 
 func getProcessedEpochs(ctx context.Context, er ValidatorRepository, address string) ([]*Epoch, uint64, error) {
-	f := repository.EpochFilter{Status: Pointer(EpochStatus_InputsProcessed)}
+	f := repository.EpochFilter{Status: []EpochStatus{EpochStatus_InputsProcessed}}
 	return er.ListEpochs(ctx, address, f, repository.Pagination{}, false)
 }
 
 // setApplicationInoperable marks an application as inoperable with the given reason,
 // logs any error that occurs during the update, and returns an error with the reason.
-func (v *Service) setApplicationInoperable(ctx context.Context, app *Application, reasonFmt string, args ...interface{}) error {
+func (s *Service) setApplicationInoperable(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
 	reason := fmt.Sprintf(reasonFmt, args...)
 	appAddress := app.IApplicationAddress.String()
 
 	// Log the reason first
-	v.Logger.Error(reason, "application", appAddress)
+	s.Logger.Error(reason, "application", appAddress)
 
 	// Update application state
-	err := v.repository.UpdateApplicationState(ctx, app.ID, ApplicationState_Inoperable, &reason)
+	err := s.repository.UpdateApplicationState(ctx, app.ID, ApplicationState_Inoperable, &reason)
 	if err != nil {
-		v.Logger.Error("failed to update application state to inoperable", "app", appAddress, "err", err)
+		s.Logger.Error("failed to update application state to inoperable", "app", appAddress, "err", err)
 	}
 
 	// Return the error with the reason
@@ -139,10 +139,10 @@ func (v *Service) setApplicationInoperable(ctx context.Context, app *Application
 
 // validateApplication calculates, validates and stores the claim and/or proofs
 // for each processed epoch of the application.
-func (v *Service) validateApplication(ctx context.Context, app *Application) error {
-	v.Logger.Debug("Starting validation", "application", app.Name)
+func (s *Service) validateApplication(ctx context.Context, app *Application) error {
+	s.Logger.Debug("Starting validation", "application", app.Name)
 	appAddress := app.IApplicationAddress.String()
-	processedEpochs, _, err := getProcessedEpochs(ctx, v.repository, appAddress)
+	processedEpochs, _, err := getProcessedEpochs(ctx, s.repository, appAddress)
 	if err != nil {
 		return fmt.Errorf(
 			"failed to get processed epochs of application %v. %w",
@@ -151,33 +151,34 @@ func (v *Service) validateApplication(ctx context.Context, app *Application) err
 	}
 
 	for _, epoch := range processedEpochs {
-		v.Logger.Debug("Started calculating claim",
+		s.Logger.Debug("Started calculating outputs merkle root",
 			"application", appAddress,
 			"epoch_index", epoch.Index,
 			"last_block", epoch.LastBlock,
 		)
-		claim, outputs, err := v.createClaimAndProofs(ctx, app, epoch)
+		merkleRoot, outputs, err := s.computeMerkleTreeAndProofs(ctx, app, epoch)
 		if err != nil {
-			v.Logger.Error("failed to create claim and proofs.", "error", err)
+			s.Logger.Error("failed to create claim and proofs.", "error", err)
 			return err
 		}
 
-		v.Logger.Info("Claim Computed",
+		s.Logger.Info("OutputsMerkleRoot Computed",
 			"application", appAddress,
 			"epoch_index", epoch.Index,
-			"claimHash", *claim,
+			"outputs_merkle_root", *merkleRoot,
 		)
 
 		// The Cartesi Machine calculates the root hash of the outputs Merkle
 		// tree after each input. Therefore, the root hash calculated after the
-		// last input in the epoch must match the claim hash calculated by the
-		// Validator. We first retrieve the hash calculated by the
-		// Cartesi Machine...
-		input, err := v.repository.GetLastInput(
-			ctx,
-			appAddress,
-			epoch.Index,
-		)
+		// last input in the epoch must match the one calculated by the Validator
+		// So we need to validate the application state.
+		if *epoch.OutputsMerkleRoot != *merkleRoot {
+			return s.setApplicationInoperable(ctx, app,
+				"epoch %v outputs merkle root does not match computed one. Expected: %v, Got %v",
+				epoch.Index, *epoch.OutputsMerkleRoot, *merkleRoot)
+		}
+
+		input, err := s.repository.GetLastInput(ctx, appAddress, epoch.Index)
 		if err != nil {
 			return fmt.Errorf(
 				"failed to get the last Input for epoch %v of application %v. %w",
@@ -185,48 +186,74 @@ func (v *Service) validateApplication(ctx context.Context, app *Application) err
 			)
 		}
 
+		// DaveConsensus can have empty epochs. Authority and Quorum don't.
 		if !app.IsDaveConsensus() || input != nil {
 			if input.OutputsHash == nil {
-				return v.setApplicationInoperable(ctx, app,
-					"inconsistent state: machine claim for epoch %v of application %v was not found",
-					epoch.Index, appAddress)
+				return s.setApplicationInoperable(ctx, app,
+					"inconsistent state: epoch %v last input (%v) outputs merkle root is not defined",
+					epoch.Index, input.Index)
 			}
 
 			// ...and compare it to the hash calculated by the Validator
-			if *input.OutputsHash != *claim {
-				return v.setApplicationInoperable(ctx, app,
-					"validator claim does not match machine claim for epoch %v of application %v. Expected: %v, Got %v",
-					epoch.Index, appAddress, *input.OutputsHash, *claim)
+			if *epoch.OutputsMerkleRoot != *input.OutputsHash {
+				return s.setApplicationInoperable(ctx, app,
+					"computed outputs merkle root does not match epoch %v last input %v merkle root. Expected: %v, Got %v",
+					epoch.Index, input.Index, *input.OutputsHash, *epoch.OutputsMerkleRoot)
 			}
-			epoch.MachineHash = input.MachineHash
-		} else {
+
+			if *epoch.MachineHash != *input.MachineHash {
+				return s.setApplicationInoperable(ctx, app,
+					"epoch %v machine hash does not match epoch last input (%v) machine hash. Expected: %v, Got %v",
+					epoch.Index, input.Index, *input.MachineHash, *epoch.MachineHash)
+			}
+		} else { // empty epochs
 			if epoch.VirtualIndex > 0 {
-				previousEpoch, err := v.repository.GetEpochByVirtualIndex(ctx, appAddress, epoch.VirtualIndex-1)
+				previousEpoch, err := s.repository.GetEpochByVirtualIndex(ctx, appAddress, epoch.VirtualIndex-1)
 				if err != nil {
 					return fmt.Errorf(
 						"failed to get previous epoch for epoch %v (%v) of application %v. %w",
 						epoch.Index, epoch.VirtualIndex, appAddress, err,
 					)
 				}
-				epoch.MachineHash = previousEpoch.MachineHash
-			} else {
-				epoch.MachineHash = &app.TemplateHash
+				if *epoch.MachineHash != *previousEpoch.MachineHash {
+					return s.setApplicationInoperable(ctx, app,
+						"epoch %v machine hash does not match previous epoch %v machine hash. Expected: %v, Got %v",
+						epoch.Index, previousEpoch.Index, *previousEpoch.MachineHash, *epoch.MachineHash)
+				}
+				if *epoch.OutputsMerkleRoot != *previousEpoch.OutputsMerkleRoot {
+					return s.setApplicationInoperable(ctx, app,
+						"epoch %v outputs merkle root does not match previous epoch %v one. Expected: %v, Got %v",
+						epoch.Index, previousEpoch.Index, *previousEpoch.OutputsMerkleRoot, *epoch.OutputsMerkleRoot)
+				}
+			} else { // first epoch
+				if *epoch.MachineHash != app.TemplateHash {
+					return s.setApplicationInoperable(ctx, app,
+						"epoch %v machine hash does not match for application template hash. Expected: %v, Got %v",
+						epoch.Index, app.TemplateHash, *epoch.MachineHash)
+				}
+				if *epoch.OutputsMerkleRoot != s.pristineRootHash {
+					return s.setApplicationInoperable(ctx, app,
+						"epoch %v outputs merkle root does not match pristine root hash. Expected: %v, Got %v",
+						epoch.Index, s.pristineRootHash, *epoch.OutputsMerkleRoot)
+				}
 			}
 		}
-		epoch.ClaimHash = claim
 
-		commitment, err := v.buildCommitment(ctx, app, epoch)
-		if err != nil {
-			return fmt.Errorf("failed to compute commitment for epoch %v (%v) of application %v. %w",
-				epoch.Index, epoch.VirtualIndex, appAddress, err,
-			)
+		if app.IsDaveConsensus() {
+			commitment, proof, err := s.buildCommitment(ctx, app, epoch)
+			if err != nil {
+				return fmt.Errorf("failed to compute commitment for epoch %v (%v) of application %v. %w",
+					epoch.Index, epoch.VirtualIndex, appAddress, err,
+				)
+			}
+			epoch.Commitment = commitment
+			epoch.CommitmentProof = proof.Siblings
 		}
-		epoch.Commitment = commitment
 
 		epoch.Status = EpochStatus_ClaimComputed
 
 		// store the epoch and proofs in the database
-		err = v.repository.StoreClaimAndProofs(ctx, epoch, outputs)
+		err = s.repository.StoreClaimAndProofs(ctx, epoch, outputs)
 		if err != nil {
 			return fmt.Errorf(
 				"failed to store claim and proofs for epoch %v of application %v. %w",
@@ -236,7 +263,7 @@ func (v *Service) validateApplication(ctx context.Context, app *Application) err
 	}
 
 	if len(processedEpochs) == 0 {
-		v.Logger.Debug("no processed epochs to validate",
+		s.Logger.Debug("no processed epochs to validate",
 			"app", app.IApplicationAddress,
 		)
 	}
@@ -244,12 +271,12 @@ func (v *Service) validateApplication(ctx context.Context, app *Application) err
 	return nil
 }
 
-func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *Epoch) (*common.Hash, error) {
+func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *Epoch) (*common.Hash, *merkle.Proof, error) {
 	if app == nil || epoch == nil {
-		return nil, fmt.Errorf("application or epoch is nil")
+		return nil, nil, fmt.Errorf("application or epoch is nil")
 	}
 	if !app.IsDaveConsensus() {
-		return nil, nil
+		return nil, nil, nil
 	}
 	s.Logger.Debug("DaveConsensus: Building commitment for epoch",
 		"application", app.Name,
@@ -261,15 +288,15 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 		statesHashes, total, err := s.repository.ListStateHashes(ctx, app.IApplicationAddress.String(),
 			repository.StateHashFilter{EpochIndex: &epoch.Index}, repository.Pagination{}, false)
 		if err != nil {
-			return nil, fmt.Errorf("failed to list state hashes for epoch %d of application %s: %w",
+			return nil, nil, fmt.Errorf("failed to list state hashes for epoch %d of application %s: %w",
 				epoch.Index, app.Name, err)
 		}
 		if total < inputCount {
-			return nil, fmt.Errorf("not enough state hashes for epoch %d of application %s: expected at least %d, got %d",
+			return nil, nil, fmt.Errorf("not enough state hashes for epoch %d of application %s: expected at least %d, got %d",
 				epoch.Index, app.Name, inputCount, total)
 		}
 		if uint64(len(statesHashes)) != total {
-			return nil, fmt.Errorf("inconsistent number of state hashes for epoch %d of application %s: expected %d, got %d", epoch.Index, app.Name, total, len(statesHashes))
+			return nil, nil, fmt.Errorf("inconsistent number of state hashes for epoch %d of application %s: expected %d, got %d", epoch.Index, app.Name, total, len(statesHashes))
 		}
 		for _, stateHash := range statesHashes {
 			builder.AppendRepeatedUint64(merkle.TreeLeaf(stateHash.MachineHash), stateHash.Repetitions)
@@ -284,25 +311,26 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 
 	epochCommitmentTree := builder.Build()
 	commitment := epochCommitmentTree.GetRootHash()
+	proof := epochCommitmentTree.ProveLast()
 	s.Logger.Info("DaveConsensus epoch commitment built",
 		"application", app.Name,
 		"epoch", epoch.Index,
 		"commitment", commitment.String())
-	return &commitment, nil
+	return &commitment, proof, nil
 
 }
 
-// createClaimAndProofs calculates the claim and proofs for an epoch. It returns
+// computeMerkleTreeAndProofs calculates the claim and proofs for an epoch. It returns
 // the claim and the epoch outputs updated with their hash and proofs. In case
 // the epoch has no outputs, there are no proofs and it returns the pristine
 // claim for the first epoch or the previous epoch claim otherwise.
-func (v *Service) createClaimAndProofs(
+func (s *Service) computeMerkleTreeAndProofs(
 	ctx context.Context,
 	app *Application,
 	epoch *Epoch,
 ) (*common.Hash, []*Output, error) {
 	appAddress := app.IApplicationAddress.String()
-	epochOutputs, _, err := v.repository.ListOutputs(ctx, appAddress, repository.OutputFilter{
+	epochOutputs, _, err := s.repository.ListOutputs(ctx, appAddress, repository.OutputFilter{
 		BlockRange: &repository.Range{
 			Start: epoch.FirstBlock,
 			End:   epoch.LastBlock,
@@ -319,7 +347,7 @@ func (v *Service) createClaimAndProofs(
 
 	var previousEpoch *Epoch
 	if epoch.VirtualIndex > 0 {
-		previousEpoch, err = v.repository.GetEpochByVirtualIndex(ctx, appAddress, epoch.VirtualIndex-1)
+		previousEpoch, err = s.repository.GetEpochByVirtualIndex(ctx, appAddress, epoch.VirtualIndex-1)
 		if err != nil {
 			return nil, nil, fmt.Errorf(
 				"failed to get previous epoch for epoch %v (%v) of application %v. %w",
@@ -333,15 +361,15 @@ func (v *Service) createClaimAndProofs(
 		// and there is no previous epoch
 		if previousEpoch == nil {
 			// this is the first epoch, return the pristine claim
-			return &v.pristineRootHash, nil, nil
+			return &s.pristineRootHash, nil, nil
 		}
 		// if there are no outputs and there is a previous epoch, return its claim
-		if previousEpoch.ClaimHash == nil {
-			return nil, nil, v.setApplicationInoperable(ctx, app,
+		if previousEpoch.OutputsMerkleRoot == nil {
+			return nil, nil, s.setApplicationInoperable(ctx, app,
 				"invalid application state for epoch %v (%v) of application %v. Previous epoch has no claim.",
 				epoch.Index, epoch.VirtualIndex, appAddress)
 		}
-		return previousEpoch.ClaimHash, nil, nil
+		return previousEpoch.OutputsMerkleRoot, nil, nil
 	}
 
 	var pre []common.Hash
@@ -349,11 +377,11 @@ func (v *Service) createClaimAndProofs(
 	// it there is no previous epoch
 	if previousEpoch == nil {
 		// there are only new outputs, use a dummy pre context
-		pre = v.pristinePostContext
+		pre = s.pristinePostContext
 		index = 0
 	} else {
 		// retrieve the previous output, one not existing is ok... handled below
-		lastOutput, err := v.repository.GetLastOutputBeforeBlock(ctx, appAddress, epoch.FirstBlock)
+		lastOutput, err := s.repository.GetLastOutputBeforeBlock(ctx, appAddress, epoch.FirstBlock)
 		if err != nil {
 			return nil, nil, fmt.Errorf(
 				"failed to get previous output for epoch %v (%v) of application %v. %w",
@@ -362,12 +390,12 @@ func (v *Service) createClaimAndProofs(
 		}
 		if lastOutput == nil {
 			// there are only new outputs, use a dummy pre context
-			pre = v.pristinePostContext
+			pre = s.pristinePostContext
 			index = 0
 		} else {
 			// there are previous outputs, create a pre context from the last output.
 			if lastOutput.Hash == nil || len(lastOutput.OutputHashesSiblings) != merkle.TREE_DEPTH {
-				return nil, nil, v.setApplicationInoperable(ctx, app,
+				return nil, nil, s.setApplicationInoperable(ctx, app,
 					"Inconsistent application state (%v). Last output (%d) before epoch %d has no hash or invalid hash siblings.",
 					app.Name, lastOutput.Index, epoch.Index)
 			}
@@ -376,7 +404,7 @@ func (v *Service) createClaimAndProofs(
 
 			// make sure no output got skipped
 			if index != epochOutputs[0].Index {
-				return nil, nil, v.setApplicationInoperable(ctx, app,
+				return nil, nil, s.setApplicationInoperable(ctx, app,
 					"Inconsistent application state (%v). Output index mismatch. "+
 						"Last output (%d) before epoch %d and first output (%d) are not sequential.",
 					app.Name, lastOutput.Index, epoch.Index, epochOutputs[0].Index)
@@ -387,7 +415,7 @@ func (v *Service) createClaimAndProofs(
 	// we have outputs to compute, gather the values to call ComputeSiblingsMatrix
 	outputHashes := make([]common.Hash, 0, len(epochOutputs))
 	for _, output := range epochOutputs {
-		hash := crypto.Keccak256Hash(output.RawData[:])
+		hash := crypto.Keccak256Hash(output.RawData)
 		// update outputs with their hash
 		output.Hash = &hash
 		// add them to the leaves slice
@@ -395,7 +423,7 @@ func (v *Service) createClaimAndProofs(
 	}
 
 	// compute and store siblings
-	siblings, err := merkle.ComputeSiblingsMatrix(pre, outputHashes, v.pristinePostContext, index)
+	siblings, err := merkle.ComputeSiblingsMatrix(pre, outputHashes, s.pristinePostContext, index)
 	if err != nil {
 		return nil, nil, err
 	}

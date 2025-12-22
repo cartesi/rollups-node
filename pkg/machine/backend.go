@@ -47,6 +47,7 @@ type Backend interface {
 	WriteMemory(address uint64, data []byte, timeout time.Duration) error
 
 	GetRootHash(timeout time.Duration) (Hash, error)
+	GetProof(address uint64, log2size int32, timeout time.Duration) ([]Hash, error)
 
 	Delete()
 	ForkServer(timeout time.Duration) (Backend, string, uint32, error)

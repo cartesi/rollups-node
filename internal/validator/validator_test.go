@@ -43,9 +43,9 @@ func (s *ValidatorSuite) SetupSubTest() {
 	serviceArgs := &service.CreateInfo{Name: "validator", Impl: validator}
 	err := service.Create(context.Background(), serviceArgs, &validator.Service)
 	s.Require().Nil(err)
-	dummyClaimHash := common.HexToHash("0x4128b6c65e6131a6823bab8deee051078080bb82d505015976efe2fb3b4c91c0")
+	dummyOutputsMerkleRoot := common.HexToHash("0x0a162946e56158bac0673e6dd3bdfdc1e4a0e7744a120fdb640050c8d7abe1c6")
 	dummyEpochs = []Epoch{
-		{Index: 0, VirtualIndex: 0, FirstBlock: 0, LastBlock: 9, ClaimHash: &dummyClaimHash},
+		{Index: 0, VirtualIndex: 0, FirstBlock: 0, LastBlock: 9, OutputsMerkleRoot: &dummyOutputsMerkleRoot, MachineHash: &validator.pristineRootHash},
 		{Index: 1, VirtualIndex: 1, FirstBlock: 10, LastBlock: 19},
 		{Index: 2, VirtualIndex: 2, FirstBlock: 20, LastBlock: 29},
 		{Index: 3, VirtualIndex: 3, FirstBlock: 30, LastBlock: 39},
@@ -140,7 +140,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofSuccess() {
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything, false,
 		).Return([]*Output{}, uint64(0), nil)
 
-		claimHash, _, err := validator.createClaimAndProofs(nil, &app, &dummyEpochs[0])
+		claimHash, _, err := validator.computeMerkleTreeAndProofs(nil, &app, &dummyEpochs[0])
 		claimHashRef, _, err := merkle.CreateProofs(nil, merkle.TREE_DEPTH)
 		s.ErrorIs(nil, err)
 		s.NotNil(claimHash)
@@ -157,7 +157,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofSuccess() {
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything, false,
 		).Return([]*Output{&output}, uint64(1), nil)
 
-		claimHash, _, err := validator.createClaimAndProofs(nil, &app, &dummyEpochs[0])
+		claimHash, _, err := validator.computeMerkleTreeAndProofs(nil, &app, &dummyEpochs[0])
 		s.ErrorIs(nil, err)
 		s.NotNil(claimHash)
 		repo.AssertExpectations(s.T())
@@ -172,9 +172,9 @@ func (s *ValidatorSuite) TestCreateClaimAndProofSuccess() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&dummyEpochs[0], nil).Once()
 
-		claimHash, _, err := validator.createClaimAndProofs(nil, &app, &dummyEpochs[1])
+		claimHash, _, err := validator.computeMerkleTreeAndProofs(nil, &app, &dummyEpochs[1])
 		s.ErrorIs(nil, err)
-		s.Equal(dummyEpochs[0].ClaimHash, claimHash)
+		s.Equal(dummyEpochs[0].OutputsMerkleRoot, claimHash)
 		repo.AssertExpectations(s.T())
 	})
 
@@ -199,13 +199,14 @@ func (s *ValidatorSuite) TestCreateClaimAndProofSuccess() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&dummyOutputs[0], nil).Once()
 
-		_, _, err := validator.createClaimAndProofs(nil, &app, &dummyEpochs[1])
+		_, _, err := validator.computeMerkleTreeAndProofs(nil, &app, &dummyEpochs[1])
 		s.ErrorIs(nil, err)
 		repo.AssertExpectations(s.T())
 	})
 }
 
 func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
+	ctx := context.Background()
 	app := Application{
 		Name: "dummy-application-name",
 	}
@@ -217,7 +218,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything, false,
 		).Return([]*Output{}, uint64(0), xerror).Once()
 
-		_, _, err := validator.createClaimAndProofs(nil, &app, &dummyEpochs[0])
+		_, _, err := validator.computeMerkleTreeAndProofs(ctx, &app, &dummyEpochs[0])
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
 	})
@@ -232,7 +233,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&dummyEpochs[0], xerror).Once()
 
-		_, _, err := validator.createClaimAndProofs(nil, &app, &dummyEpochs[1])
+		_, _, err := validator.computeMerkleTreeAndProofs(ctx, &app, &dummyEpochs[1])
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
 	})
@@ -244,7 +245,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 		).Return([]*Output{}, uint64(0), nil).Once()
 
 		invalidEpoch := dummyEpochs[0]
-		invalidEpoch.ClaimHash = nil
+		invalidEpoch.OutputsMerkleRoot = nil
 		repo.On("GetEpochByVirtualIndex",
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&invalidEpoch, nil).Once()
@@ -253,7 +254,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 		).Return(nil).Once()
 
-		_, _, err := validator.createClaimAndProofs(nil, &app, &dummyEpochs[1])
+		_, _, err := validator.computeMerkleTreeAndProofs(ctx, &app, &dummyEpochs[1])
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
 	})
@@ -272,7 +273,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&Output{}, xerror).Once()
 
-		_, _, err := validator.createClaimAndProofs(nil, &app, &dummyEpochs[1])
+		_, _, err := validator.computeMerkleTreeAndProofs(ctx, &app, &dummyEpochs[1])
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
 	})
@@ -295,7 +296,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 		).Return(nil).Once()
 
-		_, _, err := validator.createClaimAndProofs(nil, &app, &dummyEpochs[1])
+		_, _, err := validator.computeMerkleTreeAndProofs(ctx, &app, &dummyEpochs[1])
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
 	})
@@ -318,7 +319,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 		).Return(nil).Once()
 
-		_, _, err := validator.createClaimAndProofs(nil, &app, &dummyEpochs[1])
+		_, _, err := validator.computeMerkleTreeAndProofs(ctx, &app, &dummyEpochs[1])
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
 	})
@@ -326,6 +327,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 }
 
 func (s *ValidatorSuite) TestValidateApplicationSuccess() {
+	ctx := context.Background()
 	app := Application{
 		Name: "dummy-application-name",
 	}
@@ -334,7 +336,7 @@ func (s *ValidatorSuite) TestValidateApplicationSuccess() {
 			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
 		).Return(([]*Epoch)(nil), uint64(0), nil).Once()
 
-		err := validator.validateApplication(nil, &app)
+		err := validator.validateApplication(ctx, &app)
 		s.ErrorIs(nil, err)
 		repo.AssertExpectations(s.T())
 	})
@@ -342,6 +344,7 @@ func (s *ValidatorSuite) TestValidateApplicationSuccess() {
 	s.Run("FirstEpochNoOutputs", func() {
 		input := Input{
 			EpochApplicationID: app.ID,
+			MachineHash:        &validator.pristineRootHash,
 			OutputsHash:        &validator.pristineRootHash,
 		}
 
@@ -361,29 +364,30 @@ func (s *ValidatorSuite) TestValidateApplicationSuccess() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(nil).Once()
 
-		err := validator.validateApplication(nil, &app)
+		err := validator.validateApplication(ctx, &app)
 		s.ErrorIs(nil, err)
 		repo.AssertExpectations(s.T())
 	})
 }
 
 func (s *ValidatorSuite) TestValidateApplicationFailure() {
+	ctx := context.Background()
 	app := Application{
 		Name: "dummy-application-name",
 	}
 	xerror := fmt.Errorf("Error")
-
+	
 	s.Run("getProcessedEpochsFailure", func() {
 		repo.On("ListEpochs",
 			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
 		).Return([]*Epoch{}, uint64(0), xerror).Once()
 
-		err := validator.validateApplication(nil, &app)
+		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
 	})
-
-	s.Run("createClaimAndProofsFailure", func() {
+	
+	s.Run("computeMerkleTreeAndProofsFailure", func() {
 		repo.On("ListEpochs",
 			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
 		).Return([]*Epoch{&dummyEpochs[0]}, uint64(1), nil).Once()
@@ -392,11 +396,11 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything, false,
 		).Return([]*Output{}, uint64(0), xerror).Once()
 
-		err := validator.validateApplication(nil, &app)
+		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
 	})
-
+	
 	s.Run("GetLastInputFailure", func() {
 		input := Input{
 			EpochApplicationID: app.ID,
@@ -415,7 +419,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), dummyEpochs[0].Index,
 		).Return(&input, xerror).Once()
 
-		err := validator.validateApplication(nil, &app)
+		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
 	})
@@ -470,7 +474,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 		).Return(nil).Once()
 
-		err := validator.validateApplication(nil, &app)
+		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
 	})
@@ -479,6 +483,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 		input := Input{
 			EpochApplicationID: app.ID,
 			OutputsHash:        &validator.pristineRootHash,
+			MachineHash:        &validator.pristineRootHash,
 		}
 
 		repo.On("ListEpochs",
@@ -497,7 +502,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(xerror).Once()
 
-		err := validator.validateApplication(nil, &app)
+		err := validator.validateApplication(ctx, &app)
 		s.ErrorIs(err, xerror)
 		repo.AssertExpectations(s.T())
 	})

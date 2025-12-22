@@ -48,6 +48,8 @@ const (
 const maxOutputs = 65536 // 2^16
 
 const CheckpointAddress uint64 = 0x7ffff000
+const TxBufferAddress uint64 = 0x60800000
+const HashLog2Size = 5 // 32 bytes
 
 const (
 	// log2 value of the maximal number of micro instructions that emulates a big instruction
@@ -145,6 +147,18 @@ func (m *machineImpl) OutputsHash(ctx context.Context) (Hash, error) {
 	var outputsHash Hash
 	copy(outputsHash[:], data)
 	return outputsHash, nil
+}
+
+func (m *machineImpl) OutputsHashProof(ctx context.Context) ([]Hash, error) {
+	if err := checkContext(ctx); err != nil {
+		return nil, err
+	}
+	siblings, err := m.backend.GetProof(TxBufferAddress, HashLog2Size, m.params.LoadDeadline)
+	if err != nil {
+		err := fmt.Errorf("could not get outputs hash machine proof: %w", err)
+		return nil, errors.Join(ErrMachineInternal, err)
+	}
+	return siblings, nil
 }
 
 func (m *machineImpl) WriteCheckpointHash(ctx context.Context, hash Hash) error {

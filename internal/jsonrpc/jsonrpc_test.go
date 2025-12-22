@@ -250,7 +250,7 @@ func TestMethod(t *testing.T) {
 			err := s.repository.CreateEpoch(ctx, &model.Epoch{
 				ApplicationID:        appID,
 				Index:                nr,
-				ClaimHash:            &common.Hash{},
+				OutputsMerkleRoot:    &common.Hash{},
 				ClaimTransactionHash: &common.Hash{},
 				Status:               model.EpochStatus_ClaimAccepted,
 			})
@@ -285,7 +285,7 @@ func TestMethod(t *testing.T) {
 			err := s.repository.CreateEpoch(ctx, &model.Epoch{
 				ApplicationID:        appID,
 				Index:                nr,
-				ClaimHash:            &common.Hash{},
+				OutputsMerkleRoot:    &common.Hash{},
 				ClaimTransactionHash: &common.Hash{},
 				Status:               model.EpochStatus_ClaimAccepted,
 			})
@@ -455,7 +455,7 @@ func TestMethod(t *testing.T) {
 			err := s.repository.CreateEpoch(ctx, &model.Epoch{
 				ApplicationID:        appID,
 				Index:                epochIndex,
-				ClaimHash:            &common.Hash{},
+				OutputsMerkleRoot:    &common.Hash{},
 				ClaimTransactionHash: &common.Hash{},
 				Status:               model.EpochStatus_ClaimAccepted,
 			})

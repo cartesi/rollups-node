@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"time"
+	"unsafe"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -16,9 +17,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 
+	"github.com/cartesi/rollups-node/internal/merkle"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
+	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
 )
 
 type prtRepository interface {
@@ -28,7 +31,7 @@ type prtRepository interface {
 
 	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter,
 		p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
-	UpdateEpoch(ctx context.Context, nameOrAddress string, e *Epoch) error
+	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	UpdateEpochStatus(ctx context.Context, nameOrAddress string, e *Epoch) error
 
 	CreateTournament(ctx context.Context, nameOrAddress string, t *Tournament) error
@@ -39,6 +42,8 @@ type prtRepository interface {
 
 	StoreTournamentEvents(ctx context.Context, appID int64, commitments []*Commitment, matches []*Match,
 		matchAdvanced []*MatchAdvanced, matchDeleted []*Match, lastBlock uint64) error
+
+	GetCommitment(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string, commitmentHex string) (*Commitment, error)
 
 	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
@@ -56,7 +61,7 @@ func getAllRunningApplications(ctx context.Context, r prtRepository) ([]*Applica
 }
 
 func getAllClaimComputedEpochs(ctx context.Context, r prtRepository, nameOrAddress string) ([]*Epoch, uint64, error) {
-	f := repository.EpochFilter{Status: Pointer(EpochStatus_ClaimComputed)}
+	f := repository.EpochFilter{Status: []EpochStatus{EpochStatus_ClaimComputed}}
 	return r.ListEpochs(ctx, nameOrAddress, f, repository.Pagination{}, false)
 }
 
@@ -425,9 +430,9 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 			return s.setApplicationInoperable(ctx, app, "Epoch %d has inconsistent machine hash between off-chain (%s) and on-chain (%s)",
 				epoch.Index, epoch.MachineHash.String(), hexutil.Encode(event.InitialMachineStateHash[:]))
 		}
-		if *epoch.ClaimHash != event.OutputsMerkleRoot {
+		if *epoch.OutputsMerkleRoot != event.OutputsMerkleRoot {
 			return s.setApplicationInoperable(ctx, app, "Epoch %d has inconsistent claim hash between off-chain (%s) and on-chain (%s)",
-				epoch.Index, epoch.ClaimHash.String(), hexutil.Encode(event.OutputsMerkleRoot[:]))
+				epoch.Index, epoch.OutputsMerkleRoot.String(), hexutil.Encode(event.OutputsMerkleRoot[:]))
 		}
 
 		err = s.fetchTournamentData(ctx, app, epoch, RootLevel, nil, nil, *epoch.TournamentAddress, mostRecentBlock)
@@ -510,7 +515,7 @@ func (s *Service) fetchTournamentData(
 	var endBlock uint64
 	if t.FinishedAtBlock != 0 {
 		if nextSearchBlock > t.FinishedAtBlock {
-			s.Logger.Warn("No new blocks to search for "+level.String()+" tournament events", "application", app.Name,
+			s.Logger.Debug("No new blocks to search for "+level.String()+" tournament events", "application", app.Name,
 				"epoch", epoch.Index, "tournament_address", tournamentAddress.String(),
 				"finished_at_block", t.FinishedAtBlock, "next_search_block", nextSearchBlock)
 			return nil
@@ -599,6 +604,191 @@ func (s *Service) fetchTournamentData(
 	return nil
 }
 
+func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlock uint64) error {
+	if tx, joinTxIsInFlight := s.joinInFlight[app.ID]; joinTxIsInFlight {
+		s.Logger.Debug("Waiting for join tournament transaction to be mined", "application", app.Name,
+			"epoch_index", s.currentEpochIndex, "tx", tx)
+		return nil // wait for settle to be mined
+	}
+
+	// TODO: use adapters instead of direct contract calls
+	// Type assertion to get the concrete client if possible
+	ethClient, ok := s.client.(*ethclient.Client)
+	if !ok {
+		return fmt.Errorf("client is not an *ethclient.Client, cannot create dave consensus bind")
+	}
+
+	if tx, settleTxIsInFlight := s.settleInFlight[app.ID]; settleTxIsInFlight {
+		_, isPending, err := ethClient.TransactionByHash(ctx, *tx)
+		if err != nil {
+			s.Logger.Error("failed to fetch last settle transaction status", "application", app.Name,
+				"epoch_index", s.currentEpochIndex, "tx", tx, "error", err)
+			return err
+		}
+		if isPending {
+			s.Logger.Debug("Previous settle transaction is still pending", "application", app.Name,
+				"epoch_index", s.currentEpochIndex, "tx", tx)
+			return nil
+		}
+		s.Logger.Debug("Previous settle transaction has been mined", "application", app.Name,
+			"epoch_index", s.currentEpochIndex, "tx", tx)
+		delete(s.settleInFlight, app.ID)
+	}
+
+	consensus, err := idaveconsensus.NewIDaveConsensus(app.IConsensusAddress, ethClient)
+	if err != nil {
+		s.Logger.Error("failed to bind dave consensus contract", "application", app.Name,
+			"consensus_address", app.IConsensusAddress.String(), "error", err)
+		return err
+	}
+
+	callOpts := &bind.CallOpts{
+		Context:     ctx,
+		BlockNumber: new(big.Int).SetUint64(mostRecentBlock),
+	}
+
+	result, err := consensus.CanSettle(callOpts)
+	if err != nil {
+		s.Logger.Error("failed to call CanSettle on DaveConsensus", "application", app.Name,
+			"consensus", app.IConsensusAddress.String(), "error", err)
+		return err
+	}
+
+	s.currentEpochIndex = result.EpochNumber.Uint64()
+
+	if !result.IsFinished {
+		s.Logger.Debug("Epoch root tournament has not finished yet. Skipping Settle",
+			"application", app.Name, "epoch_index", s.currentEpochIndex)
+		return nil // nothing to do
+	}
+
+	epoch, err := s.repository.GetEpoch(ctx, app.IApplicationAddress.Hex(), s.currentEpochIndex)
+	if err != nil {
+		s.Logger.Error("failed to list epochs", "application", app.Name, "error", err)
+		return err
+	}
+	if epoch == nil || epoch.Status != EpochStatus_ClaimComputed {
+		s.Logger.Info("Application sync has not finished. Skipping Settle", "application", app.Name,
+			"epoch_index", s.currentEpochIndex)
+		return nil // nothing to do
+	}
+
+	s.Logger.Info("Sending Settle transaction", "application", app.Name, "epoch_index", epoch.Index,
+		"outputs_merkle_root", epoch.OutputsMerkleRoot.String())
+
+	tx, err := consensus.Settle(s.txOpts, result.EpochNumber,
+		*epoch.OutputsMerkleRoot, hashSliceTobyteSlice(epoch.OutputsMerkleProof))
+	if err != nil {
+		s.Logger.Error("failed to send Settle transaction", "application", app.Name,
+			"epoch_index", result.EpochNumber.Uint64(), "error", err)
+		return err
+	}
+	settleTx := tx.Hash()
+	s.settleInFlight[app.ID] = &settleTx
+
+	return nil
+}
+
+func (s *Service) reactToTournament(ctx context.Context, app *Application, mostRecentBlock uint64) error {
+	if tx, settleTxIsInFlight := s.settleInFlight[app.ID]; settleTxIsInFlight {
+		s.Logger.Debug("Waiting for settle transaction to be mined", "application", app.Name,
+			"epoch_index", s.currentEpochIndex, "tx", tx)
+		return nil // wait for settle to be mined
+	}
+
+	// TODO: use adapters instead of direct contract calls
+	// Type assertion to get the concrete client if possible
+	ethClient, ok := s.client.(*ethclient.Client)
+	if !ok {
+		return fmt.Errorf("client is not an *ethclient.Client, cannot create dave consensus bind")
+	}
+	if tx, joinTxIsInFlight := s.joinInFlight[app.ID]; joinTxIsInFlight {
+		_, isPending, err := ethClient.TransactionByHash(ctx, *tx)
+		if err != nil {
+			s.Logger.Error("failed to fetch last join tournament transaction status", "application", app.Name,
+				"epoch_index", s.currentEpochIndex, "tx", tx, "error", err)
+			return err
+		}
+		if isPending {
+			s.Logger.Debug("Previous join tournament transaction is still pending", "application", app.Name,
+				"epoch_index", s.currentEpochIndex, "tx", tx)
+			return nil
+		}
+		s.Logger.Debug("Previous join tournament transaction has been mined", "application", app.Name,
+			"epoch_index", s.currentEpochIndex, "tx", tx)
+		delete(s.joinInFlight, app.ID)
+	}
+
+	epoch, err := s.repository.GetEpoch(ctx, app.IApplicationAddress.Hex(), s.currentEpochIndex)
+	if err != nil {
+		s.Logger.Error("failed to list epochs", "application", app.Name, "error", err)
+		return err
+	}
+	if epoch == nil || epoch.Status != EpochStatus_ClaimComputed {
+		s.Logger.Debug("Application sync has not finished. Skipping join tournament", "application", app.Name,
+			"epoch_index", s.currentEpochIndex)
+		return nil // nothing to do
+	}
+
+	commitment, err := s.repository.GetCommitment(ctx, app.IApplicationAddress.Hex(), epoch.Index,
+		epoch.TournamentAddress.Hex(), epoch.Commitment.String())
+	if err != nil {
+		s.Logger.Error("failed to get commitment from repository", "application", app.Name,
+			"epoch_index", s.currentEpochIndex, "tournament", epoch.TournamentAddress.Hex(),
+			"commitment", epoch.Commitment.Hex(), "error", err)
+		return err
+	}
+	if commitment != nil {
+		s.Logger.Debug("Commitment already joined. Skipping JoinTournament", "application", app.Name,
+			"epoch_index", s.currentEpochIndex, "tournament", epoch.TournamentAddress.Hex(), "commitment", epoch.Commitment.Hex())
+		return nil
+	}
+
+	tournament, err := itournament.NewITournament(*epoch.TournamentAddress, ethClient)
+	if err != nil {
+		s.Logger.Error("failed to bind tournament contract", "application", app.Name,
+			"tournament", epoch.TournamentAddress.String(), "error", err)
+		return err
+	}
+
+	callOpts := &bind.CallOpts{
+		Context:     ctx,
+		BlockNumber: new(big.Int).SetUint64(mostRecentBlock),
+	}
+	bondValue, err := tournament.BondValue(callOpts)
+	if err != nil {
+		s.Logger.Error("failed to fetch tournament bond value", "application", app.Name,
+			"epoch_index", s.currentEpochIndex, "tournament", epoch.TournamentAddress.Hex(),
+			"error", err)
+		return err
+	}
+
+	txOptsWithValue := *s.txOpts
+	txOptsWithValue.Value = bondValue
+
+	// FIXME move this to constants
+	idx := uint64(1<<48) - 1 //nolint: mnd
+	leftNode, rightNode, err := merkle.RootChildrenFromProof(*epoch.MachineHash, epoch.CommitmentProof, idx)
+	if err != nil {
+		s.Logger.Error("failed to compute left and right nodes from commitment proof", "application", app.Name, "epoch_index", s.currentEpochIndex, "error", err)
+		return err
+	}
+
+	s.Logger.Info("Joining tournament", "application", app.Name, "epoch_index", epoch.Index, "commitment", epoch.Commitment, "left_node", leftNode.String(), "right_node", rightNode.String())
+
+	tx, err := tournament.JoinTournament(&txOptsWithValue, *epoch.MachineHash,
+		asBytes32Slice(epoch.CommitmentProof), leftNode, rightNode)
+	if err != nil {
+		s.Logger.Error("failed to send join tournament transaction", "application", app.Name,
+			"epoch_index", s.currentEpochIndex, "error", err)
+		return err
+	}
+	joinTx := tx.Hash()
+	s.joinInFlight[app.ID] = &joinTx
+
+	return nil
+}
+
 func (s *Service) validateApplication(ctx context.Context, app *Application) error {
 	s.Logger.Debug("Syncing PTR tournaments", "application", app.Name)
 	// TODO: use adapters instead of direct contract calls
@@ -616,5 +806,21 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 	if err != nil {
 		return err
 	}
+	if s.submissionEnabled {
+		err = s.trySettle(ctx, app, mostRecentBlock)
+		if err != nil {
+			return err
+		}
+		err = s.reactToTournament(ctx, app, mostRecentBlock)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// hashSliceToByteSlice converts []common.Hash to [][32]byte without copying.
+// This is safe because common.Hash is defined as [32]byte, so the memory layout is identical.
+func hashSliceTobyteSlice(b []common.Hash) [][32]byte {
+	return *(*[][32]byte)(unsafe.Pointer(&b))
 }

@@ -10,10 +10,13 @@ import (
 	"math/big"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/config/auth"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 type CreateInfo struct {
@@ -29,6 +32,10 @@ type Service struct {
 	client            EthClientInterface
 	submissionEnabled bool
 	filter            ethutil.Filter
+	txOpts            *bind.TransactOpts
+	currentEpochIndex uint64
+	settleInFlight    map[int64]*common.Hash // application.ID -> txHash
+	joinInFlight      map[int64]*common.Hash // application.ID -> txHash
 }
 
 const PrtConfigKey = "prt"
@@ -85,6 +92,16 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		MinChunkSize: ethutil.DefaultMinChunkSize,
 		MaxChunkSize: new(big.Int).SetUint64(c.Config.BlockchainMaxBlockRange),
 		Logger:       s.Logger,
+	}
+
+	s.settleInFlight = map[int64]*common.Hash{}
+	s.joinInFlight = map[int64]*common.Hash{}
+
+	if s.submissionEnabled {
+		s.txOpts, err = auth.GetTransactOpts(chainID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return s, nil

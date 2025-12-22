@@ -302,6 +302,14 @@ func (m *DummyMachineInstanceMock) Application() *model.Application {
 	return m.application
 }
 
+func (m *DummyMachineInstanceMock) ProcessedInputs() uint64 {
+	return 0
+}
+
+func (m *DummyMachineInstanceMock) OutputsProof(ctx context.Context, processedInputs uint64) (*model.OutputsProof, error) {
+	return nil, nil
+}
+
 func (m *DummyMachineInstanceMock) Advance(_ context.Context, _ []byte, _ uint64, _ uint64, _ bool) (*model.AdvanceResult, error) {
 	return nil, nil
 }

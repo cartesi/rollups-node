@@ -85,18 +85,18 @@ func (self *claimerBlockchain) submitClaimToBlockchain(
 	txHash := common.Hash{}
 	lastBlockNumber := new(big.Int).SetUint64(epoch.LastBlock)
 	tx, err := ic.SubmitClaim(self.txOpts, application.IApplicationAddress,
-		lastBlockNumber, *epoch.ClaimHash)
+		lastBlockNumber, *epoch.OutputsMerkleRoot)
 	if err != nil {
 		self.logger.Error("submitClaimToBlockchain:failed",
 			"appContractAddress", application.IApplicationAddress,
-			"claimHash", *epoch.ClaimHash,
+			"claimHash", *epoch.OutputsMerkleRoot,
 			"last_block", epoch.LastBlock,
 			"error", err)
 	} else {
 		txHash = tx.Hash()
 		self.logger.Debug("submitClaimToBlockchain:success",
 			"appContractAddress", application.IApplicationAddress,
-			"claimHash", *epoch.ClaimHash,
+			"claimHash", *epoch.OutputsMerkleRoot,
 			"last_block", epoch.LastBlock,
 			"TxHash", txHash)
 	}

@@ -5,7 +5,9 @@ package prt
 
 import (
 	"errors"
+	"unsafe"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
@@ -40,4 +42,8 @@ func ExtractJsonErrorInfo(err error) (JSONRPCInfo, bool) {
 	}
 
 	return out, out.HasCode || out.HasData
+}
+
+func asBytes32Slice(proof []common.Hash) [][32]byte {
+	return *(*[][32]byte)(unsafe.Pointer(&proof))
 }

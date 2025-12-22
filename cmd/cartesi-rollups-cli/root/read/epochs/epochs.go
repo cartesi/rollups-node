@@ -94,7 +94,7 @@ func run(cmd *cobra.Command, args []string) {
 			if err := status.Scan(statusFilter); err != nil {
 				cobra.CheckErr(fmt.Errorf("invalid status filter: %w", err))
 			}
-			filter.Status = &status
+			filter.Status = []model.EpochStatus{status}
 		}
 
 		// Limit is validated in PreRunE

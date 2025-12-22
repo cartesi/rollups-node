@@ -6,7 +6,6 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -77,10 +76,7 @@ func (r *PostgresRepository) GetCommitment(
 	}
 
 	tournamentAddr := common.HexToAddress(tournamentAddress)
-	commitment, err := hex.DecodeString(commitmentHex)
-	if err != nil {
-		return nil, fmt.Errorf("invalid commitment hex: %w", err)
-	}
+	commitment := common.HexToHash(commitmentHex)
 
 	sel := table.Commitments.
 		SELECT(
@@ -105,7 +101,7 @@ func (r *PostgresRepository) GetCommitment(
 			whereClause.
 				AND(table.Commitments.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", epochIndex)))).
 				AND(table.Commitments.TournamentAddress.EQ(postgres.Bytea(tournamentAddr.Bytes()))).
-				AND(table.Commitments.Commitment.EQ(postgres.Bytea(commitment))),
+				AND(table.Commitments.Commitment.EQ(postgres.Bytea(commitment.Bytes()))),
 		)
 
 	sqlStr, args := sel.Sql()

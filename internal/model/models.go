@@ -574,9 +574,11 @@ type Epoch struct {
 	InputIndexLowerBound uint64          `json:"input_index_lower_bound"`
 	InputIndexUpperBound uint64          `json:"input_index_upper_bound"`
 	MachineHash          *common.Hash    `json:"machine_hash"`
-	ClaimHash            *common.Hash    `json:"claim_hash"`
+	OutputsMerkleRoot    *common.Hash    `json:"claim_hash"`
+	OutputsMerkleProof   []common.Hash   `json:"outputs_merkle_proof,omitempty"`
 	ClaimTransactionHash *common.Hash    `json:"claim_transaction_hash"`
 	Commitment           *common.Hash    `json:"commitment"`
+	CommitmentProof      []common.Hash   `json:"commitment_proof,omitempty"`
 	TournamentAddress    *common.Address `json:"tournament_address"`
 	Status               EpochStatus     `json:"status"`
 	VirtualIndex         uint64          `json:"virtual_index"`
@@ -931,7 +933,14 @@ type NodeConfig[T any] struct {
 	UpdatedAt time.Time
 }
 
+type OutputsProof struct {
+	OutputsHash      common.Hash
+	OutputsHashProof [][32]byte
+	MachineHash      common.Hash
+}
+
 type AdvanceResult struct {
+	OutputsProof
 	EpochIndex          uint64
 	InputIndex          uint64
 	Status              InputCompletionStatus
@@ -939,8 +948,6 @@ type AdvanceResult struct {
 	Reports             [][]byte
 	Hashes              [][32]byte
 	RemainingMetaCycles uint64
-	OutputsHash         common.Hash
-	MachineHash         common.Hash
 	IsDaveConsensus     bool
 }
 

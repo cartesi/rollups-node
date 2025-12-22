@@ -37,7 +37,7 @@ type EvmReaderRepository interface {
 	) error
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter, p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
-	UpdateEpoch(ctx context.Context, nameOrAddress string, e *Epoch) error
+	UpdateEpochClaimTransactionHash(ctx context.Context, nameOrAddress string, e *Epoch) error
 	GetLastNonOpenEpoch(ctx context.Context, nameOrAddress string) (*Epoch, error)
 
 	GetNumberOfInputs(ctx context.Context, nameOrAddress string) (uint64, error)
@@ -85,7 +85,7 @@ func (r *Service) Run(ctx context.Context, ready chan struct{}) error {
 
 		r.Logger.Info("Restarting subscription",
 			"attempt", attempt,
-			"remaining", r.blockchainMaxRetries - attempt,
+			"remaining", r.blockchainMaxRetries-attempt,
 			"time_between_attempts", r.blockchainSubscriptionRetryInterval,
 		)
 

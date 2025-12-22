@@ -4,6 +4,7 @@
 package machine
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ type RemoteMachineInterface interface {
 	Load(dir string, runtimeConfig string) error
 	Run(mcycleEnd uint64) (emulator.BreakReason, error)
 	GetRootHash() (emulator.Hash, error)
+	GetProof(address uint64, log2size int32) (string, error)
 	ReadReg(reg emulator.RegID) (uint64, error)
 	SendCmioResponse(reason uint16, data []byte) error
 	ReceiveCmioRequest() (uint8, uint16, []byte, error)
@@ -26,6 +28,70 @@ type RemoteMachineInterface interface {
 	Delete()
 	ForkServer() (*emulator.RemoteMachine, string, uint32, error)
 	ShutdownServer() error
+}
+
+type proofJson struct {
+	Log2RootSize   int32  `json:"log2_root_size"`
+	Log2TargetSize int32  `json:"log2_target_size"`
+	RootHash       Hash   `json:"root_hash"`
+	Siblings       []Hash `json:"sibling_hashes"`
+	TargetAddress  uint64 `json:"target_address"`
+	TargetHash     Hash   `json:"target_hash"`
+}
+
+func decodeB64To32(dst *Hash, s string) error {
+	// accepts Std (with '=') and Raw (without '=')
+	n, err := base64.StdEncoding.Decode(dst[:], []byte(s))
+	if err == nil {
+		if n != HashSize {
+			return fmt.Errorf("provided hash base64 size is %d bytes (expected %d)", n, HashSize)
+		}
+		return nil
+	}
+
+	// fallback RawStdEncoding
+	n, err2 := base64.RawStdEncoding.Decode(dst[:], []byte(s))
+	if err2 != nil {
+		return fmt.Errorf("invalid hash base64 (std: %v, raw: %w)", err, err2)
+	}
+	if n != HashSize {
+		return fmt.Errorf("provided hash base64 size is %d bytes (expected %d)", n, HashSize)
+	}
+	return nil
+}
+
+func (p *proofJson) UnmarshalJSON(data []byte) error {
+	var aux struct {
+		Log2RootSize   int32    `json:"log2_root_size"`
+		Log2TargetSize int32    `json:"log2_target_size"`
+		RootHash       string   `json:"root_hash"`
+		Siblings       []string `json:"sibling_hashes"`
+		TargetAddress  uint64   `json:"target_address"`
+		TargetHash     string   `json:"target_hash"`
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	p.Log2RootSize = aux.Log2RootSize
+	p.Log2TargetSize = aux.Log2TargetSize
+	p.TargetAddress = aux.TargetAddress
+
+	if err := decodeB64To32(&p.RootHash, aux.RootHash); err != nil {
+		return fmt.Errorf("root_hash: %w", err)
+	}
+	if err := decodeB64To32(&p.TargetHash, aux.TargetHash); err != nil {
+		return fmt.Errorf("target_hash: %w", err)
+	}
+
+	p.Siblings = make([]Hash, len(aux.Siblings))
+	for i, s := range aux.Siblings {
+		if err := decodeB64To32(&p.Siblings[i], s); err != nil {
+			return fmt.Errorf("sibling_hashes[%d]: %w", i, err)
+		}
+	}
+	return nil
 }
 
 func NewLibCartesiBackend(address string, timeout time.Duration) (Backend, string, uint32, error) {
@@ -61,6 +127,23 @@ func (e *LibCartesiBackend) GetRootHash(timeout time.Duration) (Hash, error) {
 		return Hash{}, fmt.Errorf("failed to set operation timeout: %w", err)
 	}
 	return e.inner.GetRootHash()
+}
+
+func (e *LibCartesiBackend) GetProof(address uint64, log2size int32, timeout time.Duration) ([]Hash, error) {
+	if err := e.inner.SetTimeout(timeout.Milliseconds()); err != nil {
+		return nil, fmt.Errorf("failed to set operation timeout: %w", err)
+	}
+	jsonMessage, err := e.inner.GetProof(address, log2size)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get proof: %w", err)
+	}
+	proof := &proofJson{}
+	err = json.Unmarshal([]byte(jsonMessage), proof)
+	if err != nil {
+		println("Failed to unmarshal proof JSON:", err.Error())
+		return nil, fmt.Errorf("failed to unmarshal proof JSON: %w", err)
+	}
+	return proof.Siblings, nil
 }
 
 func (e *LibCartesiBackend) IsAtManualYield(timeout time.Duration) (bool, error) {

@@ -24,10 +24,12 @@ type epochTable struct {
 	InputIndexLowerBound postgres.ColumnFloat
 	InputIndexUpperBound postgres.ColumnFloat
 	MachineHash          postgres.ColumnString
-	ClaimHash            postgres.ColumnString
-	ClaimTransactionHash postgres.ColumnString
+	OutputsMerkleRoot    postgres.ColumnString
+	OutputsMerkleProof   postgres.ColumnString
 	Commitment           postgres.ColumnString
+	CommitmentProof      postgres.ColumnString
 	TournamentAddress    postgres.ColumnString
+	ClaimTransactionHash postgres.ColumnString
 	Status               postgres.ColumnString
 	VirtualIndex         postgres.ColumnFloat
 	CreatedAt            postgres.ColumnTimestampz
@@ -79,16 +81,18 @@ func newEpochTableImpl(schemaName, tableName, alias string) epochTable {
 		InputIndexLowerBoundColumn = postgres.FloatColumn("input_index_lower_bound")
 		InputIndexUpperBoundColumn = postgres.FloatColumn("input_index_upper_bound")
 		MachineHashColumn          = postgres.StringColumn("machine_hash")
-		ClaimHashColumn            = postgres.StringColumn("claim_hash")
-		ClaimTransactionHashColumn = postgres.StringColumn("claim_transaction_hash")
+		OutputsMerkleRootColumn    = postgres.StringColumn("outputs_merkle_root")
+		OutputsMerkleProofColumn   = postgres.StringColumn("outputs_merkle_proof")
 		CommitmentColumn           = postgres.StringColumn("commitment")
+		CommitmentProofColumn      = postgres.StringColumn("commitment_proof")
 		TournamentAddressColumn    = postgres.StringColumn("tournament_address")
+		ClaimTransactionHashColumn = postgres.StringColumn("claim_transaction_hash")
 		StatusColumn               = postgres.StringColumn("status")
 		VirtualIndexColumn         = postgres.FloatColumn("virtual_index")
 		CreatedAtColumn            = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn            = postgres.TimestampzColumn("updated_at")
-		allColumns                 = postgres.ColumnList{ApplicationIDColumn, IndexColumn, FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, ClaimHashColumn, ClaimTransactionHashColumn, CommitmentColumn, TournamentAddressColumn, StatusColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns             = postgres.ColumnList{FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, ClaimHashColumn, ClaimTransactionHashColumn, CommitmentColumn, TournamentAddressColumn, StatusColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
+		allColumns                 = postgres.ColumnList{ApplicationIDColumn, IndexColumn, FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, OutputsMerkleRootColumn, OutputsMerkleProofColumn, CommitmentColumn, CommitmentProofColumn, TournamentAddressColumn, ClaimTransactionHashColumn, StatusColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns             = postgres.ColumnList{FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, OutputsMerkleRootColumn, OutputsMerkleProofColumn, CommitmentColumn, CommitmentProofColumn, TournamentAddressColumn, ClaimTransactionHashColumn, StatusColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return epochTable{
@@ -102,10 +106,12 @@ func newEpochTableImpl(schemaName, tableName, alias string) epochTable {
 		InputIndexLowerBound: InputIndexLowerBoundColumn,
 		InputIndexUpperBound: InputIndexUpperBoundColumn,
 		MachineHash:          MachineHashColumn,
-		ClaimHash:            ClaimHashColumn,
-		ClaimTransactionHash: ClaimTransactionHashColumn,
+		OutputsMerkleRoot:    OutputsMerkleRootColumn,
+		OutputsMerkleProof:   OutputsMerkleProofColumn,
 		Commitment:           CommitmentColumn,
+		CommitmentProof:      CommitmentProofColumn,
 		TournamentAddress:    TournamentAddressColumn,
+		ClaimTransactionHash: ClaimTransactionHashColumn,
 		Status:               StatusColumn,
 		VirtualIndex:         VirtualIndexColumn,
 		CreatedAt:            CreatedAtColumn,

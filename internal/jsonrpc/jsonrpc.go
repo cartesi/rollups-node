@@ -237,7 +237,7 @@ func handleListEpochs(s *Service, w http.ResponseWriter, r *http.Request, req RP
 			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch status: %v", err), nil)
 			return
 		}
-		epochFilter.Status = &status
+		epochFilter.Status = []model.EpochStatus{status}
 	}
 
 	epochs, total, err := s.repository.ListEpochs(r.Context(), params.Application, epochFilter, repository.Pagination{

@@ -16,7 +16,9 @@ type MachineInstance interface {
 	Inspect(ctx context.Context, query []byte) (*InspectResult, error)
 	Synchronize(ctx context.Context, repo MachineRepository) error
 	CreateSnapshot(ctx context.Context, processedInputs uint64, path string) error
+	ProcessedInputs() uint64
 	Hash(ctx context.Context) ([32]byte, error)
+	OutputsProof(ctx context.Context, processedInputs uint64) (*OutputsProof, error)
 	Close() error
 }
 

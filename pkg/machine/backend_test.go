@@ -89,6 +89,11 @@ func (m *MockBackend) RunAndCollectRootHashes(mcycleEnd uint64, state *HashColle
 	return args.Get(0).(BreakReason), args.Error(1)
 }
 
+func (m *MockBackend) GetProof(address uint64, log2size int32, timeout time.Duration) ([]Hash, error) {
+	args := m.Called(address, log2size, timeout)
+	return args.Get(0).([]Hash), args.Error(1)
+}
+
 // Helper functions for setting up common mock scenarios
 
 func randomFakeHash() Hash {

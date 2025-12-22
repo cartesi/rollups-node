@@ -215,7 +215,7 @@ func makeEpoch(id int64, status model.EpochStatus, i uint64) *model.Epoch {
 		LastBlock:            i*10 + 9,
 		Status:               status,
 		ClaimTransactionHash: &tx,
-		ClaimHash:            &hash,
+		OutputsMerkleRoot:    &hash,
 	}
 	return epoch
 }
@@ -250,7 +250,7 @@ func makeSubmittedEvent(app *model.Application, epoch *model.Epoch) *iconsensus.
 	return &iconsensus.IConsensusClaimSubmitted{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(epoch.LastBlock),
 		AppContract:              app.IApplicationAddress,
-		OutputsMerkleRoot:        *epoch.ClaimHash,
+		OutputsMerkleRoot:        *epoch.OutputsMerkleRoot,
 		Raw: types.Log{
 			TxHash: common.HexToHash(epoch.ClaimTransactionHash.Hex()),
 		},
@@ -261,7 +261,7 @@ func makeAcceptedEvent(app *model.Application, epoch *model.Epoch) *iconsensus.I
 	return &iconsensus.IConsensusClaimAccepted{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(epoch.LastBlock),
 		AppContract:              app.IApplicationAddress,
-		OutputsMerkleRoot:        *epoch.ClaimHash,
+		OutputsMerkleRoot:        *epoch.OutputsMerkleRoot,
 		Raw: types.Log{
 			TxHash: common.HexToHash(epoch.ClaimTransactionHash.Hex()),
 		},
@@ -560,7 +560,7 @@ func TestSubmitClaimWithAntecessorMismatch(t *testing.T) {
 	prevEvent := &iconsensus.IConsensusClaimSubmitted{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(prevEpoch.LastBlock + 1),
 		AppContract:              app.IApplicationAddress,
-		OutputsMerkleRoot:        *prevEpoch.ClaimHash,
+		OutputsMerkleRoot:        *prevEpoch.OutputsMerkleRoot,
 	}
 	var currEvent *iconsensus.IConsensusClaimSubmitted = nil
 
@@ -727,7 +727,7 @@ func TestAcceptClaimWithAntecessorMismatch(t *testing.T) {
 	prevEvent := &iconsensus.IConsensusClaimAccepted{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(prevEpoch.LastBlock + 1),
 		AppContract:              app.IApplicationAddress,
-		OutputsMerkleRoot:        *prevEpoch.ClaimHash,
+		OutputsMerkleRoot:        *prevEpoch.OutputsMerkleRoot,
 	}
 	var currEvent *iconsensus.IConsensusClaimAccepted = nil
 

@@ -293,7 +293,7 @@ func (r *Service) processSealedEpochEvent(
 		}
 
 		prevEpoch.ClaimTransactionHash = &event.Raw.TxHash
-		err = r.repository.UpdateEpoch(ctx, app.application.IApplicationAddress.Hex(), prevEpoch)
+		err = r.repository.UpdateEpochClaimTransactionHash(ctx, app.application.IApplicationAddress.Hex(), prevEpoch)
 		if err != nil {
 			return fmt.Errorf("failed to update previous epoch %d: %w", prevEpochNumber, err)
 		}
