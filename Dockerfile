@@ -3,12 +3,12 @@
 
 # syntax=docker.io/docker/dockerfile:1
 
-ARG EMULATOR_VERSION=0.19.0
+ARG EMULATOR_VERSION=0.20.0
 
 # Build directories.
 ARG GO_BUILD_PATH=/build/cartesi/go
 
-FROM debian:bookworm-20250407 AS common-env
+FROM debian:trixie-20250811 AS common-env
 
 USER root
 
@@ -22,13 +22,13 @@ RUN <<EOF
     apt-get update
     apt-get install -y --no-install-recommends \
         ca-certificates curl wget build-essential pkg-config libssl-dev
-    addgroup --system --gid 102 cartesi
-    adduser --system --uid 102 --ingroup cartesi --disabled-login --no-create-home --home /nonexistent --gecos "cartesi user" --shell /bin/false cartesi
+    groupadd --system --gid 102 cartesi
+    useradd --system --uid 102 --gid cartesi --shell /usr/sbin/nologin --no-create-home cartesi
     ARCH=$(dpkg --print-architecture)
     wget -O /tmp/cartesi-machine-emulator.deb "https://github.com/cartesi/machine-emulator/releases/download/v${EMULATOR_VERSION}/machine-emulator_${ARCH}.deb"
     case "$ARCH" in
-        amd64) echo "adae6b030a8990e316997aad53d175192bfeaa84ad12ee19491366377073572b  /tmp/cartesi-machine-emulator.deb" | sha256sum --check ;;
-        arm64) echo "15ebb64d8cd3296564d2297dd809d1d72c13a938976bb4ecc5e5c82e71bb8069  /tmp/cartesi-machine-emulator.deb" | sha256sum --check ;;
+        amd64) echo "46b2f37b889091df3b89a8909467935f8dd4a1426eeb0491b6a346a12f0c341c  /tmp/cartesi-machine-emulator.deb" | sha256sum --check ;;
+        arm64) echo "27ea10571335ad174b75388e7de54a3d3434bd607554d8c0bdf6abca47ceae0d  /tmp/cartesi-machine-emulator.deb" | sha256sum --check ;;
         *) echo "unsupported architecture: $ARCH"; exit 1 ;;
     esac
     apt-get install -y --no-install-recommends /tmp/cartesi-machine-emulator.deb
@@ -146,7 +146,7 @@ RUN make build-debian-package DESTDIR=$PWD/_install
 # (This stage copies the binaries from previous stages.)
 # =============================================================================
 
-FROM debian:bookworm-20250407 AS rollups-node
+FROM debian:trixie-20250811 AS rollups-node
 
 ARG NODE_RUNTIME_DIR=/var/lib/cartesi-rollups-node
 ARG GO_BUILD_PATH
@@ -164,8 +164,8 @@ COPY --from=debian-packager \
 ARG DEBIAN_FRONTEND=noninteractive
 RUN <<EOF
     set -e
-    addgroup --system --gid 102 cartesi
-    adduser --system --uid 102 --ingroup cartesi --disabled-login --no-create-home --home /nonexistent --gecos "cartesi user" --shell /bin/false cartesi
+    groupadd --system --gid 102 cartesi
+    useradd --system --uid 102 --gid cartesi --shell /usr/sbin/nologin --no-create-home cartesi
     apt-get update
     apt-get install -y --no-install-recommends \
         ca-certificates \

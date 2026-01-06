@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"strings"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -16,6 +15,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
+	"github.com/cartesi/rollups-node/pkg/emulator"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -360,7 +360,7 @@ func buildSelfhostedApplicationDeployment(
 
 	if !cmd.Flags().Changed("template-hash") {
 		if len(args) >= 2 { // args[1] is mandatory if `template-hash` was absent
-			request.TemplateHash, err = readHash(args[1])
+			request.TemplateHash, err = emulator.ReadHash(args[1])
 		} else {
 			err = fmt.Errorf("missing argument. One of `template-path` or `template-hash` is required")
 		}
@@ -435,7 +435,7 @@ func buildApplicationOnlyDeployment(
 
 	if !cmd.Flags().Changed("template-hash") {
 		if len(args) >= 2 { // args[1] is mandatory if `template-hash` was absent
-			request.TemplateHash, err = readHash(args[1])
+			request.TemplateHash, err = emulator.ReadHash(args[1])
 		} else {
 			err = fmt.Errorf("missing argument. One of `template-path` or `template-hash` is required")
 		}
@@ -515,7 +515,7 @@ func buildPrtApplicationDeployment(
 
 	if !cmd.Flags().Changed("template-hash") {
 		if len(args) >= 2 { // args[1] is mandatory if `template-hash` was absent
-			request.TemplateHash, err = readHash(args[1])
+			request.TemplateHash, err = emulator.ReadHash(args[1])
 		} else {
 			err = fmt.Errorf("missing argument. One of `template-path` or `template-hash` is required")
 		}
@@ -533,23 +533,6 @@ func buildPrtApplicationDeployment(
 
 	request.Verbose = verboseParam
 	return request, nil
-}
-
-// read the hash value from the cartesi machine hash file
-func readHash(machineDir string) (common.Hash, error) {
-	zero := common.Hash{}
-	path := path.Join(machineDir, "hash")
-	hash, err := os.ReadFile(path)
-	if err != nil {
-		return zero, fmt.Errorf("read hash: %w", err)
-	} else if len(hash) != common.HashLength {
-		return zero, fmt.Errorf(
-			"read hash: wrong size; expected %v bytes but read %v",
-			common.HashLength,
-			len(hash),
-		)
-	}
-	return common.BytesToHash(hash), nil
 }
 
 func parseHexHash(hash string) (common.Hash, error) {

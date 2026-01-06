@@ -48,8 +48,8 @@ func SpawnServer(address string, timeout time.Duration) (*RemoteMachine, string,
 	return &RemoteMachine{Machine: Machine{ptr: cm}}, C.GoString(boundAddr), uint32(pid), nil
 }
 
-func CreateMachine(config, runtimeConfig string) (*Machine, error) {
+func CreateMachine(config, runtimeConfig, dir string) (*Machine, error) {
 	machine := &Machine{}
-	err := machine.Create(config, runtimeConfig)
+	err := machine.Create(config, runtimeConfig, dir)
 	return machine, err
 }

@@ -12,11 +12,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/app/util"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/contracts/dataavailability"
+	"github.com/cartesi/rollups-node/pkg/emulator"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -143,12 +143,11 @@ func run(cmd *cobra.Command, args []string) {
 		checkEnabled, err := config.GetFeatureMachineHashCheckEnabled()
 		cobra.CheckErr(err)
 		if checkEnabled {
-			templateHash, err := util.ReadHash(templatePath)
+			snapshotTemplateHash, err := emulator.ReadHash(templatePath)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Read machine template hash failed: %v\n", err)
 				os.Exit(1)
 			}
-			snapshotTemplateHash := common.HexToHash(templateHash)
 			if parsedTemplateHash != snapshotTemplateHash {
 				fmt.Fprintf(os.Stderr, "Template hash mismatch: contract has %s but machine has %s\n",
 					parsedTemplateHash.Hex(), snapshotTemplateHash.Hex())
