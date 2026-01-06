@@ -82,6 +82,8 @@ const (
 	BreakReasonYieldedAutomatically BreakReason = C.CM_BREAK_REASON_YIELDED_AUTOMATICALLY
 	BreakReasonYieldedSoftly        BreakReason = C.CM_BREAK_REASON_YIELDED_SOFTLY
 	BreakReasonReachedTargetMcycle  BreakReason = C.CM_BREAK_REASON_REACHED_TARGET_MCYCLE
+	BreakReasonConsoleOutput        BreakReason = C.CM_BREAK_REASON_CONSOLE_OUTPUT
+	BreakReasonConsoleInput         BreakReason = C.CM_BREAK_REASON_CONSOLE_INPUT
 )
 
 func (reason BreakReason) String() (s string) {
@@ -104,6 +106,15 @@ func (reason BreakReason) String() (s string) {
 	return "break reason: " + s
 
 }
+
+// SharingMode
+type SharingMode = C.cm_sharing_mode
+
+const (
+	SharingNone   SharingMode = C.CM_SHARING_NONE
+	SharingConfig SharingMode = C.CM_SHARING_CONFIG
+	SharingAll    SharingMode = C.CM_SHARING_ALL
+)
 
 type (
 	CmioYieldCommand uint8
@@ -297,11 +308,11 @@ const (
 )
 
 const (
-	CmioRxBufferStart    uint64 = C.CM_PMA_CMIO_RX_BUFFER_START
-	CmioRxBufferLog2Size uint64 = C.CM_PMA_CMIO_RX_BUFFER_LOG2_SIZE
+	CmioRxBufferStart    uint64 = C.CM_AR_CMIO_RX_BUFFER_START
+	CmioRxBufferLog2Size uint64 = C.CM_AR_CMIO_RX_BUFFER_LOG2_SIZE
 
-	CmioTxBufferStart    uint64 = C.CM_PMA_CMIO_TX_BUFFER_START
-	CmioTxBufferLog2Size uint64 = C.CM_PMA_CMIO_TX_BUFFER_LOG2_SIZE
+	CmioTxBufferStart    uint64 = C.CM_AR_CMIO_TX_BUFFER_START
+	CmioTxBufferLog2Size uint64 = C.CM_AR_CMIO_TX_BUFFER_LOG2_SIZE
 )
 
 type MachineRuntimeConfig struct {
@@ -335,3 +346,7 @@ func NewMachineRuntimeConfig() *MachineRuntimeConfig {
 		SoftYield:         false,
 	}
 }
+
+const (
+	HashTreeLog2RootSize uint32 = C.CM_HASH_TREE_LOG2_ROOT_SIZE
+)

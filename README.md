@@ -16,7 +16,7 @@ We provide packages for debian (.deb) in **amd64** and **arm64** variants on the
 
 ##### System Requirements
 
-- Cartesi Machine emulator == 0.19.x
+- Cartesi Machine emulator == 0.20.x
 - GNU Make >= 3.81
 - Go >= 1.24.1
 
@@ -24,9 +24,11 @@ Follow the Cartesi Machine installation instructions [here](https://github.com/c
 
 ##### Build
 
+With the Cartesi machine emulator installed, build the rollups-node:
+
 ```sh
-# clone a stable branch of the emulator
-git clone --branch v2.0.0 https://github.com/cartesi/rollups-node.git
+# clone a branch of the rollups-node
+git clone --branch next/2.0 https://github.com/cartesi/rollups-node.git
 cd rollups-node
 
 # compile

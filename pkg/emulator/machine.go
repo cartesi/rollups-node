@@ -58,11 +58,12 @@ func (m *Machine) Delete() {
 }
 
 // create
-func (m *Machine) Create(config, runtimeConfig string) error {
+func (m *Machine) Create(config, runtimeConfig, dir string) error {
 	var err error
 	m.callCAPI(func() {
 		var cConfig *C.char
 		var cRuntime *C.char
+		var cDir *C.char
 		if config != "" {
 			cConfig = C.CString(config)
 			defer C.free(unsafe.Pointer(cConfig))
@@ -71,7 +72,11 @@ func (m *Machine) Create(config, runtimeConfig string) error {
 			cRuntime = C.CString(runtimeConfig)
 			defer C.free(unsafe.Pointer(cRuntime))
 		}
-		err = newError(C.cm_create_new(cConfig, cRuntime, &m.ptr))
+		if dir != "" {
+			cDir = C.CString(dir)
+			defer C.free(unsafe.Pointer(cDir))
+		}
+		err = newError(C.cm_create_new(cConfig, cRuntime, cDir, &m.ptr))
 	})
 	return err
 }
@@ -119,27 +124,6 @@ func (m *Machine) GetInitialConfig() (string, error) {
 	return res, nil
 }
 
-// get_memory_ranges
-func (m *Machine) GetMemoryRanges() (string, error) {
-	var ranges *C.char
-	var err error
-	var res string
-
-	m.callCAPI(func() {
-		err = newError(C.cm_get_memory_ranges(m.ptr, &ranges))
-		if err != nil || ranges == nil {
-			return
-		}
-		res = C.GoString(ranges)
-		// no need to free 'ranges' here, as it is a static string
-	})
-
-	if err != nil {
-		return "", err
-	}
-	return res, nil
-}
-
 // get_proof
 func (m *Machine) GetProof(address uint64, log2size int32) (string, error) {
 	var proof *C.char
@@ -147,7 +131,7 @@ func (m *Machine) GetProof(address uint64, log2size int32) (string, error) {
 	var res string
 
 	m.callCAPI(func() {
-		err = newError(C.cm_get_proof(m.ptr, C.uint64_t(address), C.int32_t(log2size), &proof))
+		err = newError(C.cm_get_proof(m.ptr, C.uint64_t(address), C.int32_t(log2size), C.int32_t(HashTreeLog2RootSize), &proof))
 		if err != nil || proof == nil {
 			return
 		}
@@ -241,7 +225,7 @@ func (m *Machine) Load(dir string, runtimeConfig string) error {
 			cRuntime = C.CString(runtimeConfig)
 			defer C.free(unsafe.Pointer(cRuntime))
 		}
-		err = newError(C.cm_load(m.ptr, cDir, cRuntime))
+		err = newError(C.cm_load(m.ptr, cDir, cRuntime, SharingNone))
 	})
 
 	return err
@@ -369,6 +353,56 @@ func (m *Machine) Run(mcycleEnd uint64) (BreakReason, error) {
 	return BreakReason(br), nil
 }
 
+// collect_mcycle_root_hashes
+func (m *Machine) CollectMCycleRootHashes(mcycleEnd, mcyclePeriod, mcyclePhase uint64, log2BundleMcycleCount int32, previousBackTree string) ([]byte, error) {
+	var err error
+	var result []byte
+
+	m.callCAPI(func() {
+		var cResult *C.char
+		var previousBackTreeC *C.char
+		if previousBackTree != "" {
+			previousBackTreeC = C.CString(previousBackTree)
+			defer C.free(unsafe.Pointer(previousBackTreeC))
+		}
+		err = newError(C.cm_collect_mcycle_root_hashes(
+			m.ptr,
+			C.uint64_t(mcycleEnd),
+			C.uint64_t(mcyclePeriod),
+			C.uint64_t(mcyclePhase),
+			C.int32_t(log2BundleMcycleCount),
+			previousBackTreeC,
+			&cResult))
+		result = []byte(C.GoString(cResult))
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// collect_uarch_cycle_root_hashes
+func (m *Machine) CollectUarchCycleRootHashes(mcycleEnd uint64, log2BundleMcycleCount int32) ([]byte, error) {
+	var err error
+	var result []byte
+
+	m.callCAPI(func() {
+		var cResult *C.char
+		err = newError(C.cm_collect_uarch_cycle_root_hashes(
+			m.ptr,
+			C.uint64_t(mcycleEnd),
+			C.int32_t(log2BundleMcycleCount),
+			&cResult))
+		result = []byte(C.GoString(cResult))
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // send_cmio_response
 func (m *Machine) SendCmioResponse(reason uint16, data []byte) error {
 	var err error
@@ -414,7 +448,7 @@ func (m *Machine) Store(directory string) error {
 	m.callCAPI(func() {
 		cDir := C.CString(directory)
 		defer C.free(unsafe.Pointer(cDir))
-		err = newError(C.cm_store(m.ptr, cDir))
+		err = newError(C.cm_store(m.ptr, cDir, SharingAll))
 	})
 
 	return err

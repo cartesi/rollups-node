@@ -50,7 +50,7 @@ const (
 const maxOutputs = 65536 // 2^16
 const maxReports = 65536 // 2^16
 
-const CheckpointAddress uint64 = 0x7ffff000
+const CheckpointAddress uint64 = 0xfe0 // value from machine api: CM_AR_SHADOW_REVERT_ROOT_HASH_START
 const TxBufferAddress uint64 = 0x60800000
 const HashLog2Size = 5 // 32 bytes
 

@@ -98,7 +98,7 @@ func (snapshot *Snapshot) createTempDir() error {
 }
 
 func (snapshot *Snapshot) createRunAndStore(config string, cycles uint64) error {
-	machine, err := emulator.CreateMachine(config, "")
+	machine, err := emulator.CreateMachine(config, "", "")
 	if err != nil {
 		return errors.Join(err, snapshot.Close())
 	}
