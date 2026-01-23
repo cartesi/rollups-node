@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
+
 	"strings"
 	"testing"
 
@@ -1536,18 +1538,1286 @@ func TestMethod(t *testing.T) {
 	})
 
 	////////////////////////////////////////////////////////////////////////
-	// Place holder for new tournament data methods
+	// getTournament
 	////////////////////////////////////////////////////////////////////////
-	t.Run("cartesi_NEW_METHODS", func(_ *testing.T) {
-		// TODO: implement proper tests for tournament data methods
-		testHistogram.inc("cartesi_getTournament")
-		testHistogram.inc("cartesi_listTournaments")
-		testHistogram.inc("cartesi_getCommitment")
-		testHistogram.inc("cartesi_getMatch")
-		testHistogram.inc("cartesi_listMatchAdvances")
-		testHistogram.inc("cartesi_listCommitments")
-		testHistogram.inc("cartesi_listMatches")
-		testHistogram.inc("cartesi_getMatchAdvanced")
+	t.Run("cartesi_getTournament", func(t *testing.T) {
+		method := getName(t.Name())
+
+		// failure: tournament address not hex encoded -> invalid param
+		t.Run("malformedAddressParameter", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			app := uint64(1)
+			address := uint64(0)
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getTournament",
+				"params": {
+				"application": "%v",
+				"address": "%v"
+				},
+				"id": 0
+				}`, numberToName(app), address))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
+			assert.Equal(t, "Invalid tournament address: invalid address '0'", resp.Error.Message)
+		})
+
+		// failure: tournament address not in database -> absent tournament
+		t.Run("absent", func(t *testing.T) {
+			var err error
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(3)
+			enr := uint64(1)
+			tnr := uint64(1)   // correct (register)
+			wrong := uint64(2) // incorrect (query)
+			appID := s.newTestApplication(ctx, t, 0, app)
+			err = s.repository.CreateEpoch(ctx, &model.Epoch{
+				ApplicationID: appID,
+				Index:         enr,
+				VirtualIndex:  enr,
+				Status:        model.EpochStatus_ClaimAccepted,
+			})
+			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, enr)
+			err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
+				ApplicationID: appID,
+				EpochIndex:    enr,
+				Address:       common.HexToAddress(hexutil.EncodeUint64(tnr)),
+			})
+			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, enr)
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getTournament",
+				"params": {
+				"application": "%v",
+				"address": "0x%040x"
+				},
+				"id": 0
+				}`, numberToName(app), wrong))
+
+			resp := testRPCResponse[*model.Tournament]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Tournament not found", resp.Error.Message)
+		})
+
+		// success: tournament present in the database -> retrieve tournament
+		t.Run("success", func(t *testing.T) {
+			var err error
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(3)
+			enr := uint64(1)
+			tnr := uint64(1)
+			appID := s.newTestApplication(ctx, t, 0, app)
+			err = s.repository.CreateEpoch(ctx, &model.Epoch{
+				ApplicationID: appID,
+				Index:         enr,
+				VirtualIndex:  enr,
+				Status:        model.EpochStatus_ClaimAccepted,
+			})
+			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, enr)
+			err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
+				ApplicationID: appID,
+				EpochIndex:    enr,
+				Address:       common.HexToAddress(hexutil.EncodeUint64(tnr)),
+			})
+			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, enr)
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getTournament",
+				"params": {
+				"application": "%v",
+				"address": "0x%040x"
+				},
+				"id": 0
+				}`, numberToName(app), tnr))
+
+			type Result struct {
+				EpochIndex              hex64           `json:"epoch_index"`
+				Address                 common.Address  `json:"address"`
+				ParentTournamentAddress *common.Address `json:"parent_tournament_address"`
+				ParentMatchIDHash       *common.Hash    `json:"parent_match_id_hash"`
+				MaxLevel                hex64           `json:"max_level"`
+				Level                   hex64           `json:"level"`
+				Log2Step                hex64           `json:"log2step"`
+				Height                  hex64           `json:"height"`
+				WinnerCommitment        *common.Hash    `json:"winner_commitment"`
+				FinalStateHash          *common.Hash    `json:"final_state_hash"`
+				FinishedAtBlock         hex64           `json:"finished_at_block"`
+				CreatedAt               time.Time       `json:"created_at"`
+				UpdatedAt               time.Time       `json:"updated_at"`
+			}
+
+			resp := testRPCResponse[Result]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, hex64(enr), resp.Result.Data.EpochIndex)
+		})
+	})
+
+	////////////////////////////////////////////////////////////////////////
+	// cartesi_listTournaments
+	////////////////////////////////////////////////////////////////////////
+	t.Run("cartesi_listTournaments", func(t *testing.T) {
+		method := getName(t.Name())
+
+		// failure: no tournament in the database -> no application
+		t.Run("absentApplication", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			nr := uint64(1)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listTournaments",
+				"params": { "application": "%v" },
+				"id": 0
+				}`, numberToName(nr)))
+
+			resp := testRPCResponse[[]model.Tournament]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Application not found", resp.Error.Message)
+		})
+
+		// success: no tournament in the database -> 0
+		t.Run("empty", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			nr := uint64(1)
+			s.newTestApplication(ctx, t, 0, nr)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listTournaments",
+				"params": { "application": "%v" },
+				"id": 0
+				}`, numberToName(nr)))
+
+			resp := testRPCResponse[[]model.Tournament]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, 0, len(resp.Result.Data))
+		})
+
+		// success: many tournaments
+		// create one application with many (epoch, tournament) pairs.
+		// use their shared Index / EpochIndex to check pagination.
+		t.Run("many", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(3)
+			appID := s.newTestApplication(ctx, t, 0, app)
+
+			many := uint64(100)
+			limit := uint64(many / 2)
+			for tnr := range many {
+				err := s.repository.CreateEpoch(ctx, &model.Epoch{
+					ApplicationID: appID,
+					Index:         tnr,
+					VirtualIndex:  tnr,
+					Status:        model.EpochStatus_ClaimAccepted,
+				})
+				assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, tnr)
+				err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
+					ApplicationID: appID,
+					EpochIndex:    tnr,
+					Address:       common.HexToAddress(hexutil.EncodeUint64(tnr)),
+				})
+				assert.Nil(t, err, "on test case: %v, application: %v, index: %v", 0, appID, tnr)
+			}
+
+			{ // offset == 0, descending = false
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listTournaments",
+					"params": {
+					"application": "%v",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), limit, 0, false))
+
+				resp := testRPCResponse[[]listTournamentsResult]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					nr := i
+					assert.Equal(t, nr, uint64(resp.Result.Data[i].EpochIndex))
+				}
+			}
+
+			{ // offset == 1, descending == false
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listTournaments",
+					"params": {
+					"application": "%v",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), limit, 1, false))
+
+				resp := testRPCResponse[[]listTournamentsResult]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					nr := i + 1
+					assert.Equal(t, nr, uint64(resp.Result.Data[i].EpochIndex))
+				}
+			}
+
+			{ // offset == 0, descending = true
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listTournaments",
+					"params": {
+					"application": "%v",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), limit, 0, true))
+
+				resp := testRPCResponse[[]listTournamentsResult]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					nr := many - i - 1
+					assert.Equal(t, nr, uint64(resp.Result.Data[i].EpochIndex))
+				}
+			}
+
+			{ // offset == 1, descending = true
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listTournaments",
+					"params": {
+					"application": "%v",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), limit, 1, true))
+
+				resp := testRPCResponse[[]listTournamentsResult]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					nr := many - i - 2
+					assert.Equal(t, nr, uint64(resp.Result.Data[i].EpochIndex))
+				}
+			}
+		})
+	})
+
+	////////////////////////////////////////////////////////////////////////
+	// getCommitment
+	////////////////////////////////////////////////////////////////////////
+	t.Run("cartesi_getCommitment", func(t *testing.T) {
+		method := getName(t.Name())
+
+		// failure: epoch_index not hex encoded -> invalid param
+		t.Run("malformedEpochIndex", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			app := uint64(1)
+			nr := uint64(0)
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getCommitment",
+				"params": {
+				"application": "%v",
+				"epoch_index": "%v"
+				},
+				"id": 0
+				}`, numberToName(app), nr))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
+			assert.Equal(t, "invalid epoch_index: expected hex encoded value", resp.Error.Message)
+		})
+
+		// failure: commitment not in the database -> resource not found
+		t.Run("absent", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(1)
+			nr := uint64(0)
+
+			appID := s.newTestApplication(ctx, t, 0, app)
+			err := s.repository.CreateEpoch(ctx, &model.Epoch{
+				ApplicationID:        appID,
+				Index:                nr,
+				OutputsMerkleRoot:    &common.Hash{},
+				ClaimTransactionHash: &common.Hash{},
+				Status:               model.EpochStatus_ClaimAccepted,
+			})
+			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getCommitment",
+				"params": {
+				"application": "%v",
+				"epoch_index": "%v",
+				"tournament_address": "0x%020x",
+				"commitment": "%020x"
+				},
+				"id": 0
+				}`, numberToName(app), hexutil.EncodeUint64(nr+1), 0, 0))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Commitment not found", resp.Error.Message)
+		})
+
+		// success: commitment is in the database -> retrieve epoch
+		t.Run("present", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(1)
+			nr := uint64(1)
+			address := common.HexToAddress("0x01")
+			commitment := common.HexToHash("0xdeadbeef")
+
+			appID := s.newTestApplication(ctx, t, 0, app)
+			err := s.repository.CreateEpoch(ctx, &model.Epoch{
+				ApplicationID:        appID,
+				Index:                nr,
+				OutputsMerkleRoot:    &common.Hash{},
+				ClaimTransactionHash: &common.Hash{},
+				Status:               model.EpochStatus_ClaimAccepted,
+			})
+			assert.Nil(t, err, "failed to create epoch. on test case: %v, application: %v, epoch_index: %v.", 0, appID, nr)
+
+			err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
+				ApplicationID: appID,
+				EpochIndex:    nr,
+				Address:       address,
+			})
+			assert.Nil(t, err, "failed to create tournament. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+
+			err = s.repository.CreateCommitment(ctx, numberToName(app), &model.Commitment{
+				ApplicationID:     appID,
+				EpochIndex:        nr,
+				TournamentAddress: address,
+				Commitment:        commitment,
+			})
+			assert.Nil(t, err, "failed to create commitment. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getCommitment",
+				"params": {
+				"application": "%v",
+				"epoch_index": "%v",
+				"tournament_address": "%v",
+				"commitment": "%020x"
+				},
+				"id": 0
+				}`, numberToName(app), hexutil.EncodeUint64(nr), address, commitment))
+
+			resp := testRPCResponse[getCommitmentResult]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, hex64(nr), resp.Result.Data.EpochIndex)
+		})
+	})
+
+	////////////////////////////////////////////////////////////////////////
+	// getMatch
+	////////////////////////////////////////////////////////////////////////
+	t.Run("cartesi_getMatch", func(t *testing.T) {
+		method := getName(t.Name())
+
+		// failure: epoch_index not hex encoded -> invalid param
+		t.Run("malformedEpochIndex", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			app := uint64(1)
+			nr := uint64(0)
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getMatch",
+				"params": {
+				"application": "%v",
+				"epoch_index": "%v"
+				},
+				"id": 0
+				}`, numberToName(app), nr))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
+			assert.Equal(t, "invalid epoch_index: expected hex encoded value", resp.Error.Message)
+		})
+
+		// failure: epoch not in the database -> resource not found
+		t.Run("absent", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(1)
+			nr := uint64(0)
+
+			appID := s.newTestApplication(ctx, t, 0, app)
+			err := s.repository.CreateEpoch(ctx, &model.Epoch{
+				ApplicationID:        appID,
+				Index:                nr,
+				OutputsMerkleRoot:    &common.Hash{},
+				ClaimTransactionHash: &common.Hash{},
+				Status:               model.EpochStatus_ClaimAccepted,
+			})
+			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getMatch",
+				"params": {
+				"application": "%v",
+				"epoch_index": "%v",
+				"tournament_address": "0x%020x",
+				"id_hash": "0x%020x"
+				},
+				"id": 0
+				}`, numberToName(app), hexutil.EncodeUint64(nr+1), 0, 0))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Match not found", resp.Error.Message)
+		})
+
+		// success: commitment is in the database -> retrieve epoch
+		t.Run("present", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(1)
+			nr := uint64(2)
+			address := common.HexToAddress("0x03")
+			idHash := common.HexToHash("0x04")
+
+			appID := s.newTestApplication(ctx, t, 0, app)
+			err := s.repository.CreateEpoch(ctx, &model.Epoch{
+				ApplicationID:        appID,
+				Index:                nr,
+				OutputsMerkleRoot:    &common.Hash{},
+				ClaimTransactionHash: &common.Hash{},
+				Status:               model.EpochStatus_ClaimAccepted,
+			})
+			assert.Nil(t, err, "failed to create epoch. on test case: %v, application: %v, epoch_index: %v.", 0, appID, nr)
+
+			err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
+				ApplicationID: appID,
+				EpochIndex:    nr,
+				Address:       address,
+			})
+			assert.Nil(t, err, "failed to create tournament. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+
+			err = s.repository.CreateCommitment(ctx, numberToName(app), &model.Commitment{
+				ApplicationID:     appID,
+				EpochIndex:        nr,
+				TournamentAddress: address,
+			})
+			assert.Nil(t, err, "failed to create commitment. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+
+			err = s.repository.CreateMatch(ctx, numberToName(app), &model.Match{
+				ApplicationID:     appID,
+				EpochIndex:        nr,
+				TournamentAddress: address,
+				Winner:            model.WinnerCommitment_NONE,
+				DeletionReason:    model.MatchDeletionReason_TIMEOUT,
+				IDHash:            idHash,
+			})
+			assert.Nil(t, err, "failed to create match. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getMatch",
+				"params": {
+				"application": "%v",
+				"epoch_index": "%v",
+				"tournament_address": "0x%020x",
+				"id_hash": "%v"
+				},
+				"id": 0
+				}`, numberToName(app), hexutil.EncodeUint64(nr), address, idHash))
+
+			resp := testRPCResponse[getMatchResult]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, idHash, resp.Result.Data.IDHash)
+			assert.Equal(t, hex64(nr), resp.Result.Data.EpochIndex)
+		})
+	})
+
+	////////////////////////////////////////////////////////////////////////
+	// getMatchAdvanced
+	////////////////////////////////////////////////////////////////////////
+	t.Run("cartesi_getMatchAdvanced", func(t *testing.T) {
+		method := getName(t.Name())
+
+		// failure: epoch_index not hex encoded -> invalid param
+		t.Run("malformedEpochIndex", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			app := uint64(1)
+			nr := uint64(0)
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getMatchAdvanced",
+				"params": {
+				"application": "%v",
+				"epoch_index": "%v"
+				},
+				"id": 0
+				}`, numberToName(app), nr))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
+			assert.Equal(t, "invalid epoch_index: expected hex encoded value", resp.Error.Message)
+		})
+
+		// failure: epoch not in the database -> resource not found
+		t.Run("absent", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(1)
+			nr := uint64(0)
+
+			appID := s.newTestApplication(ctx, t, 0, app)
+			err := s.repository.CreateEpoch(ctx, &model.Epoch{
+				ApplicationID:        appID,
+				Index:                nr,
+				OutputsMerkleRoot:    &common.Hash{},
+				ClaimTransactionHash: &common.Hash{},
+				Status:               model.EpochStatus_ClaimAccepted,
+			})
+			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getMatchAdvanced",
+				"params": {
+				"application": "%v",
+				"epoch_index": "0x%020x",
+				"tournament_address": "0x%040x",
+				"id_hash": "0x%040x",
+				"parent": "0x%040x"
+				},
+				"id": 0
+				}`, numberToName(app), nr+1, 0, 0, 0))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Match advanced not found", resp.Error.Message)
+		})
+
+		// success: commitment is in the database -> retrieve epoch
+		t.Run("present", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(1)
+			nr := uint64(2)
+			address := common.HexToAddress("0x03")
+			idHash := common.HexToHash("0x04")
+			parent := common.HexToHash("0x05")
+
+			appID := s.newTestApplication(ctx, t, 0, app)
+			err := s.repository.CreateEpoch(ctx, &model.Epoch{
+				ApplicationID:        appID,
+				Index:                nr,
+				OutputsMerkleRoot:    &common.Hash{},
+				ClaimTransactionHash: &common.Hash{},
+				Status:               model.EpochStatus_ClaimAccepted,
+			})
+			assert.Nil(t, err, "failed to create epoch. on test case: %v, application: %v, epoch_index: %v.", 0, appID, nr)
+
+			err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
+				ApplicationID: appID,
+				EpochIndex:    nr,
+				Address:       address,
+			})
+			assert.Nil(t, err, "failed to create tournament. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+
+			err = s.repository.CreateCommitment(ctx, numberToName(app), &model.Commitment{
+				ApplicationID:     appID,
+				EpochIndex:        nr,
+				TournamentAddress: address,
+			})
+			assert.Nil(t, err, "failed to create commitment. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+
+			err = s.repository.CreateMatch(ctx, numberToName(app), &model.Match{
+				ApplicationID:     appID,
+				EpochIndex:        nr,
+				TournamentAddress: address,
+				Winner:            model.WinnerCommitment_NONE,
+				DeletionReason:    model.MatchDeletionReason_TIMEOUT,
+				IDHash:            idHash,
+			})
+			assert.Nil(t, err, "failed to create match. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+
+			err = s.repository.CreateMatchAdvanced(ctx, numberToName(app), &model.MatchAdvanced{
+				ApplicationID:     appID,
+				EpochIndex:        nr,
+				TournamentAddress: address,
+				IDHash:            idHash,
+				OtherParent:       parent,
+			})
+			assert.Nil(t, err, "failed to create match advanced. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getMatchAdvanced",
+				"params": {
+				"application": "%v",
+				"epoch_index": "0x%020x",
+				"tournament_address": "0x%020x",
+				"id_hash": "0x%040x",
+				"parent": "0x%040x"
+				},
+				"id": 0
+				}`, numberToName(app), nr, address, idHash, parent))
+
+			resp := testRPCResponse[getMatchAdvancedResult]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, idHash, resp.Result.Data.IDHash)
+			assert.Equal(t, hex64(nr), resp.Result.Data.EpochIndex)
+		})
+	})
+
+	////////////////////////////////////////////////////////////////////////
+	// cartesi_listMatches
+	////////////////////////////////////////////////////////////////////////
+	t.Run("cartesi_listMatches", func(t *testing.T) {
+		method := getName(t.Name())
+
+		// failure: no match in the database -> no application
+		t.Run("absentApplication", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			nr := uint64(1)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listMatches",
+				"params": { "application": "%v" },
+				"id": 0
+				}`, numberToName(nr)))
+
+			resp := testRPCResponse[[]model.Match]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Application not found", resp.Error.Message)
+		})
+
+		// success: no match in the database -> 0
+		t.Run("empty", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			nr := uint64(1)
+			s.newTestApplication(ctx, t, 0, nr)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listMatches",
+				"params": { "application": "%v" },
+				"id": 0
+				}`, numberToName(nr)))
+
+			resp := testRPCResponse[[]model.Match]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, 0, len(resp.Result.Data))
+		})
+
+		// success: many matches
+		// create one application with many (epoch, matches) pairs.
+		// use their shared EpochIndex to check pagination.
+		t.Run("many", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(3)
+			appID := s.newTestApplication(ctx, t, 0, app)
+
+			many := uint64(100)
+			limit := uint64(many / 2)
+			for tnr := range many {
+				// populate the database with stub data
+				address := common.HexToAddress(hexutil.EncodeUint64(tnr))
+				idHash := common.HexToHash(hexutil.EncodeUint64(tnr))
+				commitmentOne := common.HexToHash(hexutil.EncodeUint64(tnr))
+				commitmentTwo := common.HexToHash(hexutil.EncodeUint64(tnr))
+
+				err := s.repository.CreateEpoch(ctx, &model.Epoch{
+					ApplicationID: appID,
+					Index:         tnr,
+					VirtualIndex:  tnr,
+					Status:        model.EpochStatus_ClaimAccepted,
+				})
+				assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, tnr)
+
+				err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
+					ApplicationID: appID,
+					EpochIndex:    tnr,
+					Address:       common.HexToAddress(hexutil.EncodeUint64(tnr)),
+				})
+				assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, tnr)
+
+				err = s.repository.CreateCommitment(ctx, numberToName(app), &model.Commitment{
+					ApplicationID:     appID,
+					EpochIndex:        tnr,
+					TournamentAddress: address,
+					Commitment:        commitmentOne,
+				})
+				assert.Nil(t, err, "failed to create commitment. on test case: %v, application: %v, epoch_index: %v", 0, appID, tnr)
+
+				err = s.repository.CreateMatch(ctx, numberToName(app), &model.Match{
+					ApplicationID:     appID,
+					EpochIndex:        tnr,
+					TournamentAddress: address,
+					Winner:            model.WinnerCommitment_NONE,
+					DeletionReason:    model.MatchDeletionReason_TIMEOUT,
+					IDHash:            idHash,
+					CommitmentOne:     commitmentOne,
+					CommitmentTwo:     commitmentTwo,
+				})
+				assert.Nil(t, err, "on test case: %v, application: %v, report_index: %v", 0, appID, tnr)
+			}
+
+			{ // offset == 0, descending = false
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listMatches",
+					"params": {
+					"application": "%v",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), limit, 0, false))
+
+				resp := testRPCResponse[[]listMatchesResult]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					nr := i
+					assert.Equal(t, nr, uint64(resp.Result.Data[i].EpochIndex))
+				}
+			}
+
+			{ // offset == 1, descending == false
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listMatches",
+					"params": {
+					"application": "%v",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), limit, 1, false))
+
+				resp := testRPCResponse[[]listMatchesResult]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					nr := i + 1
+					assert.Equal(t, nr, uint64(resp.Result.Data[i].EpochIndex))
+				}
+			}
+
+			{ // offset == 0, descending = true
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listMatches",
+					"params": {
+					"application": "%v",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), limit, 0, true))
+
+				resp := testRPCResponse[[]listMatchesResult]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					nr := many - i - 1
+					assert.Equal(t, nr, uint64(resp.Result.Data[i].EpochIndex))
+				}
+			}
+
+			{ // offset == 1, descending = true
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listMatches",
+					"params": {
+					"application": "%v",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), limit, 1, true))
+
+				resp := testRPCResponse[[]listMatchesResult]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					nr := many - i - 2
+					assert.Equal(t, nr, uint64(resp.Result.Data[i].EpochIndex))
+				}
+			}
+		})
+	})
+
+	////////////////////////////////////////////////////////////////////////
+	// cartesi_listMatchAdvances
+	////////////////////////////////////////////////////////////////////////
+	t.Run("cartesi_listMatchAdvances", func(t *testing.T) {
+		method := getName(t.Name())
+
+		// failure: no match advance in the database -> no application
+		t.Run("absentApplication", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			app := uint64(0)
+			nr := uint64(1)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listMatchAdvances",
+				"params": {
+				"application": "%v",
+				"epoch_index": "%v",
+				"tournament_address": "0x%020x",
+				"id_hash": "0x%020x"
+				},
+				"id": 0
+				}`, numberToName(app+1), hexutil.EncodeUint64(nr), 0, 0))
+
+			resp := testRPCResponse[[]listMatchesResult]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Application not found", resp.Error.Message)
+		})
+
+		// success: no tournament in the database -> 0
+		t.Run("empty", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(0)
+			nr := uint64(1)
+			s.newTestApplication(ctx, t, 0, app)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listMatchAdvances",
+				"params": {
+				"application": "%v",
+				"epoch_index": "%v",
+				"tournament_address": "0x%020x",
+				"id_hash": "0x%020x"
+				},
+				"id": 0
+				}`, numberToName(app), hexutil.EncodeUint64(nr), 0, 0))
+
+			resp := testRPCResponse[[]listMatchesResult]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, 0, len(resp.Result.Data))
+		})
+
+		// success: many match_advances
+		// create one tournament with many (match_advances) pairs.
+		t.Run("many", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(1)
+			appID := s.newTestApplication(ctx, t, 0, app)
+			enr := uint64(2)
+			tournamentAddress := common.HexToAddress(hexutil.EncodeUint64(enr))
+			commitment := common.HexToHash(hexutil.EncodeUint64(enr))
+			idHash := common.HexToHash(hexutil.EncodeUint64(enr))
+
+			err := s.repository.CreateEpoch(ctx, &model.Epoch{
+				ApplicationID: appID,
+				Index:         enr,
+				VirtualIndex:  enr,
+				Status:        model.EpochStatus_ClaimAccepted,
+			})
+			assert.Nil(t, err)
+
+			err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
+				ApplicationID: appID,
+				EpochIndex:    enr,
+				Address:       tournamentAddress,
+			})
+			assert.Nil(t, err)
+
+			err = s.repository.CreateCommitment(ctx, numberToName(app), &model.Commitment{
+				ApplicationID:     appID,
+				EpochIndex:        enr,
+				TournamentAddress: tournamentAddress,
+				Commitment:        commitment,
+			})
+			assert.Nil(t, err)
+
+			err = s.repository.CreateMatch(ctx, numberToName(app), &model.Match{
+				ApplicationID:     appID,
+				EpochIndex:        enr,
+				TournamentAddress: tournamentAddress,
+				IDHash:            idHash,
+				Winner:            model.WinnerCommitment_NONE,
+				DeletionReason:    model.MatchDeletionReason_NOT_DELETED,
+				CommitmentOne:     commitment,
+				CommitmentTwo:     commitment,
+			})
+			assert.Nil(t, err)
+
+			many := uint64(100)
+			limit := uint64(many / 2)
+			for nr := range many {
+				otherParent := common.HexToHash(hexutil.EncodeUint64(nr))
+				err = s.repository.CreateMatchAdvanced(ctx, numberToName(app), &model.MatchAdvanced{
+					ApplicationID:     appID,
+					EpochIndex:        enr,
+					TournamentAddress: tournamentAddress,
+					IDHash:            idHash,
+					OtherParent:       otherParent,
+				})
+				assert.Nil(t, err, "failed to create match advance, app: %v, nr: %v", app, nr)
+			}
+
+			{ // offset == 0, descending = false
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listMatchAdvances",
+					"params": {
+					"application": "%v",
+					"epoch_index": "0x%020x",
+					"tournament_address": "0x%020x",
+					"id_hash": "0x%020x",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), enr, tournamentAddress, idHash, limit, 0, false))
+
+				resp := testRPCResponse[[]listMatchAdvancedResult]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					nr := i
+					assert.Equal(t, common.HexToHash(hexutil.EncodeUint64(nr)), resp.Result.Data[i].OtherParent)
+				}
+			}
+
+			{ // offset == 1, descending == false
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listMatchAdvances",
+					"params": {
+					"application": "%v",
+					"epoch_index": "0x%020x",
+					"tournament_address": "0x%020x",
+					"id_hash": "0x%020x",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), enr, tournamentAddress, idHash, limit, 1, false))
+
+				resp := testRPCResponse[[]listMatchAdvancedResult]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					nr := i + 1
+					assert.Equal(t, common.HexToHash(hexutil.EncodeUint64(nr)), resp.Result.Data[i].OtherParent)
+				}
+			}
+
+			{ // offset == 0, descending = true
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listMatchAdvances",
+					"params": {
+					"application": "%v",
+					"epoch_index": "0x%020x",
+					"tournament_address": "0x%020x",
+					"id_hash": "0x%020x",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), enr, tournamentAddress, idHash, limit, 0, true))
+
+				resp := testRPCResponse[[]listMatchAdvancedResult]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					nr := many - i - 1
+					assert.Equal(t, common.HexToHash(hexutil.EncodeUint64(nr)), resp.Result.Data[i].OtherParent)
+				}
+			}
+
+			{ // offset == 1, descending = true
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listMatchAdvances",
+					"params": {
+					"application": "%v",
+					"epoch_index": "0x%020x",
+					"tournament_address": "0x%020x",
+					"id_hash": "0x%020x",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), enr, tournamentAddress, idHash, limit, 1, true))
+
+				resp := testRPCResponse[[]listMatchAdvancedResult]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					nr := many - i - 2
+					assert.Equal(t, common.HexToHash(hexutil.EncodeUint64(nr)), resp.Result.Data[i].OtherParent)
+				}
+			}
+		})
+	})
+
+	////////////////////////////////////////////////////////////////////////
+	// cartesi_listCommitments
+	////////////////////////////////////////////////////////////////////////
+	t.Run("cartesi_listCommitments", func(t *testing.T) {
+		method := getName(t.Name())
+
+		// failure: no commitment in the database -> no application
+		t.Run("absentApplication", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			app := uint64(0)
+			nr := uint64(1)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listCommitments",
+				"params": {
+				"application": "%v",
+				"epoch_index": "%v",
+				"tournament_address": "0x%020x",
+				"id_hash": "0x%020x"
+				},
+				"id": 0
+				}`, numberToName(app+1), hexutil.EncodeUint64(nr), 0, 0))
+
+			resp := testRPCResponse[[]listCommitmentResult]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Application not found", resp.Error.Message)
+		})
+
+		// success: no commitment in the database -> 0
+		t.Run("empty", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			nr := uint64(1)
+			s.newTestApplication(ctx, t, 0, nr)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listCommitments",
+				"params": { "application": "%v" },
+				"id": 0
+				}`, numberToName(nr)))
+
+			resp := testRPCResponse[[]listCommitmentResult]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, 0, len(resp.Result.Data))
+		})
+
+		// success: many commitments
+		// create one tournament with many commitments.
+		t.Run("many", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(1)
+			appID := s.newTestApplication(ctx, t, 0, app)
+			enr := uint64(2)
+			tournamentAddress := common.HexToAddress(hexutil.EncodeUint64(enr))
+
+			err := s.repository.CreateEpoch(ctx, &model.Epoch{
+				ApplicationID: appID,
+				Index:         enr,
+				VirtualIndex:  enr,
+				Status:        model.EpochStatus_ClaimAccepted,
+			})
+			assert.Nil(t, err)
+
+			err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
+				ApplicationID: appID,
+				EpochIndex:    enr,
+				Address:       tournamentAddress,
+			})
+			assert.Nil(t, err)
+
+			many := uint64(100)
+			limit := uint64(many / 2)
+			for nr := range many {
+				commitment := common.HexToHash(hexutil.EncodeUint64(nr))
+
+				err = s.repository.CreateCommitment(ctx, numberToName(app), &model.Commitment{
+					ApplicationID:     appID,
+					EpochIndex:        enr,
+					TournamentAddress: tournamentAddress,
+					Commitment:        commitment,
+				})
+				assert.Nil(t, err)
+			}
+
+			{ // offset == 0, descending = false
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listCommitments",
+					"params": {
+					"application": "%v",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), limit, 0, false))
+
+				resp := testRPCResponse[[]listCommitmentResult]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					nr := i
+					assert.Equal(t, common.HexToHash(hexutil.EncodeUint64(nr)), resp.Result.Data[i].Commitment)
+				}
+			}
+
+			{ // offset == 1, descending == false
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listCommitments",
+					"params": {
+					"application": "%v",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), limit, 1, false))
+
+				resp := testRPCResponse[[]listCommitmentResult]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					nr := i + 1
+					assert.Equal(t, common.HexToHash(hexutil.EncodeUint64(nr)), resp.Result.Data[i].Commitment)
+				}
+			}
+
+			{ // offset == 0, descending = true
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listCommitments",
+					"params": {
+					"application": "%v",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), limit, 0, true))
+
+				resp := testRPCResponse[[]listCommitmentResult]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					nr := many - i - 1
+					assert.Equal(t, common.HexToHash(hexutil.EncodeUint64(nr)), resp.Result.Data[i].Commitment)
+				}
+			}
+
+			{ // offset == 1, descending = true
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listCommitments",
+					"params": {
+					"application": "%v",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), limit, 1, true))
+
+				resp := testRPCResponse[[]listCommitmentResult]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					nr := many - i - 2
+					assert.Equal(t, common.HexToHash(hexutil.EncodeUint64(nr)), resp.Result.Data[i].Commitment)
+				}
+			}
+		})
 	})
 
 	// tested methods, implemented methods and discover methods must match:

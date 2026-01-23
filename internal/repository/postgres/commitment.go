@@ -175,9 +175,17 @@ func (r *PostgresRepository) ListCommitments(
 	sel = sel.WHERE(postgres.AND(conditions...))
 
 	if descending {
-		sel = sel.ORDER_BY(table.Commitments.EpochIndex.DESC())
+		sel = sel.ORDER_BY(
+			table.Commitments.ApplicationID.DESC(),
+			table.Commitments.EpochIndex.DESC(),
+			table.Commitments.TournamentAddress.DESC(),
+			table.Commitments.Commitment.DESC())
 	} else {
-		sel = sel.ORDER_BY(table.Commitments.EpochIndex.ASC())
+		sel = sel.ORDER_BY(
+			table.Commitments.ApplicationID.ASC(),
+			table.Commitments.EpochIndex.ASC(),
+			table.Commitments.TournamentAddress.ASC(),
+			table.Commitments.Commitment.ASC())
 	}
 
 	// Apply pagination

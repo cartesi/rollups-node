@@ -250,8 +250,7 @@ func handleListEpochs(s *Service, w http.ResponseWriter, r *http.Request, req RP
 		return
 	}
 
-	if len(epochs) == 0 && !s.applicationExists(w, r, req, params.Application) {
-		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Application not found", nil)
+	if len(epochs) == 0 && s.applicationAbsentOrError(w, r, req, params.Application) {
 		return
 	}
 	if epochs == nil {
@@ -280,21 +279,6 @@ func handleListEpochs(s *Service, w http.ResponseWriter, r *http.Request, req RP
 	}
 
 	writeRPCResult(w, req.ID, result)
-}
-
-func (s *Service) applicationExists(
-	w http.ResponseWriter,
-	r *http.Request,
-	req RPCRequest,
-	validatedNameOrAddress string,
-) bool {
-	app, err := s.repository.GetApplication(r.Context(), validatedNameOrAddress)
-	if err != nil {
-		s.Logger.Error("Unable to retrieve application from repository", "err", err)
-		writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
-		return false
-	}
-	return app != nil
 }
 
 func parseIndex(indexString string, field string) (uint64, error) {
@@ -438,8 +422,7 @@ func handleListInputs(s *Service, w http.ResponseWriter, r *http.Request, req RP
 		writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
 		return
 	}
-	if len(inputs) == 0 && !s.applicationExists(w, r, req, params.Application) {
-		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Application not found", nil)
+	if len(inputs) == 0 && s.applicationAbsentOrError(w, r, req, params.Application) {
 		return
 	}
 
@@ -654,8 +637,7 @@ func handleListOutputs(s *Service, w http.ResponseWriter, r *http.Request, req R
 		resultOutputs = append(resultOutputs, decoded)
 	}
 
-	if len(resultOutputs) == 0 && !s.applicationExists(w, r, req, params.Application) {
-		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Application not found", nil)
+	if len(resultOutputs) == 0 && s.applicationAbsentOrError(w, r, req, params.Application) {
 		return
 	}
 
@@ -782,8 +764,7 @@ func handleListReports(s *Service, w http.ResponseWriter, r *http.Request, req R
 		return
 	}
 
-	if len(reports) == 0 && !s.applicationExists(w, r, req, params.Application) {
-		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Application not found", nil)
+	if len(reports) == 0 && s.applicationAbsentOrError(w, r, req, params.Application) {
 		return
 	}
 	if reports == nil {
@@ -923,6 +904,9 @@ func handleListTournaments(s *Service, w http.ResponseWriter, r *http.Request, r
 		writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
 		return
 	}
+	if len(tournaments) == 0 && s.applicationAbsentOrError(w, r, req, params.Application) {
+		return
+	}
 	if tournaments == nil {
 		tournaments = []*model.Tournament{}
 	}
@@ -1043,6 +1027,9 @@ func handleListCommitments(s *Service, w http.ResponseWriter, r *http.Request, r
 		writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
 		return
 	}
+	if len(commitments) == 0 && s.applicationAbsentOrError(w, r, req, params.Application) {
+		return
+	}
 	if commitments == nil {
 		commitments = []*model.Commitment{}
 	}
@@ -1096,6 +1083,10 @@ func handleGetCommitment(s *Service, w http.ResponseWriter, r *http.Request, req
 		return
 	}
 
+	if len(params.Commitment) == 0 {
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid commitment hex: Empty string", nil)
+		return
+	}
 	if _, err := hex.DecodeString(params.Commitment); err != nil {
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid commitment hex: %v", err), nil)
 		return
@@ -1171,6 +1162,9 @@ func handleListMatches(s *Service, w http.ResponseWriter, r *http.Request, req R
 	if err != nil {
 		s.Logger.Error("Unable to retrieve matches from repository", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return
+	}
+	if len(matches) == 0 && s.applicationAbsentOrError(w, r, req, params.Application) {
 		return
 	}
 	if matches == nil {
@@ -1303,6 +1297,9 @@ func handleListMatchAdvances(s *Service, w http.ResponseWriter, r *http.Request,
 		writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
 		return
 	}
+	if len(matchAdvances) == 0 && s.applicationAbsentOrError(w, r, req, params.Application) {
+		return
+	}
 	if matchAdvances == nil {
 		matchAdvances = []*model.MatchAdvanced{}
 	}
@@ -1367,7 +1364,7 @@ func handleGetMatchAdvanced(s *Service, w http.ResponseWriter, r *http.Request, 
 	}
 
 	matchAdvanced, err := s.repository.GetMatchAdvanced(r.Context(), params.Application, epochIndex,
-		params.TournamentAddress, params.IDHash, params.Parent)
+		params.TournamentAddress, params.IDHash, params.Parent[2:]) // TODO: use parsed value
 	if err != nil {
 		s.Logger.Error("Unable to retrieve match advanced from repository", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
@@ -1417,4 +1414,22 @@ func handleGetNodeVersion(_ *Service, w http.ResponseWriter, _ *http.Request, re
 	}
 
 	writeRPCResult(w, req.ID, result)
+}
+
+func (s *Service) applicationAbsentOrError(
+	w http.ResponseWriter,
+	r *http.Request,
+	req RPCRequest,
+	validatedNameOrAddress string,
+) bool {
+	app, err := s.repository.GetApplication(r.Context(), validatedNameOrAddress)
+	if err != nil {
+		s.Logger.Error("Unable to retrieve application from repository", "err", err)
+		writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return true
+	} else if app == nil {
+		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Application not found", nil)
+		return true
+	}
+	return false
 }

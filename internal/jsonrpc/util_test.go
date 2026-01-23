@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
@@ -148,4 +149,106 @@ func emptyInput() []byte {
 func emptyVoucher() []byte {
 	raw, _ := hexutil.Decode("0x237a816f000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb9226600000000000000000000000000000000000000000000000000000000deadbeef00000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000") //nolint: lll
 	return raw
+}
+
+type listTournamentsResult struct {
+	EpochIndex              hex64           `json:"epoch_index"`
+	Address                 common.Address  `json:"address"`
+	ParentTournamentAddress *common.Address `json:"parent_tournament_address"`
+	ParentMatchIDHash       *common.Hash    `json:"parent_match_id_hash"`
+	MaxLevel                hex64           `json:"max_level"`
+	Level                   hex64           `json:"level"`
+	Log2Step                hex64           `json:"log2step"`
+	Height                  hex64           `json:"height"`
+	WinnerCommitment        *common.Hash    `json:"winner_commitment"`
+	FinalStateHash          *common.Hash    `json:"final_state_hash"`
+	FinishedAtBlock         hex64           `json:"finished_at_block"`
+	CreatedAt               time.Time       `json:"created_at"`
+	UpdatedAt               time.Time       `json:"updated_at"`
+}
+
+type getCommitmentResult struct {
+	ApplicationID     hex64          `sql:"primary_key" json:"-"`
+	EpochIndex        hex64          `sql:"primary_key" json:"epoch_index"`
+	TournamentAddress common.Address `sql:"primary_key" json:"tournament_address"`
+	Commitment        common.Hash    `sql:"primary_key" json:"commitment"`
+	FinalStateHash    common.Hash    `json:"final_state_hash"`
+	SubmitterAddress  common.Address `json:"submitter_address"`
+	BlockNumber       hex64          `json:"block_number"`
+	TxHash            common.Hash    `json:"tx_hash"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+}
+
+type getMatchResult struct {
+	EpochIndex          hex64                     `json:"epoch_index"`
+	BlockNumber         hex64                     `json:"block_number"`
+	DeletionBlockNumber hex64                     `json:"deletion_block_number"`
+	TournamentAddress   common.Address            `json:"tournament_address"`
+	IDHash              common.Hash               `json:"id_hash"`
+	CommitmentOne       common.Hash               `json:"commitment_one"`
+	CommitmentTwo       common.Hash               `json:"commitment_two"`
+	LeftOfTwo           common.Hash               `json:"left_of_two"`
+	TxHash              common.Hash               `json:"tx_hash"`
+	Winner              model.WinnerCommitment    `json:"winner_commitment"`
+	DeletionReason      model.MatchDeletionReason `json:"deletion_reason"`
+	DeletionTxHash      common.Hash               `json:"deletion_tx_hash"`
+	CreatedAt           time.Time                 `json:"created_at"`
+	UpdatedAt           time.Time                 `json:"updated_at"`
+}
+
+type getMatchAdvancedResult struct {
+	ApplicationID     hex64          `json:"-"`
+	EpochIndex        hex64          `json:"epoch_index"`
+	TournamentAddress common.Address `json:"tournament_address"`
+	IDHash            common.Hash    `json:"id_hash"`
+	OtherParent       common.Hash    `json:"other_parent"`
+	LeftNode          common.Hash    `json:"left_node"`
+	BlockNumber       hex64          `json:"block_number"`
+	TxHash            common.Hash    `json:"tx_hash"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+}
+
+type listMatchesResult struct {
+	EpochIndex          hex64                     `json:"epoch_index"`
+	BlockNumber         hex64                     `json:"block_number"`
+	DeletionBlockNumber hex64                     `json:"deletion_block_number"`
+	TournamentAddress   common.Address            `json:"tournament_address"`
+	IDHash              common.Hash               `json:"id_hash"`
+	CommitmentOne       common.Hash               `json:"commitment_one"`
+	CommitmentTwo       common.Hash               `json:"commitment_two"`
+	LeftOfTwo           common.Hash               `json:"left_of_two"`
+	TxHash              common.Hash               `json:"tx_hash"`
+	Winner              model.WinnerCommitment    `json:"winner_commitment"`
+	DeletionReason      model.MatchDeletionReason `json:"deletion_reason"`
+	DeletionTxHash      common.Hash               `json:"deletion_tx_hash"`
+	CreatedAt           time.Time                 `json:"created_at"`
+	UpdatedAt           time.Time                 `json:"updated_at"`
+}
+
+type listMatchAdvancedResult struct {
+	ApplicationID     hex64          `json:"-"`
+	EpochIndex        hex64          `json:"epoch_index"`
+	TournamentAddress common.Address `json:"tournament_address"`
+	IDHash            common.Hash    `json:"id_hash"`
+	OtherParent       common.Hash    `json:"other_parent"`
+	LeftNode          common.Hash    `json:"left_node"`
+	BlockNumber       hex64          `json:"block_number"`
+	TxHash            common.Hash    `json:"tx_hash"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+}
+
+type listCommitmentResult struct {
+	ApplicationID     hex64          `json:"-"`
+	EpochIndex        hex64          `json:"epoch_index"`
+	TournamentAddress common.Address `json:"tournament_address"`
+	Commitment        common.Hash    `json:"commitment"`
+	FinalStateHash    common.Hash    `json:"final_state_hash"`
+	SubmitterAddress  common.Address `json:"submitter_address"`
+	BlockNumber       hex64          `json:"block_number"`
+	TxHash            common.Hash    `json:"tx_hash"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
 }

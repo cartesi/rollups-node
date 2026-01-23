@@ -184,9 +184,19 @@ func (r *PostgresRepository) ListMatchAdvances(
 	sel = sel.WHERE(postgres.AND(conditions...))
 
 	if descending {
-		sel = sel.ORDER_BY(table.MatchAdvances.EpochIndex.DESC())
+		sel = sel.ORDER_BY(
+			table.MatchAdvances.ApplicationID.DESC(),
+			table.MatchAdvances.EpochIndex.DESC(),
+			table.MatchAdvances.TournamentAddress.DESC(),
+			table.MatchAdvances.IDHash.DESC(),
+			table.MatchAdvances.OtherParent.DESC())
 	} else {
-		sel = sel.ORDER_BY(table.MatchAdvances.EpochIndex.ASC())
+		sel = sel.ORDER_BY(
+			table.MatchAdvances.ApplicationID.ASC(),
+			table.MatchAdvances.EpochIndex.ASC(),
+			table.MatchAdvances.TournamentAddress.ASC(),
+			table.MatchAdvances.IDHash.ASC(),
+			table.MatchAdvances.OtherParent.ASC())
 	}
 
 	// Apply pagination
