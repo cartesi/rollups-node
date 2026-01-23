@@ -17,7 +17,7 @@ import (
 )
 
 var Cmd = &cobra.Command{
-	Use:     "epochs [application-name-or-address]",
+	Use:     "epochs [application-name-or-address] [epoch-index]",
 	Short:   "Reads epochs",
 	Example: examples,
 	Args:    cobra.RangeArgs(1, 2), // nolint: mnd
