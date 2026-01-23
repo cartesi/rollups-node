@@ -4,6 +4,7 @@
 package read
 
 import (
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/commitments"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/epochs"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/inputs"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/outputs"
@@ -24,4 +25,5 @@ func init() {
 	Cmd.AddCommand(outputs.Cmd)
 	Cmd.AddCommand(reports.Cmd)
 	Cmd.AddCommand(tournaments.Cmd)
+	Cmd.AddCommand(commitments.Cmd)
 }
