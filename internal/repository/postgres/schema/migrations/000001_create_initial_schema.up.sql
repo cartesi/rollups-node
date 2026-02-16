@@ -70,7 +70,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 
 CREATE TABLE "application"
 (
-    "id" SERIAL,
+    "id" INT GENERATED ALWAYS AS IDENTITY,
     "name" VARCHAR(4096) UNIQUE NOT NULL CHECK ("name" ~ '^[a-z0-9_-]+$'),
     "iapplication_address" ethereum_address UNIQUE NOT NULL,
     "iconsensus_address" ethereum_address NOT NULL,
@@ -143,7 +143,9 @@ CREATE TABLE "epoch"
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT "epoch_pkey" PRIMARY KEY ("application_id", "index"),
     CONSTRAINT "epoch_application_id_virtual_index_unique" UNIQUE ("application_id", "virtual_index"),
-    CONSTRAINT "epoch_application_id_fkey" FOREIGN KEY ("application_id") REFERENCES "application"("id") ON DELETE CASCADE
+    CONSTRAINT "epoch_application_id_fkey" FOREIGN KEY ("application_id") REFERENCES "application"("id") ON DELETE CASCADE,
+    CONSTRAINT "epoch_block_bounds_check" CHECK ("first_block" <= "last_block"),
+    CONSTRAINT "epoch_input_bounds_check" CHECK ("input_index_lower_bound" <= "input_index_upper_bound")
 );
 
 CREATE INDEX "epoch_last_block_idx" ON "epoch"("application_id", "last_block");
@@ -258,7 +260,8 @@ CREATE TABLE "tournaments"
         ("level" = 0 AND "parent_tournament_address" IS NULL AND "parent_match_id_hash" IS NULL)
         OR
         ("level" > 0 AND "parent_tournament_address" IS NOT NULL AND "parent_match_id_hash" IS NOT NULL)
-      )
+      ),
+    CONSTRAINT "tournaments_max_level_gte_level_check" CHECK ("max_level" >= "level")
 );
 
 CREATE INDEX "tournaments_epoch_idx"
