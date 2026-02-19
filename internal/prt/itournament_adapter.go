@@ -45,8 +45,10 @@ func NewITournamentAdapter(
 func (a *ITournamentAdapterImpl) Result(opts *bind.CallOpts) (bool, [32]byte, [32]byte, error) {
 	result, err := a.tournament.ArbitrationResult(opts)
 	// ArbitrationResult reverts when it has finished with no winners
-	if info, ok := ExtractJsonErrorInfo(err); ok && info.HasData && info.Data == TournamentFailedNoWinner {
-		return true, [32]byte{}, [32]byte{}, nil
+	if info, ok := ExtractJsonErrorInfo(err); ok && info.HasData {
+		if dataStr, ok := info.Data.(string); ok && dataStr == TournamentFailedNoWinner {
+			return true, [32]byte{}, [32]byte{}, nil
+		}
 	}
 	return result.Finished, result.WinnerCommitment, result.FinalState, err
 }
