@@ -33,7 +33,7 @@ type Service struct {
 	submissionEnabled bool
 	filter            ethutil.Filter
 	txOpts            *bind.TransactOpts
-	currentEpochIndex uint64
+	currentEpochIndex map[int64]uint64       // application.ID -> epochIndex
 	settleInFlight    map[int64]*common.Hash // application.ID -> txHash
 	joinInFlight      map[int64]*common.Hash // application.ID -> txHash
 }
@@ -94,6 +94,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		Logger:       s.Logger,
 	}
 
+	s.currentEpochIndex = map[int64]uint64{}
 	s.settleInFlight = map[int64]*common.Hash{}
 	s.joinInFlight = map[int64]*common.Hash{}
 

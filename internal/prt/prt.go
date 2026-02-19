@@ -245,6 +245,7 @@ func (s *Service) createTournament(
 			return nil, err
 		}
 		if !finished {
+			err := fmt.Errorf("epoch %d: %s tournament %s should be finished but is not", epoch.Index, level.String(), tournamentAddress.String())
 			s.Logger.Error(level.String()+" tournament should be finished", "application", app.Name,
 				"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
 			return nil, err
@@ -389,6 +390,12 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 	}
 
 	for _, epoch := range epochs {
+		if epoch.TournamentAddress == nil || epoch.Commitment == nil ||
+			epoch.MachineHash == nil || epoch.OutputsMerkleRoot == nil {
+			return s.setApplicationInoperable(ctx, app,
+				"epoch %d has missing required fields for ClaimComputed status", epoch.Index)
+		}
+
 		if epoch.ClaimTransactionHash == nil { // epoch not claimed on-chain yet
 			err = s.fetchTournamentData(ctx, app, epoch, RootLevel, nil, nil, *epoch.TournamentAddress, mostRecentBlock)
 			if err != nil {
@@ -416,6 +423,7 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 			if err != nil {
 				continue // Skip logs that don't match
 			}
+			break
 		}
 		if event == nil {
 			return fmt.Errorf("failed to find EpochSealed event in receipt logs")
@@ -504,6 +512,7 @@ func (s *Service) fetchTournamentData(
 		if err != nil {
 			s.Logger.Error("failed to check if "+level.String()+" tournament was finished", "application", app.Name,
 				"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
+			return err
 		}
 		if t.FinishedAtBlock != 0 {
 			s.Logger.Info("Found finished "+level.String()+" tournament", "application", app.Name,
@@ -605,9 +614,14 @@ func (s *Service) fetchTournamentData(
 }
 
 func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlock uint64) error {
+	if _, exist := s.currentEpochIndex[app.ID]; !exist {
+		s.currentEpochIndex[app.ID] = 0
+	}
+	currentEpochIndex := s.currentEpochIndex[app.ID]
+
 	if tx, joinTxIsInFlight := s.joinInFlight[app.ID]; joinTxIsInFlight {
 		s.Logger.Debug("Waiting for join tournament transaction to be mined", "application", app.Name,
-			"epoch_index", s.currentEpochIndex, "tx", tx)
+			"epoch_index", currentEpochIndex, "tx", tx)
 		return nil // wait for settle to be mined
 	}
 
@@ -622,16 +636,16 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 		_, isPending, err := ethClient.TransactionByHash(ctx, *tx)
 		if err != nil {
 			s.Logger.Error("failed to fetch last settle transaction status", "application", app.Name,
-				"epoch_index", s.currentEpochIndex, "tx", tx, "error", err)
+				"epoch_index", currentEpochIndex, "tx", tx, "error", err)
 			return err
 		}
 		if isPending {
 			s.Logger.Debug("Previous settle transaction is still pending", "application", app.Name,
-				"epoch_index", s.currentEpochIndex, "tx", tx)
+				"epoch_index", currentEpochIndex, "tx", tx)
 			return nil
 		}
 		s.Logger.Debug("Previous settle transaction has been mined", "application", app.Name,
-			"epoch_index", s.currentEpochIndex, "tx", tx)
+			"epoch_index", currentEpochIndex, "tx", tx)
 		delete(s.settleInFlight, app.ID)
 	}
 
@@ -654,23 +668,29 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 		return err
 	}
 
-	s.currentEpochIndex = result.EpochNumber.Uint64()
+	currentEpochIndex = result.EpochNumber.Uint64()
+	s.currentEpochIndex[app.ID] = currentEpochIndex
 
 	if !result.IsFinished {
 		s.Logger.Debug("Epoch root tournament has not finished yet. Skipping Settle",
-			"application", app.Name, "epoch_index", s.currentEpochIndex)
+			"application", app.Name, "epoch_index", currentEpochIndex)
 		return nil // nothing to do
 	}
 
-	epoch, err := s.repository.GetEpoch(ctx, app.IApplicationAddress.Hex(), s.currentEpochIndex)
+	epoch, err := s.repository.GetEpoch(ctx, app.IApplicationAddress.Hex(), currentEpochIndex)
 	if err != nil {
 		s.Logger.Error("failed to list epochs", "application", app.Name, "error", err)
 		return err
 	}
 	if epoch == nil || epoch.Status != EpochStatus_ClaimComputed {
 		s.Logger.Info("Application sync has not finished. Skipping Settle", "application", app.Name,
-			"epoch_index", s.currentEpochIndex)
+			"epoch_index", currentEpochIndex)
 		return nil // nothing to do
+	}
+
+	if epoch.OutputsMerkleRoot == nil || epoch.OutputsMerkleProof == nil {
+		return s.setApplicationInoperable(ctx, app,
+			"epoch %d has missing required fields for settlement", epoch.Index)
 	}
 
 	s.Logger.Info("Sending Settle transaction", "application", app.Name, "epoch_index", epoch.Index,
@@ -690,9 +710,15 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 }
 
 func (s *Service) reactToTournament(ctx context.Context, app *Application, mostRecentBlock uint64) error {
+	currentEpochIndex, exist := s.currentEpochIndex[app.ID]
+	if !exist {
+		errMsg := "current epoch index not found for application. Should not happen."
+		s.Logger.Error(errMsg, "application", app.Name)
+		return errors.New(errMsg)
+	}
 	if tx, settleTxIsInFlight := s.settleInFlight[app.ID]; settleTxIsInFlight {
 		s.Logger.Debug("Waiting for settle transaction to be mined", "application", app.Name,
-			"epoch_index", s.currentEpochIndex, "tx", tx)
+			"epoch_index", currentEpochIndex, "tx", tx)
 		return nil // wait for settle to be mined
 	}
 
@@ -706,41 +732,47 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 		_, isPending, err := ethClient.TransactionByHash(ctx, *tx)
 		if err != nil {
 			s.Logger.Error("failed to fetch last join tournament transaction status", "application", app.Name,
-				"epoch_index", s.currentEpochIndex, "tx", tx, "error", err)
+				"epoch_index", currentEpochIndex, "tx", tx, "error", err)
 			return err
 		}
 		if isPending {
 			s.Logger.Debug("Previous join tournament transaction is still pending", "application", app.Name,
-				"epoch_index", s.currentEpochIndex, "tx", tx)
+				"epoch_index", currentEpochIndex, "tx", tx)
 			return nil
 		}
 		s.Logger.Debug("Previous join tournament transaction has been mined", "application", app.Name,
-			"epoch_index", s.currentEpochIndex, "tx", tx)
+			"epoch_index", currentEpochIndex, "tx", tx)
 		delete(s.joinInFlight, app.ID)
 	}
 
-	epoch, err := s.repository.GetEpoch(ctx, app.IApplicationAddress.Hex(), s.currentEpochIndex)
+	epoch, err := s.repository.GetEpoch(ctx, app.IApplicationAddress.Hex(), currentEpochIndex)
 	if err != nil {
 		s.Logger.Error("failed to list epochs", "application", app.Name, "error", err)
 		return err
 	}
 	if epoch == nil || epoch.Status != EpochStatus_ClaimComputed {
 		s.Logger.Debug("Application sync has not finished. Skipping join tournament", "application", app.Name,
-			"epoch_index", s.currentEpochIndex)
+			"epoch_index", currentEpochIndex)
 		return nil // nothing to do
+	}
+
+	if epoch.TournamentAddress == nil || epoch.Commitment == nil ||
+		epoch.MachineHash == nil || epoch.CommitmentProof == nil {
+		return s.setApplicationInoperable(ctx, app,
+			"epoch %d has missing required fields for tournament reaction", epoch.Index)
 	}
 
 	commitment, err := s.repository.GetCommitment(ctx, app.IApplicationAddress.Hex(), epoch.Index,
 		epoch.TournamentAddress.Hex(), epoch.Commitment.String())
 	if err != nil {
 		s.Logger.Error("failed to get commitment from repository", "application", app.Name,
-			"epoch_index", s.currentEpochIndex, "tournament", epoch.TournamentAddress.Hex(),
+			"epoch_index", currentEpochIndex, "tournament", epoch.TournamentAddress.Hex(),
 			"commitment", epoch.Commitment.Hex(), "error", err)
 		return err
 	}
 	if commitment != nil {
 		s.Logger.Debug("Commitment already joined. Skipping JoinTournament", "application", app.Name,
-			"epoch_index", s.currentEpochIndex, "tournament", epoch.TournamentAddress.Hex(), "commitment", epoch.Commitment.Hex())
+			"epoch_index", currentEpochIndex, "tournament", epoch.TournamentAddress.Hex(), "commitment", epoch.Commitment.Hex())
 		return nil
 	}
 
@@ -758,7 +790,7 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 	bondValue, err := tournament.BondValue(callOpts)
 	if err != nil {
 		s.Logger.Error("failed to fetch tournament bond value", "application", app.Name,
-			"epoch_index", s.currentEpochIndex, "tournament", epoch.TournamentAddress.Hex(),
+			"epoch_index", currentEpochIndex, "tournament", epoch.TournamentAddress.Hex(),
 			"error", err)
 		return err
 	}
@@ -770,7 +802,7 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 	idx := uint64(1<<48) - 1 //nolint: mnd
 	leftNode, rightNode, err := merkle.RootChildrenFromProof(*epoch.MachineHash, epoch.CommitmentProof, idx)
 	if err != nil {
-		s.Logger.Error("failed to compute left and right nodes from commitment proof", "application", app.Name, "epoch_index", s.currentEpochIndex, "error", err)
+		s.Logger.Error("failed to compute left and right nodes from commitment proof", "application", app.Name, "epoch_index", currentEpochIndex, "error", err)
 		return err
 	}
 
@@ -780,7 +812,7 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 		asBytes32Slice(epoch.CommitmentProof), leftNode, rightNode)
 	if err != nil {
 		s.Logger.Error("failed to send join tournament transaction", "application", app.Name,
-			"epoch_index", s.currentEpochIndex, "error", err)
+			"epoch_index", currentEpochIndex, "error", err)
 		return err
 	}
 	joinTx := tx.Hash()
