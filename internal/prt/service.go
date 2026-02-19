@@ -163,6 +163,6 @@ func (s *Service) setupPersistentConfig(
 		return &config.Value, nil
 	}
 
-	s.Logger.Error("Could not retrieve persistent config from Database. %w", "error", err)
+	s.Logger.Error("could not retrieve persistent config from database", "error", err)
 	return nil, err
 }
