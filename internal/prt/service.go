@@ -112,7 +112,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	s.joinInFlight = map[int64]*common.Hash{}
 
 	if s.submissionEnabled {
-		s.txOpts, err = auth.GetTransactOpts(chainID)
+		s.txOpts, err = auth.GetTransactOpts(ctx, chainID)
 		if err != nil {
 			return nil, err
 		}
@@ -136,6 +136,9 @@ func (s *Service) Tick() []error {
 	// validate each application
 	errs := []error{}
 	for idx := range apps {
+		if s.Context.Err() != nil {
+			return errs
+		}
 		if err := s.validateApplication(s.Context, apps[idx]); err != nil {
 			errs = append(errs, err)
 		}

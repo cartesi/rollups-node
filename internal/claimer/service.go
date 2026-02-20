@@ -90,7 +90,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 
 	var txOpts *bind.TransactOpts = nil
 	if s.submissionEnabled {
-		txOpts, err = auth.GetTransactOpts(chainId)
+		txOpts, err = auth.GetTransactOpts(ctx, chainId)
 		if err != nil {
 			return nil, err
 		}

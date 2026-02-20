@@ -21,7 +21,7 @@ import (
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
-func GetTransactOpts(chainId *big.Int) (*bind.TransactOpts, error) {
+func GetTransactOpts(ctx context.Context, chainId *big.Int) (*bind.TransactOpts, error) {
 	authKind, err := GetAuthKind()
 	if err != nil {
 		return nil, err
@@ -52,7 +52,7 @@ func GetTransactOpts(chainId *big.Int) (*bind.TransactOpts, error) {
 		}
 		return bind.NewKeyedTransactorWithChainID(key, chainId)
 	case AuthKindAWS:
-		awsc, err := aws_cfg.LoadDefaultConfig(context.Background())
+		awsc, err := aws_cfg.LoadDefaultConfig(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -62,7 +62,7 @@ func GetTransactOpts(chainId *big.Int) (*bind.TransactOpts, error) {
 			return nil, err
 		}
 		return signtx.CreateAWSTransactOpts(
-			context.Background(),
+			ctx,
 			kmsConfig,
 			aws.String(authAwsKmsKeyId.Value),
 			types.NewEIP155Signer(chainId),

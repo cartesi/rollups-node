@@ -155,7 +155,7 @@ func run(cmd *cobra.Command, args []string) {
 	chainId, err := client.ChainID(ctx)
 	cobra.CheckErr(err)
 
-	txOpts, err := auth.GetTransactOpts(chainId)
+	txOpts, err := auth.GetTransactOpts(ctx, chainId)
 	cobra.CheckErr(err)
 
 	// Ask for confirmation unless --yes flag is set

@@ -95,7 +95,7 @@ func run(cmd *cobra.Command, args []string) {
 	chainId, err := client.ChainID(ctx)
 	cobra.CheckErr(err)
 
-	txOpts, err := auth.GetTransactOpts(chainId)
+	txOpts, err := auth.GetTransactOpts(ctx, chainId)
 	cobra.CheckErr(err)
 
 	if !skipConfirmation {
