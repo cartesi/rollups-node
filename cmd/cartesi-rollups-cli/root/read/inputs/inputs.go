@@ -5,6 +5,7 @@ package inputs
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -159,6 +160,10 @@ func run(cmd *cobra.Command, args []string) {
 
 		input, err := repo.GetInput(ctx, nameOrAddress, inputIndex)
 		cobra.CheckErr(err)
+
+		if input == nil {
+			cobra.CheckErr(errors.New("not found"))
+		}
 
 		// Create decoded input
 		decoded, _ := jsonrpc.DecodeInput(input, parsedAbi)

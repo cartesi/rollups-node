@@ -5,6 +5,7 @@ package reports
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -96,6 +97,9 @@ func run(cmd *cobra.Command, args []string) {
 
 		report, err := repo.GetReport(ctx, nameOrAddress, reportIndex)
 		cobra.CheckErr(err)
+		if report == nil {
+			cobra.CheckErr(errors.New("not found"))
+		}
 
 		// Format response to match JSON-RPC API
 		response := struct {

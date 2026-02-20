@@ -5,6 +5,7 @@ package commitments
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -113,6 +114,9 @@ func run(cmd *cobra.Command, args []string) {
 
 		commitment, err := repo.GetCommitment(ctx, nameOrAddress, epochIndex, tournamentAddressHex, commitmentHashHex)
 		cobra.CheckErr(err)
+		if commitment == nil {
+			cobra.CheckErr(errors.New("not found"))
+		}
 
 		// Format response to match JSON-RPC API
 		response := struct {

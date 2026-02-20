@@ -5,6 +5,7 @@ package epochs
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -135,6 +136,9 @@ func run(cmd *cobra.Command, args []string) {
 		}
 		epoch, err := repo.GetEpoch(ctx, nameOrAddress, epochIndex)
 		cobra.CheckErr(err)
+		if epoch == nil {
+			cobra.CheckErr(errors.New("not found"))
+		}
 
 		// Format response to match JSON-RPC API
 		response := struct {

@@ -5,6 +5,7 @@ package tournaments
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -109,6 +110,9 @@ func run(cmd *cobra.Command, args []string) {
 
 		tournament, err := repo.GetTournament(ctx, nameOrAddress, tournamentAddressHex)
 		cobra.CheckErr(err)
+		if tournament == nil {
+			cobra.CheckErr(errors.New("not found"))
+		}
 
 		// Format response to match JSON-RPC API
 		response := struct {

@@ -5,6 +5,7 @@ package matches
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -113,6 +114,9 @@ func run(cmd *cobra.Command, args []string) {
 
 		match, err := repo.GetMatch(ctx, nameOrAddress, epochIndex, tournamentAddressHex, idHashHex)
 		cobra.CheckErr(err)
+		if match == nil {
+			cobra.CheckErr(errors.New("not found"))
+		}
 
 		// Format response to match JSON-RPC API
 		response := struct {

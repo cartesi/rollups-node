@@ -5,6 +5,7 @@ package outputs
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -108,6 +109,9 @@ func run(cmd *cobra.Command, args []string) {
 
 		output, err := repo.GetOutput(ctx, nameOrAddress, outputIndex)
 		cobra.CheckErr(err)
+		if output == nil {
+			cobra.CheckErr(errors.New("not found"))
+		}
 
 		// Create decoded output
 		decoded, _ := jsonrpc.DecodeOutput(output, parsedAbi)
