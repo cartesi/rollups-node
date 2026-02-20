@@ -44,6 +44,8 @@ func ExtractJsonErrorInfo(err error) (JSONRPCInfo, bool) {
 	return out, out.HasCode || out.HasData
 }
 
-func asBytes32Slice(proof []common.Hash) [][32]byte {
-	return *(*[][32]byte)(unsafe.Pointer(&proof))
+// hashSliceToByteSlice converts []common.Hash to [][32]byte without copying.
+// This is safe because common.Hash is defined as [32]byte, so the memory layout is identical.
+func hashSliceToByteSlice(b []common.Hash) [][32]byte {
+	return *(*[][32]byte)(unsafe.Pointer(&b))
 }

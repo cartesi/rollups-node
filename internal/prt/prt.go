@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"math/big"
 	"time"
-	"unsafe"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -43,7 +42,8 @@ type prtRepository interface {
 	StoreTournamentEvents(ctx context.Context, appID int64, commitments []*Commitment, matches []*Match,
 		matchAdvanced []*MatchAdvanced, matchDeleted []*Match, lastBlock uint64) error
 
-	GetCommitment(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string, commitmentHex string) (*Commitment, error)
+	GetCommitment(ctx context.Context, nameOrAddress string, epochIndex uint64,
+		tournamentAddress string, commitmentHex string) (*Commitment, error)
 
 	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
@@ -410,6 +410,8 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 					"epoch", epoch.Index, "tournament", epoch.TournamentAddress.String(), "error", err)
 				return err
 			}
+			// if this epoch is not claimed on-chain yet, all other epochs with higher index should not be claimed either, so we can
+			// stop processing here.
 			break
 		}
 
@@ -690,7 +692,7 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 		"outputs_merkle_root", epoch.OutputsMerkleRoot.String())
 
 	tx, err := consensus.Settle(s.txOpts, result.EpochNumber,
-		*epoch.OutputsMerkleRoot, hashSliceTobyteSlice(epoch.OutputsMerkleProof))
+		*epoch.OutputsMerkleRoot, hashSliceToByteSlice(epoch.OutputsMerkleProof))
 	if err != nil {
 		s.Logger.Error("failed to send Settle transaction", "application", app.Name,
 			"epoch_index", result.EpochNumber.Uint64(), "error", err)
@@ -705,7 +707,7 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 func (s *Service) reactToTournament(ctx context.Context, app *Application, mostRecentBlock uint64) error {
 	currentEpochIndex, exist := s.currentEpochIndex[app.ID]
 	if !exist {
-		errMsg := "current epoch index not found for application. Should not happen."
+		errMsg := "current epoch index not found for application. Should not happen"
 		s.Logger.Error(errMsg, "application", app.Name)
 		return errors.New(errMsg)
 	}
@@ -789,14 +791,16 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 	idx := uint64(1<<48) - 1 //nolint: mnd
 	leftNode, rightNode, err := merkle.RootChildrenFromProof(*epoch.MachineHash, epoch.CommitmentProof, idx)
 	if err != nil {
-		s.Logger.Error("failed to compute left and right nodes from commitment proof", "application", app.Name, "epoch_index", currentEpochIndex, "error", err)
+		s.Logger.Error("failed to compute left and right nodes from commitment proof",
+			"application", app.Name, "epoch_index", currentEpochIndex, "error", err)
 		return err
 	}
 
-	s.Logger.Info("Joining tournament", "application", app.Name, "epoch_index", epoch.Index, "commitment", epoch.Commitment, "left_node", leftNode.String(), "right_node", rightNode.String())
+	s.Logger.Info("Joining tournament", "application", app.Name, "epoch_index", epoch.Index,
+		"commitment", epoch.Commitment, "left_node", leftNode.String(), "right_node", rightNode.String())
 
 	tx, err := tournamentAdapter.JoinTournament(&txOptsWithValue, *epoch.MachineHash,
-		asBytes32Slice(epoch.CommitmentProof), leftNode, rightNode)
+		hashSliceToByteSlice(epoch.CommitmentProof), leftNode, rightNode)
 	if err != nil {
 		s.Logger.Error("failed to send join tournament transaction", "application", app.Name,
 			"epoch_index", currentEpochIndex, "error", err)
@@ -809,7 +813,7 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 }
 
 func (s *Service) validateApplication(ctx context.Context, app *Application) error {
-	s.Logger.Debug("Syncing PTR tournaments", "application", app.Name)
+	s.Logger.Debug("Syncing PRT tournaments", "application", app.Name)
 	mostRecentBlock, err := s.client.BlockNumber(ctx)
 	if err != nil {
 		s.Logger.Error("failed to fetch latest block number", "application", app.Name, "error", err)
@@ -830,10 +834,4 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 		}
 	}
 	return nil
-}
-
-// hashSliceToByteSlice converts []common.Hash to [][32]byte without copying.
-// This is safe because common.Hash is defined as [32]byte, so the memory layout is identical.
-func hashSliceTobyteSlice(b []common.Hash) [][32]byte {
-	return *(*[][32]byte)(unsafe.Pointer(&b))
 }

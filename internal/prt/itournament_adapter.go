@@ -79,9 +79,11 @@ func (a *ITournamentAdapterImpl) JoinTournament(
 	return a.tournament.JoinTournament(opts, finalState, proof, leftNode, rightNode)
 }
 
-func buildCommitmentJoinedFilterQuery(
+// buildFilterQuery creates a filter query for a specific tournament event
+func buildFilterQuery(
 	opts *bind.FilterOpts,
 	tournamentAddress common.Address,
+	eventName string,
 ) (q ethereum.FilterQuery, err error) {
 	c, err := itournament.ITournamentMetaData.GetAbi()
 	if err != nil {
@@ -89,7 +91,7 @@ func buildCommitmentJoinedFilterQuery(
 	}
 
 	topics, err := abi.MakeTopics(
-		[]any{c.Events[MonitoredEvent_CommitmentJoined.String()].ID},
+		[]any{c.Events[eventName].ID},
 	)
 	if err != nil {
 		return q, err
@@ -104,249 +106,67 @@ func buildCommitmentJoinedFilterQuery(
 		q.ToBlock = new(big.Int).SetUint64(*opts.End)
 	}
 	return q, err
+}
+
+// retrieveEvents retrieves and parses events of a specific type
+func retrieveEvents[T any](
+	a *ITournamentAdapterImpl,
+	opts *bind.FilterOpts,
+	eventName string,
+	parseFunc func(types.Log) (T, error),
+) ([]T, error) {
+	q, err := buildFilterQuery(opts, a.tournamentAddress, eventName)
+	if err != nil {
+		return nil, err
+	}
+
+	itr, err := a.filter.ChunkedFilterLogs(opts.Context, a.client, q)
+	if err != nil {
+		return nil, err
+	}
+
+	var events []T
+	for log, err := range itr {
+		if err != nil {
+			return nil, err
+		}
+		ev, err := parseFunc(*log)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, ev)
+	}
+	return events, nil
 }
 
 func (a *ITournamentAdapterImpl) RetrieveCommitmentJoinedEvents(
 	opts *bind.FilterOpts,
 ) ([]*itournament.ITournamentCommitmentJoined, error) {
-	q, err := buildCommitmentJoinedFilterQuery(opts, a.tournamentAddress)
-	if err != nil {
-		return nil, err
-	}
-
-	itr, err := a.filter.ChunkedFilterLogs(opts.Context, a.client, q)
-	if err != nil {
-		return nil, err
-	}
-
-	var events []*itournament.ITournamentCommitmentJoined
-	for log, err := range itr {
-		if err != nil {
-			return nil, err
-		}
-		ev, err := a.tournament.ParseCommitmentJoined(*log)
-		if err != nil {
-			return nil, err
-		}
-		events = append(events, ev)
-	}
-	return events, nil
-}
-
-func buildMatchAdvancedFilterQuery(
-	opts *bind.FilterOpts,
-	tournamentAddress common.Address,
-) (q ethereum.FilterQuery, err error) {
-	c, err := itournament.ITournamentMetaData.GetAbi()
-	if err != nil {
-		return q, err
-	}
-
-	topics, err := abi.MakeTopics(
-		[]any{c.Events[MonitoredEvent_MatchAdvanced.String()].ID},
-	)
-	if err != nil {
-		return q, err
-	}
-
-	q = ethereum.FilterQuery{
-		Addresses: []common.Address{tournamentAddress},
-		FromBlock: new(big.Int).SetUint64(opts.Start),
-		Topics:    topics,
-	}
-	if opts.End != nil {
-		q.ToBlock = new(big.Int).SetUint64(*opts.End)
-	}
-	return q, err
+	return retrieveEvents(a, opts, MonitoredEvent_CommitmentJoined.String(), a.tournament.ParseCommitmentJoined)
 }
 
 func (a *ITournamentAdapterImpl) RetrieveMatchAdvancedEvents(
 	opts *bind.FilterOpts,
 ) ([]*itournament.ITournamentMatchAdvanced, error) {
-	q, err := buildMatchAdvancedFilterQuery(opts, a.tournamentAddress)
-	if err != nil {
-		return nil, err
-	}
-
-	itr, err := a.filter.ChunkedFilterLogs(opts.Context, a.client, q)
-	if err != nil {
-		return nil, err
-	}
-
-	var events []*itournament.ITournamentMatchAdvanced
-	for log, err := range itr {
-		if err != nil {
-			return nil, err
-		}
-		ev, err := a.tournament.ParseMatchAdvanced(*log)
-		if err != nil {
-			return nil, err
-		}
-		events = append(events, ev)
-	}
-	return events, nil
-}
-
-func buildMatchCreatedFilterQuery(
-	opts *bind.FilterOpts,
-	tournamentAddress common.Address,
-) (q ethereum.FilterQuery, err error) {
-	c, err := itournament.ITournamentMetaData.GetAbi()
-	if err != nil {
-		return q, err
-	}
-
-	topics, err := abi.MakeTopics(
-		[]any{c.Events[MonitoredEvent_MatchCreated.String()].ID},
-	)
-	if err != nil {
-		return q, err
-	}
-
-	q = ethereum.FilterQuery{
-		Addresses: []common.Address{tournamentAddress},
-		FromBlock: new(big.Int).SetUint64(opts.Start),
-		Topics:    topics,
-	}
-	if opts.End != nil {
-		q.ToBlock = new(big.Int).SetUint64(*opts.End)
-	}
-	return q, err
+	return retrieveEvents(a, opts, MonitoredEvent_MatchAdvanced.String(), a.tournament.ParseMatchAdvanced)
 }
 
 func (a *ITournamentAdapterImpl) RetrieveMatchCreatedEvents(
 	opts *bind.FilterOpts,
 ) ([]*itournament.ITournamentMatchCreated, error) {
-	q, err := buildMatchCreatedFilterQuery(opts, a.tournamentAddress)
-	if err != nil {
-		return nil, err
-	}
-
-	itr, err := a.filter.ChunkedFilterLogs(opts.Context, a.client, q)
-	if err != nil {
-		return nil, err
-	}
-
-	var events []*itournament.ITournamentMatchCreated
-	for log, err := range itr {
-		if err != nil {
-			return nil, err
-		}
-		ev, err := a.tournament.ParseMatchCreated(*log)
-		if err != nil {
-			return nil, err
-		}
-		events = append(events, ev)
-	}
-	return events, nil
-}
-
-func buildMatchDeletedFilterQuery(
-	opts *bind.FilterOpts,
-	tournamentAddress common.Address,
-) (q ethereum.FilterQuery, err error) {
-	c, err := itournament.ITournamentMetaData.GetAbi()
-	if err != nil {
-		return q, err
-	}
-
-	topics, err := abi.MakeTopics(
-		[]any{c.Events[MonitoredEvent_MatchDeleted.String()].ID},
-	)
-	if err != nil {
-		return q, err
-	}
-
-	q = ethereum.FilterQuery{
-		Addresses: []common.Address{tournamentAddress},
-		FromBlock: new(big.Int).SetUint64(opts.Start),
-		Topics:    topics,
-	}
-	if opts.End != nil {
-		q.ToBlock = new(big.Int).SetUint64(*opts.End)
-	}
-	return q, err
+	return retrieveEvents(a, opts, MonitoredEvent_MatchCreated.String(), a.tournament.ParseMatchCreated)
 }
 
 func (a *ITournamentAdapterImpl) RetrieveMatchDeletedEvents(
 	opts *bind.FilterOpts,
 ) ([]*itournament.ITournamentMatchDeleted, error) {
-	q, err := buildMatchDeletedFilterQuery(opts, a.tournamentAddress)
-	if err != nil {
-		return nil, err
-	}
-
-	itr, err := a.filter.ChunkedFilterLogs(opts.Context, a.client, q)
-	if err != nil {
-		return nil, err
-	}
-
-	var events []*itournament.ITournamentMatchDeleted
-	for log, err := range itr {
-		if err != nil {
-			return nil, err
-		}
-		ev, err := a.tournament.ParseMatchDeleted(*log)
-		if err != nil {
-			return nil, err
-		}
-		events = append(events, ev)
-	}
-	return events, nil
-}
-
-func buildNewInnerTournamentFilterQuery(
-	opts *bind.FilterOpts,
-	tournamentAddress common.Address,
-) (q ethereum.FilterQuery, err error) {
-	c, err := itournament.ITournamentMetaData.GetAbi()
-	if err != nil {
-		return q, err
-	}
-
-	topics, err := abi.MakeTopics(
-		[]any{c.Events[MonitoredEvent_NewInnerTournament.String()].ID},
-	)
-	if err != nil {
-		return q, err
-	}
-
-	q = ethereum.FilterQuery{
-		Addresses: []common.Address{tournamentAddress},
-		FromBlock: new(big.Int).SetUint64(opts.Start),
-		Topics:    topics,
-	}
-	if opts.End != nil {
-		q.ToBlock = new(big.Int).SetUint64(*opts.End)
-	}
-	return q, err
+	return retrieveEvents(a, opts, MonitoredEvent_MatchDeleted.String(), a.tournament.ParseMatchDeleted)
 }
 
 func (a *ITournamentAdapterImpl) RetrieveNewInnerTournamentEvents(
 	opts *bind.FilterOpts,
 ) ([]*itournament.ITournamentNewInnerTournament, error) {
-	q, err := buildNewInnerTournamentFilterQuery(opts, a.tournamentAddress)
-	if err != nil {
-		return nil, err
-	}
-
-	itr, err := a.filter.ChunkedFilterLogs(opts.Context, a.client, q)
-	if err != nil {
-		return nil, err
-	}
-
-	var events []*itournament.ITournamentNewInnerTournament
-	for log, err := range itr {
-		if err != nil {
-			return nil, err
-		}
-		ev, err := a.tournament.ParseNewInnerTournament(*log)
-		if err != nil {
-			return nil, err
-		}
-		events = append(events, ev)
-	}
-	return events, nil
+	return retrieveEvents(a, opts, MonitoredEvent_NewInnerTournament.String(), a.tournament.ParseNewInnerTournament)
 }
 
 func buildAllEventsFilterQuery(
