@@ -67,36 +67,36 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 }
 
 func createServices(ctx context.Context, c *CreateInfo, s *Service) error {
-	ch := make(chan service.IService)
-	numChildren := 0
+	// Count services first
+	numChildren := 5 // evm-reader, advancer, validator, claimer, prt
+	if c.Config.FeatureJsonrpcApiEnabled {
+		numChildren++ // jsonrpc
+	}
 
-	numChildren++
+	// Create buffered channel with correct size
+	ch := make(chan service.IService, numChildren)
+
 	go func() {
 		ch <- newEVMReader(ctx, c, s)
 	}()
 
-	numChildren++
 	go func() {
 		ch <- newAdvancer(ctx, c, s)
 	}()
 
-	numChildren++
 	go func() {
 		ch <- newValidator(ctx, c, s)
 	}()
 
-	numChildren++
 	go func() {
 		ch <- newClaimer(ctx, c, s)
 	}()
 
-	numChildren++
 	go func() {
 		ch <- newPrt(ctx, c, s)
 	}()
 
 	if c.Config.FeatureJsonrpcApiEnabled {
-		numChildren++
 		go func() {
 			ch <- newJsonrpc(ctx, c, s)
 		}()
