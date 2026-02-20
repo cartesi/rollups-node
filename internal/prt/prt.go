@@ -21,7 +21,7 @@ import (
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
-	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
 type prtRepository interface {
@@ -53,6 +53,27 @@ type prtRepository interface {
 type EthClientInterface interface {
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
 	ChainID(ctx context.Context) (*big.Int, error)
+	BlockNumber(ctx context.Context) (uint64, error)
+	TransactionByHash(ctx context.Context, hash common.Hash) (*types.Transaction, bool, error)
+}
+
+// DefaultAdapterFactory creates adapters using a concrete *ethclient.Client.
+type DefaultAdapterFactory struct {
+	client *ethclient.Client
+	filter ethutil.Filter
+}
+
+// NewDefaultAdapterFactory creates a DefaultAdapterFactory.
+func NewDefaultAdapterFactory(client *ethclient.Client, filter ethutil.Filter) *DefaultAdapterFactory {
+	return &DefaultAdapterFactory{client: client, filter: filter}
+}
+
+func (f *DefaultAdapterFactory) CreateTournamentAdapter(addr common.Address) (TournamentAdapter, error) {
+	return NewITournamentAdapter(addr, f.client, f.filter)
+}
+
+func (f *DefaultAdapterFactory) CreateDaveConsensusAdapter(addr common.Address) (DaveConsensusAdapter, error) {
+	return NewDaveConsensusAdapter(addr, f.client)
 }
 
 func getAllRunningApplications(ctx context.Context, r prtRepository) ([]*Application, uint64, error) {
@@ -213,14 +234,7 @@ func (s *Service) createTournament(
 	parentTournamentAddress *common.Address,
 	tournamentAddress common.Address,
 ) (*Tournament, error) {
-	// TODO: use adapters instead of direct contract calls
-	// Type assertion to get the concrete client if possible
-	ethClient, ok := s.client.(*ethclient.Client)
-	if !ok {
-		return nil, fmt.Errorf("client is not an *ethclient.Client, cannot create dave consensus bind")
-	}
-
-	adapter, err := NewITournamentAdapter(tournamentAddress, ethClient, s.filter)
+	adapter, err := s.adapterFactory.CreateTournamentAdapter(tournamentAddress)
 	if err != nil {
 		s.Logger.Error("failed to create tournament adapter", "level", level, "application", app.Name,
 			"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
@@ -375,14 +389,7 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 		return nil // nothing to do
 	}
 
-	// TODO: use adapters instead of direct contract calls
-	// Type assertion to get the concrete client if possible
-	ethClient, ok := s.client.(*ethclient.Client)
-	if !ok {
-		return fmt.Errorf("client is not an *ethclient.Client, cannot create dave consensus bind")
-	}
-
-	consensus, err := idaveconsensus.NewIDaveConsensus(app.IConsensusAddress, ethClient)
+	consensus, err := s.adapterFactory.CreateDaveConsensusAdapter(app.IConsensusAddress)
 	if err != nil {
 		s.Logger.Error("failed to bind dave consensus contract", "application", app.Name,
 			"consensus_address", app.IConsensusAddress.String(), "error", err)
@@ -406,7 +413,7 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 			break
 		}
 
-		receipt, err := ethClient.TransactionReceipt(ctx, *epoch.ClaimTransactionHash)
+		receipt, err := s.client.TransactionReceipt(ctx, *epoch.ClaimTransactionHash)
 		if err != nil {
 			s.Logger.Error("failed to fetch transaction receipt for epoch", "application", app.Name,
 				"epoch", epoch.Index, "tx", epoch.ClaimTransactionHash, "error", err)
@@ -478,14 +485,8 @@ func (s *Service) fetchTournamentData(
 	mostRecentBlock uint64,
 ) error {
 	s.Logger.Debug("Fetching tournament data", "level", level, "application", app.Name, "tournament", tournamentAddress.String())
-	// TODO: use adapters instead of direct contract calls
-	// Type assertion to get the concrete client if possible
-	ethClient, ok := s.client.(*ethclient.Client)
-	if !ok {
-		return fmt.Errorf("client is not an *ethclient.Client, cannot create dave consensus bind")
-	}
 
-	adapter, err := NewITournamentAdapter(tournamentAddress, ethClient, s.filter)
+	adapter, err := s.adapterFactory.CreateTournamentAdapter(tournamentAddress)
 	if err != nil {
 		s.Logger.Error("failed to create tournament adapter", "level", level, "application", app.Name,
 			"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
@@ -624,15 +625,8 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 		return nil // wait for settle to be mined
 	}
 
-	// TODO: use adapters instead of direct contract calls
-	// Type assertion to get the concrete client if possible
-	ethClient, ok := s.client.(*ethclient.Client)
-	if !ok {
-		return fmt.Errorf("client is not an *ethclient.Client, cannot create dave consensus bind")
-	}
-
 	if tx, settleTxIsInFlight := s.settleInFlight[app.ID]; settleTxIsInFlight {
-		_, isPending, err := ethClient.TransactionByHash(ctx, *tx)
+		_, isPending, err := s.client.TransactionByHash(ctx, *tx)
 		if err != nil {
 			s.Logger.Error("failed to fetch last settle transaction status", "application", app.Name,
 				"epoch_index", currentEpochIndex, "tx", tx, "error", err)
@@ -648,7 +642,7 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 		delete(s.settleInFlight, app.ID)
 	}
 
-	consensus, err := idaveconsensus.NewIDaveConsensus(app.IConsensusAddress, ethClient)
+	consensus, err := s.adapterFactory.CreateDaveConsensusAdapter(app.IConsensusAddress)
 	if err != nil {
 		s.Logger.Error("failed to bind dave consensus contract", "application", app.Name,
 			"consensus_address", app.IConsensusAddress.String(), "error", err)
@@ -721,14 +715,8 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 		return nil // wait for settle to be mined
 	}
 
-	// TODO: use adapters instead of direct contract calls
-	// Type assertion to get the concrete client if possible
-	ethClient, ok := s.client.(*ethclient.Client)
-	if !ok {
-		return fmt.Errorf("client is not an *ethclient.Client, cannot create dave consensus bind")
-	}
 	if tx, joinTxIsInFlight := s.joinInFlight[app.ID]; joinTxIsInFlight {
-		_, isPending, err := ethClient.TransactionByHash(ctx, *tx)
+		_, isPending, err := s.client.TransactionByHash(ctx, *tx)
 		if err != nil {
 			s.Logger.Error("failed to fetch last join tournament transaction status", "application", app.Name,
 				"epoch_index", currentEpochIndex, "tx", tx, "error", err)
@@ -775,9 +763,9 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 		return nil
 	}
 
-	tournament, err := itournament.NewITournament(*epoch.TournamentAddress, ethClient)
+	tournamentAdapter, err := s.adapterFactory.CreateTournamentAdapter(*epoch.TournamentAddress)
 	if err != nil {
-		s.Logger.Error("failed to bind tournament contract", "application", app.Name,
+		s.Logger.Error("failed to create tournament adapter", "application", app.Name,
 			"tournament", epoch.TournamentAddress.String(), "error", err)
 		return err
 	}
@@ -786,7 +774,7 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 		Context:     ctx,
 		BlockNumber: new(big.Int).SetUint64(mostRecentBlock),
 	}
-	bondValue, err := tournament.BondValue(callOpts)
+	bondValue, err := tournamentAdapter.BondValue(callOpts)
 	if err != nil {
 		s.Logger.Error("failed to fetch tournament bond value", "application", app.Name,
 			"epoch_index", currentEpochIndex, "tournament", epoch.TournamentAddress.Hex(),
@@ -807,7 +795,7 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 
 	s.Logger.Info("Joining tournament", "application", app.Name, "epoch_index", epoch.Index, "commitment", epoch.Commitment, "left_node", leftNode.String(), "right_node", rightNode.String())
 
-	tx, err := tournament.JoinTournament(&txOptsWithValue, *epoch.MachineHash,
+	tx, err := tournamentAdapter.JoinTournament(&txOptsWithValue, *epoch.MachineHash,
 		asBytes32Slice(epoch.CommitmentProof), leftNode, rightNode)
 	if err != nil {
 		s.Logger.Error("failed to send join tournament transaction", "application", app.Name,
@@ -822,13 +810,7 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 
 func (s *Service) validateApplication(ctx context.Context, app *Application) error {
 	s.Logger.Debug("Syncing PTR tournaments", "application", app.Name)
-	// TODO: use adapters instead of direct contract calls
-	// Type assertion to get the concrete client if possible
-	ethClient, ok := s.client.(*ethclient.Client)
-	if !ok {
-		return fmt.Errorf("client is not an *ethclient.Client ")
-	}
-	mostRecentBlock, err := ethClient.BlockNumber(ctx)
+	mostRecentBlock, err := s.client.BlockNumber(ctx)
 	if err != nil {
 		s.Logger.Error("failed to fetch latest block number", "application", app.Name, "error", err)
 		return err

@@ -4,8 +4,13 @@
 package prt
 
 import (
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"math/big"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+
+	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
 )
 
@@ -16,7 +21,7 @@ type TournamentConstants struct {
 	Height   uint64
 }
 
-// Interface for Tournament reading
+// TournamentAdapter provides read and write access to tournament contracts.
 type TournamentAdapter interface {
 	RetrieveCommitmentJoinedEvents(opts *bind.FilterOpts) ([]*itournament.ITournamentCommitmentJoined, error)
 	RetrieveMatchAdvancedEvents(opts *bind.FilterOpts) ([]*itournament.ITournamentMatchAdvanced, error)
@@ -27,6 +32,30 @@ type TournamentAdapter interface {
 	Result(opts *bind.CallOpts) (bool, [32]byte, [32]byte, error)
 	Constants(opts *bind.CallOpts) (TournamentConstants, error)
 	TimeFinished(opts *bind.CallOpts) (bool, uint64, error)
+	BondValue(opts *bind.CallOpts) (*big.Int, error)
+	JoinTournament(opts *bind.TransactOpts, finalState [32]byte, proof [][32]byte,
+		leftNode [32]byte, rightNode [32]byte) (*types.Transaction, error)
+}
+
+// DaveConsensusAdapter wraps access to the IDaveConsensus contract.
+type DaveConsensusAdapter interface {
+	ParseEpochSealed(log types.Log) (*idaveconsensus.IDaveConsensusEpochSealed, error)
+	CanSettle(opts *bind.CallOpts) (CanSettleResult, error)
+	Settle(opts *bind.TransactOpts, epochNumber *big.Int,
+		outputsMerkleRoot [32]byte, proof [][32]byte) (*types.Transaction, error)
+}
+
+// CanSettleResult holds the result of a CanSettle call.
+type CanSettleResult struct {
+	IsFinished       bool
+	EpochNumber      *big.Int
+	WinnerCommitment [32]byte
+}
+
+// AdapterFactory creates contract adapters from on-chain addresses.
+type AdapterFactory interface {
+	CreateTournamentAdapter(addr common.Address) (TournamentAdapter, error)
+	CreateDaveConsensusAdapter(addr common.Address) (DaveConsensusAdapter, error)
 }
 
 // Struct to hold all events retrieved at once

@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -65,6 +66,17 @@ func (a *ITournamentAdapterImpl) Constants(opts *bind.CallOpts) (TournamentConst
 
 func (a *ITournamentAdapterImpl) TimeFinished(opts *bind.CallOpts) (bool, uint64, error) {
 	return a.tournament.TimeFinished(opts)
+}
+
+func (a *ITournamentAdapterImpl) BondValue(opts *bind.CallOpts) (*big.Int, error) {
+	return a.tournament.BondValue(opts)
+}
+
+func (a *ITournamentAdapterImpl) JoinTournament(
+	opts *bind.TransactOpts, finalState [32]byte, proof [][32]byte,
+	leftNode [32]byte, rightNode [32]byte,
+) (*types.Transaction, error) {
+	return a.tournament.JoinTournament(opts, finalState, proof, leftNode, rightNode)
 }
 
 func buildCommitmentJoinedFilterQuery(

@@ -17,19 +17,22 @@ import (
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 type CreateInfo struct {
 	service.CreateInfo
-	Config     config.PrtConfig
-	Repository repository.Repository
-	EthClient  EthClientInterface
+	Config         config.PrtConfig
+	Repository     repository.Repository
+	EthClient      EthClientInterface
+	AdapterFactory AdapterFactory
 }
 
 type Service struct {
 	service.Service
 	repository        prtRepository
 	client            EthClientInterface
+	adapterFactory    AdapterFactory
 	submissionEnabled bool
 	filter            ethutil.Filter
 	txOpts            *bind.TransactOpts
@@ -92,6 +95,16 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		MinChunkSize: ethutil.DefaultMinChunkSize,
 		MaxChunkSize: new(big.Int).SetUint64(c.Config.BlockchainMaxBlockRange),
 		Logger:       s.Logger,
+	}
+
+	if c.AdapterFactory != nil {
+		s.adapterFactory = c.AdapterFactory
+	} else {
+		ethClient, ok := c.EthClient.(*ethclient.Client)
+		if !ok {
+			return nil, fmt.Errorf("EthClient must be *ethclient.Client when AdapterFactory is not provided")
+		}
+		s.adapterFactory = NewDefaultAdapterFactory(ethClient, s.filter)
 	}
 
 	s.currentEpochIndex = map[int64]uint64{}
