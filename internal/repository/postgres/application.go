@@ -241,8 +241,8 @@ func (r *PostgresRepository) GetApplication(
 	return &app, nil
 }
 
-// GetProcessedInputs retrieves the ProcessedInputs field from a application by Name or address.
-func (r *PostgresRepository) GetProcessedInputs(
+// GetProcessedInputCount retrieves the ProcessedInputs field from an application by Name or address.
+func (r *PostgresRepository) GetProcessedInputCount(
 	ctx context.Context,
 	nameOrAddress string,
 ) (uint64, error) {

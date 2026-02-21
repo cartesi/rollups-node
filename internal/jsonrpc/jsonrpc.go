@@ -519,7 +519,7 @@ func handleGetProcessedInputCount(s *Service, w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	processedInputs, err := s.repository.GetProcessedInputs(r.Context(), params.Application)
+	processedInputs, err := s.repository.GetProcessedInputCount(r.Context(), params.Application)
 	if errors.Is(err, repository.ErrNotFound) {
 		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Application not found", nil)
 		return
