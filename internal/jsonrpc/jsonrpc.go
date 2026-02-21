@@ -1087,7 +1087,7 @@ func handleGetCommitment(s *Service, w http.ResponseWriter, r *http.Request, req
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid commitment hex: Empty string", nil)
 		return
 	}
-	if _, err := hex.DecodeString(params.Commitment); err != nil {
+	if _, err := config.ToHashFromString(params.Commitment); err != nil {
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid commitment hex: %v", err), nil)
 		return
 	}

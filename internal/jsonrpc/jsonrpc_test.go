@@ -1886,7 +1886,7 @@ func TestMethod(t *testing.T) {
 				"application": "%v",
 				"epoch_index": "%v",
 				"tournament_address": "0x%020x",
-				"commitment": "%020x"
+				"commitment": "0x%020x"
 				},
 				"id": 0
 				}`, numberToName(app), hexutil.EncodeUint64(nr+1), 0, 0))
@@ -1940,7 +1940,7 @@ func TestMethod(t *testing.T) {
 				"application": "%v",
 				"epoch_index": "%v",
 				"tournament_address": "%v",
-				"commitment": "%020x"
+				"commitment": "0x%020x"
 				},
 				"id": 0
 				}`, numberToName(app), hexutil.EncodeUint64(nr), address, commitment))

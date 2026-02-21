@@ -376,7 +376,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 		Name: "dummy-application-name",
 	}
 	xerror := fmt.Errorf("Error")
-	
+
 	s.Run("getProcessedEpochsFailure", func() {
 		repo.On("ListEpochs",
 			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
@@ -386,7 +386,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
 	})
-	
+
 	s.Run("computeMerkleTreeAndProofsFailure", func() {
 		repo.On("ListEpochs",
 			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
@@ -400,7 +400,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
 	})
-	
+
 	s.Run("GetLastInputFailure", func() {
 		input := Input{
 			EpochApplicationID: app.ID,
