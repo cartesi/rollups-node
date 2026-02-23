@@ -46,6 +46,7 @@ const (
 	FEATURE_JSONRPC_API_ENABLED                       = "CARTESI_FEATURE_JSONRPC_API_ENABLED"
 	FEATURE_MACHINE_HASH_CHECK_ENABLED                = "CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED"
 	INSPECT_ADDRESS                                   = "CARTESI_INSPECT_ADDRESS"
+	INSPECT_URL                                       = "CARTESI_INSPECT_URL"
 	JSONRPC_API_ADDRESS                               = "CARTESI_JSONRPC_API_ADDRESS"
 	TELEMETRY_ADDRESS                                 = "CARTESI_TELEMETRY_ADDRESS"
 	LOG_COLOR                                         = "CARTESI_LOG_COLOR"
@@ -126,6 +127,8 @@ func SetDefaults() {
 	viper.SetDefault(FEATURE_MACHINE_HASH_CHECK_ENABLED, "true")
 
 	viper.SetDefault(INSPECT_ADDRESS, ":10012")
+
+	viper.SetDefault(INSPECT_URL, "http://localhost:10012")
 
 	viper.SetDefault(JSONRPC_API_ADDRESS, ":10011")
 
@@ -667,7 +670,7 @@ type JsonrpcConfig struct {
 	// for more information.
 	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
 
-	// HTTP address for the jsonrpc api.
+	// HTTP address for the JSON-RPC API.
 	JsonrpcApiAddress string `mapstructure:"CARTESI_JSONRPC_API_ADDRESS"`
 
 	// HTTP address for telemetry service.
@@ -793,7 +796,7 @@ type NodeConfig struct {
 	// HTTP address for inspect.
 	InspectAddress string `mapstructure:"CARTESI_INSPECT_ADDRESS"`
 
-	// HTTP address for the jsonrpc api.
+	// HTTP address for the JSON-RPC API.
 	JsonrpcApiAddress string `mapstructure:"CARTESI_JSONRPC_API_ADDRESS"`
 
 	// HTTP address for telemetry service.
@@ -1792,6 +1795,19 @@ func GetInspectAddress() (string, error) {
 		return v, nil
 	}
 	return notDefinedstring(), fmt.Errorf("%s: %w", INSPECT_ADDRESS, ErrNotDefined)
+}
+
+// GetInspectUrl returns the value for the environment variable CARTESI_INSPECT_URL.
+func GetInspectUrl() (string, error) {
+	s := viper.GetString(INSPECT_URL)
+	if s != "" {
+		v, err := toString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", INSPECT_URL, err)
+		}
+		return v, nil
+	}
+	return notDefinedstring(), fmt.Errorf("%s: %w", INSPECT_URL, ErrNotDefined)
 }
 
 // GetJsonrpcApiAddress returns the value for the environment variable CARTESI_JSONRPC_API_ADDRESS.

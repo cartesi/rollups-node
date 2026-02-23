@@ -322,15 +322,22 @@ used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "
 default = ":10011"
 go-type = "string"
 description = """
-HTTP address for the jsonrpc api."""
-used-by = ["jsonrpc", "node", "cli"]
+HTTP address for the JSON-RPC API."""
+used-by = ["jsonrpc", "node"]
 
 [http.CARTESI_INSPECT_ADDRESS]
 default = ":10012"
 go-type = "string"
 description = """
 HTTP address for inspect."""
-used-by = ["advancer", "node", "cli"]
+used-by = ["advancer", "node"]
+
+[http.CARTESI_INSPECT_URL]
+default = "http://localhost:10012"
+go-type = "string"
+description = """
+URL of the inspect service."""
+used-by = ["cli"]
 
 #
 # Remote Cartesi Machine

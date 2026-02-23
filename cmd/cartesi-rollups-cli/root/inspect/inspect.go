@@ -39,18 +39,15 @@ cartesi-rollups-cli inspect echo-dapp 0x6869 --hex
 # Reads payload from stdin:
 echo -n "hi" | cartesi-rollups-cli inspect echo-dapp`
 
-var (
-	isHex           bool
-	inspectEndpoint string
-)
+var isHex bool
 
 func init() {
 	Cmd.Flags().BoolVarP(&isHex, "hex", "x", false,
 		"Force interpretation of payload as hex.")
 
-	Cmd.Flags().StringVar(&inspectEndpoint, "inspect-endpoint", "http://localhost:10012/",
-		"address used to connect to the inspect api")
-	cobra.CheckErr(viper.BindPFlag(config.INSPECT_ADDRESS, Cmd.Flags().Lookup("inspect-endpoint")))
+	Cmd.Flags().String("inspect-url", "http://localhost:10012/",
+		"address used to connect to the inspect API")
+	cobra.CheckErr(viper.BindPFlag(config.INSPECT_URL, Cmd.Flags().Lookup("inspect-url")))
 
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
@@ -96,10 +93,10 @@ func run(cmd *cobra.Command, args []string) {
 	nameOrAddress, err := config.ToApplicationNameOrAddressFromString(args[0])
 	cobra.CheckErr(err)
 
-	endpoint, err := config.GetInspectAddress()
+	url, err := config.GetInspectUrl()
 	cobra.CheckErr(err)
 
-	client, err := inspectclient.NewClient(endpoint)
+	client, err := inspectclient.NewClient(url)
 	cobra.CheckErr(err)
 
 	payload, err := resolvePayload(args)
