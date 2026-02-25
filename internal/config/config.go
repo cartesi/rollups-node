@@ -86,6 +86,14 @@ func ToUint64FromDecimalOrHexString(s string) (uint64, error) {
 	return ToUint64FromString(s)
 }
 
+func AsHexString(s string) (string, error) {
+	val, err := ToUint64FromDecimalOrHexString(s)
+	if err != nil {
+		return "", fmt.Errorf("invalid index '%s': expected decimal or hex value: %w", s, err)
+	}
+	return fmt.Sprintf("0x%x", val), nil
+}
+
 func ToIndexFromString(indexString string) (uint64, error) {
 	if len(indexString) < 3 || (!strings.HasPrefix(indexString, "0x") && !strings.HasPrefix(indexString, "0X")) {
 		return 0, errors.New("expected hex encoded value")

@@ -27,7 +27,7 @@ var Cmd = &cobra.Command{
 	Run:     run,
 	Long: `
 Supported Environment Variables:
-  CARTESI_INSPECT_ADDRESS                        Inspect API endpoint`,
+  CARTESI_INSPECT_URL                             Inspect API URL`,
 }
 
 const examples = `# Makes a request with "hi":

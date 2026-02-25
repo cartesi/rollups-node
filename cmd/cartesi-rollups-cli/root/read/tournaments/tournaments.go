@@ -4,78 +4,85 @@
 package tournaments
 
 import (
+	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"os"
 
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/service"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
-	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
 
 	"github.com/spf13/cobra"
 )
 
 var Cmd = &cobra.Command{
-	Use:     "tournaments [application-name-or-address] [tournament-address]",
+	Use:     "tournaments <application> [address]",
 	Short:   "Reads tournaments",
 	Example: examples,
-	Args:    cobra.RangeArgs(1, 2), // nolint: mnd
+	Args:    cobra.RangeArgs(1, 2), //nolint: mnd
 	Run:     run,
 	Long: `
+Arguments:
+	<application>     application name or address
+	[address]         hex encoded
+
 Supported Environment Variables:
+  CARTESI_JSONRPC_API_URL                        JSON-RPC API URL
   CARTESI_DATABASE_CONNECTION                    Database connection string`,
 }
 
-const examples = `# Read all tournaments:
+const examples = `# Read specific tournament:
+cartesi-rollups-cli read tournaments echo-dapp 0x0073a8637d98649717bdc02ecb439c80aa8a10d0
+
+# Read all tournaments:
 cartesi-rollups-cli read tournaments echo-dapp
 
-# Read specific tournament by address:
-cartesi-rollups-cli read tournaments echo-dapp 0x0123456789abcdef0123456789abcdef0123456789abcdef
+# Read all tournaments with filter:
+cartesi-rollups-cli read tournaments echo-dapp --epoch-index 10 --level 10 --parent-tournament-address 0x95eac57f9d67c5e0f255d5a19eb5d3fd00cafa73 --parent-match-id-hash 0xdb99c9cdb2e2070a4e4e633c2e6874648dfe3971d14da843465b3d950df3dd19
 
-# Read tournaments filtered by level:
-cartesi-rollups-cli read tournaments echo-dapp --level 1
+# Read all tournaments with pagination:
+cartesi-rollups-cli read tournaments echo-dapp --limit 10 --offset 10 --descending
+`
 
-# Read tournaments with pagination:
-cartesi-rollups-cli read tournaments echo-dapp --limit 10 --offset 20`
+var (
+	epochIndex              string
+	level                   string
+	parentTournamentAddress string
+	parentMatchIDHash       string
+	limit                   uint64
+	offset                  uint64
+	descending              bool
+)
 
 func init() {
+	Cmd.Flags().StringVar(&epochIndex, "epoch-index", "",
+		"Filter tournaments by epoch index (decimal or hex encoded)")
+	Cmd.Flags().StringVar(&level, "level", "",
+		"Filter tournaments by level (decimal or hex encoded)")
+	Cmd.Flags().StringVar(&parentTournamentAddress, "parent-tournament-address", "",
+		"Filter tournaments by parent tournament address (hex encoded)")
+	Cmd.Flags().StringVar(&parentMatchIDHash, "parent-match-id-hash", "",
+		"Filter tournaments by parent match ID hash (hex encoded)")
+	Cmd.Flags().Uint64Var(&limit, "limit", 50, //nolint: mnd
+		"Maximum number of tournaments to return")
+	Cmd.Flags().Uint64Var(&offset, "offset", 0,
+		"Starting point for the list of tournaments")
+	Cmd.Flags().BoolVar(&descending, "descending", false,
+		"Sort results in descending order")
+
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
 		command.Flags().Lookup("verbose").Hidden = false
 		command.Flags().Lookup("database-connection").Hidden = false
 		origHelpFunc(command, strings)
 	})
-}
-
-var (
-	epochIndex              uint64
-	level                   uint64
-	parentTournamentAddress string
-	parentMatchIdHash       string
-	limit                   uint64
-	offset                  uint64
-)
-
-func init() {
-	Cmd.Flags().Uint64Var(&epochIndex, "epoch-index", 0,
-		"Filter tournaments by epoch index (decimal or hex encoded)")
-	Cmd.Flags().Uint64Var(&level, "level", 0,
-		"Filter tournaments by level (decimal or hex encoded)")
-	Cmd.Flags().StringVar(&parentTournamentAddress, "parent-tournament-address", "",
-		"Filter tournaments by its parent address (hex encoded)")
-	Cmd.Flags().StringVar(&parentMatchIdHash, "parent-match-id-hash", "",
-		"Filter tournaments by its parent match ID hash (hex encoded)")
-	Cmd.Flags().Uint64Var(&limit, "limit", 50, // nolint: mnd
-		"Maximum number of tournaments to return")
-	Cmd.Flags().Uint64Var(&offset, "offset", 0,
-		"Starting point for the list of tournaments")
 
 	Cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
 		if limit > jsonrpc.LIST_ITEM_LIMIT {
 			return fmt.Errorf("limit cannot exceed %d", jsonrpc.LIST_ITEM_LIMIT)
-		} else if limit == 0 {
+		}
+		if limit == 0 {
 			limit = jsonrpc.LIST_ITEM_LIMIT
 		}
 		return nil
@@ -85,109 +92,59 @@ func init() {
 func run(cmd *cobra.Command, args []string) {
 	ctx := cmd.Context()
 
-	nameOrAddress, err := config.ToApplicationNameOrAddressFromString(args[0])
+	useJsonrpc, err := cmd.Flags().GetBool("jsonrpc")
 	cobra.CheckErr(err)
 
-	dsn, err := config.GetDatabaseConnection()
+	readServ, err := service.CreateReadService(ctx, useJsonrpc)
 	cobra.CheckErr(err)
+	defer readServ.Close()
 
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.String())
-	cobra.CheckErr(err)
-	defer repo.Close()
+	var result json.RawMessage
+	if len(args) >= 2 {
+		var params jsonrpc.GetTournamentParams
+		params.Application = args[0]
+		params.Address = args[1]
 
-	var result []byte
-	if len(args) == 2 { // nolint: mnd
-		// Get a specific tournament by address
-
-		// TODO: [maia] check out if the following check is necessary, because
-		// such conversion is already done in the 'repo.GetTournament' function,
-		// but it doesn't seem to check for invalid addresses.
-		tournamentAddressHex := args[1]
-		_, err := config.ToAddressFromString(tournamentAddressHex)
-		if err != nil {
-			cobra.CheckErr(fmt.Errorf("invalid tournament address: %w", err))
-		}
-
-		tournament, err := repo.GetTournament(ctx, nameOrAddress, tournamentAddressHex)
-		cobra.CheckErr(err)
-		if tournament == nil {
-			cobra.CheckErr(errors.New("not found"))
-		}
-
-		// Format response to match JSON-RPC API
-		response := struct {
-			Data *model.Tournament `json:"data"`
-		}{
-			Data: tournament,
-		}
-
-		result, err = json.MarshalIndent(response, "", "    ")
-		cobra.CheckErr(err)
+		result, err = readServ.GetTournament(ctx, params)
 	} else {
-		// Create filter based on flags
-		filter := repository.TournamentFilter{}
+		var params jsonrpc.ListTournamentsParams
+		params.Application = args[0]
 
 		// Add epoch index filter if provided
 		if cmd.Flags().Changed("epoch-index") {
-			filter.EpochIndex = &epochIndex
+			epochIndexHex, hexErr := config.AsHexString(epochIndex)
+			cobra.CheckErr(hexErr)
+			params.EpochIndex = &epochIndexHex
 		}
 
 		// Add level filter if provided
 		if cmd.Flags().Changed("level") {
-			filter.Level = &level
+			levelHex, hexErr := config.AsHexString(level)
+			cobra.CheckErr(hexErr)
+			params.Level = &levelHex
 		}
 
 		// Add parent tournament address filter if provided
 		if cmd.Flags().Changed("parent-tournament-address") {
-			parentAddr, err := config.ToAddressFromString(parentTournamentAddress)
-			if err != nil {
-				cobra.CheckErr(fmt.Errorf("invalid tournament address: %w", err))
-			}
-			filter.ParentTournamentAddress = &parentAddr
+			params.ParentTournamentAddress = &parentTournamentAddress
 		}
 
 		// Add parent match ID hash filter if provided
 		if cmd.Flags().Changed("parent-match-id-hash") {
-			matchHash, err := config.ToHashFromString(parentMatchIdHash)
-			if err != nil {
-				cobra.CheckErr(fmt.Errorf("invalid parent match ID hash: %w", err))
-			}
-			filter.ParentMatchIDHash = &matchHash
+			params.ParentMatchIDHash = &parentMatchIDHash
 		}
+		params.Limit = limit
+		params.Offset = offset
+		params.Descending = descending
 
-		// Limit is validated in PreRunE
-
-		// List tournaments with filters
-		tournaments, total, err := repo.ListTournaments(ctx, nameOrAddress, filter, repository.Pagination{
-			Limit:  limit,
-			Offset: offset,
-		}, false)
-		cobra.CheckErr(err)
-
-		// Format response to match JSON-RPC API
-		response := struct {
-			Data       []*model.Tournament `json:"data"`
-			Pagination struct {
-				TotalCount uint64 `json:"total_count"`
-				Limit      uint64 `json:"limit"`
-				Offset     uint64 `json:"offset"`
-			} `json:"pagination"`
-		}{
-			Data: tournaments,
-			Pagination: struct {
-				TotalCount uint64 `json:"total_count"`
-				Limit      uint64 `json:"limit"`
-				Offset     uint64 `json:"offset"`
-			}{
-				TotalCount: total,
-				Limit:      limit,
-				Offset:     offset,
-			},
-		}
-
-		result, err = json.MarshalIndent(response, "", "    ")
-		cobra.CheckErr(err)
+		result, err = readServ.ListTournaments(ctx, params)
 	}
+	cobra.CheckErr(err)
 
-	fmt.Println(string(result))
+	var out bytes.Buffer
+	err = json.Indent(&out, result, "", "    ")
+	cobra.CheckErr(err)
+	out.WriteString("\n")
+
+	out.WriteTo(os.Stdout)
 }

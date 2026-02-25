@@ -6,7 +6,6 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -79,10 +78,7 @@ func (r *PostgresRepository) GetMatchAdvanced(
 
 	tournamentAddr := common.HexToAddress(tournamentAddress)
 	idHash := common.HexToHash(idHashHex)
-	parent, err := hex.DecodeString(parentHex)
-	if err != nil {
-		return nil, fmt.Errorf("invalid parent hex: %w", err)
-	}
+	parent := common.HexToHash(parentHex)
 
 	sel := table.MatchAdvances.
 		SELECT(
@@ -108,7 +104,7 @@ func (r *PostgresRepository) GetMatchAdvanced(
 				AND(table.MatchAdvances.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", epochIndex)))).
 				AND(table.MatchAdvances.TournamentAddress.EQ(postgres.Bytea(tournamentAddr.Bytes()))).
 				AND(table.MatchAdvances.IDHash.EQ(postgres.Bytea(idHash.Bytes()))).
-				AND(table.MatchAdvances.OtherParent.EQ(postgres.Bytea(parent))),
+				AND(table.MatchAdvances.OtherParent.EQ(postgres.Bytea(parent.Bytes()))),
 		)
 
 	sqlStr, args := sel.Sql()

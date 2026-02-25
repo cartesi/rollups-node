@@ -332,6 +332,13 @@ description = """
 HTTP address for inspect."""
 used-by = ["advancer", "node"]
 
+[http.CARTESI_JSONRPC_API_URL]
+default = "http://localhost:10011/rpc"
+go-type = "string"
+description = """
+URL for the JSON-RPC API."""
+used-by = ["cli"]
+
 [http.CARTESI_INSPECT_URL]
 default = "http://localhost:10012"
 go-type = "string"

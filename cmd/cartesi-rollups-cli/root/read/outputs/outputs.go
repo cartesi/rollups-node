@@ -4,67 +4,72 @@
 package outputs
 
 import (
+	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"os"
 
-	"github.com/spf13/cobra"
-
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/service"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
-	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
-	"github.com/cartesi/rollups-node/pkg/contracts/outputs"
+
+	"github.com/spf13/cobra"
 )
 
 var Cmd = &cobra.Command{
-	Use:     "outputs [application-name-or-address] [output-index]",
+	Use:     "outputs <application> [output index]",
 	Short:   "Reads outputs",
 	Example: examples,
-	Args:    cobra.RangeArgs(1, 2), // nolint: mnd
+	Args:    cobra.RangeArgs(1, 2), //nolint: mnd
 	Run:     run,
 	Long: `
+Arguments:
+	<application>      application name or address
+	[output index]     decimal or hex encoded
+
 Supported Environment Variables:
+  CARTESI_JSONRPC_API_URL                        JSON-RPC API URL
   CARTESI_DATABASE_CONNECTION                    Database connection string`,
 }
 
-const examples = `# Read all outputs:
+const examples = `# Read specific output:
+cartesi-rollups-cli read outputs echo-dapp 10
+
+# Read all outputs:
 cartesi-rollups-cli read outputs echo-dapp
 
-# Read specific output by index:
-cartesi-rollups-cli read outputs echo-dapp 42
+# Read all outputs with filter:
+cartesi-rollups-cli read outputs echo-dapp --epoch-index 10 --input-index 10 --output-type 0x237a816f --voucher-address 0x95eac57f9d67c5e0f255d5a19eb5d3fd00cafa73
 
-# Read outputs filtered by epoch index and input index:
-cartesi-rollups-cli read outputs echo-dapp --epoch-index 0x3
-
-# Read outputs filtered by output type and voucher address:
-cartesi-rollups-cli read outputs echo-dapp --output-type 0x237a816f --voucher-address 0x0123456789abcdef0123456789abcdef0123456789abcdef
-
-# Read outputs with pagination:
-cartesi-rollups-cli read outputs echo-dapp --limit 20 --offset 0`
+# Read all outputs with pagination:
+cartesi-rollups-cli read outputs echo-dapp --limit 10 --offset 10 --descending
+`
 
 var (
-	epochIndex     uint64
-	inputIndex     uint64
+	epochIndex     string
+	inputIndex     string
 	outputType     string
 	voucherAddress string
 	limit          uint64
 	offset         uint64
+	descending     bool
 )
 
 func init() {
-	Cmd.Flags().Uint64Var(&epochIndex, "epoch-index", 0,
+	Cmd.Flags().StringVar(&epochIndex, "epoch-index", "",
 		"Filter outputs by epoch index (decimal or hex encoded)")
-	Cmd.Flags().Uint64Var(&inputIndex, "input-index", 0,
+	Cmd.Flags().StringVar(&inputIndex, "input-index", "",
 		"Filter outputs by input index (decimal or hex encoded)")
 	Cmd.Flags().StringVar(&outputType, "output-type", "",
 		"Filter outputs by output type (first 4 bytes of raw data hex encoded)")
 	Cmd.Flags().StringVar(&voucherAddress, "voucher-address", "",
 		"Filter outputs by voucher address (hex encoded)")
-	Cmd.Flags().Uint64Var(&limit, "limit", 50, // nolint: mnd
+	Cmd.Flags().Uint64Var(&limit, "limit", 50, //nolint: mnd
 		"Maximum number of outputs to return")
 	Cmd.Flags().Uint64Var(&offset, "offset", 0,
 		"Starting point for the list of outputs")
+	Cmd.Flags().BoolVar(&descending, "descending", false,
+		"Sort results in descending order")
 
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
@@ -76,7 +81,8 @@ func init() {
 	Cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
 		if limit > jsonrpc.LIST_ITEM_LIMIT {
 			return fmt.Errorf("limit cannot exceed %d", jsonrpc.LIST_ITEM_LIMIT)
-		} else if limit == 0 {
+		}
+		if limit == 0 {
 			limit = jsonrpc.LIST_ITEM_LIMIT
 		}
 		return nil
@@ -86,117 +92,60 @@ func init() {
 func run(cmd *cobra.Command, args []string) {
 	ctx := cmd.Context()
 
-	nameOrAddress, err := config.ToApplicationNameOrAddressFromString(args[0])
+	useJsonrpc, err := cmd.Flags().GetBool("jsonrpc")
 	cobra.CheckErr(err)
 
-	dsn, err := config.GetDatabaseConnection()
+	readServ, err := service.CreateReadService(ctx, useJsonrpc)
 	cobra.CheckErr(err)
+	defer readServ.Close()
 
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.String())
-	cobra.CheckErr(err)
-	defer repo.Close()
-
-	parsedAbi, err := outputs.OutputsMetaData.GetAbi()
-	cobra.CheckErr(err)
-
-	var result []byte
-	if len(args) == 2 { // nolint: mnd
-		// Get a specific output by index
-		outputIndex, err := config.ToUint64FromDecimalOrHexString(args[1])
-		if err != nil {
-			cobra.CheckErr(fmt.Errorf("invalid output index value: %w", err))
-		}
-
-		output, err := repo.GetOutput(ctx, nameOrAddress, outputIndex)
+	var result json.RawMessage
+	if len(args) >= 2 {
+		var params jsonrpc.GetOutputParams
+		params.Application = args[0]
+		params.OutputIndex, err = config.AsHexString(args[1])
 		cobra.CheckErr(err)
-		if output == nil {
-			cobra.CheckErr(errors.New("not found"))
-		}
 
-		// Create decoded output
-		decoded, _ := jsonrpc.DecodeOutput(output, parsedAbi)
-
-		// Format response to match JSON-RPC API
-		response := struct {
-			Data *jsonrpc.DecodedOutput `json:"data"`
-		}{
-			Data: decoded,
-		}
-
-		result, err = json.MarshalIndent(response, "", "    ")
-		cobra.CheckErr(err)
+		result, err = readServ.GetOutput(ctx, params)
 	} else {
-		// Create filter based on flags
-		filter := repository.OutputFilter{}
+		var params jsonrpc.ListOutputsParams
+		params.Application = args[0]
 
 		// Add epoch index filter if provided
 		if cmd.Flags().Changed("epoch-index") {
-			filter.EpochIndex = &epochIndex
+			epochIndexHex, hexErr := config.AsHexString(epochIndex)
+			cobra.CheckErr(hexErr)
+			params.EpochIndex = &epochIndexHex
 		}
 
 		// Add input index filter if provided
 		if cmd.Flags().Changed("input-index") {
-			filter.InputIndex = &inputIndex
+			inputIndexHex, hexErr := config.AsHexString(inputIndex)
+			cobra.CheckErr(hexErr)
+			params.InputIndex = &inputIndexHex
 		}
 
 		// Add output type filter if provided
 		if cmd.Flags().Changed("output-type") {
-			outputTypeBytes, err := jsonrpc.ParseOutputType(outputType)
-			if err != nil {
-				cobra.CheckErr(fmt.Errorf("invalid output type: %w", err))
-			}
-			filter.OutputType = &outputTypeBytes
+			params.OutputType = &outputType
 		}
 
 		// Add voucher address filter if provided
 		if cmd.Flags().Changed("voucher-address") {
-			voucherAddr, err := config.ToAddressFromString(voucherAddress)
-			if err != nil {
-				cobra.CheckErr(fmt.Errorf("invalid voucher address: %w", err))
-			}
-			filter.VoucherAddress = &voucherAddr
+			params.VoucherAddress = &voucherAddress
 		}
+		params.Limit = limit
+		params.Offset = offset
+		params.Descending = descending
 
-		// Limit is validated in PreRunE
-
-		// List outputs with filters
-		outputList, total, err := repo.ListOutputs(ctx, nameOrAddress, filter, repository.Pagination{
-			Limit:  limit,
-			Offset: offset,
-		}, false)
-		cobra.CheckErr(err)
-
-		// Create decoded outputs
-		var decodedOutputs []*jsonrpc.DecodedOutput
-		for _, output := range outputList {
-			decoded, _ := jsonrpc.DecodeOutput(output, parsedAbi)
-			decodedOutputs = append(decodedOutputs, decoded)
-		}
-
-		// Format response to match JSON-RPC API
-		response := struct {
-			Data       []*jsonrpc.DecodedOutput `json:"data"`
-			Pagination struct {
-				TotalCount uint64 `json:"total_count"`
-				Limit      uint64 `json:"limit"`
-				Offset     uint64 `json:"offset"`
-			} `json:"pagination"`
-		}{
-			Data: decodedOutputs,
-			Pagination: struct {
-				TotalCount uint64 `json:"total_count"`
-				Limit      uint64 `json:"limit"`
-				Offset     uint64 `json:"offset"`
-			}{
-				TotalCount: total,
-				Limit:      limit,
-				Offset:     offset,
-			},
-		}
-
-		result, err = json.MarshalIndent(response, "", "    ")
-		cobra.CheckErr(err)
+		result, err = readServ.ListOutputs(ctx, params)
 	}
+	cobra.CheckErr(err)
 
-	fmt.Println(string(result))
+	var out bytes.Buffer
+	err = json.Indent(&out, result, "", "    ")
+	cobra.CheckErr(err)
+	out.WriteString("\n")
+
+	out.WriteTo(os.Stdout)
 }

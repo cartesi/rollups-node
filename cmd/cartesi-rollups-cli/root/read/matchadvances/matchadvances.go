@@ -4,63 +4,73 @@
 package matchadvances
 
 import (
+	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"os"
 
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/service"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
-	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
 
 	"github.com/spf13/cobra"
 )
 
 var Cmd = &cobra.Command{
-	Use:     "matches_advances <application-name-or-address> <epoch-index> <tournament-address> <id-hash> [parent]",
-	Short:   "Reads matches advances",
+	Use:     "match_advances <application> <epoch index> <tournament address> <ID hash> [parent]",
+	Short:   "Reads match advances",
 	Example: examples,
-	Args:    cobra.RangeArgs(4, 5), // nolint: mnd
+	Args:    cobra.RangeArgs(4, 5), //nolint: mnd
 	Run:     run,
 	Long: `
+Arguments:
+	<application>            application name or address
+	<epoch index>            decimal or hex encoded
+	<tournament address>     hex encoded
+	<ID hash>                hex encoded
+	[parent]                 hex encoded
+
 Supported Environment Variables:
+  CARTESI_JSONRPC_API_URL                        JSON-RPC API URL
   CARTESI_DATABASE_CONNECTION                    Database connection string`,
 }
 
-const examples = `# Read all matches advances:
-cartesi-rollups-cli read matches_advances echo-dapp
+const examples = `# Read specific match advanced:
+cartesi-rollups-cli read match_advances echo-dapp 10 0x0073a8637d98649717bdc02ecb439c80aa8a10d0 0xdb99c9cdb2e2070a4e4e633c2e6874648dfe3971d14da843465b3d950df3dd19 0xdb99c9cdb2e2070a4e4e633c2e6874648dfe3971d14da843465b3d950df3dd19
 
-# Read specific match advances by address:
-cartesi-rollups-cli read matches_advances echo-dapp 1 0x0123456789abcdef0123456789abcdef0123456789abcdef
+# Read all match advances:
+cartesi-rollups-cli read match_advances echo-dapp 10 0x0073a8637d98649717bdc02ecb439c80aa8a10d0 0xdb99c9cdb2e2070a4e4e633c2e6874648dfe3971d14da843465b3d950df3dd19
 
-# Read matches advances with pagination:
-cartesi-rollups-cli read matches_advances echo-dapp --limit 10 --offset 20`
+# Read all match advances with pagination:
+cartesi-rollups-cli read match_advances echo-dapp 10 0x0073a8637d98649717bdc02ecb439c80aa8a10d0 0xdb99c9cdb2e2070a4e4e633c2e6874648dfe3971d14da843465b3d950df3dd19 --limit 10 --offset 10 --descending
+`
+
+var (
+	limit      uint64
+	offset     uint64
+	descending bool
+)
 
 func init() {
+	Cmd.Flags().Uint64Var(&limit, "limit", 50, //nolint: mnd
+		"Maximum number of match advances to return")
+	Cmd.Flags().Uint64Var(&offset, "offset", 0,
+		"Starting point for the list of match advances")
+	Cmd.Flags().BoolVar(&descending, "descending", false,
+		"Sort results in descending order")
+
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
 		command.Flags().Lookup("verbose").Hidden = false
 		command.Flags().Lookup("database-connection").Hidden = false
 		origHelpFunc(command, strings)
 	})
-}
-
-var (
-	limit  uint64
-	offset uint64
-)
-
-func init() {
-	Cmd.Flags().Uint64Var(&limit, "limit", 50, // nolint: mnd
-		"Maximum number of matches advances to return")
-	Cmd.Flags().Uint64Var(&offset, "offset", 0,
-		"Starting point for the list of matches advances")
 
 	Cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
 		if limit > jsonrpc.LIST_ITEM_LIMIT {
 			return fmt.Errorf("limit cannot exceed %d", jsonrpc.LIST_ITEM_LIMIT)
-		} else if limit == 0 {
+		}
+		if limit == 0 {
 			limit = jsonrpc.LIST_ITEM_LIMIT
 		}
 		return nil
@@ -70,90 +80,43 @@ func init() {
 func run(cmd *cobra.Command, args []string) {
 	ctx := cmd.Context()
 
-	nameOrAddress, err := config.ToApplicationNameOrAddressFromString(args[0])
+	useJsonrpc, err := cmd.Flags().GetBool("jsonrpc")
 	cobra.CheckErr(err)
 
-	dsn, err := config.GetDatabaseConnection()
+	readServ, err := service.CreateReadService(ctx, useJsonrpc)
 	cobra.CheckErr(err)
+	defer readServ.Close()
 
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.String())
-	cobra.CheckErr(err)
-	defer repo.Close()
-
-	epochIndex, err := config.ToUint64FromDecimalOrHexString(args[1])
-	if err != nil {
-		cobra.CheckErr(fmt.Errorf("invalid value for epoch-index: %w", err))
-	}
-
-	// TODO: [maia] check out if the following check is necessary, because
-	// such conversion is already done in the 'repo.GetMatchAdvanced' function,
-	// but it doesn't seem to check for invalid addresses.
-	tournamentAddressHex := args[2]
-	_, err = config.ToAddressFromString(tournamentAddressHex)
-	if err != nil {
-		cobra.CheckErr(fmt.Errorf("invalid tournament address: %w", err))
-	}
-	idHashHex := args[3]
-	_, err = config.ToHashFromString(idHashHex)
-	if err != nil {
-		cobra.CheckErr(fmt.Errorf("invalid ID hash: %w", err))
-	}
-
-	var result []byte
-	if len(args) == 5 { // nolint: mnd
-		// Get a specific match advance by address
-
-		parentHex := args[4]
-
-		matchAdvanced, err := repo.GetMatchAdvanced(ctx, nameOrAddress, epochIndex, tournamentAddressHex, idHashHex, parentHex)
+	var result json.RawMessage
+	if len(args) >= 5 {
+		var params jsonrpc.GetMatchAdvancedParams
+		params.Application = args[0]
+		params.EpochIndex, err = config.AsHexString(args[1])
 		cobra.CheckErr(err)
-		if matchAdvanced == nil {
-			cobra.CheckErr(errors.New("not found"))
-		}
+		params.TournamentAddress = args[2]
+		params.IDHash = args[3]
+		params.Parent = args[4]
 
-		// Format response to match JSON-RPC API
-		response := struct {
-			Data *model.MatchAdvanced `json:"data"`
-		}{
-			Data: matchAdvanced,
-		}
-
-		result, err = json.MarshalIndent(response, "", "    ")
-		cobra.CheckErr(err)
+		result, err = readServ.GetMatchAdvanced(ctx, params)
 	} else {
-		// Limit is validated in PreRunE
-
-		// List matches advances with filters
-		matchAdvances, total, err := repo.ListMatchAdvances(ctx, nameOrAddress, epochIndex, tournamentAddressHex, idHashHex, repository.Pagination{
-			Limit:  limit,
-			Offset: offset,
-		}, false)
+		var params jsonrpc.ListMatchAdvancesParams
+		params.Application = args[0]
+		params.EpochIndex, err = config.AsHexString(args[1])
 		cobra.CheckErr(err)
+		params.TournamentAddress = args[2]
+		params.IDHash = args[3]
+		params.Limit = limit
+		params.Offset = offset
+		params.Descending = descending
 
-		// Format response to match JSON-RPC API
-		response := struct {
-			Data       []*model.MatchAdvanced `json:"data"`
-			Pagination struct {
-				TotalCount uint64 `json:"total_count"`
-				Limit      uint64 `json:"limit"`
-				Offset     uint64 `json:"offset"`
-			} `json:"pagination"`
-		}{
-			Data: matchAdvances,
-			Pagination: struct {
-				TotalCount uint64 `json:"total_count"`
-				Limit      uint64 `json:"limit"`
-				Offset     uint64 `json:"offset"`
-			}{
-				TotalCount: total,
-				Limit:      limit,
-				Offset:     offset,
-			},
-		}
-
-		result, err = json.MarshalIndent(response, "", "    ")
-		cobra.CheckErr(err)
+		result, err = readServ.ListMatchAdvances(ctx, params)
 	}
+	cobra.CheckErr(err)
 
-	fmt.Println(string(result))
+	var out bytes.Buffer
+	err = json.Indent(&out, result, "", "    ")
+	cobra.CheckErr(err)
+	out.WriteString("\n")
+
+	out.WriteTo(os.Stdout)
 }

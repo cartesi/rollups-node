@@ -48,6 +48,7 @@ const (
 	INSPECT_ADDRESS                                   = "CARTESI_INSPECT_ADDRESS"
 	INSPECT_URL                                       = "CARTESI_INSPECT_URL"
 	JSONRPC_API_ADDRESS                               = "CARTESI_JSONRPC_API_ADDRESS"
+	JSONRPC_API_URL                                   = "CARTESI_JSONRPC_API_URL"
 	TELEMETRY_ADDRESS                                 = "CARTESI_TELEMETRY_ADDRESS"
 	LOG_COLOR                                         = "CARTESI_LOG_COLOR"
 	LOG_LEVEL                                         = "CARTESI_LOG_LEVEL"
@@ -131,6 +132,8 @@ func SetDefaults() {
 	viper.SetDefault(INSPECT_URL, "http://localhost:10012")
 
 	viper.SetDefault(JSONRPC_API_ADDRESS, ":10011")
+
+	viper.SetDefault(JSONRPC_API_URL, "http://localhost:10011/rpc")
 
 	// no default for CARTESI_TELEMETRY_ADDRESS
 
@@ -1821,6 +1824,19 @@ func GetJsonrpcApiAddress() (string, error) {
 		return v, nil
 	}
 	return notDefinedstring(), fmt.Errorf("%s: %w", JSONRPC_API_ADDRESS, ErrNotDefined)
+}
+
+// GetJsonrpcApiUrl returns the value for the environment variable CARTESI_JSONRPC_API_URL.
+func GetJsonrpcApiUrl() (string, error) {
+	s := viper.GetString(JSONRPC_API_URL)
+	if s != "" {
+		v, err := toString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", JSONRPC_API_URL, err)
+		}
+		return v, nil
+	}
+	return notDefinedstring(), fmt.Errorf("%s: %w", JSONRPC_API_URL, ErrNotDefined)
 }
 
 // GetTelemetryAddress returns the value for the environment variable CARTESI_TELEMETRY_ADDRESS.

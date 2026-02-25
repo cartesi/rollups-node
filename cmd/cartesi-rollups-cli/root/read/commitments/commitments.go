@@ -4,72 +4,85 @@
 package commitments
 
 import (
+	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"os"
 
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/service"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
-	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
 
 	"github.com/spf13/cobra"
 )
 
 var Cmd = &cobra.Command{
-	Use:     "commitments [application-name-or-address] [epoch-index] [tournament-address] [commitment-hash]",
+	Use:     "commitments <application> [epoch index] [tournament address] [commitment]",
 	Short:   "Reads commitments",
 	Example: examples,
-	Args:    cobra.RangeArgs(1, 4), // nolint: mnd
+	Args:    cobra.RangeArgs(1, 4), //nolint: mnd
 	Run:     run,
 	Long: `
+Arguments:
+	<application>            application name or address
+	[epoch index]            decimal or hex encoded
+	[tournament address]     hex encoded
+	[commitment]             hex encoded
+
 Supported Environment Variables:
+  CARTESI_JSONRPC_API_URL                        JSON-RPC API URL
   CARTESI_DATABASE_CONNECTION                    Database connection string`,
 }
 
-const examples = `# Read all commitments:
+const examples = `# Read specific commitment:
+cartesi-rollups-cli read commitments echo-dapp 10 0x0073a8637d98649717bdc02ecb439c80aa8a10d0 0xdb99c9cdb2e2070a4e4e633c2e6874648dfe3971d14da843465b3d950df3dd19
+
+# Read all commitments:
 cartesi-rollups-cli read commitments echo-dapp
 
-# Read specific commitment by epoch, tournament and commitment hash:
-cartesi-rollups-cli read commitments echo-dapp 1 0xa2835312696afa86c969e40831857dbb1412627f 0x1b7087e9580fb7946f37a40ced7ffeded336da790e00cc88e5f4e8e25301546a
+# Read all commitments with filter:
+cartesi-rollups-cli read commitments echo-dapp --epoch-index 10 --tournament-address 0x0073a8637d98649717bdc02ecb439c80aa8a10d0
 
-# Read commitments filtered by epoch:
-cartesi-rollups-cli read commitments echo-dapp --epoch-index 1
+# Read all commitments with pagination:
+cartesi-rollups-cli read commitments echo-dapp --limit 10 --offset 10 --descending
+`
 
-# Read commitments with pagination:
-cartesi-rollups-cli read commitments echo-dapp --limit 10 --offset 20`
+var (
+	epochIndex        string
+	tournamentAddress string
+	limit             uint64
+	offset            uint64
+	descending        bool
+)
 
 func init() {
+	Cmd.Flags().StringVar(&epochIndex, "epoch-index", "",
+		"Filter commitments by epoch index (decimal or hex encoded)")
+	Cmd.Flags().StringVar(&tournamentAddress, "tournament-address", "",
+		"Filter commitments by tournament address (hex encoded)")
+	Cmd.Flags().Uint64Var(&limit, "limit", 50, //nolint: mnd
+		"Maximum number of commitments to return")
+	Cmd.Flags().Uint64Var(&offset, "offset", 0,
+		"Starting point for the list of commitments")
+	Cmd.Flags().BoolVar(&descending, "descending", false,
+		"Sort results in descending order")
+
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
 		command.Flags().Lookup("verbose").Hidden = false
 		command.Flags().Lookup("database-connection").Hidden = false
 		origHelpFunc(command, strings)
 	})
-}
-
-var (
-	epochIndex        uint64
-	tournamentAddress string
-	limit             uint64
-	offset            uint64
-)
-
-func init() {
-	Cmd.Flags().Uint64Var(&epochIndex, "epoch-index", 0,
-		"Filter commitments by epoch index (decimal or hex encoded)")
-	Cmd.Flags().StringVar(&tournamentAddress, "tournament-address", "",
-		"Filter commitments by tournament address (hex encoded)")
-	Cmd.Flags().Uint64Var(&limit, "limit", 50, // nolint: mnd
-		"Maximum number of commitments to return")
-	Cmd.Flags().Uint64Var(&offset, "offset", 0,
-		"Starting point for the list of commitments")
 
 	Cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+		if len(args) > 1 && len(args) < 4 { //nolint: mnd
+			return fmt.Errorf(
+				"expected 1 argument (list) or 4 arguments (get), got %d", len(args))
+		}
 		if limit > jsonrpc.LIST_ITEM_LIMIT {
 			return fmt.Errorf("limit cannot exceed %d", jsonrpc.LIST_ITEM_LIMIT)
-		} else if limit == 0 {
+		}
+		if limit == 0 {
 			limit = jsonrpc.LIST_ITEM_LIMIT
 		}
 		return nil
@@ -79,106 +92,50 @@ func init() {
 func run(cmd *cobra.Command, args []string) {
 	ctx := cmd.Context()
 
-	nameOrAddress, err := config.ToApplicationNameOrAddressFromString(args[0])
+	useJsonrpc, err := cmd.Flags().GetBool("jsonrpc")
 	cobra.CheckErr(err)
 
-	dsn, err := config.GetDatabaseConnection()
+	readServ, err := service.CreateReadService(ctx, useJsonrpc)
 	cobra.CheckErr(err)
+	defer readServ.Close()
 
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.String())
-	cobra.CheckErr(err)
-	defer repo.Close()
-
-	var result []byte
-	if len(args) == 4 { // nolint: mnd
-		// Get a specific commitment by epoch, tournament and commitment
-
-		epochIndex, err := config.ToUint64FromDecimalOrHexString(args[1])
-		if err != nil {
-			cobra.CheckErr(fmt.Errorf("invalid value for epoch-index: %w", err))
-		}
-
-		// TODO: [maia] check out if the following check is necessary, because
-		// such conversion is already done in the 'repo.GetCommitment' function,
-		// but it doesn't seem to check for invalid addresses.
-		tournamentAddressHex := args[2]
-		_, err = config.ToAddressFromString(tournamentAddressHex)
-		if err != nil {
-			cobra.CheckErr(fmt.Errorf("invalid tournament address: %w", err))
-		}
-		commitmentHashHex := args[3]
-		_, err = config.ToHashFromString(commitmentHashHex)
-		if err != nil {
-			cobra.CheckErr(fmt.Errorf("invalid commitment hash: %w", err))
-		}
-
-		commitment, err := repo.GetCommitment(ctx, nameOrAddress, epochIndex, tournamentAddressHex, commitmentHashHex)
+	var result json.RawMessage
+	if len(args) >= 4 {
+		var params jsonrpc.GetCommitmentParams
+		params.Application = args[0]
+		params.EpochIndex, err = config.AsHexString(args[1])
 		cobra.CheckErr(err)
-		if commitment == nil {
-			cobra.CheckErr(errors.New("not found"))
-		}
+		params.TournamentAddress = args[2]
+		params.Commitment = args[3]
 
-		// Format response to match JSON-RPC API
-		response := struct {
-			Data *model.Commitment `json:"data"`
-		}{
-			Data: commitment,
-		}
-
-		result, err = json.MarshalIndent(response, "", "    ")
-		cobra.CheckErr(err)
+		result, err = readServ.GetCommitment(ctx, params)
 	} else {
-		// Create filter based on flags
-		filter := repository.CommitmentFilter{}
+		var params jsonrpc.ListCommitmentsParams
+		params.Application = args[0]
 
 		// Add epoch index filter if provided
 		if cmd.Flags().Changed("epoch-index") {
-			filter.EpochIndex = &epochIndex
+			epochIndexHex, hexErr := config.AsHexString(epochIndex)
+			cobra.CheckErr(hexErr)
+			params.EpochIndex = &epochIndexHex
 		}
 
-		// Add parent commitment address filter if provided
+		// Add tournament address filter if provided
 		if cmd.Flags().Changed("tournament-address") {
-			// TODO: [maia] check out if the following check is necessary.
-			_, err := config.ToAddressFromString(tournamentAddress)
-			if err != nil {
-				cobra.CheckErr(fmt.Errorf("invalid tournament address: %w", err))
-			}
-			filter.TournamentAddress = &tournamentAddress
+			params.TournamentAddress = &tournamentAddress
 		}
+		params.Limit = limit
+		params.Offset = offset
+		params.Descending = descending
 
-		// Limit is validated in PreRunE
-
-		// List commitments with filters
-		commitments, total, err := repo.ListCommitments(ctx, nameOrAddress, filter, repository.Pagination{
-			Limit:  limit,
-			Offset: offset,
-		}, false)
-		cobra.CheckErr(err)
-
-		// Format response to match JSON-RPC API
-		response := struct {
-			Data       []*model.Commitment `json:"data"`
-			Pagination struct {
-				TotalCount uint64 `json:"total_count"`
-				Limit      uint64 `json:"limit"`
-				Offset     uint64 `json:"offset"`
-			} `json:"pagination"`
-		}{
-			Data: commitments,
-			Pagination: struct {
-				TotalCount uint64 `json:"total_count"`
-				Limit      uint64 `json:"limit"`
-				Offset     uint64 `json:"offset"`
-			}{
-				TotalCount: total,
-				Limit:      limit,
-				Offset:     offset,
-			},
-		}
-
-		result, err = json.MarshalIndent(response, "", "    ")
-		cobra.CheckErr(err)
+		result, err = readServ.ListCommitments(ctx, params)
 	}
+	cobra.CheckErr(err)
 
-	fmt.Println(string(result))
+	var out bytes.Buffer
+	err = json.Indent(&out, result, "", "    ")
+	cobra.CheckErr(err)
+	out.WriteString("\n")
+
+	out.WriteTo(os.Stdout)
 }
