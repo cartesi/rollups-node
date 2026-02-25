@@ -236,7 +236,7 @@ func TestMethod(t *testing.T) {
 			resp := testRPCResponse[any]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
-			assert.Equal(t, "invalid epoch_index: expected hex encoded value", resp.Error.Message)
+			assert.Equal(t, "Invalid epoch index: expected hex encoded value", resp.Error.Message)
 		})
 
 		// failure: epoch not in the database -> resource not found
@@ -336,7 +336,7 @@ func TestMethod(t *testing.T) {
 			resp := testRPCResponse[any]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
-			assert.Equal(t, "invalid input_index: expected hex encoded value", resp.Error.Message)
+			assert.Equal(t, "Invalid input index: expected hex encoded value", resp.Error.Message)
 		})
 
 		// failure: input_index not in database -> absent input
@@ -527,7 +527,7 @@ func TestMethod(t *testing.T) {
 			resp := testRPCResponse[any]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
-			assert.Equal(t, "invalid output_index: expected hex encoded value", resp.Error.Message)
+			assert.Equal(t, "Invalid output index: expected hex encoded value", resp.Error.Message)
 		})
 
 		// failure: input_index not in database -> absent input
@@ -706,7 +706,7 @@ func TestMethod(t *testing.T) {
 			resp := testRPCResponse[any]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
-			assert.Equal(t, "invalid report_index: expected hex encoded value", resp.Error.Message)
+			assert.Equal(t, "Invalid report index: expected hex encoded value", resp.Error.Message)
 		})
 
 		// success: output_index of Voucher in the database -> retrieve output
@@ -1857,7 +1857,7 @@ func TestMethod(t *testing.T) {
 			resp := testRPCResponse[any]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
-			assert.Equal(t, "invalid epoch_index: expected hex encoded value", resp.Error.Message)
+			assert.Equal(t, "Invalid epoch index: expected hex encoded value", resp.Error.Message)
 		})
 
 		// failure: commitment not in the database -> resource not found
@@ -1978,7 +1978,7 @@ func TestMethod(t *testing.T) {
 			resp := testRPCResponse[any]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
-			assert.Equal(t, "invalid epoch_index: expected hex encoded value", resp.Error.Message)
+			assert.Equal(t, "Invalid epoch index: expected hex encoded value", resp.Error.Message)
 		})
 
 		// failure: epoch not in the database -> resource not found
@@ -2109,7 +2109,7 @@ func TestMethod(t *testing.T) {
 			resp := testRPCResponse[any]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
-			assert.Equal(t, "invalid epoch_index: expected hex encoded value", resp.Error.Message)
+			assert.Equal(t, "Invalid epoch index: expected hex encoded value", resp.Error.Message)
 		})
 
 		// failure: epoch not in the database -> resource not found

@@ -7,6 +7,7 @@ package config
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -83,6 +84,18 @@ func ToUint64FromDecimalOrHexString(s string) (uint64, error) {
 		return strconv.ParseUint(s[2:], 16, 64)
 	}
 	return ToUint64FromString(s)
+}
+
+func ToIndexFromString(indexString string) (uint64, error) {
+	if len(indexString) < 3 || (!strings.HasPrefix(indexString, "0x") && !strings.HasPrefix(indexString, "0X")) {
+		return 0, errors.New("expected hex encoded value")
+	}
+	str := indexString[2:]
+	index, err := strconv.ParseUint(str, 16, 64)
+	if err != nil {
+		return 0, err
+	}
+	return index, nil
 }
 
 func ToStringFromString(s string) (string, error) {

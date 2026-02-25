@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -281,18 +280,6 @@ func handleListEpochs(s *Service, w http.ResponseWriter, r *http.Request, req RP
 	writeRPCResult(w, req.ID, result)
 }
 
-func parseIndex(indexString string, field string) (uint64, error) {
-	if len(indexString) < 3 || (!strings.HasPrefix(indexString, "0x") && !strings.HasPrefix(indexString, "0X")) {
-		return 0, fmt.Errorf("invalid %s: expected hex encoded value", field)
-	}
-	str := indexString[2:]
-	index, err := strconv.ParseUint(str, 16, 64)
-	if err != nil {
-		return 0, fmt.Errorf("invalid %s: %v", field, "error parsing")
-	}
-	return index, nil
-}
-
 func handleGetEpoch(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
 	var params GetEpochParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
@@ -307,9 +294,9 @@ func handleGetEpoch(s *Service, w http.ResponseWriter, r *http.Request, req RPCR
 		return
 	}
 
-	index, err := parseIndex(params.EpochIndex, "epoch_index")
+	index, err := config.ToIndexFromString(params.EpochIndex)
 	if err != nil {
-		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
 		return
 	}
 
@@ -395,9 +382,9 @@ func handleListInputs(s *Service, w http.ResponseWriter, r *http.Request, req RP
 	// Create input filter based on params
 	inputFilter := repository.InputFilter{}
 	if params.EpochIndex != nil {
-		epochIndex, err := parseIndex(*params.EpochIndex, "epoch_index")
+		epochIndex, err := config.ToIndexFromString(*params.EpochIndex)
 		if err != nil {
-			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
 			return
 		}
 		inputFilter.EpochIndex = &epochIndex
@@ -473,9 +460,9 @@ func handleGetInput(s *Service, w http.ResponseWriter, r *http.Request, req RPCR
 		return
 	}
 
-	index, err := parseIndex(params.InputIndex, "input_index")
+	index, err := config.ToIndexFromString(params.InputIndex)
 	if err != nil {
-		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid input index: %v", err), nil)
 		return
 	}
 
@@ -581,18 +568,18 @@ func handleListOutputs(s *Service, w http.ResponseWriter, r *http.Request, req R
 	// Create output filter based on params
 	outputFilter := repository.OutputFilter{}
 	if params.EpochIndex != nil {
-		epochIndex, err := parseIndex(*params.EpochIndex, "epoch_index")
+		epochIndex, err := config.ToIndexFromString(*params.EpochIndex)
 		if err != nil {
-			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
 			return
 		}
 		outputFilter.EpochIndex = &epochIndex
 	}
 
 	if params.InputIndex != nil {
-		inputIndex, err := parseIndex(*params.InputIndex, "input_index")
+		inputIndex, err := config.ToIndexFromString(*params.InputIndex)
 		if err != nil {
-			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid input index: %v", err), nil)
 			return
 		}
 		outputFilter.InputIndex = &inputIndex
@@ -679,9 +666,9 @@ func handleGetOutput(s *Service, w http.ResponseWriter, r *http.Request, req RPC
 		return
 	}
 
-	index, err := parseIndex(params.OutputIndex, "output_index")
+	index, err := config.ToIndexFromString(params.OutputIndex)
 	if err != nil {
-		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid output index: %v", err), nil)
 		return
 	}
 
@@ -737,18 +724,18 @@ func handleListReports(s *Service, w http.ResponseWriter, r *http.Request, req R
 	// Create report filter based on params
 	reportFilter := repository.ReportFilter{}
 	if params.EpochIndex != nil {
-		epochIndex, err := parseIndex(*params.EpochIndex, "epoch_index")
+		epochIndex, err := config.ToIndexFromString(*params.EpochIndex)
 		if err != nil {
-			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
 			return
 		}
 		reportFilter.EpochIndex = &epochIndex
 	}
 
 	if params.InputIndex != nil {
-		inputIndex, err := parseIndex(*params.InputIndex, "input_index")
+		inputIndex, err := config.ToIndexFromString(*params.InputIndex)
 		if err != nil {
-			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid input index: %v", err), nil)
 			return
 		}
 		reportFilter.InputIndex = &inputIndex
@@ -809,9 +796,9 @@ func handleGetReport(s *Service, w http.ResponseWriter, r *http.Request, req RPC
 		return
 	}
 
-	index, err := parseIndex(params.ReportIndex, "report_index")
+	index, err := config.ToIndexFromString(params.ReportIndex)
 	if err != nil {
-		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid report index: %v", err), nil)
 		return
 	}
 
@@ -862,18 +849,18 @@ func handleListTournaments(s *Service, w http.ResponseWriter, r *http.Request, r
 	// Create tournament filter based on params
 	tournamentFilter := repository.TournamentFilter{}
 	if params.EpochIndex != nil {
-		epochIndex, err := parseIndex(*params.EpochIndex, "epoch_index")
+		epochIndex, err := config.ToIndexFromString(*params.EpochIndex)
 		if err != nil {
-			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
 			return
 		}
 		tournamentFilter.EpochIndex = &epochIndex
 	}
 
 	if params.Level != nil {
-		level, err := parseIndex(*params.Level, "level")
+		level, err := config.ToIndexFromString(*params.Level)
 		if err != nil {
-			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid level: %v", err), nil)
 			return
 		}
 		tournamentFilter.Level = &level
@@ -1002,9 +989,9 @@ func handleListCommitments(s *Service, w http.ResponseWriter, r *http.Request, r
 	// Create commitment filter based on params
 	commitmentFilter := repository.CommitmentFilter{}
 	if params.EpochIndex != nil {
-		epochIndex, err := parseIndex(*params.EpochIndex, "epoch_index")
+		epochIndex, err := config.ToIndexFromString(*params.EpochIndex)
 		if err != nil {
-			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
 			return
 		}
 		commitmentFilter.EpochIndex = &epochIndex
@@ -1072,9 +1059,9 @@ func handleGetCommitment(s *Service, w http.ResponseWriter, r *http.Request, req
 		return
 	}
 
-	epochIndex, err := parseIndex(params.EpochIndex, "epoch_index")
+	epochIndex, err := config.ToIndexFromString(params.EpochIndex)
 	if err != nil {
-		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
 		return
 	}
 
@@ -1139,9 +1126,9 @@ func handleListMatches(s *Service, w http.ResponseWriter, r *http.Request, req R
 	// Create match filter based on params
 	matchFilter := repository.MatchFilter{}
 	if params.EpochIndex != nil {
-		epochIndex, err := parseIndex(*params.EpochIndex, "epoch_index")
+		epochIndex, err := config.ToIndexFromString(*params.EpochIndex)
 		if err != nil {
-			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
 			return
 		}
 		matchFilter.EpochIndex = &epochIndex
@@ -1209,9 +1196,9 @@ func handleGetMatch(s *Service, w http.ResponseWriter, r *http.Request, req RPCR
 		return
 	}
 
-	epochIndex, err := parseIndex(params.EpochIndex, "epoch_index")
+	epochIndex, err := config.ToIndexFromString(params.EpochIndex)
 	if err != nil {
-		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
 		return
 	}
 
@@ -1270,9 +1257,9 @@ func handleListMatchAdvances(s *Service, w http.ResponseWriter, r *http.Request,
 	}
 
 	// Create match advance filter based on params
-	epochIndex, err := parseIndex(params.EpochIndex, "epoch_index")
+	epochIndex, err := config.ToIndexFromString(params.EpochIndex)
 	if err != nil {
-		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
 		return
 	}
 
@@ -1342,9 +1329,9 @@ func handleGetMatchAdvanced(s *Service, w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	epochIndex, err := parseIndex(params.EpochIndex, "epoch_index")
+	epochIndex, err := config.ToIndexFromString(params.EpochIndex)
 	if err != nil {
-		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, err.Error(), nil)
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
 		return
 	}
 
