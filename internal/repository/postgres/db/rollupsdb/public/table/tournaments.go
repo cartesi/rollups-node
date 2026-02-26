@@ -19,21 +19,22 @@ type tournamentsTable struct {
 	// Columns
 	ApplicationID           postgres.ColumnInteger
 	EpochIndex              postgres.ColumnFloat
-	Address                 postgres.ColumnString
-	ParentTournamentAddress postgres.ColumnString
-	ParentMatchIDHash       postgres.ColumnString
+	Address                 postgres.ColumnBytea
+	ParentTournamentAddress postgres.ColumnBytea
+	ParentMatchIDHash       postgres.ColumnBytea
 	MaxLevel                postgres.ColumnInteger
 	Level                   postgres.ColumnInteger
 	Log2step                postgres.ColumnInteger
 	Height                  postgres.ColumnInteger
-	WinnerCommitment        postgres.ColumnString
-	FinalStateHash          postgres.ColumnString
+	WinnerCommitment        postgres.ColumnBytea
+	FinalStateHash          postgres.ColumnBytea
 	FinishedAtBlock         postgres.ColumnFloat
 	CreatedAt               postgres.ColumnTimestampz
 	UpdatedAt               postgres.ColumnTimestampz
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
+	DefaultColumns postgres.ColumnList
 }
 
 type TournamentsTable struct {
@@ -73,20 +74,21 @@ func newTournamentsTableImpl(schemaName, tableName, alias string) tournamentsTab
 	var (
 		ApplicationIDColumn           = postgres.IntegerColumn("application_id")
 		EpochIndexColumn              = postgres.FloatColumn("epoch_index")
-		AddressColumn                 = postgres.StringColumn("address")
-		ParentTournamentAddressColumn = postgres.StringColumn("parent_tournament_address")
-		ParentMatchIDHashColumn       = postgres.StringColumn("parent_match_id_hash")
+		AddressColumn                 = postgres.ByteaColumn("address")
+		ParentTournamentAddressColumn = postgres.ByteaColumn("parent_tournament_address")
+		ParentMatchIDHashColumn       = postgres.ByteaColumn("parent_match_id_hash")
 		MaxLevelColumn                = postgres.IntegerColumn("max_level")
 		LevelColumn                   = postgres.IntegerColumn("level")
 		Log2stepColumn                = postgres.IntegerColumn("log2step")
 		HeightColumn                  = postgres.IntegerColumn("height")
-		WinnerCommitmentColumn        = postgres.StringColumn("winner_commitment")
-		FinalStateHashColumn          = postgres.StringColumn("final_state_hash")
+		WinnerCommitmentColumn        = postgres.ByteaColumn("winner_commitment")
+		FinalStateHashColumn          = postgres.ByteaColumn("final_state_hash")
 		FinishedAtBlockColumn         = postgres.FloatColumn("finished_at_block")
 		CreatedAtColumn               = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn               = postgres.TimestampzColumn("updated_at")
 		allColumns                    = postgres.ColumnList{ApplicationIDColumn, EpochIndexColumn, AddressColumn, ParentTournamentAddressColumn, ParentMatchIDHashColumn, MaxLevelColumn, LevelColumn, Log2stepColumn, HeightColumn, WinnerCommitmentColumn, FinalStateHashColumn, FinishedAtBlockColumn, CreatedAtColumn, UpdatedAtColumn}
 		mutableColumns                = postgres.ColumnList{ParentTournamentAddressColumn, ParentMatchIDHashColumn, MaxLevelColumn, LevelColumn, Log2stepColumn, HeightColumn, WinnerCommitmentColumn, FinalStateHashColumn, FinishedAtBlockColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns                = postgres.ColumnList{FinishedAtBlockColumn, CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return tournamentsTable{
@@ -110,5 +112,6 @@ func newTournamentsTableImpl(schemaName, tableName, alias string) tournamentsTab
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,
+		DefaultColumns: defaultColumns,
 	}
 }

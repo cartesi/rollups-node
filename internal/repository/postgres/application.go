@@ -572,9 +572,8 @@ func (r *PostgresRepository) ListApplications(
 	}
 	if f.DataAvailability != nil {
 		conditions = append(conditions,
-			postgres.SUBSTR(
-				table.Application.DataAvailability, postgres.Int(1), postgres.Int(4), // nolint: mnd
-			).EQ(postgres.Bytea(f.DataAvailability[:])))
+			SubstrBytea(table.Application.DataAvailability, 1, 4).EQ(postgres.Bytea(f.DataAvailability[:])), //nolint:mnd
+		)
 	}
 	if f.ConsensusType != nil {
 		conditions = append(conditions, table.Application.ConsensusType.EQ(postgres.NewEnumValue(f.ConsensusType.String())))

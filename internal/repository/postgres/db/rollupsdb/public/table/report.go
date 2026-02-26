@@ -20,12 +20,13 @@ type reportTable struct {
 	InputEpochApplicationID postgres.ColumnInteger
 	InputIndex              postgres.ColumnFloat
 	Index                   postgres.ColumnFloat
-	RawData                 postgres.ColumnString
+	RawData                 postgres.ColumnBytea
 	CreatedAt               postgres.ColumnTimestampz
 	UpdatedAt               postgres.ColumnTimestampz
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
+	DefaultColumns postgres.ColumnList
 }
 
 type ReportTable struct {
@@ -66,11 +67,12 @@ func newReportTableImpl(schemaName, tableName, alias string) reportTable {
 		InputEpochApplicationIDColumn = postgres.IntegerColumn("input_epoch_application_id")
 		InputIndexColumn              = postgres.FloatColumn("input_index")
 		IndexColumn                   = postgres.FloatColumn("index")
-		RawDataColumn                 = postgres.StringColumn("raw_data")
+		RawDataColumn                 = postgres.ByteaColumn("raw_data")
 		CreatedAtColumn               = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn               = postgres.TimestampzColumn("updated_at")
 		allColumns                    = postgres.ColumnList{InputEpochApplicationIDColumn, InputIndexColumn, IndexColumn, RawDataColumn, CreatedAtColumn, UpdatedAtColumn}
 		mutableColumns                = postgres.ColumnList{InputIndexColumn, RawDataColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns                = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return reportTable{
@@ -86,5 +88,6 @@ func newReportTableImpl(schemaName, tableName, alias string) reportTable {
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,
+		DefaultColumns: defaultColumns,
 	}
 }

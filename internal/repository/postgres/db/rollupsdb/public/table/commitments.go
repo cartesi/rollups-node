@@ -19,17 +19,18 @@ type commitmentsTable struct {
 	// Columns
 	ApplicationID     postgres.ColumnInteger
 	EpochIndex        postgres.ColumnFloat
-	TournamentAddress postgres.ColumnString
-	Commitment        postgres.ColumnString
-	FinalStateHash    postgres.ColumnString
-	SubmitterAddress  postgres.ColumnString
+	TournamentAddress postgres.ColumnBytea
+	Commitment        postgres.ColumnBytea
+	FinalStateHash    postgres.ColumnBytea
+	SubmitterAddress  postgres.ColumnBytea
 	BlockNumber       postgres.ColumnFloat
-	TxHash            postgres.ColumnString
+	TxHash            postgres.ColumnBytea
 	CreatedAt         postgres.ColumnTimestampz
 	UpdatedAt         postgres.ColumnTimestampz
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
+	DefaultColumns postgres.ColumnList
 }
 
 type CommitmentsTable struct {
@@ -69,16 +70,17 @@ func newCommitmentsTableImpl(schemaName, tableName, alias string) commitmentsTab
 	var (
 		ApplicationIDColumn     = postgres.IntegerColumn("application_id")
 		EpochIndexColumn        = postgres.FloatColumn("epoch_index")
-		TournamentAddressColumn = postgres.StringColumn("tournament_address")
-		CommitmentColumn        = postgres.StringColumn("commitment")
-		FinalStateHashColumn    = postgres.StringColumn("final_state_hash")
-		SubmitterAddressColumn  = postgres.StringColumn("submitter_address")
+		TournamentAddressColumn = postgres.ByteaColumn("tournament_address")
+		CommitmentColumn        = postgres.ByteaColumn("commitment")
+		FinalStateHashColumn    = postgres.ByteaColumn("final_state_hash")
+		SubmitterAddressColumn  = postgres.ByteaColumn("submitter_address")
 		BlockNumberColumn       = postgres.FloatColumn("block_number")
-		TxHashColumn            = postgres.StringColumn("tx_hash")
+		TxHashColumn            = postgres.ByteaColumn("tx_hash")
 		CreatedAtColumn         = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn         = postgres.TimestampzColumn("updated_at")
 		allColumns              = postgres.ColumnList{ApplicationIDColumn, EpochIndexColumn, TournamentAddressColumn, CommitmentColumn, FinalStateHashColumn, SubmitterAddressColumn, BlockNumberColumn, TxHashColumn, CreatedAtColumn, UpdatedAtColumn}
 		mutableColumns          = postgres.ColumnList{FinalStateHashColumn, SubmitterAddressColumn, BlockNumberColumn, TxHashColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns          = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return commitmentsTable{
@@ -98,5 +100,6 @@ func newCommitmentsTableImpl(schemaName, tableName, alias string) commitmentsTab
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,
+		DefaultColumns: defaultColumns,
 	}
 }

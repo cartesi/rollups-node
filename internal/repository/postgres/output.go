@@ -216,13 +216,13 @@ func (r *PostgresRepository) ListOutputs(
 
 	if f.OutputType != nil {
 		conditions = append(conditions,
-			postgres.SUBSTR(table.Output.RawData, postgres.Int(1), postgres.Int(4)).EQ(postgres.Bytea(*f.OutputType)),
+			SubstrBytea(table.Output.RawData, 1, 4).EQ(postgres.Bytea(*f.OutputType)),
 		)
 	}
 
 	if f.VoucherAddress != nil {
 		conditions = append(conditions,
-			postgres.SUBSTR(table.Output.RawData, postgres.Int(17), postgres.Int(20)).EQ(postgres.Bytea(f.VoucherAddress.Bytes())),
+			SubstrBytea(table.Output.RawData, 17, 20).EQ(postgres.Bytea(f.VoucherAddress.Bytes())),
 		)
 	}
 

@@ -112,9 +112,11 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 			return err
 		}
 
-		tournamentAddress := postgres.RawString("NULL")
+		var tournamentAddress postgres.ByteaExpression
 		if epoch.TournamentAddress != nil {
 			tournamentAddress = postgres.Bytea(epoch.TournamentAddress.Bytes())
+		} else {
+			tournamentAddress = postgres.ByteaExp(postgres.NULL)
 		}
 		epochSelectQuery := table.Application.SELECT(
 			table.Application.ID,

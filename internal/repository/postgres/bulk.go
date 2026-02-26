@@ -12,7 +12,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-jet/jet/v2/postgres"
-	"github.com/jackc/pgtype"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/cartesi/rollups-node/internal/model"
@@ -25,30 +24,13 @@ func byteSliceToHashSlice(b [][32]byte) []common.Hash {
 	return *(*[]common.Hash)(unsafe.Pointer(&b))
 }
 
-func encodeSiblings(siblings []common.Hash) ([]byte, error) {
-	// 1) Make a slice of []byte
-	arr := make([][]byte, 0, len(siblings))
-	for _, h := range siblings {
-		// h is [32]byte
-		// we must copy it into a slice of bytes
-		copyH := make([]byte, len(h))
-		copy(copyH, h[:])
-		arr = append(arr, copyH)
+func encodeSiblings(siblings []common.Hash) [][]byte {
+	arr := make([][]byte, len(siblings))
+	for i, h := range siblings {
+		arr[i] = make([]byte, len(h))
+		copy(arr[i], h[:])
 	}
-
-	// 2) Use pgtype.ByteaArray and call Set with [][]byte
-	var pgSiblings pgtype.ByteaArray
-	if err := pgSiblings.Set(arr); err != nil {
-		return nil, fmt.Errorf("failed to set ByteaArray: %w", err)
-	}
-
-	// 3) Encode it as text (the Postgres array string, e.g. '{\\x...,\\x..., ...}')
-	encoded, err := pgSiblings.EncodeText(nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode ByteaArray: %w", err)
-	}
-
-	return encoded, nil
+	return arr
 }
 
 func getOutputNextIndex(
@@ -281,8 +263,8 @@ func updateInput(
 		).
 		SET(
 			status,
-			machineHash,
-			outputsHash,
+			machineHash[:],
+			outputsHash[:],
 		).
 		WHERE(
 			table.Input.EpochApplicationID.EQ(postgres.Int64(appID)).
@@ -310,10 +292,6 @@ func updateEpochOutputsMerkleProof(
 	machineHash common.Hash,
 ) error {
 
-	proof, err := encodeSiblings(outputsHashProof)
-	if err != nil {
-		return fmt.Errorf("failed to serialize epoch '%d' OutputsMerkleProof. %w", epochIndex, err)
-	}
 	updStmt := table.Epoch.
 		UPDATE(
 			table.Epoch.OutputsMerkleRoot,
@@ -321,9 +299,9 @@ func updateEpochOutputsMerkleProof(
 			table.Epoch.MachineHash,
 		).
 		SET(
-			outputsHash,
-			proof,
-			machineHash,
+			outputsHash[:],
+			encodeSiblings(outputsHashProof),
+			machineHash[:],
 		).
 		WHERE(
 			table.Epoch.ApplicationID.EQ(postgres.Int64(appID)).
@@ -429,14 +407,6 @@ func updateEpochClaim(
 	e *model.Epoch,
 ) error {
 
-	commitmentProof, err := encodeSiblings(e.CommitmentProof)
-	if err != nil {
-		return errors.Join(
-			fmt.Errorf("failed to serialize epoch '%d' OutputsMerkleProof. %w", e.Index, err),
-			tx.Rollback(ctx),
-		)
-	}
-
 	updStmt := table.Epoch.
 		UPDATE(
 			table.Epoch.Commitment,
@@ -444,8 +414,8 @@ func updateEpochClaim(
 			table.Epoch.Status,
 		).
 		SET(
-			e.Commitment,
-			commitmentProof,
+			hashToBytes(e.Commitment),
+			encodeSiblings(e.CommitmentProof),
 			postgres.NewEnumValue(model.EpochStatus_ClaimComputed.String()),
 		).
 		WHERE(
@@ -476,22 +446,14 @@ func updateOutputs(
 	outputs []*model.Output,
 ) error {
 	for _, output := range outputs {
-		siblings, err := encodeSiblings(output.OutputHashesSiblings)
-		if err != nil {
-			return errors.Join(
-				fmt.Errorf("failed to serialize outputHashesSiblings for output '%d'. %w", output.Index, err),
-				tx.Rollback(ctx),
-			)
-		}
-
 		updStmt := table.Output.
 			UPDATE(
 				table.Output.Hash,
 				table.Output.OutputHashesSiblings,
 			).
 			SET(
-				output.Hash,
-				siblings,
+				hashToBytes(output.Hash),
+				encodeSiblings(output.OutputHashesSiblings),
 			).
 			WHERE(
 				table.Output.InputEpochApplicationID.EQ(postgres.Int64(output.InputEpochApplicationID)).
@@ -566,11 +528,11 @@ func insertCommitments(ctx context.Context, tx pgx.Tx, appID int64, commitments 
 			appID,
 			c.EpochIndex,
 			c.TournamentAddress,
-			c.Commitment,
-			c.FinalStateHash,
-			c.SubmitterAddress,
+			c.Commitment[:],
+			c.FinalStateHash[:],
+			c.SubmitterAddress[:],
 			c.BlockNumber,
-			c.TxHash,
+			c.TxHash[:],
 		)
 	}
 
@@ -606,10 +568,10 @@ func insertMatches(ctx context.Context, tx pgx.Tx, appID int64, matches []*model
 		stmt = stmt.VALUES(
 			appID,
 			m.EpochIndex,
-			m.TournamentAddress,
-			m.IDHash,
-			m.CommitmentOne,
-			m.CommitmentTwo,
+			m.TournamentAddress[:],
+			m.IDHash[:],
+			m.CommitmentOne[:],
+			m.CommitmentTwo[:],
 			m.LeftOfTwo,
 			m.BlockNumber,
 			m.TxHash,

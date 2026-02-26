@@ -36,6 +36,7 @@ type executionParametersTable struct {
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
+	DefaultColumns postgres.ColumnList
 }
 
 type ExecutionParametersTable struct {
@@ -91,6 +92,7 @@ func newExecutionParametersTableImpl(schemaName, tableName, alias string) execut
 		UpdatedAtColumn             = postgres.TimestampzColumn("updated_at")
 		allColumns                  = postgres.ColumnList{ApplicationIDColumn, SnapshotPolicyColumn, AdvanceIncCyclesColumn, AdvanceMaxCyclesColumn, InspectIncCyclesColumn, InspectMaxCyclesColumn, AdvanceIncDeadlineColumn, AdvanceMaxDeadlineColumn, InspectIncDeadlineColumn, InspectMaxDeadlineColumn, LoadDeadlineColumn, StoreDeadlineColumn, FastDeadlineColumn, MaxConcurrentInspectsColumn, CreatedAtColumn, UpdatedAtColumn}
 		mutableColumns              = postgres.ColumnList{SnapshotPolicyColumn, AdvanceIncCyclesColumn, AdvanceMaxCyclesColumn, InspectIncCyclesColumn, InspectMaxCyclesColumn, AdvanceIncDeadlineColumn, AdvanceMaxDeadlineColumn, InspectIncDeadlineColumn, InspectMaxDeadlineColumn, LoadDeadlineColumn, StoreDeadlineColumn, FastDeadlineColumn, MaxConcurrentInspectsColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns              = postgres.ColumnList{SnapshotPolicyColumn, AdvanceIncCyclesColumn, AdvanceMaxCyclesColumn, InspectIncCyclesColumn, InspectMaxCyclesColumn, AdvanceIncDeadlineColumn, AdvanceMaxDeadlineColumn, InspectIncDeadlineColumn, InspectMaxDeadlineColumn, LoadDeadlineColumn, StoreDeadlineColumn, FastDeadlineColumn, MaxConcurrentInspectsColumn, CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return executionParametersTable{
@@ -116,5 +118,6 @@ func newExecutionParametersTableImpl(schemaName, tableName, alias string) execut
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,
+		DefaultColumns: defaultColumns,
 	}
 }

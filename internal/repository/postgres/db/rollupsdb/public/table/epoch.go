@@ -23,13 +23,13 @@ type epochTable struct {
 	LastBlock            postgres.ColumnFloat
 	InputIndexLowerBound postgres.ColumnFloat
 	InputIndexUpperBound postgres.ColumnFloat
-	MachineHash          postgres.ColumnString
-	OutputsMerkleRoot    postgres.ColumnString
-	OutputsMerkleProof   postgres.ColumnString
-	Commitment           postgres.ColumnString
-	CommitmentProof      postgres.ColumnString
-	TournamentAddress    postgres.ColumnString
-	ClaimTransactionHash postgres.ColumnString
+	MachineHash          postgres.ColumnBytea
+	OutputsMerkleRoot    postgres.ColumnBytea
+	OutputsMerkleProof   postgres.ColumnByteaArray
+	Commitment           postgres.ColumnBytea
+	CommitmentProof      postgres.ColumnByteaArray
+	TournamentAddress    postgres.ColumnBytea
+	ClaimTransactionHash postgres.ColumnBytea
 	Status               postgres.ColumnString
 	VirtualIndex         postgres.ColumnFloat
 	CreatedAt            postgres.ColumnTimestampz
@@ -37,6 +37,7 @@ type epochTable struct {
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
+	DefaultColumns postgres.ColumnList
 }
 
 type EpochTable struct {
@@ -80,19 +81,20 @@ func newEpochTableImpl(schemaName, tableName, alias string) epochTable {
 		LastBlockColumn            = postgres.FloatColumn("last_block")
 		InputIndexLowerBoundColumn = postgres.FloatColumn("input_index_lower_bound")
 		InputIndexUpperBoundColumn = postgres.FloatColumn("input_index_upper_bound")
-		MachineHashColumn          = postgres.StringColumn("machine_hash")
-		OutputsMerkleRootColumn    = postgres.StringColumn("outputs_merkle_root")
-		OutputsMerkleProofColumn   = postgres.StringColumn("outputs_merkle_proof")
-		CommitmentColumn           = postgres.StringColumn("commitment")
-		CommitmentProofColumn      = postgres.StringColumn("commitment_proof")
-		TournamentAddressColumn    = postgres.StringColumn("tournament_address")
-		ClaimTransactionHashColumn = postgres.StringColumn("claim_transaction_hash")
+		MachineHashColumn          = postgres.ByteaColumn("machine_hash")
+		OutputsMerkleRootColumn    = postgres.ByteaColumn("outputs_merkle_root")
+		OutputsMerkleProofColumn   = postgres.ByteaArrayColumn("outputs_merkle_proof")
+		CommitmentColumn           = postgres.ByteaColumn("commitment")
+		CommitmentProofColumn      = postgres.ByteaArrayColumn("commitment_proof")
+		TournamentAddressColumn    = postgres.ByteaColumn("tournament_address")
+		ClaimTransactionHashColumn = postgres.ByteaColumn("claim_transaction_hash")
 		StatusColumn               = postgres.StringColumn("status")
 		VirtualIndexColumn         = postgres.FloatColumn("virtual_index")
 		CreatedAtColumn            = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn            = postgres.TimestampzColumn("updated_at")
 		allColumns                 = postgres.ColumnList{ApplicationIDColumn, IndexColumn, FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, OutputsMerkleRootColumn, OutputsMerkleProofColumn, CommitmentColumn, CommitmentProofColumn, TournamentAddressColumn, ClaimTransactionHashColumn, StatusColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
 		mutableColumns             = postgres.ColumnList{FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, OutputsMerkleRootColumn, OutputsMerkleProofColumn, CommitmentColumn, CommitmentProofColumn, TournamentAddressColumn, ClaimTransactionHashColumn, StatusColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns             = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return epochTable{
@@ -119,5 +121,6 @@ func newEpochTableImpl(schemaName, tableName, alias string) epochTable {
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,
+		DefaultColumns: defaultColumns,
 	}
 }

@@ -24,6 +24,7 @@ type nodeConfigTable struct {
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
+	DefaultColumns postgres.ColumnList
 }
 
 type NodeConfigTable struct {
@@ -67,6 +68,7 @@ func newNodeConfigTableImpl(schemaName, tableName, alias string) nodeConfigTable
 		UpdatedAtColumn = postgres.TimestampzColumn("updated_at")
 		allColumns      = postgres.ColumnList{KeyColumn, ValueColumn, CreatedAtColumn, UpdatedAtColumn}
 		mutableColumns  = postgres.ColumnList{ValueColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns  = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return nodeConfigTable{
@@ -80,5 +82,6 @@ func newNodeConfigTableImpl(schemaName, tableName, alias string) nodeConfigTable
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,
+		DefaultColumns: defaultColumns,
 	}
 }

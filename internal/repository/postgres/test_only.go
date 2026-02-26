@@ -37,13 +37,13 @@ func (r *PostgresRepository) CreateEpoch(
 		e.LastBlock,
 		e.InputIndexLowerBound,
 		e.InputIndexUpperBound,
-		e.MachineHash,
+		hashToBytes(e.MachineHash),
 		e.OutputsMerkleRoot,
-		e.OutputsMerkleProof,
-		e.Commitment,
-		e.CommitmentProof,
-		e.ClaimTransactionHash,
-		e.TournamentAddress,
+		encodeSiblings(e.OutputsMerkleProof),
+		hashToBytes(e.Commitment),
+		encodeSiblings(e.CommitmentProof),
+		hashToBytes(e.ClaimTransactionHash),
+		addressToBytes(e.TournamentAddress),
 		e.Status,
 		e.VirtualIndex,
 	)
@@ -75,8 +75,8 @@ func (r *PostgresRepository) CreateInput(
 		inp.BlockNumber,
 		inp.RawData,
 		inp.Status,
-		inp.MachineHash,
-		inp.OutputsHash,
+		hashToBytes(inp.MachineHash),
+		hashToBytes(inp.OutputsHash),
 		inp.TransactionReference,
 		inp.SnapshotURI,
 	)
@@ -103,9 +103,9 @@ func (r *PostgresRepository) CreateOutput(
 		out.InputIndex,
 		out.Index,
 		out.RawData,
-		out.Hash,
-		out.OutputHashesSiblings,
-		out.ExecutionTransactionHash,
+		hashToBytes(out.Hash),
+		encodeSiblings(out.OutputHashesSiblings),
+		hashToBytes(out.ExecutionTransactionHash),
 	)
 
 	sqlStr, args := insertStmt.Sql()

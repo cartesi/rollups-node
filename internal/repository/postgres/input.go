@@ -118,7 +118,7 @@ func (r *PostgresRepository) GetInputByTxReference(
 		).
 		WHERE(
 			whereClause.
-				AND(table.Input.TransactionReference.EQ(postgres.Bytea(ref))),
+				AND(table.Input.TransactionReference.EQ(postgres.Bytea(ref[:]))),
 		)
 
 	sqlStr, args := sel.Sql()
@@ -330,7 +330,7 @@ func (r *PostgresRepository) ListInputs(
 
 	if f.Sender != nil {
 		conditions = append(conditions,
-			postgres.SUBSTR(table.Input.RawData, postgres.Int(81), postgres.Int(20)).EQ(postgres.Bytea(f.Sender.Bytes())),
+			SubstrBytea(table.Input.RawData, 81, 20).EQ(postgres.Bytea(f.Sender.Bytes())),
 		)
 	}
 

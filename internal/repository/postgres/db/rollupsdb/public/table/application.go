@@ -19,14 +19,14 @@ type applicationTable struct {
 	// Columns
 	ID                       postgres.ColumnInteger
 	Name                     postgres.ColumnString
-	IapplicationAddress      postgres.ColumnString
-	IconsensusAddress        postgres.ColumnString
-	IinputboxAddress         postgres.ColumnString
+	IapplicationAddress      postgres.ColumnBytea
+	IconsensusAddress        postgres.ColumnBytea
+	IinputboxAddress         postgres.ColumnBytea
 	IinputboxBlock           postgres.ColumnFloat
-	TemplateHash             postgres.ColumnString
+	TemplateHash             postgres.ColumnBytea
 	TemplateURI              postgres.ColumnString
 	EpochLength              postgres.ColumnFloat
-	DataAvailability         postgres.ColumnString
+	DataAvailability         postgres.ColumnBytea
 	ConsensusType            postgres.ColumnString
 	State                    postgres.ColumnString
 	Reason                   postgres.ColumnString
@@ -40,6 +40,7 @@ type applicationTable struct {
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
+	DefaultColumns postgres.ColumnList
 }
 
 type ApplicationTable struct {
@@ -79,14 +80,14 @@ func newApplicationTableImpl(schemaName, tableName, alias string) applicationTab
 	var (
 		IDColumn                       = postgres.IntegerColumn("id")
 		NameColumn                     = postgres.StringColumn("name")
-		IapplicationAddressColumn      = postgres.StringColumn("iapplication_address")
-		IconsensusAddressColumn        = postgres.StringColumn("iconsensus_address")
-		IinputboxAddressColumn         = postgres.StringColumn("iinputbox_address")
+		IapplicationAddressColumn      = postgres.ByteaColumn("iapplication_address")
+		IconsensusAddressColumn        = postgres.ByteaColumn("iconsensus_address")
+		IinputboxAddressColumn         = postgres.ByteaColumn("iinputbox_address")
 		IinputboxBlockColumn           = postgres.FloatColumn("iinputbox_block")
-		TemplateHashColumn             = postgres.StringColumn("template_hash")
+		TemplateHashColumn             = postgres.ByteaColumn("template_hash")
 		TemplateURIColumn              = postgres.StringColumn("template_uri")
 		EpochLengthColumn              = postgres.FloatColumn("epoch_length")
-		DataAvailabilityColumn         = postgres.StringColumn("data_availability")
+		DataAvailabilityColumn         = postgres.ByteaColumn("data_availability")
 		ConsensusTypeColumn            = postgres.StringColumn("consensus_type")
 		StateColumn                    = postgres.StringColumn("state")
 		ReasonColumn                   = postgres.StringColumn("reason")
@@ -99,6 +100,7 @@ func newApplicationTableImpl(schemaName, tableName, alias string) applicationTab
 		UpdatedAtColumn                = postgres.TimestampzColumn("updated_at")
 		allColumns                     = postgres.ColumnList{IDColumn, NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, DataAvailabilityColumn, ConsensusTypeColumn, StateColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, ProcessedInputsColumn, CreatedAtColumn, UpdatedAtColumn}
 		mutableColumns                 = postgres.ColumnList{NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, DataAvailabilityColumn, ConsensusTypeColumn, StateColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, ProcessedInputsColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns                 = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return applicationTable{
@@ -128,5 +130,6 @@ func newApplicationTableImpl(schemaName, tableName, alias string) applicationTab
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,
+		DefaultColumns: defaultColumns,
 	}
 }

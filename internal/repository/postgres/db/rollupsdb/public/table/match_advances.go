@@ -19,17 +19,18 @@ type matchAdvancesTable struct {
 	// Columns
 	ApplicationID     postgres.ColumnInteger
 	EpochIndex        postgres.ColumnFloat
-	TournamentAddress postgres.ColumnString
-	IDHash            postgres.ColumnString
-	OtherParent       postgres.ColumnString
-	LeftNode          postgres.ColumnString
+	TournamentAddress postgres.ColumnBytea
+	IDHash            postgres.ColumnBytea
+	OtherParent       postgres.ColumnBytea
+	LeftNode          postgres.ColumnBytea
 	BlockNumber       postgres.ColumnFloat
-	TxHash            postgres.ColumnString
+	TxHash            postgres.ColumnBytea
 	CreatedAt         postgres.ColumnTimestampz
 	UpdatedAt         postgres.ColumnTimestampz
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
+	DefaultColumns postgres.ColumnList
 }
 
 type MatchAdvancesTable struct {
@@ -69,16 +70,17 @@ func newMatchAdvancesTableImpl(schemaName, tableName, alias string) matchAdvance
 	var (
 		ApplicationIDColumn     = postgres.IntegerColumn("application_id")
 		EpochIndexColumn        = postgres.FloatColumn("epoch_index")
-		TournamentAddressColumn = postgres.StringColumn("tournament_address")
-		IDHashColumn            = postgres.StringColumn("id_hash")
-		OtherParentColumn       = postgres.StringColumn("other_parent")
-		LeftNodeColumn          = postgres.StringColumn("left_node")
+		TournamentAddressColumn = postgres.ByteaColumn("tournament_address")
+		IDHashColumn            = postgres.ByteaColumn("id_hash")
+		OtherParentColumn       = postgres.ByteaColumn("other_parent")
+		LeftNodeColumn          = postgres.ByteaColumn("left_node")
 		BlockNumberColumn       = postgres.FloatColumn("block_number")
-		TxHashColumn            = postgres.StringColumn("tx_hash")
+		TxHashColumn            = postgres.ByteaColumn("tx_hash")
 		CreatedAtColumn         = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn         = postgres.TimestampzColumn("updated_at")
 		allColumns              = postgres.ColumnList{ApplicationIDColumn, EpochIndexColumn, TournamentAddressColumn, IDHashColumn, OtherParentColumn, LeftNodeColumn, BlockNumberColumn, TxHashColumn, CreatedAtColumn, UpdatedAtColumn}
 		mutableColumns          = postgres.ColumnList{LeftNodeColumn, BlockNumberColumn, TxHashColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns          = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return matchAdvancesTable{
@@ -98,5 +100,6 @@ func newMatchAdvancesTableImpl(schemaName, tableName, alias string) matchAdvance
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,
+		DefaultColumns: defaultColumns,
 	}
 }

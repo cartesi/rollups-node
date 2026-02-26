@@ -20,15 +20,16 @@ type outputTable struct {
 	InputEpochApplicationID  postgres.ColumnInteger
 	InputIndex               postgres.ColumnFloat
 	Index                    postgres.ColumnFloat
-	RawData                  postgres.ColumnString
-	Hash                     postgres.ColumnString
-	OutputHashesSiblings     postgres.ColumnString
-	ExecutionTransactionHash postgres.ColumnString
+	RawData                  postgres.ColumnBytea
+	Hash                     postgres.ColumnBytea
+	OutputHashesSiblings     postgres.ColumnByteaArray
+	ExecutionTransactionHash postgres.ColumnBytea
 	CreatedAt                postgres.ColumnTimestampz
 	UpdatedAt                postgres.ColumnTimestampz
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
+	DefaultColumns postgres.ColumnList
 }
 
 type OutputTable struct {
@@ -69,14 +70,15 @@ func newOutputTableImpl(schemaName, tableName, alias string) outputTable {
 		InputEpochApplicationIDColumn  = postgres.IntegerColumn("input_epoch_application_id")
 		InputIndexColumn               = postgres.FloatColumn("input_index")
 		IndexColumn                    = postgres.FloatColumn("index")
-		RawDataColumn                  = postgres.StringColumn("raw_data")
-		HashColumn                     = postgres.StringColumn("hash")
-		OutputHashesSiblingsColumn     = postgres.StringColumn("output_hashes_siblings")
-		ExecutionTransactionHashColumn = postgres.StringColumn("execution_transaction_hash")
+		RawDataColumn                  = postgres.ByteaColumn("raw_data")
+		HashColumn                     = postgres.ByteaColumn("hash")
+		OutputHashesSiblingsColumn     = postgres.ByteaArrayColumn("output_hashes_siblings")
+		ExecutionTransactionHashColumn = postgres.ByteaColumn("execution_transaction_hash")
 		CreatedAtColumn                = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn                = postgres.TimestampzColumn("updated_at")
 		allColumns                     = postgres.ColumnList{InputEpochApplicationIDColumn, InputIndexColumn, IndexColumn, RawDataColumn, HashColumn, OutputHashesSiblingsColumn, ExecutionTransactionHashColumn, CreatedAtColumn, UpdatedAtColumn}
 		mutableColumns                 = postgres.ColumnList{InputIndexColumn, RawDataColumn, HashColumn, OutputHashesSiblingsColumn, ExecutionTransactionHashColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns                 = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return outputTable{
@@ -95,5 +97,6 @@ func newOutputTableImpl(schemaName, tableName, alias string) outputTable {
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,
+		DefaultColumns: defaultColumns,
 	}
 }

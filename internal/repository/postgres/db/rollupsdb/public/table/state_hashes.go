@@ -21,13 +21,14 @@ type stateHashesTable struct {
 	EpochIndex              postgres.ColumnFloat
 	InputIndex              postgres.ColumnFloat
 	Index                   postgres.ColumnFloat
-	MachineHash             postgres.ColumnString
+	MachineHash             postgres.ColumnBytea
 	Repetitions             postgres.ColumnInteger
 	CreatedAt               postgres.ColumnTimestampz
 	UpdatedAt               postgres.ColumnTimestampz
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
+	DefaultColumns postgres.ColumnList
 }
 
 type StateHashesTable struct {
@@ -69,12 +70,13 @@ func newStateHashesTableImpl(schemaName, tableName, alias string) stateHashesTab
 		EpochIndexColumn              = postgres.FloatColumn("epoch_index")
 		InputIndexColumn              = postgres.FloatColumn("input_index")
 		IndexColumn                   = postgres.FloatColumn("index")
-		MachineHashColumn             = postgres.StringColumn("machine_hash")
+		MachineHashColumn             = postgres.ByteaColumn("machine_hash")
 		RepetitionsColumn             = postgres.IntegerColumn("repetitions")
 		CreatedAtColumn               = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn               = postgres.TimestampzColumn("updated_at")
 		allColumns                    = postgres.ColumnList{InputEpochApplicationIDColumn, EpochIndexColumn, InputIndexColumn, IndexColumn, MachineHashColumn, RepetitionsColumn, CreatedAtColumn, UpdatedAtColumn}
 		mutableColumns                = postgres.ColumnList{InputIndexColumn, MachineHashColumn, RepetitionsColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns                = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return stateHashesTable{
@@ -92,5 +94,6 @@ func newStateHashesTableImpl(schemaName, tableName, alias string) stateHashesTab
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,
+		DefaultColumns: defaultColumns,
 	}
 }

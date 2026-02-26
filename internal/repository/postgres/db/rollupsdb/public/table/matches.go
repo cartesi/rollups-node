@@ -19,22 +19,23 @@ type matchesTable struct {
 	// Columns
 	ApplicationID       postgres.ColumnInteger
 	EpochIndex          postgres.ColumnFloat
-	TournamentAddress   postgres.ColumnString
-	IDHash              postgres.ColumnString
-	CommitmentOne       postgres.ColumnString
-	CommitmentTwo       postgres.ColumnString
-	LeftOfTwo           postgres.ColumnString
+	TournamentAddress   postgres.ColumnBytea
+	IDHash              postgres.ColumnBytea
+	CommitmentOne       postgres.ColumnBytea
+	CommitmentTwo       postgres.ColumnBytea
+	LeftOfTwo           postgres.ColumnBytea
 	BlockNumber         postgres.ColumnFloat
-	TxHash              postgres.ColumnString
+	TxHash              postgres.ColumnBytea
 	Winner              postgres.ColumnString
 	DeletionReason      postgres.ColumnString
 	DeletionBlockNumber postgres.ColumnFloat
-	DeletionTxHash      postgres.ColumnString
+	DeletionTxHash      postgres.ColumnBytea
 	CreatedAt           postgres.ColumnTimestampz
 	UpdatedAt           postgres.ColumnTimestampz
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
+	DefaultColumns postgres.ColumnList
 }
 
 type MatchesTable struct {
@@ -74,21 +75,22 @@ func newMatchesTableImpl(schemaName, tableName, alias string) matchesTable {
 	var (
 		ApplicationIDColumn       = postgres.IntegerColumn("application_id")
 		EpochIndexColumn          = postgres.FloatColumn("epoch_index")
-		TournamentAddressColumn   = postgres.StringColumn("tournament_address")
-		IDHashColumn              = postgres.StringColumn("id_hash")
-		CommitmentOneColumn       = postgres.StringColumn("commitment_one")
-		CommitmentTwoColumn       = postgres.StringColumn("commitment_two")
-		LeftOfTwoColumn           = postgres.StringColumn("left_of_two")
+		TournamentAddressColumn   = postgres.ByteaColumn("tournament_address")
+		IDHashColumn              = postgres.ByteaColumn("id_hash")
+		CommitmentOneColumn       = postgres.ByteaColumn("commitment_one")
+		CommitmentTwoColumn       = postgres.ByteaColumn("commitment_two")
+		LeftOfTwoColumn           = postgres.ByteaColumn("left_of_two")
 		BlockNumberColumn         = postgres.FloatColumn("block_number")
-		TxHashColumn              = postgres.StringColumn("tx_hash")
+		TxHashColumn              = postgres.ByteaColumn("tx_hash")
 		WinnerColumn              = postgres.StringColumn("winner")
 		DeletionReasonColumn      = postgres.StringColumn("deletion_reason")
 		DeletionBlockNumberColumn = postgres.FloatColumn("deletion_block_number")
-		DeletionTxHashColumn      = postgres.StringColumn("deletion_tx_hash")
+		DeletionTxHashColumn      = postgres.ByteaColumn("deletion_tx_hash")
 		CreatedAtColumn           = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn           = postgres.TimestampzColumn("updated_at")
 		allColumns                = postgres.ColumnList{ApplicationIDColumn, EpochIndexColumn, TournamentAddressColumn, IDHashColumn, CommitmentOneColumn, CommitmentTwoColumn, LeftOfTwoColumn, BlockNumberColumn, TxHashColumn, WinnerColumn, DeletionReasonColumn, DeletionBlockNumberColumn, DeletionTxHashColumn, CreatedAtColumn, UpdatedAtColumn}
 		mutableColumns            = postgres.ColumnList{CommitmentOneColumn, CommitmentTwoColumn, LeftOfTwoColumn, BlockNumberColumn, TxHashColumn, WinnerColumn, DeletionReasonColumn, DeletionBlockNumberColumn, DeletionTxHashColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns            = postgres.ColumnList{DeletionBlockNumberColumn, CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return matchesTable{
@@ -113,5 +115,6 @@ func newMatchesTableImpl(schemaName, tableName, alias string) matchesTable {
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,
+		DefaultColumns: defaultColumns,
 	}
 }
