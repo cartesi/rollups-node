@@ -56,12 +56,12 @@ func GetTestBook() *Book {
 func GetBookFromFile(path string) (*Book, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read address book file: %v", err)
+		return nil, fmt.Errorf("read address book file: %w", err)
 	}
 	var book Book
 	err = json.Unmarshal(data, &book)
 	if err != nil {
-		return nil, fmt.Errorf("parse address book json: %v", err)
+		return nil, fmt.Errorf("parse address book json: %w", err)
 	}
 	return &book, nil
 }
