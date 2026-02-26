@@ -115,11 +115,13 @@ env:
 	@echo export CARTESI_BLOCKCHAIN_HTTP_ENDPOINT="http://localhost:8545"
 	@echo export CARTESI_BLOCKCHAIN_WS_ENDPOINT="ws://localhost:8545"
 	@echo export CARTESI_BLOCKCHAIN_ID="31337"
+	# @ADDRESS-BOOK-BEGIN@
 	@echo export CARTESI_CONTRACTS_INPUT_BOX_ADDRESS="0x1b51e2992A2755Ba4D6F7094032DF91991a0Cfac"
 	@echo export CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS="0x5E96408CFE423b01dADeD3bc867E6013135990cc"
 	@echo export CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS="0x26E758238CB6eC5aB70ce0dd52aF2d7b82e1972E"
 	@echo export CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS="0x010D3CbB4223F5bCc7b7B03cEE59f3aAea8eDb8A"
 	@echo export CARTESI_CONTRACTS_DAVE_APP_FACTORY_ADDRESS="0xfC2DBC639b5FB9AfE66A8696eC14EaD9FbFBC404"
+	# @ADDRESS-BOOK-END@
 	@echo export CARTESI_AUTH_MNEMONIC=\"test test test test test test test test test test test junk\"
 	@echo export CARTESI_DATABASE_CONNECTION="postgres://postgres:password@localhost:5432/rollupsdb?sslmode=disable"
 	@echo export CARTESI_SNAPSHOTS_DIR="snapshots"
@@ -337,6 +339,7 @@ copy-devnet-files deployment.json: ## Copy the devnet files to the host (it must
 	@echo "Copying devnet files"
 	@docker cp devnet:/usr/share/devnet/deployment.json deployment.json
 	@docker cp devnet:/usr/share/devnet/anvil_state.json anvil_state.json
+	@sh tools/update_addresses.sh
 
 start-postgres: ## Run the PostgreSQL 16 docker container
 	@echo "Starting portgres"
