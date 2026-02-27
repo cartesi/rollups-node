@@ -380,6 +380,9 @@ func (r *PostgresRepository) ListInputs(
 		}
 		inputs = append(inputs, &in)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
 	return inputs, total, nil
 }
 

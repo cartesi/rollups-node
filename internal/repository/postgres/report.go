@@ -160,5 +160,8 @@ func (r *PostgresRepository) ListReports(
 		}
 		reports = append(reports, &rp)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
 	return reports, total, nil
 }

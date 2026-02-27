@@ -735,6 +735,9 @@ func (r *PostgresRepository) ListEpochs(
 		}
 		epochs = append(epochs, &ep)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
 	return epochs, total, nil
 }
 

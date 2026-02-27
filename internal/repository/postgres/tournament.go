@@ -308,6 +308,9 @@ func (r *PostgresRepository) ListTournaments(
 		}
 		tournaments = append(tournaments, &t)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
 
 	return tournaments, total, nil
 }

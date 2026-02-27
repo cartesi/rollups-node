@@ -93,5 +93,8 @@ func (r *PostgresRepository) ListStateHashes(
 		}
 		stateHashes = append(stateHashes, &sh)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
 	return stateHashes, total, nil
 }

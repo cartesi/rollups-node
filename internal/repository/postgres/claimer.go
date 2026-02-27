@@ -134,6 +134,9 @@ func (r *PostgresRepository) selectOldestClaimPerApp(
 		epochs[application.ID] = &epoch
 		applications[application.ID] = &application
 	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
 	return epochs, applications, nil
 }
 
@@ -209,6 +212,9 @@ func (r *PostgresRepository) selectNewestAcceptedClaimPerApp(
 			return nil, err
 		}
 		epochs[epoch.ApplicationID] = &epoch
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return epochs, nil
 }

@@ -293,6 +293,9 @@ func (r *PostgresRepository) ListMatches(
 		}
 		matches = append(matches, &m)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
 
 	return matches, total, nil
 }

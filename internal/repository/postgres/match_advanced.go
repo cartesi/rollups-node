@@ -232,6 +232,9 @@ func (r *PostgresRepository) ListMatchAdvances(
 		}
 		matchAdvances = append(matchAdvances, &m)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
 
 	return matchAdvances, total, nil
 }

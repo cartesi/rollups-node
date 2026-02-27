@@ -225,6 +225,9 @@ func (r *PostgresRepository) ListCommitments(
 		}
 		commitments = append(commitments, &c)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
 
 	return commitments, total, nil
 }

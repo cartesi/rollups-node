@@ -270,6 +270,9 @@ func (r *PostgresRepository) ListOutputs(
 		}
 		outputs = append(outputs, &out)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
 	return outputs, total, nil
 }
 

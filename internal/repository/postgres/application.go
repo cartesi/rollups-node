@@ -652,6 +652,9 @@ func (r *PostgresRepository) ListApplications(
 		}
 		apps = append(apps, &app)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
 
 	return apps, total, nil
 }
