@@ -24,6 +24,7 @@ var (
 // The query may return either 0 or 1 entries per application.
 func (r *PostgresRepository) selectOldestClaimPerApp(
 	ctx context.Context,
+	tx pgx.Tx,
 	epochStatus model.EpochStatus,
 ) (
 	map[int64]*model.Epoch,
@@ -86,7 +87,7 @@ func (r *PostgresRepository) selectOldestClaimPerApp(
 		)
 
 	sqlStr, args := stmt.Sql()
-	rows, err := r.db.Query(ctx, sqlStr, args...)
+	rows, err := tx.Query(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -139,6 +140,7 @@ func (r *PostgresRepository) selectOldestClaimPerApp(
 // Retrieve the newest accepted claim of each application
 func (r *PostgresRepository) selectNewestAcceptedClaimPerApp(
 	ctx context.Context,
+	tx pgx.Tx,
 	includeSubmitted bool,
 ) (
 	map[int64]*model.Epoch,
@@ -182,7 +184,7 @@ func (r *PostgresRepository) selectNewestAcceptedClaimPerApp(
 		)
 
 	sqlStr, args := stmt.Sql()
-	rows, err := r.db.Query(ctx, sqlStr, args...)
+	rows, err := tx.Query(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -226,12 +228,12 @@ func (r *PostgresRepository) SelectSubmittedClaimPairsPerApp(ctx context.Context
 	}
 	defer tx.Commit(ctx)
 
-	computed, applications, err := r.selectOldestClaimPerApp(ctx, model.EpochStatus_ClaimComputed)
+	computed, applications, err := r.selectOldestClaimPerApp(ctx, tx, model.EpochStatus_ClaimComputed)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	acceptedOrSubmitted, err := r.selectNewestAcceptedClaimPerApp(ctx, true)
+	acceptedOrSubmitted, err := r.selectNewestAcceptedClaimPerApp(ctx, tx, true)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -254,12 +256,12 @@ func (r *PostgresRepository) SelectAcceptedClaimPairsPerApp(ctx context.Context)
 	}
 	defer tx.Commit(ctx)
 
-	submitted, applications, err := r.selectOldestClaimPerApp(ctx, model.EpochStatus_ClaimSubmitted)
+	submitted, applications, err := r.selectOldestClaimPerApp(ctx, tx, model.EpochStatus_ClaimSubmitted)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	accepted, err := r.selectNewestAcceptedClaimPerApp(ctx, false)
+	accepted, err := r.selectNewestAcceptedClaimPerApp(ctx, tx, false)
 	if err != nil {
 		return nil, nil, nil, err
 	}
