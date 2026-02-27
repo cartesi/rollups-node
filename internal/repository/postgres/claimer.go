@@ -190,7 +190,6 @@ func (r *PostgresRepository) selectNewestAcceptedClaimPerApp(
 
 	epochs := map[int64]*model.Epoch{}
 	for rows.Next() {
-		var application model.Application
 		var epoch model.Epoch
 		err := rows.Scan(
 			&epoch.ApplicationID,
@@ -207,7 +206,7 @@ func (r *PostgresRepository) selectNewestAcceptedClaimPerApp(
 		if err != nil {
 			return nil, err
 		}
-		epochs[application.ID] = &epoch
+		epochs[epoch.ApplicationID] = &epoch
 	}
 	return epochs, nil
 }
