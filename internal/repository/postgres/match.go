@@ -113,7 +113,7 @@ func (r *PostgresRepository) UpdateMatch(
 		return err
 	}
 	if cmd.RowsAffected() == 0 {
-		return sql.ErrNoRows
+		return repository.ErrNotFound
 	}
 	return nil
 }

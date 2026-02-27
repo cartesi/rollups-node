@@ -133,7 +133,7 @@ func (r *PostgresRepository) UpdateTournament(
 		return err
 	}
 	if cmd.RowsAffected() == 0 {
-		return sql.ErrNoRows
+		return repository.ErrNotFound
 	}
 	return nil
 }

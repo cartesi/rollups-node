@@ -5,7 +5,6 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"unsafe"
@@ -15,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/table"
 )
 
@@ -278,7 +278,7 @@ func updateInput(
 		return err
 	}
 	if cmd.RowsAffected() == 0 {
-		return sql.ErrNoRows
+		return repository.ErrNotFound
 	}
 	return nil
 }
@@ -315,7 +315,7 @@ func updateEpochOutputsMerkleProof(
 		return err
 	}
 	if cmd.RowsAffected() == 0 {
-		return sql.ErrNoRows
+		return repository.ErrNotFound
 	}
 	return nil
 }
@@ -344,7 +344,7 @@ func updateApp(
 		return err
 	}
 	if cmd.RowsAffected() == 0 {
-		return sql.ErrNoRows
+		return repository.ErrNotFound
 	}
 	return nil
 }

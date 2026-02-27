@@ -12,12 +12,9 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/enum"
 	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/table"
-)
-
-var (
-	ErrNoUpdate = fmt.Errorf("update did not take effect")
 )
 
 // Retrieve the claim of each application with the smallest index.
@@ -232,7 +229,7 @@ func (r *PostgresRepository) SelectSubmittedClaimPairsPerApp(ctx context.Context
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	defer tx.Commit(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	computed, applications, err := r.selectOldestClaimPerApp(ctx, tx, model.EpochStatus_ClaimComputed)
 	if err != nil {
@@ -260,7 +257,7 @@ func (r *PostgresRepository) SelectAcceptedClaimPairsPerApp(ctx context.Context)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	defer tx.Commit(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	submitted, applications, err := r.selectOldestClaimPerApp(ctx, tx, model.EpochStatus_ClaimSubmitted)
 	if err != nil {
@@ -305,7 +302,7 @@ func (r *PostgresRepository) UpdateEpochWithSubmittedClaim(
 		return err
 	}
 	if cmd.RowsAffected() == 0 {
-		return ErrNoUpdate
+		return repository.ErrNoUpdate
 	}
 	return nil
 }
@@ -337,7 +334,7 @@ func (r *PostgresRepository) UpdateEpochWithAcceptedClaim(
 		return err
 	}
 	if cmd.RowsAffected() == 0 {
-		return ErrNoUpdate
+		return repository.ErrNoUpdate
 	}
 	return nil
 }

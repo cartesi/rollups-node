@@ -6,6 +6,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -14,7 +15,8 @@ import (
 )
 
 var (
-	ErrNotFound = fmt.Errorf("not found")
+	ErrNotFound = errors.New("not found")
+	ErrNoUpdate = errors.New("update did not take effect")
 )
 
 type Pagination struct {

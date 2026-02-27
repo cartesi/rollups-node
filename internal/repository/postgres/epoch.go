@@ -491,7 +491,7 @@ func (r *PostgresRepository) UpdateEpochClaimTransactionHash(
 		return err
 	}
 	if cmd.RowsAffected() == 0 {
-		return sql.ErrNoRows
+		return repository.ErrNotFound
 	}
 	return nil
 }
@@ -548,7 +548,7 @@ func (r *PostgresRepository) UpdateEpochStatus(
 		return err
 	}
 	if cmd.RowsAffected() == 0 {
-		return sql.ErrNoRows
+		return repository.ErrNotFound
 	}
 	return nil
 }
@@ -621,7 +621,7 @@ func (r *PostgresRepository) UpdateEpochInputsProcessed(
 	var index uint64
 	err = r.db.QueryRow(ctx, sqlStr, args...).Scan(&index)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
 		return err
@@ -778,7 +778,7 @@ func (r *PostgresRepository) RepeatPreviousEpochOutputsProof(
 		return err
 	}
 	if cmd.RowsAffected() == 0 {
-		return sql.ErrNoRows
+		return repository.ErrNotFound
 	}
 	return nil
 }
