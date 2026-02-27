@@ -1,0 +1,382 @@
+// (c) Cartesi and individual authors (see AUTHORS)
+// SPDX-License-Identifier: Apache-2.0 (see LICENSE)
+
+package repotest
+
+import (
+	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
+)
+
+type InputSuite struct {
+	BaseSuite
+}
+
+func NewInputSuite(factory RepositoryFactory) *InputSuite {
+	return &InputSuite{BaseSuite: BaseSuite{factory: factory}}
+}
+
+func (s *InputSuite) TestGetInput() {
+	s.Run("ExistingInput", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+		got, err := s.Repo.GetInput(s.Ctx, seed.App.IApplicationAddress.String(), 0)
+		s.Require().NoError(err)
+		s.Equal(seed.App.ID, got.EpochApplicationID)
+		s.Equal(uint64(0), got.EpochIndex)
+		s.Equal(uint64(0), got.Index)
+		s.Equal(seed.Input.BlockNumber, got.BlockNumber)
+		s.Equal(seed.Input.RawData, got.RawData)
+		s.Equal(InputCompletionStatus_None, got.Status)
+		s.Equal(seed.Input.TransactionReference, got.TransactionReference)
+		s.Nil(got.MachineHash)
+		s.Nil(got.OutputsHash)
+		s.Nil(got.SnapshotURI)
+		s.False(got.CreatedAt.IsZero(), "CreatedAt should be set")
+		s.False(got.UpdatedAt.IsZero(), "UpdatedAt should be set")
+	})
+
+	s.Run("NotFound", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		got, err := s.Repo.GetInput(s.Ctx, app.IApplicationAddress.String(), 99)
+		s.Require().NoError(err)
+		s.Nil(got)
+	})
+}
+
+func (s *InputSuite) TestGetInputByTxReference() {
+	s.Run("NilRef", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		_, err := s.Repo.GetInputByTxReference(s.Ctx, app.IApplicationAddress.String(), nil)
+		s.Error(err)
+	})
+
+	s.Run("ExistingRef", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+		ref := seed.Input.TransactionReference
+
+		got, err := s.Repo.GetInputByTxReference(
+			s.Ctx, seed.App.IApplicationAddress.String(), &ref)
+		s.Require().NoError(err)
+		s.Require().NotNil(got)
+		s.Equal(seed.Input.Index, got.Index)
+		s.Equal(ref, got.TransactionReference)
+	})
+
+	s.Run("NotFound", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+		nonExistentRef := UniqueHash()
+
+		got, err := s.Repo.GetInputByTxReference(
+			s.Ctx, seed.App.IApplicationAddress.String(), &nonExistentRef)
+		s.Require().NoError(err)
+		s.Nil(got)
+	})
+}
+
+func (s *InputSuite) TestGetLastInput() {
+	s.Run("ReturnsLastInput", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 19).WithInputBounds(0, 2).Build()
+
+		input0 := NewInputBuilder().WithIndex(0).WithBlockNumber(5).Build()
+		input1 := NewInputBuilder().WithIndex(1).WithBlockNumber(10).Build()
+		input2 := NewInputBuilder().WithIndex(2).WithBlockNumber(15).Build()
+
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: {input0, input1, input2}}, 20)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetLastInput(s.Ctx, app.IApplicationAddress.String(), 0)
+		s.Require().NoError(err)
+		s.Equal(uint64(2), got.Index)
+	})
+}
+
+func (s *InputSuite) TestGetLastProcessedInput() {
+	s.Run("ReturnsLastProcessed", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 19).WithInputBounds(0, 1).Build()
+
+		input0 := NewInputBuilder().
+			WithIndex(0).WithBlockNumber(5).
+			WithStatus(InputCompletionStatus_Accepted).Build()
+		input1 := NewInputBuilder().
+			WithIndex(1).WithBlockNumber(10).
+			WithStatus(InputCompletionStatus_None).Build()
+
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: {input0, input1}}, 20)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetLastProcessedInput(s.Ctx, app.IApplicationAddress.String())
+		s.Require().NoError(err)
+		s.Equal(uint64(0), got.Index)
+		s.Equal(InputCompletionStatus_Accepted, got.Status)
+	})
+}
+
+func (s *InputSuite) TestListInputs() {
+	s.Run("EmptyResult", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		inputs, total, err := s.Repo.ListInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			repository.InputFilter{}, repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Empty(inputs)
+		s.Equal(uint64(0), total)
+	})
+
+	s.Run("ReturnsAllInputs", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 29).WithInputBounds(0, 2).Build()
+
+		input0 := NewInputBuilder().WithIndex(0).WithBlockNumber(5).Build()
+		input1 := NewInputBuilder().WithIndex(1).WithBlockNumber(10).Build()
+		input2 := NewInputBuilder().WithIndex(2).WithBlockNumber(20).Build()
+
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: {input0, input1, input2}}, 30)
+		s.Require().NoError(err)
+
+		inputs, total, err := s.Repo.ListInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			repository.InputFilter{}, repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Len(inputs, 3)
+		s.Equal(uint64(3), total)
+	})
+
+	s.Run("FilterByEpochIndex", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+
+		epoch0 := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 9).WithInputBounds(0, 0).Build()
+		epoch1 := NewEpochBuilder(app.ID).
+			WithIndex(1).WithStatus(EpochStatus_Open).
+			WithBlocks(10, 19).WithInputBounds(1, 1).Build()
+
+		input0 := NewInputBuilder().WithIndex(0).WithBlockNumber(5).Build()
+		input1 := NewInputBuilder().WithIndex(1).WithEpochIndex(1).WithBlockNumber(15).Build()
+
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch0: {input0}, epoch1: {input1}}, 20)
+		s.Require().NoError(err)
+
+		epochIdx := uint64(1)
+		inputs, total, err := s.Repo.ListInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			repository.InputFilter{EpochIndex: &epochIdx},
+			repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Len(inputs, 1)
+		s.Equal(uint64(1), total)
+		s.Equal(uint64(1), inputs[0].Index)
+	})
+
+	s.Run("FilterByStatus", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 19).WithInputBounds(0, 1).Build()
+
+		input0 := NewInputBuilder().
+			WithIndex(0).WithBlockNumber(5).
+			WithStatus(InputCompletionStatus_Accepted).Build()
+		input1 := NewInputBuilder().
+			WithIndex(1).WithBlockNumber(10).
+			WithStatus(InputCompletionStatus_None).Build()
+
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: {input0, input1}}, 20)
+		s.Require().NoError(err)
+
+		status := InputCompletionStatus_Accepted
+		inputs, total, err := s.Repo.ListInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			repository.InputFilter{Status: &status},
+			repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Len(inputs, 1)
+		s.Equal(uint64(1), total)
+		s.Equal(InputCompletionStatus_Accepted, inputs[0].Status)
+	})
+
+	s.Run("FilterByNotStatus", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 19).WithInputBounds(0, 2).Build()
+
+		input0 := NewInputBuilder().
+			WithIndex(0).WithBlockNumber(5).
+			WithStatus(InputCompletionStatus_Accepted).Build()
+		input1 := NewInputBuilder().
+			WithIndex(1).WithBlockNumber(10).
+			WithStatus(InputCompletionStatus_Rejected).Build()
+		input2 := NewInputBuilder().
+			WithIndex(2).WithBlockNumber(15).
+			WithStatus(InputCompletionStatus_None).Build()
+
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: {input0, input1, input2}}, 20)
+		s.Require().NoError(err)
+
+		notStatus := InputCompletionStatus_None
+		inputs, total, err := s.Repo.ListInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			repository.InputFilter{NotStatus: &notStatus},
+			repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Len(inputs, 2)
+		s.Equal(uint64(2), total)
+		for _, inp := range inputs {
+			s.NotEqual(InputCompletionStatus_None, inp.Status)
+		}
+	})
+
+	s.Run("FilterBySender", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 19).WithInputBounds(0, 1).Build()
+
+		// The Sender filter uses SUBSTR(raw_data, 81, 20) to extract a
+		// 20-byte sender address from the ABI-encoded input payload.
+		senderAddr := UniqueAddress()
+		rawWithSender := make([]byte, 101)
+		copy(rawWithSender[80:100], senderAddr.Bytes())
+
+		otherAddr := UniqueAddress()
+		rawWithOther := make([]byte, 101)
+		copy(rawWithOther[80:100], otherAddr.Bytes())
+
+		input0 := NewInputBuilder().
+			WithIndex(0).WithBlockNumber(5).
+			WithRawData(rawWithSender).Build()
+		input1 := NewInputBuilder().
+			WithIndex(1).WithBlockNumber(10).
+			WithRawData(rawWithOther).Build()
+
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: {input0, input1}}, 20)
+		s.Require().NoError(err)
+
+		inputs, total, err := s.Repo.ListInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			repository.InputFilter{Sender: &senderAddr},
+			repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Len(inputs, 1)
+		s.Equal(uint64(1), total)
+		s.Equal(uint64(0), inputs[0].Index)
+	})
+
+	s.Run("Pagination", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 49).WithInputBounds(0, 4).Build()
+
+		inputs := make([]*Input, 5)
+		for i := range uint64(5) {
+			inputs[i] = NewInputBuilder().WithIndex(i).WithBlockNumber(i*10 + 5).Build()
+		}
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: inputs}, 50)
+		s.Require().NoError(err)
+
+		got, total, err := s.Repo.ListInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			repository.InputFilter{},
+			repository.Pagination{Limit: 2, Offset: 0}, false)
+		s.Require().NoError(err)
+		s.Len(got, 2)
+		s.Equal(uint64(5), total)
+	})
+
+	s.Run("Descending", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 29).WithInputBounds(0, 2).Build()
+
+		input0 := NewInputBuilder().WithIndex(0).WithBlockNumber(5).Build()
+		input1 := NewInputBuilder().WithIndex(1).WithBlockNumber(10).Build()
+		input2 := NewInputBuilder().WithIndex(2).WithBlockNumber(20).Build()
+
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: {input0, input1, input2}}, 30)
+		s.Require().NoError(err)
+
+		inputs, _, err := s.Repo.ListInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			repository.InputFilter{},
+			repository.Pagination{Limit: 10}, true)
+		s.Require().NoError(err)
+		s.Require().Len(inputs, 3)
+		// Descending: highest index first
+		s.Equal(uint64(2), inputs[0].Index)
+		s.Equal(uint64(1), inputs[1].Index)
+		s.Equal(uint64(0), inputs[2].Index)
+	})
+}
+
+func (s *InputSuite) TestGetNumberOfInputs() {
+	s.Run("ReturnsCount", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 19).WithInputBounds(0, 2).Build()
+
+		input0 := NewInputBuilder().WithIndex(0).WithBlockNumber(5).Build()
+		input1 := NewInputBuilder().WithIndex(1).WithBlockNumber(10).Build()
+		input2 := NewInputBuilder().WithIndex(2).WithBlockNumber(15).Build()
+
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: {input0, input1, input2}}, 20)
+		s.Require().NoError(err)
+
+		count, err := s.Repo.GetNumberOfInputs(s.Ctx, app.IApplicationAddress.String())
+		s.Require().NoError(err)
+		s.Equal(uint64(3), count)
+	})
+
+	s.Run("ZeroWhenEmpty", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		count, err := s.Repo.GetNumberOfInputs(s.Ctx, app.IApplicationAddress.String())
+		s.Require().NoError(err)
+		s.Equal(uint64(0), count)
+	})
+}
+
+func (s *InputSuite) TestUpdateInputSnapshotURI() {
+	s.Run("SetsSnapshotURI", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+		uri := "/snapshots/test"
+
+		err := s.Repo.UpdateInputSnapshotURI(s.Ctx, seed.App.ID, 0, uri)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetInput(s.Ctx, seed.App.IApplicationAddress.String(), 0)
+		s.Require().NoError(err)
+		s.Require().NotNil(got.SnapshotURI)
+		s.Equal(uri, *got.SnapshotURI)
+	})
+}

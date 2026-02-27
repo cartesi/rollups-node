@@ -73,7 +73,8 @@ func getReportNextIndex(
 			postgres.Float(0),
 		),
 	).FROM(
-		table.Report.INNER_JOIN(table.Input, table.Input.EpochApplicationID.EQ(table.Report.InputEpochApplicationID)),
+		table.Report.INNER_JOIN(table.Input, table.Input.EpochApplicationID.EQ(table.Report.InputEpochApplicationID).
+			AND(table.Input.Index.EQ(table.Report.InputIndex))),
 	).WHERE(
 		table.Report.InputEpochApplicationID.EQ(postgres.Int64(appID)).
 			AND(table.Input.Status.EQ(postgres.NewEnumValue(model.InputCompletionStatus_Accepted.String()))),

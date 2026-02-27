@@ -94,6 +94,14 @@ ifneq ($(TEST_PACKAGES),)
 	GO_TEST_PACKAGES := $(addprefix ./, $(addsuffix /..., $(subst :, ,$(TEST_PACKAGES))))
 endif
 
+COVERAGE_DIR := coverage
+COVER ?=
+ifeq ($(COVER),true)
+	GO_TEST_FLAGS += -coverprofile=$(COVERAGE_DIR)/coverage.out -covermode=atomic -coverpkg=./...
+	COVER_DEPS := $(COVERAGE_DIR)
+	COVER_REPORT := coverage-report
+endif
+
 
 ROLLUPS_CONTRACTS_ABI_BASEDIR:= rollups-contracts/
 ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR:= rollups-prt-contracts/
@@ -190,6 +198,7 @@ clean-go: ## Clean Go artifacts
 	@echo "Cleaning Go artifacts"
 	@go clean -i -r -cache
 	@rm -f $(GO_ARTIFACTS)
+	@rm -rf $(COVERAGE_DIR)
 
 clean-contracts: ## Clean contract artifacts
 	@echo "Cleaning contract artifacts"
@@ -221,10 +230,19 @@ clean-test-dependencies: ## Clean the test dependencies
 # =============================================================================
 test: unit-test ## Execute all tests
 
-unit-test: ## Execute go unit tests
+$(COVERAGE_DIR):
+	@mkdir -p $@
+
+coverage-report:
+	@go tool cover -func=$(COVERAGE_DIR)/coverage.out
+	@go tool cover -html=$(COVERAGE_DIR)/coverage.out -o $(COVERAGE_DIR)/coverage.html
+	@echo "Coverage report: $(COVERAGE_DIR)/coverage.html"
+
+unit-test: $(COVER_DEPS) ## Execute go unit tests
 	@echo "Running go unit tests"
 	@go clean -testcache
 	@go test -p 1 $(GO_BUILD_PARAMS) $(GO_TEST_FLAGS) $(GO_TEST_PACKAGES)
+	@$(if $(COVER_REPORT),$(MAKE) $(COVER_REPORT))
 
 integration-test: ## Execute e2e tests
 	@echo "Running end-to-end tests"
@@ -417,4 +435,4 @@ build-debian-package: install
 	sed 's|ARG_VERSION|$(ROLLUPS_NODE_VERSION)|g;s|ARG_ARCH|$(DEB_ARCH)|g' control.template > $(DESTDIR)/DEBIAN/control
 	dpkg-deb -Zxz --root-owner-group --build $(DESTDIR) $(DEB_FILENAME)
 
-.PHONY: build build-go clean clean-go test unit-test-go e2e-test lint fmt vet escape md-lint devnet image run-with-compose shutdown-compose help docs $(GO_ARTIFACTS)
+.PHONY: build build-go clean clean-go test unit-test-go e2e-test lint fmt vet escape md-lint devnet image run-with-compose shutdown-compose help docs coverage-report $(GO_ARTIFACTS)
