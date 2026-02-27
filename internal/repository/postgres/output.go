@@ -121,7 +121,7 @@ func (r *PostgresRepository) UpdateOutputsExecution(
 			)
 
 		sqlStr, args := updStmt.Sql()
-		cmd, err := r.db.Exec(ctx, sqlStr, args...)
+		cmd, err := tx.Exec(ctx, sqlStr, args...)
 		if err != nil {
 			return errors.Join(err, tx.Rollback(ctx))
 		}
