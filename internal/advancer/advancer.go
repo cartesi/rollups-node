@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/cartesi/rollups-node/internal/manager"
@@ -342,7 +342,7 @@ func (s *Service) createSnapshot(ctx context.Context, app *Application, machine 
 	// Generate a snapshot path with a simpler structure
 	// Use app name and input index only, avoiding deep directory nesting
 	snapshotName := fmt.Sprintf("%s_epoch%d_input%d", app.Name, input.EpochIndex, input.Index)
-	snapshotPath := path.Join(s.snapshotsDir, snapshotName)
+	snapshotPath := filepath.Join(s.snapshotsDir, snapshotName)
 
 	s.Logger.Info("Creating snapshot",
 		"application", app.Name,
@@ -351,16 +351,24 @@ func (s *Service) createSnapshot(ctx context.Context, app *Application, machine 
 		"path", snapshotPath)
 
 	// Ensure the parent directory exists
-	if _, err := os.Stat(s.snapshotsDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(s.snapshotsDir, 0755); err != nil { //nolint: mnd
-			return fmt.Errorf("failed to create snapshots directory: %w", err)
-		}
+	if err := os.MkdirAll(s.snapshotsDir, 0755); err != nil { //nolint: mnd
+		return fmt.Errorf("failed to create snapshots directory: %w", err)
 	}
 
 	// Create the snapshot
 	err := machine.CreateSnapshot(ctx, input.Index+1, snapshotPath)
 	if err != nil {
 		return err
+	}
+
+	// Get previous snapshot BEFORE writing the new one so the query does not
+	// return the snapshot we just created — that would cause self-deletion.
+	previousSnapshot, err := s.repository.GetLastSnapshot(ctx, app.IApplicationAddress.String())
+	if err != nil {
+		s.Logger.Error("Failed to get previous snapshot",
+			"application", app.Name,
+			"error", err)
+		// Continue even if we can't get the previous snapshot
 	}
 
 	// Update the input record with the snapshot URI
@@ -372,18 +380,8 @@ func (s *Service) createSnapshot(ctx context.Context, app *Application, machine 
 		return fmt.Errorf("failed to update input snapshot URI: %w", err)
 	}
 
-	// Get previous snapshot if it exists
-	previousSnapshot, err := s.repository.GetLastSnapshot(ctx, app.IApplicationAddress.String())
-	if err != nil {
-		s.Logger.Error("Failed to get previous snapshot",
-			"application", app.Name,
-			"error", err)
-		// Continue even if we can't get the previous snapshot
-	}
-
 	// Remove previous snapshot if it exists
-	if previousSnapshot != nil && previousSnapshot.Index != input.Index && previousSnapshot.SnapshotURI != nil {
-		// Only remove if it's a different snapshot than the one we just created
+	if previousSnapshot != nil && previousSnapshot.SnapshotURI != nil {
 		if err := s.removeSnapshot(*previousSnapshot.SnapshotURI, app.Name); err != nil {
 			s.Logger.Error("Failed to remove previous snapshot",
 				"application", app.Name,
@@ -398,8 +396,11 @@ func (s *Service) createSnapshot(ctx context.Context, app *Application, machine 
 
 // removeSnapshot safely removes a previous snapshot
 func (s *Service) removeSnapshot(snapshotPath string, appName string) error {
-	// Safety check: ensure the path contains the application name and is in the snapshots directory
-	if !strings.HasPrefix(snapshotPath, s.snapshotsDir) || !strings.Contains(snapshotPath, appName) {
+	// Safety check: canonicalize paths to prevent directory traversal via ".." sequences
+	cleanPath := filepath.Clean(snapshotPath)
+	cleanDir := filepath.Clean(s.snapshotsDir)
+	if !strings.HasPrefix(cleanPath, cleanDir+string(filepath.Separator)) ||
+		!strings.HasPrefix(filepath.Base(cleanPath), appName+"_") {
 		return fmt.Errorf("invalid snapshot path: %s", snapshotPath)
 	}
 
