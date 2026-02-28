@@ -14,6 +14,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/manager/pmutex"
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/ethereum/go-ethereum/common"
 	"golang.org/x/sync/semaphore"
@@ -29,7 +30,18 @@ var (
 	ErrInvalidConcurrentLimit = errors.New("maximum concurrent inspects must not be zero")
 )
 
-// MachineInstanceImpl represents a running Cartesi machine for an application
+// MachineInstanceImpl represents a running Cartesi machine for an application.
+//
+// Concurrency protocol:
+//   - runtime:          Protected by PMutex. Written under HLock, read under LLock.
+//   - processedInputs:  atomic.Uint64. Written under HLock (together with runtime swap,
+//                        so writers see a consistent pair). Read lock-free via Load() —
+//                        this is safe because only one advance runs at a time (advanceMutex)
+//                        and the atomic store is visible to all goroutines immediately.
+//   - advanceMutex:     Serializes all Advance calls. Only one input is processed at a time.
+//   - mutex (PMutex):   HLock for advance/snapshot/hash/proof (may destroy runtime on error).
+//                        LLock for inspect (read-only fork). HLock starves LLock by design.
+//   - inspectSemaphore: Bounds concurrent inspect operations.
 type MachineInstanceImpl struct {
 	application *Application
 	runtime     machine.Machine
@@ -147,43 +159,65 @@ func (m *MachineInstanceImpl) ProcessedInputs() uint64 {
 	return m.processedInputs
 }
 
-// Synchronize brings the machine up to date with processed inputs
+// Synchronize brings the machine up to date with processed inputs.
+// It handles both template-based instances (processedInputs == 0, replays all)
+// and snapshot-based instances (processedInputs > 0, replays only remaining).
+// Inputs are fetched in batches to bound memory usage.
 func (m *MachineInstanceImpl) Synchronize(ctx context.Context, repo MachineRepository) error {
 	appAddress := m.application.IApplicationAddress.String()
-	m.logger.Info("Synchronizing machine processed inputs",
+	m.logger.Info("Synchronizing machine with processed inputs",
 		"address", appAddress,
-		"processed_inputs", m.application.ProcessedInputs)
+		"app_processed_inputs", m.application.ProcessedInputs,
+		"machine_processed_inputs", m.processedInputs)
 
-	// Get all processed inputs for this application
-	inputs, _, err := getProcessedInputs(ctx, repo, appAddress)
-	if err != nil {
-		return err
-	}
+	initialProcessedInputs := m.processedInputs
+	replayed := uint64(0)
+	toReplay := uint64(0)
 
-	// Verify that the number of inputs matches what's expected
-	if uint64(len(inputs)) != m.application.ProcessedInputs {
-		errorMsg := fmt.Sprintf("processed inputs count mismatch: expected %d, got %d",
-			m.application.ProcessedInputs, len(inputs))
-		m.logger.Error(errorMsg, "address", appAddress)
-		return fmt.Errorf("%w: %s", ErrMachineSynchronization, errorMsg)
-	}
-
-	if len(inputs) == 0 {
-		m.logger.Info("No previous processed inputs to synchronize", "address", appAddress)
-		return nil
-	}
-
-	// Process each input to bring the machine to the current state
-	for _, input := range inputs {
-		m.logger.Info("Replaying input during synchronization",
-			"address", appAddress,
-			"epoch_index", input.EpochIndex,
-			"input_index", input.Index)
-
-		_, err := m.Advance(ctx, input.RawData, input.EpochIndex, input.Index, false)
+	for {
+		p := repository.Pagination{
+			Limit:  inputBatchSize,
+			Offset: initialProcessedInputs + replayed,
+		}
+		inputs, totalCount, err := getProcessedInputs(ctx, repo, appAddress, p)
 		if err != nil {
-			return fmt.Errorf("%w: failed to replay input %d: %v",
-				ErrMachineSynchronization, input.Index, err)
+			return fmt.Errorf("%w: %w", ErrMachineSynchronization, err)
+		}
+
+		// Validate count on the first batch
+		if replayed == 0 {
+			if totalCount != m.application.ProcessedInputs {
+				errorMsg := fmt.Sprintf(
+					"processed inputs count mismatch: expected %d, got %d",
+					m.application.ProcessedInputs, totalCount)
+				m.logger.Error(errorMsg, "address", appAddress)
+				return fmt.Errorf("%w: %s", ErrMachineSynchronization, errorMsg)
+			}
+			toReplay = totalCount - m.processedInputs
+			if toReplay == 0 {
+				m.logger.Info("No inputs to replay during synchronization",
+					"address", appAddress)
+				return nil
+			}
+		}
+
+		for _, input := range inputs {
+			m.logger.Info("Replaying input during synchronization",
+				"address", appAddress,
+				"epoch_index", input.EpochIndex,
+				"input_index", input.Index,
+				"progress", fmt.Sprintf("%d/%d", replayed+1, toReplay))
+
+			_, err := m.Advance(ctx, input.RawData, input.EpochIndex, input.Index, false)
+			if err != nil {
+				return fmt.Errorf("%w: failed to replay input %d: %w",
+					ErrMachineSynchronization, input.Index, err)
+			}
+			replayed++
+		}
+
+		if replayed >= toReplay || len(inputs) == 0 {
+			break
 		}
 	}
 

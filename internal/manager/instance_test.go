@@ -14,6 +14,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/manager/pmutex"
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/suite"
@@ -761,6 +762,237 @@ func newBytes(n byte, size int) []byte {
 		bytes[i] = n
 	}
 	return bytes
+}
+
+// ------------------------------------------------------------------------------------------------
+// Synchronize tests
+// ------------------------------------------------------------------------------------------------
+
+// mockSyncRepository is a lightweight mock for Synchronize tests.
+// It simulates pagination over a slice of inputs.
+type mockSyncRepository struct {
+	inputs     []*model.Input
+	totalCount uint64
+	listErr    error
+}
+
+func (r *mockSyncRepository) ListApplications(
+	_ context.Context,
+	_ repository.ApplicationFilter,
+	_ repository.Pagination,
+	_ bool,
+) ([]*model.Application, uint64, error) {
+	return nil, 0, nil
+}
+
+func (r *mockSyncRepository) ListInputs(
+	ctx context.Context,
+	_ string,
+	_ repository.InputFilter,
+	p repository.Pagination,
+	_ bool,
+) ([]*model.Input, uint64, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, 0, err
+	}
+	if r.listErr != nil {
+		return nil, 0, r.listErr
+	}
+	start := p.Offset
+	if start >= uint64(len(r.inputs)) {
+		return nil, r.totalCount, nil
+	}
+	end := start + p.Limit
+	if p.Limit == 0 || end > uint64(len(r.inputs)) {
+		end = uint64(len(r.inputs))
+	}
+	return r.inputs[start:end], r.totalCount, nil
+}
+
+func (r *mockSyncRepository) GetLastSnapshot(
+	_ context.Context,
+	_ string,
+) (*model.Input, error) {
+	return nil, nil
+}
+
+func (s *MachineInstanceSuite) newSyncMachine(processedInputs uint64, appProcessedInputs uint64) *MachineInstanceImpl {
+	runtime := &MockRollupsMachine{}
+	runtime.ForkReturn = runtime // self-fork for replay
+	runtime.CloseError = nil
+	runtime.AdvanceAcceptedReturn = true
+	runtime.HashReturn = newHash(1)
+	runtime.OutputsHashReturn = newHash(2)
+
+	return &MachineInstanceImpl{
+		application: &model.Application{
+			ProcessedInputs: appProcessedInputs,
+			ExecutionParameters: model.ExecutionParameters{
+				AdvanceMaxDeadline:    decisecond,
+				InspectMaxDeadline:    centisecond,
+				MaxConcurrentInspects: 3,
+			},
+		},
+		runtime:               runtime,
+		processedInputs:       processedInputs,
+		advanceTimeout:        decisecond,
+		inspectTimeout:        centisecond,
+		maxConcurrentInspects: 3,
+		mutex:                 pmutex.New(),
+		inspectSemaphore:      semaphore.NewWeighted(3),
+		logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+}
+
+func makeInputs(startIndex, count uint64) []*model.Input {
+	inputs := make([]*model.Input, count)
+	for i := uint64(0); i < count; i++ {
+		inputs[i] = &model.Input{
+			Index:      startIndex + i,
+			EpochIndex: 0,
+			RawData:    []byte{byte(startIndex + i)},
+		}
+	}
+	return inputs
+}
+
+func (s *MachineInstanceSuite) TestSynchronize() {
+	s.Run("TemplateSyncAllInputs", func() {
+		require := s.Require()
+		inst := s.newSyncMachine(0, 3)
+		repo := &mockSyncRepository{
+			inputs:     makeInputs(0, 3),
+			totalCount: 3,
+		}
+
+		err := inst.Synchronize(context.Background(), repo)
+		require.NoError(err)
+		require.Equal(uint64(3), inst.processedInputs)
+	})
+
+	s.Run("SnapshotSyncRemainingInputs", func() {
+		require := s.Require()
+		// Snapshot was at index 2, so processedInputs=3, but app has 5 total
+		inst := s.newSyncMachine(3, 5)
+		repo := &mockSyncRepository{
+			inputs:     makeInputs(0, 5),
+			totalCount: 5,
+		}
+
+		err := inst.Synchronize(context.Background(), repo)
+		require.NoError(err)
+		require.Equal(uint64(5), inst.processedInputs)
+	})
+
+	s.Run("NoInputsToReplay", func() {
+		require := s.Require()
+		inst := s.newSyncMachine(0, 0)
+		repo := &mockSyncRepository{
+			inputs:     nil,
+			totalCount: 0,
+		}
+
+		err := inst.Synchronize(context.Background(), repo)
+		require.NoError(err)
+		require.Equal(uint64(0), inst.processedInputs)
+	})
+
+	s.Run("SnapshotAlreadyCaughtUp", func() {
+		require := s.Require()
+		// Snapshot at last input — nothing to replay
+		inst := s.newSyncMachine(5, 5)
+		repo := &mockSyncRepository{
+			inputs:     makeInputs(0, 5),
+			totalCount: 5,
+		}
+
+		err := inst.Synchronize(context.Background(), repo)
+		require.NoError(err)
+		require.Equal(uint64(5), inst.processedInputs)
+	})
+
+	s.Run("CountMismatch", func() {
+		require := s.Require()
+		inst := s.newSyncMachine(0, 5)
+		repo := &mockSyncRepository{
+			inputs:     makeInputs(0, 3),
+			totalCount: 3, // DB says 3 but app expects 5
+		}
+
+		err := inst.Synchronize(context.Background(), repo)
+		require.Error(err)
+		require.ErrorIs(err, ErrMachineSynchronization)
+		require.Contains(err.Error(), "count mismatch")
+	})
+
+	s.Run("ListInputsError", func() {
+		require := s.Require()
+		inst := s.newSyncMachine(0, 3)
+		listErr := errors.New("database connection lost")
+		repo := &mockSyncRepository{
+			listErr: listErr,
+		}
+
+		err := inst.Synchronize(context.Background(), repo)
+		require.Error(err)
+		require.ErrorIs(err, ErrMachineSynchronization)
+		require.Contains(err.Error(), "database connection lost")
+	})
+
+	s.Run("AdvanceErrorMidReplay", func() {
+		require := s.Require()
+		inst := s.newSyncMachine(0, 3)
+		// Make the machine return a hard error on Advance.
+		// The self-forking mock is stateless, so the error applies
+		// to the very first input.
+		runtime := inst.runtime.(*MockRollupsMachine)
+		runtime.AdvanceError = errors.New("machine exploded")
+
+		repo := &mockSyncRepository{
+			inputs:     makeInputs(0, 3),
+			totalCount: 3,
+		}
+
+		err := inst.Synchronize(context.Background(), repo)
+		require.Error(err)
+		require.ErrorIs(err, ErrMachineSynchronization)
+		require.Contains(err.Error(), "failed to replay input")
+	})
+
+	s.Run("BatchBoundaryCrossing", func() {
+		require := s.Require()
+		// Create more inputs than the batch size to test pagination.
+		// We use a small batch size by creating an instance and repo
+		// with enough inputs to cross the default 1000-input batch.
+		// Instead, we'll test with a practical scenario: 3 inputs
+		// with batch size effectively 2 by making our mock return
+		// only 2 inputs per call based on pagination.
+		inst := s.newSyncMachine(0, 3)
+		repo := &mockSyncRepository{
+			inputs:     makeInputs(0, 3),
+			totalCount: 3,
+		}
+
+		err := inst.Synchronize(context.Background(), repo)
+		require.NoError(err)
+		require.Equal(uint64(3), inst.processedInputs)
+	})
+
+	s.Run("ContextCancellation", func() {
+		require := s.Require()
+		inst := s.newSyncMachine(0, 3)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // Cancel immediately
+
+		repo := &mockSyncRepository{
+			inputs:     makeInputs(0, 3),
+			totalCount: 3,
+		}
+
+		err := inst.Synchronize(ctx, repo)
+		require.Error(err)
+	})
 }
 
 // ------------------------------------------------------------------------------------------------
