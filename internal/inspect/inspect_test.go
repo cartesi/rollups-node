@@ -234,7 +234,7 @@ func (mock *MockMachine) ProcessedInputs() uint64 {
 	return 0
 }
 
-func (m *MockMachine) OutputsProof(ctx context.Context, processedInputs uint64) (*OutputsProof, error) {
+func (m *MockMachine) OutputsProof(ctx context.Context) (*OutputsProof, error) {
 	return nil, nil
 }
 

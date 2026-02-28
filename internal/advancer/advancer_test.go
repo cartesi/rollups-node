@@ -684,7 +684,7 @@ func (m *MockMachineInstance) ProcessedInputs() uint64 {
 	return 0
 }
 
-func (m *MockMachineInstance) OutputsProof(ctx context.Context, processedInputs uint64) (*OutputsProof, error) {
+func (m *MockMachineInstance) OutputsProof(ctx context.Context) (*OutputsProof, error) {
 	return nil, nil
 }
 

@@ -306,7 +306,7 @@ func (m *DummyMachineInstanceMock) ProcessedInputs() uint64 {
 	return 0
 }
 
-func (m *DummyMachineInstanceMock) OutputsProof(ctx context.Context, processedInputs uint64) (*model.OutputsProof, error) {
+func (m *DummyMachineInstanceMock) OutputsProof(ctx context.Context) (*model.OutputsProof, error) {
 	return nil, nil
 }
 

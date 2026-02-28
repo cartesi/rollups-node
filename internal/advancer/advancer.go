@@ -195,6 +195,17 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 					"error", updateErr)
 			}
 
+			// Eagerly close the machine to release the child process.
+			// The app is already inoperable, so no further operations will succeed.
+			// Skip if the runtime was already destroyed inside the manager.
+			if !errors.Is(err, manager.ErrMachineClosed) {
+				if closeErr := machine.Close(); closeErr != nil {
+					s.Logger.Warn("Failed to close machine after advance error",
+						"application", app.Name,
+						"error", closeErr)
+				}
+			}
+
 			return err
 		}
 		// log advance result hashes
@@ -305,8 +316,15 @@ func (s *Service) handleEpochAfterInputsProcessed(ctx context.Context, app *Appl
 		if !exists {
 			return fmt.Errorf("%w: %d", ErrNoApp, app.ID)
 		}
-		outputsProof, err := machine.OutputsProof(ctx, 0)
+		outputsProof, err := machine.OutputsProof(ctx)
 		if err != nil {
+			// If the runtime was destroyed (e.g., child process crashed),
+			// mark the app inoperable to avoid an infinite retry loop.
+			if errors.Is(err, manager.ErrMachineClosed) {
+				reason := err.Error()
+				_ = s.repository.UpdateApplicationState(ctx, app.ID,
+					ApplicationState_Inoperable, &reason)
+			}
 			return fmt.Errorf("failed to get outputs proof from machine: %w", err)
 		}
 		err = s.repository.UpdateEpochOutputsProof(ctx, app.ID, epoch.Index, outputsProof)

@@ -540,10 +540,29 @@ func (s *MachineInstanceSuite) TestCreateSnapshot() {
 		inner, _, machine := s.setupAdvance()
 		errStore := errors.New("Store error")
 		inner.StoreError = errStore
+		inner.CloseError = nil
 
 		err := machine.CreateSnapshot(context.Background(), 5, "/tmp/snapshot")
 		require.Error(err)
-		require.Equal(errStore, err)
+		require.ErrorIs(err, errStore)
+
+		// Runtime should be destroyed after a store error.
+		require.Nil(machine.runtime)
+	})
+
+	s.Run("ErrorAndCloseError", func() {
+		require := s.Require()
+		inner, _, machine := s.setupAdvance()
+		errStore := errors.New("Store error")
+		errClose := errors.New("Close error")
+		inner.StoreError = errStore
+		inner.CloseError = errClose
+
+		err := machine.CreateSnapshot(context.Background(), 5, "/tmp/snapshot")
+		require.Error(err)
+		require.ErrorIs(err, errStore)
+		require.ErrorIs(err, errClose)
+		require.Nil(machine.runtime)
 	})
 
 	s.Run("MachineClosed", func() {
@@ -562,6 +581,158 @@ func (s *MachineInstanceSuite) TestCreateSnapshot() {
 
 		err := machine.CreateSnapshot(context.Background(), 6, "/tmp/snapshot")
 		require.ErrorIs(err, ErrInvalidSnapshotPoint)
+	})
+}
+
+func (s *MachineInstanceSuite) TestHash() {
+	s.Run("Ok", func() {
+		require := s.Require()
+		inner, machineInst := s.setupOutputsProof()
+
+		hash, err := machineInst.Hash(context.Background())
+		require.NoError(err)
+		require.Equal([32]byte(newHash(1)), hash)
+
+		// Runtime should still be alive after a successful call.
+		require.Same(inner, machineInst.runtime)
+	})
+
+	s.Run("MachineClosed", func() {
+		require := s.Require()
+		_, machineInst := s.setupOutputsProof()
+		machineInst.runtime = nil
+
+		hash, err := machineInst.Hash(context.Background())
+		require.Error(err)
+		require.Equal(ErrMachineClosed, err)
+		require.Equal([32]byte{}, hash)
+	})
+
+	s.Run("Error", func() {
+		require := s.Require()
+		inner, machineInst := s.setupOutputsProof()
+		errHash := errors.New("Hash error")
+		inner.HashError = errHash
+		inner.CloseError = nil
+
+		hash, err := machineInst.Hash(context.Background())
+		require.Error(err)
+		require.ErrorIs(err, errHash)
+		require.Equal([32]byte{}, hash)
+
+		// Runtime should be destroyed after a hash error.
+		require.Nil(machineInst.runtime)
+	})
+
+	s.Run("ErrorAndCloseError", func() {
+		require := s.Require()
+		inner, machineInst := s.setupOutputsProof()
+		errHash := errors.New("Hash error")
+		errClose := errors.New("Close error")
+		inner.HashError = errHash
+		inner.CloseError = errClose
+
+		hash, err := machineInst.Hash(context.Background())
+		require.Error(err)
+		require.ErrorIs(err, errHash)
+		require.ErrorIs(err, errClose)
+		require.Equal([32]byte{}, hash)
+		require.Nil(machineInst.runtime)
+	})
+}
+
+func (s *MachineInstanceSuite) TestOutputsProof() {
+	s.Run("Ok", func() {
+		require := s.Require()
+		inner, machineInst := s.setupOutputsProof()
+
+		proof, err := machineInst.OutputsProof(context.Background())
+		require.NoError(err)
+		require.NotNil(proof)
+
+		require.Equal(newHash(1), proof.MachineHash)
+		require.Equal(newHash(2), proof.OutputsHash)
+		require.Equal(expectedOutputsHashProof, proof.OutputsHashProof)
+
+		// Runtime should still be alive after a successful call.
+		require.Same(inner, machineInst.runtime)
+	})
+
+	s.Run("MachineClosed", func() {
+		require := s.Require()
+		_, machineInst := s.setupOutputsProof()
+		machineInst.runtime = nil
+
+		proof, err := machineInst.OutputsProof(context.Background())
+		require.Nil(proof)
+		require.Error(err)
+		require.Equal(ErrMachineClosed, err)
+	})
+
+	s.Run("HashError", func() {
+		require := s.Require()
+		inner, machineInst := s.setupOutputsProof()
+		errHash := errors.New("Hash error")
+		inner.HashError = errHash
+		inner.CloseError = nil
+
+		proof, err := machineInst.OutputsProof(context.Background())
+		require.Nil(proof)
+		require.Error(err)
+		require.ErrorIs(err, errHash)
+
+		// Runtime should be destroyed after a hash error.
+		require.Nil(machineInst.runtime)
+	})
+
+	s.Run("HashErrorAndCloseError", func() {
+		require := s.Require()
+		inner, machineInst := s.setupOutputsProof()
+		errHash := errors.New("Hash error")
+		errClose := errors.New("Close error")
+		inner.HashError = errHash
+		inner.CloseError = errClose
+
+		proof, err := machineInst.OutputsProof(context.Background())
+		require.Nil(proof)
+		require.Error(err)
+		require.ErrorIs(err, errHash)
+		require.ErrorIs(err, errClose)
+
+		// Runtime should be destroyed even when Close also fails.
+		require.Nil(machineInst.runtime)
+	})
+
+	s.Run("OutputsHashError", func() {
+		require := s.Require()
+		inner, machineInst := s.setupOutputsProof()
+		errOutputsHash := errors.New("OutputsHash error")
+		inner.OutputsHashError = errOutputsHash
+		inner.CloseError = nil
+
+		proof, err := machineInst.OutputsProof(context.Background())
+		require.Nil(proof)
+		require.Error(err)
+		require.ErrorIs(err, errOutputsHash)
+
+		// Runtime should be destroyed after an outputs hash error.
+		require.Nil(machineInst.runtime)
+	})
+
+	s.Run("OutputsHashProofError", func() {
+		require := s.Require()
+		inner, machineInst := s.setupOutputsProof()
+		errProof := errors.New("OutputsHashProof error")
+		inner.OutputsHashProofError = errProof
+		inner.CloseError = nil
+
+		proof, err := machineInst.OutputsProof(context.Background())
+		require.Nil(proof)
+		require.Error(err)
+		require.ErrorIs(err, errProof)
+
+		// Runtime should be destroyed after an outputs hash proof error.
+		require.Nil(machineInst.runtime)
 	})
 }
 
@@ -671,6 +842,11 @@ var (
 		newBytes(33, 300),
 		newBytes(34, 300),
 	}
+	expectedOutputsHashProof = []machine.Hash{
+		newHash(3),
+		newHash(4),
+		newHash(5),
+	}
 )
 
 func (s *MachineInstanceSuite) setupAdvance() (*MockRollupsMachine, *MockRollupsMachine, *MachineInstanceImpl) {
@@ -772,6 +948,44 @@ func (s *MachineInstanceSuite) setupInspect() (*MockRollupsMachine, *MockRollups
 	fork.CloseError = nil
 
 	return inner, fork, machineInst
+}
+
+func (s *MachineInstanceSuite) setupOutputsProof() (*MockRollupsMachine, *MachineInstanceImpl) {
+	app := &model.Application{
+		ExecutionParameters: model.ExecutionParameters{
+			AdvanceMaxDeadline:    decisecond,
+			InspectMaxDeadline:    centisecond,
+			LoadDeadline:          decisecond,
+			MaxConcurrentInspects: 3,
+		},
+	}
+	inner := &MockRollupsMachine{}
+	machineInst := &MachineInstanceImpl{
+		application:           app,
+		runtime:               inner,
+		advanceTimeout:        decisecond,
+		inspectTimeout:        centisecond,
+		maxConcurrentInspects: 3,
+		closeTimeout:          defaultCloseTimeout,
+		mutex:                 pmutex.New(),
+		inspectSemaphore:      semaphore.NewWeighted(3),
+		logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	machineInst.processedInputs.Store(5)
+
+	inner.HashReturn = newHash(1)
+	inner.HashError = nil
+	inner.OutputsHashReturn = newHash(2)
+	inner.OutputsHashError = nil
+	inner.OutputsHashProofReturn = []machine.Hash{
+		newHash(3),
+		newHash(4),
+		newHash(5),
+	}
+	inner.OutputsHashProofError = nil
+	inner.CloseError = errUnreachable
+
+	return inner, machineInst
 }
 
 // ------------------------------------------------------------------------------------------------

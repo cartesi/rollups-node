@@ -432,8 +432,8 @@ func (m *MachineInstanceImpl) CreateSnapshot(ctx context.Context, processedInput
 	m.advanceMutex.Lock()
 	defer m.advanceMutex.Unlock()
 
-	// Acquire a read lock on the machine
-	m.mutex.LLock()
+	// Acquire HLock since this operation may destroy the runtime on failure.
+	m.mutex.HLock()
 	defer m.mutex.Unlock()
 
 	if m.runtime == nil {
@@ -453,11 +453,13 @@ func (m *MachineInstanceImpl) CreateSnapshot(ctx context.Context, processedInput
 	storeCtx, cancel := context.WithTimeout(ctx, m.application.ExecutionParameters.StoreDeadline)
 	defer cancel()
 
-	// Store the machine state to the specified path
+	// Store the machine state to the specified path.
+	// A Store failure on a local child process indicates an unrecoverable
+	// condition (disk full, process crash, etc.) — destroy the runtime.
 	err := m.runtime.Store(storeCtx, path)
 	if err != nil {
-		m.logger.Error("Failed to create snapshot", "path", path, "error", err)
-		return err
+		m.logger.Error("Failed to create snapshot, destroying runtime", "path", path, "error", err)
+		return m.destroyRuntime(fmt.Errorf("failed to create snapshot: %w", err))
 	}
 
 	m.logger.Debug("Snapshot created successfully", "path", path)
@@ -469,8 +471,8 @@ func (m *MachineInstanceImpl) Hash(ctx context.Context) ([32]byte, error) {
 	m.advanceMutex.Lock()
 	defer m.advanceMutex.Unlock()
 
-	// Acquire a read lock on the machine
-	m.mutex.LLock()
+	// Acquire HLock since this operation may destroy the runtime on failure.
+	m.mutex.HLock()
 	defer m.mutex.Unlock()
 
 	if m.runtime == nil {
@@ -484,21 +486,21 @@ func (m *MachineInstanceImpl) Hash(ctx context.Context) ([32]byte, error) {
 
 	hash, err := m.runtime.Hash(storeCtx)
 	if err != nil {
-		m.logger.Error("Failed to retrieve machine root hash", "error", err)
-		return [32]byte{}, err
+		m.logger.Error("Failed to retrieve machine root hash, destroying runtime", "error", err)
+		return [32]byte{}, m.destroyRuntime(fmt.Errorf("failed to retrieve machine root hash: %w", err))
 	}
 
 	m.logger.Debug("Machine root hash retrieved successfully", "hash", "0x"+hex.EncodeToString(hash[:]))
 	return hash, nil
 }
 
-func (m *MachineInstanceImpl) OutputsProof(ctx context.Context, processedInputs uint64) (*OutputsProof, error) {
+func (m *MachineInstanceImpl) OutputsProof(ctx context.Context) (*OutputsProof, error) {
 	// Acquire the advance mutex to ensure no advance operations are in progress
 	m.advanceMutex.Lock()
 	defer m.advanceMutex.Unlock()
 
-	// Acquire a read lock on the machine
-	m.mutex.LLock()
+	// Acquire HLock since this operation may destroy the runtime on failure.
+	m.mutex.HLock()
 	defer m.mutex.Unlock()
 
 	if m.runtime == nil {
@@ -510,20 +512,22 @@ func (m *MachineInstanceImpl) OutputsProof(ctx context.Context, processedInputs 
 	proofCtx, cancel := context.WithTimeout(ctx, m.application.ExecutionParameters.LoadDeadline)
 	defer cancel()
 
-	// Get the machine state before processing
+	// The runtime is a local child process — errors here indicate the process
+	// crashed, ran out of resources, or is otherwise unrecoverable.
+	// Close the runtime to avoid leaving a broken process alive.
 	machineHash, err := m.runtime.Hash(proofCtx)
 	if err != nil {
-		return nil, errors.Join(err, m.runtime.Close())
+		return nil, m.destroyRuntime(fmt.Errorf("failed to get machine hash: %w", err))
 	}
 
 	outputsHash, err := m.runtime.OutputsHash(proofCtx)
 	if err != nil {
-		return nil, errors.Join(err, m.runtime.Close())
+		return nil, m.destroyRuntime(fmt.Errorf("failed to get outputs hash: %w", err))
 	}
 
 	outputsHashProof, err := m.runtime.OutputsHashProof(proofCtx)
 	if err != nil {
-		return nil, errors.Join(err, m.runtime.Close())
+		return nil, m.destroyRuntime(fmt.Errorf("failed to get outputs hash proof: %w", err))
 	}
 
 	proof := &OutputsProof{
@@ -532,7 +536,7 @@ func (m *MachineInstanceImpl) OutputsProof(ctx context.Context, processedInputs 
 		OutputsHashProof: outputsHashProof,
 	}
 
-	m.logger.Debug("Machine machine hash, outputs merkle root and outputs merkle proof retrieved successfully",
+	m.logger.Debug("Machine hash, outputs merkle root and outputs merkle proof retrieved successfully",
 		"hash", "0x"+hex.EncodeToString(machineHash[:]))
 	return proof, nil
 }
@@ -573,6 +577,18 @@ func (m *MachineInstanceImpl) Close() error {
 	err := m.runtime.Close()
 	m.runtime = nil
 	return err
+}
+
+// destroyRuntime closes the runtime and nils it out so that subsequent calls
+// fail fast with ErrMachineClosed instead of talking to a broken process.
+// Must be called while holding the appropriate locks.
+func (m *MachineInstanceImpl) destroyRuntime(cause error) error {
+	if m.runtime == nil {
+		return cause
+	}
+	closeErr := m.runtime.Close()
+	m.runtime = nil
+	return errors.Join(cause, closeErr)
 }
 
 // MachineRuntimeFactory defines an interface for creating machine runtimes
