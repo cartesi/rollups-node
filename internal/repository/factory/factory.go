@@ -28,7 +28,9 @@ func NewRepositoryFromConnectionString(ctx context.Context, conn string) (Reposi
 	// case strings.HasPrefix(lowerConn, "sqlite://"):
 	// 	return newSQLiteRepository(ctx, conn)
 	default:
-		return nil, fmt.Errorf("unrecognized connection string format: %s", conn)
+		return nil, fmt.Errorf(
+			"unrecognized connection string scheme (expected postgres:// or postgresql://)",
+		)
 	}
 }
 
