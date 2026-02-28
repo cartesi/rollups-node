@@ -292,7 +292,7 @@ func (r *PostgresRepository) UpdateEpochWithSubmittedClaim(
 		).
 		WHERE(
 			table.Epoch.ApplicationID.EQ(postgres.Int64(application_id)).
-				AND(table.Epoch.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", index)))).
+				AND(table.Epoch.Index.EQ(uint64Expr(index))).
 				AND(table.Epoch.Status.EQ(postgres.NewEnumValue(model.EpochStatus_ClaimComputed.String()))),
 		)
 
@@ -324,7 +324,7 @@ func (r *PostgresRepository) UpdateEpochWithAcceptedClaim(
 		).
 		WHERE(
 			table.Epoch.ApplicationID.EQ(postgres.Int64(application_id)).
-				AND(table.Epoch.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", index)))).
+				AND(table.Epoch.Index.EQ(uint64Expr(index))).
 				AND(table.Epoch.Status.EQ(postgres.NewEnumValue(model.EpochStatus_ClaimSubmitted.String()))),
 		)
 

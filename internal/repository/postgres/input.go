@@ -22,10 +22,7 @@ func (r *PostgresRepository) GetInput(
 	inputIndex uint64,
 ) (*model.Input, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.Input.
 		SELECT(
@@ -50,14 +47,14 @@ func (r *PostgresRepository) GetInput(
 		).
 		WHERE(
 			whereClause.
-				AND(table.Input.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", inputIndex)))),
+				AND(table.Input.Index.EQ(uint64Expr(inputIndex))),
 		)
 
 	sqlStr, args := sel.Sql()
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var inp model.Input
-	err = row.Scan(
+	err := row.Scan(
 		&inp.EpochApplicationID,
 		&inp.EpochIndex,
 		&inp.Index,
@@ -90,10 +87,7 @@ func (r *PostgresRepository) GetInputByTxReference(
 		return nil, fmt.Errorf("tx reference is nil")
 	}
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.Input.
 		SELECT(
@@ -125,7 +119,7 @@ func (r *PostgresRepository) GetInputByTxReference(
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var inp model.Input
-	err = row.Scan(
+	err := row.Scan(
 		&inp.EpochApplicationID,
 		&inp.EpochIndex,
 		&inp.Index,
@@ -154,10 +148,7 @@ func (r *PostgresRepository) GetLastInput(
 	epochIndex uint64,
 ) (*model.Input, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.Input.
 		SELECT(
@@ -182,7 +173,7 @@ func (r *PostgresRepository) GetLastInput(
 		).
 		WHERE(
 			whereClause.
-				AND(table.Input.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", epochIndex)))),
+				AND(table.Input.EpochIndex.EQ(uint64Expr(epochIndex))),
 		).
 		ORDER_BY(table.Input.Index.DESC()).
 		LIMIT(1)
@@ -191,7 +182,7 @@ func (r *PostgresRepository) GetLastInput(
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var inp model.Input
-	err = row.Scan(
+	err := row.Scan(
 		&inp.EpochApplicationID,
 		&inp.EpochIndex,
 		&inp.Index,
@@ -219,10 +210,7 @@ func (r *PostgresRepository) GetLastProcessedInput(
 	nameOrAddress string,
 ) (*model.Input, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.Input.
 		SELECT(
@@ -256,7 +244,7 @@ func (r *PostgresRepository) GetLastProcessedInput(
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var inp model.Input
-	err = row.Scan(
+	err := row.Scan(
 		&inp.EpochApplicationID,
 		&inp.EpochIndex,
 		&inp.Index,
@@ -287,10 +275,7 @@ func (r *PostgresRepository) ListInputs(
 	descending bool,
 ) ([]*model.Input, uint64, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, 0, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.Input.
 		SELECT(
@@ -317,7 +302,7 @@ func (r *PostgresRepository) ListInputs(
 
 	conditions := []postgres.BoolExpression{whereClause}
 	if f.EpochIndex != nil {
-		conditions = append(conditions, table.Input.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", *f.EpochIndex))))
+		conditions = append(conditions, table.Input.EpochIndex.EQ(uint64Expr(*f.EpochIndex)))
 	}
 
 	if f.Status != nil {
@@ -391,10 +376,7 @@ func (r *PostgresRepository) GetNumberOfInputs(
 	nameOrAddress string,
 ) (uint64, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return 0, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.Input.
 		SELECT(postgres.COUNT(postgres.STAR)).
@@ -410,7 +392,7 @@ func (r *PostgresRepository) GetNumberOfInputs(
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var count uint64
-	err = row.Scan(&count)
+	err := row.Scan(&count)
 	if err != nil {
 		return 0, err
 	}
@@ -427,7 +409,7 @@ func (r *PostgresRepository) UpdateInputSnapshotURI(ctx context.Context, appId i
 		).
 		WHERE(
 			table.Input.EpochApplicationID.EQ(postgres.Int64(appId)).
-				AND(table.Input.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", inputIndex)))),
+				AND(table.Input.Index.EQ(uint64Expr(inputIndex))),
 		)
 
 	sqlStr, args := updStmt.Sql()

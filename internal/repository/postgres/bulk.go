@@ -103,7 +103,7 @@ func getStateHashNextIndex(
 		),
 	).WHERE(
 		table.StateHashes.InputEpochApplicationID.EQ(postgres.Int64(appID)).
-			AND(table.StateHashes.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", epochIndex)))),
+			AND(table.StateHashes.EpochIndex.EQ(uint64Expr(epochIndex))),
 	)
 
 	queryStr, args := query.Sql()
@@ -269,7 +269,7 @@ func updateInput(
 		).
 		WHERE(
 			table.Input.EpochApplicationID.EQ(postgres.Int64(appID)).
-				AND(table.Input.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", inputIndex)))),
+				AND(table.Input.Index.EQ(uint64Expr(inputIndex))),
 		)
 
 	sqlStr, args := updStmt.Sql()
@@ -306,7 +306,7 @@ func updateEpochOutputsMerkleProof(
 		).
 		WHERE(
 			table.Epoch.ApplicationID.EQ(postgres.Int64(appID)).
-				AND(table.Epoch.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", epochIndex)))),
+				AND(table.Epoch.Index.EQ(uint64Expr(epochIndex))),
 		)
 
 	sqlStr, args := updStmt.Sql()
@@ -332,7 +332,7 @@ func updateApp(
 			table.Application.ProcessedInputs,
 		).
 		SET(
-			postgres.RawFloat(fmt.Sprintf("%d", inputIndex+1)),
+			uint64Expr(inputIndex+1),
 		).
 		WHERE(
 			table.Application.ID.EQ(postgres.Int64(appID)),
@@ -421,7 +421,7 @@ func updateEpochClaim(
 		).
 		WHERE(
 			table.Epoch.ApplicationID.EQ(postgres.Int64(e.ApplicationID)).
-				AND(table.Epoch.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", e.Index)))),
+				AND(table.Epoch.Index.EQ(uint64Expr(e.Index))),
 		)
 
 	sqlStr, args := updStmt.Sql()
@@ -458,7 +458,7 @@ func updateOutputs(
 			).
 			WHERE(
 				table.Output.InputEpochApplicationID.EQ(postgres.Int64(output.InputEpochApplicationID)).
-					AND(table.Output.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", output.Index)))),
+					AND(table.Output.Index.EQ(uint64Expr(output.Index))),
 			)
 
 		sqlStr, args := updStmt.Sql()
@@ -641,7 +641,7 @@ func updateMatches(ctx context.Context, tx pgx.Tx, appID int64, matches []*model
 			m.DeletionTxHash,
 		).WHERE(
 			table.Matches.ApplicationID.EQ(postgres.Int64(appID)).
-				AND(table.Matches.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", m.EpochIndex)))).
+				AND(table.Matches.EpochIndex.EQ(uint64Expr(m.EpochIndex))).
 				AND(table.Matches.TournamentAddress.EQ(postgres.Bytea(m.TournamentAddress.Bytes()))).
 				AND(table.Matches.IDHash.EQ(postgres.Bytea(m.IDHash.Bytes()))),
 		)
@@ -662,7 +662,7 @@ func updateMatches(ctx context.Context, tx pgx.Tx, appID int64, matches []*model
 }
 
 func updateLastProcessedBlock(ctx context.Context, tx pgx.Tx, appID int64, lastProcessedBlock uint64) error {
-	lastBlock := postgres.RawFloat(fmt.Sprintf("%d", lastProcessedBlock))
+	lastBlock := uint64Expr(lastProcessedBlock)
 	appUpdateStmt := table.Application.
 		UPDATE(
 			table.Application.LastTournamentCheckBlock,

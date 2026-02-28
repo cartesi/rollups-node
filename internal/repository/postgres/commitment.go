@@ -7,7 +7,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-jet/jet/v2/postgres"
@@ -25,19 +24,16 @@ func (r *PostgresRepository) CreateCommitment(
 	c *model.Commitment,
 ) error {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	selectQuery := table.Application.SELECT(
 		table.Application.ID,
-		postgres.RawFloat(fmt.Sprintf("%d", c.EpochIndex)),
+		uint64Expr(c.EpochIndex),
 		postgres.Bytea(c.TournamentAddress.Bytes()),
 		postgres.Bytea(c.Commitment.Bytes()),
 		postgres.Bytea(c.FinalStateHash.Bytes()),
 		postgres.Bytea(c.SubmitterAddress.Bytes()),
-		postgres.RawFloat(fmt.Sprintf("%d", c.BlockNumber)),
+		uint64Expr(c.BlockNumber),
 		postgres.Bytea(c.TxHash.Bytes()),
 	).WHERE(
 		whereClause,
@@ -57,7 +53,7 @@ func (r *PostgresRepository) CreateCommitment(
 	)
 
 	sqlStr, args := insertStmt.Sql()
-	_, err = r.db.Exec(ctx, sqlStr, args...)
+	_, err := r.db.Exec(ctx, sqlStr, args...)
 
 	return err
 }
@@ -70,10 +66,7 @@ func (r *PostgresRepository) GetCommitment(
 	commitmentHex string,
 ) (*model.Commitment, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	tournamentAddr := common.HexToAddress(tournamentAddress)
 	commitment := common.HexToHash(commitmentHex)
@@ -99,7 +92,7 @@ func (r *PostgresRepository) GetCommitment(
 		).
 		WHERE(
 			whereClause.
-				AND(table.Commitments.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", epochIndex)))).
+				AND(table.Commitments.EpochIndex.EQ(uint64Expr(epochIndex))).
 				AND(table.Commitments.TournamentAddress.EQ(postgres.Bytea(tournamentAddr.Bytes()))).
 				AND(table.Commitments.Commitment.EQ(postgres.Bytea(commitment.Bytes()))),
 		)
@@ -108,7 +101,7 @@ func (r *PostgresRepository) GetCommitment(
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var c model.Commitment
-	err = row.Scan(
+	err := row.Scan(
 		&c.ApplicationID,
 		&c.EpochIndex,
 		&c.TournamentAddress,
@@ -137,10 +130,7 @@ func (r *PostgresRepository) ListCommitments(
 	descending bool,
 ) ([]*model.Commitment, uint64, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, 0, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.Commitments.
 		SELECT(
@@ -165,7 +155,7 @@ func (r *PostgresRepository) ListCommitments(
 
 	conditions := []postgres.BoolExpression{whereClause}
 	if f.EpochIndex != nil {
-		conditions = append(conditions, table.Commitments.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", *f.EpochIndex))))
+		conditions = append(conditions, table.Commitments.EpochIndex.EQ(uint64Expr(*f.EpochIndex)))
 	}
 	if f.TournamentAddress != nil {
 		tournamentAddr := common.HexToAddress(*f.TournamentAddress)

@@ -7,7 +7,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-jet/jet/v2/postgres"
@@ -25,24 +24,21 @@ func (r *PostgresRepository) CreateMatch(
 	m *model.Match,
 ) error {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	selectQuery := table.Application.SELECT(
 		table.Application.ID,
-		postgres.RawFloat(fmt.Sprintf("%d", m.EpochIndex)),
+		uint64Expr(m.EpochIndex),
 		postgres.Bytea(m.TournamentAddress.Bytes()),
 		postgres.Bytea(m.IDHash.Bytes()),
 		postgres.Bytea(m.CommitmentOne.Bytes()),
 		postgres.Bytea(m.CommitmentTwo.Bytes()),
 		postgres.Bytea(m.LeftOfTwo.Bytes()),
-		postgres.RawFloat(fmt.Sprintf("%d", m.BlockNumber)),
+		uint64Expr(m.BlockNumber),
 		postgres.Bytea(m.TxHash.Bytes()),
 		postgres.NewEnumValue(m.Winner.String()),
 		postgres.NewEnumValue(m.DeletionReason.String()),
-		postgres.RawFloat(fmt.Sprintf("%d", m.DeletionBlockNumber)),
+		uint64Expr(m.DeletionBlockNumber),
 		postgres.Bytea(m.DeletionTxHash.Bytes()),
 	).WHERE(
 		whereClause,
@@ -67,7 +63,7 @@ func (r *PostgresRepository) CreateMatch(
 	)
 
 	sqlStr, args := insertStmt.Sql()
-	_, err = r.db.Exec(ctx, sqlStr, args...)
+	_, err := r.db.Exec(ctx, sqlStr, args...)
 
 	return err
 }
@@ -78,10 +74,7 @@ func (r *PostgresRepository) UpdateMatch(
 	m *model.Match,
 ) error {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	updateStmt := table.Matches.
 		UPDATE(
@@ -102,7 +95,7 @@ func (r *PostgresRepository) UpdateMatch(
 		WHERE(
 			whereClause.
 				AND(table.Matches.ApplicationID.EQ(postgres.Int(m.ApplicationID))).
-				AND(table.Matches.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", m.EpochIndex)))).
+				AND(table.Matches.EpochIndex.EQ(uint64Expr(m.EpochIndex))).
 				AND(table.Matches.TournamentAddress.EQ(postgres.Bytea(m.TournamentAddress.Bytes()))).
 				AND(table.Matches.IDHash.EQ(postgres.Bytea(m.IDHash.Bytes()))),
 		)
@@ -126,10 +119,7 @@ func (r *PostgresRepository) GetMatch(
 	idHashHex string,
 ) (*model.Match, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	tournamentAddr := common.HexToAddress(tournamentAddress)
 	idHash := common.HexToHash(idHashHex)
@@ -160,7 +150,7 @@ func (r *PostgresRepository) GetMatch(
 		).
 		WHERE(
 			whereClause.
-				AND(table.Matches.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", epochIndex)))).
+				AND(table.Matches.EpochIndex.EQ(uint64Expr(epochIndex))).
 				AND(table.Matches.TournamentAddress.EQ(postgres.Bytea(tournamentAddr.Bytes()))).
 				AND(table.Matches.IDHash.EQ(postgres.Bytea(idHash.Bytes()))),
 		)
@@ -169,7 +159,7 @@ func (r *PostgresRepository) GetMatch(
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var m model.Match
-	err = row.Scan(
+	err := row.Scan(
 		&m.ApplicationID,
 		&m.EpochIndex,
 		&m.TournamentAddress,
@@ -203,10 +193,7 @@ func (r *PostgresRepository) ListMatches(
 	descending bool,
 ) ([]*model.Match, uint64, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, 0, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.Matches.
 		SELECT(
@@ -236,7 +223,7 @@ func (r *PostgresRepository) ListMatches(
 
 	conditions := []postgres.BoolExpression{whereClause}
 	if f.EpochIndex != nil {
-		conditions = append(conditions, table.Matches.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", *f.EpochIndex))))
+		conditions = append(conditions, table.Matches.EpochIndex.EQ(uint64Expr(*f.EpochIndex)))
 	}
 	if f.TournamentAddress != nil {
 		tournamentAddr := common.HexToAddress(*f.TournamentAddress)

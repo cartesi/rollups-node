@@ -7,7 +7,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-jet/jet/v2/postgres"
@@ -25,19 +24,16 @@ func (r *PostgresRepository) CreateMatchAdvanced(
 	m *model.MatchAdvanced,
 ) error {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	selectQuery := table.Application.SELECT(
 		table.Application.ID,
-		postgres.RawFloat(fmt.Sprintf("%d", m.EpochIndex)),
+		uint64Expr(m.EpochIndex),
 		postgres.Bytea(m.TournamentAddress.Bytes()),
 		postgres.Bytea(m.IDHash.Bytes()),
 		postgres.Bytea(m.OtherParent.Bytes()),
 		postgres.Bytea(m.LeftNode.Bytes()),
-		postgres.RawFloat(fmt.Sprintf("%d", m.BlockNumber)),
+		uint64Expr(m.BlockNumber),
 		postgres.Bytea(m.TxHash.Bytes()),
 	).WHERE(
 		whereClause,
@@ -57,7 +53,7 @@ func (r *PostgresRepository) CreateMatchAdvanced(
 	)
 
 	sqlStr, args := insertStmt.Sql()
-	_, err = r.db.Exec(ctx, sqlStr, args...)
+	_, err := r.db.Exec(ctx, sqlStr, args...)
 
 	return err
 }
@@ -71,10 +67,7 @@ func (r *PostgresRepository) GetMatchAdvanced(
 	parentHex string,
 ) (*model.MatchAdvanced, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	tournamentAddr := common.HexToAddress(tournamentAddress)
 	idHash := common.HexToHash(idHashHex)
@@ -101,7 +94,7 @@ func (r *PostgresRepository) GetMatchAdvanced(
 		).
 		WHERE(
 			whereClause.
-				AND(table.MatchAdvances.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", epochIndex)))).
+				AND(table.MatchAdvances.EpochIndex.EQ(uint64Expr(epochIndex))).
 				AND(table.MatchAdvances.TournamentAddress.EQ(postgres.Bytea(tournamentAddr.Bytes()))).
 				AND(table.MatchAdvances.IDHash.EQ(postgres.Bytea(idHash.Bytes()))).
 				AND(table.MatchAdvances.OtherParent.EQ(postgres.Bytea(parent.Bytes()))),
@@ -111,7 +104,7 @@ func (r *PostgresRepository) GetMatchAdvanced(
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var m model.MatchAdvanced
-	err = row.Scan(
+	err := row.Scan(
 		&m.ApplicationID,
 		&m.EpochIndex,
 		&m.TournamentAddress,
@@ -142,10 +135,7 @@ func (r *PostgresRepository) ListMatchAdvances(
 	descending bool,
 ) ([]*model.MatchAdvanced, uint64, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, 0, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.MatchAdvances.
 		SELECT(
@@ -169,7 +159,7 @@ func (r *PostgresRepository) ListMatchAdvances(
 		)
 
 	conditions := []postgres.BoolExpression{whereClause}
-	conditions = append(conditions, table.MatchAdvances.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", epochIndex))))
+	conditions = append(conditions, table.MatchAdvances.EpochIndex.EQ(uint64Expr(epochIndex)))
 
 	tAddr := common.HexToAddress(tournamentAddress)
 	conditions = append(conditions, table.MatchAdvances.TournamentAddress.EQ(postgres.Bytea(tAddr.Bytes())))

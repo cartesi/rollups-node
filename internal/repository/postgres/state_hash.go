@@ -5,7 +5,6 @@ package postgres
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/go-jet/jet/v2/postgres"
 
@@ -22,10 +21,7 @@ func (r *PostgresRepository) ListStateHashes(
 	descending bool,
 ) ([]*model.StateHash, uint64, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, 0, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.StateHashes.
 		SELECT(
@@ -48,7 +44,7 @@ func (r *PostgresRepository) ListStateHashes(
 
 	conditions := []postgres.BoolExpression{whereClause}
 	if f.EpochIndex != nil {
-		conditions = append(conditions, table.StateHashes.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", *f.EpochIndex))))
+		conditions = append(conditions, table.StateHashes.EpochIndex.EQ(uint64Expr(*f.EpochIndex)))
 	}
 
 	sel = sel.WHERE(postgres.AND(conditions...))

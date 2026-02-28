@@ -24,10 +24,7 @@ func getEpochNextVirtualIndex(
 	nameOrAddress string,
 ) (uint64, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return 0, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	query := table.Epoch.SELECT(
 		postgres.COALESCE(
@@ -42,7 +39,7 @@ func getEpochNextVirtualIndex(
 
 	queryStr, args := query.Sql()
 	var currentIndex uint64
-	err = tx.QueryRow(ctx, queryStr, args...).Scan(&currentIndex)
+	err := tx.QueryRow(ctx, queryStr, args...).Scan(&currentIndex)
 	if err != nil {
 		err = fmt.Errorf("failed to get the next epoch virtual index: %w", err)
 		return 0, errors.Join(err, tx.Rollback(ctx))
@@ -70,10 +67,7 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 	blockNumber uint64,
 ) error {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	epochInsertStmt := table.Epoch.INSERT(
 		table.Epoch.ApplicationID,
@@ -120,14 +114,14 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 		}
 		epochSelectQuery := table.Application.SELECT(
 			table.Application.ID,
-			postgres.RawFloat(fmt.Sprintf("%d", epoch.Index)),
-			postgres.RawFloat(fmt.Sprintf("%d", epoch.FirstBlock)),
-			postgres.RawFloat(fmt.Sprintf("%d", epoch.LastBlock)),
-			postgres.RawFloat(fmt.Sprintf("%d", epoch.InputIndexLowerBound)),
-			postgres.RawFloat(fmt.Sprintf("%d", epoch.InputIndexUpperBound)),
+			uint64Expr(epoch.Index),
+			uint64Expr(epoch.FirstBlock),
+			uint64Expr(epoch.LastBlock),
+			uint64Expr(epoch.InputIndexLowerBound),
+			uint64Expr(epoch.InputIndexUpperBound),
 			tournamentAddress,
 			postgres.NewEnumValue(epoch.Status.String()),
-			postgres.RawFloat(fmt.Sprintf("%d", nextVirtualIndex)),
+			uint64Expr(nextVirtualIndex),
 		).WHERE(
 			whereClause,
 		)
@@ -136,8 +130,8 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 			ON_CONFLICT(table.Epoch.ApplicationID, table.Epoch.Index).
 			DO_UPDATE(postgres.SET(
 				table.Epoch.Status.SET(postgres.NewEnumValue(epoch.Status.String())),
-				table.Epoch.LastBlock.SET(postgres.RawFloat(fmt.Sprintf("%d", epoch.LastBlock))),
-				table.Epoch.InputIndexUpperBound.SET(postgres.RawFloat(fmt.Sprintf("%d", epoch.InputIndexUpperBound))),
+				table.Epoch.LastBlock.SET(uint64Expr(epoch.LastBlock)),
+				table.Epoch.InputIndexUpperBound.SET(uint64Expr(epoch.InputIndexUpperBound)),
 				table.Epoch.TournamentAddress.SET(tournamentAddress),
 			)).Sql() // FIXME on conflict
 		_, err = tx.Exec(ctx, sqlStr, args...)
@@ -149,9 +143,9 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 		for _, input := range inputs {
 			inputSelectQuery := table.Application.SELECT(
 				table.Application.ID,
-				postgres.RawFloat(fmt.Sprintf("%d", epoch.Index)),
-				postgres.RawFloat(fmt.Sprintf("%d", input.Index)),
-				postgres.RawFloat(fmt.Sprintf("%d", input.BlockNumber)),
+				uint64Expr(epoch.Index),
+				uint64Expr(input.Index),
+				uint64Expr(input.BlockNumber),
 				postgres.Bytea(input.RawData),
 				postgres.NewEnumValue(input.Status.String()),
 				postgres.Bytea(input.TransactionReference.Bytes()),
@@ -173,7 +167,7 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 			table.Application.LastInputCheckBlock,
 		).
 		SET(
-			postgres.RawFloat(fmt.Sprintf("%d", blockNumber)),
+			uint64Expr(blockNumber),
 		).
 		WHERE(whereClause)
 
@@ -198,10 +192,7 @@ func (r *PostgresRepository) GetEpoch(
 	index uint64,
 ) (*model.Epoch, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	stmt := table.Epoch.
 		SELECT(
@@ -231,14 +222,14 @@ func (r *PostgresRepository) GetEpoch(
 		).
 		WHERE(
 			whereClause.
-				AND(table.Epoch.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", index)))),
+				AND(table.Epoch.Index.EQ(uint64Expr(index))),
 		)
 
 	sqlStr, args := stmt.Sql()
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var ep model.Epoch
-	err = row.Scan(
+	err := row.Scan(
 		&ep.ApplicationID,
 		&ep.Index,
 		&ep.FirstBlock,
@@ -271,10 +262,7 @@ func (r *PostgresRepository) GetLastAcceptedEpochIndex(
 	nameOrAddress string,
 ) (uint64, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return 0, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	stmt := table.Epoch.
 		SELECT(
@@ -297,7 +285,7 @@ func (r *PostgresRepository) GetLastAcceptedEpochIndex(
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var index uint64
-	err = row.Scan(
+	err := row.Scan(
 		&index,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -314,10 +302,7 @@ func (r *PostgresRepository) GetLastNonOpenEpoch(
 	nameOrAddress string,
 ) (*model.Epoch, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	stmt := table.Epoch.
 		SELECT(
@@ -356,7 +341,7 @@ func (r *PostgresRepository) GetLastNonOpenEpoch(
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var ep model.Epoch
-	err = row.Scan(
+	err := row.Scan(
 		&ep.ApplicationID,
 		&ep.Index,
 		&ep.FirstBlock,
@@ -390,10 +375,7 @@ func (r *PostgresRepository) GetEpochByVirtualIndex(
 	index uint64,
 ) (*model.Epoch, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	stmt := table.Epoch.
 		SELECT(
@@ -423,14 +405,14 @@ func (r *PostgresRepository) GetEpochByVirtualIndex(
 		).
 		WHERE(
 			whereClause.
-				AND(table.Epoch.VirtualIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", index)))),
+				AND(table.Epoch.VirtualIndex.EQ(uint64Expr(index))),
 		)
 
 	sqlStr, args := stmt.Sql()
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var ep model.Epoch
-	err = row.Scan(
+	err := row.Scan(
 		&ep.ApplicationID,
 		&ep.Index,
 		&ep.FirstBlock,
@@ -464,10 +446,7 @@ func (r *PostgresRepository) UpdateEpochClaimTransactionHash(
 	e *model.Epoch,
 ) error {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	updStmt := table.Epoch.
 		UPDATE(
@@ -482,7 +461,7 @@ func (r *PostgresRepository) UpdateEpochClaimTransactionHash(
 		WHERE(
 			whereClause.
 				AND(table.Epoch.ApplicationID.EQ(table.Application.ID)).
-				AND(table.Epoch.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", e.Index)))),
+				AND(table.Epoch.Index.EQ(uint64Expr(e.Index))),
 		)
 
 	sqlStr, args := updStmt.Sql()
@@ -521,10 +500,7 @@ func (r *PostgresRepository) UpdateEpochStatus(
 	e *model.Epoch,
 ) error {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	updStmt := table.Epoch.
 		UPDATE(
@@ -539,7 +515,7 @@ func (r *PostgresRepository) UpdateEpochStatus(
 		WHERE(
 			whereClause.
 				AND(table.Epoch.ApplicationID.EQ(table.Application.ID)).
-				AND(table.Epoch.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", e.Index)))),
+				AND(table.Epoch.Index.EQ(uint64Expr(e.Index))),
 		)
 
 	sqlStr, args := updStmt.Sql()
@@ -559,10 +535,7 @@ func (r *PostgresRepository) UpdateEpochInputsProcessed(
 	epochIndex uint64,
 ) error {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	// Subquery to check if the previous epoch is not open or closed
 	prevTable := table.Epoch.AS("prev")
@@ -608,7 +581,7 @@ func (r *PostgresRepository) UpdateEpochInputsProcessed(
 		WHERE(postgres.AND(
 			table.Epoch.Status.EQ(postgres.NewEnumValue(model.EpochStatus_Closed.String())),
 			table.Epoch.ApplicationID.EQ(table.Application.ID),
-			table.Epoch.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", epochIndex))),
+			table.Epoch.Index.EQ(uint64Expr(epochIndex)),
 			whereClause,
 			prevCondition,
 			inputsCondition,
@@ -619,7 +592,7 @@ func (r *PostgresRepository) UpdateEpochInputsProcessed(
 	sqlStr, args := updateStmt.Sql()
 
 	var index uint64
-	err = r.db.QueryRow(ctx, sqlStr, args...).Scan(&index)
+	err := r.db.QueryRow(ctx, sqlStr, args...).Scan(&index)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
@@ -641,10 +614,7 @@ func (r *PostgresRepository) ListEpochs(
 	descending bool,
 ) ([]*model.Epoch, uint64, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, 0, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.Epoch.
 		SELECT(
@@ -682,7 +652,7 @@ func (r *PostgresRepository) ListEpochs(
 	}
 
 	if f.BeforeBlock != nil {
-		conditions = append(conditions, table.Epoch.LastBlock.LT(postgres.RawFloat(fmt.Sprintf("%d", *f.BeforeBlock))))
+		conditions = append(conditions, table.Epoch.LastBlock.LT(uint64Expr(*f.BeforeBlock)))
 	}
 
 	sel = sel.WHERE(postgres.AND(conditions...))
@@ -766,9 +736,9 @@ func (r *PostgresRepository) RepeatPreviousEpochOutputsProof(
 		FROM(e2).
 		WHERE(postgres.AND(
 			e1.ApplicationID.EQ(postgres.Int64(appID)),
-			e1.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", epochIndex))),
+			e1.Index.EQ(uint64Expr(epochIndex)),
 			e2.ApplicationID.EQ(postgres.Int64(appID)),
-			e2.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", epochIndex-1))),
+			e2.Index.EQ(uint64Expr(epochIndex - 1)),
 		))
 
 	sqlStr, args := updStmt.Sql()

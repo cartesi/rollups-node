@@ -20,17 +20,18 @@ func isHexAddress(s string) bool {
 	return hexAddressRegex.MatchString(s)
 }
 
-func getWhereClauseFromNameOrAddress(nameOrAddress string) (postgres.BoolExpression, error) {
-
-	var whereClause postgres.BoolExpression
+func getWhereClauseFromNameOrAddress(nameOrAddress string) postgres.BoolExpression {
 	if isHexAddress(nameOrAddress) {
 		address := common.HexToAddress(nameOrAddress)
-		whereClause = table.Application.IapplicationAddress.EQ(postgres.Bytea(address.Bytes()))
-	} else {
-		// treat as name
-		whereClause = table.Application.Name.EQ(postgres.String(nameOrAddress))
+		return table.Application.IapplicationAddress.EQ(postgres.Bytea(address.Bytes()))
 	}
-	return whereClause, nil
+	return table.Application.Name.EQ(postgres.String(nameOrAddress))
+}
+
+// uint64Expr converts a uint64 to a go-jet FloatExpression for use with
+// PostgreSQL NUMERIC(20,0) "uint64" domain columns.
+func uint64Expr(v uint64) postgres.FloatExpression {
+	return postgres.RawFloat(fmt.Sprintf("%d", v))
 }
 
 func hashToBytes(h *common.Hash) any {

@@ -25,10 +25,7 @@ func (r *PostgresRepository) CreateTournament(
 	t *model.Tournament,
 ) error {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	insertStmt := table.Tournaments.
 		INSERT(
@@ -65,23 +62,23 @@ func (r *PostgresRepository) CreateTournament(
 
 	selectQuery := table.Application.SELECT(
 		table.Application.ID,
-		postgres.RawFloat(fmt.Sprintf("%d", t.EpochIndex)),
+		uint64Expr(t.EpochIndex),
 		postgres.Bytea(t.Address.Bytes()),
 		parentAddress,
 		parentMatch,
-		postgres.RawFloat(fmt.Sprintf("%d", t.MaxLevel)),
-		postgres.RawFloat(fmt.Sprintf("%d", t.Level)),
-		postgres.RawFloat(fmt.Sprintf("%d", t.Log2Step)),
-		postgres.RawFloat(fmt.Sprintf("%d", t.Height)),
+		uint64Expr(t.MaxLevel),
+		uint64Expr(t.Level),
+		uint64Expr(t.Log2Step),
+		uint64Expr(t.Height),
 		winnerCommitment,
 		finalState,
-		postgres.RawFloat(fmt.Sprintf("%d", t.FinishedAtBlock)),
+		uint64Expr(t.FinishedAtBlock),
 	).WHERE(
 		whereClause,
 	)
 
 	sqlStr, args := insertStmt.QUERY(selectQuery).Sql()
-	_, err = r.db.Exec(ctx, sqlStr, args...)
+	_, err := r.db.Exec(ctx, sqlStr, args...)
 
 	return err
 }
@@ -92,10 +89,7 @@ func (r *PostgresRepository) UpdateTournament(
 	t *model.Tournament,
 ) error {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	winnerCommitment := postgres.NULL
 	if t.WinnerCommitment != nil {
@@ -123,7 +117,7 @@ func (r *PostgresRepository) UpdateTournament(
 		WHERE(postgres.AND(
 			whereClause,
 			table.Tournaments.ApplicationID.EQ(postgres.Int(t.ApplicationID)),
-			table.Tournaments.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", t.EpochIndex))),
+			table.Tournaments.EpochIndex.EQ(uint64Expr(t.EpochIndex)),
 			table.Tournaments.Address.EQ(postgres.Bytea(t.Address.Bytes())),
 		))
 
@@ -144,10 +138,7 @@ func (r *PostgresRepository) GetTournament(
 	address string,
 ) (*model.Tournament, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	tournamentAddress := common.HexToAddress(address)
 	sel := table.Tournaments.
@@ -182,7 +173,7 @@ func (r *PostgresRepository) GetTournament(
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var t model.Tournament
-	err = row.Scan(
+	err := row.Scan(
 		&t.ApplicationID,
 		&t.EpochIndex,
 		&t.Address,
@@ -215,10 +206,7 @@ func (r *PostgresRepository) ListTournaments(
 	descending bool,
 ) ([]*model.Tournament, uint64, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, 0, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.Tournaments.
 		SELECT(
@@ -247,7 +235,7 @@ func (r *PostgresRepository) ListTournaments(
 
 	conditions := []postgres.BoolExpression{whereClause}
 	if f.EpochIndex != nil {
-		conditions = append(conditions, table.Tournaments.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", *f.EpochIndex))))
+		conditions = append(conditions, table.Tournaments.EpochIndex.EQ(uint64Expr(*f.EpochIndex)))
 	}
 	if f.Level != nil {
 		conditions = append(conditions, table.Tournaments.Level.EQ(postgres.RawInt(fmt.Sprintf("%d", *f.Level))))

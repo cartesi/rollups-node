@@ -22,10 +22,7 @@ func (r *PostgresRepository) GetOutput(
 	outputIndex uint64,
 ) (*model.Output, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.Output.
 		SELECT(
@@ -52,14 +49,14 @@ func (r *PostgresRepository) GetOutput(
 		).
 		WHERE(
 			whereClause.
-				AND(table.Output.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", outputIndex)))),
+				AND(table.Output.Index.EQ(uint64Expr(outputIndex))),
 		)
 
 	sqlStr, args := sel.Sql()
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var o model.Output
-	err = row.Scan(
+	err := row.Scan(
 		&o.InputEpochApplicationID,
 		&o.InputIndex,
 		&o.Index,
@@ -87,10 +84,7 @@ func (r *PostgresRepository) UpdateOutputsExecution(
 	lastOutputCheckBlock uint64,
 ) error {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -117,7 +111,7 @@ func (r *PostgresRepository) UpdateOutputsExecution(
 			WHERE(
 				whereClause.
 					AND(table.Output.InputEpochApplicationID.EQ(table.Application.ID)).
-					AND(table.Output.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", o.Index)))),
+					AND(table.Output.Index.EQ(uint64Expr(o.Index))),
 			)
 
 		sqlStr, args := updStmt.Sql()
@@ -139,7 +133,7 @@ func (r *PostgresRepository) UpdateOutputsExecution(
 			table.Application.LastOutputCheckBlock,
 		).
 		SET(
-			postgres.RawFloat(fmt.Sprintf("%d", lastOutputCheckBlock)),
+			uint64Expr(lastOutputCheckBlock),
 		).
 		WHERE(whereClause)
 
@@ -166,10 +160,7 @@ func (r *PostgresRepository) ListOutputs(
 	descending bool,
 ) ([]*model.Output, uint64, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, 0, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.Output.
 		SELECT(
@@ -199,19 +190,19 @@ func (r *PostgresRepository) ListOutputs(
 	conditions := []postgres.BoolExpression{whereClause}
 	if f.BlockRange != nil {
 		conditions = append(conditions, table.Input.BlockNumber.BETWEEN(
-			postgres.RawFloat(fmt.Sprintf("%d", f.BlockRange.Start)),
-			postgres.RawFloat(fmt.Sprintf("%d", f.BlockRange.End)),
+			uint64Expr(f.BlockRange.Start),
+			uint64Expr(f.BlockRange.End),
 		))
 		conditions = append(conditions, table.Input.Status.EQ(postgres.NewEnumValue(model.InputCompletionStatus_Accepted.String())))
 	}
 
 	if f.EpochIndex != nil {
-		conditions = append(conditions, table.Input.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", *f.EpochIndex))))
+		conditions = append(conditions, table.Input.EpochIndex.EQ(uint64Expr(*f.EpochIndex)))
 		conditions = append(conditions, table.Input.Status.EQ(postgres.NewEnumValue(model.InputCompletionStatus_Accepted.String())))
 	}
 
 	if f.InputIndex != nil {
-		conditions = append(conditions, table.Output.InputIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", *f.InputIndex))))
+		conditions = append(conditions, table.Output.InputIndex.EQ(uint64Expr(*f.InputIndex)))
 	}
 
 	if f.OutputType != nil {
@@ -282,10 +273,7 @@ func (r *PostgresRepository) GetLastOutputBeforeBlock(
 	block uint64,
 ) (*model.Output, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.Output.
 		SELECT(
@@ -314,7 +302,7 @@ func (r *PostgresRepository) GetLastOutputBeforeBlock(
 		WHERE(
 			postgres.AND(
 				whereClause,
-				table.Input.BlockNumber.LT(postgres.RawFloat(fmt.Sprintf("%d", block))),
+				table.Input.BlockNumber.LT(uint64Expr(block)),
 				table.Input.Status.EQ(postgres.NewEnumValue(model.InputCompletionStatus_Accepted.String())),
 			),
 		).
@@ -325,7 +313,7 @@ func (r *PostgresRepository) GetLastOutputBeforeBlock(
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var out model.Output
-	err = row.Scan(
+	err := row.Scan(
 		&out.InputEpochApplicationID,
 		&out.InputIndex,
 		&out.Index,
@@ -351,10 +339,7 @@ func (r *PostgresRepository) GetNumberOfExecutedOutputs(
 	nameOrAddress string,
 ) (uint64, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return 0, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.Output.
 		SELECT(postgres.COUNT(postgres.STAR)).
@@ -370,7 +355,7 @@ func (r *PostgresRepository) GetNumberOfExecutedOutputs(
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var count uint64
-	err = row.Scan(&count)
+	err := row.Scan(&count)
 	if err != nil {
 		return 0, err
 	}

@@ -137,10 +137,7 @@ func (r *PostgresRepository) GetApplication(
 	nameOrAddress string,
 ) (*model.Application, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	stmt := table.Application.
 		SELECT(
@@ -193,7 +190,7 @@ func (r *PostgresRepository) GetApplication(
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var app model.Application
-	err = row.Scan(
+	err := row.Scan(
 		&app.ID,
 		&app.Name,
 		&app.IApplicationAddress,
@@ -247,10 +244,7 @@ func (r *PostgresRepository) GetProcessedInputCount(
 	nameOrAddress string,
 ) (uint64, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return 0, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	stmt := table.Application.
 		SELECT(table.Application.ProcessedInputs).
@@ -260,7 +254,7 @@ func (r *PostgresRepository) GetProcessedInputCount(
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var processedInputs uint64
-	err = row.Scan(&processedInputs)
+	err := row.Scan(&processedInputs)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, repository.ErrNotFound
 	}
@@ -419,7 +413,7 @@ func (r *PostgresRepository) UpdateEventLastCheckBlock(
 			column,
 		).
 		SET(
-			postgres.RawFloat(fmt.Sprintf("%d", blockNumber)),
+			uint64Expr(blockNumber),
 		).
 		WHERE(table.Application.ID.IN(ids...))
 
@@ -430,10 +424,7 @@ func (r *PostgresRepository) UpdateEventLastCheckBlock(
 
 // GetLastSnapshot retrieves the most recent input with a snapshot for the given application
 func (r *PostgresRepository) GetLastSnapshot(ctx context.Context, nameOrAddress string) (*model.Input, error) {
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.Input.
 		SELECT(
@@ -468,7 +459,7 @@ func (r *PostgresRepository) GetLastSnapshot(ctx context.Context, nameOrAddress 
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var inp model.Input
-	err = row.Scan(
+	err := row.Scan(
 		&inp.EpochApplicationID,
 		&inp.EpochIndex,
 		&inp.Index,

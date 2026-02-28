@@ -7,7 +7,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 
 	"github.com/go-jet/jet/v2/postgres"
 
@@ -22,10 +21,7 @@ func (r *PostgresRepository) GetReport(
 	reportIndex uint64,
 ) (*model.Report, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.Report.
 		SELECT(
@@ -49,14 +45,14 @@ func (r *PostgresRepository) GetReport(
 		).
 		WHERE(
 			whereClause.
-				AND(table.Report.Index.EQ(postgres.RawFloat(fmt.Sprintf("%d", reportIndex)))),
+				AND(table.Report.Index.EQ(uint64Expr(reportIndex))),
 		)
 
 	sqlStr, args := sel.Sql()
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var rp model.Report
-	err = row.Scan(
+	err := row.Scan(
 		&rp.InputEpochApplicationID,
 		&rp.InputIndex,
 		&rp.Index,
@@ -82,10 +78,7 @@ func (r *PostgresRepository) ListReports(
 	descending bool,
 ) ([]*model.Report, uint64, error) {
 
-	whereClause, err := getWhereClauseFromNameOrAddress(nameOrAddress)
-	if err != nil {
-		return nil, 0, err
-	}
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
 	sel := table.Report.
 		SELECT(
@@ -111,11 +104,11 @@ func (r *PostgresRepository) ListReports(
 
 	conditions := []postgres.BoolExpression{whereClause}
 	if f.InputIndex != nil {
-		conditions = append(conditions, table.Report.InputIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", *f.InputIndex))))
+		conditions = append(conditions, table.Report.InputIndex.EQ(uint64Expr(*f.InputIndex)))
 	}
 
 	if f.EpochIndex != nil {
-		conditions = append(conditions, table.Input.EpochIndex.EQ(postgres.RawFloat(fmt.Sprintf("%d", *f.EpochIndex))))
+		conditions = append(conditions, table.Input.EpochIndex.EQ(uint64Expr(*f.EpochIndex)))
 		conditions = append(conditions, table.Input.Status.EQ(postgres.NewEnumValue(model.InputCompletionStatus_Accepted.String())))
 	}
 
