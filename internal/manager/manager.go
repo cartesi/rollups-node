@@ -142,12 +142,20 @@ func (m *MachineManager) UpdateMachines(ctx context.Context) error {
 			m.logger.Error("Failed to synchronize machine",
 				"application", app.IApplicationAddress,
 				"error", err)
-			instance.Close()
+			if err := instance.Close(); err != nil {
+				m.logger.Warn("Failed to close machine after synchronization failure",
+					"application", app.Name, "error", err)
+			}
 			continue
 		}
 
-		// Add the machine to the manager
-		m.addMachine(app.ID, instance)
+		// Add the machine to the manager; close if it fails
+		if !m.addMachine(app.ID, instance) {
+			if err := instance.Close(); err != nil {
+				m.logger.Warn("Failed to close duplicate machine instance",
+					"application", app.Name, "error", err)
+			}
+		}
 	}
 
 	// Remove machines for disabled applications
@@ -203,7 +211,10 @@ func (m *MachineManager) removeMachines(apps []*Application) {
 				m.logger.Info("Application was disabled, shutting down machine",
 					"application", machine.Application().Name)
 			}
-			machine.Close()
+			if err := machine.Close(); err != nil {
+				m.logger.Warn("Failed to close machine for disabled application",
+					"application", machine.Application().Name, "error", err)
+			}
 			delete(m.machines, id)
 		}
 	}
