@@ -446,6 +446,11 @@ func updateOutputs(
 	tx pgx.Tx,
 	outputs []*model.Output,
 ) error {
+	if len(outputs) == 0 {
+		return nil
+	}
+
+	batch := &pgx.Batch{}
 	for _, output := range outputs {
 		updStmt := table.Output.
 			UPDATE(
@@ -460,16 +465,23 @@ func updateOutputs(
 				table.Output.InputEpochApplicationID.EQ(postgres.Int64(output.InputEpochApplicationID)).
 					AND(table.Output.Index.EQ(uint64Expr(output.Index))),
 			)
-
 		sqlStr, args := updStmt.Sql()
-		cmd, err := tx.Exec(ctx, sqlStr, args...)
+		batch.Queue(sqlStr, args...)
+	}
+
+	br := tx.SendBatch(ctx, batch)
+
+	for _, output := range outputs {
+		cmd, err := br.Exec()
 		if err != nil {
+			br.Close()
 			return errors.Join(
-				fmt.Errorf("failed to insert proof for output '%d'. %w", output.Index, err),
+				fmt.Errorf("failed to insert proof for output '%d': %w", output.Index, err),
 				tx.Rollback(ctx),
 			)
 		}
 		if cmd.RowsAffected() == 0 {
+			br.Close()
 			return errors.Join(
 				fmt.Errorf(
 					"failed to insert proof for output '%d'. No rows affected",
@@ -479,7 +491,7 @@ func updateOutputs(
 			)
 		}
 	}
-	return nil
+	return br.Close()
 }
 
 func (r *PostgresRepository) StoreClaimAndProofs(ctx context.Context, epoch *model.Epoch, outputs []*model.Output) error {
@@ -628,6 +640,11 @@ func insertMatchAdvanced(ctx context.Context, tx pgx.Tx, appID int64, matchAdvan
 }
 
 func updateMatches(ctx context.Context, tx pgx.Tx, appID int64, matches []*model.Match) error {
+	if len(matches) == 0 {
+		return nil
+	}
+
+	batch := &pgx.Batch{}
 	for _, m := range matches {
 		updStmt := table.Matches.UPDATE(
 			table.Matches.Winner,
@@ -645,20 +662,28 @@ func updateMatches(ctx context.Context, tx pgx.Tx, appID int64, matches []*model
 				AND(table.Matches.TournamentAddress.EQ(postgres.Bytea(m.TournamentAddress.Bytes()))).
 				AND(table.Matches.IDHash.EQ(postgres.Bytea(m.IDHash.Bytes()))),
 		)
-
 		sqlStr, args := updStmt.Sql()
-		cmd, err := tx.Exec(ctx, sqlStr, args...)
+		batch.Queue(sqlStr, args...)
+	}
+
+	br := tx.SendBatch(ctx, batch)
+
+	for _, m := range matches {
+		cmd, err := br.Exec()
 		if err != nil {
+			br.Close()
 			return errors.Join(err, tx.Rollback(ctx))
 		}
 		if cmd.RowsAffected() == 0 {
+			br.Close()
 			return errors.Join(
-				fmt.Errorf("no match found for update: app %d, epoch %d, tournament %s, idHash %s", m.ApplicationID, m.EpochIndex, m.TournamentAddress.Hex(), m.IDHash.Hex()),
+				fmt.Errorf("no match found for update: app %d, epoch %d, tournament %s, idHash %s",
+					m.ApplicationID, m.EpochIndex, m.TournamentAddress.Hex(), m.IDHash.Hex()),
 				tx.Rollback(ctx),
 			)
 		}
 	}
-	return nil
+	return br.Close()
 }
 
 func updateLastProcessedBlock(ctx context.Context, tx pgx.Tx, appID int64, lastProcessedBlock uint64) error {

@@ -140,22 +140,34 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 			return errors.Join(err, tx.Rollback(ctx))
 		}
 
-		for _, input := range inputs {
-			inputSelectQuery := table.Application.SELECT(
-				table.Application.ID,
-				uint64Expr(epoch.Index),
-				uint64Expr(input.Index),
-				uint64Expr(input.BlockNumber),
-				postgres.Bytea(input.RawData),
-				postgres.NewEnumValue(input.Status.String()),
-				postgres.Bytea(input.TransactionReference.Bytes()),
-			).WHERE(
-				whereClause,
-			)
+		if len(inputs) > 0 {
+			batch := &pgx.Batch{}
+			for _, input := range inputs {
+				inputSelectQuery := table.Application.SELECT(
+					table.Application.ID,
+					uint64Expr(epoch.Index),
+					uint64Expr(input.Index),
+					uint64Expr(input.BlockNumber),
+					postgres.Bytea(input.RawData),
+					postgres.NewEnumValue(input.Status.String()),
+					postgres.Bytea(input.TransactionReference.Bytes()),
+				).WHERE(
+					whereClause,
+				)
 
-			sqlStr, args := inputInsertStmt.QUERY(inputSelectQuery).Sql()
-			_, err := tx.Exec(ctx, sqlStr, args...)
-			if err != nil {
+				sqlStr, args := inputInsertStmt.QUERY(inputSelectQuery).Sql()
+				batch.Queue(sqlStr, args...)
+			}
+
+			br := tx.SendBatch(ctx, batch)
+			for range inputs {
+				_, err := br.Exec()
+				if err != nil {
+					br.Close()
+					return errors.Join(err, tx.Rollback(ctx))
+				}
+			}
+			if err := br.Close(); err != nil {
 				return errors.Join(err, tx.Rollback(ctx))
 			}
 		}
