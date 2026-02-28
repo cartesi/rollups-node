@@ -57,7 +57,12 @@ func NewPostgresRepository(ctx context.Context, conn string, maxRetries int, del
 			pool.Close()
 			return nil, fmt.Errorf("failed to ping Postgres after %d retries", maxRetries)
 		}
-		time.Sleep(delay)
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			pool.Close()
+			return nil, ctx.Err()
+		}
 	}
 
 	// Wait for schema validation (migrations) to complete. Workaround to facilitate container startup order.
@@ -70,7 +75,12 @@ func NewPostgresRepository(ctx context.Context, conn string, maxRetries int, del
 			pool.Close()
 			return nil, fmt.Errorf("failed to validate Postgres schema version: %w", err)
 		}
-		time.Sleep(delay)
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			pool.Close()
+			return nil, ctx.Err()
+		}
 	}
 
 	// This should never be reached due to the returns in the loops above
