@@ -275,7 +275,8 @@ func (m *machineImpl) wasLastRequestAccepted(ctx context.Context) (bool, []byte,
 	case ManualYieldReasonException:
 		return false, data, ErrException
 	default:
-		panic("unreachable code: invalid manual yield reason")
+		err = fmt.Errorf("invalid manual yield reason: %d: %w", yieldReason, ErrMachineInternal)
+		return false, nil, err
 	}
 }
 
@@ -383,6 +384,9 @@ func (m *machineImpl) run(ctx context.Context, reqType requestType, computeHashe
 
 		// Steps the machine as many times as needed until it manually/automatically yields.
 		for yt == nil {
+			if err := checkContext(ctx); err != nil {
+				return outputs, reports, hashes(), remainingMetaCycles(), err
+			}
 			if time.Since(startTime) > runTimeout {
 				werr := fmt.Errorf("run operation timed out: %w", ErrDeadlineExceeded)
 				return outputs, reports, hashes(), remainingMetaCycles(), werr
@@ -400,9 +404,14 @@ func (m *machineImpl) run(ctx context.Context, reqType requestType, computeHashe
 
 		// Asserts the machine yielded automatically.
 		if *yt != AutomaticYield {
-			panic("unreachable code: invalid yield type")
+			err := fmt.Errorf("invalid yield type: %d: %w", *yt, ErrMachineInternal)
+			return outputs, reports, hashes(), remainingMetaCycles(), err
 		}
 		yt = nil
+
+		if err := checkContext(ctx); err != nil {
+			return outputs, reports, hashes(), remainingMetaCycles(), err
+		}
 
 		_, yieldReason, data, err := m.backend.ReceiveCmioRequest(m.params.FastDeadline)
 		if err != nil {
@@ -422,7 +431,8 @@ func (m *machineImpl) run(ctx context.Context, reqType requestType, computeHashe
 		case AutomaticYieldReasonReport:
 			reports = append(reports, data)
 		default:
-			panic("unreachable code: invalid automatic yield reason")
+			err := fmt.Errorf("invalid automatic yield reason: %d: %w", yieldReason, ErrMachineInternal)
+			return outputs, reports, hashes(), remainingMetaCycles(), err
 		}
 	}
 }
@@ -483,9 +493,10 @@ func (m *machineImpl) runIncrementInterval(ctx context.Context,
 	case Halted:
 		return nil, currentCycle, ErrHalted
 	case Failed:
-		fallthrough // covered by backend.Run() err
+		return nil, currentCycle, ErrMachineInternal
 	default:
-		panic("unreachable code: invalid break reason")
+		err := fmt.Errorf("invalid break reason: %d: %w", breakReason, ErrMachineInternal)
+		return nil, currentCycle, err
 	}
 }
 

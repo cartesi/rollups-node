@@ -30,8 +30,8 @@ type (
 // Common errors
 var (
 	ErrMachineInternal            = errors.New("machine internal error")
-	ErrDeadlineExceeded           = errors.New("machine operation deadline exceeded")
-	ErrCanceled                   = errors.New("machine operation canceled")
+	ErrDeadlineExceeded           = fmt.Errorf("machine operation deadline exceeded: %w", context.DeadlineExceeded)
+	ErrCanceled                   = fmt.Errorf("machine operation canceled: %w", context.Canceled)
 	ErrOrphanServer               = errors.New("machine server was left orphan")
 	ErrNotAtManualYield           = errors.New("not at manual yield")
 	ErrException                  = errors.New("last request yielded an exception")
