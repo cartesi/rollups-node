@@ -175,22 +175,34 @@ func (m *machineImpl) WriteCheckpointHash(ctx context.Context, hash Hash) error 
 }
 
 // Advance sends an input to the machine and processes it
-func (m *machineImpl) Advance(ctx context.Context, input []byte, computeHashes bool) (bool, []Output, []Report, []Hash, uint64, Hash, error) {
-	outputsHash := Hash{}
+func (m *machineImpl) Advance(ctx context.Context, input []byte, computeHashes bool) (*AdvanceResponse, error) {
 	// TODO: return the exception reason
 	accepted, outputs, reports, hashes, remaining, data, err := m.process(ctx, input, AdvanceStateRequest, computeHashes)
 	if err != nil {
-		return accepted, outputs, reports, hashes, remaining, outputsHash, err
+		return &AdvanceResponse{
+			Accepted:        accepted,
+			Outputs:         outputs,
+			Reports:         reports,
+			Hashes:          hashes,
+			RemainingCycles: remaining,
+		}, err
+	}
+
+	resp := &AdvanceResponse{
+		Accepted:        accepted,
+		Outputs:         outputs,
+		Reports:         reports,
+		Hashes:          hashes,
+		RemainingCycles: remaining,
 	}
 
 	if accepted {
 		if length := len(data); length != HashSize {
-			err = fmt.Errorf("%w (it has %d bytes)", ErrHashLength, length)
-			return accepted, outputs, reports, hashes, remaining, outputsHash, err
+			return resp, fmt.Errorf("%w (it has %d bytes)", ErrHashLength, length)
 		}
-		copy(outputsHash[:], data)
+		copy(resp.OutputsHash[:], data)
 	}
-	return accepted, outputs, reports, hashes, remaining, outputsHash, nil
+	return resp, nil
 }
 
 // Inspect sends a query to the machine and returns the results

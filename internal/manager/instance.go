@@ -287,8 +287,8 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 	}
 
 	// Process the input
-	accepted, outputs, reports, hashes, remaining, outputsHash, err := fork.Advance(advanceCtx, input, computeHashes)
-	status, err := toInputStatus(accepted, err)
+	advanceResp, err := fork.Advance(advanceCtx, input, computeHashes)
+	status, err := toInputStatus(advanceResp.Accepted, err)
 	if err != nil {
 		return nil, errors.Join(err, fork.Close())
 	}
@@ -298,10 +298,10 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 		EpochIndex:          epochIndex,
 		InputIndex:          index,
 		Status:              status,
-		Outputs:             outputs,
-		Reports:             reports,
-		Hashes:              hashes,
-		RemainingMetaCycles: remaining,
+		Outputs:             advanceResp.Outputs,
+		Reports:             advanceResp.Reports,
+		Hashes:              advanceResp.Hashes,
+		RemainingMetaCycles: advanceResp.RemainingCycles,
 		IsDaveConsensus:     computeHashes,
 	}
 
@@ -312,7 +312,7 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 		if err != nil {
 			return nil, errors.Join(err, fork.Close())
 		}
-		result.OutputsHash = outputsHash
+		result.OutputsHash = advanceResp.OutputsHash
 		result.OutputsHashProof, err = fork.OutputsHashProof(ctx)
 		if err != nil {
 			return nil, errors.Join(err, fork.Close())

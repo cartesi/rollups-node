@@ -1035,7 +1035,7 @@ func (m *MockRollupsMachine) Hash(_ context.Context) (machine.Hash, error) {
 }
 
 func (m *MockRollupsMachine) OutputsHash(_ context.Context) (machine.Hash, error) {
-	return m.OutputsHashReturn, m.HashError
+	return m.OutputsHashReturn, m.OutputsHashError
 }
 
 func (m *MockRollupsMachine) OutputsHashProof(_ context.Context) ([]machine.Hash, error) {
@@ -1046,16 +1046,15 @@ func (m *MockRollupsMachine) WriteCheckpointHash(_ context.Context, _ machine.Ha
 	return m.CheckpointHashError
 }
 
-func (m *MockRollupsMachine) Advance(_ context.Context, _ []byte, _ bool) (
-	bool, []machine.Output, []machine.Report, []machine.Hash, uint64, machine.Hash, error,
-) {
-	return m.AdvanceAcceptedReturn,
-		m.AdvanceOutputsReturn,
-		m.AdvanceReportsReturn,
-		m.AdvanceLeafsReturn,
-		m.AdvanceRemainingReturn,
-		m.OutputsHashReturn,
-		m.AdvanceError
+func (m *MockRollupsMachine) Advance(_ context.Context, _ []byte, _ bool) (*machine.AdvanceResponse, error) {
+	return &machine.AdvanceResponse{
+		Accepted:        m.AdvanceAcceptedReturn,
+		Outputs:         m.AdvanceOutputsReturn,
+		Reports:         m.AdvanceReportsReturn,
+		Hashes:          m.AdvanceLeafsReturn,
+		RemainingCycles: m.AdvanceRemainingReturn,
+		OutputsHash:     m.OutputsHashReturn,
+	}, m.AdvanceError
 }
 
 func (m *MockRollupsMachine) Inspect(_ context.Context, _ []byte) (bool, []machine.Report, error) {

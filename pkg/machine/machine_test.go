@@ -214,15 +214,15 @@ func (s *MachineSuite) TestMachineInterface() {
 	require.Equal(Hash{6, 7, 8, 9, 10}, outputsHash)
 
 	// Test Advance
-	accepted, outputs, reports, _, _, advanceHash, err := machine.Advance(ctx, []byte("input"), false)
+	advanceResp, err := machine.Advance(ctx, []byte("input"), false)
 	require.NoError(err)
-	require.True(accepted)
-	require.Len(outputs, 2)
-	require.Equal([]byte("output1"), outputs[0])
-	require.Equal([]byte("output2"), outputs[1])
-	require.Len(reports, 1)
-	require.Equal([]byte("report1"), reports[0])
-	require.Equal(Hash{11, 12, 13, 14, 15}, advanceHash)
+	require.True(advanceResp.Accepted)
+	require.Len(advanceResp.Outputs, 2)
+	require.Equal([]byte("output1"), advanceResp.Outputs[0])
+	require.Equal([]byte("output2"), advanceResp.Outputs[1])
+	require.Len(advanceResp.Reports, 1)
+	require.Equal([]byte("report1"), advanceResp.Reports[0])
+	require.Equal(Hash{11, 12, 13, 14, 15}, advanceResp.OutputsHash)
 
 	// Test Inspect
 	accepted, inspectReports, err := machine.Inspect(ctx, []byte("query"))
@@ -279,7 +279,7 @@ func (s *MachineSuite) TestMachineInterfaceErrors() {
 	require.Contains(err.Error(), "outputs hash error")
 
 	// Test Advance error
-	_, _, _, _, _, _, err = machine.Advance(ctx, []byte("input"), false)
+	_, err = machine.Advance(ctx, []byte("input"), false)
 	require.Error(err)
 	require.Contains(err.Error(), "advance error")
 
@@ -354,16 +354,15 @@ func (m *MockMachine) WriteCheckpointHash(_ context.Context, _ Hash) error {
 	return m.CheckpointHashError
 }
 
-func (m *MockMachine) Advance(_ context.Context, _ []byte, _ bool) (
-	bool, []Output, []Report, []Hash, uint64, Hash, error,
-) {
-	return m.AdvanceAcceptedReturn,
-		m.AdvanceOutputsReturn,
-		m.AdvanceReportsReturn,
-		m.AdvanceHashesReturn,
-		m.AdvanceRemainingReturn,
-		m.AdvanceHashReturn,
-		m.AdvanceError
+func (m *MockMachine) Advance(_ context.Context, _ []byte, _ bool) (*AdvanceResponse, error) {
+	return &AdvanceResponse{
+		Accepted:        m.AdvanceAcceptedReturn,
+		Outputs:         m.AdvanceOutputsReturn,
+		Reports:         m.AdvanceReportsReturn,
+		Hashes:          m.AdvanceHashesReturn,
+		RemainingCycles: m.AdvanceRemainingReturn,
+		OutputsHash:     m.AdvanceHashReturn,
+	}, m.AdvanceError
 }
 
 func (m *MockMachine) Inspect(_ context.Context,

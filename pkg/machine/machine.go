@@ -27,6 +27,16 @@ type (
 	Hash    = [HashSize]byte
 )
 
+// AdvanceResponse contains the result of an advance operation.
+type AdvanceResponse struct {
+	Accepted        bool
+	Outputs         []Output
+	Reports         []Report
+	Hashes          []Hash
+	RemainingCycles uint64
+	OutputsHash     Hash
+}
+
 // Common errors
 var (
 	ErrMachineInternal            = errors.New("machine internal error")
@@ -60,10 +70,11 @@ type Machine interface {
 	WriteCheckpointHash(ctx context.Context, hash Hash) error
 
 	// Advance sends an input to the machine.
-	// It returns a boolean indicating whether or not the request was accepted.
-	// It also returns the corresponding outputs, reports, and the hash of the outputs.
-	// In case the request is not accepted, the function does not return outputs.
-	Advance(ctx context.Context, input []byte, computeHashes bool) (bool, []Output, []Report, []Hash, uint64, Hash, error)
+	// It always returns a non-nil AdvanceResponse, even on error paths.
+	// The response contains whether the request was accepted,
+	// the corresponding outputs, reports, and the hash of the outputs.
+	// In case the request is not accepted, the response does not contain outputs.
+	Advance(ctx context.Context, input []byte, computeHashes bool) (*AdvanceResponse, error)
 
 	// Inspect sends a query to the machine.
 	// It returns a boolean indicating whether or not the request was accepted

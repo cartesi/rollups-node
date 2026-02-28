@@ -223,12 +223,12 @@ func (s *ImplementationSuite) TestAdvance() {
 	}
 
 	input := []byte("test input")
-	accepted, outputs, reports, _, _, hash, err := machine.Advance(ctx, input, false)
+	resp, err := machine.Advance(ctx, input, false)
 	require.NoError(err)
-	require.True(accepted)
-	require.Empty(outputs)
-	require.Empty(reports)
-	require.NotEqual(Hash{}, hash)
+	require.True(resp.Accepted)
+	require.Empty(resp.Outputs)
+	require.Empty(resp.Reports)
+	require.NotEqual(Hash{}, resp.OutputsHash)
 	mockBackend.AssertExpectations(s.T())
 
 	// Test advance with rejection
@@ -245,12 +245,12 @@ func (s *ImplementationSuite) TestAdvance() {
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	accepted, outputs, reports, _, _, hash, err = machine2.Advance(ctx, input, false)
+	resp, err = machine2.Advance(ctx, input, false)
 	require.NoError(err)
-	require.False(accepted)
-	require.Empty(outputs)
-	require.Empty(reports)
-	require.Equal(Hash{}, hash)
+	require.False(resp.Accepted)
+	require.Empty(resp.Outputs)
+	require.Empty(resp.Reports)
+	require.Equal(Hash{}, resp.OutputsHash)
 	mockBackend2.AssertExpectations(s.T())
 
 	// Test advance with exception
@@ -267,10 +267,10 @@ func (s *ImplementationSuite) TestAdvance() {
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	accepted, outputs, reports, _, _, hash, err = machine3.Advance(ctx, input, false)
+	resp, err = machine3.Advance(ctx, input, false)
 	require.ErrorIs(err, ErrException)
-	require.False(accepted)
-	require.Equal(Hash{}, hash)
+	require.False(resp.Accepted)
+	require.Equal(Hash{}, resp.OutputsHash)
 	mockBackend3.AssertExpectations(s.T())
 
 	// Test advance with payload too large
@@ -288,7 +288,7 @@ func (s *ImplementationSuite) TestAdvance() {
 		},
 	}
 	largeInput := make([]byte, 10)
-	_, _, _, _, _, _, err = machine4.Advance(ctx, largeInput, false)
+	_, err = machine4.Advance(ctx, largeInput, false)
 	require.ErrorIs(err, ErrPayloadLengthLimitExceeded)
 	mockBackend4.AssertExpectations(s.T())
 
@@ -311,7 +311,7 @@ func (s *ImplementationSuite) TestAdvance() {
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	_, _, _, _, _, _, err = machine5.Advance(ctx, input, false)
+	_, err = machine5.Advance(ctx, input, false)
 	require.Error(err)
 	require.ErrorIs(err, ErrHashLength)
 	mockBackend5.AssertExpectations(s.T())
