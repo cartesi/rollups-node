@@ -199,13 +199,13 @@ type ClaimerRepository interface {
 	)
 	UpdateEpochWithSubmittedClaim(
 		ctx context.Context,
-		application_id int64,
+		applicationID int64,
 		index uint64,
-		transaction_hash common.Hash,
+		transactionHash common.Hash,
 	) error
 	UpdateEpochWithAcceptedClaim(
 		ctx context.Context,
-		application_id int64,
+		applicationID int64,
 		index uint64,
 	) error
 }

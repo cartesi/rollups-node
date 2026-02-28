@@ -90,12 +90,13 @@ func (r *PostgresRepository) UpdateOutputsExecution(
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	for _, o := range outputs {
 		if o.ExecutionTransactionHash == nil {
-			return errors.Join(
-				fmt.Errorf("output ExecutionTransactionHash must be not nil when updating app %s output %d", nameOrAddress, o.Index),
-				tx.Rollback(ctx),
+			return fmt.Errorf(
+				"output ExecutionTransactionHash must be not nil when updating app %s output %d",
+				nameOrAddress, o.Index,
 			)
 		}
 		updStmt := table.Output.
@@ -117,13 +118,10 @@ func (r *PostgresRepository) UpdateOutputsExecution(
 		sqlStr, args := updStmt.Sql()
 		cmd, err := tx.Exec(ctx, sqlStr, args...)
 		if err != nil {
-			return errors.Join(err, tx.Rollback(ctx))
+			return err
 		}
 		if cmd.RowsAffected() != 1 {
-			return errors.Join(
-				fmt.Errorf("no row affected when updating app %s epoch %d", nameOrAddress, o.Index),
-				tx.Rollback(ctx),
-			)
+			return fmt.Errorf("no row affected when updating app %s output %d", nameOrAddress, o.Index)
 		}
 	}
 
@@ -140,16 +138,10 @@ func (r *PostgresRepository) UpdateOutputsExecution(
 	sqlStr, args := appUpdateStmt.Sql()
 	_, err = tx.Exec(ctx, sqlStr, args...)
 	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
+		return err
 	}
 
-	// Commit transaction
-	err = tx.Commit(ctx)
-	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
-	}
-
-	return nil
+	return tx.Commit(ctx)
 }
 
 func (r *PostgresRepository) ListOutputs(

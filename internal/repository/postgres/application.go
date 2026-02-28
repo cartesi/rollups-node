@@ -67,12 +67,13 @@ func (r *PostgresRepository) CreateApplication(
 	if err != nil {
 		return 0, err
 	}
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	sqlStr, args := insertStmt.Sql()
 	var newID int64
 	err = tx.QueryRow(ctx, sqlStr, args...).Scan(&newID)
 	if err != nil {
-		return 0, errors.Join(fmt.Errorf("unable to create database application: %w", err), tx.Rollback(ctx))
+		return 0, fmt.Errorf("unable to create database application: %w", err)
 	}
 
 	if !withExecutionParameters {
@@ -121,12 +122,12 @@ func (r *PostgresRepository) CreateApplication(
 
 	_, err = tx.Exec(ctx, sqlStr, args...)
 	if err != nil {
-		return 0, errors.Join(err, tx.Rollback(ctx))
+		return 0, err
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		return 0, errors.Join(err, tx.Rollback(ctx))
+		return 0, err
 	}
 	return newID, nil
 }

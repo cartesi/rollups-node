@@ -5,7 +5,6 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"unsafe"
 
@@ -332,7 +331,7 @@ func updateApp(
 			table.Application.ProcessedInputs,
 		).
 		SET(
-			uint64Expr(inputIndex+1),
+			uint64Expr(inputIndex + 1),
 		).
 		WHERE(
 			table.Application.ID.EQ(postgres.Int64(appID)),
@@ -358,48 +357,44 @@ func (r *PostgresRepository) StoreAdvanceResult(
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	if res.Status == model.InputCompletionStatus_Accepted {
 		err = insertOutputs(ctx, tx, appID, res.InputIndex, res.Outputs)
 		if err != nil {
-			return errors.Join(err, tx.Rollback(ctx))
+			return err
 		}
 
 		err = insertReports(ctx, tx, appID, res.InputIndex, res.Reports)
 		if err != nil {
-			return errors.Join(err, tx.Rollback(ctx))
+			return err
 		}
 	}
 
 	if res.IsDaveConsensus {
 		err = insertStateHashes(ctx, tx, appID, res.EpochIndex, res.InputIndex, res.Hashes, res.MachineHash, res.RemainingMetaCycles)
 		if err != nil {
-			return errors.Join(err, tx.Rollback(ctx))
+			return err
 		}
 	}
 
 	err = updateInput(ctx, tx, appID, res.InputIndex, res.Status, res.OutputsHash, res.MachineHash)
 	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
+		return err
 	}
 
 	err = updateEpochOutputsMerkleProof(ctx, tx, appID, res.EpochIndex, res.OutputsHash,
 		byteSliceToHashSlice(res.OutputsHashProof), res.MachineHash)
 	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
+		return err
 	}
 
 	err = updateApp(ctx, tx, appID, res.InputIndex)
 	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
+		return err
 	}
 
-	err = tx.Commit(ctx)
-	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
-	}
-
-	return nil
+	return tx.Commit(ctx)
 }
 
 func updateEpochClaim(
@@ -427,16 +422,10 @@ func updateEpochClaim(
 	sqlStr, args := updStmt.Sql()
 	cmd, err := tx.Exec(ctx, sqlStr, args...)
 	if err != nil {
-		return errors.Join(
-			fmt.Errorf("SetEpochClaimAndInsertProofsTransaction failed: %w", err),
-			tx.Rollback(ctx),
-		)
+		return fmt.Errorf("SetEpochClaimAndInsertProofsTransaction failed: %w", err)
 	}
 	if cmd.RowsAffected() != 1 {
-		return errors.Join(
-			fmt.Errorf("failed to update application %d epoch %d: no rows affected", e.ApplicationID, e.Index),
-			tx.Rollback(ctx),
-		)
+		return fmt.Errorf("failed to update application %d epoch %d: no rows affected", e.ApplicationID, e.Index)
 	}
 	return nil
 }
@@ -475,20 +464,11 @@ func updateOutputs(
 		cmd, err := br.Exec()
 		if err != nil {
 			br.Close()
-			return errors.Join(
-				fmt.Errorf("failed to insert proof for output '%d': %w", output.Index, err),
-				tx.Rollback(ctx),
-			)
+			return fmt.Errorf("failed to insert proof for output '%d': %w", output.Index, err)
 		}
 		if cmd.RowsAffected() == 0 {
 			br.Close()
-			return errors.Join(
-				fmt.Errorf(
-					"failed to insert proof for output '%d'. No rows affected",
-					output.Index,
-				),
-				tx.Rollback(ctx),
-			)
+			return fmt.Errorf("failed to insert proof for output '%d'. No rows affected", output.Index)
 		}
 	}
 	return br.Close()
@@ -500,6 +480,7 @@ func (r *PostgresRepository) StoreClaimAndProofs(ctx context.Context, epoch *mod
 	if err != nil {
 		return fmt.Errorf("SetEpochClaimAndInsertProofsTransaction failed: %w", err)
 	}
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	err = updateEpochClaim(ctx, tx, epoch)
 	if err != nil {
@@ -511,14 +492,7 @@ func (r *PostgresRepository) StoreClaimAndProofs(ctx context.Context, epoch *mod
 		return err
 	}
 
-	err = tx.Commit(ctx)
-	if err != nil {
-		return errors.Join(
-			fmt.Errorf("SetEpochClaimAndInsertProofsTransaction failed: %w", err),
-			tx.Rollback(ctx),
-		)
-	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 func insertCommitments(ctx context.Context, tx pgx.Tx, appID int64, commitments []*model.Commitment) error {
@@ -551,10 +525,7 @@ func insertCommitments(ctx context.Context, tx pgx.Tx, appID int64, commitments 
 
 	sqlStr, args := stmt.Sql()
 	_, err := tx.Exec(ctx, sqlStr, args...)
-	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
-	}
-	return nil
+	return err
 }
 
 func insertMatches(ctx context.Context, tx pgx.Tx, appID int64, matches []*model.Match) error {
@@ -597,10 +568,7 @@ func insertMatches(ctx context.Context, tx pgx.Tx, appID int64, matches []*model
 
 	sqlStr, args := stmt.Sql()
 	_, err := tx.Exec(ctx, sqlStr, args...)
-	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
-	}
-	return nil
+	return err
 }
 
 func insertMatchAdvanced(ctx context.Context, tx pgx.Tx, appID int64, matchAdvanced []*model.MatchAdvanced) error {
@@ -633,10 +601,7 @@ func insertMatchAdvanced(ctx context.Context, tx pgx.Tx, appID int64, matchAdvan
 
 	sqlStr, args := stmt.Sql()
 	_, err := tx.Exec(ctx, sqlStr, args...)
-	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
-	}
-	return nil
+	return err
 }
 
 func updateMatches(ctx context.Context, tx pgx.Tx, appID int64, matches []*model.Match) error {
@@ -672,15 +637,12 @@ func updateMatches(ctx context.Context, tx pgx.Tx, appID int64, matches []*model
 		cmd, err := br.Exec()
 		if err != nil {
 			br.Close()
-			return errors.Join(err, tx.Rollback(ctx))
+			return err
 		}
 		if cmd.RowsAffected() == 0 {
 			br.Close()
-			return errors.Join(
-				fmt.Errorf("no match found for update: app %d, epoch %d, tournament %s, idHash %s",
-					m.ApplicationID, m.EpochIndex, m.TournamentAddress.Hex(), m.IDHash.Hex()),
-				tx.Rollback(ctx),
-			)
+			return fmt.Errorf("no match found for update: app %d, epoch %d, tournament %s, idHash %s",
+				m.ApplicationID, m.EpochIndex, m.TournamentAddress.Hex(), m.IDHash.Hex())
 		}
 	}
 	return br.Close()
@@ -702,10 +664,7 @@ func updateLastProcessedBlock(ctx context.Context, tx pgx.Tx, appID int64, lastP
 
 	sqlStr, args := appUpdateStmt.Sql()
 	_, err := tx.Exec(ctx, sqlStr, args...)
-	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
-	}
-	return nil
+	return err
 }
 
 func (r *PostgresRepository) StoreTournamentEvents(
@@ -721,6 +680,7 @@ func (r *PostgresRepository) StoreTournamentEvents(
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	err = insertCommitments(ctx, tx, appID, commitments)
 	if err != nil {
@@ -747,10 +707,5 @@ func (r *PostgresRepository) StoreTournamentEvents(
 		return err
 	}
 
-	err = tx.Commit(ctx)
-	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
-	}
-
-	return nil
+	return tx.Commit(ctx)
 }

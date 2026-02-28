@@ -29,7 +29,7 @@ func (r *PostgresRepository) selectOldestClaimPerApp(
 	error,
 ) {
 	if (epochStatus != model.EpochStatus_ClaimSubmitted) && (epochStatus != model.EpochStatus_ClaimComputed) {
-		return nil, nil, fmt.Errorf("Invalid epoch status: %v", epochStatus)
+		return nil, nil, fmt.Errorf("invalid epoch status: %v", epochStatus)
 	}
 
 	// NOTE(mpolitzer): DISTINCT ON is a postgres extension. To implement
@@ -229,6 +229,7 @@ func (r *PostgresRepository) SelectSubmittedClaimPairsPerApp(ctx context.Context
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	// Read-only tx: rollback releases the snapshot, equivalent to commit.
 	defer tx.Rollback(ctx) //nolint:errcheck
 
 	computed, applications, err := r.selectOldestClaimPerApp(ctx, tx, model.EpochStatus_ClaimComputed)
@@ -257,6 +258,7 @@ func (r *PostgresRepository) SelectAcceptedClaimPairsPerApp(ctx context.Context)
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	// Read-only tx: rollback releases the snapshot, equivalent to commit.
 	defer tx.Rollback(ctx) //nolint:errcheck
 
 	submitted, applications, err := r.selectOldestClaimPerApp(ctx, tx, model.EpochStatus_ClaimSubmitted)
@@ -274,9 +276,9 @@ func (r *PostgresRepository) SelectAcceptedClaimPairsPerApp(ctx context.Context)
 
 func (r *PostgresRepository) UpdateEpochWithSubmittedClaim(
 	ctx context.Context,
-	application_id int64,
+	applicationID int64,
 	index uint64,
-	transaction_hash common.Hash,
+	transactionHash common.Hash,
 ) error {
 	updStmt := table.Epoch.
 		UPDATE(
@@ -284,14 +286,14 @@ func (r *PostgresRepository) UpdateEpochWithSubmittedClaim(
 			table.Epoch.Status,
 		).
 		SET(
-			transaction_hash,
+			transactionHash,
 			postgres.NewEnumValue(model.EpochStatus_ClaimSubmitted.String()),
 		).
 		FROM(
 			table.Application,
 		).
 		WHERE(
-			table.Epoch.ApplicationID.EQ(postgres.Int64(application_id)).
+			table.Epoch.ApplicationID.EQ(postgres.Int64(applicationID)).
 				AND(table.Epoch.Index.EQ(uint64Expr(index))).
 				AND(table.Epoch.Status.EQ(postgres.NewEnumValue(model.EpochStatus_ClaimComputed.String()))),
 		)
@@ -309,7 +311,7 @@ func (r *PostgresRepository) UpdateEpochWithSubmittedClaim(
 
 func (r *PostgresRepository) UpdateEpochWithAcceptedClaim(
 	ctx context.Context,
-	application_id int64,
+	applicationID int64,
 	index uint64,
 ) error {
 	updStmt := table.Epoch.
@@ -323,7 +325,7 @@ func (r *PostgresRepository) UpdateEpochWithAcceptedClaim(
 			table.Application,
 		).
 		WHERE(
-			table.Epoch.ApplicationID.EQ(postgres.Int64(application_id)).
+			table.Epoch.ApplicationID.EQ(postgres.Int64(applicationID)).
 				AND(table.Epoch.Index.EQ(uint64Expr(index))).
 				AND(table.Epoch.Status.EQ(postgres.NewEnumValue(model.EpochStatus_ClaimSubmitted.String()))),
 		)

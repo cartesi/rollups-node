@@ -41,8 +41,7 @@ func getEpochNextVirtualIndex(
 	var currentIndex uint64
 	err := tx.QueryRow(ctx, queryStr, args...).Scan(&currentIndex)
 	if err != nil {
-		err = fmt.Errorf("failed to get the next epoch virtual index: %w", err)
-		return 0, errors.Join(err, tx.Rollback(ctx))
+		return 0, fmt.Errorf("failed to get the next epoch virtual index: %w", err)
 	}
 	return currentIndex, nil
 }
@@ -96,6 +95,7 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	epochs := orderEpochs(epochInputsMap)
 	for _, epoch := range epochs {
@@ -137,7 +137,7 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 		_, err = tx.Exec(ctx, sqlStr, args...)
 
 		if err != nil {
-			return errors.Join(err, tx.Rollback(ctx))
+			return err
 		}
 
 		if len(inputs) > 0 {
@@ -164,11 +164,11 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 				_, err := br.Exec()
 				if err != nil {
 					br.Close()
-					return errors.Join(err, tx.Rollback(ctx))
+					return err
 				}
 			}
 			if err := br.Close(); err != nil {
-				return errors.Join(err, tx.Rollback(ctx))
+				return err
 			}
 		}
 	}
@@ -186,16 +186,10 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 	sqlStr, args := appUpdateStmt.Sql()
 	_, err = tx.Exec(ctx, sqlStr, args...)
 	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
+		return err
 	}
 
-	// Commit transaction
-	err = tx.Commit(ctx)
-	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
-	}
-
-	return nil
+	return tx.Commit(ctx)
 }
 
 func (r *PostgresRepository) GetEpoch(
@@ -492,18 +486,15 @@ func (r *PostgresRepository) UpdateEpochOutputsProof(ctx context.Context, appID 
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	err = updateEpochOutputsMerkleProof(ctx, tx, appID, epochIndex,
 		proof.OutputsHash, byteSliceToHashSlice(proof.OutputsHashProof), proof.MachineHash)
 	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
+		return err
 	}
 
-	err = tx.Commit(ctx)
-	if err != nil {
-		return errors.Join(err, tx.Rollback(ctx))
-	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 func (r *PostgresRepository) UpdateEpochStatus(
@@ -750,7 +741,7 @@ func (r *PostgresRepository) RepeatPreviousEpochOutputsProof(
 			e1.ApplicationID.EQ(postgres.Int64(appID)),
 			e1.Index.EQ(uint64Expr(epochIndex)),
 			e2.ApplicationID.EQ(postgres.Int64(appID)),
-			e2.Index.EQ(uint64Expr(epochIndex - 1)),
+			e2.Index.EQ(uint64Expr(epochIndex-1)),
 		))
 
 	sqlStr, args := updStmt.Sql()
