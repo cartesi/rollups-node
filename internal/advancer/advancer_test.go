@@ -618,6 +618,10 @@ func (mock *MockMachineManager) HasMachine(appID int64) bool {
 	return exists
 }
 
+func (mock *MockMachineManager) Close() error {
+	return nil
+}
+
 // MockMachineInstance is a test implementation of manager.MachineInstance
 type MockMachineInstance struct {
 	application *Application

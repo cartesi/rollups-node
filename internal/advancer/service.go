@@ -5,8 +5,10 @@ package advancer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/inspect"
@@ -14,6 +16,10 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/service"
 )
+
+// httpShutdownTimeout is how long to wait for in-flight inspect HTTP requests
+// to drain before forcibly closing the server during shutdown.
+const httpShutdownTimeout = 10 * time.Second //nolint: mnd
 
 // Service is the main advancer service that processes inputs through Cartesi machines
 type Service struct {
@@ -89,11 +95,37 @@ func (s *Service) Tick() []error {
 	return []error{}
 }
 func (s *Service) Stop(b bool) []error {
-	return nil
+	var errs []error
+
+	// Shut down the inspect HTTP server gracefully.
+	// Use a dedicated timeout context because s.Context may already be cancelled
+	// when Stop is called from the context.Done path.
+	if s.HTTPServer != nil {
+		s.Logger.Info("Shutting down inspect HTTP server")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), httpShutdownTimeout)
+		defer cancel()
+		if err := s.HTTPServer.Shutdown(shutdownCtx); err != nil {
+			errs = append(errs, fmt.Errorf("failed to shutdown inspect HTTP server: %w", err))
+		}
+	}
+
+	// Close all machine instances to avoid orphaned emulator processes
+	if s.machineManager != nil {
+		s.Logger.Info("Closing machine manager")
+		if err := s.machineManager.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to close machine manager: %w", err))
+		}
+	}
+
+	return errs
 }
 func (s *Service) Serve() error {
 	if s.inspector != nil && s.HTTPServerFunc != nil {
-		go s.HTTPServerFunc()
+		go func() {
+			if err := s.HTTPServerFunc(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				s.Logger.Error("Inspect HTTP server failed", "error", err)
+			}
+		}()
 	}
 	return s.Service.Serve()
 }

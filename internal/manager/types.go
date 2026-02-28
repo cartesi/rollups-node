@@ -35,4 +35,7 @@ type MachineProvider interface {
 
 	// HasMachine checks if a machine exists for the given application ID
 	HasMachine(appID int64) bool
+
+	// Close shuts down all machine instances and releases resources
+	Close() error
 }
