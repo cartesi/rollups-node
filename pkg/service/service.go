@@ -266,6 +266,15 @@ func (s *Service) Stop(force bool) []error {
 
 func (s *Service) Serve() error {
 	s.Running.Store(true)
+
+	// Check for context cancellation before the first tick.
+	select {
+	case <-s.Context.Done():
+		s.Stop(true)
+		return nil
+	default:
+	}
+
 	s.Tick()
 	for s.Running.Load() {
 		select {

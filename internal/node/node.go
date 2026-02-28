@@ -6,7 +6,6 @@ package node
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/cartesi/rollups-node/pkg/service"
 
@@ -21,6 +20,13 @@ import (
 
 	"github.com/ethereum/go-ethereum/ethclient"
 )
+
+// serviceResult carries either a successfully created service or an error
+// back from the goroutines in createServices.
+type serviceResult struct {
+	service service.IService
+	err     error
+}
 
 type CreateInfo struct {
 	service.CreateInfo
@@ -66,54 +72,57 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	return s, nil
 }
 
+type serviceCreator func(context.Context, *CreateInfo, *Service) (service.IService, error)
+
 func createServices(ctx context.Context, c *CreateInfo, s *Service) error {
-	// Count services first
-	numChildren := 5 // evm-reader, advancer, validator, claimer, prt
+	creators := []serviceCreator{
+		newEVMReader,
+		newAdvancer,
+		newValidator,
+		newClaimer,
+		newPrt,
+	}
 	if c.Config.FeatureJsonrpcApiEnabled {
-		numChildren++ // jsonrpc
+		creators = append(creators, newJsonrpc)
 	}
 
-	// Create buffered channel with correct size
-	ch := make(chan service.IService, numChildren)
-
-	go func() {
-		ch <- newEVMReader(ctx, c, s)
-	}()
-
-	go func() {
-		ch <- newAdvancer(ctx, c, s)
-	}()
-
-	go func() {
-		ch <- newValidator(ctx, c, s)
-	}()
-
-	go func() {
-		ch <- newClaimer(ctx, c, s)
-	}()
-
-	go func() {
-		ch <- newPrt(ctx, c, s)
-	}()
-
-	if c.Config.FeatureJsonrpcApiEnabled {
+	ch := make(chan serviceResult, len(creators))
+	for _, create := range creators {
 		go func() {
-			ch <- newJsonrpc(ctx, c, s)
+			svc, err := create(ctx, c, s)
+			ch <- serviceResult{service: svc, err: err}
 		}()
 	}
 
-	for range numChildren {
+	for range len(creators) {
 		select {
-		case child := <-ch:
-			s.Children = append(s.Children, child)
+		case result := <-ch:
+			if result.err != nil {
+				stopAndDrain(s.Children, ch, len(creators)-len(s.Children)-1)
+				return fmt.Errorf("failed to create service: %w", result.err)
+			}
+			s.Children = append(s.Children, result.service)
 		case <-ctx.Done():
-			err := ctx.Err()
-			s.Logger.Error("Failed to create services. Time limit exceeded",
-				"err", err)
-			return fmt.Errorf("failed to create services. Time limit exceeded")
+			stopAndDrain(s.Children, ch, len(creators)-len(s.Children))
+			return fmt.Errorf("failed to create services: %w", ctx.Err())
 		}
 	}
 	return nil
+}
+
+// stopAndDrain stops already-created children and drains remaining results
+// from the channel, stopping any successful services to prevent resource leaks.
+func stopAndDrain(children []service.IService, ch <-chan serviceResult, remaining int) {
+	for _, child := range children {
+		child.Stop(true)
+	}
+	go func() {
+		for range remaining {
+			if r := <-ch; r.err == nil && r.service != nil {
+				r.service.Stop(true)
+			}
+		}
+	}()
 }
 
 func (me *Service) Alive() bool {
@@ -151,7 +160,7 @@ func (me *Service) Serve() error {
 
 // services creation
 
-func newEVMReader(ctx context.Context, c *CreateInfo, s *Service) service.IService {
+func newEVMReader(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	readerArgs := evmreader.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 "evm-reader",
@@ -171,13 +180,12 @@ func newEVMReader(ctx context.Context, c *CreateInfo, s *Service) service.IServi
 
 	readerService, err := evmreader.Create(ctx, &readerArgs)
 	if err != nil {
-		s.Logger.Error("Fatal", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("create evm-reader: %w", err)
 	}
-	return readerService
+	return readerService, nil
 }
 
-func newAdvancer(ctx context.Context, c *CreateInfo, s *Service) service.IService {
+func newAdvancer(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	advancerArgs := advancer.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 "advancer",
@@ -196,13 +204,12 @@ func newAdvancer(ctx context.Context, c *CreateInfo, s *Service) service.IServic
 
 	advancerService, err := advancer.Create(ctx, &advancerArgs)
 	if err != nil {
-		s.Logger.Error("Fatal", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("create advancer: %w", err)
 	}
-	return advancerService
+	return advancerService, nil
 }
 
-func newValidator(ctx context.Context, c *CreateInfo, s *Service) service.IService {
+func newValidator(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	validatorArgs := validator.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 "validator",
@@ -221,13 +228,12 @@ func newValidator(ctx context.Context, c *CreateInfo, s *Service) service.IServi
 
 	validatorService, err := validator.Create(ctx, &validatorArgs)
 	if err != nil {
-		s.Logger.Error("Fatal", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("create validator: %w", err)
 	}
-	return validatorService
+	return validatorService, nil
 }
 
-func newClaimer(ctx context.Context, c *CreateInfo, s *Service) service.IService {
+func newClaimer(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	claimerArgs := claimer.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 "claimer",
@@ -247,13 +253,12 @@ func newClaimer(ctx context.Context, c *CreateInfo, s *Service) service.IService
 
 	claimerService, err := claimer.Create(ctx, &claimerArgs)
 	if err != nil {
-		s.Logger.Error("Fatal", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("create claimer: %w", err)
 	}
-	return claimerService
+	return claimerService, nil
 }
 
-func newJsonrpc(ctx context.Context, c *CreateInfo, s *Service) service.IService {
+func newJsonrpc(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	jsonrpcArgs := jsonrpc.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 "jsonrpc",
@@ -271,13 +276,12 @@ func newJsonrpc(ctx context.Context, c *CreateInfo, s *Service) service.IService
 
 	jsonrpcService, err := jsonrpc.Create(ctx, &jsonrpcArgs)
 	if err != nil {
-		s.Logger.Error("Fatal", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("create jsonrpc: %w", err)
 	}
-	return jsonrpcService
+	return jsonrpcService, nil
 }
 
-func newPrt(ctx context.Context, c *CreateInfo, s *Service) service.IService {
+func newPrt(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	prtArgs := prt.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 "prt",
@@ -297,8 +301,7 @@ func newPrt(ctx context.Context, c *CreateInfo, s *Service) service.IService {
 
 	prtService, err := prt.Create(ctx, &prtArgs)
 	if err != nil {
-		s.Logger.Error("Fatal", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("create prt: %w", err)
 	}
-	return prtService
+	return prtService, nil
 }
