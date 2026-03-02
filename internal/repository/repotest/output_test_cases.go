@@ -21,11 +21,8 @@ func (s *OutputSuite) TestGetOutput() {
 	s.Run("ExistingOutput", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
-		out := NewOutputBuilder(seed.App.ID).
-			WithEpochIndex(0).WithInputIndex(0).WithIndex(0).
-			WithRawData([]byte("output-data")).Build()
-		err := s.Repo.CreateOutput(s.Ctx, out)
-		s.Require().NoError(err)
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{[]byte("output-data")}, nil)
 
 		got, err := s.Repo.GetOutput(s.Ctx, seed.App.IApplicationAddress.String(), 0)
 		s.Require().NoError(err)
@@ -54,12 +51,9 @@ func (s *OutputSuite) TestListOutputs() {
 
 	s.Run("ReturnsAllOutputs", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
-		for i := range uint64(3) {
-			out := NewOutputBuilder(seed.App.ID).
-				WithEpochIndex(0).WithInputIndex(0).WithIndex(i).Build()
-			err := s.Repo.CreateOutput(s.Ctx, out)
-			s.Require().NoError(err)
-		}
+
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{[]byte("o0"), []byte("o1"), []byte("o2")}, nil)
 
 		outputs, total, err := s.Repo.ListOutputs(
 			s.Ctx, seed.App.IApplicationAddress.String(),
@@ -100,12 +94,8 @@ func (s *OutputSuite) TestListOutputs() {
 	s.Run("FilterByInputIndex", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
-		for i := range uint64(3) {
-			out := NewOutputBuilder(seed.App.ID).
-				WithEpochIndex(0).WithInputIndex(0).WithIndex(i).Build()
-			err := s.Repo.CreateOutput(s.Ctx, out)
-			s.Require().NoError(err)
-		}
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{[]byte("o0"), []byte("o1"), []byte("o2")}, nil)
 
 		inputIdx := uint64(0)
 		outputs, total, err := s.Repo.ListOutputs(
@@ -172,17 +162,8 @@ func (s *OutputSuite) TestListOutputs() {
 		rawWithOther := make([]byte, 32)
 		copy(rawWithOther[0:4], otherType)
 
-		out0 := NewOutputBuilder(seed.App.ID).
-			WithEpochIndex(0).WithInputIndex(0).WithIndex(0).
-			WithRawData(rawWithType).Build()
-		err := s.Repo.CreateOutput(s.Ctx, out0)
-		s.Require().NoError(err)
-
-		out1 := NewOutputBuilder(seed.App.ID).
-			WithEpochIndex(0).WithInputIndex(0).WithIndex(1).
-			WithRawData(rawWithOther).Build()
-		err = s.Repo.CreateOutput(s.Ctx, out1)
-		s.Require().NoError(err)
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{rawWithType, rawWithOther}, nil)
 
 		outputs, total, err := s.Repo.ListOutputs(
 			s.Ctx, seed.App.IApplicationAddress.String(),
@@ -207,17 +188,8 @@ func (s *OutputSuite) TestListOutputs() {
 		rawWithOther := make([]byte, 64)
 		copy(rawWithOther[16:36], otherAddr.Bytes())
 
-		out0 := NewOutputBuilder(seed.App.ID).
-			WithEpochIndex(0).WithInputIndex(0).WithIndex(0).
-			WithRawData(rawWithVoucher).Build()
-		err := s.Repo.CreateOutput(s.Ctx, out0)
-		s.Require().NoError(err)
-
-		out1 := NewOutputBuilder(seed.App.ID).
-			WithEpochIndex(0).WithInputIndex(0).WithIndex(1).
-			WithRawData(rawWithOther).Build()
-		err = s.Repo.CreateOutput(s.Ctx, out1)
-		s.Require().NoError(err)
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{rawWithVoucher, rawWithOther}, nil)
 
 		outputs, total, err := s.Repo.ListOutputs(
 			s.Ctx, seed.App.IApplicationAddress.String(),
@@ -231,12 +203,12 @@ func (s *OutputSuite) TestListOutputs() {
 
 	s.Run("Pagination", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
-		for i := range uint64(5) {
-			out := NewOutputBuilder(seed.App.ID).
-				WithEpochIndex(0).WithInputIndex(0).WithIndex(i).Build()
-			err := s.Repo.CreateOutput(s.Ctx, out)
-			s.Require().NoError(err)
+
+		data := make([][]byte, 5)
+		for i := range data {
+			data[i] = []byte("output-data")
 		}
+		s.storeAdvanceResult(seed.App.ID, 0, 0, data, nil)
 
 		outputs, total, err := s.Repo.ListOutputs(
 			s.Ctx, seed.App.IApplicationAddress.String(),
@@ -249,12 +221,9 @@ func (s *OutputSuite) TestListOutputs() {
 
 	s.Run("Descending", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
-		for i := range uint64(3) {
-			out := NewOutputBuilder(seed.App.ID).
-				WithEpochIndex(0).WithInputIndex(0).WithIndex(i).Build()
-			err := s.Repo.CreateOutput(s.Ctx, out)
-			s.Require().NoError(err)
-		}
+
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{[]byte("o0"), []byte("o1"), []byte("o2")}, nil)
 
 		outputs, _, err := s.Repo.ListOutputs(
 			s.Ctx, seed.App.IApplicationAddress.String(),
@@ -273,14 +242,16 @@ func (s *OutputSuite) TestUpdateOutputsExecution() {
 	s.Run("UpdatesExecutionHash", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
-		out := NewOutputBuilder(seed.App.ID).
-			WithEpochIndex(0).WithInputIndex(0).WithIndex(0).Build()
-		err := s.Repo.CreateOutput(s.Ctx, out)
-		s.Require().NoError(err)
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{[]byte("output-data")}, nil)
 
 		txHash := UniqueHash()
-		out.ExecutionTransactionHash = &txHash
-		err = s.Repo.UpdateOutputsExecution(
+		out := &Output{
+			InputEpochApplicationID:  seed.App.ID,
+			Index:                    0,
+			ExecutionTransactionHash: &txHash,
+		}
+		err := s.Repo.UpdateOutputsExecution(
 			s.Ctx, seed.App.IApplicationAddress.String(), []*Output{out}, 100)
 		s.Require().NoError(err)
 
@@ -295,13 +266,8 @@ func (s *OutputSuite) TestUpdateOutputsExecution() {
 	s.Run("MultipleOutputsUpdatedAtomically", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
-		// Create 3 outputs
-		for i := range uint64(3) {
-			out := NewOutputBuilder(seed.App.ID).
-				WithEpochIndex(0).WithInputIndex(0).WithIndex(i).Build()
-			err := s.Repo.CreateOutput(s.Ctx, out)
-			s.Require().NoError(err)
-		}
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{[]byte("o0"), []byte("o1"), []byte("o2")}, nil)
 
 		txHash := UniqueHash()
 		outputs := make([]*Output, 3)
@@ -331,17 +297,15 @@ func (s *OutputSuite) TestUpdateOutputsExecution() {
 	s.Run("NilExecutionHashReturnsError", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
-		out := NewOutputBuilder(seed.App.ID).
-			WithEpochIndex(0).WithInputIndex(0).WithIndex(0).Build()
-		err := s.Repo.CreateOutput(s.Ctx, out)
-		s.Require().NoError(err)
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{[]byte("output-data")}, nil)
 
 		// ExecutionTransactionHash is nil — should fail
 		badOutput := &Output{
 			InputEpochApplicationID: seed.App.ID,
 			Index:                   0,
 		}
-		err = s.Repo.UpdateOutputsExecution(
+		err := s.Repo.UpdateOutputsExecution(
 			s.Ctx, seed.App.IApplicationAddress.String(),
 			[]*Output{badOutput}, 100)
 		s.Require().Error(err)
@@ -354,13 +318,8 @@ func (s *OutputSuite) TestUpdateOutputsExecution() {
 	s.Run("RollbackOnPartialFailure", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
-		// Create 2 valid outputs (index 0 and 1)
-		for i := range uint64(2) {
-			out := NewOutputBuilder(seed.App.ID).
-				WithEpochIndex(0).WithInputIndex(0).WithIndex(i).Build()
-			err := s.Repo.CreateOutput(s.Ctx, out)
-			s.Require().NoError(err)
-		}
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{[]byte("o0"), []byte("o1")}, nil)
 
 		txHash := UniqueHash()
 		outputs := []*Output{
@@ -407,12 +366,8 @@ func (s *OutputSuite) TestUpdateOutputsExecution() {
 	s.Run("NilHashMidLoopRollsBackPrior", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
-		for i := range uint64(2) {
-			out := NewOutputBuilder(seed.App.ID).
-				WithEpochIndex(0).WithInputIndex(0).WithIndex(i).Build()
-			err := s.Repo.CreateOutput(s.Ctx, out)
-			s.Require().NoError(err)
-		}
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{[]byte("o0"), []byte("o1")}, nil)
 
 		txHash := UniqueHash()
 		outputs := []*Output{
@@ -503,13 +458,8 @@ func (s *OutputSuite) TestGetNumberOfExecutedOutputs() {
 	s.Run("ReturnsCountAfterExecution", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
-		// Create outputs
-		for i := range uint64(3) {
-			out := NewOutputBuilder(seed.App.ID).
-				WithEpochIndex(0).WithInputIndex(0).WithIndex(i).Build()
-			err := s.Repo.CreateOutput(s.Ctx, out)
-			s.Require().NoError(err)
-		}
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{[]byte("o0"), []byte("o1"), []byte("o2")}, nil)
 
 		// Execute 2 of the 3 outputs
 		txHash := UniqueHash()

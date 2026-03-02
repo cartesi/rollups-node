@@ -28,10 +28,12 @@ import (
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/repository/repotest"
 	"github.com/cartesi/rollups-node/internal/version"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type jsonrpcSchema struct {
@@ -93,7 +95,7 @@ func TestMethod(t *testing.T) {
 			s := newTestService(t, t.Name())
 
 			contents, err := os.ReadFile("jsonrpc-discover.json")
-			assert.Nil(t, err)
+			require.NoError(t, err)
 
 			var expected any
 			assert.Nil(t, json.Unmarshal(contents, &expected))
@@ -142,7 +144,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(ctx, t, 0, nr)
+			s.newTestApplication(ctx, t, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_getApplication",
@@ -195,7 +197,7 @@ func TestMethod(t *testing.T) {
 					},
 				},
 			)
-			assert.Nil(t, err, "on test case: %v, when saving evm reader config", t.Name())
+			require.NoError(t, err, "on test case: %v, when saving evm reader config", t.Name())
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -248,15 +250,12 @@ func TestMethod(t *testing.T) {
 			app := uint64(1)
 			nr := uint64(0)
 
-			appID := s.newTestApplication(ctx, t, 0, app)
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID:        appID,
-				Index:                nr,
-				OutputsMerkleRoot:    &common.Hash{},
-				ClaimTransactionHash: &common.Hash{},
-				Status:               model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+			appID := s.newTestApplication(ctx, t, app)
+			s.createTestEpoch(ctx, t, numberToName(app),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(nr).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -283,15 +282,12 @@ func TestMethod(t *testing.T) {
 			app := uint64(1)
 			nr := uint64(1)
 
-			appID := s.newTestApplication(ctx, t, 0, app)
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID:        appID,
-				Index:                nr,
-				OutputsMerkleRoot:    &common.Hash{},
-				ClaimTransactionHash: &common.Hash{},
-				Status:               model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+			appID := s.newTestApplication(ctx, t, app)
+			s.createTestEpoch(ctx, t, numberToName(app),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(nr).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -348,14 +344,12 @@ func TestMethod(t *testing.T) {
 			app := uint64(2)
 			enr := uint64(1)
 			inr := uint64(0)
-			appID := s.newTestApplication(ctx, t, 0, app)
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID: appID,
-				Index:         enr,
-				VirtualIndex:  enr,
-				Status:        model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, enr)
+			appID := s.newTestApplication(ctx, t, app)
+			s.createTestEpoch(ctx, t, numberToName(app),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(enr).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -382,23 +376,17 @@ func TestMethod(t *testing.T) {
 			app := uint64(2)
 			enr := uint64(1)
 			inr := uint64(0)
-			appID := s.newTestApplication(ctx, t, 0, app)
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID: appID,
-				Index:         enr,
-				VirtualIndex:  enr,
-				Status:        model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, enr)
-
-			err = s.repository.CreateInput(ctx, &model.Input{
-				EpochApplicationID: appID,
-				EpochIndex:         enr,
-				Index:              inr,
-				Status:             model.InputCompletionStatus_Accepted,
-				RawData:            emptyInput(),
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, input_index: %v", 0, appID, inr)
+			appID := s.newTestApplication(ctx, t, app)
+			epoch := repotest.NewEpochBuilder(appID).
+				WithIndex(enr).
+				WithStatus(model.EpochStatus_ClaimAccepted).
+				Build()
+			input := repotest.NewInputBuilder().
+				WithIndex(inr).
+				WithRawData(emptyInput()).
+				Build()
+			s.createTestEpochWithInput(ctx, t, numberToName(app), epoch, input)
+			s.advanceInput(ctx, t, appID, enr, inr, nil, nil)
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -453,15 +441,12 @@ func TestMethod(t *testing.T) {
 			nr := uint64(0)
 			epochIndex := uint64(0xdeadbeef)
 
-			appID := s.newTestApplication(ctx, t, 0, nr)
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID:        appID,
-				Index:                epochIndex,
-				OutputsMerkleRoot:    &common.Hash{},
-				ClaimTransactionHash: &common.Hash{},
-				Status:               model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+			appID := s.newTestApplication(ctx, t, nr)
+			s.createTestEpoch(ctx, t, numberToName(nr),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(epochIndex).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -539,14 +524,12 @@ func TestMethod(t *testing.T) {
 			app := uint64(2)
 			enr := uint64(1)
 			inr := uint64(0)
-			appID := s.newTestApplication(ctx, t, 0, app)
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID: appID,
-				Index:         enr,
-				VirtualIndex:  enr,
-				Status:        model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, enr)
+			appID := s.newTestApplication(ctx, t, app)
+			s.createTestEpoch(ctx, t, numberToName(app),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(enr).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -574,31 +557,17 @@ func TestMethod(t *testing.T) {
 			enr := uint64(1)
 			inr := uint64(1)
 			onr := uint64(0)
-			appID := s.newTestApplication(ctx, t, 0, app)
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID: appID,
-				Index:         enr,
-				VirtualIndex:  enr,
-				Status:        model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, enr)
-
-			err = s.repository.CreateInput(ctx, &model.Input{
-				EpochApplicationID: appID,
-				EpochIndex:         enr,
-				Index:              inr,
-				Status:             model.InputCompletionStatus_Accepted,
-				RawData:            emptyInput(),
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, input_index: %v", 0, appID, inr)
-
-			err = s.repository.CreateOutput(ctx, &model.Output{
-				InputEpochApplicationID: appID,
-				InputIndex:              inr,
-				Index:                   onr,
-				RawData:                 emptyVoucher(),
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, output_index: %v", 0, appID, onr)
+			appID := s.newTestApplication(ctx, t, app)
+			epoch := repotest.NewEpochBuilder(appID).
+				WithIndex(enr).
+				WithStatus(model.EpochStatus_ClaimAccepted).
+				Build()
+			input := repotest.NewInputBuilder().
+				WithIndex(inr).
+				WithRawData(emptyInput()).
+				Build()
+			s.createTestEpochWithInput(ctx, t, numberToName(app), epoch, input)
+			s.advanceInput(ctx, t, appID, enr, inr, [][]byte{emptyVoucher()}, nil)
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -663,7 +632,7 @@ func TestMethod(t *testing.T) {
 
 			app := uint64(1)
 
-			s.newTestApplication(ctx, t, 0, app)
+			s.newTestApplication(ctx, t, app)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_getProcessedInputCount",
@@ -676,7 +645,7 @@ func TestMethod(t *testing.T) {
 			assert.Equal(t, uint64(0), uint64(resp.Result.Data))
 		})
 
-		// TODO: test with inputs (need repository.CreateInput)
+		// TODO: test with inputs (use createTestEpochWithInput)
 	})
 
 	////////////////////////////////////////////////////////////////////////
@@ -719,31 +688,17 @@ func TestMethod(t *testing.T) {
 			enr := uint64(1)
 			inr := uint64(1)
 			onr := uint64(0)
-			appID := s.newTestApplication(ctx, t, 0, app)
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID: appID,
-				Index:         enr,
-				VirtualIndex:  enr,
-				Status:        model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, enr)
-
-			err = s.repository.CreateInput(ctx, &model.Input{
-				EpochApplicationID: appID,
-				EpochIndex:         enr,
-				Index:              inr,
-				Status:             model.InputCompletionStatus_Accepted,
-				RawData:            emptyInput(),
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, input_index: %v", 0, appID, inr)
-
-			err = s.repository.CreateReport(ctx, &model.Report{
-				InputEpochApplicationID: appID,
-				InputIndex:              inr,
-				Index:                   onr,
-				RawData:                 emptyVoucher(),
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, output_index: %v", 0, appID, onr)
+			appID := s.newTestApplication(ctx, t, app)
+			epoch := repotest.NewEpochBuilder(appID).
+				WithIndex(enr).
+				WithStatus(model.EpochStatus_ClaimAccepted).
+				Build()
+			input := repotest.NewInputBuilder().
+				WithIndex(inr).
+				WithRawData(emptyInput()).
+				Build()
+			s.createTestEpochWithInput(ctx, t, numberToName(app), epoch, input)
+			s.advanceInput(ctx, t, appID, enr, inr, nil, [][]byte{emptyVoucher()})
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -805,7 +760,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(ctx, t, 0, nr)
+			s.newTestApplication(ctx, t, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listApplications",
@@ -830,7 +785,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(ctx, t, 0, nr)
+			s.newTestApplication(ctx, t, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listApplications",
@@ -853,7 +808,7 @@ func TestMethod(t *testing.T) {
 			many := uint64(100)
 			limit := uint64(many / 2)
 			for i := range many {
-				s.newTestApplication(ctx, t, 0, i)
+				s.newTestApplication(ctx, t, i)
 			}
 
 			{ // offset == 0, descending = false
@@ -974,7 +929,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(ctx, t, 0, nr)
+			s.newTestApplication(ctx, t, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listEpochs",
@@ -994,7 +949,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(ctx, t, 0, nr)
+			s.newTestApplication(ctx, t, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listEpochs",
@@ -1020,15 +975,13 @@ func TestMethod(t *testing.T) {
 			nr := uint64(1)
 			many := uint64(100)
 			limit := uint64(many / 2)
-			appID := s.newTestApplication(ctx, t, 0, nr)
+			appID := s.newTestApplication(ctx, t, nr)
 			for i := range many {
-				err := s.repository.CreateEpoch(ctx, &model.Epoch{
-					ApplicationID: appID,
-					Index:         i,
-					VirtualIndex:  i,
-					Status:        model.EpochStatus_ClaimAccepted,
-				})
-				assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+				s.createTestEpoch(ctx, t, numberToName(nr),
+					repotest.NewEpochBuilder(appID).
+						WithIndex(i).
+						WithStatus(model.EpochStatus_ClaimAccepted).
+						Build())
 			}
 
 			{ // offset == 0, descending = false
@@ -1153,7 +1106,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(ctx, t, 0, nr)
+			s.newTestApplication(ctx, t, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listInputs",
@@ -1166,7 +1119,7 @@ func TestMethod(t *testing.T) {
 			assert.Equal(t, 0, len(resp.Result.Data))
 		})
 
-		// TODO: test many inputs in the database (requires: repository.CreateInput)
+		// TODO: test many inputs in the database (use createTestEpochWithInput)
 	})
 
 	////////////////////////////////////////////////////////////////////////
@@ -1201,7 +1154,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(ctx, t, 0, nr)
+			s.newTestApplication(ctx, t, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listOutputs",
@@ -1223,35 +1176,24 @@ func TestMethod(t *testing.T) {
 			app := uint64(3)
 			enr := uint64(1)
 			inr := uint64(1)
-			appID := s.newTestApplication(ctx, t, 0, app)
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID: appID,
-				Index:         enr,
-				VirtualIndex:  enr,
-				Status:        model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, enr)
-
-			err = s.repository.CreateInput(ctx, &model.Input{
-				EpochApplicationID: appID,
-				EpochIndex:         enr,
-				Index:              inr,
-				Status:             model.InputCompletionStatus_Accepted,
-				RawData:            emptyInput(),
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, input_index: %v", 0, appID, inr)
+			appID := s.newTestApplication(ctx, t, app)
+			epoch := repotest.NewEpochBuilder(appID).
+				WithIndex(enr).
+				WithStatus(model.EpochStatus_ClaimAccepted).
+				Build()
+			input := repotest.NewInputBuilder().
+				WithIndex(inr).
+				WithRawData(emptyInput()).
+				Build()
+			s.createTestEpochWithInput(ctx, t, numberToName(app), epoch, input)
 
 			many := uint64(100)
 			limit := uint64(many / 2)
-			for onr := range many {
-				err = s.repository.CreateOutput(ctx, &model.Output{
-					InputEpochApplicationID: appID,
-					InputIndex:              inr,
-					Index:                   onr,
-					RawData:                 emptyVoucher(),
-				})
-				assert.Nil(t, err, "on test case: %v, application: %v, output_index: %v", 0, appID, onr)
+			outputData := make([][]byte, many)
+			for i := range many {
+				outputData[i] = emptyVoucher()
 			}
+			s.advanceInput(ctx, t, appID, enr, inr, outputData, nil)
 
 			type Result struct {
 				EpochIndex hex64  `json:"epoch_index"`
@@ -1386,7 +1328,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(ctx, t, 0, nr)
+			s.newTestApplication(ctx, t, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listReports",
@@ -1408,35 +1350,24 @@ func TestMethod(t *testing.T) {
 			app := uint64(3)
 			enr := uint64(1)
 			inr := uint64(1)
-			appID := s.newTestApplication(ctx, t, 0, app)
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID: appID,
-				Index:         enr,
-				VirtualIndex:  enr,
-				Status:        model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, enr)
-
-			err = s.repository.CreateInput(ctx, &model.Input{
-				EpochApplicationID: appID,
-				EpochIndex:         enr,
-				Index:              inr,
-				Status:             model.InputCompletionStatus_Accepted,
-				RawData:            emptyInput(),
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, input_index: %v", 0, appID, inr)
+			appID := s.newTestApplication(ctx, t, app)
+			epoch := repotest.NewEpochBuilder(appID).
+				WithIndex(enr).
+				WithStatus(model.EpochStatus_ClaimAccepted).
+				Build()
+			input := repotest.NewInputBuilder().
+				WithIndex(inr).
+				WithRawData(emptyInput()).
+				Build()
+			s.createTestEpochWithInput(ctx, t, numberToName(app), epoch, input)
 
 			many := uint64(100)
 			limit := uint64(many / 2)
-			for onr := range many {
-				err = s.repository.CreateReport(ctx, &model.Report{
-					InputEpochApplicationID: appID,
-					InputIndex:              inr,
-					Index:                   onr,
-					RawData:                 emptyVoucher(),
-				})
-				assert.Nil(t, err, "on test case: %v, application: %v, report_index: %v", 0, appID, onr)
+			reportData := make([][]byte, many)
+			for i := range many {
+				reportData[i] = emptyVoucher()
 			}
+			s.advanceInput(ctx, t, appID, enr, inr, nil, reportData)
 
 			type Result struct {
 				EpochIndex hex64  `json:"epoch_index"`
@@ -1578,20 +1509,18 @@ func TestMethod(t *testing.T) {
 			enr := uint64(1)
 			tnr := uint64(1)   // correct (register)
 			wrong := uint64(2) // incorrect (query)
-			appID := s.newTestApplication(ctx, t, 0, app)
-			err = s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID: appID,
-				Index:         enr,
-				VirtualIndex:  enr,
-				Status:        model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, enr)
-			err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
-				ApplicationID: appID,
-				EpochIndex:    enr,
-				Address:       common.HexToAddress(hexutil.EncodeUint64(tnr)),
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, enr)
+			appID := s.newTestApplication(ctx, t, app)
+			s.createTestEpoch(ctx, t, numberToName(app),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(enr).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
+			err = s.repository.CreateTournament(ctx, numberToName(app),
+				repotest.NewTournamentBuilder(appID).
+					WithEpochIndex(enr).
+					WithAddress(common.HexToAddress(hexutil.EncodeUint64(tnr))).
+					Build())
+			require.NoError(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, enr)
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -1619,20 +1548,18 @@ func TestMethod(t *testing.T) {
 			app := uint64(3)
 			enr := uint64(1)
 			tnr := uint64(1)
-			appID := s.newTestApplication(ctx, t, 0, app)
-			err = s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID: appID,
-				Index:         enr,
-				VirtualIndex:  enr,
-				Status:        model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, enr)
-			err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
-				ApplicationID: appID,
-				EpochIndex:    enr,
-				Address:       common.HexToAddress(hexutil.EncodeUint64(tnr)),
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, enr)
+			appID := s.newTestApplication(ctx, t, app)
+			s.createTestEpoch(ctx, t, numberToName(app),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(enr).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
+			err = s.repository.CreateTournament(ctx, numberToName(app),
+				repotest.NewTournamentBuilder(appID).
+					WithEpochIndex(enr).
+					WithAddress(common.HexToAddress(hexutil.EncodeUint64(tnr))).
+					Build())
+			require.NoError(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, enr)
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -1698,7 +1625,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(ctx, t, 0, nr)
+			s.newTestApplication(ctx, t, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listTournaments",
@@ -1720,24 +1647,22 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			app := uint64(3)
-			appID := s.newTestApplication(ctx, t, 0, app)
+			appID := s.newTestApplication(ctx, t, app)
 
 			many := uint64(100)
 			limit := uint64(many / 2)
 			for tnr := range many {
-				err := s.repository.CreateEpoch(ctx, &model.Epoch{
-					ApplicationID: appID,
-					Index:         tnr,
-					VirtualIndex:  tnr,
-					Status:        model.EpochStatus_ClaimAccepted,
-				})
-				assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, tnr)
-				err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
-					ApplicationID: appID,
-					EpochIndex:    tnr,
-					Address:       common.HexToAddress(hexutil.EncodeUint64(tnr)),
-				})
-				assert.Nil(t, err, "on test case: %v, application: %v, index: %v", 0, appID, tnr)
+				s.createTestEpoch(ctx, t, numberToName(app),
+					repotest.NewEpochBuilder(appID).
+						WithIndex(tnr).
+						WithStatus(model.EpochStatus_ClaimAccepted).
+						Build())
+				err := s.repository.CreateTournament(ctx, numberToName(app),
+					repotest.NewTournamentBuilder(appID).
+						WithEpochIndex(tnr).
+						WithAddress(common.HexToAddress(hexutil.EncodeUint64(tnr))).
+						Build())
+				require.NoError(t, err, "on test case: %v, application: %v, index: %v", 0, appID, tnr)
 			}
 
 			{ // offset == 0, descending = false
@@ -1869,15 +1794,12 @@ func TestMethod(t *testing.T) {
 			app := uint64(1)
 			nr := uint64(0)
 
-			appID := s.newTestApplication(ctx, t, 0, app)
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID:        appID,
-				Index:                nr,
-				OutputsMerkleRoot:    &common.Hash{},
-				ClaimTransactionHash: &common.Hash{},
-				Status:               model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+			appID := s.newTestApplication(ctx, t, app)
+			s.createTestEpoch(ctx, t, numberToName(app),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(nr).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -1908,30 +1830,27 @@ func TestMethod(t *testing.T) {
 			address := common.HexToAddress("0x01")
 			commitment := common.HexToHash("0xdeadbeef")
 
-			appID := s.newTestApplication(ctx, t, 0, app)
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID:        appID,
-				Index:                nr,
-				OutputsMerkleRoot:    &common.Hash{},
-				ClaimTransactionHash: &common.Hash{},
-				Status:               model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "failed to create epoch. on test case: %v, application: %v, epoch_index: %v.", 0, appID, nr)
+			appID := s.newTestApplication(ctx, t, app)
+			s.createTestEpoch(ctx, t, numberToName(app),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(nr).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
 
-			err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
-				ApplicationID: appID,
-				EpochIndex:    nr,
-				Address:       address,
-			})
-			assert.Nil(t, err, "failed to create tournament. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+			err := s.repository.CreateTournament(ctx, numberToName(app),
+				repotest.NewTournamentBuilder(appID).
+					WithEpochIndex(nr).
+					WithAddress(address).
+					Build())
+			require.NoError(t, err, "failed to create tournament. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
 
-			err = s.repository.CreateCommitment(ctx, numberToName(app), &model.Commitment{
-				ApplicationID:     appID,
-				EpochIndex:        nr,
-				TournamentAddress: address,
-				Commitment:        commitment,
-			})
-			assert.Nil(t, err, "failed to create commitment. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+			err = s.repository.CreateCommitment(ctx, numberToName(app),
+				repotest.NewCommitmentBuilder(appID).
+					WithEpochIndex(nr).
+					WithTournamentAddress(address).
+					WithCommitmentHash(commitment).
+					Build())
+			require.NoError(t, err, "failed to create commitment. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -1990,15 +1909,12 @@ func TestMethod(t *testing.T) {
 			app := uint64(1)
 			nr := uint64(0)
 
-			appID := s.newTestApplication(ctx, t, 0, app)
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID:        appID,
-				Index:                nr,
-				OutputsMerkleRoot:    &common.Hash{},
-				ClaimTransactionHash: &common.Hash{},
-				Status:               model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+			appID := s.newTestApplication(ctx, t, app)
+			s.createTestEpoch(ctx, t, numberToName(app),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(nr).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -2029,39 +1945,38 @@ func TestMethod(t *testing.T) {
 			address := common.HexToAddress("0x03")
 			idHash := common.HexToHash("0x04")
 
-			appID := s.newTestApplication(ctx, t, 0, app)
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID:        appID,
-				Index:                nr,
-				OutputsMerkleRoot:    &common.Hash{},
-				ClaimTransactionHash: &common.Hash{},
-				Status:               model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "failed to create epoch. on test case: %v, application: %v, epoch_index: %v.", 0, appID, nr)
+			appID := s.newTestApplication(ctx, t, app)
+			s.createTestEpoch(ctx, t, numberToName(app),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(nr).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
 
-			err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
-				ApplicationID: appID,
-				EpochIndex:    nr,
-				Address:       address,
-			})
-			assert.Nil(t, err, "failed to create tournament. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+			err := s.repository.CreateTournament(ctx, numberToName(app),
+				repotest.NewTournamentBuilder(appID).
+					WithEpochIndex(nr).
+					WithAddress(address).
+					Build())
+			require.NoError(t, err, "failed to create tournament. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
 
-			err = s.repository.CreateCommitment(ctx, numberToName(app), &model.Commitment{
-				ApplicationID:     appID,
-				EpochIndex:        nr,
-				TournamentAddress: address,
-			})
-			assert.Nil(t, err, "failed to create commitment. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+			commitment := repotest.NewCommitmentBuilder(appID).
+				WithEpochIndex(nr).
+				WithTournamentAddress(address).
+				Build()
+			err = s.repository.CreateCommitment(ctx, numberToName(app), commitment)
+			require.NoError(t, err, "failed to create commitment. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
 
-			err = s.repository.CreateMatch(ctx, numberToName(app), &model.Match{
-				ApplicationID:     appID,
-				EpochIndex:        nr,
-				TournamentAddress: address,
-				Winner:            model.WinnerCommitment_NONE,
-				DeletionReason:    model.MatchDeletionReason_TIMEOUT,
-				IDHash:            idHash,
-			})
-			assert.Nil(t, err, "failed to create match. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+			err = s.repository.CreateMatch(ctx, numberToName(app),
+				repotest.NewMatchBuilder(appID).
+					WithEpochIndex(nr).
+					WithTournamentAddress(address).
+					WithIDHash(idHash).
+					WithCommitmentOne(commitment.Commitment).
+					WithCommitmentTwo(commitment.Commitment).
+					WithWinner(model.WinnerCommitment_NONE).
+					WithDeletionReason(model.MatchDeletionReason_TIMEOUT).
+					Build())
+			require.NoError(t, err, "failed to create match. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -2121,15 +2036,12 @@ func TestMethod(t *testing.T) {
 			app := uint64(1)
 			nr := uint64(0)
 
-			appID := s.newTestApplication(ctx, t, 0, app)
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID:        appID,
-				Index:                nr,
-				OutputsMerkleRoot:    &common.Hash{},
-				ClaimTransactionHash: &common.Hash{},
-				Status:               model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+			appID := s.newTestApplication(ctx, t, app)
+			s.createTestEpoch(ctx, t, numberToName(app),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(nr).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -2162,48 +2074,47 @@ func TestMethod(t *testing.T) {
 			idHash := common.HexToHash("0x04")
 			parent := common.HexToHash("0x05")
 
-			appID := s.newTestApplication(ctx, t, 0, app)
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID:        appID,
-				Index:                nr,
-				OutputsMerkleRoot:    &common.Hash{},
-				ClaimTransactionHash: &common.Hash{},
-				Status:               model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err, "failed to create epoch. on test case: %v, application: %v, epoch_index: %v.", 0, appID, nr)
+			appID := s.newTestApplication(ctx, t, app)
+			s.createTestEpoch(ctx, t, numberToName(app),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(nr).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
 
-			err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
-				ApplicationID: appID,
-				EpochIndex:    nr,
-				Address:       address,
-			})
-			assert.Nil(t, err, "failed to create tournament. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+			err := s.repository.CreateTournament(ctx, numberToName(app),
+				repotest.NewTournamentBuilder(appID).
+					WithEpochIndex(nr).
+					WithAddress(address).
+					Build())
+			require.NoError(t, err, "failed to create tournament. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
 
-			err = s.repository.CreateCommitment(ctx, numberToName(app), &model.Commitment{
-				ApplicationID:     appID,
-				EpochIndex:        nr,
-				TournamentAddress: address,
-			})
-			assert.Nil(t, err, "failed to create commitment. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+			commitment := repotest.NewCommitmentBuilder(appID).
+				WithEpochIndex(nr).
+				WithTournamentAddress(address).
+				Build()
+			err = s.repository.CreateCommitment(ctx, numberToName(app), commitment)
+			require.NoError(t, err, "failed to create commitment. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
 
-			err = s.repository.CreateMatch(ctx, numberToName(app), &model.Match{
-				ApplicationID:     appID,
-				EpochIndex:        nr,
-				TournamentAddress: address,
-				Winner:            model.WinnerCommitment_NONE,
-				DeletionReason:    model.MatchDeletionReason_TIMEOUT,
-				IDHash:            idHash,
-			})
-			assert.Nil(t, err, "failed to create match. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+			err = s.repository.CreateMatch(ctx, numberToName(app),
+				repotest.NewMatchBuilder(appID).
+					WithEpochIndex(nr).
+					WithTournamentAddress(address).
+					WithIDHash(idHash).
+					WithCommitmentOne(commitment.Commitment).
+					WithCommitmentTwo(commitment.Commitment).
+					WithWinner(model.WinnerCommitment_NONE).
+					WithDeletionReason(model.MatchDeletionReason_TIMEOUT).
+					Build())
+			require.NoError(t, err, "failed to create match. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
 
-			err = s.repository.CreateMatchAdvanced(ctx, numberToName(app), &model.MatchAdvanced{
-				ApplicationID:     appID,
-				EpochIndex:        nr,
-				TournamentAddress: address,
-				IDHash:            idHash,
-				OtherParent:       parent,
-			})
-			assert.Nil(t, err, "failed to create match advanced. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
+			err = s.repository.CreateMatchAdvanced(ctx, numberToName(app),
+				repotest.NewMatchAdvancedBuilder(appID).
+					WithEpochIndex(nr).
+					WithTournamentAddress(address).
+					WithIDHash(idHash).
+					WithOtherParent(parent).
+					Build())
+			require.NoError(t, err, "failed to create match advanced. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -2257,7 +2168,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(ctx, t, 0, nr)
+			s.newTestApplication(ctx, t, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listMatches",
@@ -2279,7 +2190,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			app := uint64(3)
-			appID := s.newTestApplication(ctx, t, 0, app)
+			appID := s.newTestApplication(ctx, t, app)
 
 			many := uint64(100)
 			limit := uint64(many / 2)
@@ -2290,40 +2201,38 @@ func TestMethod(t *testing.T) {
 				commitmentOne := common.HexToHash(hexutil.EncodeUint64(tnr))
 				commitmentTwo := common.HexToHash(hexutil.EncodeUint64(tnr))
 
-				err := s.repository.CreateEpoch(ctx, &model.Epoch{
-					ApplicationID: appID,
-					Index:         tnr,
-					VirtualIndex:  tnr,
-					Status:        model.EpochStatus_ClaimAccepted,
-				})
-				assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, tnr)
+				s.createTestEpoch(ctx, t, numberToName(app),
+					repotest.NewEpochBuilder(appID).
+						WithIndex(tnr).
+						WithStatus(model.EpochStatus_ClaimAccepted).
+						Build())
 
-				err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
-					ApplicationID: appID,
-					EpochIndex:    tnr,
-					Address:       common.HexToAddress(hexutil.EncodeUint64(tnr)),
-				})
-				assert.Nil(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, tnr)
+				err := s.repository.CreateTournament(ctx, numberToName(app),
+					repotest.NewTournamentBuilder(appID).
+						WithEpochIndex(tnr).
+						WithAddress(common.HexToAddress(hexutil.EncodeUint64(tnr))).
+						Build())
+				require.NoError(t, err, "on test case: %v, application: %v, epoch_index: %v", 0, appID, tnr)
 
-				err = s.repository.CreateCommitment(ctx, numberToName(app), &model.Commitment{
-					ApplicationID:     appID,
-					EpochIndex:        tnr,
-					TournamentAddress: address,
-					Commitment:        commitmentOne,
-				})
-				assert.Nil(t, err, "failed to create commitment. on test case: %v, application: %v, epoch_index: %v", 0, appID, tnr)
+				err = s.repository.CreateCommitment(ctx, numberToName(app),
+					repotest.NewCommitmentBuilder(appID).
+						WithEpochIndex(tnr).
+						WithTournamentAddress(address).
+						WithCommitmentHash(commitmentOne).
+						Build())
+				require.NoError(t, err, "failed to create commitment. on test case: %v, application: %v, epoch_index: %v", 0, appID, tnr)
 
-				err = s.repository.CreateMatch(ctx, numberToName(app), &model.Match{
-					ApplicationID:     appID,
-					EpochIndex:        tnr,
-					TournamentAddress: address,
-					Winner:            model.WinnerCommitment_NONE,
-					DeletionReason:    model.MatchDeletionReason_TIMEOUT,
-					IDHash:            idHash,
-					CommitmentOne:     commitmentOne,
-					CommitmentTwo:     commitmentTwo,
-				})
-				assert.Nil(t, err, "on test case: %v, application: %v, report_index: %v", 0, appID, tnr)
+				err = s.repository.CreateMatch(ctx, numberToName(app),
+					repotest.NewMatchBuilder(appID).
+						WithEpochIndex(tnr).
+						WithTournamentAddress(address).
+						WithIDHash(idHash).
+						WithCommitmentOne(commitmentOne).
+						WithCommitmentTwo(commitmentTwo).
+						WithWinner(model.WinnerCommitment_NONE).
+						WithDeletionReason(model.MatchDeletionReason_TIMEOUT).
+						Build())
+				require.NoError(t, err, "on test case: %v, application: %v, report_index: %v", 0, appID, tnr)
 			}
 
 			{ // offset == 0, descending = false
@@ -2455,7 +2364,7 @@ func TestMethod(t *testing.T) {
 
 			app := uint64(0)
 			nr := uint64(1)
-			s.newTestApplication(ctx, t, 0, app)
+			s.newTestApplication(ctx, t, app)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listMatchAdvances",
@@ -2481,59 +2390,57 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			app := uint64(1)
-			appID := s.newTestApplication(ctx, t, 0, app)
+			appID := s.newTestApplication(ctx, t, app)
 			enr := uint64(2)
 			tournamentAddress := common.HexToAddress(hexutil.EncodeUint64(enr))
 			commitment := common.HexToHash(hexutil.EncodeUint64(enr))
 			idHash := common.HexToHash(hexutil.EncodeUint64(enr))
 
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID: appID,
-				Index:         enr,
-				VirtualIndex:  enr,
-				Status:        model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err)
+			s.createTestEpoch(ctx, t, numberToName(app),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(enr).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
 
-			err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
-				ApplicationID: appID,
-				EpochIndex:    enr,
-				Address:       tournamentAddress,
-			})
-			assert.Nil(t, err)
+			err := s.repository.CreateTournament(ctx, numberToName(app),
+				repotest.NewTournamentBuilder(appID).
+					WithEpochIndex(enr).
+					WithAddress(tournamentAddress).
+					Build())
+			require.NoError(t, err)
 
-			err = s.repository.CreateCommitment(ctx, numberToName(app), &model.Commitment{
-				ApplicationID:     appID,
-				EpochIndex:        enr,
-				TournamentAddress: tournamentAddress,
-				Commitment:        commitment,
-			})
-			assert.Nil(t, err)
+			err = s.repository.CreateCommitment(ctx, numberToName(app),
+				repotest.NewCommitmentBuilder(appID).
+					WithEpochIndex(enr).
+					WithTournamentAddress(tournamentAddress).
+					WithCommitmentHash(commitment).
+					Build())
+			require.NoError(t, err)
 
-			err = s.repository.CreateMatch(ctx, numberToName(app), &model.Match{
-				ApplicationID:     appID,
-				EpochIndex:        enr,
-				TournamentAddress: tournamentAddress,
-				IDHash:            idHash,
-				Winner:            model.WinnerCommitment_NONE,
-				DeletionReason:    model.MatchDeletionReason_NOT_DELETED,
-				CommitmentOne:     commitment,
-				CommitmentTwo:     commitment,
-			})
-			assert.Nil(t, err)
+			err = s.repository.CreateMatch(ctx, numberToName(app),
+				repotest.NewMatchBuilder(appID).
+					WithEpochIndex(enr).
+					WithTournamentAddress(tournamentAddress).
+					WithIDHash(idHash).
+					WithCommitmentOne(commitment).
+					WithCommitmentTwo(commitment).
+					WithWinner(model.WinnerCommitment_NONE).
+					WithDeletionReason(model.MatchDeletionReason_NOT_DELETED).
+					Build())
+			require.NoError(t, err)
 
 			many := uint64(100)
 			limit := uint64(many / 2)
 			for nr := range many {
 				otherParent := common.HexToHash(hexutil.EncodeUint64(nr))
-				err = s.repository.CreateMatchAdvanced(ctx, numberToName(app), &model.MatchAdvanced{
-					ApplicationID:     appID,
-					EpochIndex:        enr,
-					TournamentAddress: tournamentAddress,
-					IDHash:            idHash,
-					OtherParent:       otherParent,
-				})
-				assert.Nil(t, err, "failed to create match advance, app: %v, nr: %v", app, nr)
+				err = s.repository.CreateMatchAdvanced(ctx, numberToName(app),
+					repotest.NewMatchAdvancedBuilder(appID).
+						WithEpochIndex(enr).
+						WithTournamentAddress(tournamentAddress).
+						WithIDHash(idHash).
+						WithOtherParent(otherParent).
+						Build())
+				require.NoError(t, err, "failed to create match advance, app: %v, nr: %v", app, nr)
 			}
 
 			{ // offset == 0, descending = false
@@ -2676,7 +2583,7 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			nr := uint64(1)
-			s.newTestApplication(ctx, t, 0, nr)
+			s.newTestApplication(ctx, t, nr)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_listCommitments",
@@ -2697,37 +2604,35 @@ func TestMethod(t *testing.T) {
 			ctx := context.Background()
 
 			app := uint64(1)
-			appID := s.newTestApplication(ctx, t, 0, app)
+			appID := s.newTestApplication(ctx, t, app)
 			enr := uint64(2)
 			tournamentAddress := common.HexToAddress(hexutil.EncodeUint64(enr))
 
-			err := s.repository.CreateEpoch(ctx, &model.Epoch{
-				ApplicationID: appID,
-				Index:         enr,
-				VirtualIndex:  enr,
-				Status:        model.EpochStatus_ClaimAccepted,
-			})
-			assert.Nil(t, err)
+			s.createTestEpoch(ctx, t, numberToName(app),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(enr).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
 
-			err = s.repository.CreateTournament(ctx, numberToName(app), &model.Tournament{
-				ApplicationID: appID,
-				EpochIndex:    enr,
-				Address:       tournamentAddress,
-			})
-			assert.Nil(t, err)
+			err := s.repository.CreateTournament(ctx, numberToName(app),
+				repotest.NewTournamentBuilder(appID).
+					WithEpochIndex(enr).
+					WithAddress(tournamentAddress).
+					Build())
+			require.NoError(t, err)
 
 			many := uint64(100)
 			limit := uint64(many / 2)
 			for nr := range many {
 				commitment := common.HexToHash(hexutil.EncodeUint64(nr))
 
-				err = s.repository.CreateCommitment(ctx, numberToName(app), &model.Commitment{
-					ApplicationID:     appID,
-					EpochIndex:        enr,
-					TournamentAddress: tournamentAddress,
-					Commitment:        commitment,
-				})
-				assert.Nil(t, err)
+				err = s.repository.CreateCommitment(ctx, numberToName(app),
+					repotest.NewCommitmentBuilder(appID).
+						WithEpochIndex(enr).
+						WithTournamentAddress(tournamentAddress).
+						WithCommitmentHash(commitment).
+						Build())
+				require.NoError(t, err)
 			}
 
 			{ // offset == 0, descending = false
@@ -2822,11 +2727,11 @@ func TestMethod(t *testing.T) {
 
 	// tested methods, implemented methods and discover methods must match:
 	data, err := discoverSpec.ReadFile("jsonrpc-discover.json")
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	var schema jsonrpcSchema
 	err = json.Unmarshal(data, &schema)
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	allMethods := make(map[string]bool)
 	tested := make(map[string]bool)

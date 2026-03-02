@@ -41,13 +41,6 @@ func hashToBytes(h *common.Hash) any {
 	return (*h)[:]
 }
 
-func addressToBytes(a *common.Address) any {
-	if a == nil {
-		return nil
-	}
-	return (*a)[:]
-}
-
 // SubstrBytea returns a SUBSTR expression properly typed as ByteaExpression.
 func SubstrBytea(col postgres.ColumnBytea, from, count int64) postgres.ByteaExpression {
 	qualified := pgx.Identifier{col.TableName(), col.Name()}.Sanitize()

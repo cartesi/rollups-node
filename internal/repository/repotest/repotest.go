@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -31,6 +33,39 @@ type BaseSuite struct {
 	cleanup func()
 	Ctx     context.Context
 	cancel  context.CancelFunc
+}
+
+// StoreAdvanceResult is a test helper that creates outputs and/or reports
+// for an input via the production StoreAdvanceResult method.
+func StoreAdvanceResult(
+	ctx context.Context, t *testing.T, repo repository.Repository,
+	appID int64, epochIdx, inputIdx uint64,
+	status InputCompletionStatus, outputs [][]byte, reports [][]byte,
+) {
+	t.Helper()
+	result := &AdvanceResult{
+		EpochIndex: epochIdx,
+		InputIndex: inputIdx,
+		Status:     status,
+		Outputs:    outputs,
+		Reports:    reports,
+		OutputsProof: OutputsProof{
+			OutputsHash: UniqueHash(),
+			MachineHash: UniqueHash(),
+		},
+	}
+	err := repo.StoreAdvanceResult(ctx, appID, result)
+	require.NoError(t, err)
+}
+
+// storeAdvanceResult delegates to the standalone StoreAdvanceResult helper
+// with InputCompletionStatus_Accepted as the default status.
+func (s *BaseSuite) storeAdvanceResult(
+	appID int64, epochIdx, inputIdx uint64, outputs [][]byte, reports [][]byte,
+) {
+	s.T().Helper()
+	StoreAdvanceResult(s.Ctx, s.T(), s.Repo, appID, epochIdx, inputIdx,
+		InputCompletionStatus_Accepted, outputs, reports)
 }
 
 func (s *BaseSuite) SetupSuite() {

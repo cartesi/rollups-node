@@ -19,11 +19,12 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
+	"github.com/cartesi/rollups-node/internal/repository/repotest"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/cartesi/rollups-node/test/tooling/db"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // histogram to gather statistics for each method
@@ -73,16 +74,16 @@ func newTestService(t *testing.T, name string) *Service {
 	ctx := context.Background()
 
 	dbTestEndpoint, err := db.GetTestDatabaseEndpoint()
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	err = db.SetupTestPostgres(dbTestEndpoint)
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	repo, err := factory.NewRepositoryFromConnectionString(ctx, dbTestEndpoint)
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	logLevel, err := config.GetLogLevel()
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	ci := CreateInfo{
 		CreateInfo: service.CreateInfo{
@@ -93,7 +94,7 @@ func newTestService(t *testing.T, name string) *Service {
 		Repository: repo,
 	}
 	s, err := Create(ctx, &ci)
-	assert.Nil(t, err, "on new test service")
+	require.NoError(t, err, "on new test service")
 
 	return s
 }
@@ -108,17 +109,14 @@ func numberToName(x uint64) string {
 }
 
 // create an application with mostly stub values.
-func (s *Service) newTestApplication(ctx context.Context, t *testing.T, test, i uint64) int64 {
+func (s *Service) newTestApplication(ctx context.Context, t *testing.T, i uint64) int64 {
 	hex := numberToName(i)
-	id, err := s.repository.CreateApplication(ctx, &model.Application{
-		Name:                hex,
-		IApplicationAddress: common.HexToAddress(hex),
-		DataAvailability:    []byte{0x00, 0x00, 0x00, 0x00},
-		State:               model.ApplicationState_Enabled,
-		ConsensusType:       model.Consensus_Authority,
-	}, false)
-	assert.Nil(t, err, "on test case: %v, when creating application: %v", test, i)
-	return id
+	app := repotest.NewApplicationBuilder().
+		WithName(hex).
+		WithAddress(common.HexToAddress(hex)).
+		WithDataAvailability([]byte{0x00, 0x00, 0x00, 0x00}).
+		Create(ctx, t, s.repository)
+	return app.ID
 }
 
 func (s *Service) doRequest(t *testing.T, i uint64, reqData []byte) []byte {
@@ -134,7 +132,7 @@ func (s *Service) doRequest(t *testing.T, i uint64, reqData []byte) []byte {
 
 	body := new(strings.Builder)
 	_, err := io.Copy(body, w.Result().Body)
-	assert.Nil(t, err, "on test case: %v", i)
+	require.NoError(t, err, "on test case: %v", i)
 
 	return []byte(body.String())
 }
@@ -149,6 +147,35 @@ func emptyInput() []byte {
 func emptyVoucher() []byte {
 	raw, _ := hexutil.Decode("0x237a816f000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb9226600000000000000000000000000000000000000000000000000000000deadbeef00000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000") //nolint: lll
 	return raw
+}
+
+// createTestEpoch creates an epoch using production CreateEpochsAndInputs.
+func (s *Service) createTestEpoch(ctx context.Context, t *testing.T, appName string, epoch *model.Epoch) {
+	t.Helper()
+	err := s.repository.CreateEpochsAndInputs(ctx, appName,
+		map[*model.Epoch][]*model.Input{epoch: {}}, 10)
+	require.NoError(t, err)
+}
+
+// createTestEpochWithInput creates an epoch with one input using production CreateEpochsAndInputs.
+func (s *Service) createTestEpochWithInput(
+	ctx context.Context, t *testing.T, appName string,
+	epoch *model.Epoch, input *model.Input,
+) {
+	t.Helper()
+	err := s.repository.CreateEpochsAndInputs(ctx, appName,
+		map[*model.Epoch][]*model.Input{epoch: {input}}, 10)
+	require.NoError(t, err)
+}
+
+// advanceInput stores an advance result (outputs/reports) for an input using production StoreAdvanceResult.
+func (s *Service) advanceInput(
+	ctx context.Context, t *testing.T, appID int64,
+	epochIndex, inputIndex uint64, outputs [][]byte, reports [][]byte,
+) {
+	t.Helper()
+	repotest.StoreAdvanceResult(ctx, t, s.repository, appID, epochIndex, inputIndex,
+		model.InputCompletionStatus_Accepted, outputs, reports)
 }
 
 type listTournamentsResult struct {

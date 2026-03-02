@@ -20,11 +20,8 @@ func (s *ReportSuite) TestGetReport() {
 	s.Run("ExistingReport", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
-		report := NewReportBuilder(seed.App.ID).
-			WithEpochIndex(0).WithInputIndex(0).WithIndex(0).
-			WithRawData([]byte("report-payload")).Build()
-		err := s.Repo.CreateReport(s.Ctx, report)
-		s.Require().NoError(err)
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			nil, [][]byte{[]byte("report-payload")})
 
 		got, err := s.Repo.GetReport(s.Ctx, seed.App.IApplicationAddress.String(), 0)
 		s.Require().NoError(err)
@@ -53,12 +50,9 @@ func (s *ReportSuite) TestListReports() {
 
 	s.Run("ReturnsAllReports", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
-		for i := range uint64(3) {
-			r := NewReportBuilder(seed.App.ID).
-				WithEpochIndex(0).WithInputIndex(0).WithIndex(i).Build()
-			err := s.Repo.CreateReport(s.Ctx, r)
-			s.Require().NoError(err)
-		}
+
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			nil, [][]byte{[]byte("r0"), []byte("r1"), []byte("r2")})
 
 		reports, total, err := s.Repo.ListReports(
 			s.Ctx, seed.App.IApplicationAddress.String(),
@@ -99,12 +93,8 @@ func (s *ReportSuite) TestListReports() {
 	s.Run("FilterByInputIndex", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
-		for i := range uint64(3) {
-			r := NewReportBuilder(seed.App.ID).
-				WithEpochIndex(0).WithInputIndex(0).WithIndex(i).Build()
-			err := s.Repo.CreateReport(s.Ctx, r)
-			s.Require().NoError(err)
-		}
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			nil, [][]byte{[]byte("r0"), []byte("r1"), []byte("r2")})
 
 		inputIdx := uint64(0)
 		reports, total, err := s.Repo.ListReports(
@@ -118,12 +108,12 @@ func (s *ReportSuite) TestListReports() {
 
 	s.Run("Pagination", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
-		for i := range uint64(5) {
-			r := NewReportBuilder(seed.App.ID).
-				WithEpochIndex(0).WithInputIndex(0).WithIndex(i).Build()
-			err := s.Repo.CreateReport(s.Ctx, r)
-			s.Require().NoError(err)
+
+		data := make([][]byte, 5)
+		for i := range data {
+			data[i] = []byte("report-data")
 		}
+		s.storeAdvanceResult(seed.App.ID, 0, 0, nil, data)
 
 		reports, total, err := s.Repo.ListReports(
 			s.Ctx, seed.App.IApplicationAddress.String(),
@@ -136,12 +126,9 @@ func (s *ReportSuite) TestListReports() {
 
 	s.Run("Descending", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
-		for i := range uint64(3) {
-			r := NewReportBuilder(seed.App.ID).
-				WithEpochIndex(0).WithInputIndex(0).WithIndex(i).Build()
-			err := s.Repo.CreateReport(s.Ctx, r)
-			s.Require().NoError(err)
-		}
+
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			nil, [][]byte{[]byte("r0"), []byte("r1"), []byte("r2")})
 
 		reports, _, err := s.Repo.ListReports(
 			s.Ctx, seed.App.IApplicationAddress.String(),

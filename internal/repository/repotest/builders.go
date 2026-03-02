@@ -135,14 +135,10 @@ func NewEpochBuilder(appID int64) *EpochBuilder {
 	}
 }
 
+// WithIndex sets the epoch's physical Index.
+// Note: VirtualIndex is auto-assigned by CreateEpochsAndInputs.
 func (b *EpochBuilder) WithIndex(i uint64) *EpochBuilder {
 	b.epoch.Index = i
-	b.epoch.VirtualIndex = i
-	return b
-}
-
-func (b *EpochBuilder) WithVirtualIndex(i uint64) *EpochBuilder {
-	b.epoch.VirtualIndex = i
 	return b
 }
 
@@ -209,6 +205,11 @@ func (b *InputBuilder) WithIndex(i uint64) *InputBuilder {
 	return b
 }
 
+func (b *InputBuilder) WithEpochApplicationID(id int64) *InputBuilder {
+	b.input.EpochApplicationID = id
+	return b
+}
+
 func (b *InputBuilder) WithEpochIndex(i uint64) *InputBuilder {
 	b.input.EpochIndex = i
 	return b
@@ -238,103 +239,6 @@ func (b *InputBuilder) WithTransactionReference(h common.Hash) *InputBuilder {
 func (b *InputBuilder) Build() *Input {
 	i := *b.input
 	return &i
-}
-
-// ---------------------------------------------------------------------------
-// OutputBuilder
-// ---------------------------------------------------------------------------
-
-type OutputBuilder struct {
-	output *Output
-}
-
-func NewOutputBuilder(appID int64) *OutputBuilder {
-	return &OutputBuilder{
-		output: &Output{
-			InputEpochApplicationID: appID,
-			EpochIndex:              0,
-			InputIndex:              0,
-			Index:                   0,
-			RawData:                 []byte("output-data"),
-		},
-	}
-}
-
-func (b *OutputBuilder) WithEpochIndex(i uint64) *OutputBuilder {
-	b.output.EpochIndex = i
-	return b
-}
-
-func (b *OutputBuilder) WithInputIndex(i uint64) *OutputBuilder {
-	b.output.InputIndex = i
-	return b
-}
-
-func (b *OutputBuilder) WithIndex(i uint64) *OutputBuilder {
-	b.output.Index = i
-	return b
-}
-
-func (b *OutputBuilder) WithRawData(data []byte) *OutputBuilder {
-	b.output.RawData = data
-	return b
-}
-
-func (b *OutputBuilder) WithHash(h common.Hash) *OutputBuilder {
-	b.output.Hash = &h
-	return b
-}
-
-// Build returns a copy of the Output model without persisting it.
-func (b *OutputBuilder) Build() *Output {
-	o := *b.output
-	return &o
-}
-
-// ---------------------------------------------------------------------------
-// ReportBuilder
-// ---------------------------------------------------------------------------
-
-type ReportBuilder struct {
-	report *Report
-}
-
-func NewReportBuilder(appID int64) *ReportBuilder {
-	return &ReportBuilder{
-		report: &Report{
-			InputEpochApplicationID: appID,
-			EpochIndex:              0,
-			InputIndex:              0,
-			Index:                   0,
-			RawData:                 []byte("report-data"),
-		},
-	}
-}
-
-func (b *ReportBuilder) WithEpochIndex(i uint64) *ReportBuilder {
-	b.report.EpochIndex = i
-	return b
-}
-
-func (b *ReportBuilder) WithInputIndex(i uint64) *ReportBuilder {
-	b.report.InputIndex = i
-	return b
-}
-
-func (b *ReportBuilder) WithIndex(i uint64) *ReportBuilder {
-	b.report.Index = i
-	return b
-}
-
-func (b *ReportBuilder) WithRawData(data []byte) *ReportBuilder {
-	b.report.RawData = data
-	return b
-}
-
-// Build returns a copy of the Report model without persisting it.
-func (b *ReportBuilder) Build() *Report {
-	r := *b.report
-	return &r
 }
 
 // ---------------------------------------------------------------------------
