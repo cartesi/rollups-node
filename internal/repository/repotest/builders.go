@@ -75,6 +75,11 @@ func (b *ApplicationBuilder) WithConsensus(c Consensus) *ApplicationBuilder {
 	return b
 }
 
+func (b *ApplicationBuilder) WithConsensusAddress(addr common.Address) *ApplicationBuilder {
+	b.app.IConsensusAddress = addr
+	return b
+}
+
 func (b *ApplicationBuilder) WithState(s ApplicationState) *ApplicationBuilder {
 	b.app.State = s
 	return b

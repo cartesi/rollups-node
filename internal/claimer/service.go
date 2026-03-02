@@ -34,9 +34,14 @@ type CreateInfo struct {
 type Service struct {
 	service.Service
 
-	repository        iclaimerRepository
-	blockchain        iclaimerBlockchain
-	claimsInFlight    map[int64]common.Hash // application.ID -> txHash
+	repository iclaimerRepository
+	blockchain iclaimerBlockchain
+
+	// submitted claims waiting for confirmation from the blockchain.
+	// only accessed from tick, so no need for a lock
+	// contains: application ID -> transaction hash, with a maximum of one
+	// key per application due to the epoch advancement logic.
+	claimsInFlight    map[int64]common.Hash
 	submissionEnabled bool
 }
 
@@ -197,6 +202,6 @@ func setupPersistentConfig(
 		return &config.Value, nil
 	}
 
-	logger.Error("Could not retrieve persistent config from Database. %w", "error", err)
+	logger.Error("Could not retrieve persistent config from Database", "error", err)
 	return nil, err
 }
