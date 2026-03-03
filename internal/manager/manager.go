@@ -21,11 +21,6 @@ var (
 	ErrMachineSynchronization = errors.New("failed to synchronize machine")
 )
 
-// inputBatchSize is the maximum number of inputs fetched per database query
-// during synchronization and snapshot replay. This bounds memory usage for
-// applications with large numbers of processed inputs.
-const inputBatchSize uint64 = 1000
-
 // MachineRepository defines the repository interface needed by the MachineManager
 type MachineRepository interface {
 	// ListApplications retrieves applications based on filter criteria
@@ -40,11 +35,12 @@ type MachineRepository interface {
 
 // MachineManager manages the lifecycle of machine instances for applications
 type MachineManager struct {
-	mutex      sync.RWMutex
-	machines   map[int64]MachineInstance
-	repository MachineRepository
-	checkHash  bool
-	logger     *slog.Logger
+	mutex          sync.RWMutex
+	machines       map[int64]MachineInstance
+	repository     MachineRepository
+	checkHash      bool
+	inputBatchSize uint64
+	logger         *slog.Logger
 }
 
 // NewMachineManager creates a new machine manager
@@ -53,12 +49,14 @@ func NewMachineManager(
 	repo MachineRepository,
 	logger *slog.Logger,
 	checkHash bool,
+	inputBatchSize uint64,
 ) *MachineManager {
 	return &MachineManager{
-		machines:   map[int64]MachineInstance{},
-		repository: repo,
-		checkHash:  checkHash,
-		logger:     logger,
+		machines:       map[int64]MachineInstance{},
+		repository:     repo,
+		checkHash:      checkHash,
+		inputBatchSize: inputBatchSize,
+		logger:         logger,
 	}
 }
 
@@ -137,7 +135,7 @@ func (m *MachineManager) UpdateMachines(ctx context.Context) error {
 		// For template instances (processedInputs=0) this replays all inputs.
 		// For snapshot instances (processedInputs=snapshotIndex+1) this replays
 		// only inputs after the snapshot.
-		err = instance.Synchronize(ctx, m.repository)
+		err = instance.Synchronize(ctx, m.repository, m.inputBatchSize)
 		if err != nil {
 			m.logger.Error("Failed to synchronize machine",
 				"application", app.IApplicationAddress,

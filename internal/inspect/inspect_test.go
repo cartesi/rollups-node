@@ -238,7 +238,7 @@ func (m *MockMachine) OutputsProof(ctx context.Context, processedInputs uint64) 
 	return nil, nil
 }
 
-func (mock *MockMachine) Synchronize(ctx context.Context, repo manager.MachineRepository) error {
+func (mock *MockMachine) Synchronize(ctx context.Context, repo manager.MachineRepository, batchSize uint64) error {
 	// Not used in inspect tests, but needed to satisfy the interface
 	return nil
 }

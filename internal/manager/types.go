@@ -14,7 +14,7 @@ type MachineInstance interface {
 	Application() *Application
 	Advance(ctx context.Context, input []byte, epochIndex uint64, inputIndex uint64, computeHashes bool) (*AdvanceResult, error)
 	Inspect(ctx context.Context, query []byte) (*InspectResult, error)
-	Synchronize(ctx context.Context, repo MachineRepository) error
+	Synchronize(ctx context.Context, repo MachineRepository, batchSize uint64) error
 	CreateSnapshot(ctx context.Context, processedInputs uint64, path string) error
 	ProcessedInputs() uint64
 	Hash(ctx context.Context) ([32]byte, error)

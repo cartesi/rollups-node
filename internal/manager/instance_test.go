@@ -816,13 +816,22 @@ func (r *mockSyncRepository) GetLastSnapshot(
 	return nil, nil
 }
 
+// newForkableMock creates a mock where Fork returns a fresh mock each time,
+// properly exercising the fork/replace lifecycle in Synchronize tests.
+func newForkableMock() *MockRollupsMachine {
+	m := &MockRollupsMachine{}
+	m.CloseError = nil
+	m.AdvanceAcceptedReturn = true
+	m.HashReturn = newHash(1)
+	m.OutputsHashReturn = newHash(2)
+	m.ForkFunc = func(_ context.Context) (machine.Machine, error) {
+		return newForkableMock(), nil
+	}
+	return m
+}
+
 func (s *MachineInstanceSuite) newSyncMachine(processedInputs uint64, appProcessedInputs uint64) *MachineInstanceImpl {
-	runtime := &MockRollupsMachine{}
-	runtime.ForkReturn = runtime // self-fork for replay
-	runtime.CloseError = nil
-	runtime.AdvanceAcceptedReturn = true
-	runtime.HashReturn = newHash(1)
-	runtime.OutputsHashReturn = newHash(2)
+	runtime := newForkableMock()
 
 	return &MachineInstanceImpl{
 		application: &model.Application{
@@ -860,14 +869,17 @@ func (s *MachineInstanceSuite) TestSynchronize() {
 	s.Run("TemplateSyncAllInputs", func() {
 		require := s.Require()
 		inst := s.newSyncMachine(0, 3)
+		originalRuntime := inst.runtime
 		repo := &mockSyncRepository{
 			inputs:     makeInputs(0, 3),
 			totalCount: 3,
 		}
 
-		err := inst.Synchronize(context.Background(), repo)
+		err := inst.Synchronize(context.Background(), repo, 1000)
 		require.NoError(err)
 		require.Equal(uint64(3), inst.processedInputs)
+		// Verify the runtime was actually replaced (not self-fork)
+		require.NotSame(originalRuntime, inst.runtime)
 	})
 
 	s.Run("SnapshotSyncRemainingInputs", func() {
@@ -879,7 +891,7 @@ func (s *MachineInstanceSuite) TestSynchronize() {
 			totalCount: 5,
 		}
 
-		err := inst.Synchronize(context.Background(), repo)
+		err := inst.Synchronize(context.Background(), repo, 1000)
 		require.NoError(err)
 		require.Equal(uint64(5), inst.processedInputs)
 	})
@@ -892,7 +904,7 @@ func (s *MachineInstanceSuite) TestSynchronize() {
 			totalCount: 0,
 		}
 
-		err := inst.Synchronize(context.Background(), repo)
+		err := inst.Synchronize(context.Background(), repo, 1000)
 		require.NoError(err)
 		require.Equal(uint64(0), inst.processedInputs)
 	})
@@ -906,7 +918,7 @@ func (s *MachineInstanceSuite) TestSynchronize() {
 			totalCount: 5,
 		}
 
-		err := inst.Synchronize(context.Background(), repo)
+		err := inst.Synchronize(context.Background(), repo, 1000)
 		require.NoError(err)
 		require.Equal(uint64(5), inst.processedInputs)
 	})
@@ -919,7 +931,7 @@ func (s *MachineInstanceSuite) TestSynchronize() {
 			totalCount: 3, // DB says 3 but app expects 5
 		}
 
-		err := inst.Synchronize(context.Background(), repo)
+		err := inst.Synchronize(context.Background(), repo, 1000)
 		require.Error(err)
 		require.ErrorIs(err, ErrMachineSynchronization)
 		require.Contains(err.Error(), "count mismatch")
@@ -933,7 +945,7 @@ func (s *MachineInstanceSuite) TestSynchronize() {
 			listErr: listErr,
 		}
 
-		err := inst.Synchronize(context.Background(), repo)
+		err := inst.Synchronize(context.Background(), repo, 1000)
 		require.Error(err)
 		require.ErrorIs(err, ErrMachineSynchronization)
 		require.Contains(err.Error(), "database connection lost")
@@ -942,18 +954,20 @@ func (s *MachineInstanceSuite) TestSynchronize() {
 	s.Run("AdvanceErrorMidReplay", func() {
 		require := s.Require()
 		inst := s.newSyncMachine(0, 3)
-		// Make the machine return a hard error on Advance.
-		// The self-forking mock is stateless, so the error applies
-		// to the very first input.
+		// Make each fork return a hard error on Advance.
 		runtime := inst.runtime.(*MockRollupsMachine)
-		runtime.AdvanceError = errors.New("machine exploded")
+		runtime.ForkFunc = func(_ context.Context) (machine.Machine, error) {
+			fork := newForkableMock()
+			fork.AdvanceError = errors.New("machine exploded")
+			return fork, nil
+		}
 
 		repo := &mockSyncRepository{
 			inputs:     makeInputs(0, 3),
 			totalCount: 3,
 		}
 
-		err := inst.Synchronize(context.Background(), repo)
+		err := inst.Synchronize(context.Background(), repo, 1000)
 		require.Error(err)
 		require.ErrorIs(err, ErrMachineSynchronization)
 		require.Contains(err.Error(), "failed to replay input")
@@ -961,19 +975,15 @@ func (s *MachineInstanceSuite) TestSynchronize() {
 
 	s.Run("BatchBoundaryCrossing", func() {
 		require := s.Require()
-		// Create more inputs than the batch size to test pagination.
-		// We use a small batch size by creating an instance and repo
-		// with enough inputs to cross the default 1000-input batch.
-		// Instead, we'll test with a practical scenario: 3 inputs
-		// with batch size effectively 2 by making our mock return
-		// only 2 inputs per call based on pagination.
+		// Use batchSize=2 with 3 inputs so the loop must fetch two batches
+		// (batch 1: inputs 0-1, batch 2: input 2), exercising pagination.
 		inst := s.newSyncMachine(0, 3)
 		repo := &mockSyncRepository{
 			inputs:     makeInputs(0, 3),
 			totalCount: 3,
 		}
 
-		err := inst.Synchronize(context.Background(), repo)
+		err := inst.Synchronize(context.Background(), repo, 2)
 		require.NoError(err)
 		require.Equal(uint64(3), inst.processedInputs)
 	})
@@ -990,7 +1000,7 @@ func (s *MachineInstanceSuite) TestSynchronize() {
 			totalCount: 3,
 		}
 
-		err := inst.Synchronize(ctx, repo)
+		err := inst.Synchronize(ctx, repo, 1000)
 		require.Error(err)
 	})
 }
@@ -999,6 +1009,7 @@ func (s *MachineInstanceSuite) TestSynchronize() {
 
 type MockRollupsMachine struct {
 	ForkReturn machine.Machine
+	ForkFunc   func(context.Context) (machine.Machine, error)
 	ForkError  error
 
 	HashReturn machine.Hash
@@ -1026,7 +1037,10 @@ type MockRollupsMachine struct {
 	CloseError error
 }
 
-func (m *MockRollupsMachine) Fork(_ context.Context) (machine.Machine, error) {
+func (m *MockRollupsMachine) Fork(ctx context.Context) (machine.Machine, error) {
+	if m.ForkFunc != nil {
+		return m.ForkFunc(ctx)
+	}
 	return m.ForkReturn, m.ForkError
 }
 

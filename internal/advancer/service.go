@@ -24,6 +24,7 @@ const httpShutdownTimeout = 10 * time.Second //nolint: mnd
 // Service is the main advancer service that processes inputs through Cartesi machines
 type Service struct {
 	service.Service
+	inputBatchSize uint64
 	snapshotsDir   string
 	repository     AdvancerRepository
 	machineManager manager.MachineProvider
@@ -59,12 +60,18 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		return nil, fmt.Errorf("repository on advancer service Create is nil")
 	}
 
+	s.inputBatchSize = c.Config.AdvancerInputBatchSize
+	if s.inputBatchSize == 0 {
+		return nil, fmt.Errorf("advancer input batch size must be greater than 0")
+	}
+
 	// Create the machine manager
 	manager := manager.NewMachineManager(
 		ctx,
 		c.Repository,
 		s.Logger,
 		c.Config.FeatureMachineHashCheckEnabled,
+		s.inputBatchSize,
 	)
 	s.machineManager = manager
 

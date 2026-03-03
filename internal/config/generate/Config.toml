@@ -61,6 +61,14 @@ used-by = ["advancer", "node", "cli"]
 # Rollups
 #
 
+[rollups.CARTESI_ADVANCER_INPUT_BATCH_SIZE]
+default = "500"
+go-type = "uint64"
+description = """
+Maximum number of inputs fetched per database query during advance processing and machine
+synchronization. Bounds memory usage for applications with large backlogs of unprocessed inputs."""
+used-by = ["advancer", "node"]
+
 [rollups.CARTESI_ADVANCER_POLLING_INTERVAL]
 default = "3"
 go-type = "Duration"

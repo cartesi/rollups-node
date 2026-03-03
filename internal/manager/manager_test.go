@@ -28,7 +28,7 @@ func (s *MachineManagerSuite) TestNewMachineManager() {
 	require := s.Require()
 	repo := &MockMachineRepository{}
 	testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	manager := NewMachineManager(context.Background(), repo, testLogger, false)
+	manager := NewMachineManager(context.Background(), repo, testLogger, false, 500)
 	require.NotNil(manager)
 	require.Empty(manager.machines)
 	require.Equal(repo, manager.repository)
@@ -65,7 +65,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 
 		// Create manager with a test logger
 		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		manager := NewMachineManager(context.Background(), repo, testLogger, false)
+		manager := NewMachineManager(context.Background(), repo, testLogger, false, 500)
 
 		// Create a mock factory for testing
 		mockRuntime := &MockRollupsMachine{}
@@ -96,7 +96,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 
 		// Create a test logger
 		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		manager := NewMachineManager(context.Background(), repo, testLogger, false)
+		manager := NewMachineManager(context.Background(), repo, testLogger, false, 500)
 
 		// Add mock machines
 		app1 := &model.Application{ID: 1, Name: "App1"}
@@ -129,7 +129,7 @@ func (s *MachineManagerSuite) TestGetMachine() {
 	repo.On("GetLastSnapshot", mock.Anything, mock.Anything).
 		Return(nil, nil)
 
-	manager := NewMachineManager(context.Background(), repo, nil, false)
+	manager := NewMachineManager(context.Background(), repo, nil, false, 500)
 	machine := &DummyMachineInstanceMock{application: &model.Application{ID: 1}}
 
 	// Add a machine
@@ -152,7 +152,7 @@ func (s *MachineManagerSuite) TestHasMachine() {
 	repo.On("GetLastSnapshot", mock.Anything, mock.Anything).
 		Return(nil, nil)
 
-	manager := NewMachineManager(context.Background(), repo, nil, false)
+	manager := NewMachineManager(context.Background(), repo, nil, false, 500)
 	machine := &DummyMachineInstanceMock{application: &model.Application{ID: 1}}
 
 	// Add a machine
@@ -172,7 +172,7 @@ func (s *MachineManagerSuite) TestAddMachine() {
 	repo.On("GetLastSnapshot", mock.Anything, mock.Anything).
 		Return(nil, nil)
 
-	manager := NewMachineManager(context.Background(), repo, nil, false)
+	manager := NewMachineManager(context.Background(), repo, nil, false, 500)
 	machine1 := &DummyMachineInstanceMock{application: &model.Application{ID: 1}}
 	machine2 := &DummyMachineInstanceMock{application: &model.Application{ID: 2}}
 
@@ -195,7 +195,7 @@ func (s *MachineManagerSuite) TestAddMachine() {
 func (s *MachineManagerSuite) TestRemoveDisabledMachines() {
 	require := s.Require()
 
-	manager := NewMachineManager(context.Background(), nil, nil, false)
+	manager := NewMachineManager(context.Background(), nil, nil, false, 500)
 
 	// Add machines
 	app1 := &model.Application{ID: 1}
@@ -227,7 +227,7 @@ func (s *MachineManagerSuite) TestApplications() {
 	repo.On("GetLastSnapshot", mock.Anything, mock.Anything).
 		Return(nil, nil)
 
-	manager := NewMachineManager(context.Background(), repo, nil, false)
+	manager := NewMachineManager(context.Background(), repo, nil, false, 500)
 
 	// Add machines
 	app1 := &model.Application{ID: 1, Name: "App1"}
@@ -318,7 +318,7 @@ func (m *DummyMachineInstanceMock) Inspect(_ context.Context, _ []byte) (*model.
 	return nil, nil
 }
 
-func (m *DummyMachineInstanceMock) Synchronize(_ context.Context, _ MachineRepository) error {
+func (m *DummyMachineInstanceMock) Synchronize(_ context.Context, _ MachineRepository, _ uint64) error {
 	return nil
 }
 

@@ -163,7 +163,7 @@ func (m *MachineInstanceImpl) ProcessedInputs() uint64 {
 // It handles both template-based instances (processedInputs == 0, replays all)
 // and snapshot-based instances (processedInputs > 0, replays only remaining).
 // Inputs are fetched in batches to bound memory usage.
-func (m *MachineInstanceImpl) Synchronize(ctx context.Context, repo MachineRepository) error {
+func (m *MachineInstanceImpl) Synchronize(ctx context.Context, repo MachineRepository, batchSize uint64) error {
 	appAddress := m.application.IApplicationAddress.String()
 	m.logger.Info("Synchronizing machine with processed inputs",
 		"address", appAddress,
@@ -176,7 +176,7 @@ func (m *MachineInstanceImpl) Synchronize(ctx context.Context, repo MachineRepos
 
 	for {
 		p := repository.Pagination{
-			Limit:  inputBatchSize,
+			Limit:  batchSize,
 			Offset: initialProcessedInputs + replayed,
 		}
 		inputs, totalCount, err := getProcessedInputs(ctx, repo, appAddress, p)

@@ -45,10 +45,16 @@ func getUnprocessedEpochs(ctx context.Context, er AdvancerRepository, address st
 	return er.ListEpochs(ctx, address, f, repository.Pagination{}, false)
 }
 
-// getUnprocessedInputs retrieves inputs that haven't been processed yet
-func getUnprocessedInputs(ctx context.Context, repo AdvancerRepository, appAddress string, epochIndex uint64) ([]*Input, uint64, error) {
+// getUnprocessedInputs retrieves inputs that haven't been processed yet with pagination support.
+func getUnprocessedInputs(
+	ctx context.Context,
+	repo AdvancerRepository,
+	appAddress string,
+	epochIndex uint64,
+	batchSize uint64,
+) ([]*Input, uint64, error) {
 	f := repository.InputFilter{Status: Pointer(InputCompletionStatus_None), EpochIndex: &epochIndex}
-	return repo.ListInputs(ctx, appAddress, f, repository.Pagination{}, false)
+	return repo.ListInputs(ctx, appAddress, f, repository.Pagination{Limit: batchSize}, false)
 }
 
 // Step performs one processing cycle of the advancer
@@ -78,17 +84,7 @@ func (s *Service) Step(ctx context.Context) error {
 		}
 
 		for _, epoch := range epochs {
-			// Get unprocessed inputs for this application
-			s.Logger.Debug("Querying for unprocessed inputs", "application", app.Name, "epoch_index", epoch.Index)
-			inputs, _, err := getUnprocessedInputs(ctx, s.repository, appAddress, epoch.Index)
-			if err != nil {
-				return err
-			}
-
-			// Process the inputs
-			s.Logger.Debug("Processing inputs", "application", app.Name, "epoch_index", epoch.Index, "count", len(inputs))
-			err = s.processInputs(ctx, app, inputs)
-			if err != nil {
+			if err := s.processEpochInputs(ctx, app, epoch.Index); err != nil {
 				return err
 			}
 
@@ -115,6 +111,26 @@ func (s *Service) Step(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// processEpochInputs fetches and processes unprocessed inputs for an epoch in batches.
+// Processed inputs change status and drop out of the filter, so each batch fetches from offset 0.
+func (s *Service) processEpochInputs(ctx context.Context, app *Application, epochIndex uint64) error {
+	appAddress := app.IApplicationAddress.String()
+	for {
+		inputs, _, err := getUnprocessedInputs(ctx, s.repository, appAddress, epochIndex, s.inputBatchSize)
+		if err != nil {
+			return err
+		}
+		if len(inputs) == 0 {
+			return nil
+		}
+		s.Logger.Debug("Processing inputs",
+			"application", app.Name, "epoch_index", epochIndex, "count", len(inputs))
+		if err := s.processInputs(ctx, app, inputs); err != nil {
+			return err
+		}
+	}
 }
 
 func (s *Service) isAllEpochInputsProcessed(app *Application, epoch *Epoch) (bool, error) {

@@ -31,6 +31,7 @@ type AdvancerSuite struct{ suite.Suite }
 
 func newMockAdvancerService(machineManager *MockMachineManager, repo *MockRepository) (*Service, error) {
 	s := &Service{
+		inputBatchSize: 500,
 		machineManager: machineManager,
 		repository:     repo,
 	}
@@ -84,9 +85,9 @@ func (s *AdvancerSuite) TestStep() {
 		app2 := newMockMachine(2)
 		machineManager.Map[1] = *app1
 		machineManager.Map[2] = *app2
+		res0 := randomAdvanceResult(0)
 		res1 := randomAdvanceResult(1)
-		res2 := randomAdvanceResult(2)
-		res3 := randomAdvanceResult(3)
+		res2 := randomAdvanceResult(0)
 
 		repository := &MockRepository{
 			GetEpochsReturn: map[common.Address][]*Epoch{
@@ -99,11 +100,11 @@ func (s *AdvancerSuite) TestStep() {
 			},
 			GetInputsReturn: map[common.Address][]*Input{
 				app1.Application.IApplicationAddress: {
-					newInput(app1.Application.ID, 0, 0, marshal(res1)),
-					newInput(app1.Application.ID, 0, 1, marshal(res2)),
+					newInput(app1.Application.ID, 0, 0, marshal(res0)),
+					newInput(app1.Application.ID, 0, 1, marshal(res1)),
 				},
 				app2.Application.IApplicationAddress: {
-					newInput(app2.Application.ID, 0, 0, marshal(res3)),
+					newInput(app2.Application.ID, 0, 0, marshal(res2)),
 				},
 			},
 		}
@@ -124,7 +125,7 @@ func (s *AdvancerSuite) TestStep() {
 		machineManager := newMockMachineManager()
 		app1 := newMockMachine(1)
 		machineManager.Map[1] = *app1
-		res1 := randomAdvanceResult(1)
+		res0 := randomAdvanceResult(0)
 
 		repository := &MockRepository{
 			GetEpochsReturn: map[common.Address][]*Epoch{
@@ -134,7 +135,7 @@ func (s *AdvancerSuite) TestStep() {
 			},
 			GetInputsReturn: map[common.Address][]*Input{
 				app1.Application.IApplicationAddress: {
-					newInput(app1.Application.ID, 0, 0, marshal(res1)),
+					newInput(app1.Application.ID, 0, 0, marshal(res0)),
 				},
 			},
 			UpdateEpochsError: errors.New("update epochs error"),
@@ -225,13 +226,14 @@ func (s *AdvancerSuite) TestGetUnprocessedInputs() {
 			newInput(app1.Application.ID, 0, 1, marshal(randomAdvanceResult(1))),
 		}
 
-		repository := &MockRepository{
+		repo := &MockRepository{
 			GetInputsReturn: map[common.Address][]*Input{
 				app1.Application.IApplicationAddress: inputs,
 			},
 		}
 
-		result, count, err := getUnprocessedInputs(context.Background(), repository, app1.Application.IApplicationAddress.String(), 0)
+		result, count, err := getUnprocessedInputs(
+			context.Background(), repo, app1.Application.IApplicationAddress.String(), 0, 500)
 		require.Nil(err)
 		require.Equal(uint64(2), count)
 		require.Equal(inputs, result)
@@ -241,11 +243,12 @@ func (s *AdvancerSuite) TestGetUnprocessedInputs() {
 		require := s.Require()
 
 		app1 := newMockMachine(1)
-		repository := &MockRepository{
+		repo := &MockRepository{
 			GetInputsError: errors.New("list inputs error"),
 		}
 
-		_, _, err := getUnprocessedInputs(context.Background(), repository, app1.Application.IApplicationAddress.String(), 0)
+		_, _, err := getUnprocessedInputs(
+			context.Background(), repo, app1.Application.IApplicationAddress.String(), 0, 500)
 		require.Error(err)
 		require.Contains(err.Error(), "list inputs error")
 	})
@@ -653,7 +656,7 @@ func (m *MockMachineInstance) OutputsProof(ctx context.Context, processedInputs 
 }
 
 // Synchronize implements the MachineInstance interface for testing
-func (m *MockMachineInstance) Synchronize(ctx context.Context, repo manager.MachineRepository) error {
+func (m *MockMachineInstance) Synchronize(ctx context.Context, repo manager.MachineRepository, batchSize uint64) error {
 	// Not used in advancer tests, but needed to satisfy the interface
 	return nil
 }
@@ -743,7 +746,23 @@ func (mock *MockRepository) ListInputs(
 	}
 
 	address := common.HexToAddress(nameOrAddress)
-	return mock.GetInputsReturn[address], uint64(len(mock.GetInputsReturn[address])), mock.GetInputsError
+	inputs := mock.GetInputsReturn[address]
+	total := uint64(len(inputs))
+
+	// Apply pagination if a limit is set
+	if p.Limit > 0 {
+		start := p.Offset
+		if start >= total {
+			return nil, total, mock.GetInputsError
+		}
+		end := start + p.Limit
+		if end > total {
+			end = total
+		}
+		inputs = inputs[start:end]
+	}
+
+	return inputs, total, mock.GetInputsError
 }
 
 func (mock *MockRepository) StoreAdvanceResult(
@@ -767,6 +786,24 @@ func (mock *MockRepository) StoreAdvanceResult(
 	}
 
 	mock.StoredResults = append(mock.StoredResults, res)
+
+	// Simulate real behavior: processed inputs change status and are no longer
+	// returned by queries filtering for unprocessed (Status_None) inputs.
+	// This prevents infinite loops in batched fetching.
+	if mock.StoreAdvanceError == nil {
+		for addr, inputs := range mock.GetInputsReturn {
+			for i, inp := range inputs {
+				if inp.EpochApplicationID == appID && inp.Index == res.InputIndex {
+					newInputs := make([]*Input, 0, len(inputs)-1)
+					newInputs = append(newInputs, inputs[:i]...)
+					newInputs = append(newInputs, inputs[i+1:]...)
+					mock.GetInputsReturn[addr] = newInputs
+					break
+				}
+			}
+		}
+	}
+
 	return mock.StoreAdvanceError
 }
 

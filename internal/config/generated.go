@@ -53,6 +53,7 @@ const (
 	LOG_COLOR                                         = "CARTESI_LOG_COLOR"
 	LOG_LEVEL                                         = "CARTESI_LOG_LEVEL"
 	JSONRPC_MACHINE_LOG_LEVEL                         = "CARTESI_JSONRPC_MACHINE_LOG_LEVEL"
+	ADVANCER_INPUT_BATCH_SIZE                         = "CARTESI_ADVANCER_INPUT_BATCH_SIZE"
 	ADVANCER_POLLING_INTERVAL                         = "CARTESI_ADVANCER_POLLING_INTERVAL"
 	BLOCKCHAIN_HTTP_MAX_RETRIES                       = "CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES"
 	BLOCKCHAIN_HTTP_RETRY_MAX_WAIT                    = "CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT"
@@ -143,6 +144,8 @@ func SetDefaults() {
 
 	viper.SetDefault(JSONRPC_MACHINE_LOG_LEVEL, "info")
 
+	viper.SetDefault(ADVANCER_INPUT_BATCH_SIZE, "500")
+
 	viper.SetDefault(ADVANCER_POLLING_INTERVAL, "3")
 
 	viper.SetDefault(BLOCKCHAIN_HTTP_MAX_RETRIES, "4")
@@ -200,6 +203,10 @@ type AdvancerConfig struct {
 	// Remote Cartesi Machine server log level.
 	// One of "trace", "debug", "info", "warning", "error", "fatal".
 	JsonrpcMachineLogLevel string `mapstructure:"CARTESI_JSONRPC_MACHINE_LOG_LEVEL"`
+
+	// Maximum number of inputs fetched per database query during advance processing and machine
+	// synchronization. Bounds memory usage for applications with large backlogs of unprocessed inputs.
+	AdvancerInputBatchSize uint64 `mapstructure:"CARTESI_ADVANCER_INPUT_BATCH_SIZE"`
 
 	// How many seconds the node will wait before querying the database for new inputs.
 	AdvancerPollingInterval Duration `mapstructure:"CARTESI_ADVANCER_POLLING_INTERVAL"`
@@ -281,6 +288,13 @@ func LoadAdvancerConfig() (*AdvancerConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_JSONRPC_MACHINE_LOG_LEVEL: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_JSONRPC_MACHINE_LOG_LEVEL is required for the advancer service: %w", err)
+	}
+
+	cfg.AdvancerInputBatchSize, err = GetAdvancerInputBatchSize()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_ADVANCER_INPUT_BATCH_SIZE: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_ADVANCER_INPUT_BATCH_SIZE is required for the advancer service: %w", err)
 	}
 
 	cfg.AdvancerPollingInterval, err = GetAdvancerPollingInterval()
@@ -815,6 +829,10 @@ type NodeConfig struct {
 	// One of "trace", "debug", "info", "warning", "error", "fatal".
 	JsonrpcMachineLogLevel string `mapstructure:"CARTESI_JSONRPC_MACHINE_LOG_LEVEL"`
 
+	// Maximum number of inputs fetched per database query during advance processing and machine
+	// synchronization. Bounds memory usage for applications with large backlogs of unprocessed inputs.
+	AdvancerInputBatchSize uint64 `mapstructure:"CARTESI_ADVANCER_INPUT_BATCH_SIZE"`
+
 	// How many seconds the node will wait before querying the database for new inputs.
 	AdvancerPollingInterval Duration `mapstructure:"CARTESI_ADVANCER_POLLING_INTERVAL"`
 
@@ -979,6 +997,13 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_JSONRPC_MACHINE_LOG_LEVEL: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_JSONRPC_MACHINE_LOG_LEVEL is required for the node service: %w", err)
+	}
+
+	cfg.AdvancerInputBatchSize, err = GetAdvancerInputBatchSize()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_ADVANCER_INPUT_BATCH_SIZE: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_ADVANCER_INPUT_BATCH_SIZE is required for the node service: %w", err)
 	}
 
 	cfg.AdvancerPollingInterval, err = GetAdvancerPollingInterval()
@@ -1347,6 +1372,7 @@ func (c *NodeConfig) ToAdvancerConfig() *AdvancerConfig {
 		LogColor:                       c.LogColor,
 		LogLevel:                       c.LogLevel,
 		JsonrpcMachineLogLevel:         c.JsonrpcMachineLogLevel,
+		AdvancerInputBatchSize:         c.AdvancerInputBatchSize,
 		AdvancerPollingInterval:        c.AdvancerPollingInterval,
 		MaxStartupTime:                 c.MaxStartupTime,
 		SnapshotsDir:                   c.SnapshotsDir,
@@ -1889,6 +1915,19 @@ func GetJsonrpcMachineLogLevel() (string, error) {
 		return v, nil
 	}
 	return notDefinedstring(), fmt.Errorf("%s: %w", JSONRPC_MACHINE_LOG_LEVEL, ErrNotDefined)
+}
+
+// GetAdvancerInputBatchSize returns the value for the environment variable CARTESI_ADVANCER_INPUT_BATCH_SIZE.
+func GetAdvancerInputBatchSize() (uint64, error) {
+	s := viper.GetString(ADVANCER_INPUT_BATCH_SIZE)
+	if s != "" {
+		v, err := toUint64(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", ADVANCER_INPUT_BATCH_SIZE, err)
+		}
+		return v, nil
+	}
+	return notDefineduint64(), fmt.Errorf("%s: %w", ADVANCER_INPUT_BATCH_SIZE, ErrNotDefined)
 }
 
 // GetAdvancerPollingInterval returns the value for the environment variable CARTESI_ADVANCER_POLLING_INTERVAL.
