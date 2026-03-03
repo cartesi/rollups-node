@@ -373,6 +373,9 @@ func (s *AdvancerSuite) TestProcess() {
 			require.Error(err)
 			require.Contains(err.Error(), "store-advance error")
 			require.Len(repository.StoredResults, 1)
+
+			// Verify that the node shutdown was triggered (context cancelled)
+			require.Error(advancer.Context.Err(), "shared context should be cancelled")
 		})
 	})
 }
@@ -488,16 +491,17 @@ func (s *AdvancerSuite) TestLargeNumberOfInputs() {
 	})
 }
 
-// TestErrorRecovery tests how the advancer recovers from temporary failures
+// TestErrorRecovery verifies that any store failure after a successful Advance()
+// triggers node shutdown, because the machine and DB are now out of sync.
 func (s *AdvancerSuite) TestErrorRecovery() {
-	s.Run("TemporaryRepositoryFailure", func() {
+	s.Run("TransientStoreFailureTriggersShutdown", func() {
 		require := s.Require()
 
 		machineManager := newMockMachineManager()
 		app1 := newMockMachine(1)
 		machineManager.Map[1] = *app1
 
-		// Repository that fails on first attempt but succeeds on second
+		// Repository that fails on the first store attempt
 		repository := &MockRepository{
 			StoreAdvanceFailCount: 1,
 		}
@@ -506,21 +510,50 @@ func (s *AdvancerSuite) TestErrorRecovery() {
 		require.NotNil(advancer)
 		require.Nil(err)
 
-		// Create inputs
 		inputs := []*Input{
 			newInput(app1.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
-			newInput(app1.Application.ID, 0, 1, marshal(randomAdvanceResult(1))),
 		}
 
-		// First attempt should fail
+		// The transient failure triggers node shutdown — no retry at this layer
 		err = advancer.processInputs(context.Background(), app1.Application, inputs)
 		require.Error(err)
 		require.Contains(err.Error(), "temporary failure")
 
-		// Second attempt should succeed
-		err = advancer.processInputs(context.Background(), app1.Application, inputs)
+		// Verify that the node shutdown was triggered
+		require.Error(advancer.Context.Err(), "shared context should be cancelled")
+	})
+}
+
+// TestContextCancelledBeforeProcessing verifies that when the context is
+// already cancelled, processInputs returns the context error immediately
+// without reaching the advance or store paths.
+func (s *AdvancerSuite) TestContextCancelledBeforeProcessing() {
+	s.Run("ContextAlreadyCancelled", func() {
+		require := s.Require()
+
+		machineManager := newMockMachineManager()
+		app1 := newMockMachine(1)
+		machineManager.Map[1] = *app1
+
+		repository := &MockRepository{}
+
+		advancer, err := newMockAdvancerService(machineManager, repository)
+		require.NotNil(advancer)
 		require.Nil(err)
-		require.Len(repository.StoredResults, 2)
+
+		// Cancel the context before calling processInputs to simulate
+		// an external shutdown already in progress.
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		inputs := []*Input{
+			newInput(app1.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+		}
+
+		// With the context already cancelled, processInputs returns
+		// the context error immediately (before reaching advance).
+		err = advancer.processInputs(ctx, app1.Application, inputs)
+		require.ErrorIs(err, context.Canceled)
 	})
 }
 

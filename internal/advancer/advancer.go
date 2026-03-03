@@ -212,10 +212,18 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 		// Store the result in the database
 		err = s.repository.StoreAdvanceResult(ctx, input.EpochApplicationID, result)
 		if err != nil {
-			s.Logger.Error("Failed to store advance result",
+			// Machine state is now ahead of the database. This desync is
+			// unrecoverable without a restart — regardless of whether the
+			// failure was a DB error or a context timeout. Shut down the
+			// node so it can restart cleanly from the last snapshot.
+			s.Logger.Error(
+				"FATAL: failed to store advance result after machine state "+
+					"was already updated — shutting down to prevent permanent desync",
 				"application", app.Name,
+				"epoch", input.EpochIndex,
 				"index", input.Index,
 				"error", err)
+			s.Cancel() // triggers graceful shutdown of all services
 			return err
 		}
 
