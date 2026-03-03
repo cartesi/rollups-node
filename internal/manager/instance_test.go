@@ -221,7 +221,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			require.Equal(expectedReports1, res.Reports)
 			require.Equal(newHash(1), res.OutputsHash)
 			require.Equal(newHash(2), res.MachineHash)
-			require.Equal(uint64(6), machine.processedInputs)
+			require.Equal(uint64(6), machine.processedInputs.Load())
 		})
 
 		s.Run("Reject", func() {
@@ -240,7 +240,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			require.Equal(expectedReports1, res.Reports)
 			require.Equal(newHash(1), res.OutputsHash)
 			require.Equal(newHash(2), res.MachineHash)
-			require.Equal(uint64(6), machine.processedInputs)
+			require.Equal(uint64(6), machine.processedInputs.Load())
 		})
 
 		testSoftError := func(name string, err error, status model.InputCompletionStatus) {
@@ -259,7 +259,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 				require.Equal(expectedReports1, res.Reports)
 				require.Equal(newHash(1), res.OutputsHash)
 				require.Equal(newHash(2), res.MachineHash)
-				require.Equal(uint64(6), machine.processedInputs)
+				require.Equal(uint64(6), machine.processedInputs.Load())
 			})
 		}
 
@@ -299,7 +299,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			require.Error(err)
 			require.Nil(res)
 			require.Equal(errFork, err)
-			require.Equal(uint64(5), machine.processedInputs)
+			require.Equal(uint64(5), machine.processedInputs.Load())
 		})
 
 		s.Run("Advance", func() {
@@ -314,7 +314,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			require.Nil(res)
 			require.ErrorIs(err, errAdvance)
 			require.NotErrorIs(err, errUnreachable)
-			require.Equal(uint64(5), machine.processedInputs)
+			require.Equal(uint64(5), machine.processedInputs.Load())
 		})
 
 		s.Run("AdvanceAndClose", func() {
@@ -332,7 +332,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			require.ErrorIs(err, errAdvance)
 			require.ErrorIs(err, errClose)
 			require.NotErrorIs(err, errUnreachable)
-			require.Equal(uint64(5), machine.processedInputs)
+			require.Equal(uint64(5), machine.processedInputs.Load())
 		})
 
 		s.Run("Hash", func() {
@@ -347,7 +347,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			require.Nil(res)
 			require.ErrorIs(err, errHash)
 			require.NotErrorIs(err, errUnreachable)
-			require.Equal(uint64(5), machine.processedInputs)
+			require.Equal(uint64(5), machine.processedInputs.Load())
 		})
 
 		s.Run("HashAndClose", func() {
@@ -365,7 +365,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			require.ErrorIs(err, errHash)
 			require.ErrorIs(err, errClose)
 			require.NotErrorIs(err, errUnreachable)
-			require.Equal(uint64(5), machine.processedInputs)
+			require.Equal(uint64(5), machine.processedInputs.Load())
 		})
 
 		s.Run("Close", func() {
@@ -375,27 +375,26 @@ func (s *MachineInstanceSuite) TestAdvance() {
 				errClose := errors.New("Close error")
 				inner.CloseError = errClose
 
+				// Close error on old runtime is logged, not propagated.
+				// Advance succeeds and processedInputs is incremented.
 				res, err := machine.Advance(context.Background(), []byte{}, 0, 5, false)
-				require.Error(err)
-				require.Nil(res)
-				require.ErrorIs(err, errClose)
-				require.NotErrorIs(err, errUnreachable)
-				require.Equal(uint64(5), machine.processedInputs)
+				require.NoError(err)
+				require.NotNil(res)
+				require.Equal(uint64(6), machine.processedInputs.Load())
 			})
 
 			s.Run("Fork", func() {
 				require := s.Require()
 				_, fork, machineInst := s.setupAdvance()
-				errClose := errors.New("Close error")
 				fork.AdvanceError = machine.ErrException
-				fork.CloseError = errClose
+				fork.CloseError = errors.New("Close error")
 
+				// Close error on fork is logged, not propagated.
+				// Advance succeeds and processedInputs is incremented.
 				res, err := machineInst.Advance(context.Background(), []byte{}, 0, 5, false)
-				require.Error(err)
+				require.NoError(err)
 				require.NotNil(res)
-				require.ErrorIs(err, errClose)
-				require.NotErrorIs(err, errUnreachable)
-				require.Equal(uint64(6), machineInst.processedInputs)
+				require.Equal(uint64(6), machineInst.processedInputs.Load())
 			})
 		})
 	})
@@ -654,7 +653,6 @@ func (s *MachineInstanceSuite) setupAdvance() (*MockRollupsMachine, *MockRollups
 	machineInst := &MachineInstanceImpl{
 		application:           app,
 		runtime:               inner,
-		processedInputs:       5,
 		advanceTimeout:        decisecond,
 		inspectTimeout:        centisecond,
 		maxConcurrentInspects: 3,
@@ -662,6 +660,7 @@ func (s *MachineInstanceSuite) setupAdvance() (*MockRollupsMachine, *MockRollups
 		inspectSemaphore:      semaphore.NewWeighted(3),
 		logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
+	machineInst.processedInputs.Store(5)
 
 	fork := &MockRollupsMachine{}
 
@@ -710,7 +709,6 @@ func (s *MachineInstanceSuite) setupInspect() (*MockRollupsMachine, *MockRollups
 	machineInst := &MachineInstanceImpl{
 		application:           app,
 		runtime:               inner,
-		processedInputs:       55,
 		advanceTimeout:        decisecond,
 		inspectTimeout:        centisecond,
 		maxConcurrentInspects: 3,
@@ -718,6 +716,7 @@ func (s *MachineInstanceSuite) setupInspect() (*MockRollupsMachine, *MockRollups
 		inspectSemaphore:      semaphore.NewWeighted(3),
 		logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
+	machineInst.processedInputs.Store(55)
 
 	fork := &MockRollupsMachine{}
 
@@ -833,7 +832,7 @@ func newForkableMock() *MockRollupsMachine {
 func (s *MachineInstanceSuite) newSyncMachine(processedInputs uint64, appProcessedInputs uint64) *MachineInstanceImpl {
 	runtime := newForkableMock()
 
-	return &MachineInstanceImpl{
+	inst := &MachineInstanceImpl{
 		application: &model.Application{
 			ProcessedInputs: appProcessedInputs,
 			ExecutionParameters: model.ExecutionParameters{
@@ -843,7 +842,6 @@ func (s *MachineInstanceSuite) newSyncMachine(processedInputs uint64, appProcess
 			},
 		},
 		runtime:               runtime,
-		processedInputs:       processedInputs,
 		advanceTimeout:        decisecond,
 		inspectTimeout:        centisecond,
 		maxConcurrentInspects: 3,
@@ -851,6 +849,8 @@ func (s *MachineInstanceSuite) newSyncMachine(processedInputs uint64, appProcess
 		inspectSemaphore:      semaphore.NewWeighted(3),
 		logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
+	inst.processedInputs.Store(processedInputs)
+	return inst
 }
 
 func makeInputs(startIndex, count uint64) []*model.Input {
@@ -877,7 +877,7 @@ func (s *MachineInstanceSuite) TestSynchronize() {
 
 		err := inst.Synchronize(context.Background(), repo, 1000)
 		require.NoError(err)
-		require.Equal(uint64(3), inst.processedInputs)
+		require.Equal(uint64(3), inst.processedInputs.Load())
 		// Verify the runtime was actually replaced (not self-fork)
 		require.NotSame(originalRuntime, inst.runtime)
 	})
@@ -893,7 +893,7 @@ func (s *MachineInstanceSuite) TestSynchronize() {
 
 		err := inst.Synchronize(context.Background(), repo, 1000)
 		require.NoError(err)
-		require.Equal(uint64(5), inst.processedInputs)
+		require.Equal(uint64(5), inst.processedInputs.Load())
 	})
 
 	s.Run("NoInputsToReplay", func() {
@@ -906,7 +906,7 @@ func (s *MachineInstanceSuite) TestSynchronize() {
 
 		err := inst.Synchronize(context.Background(), repo, 1000)
 		require.NoError(err)
-		require.Equal(uint64(0), inst.processedInputs)
+		require.Equal(uint64(0), inst.processedInputs.Load())
 	})
 
 	s.Run("SnapshotAlreadyCaughtUp", func() {
@@ -920,7 +920,22 @@ func (s *MachineInstanceSuite) TestSynchronize() {
 
 		err := inst.Synchronize(context.Background(), repo, 1000)
 		require.NoError(err)
-		require.Equal(uint64(5), inst.processedInputs)
+		require.Equal(uint64(5), inst.processedInputs.Load())
+	})
+
+	s.Run("MachineAheadOfDB", func() {
+		require := s.Require()
+		// Machine has processed 5 inputs but DB only has 3
+		inst := s.newSyncMachine(5, 3)
+		repo := &mockSyncRepository{
+			inputs:     makeInputs(0, 3),
+			totalCount: 3,
+		}
+
+		err := inst.Synchronize(context.Background(), repo, 1000)
+		require.Error(err)
+		require.ErrorIs(err, ErrMachineSynchronization)
+		require.Contains(err.Error(), "machine has processed 5 inputs but DB only has 3")
 	})
 
 	s.Run("CountMismatch", func() {
@@ -985,7 +1000,7 @@ func (s *MachineInstanceSuite) TestSynchronize() {
 
 		err := inst.Synchronize(context.Background(), repo, 2)
 		require.NoError(err)
-		require.Equal(uint64(3), inst.processedInputs)
+		require.Equal(uint64(3), inst.processedInputs.Load())
 	})
 
 	s.Run("ContextCancellation", func() {

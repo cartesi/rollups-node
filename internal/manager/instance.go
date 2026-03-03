@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/manager/pmutex"
@@ -46,8 +47,10 @@ type MachineInstanceImpl struct {
 	application *Application
 	runtime     machine.Machine
 
-	// How many inputs were processed by the machine
-	processedInputs uint64
+	// How many inputs were processed by the machine.
+	// Written under HLock (together with runtime swap — the two MUST be updated
+	// atomically from the perspective of readers). Read without locks via Load().
+	processedInputs atomic.Uint64
 
 	// Timeouts for operations
 	advanceTimeout time.Duration
@@ -138,7 +141,6 @@ func NewMachineInstanceWithFactory(
 	instance := &MachineInstanceImpl{
 		application:           app,
 		runtime:               runtime,
-		processedInputs:       processedInputs,
 		advanceTimeout:        app.ExecutionParameters.AdvanceMaxDeadline,
 		inspectTimeout:        app.ExecutionParameters.InspectMaxDeadline,
 		maxConcurrentInspects: app.ExecutionParameters.MaxConcurrentInspects,
@@ -147,6 +149,7 @@ func NewMachineInstanceWithFactory(
 		runtimeFactory:        factory,
 		logger:                logger.With("application", app.Name),
 	}
+	instance.processedInputs.Store(processedInputs)
 
 	return instance, nil
 }
@@ -156,7 +159,7 @@ func (m *MachineInstanceImpl) Application() *Application {
 }
 
 func (m *MachineInstanceImpl) ProcessedInputs() uint64 {
-	return m.processedInputs
+	return m.processedInputs.Load()
 }
 
 // Synchronize brings the machine up to date with processed inputs.
@@ -165,12 +168,13 @@ func (m *MachineInstanceImpl) ProcessedInputs() uint64 {
 // Inputs are fetched in batches to bound memory usage.
 func (m *MachineInstanceImpl) Synchronize(ctx context.Context, repo MachineRepository, batchSize uint64) error {
 	appAddress := m.application.IApplicationAddress.String()
+	currentProcessed := m.processedInputs.Load()
 	m.logger.Info("Synchronizing machine with processed inputs",
 		"address", appAddress,
 		"app_processed_inputs", m.application.ProcessedInputs,
-		"machine_processed_inputs", m.processedInputs)
+		"machine_processed_inputs", currentProcessed)
 
-	initialProcessedInputs := m.processedInputs
+	initialProcessedInputs := currentProcessed
 	replayed := uint64(0)
 	toReplay := uint64(0)
 
@@ -193,7 +197,12 @@ func (m *MachineInstanceImpl) Synchronize(ctx context.Context, repo MachineRepos
 				m.logger.Error(errorMsg, "address", appAddress)
 				return fmt.Errorf("%w: %s", ErrMachineSynchronization, errorMsg)
 			}
-			toReplay = totalCount - m.processedInputs
+			if currentProcessed > totalCount {
+				return fmt.Errorf(
+					"%w: machine has processed %d inputs but DB only has %d",
+					ErrMachineSynchronization, currentProcessed, totalCount)
+			}
+			toReplay = totalCount - currentProcessed
 			if toReplay == 0 {
 				m.logger.Info("No inputs to replay during synchronization",
 					"address", appAddress)
@@ -235,8 +244,10 @@ func (m *MachineInstanceImpl) forkForAdvance(ctx context.Context, index uint64) 
 	}
 
 	// Verify input index
-	if m.processedInputs != index {
-		return nil, fmt.Errorf("%w: processed inputs is %d and index is %d", ErrInvalidInputIndex, m.processedInputs, index)
+	current := m.processedInputs.Load()
+	if current != index {
+		return nil, fmt.Errorf("%w: processed inputs is %d and index is %d",
+			ErrInvalidInputIndex, current, index)
 	}
 
 	// Fork the machine
@@ -320,13 +331,14 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 
 		// Replace the current machine with the fork
 		m.mutex.HLock()
-		if err = m.runtime.Close(); err != nil {
-			m.mutex.Unlock()
-			return nil, err
-		}
+		oldRuntime := m.runtime
 		m.runtime = fork
-		m.processedInputs++
+		m.processedInputs.Add(1)
 		m.mutex.Unlock()
+
+		if err := oldRuntime.Close(); err != nil {
+			m.logger.Warn("Failed to close old machine runtime", "error", err)
+		}
 	} else {
 		// Use the previous state for rejected inputs
 		result.MachineHash = prevMachineHash
@@ -334,15 +346,17 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 		result.OutputsHashProof = prevOutputsHashProof
 
 		// Close the fork since we're not using it
-		err = fork.Close()
+		if err := fork.Close(); err != nil {
+			m.logger.Warn("Failed to close fork machine runtime", "error", err)
+		}
 
 		// Update the processed inputs counter
 		m.mutex.HLock()
-		m.processedInputs++
+		m.processedInputs.Add(1)
 		m.mutex.Unlock()
 	}
 
-	return result, err
+	return result, nil
 }
 
 // forkForInspect creates a copy of the machine for inspect operations
@@ -361,7 +375,7 @@ func (m *MachineInstanceImpl) forkForInspect(ctx context.Context) (machine.Machi
 		return nil, 0, err
 	}
 
-	return fork, m.processedInputs, nil
+	return fork, m.processedInputs.Load(), nil
 }
 
 // Inspect queries the machine state without modifying it
@@ -423,11 +437,13 @@ func (m *MachineInstanceImpl) CreateSnapshot(ctx context.Context, processedInput
 	}
 
 	// Verify processed inputs
-	if m.processedInputs != processedInputs {
-		return fmt.Errorf("%w: machine processed inputs is %d and expected is %d", ErrInvalidSnapshotPoint, m.processedInputs, processedInputs)
+	current := m.processedInputs.Load()
+	if current != processedInputs {
+		return fmt.Errorf("%w: machine processed inputs is %d and expected is %d",
+			ErrInvalidSnapshotPoint, current, processedInputs)
 	}
 
-	m.logger.Debug("Creating machine snapshot", "path", path, "processed_inputs", m.processedInputs)
+	m.logger.Debug("Creating machine snapshot", "path", path, "processed_inputs", current)
 
 	// Create a context with a timeout for the store operation
 	storeCtx, cancel := context.WithTimeout(ctx, m.application.ExecutionParameters.StoreDeadline)
