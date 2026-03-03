@@ -618,6 +618,38 @@ func (s *MachineInstanceSuite) TestClose() {
 			require.Fail("Advance did not complete after Close")
 		}
 	})
+
+	s.Run("TimesOutWaitingForInspects", func() {
+		require := s.Require()
+		inner, _, machine := s.setupAdvance()
+		inner.CloseError = nil
+
+		// Use a short timeout so the test runs fast
+		machine.closeTimeout = centisecond
+
+		// Pre-acquire all semaphore slots to simulate stuck inspects
+		for range int(machine.maxConcurrentInspects) {
+			err := machine.inspectSemaphore.Acquire(context.Background(), 1)
+			require.Nil(err)
+		}
+
+		// Close should not block indefinitely — it times out and closes anyway
+		done := make(chan error, 1)
+		go func() {
+			done <- machine.Close()
+		}()
+
+		select {
+		case err := <-done:
+			require.Nil(err)
+			require.Nil(machine.runtime)
+		case <-time.After(decisecond * 5):
+			require.Fail("Close blocked indefinitely despite timeout")
+		}
+
+		// Release slots to clean up
+		machine.inspectSemaphore.Release(int64(machine.maxConcurrentInspects))
+	})
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -656,6 +688,7 @@ func (s *MachineInstanceSuite) setupAdvance() (*MockRollupsMachine, *MockRollups
 		advanceTimeout:        decisecond,
 		inspectTimeout:        centisecond,
 		maxConcurrentInspects: 3,
+		closeTimeout:          defaultCloseTimeout,
 		mutex:                 pmutex.New(),
 		inspectSemaphore:      semaphore.NewWeighted(3),
 		logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -712,6 +745,7 @@ func (s *MachineInstanceSuite) setupInspect() (*MockRollupsMachine, *MockRollups
 		advanceTimeout:        decisecond,
 		inspectTimeout:        centisecond,
 		maxConcurrentInspects: 3,
+		closeTimeout:          defaultCloseTimeout,
 		mutex:                 pmutex.New(),
 		inspectSemaphore:      semaphore.NewWeighted(3),
 		logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -845,6 +879,7 @@ func (s *MachineInstanceSuite) newSyncMachine(processedInputs uint64, appProcess
 		advanceTimeout:        decisecond,
 		inspectTimeout:        centisecond,
 		maxConcurrentInspects: 3,
+		closeTimeout:          defaultCloseTimeout,
 		mutex:                 pmutex.New(),
 		inspectSemaphore:      semaphore.NewWeighted(3),
 		logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),

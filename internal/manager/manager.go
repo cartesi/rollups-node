@@ -230,23 +230,37 @@ func (m *MachineManager) Applications() []*Application {
 	return apps
 }
 
-// Close shuts down all machine instances
+// Close shuts down all machine instances in parallel.
 func (m *MachineManager) Close() error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	var errs []error
-	for id, machine := range m.machines {
-		if err := machine.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("failed to close machine for app %d: %w", id, err))
-		}
-		delete(m.machines, id)
+	type closeResult struct {
+		id  int64
+		err error
 	}
 
-	if len(errs) > 0 {
-		return errors.Join(errs...)
+	var wg sync.WaitGroup
+	results := make(chan closeResult, len(m.machines))
+
+	for id, machine := range m.machines {
+		wg.Go(func() {
+			results <- closeResult{id: id, err: machine.Close()}
+		})
 	}
-	return nil
+
+	wg.Wait()
+	close(results)
+
+	var errs []error
+	for r := range results {
+		if r.err != nil {
+			errs = append(errs, fmt.Errorf("failed to close machine for app %d: %w", r.id, r.err))
+		}
+	}
+	clear(m.machines)
+
+	return errors.Join(errs...)
 }
 
 // Helper function to get enabled applications

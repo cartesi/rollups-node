@@ -62,6 +62,9 @@ type MachineInstanceImpl struct {
 	advanceMutex          sync.Mutex
 	inspectSemaphore      *semaphore.Weighted
 
+	// Timeout for draining in-flight inspects during Close
+	closeTimeout time.Duration
+
 	// Factory for creating machine runtimes
 	runtimeFactory MachineRuntimeFactory
 
@@ -146,6 +149,7 @@ func NewMachineInstanceWithFactory(
 		maxConcurrentInspects: app.ExecutionParameters.MaxConcurrentInspects,
 		mutex:                 pmutex.New(),
 		inspectSemaphore:      semaphore.NewWeighted(int64(app.ExecutionParameters.MaxConcurrentInspects)),
+		closeTimeout:          defaultCloseTimeout,
 		runtimeFactory:        factory,
 		logger:                logger.With("application", app.Name),
 	}
@@ -533,17 +537,30 @@ func (m *MachineInstanceImpl) OutputsProof(ctx context.Context, processedInputs 
 	return proof, nil
 }
 
+// defaultCloseTimeout is how long Close waits for in-flight inspects to drain
+// before forcibly closing the runtime.
+const defaultCloseTimeout = 30 * time.Second
+
 // Close shuts down the machine instance
 func (m *MachineInstanceImpl) Close() error {
 	// Acquire all locks to ensure no operations are in progress
 	m.advanceMutex.Lock()
 	defer m.advanceMutex.Unlock()
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), m.closeTimeout)
+	defer cancel()
+
+	acquired := 0
 	for range int(m.maxConcurrentInspects) {
-		_ = m.inspectSemaphore.Acquire(ctx, 1)
-		defer m.inspectSemaphore.Release(1)
+		if err := m.inspectSemaphore.Acquire(ctx, 1); err != nil {
+			m.logger.Warn("Timed out waiting for in-flight inspects to drain; closing anyway",
+				"still_in_flight", int(m.maxConcurrentInspects)-acquired,
+				"drained", acquired)
+			break
+		}
+		acquired++
 	}
+	defer m.inspectSemaphore.Release(int64(acquired))
 
 	// Close the runtime
 	m.mutex.HLock()
