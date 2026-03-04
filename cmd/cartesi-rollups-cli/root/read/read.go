@@ -23,7 +23,7 @@ var Cmd = &cobra.Command{
 	Short: "Read the node state from the database",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		if !cmd.Flags().Changed("jsonrpc") && cmd.Flags().Changed("jsonrpc-api-url") {
-			if err:= cmd.Flags().Set("jsonrpc", "true"); err != nil {
+			if err := cmd.Flags().Set("jsonrpc", "true"); err != nil {
 				return err
 			}
 		}

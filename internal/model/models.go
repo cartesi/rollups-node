@@ -808,6 +808,7 @@ const (
 	InputCompletionStatus_Exception                  InputCompletionStatus = "EXCEPTION"
 	InputCompletionStatus_MachineHalted              InputCompletionStatus = "MACHINE_HALTED"
 	InputCompletionStatus_OutputsLimitExceeded       InputCompletionStatus = "OUTPUTS_LIMIT_EXCEEDED"
+	InputCompletionStatus_ReportsLimitExceeded       InputCompletionStatus = "REPORTS_LIMIT_EXCEEDED"
 	InputCompletionStatus_CycleLimitExceeded         InputCompletionStatus = "CYCLE_LIMIT_EXCEEDED"
 	InputCompletionStatus_TimeLimitExceeded          InputCompletionStatus = "TIME_LIMIT_EXCEEDED"
 	InputCompletionStatus_PayloadLengthLimitExceeded InputCompletionStatus = "PAYLOAD_LENGTH_LIMIT_EXCEEDED"
@@ -819,6 +820,8 @@ var InputCompletionStatusAllValues = []InputCompletionStatus{
 	InputCompletionStatus_Rejected,
 	InputCompletionStatus_Exception,
 	InputCompletionStatus_MachineHalted,
+	InputCompletionStatus_OutputsLimitExceeded,
+	InputCompletionStatus_ReportsLimitExceeded,
 	InputCompletionStatus_CycleLimitExceeded,
 	InputCompletionStatus_TimeLimitExceeded,
 	InputCompletionStatus_PayloadLengthLimitExceeded,
@@ -846,6 +849,10 @@ func (e *InputCompletionStatus) Scan(value any) error {
 		*e = InputCompletionStatus_Exception
 	case "MACHINE_HALTED":
 		*e = InputCompletionStatus_MachineHalted
+	case "OUTPUTS_LIMIT_EXCEEDED":
+		*e = InputCompletionStatus_OutputsLimitExceeded
+	case "REPORTS_LIMIT_EXCEEDED":
+		*e = InputCompletionStatus_ReportsLimitExceeded
 	case "CYCLE_LIMIT_EXCEEDED":
 		*e = InputCompletionStatus_CycleLimitExceeded
 	case "TIME_LIMIT_EXCEEDED":

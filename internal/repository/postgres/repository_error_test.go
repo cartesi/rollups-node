@@ -39,7 +39,7 @@ func TestNewPostgresRepository_ContextCancelledDuringRetry(t *testing.T) {
 	_, err := postgres.NewPostgresRepository(
 		ctx,
 		"postgres://user:pass@localhost:1/testdb?connect_timeout=1",
-		100,           // many retries — we won't exhaust them
+		100,            // many retries — we won't exhaust them
 		10*time.Second, // long delay — context expires before this elapses
 	)
 	require.Error(t, err)

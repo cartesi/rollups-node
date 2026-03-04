@@ -140,7 +140,6 @@ func (e *LibCartesiBackend) GetProof(address uint64, log2size int32, timeout tim
 	proof := &proofJson{}
 	err = json.Unmarshal([]byte(jsonMessage), proof)
 	if err != nil {
-		println("Failed to unmarshal proof JSON:", err.Error())
 		return nil, fmt.Errorf("failed to unmarshal proof JSON: %w", err)
 	}
 	return proof.Siblings, nil

@@ -737,6 +737,8 @@ func toInputStatus(accepted bool, err error) (status InputCompletionStatus, _ er
 		return InputCompletionStatus_MachineHalted, nil
 	case errors.Is(err, machine.ErrOutputsLimitExceeded):
 		return InputCompletionStatus_OutputsLimitExceeded, nil
+	case errors.Is(err, machine.ErrReportsLimitExceeded):
+		return InputCompletionStatus_ReportsLimitExceeded, nil
 	case errors.Is(err, machine.ErrReachedTargetMcycle):
 		return InputCompletionStatus_CycleLimitExceeded, nil
 	case errors.Is(err, machine.ErrPayloadLengthLimitExceeded):

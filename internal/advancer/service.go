@@ -99,7 +99,7 @@ func (s *Service) Tick() []error {
 	if err := s.Step(s.Context); err != nil {
 		return []error{err}
 	}
-	return []error{}
+	return nil
 }
 func (s *Service) Stop(b bool) []error {
 	var errs []error
@@ -130,7 +130,8 @@ func (s *Service) Serve() error {
 	if s.inspector != nil && s.HTTPServerFunc != nil {
 		go func() {
 			if err := s.HTTPServerFunc(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				s.Logger.Error("Inspect HTTP server failed", "error", err)
+				s.Logger.Error("Inspect HTTP server failed — shutting down", "error", err)
+				s.Cancel()
 			}
 		}()
 	}

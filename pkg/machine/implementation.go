@@ -44,8 +44,9 @@ const (
 	ManualYieldReasonException manualYieldReason = 0x4
 )
 
-// Constants
+// Limits for outputs and reports per input
 const maxOutputs = 65536 // 2^16
+const maxReports = 65536 // 2^16
 
 const CheckpointAddress uint64 = 0x7ffff000
 const TxBufferAddress uint64 = 0x60800000
@@ -364,8 +365,8 @@ func (m *machineImpl) run(ctx context.Context, reqType requestType, computeHashe
 		"limitCycle", limitCycle,
 		"leftover", limitCycle-currentCycle)
 
-	outputs := []Output{}
-	reports := []Report{}
+	outputs := make([]Output, 0, 16) //nolint:mnd
+	reports := make([]Report, 0, 16) //nolint:mnd
 
 	var hashCollectorState *HashCollectorState
 	if computeHashes {
@@ -441,6 +442,9 @@ func (m *machineImpl) run(ctx context.Context, reqType requestType, computeHashe
 			}
 			outputs = append(outputs, data)
 		case AutomaticYieldReasonReport:
+			if len(reports) == maxReports {
+				return outputs, reports, hashes(), remainingMetaCycles(), ErrReportsLimitExceeded
+			}
 			reports = append(reports, data)
 		default:
 			err := fmt.Errorf("invalid automatic yield reason: %d: %w", yieldReason, ErrMachineInternal)

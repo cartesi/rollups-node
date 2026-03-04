@@ -275,6 +275,10 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			machine.ErrOutputsLimitExceeded,
 			model.InputCompletionStatus_OutputsLimitExceeded)
 
+		testSoftError("ReportsLimit",
+			machine.ErrReportsLimitExceeded,
+			model.InputCompletionStatus_ReportsLimitExceeded)
+
 		testSoftError("ReachedTargetMcycle",
 			machine.ErrReachedTargetMcycle,
 			model.InputCompletionStatus_CycleLimitExceeded)

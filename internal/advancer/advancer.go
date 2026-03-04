@@ -175,6 +175,7 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 
 		// Advance the machine with this input
 		result, err := machine.Advance(ctx, input.RawData, input.EpochIndex, input.Index, app.IsDaveConsensus())
+		input.RawData = nil // allow GC to collect payload while batch continues
 		if err != nil {
 			// If there's an error, mark the application as inoperable
 			s.Logger.Error("Error executing advance",

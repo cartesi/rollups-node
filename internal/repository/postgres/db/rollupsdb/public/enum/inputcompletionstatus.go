@@ -16,6 +16,7 @@ var InputCompletionStatus = &struct {
 	Exception                  postgres.StringExpression
 	MachineHalted              postgres.StringExpression
 	OutputsLimitExceeded       postgres.StringExpression
+	ReportsLimitExceeded       postgres.StringExpression
 	CycleLimitExceeded         postgres.StringExpression
 	TimeLimitExceeded          postgres.StringExpression
 	PayloadLengthLimitExceeded postgres.StringExpression
@@ -26,6 +27,7 @@ var InputCompletionStatus = &struct {
 	Exception:                  postgres.NewEnumValue("EXCEPTION"),
 	MachineHalted:              postgres.NewEnumValue("MACHINE_HALTED"),
 	OutputsLimitExceeded:       postgres.NewEnumValue("OUTPUTS_LIMIT_EXCEEDED"),
+	ReportsLimitExceeded:       postgres.NewEnumValue("REPORTS_LIMIT_EXCEEDED"),
 	CycleLimitExceeded:         postgres.NewEnumValue("CYCLE_LIMIT_EXCEEDED"),
 	TimeLimitExceeded:          postgres.NewEnumValue("TIME_LIMIT_EXCEEDED"),
 	PayloadLengthLimitExceeded: postgres.NewEnumValue("PAYLOAD_LENGTH_LIMIT_EXCEEDED"),

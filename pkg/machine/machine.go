@@ -48,6 +48,7 @@ var (
 	ErrRejected                   = errors.New("last request yielded as rejected")
 	ErrHalted                     = errors.New("machine halted")
 	ErrOutputsLimitExceeded       = errors.New("outputs limit exceeded")
+	ErrReportsLimitExceeded       = errors.New("reports limit exceeded")
 	ErrReachedTargetMcycle        = errors.New("machine reached target mcycle")
 	ErrPayloadLengthLimitExceeded = errors.New("payload length limit exceeded")
 	ErrHashLength                 = errors.New("hash does not have the exactly number of bytes")
