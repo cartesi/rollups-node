@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -41,15 +40,39 @@ func (s *PMutexSuite) TestSingleLLock() {
 }
 
 func (s *PMutexSuite) TestContestedHLock() {
-	require := s.Require()
 	s.mutex.LLock()
-	never(require, func() bool { s.mutex.HLock(); return true })
+	acquired := make(chan struct{})
+	go func() {
+		s.mutex.HLock()
+		close(acquired)
+	}()
+	select {
+	case <-acquired:
+		s.Fail("HLock should not be acquired while LLock is held")
+	case <-time.After(decisecond):
+		// Expected: HLock is blocked.
+	}
+	// Clean up: unlock so the goroutine can finish.
+	s.mutex.Unlock()
+	<-acquired
 }
 
 func (s *PMutexSuite) TestContestedLLock() {
-	require := s.Require()
 	s.mutex.HLock()
-	never(require, func() bool { s.mutex.LLock(); return true })
+	acquired := make(chan struct{})
+	go func() {
+		s.mutex.LLock()
+		close(acquired)
+	}()
+	select {
+	case <-acquired:
+		s.Fail("LLock should not be acquired while HLock is held")
+	case <-time.After(decisecond):
+		// Expected: LLock is blocked.
+	}
+	// Clean up: unlock so the goroutine can finish.
+	s.mutex.Unlock()
+	<-acquired
 }
 
 func (s *PMutexSuite) TestPriority() {
@@ -105,11 +128,4 @@ func (s *PMutexSuite) TestPriority() {
 
 // ------------------------------------------------------------------------------------------------
 
-const (
-	centisecond = 10 * time.Millisecond
-	decisecond  = 100 * time.Millisecond
-)
-
-func never(require *require.Assertions, f func() bool) {
-	require.Never(f, decisecond, centisecond)
-}
+const decisecond = 100 * time.Millisecond
