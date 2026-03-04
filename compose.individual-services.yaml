@@ -71,6 +71,7 @@ services:
 
   advancer:
     image: cartesi/rollups-node:devel
+    init: true
     command: cartesi-rollups-advancer
     depends_on:
       database:

@@ -40,6 +40,7 @@ services:
 
   unit-test:
     image: cartesi/rollups-node:tester
+    init: true
     profiles: [unit-test]
     entrypoint: ["sh", "-c"]
     command: |
