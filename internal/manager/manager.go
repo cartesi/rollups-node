@@ -37,6 +37,7 @@ type MachineRepository interface {
 type MachineManager struct {
 	mutex          sync.RWMutex
 	machines       map[int64]MachineInstance
+	closed         bool
 	repository     MachineRepository
 	checkHash      bool
 	inputBatchSize uint64
@@ -80,7 +81,6 @@ func (m *MachineManager) UpdateMachines(ctx context.Context) error {
 
 		// Check if we have a snapshot to load from
 		var instance MachineInstance
-		var err error
 
 		// Find the latest snapshot for this application
 		snapshot, err := m.repository.GetLastSnapshot(ctx, app.IApplicationAddress.String())
@@ -125,7 +125,7 @@ func (m *MachineManager) UpdateMachines(ctx context.Context) error {
 			instance, err = NewMachineInstance(ctx, app, m.logger, m.checkHash)
 			if err != nil {
 				m.logger.Error("Failed to create machine instance",
-					"application", app.IApplicationAddress,
+					"application", app.IApplicationAddress.String(),
 					"error", err)
 				continue
 			}
@@ -178,10 +178,15 @@ func (m *MachineManager) HasMachine(appID int64) bool {
 	return exists
 }
 
-// AddMachine adds a machine to the manager
+// addMachine adds a machine to the manager.
+// Returns false if the manager is closed or the appID already exists.
 func (m *MachineManager) addMachine(appID int64, machine MachineInstance) bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
+
+	if m.closed {
+		return false
+	}
 
 	if _, exists := m.machines[appID]; exists {
 		return false
@@ -209,7 +214,7 @@ func (m *MachineManager) removeMachines(apps []*Application) {
 				m.logger.Info("Application was disabled, shutting down machine",
 					"application", machine.Application().Name)
 			}
-			if err := machine.Close(); err != nil {
+			if err := machine.Close(); err != nil && m.logger != nil {
 				m.logger.Warn("Failed to close machine for disabled application",
 					"application", machine.Application().Name, "error", err)
 			}
@@ -231,9 +236,16 @@ func (m *MachineManager) Applications() []*Application {
 }
 
 // Close shuts down all machine instances in parallel.
+// After Close returns, no new machines can be added.
 func (m *MachineManager) Close() error {
+	// Mark as closed and take ownership of the machines map under the lock,
+	// then release it so readers (GetMachine, HasMachine, Applications)
+	// aren't blocked during the potentially slow parallel shutdown.
 	m.mutex.Lock()
-	defer m.mutex.Unlock()
+	m.closed = true
+	machines := m.machines
+	m.machines = make(map[int64]MachineInstance)
+	m.mutex.Unlock()
 
 	type closeResult struct {
 		id  int64
@@ -241,9 +253,9 @@ func (m *MachineManager) Close() error {
 	}
 
 	var wg sync.WaitGroup
-	results := make(chan closeResult, len(m.machines))
+	results := make(chan closeResult, len(machines))
 
-	for id, machine := range m.machines {
+	for id, machine := range machines {
 		wg.Go(func() {
 			results <- closeResult{id: id, err: machine.Close()}
 		})
@@ -258,7 +270,6 @@ func (m *MachineManager) Close() error {
 			errs = append(errs, fmt.Errorf("failed to close machine for app %d: %w", r.id, r.err))
 		}
 	}
-	clear(m.machines)
 
 	return errors.Join(errs...)
 }

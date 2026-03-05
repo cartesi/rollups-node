@@ -190,6 +190,14 @@ func (s *MachineManagerSuite) TestAddMachine() {
 	added = manager.addMachine(1, machine1)
 	require.False(added)
 	require.Len(manager.machines, 2)
+
+	// Close the manager and try to add a new machine
+	err := manager.Close()
+	require.NoError(err)
+
+	machine3 := &DummyMachineInstanceMock{application: &model.Application{ID: 3}}
+	added = manager.addMachine(3, machine3)
+	require.False(added, "addMachine must reject additions after Close")
 }
 
 func (s *MachineManagerSuite) TestRemoveDisabledMachines() {
