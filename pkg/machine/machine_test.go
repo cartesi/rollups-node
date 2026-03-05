@@ -115,6 +115,25 @@ func (s *MachineSuite) TestLoad() {
 	require.ErrorIs(err, ErrNotAtManualYield)
 	mockBackend.AssertExpectations(s.T())
 
+	// Test with IsAtManualYield returning error
+	mockBackend = NewMockBackend()
+	mockBackend.On("NewMachineRuntimeConfig").Return(`{"concurrency":{"update_merkle_tree":1}}`, nil)
+	mockBackend.On("Load",
+		mock.AnythingOfType("string"),
+		mock.AnythingOfType("string"),
+		mock.AnythingOfType("time.Duration"),
+	).Return(nil).Once()
+	mockBackend.On("IsAtManualYield", mock.AnythingOfType("time.Duration")).Return(false, errors.New("yield check failed"))
+	mockBackend.SetupForCleanup()
+	config = DefaultConfig("some/path")
+	config.BackendFactoryFn = MockBackendFactory(mockBackend)
+	machine, err = Load(ctx, s.logger, config)
+	require.Error(err)
+	require.Nil(machine)
+	require.ErrorIs(err, ErrMachineInternal)
+	require.Contains(err.Error(), "yield check failed")
+	mockBackend.AssertExpectations(s.T())
+
 	// Test with machine last request not accepted
 	mockBackend = NewMockBackend()
 	mockBackend.On("NewMachineRuntimeConfig").Return(`{"concurrency":{"update_merkle_tree":1}}`, nil)

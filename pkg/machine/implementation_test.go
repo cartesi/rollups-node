@@ -201,6 +201,100 @@ func (s *ImplementationSuite) TestOutputsHash() {
 	mockBackend4.AssertExpectations(s.T())
 }
 
+// Test OutputsHashProof method
+func (s *ImplementationSuite) TestOutputsHashProof() {
+	require := s.Require()
+	ctx := context.Background()
+
+	// Test successful outputs hash proof retrieval
+	mockBackend := NewMockBackend()
+	expectedProof := []Hash{randomFakeHash(), randomFakeHash(), randomFakeHash()}
+	mockBackend.On("GetProof", TxBufferAddress, int32(HashLog2Size), mock.AnythingOfType("time.Duration")).
+		Return(expectedProof, nil)
+
+	machine := &machineImpl{
+		backend: mockBackend,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			LoadDeadline: time.Second * 5,
+		},
+	}
+
+	proof, err := machine.OutputsHashProof(ctx)
+	require.NoError(err)
+	require.Equal(expectedProof, proof)
+	mockBackend.AssertExpectations(s.T())
+
+	// Test outputs hash proof with backend error
+	mockBackend2 := NewMockBackend()
+	mockBackend2.On("GetProof", TxBufferAddress, int32(HashLog2Size), mock.AnythingOfType("time.Duration")).
+		Return([]Hash(nil), errors.New("proof failed"))
+	machine2 := &machineImpl{
+		backend: mockBackend2,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			LoadDeadline: time.Second * 5,
+		},
+	}
+	_, err = machine2.OutputsHashProof(ctx)
+	require.Error(err)
+	require.ErrorIs(err, ErrMachineInternal)
+	require.Contains(err.Error(), "could not get outputs hash machine proof")
+	mockBackend2.AssertExpectations(s.T())
+
+	// Test outputs hash proof with canceled context
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = machine.OutputsHashProof(canceledCtx)
+	require.ErrorIs(err, ErrCanceled)
+}
+
+// Test WriteCheckpointHash method
+func (s *ImplementationSuite) TestWriteCheckpointHash() {
+	require := s.Require()
+	ctx := context.Background()
+
+	// Test successful write
+	mockBackend := NewMockBackend()
+	hash := randomFakeHash()
+	mockBackend.On("WriteMemory", CheckpointAddress, hash[:], mock.AnythingOfType("time.Duration")).
+		Return(nil)
+	machine := &machineImpl{
+		backend: mockBackend,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline: time.Second * 5,
+		},
+	}
+
+	err := machine.WriteCheckpointHash(ctx, hash)
+	require.NoError(err)
+	mockBackend.AssertExpectations(s.T())
+
+	// Test write with backend error
+	mockBackend2 := NewMockBackend()
+	mockBackend2.On("WriteMemory", CheckpointAddress, hash[:], mock.AnythingOfType("time.Duration")).
+		Return(errors.New("write failed"))
+	machine2 := &machineImpl{
+		backend: mockBackend2,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline: time.Second * 5,
+		},
+	}
+	err = machine2.WriteCheckpointHash(ctx, hash)
+	require.Error(err)
+	require.ErrorIs(err, ErrMachineInternal)
+	require.Contains(err.Error(), "could not write checkpoint hash")
+	mockBackend2.AssertExpectations(s.T())
+
+	// Test write with canceled context
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	err = machine.WriteCheckpointHash(canceledCtx, hash)
+	require.ErrorIs(err, ErrCanceled)
+}
+
 // Test Advance method
 func (s *ImplementationSuite) TestAdvance() {
 	require := s.Require()
@@ -704,6 +798,89 @@ func (s *ImplementationSuite) TestRun() {
 	_, _, _, _, err = machine3.run(ctx, AdvanceStateRequest, false)
 	require.NoError(err)
 	mockBackend3.AssertExpectations(s.T())
+
+	// Test run with ReceiveCmioRequest error during automatic yield
+	mockBackend4 := NewMockBackend()
+	mockBackend4.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
+	mockBackend4.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedAutomatically, nil)
+	mockBackend4.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
+		uint8(0), uint16(0), []byte(nil), errors.New("cmio request failed"))
+
+	machine4 := &machineImpl{
+		backend: mockBackend4,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline:       time.Second * 5,
+			AdvanceMaxCycles:   1000,
+			AdvanceIncCycles:   100,
+			AdvanceIncDeadline: time.Second * 1,
+			AdvanceMaxDeadline: time.Second * 10,
+		},
+	}
+
+	_, _, _, _, err = machine4.run(ctx, AdvanceStateRequest, false)
+	require.Error(err)
+	require.Contains(err.Error(), "could not read output/report")
+	require.Contains(err.Error(), "cmio request failed")
+	mockBackend4.AssertExpectations(s.T())
+
+	// Test run with automatic yield producing output then manual yield
+	mockBackend5 := NewMockBackend()
+	mockBackend5.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
+	mockBackend5.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).
+		Return(YieldedAutomatically, nil).Once()
+	mockBackend5.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).
+		Return(YieldedManually, nil).Once()
+	mockBackend5.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
+		uint8(0), uint16(AutomaticYieldReasonOutput), []byte("output data"), nil).Once()
+
+	machine5 := &machineImpl{
+		backend: mockBackend5,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline:       time.Second * 5,
+			AdvanceMaxCycles:   1000,
+			AdvanceIncCycles:   100,
+			AdvanceIncDeadline: time.Second * 1,
+			AdvanceMaxDeadline: time.Second * 10,
+		},
+	}
+
+	outputs5, reports5, _, _, err := machine5.run(ctx, AdvanceStateRequest, false)
+	require.NoError(err)
+	require.Len(outputs5, 1)
+	require.Equal([]byte("output data"), []byte(outputs5[0]))
+	require.Empty(reports5)
+	mockBackend5.AssertExpectations(s.T())
+
+	// Test run with automatic yield producing report then manual yield
+	mockBackend6 := NewMockBackend()
+	mockBackend6.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
+	mockBackend6.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).
+		Return(YieldedAutomatically, nil).Once()
+	mockBackend6.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).
+		Return(YieldedManually, nil).Once()
+	mockBackend6.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
+		uint8(0), uint16(AutomaticYieldReasonReport), []byte("report data"), nil).Once()
+
+	machine6 := &machineImpl{
+		backend: mockBackend6,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline:       time.Second * 5,
+			AdvanceMaxCycles:   1000,
+			AdvanceIncCycles:   100,
+			AdvanceIncDeadline: time.Second * 1,
+			AdvanceMaxDeadline: time.Second * 10,
+		},
+	}
+
+	outputs6, reports6, _, _, err := machine6.run(ctx, AdvanceStateRequest, false)
+	require.NoError(err)
+	require.Empty(outputs6)
+	require.Len(reports6, 1)
+	require.Equal([]byte("report data"), []byte(reports6[0]))
+	mockBackend6.AssertExpectations(s.T())
 
 }
 
