@@ -13,6 +13,7 @@ import (
 
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 var (
@@ -33,32 +34,70 @@ type MachineRepository interface {
 	GetLastSnapshot(ctx context.Context, nameOrAddress string) (*Input, error)
 }
 
-// MachineManager manages the lifecycle of machine instances for applications
-type MachineManager struct {
-	mutex          sync.RWMutex
-	machines       map[int64]MachineInstance
-	closed         bool
-	repository     MachineRepository
-	checkHash      bool
-	inputBatchSize uint64
-	logger         *slog.Logger
+// MachineInstanceFactory creates MachineInstance values from applications.
+// Implementations decide whether to load from a template or snapshot.
+type MachineInstanceFactory interface {
+	NewFromTemplate(ctx context.Context, app *Application, logger *slog.Logger, checkHash bool) (MachineInstance, error)
+	NewFromSnapshot(ctx context.Context, app *Application, logger *slog.Logger, checkHash bool,
+		snapshotPath string, machineHash *common.Hash, inputIndex uint64) (MachineInstance, error)
 }
 
-// NewMachineManager creates a new machine manager
+// DefaultMachineInstanceFactory delegates to NewMachineInstance / NewMachineInstanceFromSnapshot.
+type DefaultMachineInstanceFactory struct{}
+
+func (f *DefaultMachineInstanceFactory) NewFromTemplate(
+	ctx context.Context, app *Application, logger *slog.Logger, checkHash bool,
+) (MachineInstance, error) {
+	return NewMachineInstance(ctx, app, logger, checkHash)
+}
+
+func (f *DefaultMachineInstanceFactory) NewFromSnapshot(
+	ctx context.Context, app *Application, logger *slog.Logger, checkHash bool,
+	snapshotPath string, machineHash *common.Hash, inputIndex uint64,
+) (MachineInstance, error) {
+	return NewMachineInstanceFromSnapshot(ctx, app, logger, checkHash, snapshotPath, machineHash, inputIndex)
+}
+
+// MachineManager manages the lifecycle of machine instances for applications
+type MachineManager struct {
+	mutex           sync.RWMutex
+	machines        map[int64]MachineInstance
+	closed          bool
+	repository      MachineRepository
+	checkHash       bool
+	inputBatchSize  uint64
+	logger          *slog.Logger
+	instanceFactory MachineInstanceFactory
+}
+
+// Option configures a MachineManager.
+type Option func(*MachineManager)
+
+// WithInstanceFactory overrides the default MachineInstanceFactory.
+func WithInstanceFactory(f MachineInstanceFactory) Option {
+	return func(m *MachineManager) { m.instanceFactory = f }
+}
+
+// NewMachineManager creates a new machine manager.
 func NewMachineManager(
-	ctx context.Context,
 	repo MachineRepository,
 	logger *slog.Logger,
 	checkHash bool,
 	inputBatchSize uint64,
+	opts ...Option,
 ) *MachineManager {
-	return &MachineManager{
-		machines:       map[int64]MachineInstance{},
-		repository:     repo,
-		checkHash:      checkHash,
-		inputBatchSize: inputBatchSize,
-		logger:         logger,
+	m := &MachineManager{
+		machines:        map[int64]MachineInstance{},
+		repository:      repo,
+		checkHash:       checkHash,
+		inputBatchSize:  inputBatchSize,
+		logger:          logger,
+		instanceFactory: &DefaultMachineInstanceFactory{},
 	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
 }
 
 // UpdateMachines refreshes the list of machines based on enabled applications
@@ -77,7 +116,7 @@ func (m *MachineManager) UpdateMachines(ctx context.Context) error {
 
 		m.logger.Info("Creating new machine instance",
 			"application", app.Name,
-			"address", app.IApplicationAddress.String())
+			"address", app.IApplicationAddress)
 
 		// Check if we have a snapshot to load from
 		var instance MachineInstance
@@ -98,7 +137,7 @@ func (m *MachineManager) UpdateMachines(ctx context.Context) error {
 					"application", app.Name,
 					"snapshot", *snapshot.SnapshotURI)
 
-				instance, err = NewMachineInstanceFromSnapshot(
+				instance, err = m.instanceFactory.NewFromSnapshot(
 					ctx, app, m.logger, m.checkHash,
 					*snapshot.SnapshotURI, snapshot.MachineHash, snapshot.Index)
 				if err != nil {
@@ -122,10 +161,10 @@ func (m *MachineManager) UpdateMachines(ctx context.Context) error {
 
 		// Fall back to template if snapshot loading failed or was unavailable
 		if instance == nil {
-			instance, err = NewMachineInstance(ctx, app, m.logger, m.checkHash)
+			instance, err = m.instanceFactory.NewFromTemplate(ctx, app, m.logger, m.checkHash)
 			if err != nil {
 				m.logger.Error("Failed to create machine instance",
-					"application", app.IApplicationAddress.String(),
+					"application", app.IApplicationAddress,
 					"error", err)
 				continue
 			}

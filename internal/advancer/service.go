@@ -67,7 +67,6 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 
 	// Create the machine manager
 	manager := manager.NewMachineManager(
-		ctx,
 		c.Repository,
 		s.Logger,
 		c.Config.FeatureMachineHashCheckEnabled,

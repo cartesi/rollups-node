@@ -29,7 +29,7 @@ func (s *MachineManagerSuite) TestNewMachineManager() {
 	require := s.Require()
 	repo := &MockMachineRepository{}
 	testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	manager := NewMachineManager(context.Background(), repo, testLogger, false, 500)
+	manager := NewMachineManager(repo, testLogger, false, 500)
 	require.NotNil(manager)
 	require.Empty(manager.machines)
 	require.Equal(repo, manager.repository)
@@ -64,25 +64,15 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 		repo.On("GetLastSnapshot", mock.Anything, mock.Anything).
 			Return(nil, nil)
 
-		// Create manager with a test logger
+		// Create manager with a mock instance factory
 		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		manager := NewMachineManager(context.Background(), repo, testLogger, false, 500)
+		mockInstance := &DummyMachineInstanceMock{application: app1}
+		factory := &MockMachineInstanceFactory{Instance: mockInstance}
+		manager := NewMachineManager(repo, testLogger, false, 500, WithInstanceFactory(factory))
 
-		// Create a mock factory for testing
-		mockRuntime := &MockRollupsMachine{}
-		mockFactory := &MockMachineRuntimeFactory{
-			RuntimeToReturn: mockRuntime,
-			ErrorToReturn:   nil,
-		}
-
-		// Replace the default factory with our mock
-		originalFactory := defaultFactory
-		defaultFactory = mockFactory
-		defer func() { defaultFactory = originalFactory }()
-
-		// This test should now succeed with our mock
 		err := manager.UpdateMachines(context.Background())
 		require.NoError(err)
+		require.True(manager.HasMachine(1))
 
 		repo.AssertCalled(s.T(), "ListApplications", mock.Anything, mock.Anything, mock.Anything, false)
 	})
@@ -97,7 +87,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 
 		// Create a test logger
 		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		manager := NewMachineManager(context.Background(), repo, testLogger, false, 500)
+		manager := NewMachineManager(repo, testLogger, false, 500)
 
 		// Add mock machines
 		app1 := &model.Application{ID: 1, Name: "App1"}
@@ -130,7 +120,7 @@ func (s *MachineManagerSuite) TestGetMachine() {
 	repo.On("GetLastSnapshot", mock.Anything, mock.Anything).
 		Return(nil, nil)
 
-	manager := NewMachineManager(context.Background(), repo, nil, false, 500)
+	manager := NewMachineManager(repo, nil, false, 500)
 	machine := &DummyMachineInstanceMock{application: &model.Application{ID: 1}}
 
 	// Add a machine
@@ -153,7 +143,7 @@ func (s *MachineManagerSuite) TestHasMachine() {
 	repo.On("GetLastSnapshot", mock.Anything, mock.Anything).
 		Return(nil, nil)
 
-	manager := NewMachineManager(context.Background(), repo, nil, false, 500)
+	manager := NewMachineManager(repo, nil, false, 500)
 	machine := &DummyMachineInstanceMock{application: &model.Application{ID: 1}}
 
 	// Add a machine
@@ -173,7 +163,7 @@ func (s *MachineManagerSuite) TestAddMachine() {
 	repo.On("GetLastSnapshot", mock.Anything, mock.Anything).
 		Return(nil, nil)
 
-	manager := NewMachineManager(context.Background(), repo, nil, false, 500)
+	manager := NewMachineManager(repo, nil, false, 500)
 	machine1 := &DummyMachineInstanceMock{application: &model.Application{ID: 1}}
 	machine2 := &DummyMachineInstanceMock{application: &model.Application{ID: 2}}
 
@@ -204,7 +194,7 @@ func (s *MachineManagerSuite) TestAddMachine() {
 func (s *MachineManagerSuite) TestRemoveDisabledMachines() {
 	require := s.Require()
 
-	manager := NewMachineManager(context.Background(), nil, nil, false, 500)
+	manager := NewMachineManager(nil, nil, false, 500)
 
 	// Add machines
 	app1 := &model.Application{ID: 1}
@@ -238,7 +228,7 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 			Return(([]*model.Application)(nil), uint64(0), errors.New("db error"))
 
 		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		manager := NewMachineManager(context.Background(), repo, testLogger, false, 500)
+		manager := NewMachineManager(repo, testLogger, false, 500)
 
 		err := manager.UpdateMachines(context.Background())
 		require.Error(err)
@@ -275,23 +265,14 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 		repo.On("ListInputs", mock.Anything, mock.Anything, mock.Anything, mock.Anything, false).
 			Return([]*model.Input{}, uint64(0), nil)
 
+		// The snapshot path doesn't exist, so it should fall back to template
 		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		manager := NewMachineManager(context.Background(), repo, testLogger, false, 500)
-
-		// Mock factory that always succeeds — the snapshot path doesn't exist,
-		// so it should fall back to template via defaultFactory
-		mockRuntime := &MockRollupsMachine{}
-		mockFactory := &MockMachineRuntimeFactory{
-			RuntimeToReturn: mockRuntime,
-			ErrorToReturn:   nil,
-		}
-		originalFactory := defaultFactory
-		defaultFactory = mockFactory
-		defer func() { defaultFactory = originalFactory }()
+		mockInstance := &DummyMachineInstanceMock{application: app}
+		factory := &MockMachineInstanceFactory{Instance: mockInstance}
+		manager := NewMachineManager(repo, testLogger, false, 500, WithInstanceFactory(factory))
 
 		err := manager.UpdateMachines(context.Background())
 		require.NoError(err)
-		// Machine should have been created via fallback
 		require.True(manager.HasMachine(1))
 	})
 
@@ -317,16 +298,8 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 			Return(nil, nil)
 
 		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		manager := NewMachineManager(context.Background(), repo, testLogger, false, 500)
-
-		// Factory that always fails
-		mockFactory := &MockMachineRuntimeFactory{
-			RuntimeToReturn: nil,
-			ErrorToReturn:   errors.New("machine creation failed"),
-		}
-		originalFactory := defaultFactory
-		defaultFactory = mockFactory
-		defer func() { defaultFactory = originalFactory }()
+		factory := &MockMachineInstanceFactory{Err: errors.New("machine creation failed")}
+		manager := NewMachineManager(repo, testLogger, false, 500, WithInstanceFactory(factory))
 
 		err := manager.UpdateMachines(context.Background())
 		// UpdateMachines should not return an error; it logs and skips
@@ -355,22 +328,21 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 			Return([]*model.Application{app}, uint64(1), nil)
 		repo.On("GetLastSnapshot", mock.Anything, mock.Anything).
 			Return(nil, nil)
-		// ListInputs returns an error to cause Synchronize to fail
+		// ListInputs returns an error so the real Synchronize method propagates the failure.
 		repo.On("ListInputs", mock.Anything, mock.Anything, mock.Anything, mock.Anything, false).
 			Return(([]*model.Input)(nil), uint64(0), errors.New("db connection lost"))
 
 		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		manager := NewMachineManager(context.Background(), repo, testLogger, false, 500)
 
+		// Use a factory that builds a real MachineInstanceImpl (with a mock runtime)
+		// so that Synchronize actually runs and hits the repo.
 		mockRuntime := &MockRollupsMachine{}
-		mockRuntime.CloseError = nil
-		mockFactory := &MockMachineRuntimeFactory{
+		runtimeFactory := &MockMachineRuntimeFactory{
 			RuntimeToReturn: mockRuntime,
 			ErrorToReturn:   nil,
 		}
-		originalFactory := defaultFactory
-		defaultFactory = mockFactory
-		defer func() { defaultFactory = originalFactory }()
+		realFactory := &realMachineInstanceFactory{runtimeFactory: runtimeFactory}
+		manager := NewMachineManager(repo, testLogger, false, 500, WithInstanceFactory(realFactory))
 
 		err := manager.UpdateMachines(context.Background())
 		require.NoError(err)
@@ -382,7 +354,7 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 func (s *MachineManagerSuite) TestCloseAggregatesErrors() {
 	require := s.Require()
 
-	manager := NewMachineManager(context.Background(), nil, nil, false, 500)
+	manager := NewMachineManager(nil, nil, false, 500)
 
 	machine1 := &DummyMachineInstanceMock{application: &model.Application{ID: 1}}
 	machine2 := &DummyMachineInstanceMock{
@@ -411,7 +383,7 @@ func (s *MachineManagerSuite) TestApplications() {
 	repo.On("GetLastSnapshot", mock.Anything, mock.Anything).
 		Return(nil, nil)
 
-	manager := NewMachineManager(context.Background(), repo, nil, false, 500)
+	manager := NewMachineManager(repo, nil, false, 500)
 
 	// Add machines
 	app1 := &model.Application{ID: 1, Name: "App1"}
@@ -477,10 +449,54 @@ func (m *MockMachineRepository) GetLastSnapshot(
 
 // ------------------------------------------------------------------------------------------------
 
+// MockMachineInstanceFactory implements MachineInstanceFactory for testing.
+// It returns the same instance for every call, ignoring the app/path arguments.
+type MockMachineInstanceFactory struct {
+	Instance MachineInstance
+	Err      error
+}
+
+func (f *MockMachineInstanceFactory) NewFromTemplate(
+	_ context.Context, _ *model.Application, _ *slog.Logger, _ bool,
+) (MachineInstance, error) {
+	return f.Instance, f.Err
+}
+
+func (f *MockMachineInstanceFactory) NewFromSnapshot(
+	_ context.Context, _ *model.Application, _ *slog.Logger, _ bool,
+	_ string, _ *common.Hash, _ uint64,
+) (MachineInstance, error) {
+	return f.Instance, f.Err
+}
+
+// realMachineInstanceFactory builds real MachineInstanceImpl values using the
+// provided MachineRuntimeFactory. This lets tests exercise the real Synchronize
+// path while still mocking the machine runtime. Unlike MockMachineInstanceFactory,
+// snapshot path and hash are ignored — it always creates from the runtime factory.
+type realMachineInstanceFactory struct {
+	runtimeFactory MachineRuntimeFactory
+}
+
+func (f *realMachineInstanceFactory) NewFromTemplate(
+	ctx context.Context, app *model.Application, logger *slog.Logger, checkHash bool,
+) (MachineInstance, error) {
+	return NewMachineInstanceWithFactory(ctx, app, 0, logger, checkHash, f.runtimeFactory)
+}
+
+func (f *realMachineInstanceFactory) NewFromSnapshot(
+	ctx context.Context, app *model.Application, logger *slog.Logger, checkHash bool,
+	_ string, _ *common.Hash, inputIndex uint64,
+) (MachineInstance, error) {
+	return NewMachineInstanceWithFactory(ctx, app, inputIndex+1, logger, checkHash, f.runtimeFactory)
+}
+
+// ------------------------------------------------------------------------------------------------
+
 // DummyMachineInstanceMock implements the MachineInstance interface for testing
 type DummyMachineInstanceMock struct {
-	application *model.Application
-	closeError  error
+	application    *model.Application
+	closeError     error
+	synchronizeErr error
 }
 
 func (m *DummyMachineInstanceMock) Application() *model.Application {
@@ -504,7 +520,7 @@ func (m *DummyMachineInstanceMock) Inspect(_ context.Context, _ []byte) (*model.
 }
 
 func (m *DummyMachineInstanceMock) Synchronize(_ context.Context, _ MachineRepository, _ uint64) error {
-	return nil
+	return m.synchronizeErr
 }
 
 func (m *DummyMachineInstanceMock) CreateSnapshot(_ context.Context, _ uint64, _ string) error {

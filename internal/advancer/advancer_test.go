@@ -46,6 +46,27 @@ func newMockAdvancerService(machineManager *MockMachineManager, repo *MockReposi
 	return s, nil
 }
 
+// testEnv bundles the components most tests need: a service, a single app's mock,
+// the mock machine manager, and the mock repository.
+type testEnv struct {
+	service *Service
+	app     *MockMachineImpl
+	mm      *MockMachineManager
+	repo    *MockRepository
+}
+
+// setupOneApp creates a standard test environment with one application.
+// The repository is empty; callers can configure it after the call.
+func (s *AdvancerSuite) setupOneApp() testEnv {
+	mm := newMockMachineManager()
+	app := newMockMachine(1)
+	mm.Map[1] = newMockInstance(app)
+	repo := &MockRepository{}
+	svc, err := newMockAdvancerService(mm, repo)
+	s.Require().NoError(err)
+	return testEnv{service: svc, app: app, mm: mm, repo: repo}
+}
+
 func (s *AdvancerSuite) TestServiceInterface() {
 	s.Run("ServiceMethods", func() {
 		require := s.Require()
@@ -64,9 +85,9 @@ func (s *AdvancerSuite) TestServiceInterface() {
 		require.Equal(advancer.Name, advancer.String())
 
 		// Test Tick method
-		machineManager.Map[1] = *newMockMachine(1)
+		machineManager.Map[1] = newMockInstance(newMockMachine(1))
 		repository.GetEpochsReturn = map[common.Address][]*Epoch{
-			machineManager.Map[1].Application.IApplicationAddress: {},
+			machineManager.Map[1].application.IApplicationAddress: {},
 		}
 		tickErrors := advancer.Tick()
 		require.Empty(tickErrors)
@@ -86,8 +107,8 @@ func (s *AdvancerSuite) TestStep() {
 		machineManager := newMockMachineManager()
 		app1 := newMockMachine(1)
 		app2 := newMockMachine(2)
-		machineManager.Map[1] = *app1
-		machineManager.Map[2] = *app2
+		machineManager.Map[1] = newMockInstance(app1)
+		machineManager.Map[2] = newMockInstance(app2)
 		res0 := randomAdvanceResult(0)
 		res1 := randomAdvanceResult(1)
 		res2 := randomAdvanceResult(0)
@@ -124,31 +145,22 @@ func (s *AdvancerSuite) TestStep() {
 
 	s.Run("Error/UpdateEpochs", func() {
 		require := s.Require()
-
-		machineManager := newMockMachineManager()
-		app1 := newMockMachine(1)
-		machineManager.Map[1] = *app1
+		env := s.setupOneApp()
 		res0 := randomAdvanceResult(0)
 
-		repository := &MockRepository{
-			GetEpochsReturn: map[common.Address][]*Epoch{
-				app1.Application.IApplicationAddress: {
-					&Epoch{Index: 0, Status: EpochStatus_Closed},
-				},
+		env.repo.GetEpochsReturn = map[common.Address][]*Epoch{
+			env.app.Application.IApplicationAddress: {
+				{Index: 0, Status: EpochStatus_Closed},
 			},
-			GetInputsReturn: map[common.Address][]*Input{
-				app1.Application.IApplicationAddress: {
-					newInput(app1.Application.ID, 0, 0, marshal(res0)),
-				},
-			},
-			UpdateEpochsError: errors.New("update epochs error"),
 		}
+		env.repo.GetInputsReturn = map[common.Address][]*Input{
+			env.app.Application.IApplicationAddress: {
+				newInput(env.app.Application.ID, 0, 0, marshal(res0)),
+			},
+		}
+		env.repo.UpdateEpochsError = errors.New("update epochs error")
 
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.NotNil(advancer)
-		require.Nil(err)
-
-		err = advancer.Step(context.Background())
+		err := env.service.Step(context.Background())
 		require.Error(err)
 		require.Contains(err.Error(), "update epochs error")
 	})
@@ -157,7 +169,7 @@ func (s *AdvancerSuite) TestStep() {
 		require := s.Require()
 
 		machineManager := &MockMachineManager{
-			Map:                 map[int64]MockMachineImpl{},
+			Map:                 map[int64]*MockMachineInstance{},
 			UpdateMachinesError: errors.New("update machines error"),
 		}
 		repository := &MockRepository{}
@@ -173,49 +185,31 @@ func (s *AdvancerSuite) TestStep() {
 
 	s.Run("Error/GetInputs", func() {
 		require := s.Require()
+		env := s.setupOneApp()
 
-		machineManager := newMockMachineManager()
-		app1 := newMockMachine(1)
-		machineManager.Map[1] = *app1
-
-		repository := &MockRepository{
-			GetEpochsReturn: map[common.Address][]*Epoch{
-				app1.Application.IApplicationAddress: {
-					&Epoch{Index: 0, Status: EpochStatus_Closed},
-				},
+		env.repo.GetEpochsReturn = map[common.Address][]*Epoch{
+			env.app.Application.IApplicationAddress: {
+				{Index: 0, Status: EpochStatus_Closed},
 			},
-			GetInputsError: errors.New("get inputs error"),
 		}
+		env.repo.GetInputsError = errors.New("get inputs error")
 
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.NotNil(advancer)
-		require.Nil(err)
-
-		err = advancer.Step(context.Background())
+		err := env.service.Step(context.Background())
 		require.Error(err)
 		require.Contains(err.Error(), "get inputs error")
 	})
 
 	s.Run("NoInputs", func() {
 		require := s.Require()
+		env := s.setupOneApp()
 
-		machineManager := newMockMachineManager()
-		app1 := newMockMachine(1)
-		machineManager.Map[1] = *app1
-
-		repository := &MockRepository{
-			GetInputsReturn: map[common.Address][]*Input{
-				app1.Application.IApplicationAddress: {},
-			},
+		env.repo.GetInputsReturn = map[common.Address][]*Input{
+			env.app.Application.IApplicationAddress: {},
 		}
 
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.NotNil(advancer)
+		err := env.service.Step(context.Background())
 		require.Nil(err)
-
-		err = advancer.Step(context.Background())
-		require.Nil(err)
-		require.Len(repository.StoredResults, 0)
+		require.Len(env.repo.StoredResults, 0)
 	})
 }
 
@@ -258,77 +252,58 @@ func (s *AdvancerSuite) TestGetUnprocessedInputs() {
 }
 
 func (s *AdvancerSuite) TestProcess() {
-	setup := func() (*MockMachineManager, *MockRepository, *Service, *MockMachineImpl) {
-		require := s.Require()
-
-		machineManager := newMockMachineManager()
-		app1 := newMockMachine(1)
-		machineManager.Map[1] = *app1
-		repository := &MockRepository{}
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.Nil(err)
-		return machineManager, repository, advancer, app1
-	}
-
 	s.Run("ApplicationStateUpdate", func() {
 		require := s.Require()
-
-		_, repository, advancer, app := setup()
+		env := s.setupOneApp()
 		inputs := []*Input{
-			newInput(app.Application.ID, 0, 0, []byte("advance error")),
+			newInput(env.app.Application.ID, 0, 0, []byte("advance error")),
 		}
 
-		// Verify application state is updated on error
-		err := advancer.processInputs(context.Background(), app.Application, inputs)
+		err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 		require.Error(err)
-		require.Equal(1, repository.ApplicationStateUpdates)
-		require.Equal(ApplicationState_Inoperable, repository.LastApplicationState)
-		require.NotNil(repository.LastApplicationStateReason)
-		require.Equal("advance error", *repository.LastApplicationStateReason)
+		require.Equal(1, env.repo.ApplicationStateUpdates)
+		require.Equal(ApplicationState_Inoperable, env.repo.LastApplicationState)
+		require.NotNil(env.repo.LastApplicationStateReason)
+		require.Equal("advance error", *env.repo.LastApplicationStateReason)
 	})
 
 	s.Run("ApplicationStateUpdateError", func() {
 		require := s.Require()
-
-		_, repository, advancer, app := setup()
+		env := s.setupOneApp()
 		inputs := []*Input{
-			newInput(app.Application.ID, 0, 0, []byte("advance error")),
+			newInput(env.app.Application.ID, 0, 0, []byte("advance error")),
 		}
-		repository.UpdateApplicationStateError = errors.New("update state error")
+		env.repo.UpdateApplicationStateError = errors.New("update state error")
 
-		// Verify error is still returned even if application state update fails
-		err := advancer.processInputs(context.Background(), app.Application, inputs)
+		err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 		require.Error(err)
 		require.Contains(err.Error(), "advance error")
 	})
 
 	s.Run("Ok", func() {
 		require := s.Require()
-
-		_, repository, advancer, app := setup()
+		env := s.setupOneApp()
 		inputs := []*Input{
-			newInput(app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
-			newInput(app.Application.ID, 0, 1, marshal(randomAdvanceResult(1))),
-			newInput(app.Application.ID, 0, 2, marshal(randomAdvanceResult(2))),
-			newInput(app.Application.ID, 0, 3, marshal(randomAdvanceResult(3))),
-			newInput(app.Application.ID, 1, 4, marshal(randomAdvanceResult(4))),
-			newInput(app.Application.ID, 1, 5, marshal(randomAdvanceResult(5))),
-			newInput(app.Application.ID, 2, 6, marshal(randomAdvanceResult(6))),
+			newInput(env.app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+			newInput(env.app.Application.ID, 0, 1, marshal(randomAdvanceResult(1))),
+			newInput(env.app.Application.ID, 0, 2, marshal(randomAdvanceResult(2))),
+			newInput(env.app.Application.ID, 0, 3, marshal(randomAdvanceResult(3))),
+			newInput(env.app.Application.ID, 1, 4, marshal(randomAdvanceResult(4))),
+			newInput(env.app.Application.ID, 1, 5, marshal(randomAdvanceResult(5))),
+			newInput(env.app.Application.ID, 2, 6, marshal(randomAdvanceResult(6))),
 		}
 
-		err := advancer.processInputs(context.Background(), app.Application, inputs)
+		err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 		require.Nil(err)
-		require.Len(repository.StoredResults, 7)
+		require.Len(env.repo.StoredResults, 7)
 	})
 
 	s.Run("Noop", func() {
 		s.Run("NoInputs", func() {
 			require := s.Require()
+			env := s.setupOneApp()
 
-			_, _, advancer, app := setup()
-			inputs := []*Input{}
-
-			err := advancer.processInputs(context.Background(), app.Application, inputs)
+			err := env.service.processInputs(context.Background(), env.app.Application, []*Input{})
 			require.Nil(err)
 		})
 	})
@@ -336,49 +311,46 @@ func (s *AdvancerSuite) TestProcess() {
 	s.Run("Error", func() {
 		s.Run("ErrApp", func() {
 			require := s.Require()
-
+			env := s.setupOneApp()
 			invalidApp := Application{ID: 999}
-			_, _, advancer, _ := setup()
 			inputs := randomInputs(1, 0, 3)
 
-			err := advancer.processInputs(context.Background(), &invalidApp, inputs)
+			err := env.service.processInputs(context.Background(), &invalidApp, inputs)
 			expected := fmt.Sprintf("%v: %v", ErrNoApp, invalidApp.ID)
 			require.EqualError(err, expected)
 		})
 
 		s.Run("Advance", func() {
 			require := s.Require()
-
-			_, repository, advancer, app := setup()
+			env := s.setupOneApp()
 			inputs := []*Input{
-				newInput(app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
-				newInput(app.Application.ID, 0, 1, []byte("advance error")),
-				newInput(app.Application.ID, 0, 2, []byte("unreachable")),
+				newInput(env.app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+				newInput(env.app.Application.ID, 0, 1, []byte("advance error")),
+				newInput(env.app.Application.ID, 0, 2, []byte("unreachable")),
 			}
 
-			err := advancer.processInputs(context.Background(), app.Application, inputs)
+			err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 			require.Error(err)
 			require.Contains(err.Error(), "advance error")
-			require.Len(repository.StoredResults, 1)
+			require.Len(env.repo.StoredResults, 1)
 		})
 
 		s.Run("StoreAdvance", func() {
 			require := s.Require()
-
-			_, repository, advancer, app := setup()
+			env := s.setupOneApp()
 			inputs := []*Input{
-				newInput(app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
-				newInput(app.Application.ID, 0, 1, []byte("unreachable")),
+				newInput(env.app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+				newInput(env.app.Application.ID, 0, 1, []byte("unreachable")),
 			}
-			repository.StoreAdvanceError = errors.New("store-advance error")
+			env.repo.StoreAdvanceError = errors.New("store-advance error")
 
-			err := advancer.processInputs(context.Background(), app.Application, inputs)
+			err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 			require.Error(err)
 			require.Contains(err.Error(), "store-advance error")
-			require.Len(repository.StoredResults, 1)
+			require.Len(env.repo.StoredResults, 1)
 
 			// Verify that the node shutdown was triggered (context cancelled)
-			require.Error(advancer.Context.Err(), "shared context should be cancelled")
+			require.Error(env.service.Context.Err(), "shared context should be cancelled")
 		})
 	})
 }
@@ -387,27 +359,15 @@ func (s *AdvancerSuite) TestProcess() {
 func (s *AdvancerSuite) TestContextCancellation() {
 	s.Run("CancelDuringStep", func() {
 		require := s.Require()
+		env := s.setupOneApp()
+		env.repo.GetEpochsBlock = true
 
-		machineManager := newMockMachineManager()
-		app1 := newMockMachine(1)
-		machineManager.Map[1] = *app1
-
-		// Create a repository that will block until we cancel the context
-		repository := &MockRepository{
-			GetEpochsBlock: true,
-		}
-
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.NotNil(advancer)
-		require.Nil(err)
-
-		// Create a context that we can cancel
 		ctx, cancel := context.WithCancel(context.Background())
 
 		// Start the Step operation in a goroutine
 		errCh := make(chan error)
 		go func() {
-			errCh <- advancer.Step(ctx)
+			errCh <- env.service.Step(ctx)
 		}()
 
 		// Cancel the context after a short delay
@@ -426,28 +386,17 @@ func (s *AdvancerSuite) TestContextCancellation() {
 
 	s.Run("CancelDuringProcessInputs", func() {
 		require := s.Require()
+		env := s.setupOneApp()
+		env.app.AdvanceBlock = true
 
-		machineManager := newMockMachineManager()
-		app1 := newMockMachine(1)
-		// Create a machine that will block during Advance until we cancel the context
-		app1.AdvanceBlock = true
-		machineManager.Map[1] = *app1
-
-		repository := &MockRepository{}
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.NotNil(advancer)
-		require.Nil(err)
-
-		// Create inputs and a context that we can cancel
 		inputs := []*Input{
-			newInput(app1.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+			newInput(env.app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 
-		// Start the processInputs operation in a goroutine
 		errCh := make(chan error)
 		go func() {
-			errCh <- advancer.processInputs(ctx, app1.Application, inputs)
+			errCh <- env.service.processInputs(ctx, env.app.Application, inputs)
 		}()
 
 		// Cancel the context after a short delay
@@ -469,28 +418,17 @@ func (s *AdvancerSuite) TestContextCancellation() {
 func (s *AdvancerSuite) TestLargeNumberOfInputs() {
 	s.Run("LargeNumberOfInputs", func() {
 		require := s.Require()
+		env := s.setupOneApp()
 
-		machineManager := newMockMachineManager()
-		app1 := newMockMachine(1)
-		machineManager.Map[1] = *app1
-		repository := &MockRepository{}
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.NotNil(advancer)
-		require.Nil(err)
-
-		// Create a large number of inputs
 		const inputCount = 10000
 		inputs := make([]*Input, inputCount)
 		for i := range inputCount {
-			inputs[i] = newInput(app1.Application.ID, 0, uint64(i), marshal(randomAdvanceResult(uint64(i))))
+			inputs[i] = newInput(env.app.Application.ID, 0, uint64(i), marshal(randomAdvanceResult(uint64(i))))
 		}
 
-		// Process the inputs
-		err = advancer.processInputs(context.Background(), app1.Application, inputs)
+		err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 		require.Nil(err)
-
-		// Verify all inputs were processed
-		require.Len(repository.StoredResults, inputCount)
+		require.Len(env.repo.StoredResults, inputCount)
 	})
 }
 
@@ -499,31 +437,17 @@ func (s *AdvancerSuite) TestLargeNumberOfInputs() {
 func (s *AdvancerSuite) TestErrorRecovery() {
 	s.Run("TransientStoreFailureTriggersShutdown", func() {
 		require := s.Require()
-
-		machineManager := newMockMachineManager()
-		app1 := newMockMachine(1)
-		machineManager.Map[1] = *app1
-
-		// Repository that fails on the first store attempt
-		repository := &MockRepository{
-			StoreAdvanceFailCount: 1,
-		}
-
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.NotNil(advancer)
-		require.Nil(err)
+		env := s.setupOneApp()
+		env.repo.StoreAdvanceFailCount = 1
 
 		inputs := []*Input{
-			newInput(app1.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+			newInput(env.app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
 		}
 
-		// The transient failure triggers node shutdown — no retry at this layer
-		err = advancer.processInputs(context.Background(), app1.Application, inputs)
+		err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 		require.Error(err)
 		require.Contains(err.Error(), "temporary failure")
-
-		// Verify that the node shutdown was triggered
-		require.Error(advancer.Context.Err(), "shared context should be cancelled")
+		require.Error(env.service.Context.Err(), "shared context should be cancelled")
 	})
 }
 
@@ -533,29 +457,16 @@ func (s *AdvancerSuite) TestErrorRecovery() {
 func (s *AdvancerSuite) TestContextCancelledBeforeProcessing() {
 	s.Run("ContextAlreadyCancelled", func() {
 		require := s.Require()
+		env := s.setupOneApp()
 
-		machineManager := newMockMachineManager()
-		app1 := newMockMachine(1)
-		machineManager.Map[1] = *app1
-
-		repository := &MockRepository{}
-
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.NotNil(advancer)
-		require.Nil(err)
-
-		// Cancel the context before calling processInputs to simulate
-		// an external shutdown already in progress.
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
 		inputs := []*Input{
-			newInput(app1.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+			newInput(env.app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
 		}
 
-		// With the context already cancelled, processInputs returns
-		// the context error immediately (before reaching advance).
-		err = advancer.processInputs(ctx, app1.Application, inputs)
+		err := env.service.processInputs(ctx, env.app.Application, inputs)
 		require.ErrorIs(err, context.Canceled)
 	})
 }
@@ -567,97 +478,46 @@ func (s *AdvancerSuite) TestContextCancelledBeforeProcessing() {
 func (s *AdvancerSuite) TestIsAllEpochInputsProcessed() {
 	s.Run("TrueWhenEpochHasNoInputs", func() {
 		require := s.Require()
+		env := s.setupOneApp()
 
-		machineManager := newMockMachineManager()
-		app := newMockMachine(1)
-		machineManager.Map[1] = *app
-		repository := &MockRepository{}
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.Nil(err)
-
-		// Epoch with no inputs (lower == upper)
-		epoch := &Epoch{
-			Index:               0,
-			InputIndexLowerBound: 5,
-			InputIndexUpperBound: 5,
-		}
-
-		result, perr := advancer.isAllEpochInputsProcessed(app.Application, epoch)
+		epoch := &Epoch{Index: 0, InputIndexLowerBound: 5, InputIndexUpperBound: 5}
+		result, perr := env.service.isAllEpochInputsProcessed(env.app.Application, epoch)
 		require.Nil(perr)
 		require.True(result)
 	})
 
 	s.Run("TrueWhenMachineProcessedAllInputs", func() {
 		require := s.Require()
+		env := s.setupOneApp()
+		env.mm.Map[1].machineImpl.processedInputs = 10
 
-		machineManager := newMockMachineManager()
-		app := newMockMachine(1)
-		machineManager.Map[1] = *app
-		repository := &MockRepository{}
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.Nil(err)
-
-		// Mock the machine to report ProcessedInputs = 10
-		machineManager.Map[1] = MockMachineImpl{
-			Application:     app.Application,
-			processedInputs: 10,
-		}
-
-		epoch := &Epoch{
-			Index:               0,
-			InputIndexLowerBound: 5,
-			InputIndexUpperBound: 10,
-		}
-
-		result, perr := advancer.isAllEpochInputsProcessed(app.Application, epoch)
+		epoch := &Epoch{Index: 0, InputIndexLowerBound: 5, InputIndexUpperBound: 10}
+		result, perr := env.service.isAllEpochInputsProcessed(env.app.Application, epoch)
 		require.Nil(perr)
 		require.True(result)
 	})
 
 	s.Run("FalseWhenMoreInputsExist", func() {
 		require := s.Require()
+		env := s.setupOneApp()
+		env.mm.Map[1].machineImpl.processedInputs = 7
 
-		machineManager := newMockMachineManager()
-		app := newMockMachine(1)
-		machineManager.Map[1] = *app
-		repository := &MockRepository{}
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.Nil(err)
-
-		// Mock the machine to report ProcessedInputs = 7 (not yet at upper bound)
-		machineManager.Map[1] = MockMachineImpl{
-			Application:     app.Application,
-			processedInputs: 7,
-		}
-
-		epoch := &Epoch{
-			Index:               0,
-			InputIndexLowerBound: 5,
-			InputIndexUpperBound: 10,
-		}
-
-		result, perr := advancer.isAllEpochInputsProcessed(app.Application, epoch)
+		epoch := &Epoch{Index: 0, InputIndexLowerBound: 5, InputIndexUpperBound: 10}
+		result, perr := env.service.isAllEpochInputsProcessed(env.app.Application, epoch)
 		require.Nil(perr)
 		require.False(result)
 	})
 
 	s.Run("ErrorWhenNoMachineForApp", func() {
 		require := s.Require()
-
-		machineManager := newMockMachineManager()
-		// Don't add any machine
-		repository := &MockRepository{}
-		advancer, err := newMockAdvancerService(machineManager, repository)
+		mm := newMockMachineManager()
+		repo := &MockRepository{}
+		svc, err := newMockAdvancerService(mm, repo)
 		require.Nil(err)
 
 		app := &Application{ID: 999}
-		epoch := &Epoch{
-			Index:               0,
-			InputIndexLowerBound: 0,
-			InputIndexUpperBound: 5,
-		}
-
-		_, perr := advancer.isAllEpochInputsProcessed(app, epoch)
+		epoch := &Epoch{Index: 0, InputIndexLowerBound: 0, InputIndexUpperBound: 5}
+		_, perr := svc.isAllEpochInputsProcessed(app, epoch)
 		require.Error(perr)
 		require.ErrorIs(perr, ErrNoApp)
 	})
@@ -668,94 +528,87 @@ func (s *AdvancerSuite) TestIsAllEpochInputsProcessed() {
 // ---------------------------------------------------------------------------
 
 func (s *AdvancerSuite) TestIsEpochLastInput() {
-	setupWithEpoch := func(epochStatus EpochStatus) (*Service, *Application, *MockRepository) {
-		machineManager := newMockMachineManager()
-		app := newMockMachine(1)
-		machineManager.Map[1] = *app
-		repository := &MockRepository{}
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		s.Require().Nil(err)
-
-		repository.GetEpochReturn = &Epoch{Status: epochStatus}
-		return advancer, app.Application, repository
+	setupWithEpoch := func(epochStatus EpochStatus) (testEnv, *Application) {
+		env := s.setupOneApp()
+		env.repo.GetEpochReturn = &Epoch{Status: epochStatus}
+		return env, env.app.Application
 	}
 
 	s.Run("TrueWhenLastInputInClosedEpoch", func() {
 		require := s.Require()
-		advancer, app, repo := setupWithEpoch(EpochStatus_Closed)
+		env, app := setupWithEpoch(EpochStatus_Closed)
 
 		lastInput := repotest.NewInputBuilder().WithIndex(5).WithEpochIndex(0).Build()
-		repo.GetInputsReturn = map[common.Address][]*Input{
+		env.repo.GetInputsReturn = map[common.Address][]*Input{
 			app.IApplicationAddress: {lastInput},
 		}
-		repo.GetLastInputReturn = lastInput
+		env.repo.GetLastInputReturn = lastInput
 
 		input := repotest.NewInputBuilder().WithIndex(5).WithEpochIndex(0).Build()
-		result, err := advancer.isEpochLastInput(context.Background(), app, input)
+		result, err := env.service.isEpochLastInput(context.Background(), app, input)
 		require.Nil(err)
 		require.True(result)
 	})
 
 	s.Run("FalseWhenEpochIsOpen", func() {
 		require := s.Require()
-		advancer, app, _ := setupWithEpoch(EpochStatus_Open)
+		env, app := setupWithEpoch(EpochStatus_Open)
 
 		input := repotest.NewInputBuilder().WithIndex(3).WithEpochIndex(0).Build()
-		result, err := advancer.isEpochLastInput(context.Background(), app, input)
+		result, err := env.service.isEpochLastInput(context.Background(), app, input)
 		require.Nil(err)
 		require.False(result)
 	})
 
 	s.Run("FalseWhenNotLastInput", func() {
 		require := s.Require()
-		advancer, app, repo := setupWithEpoch(EpochStatus_Closed)
+		env, app := setupWithEpoch(EpochStatus_Closed)
 
-		lastInput := repotest.NewInputBuilder().WithIndex(5).WithEpochIndex(0).Build()
-		repo.GetLastInputReturn = lastInput
+		env.repo.GetLastInputReturn = repotest.NewInputBuilder().WithIndex(5).WithEpochIndex(0).Build()
 
 		input := repotest.NewInputBuilder().WithIndex(3).WithEpochIndex(0).Build()
-		result, err := advancer.isEpochLastInput(context.Background(), app, input)
+		result, err := env.service.isEpochLastInput(context.Background(), app, input)
 		require.Nil(err)
 		require.False(result)
 	})
 
 	s.Run("ErrorWhenNilInput", func() {
 		require := s.Require()
-		advancer, app, _ := setupWithEpoch(EpochStatus_Closed)
+		env, app := setupWithEpoch(EpochStatus_Closed)
 
-		_, err := advancer.isEpochLastInput(context.Background(), app, nil)
+		_, err := env.service.isEpochLastInput(context.Background(), app, nil)
 		require.Error(err)
 		require.Contains(err.Error(), "must not be nil")
 	})
 
 	s.Run("ErrorWhenNilApplication", func() {
 		require := s.Require()
-		advancer, _, _ := setupWithEpoch(EpochStatus_Closed)
+		env, _ := setupWithEpoch(EpochStatus_Closed)
 
 		input := repotest.NewInputBuilder().WithIndex(0).Build()
-		_, err := advancer.isEpochLastInput(context.Background(), nil, input)
+		_, err := env.service.isEpochLastInput(context.Background(), nil, input)
 		require.Error(err)
 		require.Contains(err.Error(), "must not be nil")
 	})
 
 	s.Run("ErrorWhenGetEpochFails", func() {
 		require := s.Require()
-		advancer, app, repo := setupWithEpoch(EpochStatus_Closed)
-		repo.GetEpochError = errors.New("get epoch error")
+		env, app := setupWithEpoch(EpochStatus_Closed)
+		env.repo.GetEpochError = errors.New("get epoch error")
 
 		input := repotest.NewInputBuilder().WithIndex(0).Build()
-		_, err := advancer.isEpochLastInput(context.Background(), app, input)
+		_, err := env.service.isEpochLastInput(context.Background(), app, input)
 		require.Error(err)
 		require.Contains(err.Error(), "get epoch error")
 	})
 
 	s.Run("ErrorWhenGetLastInputFails", func() {
 		require := s.Require()
-		advancer, app, repo := setupWithEpoch(EpochStatus_Closed)
-		repo.GetLastInputError = errors.New("get last input error")
+		env, app := setupWithEpoch(EpochStatus_Closed)
+		env.repo.GetLastInputError = errors.New("get last input error")
 
 		input := repotest.NewInputBuilder().WithIndex(0).Build()
-		_, err := advancer.isEpochLastInput(context.Background(), app, input)
+		_, err := env.service.isEpochLastInput(context.Background(), app, input)
 		require.Error(err)
 		require.Contains(err.Error(), "get last input error")
 	})
@@ -768,163 +621,103 @@ func (s *AdvancerSuite) TestIsEpochLastInput() {
 func (s *AdvancerSuite) TestHandleEpochAfterInputsProcessed() {
 	s.Run("EmptyEpochIndex0GetsOutputsProofFromMachine", func() {
 		require := s.Require()
+		env := s.setupOneApp()
 
-		machineManager := newMockMachineManager()
-		app := newMockMachine(1)
-		machineManager.Map[1] = *app
-		repository := &MockRepository{}
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.Nil(err)
-
-		// Epoch with no inputs (lower == upper)
 		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 0}
-
-		err = advancer.handleEpochAfterInputsProcessed(context.Background(), app.Application, epoch)
+		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
 		require.Nil(err)
-		require.True(repository.OutputsProofUpdated)
+		require.True(env.repo.OutputsProofUpdated)
 	})
 
 	s.Run("EmptyEpochIndex0ErrorOnOutputsProof", func() {
 		require := s.Require()
-
-		machineManager := newMockMachineManager()
-		app := newMockMachine(1)
-		app.OutputsProofError = errors.New("proof error")
-		machineManager.Map[1] = *app
-		repository := &MockRepository{}
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.Nil(err)
+		env := s.setupOneApp()
+		env.app.OutputsProofError = errors.New("proof error")
 
 		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 0}
-
-		err = advancer.handleEpochAfterInputsProcessed(context.Background(), app.Application, epoch)
+		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
 		require.Error(err)
 		require.Contains(err.Error(), "proof error")
 	})
 
 	s.Run("EmptyEpochIndexGt0RepeatsPreviousProof", func() {
 		require := s.Require()
-
-		machineManager := newMockMachineManager()
-		app := newMockMachine(1)
-		machineManager.Map[1] = *app
-		repository := &MockRepository{}
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.Nil(err)
+		env := s.setupOneApp()
 
 		epoch := &Epoch{Index: 2, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 0}
-
-		err = advancer.handleEpochAfterInputsProcessed(context.Background(), app.Application, epoch)
+		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
 		require.Nil(err)
-		require.True(repository.RepeatOutputsProofCalled)
+		require.True(env.repo.RepeatOutputsProofCalled)
 	})
 
 	s.Run("EmptyEpochIndexGt0RepeatError", func() {
 		require := s.Require()
-
-		machineManager := newMockMachineManager()
-		app := newMockMachine(1)
-		machineManager.Map[1] = *app
-		repository := &MockRepository{
-			RepeatOutputsProofError: errors.New("repeat error"),
-		}
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.Nil(err)
+		env := s.setupOneApp()
+		env.repo.RepeatOutputsProofError = errors.New("repeat error")
 
 		epoch := &Epoch{Index: 2, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 0}
-
-		err = advancer.handleEpochAfterInputsProcessed(context.Background(), app.Application, epoch)
+		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
 		require.Error(err)
 		require.Contains(err.Error(), "repeat error")
 	})
 
 	s.Run("NonEmptyEpochWithEveryEpochSnapshotPolicy", func() {
 		require := s.Require()
+		env := s.setupOneApp()
+		env.app.Application.ExecutionParameters.SnapshotPolicy = SnapshotPolicy_EveryEpoch
+		env.service.snapshotsDir = s.T().TempDir()
 
-		machineManager := newMockMachineManager()
-		app := newMockMachine(1)
-		app.Application.ExecutionParameters.SnapshotPolicy = SnapshotPolicy_EveryEpoch
-		machineManager.Map[1] = *app
-		repository := &MockRepository{}
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.Nil(err)
-		advancer.snapshotsDir = s.T().TempDir()
-
-		// Epoch with inputs
 		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 3}
-
-		// Provide a last processed input
 		lastInput := repotest.NewInputBuilder().WithIndex(2).WithEpochIndex(0).
 			WithStatus(InputCompletionStatus_Accepted).Build()
-		lastInput.EpochApplicationID = app.Application.ID
-		repository.GetLastProcessedInputReturn = lastInput
-		// isEpochLastInput needs GetLastInput to return the same input
-		repository.GetLastInputReturn = lastInput
+		lastInput.EpochApplicationID = env.app.Application.ID
+		env.repo.GetLastProcessedInputReturn = lastInput
+		env.repo.GetLastInputReturn = lastInput
 
-		err = advancer.handleEpochAfterInputsProcessed(context.Background(), app.Application, epoch)
+		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
 		require.Nil(err)
-		// Verify snapshot was attempted (CreateSnapshot called on mock)
-		require.True(repository.SnapshotURIUpdated)
+		require.True(env.repo.SnapshotURIUpdated)
 	})
 
 	s.Run("NonEmptyEpochNoSnapshotPolicy", func() {
 		require := s.Require()
-
-		machineManager := newMockMachineManager()
-		app := newMockMachine(1)
-		app.Application.ExecutionParameters.SnapshotPolicy = SnapshotPolicy_None
-		machineManager.Map[1] = *app
-		repository := &MockRepository{}
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.Nil(err)
+		env := s.setupOneApp()
+		env.app.Application.ExecutionParameters.SnapshotPolicy = SnapshotPolicy_None
 
 		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 3}
 		lastInput := repotest.NewInputBuilder().WithIndex(2).WithEpochIndex(0).
 			WithStatus(InputCompletionStatus_Accepted).Build()
-		lastInput.EpochApplicationID = app.Application.ID
-		repository.GetLastProcessedInputReturn = lastInput
+		lastInput.EpochApplicationID = env.app.Application.ID
+		env.repo.GetLastProcessedInputReturn = lastInput
 
-		err = advancer.handleEpochAfterInputsProcessed(context.Background(), app.Application, epoch)
+		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
 		require.Nil(err)
-		// No snapshot should be created with None policy
-		require.False(repository.SnapshotURIUpdated)
+		require.False(env.repo.SnapshotURIUpdated)
 	})
 
 	s.Run("NoMachineReturnsError", func() {
 		require := s.Require()
-
-		machineManager := newMockMachineManager()
-		repository := &MockRepository{}
-		advancer, err := newMockAdvancerService(machineManager, repository)
+		mm := newMockMachineManager()
+		svc, err := newMockAdvancerService(mm, &MockRepository{})
 		require.Nil(err)
 
 		app := repotest.NewApplicationBuilder().Build()
 		app.ID = 999
 
-		// Non-empty epoch: machine lookup
 		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 3}
-
-		err = advancer.handleEpochAfterInputsProcessed(context.Background(), app, epoch)
+		err = svc.handleEpochAfterInputsProcessed(context.Background(), app, epoch)
 		require.Error(err)
 		require.ErrorIs(err, ErrNoApp)
 	})
 
 	s.Run("GetLastProcessedInputError", func() {
 		require := s.Require()
-
-		machineManager := newMockMachineManager()
-		app := newMockMachine(1)
-		app.Application.ExecutionParameters.SnapshotPolicy = SnapshotPolicy_EveryEpoch
-		machineManager.Map[1] = *app
-		repository := &MockRepository{
-			GetLastProcessedInputError: errors.New("db connection lost"),
-		}
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		require.Nil(err)
+		env := s.setupOneApp()
+		env.app.Application.ExecutionParameters.SnapshotPolicy = SnapshotPolicy_EveryEpoch
+		env.repo.GetLastProcessedInputError = errors.New("db connection lost")
 
 		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 3}
-
-		err = advancer.handleEpochAfterInputsProcessed(context.Background(), app.Application, epoch)
+		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
 		require.Error(err)
 		require.Contains(err.Error(), "db connection lost")
 	})
@@ -935,94 +728,77 @@ func (s *AdvancerSuite) TestHandleEpochAfterInputsProcessed() {
 // ---------------------------------------------------------------------------
 
 func (s *AdvancerSuite) TestHandleSnapshot() {
-	setupSnapshot := func(policy SnapshotPolicy) (*Service, *Application, *MockMachineInstance, *MockRepository) {
-		machineManager := newMockMachineManager()
-		app := newMockMachine(1)
-		app.Application.ExecutionParameters.SnapshotPolicy = policy
-		machineManager.Map[1] = *app
-		repository := &MockRepository{}
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		s.Require().Nil(err)
-		advancer.snapshotsDir = s.T().TempDir()
-
-		mockInstance := &MockMachineInstance{
-			application: app.Application,
-			machineImpl: app,
-		}
-		return advancer, app.Application, mockInstance, repository
+	setupSnapshot := func(policy SnapshotPolicy) (testEnv, *MockMachineInstance) {
+		env := s.setupOneApp()
+		env.app.Application.ExecutionParameters.SnapshotPolicy = policy
+		env.service.snapshotsDir = s.T().TempDir()
+		instance := env.mm.Map[1]
+		return env, instance
 	}
 
 	s.Run("NonePolicy", func() {
 		require := s.Require()
-		advancer, app, machine, repo := setupSnapshot(SnapshotPolicy_None)
+		env, machine := setupSnapshot(SnapshotPolicy_None)
 
 		input := repotest.NewInputBuilder().WithIndex(0).Build()
-		input.EpochApplicationID = app.ID
+		input.EpochApplicationID = env.app.Application.ID
 
-		err := advancer.handleSnapshot(context.Background(), app, machine, input)
+		err := env.service.handleSnapshot(context.Background(), env.app.Application, machine, input)
 		require.Nil(err)
-		require.False(repo.SnapshotURIUpdated)
+		require.False(env.repo.SnapshotURIUpdated)
 	})
 
 	s.Run("EveryInputPolicy", func() {
 		require := s.Require()
-		advancer, app, machine, repo := setupSnapshot(SnapshotPolicy_EveryInput)
+		env, machine := setupSnapshot(SnapshotPolicy_EveryInput)
 
 		input := repotest.NewInputBuilder().WithIndex(0).Build()
-		input.EpochApplicationID = app.ID
+		input.EpochApplicationID = env.app.Application.ID
 
-		err := advancer.handleSnapshot(context.Background(), app, machine, input)
+		err := env.service.handleSnapshot(context.Background(), env.app.Application, machine, input)
 		require.Nil(err)
-		require.True(repo.SnapshotURIUpdated)
+		require.True(env.repo.SnapshotURIUpdated)
 	})
 
 	s.Run("EveryEpochPolicyLastInput", func() {
 		require := s.Require()
-		advancer, app, machine, repo := setupSnapshot(SnapshotPolicy_EveryEpoch)
-
-		// Set up GetEpoch to return closed epoch
-		repo.GetEpochReturn = &Epoch{Status: EpochStatus_Closed}
+		env, machine := setupSnapshot(SnapshotPolicy_EveryEpoch)
+		env.repo.GetEpochReturn = &Epoch{Status: EpochStatus_Closed}
+		env.repo.GetLastInputReturn = repotest.NewInputBuilder().WithIndex(5).WithEpochIndex(0).Build()
 
 		input := repotest.NewInputBuilder().WithIndex(5).WithEpochIndex(0).Build()
-		input.EpochApplicationID = app.ID
+		input.EpochApplicationID = env.app.Application.ID
 
-		// Last input in epoch matches
-		repo.GetLastInputReturn = repotest.NewInputBuilder().WithIndex(5).WithEpochIndex(0).Build()
-
-		err := advancer.handleSnapshot(context.Background(), app, machine, input)
+		err := env.service.handleSnapshot(context.Background(), env.app.Application, machine, input)
 		require.Nil(err)
-		require.True(repo.SnapshotURIUpdated)
+		require.True(env.repo.SnapshotURIUpdated)
 	})
 
 	s.Run("EveryEpochPolicyNotLastInput", func() {
 		require := s.Require()
-		advancer, app, machine, repo := setupSnapshot(SnapshotPolicy_EveryEpoch)
-
-		repo.GetEpochReturn = &Epoch{Status: EpochStatus_Closed}
+		env, machine := setupSnapshot(SnapshotPolicy_EveryEpoch)
+		env.repo.GetEpochReturn = &Epoch{Status: EpochStatus_Closed}
+		env.repo.GetLastInputReturn = repotest.NewInputBuilder().WithIndex(5).WithEpochIndex(0).Build()
 
 		input := repotest.NewInputBuilder().WithIndex(3).WithEpochIndex(0).Build()
-		input.EpochApplicationID = app.ID
+		input.EpochApplicationID = env.app.Application.ID
 
-		// Last input is a different one
-		repo.GetLastInputReturn = repotest.NewInputBuilder().WithIndex(5).WithEpochIndex(0).Build()
-
-		err := advancer.handleSnapshot(context.Background(), app, machine, input)
+		err := env.service.handleSnapshot(context.Background(), env.app.Application, machine, input)
 		require.Nil(err)
-		require.False(repo.SnapshotURIUpdated)
+		require.False(env.repo.SnapshotURIUpdated)
 	})
 
 	s.Run("EveryEpochPolicyOpenEpoch", func() {
 		require := s.Require()
-		advancer, app, machine, repo := setupSnapshot(SnapshotPolicy_EveryEpoch)
-
-		repo.GetEpochReturn = &Epoch{Status: EpochStatus_Open}
+		env, machine := setupSnapshot(SnapshotPolicy_EveryEpoch)
+		env.repo.GetEpochReturn = &Epoch{Status: EpochStatus_Open}
 
 		input := repotest.NewInputBuilder().WithIndex(0).WithEpochIndex(0).Build()
-		input.EpochApplicationID = app.ID
+		input.EpochApplicationID = env.app.Application.ID
 
-		err := advancer.handleSnapshot(context.Background(), app, machine, input)
+		err := env.service.handleSnapshot(context.Background(), env.app.Application, machine, input)
 		require.Nil(err)
-		require.False(repo.SnapshotURIUpdated)
+		require.False(env.repo.SnapshotURIUpdated)
 	})
 }
 
@@ -1031,38 +807,30 @@ func (s *AdvancerSuite) TestHandleSnapshot() {
 // ---------------------------------------------------------------------------
 
 func (s *AdvancerSuite) TestCreateSnapshot() {
-	setupCreateSnapshot := func() (*Service, *Application, *MockMachineInstance, *MockRepository, string) {
-		machineManager := newMockMachineManager()
-		app := newMockMachine(1)
-		app.Application.Name = "testapp"
-		app.Application.ExecutionParameters.SnapshotPolicy = SnapshotPolicy_EveryInput
-		machineManager.Map[1] = *app
-		repository := &MockRepository{}
-		advancer, err := newMockAdvancerService(machineManager, repository)
-		s.Require().Nil(err)
-
+	setupCreateSnapshot := func() (testEnv, *MockMachineInstance, string) {
+		env := s.setupOneApp()
+		env.app.Application.Name = "testapp"
+		env.app.Application.ExecutionParameters.SnapshotPolicy = SnapshotPolicy_EveryInput
 		tmpDir := s.T().TempDir()
-		advancer.snapshotsDir = tmpDir
-
-		mockInstance := &MockMachineInstance{
-			application: app.Application,
-			machineImpl: app,
+		env.service.snapshotsDir = tmpDir
+		instance := &MockMachineInstance{
+			application: env.app.Application,
+			machineImpl: env.app,
 		}
-		return advancer, app.Application, mockInstance, repository, tmpDir
+		return env, instance, tmpDir
 	}
 
 	s.Run("Success", func() {
 		require := s.Require()
-		advancer, app, machine, repo, tmpDir := setupCreateSnapshot()
+		env, machine, tmpDir := setupCreateSnapshot()
 
 		input := repotest.NewInputBuilder().WithIndex(3).WithEpochIndex(1).Build()
-		input.EpochApplicationID = app.ID
+		input.EpochApplicationID = env.app.Application.ID
 
-		err := advancer.createSnapshot(context.Background(), app, machine, input)
+		err := env.service.createSnapshot(context.Background(), env.app.Application, machine, input)
 		require.Nil(err)
-		require.True(repo.SnapshotURIUpdated)
+		require.True(env.repo.SnapshotURIUpdated)
 
-		// Verify the snapshot path was set correctly
 		require.NotNil(input.SnapshotURI)
 		expectedPath := filepath.Join(tmpDir, "testapp_epoch1_input3")
 		require.Equal(expectedPath, *input.SnapshotURI)
@@ -1070,55 +838,48 @@ func (s *AdvancerSuite) TestCreateSnapshot() {
 
 	s.Run("SkipsIfAlreadyHasSnapshot", func() {
 		require := s.Require()
-		advancer, app, machine, repo, _ := setupCreateSnapshot()
+		env, machine, _ := setupCreateSnapshot()
 
 		existingPath := "/existing/snapshot"
 		input := repotest.NewInputBuilder().WithIndex(0).Build()
-		input.EpochApplicationID = app.ID
+		input.EpochApplicationID = env.app.Application.ID
 		input.SnapshotURI = &existingPath
 
-		err := advancer.createSnapshot(context.Background(), app, machine, input)
+		err := env.service.createSnapshot(context.Background(), env.app.Application, machine, input)
 		require.Nil(err)
-		require.False(repo.SnapshotURIUpdated)
+		require.False(env.repo.SnapshotURIUpdated)
 	})
 
 	s.Run("RemovesPreviousSnapshot", func() {
 		require := s.Require()
-		advancer, app, machine, repo, tmpDir := setupCreateSnapshot()
+		env, machine, tmpDir := setupCreateSnapshot()
 
-		// Create a previous snapshot directory to be cleaned up
 		prevPath := filepath.Join(tmpDir, "testapp_epoch0_input0")
 		require.Nil(os.MkdirAll(prevPath, 0755))
-
-		prevInput := &Input{
-			SnapshotURI: &prevPath,
-		}
-		repo.GetLastSnapshotReturn = prevInput
+		env.repo.GetLastSnapshotReturn = &Input{SnapshotURI: &prevPath}
 
 		input := repotest.NewInputBuilder().WithIndex(1).WithEpochIndex(0).Build()
-		input.EpochApplicationID = app.ID
+		input.EpochApplicationID = env.app.Application.ID
 
-		err := advancer.createSnapshot(context.Background(), app, machine, input)
+		err := env.service.createSnapshot(context.Background(), env.app.Application, machine, input)
 		require.Nil(err)
 
-		// Verify previous snapshot was removed
 		_, statErr := os.Stat(prevPath)
 		require.True(os.IsNotExist(statErr))
 	})
 
 	s.Run("CreateSnapshotError", func() {
 		require := s.Require()
-		advancer, app, machine, repo, _ := setupCreateSnapshot()
-
+		env, machine, _ := setupCreateSnapshot()
 		machine.createSnapshotError = errors.New("snapshot failed")
 
 		input := repotest.NewInputBuilder().WithIndex(0).Build()
-		input.EpochApplicationID = app.ID
+		input.EpochApplicationID = env.app.Application.ID
 
-		err := advancer.createSnapshot(context.Background(), app, machine, input)
+		err := env.service.createSnapshot(context.Background(), env.app.Application, machine, input)
 		require.Error(err)
 		require.Contains(err.Error(), "snapshot failed")
-		require.False(repo.SnapshotURIUpdated)
+		require.False(env.repo.SnapshotURIUpdated)
 	})
 
 	s.Run("MkdirAllError", func() {
@@ -1127,7 +888,7 @@ func (s *AdvancerSuite) TestCreateSnapshot() {
 		machineManager := newMockMachineManager()
 		app := newMockMachine(1)
 		app.Application.Name = "testapp"
-		machineManager.Map[1] = *app
+		machineManager.Map[1] = newMockInstance(app)
 		repository := &MockRepository{}
 		advancer, err := newMockAdvancerService(machineManager, repository)
 		require.Nil(err)
@@ -1137,32 +898,27 @@ func (s *AdvancerSuite) TestCreateSnapshot() {
 		readonlyDir := filepath.Join(tmpDir, "readonly")
 		require.Nil(os.MkdirAll(readonlyDir, 0755))
 		require.Nil(os.Chmod(readonlyDir, 0555))
-		s.T().Cleanup(func() { os.Chmod(readonlyDir, 0755) }) //nolint: errcheck
+		s.T().Cleanup(func() { os.Chmod(readonlyDir, 0755) }) //nolint:errcheck
 		advancer.snapshotsDir = filepath.Join(readonlyDir, "snapshots")
-
-		mockInstance := &MockMachineInstance{
-			application: app.Application,
-			machineImpl: app,
-		}
 
 		input := repotest.NewInputBuilder().WithIndex(0).Build()
 		input.EpochApplicationID = app.Application.ID
 
-		err = advancer.createSnapshot(context.Background(), app.Application, mockInstance, input)
+		err = advancer.createSnapshot(context.Background(), app.Application, machineManager.Map[1], input)
 		require.Error(err)
 		require.Contains(err.Error(), "failed to create snapshots directory")
 	})
 
 	s.Run("UpdateSnapshotURIError", func() {
 		require := s.Require()
-		advancer, app, machine, repo, _ := setupCreateSnapshot()
+		env, machine, _ := setupCreateSnapshot()
 
-		repo.UpdateSnapshotURIError = errors.New("db error")
+		env.repo.UpdateSnapshotURIError = errors.New("db error")
 
 		input := repotest.NewInputBuilder().WithIndex(0).Build()
-		input.EpochApplicationID = app.ID
+		input.EpochApplicationID = env.app.Application.ID
 
-		err := advancer.createSnapshot(context.Background(), app, machine, input)
+		err := env.service.createSnapshot(context.Background(), env.app.Application, machine, input)
 		require.Error(err)
 		require.Contains(err.Error(), "db error")
 	})
@@ -1336,33 +1092,33 @@ func newMockMachine(id int64) *MockMachineImpl {
 	}
 }
 
+// newMockInstance creates a MockMachineInstance from a MockMachineImpl, ready to store in MockMachineManager.Map.
+func newMockInstance(impl *MockMachineImpl) *MockMachineInstance {
+	return &MockMachineInstance{
+		application: impl.Application,
+		machineImpl: impl,
+	}
+}
+
 // ------------------------------------------------------------------------------------------------
 
 type MockMachineManager struct {
-	Map                 map[int64]MockMachineImpl
+	Map                 map[int64]*MockMachineInstance
 	UpdateMachinesError error
 }
 
 func newMockMachineManager() *MockMachineManager {
 	return &MockMachineManager{
-		Map: map[int64]MockMachineImpl{},
+		Map: map[int64]*MockMachineInstance{},
 	}
 }
 
 func (mock *MockMachineManager) GetMachine(appID int64) (manager.MachineInstance, bool) {
-	machine, exists := mock.Map[appID]
+	instance, exists := mock.Map[appID]
 	if !exists {
 		return nil, false
 	}
-
-	// For testing purposes, we'll create a mock MachineInstance
-	// that has the same Application but delegates the methods to our mock
-	mockInstance := &MockMachineInstance{
-		application: machine.Application,
-		machineImpl: &machine,
-	}
-
-	return mockInstance, true
+	return instance, true
 }
 
 func (mock *MockMachineManager) UpdateMachines(ctx context.Context) error {
@@ -1372,7 +1128,7 @@ func (mock *MockMachineManager) UpdateMachines(ctx context.Context) error {
 func (mock *MockMachineManager) Applications() []*Application {
 	apps := make([]*Application, 0, len(mock.Map))
 	for _, v := range mock.Map {
-		apps = append(apps, v.Application)
+		apps = append(apps, v.application)
 	}
 	return apps
 }
