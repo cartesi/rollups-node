@@ -69,6 +69,8 @@ import (
 	"github.com/lmittmann/tint"
 )
 
+const telemetryShutdownTimeout = 5 * time.Second
+
 var (
 	ErrInvalid = fmt.Errorf("Invalid Argument") // invalid argument
 )
@@ -117,7 +119,7 @@ type Service struct {
 	Context       context.Context
 	Cancel        context.CancelFunc
 	Sighup        chan os.Signal // SIGHUP to reload
-	Sigint        chan os.Signal // SIGINT to exit gracefully
+	SigShutdown   chan os.Signal // SIGINT/SIGTERM to exit gracefully
 	ServeMux      *http.ServeMux
 	Telemetry     *http.Server
 	TelemetryFunc func() error
@@ -173,9 +175,9 @@ func Create(ctx context.Context, c *CreateInfo, s *Service) error {
 			s.Sighup = make(chan os.Signal, 1)
 			signal.Notify(s.Sighup, syscall.SIGHUP)
 		}
-		if s.Sigint == nil {
-			s.Sigint = make(chan os.Signal, 1)
-			signal.Notify(s.Sigint, syscall.SIGINT)
+		if s.SigShutdown == nil {
+			s.SigShutdown = make(chan os.Signal, 1)
+			signal.Notify(s.SigShutdown, syscall.SIGINT, syscall.SIGTERM)
 		}
 	}
 
@@ -245,7 +247,17 @@ func (s *Service) Stop(force bool) []error {
 	start := time.Now()
 	errs := s.Impl.Stop(force)
 	if s.Telemetry != nil {
-		s.Telemetry.Shutdown(s.Context)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), telemetryShutdownTimeout)
+		defer cancel()
+		if err := s.Telemetry.Shutdown(shutdownCtx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if s.SigShutdown != nil {
+		signal.Stop(s.SigShutdown)
+	}
+	if s.Sighup != nil {
+		signal.Stop(s.Sighup)
 	}
 	elapsed := time.Since(start)
 
@@ -261,7 +273,7 @@ func (s *Service) Stop(force bool) []error {
 			"force", force,
 			"duration", elapsed)
 	}
-	return nil
+	return errs
 }
 
 func (s *Service) Serve() error {
@@ -270,7 +282,7 @@ func (s *Service) Serve() error {
 	// Check for context cancellation before the first tick.
 	select {
 	case <-s.Context.Done():
-		s.Stop(true)
+		s.Stop(true) // Stop logs errors internally.
 		return nil
 	default:
 	}
@@ -280,10 +292,12 @@ func (s *Service) Serve() error {
 		select {
 		case <-s.Sighup:
 			s.Reload()
-		case <-s.Sigint:
-			s.Stop(false)
+		case <-s.SigShutdown:
+			s.Stop(false) // Graceful shutdown; errors are logged by Stop.
+			return nil
 		case <-s.Context.Done():
-			s.Stop(true)
+			s.Stop(true) // Stop logs errors internally.
+			return nil
 		case <-s.Ticker.C:
 			s.Tick()
 		}
