@@ -315,14 +315,16 @@ func (r *Service) readAndStoreInputs(
 
 	}
 
-	// Update LastInputCheckBlock for applications that didn't have any inputs
+	// Update LastInputCheckBlock for applications that were successfully scanned
+	// but didn't have any inputs.
 	// (for apps with inputs, LastInputCheckBlock is already updated in CreateEpochsAndInputs)
+	// Only apps present in appInputsMap were successfully scanned. Apps that failed
+	// to fetch are absent from the map and their checkpoint must NOT advance,
+	// otherwise inputs in the failed block range would be permanently skipped.
 	appsToUpdate := []int64{}
-	// Find applications that didn't have any inputs in appInputsMap
 	for _, app := range apps {
 		appAddress := app.application.IApplicationAddress
-		// If the app doesn't have any inputs in the map or has an empty slice
-		if inputs, exists := appInputsMap[appAddress]; !exists || len(inputs) == 0 {
+		if inputs, exists := appInputsMap[appAddress]; exists && len(inputs) == 0 {
 			appsToUpdate = append(appsToUpdate, app.application.ID)
 		}
 	}
@@ -348,6 +350,13 @@ func (r *Service) readAndStoreInputs(
 	return nil
 }
 
+// readInputsFromBlockchain fetches inputs for each application independently.
+// On per-app failure, the failing app is omitted from the returned map (not
+// present as a key) and processing continues for the remaining apps. The error
+// return is reserved for fatal failures that prevent any work.
+// Callers must use map-key presence to distinguish success (key exists, possibly
+// with an empty slice) from failure (key absent) — apps absent from the map must
+// NOT have their checkpoint advanced.
 func (r *Service) readInputsFromBlockchain(
 	ctx context.Context,
 	apps []appContracts,
