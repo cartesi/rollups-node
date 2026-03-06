@@ -778,22 +778,22 @@ func (i *Input) UnmarshalJSON(in []byte) error {
 
 	i.EpochIndex, err = ParseHexUint64(aux.EpochIndex)
 	if err != nil {
-		return fmt.Errorf("error on EpochIndex: %v", err)
+		return fmt.Errorf("error on EpochIndex: %w", err)
 	}
 
 	i.Index, err = ParseHexUint64(aux.Index)
 	if err != nil {
-		return fmt.Errorf("error on Index: %v", err)
+		return fmt.Errorf("error on Index: %w", err)
 	}
 
 	i.BlockNumber, err = ParseHexUint64(aux.BlockNumber)
 	if err != nil {
-		return fmt.Errorf("error on BlockNumber: %v", err)
+		return fmt.Errorf("error on BlockNumber: %w", err)
 	}
 
 	i.RawData, err = hexutil.Decode(aux.RawData)
 	if err != nil {
-		return fmt.Errorf("error on RawData: %v", err)
+		return fmt.Errorf("error on RawData: %w", err)
 	}
 
 	return nil
@@ -903,6 +903,41 @@ func (i *Output) MarshalJSON() ([]byte, error) {
 	return json.Marshal(aux)
 }
 
+func (o *Output) UnmarshalJSON(data []byte) error {
+	type Alias Output
+	aux := &struct {
+		EpochIndex string `json:"epoch_index"`
+		InputIndex string `json:"input_index"`
+		Index      string `json:"index"`
+		RawData    string `json:"raw_data"`
+		*Alias
+	}{Alias: (*Alias)(o)}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	*o = Output(*aux.Alias)
+
+	var err error
+	o.EpochIndex, err = ParseHexUint64(aux.EpochIndex)
+	if err != nil {
+		return fmt.Errorf("error on EpochIndex: %w", err)
+	}
+	o.InputIndex, err = ParseHexUint64(aux.InputIndex)
+	if err != nil {
+		return fmt.Errorf("error on InputIndex: %w", err)
+	}
+	o.Index, err = ParseHexUint64(aux.Index)
+	if err != nil {
+		return fmt.Errorf("error on Index: %w", err)
+	}
+	o.RawData, err = hexutil.Decode(aux.RawData)
+	if err != nil {
+		return fmt.Errorf("error on RawData: %w", err)
+	}
+	return nil
+}
+
 type Report struct {
 	InputEpochApplicationID int64     `sql:"primary_key" json:"-"`
 	EpochIndex              uint64    `json:"epoch_index"`
@@ -931,6 +966,41 @@ func (r *Report) MarshalJSON() ([]byte, error) {
 		Alias:      (*Alias)(r),
 	}
 	return json.Marshal(aux)
+}
+
+func (r *Report) UnmarshalJSON(data []byte) error {
+	type Alias Report
+	aux := &struct {
+		EpochIndex string `json:"epoch_index"`
+		InputIndex string `json:"input_index"`
+		Index      string `json:"index"`
+		RawData    string `json:"raw_data"`
+		*Alias
+	}{Alias: (*Alias)(r)}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	*r = Report(*aux.Alias)
+
+	var err error
+	r.EpochIndex, err = ParseHexUint64(aux.EpochIndex)
+	if err != nil {
+		return fmt.Errorf("error on EpochIndex: %w", err)
+	}
+	r.InputIndex, err = ParseHexUint64(aux.InputIndex)
+	if err != nil {
+		return fmt.Errorf("error on InputIndex: %w", err)
+	}
+	r.Index, err = ParseHexUint64(aux.Index)
+	if err != nil {
+		return fmt.Errorf("error on Index: %w", err)
+	}
+	r.RawData, err = hexutil.Decode(aux.RawData)
+	if err != nil {
+		return fmt.Errorf("error on RawData: %w", err)
+	}
+	return nil
 }
 
 type NodeConfig[T any] struct {
@@ -1079,6 +1149,51 @@ func (t *Tournament) MarshalJSON() ([]byte, error) {
 	return json.Marshal(aux)
 }
 
+func (t *Tournament) UnmarshalJSON(data []byte) error {
+	type Alias Tournament
+	aux := &struct {
+		EpochIndex      string `json:"epoch_index"`
+		MaxLevel        string `json:"max_level"`
+		Level           string `json:"level"`
+		Log2Step        string `json:"log2step"`
+		Height          string `json:"height"`
+		FinishedAtBlock string `json:"finished_at_block"`
+		*Alias
+	}{Alias: (*Alias)(t)}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	*t = Tournament(*aux.Alias)
+
+	var err error
+	t.EpochIndex, err = ParseHexUint64(aux.EpochIndex)
+	if err != nil {
+		return fmt.Errorf("error on EpochIndex: %w", err)
+	}
+	t.MaxLevel, err = ParseHexUint64(aux.MaxLevel)
+	if err != nil {
+		return fmt.Errorf("error on MaxLevel: %w", err)
+	}
+	t.Level, err = ParseHexUint64(aux.Level)
+	if err != nil {
+		return fmt.Errorf("error on Level: %w", err)
+	}
+	t.Log2Step, err = ParseHexUint64(aux.Log2Step)
+	if err != nil {
+		return fmt.Errorf("error on Log2Step: %w", err)
+	}
+	t.Height, err = ParseHexUint64(aux.Height)
+	if err != nil {
+		return fmt.Errorf("error on Height: %w", err)
+	}
+	t.FinishedAtBlock, err = ParseHexUint64(aux.FinishedAtBlock)
+	if err != nil {
+		return fmt.Errorf("error on FinishedAtBlock: %w", err)
+	}
+	return nil
+}
+
 type Commitment struct {
 	ApplicationID     int64          `sql:"primary_key" json:"-"`
 	EpochIndex        uint64         `sql:"primary_key" json:"epoch_index"`
@@ -1106,6 +1221,31 @@ func (c *Commitment) MarshalJSON() ([]byte, error) {
 		Alias:       (*Alias)(c),
 	}
 	return json.Marshal(aux)
+}
+
+func (c *Commitment) UnmarshalJSON(data []byte) error {
+	type Alias Commitment
+	aux := &struct {
+		EpochIndex  string `json:"epoch_index"`
+		BlockNumber string `json:"block_number"`
+		*Alias
+	}{Alias: (*Alias)(c)}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	*c = Commitment(*aux.Alias)
+
+	var err error
+	c.EpochIndex, err = ParseHexUint64(aux.EpochIndex)
+	if err != nil {
+		return fmt.Errorf("error on EpochIndex: %w", err)
+	}
+	c.BlockNumber, err = ParseHexUint64(aux.BlockNumber)
+	if err != nil {
+		return fmt.Errorf("error on BlockNumber: %w", err)
+	}
+	return nil
 }
 
 type Match struct {

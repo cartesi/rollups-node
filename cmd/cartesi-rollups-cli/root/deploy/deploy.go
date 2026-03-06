@@ -13,7 +13,7 @@ import (
 var (
 	epochLengthParam uint64
 	saltParam        string
-	asJsonParam      bool
+	asJSONParam      bool
 	verboseParam     bool
 )
 
@@ -30,7 +30,7 @@ func init() {
 	Cmd.PersistentFlags().StringVar(&saltParam, "salt", "0000000000000000000000000000000000000000000000000000000000000000",
 		"Salt value for contract deployment")
 	Cmd.PersistentFlags().MarkHidden("salt")
-	Cmd.PersistentFlags().BoolVarP(&asJsonParam, "json", "", false,
+	Cmd.PersistentFlags().BoolVarP(&asJSONParam, "json", "", false,
 		"Print results as JSON")
 	Cmd.PersistentFlags().MarkHidden("json")
 	Cmd.PersistentFlags().BoolVarP(&verboseParam, "verbose", "", false,

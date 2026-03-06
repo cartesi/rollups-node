@@ -12,6 +12,7 @@ import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/service"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
+	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
 
 	"github.com/spf13/cobra"
 )
@@ -95,14 +96,14 @@ func run(cmd *cobra.Command, args []string) {
 
 	var result json.RawMessage
 	if len(args) >= 2 {
-		var params jsonrpc.GetInputParams
+		var params api.GetInputParams
 		params.Application = args[0]
 		params.InputIndex, err = config.AsHexString(args[1])
 		cobra.CheckErr(err)
 
 		result, err = readServ.GetInput(ctx, params)
 	} else {
-		var params jsonrpc.ListInputsParams
+		var params api.ListInputsParams
 		params.Application = args[0]
 
 		// Add epoch index filter if provided

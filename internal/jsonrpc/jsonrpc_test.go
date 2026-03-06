@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/cartesi/rollups-node/internal/evmreader"
+	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/repotest"
@@ -585,7 +586,7 @@ func TestMethod(t *testing.T) {
 				Index      hex64  `json:"index"`
 				RawData    string `json:"raw_data"` // hex encoded
 
-				Voucher *Voucher `json:"decoded_data,omitempty"`
+				DecodedData *api.DecodedData `json:"decoded_data,omitempty"`
 
 				// ... (ignore the rest of fields for test
 			}
@@ -594,7 +595,7 @@ func TestMethod(t *testing.T) {
 			assert.Nil(t, json.Unmarshal(body, &resp))
 			assert.Equal(t, inr, uint64(resp.Result.Data.InputIndex))
 			assert.Equal(t, onr, uint64(resp.Result.Data.Index))
-			assert.Equal(t, "0xdeadbeef", resp.Result.Data.Voucher.Value)
+			assert.Equal(t, "0xdeadbeef", resp.Result.Data.DecodedData.Value)
 		})
 	})
 
@@ -1201,7 +1202,7 @@ func TestMethod(t *testing.T) {
 				Index      hex64  `json:"index"`
 				RawData    string `json:"raw_data"` // hex encoded
 
-				Voucher *Voucher `json:"decoded_data,omitempty"`
+				DecodedData *api.DecodedData `json:"decoded_data,omitempty"`
 
 				// ... (ignore the rest of fields for test
 			}

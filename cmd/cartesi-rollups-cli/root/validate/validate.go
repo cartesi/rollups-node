@@ -4,9 +4,11 @@
 package validate
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
+	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
@@ -33,7 +35,11 @@ cartesi-rollups-cli validate echo-dapp 5
 # Validates output with index 3 using application address:
 cartesi-rollups-cli validate 0x1234567890123456789012345678901234567890 3`
 
+var asJSONParam bool
+
 func init() {
+	Cmd.Flags().BoolVar(&asJSONParam, "json", false, "Print result as JSON")
+
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
 		command.Flags().Lookup("verbose").Hidden = false
@@ -81,7 +87,10 @@ func run(cmd *cobra.Command, args []string) {
 	client, err := ethclient.DialContext(ctx, ethEndpoint.String())
 	cobra.CheckErr(err)
 
-	fmt.Printf("Validating output app: %v (%v) output_index: %v\n", app.Name, app.IApplicationAddress, outputIndex)
+	if !asJSONParam {
+		fmt.Printf("Validating output app: %v (%v) output_index: %v\n",
+			app.Name, app.IApplicationAddress, outputIndex)
+	}
 	err = ethutil.ValidateOutput(
 		ctx,
 		client,
@@ -92,5 +101,12 @@ func run(cmd *cobra.Command, args []string) {
 	)
 	cobra.CheckErr(err)
 
-	fmt.Println("Output validated!")
+	if asJSONParam {
+		result := cli.ValidateResult{Valid: true}
+		jsonBytes, err := json.MarshalIndent(&result, "", "  ")
+		cobra.CheckErr(err)
+		fmt.Println(string(jsonBytes))
+	} else {
+		fmt.Println("Output validated!")
+	}
 }

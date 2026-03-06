@@ -217,13 +217,13 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	}
 
 	// deploy
-	if verboseParam || !asJsonParam {
+	if verboseParam || !asJSONParam {
 		fmt.Fprint(os.Stderr, "deploying...")
 	}
 	_, result, err := deployment.Deploy(ctx, client, txOpts)
 	cobra.CheckErr(err)
 
-	if verboseParam || !asJsonParam {
+	if verboseParam || !asJSONParam {
 		fmt.Fprint(os.Stderr, "success\n")
 		fmt.Fprint(os.Stderr, result)
 	}
@@ -263,7 +263,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	}
 
 	if applicationRegisterParam {
-		if verboseParam || !asJsonParam {
+		if verboseParam || !asJSONParam {
 			fmt.Fprint(os.Stderr, "registering...")
 		}
 		dsn, err := config.GetDatabaseConnection()
@@ -281,11 +281,11 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		if err != nil {
 			cobra.CheckErr(fmt.Errorf("failed to register application: %w", err))
 		}
-		if verboseParam || !asJsonParam {
+		if verboseParam || !asJSONParam {
 			fmt.Fprint(os.Stderr, "success\n")
 		}
 
-		if verboseParam || !asJsonParam {
+		if verboseParam || !asJSONParam {
 			if applicationName != "" || verboseParam {
 				fmt.Fprintln(os.Stderr, "\tapplication name:          ", applicationName)
 			}
@@ -300,7 +300,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		fmt.Fprint(os.Stderr, "registering...skipped\n")
 	}
 
-	if asJsonParam {
+	if asJSONParam {
 		report, err := json.MarshalIndent(&application, "", "  ")
 		cobra.CheckErr(err)
 		fmt.Println(string(report))

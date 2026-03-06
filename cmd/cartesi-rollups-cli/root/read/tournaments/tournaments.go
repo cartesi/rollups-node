@@ -12,6 +12,7 @@ import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/service"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
+	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
 
 	"github.com/spf13/cobra"
 )
@@ -101,13 +102,13 @@ func run(cmd *cobra.Command, args []string) {
 
 	var result json.RawMessage
 	if len(args) >= 2 {
-		var params jsonrpc.GetTournamentParams
+		var params api.GetTournamentParams
 		params.Application = args[0]
 		params.Address = args[1]
 
 		result, err = readServ.GetTournament(ctx, params)
 	} else {
-		var params jsonrpc.ListTournamentsParams
+		var params api.ListTournamentsParams
 		params.Application = args[0]
 
 		// Add epoch index filter if provided

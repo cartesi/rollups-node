@@ -36,12 +36,12 @@ var (
 // Concurrency protocol:
 //   - runtime:          Protected by PMutex. Written under HLock, read under LLock.
 //   - processedInputs:  atomic.Uint64. Written under HLock (together with runtime swap,
-//                        so writers see a consistent pair). Read lock-free via Load() —
-//                        this is safe because only one advance runs at a time (advanceMutex)
-//                        and the atomic store is visible to all goroutines immediately.
+//     so writers see a consistent pair). Read lock-free via Load() —
+//     this is safe because only one advance runs at a time (advanceMutex)
+//     and the atomic store is visible to all goroutines immediately.
 //   - advanceMutex:     Serializes all Advance calls. Only one input is processed at a time.
 //   - mutex (PMutex):   HLock for advance/snapshot/hash/proof (may destroy runtime on error).
-//                        LLock for inspect (read-only fork). HLock starves LLock by design.
+//     LLock for inspect (read-only fork). HLock starves LLock by design.
 //   - inspectSemaphore: Bounds concurrent inspect operations.
 type MachineInstanceImpl struct {
 	application *Application

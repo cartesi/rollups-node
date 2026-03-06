@@ -9,7 +9,7 @@ import (
 	"fmt"
 
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/jsonrpc"
+	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
@@ -25,7 +25,7 @@ type RepositoryReadService struct {
 	OutputAbi  *abi.ABI
 }
 
-func (s *RepositoryReadService) GetApplication(ctx context.Context, params jsonrpc.GetApplicationParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetApplication(ctx context.Context, params api.GetApplicationParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -49,7 +49,7 @@ func (s *RepositoryReadService) GetApplication(ctx context.Context, params jsonr
 	return json.RawMessage(result), err
 }
 
-func (s *RepositoryReadService) GetEpoch(ctx context.Context, params jsonrpc.GetEpochParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetEpoch(ctx context.Context, params api.GetEpochParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -77,7 +77,7 @@ func (s *RepositoryReadService) GetEpoch(ctx context.Context, params jsonrpc.Get
 	return json.RawMessage(result), err
 }
 
-func (s *RepositoryReadService) ListEpochs(ctx context.Context, params jsonrpc.ListEpochsParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListEpochs(ctx context.Context, params api.ListEpochsParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -125,7 +125,7 @@ func (s *RepositoryReadService) ListEpochs(ctx context.Context, params jsonrpc.L
 	return json.RawMessage(result), err
 }
 
-func (s *RepositoryReadService) GetInput(ctx context.Context, params jsonrpc.GetInputParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetInput(ctx context.Context, params api.GetInputParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -143,9 +143,9 @@ func (s *RepositoryReadService) GetInput(ctx context.Context, params jsonrpc.Get
 	if data == nil {
 		return nil, ErrNotFound
 	}
-	dataVal, err := jsonrpc.DecodeInput(data, s.InputAbi)
+	dataVal, err := api.DecodeInput(data, s.InputAbi)
 	if err != nil {
-		dataVal = &jsonrpc.DecodedInput{Input: data}
+		dataVal = &api.DecodedInput{Input: data}
 	}
 
 	response := map[string]any{
@@ -157,7 +157,7 @@ func (s *RepositoryReadService) GetInput(ctx context.Context, params jsonrpc.Get
 	return json.RawMessage(result), err
 }
 
-func (s *RepositoryReadService) ListInputs(ctx context.Context, params jsonrpc.ListInputsParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListInputs(ctx context.Context, params api.ListInputsParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -198,11 +198,11 @@ func (s *RepositoryReadService) ListInputs(ctx context.Context, params jsonrpc.L
 		}
 		data = make([]*model.Input, 0)
 	}
-	dataVal := make([]*jsonrpc.DecodedInput, 0, len(data))
+	dataVal := make([]*api.DecodedInput, 0, len(data))
 	for _, item := range data {
-		decoded, err := jsonrpc.DecodeInput(item, s.InputAbi)
+		decoded, err := api.DecodeInput(item, s.InputAbi)
 		if err != nil {
-			decoded = &jsonrpc.DecodedInput{Input: item}
+			decoded = &api.DecodedInput{Input: item}
 		}
 		dataVal = append(dataVal, decoded)
 	}
@@ -221,7 +221,7 @@ func (s *RepositoryReadService) ListInputs(ctx context.Context, params jsonrpc.L
 	return json.RawMessage(result), err
 }
 
-func (s *RepositoryReadService) GetOutput(ctx context.Context, params jsonrpc.GetOutputParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetOutput(ctx context.Context, params api.GetOutputParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -239,9 +239,12 @@ func (s *RepositoryReadService) GetOutput(ctx context.Context, params jsonrpc.Ge
 	if data == nil {
 		return nil, ErrNotFound
 	}
-	dataVal, err := jsonrpc.DecodeOutput(data, s.OutputAbi)
+	dataVal, err := api.DecodeOutput(data, s.OutputAbi)
 	if err != nil {
-		dataVal = &jsonrpc.DecodedOutput{Output: data, DecodedData: err.Error()}
+		dataVal = &api.DecodedOutput{
+			Output:      data,
+			DecodedData: &api.DecodedData{Type: "error", RawData: err.Error()},
+		}
 	}
 
 	response := map[string]any{
@@ -253,7 +256,7 @@ func (s *RepositoryReadService) GetOutput(ctx context.Context, params jsonrpc.Ge
 	return json.RawMessage(result), err
 }
 
-func (s *RepositoryReadService) ListOutputs(ctx context.Context, params jsonrpc.ListOutputsParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListOutputs(ctx context.Context, params api.ListOutputsParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -279,7 +282,7 @@ func (s *RepositoryReadService) ListOutputs(ctx context.Context, params jsonrpc.
 	}
 	// Add output type filter if provided
 	if params.OutputType != nil {
-		outputTypeVal, err := jsonrpc.ParseOutputType(*params.OutputType)
+		outputTypeVal, err := api.ParseOutputType(*params.OutputType)
 		if err != nil {
 			return nil, fmt.Errorf("invalid output type: %w", err)
 		}
@@ -310,11 +313,14 @@ func (s *RepositoryReadService) ListOutputs(ctx context.Context, params jsonrpc.
 		}
 		data = make([]*model.Output, 0)
 	}
-	dataVal := make([]*jsonrpc.DecodedOutput, 0, len(data))
+	dataVal := make([]*api.DecodedOutput, 0, len(data))
 	for _, item := range data {
-		decoded, err := jsonrpc.DecodeOutput(item, s.OutputAbi)
+		decoded, err := api.DecodeOutput(item, s.OutputAbi)
 		if err != nil {
-			decoded = &jsonrpc.DecodedOutput{Output: item, DecodedData: err.Error()}
+			decoded = &api.DecodedOutput{
+				Output:      item,
+				DecodedData: &api.DecodedData{Type: "error", RawData: err.Error()},
+			}
 		}
 		dataVal = append(dataVal, decoded)
 	}
@@ -333,7 +339,7 @@ func (s *RepositoryReadService) ListOutputs(ctx context.Context, params jsonrpc.
 	return json.RawMessage(result), err
 }
 
-func (s *RepositoryReadService) GetReport(ctx context.Context, params jsonrpc.GetReportParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetReport(ctx context.Context, params api.GetReportParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -361,7 +367,7 @@ func (s *RepositoryReadService) GetReport(ctx context.Context, params jsonrpc.Ge
 	return json.RawMessage(result), err
 }
 
-func (s *RepositoryReadService) ListReports(ctx context.Context, params jsonrpc.ListReportsParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListReports(ctx context.Context, params api.ListReportsParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -417,7 +423,7 @@ func (s *RepositoryReadService) ListReports(ctx context.Context, params jsonrpc.
 	return json.RawMessage(result), err
 }
 
-func (s *RepositoryReadService) GetTournament(ctx context.Context, params jsonrpc.GetTournamentParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetTournament(ctx context.Context, params api.GetTournamentParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -444,7 +450,7 @@ func (s *RepositoryReadService) GetTournament(ctx context.Context, params jsonrp
 	return json.RawMessage(result), err
 }
 
-func (s *RepositoryReadService) ListTournaments(ctx context.Context, params jsonrpc.ListTournamentsParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListTournaments(ctx context.Context, params api.ListTournamentsParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -516,7 +522,7 @@ func (s *RepositoryReadService) ListTournaments(ctx context.Context, params json
 	return json.RawMessage(result), err
 }
 
-func (s *RepositoryReadService) GetCommitment(ctx context.Context, params jsonrpc.GetCommitmentParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetCommitment(ctx context.Context, params api.GetCommitmentParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -550,7 +556,7 @@ func (s *RepositoryReadService) GetCommitment(ctx context.Context, params jsonrp
 	return json.RawMessage(result), err
 }
 
-func (s *RepositoryReadService) ListCommitments(ctx context.Context, params jsonrpc.ListCommitmentsParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListCommitments(ctx context.Context, params api.ListCommitmentsParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -605,7 +611,7 @@ func (s *RepositoryReadService) ListCommitments(ctx context.Context, params json
 	return json.RawMessage(result), err
 }
 
-func (s *RepositoryReadService) GetMatch(ctx context.Context, params jsonrpc.GetMatchParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetMatch(ctx context.Context, params api.GetMatchParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -639,7 +645,7 @@ func (s *RepositoryReadService) GetMatch(ctx context.Context, params jsonrpc.Get
 	return json.RawMessage(result), err
 }
 
-func (s *RepositoryReadService) ListMatches(ctx context.Context, params jsonrpc.ListMatchesParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListMatches(ctx context.Context, params api.ListMatchesParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -694,7 +700,7 @@ func (s *RepositoryReadService) ListMatches(ctx context.Context, params jsonrpc.
 	return json.RawMessage(result), err
 }
 
-func (s *RepositoryReadService) GetMatchAdvanced(ctx context.Context, params jsonrpc.GetMatchAdvancedParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetMatchAdvanced(ctx context.Context, params api.GetMatchAdvancedParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -731,7 +737,7 @@ func (s *RepositoryReadService) GetMatchAdvanced(ctx context.Context, params jso
 	return json.RawMessage(result), err
 }
 
-func (s *RepositoryReadService) ListMatchAdvances(ctx context.Context, params jsonrpc.ListMatchAdvancesParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListMatchAdvances(ctx context.Context, params api.ListMatchAdvancesParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {

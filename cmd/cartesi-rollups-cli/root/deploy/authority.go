@@ -98,20 +98,20 @@ func runDeployAuthority(cmd *cobra.Command, args []string) {
 	}
 
 	// deploy
-	if verboseParam || !asJsonParam {
+	if verboseParam || !asJSONParam {
 		fmt.Fprintf(os.Stderr, "deploying authority...")
 	}
 	deployment.Address, err = deployment.Deploy(ctx, client, txOpts)
 	cobra.CheckErr(err)
 
 	// report
-	if verboseParam || !asJsonParam {
+	if verboseParam || !asJSONParam {
 		fmt.Fprintf(os.Stderr, "success\n")
 		fmt.Fprintln(os.Stderr, "\tconsensus address:    ", deployment.Address)
 		fmt.Fprintln(os.Stderr, "\tepoch length:         ", deployment.EpochLength)
 	}
 
-	if asJsonParam {
+	if asJSONParam {
 		report, err := json.MarshalIndent(&deployment, "", "  ")
 		cobra.CheckErr(err) // deployed, but fail to print
 

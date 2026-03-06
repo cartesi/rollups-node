@@ -4,11 +4,13 @@
 package send
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
+	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
@@ -47,11 +49,13 @@ cartesi-rollups-cli send echo-dapp "hi" --yes`
 var (
 	isHex            bool
 	skipConfirmation bool
+	asJSONParam      bool
 )
 
 func init() {
 	Cmd.Flags().BoolVarP(&isHex, "hex", "x", false, "Force interpretation of payload as hex.")
 	Cmd.Flags().BoolVarP(&skipConfirmation, "yes", "y", false, "Skip confirmation prompt")
+	Cmd.Flags().BoolVar(&asJSONParam, "json", false, "Print result as JSON")
 
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
@@ -172,5 +176,17 @@ func run(cmd *cobra.Command, args []string) {
 	inputIndex, blockNumber, err := ethutil.AddInput(ctx, client, txOpts, iboxAddr, app.IApplicationAddress, payload)
 	cobra.CheckErr(err)
 
-	fmt.Printf("Input sent to app at %s. Index: %d BlockNumber: %d\n", app.IApplicationAddress, inputIndex, blockNumber)
+	if asJSONParam {
+		result := cli.SendResult{
+			ApplicationAddress: app.IApplicationAddress.Hex(),
+			InputIndex:         fmt.Sprintf("0x%x", inputIndex),
+			BlockNumber:        fmt.Sprintf("0x%x", blockNumber),
+		}
+		jsonBytes, err := json.MarshalIndent(&result, "", "  ")
+		cobra.CheckErr(err)
+		fmt.Println(string(jsonBytes))
+	} else {
+		fmt.Printf("Input sent to app at %s. Index: %d BlockNumber: %d\n",
+			app.IApplicationAddress, inputIndex, blockNumber)
+	}
 }

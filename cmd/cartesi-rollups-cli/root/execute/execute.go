@@ -4,6 +4,7 @@
 package execute
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
 
+	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
@@ -40,10 +42,12 @@ cartesi-rollups-cli execute echo-dapp 5 --yes`
 
 var (
 	skipConfirmation bool
+	asJSONParam      bool
 )
 
 func init() {
 	Cmd.Flags().BoolVarP(&skipConfirmation, "yes", "y", false, "Skip confirmation prompt")
+	Cmd.Flags().BoolVar(&asJSONParam, "json", false, "Print result as JSON")
 
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
@@ -127,5 +131,14 @@ func run(cmd *cobra.Command, args []string) {
 	)
 	cobra.CheckErr(err)
 
-	fmt.Printf("Voucher executed tx-hash: %v\n", txHash)
+	if asJSONParam {
+		result := cli.ExecuteResult{
+			TransactionHash: txHash.Hex(),
+		}
+		jsonBytes, err := json.MarshalIndent(&result, "", "  ")
+		cobra.CheckErr(err)
+		fmt.Println(string(jsonBytes))
+	} else {
+		fmt.Printf("Voucher executed tx-hash: %v\n", txHash)
+	}
 }

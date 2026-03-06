@@ -5,16 +5,15 @@ package jsonrpc
 
 import (
 	"embed"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/evmreader"
+	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/version"
@@ -119,7 +118,7 @@ func handleDiscover(s *Service, w http.ResponseWriter, _ *http.Request, req RPCR
 }
 
 func handleListApplications(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params ListApplicationsParams
+	var params api.ListApplicationsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -147,32 +146,18 @@ func handleListApplications(s *Service, w http.ResponseWriter, r *http.Request, 
 		apps = []*model.Application{}
 	}
 
-	// Create result with proper pagination format per spec
-	result := struct {
-		Data       []*model.Application `json:"data"`
-		Pagination struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		} `json:"pagination"`
-	}{
+	writeRPCResult(w, req.ID, api.ListResponse[*model.Application]{
 		Data: apps,
-		Pagination: struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		}{
+		Pagination: api.Pagination{
 			TotalCount: total,
 			Limit:      params.Limit,
 			Offset:     params.Offset,
 		},
-	}
-
-	writeRPCResult(w, req.ID, result)
+	})
 }
 
 func handleGetApplication(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params GetApplicationParams
+	var params api.GetApplicationParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -196,18 +181,11 @@ func handleGetApplication(s *Service, w http.ResponseWriter, r *http.Request, re
 		return
 	}
 
-	// Return in the format specified in the OpenRPC spec
-	result := struct {
-		Data *model.Application `json:"data"`
-	}{
-		Data: app,
-	}
-
-	writeRPCResult(w, req.ID, result)
+	writeRPCResult(w, req.ID, api.SingleResponse[*model.Application]{Data: app})
 }
 
 func handleListEpochs(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params ListEpochsParams
+	var params api.ListEpochsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -256,32 +234,18 @@ func handleListEpochs(s *Service, w http.ResponseWriter, r *http.Request, req RP
 		epochs = []*model.Epoch{}
 	}
 
-	// Format response according to spec
-	result := struct {
-		Data       []*model.Epoch `json:"data"`
-		Pagination struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		} `json:"pagination"`
-	}{
+	writeRPCResult(w, req.ID, api.ListResponse[*model.Epoch]{
 		Data: epochs,
-		Pagination: struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		}{
+		Pagination: api.Pagination{
 			TotalCount: total,
 			Limit:      params.Limit,
 			Offset:     params.Offset,
 		},
-	}
-
-	writeRPCResult(w, req.ID, result)
+	})
 }
 
 func handleGetEpoch(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params GetEpochParams
+	var params api.GetEpochParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -311,18 +275,11 @@ func handleGetEpoch(s *Service, w http.ResponseWriter, r *http.Request, req RPCR
 		return
 	}
 
-	// Format response according to spec
-	result := struct {
-		Data *model.Epoch `json:"data"`
-	}{
-		Data: epoch,
-	}
-
-	writeRPCResult(w, req.ID, result)
+	writeRPCResult(w, req.ID, api.SingleResponse[*model.Epoch]{Data: epoch})
 }
 
 func handleGetLastAcceptedEpochIndex(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params GetLastAcceptedEpochIndexParams
+	var params api.GetLastAcceptedEpochIndexParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -346,18 +303,11 @@ func handleGetLastAcceptedEpochIndex(s *Service, w http.ResponseWriter, r *http.
 		return
 	}
 
-	// Format response according to spec
-	result := struct {
-		Data string `json:"data"`
-	}{
-		Data: fmt.Sprintf("0x%x", index),
-	}
-
-	writeRPCResult(w, req.ID, result)
+	writeRPCResult(w, req.ID, api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", index)})
 }
 
 func handleListInputs(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params ListInputsParams
+	var params api.ListInputsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -413,41 +363,27 @@ func handleListInputs(s *Service, w http.ResponseWriter, r *http.Request, req RP
 		return
 	}
 
-	resultInputs := make([]*DecodedInput, 0, len(inputs))
+	resultInputs := make([]*api.DecodedInput, 0, len(inputs))
 	for _, in := range inputs {
-		decoded, err := DecodeInput(in, s.inputABI)
+		decoded, err := api.DecodeInput(in, s.inputABI)
 		if err != nil {
 			s.Logger.Error("Unable to decode Input", "app", params.Application, "index", in.Index, "err", err)
 		}
 		resultInputs = append(resultInputs, decoded)
 	}
 
-	// Format response according to spec
-	result := struct {
-		Data       []*DecodedInput `json:"data"`
-		Pagination struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		} `json:"pagination"`
-	}{
+	writeRPCResult(w, req.ID, api.ListResponse[*api.DecodedInput]{
 		Data: resultInputs,
-		Pagination: struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		}{
+		Pagination: api.Pagination{
 			TotalCount: total,
 			Limit:      params.Limit,
 			Offset:     params.Offset,
 		},
-	}
-
-	writeRPCResult(w, req.ID, result)
+	})
 }
 
 func handleGetInput(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params GetInputParams
+	var params api.GetInputParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -477,23 +413,16 @@ func handleGetInput(s *Service, w http.ResponseWriter, r *http.Request, req RPCR
 		return
 	}
 
-	decoded, err := DecodeInput(input, s.inputABI)
+	decoded, err := api.DecodeInput(input, s.inputABI)
 	if err != nil {
 		s.Logger.Error("Unable to decode Input", "app", params.Application, "index", input.Index, "err", err)
 	}
 
-	// Format response according to spec
-	response := struct {
-		Data *DecodedInput `json:"data"`
-	}{
-		Data: decoded,
-	}
-
-	writeRPCResult(w, req.ID, response)
+	writeRPCResult(w, req.ID, api.SingleResponse[*api.DecodedInput]{Data: decoded})
 }
 
 func handleGetProcessedInputCount(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params GetApplicationParams
+	var params api.GetApplicationParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -517,33 +446,11 @@ func handleGetProcessedInputCount(s *Service, w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Return processed input count as specified in the spec
-	result := struct {
-		ProcessedInputs string `json:"data"`
-	}{
-		ProcessedInputs: fmt.Sprintf("0x%x", processedInputs),
-	}
-
-	writeRPCResult(w, req.ID, result)
-}
-
-func ParseOutputType(s string) ([]byte, error) {
-	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
-		s = s[2:]
-	}
-	if len(s) != 8 { //nolint: mnd
-		return []byte{}, fmt.Errorf("invalid output type: expected exactly 4 bytes")
-	}
-	// Decode the hex string into bytes.
-	b, err := hex.DecodeString(s)
-	if err != nil {
-		return []byte{}, err
-	}
-	return b, nil
+	writeRPCResult(w, req.ID, api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", processedInputs)})
 }
 
 func handleListOutputs(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params ListOutputsParams
+	var params api.ListOutputsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -587,7 +494,7 @@ func handleListOutputs(s *Service, w http.ResponseWriter, r *http.Request, req R
 
 	// Add output type filter if provided
 	if params.OutputType != nil {
-		outputType, err := ParseOutputType(*params.OutputType)
+		outputType, err := api.ParseOutputType(*params.OutputType)
 		if err != nil {
 			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid output type: %v", err), nil)
 			return
@@ -615,9 +522,9 @@ func handleListOutputs(s *Service, w http.ResponseWriter, r *http.Request, req R
 		return
 	}
 
-	resultOutputs := make([]*DecodedOutput, 0, len(outputs))
+	resultOutputs := make([]*api.DecodedOutput, 0, len(outputs))
 	for _, out := range outputs {
-		decoded, err := DecodeOutput(out, s.outputABI)
+		decoded, err := api.DecodeOutput(out, s.outputABI)
 		if err != nil {
 			s.Logger.Error("Unable to decode Output", "app", params.Application, "index", out.Index, "err", err)
 		}
@@ -628,32 +535,18 @@ func handleListOutputs(s *Service, w http.ResponseWriter, r *http.Request, req R
 		return
 	}
 
-	// Format response according to spec
-	result := struct {
-		Data       []*DecodedOutput `json:"data"`
-		Pagination struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		} `json:"pagination"`
-	}{
+	writeRPCResult(w, req.ID, api.ListResponse[*api.DecodedOutput]{
 		Data: resultOutputs,
-		Pagination: struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		}{
+		Pagination: api.Pagination{
 			TotalCount: total,
 			Limit:      params.Limit,
 			Offset:     params.Offset,
 		},
-	}
-
-	writeRPCResult(w, req.ID, result)
+	})
 }
 
 func handleGetOutput(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params GetOutputParams
+	var params api.GetOutputParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -683,23 +576,16 @@ func handleGetOutput(s *Service, w http.ResponseWriter, r *http.Request, req RPC
 		return
 	}
 
-	decoded, err := DecodeOutput(output, s.outputABI)
+	decoded, err := api.DecodeOutput(output, s.outputABI)
 	if err != nil {
 		s.Logger.Error("Unable to decode Output", "app", params.Application, "index", output.Index, "err", err)
 	}
 
-	// Format response according to spec
-	response := struct {
-		Data *DecodedOutput `json:"data"`
-	}{
-		Data: decoded,
-	}
-
-	writeRPCResult(w, req.ID, response)
+	writeRPCResult(w, req.ID, api.SingleResponse[*api.DecodedOutput]{Data: decoded})
 }
 
 func handleListReports(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params ListReportsParams
+	var params api.ListReportsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -758,32 +644,18 @@ func handleListReports(s *Service, w http.ResponseWriter, r *http.Request, req R
 		reports = []*model.Report{}
 	}
 
-	// Format response according to spec
-	result := struct {
-		Data       []*model.Report `json:"data"`
-		Pagination struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		} `json:"pagination"`
-	}{
+	writeRPCResult(w, req.ID, api.ListResponse[*model.Report]{
 		Data: reports,
-		Pagination: struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		}{
+		Pagination: api.Pagination{
 			TotalCount: total,
 			Limit:      params.Limit,
 			Offset:     params.Offset,
 		},
-	}
-
-	writeRPCResult(w, req.ID, result)
+	})
 }
 
 func handleGetReport(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params GetReportParams
+	var params api.GetReportParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -813,18 +685,11 @@ func handleGetReport(s *Service, w http.ResponseWriter, r *http.Request, req RPC
 		return
 	}
 
-	// Format response according to spec
-	response := struct {
-		Data *model.Report `json:"data"`
-	}{
-		Data: report,
-	}
-
-	writeRPCResult(w, req.ID, response)
+	writeRPCResult(w, req.ID, api.SingleResponse[*model.Report]{Data: report})
 }
 
 func handleListTournaments(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params ListTournamentsParams
+	var params api.ListTournamentsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -898,32 +763,18 @@ func handleListTournaments(s *Service, w http.ResponseWriter, r *http.Request, r
 		tournaments = []*model.Tournament{}
 	}
 
-	// Format response according to spec
-	result := struct {
-		Data       []*model.Tournament `json:"data"`
-		Pagination struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		} `json:"pagination"`
-	}{
+	writeRPCResult(w, req.ID, api.ListResponse[*model.Tournament]{
 		Data: tournaments,
-		Pagination: struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		}{
+		Pagination: api.Pagination{
 			TotalCount: total,
 			Limit:      params.Limit,
 			Offset:     params.Offset,
 		},
-	}
-
-	writeRPCResult(w, req.ID, result)
+	})
 }
 
 func handleGetTournament(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params GetTournamentParams
+	var params api.GetTournamentParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -953,18 +804,11 @@ func handleGetTournament(s *Service, w http.ResponseWriter, r *http.Request, req
 		return
 	}
 
-	// Format response according to spec
-	response := struct {
-		Data *model.Tournament `json:"data"`
-	}{
-		Data: tournament,
-	}
-
-	writeRPCResult(w, req.ID, response)
+	writeRPCResult(w, req.ID, api.SingleResponse[*model.Tournament]{Data: tournament})
 }
 
 func handleListCommitments(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params ListCommitmentsParams
+	var params api.ListCommitmentsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -1021,32 +865,18 @@ func handleListCommitments(s *Service, w http.ResponseWriter, r *http.Request, r
 		commitments = []*model.Commitment{}
 	}
 
-	// Format response according to spec
-	result := struct {
-		Data       []*model.Commitment `json:"data"`
-		Pagination struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		} `json:"pagination"`
-	}{
+	writeRPCResult(w, req.ID, api.ListResponse[*model.Commitment]{
 		Data: commitments,
-		Pagination: struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		}{
+		Pagination: api.Pagination{
 			TotalCount: total,
 			Limit:      params.Limit,
 			Offset:     params.Offset,
 		},
-	}
-
-	writeRPCResult(w, req.ID, result)
+	})
 }
 
 func handleGetCommitment(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params GetCommitmentParams
+	var params api.GetCommitmentParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -1090,18 +920,11 @@ func handleGetCommitment(s *Service, w http.ResponseWriter, r *http.Request, req
 		return
 	}
 
-	// Format response according to spec
-	response := struct {
-		Data *model.Commitment `json:"data"`
-	}{
-		Data: commitment,
-	}
-
-	writeRPCResult(w, req.ID, response)
+	writeRPCResult(w, req.ID, api.SingleResponse[*model.Commitment]{Data: commitment})
 }
 
 func handleListMatches(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params ListMatchesParams
+	var params api.ListMatchesParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -1158,32 +981,18 @@ func handleListMatches(s *Service, w http.ResponseWriter, r *http.Request, req R
 		matches = []*model.Match{}
 	}
 
-	// Format response according to spec
-	result := struct {
-		Data       []*model.Match `json:"data"`
-		Pagination struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		} `json:"pagination"`
-	}{
+	writeRPCResult(w, req.ID, api.ListResponse[*model.Match]{
 		Data: matches,
-		Pagination: struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		}{
+		Pagination: api.Pagination{
 			TotalCount: total,
 			Limit:      params.Limit,
 			Offset:     params.Offset,
 		},
-	}
-
-	writeRPCResult(w, req.ID, result)
+	})
 }
 
 func handleGetMatch(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params GetMatchParams
+	var params api.GetMatchParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -1223,18 +1032,11 @@ func handleGetMatch(s *Service, w http.ResponseWriter, r *http.Request, req RPCR
 		return
 	}
 
-	// Format response according to spec
-	response := struct {
-		Data *model.Match `json:"data"`
-	}{
-		Data: match,
-	}
-
-	writeRPCResult(w, req.ID, response)
+	writeRPCResult(w, req.ID, api.SingleResponse[*model.Match]{Data: match})
 }
 
 func handleListMatchAdvances(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params ListMatchAdvancesParams
+	var params api.ListMatchAdvancesParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -1291,32 +1093,18 @@ func handleListMatchAdvances(s *Service, w http.ResponseWriter, r *http.Request,
 		matchAdvances = []*model.MatchAdvanced{}
 	}
 
-	// Format response according to spec
-	result := struct {
-		Data       []*model.MatchAdvanced `json:"data"`
-		Pagination struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		} `json:"pagination"`
-	}{
+	writeRPCResult(w, req.ID, api.ListResponse[*model.MatchAdvanced]{
 		Data: matchAdvances,
-		Pagination: struct {
-			TotalCount uint64 `json:"total_count"`
-			Limit      uint64 `json:"limit"`
-			Offset     uint64 `json:"offset"`
-		}{
+		Pagination: api.Pagination{
 			TotalCount: total,
 			Limit:      params.Limit,
 			Offset:     params.Offset,
 		},
-	}
-
-	writeRPCResult(w, req.ID, result)
+	})
 }
 
 func handleGetMatchAdvanced(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
-	var params GetMatchAdvancedParams
+	var params api.GetMatchAdvancedParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
@@ -1362,14 +1150,7 @@ func handleGetMatchAdvanced(s *Service, w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	// Format response according to spec
-	response := struct {
-		Data *model.MatchAdvanced `json:"data"`
-	}{
-		Data: matchAdvanced,
-	}
-
-	writeRPCResult(w, req.ID, response)
+	writeRPCResult(w, req.ID, api.SingleResponse[*model.MatchAdvanced]{Data: matchAdvanced})
 }
 
 func handleGetChainID(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
@@ -1384,23 +1165,11 @@ func handleGetChainID(s *Service, w http.ResponseWriter, r *http.Request, req RP
 		return
 	}
 
-	result := struct {
-		Data string `json:"data"`
-	}{
-		Data: fmt.Sprintf("0x%x", config.Value.ChainID),
-	}
-
-	writeRPCResult(w, req.ID, result)
+	writeRPCResult(w, req.ID, api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", config.Value.ChainID)})
 }
 
 func handleGetNodeVersion(_ *Service, w http.ResponseWriter, _ *http.Request, req RPCRequest) {
-	result := struct {
-		Data string `json:"data"`
-	}{
-		Data: version.BuildVersion,
-	}
-
-	writeRPCResult(w, req.ID, result)
+	writeRPCResult(w, req.ID, api.SingleResponse[string]{Data: version.BuildVersion})
 }
 
 func (s *Service) applicationAbsentOrError(

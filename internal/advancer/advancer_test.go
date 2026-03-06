@@ -1144,8 +1144,8 @@ func (mock *MockMachineManager) Close() error {
 
 // MockMachineInstance is a test implementation of manager.MachineInstance
 type MockMachineInstance struct {
-	application        *Application
-	machineImpl        *MockMachineImpl
+	application         *Application
+	machineImpl         *MockMachineImpl
 	createSnapshotError error
 }
 

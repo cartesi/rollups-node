@@ -9,7 +9,7 @@ import (
 	"errors"
 
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/jsonrpc"
+	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
 )
 
 var (
@@ -18,23 +18,23 @@ var (
 )
 
 type ReadService interface {
-	GetApplication(ctx context.Context, params jsonrpc.GetApplicationParams) (json.RawMessage, error)
-	GetEpoch(ctx context.Context, params jsonrpc.GetEpochParams) (json.RawMessage, error)
-	ListEpochs(ctx context.Context, params jsonrpc.ListEpochsParams) (json.RawMessage, error)
-	GetInput(ctx context.Context, params jsonrpc.GetInputParams) (json.RawMessage, error)
-	ListInputs(ctx context.Context, params jsonrpc.ListInputsParams) (json.RawMessage, error)
-	GetOutput(ctx context.Context, params jsonrpc.GetOutputParams) (json.RawMessage, error)
-	ListOutputs(ctx context.Context, params jsonrpc.ListOutputsParams) (json.RawMessage, error)
-	GetReport(ctx context.Context, params jsonrpc.GetReportParams) (json.RawMessage, error)
-	ListReports(ctx context.Context, params jsonrpc.ListReportsParams) (json.RawMessage, error)
-	GetTournament(ctx context.Context, params jsonrpc.GetTournamentParams) (json.RawMessage, error)
-	ListTournaments(ctx context.Context, params jsonrpc.ListTournamentsParams) (json.RawMessage, error)
-	GetCommitment(ctx context.Context, params jsonrpc.GetCommitmentParams) (json.RawMessage, error)
-	ListCommitments(ctx context.Context, params jsonrpc.ListCommitmentsParams) (json.RawMessage, error)
-	GetMatch(ctx context.Context, params jsonrpc.GetMatchParams) (json.RawMessage, error)
-	ListMatches(ctx context.Context, params jsonrpc.ListMatchesParams) (json.RawMessage, error)
-	GetMatchAdvanced(ctx context.Context, params jsonrpc.GetMatchAdvancedParams) (json.RawMessage, error)
-	ListMatchAdvances(ctx context.Context, params jsonrpc.ListMatchAdvancesParams) (json.RawMessage, error)
+	GetApplication(ctx context.Context, params api.GetApplicationParams) (json.RawMessage, error)
+	GetEpoch(ctx context.Context, params api.GetEpochParams) (json.RawMessage, error)
+	ListEpochs(ctx context.Context, params api.ListEpochsParams) (json.RawMessage, error)
+	GetInput(ctx context.Context, params api.GetInputParams) (json.RawMessage, error)
+	ListInputs(ctx context.Context, params api.ListInputsParams) (json.RawMessage, error)
+	GetOutput(ctx context.Context, params api.GetOutputParams) (json.RawMessage, error)
+	ListOutputs(ctx context.Context, params api.ListOutputsParams) (json.RawMessage, error)
+	GetReport(ctx context.Context, params api.GetReportParams) (json.RawMessage, error)
+	ListReports(ctx context.Context, params api.ListReportsParams) (json.RawMessage, error)
+	GetTournament(ctx context.Context, params api.GetTournamentParams) (json.RawMessage, error)
+	ListTournaments(ctx context.Context, params api.ListTournamentsParams) (json.RawMessage, error)
+	GetCommitment(ctx context.Context, params api.GetCommitmentParams) (json.RawMessage, error)
+	ListCommitments(ctx context.Context, params api.ListCommitmentsParams) (json.RawMessage, error)
+	GetMatch(ctx context.Context, params api.GetMatchParams) (json.RawMessage, error)
+	ListMatches(ctx context.Context, params api.ListMatchesParams) (json.RawMessage, error)
+	GetMatchAdvanced(ctx context.Context, params api.GetMatchAdvancedParams) (json.RawMessage, error)
+	ListMatchAdvances(ctx context.Context, params api.ListMatchAdvancesParams) (json.RawMessage, error)
 	Close()
 }
 
