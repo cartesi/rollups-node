@@ -7,9 +7,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  id-token: write
-  contents: read
+env:
+  GHCR_REGISTRY: ghcr.io
+  CI_TAG: ci-${{ github.sha }}
 
 jobs:
   basic-checks:
@@ -41,6 +41,10 @@ jobs:
 
   build:
     runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
@@ -49,6 +53,13 @@ jobs:
 
       - name: Setup variables
         run: echo ROLLUPS_NODE_VERSION=`make version` >> $GITHUB_ENV
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
@@ -59,9 +70,8 @@ jobs:
           file: Dockerfile
           context: .
           platforms: linux/amd64
-          tags:  ${{ github.repository_owner }}/rollups-node:devel-amd64
-          push: false
-          load: true
+          tags: ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node:devel-amd64-${{ env.CI_TAG }}
+          push: true
           project: ${{ vars.DEPOT_PROJECT }}
           token: ${{ secrets.DEPOT_TOKEN }}
 
@@ -71,9 +81,20 @@ jobs:
           file: Dockerfile
           context: .
           platforms: linux/arm64
-          tags:  ${{ github.repository_owner }}/rollups-node:devel-arm64
-          push: false
-          load: true
+          tags: ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node:devel-arm64-${{ env.CI_TAG }}
+          push: true
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
+
+      - name: Build tester image
+        uses: depot/build-push-action@v1
+        with:
+          file: Dockerfile
+          context: .
+          target: tester
+          platforms: linux/amd64
+          tags: ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node:tester-${{ env.CI_TAG }}
+          push: true
           project: ${{ vars.DEPOT_PROJECT }}
           token: ${{ secrets.DEPOT_TOKEN }}
 
@@ -83,9 +104,8 @@ jobs:
           file: test/devnet/Dockerfile
           context: .
           platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/rollups-node-devnet:devel
-          push: false
-          load: true
+          tags: ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node-devnet:${{ env.CI_TAG }}
+          push: true
           project: ${{ vars.DEPOT_PROJECT }}
           token: ${{ secrets.DEPOT_TOKEN }}
 
@@ -96,7 +116,7 @@ jobs:
           context: .
           target: debian-packager
           platforms: linux/amd64
-          tags:  ${{ github.repository_owner }}/rollups-node:debian-packager-amd64
+          tags: ${{ github.repository_owner }}/rollups-node:debian-packager-amd64
           push: false
           load: true
           project: ${{ vars.DEPOT_PROJECT }}
@@ -112,7 +132,7 @@ jobs:
           context: .
           target: debian-packager
           platforms: linux/arm64
-          tags:  ${{ github.repository_owner }}/rollups-node:debian-packager-arm64
+          tags: ${{ github.repository_owner }}/rollups-node:debian-packager-arm64
           push: false
           load: true
           project: ${{ vars.DEPOT_PROJECT }}
@@ -121,7 +141,7 @@ jobs:
       - name: Export deb package artifact (arm64)
         run: make copy-debian-package BUILD_PLATFORM=linux/arm64 DEB_ARCH=arm64 DEB_PACKAGER_IMG=${{ github.repository_owner }}/rollups-node:debian-packager-arm64
 
-      - name: Upload artifacts
+      - name: Upload deb artifacts
         uses: actions/upload-artifact@v4
         with:
           name: artifacts
@@ -129,60 +149,128 @@ jobs:
             cartesi-rollups-node-v${{ env.ROLLUPS_NODE_VERSION }}_amd64.deb
             cartesi-rollups-node-v${{ env.ROLLUPS_NODE_VERSION }}_arm64.deb
 
-  unit-test:
+  lint:
+    # disabled for now
+    if: false
     runs-on: ubuntu-24.04
-    needs:
-      - build
+    needs: [build]
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      - name: Login to GitHub Container Registry
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.GHCR_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Depot CLI
-        uses: depot/setup-action@v1
+      - name: Pull and tag tester image
+        run: |
+          docker pull ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node:tester-${{ env.CI_TAG }}
+          docker tag ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node:tester-${{ env.CI_TAG }} \
+            cartesi/rollups-node:tester
 
-      - name: Build rollups-node:tester image
-        uses: depot/build-push-action@v1
-        with:
-          file: Dockerfile
-          context: .
-          target: go-builder
-          platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/rollups-node:tester
-          push: false
-          load: true
-          project: ${{ vars.DEPOT_PROJECT }}
-          token: ${{ secrets.DEPOT_TOKEN }}
+      - name: Run linting
+        run: make lint-with-docker
 
-      - name: Build devnet image
-        uses: depot/build-push-action@v1
+  unit-test:
+    runs-on: ubuntu-24.04
+    needs: [build]
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
         with:
-          file: test/devnet/Dockerfile
-          context: .
-          platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/rollups-node-devnet:devel
-          push: false
-          load: true
-          project: ${{ vars.DEPOT_PROJECT }}
-          token: ${{ secrets.DEPOT_TOKEN }}
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull and tag CI images
+        run: |
+          docker pull ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node:tester-${{ env.CI_TAG }}
+          docker pull ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node:devel-amd64-${{ env.CI_TAG }}
+          docker pull ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node-devnet:${{ env.CI_TAG }}
+          docker tag ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node:tester-${{ env.CI_TAG }} \
+            cartesi/rollups-node:tester
+          docker tag ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node:devel-amd64-${{ env.CI_TAG }} \
+            cartesi/rollups-node:devel
+          docker tag ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node-devnet:${{ env.CI_TAG }} \
+            cartesi/rollups-node-devnet:devel
+
+      - name: Cache test machine images
+        uses: actions/cache@v4
+        with:
+          path: test/downloads
+          key: test-deps-${{ hashFiles('test/dependencies.sha256') }}
 
       - name: Download test dependencies
-        run: |
-          make download-test-dependencies
+        run: make download-test-dependencies
 
       - name: Run unit tests
+        run: make unit-test-with-compose
+
+  integration-test:
+    runs-on: ubuntu-24.04
+    needs: [build]
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull and tag CI images
         run: |
-          make test-with-compose
+          docker pull ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node:tester-${{ env.CI_TAG }}
+          docker pull ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node:devel-amd64-${{ env.CI_TAG }}
+          docker pull ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node-devnet:${{ env.CI_TAG }}
+          docker tag ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node:tester-${{ env.CI_TAG }} \
+            cartesi/rollups-node:tester
+          docker tag ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node:devel-amd64-${{ env.CI_TAG }} \
+            cartesi/rollups-node:devel
+          docker tag ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node-devnet:${{ env.CI_TAG }} \
+            cartesi/rollups-node-devnet:devel
+
+      - name: Cache test machine images
+        uses: actions/cache@v4
+        with:
+          path: test/downloads
+          key: test-deps-${{ hashFiles('test/dependencies.sha256') }}
+
+      - name: Download test dependencies
+        run: make download-test-dependencies
+
+      - name: Run integration tests
+        run: make integration-test-with-compose
+
+      - name: Upload integration test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-logs
+          path: integration-logs.txt
+          retention-days: 3
 
   publish_artifacts:
     name: Publish artifacts
-    needs: [basic-checks, build, unit-test]
+    needs: [basic-checks, build, unit-test, integration-test]
     runs-on: ubuntu-24.04
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     permissions:

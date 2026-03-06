@@ -9,7 +9,7 @@ on:
 
 jobs:
   cleanup:
-    name: Cleanup ghcr.io/cartesi/${{ matrix.image }}:pr-${{ github.event.number }} image
+    name: Cleanup ghcr.io/cartesi/${{ matrix.image }} CI images
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -17,9 +17,11 @@ jobs:
       matrix:
         image:
           - rollups-node
-          - rollups-node-ci
+          - rollups-node-devnet
     steps:
-      - uses: vlaurin/action-ghcr-prune@v0.6.0
+      # Remove PR-scoped tags immediately.
+      - name: Prune PR tags
+        uses: vlaurin/action-ghcr-prune@v0.6.0
         with:
           organization: cartesi
           container: ${{ matrix.image }}
@@ -28,3 +30,17 @@ jobs:
           keep-last: 0
           prune-tags-regexes: |
             ^pr-${{ github.event.number }}$
+
+      # Prune stale CI images older than 7 days to avoid deleting
+      # images needed by concurrently running workflows.
+      - name: Prune stale CI tags
+        uses: vlaurin/action-ghcr-prune@v0.6.0
+        with:
+          organization: cartesi
+          container: ${{ matrix.image }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          prune-untagged: false
+          keep-last: 0
+          older-than: 7 days
+          prune-tags-regexes: |
+            ^ci-
