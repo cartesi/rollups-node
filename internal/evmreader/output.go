@@ -227,15 +227,15 @@ func (r *Service) readOutputExecutionsFromBlockChain(
 			Context:     ctx,
 			BlockNumber: new(big.Int).SetUint64(block),
 		}
-		numInputs, err := app.applicationContract.GetNumberOfExecutedOutputs(callOpts)
+		numOutputs, err := app.applicationContract.GetNumberOfExecutedOutputs(callOpts)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get number of Executed outputs at block %d: %w", block, err)
+			return nil, fmt.Errorf("failed to get number of executed outputs at block %d: %w", block, err)
 		}
-		return numInputs, nil
+		return numOutputs, nil
 	}
 
 	var executedOutputs []*iapplication.IApplicationOutputExecuted
-	// Define onHit function that accumulates inputs at transition blocks
+	// Define onHit function that accumulates executed outputs at transition blocks
 	onHit := func(block uint64) error {
 		filterOpts := &bind.FilterOpts{
 			Context: ctx,
@@ -244,7 +244,7 @@ func (r *Service) readOutputExecutionsFromBlockChain(
 		}
 		execEvents, err := app.applicationContract.RetrieveOutputExecutionEvents(filterOpts)
 		if err != nil {
-			return fmt.Errorf("failed to retrieve inputs at block %d: %w", block, err)
+			return fmt.Errorf("failed to retrieve output execution events at block %d: %w", block, err)
 		}
 		executedOutputs = append(executedOutputs, execEvents...)
 		return nil
@@ -257,10 +257,10 @@ func (r *Service) readOutputExecutionsFromBlockChain(
 	}
 	prevValue.SetUint64(execCount)
 
-	// Use FindTransitions to find blocks where inputs were added
+	// Use FindTransitions to find blocks where outputs were executed
 	_, err = ethutil.FindTransitions(ctx, startBlock, endBlock, prevValue, oracle, onHit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to walk input transitions: %w", err)
+		return nil, fmt.Errorf("failed to walk output execution transitions: %w", err)
 	}
 
 	r.Logger.Debug("Fetched output executed events for application",

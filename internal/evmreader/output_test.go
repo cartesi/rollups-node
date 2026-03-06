@@ -536,6 +536,7 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 		inputReaderEnabled:                  true,
 		blockchainMaxRetries:                0,
 		blockchainSubscriptionRetryInterval: time.Second,
+		wsLivenessTimeout:                   120 * time.Second,
 	}
 
 	logLevel, err := config.GetLogLevel()

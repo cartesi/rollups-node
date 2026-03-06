@@ -78,7 +78,7 @@ func (r *Service) Run(ctx context.Context, ready chan struct{}) error {
 		r.Logger.Error(err.Error())
 
 		if attempt > r.blockchainMaxRetries {
-			r.Logger.Error("Max attempts reached for subscription restart. Exititng",
+			r.Logger.Error("Max attempts reached for subscription restart. Exiting",
 				"max_retries", r.blockchainMaxRetries,
 			)
 			return err
@@ -115,11 +115,14 @@ func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) 
 	headers := make(chan *types.Header)
 	sub, err := r.wsClient.SubscribeNewHead(ctx, headers)
 	if err != nil {
-		return fmt.Errorf("could not start subscription: %v", err)
+		return fmt.Errorf("could not start subscription: %w", err)
 	}
 	r.Logger.Info("Subscribed to new block events")
 	ready <- struct{}{}
 	defer sub.Unsubscribe()
+
+	liveness := time.NewTimer(r.wsLivenessTimeout)
+	defer liveness.Stop()
 
 	for {
 		select {
@@ -127,7 +130,15 @@ func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) 
 			return ctx.Err()
 		case err := <-sub.Err():
 			return &SubscriptionError{Cause: err}
+		case <-liveness.C:
+			return &SubscriptionError{
+				Cause: fmt.Errorf(
+					"no new block header received for %s, assuming stalled connection",
+					r.wsLivenessTimeout,
+				),
+			}
 		case header := <-headers:
+			liveness.Reset(r.wsLivenessTimeout)
 
 			// Every time a new block arrives
 			r.Logger.Debug("New block header received", "blockNumber", header.Number, "blockHash", header.Hash())
@@ -239,7 +250,7 @@ func (r *Service) fetchMostRecentHeader(
 			ctx,
 			new(big.Int).SetInt64(defaultBlockNumber))
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve header. %v", err)
+		return nil, fmt.Errorf("failed to retrieve header: %w", err)
 	}
 
 	if header == nil {

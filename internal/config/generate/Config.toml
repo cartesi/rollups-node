@@ -227,6 +227,13 @@ description = """
 Maximum wait time in seconds for the exponential backoff retry policy. The delay between retries for HTTP blockchain requests will never exceed this value, regardless of the backoff calculation."""
 used-by = ["evmreader", "claimer", "node", "prt"]
 
+[rollups.CARTESI_BLOCKCHAIN_WS_LIVENESS_TIMEOUT]
+default = "120"
+go-type = "Duration"
+description = """
+Maximum time in seconds to wait for a new block header on the WebSocket subscription before treating the connection as stalled and reconnecting. Handles silent connection drops where no error is delivered."""
+used-by = ["evmreader", "node"]
+
 [rollups.CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE]
 default = "0"
 go-type = "uint64"

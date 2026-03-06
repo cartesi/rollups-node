@@ -154,6 +154,7 @@ func (s *EvmReaderSuite) SetupTest() {
 		inputReaderEnabled:                  true,
 		blockchainMaxRetries:                0,
 		blockchainSubscriptionRetryInterval: time.Second,
+		wsLivenessTimeout:                   120 * time.Second,
 	}
 
 	logLevel, err := config.GetLogLevel()
@@ -190,6 +191,15 @@ func (s *EvmReaderSuite) TestItEventuallyBecomesReady() {
 	case err := <-errChannel:
 		s.FailNow("unexpected failure", err)
 	}
+}
+
+func (s *EvmReaderSuite) TestItReturnsErrorWhenWebSocketStalls() {
+	s.evmReader.wsLivenessTimeout = 50 * time.Millisecond
+	ready := make(chan struct{}, 1)
+	err := s.evmReader.watchForNewBlocks(s.ctx, ready)
+	var subErr *SubscriptionError
+	s.Require().ErrorAs(err, &subErr)
+	s.Require().ErrorContains(err, "no new block header received")
 }
 
 func (s *EvmReaderSuite) TestItFailsToSubscribeForNewInputsOnStart() {

@@ -41,6 +41,7 @@ type Service struct {
 	inputReaderEnabled                  bool
 	blockchainMaxRetries                uint64
 	blockchainSubscriptionRetryInterval time.Duration
+	wsLivenessTimeout                   time.Duration
 }
 
 const EvmReaderConfigKey = "evm-reader"
@@ -104,6 +105,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	}
 	s.blockchainMaxRetries = c.Config.BlockchainHttpMaxRetries
 	s.blockchainSubscriptionRetryInterval = c.Config.BlockchainHttpRetryMinWait
+	s.wsLivenessTimeout = c.Config.BlockchainWsLivenessTimeout
 
 	s.client = c.EthClient
 	s.wsClient = c.EthWsClient
@@ -181,6 +183,6 @@ func (s *Service) setupPersistentConfig(
 		return &config.Value, nil
 	}
 
-	s.Logger.Error("Could not retrieve persistent config from Database. %w", "error", err)
+	s.Logger.Error("Could not retrieve persistent config from database", "error", err)
 	return nil, err
 }
