@@ -219,6 +219,30 @@ func DecodeOutput(output *model.Output, parsedAbi *abi.ABI) (*DecodedOutput, err
 	return decodedOutput, nil
 }
 
+// UnmarshalJSON deserializes a DecodedOutput: it delegates base fields to
+// model.Output.UnmarshalJSON, then extracts and parses the decoded_data field.
+func (d *DecodedOutput) UnmarshalJSON(data []byte) error {
+	if d.Output == nil {
+		d.Output = new(model.Output)
+	}
+	if err := d.Output.UnmarshalJSON(data); err != nil {
+		return err
+	}
+	var raw struct {
+		DecodedData json.RawMessage `json:"decoded_data"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if len(raw.DecodedData) > 0 && string(raw.DecodedData) != "null" {
+		d.DecodedData = new(DecodedData)
+		if err := json.Unmarshal(raw.DecodedData, d.DecodedData); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // MarshalJSON produces a flat JSON object merging Output fields with decoded_data.
 func (d *DecodedOutput) MarshalJSON() ([]byte, error) {
 	outputJSON, err := d.Output.MarshalJSON()

@@ -247,7 +247,7 @@ unit-test: $(COVER_DEPS) ## Execute go unit tests
 
 integration-test: ## Execute e2e tests
 	@echo "Running end-to-end tests"
-	@go test -count=1 ./test --tags=endtoendtests
+	@go test -count=1 -timeout 55m $(GO_BUILD_PARAMS) $(GO_TEST_FLAGS) -tags=endtoendtests ./test/integration/...
 
 echo-dapp: applications/echo-dapp ## Echo dapp
 
@@ -269,6 +269,20 @@ applications/exception-dapp: ## Create exception-dapp test application
 	@echo "Creating exception-dapp test application"
 	@mkdir -p applications
 	@cartesi-machine --ram-length=128Mi --store=applications/exception-dapp --final-hash -- "rollup accept && echo '{\"payload\": \"0x7468697320697320612064756d6d7920657863657074696f6e2074657874\"}' | rollup exception"
+
+reject-loop-dapp: applications/reject-loop-dapp ## Reject loop dapp
+
+exception-loop-dapp: applications/exception-loop-dapp ## Exception loop dapp
+
+applications/reject-loop-dapp: ## Create reject-loop-dapp test application
+	@echo "Creating reject-loop-dapp test application"
+	@mkdir -p applications
+	@cartesi-machine --ram-length=128Mi --store=applications/reject-loop-dapp --final-hash -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1 --verbose=1
+
+applications/exception-loop-dapp: ## Create exception-loop-dapp test application
+	@echo "Creating exception-loop-dapp test application"
+	@mkdir -p applications
+	@cartesi-machine --ram-length=128Mi --store=applications/exception-loop-dapp --final-hash -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --exception=1 --verbose=1
 
 deploy-echo-dapp: applications/echo-dapp ## Deploy echo-dapp test application
 	@echo "Deploying echo-dapp test application"
@@ -312,6 +326,10 @@ fmt: ## Run go fmt
 	@echo "Running go fmt"
 	@go fmt ./...
 
+fmt-check: ## Check go formatting (non-destructive)
+	@echo "Checking go formatting"
+	@test -z "$$(gofmt -l .)" || (echo "Unformatted files:" && gofmt -l . && exit 1)
+
 vet: ## Run go vet
 	@echo "Running go vet"
 	@go vet ./...
@@ -338,7 +356,7 @@ image: ## Build the docker images using bake
 	@docker build $(DOCKER_PLATFORM) -t cartesi/rollups-node:$(IMAGE_TAG) .
 
 tester-image: ## Build the docker images using bake
-	@docker build $(DOCKER_PLATFORM) --target=go-builder -t cartesi/rollups-node:tester .
+	@docker build $(DOCKER_PLATFORM) --target=tester -t cartesi/rollups-node:tester .
 
 debian-packager: ## Build debian packager image
 	@echo "Building debian packager image $(DEB_PACKAGER_IMG) $(BUILD_PLATFORM)"
@@ -391,15 +409,48 @@ shutdown-compose: ## Remove the containers and volumes from previous compose run
 
 unit-test-with-compose: $(CARTESI_TEST_MACHINE_IMAGES) ## Run unit tests using docker compose with auto-shutdown
 	@trap 'docker compose -f test/compose/compose.test.yaml down -v || true' EXIT && \
-		docker compose -f test/compose/compose.test.yaml run --remove-orphans unit-test
+		docker compose -f test/compose/compose.test.yaml run --rm --remove-orphans unit-test
 
-#integration-test-with-compose: $(CARTESI_TEST_MACHINE_IMAGES) ## Run integration tests using docker compose with auto-shutdown
-#	@trap 'docker compose -f test/compose/compose.test.yaml down -v || true' EXIT && \
-#		docker compose -f test/compose/compose.test.yaml run integration-test
+lint-with-docker: ## Run linting inside Docker (no host Go needed)
+	@docker run --rm cartesi/rollups-node:tester sh -c 'make lint && make vet && make fmt-check'
+
+integration-test-with-compose: $(CARTESI_TEST_MACHINE_IMAGES) ## Run integration tests using docker compose with auto-shutdown
+	@trap 'docker compose -f test/compose/compose.integration.yaml logs --no-color > integration-logs.txt 2>&1 || true; docker compose -f test/compose/compose.integration.yaml down -v || true' EXIT && \
+		docker compose -f test/compose/compose.integration.yaml run --rm --remove-orphans integration-test
 
 test-with-compose: ## Run all tests using docker compose with auto-shutdown
 	@$(MAKE) unit-test-with-compose
-#	@$(MAKE) integration-test-with-compose
+	@$(MAKE) integration-test-with-compose
+
+integration-test-local: build echo-dapp reject-loop-dapp exception-loop-dapp ## Run integration tests locally (requires: make start && eval $$(make env))
+	@cartesi-rollups-cli db init
+	@echo "Starting node in background..."
+	@env CARTESI_ADVANCER_POLLING_INTERVAL=1 \
+		CARTESI_VALIDATOR_POLLING_INTERVAL=1 \
+		CARTESI_CLAIMER_POLLING_INTERVAL=1 \
+		CARTESI_PRT_POLLING_INTERVAL=1 \
+		cartesi-rollups-node & NODE_PID=$$!; \
+	trap 'echo "Stopping node (pid $$NODE_PID)..."; kill $$NODE_PID 2>/dev/null; wait $$NODE_PID 2>/dev/null' EXIT; \
+	echo "Waiting for node to become healthy..."; \
+	attempts=0; \
+	until curl -sf http://localhost:10000/readyz >/dev/null 2>&1; do \
+		attempts=$$((attempts + 1)); \
+		if [ $$attempts -ge 60 ]; then \
+			echo "ERROR: Node failed to become healthy after 120 seconds"; \
+			exit 1; \
+		fi; \
+		sleep 2; \
+	done; \
+	echo "Node is healthy. Running integration tests..."; \
+	export CARTESI_TEST_DAPP_PATH=$(CURDIR)/applications/echo-dapp; \
+	export CARTESI_TEST_REJECT_DAPP_PATH=$(CURDIR)/applications/reject-loop-dapp; \
+	export CARTESI_TEST_EXCEPTION_DAPP_PATH=$(CURDIR)/applications/exception-loop-dapp; \
+	$(MAKE) integration-test
+
+ci-test: ## Run the full CI test pipeline locally (lint + unit + integration)
+#	@$(MAKE) lint-with-docker
+	@$(MAKE) unit-test-with-compose
+	@$(MAKE) integration-test-with-compose
 
 clean-test-compose-resources: ## Clean up compose resources after some unexpected test failure
 	@echo "Cleaning up Docker Compose resources..."
@@ -436,4 +487,4 @@ build-debian-package: install
 	sed 's|ARG_VERSION|$(ROLLUPS_NODE_VERSION)|g;s|ARG_ARCH|$(DEB_ARCH)|g' control.template > $(DESTDIR)/DEBIAN/control
 	dpkg-deb -Zxz --root-owner-group --build $(DESTDIR) $(DEB_FILENAME)
 
-.PHONY: build build-go clean clean-go test unit-test-go e2e-test lint fmt vet escape md-lint devnet image run-with-compose shutdown-compose help docs coverage-report $(GO_ARTIFACTS)
+.PHONY: build build-go clean clean-go test unit-test-go e2e-test lint fmt fmt-check vet escape md-lint devnet image run-with-compose shutdown-compose help docs coverage-report lint-with-docker integration-test-with-compose integration-test-local ci-test $(GO_ARTIFACTS)

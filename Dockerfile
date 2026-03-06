@@ -101,6 +101,27 @@ WORKDIR ${GO_BUILD_PATH}/rollups-node
 RUN make build-go
 
 # =============================================================================
+# STAGE: tester
+#
+# This stage extends go-builder with tools and directories needed for testing
+# and linting. It is NOT part of the production image build chain.
+# =============================================================================
+
+FROM go-builder AS tester
+
+# Install golangci-lint for linting inside Docker.
+ARG GOLANGCI_LINT_VERSION=1.64.5
+RUN go install github.com/golangci/golangci-lint/cmd/golangci-lint@v${GOLANGCI_LINT_VERSION}
+ENV PATH="${GOPATH}/bin:${PATH}"
+ENV GOLANGCI_LINT_CACHE=${GOCACHE}/golangci-lint
+
+# Create /dapps directory owned by cartesi for Docker named volume pre-population.
+# When a named volume is first mounted here, Docker copies this ownership.
+USER root
+RUN mkdir -p /dapps && chown cartesi:cartesi /dapps
+USER cartesi
+
+# =============================================================================
 # STAGE: debian-packager
 #
 # This stage packages the node binaries into a Debian package.
@@ -158,7 +179,7 @@ USER cartesi
 WORKDIR ${NODE_RUNTIME_DIR}
 
 HEALTHCHECK --interval=1s --timeout=1s --retries=5 \
-    CMD curl -G -f -H 'Content-Type: application/json' http://127.0.0.1:10000/healthz
+    CMD curl -G -f -H 'Content-Type: application/json' http://127.0.0.1:10000/readyz
 
 # Set the Go supervisor as the command.
 CMD [ "cartesi-rollups-node" ]
