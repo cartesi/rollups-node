@@ -670,21 +670,17 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 	).Return(new(big.Int).SetUint64(0), nil).Times(4)
 
 	s.contractFactory.On("CreateAdapters",
+		mock.MatchedBy(func(app *Application) bool {
+			return app.IApplicationAddress == applications[0].IApplicationAddress
+		}),
 		mock.Anything,
-		mock.Anything,
-	).Return(s.applicationContract1, s.inputBox, nil).Once()
+	).Return(s.applicationContract1, s.inputBox, nil)
 	s.contractFactory.On("CreateAdapters",
+		mock.MatchedBy(func(app *Application) bool {
+			return app.IApplicationAddress == applications[1].IApplicationAddress
+		}),
 		mock.Anything,
-		mock.Anything,
-	).Return(s.applicationContract2, nil, nil).Once()
-	s.contractFactory.On("CreateAdapters",
-		mock.Anything,
-		mock.Anything,
-	).Return(s.applicationContract2, nil, nil).Once()
-	s.contractFactory.On("CreateAdapters",
-		mock.Anything,
-		mock.Anything,
-	).Return(s.applicationContract2, nil, nil).Once()
+	).Return(s.applicationContract2, nil, nil)
 }
 
 func (s *EvmReaderSuite) TestCheckOutputFailsWhenOutputMismatches() {

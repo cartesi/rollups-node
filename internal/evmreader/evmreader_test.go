@@ -298,6 +298,20 @@ func (s *EvmReaderSuite) TestItFailsToSubscribeForNewInputsOnStart() {
 	s.wsClient.AssertExpectations(s.T())
 }
 
+// indexApps indexes applications given a key extractor function.
+// Only used in tests.
+func indexApps[K comparable](
+	keyExtractor func(appContracts) K,
+	apps []appContracts,
+) map[K][]appContracts {
+	result := make(map[K][]appContracts)
+	for _, item := range apps {
+		key := keyExtractor(item)
+		result[key] = append(result[key], item)
+	}
+	return result
+}
+
 func (s *EvmReaderSuite) TestIndexApps() {
 
 	s.Run("Ok", func() {
@@ -854,31 +868,20 @@ func (m *MockAdapterFactory) SetupDefaultBehavior(
 	inputBox1 *MockInputBox,
 ) *MockAdapterFactory {
 
-	// Set up a default behavior that always returns valid non-nil interfaces
+	// Match by application address so adapters are returned correctly regardless of call count
+	// (adapter caching means CreateAdapters is only called once per app address)
 	m.On("CreateAdapters",
+		mock.MatchedBy(func(app *Application) bool {
+			return app.IApplicationAddress == applications[0].IApplicationAddress
+		}),
 		mock.Anything,
-		mock.Anything,
-	).Return(appContract1, inputBox1, nil).Once()
+	).Return(appContract1, inputBox1, nil)
 	m.On("CreateAdapters",
+		mock.MatchedBy(func(app *Application) bool {
+			return app.IApplicationAddress == applications[1].IApplicationAddress
+		}),
 		mock.Anything,
-		mock.Anything,
-	).Return(appContract2, nil, nil).Once()
-	m.On("CreateAdapters",
-		mock.Anything,
-		mock.Anything,
-	).Return(appContract1, inputBox1, nil).Once()
-	m.On("CreateAdapters",
-		mock.Anything,
-		mock.Anything,
-	).Return(appContract2, nil, nil).Once()
-	m.On("CreateAdapters",
-		mock.Anything,
-		mock.Anything,
-	).Return(appContract1, inputBox1, nil).Once()
-	m.On("CreateAdapters",
-		mock.Anything,
-		mock.Anything,
-	).Return(appContract2, nil, nil).Once()
+	).Return(appContract2, nil, nil)
 	return m
 }
 

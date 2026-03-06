@@ -50,17 +50,3 @@ func insertSorted[T any](compare func(a, b *T) int, slice []*T, item *T) []*T {
 		compare)
 	return slices.Insert(slice, i, item)
 }
-
-// Index applications given a key extractor function
-func indexApps[K comparable](
-	keyExtractor func(appContracts) K,
-	apps []appContracts,
-) map[K][]appContracts {
-
-	result := make(map[K][]appContracts)
-	for _, item := range apps {
-		key := keyExtractor(item)
-		result[key] = append(result[key], item)
-	}
-	return result
-}

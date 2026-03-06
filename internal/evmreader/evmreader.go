@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -74,6 +75,18 @@ type appContracts struct {
 	applicationContract ApplicationContractAdapter
 	inputSource         InputSourceAdapter
 	daveConsensus       DaveConsensusAdapter
+}
+
+// cachedAdapters stores contract adapters along with the configuration fields
+// used to create them, enabling staleness detection when app config changes.
+type cachedAdapters struct {
+	applicationContract ApplicationContractAdapter
+	inputSource         InputSourceAdapter
+	daveConsensus       DaveConsensusAdapter
+	consensusAddr       common.Address
+	inputBoxAddr        common.Address
+	isDaveConsensus     bool
+	hasInputBoxDA       bool
 }
 
 func (r *Service) Run(ctx context.Context, ready chan struct{}) error {
@@ -147,6 +160,7 @@ func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) 
 	liveness := time.NewTimer(r.wsLivenessTimeout)
 	defer liveness.Stop()
 
+	adapterCache := make(map[common.Address]cachedAdapters)
 	var headersProcessed uint64
 	for {
 		select {
@@ -169,7 +183,8 @@ func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) 
 			liveness.Reset(r.wsLivenessTimeout)
 
 			// Every time a new block arrives
-			r.Logger.Debug("New block header received", "blockNumber", header.Number, "blockHash", header.Hash())
+			r.Logger.Debug("New block header received",
+				"blockNumber", header.Number, "blockHash", header.Hash())
 
 			r.Logger.Debug("Retrieving enabled applications")
 			runningApps, _, err := getAllRunningApplications(ctx, r.repository)
@@ -193,22 +208,65 @@ func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) 
 			}
 			r.hasEnabledApps = true
 
-			// Build Contracts
+			// Evict cache entries for applications that are no longer enabled.
+			activeAddrs := make(map[common.Address]struct{}, len(runningApps))
+			for _, app := range runningApps {
+				activeAddrs[app.IApplicationAddress] = struct{}{}
+			}
+			for addr := range adapterCache {
+				if _, active := activeAddrs[addr]; !active {
+					r.Logger.Debug("Evicting cached adapters for removed application",
+						"address", addr)
+					delete(adapterCache, addr)
+				}
+			}
+
+			// Build Contracts (adapters are cached per application address)
 			var apps []appContracts
 			var daveConsensusApps []appContracts
 			var iconsensusApps []appContracts
 			for _, app := range runningApps {
-				applicationContract, inputSource, daveConsensus, err := r.adapterFactory.CreateAdapters(app, r.client)
-
-				if err != nil {
-					r.Logger.Error("Error retrieving application contracts", "app", app, "error", err)
-					continue
+				addr := app.IApplicationAddress
+				cached, ok := adapterCache[addr]
+				if ok {
+					// Invalidate cache if the app's contract configuration changed.
+					if cached.consensusAddr != app.IConsensusAddress ||
+						cached.inputBoxAddr != app.IInputBoxAddress ||
+						cached.isDaveConsensus != app.IsDaveConsensus() ||
+						cached.hasInputBoxDA !=
+							app.HasDataAvailabilitySelector(DataAvailability_InputBox) {
+						r.Logger.Info(
+							"Application contract configuration changed, recreating adapters",
+							"application", app.Name, "address", addr)
+						delete(adapterCache, addr)
+						ok = false
+					}
+				}
+				if !ok {
+					appContract, inputSource, daveConsensus, err :=
+						r.adapterFactory.CreateAdapters(app, r.client)
+					if err != nil {
+						r.Logger.Error("Error retrieving application contracts",
+							"app", app, "error", err)
+						continue
+					}
+					cached = cachedAdapters{
+						applicationContract: appContract,
+						inputSource:         inputSource,
+						daveConsensus:       daveConsensus,
+						consensusAddr:       app.IConsensusAddress,
+						inputBoxAddr:        app.IInputBoxAddress,
+						isDaveConsensus:     app.IsDaveConsensus(),
+						hasInputBoxDA: app.HasDataAvailabilitySelector(
+							DataAvailability_InputBox),
+					}
+					adapterCache[addr] = cached
 				}
 				aContracts := appContracts{
 					application:         app,
-					applicationContract: applicationContract,
-					inputSource:         inputSource,
-					daveConsensus:       daveConsensus,
+					applicationContract: cached.applicationContract,
+					inputSource:         cached.inputSource,
+					daveConsensus:       cached.daveConsensus,
 				}
 
 				apps = append(apps, aContracts)
@@ -238,8 +296,10 @@ func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) 
 				}
 				blockNumber = mostRecentHeader.Number.Uint64()
 
-				r.Logger.Debug(fmt.Sprintf("Using block %d and not %d because of commitment policy: %s",
-					mostRecentHeader.Number.Uint64(), header.Number.Uint64(), r.defaultBlock))
+				r.Logger.Debug(fmt.Sprintf(
+					"Using block %d and not %d because of commitment policy: %s",
+					mostRecentHeader.Number.Uint64(),
+					header.Number.Uint64(), r.defaultBlock))
 			}
 
 			r.checkForEpochsAndInputs(ctx, daveConsensusApps, blockNumber)
