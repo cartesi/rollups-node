@@ -196,10 +196,90 @@ func (s *EvmReaderSuite) TestItEventuallyBecomesReady() {
 func (s *EvmReaderSuite) TestItReturnsErrorWhenWebSocketStalls() {
 	s.evmReader.wsLivenessTimeout = 50 * time.Millisecond
 	ready := make(chan struct{}, 1)
-	err := s.evmReader.watchForNewBlocks(s.ctx, ready)
+	headersProcessed, err := s.evmReader.watchForNewBlocks(s.ctx, ready)
+	s.Require().Equal(uint64(0), headersProcessed)
 	var subErr *SubscriptionError
 	s.Require().ErrorAs(err, &subErr)
 	s.Require().ErrorContains(err, "no new block header received")
+}
+
+func (s *EvmReaderSuite) TestRunExhaustsRetriesOnConsecutiveConnectionFailures() {
+	s.evmReader.blockchainMaxRetries = 2
+	s.evmReader.blockchainSubscriptionRetryInterval = time.Millisecond
+
+	s.wsClient.Unset("SubscribeNewHead")
+	sub := &MockSubscription{}
+	s.wsClient.On("SubscribeNewHead", mock.Anything, mock.Anything).
+		Return(sub, fmt.Errorf("connection refused"))
+
+	err := s.evmReader.Run(s.ctx, make(chan struct{}, 1))
+	s.Require().ErrorContains(err, "connection refused")
+	// 1 initial + 2 retries = 3 calls
+	s.wsClient.AssertNumberOfCalls(s.T(), "SubscribeNewHead", 3)
+}
+
+func (s *EvmReaderSuite) TestRunResetsRetriesAfterProcessingHeaders() {
+	s.evmReader.blockchainMaxRetries = 1
+	s.evmReader.blockchainSubscriptionRetryInterval = time.Millisecond
+	s.evmReader.wsLivenessTimeout = 100 * time.Millisecond
+
+	// First call: subscribe succeeds, deliver a header, then subscription error fires.
+	// → headersProcessed > 0, so consecutiveFailures resets to 0
+	// Second call: subscribe fails (connection error) → consecutiveFailures=1
+	// Third call: subscribe fails → consecutiveFailures=2 > maxRetries(1) → exit
+	subWithError := &MockSubscription{}
+	errCh := make(chan error, 1)
+	subWithError.On("Unsubscribe").Return()
+	subWithError.On("Err").Return((<-chan error)(errCh))
+
+	s.wsClient.Unset("SubscribeNewHead")
+	s.wsClient.On("SubscribeNewHead", mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			ch := args.Get(1).(chan<- *types.Header)
+			// Deliver a header then trigger subscription error
+			go func() {
+				ch <- &header0
+				errCh <- fmt.Errorf("connection lost")
+			}()
+		}).
+		Return(subWithError, nil).Once()
+
+	emptySub := &MockSubscription{}
+	s.wsClient.On("SubscribeNewHead", mock.Anything, mock.Anything).
+		Return(emptySub, fmt.Errorf("connection refused"))
+
+	err := s.evmReader.Run(s.ctx, make(chan struct{}, 1))
+	s.Require().ErrorContains(err, "connection refused")
+	// 1 successful + 1 retry + 1 exhausted = 3 calls
+	s.wsClient.AssertNumberOfCalls(s.T(), "SubscribeNewHead", 3)
+}
+
+func (s *EvmReaderSuite) TestRunDoesNotResetRetriesWithoutProcessingHeaders() {
+	s.evmReader.blockchainMaxRetries = 1
+	s.evmReader.blockchainSubscriptionRetryInterval = time.Millisecond
+	s.evmReader.wsLivenessTimeout = time.Millisecond
+
+	// Subscribe succeeds but no headers arrive before liveness timeout.
+	// headersProcessed=0, so consecutiveFailures increments (not reset).
+	// With maxRetries=1: first timeout → failures=1, second timeout → failures=2 > 1 → exit
+	err := s.evmReader.Run(s.ctx, make(chan struct{}, 1))
+	s.Require().ErrorContains(err, "no new block header received")
+	s.wsClient.AssertNumberOfCalls(s.T(), "SubscribeNewHead", 2)
+}
+
+func (s *EvmReaderSuite) TestRunStopsDuringRetryWhenContextCanceled() {
+	s.evmReader.blockchainMaxRetries = 100
+	s.evmReader.blockchainSubscriptionRetryInterval = time.Second
+
+	s.wsClient.Unset("SubscribeNewHead")
+	sub := &MockSubscription{}
+	ctx, cancel := context.WithCancel(s.ctx)
+	s.wsClient.On("SubscribeNewHead", mock.Anything, mock.Anything).
+		Run(func(_ mock.Arguments) { cancel() }).
+		Return(sub, fmt.Errorf("connection refused"))
+
+	err := s.evmReader.Run(ctx, make(chan struct{}, 1))
+	s.Require().ErrorIs(err, context.Canceled)
 }
 
 func (s *EvmReaderSuite) TestItFailsToSubscribeForNewInputsOnStart() {
@@ -365,6 +445,7 @@ func newMockSubscription() *MockSubscription {
 }
 
 func (m *MockSubscription) Unsubscribe() {
+	m.Called()
 }
 
 func (m *MockSubscription) Err() <-chan error {
@@ -659,7 +740,11 @@ func (m *MockRepository) UpdateEpochClaimTransactionHash(ctx context.Context, na
 
 func (m *MockRepository) GetLastNonOpenEpoch(ctx context.Context, nameOrAddress string) (*Epoch, error) {
 	args := m.Called(ctx, nameOrAddress)
-	return args.Get(0).(*Epoch), args.Error(1)
+	obj := args.Get(0)
+	if obj == nil {
+		return nil, args.Error(1)
+	}
+	return obj.(*Epoch), args.Error(1)
 }
 
 func (m *MockRepository) GetNumberOfInputs(ctx context.Context, nameOrAddress string) (uint64, error) {

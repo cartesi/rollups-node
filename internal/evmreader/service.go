@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync/atomic"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -42,6 +43,8 @@ type Service struct {
 	blockchainMaxRetries                uint64
 	blockchainSubscriptionRetryInterval time.Duration
 	wsLivenessTimeout                   time.Duration
+	alive                               atomic.Bool
+	ready                               atomic.Bool
 }
 
 const EvmReaderConfigKey = "evm-reader"
@@ -103,8 +106,8 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		return nil, fmt.Errorf("NodeConfig chainId mismatch: network %d != config %d",
 			chainId.Uint64(), nodeConfig.ChainID)
 	}
-	s.blockchainMaxRetries = c.Config.BlockchainHttpMaxRetries
-	s.blockchainSubscriptionRetryInterval = c.Config.BlockchainHttpRetryMinWait
+	s.blockchainMaxRetries = c.Config.BlockchainWsMaxRetries
+	s.blockchainSubscriptionRetryInterval = c.Config.BlockchainWsReconnectInterval
 	s.wsLivenessTimeout = c.Config.BlockchainWsLivenessTimeout
 
 	s.client = c.EthClient
@@ -126,11 +129,11 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 }
 
 func (s *Service) Alive() bool {
-	return true
+	return s.alive.Load()
 }
 
 func (s *Service) Ready() bool {
-	return true
+	return s.ready.Load()
 }
 
 func (s *Service) Reload() []error {
@@ -146,10 +149,23 @@ func (s *Service) Tick() []error {
 }
 
 func (s *Service) Serve() error {
+	s.alive.Store(true)
 	ready := make(chan struct{}, 1)
 	go func() {
-		s.Run(s.Context, ready)
-		s.Service.Stop(false)
+		defer s.alive.Store(false)
+		defer s.ready.Store(false)
+		err := s.Run(s.Context, ready)
+		if err != nil && s.Context.Err() == nil {
+			s.Logger.Error("Run exited with error", "error", err)
+		}
+		s.Cancel()
+	}()
+	go func() {
+		select {
+		case <-ready:
+			s.ready.Store(true)
+		case <-s.Context.Done():
+		}
 	}()
 	return s.Service.Serve()
 }

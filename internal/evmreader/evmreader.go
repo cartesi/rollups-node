@@ -64,6 +64,10 @@ func (e *SubscriptionError) Error() string {
 	return fmt.Sprintf("Subscription error : %v", e.Cause)
 }
 
+func (e *SubscriptionError) Unwrap() error {
+	return e.Cause
+}
+
 // Internal struct to hold application and it's contracts together
 type appContracts struct {
 	application         *Application
@@ -73,26 +77,40 @@ type appContracts struct {
 }
 
 func (r *Service) Run(ctx context.Context, ready chan struct{}) error {
-	for attempt := uint64(1); ; attempt++ {
-		err := r.watchForNewBlocks(ctx, ready)
-		r.Logger.Error(err.Error())
+	var consecutiveFailures uint64
+	for {
+		headersProcessed, err := r.watchForNewBlocks(ctx, ready)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		r.Logger.Error("watchForNewBlocks exited",
+			"error", err, "headers_processed", headersProcessed)
 
-		if attempt > r.blockchainMaxRetries {
-			r.Logger.Error("Max attempts reached for subscription restart. Exiting",
+		// Only reset the retry counter if the connection actually processed
+		// at least one block header. This prevents infinite retries when the
+		// subscription connects but immediately fails before doing useful work.
+		if headersProcessed > 0 {
+			consecutiveFailures = 0
+		} else {
+			consecutiveFailures++
+		}
+
+		if consecutiveFailures > r.blockchainMaxRetries {
+			r.Logger.Error("Max consecutive failures reached. Exiting",
+				"consecutive_failures", consecutiveFailures,
 				"max_retries", r.blockchainMaxRetries,
 			)
 			return err
 		}
 
 		r.Logger.Info("Restarting subscription",
-			"attempt", attempt,
-			"remaining", r.blockchainMaxRetries-attempt,
-			"time_between_attempts", r.blockchainSubscriptionRetryInterval,
+			"consecutive_failures", consecutiveFailures,
+			"max_retries", r.blockchainMaxRetries,
 		)
 
-		// sleep or cancel
 		select {
 		case <-ctx.Done():
+			return ctx.Err()
 		case <-time.After(r.blockchainSubscriptionRetryInterval):
 		}
 	}
@@ -111,33 +129,43 @@ func (r *Service) setApplicationInoperable(ctx context.Context, app *Application
 
 // watchForNewBlocks watches for new blocks and reads new inputs based on the
 // default block configuration, which have not been processed yet.
-func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) error {
+// watchForNewBlocks subscribes to new block headers and processes them.
+// Returns the number of headers processed and any error that caused it to stop.
+func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) (uint64, error) {
 	headers := make(chan *types.Header)
 	sub, err := r.wsClient.SubscribeNewHead(ctx, headers)
 	if err != nil {
-		return fmt.Errorf("could not start subscription: %w", err)
+		return 0, fmt.Errorf("could not start subscription: %w", err)
 	}
 	r.Logger.Info("Subscribed to new block events")
-	ready <- struct{}{}
+	select {
+	case ready <- struct{}{}:
+	default:
+	}
 	defer sub.Unsubscribe()
 
 	liveness := time.NewTimer(r.wsLivenessTimeout)
 	defer liveness.Stop()
 
+	var headersProcessed uint64
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return headersProcessed, ctx.Err()
 		case err := <-sub.Err():
-			return &SubscriptionError{Cause: err}
+			if err == nil {
+				err = errors.New("subscription closed unexpectedly")
+			}
+			return headersProcessed, &SubscriptionError{Cause: err}
 		case <-liveness.C:
-			return &SubscriptionError{
+			return headersProcessed, &SubscriptionError{
 				Cause: fmt.Errorf(
 					"no new block header received for %s, assuming stalled connection",
 					r.wsLivenessTimeout,
 				),
 			}
 		case header := <-headers:
+			headersProcessed++
 			liveness.Reset(r.wsLivenessTimeout)
 
 			// Every time a new block arrives

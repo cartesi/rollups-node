@@ -234,6 +234,20 @@ description = """
 Maximum time in seconds to wait for a new block header on the WebSocket subscription before treating the connection as stalled and reconnecting. Handles silent connection drops where no error is delivered."""
 used-by = ["evmreader", "node"]
 
+[rollups.CARTESI_BLOCKCHAIN_WS_MAX_RETRIES]
+default = "4"
+go-type = "uint64"
+description = """
+Maximum number of consecutive WebSocket subscription failures before the service gives up and exits. A failure is counted only when a subscription attempt produces zero headers before disconnecting. Successful header processing resets the counter."""
+used-by = ["evmreader", "node"]
+
+[rollups.CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL]
+default = "1"
+go-type = "Duration"
+description = """
+Wait time in seconds between WebSocket subscription reconnection attempts after a connection failure."""
+used-by = ["evmreader", "node"]
+
 [rollups.CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE]
 default = "0"
 go-type = "uint64"
