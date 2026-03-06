@@ -41,12 +41,14 @@ func sortByInputIndex(a, b *Input) int {
 }
 
 // insertSorted inserts the received input in the slice at the position defined
-// by its index property.
-func insertSorted[T any](compare func(a, b *T) int, slice []*T, item *T) []*T {
-	// Insert Sorted
-	i, _ := slices.BinarySearchFunc(
+// by its index property. Returns the updated slice and true if the item was a duplicate.
+func insertSorted[T any](compare func(a, b *T) int, slice []*T, item *T) ([]*T, bool) {
+	i, found := slices.BinarySearchFunc(
 		slice,
 		item,
 		compare)
-	return slices.Insert(slice, i, item)
+	if found {
+		return slice, true
+	}
+	return slices.Insert(slice, i, item), false
 }

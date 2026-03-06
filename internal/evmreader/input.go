@@ -317,7 +317,11 @@ func (r *Service) readAndStoreInputs(
 
 	// Update LastInputCheckBlock for applications that were successfully scanned
 	// but didn't have any inputs.
-	// (for apps with inputs, LastInputCheckBlock is already updated in CreateEpochsAndInputs)
+	// For apps WITH inputs, LastInputCheckBlock is already updated atomically inside
+	// CreateEpochsAndInputs (same DB transaction as the epoch/input inserts).
+	// This separate call for no-input apps is NOT in the same transaction. If the process
+	// crashes between the two, no-input apps will re-scan the block range on restart.
+	// This is benign: the re-scan finds no inputs and updates the checkpoint idempotently.
 	// Only apps present in appInputsMap were successfully scanned. Apps that failed
 	// to fetch are absent from the map and their checkpoint must NOT advance,
 	// otherwise inputs in the failed block range would be permanently skipped.
@@ -431,7 +435,16 @@ func (r *Service) fetchApplicationInputs(
 				BlockNumber:          event.Raw.BlockNumber,
 				TransactionReference: event.Raw.TxHash,
 			}
-			sortedInputs = insertSorted(sortByInputIndex, sortedInputs, input)
+			var duplicate bool
+			sortedInputs, duplicate = insertSorted(sortByInputIndex, sortedInputs, input)
+			if duplicate {
+				r.Logger.Warn("Duplicate input event detected, skipping",
+					"application", app.application.Name,
+					"index", input.Index,
+					"block", input.BlockNumber,
+				)
+				continue
+			}
 		}
 		return nil
 	}
