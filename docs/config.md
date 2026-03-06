@@ -224,6 +224,16 @@ If set to true, the node will add colors to its log output.
 * **Type:** `bool`
 * **Default:** `"false"`
 
+## `CARTESI_SERVICE_READY_TIMEOUT`
+
+Timeout in seconds for a service to become ready before the supervisor gives up.
+
+Increase this value on platforms where services take longer to initialise
+(e.g. fly.io, slow machines).
+
+* **Type:** `Duration`
+* **Default:** `"5"`
+
 ## `CARTESI_POSTGRES_ENDPOINT`
 
 Postgres endpoint in the 'postgres://user:password@hostname:port/database' format.

@@ -461,6 +461,18 @@ func getLogPretty() bool {
 	return val
 }
 
+func getServiceReadyTimeout() Duration {
+	s, ok := os.LookupEnv("CARTESI_SERVICE_READY_TIMEOUT")
+	if !ok {
+		s = "5"
+	}
+	val, err := toDuration(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse CARTESI_SERVICE_READY_TIMEOUT: %v", err))
+	}
+	return val
+}
+
 func getPostgresEndpoint() string {
 	s, ok := os.LookupEnv("CARTESI_POSTGRES_ENDPOINT")
 	if !ok {

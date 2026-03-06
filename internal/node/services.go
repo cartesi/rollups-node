@@ -339,8 +339,10 @@ func newSupervisorService(c config.NodeConfig, workDir string) services.Supervis
 	s = append(s, newHttpService(c))
 
 	supervisor := services.SupervisorService{
-		Name:     "rollups-node",
-		Services: s,
+		Name:         "rollups-node",
+		Services:     s,
+		ReadyTimeout: c.ServiceReadyTimeout,
+		StopTimeout:  c.ServiceReadyTimeout,
 	}
 	return supervisor
 }

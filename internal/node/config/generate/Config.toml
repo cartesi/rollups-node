@@ -207,6 +207,19 @@ See [this](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONN
 for more information."""
 
 #
+# Node
+#
+
+[node.CARTESI_SERVICE_READY_TIMEOUT]
+default = "5"
+go-type = "Duration"
+description = """
+Timeout in seconds for a service to become ready before the supervisor gives up.
+
+Increase this value on platforms where services take longer to initialise
+(e.g. fly.io, slow machines)."""
+
+#
 # HTTP
 #
 

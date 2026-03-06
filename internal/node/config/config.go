@@ -31,6 +31,7 @@ type NodeConfig struct {
 	PostgresEndpoint                         Redacted[string]
 	HttpAddress                              string
 	HttpPort                                 int
+	ServiceReadyTimeout                      Duration
 	FeatureHostMode                          bool
 	FeatureReaderModeEnabled                 bool
 	FeatureDisableClaimer                    bool
@@ -93,6 +94,7 @@ func FromEnv() NodeConfig {
 	config.PostgresEndpoint = Redacted[string]{getPostgresEndpoint()}
 	config.HttpAddress = getHttpAddress()
 	config.HttpPort = getHttpPort()
+	config.ServiceReadyTimeout = getServiceReadyTimeout()
 	config.FeatureHostMode = getFeatureHostMode()
 	config.FeatureDisableMachineHashCheck = getFeatureDisableMachineHashCheck()
 	config.ExperimentalServerManagerBypassLog = getExperimentalServerManagerBypassLog()
