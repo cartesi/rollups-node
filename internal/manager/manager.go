@@ -195,7 +195,7 @@ func (m *MachineManager) UpdateMachines(ctx context.Context) error {
 		}
 	}
 
-	// Remove machines for disabled applications
+	// Remove machines for non-enabled applications (disabled, failed, etc.)
 	m.removeMachines(apps)
 
 	return nil
@@ -250,11 +250,11 @@ func (m *MachineManager) removeMachines(apps []*Application) {
 	for id, machine := range m.machines {
 		if _, present := activeApps[id]; !present {
 			if m.logger != nil {
-				m.logger.Info("Application was disabled, shutting down machine",
+				m.logger.Info("Application is no longer enabled, shutting down machine",
 					"application", machine.Application().Name)
 			}
 			if err := machine.Close(); err != nil && m.logger != nil {
-				m.logger.Warn("Failed to close machine for disabled application",
+				m.logger.Warn("Failed to close machine for non-enabled application",
 					"application", machine.Application().Name, "error", err)
 			}
 			delete(m.machines, id)

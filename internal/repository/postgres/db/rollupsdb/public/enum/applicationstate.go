@@ -12,9 +12,11 @@ import "github.com/go-jet/jet/v2/postgres"
 var ApplicationState = &struct {
 	Enabled    postgres.StringExpression
 	Disabled   postgres.StringExpression
+	Failed     postgres.StringExpression
 	Inoperable postgres.StringExpression
 }{
 	Enabled:    postgres.NewEnumValue("ENABLED"),
 	Disabled:   postgres.NewEnumValue("DISABLED"),
+	Failed:     postgres.NewEnumValue("FAILED"),
 	Inoperable: postgres.NewEnumValue("INOPERABLE"),
 }

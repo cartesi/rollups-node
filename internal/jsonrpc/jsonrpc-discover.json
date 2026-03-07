@@ -1,5 +1,5 @@
 {
-	"openrpc": "1.0.0",
+	"openrpc": "1.4.1",
 	"info": {
 		"title": "Cartesi Rollups Node API",
 		"version": "2.0.0",
@@ -1030,7 +1030,9 @@
 						"$ref": "#/components/schemas/ApplicationState"
 					},
 					"reason": {
-						"type": "string"
+						"type": "string",
+						"nullable": true,
+						"description": "Human-readable failure description. Non-null when state is FAILED or INOPERABLE; null otherwise."
 					},
 					"iinputbox_block": {
 						"$ref": "#/components/schemas/UnsignedInteger"
@@ -1569,6 +1571,7 @@
 				"enum": [
 					"ENABLED",
 					"DISABLED",
+					"FAILED",
 					"INOPERABLE"
 				]
 			},

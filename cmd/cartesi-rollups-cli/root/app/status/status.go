@@ -10,10 +10,13 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 )
+
+var yesFlag bool
 
 var Cmd = &cobra.Command{
 	Use:     "status [app-name-or-address] [new-status]",
@@ -31,9 +34,14 @@ cartesi-rollups-cli app status echo-dapp
 
 # Set application status:
 cartesi-rollups-cli app status echo-dapp enabled
-cartesi-rollups-cli app status echo-dapp disabled`
+cartesi-rollups-cli app status echo-dapp disabled
+
+# Re-enable a FAILED application without confirmation prompt:
+cartesi-rollups-cli app status echo-dapp enabled --yes`
 
 func init() {
+	Cmd.Flags().BoolVarP(&yesFlag, "yes", "y", false, "Skip confirmation prompts")
+
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
 		command.Flags().Lookup("verbose").Hidden = false
@@ -62,9 +70,12 @@ func run(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// If no new status is provided, just display the current status
+	// If no new status is provided, display the current status and reason
 	if len(args) == 1 {
 		fmt.Println(app.State)
+		if app.Reason != nil && *app.Reason != "" {
+			fmt.Printf("Reason: %s\n", *app.Reason)
+		}
 		os.Exit(0)
 	}
 
@@ -72,7 +83,13 @@ func run(cmd *cobra.Command, args []string) {
 	newStatus := strings.ToLower(args[1])
 
 	if app.State == model.ApplicationState_Inoperable {
-		fmt.Fprintf(os.Stderr, "Error: Cannot execute operation. Application %s is in %s state\n", app.Name, app.State)
+		fmt.Fprintf(os.Stderr,
+			"Error: Cannot change state of application %s. It is INOPERABLE (irrecoverable).\n",
+			app.Name)
+		if app.Reason != nil {
+			fmt.Fprintf(os.Stderr, "Reason: %s\n", *app.Reason)
+		}
+		fmt.Fprintf(os.Stderr, "Use 'app remove' to remove this application.\n")
 		os.Exit(1)
 	}
 
@@ -90,6 +107,34 @@ func run(cmd *cobra.Command, args []string) {
 	if app.State == targetState {
 		fmt.Printf("Application %s status is already %s\n", app.Name, app.State)
 		os.Exit(0)
+	}
+
+	// Changing state of a FAILED application requires confirmation
+	if app.State == model.ApplicationState_Failed &&
+		(targetState == model.ApplicationState_Enabled ||
+			targetState == model.ApplicationState_Disabled) &&
+		!yesFlag {
+		fmt.Printf("Application %q is in FAILED state.\n", app.Name)
+		if app.Reason != nil {
+			fmt.Printf("Reason: %s\n", *app.Reason)
+		}
+		if targetState == model.ApplicationState_Enabled {
+			fmt.Println("Re-enabling will attempt to restart processing from the last snapshot.")
+		}
+		confirmed, err := cli.ConfirmPrompt("Proceed?")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
+			os.Exit(1)
+		}
+		if !confirmed {
+			fmt.Println("Aborted.")
+			os.Exit(0)
+		}
+	}
+
+	// Show failure reason when changing state away from FAILED
+	if app.State == model.ApplicationState_Failed && app.Reason != nil && *app.Reason != "" {
+		fmt.Printf("Previous failure reason: %s\n", *app.Reason)
 	}
 
 	err = repo.UpdateApplicationState(ctx, app.ID, targetState, nil)

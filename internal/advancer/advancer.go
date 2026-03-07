@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cartesi/rollups-node/internal/appstatus"
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -57,8 +58,11 @@ func getUnprocessedInputs(
 	return repo.ListInputs(ctx, appAddress, f, repository.Pagination{Limit: batchSize}, false)
 }
 
-// Step performs one processing cycle of the advancer
-// It updates machines, gets unprocessed inputs, processes them, and updates epochs
+// Step performs one processing cycle of the advancer.
+// It updates machines, gets unprocessed inputs, processes them, and updates epochs.
+// Per-app errors are accumulated so that a failure in one application does not block
+// processing of other healthy applications. Context cancellation is always propagated
+// immediately.
 func (s *Service) Step(ctx context.Context) error {
 	// Check for context cancellation
 	if err := ctx.Err(); err != nil {
@@ -74,38 +78,53 @@ func (s *Service) Step(ctx context.Context) error {
 	// Get all applications with active machines
 	apps := s.machineManager.Applications()
 
-	// Process inputs for each application
+	// Process inputs for each application, accumulating per-app errors
+	var errs []error
 	for _, app := range apps {
-		appAddress := app.IApplicationAddress.String()
+		if err := s.stepApp(ctx, app); err != nil {
+			// Context cancellation means the node is shutting down — stop immediately.
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+			errs = append(errs, err)
+		}
+	}
 
-		epochs, _, err := getUnprocessedEpochs(ctx, s.repository, appAddress)
-		if err != nil {
+	return errors.Join(errs...)
+}
+
+// stepApp processes all unprocessed epochs and inputs for a single application.
+func (s *Service) stepApp(ctx context.Context, app *Application) error {
+	appAddress := app.IApplicationAddress.String()
+
+	epochs, _, err := getUnprocessedEpochs(ctx, s.repository, appAddress)
+	if err != nil {
+		return err
+	}
+
+	for _, epoch := range epochs {
+		if err := s.processEpochInputs(ctx, app, epoch.Index); err != nil {
 			return err
 		}
 
-		for _, epoch := range epochs {
-			if err := s.processEpochInputs(ctx, app, epoch.Index); err != nil {
-				return err
-			}
-
-			if epoch.Status == EpochStatus_Closed {
-				if allProcessed, perr := s.isAllEpochInputsProcessed(app, epoch); perr == nil && allProcessed {
-					err := s.handleEpochAfterInputsProcessed(ctx, app, epoch)
-					if err != nil {
-						return err
-					}
-
-					// Update epochs to mark inputs as processed
-					err = s.repository.UpdateEpochInputsProcessed(ctx, appAddress, epoch.Index)
-					if err != nil {
-						return err
-					}
-					s.Logger.Info("Epoch updated to Inputs Processed", "application", app.Name, "epoch_index", epoch.Index)
-				} else if perr != nil {
-					return perr
-				} else {
-					break // some inputs were not processed yet, check next time
+		if epoch.Status == EpochStatus_Closed {
+			if allProcessed, perr := s.isAllEpochInputsProcessed(app, epoch); perr == nil && allProcessed {
+				err := s.handleEpochAfterInputsProcessed(ctx, app, epoch)
+				if err != nil {
+					return err
 				}
+
+				// Update epochs to mark inputs as processed
+				err = s.repository.UpdateEpochInputsProcessed(ctx, appAddress, epoch.Index)
+				if err != nil {
+					return err
+				}
+				s.Logger.Info("Epoch updated to Inputs Processed",
+					"application", app.Name, "epoch_index", epoch.Index)
+			} else if perr != nil {
+				return perr
+			} else {
+				break // some inputs were not processed yet, check next time
 			}
 		}
 	}
@@ -177,27 +196,27 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 		result, err := machine.Advance(ctx, input.RawData, input.EpochIndex, input.Index, app.IsDaveConsensus())
 		input.RawData = nil // allow GC to collect payload while batch continues
 		if err != nil {
-			// If there's an error, mark the application as inoperable
+			// If there's an error, mark the application as failed
 			s.Logger.Error("Error executing advance",
 				"application", app.Name,
 				"index", input.Index,
 				"error", err)
 
-			// If the error is due to context cancellation, don't mark as inoperable
+			// If the error is due to context cancellation, don't mark as failed
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return err
 			}
 
-			reason := err.Error()
-			updateErr := s.repository.UpdateApplicationState(ctx, app.ID, ApplicationState_Inoperable, &reason)
-			if updateErr != nil {
-				s.Logger.Error("Failed to update application state",
-					"application", app.Name,
-					"error", updateErr)
+			if dbErr := appstatus.SetFailed(ctx, s.Logger, s.repository, app, err.Error()); dbErr != nil {
+				s.Logger.Error("Failed to persist FAILED state — machine will be closed "+
+					"but app remains ENABLED in DB; it will be re-created from the "+
+					"last snapshot on the next tick. If the root cause persists, "+
+					"this may loop.",
+					"application", app.Name, "db_error", dbErr)
 			}
 
 			// Eagerly close the machine to release the child process.
-			// The app is already inoperable, so no further operations will succeed.
+			// The app has failed, so no further operations will succeed.
 			// Skip if the runtime was already destroyed inside the manager.
 			if !errors.Is(err, manager.ErrMachineClosed) {
 				if closeErr := machine.Close(); closeErr != nil {
@@ -320,11 +339,12 @@ func (s *Service) handleEpochAfterInputsProcessed(ctx context.Context, app *Appl
 		outputsProof, err := machine.OutputsProof(ctx)
 		if err != nil {
 			// If the runtime was destroyed (e.g., child process crashed),
-			// mark the app inoperable to avoid an infinite retry loop.
+			// mark the app as failed to avoid an infinite retry loop.
 			if errors.Is(err, manager.ErrMachineClosed) {
-				reason := err.Error()
-				_ = s.repository.UpdateApplicationState(ctx, app.ID,
-					ApplicationState_Inoperable, &reason)
+				if dbErr := appstatus.SetFailed(ctx, s.Logger, s.repository, app, err.Error()); dbErr != nil {
+					s.Logger.Error("Failed to persist FAILED state for crashed machine",
+						"application", app.Name, "db_error", dbErr)
+				}
 			}
 			return fmt.Errorf("failed to get outputs proof from machine: %w", err)
 		}

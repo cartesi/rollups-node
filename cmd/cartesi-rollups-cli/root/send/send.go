@@ -98,27 +98,6 @@ func decodeHex(s string) ([]byte, error) {
 	return b, nil
 }
 
-// isStdinPiped returns true if stdin is being piped (not a terminal)
-func isStdinPiped() bool {
-	fileInfo, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return (fileInfo.Mode() & os.ModeCharDevice) == 0
-}
-
-// promptForConfirmation asks the user for confirmation
-func promptForConfirmation() bool {
-	var response string
-	fmt.Print("Do you want to proceed? [y/N]: ")
-	_, err := fmt.Scanln(&response)
-	if err != nil {
-		return false
-	}
-	response = strings.ToLower(strings.TrimSpace(response))
-	return response == "y" || response == "yes"
-}
-
 func run(cmd *cobra.Command, args []string) {
 	ctx := cmd.Context()
 
@@ -146,7 +125,7 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	// Check if stdin is being used for payload and --yes flag is not set
-	if len(args) == 1 && !skipConfirmation && isStdinPiped() {
+	if len(args) == 1 && !skipConfirmation && !cli.IsTerminal(os.Stdin) {
 		cobra.CheckErr(fmt.Errorf("reading payload from stdin. Use --yes flag to skip confirmation when piping data"))
 	}
 
@@ -167,7 +146,8 @@ func run(cmd *cobra.Command, args []string) {
 		fmt.Printf("Preparing to send input to application %v (%v) with account %v\n",
 			app.Name, app.IApplicationAddress, txOpts.From)
 
-		if !promptForConfirmation() {
+		confirmed, promptErr := cli.ConfirmPrompt("Do you want to proceed?")
+		if promptErr != nil || !confirmed {
 			fmt.Println("Operation cancelled")
 			return
 		}

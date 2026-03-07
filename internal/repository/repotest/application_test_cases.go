@@ -284,15 +284,245 @@ func (s *ApplicationSuite) TestUpdateApplicationState() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 		s.Equal(ApplicationState_Enabled, app.State)
 
-		reason := "maintenance"
-		err := s.Repo.UpdateApplicationState(s.Ctx, app.ID, ApplicationState_Disabled, &reason)
+		err := s.Repo.UpdateApplicationState(s.Ctx, app.ID, ApplicationState_Disabled, nil)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
 		s.Equal(ApplicationState_Disabled, got.State)
+		s.Nil(got.Reason)
+	})
+
+	s.Run("TriggerClearsReasonOnEnabled", func() {
+		// Even if a reason is passed, the DB trigger clears it for ENABLED/DISABLED states
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+
+		// First set to FAILED with a reason
+		reason := "machine crash"
+		err := s.Repo.UpdateApplicationState(s.Ctx, app.ID, ApplicationState_Failed, &reason)
+		s.Require().NoError(err)
+
+		// Re-enable with a stale reason — trigger should clear it
+		staleReason := "should be cleared"
+		err = s.Repo.UpdateApplicationState(s.Ctx, app.ID, ApplicationState_Enabled, &staleReason)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(ApplicationState_Enabled, got.State)
+		s.Nil(got.Reason)
+	})
+}
+
+func (s *ApplicationSuite) TestInoperableIsTerminal() {
+	// helper: create an app and transition it to INOPERABLE via UpdateApplicationState.
+	makeInoperable := func(reason string) *Application {
+		s.T().Helper()
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		err := s.Repo.UpdateApplicationState(
+			s.Ctx, app.ID, ApplicationState_Inoperable, &reason)
+		s.Require().NoError(err)
+		return app
+	}
+
+	s.Run("CannotChangeStateFromInoperable", func() {
+		reason := "irrecoverable error"
+		app := makeInoperable(reason)
+
+		newReason := "re-enabling"
+		err := s.Repo.UpdateApplicationState(
+			s.Ctx, app.ID, ApplicationState_Enabled, &newReason)
+		s.Require().Error(err)
+		s.Contains(err.Error(), "INOPERABLE")
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(ApplicationState_Inoperable, got.State)
 		s.Require().NotNil(got.Reason)
-		s.Equal("maintenance", *got.Reason)
+		s.Equal(reason, *got.Reason)
+	})
+
+	s.Run("CannotChangeReasonFromInoperable", func() {
+		reason := "original reason"
+		app := makeInoperable(reason)
+
+		newReason := "different reason"
+		err := s.Repo.UpdateApplicationState(
+			s.Ctx, app.ID, ApplicationState_Inoperable, &newReason)
+		s.Require().Error(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Require().NotNil(got.Reason)
+		s.Equal(reason, *got.Reason)
+	})
+
+	s.Run("CanSetToInoperableFromOtherStates", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+
+		reason := "fatal error"
+		err := s.Repo.UpdateApplicationState(
+			s.Ctx, app.ID, ApplicationState_Inoperable, &reason)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(ApplicationState_Inoperable, got.State)
+		s.Require().NotNil(got.Reason)
+		s.Equal(reason, *got.Reason)
+	})
+
+	s.Run("InoperableToSameStateAndReasonIsNoOp", func() {
+		reason := "irrecoverable"
+		app := makeInoperable(reason)
+
+		err := s.Repo.UpdateApplicationState(
+			s.Ctx, app.ID, ApplicationState_Inoperable, &reason)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(ApplicationState_Inoperable, got.State)
+		s.Require().NotNil(got.Reason)
+		s.Equal(reason, *got.Reason)
+	})
+}
+
+func (s *ApplicationSuite) TestFailedStateLifecycle() {
+	// helper: create an app and transition it to FAILED.
+	makeFailed := func(reason string) *Application {
+		s.T().Helper()
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		err := s.Repo.UpdateApplicationState(
+			s.Ctx, app.ID, ApplicationState_Failed, &reason)
+		s.Require().NoError(err)
+		return app
+	}
+
+	s.Run("CanReEnableFromFailed", func() {
+		reason := "machine crashed"
+		app := makeFailed(reason)
+
+		err := s.Repo.UpdateApplicationState(
+			s.Ctx, app.ID, ApplicationState_Enabled, nil)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(ApplicationState_Enabled, got.State)
+		s.Nil(got.Reason)
+	})
+
+	s.Run("CanDisableFromFailed", func() {
+		reason := "process crash"
+		app := makeFailed(reason)
+
+		err := s.Repo.UpdateApplicationState(
+			s.Ctx, app.ID, ApplicationState_Disabled, nil)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(ApplicationState_Disabled, got.State)
+	})
+
+	s.Run("CanEscalateFromFailedToInoperable", func() {
+		app := makeFailed("machine error")
+
+		reason := "data corruption detected"
+		err := s.Repo.UpdateApplicationState(
+			s.Ctx, app.ID, ApplicationState_Inoperable, &reason)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(ApplicationState_Inoperable, got.State)
+		s.Require().NotNil(got.Reason)
+		s.Equal(reason, *got.Reason)
+	})
+
+	s.Run("ReasonClearedOnReEnable", func() {
+		app := makeFailed("OOM kill")
+
+		err := s.Repo.UpdateApplicationState(
+			s.Ctx, app.ID, ApplicationState_Enabled, nil)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(ApplicationState_Enabled, got.State)
+		s.Nil(got.Reason)
+	})
+
+	s.Run("FailedToFailedUpdatesReason", func() {
+		app := makeFailed("first crash")
+
+		newReason := "second crash: different error"
+		err := s.Repo.UpdateApplicationState(
+			s.Ctx, app.ID, ApplicationState_Failed, &newReason)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(ApplicationState_Failed, got.State)
+		s.Require().NotNil(got.Reason)
+		s.Equal(newReason, *got.Reason)
+	})
+
+	s.Run("FullRecoveryCycle", func() {
+		// ENABLED -> FAILED -> ENABLED -> FAILED (verify full cycle works)
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+
+		// First failure
+		reason1 := "crash 1"
+		err := s.Repo.UpdateApplicationState(
+			s.Ctx, app.ID, ApplicationState_Failed, &reason1)
+		s.Require().NoError(err)
+
+		// Re-enable
+		err = s.Repo.UpdateApplicationState(
+			s.Ctx, app.ID, ApplicationState_Enabled, nil)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(ApplicationState_Enabled, got.State)
+		s.Nil(got.Reason)
+
+		// Second failure
+		reason2 := "crash 2"
+		err = s.Repo.UpdateApplicationState(
+			s.Ctx, app.ID, ApplicationState_Failed, &reason2)
+		s.Require().NoError(err)
+
+		got, err = s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(ApplicationState_Failed, got.State)
+		s.Require().NotNil(got.Reason)
+		s.Equal(reason2, *got.Reason)
+	})
+}
+
+func (s *ApplicationSuite) TestDisabledToFailedBlocked() {
+	s.Run("CannotTransitionFromDisabledToFailed", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+
+		// First disable the app
+		err := s.Repo.UpdateApplicationState(
+			s.Ctx, app.ID, ApplicationState_Disabled, nil)
+		s.Require().NoError(err)
+
+		// Attempt DISABLED -> FAILED should be blocked by trigger
+		reason := "should not work"
+		err = s.Repo.UpdateApplicationState(
+			s.Ctx, app.ID, ApplicationState_Failed, &reason)
+		s.Require().Error(err)
+		s.Contains(err.Error(), "DISABLED")
+
+		// Verify state unchanged
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(ApplicationState_Disabled, got.State)
 	})
 }
 

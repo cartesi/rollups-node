@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/cartesi/rollups-node/internal/appstatus"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
@@ -104,24 +105,8 @@ func getAllRunningApplications(ctx context.Context, er EvmReaderRepository) ([]*
 	return er.ListApplications(ctx, f, repository.Pagination{}, false)
 }
 
-// setApplicationInoperable marks an application as inoperable with the given reason,
-// logs any error that occurs during the update, and returns an error with the reason.
 func (r *Service) setApplicationInoperable(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
-	reason := fmt.Sprintf(reasonFmt, args...)
-	appAddress := app.IApplicationAddress.String()
-
-	// Log the reason first
-	r.Logger.Error(reason, "application", app.Name, "address", appAddress)
-
-	// Update application state
-	err := r.repository.UpdateApplicationState(ctx, app.ID, ApplicationState_Inoperable, &reason)
-	if err != nil {
-		r.Logger.Error("failed to update application state to inoperable",
-			"application", app.Name,
-			"address", appAddress, "err", err)
-	}
-	// Return the error with the reason
-	return errors.New(reason)
+	return appstatus.SetInoperablef(ctx, r.Logger, r.repository, app, reasonFmt, args...)
 }
 
 // watchForNewBlocks watches for new blocks and reads new inputs based on the

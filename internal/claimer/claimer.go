@@ -39,11 +39,11 @@ package claimer
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/appstatus"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 
@@ -170,8 +170,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 			if err != nil {
 				err = s.setApplicationInoperable(
 					s.Context,
-					app.IApplicationAddress,
-					prevEpoch.ApplicationID,
+					app,
 					"database mismatch on epochs. application: %v, epochs: %v (%v), %v (%v).",
 					app.IApplicationAddress,
 					prevEpoch.Index,
@@ -196,8 +195,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 			if prevClaimSubmissionEvent == nil {
 				err = s.setApplicationInoperable(
 					s.Context,
-					app.IApplicationAddress,
-					app.ID,
+					app,
 					"epoch has no matching event. application: %v, epoch: %v (%v).",
 					app.IApplicationAddress,
 					prevEpoch.Index,
@@ -215,8 +213,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 				)
 				err = s.setApplicationInoperable(
 					s.Context,
-					app.IApplicationAddress,
-					app.ID,
+					app,
 					"epoch has an invalid event: %v, epoch: %v (%v). event: %v",
 					currEpoch.Index,
 					prevEpoch.Index,
@@ -247,8 +244,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 			if !claimSubmittedEventMatches(app, currEpoch, currClaimSubmissionEvent) {
 				err = s.setApplicationInoperable(
 					s.Context,
-					app.IApplicationAddress,
-					app.ID,
+					app,
 					"computed claim does not match event. computed_claim=%v, current_event=%v",
 					currEpoch, currClaimSubmissionEvent,
 				)
@@ -432,29 +428,13 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 	return errs
 }
 
-// setApplicationInoperable marks an application as inoperable with the given reason,
-// logs any error that occurs during the update, and returns an error with the reason.
 func (s *Service) setApplicationInoperable(
 	ctx context.Context,
-	iApplicationAddress common.Address,
-	id int64,
+	app *model.Application,
 	reasonFmt string,
 	args ...any,
 ) error {
-	reason := fmt.Sprintf(reasonFmt, args...)
-	appAddress := iApplicationAddress.String()
-
-	// Log the reason first
-	s.Logger.Error(reason, "application", appAddress)
-
-	// Update application state
-	err := s.repository.UpdateApplicationState(ctx, id, model.ApplicationState_Inoperable, &reason)
-	if err != nil {
-		s.Logger.Error("failed to update application state to inoperable", "app", appAddress, "err", err)
-	}
-
-	// Return the error with the reason
-	return errors.New(reason)
+	return appstatus.SetInoperablef(ctx, s.Logger, s.repository, app, reasonFmt, args...)
 }
 
 func (s *Service) checkConsensusForAddressChange(
@@ -467,8 +447,7 @@ func (s *Service) checkConsensusForAddressChange(
 	if app.IConsensusAddress != newConsensusAddress {
 		err = s.setApplicationInoperable(
 			s.Context,
-			app.IApplicationAddress,
-			app.ID,
+			app,
 			"consensus change detected. application: %v.",
 			app.IApplicationAddress,
 		)

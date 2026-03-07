@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
@@ -106,15 +105,9 @@ func run(cmd *cobra.Command, args []string) {
 		fmt.Printf("Preparing to execute application %v (%v) output index %v with account %v\n",
 			app.Name, app.IApplicationAddress, outputIndex, txOpts.From)
 
-		fmt.Print("Do you want to continue? [y/N]: ")
-		var response string
-		_, err = fmt.Scanln(&response)
-		if err != nil && err.Error() != "unexpected newline" {
-			cobra.CheckErr(err)
-		}
-
-		response = strings.ToLower(strings.TrimSpace(response))
-		if response != "y" && response != "yes" {
+		confirmed, promptErr := cli.ConfirmPrompt("Do you want to continue?")
+		cobra.CheckErr(promptErr)
+		if !confirmed {
 			fmt.Println("Transaction cancelled")
 			os.Exit(0)
 		}

@@ -145,17 +145,29 @@ func (a *Application) IsDaveConsensus() bool {
 	return a.ConsensusType == Consensus_PRT
 }
 
+// ApplicationState represents the lifecycle state of an application.
+//
+// State machine transitions (enforced by DB trigger):
+//
+//	ENABLED  → DISABLED, FAILED, INOPERABLE
+//	DISABLED → ENABLED, INOPERABLE
+//	FAILED   → ENABLED, DISABLED, INOPERABLE  (recoverable by operator)
+//	INOPERABLE → (terminal, no transitions allowed)
+//
+// DISABLED → FAILED is blocked (app must be running to fail).
 type ApplicationState string
 
 const (
-	ApplicationState_Enabled    ApplicationState = "ENABLED"
-	ApplicationState_Disabled   ApplicationState = "DISABLED"
-	ApplicationState_Inoperable ApplicationState = "INOPERABLE"
+	ApplicationState_Enabled    ApplicationState = "ENABLED"    // actively processing inputs
+	ApplicationState_Disabled   ApplicationState = "DISABLED"   // stopped by operator
+	ApplicationState_Failed     ApplicationState = "FAILED"     // recoverable failure (e.g., OOM, process crash)
+	ApplicationState_Inoperable ApplicationState = "INOPERABLE" // irrecoverable (data corruption, invariant violation)
 )
 
 var ApplicationStateAllValues = []ApplicationState{
 	ApplicationState_Enabled,
 	ApplicationState_Disabled,
+	ApplicationState_Failed,
 	ApplicationState_Inoperable,
 }
 
@@ -175,6 +187,8 @@ func (e *ApplicationState) Scan(value any) error {
 		*e = ApplicationState_Enabled
 	case "DISABLED":
 		*e = ApplicationState_Disabled
+	case "FAILED":
+		*e = ApplicationState_Failed
 	case "INOPERABLE":
 		*e = ApplicationState_Inoperable
 	default:

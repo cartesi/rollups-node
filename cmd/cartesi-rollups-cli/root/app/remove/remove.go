@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
@@ -30,12 +31,12 @@ const examples = `# Remove application:
 cartesi-rollups-cli app remove echo-dapp
 
 # Remove application without confirmation:
-cartesi-rollups-cli app remove echo-dapp --force`
+cartesi-rollups-cli app remove echo-dapp --yes`
 
-var force bool
+var yesFlag bool
 
 func init() {
-	Cmd.Flags().BoolVarP(&force, "force", "f", false, "Force removal without confirmation")
+	Cmd.Flags().BoolVarP(&yesFlag, "yes", "y", false, "Skip confirmation prompts")
 
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
@@ -70,13 +71,11 @@ func run(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	if !force {
-		fmt.Printf("Are you sure you want to remove application %s (%s)? [y/N] ",
-			app.Name, app.IApplicationAddress.String())
-
-		var response string
-		_, err = fmt.Scanln(&response)
-		if err != nil || (response != "y" && response != "Y") {
+	if !yesFlag {
+		confirmed, promptErr := cli.ConfirmPrompt(
+			fmt.Sprintf("Are you sure you want to remove application %s (%s)?",
+				app.Name, app.IApplicationAddress.String()))
+		if promptErr != nil || !confirmed {
 			fmt.Println("Operation cancelled")
 			return
 		}

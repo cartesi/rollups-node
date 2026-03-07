@@ -7,12 +7,12 @@ package validator
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/cartesi/rollups-node/internal/appstatus"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/merkle"
 	. "github.com/cartesi/rollups-node/internal/model"
@@ -118,23 +118,8 @@ func getProcessedEpochs(ctx context.Context, er ValidatorRepository, address str
 	return er.ListEpochs(ctx, address, f, repository.Pagination{}, false)
 }
 
-// setApplicationInoperable marks an application as inoperable with the given reason,
-// logs any error that occurs during the update, and returns an error with the reason.
 func (s *Service) setApplicationInoperable(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
-	reason := fmt.Sprintf(reasonFmt, args...)
-	appAddress := app.IApplicationAddress.String()
-
-	// Log the reason first
-	s.Logger.Error(reason, "application", appAddress)
-
-	// Update application state
-	err := s.repository.UpdateApplicationState(ctx, app.ID, ApplicationState_Inoperable, &reason)
-	if err != nil {
-		s.Logger.Error("failed to update application state to inoperable", "app", appAddress, "err", err)
-	}
-
-	// Return the error with the reason
-	return errors.New(reason)
+	return appstatus.SetInoperablef(ctx, s.Logger, s.repository, app, reasonFmt, args...)
 }
 
 // validateApplication calculates, validates and stores the claim and/or proofs

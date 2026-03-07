@@ -8,7 +8,7 @@ CREATE DOMAIN "uint64" AS NUMERIC(20, 0) CHECK (VALUE >= 0 AND VALUE <= 18446744
 CREATE DOMAIN "hash" AS BYTEA CHECK (octet_length(VALUE) = 32);
 CREATE DOMAIN "data_availability" AS BYTEA CHECK (octet_length(VALUE) >= 4);
 
-CREATE TYPE "ApplicationState" AS ENUM ('ENABLED', 'DISABLED', 'INOPERABLE');
+CREATE TYPE "ApplicationState" AS ENUM ('ENABLED', 'DISABLED', 'FAILED', 'INOPERABLE');
 
 CREATE TYPE "InputCompletionStatus" AS ENUM (
     'NONE',
@@ -91,7 +91,7 @@ CREATE TABLE "application"
     "processed_inputs" uint64 NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT "reason_required_for_inoperable" CHECK (NOT ("state" = 'INOPERABLE' AND ("reason" IS NULL OR LENGTH("reason") = 0))),
+    CONSTRAINT "reason_required_for_failure_states" CHECK (NOT ("state" IN ('FAILED', 'INOPERABLE') AND ("reason" IS NULL OR LENGTH("reason") = 0))),
     CONSTRAINT "application_pkey" PRIMARY KEY ("id")
 );
 
@@ -99,6 +99,33 @@ CREATE INDEX "application_data_availability_selector_idx" ON "application"(subst
 
 CREATE TRIGGER "application_set_updated_at" BEFORE UPDATE ON "application"
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE OR REPLACE FUNCTION validate_application_state_transition()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- INOPERABLE is terminal: no state or reason changes allowed
+    IF OLD.state = 'INOPERABLE'::"ApplicationState"
+       AND (NEW.state <> OLD.state OR NEW.reason IS DISTINCT FROM OLD.reason)
+    THEN
+        RAISE EXCEPTION 'cannot change state or reason of an INOPERABLE application';
+    END IF;
+
+    -- DISABLED cannot transition to FAILED (app must be running to fail)
+    IF OLD.state = 'DISABLED'::"ApplicationState" AND NEW.state = 'FAILED'::"ApplicationState" THEN
+        RAISE EXCEPTION 'cannot transition from DISABLED to FAILED: application is not running';
+    END IF;
+
+    -- Clear stale reason when transitioning to ENABLED or DISABLED
+    IF NEW.state IN ('ENABLED'::"ApplicationState", 'DISABLED'::"ApplicationState") THEN
+        NEW.reason := NULL;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER "application_validate_state_transition" BEFORE UPDATE ON "application"
+FOR EACH ROW EXECUTE FUNCTION validate_application_state_transition();
 
 CREATE TABLE "execution_parameters" (
     "application_id" INT PRIMARY KEY,

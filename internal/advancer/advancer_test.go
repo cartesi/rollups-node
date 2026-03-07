@@ -211,6 +211,49 @@ func (s *AdvancerSuite) TestStep() {
 		require.Nil(err)
 		require.Len(env.repo.StoredResults, 0)
 	})
+
+	s.Run("FailedAppDoesNotBlockOtherApps", func() {
+		require := s.Require()
+
+		mm := newMockMachineManager()
+		app1 := newMockMachine(1) // will fail
+		app2 := newMockMachine(2) // should still be processed
+		mm.Map[1] = newMockInstance(app1)
+		mm.Map[2] = newMockInstance(app2)
+		res2 := randomAdvanceResult(0)
+
+		repo := &MockRepository{
+			GetEpochsReturn: map[common.Address][]*Epoch{
+				app1.Application.IApplicationAddress: {
+					{Index: 0, Status: EpochStatus_Open},
+				},
+				app2.Application.IApplicationAddress: {
+					{Index: 0, Status: EpochStatus_Open},
+				},
+			},
+			GetInputsReturn: map[common.Address][]*Input{
+				app1.Application.IApplicationAddress: {
+					newInput(app1.Application.ID, 0, 0, []byte("advance error")),
+				},
+				app2.Application.IApplicationAddress: {
+					newInput(app2.Application.ID, 0, 0, marshal(res2)),
+				},
+			},
+		}
+
+		svc, err := newMockAdvancerService(mm, repo)
+		require.NoError(err)
+
+		err = svc.Step(context.Background())
+		// Step returns a combined error but the healthy app was still processed
+		require.Error(err)
+		require.Contains(err.Error(), "advance error")
+		require.Equal(1, repo.ApplicationStateUpdates)
+		require.Equal(ApplicationState_Failed, repo.LastApplicationState)
+
+		// app2's input was processed despite app1's failure
+		require.Len(repo.StoredResults, 1)
+	})
 }
 
 func (s *AdvancerSuite) TestGetUnprocessedInputs() {
@@ -262,7 +305,7 @@ func (s *AdvancerSuite) TestProcess() {
 		err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 		require.Error(err)
 		require.Equal(1, env.repo.ApplicationStateUpdates)
-		require.Equal(ApplicationState_Inoperable, env.repo.LastApplicationState)
+		require.Equal(ApplicationState_Failed, env.repo.LastApplicationState)
 		require.NotNil(env.repo.LastApplicationStateReason)
 		require.Equal("advance error", *env.repo.LastApplicationStateReason)
 	})
@@ -638,6 +681,19 @@ func (s *AdvancerSuite) TestHandleEpochAfterInputsProcessed() {
 		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
 		require.Error(err)
 		require.Contains(err.Error(), "proof error")
+	})
+
+	s.Run("EmptyEpochIndex0ErrMachineClosedMarksAppFailed", func() {
+		require := s.Require()
+		env := s.setupOneApp()
+		env.app.OutputsProofError = manager.ErrMachineClosed
+
+		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 0}
+		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
+		require.Error(err)
+		require.ErrorIs(err, manager.ErrMachineClosed)
+		require.Equal(1, env.repo.ApplicationStateUpdates)
+		require.Equal(ApplicationState_Failed, env.repo.LastApplicationState)
 	})
 
 	s.Run("EmptyEpochIndexGt0RepeatsPreviousProof", func() {
