@@ -673,13 +673,11 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 		mock.MatchedBy(func(app *Application) bool {
 			return app.IApplicationAddress == applications[0].IApplicationAddress
 		}),
-		mock.Anything,
 	).Return(s.applicationContract1, s.inputBox, nil)
 	s.contractFactory.On("CreateAdapters",
 		mock.MatchedBy(func(app *Application) bool {
 			return app.IApplicationAddress == applications[1].IApplicationAddress
 		}),
-		mock.Anything,
 	).Return(s.applicationContract2, nil, nil)
 }
 

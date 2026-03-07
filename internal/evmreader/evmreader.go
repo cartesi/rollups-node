@@ -244,7 +244,7 @@ func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) 
 				}
 				if !ok {
 					appContract, inputSource, daveConsensus, err :=
-						r.adapterFactory.CreateAdapters(app, r.client)
+						r.adapterFactory.CreateAdapters(app)
 					if err != nil {
 						r.Logger.Error("Error retrieving application contracts",
 							"app", app, "error", err)
@@ -348,51 +348,37 @@ func (r *Service) fetchMostRecentHeader(
 }
 
 type AdapterFactory interface {
-	CreateAdapters(app *Application, client EthClientInterface) (ApplicationContractAdapter, InputSourceAdapter, DaveConsensusAdapter, error)
+	CreateAdapters(app *Application) (ApplicationContractAdapter, InputSourceAdapter, DaveConsensusAdapter, error)
 }
 
 type DefaultAdapterFactory struct {
+	Client *ethclient.Client
 	Filter ethutil.Filter
 }
 
-func (f *DefaultAdapterFactory) CreateAdapters(app *Application, client EthClientInterface) (ApplicationContractAdapter, InputSourceAdapter, DaveConsensusAdapter, error) {
+func (f *DefaultAdapterFactory) CreateAdapters(app *Application) (ApplicationContractAdapter, InputSourceAdapter, DaveConsensusAdapter, error) {
 	if app == nil {
-		return nil, nil, nil, fmt.Errorf("Application reference is nil. Should never happen")
+		return nil, nil, nil, fmt.Errorf("application reference is nil, should never happen")
 	}
 
-	// Type assertion to get the concrete client if possible
-	ethClient, ok := client.(*ethclient.Client)
-	if !ok {
-		return nil, nil, nil, fmt.Errorf("client is not an *ethclient.Client, cannot create adapters")
-	}
-
-	applicationContract, err := NewApplicationContractAdapter(app.IApplicationAddress, ethClient, f.Filter)
+	applicationContract, err := NewApplicationContractAdapter(app.IApplicationAddress, f.Client, f.Filter)
 	if err != nil {
-		return nil, nil, nil, errors.Join(
-			fmt.Errorf("error building application contract"),
-			err,
-		)
+		return nil, nil, nil, fmt.Errorf("error building application contract: %w", err)
 	}
 
 	var inputSource InputSourceAdapter
 	if app.HasDataAvailabilitySelector(DataAvailability_InputBox) {
-		inputSource, err = NewInputSourceAdapter(app.IInputBoxAddress, ethClient, f.Filter)
+		inputSource, err = NewInputSourceAdapter(app.IInputBoxAddress, f.Client, f.Filter)
 		if err != nil {
-			return nil, nil, nil, errors.Join(
-				fmt.Errorf("error building inputbox contract"),
-				err,
-			)
+			return nil, nil, nil, fmt.Errorf("error building inputbox contract: %w", err)
 		}
 	}
 
 	var daveConsensus DaveConsensusAdapter
 	if app.IsDaveConsensus() {
-		daveConsensus, err = NewDaveConsensusAdapter(app.IConsensusAddress, ethClient, f.Filter)
+		daveConsensus, err = NewDaveConsensusAdapter(app.IConsensusAddress, f.Client, f.Filter)
 		if err != nil {
-			return nil, nil, nil, errors.Join(
-				fmt.Errorf("error building daveconsensus contract"),
-				err,
-			)
+			return nil, nil, nil, fmt.Errorf("error building daveconsensus contract: %w", err)
 		}
 	}
 

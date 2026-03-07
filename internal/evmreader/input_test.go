@@ -361,7 +361,6 @@ func (s *EvmReaderSuite) TestItStartsWhenLastProcessedBlockIsTheMostRecentBlock(
 	s.contractFactory.Unset("CreateAdapters")
 	s.contractFactory.On("CreateAdapters",
 		mock.Anything,
-		mock.Anything,
 	).Return(s.applicationContract1, s.inputBox, nil).Once()
 
 	// Start service

@@ -16,6 +16,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
+	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 type CreateInfo struct {
@@ -25,7 +26,7 @@ type CreateInfo struct {
 
 	Repository repository.Repository
 
-	EthClient   EthClientInterface
+	EthClient   *ethclient.Client
 	EthWsClient EthClientInterface
 }
 
@@ -118,6 +119,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	s.inputReaderEnabled = nodeConfig.InputReaderEnabled
 	s.hasEnabledApps = true
 	s.adapterFactory = &DefaultAdapterFactory{
+		Client: c.EthClient,
 		Filter: ethutil.Filter{
 			MinChunkSize: ethutil.DefaultMinChunkSize,
 			MaxChunkSize: new(big.Int).SetUint64(c.Config.BlockchainMaxBlockRange),

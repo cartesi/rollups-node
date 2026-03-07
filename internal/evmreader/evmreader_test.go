@@ -842,9 +842,8 @@ func (m *MockAdapterFactory) Unset(methodName string) {
 
 func (m *MockAdapterFactory) CreateAdapters(
 	app *Application,
-	client EthClientInterface,
 ) (ApplicationContractAdapter, InputSourceAdapter, DaveConsensusAdapter, error) {
-	args := m.Called(app, client)
+	args := m.Called(app)
 
 	// Safely handle nil values to prevent interface conversion panic
 	appContract, _ := args.Get(0).(ApplicationContractAdapter)
@@ -874,13 +873,11 @@ func (m *MockAdapterFactory) SetupDefaultBehavior(
 		mock.MatchedBy(func(app *Application) bool {
 			return app.IApplicationAddress == applications[0].IApplicationAddress
 		}),
-		mock.Anything,
 	).Return(appContract1, inputBox1, nil)
 	m.On("CreateAdapters",
 		mock.MatchedBy(func(app *Application) bool {
 			return app.IApplicationAddress == applications[1].IApplicationAddress
 		}),
-		mock.Anything,
 	).Return(appContract2, nil, nil)
 	return m
 }
@@ -890,7 +887,6 @@ func (m *MockAdapterFactory) SetupDefaultBehaviorSingleApp(
 	inputBox *MockInputBox) *MockAdapterFactory {
 	// Set up a default behavior that always returns valid non-nil interfaces
 	m.On("CreateAdapters",
-		mock.Anything,
 		mock.Anything,
 	).Return(appContract, inputBox, nil)
 	return m
