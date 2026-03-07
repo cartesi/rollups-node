@@ -45,34 +45,21 @@ var outputExecution1 = &iapplication.IApplicationOutputExecuted{
 }
 
 func (s *EvmReaderSuite) setupOutputExecution() {
+	// On-chain state: 0 executed outputs before 0x11, 1 at 0x11-0x12, 2 from 0x13
 	s.applicationContract1.Unset("GetNumberOfExecutedOutputs")
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(0), nil).Once()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(1), nil).Once()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(0), nil).Once()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(1), nil).Once()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(2), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs", blockRange(0, 0x11)).
+		Return(new(big.Int).SetUint64(0), nil)
+	s.applicationContract1.On("GetNumberOfExecutedOutputs", blockRange(0x11, 0x13)).
+		Return(new(big.Int).SetUint64(1), nil)
+	s.applicationContract1.On("GetNumberOfExecutedOutputs", blockFrom(0x13)).
+		Return(new(big.Int).SetUint64(2), nil)
 
 	s.applicationContract1.On("RetrieveOutputExecutionEvents",
-		mock.Anything,
-	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil).Once()
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x11 }),
+	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil)
 	s.applicationContract1.On("RetrieveOutputExecutionEvents",
-		mock.Anything,
-	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution1}, nil).Once()
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x13 }),
+	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution1}, nil)
 
 	s.repository.Unset("UpdateEventLastCheckBlock")
 	s.repository.On("UpdateEventLastCheckBlock",
@@ -154,7 +141,7 @@ func (s *EvmReaderSuite) setupOutputExecution() {
 }
 
 func (s *EvmReaderSuite) TestOutputExecution() {
-	wsClient := FakeWSEhtClient{}
+	wsClient := FakeWSEthClient{}
 	s.evmReader.wsClient = &wsClient
 
 	s.setupOutputExecution()
@@ -177,7 +164,7 @@ func (s *EvmReaderSuite) TestOutputExecution() {
 	wsClient.fireNewHead(&header0)
 	wsClient.fireNewHead(&header1)
 	wsClient.fireNewHead(&header2)
-	time.Sleep(1 * time.Second)
+	wsClient.flushHeaders()
 
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 2)
 	s.repository.AssertExpectations(s.T())
@@ -191,7 +178,7 @@ func (s *EvmReaderSuite) TestOutputExecution() {
 }
 
 func (s *EvmReaderSuite) TestOutputExecutionOnFinalizedBlocks() {
-	wsClient := FakeWSEhtClient{}
+	wsClient := FakeWSEthClient{}
 	s.evmReader.wsClient = &wsClient
 
 	s.evmReader.defaultBlock = DefaultBlock_Finalized
@@ -229,7 +216,7 @@ func (s *EvmReaderSuite) TestOutputExecutionOnFinalizedBlocks() {
 	wsClient.fireNewHead(&header3)
 	wsClient.fireNewHead(&header3)
 	wsClient.fireNewHead(&header3)
-	time.Sleep(1 * time.Second)
+	wsClient.flushHeaders()
 
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 2)
 	s.repository.AssertExpectations(s.T())
@@ -243,7 +230,7 @@ func (s *EvmReaderSuite) TestOutputExecutionOnFinalizedBlocks() {
 }
 
 func (s *EvmReaderSuite) TestCheckOutputFailsWhenRetrieveOutputsFails() {
-	wsClient := FakeWSEhtClient{}
+	wsClient := FakeWSEthClient{}
 	s.evmReader.wsClient = &wsClient
 
 	s.setupOutputExecution()
@@ -251,46 +238,16 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenRetrieveOutputsFails() {
 	s.applicationContract1.Unset("RetrieveOutputExecutionEvents")
 	s.applicationContract1.On("RetrieveOutputExecutionEvents",
 		mock.Anything,
-	).Return([]*iapplication.IApplicationOutputExecuted{}, errors.New("No outputs for you")).Times(3)
+	).Return([]*iapplication.IApplicationOutputExecuted{}, errors.New("No outputs for you"))
 
-	// If retrieving outputs fails, it does not update the database and keep scanning the ranges
+	// On-chain state: same as setupOutputExecution. Retrieval fails but oracle still works.
 	s.applicationContract1.Unset("GetNumberOfExecutedOutputs")
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(0), nil).Once()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(1), nil).Once()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(0), nil).Twice()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(1), nil).Twice()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(0), nil).Twice()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(2), nil).Once()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(1), nil).Once()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(0), nil).Once()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(1), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs", blockRange(0, 0x11)).
+		Return(new(big.Int).SetUint64(0), nil)
+	s.applicationContract1.On("GetNumberOfExecutedOutputs", blockRange(0x11, 0x13)).
+		Return(new(big.Int).SetUint64(1), nil)
+	s.applicationContract1.On("GetNumberOfExecutedOutputs", blockFrom(0x13)).
+		Return(new(big.Int).SetUint64(2), nil)
 
 	apps := copyApplications(applications)
 	s.repository.Unset("ListApplications")
@@ -322,6 +279,9 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenRetrieveOutputsFails() {
 		mock.Anything,
 		false,
 	).Return(apps, uint64(2), nil).Once()
+	// Catch-all for sentinel / extra headers
+	s.repository.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).
+		Return([]*Application{}, uint64(0), nil)
 
 	s.repository.Unset("GetNumberOfExecutedOutputs")
 	s.repository.On("GetNumberOfExecutedOutputs",
@@ -364,7 +324,7 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenRetrieveOutputsFails() {
 	wsClient.fireNewHead(&header0)
 	wsClient.fireNewHead(&header1)
 	wsClient.fireNewHead(&header2)
-	time.Sleep(1 * time.Second)
+	wsClient.flushHeaders()
 
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 0)
 	s.repository.AssertExpectations(s.T())
@@ -378,7 +338,7 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenRetrieveOutputsFails() {
 }
 
 func (s *EvmReaderSuite) TestCheckOutputFailsWhenGetOutputsFails() {
-	wsClient := FakeWSEhtClient{}
+	wsClient := FakeWSEthClient{}
 	s.evmReader.wsClient = &wsClient
 
 	s.setupOutputExecution()
@@ -389,52 +349,22 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenGetOutputsFails() {
 		mock.Anything,
 		mock.Anything).Return(nil, errors.New("no output for you")).Times(3)
 
-	// If retrieving outputs fails, it does not update the database and keep scanning the ranges
+	// On-chain state: same as setupOutputExecution. GetOutput fails but oracle still works.
 	s.applicationContract1.Unset("GetNumberOfExecutedOutputs")
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(0), nil).Once()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(1), nil).Once()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(0), nil).Twice()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(1), nil).Twice()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(0), nil).Twice()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(2), nil).Once()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(1), nil).Once()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(0), nil).Once()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(1), nil).Once()
+	s.applicationContract1.On("GetNumberOfExecutedOutputs", blockRange(0, 0x11)).
+		Return(new(big.Int).SetUint64(0), nil)
+	s.applicationContract1.On("GetNumberOfExecutedOutputs", blockRange(0x11, 0x13)).
+		Return(new(big.Int).SetUint64(1), nil)
+	s.applicationContract1.On("GetNumberOfExecutedOutputs", blockFrom(0x13)).
+		Return(new(big.Int).SetUint64(2), nil)
 
 	s.applicationContract1.Unset("RetrieveOutputExecutionEvents")
 	s.applicationContract1.On("RetrieveOutputExecutionEvents",
-		mock.Anything,
-	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil).Times(3)
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x11 }),
+	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil)
 	s.applicationContract1.On("RetrieveOutputExecutionEvents",
-		mock.Anything,
-	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution1}, nil).Once()
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x13 }),
+	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution1}, nil)
 
 	apps := copyApplications(applications)
 	s.repository.Unset("ListApplications")
@@ -466,6 +396,9 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenGetOutputsFails() {
 		mock.Anything,
 		false,
 	).Return(apps, uint64(2), nil).Once()
+	// Catch-all for sentinel / extra headers
+	s.repository.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).
+		Return([]*Application{}, uint64(0), nil)
 
 	s.repository.Unset("GetNumberOfExecutedOutputs")
 	s.repository.On("GetNumberOfExecutedOutputs",
@@ -507,7 +440,7 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenGetOutputsFails() {
 	wsClient.fireNewHead(&header0)
 	wsClient.fireNewHead(&header1)
 	wsClient.fireNewHead(&header2)
-	time.Sleep(1 * time.Second)
+	wsClient.flushHeaders()
 
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 0)
 	s.repository.AssertExpectations(s.T())
@@ -540,11 +473,11 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 	}
 
 	logLevel, err := config.GetLogLevel()
-	s.Require().Nil(err)
+	s.Require().NoError(err)
 
 	serviceArgs := &service.CreateInfo{Name: "evm-reader", Impl: s.evmReader, LogLevel: logLevel}
 	err = service.Create(context.Background(), serviceArgs, &s.evmReader.Service)
-	s.Require().Nil(err)
+	s.Require().NoError(err)
 
 	apps := copyApplications(applications)
 	s.repository.On("ListApplications",
@@ -571,6 +504,9 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 		mock.Anything,
 		false,
 	).Return(apps, uint64(1), nil).Once()
+	// Catch-all for sentinel / extra headers
+	s.repository.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).
+		Return([]*Application{}, uint64(0), nil)
 
 	s.repository.On("UpdateEventLastCheckBlock",
 		mock.Anything,
@@ -627,34 +563,21 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 		mock.Anything,
 	).Return(new(big.Int).SetUint64(0x10), nil).Once()
 
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(0), nil).Once()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(1), nil).Once()
-	s.applicationContract1.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(0), nil).Once()
+	// On-chain state: 0 executed outputs before 0x11, 1 from 0x11
+	s.applicationContract1.On("GetNumberOfExecutedOutputs", blockRange(0, 0x11)).
+		Return(new(big.Int).SetUint64(0), nil)
+	s.applicationContract1.On("GetNumberOfExecutedOutputs", blockFrom(0x11)).
+		Return(new(big.Int).SetUint64(1), nil)
 
 	s.applicationContract1.On("RetrieveOutputExecutionEvents",
-		mock.Anything,
-	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil).Once()
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x11 }),
+	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil)
 
-	events0 := []iinputbox.IInputBoxInputAdded{inputAddedEvent0}
-	retrieveInputsOpts0 := bind.FilterOpts{
-		Context: s.ctx,
-		Start:   0x11,
-		End:     Pointer(uint64(0x11)),
-	}
 	s.inputBox.On("RetrieveInputs",
-		&retrieveInputsOpts0,
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x11 }),
 		mock.Anything,
 		mock.Anything,
-	).Return(events0, nil).Once()
+	).Return([]iinputbox.IInputBoxInputAdded{inputAddedEvent0}, nil)
 
 	s.inputBox.On("GetNumberOfInputs",
 		mock.Anything,
@@ -673,18 +596,18 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 		mock.MatchedBy(func(app *Application) bool {
 			return app.IApplicationAddress == applications[0].IApplicationAddress
 		}),
-	).Return(s.applicationContract1, s.inputBox, nil)
+	).Return(s.applicationContract1, s.inputBox, nil, nil)
 	s.contractFactory.On("CreateAdapters",
 		mock.MatchedBy(func(app *Application) bool {
 			return app.IApplicationAddress == applications[1].IApplicationAddress
 		}),
-	).Return(s.applicationContract2, nil, nil)
+	).Return(s.applicationContract2, nil, nil, nil)
 }
 
 func (s *EvmReaderSuite) TestCheckOutputFailsWhenOutputMismatches() {
 	s.setupOutputMismatchTest()
 
-	wsClient := FakeWSEhtClient{}
+	wsClient := FakeWSEthClient{}
 	s.evmReader.wsClient = &wsClient
 
 	// Start service
@@ -705,7 +628,7 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenOutputMismatches() {
 	wsClient.fireNewHead(&header0)
 	wsClient.fireNewHead(&header1)
 	wsClient.fireNewHead(&header2)
-	time.Sleep(1 * time.Second)
+	wsClient.flushHeaders()
 
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 0)
 	s.repository.AssertExpectations(s.T())
