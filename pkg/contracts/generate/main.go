@@ -34,8 +34,16 @@ var bindings = []contractBinding{
 		typeName: "IAuthorityFactory",
 	},
 	{
+		jsonPath: rollupsContractsPath + "IAuthority.sol/IAuthority.json",
+		typeName: "IAuthority",
+	},
+	{
 		jsonPath: rollupsContractsPath + "IConsensus.sol/IConsensus.json",
 		typeName: "IConsensus",
+	},
+	{
+		jsonPath: rollupsContractsPath + "IQuorum.sol/IQuorum.json",
+		typeName: "IQuorum",
 	},
 	{
 		jsonPath: rollupsContractsPath + "IApplication.sol/IApplication.json",

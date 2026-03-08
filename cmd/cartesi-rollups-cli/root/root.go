@@ -5,6 +5,7 @@ package root
 
 import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/app"
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/contract"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/db"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/deploy"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/execute"
@@ -65,5 +66,6 @@ func init() {
 	Cmd.AddCommand(app.Cmd)
 	Cmd.AddCommand(db.Cmd)
 	Cmd.AddCommand(deploy.Cmd)
+	Cmd.AddCommand(contract.Cmd)
 	Cmd.DisableAutoGenTag = true
 }
