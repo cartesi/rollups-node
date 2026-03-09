@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"syscall"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
@@ -95,7 +97,7 @@ func (m *machineImpl) Fork(ctx context.Context) (Machine, error) {
 	}
 
 	// Forks the server.
-	newServer, address, _, err := m.backend.ForkServer(m.params.FastDeadline)
+	newServer, address, pid, err := m.backend.ForkServer(m.params.FastDeadline)
 	if err != nil {
 		err = fmt.Errorf("could not fork the machine: %w", err)
 		return nil, errors.Join(ErrMachineInternal, err)
@@ -105,6 +107,7 @@ func (m *machineImpl) Fork(ctx context.Context) (Machine, error) {
 	newMachine := &machineImpl{
 		backend: newServer,
 		address: address,
+		pid:     pid,
 		params:  m.params,
 		logger:  m.logger,
 	}
@@ -236,6 +239,16 @@ func (m *machineImpl) Close() error {
 
 	err := m.backend.ShutdownServer(m.params.FastDeadline)
 	if err != nil {
+		// ShutdownServer can fail because SIGINT was delivered to the
+		// entire process group: the child is already shutting down (closing
+		// sockets) so our RPC gets "connection reset" or "end of stream".
+		// Wait briefly for the child to finish exiting before reporting it
+		// as orphaned.
+		if m.pid != 0 && waitForExit(m.pid, 500*time.Millisecond) { //nolint: mnd
+			m.backend.Delete()
+			m.backend = nil
+			return nil
+		}
 		err = fmt.Errorf("could not shut down the server: %w", err)
 		err = errors.Join(errors.Join(ErrMachineInternal, err),
 			fmt.Errorf("%w at address %s", ErrOrphanServer, m.address))
@@ -243,6 +256,24 @@ func (m *machineImpl) Close() error {
 	m.backend.Delete()
 	m.backend = nil
 	return err
+}
+
+// waitForExit polls until the process with the given PID has exited or the
+// timeout elapses. Returns true if the process exited within the timeout.
+func waitForExit(pid uint32, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		proc, err := os.FindProcess(int(pid))
+		if err != nil {
+			return true
+		}
+		// try send no-op signal 0 to check process is still receiving signals.
+		if proc.Signal(syscall.Signal(0)) != nil {
+			return true
+		}
+		time.Sleep(50 * time.Millisecond) //nolint: mnd
+	}
+	return false
 }
 
 // Address returns the address of the machine server

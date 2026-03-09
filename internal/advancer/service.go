@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -31,6 +32,7 @@ type Service struct {
 	inspector      *inspect.Inspector
 	HTTPServer     *http.Server
 	HTTPServerFunc func() error
+	stopOnce       sync.Once
 }
 
 // CreateInfo contains the configuration for creating an advancer service
@@ -102,27 +104,22 @@ func (s *Service) Tick() []error {
 }
 func (s *Service) Stop(b bool) []error {
 	var errs []error
-
-	// Shut down the inspect HTTP server gracefully.
-	// Use a dedicated timeout context because s.Context may already be cancelled
-	// when Stop is called from the context.Done path.
-	if s.HTTPServer != nil {
-		s.Logger.Info("Shutting down inspect HTTP server")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), httpShutdownTimeout)
-		defer cancel()
-		if err := s.HTTPServer.Shutdown(shutdownCtx); err != nil {
-			errs = append(errs, fmt.Errorf("failed to shutdown inspect HTTP server: %w", err))
+	s.stopOnce.Do(func() {
+		if s.HTTPServer != nil {
+			s.Logger.Info("Shutting down inspect HTTP server")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), httpShutdownTimeout)
+			defer cancel()
+			if err := s.HTTPServer.Shutdown(shutdownCtx); err != nil {
+				errs = append(errs, fmt.Errorf("failed to shutdown inspect HTTP server: %w", err))
+			}
 		}
-	}
-
-	// Close all machine instances to avoid orphaned emulator processes
-	if s.machineManager != nil {
-		s.Logger.Info("Closing machine manager")
-		if err := s.machineManager.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("failed to close machine manager: %w", err))
+		if s.machineManager != nil {
+			s.Logger.Info("Closing machine manager")
+			if err := s.machineManager.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("failed to close machine manager: %w", err))
+			}
 		}
-	}
-
+	})
 	return errs
 }
 func (s *Service) Serve() error {
