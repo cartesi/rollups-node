@@ -5,8 +5,8 @@ package claimer
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"iter"
 	"log/slog"
 	"math/big"
 
@@ -16,7 +16,6 @@ import (
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -29,7 +28,8 @@ type iclaimerBlockchain interface {
 		ctx context.Context,
 		application *model.Application,
 		epoch *model.Epoch,
-		endBlock *big.Int,
+		fromBlock uint64,
+		toBlock uint64,
 	) (
 		*iconsensus.IConsensus,
 		*iconsensus.IConsensusClaimSubmitted,
@@ -53,7 +53,8 @@ type iclaimerBlockchain interface {
 		ctx context.Context,
 		application *model.Application,
 		epoch *model.Epoch,
-		endBlock *big.Int,
+		fromBlock uint64,
+		toBlock uint64,
 	) (
 		*iconsensus.IConsensus,
 		*iconsensus.IConsensusClaimAccepted,
@@ -61,7 +62,7 @@ type iclaimerBlockchain interface {
 		error,
 	)
 
-	getBlockNumber(ctx context.Context) (*big.Int, error)
+	getDefaultBlockNumber(ctx context.Context) (*big.Int, error)
 
 	getConsensusAddress(
 		ctx context.Context,
@@ -73,28 +74,30 @@ type claimerBlockchain struct {
 	client       *ethclient.Client
 	txOpts       *bind.TransactOpts
 	logger       *slog.Logger
-	filter       ethutil.Filter
 	defaultBlock config.DefaultBlock
 }
 
-func (self *claimerBlockchain) submitClaimToBlockchain(
+func (cb *claimerBlockchain) submitClaimToBlockchain(
 	ic *iconsensus.IConsensus,
 	application *model.Application,
 	epoch *model.Epoch,
 ) (common.Hash, error) {
 	txHash := common.Hash{}
+	if cb.txOpts == nil {
+		return txHash, fmt.Errorf("txOpts is required for claim submission")
+	}
 	lastBlockNumber := new(big.Int).SetUint64(epoch.LastBlock)
-	tx, err := ic.SubmitClaim(self.txOpts, application.IApplicationAddress,
+	tx, err := ic.SubmitClaim(cb.txOpts, application.IApplicationAddress,
 		lastBlockNumber, *epoch.OutputsMerkleRoot)
 	if err != nil {
-		self.logger.Error("submitClaimToBlockchain:failed",
+		cb.logger.Error("submitClaimToBlockchain:failed",
 			"appContractAddress", application.IApplicationAddress,
 			"claimHash", *epoch.OutputsMerkleRoot,
 			"last_block", epoch.LastBlock,
 			"error", err)
 	} else {
 		txHash = tx.Hash()
-		self.logger.Debug("submitClaimToBlockchain:success",
+		cb.logger.Debug("submitClaimToBlockchain:success",
 			"appContractAddress", application.IApplicationAddress,
 			"claimHash", *epoch.OutputsMerkleRoot,
 			"last_block", epoch.LastBlock,
@@ -103,202 +106,182 @@ func (self *claimerBlockchain) submitClaimToBlockchain(
 	return txHash, err
 }
 
-func unwrapClaimSubmitted(
-	ic *iconsensus.IConsensus,
-	pull func() (log *types.Log, err error, ok bool),
-) (
-	*iconsensus.IConsensusClaimSubmitted,
-	bool,
-	error,
-) {
-	log, err, ok := pull()
-	if !ok || err != nil {
-		return nil, false, err
+type eventIterator interface {
+	Next() bool
+	Close() error
+	Error() error
+}
+
+func newOracle(
+	nr func(*bind.CallOpts) (*big.Int, error),
+) func(ctx context.Context, block uint64) (*big.Int, error) {
+	return func(ctx context.Context, block uint64) (*big.Int, error) {
+		return nr(&bind.CallOpts{
+			Context:     ctx,
+			BlockNumber: new(big.Int).SetUint64(block),
+		})
 	}
-	ev, err := ic.ParseClaimSubmitted(*log)
-	return ev, true, err
+}
+
+func newOnHit[IT eventIterator](
+	ctx context.Context,
+	address common.Address,
+	filter func(*bind.FilterOpts, []common.Address, []common.Address) (IT, error),
+	onEvent func(IT),
+) func(block uint64) error {
+	return func(block uint64) error {
+		filterOpts := &bind.FilterOpts{
+			Context: ctx,
+			Start:   block,
+			End:     &block,
+		}
+		it, err := filter(filterOpts, nil, []common.Address{address})
+		if err != nil {
+			return err
+		}
+		defer it.Close()
+		for it.Next() {
+			onEvent(it)
+		}
+		return it.Error()
+	}
 }
 
 // scan the event stream for a claimSubmitted event that matches claim.
 // return this event and its successor
-func (self *claimerBlockchain) findClaimSubmittedEventAndSucc(
+func (cb *claimerBlockchain) findClaimSubmittedEventAndSucc(
 	ctx context.Context,
 	application *model.Application,
 	epoch *model.Epoch,
-	endBlock *big.Int,
+	fromBlock uint64,
+	toBlock uint64,
 ) (
 	*iconsensus.IConsensus,
 	*iconsensus.IConsensusClaimSubmitted,
 	*iconsensus.IConsensusClaimSubmitted,
 	error,
 ) {
-	ic, err := iconsensus.NewIConsensus(application.IConsensusAddress, self.client)
+	ic, err := iconsensus.NewIConsensus(application.IConsensusAddress, cb.client)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-
-	// filter must match:
-	// - `ClaimSubmitted` events
-	// - submitter == nil (any)
-	// - appContract == claim.IApplicationAddress
-	c, err := iconsensus.IConsensusMetaData.GetAbi()
-	topics, err := abi.MakeTopics(
-		[]any{c.Events[model.MonitoredEvent_ClaimSubmitted.String()].ID},
-		nil,
-		[]any{application.IApplicationAddress},
-	)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	it, err := self.filter.ChunkedFilterLogs(ctx, self.client, ethereum.FilterQuery{
-		FromBlock: new(big.Int).SetUint64(epoch.LastBlock),
-		ToBlock:   endBlock,
-		Addresses: []common.Address{application.IConsensusAddress},
-		Topics:    topics,
-	})
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	// pull events instead of iterating
-	next, stop := iter.Pull2(it)
-	defer stop()
-	for {
-		event, ok, err := unwrapClaimSubmitted(ic, next)
-		if !ok || err != nil {
-			return ic, event, nil, err
-		}
-		lastBlock := event.LastProcessedBlockNumber.Uint64()
-
-		if claimSubmittedEventMatches(application, epoch, event) {
-			// found the event, does it has a successor? try to fetch it
-			succ, ok, err := unwrapClaimSubmitted(ic, next)
-			if !ok || err != nil {
-				return ic, event, nil, err
+	oracle := newOracle(ic.GetNumberOfSubmittedClaims)
+	events := []*iconsensus.IConsensusClaimSubmitted{}
+	onHit := newOnHit(ctx, application.IApplicationAddress, ic.FilterClaimSubmitted,
+		func(it *iconsensus.IConsensusClaimSubmittedIterator) {
+			event := it.Event
+			if (len(events) > 0) || claimSubmittedEventMatches(application, epoch, event) {
+				events = append(events, event)
 			}
-			return ic, event, succ, err
-		} else if lastBlock > epoch.LastBlock {
-			err = fmt.Errorf("No matching claim, searched up to %v", event)
-			return nil, nil, nil, err
-		}
-	}
-}
+		},
+	)
 
-func unwrapClaimAccepted(
-	ic *iconsensus.IConsensus,
-	pull func() (log *types.Log, err error, ok bool),
-) (
-	*iconsensus.IConsensusClaimAccepted,
-	bool,
-	error,
-) {
-	log, err, ok := pull()
-	if !ok || err != nil {
-		return nil, false, err
+	numSubmittedClaims, err := oracle(ctx, epoch.LastBlock)
+	if err != nil {
+		return nil, nil, nil, err
 	}
-	ev, err := ic.ParseClaimAccepted(*log)
-	return ev, true, err
+	_, err = ethutil.FindTransitions(ctx, fromBlock, toBlock, numSubmittedClaims, oracle, onHit)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to walk ClaimSubmitted transitions: %w", err)
+	}
+
+	if len(events) == 0 {
+		return ic, nil, nil, nil
+	} else if len(events) == 1 {
+		return ic, events[0], nil, nil
+	} else {
+		return ic, events[0], events[1], nil
+	}
 }
 
 // scan the event stream for a claimAccepted event that matches claim.
 // return this event and its successor
-func (self *claimerBlockchain) findClaimAcceptedEventAndSucc(
+func (cb *claimerBlockchain) findClaimAcceptedEventAndSucc(
 	ctx context.Context,
 	application *model.Application,
 	epoch *model.Epoch,
-	endBlock *big.Int,
+	fromBlock uint64,
+	toBlock uint64,
 ) (
 	*iconsensus.IConsensus,
 	*iconsensus.IConsensusClaimAccepted,
 	*iconsensus.IConsensusClaimAccepted,
 	error,
 ) {
-	ic, err := iconsensus.NewIConsensus(application.IConsensusAddress, self.client)
+	ic, err := iconsensus.NewIConsensus(application.IConsensusAddress, cb.client)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	// filter must match:
-	// - `ClaimAccepted` events
-	// - appContract == claim.IApplicationAddress
-	c, err := iconsensus.IConsensusMetaData.GetAbi()
-	topics, err := abi.MakeTopics(
-		[]any{c.Events[model.MonitoredEvent_ClaimAccepted.String()].ID},
-		[]any{application.IApplicationAddress},
-	)
-	if err != nil {
-		return nil, nil, nil, err
+	oracle := newOracle(ic.GetNumberOfAcceptedClaims)
+	events := []*iconsensus.IConsensusClaimAccepted{}
+	filter := func(
+		opts *bind.FilterOpts,
+		_ []common.Address,
+		appContract []common.Address,
+	) (*iconsensus.IConsensusClaimAcceptedIterator, error) {
+		return ic.FilterClaimAccepted(opts, appContract)
 	}
-
-	it, err := self.filter.ChunkedFilterLogs(ctx, self.client, ethereum.FilterQuery{
-		FromBlock: new(big.Int).SetUint64(epoch.LastBlock),
-		ToBlock:   endBlock,
-		Addresses: []common.Address{application.IConsensusAddress},
-		Topics:    topics,
-	})
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	// pull events instead of iterating
-	next, stop := iter.Pull2(it)
-	defer stop()
-	for {
-		event, ok, err := unwrapClaimAccepted(ic, next)
-		if !ok || err != nil {
-			return ic, event, nil, err
-		}
-		lastBlock := event.LastProcessedBlockNumber.Uint64()
-
-		if claimAcceptedEventMatches(application, epoch, event) {
-			// found the event, does it has a successor? try to fetch it
-			succ, ok, err := unwrapClaimAccepted(ic, next)
-			if !ok || err != nil {
-				return ic, event, nil, err
+	onHit := newOnHit(ctx, application.IApplicationAddress, filter,
+		func(it *iconsensus.IConsensusClaimAcceptedIterator) {
+			event := it.Event
+			if (len(events) > 0) || claimAcceptedEventMatches(application, epoch, event) {
+				events = append(events, event)
 			}
-			return ic, event, succ, err
-		} else if lastBlock > epoch.LastBlock {
-			err = fmt.Errorf("No matching claim, searched up to %v", event)
-			return nil, nil, nil, err
-		}
+		},
+	)
+
+	numAcceptedClaims, err := oracle(ctx, epoch.LastBlock)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	_, err = ethutil.FindTransitions(ctx, fromBlock, toBlock, numAcceptedClaims, oracle, onHit)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to walk ClaimAccepted transitions: %w", err)
+	}
+
+	if len(events) == 0 {
+		return ic, nil, nil, nil
+	} else if len(events) == 1 {
+		return ic, events[0], nil, nil
+	} else {
+		return ic, events[0], events[1], nil
 	}
 }
 
-func (self *claimerBlockchain) getConsensusAddress(
+func (cb *claimerBlockchain) getConsensusAddress(
 	ctx context.Context,
 	app *model.Application,
 ) (common.Address, error) {
-	return ethutil.GetConsensus(ctx, self.client, app.IApplicationAddress)
+	return ethutil.GetConsensus(ctx, cb.client, app.IApplicationAddress)
 }
 
-/* poll a transaction hash for its submission status and receipt */
-func (self *claimerBlockchain) pollTransaction(
+// poll a transaction for its receipt
+func (cb *claimerBlockchain) pollTransaction(
 	ctx context.Context,
 	txHash common.Hash,
-	endBlock *big.Int,
+	endBlockNumber *big.Int,
 ) (bool, *types.Receipt, error) {
-	_, isPending, err := self.client.TransactionByHash(ctx, txHash)
-	if err != nil || isPending {
-		return false, nil, err
-	}
-
-	receipt, err := self.client.TransactionReceipt(ctx, txHash)
+	receipt, err := cb.client.TransactionReceipt(ctx, txHash)
 	if err != nil {
+		// TransactionReceipt returns ethereum.NotFound while the transaction is still pending.
+		// Treat this as "not ready yet" rather than a hard failure so that callers keep
+		// the claim in-flight and avoid duplicate submissions.
+		if errors.Is(err, ethereum.NotFound) {
+			return false, nil, nil
+		}
 		return false, nil, err
 	}
 
-	if receipt.BlockNumber.Cmp(endBlock) >= 0 {
-		return false, receipt, err
-	}
-
-	return receipt.Status == 1, receipt, err
+	// receipt must be committed before use. Return false until it is.
+	return receipt.BlockNumber.Cmp(endBlockNumber) <= 0, receipt, nil
 }
 
-/* Retrieve the block number of "DefaultBlock" */
-func (self *claimerBlockchain) getBlockNumber(ctx context.Context) (*big.Int, error) {
+/* Retrieve the block number for the configured commitment level in ethereum terms,
+ * that is: `latest`, `safe`, `finalized`, etc. Which may be many blocks behind. */
+func (cb *claimerBlockchain) getDefaultBlockNumber(ctx context.Context) (*big.Int, error) {
 	var nr int64
-	switch self.defaultBlock {
+	switch cb.defaultBlock {
 	case model.DefaultBlock_Pending:
 		nr = rpc.PendingBlockNumber.Int64()
 	case model.DefaultBlock_Latest:
@@ -308,10 +291,10 @@ func (self *claimerBlockchain) getBlockNumber(ctx context.Context) (*big.Int, er
 	case model.DefaultBlock_Safe:
 		nr = rpc.SafeBlockNumber.Int64()
 	default:
-		return nil, fmt.Errorf("default block '%v' not supported", self.defaultBlock)
+		return nil, fmt.Errorf("default block '%v' not supported", cb.defaultBlock)
 	}
 
-	hdr, err := self.client.HeaderByNumber(ctx, big.NewInt(nr))
+	hdr, err := cb.client.HeaderByNumber(ctx, big.NewInt(nr))
 	if err != nil {
 		return nil, err
 	}
