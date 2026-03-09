@@ -51,9 +51,9 @@ import (
 )
 
 var (
-	ErrClaimMismatch = fmt.Errorf("Claim and antecessor mismatch")
-	ErrEventMismatch = fmt.Errorf("Computed Claim mismatches ClaimSubmitted event")
-	ErrMissingEvent  = fmt.Errorf("Accepted claim has no matching blockchain event")
+	ErrClaimMismatch = fmt.Errorf("constraints failed for epoch claim and its successor.")
+	ErrEventMismatch = fmt.Errorf("epoch claim does not match its corresponding event.")
+	ErrMissingEvent  = fmt.Errorf("epoch claim does not have a corresponding event.")
 )
 
 type iclaimerRepository interface {
@@ -97,7 +97,7 @@ type iclaimerRepository interface {
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
 }
 
-/* transition claims from computed to submitted */
+// transition epoch claims from computed to submitted.
 func (s *Service) submitClaimsAndUpdateDatabase(
 	acceptedOrSubmittedEpochs map[int64]*model.Epoch,
 	computedEpochs map[int64]*model.Epoch,
@@ -107,7 +107,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 	errs := []error{}
 	var err error
 
-	// check claims in flight
+	// check claims in flight. NOTE: map mutation + iteration is safe in Go
 	for key, txHash := range s.claimsInFlight {
 		ready, receipt, err := s.blockchain.pollTransaction(s.Context, txHash, endBlock)
 		if err != nil {
@@ -128,12 +128,22 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 				computedEpoch.Index,
 				receipt.TxHash,
 			)
+
+			// NOTE: there is no point in trying the other claims on a database error
+			//       so we just return and try again on the next tick
 			if err != nil {
 				errs = append(errs, err)
 				return errs
 			}
+
+			// we expect apps[key] to always exist,
+			// but guard its use behind this `if` to ensure there is no panic if we are wrong.
+			appAddress := common.Address{}
+			if app, ok := apps[key]; ok {
+				appAddress = app.IApplicationAddress
+			}
 			s.Logger.Info("Claim submitted",
-				"app", apps[key].IApplicationAddress,
+				"app", appAddress,
 				"receipt_block_number", receipt.BlockNumber,
 				"claim_hash", fmt.Sprintf("%x", computedEpoch.OutputsMerkleRoot),
 				"last_block", computedEpoch.LastBlock,
@@ -146,7 +156,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 		delete(s.claimsInFlight, key)
 	}
 
-	// check computed epochs
+	// check computed epochs. NOTE: map mutation + iteration is safe in Go
 	for key, currEpoch := range computedEpochs {
 		var ic *iconsensus.IConsensus
 		var prevClaimSubmissionEvent *iconsensus.IConsensusClaimSubmitted
@@ -163,7 +173,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 		if err := s.checkConsensusForAddressChange(app); err != nil {
 			delete(computedEpochs, key)
 			errs = append(errs, err)
-			goto nextApp
+			continue
 		}
 		if previousEpochExists {
 			err := checkEpochSequenceConstraint(prevEpoch, currEpoch)
@@ -180,7 +190,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 				)
 				delete(computedEpochs, key)
 				errs = append(errs, err)
-				goto nextApp
+				continue
 			}
 
 			// the previous epoch must have a matching claim submission event.
@@ -190,7 +200,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 			if err != nil {
 				delete(computedEpochs, key)
 				errs = append(errs, err)
-				goto nextApp
+				continue
 			}
 			if prevClaimSubmissionEvent == nil {
 				err = s.setApplicationInoperable(
@@ -203,7 +213,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 				)
 				delete(computedEpochs, key)
 				errs = append(errs, err)
-				goto nextApp
+				continue
 			}
 			if !claimSubmittedEventMatches(app, prevEpoch, prevClaimSubmissionEvent) {
 				s.Logger.Error("event mismatch",
@@ -218,11 +228,11 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 					currEpoch.Index,
 					prevEpoch.Index,
 					prevEpoch.VirtualIndex,
-					prevClaimSubmissionEvent,
+					prevClaimSubmissionEvent.Raw.TxHash,
 				)
 				delete(computedEpochs, key)
 				errs = append(errs, err)
-				goto nextApp
+				continue
 			}
 		} else {
 			// first claim
@@ -231,7 +241,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 			if err != nil {
 				delete(computedEpochs, key)
 				errs = append(errs, err)
-				goto nextApp
+				continue
 			}
 		}
 
@@ -250,7 +260,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 				)
 				delete(computedEpochs, key)
 				errs = append(errs, err)
-				goto nextApp
+				continue
 			}
 			s.Logger.Debug("Updating claim status to submitted",
 				"app", app.IApplicationAddress,
@@ -267,7 +277,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 			if err != nil {
 				delete(computedEpochs, key)
 				errs = append(errs, err)
-				goto nextApp
+				continue
 			}
 			delete(s.claimsInFlight, key)
 			s.Logger.Info("Claim previously submitted",
@@ -283,7 +293,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 					"claim_hash", fmt.Sprintf("%x", prevEpoch.OutputsMerkleRoot),
 					"last_block", prevEpoch.LastBlock,
 				)
-				goto nextApp
+				continue
 			}
 			s.Logger.Debug("Submitting claim to blockchain",
 				"app", app.IApplicationAddress,
@@ -294,7 +304,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 			if err != nil {
 				delete(computedEpochs, key)
 				errs = append(errs, err)
-				goto nextApp
+				continue
 			}
 			s.claimsInFlight[key] = txHash
 		} else {
@@ -305,12 +315,11 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 			)
 
 		}
-	nextApp:
 	}
 	return errs
 }
 
-/* transition claims from submitted to accepted */
+// transition claims from submitted to accepted
 func (s *Service) acceptClaimsAndUpdateDatabase(
 	acceptedEpochs map[int64]*model.Epoch,
 	submittedEpochs map[int64]*model.Epoch,
@@ -320,7 +329,7 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 	errs := []error{}
 	var err error
 
-	// check submitted claims
+	// check submitted  epochs. NOTE: map mutation + iteration is safe in Go
 	for key, submittedEpoch := range submittedEpochs {
 		var prevEvent *iconsensus.IConsensusClaimAccepted
 		var currEvent *iconsensus.IConsensusClaimAccepted
@@ -331,50 +340,64 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 		if err := s.checkConsensusForAddressChange(app); err != nil {
 			delete(submittedEpochs, key)
 			errs = append(errs, err)
-			goto nextApp
+			continue
 		}
 		if prevExists {
 			err := checkEpochSequenceConstraint(acceptedEpoch, submittedEpoch)
 			if err != nil {
-				s.Logger.Error("Database mismatch on epochs.",
+				s.Logger.Error("epoch sequence check failed.",
 					"app", app.IApplicationAddress,
 					"previous_epoch_index", acceptedEpoch.Index,
 					"current_epoch_index", submittedEpoch.Index,
 					"err", err,
 				)
+				err = s.setApplicationInoperable(
+					s.Context,
+					app,
+					"%v. application: %v",
+					err,
+					app.IApplicationAddress,
+				)
 				delete(submittedEpochs, key)
 				errs = append(errs, err)
-				goto nextApp
+				continue
 			}
 
-			// if prevClaimRow exists, there must be a matching event
+			// if an epoch was accepted, there must exist a matching event for it
 			_, prevEvent, currEvent, err =
 				s.blockchain.findClaimAcceptedEventAndSucc(s.Context, app, acceptedEpoch, endBlock)
 			if err != nil {
 				delete(submittedEpochs, key)
 				errs = append(errs, err)
-				goto nextApp
+				continue
 			}
 			if prevEvent == nil {
-				s.Logger.Error("Missing event",
+				s.Logger.Error("accepted epoch has no matching event",
 					"app", app.IApplicationAddress,
 					"claim", acceptedEpoch,
 					"err", ErrMissingEvent,
 				)
 				delete(submittedEpochs, key)
 				errs = append(errs, ErrMissingEvent)
-				goto nextApp
+				continue
 			}
 			if !claimAcceptedEventMatches(app, acceptedEpoch, prevEvent) {
-				s.Logger.Error("Event mismatch",
+				s.Logger.Error("accepted epoch does not match event",
 					"app", app.IApplicationAddress,
 					"claim", acceptedEpoch,
 					"event", prevEvent,
 					"err", ErrEventMismatch,
 				)
+				err = s.setApplicationInoperable(
+					s.Context,
+					app,
+					"epoch: %v does not match event with tx_hash: %v",
+					acceptedEpoch.Index,
+					prevEvent.Raw.TxHash,
+				)
 				delete(submittedEpochs, key)
-				errs = append(errs, ErrEventMismatch)
-				goto nextApp
+				errs = append(errs, err)
+				continue
 			}
 		} else {
 			// first claim
@@ -383,7 +406,7 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 			if err != nil {
 				delete(submittedEpochs, key)
 				errs = append(errs, err)
-				goto nextApp
+				continue
 			}
 		}
 
@@ -399,9 +422,16 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 					"event", currEvent,
 					"err", ErrEventMismatch,
 				)
+				err := s.setApplicationInoperable(
+					s.Context,
+					app,
+					"event mismatch for epoch %v, event tx_hash: %v",
+					acceptedEpoch.Index,
+					prevEvent.Raw.TxHash,
+				)
 				delete(submittedEpochs, key)
-				errs = append(errs, ErrEventMismatch)
-				goto nextApp
+				errs = append(errs, err)
+				continue
 			}
 			s.Logger.Debug("Updating claim status to accepted",
 				"app", app.IApplicationAddress,
@@ -413,7 +443,7 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 			if err != nil {
 				delete(submittedEpochs, key)
 				errs = append(errs, err)
-				goto nextApp
+				continue
 			}
 			s.Logger.Info("Claim accepted",
 				"app", currEvent.AppContract,
@@ -423,7 +453,6 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 				"tx", txHash,
 			)
 		}
-	nextApp:
 	}
 	return errs
 }
@@ -456,17 +485,25 @@ func (s *Service) checkConsensusForAddressChange(
 	return nil
 }
 
-func checkEpochConstraint(c *model.Epoch) error {
-	if c.FirstBlock > c.LastBlock {
-		return fmt.Errorf("unexpected epoch state. first_block: %v > last_block: %v", c.FirstBlock, c.LastBlock)
+func checkEpochConstraint(epoch *model.Epoch) error {
+	if epoch.FirstBlock > epoch.LastBlock {
+		return fmt.Errorf("unexpected epoch state. first_block: %v > last_block: %v",
+			epoch.FirstBlock, epoch.LastBlock)
 	}
-	if c.Status == model.EpochStatus_ClaimSubmitted {
-		if c.OutputsMerkleRoot == nil {
-			return fmt.Errorf("unexpected epoch state. missing claim_hash.")
+
+	mustHaveOutputsMerkleRoot := epoch.Status == model.EpochStatus_ClaimSubmitted ||
+		epoch.Status == model.EpochStatus_ClaimAccepted ||
+		epoch.Status == model.EpochStatus_ClaimComputed
+	if mustHaveOutputsMerkleRoot {
+		if epoch.OutputsMerkleRoot == nil {
+			return fmt.Errorf("unexpected epoch state. missing outputs_merkle_root.")
 		}
 	}
-	if c.Status == model.EpochStatus_ClaimAccepted || c.Status == model.EpochStatus_ClaimSubmitted {
-		if c.ClaimTransactionHash == nil {
+
+	mustHaveClaimTransactionHash := epoch.Status == model.EpochStatus_ClaimSubmitted ||
+		epoch.Status == model.EpochStatus_ClaimAccepted
+	if mustHaveClaimTransactionHash {
+		if epoch.ClaimTransactionHash == nil {
 			return fmt.Errorf("unexpected epoch state. missing claim_transaction_hash.")
 		}
 	}
@@ -498,13 +535,21 @@ func checkEpochSequenceConstraint(prevEpoch *model.Epoch, currEpoch *model.Epoch
 }
 
 func claimSubmittedEventMatches(application *model.Application, epoch *model.Epoch, event *iconsensus.IConsensusClaimSubmitted) bool {
+	if application == nil || epoch == nil || event == nil {
+		return false
+	}
 	return application.IApplicationAddress == event.AppContract &&
+		epoch.OutputsMerkleRoot != nil &&
 		*epoch.OutputsMerkleRoot == event.OutputsMerkleRoot &&
 		epoch.LastBlock == event.LastProcessedBlockNumber.Uint64()
 }
 
 func claimAcceptedEventMatches(application *model.Application, epoch *model.Epoch, event *iconsensus.IConsensusClaimAccepted) bool {
+	if application == nil || epoch == nil || event == nil {
+		return false
+	}
 	return application.IApplicationAddress == event.AppContract &&
+		epoch.OutputsMerkleRoot != nil &&
 		*epoch.OutputsMerkleRoot == event.OutputsMerkleRoot &&
 		epoch.LastBlock == event.LastProcessedBlockNumber.Uint64()
 }

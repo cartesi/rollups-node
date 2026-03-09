@@ -158,7 +158,7 @@ func (m *claimerBlockchainMock) pollTransaction(
 		args.Get(1).(*types.Receipt),
 		args.Error(2)
 }
-func (m *claimerBlockchainMock) getBlockNumber(ctx context.Context) (*big.Int, error) {
+func (m *claimerBlockchainMock) getDefaultBlockNumber(ctx context.Context) (*big.Int, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(*big.Int),
 		args.Error(1)
@@ -570,7 +570,7 @@ func TestSubmitClaimWithAntecessorMismatch(t *testing.T) {
 	b.On("findClaimSubmittedEventAndSucc", app, prevEpoch, endBlock).
 		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil).
 		Once()
-	r.On("UpdateApplicationState", nil, int64(0), model.ApplicationState_Inoperable, mock.Anything).
+	r.On("UpdateApplicationState", mock.Anything, int64(0), model.ApplicationState_Inoperable, mock.Anything).
 		Return(nil).
 		Once()
 
@@ -595,7 +595,7 @@ func TestSubmitClaimWithEventMismatch(t *testing.T) {
 		Return(app.IConsensusAddress, nil).Once()
 	b.On("findClaimSubmittedEventAndSucc", app, prevEpoch, endBlock).
 		Return(&iconsensus.IConsensus{}, prevEvent, wrongEvent, nil)
-	r.On("UpdateApplicationState", nil, int64(0), model.ApplicationState_Inoperable, mock.Anything).
+	r.On("UpdateApplicationState", mock.Anything, int64(0), model.ApplicationState_Inoperable, mock.Anything).
 		Return(nil)
 
 	errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
@@ -614,7 +614,7 @@ func TestSubmitClaimWithAntecessorOutOfOrder(t *testing.T) {
 
 	b.On("getConsensusAddress", mock.Anything, app).
 		Return(app.IConsensusAddress, nil).Once()
-	r.On("UpdateApplicationState", nil, int64(0), model.ApplicationState_Inoperable, mock.Anything).
+	r.On("UpdateApplicationState", mock.Anything, int64(0), model.ApplicationState_Inoperable, mock.Anything).
 		Return(nil)
 
 	errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), big.NewInt(0))
@@ -637,7 +637,7 @@ func TestErrSubmittedMissingEvent(t *testing.T) {
 		Return(app.IConsensusAddress, nil).Once()
 	b.On("findClaimSubmittedEventAndSucc", app, prevEpoch, endBlock).
 		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil).Once()
-	r.On("UpdateApplicationState", nil, int64(0), model.ApplicationState_Inoperable, mock.Anything).
+	r.On("UpdateApplicationState", mock.Anything, int64(0), model.ApplicationState_Inoperable, mock.Anything).
 		Return(nil)
 
 	errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
@@ -658,7 +658,7 @@ func TestConsensusAddressChangedOnSubmittedClaims(t *testing.T) {
 	b.On("getConsensusAddress", mock.Anything, app).
 		Return(wrongConsensusAddress, nil).
 		Once()
-	r.On("UpdateApplicationState", nil, int64(0), model.ApplicationState_Inoperable, mock.Anything).
+	r.On("UpdateApplicationState", mock.Anything, int64(0), model.ApplicationState_Inoperable, mock.Anything).
 		Return(nil).
 		Once()
 
@@ -735,6 +735,9 @@ func TestAcceptClaimWithAntecessorMismatch(t *testing.T) {
 		Return(app.IConsensusAddress, nil).Once()
 	b.On("findClaimAcceptedEventAndSucc", mock.Anything, app, prevEpoch, endBlock).
 		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil)
+	r.On("UpdateApplicationState", mock.Anything, mock.Anything, model.ApplicationState_Inoperable, mock.Anything).
+		Return(nil).
+		Once()
 
 	errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	assert.Equal(t, 1, len(errs))
@@ -758,6 +761,9 @@ func TestAcceptClaimWithEventMismatch(t *testing.T) {
 		Return(app.IConsensusAddress, nil).Once()
 	b.On("findClaimAcceptedEventAndSucc", mock.Anything, app, prevEpoch, endBlock).
 		Return(&iconsensus.IConsensus{}, prevEvent, wrongEvent, nil)
+	r.On("UpdateApplicationState", mock.Anything, mock.Anything, model.ApplicationState_Inoperable, mock.Anything).
+		Return(nil).
+		Once()
 
 	errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	assert.Equal(t, 1, len(errs))
@@ -775,6 +781,10 @@ func TestAcceptClaimWithAntecessorOutOfOrder(t *testing.T) {
 
 	b.On("getConsensusAddress", mock.Anything, app).
 		Return(app.IConsensusAddress, nil).Once()
+	r.On("UpdateApplicationState", mock.Anything, mock.Anything, model.ApplicationState_Inoperable, mock.Anything).
+		Return(nil).
+		Once()
+
 
 	errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(wrongEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), big.NewInt(0))
 	assert.Equal(t, 1, len(errs))
@@ -840,7 +850,7 @@ func TestConsensusAddressChangedOnAcceptedClaims(t *testing.T) {
 	b.On("getConsensusAddress", mock.Anything, app).
 		Return(wrongConsensusAddress, nil).
 		Once()
-	r.On("UpdateApplicationState", nil, int64(0), model.ApplicationState_Inoperable, mock.Anything).
+	r.On("UpdateApplicationState", mock.Anything, int64(0), model.ApplicationState_Inoperable, mock.Anything).
 		Return(nil).
 		Once()
 

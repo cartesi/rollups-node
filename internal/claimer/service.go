@@ -8,13 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/big"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
-	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -34,22 +32,31 @@ type CreateInfo struct {
 type Service struct {
 	service.Service
 
-	repository        iclaimerRepository
-	blockchain        iclaimerBlockchain
-	claimsInFlight    map[int64]common.Hash // application.ID -> txHash
+	repository iclaimerRepository
+	blockchain iclaimerBlockchain
+
+	// submitted claims waiting for confirmation from the blockchain.
+	// only accessed from tick, so no need for a lock
+	// contains: application ID -> transaction hash, with a maximum of one
+	// key per application due to the epoch advancement logic.
+	claimsInFlight    map[int64]common.Hash
 	submissionEnabled bool
 }
 
 const ClaimerConfigKey = "claimer"
 
 type PersistentConfig struct {
-	DefaultBlock           DefaultBlock
+	DefaultBlock           model.DefaultBlock
 	ClaimSubmissionEnabled bool
 	ChainID                uint64
 }
 
 func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	var err error
+
+	if c == nil {
+		return nil, errors.New("invalid CreateInfo is nil")
+	}
 	if err = ctx.Err(); err != nil {
 		return nil, err // This returns context.Canceled or context.DeadlineExceeded.
 	}
@@ -102,12 +109,6 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		client:       c.EthConn,
 		txOpts:       txOpts,
 		defaultBlock: c.Config.BlockchainDefaultBlock,
-
-		filter: ethutil.Filter{
-			MinChunkSize: ethutil.DefaultMinChunkSize,
-			MaxChunkSize: new(big.Int).SetUint64(c.Config.BlockchainMaxBlockRange),
-			Logger:       s.Logger,
-		},
 	}
 
 	return s, nil
@@ -129,6 +130,7 @@ func (s *Service) Stop(bool) []error {
 	return nil
 }
 
+// NOTE: tick is not re-entrant!
 func (s *Service) Tick() []error {
 	errs := []error{}
 
@@ -157,16 +159,15 @@ func (s *Service) Tick() []error {
 		return nil
 	}
 
-	// we have claims to check
-	// get the latest/safe/finalized, etc. block
-	endBlock, err := s.blockchain.getBlockNumber(s.Context)
+	// we have claims to check. Get the latest/safe/finalized, etc. block
+	defaultBlockNumber, err := s.blockchain.getDefaultBlockNumber(s.Context)
 	if err != nil {
 		errs = append(errs, err)
 		return errs
 	}
 
-	errs = append(errs, s.submitClaimsAndUpdateDatabase(acceptedOrSubmittedEpochs, computedEpochs, computedApps, endBlock)...)
-	errs = append(errs, s.acceptClaimsAndUpdateDatabase(acceptedEpochs, submittedEpochs, submittedApps, endBlock)...)
+	errs = append(errs, s.submitClaimsAndUpdateDatabase(acceptedOrSubmittedEpochs, computedEpochs, computedApps, defaultBlockNumber)...)
+	errs = append(errs, s.acceptClaimsAndUpdateDatabase(acceptedEpochs, submittedEpochs, submittedApps, defaultBlockNumber)...)
 	return errs
 }
 
@@ -178,7 +179,7 @@ func setupPersistentConfig(
 ) (*PersistentConfig, error) {
 	config, err := repository.LoadNodeConfig[PersistentConfig](ctx, repo, ClaimerConfigKey)
 	if config == nil && errors.Is(err, repository.ErrNotFound) {
-		nc := NodeConfig[PersistentConfig]{
+		nc := model.NodeConfig[PersistentConfig]{
 			Key: ClaimerConfigKey,
 			Value: PersistentConfig{
 				DefaultBlock:           c.BlockchainDefaultBlock,
