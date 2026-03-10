@@ -1030,8 +1030,7 @@
 						"$ref": "#/components/schemas/ApplicationState"
 					},
 					"reason": {
-						"type": "string",
-						"nullable": true,
+						"type": ["string", "null"],
 						"description": "Human-readable failure description. Non-null when state is FAILED or INOPERABLE; null otherwise."
 					},
 					"iinputbox_block": {
@@ -1118,38 +1117,31 @@
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
 					"machine_hash": {
-						"$ref": "#/components/schemas/Hash",
-						"nullable": true
+						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
 					},
 					"outputs_merkle_root": {
-						"$ref": "#/components/schemas/Hash",
-						"nullable": true
+						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
 					},
 					"outputs_merkle_proof": {
-						"type": "array",
+						"type": ["array", "null"],
 						"items": {
 							"$ref": "#/components/schemas/Hash"
-						},
-						"nullable": true
+						}
 					},
 					"commitment": {
-						"$ref": "#/components/schemas/Hash",
-						"nullable": true
+						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
 					},
 					"commitment_proof": {
-						"type": "array",
+						"type": ["array", "null"],
 						"items": {
 							"$ref": "#/components/schemas/Hash"
-						},
-						"nullable": true
+						}
 					},
 					"claim_transaction_hash": {
-						"$ref": "#/components/schemas/Hash",
-						"nullable": true
+						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
 					},
 					"tournament_address": {
-						"$ref": "#/components/schemas/EthereumAddress",
-						"nullable": true
+						"oneOf": [{"$ref": "#/components/schemas/EthereumAddress"}, {"type": "null"}]
 					},
 					"status": {
 						"$ref": "#/components/schemas/EpochStatus"
@@ -1219,19 +1211,16 @@
 						"$ref": "#/components/schemas/ByteArray"
 					},
 					"decoded_data": {
-						"$ref": "#/components/schemas/EvmAdvance",
-						"nullable": true
+						"oneOf": [{"$ref": "#/components/schemas/EvmAdvance"}, {"type": "null"}]
 					},
 					"status": {
 						"$ref": "#/components/schemas/InputCompletionStatus"
 					},
 					"machine_hash": {
-						"$ref": "#/components/schemas/Hash",
-						"nullable": true
+						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
 					},
 					"outputs_hash": {
-						"$ref": "#/components/schemas/Hash",
-						"nullable": true
+						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
 					},
 					"transaction_reference": {
 						"$ref": "#/components/schemas/ByteArray"
@@ -1329,23 +1318,19 @@
 						"$ref": "#/components/schemas/ByteArray"
 					},
 					"decoded_data": {
-						"$ref": "#/components/schemas/DecodedOutput",
-						"nullable": true
+						"oneOf": [{"$ref": "#/components/schemas/DecodedOutput"}, {"type": "null"}]
 					},
 					"hash": {
-						"$ref": "#/components/schemas/Hash",
-						"nullable": true
+						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
 					},
 					"output_hashes_siblings": {
-						"type": "array",
+						"type": ["array", "null"],
 						"items": {
 							"$ref": "#/components/schemas/Hash"
-						},
-						"nullable": true
+						}
 					},
 					"execution_transaction_hash": {
-						"$ref": "#/components/schemas/Hash",
-						"nullable": true
+						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
 					},
 					"created_at": {
 						"type": "string",
@@ -1649,12 +1634,10 @@
 						"$ref": "#/components/schemas/EthereumAddress"
 					},
 					"parent_tournament_address": {
-						"$ref": "#/components/schemas/EthereumAddress",
-						"nullable": true
+						"oneOf": [{"$ref": "#/components/schemas/EthereumAddress"}, {"type": "null"}]
 					},
 					"parent_match_id_hash": {
-						"$ref": "#/components/schemas/Hash",
-						"nullable": true
+						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
 					},
 					"max_level": {
 						"$ref": "#/components/schemas/UnsignedInteger"
@@ -1669,12 +1652,10 @@
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
 					"winner_commitment": {
-						"$ref": "#/components/schemas/Hash",
-						"nullable": true
+						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
 					},
 					"final_state_hash": {
-						"$ref": "#/components/schemas/Hash",
-						"nullable": true
+						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
 					},
 					"finished_at_block": {
 						"$ref": "#/components/schemas/UnsignedInteger"
