@@ -6,14 +6,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var manyEventTypes []EventType = []EventType{
+const wrongAppID = "mismatch"
+
+var manyEventTypes = []EventType{
 	EventAppRegistered,
 	EventAppDeactivated,
 	EventAppReactivated,
 	EventAppInoperable,
 }
 
-var manyApplicationIDs []string = []string{
+var manyApplicationIDs = []string{
 	"app-1",
 	"myApp",
 	"echo-dapp",
@@ -62,7 +64,7 @@ func TestSubscriptionFilter_ManyEventTypeOfSignleApp(t *testing.T) {
 		event.AppID = manyApplicationIDs[0]
 		assert.True(t, filter.Matches(event), "expected event to match filter")
 
-		event.AppID = "mismatch"
+		event.AppID = wrongAppID
 		assert.False(t, filter.Matches(event), "unexpected match for wrong application ID")
 	}
 
@@ -120,7 +122,7 @@ func TestSubscriptionFilter_SingleEventTypeOfManyApps(t *testing.T) {
 
 	mismatch := Event{
 		Type:  manyEventTypes[0],
-		AppID: "mismatch",
+		AppID: wrongAppID,
 	}
 	assert.False(t, filter.Matches(mismatch), "unexpected match for wrong application ID")
 }
@@ -141,7 +143,7 @@ func TestSubscriptionFilter_AnyEventTypeOfManyApps(t *testing.T) {
 			assert.True(t, filter.Matches(event), "expected event to match filter")
 
 			mismatch := event
-			mismatch.AppID = "mismatch"
+			mismatch.AppID = wrongAppID
 			assert.False(t, filter.Matches(mismatch), "unexpected match for wrong application ID")
 		}
 	}
@@ -175,7 +177,7 @@ func TestSubscriptionFilter_ManyEventTypesOfManyApps(t *testing.T) {
 		}
 
 		mismatch := event
-		mismatch.AppID = "mismatch"
+		mismatch.AppID = wrongAppID
 		assert.False(t, filter.Matches(mismatch), "unexpected match for wrong application ID")
 	}
 
@@ -189,7 +191,7 @@ func TestSubscriptionFilter_EveryEvent(t *testing.T) {
 
 	event := Event{
 		Type:  EventEpochOpened,
-		AppID: "mismatch",
+		AppID: wrongAppID,
 	}
 	assert.True(t, filter.Matches(event), "expected event to match filter")
 
