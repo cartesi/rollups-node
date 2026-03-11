@@ -10,11 +10,9 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/internal/version"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
 
-	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -104,32 +102,25 @@ func run(cmd *cobra.Command, args []string) {
 		Config: *cfg,
 	}
 
-	rclient := retryablehttp.NewClient()
-	rclient.Logger = service.NewLogger(logLevel, cfg.LogColor).With("service", config.ServiceClaimer)
-	rclient.RetryMax = int(cfg.BlockchainHttpMaxRetries)
-	rclient.RetryWaitMin = cfg.BlockchainHttpRetryMinWait
-	rclient.RetryWaitMax = cfg.BlockchainHttpRetryMaxWait
-
-	clientOptions := []rpc.ClientOption{
-		rpc.WithHTTPClient(rclient.StandardClient()),
-	}
-
+	logger := service.NewLogger(logLevel, cfg.LogColor).With("service", config.ServiceClaimer)
 	authOpt, err := config.HTTPAuthorizationOption()
 	cobra.CheckErr(err)
-	if authOpt != nil {
-		clientOptions = append(clientOptions, authOpt)
-	}
-
-	rpcClient, err := rpc.DialOptions(ctx, cfg.BlockchainHttpEndpoint.String(), clientOptions...)
+	createInfo.EthConn, err = ethutil.NewEthClient(
+		ctx, cfg.BlockchainHttpEndpoint.Raw(), logger,
+		ethutil.RetryConfig{
+			MaxRetries:   cfg.BlockchainHttpMaxRetries,
+			RetryMinWait: cfg.BlockchainHttpRetryMinWait,
+			RetryMaxWait: cfg.BlockchainHttpRetryMaxWait,
+		}, authOpt)
 	cobra.CheckErr(err)
-	createInfo.EthConn = ethclient.NewClient(rpcClient)
 
-	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.String())
+	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
 	cobra.CheckErr(err)
 	defer createInfo.Repository.Close()
 
 	claimerService, err := claimer.Create(ctx, &createInfo)
 	cobra.CheckErr(err)
+	claimerService.LogConfig(createInfo.Config)
 
 	err = claimerService.Serve()
 	cobra.CheckErr(err)

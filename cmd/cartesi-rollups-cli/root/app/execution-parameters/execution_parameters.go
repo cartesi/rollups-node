@@ -149,7 +149,7 @@ func runGet(cmd *cobra.Command, args []string) {
 	dsn, err := config.GetDatabaseConnection()
 	cobra.CheckErr(err)
 
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.String())
+	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.Raw())
 	cobra.CheckErr(err)
 	defer repo.Close()
 
@@ -186,7 +186,7 @@ func runSet(cmd *cobra.Command, args []string) {
 	dsn, err := config.GetDatabaseConnection()
 	cobra.CheckErr(err)
 
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.String())
+	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.Raw())
 	cobra.CheckErr(err)
 	defer repo.Close()
 
@@ -222,7 +222,7 @@ func runList(cmd *cobra.Command, args []string) {
 	dsn, err := config.GetDatabaseConnection()
 	cobra.CheckErr(err)
 
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.String())
+	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.Raw())
 	cobra.CheckErr(err)
 	defer repo.Close()
 
@@ -248,7 +248,7 @@ func runDump(cmd *cobra.Command, args []string) {
 	dsn, err := config.GetDatabaseConnection()
 	cobra.CheckErr(err)
 
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.String())
+	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.Raw())
 	cobra.CheckErr(err)
 	defer repo.Close()
 
@@ -276,7 +276,7 @@ func runLoad(cmd *cobra.Command, args []string) {
 	dsn, err := config.GetDatabaseConnection()
 	cobra.CheckErr(err)
 
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.String())
+	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.Raw())
 	cobra.CheckErr(err)
 	defer repo.Close()
 

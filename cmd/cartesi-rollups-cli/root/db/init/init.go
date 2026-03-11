@@ -43,15 +43,15 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 
 	for i := range 5 {
-		s, err = schema.New(dsnURL.String())
+		s, err = schema.New(dsnURL.Raw())
 		if err == nil {
 			break
 		}
 		if i == 4 { // nolint: mnd
-			fmt.Fprintf(os.Stderr, "Failed to connect to database. (%s)\n", dsnURL.Redacted())
+			fmt.Fprintf(os.Stderr, "Failed to connect to database. (%s)\n", dsnURL)
 			os.Exit(1)
 		}
-		fmt.Fprintf(os.Stderr, "Connection to database failed. Trying again... (%s)\n", dsnURL.Redacted())
+		fmt.Fprintf(os.Stderr, "Connection to database failed. Trying again... (%s)\n", dsnURL)
 		// wait before retrying
 		time.Sleep(5 * time.Second) // nolint: mnd
 	}

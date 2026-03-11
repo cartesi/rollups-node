@@ -72,7 +72,7 @@ func run(cmd *cobra.Command, args []string) {
 	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
 	cobra.CheckErr(err)
 
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.String())
+	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.Raw())
 	cobra.CheckErr(err)
 	defer repo.Close()
 
@@ -92,7 +92,7 @@ func run(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	client, err := ethclient.DialContext(ctx, ethEndpoint.String())
+	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
 	cobra.CheckErr(err)
 
 	chainId, err := client.ChainID(ctx)

@@ -120,7 +120,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
 	cobra.CheckErr(err)
 
-	client, err := ethclient.DialContext(ctx, ethEndpoint.String())
+	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
 	cobra.CheckErr(err)
 
 	chainId, err := client.ChainID(ctx)
@@ -143,7 +143,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		cobra.CheckErr(err)
 
 		dsn, err := config.GetDatabaseConnection()
-		repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.String())
+		repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.Raw())
 		cobra.CheckErr(err)
 		defer repo.Close()
 
@@ -271,7 +271,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 			cobra.CheckErr(fmt.Errorf("failed to register application: %w", err))
 		}
 
-		repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.String())
+		repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.Raw())
 		if err != nil {
 			cobra.CheckErr(fmt.Errorf("failed to register application: %w", err))
 		}

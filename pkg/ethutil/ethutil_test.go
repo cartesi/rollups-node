@@ -6,7 +6,6 @@ package ethutil
 import (
 	"context"
 	"crypto/rand"
-	"net/url"
 	"os"
 	"sync"
 	"testing"
@@ -29,7 +28,7 @@ type EthUtilSuite struct {
 	ctx                  context.Context
 	cancel               context.CancelFunc
 	client               *ethclient.Client
-	endpoint             *url.URL
+	endpoint             config.URL
 	txOpts               *bind.TransactOpts
 	inputBoxAddr         common.Address
 	selfHostedAppFactory common.Address
@@ -45,7 +44,7 @@ func (s *EthUtilSuite) SetupTest() {
 	s.endpoint, err = config.GetBlockchainHttpEndpoint()
 	s.Require().Nil(err)
 
-	s.client, err = ethclient.DialContext(s.ctx, s.endpoint.String())
+	s.client, err = ethclient.DialContext(s.ctx, s.endpoint.Raw())
 	s.Require().Nil(err)
 
 	chainId, err := s.client.ChainID(s.ctx)

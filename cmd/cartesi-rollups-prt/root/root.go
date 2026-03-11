@@ -5,16 +5,13 @@ package root
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/prt"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/internal/version"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
-	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/hashicorp/go-retryablehttp"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -69,31 +66,6 @@ func init() {
 	}
 }
 
-func createEthClient(ctx context.Context, endpoint string, logger *slog.Logger) (*ethclient.Client, error) {
-	rclient := retryablehttp.NewClient()
-	rclient.Logger = logger
-	rclient.RetryMax = int(cfg.BlockchainHttpMaxRetries)
-	rclient.RetryWaitMin = cfg.BlockchainHttpRetryMinWait
-	rclient.RetryWaitMax = cfg.BlockchainHttpRetryMaxWait
-
-	clientOptions := []rpc.ClientOption{
-		rpc.WithHTTPClient(rclient.StandardClient()),
-	}
-
-	authOpt, err := config.HTTPAuthorizationOption()
-	cobra.CheckErr(err)
-	if authOpt != nil {
-		clientOptions = append(clientOptions, authOpt)
-	}
-
-	rpcClient, err := rpc.DialOptions(ctx, endpoint, clientOptions...)
-	if err != nil {
-		return nil, err
-	}
-
-	return ethclient.NewClient(rpcClient), nil
-}
-
 func run(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
 	defer cancel()
@@ -114,15 +86,24 @@ func run(cmd *cobra.Command, args []string) {
 
 	var err error
 	logger := service.NewLogger(logLevel, cfg.LogColor).With("service", config.ServicePrt)
-	createInfo.EthClient, err = createEthClient(ctx, cfg.BlockchainHttpEndpoint.String(), logger)
+	authOpt, err := config.HTTPAuthorizationOption()
+	cobra.CheckErr(err)
+	createInfo.EthClient, err = ethutil.NewEthClient(
+		ctx, cfg.BlockchainHttpEndpoint.Raw(), logger,
+		ethutil.RetryConfig{
+			MaxRetries:   cfg.BlockchainHttpMaxRetries,
+			RetryMinWait: cfg.BlockchainHttpRetryMinWait,
+			RetryMaxWait: cfg.BlockchainHttpRetryMaxWait,
+		}, authOpt)
 	cobra.CheckErr(err)
 
-	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.String())
+	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
 	cobra.CheckErr(err)
 	defer createInfo.Repository.Close()
 
-	validatorService, err := prt.Create(ctx, &createInfo)
+	prtService, err := prt.Create(ctx, &createInfo)
 	cobra.CheckErr(err)
+	prtService.LogConfig(createInfo.Config)
 
-	cobra.CheckErr(validatorService.Serve())
+	cobra.CheckErr(prtService.Serve())
 }

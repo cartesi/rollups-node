@@ -82,12 +82,13 @@ func run(cmd *cobra.Command, args []string) {
 		Config: *cfg,
 	}
 	var err error
-	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.String())
+	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
 	cobra.CheckErr(err)
 	defer createInfo.Repository.Close()
 
 	validatorService, err := validator.Create(ctx, &createInfo)
 	cobra.CheckErr(err)
+	validatorService.LogConfig(createInfo.Config)
 
 	cobra.CheckErr(validatorService.Serve())
 }

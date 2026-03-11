@@ -50,6 +50,6 @@ func CreateReadService(ctx context.Context, useJsonrpc bool) (ReadService, error
 		if err != nil {
 			return nil, err
 		}
-		return NewRepositoryReadService(ctx, dsn.String())
+		return NewRepositoryReadService(ctx, dsn.Raw())
 	}
 }

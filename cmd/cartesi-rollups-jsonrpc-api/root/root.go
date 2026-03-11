@@ -81,12 +81,13 @@ func run(cmd *cobra.Command, args []string) {
 		Config: *cfg,
 	}
 	var err error
-	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.String())
+	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
 	cobra.CheckErr(err)
 	defer createInfo.Repository.Close()
 
 	jsonrpcService, err := jsonrpc.Create(ctx, &createInfo)
 	cobra.CheckErr(err)
+	jsonrpcService.LogConfig(createInfo.Config)
 
 	cobra.CheckErr(jsonrpcService.Serve())
 }

@@ -5,16 +5,14 @@ package root
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/node"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/internal/version"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/hashicorp/go-retryablehttp"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -163,29 +161,21 @@ func init() {
 	}
 }
 
-func createEthClient(ctx context.Context, endpoint string, logger *slog.Logger) (*ethclient.Client, error) {
-	rclient := retryablehttp.NewClient()
-	rclient.Logger = logger
-	rclient.RetryMax = int(cfg.BlockchainHttpMaxRetries)
-	rclient.RetryWaitMin = cfg.BlockchainHttpRetryMinWait
-	rclient.RetryWaitMax = cfg.BlockchainHttpRetryMaxWait
-
-	clientOptions := []rpc.ClientOption{
-		rpc.WithHTTPClient(rclient.StandardClient()),
-	}
+func newEthClient(ctx context.Context, svcName string) (*ethclient.Client, error) {
+	level := config.ResolveServiceLogLevel(svcName, cfg.LogLevel)
+	logger := service.NewLogger(level, cfg.LogColor).With("service", svcName)
 
 	authOpt, err := config.HTTPAuthorizationOption()
-	cobra.CheckErr(err)
-	if authOpt != nil {
-		clientOptions = append(clientOptions, authOpt)
-	}
-
-	rpcClient, err := rpc.DialOptions(ctx, endpoint, clientOptions...)
 	if err != nil {
 		return nil, err
 	}
 
-	return ethclient.NewClient(rpcClient), nil
+	return ethutil.NewEthClient(ctx, cfg.BlockchainHttpEndpoint.Raw(), logger,
+		ethutil.RetryConfig{
+			MaxRetries:   cfg.BlockchainHttpMaxRetries,
+			RetryMinWait: cfg.BlockchainHttpRetryMinWait,
+			RetryMaxWait: cfg.BlockchainHttpRetryMaxWait,
+		}, authOpt)
 }
 
 func run(cmd *cobra.Command, args []string) {
@@ -205,30 +195,26 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	var err error
-	readerLevel := config.ResolveServiceLogLevel(config.ServiceEvmReader, cfg.LogLevel)
-	logger := service.NewLogger(readerLevel, cfg.LogColor).With("service", config.ServiceEvmReader)
-	createInfo.ReaderClient, err = createEthClient(ctx, cfg.BlockchainHttpEndpoint.String(), logger)
+	createInfo.ReaderClient, err = newEthClient(ctx, config.ServiceEvmReader)
 	cobra.CheckErr(err)
 
-	createInfo.ReaderWSClient, err = ethclient.DialContext(ctx, cfg.BlockchainWsEndpoint.String())
+	wsEndpoint := cfg.BlockchainWsEndpoint.Raw()
+	createInfo.ReaderWSClient, err = ethclient.DialContext(ctx, wsEndpoint)
+	cobra.CheckErr(ethutil.RedactEndpointFromError(err, wsEndpoint))
+
+	createInfo.ClaimerClient, err = newEthClient(ctx, config.ServiceClaimer)
 	cobra.CheckErr(err)
 
-	claimerLevel := config.ResolveServiceLogLevel(config.ServiceClaimer, cfg.LogLevel)
-	logger = service.NewLogger(claimerLevel, cfg.LogColor).With("service", config.ServiceClaimer)
-	createInfo.ClaimerClient, err = createEthClient(ctx, cfg.BlockchainHttpEndpoint.String(), logger)
+	createInfo.PrtClient, err = newEthClient(ctx, config.ServicePrt)
 	cobra.CheckErr(err)
 
-	prtLevel := config.ResolveServiceLogLevel(config.ServicePrt, cfg.LogLevel)
-	logger = service.NewLogger(prtLevel, cfg.LogColor).With("service", config.ServicePrt)
-	createInfo.PrtClient, err = createEthClient(ctx, cfg.BlockchainHttpEndpoint.String(), logger)
-	cobra.CheckErr(err)
-
-	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.String())
+	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
 	cobra.CheckErr(err)
 	defer createInfo.Repository.Close()
 
 	nodeService, err := node.Create(ctx, &createInfo)
 	cobra.CheckErr(err)
+	nodeService.LogConfig(createInfo.Config)
 
 	cobra.CheckErr(nodeService.Serve())
 }

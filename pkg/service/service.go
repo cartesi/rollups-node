@@ -309,6 +309,12 @@ func (s *Service) String() string {
 	return s.Name
 }
 
+// LogConfig logs the service configuration at debug level.
+// Intended for use by standalone service binaries after Create.
+func (s *Service) LogConfig(config any) {
+	s.Logger.Info("Starting service", "config", config)
+}
+
 func NewLogger(level slog.Level, color bool) *slog.Logger {
 	opts := &tint.Options{
 		Level:     level,

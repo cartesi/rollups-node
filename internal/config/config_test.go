@@ -5,6 +5,7 @@ package config
 
 import (
 	"log/slog"
+	"net/url"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -61,5 +62,68 @@ func TestResolveServiceLogLevel(t *testing.T) {
 			_, ok := serviceLogLevelGetters[name]
 			require.True(t, ok, "service %q should have a log level getter", name)
 		}
+	})
+}
+
+func TestSafeURL(t *testing.T) {
+	t.Run("String redacts full URL", func(t *testing.T) {
+		u, _ := url.Parse("https://eth-mainnet.alchemyapi.io/v2/my-secret-key")
+		safe := NewSafeURL(u)
+		require.Equal(t, "https://eth-mainnet.alchemyapi.io", safe.String())
+	})
+
+	t.Run("Raw returns full URL", func(t *testing.T) {
+		raw := "https://eth-mainnet.alchemyapi.io/v2/my-secret-key"
+		u, _ := url.Parse(raw)
+		safe := NewSafeURL(u)
+		require.Equal(t, raw, safe.Raw())
+	})
+
+	t.Run("String redacts userinfo passwords", func(t *testing.T) {
+		u, _ := url.Parse("postgres://user:secret@localhost:5432/mydb")
+		safe := NewSafeURL(u)
+		require.Equal(t, "postgres://localhost:5432", safe.String())
+	})
+
+	t.Run("zero value is safe", func(t *testing.T) {
+		var safe SafeURL
+		require.Equal(t, "[REDACTED]", safe.String())
+		require.Equal(t, "", safe.Raw())
+		require.Equal(t, "", safe.Scheme())
+		require.Equal(t, "", safe.Host())
+	})
+
+	t.Run("nil url is safe", func(t *testing.T) {
+		safe := NewSafeURL(nil)
+		require.Equal(t, "[REDACTED]", safe.String())
+		require.Equal(t, "", safe.Raw())
+	})
+
+	t.Run("LogValue returns redacted string", func(t *testing.T) {
+		u, _ := url.Parse("https://infura.io/v3/my-api-key")
+		safe := NewSafeURL(u)
+		logVal := safe.LogValue()
+		require.Equal(t, slog.KindString, logVal.Kind())
+		require.Equal(t, "https://infura.io", logVal.String())
+	})
+
+	t.Run("Scheme and Host delegate correctly", func(t *testing.T) {
+		u, _ := url.Parse("wss://example.com:8546/ws")
+		safe := NewSafeURL(u)
+		require.Equal(t, "wss", safe.Scheme())
+		require.Equal(t, "example.com:8546", safe.Host())
+	})
+
+	t.Run("ToURLFromString returns SafeURL", func(t *testing.T) {
+		safe, err := ToURLFromString("https://host.example/path?key=secret")
+		require.NoError(t, err)
+		require.Equal(t, "https://host.example", safe.String())
+		require.Equal(t, "https://host.example/path?key=secret", safe.Raw())
+	})
+
+	t.Run("ToURLFromString error returns zero SafeURL", func(t *testing.T) {
+		safe, err := ToURLFromString("://invalid")
+		require.Error(t, err)
+		require.Equal(t, "[REDACTED]", safe.String())
 	})
 }

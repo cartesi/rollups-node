@@ -62,8 +62,6 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		return nil, err
 	}
 
-	s.Logger.Debug("Creating services", "config", c.Config)
-
 	err = createServices(ctx, c, s)
 	if err != nil {
 		s.Logger.Error(fmt.Sprint(err))

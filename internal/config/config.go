@@ -30,8 +30,58 @@ func (r Redacted[T]) String() string {
 	return "[REDACTED]"
 }
 
+// SafeURL wraps *url.URL with a safe String() that only shows scheme://host.
+// Use Raw() to get the full URL string for dialing or connecting.
+type SafeURL struct {
+	url *url.URL
+}
+
+// NewSafeURL creates a SafeURL from a *url.URL. A nil input produces a zero-value SafeURL.
+func NewSafeURL(u *url.URL) SafeURL {
+	return SafeURL{url: u}
+}
+
+// String returns the redacted form "scheme://host", hiding paths, query parameters,
+// and userinfo that may contain API keys or passwords.
+func (u SafeURL) String() string {
+	if u.url == nil || u.url.Scheme == "" || u.url.Host == "" {
+		return "[REDACTED]"
+	}
+	return fmt.Sprintf("%s://%s", u.url.Scheme, u.url.Host)
+}
+
+// LogValue implements slog.LogValuer so structured logging automatically redacts.
+func (u SafeURL) LogValue() slog.Value {
+	return slog.StringValue(u.String())
+}
+
+// Raw returns the full, unredacted URL string for dialing or connecting.
+// Returns an empty string for a zero-value SafeURL.
+func (u SafeURL) Raw() string {
+	if u.url == nil {
+		return ""
+	}
+	return u.url.String()
+}
+
+// Scheme returns the URL scheme (e.g. "https", "postgres").
+func (u SafeURL) Scheme() string {
+	if u.url == nil {
+		return ""
+	}
+	return u.url.Scheme
+}
+
+// Host returns the URL host (including port if present).
+func (u SafeURL) Host() string {
+	if u.url == nil {
+		return ""
+	}
+	return u.url.Host
+}
+
 type (
-	URL            = *url.URL
+	URL            = SafeURL
 	Duration       = time.Duration
 	LogLevel       = slog.Level
 	DefaultBlock   = model.DefaultBlock
@@ -233,12 +283,12 @@ func ToRedactedUint32FromString(s string) (RedactedUint, error) {
 	return RedactedUint{uint32(value)}, err
 }
 
-func ToURLFromString(s string) (URL, error) {
+func ToURLFromString(s string) (SafeURL, error) {
 	result, err := url.Parse(s)
 	if err != nil {
-		return nil, fmt.Errorf("invalid URL [Redacted]")
+		return SafeURL{}, fmt.Errorf("invalid URL [Redacted]")
 	}
-	return result, nil
+	return NewSafeURL(result), nil
 }
 
 // Service name constants for per-service configuration lookup.
@@ -307,7 +357,7 @@ var (
 	notDefinedDefaultBlock    = func() model.DefaultBlock { return model.DefaultBlock_Finalized }
 	notDefinedRedactedString  = func() RedactedString { return RedactedString{""} }
 	notDefinedRedactedUint    = func() RedactedUint { return RedactedUint{0} }
-	notDefinedURL             = func() URL { return &url.URL{} }
+	notDefinedURL             = func() URL { return SafeURL{} }
 	notDefinedMachineLogLevel = func() MachineLogLevel { return MachineLogLevelInfo }
 	notDefinedAddress         = func() Address { return common.Address{} }
 )

@@ -113,7 +113,7 @@ func run(cmd *cobra.Command, args []string) {
 	iboxAddr, err := config.GetContractsInputBoxAddress()
 	cobra.CheckErr(err)
 
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.String())
+	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.Raw())
 	cobra.CheckErr(err)
 	defer repo.Close()
 
@@ -132,7 +132,7 @@ func run(cmd *cobra.Command, args []string) {
 	payload, err := resolvePayload(args)
 	cobra.CheckErr(err)
 
-	client, err := ethclient.DialContext(ctx, ethEndpoint.String())
+	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
 	cobra.CheckErr(err)
 
 	chainId, err := client.ChainID(ctx)
