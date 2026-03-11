@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 
 	. "github.com/cartesi/rollups-node/internal/model"
@@ -388,7 +389,19 @@ func (r *Service) readInputsFromBlockchain(
 	var appInputsMap = make(map[common.Address][]*Input)
 
 	for _, app := range apps {
-		inputs, err := r.fetchApplicationInputs(ctx, app, startBlock, endBlock)
+		inputCount, err := r.repository.GetNumberOfInputs(
+			ctx, app.application.IApplicationAddress.String())
+		if err != nil {
+			r.Logger.Error("Error getting input count for application",
+				"application", app.application.Name,
+				"error", err.Error(),
+			)
+			continue
+		}
+		prevValue := new(big.Int).SetUint64(inputCount)
+		inputs, err := r.fetchInputs(
+			ctx, app, startBlock, endBlock,
+			prevValue, 0, math.MaxUint64)
 		if err != nil {
 			r.Logger.Error("Error fetching inputs for application",
 				"application", app.application.Name,
@@ -398,38 +411,82 @@ func (r *Service) readInputsFromBlockchain(
 			)
 			continue
 		}
+
+		// Validate input count: the on-chain counter delta should match
+		// the number of inputs fetched. This mirrors the DaveConsensus
+		// sealed epoch validation at sealedepochs.go and guards against
+		// silent input loss from FindTransitions missing a transition.
+		endCallOpts := &bind.CallOpts{
+			Context:     ctx,
+			BlockNumber: new(big.Int).SetUint64(endBlock),
+		}
+		endCount, err := app.inputSource.GetNumberOfInputs(
+			endCallOpts, app.application.IApplicationAddress)
+		if err != nil {
+			r.Logger.Error("Error getting end-block input count",
+				"application", app.application.Name,
+				"end_block", endBlock,
+				"error", err,
+			)
+			continue
+		}
+		expectedNew := endCount.Uint64() - inputCount
+		if uint64(len(inputs)) != expectedNew {
+			r.Logger.Error(
+				"Input count mismatch: on-chain delta does not match fetched inputs",
+				"application", app.application.Name,
+				"db_count", inputCount,
+				"on_chain_end_count", endCount.Uint64(),
+				"expected_new", expectedNew,
+				"got", len(inputs),
+				"start_block", startBlock,
+				"end_block", endBlock,
+			)
+			continue
+		}
+
 		appInputsMap[app.application.IApplicationAddress] = inputs
 	}
 
 	return appInputsMap, nil
 }
 
-func (r *Service) fetchApplicationInputs(
+// fetchInputs locates blocks where new inputs were added via FindTransitions
+// and accumulates them. The prevValue, lowerBound, and upperBound are caller-
+// determined: IConsensus passes prevValue from the DB input count with full
+// bounds [0, MaxUint64), while DaveConsensus sealed epochs use the epoch's
+// InputIndexLowerBound as prevValue and the epoch's own index range as bounds.
+func (r *Service) fetchInputs(
 	ctx context.Context,
 	app appContracts,
 	startBlock, endBlock uint64,
+	prevValue *big.Int,
+	lowerBound, upperBound uint64,
 ) ([]*Input, error) {
-	r.Logger.Debug("Fetching inputs for application",
+	r.Logger.Debug("Fetching inputs",
 		"application", app.application.Name,
 		"start_block", startBlock,
 		"end_block", endBlock,
+		"lower_bound", lowerBound,
+		"upper_bound", upperBound,
 	)
 
-	// Define oracle function that returns the number of inputs at a given block
 	oracle := func(ctx context.Context, block uint64) (*big.Int, error) {
 		callOpts := &bind.CallOpts{
 			Context:     ctx,
 			BlockNumber: new(big.Int).SetUint64(block),
 		}
-		numInputs, err := app.inputSource.GetNumberOfInputs(callOpts, app.application.IApplicationAddress)
+		numInputs, err := app.inputSource.GetNumberOfInputs(
+			callOpts, app.application.IApplicationAddress)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get number of inputs at block %d: %w", block, err)
+			return nil, fmt.Errorf(
+				"failed to get number of inputs at block %d: %w",
+				block, err)
 		}
 		return numInputs, nil
 	}
 
 	var sortedInputs []*Input
-	// Define onHit function that accumulates inputs at transition blocks
 	onHit := func(block uint64) error {
 		filterOpts := &bind.FilterOpts{
 			Context: ctx,
@@ -442,43 +499,44 @@ func (r *Service) fetchApplicationInputs(
 			nil,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to retrieve inputs at block %d: %w", block, err)
+			return fmt.Errorf(
+				"failed to retrieve inputs at block %d: %w",
+				block, err)
 		}
 		for _, event := range inputEvents {
+			idx := event.Index.Uint64()
+			if idx < lowerBound || idx >= upperBound {
+				continue
+			}
 			input := &Input{
-				Index:                event.Index.Uint64(),
+				Index:                idx,
 				Status:               InputCompletionStatus_None,
 				RawData:              event.Input,
 				BlockNumber:          event.Raw.BlockNumber,
 				TransactionReference: event.Raw.TxHash,
 			}
 			var duplicate bool
-			sortedInputs, duplicate = insertSorted(sortByInputIndex, sortedInputs, input)
+			sortedInputs, duplicate = insertSorted(
+				sortByInputIndex, sortedInputs, input)
 			if duplicate {
 				r.Logger.Warn("Duplicate input event detected, skipping",
 					"application", app.application.Name,
 					"index", input.Index,
 					"block", input.BlockNumber,
 				)
-				continue
 			}
 		}
 		return nil
 	}
 
-	inputCount, err := r.repository.GetNumberOfInputs(ctx, app.application.IApplicationAddress.String())
+	_, err := ethutil.FindTransitions(
+		ctx, startBlock, endBlock, prevValue, oracle, onHit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get number of inputs from repository: %w", err)
-	}
-	prevValue := new(big.Int).SetUint64(inputCount)
-
-	// Use FindTransitions to find blocks where inputs were added
-	_, err = ethutil.FindTransitions(ctx, startBlock, endBlock, prevValue, oracle, onHit)
-	if err != nil {
-		return nil, fmt.Errorf("failed to walk input transitions: %w", err)
+		return nil, fmt.Errorf(
+			"failed to walk input transitions: %w", err)
 	}
 
-	r.Logger.Debug("Fetched inputs for application",
+	r.Logger.Debug("Fetched inputs",
 		"application", app.application.Name,
 		"start_block", startBlock,
 		"end_block", endBlock,

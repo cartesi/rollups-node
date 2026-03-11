@@ -14,7 +14,6 @@ import (
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
 )
 
 func (r *Service) initializeNewApplicationSealedEpochSync(
@@ -336,7 +335,11 @@ func (r *Service) processSealedEpochEvent(
 	var inputs []*Input
 	if epoch.InputIndexUpperBound > epoch.InputIndexLowerBound {
 		var err error
-		inputs, err = r.fetchSealedEpochInputs(ctx, app, epoch)
+		prevValue := new(big.Int).SetUint64(epoch.InputIndexLowerBound)
+		inputs, err = r.fetchInputs(ctx, app,
+			epoch.FirstBlock, epoch.LastBlock,
+			prevValue,
+			epoch.InputIndexLowerBound, epoch.InputIndexUpperBound)
 		if err != nil {
 			return fmt.Errorf("failed to fetch inputs for epoch %d: %w", epoch.Index, err)
 		}
@@ -372,181 +375,6 @@ func (r *Service) processSealedEpochEvent(
 		"block", event.Raw.BlockNumber)
 
 	return nil
-}
-
-// fetchSealedEpochInputs fetches inputs for a sealed epoch using the epoch's own
-// block range and contract-authoritative input bounds. Unlike the open epoch path,
-// it does not rely on the DB's LastInputCheckBlock or GetNumberOfInputs, because:
-//   - With PRT's overlapping block boundaries, the overlap block may contain inputs
-//     for this epoch that were added after the previous epoch was sealed.
-//   - The open epoch may have already stored some inputs, making the DB count higher
-//     than what FindTransitions expects as prevValue.
-func (r *Service) fetchSealedEpochInputs(
-	ctx context.Context,
-	app appContracts,
-	epoch *Epoch,
-) ([]*Input, error) {
-	r.Logger.Debug("Fetching inputs for sealed epoch",
-		"application", app.application.Name,
-		"epoch_index", epoch.Index,
-		"input_lower_bound", epoch.InputIndexLowerBound,
-		"input_upper_bound", epoch.InputIndexUpperBound,
-		"first_block", epoch.FirstBlock,
-		"last_block", epoch.LastBlock,
-	)
-
-	oracle := func(ctx context.Context, block uint64) (*big.Int, error) {
-		callOpts := &bind.CallOpts{
-			Context:     ctx,
-			BlockNumber: new(big.Int).SetUint64(block),
-		}
-		numInputs, err := app.inputSource.GetNumberOfInputs(callOpts, app.application.IApplicationAddress)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get number of inputs at block %d: %w", block, err)
-		}
-		return numInputs, nil
-	}
-
-	var sortedInputs []*Input
-	onHit := func(block uint64) error {
-		filterOpts := &bind.FilterOpts{
-			Context: ctx,
-			Start:   block,
-			End:     &block,
-		}
-		inputEvents, err := app.inputSource.RetrieveInputs(
-			filterOpts,
-			[]common.Address{app.application.IApplicationAddress},
-			nil,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to retrieve inputs at block %d: %w", block, err)
-		}
-		for _, event := range inputEvents {
-			if event.Index.Uint64() >= epoch.InputIndexLowerBound &&
-				event.Index.Uint64() < epoch.InputIndexUpperBound {
-				input := &Input{
-					Index:                event.Index.Uint64(),
-					Status:               InputCompletionStatus_None,
-					RawData:              event.Input,
-					BlockNumber:          event.Raw.BlockNumber,
-					TransactionReference: event.Raw.TxHash,
-				}
-				var duplicate bool
-				sortedInputs, duplicate = insertSorted(sortByInputIndex, sortedInputs, input)
-				if duplicate {
-					r.Logger.Warn("Duplicate input event detected, skipping",
-						"application", app.application.Name,
-						"index", input.Index,
-						"block", input.BlockNumber,
-					)
-				}
-			}
-		}
-		return nil
-	}
-
-	prevValue := new(big.Int).SetUint64(epoch.InputIndexLowerBound)
-	_, err := ethutil.FindTransitions(ctx, epoch.FirstBlock, epoch.LastBlock, prevValue, oracle, onHit)
-	if err != nil {
-		return nil, fmt.Errorf("failed to walk input transitions: %w", err)
-	}
-
-	r.Logger.Debug("Fetched inputs for sealed epoch",
-		"application", app.application.Name,
-		"epoch_index", epoch.Index,
-		"input_count", len(sortedInputs),
-	)
-	return sortedInputs, nil
-}
-
-func (r *Service) fetchInputsForEpoch(
-	ctx context.Context,
-	app appContracts,
-	epochIndex uint64,
-	startBlock, endBlock uint64,
-	lowerBound, upperBound uint64,
-) ([]*Input, error) {
-	r.Logger.Debug("Fetching inputs for epoch",
-		"application", app.application.Name,
-		"epoch_index", epochIndex,
-		"input_lower_bound", lowerBound,
-		"input_upper_bound", upperBound,
-		"epoch_first_block", startBlock,
-		"epoch_last_block", endBlock,
-	)
-
-	// Define oracle function that returns the number of inputs at a given block
-	oracle := func(ctx context.Context, block uint64) (*big.Int, error) {
-		callOpts := &bind.CallOpts{
-			Context:     ctx,
-			BlockNumber: new(big.Int).SetUint64(block),
-		}
-		numInputs, err := app.inputSource.GetNumberOfInputs(callOpts, app.application.IApplicationAddress)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get number of inputs at block %d: %w", block, err)
-		}
-		return numInputs, nil
-	}
-
-	var sortedInputs []*Input
-	// Define onHit function that accumulates inputs at transition blocks
-	onHit := func(block uint64) error {
-		filterOpts := &bind.FilterOpts{
-			Context: ctx,
-			Start:   block,
-			End:     &block,
-		}
-		inputEvents, err := app.inputSource.RetrieveInputs(
-			filterOpts,
-			[]common.Address{app.application.IApplicationAddress},
-			nil,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to retrieve inputs at block %d: %w", block, err)
-		}
-		for _, event := range inputEvents {
-			if event.Index.Uint64() >= lowerBound && event.Index.Uint64() < upperBound {
-				input := &Input{
-					Index:                event.Index.Uint64(),
-					Status:               InputCompletionStatus_None,
-					RawData:              event.Input,
-					BlockNumber:          event.Raw.BlockNumber,
-					TransactionReference: event.Raw.TxHash,
-				}
-				var duplicate bool
-				sortedInputs, duplicate = insertSorted(sortByInputIndex, sortedInputs, input)
-				if duplicate {
-					r.Logger.Warn("Duplicate input event detected, skipping",
-						"application", app.application.Name,
-						"index", input.Index,
-						"block", input.BlockNumber,
-					)
-					continue
-				}
-			}
-		}
-		return nil
-	}
-
-	inputCount, err := r.repository.GetNumberOfInputs(ctx, app.application.IApplicationAddress.String())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get number of inputs from repository: %w", err)
-	}
-	prevValue := new(big.Int).SetUint64(inputCount)
-
-	// Use FindTransitions to find blocks where inputs were added
-	_, err = ethutil.FindTransitions(ctx, startBlock, endBlock, prevValue, oracle, onHit)
-	if err != nil {
-		return nil, fmt.Errorf("failed to walk input transitions: %w", err)
-	}
-
-	r.Logger.Debug("Fetched inputs for epoch",
-		"application", app.application.Name,
-		"epoch_index", epochIndex,
-		"input_count", len(sortedInputs),
-	)
-	return sortedInputs, nil
 }
 
 func (r *Service) processApplicationOpenEpoch(
@@ -591,8 +419,17 @@ func (r *Service) processApplicationOpenEpoch(
 	}
 
 	// Fetch inputs for this epoch from the InputBox
-	inputs, err := r.fetchInputsForEpoch(ctx, app, nextEpochNumber, lastInputCheckBlock,
-		mostRecentBlockNumber, openEpoch.InputIndexLowerBound, math.MaxUint64)
+	inputCount, err := r.repository.GetNumberOfInputs(
+		ctx, app.application.IApplicationAddress.String())
+	if err != nil {
+		return fmt.Errorf(
+			"failed to get number of inputs from repository: %w", err)
+	}
+	prevValue := new(big.Int).SetUint64(inputCount)
+	inputs, err := r.fetchInputs(ctx, app,
+		lastInputCheckBlock, mostRecentBlockNumber,
+		prevValue,
+		openEpoch.InputIndexLowerBound, math.MaxUint64)
 	if err != nil {
 		return fmt.Errorf("failed to fetch inputs for epoch %d: %w", openEpoch.Index, err)
 	}

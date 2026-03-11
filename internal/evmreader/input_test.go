@@ -158,7 +158,7 @@ func (s *EvmReaderSuite) TestItUpdatesLastInputCheckBlockWhenThereIsNoInputs() {
 		"GetNumberOfInputs",
 		mock.Anything,
 		mock.Anything,
-	).Return(new(big.Int).SetUint64(0), nil).Times(4)
+	).Return(new(big.Int).SetUint64(0), nil)
 
 	// Start service
 	ready := make(chan struct{}, 1)

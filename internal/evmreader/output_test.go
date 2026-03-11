@@ -579,18 +579,11 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 		mock.Anything,
 	).Return([]iinputbox.IInputBoxInputAdded{inputAddedEvent0}, nil)
 
-	s.inputBox.On("GetNumberOfInputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(0), nil).Once()
-	s.inputBox.On("GetNumberOfInputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(1), nil).Once()
-	s.inputBox.On("GetNumberOfInputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(0), nil).Times(4)
+	// On-chain: 0 inputs before block 0x11, 1 from block 0x11
+	s.inputBox.On("GetNumberOfInputs", blockRange(0, 0x11), mock.Anything).
+		Return(new(big.Int).SetUint64(0), nil)
+	s.inputBox.On("GetNumberOfInputs", blockFrom(0x11), mock.Anything).
+		Return(new(big.Int).SetUint64(1), nil)
 
 	s.contractFactory.On("CreateAdapters",
 		mock.MatchedBy(func(app *Application) bool {

@@ -72,7 +72,7 @@ func (s *EvmReaderSuite) TestCreateEpochsAndInputsErrorDoesNotAdvanceCheckpoint(
 }
 
 // --- Priority 2: Sealed epoch input count mismatch → error, no epoch stored ---
-// When fetchSealedEpochInputs returns fewer inputs than the sealed event
+// When fetchInputs returns fewer inputs than the sealed event
 // declares, processSealedEpochEvent must return an error and NOT store the epoch.
 func (s *SealedEpochsSuite) TestSealedEpochInputCountMismatchReturnsError() {
 	const sealBlock uint64 = 200
@@ -384,6 +384,55 @@ func (s *EvmReaderSuite) TestOutputBlockRegressionDoesNotWriteToDb() {
 	repo.AssertNumberOfCalls(s.T(), "GetNumberOfExecutedOutputs", 0)
 }
 
+// --- Input count mismatch in IConsensus path → app skipped, no checkpoint advance ---
+// When the on-chain counter delta at endBlock disagrees with the number of inputs
+// returned by RetrieveInputs (e.g., missing event), the app must be skipped
+// (not stored) and its checkpoint must NOT advance.
+func (s *EvmReaderSuite) TestIConsensusInputCountMismatchSkipsApp() {
+	addr := common.HexToAddress("0x6666666666666666666666666666666666666666")
+
+	inputSrc := &MockInputBox{}
+	app := &Application{
+		ID:                  1,
+		Name:                "test-app",
+		IApplicationAddress: addr,
+		IInputBoxAddress:    inputBoxAddr,
+		DataAvailability:    DataAvailability_InputBox[:],
+		EpochLength:         10,
+		LastInputCheckBlock: 100,
+	}
+
+	// On-chain counter says 2 new inputs, but RetrieveInputs only returns 1
+	inputSrc.On("GetNumberOfInputs", blockRange(0, 105), mock.Anything).
+		Return(new(big.Int).SetUint64(0), nil)
+	inputSrc.On("GetNumberOfInputs", blockFrom(105), mock.Anything).
+		Return(new(big.Int).SetUint64(2), nil)
+
+	// RetrieveInputs at 105 only returns 1 event (missing second input)
+	inputSrc.On("RetrieveInputs",
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 105 }),
+		mock.Anything, mock.Anything,
+	).Return([]iinputbox.IInputBoxInputAdded{
+		makeInputEvent(addr, 0, 105),
+	}, nil)
+
+	apps := []appContracts{
+		{application: app, inputSource: inputSrc},
+	}
+
+	repo := newMockRepository()
+	repo.On("GetNumberOfInputs", mock.Anything, mock.Anything).
+		Return(uint64(0), nil)
+	s.evmReader.repository = repo
+
+	err := s.evmReader.readAndStoreInputs(s.ctx, 100, 110, apps)
+	s.Require().NoError(err) // per-app failure doesn't abort
+
+	// App was skipped: counter says 2 new, but only 1 fetched → no DB writes
+	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
+	repo.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 0)
+}
+
 // --- EpochLength=0 sets app inoperable ---
 // When an application with EpochLength=0 reaches the epoch indexing logic,
 // it must be set inoperable to prevent division-by-zero in calculateEpochIndex.
@@ -391,7 +440,7 @@ func (s *EvmReaderSuite) TestEpochLengthZeroSetsAppInoperable() {
 	addr := common.HexToAddress("0x5555555555555555555555555555555555555555")
 
 	inputSrc := &MockInputBox{}
-	// On-chain: constant 0 inputs (no transitions, fetchApplicationInputs succeeds)
+	// On-chain: constant 0 inputs (no transitions, fetchInputs succeeds)
 	inputSrc.On("GetNumberOfInputs", mock.Anything, mock.Anything).
 		Return(new(big.Int).SetUint64(0), nil)
 
