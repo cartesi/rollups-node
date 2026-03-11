@@ -20,8 +20,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-const serviceName = "prt"
-
 var (
 	logLevel           string
 	logColor           bool
@@ -33,9 +31,9 @@ var (
 )
 
 var Cmd = &cobra.Command{
-	Use:     "cartesi-rollups-" + serviceName,
-	Short:   "Runs cartesi-rollups-" + serviceName,
-	Long:    "Runs cartesi-rollups-" + serviceName + " in standalone mode",
+	Use:     "cartesi-rollups-" + config.ServicePrt,
+	Short:   "Runs cartesi-rollups-" + config.ServicePrt,
+	Long:    "Runs cartesi-rollups-" + config.ServicePrt + " in standalone mode",
 	Run:     run,
 	Version: version.BuildVersion,
 }
@@ -100,10 +98,11 @@ func run(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
 	defer cancel()
 
+	logLevel := config.ResolveServiceLogLevel(config.ServicePrt, cfg.LogLevel)
 	createInfo := prt.CreateInfo{
 		CreateInfo: service.CreateInfo{
-			Name:                 serviceName,
-			LogLevel:             cfg.LogLevel,
+			Name:                 config.ServicePrt,
+			LogLevel:             logLevel,
 			LogColor:             cfg.LogColor,
 			EnableSignalHandling: true,
 			TelemetryCreate:      true,
@@ -114,7 +113,7 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	var err error
-	logger := service.NewLogger(cfg.LogLevel, cfg.LogColor).With("service", serviceName)
+	logger := service.NewLogger(logLevel, cfg.LogColor).With("service", config.ServicePrt)
 	createInfo.EthClient, err = createEthClient(ctx, cfg.BlockchainHttpEndpoint.String(), logger)
 	cobra.CheckErr(err)
 

@@ -17,6 +17,54 @@ description = """
 If set to true, the node will add colors to its log output."""
 used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "prt"]
 
+[logging.CARTESI_LOG_LEVEL_ADVANCER]
+go-type = "LogLevel"
+omit = true
+description = """
+Override log level for the advancer service. Falls back to CARTESI_LOG_LEVEL if unset.
+One of "debug", "info", "warn", "error"."""
+used-by = ["advancer", "node"]
+
+[logging.CARTESI_LOG_LEVEL_CLAIMER]
+go-type = "LogLevel"
+omit = true
+description = """
+Override log level for the claimer service. Falls back to CARTESI_LOG_LEVEL if unset.
+One of "debug", "info", "warn", "error"."""
+used-by = ["claimer", "node"]
+
+[logging.CARTESI_LOG_LEVEL_EVM_READER]
+go-type = "LogLevel"
+omit = true
+description = """
+Override log level for the evm-reader service. Falls back to CARTESI_LOG_LEVEL if unset.
+One of "debug", "info", "warn", "error"."""
+used-by = ["evmreader", "node"]
+
+[logging.CARTESI_LOG_LEVEL_JSONRPC_API]
+go-type = "LogLevel"
+omit = true
+description = """
+Override log level for the jsonrpc-api service. Falls back to CARTESI_LOG_LEVEL if unset.
+One of "debug", "info", "warn", "error"."""
+used-by = ["jsonrpc", "node"]
+
+[logging.CARTESI_LOG_LEVEL_PRT]
+go-type = "LogLevel"
+omit = true
+description = """
+Override log level for the prt service. Falls back to CARTESI_LOG_LEVEL if unset.
+One of "debug", "info", "warn", "error"."""
+used-by = ["prt", "node"]
+
+[logging.CARTESI_LOG_LEVEL_VALIDATOR]
+go-type = "LogLevel"
+omit = true
+description = """
+Override log level for the validator service. Falls back to CARTESI_LOG_LEVEL if unset.
+One of "debug", "info", "warn", "error"."""
+used-by = ["validator", "node"]
+
 #
 # Features
 #

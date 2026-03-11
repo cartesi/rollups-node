@@ -20,11 +20,15 @@ import (
 	"github.com/spf13/viper"
 )
 
-const serviceName = "node"
-
 var (
 	logLevel               string
 	logColor               bool
+	logLevelAdvancer       string
+	logLevelClaimer        string
+	logLevelEvmReader      string
+	logLevelJsonrpc        string
+	logLevelPrt            string
+	logLevelValidator      string
 	defaultBlockString     string
 	blockchainHttpEndpoint string
 	blockchainWsEndpoint   string
@@ -48,9 +52,9 @@ var (
 )
 
 var Cmd = &cobra.Command{
-	Use:     "cartesi-rollups-" + serviceName,
-	Short:   "Runs cartesi-rollups-" + serviceName,
-	Long:    "Runs cartesi-rollups-" + serviceName + " in standalone mode",
+	Use:     "cartesi-rollups-" + config.ServiceNode,
+	Short:   "Runs cartesi-rollups-" + config.ServiceNode,
+	Long:    "Runs cartesi-rollups-" + config.ServiceNode + " in standalone mode",
 	Run:     run,
 	Version: version.BuildVersion,
 }
@@ -74,6 +78,30 @@ func init() {
 
 	Cmd.Flags().BoolVar(&logColor, "log-color", true, "Tint the logs (colored output)")
 	cobra.CheckErr(viper.BindPFlag(config.LOG_COLOR, Cmd.Flags().Lookup("log-color")))
+
+	Cmd.Flags().StringVar(&logLevelAdvancer, "log-level-advancer", "",
+		"Override log level for the advancer service (default: inherit --log-level)")
+	cobra.CheckErr(viper.BindPFlag(config.LOG_LEVEL_ADVANCER, Cmd.Flags().Lookup("log-level-advancer")))
+
+	Cmd.Flags().StringVar(&logLevelClaimer, "log-level-claimer", "",
+		"Override log level for the claimer service (default: inherit --log-level)")
+	cobra.CheckErr(viper.BindPFlag(config.LOG_LEVEL_CLAIMER, Cmd.Flags().Lookup("log-level-claimer")))
+
+	Cmd.Flags().StringVar(&logLevelEvmReader, "log-level-evm-reader", "",
+		"Override log level for the evm-reader service (default: inherit --log-level)")
+	cobra.CheckErr(viper.BindPFlag(config.LOG_LEVEL_EVM_READER, Cmd.Flags().Lookup("log-level-evm-reader")))
+
+	Cmd.Flags().StringVar(&logLevelJsonrpc, "log-level-jsonrpc-api", "",
+		"Override log level for the jsonrpc-api service (default: inherit --log-level)")
+	cobra.CheckErr(viper.BindPFlag(config.LOG_LEVEL_JSONRPC_API, Cmd.Flags().Lookup("log-level-jsonrpc-api")))
+
+	Cmd.Flags().StringVar(&logLevelPrt, "log-level-prt", "",
+		"Override log level for the prt service (default: inherit --log-level)")
+	cobra.CheckErr(viper.BindPFlag(config.LOG_LEVEL_PRT, Cmd.Flags().Lookup("log-level-prt")))
+
+	Cmd.Flags().StringVar(&logLevelValidator, "log-level-validator", "",
+		"Override log level for the validator service (default: inherit --log-level)")
+	cobra.CheckErr(viper.BindPFlag(config.LOG_LEVEL_VALIDATOR, Cmd.Flags().Lookup("log-level-validator")))
 
 	Cmd.Flags().StringVar(&databaseConnection, "database-connection", "",
 		"Database connection string in the URL format\n(eg.: 'postgres://user:password@hostname:port/database') ")
@@ -166,7 +194,7 @@ func run(cmd *cobra.Command, args []string) {
 
 	createInfo := node.CreateInfo{
 		CreateInfo: service.CreateInfo{
-			Name:                 serviceName,
+			Name:                 config.ServiceNode,
 			LogLevel:             cfg.LogLevel,
 			LogColor:             cfg.LogColor,
 			EnableSignalHandling: true,
@@ -177,18 +205,21 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	var err error
-	logger := service.NewLogger(cfg.LogLevel, cfg.LogColor).With("service", "evm-reader")
+	readerLevel := config.ResolveServiceLogLevel(config.ServiceEvmReader, cfg.LogLevel)
+	logger := service.NewLogger(readerLevel, cfg.LogColor).With("service", config.ServiceEvmReader)
 	createInfo.ReaderClient, err = createEthClient(ctx, cfg.BlockchainHttpEndpoint.String(), logger)
 	cobra.CheckErr(err)
 
 	createInfo.ReaderWSClient, err = ethclient.DialContext(ctx, cfg.BlockchainWsEndpoint.String())
 	cobra.CheckErr(err)
 
-	logger = service.NewLogger(cfg.LogLevel, cfg.LogColor).With("service", "claimer")
+	claimerLevel := config.ResolveServiceLogLevel(config.ServiceClaimer, cfg.LogLevel)
+	logger = service.NewLogger(claimerLevel, cfg.LogColor).With("service", config.ServiceClaimer)
 	createInfo.ClaimerClient, err = createEthClient(ctx, cfg.BlockchainHttpEndpoint.String(), logger)
 	cobra.CheckErr(err)
 
-	logger = service.NewLogger(cfg.LogLevel, cfg.LogColor).With("service", "prt")
+	prtLevel := config.ResolveServiceLogLevel(config.ServicePrt, cfg.LogLevel)
+	logger = service.NewLogger(prtLevel, cfg.LogColor).With("service", config.ServicePrt)
 	createInfo.PrtClient, err = createEthClient(ctx, cfg.BlockchainHttpEndpoint.String(), logger)
 	cobra.CheckErr(err)
 

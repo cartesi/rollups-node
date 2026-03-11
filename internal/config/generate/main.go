@@ -18,7 +18,10 @@
 // names, and the keys of the inner map being variable names.
 package main
 
-import "flag"
+import (
+	"flag"
+	"log"
+)
 
 func main() {
 	mode := flag.String("mode", "all", "generation mode: code, docs, or all")
@@ -40,6 +43,6 @@ func main() {
 		generateCodeFile("../generated.go", envs)
 		generateDocsFile("../../../docs/config.md", envs)
 	default:
-		panic("invalid mode: " + *mode + " (expected code, docs, or all)")
+		log.Fatalf("invalid mode: %s (expected code, docs, or all)", *mode)
 	}
 }

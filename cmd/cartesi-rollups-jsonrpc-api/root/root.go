@@ -16,8 +16,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-const serviceName = "jsonrpc-api"
-
 var (
 	logLevel           string
 	logColor           bool
@@ -29,9 +27,9 @@ var (
 )
 
 var Cmd = &cobra.Command{
-	Use:     "cartesi-rollups-" + serviceName,
-	Short:   "Runs cartesi-rollups-" + serviceName,
-	Long:    "Runs cartesi-rollups-" + serviceName + " in standalone mode",
+	Use:     "cartesi-rollups-" + config.ServiceJsonrpc,
+	Short:   "Runs cartesi-rollups-" + config.ServiceJsonrpc,
+	Long:    "Runs cartesi-rollups-" + config.ServiceJsonrpc + " in standalone mode",
 	Run:     run,
 	Version: version.BuildVersion,
 }
@@ -73,8 +71,8 @@ func run(cmd *cobra.Command, args []string) {
 
 	createInfo := jsonrpc.CreateInfo{
 		CreateInfo: service.CreateInfo{
-			Name:                 serviceName,
-			LogLevel:             cfg.LogLevel,
+			Name:                 config.ServiceJsonrpc,
+			LogLevel:             config.ResolveServiceLogLevel(config.ServiceJsonrpc, cfg.LogLevel),
 			LogColor:             cfg.LogColor,
 			EnableSignalHandling: false,
 			TelemetryCreate:      true,

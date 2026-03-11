@@ -241,6 +241,46 @@ func ToURLFromString(s string) (URL, error) {
 	return result, nil
 }
 
+// Service name constants for per-service configuration lookup.
+const (
+	ServiceNode      = "node"
+	ServiceAdvancer  = "advancer"
+	ServiceClaimer   = "claimer"
+	ServiceEvmReader = "evm-reader"
+	ServiceJsonrpc   = "jsonrpc-api"
+	ServicePrt       = "prt"
+	ServiceValidator = "validator"
+)
+
+// serviceLogLevelGetters maps service names to their per-service log level getter functions.
+var serviceLogLevelGetters = map[string]func() (LogLevel, error){
+	ServiceAdvancer:  GetLogLevelAdvancer,
+	ServiceClaimer:   GetLogLevelClaimer,
+	ServiceEvmReader: GetLogLevelEvmReader,
+	ServiceJsonrpc:   GetLogLevelJsonrpcApi,
+	ServicePrt:       GetLogLevelPrt,
+	ServiceValidator: GetLogLevelValidator,
+}
+
+// ResolveServiceLogLevel returns the per-service log level override if set,
+// otherwise falls back to the global log level. Invalid override values
+// produce a warning log and fall back to the global level.
+func ResolveServiceLogLevel(name string, globalLevel LogLevel) LogLevel {
+	getter, ok := serviceLogLevelGetters[name]
+	if !ok {
+		return globalLevel
+	}
+	level, err := getter()
+	if err != nil {
+		if !errors.Is(err, ErrNotDefined) {
+			slog.Warn("invalid per-service log level override, using global",
+				"service", name, "error", err)
+		}
+		return globalLevel
+	}
+	return level
+}
+
 // Aliases to be used by the generated functions.
 var (
 	toBool            = strconv.ParseBool

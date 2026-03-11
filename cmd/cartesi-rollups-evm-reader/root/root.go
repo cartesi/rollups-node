@@ -20,8 +20,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-const serviceName = "evm-reader"
-
 var (
 	logLevel               string
 	logColor               bool
@@ -37,9 +35,9 @@ var (
 )
 
 var Cmd = &cobra.Command{
-	Use:     "cartesi-rollups-" + serviceName,
-	Short:   "Runs cartesi-rollups-" + serviceName,
-	Long:    "Runs cartesi-rollups-" + serviceName + " in standalone mode",
+	Use:     "cartesi-rollups-" + config.ServiceEvmReader,
+	Short:   "Runs cartesi-rollups-" + config.ServiceEvmReader,
+	Long:    "Runs cartesi-rollups-" + config.ServiceEvmReader + " in standalone mode",
 	Run:     run,
 	Version: version.BuildVersion,
 }
@@ -118,10 +116,11 @@ func run(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
 	defer cancel()
 
+	logLevel := config.ResolveServiceLogLevel(config.ServiceEvmReader, cfg.LogLevel)
 	createInfo := evmreader.CreateInfo{
 		CreateInfo: service.CreateInfo{
-			Name:                 serviceName,
-			LogLevel:             cfg.LogLevel,
+			Name:                 config.ServiceEvmReader,
+			LogLevel:             logLevel,
 			LogColor:             cfg.LogColor,
 			EnableSignalHandling: true,
 			TelemetryCreate:      true,
@@ -131,7 +130,7 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	var err error
-	logger := service.NewLogger(cfg.LogLevel, cfg.LogColor).With("service", serviceName)
+	logger := service.NewLogger(logLevel, cfg.LogColor).With("service", config.ServiceEvmReader)
 	createInfo.EthClient, err = createEthClient(ctx, cfg.BlockchainHttpEndpoint.String(), logger)
 	cobra.CheckErr(err)
 

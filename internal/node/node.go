@@ -163,10 +163,10 @@ func (me *Service) Serve() error {
 func newEVMReader(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	readerArgs := evmreader.CreateInfo{
 		CreateInfo: service.CreateInfo{
-			Name:                 "evm-reader",
+			Name:                 config.ServiceEvmReader,
 			Context:              s.Context,
 			Cancel:               s.Cancel,
-			LogLevel:             c.Config.LogLevel,
+			LogLevel:             config.ResolveServiceLogLevel(config.ServiceEvmReader, c.Config.LogLevel),
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
 			TelemetryCreate:      false,
@@ -188,10 +188,10 @@ func newEVMReader(ctx context.Context, c *CreateInfo, s *Service) (service.IServ
 func newAdvancer(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	advancerArgs := advancer.CreateInfo{
 		CreateInfo: service.CreateInfo{
-			Name:                 "advancer",
+			Name:                 config.ServiceAdvancer,
 			Context:              s.Context,
 			Cancel:               s.Cancel,
-			LogLevel:             c.Config.LogLevel,
+			LogLevel:             config.ResolveServiceLogLevel(config.ServiceAdvancer, c.Config.LogLevel),
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
 			TelemetryCreate:      false,
@@ -212,10 +212,10 @@ func newAdvancer(ctx context.Context, c *CreateInfo, s *Service) (service.IServi
 func newValidator(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	validatorArgs := validator.CreateInfo{
 		CreateInfo: service.CreateInfo{
-			Name:                 "validator",
+			Name:                 config.ServiceValidator,
 			Context:              s.Context,
 			Cancel:               s.Cancel,
-			LogLevel:             c.Config.LogLevel,
+			LogLevel:             config.ResolveServiceLogLevel(config.ServiceValidator, c.Config.LogLevel),
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
 			TelemetryCreate:      false,
@@ -236,10 +236,10 @@ func newValidator(ctx context.Context, c *CreateInfo, s *Service) (service.IServ
 func newClaimer(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	claimerArgs := claimer.CreateInfo{
 		CreateInfo: service.CreateInfo{
-			Name:                 "claimer",
+			Name:                 config.ServiceClaimer,
 			Context:              s.Context,
 			Cancel:               s.Cancel,
-			LogLevel:             c.Config.LogLevel,
+			LogLevel:             config.ResolveServiceLogLevel(config.ServiceClaimer, c.Config.LogLevel),
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
 			TelemetryCreate:      false,
@@ -261,10 +261,10 @@ func newClaimer(ctx context.Context, c *CreateInfo, s *Service) (service.IServic
 func newJsonrpc(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	jsonrpcArgs := jsonrpc.CreateInfo{
 		CreateInfo: service.CreateInfo{
-			Name:                 "jsonrpc",
+			Name:                 config.ServiceJsonrpc,
 			Context:              s.Context,
 			Cancel:               s.Cancel,
-			LogLevel:             c.Config.LogLevel,
+			LogLevel:             config.ResolveServiceLogLevel(config.ServiceJsonrpc, c.Config.LogLevel),
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
 			TelemetryCreate:      false,
@@ -284,10 +284,10 @@ func newJsonrpc(ctx context.Context, c *CreateInfo, s *Service) (service.IServic
 func newPrt(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	prtArgs := prt.CreateInfo{
 		CreateInfo: service.CreateInfo{
-			Name:                 "prt",
+			Name:                 config.ServicePrt,
 			Context:              s.Context,
 			Cancel:               s.Cancel,
-			LogLevel:             c.Config.LogLevel,
+			LogLevel:             config.ResolveServiceLogLevel(config.ServicePrt, c.Config.LogLevel),
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
 			TelemetryCreate:      false,

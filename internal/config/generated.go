@@ -52,6 +52,12 @@ const (
 	TELEMETRY_ADDRESS                                 = "CARTESI_TELEMETRY_ADDRESS"
 	LOG_COLOR                                         = "CARTESI_LOG_COLOR"
 	LOG_LEVEL                                         = "CARTESI_LOG_LEVEL"
+	LOG_LEVEL_ADVANCER                                = "CARTESI_LOG_LEVEL_ADVANCER"
+	LOG_LEVEL_CLAIMER                                 = "CARTESI_LOG_LEVEL_CLAIMER"
+	LOG_LEVEL_EVM_READER                              = "CARTESI_LOG_LEVEL_EVM_READER"
+	LOG_LEVEL_JSONRPC_API                             = "CARTESI_LOG_LEVEL_JSONRPC_API"
+	LOG_LEVEL_PRT                                     = "CARTESI_LOG_LEVEL_PRT"
+	LOG_LEVEL_VALIDATOR                               = "CARTESI_LOG_LEVEL_VALIDATOR"
 	JSONRPC_MACHINE_LOG_LEVEL                         = "CARTESI_JSONRPC_MACHINE_LOG_LEVEL"
 	ADVANCER_INPUT_BATCH_SIZE                         = "CARTESI_ADVANCER_INPUT_BATCH_SIZE"
 	ADVANCER_POLLING_INTERVAL                         = "CARTESI_ADVANCER_POLLING_INTERVAL"
@@ -141,6 +147,18 @@ func SetDefaults() {
 	viper.SetDefault(LOG_COLOR, "true")
 
 	viper.SetDefault(LOG_LEVEL, "info")
+
+	// no default for CARTESI_LOG_LEVEL_ADVANCER
+
+	// no default for CARTESI_LOG_LEVEL_CLAIMER
+
+	// no default for CARTESI_LOG_LEVEL_EVM_READER
+
+	// no default for CARTESI_LOG_LEVEL_JSONRPC_API
+
+	// no default for CARTESI_LOG_LEVEL_PRT
+
+	// no default for CARTESI_LOG_LEVEL_VALIDATOR
 
 	viper.SetDefault(JSONRPC_MACHINE_LOG_LEVEL, "info")
 
@@ -1902,6 +1920,84 @@ func GetLogLevel() (LogLevel, error) {
 		return v, nil
 	}
 	return notDefinedLogLevel(), fmt.Errorf("%s: %w", LOG_LEVEL, ErrNotDefined)
+}
+
+// GetLogLevelAdvancer returns the value for the environment variable CARTESI_LOG_LEVEL_ADVANCER.
+func GetLogLevelAdvancer() (LogLevel, error) {
+	s := viper.GetString(LOG_LEVEL_ADVANCER)
+	if s != "" {
+		v, err := toLogLevel(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", LOG_LEVEL_ADVANCER, err)
+		}
+		return v, nil
+	}
+	return notDefinedLogLevel(), fmt.Errorf("%s: %w", LOG_LEVEL_ADVANCER, ErrNotDefined)
+}
+
+// GetLogLevelClaimer returns the value for the environment variable CARTESI_LOG_LEVEL_CLAIMER.
+func GetLogLevelClaimer() (LogLevel, error) {
+	s := viper.GetString(LOG_LEVEL_CLAIMER)
+	if s != "" {
+		v, err := toLogLevel(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", LOG_LEVEL_CLAIMER, err)
+		}
+		return v, nil
+	}
+	return notDefinedLogLevel(), fmt.Errorf("%s: %w", LOG_LEVEL_CLAIMER, ErrNotDefined)
+}
+
+// GetLogLevelEvmReader returns the value for the environment variable CARTESI_LOG_LEVEL_EVM_READER.
+func GetLogLevelEvmReader() (LogLevel, error) {
+	s := viper.GetString(LOG_LEVEL_EVM_READER)
+	if s != "" {
+		v, err := toLogLevel(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", LOG_LEVEL_EVM_READER, err)
+		}
+		return v, nil
+	}
+	return notDefinedLogLevel(), fmt.Errorf("%s: %w", LOG_LEVEL_EVM_READER, ErrNotDefined)
+}
+
+// GetLogLevelJsonrpcApi returns the value for the environment variable CARTESI_LOG_LEVEL_JSONRPC_API.
+func GetLogLevelJsonrpcApi() (LogLevel, error) {
+	s := viper.GetString(LOG_LEVEL_JSONRPC_API)
+	if s != "" {
+		v, err := toLogLevel(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", LOG_LEVEL_JSONRPC_API, err)
+		}
+		return v, nil
+	}
+	return notDefinedLogLevel(), fmt.Errorf("%s: %w", LOG_LEVEL_JSONRPC_API, ErrNotDefined)
+}
+
+// GetLogLevelPrt returns the value for the environment variable CARTESI_LOG_LEVEL_PRT.
+func GetLogLevelPrt() (LogLevel, error) {
+	s := viper.GetString(LOG_LEVEL_PRT)
+	if s != "" {
+		v, err := toLogLevel(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", LOG_LEVEL_PRT, err)
+		}
+		return v, nil
+	}
+	return notDefinedLogLevel(), fmt.Errorf("%s: %w", LOG_LEVEL_PRT, ErrNotDefined)
+}
+
+// GetLogLevelValidator returns the value for the environment variable CARTESI_LOG_LEVEL_VALIDATOR.
+func GetLogLevelValidator() (LogLevel, error) {
+	s := viper.GetString(LOG_LEVEL_VALIDATOR)
+	if s != "" {
+		v, err := toLogLevel(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", LOG_LEVEL_VALIDATOR, err)
+		}
+		return v, nil
+	}
+	return notDefinedLogLevel(), fmt.Errorf("%s: %w", LOG_LEVEL_VALIDATOR, ErrNotDefined)
 }
 
 // GetJsonrpcMachineLogLevel returns the value for the environment variable CARTESI_JSONRPC_MACHINE_LOG_LEVEL.
