@@ -93,20 +93,25 @@ type iclaimerRepository interface {
 		reason *string,
 	) error
 
+	UpdateEventLastCheckBlock(
+		ctx context.Context,
+		appIDs []int64,
+		event model.MonitoredEvent,
+		blockNumber uint64,
+	) error
+
 	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
 }
 
-// transition epoch claims from computed to submitted.
-func (s *Service) submitClaimsAndUpdateDatabase(
-	acceptedOrSubmittedEpochs map[int64]*model.Epoch,
+// claims in flight are those that have been submitted but are waiting for a
+// transaction confirmation. When confirmed, we update their status on the
+// database. The epoch is now "submitted" and no longer "computed".
+func (s *Service) checkClaimsInFlight(
 	computedEpochs map[int64]*model.Epoch,
 	apps map[int64]*model.Application,
 	endBlock *big.Int,
-) []error {
-	errs := []error{}
-	var err error
-
+) error {
 	// check claims in flight. NOTE: map mutation + iteration is safe in Go
 	for key, txHash := range s.claimsInFlight {
 		ready, receipt, err := s.blockchain.pollTransaction(s.Context, txHash, endBlock)
@@ -121,6 +126,14 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 		if !ready {
 			continue
 		}
+		if receipt.Status == 0 {
+			s.Logger.Warn("Claim submission reverted, retrying.",
+				"txHash", txHash,
+				"err", err,
+			)
+			delete(s.claimsInFlight, key)
+			continue
+		}
 		if computedEpoch, ok := computedEpochs[key]; ok {
 			err = s.repository.UpdateEpochWithSubmittedClaim(
 				s.Context,
@@ -129,15 +142,14 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 				receipt.TxHash,
 			)
 
-			// NOTE: there is no point in trying the other claims on a database error
-			//       so we just return and try again on the next tick
+			// NOTE: there is no point in trying the other applications on a database error
+			//       so we just return and try again later (next tick)
 			if err != nil {
-				errs = append(errs, err)
-				return errs
+				return err
 			}
 
 			// we expect apps[key] to always exist,
-			// but guard its use behind this `if` to ensure there is no panic if we are wrong.
+			// but guard its use behind `if` to ensure there is no panic if we are wrong.
 			appAddress := common.Address{}
 			if app, ok := apps[key]; ok {
 				appAddress = app.IApplicationAddress
@@ -148,26 +160,102 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 				"claim_hash", fmt.Sprintf("%x", computedEpoch.OutputsMerkleRoot),
 				"last_block", computedEpoch.LastBlock,
 				"tx", txHash)
+
+			// epoch is no longer "computed" and is now "submitted".
+			// Processing will happen on the next tick iteration.
 			delete(computedEpochs, key)
 		} else {
-			s.Logger.Warn("expected claim in flight to be in currClaims.",
+			s.Logger.Warn("unexpected, claim in flight is not a computed epoch.",
+				"id", key,
 				"tx", receipt.TxHash)
 		}
 		delete(s.claimsInFlight, key)
 	}
+	return nil
+}
 
+func (s *Service) findClaimSubmittedEventAndSucc(
+	ctx context.Context,
+	app *model.Application,
+	prevEpoch *model.Epoch,
+	currEpoch *model.Epoch,
+	fromBlock uint64,
+	toBlock uint64,
+) (
+	*iconsensus.IConsensus,
+	*iconsensus.IConsensusClaimSubmitted,
+	*iconsensus.IConsensusClaimSubmitted,
+	error,
+) {
+	err := checkEpochSequenceConstraint(prevEpoch, currEpoch)
+	if err != nil {
+		err = s.setApplicationInoperable(
+			s.Context,
+			app,
+			"%v. epoch: %v (%v).",
+			err,
+			prevEpoch.Index,
+			prevEpoch.VirtualIndex,
+		)
+		return nil, nil, nil, err
+	}
+
+	ic, prevClaimSubmissionEvent, currClaimSubmissionEvent, err :=
+		s.blockchain.findClaimSubmittedEventAndSucc(ctx, app, prevEpoch, fromBlock, toBlock)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	if prevClaimSubmissionEvent == nil {
+		err = s.setApplicationInoperable(
+			s.Context,
+			app,
+			"application has an invalid epoch: %v (%v). No claim submission event to match.",
+			prevEpoch.Index,
+			prevEpoch.VirtualIndex,
+		)
+		return nil, nil, nil, err
+	}
+
+	if !claimSubmittedEventMatches(app, prevEpoch, prevClaimSubmissionEvent) {
+		err = s.setApplicationInoperable(
+			s.Context,
+			app,
+			"application has an invalid epoch: %v (%v), missing claim submitted event (%v).",
+			prevEpoch.Index,
+			prevEpoch.VirtualIndex,
+			prevClaimSubmissionEvent.Raw.TxHash,
+		)
+		return nil, nil, nil, err
+	}
+	return ic, prevClaimSubmissionEvent, currClaimSubmissionEvent, nil
+}
+
+// transition epoch claims from computed to submitted.
+func (s *Service) submitClaimsAndUpdateDatabase(
+	acceptedOrSubmittedEpochs map[int64]*model.Epoch,
+	computedEpochs map[int64]*model.Epoch,
+	apps map[int64]*model.Application,
+	defaultBlockNumber *big.Int,
+) []error {
+	err := s.checkClaimsInFlight(computedEpochs, apps, defaultBlockNumber)
+	if err != nil {
+		return []error{err}
+	}
+
+	errs := []error{}
 	// check computed epochs. NOTE: map mutation + iteration is safe in Go
 	for key, currEpoch := range computedEpochs {
 		var ic *iconsensus.IConsensus
-		var prevClaimSubmissionEvent *iconsensus.IConsensusClaimSubmitted
-		var currClaimSubmissionEvent *iconsensus.IConsensusClaimSubmitted
+		var prevEvent *iconsensus.IConsensusClaimSubmitted
+		var currEvent *iconsensus.IConsensusClaimSubmitted
 
 		if _, isClaimInFlight := s.claimsInFlight[key]; isClaimInFlight {
 			continue
 		}
 
 		app := apps[key] // guaranteed to exist because of the query and database constraints
-		prevEpoch, previousEpochExists := acceptedOrSubmittedEpochs[key]
+		prevEpoch, prevEpochExists := acceptedOrSubmittedEpochs[key]
 
 		// check address for changes
 		if err := s.checkConsensusForAddressChange(app); err != nil {
@@ -175,88 +263,49 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 			errs = append(errs, err)
 			continue
 		}
-		if previousEpochExists {
-			err := checkEpochSequenceConstraint(prevEpoch, currEpoch)
-			if err != nil {
-				err = s.setApplicationInoperable(
-					s.Context,
-					app,
-					"database mismatch on epochs. application: %v, epochs: %v (%v), %v (%v).",
-					app.IApplicationAddress,
-					prevEpoch.Index,
-					prevEpoch.VirtualIndex,
-					currEpoch.Index,
-					currEpoch.VirtualIndex,
-				)
-				delete(computedEpochs, key)
-				errs = append(errs, err)
-				continue
-			}
-
-			// the previous epoch must have a matching claim submission event.
-			// current epoch may or may not be present
-			ic, prevClaimSubmissionEvent, currClaimSubmissionEvent, err =
-				s.blockchain.findClaimSubmittedEventAndSucc(s.Context, app, prevEpoch, endBlock)
-			if err != nil {
-				delete(computedEpochs, key)
-				errs = append(errs, err)
-				continue
-			}
-			if prevClaimSubmissionEvent == nil {
-				err = s.setApplicationInoperable(
-					s.Context,
-					app,
-					"epoch has no matching event. application: %v, epoch: %v (%v).",
-					app.IApplicationAddress,
-					prevEpoch.Index,
-					prevEpoch.VirtualIndex,
-				)
-				delete(computedEpochs, key)
-				errs = append(errs, err)
-				continue
-			}
-			if !claimSubmittedEventMatches(app, prevEpoch, prevClaimSubmissionEvent) {
-				s.Logger.Error("event mismatch",
-					"claim", prevEpoch,
-					"event", prevClaimSubmissionEvent,
-					"err", ErrEventMismatch,
-				)
-				err = s.setApplicationInoperable(
-					s.Context,
-					app,
-					"epoch has an invalid event: %v, epoch: %v (%v). event: %v",
-					currEpoch.Index,
-					prevEpoch.Index,
-					prevEpoch.VirtualIndex,
-					prevClaimSubmissionEvent.Raw.TxHash,
-				)
-				delete(computedEpochs, key)
-				errs = append(errs, err)
-				continue
-			}
+		if prevEpochExists {
+			fromBlock := prevEpoch.LastBlock + 1
+			ic, prevEvent, currEvent, err = s.findClaimSubmittedEventAndSucc(s.Context, app, prevEpoch, currEpoch, fromBlock, defaultBlockNumber.Uint64())
 		} else {
-			// first claim
-			ic, currClaimSubmissionEvent, _, err =
-				s.blockchain.findClaimSubmittedEventAndSucc(s.Context, app, currEpoch, endBlock)
-			if err != nil {
-				delete(computedEpochs, key)
-				errs = append(errs, err)
-				continue
-			}
+			fromBlock := max(app.LastSubmittedClaimCheckBlock, currEpoch.LastBlock) + 1
+			ic, currEvent, _, err = s.blockchain.findClaimSubmittedEventAndSucc(s.Context, app, currEpoch, fromBlock, defaultBlockNumber.Uint64())
+		}
+		if err != nil {
+			delete(computedEpochs, key)
+			errs = append(errs, err)
+			continue
 		}
 
-		if currClaimSubmissionEvent != nil {
-			s.Logger.Debug("Found ClaimSubmitted Event",
-				"app", currClaimSubmissionEvent.AppContract,
-				"claim_hash", fmt.Sprintf("%x", currClaimSubmissionEvent.OutputsMerkleRoot),
-				"last_block", currClaimSubmissionEvent.LastProcessedBlockNumber.Uint64(),
+		if currEvent != nil {
+			checkFrom := uint64(0)
+			if currEvent.Raw.BlockNumber > 0 {
+				checkFrom = currEvent.Raw.BlockNumber - 1
+			}
+			if prevEvent != nil {
+				checkFrom = prevEvent.Raw.BlockNumber
+			}
+			err = s.repository.UpdateEventLastCheckBlock(
+				s.Context,
+				[]int64{app.ID},
+				model.MonitoredEvent_ClaimSubmitted,
+				checkFrom,
 			)
-			if !claimSubmittedEventMatches(app, currEpoch, currClaimSubmissionEvent) {
+			// NOTE: there is no point in trying the other applications on a database error
+			//       so we just return and try again later (next tick)
+			if err != nil {
+				return append(errs, err)
+			}
+			s.Logger.Debug("Found ClaimSubmitted Event",
+				"app", currEvent.AppContract,
+				"claim_hash", fmt.Sprintf("%x", currEvent.OutputsMerkleRoot),
+				"last_block", currEvent.LastProcessedBlockNumber.Uint64(),
+			)
+			if !claimSubmittedEventMatches(app, currEpoch, currEvent) {
 				err = s.setApplicationInoperable(
 					s.Context,
 					app,
 					"computed claim does not match event. computed_claim=%v, current_event=%v",
-					currEpoch, currClaimSubmissionEvent,
+					currEpoch, currEvent,
 				)
 				delete(computedEpochs, key)
 				errs = append(errs, err)
@@ -267,7 +316,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 				"claim_hash", fmt.Sprintf("%x", currEpoch.OutputsMerkleRoot),
 				"last_block", currEpoch.LastBlock,
 			)
-			txHash := currClaimSubmissionEvent.Raw.TxHash
+			txHash := currEvent.Raw.TxHash
 			err = s.repository.UpdateEpochWithSubmittedClaim(
 				s.Context,
 				currEpoch.ApplicationID,
@@ -282,41 +331,111 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 			delete(s.claimsInFlight, key)
 			s.Logger.Info("Claim previously submitted",
 				"app", app.IApplicationAddress,
-				"event_block_number", currClaimSubmissionEvent.Raw.BlockNumber,
+				"event_block_number", currEvent.Raw.BlockNumber,
 				"claim_hash", fmt.Sprintf("%x", currEpoch.OutputsMerkleRoot),
 				"last_block", currEpoch.LastBlock,
 			)
-		} else if s.submissionEnabled {
-			if prevEpoch != nil && prevEpoch.Status != model.EpochStatus_ClaimAccepted {
-				s.Logger.Debug("Waiting previous claim to be accepted before submitting new one. Previous:",
-					"app", app.IApplicationAddress,
-					"claim_hash", fmt.Sprintf("%x", prevEpoch.OutputsMerkleRoot),
-					"last_block", prevEpoch.LastBlock,
-				)
-				continue
-			}
-			s.Logger.Debug("Submitting claim to blockchain",
-				"app", app.IApplicationAddress,
-				"claim_hash", fmt.Sprintf("%x", currEpoch.OutputsMerkleRoot),
-				"last_block", currEpoch.LastBlock,
-			)
-			txHash, err := s.blockchain.submitClaimToBlockchain(ic, app, currEpoch)
-			if err != nil {
-				delete(computedEpochs, key)
-				errs = append(errs, err)
-				continue
-			}
-			s.claimsInFlight[key] = txHash
 		} else {
-			s.Logger.Debug("Claim submission disabled. Doing nothing",
-				"app", app.IApplicationAddress,
-				"claim_hash", fmt.Sprintf("%x", currEpoch.OutputsMerkleRoot),
-				"last_block", currEpoch.LastBlock,
+			err = s.repository.UpdateEventLastCheckBlock(
+				s.Context,
+				[]int64{app.ID},
+				model.MonitoredEvent_ClaimSubmitted,
+				defaultBlockNumber.Uint64(),
 			)
+			// NOTE: there is no point in trying the other applications on a database error
+			//       so we just return and try again later (next tick)
+			if err != nil {
+				return append(errs, err)
+			}
 
+			if s.submissionEnabled {
+				if prevEpoch != nil && prevEpoch.Status != model.EpochStatus_ClaimAccepted {
+					s.Logger.Debug("Waiting previous claim to be accepted before submitting new one. Previous:",
+						"app", app.IApplicationAddress,
+						"claim_hash", fmt.Sprintf("%x", prevEpoch.OutputsMerkleRoot),
+						"last_block", prevEpoch.LastBlock,
+					)
+					continue
+				}
+				s.Logger.Debug("Submitting claim to blockchain",
+					"app", app.IApplicationAddress,
+					"claim_hash", fmt.Sprintf("%x", currEpoch.OutputsMerkleRoot),
+					"last_block", currEpoch.LastBlock,
+				)
+				txHash, err := s.blockchain.submitClaimToBlockchain(ic, app, currEpoch)
+				if err != nil {
+					delete(computedEpochs, key)
+					errs = append(errs, err)
+					continue
+				}
+				s.claimsInFlight[key] = txHash
+			} else {
+				s.Logger.Debug("Claim submission disabled. Doing nothing",
+					"app", app.IApplicationAddress,
+					"claim_hash", fmt.Sprintf("%x", currEpoch.OutputsMerkleRoot),
+					"last_block", currEpoch.LastBlock,
+				)
+
+			}
 		}
 	}
 	return errs
+}
+
+func (s *Service) findClaimAcceptedEventAndSucc(
+	ctx context.Context,
+	app *model.Application,
+	prevEpoch *model.Epoch,
+	currEpoch *model.Epoch,
+	fromBlock uint64,
+	toBlock uint64,
+) (
+	*iconsensus.IConsensus,
+	*iconsensus.IConsensusClaimAccepted,
+	*iconsensus.IConsensusClaimAccepted,
+	error,
+) {
+	err := checkEpochSequenceConstraint(prevEpoch, currEpoch)
+	if err != nil {
+		err = s.setApplicationInoperable(
+			ctx,
+			app,
+			"%v. epoch: %v (%v).",
+			err,
+			prevEpoch.Index,
+			prevEpoch.VirtualIndex,
+		)
+		return nil, nil, nil, err
+	}
+
+	ic, prevClaimAcceptanceEvent, currClaimAcceptanceEvent, err :=
+		s.blockchain.findClaimAcceptedEventAndSucc(ctx, app, prevEpoch, fromBlock, toBlock)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	if prevClaimAcceptanceEvent == nil {
+		err = s.setApplicationInoperable(
+			ctx,
+			app,
+			"application has an invalid epoch: %v (%v), missing claim acceptance event.",
+			prevEpoch.Index,
+			prevEpoch.VirtualIndex,
+		)
+		return nil, nil, nil, err
+	}
+	if !claimAcceptedEventMatches(app, prevEpoch, prevClaimAcceptanceEvent) {
+		err = s.setApplicationInoperable(
+			ctx,
+			app,
+			"application has an invalid epoch: %v (%v). event does not match: %v",
+			prevEpoch.Index,
+			prevEpoch.VirtualIndex,
+			prevClaimAcceptanceEvent.Raw.TxHash,
+		)
+		return nil, nil, nil, err
+	}
+	return ic, prevClaimAcceptanceEvent, currClaimAcceptanceEvent, nil
 }
 
 // transition claims from submitted to accepted
@@ -324,101 +443,68 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 	acceptedEpochs map[int64]*model.Epoch,
 	submittedEpochs map[int64]*model.Epoch,
 	apps map[int64]*model.Application,
-	endBlock *big.Int,
+	defaultBlockNumber *big.Int,
 ) []error {
 	errs := []error{}
 	var err error
 
 	// check submitted  epochs. NOTE: map mutation + iteration is safe in Go
-	for key, submittedEpoch := range submittedEpochs {
+	for key, currEpoch := range submittedEpochs {
 		var prevEvent *iconsensus.IConsensusClaimAccepted
 		var currEvent *iconsensus.IConsensusClaimAccepted
 
 		app := apps[key]
-		acceptedEpoch, prevExists := acceptedEpochs[key]
+		prevEpoch, prevEpochExists := acceptedEpochs[key]
 		// check address for changes
 		if err := s.checkConsensusForAddressChange(app); err != nil {
 			delete(submittedEpochs, key)
 			errs = append(errs, err)
 			continue
 		}
-		if prevExists {
-			err := checkEpochSequenceConstraint(acceptedEpoch, submittedEpoch)
-			if err != nil {
-				s.Logger.Error("epoch sequence check failed.",
-					"app", app.IApplicationAddress,
-					"previous_epoch_index", acceptedEpoch.Index,
-					"current_epoch_index", submittedEpoch.Index,
-					"err", err,
-				)
-				err = s.setApplicationInoperable(
-					s.Context,
-					app,
-					"%v. application: %v",
-					err,
-					app.IApplicationAddress,
-				)
-				delete(submittedEpochs, key)
-				errs = append(errs, err)
-				continue
-			}
 
-			// if an epoch was accepted, there must exist a matching event for it
+		if prevEpochExists {
+			fromBlock := prevEpoch.LastBlock + 1
 			_, prevEvent, currEvent, err =
-				s.blockchain.findClaimAcceptedEventAndSucc(s.Context, app, acceptedEpoch, endBlock)
-			if err != nil {
-				delete(submittedEpochs, key)
-				errs = append(errs, err)
-				continue
-			}
-			if prevEvent == nil {
-				s.Logger.Error("accepted epoch has no matching event",
-					"app", app.IApplicationAddress,
-					"claim", acceptedEpoch,
-					"err", ErrMissingEvent,
-				)
-				delete(submittedEpochs, key)
-				errs = append(errs, ErrMissingEvent)
-				continue
-			}
-			if !claimAcceptedEventMatches(app, acceptedEpoch, prevEvent) {
-				s.Logger.Error("accepted epoch does not match event",
-					"app", app.IApplicationAddress,
-					"claim", acceptedEpoch,
-					"event", prevEvent,
-					"err", ErrEventMismatch,
-				)
-				err = s.setApplicationInoperable(
-					s.Context,
-					app,
-					"epoch: %v does not match event with tx_hash: %v",
-					acceptedEpoch.Index,
-					prevEvent.Raw.TxHash,
-				)
-				delete(submittedEpochs, key)
-				errs = append(errs, err)
-				continue
-			}
+				s.findClaimAcceptedEventAndSucc(s.Context, app, prevEpoch, currEpoch, fromBlock, defaultBlockNumber.Uint64())
 		} else {
-			// first claim
+			fromBlock := max(app.LastAcceptedClaimCheckBlock, currEpoch.LastBlock) + 1
 			_, currEvent, _, err =
-				s.blockchain.findClaimAcceptedEventAndSucc(s.Context, app, submittedEpoch, endBlock)
-			if err != nil {
-				delete(submittedEpochs, key)
-				errs = append(errs, err)
-				continue
-			}
+				s.blockchain.findClaimAcceptedEventAndSucc(s.Context, app, currEpoch, fromBlock, defaultBlockNumber.Uint64())
+		}
+		if err != nil {
+			delete(submittedEpochs, key)
+			errs = append(errs, err)
+			continue
 		}
 
 		if currEvent != nil {
+			checkFrom := uint64(0)
+			if currEvent.Raw.BlockNumber > 0 {
+				checkFrom = currEvent.Raw.BlockNumber - 1
+			}
+			if prevEvent != nil {
+				checkFrom = prevEvent.Raw.BlockNumber
+			}
+			err = s.repository.UpdateEventLastCheckBlock(
+				s.Context,
+				[]int64{app.ID},
+				model.MonitoredEvent_ClaimAccepted,
+				checkFrom,
+			)
+			// NOTE: there is no point in trying the other applications on a database error
+			//       so we just return and try again later (next tick)
+			if err != nil {
+				return append(errs, err)
+			}
+
 			s.Logger.Debug("Found ClaimAccepted Event",
 				"app", currEvent.AppContract,
 				"claim_hash", fmt.Sprintf("%x", currEvent.OutputsMerkleRoot),
 				"last_block", currEvent.LastProcessedBlockNumber.Uint64(),
 			)
-			if !claimAcceptedEventMatches(app, submittedEpoch, currEvent) {
+			if !claimAcceptedEventMatches(app, currEpoch, currEvent) {
 				s.Logger.Error("event mismatch",
-					"claim", submittedEpoch,
+					"claim", currEpoch,
 					"event", currEvent,
 					"err", ErrEventMismatch,
 				)
@@ -426,8 +512,8 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 					s.Context,
 					app,
 					"event mismatch for epoch %v, event tx_hash: %v",
-					acceptedEpoch.Index,
-					prevEvent.Raw.TxHash,
+					currEpoch.Index,
+					currEvent.Raw.TxHash,
 				)
 				delete(submittedEpochs, key)
 				errs = append(errs, err)
@@ -435,11 +521,11 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 			}
 			s.Logger.Debug("Updating claim status to accepted",
 				"app", app.IApplicationAddress,
-				"claim_hash", fmt.Sprintf("%x", submittedEpoch.OutputsMerkleRoot),
-				"last_block", submittedEpoch.LastBlock,
+				"claim_hash", fmt.Sprintf("%x", currEpoch.OutputsMerkleRoot),
+				"last_block", currEpoch.LastBlock,
 			)
 			txHash := currEvent.Raw.TxHash
-			err = s.repository.UpdateEpochWithAcceptedClaim(s.Context, submittedEpoch.ApplicationID, submittedEpoch.Index)
+			err = s.repository.UpdateEpochWithAcceptedClaim(s.Context, currEpoch.ApplicationID, currEpoch.Index)
 			if err != nil {
 				delete(submittedEpochs, key)
 				errs = append(errs, err)
@@ -452,6 +538,19 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 				"last_block", currEvent.LastProcessedBlockNumber.Uint64(),
 				"tx", txHash,
 			)
+		} else {
+			err = s.repository.UpdateEventLastCheckBlock(
+				s.Context,
+				[]int64{app.ID},
+				model.MonitoredEvent_ClaimAccepted,
+				defaultBlockNumber.Uint64(),
+			)
+			// NOTE: there is no point in trying the other applications on a database error
+			//       so we just return and try again later (next tick)
+			if err != nil {
+				return append(errs, err)
+			}
+
 		}
 	}
 	return errs

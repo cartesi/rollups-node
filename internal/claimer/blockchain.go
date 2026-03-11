@@ -26,7 +26,8 @@ type iclaimerBlockchain interface {
 		ctx context.Context,
 		application *model.Application,
 		epoch *model.Epoch,
-		endBlock *big.Int,
+		fromBlock uint64,
+		toBlock uint64,
 	) (
 		*iconsensus.IConsensus,
 		*iconsensus.IConsensusClaimSubmitted,
@@ -50,7 +51,8 @@ type iclaimerBlockchain interface {
 		ctx context.Context,
 		application *model.Application,
 		epoch *model.Epoch,
-		endBlock *big.Int,
+		fromBlock uint64,
+		toBlock uint64,
 	) (
 		*iconsensus.IConsensus,
 		*iconsensus.IConsensusClaimAccepted,
@@ -70,7 +72,6 @@ type claimerBlockchain struct {
 	client       *ethclient.Client
 	txOpts       *bind.TransactOpts
 	logger       *slog.Logger
-	filter       ethutil.Filter
 	defaultBlock config.DefaultBlock
 }
 
@@ -103,7 +104,7 @@ func (cb *claimerBlockchain) submitClaimToBlockchain(
 	return txHash, err
 }
 
-type EventIterator interface {
+type eventIterator interface {
 	Next() bool
 	Close() error
 	Error() error
@@ -111,9 +112,7 @@ type EventIterator interface {
 
 func newOracle(
 	nr func(*bind.CallOpts) (*big.Int, error),
-) (
-	func(ctx context.Context, block uint64) (*big.Int, error),
-) {
+) func(ctx context.Context, block uint64) (*big.Int, error) {
 	return func(ctx context.Context, block uint64) (*big.Int, error) {
 		return nr(&bind.CallOpts{
 			Context:     ctx,
@@ -122,14 +121,12 @@ func newOracle(
 	}
 }
 
-func newOnHit[IT EventIterator](
+func newOnHit[IT eventIterator](
 	ctx context.Context,
 	address common.Address,
-	filter func (*bind.FilterOpts, []common.Address, []common.Address) (IT, error),
+	filter func(*bind.FilterOpts, []common.Address, []common.Address) (IT, error),
 	onEvent func(IT),
-) (
-	func(block uint64) error,
-) {
+) func(block uint64) error {
 	return func(block uint64) error {
 		filterOpts := &bind.FilterOpts{
 			Context: ctx,
@@ -154,7 +151,8 @@ func (cb *claimerBlockchain) findClaimSubmittedEventAndSucc(
 	ctx context.Context,
 	application *model.Application,
 	epoch *model.Epoch,
-	endBlock *big.Int,
+	fromBlock uint64,
+	toBlock uint64,
 ) (
 	*iconsensus.IConsensus,
 	*iconsensus.IConsensusClaimSubmitted,
@@ -170,7 +168,7 @@ func (cb *claimerBlockchain) findClaimSubmittedEventAndSucc(
 	onHit := newOnHit(ctx, application.IApplicationAddress, ic.FilterClaimSubmitted,
 		func(it *iconsensus.IConsensusClaimSubmittedIterator) {
 			event := it.Event
-			if (len(events) == 0) || claimSubmittedEventMatches(application, epoch, event) {
+			if (len(events) > 0) || claimSubmittedEventMatches(application, epoch, event) {
 				events = append(events, event)
 			}
 		},
@@ -180,7 +178,7 @@ func (cb *claimerBlockchain) findClaimSubmittedEventAndSucc(
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	_, err = ethutil.FindTransitions(ctx, epoch.LastBlock, endBlock.Uint64(), numSubmittedClaims, oracle, onHit)
+	_, err = ethutil.FindTransitions(ctx, fromBlock, toBlock, numSubmittedClaims, oracle, onHit)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to walk ClaimSubmitted transitions: %w", err)
 	}
@@ -200,7 +198,8 @@ func (cb *claimerBlockchain) findClaimAcceptedEventAndSucc(
 	ctx context.Context,
 	application *model.Application,
 	epoch *model.Epoch,
-	endBlock *big.Int,
+	fromBlock uint64,
+	toBlock uint64,
 ) (
 	*iconsensus.IConsensus,
 	*iconsensus.IConsensusClaimAccepted,
@@ -224,7 +223,7 @@ func (cb *claimerBlockchain) findClaimAcceptedEventAndSucc(
 	onHit := newOnHit(ctx, application.IApplicationAddress, filter,
 		func(it *iconsensus.IConsensusClaimAcceptedIterator) {
 			event := it.Event
-			if (len(events) == 0) || claimAcceptedEventMatches(application, epoch, event) {
+			if (len(events) > 0) || claimAcceptedEventMatches(application, epoch, event) {
 				events = append(events, event)
 			}
 		},
@@ -234,7 +233,7 @@ func (cb *claimerBlockchain) findClaimAcceptedEventAndSucc(
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	_, err = ethutil.FindTransitions(ctx, epoch.LastBlock, endBlock.Uint64(), numAcceptedClaims, oracle, onHit)
+	_, err = ethutil.FindTransitions(ctx, fromBlock, toBlock, numAcceptedClaims, oracle, onHit)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to walk ClaimAccepted transitions: %w", err)
 	}
@@ -267,11 +266,7 @@ func (cb *claimerBlockchain) pollTransaction(
 	}
 
 	// receipt must be committed before use. Return false until it is.
-	if receipt.BlockNumber.Cmp(endBlockNumber) >= 0 {
-		return false, nil, nil
-	}
-
-	return receipt.Status == 1, receipt, nil
+	return receipt.BlockNumber.Cmp(endBlockNumber) <= 0, receipt, nil
 }
 
 /* Retrieve the block number for the configured commitment level in ethereum terms,

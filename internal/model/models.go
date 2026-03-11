@@ -17,27 +17,29 @@ import (
 )
 
 type Application struct {
-	ID                       int64               `sql:"primary_key" json:"-"`
-	Name                     string              `json:"name"`
-	IApplicationAddress      common.Address      `json:"iapplication_address"`
-	IConsensusAddress        common.Address      `json:"iconsensus_address"`
-	IInputBoxAddress         common.Address      `json:"iinputbox_address"`
-	TemplateHash             common.Hash         `json:"template_hash"`
-	TemplateURI              string              `json:"-"`
-	EpochLength              uint64              `json:"epoch_length"`
-	DataAvailability         []byte              `json:"data_availability"`
-	ConsensusType            Consensus           `json:"consensus_type"`
-	State                    ApplicationState    `json:"state"`
-	Reason                   *string             `json:"reason"`
-	IInputBoxBlock           uint64              `json:"iinputbox_block"`
-	LastEpochCheckBlock      uint64              `json:"last_epoch_check_block"`
-	LastInputCheckBlock      uint64              `json:"last_input_check_block"`
-	LastOutputCheckBlock     uint64              `json:"last_output_check_block"`
-	LastTournamentCheckBlock uint64              `json:"last_tournament_check_block"`
-	ProcessedInputs          uint64              `json:"processed_inputs"`
-	CreatedAt                time.Time           `json:"created_at"`
-	UpdatedAt                time.Time           `json:"updated_at"`
-	ExecutionParameters      ExecutionParameters `json:"execution_parameters"`
+	ID                           int64               `sql:"primary_key" json:"-"`
+	Name                         string              `json:"name"`
+	IApplicationAddress          common.Address      `json:"iapplication_address"`
+	IConsensusAddress            common.Address      `json:"iconsensus_address"`
+	IInputBoxAddress             common.Address      `json:"iinputbox_address"`
+	TemplateHash                 common.Hash         `json:"template_hash"`
+	TemplateURI                  string              `json:"-"`
+	EpochLength                  uint64              `json:"epoch_length"`
+	DataAvailability             []byte              `json:"data_availability"`
+	ConsensusType                Consensus           `json:"consensus_type"`
+	State                        ApplicationState    `json:"state"`
+	Reason                       *string             `json:"reason"`
+	IInputBoxBlock               uint64              `json:"iinputbox_block"`
+	LastEpochCheckBlock          uint64              `json:"last_epoch_check_block"`
+	LastInputCheckBlock          uint64              `json:"last_input_check_block"`
+	LastOutputCheckBlock         uint64              `json:"last_output_check_block"`
+	LastTournamentCheckBlock     uint64              `json:"last_tournament_check_block"`
+	LastSubmittedClaimCheckBlock uint64              `json:"last_submitted_claim_check_block"`
+	LastAcceptedClaimCheckBlock  uint64              `json:"last_accepted_claim_check_block"`
+	ProcessedInputs              uint64              `json:"processed_inputs"`
+	CreatedAt                    time.Time           `json:"created_at"`
+	UpdatedAt                    time.Time           `json:"updated_at"`
+	ExecutionParameters          ExecutionParameters `json:"execution_parameters"`
 }
 
 // HasDataAvailabilitySelector checks if the application's DataAvailability
@@ -52,24 +54,28 @@ func (a *Application) MarshalJSON() ([]byte, error) {
 	// Define a new structure that embeds the alias but overrides the hex fields.
 	aux := &struct {
 		*Alias
-		DataAvailability         string `json:"data_availability"`
-		IInputBoxBlock           string `json:"iinputbox_block"`
-		LastEpochCheckBlock      string `json:"last_epoch_check_block"`
-		LastInputCheckBlock      string `json:"last_input_check_block"`
-		LastOutputCheckBlock     string `json:"last_output_check_block"`
-		LastTournamentCheckBlock string `json:"last_tournament_check_block"`
-		EpochLength              string `json:"epoch_length"`
-		ProcessedInputs          string `json:"processed_inputs"`
+		DataAvailability             string `json:"data_availability"`
+		IInputBoxBlock               string `json:"iinputbox_block"`
+		LastEpochCheckBlock          string `json:"last_epoch_check_block"`
+		LastInputCheckBlock          string `json:"last_input_check_block"`
+		LastOutputCheckBlock         string `json:"last_output_check_block"`
+		LastTournamentCheckBlock     string `json:"last_tournament_check_block"`
+		LastSubmittedClaimCheckBlock string `json:"last_submitted_claim_check_block"`
+		LastAcceptedClaimCheckBlock  string `json:"last_accepted_claim_check_block"`
+		EpochLength                  string `json:"epoch_length"`
+		ProcessedInputs              string `json:"processed_inputs"`
 	}{
-		Alias:                    (*Alias)(a),
-		DataAvailability:         "0x" + hex.EncodeToString(a.DataAvailability),
-		IInputBoxBlock:           fmt.Sprintf("0x%x", a.IInputBoxBlock),
-		LastEpochCheckBlock:      fmt.Sprintf("0x%x", a.LastEpochCheckBlock),
-		LastInputCheckBlock:      fmt.Sprintf("0x%x", a.LastInputCheckBlock),
-		LastOutputCheckBlock:     fmt.Sprintf("0x%x", a.LastOutputCheckBlock),
-		LastTournamentCheckBlock: fmt.Sprintf("0x%x", a.LastTournamentCheckBlock),
-		EpochLength:              fmt.Sprintf("0x%x", a.EpochLength),
-		ProcessedInputs:          fmt.Sprintf("0x%x", a.ProcessedInputs),
+		Alias:                        (*Alias)(a),
+		DataAvailability:             "0x" + hex.EncodeToString(a.DataAvailability),
+		IInputBoxBlock:               fmt.Sprintf("0x%x", a.IInputBoxBlock),
+		LastEpochCheckBlock:          fmt.Sprintf("0x%x", a.LastEpochCheckBlock),
+		LastInputCheckBlock:          fmt.Sprintf("0x%x", a.LastInputCheckBlock),
+		LastOutputCheckBlock:         fmt.Sprintf("0x%x", a.LastOutputCheckBlock),
+		LastTournamentCheckBlock:     fmt.Sprintf("0x%x", a.LastTournamentCheckBlock),
+		LastSubmittedClaimCheckBlock: fmt.Sprintf("0x%x", a.LastSubmittedClaimCheckBlock),
+		LastAcceptedClaimCheckBlock:  fmt.Sprintf("0x%x", a.LastAcceptedClaimCheckBlock),
+		EpochLength:                  fmt.Sprintf("0x%x", a.EpochLength),
+		ProcessedInputs:              fmt.Sprintf("0x%x", a.ProcessedInputs),
 	}
 	return json.Marshal(aux)
 }
@@ -79,14 +85,16 @@ func (a *Application) UnmarshalJSON(in []byte) error {
 	aux := &struct {
 		*Alias
 
-		DataAvailability         string `json:"data_availability"`
-		IInputBoxBlock           string `json:"iinputbox_block"`
-		LastInputCheckBlock      string `json:"last_input_check_block"`
-		LastOutputCheckBlock     string `json:"last_output_check_block"`
-		LastEpochCheckBlock      string `json:"last_epoch_check_block"`
-		LastTournamentCheckBlock string `json:"last_tournament_check_block"`
-		EpochLength              string `json:"epoch_length"`
-		ProcessedInputs          string `json:"processed_inputs"`
+		DataAvailability             string `json:"data_availability"`
+		IInputBoxBlock               string `json:"iinputbox_block"`
+		LastInputCheckBlock          string `json:"last_input_check_block"`
+		LastOutputCheckBlock         string `json:"last_output_check_block"`
+		LastEpochCheckBlock          string `json:"last_epoch_check_block"`
+		LastTournamentCheckBlock     string `json:"last_tournament_check_block"`
+		EpochLength                  string `json:"epoch_length"`
+		ProcessedInputs              string `json:"processed_inputs"`
+		LastSubmittedClaimCheckBlock string `json:"last_submitted_claim_check_block"`
+		LastAcceptedClaimCheckBlock  string `json:"last_accepted_claim_check_block"`
 	}{}
 
 	var err error
@@ -124,6 +132,16 @@ func (a *Application) UnmarshalJSON(in []byte) error {
 	}
 
 	a.LastTournamentCheckBlock, err = ParseHexUint64(aux.LastTournamentCheckBlock)
+	if err != nil {
+		return err
+	}
+
+	a.LastSubmittedClaimCheckBlock, err = ParseHexUint64(aux.LastSubmittedClaimCheckBlock)
+	if err != nil {
+		return err
+	}
+
+	a.LastAcceptedClaimCheckBlock, err = ParseHexUint64(aux.LastAcceptedClaimCheckBlock)
 	if err != nil {
 		return err
 	}

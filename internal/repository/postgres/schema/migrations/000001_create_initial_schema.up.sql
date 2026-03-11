@@ -88,6 +88,8 @@ CREATE TABLE "application"
     "last_input_check_block" uint64 NOT NULL,
     "last_output_check_block" uint64 NOT NULL,
     "last_tournament_check_block" uint64 NOT NULL,
+    "last_submitted_claim_check_block" uint64 NOT NULL,
+    "last_accepted_claim_check_block" uint64 NOT NULL,
     "processed_inputs" uint64 NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),

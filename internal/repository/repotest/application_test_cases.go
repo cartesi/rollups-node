@@ -623,6 +623,22 @@ func (s *ApplicationSuite) TestEventLastCheckBlock() {
 		s.Require().NoError(err)
 		s.Equal(uint64(20), block)
 
+		err = s.Repo.UpdateEventLastCheckBlock(
+			s.Ctx, []int64{app.ID}, MonitoredEvent_ClaimAccepted, 30)
+		s.Require().NoError(err)
+		block, err = s.Repo.GetEventLastCheckBlock(
+			s.Ctx, app.ID, MonitoredEvent_ClaimAccepted)
+		s.Require().NoError(err)
+		s.Equal(uint64(30), block)
+
+		err = s.Repo.UpdateEventLastCheckBlock(
+			s.Ctx, []int64{app.ID}, MonitoredEvent_ClaimSubmitted, 40)
+		s.Require().NoError(err)
+		block, err = s.Repo.GetEventLastCheckBlock(
+			s.Ctx, app.ID, MonitoredEvent_ClaimSubmitted)
+		s.Require().NoError(err)
+		s.Equal(uint64(40), block)
+
 		// Tournament events all map to the tournament check block column
 		tournamentEvents := []MonitoredEvent{
 			MonitoredEvent_CommitmentJoined,
@@ -639,15 +655,6 @@ func (s *ApplicationSuite) TestEventLastCheckBlock() {
 			s.Require().NoError(err)
 			s.Equal(uint64(30), block)
 		}
-
-		// ClaimSubmitted and ClaimAccepted should return errors
-		_, err = s.Repo.GetEventLastCheckBlock(
-			s.Ctx, app.ID, MonitoredEvent_ClaimSubmitted)
-		s.Require().Error(err)
-
-		_, err = s.Repo.GetEventLastCheckBlock(
-			s.Ctx, app.ID, MonitoredEvent_ClaimAccepted)
-		s.Require().Error(err)
 	})
 
 	s.Run("UpdateMultipleAppIDs", func() {
