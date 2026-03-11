@@ -231,7 +231,7 @@ used-by = ["evmreader", "claimer", "node", "prt"]
 default = "120"
 go-type = "Duration"
 description = """
-Maximum time in seconds to wait for a new block header on the WebSocket subscription before treating the connection as stalled and reconnecting. Handles silent connection drops where no error is delivered."""
+Maximum time in seconds to wait for a new block header on the WebSocket subscription before treating the connection as stalled and reconnecting. Handles silent connection drops where no error is delivered. The default (120s) is tuned for mainnet (~12s block time). Reduce for faster chains or devnets."""
 used-by = ["evmreader", "node"]
 
 [rollups.CARTESI_BLOCKCHAIN_WS_MAX_RETRIES]

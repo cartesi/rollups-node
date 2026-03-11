@@ -140,8 +140,6 @@ func (r *Service) setApplicationInoperable(ctx context.Context, app *Application
 	return appstatus.SetInoperablef(ctx, r.Logger, r.repository, app, reasonFmt, args...)
 }
 
-// watchForNewBlocks watches for new blocks and reads new inputs based on the
-// default block configuration, which have not been processed yet.
 // watchForNewBlocks subscribes to new block headers and processes them.
 // Returns the number of headers processed and any error that caused it to stop.
 func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) (uint64, error) {
@@ -163,6 +161,7 @@ func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) 
 	adapterCache := make(map[common.Address]cachedAdapters)
 	var headersProcessed uint64
 	for {
+		var header *types.Header
 		select {
 		case <-ctx.Done():
 			return headersProcessed, ctx.Err()
@@ -172,143 +171,153 @@ func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) 
 			}
 			return headersProcessed, &SubscriptionError{Cause: err}
 		case <-liveness.C:
-			return headersProcessed, &SubscriptionError{
-				Cause: fmt.Errorf(
-					"no new block header received for %s, assuming stalled connection",
-					r.wsLivenessTimeout,
-				),
-			}
-		case header := <-headers:
-			headersProcessed++
-			liveness.Reset(r.wsLivenessTimeout)
-
-			// Every time a new block arrives
-			r.Logger.Debug("New block header received",
-				"blockNumber", header.Number, "blockHash", header.Hash())
-
-			r.Logger.Debug("Retrieving enabled applications")
-			runningApps, _, err := getAllRunningApplications(ctx, r.repository)
-			if err != nil {
-				r.Logger.Error("Error retrieving running applications",
-					"error",
-					err,
-				)
-				continue
-			}
-
-			if len(runningApps) == 0 {
-				if r.hasEnabledApps {
-					r.Logger.Info("No registered applications enabled")
+			// Before declaring stalled, check if a header arrived simultaneously.
+			// Go's select picks randomly when multiple cases are ready, so the
+			// liveness timer may win even though a header is available.
+			select {
+			case header = <-headers:
+			default:
+				return headersProcessed, &SubscriptionError{
+					Cause: fmt.Errorf(
+						"no new block header received for %s, assuming stalled connection",
+						r.wsLivenessTimeout,
+					),
 				}
-				r.hasEnabledApps = false
-				continue
 			}
-			if !r.hasEnabledApps {
-				r.Logger.Info("Found enabled applications")
-			}
-			r.hasEnabledApps = true
+		case header = <-headers:
+		}
 
-			// Evict cache entries for applications that are no longer enabled.
-			activeAddrs := make(map[common.Address]struct{}, len(runningApps))
-			for _, app := range runningApps {
-				activeAddrs[app.IApplicationAddress] = struct{}{}
+		if header == nil {
+			continue
+		}
+		headersProcessed++
+		liveness.Reset(r.wsLivenessTimeout)
+
+		// Every time a new block arrives
+		r.Logger.Debug("New block header received",
+			"blockNumber", header.Number, "blockHash", header.Hash())
+
+		r.Logger.Debug("Retrieving enabled applications")
+		runningApps, _, err := getAllRunningApplications(ctx, r.repository)
+		if err != nil {
+			r.Logger.Error("Error retrieving running applications",
+				"error",
+				err,
+			)
+			continue
+		}
+
+		if len(runningApps) == 0 {
+			if r.hasEnabledApps {
+				r.Logger.Info("No registered applications enabled")
 			}
-			for addr := range adapterCache {
-				if _, active := activeAddrs[addr]; !active {
-					r.Logger.Debug("Evicting cached adapters for removed application",
-						"address", addr)
+			r.hasEnabledApps = false
+			continue
+		}
+		if !r.hasEnabledApps {
+			r.Logger.Info("Found enabled applications")
+		}
+		r.hasEnabledApps = true
+
+		// Evict cache entries for applications that are no longer enabled.
+		activeAddrs := make(map[common.Address]struct{}, len(runningApps))
+		for _, app := range runningApps {
+			activeAddrs[app.IApplicationAddress] = struct{}{}
+		}
+		for addr := range adapterCache {
+			if _, active := activeAddrs[addr]; !active {
+				r.Logger.Debug("Evicting cached adapters for removed application",
+					"address", addr)
+				delete(adapterCache, addr)
+			}
+		}
+
+		// Build Contracts (adapters are cached per application address)
+		var apps []appContracts
+		var daveConsensusApps []appContracts
+		var iconsensusApps []appContracts
+		for _, app := range runningApps {
+			addr := app.IApplicationAddress
+			cached, cacheHit := adapterCache[addr]
+			if cacheHit {
+				// Invalidate cache if the app's contract configuration changed.
+				if cached.consensusAddr != app.IConsensusAddress ||
+					cached.inputBoxAddr != app.IInputBoxAddress ||
+					cached.isDaveConsensus != app.IsDaveConsensus() ||
+					cached.hasInputBoxDA !=
+						app.HasDataAvailabilitySelector(DataAvailability_InputBox) {
+					r.Logger.Info(
+						"Application contract configuration changed, recreating adapters",
+						"application", app.Name, "address", addr)
 					delete(adapterCache, addr)
+					cacheHit = false
 				}
 			}
-
-			// Build Contracts (adapters are cached per application address)
-			var apps []appContracts
-			var daveConsensusApps []appContracts
-			var iconsensusApps []appContracts
-			for _, app := range runningApps {
-				addr := app.IApplicationAddress
-				cached, ok := adapterCache[addr]
-				if ok {
-					// Invalidate cache if the app's contract configuration changed.
-					if cached.consensusAddr != app.IConsensusAddress ||
-						cached.inputBoxAddr != app.IInputBoxAddress ||
-						cached.isDaveConsensus != app.IsDaveConsensus() ||
-						cached.hasInputBoxDA !=
-							app.HasDataAvailabilitySelector(DataAvailability_InputBox) {
-						r.Logger.Info(
-							"Application contract configuration changed, recreating adapters",
-							"application", app.Name, "address", addr)
-						delete(adapterCache, addr)
-						ok = false
-					}
-				}
-				if !ok {
-					appContract, inputSource, daveConsensus, err :=
-						r.adapterFactory.CreateAdapters(app)
-					if err != nil {
-						r.Logger.Error("Error retrieving application contracts",
-							"app", app, "error", err)
-						continue
-					}
-					cached = cachedAdapters{
-						applicationContract: appContract,
-						inputSource:         inputSource,
-						daveConsensus:       daveConsensus,
-						consensusAddr:       app.IConsensusAddress,
-						inputBoxAddr:        app.IInputBoxAddress,
-						isDaveConsensus:     app.IsDaveConsensus(),
-						hasInputBoxDA: app.HasDataAvailabilitySelector(
-							DataAvailability_InputBox),
-					}
-					adapterCache[addr] = cached
-				}
-				aContracts := appContracts{
-					application:         app,
-					applicationContract: cached.applicationContract,
-					inputSource:         cached.inputSource,
-					daveConsensus:       cached.daveConsensus,
-				}
-
-				apps = append(apps, aContracts)
-				if app.IsDaveConsensus() {
-					daveConsensusApps = append(daveConsensusApps, aContracts)
-				} else {
-					iconsensusApps = append(iconsensusApps, aContracts)
-				}
-			}
-
-			if len(apps) == 0 {
-				r.Logger.Info("No correctly configured applications running")
-				continue
-			}
-
-			blockNumber := header.Number.Uint64()
-			if r.defaultBlock != DefaultBlock_Latest {
-				mostRecentHeader, err := r.fetchMostRecentHeader(
-					ctx,
-					r.defaultBlock,
-				)
+			if !cacheHit {
+				appContract, inputSource, daveConsensus, err :=
+					r.adapterFactory.CreateAdapters(app)
 				if err != nil {
-					r.Logger.Error("Error fetching most recent block",
-						"default block", r.defaultBlock,
-						"error", err)
+					r.Logger.Error("Error retrieving application contracts",
+						"app", app, "error", err)
 					continue
 				}
-				blockNumber = mostRecentHeader.Number.Uint64()
-
-				r.Logger.Debug(fmt.Sprintf(
-					"Using block %d and not %d because of commitment policy: %s",
-					mostRecentHeader.Number.Uint64(),
-					header.Number.Uint64(), r.defaultBlock))
+				cached = cachedAdapters{
+					applicationContract: appContract,
+					inputSource:         inputSource,
+					daveConsensus:       daveConsensus,
+					consensusAddr:       app.IConsensusAddress,
+					inputBoxAddr:        app.IInputBoxAddress,
+					isDaveConsensus:     app.IsDaveConsensus(),
+					hasInputBoxDA: app.HasDataAvailabilitySelector(
+						DataAvailability_InputBox),
+				}
+				adapterCache[addr] = cached
+			}
+			aContracts := appContracts{
+				application:         app,
+				applicationContract: cached.applicationContract,
+				inputSource:         cached.inputSource,
+				daveConsensus:       cached.daveConsensus,
 			}
 
-			r.checkForEpochsAndInputs(ctx, daveConsensusApps, blockNumber)
-
-			r.checkForNewInputs(ctx, iconsensusApps, blockNumber)
-
-			r.checkForOutputExecution(ctx, apps, blockNumber)
-
+			apps = append(apps, aContracts)
+			if app.IsDaveConsensus() {
+				daveConsensusApps = append(daveConsensusApps, aContracts)
+			} else {
+				iconsensusApps = append(iconsensusApps, aContracts)
+			}
 		}
+
+		if len(apps) == 0 {
+			r.Logger.Info("No correctly configured applications running")
+			continue
+		}
+
+		blockNumber := header.Number.Uint64()
+		if r.defaultBlock != DefaultBlock_Latest {
+			mostRecentHeader, err := r.fetchMostRecentHeader(
+				ctx,
+				r.defaultBlock,
+			)
+			if err != nil {
+				r.Logger.Error("Error fetching most recent block",
+					"default block", r.defaultBlock,
+					"error", err)
+				continue
+			}
+			blockNumber = mostRecentHeader.Number.Uint64()
+
+			r.Logger.Debug(fmt.Sprintf(
+				"Using block %d and not %d because of commitment policy: %s",
+				mostRecentHeader.Number.Uint64(),
+				header.Number.Uint64(), r.defaultBlock))
+		}
+
+		r.checkForEpochsAndInputs(ctx, daveConsensusApps, blockNumber)
+
+		r.checkForNewInputs(ctx, iconsensusApps, blockNumber)
+
+		r.checkForOutputExecution(ctx, apps, blockNumber)
 	}
 }
 

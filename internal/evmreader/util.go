@@ -17,7 +17,7 @@ func calculateEpochIndex(epochLength uint64, blockNumber uint64) uint64 {
 	return blockNumber / epochLength
 }
 
-// appsToAddresses
+// appsToAddresses extracts IApplicationAddress from each appContracts entry.
 func appsToAddresses(apps []appContracts) []common.Address {
 	var addresses []common.Address
 	for _, app := range apps {

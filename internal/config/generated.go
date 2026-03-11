@@ -580,7 +580,7 @@ type EvmreaderConfig struct {
 	// Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited.
 	BlockchainMaxBlockRange uint64 `mapstructure:"CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"`
 
-	// Maximum time in seconds to wait for a new block header on the WebSocket subscription before treating the connection as stalled and reconnecting. Handles silent connection drops where no error is delivered.
+	// Maximum time in seconds to wait for a new block header on the WebSocket subscription before treating the connection as stalled and reconnecting. Handles silent connection drops where no error is delivered. The default (120s) is tuned for mainnet (~12s block time). Reduce for faster chains or devnets.
 	BlockchainWsLivenessTimeout Duration `mapstructure:"CARTESI_BLOCKCHAIN_WS_LIVENESS_TIMEOUT"`
 
 	// Maximum number of consecutive WebSocket subscription failures before the service gives up and exits. A failure is counted only when a subscription attempt produces zero headers before disconnecting. Successful header processing resets the counter.
@@ -905,7 +905,7 @@ type NodeConfig struct {
 	// Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited.
 	BlockchainMaxBlockRange uint64 `mapstructure:"CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"`
 
-	// Maximum time in seconds to wait for a new block header on the WebSocket subscription before treating the connection as stalled and reconnecting. Handles silent connection drops where no error is delivered.
+	// Maximum time in seconds to wait for a new block header on the WebSocket subscription before treating the connection as stalled and reconnecting. Handles silent connection drops where no error is delivered. The default (120s) is tuned for mainnet (~12s block time). Reduce for faster chains or devnets.
 	BlockchainWsLivenessTimeout Duration `mapstructure:"CARTESI_BLOCKCHAIN_WS_LIVENESS_TIMEOUT"`
 
 	// Maximum number of consecutive WebSocket subscription failures before the service gives up and exits. A failure is counted only when a subscription attempt produces zero headers before disconnecting. Successful header processing resets the counter.
