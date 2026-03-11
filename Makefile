@@ -146,9 +146,19 @@ $(GO_ARTIFACTS):
 tidy-go:
 	@go mod tidy
 
-generate: contracts ## Generate the file that are committed to the repo
-	@echo "Generating Go files"
-	@go generate ./internal/... ./pkg/...
+generate: generate-contracts generate-config generate-inspect ## Generate all code files committed to the repo
+
+generate-contracts: contracts ## Generate contract ABI bindings
+	@echo "Generating contract bindings"
+	@go generate ./pkg/contracts/...
+
+generate-config: ## Generate config code from Config.toml
+	@echo "Generating config code"
+	@go generate ./internal/config/...
+
+generate-inspect: ## Generate inspect API client
+	@echo "Generating inspect client"
+	@go generate ./pkg/inspectclient/...
 
 check-generate: generate ## Check whether the generated files are in sync
 	@echo "Checking differences on the repository..."
@@ -342,9 +352,15 @@ escape: ## Run go escape analysis
 # Docs
 # =============================================================================
 
-docs: ## Generate the documentation
-	@echo "Generating documentation"
+docs: generate-cli-docs generate-config-docs ## Generate all documentation
+
+generate-cli-docs: ## Generate CLI documentation
+	@echo "Generating CLI documentation"
 	@go run $(GO_BUILD_PARAMS) dev/gen-docs/main.go
+
+generate-config-docs: ## Generate config documentation from Config.toml
+	@echo "Generating config documentation"
+	@cd internal/config/generate && go run . -mode=docs
 
 # =============================================================================
 # Docker
@@ -487,4 +503,14 @@ build-debian-package: install
 	sed 's|ARG_VERSION|$(ROLLUPS_NODE_VERSION)|g;s|ARG_ARCH|$(DEB_ARCH)|g' control.template > $(DESTDIR)/DEBIAN/control
 	dpkg-deb -Zxz --root-owner-group --build $(DESTDIR) $(DEB_FILENAME)
 
-.PHONY: build build-go clean clean-go test unit-test-go e2e-test lint fmt fmt-check vet escape md-lint devnet image run-with-compose shutdown-compose help docs coverage-report lint-with-docker integration-test-with-compose integration-test-local ci-test $(GO_ARTIFACTS)
+.PHONY: \
+	build build-go $(GO_ARTIFACTS) \
+	clean clean-go clean-contracts clean-docs clean-devnet-files clean-dapps clean-test-dependencies clean-debian-packages \
+	test unit-test unit-test-with-compose integration-test integration-test-with-compose integration-test-local test-with-compose ci-test coverage-report \
+	generate generate-contracts generate-config generate-inspect check-generate generate-db \
+	docs generate-cli-docs generate-config-docs \
+	lint fmt fmt-check vet escape \
+	devnet image tester-image debian-packager run-with-compose shutdown-compose \
+	start start-devnet start-postgres stop stop-devnet stop-postgres restart restart-devnet restart-postgres \
+	install copy-debian-package build-debian-package \
+	env help version
