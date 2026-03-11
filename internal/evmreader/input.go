@@ -146,6 +146,79 @@ func (r *Service) checkForNewInputs(
 	}
 }
 
+// ErrInputForNonOpenEpoch indicates that an input was received for an epoch
+// that is not open — a state that should never occur during normal operation.
+var ErrInputForNonOpenEpoch = errors.New("received input for non-open epoch")
+
+// indexInputsIntoEpochs is a pure function that indexes a sorted list of inputs
+// into their respective epochs based on block number and epoch length.
+// It creates new epochs as needed and closes epochs when subsequent inputs fall
+// into a later epoch. It also closes the final epoch if mostRecentBlockNumber
+// has advanced past its last block.
+// The returned map contains epoch pointers as keys and their inputs as values.
+// An epoch may appear with an empty input slice if it was closed without receiving
+// new inputs in this batch.
+// Returns ErrInputForNonOpenEpoch if an input targets an already-closed epoch.
+func indexInputsIntoEpochs(
+	epochLength uint64,
+	currentEpoch *Epoch,
+	inputs []*Input,
+	mostRecentBlockNumber uint64,
+) (map[*Epoch][]*Input, error) {
+	epochInputMap := make(map[*Epoch][]*Input)
+
+	for _, input := range inputs {
+		inputEpochIndex := calculateEpochIndex(epochLength, input.BlockNumber)
+
+		// If input belongs into a new epoch, close the previous known one
+		if currentEpoch != nil {
+			if currentEpoch.Index == inputEpochIndex {
+				// Input can only be added to open epochs
+				if currentEpoch.Status != EpochStatus_Open {
+					return nil, fmt.Errorf(
+						"%w: epoch %d status %s, input %d",
+						ErrInputForNonOpenEpoch,
+						currentEpoch.Index, currentEpoch.Status, input.Index)
+				}
+				currentEpoch.InputIndexUpperBound = input.Index + 1
+			} else {
+				if currentEpoch.Status == EpochStatus_Open {
+					currentEpoch.Status = EpochStatus_Closed
+					currentEpoch.InputIndexUpperBound = input.Index
+					if _, ok := epochInputMap[currentEpoch]; !ok {
+						epochInputMap[currentEpoch] = []*Input{}
+					}
+				}
+				currentEpoch = nil
+			}
+		}
+		if currentEpoch == nil {
+			currentEpoch = &Epoch{
+				Index:                inputEpochIndex,
+				FirstBlock:           inputEpochIndex * epochLength,
+				LastBlock:            (inputEpochIndex * epochLength) + epochLength - 1,
+				InputIndexLowerBound: input.Index,
+				InputIndexUpperBound: input.Index + 1,
+				Status:               EpochStatus_Open,
+			}
+			epochInputMap[currentEpoch] = []*Input{}
+		}
+
+		epochInputMap[currentEpoch] = append(epochInputMap[currentEpoch], input)
+	}
+
+	// Indexed all inputs. Check if it is time to close the last epoch
+	if currentEpoch != nil && currentEpoch.Status == EpochStatus_Open &&
+		mostRecentBlockNumber >= currentEpoch.LastBlock {
+		currentEpoch.Status = EpochStatus_Closed
+		if _, ok := epochInputMap[currentEpoch]; !ok {
+			epochInputMap[currentEpoch] = []*Input{}
+		}
+	}
+
+	return epochInputMap, nil
+}
+
 // readAndStoreInputs reads, inputs from the InputSource given specific filter options, indexes
 // them into epochs and store the indexed inputs and epochs
 func (r *Service) readAndStoreInputs(
@@ -199,89 +272,33 @@ func (r *Service) readAndStoreInputs(
 			continue
 		}
 
-		// Initialize epochs inputs map
-		var epochInputMap = make(map[*Epoch][]*Input)
-		// Index Inputs into epochs
-		for _, input := range inputs {
-
-			inputEpochIndex := calculateEpochIndex(epochLength, input.BlockNumber)
-
-			// If input belongs into a new epoch, close the previous known one
-			if currentEpoch != nil {
-				r.Logger.Debug("Current epoch and new input",
-					"application", app.application.Name,
-					"address", address,
-					"epoch_index", currentEpoch.Index,
-					"epoch_status", currentEpoch.Status,
-					"input_epoch_index", inputEpochIndex,
-				)
-				if currentEpoch.Index == inputEpochIndex {
-					// Input can only be added to open epochs
-					if currentEpoch.Status != EpochStatus_Open {
-						return r.setApplicationInoperable(ctx, app.application,
-							"Received inputs for an epoch that was not open. Should never happen. Epoch %d Status %s, Input %d",
-							currentEpoch.Index, currentEpoch.Status, input.Index)
-					}
-					currentEpoch.InputIndexUpperBound = input.Index + 1
-				} else {
-					if currentEpoch.Status == EpochStatus_Open {
-						currentEpoch.Status = EpochStatus_Closed
-						currentEpoch.InputIndexUpperBound = input.Index
-						r.Logger.Info("Closing epoch",
-							"application", app.application.Name,
-							"address", address,
-							"epoch_index", currentEpoch.Index,
-							"start", currentEpoch.FirstBlock,
-							"end", currentEpoch.LastBlock)
-						_, ok := epochInputMap[currentEpoch]
-						if !ok {
-							epochInputMap[currentEpoch] = []*Input{}
-						}
-					}
-					currentEpoch = nil
-				}
+		// Index inputs into epochs using pure function
+		epochInputMap, err := indexInputsIntoEpochs(
+			epochLength, currentEpoch, inputs, mostRecentBlockNumber)
+		if err != nil {
+			if errors.Is(err, ErrInputForNonOpenEpoch) {
+				return r.setApplicationInoperable(ctx, app.application,
+					"Should never happen. %v", err)
 			}
-			if currentEpoch == nil {
-				currentEpoch = &Epoch{
-					Index:                inputEpochIndex,
-					FirstBlock:           inputEpochIndex * epochLength,
-					LastBlock:            (inputEpochIndex * epochLength) + epochLength - 1,
-					InputIndexLowerBound: input.Index,
-					InputIndexUpperBound: input.Index + 1,
-					Status:               EpochStatus_Open,
-				}
-				epochInputMap[currentEpoch] = []*Input{}
-			}
-
-			r.Logger.Info("Found new Input",
-				"application", app.application.Name,
-				"address", address,
-				"index", input.Index,
-				"block", input.BlockNumber,
-				"epoch_index", inputEpochIndex)
-
-			currentInputs, ok := epochInputMap[currentEpoch]
-			if !ok {
-				currentInputs = []*Input{}
-			}
-			epochInputMap[currentEpoch] = append(currentInputs, input)
-
+			return fmt.Errorf("error indexing inputs: %w", err)
 		}
 
-		// Indexed all inputs. Check if it is time to close the last epoch
-		if currentEpoch != nil && currentEpoch.Status == EpochStatus_Open &&
-			mostRecentBlockNumber >= currentEpoch.LastBlock {
-			currentEpoch.Status = EpochStatus_Closed
-			r.Logger.Info("Closing epoch",
-				"application", app.application.Name,
-				"address", address,
-				"epoch_index", currentEpoch.Index,
-				"start", currentEpoch.FirstBlock,
-				"end", currentEpoch.LastBlock)
-			// Add to inputMap so it is stored
-			_, ok := epochInputMap[currentEpoch]
-			if !ok {
-				epochInputMap[currentEpoch] = []*Input{}
+		for epoch, epochInputs := range epochInputMap {
+			if epoch.Status == EpochStatus_Closed {
+				r.Logger.Info("Closing epoch",
+					"application", app.application.Name,
+					"address", address,
+					"epoch_index", epoch.Index,
+					"start", epoch.FirstBlock,
+					"end", epoch.LastBlock)
+			}
+			for _, input := range epochInputs {
+				r.Logger.Info("Found new Input",
+					"application", app.application.Name,
+					"address", address,
+					"index", input.Index,
+					"block", input.BlockNumber,
+					"epoch_index", epoch.Index)
 			}
 		}
 
