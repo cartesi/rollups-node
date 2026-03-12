@@ -47,7 +47,7 @@ func (g *TimeoutGroup) Wait() {
 		case <-g.channel:
 			g.count--
 		case <-g.Context.Done():
-			return
+			panic("tasks did not complete before timeout")
 		}
 	}
 }
@@ -234,7 +234,7 @@ func (s *PublisherTestSuite) TestFilteredEventsWithNewSubscriptions() {
 		// events.EventAppReactivated,
 		// events.EventAppInoperable,
 	}
-	var manyApplicationIDs = []string{
+	var manyApplicationIDs = []events.ApplicationID{
 		"app-1",
 		// "myApp",
 		"echo-dapp",
@@ -256,7 +256,7 @@ func (s *PublisherTestSuite) TestFilteredEventsWithNewSubscriptions() {
 			for _, appID := range manyApplicationIDs {
 				ch, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{
 					EventTypes: []events.EventType{evtType},
-					AppIDs:     []string{appID},
+					AppIDs:     []events.ApplicationID{appID},
 				})
 				req.NoError(err)
 
@@ -338,6 +338,7 @@ func (s *PublisherTestSuite) TestContextCancelledLater() {
 	})
 
 	cancel()
+	s.Service.Close()
 
 	err = s.Service.Publish(newCtx, expected)
 	req.ErrorIs(err, context.Canceled)
