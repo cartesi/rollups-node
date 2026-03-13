@@ -610,7 +610,7 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 	if tx, joinTxIsInFlight := s.joinInFlight[app.ID]; joinTxIsInFlight {
 		s.Logger.Debug("Waiting for join tournament transaction to be mined", "application", app.Name,
 			"epoch_index", currentEpochIndex, "tx", tx)
-		return nil // wait for settle to be mined
+		return nil // wait for join to be mined before settling
 	}
 
 	if tx, settleTxIsInFlight := s.settleInFlight[app.ID]; settleTxIsInFlight {
@@ -628,6 +628,11 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 		s.Logger.Debug("Previous settle transaction has been mined", "application", app.Name,
 			"epoch_index", currentEpochIndex, "tx", tx)
 		delete(s.settleInFlight, app.ID)
+		// Return so that the next tick's checkEpochs syncs the EpochSealed
+		// event before we re-check CanSettle. Without this, a stale
+		// mostRecentBlock snapshot could cause CanSettle to return true
+		// and trigger a duplicate Settle that reverts on-chain.
+		return nil
 	}
 
 	consensus, err := s.adapterFactory.CreateDaveConsensusAdapter(app.IConsensusAddress)
@@ -718,6 +723,11 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 		s.Logger.Debug("Previous join tournament transaction has been mined", "application", app.Name,
 			"epoch_index", currentEpochIndex, "tx", tx)
 		delete(s.joinInFlight, app.ID)
+		// Return so that the next tick's checkEpochs syncs the CommitmentJoined
+		// event before we re-check GetCommitment. Without this, a stale
+		// mostRecentBlock snapshot could cause GetCommitment to return nil
+		// and trigger a duplicate JoinTournament that reverts on-chain.
+		return nil
 	}
 
 	epoch, err := s.repository.GetEpoch(ctx, app.IApplicationAddress.Hex(), currentEpochIndex)
