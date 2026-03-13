@@ -354,6 +354,10 @@ func (s *BulkOperationsSuite) TestStoreClaimAndProofs() {
 	s.Run("StoresClaimAndOutputProofs", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
+		// Advance epoch to INPUTS_PROCESSED so StoreClaimAndProofs can set CLAIM_COMPUTED
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			seed.App.IApplicationAddress.String(), seed.Epoch, EpochStatus_InputsProcessed)
+
 		// First store an advance result to create outputs
 		machineHash := crypto.Keccak256Hash([]byte("machine"))
 		outputData := []byte("output-for-claim")
@@ -700,6 +704,12 @@ func (s *BulkOperationsSuite) TestStoreClaimAndProofsRollback() {
 	s.Run("RollbackOnOutputProofUpdateFailure", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
+		// Advance epoch to INPUTS_PROCESSED so updateEpochClaim can
+		// set CLAIM_COMPUTED (the trigger rejects other transitions).
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			seed.App.IApplicationAddress.String(), seed.Epoch,
+			EpochStatus_InputsProcessed)
+
 		// Store advance result to create one output (index 0)
 		result := &AdvanceResult{
 			EpochIndex: 0,
@@ -733,12 +743,12 @@ func (s *BulkOperationsSuite) TestStoreClaimAndProofsRollback() {
 			s.Ctx, seed.Epoch, []*Output{nonExistentOutput})
 		s.Require().Error(err)
 
-		// Verify the epoch status was rolled back — still Closed
+		// Verify the epoch status was rolled back — still InputsProcessed
 		gotEpoch, err := s.Repo.GetEpoch(
 			s.Ctx, seed.App.IApplicationAddress.String(), 0)
 		s.Require().NoError(err)
-		s.Equal(EpochStatus_Closed, gotEpoch.Status,
-			"epoch status should be rolled back to Closed")
+		s.Equal(EpochStatus_InputsProcessed, gotEpoch.Status,
+			"epoch status should be rolled back to InputsProcessed")
 		s.Nil(gotEpoch.Commitment,
 			"commitment should not have been persisted")
 

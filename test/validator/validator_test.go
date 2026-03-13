@@ -165,16 +165,16 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 		_, err := s.repository.CreateApplication(s.ctx, app, false)
 		s.Require().Nil(err)
 
-		// insert the first epoch with a claim
+		// insert the first epoch — will be advanced to CLAIM_COMPUTED
+		// via StoreClaimAndProofs after storing the advance result
 		firstEpochClaim := pristineRootHash
 		firstEpoch := model.Epoch{
-			ApplicationID:     1,
-			Index:             0,
-			VirtualIndex:      0,
-			Status:            model.EpochStatus_ClaimComputed,
-			OutputsMerkleRoot: &firstEpochClaim,
-			FirstBlock:        0,
-			LastBlock:         9,
+			ApplicationID: 1,
+			Index:         0,
+			VirtualIndex:  0,
+			Status:        model.EpochStatus_Closed,
+			FirstBlock:    0,
+			LastBlock:     9,
 		}
 
 		// we add an input to the epoch because they must have at least one and
@@ -213,6 +213,12 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 		err = s.repository.CreateEpochsAndInputs(s.ctx, app.IApplicationAddress.String(), epochInputMap, 20)
 		s.Require().Nil(err)
 
+		// Advance first epoch to INPUTS_PROCESSED so StoreClaimAndProofs can
+		// transition it to CLAIM_COMPUTED.
+		firstEpoch.Status = model.EpochStatus_InputsProcessed
+		err = s.repository.UpdateEpochStatus(s.ctx, app.IApplicationAddress.String(), &firstEpoch)
+		s.Require().Nil(err)
+
 		// Store the input advance result
 		machinehash1 := crypto.Keccak256Hash([]byte("machine-hash1"))
 		advanceResult := model.AdvanceResult{
@@ -227,6 +233,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
 
+		firstEpoch.OutputsMerkleRoot = &firstEpochClaim
 		err = s.repository.StoreClaimAndProofs(s.ctx, &firstEpoch, []*model.Output{})
 		s.Require().Nil(err)
 
@@ -371,7 +378,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			ApplicationID: 1,
 			Index:         0,
 			VirtualIndex:  0,
-			Status:        model.EpochStatus_ClaimComputed,
+			Status:        model.EpochStatus_Closed,
 			FirstBlock:    0,
 			LastBlock:     9,
 		}
@@ -387,6 +394,12 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		var epochInputMap = make(map[*model.Epoch][]*model.Input)
 		epochInputMap[&firstEpoch] = []*model.Input{&firstInput}
 		err = s.repository.CreateEpochsAndInputs(s.ctx, app.IApplicationAddress.String(), epochInputMap, 10)
+		s.Require().Nil(err)
+
+		// Advance first epoch to INPUTS_PROCESSED so StoreClaimAndProofs can
+		// transition it to CLAIM_COMPUTED.
+		firstEpoch.Status = model.EpochStatus_InputsProcessed
+		err = s.repository.UpdateEpochStatus(s.ctx, app.IApplicationAddress.String(), &firstEpoch)
 		s.Require().Nil(err)
 
 		firstOutputData := []byte("output1")
