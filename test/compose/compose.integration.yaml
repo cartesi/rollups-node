@@ -77,7 +77,7 @@ services:
   node:
     image: cartesi/rollups-node:devel
     init: true
-    command: cartesi-rollups-node
+    command: ["bash", "-o", "pipefail", "-c", "cartesi-rollups-node 2>&1 | tee /var/lib/cartesi-rollups-node/logs/node.log"]
     depends_on:
       migration:
         condition: service_completed_successfully
@@ -87,6 +87,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - dapp_images:/var/lib/cartesi-rollups-node/dapps
+      - node_logs:/var/lib/cartesi-rollups-node/logs
     networks:
       - devnet
     healthcheck:
@@ -115,6 +116,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - dapp_images:/var/lib/cartesi-rollups-node/dapps:ro
+      - node_logs:/var/lib/cartesi-rollups-node/logs:ro
       - ../downloads:/usr/share/cartesi-machine/images
       - ../../scripts/run-integration-tests.sh:/scripts/run-integration-tests.sh:ro
     networks:
@@ -125,9 +127,12 @@ services:
       CARTESI_TEST_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/echo-dapp
       CARTESI_TEST_REJECT_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/reject-loop-dapp
       CARTESI_TEST_EXCEPTION_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/exception-loop-dapp
+      CARTESI_TEST_NODE_LOG_FILE: /var/lib/cartesi-rollups-node/logs/node.log
+      CARTESI_INSPECT_URL: http://node:10012/
 
 volumes:
   dapp_images:
+  node_logs:
 
 networks:
   devnet:

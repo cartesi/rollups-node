@@ -18,8 +18,10 @@ import (
 
 type RejectExceptionPrtSuite struct {
 	suite.Suite
-	ctx    context.Context
-	cancel context.CancelFunc
+	LogChecker
+	ctx      context.Context
+	cancel   context.CancelFunc
+	appNames []string
 
 	ethClient *ethclient.Client
 }
@@ -42,14 +44,31 @@ func (s *RejectExceptionPrtSuite) TearDownSuite() {
 	s.ethClient.Close()
 }
 
+func (s *RejectExceptionPrtSuite) SetupTest() {
+	s.StartLogCapture()
+	s.appNames = nil
+}
+
+func (s *RejectExceptionPrtSuite) TearDownTest() {
+	for _, name := range s.appNames {
+		s.T().Logf("Disabling application %s", name)
+		if err := disableApplication(s.ctx, name); err != nil {
+			s.T().Errorf("failed to disable application %s: %v", name, err)
+		}
+	}
+	s.CheckLogs(s.T())
+}
+
 // TestRejectInputPrt deploys a reject-loop-dapp with PRT consensus,
 // sends 3 inputs, and verifies that input 1 is REJECTED while inputs 0 and 2
 // are ACCEPTED. Then settles tournaments and executes outputs on L1.
 func (s *RejectExceptionPrtSuite) TestRejectInputPrt() {
 	ethClient := s.ethClient
 	prtEpoch := uint64(1)
+	appName := uniqueAppName("reject-prt-loop")
+	s.appNames = append(s.appNames, appName)
 	runRejectExceptionLifecycleTest(s.ctx, s.T(), s.Require(), rejectExceptionLifecycleConfig{
-		AppName:         uniqueAppName("reject-prt-loop"),
+		AppName:         appName,
 		DappPath:        envOrDefault("CARTESI_TEST_REJECT_DAPP_PATH", "applications/reject-loop-dapp"),
 		TestName:        "reject",
 		FailStatus:      model.InputCompletionStatus_Rejected,
@@ -68,8 +87,10 @@ func (s *RejectExceptionPrtSuite) TestRejectInputPrt() {
 func (s *RejectExceptionPrtSuite) TestExceptionInputPrt() {
 	ethClient := s.ethClient
 	prtEpoch := uint64(1)
+	appName := uniqueAppName("exception-prt-loop")
+	s.appNames = append(s.appNames, appName)
 	runRejectExceptionLifecycleTest(s.ctx, s.T(), s.Require(), rejectExceptionLifecycleConfig{
-		AppName:         uniqueAppName("exception-prt-loop"),
+		AppName:         appName,
 		DappPath:        envOrDefault("CARTESI_TEST_EXCEPTION_DAPP_PATH", "applications/exception-loop-dapp"),
 		TestName:        "exception",
 		FailStatus:      model.InputCompletionStatus_Exception,

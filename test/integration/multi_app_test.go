@@ -17,6 +17,7 @@ import (
 
 type MultiAppSuite struct {
 	suite.Suite
+	LogChecker
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -63,6 +64,22 @@ func (s *MultiAppSuite) SetupSuite() {
 
 func (s *MultiAppSuite) TearDownSuite() {
 	s.cancel()
+}
+
+func (s *MultiAppSuite) SetupTest() {
+	s.StartLogCapture()
+}
+
+func (s *MultiAppSuite) TearDownTest() {
+	for _, name := range []string{s.app1Name, s.app2Name} {
+		if name != "" {
+			s.T().Logf("Disabling application %s", name)
+			if err := disableApplication(s.ctx, name); err != nil {
+				s.T().Errorf("failed to disable application %s: %v", name, err)
+			}
+		}
+	}
+	s.CheckLogs(s.T())
 }
 
 // TestMultiAppIsolation verifies that two applications running on the same node

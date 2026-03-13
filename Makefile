@@ -440,19 +440,24 @@ test-with-compose: ## Run all tests using docker compose with auto-shutdown
 
 integration-test-local: build echo-dapp reject-loop-dapp exception-loop-dapp ## Run integration tests locally (requires: make start && eval $$(make env))
 	@cartesi-rollups-cli db init
-	@echo "Starting node in background..."
-	@env CARTESI_ADVANCER_POLLING_INTERVAL=1 \
+	@NODE_LOG_FILE=$$(mktemp /tmp/rollups-node-log.XXXXXX); \
+	echo "Node log file: $$NODE_LOG_FILE"; \
+	echo "Starting node in background..."; \
+	env CARTESI_ADVANCER_POLLING_INTERVAL=1 \
 		CARTESI_VALIDATOR_POLLING_INTERVAL=1 \
 		CARTESI_CLAIMER_POLLING_INTERVAL=1 \
 		CARTESI_PRT_POLLING_INTERVAL=1 \
-		cartesi-rollups-node & NODE_PID=$$!; \
-	trap 'echo "Stopping node (pid $$NODE_PID)..."; kill $$NODE_PID 2>/dev/null; wait $$NODE_PID 2>/dev/null' EXIT; \
+		cartesi-rollups-node > $$NODE_LOG_FILE 2>&1 & NODE_PID=$$!; \
+	tail -f $$NODE_LOG_FILE & TAIL_PID=$$!; \
+	trap 'kill $$TAIL_PID 2>/dev/null; echo "Stopping node (pid $$NODE_PID)..."; kill $$NODE_PID 2>/dev/null; wait $$NODE_PID 2>/dev/null; echo "Node logs saved to $$NODE_LOG_FILE"' EXIT; \
 	echo "Waiting for node to become healthy..."; \
 	attempts=0; \
 	until curl -sf http://localhost:10000/readyz >/dev/null 2>&1; do \
 		attempts=$$((attempts + 1)); \
 		if [ $$attempts -ge 60 ]; then \
 			echo "ERROR: Node failed to become healthy after 120 seconds"; \
+			echo "Last 50 lines of node log:"; \
+			tail -50 $$NODE_LOG_FILE; \
 			exit 1; \
 		fi; \
 		sleep 2; \
@@ -461,6 +466,7 @@ integration-test-local: build echo-dapp reject-loop-dapp exception-loop-dapp ## 
 	export CARTESI_TEST_DAPP_PATH=$(CURDIR)/applications/echo-dapp; \
 	export CARTESI_TEST_REJECT_DAPP_PATH=$(CURDIR)/applications/reject-loop-dapp; \
 	export CARTESI_TEST_EXCEPTION_DAPP_PATH=$(CURDIR)/applications/exception-loop-dapp; \
+	export CARTESI_TEST_NODE_LOG_FILE=$$NODE_LOG_FILE; \
 	$(MAKE) integration-test
 
 ci-test: ## Run the full CI test pipeline locally (lint + unit + integration)

@@ -50,6 +50,12 @@ which cartesi-rollups-cli || { echo "ERROR: cartesi-rollups-cli not found on PAT
 
 # Timeout must be less than the CI job timeout-minutes (60) to produce
 # a useful go test panic instead of an abrupt CI kill.
-go test -count=1 -v -timeout 55m \
-  -ldflags "-r /opt/cartesi/lib" \
-  -tags=endtoendtests ./test/integration/...
+if command -v gotestsum >/dev/null 2>&1; then
+  gotestsum --format testdox -- -count=1 -v -timeout 55m \
+    -ldflags "-r /opt/cartesi/lib" \
+    -tags=endtoendtests ./test/integration/...
+else
+  go test -count=1 -v -timeout 55m \
+    -ldflags "-r /opt/cartesi/lib" \
+    -tags=endtoendtests ./test/integration/...
+fi

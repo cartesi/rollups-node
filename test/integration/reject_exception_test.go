@@ -16,8 +16,10 @@ import (
 
 type RejectExceptionSuite struct {
 	suite.Suite
-	ctx    context.Context
-	cancel context.CancelFunc
+	LogChecker
+	ctx      context.Context
+	cancel   context.CancelFunc
+	appNames []string
 }
 
 func TestRejectException(t *testing.T) {
@@ -32,12 +34,29 @@ func (s *RejectExceptionSuite) TearDownSuite() {
 	s.cancel()
 }
 
+func (s *RejectExceptionSuite) SetupTest() {
+	s.StartLogCapture()
+	s.appNames = nil
+}
+
+func (s *RejectExceptionSuite) TearDownTest() {
+	for _, name := range s.appNames {
+		s.T().Logf("Disabling application %s", name)
+		if err := disableApplication(s.ctx, name); err != nil {
+			s.T().Errorf("failed to disable application %s: %v", name, err)
+		}
+	}
+	s.CheckLogs(s.T())
+}
+
 // TestRejectInput deploys a reject-loop-dapp (ioctl-echo-loop --reject=1),
 // sends 3 inputs, and verifies that input 1 is REJECTED while inputs 0 and 2
 // are ACCEPTED with correct outputs and reports.
 func (s *RejectExceptionSuite) TestRejectInput() {
+	appName := uniqueAppName("reject-loop")
+	s.appNames = append(s.appNames, appName)
 	runRejectExceptionLifecycleTest(s.ctx, s.T(), s.Require(), rejectExceptionLifecycleConfig{
-		AppName:    uniqueAppName("reject-loop"),
+		AppName:    appName,
 		DappPath:   envOrDefault("CARTESI_TEST_REJECT_DAPP_PATH", "applications/reject-loop-dapp"),
 		TestName:   "reject",
 		FailStatus: model.InputCompletionStatus_Rejected,
@@ -48,8 +67,10 @@ func (s *RejectExceptionSuite) TestRejectInput() {
 // sends 3 inputs, and verifies that input 1 is EXCEPTION while inputs 0 and 2
 // are ACCEPTED with correct outputs and reports.
 func (s *RejectExceptionSuite) TestExceptionInput() {
+	appName := uniqueAppName("exception-loop")
+	s.appNames = append(s.appNames, appName)
 	runRejectExceptionLifecycleTest(s.ctx, s.T(), s.Require(), rejectExceptionLifecycleConfig{
-		AppName:    uniqueAppName("exception-loop"),
+		AppName:    appName,
 		DappPath:   envOrDefault("CARTESI_TEST_EXCEPTION_DAPP_PATH", "applications/exception-loop-dapp"),
 		TestName:   "exception",
 		FailStatus: model.InputCompletionStatus_Exception,

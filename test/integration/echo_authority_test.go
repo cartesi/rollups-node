@@ -15,8 +15,10 @@ import (
 
 type EchoAuthoritySuite struct {
 	suite.Suite
-	ctx    context.Context
-	cancel context.CancelFunc
+	LogChecker
+	ctx     context.Context
+	cancel  context.CancelFunc
+	appName string
 }
 
 func TestEchoAuthority(t *testing.T) {
@@ -31,13 +33,29 @@ func (s *EchoAuthoritySuite) TearDownSuite() {
 	s.cancel()
 }
 
+func (s *EchoAuthoritySuite) SetupTest() {
+	s.StartLogCapture()
+	s.appName = ""
+}
+
+func (s *EchoAuthoritySuite) TearDownTest() {
+	if s.appName != "" {
+		s.T().Logf("Disabling application %s", s.appName)
+		if err := disableApplication(s.ctx, s.appName); err != nil {
+			s.T().Errorf("failed to disable application %s: %v", s.appName, err)
+		}
+	}
+	s.CheckLogs(s.T())
+}
+
 // TestEchoAuthorityLifecycle tests the full L1->Machine->L1 pipeline:
 // deploy, send input, verify outputs, wait for claim, execute voucher, validate notice.
 func (s *EchoAuthoritySuite) TestEchoAuthorityLifecycle() {
 	dappPath := envOrDefault("CARTESI_TEST_DAPP_PATH", "applications/echo-dapp")
+	s.appName = uniqueAppName("echo-authority")
 
 	runEchoLifecycleTest(s.ctx, s.T(), s.Require(), echoLifecycleConfig{
-		AppName:  uniqueAppName("echo-authority"),
+		AppName:  s.appName,
 		DappPath: dappPath,
 		Payload:  "hello cartesi",
 	})

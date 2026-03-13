@@ -17,8 +17,10 @@ import (
 
 type EchoPrtSuite struct {
 	suite.Suite
-	ctx    context.Context
-	cancel context.CancelFunc
+	LogChecker
+	ctx     context.Context
+	cancel  context.CancelFunc
+	appName string
 
 	ethClient *ethclient.Client
 }
@@ -41,15 +43,31 @@ func (s *EchoPrtSuite) TearDownSuite() {
 	s.ethClient.Close()
 }
 
+func (s *EchoPrtSuite) SetupTest() {
+	s.StartLogCapture()
+	s.appName = ""
+}
+
+func (s *EchoPrtSuite) TearDownTest() {
+	if s.appName != "" {
+		s.T().Logf("Disabling application %s", s.appName)
+		if err := disableApplication(s.ctx, s.appName); err != nil {
+			s.T().Errorf("failed to disable application %s: %v", s.appName, err)
+		}
+	}
+	s.CheckLogs(s.T())
+}
+
 // TestEchoPrtLifecycle tests the PRT (Dave consensus) path:
 // deploy with --prt, send input, verify outputs/reports, then complete
 // both epoch 0 (empty, sealed at deploy) and epoch 1 (with input) tournaments.
 func (s *EchoPrtSuite) TestEchoPrtLifecycle() {
 	dappPath := envOrDefault("CARTESI_TEST_DAPP_PATH", "applications/echo-dapp")
 	ethClient := s.ethClient
+	s.appName = uniqueAppName("echo-prt")
 
 	runEchoLifecycleTest(s.ctx, s.T(), s.Require(), echoLifecycleConfig{
-		AppName:         uniqueAppName("echo-prt"),
+		AppName:         s.appName,
 		DappPath:        dappPath,
 		Payload:         "prt-hello",
 		ExtraDeployArgs: []string{"--prt"},

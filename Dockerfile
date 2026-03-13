@@ -169,7 +169,7 @@ RUN <<EOF
         ./cartesi-machine-emulator.deb \
         ./cartesi-rollups-node.deb
     rm -rf /var/lib/apt/lists/* cartesi-*.deb
-    mkdir -p ${NODE_RUNTIME_DIR}/snapshots ${NODE_RUNTIME_DIR}/data
+    mkdir -p ${NODE_RUNTIME_DIR}/snapshots ${NODE_RUNTIME_DIR}/data ${NODE_RUNTIME_DIR}/logs
     chown -R cartesi:cartesi ${NODE_RUNTIME_DIR}
 EOF
 

@@ -132,6 +132,17 @@ func deployApplication(ctx context.Context, appName, dappPath string, extraArgs 
 	return app.IApplicationAddress, nil
 }
 
+// disableApplication sets the application status to disabled so the node
+// stops processing it. Call this from TearDownTest (or equivalent per-test
+// teardown) to prevent a finished test's application from generating errors.
+func disableApplication(ctx context.Context, appName string) error {
+	_, err := runCLI(ctx, "app", "status", appName, "disabled", "--yes")
+	if err != nil {
+		return fmt.Errorf("disable %s: %w", appName, err)
+	}
+	return nil
+}
+
 // sendInput sends a payload to the application and returns (inputIndex, blockNumber).
 func sendInput(ctx context.Context, appName string, payload string) (uint64, uint64, error) {
 	out, err := runCLI(ctx, "send", appName, payload, "--yes", "--json")
