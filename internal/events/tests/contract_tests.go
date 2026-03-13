@@ -79,10 +79,11 @@ func NewPublisherTestSuite(factory EventsServiceFactory) *PublisherTestSuite {
 
 func (s *PublisherTestSuite) SetupTest() {
 	s.Service = s.CreateService()
+	s.Service.Start(s.T().Context())
 }
 
 func (s *PublisherTestSuite) TeardownTest() {
-	s.Service.Close()
+	s.Service.Stop()
 }
 
 func (s *PublisherTestSuite) TestSingleEvent() {
@@ -92,12 +93,12 @@ func (s *PublisherTestSuite) TestSingleEvent() {
 	tmGrp := MakeTimeoutGroup(ctx, testcaseTimeout, 1)
 	defer tmGrp.Wait()
 
-	ch, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
+	sub, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
 	req.NoError(err)
 
 	tmGrp.Go(func(ctx context.Context) {
 		select {
-		case actual := <-ch:
+		case actual := <-sub.Channel():
 			req.Equal(actual, expected)
 		case <-ctx.Done():
 			req.Fail("no event received before timeout")
@@ -114,13 +115,13 @@ func (s *PublisherTestSuite) TestRepeatedEvents() {
 	tmGrp := MakeTimeoutGroup(ctx, testcaseTimeout, 1)
 	defer tmGrp.Wait()
 
-	ch, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
+	sub, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
 	req.NoError(err)
 
 	tmGrp.Go(func(ctx context.Context) {
 		for range eventCount {
 			select {
-			case actual := <-ch:
+			case actual := <-sub.Channel():
 				req.Equal(actual, expected)
 			case <-ctx.Done():
 				req.Fail("got no events before timeout")
@@ -141,12 +142,12 @@ func (s *PublisherTestSuite) TestSinglePublisherManySubscribers() {
 	defer tmGrp.Wait()
 
 	for range subsCount {
-		ch, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
+		sub, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
 		req.NoError(err)
 
 		tmGrp.Go(func(ctx context.Context) {
 			select {
-			case actual := <-ch:
+			case actual := <-sub.Channel():
 				req.Equal(actual, expected)
 			case <-ctx.Done():
 				req.Fail("got no events before timeout")
@@ -167,13 +168,13 @@ func (s *PublisherTestSuite) TestManyPublishersSingleSubscriber() {
 	tmGrp := MakeTimeoutGroup(ctx, testcaseTimeout, 1)
 	defer tmGrp.Wait()
 
-	ch, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
+	sub, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
 	req.NoError(err)
 
 	tmGrp.Go(func(ctx context.Context) {
 		for i := range pubsCount {
 			select {
-			case actual := <-ch:
+			case actual := <-sub.Channel():
 				req.Equal(actual, expected)
 			case <-ctx.Done():
 				req.Fail("got only %d/%d events before timeout", i+1, pubsCount)
@@ -200,7 +201,7 @@ func (s *PublisherTestSuite) TestManySlowSubscribers() {
 	startCh := make(chan struct{}, subsCount)
 
 	for range subsCount {
-		ch, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
+		sub, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
 		req.NoError(err)
 
 		tmGrp.Go(func(ctx context.Context) {
@@ -208,7 +209,7 @@ func (s *PublisherTestSuite) TestManySlowSubscribers() {
 
 			for i := range eventCount {
 				select {
-				case actual := <-ch:
+				case actual := <-sub.Channel():
 					req.Equal(actual, expected)
 				case <-ctx.Done():
 					req.Fail("got only %d/%d events before timeout", i+1, eventCount)
@@ -254,7 +255,7 @@ func (s *PublisherTestSuite) TestFilteredEventsWithNewSubscriptions() {
 
 		for _, evtType := range manyEventTypes {
 			for _, appID := range manyApplicationIDs {
-				ch, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{
+				sub, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{
 					EventTypes: []events.EventType{evtType},
 					AppIDs:     []events.ApplicationID{appID},
 				})
@@ -263,7 +264,7 @@ func (s *PublisherTestSuite) TestFilteredEventsWithNewSubscriptions() {
 				tmGrp.Go(func(ctx context.Context) {
 					for i := range eventCount * (phaseCount - phase) {
 						select {
-						case actual := <-ch:
+						case actual := <-sub.Channel():
 							req.Equal(actual.Type, evtType)
 							req.Equal(actual.AppID, appID)
 							req.Equal(actual.Payload, expected.Payload)
@@ -303,33 +304,27 @@ func (s *PublisherTestSuite) TestCancelledContext() {
 	err := s.Service.Publish(cancelledCtx, expected)
 	req.ErrorIs(err, context.Canceled)
 
-	ch, err := s.Service.Subscribe(cancelledCtx, events.SubscriptionFilter{})
+	sub, err := s.Service.Subscribe(cancelledCtx, events.SubscriptionFilter{})
+	req.Nil(sub)
 	req.ErrorIs(err, context.Canceled)
 
-	select {
-	case evt, open := <-ch:
-		req.Equal(evt, events.Event{})
-		req.False(open)
-	case <-time.After(testcaseTimeout):
-		req.Fail("subscription blocked on canceled context")
-	}
+	err = s.Service.Publish(cancelledCtx, expected)
+	req.ErrorIs(err, context.Canceled)
 }
 
-func (s *PublisherTestSuite) TestContextCancelledLater() {
+func (s *PublisherTestSuite) TestChannelClosedOnUnsubscription() {
 	req := s.Require()
 	ctx := s.T().Context()
 
 	tmGrp := MakeTimeoutGroup(ctx, testcaseTimeout, 1)
 	defer tmGrp.Wait()
 
-	newCtx, cancel := context.WithCancel(tmGrp.Context)
-
-	ch, err := s.Service.Subscribe(newCtx, events.SubscriptionFilter{})
+	sub, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
 	req.NoError(err)
 
 	tmGrp.Go(func(ctx context.Context) {
 		select {
-		case evt, open := <-ch:
+		case evt, open := <-sub.Channel():
 			req.Equal(evt, events.Event{})
 			req.False(open)
 		case <-ctx.Done():
@@ -337,9 +332,8 @@ func (s *PublisherTestSuite) TestContextCancelledLater() {
 		}
 	})
 
-	cancel()
-	s.Service.Close()
+	sub.Close(ctx)
 
-	err = s.Service.Publish(newCtx, expected)
-	req.ErrorIs(err, context.Canceled)
+	err = s.Service.Publish(ctx, expected)
+	req.NoError(err)
 }

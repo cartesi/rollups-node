@@ -1,4 +1,4 @@
-package notifier
+package postgres
 
 import (
 	"context"
@@ -11,21 +11,27 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func NewListener(dbPool *pgxpool.Pool) events.Listener {
-	return &Listener{dbPool: dbPool}
+func NewDriver(dbPool *pgxpool.Pool) events.Driver {
+	return &pgDriver{dbPool: dbPool}
 }
 
-type Listener struct {
+type pgDriver struct {
 	conn   *pgx.Conn
 	dbPool *pgxpool.Pool
 	mu     sync.Mutex
 }
 
-func (l *Listener) Close(ctx context.Context) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+func (d *pgDriver) Notify(ctx context.Context, n *events.Notification) error {
+	// send NOTIFY; Postgres limits payload size (~8000), keep that in mind
+	_, err := d.dbPool.Exec(ctx, "SELECT pg_notify($1::text, $2::text)", n.Topic, n.Payload)
+	return err
+}
 
-	if l.conn == nil {
+func (d *pgDriver) Close(ctx context.Context) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.conn == nil {
 		return nil
 	}
 
@@ -33,63 +39,63 @@ func (l *Listener) Close(ctx context.Context) error {
 	// connection back into rotation, but in case a Listen was invoked without a
 	// subsequent Unlisten on the same topic, close the connection explicitly to
 	// guarantee no other caller will receive a partially tainted connection.
-	err := l.conn.Close(ctx)
+	err := d.conn.Close(ctx)
 
 	// Even in the event of an error, make sure conn is set back to nil so that
 	// the listener can be reused.
-	l.conn = nil
+	d.conn = nil
 
 	return err
 }
 
-func (l *Listener) Connect(ctx context.Context) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+func (d *pgDriver) Connect(ctx context.Context) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 
-	if l.conn != nil {
+	if d.conn != nil {
 		return errors.New("connection already established")
 	}
 
-	poolConn, err := l.dbPool.Acquire(ctx)
+	poolConn, err := d.dbPool.Acquire(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Assume full ownership of the conn so that it doesn't get released back to
 	// the pool or auto-closed by the pool.
-	l.conn = poolConn.Hijack()
+	d.conn = poolConn.Hijack()
 
 	return nil
 }
 
-func (l *Listener) Listen(ctx context.Context, topics []string) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+func (d *pgDriver) Listen(ctx context.Context, topics []string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 
-	_, err := l.conn.Exec(ctx, makeMultipleTopicSql("LISTEN", topics))
+	_, err := d.conn.Exec(ctx, makeMultipleTopicSql("LISTEN", topics))
 	return err
 }
 
-func (l *Listener) Ping(ctx context.Context) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+func (d *pgDriver) Ping(ctx context.Context) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 
-	return l.conn.Ping(ctx)
+	return d.conn.Ping(ctx)
 }
 
-func (l *Listener) Unlisten(ctx context.Context, topics []string) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+func (d *pgDriver) Unlisten(ctx context.Context, topics []string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 
-	_, err := l.conn.Exec(ctx, makeMultipleTopicSql("UNLISTEN", topics))
+	_, err := d.conn.Exec(ctx, makeMultipleTopicSql("UNLISTEN", topics))
 	return err
 }
 
-func (l *Listener) WaitForNotification(ctx context.Context) (*events.Notification, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+func (d *pgDriver) WaitForNotification(ctx context.Context) (*events.Notification, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 
-	notification, err := l.conn.WaitForNotification(ctx)
+	notification, err := d.conn.WaitForNotification(ctx)
 	if err != nil {
 		return nil, err
 	}

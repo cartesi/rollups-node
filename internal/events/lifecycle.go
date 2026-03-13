@@ -1,4 +1,4 @@
-package notifier
+package events
 
 import (
 	"context"
@@ -13,7 +13,7 @@ var ErrStop = errors.New("service stopped")
 
 // Service is a generalized interface for a service that starts and stops,
 // usually one backed by embedding BaseStartStop.
-type Service interface {
+type BaseService interface {
 	// Start starts a service. Services are responsible for backgrounding
 	// themselves, so this function should be invoked synchronously. Services
 	// may return an error if they have trouble starting up, so the caller
@@ -150,59 +150,21 @@ func (s *BaseStartStop) Started() <-chan struct{} {
 // Stop is an automatically provided implementation for the maintenance Service
 // interface's Stop.
 func (s *BaseStartStop) Stop() {
-	shouldStop, stopped, finalizeStop := s.StopInit()
-	if !shouldStop {
-		return
-	}
-
-	<-stopped
-	finalizeStop(true)
-}
-
-// StopInit provides a way to build a more customized Stop implementation. It
-// should be avoided unless there's an exceptional reason not to because Stop
-// should be fine in the vast majority of situations.
-//
-// It returns a boolean indicating whether the service should do any additional
-// work to stop (false is returned if the service was never started), a stopped
-// channel to wait on for full stop, and a finalizeStop function that should be
-// deferred in the stop function to ensure that locks are cleaned up and the
-// struct is reset after stopping.
-//
-//	func (s *Service) Stop(ctx context.Context) error {
-//	    shouldStop, stopped, finalizeStop := s.StopInit(ctx)
-//	    if !shouldStop {
-//	        return
-//	    }
-//
-//	    defer finalizeStop(true)
-//
-//	    ...
-//	}
-//
-// finalizeStop takes a boolean which indicates where the service should indeed
-// be considered stopped. This should usually be true, but callers can pass
-// false to cancel the stop action, keeping the service from starting again, and
-// potentially allowing the service to try another stop.
-func (s *BaseStartStop) StopInit() (bool, <-chan struct{}, func(didStop bool)) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	// Tolerate being told to stop without having been started.
 	if !s.isRunning {
-		s.mu.Unlock()
-		return false, nil, func(didStop bool) {}
+		return
 	}
 
 	s.cancelFunc(ErrStop)
 
-	return true, s.stopped, func(didStop bool) {
-		defer s.mu.Unlock()
-		if didStop {
-			s.isRunning = false
-			s.started = nil
-			s.stopped = nil
-		}
-	}
+	<-s.stopped
+
+	s.isRunning = false
+	s.started = nil
+	s.stopped = nil
 }
 
 // Stopped returns a channel that can be waited on for the service to be

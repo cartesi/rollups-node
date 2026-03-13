@@ -52,7 +52,7 @@ func setupNewDBPool(t *testing.T) *pgxpool.Pool {
 
 func TestPostgresEvents(t *testing.T) {
 	suite.Run(t, contract_tests.NewPublisherTestSuite(func() events.Service {
-		return NewPostgresEventsService(setupNewDBPool(t))
+		return events.NewEventsService(NewDriver(setupNewDBPool(t)))
 	}))
 }
 
