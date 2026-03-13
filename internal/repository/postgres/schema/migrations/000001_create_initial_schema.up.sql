@@ -182,6 +182,88 @@ CREATE INDEX "epoch_status_idx" ON "epoch"("application_id", "status");
 CREATE TRIGGER "epoch_set_updated_at" BEFORE UPDATE ON "epoch"
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+-- Enforce valid epoch status transitions.
+-- The state machine is:
+--   OPEN → CLOSED → INPUTS_PROCESSED → CLAIM_COMPUTED
+--   CLAIM_COMPUTED → CLAIM_SUBMITTED → CLAIM_ACCEPTED
+--   CLAIM_COMPUTED → CLAIM_ACCEPTED  (PRT skips SUBMITTED; also valid when
+--                                     syncing from scratch and the claim was
+--                                     already accepted, or in reader-only mode
+--                                     with tx submission disabled)
+--   CLAIM_COMPUTED  → CLAIM_REJECTED (claim rejected on-chain before the node
+--                                     submits, e.g. a conflicting claim was
+--                                     already accepted)
+--   CLAIM_SUBMITTED → CLAIM_REJECTED
+-- Any other transition (including backwards) is rejected.
+-- Same-status updates are allowed (idempotent no-ops).
+--
+-- When transitioning to CLAIM_COMPUTED, the trigger also verifies that
+-- required proof fields are populated:
+--   All apps:          machine_hash, outputs_merkle_root, outputs_merkle_proof
+--   PRT (DaveConsensus): additionally commitment, commitment_proof
+CREATE FUNCTION enforce_epoch_status_transition() RETURNS trigger AS $$
+DECLARE
+    valid_transitions text[][] := ARRAY[
+        ARRAY['OPEN',             'CLOSED'],
+        ARRAY['CLOSED',           'INPUTS_PROCESSED'],
+        ARRAY['INPUTS_PROCESSED', 'CLAIM_COMPUTED'],
+        ARRAY['CLAIM_COMPUTED',   'CLAIM_SUBMITTED'],
+        ARRAY['CLAIM_COMPUTED',   'CLAIM_ACCEPTED'],
+        ARRAY['CLAIM_COMPUTED',   'CLAIM_REJECTED'],
+        ARRAY['CLAIM_SUBMITTED',  'CLAIM_ACCEPTED'],
+        ARRAY['CLAIM_SUBMITTED',  'CLAIM_REJECTED']
+    ];
+    is_valid boolean := false;
+    app_consensus text;
+BEGIN
+    IF OLD.status = NEW.status THEN
+        RETURN NEW;
+    END IF;
+    FOR i IN 1..array_length(valid_transitions, 1) LOOP
+        IF OLD.status::text = valid_transitions[i][1]
+           AND NEW.status::text = valid_transitions[i][2] THEN
+            is_valid := true;
+            EXIT;
+        END IF;
+    END LOOP;
+    IF NOT is_valid THEN
+        RAISE EXCEPTION 'invalid epoch status transition: % -> %',
+            OLD.status, NEW.status;
+    END IF;
+
+    -- Enforce required fields when entering CLAIM_COMPUTED.
+    IF NEW.status::text = 'CLAIM_COMPUTED' THEN
+        IF NEW.machine_hash IS NULL
+           OR NEW.outputs_merkle_root IS NULL
+           OR NEW.outputs_merkle_proof IS NULL THEN
+            RAISE EXCEPTION
+                'CLAIM_COMPUTED requires machine_hash, outputs_merkle_root, '
+                'and outputs_merkle_proof to be non-null';
+        END IF;
+
+        SELECT a.consensus_type::text INTO app_consensus
+          FROM application a
+         WHERE a.id = NEW.application_id;
+
+        IF app_consensus = 'PRT' THEN
+            IF NEW.commitment IS NULL
+               OR NEW.commitment_proof IS NULL THEN
+                RAISE EXCEPTION
+                    'CLAIM_COMPUTED for PRT apps requires commitment '
+                    'and commitment_proof to be non-null';
+            END IF;
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER "epoch_status_transition_check"
+    BEFORE UPDATE OF "status" ON "epoch"
+    FOR EACH ROW
+    EXECUTE FUNCTION enforce_epoch_status_transition();
+
 CREATE TABLE "input"
 (
     "epoch_application_id" int4 NOT NULL,
@@ -292,9 +374,6 @@ CREATE TABLE "tournaments"
     CONSTRAINT "tournaments_max_level_gte_level_check" CHECK ("max_level" >= "level")
 );
 
-CREATE INDEX "tournaments_epoch_idx"
-  ON "tournaments"("application_id","epoch_index");
-
 CREATE UNIQUE INDEX "unique_root_per_epoch_idx"
   ON "tournaments"("application_id","epoch_index")
   WHERE "level" = 0;
@@ -326,9 +405,6 @@ CREATE TABLE "commitments"
       REFERENCES "tournaments"("application_id","epoch_index","address")
       ON DELETE CASCADE
 );
-
-CREATE INDEX "commitments_app_epoch_tournament_idx"
-  ON "commitments"("application_id","epoch_index","tournament_address");
 
 CREATE INDEX "commitments_final_state_idx"
   ON "commitments"("final_state_hash");
@@ -372,9 +448,6 @@ CREATE TABLE "matches"
       REFERENCES "commitments"("application_id","epoch_index","tournament_address","commitment")
       ON DELETE RESTRICT
 );
-
-CREATE INDEX "matches_app_epoch_tournament_idx"
-  ON "matches"("application_id","epoch_index","tournament_address");
 
 CREATE UNIQUE INDEX "matches_unique_pair_idx"
   ON "matches"("application_id","epoch_index","tournament_address","commitment_one","commitment_two");

@@ -126,14 +126,38 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 			whereClause,
 		)
 
+		// Guard: only update epoch fields when the existing row is still OPEN.
+		// Once an epoch is sealed (CLOSED) or beyond, its status, block range,
+		// input bounds, and tournament address are finalized and must not be
+		// overwritten by crash-recovery re-processing.
+		isOpen := table.Epoch.Status.EQ(
+			postgres.NewEnumValue(model.EpochStatus_Open.String()),
+		)
+
 		sqlStr, args := epochInsertStmt.QUERY(epochSelectQuery).
 			ON_CONFLICT(table.Epoch.ApplicationID, table.Epoch.Index).
 			DO_UPDATE(postgres.SET(
-				table.Epoch.Status.SET(postgres.NewEnumValue(epoch.Status.String())),
-				table.Epoch.LastBlock.SET(uint64Expr(epoch.LastBlock)),
-				table.Epoch.InputIndexUpperBound.SET(uint64Expr(epoch.InputIndexUpperBound)),
-				table.Epoch.TournamentAddress.SET(tournamentAddress),
-			)).Sql() // FIXME on conflict
+				table.Epoch.Status.SET(postgres.StringExp(
+					postgres.CASE().
+						WHEN(isOpen).THEN(table.Epoch.EXCLUDED.Status).
+						ELSE(table.Epoch.Status),
+				)),
+				table.Epoch.LastBlock.SET(postgres.FloatExp(
+					postgres.CASE().
+						WHEN(isOpen).THEN(table.Epoch.EXCLUDED.LastBlock).
+						ELSE(table.Epoch.LastBlock),
+				)),
+				table.Epoch.InputIndexUpperBound.SET(postgres.FloatExp(
+					postgres.CASE().
+						WHEN(isOpen).THEN(table.Epoch.EXCLUDED.InputIndexUpperBound).
+						ELSE(table.Epoch.InputIndexUpperBound),
+				)),
+				table.Epoch.TournamentAddress.SET(postgres.ByteaExp(
+					postgres.CASE().
+						WHEN(isOpen).THEN(table.Epoch.EXCLUDED.TournamentAddress).
+						ELSE(table.Epoch.TournamentAddress),
+				)),
+			)).Sql()
 		_, err = tx.Exec(ctx, sqlStr, args...)
 
 		if err != nil {

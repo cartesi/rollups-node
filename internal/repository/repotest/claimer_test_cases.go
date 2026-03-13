@@ -33,9 +33,8 @@ func (s *ClaimerSuite) createAppWithClaimComputedEpoch() *Application {
 		map[*Epoch][]*Input{epoch: {input}}, 10)
 	s.Require().NoError(err)
 
-	epoch.Status = EpochStatus_ClaimComputed
-	err = s.Repo.UpdateEpochStatus(s.Ctx, app.IApplicationAddress.String(), epoch)
-	s.Require().NoError(err)
+	AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+		app.IApplicationAddress.String(), epoch, EpochStatus_ClaimComputed)
 
 	return app
 }
@@ -140,9 +139,8 @@ func (s *ClaimerSuite) TestSelectSubmittedClaimPairsPerApp() {
 			map[*Epoch][]*Input{epoch: {input}}, 10)
 		s.Require().NoError(err)
 
-		epoch.Status = EpochStatus_ClaimComputed
-		err = s.Repo.UpdateEpochStatus(s.Ctx, app.IApplicationAddress.String(), epoch)
-		s.Require().NoError(err)
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			app.IApplicationAddress.String(), epoch, EpochStatus_ClaimComputed)
 
 		_, computed, apps, err := s.Repo.SelectSubmittedClaimPairsPerApp(s.Ctx)
 		s.Require().NoError(err)
@@ -163,9 +161,8 @@ func (s *ClaimerSuite) TestSelectSubmittedClaimPairsPerApp() {
 			map[*Epoch][]*Input{epoch: {input}}, 10)
 		s.Require().NoError(err)
 
-		epoch.Status = EpochStatus_ClaimComputed
-		err = s.Repo.UpdateEpochStatus(s.Ctx, app.IApplicationAddress.String(), epoch)
-		s.Require().NoError(err)
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			app.IApplicationAddress.String(), epoch, EpochStatus_ClaimComputed)
 
 		reason := "test disabled"
 		err = s.Repo.UpdateApplicationState(
@@ -288,9 +285,8 @@ func (s *ClaimerSuite) TestSelectAcceptedClaimPairsPerApp() {
 			map[*Epoch][]*Input{epoch: {input}}, 10)
 		s.Require().NoError(err)
 
-		epoch.Status = EpochStatus_ClaimComputed
-		err = s.Repo.UpdateEpochStatus(s.Ctx, app.IApplicationAddress.String(), epoch)
-		s.Require().NoError(err)
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			app.IApplicationAddress.String(), epoch, EpochStatus_ClaimComputed)
 
 		txHash := UniqueHash()
 		err = s.Repo.UpdateEpochWithSubmittedClaim(s.Ctx, app.ID, 0, txHash)
@@ -319,9 +315,8 @@ func (s *ClaimerSuite) TestSelectAcceptedClaimPairsPerApp() {
 			map[*Epoch][]*Input{epoch: {input}}, 10)
 		s.Require().NoError(err)
 
-		epoch.Status = EpochStatus_ClaimComputed
-		err = s.Repo.UpdateEpochStatus(s.Ctx, app.IApplicationAddress.String(), epoch)
-		s.Require().NoError(err)
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			app.IApplicationAddress.String(), epoch, EpochStatus_ClaimComputed)
 
 		txHash := UniqueHash()
 		err = s.Repo.UpdateEpochWithSubmittedClaim(s.Ctx, app.ID, 0, txHash)
@@ -362,10 +357,8 @@ func (s *ClaimerSuite) TestSelectAcceptedClaimPairsPerApp() {
 		s.Require().NoError(err)
 
 		// Move epoch 0 to ClaimAccepted
-		epoch0.Status = EpochStatus_ClaimComputed
-		err = s.Repo.UpdateEpochStatus(
-			s.Ctx, app.IApplicationAddress.String(), epoch0)
-		s.Require().NoError(err)
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			app.IApplicationAddress.String(), epoch0, EpochStatus_ClaimComputed)
 
 		txHash0 := UniqueHash()
 		err = s.Repo.UpdateEpochWithSubmittedClaim(s.Ctx, app.ID, 0, txHash0)
@@ -375,10 +368,8 @@ func (s *ClaimerSuite) TestSelectAcceptedClaimPairsPerApp() {
 		s.Require().NoError(err)
 
 		// Move epoch 1 to ClaimSubmitted
-		epoch1.Status = EpochStatus_ClaimComputed
-		err = s.Repo.UpdateEpochStatus(
-			s.Ctx, app.IApplicationAddress.String(), epoch1)
-		s.Require().NoError(err)
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			app.IApplicationAddress.String(), epoch1, EpochStatus_ClaimComputed)
 
 		txHash1 := UniqueHash()
 		err = s.Repo.UpdateEpochWithSubmittedClaim(s.Ctx, app.ID, 1, txHash1)
@@ -463,9 +454,8 @@ func (s *ClaimerSuite) TestUpdateEpochWithAcceptedClaim() {
 			map[*Epoch][]*Input{epoch: {input}}, 10)
 		s.Require().NoError(err)
 
-		epoch.Status = EpochStatus_ClaimSubmitted
-		err = s.Repo.UpdateEpochStatus(s.Ctx, app.IApplicationAddress.String(), epoch)
-		s.Require().NoError(err)
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			app.IApplicationAddress.String(), epoch, EpochStatus_ClaimSubmitted)
 
 		err = s.Repo.UpdateEpochWithAcceptedClaim(s.Ctx, app.ID, 0)
 		s.Require().NoError(err)

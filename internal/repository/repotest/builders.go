@@ -461,6 +461,120 @@ type SeedResult struct {
 	Input *Input
 }
 
+// AdvanceEpochStatus transitions an epoch through the valid state machine to
+// the target status, finding the shortest path through the transition graph.
+// The graph mirrors the SQL trigger enforce_epoch_status_transition:
+//
+//	OPEN → CLOSED → INPUTS_PROCESSED → CLAIM_COMPUTED
+//	CLAIM_COMPUTED → CLAIM_SUBMITTED → CLAIM_ACCEPTED
+//	CLAIM_COMPUTED → CLAIM_ACCEPTED  (PRT, sync catch-up, or reader-only mode)
+//	CLAIM_COMPUTED → CLAIM_REJECTED  (rejected on-chain before node submits)
+//	CLAIM_SUBMITTED → CLAIM_REJECTED
+func AdvanceEpochStatus(
+	ctx context.Context, t *testing.T,
+	repo repository.Repository,
+	nameOrAddress string,
+	epoch *Epoch,
+	target EpochStatus,
+) {
+	t.Helper()
+
+	// Adjacency list mirrors the SQL trigger's valid transitions.
+	next := map[EpochStatus][]EpochStatus{
+		EpochStatus_Open:            {EpochStatus_Closed},
+		EpochStatus_Closed:          {EpochStatus_InputsProcessed},
+		EpochStatus_InputsProcessed: {EpochStatus_ClaimComputed},
+		EpochStatus_ClaimComputed:   {EpochStatus_ClaimSubmitted, EpochStatus_ClaimAccepted, EpochStatus_ClaimRejected},
+		EpochStatus_ClaimSubmitted:  {EpochStatus_ClaimAccepted, EpochStatus_ClaimRejected},
+	}
+
+	// BFS to find shortest valid path.
+	type step struct {
+		status EpochStatus
+		path   []EpochStatus
+	}
+	queue := []step{{status: epoch.Status, path: nil}}
+	visited := map[EpochStatus]bool{epoch.Status: true}
+
+	var path []EpochStatus
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		if cur.status == target {
+			path = cur.path
+			break
+		}
+		for _, n := range next[cur.status] {
+			if !visited[n] {
+				visited[n] = true
+				p := make([]EpochStatus, len(cur.path)+1)
+				copy(p, cur.path)
+				p[len(cur.path)] = n
+				queue = append(queue, step{n, p})
+			}
+		}
+	}
+	if path == nil {
+		t.Fatalf("AdvanceEpochStatus: no valid path from %s to %s",
+			epoch.Status, target)
+	}
+
+	for _, s := range path {
+		// The DB trigger requires proof fields to be non-null when
+		// entering CLAIM_COMPUTED.  Populate them with dummy values
+		// so tests that only care about status transitions don't need
+		// to set up proofs manually.
+		if s == EpochStatus_ClaimComputed {
+			setDummyProofFields(ctx, t, repo, nameOrAddress, epoch)
+			// For PRT apps StoreClaimAndProofs already set the status
+			// to CLAIM_COMPUTED, so skip the redundant UpdateEpochStatus.
+			app, err := repo.GetApplication(ctx, nameOrAddress)
+			require.NoError(t, err)
+			if app.IsDaveConsensus() {
+				epoch.Status = s
+				continue
+			}
+		}
+		epoch.Status = s
+		err := repo.UpdateEpochStatus(ctx, nameOrAddress, epoch)
+		require.NoError(t, err)
+	}
+}
+
+// setDummyProofFields populates the proof fields required by the DB trigger
+// for the INPUTS_PROCESSED → CLAIM_COMPUTED transition.
+// For all apps:  machine_hash, outputs_merkle_root, outputs_merkle_proof.
+// For PRT apps:  additionally commitment and commitment_proof (set via
+// StoreClaimAndProofs which also transitions the status atomically).
+func setDummyProofFields(
+	ctx context.Context, t *testing.T,
+	repo repository.Repository,
+	nameOrAddress string,
+	epoch *Epoch,
+) {
+	t.Helper()
+
+	proof := &OutputsProof{
+		OutputsHash:      UniqueHash(),
+		OutputsHashProof: [][32]byte{[32]byte(UniqueHash())},
+		MachineHash:      UniqueHash(),
+	}
+	err := repo.UpdateEpochOutputsProof(
+		ctx, epoch.ApplicationID, epoch.Index, proof)
+	require.NoError(t, err)
+
+	app, err := repo.GetApplication(ctx, nameOrAddress)
+	require.NoError(t, err)
+	if app.IsDaveConsensus() {
+		commitHash := UniqueHash()
+		epoch.Commitment = &commitHash
+		epoch.CommitmentProof = []common.Hash{UniqueHash()}
+		epoch.Status = EpochStatus_ClaimComputed
+		err = repo.StoreClaimAndProofs(ctx, epoch, nil)
+		require.NoError(t, err)
+	}
+}
+
 // Seed creates and persists a minimal Application with one Epoch and one Input.
 func Seed(ctx context.Context, t *testing.T, repo repository.Repository) *SeedResult {
 	t.Helper()

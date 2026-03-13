@@ -184,6 +184,10 @@ func (r *Service) readAndUpdateOutputs(
 		}
 
 		if !bytes.Equal(output.RawData, event.Output) {
+			// setApplicationInoperable always returns non-nil (the reason text itself).
+			// The DB error case is already logged inside setApplicationState.
+			// On DB success the app is marked inoperable and won't reappear next tick.
+			// On DB failure the app reappears as Enabled next tick, retrying this path.
 			_ = r.setApplicationInoperable(ctx, app.application,
 				"Output mismatch. Application is in an invalid state. Output Index %d, raw data %s != event data %s",
 				output.Index,

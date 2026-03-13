@@ -416,7 +416,10 @@ func updateEpochClaim(
 		).
 		WHERE(
 			table.Epoch.ApplicationID.EQ(postgres.Int64(e.ApplicationID)).
-				AND(table.Epoch.Index.EQ(uint64Expr(e.Index))),
+				AND(table.Epoch.Index.EQ(uint64Expr(e.Index))).
+				AND(table.Epoch.Status.EQ(
+					postgres.NewEnumValue(model.EpochStatus_InputsProcessed.String()),
+				)),
 		)
 
 	sqlStr, args := updStmt.Sql()
