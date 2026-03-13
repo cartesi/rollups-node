@@ -255,9 +255,18 @@ unit-test: $(COVER_DEPS) ## Execute go unit tests
 	@go test -p 1 $(GO_BUILD_PARAMS) $(GO_TEST_FLAGS) $(GO_TEST_PACKAGES)
 	@$(if $(COVER_REPORT),$(MAKE) $(COVER_REPORT))
 
+GOTESTSUM_FORMAT ?= testdox
+ifeq ($(VERBOSE),true)
+	GOTESTSUM_FORMAT = standard-verbose
+endif
+
 integration-test: ## Execute e2e tests
 	@echo "Running end-to-end tests"
-	@go test -count=1 -timeout 55m $(GO_BUILD_PARAMS) $(GO_TEST_FLAGS) -tags=endtoendtests ./test/integration/...
+	@if command -v gotestsum >/dev/null 2>&1; then \
+		gotestsum --format $(GOTESTSUM_FORMAT) -- -count=1 -timeout 55m $(GO_BUILD_PARAMS) $(GO_TEST_FLAGS) -tags=endtoendtests ./test/integration/...; \
+	else \
+		go test -count=1 -timeout 55m $(GO_BUILD_PARAMS) $(GO_TEST_FLAGS) -tags=endtoendtests ./test/integration/...; \
+	fi
 
 echo-dapp: applications/echo-dapp ## Echo dapp
 
