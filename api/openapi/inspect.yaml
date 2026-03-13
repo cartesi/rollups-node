@@ -46,6 +46,24 @@ paths:
               schema:
                 $ref: "#/components/schemas/InspectResult"
 
+        "404":
+          description: Application not found.
+          content:
+            text/plain:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+        "503":
+          description: |
+            The application is registered but its Cartesi Machine instance
+            has not been initialized yet. If the application is in the
+            enabled state, the machine will be available once the advancer
+            service completes initialization.
+          content:
+            text/plain:
+              schema:
+                $ref: "#/components/schemas/Error"
+
         default:
           description: Error response.
           content:

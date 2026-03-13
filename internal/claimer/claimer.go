@@ -264,11 +264,11 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 		}
 		if prevEpochExists {
 			ic, _, currEvent, err = s.findClaimSubmittedEventAndSucc(
-				s.Context, app, prevEpoch, currEpoch, prevEpoch.LastBlock + 1, defaultBlockNumber.Uint64(),
+				s.Context, app, prevEpoch, currEpoch, prevEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
 			)
 		} else {
 			ic, currEvent, _, err = s.blockchain.findClaimSubmittedEventAndSucc(
-				s.Context, app, currEpoch, currEpoch.LastBlock + 1, defaultBlockNumber.Uint64(),
+				s.Context, app, currEpoch, currEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
 			)
 		}
 		if err != nil {

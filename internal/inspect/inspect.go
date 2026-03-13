@@ -24,6 +24,7 @@ import (
 var (
 	ErrInvalidMachines = errors.New("machines must not be nil")
 	ErrNoApp           = errors.New("no application")
+	ErrMachineNotReady = errors.New("machine not ready for application")
 )
 
 type IInspectMachines interface {
@@ -133,6 +134,11 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	inspect.Logger.Info("Got new inspect request", "application", dapp)
 	result, err := inspect.process(r.Context(), dapp, payload)
 	if err != nil {
+		if errors.Is(err, ErrMachineNotReady) {
+			inspect.Logger.Warn("Machine not ready", "application", dapp, "err", err)
+			http.Error(w, "Machine not ready", http.StatusServiceUnavailable)
+			return
+		}
 		if errors.Is(err, ErrNoApp) {
 			inspect.Logger.Error("Application not found", "application", dapp, "err", err)
 			http.Error(w, "Application not found", http.StatusNotFound)
@@ -194,7 +200,7 @@ func (inspect *Inspector) process(
 	// Asserts that the app has an associated machine.
 	machine, exists := inspect.GetMachine(app.ID)
 	if !exists {
-		return nil, fmt.Errorf("%w %s", ErrNoApp, nameOrAddress)
+		return nil, fmt.Errorf("%w %s", ErrMachineNotReady, nameOrAddress)
 	}
 
 	res, err := machine.Inspect(ctx, query)

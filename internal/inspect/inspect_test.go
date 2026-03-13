@@ -143,6 +143,60 @@ func (s *InspectSuite) TestPostNoApp() {
 	s.Equal(http.StatusNotFound, resp.StatusCode)
 }
 
+func (s *InspectSuite) TestPostMachineNotReady() {
+	// App exists in the repository but has no machine in the machines map.
+	// This simulates the startup window where the advancer hasn't created
+	// the machine instance yet. Should return 503 Service Unavailable.
+	app := &Application{
+		ID:                  42,
+		IApplicationAddress: randomAddress(),
+		Name:                "app-no-machine",
+	}
+	repo := newMockRepository()
+	repo.apps = append(repo.apps, app)
+	machines := newMockMachines() // no machine added for app ID 42
+
+	inspect := &Inspector{
+		repository:       repo,
+		IInspectMachines: machines,
+		Logger:           service.NewLogger(slog.LevelDebug, true),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	router := http.NewServeMux()
+	router.Handle("/inspect/{dapp}", inspect)
+	httpService := services.HttpService{Name: "http", Address: s.ServiceAddr, Handler: router}
+
+	ready := make(chan struct{}, 1)
+	go func() {
+		_ = httpService.Start(ctx, ready, service.NewLogger(slog.LevelDebug, true))
+	}()
+
+	select {
+	case <-ready:
+	case <-time.After(TestTimeout):
+		s.FailNow("timed out waiting for HttpService to be ready")
+	}
+
+	// Query by name
+	respByName, err := http.Post(fmt.Sprintf("http://%s/inspect/%s", s.ServiceAddr, app.Name),
+		"application/octet-stream",
+		bytes.NewBuffer([]byte("hello")))
+	s.Require().Nil(err)
+	defer respByName.Body.Close()
+	s.Equal(http.StatusServiceUnavailable, respByName.StatusCode)
+
+	// Query by address
+	respByAddr, err := http.Post(fmt.Sprintf("http://%s/inspect/%s", s.ServiceAddr, app.IApplicationAddress.Hex()),
+		"application/octet-stream",
+		bytes.NewBuffer([]byte("hello")))
+	s.Require().Nil(err)
+	defer respByAddr.Body.Close()
+	s.Equal(http.StatusServiceUnavailable, respByAddr.StatusCode)
+}
+
 // FIXME: add more tests
 
 func (s *InspectSuite) setup() (*Inspector, *Application, common.Hash) {

@@ -143,6 +143,28 @@ func disableApplication(ctx context.Context, appName string) error {
 	return nil
 }
 
+// inspectResult holds the parsed output of the inspect CLI command.
+type inspectResult struct {
+	Status              string `json:"status"`
+	ProcessedInputCount int    `json:"processed_input_count"`
+	Reports             []struct {
+		Payload string `json:"payload"`
+	} `json:"reports"`
+}
+
+// inspectApplication sends an inspect request and returns the parsed result.
+func inspectApplication(ctx context.Context, appName, payload string) (*inspectResult, error) {
+	out, err := runCLI(ctx, "inspect", appName, payload)
+	if err != nil {
+		return nil, fmt.Errorf("inspect %s: %w", appName, err)
+	}
+	var result inspectResult
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		return nil, fmt.Errorf("parse inspect output: %w", err)
+	}
+	return &result, nil
+}
+
 // sendInput sends a payload to the application and returns (inputIndex, blockNumber).
 func sendInput(ctx context.Context, appName string, payload string) (uint64, uint64, error) {
 	out, err := runCLI(ctx, "send", appName, payload, "--yes", "--json")

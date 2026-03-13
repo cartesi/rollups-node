@@ -7,6 +7,7 @@ package integration
 
 import (
 	"context"
+	"regexp"
 	"testing"
 	"time"
 
@@ -61,4 +62,59 @@ func (s *EchoAuthoritySuite) TestEchoAuthorityLifecycle() {
 	})
 
 	s.T().Log("=== Authority lifecycle complete: L1 → Machine → Proofs → L1 execution verified ===")
+}
+
+// TestInspect verifies the inspect API happy path: a deployed echo-dapp
+// returns the payload as a report with status Accepted. No errors are
+// expected in the node logs — the polling loop gets 503 (machine not
+// ready) until the advancer creates the machine, which is logged at
+// WARN level, not ERR.
+func (s *EchoAuthoritySuite) TestInspect() {
+	dappPath := envOrDefault("CARTESI_TEST_DAPP_PATH", "applications/echo-dapp")
+	s.appName = uniqueAppName("echo-inspect")
+
+	s.T().Logf("Deploying echo-dapp %s for inspect test", s.appName)
+	_, err := deployApplication(s.ctx, s.appName, dappPath, "--salt", uniqueSalt())
+	s.Require().NoError(err, "deploy echo-dapp")
+
+	// Wait for the machine to be ready by polling inspect until it succeeds.
+	s.T().Log("Waiting for inspect to become available...")
+	var result *inspectResult
+	deadline := time.After(2 * time.Minute)
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		result, err = inspectApplication(s.ctx, s.appName, "hello")
+		if err == nil {
+			break
+		}
+		select {
+		case <-deadline:
+			s.Require().NoError(err, "inspect did not become available within timeout")
+		case <-ticker.C:
+		}
+	}
+
+	s.Require().Equal("Accepted", result.Status)
+	s.Require().Len(result.Reports, 1, "echo-dapp should return 1 report")
+	s.T().Logf("Inspect returned status=%s reports=%d", result.Status, len(result.Reports))
+	s.T().Log("=== Inspect happy path complete ===")
+}
+
+// TestInspectNotFound verifies that inspecting a non-existent application
+// returns an error from the CLI and produces an ERR log in the node.
+// The Required allowed error ensures the test fails if the node does NOT
+// log the expected error.
+func (s *EchoAuthoritySuite) TestInspectNotFound() {
+	s.SetAllowedErrors(AllowedError{
+		Pattern:  regexp.MustCompile(`Application not found`),
+		Reason:   "intentional inspect of non-existent application",
+		Required: true,
+	})
+
+	s.T().Log("Inspecting non-existent application (should fail with 404)...")
+	_, err := inspectApplication(s.ctx, "nonexistent-app-12345", "hello")
+	s.Require().Error(err, "inspect of non-existent app should fail")
+	s.T().Logf("Got expected error: %v", err)
+	s.T().Log("=== Inspect not-found test complete ===")
 }
