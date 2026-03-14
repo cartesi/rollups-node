@@ -441,12 +441,12 @@ CREATE TABLE "matches"
     CONSTRAINT "matches_one_commitment_fkey"
       FOREIGN KEY ("application_id","epoch_index","tournament_address","commitment_one")
       REFERENCES "commitments"("application_id","epoch_index","tournament_address","commitment")
-      ON DELETE RESTRICT,
+      ON DELETE CASCADE,
 
     CONSTRAINT "matches_two_commitment_fkey"
       FOREIGN KEY ("application_id","epoch_index","tournament_address","commitment_two")
       REFERENCES "commitments"("application_id","epoch_index","tournament_address","commitment")
-      ON DELETE RESTRICT
+      ON DELETE CASCADE
 );
 
 CREATE UNIQUE INDEX "matches_unique_pair_idx"
