@@ -131,6 +131,7 @@ func run(cmd *cobra.Command, args []string) {
 	defer subscriber.Close()
 	notifCh := subscriber.Subscribe(
 		events.ChannelClaimComputed,
+		events.ChannelClaimSubmitted,
 		events.ChannelAppStateChanged,
 	)
 	createInfo.CreateInfo.EventChannel = events.Coalesce(notifCh)

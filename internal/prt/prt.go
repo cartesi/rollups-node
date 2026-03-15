@@ -697,6 +697,10 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 	}
 	settleTx := tx.Hash()
 	s.settleInFlight[app.ID] = &settleTx
+	s.publisher.Publish(ctx, events.Notification{
+		Channel:       events.ChannelSettleSubmitted,
+		ApplicationID: app.ID,
+	})
 
 	return nil
 }
@@ -810,6 +814,10 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 	}
 	joinTx := tx.Hash()
 	s.joinInFlight[app.ID] = &joinTx
+	s.publisher.Publish(ctx, events.Notification{
+		Channel:       events.ChannelJoinSubmitted,
+		ApplicationID: app.ID,
+	})
 
 	return nil
 }

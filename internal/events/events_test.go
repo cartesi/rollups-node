@@ -12,7 +12,7 @@ import (
 
 func TestAllChannels(t *testing.T) {
 	channels := AllChannels()
-	assert.Len(t, channels, 7)
+	assert.Len(t, channels, 9)
 
 	expected := []Channel{
 		ChannelInputReceived,
@@ -21,9 +21,11 @@ func TestAllChannels(t *testing.T) {
 		ChannelClaimComputed,
 		ChannelClaimSubmitted,
 		ChannelClaimAccepted,
+		ChannelSettleSubmitted,
+		ChannelJoinSubmitted,
 		ChannelAppStateChanged,
 	}
-	assert.Equal(t, expected, channels)
+	assert.ElementsMatch(t, expected, channels)
 }
 
 func TestValidateChannel(t *testing.T) {

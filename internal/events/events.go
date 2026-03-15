@@ -30,12 +30,20 @@ const (
 	ChannelClaimComputed Channel = "claim_computed"
 
 	// ChannelClaimSubmitted signals that a claim transaction was sent to L1.
-	// Producer: Claimer. Consumer: (informational).
+	// Producer: Claimer. Consumer: Claimer.
 	ChannelClaimSubmitted Channel = "claim_submitted"
 
 	// ChannelClaimAccepted signals terminal epoch state.
 	// Producer: Claimer, PRT. Consumer: (informational).
 	ChannelClaimAccepted Channel = "claim_accepted"
+
+	// ChannelSettleSubmitted signals that a PRT settle transaction was sent to L1.
+	// Producer: PRT. Consumer: PRT.
+	ChannelSettleSubmitted Channel = "settle_submitted"
+
+	// ChannelJoinSubmitted signals that a PRT join tournament transaction was sent to L1.
+	// Producer: PRT. Consumer: PRT.
+	ChannelJoinSubmitted Channel = "join_submitted"
 
 	// ChannelAppStateChanged signals an application state change.
 	// Producer: any service that changes app lifecycle fields (or DB trigger).
@@ -43,22 +51,32 @@ const (
 	ChannelAppStateChanged Channel = "app_state_changed"
 )
 
+// validChannels is the set of recognized channels for O(1) lookup.
+var validChannels = map[Channel]struct{}{
+	ChannelInputReceived:   {},
+	ChannelEpochClosed:     {},
+	ChannelInputsProcessed: {},
+	ChannelClaimComputed:   {},
+	ChannelClaimSubmitted:  {},
+	ChannelClaimAccepted:   {},
+	ChannelSettleSubmitted: {},
+	ChannelJoinSubmitted:   {},
+	ChannelAppStateChanged: {},
+}
+
 // AllChannels returns the complete set of valid channels.
 func AllChannels() []Channel {
-	return []Channel{
-		ChannelInputReceived,
-		ChannelEpochClosed,
-		ChannelInputsProcessed,
-		ChannelClaimComputed,
-		ChannelClaimSubmitted,
-		ChannelClaimAccepted,
-		ChannelAppStateChanged,
+	channels := make([]Channel, 0, len(validChannels))
+	for ch := range validChannels {
+		channels = append(channels, ch)
 	}
+	slices.Sort(channels)
+	return channels
 }
 
 // ValidateChannel returns an error if ch is not a recognized channel.
 func ValidateChannel(ch Channel) error {
-	if slices.Contains(AllChannels(), ch) {
+	if _, ok := validChannels[ch]; ok {
 		return nil
 	}
 	return fmt.Errorf("events: unrecognized channel %q", ch)

@@ -100,10 +100,13 @@ func createServices(ctx context.Context, c *CreateInfo, s *Service) error {
 	)
 	claimerNotifCh := bus.Subscribe(
 		events.ChannelClaimComputed,
+		events.ChannelClaimSubmitted,
 		events.ChannelAppStateChanged,
 	)
 	prtNotifCh := bus.Subscribe(
 		events.ChannelClaimComputed,
+		events.ChannelSettleSubmitted,
+		events.ChannelJoinSubmitted,
 		events.ChannelAppStateChanged,
 	)
 

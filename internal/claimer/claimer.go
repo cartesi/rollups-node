@@ -351,6 +351,11 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 					continue
 				}
 				s.claimsInFlight[key] = txHash
+				s.publisher.Publish(s.Context, events.Notification{
+					Channel:       events.ChannelClaimSubmitted,
+					ApplicationID: currEpoch.ApplicationID,
+					EpochIndex:    currEpoch.Index,
+				})
 			}
 		}
 	}

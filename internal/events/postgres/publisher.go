@@ -47,5 +47,12 @@ func (p *Publisher) Publish(ctx context.Context, n events.Notification) {
 			"app_id", n.ApplicationID,
 			"error", err,
 		)
+		return
 	}
+
+	p.logger.Debug("Published notification",
+		"channel", n.Channel,
+		"app_id", n.ApplicationID,
+		"epoch_idx", n.EpochIndex,
+	)
 }

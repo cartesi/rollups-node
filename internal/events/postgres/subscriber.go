@@ -212,6 +212,12 @@ func (s *Subscriber) listenLoop(
 			continue
 		}
 
+		s.logger.Debug("Received notification",
+			"channel", n.Channel,
+			"app_id", n.ApplicationID,
+			"epoch_idx", n.EpochIndex,
+		)
+
 		// Deliver to all matching subscriptions.
 		for i := range subs {
 			if _, ok := subs[i].channels[n.Channel]; !ok {

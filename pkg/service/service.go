@@ -310,8 +310,10 @@ func (s *Service) Serve() error {
 			s.Stop(true) // Stop logs errors internally.
 			return nil
 		case <-s.Ticker.C:
+			s.Logger.Debug("Tick triggered by poll timer")
 			s.Tick()
 		case <-s.eventChan():
+			s.Logger.Debug("Tick triggered by event")
 			s.Tick()
 		}
 	}
@@ -327,6 +329,7 @@ func (s *Service) String() string {
 func (s *Service) eventChan() <-chan struct{} {
 	return s.EventChannel
 }
+
 
 // LogConfig logs the service configuration at debug level.
 // Intended for use by standalone service binaries after Create.
