@@ -252,7 +252,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&invalidEpoch, nil).Once()
 
-		repo.On("UpdateApplicationState",
+		repo.On("UpdateApplicationHealth",
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 		).Return(nil).Once()
 
@@ -294,7 +294,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&Output{}, nil).Once()
 
-		repo.On("UpdateApplicationState",
+		repo.On("UpdateApplicationHealth",
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 		).Return(nil).Once()
 
@@ -317,7 +317,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&dummyOutputs[0], nil).Once()
 
-		repo.On("UpdateApplicationState",
+		repo.On("UpdateApplicationHealth",
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 		).Return(nil).Once()
 
@@ -444,7 +444,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), dummyEpochs[0].Index,
 		).Return(&input, nil).Once()
 
-		repo.On("UpdateApplicationState",
+		repo.On("UpdateApplicationHealth",
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 		).Return(nil).Once()
 
@@ -472,7 +472,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), dummyEpochs[0].Index,
 		).Return(&input, nil).Once()
 
-		repo.On("UpdateApplicationState",
+		repo.On("UpdateApplicationHealth",
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 		).Return(nil).Once()
 
@@ -586,7 +586,7 @@ func (m *Mockrepo) ListStateHashes(ctx context.Context, nameOrAddress string,
 	return args.Get(0).([]*StateHash), args.Get(1).(uint64), args.Error(2)
 }
 
-func (m *Mockrepo) UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error {
+func (m *Mockrepo) UpdateApplicationHealth(ctx context.Context, appID int64, state ApplicationHealth, reason *string) error {
 	args := m.Called(ctx, appID, state, reason)
 	return args.Error(0)
 }

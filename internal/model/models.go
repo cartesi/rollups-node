@@ -210,19 +210,6 @@ func (a *Application) IsDeleted() bool {
 	return a.DeletedAt != nil
 }
 
-// Deprecated: Use ApplicationHealth + Enabled fields instead.
-type ApplicationState = ApplicationHealth
-
-// Deprecated: Use ApplicationHealth constants and Enabled field instead.
-const (
-	ApplicationState_Enabled    = ApplicationHealth_Running
-	ApplicationState_Disabled   = ApplicationHealth_Stopped
-	ApplicationState_Failed     = ApplicationHealth_Failed
-	ApplicationState_Inoperable = ApplicationHealth_Inoperable
-)
-
-var ApplicationStateAllValues = ApplicationHealthAllValues
-
 type Consensus string
 
 const (

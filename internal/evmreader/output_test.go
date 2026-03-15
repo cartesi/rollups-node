@@ -554,10 +554,10 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 		mock.Anything,
 	).Return(output, nil).Once()
 
-	s.repository.On("UpdateApplicationState",
+	s.repository.On("UpdateApplicationHealth",
 		mock.Anything,
 		applications[0].ID,
-		ApplicationState_Inoperable,
+		ApplicationHealth_Inoperable,
 		mock.Anything,
 	).Return(nil).Once()
 

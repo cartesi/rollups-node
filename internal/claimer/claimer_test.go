@@ -64,10 +64,10 @@ func (m *claimerRepositoryMock) UpdateEpochWithSubmittedClaim(
 	return args.Error(0)
 }
 
-func (m *claimerRepositoryMock) UpdateApplicationState(
+func (m *claimerRepositoryMock) UpdateApplicationHealth(
 	ctx context.Context,
 	appID int64,
-	state model.ApplicationState,
+	state model.ApplicationHealth,
 	reason *string,
 ) error {
 	args := m.Called(ctx, appID, state, reason)
@@ -613,7 +613,7 @@ func TestSubmitClaimWithAntecessorMismatch(t *testing.T) {
 	b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, prevEpoch, prevEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil).
 		Once()
-	r.On("UpdateApplicationState", mock.Anything, int64(0), model.ApplicationState_Inoperable, mock.Anything).
+	r.On("UpdateApplicationHealth", mock.Anything, int64(0), model.ApplicationHealth_Inoperable, mock.Anything).
 		Return(nil).Once()
 
 	errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
@@ -637,7 +637,7 @@ func TestSubmitClaimWithEventMismatch(t *testing.T) {
 		Return(app.IConsensusAddress, nil).Once()
 	b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, prevEpoch, prevEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, prevEvent, wrongEvent, nil)
-	r.On("UpdateApplicationState", mock.Anything, int64(0), model.ApplicationState_Inoperable, mock.Anything).
+	r.On("UpdateApplicationHealth", mock.Anything, int64(0), model.ApplicationHealth_Inoperable, mock.Anything).
 		Return(nil).Once()
 
 	errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
@@ -656,7 +656,7 @@ func TestSubmitClaimWithAntecessorOutOfOrder(t *testing.T) {
 
 	b.On("getConsensusAddress", mock.Anything, app).
 		Return(app.IConsensusAddress, nil).Once()
-	r.On("UpdateApplicationState", mock.Anything, int64(0), model.ApplicationState_Inoperable, mock.Anything).
+	r.On("UpdateApplicationHealth", mock.Anything, int64(0), model.ApplicationHealth_Inoperable, mock.Anything).
 		Return(nil).Once()
 
 	errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), big.NewInt(0))
@@ -679,7 +679,7 @@ func TestErrSubmittedMissingEvent(t *testing.T) {
 		Return(app.IConsensusAddress, nil).Once()
 	b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, prevEpoch, prevEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil).Once()
-	r.On("UpdateApplicationState", mock.Anything, int64(0), model.ApplicationState_Inoperable, mock.Anything).
+	r.On("UpdateApplicationHealth", mock.Anything, int64(0), model.ApplicationHealth_Inoperable, mock.Anything).
 		Return(nil).Once()
 
 	errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
@@ -700,7 +700,7 @@ func TestConsensusAddressChangedOnSubmittedClaims(t *testing.T) {
 	b.On("getConsensusAddress", mock.Anything, app).
 		Return(wrongConsensusAddress, nil).
 		Once()
-	r.On("UpdateApplicationState", mock.Anything, int64(0), model.ApplicationState_Inoperable, mock.Anything).
+	r.On("UpdateApplicationHealth", mock.Anything, int64(0), model.ApplicationHealth_Inoperable, mock.Anything).
 		Return(nil).Once()
 
 	errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
@@ -776,7 +776,7 @@ func TestAcceptClaimWithAntecessorMismatch(t *testing.T) {
 		Return(app.IConsensusAddress, nil).Once()
 	b.On("findClaimAcceptedEventAndSucc", mock.Anything, app, prevEpoch, prevEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil)
-	r.On("UpdateApplicationState", mock.Anything, mock.Anything, model.ApplicationState_Inoperable, mock.Anything).
+	r.On("UpdateApplicationHealth", mock.Anything, mock.Anything, model.ApplicationHealth_Inoperable, mock.Anything).
 		Return(nil).Once()
 
 	errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
@@ -801,7 +801,7 @@ func TestAcceptClaimWithEventMismatch(t *testing.T) {
 		Return(app.IConsensusAddress, nil).Once()
 	b.On("findClaimAcceptedEventAndSucc", mock.Anything, app, prevEpoch, prevEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, prevEvent, wrongEvent, nil)
-	r.On("UpdateApplicationState", mock.Anything, mock.Anything, model.ApplicationState_Inoperable, mock.Anything).
+	r.On("UpdateApplicationHealth", mock.Anything, mock.Anything, model.ApplicationHealth_Inoperable, mock.Anything).
 		Return(nil).Once()
 
 	errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
@@ -820,7 +820,7 @@ func TestAcceptClaimWithAntecessorOutOfOrder(t *testing.T) {
 
 	b.On("getConsensusAddress", mock.Anything, app).
 		Return(app.IConsensusAddress, nil).Once()
-	r.On("UpdateApplicationState", mock.Anything, mock.Anything, model.ApplicationState_Inoperable, mock.Anything).
+	r.On("UpdateApplicationHealth", mock.Anything, mock.Anything, model.ApplicationHealth_Inoperable, mock.Anything).
 		Return(nil).
 		Once()
 
@@ -844,7 +844,7 @@ func TestErrAcceptedMissingEvent(t *testing.T) {
 		Return(app.IConsensusAddress, nil).Once()
 	b.On("findClaimAcceptedEventAndSucc", mock.Anything, app, prevEpoch, prevEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil).Once()
-	r.On("UpdateApplicationState", mock.Anything, mock.Anything, model.ApplicationState_Inoperable, mock.Anything).
+	r.On("UpdateApplicationHealth", mock.Anything, mock.Anything, model.ApplicationHealth_Inoperable, mock.Anything).
 		Return(nil).Once()
 
 	errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
@@ -890,7 +890,7 @@ func TestConsensusAddressChangedOnAcceptedClaims(t *testing.T) {
 	b.On("getConsensusAddress", mock.Anything, app).
 		Return(wrongConsensusAddress, nil).
 		Once()
-	r.On("UpdateApplicationState", mock.Anything, int64(0), model.ApplicationState_Inoperable, mock.Anything).
+	r.On("UpdateApplicationHealth", mock.Anything, int64(0), model.ApplicationHealth_Inoperable, mock.Anything).
 		Return(nil).
 		Once()
 

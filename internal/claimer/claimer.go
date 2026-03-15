@@ -87,10 +87,10 @@ type iclaimerRepository interface {
 		index uint64,
 	) error
 
-	UpdateApplicationState(
+	UpdateApplicationHealth(
 		ctx context.Context,
 		appID int64,
-		state model.ApplicationState,
+		state model.ApplicationHealth,
 		reason *string,
 	) error
 

@@ -35,7 +35,7 @@ type AdvancerRepository interface {
 	UpdateEpochInputsProcessed(ctx context.Context, nameOrAddress string, epochIndex uint64) error
 	UpdateEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64, proof *OutputsProof) error
 	RepeatPreviousEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64) error
-	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
+	UpdateApplicationHealth(ctx context.Context, appID int64, state ApplicationHealth, reason *string) error
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	UpdateInputSnapshotURI(ctx context.Context, appId int64, inputIndex uint64, snapshotURI string) error
 	GetLastSnapshot(ctx context.Context, nameOrAddress string) (*Input, error)

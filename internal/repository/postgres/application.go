@@ -324,10 +324,10 @@ func (r *PostgresRepository) UpdateApplication(
 	return err
 }
 
-func (r *PostgresRepository) UpdateApplicationState(
+func (r *PostgresRepository) UpdateApplicationHealth(
 	ctx context.Context,
 	appID int64,
-	state model.ApplicationState,
+	state model.ApplicationHealth,
 	reason *string,
 ) error {
 

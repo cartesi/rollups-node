@@ -116,10 +116,10 @@ func (s *ApplicationSuite) TestListApplications() {
 	})
 
 	s.Run("FilterByState", func() {
-		NewApplicationBuilder().WithState(ApplicationState_Enabled).Create(s.Ctx, s.T(), s.Repo)
-		NewApplicationBuilder().WithState(ApplicationState_Disabled).Create(s.Ctx, s.T(), s.Repo)
+		NewApplicationBuilder().WithState(ApplicationHealth_Running).Create(s.Ctx, s.T(), s.Repo)
+		NewApplicationBuilder().WithState(ApplicationHealth_Stopped).Create(s.Ctx, s.T(), s.Repo)
 
-		state := ApplicationState_Enabled
+		state := ApplicationHealth_Running
 		apps, total, err := s.Repo.ListApplications(
 			s.Ctx,
 			repository.ApplicationFilter{State: &state},
@@ -216,22 +216,22 @@ func (s *ApplicationSuite) TestListApplications() {
 	s.Run("CombinedFilters", func() {
 		// Create apps with different combinations of state, consensus, and DA
 		NewApplicationBuilder().
-			WithState(ApplicationState_Enabled).
+			WithState(ApplicationHealth_Running).
 			WithConsensus(Consensus_Authority).
 			WithDataAvailability(DataAvailability_InputBox[:]).
 			Create(s.Ctx, s.T(), s.Repo)
 		NewApplicationBuilder().
-			WithState(ApplicationState_Enabled).
+			WithState(ApplicationHealth_Running).
 			WithConsensus(Consensus_PRT).
 			WithDataAvailability(DataAvailability_InputBox[:]).
 			Create(s.Ctx, s.T(), s.Repo)
 		NewApplicationBuilder().
-			WithState(ApplicationState_Disabled).
+			WithState(ApplicationHealth_Stopped).
 			WithConsensus(Consensus_Authority).
 			WithDataAvailability(DataAvailability_InputBox[:]).
 			Create(s.Ctx, s.T(), s.Repo)
 
-		state := ApplicationState_Enabled
+		state := ApplicationHealth_Running
 		consensus := Consensus_Authority
 		apps, total, err := s.Repo.ListApplications(
 			s.Ctx,
@@ -251,17 +251,17 @@ func (s *ApplicationSuite) TestListApplications() {
 
 	s.Run("CombinedStateAndDataAvailability", func() {
 		NewApplicationBuilder().
-			WithState(ApplicationState_Enabled).
+			WithState(ApplicationHealth_Running).
 			WithDataAvailability(DataAvailability_InputBox[:]).
 			Create(s.Ctx, s.T(), s.Repo)
 
 		otherDA := DataAvailabilitySelector{0xaa, 0xbb, 0xcc, 0xdd}
 		NewApplicationBuilder().
-			WithState(ApplicationState_Enabled).
+			WithState(ApplicationHealth_Running).
 			WithDataAvailability(otherDA[:]).
 			Create(s.Ctx, s.T(), s.Repo)
 
-		state := ApplicationState_Enabled
+		state := ApplicationHealth_Running
 		da := DataAvailability_InputBox
 		apps, total, err := s.Repo.ListApplications(
 			s.Ctx,
@@ -279,12 +279,12 @@ func (s *ApplicationSuite) TestListApplications() {
 	})
 }
 
-func (s *ApplicationSuite) TestUpdateApplicationState() {
+func (s *ApplicationSuite) TestUpdateApplicationHealth() {
 	s.Run("UpdatesState", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 		s.Equal(ApplicationHealth_Running, app.Health)
 
-		err := s.Repo.UpdateApplicationState(s.Ctx, app.ID, ApplicationState_Disabled, nil)
+		err := s.Repo.UpdateApplicationHealth(s.Ctx, app.ID, ApplicationHealth_Stopped, nil)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
@@ -299,12 +299,12 @@ func (s *ApplicationSuite) TestUpdateApplicationState() {
 
 		// First set to FAILED with a reason
 		reason := "machine crash"
-		err := s.Repo.UpdateApplicationState(s.Ctx, app.ID, ApplicationState_Failed, &reason)
+		err := s.Repo.UpdateApplicationHealth(s.Ctx, app.ID, ApplicationHealth_Failed, &reason)
 		s.Require().NoError(err)
 
 		// Re-enable with a stale reason — trigger should clear it
 		staleReason := "should be cleared"
-		err = s.Repo.UpdateApplicationState(s.Ctx, app.ID, ApplicationState_Enabled, &staleReason)
+		err = s.Repo.UpdateApplicationHealth(s.Ctx, app.ID, ApplicationHealth_Running, &staleReason)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
@@ -315,12 +315,12 @@ func (s *ApplicationSuite) TestUpdateApplicationState() {
 }
 
 func (s *ApplicationSuite) TestInoperableIsTerminal() {
-	// helper: create an app and transition it to INOPERABLE via UpdateApplicationState.
+	// helper: create an app and transition it to INOPERABLE via UpdateApplicationHealth.
 	makeInoperable := func(reason string) *Application {
 		s.T().Helper()
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Inoperable, &reason)
+		err := s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Inoperable, &reason)
 		s.Require().NoError(err)
 		return app
 	}
@@ -330,8 +330,8 @@ func (s *ApplicationSuite) TestInoperableIsTerminal() {
 		app := makeInoperable(reason)
 
 		newReason := "re-enabling"
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Enabled, &newReason)
+		err := s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Running, &newReason)
 		s.Require().Error(err)
 		s.Contains(err.Error(), "INOPERABLE")
 
@@ -347,8 +347,8 @@ func (s *ApplicationSuite) TestInoperableIsTerminal() {
 		app := makeInoperable(reason)
 
 		newReason := "different reason"
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Inoperable, &newReason)
+		err := s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Inoperable, &newReason)
 		s.Require().Error(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
@@ -361,8 +361,8 @@ func (s *ApplicationSuite) TestInoperableIsTerminal() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 
 		reason := "fatal error"
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Inoperable, &reason)
+		err := s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Inoperable, &reason)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
@@ -376,8 +376,8 @@ func (s *ApplicationSuite) TestInoperableIsTerminal() {
 		reason := "irrecoverable"
 		app := makeInoperable(reason)
 
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Inoperable, &reason)
+		err := s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Inoperable, &reason)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
@@ -393,8 +393,8 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 	makeFailed := func(reason string) *Application {
 		s.T().Helper()
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Failed, &reason)
+		err := s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Failed, &reason)
 		s.Require().NoError(err)
 		return app
 	}
@@ -403,8 +403,8 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 		reason := "machine crashed"
 		app := makeFailed(reason)
 
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Enabled, nil)
+		err := s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Running, nil)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
@@ -417,8 +417,8 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 		reason := "process crash"
 		app := makeFailed(reason)
 
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Disabled, nil)
+		err := s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Stopped, nil)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
@@ -430,8 +430,8 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 		app := makeFailed("machine error")
 
 		reason := "data corruption detected"
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Inoperable, &reason)
+		err := s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Inoperable, &reason)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
@@ -444,8 +444,8 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 	s.Run("ReasonClearedOnReEnable", func() {
 		app := makeFailed("OOM kill")
 
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Enabled, nil)
+		err := s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Running, nil)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
@@ -458,8 +458,8 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 		app := makeFailed("first crash")
 
 		newReason := "second crash: different error"
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Failed, &newReason)
+		err := s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Failed, &newReason)
 		s.Require().Error(err, "FAILED->FAILED should be blocked: only RUNNING can transition to FAILED")
 		s.Contains(err.Error(), "RUNNING")
 
@@ -477,13 +477,13 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 
 		// First failure
 		reason1 := "crash 1"
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Failed, &reason1)
+		err := s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Failed, &reason1)
 		s.Require().NoError(err)
 
 		// Re-enable
-		err = s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Enabled, nil)
+		err = s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Running, nil)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
@@ -493,8 +493,8 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 
 		// Second failure
 		reason2 := "crash 2"
-		err = s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Failed, &reason2)
+		err = s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Failed, &reason2)
 		s.Require().NoError(err)
 
 		got, err = s.Repo.GetApplication(s.Ctx, app.Name)
@@ -510,14 +510,14 @@ func (s *ApplicationSuite) TestDisabledToFailedBlocked() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 
 		// First disable the app
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Disabled, nil)
+		err := s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Stopped, nil)
 		s.Require().NoError(err)
 
 		// Attempt DISABLED -> FAILED should be blocked by trigger
 		reason := "should not work"
-		err = s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Failed, &reason)
+		err = s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Failed, &reason)
 		s.Require().Error(err)
 		s.Contains(err.Error(), "STOPPED")
 

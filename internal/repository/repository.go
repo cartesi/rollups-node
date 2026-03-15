@@ -25,7 +25,7 @@ type Pagination struct {
 }
 
 type ApplicationFilter struct {
-	State            *ApplicationState
+	State            *ApplicationHealth
 	Enabled          *bool
 	Health           *ApplicationHealth
 	Active           *bool // shorthand for enabled=true, health=RUNNING, deleted_at IS NULL
@@ -90,7 +90,7 @@ type ApplicationRepository interface {
 	GetApplication(ctx context.Context, nameOrAddress string) (*Application, error)
 	GetProcessedInputCount(ctx context.Context, nameOrAddress string) (uint64, error)
 	UpdateApplication(ctx context.Context, app *Application) error
-	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
+	UpdateApplicationHealth(ctx context.Context, appID int64, state ApplicationHealth, reason *string) error
 	DeleteApplication(ctx context.Context, id int64) error
 	ListApplications(ctx context.Context, f ApplicationFilter, p Pagination, descending bool) ([]*Application, uint64, error)
 

@@ -211,8 +211,8 @@ func (s *SealedEpochsSuite) TestOpenEpochWithNoNonOpenEpochSetsInoperable() {
 
 	s.repository.On("GetLastNonOpenEpoch", mock.Anything, mock.Anything).
 		Return(nil, nil)
-	s.repository.On("UpdateApplicationState",
-		mock.Anything, int64(1), ApplicationState_Inoperable, mock.Anything,
+	s.repository.On("UpdateApplicationHealth",
+		mock.Anything, int64(1), ApplicationHealth_Inoperable, mock.Anything,
 	).Return(nil).Once()
 
 	err := s.evmReader.processApplicationOpenEpoch(s.ctx, app, 200)
@@ -460,8 +460,8 @@ func (s *EvmReaderSuite) TestEpochLengthZeroSetsAppInoperable() {
 	repo := newMockRepository()
 	repo.On("GetNumberOfInputs", mock.Anything, mock.Anything).
 		Return(uint64(0), nil)
-	repo.On("UpdateApplicationState",
-		mock.Anything, int64(1), ApplicationState_Inoperable, mock.Anything,
+	repo.On("UpdateApplicationHealth",
+		mock.Anything, int64(1), ApplicationHealth_Inoperable, mock.Anything,
 	).Return(nil)
 	repo.On("UpdateEventLastCheckBlock",
 		mock.Anything, mock.Anything, MonitoredEvent_InputAdded, mock.Anything,
@@ -472,7 +472,7 @@ func (s *EvmReaderSuite) TestEpochLengthZeroSetsAppInoperable() {
 	s.Require().NoError(err)
 
 	// App must be set inoperable
-	repo.AssertNumberOfCalls(s.T(), "UpdateApplicationState", 1)
+	repo.AssertNumberOfCalls(s.T(), "UpdateApplicationHealth", 1)
 	// No epochs or inputs should be stored
 	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
 }

@@ -1026,12 +1026,21 @@
 					"consensus_type": {
 						"$ref": "#/components/schemas/Consensus"
 					},
-					"state": {
-						"$ref": "#/components/schemas/ApplicationState"
+					"enabled": {
+						"type": "boolean",
+						"description": "Whether the application is enabled for processing."
+					},
+					"health": {
+						"$ref": "#/components/schemas/ApplicationHealth"
+					},
+					"deleted_at": {
+						"type": ["string", "null"],
+						"format": "date-time",
+						"description": "Soft-delete timestamp. Null if the application has not been deleted."
 					},
 					"reason": {
 						"type": ["string", "null"],
-						"description": "Human-readable failure description. Non-null when state is FAILED or INOPERABLE; null otherwise."
+						"description": "Human-readable failure description. Non-null when health is FAILED or INOPERABLE; null otherwise."
 					},
 					"iinputbox_block": {
 						"$ref": "#/components/schemas/UnsignedInteger"
@@ -1551,11 +1560,11 @@
 					}
 				}
 			},
-			"ApplicationState": {
+			"ApplicationHealth": {
 				"type": "string",
 				"enum": [
-					"ENABLED",
-					"DISABLED",
+					"RUNNING",
+					"STOPPED",
 					"FAILED",
 					"INOPERABLE"
 				]

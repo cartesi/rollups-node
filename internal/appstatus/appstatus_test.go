@@ -35,16 +35,16 @@ func newTestApp() *Application {
 
 type mockRepo struct {
 	lastAppID  int64
-	lastState  ApplicationState
+	lastState  ApplicationHealth
 	lastReason *string
 	err        error
 	callCount  int
 }
 
-func (m *mockRepo) UpdateApplicationState(
+func (m *mockRepo) UpdateApplicationHealth(
 	_ context.Context,
 	appID int64,
-	state ApplicationState,
+	state ApplicationHealth,
 	reason *string,
 ) error {
 	m.callCount++
@@ -65,12 +65,12 @@ func (s *AppStatusSuite) TestSetFailed() {
 	require.NoError(err)
 	require.Equal(1, repo.callCount)
 	require.Equal(int64(42), repo.lastAppID)
-	require.Equal(ApplicationState_Failed, repo.lastState)
+	require.Equal(ApplicationHealth_Failed, repo.lastState)
 	require.NotNil(repo.lastReason)
 	require.Equal("machine crashed: OOM", *repo.lastReason)
 
 	// Verify in-memory state was updated
-	require.Equal(ApplicationState_Failed, app.Health)
+	require.Equal(ApplicationHealth_Failed, app.Health)
 	require.NotNil(app.Reason)
 	require.Equal("machine crashed: OOM", *app.Reason)
 }
@@ -86,12 +86,12 @@ func (s *AppStatusSuite) TestSetFailedf() {
 
 	require.NoError(err)
 	require.Equal(1, repo.callCount)
-	require.Equal(ApplicationState_Failed, repo.lastState)
+	require.Equal(ApplicationHealth_Failed, repo.lastState)
 	require.NotNil(repo.lastReason)
 	require.Equal("epoch 5 input 42: timeout", *repo.lastReason)
 
 	// Verify in-memory state was updated
-	require.Equal(ApplicationState_Failed, app.Health)
+	require.Equal(ApplicationHealth_Failed, app.Health)
 }
 
 func (s *AppStatusSuite) TestSetInoperable() {
@@ -107,12 +107,12 @@ func (s *AppStatusSuite) TestSetInoperable() {
 	require.Contains(err.Error(), "hash mismatch: 0xaa != 0xbb")
 	require.Equal(1, repo.callCount)
 	require.Equal(int64(42), repo.lastAppID)
-	require.Equal(ApplicationState_Inoperable, repo.lastState)
+	require.Equal(ApplicationHealth_Inoperable, repo.lastState)
 	require.NotNil(repo.lastReason)
 	require.Equal("hash mismatch: 0xaa != 0xbb", *repo.lastReason)
 
 	// Verify in-memory state was updated
-	require.Equal(ApplicationState_Inoperable, app.Health)
+	require.Equal(ApplicationHealth_Inoperable, app.Health)
 	require.NotNil(app.Reason)
 	require.Equal("hash mismatch: 0xaa != 0xbb", *app.Reason)
 }
@@ -128,12 +128,12 @@ func (s *AppStatusSuite) TestSetFailedDBError() {
 
 	require.ErrorIs(err, dbErr)
 	require.Equal(1, repo.callCount)
-	require.Equal(ApplicationState_Failed, repo.lastState)
+	require.Equal(ApplicationHealth_Failed, repo.lastState)
 	require.NotNil(repo.lastReason)
 	require.Equal("process crashed", *repo.lastReason)
 
 	// In-memory state must NOT be updated on DB error to stay consistent
-	require.Equal(ApplicationState_Enabled, app.Health)
+	require.Equal(ApplicationHealth_Running, app.Health)
 	require.Nil(app.Reason)
 }
 
@@ -149,10 +149,10 @@ func (s *AppStatusSuite) TestSetInoperableDBError() {
 	require.ErrorIs(err, dbErr)
 	require.Contains(err.Error(), "state corruption")
 	require.Equal(1, repo.callCount)
-	require.Equal(ApplicationState_Inoperable, repo.lastState)
+	require.Equal(ApplicationHealth_Inoperable, repo.lastState)
 
 	// In-memory state must NOT be updated on DB error to stay consistent
-	require.Equal(ApplicationState_Enabled, app.Health)
+	require.Equal(ApplicationHealth_Running, app.Health)
 	require.Nil(app.Reason)
 }
 
@@ -181,12 +181,12 @@ func (s *AppStatusSuite) TestSetInoperablef() {
 	require.Error(err)
 	require.Contains(err.Error(), "epoch 5: hash mismatch 0xaa != 0xbb")
 	require.Equal(1, repo.callCount)
-	require.Equal(ApplicationState_Inoperable, repo.lastState)
+	require.Equal(ApplicationHealth_Inoperable, repo.lastState)
 	require.NotNil(repo.lastReason)
 	require.Equal("epoch 5: hash mismatch 0xaa != 0xbb", *repo.lastReason)
 
 	// Verify in-memory state was updated (DB succeeded)
-	require.Equal(ApplicationState_Inoperable, app.Health)
+	require.Equal(ApplicationHealth_Inoperable, app.Health)
 	require.NotNil(app.Reason)
 	require.Equal("epoch 5: hash mismatch 0xaa != 0xbb", *app.Reason)
 }
@@ -205,7 +205,7 @@ func (s *AppStatusSuite) TestSetInoperablefDBError() {
 	require.Contains(err.Error(), "reason: test")
 
 	// In-memory state must NOT be updated on DB error
-	require.Equal(ApplicationState_Enabled, app.Health)
+	require.Equal(ApplicationHealth_Running, app.Health)
 	require.Nil(app.Reason)
 }
 
@@ -220,7 +220,7 @@ func (s *AppStatusSuite) TestSetFailedfDBError() {
 
 	require.ErrorIs(err, dbErr)
 	require.Equal(1, repo.callCount)
-	require.Equal(ApplicationState_Failed, repo.lastState)
+	require.Equal(ApplicationHealth_Failed, repo.lastState)
 	require.NotNil(repo.lastReason)
 	require.Equal("input 7: crash", *repo.lastReason)
 }
