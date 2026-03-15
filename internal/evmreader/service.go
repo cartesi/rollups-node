@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/events"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
@@ -28,6 +29,15 @@ type CreateInfo struct {
 
 	EthClient   *ethclient.Client
 	EthWsClient EthClientInterface
+
+	// Publisher sends advisory event notifications after DB writes.
+	// Defaults to events.NopPublisher{} if nil.
+	Publisher events.Publisher
+
+	// AppChangeSignal, when non-nil, triggers an app list refresh on the
+	// next block header. Created via events.Coalesce() from a Subscriber
+	// listening on events.ChannelAppStateChanged.
+	AppChangeSignal <-chan struct{}
 }
 
 type Service struct {
@@ -37,6 +47,8 @@ type Service struct {
 	wsClient                            EthClientInterface
 	adapterFactory                      AdapterFactory
 	repository                          EvmReaderRepository
+	publisher                           events.Publisher
+	appChangeSignal                     <-chan struct{}
 	chainId                             uint64
 	defaultBlock                        DefaultBlock
 	hasEnabledApps                      bool
@@ -110,6 +122,12 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	s.blockchainMaxRetries = c.Config.BlockchainWsMaxRetries
 	s.blockchainSubscriptionRetryInterval = c.Config.BlockchainWsReconnectInterval
 	s.wsLivenessTimeout = c.Config.BlockchainWsLivenessTimeout
+
+	s.publisher = c.Publisher
+	if s.publisher == nil {
+		s.publisher = events.NopPublisher{}
+	}
+	s.appChangeSignal = c.AppChangeSignal
 
 	s.client = c.EthClient
 	s.wsClient = c.EthWsClient

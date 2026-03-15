@@ -12,6 +12,8 @@ import (
 	"github.com/cartesi/rollups-node/internal/advancer"
 	"github.com/cartesi/rollups-node/internal/claimer"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/events"
+	"github.com/cartesi/rollups-node/internal/events/memory"
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
 	"github.com/cartesi/rollups-node/internal/prt"
@@ -45,6 +47,10 @@ type Service struct {
 
 	Children   []service.IService
 	Repository repository.Repository
+
+	// Event bus for inter-service notifications (standalone mode).
+	eventBus                 *memory.Bus
+	evmReaderAppChangeSignal <-chan struct{}
 }
 
 func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
@@ -73,6 +79,16 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 type serviceCreator func(context.Context, *CreateInfo, *Service) (service.IService, error)
 
 func createServices(ctx context.Context, c *CreateInfo, s *Service) error {
+	// Create in-memory event bus for inter-service notifications.
+	bus := memory.NewBus(64) //nolint:mnd
+	go func() { _ = bus.Listen(s.Context) }()
+
+	// Subscribe each service to its relevant channels before starting goroutines.
+	evmReaderAppChangeCh := bus.Subscribe(events.ChannelAppStateChanged)
+
+	s.eventBus = bus
+	s.evmReaderAppChangeSignal = events.Coalesce(evmReaderAppChangeCh)
+
 	creators := []serviceCreator{
 		newEVMReader,
 		newAdvancer,
@@ -105,6 +121,7 @@ func createServices(ctx context.Context, c *CreateInfo, s *Service) error {
 			return fmt.Errorf("failed to create services: %w", ctx.Err())
 		}
 	}
+
 	return nil
 }
 
@@ -170,10 +187,12 @@ func newEVMReader(ctx context.Context, c *CreateInfo, s *Service) (service.IServ
 			TelemetryCreate:      false,
 			ServeMux:             s.ServeMux,
 		},
-		EthClient:   c.ReaderClient,
-		EthWsClient: c.ReaderWSClient,
-		Repository:  c.Repository,
-		Config:      *c.Config.ToEvmreaderConfig(),
+		EthClient:       c.ReaderClient,
+		EthWsClient:     c.ReaderWSClient,
+		Repository:      c.Repository,
+		Config:          *c.Config.ToEvmreaderConfig(),
+		Publisher:       s.eventBus,
+		AppChangeSignal: s.evmReaderAppChangeSignal,
 	}
 
 	readerService, err := evmreader.Create(ctx, &readerArgs)

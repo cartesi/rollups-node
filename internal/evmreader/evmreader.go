@@ -170,6 +170,11 @@ func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) 
 				err = errors.New("subscription closed unexpectedly")
 			}
 			return headersProcessed, &SubscriptionError{Cause: err}
+		case <-r.appChangeSignal:
+			// App lifecycle changed; the app list will be refreshed
+			// on the next block header (which always re-reads from DB).
+			r.Logger.Debug("Received app_state_changed signal")
+			continue
 		case <-liveness.C:
 			// Before declaring stalled, check if a header arrived simultaneously.
 			// Go's select picks randomly when multiple cases are ready, so the

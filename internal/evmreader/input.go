@@ -10,6 +10,7 @@ import (
 	"math"
 	"math/big"
 
+	"github.com/cartesi/rollups-node/internal/events"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -332,6 +333,23 @@ func (r *Service) readAndStoreInputs(
 				"epoch_count", len(epochInputMap),
 				"input_count", len(inputs),
 			)
+
+			// Publish advisory events after successful DB write.
+			if len(inputs) > 0 {
+				r.publisher.Publish(ctx, events.Notification{
+					Channel:       events.ChannelInputReceived,
+					ApplicationID: app.application.ID,
+				})
+			}
+			for epoch := range epochInputMap {
+				if epoch.Status == EpochStatus_Closed {
+					r.publisher.Publish(ctx, events.Notification{
+						Channel:       events.ChannelEpochClosed,
+						ApplicationID: app.application.ID,
+						EpochIndex:    epoch.Index,
+					})
+				}
+			}
 		} else {
 			r.Logger.Debug("No inputs or epochs to store")
 		}

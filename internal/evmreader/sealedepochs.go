@@ -10,6 +10,7 @@ import (
 	"math"
 	"math/big"
 
+	"github.com/cartesi/rollups-node/internal/events"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
@@ -374,6 +375,19 @@ func (r *Service) processSealedEpochEvent(
 		"num_inputs", len(inputs),
 		"block", event.Raw.BlockNumber)
 
+	// Publish advisory events after successful DB write.
+	if len(inputs) > 0 {
+		r.publisher.Publish(ctx, events.Notification{
+			Channel:       events.ChannelInputReceived,
+			ApplicationID: app.application.ID,
+		})
+	}
+	r.publisher.Publish(ctx, events.Notification{
+		Channel:       events.ChannelEpochClosed,
+		ApplicationID: app.application.ID,
+		EpochIndex:    epoch.Index,
+	})
+
 	return nil
 }
 
@@ -462,6 +476,14 @@ func (r *Service) processApplicationOpenEpoch(
 		"epoch_number", nextEpochNumber,
 		"num_inputs", len(inputs),
 		"block", mostRecentBlockNumber)
+
+	// Publish advisory events after successful DB write.
+	if len(inputs) > 0 {
+		r.publisher.Publish(ctx, events.Notification{
+			Channel:       events.ChannelInputReceived,
+			ApplicationID: app.application.ID,
+		})
+	}
 
 	return nil
 }
