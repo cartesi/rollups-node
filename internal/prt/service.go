@@ -144,6 +144,33 @@ func (s *Service) Tick() []error {
 		return []error{fmt.Errorf("failed to get running applications. %w", err)}
 	}
 
+	// Clean up per-app state for apps no longer in the active set.
+	activeIDs := make(map[int64]struct{}, len(apps))
+	for _, app := range apps {
+		activeIDs[app.ID] = struct{}{}
+	}
+	for appID := range s.currentEpochIndex {
+		if _, ok := activeIDs[appID]; !ok {
+			s.Logger.Info("Cleaning PRT state for inactive app",
+				"app_id", appID)
+			delete(s.currentEpochIndex, appID)
+			delete(s.settleInFlight, appID)
+			delete(s.joinInFlight, appID)
+		}
+	}
+	// Also clean settle/join maps for IDs not in currentEpochIndex
+	// (defensive: covers keys present only in these maps).
+	for appID := range s.settleInFlight {
+		if _, ok := activeIDs[appID]; !ok {
+			delete(s.settleInFlight, appID)
+		}
+	}
+	for appID := range s.joinInFlight {
+		if _, ok := activeIDs[appID]; !ok {
+			delete(s.joinInFlight, appID)
+		}
+	}
+
 	// validate each application
 	errs := []error{}
 	for idx := range apps {

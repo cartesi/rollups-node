@@ -160,6 +160,17 @@ func (s *Service) Tick() []error {
 		return errs
 	}
 
+	// Clean up in-flight claims for apps no longer in the active set.
+	for appID := range s.claimsInFlight {
+		_, inComputed := computedEpochs[appID]
+		_, inSubmitted := submittedEpochs[appID]
+		if !inComputed && !inSubmitted {
+			s.Logger.Info("Cleaning in-flight claim for inactive app",
+				"app_id", appID)
+			delete(s.claimsInFlight, appID)
+		}
+	}
+
 	s.Logger.Debug("Processing claims for epochs",
 		"computed", len(computedEpochs),
 		"submitted", len(submittedEpochs),

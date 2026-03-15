@@ -175,6 +175,19 @@ type MatchAdvancedRepository interface {
 	ListMatchAdvances(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string, idHashHex string, p Pagination, descending bool) ([]*MatchAdvanced, uint64, error)
 }
 
+type ApplicationLifecycleRepository interface {
+	SetApplicationEnabled(ctx context.Context, appID int64, enabled bool) error
+	SoftDeleteApplication(ctx context.Context, appID int64) error
+	HardDeleteApplication(ctx context.Context, appID int64) error
+	MarkApplicationRunning(ctx context.Context, appID int64) error
+	MarkApplicationFailed(ctx context.Context, appID int64, reason string) error
+	MarkApplicationInoperable(ctx context.Context, appID int64, reason string) error
+	MarkApplicationStopped(ctx context.Context, appID int64) error
+	AcknowledgeAppStopped(ctx context.Context, appID int64, serviceName string) error
+	GetPendingAcks(ctx context.Context, appID int64, requiredServices []string) ([]string, error)
+	ClearAcks(ctx context.Context, appID int64) error
+}
+
 type BulkOperationsRepository interface {
 	StoreAdvanceResult(ctx context.Context, appID int64, result *AdvanceResult) error
 	StoreClaimAndProofs(ctx context.Context, epoch *Epoch, outputs []*Output) error
@@ -216,6 +229,7 @@ type ClaimerRepository interface {
 
 type Repository interface {
 	ApplicationRepository
+	ApplicationLifecycleRepository
 	EpochRepository
 	InputRepository
 	OutputRepository

@@ -165,6 +165,16 @@ CREATE TRIGGER "application_notify_lifecycle"
 AFTER UPDATE OF "enabled", "health", "deleted_at" ON "application"
 FOR EACH ROW EXECUTE FUNCTION notify_app_lifecycle_change();
 
+CREATE TABLE "application_service_ack" (
+    "application_id" INT NOT NULL,
+    "service_name" VARCHAR(64) NOT NULL,
+    "acked_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY ("application_id", "service_name"),
+    CONSTRAINT "ack_application_fkey"
+        FOREIGN KEY ("application_id")
+        REFERENCES "application"("id") ON DELETE CASCADE
+);
+
 CREATE TABLE "execution_parameters" (
     "application_id" INT PRIMARY KEY,
     "snapshot_policy" "SnapshotPolicy" NOT NULL DEFAULT 'NONE',
