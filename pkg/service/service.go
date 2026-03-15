@@ -123,6 +123,11 @@ type Service struct {
 	ServeMux      *http.ServeMux
 	Telemetry     *http.Server
 	TelemetryFunc func() error
+
+	// EventChannel, when non-nil, triggers Tick() on event receipt.
+	// Use events.Coalesce() to create from a Subscriber's notification channel.
+	// A nil value disables event-driven wakeup (pure polling).
+	EventChannel <-chan struct{}
 }
 
 // Create a service by:
@@ -300,6 +305,8 @@ func (s *Service) Serve() error {
 			return nil
 		case <-s.Ticker.C:
 			s.Tick()
+		case <-s.eventChan():
+			s.Tick()
 		}
 	}
 	return nil
@@ -307,6 +314,12 @@ func (s *Service) Serve() error {
 
 func (s *Service) String() string {
 	return s.Name
+}
+
+// eventChan returns EventChannel if set, or nil.
+// A nil channel in select blocks forever, preserving existing behavior.
+func (s *Service) eventChan() <-chan struct{} {
+	return s.EventChannel
 }
 
 // LogConfig logs the service configuration at debug level.
