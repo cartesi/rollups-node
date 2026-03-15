@@ -51,6 +51,7 @@ type Service struct {
 	// Event bus for inter-service notifications (standalone mode).
 	eventBus                 *memory.Bus
 	evmReaderAppChangeSignal <-chan struct{}
+	advancerEventChannel     <-chan struct{}
 }
 
 func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
@@ -85,9 +86,15 @@ func createServices(ctx context.Context, c *CreateInfo, s *Service) error {
 
 	// Subscribe each service to its relevant channels before starting goroutines.
 	evmReaderAppChangeCh := bus.Subscribe(events.ChannelAppStateChanged)
+	advancerNotifCh := bus.Subscribe(
+		events.ChannelInputReceived,
+		events.ChannelEpochClosed,
+		events.ChannelAppStateChanged,
+	)
 
 	s.eventBus = bus
 	s.evmReaderAppChangeSignal = events.Coalesce(evmReaderAppChangeCh)
+	s.advancerEventChannel = events.Coalesce(advancerNotifCh)
 
 	creators := []serviceCreator{
 		newEVMReader,
@@ -214,9 +221,11 @@ func newAdvancer(ctx context.Context, c *CreateInfo, s *Service) (service.IServi
 			TelemetryCreate:      false,
 			PollInterval:         c.Config.AdvancerPollingInterval,
 			ServeMux:             s.ServeMux,
+			EventChannel:         s.advancerEventChannel,
 		},
 		Repository: c.Repository,
 		Config:     *c.Config.ToAdvancerConfig(),
+		Publisher:  s.eventBus,
 	}
 
 	advancerService, err := advancer.Create(ctx, &advancerArgs)

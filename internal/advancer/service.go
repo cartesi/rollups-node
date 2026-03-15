@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/events"
 	"github.com/cartesi/rollups-node/internal/inspect"
 	"github.com/cartesi/rollups-node/internal/manager"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -28,6 +29,7 @@ type Service struct {
 	inputBatchSize uint64
 	snapshotsDir   string
 	repository     AdvancerRepository
+	publisher      events.Publisher
 	machineManager manager.MachineProvider
 	inspector      *inspect.Inspector
 	HTTPServer     *http.Server
@@ -40,6 +42,10 @@ type CreateInfo struct {
 	service.CreateInfo
 	Config     config.AdvancerConfig
 	Repository repository.Repository
+
+	// Publisher sends advisory event notifications after DB writes.
+	// Defaults to events.NopPublisher{} if nil.
+	Publisher events.Publisher
 }
 
 // Create initializes a new advancer service
@@ -60,6 +66,11 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	s.repository = c.Repository
 	if s.repository == nil {
 		return nil, fmt.Errorf("repository on advancer service Create is nil")
+	}
+
+	s.publisher = c.Publisher
+	if s.publisher == nil {
+		s.publisher = events.NopPublisher{}
 	}
 
 	s.inputBatchSize = c.Config.AdvancerInputBatchSize

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
+	"github.com/cartesi/rollups-node/internal/events"
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -119,6 +120,11 @@ func (s *Service) stepApp(ctx context.Context, app *Application) error {
 				if err != nil {
 					return err
 				}
+				s.publisher.Publish(ctx, events.Notification{
+					Channel:       events.ChannelInputsProcessed,
+					ApplicationID: app.ID,
+					EpochIndex:    epoch.Index,
+				})
 				s.Logger.Info("Epoch updated to Inputs Processed",
 					"application", app.Name, "epoch_index", epoch.Index)
 			} else if perr != nil {

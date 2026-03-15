@@ -106,6 +106,7 @@ type CreateInfo struct {
 	ServeMux             *http.ServeMux
 	Context              context.Context
 	Cancel               context.CancelFunc
+	EventChannel         <-chan struct{} // optional: triggers Tick() on event receipt
 }
 
 // Service stores runtime information.
@@ -172,6 +173,11 @@ func Create(ctx context.Context, c *CreateInfo, s *Service) error {
 		}
 		s.PollInterval = c.PollInterval
 		s.Ticker = time.NewTicker(s.PollInterval)
+	}
+
+	// event channel
+	if s.EventChannel == nil && c.EventChannel != nil {
+		s.EventChannel = c.EventChannel
 	}
 
 	// signal handling
