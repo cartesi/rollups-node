@@ -6,6 +6,7 @@ package purge
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -15,7 +16,10 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 )
 
-var gracePeriod string
+var (
+	gracePeriod string
+	forceFlag   bool
+)
 
 var Cmd = &cobra.Command{
 	Use:   "purge",
@@ -24,9 +28,16 @@ var Cmd = &cobra.Command{
 cartesi-rollups-cli app purge
 
 # Purge with custom grace period:
-cartesi-rollups-cli app purge --grace-period 24h`,
+cartesi-rollups-cli app purge --grace-period 24h
+
+# Purge even if some services have not acknowledged (unsafe):
+cartesi-rollups-cli app purge --force`,
 	Run: run,
 	Long: `
+Permanently removes applications that were soft-deleted longer ago than the grace period.
+Before deleting, verifies that all required services (advancer, claimer, prt) have
+acknowledged they are no longer processing the application. Use --force to skip this check.
+
 Supported Environment Variables:
   CARTESI_DATABASE_CONNECTION                    Database connection string`,
 }
@@ -34,6 +45,8 @@ Supported Environment Variables:
 func init() {
 	Cmd.Flags().StringVar(&gracePeriod, "grace-period", "1h",
 		"Minimum time since soft delete before hard delete")
+	Cmd.Flags().BoolVar(&forceFlag, "force", false,
+		"Skip drain ack check (unsafe: may destroy in-flight state)")
 
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
@@ -71,6 +84,21 @@ func run(cmd *cobra.Command, args []string) {
 			fmt.Printf("Skipping %s (deleted %s ago, grace period is %s)\n",
 				app.Name, time.Since(*app.DeletedAt).Round(time.Second), grace)
 			continue
+		}
+
+		// Check drain acks before hard-deleting.
+		if !forceFlag {
+			pending, ackErr := repo.GetPendingAcks(ctx, app.ID, repository.DrainRequiredServices)
+			if ackErr != nil {
+				fmt.Fprintf(os.Stderr, "Error checking acks for %s: %v\n", app.Name, ackErr)
+				continue
+			}
+			if len(pending) > 0 {
+				fmt.Fprintf(os.Stderr,
+					"Skipping %s: services still draining [%s] (use --force to override)\n",
+					app.Name, strings.Join(pending, ", "))
+				continue
+			}
 		}
 
 		err = repo.HardDeleteApplication(ctx, app.ID)

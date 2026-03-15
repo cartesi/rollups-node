@@ -40,6 +40,7 @@ type AdvancerRepository interface {
 	UpdateInputSnapshotURI(ctx context.Context, appId int64, inputIndex uint64, snapshotURI string) error
 	GetLastSnapshot(ctx context.Context, nameOrAddress string) (*Input, error)
 	GetLastProcessedInput(ctx context.Context, appAddress string) (*Input, error)
+	AcknowledgeAppStopped(ctx context.Context, appID int64, serviceName string) error
 }
 
 func getUnprocessedEpochs(ctx context.Context, er AdvancerRepository, address string) ([]*Epoch, uint64, error) {
@@ -70,6 +71,13 @@ func (s *Service) Step(ctx context.Context) error {
 		return err
 	}
 
+	// Snapshot active app IDs before the update so we can detect removals.
+	prevApps := s.machineManager.Applications()
+	prevIDs := make(map[int64]struct{}, len(prevApps))
+	for _, app := range prevApps {
+		prevIDs[app.ID] = struct{}{}
+	}
+
 	// Update the machine manager with any new or disabled applications
 	err := s.machineManager.UpdateMachines(ctx)
 	if err != nil {
@@ -78,6 +86,20 @@ func (s *Service) Step(ctx context.Context) error {
 
 	// Get all applications with active machines
 	apps := s.machineManager.Applications()
+
+	// Write drain acks for apps that were removed (disabled, failed, etc.).
+	currIDs := make(map[int64]struct{}, len(apps))
+	for _, app := range apps {
+		currIDs[app.ID] = struct{}{}
+	}
+	for appID := range prevIDs {
+		if _, ok := currIDs[appID]; !ok {
+			if err := s.repository.AcknowledgeAppStopped(ctx, appID, "advancer"); err != nil {
+				s.Logger.Warn("Failed to write advancer drain ack",
+					"app_id", appID, "error", err)
+			}
+		}
+	}
 
 	// Process inputs for each application, accumulating per-app errors
 	var errs []error

@@ -94,6 +94,8 @@ type iclaimerRepository interface {
 		reason *string,
 	) error
 
+	AcknowledgeAppStopped(ctx context.Context, appID int64, serviceName string) error
+
 	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
 }

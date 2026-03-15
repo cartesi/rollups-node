@@ -101,6 +101,13 @@ func (m *claimerRepositoryMock) LoadNodeConfigRaw(ctx context.Context, key strin
 	return args.Get(0).([]byte), args.Get(1).(time.Time), args.Get(2).(time.Time), args.Error(3)
 }
 
+func (m *claimerRepositoryMock) AcknowledgeAppStopped(
+	ctx context.Context, appID int64, serviceName string,
+) error {
+	args := m.Called(ctx, appID, serviceName)
+	return args.Error(0)
+}
+
 type claimerBlockchainMock struct {
 	mock.Mock
 }
@@ -193,6 +200,7 @@ func newServiceMock() (*Service, *claimerRepositoryMock, *claimerBlockchainMock)
 		},
 		submissionEnabled: true,
 		claimsInFlight:    map[int64]common.Hash{},
+		knownApps:         map[int64]struct{}{},
 		repository:        repository,
 		blockchain:        blockchain,
 		publisher:         events.NopPublisher{},

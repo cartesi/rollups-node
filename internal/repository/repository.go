@@ -18,6 +18,13 @@ var (
 	ErrNotFound           = errors.New("not found")
 	ErrNoUpdate           = errors.New("update did not take effect")
 	ErrApplicationDeleted = errors.New("application was deleted during operation")
+
+	// DrainRequiredServices lists the services that hold cross-tick state and
+	// must acknowledge before an application can be safely hard-deleted.
+	//   - "advancer": holds a live machine child process between ticks.
+	//   - "claimer":  tracks in-flight L1 claim txs between ticks (Authority/Quorum).
+	//   - "prt":      tracks in-flight L1 settle/join txs between ticks (PRT).
+	DrainRequiredServices = []string{"advancer", "claimer", "prt"}
 )
 
 type Pagination struct {
@@ -184,6 +191,14 @@ type ApplicationLifecycleRepository interface {
 	MarkApplicationFailed(ctx context.Context, appID int64, reason string) error
 	MarkApplicationInoperable(ctx context.Context, appID int64, reason string) error
 	MarkApplicationStopped(ctx context.Context, appID int64) error
+	// AcknowledgeAppStopped records that a service has finished all in-flight
+	// work for a disabled application and is safe to delete.
+	//
+	// Only services with cross-tick state participate in the drain protocol.
+	// See DrainRequiredServices for the canonical list.
+	//
+	// Services without cross-tick state (validator, evmreader, jsonrpc, inspect)
+	// do not ack — they are purely functional per tick with nothing to drain.
 	AcknowledgeAppStopped(ctx context.Context, appID int64, serviceName string) error
 	GetPendingAcks(ctx context.Context, appID int64, requiredServices []string) ([]string, error)
 	ClearAcks(ctx context.Context, appID int64) error

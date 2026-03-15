@@ -6,11 +6,13 @@ package remove
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 )
 
@@ -22,6 +24,12 @@ var Cmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	Run:     run,
 	Long: `
+Soft-deletes an application by setting deleted_at. The application is first disabled,
+triggering the drain protocol so services can finish in-flight work.
+
+Use --force to hard-delete immediately. This skips the drain protocol and may destroy
+in-flight state (pending claims, active tournaments, running machine advances).
+
 Supported Environment Variables:
   CARTESI_DATABASE_CONNECTION                    Database connection string`,
 }
@@ -32,7 +40,7 @@ cartesi-rollups-cli app remove echo-dapp
 # Soft-delete without confirmation:
 cartesi-rollups-cli app remove echo-dapp --yes
 
-# Hard-delete application immediately:
+# Hard-delete application immediately (unsafe):
 cartesi-rollups-cli app remove echo-dapp --force --yes`
 
 var (
@@ -42,7 +50,8 @@ var (
 
 func init() {
 	Cmd.Flags().BoolVarP(&yesFlag, "yes", "y", false, "Skip confirmation prompts")
-	Cmd.Flags().BoolVar(&forceFlag, "force", false, "Hard delete immediately (skip soft delete)")
+	Cmd.Flags().BoolVar(&forceFlag, "force", false,
+		"Hard delete immediately (skips drain protocol, may destroy in-flight state)")
 
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
@@ -93,7 +102,25 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	if forceFlag {
-		// Hard delete immediately
+		// Warn about pending drain acks.
+		pending, ackErr := repo.GetPendingAcks(ctx, app.ID, repository.DrainRequiredServices)
+		if ackErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not check drain status: %v\n", ackErr)
+		} else if len(pending) > 0 {
+			fmt.Fprintf(os.Stderr,
+				"WARNING: services [%s] have not acknowledged drain.\n"+
+					"Hard-deleting may destroy in-flight state "+
+					"(pending claims, active tournaments, running advances).\n",
+				strings.Join(pending, ", "))
+			if !yesFlag {
+				confirmed, promptErr := cli.ConfirmPrompt("Proceed with hard delete?")
+				if promptErr != nil || !confirmed {
+					fmt.Println("Operation cancelled")
+					return
+				}
+			}
+		}
+
 		err = repo.HardDeleteApplication(ctx, app.ID)
 		cobra.CheckErr(err)
 		fmt.Printf("Application %s hard-deleted\n", app.Name)

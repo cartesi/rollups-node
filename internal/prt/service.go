@@ -45,6 +45,7 @@ type Service struct {
 	currentEpochIndex map[int64]uint64       // application.ID -> epochIndex
 	settleInFlight    map[int64]*common.Hash // application.ID -> txHash
 	joinInFlight      map[int64]*common.Hash // application.ID -> txHash
+	knownApps         map[int64]struct{}     // apps seen as active in previous ticks
 }
 
 const PrtConfigKey = "prt"
@@ -121,6 +122,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	s.currentEpochIndex = map[int64]uint64{}
 	s.settleInFlight = map[int64]*common.Hash{}
 	s.joinInFlight = map[int64]*common.Hash{}
+	s.knownApps = map[int64]struct{}{}
 
 	if s.submissionEnabled {
 		s.txOpts, err = auth.GetTransactOpts(ctx, chainID)
@@ -149,6 +151,21 @@ func (s *Service) Tick() []error {
 	for _, app := range apps {
 		activeIDs[app.ID] = struct{}{}
 	}
+
+	// Write drain acks for apps that left the active set.
+	for appID := range s.knownApps {
+		if _, ok := activeIDs[appID]; !ok {
+			if err := s.repository.AcknowledgeAppStopped(s.Context, appID, "prt"); err != nil {
+				s.Logger.Warn("Failed to write PRT drain ack",
+					"app_id", appID, "error", err)
+			}
+			delete(s.knownApps, appID)
+		}
+	}
+	for _, app := range apps {
+		s.knownApps[app.ID] = struct{}{}
+	}
+
 	for appID := range s.currentEpochIndex {
 		if _, ok := activeIDs[appID]; !ok {
 			s.Logger.Info("Cleaning PRT state for inactive app",

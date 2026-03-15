@@ -1517,6 +1517,10 @@ func (mock *MockRepository) RepeatPreviousEpochOutputsProof(ctx context.Context,
 	return mock.RepeatOutputsProofError
 }
 
+func (mock *MockRepository) AcknowledgeAppStopped(_ context.Context, _ int64, _ string) error {
+	return nil
+}
+
 // ------------------------------------------------------------------------------------------------
 
 func randomAddress() common.Address {

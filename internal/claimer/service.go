@@ -46,6 +46,7 @@ type Service struct {
 	// contains: application ID -> transaction hash, with a maximum of one
 	// key per application due to the epoch advancement logic.
 	claimsInFlight    map[int64]common.Hash
+	knownApps         map[int64]struct{} // apps seen as active in previous ticks
 	submissionEnabled bool
 }
 
@@ -100,6 +101,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	}
 	s.submissionEnabled = nodeConfig.ClaimSubmissionEnabled
 	s.claimsInFlight = map[int64]common.Hash{}
+	s.knownApps = map[int64]struct{}{}
 
 	var txOpts *bind.TransactOpts = nil
 	if s.submissionEnabled {
@@ -158,6 +160,35 @@ func (s *Service) Tick() []error {
 	if errAccepted != nil {
 		errs = append(errs, errAccepted)
 		return errs
+	}
+
+	// Build the current active set from query results.
+	currentApps := make(map[int64]struct{}, len(computedApps)+len(submittedApps))
+	for appID := range computedApps {
+		currentApps[appID] = struct{}{}
+	}
+	for appID := range submittedApps {
+		currentApps[appID] = struct{}{}
+	}
+
+	// Write drain acks for apps that left the active set and have no in-flight claims.
+	for appID := range s.knownApps {
+		if _, active := currentApps[appID]; active {
+			continue
+		}
+		if _, inFlight := s.claimsInFlight[appID]; inFlight {
+			continue // still has a pending L1 tx — ack after it clears
+		}
+		if err := s.repository.AcknowledgeAppStopped(s.Context, appID, "claimer"); err != nil {
+			s.Logger.Warn("Failed to write claimer drain ack",
+				"app_id", appID, "error", err)
+		}
+		delete(s.knownApps, appID)
+	}
+
+	// Update known apps with current active set.
+	for appID := range currentApps {
+		s.knownApps[appID] = struct{}{}
 	}
 
 	// Clean up in-flight claims for apps no longer in the active set.
