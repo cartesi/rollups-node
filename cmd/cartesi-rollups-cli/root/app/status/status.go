@@ -76,6 +76,9 @@ func run(cmd *cobra.Command, args []string) {
 		if app.Reason != nil && *app.Reason != "" {
 			fmt.Printf("Reason: %s\n", *app.Reason)
 		}
+		if app.DeletedAt != nil {
+			fmt.Printf("deleted_at=%s\n", app.DeletedAt.Format("2006-01-02T15:04:05Z07:00"))
+		}
 		os.Exit(0)
 	}
 
@@ -93,52 +96,75 @@ func run(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	var targetState model.ApplicationHealth
 	switch newStatus {
 	case "enabled", "enable":
-		targetState = model.ApplicationHealth_Running
-	case "disabled", "disable":
-		targetState = model.ApplicationHealth_Stopped
-	default:
-		fmt.Fprintf(os.Stderr, "Error: Invalid status %q. Valid values are 'enabled' or 'disabled'\n", newStatus)
-		os.Exit(1)
-	}
-
-	if app.Health == targetState {
-		fmt.Printf("Application %s health is already %s\n", app.Name, app.Health)
-		os.Exit(0)
-	}
-
-	// Changing state of a FAILED application requires confirmation
-	if app.Health == model.ApplicationHealth_Failed &&
-		(targetState == model.ApplicationHealth_Running ||
-			targetState == model.ApplicationHealth_Stopped) &&
-		!yesFlag {
-		fmt.Printf("Application %q is in FAILED state.\n", app.Name)
-		if app.Reason != nil {
-			fmt.Printf("Reason: %s\n", *app.Reason)
-		}
-		if targetState == model.ApplicationHealth_Running {
-			fmt.Println("Re-enabling will attempt to restart processing from the last snapshot.")
-		}
-		confirmed, err := cli.ConfirmPrompt("Proceed?")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
-			os.Exit(1)
-		}
-		if !confirmed {
-			fmt.Println("Aborted.")
+		if app.Enabled {
+			fmt.Printf("Application %s is already enabled\n", app.Name)
 			os.Exit(0)
 		}
+
+		// Changing state of a FAILED application requires confirmation
+		if app.Health == model.ApplicationHealth_Failed && !yesFlag {
+			fmt.Printf("Application %q is in FAILED state.\n", app.Name)
+			if app.Reason != nil {
+				fmt.Printf("Reason: %s\n", *app.Reason)
+			}
+			fmt.Println("Re-enabling will attempt to restart processing from the last snapshot.")
+			confirmed, promptErr := cli.ConfirmPrompt("Proceed?")
+			if promptErr != nil {
+				fmt.Fprintf(os.Stderr, "Error reading input: %v\n", promptErr)
+				os.Exit(1)
+			}
+			if !confirmed {
+				fmt.Println("Aborted.")
+				os.Exit(0)
+			}
+		}
+
+		// Show failure reason when changing state away from FAILED
+		if app.Health == model.ApplicationHealth_Failed && app.Reason != nil && *app.Reason != "" {
+			fmt.Printf("Previous failure reason: %s\n", *app.Reason)
+		}
+
+		err = repo.SetApplicationEnabled(ctx, app.ID, true)
+		cobra.CheckErr(err)
+		if app.Health == model.ApplicationHealth_Stopped ||
+			app.Health == model.ApplicationHealth_Failed {
+			err = repo.MarkApplicationRunning(ctx, app.ID)
+			cobra.CheckErr(err)
+		}
+		fmt.Printf("Application %s enabled\n", app.Name)
+
+	case "disabled", "disable":
+		if !app.Enabled {
+			fmt.Printf("Application %s is already disabled\n", app.Name)
+			os.Exit(0)
+		}
+
+		// Changing state of a FAILED application requires confirmation
+		if app.Health == model.ApplicationHealth_Failed && !yesFlag {
+			fmt.Printf("Application %q is in FAILED state.\n", app.Name)
+			if app.Reason != nil {
+				fmt.Printf("Reason: %s\n", *app.Reason)
+			}
+			confirmed, promptErr := cli.ConfirmPrompt("Proceed?")
+			if promptErr != nil {
+				fmt.Fprintf(os.Stderr, "Error reading input: %v\n", promptErr)
+				os.Exit(1)
+			}
+			if !confirmed {
+				fmt.Println("Aborted.")
+				os.Exit(0)
+			}
+		}
+
+		err = repo.SetApplicationEnabled(ctx, app.ID, false)
+		cobra.CheckErr(err)
+		fmt.Printf("Application %s disabled\n", app.Name)
+
+	default:
+		fmt.Fprintf(os.Stderr,
+			"Error: Invalid status %q. Valid values are 'enabled' or 'disabled'\n", newStatus)
+		os.Exit(1)
 	}
-
-	// Show failure reason when changing state away from FAILED
-	if app.Health == model.ApplicationHealth_Failed && app.Reason != nil && *app.Reason != "" {
-		fmt.Printf("Previous failure reason: %s\n", *app.Reason)
-	}
-
-	err = repo.UpdateApplicationState(ctx, app.ID, targetState, nil)
-	cobra.CheckErr(err)
-
-	fmt.Printf("Application %s status updated to %s\n", app.Name, targetState)
 }

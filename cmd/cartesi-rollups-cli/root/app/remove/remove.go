@@ -11,14 +11,13 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 )
 
 var Cmd = &cobra.Command{
 	Use:     "remove [app-name-or-address]",
 	Aliases: []string{"rm"},
-	Short:   "Remove registered applications",
+	Short:   "Soft-delete an application (use --force for hard delete)",
 	Example: examples,
 	Args:    cobra.ExactArgs(1),
 	Run:     run,
@@ -27,16 +26,23 @@ Supported Environment Variables:
   CARTESI_DATABASE_CONNECTION                    Database connection string`,
 }
 
-const examples = `# Remove application:
+const examples = `# Soft-delete application:
 cartesi-rollups-cli app remove echo-dapp
 
-# Remove application without confirmation:
-cartesi-rollups-cli app remove echo-dapp --yes`
+# Soft-delete without confirmation:
+cartesi-rollups-cli app remove echo-dapp --yes
 
-var yesFlag bool
+# Hard-delete application immediately:
+cartesi-rollups-cli app remove echo-dapp --force --yes`
+
+var (
+	yesFlag   bool
+	forceFlag bool
+)
 
 func init() {
 	Cmd.Flags().BoolVarP(&yesFlag, "yes", "y", false, "Skip confirmation prompts")
+	Cmd.Flags().BoolVar(&forceFlag, "force", false, "Hard delete immediately (skip soft delete)")
 
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
@@ -66,23 +72,35 @@ func run(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	if app.Enabled && app.Health == model.ApplicationHealth_Running {
-		fmt.Fprintf(os.Stderr, "Error: Application %s is ENABLED. Must disable it first\n", app.Name)
-		os.Exit(1)
-	}
-
 	if !yesFlag {
+		action := "soft-delete"
+		if forceFlag {
+			action = "permanently delete"
+		}
 		confirmed, promptErr := cli.ConfirmPrompt(
-			fmt.Sprintf("Are you sure you want to remove application %s (%s)?",
-				app.Name, app.IApplicationAddress.String()))
+			fmt.Sprintf("Are you sure you want to %s application %s (%s)?",
+				action, app.Name, app.IApplicationAddress.String()))
 		if promptErr != nil || !confirmed {
 			fmt.Println("Operation cancelled")
 			return
 		}
 	}
 
-	err = repo.DeleteApplication(ctx, app.ID)
-	cobra.CheckErr(err)
+	// Disable if still enabled
+	if app.Enabled {
+		err = repo.SetApplicationEnabled(ctx, app.ID, false)
+		cobra.CheckErr(err)
+	}
 
-	fmt.Printf("Application %s (%s) successfully removed\n", app.Name, app.IApplicationAddress.String())
+	if forceFlag {
+		// Hard delete immediately
+		err = repo.HardDeleteApplication(ctx, app.ID)
+		cobra.CheckErr(err)
+		fmt.Printf("Application %s hard-deleted\n", app.Name)
+	} else {
+		// Soft delete
+		err = repo.SoftDeleteApplication(ctx, app.ID)
+		cobra.CheckErr(err)
+		fmt.Printf("Application %s soft-deleted (use 'app purge' to permanently remove)\n", app.Name)
+	}
 }
