@@ -15,8 +15,9 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("not found")
-	ErrNoUpdate = errors.New("update did not take effect")
+	ErrNotFound           = errors.New("not found")
+	ErrNoUpdate           = errors.New("update did not take effect")
+	ErrApplicationDeleted = errors.New("application was deleted during operation")
 )
 
 type Pagination struct {

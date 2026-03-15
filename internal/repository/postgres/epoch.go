@@ -97,6 +97,10 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
+	if err := lockApplicationByName(ctx, tx, nameOrAddress); err != nil {
+		return err
+	}
+
 	epochs := orderEpochs(epochInputsMap)
 	for _, epoch := range epochs {
 		inputs := epochInputsMap[epoch]

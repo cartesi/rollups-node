@@ -7,6 +7,7 @@ package validator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -251,6 +252,11 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 		// store the epoch and proofs in the database
 		err = s.repository.StoreClaimAndProofs(ctx, epoch, outputs)
 		if err != nil {
+			if errors.Is(err, repository.ErrApplicationDeleted) {
+				s.Logger.Warn("application deleted during validation — skipping",
+					"application", app.Name, "epoch_index", epoch.Index)
+				return nil
+			}
 			return fmt.Errorf(
 				"failed to store claim and proofs for epoch %v of application %v. %w",
 				epoch.Index, appAddress, err,

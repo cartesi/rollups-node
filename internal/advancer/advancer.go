@@ -249,6 +249,18 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 		// Store the result in the database
 		err = s.repository.StoreAdvanceResult(ctx, input.EpochApplicationID, result)
 		if err != nil {
+			// If the application was deleted while the machine was advancing,
+			// the machine state for this app is irrelevant. Log and stop
+			// processing this app without shutting down the node.
+			if errors.Is(err, repository.ErrApplicationDeleted) {
+				s.Logger.Warn(
+					"application deleted during advance — discarding result",
+					"application", app.Name,
+					"epoch", input.EpochIndex,
+					"index", input.Index)
+				return err
+			}
+
 			// Machine state is now ahead of the database. This desync is
 			// unrecoverable without a restart — regardless of whether the
 			// failure was a DB error or a context timeout. Shut down the

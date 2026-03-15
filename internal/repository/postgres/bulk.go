@@ -17,6 +17,55 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/table"
 )
 
+// lockApplication acquires a FOR NO KEY UPDATE row lock on the application row,
+// preventing a concurrent hard-delete or lifecycle update from modifying the row
+// while this transaction is in progress.
+//
+// FOR NO KEY UPDATE (not FOR SHARE) is required because callers such as
+// StoreAdvanceResult and StoreTournamentEvents later UPDATE the same application
+// row within the same transaction. FOR SHARE would deadlock when attempting to
+// upgrade the lock if a concurrent UPDATE (e.g., SetApplicationEnabled) is
+// queued on the same row.
+//
+// Returns repository.ErrApplicationDeleted if the row no longer exists.
+func lockApplication(ctx context.Context, tx pgx.Tx, appID int64) error {
+	var exists bool
+	err := tx.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM application WHERE id = $1 FOR NO KEY UPDATE)`,
+		appID).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("lock application: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("application %d: %w", appID, repository.ErrApplicationDeleted)
+	}
+	return nil
+}
+
+// lockApplicationByName is like lockApplication but resolves
+// the application by name or hex address.
+func lockApplicationByName(ctx context.Context, tx pgx.Tx, nameOrAddress string) error {
+	var exists bool
+	var err error
+	if isHexAddress(nameOrAddress) {
+		addr := common.HexToAddress(nameOrAddress)
+		err = tx.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM application WHERE iapplication_address = $1 FOR NO KEY UPDATE)`,
+			addr.Bytes()).Scan(&exists)
+	} else {
+		err = tx.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM application WHERE name = $1 FOR NO KEY UPDATE)`,
+			nameOrAddress).Scan(&exists)
+	}
+	if err != nil {
+		return fmt.Errorf("lock application: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("application %q: %w", nameOrAddress, repository.ErrApplicationDeleted)
+	}
+	return nil
+}
+
 // byteSliceToHashSlice converts [][32]byte to []common.Hash without copying.
 // This is safe because common.Hash is defined as [32]byte, so the memory layout is identical.
 func byteSliceToHashSlice(b [][32]byte) []common.Hash {
@@ -359,6 +408,10 @@ func (r *PostgresRepository) StoreAdvanceResult(
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
+	if err := lockApplication(ctx, tx, appID); err != nil {
+		return err
+	}
+
 	if res.Status == model.InputCompletionStatus_Accepted {
 		err = insertOutputs(ctx, tx, appID, res.InputIndex, res.Outputs)
 		if err != nil {
@@ -484,6 +537,10 @@ func (r *PostgresRepository) StoreClaimAndProofs(ctx context.Context, epoch *mod
 		return fmt.Errorf("SetEpochClaimAndInsertProofsTransaction failed: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
+
+	if err := lockApplication(ctx, tx, epoch.ApplicationID); err != nil {
+		return err
+	}
 
 	err = updateEpochClaim(ctx, tx, epoch)
 	if err != nil {
@@ -684,6 +741,10 @@ func (r *PostgresRepository) StoreTournamentEvents(
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
+
+	if err := lockApplication(ctx, tx, appID); err != nil {
+		return err
+	}
 
 	err = insertCommitments(ctx, tx, appID, commitments)
 	if err != nil {
