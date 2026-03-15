@@ -15,7 +15,9 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/events"
 	"github.com/cartesi/rollups-node/internal/events/memory"
+	eventsPostgres "github.com/cartesi/rollups-node/internal/events/postgres"
 	"github.com/cartesi/rollups-node/internal/evmreader"
+	repoPostgres "github.com/cartesi/rollups-node/internal/repository/postgres"
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
 	"github.com/cartesi/rollups-node/internal/prt"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -49,8 +51,8 @@ type Service struct {
 	Children   []service.IService
 	Repository repository.Repository
 
-	// Event bus for inter-service notifications (standalone mode).
-	eventBus                 *memory.Bus
+	// Event system for inter-service notifications (standalone mode).
+	publisher                events.Publisher
 	evmReaderAppChangeSignal <-chan struct{}
 	advancerEventChannel     <-chan struct{}
 	validatorEventChannel    <-chan struct{}
@@ -96,38 +98,66 @@ func eventsLoggerForService(serviceName string, c *CreateInfo) *slog.Logger {
 }
 
 func createServices(ctx context.Context, c *CreateInfo, s *Service) error {
-	// Create in-memory event bus for inter-service notifications.
-	bus := memory.NewBus(64) //nolint:mnd
 	eventsLogger := eventsLoggerForService(config.ServiceNode, c)
-	if eventsLogger != nil {
-		bus.SetLogger(eventsLogger)
+
+	var pub events.Publisher
+	var sub events.Subscriber
+
+	if c.Config.FeatureEventsMemoryBus {
+		// In-memory backend: zero-latency, no extra PG connection.
+		// Does not receive cross-process notifications (e.g., CLI app register).
+		bus := memory.NewBus(64) //nolint:mnd
+		if eventsLogger != nil {
+			bus.SetLogger(eventsLogger)
+		}
+		pub = bus
+		sub = bus
+		s.Logger.Info("Event system using in-memory backend")
+	} else {
+		// PostgreSQL backend (default): uses the same LISTEN/NOTIFY code path
+		// as individual-service deployment. Receives cross-process notifications.
+		pool := c.Repository.(*repoPostgres.PostgresRepository).Pool()
+		logger := eventsLogger
+		if logger == nil {
+			logger = s.Logger
+		}
+		pub = eventsPostgres.NewPublisher(pool, logger)
+
+		eventsConnStr := c.Config.DatabaseEventsConnection.Raw()
+		if eventsConnStr == "" {
+			eventsConnStr = c.Config.DatabaseConnection.Raw()
+		}
+		pgSub := eventsPostgres.NewSubscriber(eventsConnStr, logger, nil)
+		sub = pgSub
+		s.Logger.Info("Event system using PostgreSQL LISTEN/NOTIFY backend")
 	}
-	go func() { _ = bus.Listen(s.Context) }()
 
 	// Subscribe each service to its relevant channels before starting goroutines.
-	evmReaderAppChangeCh := bus.Subscribe(events.ChannelAppStateChanged)
-	advancerNotifCh := bus.Subscribe(
+	evmReaderAppChangeCh := sub.Subscribe(events.ChannelAppStateChanged)
+	advancerNotifCh := sub.Subscribe(
 		events.ChannelInputReceived,
 		events.ChannelEpochClosed,
 		events.ChannelAppStateChanged,
 	)
-	validatorNotifCh := bus.Subscribe(
+	validatorNotifCh := sub.Subscribe(
 		events.ChannelInputsProcessed,
 		events.ChannelAppStateChanged,
 	)
-	claimerNotifCh := bus.Subscribe(
+	claimerNotifCh := sub.Subscribe(
 		events.ChannelClaimComputed,
 		events.ChannelClaimSubmitted,
 		events.ChannelAppStateChanged,
 	)
-	prtNotifCh := bus.Subscribe(
+	prtNotifCh := sub.Subscribe(
 		events.ChannelClaimComputed,
 		events.ChannelSettleSubmitted,
 		events.ChannelJoinSubmitted,
 		events.ChannelAppStateChanged,
 	)
 
-	s.eventBus = bus
+	go func() { _ = sub.Listen(s.Context) }()
+
+	s.publisher = pub
 	s.evmReaderAppChangeSignal = events.Coalesce(evmReaderAppChangeCh)
 	s.advancerEventChannel = events.Coalesce(advancerNotifCh)
 	s.validatorEventChannel = events.Coalesce(validatorNotifCh)
@@ -236,7 +266,7 @@ func newEVMReader(ctx context.Context, c *CreateInfo, s *Service) (service.IServ
 		EthWsClient:     c.ReaderWSClient,
 		Repository:      c.Repository,
 		Config:          *c.Config.ToEvmreaderConfig(),
-		Publisher:       s.eventBus,
+		Publisher:       s.publisher,
 		AppChangeSignal: s.evmReaderAppChangeSignal,
 	}
 
@@ -264,7 +294,7 @@ func newAdvancer(ctx context.Context, c *CreateInfo, s *Service) (service.IServi
 		},
 		Repository: c.Repository,
 		Config:     *c.Config.ToAdvancerConfig(),
-		Publisher:  s.eventBus,
+		Publisher:  s.publisher,
 	}
 
 	advancerService, err := advancer.Create(ctx, &advancerArgs)
@@ -291,7 +321,7 @@ func newValidator(ctx context.Context, c *CreateInfo, s *Service) (service.IServ
 		},
 		Repository: c.Repository,
 		Config:     *c.Config.ToValidatorConfig(),
-		Publisher:  s.eventBus,
+		Publisher:  s.publisher,
 	}
 
 	validatorService, err := validator.Create(ctx, &validatorArgs)
@@ -319,7 +349,7 @@ func newClaimer(ctx context.Context, c *CreateInfo, s *Service) (service.IServic
 		EthConn:    c.ClaimerClient,
 		Repository: c.Repository,
 		Config:     *c.Config.ToClaimerConfig(),
-		Publisher:  s.eventBus,
+		Publisher:  s.publisher,
 	}
 
 	claimerService, err := claimer.Create(ctx, &claimerArgs)
@@ -370,7 +400,7 @@ func newPrt(ctx context.Context, c *CreateInfo, s *Service) (service.IService, e
 		EthClient:  c.PrtClient,
 		Repository: c.Repository,
 		Config:     *c.Config.ToPrtConfig(),
-		Publisher:  s.eventBus,
+		Publisher:  s.publisher,
 	}
 
 	prtService, err := prt.Create(ctx, &prtArgs)

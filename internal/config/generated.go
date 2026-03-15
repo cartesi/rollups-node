@@ -7,6 +7,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -42,6 +43,7 @@ const (
 	DATABASE_CONNECTION                               = "CARTESI_DATABASE_CONNECTION"
 	DATABASE_EVENTS_CONNECTION                        = "CARTESI_DATABASE_EVENTS_CONNECTION"
 	FEATURE_CLAIM_SUBMISSION_ENABLED                  = "CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"
+	FEATURE_EVENTS_MEMORY_BUS                         = "CARTESI_FEATURE_EVENTS_MEMORY_BUS"
 	FEATURE_INPUT_READER_ENABLED                      = "CARTESI_FEATURE_INPUT_READER_ENABLED"
 	FEATURE_INSPECT_ENABLED                           = "CARTESI_FEATURE_INSPECT_ENABLED"
 	FEATURE_JSONRPC_API_ENABLED                       = "CARTESI_FEATURE_JSONRPC_API_ENABLED"
@@ -133,6 +135,8 @@ func SetDefaults() {
 	viper.SetDefault(DATABASE_EVENTS_CONNECTION, "")
 
 	viper.SetDefault(FEATURE_CLAIM_SUBMISSION_ENABLED, "true")
+
+	viper.SetDefault(FEATURE_EVENTS_MEMORY_BUS, "false")
 
 	viper.SetDefault(FEATURE_INPUT_READER_ENABLED, "true")
 
@@ -274,93 +278,91 @@ func LoadAdvancerConfig() (*AdvancerConfig, error) {
 	var err error
 
 	cfg.DatabaseConnection, err = GetDatabaseConnection()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_CONNECTION: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_DATABASE_CONNECTION is required for the advancer service: %w", err)
 	}
 
 	cfg.DatabaseEventsConnection, err = GetDatabaseEventsConnection()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_EVENTS_CONNECTION: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_DATABASE_EVENTS_CONNECTION is required for the advancer service: %w", err)
 	}
 
 	cfg.FeatureInspectEnabled, err = GetFeatureInspectEnabled()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_INSPECT_ENABLED: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_FEATURE_INSPECT_ENABLED is required for the advancer service: %w", err)
 	}
 
 	cfg.FeatureMachineHashCheckEnabled, err = GetFeatureMachineHashCheckEnabled()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED is required for the advancer service: %w", err)
 	}
 
 	cfg.InspectAddress, err = GetInspectAddress()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_INSPECT_ADDRESS: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_INSPECT_ADDRESS is required for the advancer service: %w", err)
 	}
 
 	cfg.TelemetryAddress, err = GetTelemetryAddress()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_TELEMETRY_ADDRESS: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_TELEMETRY_ADDRESS is required for the advancer service: %w", err)
 	}
 
 	cfg.LogColor, err = GetLogColor()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_LOG_COLOR: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_LOG_COLOR is required for the advancer service: %w", err)
 	}
 
 	cfg.LogLevel, err = GetLogLevel()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_LOG_LEVEL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_LOG_LEVEL is required for the advancer service: %w", err)
 	}
 
 	cfg.JsonrpcMachineLogLevel, err = GetJsonrpcMachineLogLevel()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_JSONRPC_MACHINE_LOG_LEVEL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_JSONRPC_MACHINE_LOG_LEVEL is required for the advancer service: %w", err)
 	}
 
 	cfg.AdvancerInputBatchSize, err = GetAdvancerInputBatchSize()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_ADVANCER_INPUT_BATCH_SIZE: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_ADVANCER_INPUT_BATCH_SIZE is required for the advancer service: %w", err)
 	}
 
 	cfg.AdvancerPollingInterval, err = GetAdvancerPollingInterval()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_ADVANCER_POLLING_INTERVAL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_ADVANCER_POLLING_INTERVAL is required for the advancer service: %w", err)
 	}
 
 	cfg.MaxStartupTime, err = GetMaxStartupTime()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_MAX_STARTUP_TIME: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_MAX_STARTUP_TIME is required for the advancer service: %w", err)
 	}
 
 	cfg.SnapshotsDir, err = GetSnapshotsDir()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_SNAPSHOTS_DIR: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_SNAPSHOTS_DIR is required for the advancer service: %w", err)
 	}
 
@@ -447,114 +449,112 @@ func LoadClaimerConfig() (*ClaimerConfig, error) {
 	var err error
 
 	cfg.BlockchainDefaultBlock, err = GetBlockchainDefaultBlock()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_DEFAULT_BLOCK: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_DEFAULT_BLOCK is required for the claimer service: %w", err)
 	}
 
 	cfg.BlockchainHttpEndpoint, err = GetBlockchainHttpEndpoint()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_ENDPOINT: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_ENDPOINT is required for the claimer service: %w", err)
 	}
 
 	cfg.BlockchainId, err = GetBlockchainId()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_ID: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_ID is required for the claimer service: %w", err)
 	}
 
 	cfg.BlockchainLegacyEnabled, err = GetBlockchainLegacyEnabled()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_LEGACY_ENABLED: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_LEGACY_ENABLED is required for the claimer service: %w", err)
 	}
 
 	cfg.DatabaseConnection, err = GetDatabaseConnection()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_CONNECTION: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_DATABASE_CONNECTION is required for the claimer service: %w", err)
 	}
 
 	cfg.DatabaseEventsConnection, err = GetDatabaseEventsConnection()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_EVENTS_CONNECTION: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_DATABASE_EVENTS_CONNECTION is required for the claimer service: %w", err)
 	}
 
 	cfg.FeatureClaimSubmissionEnabled, err = GetFeatureClaimSubmissionEnabled()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED is required for the claimer service: %w", err)
 	}
 
 	cfg.TelemetryAddress, err = GetTelemetryAddress()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_TELEMETRY_ADDRESS: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_TELEMETRY_ADDRESS is required for the claimer service: %w", err)
 	}
 
 	cfg.LogColor, err = GetLogColor()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_LOG_COLOR: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_LOG_COLOR is required for the claimer service: %w", err)
 	}
 
 	cfg.LogLevel, err = GetLogLevel()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_LOG_LEVEL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_LOG_LEVEL is required for the claimer service: %w", err)
 	}
 
 	cfg.BlockchainHttpMaxRetries, err = GetBlockchainHttpMaxRetries()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES is required for the claimer service: %w", err)
 	}
 
 	cfg.BlockchainHttpRetryMaxWait, err = GetBlockchainHttpRetryMaxWait()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT is required for the claimer service: %w", err)
 	}
 
 	cfg.BlockchainHttpRetryMinWait, err = GetBlockchainHttpRetryMinWait()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT is required for the claimer service: %w", err)
 	}
 
 	cfg.BlockchainMaxBlockRange, err = GetBlockchainMaxBlockRange()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE is required for the claimer service: %w", err)
 	}
 
 	cfg.ClaimerPollingInterval, err = GetClaimerPollingInterval()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_CLAIMER_POLLING_INTERVAL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_CLAIMER_POLLING_INTERVAL is required for the claimer service: %w", err)
 	}
 
 	cfg.MaxStartupTime, err = GetMaxStartupTime()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_MAX_STARTUP_TIME: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_MAX_STARTUP_TIME is required for the claimer service: %w", err)
 	}
 
@@ -646,128 +646,126 @@ func LoadEvmreaderConfig() (*EvmreaderConfig, error) {
 	var err error
 
 	cfg.BlockchainDefaultBlock, err = GetBlockchainDefaultBlock()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_DEFAULT_BLOCK: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_DEFAULT_BLOCK is required for the evmreader service: %w", err)
 	}
 
 	cfg.BlockchainHttpEndpoint, err = GetBlockchainHttpEndpoint()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_ENDPOINT: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_ENDPOINT is required for the evmreader service: %w", err)
 	}
 
 	cfg.BlockchainId, err = GetBlockchainId()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_ID: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_ID is required for the evmreader service: %w", err)
 	}
 
 	cfg.BlockchainWsEndpoint, err = GetBlockchainWsEndpoint()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_WS_ENDPOINT: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_WS_ENDPOINT is required for the evmreader service: %w", err)
 	}
 
 	cfg.DatabaseConnection, err = GetDatabaseConnection()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_CONNECTION: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_DATABASE_CONNECTION is required for the evmreader service: %w", err)
 	}
 
 	cfg.DatabaseEventsConnection, err = GetDatabaseEventsConnection()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_EVENTS_CONNECTION: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_DATABASE_EVENTS_CONNECTION is required for the evmreader service: %w", err)
 	}
 
 	cfg.FeatureInputReaderEnabled, err = GetFeatureInputReaderEnabled()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_INPUT_READER_ENABLED: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_FEATURE_INPUT_READER_ENABLED is required for the evmreader service: %w", err)
 	}
 
 	cfg.TelemetryAddress, err = GetTelemetryAddress()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_TELEMETRY_ADDRESS: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_TELEMETRY_ADDRESS is required for the evmreader service: %w", err)
 	}
 
 	cfg.LogColor, err = GetLogColor()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_LOG_COLOR: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_LOG_COLOR is required for the evmreader service: %w", err)
 	}
 
 	cfg.LogLevel, err = GetLogLevel()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_LOG_LEVEL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_LOG_LEVEL is required for the evmreader service: %w", err)
 	}
 
 	cfg.BlockchainHttpMaxRetries, err = GetBlockchainHttpMaxRetries()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES is required for the evmreader service: %w", err)
 	}
 
 	cfg.BlockchainHttpRetryMaxWait, err = GetBlockchainHttpRetryMaxWait()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT is required for the evmreader service: %w", err)
 	}
 
 	cfg.BlockchainHttpRetryMinWait, err = GetBlockchainHttpRetryMinWait()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT is required for the evmreader service: %w", err)
 	}
 
 	cfg.BlockchainMaxBlockRange, err = GetBlockchainMaxBlockRange()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE is required for the evmreader service: %w", err)
 	}
 
 	cfg.BlockchainWsLivenessTimeout, err = GetBlockchainWsLivenessTimeout()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_WS_LIVENESS_TIMEOUT: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_WS_LIVENESS_TIMEOUT is required for the evmreader service: %w", err)
 	}
 
 	cfg.BlockchainWsMaxRetries, err = GetBlockchainWsMaxRetries()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_WS_MAX_RETRIES: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_WS_MAX_RETRIES is required for the evmreader service: %w", err)
 	}
 
 	cfg.BlockchainWsReconnectInterval, err = GetBlockchainWsReconnectInterval()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL is required for the evmreader service: %w", err)
 	}
 
 	cfg.MaxStartupTime, err = GetMaxStartupTime()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_MAX_STARTUP_TIME: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_MAX_STARTUP_TIME is required for the evmreader service: %w", err)
 	}
 
@@ -820,44 +818,44 @@ func LoadJsonrpcConfig() (*JsonrpcConfig, error) {
 	var err error
 
 	cfg.DatabaseConnection, err = GetDatabaseConnection()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_CONNECTION: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_DATABASE_CONNECTION is required for the jsonrpc service: %w", err)
 	}
 
 	cfg.JsonrpcApiAddress, err = GetJsonrpcApiAddress()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_JSONRPC_API_ADDRESS: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_JSONRPC_API_ADDRESS is required for the jsonrpc service: %w", err)
 	}
 
 	cfg.TelemetryAddress, err = GetTelemetryAddress()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_TELEMETRY_ADDRESS: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_TELEMETRY_ADDRESS is required for the jsonrpc service: %w", err)
 	}
 
 	cfg.LogColor, err = GetLogColor()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_LOG_COLOR: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_LOG_COLOR is required for the jsonrpc service: %w", err)
 	}
 
 	cfg.LogLevel, err = GetLogLevel()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_LOG_LEVEL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_LOG_LEVEL is required for the jsonrpc service: %w", err)
 	}
 
 	cfg.MaxStartupTime, err = GetMaxStartupTime()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_MAX_STARTUP_TIME: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_MAX_STARTUP_TIME is required for the jsonrpc service: %w", err)
 	}
 
@@ -894,8 +892,20 @@ type NodeConfig struct {
 	// for more information.
 	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
 
+	// Postgres endpoint for event notifications (LISTEN/NOTIFY). Falls back to CARTESI_DATABASE_CONNECTION if not set.
+	//
+	// Use a separate connection when running behind PgBouncer in transaction-pooling mode, which does not support LISTEN. Point this to a direct PostgreSQL connection while CARTESI_DATABASE_CONNECTION goes through PgBouncer.
+	DatabaseEventsConnection URL `mapstructure:"CARTESI_DATABASE_EVENTS_CONNECTION"`
+
 	// If set to false, the node will not submit claims (reader mode).
 	FeatureClaimSubmissionEnabled bool `mapstructure:"CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"`
+
+	// If set to true, the standalone node uses an in-memory event bus instead of PostgreSQL
+	// LISTEN/NOTIFY for inter-service notifications. The in-memory bus has zero latency but
+	// does not receive cross-process notifications (e.g., from CLI commands registering apps).
+	// The default (false) uses PostgreSQL, which exercises the same code path as individual-service
+	// deployment.
+	FeatureEventsMemoryBus bool `mapstructure:"CARTESI_FEATURE_EVENTS_MEMORY_BUS"`
 
 	// If set to false, the node will not read inputs from the blockchain.
 	FeatureInputReaderEnabled bool `mapstructure:"CARTESI_FEATURE_INPUT_READER_ENABLED"`
@@ -990,219 +1000,231 @@ func LoadNodeConfig() (*NodeConfig, error) {
 	var err error
 
 	cfg.BlockchainDefaultBlock, err = GetBlockchainDefaultBlock()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_DEFAULT_BLOCK: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_DEFAULT_BLOCK is required for the node service: %w", err)
 	}
 
 	cfg.BlockchainHttpEndpoint, err = GetBlockchainHttpEndpoint()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_ENDPOINT: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_ENDPOINT is required for the node service: %w", err)
 	}
 
 	cfg.BlockchainId, err = GetBlockchainId()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_ID: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_ID is required for the node service: %w", err)
 	}
 
 	cfg.BlockchainLegacyEnabled, err = GetBlockchainLegacyEnabled()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_LEGACY_ENABLED: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_LEGACY_ENABLED is required for the node service: %w", err)
 	}
 
 	cfg.BlockchainWsEndpoint, err = GetBlockchainWsEndpoint()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_WS_ENDPOINT: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_WS_ENDPOINT is required for the node service: %w", err)
 	}
 
 	cfg.DatabaseConnection, err = GetDatabaseConnection()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_CONNECTION: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_DATABASE_CONNECTION is required for the node service: %w", err)
 	}
 
+	cfg.DatabaseEventsConnection, err = GetDatabaseEventsConnection()
+	if err != nil && !errors.Is(err, ErrNotDefined) {
+		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_EVENTS_CONNECTION: %w", err)
+	}
+
 	cfg.FeatureClaimSubmissionEnabled, err = GetFeatureClaimSubmissionEnabled()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED is required for the node service: %w", err)
 	}
 
+	cfg.FeatureEventsMemoryBus, err = GetFeatureEventsMemoryBus()
+	if err != nil && !errors.Is(err, ErrNotDefined) {
+		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_EVENTS_MEMORY_BUS: %w", err)
+	} else if errors.Is(err, ErrNotDefined) {
+		return nil, fmt.Errorf("CARTESI_FEATURE_EVENTS_MEMORY_BUS is required for the node service: %w", err)
+	}
+
 	cfg.FeatureInputReaderEnabled, err = GetFeatureInputReaderEnabled()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_INPUT_READER_ENABLED: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_FEATURE_INPUT_READER_ENABLED is required for the node service: %w", err)
 	}
 
 	cfg.FeatureInspectEnabled, err = GetFeatureInspectEnabled()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_INSPECT_ENABLED: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_FEATURE_INSPECT_ENABLED is required for the node service: %w", err)
 	}
 
 	cfg.FeatureJsonrpcApiEnabled, err = GetFeatureJsonrpcApiEnabled()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_JSONRPC_API_ENABLED: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_FEATURE_JSONRPC_API_ENABLED is required for the node service: %w", err)
 	}
 
 	cfg.FeatureMachineHashCheckEnabled, err = GetFeatureMachineHashCheckEnabled()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED is required for the node service: %w", err)
 	}
 
 	cfg.InspectAddress, err = GetInspectAddress()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_INSPECT_ADDRESS: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_INSPECT_ADDRESS is required for the node service: %w", err)
 	}
 
 	cfg.JsonrpcApiAddress, err = GetJsonrpcApiAddress()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_JSONRPC_API_ADDRESS: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_JSONRPC_API_ADDRESS is required for the node service: %w", err)
 	}
 
 	cfg.TelemetryAddress, err = GetTelemetryAddress()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_TELEMETRY_ADDRESS: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_TELEMETRY_ADDRESS is required for the node service: %w", err)
 	}
 
 	cfg.LogColor, err = GetLogColor()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_LOG_COLOR: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_LOG_COLOR is required for the node service: %w", err)
 	}
 
 	cfg.LogLevel, err = GetLogLevel()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_LOG_LEVEL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_LOG_LEVEL is required for the node service: %w", err)
 	}
 
 	cfg.JsonrpcMachineLogLevel, err = GetJsonrpcMachineLogLevel()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_JSONRPC_MACHINE_LOG_LEVEL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_JSONRPC_MACHINE_LOG_LEVEL is required for the node service: %w", err)
 	}
 
 	cfg.AdvancerInputBatchSize, err = GetAdvancerInputBatchSize()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_ADVANCER_INPUT_BATCH_SIZE: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_ADVANCER_INPUT_BATCH_SIZE is required for the node service: %w", err)
 	}
 
 	cfg.AdvancerPollingInterval, err = GetAdvancerPollingInterval()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_ADVANCER_POLLING_INTERVAL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_ADVANCER_POLLING_INTERVAL is required for the node service: %w", err)
 	}
 
 	cfg.BlockchainHttpMaxRetries, err = GetBlockchainHttpMaxRetries()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES is required for the node service: %w", err)
 	}
 
 	cfg.BlockchainHttpRetryMaxWait, err = GetBlockchainHttpRetryMaxWait()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT is required for the node service: %w", err)
 	}
 
 	cfg.BlockchainHttpRetryMinWait, err = GetBlockchainHttpRetryMinWait()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT is required for the node service: %w", err)
 	}
 
 	cfg.BlockchainMaxBlockRange, err = GetBlockchainMaxBlockRange()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE is required for the node service: %w", err)
 	}
 
 	cfg.BlockchainWsLivenessTimeout, err = GetBlockchainWsLivenessTimeout()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_WS_LIVENESS_TIMEOUT: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_WS_LIVENESS_TIMEOUT is required for the node service: %w", err)
 	}
 
 	cfg.BlockchainWsMaxRetries, err = GetBlockchainWsMaxRetries()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_WS_MAX_RETRIES: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_WS_MAX_RETRIES is required for the node service: %w", err)
 	}
 
 	cfg.BlockchainWsReconnectInterval, err = GetBlockchainWsReconnectInterval()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL is required for the node service: %w", err)
 	}
 
 	cfg.ClaimerPollingInterval, err = GetClaimerPollingInterval()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_CLAIMER_POLLING_INTERVAL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_CLAIMER_POLLING_INTERVAL is required for the node service: %w", err)
 	}
 
 	cfg.MaxStartupTime, err = GetMaxStartupTime()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_MAX_STARTUP_TIME: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_MAX_STARTUP_TIME is required for the node service: %w", err)
 	}
 
 	cfg.PrtPollingInterval, err = GetPrtPollingInterval()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_PRT_POLLING_INTERVAL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_PRT_POLLING_INTERVAL is required for the node service: %w", err)
 	}
 
 	cfg.ValidatorPollingInterval, err = GetValidatorPollingInterval()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_VALIDATOR_POLLING_INTERVAL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_VALIDATOR_POLLING_INTERVAL is required for the node service: %w", err)
 	}
 
 	cfg.SnapshotsDir, err = GetSnapshotsDir()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_SNAPSHOTS_DIR: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_SNAPSHOTS_DIR is required for the node service: %w", err)
 	}
 
@@ -1292,121 +1314,119 @@ func LoadPrtConfig() (*PrtConfig, error) {
 	var err error
 
 	cfg.BlockchainDefaultBlock, err = GetBlockchainDefaultBlock()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_DEFAULT_BLOCK: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_DEFAULT_BLOCK is required for the prt service: %w", err)
 	}
 
 	cfg.BlockchainHttpEndpoint, err = GetBlockchainHttpEndpoint()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_ENDPOINT: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_ENDPOINT is required for the prt service: %w", err)
 	}
 
 	cfg.BlockchainId, err = GetBlockchainId()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_ID: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_ID is required for the prt service: %w", err)
 	}
 
 	cfg.BlockchainLegacyEnabled, err = GetBlockchainLegacyEnabled()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_LEGACY_ENABLED: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_LEGACY_ENABLED is required for the prt service: %w", err)
 	}
 
 	cfg.DatabaseConnection, err = GetDatabaseConnection()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_CONNECTION: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_DATABASE_CONNECTION is required for the prt service: %w", err)
 	}
 
 	cfg.DatabaseEventsConnection, err = GetDatabaseEventsConnection()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_EVENTS_CONNECTION: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_DATABASE_EVENTS_CONNECTION is required for the prt service: %w", err)
 	}
 
 	cfg.FeatureClaimSubmissionEnabled, err = GetFeatureClaimSubmissionEnabled()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED is required for the prt service: %w", err)
 	}
 
 	cfg.TelemetryAddress, err = GetTelemetryAddress()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_TELEMETRY_ADDRESS: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_TELEMETRY_ADDRESS is required for the prt service: %w", err)
 	}
 
 	cfg.LogColor, err = GetLogColor()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_LOG_COLOR: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_LOG_COLOR is required for the prt service: %w", err)
 	}
 
 	cfg.LogLevel, err = GetLogLevel()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_LOG_LEVEL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_LOG_LEVEL is required for the prt service: %w", err)
 	}
 
 	cfg.BlockchainHttpMaxRetries, err = GetBlockchainHttpMaxRetries()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES is required for the prt service: %w", err)
 	}
 
 	cfg.BlockchainHttpRetryMaxWait, err = GetBlockchainHttpRetryMaxWait()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT is required for the prt service: %w", err)
 	}
 
 	cfg.BlockchainHttpRetryMinWait, err = GetBlockchainHttpRetryMinWait()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT is required for the prt service: %w", err)
 	}
 
 	cfg.BlockchainMaxBlockRange, err = GetBlockchainMaxBlockRange()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE is required for the prt service: %w", err)
 	}
 
 	cfg.MaxStartupTime, err = GetMaxStartupTime()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_MAX_STARTUP_TIME: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_MAX_STARTUP_TIME is required for the prt service: %w", err)
 	}
 
 	cfg.PrtPollingInterval, err = GetPrtPollingInterval()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_PRT_POLLING_INTERVAL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_PRT_POLLING_INTERVAL is required for the prt service: %w", err)
 	}
 
 	cfg.SnapshotsDir, err = GetSnapshotsDir()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_SNAPSHOTS_DIR: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_SNAPSHOTS_DIR is required for the prt service: %w", err)
 	}
 
@@ -1464,51 +1484,49 @@ func LoadValidatorConfig() (*ValidatorConfig, error) {
 	var err error
 
 	cfg.DatabaseConnection, err = GetDatabaseConnection()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_CONNECTION: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_DATABASE_CONNECTION is required for the validator service: %w", err)
 	}
 
 	cfg.DatabaseEventsConnection, err = GetDatabaseEventsConnection()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_EVENTS_CONNECTION: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_DATABASE_EVENTS_CONNECTION is required for the validator service: %w", err)
 	}
 
 	cfg.TelemetryAddress, err = GetTelemetryAddress()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_TELEMETRY_ADDRESS: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_TELEMETRY_ADDRESS is required for the validator service: %w", err)
 	}
 
 	cfg.LogColor, err = GetLogColor()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_LOG_COLOR: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_LOG_COLOR is required for the validator service: %w", err)
 	}
 
 	cfg.LogLevel, err = GetLogLevel()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_LOG_LEVEL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_LOG_LEVEL is required for the validator service: %w", err)
 	}
 
 	cfg.MaxStartupTime, err = GetMaxStartupTime()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_MAX_STARTUP_TIME: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_MAX_STARTUP_TIME is required for the validator service: %w", err)
 	}
 
 	cfg.ValidatorPollingInterval, err = GetValidatorPollingInterval()
-	if err != nil && err != ErrNotDefined {
+	if err != nil && !errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("failed to get CARTESI_VALIDATOR_POLLING_INTERVAL: %w", err)
-	} else if err == ErrNotDefined {
+	} else if errors.Is(err, ErrNotDefined) {
 		return nil, fmt.Errorf("CARTESI_VALIDATOR_POLLING_INTERVAL is required for the validator service: %w", err)
 	}
 
@@ -1519,6 +1537,7 @@ func LoadValidatorConfig() (*ValidatorConfig, error) {
 func (c *NodeConfig) ToAdvancerConfig() *AdvancerConfig {
 	return &AdvancerConfig{
 		DatabaseConnection:             c.DatabaseConnection,
+		DatabaseEventsConnection:       c.DatabaseEventsConnection,
 		FeatureInspectEnabled:          c.FeatureInspectEnabled,
 		FeatureMachineHashCheckEnabled: c.FeatureMachineHashCheckEnabled,
 		InspectAddress:                 c.InspectAddress,
@@ -1541,6 +1560,7 @@ func (c *NodeConfig) ToClaimerConfig() *ClaimerConfig {
 		BlockchainId:                  c.BlockchainId,
 		BlockchainLegacyEnabled:       c.BlockchainLegacyEnabled,
 		DatabaseConnection:            c.DatabaseConnection,
+		DatabaseEventsConnection:      c.DatabaseEventsConnection,
 		FeatureClaimSubmissionEnabled: c.FeatureClaimSubmissionEnabled,
 		TelemetryAddress:              c.TelemetryAddress,
 		LogColor:                      c.LogColor,
@@ -1562,6 +1582,7 @@ func (c *NodeConfig) ToEvmreaderConfig() *EvmreaderConfig {
 		BlockchainId:                  c.BlockchainId,
 		BlockchainWsEndpoint:          c.BlockchainWsEndpoint,
 		DatabaseConnection:            c.DatabaseConnection,
+		DatabaseEventsConnection:      c.DatabaseEventsConnection,
 		FeatureInputReaderEnabled:     c.FeatureInputReaderEnabled,
 		TelemetryAddress:              c.TelemetryAddress,
 		LogColor:                      c.LogColor,
@@ -1597,6 +1618,7 @@ func (c *NodeConfig) ToPrtConfig() *PrtConfig {
 		BlockchainId:                  c.BlockchainId,
 		BlockchainLegacyEnabled:       c.BlockchainLegacyEnabled,
 		DatabaseConnection:            c.DatabaseConnection,
+		DatabaseEventsConnection:      c.DatabaseEventsConnection,
 		FeatureClaimSubmissionEnabled: c.FeatureClaimSubmissionEnabled,
 		TelemetryAddress:              c.TelemetryAddress,
 		LogColor:                      c.LogColor,
@@ -1615,6 +1637,7 @@ func (c *NodeConfig) ToPrtConfig() *PrtConfig {
 func (c *NodeConfig) ToValidatorConfig() *ValidatorConfig {
 	return &ValidatorConfig{
 		DatabaseConnection:       c.DatabaseConnection,
+		DatabaseEventsConnection: c.DatabaseEventsConnection,
 		TelemetryAddress:         c.TelemetryAddress,
 		LogColor:                 c.LogColor,
 		LogLevel:                 c.LogLevel,
@@ -1667,11 +1690,13 @@ func GetAuthMnemonic() (RedactedString, error) {
 	s := viper.GetString(AUTH_MNEMONIC)
 	if s == "" {
 		filename := viper.GetString(AUTH_MNEMONIC_FILE)
-		contents, err := os.ReadFile(filename)
-		if err != nil {
-			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", AUTH_MNEMONIC_FILE, err)
+		if filename != "" {
+			contents, err := os.ReadFile(filename)
+			if err != nil {
+				return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", AUTH_MNEMONIC_FILE, err)
+			}
+			s = strings.TrimSpace(string(contents))
 		}
-		s = strings.TrimSpace(string(contents))
 	}
 	if s != "" {
 		v, err := toRedactedString(s)
@@ -1701,11 +1726,13 @@ func GetAuthPrivateKey() (RedactedString, error) {
 	s := viper.GetString(AUTH_PRIVATE_KEY)
 	if s == "" {
 		filename := viper.GetString(AUTH_PRIVATE_KEY_FILE)
-		contents, err := os.ReadFile(filename)
-		if err != nil {
-			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", AUTH_PRIVATE_KEY_FILE, err)
+		if filename != "" {
+			contents, err := os.ReadFile(filename)
+			if err != nil {
+				return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", AUTH_PRIVATE_KEY_FILE, err)
+			}
+			s = strings.TrimSpace(string(contents))
 		}
-		s = strings.TrimSpace(string(contents))
 	}
 	if s != "" {
 		v, err := toRedactedString(s)
@@ -1735,11 +1762,13 @@ func GetBlockchainHttpAuthorization() (RedactedString, error) {
 	s := viper.GetString(BLOCKCHAIN_HTTP_AUTHORIZATION)
 	if s == "" {
 		filename := viper.GetString(BLOCKCHAIN_HTTP_AUTHORIZATION_FILE)
-		contents, err := os.ReadFile(filename)
-		if err != nil {
-			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_AUTHORIZATION_FILE, err)
+		if filename != "" {
+			contents, err := os.ReadFile(filename)
+			if err != nil {
+				return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_AUTHORIZATION_FILE, err)
+			}
+			s = strings.TrimSpace(string(contents))
 		}
-		s = strings.TrimSpace(string(contents))
 	}
 	if s != "" {
 		v, err := toRedactedString(s)
@@ -1756,11 +1785,13 @@ func GetBlockchainHttpEndpoint() (URL, error) {
 	s := viper.GetString(BLOCKCHAIN_HTTP_ENDPOINT)
 	if s == "" {
 		filename := viper.GetString(BLOCKCHAIN_HTTP_ENDPOINT_FILE)
-		contents, err := os.ReadFile(filename)
-		if err != nil {
-			return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_ENDPOINT_FILE, err)
+		if filename != "" {
+			contents, err := os.ReadFile(filename)
+			if err != nil {
+				return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_ENDPOINT_FILE, err)
+			}
+			s = strings.TrimSpace(string(contents))
 		}
-		s = strings.TrimSpace(string(contents))
 	}
 	if s != "" {
 		v, err := toURL(s)
@@ -1803,11 +1834,13 @@ func GetBlockchainWsEndpoint() (URL, error) {
 	s := viper.GetString(BLOCKCHAIN_WS_ENDPOINT)
 	if s == "" {
 		filename := viper.GetString(BLOCKCHAIN_WS_ENDPOINT_FILE)
-		contents, err := os.ReadFile(filename)
-		if err != nil {
-			return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_WS_ENDPOINT_FILE, err)
+		if filename != "" {
+			contents, err := os.ReadFile(filename)
+			if err != nil {
+				return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_WS_ENDPOINT_FILE, err)
+			}
+			s = strings.TrimSpace(string(contents))
 		}
-		s = strings.TrimSpace(string(contents))
 	}
 	if s != "" {
 		v, err := toURL(s)
@@ -1889,11 +1922,13 @@ func GetDatabaseConnection() (URL, error) {
 	s := viper.GetString(DATABASE_CONNECTION)
 	if s == "" {
 		filename := viper.GetString(DATABASE_CONNECTION_FILE)
-		contents, err := os.ReadFile(filename)
-		if err != nil {
-			return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", DATABASE_CONNECTION_FILE, err)
+		if filename != "" {
+			contents, err := os.ReadFile(filename)
+			if err != nil {
+				return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", DATABASE_CONNECTION_FILE, err)
+			}
+			s = strings.TrimSpace(string(contents))
 		}
-		s = strings.TrimSpace(string(contents))
 	}
 	if s != "" {
 		v, err := toURL(s)
@@ -1910,11 +1945,13 @@ func GetDatabaseEventsConnection() (URL, error) {
 	s := viper.GetString(DATABASE_EVENTS_CONNECTION)
 	if s == "" {
 		filename := viper.GetString(DATABASE_EVENTS_CONNECTION_FILE)
-		contents, err := os.ReadFile(filename)
-		if err != nil {
-			return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", DATABASE_EVENTS_CONNECTION_FILE, err)
+		if filename != "" {
+			contents, err := os.ReadFile(filename)
+			if err != nil {
+				return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", DATABASE_EVENTS_CONNECTION_FILE, err)
+			}
+			s = strings.TrimSpace(string(contents))
 		}
-		s = strings.TrimSpace(string(contents))
 	}
 	if s != "" {
 		v, err := toURL(s)
@@ -1937,6 +1974,19 @@ func GetFeatureClaimSubmissionEnabled() (bool, error) {
 		return v, nil
 	}
 	return notDefinedbool(), fmt.Errorf("%s: %w", FEATURE_CLAIM_SUBMISSION_ENABLED, ErrNotDefined)
+}
+
+// GetFeatureEventsMemoryBus returns the value for the environment variable CARTESI_FEATURE_EVENTS_MEMORY_BUS.
+func GetFeatureEventsMemoryBus() (bool, error) {
+	s := viper.GetString(FEATURE_EVENTS_MEMORY_BUS)
+	if s != "" {
+		v, err := toBool(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", FEATURE_EVENTS_MEMORY_BUS, err)
+		}
+		return v, nil
+	}
+	return notDefinedbool(), fmt.Errorf("%s: %w", FEATURE_EVENTS_MEMORY_BUS, ErrNotDefined)
 }
 
 // GetFeatureInputReaderEnabled returns the value for the environment variable CARTESI_FEATURE_INPUT_READER_ENABLED.

@@ -107,6 +107,17 @@ description = """
 If set to false, the node will not start the jsonrpc api service."""
 used-by = ["node"]
 
+[features.CARTESI_FEATURE_EVENTS_MEMORY_BUS]
+default = "false"
+go-type = "bool"
+description = """
+If set to true, the standalone node uses an in-memory event bus instead of PostgreSQL
+LISTEN/NOTIFY for inter-service notifications. The in-memory bus has zero latency but
+does not receive cross-process notifications (e.g., from CLI commands registering apps).
+The default (false) uses PostgreSQL, which exercises the same code path as individual-service
+deployment."""
+used-by = ["node"]
+
 [features.CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED]
 default = "true"
 go-type = "bool"
@@ -408,6 +419,7 @@ used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "
 [database.CARTESI_DATABASE_EVENTS_CONNECTION]
 default = ""
 file = true
+optional = true
 go-type = "URL"
 description = """
 Postgres endpoint for event notifications (LISTEN/NOTIFY). Falls back to \
@@ -416,7 +428,7 @@ CARTESI_DATABASE_CONNECTION if not set.
 Use a separate connection when running behind PgBouncer in transaction-pooling mode, \
 which does not support LISTEN. Point this to a direct PostgreSQL connection while \
 CARTESI_DATABASE_CONNECTION goes through PgBouncer."""
-used-by = ["advancer", "claimer", "evmreader", "validator", "prt"]
+used-by = ["advancer", "claimer", "evmreader", "validator", "node", "prt"]
 
 #
 # Telemetry http address

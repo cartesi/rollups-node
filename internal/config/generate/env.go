@@ -26,6 +26,10 @@ type Env struct {
 	// Configuration also has a "_FILE" variant that should be searched
 	File bool `toml:"file"`
 
+	// If true, the field is not treated as required in the generated loader.
+	// When unset, ErrNotDefined is silently accepted and the zero value is used.
+	Optional bool `toml:"optional"`
+
 	// List of services that use this environment variable.
 	// Possible values: "advancer", "claimer", "cli", "evm-reader", "jsonrpc-api", "node", "validator"
 	UsedBy []string `toml:"used-by"`
