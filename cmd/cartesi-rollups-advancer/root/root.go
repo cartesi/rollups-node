@@ -8,7 +8,10 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/advancer"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/events"
+	eventsPostgres "github.com/cartesi/rollups-node/internal/events/postgres"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
+	repoPostgres "github.com/cartesi/rollups-node/internal/repository/postgres"
 	"github.com/cartesi/rollups-node/internal/version"
 	"github.com/cartesi/rollups-node/pkg/service"
 
@@ -87,10 +90,11 @@ func run(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
 	defer cancel()
 
+	logLevel := config.ResolveServiceLogLevel(config.ServiceAdvancer, cfg.LogLevel)
 	createInfo := advancer.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 config.ServiceAdvancer,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServiceAdvancer, cfg.LogLevel),
+			LogLevel:             logLevel,
 			LogColor:             cfg.LogColor,
 			EnableSignalHandling: true,
 			TelemetryCreate:      true,
@@ -104,9 +108,27 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	defer createInfo.Repository.Close()
 
+	// Wire PostgreSQL event publisher and subscriber.
+	logger := service.NewLogger(logLevel, cfg.LogColor).With("service", config.ServiceAdvancer)
+	pool := createInfo.Repository.(*repoPostgres.PostgresRepository).Pool()
+	publisher := eventsPostgres.NewPublisher(pool, logger)
+	createInfo.Publisher = publisher
+
+	connStr := cfg.DatabaseConnection.Raw()
+	subscriber := eventsPostgres.NewSubscriber(connStr, logger)
+	defer subscriber.Close()
+	notifCh := subscriber.Subscribe(
+		events.ChannelInputReceived,
+		events.ChannelEpochClosed,
+		events.ChannelAppStateChanged,
+	)
+	createInfo.CreateInfo.EventChannel = events.Coalesce(notifCh)
+
 	advancerService, err := advancer.Create(ctx, &createInfo)
 	cobra.CheckErr(err)
 	advancerService.LogConfig(createInfo.Config)
+
+	go func() { _ = subscriber.Listen(advancerService.Context) }()
 
 	cobra.CheckErr(advancerService.Serve())
 }

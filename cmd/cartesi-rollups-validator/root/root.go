@@ -7,7 +7,10 @@ import (
 	"context"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/events"
+	eventsPostgres "github.com/cartesi/rollups-node/internal/events/postgres"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
+	repoPostgres "github.com/cartesi/rollups-node/internal/repository/postgres"
 	"github.com/cartesi/rollups-node/internal/validator"
 	"github.com/cartesi/rollups-node/internal/version"
 	"github.com/cartesi/rollups-node/pkg/service"
@@ -69,10 +72,11 @@ func run(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
 	defer cancel()
 
+	logLevel := config.ResolveServiceLogLevel(config.ServiceValidator, cfg.LogLevel)
 	createInfo := validator.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 config.ServiceValidator,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServiceValidator, cfg.LogLevel),
+			LogLevel:             logLevel,
 			LogColor:             cfg.LogColor,
 			EnableSignalHandling: true,
 			TelemetryCreate:      true,
@@ -86,9 +90,26 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	defer createInfo.Repository.Close()
 
+	// Wire PostgreSQL event publisher and subscriber.
+	logger := service.NewLogger(logLevel, cfg.LogColor).With("service", config.ServiceValidator)
+	pool := createInfo.Repository.(*repoPostgres.PostgresRepository).Pool()
+	publisher := eventsPostgres.NewPublisher(pool, logger)
+	createInfo.Publisher = publisher
+
+	connStr := cfg.DatabaseConnection.Raw()
+	subscriber := eventsPostgres.NewSubscriber(connStr, logger)
+	defer subscriber.Close()
+	notifCh := subscriber.Subscribe(
+		events.ChannelInputsProcessed,
+		events.ChannelAppStateChanged,
+	)
+	createInfo.CreateInfo.EventChannel = events.Coalesce(notifCh)
+
 	validatorService, err := validator.Create(ctx, &createInfo)
 	cobra.CheckErr(err)
 	validatorService.LogConfig(createInfo.Config)
+
+	go func() { _ = subscriber.Listen(validatorService.Context) }()
 
 	cobra.CheckErr(validatorService.Serve())
 }

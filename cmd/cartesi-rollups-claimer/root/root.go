@@ -8,7 +8,10 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/claimer"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/events"
+	eventsPostgres "github.com/cartesi/rollups-node/internal/events/postgres"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
+	repoPostgres "github.com/cartesi/rollups-node/internal/repository/postgres"
 	"github.com/cartesi/rollups-node/internal/version"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
@@ -118,9 +121,25 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	defer createInfo.Repository.Close()
 
+	// Wire PostgreSQL event publisher and subscriber.
+	pool := createInfo.Repository.(*repoPostgres.PostgresRepository).Pool()
+	publisher := eventsPostgres.NewPublisher(pool, logger)
+	createInfo.Publisher = publisher
+
+	connStr := cfg.DatabaseConnection.Raw()
+	subscriber := eventsPostgres.NewSubscriber(connStr, logger)
+	defer subscriber.Close()
+	notifCh := subscriber.Subscribe(
+		events.ChannelClaimComputed,
+		events.ChannelAppStateChanged,
+	)
+	createInfo.CreateInfo.EventChannel = events.Coalesce(notifCh)
+
 	claimerService, err := claimer.Create(ctx, &createInfo)
 	cobra.CheckErr(err)
 	claimerService.LogConfig(createInfo.Config)
+
+	go func() { _ = subscriber.Listen(claimerService.Context) }()
 
 	err = claimerService.Serve()
 	cobra.CheckErr(err)
