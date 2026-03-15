@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/events"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/service"
@@ -194,6 +195,7 @@ func newServiceMock() (*Service, *claimerRepositoryMock, *claimerBlockchainMock)
 		claimsInFlight:    map[int64]common.Hash{},
 		repository:        repository,
 		blockchain:        blockchain,
+		publisher:         events.NopPublisher{},
 	}
 	return claimer, repository, blockchain
 }

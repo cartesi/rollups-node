@@ -44,6 +44,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
+	"github.com/cartesi/rollups-node/internal/events"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 
@@ -147,6 +148,11 @@ func (s *Service) checkClaimsInFlight(
 			if err != nil {
 				return err
 			}
+			s.publisher.Publish(s.Context, events.Notification{
+				Channel:       events.ChannelClaimSubmitted,
+				ApplicationID: computedEpoch.ApplicationID,
+				EpochIndex:    computedEpoch.Index,
+			})
 
 			// we expect apps[key] to always exist,
 			// but guard its use behind `if` to ensure there is no panic if we are wrong.
@@ -311,6 +317,11 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 				errs = append(errs, err)
 				continue
 			}
+			s.publisher.Publish(s.Context, events.Notification{
+				Channel:       events.ChannelClaimSubmitted,
+				ApplicationID: currEpoch.ApplicationID,
+				EpochIndex:    currEpoch.Index,
+			})
 			delete(s.claimsInFlight, key)
 			s.Logger.Info("Claim previously submitted",
 				"app", app.IApplicationAddress,
@@ -475,6 +486,11 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 				errs = append(errs, err)
 				continue
 			}
+			s.publisher.Publish(s.Context, events.Notification{
+				Channel:       events.ChannelClaimAccepted,
+				ApplicationID: currEpoch.ApplicationID,
+				EpochIndex:    currEpoch.Index,
+			})
 			s.Logger.Info("Claim accepted",
 				"app", currEvent.AppContract,
 				"event_block_number", currEvent.Raw.BlockNumber,

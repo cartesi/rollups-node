@@ -14,6 +14,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/events"
 	"github.com/cartesi/rollups-node/internal/merkle"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -24,6 +25,7 @@ import (
 type Service struct {
 	service.Service
 	repository ValidatorRepository
+	publisher  events.Publisher
 
 	// cached constants
 	pristineRootHash    common.Hash
@@ -36,6 +38,10 @@ type CreateInfo struct {
 	Config config.ValidatorConfig
 
 	Repository repository.Repository
+
+	// Publisher sends advisory event notifications after DB writes.
+	// Defaults to events.NopPublisher{} if nil.
+	Publisher events.Publisher
 }
 
 func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
@@ -55,6 +61,11 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	s.repository = c.Repository
 	if s.repository == nil {
 		return nil, fmt.Errorf("repository on validator service Create is nil")
+	}
+
+	s.publisher = c.Publisher
+	if s.publisher == nil {
+		s.publisher = events.NopPublisher{}
 	}
 
 	s.pristinePostContext = merkle.CreatePostContext()
@@ -245,6 +256,11 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 				epoch.Index, appAddress, err,
 			)
 		}
+		s.publisher.Publish(ctx, events.Notification{
+			Channel:       events.ChannelClaimComputed,
+			ApplicationID: app.ID,
+			EpochIndex:    epoch.Index,
+		})
 	}
 
 	if len(processedEpochs) == 0 {

@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
+	"github.com/cartesi/rollups-node/internal/events"
 	"github.com/cartesi/rollups-node/internal/merkle"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -458,6 +459,11 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 			s.Logger.Error("failed to update epoch status to claim accepted", "application", app.Name, "epoch", epoch.Index, "error", err)
 			return err
 		}
+		s.publisher.Publish(ctx, events.Notification{
+			Channel:       events.ChannelClaimAccepted,
+			ApplicationID: app.ID,
+			EpochIndex:    epoch.Index,
+		})
 	}
 	return nil
 }

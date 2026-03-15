@@ -11,6 +11,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
+	"github.com/cartesi/rollups-node/internal/events"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/service"
@@ -27,6 +28,10 @@ type CreateInfo struct {
 
 	EthConn    *ethclient.Client
 	Repository repository.Repository
+
+	// Publisher sends advisory event notifications after DB writes.
+	// Defaults to events.NopPublisher{} if nil.
+	Publisher events.Publisher
 }
 
 type Service struct {
@@ -34,6 +39,7 @@ type Service struct {
 
 	repository iclaimerRepository
 	blockchain iclaimerBlockchain
+	publisher  events.Publisher
 
 	// submitted claims waiting for confirmation from the blockchain.
 	// only accessed from tick, so no need for a lock
@@ -101,6 +107,11 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	s.publisher = c.Publisher
+	if s.publisher == nil {
+		s.publisher = events.NopPublisher{}
 	}
 
 	s.repository = c.Repository

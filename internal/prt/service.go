@@ -11,6 +11,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
+	"github.com/cartesi/rollups-node/internal/events"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
@@ -26,11 +27,16 @@ type CreateInfo struct {
 	Repository     repository.Repository
 	EthClient      EthClientInterface
 	AdapterFactory AdapterFactory
+
+	// Publisher sends advisory event notifications after DB writes.
+	// Defaults to events.NopPublisher{} if nil.
+	Publisher events.Publisher
 }
 
 type Service struct {
 	service.Service
 	repository        prtRepository
+	publisher         events.Publisher
 	client            EthClientInterface
 	adapterFactory    AdapterFactory
 	submissionEnabled bool
@@ -78,6 +84,11 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	s.repository = c.Repository
 	if s.repository == nil {
 		return nil, fmt.Errorf("repository on prt service Create is nil")
+	}
+
+	s.publisher = c.Publisher
+	if s.publisher == nil {
+		s.publisher = events.NopPublisher{}
 	}
 
 	nodeConfig, err := s.setupPersistentConfig(ctx, &c.Config)

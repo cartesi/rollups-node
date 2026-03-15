@@ -52,6 +52,9 @@ type Service struct {
 	eventBus                 *memory.Bus
 	evmReaderAppChangeSignal <-chan struct{}
 	advancerEventChannel     <-chan struct{}
+	validatorEventChannel    <-chan struct{}
+	claimerEventChannel      <-chan struct{}
+	prtEventChannel          <-chan struct{}
 }
 
 func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
@@ -91,10 +94,25 @@ func createServices(ctx context.Context, c *CreateInfo, s *Service) error {
 		events.ChannelEpochClosed,
 		events.ChannelAppStateChanged,
 	)
+	validatorNotifCh := bus.Subscribe(
+		events.ChannelInputsProcessed,
+		events.ChannelAppStateChanged,
+	)
+	claimerNotifCh := bus.Subscribe(
+		events.ChannelClaimComputed,
+		events.ChannelAppStateChanged,
+	)
+	prtNotifCh := bus.Subscribe(
+		events.ChannelClaimComputed,
+		events.ChannelAppStateChanged,
+	)
 
 	s.eventBus = bus
 	s.evmReaderAppChangeSignal = events.Coalesce(evmReaderAppChangeCh)
 	s.advancerEventChannel = events.Coalesce(advancerNotifCh)
+	s.validatorEventChannel = events.Coalesce(validatorNotifCh)
+	s.claimerEventChannel = events.Coalesce(claimerNotifCh)
+	s.prtEventChannel = events.Coalesce(prtNotifCh)
 
 	creators := []serviceCreator{
 		newEVMReader,
@@ -247,9 +265,11 @@ func newValidator(ctx context.Context, c *CreateInfo, s *Service) (service.IServ
 			TelemetryCreate:      false,
 			PollInterval:         c.Config.ValidatorPollingInterval,
 			ServeMux:             s.ServeMux,
+			EventChannel:         s.validatorEventChannel,
 		},
 		Repository: c.Repository,
 		Config:     *c.Config.ToValidatorConfig(),
+		Publisher:  s.eventBus,
 	}
 
 	validatorService, err := validator.Create(ctx, &validatorArgs)
@@ -271,10 +291,12 @@ func newClaimer(ctx context.Context, c *CreateInfo, s *Service) (service.IServic
 			TelemetryCreate:      false,
 			PollInterval:         c.Config.ClaimerPollingInterval,
 			ServeMux:             s.ServeMux,
+			EventChannel:         s.claimerEventChannel,
 		},
 		EthConn:    c.ClaimerClient,
 		Repository: c.Repository,
 		Config:     *c.Config.ToClaimerConfig(),
+		Publisher:  s.eventBus,
 	}
 
 	claimerService, err := claimer.Create(ctx, &claimerArgs)
@@ -319,10 +341,12 @@ func newPrt(ctx context.Context, c *CreateInfo, s *Service) (service.IService, e
 			TelemetryCreate:      false,
 			PollInterval:         c.Config.PrtPollingInterval,
 			ServeMux:             s.ServeMux,
+			EventChannel:         s.prtEventChannel,
 		},
 		EthClient:  c.PrtClient,
 		Repository: c.Repository,
 		Config:     *c.Config.ToPrtConfig(),
+		Publisher:  s.eventBus,
 	}
 
 	prtService, err := prt.Create(ctx, &prtArgs)

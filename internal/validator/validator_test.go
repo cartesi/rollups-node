@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/cartesi/rollups-node/internal/events"
 	"github.com/cartesi/rollups-node/internal/merkle"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -37,6 +38,7 @@ func (s *ValidatorSuite) SetupSubTest() {
 	postContext := merkle.CreatePostContext()
 	validator = &Service{
 		repository:          repo,
+		publisher:           events.NopPublisher{},
 		pristinePostContext: postContext,
 		pristineRootHash:    postContext[merkle.TREE_DEPTH],
 	}
