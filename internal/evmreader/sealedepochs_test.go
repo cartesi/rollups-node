@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/events"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
@@ -50,6 +51,7 @@ func (s *SealedEpochsSuite) SetupTest() {
 
 	s.evmReader = &Service{
 		repository:     s.repository,
+		publisher:      events.NopPublisher{},
 		defaultBlock:   DefaultBlock_Latest,
 		hasEnabledApps: true,
 	}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/events"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
@@ -463,6 +464,7 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 		client:                              s.client,
 		wsClient:                            s.wsClient,
 		repository:                          s.repository,
+		publisher:                           events.NopPublisher{},
 		defaultBlock:                        DefaultBlock_Latest,
 		adapterFactory:                      s.contractFactory,
 		hasEnabledApps:                      true,
