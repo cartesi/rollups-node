@@ -65,6 +65,16 @@ Override log level for the validator service. Falls back to CARTESI_LOG_LEVEL if
 One of "debug", "info", "warn", "error"."""
 used-by = ["validator", "node"]
 
+[logging.CARTESI_LOG_LEVEL_EVENTS]
+go-type = "LogLevel"
+omit = true
+description = """
+Log level for event system messages (publish, subscribe, tick triggers).
+Set to "debug" to trace event flow without enabling full debug logging.
+Falls back to the service log level if unset.
+One of "debug", "info", "warn", "error"."""
+used-by = ["advancer", "claimer", "evmreader", "validator", "node", "prt"]
+
 #
 # Features
 #

@@ -5,6 +5,7 @@ package memory
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 
 	"github.com/cartesi/rollups-node/internal/events"
@@ -26,6 +27,7 @@ type Bus struct {
 	subscribers map[events.Channel][]subscription
 	bufferSize  int
 	closed      bool
+	logger      *slog.Logger
 }
 
 func NewBus(bufferSize int) *Bus {
@@ -36,6 +38,12 @@ func NewBus(bufferSize int) *Bus {
 		subscribers: make(map[events.Channel][]subscription),
 		bufferSize:  bufferSize,
 	}
+}
+
+// SetLogger enables debug logging for publish and delivery events.
+// When nil (the default), the bus is silent.
+func (b *Bus) SetLogger(logger *slog.Logger) {
+	b.logger = logger
 }
 
 func (b *Bus) Publish(_ context.Context, n events.Notification) {
@@ -52,7 +60,20 @@ func (b *Bus) Publish(_ context.Context, n events.Notification) {
 		case sub.ch <- n:
 		default:
 			// Drop: same semantics as PostgreSQL backend.
+			if b.logger != nil {
+				b.logger.Debug("Notification buffer full, dropping",
+					"channel", n.Channel,
+					"app_id", n.ApplicationID,
+				)
+			}
 		}
+	}
+	if b.logger != nil {
+		b.logger.Debug("Published notification",
+			"channel", n.Channel,
+			"app_id", n.ApplicationID,
+			"epoch_idx", n.EpochIndex,
+		)
 	}
 }
 

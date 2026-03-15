@@ -55,6 +55,7 @@ const (
 	LOG_LEVEL                                         = "CARTESI_LOG_LEVEL"
 	LOG_LEVEL_ADVANCER                                = "CARTESI_LOG_LEVEL_ADVANCER"
 	LOG_LEVEL_CLAIMER                                 = "CARTESI_LOG_LEVEL_CLAIMER"
+	LOG_LEVEL_EVENTS                                  = "CARTESI_LOG_LEVEL_EVENTS"
 	LOG_LEVEL_EVM_READER                              = "CARTESI_LOG_LEVEL_EVM_READER"
 	LOG_LEVEL_JSONRPC_API                             = "CARTESI_LOG_LEVEL_JSONRPC_API"
 	LOG_LEVEL_PRT                                     = "CARTESI_LOG_LEVEL_PRT"
@@ -158,6 +159,8 @@ func SetDefaults() {
 	// no default for CARTESI_LOG_LEVEL_ADVANCER
 
 	// no default for CARTESI_LOG_LEVEL_CLAIMER
+
+	// no default for CARTESI_LOG_LEVEL_EVENTS
 
 	// no default for CARTESI_LOG_LEVEL_EVM_READER
 
@@ -420,7 +423,7 @@ type ClaimerConfig struct {
 	// Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited.
 	BlockchainMaxBlockRange uint64 `mapstructure:"CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"`
 
-	// Safety-net polling interval in seconds. The claimer is woken immediately by event notifications when claims are computed; this interval is a fallback to guarantee liveness if a notification is lost.
+	// Polling interval in seconds. The claimer is woken immediately by event notifications when claims are computed, but it also needs to poll for L1 transaction confirmations (claim submission receipts, ClaimAccepted events) which arrive with new blocks. The default (3s) is kept short because the claimer cannot rely solely on internal events for L1-dependent work — it must poll at a rate informed by the L1 block time (~12s for Ethereum mainnet, ~2s for some L2s).
 	ClaimerPollingInterval Duration `mapstructure:"CARTESI_CLAIMER_POLLING_INTERVAL"`
 
 	// How many seconds the node expects services take initializing before aborting.
@@ -954,13 +957,13 @@ type NodeConfig struct {
 	// Wait time in seconds between WebSocket subscription reconnection attempts after a connection failure.
 	BlockchainWsReconnectInterval Duration `mapstructure:"CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL"`
 
-	// Safety-net polling interval in seconds. The claimer is woken immediately by event notifications when claims are computed; this interval is a fallback to guarantee liveness if a notification is lost.
+	// Polling interval in seconds. The claimer is woken immediately by event notifications when claims are computed, but it also needs to poll for L1 transaction confirmations (claim submission receipts, ClaimAccepted events) which arrive with new blocks. The default (3s) is kept short because the claimer cannot rely solely on internal events for L1-dependent work — it must poll at a rate informed by the L1 block time (~12s for Ethereum mainnet, ~2s for some L2s).
 	ClaimerPollingInterval Duration `mapstructure:"CARTESI_CLAIMER_POLLING_INTERVAL"`
 
 	// How many seconds the node expects services take initializing before aborting.
 	MaxStartupTime Duration `mapstructure:"CARTESI_MAX_STARTUP_TIME"`
 
-	// Safety-net polling interval in seconds. PRT is woken immediately by event notifications when claims are computed; this interval is a fallback to guarantee liveness if a notification is lost.
+	// Polling interval in seconds. PRT is woken immediately by event notifications when claims are computed, but it also needs to poll for L1 transaction confirmations (settle/join receipts, tournament state changes) which arrive with new blocks. The default (3s) is kept short because PRT cannot rely solely on internal events for L1-dependent work — it must poll at a rate informed by the L1 block time (~12s for Ethereum mainnet, ~2s for some L2s).
 	PrtPollingInterval Duration `mapstructure:"CARTESI_PRT_POLLING_INTERVAL"`
 
 	// Safety-net polling interval in seconds. The validator is woken immediately by event notifications when inputs are processed; this interval is a fallback to guarantee liveness if a notification is lost.
@@ -1265,7 +1268,7 @@ type PrtConfig struct {
 	// How many seconds the node expects services take initializing before aborting.
 	MaxStartupTime Duration `mapstructure:"CARTESI_MAX_STARTUP_TIME"`
 
-	// Safety-net polling interval in seconds. PRT is woken immediately by event notifications when claims are computed; this interval is a fallback to guarantee liveness if a notification is lost.
+	// Polling interval in seconds. PRT is woken immediately by event notifications when claims are computed, but it also needs to poll for L1 transaction confirmations (settle/join receipts, tournament state changes) which arrive with new blocks. The default (3s) is kept short because PRT cannot rely solely on internal events for L1-dependent work — it must poll at a rate informed by the L1 block time (~12s for Ethereum mainnet, ~2s for some L2s).
 	PrtPollingInterval Duration `mapstructure:"CARTESI_PRT_POLLING_INTERVAL"`
 
 	// Path to the directory where the snapshots will be written.
@@ -2103,6 +2106,19 @@ func GetLogLevelClaimer() (LogLevel, error) {
 		return v, nil
 	}
 	return notDefinedLogLevel(), fmt.Errorf("%s: %w", LOG_LEVEL_CLAIMER, ErrNotDefined)
+}
+
+// GetLogLevelEvents returns the value for the environment variable CARTESI_LOG_LEVEL_EVENTS.
+func GetLogLevelEvents() (LogLevel, error) {
+	s := viper.GetString(LOG_LEVEL_EVENTS)
+	if s != "" {
+		v, err := toLogLevel(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", LOG_LEVEL_EVENTS, err)
+		}
+		return v, nil
+	}
+	return notDefinedLogLevel(), fmt.Errorf("%s: %w", LOG_LEVEL_EVENTS, ErrNotDefined)
 }
 
 // GetLogLevelEvmReader returns the value for the environment variable CARTESI_LOG_LEVEL_EVM_READER.

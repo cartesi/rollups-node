@@ -107,6 +107,7 @@ type CreateInfo struct {
 	Context              context.Context
 	Cancel               context.CancelFunc
 	EventChannel         <-chan struct{} // optional: triggers Tick() on event receipt
+	EventLogger          *slog.Logger   // optional: separate logger for event-related messages
 }
 
 // Service stores runtime information.
@@ -129,6 +130,11 @@ type Service struct {
 	// Use events.Coalesce() to create from a Subscriber's notification channel.
 	// A nil value disables event-driven wakeup (pure polling).
 	EventChannel <-chan struct{}
+
+	// EventLogger is used for event-related debug messages (tick triggers,
+	// publish, subscribe). When nil, falls back to Logger. Set via
+	// CARTESI_LOG_LEVEL_EVENTS to enable event tracing without full debug.
+	EventLogger *slog.Logger
 }
 
 // Create a service by:
@@ -178,6 +184,11 @@ func Create(ctx context.Context, c *CreateInfo, s *Service) error {
 	// event channel
 	if s.EventChannel == nil && c.EventChannel != nil {
 		s.EventChannel = c.EventChannel
+	}
+
+	// event logger
+	if s.EventLogger == nil && c.EventLogger != nil {
+		s.EventLogger = c.EventLogger
 	}
 
 	// signal handling
@@ -310,10 +321,10 @@ func (s *Service) Serve() error {
 			s.Stop(true) // Stop logs errors internally.
 			return nil
 		case <-s.Ticker.C:
-			s.Logger.Debug("Tick triggered by poll timer")
+			s.eventLog().Debug("Tick triggered by poll timer")
 			s.Tick()
 		case <-s.eventChan():
-			s.Logger.Debug("Tick triggered by event")
+			s.eventLog().Debug("Tick triggered by event")
 			s.Tick()
 		}
 	}
@@ -328,6 +339,21 @@ func (s *Service) String() string {
 // A nil channel in select blocks forever, preserving existing behavior.
 func (s *Service) eventChan() <-chan struct{} {
 	return s.EventChannel
+}
+
+// eventLog returns EventLogger if set, or Logger.
+func (s *Service) eventLog() *slog.Logger {
+	if s.EventLogger != nil {
+		return s.EventLogger
+	}
+	return s.Logger
+}
+
+// EventLog returns the logger for event-related messages.
+// Use this when creating event publishers and subscribers so they
+// share the same log level as the event system (CARTESI_LOG_LEVEL_EVENTS).
+func (s *Service) EventLog() *slog.Logger {
+	return s.eventLog()
 }
 
 

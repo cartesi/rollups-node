@@ -54,6 +54,10 @@ func init() {
 	Cmd.Flags().BoolVar(&logColor, "log-color", true, "Tint the logs (colored output)")
 	cobra.CheckErr(viper.BindPFlag(config.LOG_COLOR, Cmd.Flags().Lookup("log-color")))
 
+	Cmd.Flags().String("log-level-events", "",
+		"Log level for event system messages: publish, subscribe, tick triggers (default: inherit --log-level)")
+	cobra.CheckErr(viper.BindPFlag(config.LOG_LEVEL_EVENTS, Cmd.Flags().Lookup("log-level-events")))
+
 	Cmd.Flags().StringVar(&databaseConnection, "database-connection", "",
 		"Database connection string in the URL format\n(eg.: 'postgres://user:password@hostname:port/database') ")
 	cobra.CheckErr(viper.BindPFlag(config.DATABASE_CONNECTION, Cmd.Flags().Lookup("database-connection")))
@@ -109,16 +113,20 @@ func run(cmd *cobra.Command, args []string) {
 	defer createInfo.Repository.Close()
 
 	// Wire PostgreSQL event publisher and subscriber.
-	logger := service.NewLogger(logLevel, cfg.LogColor).With("service", config.ServiceAdvancer)
+	eventsLogLevel, hasOverride := config.ResolveEventsLogLevel(logLevel)
+	eventsLogger := service.NewLogger(eventsLogLevel, cfg.LogColor).With("service", config.ServiceAdvancer)
+	if hasOverride {
+		createInfo.CreateInfo.EventLogger = eventsLogger
+	}
 	pool := createInfo.Repository.(*repoPostgres.PostgresRepository).Pool()
-	publisher := eventsPostgres.NewPublisher(pool, logger)
+	publisher := eventsPostgres.NewPublisher(pool, eventsLogger)
 	createInfo.Publisher = publisher
 
 	eventsConnStr := cfg.DatabaseEventsConnection.Raw()
 	if eventsConnStr == "" {
 		eventsConnStr = cfg.DatabaseConnection.Raw()
 	}
-	subscriber := eventsPostgres.NewSubscriber(eventsConnStr, logger, nil)
+	subscriber := eventsPostgres.NewSubscriber(eventsConnStr, eventsLogger, nil)
 	defer subscriber.Close()
 	notifCh := subscriber.Subscribe(
 		events.ChannelInputReceived,

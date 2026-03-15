@@ -6,6 +6,7 @@ package node
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/cartesi/rollups-node/pkg/service"
 
@@ -82,9 +83,25 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 
 type serviceCreator func(context.Context, *CreateInfo, *Service) (service.IService, error)
 
+// eventsLoggerForService creates an EventLogger for the given service if
+// CARTESI_LOG_LEVEL_EVENTS is set. Returns nil when no override is configured
+// (the service will use its own logger for event messages).
+func eventsLoggerForService(serviceName string, c *CreateInfo) *slog.Logger {
+	serviceLevel := config.ResolveServiceLogLevel(serviceName, c.Config.LogLevel)
+	eventsLevel, hasOverride := config.ResolveEventsLogLevel(serviceLevel)
+	if !hasOverride {
+		return nil
+	}
+	return service.NewLogger(eventsLevel, c.Config.LogColor).With("service", serviceName)
+}
+
 func createServices(ctx context.Context, c *CreateInfo, s *Service) error {
 	// Create in-memory event bus for inter-service notifications.
 	bus := memory.NewBus(64) //nolint:mnd
+	eventsLogger := eventsLoggerForService(config.ServiceNode, c)
+	if eventsLogger != nil {
+		bus.SetLogger(eventsLogger)
+	}
 	go func() { _ = bus.Listen(s.Context) }()
 
 	// Subscribe each service to its relevant channels before starting goroutines.
@@ -243,6 +260,7 @@ func newAdvancer(ctx context.Context, c *CreateInfo, s *Service) (service.IServi
 			PollInterval:         c.Config.AdvancerPollingInterval,
 			ServeMux:             s.ServeMux,
 			EventChannel:         s.advancerEventChannel,
+			EventLogger:          eventsLoggerForService(config.ServiceAdvancer, c),
 		},
 		Repository: c.Repository,
 		Config:     *c.Config.ToAdvancerConfig(),
@@ -269,6 +287,7 @@ func newValidator(ctx context.Context, c *CreateInfo, s *Service) (service.IServ
 			PollInterval:         c.Config.ValidatorPollingInterval,
 			ServeMux:             s.ServeMux,
 			EventChannel:         s.validatorEventChannel,
+			EventLogger:          eventsLoggerForService(config.ServiceValidator, c),
 		},
 		Repository: c.Repository,
 		Config:     *c.Config.ToValidatorConfig(),
@@ -295,6 +314,7 @@ func newClaimer(ctx context.Context, c *CreateInfo, s *Service) (service.IServic
 			PollInterval:         c.Config.ClaimerPollingInterval,
 			ServeMux:             s.ServeMux,
 			EventChannel:         s.claimerEventChannel,
+			EventLogger:          eventsLoggerForService(config.ServiceClaimer, c),
 		},
 		EthConn:    c.ClaimerClient,
 		Repository: c.Repository,
@@ -345,6 +365,7 @@ func newPrt(ctx context.Context, c *CreateInfo, s *Service) (service.IService, e
 			PollInterval:         c.Config.PrtPollingInterval,
 			ServeMux:             s.ServeMux,
 			EventChannel:         s.prtEventChannel,
+			EventLogger:          eventsLoggerForService(config.ServicePrt, c),
 		},
 		EthClient:  c.PrtClient,
 		Repository: c.Repository,

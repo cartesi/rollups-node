@@ -27,6 +27,7 @@ var (
 	logLevelJsonrpc        string
 	logLevelPrt            string
 	logLevelValidator      string
+	logLevelEvents         string
 	defaultBlockString     string
 	blockchainHttpEndpoint string
 	blockchainWsEndpoint   string
@@ -100,6 +101,10 @@ func init() {
 	Cmd.Flags().StringVar(&logLevelValidator, "log-level-validator", "",
 		"Override log level for the validator service (default: inherit --log-level)")
 	cobra.CheckErr(viper.BindPFlag(config.LOG_LEVEL_VALIDATOR, Cmd.Flags().Lookup("log-level-validator")))
+
+	Cmd.Flags().StringVar(&logLevelEvents, "log-level-events", "",
+		"Log level for event system messages: publish, subscribe, tick triggers (default: inherit --log-level)")
+	cobra.CheckErr(viper.BindPFlag(config.LOG_LEVEL_EVENTS, Cmd.Flags().Lookup("log-level-events")))
 
 	Cmd.Flags().StringVar(&databaseConnection, "database-connection", "",
 		"Database connection string in the URL format\n(eg.: 'postgres://user:password@hostname:port/database') ")
