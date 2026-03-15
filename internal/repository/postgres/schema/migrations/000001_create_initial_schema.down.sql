@@ -53,6 +53,12 @@ DROP FUNCTION IF EXISTS "enforce_epoch_status_transition";
 DROP TRIGGER IF EXISTS "execution_parameters_set_updated_at" ON "execution_parameters";
 DROP TABLE IF EXISTS "execution_parameters";
 
+DROP TABLE IF EXISTS "application_service_ack";
+
+DROP TRIGGER IF EXISTS "application_notify_lifecycle" ON "application";
+DROP FUNCTION IF EXISTS "notify_app_lifecycle_change";
+DROP TRIGGER IF EXISTS "application_validate_health_transition" ON "application";
+DROP FUNCTION IF EXISTS "validate_application_health_transition";
 DROP TRIGGER IF EXISTS "application_set_updated_at" ON "application";
 DROP INDEX IF EXISTS "application_data_availability_selector_idx";
 DROP TABLE IF EXISTS "application";

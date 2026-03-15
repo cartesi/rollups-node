@@ -454,19 +454,21 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 		s.Nil(got.Reason)
 	})
 
-	s.Run("FailedToFailedUpdatesReason", func() {
+	s.Run("FailedToFailedIsBlocked", func() {
 		app := makeFailed("first crash")
 
 		newReason := "second crash: different error"
 		err := s.Repo.UpdateApplicationState(
 			s.Ctx, app.ID, ApplicationState_Failed, &newReason)
-		s.Require().NoError(err)
+		s.Require().Error(err, "FAILED->FAILED should be blocked: only RUNNING can transition to FAILED")
+		s.Contains(err.Error(), "RUNNING")
 
+		// Verify reason unchanged
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
 		s.Equal(ApplicationHealth_Failed, got.Health)
 		s.Require().NotNil(got.Reason)
-		s.Equal(newReason, *got.Reason)
+		s.Equal("first crash", *got.Reason)
 	})
 
 	s.Run("FullRecoveryCycle", func() {
@@ -517,7 +519,7 @@ func (s *ApplicationSuite) TestDisabledToFailedBlocked() {
 		err = s.Repo.UpdateApplicationState(
 			s.Ctx, app.ID, ApplicationState_Failed, &reason)
 		s.Require().Error(err)
-		s.Contains(err.Error(), "DISABLED")
+		s.Contains(err.Error(), "STOPPED")
 
 		// Verify state unchanged
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
