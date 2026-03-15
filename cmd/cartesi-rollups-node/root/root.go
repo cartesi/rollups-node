@@ -111,16 +111,16 @@ func init() {
 	Cmd.Flags().StringVar(&blockchainWsEndpoint, "blockchain-ws-endpoint", "", "Blockchain WS Endpoint")
 	cobra.CheckErr(viper.BindPFlag(config.BLOCKCHAIN_WS_ENDPOINT, Cmd.Flags().Lookup("blockchain-ws-endpoint")))
 
-	Cmd.Flags().StringVar(&advancerPollInterval, "advancer-poll-interval", "3", "Advancer poll interval")
+	Cmd.Flags().StringVar(&advancerPollInterval, "advancer-poll-interval", "30", "Advancer safety-net poll interval in seconds")
 	cobra.CheckErr(viper.BindPFlag(config.ADVANCER_POLLING_INTERVAL, Cmd.Flags().Lookup("advancer-poll-interval")))
 
-	Cmd.Flags().StringVar(&validatorPollInterval, "validator-poll-interval", "3", "Validator poll interval")
+	Cmd.Flags().StringVar(&validatorPollInterval, "validator-poll-interval", "30", "Validator safety-net poll interval in seconds")
 	cobra.CheckErr(viper.BindPFlag(config.VALIDATOR_POLLING_INTERVAL, Cmd.Flags().Lookup("validator-poll-interval")))
 
-	Cmd.Flags().StringVar(&claimerPollInterval, "claimer-poll-interval", "3", "Claimer poll interval")
+	Cmd.Flags().StringVar(&claimerPollInterval, "claimer-poll-interval", "3", "Claimer safety-net poll interval in seconds")
 	cobra.CheckErr(viper.BindPFlag(config.CLAIMER_POLLING_INTERVAL, Cmd.Flags().Lookup("claimer-poll-interval")))
 
-	Cmd.Flags().StringVar(&prtPollInterval, "prt-poll-interval", "3", "Claimer poll interval")
+	Cmd.Flags().StringVar(&prtPollInterval, "prt-poll-interval", "3", "PRT safety-net poll interval in seconds")
 	cobra.CheckErr(viper.BindPFlag(config.PRT_POLLING_INTERVAL, Cmd.Flags().Lookup("prt-poll-interval")))
 
 	Cmd.Flags().StringVar(&maxStartupTime, "max-startup-time", "15", "Maximum startup time in seconds")

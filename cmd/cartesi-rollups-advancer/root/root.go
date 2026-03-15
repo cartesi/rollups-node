@@ -58,7 +58,7 @@ func init() {
 		"Database connection string in the URL format\n(eg.: 'postgres://user:password@hostname:port/database') ")
 	cobra.CheckErr(viper.BindPFlag(config.DATABASE_CONNECTION, Cmd.Flags().Lookup("database-connection")))
 
-	Cmd.Flags().StringVar(&pollInterval, "poll-interval", "7", "Poll interval")
+	Cmd.Flags().StringVar(&pollInterval, "poll-interval", "30", "Safety-net poll interval in seconds")
 	cobra.CheckErr(viper.BindPFlag(config.ADVANCER_POLLING_INTERVAL, Cmd.Flags().Lookup("poll-interval")))
 
 	Cmd.Flags().StringVar(&maxStartupTime, "max-startup-time", "15", "Maximum startup time in seconds")

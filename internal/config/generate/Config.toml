@@ -118,31 +118,45 @@ synchronization. Bounds memory usage for applications with large backlogs of unp
 used-by = ["advancer", "node"]
 
 [rollups.CARTESI_ADVANCER_POLLING_INTERVAL]
-default = "3"
+default = "30"
 go-type = "Duration"
 description = """
-How many seconds the node will wait before querying the database for new inputs."""
+Safety-net polling interval in seconds. The advancer is woken immediately by event \
+notifications when new inputs arrive; this interval is a fallback to guarantee liveness \
+if a notification is lost."""
 used-by = ["advancer", "node"]
 
 [rollups.CARTESI_VALIDATOR_POLLING_INTERVAL]
-default = "3"
+default = "30"
 go-type = "Duration"
 description = """
-How many seconds the node will wait before trying to finish epochs for all applications."""
+Safety-net polling interval in seconds. The validator is woken immediately by event \
+notifications when inputs are processed; this interval is a fallback to guarantee liveness \
+if a notification is lost."""
 used-by = ["validator", "node"]
 
 [rollups.CARTESI_CLAIMER_POLLING_INTERVAL]
 default = "3"
 go-type = "Duration"
 description = """
-How many seconds the node will wait before querying the database for new claims."""
+Polling interval in seconds. The claimer is woken immediately by event notifications \
+when claims are computed, but it also needs to poll for L1 transaction confirmations \
+(claim submission receipts, ClaimAccepted events) which arrive with new blocks. The \
+default (3s) is kept short because the claimer cannot rely solely on internal events \
+for L1-dependent work — it must poll at a rate informed by the L1 block time \
+(~12s for Ethereum mainnet, ~2s for some L2s)."""
 used-by = ["claimer", "node"]
 
 [rollups.CARTESI_PRT_POLLING_INTERVAL]
 default = "3"
 go-type = "Duration"
 description = """
-How many seconds the node will wait before trying to finish epochs for all applications."""
+Polling interval in seconds. PRT is woken immediately by event notifications when \
+claims are computed, but it also needs to poll for L1 transaction confirmations \
+(settle/join receipts, tournament state changes) which arrive with new blocks. The \
+default (3s) is kept short because PRT cannot rely solely on internal events for \
+L1-dependent work — it must poll at a rate informed by the L1 block time \
+(~12s for Ethereum mainnet, ~2s for some L2s)."""
 used-by = ["prt", "node"]
 
 [rollups.CARTESI_MAX_STARTUP_TIME]

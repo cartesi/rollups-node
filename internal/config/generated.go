@@ -171,7 +171,7 @@ func SetDefaults() {
 
 	viper.SetDefault(ADVANCER_INPUT_BATCH_SIZE, "500")
 
-	viper.SetDefault(ADVANCER_POLLING_INTERVAL, "3")
+	viper.SetDefault(ADVANCER_POLLING_INTERVAL, "30")
 
 	viper.SetDefault(BLOCKCHAIN_HTTP_MAX_RETRIES, "4")
 
@@ -193,7 +193,7 @@ func SetDefaults() {
 
 	viper.SetDefault(PRT_POLLING_INTERVAL, "3")
 
-	viper.SetDefault(VALIDATOR_POLLING_INTERVAL, "3")
+	viper.SetDefault(VALIDATOR_POLLING_INTERVAL, "30")
 
 	viper.SetDefault(SNAPSHOTS_DIR, "/var/lib/cartesi-rollups-node/snapshots")
 
@@ -244,7 +244,7 @@ type AdvancerConfig struct {
 	// synchronization. Bounds memory usage for applications with large backlogs of unprocessed inputs.
 	AdvancerInputBatchSize uint64 `mapstructure:"CARTESI_ADVANCER_INPUT_BATCH_SIZE"`
 
-	// How many seconds the node will wait before querying the database for new inputs.
+	// Safety-net polling interval in seconds. The advancer is woken immediately by event notifications when new inputs arrive; this interval is a fallback to guarantee liveness if a notification is lost.
 	AdvancerPollingInterval Duration `mapstructure:"CARTESI_ADVANCER_POLLING_INTERVAL"`
 
 	// How many seconds the node expects services take initializing before aborting.
@@ -420,7 +420,7 @@ type ClaimerConfig struct {
 	// Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited.
 	BlockchainMaxBlockRange uint64 `mapstructure:"CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"`
 
-	// How many seconds the node will wait before querying the database for new claims.
+	// Safety-net polling interval in seconds. The claimer is woken immediately by event notifications when claims are computed; this interval is a fallback to guarantee liveness if a notification is lost.
 	ClaimerPollingInterval Duration `mapstructure:"CARTESI_CLAIMER_POLLING_INTERVAL"`
 
 	// How many seconds the node expects services take initializing before aborting.
@@ -930,7 +930,7 @@ type NodeConfig struct {
 	// synchronization. Bounds memory usage for applications with large backlogs of unprocessed inputs.
 	AdvancerInputBatchSize uint64 `mapstructure:"CARTESI_ADVANCER_INPUT_BATCH_SIZE"`
 
-	// How many seconds the node will wait before querying the database for new inputs.
+	// Safety-net polling interval in seconds. The advancer is woken immediately by event notifications when new inputs arrive; this interval is a fallback to guarantee liveness if a notification is lost.
 	AdvancerPollingInterval Duration `mapstructure:"CARTESI_ADVANCER_POLLING_INTERVAL"`
 
 	// Maximum number of retry attempts for HTTP blockchain requests after encountering an error.
@@ -954,16 +954,16 @@ type NodeConfig struct {
 	// Wait time in seconds between WebSocket subscription reconnection attempts after a connection failure.
 	BlockchainWsReconnectInterval Duration `mapstructure:"CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL"`
 
-	// How many seconds the node will wait before querying the database for new claims.
+	// Safety-net polling interval in seconds. The claimer is woken immediately by event notifications when claims are computed; this interval is a fallback to guarantee liveness if a notification is lost.
 	ClaimerPollingInterval Duration `mapstructure:"CARTESI_CLAIMER_POLLING_INTERVAL"`
 
 	// How many seconds the node expects services take initializing before aborting.
 	MaxStartupTime Duration `mapstructure:"CARTESI_MAX_STARTUP_TIME"`
 
-	// How many seconds the node will wait before trying to finish epochs for all applications.
+	// Safety-net polling interval in seconds. PRT is woken immediately by event notifications when claims are computed; this interval is a fallback to guarantee liveness if a notification is lost.
 	PrtPollingInterval Duration `mapstructure:"CARTESI_PRT_POLLING_INTERVAL"`
 
-	// How many seconds the node will wait before trying to finish epochs for all applications.
+	// Safety-net polling interval in seconds. The validator is woken immediately by event notifications when inputs are processed; this interval is a fallback to guarantee liveness if a notification is lost.
 	ValidatorPollingInterval Duration `mapstructure:"CARTESI_VALIDATOR_POLLING_INTERVAL"`
 
 	// Path to the directory where the snapshots will be written.
@@ -1265,7 +1265,7 @@ type PrtConfig struct {
 	// How many seconds the node expects services take initializing before aborting.
 	MaxStartupTime Duration `mapstructure:"CARTESI_MAX_STARTUP_TIME"`
 
-	// How many seconds the node will wait before trying to finish epochs for all applications.
+	// Safety-net polling interval in seconds. PRT is woken immediately by event notifications when claims are computed; this interval is a fallback to guarantee liveness if a notification is lost.
 	PrtPollingInterval Duration `mapstructure:"CARTESI_PRT_POLLING_INTERVAL"`
 
 	// Path to the directory where the snapshots will be written.
@@ -1440,7 +1440,7 @@ type ValidatorConfig struct {
 	// How many seconds the node expects services take initializing before aborting.
 	MaxStartupTime Duration `mapstructure:"CARTESI_MAX_STARTUP_TIME"`
 
-	// How many seconds the node will wait before trying to finish epochs for all applications.
+	// Safety-net polling interval in seconds. The validator is woken immediately by event notifications when inputs are processed; this interval is a fallback to guarantee liveness if a notification is lost.
 	ValidatorPollingInterval Duration `mapstructure:"CARTESI_VALIDATOR_POLLING_INTERVAL"`
 }
 

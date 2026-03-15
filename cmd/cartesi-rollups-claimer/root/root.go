@@ -63,7 +63,7 @@ func init() {
 	Cmd.Flags().StringVar(&blockchainHttpEndpoint, "blockchain-http-endpoint", "", "Blockchain http endpoint")
 	cobra.CheckErr(viper.BindPFlag(config.BLOCKCHAIN_HTTP_ENDPOINT, Cmd.Flags().Lookup("blockchain-http-endpoint")))
 
-	Cmd.Flags().StringVar(&pollInterval, "poll-interval", "7", "Poll interval")
+	Cmd.Flags().StringVar(&pollInterval, "poll-interval", "3", "Safety-net poll interval in seconds")
 	cobra.CheckErr(viper.BindPFlag(config.CLAIMER_POLLING_INTERVAL, Cmd.Flags().Lookup("poll-interval")))
 
 	Cmd.Flags().StringVar(&maxStartupTime, "max-startup-time", "15", "Maximum startup time in seconds")
