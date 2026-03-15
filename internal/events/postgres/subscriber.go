@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"net"
 	"slices"
 	"strings"
 	"sync"
@@ -169,6 +170,19 @@ func (s *Subscriber) listenLoop(
 		return fmt.Errorf("parse config: %w", err)
 	}
 	connConfig.RuntimeParams["application_name"] = "rollups-node-events"
+
+	// TCP keepalives provide OS-level stale connection detection.
+	// A LISTEN connection sits idle for long periods, making it vulnerable to
+	// half-open TCP states and silent firewall drops. These probes detect dead
+	// connections within 90s (60s idle + 3 probes x 10s), complementing the
+	// application-level heartbeat (WaitForNotification timeout + SELECT 1).
+	//
+	// Note: keepalive params are libpq connection-time parameters, not PostgreSQL
+	// GUC variables. They must be configured via DialFunc, not RuntimeParams
+	// (which are sent as SET commands and rejected by the server).
+	connConfig.DialFunc = (&net.Dialer{
+		KeepAlive: 60 * time.Second,
+	}).DialContext
 
 	conn, err := pgx.ConnectConfig(ctx, connConfig)
 	if err != nil {
