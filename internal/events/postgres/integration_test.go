@@ -44,7 +44,7 @@ func TestCoalesceThroughPostgres(t *testing.T) {
 	defer pool.Close()
 
 	pub := NewPublisher(pool, slog.Default())
-	sub := NewSubscriber(connStr, slog.Default())
+	sub := NewSubscriber(connStr, slog.Default(), nil)
 	notifCh := sub.Subscribe(events.ChannelInputReceived)
 	signal := events.Coalesce(notifCh)
 
@@ -97,7 +97,7 @@ func TestMultipleChannelsOnOneSubscriber(t *testing.T) {
 	defer pool.Close()
 
 	pub := NewPublisher(pool, slog.Default())
-	sub := NewSubscriber(connStr, slog.Default())
+	sub := NewSubscriber(connStr, slog.Default(), nil)
 	ch := sub.Subscribe(events.ChannelInputReceived, events.ChannelEpochClosed)
 
 	go sub.Listen(ctx) //nolint:errcheck
@@ -139,7 +139,7 @@ func TestNotifyInsideRolledBackTransaction(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	sub := NewSubscriber(connStr, slog.Default())
+	sub := NewSubscriber(connStr, slog.Default(), nil)
 	ch := sub.Subscribe(events.ChannelInputReceived)
 
 	go sub.Listen(ctx) //nolint:errcheck

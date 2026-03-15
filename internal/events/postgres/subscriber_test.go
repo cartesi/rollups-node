@@ -29,7 +29,7 @@ func TestSubscriberRoundTrip(t *testing.T) {
 	defer pool.Close()
 
 	pub := NewPublisher(pool, slog.Default())
-	sub := NewSubscriber(connStr, slog.Default())
+	sub := NewSubscriber(connStr, slog.Default(), nil)
 	ch := sub.Subscribe(events.ChannelInputReceived)
 
 	go sub.Listen(ctx) //nolint:errcheck
@@ -61,7 +61,7 @@ func TestSubscriberChannelIsolation(t *testing.T) {
 	defer pool.Close()
 
 	pub := NewPublisher(pool, slog.Default())
-	sub := NewSubscriber(connStr, slog.Default())
+	sub := NewSubscriber(connStr, slog.Default(), nil)
 	ch := sub.Subscribe(events.ChannelEpochClosed)
 
 	go sub.Listen(ctx) //nolint:errcheck
@@ -93,7 +93,7 @@ func TestSubscriberMalformedPayload(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	sub := NewSubscriber(connStr, slog.Default())
+	sub := NewSubscriber(connStr, slog.Default(), nil)
 	ch := sub.Subscribe(events.ChannelInputReceived)
 
 	go sub.Listen(ctx) //nolint:errcheck
@@ -124,14 +124,14 @@ func TestSubscriberMalformedPayload(t *testing.T) {
 }
 
 func TestSubscriberListenWithoutSubscribe(t *testing.T) {
-	sub := NewSubscriber("postgres://localhost/test", slog.Default())
+	sub := NewSubscriber("postgres://localhost/test", slog.Default(), nil)
 	err := sub.Listen(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "without Subscribe")
 }
 
 func TestSubscriberPanicsOnInvalidChannel(t *testing.T) {
-	sub := NewSubscriber("postgres://localhost/test", slog.Default())
+	sub := NewSubscriber("postgres://localhost/test", slog.Default(), nil)
 	assert.Panics(t, func() {
 		sub.Subscribe("bogus_channel")
 	})
@@ -146,7 +146,7 @@ func TestSubscriberBufferOverflow(t *testing.T) {
 	require.NoError(t, err)
 	defer pool.Close()
 
-	sub := NewSubscriber(connStr, slog.Default())
+	sub := NewSubscriber(connStr, slog.Default(), nil)
 	// Use the default buffer size (64).
 	ch := sub.Subscribe(events.ChannelInputReceived)
 
@@ -189,7 +189,7 @@ func TestSubscriberReconnectsAfterConnectionKill(t *testing.T) {
 	defer pool.Close()
 
 	pub := NewPublisher(pool, slog.Default())
-	sub := NewSubscriber(connStr, slog.Default())
+	sub := NewSubscriber(connStr, slog.Default(), nil)
 	ch := sub.Subscribe(events.ChannelInputReceived)
 
 	go sub.Listen(ctx) //nolint:errcheck
@@ -225,7 +225,7 @@ func TestSubscriberReconnectsAfterConnectionKill(t *testing.T) {
 }
 
 func TestSubscriberCloseIsIdempotent(t *testing.T) {
-	sub := NewSubscriber("postgres://localhost/test", slog.Default())
+	sub := NewSubscriber("postgres://localhost/test", slog.Default(), nil)
 	_ = sub.Subscribe(events.ChannelInputReceived)
 	require.NoError(t, sub.Close())
 	require.NoError(t, sub.Close())
@@ -235,7 +235,7 @@ func TestSubscriberContextCancelDuringListen(t *testing.T) {
 	connStr := getTestConnString(t)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	sub := NewSubscriber(connStr, slog.Default())
+	sub := NewSubscriber(connStr, slog.Default(), nil)
 	_ = sub.Subscribe(events.ChannelInputReceived)
 
 	done := make(chan error, 1)

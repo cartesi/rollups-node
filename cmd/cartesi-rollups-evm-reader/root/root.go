@@ -132,7 +132,7 @@ func run(cmd *cobra.Command, args []string) {
 	createInfo.Publisher = publisher
 
 	connStr := cfg.DatabaseConnection.Raw()
-	subscriber := eventsPostgres.NewSubscriber(connStr, logger)
+	subscriber := eventsPostgres.NewSubscriber(connStr, logger, nil)
 	defer subscriber.Close()
 	appChangeCh := subscriber.Subscribe(events.ChannelAppStateChanged)
 	createInfo.AppChangeSignal = events.Coalesce(appChangeCh)

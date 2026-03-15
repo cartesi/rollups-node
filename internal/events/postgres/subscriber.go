@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,77 +21,116 @@ import (
 )
 
 const (
-	defaultBufferSize   = 64
-	reconnectBaseDelay  = 500 * time.Millisecond
-	reconnectMaxDelay   = 30 * time.Second
-	reconnectMultiplier = 2
-	heartbeatTimeout    = 60 * time.Second
-	heartbeatQuery      = "SELECT 1"
-	jitterLow           = 0.75
-	jitterRange         = 0.5
+	defaultBufferSize       = 64
+	reconnectBaseDelay      = 500 * time.Millisecond
+	reconnectMaxDelay       = 30 * time.Second
+	reconnectMultiplier     = 2
+	maxAttemptsBeforeReset  = 7
+	defaultHeartbeatTimeout = 60 * time.Second
+	heartbeatQuery          = "SELECT 1"
+	jitterLow               = 0.75
+	jitterRange             = 0.5
 )
+
+// SubscriberConfig allows tuning the subscriber for different deployments.
+type SubscriberConfig struct {
+	// HeartbeatTimeout is the maximum time to wait for a notification before
+	// sending a health-check query on the LISTEN connection. A shorter timeout
+	// detects dead connections faster but generates more health-check traffic.
+	// Default: 60s. Set lower for local development, higher for production.
+	HeartbeatTimeout time.Duration
+}
+
+// subscription holds the delivery channel and optional filter for one
+// Subscribe or SubscribeWithFilter call.
+type subscription struct {
+	ch     chan events.Notification
+	filter *events.SubscriptionFilter // nil means no filter (deliver all)
+}
 
 // Subscriber receives advisory notifications from PostgreSQL LISTEN.
 // It manages a dedicated pgx.Conn (not from the pool) with automatic
 // reconnection, heartbeat, and non-blocking delivery.
 type Subscriber struct {
-	connString string
-	logger     *slog.Logger
-	bufferSize int
+	connString       string
+	logger           *slog.Logger
+	bufferSize       int
+	heartbeatTimeout time.Duration
 
-	mu       sync.Mutex
-	channels []events.Channel
-	ch       chan events.Notification
-	closed   bool
+	mu            sync.Mutex
+	channels      []events.Channel
+	subscriptions []subscription
+	closed        bool
 }
 
-func NewSubscriber(connString string, logger *slog.Logger) *Subscriber {
+func NewSubscriber(connString string, logger *slog.Logger, cfg *SubscriberConfig) *Subscriber {
+	heartbeat := defaultHeartbeatTimeout
+	if cfg != nil && cfg.HeartbeatTimeout > 0 {
+		heartbeat = cfg.HeartbeatTimeout
+	}
 	return &Subscriber{
-		connString: connString,
-		logger:     logger,
-		bufferSize: defaultBufferSize,
+		connString:       connString,
+		logger:           logger,
+		bufferSize:       defaultBufferSize,
+		heartbeatTimeout: heartbeat,
 	}
 }
 
 func (s *Subscriber) Subscribe(channels ...events.Channel) <-chan events.Notification {
+	return s.SubscribeWithFilter(events.SubscriptionFilter{}, channels...)
+}
+
+func (s *Subscriber) SubscribeWithFilter(
+	filter events.SubscriptionFilter,
+	channels ...events.Channel,
+) <-chan events.Notification {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, ch := range channels {
-		if err := events.ValidateChannel(ch); err != nil {
-			panic(fmt.Sprintf("events: invalid channel in Subscribe: %s", ch))
+	for _, c := range channels {
+		if err := events.ValidateChannel(c); err != nil {
+			panic(fmt.Sprintf("events: invalid channel in Subscribe: %s", c))
+		}
+		if !slices.Contains(s.channels, c) {
+			s.channels = append(s.channels, c)
 		}
 	}
-	s.channels = append(s.channels, channels...)
-	if s.ch == nil {
-		s.ch = make(chan events.Notification, s.bufferSize)
-	}
-	return s.ch
+	ch := make(chan events.Notification, s.bufferSize)
+	f := filter // copy
+	s.subscriptions = append(s.subscriptions, subscription{ch: ch, filter: &f})
+	return ch
 }
 
 func (s *Subscriber) Listen(ctx context.Context) error {
 	s.mu.Lock()
 	channels := make([]events.Channel, len(s.channels))
 	copy(channels, s.channels)
-	ch := s.ch
+	subs := make([]subscription, len(s.subscriptions))
+	copy(subs, s.subscriptions)
 	s.mu.Unlock()
 
-	if ch == nil {
+	if len(subs) == 0 {
 		return fmt.Errorf("events: Listen called without Subscribe")
 	}
 	if len(channels) == 0 {
 		return fmt.Errorf("events: no channels subscribed")
 	}
 
-	defer s.closeChan()
+	defer s.closeAll()
 
 	delay := reconnectBaseDelay
+	attempt := 0
 	for {
-		err := s.listenLoop(ctx, channels, ch)
+		err := s.listenLoop(ctx, channels, subs)
 		if ctx.Err() != nil {
 			return nil
 		}
+		attempt++
+		if attempt >= maxAttemptsBeforeReset {
+			attempt = 0
+			delay = reconnectBaseDelay
+		}
 		s.logger.Warn("Event listener disconnected, reconnecting",
-			"error", err, "delay", delay)
+			"error", err, "delay", delay, "attempt", attempt)
 		select {
 		case <-ctx.Done():
 			return nil
@@ -102,16 +143,13 @@ func (s *Subscriber) Listen(ctx context.Context) error {
 func (s *Subscriber) listenLoop(
 	ctx context.Context,
 	channels []events.Channel,
-	ch chan events.Notification,
+	subs []subscription,
 ) error {
 	connConfig, err := pgx.ParseConfig(s.connString)
 	if err != nil {
 		return fmt.Errorf("parse config: %w", err)
 	}
 	connConfig.RuntimeParams["application_name"] = "rollups-node-events"
-	// TCP keepalives are enabled by default in Go's net.Dialer.
-	// Stale connection detection relies on the application-level heartbeat
-	// (WaitForNotification timeout + SELECT 1) defined in heartbeatTimeout.
 
 	conn, err := pgx.ConnectConfig(ctx, connConfig)
 	if err != nil {
@@ -119,18 +157,16 @@ func (s *Subscriber) listenLoop(
 	}
 	defer conn.Close(context.Background())
 
-	for _, channel := range channels {
-		_, err := conn.Exec(ctx,
-			"LISTEN "+pgx.Identifier{string(channel)}.Sanitize())
-		if err != nil {
-			return fmt.Errorf("listen %s: %w", channel, err)
-		}
+	// Issue all LISTEN commands in a single Exec call to reduce
+	// network round-trips (1 round-trip instead of N).
+	if err := listenAll(ctx, conn, channels); err != nil {
+		return fmt.Errorf("listen: %w", err)
 	}
 
 	s.logger.Info("Event listener connected", "channels", channels)
 
 	for {
-		waitCtx, cancel := context.WithTimeout(ctx, heartbeatTimeout)
+		waitCtx, cancel := context.WithTimeout(ctx, s.heartbeatTimeout)
 		notification, err := conn.WaitForNotification(waitCtx)
 		cancel()
 
@@ -157,28 +193,37 @@ func (s *Subscriber) listenLoop(
 			continue
 		}
 
-		select {
-		case ch <- n:
-		default:
-			s.logger.Debug("Notification buffer full, dropping",
-				"channel", n.Channel,
-				"app_id", n.ApplicationID,
-			)
+		// Deliver to all matching subscriptions.
+		for i := range subs {
+			if subs[i].filter != nil && !subs[i].filter.Matches(n) {
+				continue
+			}
+			select {
+			case subs[i].ch <- n:
+			default:
+				s.logger.Debug("Notification buffer full, dropping",
+					"channel", n.Channel,
+					"app_id", n.ApplicationID,
+				)
+			}
 		}
 	}
 }
 
-func (s *Subscriber) closeChan() {
+func (s *Subscriber) closeAll() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.closed && s.ch != nil {
-		close(s.ch)
-		s.closed = true
+	if s.closed {
+		return
+	}
+	s.closed = true
+	for i := range s.subscriptions {
+		close(s.subscriptions[i].ch)
 	}
 }
 
 func (s *Subscriber) Close() error {
-	s.closeChan()
+	s.closeAll()
 	return nil
 }
 
@@ -186,4 +231,18 @@ func jitter(d time.Duration) time.Duration {
 	// +/- 25% jitter
 	factor := jitterLow + rand.Float64()*jitterRange //nolint:gosec
 	return time.Duration(float64(d) * factor)
+}
+
+// listenAll issues all LISTEN commands in a single Exec call,
+// reducing N round-trips to 1. Each channel name is sanitized via
+// pgx.Identifier to prevent SQL injection.
+func listenAll(ctx context.Context, conn *pgx.Conn, channels []events.Channel) error {
+	var sb strings.Builder
+	for _, ch := range channels {
+		sb.WriteString("LISTEN ")
+		sb.WriteString(pgx.Identifier{string(ch)}.Sanitize())
+		sb.WriteString(";\n")
+	}
+	_, err := conn.Exec(ctx, sb.String())
+	return err
 }
