@@ -12,12 +12,18 @@ import (
 
 const defaultBufferSize = 64
 
+// subscription holds a delivery channel and optional filter.
+type subscription struct {
+	ch     chan events.Notification
+	filter *events.SubscriptionFilter
+}
+
 // Bus is an in-memory event bus implementing both Publisher and Subscriber.
 // It provides the same fire-and-forget semantics as the PostgreSQL backend.
 // Used in standalone mode (single process) and tests.
 type Bus struct {
 	mu          sync.RWMutex
-	subscribers map[events.Channel][]chan events.Notification
+	subscribers map[events.Channel][]subscription
 	bufferSize  int
 	closed      bool
 }
@@ -27,7 +33,7 @@ func NewBus(bufferSize int) *Bus {
 		bufferSize = defaultBufferSize
 	}
 	return &Bus{
-		subscribers: make(map[events.Channel][]chan events.Notification),
+		subscribers: make(map[events.Channel][]subscription),
 		bufferSize:  bufferSize,
 	}
 }
@@ -38,9 +44,12 @@ func (b *Bus) Publish(_ context.Context, n events.Notification) {
 	if b.closed {
 		return
 	}
-	for _, ch := range b.subscribers[n.Channel] {
+	for _, sub := range b.subscribers[n.Channel] {
+		if sub.filter != nil && !sub.filter.Matches(n) {
+			continue
+		}
 		select {
-		case ch <- n:
+		case sub.ch <- n:
 		default:
 			// Drop: same semantics as PostgreSQL backend.
 		}
@@ -48,11 +57,20 @@ func (b *Bus) Publish(_ context.Context, n events.Notification) {
 }
 
 func (b *Bus) Subscribe(channels ...events.Channel) <-chan events.Notification {
+	return b.SubscribeWithFilter(events.SubscriptionFilter{}, channels...)
+}
+
+func (b *Bus) SubscribeWithFilter(
+	filter events.SubscriptionFilter,
+	channels ...events.Channel,
+) <-chan events.Notification {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	ch := make(chan events.Notification, b.bufferSize)
+	f := filter // copy
+	sub := subscription{ch: ch, filter: &f}
 	for _, channel := range channels {
-		b.subscribers[channel] = append(b.subscribers[channel], ch)
+		b.subscribers[channel] = append(b.subscribers[channel], sub)
 	}
 	return ch
 }
@@ -74,11 +92,11 @@ func (b *Bus) Close() error {
 	// (when Subscribe is called with multiple channels). Deduplicate
 	// to avoid closing the same Go channel twice.
 	closed := make(map[chan events.Notification]struct{})
-	for channel, chans := range b.subscribers {
-		for _, ch := range chans {
-			if _, ok := closed[ch]; !ok {
-				close(ch)
-				closed[ch] = struct{}{}
+	for channel, subs := range b.subscribers {
+		for _, sub := range subs {
+			if _, ok := closed[sub.ch]; !ok {
+				close(sub.ch)
+				closed[sub.ch] = struct{}{}
 			}
 		}
 		delete(b.subscribers, channel)

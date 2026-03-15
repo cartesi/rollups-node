@@ -11,8 +11,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/cartesi/rollups-node/internal/events"
+	"github.com/cartesi/rollups-node/internal/events/eventstest"
 )
 
 func TestBusPublishSubscribeRoundTrip(t *testing.T) {
@@ -196,4 +198,13 @@ func TestBusConcurrentAccess(t *testing.T) {
 func TestBusDefaultBufferSize(t *testing.T) {
 	bus := NewBus(0)
 	assert.Equal(t, defaultBufferSize, bus.bufferSize)
+}
+
+func TestMemoryBusContract(t *testing.T) {
+	suite.Run(t, &eventstest.ContractSuite{
+		Factory: func(_ *testing.T) (events.Publisher, events.Subscriber) {
+			bus := NewBus(64)
+			return bus, bus
+		},
+	})
 }

@@ -39,13 +39,20 @@ type SubscriberConfig struct {
 	// detects dead connections faster but generates more health-check traffic.
 	// Default: 60s. Set lower for local development, higher for production.
 	HeartbeatTimeout time.Duration
+
+	// BufferSize is the capacity of the notification delivery channel.
+	// When the buffer is full, new notifications are dropped (fire-and-forget).
+	// Default: 64. Increase for systems with many applications where a single
+	// block could generate notifications for all of them.
+	BufferSize int
 }
 
-// subscription holds the delivery channel and optional filter for one
-// Subscribe or SubscribeWithFilter call.
+// subscription holds the delivery channel, subscribed channels, and optional
+// filter for one Subscribe or SubscribeWithFilter call.
 type subscription struct {
-	ch     chan events.Notification
-	filter *events.SubscriptionFilter // nil means no filter (deliver all)
+	ch       chan events.Notification
+	channels map[events.Channel]struct{} // channels this subscription cares about
+	filter   *events.SubscriptionFilter  // nil means no app filter (deliver all)
 }
 
 // Subscriber receives advisory notifications from PostgreSQL LISTEN.
@@ -65,13 +72,19 @@ type Subscriber struct {
 
 func NewSubscriber(connString string, logger *slog.Logger, cfg *SubscriberConfig) *Subscriber {
 	heartbeat := defaultHeartbeatTimeout
-	if cfg != nil && cfg.HeartbeatTimeout > 0 {
-		heartbeat = cfg.HeartbeatTimeout
+	bufSize := defaultBufferSize
+	if cfg != nil {
+		if cfg.HeartbeatTimeout > 0 {
+			heartbeat = cfg.HeartbeatTimeout
+		}
+		if cfg.BufferSize > 0 {
+			bufSize = cfg.BufferSize
+		}
 	}
 	return &Subscriber{
 		connString:       connString,
 		logger:           logger,
-		bufferSize:       defaultBufferSize,
+		bufferSize:       bufSize,
 		heartbeatTimeout: heartbeat,
 	}
 }
@@ -96,7 +109,11 @@ func (s *Subscriber) SubscribeWithFilter(
 	}
 	ch := make(chan events.Notification, s.bufferSize)
 	f := filter // copy
-	s.subscriptions = append(s.subscriptions, subscription{ch: ch, filter: &f})
+	chSet := make(map[events.Channel]struct{}, len(channels))
+	for _, c := range channels {
+		chSet[c] = struct{}{}
+	}
+	s.subscriptions = append(s.subscriptions, subscription{ch: ch, channels: chSet, filter: &f})
 	return ch
 }
 
@@ -115,7 +132,9 @@ func (s *Subscriber) Listen(ctx context.Context) error {
 		return fmt.Errorf("events: no channels subscribed")
 	}
 
-	defer s.closeAll()
+	// Note: closeAll() is NOT deferred here. The caller owns cleanup via
+	// Close(). This avoids double-close when the caller defers Close()
+	// (which is the normal pattern in all service binaries).
 
 	delay := reconnectBaseDelay
 	attempt := 0
@@ -195,6 +214,9 @@ func (s *Subscriber) listenLoop(
 
 		// Deliver to all matching subscriptions.
 		for i := range subs {
+			if _, ok := subs[i].channels[n.Channel]; !ok {
+				continue
+			}
 			if subs[i].filter != nil && !subs[i].filter.Matches(n) {
 				continue
 			}
