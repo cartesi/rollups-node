@@ -131,8 +131,11 @@ func run(cmd *cobra.Command, args []string) {
 	publisher := eventsPostgres.NewPublisher(pool, logger)
 	createInfo.Publisher = publisher
 
-	connStr := cfg.DatabaseConnection.Raw()
-	subscriber := eventsPostgres.NewSubscriber(connStr, logger, nil)
+	eventsConnStr := cfg.DatabaseEventsConnection.Raw()
+	if eventsConnStr == "" {
+		eventsConnStr = cfg.DatabaseConnection.Raw()
+	}
+	subscriber := eventsPostgres.NewSubscriber(eventsConnStr, logger, nil)
 	defer subscriber.Close()
 	appChangeCh := subscriber.Subscribe(events.ChannelAppStateChanged)
 	createInfo.AppChangeSignal = events.Coalesce(appChangeCh)

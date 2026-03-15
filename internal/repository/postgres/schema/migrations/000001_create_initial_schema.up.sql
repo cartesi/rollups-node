@@ -146,7 +146,10 @@ FOR EACH ROW EXECUTE FUNCTION validate_application_health_transition();
 CREATE OR REPLACE FUNCTION notify_app_lifecycle_change()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF OLD.enabled IS DISTINCT FROM NEW.enabled
+    -- INSERT: always notify (new application registered).
+    -- UPDATE: notify only when lifecycle fields actually changed.
+    IF TG_OP = 'INSERT'
+       OR OLD.enabled IS DISTINCT FROM NEW.enabled
        OR OLD.health IS DISTINCT FROM NEW.health
        OR OLD.deleted_at IS DISTINCT FROM NEW.deleted_at
     THEN
@@ -162,7 +165,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER "application_notify_lifecycle"
-AFTER UPDATE OF "enabled", "health", "deleted_at" ON "application"
+AFTER INSERT OR UPDATE OF "enabled", "health", "deleted_at" ON "application"
 FOR EACH ROW EXECUTE FUNCTION notify_app_lifecycle_change();
 
 CREATE TABLE "application_service_ack" (

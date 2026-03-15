@@ -381,6 +381,19 @@ See [this](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONN
 for more information."""
 used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "cli", "prt"]
 
+[database.CARTESI_DATABASE_EVENTS_CONNECTION]
+default = ""
+file = true
+go-type = "URL"
+description = """
+Postgres endpoint for event notifications (LISTEN/NOTIFY). Falls back to \
+CARTESI_DATABASE_CONNECTION if not set.
+
+Use a separate connection when running behind PgBouncer in transaction-pooling mode, \
+which does not support LISTEN. Point this to a direct PostgreSQL connection while \
+CARTESI_DATABASE_CONNECTION goes through PgBouncer."""
+used-by = ["advancer", "claimer", "evmreader", "validator", "prt"]
+
 #
 # Telemetry http address
 #

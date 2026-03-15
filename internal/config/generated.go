@@ -40,6 +40,7 @@ const (
 	CONTRACTS_INPUT_BOX_ADDRESS                       = "CARTESI_CONTRACTS_INPUT_BOX_ADDRESS"
 	CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS = "CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS"
 	DATABASE_CONNECTION                               = "CARTESI_DATABASE_CONNECTION"
+	DATABASE_EVENTS_CONNECTION                        = "CARTESI_DATABASE_EVENTS_CONNECTION"
 	FEATURE_CLAIM_SUBMISSION_ENABLED                  = "CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"
 	FEATURE_INPUT_READER_ENABLED                      = "CARTESI_FEATURE_INPUT_READER_ENABLED"
 	FEATURE_INSPECT_ENABLED                           = "CARTESI_FEATURE_INSPECT_ENABLED"
@@ -85,7 +86,8 @@ const (
 
 	BLOCKCHAIN_WS_ENDPOINT_FILE = "CARTESI_BLOCKCHAIN_WS_ENDPOINT_FILE"
 
-	DATABASE_CONNECTION_FILE = "CARTESI_DATABASE_CONNECTION_FILE"
+	DATABASE_CONNECTION_FILE        = "CARTESI_DATABASE_CONNECTION_FILE"
+	DATABASE_EVENTS_CONNECTION_FILE = "CARTESI_DATABASE_EVENTS_CONNECTION_FILE"
 )
 
 func SetDefaults() {
@@ -126,6 +128,8 @@ func SetDefaults() {
 	// no default for CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS
 
 	viper.SetDefault(DATABASE_CONNECTION, "")
+
+	viper.SetDefault(DATABASE_EVENTS_CONNECTION, "")
 
 	viper.SetDefault(FEATURE_CLAIM_SUBMISSION_ENABLED, "true")
 
@@ -208,6 +212,11 @@ type AdvancerConfig struct {
 	// for more information.
 	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
 
+	// Postgres endpoint for event notifications (LISTEN/NOTIFY). Falls back to CARTESI_DATABASE_CONNECTION if not set.
+	//
+	// Use a separate connection when running behind PgBouncer in transaction-pooling mode, which does not support LISTEN. Point this to a direct PostgreSQL connection while CARTESI_DATABASE_CONNECTION goes through PgBouncer.
+	DatabaseEventsConnection URL `mapstructure:"CARTESI_DATABASE_EVENTS_CONNECTION"`
+
 	// If set to false, the node will not start the inspect service.
 	FeatureInspectEnabled bool `mapstructure:"CARTESI_FEATURE_INSPECT_ENABLED"`
 
@@ -266,6 +275,13 @@ func LoadAdvancerConfig() (*AdvancerConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_CONNECTION: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_DATABASE_CONNECTION is required for the advancer service: %w", err)
+	}
+
+	cfg.DatabaseEventsConnection, err = GetDatabaseEventsConnection()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_EVENTS_CONNECTION: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_DATABASE_EVENTS_CONNECTION is required for the advancer service: %w", err)
 	}
 
 	cfg.FeatureInspectEnabled, err = GetFeatureInspectEnabled()
@@ -375,6 +391,11 @@ type ClaimerConfig struct {
 	// for more information.
 	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
 
+	// Postgres endpoint for event notifications (LISTEN/NOTIFY). Falls back to CARTESI_DATABASE_CONNECTION if not set.
+	//
+	// Use a separate connection when running behind PgBouncer in transaction-pooling mode, which does not support LISTEN. Point this to a direct PostgreSQL connection while CARTESI_DATABASE_CONNECTION goes through PgBouncer.
+	DatabaseEventsConnection URL `mapstructure:"CARTESI_DATABASE_EVENTS_CONNECTION"`
+
 	// If set to false, the node will not submit claims (reader mode).
 	FeatureClaimSubmissionEnabled bool `mapstructure:"CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"`
 
@@ -455,6 +476,13 @@ func LoadClaimerConfig() (*ClaimerConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_CONNECTION: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_DATABASE_CONNECTION is required for the claimer service: %w", err)
+	}
+
+	cfg.DatabaseEventsConnection, err = GetDatabaseEventsConnection()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_EVENTS_CONNECTION: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_DATABASE_EVENTS_CONNECTION is required for the claimer service: %w", err)
 	}
 
 	cfg.FeatureClaimSubmissionEnabled, err = GetFeatureClaimSubmissionEnabled()
@@ -556,6 +584,11 @@ type EvmreaderConfig struct {
 	// for more information.
 	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
 
+	// Postgres endpoint for event notifications (LISTEN/NOTIFY). Falls back to CARTESI_DATABASE_CONNECTION if not set.
+	//
+	// Use a separate connection when running behind PgBouncer in transaction-pooling mode, which does not support LISTEN. Point this to a direct PostgreSQL connection while CARTESI_DATABASE_CONNECTION goes through PgBouncer.
+	DatabaseEventsConnection URL `mapstructure:"CARTESI_DATABASE_EVENTS_CONNECTION"`
+
 	// If set to false, the node will not read inputs from the blockchain.
 	FeatureInputReaderEnabled bool `mapstructure:"CARTESI_FEATURE_INPUT_READER_ENABLED"`
 
@@ -642,6 +675,13 @@ func LoadEvmreaderConfig() (*EvmreaderConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_CONNECTION: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_DATABASE_CONNECTION is required for the evmreader service: %w", err)
+	}
+
+	cfg.DatabaseEventsConnection, err = GetDatabaseEventsConnection()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_EVENTS_CONNECTION: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_DATABASE_EVENTS_CONNECTION is required for the evmreader service: %w", err)
 	}
 
 	cfg.FeatureInputReaderEnabled, err = GetFeatureInputReaderEnabled()
@@ -1193,6 +1233,11 @@ type PrtConfig struct {
 	// for more information.
 	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
 
+	// Postgres endpoint for event notifications (LISTEN/NOTIFY). Falls back to CARTESI_DATABASE_CONNECTION if not set.
+	//
+	// Use a separate connection when running behind PgBouncer in transaction-pooling mode, which does not support LISTEN. Point this to a direct PostgreSQL connection while CARTESI_DATABASE_CONNECTION goes through PgBouncer.
+	DatabaseEventsConnection URL `mapstructure:"CARTESI_DATABASE_EVENTS_CONNECTION"`
+
 	// If set to false, the node will not submit claims (reader mode).
 	FeatureClaimSubmissionEnabled bool `mapstructure:"CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"`
 
@@ -1276,6 +1321,13 @@ func LoadPrtConfig() (*PrtConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_CONNECTION: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_DATABASE_CONNECTION is required for the prt service: %w", err)
+	}
+
+	cfg.DatabaseEventsConnection, err = GetDatabaseEventsConnection()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_EVENTS_CONNECTION: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_DATABASE_EVENTS_CONNECTION is required for the prt service: %w", err)
 	}
 
 	cfg.FeatureClaimSubmissionEnabled, err = GetFeatureClaimSubmissionEnabled()
@@ -1371,6 +1423,11 @@ type ValidatorConfig struct {
 	// for more information.
 	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
 
+	// Postgres endpoint for event notifications (LISTEN/NOTIFY). Falls back to CARTESI_DATABASE_CONNECTION if not set.
+	//
+	// Use a separate connection when running behind PgBouncer in transaction-pooling mode, which does not support LISTEN. Point this to a direct PostgreSQL connection while CARTESI_DATABASE_CONNECTION goes through PgBouncer.
+	DatabaseEventsConnection URL `mapstructure:"CARTESI_DATABASE_EVENTS_CONNECTION"`
+
 	// HTTP address for telemetry service.
 	TelemetryAddress string `mapstructure:"CARTESI_TELEMETRY_ADDRESS"`
 
@@ -1408,6 +1465,13 @@ func LoadValidatorConfig() (*ValidatorConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_CONNECTION: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_DATABASE_CONNECTION is required for the validator service: %w", err)
+	}
+
+	cfg.DatabaseEventsConnection, err = GetDatabaseEventsConnection()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_EVENTS_CONNECTION: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_DATABASE_EVENTS_CONNECTION is required for the validator service: %w", err)
 	}
 
 	cfg.TelemetryAddress, err = GetTelemetryAddress()
@@ -1836,6 +1900,27 @@ func GetDatabaseConnection() (URL, error) {
 		return v, nil
 	}
 	return notDefinedURL(), fmt.Errorf("%s: %w", DATABASE_CONNECTION, ErrNotDefined)
+}
+
+// GetDatabaseEventsConnection returns the value for the environment variable CARTESI_DATABASE_EVENTS_CONNECTION.
+func GetDatabaseEventsConnection() (URL, error) {
+	s := viper.GetString(DATABASE_EVENTS_CONNECTION)
+	if s == "" {
+		filename := viper.GetString(DATABASE_EVENTS_CONNECTION_FILE)
+		contents, err := os.ReadFile(filename)
+		if err != nil {
+			return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", DATABASE_EVENTS_CONNECTION_FILE, err)
+		}
+		s = strings.TrimSpace(string(contents))
+	}
+	if s != "" {
+		v, err := toURL(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", DATABASE_EVENTS_CONNECTION, err)
+		}
+		return v, nil
+	}
+	return notDefinedURL(), fmt.Errorf("%s: %w", DATABASE_EVENTS_CONNECTION, ErrNotDefined)
 }
 
 // GetFeatureClaimSubmissionEnabled returns the value for the environment variable CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED.
