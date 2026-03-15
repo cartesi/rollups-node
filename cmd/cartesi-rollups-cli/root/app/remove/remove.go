@@ -66,7 +66,7 @@ func run(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	if app.State == model.ApplicationState_Enabled {
+	if app.Enabled && app.Health == model.ApplicationHealth_Running {
 		fmt.Fprintf(os.Stderr, "Error: Application %s is ENABLED. Must disable it first\n", app.Name)
 		os.Exit(1)
 	}

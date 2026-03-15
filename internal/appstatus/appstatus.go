@@ -147,7 +147,7 @@ func setApplicationState(
 
 	// Only update in-memory state when the DB write succeeds to keep
 	// the in-memory Application consistent with the database.
-	app.State = state
+	app.Health = state
 	app.Reason = &reason
 	return nil
 }

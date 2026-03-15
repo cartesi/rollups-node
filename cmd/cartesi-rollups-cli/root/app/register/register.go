@@ -123,9 +123,11 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	defer repo.Close()
 
-	applicationState := model.ApplicationState_Enabled
+	appEnabled := true
+	appHealth := model.ApplicationHealth_Running
 	if disabled {
-		applicationState = model.ApplicationState_Disabled
+		appEnabled = false
+		appHealth = model.ApplicationHealth_Stopped
 	}
 
 	address := common.HexToAddress(applicationAddress)
@@ -219,7 +221,8 @@ func run(cmd *cobra.Command, args []string) {
 		EpochLength:              epochLength,
 		DataAvailability:         encodedDA,
 		ConsensusType:            consensusType,
-		State:                    applicationState,
+		Enabled:                  appEnabled,
+		Health:                   appHealth,
 		IInputBoxBlock:           inputBoxBlockNumber,
 		LastEpochCheckBlock:      0,
 		LastInputCheckBlock:      0,

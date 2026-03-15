@@ -55,7 +55,8 @@ func NewApplicationBuilder() *ApplicationBuilder {
 			EpochLength:         10,
 			DataAvailability:    DataAvailability_InputBox[:],
 			ConsensusType:       Consensus_Authority,
-			State:               ApplicationState_Enabled,
+			Enabled:             true,
+			Health:              ApplicationHealth_Running,
 		},
 	}
 }
@@ -76,7 +77,14 @@ func (b *ApplicationBuilder) WithConsensus(c Consensus) *ApplicationBuilder {
 }
 
 func (b *ApplicationBuilder) WithState(s ApplicationState) *ApplicationBuilder {
-	b.app.State = s
+	b.app.Health = s
+	if s == ApplicationState_Enabled {
+		b.app.Enabled = true
+		b.app.Health = ApplicationHealth_Running
+	} else if s == ApplicationState_Disabled {
+		b.app.Enabled = false
+		b.app.Health = ApplicationHealth_Stopped
+	}
 	return b
 }
 

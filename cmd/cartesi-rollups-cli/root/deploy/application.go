@@ -173,10 +173,12 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	application := model.Application{}
 	application.Name = applicationName
 	application.TemplateURI = templateURI
-	application.State = model.ApplicationState_Disabled
+	application.Enabled = false
+	application.Health = model.ApplicationHealth_Stopped
 	application.ConsensusType = model.Consensus_Authority
 	if applicationEnableParam {
-		application.State = model.ApplicationState_Enabled
+		application.Enabled = true
+		application.Health = model.ApplicationHealth_Running
 	}
 
 	// load execution parameters from a file?

@@ -26,6 +26,10 @@ type Pagination struct {
 
 type ApplicationFilter struct {
 	State            *ApplicationState
+	Enabled          *bool
+	Health           *ApplicationHealth
+	Active           *bool // shorthand for enabled=true, health=RUNNING, deleted_at IS NULL
+	NotDeleted       *bool // filter deleted_at IS NULL (defaults to true)
 	DataAvailability *DataAvailabilitySelector
 	ConsensusType    *Consensus
 }

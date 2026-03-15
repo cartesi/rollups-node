@@ -35,7 +35,8 @@ func (r *PostgresRepository) CreateApplication(
 			table.Application.EpochLength,
 			table.Application.DataAvailability,
 			table.Application.ConsensusType,
-			table.Application.State,
+			table.Application.Enabled,
+			table.Application.Health,
 			table.Application.IinputboxBlock,
 			table.Application.LastEpochCheckBlock,
 			table.Application.LastInputCheckBlock,
@@ -53,7 +54,8 @@ func (r *PostgresRepository) CreateApplication(
 			app.EpochLength,
 			app.DataAvailability,
 			app.ConsensusType,
-			app.State,
+			app.Enabled,
+			app.Health,
 			app.IInputBoxBlock,
 			app.LastEpochCheckBlock,
 			app.LastInputCheckBlock,
@@ -152,7 +154,9 @@ func (r *PostgresRepository) GetApplication(
 			table.Application.EpochLength,
 			table.Application.DataAvailability,
 			table.Application.ConsensusType,
-			table.Application.State,
+			table.Application.Enabled,
+			table.Application.Health,
+			table.Application.DeletedAt,
 			table.Application.Reason,
 			table.Application.IinputboxBlock,
 			table.Application.LastEpochCheckBlock,
@@ -202,7 +206,9 @@ func (r *PostgresRepository) GetApplication(
 		&app.EpochLength,
 		&app.DataAvailability,
 		&app.ConsensusType,
-		&app.State,
+		&app.Enabled,
+		&app.Health,
+		&app.DeletedAt,
 		&app.Reason,
 		&app.IInputBoxBlock,
 		&app.LastEpochCheckBlock,
@@ -279,7 +285,9 @@ func (r *PostgresRepository) UpdateApplication(
 			table.Application.EpochLength,
 			table.Application.DataAvailability,
 			table.Application.ConsensusType,
-			table.Application.State,
+			table.Application.Enabled,
+			table.Application.Health,
+			table.Application.DeletedAt,
 			table.Application.Reason,
 			table.Application.IinputboxBlock,
 			table.Application.LastEpochCheckBlock,
@@ -298,7 +306,9 @@ func (r *PostgresRepository) UpdateApplication(
 			app.EpochLength,
 			app.DataAvailability,
 			app.ConsensusType,
-			app.State,
+			app.Enabled,
+			app.Health,
+			app.DeletedAt,
 			app.Reason,
 			app.IInputBoxBlock,
 			app.LastEpochCheckBlock,
@@ -323,7 +333,7 @@ func (r *PostgresRepository) UpdateApplicationState(
 
 	updateStmt := table.Application.
 		UPDATE(
-			table.Application.State,
+			table.Application.Health,
 			table.Application.Reason,
 		).
 		SET(
@@ -523,7 +533,9 @@ func (r *PostgresRepository) ListApplications(
 			table.Application.EpochLength,
 			table.Application.DataAvailability,
 			table.Application.ConsensusType,
-			table.Application.State,
+			table.Application.Enabled,
+			table.Application.Health,
+			table.Application.DeletedAt,
 			table.Application.Reason,
 			table.Application.IinputboxBlock,
 			table.Application.LastEpochCheckBlock,
@@ -560,7 +572,23 @@ func (r *PostgresRepository) ListApplications(
 
 	conditions := []postgres.BoolExpression{}
 	if f.State != nil {
-		conditions = append(conditions, table.Application.State.EQ(postgres.NewEnumValue(f.State.String())))
+		conditions = append(conditions, table.Application.Health.EQ(postgres.NewEnumValue(f.State.String())))
+	}
+	if f.Active != nil && *f.Active {
+		conditions = append(conditions,
+			table.Application.Enabled.EQ(postgres.Bool(true)),
+			table.Application.Health.EQ(postgres.NewEnumValue(string(model.ApplicationHealth_Running))),
+			table.Application.DeletedAt.IS_NULL(),
+		)
+	}
+	if f.Enabled != nil {
+		conditions = append(conditions, table.Application.Enabled.EQ(postgres.Bool(*f.Enabled)))
+	}
+	if f.Health != nil {
+		conditions = append(conditions, table.Application.Health.EQ(postgres.NewEnumValue(string(*f.Health))))
+	}
+	if f.NotDeleted != nil && *f.NotDeleted {
+		conditions = append(conditions, table.Application.DeletedAt.IS_NULL())
 	}
 	if f.DataAvailability != nil {
 		conditions = append(conditions,
@@ -611,7 +639,9 @@ func (r *PostgresRepository) ListApplications(
 			&app.EpochLength,
 			&app.DataAvailability,
 			&app.ConsensusType,
-			&app.State,
+			&app.Enabled,
+			&app.Health,
+			&app.DeletedAt,
 			&app.Reason,
 			&app.IInputBoxBlock,
 			&app.LastEpochCheckBlock,

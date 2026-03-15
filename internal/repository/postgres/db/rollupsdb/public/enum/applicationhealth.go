@@ -9,14 +9,14 @@ package enum
 
 import "github.com/go-jet/jet/v2/postgres"
 
-var ApplicationState = &struct {
-	Enabled    postgres.StringExpression
-	Disabled   postgres.StringExpression
+var ApplicationHealth = &struct {
+	Running    postgres.StringExpression
+	Stopped    postgres.StringExpression
 	Failed     postgres.StringExpression
 	Inoperable postgres.StringExpression
 }{
-	Enabled:    postgres.NewEnumValue("ENABLED"),
-	Disabled:   postgres.NewEnumValue("DISABLED"),
+	Running:    postgres.NewEnumValue("RUNNING"),
+	Stopped:    postgres.NewEnumValue("STOPPED"),
 	Failed:     postgres.NewEnumValue("FAILED"),
 	Inoperable: postgres.NewEnumValue("INOPERABLE"),
 }

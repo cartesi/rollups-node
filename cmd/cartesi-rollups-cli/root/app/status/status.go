@@ -72,7 +72,7 @@ func run(cmd *cobra.Command, args []string) {
 
 	// If no new status is provided, display the current status and reason
 	if len(args) == 1 {
-		fmt.Println(app.State)
+		fmt.Printf("enabled=%v health=%s\n", app.Enabled, app.Health)
 		if app.Reason != nil && *app.Reason != "" {
 			fmt.Printf("Reason: %s\n", *app.Reason)
 		}
@@ -82,7 +82,7 @@ func run(cmd *cobra.Command, args []string) {
 	// Handle status change
 	newStatus := strings.ToLower(args[1])
 
-	if app.State == model.ApplicationState_Inoperable {
+	if app.Health == model.ApplicationHealth_Inoperable {
 		fmt.Fprintf(os.Stderr,
 			"Error: Cannot change state of application %s. It is INOPERABLE (irrecoverable).\n",
 			app.Name)
@@ -93,32 +93,32 @@ func run(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	var targetState model.ApplicationState
+	var targetState model.ApplicationHealth
 	switch newStatus {
 	case "enabled", "enable":
-		targetState = model.ApplicationState_Enabled
+		targetState = model.ApplicationHealth_Running
 	case "disabled", "disable":
-		targetState = model.ApplicationState_Disabled
+		targetState = model.ApplicationHealth_Stopped
 	default:
 		fmt.Fprintf(os.Stderr, "Error: Invalid status %q. Valid values are 'enabled' or 'disabled'\n", newStatus)
 		os.Exit(1)
 	}
 
-	if app.State == targetState {
-		fmt.Printf("Application %s status is already %s\n", app.Name, app.State)
+	if app.Health == targetState {
+		fmt.Printf("Application %s health is already %s\n", app.Name, app.Health)
 		os.Exit(0)
 	}
 
 	// Changing state of a FAILED application requires confirmation
-	if app.State == model.ApplicationState_Failed &&
-		(targetState == model.ApplicationState_Enabled ||
-			targetState == model.ApplicationState_Disabled) &&
+	if app.Health == model.ApplicationHealth_Failed &&
+		(targetState == model.ApplicationHealth_Running ||
+			targetState == model.ApplicationHealth_Stopped) &&
 		!yesFlag {
 		fmt.Printf("Application %q is in FAILED state.\n", app.Name)
 		if app.Reason != nil {
 			fmt.Printf("Reason: %s\n", *app.Reason)
 		}
-		if targetState == model.ApplicationState_Enabled {
+		if targetState == model.ApplicationHealth_Running {
 			fmt.Println("Re-enabling will attempt to restart processing from the last snapshot.")
 		}
 		confirmed, err := cli.ConfirmPrompt("Proceed?")
@@ -133,7 +133,7 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	// Show failure reason when changing state away from FAILED
-	if app.State == model.ApplicationState_Failed && app.Reason != nil && *app.Reason != "" {
+	if app.Health == model.ApplicationHealth_Failed && app.Reason != nil && *app.Reason != "" {
 		fmt.Printf("Previous failure reason: %s\n", *app.Reason)
 	}
 

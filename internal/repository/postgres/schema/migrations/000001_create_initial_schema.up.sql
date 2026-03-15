@@ -8,7 +8,7 @@ CREATE DOMAIN "uint64" AS NUMERIC(20, 0) CHECK (VALUE >= 0 AND VALUE <= 18446744
 CREATE DOMAIN "hash" AS BYTEA CHECK (octet_length(VALUE) = 32);
 CREATE DOMAIN "data_availability" AS BYTEA CHECK (octet_length(VALUE) >= 4);
 
-CREATE TYPE "ApplicationState" AS ENUM ('ENABLED', 'DISABLED', 'FAILED', 'INOPERABLE');
+CREATE TYPE "ApplicationHealth" AS ENUM ('RUNNING', 'STOPPED', 'FAILED', 'INOPERABLE');
 
 CREATE TYPE "InputCompletionStatus" AS ENUM (
     'NONE',
@@ -82,7 +82,8 @@ CREATE TABLE "application"
     "epoch_length" uint64 NOT NULL,
     "data_availability" data_availability NOT NULL,
     "consensus_type" "Consensus" NOT NULL,
-    "state" "ApplicationState" NOT NULL,
+    "enabled" BOOLEAN NOT NULL DEFAULT true,
+    "health" "ApplicationHealth" NOT NULL DEFAULT 'RUNNING',
     "reason" VARCHAR(4096),
     "last_epoch_check_block" uint64 NOT NULL,
     "last_input_check_block" uint64 NOT NULL,
@@ -91,41 +92,78 @@ CREATE TABLE "application"
     "processed_inputs" uint64 NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT "reason_required_for_failure_states" CHECK (NOT ("state" IN ('FAILED', 'INOPERABLE') AND ("reason" IS NULL OR LENGTH("reason") = 0))),
+    "deleted_at" TIMESTAMPTZ,
+    CONSTRAINT "reason_required_for_failure_states" CHECK (NOT ("health" IN ('FAILED', 'INOPERABLE') AND ("reason" IS NULL OR LENGTH("reason") = 0))),
     CONSTRAINT "application_pkey" PRIMARY KEY ("id")
 );
 
 CREATE INDEX "application_data_availability_selector_idx" ON "application"(substring("data_availability" FROM 1 for 4));
 
+-- Partial index for the active-application filter used by every service on every tick:
+-- WHERE enabled = true AND health = 'RUNNING' AND deleted_at IS NULL.
+CREATE INDEX "application_active_idx" ON "application"("id")
+    WHERE "enabled" = true AND "health" = 'RUNNING' AND "deleted_at" IS NULL;
+
 CREATE TRIGGER "application_set_updated_at" BEFORE UPDATE ON "application"
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE OR REPLACE FUNCTION validate_application_state_transition()
+CREATE OR REPLACE FUNCTION validate_application_health_transition()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- INOPERABLE is terminal: no state or reason changes allowed
-    IF OLD.state = 'INOPERABLE'::"ApplicationState"
-       AND (NEW.state <> OLD.state OR NEW.reason IS DISTINCT FROM OLD.reason)
+    -- INOPERABLE is terminal: no health or reason changes allowed
+    IF OLD.health = 'INOPERABLE'::"ApplicationHealth"
+       AND (NEW.health <> OLD.health OR NEW.reason IS DISTINCT FROM OLD.reason)
     THEN
-        RAISE EXCEPTION 'cannot change state or reason of an INOPERABLE application';
+        RAISE EXCEPTION 'cannot change health or reason of an INOPERABLE application';
     END IF;
 
-    -- DISABLED cannot transition to FAILED (app must be running to fail)
-    IF OLD.state = 'DISABLED'::"ApplicationState" AND NEW.state = 'FAILED'::"ApplicationState" THEN
-        RAISE EXCEPTION 'cannot transition from DISABLED to FAILED: application is not running';
+    -- Only RUNNING can transition to FAILED (app must be running to fail)
+    IF NEW.health = 'FAILED'::"ApplicationHealth"
+       AND OLD.health <> 'RUNNING'::"ApplicationHealth"
+    THEN
+        RAISE EXCEPTION 'cannot transition to FAILED from %: app must be RUNNING',
+            OLD.health;
     END IF;
 
-    -- Clear stale reason when transitioning to ENABLED or DISABLED
-    IF NEW.state IN ('ENABLED'::"ApplicationState", 'DISABLED'::"ApplicationState") THEN
+    -- Clear stale reason when transitioning to RUNNING or STOPPED
+    IF NEW.health IN ('RUNNING'::"ApplicationHealth",
+                      'STOPPED'::"ApplicationHealth") THEN
         NEW.reason := NULL;
+    END IF;
+
+    -- Cannot re-enable a soft-deleted application
+    IF NEW.enabled = true AND OLD.deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION 'cannot re-enable a deleted application';
     END IF;
 
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER "application_validate_state_transition" BEFORE UPDATE ON "application"
-FOR EACH ROW EXECUTE FUNCTION validate_application_state_transition();
+CREATE TRIGGER "application_validate_health_transition" BEFORE UPDATE ON "application"
+FOR EACH ROW EXECUTE FUNCTION validate_application_health_transition();
+
+CREATE OR REPLACE FUNCTION notify_app_lifecycle_change()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.enabled IS DISTINCT FROM NEW.enabled
+       OR OLD.health IS DISTINCT FROM NEW.health
+       OR OLD.deleted_at IS DISTINCT FROM NEW.deleted_at
+    THEN
+        PERFORM pg_notify('app_state_changed',
+            json_build_object(
+                'ch', 'app_state_changed',
+                'app_id', NEW.id
+            )::text
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER "application_notify_lifecycle"
+AFTER UPDATE OF "enabled", "health", "deleted_at" ON "application"
+FOR EACH ROW EXECUTE FUNCTION notify_app_lifecycle_change();
 
 CREATE TABLE "execution_parameters" (
     "application_id" INT PRIMARY KEY,

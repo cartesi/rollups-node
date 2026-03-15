@@ -67,7 +67,7 @@ DROP TYPE IF EXISTS "SnapshotPolicy";
 DROP TYPE IF EXISTS "EpochStatus";
 DROP TYPE IF EXISTS "DefaultBlock";
 DROP TYPE IF EXISTS "InputCompletionStatus";
-DROP TYPE IF EXISTS "ApplicationState";
+DROP TYPE IF EXISTS "ApplicationHealth";
 DROP DOMAIN IF EXISTS "data_availability";
 DROP DOMAIN IF EXISTS "hash";
 DROP DOMAIN IF EXISTS "uint64";

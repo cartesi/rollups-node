@@ -27,7 +27,9 @@ type Application struct {
 	EpochLength              uint64              `json:"epoch_length"`
 	DataAvailability         []byte              `json:"data_availability"`
 	ConsensusType            Consensus           `json:"consensus_type"`
-	State                    ApplicationState    `json:"state"`
+	Enabled                  bool                `json:"enabled"`
+	Health                   ApplicationHealth   `json:"health"`
+	DeletedAt                *time.Time          `json:"deleted_at,omitempty"`
 	Reason                   *string             `json:"reason"`
 	IInputBoxBlock           uint64              `json:"iinputbox_block"`
 	LastEpochCheckBlock      uint64              `json:"last_epoch_check_block"`
@@ -145,33 +147,24 @@ func (a *Application) IsDaveConsensus() bool {
 	return a.ConsensusType == Consensus_PRT
 }
 
-// ApplicationState represents the lifecycle state of an application.
-//
-// State machine transitions (enforced by DB trigger):
-//
-//	ENABLED  → DISABLED, FAILED, INOPERABLE
-//	DISABLED → ENABLED, INOPERABLE
-//	FAILED   → ENABLED, DISABLED, INOPERABLE  (recoverable by operator)
-//	INOPERABLE → (terminal, no transitions allowed)
-//
-// DISABLED → FAILED is blocked (app must be running to fail).
-type ApplicationState string
+// ApplicationHealth represents the runtime health of an application.
+type ApplicationHealth string
 
 const (
-	ApplicationState_Enabled    ApplicationState = "ENABLED"    // actively processing inputs
-	ApplicationState_Disabled   ApplicationState = "DISABLED"   // stopped by operator
-	ApplicationState_Failed     ApplicationState = "FAILED"     // recoverable failure (e.g., OOM, process crash)
-	ApplicationState_Inoperable ApplicationState = "INOPERABLE" // irrecoverable (data corruption, invariant violation)
+	ApplicationHealth_Running    ApplicationHealth = "RUNNING"
+	ApplicationHealth_Stopped    ApplicationHealth = "STOPPED"
+	ApplicationHealth_Failed     ApplicationHealth = "FAILED"
+	ApplicationHealth_Inoperable ApplicationHealth = "INOPERABLE"
 )
 
-var ApplicationStateAllValues = []ApplicationState{
-	ApplicationState_Enabled,
-	ApplicationState_Disabled,
-	ApplicationState_Failed,
-	ApplicationState_Inoperable,
+var ApplicationHealthAllValues = []ApplicationHealth{
+	ApplicationHealth_Running,
+	ApplicationHealth_Stopped,
+	ApplicationHealth_Failed,
+	ApplicationHealth_Inoperable,
 }
 
-func (e *ApplicationState) Scan(value any) error {
+func (e *ApplicationHealth) Scan(value any) error {
 	var enumValue string
 	switch val := value.(type) {
 	case string:
@@ -179,28 +172,56 @@ func (e *ApplicationState) Scan(value any) error {
 	case []byte:
 		enumValue = string(val)
 	default:
-		return errors.New("invalid value for ApplicationState enum. Enum value has to be of type string or []byte")
+		return errors.New("invalid value for ApplicationHealth enum. Enum value has to be of type string or []byte")
 	}
 
 	switch enumValue {
-	case "ENABLED":
-		*e = ApplicationState_Enabled
-	case "DISABLED":
-		*e = ApplicationState_Disabled
+	case "RUNNING":
+		*e = ApplicationHealth_Running
+	case "STOPPED":
+		*e = ApplicationHealth_Stopped
 	case "FAILED":
-		*e = ApplicationState_Failed
+		*e = ApplicationHealth_Failed
 	case "INOPERABLE":
-		*e = ApplicationState_Inoperable
+		*e = ApplicationHealth_Inoperable
 	default:
-		return errors.New("invalid value '" + enumValue + "' for ApplicationState enum")
+		return errors.New("invalid value '" + enumValue + "' for ApplicationHealth enum")
 	}
 
 	return nil
 }
 
-func (e ApplicationState) String() string {
+func (e ApplicationHealth) String() string {
 	return string(e)
 }
+
+// IsActive returns true if the application is enabled, running, and not deleted.
+func (a *Application) IsActive() bool {
+	return a.Enabled && a.Health == ApplicationHealth_Running && a.DeletedAt == nil
+}
+
+// IsDraining returns true if the application is disabled but still running and not deleted.
+func (a *Application) IsDraining() bool {
+	return !a.Enabled && a.Health == ApplicationHealth_Running && a.DeletedAt == nil
+}
+
+// IsDeleted returns true if the application has been soft-deleted.
+func (a *Application) IsDeleted() bool {
+	return a.DeletedAt != nil
+}
+
+// Deprecated: Use ApplicationHealth + Enabled fields instead.
+type ApplicationState = ApplicationHealth
+
+// Deprecated: Use ApplicationHealth constants and Enabled field instead.
+const (
+	ApplicationState_Enabled    = ApplicationHealth_Running
+	ApplicationState_Disabled   = ApplicationHealth_Stopped
+	ApplicationState_Failed     = ApplicationHealth_Failed
+	ApplicationState_Inoperable = ApplicationHealth_Inoperable
+)
+
+var ApplicationStateAllValues = ApplicationHealthAllValues
 
 type Consensus string
 

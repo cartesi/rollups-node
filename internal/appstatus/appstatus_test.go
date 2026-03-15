@@ -28,7 +28,8 @@ func newTestApp() *Application {
 		IApplicationAddress: common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
 		IConsensusAddress:   common.HexToAddress("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"),
 		IInputBoxAddress:    common.HexToAddress("0x1111111111111111111111111111111111111111"),
-		State:               ApplicationState_Enabled,
+		Enabled:             true,
+		Health:              ApplicationHealth_Running,
 	}
 }
 
@@ -69,7 +70,7 @@ func (s *AppStatusSuite) TestSetFailed() {
 	require.Equal("machine crashed: OOM", *repo.lastReason)
 
 	// Verify in-memory state was updated
-	require.Equal(ApplicationState_Failed, app.State)
+	require.Equal(ApplicationState_Failed, app.Health)
 	require.NotNil(app.Reason)
 	require.Equal("machine crashed: OOM", *app.Reason)
 }
@@ -90,7 +91,7 @@ func (s *AppStatusSuite) TestSetFailedf() {
 	require.Equal("epoch 5 input 42: timeout", *repo.lastReason)
 
 	// Verify in-memory state was updated
-	require.Equal(ApplicationState_Failed, app.State)
+	require.Equal(ApplicationState_Failed, app.Health)
 }
 
 func (s *AppStatusSuite) TestSetInoperable() {
@@ -111,7 +112,7 @@ func (s *AppStatusSuite) TestSetInoperable() {
 	require.Equal("hash mismatch: 0xaa != 0xbb", *repo.lastReason)
 
 	// Verify in-memory state was updated
-	require.Equal(ApplicationState_Inoperable, app.State)
+	require.Equal(ApplicationState_Inoperable, app.Health)
 	require.NotNil(app.Reason)
 	require.Equal("hash mismatch: 0xaa != 0xbb", *app.Reason)
 }
@@ -132,7 +133,7 @@ func (s *AppStatusSuite) TestSetFailedDBError() {
 	require.Equal("process crashed", *repo.lastReason)
 
 	// In-memory state must NOT be updated on DB error to stay consistent
-	require.Equal(ApplicationState_Enabled, app.State)
+	require.Equal(ApplicationState_Enabled, app.Health)
 	require.Nil(app.Reason)
 }
 
@@ -151,7 +152,7 @@ func (s *AppStatusSuite) TestSetInoperableDBError() {
 	require.Equal(ApplicationState_Inoperable, repo.lastState)
 
 	// In-memory state must NOT be updated on DB error to stay consistent
-	require.Equal(ApplicationState_Enabled, app.State)
+	require.Equal(ApplicationState_Enabled, app.Health)
 	require.Nil(app.Reason)
 }
 
@@ -185,7 +186,7 @@ func (s *AppStatusSuite) TestSetInoperablef() {
 	require.Equal("epoch 5: hash mismatch 0xaa != 0xbb", *repo.lastReason)
 
 	// Verify in-memory state was updated (DB succeeded)
-	require.Equal(ApplicationState_Inoperable, app.State)
+	require.Equal(ApplicationState_Inoperable, app.Health)
 	require.NotNil(app.Reason)
 	require.Equal("epoch 5: hash mismatch 0xaa != 0xbb", *app.Reason)
 }
@@ -204,7 +205,7 @@ func (s *AppStatusSuite) TestSetInoperablefDBError() {
 	require.Contains(err.Error(), "reason: test")
 
 	// In-memory state must NOT be updated on DB error
-	require.Equal(ApplicationState_Enabled, app.State)
+	require.Equal(ApplicationState_Enabled, app.Health)
 	require.Nil(app.Reason)
 }
 

@@ -73,7 +73,7 @@ func (s *ApplicationSuite) TestGetApplication() {
 		s.Equal(app.TemplateHash, got.TemplateHash)
 		s.Equal(app.EpochLength, got.EpochLength)
 		s.Equal(app.ConsensusType, got.ConsensusType)
-		s.Equal(app.State, got.State)
+		s.Equal(app.Health, got.Health)
 		s.Equal(app.DataAvailability, got.DataAvailability)
 		s.False(got.CreatedAt.IsZero(), "CreatedAt should be set")
 		s.False(got.UpdatedAt.IsZero(), "UpdatedAt should be set")
@@ -129,7 +129,7 @@ func (s *ApplicationSuite) TestListApplications() {
 		s.Require().NoError(err)
 		s.Len(apps, 1)
 		s.Equal(uint64(1), total)
-		s.Equal(ApplicationState_Enabled, apps[0].State)
+		s.Equal(ApplicationHealth_Running, apps[0].Health)
 	})
 
 	s.Run("FilterByConsensus", func() {
@@ -245,7 +245,7 @@ func (s *ApplicationSuite) TestListApplications() {
 		s.Require().NoError(err)
 		s.Len(apps, 1)
 		s.Equal(uint64(1), total)
-		s.Equal(ApplicationState_Enabled, apps[0].State)
+		s.Equal(ApplicationHealth_Running, apps[0].Health)
 		s.Equal(Consensus_Authority, apps[0].ConsensusType)
 	})
 
@@ -282,14 +282,14 @@ func (s *ApplicationSuite) TestListApplications() {
 func (s *ApplicationSuite) TestUpdateApplicationState() {
 	s.Run("UpdatesState", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
-		s.Equal(ApplicationState_Enabled, app.State)
+		s.Equal(ApplicationHealth_Running, app.Health)
 
 		err := s.Repo.UpdateApplicationState(s.Ctx, app.ID, ApplicationState_Disabled, nil)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Disabled, got.State)
+		s.Equal(ApplicationHealth_Stopped, got.Health)
 		s.Nil(got.Reason)
 	})
 
@@ -309,7 +309,7 @@ func (s *ApplicationSuite) TestUpdateApplicationState() {
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Enabled, got.State)
+		s.Equal(ApplicationHealth_Running, got.Health)
 		s.Nil(got.Reason)
 	})
 }
@@ -337,7 +337,7 @@ func (s *ApplicationSuite) TestInoperableIsTerminal() {
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Inoperable, got.State)
+		s.Equal(ApplicationHealth_Inoperable, got.Health)
 		s.Require().NotNil(got.Reason)
 		s.Equal(reason, *got.Reason)
 	})
@@ -367,7 +367,7 @@ func (s *ApplicationSuite) TestInoperableIsTerminal() {
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Inoperable, got.State)
+		s.Equal(ApplicationHealth_Inoperable, got.Health)
 		s.Require().NotNil(got.Reason)
 		s.Equal(reason, *got.Reason)
 	})
@@ -382,7 +382,7 @@ func (s *ApplicationSuite) TestInoperableIsTerminal() {
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Inoperable, got.State)
+		s.Equal(ApplicationHealth_Inoperable, got.Health)
 		s.Require().NotNil(got.Reason)
 		s.Equal(reason, *got.Reason)
 	})
@@ -409,7 +409,7 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Enabled, got.State)
+		s.Equal(ApplicationHealth_Running, got.Health)
 		s.Nil(got.Reason)
 	})
 
@@ -423,7 +423,7 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Disabled, got.State)
+		s.Equal(ApplicationHealth_Stopped, got.Health)
 	})
 
 	s.Run("CanEscalateFromFailedToInoperable", func() {
@@ -436,7 +436,7 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Inoperable, got.State)
+		s.Equal(ApplicationHealth_Inoperable, got.Health)
 		s.Require().NotNil(got.Reason)
 		s.Equal(reason, *got.Reason)
 	})
@@ -450,7 +450,7 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Enabled, got.State)
+		s.Equal(ApplicationHealth_Running, got.Health)
 		s.Nil(got.Reason)
 	})
 
@@ -464,7 +464,7 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Failed, got.State)
+		s.Equal(ApplicationHealth_Failed, got.Health)
 		s.Require().NotNil(got.Reason)
 		s.Equal(newReason, *got.Reason)
 	})
@@ -486,7 +486,7 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Enabled, got.State)
+		s.Equal(ApplicationHealth_Running, got.Health)
 		s.Nil(got.Reason)
 
 		// Second failure
@@ -497,7 +497,7 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 
 		got, err = s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Failed, got.State)
+		s.Equal(ApplicationHealth_Failed, got.Health)
 		s.Require().NotNil(got.Reason)
 		s.Equal(reason2, *got.Reason)
 	})
@@ -522,7 +522,7 @@ func (s *ApplicationSuite) TestDisabledToFailedBlocked() {
 		// Verify state unchanged
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Disabled, got.State)
+		s.Equal(ApplicationHealth_Stopped, got.Health)
 	})
 }
 

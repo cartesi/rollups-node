@@ -28,7 +28,9 @@ type applicationTable struct {
 	EpochLength              postgres.ColumnFloat
 	DataAvailability         postgres.ColumnBytea
 	ConsensusType            postgres.ColumnString
-	State                    postgres.ColumnString
+	Enabled                  postgres.ColumnBool
+	Health                   postgres.ColumnString
+	DeletedAt                postgres.ColumnTimestampz
 	Reason                   postgres.ColumnString
 	LastEpochCheckBlock      postgres.ColumnFloat
 	LastInputCheckBlock      postgres.ColumnFloat
@@ -89,7 +91,9 @@ func newApplicationTableImpl(schemaName, tableName, alias string) applicationTab
 		EpochLengthColumn              = postgres.FloatColumn("epoch_length")
 		DataAvailabilityColumn         = postgres.ByteaColumn("data_availability")
 		ConsensusTypeColumn            = postgres.StringColumn("consensus_type")
-		StateColumn                    = postgres.StringColumn("state")
+		EnabledColumn                  = postgres.BoolColumn("enabled")
+		HealthColumn                   = postgres.StringColumn("health")
+		DeletedAtColumn                = postgres.TimestampzColumn("deleted_at")
 		ReasonColumn                   = postgres.StringColumn("reason")
 		LastEpochCheckBlockColumn      = postgres.FloatColumn("last_epoch_check_block")
 		LastInputCheckBlockColumn      = postgres.FloatColumn("last_input_check_block")
@@ -98,9 +102,9 @@ func newApplicationTableImpl(schemaName, tableName, alias string) applicationTab
 		ProcessedInputsColumn          = postgres.FloatColumn("processed_inputs")
 		CreatedAtColumn                = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn                = postgres.TimestampzColumn("updated_at")
-		allColumns                     = postgres.ColumnList{IDColumn, NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, DataAvailabilityColumn, ConsensusTypeColumn, StateColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, ProcessedInputsColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns                 = postgres.ColumnList{NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, DataAvailabilityColumn, ConsensusTypeColumn, StateColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, ProcessedInputsColumn, CreatedAtColumn, UpdatedAtColumn}
-		defaultColumns                 = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
+		allColumns                     = postgres.ColumnList{IDColumn, NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, DataAvailabilityColumn, ConsensusTypeColumn, EnabledColumn, HealthColumn, DeletedAtColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, ProcessedInputsColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns                 = postgres.ColumnList{NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, DataAvailabilityColumn, ConsensusTypeColumn, EnabledColumn, HealthColumn, DeletedAtColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, ProcessedInputsColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns                 = postgres.ColumnList{EnabledColumn, HealthColumn, CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return applicationTable{
@@ -118,7 +122,9 @@ func newApplicationTableImpl(schemaName, tableName, alias string) applicationTab
 		EpochLength:              EpochLengthColumn,
 		DataAvailability:         DataAvailabilityColumn,
 		ConsensusType:            ConsensusTypeColumn,
-		State:                    StateColumn,
+		Enabled:                  EnabledColumn,
+		Health:                   HealthColumn,
+		DeletedAt:                DeletedAtColumn,
 		Reason:                   ReasonColumn,
 		LastEpochCheckBlock:      LastEpochCheckBlockColumn,
 		LastInputCheckBlock:      LastInputCheckBlockColumn,
