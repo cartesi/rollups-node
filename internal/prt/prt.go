@@ -79,7 +79,7 @@ func (f *DefaultAdapterFactory) CreateDaveConsensusAdapter(addr common.Address) 
 }
 
 func getAllRunningApplications(ctx context.Context, r prtRepository) ([]*Application, uint64, error) {
-	f := repository.ApplicationFilter{State: Pointer(ApplicationState_Enabled), ConsensusType: Pointer(Consensus_PRT)}
+	f := repository.ApplicationFilter{Active: Pointer(true), ConsensusType: Pointer(Consensus_PRT)}
 	return r.ListApplications(ctx, f, repository.Pagination{}, false)
 }
 

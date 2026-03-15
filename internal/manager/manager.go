@@ -315,7 +315,7 @@ func (m *MachineManager) Close() error {
 
 // Helper function to get enabled applications
 func getEnabledApplications(ctx context.Context, repo MachineRepository) ([]*Application, uint64, error) {
-	f := repository.ApplicationFilter{State: Pointer(ApplicationState_Enabled)}
+	f := repository.ApplicationFilter{Active: Pointer(true)}
 	return repo.ListApplications(ctx, f, repository.Pagination{}, false)
 }
 
