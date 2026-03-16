@@ -15,7 +15,12 @@ import (
 
 // PublisherSubscriberFactory creates a matched Publisher and Subscriber
 // pair for testing. The factory is called once per test case.
-type PublisherSubscriberFactory func(t *testing.T) (events.Publisher, events.Subscriber)
+//
+// The returned ready channel is closed (or receives a value) when the
+// subscriber is connected and ready to receive notifications. For
+// memory.Bus, return a pre-closed channel. For PostgreSQL, use
+// SubscriberConfig.ReadySignal.
+type PublisherSubscriberFactory func(t *testing.T) (events.Publisher, events.Subscriber, <-chan struct{})
 
 // ContractSuite verifies that any Publisher+Subscriber implementation
 // satisfies the events library's behavioral contract. Run it against
@@ -25,18 +30,28 @@ type ContractSuite struct {
 	Factory PublisherSubscriberFactory
 }
 
-func (s *ContractSuite) TestSinglePublishSubscribe() {
-	pub, sub := s.Factory(s.T())
-	ch := sub.Subscribe(events.ChannelInputReceived)
+// startListening starts sub.Listen and waits for the subscriber to be ready.
+func (s *ContractSuite) startListening(sub events.Subscriber, ready <-chan struct{}) {
 	ctx := s.T().Context()
 	go sub.Listen(ctx) //nolint:errcheck
-	time.Sleep(200 * time.Millisecond)
+	select {
+	case <-ready:
+	case <-time.After(5 * time.Second):
+		s.Fail("subscriber did not become ready")
+	}
+}
+
+func (s *ContractSuite) TestSinglePublishSubscribe() {
+	pub, sub, ready := s.Factory(s.T())
+	ch := sub.Subscribe(events.ChannelInputReceived)
+	s.startListening(sub, ready)
 
 	expected := events.Notification{
 		Channel:       events.ChannelInputReceived,
 		ApplicationID: 42,
 		EpochIndex:    7,
 	}
+	ctx := s.T().Context()
 	pub.Publish(ctx, expected)
 
 	select {
@@ -49,12 +64,11 @@ func (s *ContractSuite) TestSinglePublishSubscribe() {
 }
 
 func (s *ContractSuite) TestChannelIsolation() {
-	pub, sub := s.Factory(s.T())
+	pub, sub, ready := s.Factory(s.T())
 	ch := sub.Subscribe(events.ChannelInputReceived)
-	ctx := s.T().Context()
-	go sub.Listen(ctx) //nolint:errcheck
-	time.Sleep(200 * time.Millisecond)
+	s.startListening(sub, ready)
 
+	ctx := s.T().Context()
 	// Publish on a different channel.
 	pub.Publish(ctx, events.Notification{
 		Channel:       events.ChannelClaimComputed,
@@ -75,12 +89,11 @@ func (s *ContractSuite) TestChannelIsolation() {
 }
 
 func (s *ContractSuite) TestBufferOverflowDropsWithoutBlocking() {
-	pub, sub := s.Factory(s.T())
+	pub, sub, ready := s.Factory(s.T())
 	ch := sub.Subscribe(events.ChannelInputReceived)
-	ctx := s.T().Context()
-	go sub.Listen(ctx) //nolint:errcheck
-	time.Sleep(200 * time.Millisecond)
+	s.startListening(sub, ready)
 
+	ctx := s.T().Context()
 	// Publish more than buffer size (64) without reading.
 	for i := range 100 {
 		pub.Publish(ctx, events.Notification{
@@ -99,13 +112,12 @@ func (s *ContractSuite) TestBufferOverflowDropsWithoutBlocking() {
 }
 
 func (s *ContractSuite) TestMultipleSubscriptions() {
-	pub, sub := s.Factory(s.T())
+	pub, sub, ready := s.Factory(s.T())
 	ch1 := sub.Subscribe(events.ChannelInputReceived)
 	ch2 := sub.Subscribe(events.ChannelClaimComputed)
-	ctx := s.T().Context()
-	go sub.Listen(ctx) //nolint:errcheck
-	time.Sleep(200 * time.Millisecond)
+	s.startListening(sub, ready)
 
+	ctx := s.T().Context()
 	pub.Publish(ctx, events.Notification{
 		Channel:       events.ChannelInputReceived,
 		ApplicationID: 1,
@@ -130,13 +142,12 @@ func (s *ContractSuite) TestMultipleSubscriptions() {
 }
 
 func (s *ContractSuite) TestSubscribeWithFilterByAppID() {
-	pub, sub := s.Factory(s.T())
+	pub, sub, ready := s.Factory(s.T())
 	filter := events.SubscriptionFilter{ApplicationIDs: []int64{42}}
 	ch := sub.SubscribeWithFilter(filter, events.ChannelInputReceived)
-	ctx := s.T().Context()
-	go sub.Listen(ctx) //nolint:errcheck
-	time.Sleep(200 * time.Millisecond)
+	s.startListening(sub, ready)
 
+	ctx := s.T().Context()
 	// Publish for a non-matching app.
 	pub.Publish(ctx, events.Notification{
 		Channel:       events.ChannelInputReceived,

@@ -361,17 +361,18 @@ func TestPostgresContract(t *testing.T) {
 	connStr := getTestConnString(t)
 
 	suite.Run(t, &eventstest.ContractSuite{
-		Factory: func(_ *testing.T) (events.Publisher, events.Subscriber) {
+		Factory: func(_ *testing.T) (events.Publisher, events.Subscriber, <-chan struct{}) {
 			ctx := context.Background()
 			pool, err := pgxpool.New(ctx, connStr)
 			require.NoError(t, err)
 			t.Cleanup(pool.Close)
 
+			ready := make(chan struct{}, 1)
 			pub := NewPublisher(pool, slog.Default())
-			sub := NewSubscriber(connStr, slog.Default(), nil)
+			sub := NewSubscriber(connStr, slog.Default(), &SubscriberConfig{ReadySignal: ready})
 			t.Cleanup(func() { _ = sub.Close() })
 
-			return pub, sub
+			return pub, sub, ready
 		},
 	})
 }

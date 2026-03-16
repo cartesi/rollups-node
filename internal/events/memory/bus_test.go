@@ -202,9 +202,11 @@ func TestBusDefaultBufferSize(t *testing.T) {
 
 func TestMemoryBusContract(t *testing.T) {
 	suite.Run(t, &eventstest.ContractSuite{
-		Factory: func(_ *testing.T) (events.Publisher, events.Subscriber) {
+		Factory: func(_ *testing.T) (events.Publisher, events.Subscriber, <-chan struct{}) {
 			bus := NewBus(64)
-			return bus, bus
+			ready := make(chan struct{})
+			close(ready) // memory bus is immediately ready
+			return bus, bus, ready
 		},
 	})
 }

@@ -46,6 +46,11 @@ type SubscriberConfig struct {
 	// Default: 64. Increase for systems with many applications where a single
 	// block could generate notifications for all of them.
 	BufferSize int
+
+	// ReadySignal, if non-nil, receives a value each time the subscriber
+	// successfully connects and issues LISTEN commands. This enables tests
+	// to wait for readiness without time.Sleep.
+	ReadySignal chan<- struct{}
 }
 
 // subscription holds the delivery channel, subscribed channels, and optional
@@ -64,6 +69,7 @@ type Subscriber struct {
 	logger           *slog.Logger
 	bufferSize       int
 	heartbeatTimeout time.Duration
+	readySignal      chan<- struct{}
 
 	mu            sync.Mutex
 	channels      []events.Channel
@@ -74,6 +80,7 @@ type Subscriber struct {
 func NewSubscriber(connString string, logger *slog.Logger, cfg *SubscriberConfig) *Subscriber {
 	heartbeat := defaultHeartbeatTimeout
 	bufSize := defaultBufferSize
+	var readySig chan<- struct{}
 	if cfg != nil {
 		if cfg.HeartbeatTimeout > 0 {
 			heartbeat = cfg.HeartbeatTimeout
@@ -81,12 +88,14 @@ func NewSubscriber(connString string, logger *slog.Logger, cfg *SubscriberConfig
 		if cfg.BufferSize > 0 {
 			bufSize = cfg.BufferSize
 		}
+		readySig = cfg.ReadySignal
 	}
 	return &Subscriber{
 		connString:       connString,
 		logger:           logger,
 		bufferSize:       bufSize,
 		heartbeatTimeout: heartbeat,
+		readySignal:      readySig,
 	}
 }
 
@@ -197,6 +206,12 @@ func (s *Subscriber) listenLoop(
 	}
 
 	s.logger.Info("Event listener connected", "channels", channels)
+	if s.readySignal != nil {
+		select {
+		case s.readySignal <- struct{}{}:
+		default:
+		}
+	}
 
 	for {
 		waitCtx, cancel := context.WithTimeout(ctx, s.heartbeatTimeout)

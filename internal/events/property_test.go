@@ -25,10 +25,12 @@ import (
 // in internal/events/postgres/property_test.go.
 func TestPropertySuiteMemory(t *testing.T) {
 	suite.Run(t, &eventstest.PropertySuite{
-		Factory: func(t *testing.T) (events.Publisher, events.Subscriber) {
+		Factory: func(t *testing.T) (events.Publisher, events.Subscriber, <-chan struct{}) {
 			bus := memory.NewBus(64)
 			t.Cleanup(func() { _ = bus.Close() })
-			return bus, bus
+			ready := make(chan struct{})
+			close(ready) // memory bus is immediately ready
+			return bus, bus, ready
 		},
 	})
 }
