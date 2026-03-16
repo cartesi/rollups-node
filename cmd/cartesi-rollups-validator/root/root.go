@@ -10,7 +10,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/events"
 	eventsPostgres "github.com/cartesi/rollups-node/internal/events/postgres"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
-	repoPostgres "github.com/cartesi/rollups-node/internal/repository/postgres"
 	"github.com/cartesi/rollups-node/internal/validator"
 	"github.com/cartesi/rollups-node/internal/version"
 	"github.com/cartesi/rollups-node/pkg/service"
@@ -100,27 +99,19 @@ func run(cmd *cobra.Command, args []string) {
 	if hasEventsOverride {
 		createInfo.CreateInfo.EventLogger = eventsLogger
 	}
-	pool := createInfo.Repository.(*repoPostgres.PostgresRepository).Pool()
-	publisher := eventsPostgres.NewPublisher(pool, eventsLogger)
-	createInfo.Publisher = publisher
-
-	eventsConnStr := cfg.DatabaseEventsConnection.Raw()
-	if eventsConnStr == "" {
-		eventsConnStr = cfg.DatabaseConnection.Raw()
-	}
-	subscriber := eventsPostgres.NewSubscriber(eventsConnStr, eventsLogger, nil)
-	defer subscriber.Close()
-	notifCh := subscriber.Subscribe(
-		events.ChannelInputsProcessed,
-		events.ChannelAppStateChanged,
-	)
-	createInfo.CreateInfo.EventChannel = events.Coalesce(notifCh)
+	pool, err := eventsPostgres.PoolFromRepository(createInfo.Repository)
+	cobra.CheckErr(err)
+	w := eventsPostgres.Wire(pool, cfg.DatabaseConnection.Raw(), cfg.DatabaseEventsConnection.Raw(),
+		eventsLogger, events.ChannelInputsProcessed, events.ChannelAppStateChanged)
+	defer w.Subscriber.Close()
+	createInfo.Publisher = w.Publisher
+	createInfo.CreateInfo.EventChannel = w.Signal
 
 	validatorService, err := validator.Create(ctx, &createInfo)
 	cobra.CheckErr(err)
 	validatorService.LogConfig(createInfo.Config)
 
-	go func() { _ = subscriber.Listen(validatorService.Context) }()
+	w.StartListener(validatorService.Context)
 
 	cobra.CheckErr(validatorService.Serve())
 }

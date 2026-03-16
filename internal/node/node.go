@@ -17,7 +17,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/events/memory"
 	eventsPostgres "github.com/cartesi/rollups-node/internal/events/postgres"
 	"github.com/cartesi/rollups-node/internal/evmreader"
-	repoPostgres "github.com/cartesi/rollups-node/internal/repository/postgres"
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
 	"github.com/cartesi/rollups-node/internal/prt"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -116,7 +115,10 @@ func createServices(ctx context.Context, c *CreateInfo, s *Service) error {
 	} else {
 		// PostgreSQL backend (default): uses the same LISTEN/NOTIFY code path
 		// as individual-service deployment. Receives cross-process notifications.
-		pool := c.Repository.(*repoPostgres.PostgresRepository).Pool()
+		pool, err := eventsPostgres.PoolFromRepository(c.Repository)
+		if err != nil {
+			return err
+		}
 		logger := eventsLogger
 		if logger == nil {
 			logger = s.Logger
