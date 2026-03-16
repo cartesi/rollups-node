@@ -21,6 +21,12 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
+// maxPayloadSize is the maximum allowed inspect request body size.
+// This matches the Cartesi Machine's CMIO RX buffer (2 MiB, defined as log2 size 21
+// in the machine emulator's pma-defines.h). Payloads larger than this are rejected
+// by the machine anyway, so there is no reason to read them into memory.
+const maxPayloadSize = 1 << 21 // 2 MiB
+
 var (
 	ErrInvalidMachines = errors.New("machines must not be nil")
 	ErrNoApp           = errors.New("no application")
@@ -119,10 +125,22 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	dapp = r.PathValue("dapp")
 	if r.Method == "POST" {
-		payload, err = io.ReadAll(r.Body)
+		// Limit the request body to the machine's CMIO RX buffer size.
+		// Payloads larger than this are rejected by the machine, so reading
+		// them into memory would only waste resources. We read maxPayloadSize+1
+		// bytes so we can distinguish "exactly at limit" from "over limit".
+		limitedReader := io.LimitReader(r.Body, maxPayloadSize+1)
+		payload, err = io.ReadAll(limitedReader)
 		if err != nil {
 			inspect.Logger.Info("Bad request", "err", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if int64(len(payload)) > maxPayloadSize {
+			inspect.Logger.Info("Payload too large",
+				"size", len(payload),
+				"limit", maxPayloadSize)
+			http.Error(w, "Payload too large", http.StatusRequestEntityTooLarge)
 			return
 		}
 	} else {

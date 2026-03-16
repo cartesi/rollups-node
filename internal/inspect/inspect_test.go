@@ -197,7 +197,68 @@ func (s *InspectSuite) TestPostMachineNotReady() {
 	s.Equal(http.StatusServiceUnavailable, respByAddr.StatusCode)
 }
 
-// FIXME: add more tests
+func (s *InspectSuite) TestPostMaxPayloadSize() {
+	inspect, app, _ := s.setup()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.startServer(ctx, inspect)
+
+	// A payload exactly at the max size should be accepted.
+	payload := make([]byte, maxPayloadSize)
+	_, err := crand.Read(payload)
+	s.Require().NoError(err)
+
+	resp, err := http.Post(
+		fmt.Sprintf("http://%s/inspect/%s", s.ServiceAddr, app.IApplicationAddress.Hex()),
+		"application/octet-stream",
+		bytes.NewReader(payload))
+	s.Require().NoError(err)
+	defer resp.Body.Close()
+	s.Equal(http.StatusOK, resp.StatusCode)
+
+	var r InspectResponse
+	err = json.NewDecoder(resp.Body).Decode(&r)
+	s.Require().NoError(err)
+	s.Equal("Accepted", r.Status)
+	s.Require().Len(r.Reports, 1)
+}
+
+func (s *InspectSuite) TestPostPayloadTooLarge() {
+	inspect, app, _ := s.setup()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.startServer(ctx, inspect)
+
+	// A payload one byte over the max size should be rejected.
+	payload := make([]byte, maxPayloadSize+1)
+	_, err := crand.Read(payload)
+	s.Require().NoError(err)
+
+	resp, err := http.Post(
+		fmt.Sprintf("http://%s/inspect/%s", s.ServiceAddr, app.IApplicationAddress.Hex()),
+		"application/octet-stream",
+		bytes.NewReader(payload))
+	s.Require().NoError(err)
+	defer resp.Body.Close()
+	s.Equal(http.StatusRequestEntityTooLarge, resp.StatusCode)
+}
+
+func (s *InspectSuite) startServer(ctx context.Context, inspect *Inspector) {
+	router := http.NewServeMux()
+	router.Handle("/inspect/{dapp}", inspect)
+	httpService := services.HttpService{Name: "http", Address: s.ServiceAddr, Handler: router}
+
+	ready := make(chan struct{}, 1)
+	go func() {
+		_ = httpService.Start(ctx, ready, service.NewLogger(slog.LevelDebug, true))
+	}()
+
+	select {
+	case <-ready:
+	case <-time.After(TestTimeout):
+		s.FailNow("timed out waiting for HttpService to be ready")
+	}
+}
 
 func (s *InspectSuite) setup() (*Inspector, *Application, common.Hash) {
 	m := newMockMachine(1)
