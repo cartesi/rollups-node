@@ -178,6 +178,21 @@ func (m *MachineInstanceImpl) Synchronize(ctx context.Context, repo MachineRepos
 		"app_processed_inputs", m.application.ProcessedInputs,
 		"machine_processed_inputs", currentProcessed)
 
+	// Validate machine vs app state before querying the DB.
+	// This must be done upfront because the ListInputs query uses OFFSET to skip
+	// already-processed inputs, and when OFFSET >= total rows the query returns
+	// 0 rows — making the COUNT(*) OVER() window function value unavailable.
+	if currentProcessed > m.application.ProcessedInputs {
+		return fmt.Errorf(
+			"%w: machine has processed %d inputs but app only has %d",
+			ErrMachineSynchronization, currentProcessed, m.application.ProcessedInputs)
+	}
+	if currentProcessed == m.application.ProcessedInputs {
+		m.logger.Info("No inputs to replay during synchronization",
+			"address", appAddress)
+		return nil
+	}
+
 	initialProcessedInputs := currentProcessed
 	replayed := uint64(0)
 	toReplay := uint64(0)
@@ -201,17 +216,7 @@ func (m *MachineInstanceImpl) Synchronize(ctx context.Context, repo MachineRepos
 				m.logger.Error(errorMsg, "address", appAddress)
 				return fmt.Errorf("%w: %s", ErrMachineSynchronization, errorMsg)
 			}
-			if currentProcessed > totalCount {
-				return fmt.Errorf(
-					"%w: machine has processed %d inputs but DB only has %d",
-					ErrMachineSynchronization, currentProcessed, totalCount)
-			}
 			toReplay = totalCount - currentProcessed
-			if toReplay == 0 {
-				m.logger.Info("No inputs to replay during synchronization",
-					"address", appAddress)
-				return nil
-			}
 		}
 
 		for _, input := range inputs {
