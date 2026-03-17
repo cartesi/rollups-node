@@ -240,6 +240,64 @@ func TestBuildRootChildrenAgainstBuilder(t *testing.T) {
 	assert.Equal(t, rootHashProof, crypto.Keccak256Hash(lhsProof[:], rhsProof[:]))
 }
 
+func TestFindChildByHash(t *testing.T) {
+	t.Run("simple", func(t *testing.T) {
+		builder := Builder{}
+		leaf1 := TreeLeaf(common.HexToHash("0x1"))
+		leaf2 := TreeLeaf(common.HexToHash("0x2"))
+		builder.Append(leaf1)
+		builder.Append(leaf2)
+		tree := builder.Build()
+
+		child1 := tree.FindChildByHash(leaf1.RootHash)
+		assert.NotNil(t, child1)
+		assert.Equal(t, leaf1.RootHash, child1.RootHash)
+	})
+
+	t.Run("repetitions", func(t *testing.T) {
+		builder := Builder{}
+		leaf1 := TreeLeaf(common.HexToHash("0x1"))
+		builder.AppendRepeatedUint64(leaf1, 1024)
+		tree := builder.Build()
+
+		child1 := tree.FindChildByHash(leaf1.RootHash)
+		assert.NotNil(t, child1)
+		assert.Equal(t, leaf1.RootHash, child1.RootHash)
+	})
+
+	t.Run("deeper", func(t *testing.T) {
+		builder := Builder{}
+		leaf1 := TreeLeaf(common.HexToHash("0x1"))
+		leaf2 := TreeLeaf(common.HexToHash("0x2"))
+		leaf3 := TreeLeaf(common.HexToHash("0x3"))
+		leaf4 := TreeLeaf(common.HexToHash("0x4"))
+		builder.Append(leaf1)
+		builder.Append(leaf2)
+		builder.Append(leaf3)
+		builder.Append(leaf4)
+		tree := builder.Build()
+
+		child1 := tree.FindChildByHash(leaf1.RootHash)
+		assert.NotNil(t, child1)
+		assert.Equal(t, leaf1.RootHash, child1.RootHash)
+
+		child2 := tree.FindChildByHash(leaf2.RootHash)
+		assert.NotNil(t, child2)
+		assert.Equal(t, child2.RootHash, leaf2.RootHash)
+	})
+
+	t.Run("notfound", func(t *testing.T) {
+		builder := Builder{}
+		builder.Append(TreeLeaf(zeroDigest))
+		builder.Append(TreeLeaf(oneDigest))
+		tree := builder.Build()
+
+		missing := common.HexToHash("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+		child := tree.FindChildByHash(missing)
+		assert.Nil(t, child)
+	})
+}
+
 // repanicked
 //func TestBuildNotPow2(t *testing.T) {
 //	defer recover()

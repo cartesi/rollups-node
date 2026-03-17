@@ -144,7 +144,10 @@ func (tree *Tree) GetRootHash() common.Hash {
 	return tree.RootHash
 }
 
-func (tree *Tree) FindChildByHash(hash common.Hash) *InnerNode {
+func (tree *Tree) FindChildByHash(hash common.Hash) *Tree {
+	if tree.RootHash == hash {
+		return tree
+	}
 	if inner := tree.Subtrees; inner != nil {
 		if !inner.Valid() {
 			panic(fmt.Sprintf("invalid InnerNode state: %v\n", inner))
@@ -161,7 +164,7 @@ func (tree *Tree) FindChildByHash(hash common.Hash) *InnerNode {
 				return lhs
 			}
 
-			rhs := inner.LHS.FindChildByHash(hash)
+			rhs := inner.RHS.FindChildByHash(hash)
 			if rhs != nil {
 				return rhs
 			}
