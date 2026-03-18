@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
 	"github.com/cartesi/rollups-node/internal/merkle"
@@ -679,12 +680,39 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 			"epoch %d has missing required fields for settlement", epoch.Index)
 	}
 
+	// Check on-chain if the epoch was already settled (e.g., after a node
+	// restart where settleInFlight was lost). CanSettle only checks if
+	// the tournament has finished, not if settlement was already performed.
+	alreadySettled, err := consensus.IsEpochSettled(callOpts, currentEpochIndex)
+	if err != nil {
+		s.Logger.Error("failed to check if epoch is already settled", "application", app.Name,
+			"epoch_index", currentEpochIndex, "error", err)
+		return err
+	}
+	if alreadySettled {
+		s.Logger.Info("Epoch already settled on-chain, waiting for event sync",
+			"application", app.Name, "epoch_index", currentEpochIndex)
+		return nil
+	}
+
 	s.Logger.Info("Sending Settle transaction", "application", app.Name, "epoch_index", epoch.Index,
 		"outputs_merkle_root", epoch.OutputsMerkleRoot.String())
 
 	tx, err := consensus.Settle(s.txOpts, result.EpochNumber,
 		*epoch.OutputsMerkleRoot, hashSliceToByteSlice(epoch.OutputsMerkleProof))
 	if err != nil {
+		// The contract reverts with IncorrectEpochNumber when the epoch was
+		// already settled. This can happen after a restart if the on-chain
+		// check (IsEpochSettled) used a slightly stale block number, or if
+		// another entity settled the epoch concurrently.
+		if isIncorrectEpochNumberError(err) {
+			s.Logger.Info(
+				"Epoch already settled on-chain (detected via revert), "+
+					"waiting for event sync",
+				"application", app.Name,
+				"epoch_index", result.EpochNumber.Uint64())
+			return nil
+		}
 		s.Logger.Error("failed to send Settle transaction", "application", app.Name,
 			"epoch_index", result.EpochNumber.Uint64(), "error", err)
 		return err
@@ -772,6 +800,23 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 		Context:     ctx,
 		BlockNumber: new(big.Int).SetUint64(mostRecentBlock),
 	}
+
+	// Check on-chain if the commitment was already joined (e.g., after a node
+	// restart where joinInFlight was lost and the DB event sync hasn't caught up).
+	alreadyJoined, err := tournamentAdapter.IsCommitmentJoined(callOpts, *epoch.Commitment)
+	if err != nil {
+		s.Logger.Error("failed to check commitment on-chain", "application", app.Name,
+			"epoch_index", currentEpochIndex, "tournament", epoch.TournamentAddress.Hex(),
+			"commitment", epoch.Commitment.Hex(), "error", err)
+		return err
+	}
+	if alreadyJoined {
+		s.Logger.Info("Commitment already joined on-chain, waiting for event sync",
+			"application", app.Name, "epoch_index", currentEpochIndex,
+			"tournament", epoch.TournamentAddress.Hex(), "commitment", epoch.Commitment.Hex())
+		return nil
+	}
+
 	bondValue, err := tournamentAdapter.BondValue(callOpts)
 	if err != nil {
 		s.Logger.Error("failed to fetch tournament bond value", "application", app.Name,
@@ -830,4 +875,29 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 		}
 	}
 	return nil
+}
+
+// isIncorrectEpochNumberError checks whether an error from Settle is an
+// IncorrectEpochNumber revert, indicating the epoch was already settled
+// on-chain (e.g., before a node restart or by another entity).
+func isIncorrectEpochNumberError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var de rpc.DataError
+	if errors.As(err, &de) {
+		if dataStr, ok := de.ErrorData().(string); ok {
+			parsed, _ := idaveconsensus.IDaveConsensusMetaData.GetAbi()
+			if parsed == nil {
+				return false
+			}
+			abiErr, ok := parsed.Errors["IncorrectEpochNumber"]
+			if !ok {
+				return false
+			}
+			selector := fmt.Sprintf("0x%x", abiErr.ID[:4])
+			return strings.HasPrefix(dataStr, selector)
+		}
+	}
+	return false
 }

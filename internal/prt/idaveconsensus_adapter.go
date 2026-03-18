@@ -47,6 +47,20 @@ func (a *DaveConsensusAdapterImpl) CanSettle(opts *bind.CallOpts) (CanSettleResu
 	}, nil
 }
 
+// IsEpochSettled checks on-chain whether an epoch has already been settled by
+// comparing the given epoch number against the current sealed epoch. If the
+// sealed epoch has advanced past it, the settlement was already performed.
+// This prevents duplicate Settle calls after a node restart.
+func (a *DaveConsensusAdapterImpl) IsEpochSettled(
+	opts *bind.CallOpts, epochNumber uint64,
+) (bool, error) {
+	sealed, err := a.consensus.GetCurrentSealedEpoch(opts)
+	if err != nil {
+		return false, err
+	}
+	return sealed.EpochNumber.Uint64() > epochNumber, nil
+}
+
 func (a *DaveConsensusAdapterImpl) Settle(
 	opts *bind.TransactOpts, epochNumber *big.Int,
 	outputsMerkleRoot [32]byte, proof [][32]byte,

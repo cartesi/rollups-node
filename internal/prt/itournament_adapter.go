@@ -72,6 +72,20 @@ func (a *ITournamentAdapterImpl) BondValue(opts *bind.CallOpts) (*big.Int, error
 	return a.tournament.BondValue(opts)
 }
 
+// IsCommitmentJoined checks on-chain whether a commitment has already been
+// joined to this tournament. It calls the contract's getCommitment method
+// and checks if the returned finalState is non-zero (indicating the commitment
+// exists). This prevents duplicate JoinTournament calls after a node restart.
+func (a *ITournamentAdapterImpl) IsCommitmentJoined(
+	opts *bind.CallOpts, commitmentRoot [32]byte,
+) (bool, error) {
+	result, err := a.tournament.GetCommitment(opts, commitmentRoot)
+	if err != nil {
+		return false, err
+	}
+	return result.FinalState != [32]byte{}, nil
+}
+
 func (a *ITournamentAdapterImpl) JoinTournament(
 	opts *bind.TransactOpts, finalState [32]byte, proof [][32]byte,
 	leftNode [32]byte, rightNode [32]byte,

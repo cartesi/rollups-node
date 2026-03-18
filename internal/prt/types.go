@@ -33,6 +33,7 @@ type TournamentAdapter interface {
 	Constants(opts *bind.CallOpts) (TournamentConstants, error)
 	TimeFinished(opts *bind.CallOpts) (bool, uint64, error)
 	BondValue(opts *bind.CallOpts) (*big.Int, error)
+	IsCommitmentJoined(opts *bind.CallOpts, commitmentRoot [32]byte) (bool, error)
 	JoinTournament(opts *bind.TransactOpts, finalState [32]byte, proof [][32]byte,
 		leftNode [32]byte, rightNode [32]byte) (*types.Transaction, error)
 }
@@ -41,6 +42,7 @@ type TournamentAdapter interface {
 type DaveConsensusAdapter interface {
 	ParseEpochSealed(log types.Log) (*idaveconsensus.IDaveConsensusEpochSealed, error)
 	CanSettle(opts *bind.CallOpts) (CanSettleResult, error)
+	IsEpochSettled(opts *bind.CallOpts, epochNumber uint64) (bool, error)
 	Settle(opts *bind.TransactOpts, epochNumber *big.Int,
 		outputsMerkleRoot [32]byte, proof [][32]byte) (*types.Transaction, error)
 }
