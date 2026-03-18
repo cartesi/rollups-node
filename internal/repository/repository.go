@@ -109,6 +109,8 @@ type EpochRepository interface {
 	GetEpochByVirtualIndex(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 
 	UpdateEpochClaimTransactionHash(ctx context.Context, nameOrAddress string, e *Epoch) error
+	UpdateEpochClaimSubmittedTransactionHash(ctx context.Context, nameOrAddress string, e *Epoch) error
+	UpdateEpochClaimAcceptedTransactionHash(ctx context.Context, nameOrAddress string, e *Epoch) error
 	UpdateEpochStatus(ctx context.Context, nameOrAddress string, e *Epoch) error
 	UpdateEpochInputsProcessed(ctx context.Context, nameOrAddress string, epochIndex uint64) error
 	UpdateEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64, proof *OutputsProof) error
@@ -183,33 +185,6 @@ type NodeConfigRepository interface {
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
 }
 
-// TODO: migrate ClaimRow -> Application + Epoch and use the other interfaces
-type ClaimerRepository interface {
-	SelectSubmittedClaimPairsPerApp(ctx context.Context) (
-		map[int64]*Epoch,
-		map[int64]*Epoch,
-		map[int64]*Application,
-		error,
-	)
-	SelectAcceptedClaimPairsPerApp(ctx context.Context) (
-		map[int64]*Epoch,
-		map[int64]*Epoch,
-		map[int64]*Application,
-		error,
-	)
-	UpdateEpochWithSubmittedClaim(
-		ctx context.Context,
-		applicationID int64,
-		index uint64,
-		transactionHash common.Hash,
-	) error
-	UpdateEpochWithAcceptedClaim(
-		ctx context.Context,
-		applicationID int64,
-		index uint64,
-	) error
-}
-
 type Repository interface {
 	ApplicationRepository
 	EpochRepository
@@ -223,7 +198,6 @@ type Repository interface {
 	MatchAdvancedRepository
 	BulkOperationsRepository
 	NodeConfigRepository
-	ClaimerRepository
 	Close()
 }
 

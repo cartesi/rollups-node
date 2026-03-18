@@ -16,7 +16,6 @@ import (
 	"github.com/cartesi/rollups-node/pkg/service"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -32,15 +31,11 @@ type CreateInfo struct {
 type Service struct {
 	service.Service
 
-	repository iclaimerRepository
-	blockchain iclaimerBlockchain
-
-	// submitted claims waiting for confirmation from the blockchain.
-	// only accessed from tick, so no need for a lock
-	// contains: application ID -> transaction hash, with a maximum of one
-	// key per application due to the epoch advancement logic.
-	claimsInFlight    map[int64]common.Hash
+	repository        iRepository
+	blockchain        iBlockchain
 	submissionEnabled bool
+	txOpts            *bind.TransactOpts
+	defaultBlock      model.DefaultBlock
 }
 
 const ClaimerConfigKey = "claimer"
@@ -93,7 +88,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 			chainId.Uint64(), nodeConfig.ChainID)
 	}
 	s.submissionEnabled = nodeConfig.ClaimSubmissionEnabled
-	s.claimsInFlight = map[int64]common.Hash{}
+	s.defaultBlock = nodeConfig.DefaultBlock
 
 	var txOpts *bind.TransactOpts = nil
 	if s.submissionEnabled {
@@ -104,12 +99,8 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	}
 
 	s.repository = c.Repository
-	s.blockchain = &claimerBlockchain{
-		logger:       s.Logger,
-		client:       c.EthConn,
-		txOpts:       txOpts,
-		defaultBlock: c.Config.BlockchainDefaultBlock,
-	}
+	s.blockchain = c.EthConn
+	s.txOpts = txOpts
 
 	return s, nil
 }
@@ -132,49 +123,17 @@ func (s *Service) Stop(bool) []error {
 
 // NOTE: tick is not re-entrant!
 func (s *Service) Tick() []error {
-	errs := []error{}
-
-	// gather epochs pairs with open claims, either:
-	// - computed but not yet submitted
-	acceptedOrSubmittedEpochs, computedEpochs, computedApps, errSubmitted := s.repository.SelectSubmittedClaimPairsPerApp(s.Context)
-	if errSubmitted != nil {
-		errs = append(errs, errSubmitted)
-		return errs
-	}
-
-	// - submitted but not yet accepted.
-	acceptedEpochs, submittedEpochs, submittedApps, errAccepted := s.repository.SelectAcceptedClaimPairsPerApp(s.Context)
-	if errAccepted != nil {
-		errs = append(errs, errAccepted)
-		return errs
-	}
-
-	s.Logger.Debug("Processing claims for epochs",
-		"computed", len(computedEpochs),
-		"submitted", len(submittedEpochs),
-	)
-
-	// return early if there is nothing to do
-	if len(computedEpochs) == 0 && len(submittedEpochs) == 0 {
-		return nil
-	}
-
-	// we have claims to check. Get the latest/safe/finalized, etc. block
-	defaultBlockNumber, err := s.blockchain.getDefaultBlockNumber(s.Context)
+	nr, err := getDefaultBlockNumber(s.Context, s.blockchain, s.defaultBlock)
 	if err != nil {
-		errs = append(errs, err)
-		return errs
+		return []error{err}
 	}
-
-	errs = append(errs, s.submitClaimsAndUpdateDatabase(acceptedOrSubmittedEpochs, computedEpochs, computedApps, defaultBlockNumber)...)
-	errs = append(errs, s.acceptClaimsAndUpdateDatabase(acceptedEpochs, submittedEpochs, submittedApps, defaultBlockNumber)...)
-	return errs
+	return update(s.Context, s.Logger, s.txOpts, s.repository, s.blockchain, nr)
 }
 
 func setupPersistentConfig(
 	ctx context.Context,
 	logger *slog.Logger,
-	repo iclaimerRepository,
+	repo iRepository,
 	c *config.ClaimerConfig,
 ) (*PersistentConfig, error) {
 	config, err := repository.LoadNodeConfig[PersistentConfig](ctx, repo, ClaimerConfigKey)

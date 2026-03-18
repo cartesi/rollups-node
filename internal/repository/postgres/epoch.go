@@ -507,6 +507,76 @@ func (r *PostgresRepository) UpdateEpochClaimTransactionHash(
 	return nil
 }
 
+func (r *PostgresRepository) UpdateEpochClaimSubmittedTransactionHash(
+	ctx context.Context,
+	nameOrAddress string,
+	e *model.Epoch,
+) error {
+
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
+
+	updStmt := table.Epoch.
+		UPDATE(
+			table.Epoch.ClaimSubmittedTransactionHash,
+		).
+		SET(
+			e.ClaimSubmittedTransactionHash,
+		).
+		FROM(
+			table.Application,
+		).
+		WHERE(
+			whereClause.
+				AND(table.Epoch.ApplicationID.EQ(table.Application.ID)).
+				AND(table.Epoch.Index.EQ(uint64Expr(e.Index))),
+		)
+
+	sqlStr, args := updStmt.Sql()
+	cmd, err := r.db.Exec(ctx, sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return repository.ErrNotFound
+	}
+	return nil
+}
+
+func (r *PostgresRepository) UpdateEpochClaimAcceptedTransactionHash(
+	ctx context.Context,
+	nameOrAddress string,
+	e *model.Epoch,
+) error {
+
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
+
+	updStmt := table.Epoch.
+		UPDATE(
+			table.Epoch.ClaimAcceptedTransactionHash,
+		).
+		SET(
+			e.ClaimAcceptedTransactionHash,
+		).
+		FROM(
+			table.Application,
+		).
+		WHERE(
+			whereClause.
+				AND(table.Epoch.ApplicationID.EQ(table.Application.ID)).
+				AND(table.Epoch.Index.EQ(uint64Expr(e.Index))),
+		)
+
+	sqlStr, args := updStmt.Sql()
+	cmd, err := r.db.Exec(ctx, sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return repository.ErrNotFound
+	}
+	return nil
+}
+
 func (r *PostgresRepository) UpdateEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64, proof *model.OutputsProof) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -657,6 +727,8 @@ func (r *PostgresRepository) ListEpochs(
 			table.Epoch.OutputsMerkleRoot,
 			table.Epoch.Commitment,
 			table.Epoch.ClaimTransactionHash,
+			table.Epoch.ClaimSubmittedTransactionHash,
+			table.Epoch.ClaimAcceptedTransactionHash,
 			table.Epoch.TournamentAddress,
 			table.Epoch.Status,
 			table.Epoch.VirtualIndex,
@@ -722,6 +794,8 @@ func (r *PostgresRepository) ListEpochs(
 			&ep.OutputsMerkleRoot,
 			&ep.Commitment,
 			&ep.ClaimTransactionHash,
+			&ep.ClaimSubmittedTransactionHash,
+			&ep.ClaimAcceptedTransactionHash,
 			&ep.TournamentAddress,
 			&ep.Status,
 			&ep.VirtualIndex,

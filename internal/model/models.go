@@ -17,27 +17,29 @@ import (
 )
 
 type Application struct {
-	ID                       int64               `sql:"primary_key" json:"-"`
-	Name                     string              `json:"name"`
-	IApplicationAddress      common.Address      `json:"iapplication_address"`
-	IConsensusAddress        common.Address      `json:"iconsensus_address"`
-	IInputBoxAddress         common.Address      `json:"iinputbox_address"`
-	TemplateHash             common.Hash         `json:"template_hash"`
-	TemplateURI              string              `json:"-"`
-	EpochLength              uint64              `json:"epoch_length"`
-	DataAvailability         []byte              `json:"data_availability"`
-	ConsensusType            Consensus           `json:"consensus_type"`
-	State                    ApplicationState    `json:"state"`
-	Reason                   *string             `json:"reason"`
-	IInputBoxBlock           uint64              `json:"iinputbox_block"`
-	LastEpochCheckBlock      uint64              `json:"last_epoch_check_block"`
-	LastInputCheckBlock      uint64              `json:"last_input_check_block"`
-	LastOutputCheckBlock     uint64              `json:"last_output_check_block"`
-	LastTournamentCheckBlock uint64              `json:"last_tournament_check_block"`
-	ProcessedInputs          uint64              `json:"processed_inputs"`
-	CreatedAt                time.Time           `json:"created_at"`
-	UpdatedAt                time.Time           `json:"updated_at"`
-	ExecutionParameters      ExecutionParameters `json:"execution_parameters"`
+	ID                           int64               `sql:"primary_key" json:"-"`
+	Name                         string              `json:"name"`
+	IApplicationAddress          common.Address      `json:"iapplication_address"`
+	IConsensusAddress            common.Address      `json:"iconsensus_address"`
+	IInputBoxAddress             common.Address      `json:"iinputbox_address"`
+	TemplateHash                 common.Hash         `json:"template_hash"`
+	TemplateURI                  string              `json:"-"`
+	EpochLength                  uint64              `json:"epoch_length"`
+	DataAvailability             []byte              `json:"data_availability"`
+	ConsensusType                Consensus           `json:"consensus_type"`
+	State                        ApplicationState    `json:"state"`
+	Reason                       *string             `json:"reason"`
+	IInputBoxBlock               uint64              `json:"iinputbox_block"`
+	LastEpochCheckBlock          uint64              `json:"last_epoch_check_block"`
+	LastInputCheckBlock          uint64              `json:"last_input_check_block"`
+	LastOutputCheckBlock         uint64              `json:"last_output_check_block"`
+	LastTournamentCheckBlock     uint64              `json:"last_tournament_check_block"`
+	LastSubmittedClaimCheckBlock uint64              `json:"last_submitted_claim_check_block"`
+	LastAcceptedClaimCheckBlock  uint64              `json:"last_accepted_claim_check_block"`
+	ProcessedInputs              uint64              `json:"processed_inputs"`
+	CreatedAt                    time.Time           `json:"created_at"`
+	UpdatedAt                    time.Time           `json:"updated_at"`
+	ExecutionParameters          ExecutionParameters `json:"execution_parameters"`
 }
 
 // HasDataAvailabilitySelector checks if the application's DataAvailability
@@ -581,23 +583,25 @@ func ParseHexDuration(s string) (time.Duration, error) {
 }
 
 type Epoch struct {
-	ApplicationID        int64           `sql:"primary_key" json:"-"`
-	Index                uint64          `sql:"primary_key" json:"index"`
-	FirstBlock           uint64          `json:"first_block"`
-	LastBlock            uint64          `json:"last_block"`
-	InputIndexLowerBound uint64          `json:"input_index_lower_bound"`
-	InputIndexUpperBound uint64          `json:"input_index_upper_bound"`
-	MachineHash          *common.Hash    `json:"machine_hash"`
-	OutputsMerkleRoot    *common.Hash    `json:"claim_hash"`
-	OutputsMerkleProof   []common.Hash   `json:"outputs_merkle_proof,omitempty"`
-	ClaimTransactionHash *common.Hash    `json:"claim_transaction_hash"`
-	Commitment           *common.Hash    `json:"commitment"`
-	CommitmentProof      []common.Hash   `json:"commitment_proof,omitempty"`
-	TournamentAddress    *common.Address `json:"tournament_address"`
-	Status               EpochStatus     `json:"status"`
-	VirtualIndex         uint64          `json:"virtual_index"`
-	CreatedAt            time.Time       `json:"created_at"`
-	UpdatedAt            time.Time       `json:"updated_at"`
+	ApplicationID                 int64           `sql:"primary_key" json:"-"`
+	Index                         uint64          `sql:"primary_key" json:"index"`
+	FirstBlock                    uint64          `json:"first_block"`
+	LastBlock                     uint64          `json:"last_block"`
+	InputIndexLowerBound          uint64          `json:"input_index_lower_bound"`
+	InputIndexUpperBound          uint64          `json:"input_index_upper_bound"`
+	MachineHash                   *common.Hash    `json:"machine_hash"`
+	OutputsMerkleRoot             *common.Hash    `json:"claim_hash"`
+	OutputsMerkleProof            []common.Hash   `json:"outputs_merkle_proof,omitempty"`
+	ClaimSubmittedTransactionHash *common.Hash    `json:"claim_submitted_transaction_hash"`
+	ClaimAcceptedTransactionHash  *common.Hash    `json:"claim_accepted_transaction_hash"`
+	ClaimTransactionHash          *common.Hash    `json:"claim_transaction_hash"`
+	Commitment                    *common.Hash    `json:"commitment"`
+	CommitmentProof               []common.Hash   `json:"commitment_proof,omitempty"`
+	TournamentAddress             *common.Address `json:"tournament_address"`
+	Status                        EpochStatus     `json:"status"`
+	VirtualIndex                  uint64          `json:"virtual_index"`
+	CreatedAt                     time.Time       `json:"created_at"`
+	UpdatedAt                     time.Time       `json:"updated_at"`
 }
 
 func (e *Epoch) MarshalJSON() ([]byte, error) {

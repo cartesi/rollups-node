@@ -17,23 +17,25 @@ type epochTable struct {
 	postgres.Table
 
 	// Columns
-	ApplicationID        postgres.ColumnInteger
-	Index                postgres.ColumnFloat
-	FirstBlock           postgres.ColumnFloat
-	LastBlock            postgres.ColumnFloat
-	InputIndexLowerBound postgres.ColumnFloat
-	InputIndexUpperBound postgres.ColumnFloat
-	MachineHash          postgres.ColumnBytea
-	OutputsMerkleRoot    postgres.ColumnBytea
-	OutputsMerkleProof   postgres.ColumnByteaArray
-	Commitment           postgres.ColumnBytea
-	CommitmentProof      postgres.ColumnByteaArray
-	TournamentAddress    postgres.ColumnBytea
-	ClaimTransactionHash postgres.ColumnBytea
-	Status               postgres.ColumnString
-	VirtualIndex         postgres.ColumnFloat
-	CreatedAt            postgres.ColumnTimestampz
-	UpdatedAt            postgres.ColumnTimestampz
+	ApplicationID                 postgres.ColumnInteger
+	Index                         postgres.ColumnFloat
+	FirstBlock                    postgres.ColumnFloat
+	LastBlock                     postgres.ColumnFloat
+	InputIndexLowerBound          postgres.ColumnFloat
+	InputIndexUpperBound          postgres.ColumnFloat
+	MachineHash                   postgres.ColumnBytea
+	OutputsMerkleRoot             postgres.ColumnBytea
+	OutputsMerkleProof            postgres.ColumnByteaArray
+	Commitment                    postgres.ColumnBytea
+	CommitmentProof               postgres.ColumnByteaArray
+	TournamentAddress             postgres.ColumnBytea
+	ClaimSubmittedTransactionHash postgres.ColumnBytea
+	ClaimAcceptedTransactionHash  postgres.ColumnBytea
+	ClaimTransactionHash          postgres.ColumnBytea
+	Status                        postgres.ColumnString
+	VirtualIndex                  postgres.ColumnFloat
+	CreatedAt                     postgres.ColumnTimestampz
+	UpdatedAt                     postgres.ColumnTimestampz
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
@@ -75,49 +77,53 @@ func newEpochTable(schemaName, tableName, alias string) *EpochTable {
 
 func newEpochTableImpl(schemaName, tableName, alias string) epochTable {
 	var (
-		ApplicationIDColumn        = postgres.IntegerColumn("application_id")
-		IndexColumn                = postgres.FloatColumn("index")
-		FirstBlockColumn           = postgres.FloatColumn("first_block")
-		LastBlockColumn            = postgres.FloatColumn("last_block")
-		InputIndexLowerBoundColumn = postgres.FloatColumn("input_index_lower_bound")
-		InputIndexUpperBoundColumn = postgres.FloatColumn("input_index_upper_bound")
-		MachineHashColumn          = postgres.ByteaColumn("machine_hash")
-		OutputsMerkleRootColumn    = postgres.ByteaColumn("outputs_merkle_root")
-		OutputsMerkleProofColumn   = postgres.ByteaArrayColumn("outputs_merkle_proof")
-		CommitmentColumn           = postgres.ByteaColumn("commitment")
-		CommitmentProofColumn      = postgres.ByteaArrayColumn("commitment_proof")
-		TournamentAddressColumn    = postgres.ByteaColumn("tournament_address")
-		ClaimTransactionHashColumn = postgres.ByteaColumn("claim_transaction_hash")
-		StatusColumn               = postgres.StringColumn("status")
-		VirtualIndexColumn         = postgres.FloatColumn("virtual_index")
-		CreatedAtColumn            = postgres.TimestampzColumn("created_at")
-		UpdatedAtColumn            = postgres.TimestampzColumn("updated_at")
-		allColumns                 = postgres.ColumnList{ApplicationIDColumn, IndexColumn, FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, OutputsMerkleRootColumn, OutputsMerkleProofColumn, CommitmentColumn, CommitmentProofColumn, TournamentAddressColumn, ClaimTransactionHashColumn, StatusColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns             = postgres.ColumnList{FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, OutputsMerkleRootColumn, OutputsMerkleProofColumn, CommitmentColumn, CommitmentProofColumn, TournamentAddressColumn, ClaimTransactionHashColumn, StatusColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
-		defaultColumns             = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
+		ApplicationIDColumn                 = postgres.IntegerColumn("application_id")
+		IndexColumn                         = postgres.FloatColumn("index")
+		FirstBlockColumn                    = postgres.FloatColumn("first_block")
+		LastBlockColumn                     = postgres.FloatColumn("last_block")
+		InputIndexLowerBoundColumn          = postgres.FloatColumn("input_index_lower_bound")
+		InputIndexUpperBoundColumn          = postgres.FloatColumn("input_index_upper_bound")
+		MachineHashColumn                   = postgres.ByteaColumn("machine_hash")
+		OutputsMerkleRootColumn             = postgres.ByteaColumn("outputs_merkle_root")
+		OutputsMerkleProofColumn            = postgres.ByteaArrayColumn("outputs_merkle_proof")
+		CommitmentColumn                    = postgres.ByteaColumn("commitment")
+		CommitmentProofColumn               = postgres.ByteaArrayColumn("commitment_proof")
+		TournamentAddressColumn             = postgres.ByteaColumn("tournament_address")
+		ClaimSubmittedTransactionHashColumn = postgres.ByteaColumn("claim_submitted_transaction_hash")
+		ClaimAcceptedTransactionHashColumn  = postgres.ByteaColumn("claim_accepted_transaction_hash")
+		ClaimTransactionHashColumn          = postgres.ByteaColumn("claim_transaction_hash")
+		StatusColumn                        = postgres.StringColumn("status")
+		VirtualIndexColumn                  = postgres.FloatColumn("virtual_index")
+		CreatedAtColumn                     = postgres.TimestampzColumn("created_at")
+		UpdatedAtColumn                     = postgres.TimestampzColumn("updated_at")
+		allColumns                          = postgres.ColumnList{ApplicationIDColumn, IndexColumn, FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, OutputsMerkleRootColumn, OutputsMerkleProofColumn, CommitmentColumn, CommitmentProofColumn, TournamentAddressColumn, ClaimSubmittedTransactionHashColumn, ClaimAcceptedTransactionHashColumn, ClaimTransactionHashColumn, StatusColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns                      = postgres.ColumnList{FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, OutputsMerkleRootColumn, OutputsMerkleProofColumn, CommitmentColumn, CommitmentProofColumn, TournamentAddressColumn, ClaimSubmittedTransactionHashColumn, ClaimAcceptedTransactionHashColumn, ClaimTransactionHashColumn, StatusColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns                      = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return epochTable{
 		Table: postgres.NewTable(schemaName, tableName, alias, allColumns...),
 
 		//Columns
-		ApplicationID:        ApplicationIDColumn,
-		Index:                IndexColumn,
-		FirstBlock:           FirstBlockColumn,
-		LastBlock:            LastBlockColumn,
-		InputIndexLowerBound: InputIndexLowerBoundColumn,
-		InputIndexUpperBound: InputIndexUpperBoundColumn,
-		MachineHash:          MachineHashColumn,
-		OutputsMerkleRoot:    OutputsMerkleRootColumn,
-		OutputsMerkleProof:   OutputsMerkleProofColumn,
-		Commitment:           CommitmentColumn,
-		CommitmentProof:      CommitmentProofColumn,
-		TournamentAddress:    TournamentAddressColumn,
-		ClaimTransactionHash: ClaimTransactionHashColumn,
-		Status:               StatusColumn,
-		VirtualIndex:         VirtualIndexColumn,
-		CreatedAt:            CreatedAtColumn,
-		UpdatedAt:            UpdatedAtColumn,
+		ApplicationID:                 ApplicationIDColumn,
+		Index:                         IndexColumn,
+		FirstBlock:                    FirstBlockColumn,
+		LastBlock:                     LastBlockColumn,
+		InputIndexLowerBound:          InputIndexLowerBoundColumn,
+		InputIndexUpperBound:          InputIndexUpperBoundColumn,
+		MachineHash:                   MachineHashColumn,
+		OutputsMerkleRoot:             OutputsMerkleRootColumn,
+		OutputsMerkleProof:            OutputsMerkleProofColumn,
+		Commitment:                    CommitmentColumn,
+		CommitmentProof:               CommitmentProofColumn,
+		TournamentAddress:             TournamentAddressColumn,
+		ClaimSubmittedTransactionHash: ClaimSubmittedTransactionHashColumn,
+		ClaimAcceptedTransactionHash:  ClaimAcceptedTransactionHashColumn,
+		ClaimTransactionHash:          ClaimTransactionHashColumn,
+		Status:                        StatusColumn,
+		VirtualIndex:                  VirtualIndexColumn,
+		CreatedAt:                     CreatedAtColumn,
+		UpdatedAt:                     UpdatedAtColumn,
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,
