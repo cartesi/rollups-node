@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"strings"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
@@ -90,7 +91,7 @@ func (cb *claimerBlockchain) submitClaimToBlockchain(
 	tx, err := ic.SubmitClaim(cb.txOpts, application.IApplicationAddress,
 		lastBlockNumber, *epoch.OutputsMerkleRoot)
 	if err != nil {
-		cb.logger.Error("submitClaimToBlockchain:failed",
+		cb.logger.Warn("submitClaimToBlockchain:failed",
 			"appContractAddress", application.IApplicationAddress,
 			"claimHash", *epoch.OutputsMerkleRoot,
 			"last_block", epoch.LastBlock,
@@ -254,6 +255,31 @@ func (cb *claimerBlockchain) getConsensusAddress(
 	app *model.Application,
 ) (common.Address, error) {
 	return ethutil.GetConsensus(ctx, cb.client, app.IApplicationAddress)
+}
+
+// isNotFirstClaimError checks whether an error from submitClaim is
+// a NotFirstClaim revert, indicating the claim was already submitted
+// on-chain (e.g., before a node restart).
+func isNotFirstClaimError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var de rpc.DataError
+	if errors.As(err, &de) {
+		if dataStr, ok := de.ErrorData().(string); ok {
+			parsed, _ := iconsensus.IConsensusMetaData.GetAbi()
+			if parsed == nil {
+				return false
+			}
+			abiErr, ok := parsed.Errors["NotFirstClaim"]
+			if !ok {
+				return false
+			}
+			selector := fmt.Sprintf("0x%x", abiErr.ID[:4])
+			return strings.HasPrefix(dataStr, selector)
+		}
+	}
+	return false
 }
 
 // poll a transaction for its receipt

@@ -335,6 +335,70 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 				)
 				txHash, err := s.blockchain.submitClaimToBlockchain(ic, app, currEpoch)
 				if err != nil {
+					// NotFirstClaim handling after restart.
+					//
+					// Gas estimation (eth_estimateGas) simulates
+					// the call before broadcasting, so the revert
+					// is caught without spending gas. This relies
+					// on txOpts.GasLimit == 0 (the default); if
+					// GasLimit were pre-set, the tx would skip
+					// estimation and revert on-chain.
+					//
+					// Authority: submitClaim checks a per-epoch
+					// bitmap. Any duplicate (same epoch, regardless
+					// of merkle root) reverts with NotFirstClaim.
+					// After restart this is benign — the node
+					// recomputed the same claim that was already
+					// on-chain. Both ClaimSubmitted and
+					// ClaimAccepted events were already emitted
+					// (Authority emits both atomically).
+					//
+					// Quorum: submitClaim first checks if this
+					// validator already voted for the SAME claim
+					// (same app + lastBlock + merkleRoot). If so,
+					// it silently returns — no revert, no event.
+					// It only reverts with NotFirstClaim when the
+					// validator voted for a DIFFERENT merkleRoot
+					// in the same epoch (checked via allVotes
+					// bitmap). After restart, this means the node
+					// recomputed a different claim hash than what
+					// it submitted pre-restart — a determinism
+					// violation. ClaimSubmitted was emitted for
+					// the original vote; ClaimAccepted is emitted
+					// only once a majority of validators agree.
+					if isNotFirstClaimError(err) {
+						if app.ConsensusType == model.Consensus_Quorum {
+							// Quorum only reverts with NotFirstClaim
+							// when the merkle root differs. This is
+							// unrecoverable: computation is expected
+							// to be deterministic, so recomputing
+							// will produce the same divergent hash.
+							err = s.setApplicationInoperable(
+								s.Context,
+								app,
+								"NotFirstClaim from Quorum consensus: "+
+									"computed claim hash %s differs from "+
+									"previously submitted claim for "+
+									"epoch with last_block %d. "+
+									"Possible determinism violation or "+
+									"machine state corruption.",
+								hashToHex(currEpoch.OutputsMerkleRoot),
+								currEpoch.LastBlock,
+							)
+							delete(computedEpochs, key)
+							errs = append(errs, err)
+							continue
+						}
+						s.Logger.Info(
+							"Claim already on-chain, "+
+								"waiting for event sync",
+							"app", app.IApplicationAddress,
+							"claim_hash",
+							hashToHex(currEpoch.OutputsMerkleRoot),
+							"last_block", currEpoch.LastBlock,
+						)
+						continue
+					}
 					delete(computedEpochs, key)
 					errs = append(errs, err)
 					continue

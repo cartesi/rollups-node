@@ -207,10 +207,10 @@ func makeApplication() *model.Application {
 
 func makeEpoch(id int64, status model.EpochStatus, i uint64) *model.Epoch {
 	outputsMerkleRoot := common.HexToHash("0x01") // dummy value
-	txHash := common.HexToHash("0x02") // dummy value
+	txHash := common.HexToHash("0x02")            // dummy value
 	return repotest.NewEpochBuilder(id).
 		WithIndex(i).
-		WithBlocks(i * 10, i * 10 + 9).
+		WithBlocks(i*10, i*10+9).
 		WithStatus(status).
 		WithClaimTransactionHash(txHash).
 		WithOutputsMerkleRoot(outputsMerkleRoot).
@@ -264,6 +264,33 @@ func makeAcceptedEvent(app *model.Application, epoch *model.Epoch) *iconsensus.I
 			TxHash:      common.HexToHash(epoch.ClaimTransactionHash.Hex()),
 			BlockNumber: epoch.LastBlock + 5,
 		},
+	}
+}
+
+// rpcDataError simulates an RPC error with revert data, as returned by
+// eth_estimateGas when the contract reverts.
+type rpcDataError struct {
+	code int
+	msg  string
+	data any
+}
+
+func (e *rpcDataError) Error() string  { return e.msg }
+func (e *rpcDataError) ErrorCode() int { return e.code }
+func (e *rpcDataError) ErrorData() any { return e.data }
+
+// notFirstClaimError creates an error that mimics a NotFirstClaim revert
+// from eth_estimateGas, with the ABI error selector as revert data.
+func notFirstClaimError() error {
+	parsed, _ := iconsensus.IConsensusMetaData.GetAbi()
+	id := parsed.Errors["NotFirstClaim"].ID
+	selector := fmt.Sprintf("0x%x", id[:4])
+	return &rpcDataError{
+		code: 3,
+		msg:  "execution reverted",
+		data: selector + "000000000000000000000000" +
+			"01000000000000000000000000000000000000000000000000000000000000" +
+			"0000000000000000000000000000000000000000000000000000000000000027",
 	}
 }
 
@@ -579,6 +606,66 @@ func TestSubmitFailedClaim(t *testing.T) {
 
 	errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	assert.Equal(t, 0, len(errs))
+}
+
+// TestNotFirstClaimHandledGracefully verifies that when submitClaim reverts
+// with NotFirstClaim (e.g., after a node restart where claimsInFlight was
+// lost), the claimer handles it gracefully — no error, no claimsInFlight
+// entry, and the claim is left for event sync to pick up.
+func TestNotFirstClaimHandledGracefully(t *testing.T) {
+	m, r, b := newServiceMock()
+	defer r.AssertExpectations(t)
+	defer b.AssertExpectations(t)
+
+	endBlock := big.NewInt(40)
+	app := makeApplication()
+	currEpoch := makeComputedEpoch(app, 3)
+	var prevEvent *iconsensus.IConsensusClaimSubmitted
+	var currEvent *iconsensus.IConsensusClaimSubmitted
+
+	b.On("getConsensusAddress", mock.Anything, app).
+		Return(app.IConsensusAddress, nil).Once()
+	b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, currEpoch, currEpoch.LastBlock+1, endBlock.Uint64()).
+		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil).Once()
+	// submitClaim reverts with NotFirstClaim (caught by eth_estimateGas).
+	b.On("submitClaimToBlockchain", mock.Anything, app, currEpoch).
+		Return(common.Hash{}, notFirstClaimError()).Once()
+
+	errs := m.submitClaimsAndUpdateDatabase(
+		makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Equal(t, 0, len(errs))
+	assert.Equal(t, 0, len(m.claimsInFlight))
+}
+
+// TestNotFirstClaimQuorumSetsInoperable verifies that when submitClaim reverts
+// with NotFirstClaim for a Quorum app, the claimer marks the application as
+// inoperable. In Quorum, NotFirstClaim means the validator previously submitted
+// a different merkle root — a determinism violation.
+func TestNotFirstClaimQuorumSetsInoperable(t *testing.T) {
+	m, r, b := newServiceMock()
+	defer r.AssertExpectations(t)
+	defer b.AssertExpectations(t)
+
+	endBlock := big.NewInt(40)
+	app := makeApplication()
+	app.ConsensusType = model.Consensus_Quorum
+	currEpoch := makeComputedEpoch(app, 3)
+	var prevEvent *iconsensus.IConsensusClaimSubmitted
+	var currEvent *iconsensus.IConsensusClaimSubmitted
+
+	b.On("getConsensusAddress", mock.Anything, app).
+		Return(app.IConsensusAddress, nil).Once()
+	b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, currEpoch, currEpoch.LastBlock+1, endBlock.Uint64()).
+		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil).Once()
+	b.On("submitClaimToBlockchain", mock.Anything, app, currEpoch).
+		Return(common.Hash{}, notFirstClaimError()).Once()
+	r.On("UpdateApplicationState", mock.Anything, int64(0), model.ApplicationState_Inoperable, mock.Anything).
+		Return(nil).Once()
+
+	errs := m.submitClaimsAndUpdateDatabase(
+		makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Equal(t, 1, len(errs))
+	assert.Equal(t, 0, len(m.claimsInFlight))
 }
 
 // !claimSubmittedMatche(prevClaim, prevEvent)
