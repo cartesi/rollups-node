@@ -1249,11 +1249,11 @@ func (s *ImplementationSuite) TestCheckContext() {
 	err = checkContext(canceledCtx)
 	require.ErrorIs(err, ErrCanceled)
 
-	// Test deadline exceeded context
-	timeoutCtx, cancel := context.WithTimeout(ctx, 1*time.Millisecond)
+	// Test deadline exceeded context — use a deadline in the past so it's
+	// already expired without relying on sleep timing.
+	expiredCtx, cancel := context.WithDeadline(ctx, time.Now().Add(-time.Second))
 	defer cancel()
-	time.Sleep(2 * time.Millisecond)
-	err = checkContext(timeoutCtx)
+	err = checkContext(expiredCtx)
 	require.ErrorIs(err, ErrDeadlineExceeded)
 
 	// Test nil context (should not panic)

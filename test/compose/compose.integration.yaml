@@ -40,8 +40,8 @@ services:
       POSTGRES_DB: rollupsdb
 
   migration:
-    image: cartesi/rollups-node:devel
-    command: cartesi-rollups-cli db init
+    image: cartesi/rollups-node:tester
+    command: /build/cartesi/go/rollups-node/cartesi-rollups-cli db init
     depends_on:
       database:
         condition: service_healthy
@@ -74,10 +74,15 @@ services:
       - ../downloads:/usr/share/cartesi-machine/images
     restart: "no"
 
-  node:
-    image: cartesi/rollups-node:devel
+  # The node is started and managed by TestMain inside the test process.
+  # This ensures all tests (including restart and snapshot policy tests)
+  # run with the same infrastructure in both local and CI environments.
+  integration-test:
+    image: cartesi/rollups-node:tester
+    profiles: [integration-test]
     init: true
-    command: ["bash", "-o", "pipefail", "-c", "cartesi-rollups-node 2>&1 | tee /var/lib/cartesi-rollups-node/logs/node.log"]
+    entrypoint: ["bash"]
+    command: ["/scripts/run-integration-tests.sh"]
     depends_on:
       migration:
         condition: service_completed_successfully
@@ -86,37 +91,8 @@ services:
       dapp-builder:
         condition: service_completed_successfully
     volumes:
-      - dapp_images:/var/lib/cartesi-rollups-node/dapps
-      - node_logs:/var/lib/cartesi-rollups-node/logs
-    networks:
-      - devnet
-    healthcheck:
-      test: ["CMD", "curl", "-G", "-f", "http://127.0.0.1:10000/readyz"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 10s
-    environment:
-      <<: *env
-      CARTESI_BLOCKCHAIN_DEFAULT_BLOCK: latest
-      CARTESI_ADVANCER_POLLING_INTERVAL: 1
-      CARTESI_VALIDATOR_POLLING_INTERVAL: 1
-      CARTESI_CLAIMER_POLLING_INTERVAL: 1
-      CARTESI_PRT_POLLING_INTERVAL: 1
-
-  integration-test:
-    image: cartesi/rollups-node:tester
-    profiles: [integration-test]
-    entrypoint: ["bash"]
-    command: ["/scripts/run-integration-tests.sh", "http://node:10000"]
-    depends_on:
-      node:
-        condition: service_healthy
-      dapp-builder:
-        condition: service_completed_successfully
-    volumes:
       - dapp_images:/var/lib/cartesi-rollups-node/dapps:ro
-      - node_logs:/var/lib/cartesi-rollups-node/logs:ro
+      - node_logs:/var/lib/cartesi-rollups-node/logs
       - ../downloads:/usr/share/cartesi-machine/images
       - ../../scripts/run-integration-tests.sh:/scripts/run-integration-tests.sh:ro
     networks:
@@ -124,11 +100,12 @@ services:
     restart: "no"
     environment:
       <<: *env
+      CARTESI_BLOCKCHAIN_DEFAULT_BLOCK: latest
       CARTESI_TEST_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/echo-dapp
       CARTESI_TEST_REJECT_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/reject-loop-dapp
       CARTESI_TEST_EXCEPTION_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/exception-loop-dapp
       CARTESI_TEST_NODE_LOG_FILE: /var/lib/cartesi-rollups-node/logs/node.log
-      CARTESI_INSPECT_URL: http://node:10012/
+      CARTESI_INSPECT_URL: http://localhost:10012/
 
 volumes:
   dapp_images:
