@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -843,6 +844,17 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 	tx, err := tournamentAdapter.JoinTournament(&txOptsWithValue, *epoch.MachineHash,
 		hashSliceToByteSlice(epoch.CommitmentProof), leftNode, rightNode)
 	if err != nil {
+		// The contract reverts with "clock is initialized" (a require string
+		// from Clock.sol) when the commitment was already joined. This can
+		// happen after a restart if the on-chain check (IsCommitmentJoined)
+		// used a slightly stale block number.
+		// Matched via ABI-decoded Error(string) revert data, not err.Error().
+		if isRevertReason(err, TournamentClockInitialized) {
+			s.Logger.Info("Commitment already joined on-chain (detected via revert), waiting for event sync",
+				"application", app.Name, "epoch_index", currentEpochIndex,
+				"tournament", epoch.TournamentAddress.Hex(), "commitment", epoch.Commitment.Hex())
+			return nil
+		}
 		s.Logger.Error("failed to send join tournament transaction", "application", app.Name,
 			"epoch_index", currentEpochIndex, "error", err)
 		return err

@@ -91,3 +91,8 @@ func (l TournamentLevel) String() string {
 }
 
 const TournamentFailedNoWinner string = "0xb3045ef8"
+
+// TournamentClockInitialized is the revert reason from the tournament contract
+// when joinTournament is called for a commitment that was already joined.
+// This happens after a node restart when the in-memory joinInFlight map is lost.
+const TournamentClockInitialized string = "clock is initialized"

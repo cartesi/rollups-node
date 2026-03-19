@@ -13,6 +13,7 @@ package integration
 
 import (
 	"context"
+	"regexp"
 	"testing"
 	"time"
 
@@ -285,6 +286,13 @@ func (s *RestartSuite) TestRestartMultiAppAuthority() {
 
 // TestRestartMultiAppPrt tests restart with PRT (Dave) consensus.
 func (s *RestartSuite) TestRestartMultiAppPrt() {
+	// PRT settlement mines hundreds of blocks rapidly, which can cause
+	// transient BlockOutOfRangeError in the EVM reader.
+	s.SetAllowedErrors(AllowedError{
+		Pattern: regexp.MustCompile(`BlockOutOfRangeError`),
+		Reason:  "transient Anvil error during rapid block mining in PRT settlement",
+	})
+
 	s.app1Name = uniqueAppName("restart-prt-1")
 	s.app2Name = uniqueAppName("restart-prt-2")
 

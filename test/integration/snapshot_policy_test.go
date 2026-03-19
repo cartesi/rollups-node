@@ -13,6 +13,7 @@ package integration
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -274,6 +275,13 @@ func (s *SnapshotPolicySuite) TestSnapshotPolicyEveryEpoch() {
 // TestSnapshotPolicyEveryInputPrt tests the EVERY_INPUT snapshot policy
 // with PRT (Dave) consensus.
 func (s *SnapshotPolicySuite) TestSnapshotPolicyEveryInputPrt() {
+	// PRT settlement mines hundreds of blocks rapidly, which can cause
+	// transient BlockOutOfRangeError in the EVM reader.
+	s.SetAllowedErrors(AllowedError{
+		Pattern: regexp.MustCompile(`BlockOutOfRangeError`),
+		Reason:  "transient Anvil error during rapid block mining in PRT settlement",
+	})
+
 	endpoint := envOrDefault(
 		"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT", "http://localhost:8545")
 	ethClient, err := ethclient.Dial(endpoint)
@@ -296,6 +304,13 @@ func (s *SnapshotPolicySuite) TestSnapshotPolicyEveryInputPrt() {
 // TestSnapshotPolicyEveryEpochPrt tests the EVERY_EPOCH snapshot policy
 // with PRT (Dave) consensus.
 func (s *SnapshotPolicySuite) TestSnapshotPolicyEveryEpochPrt() {
+	// PRT settlement mines hundreds of blocks rapidly, which can cause
+	// transient BlockOutOfRangeError in the EVM reader.
+	s.SetAllowedErrors(AllowedError{
+		Pattern: regexp.MustCompile(`BlockOutOfRangeError`),
+		Reason:  "transient Anvil error during rapid block mining in PRT settlement",
+	})
+
 	endpoint := envOrDefault(
 		"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT", "http://localhost:8545")
 	ethClient, err := ethclient.Dial(endpoint)
