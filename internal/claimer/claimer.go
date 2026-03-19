@@ -648,6 +648,18 @@ func claimAcceptedEventMatches(application *model.Application, epoch *model.Epoc
 		epoch.LastBlock == event.LastProcessedBlockNumber.Uint64()
 }
 
+// claimAcceptedEventMatchesEpoch checks if a ClaimAccepted event belongs to
+// the same epoch (app + lastBlock) regardless of the merkle root. This is
+// used to detect outvoting in Quorum: a ClaimAccepted event exists for the
+// epoch but with a different merkle root than what this node submitted.
+func claimAcceptedEventMatchesEpoch(application *model.Application, epoch *model.Epoch, event *iconsensus.IConsensusClaimAccepted) bool {
+	if application == nil || epoch == nil || event == nil {
+		return false
+	}
+	return application.IApplicationAddress == event.AppContract &&
+		epoch.LastBlock == event.LastProcessedBlockNumber.Uint64()
+}
+
 func (s *Service) String() string {
 	return s.Name
 }

@@ -226,7 +226,13 @@ func (cb *claimerBlockchain) findClaimAcceptedEventAndSucc(
 	onHit := newOnHit(ctx, application.IApplicationAddress, filter,
 		func(it *iconsensus.IConsensusClaimAcceptedIterator) {
 			event := it.Event
-			if (len(events) > 0) || claimAcceptedEventMatches(application, epoch, event) {
+			// Match on epoch identity (app + lastBlock) without
+			// requiring the merkle root to match. This ensures
+			// that a ClaimAccepted event from a different claim
+			// (outvoting in Quorum) is returned to the caller,
+			// where claimAcceptedEventMatches detects the
+			// mismatch and sets the app as inoperable.
+			if (len(events) > 0) || claimAcceptedEventMatchesEpoch(application, epoch, event) {
 				events = append(events, event)
 			}
 		},
