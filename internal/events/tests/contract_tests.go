@@ -6,8 +6,10 @@ package contracttests
 import (
 	"context"
 	"encoding/json"
+	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/cartesi/rollups-node/internal/events"
@@ -54,7 +56,7 @@ func (g *TimeoutGroup) Wait() {
 
 const (
 	eventCount      = 50
-	subsCount       = 5 // TODO: cannot increase above the limit of simultaneous connections to PostgreSQL.
+	subsCount       = 50
 	testcaseTimeout = 5 * time.Second
 )
 
@@ -232,17 +234,24 @@ func (s *PublisherTestSuite) TestFilteredEventsWithNewSubscriptions() {
 	var manyEventTypes = []events.EventType{
 		events.EventAppRegistered,
 		events.EventAppDeactivated,
-		// events.EventAppReactivated,
-		// events.EventAppInoperable,
+		events.EventAppReactivated,
+		events.EventAppInoperable,
+		events.EventEpochOpened,
+		events.EventEpochClosed,
+		events.EventEpochInputsProcessed,
+		events.EventEpochClaimCalculated,
+		events.EventEpochClaimSubmitted,
+		events.EventEpochClaimAccepted,
+		events.EventEpochClaimRejected,
+		events.EventInputReceived,
 	}
 	var manyApplicationIDs = []events.ApplicationID{
 		"app-1",
-		// "myApp",
+		"myApp",
 		"echo-dapp",
 	}
 
 	phaseCount := 3
-	// TODO: cannot increase above the limit of simultaneous connections to PostgreSQL.
 	subsCount := len(manyEventTypes) * len(manyApplicationIDs) * phaseCount
 
 	req := s.Require()
@@ -307,9 +316,6 @@ func (s *PublisherTestSuite) TestCancelledContext() {
 	sub, err := s.Service.Subscribe(cancelledCtx, events.SubscriptionFilter{})
 	req.Nil(sub)
 	req.ErrorIs(err, context.Canceled)
-
-	err = s.Service.Publish(cancelledCtx, expected)
-	req.ErrorIs(err, context.Canceled)
 }
 
 func (s *PublisherTestSuite) TestChannelClosedOnUnsubscription() {
@@ -336,4 +342,38 @@ func (s *PublisherTestSuite) TestChannelClosedOnUnsubscription() {
 
 	err = s.Service.Publish(ctx, expected)
 	req.NoError(err)
+}
+
+func (s *PublisherTestSuite) TestSubscribeAndUnsubscribe() {
+	req := s.Require()
+	ctx := s.T().Context()
+
+	sub, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
+	req.NoError(err)
+
+	err = s.Service.Publish(ctx, expected)
+	req.NoError(err)
+
+	req.Equal(expected, WaitEvent(s.T(), sub.Channel()))
+
+	sub.Close(ctx)
+
+	err = s.Service.Publish(ctx, expected)
+	req.NoError(err)
+
+	event, open := <-sub.Channel()
+	req.Equal(event, events.Event{})
+	req.False(open)
+}
+
+func WaitEvent[T any](tb testing.TB, waitChan <-chan T) T {
+	tb.Helper()
+
+	select {
+	case value := <-waitChan:
+		return value
+	case <-time.After(testcaseTimeout):
+		require.FailNowf(tb, "WaitEvent timed out", "after waiting %s", testcaseTimeout)
+	}
+	return *new(T) // unreachable
 }

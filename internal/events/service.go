@@ -133,7 +133,7 @@ func (s *eventService) Start(ctx context.Context) error {
 				}
 
 				sleepDuration := ExponentialBackoff(attempt, MaxAttemptsBeforeResetDefault)
-				s.Logger.ErrorContext(ctx, s.Name+": Error running listener (will attempt reconnect after backoff)",
+				s.Logger.ErrorContext(ctx, s.Name+": Error running driver (will attempt reconnect after backoff)",
 					slog.Int("attempt", attempt),
 					slog.String("err", err.Error()),
 					slog.String("sleep_duration", sleepDuration.String()),
@@ -169,19 +169,28 @@ func (s *eventService) deliverNotifications(ctx context.Context) {
 					oneAppSubs := appSubIdx[event.AppID]
 					anyAppSubs := appSubIdx[anyApplicationID]
 
-					funcs := make([]chan Event, len(oneAppSubs)+len(anyAppSubs))
+					channels := make([]chan Event, len(oneAppSubs)+len(anyAppSubs))
 					i := 0
 					for _, subs := range []subscriptionList{oneAppSubs, anyAppSubs} {
 						for _, sub := range subs {
-							funcs[i] = sub.channel
+							channels[i] = sub.channel
 							i++
 						}
 					}
-					return funcs
+					return channels
 				}()
 
 				for _, channel := range channels {
-					channel <- event
+					select {
+						case channel <- event:
+						default:
+							s.Logger.DebugContext(
+								ctx,
+								"subscription channel is full, dropping event",
+								"EventType", event.Type,
+								"AppID", event.AppID,
+							)
+					}
 				}
 			}
 		}
@@ -261,10 +270,10 @@ func (s *eventService) driverClose(ctx context.Context, skipLock bool) {
 		return
 	}
 
-	s.Logger.DebugContext(ctx, s.Name+": Listener closing")
+	s.Logger.DebugContext(ctx, s.Name+": Driver closing")
 	if err := s.driver.Close(ctx); err != nil {
 		if !errors.Is(err, context.Canceled) {
-			s.Logger.ErrorContext(ctx, s.Name+": Error closing listener", "err", err)
+			s.Logger.ErrorContext(ctx, s.Name+": Error closing driver", "err", err)
 		}
 	}
 
@@ -286,10 +295,10 @@ func (s *eventService) driverConnect(ctx context.Context, skipLock bool) error {
 	ctx, cancel := context.WithTimeout(ctx, listenerTimeout)
 	defer cancel()
 
-	s.Logger.DebugContext(ctx, s.Name+": Listener connecting")
+	s.Logger.DebugContext(ctx, s.Name+": Driver connecting")
 	if err := s.driver.Connect(ctx); err != nil {
 		if !errors.Is(err, context.Canceled) {
-			s.Logger.ErrorContext(ctx, s.Name+": Error connecting listener", "err", err)
+			s.Logger.ErrorContext(ctx, s.Name+": Error connecting driver", "err", err)
 		}
 
 		return err
@@ -299,11 +308,10 @@ func (s *eventService) driverConnect(ctx context.Context, skipLock bool) error {
 	return nil
 }
 
-// Listens on a topic with an appropriate logging statement. Should be preferred
-// to `listener.Listen` for improved logging/telemetry.
+// Listens on a topic with an appropriate logging statement.
 //
 // Not protected by mutex because it doesn't modify any notifier state and the
-// underlying listener has a mutex around its operations.
+// underlying driver has a mutex around its operations.
 func (s *eventService) driverListen(ctx context.Context, topics []string) error {
 	ctx, cancel := context.WithTimeout(ctx, listenerTimeout)
 	defer cancel()
@@ -316,11 +324,10 @@ func (s *eventService) driverListen(ctx context.Context, topics []string) error 
 	return nil
 }
 
-// Unlistens on a topic with an appropriate logging statement. Should be
-// preferred to `listener.Unlisten` for improved logging/telemetry.
+// Unlistens on a topic with an appropriate logging statement.
 //
-// Not protected by mutex because it doesn't modify any notifier state and the
-// underlying listener has a mutex around its operations.
+// Not protected by mutex because it doesn't modify any service state and the
+// underlying drvier has a mutex around its operations.
 func (s *eventService) driverUnlisten(ctx context.Context, topics []string) error {
 	ctx, cancel := context.WithTimeout(ctx, listenerTimeout)
 	defer cancel()
@@ -335,9 +342,9 @@ func (s *eventService) driverUnlisten(ctx context.Context, topics []string) erro
 
 const pingInterval = 5 * time.Second
 
-// Enters a single blocking wait for notifications on the underlying listener.
+// Enters a single blocking wait for notifications on the underlying driver.
 // Waiting for a notification locks an underlying connection, so infrastructure
-// elsewhere in the notifier must preempt it by sending to `n.waitInterruptChan`
+// elsewhere in the service must preempt it by sending to `n.waitInterruptChan`
 // and invoking `n.waitCancel()`. Cancelling the input context (as occurs during
 // shutdown) also unblocks the wait.
 func (s *eventService) waitOnce(ctx context.Context) error {
@@ -574,8 +581,8 @@ func (s *eventService) unlisten(ctx context.Context, sub *eventSubscription) err
 				}
 
 				// If this was the last subscription, we weren't in a wait loop,
-				// and the notifier never started, also clean up by closing the
-				// listener.
+				// and the service never started, also clean up by closing the
+				// driver.
 				if !s.isStarted && len(s.subscriptions) <= 1 {
 					s.driverClose(ctx, true)
 				}

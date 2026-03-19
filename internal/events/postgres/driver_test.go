@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -11,11 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-)
-
-const (
-	pingAttempts = 5
-	pingInterval = 3 * time.Second
 )
 
 func setupNewDBPool(t *testing.T) *pgxpool.Pool {
@@ -34,26 +30,70 @@ func setupNewDBPool(t *testing.T) *pgxpool.Pool {
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	require.NoError(t, err)
 
-	// Wait for database to be available
-	for range pingAttempts {
-		if err = pool.Ping(ctx); err == nil {
-			break
-		}
-		select {
-		case <-time.After(pingInterval):
-		case <-ctx.Done():
-			pool.Close()
-			panic(ctx.Err())
-		}
-	}
-
 	return pool
 }
 
-func TestPostgresEvents(t *testing.T) {
+func TestPostgresEventsContract(t *testing.T) {
+	dbPool := setupNewDBPool(t)
 	suite.Run(t, contract_tests.NewPublisherTestSuite(func() events.Service {
-		return events.NewEventsService(NewDriver(setupNewDBPool(t)))
+		return events.NewEventsService(NewDriver(dbPool))
 	}))
+	dbPool.Close()
+}
+
+func TestPostgresEventsService(t *testing.T) {
+
+	ctx := t.Context()
+
+	t.Run("StartErrorsOnImmediateProblem", func(t *testing.T) {
+		t.Parallel()
+
+		dbPool := setupNewDBPool(t)
+		service := events.NewEventsService(NewDriver(dbPool))
+
+		t.Log("Closing database pool")
+		dbPool.Close()
+
+		require.EqualError(t, service.Start(ctx), "closed pool")
+	})
+
+	t.Run("ReconnectOnClosedConnection", func(t *testing.T) {
+		t.Parallel()
+
+		dbPool := setupNewDBPool(t)
+		driver := &pgDriver{dbPool: dbPool}
+		service := events.NewEventsService(driver)
+
+		require.NoError(t, service.Start(ctx))
+
+		sub, err := service.Subscribe(ctx, events.SubscriptionFilter{})
+		require.NoError(t, err)
+
+		expected := events.Event{
+			Type:      events.EventAppRegistered,
+			AppID:     "echo-dapp",
+			Payload:   json.RawMessage(`"Hello, World!"`),
+			Timestamp: time.Now().Truncate(time.Second),
+		}
+
+		for i := range 2 {
+			err = service.Publish(ctx, expected)
+			require.NoError(t, err)
+
+			actual := contract_tests.WaitEvent(t, sub.Channel())
+			require.Equal(t, actual, expected)
+
+			if i == 0 {
+				t.Log("Closing database pool")
+				driver.conn.Close(ctx)
+
+				time.Sleep(1 * time.Second)
+			}
+		}
+
+	})
+
 }
 
 // TODO: Subscriber reconnection after connection loss
+

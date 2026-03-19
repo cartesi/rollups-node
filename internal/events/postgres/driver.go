@@ -109,13 +109,12 @@ func (d *pgDriver) WaitForNotification(ctx context.Context) (*events.Notificatio
 const sqlPiecesCount = 4
 
 func makeMultipleTopicSql(cmd string, topics []string) string {
-	strList := make([]string, sqlPiecesCount*len(topics))
-	for i, topic := range topics {
-		baseIdx := i * sqlPiecesCount
-		strList[baseIdx] = cmd
-		strList[baseIdx+1] = " \""
-		strList[baseIdx+2] = topic
-		strList[baseIdx+3] = "\";\n"
+	var sb strings.Builder
+	for _, topic := range topics {
+		sb.WriteString(cmd)
+		sb.WriteString(" ")
+		sb.WriteString(pgx.Identifier{topic}.Sanitize())
+		sb.WriteString(";\n")
 	}
-	return strings.Join(strList, "")
+	return sb.String()
 }
