@@ -159,7 +159,7 @@ func (b *EpochBuilder) WithInputBounds(lower, upper uint64) *EpochBuilder {
 	return b
 }
 
-func (b *EpochBuilder) WithClaimHash(h common.Hash) *EpochBuilder {
+func (b *EpochBuilder) WithOutputsMerkleRoot(h common.Hash) *EpochBuilder {
 	b.epoch.OutputsMerkleRoot = &h
 	return b
 }

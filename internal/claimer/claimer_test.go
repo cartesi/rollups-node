@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository/repotest"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/lmittmann/tint"
@@ -198,28 +199,22 @@ func newServiceMock() (*Service, *claimerRepositoryMock, *claimerBlockchainMock)
 	return claimer, repository, blockchain
 }
 
-func makeApplication(id int64) *model.Application {
-	return &model.Application{
-		ID:                  id,
-		IApplicationAddress: common.HexToAddress("0x01"),
-		IConsensusAddress:   common.HexToAddress("0x01"),
-		IInputBoxAddress:    common.HexToAddress("0x02"),
-	}
+func makeApplication() *model.Application {
+	return repotest.NewApplicationBuilder().
+		WithEpochLength(10).
+		Build()
 }
 
 func makeEpoch(id int64, status model.EpochStatus, i uint64) *model.Epoch {
-	hash := common.HexToHash("0x01")
-	tx := common.HexToHash("0x02")
-	epoch := &model.Epoch{
-		ApplicationID:        id,
-		Index:                i,
-		FirstBlock:           i * 10,
-		LastBlock:            i*10 + 9,
-		Status:               status,
-		ClaimTransactionHash: &tx,
-		OutputsMerkleRoot:    &hash,
-	}
-	return epoch
+	outputsMerkleRoot := common.HexToHash("0x01") // dummy value
+	txHash := common.HexToHash("0x02") // dummy value
+	return repotest.NewEpochBuilder(id).
+		WithIndex(i).
+		WithBlocks(i * 10, i * 10 + 9).
+		WithStatus(status).
+		WithClaimTransactionHash(txHash).
+		WithOutputsMerkleRoot(outputsMerkleRoot).
+		Build()
 }
 
 func makeAcceptedEpoch(app *model.Application, i uint64) *model.Epoch {
@@ -292,7 +287,7 @@ func TestSubmitFirstClaim(t *testing.T) {
 	defer b.AssertExpectations(t)
 
 	endBlock := big.NewInt(40)
-	app := makeApplication(0)
+	app := makeApplication()
 	currEpoch := makeComputedEpoch(app, 3)
 	var prevEvent *iconsensus.IConsensusClaimSubmitted = nil
 	var currEvent *iconsensus.IConsensusClaimSubmitted = nil
@@ -315,7 +310,7 @@ func TestSubmitClaimWithAntecessor(t *testing.T) {
 	defer b.AssertExpectations(t)
 
 	endBlock := big.NewInt(100)
-	app := makeApplication(0)
+	app := makeApplication()
 	prevEpoch := makeAcceptedEpoch(app, 1)
 	currEpoch := makeComputedEpoch(app, 3)
 	var currEvent *iconsensus.IConsensusClaimSubmitted = nil
@@ -340,7 +335,7 @@ func TestSkipSubmitFirstClaim(t *testing.T) {
 
 	m.submissionEnabled = false
 	endBlock := big.NewInt(40)
-	app := makeApplication(0)
+	app := makeApplication()
 	currEpoch := makeComputedEpoch(app, 3)
 	var prevEvent *iconsensus.IConsensusClaimSubmitted = nil
 	var currEvent *iconsensus.IConsensusClaimSubmitted = nil
@@ -362,7 +357,7 @@ func TestSkipSubmitClaimWithAntecessor(t *testing.T) {
 
 	m.submissionEnabled = false
 	endBlock := big.NewInt(40)
-	app := makeApplication(0)
+	app := makeApplication()
 	prevEpoch := makeAcceptedEpoch(app, 1)
 	currEpoch := makeComputedEpoch(app, 3)
 	prevEvent := makeSubmittedEvent(app, prevEpoch)
@@ -385,7 +380,7 @@ func TestInFlightCompleted(t *testing.T) {
 
 	txHash := common.HexToHash("0x10")
 	endBlock := big.NewInt(100)
-	app := makeApplication(0)
+	app := makeApplication()
 	currEpoch := makeComputedEpoch(app, 3)
 	currEpoch.ClaimTransactionHash = &txHash
 
@@ -413,7 +408,7 @@ func TestInFlightReverted(t *testing.T) {
 
 	txHash := common.HexToHash("0x10")
 	endBlock := big.NewInt(100)
-	app := makeApplication(0)
+	app := makeApplication()
 	currEpoch := makeComputedEpoch(app, 3)
 	currEpoch.ClaimTransactionHash = &txHash
 
@@ -447,7 +442,7 @@ func TestUpdateFirstClaim(t *testing.T) {
 	defer b.AssertExpectations(t)
 
 	endBlock := big.NewInt(40)
-	app := makeApplication(0)
+	app := makeApplication()
 	currEpoch := makeComputedEpoch(app, 3)
 	var prevEvent *iconsensus.IConsensusClaimSubmitted = nil
 	currEvent := makeSubmittedEvent(app, currEpoch)
@@ -470,7 +465,7 @@ func TestUpdateClaimWithAntecessor(t *testing.T) {
 	defer b.AssertExpectations(t)
 
 	endBlock := big.NewInt(100)
-	app := makeApplication(0)
+	app := makeApplication()
 	prevEpoch := makeAcceptedEpoch(app, 1)
 	currEpoch := makeComputedEpoch(app, 3)
 	prevEvent := makeSubmittedEvent(app, prevEpoch)
@@ -494,7 +489,7 @@ func TestAcceptFirstClaim(t *testing.T) {
 	defer b.AssertExpectations(t)
 
 	endBlock := big.NewInt(100)
-	app := makeApplication(0)
+	app := makeApplication()
 	currEpoch := makeSubmittedEpoch(app, 3)
 	var prevEvent *iconsensus.IConsensusClaimAccepted = nil
 	currEvent := makeAcceptedEvent(app, currEpoch)
@@ -514,7 +509,7 @@ func TestAcceptClaimWithAntecessor(t *testing.T) {
 	defer b.AssertExpectations(t)
 
 	endBlock := big.NewInt(100)
-	app := makeApplication(0)
+	app := makeApplication()
 	prevEpoch := makeAcceptedEpoch(app, 1)
 	currEpoch := makeSubmittedEpoch(app, 3)
 	prevEvent := makeAcceptedEvent(app, prevEpoch)
@@ -544,7 +539,7 @@ func TestClaimInFlightMissingFromCurrClaims(t *testing.T) {
 	reqHash := common.HexToHash("0x01")
 	receipt := new(types.Receipt)
 
-	app := makeApplication(0)
+	app := makeApplication()
 	m.claimsInFlight[app.ID] = reqHash
 
 	b.On("pollTransaction", mock.Anything, reqHash, endBlock).
@@ -565,7 +560,7 @@ func TestSubmitFailedClaim(t *testing.T) {
 	reqHash := common.HexToHash("0x01")
 	var nilReceipt *types.Receipt
 
-	app := makeApplication(0)
+	app := makeApplication()
 	prevEpoch := makeAcceptedEpoch(app, 1)
 	currEpoch := makeComputedEpoch(app, 3)
 	prevEvent := makeSubmittedEvent(app, prevEpoch)
@@ -593,7 +588,7 @@ func TestSubmitClaimWithAntecessorMismatch(t *testing.T) {
 	defer b.AssertExpectations(t)
 
 	endBlock := big.NewInt(100)
-	app := makeApplication(0)
+	app := makeApplication()
 	prevEpoch := makeAcceptedEpoch(app, 1)
 	currEpoch := makeComputedEpoch(app, 3)
 
@@ -625,7 +620,7 @@ func TestSubmitClaimWithEventMismatch(t *testing.T) {
 	defer b.AssertExpectations(t)
 
 	endBlock := big.NewInt(40)
-	app := makeApplication(0)
+	app := makeApplication()
 	prevEpoch := makeAcceptedEpoch(app, 1)
 	currEpoch := makeComputedEpoch(app, 3)
 	prevEvent := makeSubmittedEvent(app, prevEpoch)
@@ -648,7 +643,7 @@ func TestSubmitClaimWithAntecessorOutOfOrder(t *testing.T) {
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
-	app := makeApplication(0)
+	app := makeApplication()
 	prevEpoch := makeSubmittedEpoch(app, 2)
 	currEpoch := makeComputedEpoch(app, 1)
 
@@ -667,7 +662,7 @@ func TestErrSubmittedMissingEvent(t *testing.T) {
 	defer b.AssertExpectations(t)
 
 	endBlock := big.NewInt(100)
-	app := makeApplication(0)
+	app := makeApplication()
 	prevEpoch := makeComputedEpoch(app, 1)
 	currEpoch := makeComputedEpoch(app, 2)
 	var prevEvent *iconsensus.IConsensusClaimSubmitted = nil
@@ -690,7 +685,7 @@ func TestConsensusAddressChangedOnSubmittedClaims(t *testing.T) {
 	defer b.AssertExpectations(t)
 
 	endBlock := big.NewInt(100)
-	app := makeApplication(0)
+	app := makeApplication()
 	currEpoch := makeComputedEpoch(app, 3)
 	wrongConsensusAddress := app.IConsensusAddress
 	wrongConsensusAddress[0]++
@@ -715,7 +710,7 @@ func TestFindClaimAcceptedEventAndSuccFailure0(t *testing.T) {
 	expectedErr := fmt.Errorf("not found")
 	endBlock := big.NewInt(100)
 
-	app := makeApplication(0)
+	app := makeApplication()
 	currEpoch := makeComputedEpoch(app, 2)
 	var prevEvent *iconsensus.IConsensusClaimAccepted = nil
 	currEvent := makeAcceptedEvent(app, currEpoch)
@@ -737,7 +732,7 @@ func TestFindClaimAcceptedEventAndSuccFailure1(t *testing.T) {
 	expectedErr := fmt.Errorf("not found")
 	endBlock := big.NewInt(100)
 
-	app := makeApplication(0)
+	app := makeApplication()
 	prevEpoch := makeAcceptedEpoch(app, 1)
 	currEpoch := makeComputedEpoch(app, 2)
 	prevEvent := makeAcceptedEvent(app, prevEpoch)
@@ -759,7 +754,7 @@ func TestAcceptClaimWithAntecessorMismatch(t *testing.T) {
 	defer b.AssertExpectations(t)
 
 	endBlock := big.NewInt(100)
-	app := makeApplication(0)
+	app := makeApplication()
 	prevEpoch := makeAcceptedEpoch(app, 1)
 	currEpoch := makeComputedEpoch(app, 3)
 
@@ -788,7 +783,7 @@ func TestAcceptClaimWithEventMismatch(t *testing.T) {
 	defer b.AssertExpectations(t)
 
 	endBlock := big.NewInt(100)
-	app := makeApplication(0)
+	app := makeApplication()
 	prevEpoch := makeAcceptedEpoch(app, 1)
 	wrongEpoch := makeComputedEpoch(app, 2)
 	currEpoch := makeComputedEpoch(app, 3)
@@ -812,7 +807,7 @@ func TestAcceptClaimWithAntecessorOutOfOrder(t *testing.T) {
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
-	app := makeApplication(0)
+	app := makeApplication()
 	wrongEpoch := makeComputedEpoch(app, 2)
 	currEpoch := makeComputedEpoch(app, 1)
 
@@ -832,7 +827,7 @@ func TestErrAcceptedMissingEvent(t *testing.T) {
 	defer b.AssertExpectations(t)
 
 	endBlock := big.NewInt(100)
-	app := makeApplication(0)
+	app := makeApplication()
 	prevEpoch := makeComputedEpoch(app, 1)
 	currEpoch := makeComputedEpoch(app, 2)
 	var prevEvent *iconsensus.IConsensusClaimAccepted = nil
@@ -857,7 +852,7 @@ func TestUpdateEpochWithAcceptedClaimFailed(t *testing.T) {
 	expectedErr := fmt.Errorf("not found")
 
 	endBlock := big.NewInt(100)
-	app := makeApplication(0)
+	app := makeApplication()
 	prevEpoch := makeSubmittedEpoch(app, 1)
 	currEpoch := makeSubmittedEpoch(app, 2)
 	prevEvent := makeAcceptedEvent(app, prevEpoch)
@@ -880,7 +875,7 @@ func TestConsensusAddressChangedOnAcceptedClaims(t *testing.T) {
 	defer b.AssertExpectations(t)
 
 	endBlock := big.NewInt(100)
-	app := makeApplication(0)
+	app := makeApplication()
 	currEpoch := makeComputedEpoch(app, 3)
 	wrongConsensusAddress := app.IConsensusAddress
 	wrongConsensusAddress[0]++
