@@ -117,6 +117,19 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 
 	ctx := cmd.Context()
 
+	// Validate required application name when registering
+	if applicationRegisterParam && len(args) < 1 {
+		err := cmd.Help()
+		cobra.CheckErr(err)
+		cobra.CheckErr(fmt.Errorf("missing application name: positional argument [application-name] is required when --register=true"))
+	}
+	// Validate that a template is provided either as positional [template-path] or via --template-hash
+	if cmd.Flags().Changed("template-hash") && len(args) < 2 {
+		err := cmd.Help()
+		cobra.CheckErr(err)
+		cobra.CheckErr(fmt.Errorf("missing template: provide either positional [template-path] or --template-hash"))
+	}
+
 	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
 	cobra.CheckErr(err)
 
