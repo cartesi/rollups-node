@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
-	"strings"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
@@ -267,25 +266,7 @@ func (cb *claimerBlockchain) getConsensusAddress(
 // a NotFirstClaim revert, indicating the claim was already submitted
 // on-chain (e.g., before a node restart).
 func isNotFirstClaimError(err error) bool {
-	if err == nil {
-		return false
-	}
-	var de rpc.DataError
-	if errors.As(err, &de) {
-		if dataStr, ok := de.ErrorData().(string); ok {
-			parsed, _ := iconsensus.IConsensusMetaData.GetAbi()
-			if parsed == nil {
-				return false
-			}
-			abiErr, ok := parsed.Errors["NotFirstClaim"]
-			if !ok {
-				return false
-			}
-			selector := fmt.Sprintf("0x%x", abiErr.ID[:4])
-			return strings.HasPrefix(dataStr, selector)
-		}
-	}
-	return false
+	return ethutil.IsCustomError(err, iconsensus.IConsensusMetaData, "NotFirstClaim")
 }
 
 // poll a transaction for its receipt

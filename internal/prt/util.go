@@ -5,47 +5,19 @@ package prt
 
 import (
 	"encoding/hex"
-	"errors"
 	"strings"
 	"unsafe"
 
+	"github.com/cartesi/rollups-node/pkg/ethutil"
+
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/rpc"
 )
 
-type JSONRPCInfo struct {
-	Code    int
-	Message string
-	Data    any
-	HasCode bool
-	HasData bool
-}
+// Re-export for backward compatibility within the package.
+type JSONRPCInfo = ethutil.JSONRPCInfo
 
-func ExtractJsonErrorInfo(err error) (JSONRPCInfo, bool) {
-	var out JSONRPCInfo
-	if err == nil {
-		return out, false
-	}
-
-	var e rpc.Error
-	if errors.As(err, &e) {
-		out.Code = e.ErrorCode()
-		out.Message = e.Error()
-		out.HasCode = true
-	}
-
-	var de rpc.DataError
-	if errors.As(err, &de) {
-		out.Data = de.ErrorData()
-		out.HasData = true
-		if !out.HasCode {
-			out.Message = de.Error()
-		}
-	}
-
-	return out, out.HasCode || out.HasData
-}
+var ExtractJSONErrorInfo = ethutil.ExtractJSONErrorInfo
 
 // errorStringSelector is the 4-byte selector for Solidity's Error(string),
 // used by require(condition, "reason") statements. This is keccak256("Error(string)")[:4]
@@ -58,7 +30,7 @@ var errorStringSelector = [4]byte{0x08, 0xc3, 0x79, 0xa0}
 // This is more robust than matching err.Error() because it operates on
 // structured revert data, independent of how the RPC provider formats errors.
 func isRevertReason(err error, reason string) bool {
-	info, ok := ExtractJsonErrorInfo(err)
+	info, ok := ExtractJSONErrorInfo(err)
 	if !ok || !info.HasData {
 		return false
 	}

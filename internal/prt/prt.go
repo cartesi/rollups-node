@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -16,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
 	"github.com/cartesi/rollups-node/internal/merkle"
@@ -893,23 +891,5 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 // IncorrectEpochNumber revert, indicating the epoch was already settled
 // on-chain (e.g., before a node restart or by another entity).
 func isIncorrectEpochNumberError(err error) bool {
-	if err == nil {
-		return false
-	}
-	var de rpc.DataError
-	if errors.As(err, &de) {
-		if dataStr, ok := de.ErrorData().(string); ok {
-			parsed, _ := idaveconsensus.IDaveConsensusMetaData.GetAbi()
-			if parsed == nil {
-				return false
-			}
-			abiErr, ok := parsed.Errors["IncorrectEpochNumber"]
-			if !ok {
-				return false
-			}
-			selector := fmt.Sprintf("0x%x", abiErr.ID[:4])
-			return strings.HasPrefix(dataStr, selector)
-		}
-	}
-	return false
+	return ethutil.IsCustomError(err, idaveconsensus.IDaveConsensusMetaData, "IncorrectEpochNumber")
 }
