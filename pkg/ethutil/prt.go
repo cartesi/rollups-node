@@ -61,6 +61,29 @@ func (me *PRTApplicationDeployment) deployPRT(
 	if err != nil {
 		return zero, zero, fmt.Errorf("failed to instantiate contract binding: %v", err)
 	}
+
+	// check if addresses are available (have no code)
+	addresses, err := factory.CalculateDaveAppAddress(nil, me.TemplateHash, me.Salt)
+	if err != nil {
+		return zero, zero, err
+	}
+	applicationCode, err := client.CodeAt(ctx, addresses.AppContractAddress, nil)
+	if err != nil {
+		return zero, zero, err
+	}
+	if len(applicationCode) != 0 {
+		return zero, zero, fmt.Errorf("application with address: %v already exists. Try a different salt.", addresses.AppContractAddress)
+	}
+
+	daveConsensusCode, err := client.CodeAt(ctx, addresses.DaveConsensusAddress, nil)
+	if err != nil {
+		return zero, zero, err
+	}
+	if len(daveConsensusCode) != 0 {
+		return zero, zero, fmt.Errorf("dave consensus with address: %v already exists. Try a different salt.", addresses.DaveConsensusAddress)
+	}
+
+	// deploy the contracts
 	tx, err := factory.NewDaveApp(txOpts, me.TemplateHash, me.Salt)
 	if err != nil {
 		return zero, zero, fmt.Errorf("transaction failed: %v", err)

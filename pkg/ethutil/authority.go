@@ -34,17 +34,33 @@ func (me *AuthorityDeployment) String() string {
 	return result
 }
 
-func (me AuthorityDeployment) Deploy(
+func (me *AuthorityDeployment) Deploy(
 	ctx context.Context,
 	client *ethclient.Client,
 	txOpts *bind.TransactOpts,
 ) (common.Address, error) {
-	contract, err := iauthorityfactory.NewIAuthorityFactory(me.FactoryAddress, client)
+	zero := common.Address{}
+	factory, err := iauthorityfactory.NewIAuthorityFactory(me.FactoryAddress, client)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("failed to instantiate contract: %v", err)
 	}
 
-	tx, err := contract.NewAuthority0(txOpts, me.OwnerAddress, big.NewInt(int64(me.EpochLength)), me.Salt)
+	// check if addresses are available (have no code)
+	authorityAddress, err := factory.CalculateAuthorityAddress(nil, me.OwnerAddress, new(big.Int).SetUint64(me.EpochLength), me.Salt)
+	if err != nil {
+		return zero, err
+	}
+
+	authorityCode, err := client.CodeAt(ctx, authorityAddress, nil)
+	if err != nil {
+		return zero, err
+	}
+	if len(authorityCode) != 0 {
+		return zero, fmt.Errorf("authority with address: %v already exists. Try a different salt.", authorityAddress)
+	}
+
+	// deploy the contracts
+	tx, err := factory.NewAuthority0(txOpts, me.OwnerAddress, new(big.Int).SetUint64(me.EpochLength), me.Salt)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("failed to create new authority: %v", err)
 	}
@@ -60,7 +76,7 @@ func (me AuthorityDeployment) Deploy(
 
 	// search for the matching event
 	for _, vLog := range receipt.Logs {
-		event, err := contract.ParseAuthorityCreated(*vLog)
+		event, err := factory.ParseAuthorityCreated(*vLog)
 		if err != nil {
 			continue // Skip logs that don't match
 		}

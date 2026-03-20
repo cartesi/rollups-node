@@ -75,6 +75,21 @@ func (me *ApplicationDeployment) Deploy(
 		return zero, nil, fmt.Errorf("failed to instantiate contract: %v", err)
 	}
 
+	// check if addresses are available (have no code)
+	applicationAddress, err := factory.CalculateApplicationAddress(nil, me.Consensus, me.OwnerAddress, me.TemplateHash, me.DataAvailability, me.Salt)
+	if err != nil {
+		return zero, nil, err
+	}
+
+	applicationCode, err := client.CodeAt(ctx, applicationAddress, nil)
+	if err != nil {
+		return zero, nil, err
+	}
+	if len(applicationCode) != 0 {
+		return zero, nil, fmt.Errorf("application with address: %v already exists. Try a different salt.", applicationAddress)
+	}
+
+	// deploy the contracts
 	tx, err := factory.NewApplication(txOpts, me.Consensus, me.OwnerAddress, me.TemplateHash, me.DataAvailability, me.Salt)
 	if err != nil {
 		return zero, nil, fmt.Errorf("transaction failed: %v", err)

@@ -81,6 +81,29 @@ func (me *SelfhostedApplicationDeployment) Deploy(
 		return zero, nil, err
 	}
 
+	// check if addresses are available (have no code)
+	applicationAddress, authorityAddress, err := factory.CalculateAddresses(nil, me.AuthorityOwnerAddress, new(big.Int).SetUint64(me.EpochLength), me.ApplicationOwnerAddress, me.TemplateHash, me.DataAvailability, me.Salt)
+	if err != nil {
+		return zero, nil, err
+	}
+
+	applicationCode, err := client.CodeAt(ctx, applicationAddress, nil)
+	if err != nil {
+		return zero, nil, err
+	}
+	if len(applicationCode) != 0 {
+		return zero, nil, fmt.Errorf("application with address: %v already exists. Try a different salt.", applicationAddress)
+	}
+
+	authorityCode, err := client.CodeAt(ctx, authorityAddress, nil)
+	if err != nil {
+		return zero, nil, err
+	}
+	if len(authorityCode) != 0 {
+		return zero, nil, fmt.Errorf("authority with address: %v already exists. Try a different salt.", authorityAddress)
+	}
+
+	// deploy the contracts
 	receipt, err := sendTransaction(
 		ctx, client, txOpts, big.NewInt(0), GasLimit,
 		func(txOpts *bind.TransactOpts) (*types.Transaction, error) {
