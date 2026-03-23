@@ -88,6 +88,9 @@ func (r *Service) checkForEpochsAndInputs(
 
 		err := r.processApplicationSealedEpochs(ctx, app, mostRecentBlockNumber)
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return // shutting down
+			}
 			r.Logger.Error("Error processing application sealed epochs",
 				"application", app.application.Name,
 				"consensus_address", app.application.IConsensusAddress,
@@ -97,6 +100,9 @@ func (r *Service) checkForEpochsAndInputs(
 
 		err = r.processApplicationOpenEpoch(ctx, app, mostRecentBlockNumber)
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return // shutting down
+			}
 			r.Logger.Error("Error processing application open epoch",
 				"application", app.application.Name,
 				"consensus_address", app.application.IConsensusAddress,

@@ -129,6 +129,9 @@ func (r *Service) readAndUpdateOutputs(
 	nextSearchBlock := lastOutputCheck + 1
 	outputExecutedEvents, err := r.readOutputExecutionsFromBlockChain(ctx, app, nextSearchBlock, mostRecentBlockNumber)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return // shutting down
+		}
 		r.Logger.Error("Error reading output events",
 			"application", app.application.Name, "address", app.application.IApplicationAddress,
 			"error", err)
