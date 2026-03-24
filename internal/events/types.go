@@ -15,9 +15,11 @@ type Notification struct {
 	Topic   string
 }
 
-type Driver interface {
+type PublisherDriver interface {
 	Notify(ctx context.Context, notification *Notification) error
+}
 
+type SubscriberDriver interface {
 	Close(ctx context.Context) error
 	Connect(ctx context.Context) error
 	Listen(ctx context.Context, topics []string) error
@@ -70,6 +72,7 @@ type Publisher interface {
 
 // Subscriber subscribes to events with a filter and receives matched events via a channel.
 type Subscriber interface {
+	BaseService
 	Subscribe(ctx context.Context, filter SubscriptionFilter) (Subscription, error)
 }
 
@@ -86,7 +89,6 @@ type Subscription interface {
 }
 
 type Service interface {
-	BaseService
 	Publisher
 	Subscriber
 }

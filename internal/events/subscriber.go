@@ -31,7 +31,7 @@ var eventTypeAll = []EventType{
 
 type eventSubscription struct {
 	channel      chan Event
-	service      *eventService
+	service      *subscriberService
 	filter       SubscriptionFilter
 	unlistenOnce sync.Once
 }
@@ -56,7 +56,7 @@ type subscriptionList []*eventSubscription
 type applicationToSubscriptionsMap map[ApplicationID]subscriptionList
 type eventAppSubscriptionIndex map[EventType]applicationToSubscriptionsMap
 
-type eventService struct {
+type subscriberService struct {
 	// Logger is a structured logger.
 	Logger *slog.Logger
 
@@ -66,7 +66,7 @@ type eventService struct {
 
 	BaseStartStop
 
-	driver            Driver
+	driver            SubscriberDriver
 	notificationBuf   chan *Notification
 	waitInterruptChan chan func()
 
@@ -78,8 +78,8 @@ type eventService struct {
 	waitCancel    context.CancelFunc
 }
 
-func NewEventsService(driver Driver) Service {
-	return &eventService{
+func NewSubscriber(driver SubscriberDriver) Subscriber {
+	return &subscriberService{
 		// TODO: review this values. Should come from a config.
 		Logger: service.NewLogger(slog.LevelDebug, true),
 		Name:   "Subscriber",
@@ -92,7 +92,7 @@ func NewEventsService(driver Driver) Service {
 	}
 }
 
-func (s *eventService) Start(ctx context.Context) error {
+func (s *subscriberService) Start(ctx context.Context) error {
 	ctx, shouldStart, started, stopped := s.StartInit(ctx)
 	if !shouldStart {
 		return nil
@@ -148,7 +148,7 @@ func (s *eventService) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *eventService) deliverNotifications(ctx context.Context) {
+func (s *subscriberService) deliverNotifications(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -197,7 +197,7 @@ func (s *eventService) deliverNotifications(ctx context.Context) {
 	}
 }
 
-func (s *eventService) listenAndWait(ctx context.Context) error {
+func (s *subscriberService) listenAndWait(ctx context.Context) error {
 	if err := s.driverConnect(ctx, false); err != nil {
 		return err
 	}
@@ -260,7 +260,7 @@ func (s *eventService) listenAndWait(ctx context.Context) error {
 	}
 }
 
-func (s *eventService) driverClose(ctx context.Context, skipLock bool) {
+func (s *subscriberService) driverClose(ctx context.Context, skipLock bool) {
 	if !skipLock {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -282,7 +282,7 @@ func (s *eventService) driverClose(ctx context.Context, skipLock bool) {
 
 const listenerTimeout = 10 * time.Second
 
-func (s *eventService) driverConnect(ctx context.Context, skipLock bool) error {
+func (s *subscriberService) driverConnect(ctx context.Context, skipLock bool) error {
 	if !skipLock {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -312,7 +312,7 @@ func (s *eventService) driverConnect(ctx context.Context, skipLock bool) error {
 //
 // Not protected by mutex because it doesn't modify any notifier state and the
 // underlying driver has a mutex around its operations.
-func (s *eventService) driverListen(ctx context.Context, topics []string) error {
+func (s *subscriberService) driverListen(ctx context.Context, topics []string) error {
 	ctx, cancel := context.WithTimeout(ctx, listenerTimeout)
 	defer cancel()
 
@@ -328,7 +328,7 @@ func (s *eventService) driverListen(ctx context.Context, topics []string) error 
 //
 // Not protected by mutex because it doesn't modify any service state and the
 // underlying drvier has a mutex around its operations.
-func (s *eventService) driverUnlisten(ctx context.Context, topics []string) error {
+func (s *subscriberService) driverUnlisten(ctx context.Context, topics []string) error {
 	ctx, cancel := context.WithTimeout(ctx, listenerTimeout)
 	defer cancel()
 
@@ -347,7 +347,7 @@ const pingInterval = 5 * time.Second
 // elsewhere in the service must preempt it by sending to `n.waitInterruptChan`
 // and invoking `n.waitCancel()`. Cancelling the input context (as occurs during
 // shutdown) also unblocks the wait.
-func (s *eventService) waitOnce(ctx context.Context) error {
+func (s *subscriberService) waitOnce(ctx context.Context) error {
 	s.withLock(func() {
 		s.isWaiting = true
 		ctx, s.waitCancel = context.WithCancel(ctx) //nolint:fatcontext
@@ -441,7 +441,7 @@ const interruptTimeout = 5 * time.Second
 // returns an error if there was one.
 //
 // MUST be called with the `n.mu` mutex already locked.
-func (s *eventService) sendInterruptAndReceiveResult(operation func() error) error {
+func (s *subscriberService) sendInterruptAndReceiveResult(operation func() error) error {
 	errChan := make(chan error)
 	s.waitInterruptChan <- func() {
 		errChan <- operation()
@@ -464,7 +464,7 @@ func (s *eventService) sendInterruptAndReceiveResult(operation func() error) err
 	}
 }
 
-func (s *eventService) Subscribe(ctx context.Context, filter SubscriptionFilter) (Subscription, error) {
+func (s *subscriberService) Subscribe(ctx context.Context, filter SubscriptionFilter) (Subscription, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -548,7 +548,7 @@ func (s *eventService) Subscribe(ctx context.Context, filter SubscriptionFilter)
 	return sub, nil
 }
 
-func (s *eventService) unlisten(ctx context.Context, sub *eventSubscription) error {
+func (s *subscriberService) unlisten(ctx context.Context, sub *eventSubscription) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -596,7 +596,7 @@ func (s *eventService) unlisten(ctx context.Context, sub *eventSubscription) err
 }
 
 // This function requires that the caller already has a lock on `n.mu`.
-func (s *eventService) removeSubscription(ctx context.Context, sub *eventSubscription) {
+func (s *subscriberService) removeSubscription(ctx context.Context, sub *eventSubscription) {
 	for _, evtType := range sub.filter.EventTypes {
 		appSubIdx := s.subscriptions[evtType]
 		for _, appID := range sub.filter.AppIDs {
@@ -625,20 +625,8 @@ func (s *eventService) removeSubscription(ctx context.Context, sub *eventSubscri
 	)
 }
 
-func (s *eventService) withLock(lockedFunc func()) {
+func (s *subscriberService) withLock(lockedFunc func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	lockedFunc()
-}
-
-func (s *eventService) Publish(ctx context.Context, event Event) error {
-	payload, err := json.Marshal(event)
-	if err != nil {
-		return err
-	}
-
-	return s.driver.Notify(ctx, &Notification{
-		Topic: string(event.Type),
-		Payload: string(payload),
-	})
 }

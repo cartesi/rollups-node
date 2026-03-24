@@ -11,23 +11,23 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func NewDriver(dbPool *pgxpool.Pool) events.Driver {
-	return &pgDriver{dbPool: dbPool}
+func NewSubscriber(dbPool *pgxpool.Pool) events.SubscriberDriver {
+	return &pgSubscriber{dbPool: dbPool}
 }
 
-type pgDriver struct {
+type pgSubscriber struct {
 	conn   *pgx.Conn
 	dbPool *pgxpool.Pool
 	mu     sync.Mutex
 }
 
-func (d *pgDriver) Notify(ctx context.Context, n *events.Notification) error {
+func (d *pgSubscriber) Notify(ctx context.Context, n *events.Notification) error {
 	// send NOTIFY; Postgres limits payload size (~8000), keep that in mind
 	_, err := d.dbPool.Exec(ctx, "SELECT pg_notify($1::text, $2::text)", n.Topic, n.Payload)
 	return err
 }
 
-func (d *pgDriver) Close(ctx context.Context) error {
+func (d *pgSubscriber) Close(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -48,7 +48,7 @@ func (d *pgDriver) Close(ctx context.Context) error {
 	return err
 }
 
-func (d *pgDriver) Connect(ctx context.Context) error {
+func (d *pgSubscriber) Connect(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -68,7 +68,7 @@ func (d *pgDriver) Connect(ctx context.Context) error {
 	return nil
 }
 
-func (d *pgDriver) Listen(ctx context.Context, topics []string) error {
+func (d *pgSubscriber) Listen(ctx context.Context, topics []string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -76,14 +76,14 @@ func (d *pgDriver) Listen(ctx context.Context, topics []string) error {
 	return err
 }
 
-func (d *pgDriver) Ping(ctx context.Context) error {
+func (d *pgSubscriber) Ping(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	return d.conn.Ping(ctx)
 }
 
-func (d *pgDriver) Unlisten(ctx context.Context, topics []string) error {
+func (d *pgSubscriber) Unlisten(ctx context.Context, topics []string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -91,7 +91,7 @@ func (d *pgDriver) Unlisten(ctx context.Context, topics []string) error {
 	return err
 }
 
-func (d *pgDriver) WaitForNotification(ctx context.Context) (*events.Notification, error) {
+func (d *pgSubscriber) WaitForNotification(ctx context.Context) (*events.Notification, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 

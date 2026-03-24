@@ -35,13 +35,14 @@ func setupNewDBPool(t *testing.T) *pgxpool.Pool {
 
 func TestPostgresEventsContract(t *testing.T) {
 	dbPool := setupNewDBPool(t)
-	suite.Run(t, contract_tests.NewPublisherTestSuite(func() events.Service {
-		return events.NewEventsService(NewDriver(dbPool))
-	}))
+	suite.Run(t, contract_tests.NewPubSubTestSuite(
+		func() events.Publisher { return events.NewPublisher(NewPublisher(dbPool)) },
+		func() events.Subscriber { return events.NewSubscriber(NewSubscriber(dbPool)) },
+	))
 	dbPool.Close()
 }
 
-func TestPostgresEventsService(t *testing.T) {
+func TestPostgresSubscriber(t *testing.T) {
 
 	ctx := t.Context()
 
@@ -49,7 +50,7 @@ func TestPostgresEventsService(t *testing.T) {
 		t.Parallel()
 
 		dbPool := setupNewDBPool(t)
-		service := events.NewEventsService(NewDriver(dbPool))
+		service := events.NewSubscriber(NewSubscriber(dbPool))
 
 		t.Log("Closing database pool")
 		dbPool.Close()
@@ -61,8 +62,8 @@ func TestPostgresEventsService(t *testing.T) {
 		t.Parallel()
 
 		dbPool := setupNewDBPool(t)
-		driver := &pgDriver{dbPool: dbPool}
-		service := events.NewEventsService(driver)
+		driver := &pgSubscriber{dbPool: dbPool}
+		service := events.NewSubscriber(driver)
 
 		require.NoError(t, service.Start(ctx))
 
@@ -76,8 +77,9 @@ func TestPostgresEventsService(t *testing.T) {
 			Timestamp: time.Now().Truncate(time.Second),
 		}
 
+		publisher := events.NewPublisher(NewPublisher(dbPool))
 		for i := range 2 {
-			err = service.Publish(ctx, expected)
+			err = publisher.Publish(ctx, expected)
 			require.NoError(t, err)
 
 			actual := contract_tests.WaitEvent(t, sub.Channel())
@@ -96,4 +98,3 @@ func TestPostgresEventsService(t *testing.T) {
 }
 
 // TODO: Subscriber reconnection after connection loss
-

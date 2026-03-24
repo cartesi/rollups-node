@@ -67,35 +67,45 @@ var expected = events.Event{
 	Timestamp: time.Now().Truncate(time.Second),
 }
 
-type EventsServiceFactory func() events.Service
+type PublisherFactory func() events.Publisher
+type SubscriberFactory func() events.Subscriber
 
-type PublisherTestSuite struct {
+type PubSubTestSuite struct {
 	suite.Suite
-	CreateService EventsServiceFactory
-	Service       events.Service
+	PublisherFactory
+	SubscriberFactory
+	events.Publisher
+	events.Subscriber
 }
 
-func NewPublisherTestSuite(factory EventsServiceFactory) *PublisherTestSuite {
-	return &PublisherTestSuite{CreateService: factory}
+func NewPubSubTestSuite(
+	pub_factory PublisherFactory,
+	sub_factory SubscriberFactory,
+) *PubSubTestSuite {
+	return &PubSubTestSuite{
+		SubscriberFactory: sub_factory,
+		PublisherFactory: pub_factory,
+	}
 }
 
-func (s *PublisherTestSuite) SetupTest() {
-	s.Service = s.CreateService()
-	s.Service.Start(s.T().Context())
+func (s *PubSubTestSuite) SetupTest() {
+	s.Publisher = s.PublisherFactory()
+	s.Subscriber = s.SubscriberFactory()
+	s.Subscriber.Start(s.T().Context())
 }
 
-func (s *PublisherTestSuite) TeardownTest() {
-	s.Service.Stop()
+func (s *PubSubTestSuite) TeardownTest() {
+	s.Subscriber.Stop()
 }
 
-func (s *PublisherTestSuite) TestSingleEvent() {
+func (s *PubSubTestSuite) TestSingleEvent() {
 	req := s.Require()
 	ctx := s.T().Context()
 
 	tmGrp := MakeTimeoutGroup(ctx, testcaseTimeout, 1)
 	defer tmGrp.Wait()
 
-	sub, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
+	sub, err := s.Subscriber.Subscribe(ctx, events.SubscriptionFilter{})
 	req.NoError(err)
 
 	tmGrp.Go(func(ctx context.Context) {
@@ -107,17 +117,17 @@ func (s *PublisherTestSuite) TestSingleEvent() {
 		}
 	})
 
-	req.NoError(s.Service.Publish(ctx, expected))
+	req.NoError(s.Publisher.Publish(ctx, expected))
 }
 
-func (s *PublisherTestSuite) TestRepeatedEvents() {
+func (s *PubSubTestSuite) TestRepeatedEvents() {
 	req := s.Require()
 	ctx := s.T().Context()
 
 	tmGrp := MakeTimeoutGroup(ctx, testcaseTimeout, 1)
 	defer tmGrp.Wait()
 
-	sub, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
+	sub, err := s.Subscriber.Subscribe(ctx, events.SubscriptionFilter{})
 	req.NoError(err)
 
 	tmGrp.Go(func(ctx context.Context) {
@@ -132,11 +142,11 @@ func (s *PublisherTestSuite) TestRepeatedEvents() {
 	})
 
 	for range eventCount {
-		req.NoError(s.Service.Publish(ctx, expected))
+		req.NoError(s.Publisher.Publish(ctx, expected))
 	}
 }
 
-func (s *PublisherTestSuite) TestSinglePublisherManySubscribers() {
+func (s *PubSubTestSuite) TestSinglePublisherManySubscribers() {
 	req := s.Require()
 	ctx := s.T().Context()
 
@@ -144,7 +154,7 @@ func (s *PublisherTestSuite) TestSinglePublisherManySubscribers() {
 	defer tmGrp.Wait()
 
 	for range subsCount {
-		sub, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
+		sub, err := s.Subscriber.Subscribe(ctx, events.SubscriptionFilter{})
 		req.NoError(err)
 
 		tmGrp.Go(func(ctx context.Context) {
@@ -157,11 +167,11 @@ func (s *PublisherTestSuite) TestSinglePublisherManySubscribers() {
 		})
 	}
 
-	req.NoError(s.Service.Publish(ctx, expected))
+	req.NoError(s.Publisher.Publish(ctx, expected))
 }
 
 // Publishers with multiple events to a single subscriber
-func (s *PublisherTestSuite) TestManyPublishersSingleSubscriber() {
+func (s *PubSubTestSuite) TestManyPublishersSingleSubscriber() {
 	pubsCount := 50
 
 	req := s.Require()
@@ -170,7 +180,7 @@ func (s *PublisherTestSuite) TestManyPublishersSingleSubscriber() {
 	tmGrp := MakeTimeoutGroup(ctx, testcaseTimeout, 1)
 	defer tmGrp.Wait()
 
-	sub, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
+	sub, err := s.Subscriber.Subscribe(ctx, events.SubscriptionFilter{})
 	req.NoError(err)
 
 	tmGrp.Go(func(ctx context.Context) {
@@ -186,14 +196,14 @@ func (s *PublisherTestSuite) TestManyPublishersSingleSubscriber() {
 
 	for range pubsCount {
 		tmGrp.Go(func(ctx context.Context) {
-			err := s.Service.Publish(ctx, expected)
+			err := s.Publisher.Publish(ctx, expected)
 			req.NoError(err)
 		})
 	}
 }
 
 // Slow subscribers
-func (s *PublisherTestSuite) TestManySlowSubscribers() {
+func (s *PubSubTestSuite) TestManySlowSubscribers() {
 	req := s.Require()
 	ctx := s.T().Context()
 
@@ -203,7 +213,7 @@ func (s *PublisherTestSuite) TestManySlowSubscribers() {
 	startCh := make(chan struct{}, subsCount)
 
 	for range subsCount {
-		sub, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
+		sub, err := s.Subscriber.Subscribe(ctx, events.SubscriptionFilter{})
 		req.NoError(err)
 
 		tmGrp.Go(func(ctx context.Context) {
@@ -221,7 +231,7 @@ func (s *PublisherTestSuite) TestManySlowSubscribers() {
 	}
 
 	for range eventCount {
-		req.NoError(s.Service.Publish(ctx, expected))
+		req.NoError(s.Publisher.Publish(ctx, expected))
 	}
 
 	for range subsCount {
@@ -230,7 +240,7 @@ func (s *PublisherTestSuite) TestManySlowSubscribers() {
 }
 
 // Filter events
-func (s *PublisherTestSuite) TestFilteredEventsWithNewSubscriptions() {
+func (s *PubSubTestSuite) TestFilteredEventsWithNewSubscriptions() {
 	var manyEventTypes = []events.EventType{
 		events.EventAppRegistered,
 		events.EventAppDeactivated,
@@ -264,7 +274,7 @@ func (s *PublisherTestSuite) TestFilteredEventsWithNewSubscriptions() {
 
 		for _, evtType := range manyEventTypes {
 			for _, appID := range manyApplicationIDs {
-				sub, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{
+				sub, err := s.Subscriber.Subscribe(ctx, events.SubscriptionFilter{
 					EventTypes: []events.EventType{evtType},
 					AppIDs:     []events.ApplicationID{appID},
 				})
@@ -295,7 +305,7 @@ func (s *PublisherTestSuite) TestFilteredEventsWithNewSubscriptions() {
 						Payload:   expected.Payload,
 						Timestamp: expected.Timestamp,
 					}
-					req.NoError(s.Service.Publish(ctx, expected))
+					req.NoError(s.Publisher.Publish(ctx, expected))
 				}
 			}
 		}
@@ -303,29 +313,29 @@ func (s *PublisherTestSuite) TestFilteredEventsWithNewSubscriptions() {
 	}
 }
 
-func (s *PublisherTestSuite) TestCancelledContext() {
+func (s *PubSubTestSuite) TestCancelledContext() {
 	req := s.Require()
 	ctx := s.T().Context()
 
 	cancelledCtx, cancel := context.WithCancel(ctx)
 	cancel()
 
-	err := s.Service.Publish(cancelledCtx, expected)
+	err := s.Publisher.Publish(cancelledCtx, expected)
 	req.ErrorIs(err, context.Canceled)
 
-	sub, err := s.Service.Subscribe(cancelledCtx, events.SubscriptionFilter{})
+	sub, err := s.Subscriber.Subscribe(cancelledCtx, events.SubscriptionFilter{})
 	req.Nil(sub)
 	req.ErrorIs(err, context.Canceled)
 }
 
-func (s *PublisherTestSuite) TestChannelClosedOnUnsubscription() {
+func (s *PubSubTestSuite) TestChannelClosedOnUnsubscription() {
 	req := s.Require()
 	ctx := s.T().Context()
 
 	tmGrp := MakeTimeoutGroup(ctx, testcaseTimeout, 1)
 	defer tmGrp.Wait()
 
-	sub, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
+	sub, err := s.Subscriber.Subscribe(ctx, events.SubscriptionFilter{})
 	req.NoError(err)
 
 	tmGrp.Go(func(ctx context.Context) {
@@ -340,25 +350,25 @@ func (s *PublisherTestSuite) TestChannelClosedOnUnsubscription() {
 
 	sub.Close(ctx)
 
-	err = s.Service.Publish(ctx, expected)
+	err = s.Publisher.Publish(ctx, expected)
 	req.NoError(err)
 }
 
-func (s *PublisherTestSuite) TestSubscribeAndUnsubscribe() {
+func (s *PubSubTestSuite) TestSubscribeAndUnsubscribe() {
 	req := s.Require()
 	ctx := s.T().Context()
 
-	sub, err := s.Service.Subscribe(ctx, events.SubscriptionFilter{})
+	sub, err := s.Subscriber.Subscribe(ctx, events.SubscriptionFilter{})
 	req.NoError(err)
 
-	err = s.Service.Publish(ctx, expected)
+	err = s.Publisher.Publish(ctx, expected)
 	req.NoError(err)
 
 	req.Equal(expected, WaitEvent(s.T(), sub.Channel()))
 
 	sub.Close(ctx)
 
-	err = s.Service.Publish(ctx, expected)
+	err = s.Publisher.Publish(ctx, expected)
 	req.NoError(err)
 
 	event, open := <-sub.Channel()
