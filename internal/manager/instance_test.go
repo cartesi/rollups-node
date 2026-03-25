@@ -1217,10 +1217,7 @@ func (r *mockSyncRepository) ListInputs(
 	}
 	start := p.Offset
 	if start >= uint64(len(r.inputs)) {
-		// Match real PostgreSQL behavior: COUNT(*) OVER() is a per-row window
-		// value. When OFFSET skips all rows, 0 rows are returned and the total
-		// count is never scanned — the caller sees 0, not the real total.
-		return nil, 0, nil
+		return nil, r.totalCount, nil
 	}
 	end := start + p.Limit
 	if p.Limit == 0 || end > uint64(len(r.inputs)) {
@@ -1357,7 +1354,7 @@ func (s *MachineInstanceSuite) TestSynchronize() {
 		err := inst.Synchronize(context.Background(), repo, 1000)
 		require.Error(err)
 		require.ErrorIs(err, ErrMachineSynchronization)
-		require.Contains(err.Error(), "machine has processed 5 inputs but app only has 3")
+		require.Contains(err.Error(), "machine has processed 5 inputs but DB only has 3")
 	})
 
 	s.Run("CountMismatch", func() {
