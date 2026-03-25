@@ -309,6 +309,40 @@ func (s *InputSuite) TestListInputs() {
 		s.Equal(uint64(5), total)
 	})
 
+	s.Run("TotalCountCorrectWhenOffsetExceedsRows", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 29).WithInputBounds(0, 2).Build()
+
+		input0 := NewInputBuilder().WithIndex(0).WithBlockNumber(5).Build()
+		input1 := NewInputBuilder().WithIndex(1).WithBlockNumber(10).Build()
+		input2 := NewInputBuilder().WithIndex(2).WithBlockNumber(20).Build()
+
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: {input0, input1, input2}}, 30)
+		s.Require().NoError(err)
+
+		// OFFSET == total rows: 0 data rows, but totalCount must still be 3
+		got, total, err := s.Repo.ListInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			repository.InputFilter{},
+			repository.Pagination{Limit: 10, Offset: 3}, false)
+		s.Require().NoError(err)
+		s.Empty(got)
+		s.Equal(uint64(3), total, "totalCount must be correct even when OFFSET skips all rows")
+
+		// OFFSET > total rows: same expectation
+		got, total, err = s.Repo.ListInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			repository.InputFilter{},
+			repository.Pagination{Limit: 10, Offset: 100}, false)
+		s.Require().NoError(err)
+		s.Empty(got)
+		s.Equal(uint64(3), total, "totalCount must be correct even when OFFSET far exceeds rows")
+	})
+
 	s.Run("Descending", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 		epoch := NewEpochBuilder(app.ID).

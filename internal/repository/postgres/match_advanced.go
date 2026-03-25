@@ -137,6 +137,39 @@ func (r *PostgresRepository) ListMatchAdvances(
 
 	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
+	fromClause := table.MatchAdvances.
+		INNER_JOIN(table.Application,
+			table.MatchAdvances.ApplicationID.EQ(table.Application.ID),
+		)
+
+	conditions := []postgres.BoolExpression{whereClause}
+	conditions = append(conditions, table.MatchAdvances.EpochIndex.EQ(uint64Expr(epochIndex)))
+
+	tAddr := common.HexToAddress(tournamentAddress)
+	conditions = append(conditions, table.MatchAdvances.TournamentAddress.EQ(postgres.Bytea(tAddr.Bytes())))
+
+	idHash := common.HexToHash(idHashHex)
+	conditions = append(conditions, table.MatchAdvances.IDHash.EQ(postgres.Bytea(idHash.Bytes())))
+
+	tx, err := beginReadTx(ctx, r.db)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	countStmt := table.MatchAdvances.
+		SELECT(postgres.COUNT(postgres.STAR)).
+		FROM(fromClause).
+		WHERE(postgres.AND(conditions...))
+
+	total, err := countFromTx(ctx, tx, countStmt)
+	if err != nil {
+		return nil, 0, err
+	}
+	if total == 0 {
+		return nil, 0, nil
+	}
+
 	sel := table.MatchAdvances.
 		SELECT(
 			table.MatchAdvances.ApplicationID,
@@ -149,25 +182,9 @@ func (r *PostgresRepository) ListMatchAdvances(
 			table.MatchAdvances.TxHash,
 			table.MatchAdvances.CreatedAt,
 			table.MatchAdvances.UpdatedAt,
-			postgres.COUNT(postgres.STAR).OVER().AS("total_count"),
 		).
-		FROM(
-			table.MatchAdvances.
-				INNER_JOIN(table.Application,
-					table.MatchAdvances.ApplicationID.EQ(table.Application.ID),
-				),
-		)
-
-	conditions := []postgres.BoolExpression{whereClause}
-	conditions = append(conditions, table.MatchAdvances.EpochIndex.EQ(uint64Expr(epochIndex)))
-
-	tAddr := common.HexToAddress(tournamentAddress)
-	conditions = append(conditions, table.MatchAdvances.TournamentAddress.EQ(postgres.Bytea(tAddr.Bytes())))
-
-	idHash := common.HexToHash(idHashHex)
-	conditions = append(conditions, table.MatchAdvances.IDHash.EQ(postgres.Bytea(idHash.Bytes())))
-
-	sel = sel.WHERE(postgres.AND(conditions...))
+		FROM(fromClause).
+		WHERE(postgres.AND(conditions...))
 
 	if descending {
 		sel = sel.ORDER_BY(
@@ -194,14 +211,13 @@ func (r *PostgresRepository) ListMatchAdvances(
 	}
 
 	sqlStr, args := sel.Sql()
-	rows, err := r.db.Query(ctx, sqlStr, args...)
+	rows, err := tx.Query(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
 
 	var matchAdvances []*model.MatchAdvanced
-	var total uint64
 	for rows.Next() {
 		var m model.MatchAdvanced
 		err := rows.Scan(
@@ -215,7 +231,6 @@ func (r *PostgresRepository) ListMatchAdvances(
 			&m.TxHash,
 			&m.CreatedAt,
 			&m.UpdatedAt,
-			&total,
 		)
 		if err != nil {
 			return nil, 0, err

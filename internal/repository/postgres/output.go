@@ -154,30 +154,14 @@ func (r *PostgresRepository) ListOutputs(
 
 	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
-	sel := table.Output.
-		SELECT(
-			table.Output.InputEpochApplicationID,
-			table.Output.InputIndex,
-			table.Output.Index,
-			table.Output.RawData,
-			table.Output.Hash,
-			table.Output.OutputHashesSiblings,
-			table.Output.ExecutionTransactionHash,
-			table.Output.CreatedAt,
-			table.Output.UpdatedAt,
-			table.Input.EpochIndex,
-			postgres.COUNT(postgres.STAR).OVER().AS("total_count"),
-		).
-		FROM(
-			table.Output.INNER_JOIN(
-				table.Application,
-				table.Output.InputEpochApplicationID.EQ(table.Application.ID),
-			).INNER_JOIN(
-				table.Input,
-				table.Output.InputIndex.EQ(table.Input.Index).
-					AND(table.Output.InputEpochApplicationID.EQ(table.Input.EpochApplicationID)),
-			),
-		)
+	fromClause := table.Output.INNER_JOIN(
+		table.Application,
+		table.Output.InputEpochApplicationID.EQ(table.Application.ID),
+	).INNER_JOIN(
+		table.Input,
+		table.Output.InputIndex.EQ(table.Input.Index).
+			AND(table.Output.InputEpochApplicationID.EQ(table.Input.EpochApplicationID)),
+	)
 
 	conditions := []postgres.BoolExpression{whereClause}
 	if f.BlockRange != nil {
@@ -209,7 +193,37 @@ func (r *PostgresRepository) ListOutputs(
 		)
 	}
 
-	sel = sel.WHERE(postgres.AND(conditions...))
+	tx, err := beginReadTx(ctx, r.db)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	countStmt := table.Output.SELECT(postgres.COUNT(postgres.STAR)).
+		FROM(fromClause).WHERE(postgres.AND(conditions...))
+	total, err := countFromTx(ctx, tx, countStmt)
+	if err != nil {
+		return nil, 0, err
+	}
+	if total == 0 {
+		return nil, 0, nil
+	}
+
+	sel := table.Output.
+		SELECT(
+			table.Output.InputEpochApplicationID,
+			table.Output.InputIndex,
+			table.Output.Index,
+			table.Output.RawData,
+			table.Output.Hash,
+			table.Output.OutputHashesSiblings,
+			table.Output.ExecutionTransactionHash,
+			table.Output.CreatedAt,
+			table.Output.UpdatedAt,
+			table.Input.EpochIndex,
+		).
+		FROM(fromClause).
+		WHERE(postgres.AND(conditions...))
 
 	if descending {
 		sel = sel.ORDER_BY(table.Output.Index.DESC())
@@ -225,14 +239,13 @@ func (r *PostgresRepository) ListOutputs(
 	}
 
 	sqlStr, args := sel.Sql()
-	rows, err := r.db.Query(ctx, sqlStr, args...)
+	rows, err := tx.Query(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
 
 	var outputs []*model.Output
-	var total uint64
 	for rows.Next() {
 		var out model.Output
 		err := rows.Scan(
@@ -246,7 +259,6 @@ func (r *PostgresRepository) ListOutputs(
 			&out.CreatedAt,
 			&out.UpdatedAt,
 			&out.EpochIndex,
-			&total,
 		)
 		if err != nil {
 			return nil, 0, err

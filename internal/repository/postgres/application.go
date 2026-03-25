@@ -511,6 +511,42 @@ func (r *PostgresRepository) ListApplications(
 	descending bool,
 ) ([]*model.Application, uint64, error) {
 
+	fromClause := table.Application.INNER_JOIN(
+		table.ExecutionParameters,
+		table.ExecutionParameters.ApplicationID.EQ(table.Application.ID),
+	)
+
+	conditions := []postgres.BoolExpression{}
+	if f.State != nil {
+		conditions = append(conditions, table.Application.State.EQ(postgres.NewEnumValue(f.State.String())))
+	}
+	if f.DataAvailability != nil {
+		conditions = append(conditions,
+			SubstrBytea(table.Application.DataAvailability, 1, 4).EQ(postgres.Bytea(f.DataAvailability[:])), //nolint:mnd
+		)
+	}
+	if f.ConsensusType != nil {
+		conditions = append(conditions, table.Application.ConsensusType.EQ(postgres.NewEnumValue(f.ConsensusType.String())))
+	}
+
+	tx, err := beginReadTx(ctx, r.db)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	countStmt := table.Application.SELECT(postgres.COUNT(postgres.STAR)).FROM(fromClause)
+	if len(conditions) > 0 {
+		countStmt = countStmt.WHERE(postgres.AND(conditions...))
+	}
+	total, err := countFromTx(ctx, tx, countStmt)
+	if err != nil {
+		return nil, 0, err
+	}
+	if total == 0 {
+		return nil, 0, nil
+	}
+
 	sel := table.Application.
 		SELECT(
 			table.Application.ID,
@@ -549,27 +585,8 @@ func (r *PostgresRepository) ListApplications(
 			table.ExecutionParameters.MaxConcurrentInspects,
 			table.ExecutionParameters.CreatedAt,
 			table.ExecutionParameters.UpdatedAt,
-			postgres.COUNT(postgres.STAR).OVER().AS("total_count"),
 		).
-		FROM(
-			table.Application.INNER_JOIN(
-				table.ExecutionParameters,
-				table.ExecutionParameters.ApplicationID.EQ(table.Application.ID),
-			),
-		)
-
-	conditions := []postgres.BoolExpression{}
-	if f.State != nil {
-		conditions = append(conditions, table.Application.State.EQ(postgres.NewEnumValue(f.State.String())))
-	}
-	if f.DataAvailability != nil {
-		conditions = append(conditions,
-			SubstrBytea(table.Application.DataAvailability, 1, 4).EQ(postgres.Bytea(f.DataAvailability[:])), //nolint:mnd
-		)
-	}
-	if f.ConsensusType != nil {
-		conditions = append(conditions, table.Application.ConsensusType.EQ(postgres.NewEnumValue(f.ConsensusType.String())))
-	}
+		FROM(fromClause)
 
 	if len(conditions) > 0 {
 		sel = sel.WHERE(postgres.AND(conditions...))
@@ -580,8 +597,6 @@ func (r *PostgresRepository) ListApplications(
 	} else {
 		sel = sel.ORDER_BY(table.Application.Name.ASC())
 	}
-
-	// Apply pagination
 	if p.Limit > 0 {
 		sel = sel.LIMIT(int64(p.Limit))
 	}
@@ -590,14 +605,13 @@ func (r *PostgresRepository) ListApplications(
 	}
 
 	sqlStr, args := sel.Sql()
-	rows, err := r.db.Query(ctx, sqlStr, args...)
+	rows, err := tx.Query(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
 
 	var apps []*model.Application
-	var total uint64
 	for rows.Next() {
 		var app model.Application
 		err := rows.Scan(
@@ -637,7 +651,6 @@ func (r *PostgresRepository) ListApplications(
 			&app.ExecutionParameters.MaxConcurrentInspects,
 			&app.ExecutionParameters.CreatedAt,
 			&app.ExecutionParameters.UpdatedAt,
-			&total,
 		)
 		if err != nil {
 			return nil, 0, err

@@ -132,6 +132,36 @@ func (r *PostgresRepository) ListCommitments(
 
 	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
+	fromClause := table.Commitments.
+		INNER_JOIN(table.Application,
+			table.Commitments.ApplicationID.EQ(table.Application.ID),
+		)
+
+	conditions := []postgres.BoolExpression{whereClause}
+	if f.EpochIndex != nil {
+		conditions = append(conditions, table.Commitments.EpochIndex.EQ(uint64Expr(*f.EpochIndex)))
+	}
+	if f.TournamentAddress != nil {
+		tournamentAddr := common.HexToAddress(*f.TournamentAddress)
+		conditions = append(conditions, table.Commitments.TournamentAddress.EQ(postgres.Bytea(tournamentAddr.Bytes())))
+	}
+
+	tx, err := beginReadTx(ctx, r.db)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	countStmt := table.Commitments.SELECT(postgres.COUNT(postgres.STAR)).
+		FROM(fromClause).WHERE(postgres.AND(conditions...))
+	total, err := countFromTx(ctx, tx, countStmt)
+	if err != nil {
+		return nil, 0, err
+	}
+	if total == 0 {
+		return nil, 0, nil
+	}
+
 	sel := table.Commitments.
 		SELECT(
 			table.Commitments.ApplicationID,
@@ -144,25 +174,9 @@ func (r *PostgresRepository) ListCommitments(
 			table.Commitments.TxHash,
 			table.Commitments.CreatedAt,
 			table.Commitments.UpdatedAt,
-			postgres.COUNT(postgres.STAR).OVER().AS("total_count"),
 		).
-		FROM(
-			table.Commitments.
-				INNER_JOIN(table.Application,
-					table.Commitments.ApplicationID.EQ(table.Application.ID),
-				),
-		)
-
-	conditions := []postgres.BoolExpression{whereClause}
-	if f.EpochIndex != nil {
-		conditions = append(conditions, table.Commitments.EpochIndex.EQ(uint64Expr(*f.EpochIndex)))
-	}
-	if f.TournamentAddress != nil {
-		tournamentAddr := common.HexToAddress(*f.TournamentAddress)
-		conditions = append(conditions, table.Commitments.TournamentAddress.EQ(postgres.Bytea(tournamentAddr.Bytes())))
-	}
-
-	sel = sel.WHERE(postgres.AND(conditions...))
+		FROM(fromClause).
+		WHERE(postgres.AND(conditions...))
 
 	if descending {
 		sel = sel.ORDER_BY(
@@ -187,14 +201,13 @@ func (r *PostgresRepository) ListCommitments(
 	}
 
 	sqlStr, args := sel.Sql()
-	rows, err := r.db.Query(ctx, sqlStr, args...)
+	rows, err := tx.Query(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
 
 	var commitments []*model.Commitment
-	var total uint64
 	for rows.Next() {
 		var c model.Commitment
 		err := rows.Scan(
@@ -208,7 +221,6 @@ func (r *PostgresRepository) ListCommitments(
 			&c.TxHash,
 			&c.CreatedAt,
 			&c.UpdatedAt,
-			&total,
 		)
 		if err != nil {
 			return nil, 0, err

@@ -277,6 +277,43 @@ func (r *PostgresRepository) ListInputs(
 
 	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
+	fromClause := table.Input.
+		INNER_JOIN(table.Application,
+			table.Input.EpochApplicationID.EQ(table.Application.ID),
+		)
+
+	conditions := []postgres.BoolExpression{whereClause}
+	if f.EpochIndex != nil {
+		conditions = append(conditions, table.Input.EpochIndex.EQ(uint64Expr(*f.EpochIndex)))
+	}
+	if f.Status != nil {
+		conditions = append(conditions, table.Input.Status.EQ(postgres.NewEnumValue(f.Status.String())))
+	}
+	if f.NotStatus != nil {
+		conditions = append(conditions, table.Input.Status.NOT_EQ(postgres.NewEnumValue(f.NotStatus.String())))
+	}
+	if f.Sender != nil {
+		conditions = append(conditions,
+			SubstrBytea(table.Input.RawData, 81, 20).EQ(postgres.Bytea(f.Sender.Bytes())),
+		)
+	}
+
+	tx, err := beginReadTx(ctx, r.db)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	countStmt := table.Input.SELECT(postgres.COUNT(postgres.STAR)).
+		FROM(fromClause).WHERE(postgres.AND(conditions...))
+	total, err := countFromTx(ctx, tx, countStmt)
+	if err != nil {
+		return nil, 0, err
+	}
+	if total == 0 {
+		return nil, 0, nil
+	}
+
 	sel := table.Input.
 		SELECT(
 			table.Input.EpochApplicationID,
@@ -291,42 +328,15 @@ func (r *PostgresRepository) ListInputs(
 			table.Input.SnapshotURI,
 			table.Input.CreatedAt,
 			table.Input.UpdatedAt,
-			postgres.COUNT(postgres.STAR).OVER().AS("total_count"),
 		).
-		FROM(
-			table.Input.
-				INNER_JOIN(table.Application,
-					table.Input.EpochApplicationID.EQ(table.Application.ID),
-				),
-		)
-
-	conditions := []postgres.BoolExpression{whereClause}
-	if f.EpochIndex != nil {
-		conditions = append(conditions, table.Input.EpochIndex.EQ(uint64Expr(*f.EpochIndex)))
-	}
-
-	if f.Status != nil {
-		conditions = append(conditions, table.Input.Status.EQ(postgres.NewEnumValue(f.Status.String())))
-	}
-
-	if f.NotStatus != nil {
-		conditions = append(conditions, table.Input.Status.NOT_EQ(postgres.NewEnumValue(f.NotStatus.String())))
-	}
-
-	if f.Sender != nil {
-		conditions = append(conditions,
-			SubstrBytea(table.Input.RawData, 81, 20).EQ(postgres.Bytea(f.Sender.Bytes())),
-		)
-	}
-
-	sel = sel.WHERE(postgres.AND(conditions...))
+		FROM(fromClause).
+		WHERE(postgres.AND(conditions...))
 
 	if descending {
 		sel = sel.ORDER_BY(table.Input.Index.DESC())
 	} else {
 		sel = sel.ORDER_BY(table.Input.Index.ASC())
 	}
-
 	if p.Limit > 0 {
 		sel = sel.LIMIT(int64(p.Limit))
 	}
@@ -335,14 +345,13 @@ func (r *PostgresRepository) ListInputs(
 	}
 
 	sqlStr, args := sel.Sql()
-	rows, err := r.db.Query(ctx, sqlStr, args...)
+	rows, err := tx.Query(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
 
 	var inputs []*model.Input
-	var total uint64
 	for rows.Next() {
 		var in model.Input
 		err := rows.Scan(
@@ -358,7 +367,6 @@ func (r *PostgresRepository) ListInputs(
 			&in.SnapshotURI,
 			&in.CreatedAt,
 			&in.UpdatedAt,
-			&total,
 		)
 		if err != nil {
 			return nil, 0, err

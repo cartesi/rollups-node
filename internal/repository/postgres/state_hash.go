@@ -23,6 +23,32 @@ func (r *PostgresRepository) ListStateHashes(
 
 	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
+	fromClause := table.StateHashes.
+		INNER_JOIN(table.Application,
+			table.StateHashes.InputEpochApplicationID.EQ(table.Application.ID),
+		)
+
+	conditions := []postgres.BoolExpression{whereClause}
+	if f.EpochIndex != nil {
+		conditions = append(conditions, table.StateHashes.EpochIndex.EQ(uint64Expr(*f.EpochIndex)))
+	}
+
+	tx, err := beginReadTx(ctx, r.db)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	countStmt := table.StateHashes.SELECT(postgres.COUNT(postgres.STAR)).
+		FROM(fromClause).WHERE(postgres.AND(conditions...))
+	total, err := countFromTx(ctx, tx, countStmt)
+	if err != nil {
+		return nil, 0, err
+	}
+	if total == 0 {
+		return nil, 0, nil
+	}
+
 	sel := table.StateHashes.
 		SELECT(
 			table.StateHashes.InputEpochApplicationID,
@@ -33,28 +59,15 @@ func (r *PostgresRepository) ListStateHashes(
 			table.StateHashes.Repetitions,
 			table.StateHashes.CreatedAt,
 			table.StateHashes.UpdatedAt,
-			postgres.COUNT(postgres.STAR).OVER().AS("total_count"),
 		).
-		FROM(
-			table.StateHashes.INNER_JOIN(
-				table.Application,
-				table.StateHashes.InputEpochApplicationID.EQ(table.Application.ID),
-			),
-		)
-
-	conditions := []postgres.BoolExpression{whereClause}
-	if f.EpochIndex != nil {
-		conditions = append(conditions, table.StateHashes.EpochIndex.EQ(uint64Expr(*f.EpochIndex)))
-	}
-
-	sel = sel.WHERE(postgres.AND(conditions...))
+		FROM(fromClause).
+		WHERE(postgres.AND(conditions...))
 
 	if descending {
 		sel = sel.ORDER_BY(table.StateHashes.Index.DESC())
 	} else {
 		sel = sel.ORDER_BY(table.StateHashes.Index.ASC())
 	}
-
 	if p.Limit > 0 {
 		sel = sel.LIMIT(int64(p.Limit))
 	}
@@ -63,14 +76,13 @@ func (r *PostgresRepository) ListStateHashes(
 	}
 
 	sqlStr, args := sel.Sql()
-	rows, err := r.db.Query(ctx, sqlStr, args...)
+	rows, err := tx.Query(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
 
 	var stateHashes []*model.StateHash
-	var total uint64
 	for rows.Next() {
 		var sh model.StateHash
 		err := rows.Scan(
@@ -82,7 +94,6 @@ func (r *PostgresRepository) ListStateHashes(
 			&sh.Repetitions,
 			&sh.CreatedAt,
 			&sh.UpdatedAt,
-			&total,
 		)
 		if err != nil {
 			return nil, 0, err

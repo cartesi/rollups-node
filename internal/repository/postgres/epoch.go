@@ -645,6 +645,40 @@ func (r *PostgresRepository) ListEpochs(
 
 	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
+	fromClause := table.Epoch.
+		INNER_JOIN(table.Application,
+			table.Epoch.ApplicationID.EQ(table.Application.ID),
+		)
+
+	conditions := []postgres.BoolExpression{whereClause}
+	if len(f.Status) > 0 {
+		statuses := make([]postgres.Expression, 0, len(f.Status))
+		for _, status := range f.Status {
+			statuses = append(statuses, postgres.NewEnumValue(status.String()))
+		}
+		conditions = append(conditions, table.Epoch.Status.IN(statuses...))
+	}
+
+	if f.BeforeBlock != nil {
+		conditions = append(conditions, table.Epoch.LastBlock.LT(uint64Expr(*f.BeforeBlock)))
+	}
+
+	tx, err := beginReadTx(ctx, r.db)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	countStmt := table.Epoch.SELECT(postgres.COUNT(postgres.STAR)).
+		FROM(fromClause).WHERE(postgres.AND(conditions...))
+	total, err := countFromTx(ctx, tx, countStmt)
+	if err != nil {
+		return nil, 0, err
+	}
+	if total == 0 {
+		return nil, 0, nil
+	}
+
 	sel := table.Epoch.
 		SELECT(
 			table.Epoch.ApplicationID,
@@ -662,29 +696,9 @@ func (r *PostgresRepository) ListEpochs(
 			table.Epoch.VirtualIndex,
 			table.Epoch.CreatedAt,
 			table.Epoch.UpdatedAt,
-			postgres.COUNT(postgres.STAR).OVER().AS("total_count"),
 		).
-		FROM(
-			table.Epoch.
-				INNER_JOIN(table.Application,
-					table.Epoch.ApplicationID.EQ(table.Application.ID),
-				),
-		)
-
-	conditions := []postgres.BoolExpression{whereClause}
-	if len(f.Status) > 0 {
-		statuses := make([]postgres.Expression, 0, len(f.Status))
-		for _, status := range f.Status {
-			statuses = append(statuses, postgres.NewEnumValue(status.String()))
-		}
-		conditions = append(conditions, table.Epoch.Status.IN(statuses...))
-	}
-
-	if f.BeforeBlock != nil {
-		conditions = append(conditions, table.Epoch.LastBlock.LT(uint64Expr(*f.BeforeBlock)))
-	}
-
-	sel = sel.WHERE(postgres.AND(conditions...))
+		FROM(fromClause).
+		WHERE(postgres.AND(conditions...))
 
 	if descending {
 		sel = sel.ORDER_BY(table.Epoch.Index.DESC())
@@ -701,14 +715,13 @@ func (r *PostgresRepository) ListEpochs(
 	}
 
 	sqlStr, args := sel.Sql()
-	rows, err := r.db.Query(ctx, sqlStr, args...)
+	rows, err := tx.Query(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
 
 	var epochs []*model.Epoch
-	var total uint64
 	for rows.Next() {
 		var ep model.Epoch
 		err := rows.Scan(
@@ -727,7 +740,6 @@ func (r *PostgresRepository) ListEpochs(
 			&ep.VirtualIndex,
 			&ep.CreatedAt,
 			&ep.UpdatedAt,
-			&total,
 		)
 		if err != nil {
 			return nil, 0, err

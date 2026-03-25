@@ -208,29 +208,9 @@ func (r *PostgresRepository) ListTournaments(
 
 	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
-	sel := table.Tournaments.
-		SELECT(
-			table.Tournaments.ApplicationID,
-			table.Tournaments.EpochIndex,
-			table.Tournaments.Address,
-			table.Tournaments.ParentTournamentAddress,
-			table.Tournaments.ParentMatchIDHash,
-			table.Tournaments.MaxLevel,
-			table.Tournaments.Level,
-			table.Tournaments.Log2step,
-			table.Tournaments.Height,
-			table.Tournaments.WinnerCommitment,
-			table.Tournaments.FinalStateHash,
-			table.Tournaments.FinishedAtBlock,
-			table.Tournaments.CreatedAt,
-			table.Tournaments.UpdatedAt,
-			postgres.COUNT(postgres.STAR).OVER().AS("total_count"),
-		).
-		FROM(
-			table.Tournaments.
-				INNER_JOIN(table.Application,
-					table.Tournaments.ApplicationID.EQ(table.Application.ID),
-				),
+	fromClause := table.Tournaments.
+		INNER_JOIN(table.Application,
+			table.Tournaments.ApplicationID.EQ(table.Application.ID),
 		)
 
 	conditions := []postgres.BoolExpression{whereClause}
@@ -247,7 +227,41 @@ func (r *PostgresRepository) ListTournaments(
 		conditions = append(conditions, table.Tournaments.ParentMatchIDHash.EQ(postgres.Bytea(f.ParentMatchIDHash.Bytes())))
 	}
 
-	sel = sel.WHERE(postgres.AND(conditions...))
+	tx, err := beginReadTx(ctx, r.db)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	countStmt := table.Tournaments.SELECT(postgres.COUNT(postgres.STAR)).
+		FROM(fromClause).WHERE(postgres.AND(conditions...))
+	total, err := countFromTx(ctx, tx, countStmt)
+	if err != nil {
+		return nil, 0, err
+	}
+	if total == 0 {
+		return nil, 0, nil
+	}
+
+	sel := table.Tournaments.
+		SELECT(
+			table.Tournaments.ApplicationID,
+			table.Tournaments.EpochIndex,
+			table.Tournaments.Address,
+			table.Tournaments.ParentTournamentAddress,
+			table.Tournaments.ParentMatchIDHash,
+			table.Tournaments.MaxLevel,
+			table.Tournaments.Level,
+			table.Tournaments.Log2step,
+			table.Tournaments.Height,
+			table.Tournaments.WinnerCommitment,
+			table.Tournaments.FinalStateHash,
+			table.Tournaments.FinishedAtBlock,
+			table.Tournaments.CreatedAt,
+			table.Tournaments.UpdatedAt,
+		).
+		FROM(fromClause).
+		WHERE(postgres.AND(conditions...))
 
 	if descending {
 		sel = sel.ORDER_BY(table.Tournaments.EpochIndex.DESC(), table.Tournaments.Level.DESC())
@@ -255,7 +269,6 @@ func (r *PostgresRepository) ListTournaments(
 		sel = sel.ORDER_BY(table.Tournaments.EpochIndex.ASC(), table.Tournaments.Level.ASC())
 	}
 
-	// Apply pagination
 	if p.Limit > 0 {
 		sel = sel.LIMIT(int64(p.Limit))
 	}
@@ -264,14 +277,13 @@ func (r *PostgresRepository) ListTournaments(
 	}
 
 	sqlStr, args := sel.Sql()
-	rows, err := r.db.Query(ctx, sqlStr, args...)
+	rows, err := tx.Query(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
 
 	var tournaments []*model.Tournament
-	var total uint64
 	for rows.Next() {
 		var t model.Tournament
 		err := rows.Scan(
@@ -289,7 +301,6 @@ func (r *PostgresRepository) ListTournaments(
 			&t.FinishedAtBlock,
 			&t.CreatedAt,
 			&t.UpdatedAt,
-			&total,
 		)
 		if err != nil {
 			return nil, 0, err

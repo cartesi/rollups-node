@@ -4,12 +4,14 @@
 package postgres
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-jet/jet/v2/postgres"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/table"
 )
@@ -39,6 +41,23 @@ func hashToBytes(h *common.Hash) any {
 		return nil
 	}
 	return (*h)[:]
+}
+
+// beginReadTx starts a REPEATABLE READ, read-only transaction.
+// This ensures that multiple queries within the transaction see the same snapshot.
+func beginReadTx(ctx context.Context, pool *pgxpool.Pool) (pgx.Tx, error) {
+	return pool.BeginTx(ctx, pgx.TxOptions{
+		IsoLevel:   pgx.RepeatableRead,
+		AccessMode: pgx.ReadOnly,
+	})
+}
+
+// countFromTx executes a count query on the given transaction and returns the total.
+func countFromTx(ctx context.Context, tx pgx.Tx, countStmt postgres.SelectStatement) (uint64, error) {
+	sqlStr, args := countStmt.Sql()
+	var total uint64
+	err := tx.QueryRow(ctx, sqlStr, args...).Scan(&total)
+	return total, err
 }
 
 // SubstrBytea returns a SUBSTR expression properly typed as ByteaExpression.

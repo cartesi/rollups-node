@@ -80,27 +80,14 @@ func (r *PostgresRepository) ListReports(
 
 	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
-	sel := table.Report.
-		SELECT(
-			table.Report.InputEpochApplicationID,
-			table.Report.InputIndex,
-			table.Report.Index,
-			table.Report.RawData,
-			table.Report.CreatedAt,
-			table.Report.UpdatedAt,
-			table.Input.EpochIndex,
-			postgres.COUNT(postgres.STAR).OVER().AS("total_count"),
-		).
-		FROM(
-			table.Report.INNER_JOIN(
-				table.Application,
-				table.Report.InputEpochApplicationID.EQ(table.Application.ID),
-			).INNER_JOIN(
-				table.Input,
-				table.Report.InputIndex.EQ(table.Input.Index).
-					AND(table.Report.InputEpochApplicationID.EQ(table.Input.EpochApplicationID)),
-			),
-		)
+	fromClause := table.Report.INNER_JOIN(
+		table.Application,
+		table.Report.InputEpochApplicationID.EQ(table.Application.ID),
+	).INNER_JOIN(
+		table.Input,
+		table.Report.InputIndex.EQ(table.Input.Index).
+			AND(table.Report.InputEpochApplicationID.EQ(table.Input.EpochApplicationID)),
+	)
 
 	conditions := []postgres.BoolExpression{whereClause}
 	if f.InputIndex != nil {
@@ -112,7 +99,34 @@ func (r *PostgresRepository) ListReports(
 		conditions = append(conditions, table.Input.Status.EQ(postgres.NewEnumValue(model.InputCompletionStatus_Accepted.String())))
 	}
 
-	sel = sel.WHERE(postgres.AND(conditions...))
+	tx, err := beginReadTx(ctx, r.db)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	countStmt := table.Report.SELECT(postgres.COUNT(postgres.STAR)).
+		FROM(fromClause).WHERE(postgres.AND(conditions...))
+	total, err := countFromTx(ctx, tx, countStmt)
+	if err != nil {
+		return nil, 0, err
+	}
+	if total == 0 {
+		return nil, 0, nil
+	}
+
+	sel := table.Report.
+		SELECT(
+			table.Report.InputEpochApplicationID,
+			table.Report.InputIndex,
+			table.Report.Index,
+			table.Report.RawData,
+			table.Report.CreatedAt,
+			table.Report.UpdatedAt,
+			table.Input.EpochIndex,
+		).
+		FROM(fromClause).
+		WHERE(postgres.AND(conditions...))
 
 	if descending {
 		sel = sel.ORDER_BY(table.Report.Index.DESC())
@@ -128,14 +142,13 @@ func (r *PostgresRepository) ListReports(
 	}
 
 	sqlStr, args := sel.Sql()
-	rows, err := r.db.Query(ctx, sqlStr, args...)
+	rows, err := tx.Query(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
 
 	var reports []*model.Report
-	var total uint64
 	for rows.Next() {
 		var rp model.Report
 		err := rows.Scan(
@@ -146,7 +159,6 @@ func (r *PostgresRepository) ListReports(
 			&rp.CreatedAt,
 			&rp.UpdatedAt,
 			&rp.EpochIndex,
-			&total,
 		)
 		if err != nil {
 			return nil, 0, err
