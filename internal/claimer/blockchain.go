@@ -163,7 +163,8 @@ func (cb *claimerBlockchain) findClaimSubmittedEventAndSucc(
 ) {
 	ic, err := iconsensus.NewIConsensus(application.IConsensusAddress, cb.client)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("creating IConsensus binding for submitted events of application: %v, epoch: %v (%v): %w",
+			application.IApplicationAddress, epoch.Index, epoch.VirtualIndex, err)
 	}
 	oracle := newOracle(ic.GetNumberOfSubmittedClaims)
 	events := []*iconsensus.IConsensusClaimSubmitted{}
@@ -178,11 +179,13 @@ func (cb *claimerBlockchain) findClaimSubmittedEventAndSucc(
 
 	numSubmittedClaims, err := oracle(ctx, epoch.LastBlock)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("querying number of submitted claims for epoch %v (%v) at block %d: %w",
+			epoch.Index, epoch.VirtualIndex, epoch.LastBlock, err)
 	}
 	_, err = ethutil.FindTransitions(ctx, fromBlock, toBlock, numSubmittedClaims, oracle, onHit)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to walk ClaimSubmitted transitions: %w", err)
+		return nil, nil, nil, fmt.Errorf("walking ClaimSubmitted transitions for application: %v, epoch %v (%v): %w",
+			application.IApplicationAddress, epoch.Index, epoch.VirtualIndex, err)
 	}
 
 	if len(events) == 0 {
@@ -210,7 +213,7 @@ func (cb *claimerBlockchain) findClaimAcceptedEventAndSucc(
 ) {
 	ic, err := iconsensus.NewIConsensus(application.IConsensusAddress, cb.client)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("creating IConsensus binding for accepted events: %w", err)
 	}
 
 	oracle := newOracle(ic.GetNumberOfAcceptedClaims)
@@ -239,11 +242,12 @@ func (cb *claimerBlockchain) findClaimAcceptedEventAndSucc(
 
 	numAcceptedClaims, err := oracle(ctx, epoch.LastBlock)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("querying number of accepted claims at block %d: %w", epoch.LastBlock, err)
 	}
 	_, err = ethutil.FindTransitions(ctx, fromBlock, toBlock, numAcceptedClaims, oracle, onHit)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to walk ClaimAccepted transitions: %w", err)
+		return nil, nil, nil, fmt.Errorf("walking ClaimAccepted transitions for application: %v, epoch %v (%v): %w",
+			application.IApplicationAddress, epoch.Index, epoch.VirtualIndex, err)
 	}
 
 	if len(events) == 0 {
@@ -283,7 +287,7 @@ func (cb *claimerBlockchain) pollTransaction(
 		if errors.Is(err, ethereum.NotFound) {
 			return false, nil, nil
 		}
-		return false, nil, err
+		return false, nil, fmt.Errorf("fetching transaction receipt for %v: %w", txHash, err)
 	}
 
 	// receipt must be committed before use. Return false until it is.
@@ -309,7 +313,7 @@ func (cb *claimerBlockchain) getDefaultBlockNumber(ctx context.Context) (*big.In
 
 	hdr, err := cb.client.HeaderByNumber(ctx, big.NewInt(nr))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetching header for block %v: %w", nr, err)
 	}
 	return hdr.Number, nil
 }

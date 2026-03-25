@@ -86,7 +86,7 @@ func (r *PostgresRepository) selectOldestClaimPerApp(
 	sqlStr, args := stmt.Sql()
 	rows, err := tx.Query(ctx, sqlStr, args...)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("querying oldest claim per app (status=%v): %w", epochStatus, err)
 	}
 	defer rows.Close()
 
@@ -126,13 +126,13 @@ func (r *PostgresRepository) selectOldestClaimPerApp(
 			&application.UpdatedAt,
 		)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("scanning epoch/application row: %w", err)
 		}
 		epochs[application.ID] = &epoch
 		applications[application.ID] = &application
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("iterating oldest claim rows: %w", err)
 	}
 	return epochs, applications, nil
 }
@@ -186,7 +186,7 @@ func (r *PostgresRepository) selectNewestAcceptedClaimPerApp(
 	sqlStr, args := stmt.Sql()
 	rows, err := tx.Query(ctx, sqlStr, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("querying newest accepted claim per app: %w", err)
 	}
 	defer rows.Close()
 
@@ -206,12 +206,12 @@ func (r *PostgresRepository) selectNewestAcceptedClaimPerApp(
 			&epoch.UpdatedAt,
 		)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scanning accepted epoch row: %w", err)
 		}
 		epochs[epoch.ApplicationID] = &epoch
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("iterating accepted claim rows: %w", err)
 	}
 	return epochs, nil
 }
@@ -227,19 +227,19 @@ func (r *PostgresRepository) SelectSubmittedClaimPairsPerApp(ctx context.Context
 		AccessMode: pgx.ReadOnly,
 	})
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("beginning read-only transaction for submitted claims: %w", err)
 	}
 	// Read-only tx: rollback releases the snapshot, equivalent to commit.
 	defer tx.Rollback(ctx) //nolint:errcheck
 
 	computed, applications, err := r.selectOldestClaimPerApp(ctx, tx, model.EpochStatus_ClaimComputed)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("selecting oldest computed claim per app: %w", err)
 	}
 
 	acceptedOrSubmitted, err := r.selectNewestAcceptedClaimPerApp(ctx, tx, true)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("selecting newest accepted claim per app: %w", err)
 	}
 
 	return acceptedOrSubmitted, computed, applications, err
@@ -256,19 +256,19 @@ func (r *PostgresRepository) SelectAcceptedClaimPairsPerApp(ctx context.Context)
 		AccessMode: pgx.ReadOnly,
 	})
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("beginning read-only transaction for accepted claims: %w", err)
 	}
 	// Read-only tx: rollback releases the snapshot, equivalent to commit.
 	defer tx.Rollback(ctx) //nolint:errcheck
 
 	submitted, applications, err := r.selectOldestClaimPerApp(ctx, tx, model.EpochStatus_ClaimSubmitted)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("selecting oldest submitted claim per app: %w", err)
 	}
 
 	accepted, err := r.selectNewestAcceptedClaimPerApp(ctx, tx, false)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("selecting newest accepted claim per app: %w", err)
 	}
 
 	return accepted, submitted, applications, err
@@ -301,7 +301,7 @@ func (r *PostgresRepository) UpdateEpochWithSubmittedClaim(
 	sqlStr, args := updStmt.Sql()
 	cmd, err := r.db.Exec(ctx, sqlStr, args...)
 	if err != nil {
-		return err
+		return fmt.Errorf("executing update for submitted claim (app=%d, index=%d): %w", applicationID, index, err)
 	}
 	if cmd.RowsAffected() == 0 {
 		return repository.ErrNoUpdate
@@ -333,7 +333,7 @@ func (r *PostgresRepository) UpdateEpochWithAcceptedClaim(
 	sqlStr, args := updStmt.Sql()
 	cmd, err := r.db.Exec(ctx, sqlStr, args...)
 	if err != nil {
-		return err
+		return fmt.Errorf("executing update for accepted claim (app=%d, index=%d): %w", applicationID, index, err)
 	}
 	if cmd.RowsAffected() == 0 {
 		return repository.ErrNoUpdate

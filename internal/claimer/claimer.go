@@ -145,7 +145,7 @@ func (s *Service) checkClaimsInFlight(
 			// NOTE: there is no point in trying the other applications on a database error
 			//       so we just return and try again later (next tick)
 			if err != nil {
-				return err
+				return fmt.Errorf("updating epoch %d (%d) with submitted claim: %w", computedEpoch.Index, computedEpoch.VirtualIndex, err)
 			}
 
 			// we expect apps[key] to always exist,
@@ -203,7 +203,7 @@ func (s *Service) findClaimSubmittedEventAndSucc(
 	ic, prevClaimSubmissionEvent, currClaimSubmissionEvent, err :=
 		s.blockchain.findClaimSubmittedEventAndSucc(ctx, app, prevEpoch, fromBlock, toBlock)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("finding claim submitted event for epoch %d (%d): %w", prevEpoch.Index, prevEpoch.VirtualIndex, err)
 	}
 
 	if prevClaimSubmissionEvent == nil {
@@ -439,7 +439,7 @@ func (s *Service) findClaimAcceptedEventAndSucc(
 	ic, prevClaimAcceptanceEvent, currClaimAcceptanceEvent, err :=
 		s.blockchain.findClaimAcceptedEventAndSucc(ctx, app, prevEpoch, fromBlock, toBlock)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("finding claim accepted event for epoch %d (%d): %w", prevEpoch.Index, prevEpoch.VirtualIndex, err)
 	}
 
 	if prevClaimAcceptanceEvent == nil {
@@ -565,7 +565,7 @@ func (s *Service) checkConsensusForAddressChange(
 ) error {
 	newConsensusAddress, err := s.blockchain.getConsensusAddress(s.Context, app)
 	if err != nil {
-		return err
+		return fmt.Errorf("getting consensus address for app %v: %w", app.IApplicationAddress, err)
 	}
 	if app.IConsensusAddress != newConsensusAddress {
 		err = s.setApplicationInoperable(

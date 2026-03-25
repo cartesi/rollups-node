@@ -72,17 +72,17 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 
 	err = service.Create(ctx, &c.CreateInfo, &s.Service)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating base service: %w", err)
 	}
 
 	nodeConfig, err := setupPersistentConfig(ctx, s.Logger, c.Repository, &c.Config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("setting up persistent config: %w", err)
 	}
 
 	chainId, err := c.EthConn.ChainID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("querying chain ID: %w", err)
 	}
 	if chainId.Uint64() != c.Config.BlockchainId {
 		return nil, fmt.Errorf("chainId mismatch: network %d != provided %d", chainId.Uint64(), c.Config.BlockchainId)
@@ -99,7 +99,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	if s.submissionEnabled {
 		txOpts, err = auth.GetTransactOpts(ctx, chainId)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("getting transaction options: %w", err)
 		}
 	}
 
@@ -190,7 +190,7 @@ func setupPersistentConfig(
 		logger.Info("Initializing claimer persistent config", "config", nc.Value)
 		err = repository.SaveNodeConfig(ctx, repo, &nc)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("saving claimer persistent config: %w", err)
 		}
 		return &nc.Value, nil
 	} else if err == nil {
