@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -32,6 +33,7 @@ type Service struct {
 	inspector      *inspect.Inspector
 	HTTPServer     *http.Server
 	HTTPServerFunc func() error
+	stopping       atomic.Bool
 	stopOnce       sync.Once
 }
 
@@ -97,13 +99,23 @@ func (s *Service) Alive() bool     { return true }
 func (s *Service) Ready() bool     { return true }
 func (s *Service) Reload() []error { return nil }
 func (s *Service) Tick() []error {
-	if err := s.Step(s.Context); err != nil {
-		return []error{err}
+	err := s.Step(s.Context)
+	if err == nil {
+		return nil
 	}
-	return nil
+	// During shutdown, Stop() sets s.stopping before closing the machine
+	// manager. An in-flight Tick may see ErrNoApp from GetMachine() when
+	// the manager is closed mid-operation. We suppress this to avoid
+	// spurious ERR log entries during graceful shutdown.
+	if errors.Is(err, ErrNoApp) && s.stopping.Load() {
+		s.Logger.Warn("Tick interrupted by shutdown", "error", err)
+		return nil
+	}
+	return []error{err}
 }
 func (s *Service) Stop(b bool) []error {
 	var errs []error
+	s.stopping.Store(true)
 	s.stopOnce.Do(func() {
 		if s.HTTPServer != nil {
 			s.Logger.Info("Shutting down inspect HTTP server")
