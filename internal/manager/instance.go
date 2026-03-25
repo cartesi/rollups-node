@@ -229,8 +229,13 @@ func (m *MachineInstanceImpl) Synchronize(ctx context.Context, repo MachineRepos
 			replayed++
 		}
 
-		if replayed >= toReplay || len(inputs) == 0 {
+		if replayed >= toReplay {
 			break
+		}
+		if len(inputs) == 0 {
+			return fmt.Errorf(
+				"%w: expected to replay %d inputs but only replayed %d",
+				ErrMachineSynchronization, toReplay, replayed)
 		}
 	}
 

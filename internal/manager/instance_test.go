@@ -1422,6 +1422,25 @@ func (s *MachineInstanceSuite) TestSynchronize() {
 		require.Equal(uint64(3), inst.processedInputs.Load())
 	})
 
+	s.Run("PartialSyncDetected", func() {
+		require := s.Require()
+		// Machine has 0 processed, app has 5. But the mock only has 2 inputs,
+		// simulating rows disappearing between batches.
+		// Use batchSize=2 so the first batch returns inputs [0,1] (replayed=2),
+		// then the second batch returns 0 rows (offset=2 >= len=2).
+		// The loop must detect replayed(2) != toReplay(5) and return an error.
+		inst := s.newSyncMachine(0, 5)
+		repo := &mockSyncRepository{
+			inputs:     makeInputs(0, 2), // only 2 inputs exist
+			totalCount: 5,                // but totalCount says 5
+		}
+
+		err := inst.Synchronize(context.Background(), repo, 2)
+		require.Error(err)
+		require.ErrorIs(err, ErrMachineSynchronization)
+		require.Contains(err.Error(), "expected to replay 5 inputs but only replayed 2")
+	})
+
 	s.Run("ContextCancellation", func() {
 		require := s.Require()
 		inst := s.newSyncMachine(0, 3)
