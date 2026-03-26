@@ -286,8 +286,15 @@ CREATE TABLE "input"
 
 CREATE INDEX "input_block_number_idx" ON "input"("epoch_application_id", "block_number");
 CREATE INDEX "input_status_idx" ON "input"("epoch_application_id", "status");
+CREATE INDEX "input_unprocessed_idx" ON "input"("epoch_application_id", "epoch_index", "index")
+    WHERE "status" = 'NONE';
 
 CREATE INDEX "input_sender_idx" ON "input" ("epoch_application_id", substring("raw_data" FROM 81 FOR 20));
+
+-- The input table has a hot update pattern: status changes from NONE to a
+-- terminal value on every processed input. Lower the autovacuum threshold so
+-- dead tuples (and the shrinking partial index) are reclaimed promptly.
+ALTER TABLE "input" SET (autovacuum_vacuum_scale_factor = 0.02);
 
 CREATE TRIGGER "input_set_updated_at" BEFORE UPDATE ON "input"
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

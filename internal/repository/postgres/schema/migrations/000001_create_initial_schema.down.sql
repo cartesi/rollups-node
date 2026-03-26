@@ -38,6 +38,7 @@ DROP TABLE IF EXISTS "output";
 
 DROP TRIGGER IF EXISTS "input_set_updated_at" ON "input";
 DROP INDEX IF EXISTS "input_sender_idx";
+DROP INDEX IF EXISTS "input_unprocessed_idx";
 DROP INDEX IF EXISTS "input_status_idx";
 DROP INDEX IF EXISTS "input_block_number_idx";
 DROP TABLE IF EXISTS "input";
