@@ -128,8 +128,18 @@ func (s *Service) Reload() []error { return nil }
 // Tick executes the Validator main logic of producing claims and/or proofs
 // for processed epochs of all running applications.
 func (s *Service) Tick() []error {
+	// Check for shutdown before starting work, consistent with the advancer.
+	if s.IsStopping() {
+		return nil
+	}
+
 	apps, _, err := getAllRunningApplications(s.Context, s.repository)
 	if err != nil {
+		// Only suppress context errors during shutdown; surface real DB errors.
+		if s.IsStopping() && errors.Is(err, context.Canceled) {
+			s.Logger.Warn("Tick interrupted by shutdown", "error", err)
+			return nil
+		}
 		return []error{fmt.Errorf("failed to get running applications. %w", err)}
 	}
 
@@ -140,6 +150,13 @@ func (s *Service) Tick() []error {
 			return errs
 		}
 		if err := s.validateApplication(s.Context, apps[idx]); err != nil {
+			// During shutdown, in-flight L1 requests see context cancellation.
+			// Suppress these to avoid spurious ERR log entries.
+			if s.IsStopping() && errors.Is(err, context.Canceled) {
+				s.Logger.Warn("Tick interrupted by shutdown",
+					"application", apps[idx].IApplicationAddress, "error", err)
+				continue
+			}
 			errs = append(errs, err)
 		}
 	}
@@ -147,6 +164,7 @@ func (s *Service) Tick() []error {
 }
 
 func (s *Service) Stop(_ bool) []error {
+	s.SetStopping()
 	return nil
 }
 
