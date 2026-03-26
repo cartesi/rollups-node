@@ -59,97 +59,149 @@ func getUnprocessedInputs(
 }
 
 // Step performs one processing cycle of the advancer.
-// It updates machines, gets unprocessed inputs, processes them, and updates epochs.
+// It updates machines, processes one batch of inputs per application in round-robin
+// order, and returns whether any application had work remaining.
+//
 // Per-app errors are accumulated so that a failure in one application does not block
 // processing of other healthy applications. Context cancellation is always propagated
 // immediately.
-func (s *Service) Step(ctx context.Context) error {
-	// Check for context cancellation
+//
+// The returned boolean indicates whether any app successfully processed inputs and
+// potentially has more work. Callers use this to decide whether to re-tick immediately
+// (via the Reschedule channel) or wait for the next timer/event.
+func (s *Service) Step(ctx context.Context) (bool, error) {
+	// Check for context cancellation or shutdown in progress.
+	// The framework sets Stopping before calling Impl.Stop(), so this
+	// prevents starting new work while the machine manager is being torn down.
 	if err := ctx.Err(); err != nil {
-		return err
+		return false, err
+	}
+	if s.IsStopping() {
+		return false, nil
 	}
 
 	// Update the machine manager with any new or disabled applications
 	err := s.machineManager.UpdateMachines(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	// Get all applications with active machines
+	// Get all applications with active machines (returned sorted by ID).
 	apps := s.machineManager.Applications()
-
-	// Process inputs for each application, accumulating per-app errors
+	if len(apps) == 0 {
+		return false, nil
+	}
+	anyWork := false
 	var errs []error
 	for _, app := range apps {
-		if err := s.stepApp(ctx, app); err != nil {
-			// Context cancellation means the node is shutting down — stop immediately.
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return err
+		hadWork, err := s.stepApp(ctx, app)
+		if err != nil {
+			// Context errors (cancellation or timeout) mean no further apps will
+			// succeed — stop immediately instead of accumulating identical errors.
+			if ctx.Err() != nil {
+				return false, err
 			}
 			errs = append(errs, err)
+			continue
+		}
+		if hadWork {
+			anyWork = true
 		}
 	}
 
-	return errors.Join(errs...)
+	return anyWork, errors.Join(errs...)
 }
 
-// stepApp processes all unprocessed epochs and inputs for a single application.
-func (s *Service) stepApp(ctx context.Context, app *Application) error {
+// stepApp processes unprocessed epochs for a single application, returning
+// whether more work may remain. It enforces a global per-app budget of
+// inputBatchSize inputs across all epochs, so no single app can monopolize
+// the tick even when it has many small epochs.
+func (s *Service) stepApp(ctx context.Context, app *Application) (bool, error) {
 	appAddress := app.IApplicationAddress.String()
 
 	epochs, _, err := getUnprocessedEpochs(ctx, s.repository, appAddress)
 	if err != nil {
+		return false, err
+	}
+
+	budgetRemaining := s.inputBatchSize
+	for _, epoch := range epochs {
+		moreInputs, processed, err := s.processEpochInputs(ctx, app, epoch.Index, budgetRemaining)
+		if err != nil {
+			return false, err
+		}
+
+		budgetRemaining -= processed
+
+		// More inputs remain in this epoch — reschedule immediately.
+		if moreInputs {
+			return true, nil
+		}
+
+		// All inputs in this epoch processed. Finalize if closed.
+		if epoch.Status == EpochStatus_Closed {
+			if err := s.finalizeEpoch(ctx, app, epoch); err != nil {
+				return false, err
+			}
+		}
+
+		// Budget exhausted — yield so other apps get a turn.
+		if budgetRemaining == 0 {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// finalizeEpoch verifies all inputs are processed, handles snapshot/proof
+// bookkeeping, and marks the epoch as inputs-processed in the database.
+func (s *Service) finalizeEpoch(ctx context.Context, app *Application, epoch *Epoch) error {
+	allProcessed, err := s.isAllEpochInputsProcessed(app, epoch)
+	if err != nil {
+		return err
+	}
+	if !allProcessed {
+		return nil
+	}
+
+	if err := s.handleEpochAfterInputsProcessed(ctx, app, epoch); err != nil {
 		return err
 	}
 
-	for _, epoch := range epochs {
-		if err := s.processEpochInputs(ctx, app, epoch.Index); err != nil {
-			return err
-		}
-
-		if epoch.Status == EpochStatus_Closed {
-			if allProcessed, perr := s.isAllEpochInputsProcessed(app, epoch); perr == nil && allProcessed {
-				err := s.handleEpochAfterInputsProcessed(ctx, app, epoch)
-				if err != nil {
-					return err
-				}
-
-				// Update epochs to mark inputs as processed
-				err = s.repository.UpdateEpochInputsProcessed(ctx, appAddress, epoch.Index)
-				if err != nil {
-					return err
-				}
-				s.Logger.Info("Epoch updated to Inputs Processed",
-					"application", app.Name, "epoch_index", epoch.Index)
-			} else if perr != nil {
-				return perr
-			} else {
-				break // some inputs were not processed yet, check next time
-			}
-		}
+	appAddress := app.IApplicationAddress.String()
+	if err := s.repository.UpdateEpochInputsProcessed(ctx, appAddress, epoch.Index); err != nil {
+		return err
 	}
 
+	s.Logger.Info("Epoch updated to Inputs Processed",
+		"application", app.Name, "epoch_index", epoch.Index)
 	return nil
 }
 
-// processEpochInputs fetches and processes unprocessed inputs for an epoch in batches.
-// Processed inputs change status and drop out of the filter, so each batch fetches from offset 0.
-func (s *Service) processEpochInputs(ctx context.Context, app *Application, epochIndex uint64) error {
+// processEpochInputs fetches and processes up to `budget` unprocessed inputs
+// for an epoch. Returns whether more unprocessed inputs remain in this epoch
+// and the number of inputs actually processed.
+func (s *Service) processEpochInputs(
+	ctx context.Context, app *Application, epochIndex uint64, budget uint64,
+) (bool, uint64, error) {
 	appAddress := app.IApplicationAddress.String()
-	for {
-		inputs, _, err := getUnprocessedInputs(ctx, s.repository, appAddress, epochIndex, s.inputBatchSize)
-		if err != nil {
-			return err
-		}
-		if len(inputs) == 0 {
-			return nil
-		}
-		s.Logger.Debug("Processing inputs",
-			"application", app.Name, "epoch_index", epochIndex, "count", len(inputs))
-		if err := s.processInputs(ctx, app, inputs); err != nil {
-			return err
-		}
+	inputs, total, err := getUnprocessedInputs(ctx, s.repository, appAddress, epochIndex, budget)
+	if err != nil {
+		return false, 0, err
 	}
+	if len(inputs) == 0 {
+		return false, 0, nil
+	}
+	s.Logger.Debug("Processing inputs",
+		"application", app.Name, "epoch_index", epochIndex,
+		"count", len(inputs), "total", total)
+	if err := s.processInputs(ctx, app, inputs); err != nil {
+		return false, 0, err
+	}
+	processed := uint64(len(inputs))
+	// More work remains if total exceeds what we just processed.
+	return total > processed, processed, nil
 }
 
 func (s *Service) isAllEpochInputsProcessed(app *Application, epoch *Epoch) (bool, error) {

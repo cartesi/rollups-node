@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -33,8 +32,11 @@ type Service struct {
 	inspector      *inspect.Inspector
 	HTTPServer     *http.Server
 	HTTPServerFunc func() error
-	stopping       atomic.Bool
-	stopOnce       sync.Once
+
+	// cleanedUp ensures HTTP server shutdown and machine manager close run
+	// exactly once, even when Stop() is called multiple times (by the child's
+	// Serve() loop and by the parent orchestrator).
+	cleanedUp atomic.Bool
 }
 
 // CreateInfo contains the configuration for creating an advancer service
@@ -53,6 +55,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 
 	s := &Service{}
 	c.Impl = s
+	c.EnableReschedule = true
 
 	err = service.Create(ctx, &c.CreateInfo, &s.Service)
 	if err != nil {
@@ -99,39 +102,55 @@ func (s *Service) Alive() bool     { return true }
 func (s *Service) Ready() bool     { return true }
 func (s *Service) Reload() []error { return nil }
 func (s *Service) Tick() []error {
-	err := s.Step(s.Context)
+	hadWork, err := s.Step(s.Context)
+
+	// Signal reschedule whenever work was done, even if some apps errored.
+	// Failed apps are marked Failed and removed by the machine manager,
+	// so they won't cause amplified retries on the next tick.
+	// Without this, one failing app delays all healthy apps by a full poll interval.
+	if hadWork {
+		s.SignalReschedule()
+	}
+
 	if err == nil {
 		return nil
 	}
-	// During shutdown, Stop() sets s.stopping before closing the machine
-	// manager. An in-flight Tick may see ErrNoApp from GetMachine() when
-	// the manager is closed mid-operation. We suppress this to avoid
-	// spurious ERR log entries during graceful shutdown.
-	if errors.Is(err, ErrNoApp) && s.stopping.Load() {
+	// During shutdown, the machine manager is closed and GetMachine() may
+	// return ErrNoApp. Suppress this to avoid spurious ERR log entries.
+	if errors.Is(err, ErrNoApp) && s.IsStopping() {
 		s.Logger.Warn("Tick interrupted by shutdown", "error", err)
 		return nil
 	}
 	return []error{err}
 }
+
 func (s *Service) Stop(b bool) []error {
+	// CAS achieves once-semantics: the second caller returns immediately
+	// (fire-and-forget) rather than blocking like sync.Once. This is safe
+	// because the orchestrator calls Cancel() after Stop() and waits for
+	// the Serve goroutine to exit.
+	if !s.cleanedUp.CompareAndSwap(false, true) {
+		return nil // already stopped
+	}
+	// This method shadows service.Service.Stop(), so set the stopping flag
+	// explicitly. Without this, a concurrent Tick that observes closed
+	// resources would not see IsStopping() == true.
+	s.SetStopping()
 	var errs []error
-	s.stopping.Store(true)
-	s.stopOnce.Do(func() {
-		if s.HTTPServer != nil {
-			s.Logger.Info("Shutting down inspect HTTP server")
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), httpShutdownTimeout)
-			defer cancel()
-			if err := s.HTTPServer.Shutdown(shutdownCtx); err != nil {
-				errs = append(errs, fmt.Errorf("failed to shutdown inspect HTTP server: %w", err))
-			}
+	if s.HTTPServer != nil {
+		s.Logger.Info("Shutting down inspect HTTP server")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), httpShutdownTimeout)
+		defer cancel()
+		if err := s.HTTPServer.Shutdown(shutdownCtx); err != nil {
+			errs = append(errs, fmt.Errorf("failed to shutdown inspect HTTP server: %w", err))
 		}
-		if s.machineManager != nil {
-			s.Logger.Info("Closing machine manager")
-			if err := s.machineManager.Close(); err != nil {
-				errs = append(errs, fmt.Errorf("failed to close machine manager: %w", err))
-			}
+	}
+	if s.machineManager != nil {
+		s.Logger.Info("Closing machine manager")
+		if err := s.machineManager.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to close machine manager: %w", err))
 		}
-	})
+	}
 	return errs
 }
 func (s *Service) Serve() error {

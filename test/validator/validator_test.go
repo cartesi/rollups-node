@@ -109,7 +109,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
 			Index:                0,
 			BlockNumber:          9,
 			RawData:              []byte("data"),
-			Status:               model.InputCompletionStatus_Accepted,
+			Status:               model.InputCompletionStatus_None,
 			TransactionReference: common.BigToHash(big.NewInt(0)),
 		}
 
@@ -184,7 +184,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 			Index:                0,
 			BlockNumber:          9,
 			RawData:              []byte("data"),
-			Status:               model.InputCompletionStatus_Accepted,
+			Status:               model.InputCompletionStatus_None,
 			TransactionReference: common.BigToHash(big.NewInt(0)),
 		}
 
@@ -203,7 +203,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 			Index:                1,
 			BlockNumber:          19,
 			RawData:              []byte("data2"),
-			Status:               model.InputCompletionStatus_Accepted,
+			Status:               model.InputCompletionStatus_None,
 			TransactionReference: common.BigToHash(big.NewInt(1)),
 		}
 
@@ -297,7 +297,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			Index:                0,
 			BlockNumber:          19,
 			RawData:              []byte("data"),
-			Status:               model.InputCompletionStatus_Accepted,
+			Status:               model.InputCompletionStatus_None,
 			TransactionReference: common.BigToHash(big.NewInt(0)),
 		}
 
@@ -387,7 +387,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			Index:                0,
 			BlockNumber:          9,
 			RawData:              []byte("data"),
-			Status:               model.InputCompletionStatus_Accepted,
+			Status:               model.InputCompletionStatus_None,
 			TransactionReference: common.BigToHash(big.NewInt(0)),
 		}
 
@@ -454,7 +454,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			Index:                1,
 			BlockNumber:          19,
 			RawData:              []byte("data2"),
-			Status:               model.InputCompletionStatus_Accepted,
+			Status:               model.InputCompletionStatus_None,
 			TransactionReference: common.BigToHash(big.NewInt(1)),
 		}
 

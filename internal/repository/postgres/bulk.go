@@ -268,7 +268,8 @@ func updateInput(
 		).
 		WHERE(
 			table.Input.EpochApplicationID.EQ(postgres.Int64(appID)).
-				AND(table.Input.Index.EQ(uint64Expr(inputIndex))),
+				AND(table.Input.Index.EQ(uint64Expr(inputIndex))).
+				AND(table.Input.Status.EQ(postgres.NewEnumValue(model.InputCompletionStatus_None.String()))),
 		)
 
 	sqlStr, args := updStmt.Sql()

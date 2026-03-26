@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"sync"
 
 	. "github.com/cartesi/rollups-node/internal/model"
@@ -262,7 +263,8 @@ func (m *MachineManager) removeMachines(apps []*Application) {
 	}
 }
 
-// Applications returns the list of applications with active machines
+// Applications returns the list of applications with active machines,
+// sorted by ID for deterministic iteration order.
 func (m *MachineManager) Applications() []*Application {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
@@ -271,6 +273,7 @@ func (m *MachineManager) Applications() []*Application {
 	for _, machine := range m.machines {
 		apps = append(apps, machine.Application())
 	}
+	sort.Slice(apps, func(i, j int) bool { return apps[i].ID < apps[j].ID })
 	return apps
 }
 

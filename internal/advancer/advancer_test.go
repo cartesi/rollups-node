@@ -12,6 +12,7 @@ import (
 	mrand "math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -33,12 +34,20 @@ func TestAdvancer(t *testing.T) {
 type AdvancerSuite struct{ suite.Suite }
 
 func newMockAdvancerService(machineManager *MockMachineManager, repo *MockRepository) (*Service, error) {
+	return newMockAdvancerServiceWithBatchSize(machineManager, repo, 500)
+}
+
+func newMockAdvancerServiceWithBatchSize(
+	machineManager *MockMachineManager,
+	repo *MockRepository,
+	batchSize uint64,
+) (*Service, error) {
 	s := &Service{
-		inputBatchSize: 500,
+		inputBatchSize: batchSize,
 		machineManager: machineManager,
 		repository:     repo,
 	}
-	serviceArgs := &service.CreateInfo{Name: "advancer", Impl: s}
+	serviceArgs := &service.CreateInfo{Name: "advancer", Impl: s, EnableReschedule: true}
 	err := service.Create(context.Background(), serviceArgs, &s.Service)
 	if err != nil {
 		return nil, err
@@ -81,7 +90,6 @@ func (s *AdvancerSuite) TestServiceInterface() {
 		require.True(advancer.Alive())
 		require.True(advancer.Ready())
 		require.Empty(advancer.Reload())
-		require.Empty(advancer.Stop(false))
 		require.Equal(advancer.Name, advancer.String())
 
 		// Test Tick method
@@ -97,6 +105,10 @@ func (s *AdvancerSuite) TestServiceInterface() {
 		tickErrors = advancer.Tick()
 		require.NotEmpty(tickErrors)
 		require.Contains(tickErrors[0].Error(), "list epochs error")
+
+		// Stop must be called last to cleanly shut down the service.
+		// It should complete without returning any errors.
+		require.Empty(advancer.Stop(false))
 	})
 }
 
@@ -137,7 +149,7 @@ func (s *AdvancerSuite) TestStep() {
 		require.NotNil(advancer)
 		require.Nil(err)
 
-		err = advancer.Step(context.Background())
+		_, err = advancer.Step(context.Background())
 		require.Nil(err)
 
 		require.Len(repository.StoredResults, 3)
@@ -160,7 +172,7 @@ func (s *AdvancerSuite) TestStep() {
 		}
 		env.repo.UpdateEpochsError = errors.New("update epochs error")
 
-		err := env.service.Step(context.Background())
+		_, err := env.service.Step(context.Background())
 		require.Error(err)
 		require.Contains(err.Error(), "update epochs error")
 	})
@@ -178,7 +190,7 @@ func (s *AdvancerSuite) TestStep() {
 		require.NotNil(advancer)
 		require.Nil(err)
 
-		err = advancer.Step(context.Background())
+		_, err = advancer.Step(context.Background())
 		require.Error(err)
 		require.Contains(err.Error(), "update machines error")
 	})
@@ -194,7 +206,7 @@ func (s *AdvancerSuite) TestStep() {
 		}
 		env.repo.GetInputsError = errors.New("get inputs error")
 
-		err := env.service.Step(context.Background())
+		_, err := env.service.Step(context.Background())
 		require.Error(err)
 		require.Contains(err.Error(), "get inputs error")
 	})
@@ -207,7 +219,7 @@ func (s *AdvancerSuite) TestStep() {
 			env.app.Application.IApplicationAddress: {},
 		}
 
-		err := env.service.Step(context.Background())
+		_, err := env.service.Step(context.Background())
 		require.Nil(err)
 		require.Len(env.repo.StoredResults, 0)
 	})
@@ -244,7 +256,7 @@ func (s *AdvancerSuite) TestStep() {
 		svc, err := newMockAdvancerService(mm, repo)
 		require.NoError(err)
 
-		err = svc.Step(context.Background())
+		_, err = svc.Step(context.Background())
 		// Step returns a combined error but the healthy app was still processed
 		require.Error(err)
 		require.Contains(err.Error(), "advance error")
@@ -410,7 +422,8 @@ func (s *AdvancerSuite) TestContextCancellation() {
 		// Start the Step operation in a goroutine
 		errCh := make(chan error)
 		go func() {
-			errCh <- env.service.Step(ctx)
+			_, err := env.service.Step(ctx)
+			errCh <- err
 		}()
 
 		// Cancel the context after a short delay
@@ -1048,6 +1061,586 @@ func (s *AdvancerSuite) TestRemoveSnapshot() {
 }
 
 // ---------------------------------------------------------------------------
+// Scheduling tests (starvation fix)
+// ---------------------------------------------------------------------------
+
+// Starvation prevention — both apps get served in a single Step().
+func (s *AdvancerSuite) TestStarvationPrevention() {
+	require := s.Require()
+
+	mm := newMockMachineManager()
+	appA := newMockMachine(1) // will have many inputs
+	appB := newMockMachine(2) // will have 1 input
+	mm.Map[1] = newMockInstance(appA)
+	mm.Map[2] = newMockInstance(appB)
+
+	resA := make([]*Input, 20)
+	for i := range resA {
+		resA[i] = newInput(appA.Application.ID, 0, uint64(i), marshal(randomAdvanceResult(uint64(i))))
+	}
+	resB := randomAdvanceResult(0)
+
+	repo := &MockRepository{
+		GetEpochsReturn: map[common.Address][]*Epoch{
+			appA.Application.IApplicationAddress: {{Index: 0, Status: EpochStatus_Open}},
+			appB.Application.IApplicationAddress: {{Index: 0, Status: EpochStatus_Open}},
+		},
+		GetInputsReturn: map[common.Address][]*Input{
+			appA.Application.IApplicationAddress: resA,
+			appB.Application.IApplicationAddress: {
+				newInput(appB.Application.ID, 0, 0, marshal(resB)),
+			},
+		},
+	}
+
+	svc, err := newMockAdvancerServiceWithBatchSize(mm, repo, 5)
+	require.NoError(err)
+
+	hadWork, err := svc.Step(context.Background())
+	require.NoError(err)
+	require.True(hadWork, "should report more work remaining")
+
+	// Verify both apps were served using per-app tracking.
+	var countA, countB int
+	for _, id := range repo.StoredAppIDs {
+		switch id {
+		case appA.Application.ID:
+			countA++
+		case appB.Application.ID:
+			countB++
+		}
+	}
+	require.GreaterOrEqual(countB, 1, "app B must be served (starvation-free)")
+	require.LessOrEqual(countA, 5, "app A should process at most batchSize (5) inputs")
+	require.LessOrEqual(len(repo.StoredResults), 6, // 5 for A + 1 for B
+		"should process at most batchSize per app")
+}
+
+// Single-batch enforcement — processEpochInputs processes exactly one batch.
+func (s *AdvancerSuite) TestSingleBatchEnforcement() {
+	require := s.Require()
+
+	mm := newMockMachineManager()
+	app := newMockMachine(1)
+	mm.Map[1] = newMockInstance(app)
+
+	inputs := make([]*Input, 20)
+	for i := range inputs {
+		inputs[i] = newInput(app.Application.ID, 0, uint64(i), marshal(randomAdvanceResult(uint64(i))))
+	}
+
+	repo := &MockRepository{
+		GetEpochsReturn: map[common.Address][]*Epoch{
+			app.Application.IApplicationAddress: {{Index: 0, Status: EpochStatus_Open}},
+		},
+		GetInputsReturn: map[common.Address][]*Input{
+			app.Application.IApplicationAddress: inputs,
+		},
+	}
+
+	svc, err := newMockAdvancerServiceWithBatchSize(mm, repo, 5)
+	require.NoError(err)
+
+	hadWork, err := svc.Step(context.Background())
+	require.NoError(err)
+	require.True(hadWork, "more work should remain")
+
+	// Exactly one batch of 5 should have been processed, not all 20.
+	require.Equal(5, len(repo.StoredResults),
+		"should process exactly one batch (batchSize=5)")
+}
+
+// More-work signal accuracy.
+func (s *AdvancerSuite) TestMoreWorkSignal() {
+	s.Run("TrueWhenInputsRemain", func() {
+		require := s.Require()
+		env := s.setupOneApp()
+
+		inputs := make([]*Input, 10)
+		for i := range inputs {
+			inputs[i] = newInput(env.app.Application.ID, 0, uint64(i),
+				marshal(randomAdvanceResult(uint64(i))))
+		}
+		env.repo.GetEpochsReturn = map[common.Address][]*Epoch{
+			env.app.Application.IApplicationAddress: {{Index: 0, Status: EpochStatus_Open}},
+		}
+		env.repo.GetInputsReturn = map[common.Address][]*Input{
+			env.app.Application.IApplicationAddress: inputs,
+		}
+
+		// With default batch size (500) > 10 inputs, single batch drains everything.
+		hadWork, err := env.service.Step(context.Background())
+		require.NoError(err)
+		require.False(hadWork, "no more work when all inputs fit in one batch")
+	})
+
+	s.Run("FalseWhenEmpty", func() {
+		require := s.Require()
+		env := s.setupOneApp()
+		env.repo.GetEpochsReturn = map[common.Address][]*Epoch{
+			env.app.Application.IApplicationAddress: {},
+		}
+
+		hadWork, err := env.service.Step(context.Background())
+		require.NoError(err)
+		require.False(hadWork, "no work when no epochs exist")
+	})
+}
+
+// Round-robin cursor distributes work evenly.
+func (s *AdvancerSuite) TestAllAppsProcessedEveryStep() {
+	require := s.Require()
+
+	mm := newMockMachineManager()
+	apps := make([]*MockMachineImpl, 3)
+	for i := range apps {
+		apps[i] = &MockMachineImpl{
+			Application: &Application{
+				ID:                  int64(i + 1),
+				IApplicationAddress: randomAddress(),
+			},
+		}
+		mm.Map[int64(i+1)] = newMockInstance(apps[i])
+	}
+
+	// Each app has many inputs. batchSize=1 so we process exactly 1 per app per Step.
+	repo := &MockRepository{
+		GetEpochsReturn: map[common.Address][]*Epoch{},
+		GetInputsReturn: map[common.Address][]*Input{},
+	}
+	for _, app := range apps {
+		repo.GetEpochsReturn[app.Application.IApplicationAddress] = []*Epoch{
+			{Index: 0, Status: EpochStatus_Open},
+		}
+		inputs := make([]*Input, 10)
+		for j := range inputs {
+			inputs[j] = newInput(app.Application.ID, 0, uint64(j),
+				marshal(randomAdvanceResult(uint64(j))))
+		}
+		repo.GetInputsReturn[app.Application.IApplicationAddress] = inputs
+	}
+
+	svc, err := newMockAdvancerServiceWithBatchSize(mm, repo, 1)
+	require.NoError(err)
+
+	// Each Step processes all 3 apps with 1 input each = 3 results per Step.
+	// After 2 steps: 6 results, 2 per app.
+	for range 2 {
+		_, err := svc.Step(context.Background())
+		require.NoError(err)
+	}
+
+	require.Equal(6, len(repo.StoredResults),
+		"2 steps * 3 apps * 1 input/app = 6 total results")
+}
+
+// Cursor handles app removal gracefully.
+func (s *AdvancerSuite) TestAppRemovalBetweenTicks() {
+	require := s.Require()
+
+	mm := newMockMachineManager()
+	app1 := newMockMachine(1)
+	app2 := newMockMachine(2)
+	app3 := newMockMachine(3)
+	mm.Map[1] = newMockInstance(app1)
+	mm.Map[2] = newMockInstance(app2)
+	mm.Map[3] = newMockInstance(app3)
+
+	repo := &MockRepository{
+		GetEpochsReturn: map[common.Address][]*Epoch{
+			app1.Application.IApplicationAddress: {{Index: 0, Status: EpochStatus_Open}},
+			app2.Application.IApplicationAddress: {{Index: 0, Status: EpochStatus_Open}},
+			app3.Application.IApplicationAddress: {{Index: 0, Status: EpochStatus_Open}},
+		},
+		GetInputsReturn: map[common.Address][]*Input{
+			app1.Application.IApplicationAddress: {
+				newInput(app1.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+			},
+			app2.Application.IApplicationAddress: {
+				newInput(app2.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+			},
+			app3.Application.IApplicationAddress: {
+				newInput(app3.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+			},
+		},
+	}
+
+	svc, err := newMockAdvancerService(mm, repo)
+	require.NoError(err)
+
+	// First step processes all 3 apps.
+	_, err = svc.Step(context.Background())
+	require.NoError(err)
+	require.Equal(3, len(repo.StoredResults))
+
+	// Remove app2, add fresh inputs for remaining apps.
+	delete(mm.Map, 2)
+	repo.GetInputsReturn[app1.Application.IApplicationAddress] = []*Input{
+		newInput(app1.Application.ID, 0, 1, marshal(randomAdvanceResult(1))),
+	}
+	repo.GetInputsReturn[app3.Application.IApplicationAddress] = []*Input{
+		newInput(app3.Application.ID, 0, 1, marshal(randomAdvanceResult(1))),
+	}
+
+	// Second step should not panic and should process apps 1 and 3.
+	_, err = svc.Step(context.Background())
+	require.NoError(err)
+	require.Equal(5, len(repo.StoredResults), "3 from first step + 2 from second")
+}
+
+// App addition between ticks is handled gracefully.
+func (s *AdvancerSuite) TestAppAdditionBetweenTicks() {
+	require := s.Require()
+
+	mm := newMockMachineManager()
+	app1 := newMockMachine(1)
+	app2 := newMockMachine(2)
+	mm.Map[1] = newMockInstance(app1)
+	mm.Map[2] = newMockInstance(app2)
+
+	repo := &MockRepository{
+		GetEpochsReturn: map[common.Address][]*Epoch{
+			app1.Application.IApplicationAddress: {{Index: 0, Status: EpochStatus_Open}},
+			app2.Application.IApplicationAddress: {{Index: 0, Status: EpochStatus_Open}},
+		},
+		GetInputsReturn: map[common.Address][]*Input{
+			app1.Application.IApplicationAddress: {
+				newInput(app1.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+			},
+			app2.Application.IApplicationAddress: {
+				newInput(app2.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+			},
+		},
+	}
+
+	svc, err := newMockAdvancerService(mm, repo)
+	require.NoError(err)
+
+	_, err = svc.Step(context.Background())
+	require.NoError(err)
+	require.Equal(2, len(repo.StoredResults))
+
+	// Add app3 and fresh inputs.
+	app3 := newMockMachine(3)
+	mm.Map[3] = newMockInstance(app3)
+	repo.GetEpochsReturn[app3.Application.IApplicationAddress] = []*Epoch{
+		{Index: 0, Status: EpochStatus_Open},
+	}
+	repo.GetInputsReturn[app1.Application.IApplicationAddress] = []*Input{
+		newInput(app1.Application.ID, 0, 1, marshal(randomAdvanceResult(1))),
+	}
+	repo.GetInputsReturn[app2.Application.IApplicationAddress] = []*Input{
+		newInput(app2.Application.ID, 0, 1, marshal(randomAdvanceResult(1))),
+	}
+	repo.GetInputsReturn[app3.Application.IApplicationAddress] = []*Input{
+		newInput(app3.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+	}
+
+	_, err = svc.Step(context.Background())
+	require.NoError(err)
+	require.Equal(5, len(repo.StoredResults), "2 from first + 3 from second (all 3 apps)")
+}
+
+// Epoch completion fires only after last batch.
+func (s *AdvancerSuite) TestEpochCompletionTiming() {
+	require := s.Require()
+
+	mm := newMockMachineManager()
+	app := newMockMachine(1)
+	app.processedInputs = 0
+	mm.Map[1] = newMockInstance(app)
+
+	inputs := make([]*Input, 10)
+	for i := range inputs {
+		inputs[i] = newInput(app.Application.ID, 0, uint64(i), marshal(randomAdvanceResult(uint64(i))))
+	}
+
+	repo := &MockRepository{
+		GetEpochsReturn: map[common.Address][]*Epoch{
+			app.Application.IApplicationAddress: {
+				{Index: 0, Status: EpochStatus_Closed,
+					InputIndexLowerBound: 0, InputIndexUpperBound: 10},
+			},
+		},
+		GetInputsReturn: map[common.Address][]*Input{
+			app.Application.IApplicationAddress: inputs,
+		},
+	}
+
+	svc, err := newMockAdvancerServiceWithBatchSize(mm, repo, 5)
+	require.NoError(err)
+
+	// Step 1: processes 5 of 10 inputs. Epoch should NOT be marked complete.
+	hadWork, err := svc.Step(context.Background())
+	require.NoError(err)
+	require.True(hadWork)
+	require.Equal(0, repo.EpochInputsProcessedCount,
+		"epoch should not be finalized after first batch")
+
+	// Simulate machine having processed 10 inputs for the epoch completion check.
+	app.processedInputs = 10
+
+	// Step 2: processes remaining 5 inputs. Epoch should be marked complete.
+	_, err = svc.Step(context.Background())
+	require.NoError(err)
+	require.Equal(10, len(repo.StoredResults))
+}
+
+// Zero apps returns (false, nil) without panic.
+func (s *AdvancerSuite) TestZeroApps() {
+	require := s.Require()
+
+	mm := newMockMachineManager() // empty
+	repo := &MockRepository{}
+	svc, err := newMockAdvancerService(mm, repo)
+	require.NoError(err)
+
+	hadWork, err := svc.Step(context.Background())
+	require.NoError(err)
+	require.False(hadWork)
+}
+
+// Single epoch per round — only the first epoch is processed.
+// Cross-epoch processing — all unprocessed epochs are visited in a single Step.
+func (s *AdvancerSuite) TestCrossEpochProcessing() {
+	require := s.Require()
+
+	mm := newMockMachineManager()
+	app := newMockMachine(1)
+	mm.Map[1] = newMockInstance(app)
+
+	repo := &MockRepository{
+		GetEpochsReturn: map[common.Address][]*Epoch{
+			app.Application.IApplicationAddress: {
+				{Index: 0, Status: EpochStatus_Open},
+				{Index: 1, Status: EpochStatus_Open},
+				{Index: 2, Status: EpochStatus_Open},
+			},
+		},
+		GetInputsReturn: map[common.Address][]*Input{
+			app.Application.IApplicationAddress: {
+				newInput(app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+				newInput(app.Application.ID, 1, 1, marshal(randomAdvanceResult(1))),
+				newInput(app.Application.ID, 2, 2, marshal(randomAdvanceResult(2))),
+			},
+		},
+	}
+
+	svc, err := newMockAdvancerService(mm, repo)
+	require.NoError(err)
+
+	hadWork, err := svc.Step(context.Background())
+	require.NoError(err)
+	require.False(hadWork, "all work consumed")
+	// All three epochs' inputs should be processed in one step.
+	require.Equal(3, len(repo.StoredResults))
+}
+
+// Cross-epoch budget — even when each epoch has fewer inputs than batchSize,
+// the total across epochs is capped so one app cannot monopolize the tick.
+func (s *AdvancerSuite) TestCrossEpochBudget() {
+	require := s.Require()
+
+	mm := newMockMachineManager()
+	app := newMockMachine(1)
+	mm.Map[1] = newMockInstance(app)
+
+	// 5 epochs, each with 3 inputs = 15 total. batchSize=5.
+	// Without the budget, all 15 would be processed. With it, only 5.
+	var allInputs []*Input
+	epochs := make([]*Epoch, 5)
+	for e := uint64(0); e < 5; e++ {
+		epochs[e] = &Epoch{Index: e, Status: EpochStatus_Open}
+		for i := uint64(0); i < 3; i++ {
+			idx := e*3 + i
+			allInputs = append(allInputs,
+				newInput(app.Application.ID, e, idx, marshal(randomAdvanceResult(idx))))
+		}
+	}
+
+	repo := &MockRepository{
+		GetEpochsReturn: map[common.Address][]*Epoch{
+			app.Application.IApplicationAddress: epochs,
+		},
+		GetInputsReturn: map[common.Address][]*Input{
+			app.Application.IApplicationAddress: allInputs,
+		},
+	}
+
+	svc, err := newMockAdvancerServiceWithBatchSize(mm, repo, 5)
+	require.NoError(err)
+
+	hadWork, err := svc.Step(context.Background())
+	require.NoError(err)
+	require.True(hadWork, "more work remains across later epochs")
+	// With batchSize=5 and 3 inputs per epoch: epoch 0 (3) + epoch 1 (2 of 3) = 5.
+	// Budget exhausted, remaining epochs deferred.
+	require.LessOrEqual(len(repo.StoredResults), 5,
+		"should not process more inputs than batchSize across epochs")
+	require.GreaterOrEqual(len(repo.StoredResults), 3,
+		"should process at least one full epoch")
+}
+
+// Deterministic ordering — same app set produces same order.
+func (s *AdvancerSuite) TestDeterministicOrdering() {
+	require := s.Require()
+
+	// Create apps with IDs in non-sorted order.
+	mm := newMockMachineManager()
+	for _, id := range []int64{30, 10, 20} {
+		impl := &MockMachineImpl{
+			Application: &Application{
+				ID:                  id,
+				IApplicationAddress: randomAddress(),
+			},
+		}
+		mm.Map[id] = newMockInstance(impl)
+	}
+
+	repo := &MockRepository{
+		GetEpochsReturn: map[common.Address][]*Epoch{},
+		GetInputsReturn: map[common.Address][]*Input{},
+	}
+	for _, inst := range mm.Map {
+		addr := inst.application.IApplicationAddress
+		repo.GetEpochsReturn[addr] = []*Epoch{{Index: 0, Status: EpochStatus_Open}}
+		repo.GetInputsReturn[addr] = []*Input{
+			newInput(inst.application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+		}
+	}
+
+	svc, err := newMockAdvancerService(mm, repo)
+	require.NoError(err)
+
+	_, err = svc.Step(context.Background())
+	require.NoError(err)
+
+	// Verify results were stored in sorted ID order (10, 20, 30).
+	require.Equal(3, len(repo.StoredResults))
+	require.Equal([]int64{10, 20, 30}, repo.StoredAppIDs,
+		"apps should be processed in ascending ID order")
+}
+
+// Self-wake fires on successful work.
+func (s *AdvancerSuite) TestSelfWakeOnSuccess() {
+	require := s.Require()
+
+	mm := newMockMachineManager()
+	app := newMockMachine(1)
+	mm.Map[1] = newMockInstance(app)
+
+	inputs := make([]*Input, 10)
+	for i := range inputs {
+		inputs[i] = newInput(app.Application.ID, 0, uint64(i), marshal(randomAdvanceResult(uint64(i))))
+	}
+
+	repo := &MockRepository{
+		GetEpochsReturn: map[common.Address][]*Epoch{
+			app.Application.IApplicationAddress: {{Index: 0, Status: EpochStatus_Open}},
+		},
+		GetInputsReturn: map[common.Address][]*Input{
+			app.Application.IApplicationAddress: inputs,
+		},
+	}
+
+	svc, err := newMockAdvancerServiceWithBatchSize(mm, repo, 5)
+	require.NoError(err)
+
+	// Call Tick() which internally calls Step() and signals reschedule.
+	svc.Tick()
+
+	// The reschedule channel should have a pending signal.
+	require.True(svc.DrainReschedule(),
+		"reschedule channel should have a pending signal after Tick with work")
+}
+
+// No self-wake when idle.
+func (s *AdvancerSuite) TestNoSelfWakeWhenIdle() {
+	require := s.Require()
+
+	mm := newMockMachineManager()
+	app := newMockMachine(1)
+	mm.Map[1] = newMockInstance(app)
+
+	repo := &MockRepository{
+		GetEpochsReturn: map[common.Address][]*Epoch{
+			app.Application.IApplicationAddress: {},
+		},
+	}
+
+	svc, err := newMockAdvancerService(mm, repo)
+	require.NoError(err)
+
+	svc.Tick()
+
+	require.False(svc.DrainReschedule(),
+		"reschedule channel should be empty when no work exists")
+}
+
+// No self-wake on error.
+func (s *AdvancerSuite) TestNoSelfWakeOnError() {
+	require := s.Require()
+
+	mm := &MockMachineManager{
+		Map:                 map[int64]*MockMachineInstance{},
+		UpdateMachinesError: errors.New("db unavailable"),
+	}
+	repo := &MockRepository{}
+
+	svc, err := newMockAdvancerService(mm, repo)
+	require.NoError(err)
+
+	errs := svc.Tick()
+	require.NotEmpty(errs)
+
+	require.False(svc.DrainReschedule(),
+		"reschedule should NOT be signaled on error")
+}
+
+// Error from Step does NOT signal reschedule.
+// Uses the same pattern as FailedAppDoesNotBlockOtherApps, which
+// verifies Step returns an error when one app fails.
+func (s *AdvancerSuite) TestPartialSuccessStillReschedules() {
+	require := s.Require()
+
+	mm := newMockMachineManager()
+	app1 := newMockMachine(1) // will fail
+	app2 := newMockMachine(2) // will succeed with more work remaining
+	mm.Map[1] = newMockInstance(app1)
+	mm.Map[2] = newMockInstance(app2)
+
+	// Give app2 more inputs than the batch size so stepApp signals "more work".
+	repo := &MockRepository{
+		GetEpochsReturn: map[common.Address][]*Epoch{
+			app1.Application.IApplicationAddress: {{Index: 0, Status: EpochStatus_Open}},
+			app2.Application.IApplicationAddress: {{Index: 0, Status: EpochStatus_Open}},
+		},
+		GetInputsReturn: map[common.Address][]*Input{
+			app1.Application.IApplicationAddress: {
+				newInput(app1.Application.ID, 0, 0, []byte("advance error")),
+			},
+			app2.Application.IApplicationAddress: {
+				newInput(app2.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+				newInput(app2.Application.ID, 0, 1, marshal(randomAdvanceResult(1))),
+			},
+		},
+	}
+
+	svc, err := newMockAdvancerServiceWithBatchSize(mm, repo, 1)
+	require.NoError(err)
+
+	// Call Tick — app1 fails, app2 succeeds with more work remaining (batch limit hit).
+	// Tick should surface the error AND signal reschedule for app2's pending work.
+	errs := svc.Tick()
+	require.NotEmpty(errs, "Tick should surface app1's error")
+
+	// Reschedule SHOULD fire: app2 had work, and one failing app must not
+	// delay healthy apps by suppressing the reschedule signal.
+	require.True(svc.DrainReschedule(),
+		"reschedule should be signaled when hadWork is true, even with errors")
+}
+
+// ---------------------------------------------------------------------------
 // Service.Create tests
 // ---------------------------------------------------------------------------
 
@@ -1186,6 +1779,7 @@ func (mock *MockMachineManager) Applications() []*Application {
 	for _, v := range mock.Map {
 		apps = append(apps, v.application)
 	}
+	sort.Slice(apps, func(i, j int) bool { return apps[i].ID < apps[j].ID })
 	return apps
 }
 
@@ -1284,12 +1878,14 @@ type MockRepository struct {
 	UpdateSnapshotURIError      error
 
 	StoredResults              []*AdvanceResult
+	StoredAppIDs               []int64
 	ApplicationStateUpdates    int
 	LastApplicationState       ApplicationState
 	LastApplicationStateReason *string
-	OutputsProofUpdated        bool
-	RepeatOutputsProofCalled   bool
-	SnapshotURIUpdated         bool
+	OutputsProofUpdated          bool
+	RepeatOutputsProofCalled     bool
+	SnapshotURIUpdated           bool
+	EpochInputsProcessedCount    int
 
 	mu sync.Mutex
 }
@@ -1336,6 +1932,18 @@ func (mock *MockRepository) ListInputs(
 
 	address := common.HexToAddress(nameOrAddress)
 	inputs := mock.GetInputsReturn[address]
+
+	// Filter by epoch if specified (production code always sets this).
+	if f.EpochIndex != nil {
+		var filtered []*Input
+		for _, inp := range inputs {
+			if inp.EpochIndex == *f.EpochIndex {
+				filtered = append(filtered, inp)
+			}
+		}
+		inputs = filtered
+	}
+
 	total := uint64(len(inputs))
 
 	// Apply pagination if a limit is set
@@ -1375,6 +1983,7 @@ func (mock *MockRepository) StoreAdvanceResult(
 	}
 
 	mock.StoredResults = append(mock.StoredResults, res)
+	mock.StoredAppIDs = append(mock.StoredAppIDs, appID)
 
 	// Simulate real behavior: processed inputs change status and are no longer
 	// returned by queries filtering for unprocessed (Status_None) inputs.
@@ -1410,6 +2019,7 @@ func (mock *MockRepository) UpdateEpochInputsProcessed(ctx context.Context, name
 		return ctx.Err()
 	}
 
+	mock.EpochInputsProcessedCount++
 	return mock.UpdateEpochsError
 }
 
