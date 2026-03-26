@@ -143,6 +143,7 @@ func (s *Service) Reload() []error {
 }
 
 func (s *Service) Stop(bool) []error {
+	s.SetStopping()
 	return nil
 }
 

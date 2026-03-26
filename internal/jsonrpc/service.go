@@ -100,6 +100,7 @@ func (s *Service) Tick() []error {
 }
 
 func (s *Service) Stop(_ bool) []error {
+	s.SetStopping()
 	var errs []error
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint: mnd
 	defer cancel()

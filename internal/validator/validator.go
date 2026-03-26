@@ -85,6 +85,7 @@ func (s *Service) Tick() []error {
 	return errs
 }
 func (s *Service) Stop(_ bool) []error {
+	s.SetStopping()
 	return nil
 }
 

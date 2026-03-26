@@ -75,6 +75,20 @@ var (
 	ErrInvalid = fmt.Errorf("Invalid Argument") // invalid argument
 )
 
+// ServiceImpl is the interface that concrete services must implement.
+//
+// IMPORTANT: Stop() implementations that shadow Service.Stop() MUST call
+// s.SetStopping() as their first action. This sets the stopping flag so that
+// a concurrent Tick() can detect shutdown-in-progress via IsStopping() and
+// suppress expected teardown errors (e.g., context.Canceled from in-flight
+// RPCs). Without this call, the race window between Stop() tearing down
+// resources and Tick() observing the cancellation produces spurious errors.
+//
+// When Stop() is called through the framework's Service.Stop() dispatch,
+// the flag is set automatically before Impl.Stop() runs. But the node
+// orchestrator calls child.Stop() directly (Go method resolution picks the
+// concrete type's Stop, bypassing Service.Stop), so the impl's SetStopping()
+// is the only thing that sets the flag on that path.
 type ServiceImpl interface {
 	Alive() bool
 	Ready() bool
@@ -106,6 +120,19 @@ type CreateInfo struct {
 	ServeMux             *http.ServeMux
 	Context              context.Context
 	Cancel               context.CancelFunc
+
+	// EnableReschedule, when true, creates a self-continuation channel.
+	// Services that discover remaining work after a Tick() call
+	// SignalReschedule() to re-tick immediately without waiting for the
+	// timer interval.
+	//
+	// Migration: When the events library (feature/events-library-research)
+	// ships, Serve() will gain an additional EventChannel case for external
+	// cross-service notifications. Reschedule remains complementary:
+	// Reschedule = internal self-continuation ("I have more work"),
+	// EventChannel = external stimulus ("another service produced work").
+	// Both coexist in the select loop alongside the Ticker safety-net.
+	EnableReschedule bool
 }
 
 // Service stores runtime information.
@@ -123,6 +150,15 @@ type Service struct {
 	ServeMux      *http.ServeMux
 	Telemetry     *http.Server
 	TelemetryFunc func() error
+	reschedule    chan struct{} // self-continuation signal; see CreateInfo.EnableReschedule
+
+	// stopping is set to true at the beginning of Stop(), before Impl.Stop()
+	// is called. Services can check this via IsStopping() from Tick() to
+	// detect that shutdown is in progress and suppress errors that are
+	// expected during teardown (e.g., context.Canceled from in-flight RPC
+	// calls). This covers the race window between Stop() being called and
+	// ctx.Cancel() propagating.
+	stopping atomic.Bool
 }
 
 // Create a service by:
@@ -167,6 +203,11 @@ func Create(ctx context.Context, c *CreateInfo, s *Service) error {
 		}
 		s.PollInterval = c.PollInterval
 		s.Ticker = time.NewTicker(s.PollInterval)
+	}
+
+	// self-rescheduling
+	if c.EnableReschedule {
+		s.reschedule = make(chan struct{}, 1)
 	}
 
 	// signal handling
@@ -243,7 +284,22 @@ func (s *Service) Tick() []error {
 	return errs
 }
 
+// IsStopping reports whether Stop() has been called. Services use this in
+// Tick() to detect shutdown-in-progress and suppress expected teardown errors.
+func (s *Service) IsStopping() bool {
+	return s.stopping.Load()
+}
+
+// SetStopping sets the stopping flag. Services whose Stop() method shadows
+// Service.Stop() (i.e., every ServiceImpl) must call this at the top of their
+// Stop so that concurrent Tick goroutines can observe IsStopping() == true
+// before resources are torn down.
+func (s *Service) SetStopping() {
+	s.stopping.Store(true)
+}
+
 func (s *Service) Stop(force bool) []error {
+	s.stopping.Store(true)
 	start := time.Now()
 	errs := s.Impl.Stop(force)
 	if s.Telemetry != nil {
@@ -276,6 +332,34 @@ func (s *Service) Stop(force bool) []error {
 	return errs
 }
 
+// rescheduleChan returns the reschedule channel, or nil if rescheduling is disabled.
+// A nil channel in a select case blocks forever, preserving timer-only behavior.
+func (s *Service) rescheduleChan() <-chan struct{} {
+	return s.reschedule
+}
+
+// SignalReschedule performs a non-blocking send on the reschedule channel.
+// If a signal is already pending, this is a no-op (one wake is sufficient).
+// Does nothing if rescheduling is not enabled.
+// INVARIANT: This method must never block.
+func (s *Service) SignalReschedule() {
+	select {
+	case s.reschedule <- struct{}{}:
+	default:
+	}
+}
+
+// DrainReschedule consumes and discards a pending reschedule signal, if any.
+// Returns true if a signal was pending. Intended for testing.
+func (s *Service) DrainReschedule() bool {
+	select {
+	case <-s.reschedule:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Service) Serve() error {
 	s.Running.Store(true)
 
@@ -299,6 +383,8 @@ func (s *Service) Serve() error {
 			s.Stop(true) // Stop logs errors internally.
 			return nil
 		case <-s.Ticker.C:
+			s.Tick()
+		case <-s.rescheduleChan():
 			s.Tick()
 		}
 	}

@@ -142,6 +142,7 @@ func (me *Service) Ready() bool {
 func (s *Service) Reload() []error { return nil }
 func (s *Service) Tick() []error   { return nil }
 func (me *Service) Stop(force bool) []error {
+	me.SetStopping()
 	errs := []error{}
 	for _, s := range me.Children {
 		errs = append(errs, s.Stop(force)...)
