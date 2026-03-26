@@ -93,7 +93,7 @@ func (s *EthUtilSuite) TestAddInput() {
 
 	go func() {
 		waitGroup.Done()
-		inputIndex, _, err := AddInput(s.ctx, s.client, s.txOpts, s.inputBoxAddr, s.appAddr, payload)
+		inputIndex, _, _, err := AddInput(s.ctx, s.client, s.txOpts, s.inputBoxAddr, s.appAddr, payload)
 		if err != nil {
 			errChan <- err
 			return

@@ -42,13 +42,13 @@ func AddInput(
 	inputBoxAddress common.Address,
 	application common.Address,
 	input []byte,
-) (uint64, uint64, error) {
+) (uint64, uint64, common.Hash, error) {
 	if client == nil {
-		return 0, 0, fmt.Errorf("AddInput: client is nil")
+		return 0, 0, common.Hash{}, fmt.Errorf("AddInput: client is nil")
 	}
 	inputBox, err := iinputbox.NewIInputBox(inputBoxAddress, client)
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to connect to InputBox contract: %v", err)
+		return 0, 0, common.Hash{}, fmt.Errorf("failed to connect to InputBox contract: %v", err)
 	}
 	receipt, err := sendTransaction(
 		ctx, client, transactionOpts, big.NewInt(0), GasLimit,
@@ -57,10 +57,45 @@ func AddInput(
 		},
 	)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, common.Hash{}, err
 	}
 	index, err := getInputIndex(inputBoxAddress, inputBox, receipt)
-	return index, receipt.BlockNumber.Uint64(), nil
+	if err != nil {
+		return 0, 0, common.Hash{}, fmt.Errorf("failed to get input index: %w", err)
+	}
+	return index, receipt.BlockNumber.Uint64(), receipt.TxHash, nil
+}
+
+// AddInputAsync sends an addInput transaction without waiting for the receipt.
+// Returns the transaction hash immediately. Useful for load testing where
+// throughput matters more than per-input confirmation.
+//
+// NOT safe for concurrent use with a shared transactionOpts: callers must
+// serialize calls so that nonce assignment does not race.
+func AddInputAsync(
+	ctx context.Context,
+	client *ethclient.Client,
+	transactionOpts *bind.TransactOpts,
+	inputBoxAddress common.Address,
+	application common.Address,
+	input []byte,
+) (common.Hash, error) {
+	if client == nil {
+		return common.Hash{}, fmt.Errorf("AddInputAsync: client is nil")
+	}
+	inputBox, err := iinputbox.NewIInputBox(inputBoxAddress, client)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to connect to InputBox contract: %w", err)
+	}
+	txOpts, err := _prepareTransaction(ctx, client, transactionOpts, big.NewInt(0), GasLimit)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to prepare transaction: %w", err)
+	}
+	tx, err := inputBox.AddInput(txOpts, application, input)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to send transaction: %w", err)
+	}
+	return tx.Hash(), nil
 }
 
 func CheckAddressForCode(ctx context.Context, client *ethclient.Client, address common.Address) error {

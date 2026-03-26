@@ -459,6 +459,20 @@ integration-test-local: build echo-dapp reject-loop-dapp exception-loop-dapp ## 
 	export CARTESI_TEST_EXCEPTION_DAPP_PATH=$(CURDIR)/applications/exception-loop-dapp; \
 	$(MAKE) integration-test
 
+deploy-load-test-apps: applications/echo-dapp ## Deploy 3 echo-dapp instances for load testing
+	@echo "Deploying load-test apps (3 echo-dapps with different salts)..."
+	@./cartesi-rollups-cli deploy application load-test-flood applications/echo-dapp/ \
+		--salt=0000000000000000000000000000000000000000000000000000000000000A01
+	@./cartesi-rollups-cli deploy application load-test-trickle-1 applications/echo-dapp/ \
+		--salt=0000000000000000000000000000000000000000000000000000000000000A02
+	@./cartesi-rollups-cli deploy application load-test-trickle-2 applications/echo-dapp/ \
+		--salt=0000000000000000000000000000000000000000000000000000000000000A03
+	@echo "Done. 3 apps deployed: load-test-flood, load-test-trickle-1, load-test-trickle-2"
+
+load-test: deploy-load-test-apps ## Deploy 3 apps and run advancer starvation load test
+	@echo "NOTE: Start the node (separate terminal) with: CARTESI_ADVANCER_INPUT_BATCH_SIZE=10 cartesi-rollups-node"
+	@scripts/load-test.sh
+
 ci-test: ## Run the full CI test pipeline locally (lint + unit + integration)
 #	@$(MAKE) lint-with-docker
 	@$(MAKE) unit-test-with-compose

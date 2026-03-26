@@ -8,10 +8,12 @@
 package cli
 
 // SendResult is the JSON output of the "send" CLI command.
+// In async mode, only ApplicationAddress and TransactionHash are populated.
 type SendResult struct {
 	ApplicationAddress string `json:"application_address"`
-	InputIndex         string `json:"input_index"`
-	BlockNumber        string `json:"block_number"`
+	TransactionHash    string `json:"transaction_hash"`
+	InputIndex         string `json:"input_index,omitempty"`
+	BlockNumber        string `json:"block_number,omitempty"`
 }
 
 // ExecuteResult is the JSON output of the "execute" CLI command.

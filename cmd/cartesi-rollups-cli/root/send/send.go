@@ -50,12 +50,15 @@ var (
 	isHex            bool
 	skipConfirmation bool
 	asJSONParam      bool
+	asyncMode        bool
 )
 
 func init() {
 	Cmd.Flags().BoolVarP(&isHex, "hex", "x", false, "Force interpretation of payload as hex.")
 	Cmd.Flags().BoolVarP(&skipConfirmation, "yes", "y", false, "Skip confirmation prompt")
 	Cmd.Flags().BoolVar(&asJSONParam, "json", false, "Print result as JSON")
+	Cmd.Flags().BoolVar(&asyncMode, "async", false,
+		"Send the transaction without waiting for confirmation. Prints the tx hash and returns immediately.")
 
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
@@ -153,12 +156,30 @@ func run(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	inputIndex, blockNumber, err := ethutil.AddInput(ctx, client, txOpts, iboxAddr, app.IApplicationAddress, payload)
+	if asyncMode {
+		txHash, err := ethutil.AddInputAsync(ctx, client, txOpts, iboxAddr, app.IApplicationAddress, payload)
+		cobra.CheckErr(err)
+		if asJSONParam {
+			result := cli.SendResult{
+				ApplicationAddress: app.IApplicationAddress.Hex(),
+				TransactionHash:    txHash.Hex(),
+			}
+			jsonBytes, err := json.MarshalIndent(&result, "", "  ")
+			cobra.CheckErr(err)
+			fmt.Println(string(jsonBytes))
+		} else {
+			fmt.Println(txHash.Hex())
+		}
+		return
+	}
+
+	inputIndex, blockNumber, txHash, err := ethutil.AddInput(ctx, client, txOpts, iboxAddr, app.IApplicationAddress, payload)
 	cobra.CheckErr(err)
 
 	if asJSONParam {
 		result := cli.SendResult{
 			ApplicationAddress: app.IApplicationAddress.Hex(),
+			TransactionHash:    txHash.Hex(),
 			InputIndex:         fmt.Sprintf("0x%x", inputIndex),
 			BlockNumber:        fmt.Sprintf("0x%x", blockNumber),
 		}
