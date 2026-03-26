@@ -107,11 +107,13 @@ func hashToHex(h *common.Hash) string {
 // claims in flight are those that have been submitted but are waiting for a
 // transaction confirmation. When confirmed, we update their status on the
 // database. The epoch is now "submitted" and no longer "computed".
+// Returns the number of confirmed transitions and any error.
 func (s *Service) checkClaimsInFlight(
 	computedEpochs map[int64]*model.Epoch,
 	apps map[int64]*model.Application,
 	endBlock *big.Int,
-) error {
+) (int, error) {
+	confirmed := 0
 	// check claims in flight. NOTE: map mutation + iteration is safe in Go
 	for key, txHash := range s.claimsInFlight {
 		ready, receipt, err := s.blockchain.pollTransaction(s.Context, txHash, endBlock)
@@ -145,8 +147,9 @@ func (s *Service) checkClaimsInFlight(
 			// NOTE: there is no point in trying the other applications on a database error
 			//       so we just return and try again later (next tick)
 			if err != nil {
-				return fmt.Errorf("updating epoch %d (%d) with submitted claim: %w", computedEpoch.Index, computedEpoch.VirtualIndex, err)
+				return confirmed, fmt.Errorf("updating epoch %d (%d) with submitted claim: %w", computedEpoch.Index, computedEpoch.VirtualIndex, err)
 			}
+			confirmed++
 
 			// we expect apps[key] to always exist,
 			// but guard its use behind `if` to ensure there is no panic if we are wrong.
@@ -171,7 +174,7 @@ func (s *Service) checkClaimsInFlight(
 		}
 		delete(s.claimsInFlight, key)
 	}
-	return nil
+	return confirmed, nil
 }
 
 func (s *Service) findClaimSubmittedEventAndSucc(
@@ -232,17 +235,19 @@ func (s *Service) findClaimSubmittedEventAndSucc(
 }
 
 // transition epoch claims from computed to submitted.
+// Returns the number of successful transitions and any errors.
 func (s *Service) submitClaimsAndUpdateDatabase(
 	acceptedOrSubmittedEpochs map[int64]*model.Epoch,
 	computedEpochs map[int64]*model.Epoch,
 	apps map[int64]*model.Application,
 	defaultBlockNumber *big.Int,
-) []error {
-	err := s.checkClaimsInFlight(computedEpochs, apps, defaultBlockNumber)
+) (int, []error) {
+	confirmed, err := s.checkClaimsInFlight(computedEpochs, apps, defaultBlockNumber)
 	if err != nil {
-		return []error{err}
+		return confirmed, []error{err}
 	}
 
+	transitions := confirmed
 	errs := []error{}
 	// check computed epochs. NOTE: map mutation + iteration is safe in Go
 	for key, currEpoch := range computedEpochs {
@@ -312,6 +317,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 				continue
 			}
 			delete(s.claimsInFlight, key)
+			transitions++
 			s.Logger.Info("Claim previously submitted",
 				"app", app.IApplicationAddress,
 				"event_block_number", currEvent.Raw.BlockNumber,
@@ -404,10 +410,11 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 					continue
 				}
 				s.claimsInFlight[key] = txHash
+				transitions++
 			}
 		}
 	}
-	return errs
+	return transitions, errs
 }
 
 func (s *Service) findClaimAcceptedEventAndSucc(
@@ -466,13 +473,15 @@ func (s *Service) findClaimAcceptedEventAndSucc(
 	return ic, prevClaimAcceptanceEvent, currClaimAcceptanceEvent, nil
 }
 
-// transition claims from submitted to accepted
+// transition claims from submitted to accepted.
+// Returns the number of successful transitions and any errors.
 func (s *Service) acceptClaimsAndUpdateDatabase(
 	acceptedEpochs map[int64]*model.Epoch,
 	submittedEpochs map[int64]*model.Epoch,
 	apps map[int64]*model.Application,
 	defaultBlockNumber *big.Int,
-) []error {
+) (int, []error) {
+	transitions := 0
 	errs := []error{}
 	var err error
 
@@ -539,6 +548,7 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 				errs = append(errs, err)
 				continue
 			}
+			transitions++
 			s.Logger.Info("Claim accepted",
 				"app", currEvent.AppContract,
 				"event_block_number", currEvent.Raw.BlockNumber,
@@ -548,7 +558,7 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 			)
 		}
 	}
-	return errs
+	return transitions, errs
 }
 
 func (s *Service) setApplicationInoperable(

@@ -69,6 +69,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 
 	s := &Service{}
 	c.Impl = s
+	c.EnableReschedule = true
 
 	err = service.Create(ctx, &c.CreateInfo, &s.Service)
 	if err != nil {
@@ -127,6 +128,7 @@ func (s *Service) Reload() []error {
 }
 
 func (s *Service) Stop(bool) []error {
+	s.SetStopping()
 	return nil
 }
 
@@ -166,8 +168,19 @@ func (s *Service) Tick() []error {
 		return errs
 	}
 
-	errs = append(errs, s.submitClaimsAndUpdateDatabase(acceptedOrSubmittedEpochs, computedEpochs, computedApps, defaultBlockNumber)...)
-	errs = append(errs, s.acceptClaimsAndUpdateDatabase(acceptedEpochs, submittedEpochs, submittedApps, defaultBlockNumber)...)
+	submitted, submitErrs := s.submitClaimsAndUpdateDatabase(acceptedOrSubmittedEpochs, computedEpochs, computedApps, defaultBlockNumber)
+	accepted, acceptErrs := s.acceptClaimsAndUpdateDatabase(acceptedEpochs, submittedEpochs, submittedApps, defaultBlockNumber)
+	errs = append(errs, submitErrs...)
+	errs = append(errs, acceptErrs...)
+
+	// Signal reschedule whenever pipeline progress was made, even with errors.
+	// Accepting a claim frees the pipeline slot for the next epoch's submission.
+	// Confirming a submission enables the acceptance scan on the next tick.
+	// Erring apps are retried on the next tick regardless; suppressing
+	// reschedule would delay healthy apps by a full poll interval.
+	if submitted > 0 || accepted > 0 {
+		s.SignalReschedule()
+	}
 	return errs
 }
 
