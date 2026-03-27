@@ -17,7 +17,7 @@
 TARGET_OS?=$(shell uname)
 export TARGET_OS
 
-ROLLUPS_NODE_VERSION := 2.0.0-alpha.10
+ROLLUPS_NODE_VERSION := 2.0.0-alpha.11
 ROLLUPS_CONTRACTS_VERSION := 2.2.0
 ROLLUPS_CONTRACTS_URL:=https://github.com/cartesi/rollups-contracts/releases/download/
 ROLLUPS_CONTRACTS_ARTIFACT:=rollups-contracts-$(ROLLUPS_CONTRACTS_VERSION)-artifacts.tar.gz
