@@ -306,10 +306,41 @@ func (s *RestartSuite) TestRestartMultiAppPrt() {
 		ExtraDeployArgs: []string{"--prt"},
 		PreClaimHook: func(
 			ctx context.Context, t testing.TB,
-			require *require.Assertions, appName string,
+			require *require.Assertions, _ string,
 		) {
-			settleTournament(ctx, t, require, ethClient, appName, 0)
-			settleTournament(ctx, t, require, ethClient, appName, 1)
+			// Settle tournaments for BOTH apps together. Mining blocks
+			// for one app's tournament timeout also advances the shared
+			// chain, so we must ensure all apps' commitments are joined
+			// before mining — otherwise the other app's tournament can
+			// time out without a commitment ("finished without winners").
+			apps := []string{s.app1Name, s.app2Name}
+			for _, epochIdx := range []uint64{0, 1} {
+				var tournaments []*model.Tournament
+				for _, name := range apps {
+					t.Logf("Waiting for %s epoch %d "+
+						"tournament and commitment...",
+						name, epochIdx)
+					tour := waitForTournamentAndCommitment(
+						ctx, t, require, name, epochIdx)
+					tournaments = append(tournaments, tour)
+				}
+				for i, tour := range tournaments {
+					blocksMined, err := mineForTournamentTimeout(
+						ctx, ethClient, tour.Address)
+					require.NoError(err,
+						"mine for %s epoch %d timeout",
+						apps[i], epochIdx)
+					if blocksMined > 0 {
+						t.Logf("    mined %d blocks for %s epoch %d",
+							blocksMined, apps[i], epochIdx)
+					}
+				}
+				for _, name := range apps {
+					waitForTournamentWinner(
+						ctx, t, require, name, epochIdx)
+				}
+				t.Logf("    epoch %d settled for both apps", epochIdx)
+			}
 		},
 	})
 }
