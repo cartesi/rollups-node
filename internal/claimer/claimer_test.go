@@ -255,6 +255,33 @@ func makeSubmittedEvent(app *model.Application, epoch *model.Epoch) *iconsensus.
 	}
 }
 
+// makeClaimAcceptedLog creates a types.Log that ParseClaimAccepted can decode.
+// Used to build receipt logs for the Authority fast-accept path in tests.
+func makeClaimAcceptedLog(app *model.Application, epoch *model.Epoch) types.Log {
+	parsed, err := iconsensus.IConsensusMetaData.GetAbi()
+	if err != nil {
+		panic(fmt.Sprintf("failed to get IConsensus ABI: %v", err))
+	}
+	event, ok := parsed.Events["ClaimAccepted"]
+	if !ok {
+		panic("IConsensus ABI does not define ClaimAccepted event")
+	}
+	data, err := event.Inputs.NonIndexed().Pack(
+		new(big.Int).SetUint64(epoch.LastBlock),
+		*epoch.OutputsMerkleRoot,
+	)
+	if err != nil {
+		panic(fmt.Sprintf("failed to pack ClaimAccepted event data: %v", err))
+	}
+	return types.Log{
+		Topics: []common.Hash{
+			event.ID,
+			common.BytesToHash(app.IApplicationAddress.Bytes()),
+		},
+		Data: data,
+	}
+}
+
 func makeAcceptedEvent(app *model.Application, epoch *model.Epoch) *iconsensus.IConsensusClaimAccepted {
 	return &iconsensus.IConsensusClaimAccepted{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(epoch.LastBlock),
@@ -411,28 +438,33 @@ func TestInFlightCompleted(t *testing.T) {
 
 	txHash := common.HexToHash("0x10")
 	endBlock := big.NewInt(100)
-	app := makeApplication()
+	app := makeApplication() // default: Authority consensus
 	currEpoch := makeComputedEpoch(app, 3)
 	currEpoch.ClaimTransactionHash = &txHash
 
 	m.claimsInFlight[app.ID] = *currEpoch.ClaimTransactionHash
 
+	// Authority emits ClaimAccepted in the same tx. Include a matching
+	// log in the receipt so the fast-accept path fires.
+	acceptedLog := makeClaimAcceptedLog(app, currEpoch)
 	b.On("pollTransaction", mock.Anything, txHash, endBlock).
 		Return(true, &types.Receipt{
 			ContractAddress: app.IApplicationAddress,
 			TxHash:          txHash,
 			BlockNumber:     new(big.Int).SetUint64(currEpoch.LastBlock + 1),
 			Status:          1,
+			Logs:            []*types.Log{&acceptedLog},
 		}, nil).Once()
 	r.On("UpdateEpochWithSubmittedClaim", mock.Anything, app.ID, currEpoch.Index, txHash).
+		Return(nil).Once()
+	r.On("UpdateEpochWithAcceptedClaim", mock.Anything, app.ID, currEpoch.Index).
 		Return(nil).Once()
 
 	transitions, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	assert.Equal(t, 0, len(errs))
 	assert.Equal(t, 0, len(m.claimsInFlight))
-	// In-flight confirmation is a real computed->submitted transition that
-	// should trigger a reschedule so the acceptance scan runs immediately.
-	assert.Equal(t, 1, transitions)
+	// Authority fast path: submitted (1) + accepted (1) = 2 transitions.
+	assert.Equal(t, 2, transitions)
 }
 
 func TestInFlightReverted(t *testing.T) {

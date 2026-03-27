@@ -48,6 +48,7 @@ import (
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 var (
@@ -151,10 +152,9 @@ func (s *Service) checkClaimsInFlight(
 			}
 			confirmed++
 
-			// we expect apps[key] to always exist,
-			// but guard its use behind `if` to ensure there is no panic if we are wrong.
+			app := apps[key]
 			appAddress := common.Address{}
-			if app, ok := apps[key]; ok {
+			if app != nil {
 				appAddress = app.IApplicationAddress
 			}
 			s.Logger.Info("Claim submitted",
@@ -164,8 +164,16 @@ func (s *Service) checkClaimsInFlight(
 				"last_block", computedEpoch.LastBlock,
 				"tx", txHash)
 
-			// epoch is no longer "computed" and is now "submitted".
-			// Processing will happen on the next tick iteration.
+			// Authority emits ClaimAccepted in the same tx as ClaimSubmitted.
+			// Parse the receipt to transition directly to accepted, saving a
+			// full tick round-trip. Quorum waits for a separate acceptance scan.
+			if app != nil && app.ConsensusType == model.Consensus_Authority {
+				if accepted := s.tryAcceptFromReceipt(receipt, app, computedEpoch); accepted {
+					confirmed++
+				}
+			}
+
+			// epoch is no longer "computed" and is now "submitted" (or accepted).
 			delete(computedEpochs, key)
 		} else {
 			s.Logger.Warn("unexpected, claim in flight is not a computed epoch.",
@@ -175,6 +183,57 @@ func (s *Service) checkClaimsInFlight(
 		delete(s.claimsInFlight, key)
 	}
 	return confirmed, nil
+}
+
+// tryAcceptFromReceipt parses a transaction receipt for a ClaimAccepted event
+// matching the given epoch. If found and valid, it transitions the epoch
+// directly to accepted in the database, returning true. This is an optimization
+// for Authority consensus, which emits both ClaimSubmitted and ClaimAccepted
+// atomically in the same transaction.
+//
+// Errors are logged but not propagated — the normal acceptance scan on the
+// next tick will handle the transition if this fast path fails.
+func (s *Service) tryAcceptFromReceipt(
+	receipt *types.Receipt,
+	app *model.Application,
+	epoch *model.Epoch,
+) bool {
+	ic, err := iconsensus.NewIConsensus(app.IConsensusAddress, nil)
+	if err != nil {
+		s.Logger.Warn("Authority fast-accept: failed to create ABI binding",
+			"app", app.IApplicationAddress, "error", err)
+		return false
+	}
+	for _, log := range receipt.Logs {
+		event, err := ic.ParseClaimAccepted(*log)
+		if err != nil {
+			continue // not a ClaimAccepted event
+		}
+		if !claimAcceptedEventMatches(app, epoch, event) {
+			continue
+		}
+		err = s.repository.UpdateEpochWithAcceptedClaim(
+			s.Context, epoch.ApplicationID, epoch.Index)
+		if err != nil {
+			s.Logger.Warn("Authority fast-accept: DB update failed, "+
+				"will retry via normal acceptance scan",
+				"app", app.IApplicationAddress,
+				"epoch", epoch.Index, "error", err)
+			return false
+		}
+		s.Logger.Info("Claim accepted (Authority fast path)",
+			"app", app.IApplicationAddress,
+			"epoch_index", epoch.Index,
+			"claim_hash", hashToHex(epoch.OutputsMerkleRoot),
+			"last_block", epoch.LastBlock,
+			"tx", receipt.TxHash)
+		return true
+	}
+	// No matching ClaimAccepted event found. This is unexpected for Authority
+	// but not fatal — the normal acceptance scan will handle it.
+	s.Logger.Warn("Authority fast-accept: ClaimAccepted event not found in receipt",
+		"app", app.IApplicationAddress, "tx", receipt.TxHash)
+	return false
 }
 
 func (s *Service) findClaimSubmittedEventAndSucc(
