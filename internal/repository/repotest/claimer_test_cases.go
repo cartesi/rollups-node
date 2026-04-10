@@ -165,8 +165,8 @@ func (s *ClaimerSuite) TestSelectSubmittedClaimPairsPerApp() {
 			app.IApplicationAddress.String(), epoch, EpochStatus_ClaimComputed)
 
 		reason := "test disabled"
-		err = s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Disabled, &reason)
+		err = s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Stopped, &reason)
 		s.Require().NoError(err)
 
 		_, computed, apps, err := s.Repo.SelectSubmittedClaimPairsPerApp(s.Ctx)
@@ -326,8 +326,8 @@ func (s *ClaimerSuite) TestSelectAcceptedClaimPairsPerApp() {
 		s.Require().NoError(err)
 
 		reason := "test disabled"
-		err = s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Disabled, &reason)
+		err = s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Stopped, &reason)
 		s.Require().NoError(err)
 
 		accepted, submitted, apps, err := s.Repo.SelectAcceptedClaimPairsPerApp(s.Ctx)

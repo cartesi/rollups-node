@@ -57,7 +57,9 @@ func (r *PostgresRepository) selectOldestClaimPerApp(
 		table.Application.EpochLength,
 		table.Application.DataAvailability,
 		table.Application.ConsensusType,
-		table.Application.State,
+		table.Application.Enabled,
+		table.Application.Health,
+		table.Application.DeletedAt,
 		table.Application.Reason,
 		table.Application.IinputboxBlock,
 		table.Application.LastInputCheckBlock,
@@ -76,7 +78,9 @@ func (r *PostgresRepository) selectOldestClaimPerApp(
 		).
 		WHERE(
 			table.Epoch.Status.EQ(postgres.NewEnumValue(epochStatus.String())).
-				AND(table.Application.State.EQ(enum.ApplicationState.Enabled)).
+				AND(table.Application.Enabled.EQ(postgres.Bool(true))).
+				AND(table.Application.Health.EQ(enum.ApplicationHealth.Running)).
+				AND(table.Application.DeletedAt.IS_NULL()).
 				AND(table.Application.ConsensusType.NOT_EQ(enum.Consensus.Prt)),
 		).
 		ORDER_BY(
@@ -118,7 +122,9 @@ func (r *PostgresRepository) selectOldestClaimPerApp(
 			&application.EpochLength,
 			&application.DataAvailability,
 			&application.ConsensusType,
-			&application.State,
+			&application.Enabled,
+			&application.Health,
+			&application.DeletedAt,
 			&application.Reason,
 			&application.IInputBoxBlock,
 			&application.LastInputCheckBlock,
@@ -177,7 +183,10 @@ func (r *PostgresRepository) selectNewestAcceptedClaimPerApp(
 				),
 		).
 		WHERE(
-			expr.AND(table.Application.State.EQ(enum.ApplicationState.Enabled)).
+			expr.
+				AND(table.Application.Enabled.EQ(postgres.Bool(true))).
+				AND(table.Application.Health.EQ(enum.ApplicationHealth.Running)).
+				AND(table.Application.DeletedAt.IS_NULL()).
 				AND(table.Application.ConsensusType.NOT_EQ(enum.Consensus.Prt)),
 		).
 		ORDER_BY(

@@ -45,7 +45,8 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 			ID:                  1,
 			Name:                "App1",
 			IApplicationAddress: common.HexToAddress("0x1"),
-			State:               model.ApplicationState_Enabled,
+			Enabled:             true,
+			Health:              model.ApplicationHealth_Running,
 			ExecutionParameters: model.ExecutionParameters{
 				AdvanceMaxDeadline:    100,
 				InspectMaxDeadline:    100,
@@ -242,7 +243,8 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 			ID:                  1,
 			Name:                "App1",
 			IApplicationAddress: common.HexToAddress("0x1"),
-			State:               model.ApplicationState_Enabled,
+			Enabled:             true,
+			Health:              model.ApplicationHealth_Running,
 			ExecutionParameters: model.ExecutionParameters{
 				AdvanceMaxDeadline:    100,
 				InspectMaxDeadline:    100,
@@ -283,7 +285,8 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 			ID:                  1,
 			Name:                "App1",
 			IApplicationAddress: common.HexToAddress("0x1"),
-			State:               model.ApplicationState_Enabled,
+			Enabled:             true,
+			Health:              model.ApplicationHealth_Running,
 			ExecutionParameters: model.ExecutionParameters{
 				AdvanceMaxDeadline:    100,
 				InspectMaxDeadline:    100,
@@ -314,7 +317,8 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 			ID:                  1,
 			Name:                "App1",
 			IApplicationAddress: common.HexToAddress("0x1"),
-			State:               model.ApplicationState_Enabled,
+			Enabled:             true,
+			Health:              model.ApplicationHealth_Running,
 			ProcessedInputs:     3,
 			ExecutionParameters: model.ExecutionParameters{
 				AdvanceMaxDeadline:    100,

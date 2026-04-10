@@ -90,7 +90,8 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
 			TemplateURI:         "/template/path",
 			DataAvailability:    model.DataAvailability_InputBox[:],
 			EpochLength:         10,
-			State:               model.ApplicationState_Enabled,
+			Enabled:             true,
+			Health:              model.ApplicationHealth_Running,
 			ConsensusType:       model.Consensus_Authority,
 		}
 		_, err := s.repository.CreateApplication(s.ctx, app, false)
@@ -159,7 +160,8 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 			TemplateURI:         "/template/path",
 			DataAvailability:    model.DataAvailability_InputBox[:],
 			EpochLength:         10,
-			State:               model.ApplicationState_Enabled,
+			Enabled:             true,
+			Health:              model.ApplicationHealth_Running,
 			ConsensusType:       model.Consensus_Authority,
 		}
 		_, err := s.repository.CreateApplication(s.ctx, app, false)
@@ -278,7 +280,8 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			TemplateURI:         "/template/path",
 			DataAvailability:    model.DataAvailability_InputBox[:],
 			EpochLength:         10,
-			State:               model.ApplicationState_Enabled,
+			Enabled:             true,
+			Health:              model.ApplicationHealth_Running,
 			ConsensusType:       model.Consensus_Authority,
 		}
 		_, err := s.repository.CreateApplication(s.ctx, app, false)
@@ -368,7 +371,8 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			TemplateURI:         "/template/path",
 			DataAvailability:    model.DataAvailability_InputBox[:],
 			EpochLength:         10,
-			State:               model.ApplicationState_Enabled,
+			Enabled:             true,
+			Health:              model.ApplicationHealth_Running,
 			ConsensusType:       model.Consensus_Authority,
 		}
 		_, err := s.repository.CreateApplication(s.ctx, app, false)

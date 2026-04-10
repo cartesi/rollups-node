@@ -19,7 +19,7 @@ const maxReasonLength = 4000
 
 // Repository is the minimal interface needed to update application state.
 type Repository interface {
-	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
+	UpdateApplicationHealth(ctx context.Context, appID int64, state ApplicationHealth, reason *string) error
 }
 
 // SetFailed marks an application as FAILED (recoverable).
@@ -41,7 +41,7 @@ func SetFailed(
 	app *Application,
 	reason string,
 ) error {
-	return setApplicationState(ctx, logger, repo, app, ApplicationState_Failed, reason)
+	return setApplicationHealth(ctx, logger, repo, app, ApplicationHealth_Failed, reason)
 }
 
 // SetFailedf marks an application as FAILED with a formatted reason string.
@@ -74,7 +74,7 @@ func SetInoperable(
 	reason string,
 ) error {
 	reason = truncateReason(reason)
-	dbErr := setApplicationState(ctx, logger, repo, app, ApplicationState_Inoperable, reason)
+	dbErr := setApplicationHealth(ctx, logger, repo, app, ApplicationHealth_Inoperable, reason)
 	reasonErr := errors.New(reason)
 	if dbErr != nil {
 		return errors.Join(reasonErr, dbErr)
@@ -107,23 +107,23 @@ func truncateReason(reason string) string {
 	return reason
 }
 
-func setApplicationState(
+func setApplicationHealth(
 	ctx context.Context,
 	logger *slog.Logger,
 	repo Repository,
 	app *Application,
-	state ApplicationState,
+	state ApplicationHealth,
 	reason string,
 ) error {
 	reason = truncateReason(reason)
 
-	switch state {
-	case ApplicationState_Failed:
+	switch state { //nolint:exhaustive
+	case ApplicationHealth_Failed:
 		logger.Warn("marking application as failed (recoverable)",
 			"application", app.Name,
 			"address", app.IApplicationAddress.String(),
 			"reason", reason)
-	case ApplicationState_Inoperable:
+	case ApplicationHealth_Inoperable:
 		logger.Error("marking application as inoperable (irrecoverable)",
 			"application", app.Name,
 			"address", app.IApplicationAddress.String(),
@@ -136,7 +136,7 @@ func setApplicationState(
 			"reason", reason)
 	}
 
-	err := repo.UpdateApplicationState(ctx, app.ID, state, &reason)
+	err := repo.UpdateApplicationHealth(ctx, app.ID, state, &reason)
 	if err != nil {
 		logger.Error("failed to update application state",
 			"application", app.Name,
@@ -147,7 +147,7 @@ func setApplicationState(
 
 	// Only update in-memory state when the DB write succeeds to keep
 	// the in-memory Application consistent with the database.
-	app.State = state
+	app.Health = state
 	app.Reason = &reason
 	return nil
 }
