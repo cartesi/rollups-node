@@ -119,9 +119,22 @@ RUN go install gotest.tools/gotestsum@v${GOTESTSUM_VERSION}
 ENV PATH="${GOPATH}/bin:${PATH}"
 ENV GOLANGCI_LINT_CACHE=${GOCACHE}/golangci-lint
 
+# Install Java and the pinned TLA+ tools jar used by trace validation tests.
+USER root
+ARG TLA_TOOLS_VERSION=1.7.4
+ARG TLA_TOOLS_SHA1=bee4a54f3ee3d4afc347c3240ec2d9e93b075104
+RUN <<EOF
+    set -e
+    apt-get update
+    apt-get install -y --no-install-recommends openjdk-17-jre-headless
+    mkdir -p /opt/tla
+    wget -O /opt/tla/tla2tools.jar "https://github.com/tlaplus/tlaplus/releases/download/v${TLA_TOOLS_VERSION}/tla2tools.jar"
+    echo "${TLA_TOOLS_SHA1}  /opt/tla/tla2tools.jar" | sha1sum --check
+    rm -rf /var/lib/apt/lists/*
+EOF
+
 # Create directories owned by cartesi for Docker named volume pre-population.
 # When a named volume is first mounted here, Docker copies this ownership.
-USER root
 RUN mkdir -p /dapps && chown cartesi:cartesi /dapps
 RUN mkdir -p /var/lib/cartesi-rollups-node/logs && chown cartesi:cartesi /var/lib/cartesi-rollups-node/logs
 USER cartesi

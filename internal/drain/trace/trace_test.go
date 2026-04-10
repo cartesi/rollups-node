@@ -338,6 +338,7 @@ func runTLCValidation(t *testing.T, rec *draintrace.Recorder, seed uint64) {
 	t.Helper()
 
 	tlaJar := findTLAToolsJar()
+	requireTLC := tlcRequired()
 	tmpDir := t.TempDir()
 
 	content, err := rec.WriteTLA(filepath.Join(tmpDir, "Trace.tla"))
@@ -350,6 +351,9 @@ func runTLCValidation(t *testing.T, rec *draintrace.Recorder, seed uint64) {
 	copyTLAFile(t, specDir, tmpDir, "TraceDrainProtocol.cfg")
 
 	if tlaJar == "" {
+		if requireTLC {
+			t.Fatal("TLC is required but TLA_TOOLS_JAR is not set and tla2tools.jar was not found")
+		}
 		t.Log("TLA_TOOLS_JAR not set and tla2tools.jar not found; " +
 			"skipping TLC validation (Go safety checks passed)")
 		t.Logf("To run TLC manually:\n  cd %s\n  "+
@@ -368,8 +372,8 @@ func runTLCValidation(t *testing.T, rec *draintrace.Recorder, seed uint64) {
 	cmd.Dir = tmpDir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		if strings.Contains(string(output), "java.rmi.server.ExportException") &&
-			strings.Contains(string(output), "Operation not permitted") {
+		if strings.Contains(string(output), "Operation not permitted") &&
+			!requireTLC {
 			t.Log("TLC requires local socket permissions in this environment; " +
 				"skipping TLC validation after Go-side safety checks")
 			return
@@ -394,6 +398,10 @@ func findTLAToolsJar() string {
 		}
 	}
 	return ""
+}
+
+func tlcRequired() bool {
+	return os.Getenv("CARTESI_REQUIRE_TLC") == "1"
 }
 
 func findSpecDir(t *testing.T) string {

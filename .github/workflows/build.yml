@@ -216,6 +216,8 @@ jobs:
         run: make download-test-dependencies
 
       - name: Run unit tests
+        env:
+          CARTESI_REQUIRE_TLC: "1"
         run: make unit-test-with-compose
 
   integration-test:
