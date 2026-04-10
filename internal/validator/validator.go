@@ -7,6 +7,7 @@ package validator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/events"
 	"github.com/cartesi/rollups-node/internal/merkle"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -24,6 +26,7 @@ import (
 type Service struct {
 	service.Service
 	repository ValidatorRepository
+	publisher  events.Publisher
 
 	// cached constants
 	pristineRootHash    common.Hash
@@ -36,6 +39,10 @@ type CreateInfo struct {
 	Config config.ValidatorConfig
 
 	Repository repository.Repository
+
+	// Publisher sends advisory event notifications after DB writes.
+	// Defaults to events.NopPublisher{} if nil.
+	Publisher events.Publisher
 }
 
 func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
@@ -57,6 +64,11 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		return nil, fmt.Errorf("repository on validator service Create is nil")
 	}
 
+	s.publisher = c.Publisher
+	if s.publisher == nil {
+		s.publisher = events.NopPublisher{}
+	}
+
 	s.pristinePostContext = merkle.CreatePostContext()
 	s.pristineRootHash = s.pristinePostContext[merkle.TREE_DEPTH]
 
@@ -70,8 +82,16 @@ func (s *Service) Reload() []error { return nil }
 // Tick executes the Validator main logic of producing claims and/or proofs
 // for processed epochs of all running applications.
 func (s *Service) Tick() []error {
+	if s.IsStopping() {
+		return nil
+	}
+
 	apps, _, err := getAllRunningApplications(s.Context, s.repository)
 	if err != nil {
+		if s.IsStopping() && errors.Is(err, context.Canceled) {
+			s.Logger.Warn("Tick interrupted by shutdown", "error", err)
+			return nil
+		}
 		return []error{fmt.Errorf("failed to get running applications. %w", err)}
 	}
 
@@ -99,7 +119,7 @@ const MAX_OUTPUT_TREE_HEIGHT = merkle.TREE_DEPTH //nolint: revive
 
 type ValidatorRepository interface {
 	ListApplications(ctx context.Context, f repository.ApplicationFilter, p repository.Pagination, descending bool) ([]*Application, uint64, error)
-	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
+	UpdateApplicationHealth(ctx context.Context, appID int64, state ApplicationHealth, reason *string) error
 	ListOutputs(ctx context.Context, nameOrAddress string, f repository.OutputFilter, p repository.Pagination, descending bool) ([]*Output, uint64, error)
 	GetLastOutputBeforeBlock(ctx context.Context, nameOrAddress string, block uint64) (*Output, error)
 	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter, p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
@@ -110,7 +130,7 @@ type ValidatorRepository interface {
 }
 
 func getAllRunningApplications(ctx context.Context, er ValidatorRepository) ([]*Application, uint64, error) {
-	f := repository.ApplicationFilter{State: Pointer(ApplicationState_Enabled)}
+	f := repository.ApplicationFilter{Active: Pointer(true)}
 	return er.ListApplications(ctx, f, repository.Pagination{}, false)
 }
 
@@ -241,11 +261,21 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 		// store the epoch and proofs in the database
 		err = s.repository.StoreClaimAndProofs(ctx, epoch, outputs)
 		if err != nil {
+			if errors.Is(err, repository.ErrApplicationDeleted) {
+				s.Logger.Warn("application deleted during validation — skipping",
+					"application", app.Name, "epoch_index", epoch.Index)
+				return nil
+			}
 			return fmt.Errorf(
 				"failed to store claim and proofs for epoch %v of application %v. %w",
 				epoch.Index, appAddress, err,
 			)
 		}
+		s.publisher.Publish(ctx, events.Notification{
+			Channel:       events.ChannelClaimComputed,
+			ApplicationID: app.ID,
+			EpochIndex:    epoch.Index,
+		})
 	}
 
 	if len(processedEpochs) == 0 {

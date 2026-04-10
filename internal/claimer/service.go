@@ -11,6 +11,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
+	"github.com/cartesi/rollups-node/internal/events"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/service"
@@ -27,6 +28,10 @@ type CreateInfo struct {
 
 	EthConn    *ethclient.Client
 	Repository repository.Repository
+
+	// Publisher sends advisory event notifications after DB writes.
+	// Defaults to events.NopPublisher{} if nil.
+	Publisher events.Publisher
 }
 
 type Service struct {
@@ -34,6 +39,7 @@ type Service struct {
 
 	repository iclaimerRepository
 	blockchain iclaimerBlockchain
+	publisher  events.Publisher
 
 	// submitted claims waiting for confirmation from the blockchain.
 	// only accessed from tick, so no need for a lock
@@ -104,6 +110,11 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		}
 	}
 
+	s.publisher = c.Publisher
+	if s.publisher == nil {
+		s.publisher = events.NopPublisher{}
+	}
+
 	s.repository = c.Repository
 	s.blockchain = &claimerBlockchain{
 		logger:       s.Logger,
@@ -134,12 +145,20 @@ func (s *Service) Stop(bool) []error {
 
 // NOTE: tick is not re-entrant!
 func (s *Service) Tick() []error {
+	if s.IsStopping() {
+		return nil
+	}
+
 	errs := []error{}
 
 	// gather epochs pairs with open claims, either:
 	// - computed but not yet submitted
 	acceptedOrSubmittedEpochs, computedEpochs, computedApps, errSubmitted := s.repository.SelectSubmittedClaimPairsPerApp(s.Context)
 	if errSubmitted != nil {
+		if s.IsStopping() && errors.Is(errSubmitted, context.Canceled) {
+			s.Logger.Warn("Tick interrupted by shutdown", "error", errSubmitted)
+			return nil
+		}
 		errs = append(errs, errSubmitted)
 		return errs
 	}
@@ -147,8 +166,50 @@ func (s *Service) Tick() []error {
 	// - submitted but not yet accepted.
 	acceptedEpochs, submittedEpochs, submittedApps, errAccepted := s.repository.SelectAcceptedClaimPairsPerApp(s.Context)
 	if errAccepted != nil {
+		if s.IsStopping() && errors.Is(errAccepted, context.Canceled) {
+			s.Logger.Warn("Tick interrupted by shutdown", "error", errAccepted)
+			return nil
+		}
 		errs = append(errs, errAccepted)
 		return errs
+	}
+
+	needAck, ackErr := s.repository.GetAppsNeedingAck(s.Context, repository.ServiceClaimer,
+		repository.ConsensusTypesForService(repository.ServiceClaimer))
+	if ackErr != nil {
+		s.Logger.Warn("Failed to query apps needing drain ack", "error", ackErr)
+	}
+	drainingApps := make(map[int64]struct{}, len(needAck))
+	for _, appID := range needAck {
+		drainingApps[appID] = struct{}{}
+	}
+
+	// Clean up in-flight claims for apps no longer in the active set.
+	for appID := range s.claimsInFlight {
+		if _, draining := drainingApps[appID]; draining {
+			continue
+		}
+		_, inComputed := computedEpochs[appID]
+		_, inSubmitted := submittedEpochs[appID]
+		if !inComputed && !inSubmitted {
+			s.Logger.Info("Cleaning in-flight claim for inactive app",
+				"app_id", appID)
+			delete(s.claimsInFlight, appID)
+		}
+	}
+
+	// Scan-based drain ack for soft-deleted apps.
+	// Runs after in-flight cleanup so the check sees current state.
+	if ackErr == nil {
+		for _, appID := range needAck {
+			if _, inFlight := s.claimsInFlight[appID]; inFlight {
+				continue // defer until L1 tx clears
+			}
+			if err := s.repository.AcknowledgeAppStopped(s.Context, appID, repository.ServiceClaimer); err != nil {
+				s.Logger.Warn("Failed to write claimer drain ack",
+					"app_id", appID, "error", err)
+			}
+		}
 	}
 
 	s.Logger.Debug("Processing claims for epochs",
@@ -157,7 +218,7 @@ func (s *Service) Tick() []error {
 	)
 
 	// return early if there is nothing to do
-	if len(computedEpochs) == 0 && len(submittedEpochs) == 0 {
+	if len(computedEpochs) == 0 && len(submittedEpochs) == 0 && len(s.claimsInFlight) == 0 {
 		return nil
 	}
 
@@ -168,7 +229,13 @@ func (s *Service) Tick() []error {
 		return errs
 	}
 
-	submitted, submitErrs := s.submitClaimsAndUpdateDatabase(acceptedOrSubmittedEpochs, computedEpochs, computedApps, defaultBlockNumber)
+	submitted, submitErrs := s.submitClaimsAndUpdateDatabase(
+		acceptedOrSubmittedEpochs,
+		computedEpochs,
+		computedApps,
+		drainingApps,
+		defaultBlockNumber,
+	)
 	accepted, acceptErrs := s.acceptClaimsAndUpdateDatabase(acceptedEpochs, submittedEpochs, submittedApps, defaultBlockNumber)
 	errs = append(errs, submitErrs...)
 	errs = append(errs, acceptErrs...)

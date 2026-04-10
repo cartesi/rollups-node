@@ -493,26 +493,6 @@ func (r *PostgresRepository) GetLastSnapshot(ctx context.Context, nameOrAddress 
 	return &inp, nil
 }
 
-// DeleteApplication removes the row from "application" by ID.
-func (r *PostgresRepository) DeleteApplication(
-	ctx context.Context,
-	id int64,
-) error {
-	delStmt := table.Application.
-		DELETE().
-		WHERE(table.Application.ID.EQ(postgres.Int(id)))
-
-	sqlStr, args := delStmt.Sql()
-	cmd, err := r.db.Exec(ctx, sqlStr, args...)
-	if err != nil {
-		return err
-	}
-	if cmd.RowsAffected() != 1 {
-		return fmt.Errorf("application with ID %d not found", id)
-	}
-	return nil
-}
-
 // ListApplications queries multiple apps with optional filters & pagination.
 func (r *PostgresRepository) ListApplications(
 	ctx context.Context,
@@ -543,7 +523,11 @@ func (r *PostgresRepository) ListApplications(
 	if f.Health != nil {
 		conditions = append(conditions, table.Application.Health.EQ(postgres.NewEnumValue(string(*f.Health))))
 	}
-	if f.NotDeleted != nil && *f.NotDeleted {
+	notDeleted := true
+	if f.NotDeleted != nil {
+		notDeleted = *f.NotDeleted
+	}
+	if notDeleted {
 		conditions = append(conditions, table.Application.DeletedAt.IS_NULL())
 	}
 	if f.DataAvailability != nil {

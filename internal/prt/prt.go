@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
+	"github.com/cartesi/rollups-node/internal/events"
 	"github.com/cartesi/rollups-node/internal/merkle"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -27,7 +28,7 @@ import (
 type prtRepository interface {
 	ListApplications(ctx context.Context, f repository.ApplicationFilter,
 		p repository.Pagination, descending bool) ([]*Application, uint64, error)
-	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
+	UpdateApplicationHealth(ctx context.Context, appID int64, state ApplicationHealth, reason *string) error
 
 	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter,
 		p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
@@ -45,6 +46,9 @@ type prtRepository interface {
 
 	GetCommitment(ctx context.Context, nameOrAddress string, epochIndex uint64,
 		tournamentAddress string, commitmentHex string) (*Commitment, error)
+
+	AcknowledgeAppStopped(ctx context.Context, appID int64, serviceName string) error
+	GetAppsNeedingAck(ctx context.Context, serviceName string, consensusTypes []Consensus) ([]int64, error)
 
 	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
@@ -78,7 +82,7 @@ func (f *DefaultAdapterFactory) CreateDaveConsensusAdapter(addr common.Address) 
 }
 
 func getAllRunningApplications(ctx context.Context, r prtRepository) ([]*Application, uint64, error) {
-	f := repository.ApplicationFilter{State: Pointer(ApplicationState_Enabled), ConsensusType: Pointer(Consensus_PRT)}
+	f := repository.ApplicationFilter{Active: Pointer(true), ConsensusType: Pointer(Consensus_PRT)}
 	return r.ListApplications(ctx, f, repository.Pagination{}, false)
 }
 
@@ -458,6 +462,12 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 			s.Logger.Error("failed to update epoch status to claim accepted", "application", app.Name, "epoch", epoch.Index, "error", err)
 			return err
 		}
+		s.publisher.Publish(ctx, events.Notification{
+			Channel:       events.ChannelClaimAccepted,
+			ApplicationID: app.ID,
+			EpochIndex:    epoch.Index,
+		})
+		s.SignalReschedule()
 	}
 	return nil
 }
@@ -718,6 +728,11 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 	}
 	settleTx := tx.Hash()
 	s.settleInFlight[app.ID] = &settleTx
+	s.publisher.Publish(ctx, events.Notification{
+		Channel:       events.ChannelSettleSubmitted,
+		ApplicationID: app.ID,
+	})
+	s.SignalReschedule()
 
 	return nil
 }
@@ -859,6 +874,11 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 	}
 	joinTx := tx.Hash()
 	s.joinInFlight[app.ID] = &joinTx
+	s.publisher.Publish(ctx, events.Notification{
+		Channel:       events.ChannelJoinSubmitted,
+		ApplicationID: app.ID,
+	})
+	s.SignalReschedule()
 
 	return nil
 }

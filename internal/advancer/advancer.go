@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
+	"github.com/cartesi/rollups-node/internal/events"
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -34,11 +35,13 @@ type AdvancerRepository interface {
 	UpdateEpochInputsProcessed(ctx context.Context, nameOrAddress string, epochIndex uint64) error
 	UpdateEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64, proof *OutputsProof) error
 	RepeatPreviousEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64) error
-	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
+	UpdateApplicationHealth(ctx context.Context, appID int64, state ApplicationHealth, reason *string) error
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	UpdateInputSnapshotURI(ctx context.Context, appId int64, inputIndex uint64, snapshotURI string) error
 	GetLastSnapshot(ctx context.Context, nameOrAddress string) (*Input, error)
 	GetLastProcessedInput(ctx context.Context, appAddress string) (*Input, error)
+	AcknowledgeAppStopped(ctx context.Context, appID int64, serviceName string) error
+	GetAppsNeedingAck(ctx context.Context, serviceName string, consensusTypes []Consensus) ([]int64, error)
 }
 
 func getUnprocessedEpochs(ctx context.Context, er AdvancerRepository, address string) ([]*Epoch, uint64, error) {
@@ -80,10 +83,29 @@ func (s *Service) Step(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	// Update the machine manager with any new or disabled applications
+	// Update the machine manager with any new or disabled applications.
+	// This destroys machines for apps that are no longer active.
 	err := s.machineManager.UpdateMachines(ctx)
 	if err != nil {
 		return false, err
+	}
+
+	// Scan-based drain: ack soft-deleted apps after machines are destroyed.
+	// Only ack if the machine manager no longer holds a machine for the app.
+	needAck, ackErr := s.repository.GetAppsNeedingAck(ctx, repository.ServiceAdvancer,
+		repository.ConsensusTypesForService(repository.ServiceAdvancer))
+	if ackErr != nil {
+		s.Logger.Warn("Failed to query apps needing drain ack", "error", ackErr)
+	} else {
+		for _, appID := range needAck {
+			if _, exists := s.machineManager.GetMachine(appID); exists {
+				continue // machine still alive — defer ack
+			}
+			if err := s.repository.AcknowledgeAppStopped(ctx, appID, repository.ServiceAdvancer); err != nil {
+				s.Logger.Warn("Failed to write advancer drain ack",
+					"app_id", appID, "error", err)
+			}
+		}
 	}
 
 	// Get all applications with active machines (returned sorted by ID).
@@ -92,6 +114,8 @@ func (s *Service) Step(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 	anyWork := false
+
+	// Process inputs for each application, accumulating per-app errors
 	var errs []error
 	for _, app := range apps {
 		hadWork, err := s.stepApp(ctx, app)
@@ -173,6 +197,11 @@ func (s *Service) finalizeEpoch(ctx context.Context, app *Application, epoch *Ep
 	if err := s.repository.UpdateEpochInputsProcessed(ctx, appAddress, epoch.Index); err != nil {
 		return err
 	}
+	s.publisher.Publish(ctx, events.Notification{
+		Channel:       events.ChannelInputsProcessed,
+		ApplicationID: app.ID,
+		EpochIndex:    epoch.Index,
+	})
 
 	s.Logger.Info("Epoch updated to Inputs Processed",
 		"application", app.Name, "epoch_index", epoch.Index)
@@ -295,6 +324,18 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 		// Store the result in the database
 		err = s.repository.StoreAdvanceResult(ctx, input.EpochApplicationID, result)
 		if err != nil {
+			// If the application was deleted while the machine was advancing,
+			// the machine state for this app is irrelevant. Log and stop
+			// processing this app without shutting down the node.
+			if errors.Is(err, repository.ErrApplicationDeleted) {
+				s.Logger.Warn(
+					"application deleted during advance — discarding result",
+					"application", app.Name,
+					"epoch", input.EpochIndex,
+					"index", input.Index)
+				return err
+			}
+
 			// Machine state is now ahead of the database. This desync is
 			// unrecoverable without a restart — regardless of whether the
 			// failure was a DB error or a context timeout. Shut down the

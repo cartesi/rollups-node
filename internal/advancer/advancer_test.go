@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/events"
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -46,6 +47,7 @@ func newMockAdvancerServiceWithBatchSize(
 		inputBatchSize: batchSize,
 		machineManager: machineManager,
 		repository:     repo,
+		publisher:      events.NopPublisher{},
 	}
 	serviceArgs := &service.CreateInfo{Name: "advancer", Impl: s, EnableReschedule: true}
 	err := service.Create(context.Background(), serviceArgs, &s.Service)
@@ -260,8 +262,8 @@ func (s *AdvancerSuite) TestStep() {
 		// Step returns a combined error but the healthy app was still processed
 		require.Error(err)
 		require.Contains(err.Error(), "advance error")
-		require.Equal(1, repo.ApplicationStateUpdates)
-		require.Equal(ApplicationState_Failed, repo.LastApplicationState)
+		require.Equal(1, repo.ApplicationHealthUpdates)
+		require.Equal(ApplicationHealth_Failed, repo.LastApplicationHealth)
 
 		// app2's input was processed despite app1's failure
 		require.Len(repo.StoredResults, 1)
@@ -316,10 +318,10 @@ func (s *AdvancerSuite) TestProcess() {
 
 		err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 		require.Error(err)
-		require.Equal(1, env.repo.ApplicationStateUpdates)
-		require.Equal(ApplicationState_Failed, env.repo.LastApplicationState)
-		require.NotNil(env.repo.LastApplicationStateReason)
-		require.Equal("advance error", *env.repo.LastApplicationStateReason)
+		require.Equal(1, env.repo.ApplicationHealthUpdates)
+		require.Equal(ApplicationHealth_Failed, env.repo.LastApplicationHealth)
+		require.NotNil(env.repo.LastApplicationHealthReason)
+		require.Equal("advance error", *env.repo.LastApplicationHealthReason)
 	})
 
 	s.Run("ApplicationStateUpdateError", func() {
@@ -328,7 +330,7 @@ func (s *AdvancerSuite) TestProcess() {
 		inputs := []*Input{
 			newInput(env.app.Application.ID, 0, 0, []byte("advance error")),
 		}
-		env.repo.UpdateApplicationStateError = errors.New("update state error")
+		env.repo.UpdateApplicationHealthError = errors.New("update state error")
 
 		err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 		require.Error(err)
@@ -705,8 +707,8 @@ func (s *AdvancerSuite) TestHandleEpochAfterInputsProcessed() {
 		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
 		require.Error(err)
 		require.ErrorIs(err, manager.ErrMachineClosed)
-		require.Equal(1, env.repo.ApplicationStateUpdates)
-		require.Equal(ApplicationState_Failed, env.repo.LastApplicationState)
+		require.Equal(1, env.repo.ApplicationHealthUpdates)
+		require.Equal(ApplicationHealth_Failed, env.repo.LastApplicationHealth)
 	})
 
 	s.Run("EmptyEpochIndexGt0RepeatsPreviousProof", func() {
@@ -1855,37 +1857,37 @@ func (m *MockMachineInstance) Close() error {
 // ------------------------------------------------------------------------------------------------
 
 type MockRepository struct {
-	GetEpochsReturn             map[common.Address][]*Epoch
-	GetEpochsError              error
-	GetEpochsBlock              bool
-	GetInputsReturn             map[common.Address][]*Input
-	GetInputsError              error
-	GetInputsBlock              bool
-	StoreAdvanceError           error
-	StoreAdvanceFailCount       int
-	UpdateApplicationStateError error
-	UpdateEpochsError           error
-	UpdateOutputsProofError     error
-	GetLastSnapshotReturn       *Input
-	GetLastSnapshotError        error
-	RepeatOutputsProofError     error
-	GetEpochReturn              *Epoch
-	GetEpochError               error
-	GetLastInputReturn          *Input
-	GetLastInputError           error
-	GetLastProcessedInputReturn *Input
-	GetLastProcessedInputError  error
-	UpdateSnapshotURIError      error
+	GetEpochsReturn              map[common.Address][]*Epoch
+	GetEpochsError               error
+	GetEpochsBlock               bool
+	GetInputsReturn              map[common.Address][]*Input
+	GetInputsError               error
+	GetInputsBlock               bool
+	StoreAdvanceError            error
+	StoreAdvanceFailCount        int
+	UpdateApplicationHealthError error
+	UpdateEpochsError            error
+	UpdateOutputsProofError      error
+	GetLastSnapshotReturn        *Input
+	GetLastSnapshotError         error
+	RepeatOutputsProofError      error
+	GetEpochReturn               *Epoch
+	GetEpochError                error
+	GetLastInputReturn           *Input
+	GetLastInputError            error
+	GetLastProcessedInputReturn  *Input
+	GetLastProcessedInputError   error
+	UpdateSnapshotURIError       error
 
-	StoredResults              []*AdvanceResult
-	StoredAppIDs               []int64
-	ApplicationStateUpdates    int
-	LastApplicationState       ApplicationState
-	LastApplicationStateReason *string
-	OutputsProofUpdated          bool
-	RepeatOutputsProofCalled     bool
-	SnapshotURIUpdated           bool
-	EpochInputsProcessedCount    int
+	StoredResults               []*AdvanceResult
+	StoredAppIDs                []int64
+	ApplicationHealthUpdates    int
+	LastApplicationHealth       ApplicationHealth
+	LastApplicationHealthReason *string
+	OutputsProofUpdated         bool
+	RepeatOutputsProofCalled    bool
+	SnapshotURIUpdated          bool
+	EpochInputsProcessedCount   int
 
 	mu sync.Mutex
 }
@@ -2023,16 +2025,16 @@ func (mock *MockRepository) UpdateEpochInputsProcessed(ctx context.Context, name
 	return mock.UpdateEpochsError
 }
 
-func (mock *MockRepository) UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error {
+func (mock *MockRepository) UpdateApplicationHealth(ctx context.Context, appID int64, state ApplicationHealth, reason *string) error {
 	// Check for context cancellation
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
-	mock.ApplicationStateUpdates++
-	mock.LastApplicationState = state
-	mock.LastApplicationStateReason = reason
-	return mock.UpdateApplicationStateError
+	mock.ApplicationHealthUpdates++
+	mock.LastApplicationHealth = state
+	mock.LastApplicationHealthReason = reason
+	return mock.UpdateApplicationHealthError
 }
 
 func (mock *MockRepository) GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error) {
@@ -2125,6 +2127,14 @@ func (mock *MockRepository) RepeatPreviousEpochOutputsProof(ctx context.Context,
 	}
 	mock.RepeatOutputsProofCalled = true
 	return mock.RepeatOutputsProofError
+}
+
+func (mock *MockRepository) AcknowledgeAppStopped(_ context.Context, _ int64, _ string) error {
+	return nil
+}
+
+func (mock *MockRepository) GetAppsNeedingAck(_ context.Context, _ string, _ []Consensus) ([]int64, error) {
+	return nil, nil
 }
 
 // ------------------------------------------------------------------------------------------------

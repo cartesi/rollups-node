@@ -14,10 +14,47 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-var (
-	ErrNotFound = errors.New("not found")
-	ErrNoUpdate = errors.New("update did not take effect")
+const (
+	// Drain service names — used by services, CLI, and the DB CHECK constraint.
+	ServiceAdvancer = "advancer"
+	ServiceClaimer  = "claimer"
+	ServicePRT      = "prt"
 )
+
+var (
+	ErrNotFound           = errors.New("not found")
+	ErrNoUpdate           = errors.New("update did not take effect")
+	ErrApplicationDeleted = errors.New("application was deleted during operation")
+)
+
+// DrainServicesForConsensus returns the services that must ack before
+// an application of the given consensus type can be safely hard-deleted.
+func DrainServicesForConsensus(ct Consensus) ([]string, error) {
+	switch ct {
+	case Consensus_PRT:
+		return []string{ServiceAdvancer, ServicePRT}, nil
+	case Consensus_Authority, Consensus_Quorum:
+		return []string{ServiceAdvancer, ServiceClaimer}, nil
+	default:
+		return nil, fmt.Errorf("DrainServicesForConsensus: unknown consensus type %q", ct)
+	}
+}
+
+// ConsensusTypesForService returns the consensus types for which the given
+// service participates in the drain protocol. This is the inverse of
+// DrainServicesForConsensus.
+func ConsensusTypesForService(serviceName string) []Consensus {
+	switch serviceName {
+	case ServiceAdvancer:
+		return ConsensusAllValues
+	case ServiceClaimer:
+		return []Consensus{Consensus_Authority, Consensus_Quorum}
+	case ServicePRT:
+		return []Consensus{Consensus_PRT}
+	default:
+		return nil
+	}
+}
 
 type Pagination struct {
 	Limit  uint64
@@ -25,7 +62,11 @@ type Pagination struct {
 }
 
 type ApplicationFilter struct {
-	State            *ApplicationState
+	State            *ApplicationHealth
+	Enabled          *bool
+	Health           *ApplicationHealth
+	Active           *bool // shorthand for enabled=true, health=RUNNING, deleted_at IS NULL
+	NotDeleted       *bool // filter deleted_at IS NULL (defaults to true)
 	DataAvailability *DataAvailabilitySelector
 	ConsensusType    *Consensus
 }
@@ -86,8 +127,7 @@ type ApplicationRepository interface {
 	GetApplication(ctx context.Context, nameOrAddress string) (*Application, error)
 	GetProcessedInputCount(ctx context.Context, nameOrAddress string) (uint64, error)
 	UpdateApplication(ctx context.Context, app *Application) error
-	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
-	DeleteApplication(ctx context.Context, id int64) error
+	UpdateApplicationHealth(ctx context.Context, appID int64, state ApplicationHealth, reason *string) error
 	ListApplications(ctx context.Context, f ApplicationFilter, p Pagination, descending bool) ([]*Application, uint64, error)
 
 	GetExecutionParameters(ctx context.Context, applicationID int64) (*ExecutionParameters, error)
@@ -150,6 +190,7 @@ type TournamentRepository interface {
 	GetTournament(ctx context.Context, nameOrAddress string, address string) (*Tournament, error)
 	ListTournaments(ctx context.Context, nameOrAddress string, f TournamentFilter,
 		p Pagination, descending bool) ([]*Tournament, uint64, error)
+	HasActiveTournaments(ctx context.Context, appID int64) (bool, error)
 }
 
 type CommitmentRepository interface {
@@ -169,6 +210,26 @@ type MatchAdvancedRepository interface {
 	CreateMatchAdvanced(ctx context.Context, nameOrAddress string, m *MatchAdvanced) error
 	GetMatchAdvanced(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string, idHashHex string, parentHex string) (*MatchAdvanced, error)
 	ListMatchAdvances(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string, idHashHex string, p Pagination, descending bool) ([]*MatchAdvanced, uint64, error)
+}
+
+type ApplicationLifecycleRepository interface {
+	SetApplicationEnabled(ctx context.Context, appID int64, enabled bool) error
+	SoftDeleteApplication(ctx context.Context, appID int64) error
+	HardDeleteApplication(ctx context.Context, appID int64) error
+	MarkApplicationRunning(ctx context.Context, appID int64) error
+	MarkApplicationFailed(ctx context.Context, appID int64, reason string) error
+	MarkApplicationInoperable(ctx context.Context, appID int64, reason string) error
+	// AcknowledgeAppStopped records that a service has finished all in-flight
+	// work for a disabled application and is safe to delete.
+	//
+	// Only services with cross-tick state participate in the drain protocol.
+	// See DrainServicesForConsensus for the consensus-aware set.
+	//
+	// Services without cross-tick state (validator, evmreader, jsonrpc, inspect)
+	// do not ack — they are purely functional per tick with nothing to drain.
+	AcknowledgeAppStopped(ctx context.Context, appID int64, serviceName string) error
+	GetPendingAcks(ctx context.Context, appID int64, requiredServices []string) ([]string, error)
+	GetAppsNeedingAck(ctx context.Context, serviceName string, consensusTypes []Consensus) ([]int64, error)
 }
 
 type BulkOperationsRepository interface {
@@ -212,6 +273,7 @@ type ClaimerRepository interface {
 
 type Repository interface {
 	ApplicationRepository
+	ApplicationLifecycleRepository
 	EpochRepository
 	InputRepository
 	OutputRepository

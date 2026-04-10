@@ -454,8 +454,8 @@ func (m *MockRepository) UpdateOutputsExecution(
 	return args.Error(0)
 }
 
-func (m *MockRepository) UpdateApplicationState(
-	ctx context.Context, appID int64, state ApplicationState, reason *string,
+func (m *MockRepository) UpdateApplicationHealth(
+	ctx context.Context, appID int64, state ApplicationHealth, reason *string,
 ) error {
 	args := m.Called(ctx, appID, state, reason)
 	return args.Error(0)

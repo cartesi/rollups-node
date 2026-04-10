@@ -44,6 +44,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
+	"github.com/cartesi/rollups-node/internal/events"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 
@@ -87,12 +88,15 @@ type iclaimerRepository interface {
 		index uint64,
 	) error
 
-	UpdateApplicationState(
+	UpdateApplicationHealth(
 		ctx context.Context,
 		appID int64,
-		state model.ApplicationState,
+		state model.ApplicationHealth,
 		reason *string,
 	) error
+
+	AcknowledgeAppStopped(ctx context.Context, appID int64, serviceName string) error
+	GetAppsNeedingAck(ctx context.Context, serviceName string, consensusTypes []model.Consensus) ([]int64, error)
 
 	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
@@ -112,6 +116,7 @@ func hashToHex(h *common.Hash) string {
 func (s *Service) checkClaimsInFlight(
 	computedEpochs map[int64]*model.Epoch,
 	apps map[int64]*model.Application,
+	drainingApps map[int64]struct{},
 	endBlock *big.Int,
 ) (int, error) {
 	confirmed := 0
@@ -119,6 +124,14 @@ func (s *Service) checkClaimsInFlight(
 	for key, txHash := range s.claimsInFlight {
 		ready, receipt, err := s.blockchain.pollTransaction(s.Context, txHash, endBlock)
 		if err != nil {
+			if _, draining := drainingApps[key]; draining {
+				s.Logger.Warn("Failed to poll claim transaction for draining app; preserving in-flight state",
+					"app_id", key,
+					"txHash", txHash,
+					"err", err,
+				)
+				continue
+			}
 			s.Logger.Warn("Claim submission failed, retrying.",
 				"txHash", txHash,
 				"err", err,
@@ -151,6 +164,12 @@ func (s *Service) checkClaimsInFlight(
 				return confirmed, fmt.Errorf("updating epoch %d (%d) with submitted claim: %w", computedEpoch.Index, computedEpoch.VirtualIndex, err)
 			}
 			confirmed++
+
+			s.publisher.Publish(s.Context, events.Notification{
+				Channel:       events.ChannelClaimSubmitted,
+				ApplicationID: computedEpoch.ApplicationID,
+				EpochIndex:    computedEpoch.Index,
+			})
 
 			app := apps[key]
 			appAddress := common.Address{}
@@ -299,9 +318,10 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 	acceptedOrSubmittedEpochs map[int64]*model.Epoch,
 	computedEpochs map[int64]*model.Epoch,
 	apps map[int64]*model.Application,
+	drainingApps map[int64]struct{},
 	defaultBlockNumber *big.Int,
 ) (int, []error) {
-	confirmed, err := s.checkClaimsInFlight(computedEpochs, apps, defaultBlockNumber)
+	confirmed, err := s.checkClaimsInFlight(computedEpochs, apps, drainingApps, defaultBlockNumber)
 	if err != nil {
 		return confirmed, []error{err}
 	}
@@ -375,6 +395,11 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 				errs = append(errs, err)
 				continue
 			}
+			s.publisher.Publish(s.Context, events.Notification{
+				Channel:       events.ChannelClaimSubmitted,
+				ApplicationID: currEpoch.ApplicationID,
+				EpochIndex:    currEpoch.Index,
+			})
 			delete(s.claimsInFlight, key)
 			transitions++
 			s.Logger.Info("Claim previously submitted",
@@ -470,6 +495,11 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 				}
 				s.claimsInFlight[key] = txHash
 				transitions++
+				s.publisher.Publish(s.Context, events.Notification{
+					Channel:       events.ChannelClaimSubmitted,
+					ApplicationID: currEpoch.ApplicationID,
+					EpochIndex:    currEpoch.Index,
+				})
 			}
 		}
 	}
@@ -608,6 +638,13 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 				continue
 			}
 			transitions++
+
+			s.publisher.Publish(s.Context, events.Notification{
+				Channel:       events.ChannelClaimAccepted,
+				ApplicationID: currEpoch.ApplicationID,
+				EpochIndex:    currEpoch.Index,
+			})
+
 			s.Logger.Info("Claim accepted",
 				"app", currEvent.AppContract,
 				"event_block_number", currEvent.Raw.BlockNumber,

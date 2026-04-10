@@ -115,6 +115,42 @@ func (s *ApplicationSuite) TestListApplications() {
 		s.Equal(uint64(3), total)
 	})
 
+	s.Run("ExcludesSoftDeletedByDefault", func() {
+		active := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		deleted := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+
+		err := s.Repo.SoftDeleteApplication(s.Ctx, deleted.ID)
+		s.Require().NoError(err)
+
+		apps, total, err := s.Repo.ListApplications(
+			s.Ctx, repository.ApplicationFilter{}, repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Len(apps, 1)
+		s.Equal(uint64(1), total)
+		s.Equal(active.ID, apps[0].ID)
+	})
+
+	s.Run("IncludesSoftDeletedWhenNotDeletedFalse", func() {
+		active := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		deleted := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+
+		err := s.Repo.SoftDeleteApplication(s.Ctx, deleted.ID)
+		s.Require().NoError(err)
+
+		includeDeleted := false
+		apps, total, err := s.Repo.ListApplications(
+			s.Ctx,
+			repository.ApplicationFilter{NotDeleted: &includeDeleted},
+			repository.Pagination{Limit: 10},
+			false,
+		)
+		s.Require().NoError(err)
+		s.Len(apps, 2)
+		s.Equal(uint64(2), total)
+		s.Equal(active.ID, apps[0].ID)
+		s.Equal(deleted.ID, apps[1].ID)
+	})
+
 	s.Run("FilterByState", func() {
 		NewApplicationBuilder().WithState(ApplicationHealth_Running).Create(s.Ctx, s.T(), s.Repo)
 		NewApplicationBuilder().WithState(ApplicationHealth_Stopped).Create(s.Ctx, s.T(), s.Repo)
@@ -528,16 +564,164 @@ func (s *ApplicationSuite) TestDisabledToFailedBlocked() {
 	})
 }
 
-func (s *ApplicationSuite) TestDeleteApplication() {
-	s.Run("DeletesExistingApp", func() {
+func (s *ApplicationSuite) TestApplicationLifecycleRepository() {
+	s.Run("SoftDeleteSetsEnabledFalse", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 
-		err := s.Repo.DeleteApplication(s.Ctx, app.ID)
+		err := s.Repo.SoftDeleteApplication(s.Ctx, app.ID)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Nil(got)
+		s.Require().NotNil(got)
+		s.False(got.Enabled)
+		s.NotNil(got.DeletedAt)
+	})
+
+	s.Run("ReEnableBlockedAfterSoftDelete", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+
+		err := s.Repo.SoftDeleteApplication(s.Ctx, app.ID)
+		s.Require().NoError(err)
+
+		err = s.Repo.SetApplicationEnabled(s.Ctx, app.ID, true)
+		s.Error(err)
+		s.ErrorIs(err, repository.ErrNoUpdate)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Require().NotNil(got)
+		s.False(got.Enabled)
+		s.NotNil(got.DeletedAt)
+	})
+
+	s.Run("ReEnableAllowedForDisabledRunning", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+
+		err := s.Repo.SetApplicationEnabled(s.Ctx, app.ID, false)
+		s.Require().NoError(err)
+
+		err = s.Repo.SetApplicationEnabled(s.Ctx, app.ID, true)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Require().NotNil(got)
+		s.True(got.Enabled)
+		s.Equal(ApplicationHealth_Running, got.Health)
+		s.Nil(got.DeletedAt)
+	})
+
+	s.Run("ReEnableBlockedForInoperable", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		reason := "fatal corruption"
+
+		err := s.Repo.UpdateApplicationHealth(
+			s.Ctx, app.ID, ApplicationHealth_Inoperable, &reason)
+		s.Require().NoError(err)
+
+		err = s.Repo.SetApplicationEnabled(s.Ctx, app.ID, false)
+		s.Require().NoError(err)
+
+		err = s.Repo.SetApplicationEnabled(s.Ctx, app.ID, true)
+		s.Error(err)
+		s.Contains(err.Error(), "INOPERABLE")
+	})
+}
+
+func (s *ApplicationSuite) TestDrainAcknowledgements() {
+	s.Run("GetAppsNeedingAckAuthorityApp", func() {
+		app := NewApplicationBuilder().
+			WithConsensus(Consensus_Authority).
+			Create(s.Ctx, s.T(), s.Repo)
+
+		err := s.Repo.SoftDeleteApplication(s.Ctx, app.ID)
+		s.Require().NoError(err)
+
+		advancerIDs, err := s.Repo.GetAppsNeedingAck(
+			s.Ctx,
+			repository.ServiceAdvancer,
+			repository.ConsensusTypesForService(repository.ServiceAdvancer),
+		)
+		s.Require().NoError(err)
+		s.Contains(advancerIDs, app.ID)
+
+		prtIDs, err := s.Repo.GetAppsNeedingAck(
+			s.Ctx,
+			repository.ServicePRT,
+			repository.ConsensusTypesForService(repository.ServicePRT),
+		)
+		s.Require().NoError(err)
+		s.NotContains(prtIDs, app.ID)
+	})
+
+	s.Run("GetAppsNeedingAckPrtApp", func() {
+		app := NewApplicationBuilder().
+			WithConsensus(Consensus_PRT).
+			Create(s.Ctx, s.T(), s.Repo)
+
+		err := s.Repo.SoftDeleteApplication(s.Ctx, app.ID)
+		s.Require().NoError(err)
+
+		prtIDs, err := s.Repo.GetAppsNeedingAck(
+			s.Ctx,
+			repository.ServicePRT,
+			repository.ConsensusTypesForService(repository.ServicePRT),
+		)
+		s.Require().NoError(err)
+		s.Contains(prtIDs, app.ID)
+
+		claimerIDs, err := s.Repo.GetAppsNeedingAck(
+			s.Ctx,
+			repository.ServiceClaimer,
+			repository.ConsensusTypesForService(repository.ServiceClaimer),
+		)
+		s.Require().NoError(err)
+		s.NotContains(claimerIDs, app.ID)
+	})
+
+	s.Run("GetAppsNeedingAckAlreadyAcked", func() {
+		app := NewApplicationBuilder().
+			WithConsensus(Consensus_Authority).
+			Create(s.Ctx, s.T(), s.Repo)
+
+		err := s.Repo.SoftDeleteApplication(s.Ctx, app.ID)
+		s.Require().NoError(err)
+
+		err = s.Repo.AcknowledgeAppStopped(s.Ctx, app.ID, repository.ServiceAdvancer)
+		s.Require().NoError(err)
+
+		ids, err := s.Repo.GetAppsNeedingAck(
+			s.Ctx,
+			repository.ServiceAdvancer,
+			repository.ConsensusTypesForService(repository.ServiceAdvancer),
+		)
+		s.Require().NoError(err)
+		s.NotContains(ids, app.ID)
+	})
+
+	s.Run("GetAppsNeedingAckDoesNotReturnDisabledUndeletedApps", func() {
+		app := NewApplicationBuilder().
+			WithConsensus(Consensus_Authority).
+			Create(s.Ctx, s.T(), s.Repo)
+
+		err := s.Repo.SetApplicationEnabled(s.Ctx, app.ID, false)
+		s.Require().NoError(err)
+
+		ids, err := s.Repo.GetAppsNeedingAck(
+			s.Ctx,
+			repository.ServiceAdvancer,
+			repository.ConsensusTypesForService(repository.ServiceAdvancer),
+		)
+		s.Require().NoError(err)
+		s.NotContains(ids, app.ID)
+	})
+
+	s.Run("AcknowledgeAppStoppedRejectsUnknownService", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+
+		err := s.Repo.AcknowledgeAppStopped(s.Ctx, app.ID, "advancr")
+		s.Error(err)
 	})
 }
 

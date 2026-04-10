@@ -5,6 +5,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"unsafe"
 
@@ -16,6 +17,65 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/table"
 )
+
+// lockApplication acquires a FOR NO KEY UPDATE row lock on the application row,
+// preventing a concurrent hard-delete or lifecycle update from modifying the row
+// while this transaction is in progress.
+//
+// FOR NO KEY UPDATE (not FOR SHARE) is required because callers such as
+// StoreAdvanceResult and StoreTournamentEvents later UPDATE the same application
+// row within the same transaction. FOR SHARE would deadlock when attempting to
+// upgrade the lock if a concurrent UPDATE (e.g., SetApplicationEnabled) is
+// queued on the same row.
+//
+// Returns repository.ErrApplicationDeleted if the row no longer exists.
+func lockApplication(ctx context.Context, tx pgx.Tx, appID int64) error {
+	stmt := table.Application.
+		SELECT(table.Application.ID).
+		WHERE(table.Application.ID.EQ(postgres.Int64(appID))).
+		FOR(postgres.NO_KEY_UPDATE())
+
+	sqlStr, args := stmt.Sql()
+
+	var lockedID int64
+	err := tx.QueryRow(ctx, sqlStr, args...).Scan(&lockedID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("application %d: %w", appID, repository.ErrApplicationDeleted)
+	}
+	if err != nil {
+		return fmt.Errorf("lock application: %w", err)
+	}
+	return nil
+}
+
+// lockApplicationByName is like lockApplication but resolves
+// the application by name or hex address.
+func lockApplicationByName(ctx context.Context, tx pgx.Tx, nameOrAddress string) error {
+	var where postgres.BoolExpression
+	if isHexAddress(nameOrAddress) {
+		addr := common.HexToAddress(nameOrAddress)
+		where = table.Application.IapplicationAddress.EQ(postgres.Bytea(addr.Bytes()))
+	} else {
+		where = table.Application.Name.EQ(postgres.String(nameOrAddress))
+	}
+
+	stmt := table.Application.
+		SELECT(table.Application.ID).
+		WHERE(where).
+		FOR(postgres.NO_KEY_UPDATE())
+
+	sqlStr, args := stmt.Sql()
+
+	var lockedID int64
+	err := tx.QueryRow(ctx, sqlStr, args...).Scan(&lockedID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("application %q: %w", nameOrAddress, repository.ErrApplicationDeleted)
+	}
+	if err != nil {
+		return fmt.Errorf("lock application: %w", err)
+	}
+	return nil
+}
 
 // byteSliceToHashSlice converts [][32]byte to []common.Hash without copying.
 // This is safe because common.Hash is defined as [32]byte, so the memory layout is identical.
@@ -360,6 +420,10 @@ func (r *PostgresRepository) StoreAdvanceResult(
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
+	if err := lockApplication(ctx, tx, appID); err != nil {
+		return err
+	}
+
 	if res.Status == model.InputCompletionStatus_Accepted {
 		err = insertOutputs(ctx, tx, appID, res.InputIndex, res.Outputs)
 		if err != nil {
@@ -485,6 +549,10 @@ func (r *PostgresRepository) StoreClaimAndProofs(ctx context.Context, epoch *mod
 		return fmt.Errorf("SetEpochClaimAndInsertProofsTransaction failed: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
+
+	if err := lockApplication(ctx, tx, epoch.ApplicationID); err != nil {
+		return err
+	}
 
 	err = updateEpochClaim(ctx, tx, epoch)
 	if err != nil {
@@ -685,6 +753,10 @@ func (r *PostgresRepository) StoreTournamentEvents(
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
+
+	if err := lockApplication(ctx, tx, appID); err != nil {
+		return err
+	}
 
 	err = insertCommitments(ctx, tx, appID, commitments)
 	if err != nil {

@@ -272,3 +272,97 @@ func (s *TournamentSuite) TestListTournaments() {
 		s.Equal(rootAddr, *tournaments[0].ParentTournamentAddress)
 	})
 }
+
+func (s *TournamentSuite) TestHasActiveTournaments() {
+	s.Run("TrueForUnfinishedRootTournament", func() {
+		seed := s.seedWithEpoch()
+		tournament := NewTournamentBuilder(seed.App.ID).
+			WithEpochIndex(0).
+			Build()
+
+		err := s.Repo.CreateTournament(
+			s.Ctx, seed.App.IApplicationAddress.String(), tournament)
+		s.Require().NoError(err)
+
+		active, err := s.Repo.HasActiveTournaments(s.Ctx, seed.App.ID)
+		s.Require().NoError(err)
+		s.True(active)
+	})
+
+	s.Run("FalseForFinishedRootTournament", func() {
+		seed := s.seedWithEpoch()
+		tournament := NewTournamentBuilder(seed.App.ID).
+			WithEpochIndex(0).
+			Build()
+
+		err := s.Repo.CreateTournament(
+			s.Ctx, seed.App.IApplicationAddress.String(), tournament)
+		s.Require().NoError(err)
+
+		tournament.FinishedAtBlock = 123
+		err = s.Repo.UpdateTournament(
+			s.Ctx, seed.App.IApplicationAddress.String(), tournament)
+		s.Require().NoError(err)
+
+		active, err := s.Repo.HasActiveTournaments(s.Ctx, seed.App.ID)
+		s.Require().NoError(err)
+		s.False(active)
+	})
+
+	s.Run("FalseForSubTournamentOnly", func() {
+		seed := s.seedWithEpoch()
+
+		root := NewTournamentBuilder(seed.App.ID).
+			WithEpochIndex(0).
+			Build()
+		err := s.Repo.CreateTournament(
+			s.Ctx, seed.App.IApplicationAddress.String(), root)
+		s.Require().NoError(err)
+
+		root.FinishedAtBlock = 100
+		err = s.Repo.UpdateTournament(
+			s.Ctx, seed.App.IApplicationAddress.String(), root)
+		s.Require().NoError(err)
+
+		c1 := NewCommitmentBuilder(seed.App.ID).
+			WithEpochIndex(0).
+			WithTournamentAddress(root.Address).
+			Build()
+		err = s.Repo.CreateCommitment(
+			s.Ctx, seed.App.IApplicationAddress.String(), c1)
+		s.Require().NoError(err)
+
+		c2 := NewCommitmentBuilder(seed.App.ID).
+			WithEpochIndex(0).
+			WithTournamentAddress(root.Address).
+			Build()
+		err = s.Repo.CreateCommitment(
+			s.Ctx, seed.App.IApplicationAddress.String(), c2)
+		s.Require().NoError(err)
+
+		matchIDHash := UniqueHash()
+		match := NewMatchBuilder(seed.App.ID).
+			WithEpochIndex(0).
+			WithTournamentAddress(root.Address).
+			WithIDHash(matchIDHash).
+			WithCommitmentOne(c1.Commitment).
+			WithCommitmentTwo(c2.Commitment).
+			Build()
+		err = s.Repo.CreateMatch(
+			s.Ctx, seed.App.IApplicationAddress.String(), match)
+		s.Require().NoError(err)
+
+		sub := NewTournamentBuilder(seed.App.ID).
+			WithEpochIndex(0).
+			WithLevel(1).
+			WithParent(root.Address, matchIDHash).
+			Build()
+		err = s.Repo.CreateTournament(
+			s.Ctx, seed.App.IApplicationAddress.String(), sub)
+		s.Require().NoError(err)
+
+		active, err := s.Repo.HasActiveTournaments(s.Ctx, seed.App.ID)
+		s.Require().NoError(err)
+		s.False(active)
+	})
+}

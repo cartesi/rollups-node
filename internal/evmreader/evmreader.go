@@ -25,7 +25,7 @@ import (
 // Interface for the node repository
 type EvmReaderRepository interface {
 	ListApplications(ctx context.Context, f repository.ApplicationFilter, p repository.Pagination, descending bool) ([]*Application, uint64, error)
-	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
+	UpdateApplicationHealth(ctx context.Context, appID int64, state ApplicationHealth, reason *string) error
 	UpdateEventLastCheckBlock(ctx context.Context, appIDs []int64, event MonitoredEvent, blockNumber uint64) error
 	GetEventLastCheckBlock(ctx context.Context, appID int64, event MonitoredEvent) (uint64, error)
 
@@ -130,9 +130,7 @@ func (r *Service) Run(ctx context.Context, ready chan struct{}) error {
 }
 
 func getAllRunningApplications(ctx context.Context, er EvmReaderRepository) ([]*Application, uint64, error) {
-	f := repository.ApplicationFilter{
-		State: Pointer(ApplicationState_Enabled),
-	}
+	f := repository.ApplicationFilter{Active: Pointer(true)}
 	return er.ListApplications(ctx, f, repository.Pagination{}, false)
 }
 
@@ -170,6 +168,11 @@ func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) 
 				err = errors.New("subscription closed unexpectedly")
 			}
 			return headersProcessed, &SubscriptionError{Cause: err}
+		case <-r.appChangeSignal:
+			// App lifecycle changed; the app list will be refreshed
+			// on the next block header (which always re-reads from DB).
+			r.Logger.Debug("Received app_state_changed signal")
+			continue
 		case <-liveness.C:
 			// Before declaring stalled, check if a header arrived simultaneously.
 			// Go's select picks randomly when multiple cases are ready, so the
@@ -200,6 +203,9 @@ func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) 
 		r.Logger.Debug("Retrieving enabled applications")
 		runningApps, _, err := getAllRunningApplications(ctx, r.repository)
 		if err != nil {
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return headersProcessed, ctx.Err()
+			}
 			r.Logger.Error("Error retrieving running applications",
 				"error",
 				err,

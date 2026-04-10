@@ -56,6 +56,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -120,6 +121,8 @@ type CreateInfo struct {
 	ServeMux             *http.ServeMux
 	Context              context.Context
 	Cancel               context.CancelFunc
+	EventChannel         <-chan struct{} // optional: triggers Tick() on event receipt
+	EventLogger          *slog.Logger    // optional: separate logger for event-related messages
 
 	// EnableReschedule, when true, creates a self-continuation channel.
 	// Services that discover remaining work after a Tick() call
@@ -159,6 +162,16 @@ type Service struct {
 	// calls). This covers the race window between Stop() being called and
 	// ctx.Cancel() propagating.
 	stopping atomic.Bool
+
+	// EventChannel, when non-nil, triggers Tick() on event receipt.
+	// Use events.Coalesce() to create from a Subscriber's notification channel.
+	// A nil value disables event-driven wakeup (pure polling).
+	EventChannel <-chan struct{}
+
+	// EventLogger is used for event-related debug messages (tick triggers,
+	// publish, subscribe). When nil, falls back to Logger. Set via
+	// CARTESI_LOG_LEVEL_EVENTS to enable event tracing without full debug.
+	EventLogger *slog.Logger
 }
 
 // Create a service by:
@@ -208,6 +221,15 @@ func Create(ctx context.Context, c *CreateInfo, s *Service) error {
 	// self-rescheduling
 	if c.EnableReschedule {
 		s.reschedule = make(chan struct{}, 1)
+	}
+	// event channel
+	if s.EventChannel == nil && c.EventChannel != nil {
+		s.EventChannel = c.EventChannel
+	}
+
+	// event logger
+	if s.EventLogger == nil && c.EventLogger != nil {
+		s.EventLogger = c.EventLogger
 	}
 
 	// signal handling
@@ -383,16 +405,54 @@ func (s *Service) Serve() error {
 			s.Stop(true) // Stop logs errors internally.
 			return nil
 		case <-s.Ticker.C:
-			s.Tick()
+			s.eventLog().Debug("Tick triggered by poll timer")
 		case <-s.rescheduleChan():
-			s.Tick()
+			s.eventLog().Debug("Tick triggered by reschedule")
+		case _, ok := <-s.eventChan():
+			if !ok {
+				// Event channel closed (subscriber shutdown). Set to nil
+				// so the select case blocks forever, preventing a CPU spin.
+				s.EventChannel = nil
+				continue
+			}
+			s.eventLog().Debug("Tick triggered by event")
 		}
+		// Re-check context before running Tick. Go's select picks randomly
+		// when multiple cases are ready, so a timer/event case can win even
+		// when ctx.Done() is also ready. Without this guard, Tick() runs
+		// with a canceled context and logs spurious errors during shutdown.
+		if errors.Is(s.Context.Err(), context.Canceled) {
+			s.Stop(true)
+			return nil
+		}
+		s.Tick()
 	}
 	return nil
 }
 
 func (s *Service) String() string {
 	return s.Name
+}
+
+// eventChan returns EventChannel if set, or nil.
+// A nil channel in select blocks forever, preserving existing behavior.
+func (s *Service) eventChan() <-chan struct{} {
+	return s.EventChannel
+}
+
+// eventLog returns EventLogger if set, or Logger.
+func (s *Service) eventLog() *slog.Logger {
+	if s.EventLogger != nil {
+		return s.EventLogger
+	}
+	return s.Logger
+}
+
+// EventLog returns the logger for event-related messages.
+// Use this when creating event publishers and subscribers so they
+// share the same log level as the event system (CARTESI_LOG_LEVEL_EVENTS).
+func (s *Service) EventLog() *slog.Logger {
+	return s.eventLog()
 }
 
 // LogConfig logs the service configuration at debug level.

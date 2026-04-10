@@ -313,3 +313,22 @@ func (r *PostgresRepository) ListTournaments(
 
 	return tournaments, total, nil
 }
+
+func (r *PostgresRepository) HasActiveTournaments(ctx context.Context, appID int64) (bool, error) {
+	// Root tournaments (level=0) with finished_at_block=0 (sentinel for "not finished").
+	stmt := table.Tournaments.
+		SELECT(postgres.COUNT(postgres.STAR)).
+		WHERE(
+			table.Tournaments.ApplicationID.EQ(postgres.Int64(appID)).
+				AND(table.Tournaments.Level.EQ(postgres.Int(0))).
+				AND(table.Tournaments.FinishedAtBlock.EQ(uint64Expr(0))),
+		)
+
+	sqlStr, args := stmt.Sql()
+	var count int64
+	err := r.db.QueryRow(ctx, sqlStr, args...).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("has active tournaments: %w", err)
+	}
+	return count > 0, nil
+}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/events"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -61,6 +62,7 @@ func (s *EvmReaderSuite) SetupTest() {
 		client:                              s.client,
 		wsClient:                            s.wsClient,
 		repository:                          s.repository,
+		publisher:                           events.NopPublisher{},
 		defaultBlock:                        DefaultBlock_Latest,
 		adapterFactory:                      s.contractFactory,
 		hasEnabledApps:                      true,

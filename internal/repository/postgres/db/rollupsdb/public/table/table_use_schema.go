@@ -11,6 +11,7 @@ package table
 // this method only once at the beginning of the program.
 func UseSchema(schema string) {
 	Application = Application.FromSchema(schema)
+	ApplicationServiceAck = ApplicationServiceAck.FromSchema(schema)
 	Commitments = Commitments.FromSchema(schema)
 	Epoch = Epoch.FromSchema(schema)
 	ExecutionParameters = ExecutionParameters.FromSchema(schema)

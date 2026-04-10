@@ -251,6 +251,37 @@ func (s *ServeSuite) TestSignalRescheduleNoopWhenDisabled() {
 	s.NotPanics(func() { svc.SignalReschedule() })
 }
 
+func (s *ServeSuite) TestClosedEventChannelDoesNotSpin() {
+	// When the event channel is closed (subscriber shutdown), the Serve()
+	// loop should detect it and disable event wakeup (set EventChannel to nil)
+	// rather than spinning the CPU.
+	impl := &mockImpl{}
+	svc, cancel := createTestService(s.T(), impl, false)
+	defer cancel()
+
+	// Create a channel, close it immediately, and assign as EventChannel.
+	ch := make(chan struct{})
+	close(ch)
+	svc.EventChannel = ch
+
+	done := make(chan struct{})
+	go func() {
+		_ = svc.Serve()
+		close(done)
+	}()
+
+	// Let the Serve loop run briefly. If the closed-channel detection works,
+	// only the initial tick fires (plus at most one from the closed channel
+	// before it is set to nil). Without the fix, ticks would be in the thousands.
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	<-done
+
+	ticks := impl.tickCount.Load()
+	s.LessOrEqual(ticks, int32(3),
+		"closed event channel should not cause excessive ticks (got %d)", ticks)
+}
+
 func (s *ServeSuite) TestDrainReschedule() {
 	impl := &mockImpl{}
 	svc, cancel := createTestService(s.T(), impl, true)

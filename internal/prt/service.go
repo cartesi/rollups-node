@@ -11,6 +11,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
+	"github.com/cartesi/rollups-node/internal/events"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
@@ -26,11 +27,16 @@ type CreateInfo struct {
 	Repository     repository.Repository
 	EthClient      EthClientInterface
 	AdapterFactory AdapterFactory
+
+	// Publisher sends advisory event notifications after DB writes.
+	// Defaults to events.NopPublisher{} if nil.
+	Publisher events.Publisher
 }
 
 type Service struct {
 	service.Service
 	repository        prtRepository
+	publisher         events.Publisher
 	client            EthClientInterface
 	adapterFactory    AdapterFactory
 	submissionEnabled bool
@@ -57,6 +63,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 
 	s := &Service{}
 	c.Impl = s
+	c.EnableReschedule = true
 
 	err = service.Create(ctx, &c.CreateInfo, &s.Service)
 	if err != nil {
@@ -78,6 +85,11 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	s.repository = c.Repository
 	if s.repository == nil {
 		return nil, fmt.Errorf("repository on prt service Create is nil")
+	}
+
+	s.publisher = c.Publisher
+	if s.publisher == nil {
+		s.publisher = events.NopPublisher{}
 	}
 
 	nodeConfig, err := s.setupPersistentConfig(ctx, &c.Config)
@@ -143,6 +155,71 @@ func (s *Service) Tick() []error {
 		return []error{fmt.Errorf("failed to get running applications. %w", err)}
 	}
 
+	needAck, ackErr := s.repository.GetAppsNeedingAck(s.Context, repository.ServicePRT,
+		repository.ConsensusTypesForService(repository.ServicePRT))
+	if ackErr != nil {
+		s.Logger.Warn("Failed to query apps needing drain ack", "error", ackErr)
+	}
+	drainingApps := make(map[int64]struct{}, len(needAck))
+	for _, appID := range needAck {
+		drainingApps[appID] = struct{}{}
+	}
+	s.reconcileDrainingTransactions(drainingApps)
+
+	// Clean up per-app state for apps no longer in the active set.
+	activeIDs := make(map[int64]struct{}, len(apps))
+	for _, app := range apps {
+		activeIDs[app.ID] = struct{}{}
+	}
+
+	// Clean up in-flight tracking BEFORE drain ack so the in-flight check
+	// sees the current state (not stale entries from a previous tick).
+	for appID := range s.currentEpochIndex {
+		if _, draining := drainingApps[appID]; draining {
+			continue
+		}
+		if _, ok := activeIDs[appID]; !ok {
+			s.Logger.Info("Cleaning PRT state for inactive app",
+				"app_id", appID)
+			delete(s.currentEpochIndex, appID)
+			delete(s.settleInFlight, appID)
+			delete(s.joinInFlight, appID)
+		}
+	}
+	for appID := range s.settleInFlight {
+		if _, draining := drainingApps[appID]; draining {
+			continue
+		}
+		if _, ok := activeIDs[appID]; !ok {
+			delete(s.settleInFlight, appID)
+		}
+	}
+	for appID := range s.joinInFlight {
+		if _, draining := drainingApps[appID]; draining {
+			continue
+		}
+		if _, ok := activeIDs[appID]; !ok {
+			delete(s.joinInFlight, appID)
+		}
+	}
+
+	// Scan-based drain ack with in-flight check (fixes B4).
+	// Runs after cleanup so in-flight checks reflect current state.
+	if ackErr == nil {
+		for _, appID := range needAck {
+			if _, settling := s.settleInFlight[appID]; settling {
+				continue
+			}
+			if _, joining := s.joinInFlight[appID]; joining {
+				continue
+			}
+			if err := s.repository.AcknowledgeAppStopped(s.Context, appID, repository.ServicePRT); err != nil {
+				s.Logger.Warn("Failed to write PRT drain ack",
+					"app_id", appID, "error", err)
+			}
+		}
+	}
+
 	// validate each application
 	errs := []error{}
 	for idx := range apps {
@@ -166,6 +243,43 @@ func (s *Service) Tick() []error {
 func (s *Service) Stop(_ bool) []error {
 	s.SetStopping()
 	return nil
+}
+
+func (s *Service) reconcileDrainingTransactions(drainingApps map[int64]struct{}) {
+	for appID := range drainingApps {
+		s.reconcileDrainingTransaction(appID, s.settleInFlight, "settle")
+		s.reconcileDrainingTransaction(appID, s.joinInFlight, "join")
+	}
+}
+
+func (s *Service) reconcileDrainingTransaction(
+	appID int64,
+	inFlight map[int64]*common.Hash,
+	txKind string,
+) {
+	txHash, ok := inFlight[appID]
+	if !ok {
+		return
+	}
+	_, isPending, err := s.client.TransactionByHash(s.Context, *txHash)
+	if err != nil {
+		s.Logger.Warn("Failed to poll draining PRT transaction; preserving in-flight state",
+			"app_id", appID,
+			"tx_kind", txKind,
+			"tx", txHash,
+			"error", err,
+		)
+		return
+	}
+	if isPending {
+		return
+	}
+	s.Logger.Info("Draining PRT transaction has been mined",
+		"app_id", appID,
+		"tx_kind", txKind,
+		"tx", txHash,
+	)
+	delete(inFlight, appID)
 }
 
 func (s *Service) String() string {

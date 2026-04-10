@@ -4,6 +4,7 @@
 package status
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -17,6 +18,11 @@ import (
 )
 
 var yesFlag bool
+
+type enableRepository interface {
+	SetApplicationEnabled(ctx context.Context, appID int64, enabled bool) error
+	MarkApplicationRunning(ctx context.Context, appID int64) error
+}
 
 var Cmd = &cobra.Command{
 	Use:     "status [app-name-or-address] [new-status]",
@@ -72,9 +78,12 @@ func run(cmd *cobra.Command, args []string) {
 
 	// If no new status is provided, display the current status and reason
 	if len(args) == 1 {
-		fmt.Println(app.State)
+		fmt.Printf("enabled=%v health=%s\n", app.Enabled, app.Health)
 		if app.Reason != nil && *app.Reason != "" {
 			fmt.Printf("Reason: %s\n", *app.Reason)
+		}
+		if app.DeletedAt != nil {
+			fmt.Printf("deleted_at=%s\n", app.DeletedAt.Format("2006-01-02T15:04:05Z07:00"))
 		}
 		os.Exit(0)
 	}
@@ -82,7 +91,7 @@ func run(cmd *cobra.Command, args []string) {
 	// Handle status change
 	newStatus := strings.ToLower(args[1])
 
-	if app.State == model.ApplicationState_Inoperable {
+	if app.Health == model.ApplicationHealth_Inoperable {
 		fmt.Fprintf(os.Stderr,
 			"Error: Cannot change state of application %s. It is INOPERABLE (irrecoverable).\n",
 			app.Name)
@@ -93,52 +102,104 @@ func run(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	var targetState model.ApplicationState
 	switch newStatus {
 	case "enabled", "enable":
-		targetState = model.ApplicationState_Enabled
-	case "disabled", "disable":
-		targetState = model.ApplicationState_Disabled
-	default:
-		fmt.Fprintf(os.Stderr, "Error: Invalid status %q. Valid values are 'enabled' or 'disabled'\n", newStatus)
-		os.Exit(1)
-	}
-
-	if app.State == targetState {
-		fmt.Printf("Application %s status is already %s\n", app.Name, app.State)
-		os.Exit(0)
-	}
-
-	// Changing state of a FAILED application requires confirmation
-	if app.State == model.ApplicationState_Failed &&
-		(targetState == model.ApplicationState_Enabled ||
-			targetState == model.ApplicationState_Disabled) &&
-		!yesFlag {
-		fmt.Printf("Application %q is in FAILED state.\n", app.Name)
-		if app.Reason != nil {
-			fmt.Printf("Reason: %s\n", *app.Reason)
-		}
-		if targetState == model.ApplicationState_Enabled {
-			fmt.Println("Re-enabling will attempt to restart processing from the last snapshot.")
-		}
-		confirmed, err := cli.ConfirmPrompt("Proceed?")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
-			os.Exit(1)
-		}
-		if !confirmed {
-			fmt.Println("Aborted.")
+		if app.Enabled && app.Health != model.ApplicationHealth_Failed {
+			fmt.Printf("Application %s is already enabled\n", app.Name)
 			os.Exit(0)
 		}
+
+		// Changing state of a FAILED application requires confirmation
+		if app.Health == model.ApplicationHealth_Failed && !yesFlag {
+			fmt.Printf("Application %q is in FAILED state.\n", app.Name)
+			if app.Reason != nil {
+				fmt.Printf("Reason: %s\n", *app.Reason)
+			}
+			fmt.Println("Re-enabling will attempt to restart processing from the last snapshot.")
+			confirmed, promptErr := cli.ConfirmPrompt("Proceed?")
+			if promptErr != nil {
+				fmt.Fprintf(os.Stderr, "Error reading input: %v\n", promptErr)
+				os.Exit(1)
+			}
+			if !confirmed {
+				fmt.Println("Aborted.")
+				os.Exit(0)
+			}
+		}
+
+		// Show failure reason when changing state away from FAILED
+		if app.Health == model.ApplicationHealth_Failed && app.Reason != nil && *app.Reason != "" {
+			fmt.Printf("Previous failure reason: %s\n", *app.Reason)
+		}
+
+		err = enableApplication(ctx, repo, app)
+		cobra.CheckErr(err)
+		fmt.Printf("Application %s enabled\n", app.Name)
+
+	case "disabled", "disable":
+		if !app.Enabled {
+			fmt.Printf("Application %s is already disabled\n", app.Name)
+			os.Exit(0)
+		}
+
+		// Warn about active PRT tournaments with bonded ETH.
+		if app.IsDaveConsensus() {
+			hasActive, tournErr := repo.HasActiveTournaments(ctx, app.ID)
+			cobra.CheckErr(tournErr)
+			if hasActive {
+				fmt.Fprintf(os.Stderr,
+					"Warning: application %s has active PRT tournaments with bonded ETH.\n"+
+						"Disabling may eventually lead to forfeiture of bonded funds.\n",
+					app.Name)
+				if !yesFlag {
+					confirmed, promptErr := cli.ConfirmPrompt("Proceed with disable?")
+					if promptErr != nil || !confirmed {
+						fmt.Println("Aborted.")
+						os.Exit(0)
+					}
+				}
+			}
+		}
+
+		// Changing state of a FAILED application requires confirmation
+		if app.Health == model.ApplicationHealth_Failed && !yesFlag {
+			fmt.Printf("Application %q is in FAILED state.\n", app.Name)
+			if app.Reason != nil {
+				fmt.Printf("Reason: %s\n", *app.Reason)
+			}
+			confirmed, promptErr := cli.ConfirmPrompt("Proceed?")
+			if promptErr != nil {
+				fmt.Fprintf(os.Stderr, "Error reading input: %v\n", promptErr)
+				os.Exit(1)
+			}
+			if !confirmed {
+				fmt.Println("Aborted.")
+				os.Exit(0)
+			}
+		}
+
+		err = repo.SetApplicationEnabled(ctx, app.ID, false)
+		cobra.CheckErr(err)
+		fmt.Printf("Application %s disabled\n", app.Name)
+
+	default:
+		fmt.Fprintf(os.Stderr,
+			"Error: Invalid status %q. Valid values are 'enabled' or 'disabled'\n", newStatus)
+		os.Exit(1)
 	}
+}
 
-	// Show failure reason when changing state away from FAILED
-	if app.State == model.ApplicationState_Failed && app.Reason != nil && *app.Reason != "" {
-		fmt.Printf("Previous failure reason: %s\n", *app.Reason)
+func enableApplication(ctx context.Context, repo enableRepository, app *model.Application) error {
+	if !app.Enabled {
+		if err := repo.SetApplicationEnabled(ctx, app.ID, true); err != nil {
+			return err
+		}
 	}
-
-	err = repo.UpdateApplicationState(ctx, app.ID, targetState, nil)
-	cobra.CheckErr(err)
-
-	fmt.Printf("Application %s status updated to %s\n", app.Name, targetState)
+	if app.Health == model.ApplicationHealth_Stopped ||
+		app.Health == model.ApplicationHealth_Failed {
+		if err := repo.MarkApplicationRunning(ctx, app.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }

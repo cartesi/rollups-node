@@ -25,6 +25,14 @@ func (r *PostgresRepository) Close() {
 	}
 }
 
+// Pool returns the underlying connection pool. This is a concrete method
+// (not on the Repository interface) used by individual service binaries
+// to construct a PostgreSQL event publisher without leaking pool details
+// into the interface.
+func (r *PostgresRepository) Pool() *pgxpool.Pool {
+	return r.db
+}
+
 func validateSchema(pool *pgxpool.Pool) error {
 
 	s, err := schema.NewWithPool(pool)
