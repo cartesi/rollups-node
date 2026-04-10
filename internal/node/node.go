@@ -5,13 +5,18 @@ package node
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/cartesi/rollups-node/pkg/service"
 
 	"github.com/cartesi/rollups-node/internal/advancer"
 	"github.com/cartesi/rollups-node/internal/claimer"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/events"
+	"github.com/cartesi/rollups-node/internal/events/memory"
+	eventsPostgres "github.com/cartesi/rollups-node/internal/events/postgres"
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
 	"github.com/cartesi/rollups-node/internal/prt"
@@ -45,6 +50,15 @@ type Service struct {
 
 	Children   []service.IService
 	Repository repository.Repository
+
+	// Event system for inter-service notifications (standalone mode).
+	publisher                events.Publisher
+	eventsCloser             interface{ Close() error }
+	evmReaderAppChangeSignal <-chan struct{}
+	advancerEventChannel     <-chan struct{}
+	validatorEventChannel    <-chan struct{}
+	claimerEventChannel      <-chan struct{}
+	prtEventChannel          <-chan struct{}
 }
 
 func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
@@ -72,7 +86,76 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 
 type serviceCreator func(context.Context, *CreateInfo, *Service) (service.IService, error)
 
+// eventsLoggerForService creates an EventLogger for the given service if
+// CARTESI_LOG_LEVEL_EVENTS is set. Returns nil when no override is configured
+// (the service will use its own logger for event messages).
+func eventsLoggerForService(serviceName string, c *CreateInfo) *slog.Logger {
+	serviceLevel := config.ResolveServiceLogLevel(serviceName, c.Config.LogLevel)
+	eventsLevel, hasOverride := config.ResolveEventsLogLevel(serviceLevel)
+	if !hasOverride {
+		return nil
+	}
+	return service.NewLogger(eventsLevel, c.Config.LogColor).With("service", serviceName)
+}
+
 func createServices(ctx context.Context, c *CreateInfo, s *Service) error {
+	eventsLogger := eventsLoggerForService(config.ServiceNode, c)
+
+	var pub events.Publisher
+	var sub events.Subscriber
+
+	if c.Config.FeatureEventsMemoryBus {
+		// In-memory backend: zero-latency, no extra PG connection.
+		// Does not receive cross-process notifications (e.g., CLI app register).
+		bus := memory.NewBus(64) //nolint:mnd
+		if eventsLogger != nil {
+			bus.SetLogger(eventsLogger)
+		}
+		pub = bus
+		sub = bus
+		s.Logger.Info("Event system using in-memory backend")
+	} else {
+		// PostgreSQL backend (default): uses the same LISTEN/NOTIFY code path
+		// as individual-service deployment. Receives cross-process notifications.
+		pool, err := eventsPostgres.PoolFromRepository(c.Repository)
+		if err != nil {
+			return err
+		}
+		logger := eventsLogger
+		if logger == nil {
+			logger = s.Logger
+		}
+		pgPub := eventsPostgres.NewPublisher(pool, logger)
+		pub = pgPub
+
+		eventsConnStr := c.Config.DatabaseEventsConnection.Raw()
+		if eventsConnStr == "" {
+			eventsConnStr = c.Config.DatabaseConnection.Raw()
+		}
+		pgSub := eventsPostgres.NewSubscriber(eventsConnStr, logger, nil)
+		sub = pgSub
+		s.eventsCloser = closeFunc(func() error {
+			return errors.Join(pgPub.Close(), pgSub.Close())
+		})
+		s.Logger.Info("Event system using PostgreSQL LISTEN/NOTIFY backend")
+	}
+
+	// Subscribe each service to its relevant channels before starting goroutines.
+	evmReaderAppChangeCh := sub.Subscribe(events.EVMReaderChannels()...)
+	advancerNotifCh := sub.Subscribe(events.AdvancerChannels()...)
+	validatorNotifCh := sub.Subscribe(events.ValidatorChannels()...)
+	claimerNotifCh := sub.Subscribe(events.ClaimerChannels()...)
+	prtNotifCh := sub.Subscribe(events.PRTChannels()...)
+
+	go func() { _ = sub.Listen(s.Context) }()
+
+	s.publisher = pub
+	s.evmReaderAppChangeSignal = events.Coalesce(evmReaderAppChangeCh)
+	s.advancerEventChannel = events.Coalesce(advancerNotifCh)
+	s.validatorEventChannel = events.Coalesce(validatorNotifCh)
+	s.claimerEventChannel = events.Coalesce(claimerNotifCh)
+	s.prtEventChannel = events.Coalesce(prtNotifCh)
+
 	creators := []serviceCreator{
 		newEVMReader,
 		newAdvancer,
@@ -97,14 +180,21 @@ func createServices(ctx context.Context, c *CreateInfo, s *Service) error {
 		case result := <-ch:
 			if result.err != nil {
 				stopAndDrain(s.Children, ch, len(creators)-len(s.Children)-1)
+				if s.eventsCloser != nil {
+					_ = s.eventsCloser.Close()
+				}
 				return fmt.Errorf("failed to create service: %w", result.err)
 			}
 			s.Children = append(s.Children, result.service)
 		case <-ctx.Done():
 			stopAndDrain(s.Children, ch, len(creators)-len(s.Children))
+			if s.eventsCloser != nil {
+				_ = s.eventsCloser.Close()
+			}
 			return fmt.Errorf("failed to create services: %w", ctx.Err())
 		}
 	}
+
 	return nil
 }
 
@@ -147,8 +237,17 @@ func (me *Service) Stop(force bool) []error {
 	for _, s := range me.Children {
 		errs = append(errs, s.Stop(force)...)
 	}
+	if me.eventsCloser != nil {
+		if err := me.eventsCloser.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	return errs
 }
+
+type closeFunc func() error
+
+func (f closeFunc) Close() error { return f() }
 
 func (me *Service) Serve() error {
 	for _, s := range me.Children {
@@ -171,10 +270,12 @@ func newEVMReader(ctx context.Context, c *CreateInfo, s *Service) (service.IServ
 			TelemetryCreate:      false,
 			ServeMux:             s.ServeMux,
 		},
-		EthClient:   c.ReaderClient,
-		EthWsClient: c.ReaderWSClient,
-		Repository:  c.Repository,
-		Config:      *c.Config.ToEvmreaderConfig(),
+		EthClient:       c.ReaderClient,
+		EthWsClient:     c.ReaderWSClient,
+		Repository:      c.Repository,
+		Config:          *c.Config.ToEvmreaderConfig(),
+		Publisher:       s.publisher,
+		AppChangeSignal: s.evmReaderAppChangeSignal,
 	}
 
 	readerService, err := evmreader.Create(ctx, &readerArgs)
@@ -196,9 +297,12 @@ func newAdvancer(ctx context.Context, c *CreateInfo, s *Service) (service.IServi
 			TelemetryCreate:      false,
 			PollInterval:         c.Config.AdvancerPollingInterval,
 			ServeMux:             s.ServeMux,
+			EventChannel:         s.advancerEventChannel,
+			EventLogger:          eventsLoggerForService(config.ServiceAdvancer, c),
 		},
 		Repository: c.Repository,
 		Config:     *c.Config.ToAdvancerConfig(),
+		Publisher:  s.publisher,
 	}
 
 	advancerService, err := advancer.Create(ctx, &advancerArgs)
@@ -220,9 +324,12 @@ func newValidator(ctx context.Context, c *CreateInfo, s *Service) (service.IServ
 			TelemetryCreate:      false,
 			PollInterval:         c.Config.ValidatorPollingInterval,
 			ServeMux:             s.ServeMux,
+			EventChannel:         s.validatorEventChannel,
+			EventLogger:          eventsLoggerForService(config.ServiceValidator, c),
 		},
 		Repository: c.Repository,
 		Config:     *c.Config.ToValidatorConfig(),
+		Publisher:  s.publisher,
 	}
 
 	validatorService, err := validator.Create(ctx, &validatorArgs)
@@ -244,10 +351,13 @@ func newClaimer(ctx context.Context, c *CreateInfo, s *Service) (service.IServic
 			TelemetryCreate:      false,
 			PollInterval:         c.Config.ClaimerPollingInterval,
 			ServeMux:             s.ServeMux,
+			EventChannel:         s.claimerEventChannel,
+			EventLogger:          eventsLoggerForService(config.ServiceClaimer, c),
 		},
 		EthConn:    c.ClaimerClient,
 		Repository: c.Repository,
 		Config:     *c.Config.ToClaimerConfig(),
+		Publisher:  s.publisher,
 	}
 
 	claimerService, err := claimer.Create(ctx, &claimerArgs)
@@ -292,10 +402,13 @@ func newPrt(ctx context.Context, c *CreateInfo, s *Service) (service.IService, e
 			TelemetryCreate:      false,
 			PollInterval:         c.Config.PrtPollingInterval,
 			ServeMux:             s.ServeMux,
+			EventChannel:         s.prtEventChannel,
+			EventLogger:          eventsLoggerForService(config.ServicePrt, c),
 		},
 		EthClient:  c.PrtClient,
 		Repository: c.Repository,
 		Config:     *c.Config.ToPrtConfig(),
+		Publisher:  s.publisher,
 	}
 
 	prtService, err := prt.Create(ctx, &prtArgs)

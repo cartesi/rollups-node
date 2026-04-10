@@ -331,6 +331,22 @@ func ResolveServiceLogLevel(name string, globalLevel LogLevel) LogLevel {
 	return level
 }
 
+// ResolveEventsLogLevel returns the events log level override if set,
+// otherwise returns the provided service log level (meaning events logs
+// use the same level as the service). This is a transversal setting that
+// applies across all services.
+func ResolveEventsLogLevel(serviceLevel LogLevel) (LogLevel, bool) {
+	level, err := GetLogLevelEvents()
+	if err != nil {
+		if !errors.Is(err, ErrNotDefined) {
+			slog.Warn("invalid events log level override, using service level",
+				"error", err)
+		}
+		return serviceLevel, false
+	}
+	return level, true
+}
+
 // Aliases to be used by the generated functions.
 var (
 	toBool            = strconv.ParseBool

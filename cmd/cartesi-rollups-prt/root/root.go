@@ -7,6 +7,8 @@ import (
 	"context"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/events"
+	eventsPostgres "github.com/cartesi/rollups-node/internal/events/postgres"
 	"github.com/cartesi/rollups-node/internal/prt"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/internal/version"
@@ -45,11 +47,15 @@ func init() {
 	Cmd.Flags().BoolVar(&logColor, "log-color", true, "Tint the logs (colored output)")
 	cobra.CheckErr(viper.BindPFlag(config.LOG_COLOR, Cmd.Flags().Lookup("log-color")))
 
+	Cmd.Flags().String("log-level-events", "",
+		"Log level for event system messages: publish, subscribe, tick triggers (default: inherit --log-level)")
+	cobra.CheckErr(viper.BindPFlag(config.LOG_LEVEL_EVENTS, Cmd.Flags().Lookup("log-level-events")))
+
 	Cmd.Flags().StringVar(&databaseConnection, "database-connection", "",
 		"Database connection string in the URL format\n(eg.: 'postgres://user:password@hostname:port/database') ")
 	cobra.CheckErr(viper.BindPFlag(config.DATABASE_CONNECTION, Cmd.Flags().Lookup("database-connection")))
 
-	Cmd.Flags().StringVar(&pollInterval, "poll-interval", "3", "Poll interval")
+	Cmd.Flags().StringVar(&pollInterval, "poll-interval", "3", "Safety-net poll interval in seconds")
 	cobra.CheckErr(viper.BindPFlag(config.PRT_POLLING_INTERVAL, Cmd.Flags().Lookup("poll-interval")))
 
 	Cmd.Flags().StringVar(&maxStartupTime, "max-startup-time", "15", "Maximum startup time in seconds")
@@ -101,9 +107,25 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	defer createInfo.Repository.Close()
 
+	// Wire PostgreSQL event publisher and subscriber.
+	eventsLogLevel, hasEventsOverride := config.ResolveEventsLogLevel(logLevel)
+	eventsLogger := service.NewLogger(eventsLogLevel, cfg.LogColor).With("service", config.ServicePrt)
+	if hasEventsOverride {
+		createInfo.CreateInfo.EventLogger = eventsLogger
+	}
+	pool, err := eventsPostgres.PoolFromRepository(createInfo.Repository)
+	cobra.CheckErr(err)
+	w := eventsPostgres.Wire(pool, cfg.DatabaseConnection.Raw(), cfg.DatabaseEventsConnection.Raw(),
+		eventsLogger, events.PRTChannels()...)
+	defer w.Close()
+	createInfo.Publisher = w.Publisher
+	createInfo.CreateInfo.EventChannel = w.Signal
+
 	prtService, err := prt.Create(ctx, &createInfo)
 	cobra.CheckErr(err)
 	prtService.LogConfig(createInfo.Config)
+
+	w.StartListener(prtService.Context)
 
 	cobra.CheckErr(prtService.Serve())
 }

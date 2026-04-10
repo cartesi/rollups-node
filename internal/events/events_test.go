@@ -44,3 +44,38 @@ func TestValidateChannelRejectsEmpty(t *testing.T) {
 	err := ValidateChannel("")
 	require.Error(t, err)
 }
+
+func TestServiceSubscriptionChannels(t *testing.T) {
+	testCases := map[string][]Channel{
+		"evmreader": EVMReaderChannels(),
+		"advancer":  AdvancerChannels(),
+		"validator": ValidatorChannels(),
+		"claimer":   ClaimerChannels(),
+		"prt":       PRTChannels(),
+	}
+
+	expected := map[string][]Channel{
+		"evmreader": {ChannelAppStateChanged},
+		"advancer":  {ChannelInputReceived, ChannelEpochClosed, ChannelAppStateChanged},
+		"validator": {ChannelInputsProcessed, ChannelAppStateChanged},
+		"claimer":   {ChannelClaimComputed, ChannelAppStateChanged},
+		"prt":       {ChannelClaimComputed, ChannelAppStateChanged},
+	}
+
+	for name, channels := range testCases {
+		assert.Equal(t, expected[name], channels, name)
+		for _, ch := range ExternalNotificationChannels {
+			assert.NotContains(t, channels, ch, "%s should not subscribe to external channel %s", name, ch)
+		}
+	}
+}
+
+func TestSubscriptionChannelHelpersReturnCopies(t *testing.T) {
+	advancer := AdvancerChannels()
+	advancer[0] = ChannelClaimSubmitted
+
+	assert.Equal(t,
+		[]Channel{ChannelInputReceived, ChannelEpochClosed, ChannelAppStateChanged},
+		AdvancerChannels(),
+	)
+}

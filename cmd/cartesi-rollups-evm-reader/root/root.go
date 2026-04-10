@@ -7,6 +7,8 @@ import (
 	"context"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/events"
+	eventsPostgres "github.com/cartesi/rollups-node/internal/events/postgres"
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/internal/version"
@@ -53,6 +55,10 @@ func init() {
 
 	Cmd.Flags().BoolVar(&logColor, "log-color", true, "Tint the logs (colored output)")
 	cobra.CheckErr(viper.BindPFlag(config.LOG_COLOR, Cmd.Flags().Lookup("log-color")))
+
+	Cmd.Flags().String("log-level-events", "",
+		"Log level for event system messages: publish, subscribe, tick triggers (default: inherit --log-level)")
+	cobra.CheckErr(viper.BindPFlag(config.LOG_LEVEL_EVENTS, Cmd.Flags().Lookup("log-level-events")))
 
 	Cmd.Flags().StringVar(&databaseConnection, "database-connection", "",
 		"Database connection string in the URL format\n(eg.: 'postgres://user:password@hostname:port/database') ")
@@ -123,9 +129,22 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	defer createInfo.Repository.Close()
 
+	// Wire PostgreSQL event publisher and subscriber.
+	eventsLogLevel, _ := config.ResolveEventsLogLevel(logLevel)
+	eventsLogger := service.NewLogger(eventsLogLevel, cfg.LogColor).With("service", config.ServiceEvmReader)
+	pool, err := eventsPostgres.PoolFromRepository(createInfo.Repository)
+	cobra.CheckErr(err)
+	w := eventsPostgres.Wire(pool, cfg.DatabaseConnection.Raw(), cfg.DatabaseEventsConnection.Raw(),
+		eventsLogger, events.EVMReaderChannels()...)
+	defer w.Close()
+	createInfo.Publisher = w.Publisher
+	createInfo.AppChangeSignal = w.Signal
+
 	readerService, err := evmreader.Create(ctx, &createInfo)
 	cobra.CheckErr(err)
 	readerService.LogConfig(createInfo.Config)
+
+	w.StartListener(readerService.Context)
 
 	cobra.CheckErr(readerService.Serve())
 }

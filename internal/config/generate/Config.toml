@@ -65,6 +65,16 @@ Override log level for the validator service. Falls back to CARTESI_LOG_LEVEL if
 One of "debug", "info", "warn", "error"."""
 used-by = ["validator", "node"]
 
+[logging.CARTESI_LOG_LEVEL_EVENTS]
+go-type = "LogLevel"
+omit = true
+description = """
+Log level for event system messages (publish, subscribe, tick triggers).
+Set to "debug" to trace event flow without enabling full debug logging.
+Falls back to the service log level if unset.
+One of "debug", "info", "warn", "error"."""
+used-by = ["advancer", "claimer", "evmreader", "validator", "node", "prt"]
+
 #
 # Features
 #
@@ -97,6 +107,17 @@ description = """
 If set to false, the node will not start the jsonrpc api service."""
 used-by = ["node"]
 
+[features.CARTESI_FEATURE_EVENTS_MEMORY_BUS]
+default = "false"
+go-type = "bool"
+description = """
+If set to true, the standalone node uses an in-memory event bus instead of PostgreSQL
+LISTEN/NOTIFY for inter-service notifications. The in-memory bus has zero latency but
+does not receive cross-process notifications (e.g., from CLI commands registering apps).
+The default (false) uses PostgreSQL, which exercises the same code path as individual-service
+deployment."""
+used-by = ["node"]
+
 [features.CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED]
 default = "true"
 go-type = "bool"
@@ -118,31 +139,45 @@ synchronization. Bounds memory usage for applications with large backlogs of unp
 used-by = ["advancer", "node"]
 
 [rollups.CARTESI_ADVANCER_POLLING_INTERVAL]
-default = "3"
+default = "30"
 go-type = "Duration"
 description = """
-How many seconds the node will wait before querying the database for new inputs."""
+Safety-net polling interval in seconds. The advancer is woken immediately by event \
+notifications when new inputs arrive; this interval is a fallback to guarantee liveness \
+if a notification is lost."""
 used-by = ["advancer", "node"]
 
 [rollups.CARTESI_VALIDATOR_POLLING_INTERVAL]
-default = "3"
+default = "30"
 go-type = "Duration"
 description = """
-How many seconds the node will wait before trying to finish epochs for all applications."""
+Safety-net polling interval in seconds. The validator is woken immediately by event \
+notifications when inputs are processed; this interval is a fallback to guarantee liveness \
+if a notification is lost."""
 used-by = ["validator", "node"]
 
 [rollups.CARTESI_CLAIMER_POLLING_INTERVAL]
 default = "3"
 go-type = "Duration"
 description = """
-How many seconds the node will wait before querying the database for new claims."""
+Polling interval in seconds. The claimer is woken immediately by event notifications \
+when claims are computed, but it also needs to poll for L1 transaction confirmations \
+(claim submission receipts, ClaimAccepted events) which arrive with new blocks. The \
+default (3s) is kept short because the claimer cannot rely solely on internal events \
+for L1-dependent work — it must poll at a rate informed by the L1 block time \
+(~12s for Ethereum mainnet, ~2s for some L2s)."""
 used-by = ["claimer", "node"]
 
 [rollups.CARTESI_PRT_POLLING_INTERVAL]
 default = "3"
 go-type = "Duration"
 description = """
-How many seconds the node will wait before trying to finish epochs for all applications."""
+Polling interval in seconds. PRT is woken immediately by event notifications when \
+claims are computed, but it also needs to poll for L1 transaction confirmations \
+(settle/join receipts, tournament state changes) which arrive with new blocks. The \
+default (3s) is kept short because PRT cannot rely solely on internal events for \
+L1-dependent work — it must poll at a rate informed by the L1 block time \
+(~12s for Ethereum mainnet, ~2s for some L2s)."""
 used-by = ["prt", "node"]
 
 [rollups.CARTESI_MAX_STARTUP_TIME]
@@ -380,6 +415,20 @@ It is also possible to set the endpoint without a password and load it from Post
 See [this](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-PASSFILE)
 for more information."""
 used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "cli", "prt"]
+
+[database.CARTESI_DATABASE_EVENTS_CONNECTION]
+default = ""
+file = true
+optional = true
+go-type = "URL"
+description = """
+Postgres endpoint for event notifications (LISTEN/NOTIFY). Falls back to \
+CARTESI_DATABASE_CONNECTION if not set.
+
+Use a separate connection when running behind PgBouncer in transaction-pooling mode, \
+which does not support LISTEN. Point this to a direct PostgreSQL connection while \
+CARTESI_DATABASE_CONNECTION goes through PgBouncer."""
+used-by = ["advancer", "claimer", "evmreader", "validator", "node", "prt"]
 
 #
 # Telemetry http address
