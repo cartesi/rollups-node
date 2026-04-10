@@ -6,6 +6,7 @@ package root
 import (
 	"context"
 
+	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/prt"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
@@ -14,7 +15,6 @@ import (
 	"github.com/cartesi/rollups-node/pkg/service"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var (
@@ -36,24 +36,22 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
-	Cmd.Flags().StringVar(&telemetryAddress, "telemetry-address", ":10003", "Health check and metrics address and port")
-	cobra.CheckErr(viper.BindPFlag(config.TELEMETRY_ADDRESS, Cmd.Flags().Lookup("telemetry-address")))
+	flags := Cmd.Flags()
 
-	Cmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level: debug, info, warn or error")
-	cobra.CheckErr(viper.BindPFlag(config.LOG_LEVEL, Cmd.Flags().Lookup("log-level")))
+	config.SetDefaults()
 
-	Cmd.Flags().BoolVar(&logColor, "log-color", true, "Tint the logs (colored output)")
-	cobra.CheckErr(viper.BindPFlag(config.LOG_COLOR, Cmd.Flags().Lookup("log-color")))
-
-	Cmd.Flags().StringVar(&databaseConnection, "database-connection", "",
+	cli.AddFlagStrVar(flags, &telemetryAddress, "telemetry-address", config.PRT_TELEMETRY_ADDRESS,
+		"Health check and metrics address and port")
+	cli.AddFlagStrVar(flags, &logLevel, "log-level", config.LOG_LEVEL,
+		"Log level: debug, info, warn or error")
+	cli.AddFlagBoolVar(flags, &logColor, "log-color", config.LOG_COLOR,
+		"Tint the logs (colored output)")
+	cli.AddFlagStrVar(flags, &databaseConnection, "database-connection", config.DATABASE_CONNECTION,
 		"Database connection string in the URL format\n(eg.: 'postgres://user:password@hostname:port/database') ")
-	cobra.CheckErr(viper.BindPFlag(config.DATABASE_CONNECTION, Cmd.Flags().Lookup("database-connection")))
-
-	Cmd.Flags().StringVar(&pollInterval, "poll-interval", "3", "Poll interval")
-	cobra.CheckErr(viper.BindPFlag(config.PRT_POLLING_INTERVAL, Cmd.Flags().Lookup("poll-interval")))
-
-	Cmd.Flags().StringVar(&maxStartupTime, "max-startup-time", "15", "Maximum startup time in seconds")
-	cobra.CheckErr(viper.BindPFlag(config.MAX_STARTUP_TIME, Cmd.Flags().Lookup("max-startup-time")))
+	cli.AddFlagStrVar(flags, &pollInterval, "poll-interval", config.PRT_POLLING_INTERVAL,
+		"Poll interval")
+	cli.AddFlagStrVar(flags, &maxStartupTime, "max-startup-time", config.MAX_STARTUP_TIME,
+		"Maximum startup time in seconds")
 
 	// TODO: validate on preRunE
 	Cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
@@ -78,7 +76,7 @@ func run(cmd *cobra.Command, args []string) {
 			LogColor:             cfg.LogColor,
 			EnableSignalHandling: true,
 			TelemetryCreate:      true,
-			TelemetryAddress:     cfg.TelemetryAddress,
+			TelemetryAddress:     cfg.PrtTelemetryAddress,
 			PollInterval:         cfg.PrtPollingInterval,
 		},
 		Config: *cfg,

@@ -168,8 +168,6 @@ type {{ capitalize $service }}Config struct {
 // Load{{ capitalize $service }}Config reads configuration from environment variables, a config file, and defaults.
 // Priority: command line flags > environment variables > config file > defaults.
 func Load{{ capitalize $service }}Config() (*{{ capitalize $service }}Config, error) {
-	SetDefaults()
-
 	// Load config file if specified via --config flag.
 	if cfgFile := viper.GetString("config"); cfgFile != "" {
 		viper.SetConfigFile(cfgFile)

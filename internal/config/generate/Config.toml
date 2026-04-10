@@ -385,11 +385,54 @@ used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "
 # Telemetry http address
 #
 
-[http.CARTESI_TELEMETRY_ADDRESS]
+[http.CARTESI_ADVANCER_TELEMETRY_ADDRESS]
+default = ":10002"
 go-type = "string"
 description = """
-HTTP address for telemetry service."""
-used-by = ["advancer", "claimer", "evmreader", "validator", "jsonrpc", "node", "cli", "prt"]
+HTTP address for Advancer's telemetry service."""
+used-by = ["advancer"]
+
+[http.CARTESI_CLAIMER_TELEMETRY_ADDRESS]
+default = ":10004"
+go-type = "string"
+description = """
+HTTP address for Claimer's telemetry service."""
+used-by = ["claimer"]
+
+[http.CARTESI_EVM_READER_TELEMETRY_ADDRESS]
+default = ":10001"
+go-type = "string"
+description = """
+HTTP address for EVM Reader's telemetry service."""
+used-by = ["evmreader"]
+
+[http.CARTESI_VALIDATOR_TELEMETRY_ADDRESS]
+default = ":10003"
+go-type = "string"
+description = """
+HTTP address for Validator's telemetry service."""
+used-by = ["validator"]
+
+[http.CARTESI_JSONRPC_TELEMETRY_ADDRESS]
+default = ":10005"
+go-type = "string"
+description = """
+HTTP address for JSON-RPC's telemetry service."""
+used-by = ["jsonrpc"]
+
+[http.CARTESI_NODE_TELEMETRY_ADDRESS]
+default = ":10000"
+go-type = "string"
+description = """
+HTTP address for Node's telemetry service."""
+used-by = ["node"]
+
+[http.CARTESI_PRT_TELEMETRY_ADDRESS]
+default = ":10006"
+go-type = "string"
+description = """
+HTTP address for PRT's telemetry service."""
+used-by = ["prt"]
 
 #
 # HTTP

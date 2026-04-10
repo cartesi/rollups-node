@@ -45,11 +45,17 @@ const (
 	FEATURE_INSPECT_ENABLED                           = "CARTESI_FEATURE_INSPECT_ENABLED"
 	FEATURE_JSONRPC_API_ENABLED                       = "CARTESI_FEATURE_JSONRPC_API_ENABLED"
 	FEATURE_MACHINE_HASH_CHECK_ENABLED                = "CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED"
+	ADVANCER_TELEMETRY_ADDRESS                        = "CARTESI_ADVANCER_TELEMETRY_ADDRESS"
+	CLAIMER_TELEMETRY_ADDRESS                         = "CARTESI_CLAIMER_TELEMETRY_ADDRESS"
+	EVM_READER_TELEMETRY_ADDRESS                      = "CARTESI_EVM_READER_TELEMETRY_ADDRESS"
 	INSPECT_ADDRESS                                   = "CARTESI_INSPECT_ADDRESS"
 	INSPECT_URL                                       = "CARTESI_INSPECT_URL"
 	JSONRPC_API_ADDRESS                               = "CARTESI_JSONRPC_API_ADDRESS"
 	JSONRPC_API_URL                                   = "CARTESI_JSONRPC_API_URL"
-	TELEMETRY_ADDRESS                                 = "CARTESI_TELEMETRY_ADDRESS"
+	JSONRPC_TELEMETRY_ADDRESS                         = "CARTESI_JSONRPC_TELEMETRY_ADDRESS"
+	NODE_TELEMETRY_ADDRESS                            = "CARTESI_NODE_TELEMETRY_ADDRESS"
+	PRT_TELEMETRY_ADDRESS                             = "CARTESI_PRT_TELEMETRY_ADDRESS"
+	VALIDATOR_TELEMETRY_ADDRESS                       = "CARTESI_VALIDATOR_TELEMETRY_ADDRESS"
 	LOG_COLOR                                         = "CARTESI_LOG_COLOR"
 	LOG_LEVEL                                         = "CARTESI_LOG_LEVEL"
 	LOG_LEVEL_ADVANCER                                = "CARTESI_LOG_LEVEL_ADVANCER"
@@ -137,6 +143,12 @@ func SetDefaults() {
 
 	viper.SetDefault(FEATURE_MACHINE_HASH_CHECK_ENABLED, "true")
 
+	viper.SetDefault(ADVANCER_TELEMETRY_ADDRESS, ":10002")
+
+	viper.SetDefault(CLAIMER_TELEMETRY_ADDRESS, ":10004")
+
+	viper.SetDefault(EVM_READER_TELEMETRY_ADDRESS, ":10001")
+
 	viper.SetDefault(INSPECT_ADDRESS, ":10012")
 
 	viper.SetDefault(INSPECT_URL, "http://localhost:10012")
@@ -145,7 +157,13 @@ func SetDefaults() {
 
 	viper.SetDefault(JSONRPC_API_URL, "http://localhost:10011/rpc")
 
-	// no default for CARTESI_TELEMETRY_ADDRESS
+	viper.SetDefault(JSONRPC_TELEMETRY_ADDRESS, ":10005")
+
+	viper.SetDefault(NODE_TELEMETRY_ADDRESS, ":10000")
+
+	viper.SetDefault(PRT_TELEMETRY_ADDRESS, ":10006")
+
+	viper.SetDefault(VALIDATOR_TELEMETRY_ADDRESS, ":10003")
 
 	viper.SetDefault(LOG_COLOR, "true")
 
@@ -215,11 +233,11 @@ type AdvancerConfig struct {
 	// the snapshot matches the hash in the Application contract.
 	FeatureMachineHashCheckEnabled bool `mapstructure:"CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED"`
 
+	// HTTP address for Advancer's telemetry service.
+	AdvancerTelemetryAddress string `mapstructure:"CARTESI_ADVANCER_TELEMETRY_ADDRESS"`
+
 	// HTTP address for inspect.
 	InspectAddress string `mapstructure:"CARTESI_INSPECT_ADDRESS"`
-
-	// HTTP address for telemetry service.
-	TelemetryAddress string `mapstructure:"CARTESI_TELEMETRY_ADDRESS"`
 
 	// If set to true, the node will add colors to its log output.
 	LogColor bool `mapstructure:"CARTESI_LOG_COLOR"`
@@ -248,8 +266,6 @@ type AdvancerConfig struct {
 // LoadAdvancerConfig reads configuration from environment variables, a config file, and defaults.
 // Priority: command line flags > environment variables > config file > defaults.
 func LoadAdvancerConfig() (*AdvancerConfig, error) {
-	SetDefaults()
-
 	// Load config file if specified via --config flag.
 	if cfgFile := viper.GetString("config"); cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
@@ -282,18 +298,18 @@ func LoadAdvancerConfig() (*AdvancerConfig, error) {
 		return nil, fmt.Errorf("CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED is required for the advancer service: %w", err)
 	}
 
+	cfg.AdvancerTelemetryAddress, err = GetAdvancerTelemetryAddress()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_ADVANCER_TELEMETRY_ADDRESS: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_ADVANCER_TELEMETRY_ADDRESS is required for the advancer service: %w", err)
+	}
+
 	cfg.InspectAddress, err = GetInspectAddress()
 	if err != nil && err != ErrNotDefined {
 		return nil, fmt.Errorf("failed to get CARTESI_INSPECT_ADDRESS: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_INSPECT_ADDRESS is required for the advancer service: %w", err)
-	}
-
-	cfg.TelemetryAddress, err = GetTelemetryAddress()
-	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_TELEMETRY_ADDRESS: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_TELEMETRY_ADDRESS is required for the advancer service: %w", err)
 	}
 
 	cfg.LogColor, err = GetLogColor()
@@ -378,8 +394,8 @@ type ClaimerConfig struct {
 	// If set to false, the node will not submit claims (reader mode).
 	FeatureClaimSubmissionEnabled bool `mapstructure:"CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"`
 
-	// HTTP address for telemetry service.
-	TelemetryAddress string `mapstructure:"CARTESI_TELEMETRY_ADDRESS"`
+	// HTTP address for Claimer's telemetry service.
+	ClaimerTelemetryAddress string `mapstructure:"CARTESI_CLAIMER_TELEMETRY_ADDRESS"`
 
 	// If set to true, the node will add colors to its log output.
 	LogColor bool `mapstructure:"CARTESI_LOG_COLOR"`
@@ -409,8 +425,6 @@ type ClaimerConfig struct {
 // LoadClaimerConfig reads configuration from environment variables, a config file, and defaults.
 // Priority: command line flags > environment variables > config file > defaults.
 func LoadClaimerConfig() (*ClaimerConfig, error) {
-	SetDefaults()
-
 	// Load config file if specified via --config flag.
 	if cfgFile := viper.GetString("config"); cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
@@ -464,11 +478,11 @@ func LoadClaimerConfig() (*ClaimerConfig, error) {
 		return nil, fmt.Errorf("CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED is required for the claimer service: %w", err)
 	}
 
-	cfg.TelemetryAddress, err = GetTelemetryAddress()
+	cfg.ClaimerTelemetryAddress, err = GetClaimerTelemetryAddress()
 	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_TELEMETRY_ADDRESS: %w", err)
+		return nil, fmt.Errorf("failed to get CARTESI_CLAIMER_TELEMETRY_ADDRESS: %w", err)
 	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_TELEMETRY_ADDRESS is required for the claimer service: %w", err)
+		return nil, fmt.Errorf("CARTESI_CLAIMER_TELEMETRY_ADDRESS is required for the claimer service: %w", err)
 	}
 
 	cfg.LogColor, err = GetLogColor()
@@ -559,8 +573,8 @@ type EvmreaderConfig struct {
 	// If set to false, the node will not read inputs from the blockchain.
 	FeatureInputReaderEnabled bool `mapstructure:"CARTESI_FEATURE_INPUT_READER_ENABLED"`
 
-	// HTTP address for telemetry service.
-	TelemetryAddress string `mapstructure:"CARTESI_TELEMETRY_ADDRESS"`
+	// HTTP address for EVM Reader's telemetry service.
+	EvmReaderTelemetryAddress string `mapstructure:"CARTESI_EVM_READER_TELEMETRY_ADDRESS"`
 
 	// If set to true, the node will add colors to its log output.
 	LogColor bool `mapstructure:"CARTESI_LOG_COLOR"`
@@ -596,8 +610,6 @@ type EvmreaderConfig struct {
 // LoadEvmreaderConfig reads configuration from environment variables, a config file, and defaults.
 // Priority: command line flags > environment variables > config file > defaults.
 func LoadEvmreaderConfig() (*EvmreaderConfig, error) {
-	SetDefaults()
-
 	// Load config file if specified via --config flag.
 	if cfgFile := viper.GetString("config"); cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
@@ -651,11 +663,11 @@ func LoadEvmreaderConfig() (*EvmreaderConfig, error) {
 		return nil, fmt.Errorf("CARTESI_FEATURE_INPUT_READER_ENABLED is required for the evmreader service: %w", err)
 	}
 
-	cfg.TelemetryAddress, err = GetTelemetryAddress()
+	cfg.EvmReaderTelemetryAddress, err = GetEvmReaderTelemetryAddress()
 	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_TELEMETRY_ADDRESS: %w", err)
+		return nil, fmt.Errorf("failed to get CARTESI_EVM_READER_TELEMETRY_ADDRESS: %w", err)
 	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_TELEMETRY_ADDRESS is required for the evmreader service: %w", err)
+		return nil, fmt.Errorf("CARTESI_EVM_READER_TELEMETRY_ADDRESS is required for the evmreader service: %w", err)
 	}
 
 	cfg.LogColor, err = GetLogColor()
@@ -747,8 +759,8 @@ type JsonrpcConfig struct {
 	// HTTP address for the JSON-RPC API.
 	JsonrpcApiAddress string `mapstructure:"CARTESI_JSONRPC_API_ADDRESS"`
 
-	// HTTP address for telemetry service.
-	TelemetryAddress string `mapstructure:"CARTESI_TELEMETRY_ADDRESS"`
+	// HTTP address for JSON-RPC's telemetry service.
+	JsonrpcTelemetryAddress string `mapstructure:"CARTESI_JSONRPC_TELEMETRY_ADDRESS"`
 
 	// If set to true, the node will add colors to its log output.
 	LogColor bool `mapstructure:"CARTESI_LOG_COLOR"`
@@ -763,8 +775,6 @@ type JsonrpcConfig struct {
 // LoadJsonrpcConfig reads configuration from environment variables, a config file, and defaults.
 // Priority: command line flags > environment variables > config file > defaults.
 func LoadJsonrpcConfig() (*JsonrpcConfig, error) {
-	SetDefaults()
-
 	// Load config file if specified via --config flag.
 	if cfgFile := viper.GetString("config"); cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
@@ -790,11 +800,11 @@ func LoadJsonrpcConfig() (*JsonrpcConfig, error) {
 		return nil, fmt.Errorf("CARTESI_JSONRPC_API_ADDRESS is required for the jsonrpc service: %w", err)
 	}
 
-	cfg.TelemetryAddress, err = GetTelemetryAddress()
+	cfg.JsonrpcTelemetryAddress, err = GetJsonrpcTelemetryAddress()
 	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_TELEMETRY_ADDRESS: %w", err)
+		return nil, fmt.Errorf("failed to get CARTESI_JSONRPC_TELEMETRY_ADDRESS: %w", err)
 	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_TELEMETRY_ADDRESS is required for the jsonrpc service: %w", err)
+		return nil, fmt.Errorf("CARTESI_JSONRPC_TELEMETRY_ADDRESS is required for the jsonrpc service: %w", err)
 	}
 
 	cfg.LogColor, err = GetLogColor()
@@ -873,8 +883,8 @@ type NodeConfig struct {
 	// HTTP address for the JSON-RPC API.
 	JsonrpcApiAddress string `mapstructure:"CARTESI_JSONRPC_API_ADDRESS"`
 
-	// HTTP address for telemetry service.
-	TelemetryAddress string `mapstructure:"CARTESI_TELEMETRY_ADDRESS"`
+	// HTTP address for Node's telemetry service.
+	NodeTelemetryAddress string `mapstructure:"CARTESI_NODE_TELEMETRY_ADDRESS"`
 
 	// If set to true, the node will add colors to its log output.
 	LogColor bool `mapstructure:"CARTESI_LOG_COLOR"`
@@ -933,8 +943,6 @@ type NodeConfig struct {
 // LoadNodeConfig reads configuration from environment variables, a config file, and defaults.
 // Priority: command line flags > environment variables > config file > defaults.
 func LoadNodeConfig() (*NodeConfig, error) {
-	SetDefaults()
-
 	// Load config file if specified via --config flag.
 	if cfgFile := viper.GetString("config"); cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
@@ -1037,11 +1045,11 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("CARTESI_JSONRPC_API_ADDRESS is required for the node service: %w", err)
 	}
 
-	cfg.TelemetryAddress, err = GetTelemetryAddress()
+	cfg.NodeTelemetryAddress, err = GetNodeTelemetryAddress()
 	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_TELEMETRY_ADDRESS: %w", err)
+		return nil, fmt.Errorf("failed to get CARTESI_NODE_TELEMETRY_ADDRESS: %w", err)
 	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_TELEMETRY_ADDRESS is required for the node service: %w", err)
+		return nil, fmt.Errorf("CARTESI_NODE_TELEMETRY_ADDRESS is required for the node service: %w", err)
 	}
 
 	cfg.LogColor, err = GetLogColor()
@@ -1196,8 +1204,8 @@ type PrtConfig struct {
 	// If set to false, the node will not submit claims (reader mode).
 	FeatureClaimSubmissionEnabled bool `mapstructure:"CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"`
 
-	// HTTP address for telemetry service.
-	TelemetryAddress string `mapstructure:"CARTESI_TELEMETRY_ADDRESS"`
+	// HTTP address for PRT's telemetry service.
+	PrtTelemetryAddress string `mapstructure:"CARTESI_PRT_TELEMETRY_ADDRESS"`
 
 	// If set to true, the node will add colors to its log output.
 	LogColor bool `mapstructure:"CARTESI_LOG_COLOR"`
@@ -1230,8 +1238,6 @@ type PrtConfig struct {
 // LoadPrtConfig reads configuration from environment variables, a config file, and defaults.
 // Priority: command line flags > environment variables > config file > defaults.
 func LoadPrtConfig() (*PrtConfig, error) {
-	SetDefaults()
-
 	// Load config file if specified via --config flag.
 	if cfgFile := viper.GetString("config"); cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
@@ -1285,11 +1291,11 @@ func LoadPrtConfig() (*PrtConfig, error) {
 		return nil, fmt.Errorf("CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED is required for the prt service: %w", err)
 	}
 
-	cfg.TelemetryAddress, err = GetTelemetryAddress()
+	cfg.PrtTelemetryAddress, err = GetPrtTelemetryAddress()
 	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_TELEMETRY_ADDRESS: %w", err)
+		return nil, fmt.Errorf("failed to get CARTESI_PRT_TELEMETRY_ADDRESS: %w", err)
 	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_TELEMETRY_ADDRESS is required for the prt service: %w", err)
+		return nil, fmt.Errorf("CARTESI_PRT_TELEMETRY_ADDRESS is required for the prt service: %w", err)
 	}
 
 	cfg.LogColor, err = GetLogColor()
@@ -1371,8 +1377,8 @@ type ValidatorConfig struct {
 	// for more information.
 	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
 
-	// HTTP address for telemetry service.
-	TelemetryAddress string `mapstructure:"CARTESI_TELEMETRY_ADDRESS"`
+	// HTTP address for Validator's telemetry service.
+	ValidatorTelemetryAddress string `mapstructure:"CARTESI_VALIDATOR_TELEMETRY_ADDRESS"`
 
 	// If set to true, the node will add colors to its log output.
 	LogColor bool `mapstructure:"CARTESI_LOG_COLOR"`
@@ -1390,8 +1396,6 @@ type ValidatorConfig struct {
 // LoadValidatorConfig reads configuration from environment variables, a config file, and defaults.
 // Priority: command line flags > environment variables > config file > defaults.
 func LoadValidatorConfig() (*ValidatorConfig, error) {
-	SetDefaults()
-
 	// Load config file if specified via --config flag.
 	if cfgFile := viper.GetString("config"); cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
@@ -1410,11 +1414,11 @@ func LoadValidatorConfig() (*ValidatorConfig, error) {
 		return nil, fmt.Errorf("CARTESI_DATABASE_CONNECTION is required for the validator service: %w", err)
 	}
 
-	cfg.TelemetryAddress, err = GetTelemetryAddress()
+	cfg.ValidatorTelemetryAddress, err = GetValidatorTelemetryAddress()
 	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_TELEMETRY_ADDRESS: %w", err)
+		return nil, fmt.Errorf("failed to get CARTESI_VALIDATOR_TELEMETRY_ADDRESS: %w", err)
 	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_TELEMETRY_ADDRESS is required for the validator service: %w", err)
+		return nil, fmt.Errorf("CARTESI_VALIDATOR_TELEMETRY_ADDRESS is required for the validator service: %w", err)
 	}
 
 	cfg.LogColor, err = GetLogColor()
@@ -1455,7 +1459,6 @@ func (c *NodeConfig) ToAdvancerConfig() *AdvancerConfig {
 		FeatureInspectEnabled:          c.FeatureInspectEnabled,
 		FeatureMachineHashCheckEnabled: c.FeatureMachineHashCheckEnabled,
 		InspectAddress:                 c.InspectAddress,
-		TelemetryAddress:               c.TelemetryAddress,
 		LogColor:                       c.LogColor,
 		LogLevel:                       c.LogLevel,
 		JsonrpcMachineLogLevel:         c.JsonrpcMachineLogLevel,
@@ -1475,7 +1478,6 @@ func (c *NodeConfig) ToClaimerConfig() *ClaimerConfig {
 		BlockchainLegacyEnabled:       c.BlockchainLegacyEnabled,
 		DatabaseConnection:            c.DatabaseConnection,
 		FeatureClaimSubmissionEnabled: c.FeatureClaimSubmissionEnabled,
-		TelemetryAddress:              c.TelemetryAddress,
 		LogColor:                      c.LogColor,
 		LogLevel:                      c.LogLevel,
 		BlockchainHttpMaxRetries:      c.BlockchainHttpMaxRetries,
@@ -1496,7 +1498,6 @@ func (c *NodeConfig) ToEvmreaderConfig() *EvmreaderConfig {
 		BlockchainWsEndpoint:          c.BlockchainWsEndpoint,
 		DatabaseConnection:            c.DatabaseConnection,
 		FeatureInputReaderEnabled:     c.FeatureInputReaderEnabled,
-		TelemetryAddress:              c.TelemetryAddress,
 		LogColor:                      c.LogColor,
 		LogLevel:                      c.LogLevel,
 		BlockchainHttpMaxRetries:      c.BlockchainHttpMaxRetries,
@@ -1515,7 +1516,6 @@ func (c *NodeConfig) ToJsonrpcConfig() *JsonrpcConfig {
 	return &JsonrpcConfig{
 		DatabaseConnection: c.DatabaseConnection,
 		JsonrpcApiAddress:  c.JsonrpcApiAddress,
-		TelemetryAddress:   c.TelemetryAddress,
 		LogColor:           c.LogColor,
 		LogLevel:           c.LogLevel,
 		MaxStartupTime:     c.MaxStartupTime,
@@ -1531,7 +1531,6 @@ func (c *NodeConfig) ToPrtConfig() *PrtConfig {
 		BlockchainLegacyEnabled:       c.BlockchainLegacyEnabled,
 		DatabaseConnection:            c.DatabaseConnection,
 		FeatureClaimSubmissionEnabled: c.FeatureClaimSubmissionEnabled,
-		TelemetryAddress:              c.TelemetryAddress,
 		LogColor:                      c.LogColor,
 		LogLevel:                      c.LogLevel,
 		BlockchainHttpMaxRetries:      c.BlockchainHttpMaxRetries,
@@ -1548,7 +1547,6 @@ func (c *NodeConfig) ToPrtConfig() *PrtConfig {
 func (c *NodeConfig) ToValidatorConfig() *ValidatorConfig {
 	return &ValidatorConfig{
 		DatabaseConnection:       c.DatabaseConnection,
-		TelemetryAddress:         c.TelemetryAddress,
 		LogColor:                 c.LogColor,
 		LogLevel:                 c.LogLevel,
 		MaxStartupTime:           c.MaxStartupTime,
@@ -1903,6 +1901,45 @@ func GetFeatureMachineHashCheckEnabled() (bool, error) {
 	return notDefinedbool(), fmt.Errorf("%s: %w", FEATURE_MACHINE_HASH_CHECK_ENABLED, ErrNotDefined)
 }
 
+// GetAdvancerTelemetryAddress returns the value for the environment variable CARTESI_ADVANCER_TELEMETRY_ADDRESS.
+func GetAdvancerTelemetryAddress() (string, error) {
+	s := viper.GetString(ADVANCER_TELEMETRY_ADDRESS)
+	if s != "" {
+		v, err := toString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", ADVANCER_TELEMETRY_ADDRESS, err)
+		}
+		return v, nil
+	}
+	return notDefinedstring(), fmt.Errorf("%s: %w", ADVANCER_TELEMETRY_ADDRESS, ErrNotDefined)
+}
+
+// GetClaimerTelemetryAddress returns the value for the environment variable CARTESI_CLAIMER_TELEMETRY_ADDRESS.
+func GetClaimerTelemetryAddress() (string, error) {
+	s := viper.GetString(CLAIMER_TELEMETRY_ADDRESS)
+	if s != "" {
+		v, err := toString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", CLAIMER_TELEMETRY_ADDRESS, err)
+		}
+		return v, nil
+	}
+	return notDefinedstring(), fmt.Errorf("%s: %w", CLAIMER_TELEMETRY_ADDRESS, ErrNotDefined)
+}
+
+// GetEvmReaderTelemetryAddress returns the value for the environment variable CARTESI_EVM_READER_TELEMETRY_ADDRESS.
+func GetEvmReaderTelemetryAddress() (string, error) {
+	s := viper.GetString(EVM_READER_TELEMETRY_ADDRESS)
+	if s != "" {
+		v, err := toString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", EVM_READER_TELEMETRY_ADDRESS, err)
+		}
+		return v, nil
+	}
+	return notDefinedstring(), fmt.Errorf("%s: %w", EVM_READER_TELEMETRY_ADDRESS, ErrNotDefined)
+}
+
 // GetInspectAddress returns the value for the environment variable CARTESI_INSPECT_ADDRESS.
 func GetInspectAddress() (string, error) {
 	s := viper.GetString(INSPECT_ADDRESS)
@@ -1955,17 +1992,56 @@ func GetJsonrpcApiUrl() (string, error) {
 	return notDefinedstring(), fmt.Errorf("%s: %w", JSONRPC_API_URL, ErrNotDefined)
 }
 
-// GetTelemetryAddress returns the value for the environment variable CARTESI_TELEMETRY_ADDRESS.
-func GetTelemetryAddress() (string, error) {
-	s := viper.GetString(TELEMETRY_ADDRESS)
+// GetJsonrpcTelemetryAddress returns the value for the environment variable CARTESI_JSONRPC_TELEMETRY_ADDRESS.
+func GetJsonrpcTelemetryAddress() (string, error) {
+	s := viper.GetString(JSONRPC_TELEMETRY_ADDRESS)
 	if s != "" {
 		v, err := toString(s)
 		if err != nil {
-			return v, fmt.Errorf("failed to parse %s: %w", TELEMETRY_ADDRESS, err)
+			return v, fmt.Errorf("failed to parse %s: %w", JSONRPC_TELEMETRY_ADDRESS, err)
 		}
 		return v, nil
 	}
-	return notDefinedstring(), fmt.Errorf("%s: %w", TELEMETRY_ADDRESS, ErrNotDefined)
+	return notDefinedstring(), fmt.Errorf("%s: %w", JSONRPC_TELEMETRY_ADDRESS, ErrNotDefined)
+}
+
+// GetNodeTelemetryAddress returns the value for the environment variable CARTESI_NODE_TELEMETRY_ADDRESS.
+func GetNodeTelemetryAddress() (string, error) {
+	s := viper.GetString(NODE_TELEMETRY_ADDRESS)
+	if s != "" {
+		v, err := toString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", NODE_TELEMETRY_ADDRESS, err)
+		}
+		return v, nil
+	}
+	return notDefinedstring(), fmt.Errorf("%s: %w", NODE_TELEMETRY_ADDRESS, ErrNotDefined)
+}
+
+// GetPrtTelemetryAddress returns the value for the environment variable CARTESI_PRT_TELEMETRY_ADDRESS.
+func GetPrtTelemetryAddress() (string, error) {
+	s := viper.GetString(PRT_TELEMETRY_ADDRESS)
+	if s != "" {
+		v, err := toString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", PRT_TELEMETRY_ADDRESS, err)
+		}
+		return v, nil
+	}
+	return notDefinedstring(), fmt.Errorf("%s: %w", PRT_TELEMETRY_ADDRESS, ErrNotDefined)
+}
+
+// GetValidatorTelemetryAddress returns the value for the environment variable CARTESI_VALIDATOR_TELEMETRY_ADDRESS.
+func GetValidatorTelemetryAddress() (string, error) {
+	s := viper.GetString(VALIDATOR_TELEMETRY_ADDRESS)
+	if s != "" {
+		v, err := toString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", VALIDATOR_TELEMETRY_ADDRESS, err)
+		}
+		return v, nil
+	}
+	return notDefinedstring(), fmt.Errorf("%s: %w", VALIDATOR_TELEMETRY_ADDRESS, ErrNotDefined)
 }
 
 // GetLogColor returns the value for the environment variable CARTESI_LOG_COLOR.

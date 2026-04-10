@@ -6,6 +6,7 @@ package root
 import (
 	"context"
 
+	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
@@ -15,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var (
@@ -41,38 +41,30 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
-	Cmd.Flags().StringVarP(&defaultBlockString, "default-block", "d", "finalized",
+	flags := Cmd.Flags()
+
+	config.SetDefaults()
+
+	cli.AddFlagStrVarP(flags, &defaultBlockString, "default-block", "d", config.BLOCKCHAIN_DEFAULT_BLOCK,
 		"Default block to be used when fetching new blocks.\nOne of 'latest', 'safe', 'pending', 'finalized'")
-	cobra.CheckErr(viper.BindPFlag(config.BLOCKCHAIN_DEFAULT_BLOCK, Cmd.Flags().Lookup("default-block")))
-
-	Cmd.Flags().StringVar(&telemetryAddress, "telemetry-address", ":10001", "Health check and metrics address and port")
-	cobra.CheckErr(viper.BindPFlag(config.TELEMETRY_ADDRESS, Cmd.Flags().Lookup("telemetry-address")))
-
-	Cmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level: debug, info, warn or error")
-	cobra.CheckErr(viper.BindPFlag(config.LOG_LEVEL, Cmd.Flags().Lookup("log-level")))
-
-	Cmd.Flags().BoolVar(&logColor, "log-color", true, "Tint the logs (colored output)")
-	cobra.CheckErr(viper.BindPFlag(config.LOG_COLOR, Cmd.Flags().Lookup("log-color")))
-
-	Cmd.Flags().StringVar(&databaseConnection, "database-connection", "",
+	cli.AddFlagStrVar(flags, &telemetryAddress, "telemetry-address", config.EVM_READER_TELEMETRY_ADDRESS,
+		"Health check and metrics address and port")
+	cli.AddFlagStrVar(flags, &logLevel, "log-level", config.LOG_LEVEL,
+		"Log level: debug, info, warn or error")
+	cli.AddFlagBoolVar(flags, &logColor, "log-color", config.LOG_COLOR,
+		"Tint the logs (colored output)")
+	cli.AddFlagStrVar(flags, &databaseConnection, "database-connection", config.DATABASE_CONNECTION,
 		"Database connection string in the URL format\n(eg.: 'postgres://user:password@hostname:port/database') ")
-	cobra.CheckErr(viper.BindPFlag(config.DATABASE_CONNECTION, Cmd.Flags().Lookup("database-connection")))
-
-	Cmd.Flags().StringVar(&blockchainHttpEndpoint, "blockchain-http-endpoint", "", "Blockchain http endpoint")
-	cobra.CheckErr(viper.BindPFlag(config.BLOCKCHAIN_HTTP_ENDPOINT, Cmd.Flags().Lookup("blockchain-http-endpoint")))
-
-	Cmd.Flags().StringVar(&blockchainWsEndpoint, "blockchain-ws-endpoint", "", "Blockchain WS Endpoint")
-	cobra.CheckErr(viper.BindPFlag(config.BLOCKCHAIN_WS_ENDPOINT, Cmd.Flags().Lookup("blockchain-ws-endpoint")))
-
-	Cmd.Flags().StringVar(&maxStartupTime, "max-startup-time", "15", "Maximum startup time in seconds")
-	cobra.CheckErr(viper.BindPFlag(config.MAX_STARTUP_TIME, Cmd.Flags().Lookup("max-startup-time")))
-
-	Cmd.Flags().BoolVar(&enableInputReader, "input-reader", true, "Enable or disable the input reader (for external input readers)")
-	cobra.CheckErr(viper.BindPFlag(config.FEATURE_INPUT_READER_ENABLED, Cmd.Flags().Lookup("input-reader")))
-
-	Cmd.Flags().Uint64Var(&maxBlockRange, "max-block-range", 0,
+	cli.AddFlagStrVar(flags, &blockchainHttpEndpoint, "blockchain-http-endpoint", config.BLOCKCHAIN_HTTP_ENDPOINT,
+		"Blockchain http endpoint")
+	cli.AddFlagStrVar(flags, &blockchainWsEndpoint, "blockchain-ws-endpoint", config.BLOCKCHAIN_WS_ENDPOINT,
+		"Blockchain WS Endpoint")
+	cli.AddFlagStrVar(flags, &maxStartupTime, "max-startup-time", config.MAX_STARTUP_TIME,
+		"Maximum startup time in seconds")
+	cli.AddFlagBoolVar(flags, &enableInputReader, "input-reader", config.FEATURE_INPUT_READER_ENABLED,
+		"Enable or disable the input reader (for external input readers)")
+	cli.AddFlagUint64Var(flags, &maxBlockRange, "max-block-range", config.BLOCKCHAIN_MAX_BLOCK_RANGE,
 		"Maximum number of blocks in a single query. large queries will be split automatically. Zero for unlimited.")
-	cobra.CheckErr(viper.BindPFlag(config.BLOCKCHAIN_MAX_BLOCK_RANGE, Cmd.Flags().Lookup("max-block-range")))
 
 	// TODO: validate on preRunE
 	Cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
@@ -85,8 +77,7 @@ func init() {
 	}
 }
 
-func run(cmd *cobra.Command, args []string) {
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
+func run(cmd *cobra.Command, args []string) {	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
 	defer cancel()
 
 	logLevel := config.ResolveServiceLogLevel(config.ServiceEvmReader, cfg.LogLevel)
@@ -97,7 +88,7 @@ func run(cmd *cobra.Command, args []string) {
 			LogColor:             cfg.LogColor,
 			EnableSignalHandling: true,
 			TelemetryCreate:      true,
-			TelemetryAddress:     cfg.TelemetryAddress,
+			TelemetryAddress:     cfg.EvmReaderTelemetryAddress,
 		},
 		Config: *cfg,
 	}
