@@ -5,7 +5,9 @@ package jsonrpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -30,6 +32,9 @@ type Service struct {
 	server     *http.Server
 	inputABI   *abi.ABI
 	outputABI  *abi.ABI
+	// listen opens the HTTP listener. It defaults to net.Listen and is
+	// overridden in tests so Serve() can be exercised without real sockets.
+	listen func(network, address string) (net.Listener, error)
 }
 
 type CreateInfo struct {
@@ -78,6 +83,9 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		ReadTimeout:       30 * time.Second,             //nolint: mnd
 		ReadHeaderTimeout: 10 * time.Second,             //nolint: mnd
 	}
+	if s.listen == nil {
+		s.listen = net.Listen
+	}
 
 	return s, nil
 }
@@ -102,6 +110,7 @@ func (s *Service) Tick() []error {
 func (s *Service) Stop(_ bool) []error {
 	s.SetStopping()
 	var errs []error
+	s.Logger.Info("Shutting down JSON-RPC HTTP server", "addr", s.server.Addr)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint: mnd
 	defer cancel()
 	if err := s.server.Shutdown(ctx); err != nil {
@@ -115,6 +124,55 @@ func (s *Service) String() string {
 }
 
 func (s *Service) Serve() error {
-	s.Logger.Info("Listening", "addr", s.server.Addr)
-	return s.server.ListenAndServe()
+	listener, err := s.listen("tcp", s.server.Addr)
+	if err != nil {
+		return err
+	}
+
+	s.Logger.Info("Listening", "addr", listener.Addr().String())
+
+	serverDone := make(chan error, 1)
+	go func() {
+		// Run the HTTP accept loop in parallel with the framework's lifecycle
+		// loop below. The lifecycle loop is the component that consumes
+		// SIGINT/SIGTERM and calls Stop() for graceful shutdown.
+		err := s.server.Serve(listener)
+		s.Logger.Info("Stopped listening", "addr", listener.Addr().String(), "err", err)
+		if errors.Is(err, http.ErrServerClosed) {
+			serverDone <- nil
+			return
+		}
+		serverDone <- err
+	}()
+
+	serviceDone := make(chan error, 1)
+	go func() {
+		// Run the shared service loop concurrently because it blocks waiting
+		// for signals/context cancellation while the HTTP server blocks
+		// waiting for connections.
+		serviceDone <- s.Service.Serve()
+	}()
+
+	select {
+	case err := <-serverDone:
+		// The HTTP loop exited first. This is unexpected unless the listener
+		// failed or the server was already closed, so cancel the framework
+		// loop and wait for it to observe the cancellation before returning.
+		s.Cancel()
+		serviceErr := <-serviceDone
+		if err != nil {
+			return err
+		}
+		return serviceErr
+	case err := <-serviceDone:
+		// The framework loop exited first because it handled a shutdown signal
+		// or context cancellation and called Stop(), which should trigger
+		// s.server.Shutdown(). Wait for the HTTP loop to finish so Serve()
+		// returns only after the listener is fully closed.
+		serverErr := <-serverDone
+		if serverErr != nil {
+			return serverErr
+		}
+		return err
+	}
 }

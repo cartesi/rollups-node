@@ -74,7 +74,7 @@ func run(cmd *cobra.Command, args []string) {
 			Name:                 config.ServiceJsonrpc,
 			LogLevel:             config.ResolveServiceLogLevel(config.ServiceJsonrpc, cfg.LogLevel),
 			LogColor:             cfg.LogColor,
-			EnableSignalHandling: false,
+			EnableSignalHandling: true,
 			TelemetryCreate:      true,
 			TelemetryAddress:     cfg.TelemetryAddress,
 		},
