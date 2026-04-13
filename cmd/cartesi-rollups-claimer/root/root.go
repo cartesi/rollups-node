@@ -80,11 +80,10 @@ func run(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
 	defer cancel()
 
-	logLevel := config.ResolveServiceLogLevel(config.ServiceClaimer, cfg.LogLevel)
 	createInfo := claimer.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 config.ServiceClaimer,
-			LogLevel:             logLevel,
+			LogLevel:             config.ResolveServiceLogLevel(config.ServiceClaimer, cfg.LogLevel),
 			LogColor:             cfg.LogColor,
 			EnableSignalHandling: true,
 			TelemetryCreate:      true,
@@ -93,10 +92,11 @@ func run(cmd *cobra.Command, args []string) {
 		},
 		Config: *cfg,
 	}
+	logger := service.NewServiceLogger(&createInfo.CreateInfo)
+	createInfo.CreateInfo.Logger = logger
 
-	logger := service.NewLogger(logLevel, cfg.LogColor).With("service", config.ServiceClaimer)
 	authOpt, err := config.HTTPAuthorizationOption()
-	cobra.CheckErr(err)
+	cli.CheckErr(logger, err)
 	createInfo.EthConn, err = ethutil.NewEthClient(
 		ctx, cfg.BlockchainHttpEndpoint.Raw(), logger,
 		ethutil.RetryConfig{
@@ -104,16 +104,16 @@ func run(cmd *cobra.Command, args []string) {
 			RetryMinWait: cfg.BlockchainHttpRetryMinWait,
 			RetryMaxWait: cfg.BlockchainHttpRetryMaxWait,
 		}, authOpt)
-	cobra.CheckErr(err)
+	cli.CheckErr(logger, err)
 
 	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
-	cobra.CheckErr(err)
+	cli.CheckErr(logger, err)
 	defer createInfo.Repository.Close()
 
 	claimerService, err := claimer.Create(ctx, &createInfo)
-	cobra.CheckErr(err)
+	cli.CheckErr(logger, err)
 	claimerService.LogConfig(createInfo.Config)
 
 	err = claimerService.Serve()
-	cobra.CheckErr(err)
+	cli.CheckErr(logger, err)
 }

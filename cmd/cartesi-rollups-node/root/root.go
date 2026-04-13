@@ -160,28 +160,30 @@ func run(cmd *cobra.Command, args []string) {
 		},
 		Config: *cfg,
 	}
+	logger := service.NewServiceLogger(&createInfo.CreateInfo)
+	createInfo.CreateInfo.Logger = logger
 
 	var err error
 	createInfo.ReaderClient, err = newEthClient(ctx, config.ServiceEvmReader)
-	cobra.CheckErr(err)
+	cli.CheckErr(logger, err)
 
 	wsEndpoint := cfg.BlockchainWsEndpoint.Raw()
 	createInfo.ReaderWSClient, err = ethclient.DialContext(ctx, wsEndpoint)
-	cobra.CheckErr(ethutil.RedactEndpointFromError(err, wsEndpoint))
+	cli.CheckErr(logger, ethutil.RedactEndpointFromError(err, wsEndpoint))
 
 	createInfo.ClaimerClient, err = newEthClient(ctx, config.ServiceClaimer)
-	cobra.CheckErr(err)
+	cli.CheckErr(logger, err)
 
 	createInfo.PrtClient, err = newEthClient(ctx, config.ServicePrt)
-	cobra.CheckErr(err)
+	cli.CheckErr(logger, err)
 
 	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
-	cobra.CheckErr(err)
+	cli.CheckErr(logger, err)
 	defer createInfo.Repository.Close()
 
 	nodeService, err := node.Create(ctx, &createInfo)
-	cobra.CheckErr(err)
+	cli.CheckErr(logger, err)
 	nodeService.LogConfig(createInfo.Config)
 
-	cobra.CheckErr(nodeService.Serve())
+	cli.CheckErr(logger, nodeService.Serve())
 }

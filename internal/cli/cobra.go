@@ -4,6 +4,9 @@
 package cli
 
 import (
+	"fmt"
+	"log/slog"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -27,4 +30,30 @@ func AddFlagStrVar(flags *pflag.FlagSet, varRef *string, flagName string, cfgNam
 func AddFlagStrVarP(flags *pflag.FlagSet, varRef *string, flagName string, flagShort string, cfgName string, flagDesc string) {
 	flags.StringVarP(varRef, flagName, flagShort, viper.GetString(cfgName), flagDesc)
 	cobra.CheckErr(viper.BindPFlag(cfgName, flags.Lookup(flagName)))
+}
+
+func CheckErr(logger *slog.Logger, err error, args ...any) {
+	if err == nil {
+		return
+	}
+
+	msg := "Error"
+	if len(args) > 0 {
+		arg0 := args[0]
+		args = args[1:]
+		switch value := arg0.(type) {
+		case string:
+			msg = value
+		case []byte:
+			msg = string(value)
+		case fmt.Stringer:
+			msg = value.String()
+		default:
+			msg = fmt.Sprintf("%v", value)
+		}
+	}
+
+	args = append([]any{"error", err}, args...)
+	logger.Error(msg, args...)
+	cobra.CheckErr(err)
 }

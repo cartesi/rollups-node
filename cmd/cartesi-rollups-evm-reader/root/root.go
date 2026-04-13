@@ -77,14 +77,14 @@ func init() {
 	}
 }
 
-func run(cmd *cobra.Command, args []string) {	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
+func run(cmd *cobra.Command, args []string) {
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
 	defer cancel()
 
-	logLevel := config.ResolveServiceLogLevel(config.ServiceEvmReader, cfg.LogLevel)
 	createInfo := evmreader.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 config.ServiceEvmReader,
-			LogLevel:             logLevel,
+			LogLevel:             config.ResolveServiceLogLevel(config.ServiceEvmReader, cfg.LogLevel),
 			LogColor:             cfg.LogColor,
 			EnableSignalHandling: true,
 			TelemetryCreate:      true,
@@ -92,11 +92,12 @@ func run(cmd *cobra.Command, args []string) {	ctx, cancel := context.WithTimeout
 		},
 		Config: *cfg,
 	}
+	logger := service.NewServiceLogger(&createInfo.CreateInfo)
+	createInfo.CreateInfo.Logger = logger
 
 	var err error
-	logger := service.NewLogger(logLevel, cfg.LogColor).With("service", config.ServiceEvmReader)
 	authOpt, err := config.HTTPAuthorizationOption()
-	cobra.CheckErr(err)
+	cli.CheckErr(logger, err)
 	createInfo.EthClient, err = ethutil.NewEthClient(
 		ctx, cfg.BlockchainHttpEndpoint.Raw(), logger,
 		ethutil.RetryConfig{
@@ -104,19 +105,19 @@ func run(cmd *cobra.Command, args []string) {	ctx, cancel := context.WithTimeout
 			RetryMinWait: cfg.BlockchainHttpRetryMinWait,
 			RetryMaxWait: cfg.BlockchainHttpRetryMaxWait,
 		}, authOpt)
-	cobra.CheckErr(err)
+	cli.CheckErr(logger, err)
 
 	wsEndpoint := cfg.BlockchainWsEndpoint.Raw()
 	createInfo.EthWsClient, err = ethclient.DialContext(ctx, wsEndpoint)
-	cobra.CheckErr(ethutil.RedactEndpointFromError(err, wsEndpoint))
+	cli.CheckErr(logger, ethutil.RedactEndpointFromError(err, wsEndpoint))
 
 	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
-	cobra.CheckErr(err)
+	cli.CheckErr(logger, err)
 	defer createInfo.Repository.Close()
 
 	readerService, err := evmreader.Create(ctx, &createInfo)
-	cobra.CheckErr(err)
+	cli.CheckErr(logger, err)
 	readerService.LogConfig(createInfo.Config)
 
-	cobra.CheckErr(readerService.Serve())
+	cli.CheckErr(logger, readerService.Serve())
 }

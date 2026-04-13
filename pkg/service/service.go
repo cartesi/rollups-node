@@ -117,6 +117,7 @@ type CreateInfo struct {
 	TelemetryAddress     string
 	PollInterval         time.Duration
 	Impl                 ServiceImpl
+	Logger               *slog.Logger
 	ServeMux             *http.ServeMux
 	Context              context.Context
 	Cancel               context.CancelFunc
@@ -176,10 +177,11 @@ func Create(ctx context.Context, c *CreateInfo, s *Service) error {
 	s.Running.Store(false)
 	s.Name = c.Name
 	s.Impl = c.Impl
+	s.Logger = c.Logger
 
 	// log
 	if s.Logger == nil {
-		s.Logger = NewLogger(c.LogLevel, c.LogColor).With("service", s.Name)
+		s.Logger = NewServiceLogger(c)
 	}
 
 	// context and cancelation
@@ -411,6 +413,10 @@ func NewLogger(level slog.Level, color bool) *slog.Logger {
 	}
 	handler := tint.NewHandler(os.Stdout, opts)
 	return slog.New(handler)
+}
+
+func NewServiceLogger(c *CreateInfo) *slog.Logger {
+	return NewLogger(c.LogLevel, c.LogColor).With("service", c.Name)
 }
 
 // Telemetry

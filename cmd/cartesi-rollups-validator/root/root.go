@@ -79,14 +79,17 @@ func run(cmd *cobra.Command, args []string) {
 		},
 		Config: *cfg,
 	}
+	logger := service.NewServiceLogger(&createInfo.CreateInfo)
+	createInfo.CreateInfo.Logger = logger
+
 	var err error
 	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
-	cobra.CheckErr(err)
+	cli.CheckErr(logger, err)
 	defer createInfo.Repository.Close()
 
 	validatorService, err := validator.Create(ctx, &createInfo)
-	cobra.CheckErr(err)
+	cli.CheckErr(logger, err)
 	validatorService.LogConfig(createInfo.Config)
 
-	cobra.CheckErr(validatorService.Serve())
+	cli.CheckErr(logger, validatorService.Serve())
 }
