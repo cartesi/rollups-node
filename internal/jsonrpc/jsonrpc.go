@@ -79,6 +79,11 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			http.Error(w, "Payload too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}

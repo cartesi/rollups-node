@@ -21,6 +21,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 )
 
+const jsonrpcShutdownTimeout = 5 * time.Second
+
 // -----------------------------------------------------------------------------
 // Service Implementation
 // -----------------------------------------------------------------------------
@@ -76,13 +78,17 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rpc", s.handleRPC)
-	s.server = &http.Server{
-		Addr:              c.Config.JsonrpcApiAddress,
-		Handler:           services.CorsMiddleware(mux), // FIXME: add proper cors config
-		WriteTimeout:      30 * time.Second,             //nolint: mnd
-		ReadTimeout:       30 * time.Second,             //nolint: mnd
-		ReadHeaderTimeout: 10 * time.Second,             //nolint: mnd
-	}
+
+	var handler http.Handler = mux
+	handler = services.CorsMiddleware(handler) // FIXME: add proper cors config
+	handler = service.RequestIDMiddleware(handler)
+	// RecoverMiddleware is outermost so it catches panics from every layer,
+	// including RequestIDMiddleware itself (e.g. entropy-source failure).
+	handler = service.RecoverMiddleware(s.Logger)(handler)
+
+	s.server = service.NewHTTPServer(c.Config.JsonrpcApiAddress, handler, service.DefaultJSONRPCOptions(), s.Logger)
+	service.StartupBindWarning(s.Logger, "jsonrpc", c.Config.JsonrpcApiAddress)
+
 	if s.listen == nil {
 		s.listen = net.Listen
 	}
@@ -111,7 +117,7 @@ func (s *Service) Stop(_ bool) []error {
 	s.SetStopping()
 	var errs []error
 	s.Logger.Info("Shutting down JSON-RPC HTTP server", "addr", s.server.Addr)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint: mnd
+	ctx, cancel := context.WithTimeout(context.Background(), jsonrpcShutdownTimeout)
 	defer cancel()
 	if err := s.server.Shutdown(ctx); err != nil {
 		errs = append(errs, err)
