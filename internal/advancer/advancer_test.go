@@ -1882,10 +1882,10 @@ type MockRepository struct {
 	ApplicationStateUpdates    int
 	LastApplicationState       ApplicationState
 	LastApplicationStateReason *string
-	OutputsProofUpdated          bool
-	RepeatOutputsProofCalled     bool
-	SnapshotURIUpdated           bool
-	EpochInputsProcessedCount    int
+	OutputsProofUpdated        bool
+	RepeatOutputsProofCalled   bool
+	SnapshotURIUpdated         bool
+	EpochInputsProcessedCount  int
 
 	mu sync.Mutex
 }

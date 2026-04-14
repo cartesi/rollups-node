@@ -180,8 +180,8 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 				)
 
 				sqlStr, args := inputInsertStmt.QUERY(inputSelectQuery).
-				ON_CONFLICT(table.Input.EpochApplicationID, table.Input.Index).
-				DO_NOTHING().Sql()
+					ON_CONFLICT(table.Input.EpochApplicationID, table.Input.Index).
+					DO_NOTHING().Sql()
 				batch.Queue(sqlStr, args...)
 			}
 

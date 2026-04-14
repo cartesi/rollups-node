@@ -352,7 +352,7 @@ func (s *SealedEpochsSuite) TestOpenEpochExistingEpochAccumulatesInputs() {
 	// Existing epoch reused with accumulated inputs
 	s.Require().Equal(uint64(1), storedEpoch.Index)
 	s.Require().Equal(uint64(100), storedEpoch.FirstBlock)         // Preserved
-	s.Require().Equal(mostRecentBlock, storedEpoch.LastBlock)       // Updated
+	s.Require().Equal(mostRecentBlock, storedEpoch.LastBlock)      // Updated
 	s.Require().Equal(uint64(3), storedEpoch.InputIndexLowerBound) // Preserved
 	s.Require().Equal(uint64(5), storedEpoch.InputIndexUpperBound) // 4 + 1 new
 	s.Require().Equal(EpochStatus_Open, storedEpoch.Status)
