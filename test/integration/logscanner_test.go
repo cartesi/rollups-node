@@ -65,6 +65,13 @@ func (lc *LogChecker) SetAllowedErrors(allowed ...AllowedError) {
 // fall within this test's time window. Call this in TearDownTest.
 // It also warns when an allowed error pattern was configured but
 // never matched any log line, which may indicate a stale allowlist.
+//
+// Unexpected-error detection only looks at ERR-level lines, but
+// allowed-pattern matching (both Required and non-Required) scans
+// every line in the window regardless of log level. This lets tests
+// correlate on events that are legitimately logged below ERR (for
+// example, HTTP 4xx handlers that log at Info) without forcing the
+// production code to log at a misleading level.
 func (lc *LogChecker) CheckLogs(t testing.TB) {
 	t.Helper()
 	unexpected, unmatchedIdx := scanNodeLogsBetween(
@@ -92,15 +99,19 @@ func (lc *LogChecker) CheckLogs(t testing.TB) {
 	}
 }
 
-// scanNodeLogsBetween reads the node log file and returns ERR lines
-// whose timestamps fall within [from, to+grace] that don't match any
-// allowed pattern. A 2-second grace buffer is applied at the end to
-// catch errors from async operations triggered during the test. No
-// grace is applied at the start — errors before StartLogCapture
-// belong to the previous test.
+// scanNodeLogsBetween reads the node log file, collects ERR lines in
+// the [from, to+grace] window that don't match any allowed pattern,
+// and tracks which allowed patterns matched any line (any level) in
+// that window. A 2-second grace buffer is applied at the end to catch
+// errors from async operations triggered during the test. No grace is
+// applied at the start — lines before StartLogCapture belong to the
+// previous test.
 //
-// It also returns the indices of allowed patterns that were never matched,
-// so callers can detect stale allowlist entries.
+// Unexpected collection is intentionally ERR-only: tests regress when
+// the node starts logging real errors. But allowed-pattern matching
+// spans every level so that tests can correlate on events logged at
+// Info or Warn (for example, client-error HTTP paths that shouldn't
+// be ERR in production). Non-ERR lines never count as unexpected.
 func scanNodeLogsBetween(
 	t testing.TB,
 	from, to time.Time,
@@ -130,27 +141,24 @@ func scanNodeLogsBetween(
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // handle long lines (stack traces, JSON)
 	for scanner.Scan() {
 		line := stripANSI(scanner.Text())
+
+		ts, tsOK := parseLogTimestamp(line)
+		if tsOK && (ts.Before(windowStart) || ts.After(windowEnd)) {
+			continue
+		}
+
+		// Allowed-pattern matching spans every level.
+		if idx := matchedAllowedIdx(line, allowed); idx >= 0 {
+			matched[idx] = true
+			continue
+		}
+
+		// Only ERR lines that didn't match become "unexpected".
+		// Timestamp-unparseable lines are conservatively included.
 		if !isErrLine(line) {
 			continue
 		}
-		ts, ok := parseLogTimestamp(line)
-		if !ok {
-			// Can't parse timestamp — conservatively include it.
-			if idx := matchedAllowedIdx(line, allowed); idx >= 0 {
-				matched[idx] = true
-			} else {
-				unexpected = append(unexpected, line)
-			}
-			continue
-		}
-		if ts.Before(windowStart) || ts.After(windowEnd) {
-			continue
-		}
-		if idx := matchedAllowedIdx(line, allowed); idx >= 0 {
-			matched[idx] = true
-		} else {
-			unexpected = append(unexpected, line)
-		}
+		unexpected = append(unexpected, line)
 	}
 	if err := scanner.Err(); err != nil {
 		t.Fatalf("error reading node log file: %v", err)

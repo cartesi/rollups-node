@@ -10,9 +10,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
-	"os"
-	"time"
 
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
@@ -46,6 +45,11 @@ type Inspector struct {
 	repository InspectRepository
 	Logger     *slog.Logger
 	ServeMux   *http.ServeMux
+	server     *http.Server
+	// listen opens the HTTP listener. It defaults to net.Listen and is
+	// overridden in tests so Serve() can be exercised against a pre-bound
+	// listener whose actual address is known to the test.
+	listen func(network, address string) (net.Listener, error)
 }
 
 type ReportResponse struct {
@@ -59,51 +63,75 @@ type InspectResponse struct {
 	ProcessedInputs uint64           `json:"processed_input_count"`
 }
 
-func NewInspector(
-	repo InspectRepository,
-	machines IInspectMachines,
-	address string,
-	logLevel slog.Level,
-	logPretty bool,
-) (*Inspector, *http.Server, func() error) {
-	logger := service.NewLogger(slog.Level(logLevel), logPretty)
-	logger = logger.With("service", "inspect")
+// CreateInfo bundles the parameters for [NewInspector].
+type CreateInfo struct {
+	Repository InspectRepository
+	Machines   IInspectMachines
+	Address    string
+	LogLevel   slog.Level
+	LogPretty  bool
+}
+
+// NewInspector constructs an [Inspector] and its backing HTTP server with
+// the standard hardening chain applied:
+//
+//	RecoverMiddleware -> RequestIDMiddleware -> CorsMiddleware -> AdmissionMiddleware -> Inspector
+//
+// RecoverMiddleware is the outermost wrapper so it also catches panics that
+// occur during request-id generation (e.g. an entropy failure inside
+// uuid.NewString). Without this ordering such a panic would escape to
+// net/http's default goroutine recover, dropping the connection with no
+// structured log and no 500 response.
+//
+// Use [Inspector.Serve] to run the HTTP server and [Inspector.Shutdown]
+// to stop it gracefully.
+func NewInspector(c CreateInfo) (*Inspector, error) {
+	if c.Machines == nil {
+		return nil, ErrInvalidMachines
+	}
+
+	logger := service.NewLogger(c.LogLevel, c.LogPretty).With("service", "inspect")
 	inspector := &Inspector{
-		IInspectMachines: machines,
-		repository:       repo,
+		IInspectMachines: c.Machines,
+		repository:       c.Repository,
 		Logger:           logger,
 		ServeMux:         http.NewServeMux(),
 	}
 
-	inspector.ServeMux.Handle("/inspect/{dapp}", services.CorsMiddleware(http.Handler(inspector)))
+	var handler http.Handler = inspector
+	handler = services.CorsMiddleware(handler)
+	handler = service.RequestIDMiddleware(handler)
+	handler = service.RecoverMiddleware(logger)(handler)
+	inspector.ServeMux.Handle("/inspect/{dapp}", handler)
 
-	server := &http.Server{
-		Addr:     address,
-		Handler:  inspector.ServeMux,
-		ErrorLog: slog.NewLogLogger(inspector.Logger.Handler(), slog.LevelError),
-	}
+	inspector.server = service.NewHTTPServer(c.Address, inspector.ServeMux, service.DefaultInspectOptions(), logger)
+	inspector.listen = net.Listen
+	service.StartupBindWarning(logger, "inspect", c.Address)
 
-	return inspector, server, func() error {
-		maxRetries := 3                  // FIXME: should go to config
-		retryInterval := 5 * time.Second // FIXME: should go to config
-		inspector.Logger.Info("Create", "LogLevel", logLevel, "pid", os.Getpid())
-		inspector.Logger.Info("Listening", "address", address)
-		var err error = nil
-		for retry := 0; retry <= maxRetries; retry++ {
-			switch err = server.ListenAndServe(); err {
-			case http.ErrServerClosed:
-				return nil
-			default:
-				inspector.Logger.Error("http",
-					"error", err,
-					"try", retry+1,
-					"maxRetries", maxRetries,
-					"error", err)
-			}
-			time.Sleep(retryInterval)
-		}
+	return inspector, nil
+}
+
+// Serve opens the HTTP listener and runs the server. Returns nil on
+// graceful shutdown.
+func (inspect *Inspector) Serve() error {
+	listener, err := inspect.listen("tcp", inspect.server.Addr)
+	if err != nil {
 		return err
 	}
+	inspect.Logger.Info("Listening", "address", listener.Addr().String())
+	if err := inspect.server.Serve(listener); !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
+// Shutdown gracefully stops the inspect HTTP server, waiting for in-flight
+// requests to complete or ctx to expire. Callers should not access the
+// underlying *http.Server directly; exposing only Shutdown keeps the API
+// surface minimal and prevents misuse (e.g. reaching for ListenAndServe,
+// SetKeepAlivesEnabled, or mutating Handler after construction).
+func (inspect *Inspector) Shutdown(ctx context.Context) error {
+	return inspect.server.Shutdown(ctx)
 }
 
 func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -124,28 +152,29 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dapp = r.PathValue("dapp")
-	if r.Method == "POST" {
-		// Limit the request body to the machine's CMIO RX buffer size.
-		// Payloads larger than this are rejected by the machine, so reading
-		// them into memory would only waste resources. We read maxPayloadSize+1
-		// bytes so we can distinguish "exactly at limit" from "over limit".
-		limitedReader := io.LimitReader(r.Body, maxPayloadSize+1)
-		payload, err = io.ReadAll(limitedReader)
-		if err != nil {
-			inspect.Logger.Info("Bad request", "err", err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if int64(len(payload)) > maxPayloadSize {
+	if r.Method != http.MethodPost {
+		inspect.Logger.Info("HTTP method not allowed", "application", dapp, "method", r.Method)
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Cap the request body at the machine's CMIO RX buffer size. MaxBytesReader
+	// both enforces the limit and signals the server to close the connection
+	// on over-limit so clients can't pipeline further requests on it.
+	r.Body = http.MaxBytesReader(w, r.Body, maxPayloadSize)
+	payload, err = io.ReadAll(r.Body)
+	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
 			inspect.Logger.Info("Payload too large",
-				"size", len(payload),
-				"limit", maxPayloadSize)
+				"limit", maxPayloadSize,
+				"application", dapp)
 			http.Error(w, "Payload too large", http.StatusRequestEntityTooLarge)
 			return
 		}
-	} else {
-		inspect.Logger.Info("HTTP method not supported", "application", dapp)
-		http.Error(w, "HTTP method not supported", http.StatusNotFound)
+		inspect.Logger.Info("Bad request", "err", err, "application", dapp)
+		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 
@@ -158,12 +187,11 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, ErrNoApp) {
-			inspect.Logger.Error("Application not found", "application", dapp, "err", err)
+			inspect.Logger.Info("Application not found", "application", dapp, "err", err)
 			http.Error(w, "Application not found", http.StatusNotFound)
 			return
 		}
-		inspect.Logger.Error("Internal server error", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		service.WriteInternalError(r.Context(), w, inspect.Logger, fmt.Errorf("inspect processing failed: %w", err))
 		return
 	}
 
@@ -190,11 +218,15 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	err = json.NewEncoder(w).Encode(response)
-	if err != nil {
-		inspect.Logger.Error("Internal server error",
-			"err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		// Headers are already flushed; we can only log. Writing a 500 via
+		// WriteInternalError here would produce "superfluous WriteHeader"
+		// warnings and garble the response.
+		inspect.Logger.Error("failed to encode inspect response",
+			"err", err,
+			"application", dapp,
+			"request_id", service.RequestIDFromContext(r.Context()),
+		)
 		return
 	}
 	inspect.Logger.Info("Request executed",

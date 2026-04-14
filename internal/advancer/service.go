@@ -30,8 +30,6 @@ type Service struct {
 	repository     AdvancerRepository
 	machineManager manager.MachineProvider
 	inspector      *inspect.Inspector
-	HTTPServer     *http.Server
-	HTTPServerFunc func() error
 
 	// cleanedUp ensures HTTP server shutdown and machine manager close run
 	// exactly once, even when Stop() is called multiple times (by the child's
@@ -83,13 +81,17 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 
 	// Initialize the inspect service if enabled
 	if c.Config.FeatureInspectEnabled {
-		s.inspector, s.HTTPServer, s.HTTPServerFunc = inspect.NewInspector(
-			c.Repository,
-			manager,
-			c.Config.InspectAddress,
-			c.LogLevel,
-			c.LogColor,
-		)
+		inspector, err := inspect.NewInspector(inspect.CreateInfo{
+			Repository: c.Repository,
+			Machines:   manager,
+			Address:    c.Config.InspectAddress,
+			LogLevel:   c.LogLevel,
+			LogPretty:  c.LogColor,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create inspect service: %w", err)
+		}
+		s.inspector = inspector
 	}
 
 	s.snapshotsDir = c.Config.SnapshotsDir
@@ -137,11 +139,11 @@ func (s *Service) Stop(b bool) []error {
 	// resources would not see IsStopping() == true.
 	s.SetStopping()
 	var errs []error
-	if s.HTTPServer != nil {
+	if s.inspector != nil {
 		s.Logger.Info("Shutting down inspect HTTP server")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), httpShutdownTimeout)
 		defer cancel()
-		if err := s.HTTPServer.Shutdown(shutdownCtx); err != nil {
+		if err := s.inspector.Shutdown(shutdownCtx); err != nil {
 			errs = append(errs, fmt.Errorf("failed to shutdown inspect HTTP server: %w", err))
 		}
 	}
@@ -154,9 +156,9 @@ func (s *Service) Stop(b bool) []error {
 	return errs
 }
 func (s *Service) Serve() error {
-	if s.inspector != nil && s.HTTPServerFunc != nil {
+	if s.inspector != nil {
 		go func() {
-			if err := s.HTTPServerFunc(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			if err := s.inspector.Serve(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				s.Logger.Error("Inspect HTTP server failed — shutting down", "error", err)
 				s.Cancel()
 			}
