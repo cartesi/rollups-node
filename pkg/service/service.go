@@ -56,6 +56,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -235,8 +236,12 @@ func Create(ctx context.Context, c *CreateInfo, s *Service) error {
 		if c.TelemetryAddress == "" {
 			c.TelemetryAddress = ":8080"
 		}
-		s.Telemetry, s.TelemetryFunc = s.CreateDefaultTelemetry(c.TelemetryAddress, 3, 5*time.Second)
-		go s.TelemetryFunc()
+		s.Telemetry, s.TelemetryFunc = s.CreateDefaultTelemetry(c.TelemetryAddress)
+		go func() {
+			if err := s.TelemetryFunc(); err != nil {
+				s.Logger.Error("Telemetry HTTP server failed", "error", err)
+			}
+		}()
 	}
 
 	s.Logger.Info("Create", "version", version.BuildVersion, "log_level", c.LogLevel, "pid", os.Getpid())
@@ -420,35 +425,28 @@ func NewServiceLogger(c *CreateInfo) *slog.Logger {
 }
 
 // Telemetry
-func (s *Service) CreateDefaultTelemetry(
-	addr string,
-	maxRetries int,
-	retryInterval time.Duration,
-) (*http.Server, func() error) {
+func (s *Service) CreateDefaultTelemetry(addr string) (*http.Server, func() error) {
 	s.ServeMux.Handle("/readyz", http.HandlerFunc(s.ReadyHandler))
 	s.ServeMux.Handle("/livez", http.HandlerFunc(s.AliveHandler))
 
-	server := &http.Server{
-		Addr:     addr,
-		Handler:  s.ServeMux,
-		ErrorLog: slog.NewLogLogger(s.Logger.Handler(), slog.LevelError),
-	}
+	// Telemetry deliberately omits RequestIDMiddleware. /livez and /readyz are
+	// hit every few seconds per pod per service by orchestrators like
+	// Kubernetes; burning a crypto/rand UUID per probe is measurable overhead
+	// for 1-byte idempotent responses that have nothing to correlate against.
+	// RecoverMiddleware is kept so panics still become clean 500s.
+	// A static request ID is set so panic logs show "telemetry" instead of "".
+	handler := RecoverMiddleware(s.Logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(requestIDHeader, "telemetry")
+		s.ServeMux.ServeHTTP(w, r)
+	}))
+	server := NewHTTPServer(addr, handler, DefaultTelemetryOptions(), s.Logger)
+	StartupBindWarning(s.Logger, s.Name+"/telemetry", addr)
+
 	return server, func() error {
-		var err error = nil
-		for retry := 0; retry < maxRetries+1; retry++ {
-			switch err = server.ListenAndServe(); err {
-			case http.ErrServerClosed:
-				return nil
-			default:
-				s.Logger.Error("http",
-					"error", err,
-					"try", retry+1,
-					"maxRetries", maxRetries,
-					"error", err)
-			}
-			time.Sleep(retryInterval)
+		if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			return err
 		}
-		return err
+		return nil
 	}
 }
 
