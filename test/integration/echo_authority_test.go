@@ -102,14 +102,14 @@ func (s *EchoAuthoritySuite) TestInspect() {
 }
 
 // TestInspectNotFound verifies that inspecting a non-existent application
-// returns an error from the CLI and that the node logs the event. The
-// Required allowed error ensures the test fails if the node does NOT
-// log the expected message. The log scanner matches allowed patterns
-// across every level, so the production code is free to log this at
-// Info (where it belongs — it's a client error, not a server fault).
+// returns an error from the CLI and that the node logs the event at Info
+// level (404 is a client error, not a server fault). The Required
+// expected log ensures the test fails if the node does NOT emit the
+// corresponding log entry.
 func (s *EchoAuthoritySuite) TestInspectNotFound() {
-	s.SetAllowedErrors(AllowedError{
+	s.SetExpectedLogs(s.T(), ExpectedLog{
 		Pattern:  regexp.MustCompile(`Application not found`),
+		Level:    LevelInfo,
 		Reason:   "intentional inspect of non-existent application",
 		Required: true,
 	})

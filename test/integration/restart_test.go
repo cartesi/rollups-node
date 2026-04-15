@@ -288,8 +288,9 @@ func (s *RestartSuite) TestRestartMultiAppAuthority() {
 func (s *RestartSuite) TestRestartMultiAppPrt() {
 	// PRT settlement mines hundreds of blocks rapidly, which can cause
 	// transient BlockOutOfRangeError in the EVM reader.
-	s.SetAllowedErrors(AllowedError{
+	s.SetExpectedLogs(s.T(), ExpectedLog{
 		Pattern: regexp.MustCompile(`BlockOutOfRangeError`),
+		Level:   LevelError,
 		Reason:  "transient Anvil error during rapid block mining in PRT settlement",
 	})
 
