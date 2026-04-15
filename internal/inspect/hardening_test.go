@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -289,6 +290,104 @@ func TestInspector_RealServer_PayloadTooLarge(t *testing.T) {
 	respBody, _ := io.ReadAll(resp.Body)
 	require.Contains(t, string(respBody), "Payload too large")
 }
+
+// -----------------------------------------------------------------------------
+// Admission control integration
+// -----------------------------------------------------------------------------
+
+// newInspectorWithAdmission is a variant of newInspectorForTest that also
+// accepts a *service.SemaphoreAdmission to exercise the admission
+// middleware in the full handler chain.
+func newInspectorWithAdmission(t *testing.T, admission *service.SemaphoreAdmission) (*Inspector, *Application) {
+	t.Helper()
+
+	app := &Application{
+		ID:                  1,
+		IApplicationAddress: randomAddress(),
+		Name:                "test-app",
+	}
+	repo := newMockRepository()
+	repo.apps = append(repo.apps, app)
+
+	mm := newMockMachines()
+	mm.Map[1] = MockMachine{application: app}
+
+	insp, err := NewInspector(CreateInfo{
+		Repository: repo,
+		Machines:   mm,
+		Address:    "127.0.0.1:0",
+		LogLevel:   slog.LevelError,
+		LogPretty:  false,
+		Admission:  admission,
+	})
+	require.NoError(t, err)
+	return insp, app
+}
+
+func TestInspector_AdmissionAccessor(t *testing.T) {
+	admission := service.NewSemaphoreAdmission(1)
+	insp, _ := newInspectorWithAdmission(t, admission)
+	require.Same(t, admission, insp.Admission(),
+		"Admission() must return the instance passed via CreateInfo")
+
+	inspNil, _ := newInspectorWithAdmission(t, nil)
+	require.Nil(t, inspNil.Admission(),
+		"Admission() must return nil when admission control is disabled")
+}
+
+func TestInspector_AdmissionRejectsWhenExhausted(t *testing.T) {
+	// Pre-fill a single-permit admission so every subsequent request
+	// bounces with 503 regardless of payload shape.
+	admission := service.NewSemaphoreAdmission(1)
+	admission.TryAcquire() // pre-fill the single permit
+	insp, app := newInspectorWithAdmission(t, admission)
+
+	req := httptest.NewRequest(http.MethodPost,
+		fmt.Sprintf("/inspect/%s", app.Name),
+		strings.NewReader("hello"))
+	rr := httptest.NewRecorder()
+	insp.ServeMux.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, rr.Code)
+	retryAfter, err := strconv.Atoi(rr.Header().Get("Retry-After"))
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, retryAfter, 1)
+	require.LessOrEqual(t, retryAfter, 3)
+	require.Contains(t, rr.Body.String(), "service at capacity")
+	require.Equal(t, "nosniff", rr.Header().Get("X-Content-Type-Options"))
+	require.Equal(t, uint64(1), admission.Rejected())
+}
+
+func TestInspector_AdmissionDisabledWhenNil(t *testing.T) {
+	// nil Admission should disable the gate entirely. Any request
+	// should reach the handler.
+	insp, app := newInspectorWithAdmission(t, nil)
+
+	req := httptest.NewRequest(http.MethodPost,
+		fmt.Sprintf("/inspect/%s", app.Name),
+		strings.NewReader("hello"))
+	rr := httptest.NewRecorder()
+	insp.ServeMux.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestInspector_AdmissionPermitReleasedAfterRequest(t *testing.T) {
+	admission := service.NewSemaphoreAdmission(1)
+	insp, app := newInspectorWithAdmission(t, admission)
+
+	for range 5 {
+		req := httptest.NewRequest(http.MethodPost,
+			fmt.Sprintf("/inspect/%s", app.Name),
+			strings.NewReader("hello"))
+		rr := httptest.NewRecorder()
+		insp.ServeMux.ServeHTTP(rr, req)
+		require.Equal(t, http.StatusOK, rr.Code, "sequential requests must always succeed at limit=1")
+	}
+	require.Equal(t, uint64(0), admission.Rejected())
+}
+
+// -----------------------------------------------------------------------------
 
 // TestInspector_ServeReturnsNilOnGracefulShutdown verifies the new Serve()
 // method swallows http.ErrServerClosed and returns nil, matching the

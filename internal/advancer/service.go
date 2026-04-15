@@ -20,7 +20,7 @@ import (
 
 // httpShutdownTimeout is how long to wait for in-flight inspect HTTP requests
 // to drain before forcibly closing the server during shutdown.
-const httpShutdownTimeout = 10 * time.Second //nolint: mnd
+const httpShutdownTimeout = 10 * time.Second
 
 // Service is the main advancer service that processes inputs through Cartesi machines
 type Service struct {
@@ -81,12 +81,17 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 
 	// Initialize the inspect service if enabled
 	if c.Config.FeatureInspectEnabled {
+		var admission *service.SemaphoreAdmission
+		if c.Config.InspectMaxInflight > 0 {
+			admission = service.NewSemaphoreAdmission(c.Config.InspectMaxInflight)
+		}
 		inspector, err := inspect.NewInspector(inspect.CreateInfo{
 			Repository: c.Repository,
 			Machines:   manager,
 			Address:    c.Config.InspectAddress,
 			LogLevel:   c.LogLevel,
 			LogPretty:  c.LogColor,
+			Admission:  admission,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create inspect service: %w", err)

@@ -452,6 +452,17 @@ description = """
 HTTP address for inspect."""
 used-by = ["advancer", "node"]
 
+[http.CARTESI_INSPECT_MAX_INFLIGHT]
+default = "64"
+go-type = "uint64"
+description = """
+Maximum number of concurrent in-flight HTTP inspect requests.
+Requests beyond this limit receive HTTP 503 Service Unavailable
+with Retry-After: 1. Set to 0 to disable HTTP-level admission
+control (backpressure then falls back to the per-application
+machine semaphore)."""
+used-by = ["advancer", "node"]
+
 [http.CARTESI_JSONRPC_API_URL]
 default = "http://localhost:10011/rpc"
 go-type = "string"

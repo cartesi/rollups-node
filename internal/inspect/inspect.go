@@ -46,6 +46,7 @@ type Inspector struct {
 	Logger     *slog.Logger
 	ServeMux   *http.ServeMux
 	server     *http.Server
+	admission  *service.SemaphoreAdmission
 	// listen opens the HTTP listener. It defaults to net.Listen and is
 	// overridden in tests so Serve() can be exercised against a pre-bound
 	// listener whose actual address is known to the test.
@@ -70,6 +71,10 @@ type CreateInfo struct {
 	Address    string
 	LogLevel   slog.Level
 	LogPretty  bool
+	// Admission is an optional HTTP-level concurrency gate. A nil value
+	// disables admission control; the middleware chain treats nil as a
+	// pass-through so wiring is uniform regardless of configuration.
+	Admission *service.SemaphoreAdmission
 }
 
 // NewInspector constructs an [Inspector] and its backing HTTP server with
@@ -96,9 +101,11 @@ func NewInspector(c CreateInfo) (*Inspector, error) {
 		repository:       c.Repository,
 		Logger:           logger,
 		ServeMux:         http.NewServeMux(),
+		admission:        c.Admission,
 	}
 
 	var handler http.Handler = inspector
+	handler = service.AdmissionMiddleware(c.Admission)(handler)
 	handler = services.CorsMiddleware(handler)
 	handler = service.RequestIDMiddleware(handler)
 	handler = service.RecoverMiddleware(logger)(handler)
@@ -132,6 +139,14 @@ func (inspect *Inspector) Serve() error {
 // SetKeepAlivesEnabled, or mutating Handler after construction).
 func (inspect *Inspector) Shutdown(ctx context.Context) error {
 	return inspect.server.Shutdown(ctx)
+}
+
+// Admission returns the concurrency gate used by the inspect HTTP surface,
+// or nil when admission control is disabled. This accessor gives the
+// advancer (or a future metrics hook) a path to reach the inspect
+// admission counters without threading the controller separately.
+func (inspect *Inspector) Admission() *service.SemaphoreAdmission {
+	return inspect.admission
 }
 
 func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {

@@ -49,6 +49,7 @@ const (
 	CLAIMER_TELEMETRY_ADDRESS                         = "CARTESI_CLAIMER_TELEMETRY_ADDRESS"
 	EVM_READER_TELEMETRY_ADDRESS                      = "CARTESI_EVM_READER_TELEMETRY_ADDRESS"
 	INSPECT_ADDRESS                                   = "CARTESI_INSPECT_ADDRESS"
+	INSPECT_MAX_INFLIGHT                              = "CARTESI_INSPECT_MAX_INFLIGHT"
 	INSPECT_URL                                       = "CARTESI_INSPECT_URL"
 	JSONRPC_API_ADDRESS                               = "CARTESI_JSONRPC_API_ADDRESS"
 	JSONRPC_API_URL                                   = "CARTESI_JSONRPC_API_URL"
@@ -151,6 +152,8 @@ func SetDefaults() {
 
 	viper.SetDefault(INSPECT_ADDRESS, ":10012")
 
+	viper.SetDefault(INSPECT_MAX_INFLIGHT, "64")
+
 	viper.SetDefault(INSPECT_URL, "http://localhost:10012")
 
 	viper.SetDefault(JSONRPC_API_ADDRESS, ":10011")
@@ -239,6 +242,13 @@ type AdvancerConfig struct {
 	// HTTP address for inspect.
 	InspectAddress string `mapstructure:"CARTESI_INSPECT_ADDRESS"`
 
+	// Maximum number of concurrent in-flight HTTP inspect requests.
+	// Requests beyond this limit receive HTTP 503 Service Unavailable
+	// with Retry-After: 1. Set to 0 to disable HTTP-level admission
+	// control (backpressure then falls back to the per-application
+	// machine semaphore).
+	InspectMaxInflight uint64 `mapstructure:"CARTESI_INSPECT_MAX_INFLIGHT"`
+
 	// If set to true, the node will add colors to its log output.
 	LogColor bool `mapstructure:"CARTESI_LOG_COLOR"`
 
@@ -310,6 +320,13 @@ func LoadAdvancerConfig() (*AdvancerConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_INSPECT_ADDRESS: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_INSPECT_ADDRESS is required for the advancer service: %w", err)
+	}
+
+	cfg.InspectMaxInflight, err = GetInspectMaxInflight()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_INSPECT_MAX_INFLIGHT: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_INSPECT_MAX_INFLIGHT is required for the advancer service: %w", err)
 	}
 
 	cfg.LogColor, err = GetLogColor()
@@ -880,6 +897,13 @@ type NodeConfig struct {
 	// HTTP address for inspect.
 	InspectAddress string `mapstructure:"CARTESI_INSPECT_ADDRESS"`
 
+	// Maximum number of concurrent in-flight HTTP inspect requests.
+	// Requests beyond this limit receive HTTP 503 Service Unavailable
+	// with Retry-After: 1. Set to 0 to disable HTTP-level admission
+	// control (backpressure then falls back to the per-application
+	// machine semaphore).
+	InspectMaxInflight uint64 `mapstructure:"CARTESI_INSPECT_MAX_INFLIGHT"`
+
 	// HTTP address for the JSON-RPC API.
 	JsonrpcApiAddress string `mapstructure:"CARTESI_JSONRPC_API_ADDRESS"`
 
@@ -1036,6 +1060,13 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_INSPECT_ADDRESS: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_INSPECT_ADDRESS is required for the node service: %w", err)
+	}
+
+	cfg.InspectMaxInflight, err = GetInspectMaxInflight()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_INSPECT_MAX_INFLIGHT: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_INSPECT_MAX_INFLIGHT is required for the node service: %w", err)
 	}
 
 	cfg.JsonrpcApiAddress, err = GetJsonrpcApiAddress()
@@ -1459,6 +1490,7 @@ func (c *NodeConfig) ToAdvancerConfig() *AdvancerConfig {
 		FeatureInspectEnabled:          c.FeatureInspectEnabled,
 		FeatureMachineHashCheckEnabled: c.FeatureMachineHashCheckEnabled,
 		InspectAddress:                 c.InspectAddress,
+		InspectMaxInflight:             c.InspectMaxInflight,
 		LogColor:                       c.LogColor,
 		LogLevel:                       c.LogLevel,
 		JsonrpcMachineLogLevel:         c.JsonrpcMachineLogLevel,
@@ -1951,6 +1983,19 @@ func GetInspectAddress() (string, error) {
 		return v, nil
 	}
 	return notDefinedstring(), fmt.Errorf("%s: %w", INSPECT_ADDRESS, ErrNotDefined)
+}
+
+// GetInspectMaxInflight returns the value for the environment variable CARTESI_INSPECT_MAX_INFLIGHT.
+func GetInspectMaxInflight() (uint64, error) {
+	s := viper.GetString(INSPECT_MAX_INFLIGHT)
+	if s != "" {
+		v, err := toUint64(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", INSPECT_MAX_INFLIGHT, err)
+		}
+		return v, nil
+	}
+	return notDefineduint64(), fmt.Errorf("%s: %w", INSPECT_MAX_INFLIGHT, ErrNotDefined)
 }
 
 // GetInspectUrl returns the value for the environment variable CARTESI_INSPECT_URL.
