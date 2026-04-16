@@ -388,6 +388,26 @@ func TestInspector_AdmissionPermitReleasedAfterRequest(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
+// Per-app capacity (ErrInspectAtCapacity)
+// -----------------------------------------------------------------------------
+
+func TestInspector_PerAppCapacityReturns503(t *testing.T) {
+	// Inject ErrInspectAtCapacity as the machine-level error to simulate a
+	// saturated per-app semaphore. The handler should return 503 with a
+	// body that says "Application inspect at capacity".
+	insp, app := newInspectorForTest(t, manager.ErrInspectAtCapacity)
+
+	req := httptest.NewRequest(http.MethodPost,
+		fmt.Sprintf("/inspect/%s", app.Name),
+		strings.NewReader("hello"))
+	rr := httptest.NewRecorder()
+	insp.ServeMux.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, rr.Code)
+	require.Contains(t, rr.Body.String(), "Application inspect at capacity")
+}
+
+// -----------------------------------------------------------------------------
 
 // TestInspector_ServeReturnsNilOnGracefulShutdown verifies the new Serve()
 // method swallows http.ErrServerClosed and returns nil, matching the

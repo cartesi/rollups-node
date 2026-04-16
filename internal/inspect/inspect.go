@@ -206,6 +206,12 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Application not found", http.StatusNotFound)
 			return
 		}
+		if errors.Is(err, manager.ErrInspectAtCapacity) {
+			inspect.Logger.Info("Application inspect at capacity",
+				"application", dapp)
+			http.Error(w, "Application inspect at capacity", http.StatusServiceUnavailable)
+			return
+		}
 		service.WriteInternalError(r.Context(), w, inspect.Logger, fmt.Errorf("inspect processing failed: %w", err))
 		return
 	}

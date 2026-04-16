@@ -29,6 +29,7 @@ var (
 	ErrInvalidAdvanceTimeout  = errors.New("advance timeout must not be negative")
 	ErrInvalidInspectTimeout  = errors.New("inspect timeout must not be negative")
 	ErrInvalidConcurrentLimit = errors.New("maximum concurrent inspects must not be zero")
+	ErrInspectAtCapacity      = errors.New("application inspect at capacity")
 )
 
 // MachineInstanceImpl represents a running Cartesi machine for an application.
@@ -389,10 +390,11 @@ func (m *MachineInstanceImpl) forkForInspect(ctx context.Context) (machine.Machi
 
 // Inspect queries the machine state without modifying it
 func (m *MachineInstanceImpl) Inspect(ctx context.Context, query []byte) (*InspectResult, error) {
-	// Limit concurrent inspects
-	err := m.inspectSemaphore.Acquire(ctx, 1)
-	if err != nil {
-		return nil, err
+	// Limit concurrent inspects. TryAcquire is non-blocking so that a
+	// saturated application fails fast and releases its HTTP admission
+	// permit, preventing one app from starving others on the same node.
+	if !m.inspectSemaphore.TryAcquire(1) {
+		return nil, ErrInspectAtCapacity
 	}
 	defer m.inspectSemaphore.Release(1)
 

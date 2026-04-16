@@ -610,20 +610,19 @@ func (s *MachineInstanceSuite) TestInspect() {
 	})
 
 	s.Run("Error", func() {
-		s.Run("Acquire", func() {
+		s.Run("AtCapacity", func() {
 			require := s.Require()
 			_, _, machine := s.setupInspect()
 
-			// Set semaphore to 0 to force acquisition failure
+			// Pre-fill all semaphore slots to simulate a saturated app
 			machine.inspectSemaphore.TryAcquire(int64(machine.maxConcurrentInspects))
 
-			ctx, cancel := context.WithTimeout(context.Background(), centisecond)
-			defer cancel()
-
-			res, err := machine.Inspect(ctx, []byte{})
+			// TryAcquire is non-blocking: the error is returned immediately,
+			// no context deadline required.
+			res, err := machine.Inspect(context.Background(), []byte{})
 			require.Error(err)
 			require.Nil(res)
-			require.ErrorIs(err, context.DeadlineExceeded)
+			require.ErrorIs(err, ErrInspectAtCapacity)
 
 			// Release the semaphore for cleanup
 			machine.inspectSemaphore.Release(int64(machine.maxConcurrentInspects))
