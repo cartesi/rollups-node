@@ -51,7 +51,7 @@ type PersistentConfig struct {
 	ChainID                uint64
 }
 
-func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
+func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	var err error
 
 	if c == nil {
@@ -111,6 +111,8 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		txOpts:       txOpts,
 		defaultBlock: c.Config.BlockchainDefaultBlock,
 	}
+
+	s.LogConfig(c.Config)
 
 	return s, nil
 }

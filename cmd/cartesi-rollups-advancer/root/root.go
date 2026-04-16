@@ -101,7 +101,6 @@ func run(cmd *cobra.Command, args []string) {
 
 	advancerService, err := advancer.Create(ctx, &createInfo)
 	cli.CheckErr(logger, err)
-	advancerService.LogConfig(createInfo.Config)
 
 	cli.CheckErr(logger, advancerService.Serve())
 }

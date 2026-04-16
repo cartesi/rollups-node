@@ -101,7 +101,6 @@ func run(cmd *cobra.Command, args []string) {
 
 	prtService, err := prt.Create(ctx, &createInfo)
 	cli.CheckErr(logger, err)
-	prtService.LogConfig(createInfo.Config)
 
 	cli.CheckErr(logger, prtService.Serve())
 }

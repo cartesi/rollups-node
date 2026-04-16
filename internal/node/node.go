@@ -47,7 +47,7 @@ type Service struct {
 	Repository repository.Repository
 }
 
-func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
+func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	var err error
 
 	if err = ctx.Err(); err != nil {
@@ -67,6 +67,9 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		s.Logger.Error(fmt.Sprint(err))
 		return nil, err
 	}
+
+	s.LogConfig(c.Config)
+
 	return s, nil
 }
 

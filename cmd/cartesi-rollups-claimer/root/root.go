@@ -112,7 +112,6 @@ func run(cmd *cobra.Command, args []string) {
 
 	claimerService, err := claimer.Create(ctx, &createInfo)
 	cli.CheckErr(logger, err)
-	claimerService.LogConfig(createInfo.Config)
 
 	err = claimerService.Serve()
 	cli.CheckErr(logger, err)

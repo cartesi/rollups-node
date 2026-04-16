@@ -56,7 +56,7 @@ type PersistentConfig struct {
 	ChainID            uint64
 }
 
-func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
+func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	var err error
 	if err = ctx.Err(); err != nil {
 		return nil, err // This returns context.Canceled or context.DeadlineExceeded.
@@ -126,6 +126,8 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 			Logger:       s.Logger,
 		},
 	}
+
+	s.LogConfig(c.Config)
 
 	return s, nil
 }

@@ -64,7 +64,8 @@ func (s *ValidatorRepositoryIntegrationSuite) SetupSubTest() {
 		},
 		Repository: s.repository,
 	}
-	s.validator, err = validator.Create(context.Background(), &serviceArgs)
+	srv, err := validator.Create(context.Background(), &serviceArgs)
+	s.validator = srv.(*validator.Service)
 	s.Require().Nil(err)
 }
 

@@ -38,7 +38,7 @@ type CreateInfo struct {
 	Repository repository.Repository
 }
 
-func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
+func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	var err error
 	if err = ctx.Err(); err != nil {
 		return nil, err // This returns context.Canceled or context.DeadlineExceeded.
@@ -59,6 +59,8 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 
 	s.pristinePostContext = merkle.CreatePostContext()
 	s.pristineRootHash = s.pristinePostContext[merkle.TREE_DEPTH]
+
+	s.LogConfig(c.Config)
 
 	return s, nil
 }

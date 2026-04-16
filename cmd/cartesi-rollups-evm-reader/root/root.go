@@ -117,7 +117,6 @@ func run(cmd *cobra.Command, args []string) {
 
 	readerService, err := evmreader.Create(ctx, &createInfo)
 	cli.CheckErr(logger, err)
-	readerService.LogConfig(createInfo.Config)
 
 	cli.CheckErr(logger, readerService.Serve())
 }

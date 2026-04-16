@@ -183,7 +183,6 @@ func run(cmd *cobra.Command, args []string) {
 
 	nodeService, err := node.Create(ctx, &createInfo)
 	cli.CheckErr(logger, err)
-	nodeService.LogConfig(createInfo.Config)
 
 	cli.CheckErr(logger, nodeService.Serve())
 }

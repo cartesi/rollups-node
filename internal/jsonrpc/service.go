@@ -47,7 +47,7 @@ type CreateInfo struct {
 	Repository repository.Repository
 }
 
-func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
+func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	var err error
 	if err = ctx.Err(); err != nil {
 		return nil, err // This returns context.Canceled or context.DeadlineExceeded.
@@ -96,6 +96,8 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	if s.listen == nil {
 		s.listen = net.Listen
 	}
+
+	s.LogConfig(c.Config)
 
 	return s, nil
 }

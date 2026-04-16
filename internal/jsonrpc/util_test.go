@@ -115,7 +115,7 @@ func newTestServiceFull(t *testing.T, name string, maxInflight uint64, corsOrigi
 	s, err := Create(ctx, &ci)
 	require.NoError(t, err, "on new test service")
 
-	return s
+	return s.(*Service)
 }
 
 func nameToNumber(in string) uint64 {

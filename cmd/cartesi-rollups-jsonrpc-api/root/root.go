@@ -88,7 +88,6 @@ func run(cmd *cobra.Command, args []string) {
 
 	jsonrpcService, err := jsonrpc.Create(ctx, &createInfo)
 	cli.CheckErr(logger, err)
-	jsonrpcService.LogConfig(createInfo.Config)
 
 	cli.CheckErr(logger, jsonrpcService.Serve())
 }

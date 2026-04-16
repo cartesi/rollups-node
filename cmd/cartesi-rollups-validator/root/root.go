@@ -89,7 +89,6 @@ func run(cmd *cobra.Command, args []string) {
 
 	validatorService, err := validator.Create(ctx, &createInfo)
 	cli.CheckErr(logger, err)
-	validatorService.LogConfig(createInfo.Config)
 
 	cli.CheckErr(logger, validatorService.Serve())
 }

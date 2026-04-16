@@ -45,7 +45,7 @@ type CreateInfo struct {
 }
 
 // Create initializes a new advancer service
-func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
+func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	var err error
 	if err = ctx.Err(); err != nil {
 		return nil, err // This returns context.Canceled or context.DeadlineExceeded.
@@ -101,6 +101,8 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	}
 
 	s.snapshotsDir = c.Config.SnapshotsDir
+
+	s.LogConfig(c.Config)
 
 	return s, nil
 }
