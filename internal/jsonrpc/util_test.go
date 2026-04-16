@@ -78,6 +78,14 @@ func newTestService(t *testing.T, name string) *Service {
 // set CARTESI_JSONRPC_MAX_INFLIGHT for admission-control tests. A value
 // of 0 disables admission (the Create-time nil-admission path).
 func newTestServiceWithInflight(t *testing.T, name string, maxInflight uint64) *Service {
+	return newTestServiceFull(t, name, maxInflight, "")
+}
+
+func newTestServiceWithCORS(t *testing.T, name string, origins string) *Service {
+	return newTestServiceFull(t, name, 0, origins)
+}
+
+func newTestServiceFull(t *testing.T, name string, maxInflight uint64, corsOrigins string) *Service {
 	ctx := context.Background()
 
 	dbTestEndpoint, err := db.GetTestDatabaseEndpoint()
@@ -99,7 +107,8 @@ func newTestServiceWithInflight(t *testing.T, name string, maxInflight uint64) *
 			LogColor: true,
 		},
 		Config: config.JsonrpcConfig{
-			JsonrpcMaxInflight: maxInflight,
+			JsonrpcMaxInflight:        maxInflight,
+			JsonrpcCorsAllowedOrigins: corsOrigins,
 		},
 		Repository: repo,
 	}

@@ -152,17 +152,72 @@ func TestJSONRPC_AdmissionPermitReleasedAfterRequest(t *testing.T) {
 	require.Equal(t, uint64(0), s.admission.Rejected())
 }
 
-// rebuildHandlerWithAdmission mirrors the middleware layering from
-// Create() but with the service's current admission field. Used by
-// tests that swap the admission after construction.
+// rebuildHandlerWithAdmission rewraps the service's mux with only
+// AdmissionMiddleware bound to the service's current admission field.
+// Used by tests that swap the admission after construction to exercise
+// the rejection path. The outer chain (Recover, RequestID, CORS) from
+// Create() is deliberately omitted — admission is what these tests
+// pin, and the other layers are inert for a plain POST without Origin.
 func rebuildHandlerWithAdmission(s *Service) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rpc", s.handleRPC)
 
 	var handler http.Handler = mux
 	handler = service.AdmissionMiddleware(s.admission)(handler)
-	// CORS and the rest are outside admission in production; we skip
-	// them here because the rejection path is what we're pinning, and
-	// CORS doesn't affect a plain POST without Origin.
 	return handler
+}
+
+// -----------------------------------------------------------------------------
+// CORS integration
+// -----------------------------------------------------------------------------
+
+func TestJSONRPC_CORSDisabledByDefault(t *testing.T) {
+	s := newTestService(t, "jsonrpc-cors-off")
+
+	req := httptest.NewRequest(http.MethodPost, "/rpc", http.NoBody)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://evil.com")
+	rr := httptest.NewRecorder()
+	s.server.Handler.ServeHTTP(rr, req)
+
+	require.Empty(t, rr.Header().Get("Access-Control-Allow-Origin"))
+	require.Empty(t, rr.Header().Get("Vary"))
+}
+
+func TestJSONRPC_CORSAllowedOriginEchoed(t *testing.T) {
+	s := newTestServiceWithCORS(t, "jsonrpc-cors-on", "http://trusted.example.com")
+
+	req := httptest.NewRequest(http.MethodPost, "/rpc", http.NoBody)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://trusted.example.com")
+	rr := httptest.NewRecorder()
+	s.server.Handler.ServeHTTP(rr, req)
+
+	require.Equal(t, "http://trusted.example.com", rr.Header().Get("Access-Control-Allow-Origin"))
+	require.Contains(t, rr.Header().Values("Vary"), "Origin")
+}
+
+func TestJSONRPC_CORSDisallowedOriginNoGrant(t *testing.T) {
+	s := newTestServiceWithCORS(t, "jsonrpc-cors-reject", "http://trusted.example.com")
+
+	req := httptest.NewRequest(http.MethodPost, "/rpc", http.NoBody)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://evil.com")
+	rr := httptest.NewRecorder()
+	s.server.Handler.ServeHTTP(rr, req)
+
+	require.Empty(t, rr.Header().Get("Access-Control-Allow-Origin"))
+	require.Contains(t, rr.Header().Values("Vary"), "Origin")
+}
+
+func TestJSONRPC_CORSNoOriginPassthrough(t *testing.T) {
+	s := newTestServiceWithCORS(t, "jsonrpc-cors-no-origin", "http://trusted.example.com")
+
+	req := httptest.NewRequest(http.MethodPost, "/rpc", http.NoBody)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	s.server.Handler.ServeHTTP(rr, req)
+
+	require.Empty(t, rr.Header().Get("Access-Control-Allow-Origin"))
+	require.NotEqual(t, http.StatusServiceUnavailable, rr.Code)
 }

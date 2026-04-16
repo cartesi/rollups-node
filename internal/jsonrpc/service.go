@@ -13,7 +13,6 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/internal/services"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputs"
 	"github.com/cartesi/rollups-node/pkg/contracts/outputs"
 	"github.com/cartesi/rollups-node/pkg/service"
@@ -84,13 +83,12 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rpc", s.handleRPC)
 
-	var handler http.Handler = mux
-	handler = service.AdmissionMiddleware(s.admission)(handler)
-	handler = services.CorsMiddleware(handler) // FIXME: add proper cors config
-	handler = service.RequestIDMiddleware(handler)
-	// RecoverMiddleware is outermost so it catches panics from every layer,
-	// including RequestIDMiddleware itself (e.g. entropy-source failure).
-	handler = service.RecoverMiddleware(s.Logger)(handler)
+	handler := service.NewServiceHandler(mux, service.HandlerOptions{
+		Logger:    s.Logger,
+		Admission: s.admission,
+		CORS: service.ParseCORSConfig(s.Logger, c.Config.JsonrpcCorsAllowedOrigins,
+			[]string{"POST", "OPTIONS"}, []string{"Content-Type"}),
+	})
 
 	s.server = service.NewHTTPServer(c.Config.JsonrpcApiAddress, handler, service.DefaultJSONRPCOptions(), s.Logger)
 	service.StartupBindWarning(s.Logger, "jsonrpc", c.Config.JsonrpcApiAddress)
