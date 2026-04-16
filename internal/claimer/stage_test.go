@@ -4,6 +4,7 @@
 package claimer
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"strings"
@@ -17,7 +18,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 )
 
 func TestStagingFastPathDivergence(t *testing.T) {
@@ -50,12 +50,12 @@ func TestStagingFastPathDivergence(t *testing.T) {
 	r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Diverged, mock.Anything).
 		Return(nil).Once()
 
-	_, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	_, err := m.submitClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	// The fast-path consumed the receipt and triggered DIVERGED. The
 	// divergence error is surfaced (matching the convention used by other
 	// terminal-status setters);
 	// UpdateEpochThroughStaging is NOT called and the in-flight tx is dropped.
-	assert.Equal(t, 1, len(errs), "divergence at staging fast-path must surface as an error")
+	assert.Error(t, err, "divergence at staging fast-path must surface as an error")
 	assert.Equal(t, 0, len(m.claimsInFlight))
 }
 
@@ -99,11 +99,10 @@ func TestStagingFastPathDBPending(t *testing.T) {
 	// that UpdateEpochThroughStaging guarantees in a single transaction.
 
 	computedEpochs := makeEpochMap(currEpoch)
-	_, errs := m.submitClaimsAndUpdateDatabase(
-		makeEpochMap(), computedEpochs, makeApplicationMap(app), endBlock)
+	_, err := m.submitClaimsAndUpdateDatabase(
+		context.Background(), makeEpochMap(), computedEpochs, makeApplicationMap(app), endBlock)
 
-	require.Equal(t, 1, len(errs), "DB-pending must surface as a tick-level error")
-	assert.ErrorIs(t, errs[0], dbErr)
+	assert.ErrorIs(t, err, dbErr, "DB-pending must surface as a tick-level error")
 	// Both work-tracking entries must remain so the next tick can retry
 	// from the same receipt.
 	assert.Contains(t, m.claimsInFlight, app.ID,
@@ -131,8 +130,8 @@ func TestStageByObservation(t *testing.T) {
 	r.On("UpdateEpochToStaged", mock.Anything, app.ID, currEpoch.Index, currEvent.Raw.BlockNumber).
 		Return(nil).Once()
 
-	transitions, errs := m.stageClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 0, len(errs))
+	transitions, err := m.stageClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, transitions)
 }
 
@@ -152,8 +151,8 @@ func TestStageForeclosesSubmittedForeclosedApp(t *testing.T) {
 	r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, currEpoch.Index).
 		Return(nil).Once()
 
-	transitions, errs := m.stageClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 0, len(errs))
+	transitions, err := m.stageClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, transitions)
 	assert.Equal(t, model.EpochStatus_ClaimForeclosed, currEpoch.Status)
 }
@@ -189,8 +188,8 @@ func TestStagingDivergence_Quorum(t *testing.T) {
 	})).
 		Return(nil).Once()
 
-	_, errs := m.stageClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs))
+	_, err := m.stageClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err)
 	assert.Equal(t, model.ApplicationStatus_Diverged, app.Status)
 	assert.Equal(t, model.EpochStatus_ClaimRejected, currEpoch.Status)
 }
@@ -218,8 +217,8 @@ func TestStagingDivergence_AuthorityDoesNotRejectEpoch(t *testing.T) {
 	r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Diverged, mock.Anything).
 		Return(nil).Once()
 
-	_, errs := m.stageClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs))
+	_, err := m.stageClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err)
 	assert.Equal(t, model.ApplicationStatus_Diverged, app.Status)
 	assert.Equal(t, model.EpochStatus_ClaimSubmitted, currEpoch.Status)
 }
@@ -244,8 +243,8 @@ func TestStagingMatcherPreconditionFailureMarksApplicationCorrupted(t *testing.T
 	})).
 		Return(nil).Once()
 
-	_, errs := m.stageClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs))
+	_, err := m.stageClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err)
 	assert.Equal(t, model.ApplicationStatus_Corrupted, app.Status)
 }
 
@@ -280,8 +279,8 @@ func TestStagingDivergenceReaderMode_Quorum(t *testing.T) {
 	})).
 		Return(nil).Once()
 
-	_, errs := m.stageClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs), "divergence detection must fire in reader mode")
+	_, err := m.stageClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err, "divergence detection must fire in reader mode")
 	assert.Equal(t, model.EpochStatus_ClaimRejected, currEpoch.Status)
 }
 

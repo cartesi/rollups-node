@@ -67,29 +67,30 @@ func run(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
 	defer cancel()
 
-	createInfo := validator.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:                 config.ServiceValidator,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServiceValidator, cfg.LogLevel),
-			LogColor:             cfg.LogColor,
-			EnableSignalHandling: true,
-			TelemetryCreate:      true,
-			TelemetryAddress:     cfg.ValidatorTelemetryAddress,
-			PollInterval:         cfg.ValidatorPollingInterval,
+	name := config.ServiceValidator
+	logger := service.NewLogger(name, cfg.LogLevel, cfg.LogColor)
+
+	repo, err := factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
+	cli.CheckErr(logger, err)
+	defer repo.Close()
+
+	supCfg := &service.SupervisorConfigs{
+		BaseConfigs:          service.BaseConfigs{Name: name, Logger: logger},
+		EnableSignalHandling: true,
+		TelemetryCreate:      true,
+		TelemetryAddress:     cfg.ValidatorTelemetryAddress,
+		Factories: []service.FactoryFunction{
+			func(ctx context.Context, sup *service.Supervisor) (service.SupervisedService, error) {
+				return validator.Create(ctx, &validator.CreateInfo{
+					Config:     *cfg,
+					Logger:     sup.Logger,
+					Repository: repo,
+				})
+			},
 		},
-		Config: *cfg,
 	}
-	logger := service.NewServiceLogger(&createInfo.CreateInfo)
-	createInfo.CreateInfo.Logger = logger
-
-	var err error
-	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
+	sup, err := service.NewSupervisor(ctx, supCfg)
 	cli.CheckErr(logger, err)
-	defer createInfo.Repository.Close()
-
-	validatorService, err := validator.Create(ctx, &createInfo)
-	cli.CheckErr(logger, err)
-	validatorService.LogConfig(createInfo.Config)
-
-	cli.CheckErr(logger, validatorService.Serve())
+	defer sup.Close()
+	cli.CheckErr(logger, sup.Serve())
 }

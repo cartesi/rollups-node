@@ -11,7 +11,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/internal/version"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
 
 	"github.com/spf13/cobra"
@@ -80,41 +79,30 @@ func run(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
 	defer cancel()
 
-	createInfo := claimer.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:                 config.ServiceClaimer,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServiceClaimer, cfg.LogLevel),
-			LogColor:             cfg.LogColor,
-			EnableSignalHandling: true,
-			TelemetryCreate:      true,
-			TelemetryAddress:     cfg.ClaimerTelemetryAddress,
-			PollInterval:         cfg.ClaimerPollingInterval,
+	name := config.ServiceClaimer
+	logger := service.NewLogger(name, cfg.LogLevel, cfg.LogColor)
+
+	repo, err := factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
+	cli.CheckErr(logger, err)
+	defer repo.Close()
+
+	supCfg := &service.SupervisorConfigs{
+		BaseConfigs:          service.BaseConfigs{Name: name, Logger: logger},
+		EnableSignalHandling: true,
+		TelemetryCreate:      true,
+		TelemetryAddress:     cfg.ClaimerTelemetryAddress,
+		Factories: []service.FactoryFunction{
+			func(ctx context.Context, sup *service.Supervisor) (service.SupervisedService, error) {
+				return claimer.Create(ctx, &claimer.CreateInfo{
+					Config:     *cfg,
+					Logger:     sup.Logger,
+					Repository: repo,
+				})
+			},
 		},
-		Config: *cfg,
 	}
-	logger := service.NewServiceLogger(&createInfo.CreateInfo)
-	createInfo.CreateInfo.Logger = logger
-
-	authOpt, err := config.HTTPAuthorizationOption()
+	sup, err := service.NewSupervisor(ctx, supCfg)
 	cli.CheckErr(logger, err)
-	createInfo.EthConn, err = ethutil.NewEthClient(
-		ctx, cfg.BlockchainHttpEndpoint.Raw(), logger,
-		ethutil.RetryConfig{
-			MaxRetries:     cfg.BlockchainHttpMaxRetries,
-			RetryMinWait:   cfg.BlockchainHttpRetryMinWait,
-			RetryMaxWait:   cfg.BlockchainHttpRetryMaxWait,
-			RequestTimeout: cfg.BlockchainHttpRequestTimeout,
-		}, authOpt)
-	cli.CheckErr(logger, err)
-
-	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
-	cli.CheckErr(logger, err)
-	defer createInfo.Repository.Close()
-
-	claimerService, err := claimer.Create(ctx, &createInfo)
-	cli.CheckErr(logger, err)
-	claimerService.LogConfig(createInfo.Config)
-
-	err = claimerService.Serve()
-	cli.CheckErr(logger, err)
+	defer sup.Close()
+	cli.CheckErr(logger, sup.Serve())
 }

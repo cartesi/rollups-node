@@ -56,9 +56,8 @@ func (s *SealedEpochsSuite) SetupTest() {
 
 	logLevel, err := config.GetLogLevel()
 	s.Require().NoError(err)
-	serviceArgs := &service.CreateInfo{Name: "evm-reader", Impl: s.evmReader, LogLevel: logLevel}
-	err = service.Create(context.Background(), serviceArgs, &s.evmReader.Service)
-	s.Require().NoError(err)
+	serviceArgs := &service.BaseConfigs{Name: "evm-reader", LogLevel: logLevel}
+	service.InitServiceTemplate(&s.evmReader.BaseTemplate, serviceArgs)
 }
 
 // TestProcessSealedEpochFindsInputAtOverlapBlock verifies that when an input

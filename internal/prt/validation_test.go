@@ -24,21 +24,22 @@ import (
 
 func TestTrySettleOperationDeadlineDoesNotCancelServiceContext(t *testing.T) {
 	s, app := newValidationService(t)
-	ctx, cancel := context.WithTimeout(s.Context, 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 
 	err := s.trySettle(ctx, app, 1)
 
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.NoError(t, s.Context.Err())
+	require.NoError(t, t.Context().Err())
 }
 
 func TestTrySettleShutdownCancelsOperationContext(t *testing.T) {
 	s, app := newValidationService(t)
-	ctx, cancel := context.WithTimeout(s.Context, time.Second)
+	parentCtx, parentCancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(parentCtx, time.Second)
 	defer cancel()
 
-	time.AfterFunc(50*time.Millisecond, s.Cancel)
+	time.AfterFunc(50*time.Millisecond, parentCancel)
 	start := time.Now()
 	err := s.trySettle(ctx, app, 1)
 
@@ -49,21 +50,22 @@ func TestTrySettleShutdownCancelsOperationContext(t *testing.T) {
 
 func TestReactToTournamentOperationDeadlineDoesNotCancelServiceContext(t *testing.T) {
 	s, app := newValidationService(t)
-	ctx, cancel := context.WithTimeout(s.Context, 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 
 	err := s.reactToTournament(ctx, app, 1)
 
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.NoError(t, s.Context.Err())
+	require.NoError(t, t.Context().Err())
 }
 
 func TestReactToTournamentShutdownCancelsOperationContext(t *testing.T) {
 	s, app := newValidationService(t)
-	ctx, cancel := context.WithTimeout(s.Context, time.Second)
+	parentCtx, parentCancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(parentCtx, time.Second)
 	defer cancel()
 
-	time.AfterFunc(50*time.Millisecond, s.Cancel)
+	time.AfterFunc(50*time.Millisecond, parentCancel)
 	start := time.Now()
 	err := s.reactToTournament(ctx, app, 1)
 
@@ -75,7 +77,6 @@ func TestReactToTournamentShutdownCancelsOperationContext(t *testing.T) {
 func newValidationService(t *testing.T) (*Service, *model.Application) {
 	t.Helper()
 
-	ctx, cancel := context.WithCancel(context.Background())
 	app := repotest.NewApplicationBuilder().
 		WithEpochLength(10).
 		Build()
@@ -137,10 +138,10 @@ func newValidationService(t *testing.T) (*Service, *model.Application) {
 		Return(tournamentAdapter, nil)
 
 	s := &Service{
-		Service: service.Service{
-			Context: ctx,
-			Cancel:  cancel,
-			Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		TickServiceTemplate: service.TickServiceTemplate{
+			BaseTemplate: service.BaseTemplate{
+				Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+			},
 		},
 		repository:        repo,
 		adapterFactory:    adapterFactory,
@@ -154,6 +155,5 @@ func newValidationService(t *testing.T) (*Service, *model.Application) {
 		joinInFlight:      map[int64]*common.Hash{},
 	}
 	s.currentEpochIndex[app.ID] = 0
-	t.Cleanup(cancel)
 	return s, app
 }

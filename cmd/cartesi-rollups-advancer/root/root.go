@@ -9,6 +9,8 @@ import (
 	"github.com/cartesi/rollups-node/internal/advancer"
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/inspect"
+	"github.com/cartesi/rollups-node/internal/manager"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/internal/version"
 	"github.com/cartesi/rollups-node/pkg/service"
@@ -79,29 +81,58 @@ func run(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
 	defer cancel()
 
-	createInfo := advancer.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:                 config.ServiceAdvancer,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServiceAdvancer, cfg.LogLevel),
-			LogColor:             cfg.LogColor,
-			EnableSignalHandling: true,
-			TelemetryCreate:      true,
-			TelemetryAddress:     cfg.AdvancerTelemetryAddress,
-			PollInterval:         cfg.AdvancerPollingInterval,
+	// Create shared components
+
+	name := config.ServiceAdvancer
+	logger := service.NewLogger(name, cfg.LogLevel, cfg.LogColor)
+
+	repo, err := factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
+	cli.CheckErr(logger, err)
+	defer repo.Close()
+
+	machineManager := manager.NewMachineManager(
+		repo,
+		logger,
+		cfg.FeatureMachineHashCheckEnabled,
+		cfg.AdvancerInputBatchSize,
+	)
+	defer machineManager.Close()
+
+	// Create factories of services
+
+	factories := []service.FactoryFunction{
+		func(ctx context.Context, sup *service.Supervisor) (service.SupervisedService, error) {
+			return advancer.Create(ctx, &advancer.CreateInfo{
+				Config:     *cfg,
+				Repository: repo,
+				Machines:   machineManager,
+				Supervisor: sup,
+				Logger:     sup.Logger,
+			})
 		},
-		Config: *cfg,
 	}
-	logger := service.NewServiceLogger(&createInfo.CreateInfo)
-	createInfo.CreateInfo.Logger = logger
 
-	var err error
-	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
+	if cfg.FeatureInspectEnabled {
+		factories = append(factories,
+			func(ctx context.Context, sup *service.Supervisor) (service.SupervisedService, error) {
+				return inspect.Create(ctx, &inspect.CreateInfo{
+					Config:     *cfg,
+					Repository: repo,
+					Machines:   machineManager,
+				})
+			},
+		)
+	}
+
+	supCfg := &service.SupervisorConfigs{
+		BaseConfigs:          service.BaseConfigs{Name: name, Logger: logger},
+		EnableSignalHandling: true,
+		TelemetryCreate:      true,
+		TelemetryAddress:     cfg.AdvancerTelemetryAddress,
+		Factories:            factories,
+	}
+	sup, err := service.NewSupervisor(ctx, supCfg)
 	cli.CheckErr(logger, err)
-	defer createInfo.Repository.Close()
-
-	advancerService, err := advancer.Create(ctx, &createInfo)
-	cli.CheckErr(logger, err)
-	advancerService.LogConfig(createInfo.Config)
-
-	cli.CheckErr(logger, advancerService.Serve())
+	defer sup.Close()
+	cli.CheckErr(logger, sup.Serve())
 }

@@ -4,7 +4,6 @@
 package evmreader
 
 import (
-	"context"
 	"errors"
 	"math/big"
 	"time"
@@ -149,7 +148,7 @@ func (s *EvmReaderSuite) TestOutputExecution() {
 	s.setupOutputExecution()
 
 	// Start service
-	go s.evmReader.Serve() //nolint: errcheck
+	go s.evmReader.Serve(s.ctx) //nolint: errcheck
 
 	s.Require().True(waitNotification(called), "evmreader did not read new header")
 
@@ -188,7 +187,7 @@ func (s *EvmReaderSuite) TestOutputExecutionOnFinalizedBlocks() {
 	called, blocked := newBlockedCallNotification(s.client.EnqueueNewHead(0x13))
 
 	// Start service
-	go s.evmReader.Serve() //nolint: errcheck
+	go s.evmReader.Serve(s.ctx) //nolint: errcheck
 
 	s.Require().True(waitNotification(called), "evmreader did not read new header")
 
@@ -470,7 +469,7 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenRetrieveOutputsFails() {
 	s.client.EnqueueNewHead(0x13).Once()
 	called, blocked := newBlockedCallNotification(s.client.EnqueueNewHead(0x13))
 	// Start service
-	go s.evmReader.Serve() //nolint: errcheck
+	go s.evmReader.Serve(s.ctx) //nolint: errcheck
 
 	s.Require().True(waitNotification(called), "evmreader did not read new header")
 
@@ -574,7 +573,7 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenGetOutputsFails() {
 	called, blocked := newBlockedCallNotification(s.client.EnqueueNewHead(0x13))
 
 	// Start service
-	go s.evmReader.Serve() //nolint: errcheck
+	go s.evmReader.Serve(s.ctx) //nolint: errcheck
 
 	s.Require().True(waitNotification(called), "evmreader did not read new header")
 
@@ -609,15 +608,14 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 	logLevel, err := config.GetLogLevel()
 	s.Require().NoError(err)
 
-	serviceArgs := &service.CreateInfo{
-		Name:         "evm-reader",
-		Impl:         s.evmReader,
-		LogLevel:     logLevel,
-		Context:      s.ctx,
-		Cancel:       s.cancel,
+	serviceArgs := &service.TickServiceConfigs{
+		BaseConfigs: service.BaseConfigs{
+			Name:     "evm-reader",
+			LogLevel: logLevel,
+		},
 		PollInterval: 100 * time.Millisecond,
 	}
-	err = service.Create(context.Background(), serviceArgs, &s.evmReader.Service)
+	err = service.InitTickServiceTemplate(&s.evmReader.TickServiceTemplate, serviceArgs, s.evmReader)
 	s.Require().NoError(err)
 
 	s.evmReader.resolver = newApplicationAdapterResolver(s.evmReader.Logger, s.contractFactory)
@@ -759,7 +757,7 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenOutputMismatches() {
 	called, blocked := newBlockedCallNotification(s.client.EnqueueNewHead(0x13))
 
 	// Start service
-	go s.evmReader.Serve() //nolint: errcheck
+	go s.evmReader.Serve(s.ctx) //nolint: errcheck
 
 	s.Require().True(waitNotification(called), "evmreader did not read new header")
 

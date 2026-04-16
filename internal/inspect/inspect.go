@@ -9,18 +9,21 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
-	"net"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
 	pkgmachine "github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
+
+// httpShutdownTimeout is how long to wait for in-flight inspect HTTP requests
+// to drain before forcibly closing the server during shutdown.
+const httpShutdownTimeout = 10 * time.Second
 
 // maxPayloadSize is the maximum allowed inspect request body size.
 // This matches the Cartesi Machine's CMIO RX buffer (2 MiB, defined as log2 size 21
@@ -54,17 +57,10 @@ type InspectRepository interface {
 
 type Inspector struct {
 	IInspectMachines
+	service.HTTPServiceTemplate
 	repository       InspectRepository
-	Logger           *slog.Logger
-	ServeMux         *http.ServeMux
-	server           *http.Server
-	admission        *service.SemaphoreAdmission
 	deadlineWarnedMu sync.Mutex
 	deadlineWarned   map[int64]struct{}
-	// listen opens the HTTP listener. It defaults to net.Listen and is
-	// overridden in tests so Serve() can be exercised against a pre-bound
-	// listener whose actual address is known to the test.
-	listen func(network, address string) (net.Listener, error)
 }
 
 type ReportResponse struct {
@@ -81,86 +77,45 @@ type InspectResponse struct {
 
 // CreateInfo bundles the parameters for [NewInspector].
 type CreateInfo struct {
+	Config     config.AdvancerConfig
 	Repository InspectRepository
 	Machines   IInspectMachines
-	Address    string
-	LogLevel   slog.Level
-	LogPretty  bool
-	// Admission is an optional HTTP-level concurrency gate. A nil value
-	// disables admission control; the middleware chain treats nil as a
-	// pass-through so wiring is uniform regardless of configuration.
-	Admission *service.SemaphoreAdmission
-	// CORSAllowedOrigins is the raw comma-separated origin allowlist.
-	// Empty disables CORS entirely.
-	CORSAllowedOrigins string
 }
 
-// NewInspector constructs an [Inspector] and its backing HTTP server
-// with the node's canonical hardening chain applied via
-// [service.NewServiceHandler]. See that helper for the middleware order
-// and rationale.
-//
-// Use [Inspector.Serve] to run the HTTP server and [Inspector.Shutdown]
-// to stop it gracefully.
-func NewInspector(c CreateInfo) (*Inspector, error) {
+func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, error) {
+	var err error
+	if err = ctx.Err(); err != nil {
+		return nil, err // This returns context.Canceled or context.DeadlineExceeded.
+	}
 	if c.Machines == nil {
 		return nil, ErrInvalidMachines
 	}
 
-	logger := service.NewLogger(c.LogLevel, c.LogPretty).With("service", "inspect")
 	inspector := &Inspector{
 		IInspectMachines: c.Machines,
 		repository:       c.Repository,
-		Logger:           logger,
 		deadlineWarned:   make(map[int64]struct{}),
-		ServeMux:         http.NewServeMux(),
-		admission:        c.Admission,
 	}
 
-	handler := service.NewServiceHandler(inspector, service.HandlerOptions{
-		Logger:    logger,
-		Admission: c.Admission,
-		CORS: service.ParseCORSConfig(logger, c.CORSAllowedOrigins,
-			[]string{"POST", "OPTIONS"}, []string{"Content-Type"}),
-	})
-	inspector.ServeMux.Handle("/inspect/{dapp}", handler)
+	mux := http.NewServeMux()
+	mux.Handle("/inspect/{dapp}", inspector)
 
-	inspector.server = service.NewHTTPServer(c.Address, inspector.ServeMux, service.DefaultInspectOptions(), logger)
-	inspector.listen = net.Listen
-	service.StartupBindWarning(logger, "inspect", c.Address)
+	httpCfg := &service.HTTPServiceConfigs{
+		BaseConfigs: service.BaseConfigs{
+			Name:     "inspect",
+			LogLevel: config.ResolveServiceLogLevel(config.ServiceAdvancer, c.Config.LogLevel),
+			LogColor: c.Config.LogColor,
+		},
+		HTTPServerOptions:  service.DefaultInspectOptions(),
+		Address:            c.Config.InspectAddress,
+		SafeRequestID:      true,
+		CorsAllowedOrigins: c.Config.InspectCorsAllowedOrigins,
+		MaxInflight:        c.Config.InspectMaxInflight,
+		ShutdownTimeout:    httpShutdownTimeout,
+	}
+	service.InitHTTPServiceTemplate(&inspector.HTTPServiceTemplate, httpCfg, mux)
 
 	return inspector, nil
-}
-
-// Serve opens the HTTP listener and runs the server. Returns nil on
-// graceful shutdown.
-func (inspect *Inspector) Serve() error {
-	listener, err := inspect.listen("tcp", inspect.server.Addr)
-	if err != nil {
-		return err
-	}
-	inspect.Logger.Info("Listening", "address", listener.Addr().String())
-	if err := inspect.server.Serve(listener); !errors.Is(err, http.ErrServerClosed) {
-		return err
-	}
-	return nil
-}
-
-// Shutdown gracefully stops the inspect HTTP server, waiting for in-flight
-// requests to complete or ctx to expire. Callers should not access the
-// underlying *http.Server directly; exposing only Shutdown keeps the API
-// surface minimal and prevents misuse (e.g. reaching for ListenAndServe,
-// SetKeepAlivesEnabled, or mutating Handler after construction).
-func (inspect *Inspector) Shutdown(ctx context.Context) error {
-	return inspect.server.Shutdown(ctx)
-}
-
-// Admission returns the concurrency gate used by the inspect HTTP surface,
-// or nil when admission control is disabled. This accessor gives the
-// advancer (or a future metrics hook) a path to reach the inspect
-// admission counters without threading the controller separately.
-func (inspect *Inspector) Admission() *service.SemaphoreAdmission {
-	return inspect.admission
 }
 
 func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -225,7 +180,7 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	deadline := app.ExecutionParameters.InspectMaxDeadline + inspectResponseHeadroom
-	if inspect.server != nil && deadline > inspect.server.WriteTimeout {
+	if inspect.Server != nil && deadline > inspect.Server.WriteTimeout {
 		inspect.warnDeadlineExceedsWriteTimeout(app, deadline)
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), deadline)
@@ -344,7 +299,7 @@ func (inspect *Inspector) warnDeadlineExceedsWriteTimeout(app *Application, dead
 		"inspect_max_deadline", app.ExecutionParameters.InspectMaxDeadline,
 		"response_headroom", inspectResponseHeadroom,
 		"effective_deadline", deadline,
-		"http_write_timeout", inspect.server.WriteTimeout,
+		"http_write_timeout", inspect.Server.WriteTimeout,
 	)
 }
 

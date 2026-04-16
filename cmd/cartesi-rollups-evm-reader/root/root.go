@@ -11,7 +11,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/internal/version"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
 
 	"github.com/spf13/cobra"
@@ -80,42 +79,30 @@ func run(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
 	defer cancel()
 
-	createInfo := evmreader.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:                 config.ServiceEvmReader,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServiceEvmReader, cfg.LogLevel),
-			LogColor:             cfg.LogColor,
-			EnableSignalHandling: true,
-			TelemetryCreate:      true,
-			TelemetryAddress:     cfg.EvmReaderTelemetryAddress,
-			PollInterval:         cfg.EvmReaderPollingInterval,
-		},
-		Config: *cfg,
-	}
-	logger := service.NewServiceLogger(&createInfo.CreateInfo)
-	createInfo.CreateInfo.Logger = logger
-
-	var err error
-	authOpt, err := config.HTTPAuthorizationOption()
-	cli.CheckErr(logger, err)
-	createInfo.EthClient, err = ethutil.NewEthClient(
-		ctx, cfg.BlockchainHttpEndpoint.Raw(), logger,
-		ethutil.RetryConfig{
-			MaxRetries:     cfg.BlockchainHttpMaxRetries,
-			RetryMinWait:   cfg.BlockchainHttpRetryMinWait,
-			RetryMaxWait:   cfg.BlockchainHttpRetryMaxWait,
-			RequestTimeout: cfg.BlockchainHttpRequestTimeout,
-		}, authOpt)
-	cli.CheckErr(logger, err)
+	name := config.ServiceEvmReader
+	logger := service.NewLogger(name, cfg.LogLevel, cfg.LogColor)
 
 	repo, err := factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
 	cli.CheckErr(logger, err)
 	defer repo.Close()
-	createInfo.Repository = repo
 
-	readerService, err := evmreader.Create(ctx, &createInfo)
+	supCfg := &service.SupervisorConfigs{
+		BaseConfigs:          service.BaseConfigs{Name: name, Logger: logger},
+		EnableSignalHandling: true,
+		TelemetryCreate:      true,
+		TelemetryAddress:     cfg.EvmReaderTelemetryAddress,
+		Factories: []service.FactoryFunction{
+			func(ctx context.Context, sup *service.Supervisor) (service.SupervisedService, error) {
+				return evmreader.Create(ctx, &evmreader.CreateInfo{
+					Config:     *cfg,
+					Logger:     sup.Logger,
+					Repository: repo,
+				})
+			},
+		},
+	}
+	sup, err := service.NewSupervisor(ctx, supCfg)
 	cli.CheckErr(logger, err)
-	readerService.LogConfig(createInfo.Config)
-
-	cli.CheckErr(logger, readerService.Serve())
+	defer sup.Close()
+	cli.CheckErr(logger, sup.Serve())
 }

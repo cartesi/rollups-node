@@ -4,6 +4,7 @@
 package manager
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -143,7 +144,7 @@ func (s *MachineManagerSuite) TestUpdateMachinesUsesCanonicalReplayPolicy() {
 	require.Equal(repository.ReplayVerificationCanonical, capturedOptions.Verification)
 	require.True(manager.HasMachine(app.ID))
 	repo.AssertExpectations(s.T())
-	require.NoError(manager.Close())
+	manager.Close()
 }
 
 func (s *MachineManagerSuite) TestIsOnlyApplicationFailurePersistenceErrors() {
@@ -1219,7 +1220,7 @@ func (s *MachineManagerSuite) TestSnapshotStartingStateVerification() {
 		require.Equal(1, snapshotInstance.hashCalls)
 		require.Equal(1, snapshotInstance.replayCalls)
 		require.True(manager.HasMachine(app.ID))
-		require.NoError(manager.Close())
+		manager.Close()
 	})
 
 	fallbackTests := []struct {
@@ -1344,7 +1345,7 @@ func (s *MachineManagerSuite) TestSnapshotStartingStateVerification() {
 				require.Zero(candidate.replayCalls)
 			}
 			assertTemplateReplay(require, manager, repo, app, expectedHash)
-			require.NoError(manager.Close())
+			manager.Close()
 		})
 	}
 
@@ -1368,7 +1369,7 @@ func (s *MachineManagerSuite) TestSnapshotStartingStateVerification() {
 		require.Equal(1, factory.SnapshotCalls)
 		require.Equal(1, factory.TemplateCalls)
 		assertTemplateReplay(require, manager, repo, app, expectedHash)
-		require.NoError(manager.Close())
+		manager.Close()
 	})
 }
 
@@ -1422,7 +1423,7 @@ func (s *MachineManagerSuite) TestTemplateFactoryResultHandling() {
 				require.Equal(1, tt.candidate.closeCalls)
 				require.Zero(tt.candidate.replayCalls)
 			}
-			require.NoError(manager.Close())
+			manager.Close()
 		})
 	}
 }
@@ -1477,7 +1478,7 @@ func (s *MachineManagerSuite) TestAddMachine() {
 	repo.On("GetLastSnapshot", mock.Anything, mock.Anything).
 		Return(nil, nil)
 
-	manager := newTestMachineManager(repo, nil, false, 500)
+	manager := newTestMachineManager(repo, slog.New(slog.NewTextHandler(io.Discard, nil)), false, 500)
 	machine1 := &DummyMachineInstanceMock{application: &model.Application{ID: 1}}
 	machine2 := &DummyMachineInstanceMock{application: &model.Application{ID: 2}}
 
@@ -1497,8 +1498,7 @@ func (s *MachineManagerSuite) TestAddMachine() {
 	require.Len(manager.machines, 2)
 
 	// Close the manager and try to add a new machine
-	err := manager.Close()
-	require.NoError(err)
+	manager.Close()
 
 	machine3 := &DummyMachineInstanceMock{application: &model.Application{ID: 3}}
 	added = manager.addMachine(3, machine3)
@@ -1659,10 +1659,17 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 	})
 }
 
+// captureLogger returns a logger whose output is written to buf. Level is set
+// to debug so every call is recorded.
+func captureLogger(buf *bytes.Buffer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+}
+
 func (s *MachineManagerSuite) TestCloseAggregatesErrors() {
 	require := s.Require()
 
-	manager := newTestMachineManager(nil, nil, false, 500)
+	var buf bytes.Buffer
+	manager := newTestMachineManager(nil, captureLogger(&buf), false, 500)
 
 	machine1 := &DummyMachineInstanceMock{application: &model.Application{ID: 1}}
 	machine2 := &DummyMachineInstanceMock{
@@ -1678,9 +1685,11 @@ func (s *MachineManagerSuite) TestCloseAggregatesErrors() {
 	manager.addMachine(2, machine2)
 	manager.addMachine(3, machine3)
 
-	err := manager.Close()
-	require.Error(err)
-	require.Contains(err.Error(), "close error")
+	manager.Close()
+
+	logContents := buf.String()
+	require.Contains(logContents, "close error 2")
+	require.Contains(logContents, "close error 3")
 	require.Empty(manager.machines)
 }
 

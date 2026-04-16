@@ -6,9 +6,8 @@ package jsonrpc
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -26,21 +25,12 @@ const (
 	jsonrpcWriteHeadroom   = 5 * time.Second
 )
 
-// -----------------------------------------------------------------------------
-// Service Implementation
-// -----------------------------------------------------------------------------
-
 // Service implements the IService interface.
 type Service struct {
-	service.Service
+	service.HTTPServiceTemplate
 	repository repository.Repository
-	server     *http.Server
-	admission  *service.SemaphoreAdmission
 	inputABI   *abi.ABI
 	outputABI  *abi.ABI
-	// listen opens the HTTP listener. It defaults to net.Listen and is
-	// overridden in tests so Serve() can be exercised without real sockets.
-	listen func(network, address string) (net.Listener, error)
 	// OpenAPI description for JSON-RPC API loaded from 'jsonrpc-discover.json' file
 	discoverSpec json.RawMessage
 	handlers     dispatchTable
@@ -50,25 +40,31 @@ type Service struct {
 }
 
 type CreateInfo struct {
-	service.CreateInfo
-
-	Config config.JsonrpcConfig
-
+	Config     config.JsonrpcConfig
+	Logger     *slog.Logger
 	Repository repository.Repository
 }
 
-func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
+func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, error) {
 	var err error
 	if err = ctx.Err(); err != nil {
 		return nil, err // This returns context.Canceled or context.DeadlineExceeded.
 	}
 
 	s := &Service{}
-	c.Impl = s
-
-	err = service.Create(ctx, &c.CreateInfo, &s.Service)
-	if err != nil {
-		return nil, err
+	cfg := service.HTTPServiceConfigs{
+		BaseConfigs: service.BaseConfigs{
+			Name:     config.ServiceJsonrpc,
+			Logger:   c.Logger,
+			LogLevel: c.Config.LogLevel,
+			LogColor: c.Config.LogColor,
+		},
+		HTTPServerOptions:  service.DefaultJSONRPCOptions(),
+		Address:            c.Config.JsonrpcApiAddress,
+		SafeRequestID:      true,
+		CorsAllowedOrigins: c.Config.JsonrpcCorsAllowedOrigins,
+		MaxInflight:        c.Config.JsonrpcMaxInflight,
+		ShutdownTimeout:    jsonrpcShutdownTimeout,
 	}
 
 	s.repository = c.Repository
@@ -95,115 +91,14 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		return nil, err
 	}
 
-	if c.Config.JsonrpcMaxInflight > 0 {
-		s.admission = service.NewSemaphoreAdmission(c.Config.JsonrpcMaxInflight)
-	}
-
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rpc", s.handleRPC)
 
-	handler := service.NewServiceHandler(mux, service.HandlerOptions{
-		Logger:    s.Logger,
-		Admission: s.admission,
-		CORS: service.ParseCORSConfig(s.Logger, c.Config.JsonrpcCorsAllowedOrigins,
-			[]string{"POST", "OPTIONS"}, []string{"Content-Type"}),
-	})
+	service.InitHTTPServiceTemplate(&s.HTTPServiceTemplate, &cfg, mux)
 
-	serverOpts := service.DefaultJSONRPCOptions()
-	s.dispatchTimeout = serverOpts.WriteTimeout - jsonrpcWriteHeadroom
-	s.server = service.NewHTTPServer(c.Config.JsonrpcApiAddress, handler, serverOpts, s.Logger)
-	service.StartupBindWarning(s.Logger, "jsonrpc", c.Config.JsonrpcApiAddress)
+	s.dispatchTimeout = cfg.HTTPServerOptions.WriteTimeout - jsonrpcWriteHeadroom
 
-	if s.listen == nil {
-		s.listen = net.Listen
-	}
+	s.Logger.Info("Created", "config", c.Config)
 
 	return s, nil
-}
-
-func (s *Service) Alive() bool {
-	return true
-}
-
-func (s *Service) Ready() bool {
-	return true
-}
-
-func (s *Service) Reload() []error {
-	return nil
-}
-
-func (s *Service) Tick() []error {
-	// No periodic tasks.
-	return nil
-}
-
-func (s *Service) Stop(_ bool) []error {
-	s.SetStopping()
-	var errs []error
-	s.Logger.Info("Shutting down JSON-RPC HTTP server", "addr", s.server.Addr)
-	ctx, cancel := context.WithTimeout(context.Background(), jsonrpcShutdownTimeout)
-	defer cancel()
-	if err := s.server.Shutdown(ctx); err != nil {
-		errs = append(errs, err)
-	}
-	return errs
-}
-
-func (s *Service) String() string {
-	return s.Name
-}
-
-func (s *Service) Serve() error {
-	listener, err := s.listen("tcp", s.server.Addr)
-	if err != nil {
-		return err
-	}
-
-	s.Logger.Info("Listening", "addr", listener.Addr().String())
-
-	serverDone := make(chan error, 1)
-	go func() {
-		// Run the HTTP accept loop in parallel with the framework's lifecycle
-		// loop below. The lifecycle loop is the component that consumes
-		// SIGINT/SIGTERM and calls Stop() for graceful shutdown.
-		err := s.server.Serve(listener)
-		s.Logger.Info("Stopped listening", "addr", listener.Addr().String(), "err", err)
-		if errors.Is(err, http.ErrServerClosed) {
-			serverDone <- nil
-			return
-		}
-		serverDone <- err
-	}()
-
-	serviceDone := make(chan error, 1)
-	go func() {
-		// Run the shared service loop concurrently because it blocks waiting
-		// for signals/context cancellation while the HTTP server blocks
-		// waiting for connections.
-		serviceDone <- s.Service.Serve()
-	}()
-
-	select {
-	case err := <-serverDone:
-		// The HTTP loop exited first. This is unexpected unless the listener
-		// failed or the server was already closed, so cancel the framework
-		// loop and wait for it to observe the cancellation before returning.
-		s.Cancel()
-		serviceErr := <-serviceDone
-		if err != nil {
-			return err
-		}
-		return serviceErr
-	case err := <-serviceDone:
-		// The framework loop exited first because it handled a shutdown signal
-		// or context cancellation and called Stop(), which should trigger
-		// s.server.Shutdown(). Wait for the HTTP loop to finish so Serve()
-		// returns only after the listener is fully closed.
-		serverErr := <-serverDone
-		if serverErr != nil {
-			return serverErr
-		}
-		return err
-	}
 }

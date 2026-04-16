@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -63,8 +64,10 @@ func (h *advancerLogCapture) contains(level slog.Level, message string) bool {
 	return false
 }
 
+const defaultBatchSize = 500
+
 func newMockAdvancerService(machineManager *MockMachineManager, repo *MockRepository) (*Service, error) {
-	return newMockAdvancerServiceWithBatchSize(machineManager, repo, 500)
+	return newMockAdvancerServiceWithBatchSize(machineManager, repo, defaultBatchSize)
 }
 
 func newMockAdvancerServiceWithBatchSize(
@@ -72,13 +75,14 @@ func newMockAdvancerServiceWithBatchSize(
 	repo *MockRepository,
 	batchSize uint64,
 ) (*Service, error) {
+	sup, err := service.NewSupervisor(context.Background(), &service.SupervisorConfigs{})
 	s := &Service{
 		inputBatchSize: batchSize,
 		machineManager: machineManager,
 		repository:     repo,
+		supervisor:     sup,
 	}
-	serviceArgs := &service.CreateInfo{Name: "advancer", Impl: s, EnableReschedule: true}
-	err := service.Create(context.Background(), serviceArgs, &s.Service)
+	err = service.InitTickServiceTemplate(&s.TickServiceTemplate, &service.TickServiceConfigs{}, s)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +105,7 @@ func (s *AdvancerSuite) setupOneApp() testEnv {
 	app := newMockMachine(1)
 	mm.Map[1] = newMockInstance(app)
 	repo := &MockRepository{}
-	svc, err := newMockAdvancerService(mm, repo)
+	svc, err := newMockAdvancerServiceWithBatchSize(mm, repo, defaultBatchSize)
 	s.Require().NoError(err)
 	return testEnv{service: svc, app: app, mm: mm, repo: repo}
 }
@@ -117,13 +121,11 @@ func (s *AdvancerSuite) TestServiceInterface() {
 		require.Nil(err)
 
 		// Test service interface methods
-		require.True(advancer.Alive())
 		require.True(advancer.Ready())
 		machineManager.PendingApplicationFailures = true
 		require.False(advancer.Ready())
 		machineManager.PendingApplicationFailures = false
 		require.True(advancer.Ready())
-		require.Empty(advancer.Reload())
 		require.Equal(advancer.Name, advancer.String())
 
 		// Test Tick method
@@ -131,18 +133,17 @@ func (s *AdvancerSuite) TestServiceInterface() {
 		repository.GetEpochsReturn = map[common.Address][]*Epoch{
 			machineManager.Map[1].application.IApplicationAddress: {},
 		}
-		tickErrors := advancer.Tick()
-		require.Empty(tickErrors)
+		_, tickErr := advancer.Tick(context.Background())
+		require.NoError(tickErr)
 
 		// Test Tick with error
 		repository.GetEpochsError = errors.New("list epochs error")
-		tickErrors = advancer.Tick()
-		require.NotEmpty(tickErrors)
-		require.Contains(tickErrors[0].Error(), "list epochs error")
+		_, tickErr = advancer.Tick(context.Background())
+		require.Error(tickErr)
+		require.Contains(tickErr.Error(), "list epochs error")
 
 		// Stop must be called last to cleanly shut down the service.
-		// It should complete without returning any errors.
-		require.Empty(advancer.Stop(false))
+		advancer.supervisor.Stop(false)
 	})
 }
 
@@ -556,7 +557,7 @@ func (s *AdvancerSuite) TestProcess() {
 				"an atomic store failure must leave the input pending")
 
 			// Verify that the node shutdown was triggered (context cancelled)
-			require.Error(env.service.Context.Err(), "shared context should be cancelled")
+			require.False(env.service.supervisor.Ready(), "supervisor should have stopped")
 		})
 
 		s.Run("StoreAdvanceCommitResponseLost", func() {
@@ -579,7 +580,7 @@ func (s *AdvancerSuite) TestProcess() {
 			require.Equal([]int64{env.app.Application.ID}, env.repo.StoredAppIDs)
 			require.Empty(env.repo.GetInputsReturn[address],
 				"a committed result and its input cursor must advance atomically")
-			require.Error(env.service.Context.Err(), "shared context should be cancelled")
+			require.False(env.service.supervisor.Ready(), "supervisor should have stopped")
 			require.Equal(1, env.mm.Map[env.app.Application.ID].closeCalls)
 
 			unprocessed, _, listErr := getUnprocessedInputs(
@@ -771,7 +772,7 @@ func (s *AdvancerSuite) TestErrorRecovery() {
 		require.Contains(err.Error(), "temporary failure")
 		require.Empty(env.repo.StoredResults)
 		require.Empty(env.repo.StoredAppIDs)
-		require.Error(env.service.Context.Err(), "shared context should be cancelled")
+		require.False(env.service.supervisor.Ready(), "supervisor should have stopped")
 		require.Equal(1, env.mm.Map[env.app.Application.ID].closeCalls,
 			"the already-advanced machine must be closed before processInputs returns")
 	})
@@ -1311,8 +1312,8 @@ func (s *AdvancerSuite) TestRemoveSnapshot() {
 
 		tmpDir := s.T().TempDir()
 		advancer := &Service{snapshotsDir: tmpDir}
-		serviceArgs := &service.CreateInfo{Name: "advancer", Impl: advancer}
-		require.Nil(service.Create(context.Background(), serviceArgs, &advancer.Service))
+		serviceArgs := &service.TickServiceConfigs{BaseConfigs: service.BaseConfigs{Name: "advancer"}}
+		require.Nil(service.InitTickServiceTemplate(&advancer.TickServiceTemplate, serviceArgs, advancer))
 
 		// Create a snapshot directory
 		snapshotPath := filepath.Join(tmpDir, "myapp_epoch0_input0")
@@ -1330,8 +1331,8 @@ func (s *AdvancerSuite) TestRemoveSnapshot() {
 
 		tmpDir := s.T().TempDir()
 		advancer := &Service{snapshotsDir: tmpDir}
-		serviceArgs := &service.CreateInfo{Name: "advancer", Impl: advancer}
-		require.Nil(service.Create(context.Background(), serviceArgs, &advancer.Service))
+		serviceArgs := &service.TickServiceConfigs{BaseConfigs: service.BaseConfigs{Name: "advancer"}}
+		require.Nil(service.InitTickServiceTemplate(&advancer.TickServiceTemplate, serviceArgs, advancer))
 
 		snapshotPath := filepath.Join(tmpDir, "myapp_epoch0_input0")
 		err := advancer.removeSnapshot(snapshotPath, "myapp")
@@ -1343,8 +1344,8 @@ func (s *AdvancerSuite) TestRemoveSnapshot() {
 
 		tmpDir := s.T().TempDir()
 		advancer := &Service{snapshotsDir: tmpDir}
-		serviceArgs := &service.CreateInfo{Name: "advancer", Impl: advancer}
-		require.Nil(service.Create(context.Background(), serviceArgs, &advancer.Service))
+		serviceArgs := &service.TickServiceConfigs{BaseConfigs: service.BaseConfigs{Name: "advancer"}}
+		require.Nil(service.InitTickServiceTemplate(&advancer.TickServiceTemplate, serviceArgs, advancer))
 
 		// Try to traverse outside snapshotsDir
 		maliciousPath := filepath.Join(tmpDir, "..", "outside", "myapp_evil")
@@ -1358,8 +1359,8 @@ func (s *AdvancerSuite) TestRemoveSnapshot() {
 
 		tmpDir := s.T().TempDir()
 		advancer := &Service{snapshotsDir: tmpDir}
-		serviceArgs := &service.CreateInfo{Name: "advancer", Impl: advancer}
-		require.Nil(service.Create(context.Background(), serviceArgs, &advancer.Service))
+		serviceArgs := &service.TickServiceConfigs{BaseConfigs: service.BaseConfigs{Name: "advancer"}}
+		require.Nil(service.InitTickServiceTemplate(&advancer.TickServiceTemplate, serviceArgs, advancer))
 
 		snapshotPath := filepath.Join(tmpDir, "otherapp_epoch0_input0")
 		err := advancer.removeSnapshot(snapshotPath, "myapp")
@@ -1855,10 +1856,11 @@ func (s *AdvancerSuite) TestSelfWakeOnSuccess() {
 	require.NoError(err)
 
 	// Call Tick() which internally calls Step() and signals reschedule.
-	svc.Tick()
+	reschedule, err := svc.Tick(context.Background())
+	require.NoError(err)
 
 	// The reschedule channel should have a pending signal.
-	require.True(svc.DrainReschedule(),
+	require.True(reschedule,
 		"reschedule channel should have a pending signal after Tick with work")
 }
 
@@ -1879,9 +1881,10 @@ func (s *AdvancerSuite) TestNoSelfWakeWhenIdle() {
 	svc, err := newMockAdvancerService(mm, repo)
 	require.NoError(err)
 
-	svc.Tick()
+	reschedule, err := svc.Tick(context.Background())
+	require.NoError(err)
 
-	require.False(svc.DrainReschedule(),
+	require.False(reschedule,
 		"reschedule channel should be empty when no work exists")
 }
 
@@ -1898,10 +1901,10 @@ func (s *AdvancerSuite) TestNoSelfWakeOnError() {
 	svc, err := newMockAdvancerService(mm, repo)
 	require.NoError(err)
 
-	errs := svc.Tick()
-	require.NotEmpty(errs)
+	reschedule, err := svc.Tick(context.Background())
+	require.Error(err)
 
-	require.False(svc.DrainReschedule(),
+	require.False(reschedule,
 		"reschedule should NOT be signaled on error")
 }
 
@@ -1939,13 +1942,29 @@ func (s *AdvancerSuite) TestPartialSuccessStillReschedules() {
 
 	// Call Tick — app1 fails, app2 succeeds with more work remaining (batch limit hit).
 	// Tick should surface the error AND signal reschedule for app2's pending work.
-	errs := svc.Tick()
-	require.NotEmpty(errs, "Tick should surface app1's error")
+	reschedule, err := svc.Tick(context.Background())
+	require.Error(err, "Tick should surface app1's error")
 
 	// Reschedule SHOULD fire: app2 had work, and one failing app must not
 	// delay healthy apps by suppressing the reschedule signal.
-	require.True(svc.DrainReschedule(),
+	require.True(reschedule,
 		"reschedule should be signaled when hadWork is true, even with errors")
+}
+
+func newTestAdvancer(c *CreateInfo) (*Service, error) {
+	logger := service.NewLogger(
+		config.ServiceAdvancer,
+		c.Config.LogLevel,
+		c.Config.LogColor,
+	)
+	c.Machines = manager.NewMachineManager(
+		c.Repository,
+		logger,
+		c.Config.FeatureMachineHashCheckEnabled,
+		c.Config.AdvancerInputBatchSize,
+	)
+	c.Supervisor = &service.Supervisor{}
+	return Create(context.Background(), c)
 }
 
 // ---------------------------------------------------------------------------
@@ -1956,9 +1975,8 @@ func (s *AdvancerSuite) TestServiceCreate() {
 	s.Run("NilRepository", func() {
 		require := s.Require()
 		c := &CreateInfo{}
-		c.Name = "advancer"
 		c.Config.AdvancerInputBatchSize = 500
-		svc, err := Create(context.Background(), c)
+		svc, err := newTestAdvancer(c)
 		require.Error(err)
 		require.Nil(svc)
 		require.Contains(err.Error(), "nil")
@@ -1967,10 +1985,9 @@ func (s *AdvancerSuite) TestServiceCreate() {
 	s.Run("ZeroBatchSize", func() {
 		require := s.Require()
 		c := &CreateInfo{}
-		c.Name = "advancer"
 		c.Config.AdvancerInputBatchSize = 0
 		c.Repository = &MockFullRepository{}
-		svc, err := Create(context.Background(), c)
+		svc, err := newTestAdvancer(c)
 		require.Error(err)
 		require.Nil(svc)
 		require.Contains(err.Error(), "batch size")
@@ -1981,7 +1998,6 @@ func (s *AdvancerSuite) TestServiceCreate() {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		c := &CreateInfo{}
-		c.Name = "advancer"
 		c.Config.AdvancerInputBatchSize = 500
 		c.Repository = &MockFullRepository{}
 		svc, err := Create(ctx, c)
@@ -2111,9 +2127,7 @@ func (mock *MockMachineManager) HasPendingApplicationFailures() bool {
 	return mock.PendingApplicationFailures
 }
 
-func (mock *MockMachineManager) Close() error {
-	return nil
-}
+func (mock *MockMachineManager) Close() {}
 
 // MockMachineInstance is a test implementation of manager.MachineInstance
 type MockMachineInstance struct {

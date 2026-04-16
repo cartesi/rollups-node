@@ -63,6 +63,7 @@ func divergenceBucket(c model.Consensus, stage divergenceStage) string {
 // later disagrees, the whole app is unsafe and becomes DIVERGED. Authority
 // has only one submitter, so any divergence is app-level.
 func (s *Service) markDivergence(
+	ctx context.Context,
 	app *model.Application,
 	epoch *model.Epoch,
 	stage divergenceStage,
@@ -72,15 +73,16 @@ func (s *Service) markDivergence(
 		stage != divergenceStageSubmit &&
 		epoch.Status != model.EpochStatus_ClaimStaged
 	if rejectable {
-		return s.rejectEpochAndSetApplicationDiverged(app, epoch, reasonText)
+		return s.rejectEpochAndSetApplicationDiverged(ctx, app, epoch, reasonText)
 	}
-	return s.setApplicationDiverged(s.Context, app, "%s", reasonText)
+	return s.setApplicationDiverged(ctx, app, "%s", reasonText)
 }
 
 // markStagingDivergence handles a ClaimStaged event for our epoch whose data
 // differs from our local claim. markDivergence decides whether this is only an
 // epoch reject or an app-level failure.
 func (s *Service) markStagingDivergence(
+	ctx context.Context,
 	app *model.Application,
 	epoch *model.Epoch,
 	event *iconsensus.IConsensusClaimStaged,
@@ -102,13 +104,14 @@ func (s *Service) markStagingDivergence(
 		ourMachineMerkleRoot.Hex(),
 		epoch.Index, epoch.LastBlock,
 	)
-	return s.markDivergence(app, epoch, divergenceStageStaging, reason)
+	return s.markDivergence(ctx, app, epoch, divergenceStageStaging, reason)
 }
 
 // markSubmittedDivergence handles a ClaimSubmitted event whose data differs
 // from our local claim. This is always an app-level problem. Even in Quorum,
 // if the submitted claim later gets staged, our local claim is wrong.
 func (s *Service) markSubmittedDivergence(
+	ctx context.Context,
 	app *model.Application,
 	epoch *model.Epoch,
 	event *iconsensus.IConsensusClaimSubmitted,
@@ -133,13 +136,14 @@ func (s *Service) markSubmittedDivergence(
 		ourOutputsMerkleRoot.Hex(), ourMachineMerkleRoot.Hex(),
 		epoch.Index, epoch.LastBlock,
 	)
-	return s.markDivergence(app, epoch, divergenceStageSubmit, reason)
+	return s.markDivergence(ctx, app, epoch, divergenceStageSubmit, reason)
 }
 
 // markAcceptedDivergence handles a ClaimAccepted event whose data differs from
 // our local claim. markDivergence decides whether this rejects only the epoch
 // or marks the whole app DIVERGED.
 func (s *Service) markAcceptedDivergence(
+	ctx context.Context,
 	app *model.Application,
 	epoch *model.Epoch,
 	event *iconsensus.IConsensusClaimAccepted,
@@ -166,7 +170,7 @@ func (s *Service) markAcceptedDivergence(
 		ourOutputsMerkleRoot.Hex(), ourMachineMerkleRoot.Hex(),
 		epoch.Index, epoch.LastBlock,
 	)
-	return s.markDivergence(app, epoch, divergenceStageAcceptance, reason)
+	return s.markDivergence(ctx, app, epoch, divergenceStageAcceptance, reason)
 }
 
 func (s *Service) setApplicationDiverged(
@@ -188,6 +192,7 @@ func (s *Service) setApplicationCorrupted(
 }
 
 func (s *Service) rejectEpochAndSetApplicationDiverged(
+	ctx context.Context,
 	app *model.Application,
 	epoch *model.Epoch,
 	reason string,
@@ -198,7 +203,7 @@ func (s *Service) rejectEpochAndSetApplicationDiverged(
 		"reason", reason)
 
 	err := s.repository.RejectEpochAndSetApplicationDiverged(
-		s.Context, app.ID, epoch.Index, reason)
+		ctx, app.ID, epoch.Index, reason)
 	reasonErr := errors.New(reason)
 	if err != nil {
 		s.Logger.Error("failed to reject epoch and update application status",
@@ -222,8 +227,13 @@ func (s *Service) rejectEpochAndSetApplicationDiverged(
 // later. The node cannot safely continue because it cannot compare claims, and
 // the missing data cannot be reconstructed by restarting — the status is
 // terminal.
-func (s *Service) markMatcherPrecondFailure(app *model.Application, epoch *model.Epoch, site string) error {
-	return s.setApplicationCorrupted(s.Context, app,
+func (s *Service) markMatcherPrecondFailure(
+	ctx context.Context,
+	app *model.Application,
+	epoch *model.Epoch,
+	site string,
+) error {
+	return s.setApplicationCorrupted(ctx, app,
 		"%s: cannot compare epoch %d (%d) against chain event — local row is missing "+
 			"outputs_merkle_root or machine_hash. This is terminal; inspect the epoch row.",
 		site, epoch.Index, epoch.VirtualIndex)
@@ -241,6 +251,7 @@ func (s *Service) markMatcherPrecondFailure(app *model.Application, epoch *model
 // Returns nil when the outputs match or when there is not enough local data to
 // check. Returns an error after marking the app DIVERGED when they differ.
 func (s *Service) verifyClaimOutputsMatch(
+	ctx context.Context,
 	app *model.Application,
 	epoch *model.Epoch,
 	claim iconsensus.IConsensusClaim,
@@ -262,7 +273,7 @@ func (s *Service) verifyClaimOutputsMatch(
 	case claimStatusAccepted:
 		status = "ACCEPTED"
 	}
-	return s.setApplicationDiverged(s.Context, app,
+	return s.setApplicationDiverged(ctx, app,
 		"chain_claim_outputs_mismatch: %s — getClaim returned %s for our "+
 			"(app, lpbn, machineMerkleRoot) tuple but with stagedOutputsMerkleRoot=%s "+
 			"while our local outputs_merkle_root is %s. Epoch %d (lastBlock %d). "+
@@ -280,6 +291,7 @@ type consensusAddressCheckKey struct {
 }
 
 func (s *Service) checkConsensusForAddressChange(
+	ctx context.Context,
 	app *model.Application,
 	defaultBlockNumber *big.Int,
 ) error {
@@ -295,24 +307,25 @@ func (s *Service) checkConsensusForAddressChange(
 		if err, ok := s.consensusAddressChecks[key]; ok {
 			return err
 		}
-		err := s.checkConsensusForAddressChangeUncached(app, defaultBlockNumber)
+		err := s.checkConsensusForAddressChangeUncached(ctx, app, defaultBlockNumber)
 		s.consensusAddressChecks[key] = err
 		return err
 	}
-	return s.checkConsensusForAddressChangeUncached(app, defaultBlockNumber)
+	return s.checkConsensusForAddressChangeUncached(ctx, app, defaultBlockNumber)
 }
 
 func (s *Service) checkConsensusForAddressChangeUncached(
+	ctx context.Context,
 	app *model.Application,
 	defaultBlockNumber *big.Int,
 ) error {
-	newConsensusAddress, err := s.blockchain.getConsensusAddress(s.Context, app, defaultBlockNumber)
+	newConsensusAddress, err := s.blockchain.getConsensusAddress(ctx, app, defaultBlockNumber)
 	if err != nil {
 		return fmt.Errorf("getting consensus address for app %v: %w", app.IApplicationAddress, err)
 	}
 	if app.IConsensusAddress != newConsensusAddress {
 		err = s.setApplicationCorrupted(
-			s.Context,
+			ctx,
 			app,
 			"consensus change detected. application: %v.",
 			app.IApplicationAddress,

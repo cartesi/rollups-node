@@ -67,28 +67,30 @@ func run(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
 	defer cancel()
 
-	createInfo := jsonrpc.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:                 config.ServiceJsonrpc,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServiceJsonrpc, cfg.LogLevel),
-			LogColor:             cfg.LogColor,
-			EnableSignalHandling: true,
-			TelemetryCreate:      true,
-			TelemetryAddress:     cfg.JsonrpcTelemetryAddress,
+	name := config.ServiceJsonrpc
+	logger := service.NewLogger(name, cfg.LogLevel, cfg.LogColor)
+
+	repo, err := factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
+	cli.CheckErr(logger, err)
+	defer repo.Close()
+
+	supCfg := &service.SupervisorConfigs{
+		BaseConfigs:          service.BaseConfigs{Name: name, Logger: logger},
+		EnableSignalHandling: true,
+		TelemetryCreate:      true,
+		TelemetryAddress:     cfg.JsonrpcTelemetryAddress,
+		Factories: []service.FactoryFunction{
+			func(ctx context.Context, sup *service.Supervisor) (service.SupervisedService, error) {
+				return jsonrpc.Create(ctx, &jsonrpc.CreateInfo{
+					Config:     *cfg,
+					Logger:     sup.Logger,
+					Repository: repo,
+				})
+			},
 		},
-		Config: *cfg,
 	}
-	logger := service.NewServiceLogger(&createInfo.CreateInfo)
-	createInfo.CreateInfo.Logger = logger
-
-	var err error
-	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
+	sup, err := service.NewSupervisor(ctx, supCfg)
 	cli.CheckErr(logger, err)
-	defer createInfo.Repository.Close()
-
-	jsonrpcService, err := jsonrpc.Create(ctx, &createInfo)
-	cli.CheckErr(logger, err)
-	jsonrpcService.LogConfig(createInfo.Config)
-
-	cli.CheckErr(logger, jsonrpcService.Serve())
+	defer sup.Close()
+	cli.CheckErr(logger, sup.Serve())
 }
