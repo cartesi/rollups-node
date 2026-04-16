@@ -59,6 +59,11 @@ var funcMap = template.FuncMap{
 	"mapstructure": func(s string) string {
 		return "`mapstructure:\"" + s + "\"`"
 	},
+	// hasEmptyStringDefault checks if a variable has default="" and is a string type.
+	// These vars need viper.IsSet instead of s!="" because empty string is a valid value.
+	"hasEmptyStringDefault": func(env Env) bool {
+		return env.Default != nil && *env.Default == "" && env.GoType == "string"
+	},
 	// isUsedBy checks if a variable is used by a specific service
 	"isUsedBy": func(env Env, service string) bool {
 		return slices.Contains(env.UsedBy, service)
@@ -223,7 +228,11 @@ func Get{{ toFieldName .Name }}() ({{ .GoType }}, error) {
 		s = strings.TrimSpace(string(contents))
 	}
 	{{- end }}
+	{{- if hasEmptyStringDefault . }}
+	if viper.IsSet({{ toConstName .Name }}) {
+	{{- else }}
 	if s != "" {
+	{{- end }}
 		v, err := {{ toGoFunc .GoType }}(s)
 		if err != nil {
 			return v, fmt.Errorf("failed to parse %s: %w", {{ toConstName .Name }}, err)

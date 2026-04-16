@@ -49,10 +49,12 @@ const (
 	CLAIMER_TELEMETRY_ADDRESS                         = "CARTESI_CLAIMER_TELEMETRY_ADDRESS"
 	EVM_READER_TELEMETRY_ADDRESS                      = "CARTESI_EVM_READER_TELEMETRY_ADDRESS"
 	INSPECT_ADDRESS                                   = "CARTESI_INSPECT_ADDRESS"
+	INSPECT_CORS_ALLOWED_ORIGINS                      = "CARTESI_INSPECT_CORS_ALLOWED_ORIGINS"
 	INSPECT_MAX_INFLIGHT                              = "CARTESI_INSPECT_MAX_INFLIGHT"
 	INSPECT_URL                                       = "CARTESI_INSPECT_URL"
 	JSONRPC_API_ADDRESS                               = "CARTESI_JSONRPC_API_ADDRESS"
 	JSONRPC_API_URL                                   = "CARTESI_JSONRPC_API_URL"
+	JSONRPC_CORS_ALLOWED_ORIGINS                      = "CARTESI_JSONRPC_CORS_ALLOWED_ORIGINS"
 	JSONRPC_MAX_INFLIGHT                              = "CARTESI_JSONRPC_MAX_INFLIGHT"
 	JSONRPC_TELEMETRY_ADDRESS                         = "CARTESI_JSONRPC_TELEMETRY_ADDRESS"
 	NODE_TELEMETRY_ADDRESS                            = "CARTESI_NODE_TELEMETRY_ADDRESS"
@@ -153,6 +155,8 @@ func SetDefaults() {
 
 	viper.SetDefault(INSPECT_ADDRESS, ":10012")
 
+	viper.SetDefault(INSPECT_CORS_ALLOWED_ORIGINS, "")
+
 	viper.SetDefault(INSPECT_MAX_INFLIGHT, "64")
 
 	viper.SetDefault(INSPECT_URL, "http://localhost:10012")
@@ -160,6 +164,8 @@ func SetDefaults() {
 	viper.SetDefault(JSONRPC_API_ADDRESS, ":10011")
 
 	viper.SetDefault(JSONRPC_API_URL, "http://localhost:10011/rpc")
+
+	viper.SetDefault(JSONRPC_CORS_ALLOWED_ORIGINS, "")
 
 	viper.SetDefault(JSONRPC_MAX_INFLIGHT, "64")
 
@@ -245,6 +251,11 @@ type AdvancerConfig struct {
 	// HTTP address for inspect.
 	InspectAddress string `mapstructure:"CARTESI_INSPECT_ADDRESS"`
 
+	// Comma-separated list of allowed browser origins for inspect.
+	// If empty, CORS is disabled. Origins are lowercased and validated at
+	// startup. Example: "http://localhost:3000,https://app.example.com".
+	InspectCorsAllowedOrigins string `mapstructure:"CARTESI_INSPECT_CORS_ALLOWED_ORIGINS"`
+
 	// Maximum number of concurrent in-flight HTTP inspect requests.
 	// Requests beyond this limit receive HTTP 503 Service Unavailable
 	// with Retry-After: 1. Set to 0 to disable HTTP-level admission
@@ -323,6 +334,13 @@ func LoadAdvancerConfig() (*AdvancerConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_INSPECT_ADDRESS: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_INSPECT_ADDRESS is required for the advancer service: %w", err)
+	}
+
+	cfg.InspectCorsAllowedOrigins, err = GetInspectCorsAllowedOrigins()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_INSPECT_CORS_ALLOWED_ORIGINS: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_INSPECT_CORS_ALLOWED_ORIGINS is required for the advancer service: %w", err)
 	}
 
 	cfg.InspectMaxInflight, err = GetInspectMaxInflight()
@@ -779,6 +797,11 @@ type JsonrpcConfig struct {
 	// HTTP address for the JSON-RPC API.
 	JsonrpcApiAddress string `mapstructure:"CARTESI_JSONRPC_API_ADDRESS"`
 
+	// Comma-separated list of allowed browser origins for the JSON-RPC API.
+	// If empty, CORS is disabled. Origins are lowercased and validated at
+	// startup. Example: "http://localhost:3000,https://app.example.com".
+	JsonrpcCorsAllowedOrigins string `mapstructure:"CARTESI_JSONRPC_CORS_ALLOWED_ORIGINS"`
+
 	// Maximum number of concurrent in-flight JSON-RPC requests.
 	// Requests beyond this limit receive HTTP 503 Service Unavailable
 	// with Retry-After: 1. Set to 0 to disable HTTP-level admission
@@ -824,6 +847,13 @@ func LoadJsonrpcConfig() (*JsonrpcConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_JSONRPC_API_ADDRESS: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_JSONRPC_API_ADDRESS is required for the jsonrpc service: %w", err)
+	}
+
+	cfg.JsonrpcCorsAllowedOrigins, err = GetJsonrpcCorsAllowedOrigins()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_JSONRPC_CORS_ALLOWED_ORIGINS: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_JSONRPC_CORS_ALLOWED_ORIGINS is required for the jsonrpc service: %w", err)
 	}
 
 	cfg.JsonrpcMaxInflight, err = GetJsonrpcMaxInflight()
@@ -913,6 +943,11 @@ type NodeConfig struct {
 	// HTTP address for inspect.
 	InspectAddress string `mapstructure:"CARTESI_INSPECT_ADDRESS"`
 
+	// Comma-separated list of allowed browser origins for inspect.
+	// If empty, CORS is disabled. Origins are lowercased and validated at
+	// startup. Example: "http://localhost:3000,https://app.example.com".
+	InspectCorsAllowedOrigins string `mapstructure:"CARTESI_INSPECT_CORS_ALLOWED_ORIGINS"`
+
 	// Maximum number of concurrent in-flight HTTP inspect requests.
 	// Requests beyond this limit receive HTTP 503 Service Unavailable
 	// with Retry-After: 1. Set to 0 to disable HTTP-level admission
@@ -922,6 +957,11 @@ type NodeConfig struct {
 
 	// HTTP address for the JSON-RPC API.
 	JsonrpcApiAddress string `mapstructure:"CARTESI_JSONRPC_API_ADDRESS"`
+
+	// Comma-separated list of allowed browser origins for the JSON-RPC API.
+	// If empty, CORS is disabled. Origins are lowercased and validated at
+	// startup. Example: "http://localhost:3000,https://app.example.com".
+	JsonrpcCorsAllowedOrigins string `mapstructure:"CARTESI_JSONRPC_CORS_ALLOWED_ORIGINS"`
 
 	// Maximum number of concurrent in-flight JSON-RPC requests.
 	// Requests beyond this limit receive HTTP 503 Service Unavailable
@@ -1084,6 +1124,13 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("CARTESI_INSPECT_ADDRESS is required for the node service: %w", err)
 	}
 
+	cfg.InspectCorsAllowedOrigins, err = GetInspectCorsAllowedOrigins()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_INSPECT_CORS_ALLOWED_ORIGINS: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_INSPECT_CORS_ALLOWED_ORIGINS is required for the node service: %w", err)
+	}
+
 	cfg.InspectMaxInflight, err = GetInspectMaxInflight()
 	if err != nil && err != ErrNotDefined {
 		return nil, fmt.Errorf("failed to get CARTESI_INSPECT_MAX_INFLIGHT: %w", err)
@@ -1096,6 +1143,13 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_JSONRPC_API_ADDRESS: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_JSONRPC_API_ADDRESS is required for the node service: %w", err)
+	}
+
+	cfg.JsonrpcCorsAllowedOrigins, err = GetJsonrpcCorsAllowedOrigins()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_JSONRPC_CORS_ALLOWED_ORIGINS: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_JSONRPC_CORS_ALLOWED_ORIGINS is required for the node service: %w", err)
 	}
 
 	cfg.JsonrpcMaxInflight, err = GetJsonrpcMaxInflight()
@@ -1519,6 +1573,7 @@ func (c *NodeConfig) ToAdvancerConfig() *AdvancerConfig {
 		FeatureInspectEnabled:          c.FeatureInspectEnabled,
 		FeatureMachineHashCheckEnabled: c.FeatureMachineHashCheckEnabled,
 		InspectAddress:                 c.InspectAddress,
+		InspectCorsAllowedOrigins:      c.InspectCorsAllowedOrigins,
 		InspectMaxInflight:             c.InspectMaxInflight,
 		LogColor:                       c.LogColor,
 		LogLevel:                       c.LogLevel,
@@ -1575,12 +1630,13 @@ func (c *NodeConfig) ToEvmreaderConfig() *EvmreaderConfig {
 // ToJsonrpcConfig converts a NodeConfig to a JsonrpcConfig.
 func (c *NodeConfig) ToJsonrpcConfig() *JsonrpcConfig {
 	return &JsonrpcConfig{
-		DatabaseConnection: c.DatabaseConnection,
-		JsonrpcApiAddress:  c.JsonrpcApiAddress,
-		JsonrpcMaxInflight: c.JsonrpcMaxInflight,
-		LogColor:           c.LogColor,
-		LogLevel:           c.LogLevel,
-		MaxStartupTime:     c.MaxStartupTime,
+		DatabaseConnection:        c.DatabaseConnection,
+		JsonrpcApiAddress:         c.JsonrpcApiAddress,
+		JsonrpcCorsAllowedOrigins: c.JsonrpcCorsAllowedOrigins,
+		JsonrpcMaxInflight:        c.JsonrpcMaxInflight,
+		LogColor:                  c.LogColor,
+		LogLevel:                  c.LogLevel,
+		MaxStartupTime:            c.MaxStartupTime,
 	}
 }
 
@@ -2015,6 +2071,19 @@ func GetInspectAddress() (string, error) {
 	return notDefinedstring(), fmt.Errorf("%s: %w", INSPECT_ADDRESS, ErrNotDefined)
 }
 
+// GetInspectCorsAllowedOrigins returns the value for the environment variable CARTESI_INSPECT_CORS_ALLOWED_ORIGINS.
+func GetInspectCorsAllowedOrigins() (string, error) {
+	s := viper.GetString(INSPECT_CORS_ALLOWED_ORIGINS)
+	if viper.IsSet(INSPECT_CORS_ALLOWED_ORIGINS) {
+		v, err := toString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", INSPECT_CORS_ALLOWED_ORIGINS, err)
+		}
+		return v, nil
+	}
+	return notDefinedstring(), fmt.Errorf("%s: %w", INSPECT_CORS_ALLOWED_ORIGINS, ErrNotDefined)
+}
+
 // GetInspectMaxInflight returns the value for the environment variable CARTESI_INSPECT_MAX_INFLIGHT.
 func GetInspectMaxInflight() (uint64, error) {
 	s := viper.GetString(INSPECT_MAX_INFLIGHT)
@@ -2065,6 +2134,19 @@ func GetJsonrpcApiUrl() (string, error) {
 		return v, nil
 	}
 	return notDefinedstring(), fmt.Errorf("%s: %w", JSONRPC_API_URL, ErrNotDefined)
+}
+
+// GetJsonrpcCorsAllowedOrigins returns the value for the environment variable CARTESI_JSONRPC_CORS_ALLOWED_ORIGINS.
+func GetJsonrpcCorsAllowedOrigins() (string, error) {
+	s := viper.GetString(JSONRPC_CORS_ALLOWED_ORIGINS)
+	if viper.IsSet(JSONRPC_CORS_ALLOWED_ORIGINS) {
+		v, err := toString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", JSONRPC_CORS_ALLOWED_ORIGINS, err)
+		}
+		return v, nil
+	}
+	return notDefinedstring(), fmt.Errorf("%s: %w", JSONRPC_CORS_ALLOWED_ORIGINS, ErrNotDefined)
 }
 
 // GetJsonrpcMaxInflight returns the value for the environment variable CARTESI_JSONRPC_MAX_INFLIGHT.

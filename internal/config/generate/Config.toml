@@ -455,6 +455,24 @@ with Retry-After: 1. Set to 0 to disable HTTP-level admission
 control."""
 used-by = ["jsonrpc", "node"]
 
+[http.CARTESI_JSONRPC_CORS_ALLOWED_ORIGINS]
+default = ""
+go-type = "string"
+description = """
+Comma-separated list of allowed browser origins for the JSON-RPC API.
+If empty, CORS is disabled. Origins are lowercased and validated at
+startup. Example: "http://localhost:3000,https://app.example.com"."""
+used-by = ["jsonrpc", "node"]
+
+[http.CARTESI_INSPECT_CORS_ALLOWED_ORIGINS]
+default = ""
+go-type = "string"
+description = """
+Comma-separated list of allowed browser origins for inspect.
+If empty, CORS is disabled. Origins are lowercased and validated at
+startup. Example: "http://localhost:3000,https://app.example.com"."""
+used-by = ["advancer", "node"]
+
 [http.CARTESI_INSPECT_ADDRESS]
 default = ":10012"
 go-type = "string"
