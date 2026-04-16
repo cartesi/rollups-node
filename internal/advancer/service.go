@@ -86,12 +86,13 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 			admission = service.NewSemaphoreAdmission(c.Config.InspectMaxInflight)
 		}
 		inspector, err := inspect.NewInspector(inspect.CreateInfo{
-			Repository: c.Repository,
-			Machines:   manager,
-			Address:    c.Config.InspectAddress,
-			LogLevel:   c.LogLevel,
-			LogPretty:  c.LogColor,
-			Admission:  admission,
+			Repository:         c.Repository,
+			Machines:           manager,
+			Address:            c.Config.InspectAddress,
+			LogLevel:           c.LogLevel,
+			LogPretty:          c.LogColor,
+			Admission:          admission,
+			CORSAllowedOrigins: c.Config.InspectCorsAllowedOrigins,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create inspect service: %w", err)

@@ -414,6 +414,93 @@ func TestInspector_PerAppCapacityReturns503(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
+// CORS integration
+// -----------------------------------------------------------------------------
+
+func newInspectorWithCORS(t *testing.T, origins string) (*Inspector, *Application) {
+	t.Helper()
+
+	app := &Application{
+		ID:                  1,
+		IApplicationAddress: randomAddress(),
+		Name:                "test-app",
+	}
+	repo := newMockRepository()
+	repo.apps = append(repo.apps, app)
+
+	mm := newMockMachines()
+	mm.Map[1] = MockMachine{application: app}
+
+	insp, err := NewInspector(CreateInfo{
+		Repository:         repo,
+		Machines:           mm,
+		Address:            "127.0.0.1:0",
+		LogLevel:           slog.LevelError,
+		LogPretty:          false,
+		CORSAllowedOrigins: origins,
+	})
+	require.NoError(t, err)
+	return insp, app
+}
+
+func TestInspector_CORSDisabledByDefault(t *testing.T) {
+	insp, app := newInspectorWithCORS(t, "")
+
+	req := httptest.NewRequest(http.MethodPost,
+		fmt.Sprintf("/inspect/%s", app.Name),
+		strings.NewReader("hello"))
+	req.Header.Set("Origin", "http://evil.com")
+	rr := httptest.NewRecorder()
+	insp.ServeMux.ServeHTTP(rr, req)
+
+	require.Empty(t, rr.Header().Get("Access-Control-Allow-Origin"))
+	require.Empty(t, rr.Header().Get("Vary"))
+}
+
+func TestInspector_CORSAllowedOriginEchoed(t *testing.T) {
+	insp, app := newInspectorWithCORS(t, "http://trusted.example.com")
+
+	req := httptest.NewRequest(http.MethodPost,
+		fmt.Sprintf("/inspect/%s", app.Name),
+		strings.NewReader("hello"))
+	req.Header.Set("Origin", "http://trusted.example.com")
+	rr := httptest.NewRecorder()
+	insp.ServeMux.ServeHTTP(rr, req)
+
+	require.Equal(t, "http://trusted.example.com", rr.Header().Get("Access-Control-Allow-Origin"))
+	require.Contains(t, rr.Header().Values("Vary"), "Origin")
+}
+
+func TestInspector_CORSDisallowedOriginNoGrant(t *testing.T) {
+	insp, app := newInspectorWithCORS(t, "http://trusted.example.com")
+
+	req := httptest.NewRequest(http.MethodPost,
+		fmt.Sprintf("/inspect/%s", app.Name),
+		strings.NewReader("hello"))
+	req.Header.Set("Origin", "http://evil.com")
+	rr := httptest.NewRecorder()
+	insp.ServeMux.ServeHTTP(rr, req)
+
+	require.Empty(t, rr.Header().Get("Access-Control-Allow-Origin"))
+	require.Contains(t, rr.Header().Values("Vary"), "Origin")
+}
+
+func TestInspector_CORSPreflightShortCircuits(t *testing.T) {
+	insp, app := newInspectorWithCORS(t, "http://trusted.example.com")
+
+	req := httptest.NewRequest(http.MethodOptions,
+		fmt.Sprintf("/inspect/%s", app.Name), nil)
+	req.Header.Set("Origin", "http://trusted.example.com")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	rr := httptest.NewRecorder()
+	insp.ServeMux.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusNoContent, rr.Code)
+	require.Equal(t, "http://trusted.example.com", rr.Header().Get("Access-Control-Allow-Origin"))
+	require.Equal(t, "3600", rr.Header().Get("Access-Control-Max-Age"))
+}
+
+// -----------------------------------------------------------------------------
 
 // TestInspector_ServeReturnsNilOnGracefulShutdown verifies the new Serve()
 // method swallows http.ErrServerClosed and returns nil, matching the

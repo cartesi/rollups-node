@@ -17,7 +17,6 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/services"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
@@ -83,18 +82,15 @@ type CreateInfo struct {
 	// disables admission control; the middleware chain treats nil as a
 	// pass-through so wiring is uniform regardless of configuration.
 	Admission *service.SemaphoreAdmission
+	// CORSAllowedOrigins is the raw comma-separated origin allowlist.
+	// Empty disables CORS entirely.
+	CORSAllowedOrigins string
 }
 
-// NewInspector constructs an [Inspector] and its backing HTTP server with
-// the standard hardening chain applied:
-//
-//	RecoverMiddleware -> RequestIDMiddleware -> CorsMiddleware -> AdmissionMiddleware -> Inspector
-//
-// RecoverMiddleware is the outermost wrapper so it also catches panics that
-// occur during request-id generation (e.g. an entropy failure inside
-// uuid.NewString). Without this ordering such a panic would escape to
-// net/http's default goroutine recover, dropping the connection with no
-// structured log and no 500 response.
+// NewInspector constructs an [Inspector] and its backing HTTP server
+// with the node's canonical hardening chain applied via
+// [service.NewServiceHandler]. See that helper for the middleware order
+// and rationale.
 //
 // Use [Inspector.Serve] to run the HTTP server and [Inspector.Shutdown]
 // to stop it gracefully.
@@ -113,11 +109,12 @@ func NewInspector(c CreateInfo) (*Inspector, error) {
 		admission:        c.Admission,
 	}
 
-	var handler http.Handler = inspector
-	handler = service.AdmissionMiddleware(c.Admission)(handler)
-	handler = services.CorsMiddleware(handler)
-	handler = service.RequestIDMiddleware(handler)
-	handler = service.RecoverMiddleware(logger)(handler)
+	handler := service.NewServiceHandler(inspector, service.HandlerOptions{
+		Logger:    logger,
+		Admission: c.Admission,
+		CORS: service.ParseCORSConfig(logger, c.CORSAllowedOrigins,
+			[]string{"POST", "OPTIONS"}, []string{"Content-Type"}),
+	})
 	inspector.ServeMux.Handle("/inspect/{dapp}", handler)
 
 	inspector.server = service.NewHTTPServer(c.Address, inspector.ServeMux, service.DefaultInspectOptions(), logger)
