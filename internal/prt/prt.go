@@ -320,7 +320,7 @@ func (s *Service) createTournament(
 
 	err = s.repository.CreateTournament(ctx, app.IApplicationAddress.Hex(), t)
 	if err != nil {
-		s.logErrorUnlessShutdown("failed to create tournament in database", err,
+		s.logErrorUnlessShutdown(ctx, "failed to create tournament in database", err,
 			"level", level, "application", app.Name,
 			"epoch", epoch.Index, "tournament_address", tournamentAddress.String())
 		return nil, err
@@ -414,7 +414,7 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 		if epoch.ClaimTransactionHash == nil { // epoch not claimed on-chain yet
 			err = s.fetchTournamentData(ctx, app, epoch, RootLevel, nil, nil, *epoch.TournamentAddress, mostRecentBlock)
 			if err != nil {
-				s.logErrorUnlessShutdown("failed to fetch root tournament data", err,
+				s.logErrorUnlessShutdown(ctx, "failed to fetch root tournament data", err,
 					"application", app.Name, "epoch", epoch.Index,
 					"tournament", epoch.TournamentAddress.String())
 				return err
@@ -462,7 +462,7 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 
 		err = s.fetchTournamentData(ctx, app, epoch, RootLevel, nil, nil, *epoch.TournamentAddress, mostRecentBlock)
 		if err != nil {
-			s.logErrorUnlessShutdown("failed to fetch tournament data", err,
+			s.logErrorUnlessShutdown(ctx, "failed to fetch tournament data", err,
 				"application", app.Name, "epoch", epoch.Index,
 				"tournament", epoch.TournamentAddress.String())
 			return err
@@ -515,7 +515,7 @@ func (s *Service) fetchTournamentData(
 		t, err = s.createTournament(ctx, app, epoch, level,
 			parentMatchIDHash, parentTournamentAddress, tournamentAddress)
 		if err != nil {
-			s.logErrorUnlessShutdown("failed to create new tournament", err,
+			s.logErrorUnlessShutdown(ctx, "failed to create new tournament", err,
 				"level", level, "application", app.Name,
 				"epoch", epoch.Index, "tournament_address", tournamentAddress.String())
 			return err
@@ -603,7 +603,7 @@ func (s *Service) fetchTournamentData(
 
 		err = s.fetchTournamentData(ctx, app, epoch, nextLevel, i.ParentMatchIDHash, &tournamentAddress, i.Address, mostRecentBlock)
 		if err != nil {
-			s.logErrorUnlessShutdown("failed to fetch tournament data", err,
+			s.logErrorUnlessShutdown(ctx, "failed to fetch tournament data", err,
 				"level", nextLevel, "application", app.Name,
 				"tournament", i.Address.String())
 			return err
@@ -618,7 +618,7 @@ func (s *Service) fetchTournamentData(
 
 		err = s.fetchTournamentData(ctx, app, epoch, nextLevel, &hashID, &tournamentAddress, childAddress, mostRecentBlock)
 		if err != nil {
-			s.logErrorUnlessShutdown("failed to fetch tournament data", err,
+			s.logErrorUnlessShutdown(ctx, "failed to fetch tournament data", err,
 				"level", nextLevel, "application", app.Name,
 				"tournament", childAddress.String())
 			return err

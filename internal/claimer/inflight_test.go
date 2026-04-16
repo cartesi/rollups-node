@@ -4,6 +4,7 @@
 package claimer
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"strings"
@@ -51,8 +52,8 @@ func TestInFlightCompleted(t *testing.T) {
 	r.On("UpdateEpochThroughStaging", mock.Anything, app.ID, currEpoch.Index, txHash, receiptBlock).
 		Return(nil).Once()
 
-	transitions, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 0, len(errs))
+	transitions, err := m.submitClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.NoError(t, err)
 	assert.Equal(t, 0, len(m.claimsInFlight))
 	// v3 fast path: submitted (1) + staged (1) = 2 transitions.
 	assert.Equal(t, 2, transitions)
@@ -93,8 +94,8 @@ func TestInFlightCompleted_QuorumNonDeciding(t *testing.T) {
 	r.On("UpdateEpochWithSubmittedClaim", mock.Anything, app.ID, currEpoch.Index, txHash).
 		Return(nil).Once()
 
-	transitions, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 0, len(errs))
+	transitions, err := m.submitClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.NoError(t, err)
 	assert.Equal(t, 0, len(m.claimsInFlight))
 	// Fall-back path: one transition (COMPUTED → SUBMITTED), not the fast-path's two.
 	assert.Equal(t, 1, transitions)
@@ -132,8 +133,8 @@ func TestInFlightReverted(t *testing.T) {
 	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(common.HexToHash("0x10"), nil).Once()
 
-	_, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, len(errs), 0)
+	_, err := m.submitClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.NoError(t, err)
 	assert.Equal(t, len(m.claimsInFlight), 1)
 }
 
@@ -152,8 +153,8 @@ func TestClaimInFlightMissingFromCurrClaims(t *testing.T) {
 	b.On("pollTransaction", mock.Anything, reqHash, endBlock).
 		Return(true, receipt, nil).Once()
 
-	_, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(), makeApplicationMap(app), endBlock)
-	assert.Equal(t, len(errs), 0)
+	_, err := m.submitClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(), makeApplicationMap(app), endBlock)
+	assert.NoError(t, err)
 }
 
 func TestClaimInFlightPollErrorKeepsTrackingAndStopsDuplicateSubmit(t *testing.T) {
@@ -175,10 +176,9 @@ func TestClaimInFlightPollErrorKeepsTrackingAndStopsDuplicateSubmit(t *testing.T
 	b.On("pollTransaction", mock.Anything, reqHash, endBlock).
 		Return(false, nilReceipt, expectedErr).Once()
 
-	transitions, errs := m.submitClaimsAndUpdateDatabase(
-		makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	require.Equal(t, 1, len(errs))
-	assert.ErrorIs(t, errs[0], expectedErr)
+	transitions, err := m.submitClaimsAndUpdateDatabase(
+		context.Background(), makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.ErrorIs(t, err, expectedErr)
 	assert.Equal(t, 0, transitions)
 	assert.Contains(t, m.claimsInFlight, app.ID,
 		"receipt lookup errors do not prove the tx failed; keep in-flight tracking")
@@ -210,7 +210,7 @@ func TestClaimInFlightPollErrorsDoNotStopOtherApps(t *testing.T) {
 	b.On("pollTransaction", mock.Anything, tx2, endBlock).
 		Return(false, nilReceipt, err2).Once()
 
-	transitions, err := m.checkClaimsInFlight(makeEpochMap(epoch1, epoch2), makeApplicationMap(app1, app2), endBlock)
+	transitions, err := m.checkClaimsInFlight(context.Background(), makeEpochMap(epoch1, epoch2), makeApplicationMap(app1, app2), endBlock)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, err1)
 	assert.ErrorIs(t, err, err2)
@@ -240,7 +240,7 @@ func TestClaimInFlightReceiptNotFoundBeforeTimeoutKeepsTrackingAndStopsDuplicate
 		Return(false, nilReceipt, nil).Once()
 
 	transitions, errs := m.submitClaimsAndUpdateDatabase(
-		makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+		context.Background(), makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	require.Empty(t, errs)
 	assert.Equal(t, 0, transitions)
 	assert.Contains(t, m.claimsInFlight, app.ID,
@@ -275,7 +275,7 @@ func TestClaimInFlightReceiptNotFoundAfterTimeoutClearsAndRetries(t *testing.T) 
 	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(newTxHash, nil).Once()
 
-	transitions, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	transitions, errs := m.submitClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	require.Empty(t, errs)
 	assert.Equal(t, 1, transitions, "stale in-flight tx should allow the normal submit path to retry")
 	got, ok := m.claimsInFlight[app.ID]
@@ -302,7 +302,7 @@ func TestAcceptInFlightPollErrorKeepsTracking(t *testing.T) {
 	b.On("pollTransaction", mock.Anything, txHash, endBlock).
 		Return(false, nilReceipt, expectedErr).Once()
 
-	transitions, err := m.checkAcceptsInFlight(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	transitions, err := m.checkAcceptsInFlight(context.Background(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	require.ErrorIs(t, err, expectedErr)
 	assert.Equal(t, 0, transitions)
 	assert.Contains(t, m.acceptsInFlight, app.ID,
@@ -342,7 +342,7 @@ func TestAcceptInFlightErrorsDoNotStopOtherAppsOrDropPollErrors(t *testing.T) {
 	r.On("UpdateEpochWithAcceptedClaim", mock.Anything, app2.ID, epoch2.Index, (*common.Hash)(nil)).
 		Return(updateErr).Once()
 
-	transitions, err := m.checkAcceptsInFlight(makeEpochMap(epoch1, epoch2), makeApplicationMap(app1, app2), endBlock)
+	transitions, err := m.checkAcceptsInFlight(context.Background(), makeEpochMap(epoch1, epoch2), makeApplicationMap(app1, app2), endBlock)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, pollErr)
 	assert.ErrorIs(t, err, updateErr)
@@ -371,7 +371,7 @@ func TestAcceptInFlightReceiptNotFoundAfterTimeoutClearsTracking(t *testing.T) {
 	b.On("pollTransaction", mock.Anything, txHash, endBlock).
 		Return(false, nilReceipt, nil).Once()
 
-	transitions, err := m.checkAcceptsInFlight(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	transitions, err := m.checkAcceptsInFlight(context.Background(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	require.NoError(t, err)
 	assert.Equal(t, 0, transitions)
 	assert.NotContains(t, m.acceptsInFlight, app.ID,
@@ -403,7 +403,7 @@ func TestAcceptInFlightSuccessUpdatesEpochAndClearsTracking(t *testing.T) {
 	r.On("UpdateEpochWithAcceptedClaim", mock.Anything, app.ID, currEpoch.Index, (*common.Hash)(nil)).
 		Return(nil).Once()
 
-	transitions, err := m.checkAcceptsInFlight(stagedEpochs, makeApplicationMap(app), endBlock)
+	transitions, err := m.checkAcceptsInFlight(context.Background(), stagedEpochs, makeApplicationMap(app), endBlock)
 	require.NoError(t, err)
 	assert.Equal(t, 1, transitions)
 	assert.NotContains(t, m.acceptsInFlight, app.ID)
@@ -438,7 +438,7 @@ func TestAcceptInFlightRevertedAcceptedReconcilesEpoch(t *testing.T) {
 	r.On("UpdateEpochWithAcceptedClaim", mock.Anything, app.ID, currEpoch.Index, (*common.Hash)(nil)).
 		Return(nil).Once()
 
-	transitions, err := m.checkAcceptsInFlight(stagedEpochs, makeApplicationMap(app), endBlock)
+	transitions, err := m.checkAcceptsInFlight(context.Background(), stagedEpochs, makeApplicationMap(app), endBlock)
 	require.NoError(t, err)
 	assert.Equal(t, 1, transitions)
 	assert.NotContains(t, m.acceptsInFlight, app.ID)
@@ -472,7 +472,7 @@ func TestAcceptInFlightRevertedUnstagedMarksApplicationFailed(t *testing.T) {
 	})).
 		Return(nil).Once()
 
-	transitions, err := m.checkAcceptsInFlight(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	transitions, err := m.checkAcceptsInFlight(context.Background(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	require.NoError(t, err)
 	assert.Equal(t, 0, transitions)
 	assert.Equal(t, model.ApplicationStatus_Failed, app.Status)
@@ -509,7 +509,7 @@ func TestAcceptInFlightRevertedForeclosedTerminalizes(t *testing.T) {
 	// CRITICAL: no UpdateApplicationStatus expectation — any FAILED/DIVERGED/
 	// CORRUPTED write trips the mock as an unexpected call.
 
-	transitions, err := m.checkAcceptsInFlight(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	transitions, err := m.checkAcceptsInFlight(context.Background(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	require.NoError(t, err)
 	assert.Equal(t, 1, transitions, "terminalization counts as completed work")
 	assert.Equal(t, model.EpochStatus_ClaimForeclosed, currEpoch.Status)

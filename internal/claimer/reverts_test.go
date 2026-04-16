@@ -4,6 +4,7 @@
 package claimer
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"strings"
@@ -95,9 +96,9 @@ func TestNotFirstClaimHandledGracefully(t *testing.T) {
 	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(common.Hash{}, notFirstClaimError()).Once()
 
-	_, errs := m.submitClaimsAndUpdateDatabase(
-		makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 0, len(errs))
+	_, err := m.submitClaimsAndUpdateDatabase(
+		context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.NoError(t, err)
 	assert.Equal(t, 0, len(m.claimsInFlight))
 }
 
@@ -120,9 +121,9 @@ func TestNotFirstClaimQuorumRetriesForEventSync(t *testing.T) {
 	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(common.Hash{}, notFirstClaimError()).Once()
 
-	_, errs := m.submitClaimsAndUpdateDatabase(
-		makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 0, len(errs))
+	_, err := m.submitClaimsAndUpdateDatabase(
+		context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.NoError(t, err)
 	assert.Equal(t, 0, len(m.claimsInFlight))
 }
 
@@ -145,10 +146,10 @@ func TestApplicationForeclosedIsTransient(t *testing.T) {
 		Return(common.Hash{}, consensusRevertError("ApplicationForeclosed")).Once()
 
 	currEpochs := makeEpochMap(currEpoch)
-	transitions, errs := m.submitClaimsAndUpdateDatabase(
-		makeEpochMap(), currEpochs, makeApplicationMap(app), endBlock)
+	transitions, err := m.submitClaimsAndUpdateDatabase(
+		context.Background(), makeEpochMap(), currEpochs, makeApplicationMap(app), endBlock)
 	assert.Equal(t, 0, transitions, "no DB transition on transient revert")
-	assert.Equal(t, 0, len(errs), "ApplicationForeclosed must not surface as an error")
+	assert.NoError(t, err, "ApplicationForeclosed must not surface as an error")
 	assert.Equal(t, 1, len(currEpochs), "epoch must remain in work map for retry")
 	assert.Equal(t, 0, len(m.claimsInFlight), "no claim in flight")
 }
@@ -172,9 +173,9 @@ func TestInvalidOutputsMerkleRootProofSizeSetsCorrupted(t *testing.T) {
 		Return(nil).Once()
 
 	currEpochs := makeEpochMap(currEpoch)
-	_, errs := m.submitClaimsAndUpdateDatabase(
-		makeEpochMap(), currEpochs, makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs), "CORRUPTED transition must surface a terminal error")
+	_, err := m.submitClaimsAndUpdateDatabase(
+		context.Background(), makeEpochMap(), currEpochs, makeApplicationMap(app), endBlock)
+	assert.Error(t, err, "CORRUPTED transition must surface a terminal error")
 	assert.Equal(t, 0, len(currEpochs), "epoch must be dropped from work map")
 	assert.Equal(t, 0, len(m.claimsInFlight))
 }
@@ -199,11 +200,11 @@ func TestCallerIsNotValidatorSetsFailed(t *testing.T) {
 		Return(nil).Once()
 
 	currEpochs := makeEpochMap(currEpoch)
-	_, errs := m.submitClaimsAndUpdateDatabase(
-		makeEpochMap(), currEpochs, makeApplicationMap(app), endBlock)
+	_, err := m.submitClaimsAndUpdateDatabase(
+		context.Background(), makeEpochMap(), currEpochs, makeApplicationMap(app), endBlock)
 	// SetFailedf returns nil on success — the call site only surfaces an
 	// error when state-update itself failed, so no error is expected here.
-	assert.Equal(t, 0, len(errs))
+	assert.NoError(t, err)
 	assert.Equal(t, 0, len(currEpochs), "epoch must be dropped from work map")
 }
 
@@ -227,10 +228,10 @@ func TestNotPastBlockRetriesLater(t *testing.T) {
 		Return(common.Hash{}, notPastBlockError(currEpoch.LastBlock, currEpoch.LastBlock-1)).Once()
 
 	currEpochs := makeEpochMap(currEpoch)
-	transitions, errs := m.submitClaimsAndUpdateDatabase(
-		makeEpochMap(), currEpochs, makeApplicationMap(app), endBlock)
+	transitions, err := m.submitClaimsAndUpdateDatabase(
+		context.Background(), makeEpochMap(), currEpochs, makeApplicationMap(app), endBlock)
 	assert.Equal(t, 0, transitions, "no DB transition on transient revert")
-	assert.Equal(t, 0, len(errs), "NotPastBlock must not surface as an error")
+	assert.NoError(t, err, "NotPastBlock must not surface as an error")
 	assert.Equal(t, 1, len(currEpochs), "epoch must remain in work map for retry")
 	assert.Equal(t, 0, len(m.claimsInFlight), "no claim in flight")
 }
@@ -304,12 +305,12 @@ func TestSubmitClaimRevertsSetApplicationFailed(t *testing.T) {
 				Return(nil).Once()
 
 			currEpochs := makeEpochMap(currEpoch)
-			transitions, errs := m.submitClaimsAndUpdateDatabase(
-				makeEpochMap(), currEpochs, makeApplicationMap(app), endBlock)
+			transitions, err := m.submitClaimsAndUpdateDatabase(
+				context.Background(), makeEpochMap(), currEpochs, makeApplicationMap(app), endBlock)
 			// SetFailedf returns nil on success — the call site only surfaces
 			// an error when the status update itself failed.
 			assert.Equal(t, 0, transitions, "FAILED is not a claim transition")
-			assert.Equal(t, 0, len(errs))
+			assert.NoError(t, err)
 			assert.Equal(t, 0, len(currEpochs), "epoch must be dropped from work map")
 			assert.Equal(t, 0, len(m.claimsInFlight), "no claim in flight")
 		})
@@ -335,12 +336,10 @@ func TestSubmitClaimFailedRevertWithDBError(t *testing.T) {
 		Return(fmt.Errorf("db down")).Once()
 
 	currEpochs := makeEpochMap(currEpoch)
-	_, errs := m.submitClaimsAndUpdateDatabase(
-		makeEpochMap(), currEpochs, makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs), "status-update failure must surface as an error")
-	if len(errs) == 1 {
-		assert.ErrorContains(t, errs[0], "db down", "the surfaced error must be the DB error")
-	}
+	_, err := m.submitClaimsAndUpdateDatabase(
+		context.Background(), makeEpochMap(), currEpochs, makeApplicationMap(app), endBlock)
+	assert.Error(t, err, "status-update failure must surface as an error")
+	assert.ErrorContains(t, err, "db down", "the surfaced error must be the DB error")
 	assert.Equal(t, 0, len(currEpochs), "epoch must be dropped from work map")
 	assert.Equal(t, 0, len(m.claimsInFlight), "no claim in flight")
 }
@@ -413,7 +412,7 @@ func TestHandleAcceptClaimRevert(t *testing.T) {
 			m, _, _ := newServiceMock(t)
 			app := makeApplication()
 			epoch := makeStagedEpoch(app, 3, 50)
-			outcome, stateErr := m.handleAcceptClaimRevert(tc.err, app, epoch)
+			outcome, stateErr := m.handleAcceptClaimRevert(context.Background(), tc.err, app, epoch)
 			assert.Equal(t, tc.want, outcome)
 			assert.Nil(t, stateErr, "classifier must not mutate state")
 		})
@@ -459,7 +458,7 @@ func TestClaimNotStagedUnmodeledStatusFailsClosed(t *testing.T) {
 	r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed, mock.Anything).
 		Return(nil).Once()
 
-	outcome, stateErr := m.handleAcceptClaimRevert(claimNotStagedError(3), app, epoch)
+	outcome, stateErr := m.handleAcceptClaimRevert(context.Background(), claimNotStagedError(3), app, epoch)
 	assert.Equal(t, acceptClaimAppHalted, outcome,
 		"a cleanly-decoded unmodeled ClaimStatus must escalate, not retry")
 	// SetFailedf returns nil on success; the FAILED write itself is asserted by
@@ -504,7 +503,7 @@ func TestAcceptClaimRevertsSetApplicationFailed(t *testing.T) {
 				})).
 				Return(nil).Once()
 
-			outcome, stateErr := m.handleAcceptClaimRevert(consensusRevertError(revertName), app, epoch)
+			outcome, stateErr := m.handleAcceptClaimRevert(context.Background(), consensusRevertError(revertName), app, epoch)
 			assert.Equal(t, acceptClaimAppHalted, outcome)
 			// SetFailedf returns nil on success; the FAILED write itself is
 			// asserted by the mock expectation above.
@@ -526,7 +525,7 @@ func TestInvalidNodeIndexSetsCorrupted(t *testing.T) {
 	r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Corrupted, mock.Anything).
 		Return(nil).Once()
 
-	outcome, stateErr := m.handleSubmitClaimRevert(consensusRevertError("InvalidNodeIndex"), app, epoch)
+	outcome, stateErr := m.handleSubmitClaimRevert(context.Background(), consensusRevertError("InvalidNodeIndex"), app, epoch)
 	assert.Equal(t, submitClaimAppHalted, outcome)
 	assert.Error(t, stateErr, "CORRUPTED is terminal; the handler must return the reason error")
 }
@@ -586,7 +585,7 @@ func TestHandleSubmitClaimRevert(t *testing.T) {
 			// covered by the existing end-to-end pipeline tests.
 			app.ConsensusType = model.Consensus_Authority
 			epoch := makeEpoch(app.ID, model.EpochStatus_ClaimComputed, 3)
-			outcome, _ := m.handleSubmitClaimRevert(tc.err, app, epoch)
+			outcome, _ := m.handleSubmitClaimRevert(context.Background(), tc.err, app, epoch)
 			assert.Equal(t, tc.want, outcome)
 		})
 	}

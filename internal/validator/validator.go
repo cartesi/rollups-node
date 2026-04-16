@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -22,7 +23,8 @@ import (
 )
 
 type Service struct {
-	service.Service
+	service.TickServiceTemplate
+
 	repository ValidatorRepository
 
 	// cached constants
@@ -31,23 +33,28 @@ type Service struct {
 }
 
 type CreateInfo struct {
-	service.CreateInfo
-
-	Config config.ValidatorConfig
-
+	Config     config.ValidatorConfig
+	Logger     *slog.Logger
 	Repository repository.Repository
 }
 
-func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
+func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, error) {
 	var err error
 	if err = ctx.Err(); err != nil {
 		return nil, err // This returns context.Canceled or context.DeadlineExceeded.
 	}
 
 	s := &Service{}
-	c.Impl = s
-
-	err = service.Create(ctx, &c.CreateInfo, &s.Service)
+	tickCfg := &service.TickServiceConfigs{
+		BaseConfigs: service.BaseConfigs{
+			Name:     config.ServiceValidator,
+			Logger:   c.Logger,
+			LogLevel: c.Config.LogLevel,
+			LogColor: c.Config.LogColor,
+		},
+		PollInterval: c.Config.ValidatorPollingInterval,
+	}
+	err = service.InitTickServiceTemplate(&s.TickServiceTemplate, tickCfg, s)
 	if err != nil {
 		return nil, err
 	}
@@ -60,35 +67,33 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	s.pristinePostContext = merkle.CreatePostContext()
 	s.pristineRootHash = s.pristinePostContext[merkle.TREE_DEPTH]
 
+	s.Logger.Info("Created", "config", c.Config)
+
 	return s, nil
 }
 
-func (s *Service) Alive() bool     { return true }
-func (s *Service) Ready() bool     { return true }
-func (s *Service) Reload() []error { return nil }
-
 // Tick executes the Validator main logic of producing claims and/or proofs
 // for processed epochs of all running applications.
-func (s *Service) Tick() []error {
-	apps, _, err := getAllRunningApplications(s.Context, s.repository)
+func (s *Service) Tick(ctx context.Context) (bool, error) {
+	apps, _, err := getAllRunningApplications(ctx, s.repository)
 	if err != nil {
 		// During shutdown the parent context is canceled and every in-
 		// flight DB query returns context.Canceled. Suppress only the
 		// graceful-shutdown case; deadline-exceeded (real failure) still
 		// propagates. Mirrors internal/prt/service.go's Tick pattern.
-		if s.IsStopping() && errors.Is(err, context.Canceled) {
+		if errors.Is(err, context.Canceled) {
 			s.Logger.Warn("Tick interrupted by shutdown", "error", err)
-			return nil
+			return false, nil
 		}
-		return []error{fmt.Errorf("failed to get running applications. %w", err)}
+		return false, fmt.Errorf("failed to get running applications. %w", err)
 	}
 
 	// validate each application
 	errs := []error{}
 	for idx := range apps {
-		if err := s.validateApplication(s.Context, apps[idx]); err != nil {
+		if err := s.validateApplication(ctx, apps[idx]); err != nil {
 			// Same shutdown-cancellation suppression as above, per-app.
-			if s.IsStopping() && errors.Is(err, context.Canceled) {
+			if errors.Is(err, context.Canceled) {
 				s.Logger.Warn("Tick interrupted by shutdown",
 					"application", apps[idx].IApplicationAddress, "error", err)
 				continue
@@ -96,15 +101,7 @@ func (s *Service) Tick() []error {
 			errs = append(errs, err)
 		}
 	}
-	return errs
-}
-func (s *Service) Stop(_ bool) []error {
-	s.SetStopping()
-	return nil
-}
-
-func (s *Service) String() string {
-	return s.Name
+	return false, errors.Join(errs...)
 }
 
 type ValidatorRepository interface {
@@ -185,10 +182,9 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 		if err != nil {
 			// Don't log shutdown-cancellation at ERR — every in-flight DB
 			// query returns context.Canceled and Tick's outer suppression
-			// (s.IsStopping() && errors.Is(err, context.Canceled)) handles
-			// the propagation. DeadlineExceeded is a real failure and
-			// must still be logged.
-			if !(s.IsStopping() && errors.Is(err, context.Canceled)) {
+			// (errors.Is(err, context.Canceled)) handles the propagation.
+			// DeadlineExceeded is a real failure and must still be logged.
+			if !errors.Is(err, context.Canceled) {
 				s.Logger.Error("failed to create claim and proofs.", "error", err)
 			}
 			return err

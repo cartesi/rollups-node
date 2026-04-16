@@ -101,13 +101,13 @@ func (r *Service) setApplicationCorrupted(ctx context.Context, app *Application,
 	return appstatus.SetCorruptedf(ctx, r.Logger, r.repository, app, reasonFmt, args...)
 }
 
-func (r *Service) Tick() []error {
-	blockNumber, err := r.fetchMostRecentHeader(r.Context, r.defaultBlock)
+func (r *Service) Tick(ctx context.Context) (bool, error) {
+	blockNumber, err := r.fetchMostRecentHeader(ctx, r.defaultBlock)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return nil
+			return false, nil
 		}
-		return []error{err}
+		return false, err
 	}
 
 	if blockNumber != r.lastBlockNumber.Load() {
@@ -117,9 +117,9 @@ func (r *Service) Tick() []error {
 
 	// Scans run under the service context: cancellable on shutdown, free to take
 	// as long as catch-up needs. Per-request bounds live on the HTTP transport.
-	r.processBlockHead(r.Context, blockNumber, r.resolver)
+	r.processBlockHead(ctx, blockNumber, r.resolver)
 
-	return nil
+	return false, nil
 }
 
 func (r *Service) processBlockHead(

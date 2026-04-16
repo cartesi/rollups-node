@@ -20,7 +20,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/internal/repository/repotest"
-	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/cartesi/rollups-node/test/tooling/db"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -102,12 +101,9 @@ func newTestServiceFull(t *testing.T, name string, maxInflight uint64, corsOrigi
 	require.NoError(t, err)
 
 	ci := CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:     name,
-			LogLevel: logLevel,
-			LogColor: true,
-		},
 		Config: config.JsonrpcConfig{
+			LogLevel:                  logLevel,
+			LogColor:                  true,
 			JsonrpcMaxInflight:        maxInflight,
 			JsonrpcCorsAllowedOrigins: corsOrigins,
 		},
@@ -116,7 +112,7 @@ func newTestServiceFull(t *testing.T, name string, maxInflight uint64, corsOrigi
 	s, err := Create(ctx, &ci)
 	require.NoError(t, err, "on new test service")
 
-	return s
+	return s.(*Service)
 }
 
 func nameToNumber(in string) uint64 {

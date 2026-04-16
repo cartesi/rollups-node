@@ -47,23 +47,20 @@ import (
 	"errors"
 )
 
-func (s *Service) Tick() []error {
-	errs := []error{}
-
+func (s *Service) Tick(ctx context.Context) (bool, error) {
 	// Use the same finalized block number for all chain reads in this tick.
 	// This is one RPC per tick even when there is no DB work. The call is
 	// cheap, and Tick already runs on a polling interval.
-	defaultBlockNumber, err := s.blockchain.getDefaultBlockNumber(s.Context)
+	defaultBlockNumber, err := s.blockchain.getDefaultBlockNumber(ctx)
 	if err != nil {
 		// During shutdown, the parent context is canceled and RPC/DB calls
 		// return context.Canceled. Ignore only that normal shutdown case. Other
 		// errors, such as deadline exceeded, must still be returned.
-		if s.IsStopping() && errors.Is(err, context.Canceled) {
+		if errors.Is(err, context.Canceled) {
 			s.Logger.Warn("Tick interrupted by shutdown", "stage", "getDefaultBlockNumber", "error", err)
-			return nil
+			return false, nil
 		}
-		errs = append(errs, err)
-		return errs
+		return false, err
 	}
 	s.consensusAddressChecks = map[consensusAddressCheckKey]error{}
 	defer func() {
@@ -76,42 +73,38 @@ func (s *Service) Tick() []error {
 
 	// Stage 1: submit. COMPUTED -> SUBMITTED, or directly to STAGED when the
 	// transaction receipt already contains ClaimStaged.
-	prevSubmittedOrStaged, computedEpochs, computedApps, errComputed := s.repository.SelectClaimsToSubmitPerApp(s.Context)
+	prevSubmittedOrStaged, computedEpochs, computedApps, errComputed := s.repository.SelectClaimsToSubmitPerApp(ctx)
 	if errComputed != nil {
-		if s.IsStopping() && errors.Is(errComputed, context.Canceled) {
+		if errors.Is(errComputed, context.Canceled) {
 			s.Logger.Warn("Tick interrupted by shutdown", "stage", "SelectClaimsToSubmitPerApp", "error", errComputed)
-			return nil
+			return false, nil
 		}
-		errs = append(errs, errComputed)
-		return errs
+		return false, errComputed
 	}
-	submitted, submitErrs := s.submitClaimsAndUpdateDatabase(prevSubmittedOrStaged, computedEpochs, computedApps, defaultBlockNumber)
-	errs = append(errs, submitErrs...)
+	submitted, err := s.submitClaimsAndUpdateDatabase(ctx, prevSubmittedOrStaged, computedEpochs, computedApps, defaultBlockNumber)
 
 	// Stage 2: stage. SUBMITTED -> STAGED. This read sees stage 1 updates.
-	prevAcceptedForSubmitted, submittedEpochs, submittedApps, errSubmitted := s.repository.SelectClaimsToStagePerApp(s.Context)
+	prevAcceptedForSubmitted, submittedEpochs, submittedApps, errSubmitted := s.repository.SelectClaimsToStagePerApp(ctx)
 	if errSubmitted != nil {
-		if s.IsStopping() && errors.Is(errSubmitted, context.Canceled) {
+		if errors.Is(errSubmitted, context.Canceled) {
 			s.Logger.Warn("Tick interrupted by shutdown", "stage", "SelectClaimsToStagePerApp", "error", errSubmitted)
-			return nil
+			return false, nil
 		}
-		errs = append(errs, errSubmitted)
-		return errs
+		return false, errors.Join(err, errSubmitted)
 	}
-	staged, stageErrs := s.stageClaimsAndUpdateDatabase(prevAcceptedForSubmitted, submittedEpochs, submittedApps, defaultBlockNumber)
-	errs = append(errs, stageErrs...)
+	staged, stageErr := s.stageClaimsAndUpdateDatabase(ctx, prevAcceptedForSubmitted, submittedEpochs, submittedApps, defaultBlockNumber)
+	err = errors.Join(err, stageErr)
 
 	// Stages 3, 4, and 5: accept. STAGED -> ACCEPTED by our own transaction,
 	// another party's event, or a getClaim read before we send acceptClaim.
 	// This read sees stage 1 and stage 2 updates.
-	prevAcceptedForStaged, stagedEpochs, stagedApps, errStaged := s.repository.SelectClaimsToAcceptPerApp(s.Context)
+	prevAcceptedForStaged, stagedEpochs, stagedApps, errStaged := s.repository.SelectClaimsToAcceptPerApp(ctx)
 	if errStaged != nil {
-		if s.IsStopping() && errors.Is(errStaged, context.Canceled) {
+		if errors.Is(errStaged, context.Canceled) {
 			s.Logger.Warn("Tick interrupted by shutdown", "stage", "SelectClaimsToAcceptPerApp", "error", errStaged)
-			return nil
+			return false, nil // TODO:[maia] should we discard the potential database update errors from calls above?
 		}
-		errs = append(errs, errStaged)
-		return errs
+		return false, errors.Join(err, errStaged)
 	}
 
 	// Foreclosed apps still need some read-only claim work. A claim accepted
@@ -127,29 +120,25 @@ func (s *Service) Tick() []error {
 	// work, so operators can still see drain and reconciliation progress. Once
 	// drained, the app remains enabled for L1 observation with foreclose_block
 	// set.
-	foreclosed, listErr := s.listEnabledForeclosedNonPRTApps()
-	if listErr != nil {
-		errs = append(errs, listErr)
-	}
+	foreclosed, listErr := s.listEnabledForeclosedNonPRTApps(ctx)
+	err = errors.Join(err, listErr)
 
 	// Finish the accept side of the lifecycle. First send acceptClaim for
 	// staged epochs that are ready. Then check acceptClaim transactions sent in
 	// previous ticks. Finally, scan for ClaimAccepted events from any party.
-	issuedAccepts, issueErrs := s.acceptStagedClaimsAndIssueAcceptTx(stagedEpochs, stagedApps, defaultBlockNumber)
-	errs = append(errs, issueErrs...)
+	issuedAccepts, issueErr := s.acceptStagedClaimsAndIssueAcceptTx(ctx, stagedEpochs, stagedApps, defaultBlockNumber)
+	err = errors.Join(err, issueErr)
 
-	confirmedAccepts, confirmErr := s.checkAcceptsInFlight(stagedEpochs, stagedApps, defaultBlockNumber)
-	if confirmErr != nil {
-		errs = append(errs, confirmErr)
-	}
+	confirmedAccepts, confirmErr := s.checkAcceptsInFlight(ctx, stagedEpochs, stagedApps, defaultBlockNumber)
+	err = errors.Join(err, confirmErr)
 
-	accepted, acceptErrs := s.acceptClaimsAndUpdateDatabase(prevAcceptedForStaged, stagedEpochs, stagedApps, defaultBlockNumber)
-	errs = append(errs, acceptErrs...)
+	accepted, acceptErr := s.acceptClaimsAndUpdateDatabase(ctx, prevAcceptedForStaged, stagedEpochs, stagedApps, defaultBlockNumber)
+	err = errors.Join(err, acceptErr)
 
 	// Keep logging foreclosed apps until all pre-foreclosure work is done.
 	// After that, processForeclosedApps has nothing else to change.
-	forecloseErrs := s.processForeclosedApps(foreclosed)
-	errs = append(errs, forecloseErrs...)
+	forecloseErr := s.processForeclosedApps(ctx, foreclosed)
+	err = errors.Join(err, forecloseErr)
 
 	s.cleanupOrphanedInFlight(computedApps, stagedApps, stagedEpochs)
 
@@ -161,7 +150,7 @@ func (s *Service) Tick() []error {
 
 	// Signal reschedule whenever pipeline progress was made, even with errors.
 	if submitted > 0 || staged > 0 || issuedAccepts > 0 || confirmedAccepts > 0 || accepted > 0 {
-		s.SignalReschedule()
+		return true, err
 	}
-	return errs
+	return false, err
 }

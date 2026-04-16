@@ -26,8 +26,8 @@ func TestDoNothing(t *testing.T) {
 	prevEpochs := makeEpochMap()
 	currEpochs := makeEpochMap()
 
-	transitions, errs := m.submitClaimsAndUpdateDatabase(prevEpochs, currEpochs, makeApplicationMap(), big.NewInt(0))
-	assert.Equal(t, 0, len(errs))
+	transitions, err := m.submitClaimsAndUpdateDatabase(context.Background(), prevEpochs, currEpochs, makeApplicationMap(), big.NewInt(0))
+	assert.NoError(t, err)
 	assert.Equal(t, 0, transitions, "no transitions when no epochs to process")
 }
 
@@ -36,23 +36,11 @@ func TestTickInterleavesStagesWithPinnedBlockAndReschedulesOnProgress(t *testing
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
-	ctx := context.Background()
-	err := service.Create(ctx, &service.CreateInfo{
-		Name:             "claimer-test",
-		Context:          ctx,
-		Impl:             m,
-		PollInterval:     time.Hour,
-		EnableReschedule: true,
-	}, &m.Service)
+	err := service.InitTickServiceTemplate(&m.TickServiceTemplate, &service.TickServiceConfigs{
+		BaseConfigs:  service.BaseConfigs{Name: "claimer-test"},
+		PollInterval: time.Hour,
+	}, m)
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		if m.Ticker != nil {
-			m.Ticker.Stop()
-		}
-		if m.Cancel != nil {
-			m.Cancel()
-		}
-	})
 
 	tickBlock := big.NewInt(100)
 	app := makeApplication()
@@ -87,8 +75,8 @@ func TestTickInterleavesStagesWithPinnedBlockAndReschedulesOnProgress(t *testing
 	}), repository.Pagination{}, false).
 		Return([]*model.Application{}, 0, nil).Once()
 
-	errs := m.Tick()
+	reschedule, err := m.Tick(context.Background())
 
-	require.Empty(t, errs)
-	assert.True(t, m.DrainReschedule(), "a successful stage transition should request an immediate follow-up tick")
+	require.NoError(t, err)
+	assert.True(t, reschedule, "a successful stage transition should request an immediate follow-up tick")
 }

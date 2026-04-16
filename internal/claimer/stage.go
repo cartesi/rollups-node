@@ -4,6 +4,8 @@
 package claimer
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -61,6 +63,7 @@ const (
 // always a separate transaction. Code that tries to accept from the submit
 // receipt is using the wrong contract model.
 func (s *Service) tryStageFromReceipt(
+	ctx context.Context,
 	receipt *types.Receipt,
 	app *model.Application,
 	epoch *model.Epoch,
@@ -87,7 +90,7 @@ func (s *Service) tryStageFromReceipt(
 		}
 		matches, ok := claimStagedEventMatches(app, epoch, event)
 		if !ok {
-			pErr := s.markMatcherPrecondFailure(app, epoch, "tryStageFromReceipt")
+			pErr := s.markMatcherPrecondFailure(ctx, app, epoch, "tryStageFromReceipt")
 			return stageReceiptPrecondFailure, pErr
 		}
 		if !matches {
@@ -97,11 +100,11 @@ func (s *Service) tryStageFromReceipt(
 			// state here is also a fault. Mark the app DIVERGED and return a
 			// special result so the caller does not log success or fall back to
 			// the plain SUBMITTED update.
-			divErr := s.markStagingDivergence(app, epoch, event, "tryStageFromReceipt")
+			divErr := s.markStagingDivergence(ctx, app, epoch, event, "tryStageFromReceipt")
 			return stageReceiptDivergent, divErr
 		}
 		err = s.repository.UpdateEpochThroughStaging(
-			s.Context, epoch.ApplicationID, epoch.Index,
+			ctx, epoch.ApplicationID, epoch.Index,
 			receipt.TxHash, log.BlockNumber)
 		if err != nil {
 			return stageReceiptDBPending, fmt.Errorf(
@@ -130,32 +133,34 @@ func (s *Service) tryStageFromReceipt(
 // set to DIVERGED. The reason tells the guardian to call foreclose() before
 // the staging period ends.
 func (s *Service) stageClaimsAndUpdateDatabase(
+	ctx context.Context,
 	acceptedEpochs map[int64]*model.Epoch,
 	submittedEpochs map[int64]*model.Epoch,
 	apps map[int64]*model.Application,
 	defaultBlockNumber *big.Int,
-) (int, []error) {
+) (int, error) {
 	transitions := 0
-	errs := []error{}
+	var err error
 
 	for key, currEpoch := range submittedEpochs {
-		result := s.processSubmittedClaim(submittedClaimWork{
+		result := s.processSubmittedClaim(ctx, submittedClaimWork{
 			app:       apps[key],
 			prevEpoch: acceptedEpochs[key],
 			epoch:     currEpoch,
 		}, defaultBlockNumber)
 		transitions += result.progress
 		if result.err != nil {
-			errs = append(errs, result.err)
+			err = errors.Join(err, result.err)
 		}
 		if result.drop {
 			delete(submittedEpochs, key)
 		}
 	}
-	return transitions, errs
+	return transitions, err
 }
 
 func (s *Service) processSubmittedClaim(
+	ctx context.Context,
 	work submittedClaimWork,
 	defaultBlockNumber *big.Int,
 ) claimStepResult {
@@ -163,7 +168,7 @@ func (s *Service) processSubmittedClaim(
 	currEpoch := work.epoch
 	prevEpoch := work.prevEpoch
 
-	if err := s.checkConsensusForAddressChange(app, defaultBlockNumber); err != nil {
+	if err := s.checkConsensusForAddressChange(ctx, app, defaultBlockNumber); err != nil {
 		return claimDropped(err)
 	}
 
@@ -173,7 +178,7 @@ func (s *Service) processSubmittedClaim(
 	}
 
 	_, currEvent, _, err := s.blockchain.findClaimStagedEventAndSucc(
-		s.Context, app, currEpoch, fromBlock, defaultBlockNumber.Uint64(),
+		ctx, app, currEpoch, fromBlock, defaultBlockNumber.Uint64(),
 	)
 	if err != nil {
 		return claimDropped(err)
@@ -188,13 +193,13 @@ func (s *Service) processSubmittedClaim(
 		)
 		matches, ok := claimStagedEventMatches(app, currEpoch, currEvent)
 		if !ok {
-			return claimDropped(s.markMatcherPrecondFailure(app, currEpoch, "stageClaimsAndUpdateDatabase"))
+			return claimDropped(s.markMatcherPrecondFailure(ctx, app, currEpoch, "stageClaimsAndUpdateDatabase"))
 		}
 		if !matches {
-			return claimDropped(s.markStagingDivergence(app, currEpoch, currEvent, "stageClaimsAndUpdateDatabase"))
+			return claimDropped(s.markStagingDivergence(ctx, app, currEpoch, currEvent, "stageClaimsAndUpdateDatabase"))
 		}
 		err = s.repository.UpdateEpochToStaged(
-			s.Context, currEpoch.ApplicationID, currEpoch.Index,
+			ctx, currEpoch.ApplicationID, currEpoch.Index,
 			currEvent.Raw.BlockNumber)
 		if err != nil {
 			return claimDropped(err)
@@ -212,7 +217,7 @@ func (s *Service) processSubmittedClaim(
 	// exists up to this block, this submitted claim has no remaining on-chain
 	// path.
 	if app.ForecloseBlock != 0 {
-		if ferr := s.forecloseClaim(app, currEpoch, "stageClaimsAndUpdateDatabase"); ferr != nil {
+		if ferr := s.forecloseClaim(ctx, app, currEpoch, "stageClaimsAndUpdateDatabase"); ferr != nil {
 			return claimDropped(ferr)
 		}
 		return claimWorkCompleted(1)
