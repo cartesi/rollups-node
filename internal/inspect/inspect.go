@@ -12,6 +12,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
@@ -25,6 +27,10 @@ import (
 // in the machine emulator's pma-defines.h). Payloads larger than this are rejected
 // by the machine anyway, so there is no reason to read them into memory.
 const maxPayloadSize = 1 << 21 // 2 MiB
+
+// inspectResponseHeadroom is the time budget reserved for HTTP response
+// serialization after the Cartesi Machine's inspect deadline fires.
+const inspectResponseHeadroom = 30 * time.Second
 
 var (
 	ErrInvalidMachines = errors.New("machines must not be nil")
@@ -42,11 +48,13 @@ type InspectRepository interface {
 
 type Inspector struct {
 	IInspectMachines
-	repository InspectRepository
-	Logger     *slog.Logger
-	ServeMux   *http.ServeMux
-	server     *http.Server
-	admission  *service.SemaphoreAdmission
+	repository       InspectRepository
+	Logger           *slog.Logger
+	ServeMux         *http.ServeMux
+	server           *http.Server
+	admission        *service.SemaphoreAdmission
+	deadlineWarnedMu sync.Mutex
+	deadlineWarned   map[int64]struct{}
 	// listen opens the HTTP listener. It defaults to net.Listen and is
 	// overridden in tests so Serve() can be exercised against a pre-bound
 	// listener whose actual address is known to the test.
@@ -100,6 +108,7 @@ func NewInspector(c CreateInfo) (*Inspector, error) {
 		IInspectMachines: c.Machines,
 		repository:       c.Repository,
 		Logger:           logger,
+		deadlineWarned:   make(map[int64]struct{}),
 		ServeMux:         http.NewServeMux(),
 		admission:        c.Admission,
 	}
@@ -194,25 +203,41 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	inspect.Logger.Info("Got new inspect request", "application", dapp)
-	result, err := inspect.process(r.Context(), dapp, payload)
-	if err != nil {
-		if errors.Is(err, ErrMachineNotReady) {
-			inspect.Logger.Warn("Machine not ready", "application", dapp, "err", err)
+
+	app, machine, resolveErr := inspect.resolveApp(r.Context(), dapp)
+	if resolveErr != nil {
+		if errors.Is(resolveErr, ErrMachineNotReady) {
+			inspect.Logger.Warn("Machine not ready", "application", dapp, "err", resolveErr)
 			http.Error(w, "Machine not ready", http.StatusServiceUnavailable)
 			return
 		}
-		if errors.Is(err, ErrNoApp) {
-			inspect.Logger.Info("Application not found", "application", dapp, "err", err)
+		if errors.Is(resolveErr, ErrNoApp) {
+			inspect.Logger.Info("Application not found", "application", dapp, "err", resolveErr)
 			http.Error(w, "Application not found", http.StatusNotFound)
 			return
 		}
+		service.WriteInternalError(r.Context(), w, inspect.Logger,
+			fmt.Errorf("inspect resolve failed: %w", resolveErr))
+		return
+	}
+
+	deadline := app.ExecutionParameters.InspectMaxDeadline + inspectResponseHeadroom
+	if inspect.server != nil && deadline > inspect.server.WriteTimeout {
+		inspect.warnDeadlineExceedsWriteTimeout(app, deadline)
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), deadline)
+	defer cancel()
+
+	result, err := machine.Inspect(ctx, payload)
+	if err != nil {
 		if errors.Is(err, manager.ErrInspectAtCapacity) {
 			inspect.Logger.Info("Application inspect at capacity",
 				"application", dapp)
 			http.Error(w, "Application inspect at capacity", http.StatusServiceUnavailable)
 			return
 		}
-		service.WriteInternalError(r.Context(), w, inspect.Logger, fmt.Errorf("inspect processing failed: %w", err))
+		service.WriteInternalError(ctx, w, inspect.Logger,
+			fmt.Errorf("inspect processing failed: %w", err))
 		return
 	}
 
@@ -255,29 +280,37 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"application", dapp)
 }
 
-// process sends an inspect request to the machine
-func (inspect *Inspector) process(
+func (inspect *Inspector) warnDeadlineExceedsWriteTimeout(app *Application, deadline time.Duration) {
+	inspect.deadlineWarnedMu.Lock()
+	defer inspect.deadlineWarnedMu.Unlock()
+	if _, seen := inspect.deadlineWarned[app.ID]; seen {
+		return
+	}
+	inspect.deadlineWarned[app.ID] = struct{}{}
+	inspect.Logger.Warn(
+		"application inspect deadline exceeds HTTP WriteTimeout; response may be truncated",
+		"application", app.Name,
+		"inspect_max_deadline", app.ExecutionParameters.InspectMaxDeadline,
+		"response_headroom", inspectResponseHeadroom,
+		"effective_deadline", deadline,
+		"http_write_timeout", inspect.server.WriteTimeout,
+	)
+}
+
+func (inspect *Inspector) resolveApp(
 	ctx context.Context,
 	nameOrAddress string,
-	query []byte) (*InspectResult, error) {
-
+) (*Application, manager.MachineInstance, error) {
 	app, err := inspect.repository.GetApplication(ctx, nameOrAddress)
 	if app == nil {
 		if err != nil {
-			return nil, fmt.Errorf("%w %s", err, nameOrAddress)
+			return nil, nil, fmt.Errorf("%w %s", err, nameOrAddress)
 		}
-		return nil, fmt.Errorf("%w %s", ErrNoApp, nameOrAddress)
+		return nil, nil, fmt.Errorf("%w %s", ErrNoApp, nameOrAddress)
 	}
-	// Asserts that the app has an associated machine.
 	machine, exists := inspect.GetMachine(app.ID)
 	if !exists {
-		return nil, fmt.Errorf("%w %s", ErrMachineNotReady, nameOrAddress)
+		return nil, nil, fmt.Errorf("%w %s", ErrMachineNotReady, nameOrAddress)
 	}
-
-	res, err := machine.Inspect(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-
-	return res, nil
+	return app, machine, nil
 }

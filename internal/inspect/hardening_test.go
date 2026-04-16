@@ -38,6 +38,9 @@ func newInspectorForTest(t *testing.T, machineErr error) (*Inspector, *Applicati
 		ID:                  1,
 		IApplicationAddress: randomAddress(),
 		Name:                "test-app",
+		ExecutionParameters: ExecutionParameters{
+			InspectMaxDeadline: 10 * time.Second,
+		},
 	}
 	repo := newMockRepository()
 	repo.apps = append(repo.apps, app)
@@ -305,6 +308,9 @@ func newInspectorWithAdmission(t *testing.T, admission *service.SemaphoreAdmissi
 		ID:                  1,
 		IApplicationAddress: randomAddress(),
 		Name:                "test-app",
+		ExecutionParameters: ExecutionParameters{
+			InspectMaxDeadline: 10 * time.Second,
+		},
 	}
 	repo := newMockRepository()
 	repo.apps = append(repo.apps, app)

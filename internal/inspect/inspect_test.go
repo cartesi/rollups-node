@@ -380,6 +380,9 @@ func newMockMachine(id int64) *MockMachine {
 			ID:                  id,
 			IApplicationAddress: randomAddress(),
 			Name:                fmt.Sprintf("app-%v", id),
+			ExecutionParameters: ExecutionParameters{
+				InspectMaxDeadline: 10 * time.Second,
+			},
 		},
 	}
 }
