@@ -11,12 +11,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/services"
 	"github.com/cartesi/rollups-node/pkg/service"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -24,50 +24,21 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-const TestTimeout = 5 * time.Second
-
 func TestInspect(t *testing.T) {
 	suite.Run(t, new(InspectSuite))
 }
 
 type InspectSuite struct {
 	suite.Suite
-	ServicePort int
-	ServiceAddr string
-}
-
-func (s *InspectSuite) SetupSuite() {
-	s.ServicePort = 5555
-}
-
-func (s *InspectSuite) SetupTest() {
-	s.ServicePort++
-	s.ServiceAddr = fmt.Sprintf("127.0.0.1:%v", s.ServicePort)
 }
 
 func (s *InspectSuite) TestPostOk() {
 	inspect, app, payload := s.setup()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	srv := s.startServer(inspect)
+	defer srv.Close()
 
-	router := http.NewServeMux()
-	router.Handle("/inspect/{dapp}", inspect)
-	httpService := services.HttpService{Name: "http", Address: s.ServiceAddr, Handler: router}
-
-	result := make(chan error, 1)
-	ready := make(chan struct{}, 1)
-	go func() {
-		result <- httpService.Start(ctx, ready, service.NewLogger(slog.LevelDebug, true))
-	}()
-
-	select {
-	case <-ready:
-	case <-time.After(TestTimeout):
-		s.FailNow("timed out waiting for HttpService to be ready")
-	}
-
-	resp, err := http.Post(fmt.Sprintf("http://%v/inspect/%v", s.ServiceAddr, app.IApplicationAddress.Hex()),
+	resp, err := http.Post(fmt.Sprintf("%s/inspect/%s", srv.URL, app.IApplicationAddress.Hex()),
 		"application/octet-stream",
 		bytes.NewBuffer(payload.Bytes()))
 	if err != nil {
@@ -79,26 +50,10 @@ func (s *InspectSuite) TestPostOk() {
 func (s *InspectSuite) TestPostWithNameOk() {
 	inspect, app, payload := s.setup()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	srv := s.startServer(inspect)
+	defer srv.Close()
 
-	router := http.NewServeMux()
-	router.Handle("/inspect/{dapp}", inspect)
-	httpService := services.HttpService{Name: "http", Address: s.ServiceAddr, Handler: router}
-
-	result := make(chan error, 1)
-	ready := make(chan struct{}, 1)
-	go func() {
-		result <- httpService.Start(ctx, ready, service.NewLogger(slog.LevelDebug, true))
-	}()
-
-	select {
-	case <-ready:
-	case <-time.After(TestTimeout):
-		s.FailNow("timed out waiting for HttpService to be ready")
-	}
-
-	resp, err := http.Post(fmt.Sprintf("http://%s/inspect/%s", s.ServiceAddr, app.Name),
+	resp, err := http.Post(fmt.Sprintf("%s/inspect/%s", srv.URL, app.Name),
 		"application/octet-stream",
 		bytes.NewBuffer(payload.Bytes()))
 	if err != nil {
@@ -110,32 +65,16 @@ func (s *InspectSuite) TestPostWithNameOk() {
 func (s *InspectSuite) TestPostNoApp() {
 	inspect, _, payload := s.setup()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	srv := s.startServer(inspect)
+	defer srv.Close()
 
-	router := http.NewServeMux()
-	router.Handle("/inspect/{dapp}", inspect)
-	httpService := services.HttpService{Name: "http", Address: s.ServiceAddr, Handler: router}
-
-	result := make(chan error, 1)
-	ready := make(chan struct{}, 1)
-	go func() {
-		result <- httpService.Start(ctx, ready, service.NewLogger(slog.LevelDebug, true))
-	}()
-
-	select {
-	case <-ready:
-	case <-time.After(TestTimeout):
-		s.FailNow("timed out waiting for HttpService to be ready")
-	}
-
-	resp, err := http.Post(fmt.Sprintf("http://%s/inspect/%s", s.ServiceAddr, "Aloha"),
+	resp, err := http.Post(fmt.Sprintf("%s/inspect/%s", srv.URL, "Aloha"),
 		"application/octet-stream",
 		bytes.NewBuffer(payload.Bytes()))
 	s.Require().Nil(err)
 	s.Equal(http.StatusNotFound, resp.StatusCode)
 
-	resp, err = http.Post(fmt.Sprintf("http://%s/inspect/%s", s.ServiceAddr,
+	resp, err = http.Post(fmt.Sprintf("%s/inspect/%s", srv.URL,
 		"0x1000000000000000000000000000000000000000"),
 		"application/octet-stream",
 		bytes.NewBuffer(payload.Bytes()))
@@ -144,9 +83,6 @@ func (s *InspectSuite) TestPostNoApp() {
 }
 
 func (s *InspectSuite) TestPostMachineNotReady() {
-	// App exists in the repository but has no machine in the machines map.
-	// This simulates the startup window where the advancer hasn't created
-	// the machine instance yet. Should return 503 Service Unavailable.
 	app := &Application{
 		ID:                  42,
 		IApplicationAddress: randomAddress(),
@@ -154,7 +90,7 @@ func (s *InspectSuite) TestPostMachineNotReady() {
 	}
 	repo := newMockRepository()
 	repo.apps = append(repo.apps, app)
-	machines := newMockMachines() // no machine added for app ID 42
+	machines := newMockMachines()
 
 	inspect := &Inspector{
 		repository:       repo,
@@ -162,34 +98,17 @@ func (s *InspectSuite) TestPostMachineNotReady() {
 		Logger:           service.NewLogger(slog.LevelDebug, true),
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	srv := s.startServer(inspect)
+	defer srv.Close()
 
-	router := http.NewServeMux()
-	router.Handle("/inspect/{dapp}", inspect)
-	httpService := services.HttpService{Name: "http", Address: s.ServiceAddr, Handler: router}
-
-	ready := make(chan struct{}, 1)
-	go func() {
-		_ = httpService.Start(ctx, ready, service.NewLogger(slog.LevelDebug, true))
-	}()
-
-	select {
-	case <-ready:
-	case <-time.After(TestTimeout):
-		s.FailNow("timed out waiting for HttpService to be ready")
-	}
-
-	// Query by name
-	respByName, err := http.Post(fmt.Sprintf("http://%s/inspect/%s", s.ServiceAddr, app.Name),
+	respByName, err := http.Post(fmt.Sprintf("%s/inspect/%s", srv.URL, app.Name),
 		"application/octet-stream",
 		bytes.NewBuffer([]byte("hello")))
 	s.Require().Nil(err)
 	defer respByName.Body.Close()
 	s.Equal(http.StatusServiceUnavailable, respByName.StatusCode)
 
-	// Query by address
-	respByAddr, err := http.Post(fmt.Sprintf("http://%s/inspect/%s", s.ServiceAddr, app.IApplicationAddress.Hex()),
+	respByAddr, err := http.Post(fmt.Sprintf("%s/inspect/%s", srv.URL, app.IApplicationAddress.Hex()),
 		"application/octet-stream",
 		bytes.NewBuffer([]byte("hello")))
 	s.Require().Nil(err)
@@ -199,17 +118,16 @@ func (s *InspectSuite) TestPostMachineNotReady() {
 
 func (s *InspectSuite) TestPostMaxPayloadSize() {
 	inspect, app, _ := s.setup()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	s.startServer(ctx, inspect)
 
-	// A payload exactly at the max size should be accepted.
+	srv := s.startServer(inspect)
+	defer srv.Close()
+
 	payload := make([]byte, maxPayloadSize)
 	_, err := crand.Read(payload)
 	s.Require().NoError(err)
 
 	resp, err := http.Post(
-		fmt.Sprintf("http://%s/inspect/%s", s.ServiceAddr, app.IApplicationAddress.Hex()),
+		fmt.Sprintf("%s/inspect/%s", srv.URL, app.IApplicationAddress.Hex()),
 		"application/octet-stream",
 		bytes.NewReader(payload))
 	s.Require().NoError(err)
@@ -225,17 +143,16 @@ func (s *InspectSuite) TestPostMaxPayloadSize() {
 
 func (s *InspectSuite) TestPostPayloadTooLarge() {
 	inspect, app, _ := s.setup()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	s.startServer(ctx, inspect)
 
-	// A payload one byte over the max size should be rejected.
+	srv := s.startServer(inspect)
+	defer srv.Close()
+
 	payload := make([]byte, maxPayloadSize+1)
 	_, err := crand.Read(payload)
 	s.Require().NoError(err)
 
 	resp, err := http.Post(
-		fmt.Sprintf("http://%s/inspect/%s", s.ServiceAddr, app.IApplicationAddress.Hex()),
+		fmt.Sprintf("%s/inspect/%s", srv.URL, app.IApplicationAddress.Hex()),
 		"application/octet-stream",
 		bytes.NewReader(payload))
 	s.Require().NoError(err)
@@ -243,21 +160,10 @@ func (s *InspectSuite) TestPostPayloadTooLarge() {
 	s.Equal(http.StatusRequestEntityTooLarge, resp.StatusCode)
 }
 
-func (s *InspectSuite) startServer(ctx context.Context, inspect *Inspector) {
+func (s *InspectSuite) startServer(inspect *Inspector) *httptest.Server {
 	router := http.NewServeMux()
 	router.Handle("/inspect/{dapp}", inspect)
-	httpService := services.HttpService{Name: "http", Address: s.ServiceAddr, Handler: router}
-
-	ready := make(chan struct{}, 1)
-	go func() {
-		_ = httpService.Start(ctx, ready, service.NewLogger(slog.LevelDebug, true))
-	}()
-
-	select {
-	case <-ready:
-	case <-time.After(TestTimeout):
-		s.FailNow("timed out waiting for HttpService to be ready")
-	}
+	return httptest.NewServer(router)
 }
 
 func (s *InspectSuite) setup() (*Inspector, *Application, common.Hash) {
@@ -330,6 +236,7 @@ func (mock *MockMachine) Inspect(
 	return &res, nil
 }
 
+// Not used in inspect tests, but needed to satisfy the interface
 func (mock *MockMachine) Advance(
 	_ context.Context,
 	input []byte,
@@ -337,7 +244,6 @@ func (mock *MockMachine) Advance(
 	_ uint64,
 	_ bool,
 ) (*AdvanceResult, error) {
-	// Not used in inspect tests, but needed to satisfy the interface
 	return nil, nil
 }
 
@@ -353,24 +259,23 @@ func (m *MockMachine) OutputsProof(ctx context.Context) (*OutputsProof, error) {
 	return nil, nil
 }
 
+// Not used in inspect tests, but needed to satisfy the interface
 func (mock *MockMachine) Synchronize(ctx context.Context, repo manager.MachineRepository, batchSize uint64) error {
-	// Not used in inspect tests, but needed to satisfy the interface
 	return nil
 }
 
+// Not used in inspect tests, but needed to satisfy the interface
 func (mock *MockMachine) CreateSnapshot(ctx context.Context, processedInputs uint64, path string) error {
-	// Not used in inspect tests, but needed to satisfy the interface
 	return nil
 }
 
 // Retrieves the hash of the current machine state
 func (m *MockMachine) Hash(ctx context.Context) ([32]byte, error) {
-	// Not used in inspect tests, but needed to satisfy the interface
 	return [32]byte{}, nil
 }
 
+// Not used in inspect tests, but needed to satisfy the interface
 func (mock *MockMachine) Close() error {
-	// Not used in inspect tests, but needed to satisfy the interface
 	return nil
 }
 
