@@ -160,3 +160,39 @@ func RecoverMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// HandlerOptions bundles the middleware dependencies for
+// [NewServiceHandler]. Logger must be non-nil. Admission may be nil to
+// disable admission control, and CORS may be the zero value
+// ([CORSConfig]{}) to disable CORS.
+type HandlerOptions struct {
+	Logger    *slog.Logger
+	Admission *SemaphoreAdmission
+	CORS      CORSConfig
+}
+
+// NewServiceHandler wraps h with the node's canonical HTTP hardening
+// chain, in order:
+//
+//	RecoverMiddleware -> RequestIDMiddleware -> CORSMiddleware -> AdmissionMiddleware -> h
+//
+// RecoverMiddleware is outermost so it also catches panics raised inside
+// RequestIDMiddleware itself (e.g. an entropy-source failure inside
+// uuid.NewString). Without this ordering such a panic would escape to
+// net/http's default goroutine recover, dropping the connection with no
+// structured log and no 500 response.
+//
+// CORSMiddleware sits outside AdmissionMiddleware so preflight OPTIONS
+// requests and requests from disallowed origins never consume an
+// admission permit.
+//
+// Centralizing the chain here makes the order a property of the helper,
+// not of every call site, so every HTTP surface in the node has the same
+// posture.
+func NewServiceHandler(h http.Handler, opts HandlerOptions) http.Handler {
+	h = AdmissionMiddleware(opts.Admission)(h)
+	h = CORSMiddleware(opts.CORS)(h)
+	h = RequestIDMiddleware(h)
+	h = RecoverMiddleware(opts.Logger)(h)
+	return h
+}

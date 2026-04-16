@@ -394,3 +394,88 @@ func TestRecoverMiddleware_RealServer_PanicAfterFlushDropsConnection(t *testing.
 	require.Contains(t, logged, "http handler panic")
 	require.Contains(t, logged, "kaboom")
 }
+
+// -----------------------------------------------------------------------------
+// NewServiceHandler
+// -----------------------------------------------------------------------------
+
+// TestNewServiceHandler_PanicBecomes500WithRequestID pins the canonical
+// end-to-end invariant of the chain: a panic from the wrapped handler is
+// turned into a clean 500 by Recover (outermost), and the request id
+// provided by the caller is echoed on the response header so operators
+// can correlate.
+func TestNewServiceHandler_PanicBecomes500WithRequestID(t *testing.T) {
+	var buf bytes.Buffer
+	panicking := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		panic(errors.New("boom"))
+	})
+
+	h := NewServiceHandler(panicking, HandlerOptions{Logger: captureLogger(&buf)})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Request-ID", "chain-id")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusInternalServerError, rr.Code)
+	require.Equal(t, "chain-id", rr.Header().Get("X-Request-ID"))
+	require.Contains(t, buf.String(), "chain-id")
+}
+
+// TestNewServiceHandler_NilAdmissionAndDisabledCORS confirms the helper
+// tolerates the common "no admission, no CORS" configuration: the inner
+// handler must still be reached and the request id still flows through.
+func TestNewServiceHandler_NilAdmissionAndDisabledCORS(t *testing.T) {
+	var buf bytes.Buffer
+	var seenID string
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenID = RequestIDFromContext(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+
+	h := NewServiceHandler(inner, HandlerOptions{Logger: captureLogger(&buf)})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.NotEmpty(t, seenID)
+	require.Equal(t, seenID, rr.Header().Get("X-Request-ID"))
+}
+
+// TestNewServiceHandler_CORSShortCircuitsBeforeAdmission verifies the
+// ordering property that disallowed-origin preflights are rejected by
+// CORS before consuming an admission permit. A semaphore of size 1
+// followed by a preflight from a disallowed origin must leave the permit
+// free for a subsequent real request.
+func TestNewServiceHandler_CORSShortCircuitsBeforeAdmission(t *testing.T) {
+	admission := NewSemaphoreAdmission(1)
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	cors := ParseCORSConfig(captureLogger(new(bytes.Buffer)),
+		"https://allowed.example", []string{"POST", "OPTIONS"}, []string{"Content-Type"})
+
+	h := NewServiceHandler(inner, HandlerOptions{
+		Logger:    captureLogger(new(bytes.Buffer)),
+		Admission: admission,
+		CORS:      cors,
+	})
+
+	// Preflight from a disallowed origin: CORS returns 204 without calling
+	// the admission middleware, so the permit stays free.
+	preflight := httptest.NewRequest(http.MethodOptions, "/", nil)
+	preflight.Header.Set("Origin", "https://evil.example")
+	preflight.Header.Set("Access-Control-Request-Method", "POST")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, preflight)
+	require.Equal(t, http.StatusNoContent, rr.Code)
+
+	// A real request must still be admitted — if CORS had consumed the
+	// only permit, this would be rejected with 503.
+	realReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr2 := httptest.NewRecorder()
+	h.ServeHTTP(rr2, realReq)
+	require.Equal(t, http.StatusOK, rr2.Code)
+}
