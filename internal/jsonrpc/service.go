@@ -32,6 +32,7 @@ type Service struct {
 	service.Service
 	repository repository.Repository
 	server     *http.Server
+	admission  *service.SemaphoreAdmission
 	inputABI   *abi.ABI
 	outputABI  *abi.ABI
 	// listen opens the HTTP listener. It defaults to net.Listen and is
@@ -76,10 +77,15 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		return nil, err
 	}
 
+	if c.Config.JsonrpcMaxInflight > 0 {
+		s.admission = service.NewSemaphoreAdmission(c.Config.JsonrpcMaxInflight)
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rpc", s.handleRPC)
 
 	var handler http.Handler = mux
+	handler = service.AdmissionMiddleware(s.admission)(handler)
 	handler = services.CorsMiddleware(handler) // FIXME: add proper cors config
 	handler = service.RequestIDMiddleware(handler)
 	// RecoverMiddleware is outermost so it catches panics from every layer,

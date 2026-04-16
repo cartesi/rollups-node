@@ -445,6 +445,16 @@ description = """
 HTTP address for the JSON-RPC API."""
 used-by = ["jsonrpc", "node"]
 
+[http.CARTESI_JSONRPC_MAX_INFLIGHT]
+default = "64"
+go-type = "uint64"
+description = """
+Maximum number of concurrent in-flight JSON-RPC requests.
+Requests beyond this limit receive HTTP 503 Service Unavailable
+with Retry-After: 1. Set to 0 to disable HTTP-level admission
+control."""
+used-by = ["jsonrpc", "node"]
+
 [http.CARTESI_INSPECT_ADDRESS]
 default = ":10012"
 go-type = "string"

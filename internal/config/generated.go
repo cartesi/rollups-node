@@ -53,6 +53,7 @@ const (
 	INSPECT_URL                                       = "CARTESI_INSPECT_URL"
 	JSONRPC_API_ADDRESS                               = "CARTESI_JSONRPC_API_ADDRESS"
 	JSONRPC_API_URL                                   = "CARTESI_JSONRPC_API_URL"
+	JSONRPC_MAX_INFLIGHT                              = "CARTESI_JSONRPC_MAX_INFLIGHT"
 	JSONRPC_TELEMETRY_ADDRESS                         = "CARTESI_JSONRPC_TELEMETRY_ADDRESS"
 	NODE_TELEMETRY_ADDRESS                            = "CARTESI_NODE_TELEMETRY_ADDRESS"
 	PRT_TELEMETRY_ADDRESS                             = "CARTESI_PRT_TELEMETRY_ADDRESS"
@@ -159,6 +160,8 @@ func SetDefaults() {
 	viper.SetDefault(JSONRPC_API_ADDRESS, ":10011")
 
 	viper.SetDefault(JSONRPC_API_URL, "http://localhost:10011/rpc")
+
+	viper.SetDefault(JSONRPC_MAX_INFLIGHT, "64")
 
 	viper.SetDefault(JSONRPC_TELEMETRY_ADDRESS, ":10005")
 
@@ -776,6 +779,12 @@ type JsonrpcConfig struct {
 	// HTTP address for the JSON-RPC API.
 	JsonrpcApiAddress string `mapstructure:"CARTESI_JSONRPC_API_ADDRESS"`
 
+	// Maximum number of concurrent in-flight JSON-RPC requests.
+	// Requests beyond this limit receive HTTP 503 Service Unavailable
+	// with Retry-After: 1. Set to 0 to disable HTTP-level admission
+	// control.
+	JsonrpcMaxInflight uint64 `mapstructure:"CARTESI_JSONRPC_MAX_INFLIGHT"`
+
 	// HTTP address for JSON-RPC's telemetry service.
 	JsonrpcTelemetryAddress string `mapstructure:"CARTESI_JSONRPC_TELEMETRY_ADDRESS"`
 
@@ -815,6 +824,13 @@ func LoadJsonrpcConfig() (*JsonrpcConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_JSONRPC_API_ADDRESS: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_JSONRPC_API_ADDRESS is required for the jsonrpc service: %w", err)
+	}
+
+	cfg.JsonrpcMaxInflight, err = GetJsonrpcMaxInflight()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_JSONRPC_MAX_INFLIGHT: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_JSONRPC_MAX_INFLIGHT is required for the jsonrpc service: %w", err)
 	}
 
 	cfg.JsonrpcTelemetryAddress, err = GetJsonrpcTelemetryAddress()
@@ -906,6 +922,12 @@ type NodeConfig struct {
 
 	// HTTP address for the JSON-RPC API.
 	JsonrpcApiAddress string `mapstructure:"CARTESI_JSONRPC_API_ADDRESS"`
+
+	// Maximum number of concurrent in-flight JSON-RPC requests.
+	// Requests beyond this limit receive HTTP 503 Service Unavailable
+	// with Retry-After: 1. Set to 0 to disable HTTP-level admission
+	// control.
+	JsonrpcMaxInflight uint64 `mapstructure:"CARTESI_JSONRPC_MAX_INFLIGHT"`
 
 	// HTTP address for Node's telemetry service.
 	NodeTelemetryAddress string `mapstructure:"CARTESI_NODE_TELEMETRY_ADDRESS"`
@@ -1074,6 +1096,13 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_JSONRPC_API_ADDRESS: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_JSONRPC_API_ADDRESS is required for the node service: %w", err)
+	}
+
+	cfg.JsonrpcMaxInflight, err = GetJsonrpcMaxInflight()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_JSONRPC_MAX_INFLIGHT: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_JSONRPC_MAX_INFLIGHT is required for the node service: %w", err)
 	}
 
 	cfg.NodeTelemetryAddress, err = GetNodeTelemetryAddress()
@@ -1548,6 +1577,7 @@ func (c *NodeConfig) ToJsonrpcConfig() *JsonrpcConfig {
 	return &JsonrpcConfig{
 		DatabaseConnection: c.DatabaseConnection,
 		JsonrpcApiAddress:  c.JsonrpcApiAddress,
+		JsonrpcMaxInflight: c.JsonrpcMaxInflight,
 		LogColor:           c.LogColor,
 		LogLevel:           c.LogLevel,
 		MaxStartupTime:     c.MaxStartupTime,
@@ -2035,6 +2065,19 @@ func GetJsonrpcApiUrl() (string, error) {
 		return v, nil
 	}
 	return notDefinedstring(), fmt.Errorf("%s: %w", JSONRPC_API_URL, ErrNotDefined)
+}
+
+// GetJsonrpcMaxInflight returns the value for the environment variable CARTESI_JSONRPC_MAX_INFLIGHT.
+func GetJsonrpcMaxInflight() (uint64, error) {
+	s := viper.GetString(JSONRPC_MAX_INFLIGHT)
+	if s != "" {
+		v, err := toUint64(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", JSONRPC_MAX_INFLIGHT, err)
+		}
+		return v, nil
+	}
+	return notDefineduint64(), fmt.Errorf("%s: %w", JSONRPC_MAX_INFLIGHT, ErrNotDefined)
 }
 
 // GetJsonrpcTelemetryAddress returns the value for the environment variable CARTESI_JSONRPC_TELEMETRY_ADDRESS.

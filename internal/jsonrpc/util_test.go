@@ -71,6 +71,13 @@ type testRPCResponse[T any] struct {
 }
 
 func newTestService(t *testing.T, name string) *Service {
+	return newTestServiceWithInflight(t, name, 0)
+}
+
+// newTestServiceWithInflight is like newTestService but lets the caller
+// set CARTESI_JSONRPC_MAX_INFLIGHT for admission-control tests. A value
+// of 0 disables admission (the Create-time nil-admission path).
+func newTestServiceWithInflight(t *testing.T, name string, maxInflight uint64) *Service {
 	ctx := context.Background()
 
 	dbTestEndpoint, err := db.GetTestDatabaseEndpoint()
@@ -90,6 +97,9 @@ func newTestService(t *testing.T, name string) *Service {
 			Name:     name,
 			LogLevel: logLevel,
 			LogColor: true,
+		},
+		Config: config.JsonrpcConfig{
+			JsonrpcMaxInflight: maxInflight,
 		},
 		Repository: repo,
 	}
