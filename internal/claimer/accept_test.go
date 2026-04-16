@@ -32,14 +32,15 @@ func TestAcceptFirstClaim(t *testing.T) {
 	currEpoch := makeSubmittedEpoch(app, 3)
 	var prevEvent *iconsensus.IConsensusClaimAccepted = nil
 	currEvent := makeAcceptedEvent(app, currEpoch)
+	ctx := context.Background()
 
 	b.On("findClaimAcceptedEventAndSucc", mock.Anything, app, currEpoch, currEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil).Once()
 	b.On("getConsensusAddress", mock.Anything, app, mock.Anything).
 		Return(app.IConsensusAddress, nil).Once()
 
-	_, errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, len(errs), 0)
+	_, err := m.acceptClaimsAndUpdateDatabase(ctx, makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.NoError(t, err)
 }
 
 func TestAcceptClaimWithAntecessor(t *testing.T) {
@@ -61,8 +62,8 @@ func TestAcceptClaimWithAntecessor(t *testing.T) {
 	r.On("UpdateEpochWithAcceptedClaim", mock.Anything, app.ID, currEpoch.Index, mock.Anything).
 		Return(nil).Once()
 
-	transitions, errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 0, len(errs))
+	transitions, err := m.acceptClaimsAndUpdateDatabase(context.Background(), makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, transitions, "accepting a claim counts as a transition")
 }
 
@@ -87,8 +88,8 @@ func TestFindClaimAcceptedEventAndSuccFailure0(t *testing.T) {
 	b.On("findClaimAcceptedEventAndSucc", mock.Anything, app, currEpoch, currEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, expectedErr).Once()
 
-	_, errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs))
+	_, err := m.acceptClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err)
 }
 
 func TestFindClaimAcceptedEventAndSuccFailure1(t *testing.T) {
@@ -110,8 +111,8 @@ func TestFindClaimAcceptedEventAndSuccFailure1(t *testing.T) {
 	b.On("findClaimAcceptedEventAndSucc", mock.Anything, app, prevEpoch, prevEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, expectedErr).Once()
 
-	_, errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs))
+	_, err := m.acceptClaimsAndUpdateDatabase(context.Background(), makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err)
 }
 
 // !claimAcceptedMatch(prevClaim, prevEvent)
@@ -141,8 +142,8 @@ func TestAcceptClaimWithAntecessorMismatch(t *testing.T) {
 	r.On("UpdateApplicationStatus", mock.Anything, mock.Anything, model.ApplicationStatus_Diverged, mock.Anything).
 		Return(nil).Once()
 
-	_, errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs))
+	_, err := m.acceptClaimsAndUpdateDatabase(context.Background(), makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err)
 }
 
 // !claimAcceptedMatch(currClaim, currEvent)
@@ -166,8 +167,8 @@ func TestAcceptClaimWithEventMismatch(t *testing.T) {
 	r.On("UpdateApplicationStatus", mock.Anything, mock.Anything, model.ApplicationStatus_Diverged, mock.Anything).
 		Return(nil).Once()
 
-	_, errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs))
+	_, err := m.acceptClaimsAndUpdateDatabase(context.Background(), makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err)
 }
 
 // !checkClaimsConstraint(prevClaim, currClaim)
@@ -186,8 +187,8 @@ func TestAcceptClaimWithAntecessorOutOfOrder(t *testing.T) {
 		Return(nil).
 		Once()
 
-	_, errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(wrongEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), big.NewInt(0))
-	assert.Equal(t, 1, len(errs))
+	_, err := m.acceptClaimsAndUpdateDatabase(context.Background(), makeEpochMap(wrongEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), big.NewInt(0))
+	assert.Error(t, err)
 }
 
 func TestErrAcceptedMissingEvent(t *testing.T) {
@@ -209,8 +210,8 @@ func TestErrAcceptedMissingEvent(t *testing.T) {
 	r.On("UpdateApplicationStatus", mock.Anything, mock.Anything, model.ApplicationStatus_Corrupted, mock.Anything).
 		Return(nil).Once()
 
-	_, errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs))
+	_, err := m.acceptClaimsAndUpdateDatabase(context.Background(), makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err)
 }
 
 func TestUpdateEpochWithAcceptedClaimFailed(t *testing.T) {
@@ -234,8 +235,8 @@ func TestUpdateEpochWithAcceptedClaimFailed(t *testing.T) {
 	r.On("UpdateEpochWithAcceptedClaim", mock.Anything, app.ID, currEpoch.Index, mock.Anything).
 		Return(expectedErr).Once()
 
-	_, errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs))
+	_, err := m.acceptClaimsAndUpdateDatabase(context.Background(), makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err)
 }
 
 func TestConsensusAddressChangedOnAcceptedClaims(t *testing.T) {
@@ -256,8 +257,8 @@ func TestConsensusAddressChangedOnAcceptedClaims(t *testing.T) {
 		Return(nil).
 		Once()
 
-	_, errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, len(errs), 1)
+	_, err := m.acceptClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err)
 }
 
 func TestAcceptStagedFrontRunner(t *testing.T) {
@@ -278,8 +279,8 @@ func TestAcceptStagedFrontRunner(t *testing.T) {
 	r.On("UpdateEpochWithAcceptedClaim", mock.Anything, app.ID, currEpoch.Index, mock.Anything).
 		Return(nil).Once()
 
-	transitions, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 0, len(errs))
+	transitions, err := m.acceptStagedClaimsAndIssueAcceptTx(context.Background(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, transitions)
 	assert.Equal(t, 0, len(m.acceptsInFlight))
 }
@@ -303,8 +304,8 @@ func TestAcceptStagedBroadcastsWhenClaimStillStaged(t *testing.T) {
 	b.On("acceptClaimOnBlockchain", mock.Anything, app, currEpoch).
 		Return(txHash, nil).Once()
 
-	transitions, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 0, len(errs))
+	transitions, err := m.acceptStagedClaimsAndIssueAcceptTx(context.Background(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.NoError(t, err)
 	assert.Equal(t, 0, transitions, "broadcasting acceptClaim records in-flight work but does not update DB yet")
 
 	got, ok := m.acceptsInFlight[app.ID]
@@ -334,8 +335,8 @@ func TestAcceptStagedFrontRunnerOutputsMismatchSetsDiverged(t *testing.T) {
 	r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Diverged, mock.Anything).
 		Return(nil).Once()
 
-	transitions, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs))
+	transitions, err := m.acceptStagedClaimsAndIssueAcceptTx(context.Background(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err)
 	assert.Equal(t, 0, transitions)
 	assert.Equal(t, 0, len(m.acceptsInFlight))
 }
@@ -362,10 +363,10 @@ func TestAcceptStagedUnmodeledClaimStatusFailsClosed(t *testing.T) {
 	r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed, mock.Anything).
 		Return(nil).Once()
 
-	transitions, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	transitions, err := m.acceptStagedClaimsAndIssueAcceptTx(context.Background(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	assert.Equal(t, 0, transitions)
 	// SetFailedf returns nil on success; the FAILED write is asserted by the mock.
-	assert.Equal(t, 0, len(errs))
+	assert.NoError(t, err)
 	assert.Equal(t, 0, len(m.acceptsInFlight), "no acceptClaim broadcast on an unmodeled status")
 }
 
@@ -392,10 +393,11 @@ func TestAcceptStagedForeclosesForeclosedApp(t *testing.T) {
 	// CRITICAL: no acceptClaimOnBlockchain expectation — testify reports
 	// an unexpected call if the guard fails.
 
-	transitions, errs := m.acceptStagedClaimsAndIssueAcceptTx(
-		makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	ctx := context.Background()
+	transitions, err := m.acceptStagedClaimsAndIssueAcceptTx(
+		ctx, makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 
-	assert.Equal(t, 0, len(errs))
+	assert.NoError(t, err)
 	assert.Equal(t, 1, transitions)
 	assert.Equal(t, model.EpochStatus_ClaimForeclosed, currEpoch.Status)
 	assert.Equal(t, 0, len(m.acceptsInFlight),
@@ -431,10 +433,11 @@ func TestAcceptStagedForeclosesForeclosedAppOnUnstaged(t *testing.T) {
 	// unexpected call if the foreclosure guard fails and any FAILED/DIVERGED/
 	// CORRUPTED write is attempted.
 
-	transitions, errs := m.acceptStagedClaimsAndIssueAcceptTx(
-		makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	ctx := context.Background()
+	transitions, err := m.acceptStagedClaimsAndIssueAcceptTx(
+		ctx, makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 
-	assert.Equal(t, 0, len(errs))
+	assert.NoError(t, err)
 	assert.Equal(t, 1, transitions)
 	assert.Equal(t, model.EpochStatus_ClaimForeclosed, currEpoch.Status)
 	assert.Equal(t, model.ApplicationStatus_OK, app.Status,
@@ -467,9 +470,9 @@ func TestAcceptStagedCapEnforced(t *testing.T) {
 	r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed, mock.Anything).
 		Return(nil).Once()
 
-	_, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	_, err := m.acceptStagedClaimsAndIssueAcceptTx(context.Background(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	// SetFailedf returns nil on success — no error surfaced.
-	assert.Equal(t, 0, len(errs))
+	assert.NoError(t, err)
 	assert.Equal(t, 0, len(m.acceptsInFlight))
 	// Counter cleared once FAILED is set.
 	_, present := m.acceptAttempts[acceptAttemptKey{currEpoch.ApplicationID, currEpoch.Index}]
@@ -488,6 +491,7 @@ func TestAcceptStagedUnknownBroadcastErrorsIncrementAttemptsUntilCap(t *testing.
 	currEpoch := makeStagedEpoch(app, 3, stagedAt)
 	attemptKey := acceptAttemptKey{currEpoch.ApplicationID, currEpoch.Index}
 	broadcastErr := fmt.Errorf("gas estimation failed")
+	ctx := context.Background()
 
 	for i := uint64(1); i <= m.maxAcceptAttempts; i++ {
 		b.On("getConsensusAddress", mock.Anything, app, mock.Anything).
@@ -497,11 +501,10 @@ func TestAcceptStagedUnknownBroadcastErrorsIncrementAttemptsUntilCap(t *testing.
 		b.On("acceptClaimOnBlockchain", mock.Anything, app, currEpoch).
 			Return(common.Hash{}, broadcastErr).Once()
 
-		transitions, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+		transitions, err := m.acceptStagedClaimsAndIssueAcceptTx(ctx, makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 
 		assert.Equal(t, 0, transitions)
-		require.Equal(t, 1, len(errs))
-		assert.ErrorIs(t, errs[0], broadcastErr)
+		assert.ErrorIs(t, err, broadcastErr)
 		assert.Equal(t, i, m.acceptAttempts[attemptKey])
 		assert.Equal(t, 0, len(m.acceptsInFlight))
 	}
@@ -515,10 +518,10 @@ func TestAcceptStagedUnknownBroadcastErrorsIncrementAttemptsUntilCap(t *testing.
 	})).
 		Return(nil).Once()
 
-	transitions, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	transitions, err := m.acceptStagedClaimsAndIssueAcceptTx(ctx, makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 
 	assert.Equal(t, 0, transitions)
-	assert.Equal(t, 0, len(errs), "marking FAILED after the cap is a state transition outcome, not a tick error")
+	assert.NoError(t, err, "marking FAILED after the cap is a state transition outcome, not a tick error")
 	assert.Equal(t, model.ApplicationStatus_Failed, app.Status)
 	assert.NotContains(t, m.acceptAttempts, attemptKey)
 	assert.Equal(t, 0, len(m.acceptsInFlight))
@@ -548,8 +551,9 @@ func TestAcceptClaimNotStagedAcceptedRechecksOutputsMismatch(t *testing.T) {
 	r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Diverged, mock.Anything).
 		Return(nil).Once()
 
-	transitions, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs))
+	ctx := context.Background()
+	transitions, err := m.acceptStagedClaimsAndIssueAcceptTx(ctx, makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err)
 	assert.Equal(t, 0, transitions)
 	assert.Equal(t, 0, len(m.acceptsInFlight))
 }
@@ -568,8 +572,8 @@ func TestAcceptStagedPeriodNotElapsed(t *testing.T) {
 		Return(app.IConsensusAddress, nil).Once()
 
 	endBlock := big.NewInt(60) // only 10 blocks elapsed; need 100.
-	transitions, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 0, len(errs))
+	transitions, err := m.acceptStagedClaimsAndIssueAcceptTx(context.Background(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.NoError(t, err)
 	assert.Equal(t, 0, transitions)
 	assert.Equal(t, 0, len(m.acceptsInFlight))
 }
@@ -591,8 +595,8 @@ func TestAcceptStagedReaderMode(t *testing.T) {
 	b.On("getConsensusAddress", mock.Anything, app, mock.Anything).
 		Return(app.IConsensusAddress, nil).Once()
 
-	transitions, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 0, len(errs))
+	transitions, err := m.acceptStagedClaimsAndIssueAcceptTx(context.Background(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.NoError(t, err)
 	assert.Equal(t, 0, transitions)
 	assert.Equal(t, 0, len(m.acceptsInFlight))
 }
@@ -628,8 +632,8 @@ func TestAcceptanceDivergence_QuorumStagedDoesNotRejectEpoch(t *testing.T) {
 	})).
 		Return(nil).Once()
 
-	_, errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs))
+	_, err := m.acceptClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err)
 	assert.Equal(t, model.ApplicationStatus_Diverged, app.Status)
 	assert.Equal(t, model.EpochStatus_ClaimStaged, currEpoch.Status)
 }
@@ -663,8 +667,8 @@ func TestAcceptanceDivergence_QuorumComputedRejectsEpoch(t *testing.T) {
 			ApplicationDiverged: true,
 		}, nil).Once()
 
-	_, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs))
+	_, err := m.submitClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err)
 	assert.Equal(t, model.ApplicationStatus_Diverged, app.Status)
 	assert.Equal(t, model.EpochStatus_ClaimRejected, currEpoch.Status)
 }
@@ -694,8 +698,8 @@ func TestAcceptanceDivergence_AuthorityComputedSetsDivergedWithoutRejectingEpoch
 	})).
 		Return(nil).Once()
 
-	_, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs))
+	_, err := m.submitClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err)
 	assert.Equal(t, model.ApplicationStatus_Diverged, app.Status)
 	assert.Equal(t, model.EpochStatus_ClaimComputed, currEpoch.Status)
 }
@@ -724,8 +728,8 @@ func TestAcceptanceDivergence_AuthorityDoesNotRejectEpoch(t *testing.T) {
 	r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Diverged, mock.Anything).
 		Return(nil).Once()
 
-	_, errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs))
+	_, err := m.acceptClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err)
 	assert.Equal(t, model.ApplicationStatus_Diverged, app.Status)
 	assert.Equal(t, model.EpochStatus_ClaimStaged, currEpoch.Status)
 }
@@ -763,8 +767,8 @@ func TestAcceptanceDivergenceReaderMode_Quorum(t *testing.T) {
 	})).
 		Return(nil).Once()
 
-	_, errs := m.acceptClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs), "acceptance divergence detection must fire in reader mode")
+	_, err := m.acceptClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err, "acceptance divergence detection must fire in reader mode")
 	assert.Equal(t, model.EpochStatus_ClaimStaged, currEpoch.Status)
 }
 
@@ -801,11 +805,10 @@ func TestAcceptClaimTimeout(t *testing.T) {
 		}).
 		Return(common.Hash{}, context.DeadlineExceeded).Once()
 
-	transitions, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	transitions, err := m.acceptStagedClaimsAndIssueAcceptTx(t.Context(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 
 	assert.Equal(t, 0, transitions)
-	require.Equal(t, 1, len(errs))
-	assert.ErrorIs(t, errs[0], context.DeadlineExceeded)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.Equal(t, uint64(1), m.acceptAttempts[attemptKey])
 	assert.Equal(t, 0, len(m.acceptsInFlight))
 }
@@ -815,9 +818,8 @@ func TestAcceptClaimContextCanceled(t *testing.T) {
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
-	svcCtx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	m.Context = svcCtx
 	m.submissionTimeout = 2 * time.Second
 
 	endBlock := big.NewInt(100)
@@ -848,11 +850,10 @@ func TestAcceptClaimContextCanceled(t *testing.T) {
 		cancel()
 	}()
 
-	transitions, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	transitions, err := m.acceptStagedClaimsAndIssueAcceptTx(ctx, makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 
 	assert.Equal(t, 0, transitions)
-	require.Equal(t, 1, len(errs))
-	assert.ErrorIs(t, errs[0], context.Canceled)
+	assert.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, uint64(1), m.acceptAttempts[attemptKey])
 	assert.Equal(t, 0, len(m.acceptsInFlight))
 }

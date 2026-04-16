@@ -18,7 +18,9 @@ import (
 func TestBuildIConsensusInputScanUnits_GroupsByInputBoxAndCursor(t *testing.T) {
 	ctx := context.Background()
 	reader := &Service{
-		Service: service.Service{Logger: testLogger(t)},
+		TickServiceTemplate: service.TickServiceTemplate{
+			BaseTemplate: service.BaseTemplate{Logger: testLogger(t)},
+		},
 	}
 	inputBoxA := common.HexToAddress("0x00000000000000000000000000000000000000a1")
 	inputBoxB := common.HexToAddress("0x00000000000000000000000000000000000000b1")
@@ -111,7 +113,9 @@ func TestBuildIConsensusInputScanUnits_InitializesBeforeGrouping(t *testing.T) {
 	repo.On("UpdateEventLastCheckBlock", mock.Anything, []int64{int64(1)}, MonitoredEvent_InputAdded, uint64(6)).
 		Return(nil).Once()
 	reader := &Service{
-		Service:    service.Service{Logger: testLogger(t)},
+		TickServiceTemplate: service.TickServiceTemplate{
+			BaseTemplate: service.BaseTemplate{Logger: testLogger(t)},
+		},
 		repository: repo,
 	}
 	inputBox := common.HexToAddress("0x00000000000000000000000000000000000000a1")
@@ -130,7 +134,9 @@ func TestBuildIConsensusInputScanUnits_InitializesBeforeGrouping(t *testing.T) {
 func TestBuildIConsensusInputScanUnits_FailedInitializationExcludesOnlyThatApp(t *testing.T) {
 	ctx := context.Background()
 	reader := &Service{
-		Service: service.Service{Logger: testLogger(t)},
+		TickServiceTemplate: service.TickServiceTemplate{
+			BaseTemplate: service.BaseTemplate{Logger: testLogger(t)},
+		},
 	}
 	inputBox := common.HexToAddress("0x00000000000000000000000000000000000000a1")
 	broken := inputUnitApp(1, inputBox, 0, true)

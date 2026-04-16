@@ -21,7 +21,7 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocksFilteredByDA() {
 	s.client.EnqueueNewHead(0x13).Once()
 	called, blocked := newBlockedCallNotification(s.client.EnqueueNewHead(0x13))
 
-	go s.evmReader.Serve() //nolint: errcheck
+	go s.evmReader.Serve(s.ctx) //nolint: errcheck
 
 	s.Require().True(waitNotification(called), "evmreader did not read new header")
 
@@ -101,7 +101,7 @@ func (s *EvmReaderSuite) TestItUpdatesLastInputCheckBlockWhenThereIsNoInputs() {
 	called, blocked := newBlockedCallNotification(s.client.EnqueueNewHead(0x13))
 
 	// Start service
-	go s.evmReader.Serve() //nolint: errcheck
+	go s.evmReader.Serve(s.ctx) //nolint: errcheck
 
 	s.Require().True(waitNotification(called), "evmreader did not read new header")
 
@@ -217,7 +217,7 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 	called, blocked := newBlockedCallNotification(s.client.EnqueueNewHead(0x13))
 
 	// Start service
-	go s.evmReader.Serve() //nolint: errcheck
+	go s.evmReader.Serve(s.ctx) //nolint: errcheck
 
 	s.Require().True(waitNotification(called), "evmreader did not read new header")
 
@@ -282,7 +282,7 @@ func (s *EvmReaderSuite) TestItStartsWhenLastProcessedBlockIsTheMostRecentBlock(
 	called, blocked := newBlockedCallNotification(s.client.EnqueueNewHead(0x13))
 
 	// Start service
-	go s.evmReader.Serve() //nolint: errcheck
+	go s.evmReader.Serve(s.ctx) //nolint: errcheck
 
 	s.Require().True(waitNotification(called), "evmreader did not read new header")
 

@@ -11,7 +11,6 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/pkg/service"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -19,9 +18,6 @@ import (
 )
 
 func TestCreateUsesPersistedDefaultBlock(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-
 	persistedConfig := PersistentConfig{
 		DefaultBlock:           model.DefaultBlock_Latest,
 		ClaimSubmissionEnabled: false,
@@ -34,12 +30,9 @@ func TestCreateUsesPersistedDefaultBlock(t *testing.T) {
 	repo.On("LoadNodeConfigRaw", mock.Anything, ClaimerConfigKey).
 		Return(rawConfig, time.Now(), time.Now(), nil).Once()
 
-	s, err := Create(ctx, &CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Context:      ctx,
-			PollInterval: time.Hour,
-		},
+	s, err := Create(context.Background(), &CreateInfo{
 		Config: config.ClaimerConfig{
+			ClaimerPollingInterval:        time.Hour,
 			BlockchainDefaultBlock:        model.DefaultBlock_Finalized,
 			BlockchainId:                  42,
 			FeatureClaimSubmissionEnabled: true,
@@ -48,19 +41,13 @@ func TestCreateUsesPersistedDefaultBlock(t *testing.T) {
 		Repository: repo,
 	})
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		if s.Ticker != nil {
-			s.Ticker.Stop()
-		}
-		if s.Cancel != nil {
-			s.Cancel()
-		}
-	})
 
-	blockchain, ok := s.blockchain.(*claimerBlockchain)
+	impl := s.(*Service) // expose struct API for whitebox testing.
+
+	blockchain, ok := impl.blockchain.(*claimerBlockchain)
 	require.True(t, ok)
 	assert.Equal(t, model.DefaultBlock_Latest, blockchain.defaultBlock)
-	assert.False(t, s.submissionEnabled)
+	assert.False(t, impl.submissionEnabled)
 
 	repo.AssertExpectations(t)
 	repo.AssertNumberOfCalls(t, "SaveNodeConfigRaw", 0)

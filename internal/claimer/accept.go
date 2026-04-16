@@ -5,6 +5,7 @@ package claimer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -57,7 +58,7 @@ func (s *Service) findClaimAcceptedEventAndSucc(
 	}
 	matches, ok := claimAcceptedEventMatches(app, prevEpoch, prevClaimAcceptanceEvent)
 	if !ok {
-		err = s.markMatcherPrecondFailure(app, prevEpoch, "findClaimAcceptedEventAndSucc(prev)")
+		err = s.markMatcherPrecondFailure(ctx, app, prevEpoch, "findClaimAcceptedEventAndSucc(prev)")
 		return nil, nil, nil, err
 	}
 	if !matches {
@@ -83,32 +84,34 @@ func (s *Service) findClaimAcceptedEventAndSucc(
 //
 // It returns the number of successful state changes and any errors.
 func (s *Service) acceptClaimsAndUpdateDatabase(
+	ctx context.Context,
 	acceptedEpochs map[int64]*model.Epoch,
 	stagedEpochs map[int64]*model.Epoch,
 	apps map[int64]*model.Application,
 	defaultBlockNumber *big.Int,
-) (int, []error) {
+) (int, error) {
 	transitions := 0
-	errs := []error{}
+	var err error
 
 	for key, currEpoch := range stagedEpochs {
-		result := s.processAcceptedClaimEvent(stagedClaimWork{
+		result := s.processAcceptedClaimEvent(ctx, stagedClaimWork{
 			app:       apps[key],
 			prevEpoch: acceptedEpochs[key],
 			epoch:     currEpoch,
 		}, defaultBlockNumber)
 		transitions += result.progress
 		if result.err != nil {
-			errs = append(errs, result.err)
+			err = errors.Join(err, result.err)
 		}
 		if result.drop {
 			delete(stagedEpochs, key)
 		}
 	}
-	return transitions, errs
+	return transitions, err
 }
 
 func (s *Service) processAcceptedClaimEvent(
+	ctx context.Context,
 	work stagedClaimWork,
 	defaultBlockNumber *big.Int,
 ) claimStepResult {
@@ -116,7 +119,7 @@ func (s *Service) processAcceptedClaimEvent(
 	currEpoch := work.epoch
 	prevEpoch := work.prevEpoch
 
-	if err := s.checkConsensusForAddressChange(app, defaultBlockNumber); err != nil {
+	if err := s.checkConsensusForAddressChange(ctx, app, defaultBlockNumber); err != nil {
 		return claimDropped(err)
 	}
 
@@ -124,11 +127,11 @@ func (s *Service) processAcceptedClaimEvent(
 	var err error
 	if prevEpoch != nil {
 		_, _, currEvent, err = s.findClaimAcceptedEventAndSucc(
-			s.Context, app, prevEpoch, currEpoch, prevEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
+			ctx, app, prevEpoch, currEpoch, prevEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
 		)
 	} else {
 		_, currEvent, _, err = s.blockchain.findClaimAcceptedEventAndSucc(
-			s.Context, app, currEpoch, currEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
+			ctx, app, currEpoch, currEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
 		)
 	}
 	if err != nil {
@@ -146,10 +149,10 @@ func (s *Service) processAcceptedClaimEvent(
 	)
 	matches, ok := claimAcceptedEventMatches(app, currEpoch, currEvent)
 	if !ok {
-		return claimDropped(s.markMatcherPrecondFailure(app, currEpoch, "acceptClaimsAndUpdateDatabase"))
+		return claimDropped(s.markMatcherPrecondFailure(ctx, app, currEpoch, "acceptClaimsAndUpdateDatabase"))
 	}
 	if !matches {
-		return claimDropped(s.markAcceptedDivergence(app, currEpoch, currEvent, "acceptClaimsAndUpdateDatabase"))
+		return claimDropped(s.markAcceptedDivergence(ctx, app, currEpoch, currEvent, "acceptClaimsAndUpdateDatabase"))
 	}
 	s.Logger.Debug("Updating claim status to accepted",
 		"app", app.IApplicationAddress,
@@ -157,7 +160,7 @@ func (s *Service) processAcceptedClaimEvent(
 		"last_block", currEpoch.LastBlock,
 	)
 	txHash := currEvent.Raw.TxHash
-	err = s.repository.UpdateEpochWithAcceptedClaim(s.Context, currEpoch.ApplicationID, currEpoch.Index, &txHash)
+	err = s.repository.UpdateEpochWithAcceptedClaim(ctx, currEpoch.ApplicationID, currEpoch.Index, &txHash)
 	if err != nil {
 		return claimDropped(err)
 	}
@@ -184,44 +187,46 @@ func (s *Service) processAcceptedClaimEvent(
 // In reader mode (submissionEnabled=false), this function does not send
 // transactions; the later ClaimAccepted event scan performs the DB update.
 func (s *Service) acceptStagedClaimsAndIssueAcceptTx(
+	ctx context.Context,
 	stagedEpochs map[int64]*model.Epoch,
 	apps map[int64]*model.Application,
 	defaultBlockNumber *big.Int,
-) (int, []error) {
+) (int, error) {
 	transitions := 0
-	errs := []error{}
+	var err error
 
 	for key, currEpoch := range stagedEpochs {
-		result := s.processStagedClaim(stagedClaimWork{
+		result := s.processStagedClaim(ctx, stagedClaimWork{
 			app:   apps[key],
 			epoch: currEpoch,
 		}, defaultBlockNumber)
 		transitions += result.progress
 		if result.err != nil {
-			errs = append(errs, result.err)
+			err = errors.Join(err, result.err)
 		}
 		if result.drop {
 			delete(stagedEpochs, key)
 		}
 	}
-	return transitions, errs
+	return transitions, err
 }
 
 func (s *Service) processStagedClaim(
+	ctx context.Context,
 	work stagedClaimWork,
 	defaultBlockNumber *big.Int,
 ) claimStepResult {
 	app := work.app
 	currEpoch := work.epoch
 
-	currentBlock, result, done := s.stagedClaimReadyForAccept(app, currEpoch, defaultBlockNumber)
+	currentBlock, result, done := s.stagedClaimReadyForAccept(ctx, app, currEpoch, defaultBlockNumber)
 	if done {
 		return result
 	}
 
 	// Read the claim state before sending acceptClaim. Use the same block
 	// number for all reads in this tick.
-	claim, err := s.blockchain.getClaimStatus(s.Context, app, currEpoch, defaultBlockNumber)
+	claim, err := s.blockchain.getClaimStatus(ctx, app, currEpoch, defaultBlockNumber)
 	if err != nil {
 		return claimRetryLater(fmt.Errorf("getClaim before acceptClaim (app=%v, epoch=%d): %w",
 			app.IApplicationAddress, currEpoch.Index, err))
@@ -232,15 +237,16 @@ func (s *Service) processStagedClaim(
 	// the app FAILED on an UNSTAGED reading and leave the drain behind a
 	// re-enable loop).
 	if app.ForecloseBlock != 0 && claim.Status != claimStatusAccepted {
-		return s.terminalizeForeclosedStagedClaim(app, currEpoch)
+		return s.terminalizeForeclosedStagedClaim(ctx, app, currEpoch)
 	}
-	if result, done := s.handlePreAcceptClaimStatus(app, currEpoch, claim, currentBlock); done {
+	if result, done := s.handlePreAcceptClaimStatus(ctx, app, currEpoch, claim, currentBlock); done {
 		return result
 	}
-	return s.broadcastAcceptClaimOrReconcileRevert(app, currEpoch, defaultBlockNumber)
+	return s.broadcastAcceptClaimOrReconcileRevert(ctx, app, currEpoch, defaultBlockNumber)
 }
 
 func (s *Service) stagedClaimReadyForAccept(
+	ctx context.Context,
 	app *model.Application,
 	currEpoch *model.Epoch,
 	defaultBlockNumber *big.Int,
@@ -250,14 +256,14 @@ func (s *Service) stagedClaimReadyForAccept(
 		return 0, claimNoProgress(), true
 	}
 
-	if err := s.checkConsensusForAddressChange(app, defaultBlockNumber); err != nil {
+	if err := s.checkConsensusForAddressChange(ctx, app, defaultBlockNumber); err != nil {
 		return 0, claimRetryLater(err), true
 	}
 
 	if currEpoch.StagedAtBlock == nil {
 		// Invariant: CLAIM_STAGED rows must have staged_at_block. The database
 		// CHECK should stop this from happening.
-		err := s.setApplicationCorrupted(s.Context, app,
+		err := s.setApplicationCorrupted(ctx, app,
 			"epoch %d (%d) is CLAIM_STAGED but staged_at_block is nil",
 			currEpoch.Index, currEpoch.VirtualIndex)
 		return 0, claimRetryLater(err), true
@@ -283,6 +289,7 @@ func (s *Service) stagedClaimReadyForAccept(
 }
 
 func (s *Service) handlePreAcceptClaimStatus(
+	ctx context.Context,
 	app *model.Application,
 	currEpoch *model.Epoch,
 	claim iconsensus.IConsensusClaim,
@@ -290,7 +297,7 @@ func (s *Service) handlePreAcceptClaimStatus(
 ) (claimStepResult, bool) {
 	switch claim.Status {
 	case claimStatusAccepted: // Another party accepted first; update our DB.
-		err := s.updateEpochAcceptedFromClaimStatus(app, currEpoch, claim, "acceptStagedClaimsAndIssueAcceptTx")
+		err := s.updateEpochAcceptedFromClaimStatus(ctx, app, currEpoch, claim, "acceptStagedClaimsAndIssueAcceptTx")
 		if err != nil {
 			return claimRetryLater(err), true
 		}
@@ -306,7 +313,7 @@ func (s *Service) handlePreAcceptClaimStatus(
 		// match a STAGED or ACCEPTED claim on chain. If the chain says UNSTAGED,
 		// the node is probably reading the wrong chain, an old block, or stale
 		// node_config. Mark the app FAILED so the operator sees the problem.
-		if ferr := appstatus.SetFailedf(s.Context, s.Logger, s.repository, app,
+		if ferr := appstatus.SetFailedf(ctx, s.Logger, s.repository, app,
 			"getClaim returned UNSTAGED for epoch %d (%d) recorded as CLAIM_STAGED at block %d; "+
 				"current block %d. Likely a misconfigured default block or stale node_config — "+
 				"verify CARTESI_BLOCKCHAIN_DEFAULT_BLOCK is 'finalized' or 'safe' and that the "+
@@ -320,7 +327,7 @@ func (s *Service) handlePreAcceptClaimStatus(
 		// Defense-in-depth invariant check. The chain says our claim is still
 		// STAGED, so its outputs root must match our local epoch. If it does
 		// not match, this node and the chain disagree about the claim data.
-		if vErr := s.verifyClaimOutputsMatch(app, currEpoch, claim, "acceptStagedClaimsAndIssueAcceptTx"); vErr != nil {
+		if vErr := s.verifyClaimOutputsMatch(ctx, app, currEpoch, claim, "acceptStagedClaimsAndIssueAcceptTx"); vErr != nil {
 			return claimRetryLater(vErr), true
 		}
 		return claimNoProgress(), false
@@ -330,7 +337,7 @@ func (s *Service) handlePreAcceptClaimStatus(
 		// view call, so the IConsensus contract is most likely a newer version
 		// than this node. Mark the app FAILED (recoverable) so an operator sees
 		// it, rather than skipping silently every tick forever.
-		if ferr := appstatus.SetFailedf(s.Context, s.Logger, s.repository, app,
+		if ferr := appstatus.SetFailedf(ctx, s.Logger, s.repository, app,
 			"getClaim returned unmodeled ClaimStatus %d for epoch %d (%d) — this node models "+
 				"only 0/1/2. The IConsensus contract may be newer than this node supports; "+
 				"upgrade the node or verify the contract before re-enabling.",
@@ -343,10 +350,11 @@ func (s *Service) handlePreAcceptClaimStatus(
 }
 
 func (s *Service) terminalizeForeclosedStagedClaim(
+	ctx context.Context,
 	app *model.Application,
 	currEpoch *model.Epoch,
 ) claimStepResult {
-	if ferr := s.forecloseClaim(app, currEpoch, "acceptStagedClaimsAndIssueAcceptTx"); ferr != nil {
+	if ferr := s.forecloseClaim(ctx, app, currEpoch, "acceptStagedClaimsAndIssueAcceptTx"); ferr != nil {
 		return claimRetryLater(ferr)
 	}
 	s.dropAcceptAttempt(acceptAttemptKey{currEpoch.ApplicationID, currEpoch.Index})
@@ -354,6 +362,7 @@ func (s *Service) terminalizeForeclosedStagedClaim(
 }
 
 func (s *Service) broadcastAcceptClaimOrReconcileRevert(
+	ctx context.Context,
 	app *model.Application,
 	currEpoch *model.Epoch,
 	defaultBlockNumber *big.Int,
@@ -365,7 +374,7 @@ func (s *Service) broadcastAcceptClaimOrReconcileRevert(
 	attempts := s.incrementAcceptAttempt(attemptKey)
 	if attempts > s.maxAcceptAttempts {
 		var err error
-		if ferr := appstatus.SetFailedf(s.Context, s.Logger, s.repository, app,
+		if ferr := appstatus.SetFailedf(ctx, s.Logger, s.repository, app,
 			"acceptClaim has failed %d consecutive times for epoch %d (%d); "+
 				"inspect logs and the chain state, then re-enable. "+
 				"Common causes: gas estimation issues, signer not authorised, "+
@@ -378,11 +387,11 @@ func (s *Service) broadcastAcceptClaimOrReconcileRevert(
 		return claimRetryLater(err)
 	}
 
-	txCtx, cancel := context.WithTimeout(s.Context, s.submissionTimeout)
+	txCtx, cancel := context.WithTimeout(ctx, s.submissionTimeout)
 	defer cancel()
 	txHash, err := s.blockchain.acceptClaimOnBlockchain(txCtx, app, currEpoch)
 	if err != nil {
-		outcome, stateErr := s.handleAcceptClaimRevert(err, app, currEpoch)
+		outcome, stateErr := s.handleAcceptClaimRevert(ctx, err, app, currEpoch)
 		switch outcome {
 		case acceptClaimRetryLater:
 			return claimNoProgress()
@@ -390,7 +399,7 @@ func (s *Service) broadcastAcceptClaimOrReconcileRevert(
 			s.dropAcceptAttempt(attemptKey)
 			return claimRetryLater(stateErr)
 		case acceptClaimReconciledAccepted:
-			claim, gerr := s.blockchain.getClaimStatus(s.Context, app, currEpoch, defaultBlockNumber)
+			claim, gerr := s.blockchain.getClaimStatus(ctx, app, currEpoch, defaultBlockNumber)
 			if gerr != nil {
 				return claimRetryLater(fmt.Errorf("getClaim after acceptClaim front-run revert (app=%v, epoch=%d): %w",
 					app.IApplicationAddress, currEpoch.Index, gerr))
@@ -404,7 +413,7 @@ func (s *Service) broadcastAcceptClaimOrReconcileRevert(
 				s.dropAcceptAttempt(attemptKey)
 				return claimNoProgress()
 			}
-			err = s.updateEpochAcceptedFromClaimStatus(app, currEpoch, claim, "acceptClaimReconciledAccepted")
+			err = s.updateEpochAcceptedFromClaimStatus(ctx, app, currEpoch, claim, "acceptClaimReconciledAccepted")
 			if err != nil {
 				return claimRetryLater(err)
 			}

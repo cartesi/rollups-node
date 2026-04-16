@@ -4,6 +4,7 @@
 package claimer
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/cartesi/rollups-node/internal/model"
@@ -11,31 +12,33 @@ import (
 )
 
 func (s *Service) updateEpochAcceptedFromClaimStatus(
+	ctx context.Context,
 	app *model.Application,
 	epoch *model.Epoch,
 	claim iconsensus.IConsensusClaim,
 	site string,
 ) error {
-	if err := s.verifyClaimOutputsMatch(app, epoch, claim, site); err != nil {
+	if err := s.verifyClaimOutputsMatch(ctx, app, epoch, claim, site); err != nil {
 		return err
 	}
 	// getClaim is read-only. It tells us the claim state, but not the
 	// transaction hash that accepted the claim. Store NULL for the hash; the
 	// DB accepts this for reconciled claims.
 	if err := s.repository.UpdateEpochWithAcceptedClaim(
-		s.Context, epoch.ApplicationID, epoch.Index, nil); err != nil {
+		ctx, epoch.ApplicationID, epoch.Index, nil); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (s *Service) updateEpochStagedFromClaimStatus(
+	ctx context.Context,
 	app *model.Application,
 	epoch *model.Epoch,
 	claim iconsensus.IConsensusClaim,
 	site string,
 ) (uint64, error) {
-	if err := s.verifyClaimOutputsMatch(app, epoch, claim, site); err != nil {
+	if err := s.verifyClaimOutputsMatch(ctx, app, epoch, claim, site); err != nil {
 		return 0, err
 	}
 	if claim.StagingBlockNumber == nil {
@@ -44,7 +47,7 @@ func (s *Service) updateEpochStagedFromClaimStatus(
 	}
 	stagingBlock := claim.StagingBlockNumber.Uint64()
 	if err := s.repository.UpdateEpochReconciledStaged(
-		s.Context, epoch.ApplicationID, epoch.Index, stagingBlock); err != nil {
+		ctx, epoch.ApplicationID, epoch.Index, stagingBlock); err != nil {
 		return 0, err
 	}
 	return stagingBlock, nil

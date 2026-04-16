@@ -38,8 +38,10 @@ func serveRPC(t *testing.T, s *Service, body []byte) *httptest.ResponseRecorder 
 
 func newBatchTestService() *Service {
 	return &Service{
-		Service: service.Service{
-			Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+		HTTPServiceTemplate: service.HTTPServiceTemplate{
+			BaseTemplate: service.BaseTemplate{
+				Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
+			},
 		},
 		handlers: cloneDispatchTable(jsonrpcHandlers),
 	}
@@ -576,17 +578,17 @@ func TestJSONRPCDoesNotRecoverAbortHandler(t *testing.T) {
 
 func TestJSONRPCBatchUsesOneAdmissionPermit(t *testing.T) {
 	s := newBatchTestService()
-	s.admission = service.NewSemaphoreAdmission(1)
-	s.server = &http.Server{
+	s.Admission = service.NewSemaphoreAdmission(1)
+	s.Server = &http.Server{
 		Handler:           rebuildHandlerWithAdmission(s),
 		ReadHeaderTimeout: 2 * time.Second,
 	}
 	var nestedAcquisitions atomic.Int32
 	const method = "test_batch_admission"
 	withTestRPCHandler(t, s, method, func(s *Service, _ *http.Request, _ RPCRequest) (any, error) {
-		if s.admission.TryAcquire() {
+		if s.Admission.TryAcquire() {
 			nestedAcquisitions.Add(1)
-			s.admission.Release()
+			s.Admission.Release()
 		}
 		return true, nil
 	})
@@ -597,7 +599,7 @@ func TestJSONRPCBatchUsesOneAdmissionPermit(t *testing.T) {
 	]`, method, method))
 	req := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(body))
 	rr := httptest.NewRecorder()
-	s.server.Handler.ServeHTTP(rr, req)
+	s.Server.Handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.Zero(t, nestedAcquisitions.Load(),
