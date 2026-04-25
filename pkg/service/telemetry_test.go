@@ -4,6 +4,7 @@
 package service
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -99,9 +100,9 @@ func TestCreateDefaultTelemetry_PanicRecovered(t *testing.T) {
 
 type falseLifecycleImpl struct{ Service }
 
-func (*falseLifecycleImpl) Alive() bool                  { return false }
-func (*falseLifecycleImpl) Ready() bool                  { return false }
-func (*falseLifecycleImpl) Tick() []error                { return nil }
+func (*falseLifecycleImpl) Alive() bool                   { return false }
+func (*falseLifecycleImpl) Ready() bool                   { return false }
+func (*falseLifecycleImpl) OnServe(context.Context) error { return nil }
 
 func TestCreateDefaultTelemetry_Returns500WhenLifecycleFails(t *testing.T) {
 	service := &Service{

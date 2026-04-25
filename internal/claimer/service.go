@@ -30,7 +30,7 @@ type CreateInfo struct {
 }
 
 type Service struct {
-	service.Service
+	service.TickService
 
 	repository iclaimerRepository
 	blockchain iclaimerBlockchain
@@ -68,10 +68,11 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	}
 
 	s := &Service{}
+	s.TickImpl = s
 	c.Impl = s
 	c.EnableReschedule = true
 
-	err = service.Create(ctx, &c.CreateInfo, &s.Service)
+	err = service.NewTickService(&c.CreateInfo, &s.TickService)
 	if err != nil {
 		return nil, fmt.Errorf("creating base service: %w", err)
 	}
@@ -118,19 +119,19 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 }
 
 // NOTE: tick is not re-entrant!
-func (s *Service) Tick() []error {
+func (s *Service) Tick(ctx context.Context) []error {
 	errs := []error{}
 
 	// gather epochs pairs with open claims, either:
 	// - computed but not yet submitted
-	acceptedOrSubmittedEpochs, computedEpochs, computedApps, errSubmitted := s.repository.SelectSubmittedClaimPairsPerApp(s.Context)
+	acceptedOrSubmittedEpochs, computedEpochs, computedApps, errSubmitted := s.repository.SelectSubmittedClaimPairsPerApp(ctx)
 	if errSubmitted != nil {
 		errs = append(errs, errSubmitted)
 		return errs
 	}
 
 	// - submitted but not yet accepted.
-	acceptedEpochs, submittedEpochs, submittedApps, errAccepted := s.repository.SelectAcceptedClaimPairsPerApp(s.Context)
+	acceptedEpochs, submittedEpochs, submittedApps, errAccepted := s.repository.SelectAcceptedClaimPairsPerApp(ctx)
 	if errAccepted != nil {
 		errs = append(errs, errAccepted)
 		return errs
@@ -147,7 +148,7 @@ func (s *Service) Tick() []error {
 	}
 
 	// we have claims to check. Get the latest/safe/finalized, etc. block
-	defaultBlockNumber, err := s.blockchain.getDefaultBlockNumber(s.Context)
+	defaultBlockNumber, err := s.blockchain.getDefaultBlockNumber(ctx)
 	if err != nil {
 		errs = append(errs, err)
 		return errs

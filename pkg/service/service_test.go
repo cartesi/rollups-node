@@ -16,12 +16,14 @@ import (
 
 // mockImpl is a minimal ServiceImpl for testing the Serve() loop.
 type mockImpl struct {
-	Service
+	TickService
 	tickCount atomic.Int32
 	onTick    func(n int32) // called on each Tick with the tick count (1-based)
 }
 
-func (m *mockImpl) Tick() []error {
+func (m *mockImpl) OnReload() []error   { return nil }
+func (m *mockImpl) OnStop(bool) []error { return nil }
+func (m *mockImpl) Tick(ctx context.Context) []error {
 	n := m.tickCount.Add(1)
 	if m.onTick != nil {
 		m.onTick(n)
@@ -39,8 +41,8 @@ func createTestService(
 ) (*Service, context.CancelFunc) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{}
-	err := Create(ctx, &CreateInfo{
+	impl.TickImpl = impl
+	err := NewTickService(&CreateInfo{
 		Name:             "test",
 		LogLevel:         slog.LevelError,
 		Impl:             impl,
@@ -48,9 +50,9 @@ func createTestService(
 		Context:          ctx,
 		Cancel:           cancel,
 		EnableReschedule: enableReschedule,
-	}, s)
+	}, &impl.TickService)
 	require.NoError(t, err)
-	return s, cancel
+	return &impl.Service, cancel
 }
 
 type ServeSuite struct {
@@ -66,8 +68,9 @@ func (s *ServeSuite) TestDisabledReschedulePreservesExistingBehavior() {
 	// Serve() should tick only on timer fires.
 	impl := &mockImpl{}
 	ctx, cancel := context.WithCancel(context.Background())
-	svc := &Service{}
-	err := Create(ctx, &CreateInfo{
+	svc := &TickService{}
+	svc.TickImpl = impl
+	err := NewTickService(&CreateInfo{
 		Name:         "test-no-resched",
 		LogLevel:     slog.LevelError,
 		Impl:         impl,
@@ -99,13 +102,13 @@ func (s *ServeSuite) TestDisabledReschedulePreservesExistingBehavior() {
 func (s *ServeSuite) TestRescheduleTriggersImmediateRetick() {
 	// When SignalReschedule() is called from Tick(), Serve() should call
 	// Tick() again immediately without waiting for the timer.
-	var svc *Service
-	impl := &mockImpl{
+	var impl *mockImpl
+	impl = &mockImpl{
 		onTick: func(n int32) {
 			// Signal reschedule on ticks 1 and 2 (the initial tick
 			// and the first rescheduled tick). Stop on tick 3.
 			if n <= 2 {
-				svc.SignalReschedule()
+				impl.SignalReschedule()
 			}
 		},
 	}
@@ -133,7 +136,6 @@ func (s *ServeSuite) TestRescheduleTriggersImmediateRetick() {
 func (s *ServeSuite) TestRescheduleCoalesces() {
 	// Multiple signals while Tick() is running should result in at most
 	// one extra tick, not one per signal.
-	var svc *Service
 	tickStarted := make(chan struct{})
 	tickProceed := make(chan struct{})
 
@@ -162,7 +164,7 @@ func (s *ServeSuite) TestRescheduleCoalesces() {
 
 	// Send multiple signals while tick is blocked. Only one fits in the buffer.
 	for range 10 {
-		svc.SignalReschedule()
+		impl.SignalReschedule()
 	}
 
 	// Let the first tick complete.
@@ -182,10 +184,10 @@ func (s *ServeSuite) TestRescheduleCoalesces() {
 func (s *ServeSuite) TestContextCancellationExitsPromptly() {
 	// When context is cancelled with a reschedule signal pending,
 	// Serve() should exit promptly.
-	var svc *Service
-	impl := &mockImpl{
+	var impl *mockImpl
+	impl = &mockImpl{
 		onTick: func(_ int32) {
-			svc.SignalReschedule()
+			impl.SignalReschedule()
 		},
 	}
 
@@ -225,37 +227,37 @@ func (s *ServeSuite) TestServeExitsOnContextCancelledBeforeFirstTick() {
 
 func (s *ServeSuite) TestRescheduleEnabledCreatesChannel() {
 	impl := &mockImpl{}
-	svc, cancel := createTestService(s.T(), impl, true)
+	_, cancel := createTestService(s.T(), impl, true)
 	defer cancel()
 
-	s.NotNil(svc.reschedule, "reschedule channel should be created when enabled")
+	s.NotNil(impl.reschedule, "reschedule channel should be created when enabled")
 }
 
 func (s *ServeSuite) TestRescheduleDisabledLeavesNilChannel() {
 	impl := &mockImpl{}
-	svc, cancel := createTestService(s.T(), impl, false)
+	_, cancel := createTestService(s.T(), impl, false)
 	defer cancel()
 
-	s.Nil(svc.reschedule, "reschedule channel should be nil when disabled")
+	s.Nil(impl.reschedule, "reschedule channel should be nil when disabled")
 }
 
 func (s *ServeSuite) TestSignalRescheduleNoopWhenDisabled() {
 	impl := &mockImpl{}
-	svc, cancel := createTestService(s.T(), impl, false)
+	_, cancel := createTestService(s.T(), impl, false)
 	defer cancel()
 
 	// Should not panic on nil channel.
-	s.NotPanics(func() { svc.SignalReschedule() })
+	s.NotPanics(func() { impl.SignalReschedule() })
 }
 
 func (s *ServeSuite) TestDrainReschedule() {
 	impl := &mockImpl{}
-	svc, cancel := createTestService(s.T(), impl, true)
+	_, cancel := createTestService(s.T(), impl, true)
 	defer cancel()
 
-	s.False(svc.DrainReschedule(), "should be empty initially")
+	s.False(impl.DrainReschedule(), "should be empty initially")
 
-	svc.SignalReschedule()
-	s.True(svc.DrainReschedule(), "should drain pending signal")
-	s.False(svc.DrainReschedule(), "should be empty after drain")
+	impl.SignalReschedule()
+	s.True(impl.DrainReschedule(), "should drain pending signal")
+	s.False(impl.DrainReschedule(), "should be empty after drain")
 }

@@ -24,7 +24,7 @@ const httpShutdownTimeout = 10 * time.Second
 
 // Service is the main advancer service that processes inputs through Cartesi machines
 type Service struct {
-	service.Service
+	service.TickService
 	inputBatchSize uint64
 	snapshotsDir   string
 	repository     AdvancerRepository
@@ -52,10 +52,11 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	}
 
 	s := &Service{}
+	s.TickImpl = s
 	c.Impl = s
 	c.EnableReschedule = true
 
-	err = service.Create(ctx, &c.CreateInfo, &s.Service)
+	err = service.NewTickService(&c.CreateInfo, &s.TickService)
 	if err != nil {
 		return nil, err
 	}
@@ -108,8 +109,8 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 }
 
 // Service interface implementation
-func (s *Service) Tick() []error {
-	hadWork, err := s.Step(s.Context)
+func (s *Service) Tick(ctx context.Context) []error {
+	hadWork, err := s.Step(ctx)
 
 	// Signal reschedule whenever work was done, even if some apps errored.
 	// Failed apps are marked Failed and removed by the machine manager,
@@ -132,17 +133,6 @@ func (s *Service) Tick() []error {
 }
 
 func (s *Service) OnStop(b bool) []error {
-	// CAS achieves once-semantics: the second caller returns immediately
-	// (fire-and-forget) rather than blocking like sync.Once. This is safe
-	// because the orchestrator calls Cancel() after Stop() and waits for
-	// the Serve goroutine to exit.
-	if !s.cleanedUp.CompareAndSwap(false, true) {
-		return nil // already stopped
-	}
-	// This method shadows service.Service.Stop(), so set the stopping flag
-	// explicitly. Without this, a concurrent Tick that observes closed
-	// resources would not see IsStopping() == true.
-	s.SetStopping()
 	var errs []error
 	if s.inspector != nil {
 		s.Logger.Info("Shutting down inspect HTTP server")
@@ -158,9 +148,9 @@ func (s *Service) OnStop(b bool) []error {
 			errs = append(errs, fmt.Errorf("failed to close machine manager: %w", err))
 		}
 	}
-	return append(errs, s.TickServiceTemplate.OnStop(b)...)
+	return append(errs, s.TickService.OnStop(b)...)
 }
-func (s *Service) Serve() error {
+func (s *Service) OnServe(ctx context.Context) error {
 	if s.inspector != nil {
 		go func() {
 			if err := s.inspector.Serve(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -169,5 +159,5 @@ func (s *Service) Serve() error {
 			}
 		}()
 	}
-	return s.Service.Serve()
+	return s.TickService.OnServe(ctx)
 }

@@ -140,26 +140,20 @@ func (s *Service) Ready() bool {
 	return s.ready.Load()
 }
 
-func (s *Service) Serve() error {
+func (s *Service) OnServe(ctx context.Context) error {
 	s.alive.Store(true)
 	ready := make(chan struct{}, 1)
-	go func() {
-		defer s.alive.Store(false)
-		defer s.ready.Store(false)
-		err := s.Run(s.Context, ready)
-		if err != nil && s.Context.Err() == nil {
-			s.Logger.Error("Run exited with error", "error", err)
-		}
-		s.Cancel()
-	}()
 	go func() {
 		select {
 		case <-ready:
 			s.ready.Store(true)
-		case <-s.Context.Done():
+		case <-ctx.Done():
 		}
 	}()
-	return s.Service.Serve()
+
+	defer s.alive.Store(false)
+	defer s.ready.Store(false)
+	return s.Run(ctx, ready)
 }
 
 func (s *Service) setupPersistentConfig(

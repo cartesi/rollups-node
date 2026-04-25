@@ -113,7 +113,7 @@ func (s *Service) OnStop(_ bool) []error {
 	return errs
 }
 
-func (s *Service) Serve() error {
+func (s *Service) OnServe(ctx context.Context) error {
 	listener, err := s.listen("tcp", s.server.Addr)
 	if err != nil {
 		return err
@@ -135,26 +135,18 @@ func (s *Service) Serve() error {
 		serverDone <- err
 	}()
 
-	serviceDone := make(chan error, 1)
-	go func() {
-		// Run the shared service loop concurrently because it blocks waiting
-		// for signals/context cancellation while the HTTP server blocks
-		// waiting for connections.
-		serviceDone <- s.Service.Serve()
-	}()
-
 	select {
 	case err := <-serverDone:
 		// The HTTP loop exited first. This is unexpected unless the listener
 		// failed or the server was already closed, so cancel the framework
 		// loop and wait for it to observe the cancellation before returning.
 		s.Cancel()
-		serviceErr := <-serviceDone
+		<-ctx.Done()
 		if err != nil {
 			return err
 		}
-		return serviceErr
-	case err := <-serviceDone:
+		return nil
+	case <-ctx.Done():
 		// The framework loop exited first because it handled a shutdown signal
 		// or context cancellation and called Stop(), which should trigger
 		// s.server.Shutdown(). Wait for the HTTP loop to finish so Serve()
@@ -163,6 +155,6 @@ func (s *Service) Serve() error {
 		if serverErr != nil {
 			return serverErr
 		}
-		return err
+		return nil
 	}
 }

@@ -49,7 +49,7 @@ func newMockAdvancerServiceWithBatchSize(
 		repository:     repo,
 	}
 	serviceArgs := &service.CreateInfo{Name: "advancer", Impl: s, EnableReschedule: true}
-	err := service.Create(context.Background(), serviceArgs, &s.Service)
+	err := service.NewTickService(serviceArgs, &s.TickService)
 	if err != nil {
 		return nil, err
 	}
@@ -98,12 +98,12 @@ func (s *AdvancerSuite) TestServiceInterface() {
 		repository.GetEpochsReturn = map[common.Address][]*Epoch{
 			machineManager.Map[1].application.IApplicationAddress: {},
 		}
-		tickErrors := advancer.Tick()
+		tickErrors := advancer.Tick(context.Background())
 		require.Empty(tickErrors)
 
 		// Test Tick with error
 		repository.GetEpochsError = errors.New("list epochs error")
-		tickErrors = advancer.Tick()
+		tickErrors = advancer.Tick(context.Background())
 		require.NotEmpty(tickErrors)
 		require.Contains(tickErrors[0].Error(), "list epochs error")
 
@@ -1569,7 +1569,7 @@ func (s *AdvancerSuite) TestSelfWakeOnSuccess() {
 	require.NoError(err)
 
 	// Call Tick() which internally calls Step() and signals reschedule.
-	svc.Tick()
+	svc.Tick(context.Background())
 
 	// The reschedule channel should have a pending signal.
 	require.True(svc.DrainReschedule(),
@@ -1593,7 +1593,7 @@ func (s *AdvancerSuite) TestNoSelfWakeWhenIdle() {
 	svc, err := newMockAdvancerService(mm, repo)
 	require.NoError(err)
 
-	svc.Tick()
+	svc.Tick(context.Background())
 
 	require.False(svc.DrainReschedule(),
 		"reschedule channel should be empty when no work exists")
@@ -1612,7 +1612,7 @@ func (s *AdvancerSuite) TestNoSelfWakeOnError() {
 	svc, err := newMockAdvancerService(mm, repo)
 	require.NoError(err)
 
-	errs := svc.Tick()
+	errs := svc.Tick(context.Background())
 	require.NotEmpty(errs)
 
 	require.False(svc.DrainReschedule(),
@@ -1653,7 +1653,7 @@ func (s *AdvancerSuite) TestPartialSuccessStillReschedules() {
 
 	// Call Tick — app1 fails, app2 succeeds with more work remaining (batch limit hit).
 	// Tick should surface the error AND signal reschedule for app2's pending work.
-	errs := svc.Tick()
+	errs := svc.Tick(context.Background())
 	require.NotEmpty(errs, "Tick should surface app1's error")
 
 	// Reschedule SHOULD fire: app2 had work, and one failing app must not

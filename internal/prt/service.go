@@ -29,7 +29,7 @@ type CreateInfo struct {
 }
 
 type Service struct {
-	service.Service
+	service.TickService
 	repository        prtRepository
 	client            EthClientInterface
 	adapterFactory    AdapterFactory
@@ -56,9 +56,10 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	}
 
 	s := &Service{}
+	s.TickImpl = s
 	c.Impl = s
 
-	err = service.Create(ctx, &c.CreateInfo, &s.Service)
+	err = service.NewTickService(&c.CreateInfo, &s.TickService)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +126,7 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 
 // Tick executes the Validator main logic of producing claims and/or proofs
 // for processed epochs of all running applications.
-func (s *Service) Tick() []error {
+func (s *Service) Tick(ctx context.Context) []error {
 	// Check for shutdown before starting work, consistent with the advancer.
 	if s.IsStopping() {
 		return nil

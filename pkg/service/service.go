@@ -94,8 +94,8 @@ type ServiceImpl interface {
 	Alive() bool
 	Ready() bool
 	OnReload() []error
-	Tick() []error
 	OnStop(bool) []error
+	OnServe(ctx context.Context) error
 }
 
 type IService interface {
@@ -142,8 +142,6 @@ type Service struct {
 	Name          string
 	Impl          ServiceImpl
 	Logger        *slog.Logger
-	Ticker        *time.Ticker
-	PollInterval  time.Duration
 	Context       context.Context
 	Cancel        context.CancelFunc
 	Sighup        chan os.Signal // SIGHUP to reload
@@ -151,7 +149,6 @@ type Service struct {
 	ServeMux      *http.ServeMux
 	Telemetry     *http.Server
 	TelemetryFunc func() error
-	reschedule    chan struct{} // self-continuation signal; see CreateInfo.EnableReschedule
 
 	// stopping is set to true at the beginning of Stop(), before Impl.Stop()
 	// is called. Services can check this via IsStopping() from Tick() to
@@ -160,6 +157,10 @@ type Service struct {
 	// calls). This covers the race window between Stop() being called and
 	// ctx.Cancel() propagating.
 	stopping atomic.Bool
+
+	// cleanedUp server Stop() run exactly once, even when Stop() is called
+	// multiple times (by the child's Serve() loop and by the parent orchestrator).
+	cleanedUp atomic.Bool
 }
 
 // Create a service by:
@@ -196,20 +197,6 @@ func Create(ctx context.Context, c *CreateInfo, s *Service) error {
 			s.Context, c.Cancel = context.WithCancel(c.Context)
 		}
 		s.Cancel = c.Cancel
-	}
-
-	// ticker
-	if s.Ticker == nil {
-		if c.PollInterval == 0 {
-			c.PollInterval = time.Minute
-		}
-		s.PollInterval = c.PollInterval
-		s.Ticker = time.NewTicker(s.PollInterval)
-	}
-
-	// self-rescheduling
-	if c.EnableReschedule {
-		s.reschedule = make(chan struct{}, 1)
 	}
 
 	// signal handling
@@ -254,7 +241,6 @@ func (s *Service) OnReload() []error { return nil }
 func (s *Service) OnStop(bool) []error { return nil }
 func (s *Service) Alive() bool { return true }
 func (s *Service) Ready() bool { return true }
-func (s *Service) Tick() []error { return nil }
 
 func (s *Service) Reload() []error {
 	start := time.Now()
@@ -267,22 +253,6 @@ func (s *Service) Reload() []error {
 			"error", errs)
 	} else {
 		s.Logger.Info("Reload",
-			"duration", elapsed)
-	}
-	return errs
-}
-
-func (s *Service) tickService() []error {
-	start := time.Now()
-	errs := s.Impl.Tick()
-	elapsed := time.Since(start)
-
-	if len(errs) > 0 {
-		s.Logger.Error("Tick",
-			"duration", elapsed,
-			"error", errs)
-	} else {
-		s.Logger.Debug("Tick",
 			"duration", elapsed)
 	}
 	return errs
@@ -303,6 +273,14 @@ func (s *Service) SetStopping() {
 }
 
 func (s *Service) Stop(force bool) []error {
+	// CAS achieves once-semantics: the second caller returns immediately
+	// (fire-and-forget) rather than blocking like sync.Once. This is safe
+	// because the orchestrator calls Cancel() after Stop() and waits for
+	// the Serve goroutine to exit.
+	if !s.cleanedUp.CompareAndSwap(false, true) {
+		return nil // already stopped
+	}
+
 	s.stopping.Store(true)
 	start := time.Now()
 	errs := s.Impl.OnStop(force)
@@ -336,34 +314,6 @@ func (s *Service) Stop(force bool) []error {
 	return errs
 }
 
-// rescheduleChan returns the reschedule channel, or nil if rescheduling is disabled.
-// A nil channel in a select case blocks forever, preserving timer-only behavior.
-func (s *Service) rescheduleChan() <-chan struct{} {
-	return s.reschedule
-}
-
-// SignalReschedule performs a non-blocking send on the reschedule channel.
-// If a signal is already pending, this is a no-op (one wake is sufficient).
-// Does nothing if rescheduling is not enabled.
-// INVARIANT: This method must never block.
-func (s *Service) SignalReschedule() {
-	select {
-	case s.reschedule <- struct{}{}:
-	default:
-	}
-}
-
-// DrainReschedule consumes and discards a pending reschedule signal, if any.
-// Returns true if a signal was pending. Intended for testing.
-func (s *Service) DrainReschedule() bool {
-	select {
-	case <-s.reschedule:
-		return true
-	default:
-		return false
-	}
-}
-
 func (s *Service) Serve() error {
 	s.Running.Store(true)
 
@@ -375,24 +325,24 @@ func (s *Service) Serve() error {
 	default:
 	}
 
-	s.tickService()
-	for s.Running.Load() {
-		select {
-		case <-s.Sighup:
-			s.Reload()
-		case <-s.SigShutdown:
-			s.Stop(false) // Graceful shutdown; errors are logged by Stop.
-			return nil
-		case <-s.Context.Done():
-			s.Stop(true) // Stop logs errors internally.
-			return nil
-		case <-s.Ticker.C:
-			s.tickService()
-		case <-s.rescheduleChan():
-			s.tickService()
+	go func() {
+		for s.Running.Load() {
+			select {
+			case <-s.Sighup:
+				s.Reload()
+			case <-s.SigShutdown:
+				s.Stop(false) // Graceful shutdown; errors are logged by Stop.
+				return
+			case <-s.Context.Done():
+				s.Stop(true) // Stop logs errors internally.
+				return
+			}
 		}
-	}
-	return nil
+	}()
+
+	defer s.Stop(false)
+
+	return s.Impl.OnServe(s.Context)
 }
 
 func (s *Service) String() string {
@@ -464,5 +414,104 @@ func (s *Service) AliveHandler(w http.ResponseWriter, r *http.Request) {
 			http.StatusInternalServerError)
 	} else {
 		fmt.Fprintf(w, "%s: alive\n", s.Name)
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+type TickImpl interface {
+	Tick(ctx context.Context) []error
+}
+
+type TickService struct {
+	Service
+	TickImpl
+	ticker     *time.Ticker
+	reschedule chan struct{} // self-continuation signal; see CreateInfo.EnableReschedule
+}
+
+func NewTickService(c *CreateInfo, s *TickService) error {
+	err := Create(context.Background(), c, &s.Service)
+	if err != nil {
+		return err
+	}
+
+	s.Service.Impl = s
+
+	// ticker
+	if c.PollInterval == 0 {
+		c.PollInterval = time.Minute
+	}
+	s.ticker = time.NewTicker(c.PollInterval)
+
+	// self-rescheduling
+	if c.EnableReschedule {
+		s.reschedule = make(chan struct{}, 1)
+	}
+
+	return nil
+}
+
+func (s *TickService) tick(ctx context.Context) []error {
+	start := time.Now()
+	errs := s.Tick(ctx)
+	elapsed := time.Since(start)
+
+	if len(errs) > 0 {
+		s.Logger.Error("Tick",
+			"duration", elapsed,
+			"error", errs)
+	} else {
+		s.Logger.Debug("Tick",
+			"duration", elapsed)
+	}
+	return errs
+}
+
+func (s *TickService) OnStop(bool) []error {
+	s.ticker.Stop()
+	return nil
+}
+
+func (s *TickService) OnServe(ctx context.Context) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	s.tick(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-s.ticker.C:
+			s.tick(ctx)
+		// 'reschedule' is nil when rescheduling is disabled thus blocking forever,
+		// preserving timer-only behavior.
+		case <-s.reschedule:
+			s.tick(ctx)
+		}
+	}
+}
+
+// SignalReschedule performs a non-blocking send on the reschedule channel.
+// If a signal is already pending, this is a no-op (one wake is sufficient).
+// Does nothing if rescheduling is not enabled.
+// INVARIANT: This method must never block.
+func (s *TickService) SignalReschedule() {
+	select {
+	case s.reschedule <- struct{}{}:
+	default:
+	}
+}
+
+// DrainReschedule consumes and discards a pending reschedule signal, if any.
+// Returns true if a signal was pending. Intended for testing.
+func (s *TickService) DrainReschedule() bool {
+	select {
+	case <-s.reschedule:
+		return true
+	default:
+		return false
 	}
 }

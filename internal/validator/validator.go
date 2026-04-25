@@ -22,7 +22,8 @@ import (
 )
 
 type Service struct {
-	service.Service
+	service.TickService
+
 	repository ValidatorRepository
 
 	// cached constants
@@ -45,9 +46,10 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	}
 
 	s := &Service{}
+	s.TickImpl = s
 	c.Impl = s
 
-	err = service.Create(ctx, &c.CreateInfo, &s.Service)
+	err = service.NewTickService(&c.CreateInfo, &s.TickService)
 	if err != nil {
 		return nil, err
 	}
@@ -67,8 +69,8 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 
 // Tick executes the Validator main logic of producing claims and/or proofs
 // for processed epochs of all running applications.
-func (s *Service) Tick() []error {
-	apps, _, err := getAllRunningApplications(s.Context, s.repository)
+func (s *Service) Tick(ctx context.Context) []error {
+	apps, _, err := getAllRunningApplications(ctx, s.repository)
 	if err != nil {
 		return []error{fmt.Errorf("failed to get running applications. %w", err)}
 	}
@@ -76,7 +78,7 @@ func (s *Service) Tick() []error {
 	// validate each application
 	errs := []error{}
 	for idx := range apps {
-		if err := s.validateApplication(s.Context, apps[idx]); err != nil {
+		if err := s.validateApplication(ctx, apps[idx]); err != nil {
 			errs = append(errs, err)
 		}
 	}

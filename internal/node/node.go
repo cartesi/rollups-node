@@ -150,11 +150,12 @@ func (me *Service) OnStop(force bool) []error {
 	return errs
 }
 
-func (me *Service) Serve() error {
+func (me *Service) OnServe(ctx context.Context) error {
 	for _, s := range me.Children {
 		go s.Serve()
 	}
-	return me.Service.Serve()
+	<-ctx.Done()
+	return nil
 }
 
 // services creation
