@@ -16,14 +16,11 @@ import (
 
 // mockImpl is a minimal ServiceImpl for testing the Serve() loop.
 type mockImpl struct {
+	Service
 	tickCount atomic.Int32
 	onTick    func(n int32) // called on each Tick with the tick count (1-based)
 }
 
-func (m *mockImpl) Alive() bool       { return true }
-func (m *mockImpl) Ready() bool       { return true }
-func (m *mockImpl) Reload() []error   { return nil }
-func (m *mockImpl) Stop(bool) []error { return nil }
 func (m *mockImpl) Tick() []error {
 	n := m.tickCount.Add(1)
 	if m.onTick != nil {

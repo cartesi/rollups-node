@@ -140,19 +140,6 @@ func (s *Service) Ready() bool {
 	return s.ready.Load()
 }
 
-func (s *Service) Reload() []error {
-	return nil
-}
-
-func (s *Service) Stop(bool) []error {
-	s.SetStopping()
-	return nil
-}
-
-func (s *Service) Tick() []error {
-	return []error{}
-}
-
 func (s *Service) Serve() error {
 	s.alive.Store(true)
 	ready := make(chan struct{}, 1)
@@ -173,10 +160,6 @@ func (s *Service) Serve() error {
 		}
 	}()
 	return s.Service.Serve()
-}
-
-func (s *Service) String() string {
-	return s.Name
 }
 
 func (s *Service) setupPersistentConfig(

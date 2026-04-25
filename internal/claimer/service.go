@@ -117,23 +117,6 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	return s, nil
 }
 
-func (s *Service) Alive() bool {
-	return true
-}
-
-func (s *Service) Ready() bool {
-	return true
-}
-
-func (s *Service) Reload() []error {
-	return nil
-}
-
-func (s *Service) Stop(bool) []error {
-	s.SetStopping()
-	return nil
-}
-
 // NOTE: tick is not re-entrant!
 func (s *Service) Tick() []error {
 	errs := []error{}

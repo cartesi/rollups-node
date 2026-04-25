@@ -65,10 +65,6 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	return s, nil
 }
 
-func (s *Service) Alive() bool     { return true }
-func (s *Service) Ready() bool     { return true }
-func (s *Service) Reload() []error { return nil }
-
 // Tick executes the Validator main logic of producing claims and/or proofs
 // for processed epochs of all running applications.
 func (s *Service) Tick() []error {
@@ -85,14 +81,6 @@ func (s *Service) Tick() []error {
 		}
 	}
 	return errs
-}
-func (s *Service) Stop(_ bool) []error {
-	s.SetStopping()
-	return nil
-}
-
-func (s *Service) String() string {
-	return s.Name
 }
 
 // The maximum height for the Merkle tree of all outputs produced

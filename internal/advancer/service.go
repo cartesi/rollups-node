@@ -108,9 +108,6 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 }
 
 // Service interface implementation
-func (s *Service) Alive() bool     { return true }
-func (s *Service) Ready() bool     { return true }
-func (s *Service) Reload() []error { return nil }
 func (s *Service) Tick() []error {
 	hadWork, err := s.Step(s.Context)
 
@@ -134,7 +131,7 @@ func (s *Service) Tick() []error {
 	return []error{err}
 }
 
-func (s *Service) Stop(b bool) []error {
+func (s *Service) OnStop(b bool) []error {
 	// CAS achieves once-semantics: the second caller returns immediately
 	// (fire-and-forget) rather than blocking like sync.Once. This is safe
 	// because the orchestrator calls Cancel() after Stop() and waits for
@@ -161,7 +158,7 @@ func (s *Service) Stop(b bool) []error {
 			errs = append(errs, fmt.Errorf("failed to close machine manager: %w", err))
 		}
 	}
-	return errs
+	return append(errs, s.TickServiceTemplate.OnStop(b)...)
 }
 func (s *Service) Serve() error {
 	if s.inspector != nil {
@@ -173,7 +170,4 @@ func (s *Service) Serve() error {
 		}()
 	}
 	return s.Service.Serve()
-}
-func (s *Service) String() string {
-	return s.Name
 }

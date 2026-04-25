@@ -96,3 +96,26 @@ func TestCreateDefaultTelemetry_PanicRecovered(t *testing.T) {
 	require.Contains(t, rr.Body.String(), "Internal server error")
 	require.NotContains(t, rr.Body.String(), "kaboom")
 }
+
+type falseLifecycleImpl struct{ Service }
+
+func (*falseLifecycleImpl) Alive() bool                  { return false }
+func (*falseLifecycleImpl) Ready() bool                  { return false }
+func (*falseLifecycleImpl) Tick() []error                { return nil }
+
+func TestCreateDefaultTelemetry_Returns500WhenLifecycleFails(t *testing.T) {
+	service := &Service{
+		Name:     "test",
+		Logger:   discardLogger(),
+		ServeMux: http.NewServeMux(),
+		Impl:     &falseLifecycleImpl{},
+	}
+
+	srv, _ := service.CreateDefaultTelemetry(":0")
+
+	for _, path := range []string{"/readyz", "/livez"} {
+		rr := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+		require.Equal(t, http.StatusInternalServerError, rr.Code, "path=%s", path)
+	}
+}

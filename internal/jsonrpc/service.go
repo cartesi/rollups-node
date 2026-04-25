@@ -102,25 +102,7 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	return s, nil
 }
 
-func (s *Service) Alive() bool {
-	return true
-}
-
-func (s *Service) Ready() bool {
-	return true
-}
-
-func (s *Service) Reload() []error {
-	return nil
-}
-
-func (s *Service) Tick() []error {
-	// No periodic tasks.
-	return nil
-}
-
-func (s *Service) Stop(_ bool) []error {
-	s.SetStopping()
+func (s *Service) OnStop(_ bool) []error {
 	var errs []error
 	s.Logger.Info("Shutting down JSON-RPC HTTP server", "addr", s.server.Addr)
 	ctx, cancel := context.WithTimeout(context.Background(), jsonrpcShutdownTimeout)
@@ -129,10 +111,6 @@ func (s *Service) Stop(_ bool) []error {
 		errs = append(errs, err)
 	}
 	return errs
-}
-
-func (s *Service) String() string {
-	return s.Name
 }
 
 func (s *Service) Serve() error {

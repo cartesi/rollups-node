@@ -93,16 +93,15 @@ var (
 type ServiceImpl interface {
 	Alive() bool
 	Ready() bool
-	Reload() []error
+	OnReload() []error
 	Tick() []error
-	Stop(bool) []error
+	OnStop(bool) []error
 }
 
 type IService interface {
 	Alive() bool
 	Ready() bool
 	Reload() []error
-	Tick() []error
 	Stop(bool) []error
 	Serve() error
 	String() string
@@ -168,7 +167,7 @@ type Service struct {
 //   - using values from c,
 //   - using default values when applicable
 func Create(ctx context.Context, c *CreateInfo, s *Service) error {
-	if c == nil || c.Impl == nil || c.Impl == s || s == nil {
+	if c == nil || c.Impl == nil || s == nil {
 		return ErrInvalid
 	}
 	if err := ctx.Err(); err != nil {
@@ -251,17 +250,15 @@ func Create(ctx context.Context, c *CreateInfo, s *Service) error {
 	return nil
 }
 
-func (s *Service) Alive() bool {
-	return s.Impl.Alive()
-}
-
-func (s *Service) Ready() bool {
-	return s.Impl.Ready()
-}
+func (s *Service) OnReload() []error { return nil }
+func (s *Service) OnStop(bool) []error { return nil }
+func (s *Service) Alive() bool { return true }
+func (s *Service) Ready() bool { return true }
+func (s *Service) Tick() []error { return nil }
 
 func (s *Service) Reload() []error {
 	start := time.Now()
-	errs := s.Impl.Reload()
+	errs := s.Impl.OnReload()
 	elapsed := time.Since(start)
 
 	if len(errs) > 0 {
@@ -275,7 +272,7 @@ func (s *Service) Reload() []error {
 	return errs
 }
 
-func (s *Service) Tick() []error {
+func (s *Service) tickService() []error {
 	start := time.Now()
 	errs := s.Impl.Tick()
 	elapsed := time.Since(start)
@@ -308,7 +305,7 @@ func (s *Service) SetStopping() {
 func (s *Service) Stop(force bool) []error {
 	s.stopping.Store(true)
 	start := time.Now()
-	errs := s.Impl.Stop(force)
+	errs := s.Impl.OnStop(force)
 	if s.Telemetry != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), telemetryShutdownTimeout)
 		defer cancel()
@@ -378,7 +375,7 @@ func (s *Service) Serve() error {
 	default:
 	}
 
-	s.Tick()
+	s.tickService()
 	for s.Running.Load() {
 		select {
 		case <-s.Sighup:
@@ -390,9 +387,9 @@ func (s *Service) Serve() error {
 			s.Stop(true) // Stop logs errors internally.
 			return nil
 		case <-s.Ticker.C:
-			s.Tick()
+			s.tickService()
 		case <-s.rescheduleChan():
-			s.Tick()
+			s.tickService()
 		}
 	}
 	return nil
@@ -452,7 +449,7 @@ func (s *Service) CreateDefaultTelemetry(addr string) (*http.Server, func() erro
 
 // HTTP handler for `/s.Name/readyz` that exposes the value of Ready()
 func (s *Service) ReadyHandler(w http.ResponseWriter, r *http.Request) {
-	if !s.Ready() {
+	if !s.Impl.Ready() {
 		http.Error(w, s.Name+": ready check failed",
 			http.StatusInternalServerError)
 	} else {
@@ -462,7 +459,7 @@ func (s *Service) ReadyHandler(w http.ResponseWriter, r *http.Request) {
 
 // HTTP handler for `/s.Name/livez` that exposes the value of Alive()
 func (s *Service) AliveHandler(w http.ResponseWriter, r *http.Request) {
-	if !s.Alive() {
+	if !s.Impl.Alive() {
 		http.Error(w, s.Name+": alive check failed",
 			http.StatusInternalServerError)
 	} else {
