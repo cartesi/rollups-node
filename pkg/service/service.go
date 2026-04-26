@@ -77,19 +77,6 @@ var (
 )
 
 // ServiceImpl is the interface that concrete services must implement.
-//
-// IMPORTANT: Stop() implementations that shadow Service.Stop() MUST call
-// s.SetStopping() as their first action. This sets the stopping flag so that
-// a concurrent Tick() can detect shutdown-in-progress via IsStopping() and
-// suppress expected teardown errors (e.g., context.Canceled from in-flight
-// RPCs). Without this call, the race window between Stop() tearing down
-// resources and Tick() observing the cancellation produces spurious errors.
-//
-// When Stop() is called through the framework's Service.Stop() dispatch,
-// the flag is set automatically before Impl.Stop() runs. But the node
-// orchestrator calls child.Stop() directly (Go method resolution picks the
-// concrete type's Stop, bypassing Service.Stop), so the impl's SetStopping()
-// is the only thing that sets the flag on that path.
 type ServiceImpl interface {
 	Alive() bool
 	Ready() bool
@@ -149,14 +136,6 @@ type Service struct {
 	ServeMux      *http.ServeMux
 	Telemetry     *http.Server
 	TelemetryFunc func() error
-
-	// stopping is set to true at the beginning of Stop(), before Impl.Stop()
-	// is called. Services can check this via IsStopping() from Tick() to
-	// detect that shutdown is in progress and suppress errors that are
-	// expected during teardown (e.g., context.Canceled from in-flight RPC
-	// calls). This covers the race window between Stop() being called and
-	// cancelContext() propagating.
-	stopping atomic.Bool
 
 	// cleanedUp server Stop() run exactly once, even when Stop() is called
 	// multiple times (by the child's Serve() loop and by the parent orchestrator).
@@ -254,20 +233,6 @@ func (s *Service) Reload() []error {
 	return errs
 }
 
-// IsStopping reports whether Stop() has been called. Services use this in
-// Tick() to detect shutdown-in-progress and suppress expected teardown errors.
-func (s *Service) IsStopping() bool {
-	return s.stopping.Load()
-}
-
-// SetStopping sets the stopping flag. Services whose Stop() method shadows
-// Service.Stop() (i.e., every ServiceImpl) must call this at the top of their
-// Stop so that concurrent Tick goroutines can observe IsStopping() == true
-// before resources are torn down.
-func (s *Service) SetStopping() {
-	s.stopping.Store(true)
-}
-
 func (s *Service) Stop(force bool) []error {
 	// CAS achieves once-semantics: the second caller returns immediately
 	// (fire-and-forget) rather than blocking like sync.Once. This is safe
@@ -277,7 +242,6 @@ func (s *Service) Stop(force bool) []error {
 		return nil // already stopped
 	}
 
-	s.stopping.Store(true)
 	start := time.Now()
 	errs := s.Impl.OnStop(force)
 	if s.Telemetry != nil {

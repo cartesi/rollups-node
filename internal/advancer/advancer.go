@@ -70,14 +70,10 @@ func getUnprocessedInputs(
 // potentially has more work. Callers use this to decide whether to re-tick immediately
 // (via the Reschedule channel) or wait for the next timer/event.
 func (s *Service) Step(ctx context.Context) (bool, error) {
-	// Check for context cancellation or shutdown in progress.
-	// The framework sets Stopping before calling Impl.Stop(), so this
+	// Check for context cancellation or shutdown in progress. This
 	// prevents starting new work while the machine manager is being torn down.
 	if err := ctx.Err(); err != nil {
 		return false, err
-	}
-	if s.IsStopping() {
-		return false, nil
 	}
 
 	// Update the machine manager with any new or disabled applications

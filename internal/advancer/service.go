@@ -125,7 +125,7 @@ func (s *Service) Tick(ctx context.Context) []error {
 	}
 	// During shutdown, the machine manager is closed and GetMachine() may
 	// return ErrNoApp. Suppress this to avoid spurious ERR log entries.
-	if errors.Is(err, ErrNoApp) && s.IsStopping() {
+	if errors.Is(err, ErrNoApp) && ctx.Err() != nil {
 		s.Logger.Warn("Tick interrupted by shutdown", "error", err)
 		return nil
 	}

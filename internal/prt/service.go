@@ -128,14 +128,14 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 // for processed epochs of all running applications.
 func (s *Service) Tick(ctx context.Context) []error {
 	// Check for shutdown before starting work, consistent with the advancer.
-	if s.IsStopping() {
+	if ctx.Err() != nil {
 		return nil
 	}
 
 	apps, _, err := getAllRunningApplications(ctx, s.repository)
 	if err != nil {
 		// Only suppress context errors during shutdown; surface real DB errors.
-		if s.IsStopping() && errors.Is(err, context.Canceled) {
+		if errors.Is(err, context.Canceled) {
 			s.Logger.Warn("Tick interrupted by shutdown", "error", err)
 			return nil
 		}
@@ -151,7 +151,7 @@ func (s *Service) Tick(ctx context.Context) []error {
 		if err := s.validateApplication(ctx, apps[idx]); err != nil {
 			// During shutdown, in-flight L1 requests see context cancellation.
 			// Suppress these to avoid spurious ERR log entries.
-			if s.IsStopping() && errors.Is(err, context.Canceled) {
+			if errors.Is(err, context.Canceled) {
 				s.Logger.Warn("Tick interrupted by shutdown",
 					"application", apps[idx].IApplicationAddress, "error", err)
 				continue
