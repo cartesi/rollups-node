@@ -125,7 +125,6 @@ type CreateInfo struct {
 
 // Service stores runtime information.
 type Service struct {
-	Running       atomic.Bool
 	Name          string
 	Impl          ServiceImpl
 	Logger        *slog.Logger
@@ -137,9 +136,9 @@ type Service struct {
 	Telemetry     *http.Server
 	TelemetryFunc func() error
 
-	// cleanedUp server Stop() run exactly once, even when Stop() is called
+	// stopped server Stop() run exactly once, even when Stop() is called
 	// multiple times (by the child's Serve() loop and by the parent orchestrator).
-	cleanedUp atomic.Bool
+	stopped atomic.Bool
 }
 
 // Create a service by:
@@ -154,7 +153,6 @@ func Create(ctx context.Context, c *CreateInfo, s *Service) error {
 		return err // This returns context.Canceled or context.DeadlineExceeded.
 	}
 
-	s.Running.Store(false)
 	s.Name = c.Name
 	s.Impl = c.Impl
 	s.Logger = c.Logger
@@ -238,7 +236,7 @@ func (s *Service) Stop(force bool) []error {
 	// (fire-and-forget) rather than blocking like sync.Once. This is safe
 	// because the orchestrator calls Cancel() after Stop() and waits for
 	// the Serve goroutine to exit.
-	if !s.cleanedUp.CompareAndSwap(false, true) {
+	if !s.stopped.CompareAndSwap(false, true) {
 		return nil // already stopped
 	}
 
@@ -259,8 +257,8 @@ func (s *Service) Stop(force bool) []error {
 	}
 	elapsed := time.Since(start)
 
-	s.Running.Store(false)
 	s.cancelContext()
+
 	if len(errs) > 0 {
 		s.Logger.Error("Stop",
 			"force", force,
@@ -275,8 +273,6 @@ func (s *Service) Stop(force bool) []error {
 }
 
 func (s *Service) Serve() error {
-	s.Running.Store(true)
-
 	// Check for context cancellation before the first tick.
 	select {
 	case <-s.context.Done():
@@ -286,7 +282,7 @@ func (s *Service) Serve() error {
 	}
 
 	go func() {
-		for s.Running.Load() {
+		for !s.stopped.Load() {
 			select {
 			case <-s.Sighup:
 				s.Reload()
