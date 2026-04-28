@@ -4,7 +4,6 @@
 package evmreader
 
 import (
-	"context"
 	"errors"
 	"math/big"
 	"time"
@@ -475,8 +474,8 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 	logLevel, err := config.GetLogLevel()
 	s.Require().NoError(err)
 
-	serviceArgs := &service.CreateInfo{Name: "evm-reader", Impl: s.evmReader, LogLevel: logLevel}
-	err = service.Create(context.Background(), serviceArgs, &s.evmReader.Service)
+	serviceArgs := &service.ServiceConfigs{Name: "evm-reader", LogLevel: logLevel}
+	err = service.InitServiceTemplate(serviceArgs, &s.evmReader.ServiceTemplate, s.evmReader)
 	s.Require().NoError(err)
 
 	apps := copyApplications(applications)

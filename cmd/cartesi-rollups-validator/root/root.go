@@ -68,19 +68,21 @@ func run(cmd *cobra.Command, args []string) {
 	defer cancel()
 
 	createInfo := validator.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:                 config.ServiceValidator,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServiceValidator, cfg.LogLevel),
-			LogColor:             cfg.LogColor,
-			EnableSignalHandling: true,
-			TelemetryCreate:      true,
-			TelemetryAddress:     cfg.ValidatorTelemetryAddress,
+		TickServiceConfigs: service.TickServiceConfigs{
 			PollInterval:         cfg.ValidatorPollingInterval,
+			ServiceConfigs: service.ServiceConfigs{
+				Name:                 config.ServiceValidator,
+				LogLevel:             config.ResolveServiceLogLevel(config.ServiceValidator, cfg.LogLevel),
+				LogColor:             cfg.LogColor,
+				EnableSignalHandling: true,
+				TelemetryCreate:      true,
+				TelemetryAddress:     cfg.ValidatorTelemetryAddress,
+			},
 		},
 		Config: *cfg,
 	}
-	logger := service.NewServiceLogger(&createInfo.CreateInfo)
-	createInfo.CreateInfo.Logger = logger
+	logger := service.NewServiceLogger(&createInfo.ServiceConfigs)
+	createInfo.ServiceConfigs.Logger = logger
 
 	var err error
 	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())

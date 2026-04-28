@@ -73,8 +73,8 @@ func (s *EvmReaderSuite) SetupTest() {
 	logLevel, err := config.GetLogLevel()
 	s.Require().NoError(err)
 
-	serviceArgs := &service.CreateInfo{Name: "evm-reader", Impl: s.evmReader, LogLevel: logLevel}
-	err = service.Create(context.Background(), serviceArgs, &s.evmReader.Service)
+	serviceArgs := &service.ServiceConfigs{Name: "evm-reader", LogLevel: logLevel}
+	err = service.InitServiceTemplate(serviceArgs, &s.evmReader.ServiceTemplate, s.evmReader)
 	s.Require().NoError(err)
 }
 
@@ -89,7 +89,7 @@ func (s *EvmReaderSuite) TestItStopsWhenContextIsCanceled() {
 	cancel()
 
 	err := <-errChannel
-	s.Require().Equal(context.Canceled, err, "stopped for the wrong reason")
+	s.Require().Nil(err, "stopped with an error when canceled")
 }
 
 func (s *EvmReaderSuite) TestItEventuallyBecomesReady() {
@@ -192,7 +192,7 @@ func (s *EvmReaderSuite) TestRunStopsDuringRetryWhenContextCanceled() {
 		Return(sub, fmt.Errorf("connection refused"))
 
 	err := s.evmReader.Run(ctx, make(chan struct{}, 1))
-	s.Require().ErrorIs(err, context.Canceled)
+	s.Require().Nil(err)
 }
 
 func (s *EvmReaderSuite) TestItFailsToSubscribeForNewInputsOnStart() {

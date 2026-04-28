@@ -81,19 +81,21 @@ func run(cmd *cobra.Command, args []string) {
 	defer cancel()
 
 	createInfo := claimer.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:                 config.ServiceClaimer,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServiceClaimer, cfg.LogLevel),
-			LogColor:             cfg.LogColor,
-			EnableSignalHandling: true,
-			TelemetryCreate:      true,
-			TelemetryAddress:     cfg.ClaimerTelemetryAddress,
-			PollInterval:         cfg.ClaimerPollingInterval,
+		TickServiceConfigs: service.TickServiceConfigs{
+			PollInterval:   cfg.ClaimerPollingInterval,
+			ServiceConfigs: service.ServiceConfigs{
+				Name:                 config.ServiceClaimer,
+				LogLevel:             config.ResolveServiceLogLevel(config.ServiceClaimer, cfg.LogLevel),
+				LogColor:             cfg.LogColor,
+				EnableSignalHandling: true,
+				TelemetryCreate:      true,
+				TelemetryAddress:     cfg.ClaimerTelemetryAddress,
+			},
 		},
 		Config: *cfg,
 	}
-	logger := service.NewServiceLogger(&createInfo.CreateInfo)
-	createInfo.CreateInfo.Logger = logger
+	logger := service.NewServiceLogger(&createInfo.ServiceConfigs)
+	createInfo.ServiceConfigs.Logger = logger
 
 	authOpt, err := config.HTTPAuthorizationOption()
 	cli.CheckErr(logger, err)

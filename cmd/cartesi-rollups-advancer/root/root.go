@@ -80,19 +80,21 @@ func run(cmd *cobra.Command, args []string) {
 	defer cancel()
 
 	createInfo := advancer.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:                 config.ServiceAdvancer,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServiceAdvancer, cfg.LogLevel),
-			LogColor:             cfg.LogColor,
-			EnableSignalHandling: true,
-			TelemetryCreate:      true,
-			TelemetryAddress:     cfg.AdvancerTelemetryAddress,
-			PollInterval:         cfg.AdvancerPollingInterval,
+		TickServiceConfigs: service.TickServiceConfigs{
+			PollInterval:   cfg.AdvancerPollingInterval,
+			ServiceConfigs: service.ServiceConfigs{
+				Name:                 config.ServiceAdvancer,
+				LogLevel:             config.ResolveServiceLogLevel(config.ServiceAdvancer, cfg.LogLevel),
+				LogColor:             cfg.LogColor,
+				EnableSignalHandling: true,
+				TelemetryCreate:      true,
+				TelemetryAddress:     cfg.AdvancerTelemetryAddress,
+			},
 		},
 		Config: *cfg,
 	}
-	logger := service.NewServiceLogger(&createInfo.CreateInfo)
-	createInfo.CreateInfo.Logger = logger
+	logger := service.NewServiceLogger(&createInfo.ServiceConfigs)
+	createInfo.ServiceConfigs.Logger = logger
 
 	var err error
 	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())

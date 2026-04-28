@@ -101,7 +101,7 @@ func newTestServiceFull(t *testing.T, name string, maxInflight uint64, corsOrigi
 	require.NoError(t, err)
 
 	ci := CreateInfo{
-		CreateInfo: service.CreateInfo{
+		ServiceConfigs: service.ServiceConfigs{
 			Name:     name,
 			LogLevel: logLevel,
 			LogColor: true,

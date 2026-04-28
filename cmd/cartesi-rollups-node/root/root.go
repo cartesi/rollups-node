@@ -150,7 +150,7 @@ func run(cmd *cobra.Command, args []string) {
 	defer cancel()
 
 	createInfo := node.CreateInfo{
-		CreateInfo: service.CreateInfo{
+		ServiceConfigs: service.ServiceConfigs{
 			Name:                 config.ServiceNode,
 			LogLevel:             cfg.LogLevel,
 			LogColor:             cfg.LogColor,
@@ -160,8 +160,8 @@ func run(cmd *cobra.Command, args []string) {
 		},
 		Config: *cfg,
 	}
-	logger := service.NewServiceLogger(&createInfo.CreateInfo)
-	createInfo.CreateInfo.Logger = logger
+	logger := service.NewServiceLogger(&createInfo.ServiceConfigs)
+	createInfo.ServiceConfigs.Logger = logger
 
 	var err error
 	createInfo.ReaderClient, err = newEthClient(ctx, config.ServiceEvmReader)

@@ -82,7 +82,7 @@ func run(cmd *cobra.Command, args []string) {
 	defer cancel()
 
 	createInfo := evmreader.CreateInfo{
-		CreateInfo: service.CreateInfo{
+		ServiceConfigs: service.ServiceConfigs{
 			Name:                 config.ServiceEvmReader,
 			LogLevel:             config.ResolveServiceLogLevel(config.ServiceEvmReader, cfg.LogLevel),
 			LogColor:             cfg.LogColor,
@@ -92,8 +92,8 @@ func run(cmd *cobra.Command, args []string) {
 		},
 		Config: *cfg,
 	}
-	logger := service.NewServiceLogger(&createInfo.CreateInfo)
-	createInfo.CreateInfo.Logger = logger
+	logger := service.NewServiceLogger(&createInfo.ServiceConfigs)
+	createInfo.ServiceConfigs.Logger = logger
 
 	var err error
 	authOpt, err := config.HTTPAuthorizationOption()

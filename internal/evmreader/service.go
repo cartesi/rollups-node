@@ -20,7 +20,7 @@ import (
 )
 
 type CreateInfo struct {
-	service.CreateInfo
+	service.ServiceConfigs
 
 	Config config.EvmreaderConfig
 
@@ -31,7 +31,7 @@ type CreateInfo struct {
 }
 
 type Service struct {
-	service.Service
+	service.ServiceTemplate
 
 	client                              EthClientInterface
 	wsClient                            EthClientInterface
@@ -63,9 +63,8 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	}
 
 	s := &Service{}
-	c.Impl = s
 
-	err = service.Create(ctx, &c.CreateInfo, &s.Service)
+	err = service.InitServiceTemplate(&c.ServiceConfigs, &s.ServiceTemplate, s)
 	if err != nil {
 		return nil, err
 	}

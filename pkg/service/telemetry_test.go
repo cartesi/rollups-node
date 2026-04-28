@@ -15,13 +15,13 @@ import (
 
 // newTelemetryTestService returns a *Service ready to have CreateDefaultTelemetry
 // called on it. It wires a ServeMux, a mockImpl, and a discard logger.
-func newTelemetryTestService() *Service {
+func newTelemetryTestService() *ServiceTemplate {
 	impl := &mockImpl{}
-	return &Service{
-		Name:     "test",
-		Logger:   discardLogger(),
-		ServeMux: http.NewServeMux(),
-		Impl:     impl,
+	return &ServiceTemplate{
+		Name:          "test",
+		Logger:        discardLogger(),
+		ServeMux:      http.NewServeMux(),
+		lifecycleImpl: impl,
 	}
 }
 
@@ -98,18 +98,18 @@ func TestCreateDefaultTelemetry_PanicRecovered(t *testing.T) {
 	require.NotContains(t, rr.Body.String(), "kaboom")
 }
 
-type falseLifecycleImpl struct{ Service }
+type falseLifecycleImpl struct{ ServiceTemplate }
 
 func (*falseLifecycleImpl) Alive() bool                   { return false }
 func (*falseLifecycleImpl) Ready() bool                   { return false }
 func (*falseLifecycleImpl) OnServe(context.Context) error { return nil }
 
 func TestCreateDefaultTelemetry_Returns500WhenLifecycleFails(t *testing.T) {
-	service := &Service{
-		Name:     "test",
-		Logger:   discardLogger(),
-		ServeMux: http.NewServeMux(),
-		Impl:     &falseLifecycleImpl{},
+	service := &ServiceTemplate{
+		Name:          "test",
+		Logger:        discardLogger(),
+		ServeMux:      http.NewServeMux(),
+		lifecycleImpl: &falseLifecycleImpl{},
 	}
 
 	srv, _ := service.CreateDefaultTelemetry(":0")

@@ -188,8 +188,8 @@ func newServiceMock() (*Service, *claimerRepositoryMock, *claimerBlockchainMock)
 	blockchain := &claimerBlockchainMock{}
 
 	claimer := &Service{
-		TickService: service.TickService{
-			Service: service.Service{
+		TickServiceTemplate: service.TickServiceTemplate{
+			ServiceTemplate: service.ServiceTemplate{
 				Logger: slog.New(handler),
 			},
 		},

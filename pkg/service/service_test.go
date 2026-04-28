@@ -16,7 +16,7 @@ import (
 
 // mockImpl is a minimal ServiceImpl for testing the Serve() loop.
 type mockImpl struct {
-	TickService
+	TickServiceTemplate
 	tickCount atomic.Int32
 	onTick    func(n int32) // called on each Tick with the tick count (1-based)
 }
@@ -38,21 +38,21 @@ func createTestService(
 	t *testing.T,
 	impl *mockImpl,
 	enableReschedule bool,
-) (*Service, context.CancelFunc) {
+) (IService, context.CancelFunc) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	impl.TickImpl = impl
-	err := NewTickService(&CreateInfo{
-		Name:             "test",
-		LogLevel:         slog.LevelError,
-		Impl:             impl,
+	err := InitTickServiceTemplate(&TickServiceConfigs{
+		ServiceConfigs: ServiceConfigs{
+			Name:             "test",
+			LogLevel:         slog.LevelError,
+			Context:          ctx,
+			Cancel:           cancel,
+		},
 		PollInterval:     10 * time.Minute, // long: tests control wakeup explicitly
-		Context:          ctx,
-		Cancel:           cancel,
 		EnableReschedule: enableReschedule,
-	}, &impl.TickService)
+	}, &impl.TickServiceTemplate, impl, impl)
 	require.NoError(t, err)
-	return &impl.Service, cancel
+	return impl, cancel
 }
 
 type ServeSuite struct {
@@ -68,21 +68,20 @@ func (s *ServeSuite) TestDisabledReschedulePreservesExistingBehavior() {
 	// Serve() should tick only on timer fires.
 	impl := &mockImpl{}
 	ctx, cancel := context.WithCancel(context.Background())
-	svc := &TickService{}
-	svc.TickImpl = impl
-	err := NewTickService(&CreateInfo{
-		Name:         "test-no-resched",
-		LogLevel:     slog.LevelError,
-		Impl:         impl,
+	err := InitTickServiceTemplate(&TickServiceConfigs{
+		ServiceConfigs: ServiceConfigs{
+			Name:     "test-no-resched",
+			LogLevel: slog.LevelError,
+			Context:  ctx,
+			Cancel:   cancel,
+		},
 		PollInterval: 20 * time.Millisecond,
-		Context:      ctx,
-		Cancel:       cancel,
-	}, svc)
+	}, &impl.TickServiceTemplate, impl, impl)
 	s.Require().NoError(err)
 
 	done := make(chan struct{})
 	go func() {
-		_ = svc.Serve()
+		_ = impl.Serve()
 		close(done)
 	}()
 

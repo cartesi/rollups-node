@@ -22,7 +22,7 @@ import (
 )
 
 type Service struct {
-	service.TickService
+	service.TickServiceTemplate
 
 	repository ValidatorRepository
 
@@ -32,7 +32,7 @@ type Service struct {
 }
 
 type CreateInfo struct {
-	service.CreateInfo
+	service.TickServiceConfigs
 
 	Config config.ValidatorConfig
 
@@ -46,10 +46,8 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	}
 
 	s := &Service{}
-	s.TickImpl = s
-	c.Impl = s
 
-	err = service.NewTickService(&c.CreateInfo, &s.TickService)
+	err = service.InitTickServiceTemplate(&c.TickServiceConfigs, &s.TickServiceTemplate, s, s)
 	if err != nil {
 		return nil, err
 	}

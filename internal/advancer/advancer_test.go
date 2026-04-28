@@ -67,14 +67,15 @@ func newMockAdvancerServiceWithContextAndBatchSize(
 		machineManager: machineManager,
 		repository:     repo,
 	}
-	serviceArgs := &service.CreateInfo{
-		Name: "advancer",
-		Impl: s,
-		Context: ctx,
-		Cancel: cancelCtx,
+	serviceArgs := &service.TickServiceConfigs{
+			ServiceConfigs: service.ServiceConfigs{
+			Name: "advancer",
+			Context: ctx,
+			Cancel: cancelCtx,
+		},
 		EnableReschedule: true,
 	}
-	err := service.NewTickService(serviceArgs, &s.TickService)
+	err := service.InitTickServiceTemplate(serviceArgs, &s.TickServiceTemplate, s, s)
 	if err != nil {
 		return nil, err
 	}
@@ -1052,8 +1053,8 @@ func (s *AdvancerSuite) TestRemoveSnapshot() {
 
 		tmpDir := s.T().TempDir()
 		advancer := &Service{snapshotsDir: tmpDir}
-		serviceArgs := &service.CreateInfo{Name: "advancer", Impl: advancer}
-		require.Nil(service.Create(context.Background(), serviceArgs, &advancer.Service))
+		serviceArgs := &service.TickServiceConfigs{ServiceConfigs: service.ServiceConfigs{Name: "advancer"}}
+		require.Nil(service.InitTickServiceTemplate(serviceArgs, &advancer.TickServiceTemplate, advancer, advancer))
 
 		// Create a snapshot directory
 		snapshotPath := filepath.Join(tmpDir, "myapp_epoch0_input0")
@@ -1071,8 +1072,8 @@ func (s *AdvancerSuite) TestRemoveSnapshot() {
 
 		tmpDir := s.T().TempDir()
 		advancer := &Service{snapshotsDir: tmpDir}
-		serviceArgs := &service.CreateInfo{Name: "advancer", Impl: advancer}
-		require.Nil(service.Create(context.Background(), serviceArgs, &advancer.Service))
+		serviceArgs := &service.TickServiceConfigs{ServiceConfigs: service.ServiceConfigs{Name: "advancer"}}
+		require.Nil(service.InitTickServiceTemplate(serviceArgs, &advancer.TickServiceTemplate, advancer, advancer))
 
 		snapshotPath := filepath.Join(tmpDir, "myapp_epoch0_input0")
 		err := advancer.removeSnapshot(snapshotPath, "myapp")
@@ -1084,8 +1085,8 @@ func (s *AdvancerSuite) TestRemoveSnapshot() {
 
 		tmpDir := s.T().TempDir()
 		advancer := &Service{snapshotsDir: tmpDir}
-		serviceArgs := &service.CreateInfo{Name: "advancer", Impl: advancer}
-		require.Nil(service.Create(context.Background(), serviceArgs, &advancer.Service))
+		serviceArgs := &service.TickServiceConfigs{ServiceConfigs: service.ServiceConfigs{Name: "advancer"}}
+		require.Nil(service.InitTickServiceTemplate(serviceArgs, &advancer.TickServiceTemplate, advancer, advancer))
 
 		// Try to traverse outside snapshotsDir
 		maliciousPath := filepath.Join(tmpDir, "..", "outside", "myapp_evil")
@@ -1099,8 +1100,8 @@ func (s *AdvancerSuite) TestRemoveSnapshot() {
 
 		tmpDir := s.T().TempDir()
 		advancer := &Service{snapshotsDir: tmpDir}
-		serviceArgs := &service.CreateInfo{Name: "advancer", Impl: advancer}
-		require.Nil(service.Create(context.Background(), serviceArgs, &advancer.Service))
+		serviceArgs := &service.TickServiceConfigs{ServiceConfigs: service.ServiceConfigs{Name: "advancer"}}
+		require.Nil(service.InitTickServiceTemplate(serviceArgs, &advancer.TickServiceTemplate, advancer, advancer))
 
 		snapshotPath := filepath.Join(tmpDir, "otherapp_epoch0_input0")
 		err := advancer.removeSnapshot(snapshotPath, "myapp")

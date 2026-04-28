@@ -6,8 +6,8 @@
 // The runtime information is then stored in the Service.
 //
 // The recommended way to implement a new service is to:
-//   - embed a [CreateInfo] struct into a new Create<type>Info struct.
-//   - embed a [Service] struct into a new <type>Service struct.
+//   - embed a [ServiceConfigs] struct into a new Create<type>Info struct.
+//   - embed a [ServiceTemplate] struct into a new <type>Service struct.
 //   - embed a [Create] call into a new Create<type> function.
 //
 // Check DummyService, SlowService and ListService source code for examples of how to do it.
@@ -74,17 +74,10 @@ const telemetryShutdownTimeout = 5 * time.Second
 
 var (
 	ErrInvalid = fmt.Errorf("Invalid Argument") // invalid argument
+	ErrServiceStopped = fmt.Errorf("Service was stopped")
 )
 
-// ServiceImpl is the interface that concrete services must implement.
-type ServiceImpl interface {
-	Alive() bool
-	Ready() bool
-	OnReload() []error
-	OnStop(bool) []error
-	OnServe(ctx context.Context) error
-}
-
+// Public interface with methods to manipulate the service.
 type IService interface {
 	Alive() bool
 	Ready() bool
@@ -94,40 +87,25 @@ type IService interface {
 	String() string
 }
 
-// CreateInfo stores initialization data for the Create function
-type CreateInfo struct {
-	Name                 string
-	LogLevel             slog.Level
-	LogColor             bool
-	EnableSignalHandling bool
-	TelemetryCreate      bool
-	TelemetryAddress     string
-	PollInterval         time.Duration
-	Impl                 ServiceImpl
-	Logger               *slog.Logger
-	ServeMux             *http.ServeMux
-	Context              context.Context
-	Cancel               context.CancelFunc
+/*
+ * Service template for services that do continuous processing.
+ */
 
-	// EnableReschedule, when true, creates a self-continuation channel.
-	// Services that discover remaining work after a Tick() call
-	// SignalReschedule() to re-tick immediately without waiting for the
-	// timer interval.
-	//
-	// Migration: When the events library (feature/events-library-research)
-	// ships, Serve() will gain an additional EventChannel case for external
-	// cross-service notifications. Reschedule remains complementary:
-	// Reschedule = internal self-continuation ("I have more work"),
-	// EventChannel = external stimulus ("another service produced work").
-	// Both coexist in the select loop alongside the Ticker safety-net.
-	EnableReschedule bool
+// Internal interface with abstract methods called by ServiceTemplate.
+// These methods are not part of the public service interface.
+type LifecycleImpl interface {
+	Alive() bool
+	Ready() bool
+	OnReload() []error
+	OnStop(bool) []error
+	OnServe(ctx context.Context) error
 }
 
-// Service stores runtime information.
-type Service struct {
+// ServiceTemplate stores runtime information.
+type ServiceTemplate struct {
 	Name          string
-	Impl          ServiceImpl
 	Logger        *slog.Logger
+	lifecycleImpl LifecycleImpl
 	context       context.Context
 	cancelContext context.CancelFunc
 	sigHangUp     chan os.Signal // SIGHUP to reload
@@ -141,20 +119,31 @@ type Service struct {
 	stopped atomic.Bool
 }
 
-// Create a service by:
-//   - using values from s if non zero,
-//   - using values from c,
-//   - using default values when applicable
-func Create(ctx context.Context, c *CreateInfo, s *Service) error {
-	if c == nil || c.Impl == nil || s == nil {
+// ServiceConfigs stores configuration for the InitServiceTemplate function
+type ServiceConfigs struct {
+	Name                 string
+	Logger               *slog.Logger
+	LogLevel             slog.Level
+	LogColor             bool
+	Context              context.Context
+	Cancel               context.CancelFunc
+	EnableSignalHandling bool
+	TelemetryCreate      bool
+	TelemetryAddress     string
+	ServeMux             *http.ServeMux  // used only for unit testing
+}
+
+// Initialize the 'ServiceTemplate' structure using values from 'CreateInfo'.
+// 'impl' must be a reference to the concrete service implementation that
+// embeds 'ServiceTemplate'
+func InitServiceTemplate(c *ServiceConfigs, s *ServiceTemplate, impl LifecycleImpl) error {
+	if c == nil || s == nil || impl == nil {
 		return ErrInvalid
 	}
-	if err := ctx.Err(); err != nil {
-		return err // This returns context.Canceled or context.DeadlineExceeded.
-	}
+
+	s.lifecycleImpl = impl
 
 	s.Name = c.Name
-	s.Impl = c.Impl
 	s.Logger = c.Logger
 
 	// log
@@ -210,14 +199,21 @@ func Create(ctx context.Context, c *CreateInfo, s *Service) error {
 	return nil
 }
 
-func (s *Service) OnReload() []error { return nil }
-func (s *Service) OnStop(bool) []error { return nil }
-func (s *Service) Alive() bool { return true }
-func (s *Service) Ready() bool { return true }
+// Default implementation of some abstract methods (except `OnServe`).
+// Remove them to force concrete services to provide implementation for them.
+func (s *ServiceTemplate) OnReload() []error { return nil }
+func (s *ServiceTemplate) OnStop(bool) []error { return nil }
+func (s *ServiceTemplate) Alive() bool { return true }
+func (s *ServiceTemplate) Ready() bool { return true }
+func (s *ServiceTemplate) String() string { return s.Name }
 
-func (s *Service) Reload() []error {
+func (s *ServiceTemplate) Reload() []error {
+	if s.stopped.Load() {
+		return []error{ErrServiceStopped}
+	}
+
 	start := time.Now()
-	errs := s.Impl.OnReload()
+	errs := s.lifecycleImpl.OnReload()
 	elapsed := time.Since(start)
 
 	if len(errs) > 0 {
@@ -231,7 +227,7 @@ func (s *Service) Reload() []error {
 	return errs
 }
 
-func (s *Service) Stop(force bool) []error {
+func (s *ServiceTemplate) Stop(force bool) []error {
 	// CAS achieves once-semantics: the second caller returns immediately
 	// (fire-and-forget) rather than blocking like sync.Once. This is safe
 	// because the orchestrator calls Cancel() after Stop() and waits for
@@ -241,7 +237,7 @@ func (s *Service) Stop(force bool) []error {
 	}
 
 	start := time.Now()
-	errs := s.Impl.OnStop(force)
+	errs := s.lifecycleImpl.OnStop(force)
 	if s.telemetry != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), telemetryShutdownTimeout)
 		defer cancel()
@@ -272,17 +268,13 @@ func (s *Service) Stop(force bool) []error {
 	return errs
 }
 
-func (s *Service) Serve() error {
-	// Check for context cancellation before the first tick.
-	select {
-	case <-s.context.Done():
-		s.Stop(true) // Stop logs errors internally.
-		return nil
-	default:
+func (s *ServiceTemplate) Serve() error {
+	if s.stopped.Load() {
+		return ErrServiceStopped
 	}
 
 	go func() {
-		for !s.stopped.Load() {
+		for {
 			select {
 			case <-s.sigHangUp:
 				s.Reload()
@@ -296,20 +288,146 @@ func (s *Service) Serve() error {
 		}
 	}()
 
-	defer s.Stop(false)
+	defer s.Stop(true)
 
-	return s.Impl.OnServe(s.context)
-}
-
-func (s *Service) String() string {
-	return s.Name
+	return s.lifecycleImpl.OnServe(s.context)
 }
 
 // LogConfig logs the service configuration at debug level.
 // Intended for use by standalone service binaries after Create.
-func (s *Service) LogConfig(config any) {
+func (s *ServiceTemplate) LogConfig(config any) {
 	s.Logger.Info("Starting service", "config", config)
 }
+
+/*
+ * Alternative service template that implements the tick-based processing.
+ */
+
+type TickImpl interface {
+	Tick(ctx context.Context) []error
+}
+
+type TickServiceTemplate struct {
+	ServiceTemplate
+	tickImpl   TickImpl
+	ticker     *time.Ticker
+	reschedule chan struct{} // self-continuation signal; see CreateInfo.EnableReschedule
+}
+
+type TickServiceConfigs struct {
+	ServiceConfigs
+	PollInterval time.Duration
+
+	// EnableReschedule, when true, creates a self-continuation channel.
+	// Services that discover remaining work after a Tick() call
+	// SignalReschedule() to re-tick immediately without waiting for the
+	// timer interval.
+	//
+	// Migration: When the events library (feature/events-library-research)
+	// ships, Serve() will gain an additional EventChannel case for external
+	// cross-service notifications. Reschedule remains complementary:
+	// Reschedule = internal self-continuation ("I have more work"),
+	// EventChannel = external stimulus ("another service produced work").
+	// Both coexist in the select loop alongside the Ticker safety-net.
+	EnableReschedule bool
+}
+
+func InitTickServiceTemplate(
+	cfg *TickServiceConfigs,
+	tmpl *TickServiceTemplate,
+	lifecycleImpl LifecycleImpl,
+	tickImpl TickImpl,
+) error {
+	if cfg == nil || tmpl == nil || tickImpl == nil {
+		return ErrInvalid
+	}
+
+	err := InitServiceTemplate(&cfg.ServiceConfigs, &tmpl.ServiceTemplate, lifecycleImpl)
+	if err != nil {
+		return err
+	}
+
+	tmpl.tickImpl = tickImpl
+
+	// ticker
+	if cfg.PollInterval == 0 {
+		cfg.PollInterval = time.Minute
+	}
+	tmpl.ticker = time.NewTicker(cfg.PollInterval)
+
+	// self-rescheduling
+	if cfg.EnableReschedule {
+		tmpl.reschedule = make(chan struct{}, 1)
+	}
+
+	return nil
+}
+
+func (s *TickServiceTemplate) tick(ctx context.Context) []error {
+	start := time.Now()
+	errs := s.tickImpl.Tick(ctx)
+	elapsed := time.Since(start)
+
+	if len(errs) > 0 {
+		s.Logger.Error("Tick",
+			"duration", elapsed,
+			"error", errs)
+	} else {
+		s.Logger.Debug("Tick",
+			"duration", elapsed)
+	}
+	return errs
+}
+
+func (s *TickServiceTemplate) OnStop(bool) []error {
+	s.ticker.Stop()
+	return nil
+}
+
+func (s *TickServiceTemplate) OnServe(ctx context.Context) error {
+	if ctx.Err() != nil {
+		return nil
+	}
+	s.tick(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-s.ticker.C:
+			s.tick(ctx)
+		// 'reschedule' is nil when rescheduling is disabled thus blocking forever,
+		// preserving timer-only behavior.
+		case <-s.reschedule:
+			s.tick(ctx)
+		}
+	}
+}
+
+// SignalReschedule performs a non-blocking send on the reschedule channel.
+// If a signal is already pending, this is a no-op (one wake is sufficient).
+// Does nothing if rescheduling is not enabled.
+// INVARIANT: This method must never block.
+func (s *TickServiceTemplate) SignalReschedule() {
+	select {
+	case s.reschedule <- struct{}{}:
+	default:
+	}
+}
+
+// DrainReschedule consumes and discards a pending reschedule signal, if any.
+// Returns true if a signal was pending. Intended for testing.
+func (s *TickServiceTemplate) DrainReschedule() bool {
+	select {
+	case <-s.reschedule:
+		return true
+	default:
+		return false
+	}
+}
+
+/*
+ * Service Logger
+ */
 
 func NewLogger(level slog.Level, color bool) *slog.Logger {
 	opts := &tint.Options{
@@ -323,12 +441,15 @@ func NewLogger(level slog.Level, color bool) *slog.Logger {
 	return slog.New(handler)
 }
 
-func NewServiceLogger(c *CreateInfo) *slog.Logger {
+func NewServiceLogger(c *ServiceConfigs) *slog.Logger {
 	return NewLogger(c.LogLevel, c.LogColor).With("service", c.Name)
 }
 
-// Telemetry
-func (s *Service) CreateDefaultTelemetry(addr string) (*http.Server, func() error) {
+/*
+ * Service Telemetry
+ */
+
+func (s *ServiceTemplate) CreateDefaultTelemetry(addr string) (*http.Server, func() error) {
 	s.ServeMux.Handle("/readyz", http.HandlerFunc(s.ReadyHandler))
 	s.ServeMux.Handle("/livez", http.HandlerFunc(s.AliveHandler))
 
@@ -354,8 +475,8 @@ func (s *Service) CreateDefaultTelemetry(addr string) (*http.Server, func() erro
 }
 
 // HTTP handler for `/s.Name/readyz` that exposes the value of Ready()
-func (s *Service) ReadyHandler(w http.ResponseWriter, r *http.Request) {
-	if !s.Impl.Ready() {
+func (s *ServiceTemplate) ReadyHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.lifecycleImpl.Ready() {
 		http.Error(w, s.Name+": ready check failed",
 			http.StatusInternalServerError)
 	} else {
@@ -364,110 +485,11 @@ func (s *Service) ReadyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // HTTP handler for `/s.Name/livez` that exposes the value of Alive()
-func (s *Service) AliveHandler(w http.ResponseWriter, r *http.Request) {
-	if !s.Impl.Alive() {
+func (s *ServiceTemplate) AliveHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.lifecycleImpl.Alive() {
 		http.Error(w, s.Name+": alive check failed",
 			http.StatusInternalServerError)
 	} else {
 		fmt.Fprintf(w, "%s: alive\n", s.Name)
-	}
-}
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-type TickImpl interface {
-	Tick(ctx context.Context) []error
-}
-
-type TickService struct {
-	Service
-	TickImpl
-	ticker     *time.Ticker
-	reschedule chan struct{} // self-continuation signal; see CreateInfo.EnableReschedule
-}
-
-func NewTickService(c *CreateInfo, s *TickService) error {
-	err := Create(context.Background(), c, &s.Service)
-	if err != nil {
-		return err
-	}
-
-	s.Service.Impl = s
-
-	// ticker
-	if c.PollInterval == 0 {
-		c.PollInterval = time.Minute
-	}
-	s.ticker = time.NewTicker(c.PollInterval)
-
-	// self-rescheduling
-	if c.EnableReschedule {
-		s.reschedule = make(chan struct{}, 1)
-	}
-
-	return nil
-}
-
-func (s *TickService) tick(ctx context.Context) []error {
-	start := time.Now()
-	errs := s.Tick(ctx)
-	elapsed := time.Since(start)
-
-	if len(errs) > 0 {
-		s.Logger.Error("Tick",
-			"duration", elapsed,
-			"error", errs)
-	} else {
-		s.Logger.Debug("Tick",
-			"duration", elapsed)
-	}
-	return errs
-}
-
-func (s *TickService) OnStop(bool) []error {
-	s.ticker.Stop()
-	return nil
-}
-
-func (s *TickService) OnServe(ctx context.Context) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	s.tick(ctx)
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-s.ticker.C:
-			s.tick(ctx)
-		// 'reschedule' is nil when rescheduling is disabled thus blocking forever,
-		// preserving timer-only behavior.
-		case <-s.reschedule:
-			s.tick(ctx)
-		}
-	}
-}
-
-// SignalReschedule performs a non-blocking send on the reschedule channel.
-// If a signal is already pending, this is a no-op (one wake is sufficient).
-// Does nothing if rescheduling is not enabled.
-// INVARIANT: This method must never block.
-func (s *TickService) SignalReschedule() {
-	select {
-	case s.reschedule <- struct{}{}:
-	default:
-	}
-}
-
-// DrainReschedule consumes and discards a pending reschedule signal, if any.
-// Returns true if a signal was pending. Intended for testing.
-func (s *TickService) DrainReschedule() bool {
-	select {
-	case <-s.reschedule:
-		return true
-	default:
-		return false
 	}
 }

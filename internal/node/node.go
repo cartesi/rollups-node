@@ -29,7 +29,7 @@ type serviceResult struct {
 }
 
 type CreateInfo struct {
-	service.CreateInfo
+	service.ServiceConfigs
 
 	Config config.NodeConfig
 
@@ -41,7 +41,7 @@ type CreateInfo struct {
 }
 
 type Service struct {
-	service.Service
+	service.ServiceTemplate
 
 	Children   []service.IService
 	Repository repository.Repository
@@ -56,13 +56,12 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 
 	// setup node and all child services to share the same context.
 	ctx, cancel := context.WithCancel(context.Background())
-	c.CreateInfo.Context = ctx
-	c.CreateInfo.Cancel = cancel
+	c.ServiceConfigs.Context = ctx
+	c.ServiceConfigs.Cancel = cancel
 
 	s := &Service{}
-	c.Impl = s
 
-	err = service.Create(ctx, &c.CreateInfo, &s.Service)
+	err = service.InitServiceTemplate(&c.ServiceConfigs, &s.ServiceTemplate, s)
 	if err != nil {
 		return nil, err
 	}
@@ -167,10 +166,10 @@ func (me *Service) OnServe(ctx context.Context) error {
 
 func newEVMReader(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	readerArgs := evmreader.CreateInfo{
-		CreateInfo: service.CreateInfo{
+		ServiceConfigs: service.ServiceConfigs{
 			Name:                 config.ServiceEvmReader,
-			Context:              c.CreateInfo.Context,
-			Cancel:               c.CreateInfo.Cancel,
+			Context:              c.ServiceConfigs.Context,
+			Cancel:               c.ServiceConfigs.Cancel,
 			LogLevel:             config.ResolveServiceLogLevel(config.ServiceEvmReader, c.Config.LogLevel),
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
@@ -192,16 +191,17 @@ func newEVMReader(ctx context.Context, c *CreateInfo, s *Service) (service.IServ
 
 func newAdvancer(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	advancerArgs := advancer.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:                 config.ServiceAdvancer,
-			Context:              c.CreateInfo.Context,
-			Cancel:               c.CreateInfo.Cancel,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServiceAdvancer, c.Config.LogLevel),
-			LogColor:             c.Config.LogColor,
-			EnableSignalHandling: false,
-			TelemetryCreate:      false,
-			PollInterval:         c.Config.AdvancerPollingInterval,
-			ServeMux:             s.ServeMux,
+		TickServiceConfigs: service.TickServiceConfigs{
+			PollInterval:   c.Config.AdvancerPollingInterval,
+			ServiceConfigs: service.ServiceConfigs{
+				Name:                 config.ServiceAdvancer,
+				Context:              c.ServiceConfigs.Context,
+				Cancel:               c.ServiceConfigs.Cancel,
+				LogLevel:             config.ResolveServiceLogLevel(config.ServiceAdvancer, c.Config.LogLevel),
+				LogColor:             c.Config.LogColor,
+				EnableSignalHandling: false,
+				TelemetryCreate:      false,
+			},
 		},
 		Repository: c.Repository,
 		Config:     *c.Config.ToAdvancerConfig(),
@@ -216,16 +216,17 @@ func newAdvancer(ctx context.Context, c *CreateInfo, s *Service) (service.IServi
 
 func newValidator(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	validatorArgs := validator.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:                 config.ServiceValidator,
-			Context:              c.CreateInfo.Context,
-			Cancel:               c.CreateInfo.Cancel,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServiceValidator, c.Config.LogLevel),
-			LogColor:             c.Config.LogColor,
-			EnableSignalHandling: false,
-			TelemetryCreate:      false,
-			PollInterval:         c.Config.ValidatorPollingInterval,
-			ServeMux:             s.ServeMux,
+		TickServiceConfigs: service.TickServiceConfigs{
+			PollInterval:   c.Config.ValidatorPollingInterval,
+			ServiceConfigs: service.ServiceConfigs{
+				Name:                 config.ServiceValidator,
+				Context:              c.ServiceConfigs.Context,
+				Cancel:               c.ServiceConfigs.Cancel,
+				LogLevel:             config.ResolveServiceLogLevel(config.ServiceValidator, c.Config.LogLevel),
+				LogColor:             c.Config.LogColor,
+				EnableSignalHandling: false,
+				TelemetryCreate:      false,
+			},
 		},
 		Repository: c.Repository,
 		Config:     *c.Config.ToValidatorConfig(),
@@ -240,16 +241,17 @@ func newValidator(ctx context.Context, c *CreateInfo, s *Service) (service.IServ
 
 func newClaimer(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	claimerArgs := claimer.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:                 config.ServiceClaimer,
-			Context:              c.CreateInfo.Context,
-			Cancel:               c.CreateInfo.Cancel,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServiceClaimer, c.Config.LogLevel),
-			LogColor:             c.Config.LogColor,
-			EnableSignalHandling: false,
-			TelemetryCreate:      false,
-			PollInterval:         c.Config.ClaimerPollingInterval,
-			ServeMux:             s.ServeMux,
+		TickServiceConfigs: service.TickServiceConfigs{
+			PollInterval:   c.Config.ClaimerPollingInterval,
+			ServiceConfigs: service.ServiceConfigs{
+				Name:                 config.ServiceClaimer,
+				Context:              c.ServiceConfigs.Context,
+				Cancel:               c.ServiceConfigs.Cancel,
+				LogLevel:             config.ResolveServiceLogLevel(config.ServiceClaimer, c.Config.LogLevel),
+				LogColor:             c.Config.LogColor,
+				EnableSignalHandling: false,
+				TelemetryCreate:      false,
+			},
 		},
 		EthConn:    c.ClaimerClient,
 		Repository: c.Repository,
@@ -265,10 +267,10 @@ func newClaimer(ctx context.Context, c *CreateInfo, s *Service) (service.IServic
 
 func newJsonrpc(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	jsonrpcArgs := jsonrpc.CreateInfo{
-		CreateInfo: service.CreateInfo{
+		ServiceConfigs: service.ServiceConfigs{
 			Name:                 config.ServiceJsonrpc,
-			Context:              c.CreateInfo.Context,
-			Cancel:               c.CreateInfo.Cancel,
+			Context:              c.ServiceConfigs.Context,
+			Cancel:               c.ServiceConfigs.Cancel,
 			LogLevel:             config.ResolveServiceLogLevel(config.ServiceJsonrpc, c.Config.LogLevel),
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
@@ -288,16 +290,17 @@ func newJsonrpc(ctx context.Context, c *CreateInfo, s *Service) (service.IServic
 
 func newPrt(ctx context.Context, c *CreateInfo, s *Service) (service.IService, error) {
 	prtArgs := prt.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:                 config.ServicePrt,
-			Context:              c.CreateInfo.Context,
-			Cancel:               c.CreateInfo.Cancel,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServicePrt, c.Config.LogLevel),
-			LogColor:             c.Config.LogColor,
-			EnableSignalHandling: false,
-			TelemetryCreate:      false,
-			PollInterval:         c.Config.PrtPollingInterval,
-			ServeMux:             s.ServeMux,
+		TickServiceConfigs: service.TickServiceConfigs{
+			PollInterval:   c.Config.PrtPollingInterval,
+			ServiceConfigs: service.ServiceConfigs{
+				Name:                 config.ServicePrt,
+				Context:              c.ServiceConfigs.Context,
+				Cancel:               c.ServiceConfigs.Cancel,
+				LogLevel:             config.ResolveServiceLogLevel(config.ServicePrt, c.Config.LogLevel),
+				LogColor:             c.Config.LogColor,
+				EnableSignalHandling: false,
+				TelemetryCreate:      false,
+			},
 		},
 		EthClient:  c.PrtClient,
 		Repository: c.Repository,

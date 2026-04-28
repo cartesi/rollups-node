@@ -69,19 +69,21 @@ func run(cmd *cobra.Command, args []string) {
 	defer cancel()
 
 	createInfo := prt.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:                 config.ServicePrt,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServicePrt, cfg.LogLevel),
-			LogColor:             cfg.LogColor,
-			EnableSignalHandling: true,
-			TelemetryCreate:      true,
-			TelemetryAddress:     cfg.PrtTelemetryAddress,
-			PollInterval:         cfg.PrtPollingInterval,
+		TickServiceConfigs: service.TickServiceConfigs{
+			PollInterval:   cfg.PrtPollingInterval,
+			ServiceConfigs: service.ServiceConfigs{
+				Name:                 config.ServicePrt,
+				LogLevel:             config.ResolveServiceLogLevel(config.ServicePrt, cfg.LogLevel),
+				LogColor:             cfg.LogColor,
+				EnableSignalHandling: true,
+				TelemetryCreate:      true,
+				TelemetryAddress:     cfg.PrtTelemetryAddress,
+			},
 		},
 		Config: *cfg,
 	}
-	logger := service.NewServiceLogger(&createInfo.CreateInfo)
-	createInfo.CreateInfo.Logger = logger
+	logger := service.NewServiceLogger(&createInfo.ServiceConfigs)
+	createInfo.ServiceConfigs.Logger = logger
 
 	var err error
 	authOpt, err := config.HTTPAuthorizationOption()

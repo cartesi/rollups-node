@@ -28,7 +28,7 @@ const jsonrpcShutdownTimeout = 5 * time.Second
 
 // Service implements the IService interface.
 type Service struct {
-	service.Service
+	service.ServiceTemplate
 	repository repository.Repository
 	server     *http.Server
 	admission  *service.SemaphoreAdmission
@@ -40,7 +40,7 @@ type Service struct {
 }
 
 type CreateInfo struct {
-	service.CreateInfo
+	service.ServiceConfigs
 
 	Config config.JsonrpcConfig
 
@@ -54,9 +54,8 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	}
 
 	s := &Service{}
-	c.Impl = s
 
-	err = service.Create(ctx, &c.CreateInfo, &s.Service)
+	err = service.InitServiceTemplate(&c.ServiceConfigs, &s.ServiceTemplate, s)
 	if err != nil {
 		return nil, err
 	}

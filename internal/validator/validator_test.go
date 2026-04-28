@@ -40,8 +40,8 @@ func (s *ValidatorSuite) SetupSubTest() {
 		pristinePostContext: postContext,
 		pristineRootHash:    postContext[merkle.TREE_DEPTH],
 	}
-	serviceArgs := &service.CreateInfo{Name: "validator", Impl: validator}
-	err := service.Create(context.Background(), serviceArgs, &validator.Service)
+	serviceArgs := &service.ServiceConfigs{Name: "validator"}
+	err := service.InitServiceTemplate(serviceArgs, &validator.ServiceTemplate, validator)
 	s.Require().Nil(err)
 	dummyOutputsMerkleRoot := common.HexToHash("0x0a162946e56158bac0673e6dd3bdfdc1e4a0e7744a120fdb640050c8d7abe1c6")
 	dummyEpochs = []Epoch{

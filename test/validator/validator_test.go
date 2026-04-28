@@ -58,9 +58,11 @@ func (s *ValidatorRepositoryIntegrationSuite) SetupSubTest() {
 	s.Require().Nil(err)
 
 	serviceArgs := validator.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:     "validator",
-			LogLevel: slog.LevelDebug,
+		TickServiceConfigs: service.TickServiceConfigs{
+			ServiceConfigs: service.ServiceConfigs{
+				Name:     "validator",
+				LogLevel: slog.LevelDebug,
+			},
 		},
 		Repository: s.repository,
 	}

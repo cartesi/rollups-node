@@ -21,7 +21,7 @@ import (
 )
 
 type CreateInfo struct {
-	service.CreateInfo
+	service.TickServiceConfigs
 	Config         config.PrtConfig
 	Repository     repository.Repository
 	EthClient      EthClientInterface
@@ -29,7 +29,7 @@ type CreateInfo struct {
 }
 
 type Service struct {
-	service.TickService
+	service.TickServiceTemplate
 	repository        prtRepository
 	client            EthClientInterface
 	adapterFactory    AdapterFactory
@@ -56,10 +56,8 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	}
 
 	s := &Service{}
-	s.TickImpl = s
-	c.Impl = s
 
-	err = service.NewTickService(&c.CreateInfo, &s.TickService)
+	err = service.InitTickServiceTemplate(&c.TickServiceConfigs, &s.TickServiceTemplate, s, s)
 	if err != nil {
 		return nil, err
 	}

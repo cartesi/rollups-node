@@ -35,7 +35,7 @@ func TestCreateWithNilEthClient(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = Create(context.Background(), &CreateInfo{
-		CreateInfo: service.CreateInfo{Name: "evm-reader", LogLevel: logLevel},
+		ServiceConfigs: service.ServiceConfigs{Name: "evm-reader", LogLevel: logLevel},
 	})
 	require.ErrorContains(t, err, "EthClient on evmreader service Create is nil")
 }

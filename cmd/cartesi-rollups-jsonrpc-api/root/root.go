@@ -68,7 +68,7 @@ func run(cmd *cobra.Command, args []string) {
 	defer cancel()
 
 	createInfo := jsonrpc.CreateInfo{
-		CreateInfo: service.CreateInfo{
+		ServiceConfigs: service.ServiceConfigs{
 			Name:                 config.ServiceJsonrpc,
 			LogLevel:             config.ResolveServiceLogLevel(config.ServiceJsonrpc, cfg.LogLevel),
 			LogColor:             cfg.LogColor,
@@ -78,8 +78,8 @@ func run(cmd *cobra.Command, args []string) {
 		},
 		Config: *cfg,
 	}
-	logger := service.NewServiceLogger(&createInfo.CreateInfo)
-	createInfo.CreateInfo.Logger = logger
+	logger := service.NewServiceLogger(&createInfo.ServiceConfigs)
+	createInfo.ServiceConfigs.Logger = logger
 
 	var err error
 	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())

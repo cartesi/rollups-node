@@ -94,7 +94,7 @@ func (r *Service) Run(ctx context.Context, ready chan struct{}) error {
 	for {
 		headersProcessed, err := r.watchForNewBlocks(ctx, ready)
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return nil
 		}
 		r.Logger.Error("watchForNewBlocks exited",
 			"error", err, "headers_processed", headersProcessed)
@@ -123,7 +123,7 @@ func (r *Service) Run(ctx context.Context, ready chan struct{}) error {
 
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil
 		case <-time.After(r.blockchainSubscriptionRetryInterval):
 		}
 	}

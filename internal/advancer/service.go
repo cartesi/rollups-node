@@ -24,7 +24,7 @@ const httpShutdownTimeout = 10 * time.Second
 
 // Service is the main advancer service that processes inputs through Cartesi machines
 type Service struct {
-	service.TickService
+	service.TickServiceTemplate
 	inputBatchSize uint64
 	snapshotsDir   string
 	repository     AdvancerRepository
@@ -39,7 +39,7 @@ type Service struct {
 
 // CreateInfo contains the configuration for creating an advancer service
 type CreateInfo struct {
-	service.CreateInfo
+	service.TickServiceConfigs
 	Config     config.AdvancerConfig
 	Repository repository.Repository
 }
@@ -52,11 +52,9 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	}
 
 	s := &Service{}
-	s.TickImpl = s
-	c.Impl = s
 	c.EnableReschedule = true
 
-	err = service.NewTickService(&c.CreateInfo, &s.TickService)
+	err = service.InitTickServiceTemplate(&c.TickServiceConfigs, &s.TickServiceTemplate, s, s)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +146,7 @@ func (s *Service) OnStop(b bool) []error {
 			errs = append(errs, fmt.Errorf("failed to close machine manager: %w", err))
 		}
 	}
-	return append(errs, s.TickService.OnStop(b)...)
+	return append(errs, s.TickServiceTemplate.OnStop(b)...)
 }
 func (s *Service) OnServe(ctx context.Context) error {
 	if s.inspector != nil {
@@ -159,5 +157,5 @@ func (s *Service) OnServe(ctx context.Context) error {
 			}
 		}()
 	}
-	return s.TickService.OnServe(ctx)
+	return s.TickServiceTemplate.OnServe(ctx)
 }
