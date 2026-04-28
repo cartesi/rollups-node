@@ -130,11 +130,11 @@ type Service struct {
 	Logger        *slog.Logger
 	context       context.Context
 	cancelContext context.CancelFunc
-	Sighup        chan os.Signal // SIGHUP to reload
-	SigShutdown   chan os.Signal // SIGINT/SIGTERM to exit gracefully
+	sigHangUp     chan os.Signal // SIGHUP to reload
+	sigShutdown   chan os.Signal // SIGINT/SIGTERM to exit gracefully
 	ServeMux      *http.ServeMux
-	Telemetry     *http.Server
-	TelemetryFunc func() error
+	telemetry     *http.Server
+	telemetryFunc func() error
 
 	// stopped server Stop() run exactly once, even when Stop() is called
 	// multiple times (by the child's Serve() loop and by the parent orchestrator).
@@ -174,13 +174,13 @@ func Create(ctx context.Context, c *CreateInfo, s *Service) error {
 
 	// signal handling
 	if c.EnableSignalHandling {
-		if s.Sighup == nil {
-			s.Sighup = make(chan os.Signal, 1)
-			signal.Notify(s.Sighup, syscall.SIGHUP)
+		if s.sigHangUp == nil {
+			s.sigHangUp = make(chan os.Signal, 1)
+			signal.Notify(s.sigHangUp, syscall.SIGHUP)
 		}
-		if s.SigShutdown == nil {
-			s.SigShutdown = make(chan os.Signal, 1)
-			signal.Notify(s.SigShutdown, syscall.SIGINT, syscall.SIGTERM)
+		if s.sigShutdown == nil {
+			s.sigShutdown = make(chan os.Signal, 1)
+			signal.Notify(s.sigShutdown, syscall.SIGINT, syscall.SIGTERM)
 		}
 	}
 
@@ -195,17 +195,17 @@ func Create(ctx context.Context, c *CreateInfo, s *Service) error {
 		if c.TelemetryAddress == "" {
 			c.TelemetryAddress = ":8080"
 		}
-		s.Telemetry, s.TelemetryFunc = s.CreateDefaultTelemetry(c.TelemetryAddress)
+		s.telemetry, s.telemetryFunc = s.CreateDefaultTelemetry(c.TelemetryAddress)
 		go func() {
-			if err := s.TelemetryFunc(); err != nil {
+			if err := s.telemetryFunc(); err != nil {
 				s.Logger.Error("Telemetry HTTP server failed", "error", err)
 			}
 		}()
 	}
 
 	s.Logger.Info("Create", "version", version.BuildVersion, "log_level", c.LogLevel, "pid", os.Getpid())
-	if s.Telemetry != nil {
-		s.Logger.Info("Telemetry", "address", s.Telemetry.Addr)
+	if s.telemetry != nil {
+		s.Logger.Info("Telemetry", "address", s.telemetry.Addr)
 	}
 	return nil
 }
@@ -242,18 +242,18 @@ func (s *Service) Stop(force bool) []error {
 
 	start := time.Now()
 	errs := s.Impl.OnStop(force)
-	if s.Telemetry != nil {
+	if s.telemetry != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), telemetryShutdownTimeout)
 		defer cancel()
-		if err := s.Telemetry.Shutdown(shutdownCtx); err != nil {
+		if err := s.telemetry.Shutdown(shutdownCtx); err != nil {
 			errs = append(errs, err)
 		}
 	}
-	if s.SigShutdown != nil {
-		signal.Stop(s.SigShutdown)
+	if s.sigShutdown != nil {
+		signal.Stop(s.sigShutdown)
 	}
-	if s.Sighup != nil {
-		signal.Stop(s.Sighup)
+	if s.sigHangUp != nil {
+		signal.Stop(s.sigHangUp)
 	}
 	elapsed := time.Since(start)
 
@@ -284,9 +284,9 @@ func (s *Service) Serve() error {
 	go func() {
 		for !s.stopped.Load() {
 			select {
-			case <-s.Sighup:
+			case <-s.sigHangUp:
 				s.Reload()
-			case <-s.SigShutdown:
+			case <-s.sigShutdown:
 				s.Stop(false) // Graceful shutdown; errors are logged by Stop.
 				return
 			case <-s.context.Done():
