@@ -407,7 +407,6 @@ func (m *Machine) CollectUarchCycleRootHashes(mcycleEnd uint64, log2BundleMcycle
 	return []byte(C.GoString(result)), nil
 }
 
-
 // send_cmio_response
 func (m *Machine) SendCmioResponse(reason uint16, data []byte) error {
 	var err error

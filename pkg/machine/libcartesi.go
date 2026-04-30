@@ -39,6 +39,16 @@ type proofJson struct {
 	TargetHash     Hash   `json:"target_hash"`
 }
 
+// Struct for the decoded `result` field of cm_collect_mcycle_root_hashes (originally returned as json).
+// The value comes back as a json string, that needs to be decoded to this struct below.
+// BackTree may or may not be present, check cm_collect_mcycle_root_hashes documentation for details.
+type CollectMCycleRootHashesState struct {
+	RootHashes  [][]byte        `json:"hashes"`
+	MCyclePhase uint64          `json:"mcycle_phase"`
+	BreakReason string          `json:"break_reason"`
+	BackTree    json.RawMessage `json:"back_tree,omitempty"`
+}
+
 func decodeB64To32(dst *Hash, s string) error {
 	// accepts Std (with '=') and Raw (without '=')
 	n, err := base64.StdEncoding.Decode(dst[:], []byte(s))
@@ -315,10 +325,11 @@ func (e *LibCartesiBackend) RunAndCollectRootHashes(
 		state.Phase = (state.Phase + advanced) % state.Period
 		cur = pos
 
-		// Only collect hash if we reached the exact boundary (pos == nextHashCycle)
+		// Collect hash if we reached the exact boundary (pos == nextHashCycle) or
+		// we reached a fixed-point.
 		// This ensures "hash after each complete period", matching the C API behavior
 		// and avoiding duplicate collections if the machine stops early due to yields
-		if pos == nextHashCycle {
+		if pos == nextHashCycle || br == YieldedManually || br == Halted {
 			if err := checkDeadline(); err != nil {
 				return Failed, err
 			}

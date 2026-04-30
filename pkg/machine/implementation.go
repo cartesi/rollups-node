@@ -415,9 +415,9 @@ func (m *machineImpl) run(ctx context.Context, reqType requestType, computeHashe
 		}
 		return []Hash{}
 	}
-	remainingMetaCycles := func() uint64 {
+	totalMetaCycles := func() uint64 {
 		if computeHashes {
-			return StrideCountInInput - uint64(len(hashCollectorState.Hashes))
+			return StrideCountInInput
 		}
 		return 0
 	}
@@ -429,38 +429,38 @@ func (m *machineImpl) run(ctx context.Context, reqType requestType, computeHashe
 		// Steps the machine as many times as needed until it manually/automatically yields.
 		for yt == nil {
 			if err := checkContext(ctx); err != nil {
-				return outputs, reports, hashes(), remainingMetaCycles(), err
+				return outputs, reports, hashes(), totalMetaCycles(), err
 			}
 			if time.Since(startTime) > runTimeout {
 				werr := fmt.Errorf("run operation timed out: %w", ErrDeadlineExceeded)
-				return outputs, reports, hashes(), remainingMetaCycles(), werr
+				return outputs, reports, hashes(), totalMetaCycles(), werr
 			}
 			yt, currentCycle, err = m.runIncrementInterval(ctx, currentCycle, limitCycle, hashCollectorState, stepTimeout)
 			if err != nil && err != ErrReachedTargetMcycle {
-				return outputs, reports, hashes(), remainingMetaCycles(), err
+				return outputs, reports, hashes(), totalMetaCycles(), err
 			}
 		}
 
 		// Returns with the responses when the machine manually yields.
 		if *yt == ManualYield {
-			return outputs, reports, hashes(), remainingMetaCycles(), nil
+			return outputs, reports, hashes(), totalMetaCycles(), nil
 		}
 
 		// Asserts the machine yielded automatically.
 		if *yt != AutomaticYield {
 			err := fmt.Errorf("invalid yield type: %d: %w", *yt, ErrMachineInternal)
-			return outputs, reports, hashes(), remainingMetaCycles(), err
+			return outputs, reports, hashes(), totalMetaCycles(), err
 		}
 		yt = nil
 
 		if err := checkContext(ctx); err != nil {
-			return outputs, reports, hashes(), remainingMetaCycles(), err
+			return outputs, reports, hashes(), totalMetaCycles(), err
 		}
 
 		_, yieldReason, data, err := m.backend.ReceiveCmioRequest(m.params.FastDeadline)
 		if err != nil {
 			werr := fmt.Errorf("could not read output/report: %w", err)
-			return outputs, reports, hashes(), remainingMetaCycles(), werr
+			return outputs, reports, hashes(), totalMetaCycles(), werr
 		}
 
 		switch automaticYieldReason(yieldReason) {
@@ -469,17 +469,17 @@ func (m *machineImpl) run(ctx context.Context, reqType requestType, computeHashe
 		case AutomaticYieldReasonOutput:
 			// TODO: should we remove this?
 			if len(outputs) == maxOutputs {
-				return outputs, reports, hashes(), remainingMetaCycles(), ErrOutputsLimitExceeded
+				return outputs, reports, hashes(), totalMetaCycles(), ErrOutputsLimitExceeded
 			}
 			outputs = append(outputs, data)
 		case AutomaticYieldReasonReport:
 			if len(reports) == maxReports {
-				return outputs, reports, hashes(), remainingMetaCycles(), ErrReportsLimitExceeded
+				return outputs, reports, hashes(), totalMetaCycles(), ErrReportsLimitExceeded
 			}
 			reports = append(reports, data)
 		default:
 			err := fmt.Errorf("invalid automatic yield reason: %d: %w", yieldReason, ErrMachineInternal)
-			return outputs, reports, hashes(), remainingMetaCycles(), err
+			return outputs, reports, hashes(), totalMetaCycles(), err
 		}
 	}
 }

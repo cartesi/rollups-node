@@ -1032,14 +1032,14 @@ type OutputsProof struct {
 
 type AdvanceResult struct {
 	OutputsProof
-	EpochIndex          uint64
-	InputIndex          uint64
-	Status              InputCompletionStatus
-	Outputs             [][]byte
-	Reports             [][]byte
-	Hashes              [][32]byte
-	RemainingMetaCycles uint64
-	IsDaveConsensus     bool
+	EpochIndex      uint64
+	InputIndex      uint64
+	Status          InputCompletionStatus
+	Outputs         [][]byte
+	Reports         [][]byte
+	Hashes          [][32]byte
+	TotalMetaCycles uint64
+	IsDaveConsensus bool
 }
 
 type InspectResult struct {

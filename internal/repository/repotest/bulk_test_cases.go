@@ -170,13 +170,13 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		hash3 := [32]byte(crypto.Keccak256Hash([]byte("state-3")))
 
 		result := &AdvanceResult{
-			EpochIndex:          0,
-			InputIndex:          0,
-			Status:              InputCompletionStatus_Accepted,
-			Outputs:             [][]byte{[]byte("dave-output")},
-			Hashes:              [][32]byte{hash1, hash2, hash3},
-			RemainingMetaCycles: 42,
-			IsDaveConsensus:     true,
+			EpochIndex:      0,
+			InputIndex:      0,
+			Status:          InputCompletionStatus_Accepted,
+			Outputs:         [][]byte{[]byte("dave-output")},
+			Hashes:          [][32]byte{hash1, hash2, hash3},
+			TotalMetaCycles: 42,
+			IsDaveConsensus: true,
 			OutputsProof: OutputsProof{
 				OutputsHash: outputsHash,
 				MachineHash: machineHash,
@@ -318,13 +318,13 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResultRollback() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
 		result := &AdvanceResult{
-			EpochIndex:          99, // non-existent epoch
-			InputIndex:          0,
-			Status:              InputCompletionStatus_Accepted,
-			Outputs:             [][]byte{[]byte("should-be-rolled-back")},
-			Hashes:              [][32]byte{{1}, {2}},
-			RemainingMetaCycles: 10,
-			IsDaveConsensus:     true,
+			EpochIndex:      99, // non-existent epoch
+			InputIndex:      0,
+			Status:          InputCompletionStatus_Accepted,
+			Outputs:         [][]byte{[]byte("should-be-rolled-back")},
+			Hashes:          [][32]byte{{1}, {2}},
+			TotalMetaCycles: 10,
+			IsDaveConsensus: true,
 			OutputsProof: OutputsProof{
 				OutputsHash: UniqueHash(),
 				MachineHash: UniqueHash(),

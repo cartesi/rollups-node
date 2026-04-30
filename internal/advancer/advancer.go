@@ -289,7 +289,7 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 			"outputs", len(result.Outputs),
 			"reports", len(result.Reports),
 			"hashes", len(result.Hashes),
-			"remaining_cycles", result.RemainingMetaCycles,
+			"remaining_cycles", result.TotalMetaCycles,
 		)
 
 		// Store the result in the database

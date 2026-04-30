@@ -51,12 +51,12 @@ func (s *StateHashSuite) TestListStateHashes() {
 		hash2 := [32]byte(crypto.Keccak256Hash([]byte("list-state-2")))
 
 		result := &AdvanceResult{
-			EpochIndex:          0,
-			InputIndex:          0,
-			Status:              InputCompletionStatus_Accepted,
-			Hashes:              [][32]byte{hash1, hash2},
-			RemainingMetaCycles: 10,
-			IsDaveConsensus:     true,
+			EpochIndex:      0,
+			InputIndex:      0,
+			Status:          InputCompletionStatus_Accepted,
+			Hashes:          [][32]byte{hash1, hash2},
+			TotalMetaCycles: 10,
+			IsDaveConsensus: true,
 			OutputsProof: OutputsProof{
 				OutputsHash: outputsHash,
 				MachineHash: machineHash,

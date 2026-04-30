@@ -316,14 +316,14 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 
 	// Create the result
 	result := &AdvanceResult{
-		EpochIndex:          epochIndex,
-		InputIndex:          index,
-		Status:              status,
-		Outputs:             advanceResp.Outputs,
-		Reports:             advanceResp.Reports,
-		Hashes:              advanceResp.Hashes,
-		RemainingMetaCycles: advanceResp.RemainingCycles,
-		IsDaveConsensus:     computeHashes,
+		EpochIndex:      epochIndex,
+		InputIndex:      index,
+		Status:          status,
+		Outputs:         advanceResp.Outputs,
+		Reports:         advanceResp.Reports,
+		Hashes:          advanceResp.Hashes,
+		TotalMetaCycles: advanceResp.RemainingCycles,
+		IsDaveConsensus: computeHashes,
 	}
 
 	// If the input was accepted, update the machine state
@@ -354,6 +354,7 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 		result.MachineHash = prevMachineHash
 		result.OutputsHash = prevOutputsHash
 		result.OutputsHashProof = prevOutputsHashProof
+		result.Hashes[len(result.Hashes)-1] = prevMachineHash
 
 		// Close the fork since we're not using it
 		if err := fork.Close(); err != nil {

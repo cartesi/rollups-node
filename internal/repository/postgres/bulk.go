@@ -199,10 +199,9 @@ func insertStateHashes(
 	epochIndex uint64,
 	inputIndex uint64,
 	hashes [][32]byte,
-	machineHash common.Hash,
-	remainingMetaCycles uint64,
+	totalMetaCycles uint64,
 ) error {
-
+	usedMetaCycles := uint64(0)
 	nextIndex, err := getStateHashNextIndex(ctx, tx, appID, epochIndex)
 	if err != nil {
 		return err
@@ -217,24 +216,26 @@ func insertStateHashes(
 		table.StateHashes.Repetitions,
 	)
 
-	for i, h := range hashes {
+	for i := range len(hashes) - 1 {
+		usedMetaCycles += 1
 		stmt = stmt.VALUES(
 			appID,
 			epochIndex,
 			inputIndex,
 			nextIndex+uint64(i),
-			h[:],
+			hashes[i][:],
 			1,
 		)
 	}
 
+	// the remaining meta cycles go to the fixed-point
 	stmt = stmt.VALUES(
 		appID,
 		epochIndex,
 		inputIndex,
-		nextIndex+uint64(len(hashes)),
-		machineHash[:],
-		remainingMetaCycles,
+		nextIndex+uint64(len(hashes)-1),
+		hashes[len(hashes)-1][:],
+		totalMetaCycles-usedMetaCycles,
 	)
 
 	sqlStr, args := stmt.Sql()
@@ -373,7 +374,7 @@ func (r *PostgresRepository) StoreAdvanceResult(
 	}
 
 	if res.IsDaveConsensus {
-		err = insertStateHashes(ctx, tx, appID, res.EpochIndex, res.InputIndex, res.Hashes, res.MachineHash, res.RemainingMetaCycles)
+		err = insertStateHashes(ctx, tx, appID, res.EpochIndex, res.InputIndex, res.Hashes, res.TotalMetaCycles)
 		if err != nil {
 			return err
 		}
