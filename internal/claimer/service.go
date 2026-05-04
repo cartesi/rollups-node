@@ -68,7 +68,6 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	}
 
 	s := &Service{}
-	c.EnableReschedule = true
 
 	err = service.InitTickServiceTemplate(&c.TickServiceConfigs, &s.TickServiceTemplate, s, s)
 	if err != nil {
@@ -117,7 +116,7 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 }
 
 // NOTE: tick is not re-entrant!
-func (s *Service) Tick(ctx context.Context) []error {
+func (s *Service) Tick(ctx context.Context) (bool, []error) {
 	errs := []error{}
 
 	// gather epochs pairs with open claims, either:
@@ -125,14 +124,14 @@ func (s *Service) Tick(ctx context.Context) []error {
 	acceptedOrSubmittedEpochs, computedEpochs, computedApps, errSubmitted := s.repository.SelectSubmittedClaimPairsPerApp(ctx)
 	if errSubmitted != nil {
 		errs = append(errs, errSubmitted)
-		return errs
+		return false, errs
 	}
 
 	// - submitted but not yet accepted.
 	acceptedEpochs, submittedEpochs, submittedApps, errAccepted := s.repository.SelectAcceptedClaimPairsPerApp(ctx)
 	if errAccepted != nil {
 		errs = append(errs, errAccepted)
-		return errs
+		return false, errs
 	}
 
 	s.Logger.Debug("Processing claims for epochs",
@@ -142,14 +141,14 @@ func (s *Service) Tick(ctx context.Context) []error {
 
 	// return early if there is nothing to do
 	if len(computedEpochs) == 0 && len(submittedEpochs) == 0 {
-		return nil
+		return false, nil
 	}
 
 	// we have claims to check. Get the latest/safe/finalized, etc. block
 	defaultBlockNumber, err := s.blockchain.getDefaultBlockNumber(ctx)
 	if err != nil {
 		errs = append(errs, err)
-		return errs
+		return false, errs
 	}
 
 	submitted, submitErrs := s.submitClaimsAndUpdateDatabase(ctx, acceptedOrSubmittedEpochs, computedEpochs, computedApps, defaultBlockNumber)
@@ -162,10 +161,7 @@ func (s *Service) Tick(ctx context.Context) []error {
 	// Confirming a submission enables the acceptance scan on the next tick.
 	// Erring apps are retried on the next tick regardless; suppressing
 	// reschedule would delay healthy apps by a full poll interval.
-	if submitted > 0 || accepted > 0 {
-		s.SignalReschedule()
-	}
-	return errs
+	return submitted > 0 || accepted > 0, errs
 }
 
 func setupPersistentConfig(

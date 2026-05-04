@@ -304,32 +304,18 @@ func (s *ServiceTemplate) LogConfig(config any) {
  */
 
 type TickImpl interface {
-	Tick(ctx context.Context) []error
+	Tick(ctx context.Context) (bool, []error)
 }
 
 type TickServiceTemplate struct {
 	ServiceTemplate
 	tickImpl   TickImpl
 	ticker     *time.Ticker
-	reschedule chan struct{} // self-continuation signal; see CreateInfo.EnableReschedule
 }
 
 type TickServiceConfigs struct {
 	ServiceConfigs
 	PollInterval time.Duration
-
-	// EnableReschedule, when true, creates a self-continuation channel.
-	// Services that discover remaining work after a Tick() call
-	// SignalReschedule() to re-tick immediately without waiting for the
-	// timer interval.
-	//
-	// Migration: When the events library (feature/events-library-research)
-	// ships, Serve() will gain an additional EventChannel case for external
-	// cross-service notifications. Reschedule remains complementary:
-	// Reschedule = internal self-continuation ("I have more work"),
-	// EventChannel = external stimulus ("another service produced work").
-	// Both coexist in the select loop alongside the Ticker safety-net.
-	EnableReschedule bool
 }
 
 func InitTickServiceTemplate(
@@ -355,28 +341,30 @@ func InitTickServiceTemplate(
 	}
 	tmpl.ticker = time.NewTicker(cfg.PollInterval)
 
-	// self-rescheduling
-	if cfg.EnableReschedule {
-		tmpl.reschedule = make(chan struct{}, 1)
-	}
-
 	return nil
 }
 
-func (s *TickServiceTemplate) tick(ctx context.Context) []error {
+func (s *TickServiceTemplate) tick(ctx context.Context) bool {
+	if ctx.Err() != nil {
+		return false
+	}
 	start := time.Now()
-	errs := s.tickImpl.Tick(ctx)
+	reschedule, errs := s.tickImpl.Tick(ctx)
 	elapsed := time.Since(start)
 
 	if len(errs) > 0 {
 		s.Logger.Error("Tick",
 			"duration", elapsed,
-			"error", errs)
+			"reschedule", reschedule,
+			"error", errs,
+		)
 	} else {
 		s.Logger.Debug("Tick",
-			"duration", elapsed)
+			"duration", elapsed,
+			"reschedule", reschedule,
+		)
 	}
-	return errs
+	return reschedule
 }
 
 func (s *TickServiceTemplate) OnStop(bool) []error {
@@ -388,40 +376,14 @@ func (s *TickServiceTemplate) OnServe(ctx context.Context) error {
 	if ctx.Err() != nil {
 		return nil
 	}
-	s.tick(ctx)
+	for s.tick(ctx) {}
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-s.ticker.C:
-			s.tick(ctx)
-		// 'reschedule' is nil when rescheduling is disabled thus blocking forever,
-		// preserving timer-only behavior.
-		case <-s.reschedule:
-			s.tick(ctx)
+			for s.tick(ctx) {}
 		}
-	}
-}
-
-// SignalReschedule performs a non-blocking send on the reschedule channel.
-// If a signal is already pending, this is a no-op (one wake is sufficient).
-// Does nothing if rescheduling is not enabled.
-// INVARIANT: This method must never block.
-func (s *TickServiceTemplate) SignalReschedule() {
-	select {
-	case s.reschedule <- struct{}{}:
-	default:
-	}
-}
-
-// DrainReschedule consumes and discards a pending reschedule signal, if any.
-// Returns true if a signal was pending. Intended for testing.
-func (s *TickServiceTemplate) DrainReschedule() bool {
-	select {
-	case <-s.reschedule:
-		return true
-	default:
-		return false
 	}
 }
 

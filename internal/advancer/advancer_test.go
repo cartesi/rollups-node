@@ -73,7 +73,6 @@ func newMockAdvancerServiceWithContextAndBatchSize(
 			Context: ctx,
 			Cancel: cancelCtx,
 		},
-		EnableReschedule: true,
 	}
 	err := service.InitTickServiceTemplate(serviceArgs, &s.TickServiceTemplate, s, s)
 	if err != nil {
@@ -126,12 +125,12 @@ func (s *AdvancerSuite) TestServiceInterface() {
 		repository.GetEpochsReturn = map[common.Address][]*Epoch{
 			machineManager.Map[1].application.IApplicationAddress: {},
 		}
-		tickErrors := advancer.Tick(context.Background())
+		_, tickErrors := advancer.Tick(context.Background())
 		require.Empty(tickErrors)
 
 		// Test Tick with error
 		repository.GetEpochsError = errors.New("list epochs error")
-		tickErrors = advancer.Tick(context.Background())
+		_, tickErrors = advancer.Tick(context.Background())
 		require.NotEmpty(tickErrors)
 		require.Contains(tickErrors[0].Error(), "list epochs error")
 
@@ -1597,10 +1596,10 @@ func (s *AdvancerSuite) TestSelfWakeOnSuccess() {
 	require.NoError(err)
 
 	// Call Tick() which internally calls Step() and signals reschedule.
-	svc.Tick(context.Background())
+	reschedule, _ := svc.Tick(context.Background())
 
 	// The reschedule channel should have a pending signal.
-	require.True(svc.DrainReschedule(),
+	require.True(reschedule,
 		"reschedule channel should have a pending signal after Tick with work")
 }
 
@@ -1621,9 +1620,9 @@ func (s *AdvancerSuite) TestNoSelfWakeWhenIdle() {
 	svc, err := newMockAdvancerService(mm, repo)
 	require.NoError(err)
 
-	svc.Tick(context.Background())
+	reschedule, _ := svc.Tick(context.Background())
 
-	require.False(svc.DrainReschedule(),
+	require.False(reschedule,
 		"reschedule channel should be empty when no work exists")
 }
 
@@ -1640,10 +1639,10 @@ func (s *AdvancerSuite) TestNoSelfWakeOnError() {
 	svc, err := newMockAdvancerService(mm, repo)
 	require.NoError(err)
 
-	errs := svc.Tick(context.Background())
+	reschedule, errs := svc.Tick(context.Background())
 	require.NotEmpty(errs)
 
-	require.False(svc.DrainReschedule(),
+	require.False(reschedule,
 		"reschedule should NOT be signaled on error")
 }
 
@@ -1681,12 +1680,12 @@ func (s *AdvancerSuite) TestPartialSuccessStillReschedules() {
 
 	// Call Tick — app1 fails, app2 succeeds with more work remaining (batch limit hit).
 	// Tick should surface the error AND signal reschedule for app2's pending work.
-	errs := svc.Tick(context.Background())
+	reschedule, errs := svc.Tick(context.Background())
 	require.NotEmpty(errs, "Tick should surface app1's error")
 
 	// Reschedule SHOULD fire: app2 had work, and one failing app must not
 	// delay healthy apps by suppressing the reschedule signal.
-	require.True(svc.DrainReschedule(),
+	require.True(reschedule,
 		"reschedule should be signaled when hadWork is true, even with errors")
 }
 

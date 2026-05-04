@@ -52,7 +52,6 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 	}
 
 	s := &Service{}
-	c.EnableReschedule = true
 
 	err = service.InitTickServiceTemplate(&c.TickServiceConfigs, &s.TickServiceTemplate, s, s)
 	if err != nil {
@@ -107,27 +106,23 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 }
 
 // Service interface implementation
-func (s *Service) Tick(ctx context.Context) []error {
-	hadWork, err := s.Step(ctx)
-
+func (s *Service) Tick(ctx context.Context) (bool, []error) {
 	// Signal reschedule whenever work was done, even if some apps errored.
 	// Failed apps are marked Failed and removed by the machine manager,
 	// so they won't cause amplified retries on the next tick.
 	// Without this, one failing app delays all healthy apps by a full poll interval.
-	if hadWork {
-		s.SignalReschedule()
-	}
+	hadWork, err := s.Step(ctx)
 
 	if err == nil {
-		return nil
+		return hadWork, nil
 	}
 	// During shutdown, the machine manager is closed and GetMachine() may
 	// return ErrNoApp. Suppress this to avoid spurious ERR log entries.
 	if errors.Is(err, ErrNoApp) && ctx.Err() != nil {
 		s.Logger.Warn("Tick interrupted by shutdown", "error", err)
-		return nil
+		return hadWork, nil
 	}
-	return []error{err}
+	return hadWork, []error{err}
 }
 
 func (s *Service) OnStop(b bool) []error {

@@ -67,10 +67,10 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 
 // Tick executes the Validator main logic of producing claims and/or proofs
 // for processed epochs of all running applications.
-func (s *Service) Tick(ctx context.Context) []error {
+func (s *Service) Tick(ctx context.Context) (bool, []error) {
 	apps, _, err := getAllRunningApplications(ctx, s.repository)
 	if err != nil {
-		return []error{fmt.Errorf("failed to get running applications. %w", err)}
+		return false, []error{fmt.Errorf("failed to get running applications. %w", err)}
 	}
 
 	// validate each application
@@ -80,7 +80,7 @@ func (s *Service) Tick(ctx context.Context) []error {
 			errs = append(errs, err)
 		}
 	}
-	return errs
+	return false, errs
 }
 
 // The maximum height for the Merkle tree of all outputs produced

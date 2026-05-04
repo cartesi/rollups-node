@@ -124,10 +124,10 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 
 // Tick executes the Validator main logic of producing claims and/or proofs
 // for processed epochs of all running applications.
-func (s *Service) Tick(ctx context.Context) []error {
+func (s *Service) Tick(ctx context.Context) (bool, []error) {
 	// Check for shutdown before starting work, consistent with the advancer.
 	if ctx.Err() != nil {
-		return nil
+		return false, nil
 	}
 
 	apps, _, err := getAllRunningApplications(ctx, s.repository)
@@ -135,16 +135,16 @@ func (s *Service) Tick(ctx context.Context) []error {
 		// Only suppress context errors during shutdown; surface real DB errors.
 		if errors.Is(err, context.Canceled) {
 			s.Logger.Warn("Tick interrupted by shutdown", "error", err)
-			return nil
+			return false, nil
 		}
-		return []error{fmt.Errorf("failed to get running applications. %w", err)}
+		return false, []error{fmt.Errorf("failed to get running applications. %w", err)}
 	}
 
 	// validate each application
 	errs := []error{}
 	for idx := range apps {
 		if ctx.Err() != nil {
-			return errs
+			return false, errs
 		}
 		if err := s.validateApplication(ctx, apps[idx]); err != nil {
 			// During shutdown, in-flight L1 requests see context cancellation.
@@ -157,7 +157,7 @@ func (s *Service) Tick(ctx context.Context) []error {
 			errs = append(errs, err)
 		}
 	}
-	return errs
+	return false, errs
 }
 
 func (s *Service) setupPersistentConfig(

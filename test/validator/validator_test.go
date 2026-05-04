@@ -134,7 +134,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
 		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
 
-		errs := s.validator.Tick(s.ctx)
+		_, errs := s.validator.Tick(s.ctx)
 		s.Require().Equal(0, len(errs))
 
 		updatedEpoch, err := s.repository.GetEpoch(s.ctx, app.IApplicationAddress.String(), epoch.Index)
@@ -256,7 +256,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
 
-		errs := s.validator.Tick(s.ctx)
+		_, errs := s.validator.Tick(s.ctx)
 		s.Require().Equal(0, len(errs))
 
 		updatedEpoch, err := s.repository.GetEpoch(s.ctx, app.IApplicationAddress.String(), secondEpoch.Index)
@@ -338,7 +338,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
 
-		errs := s.validator.Tick(s.ctx)
+		_, errs := s.validator.Tick(s.ctx)
 		s.Require().Equal(0, len(errs))
 
 		updatedEpoch, err := s.repository.GetEpoch(s.ctx, app.IApplicationAddress.String(), epoch.Index)
@@ -491,7 +491,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
 
-		errs := s.validator.Tick(s.ctx)
+		_, errs := s.validator.Tick(s.ctx)
 		s.Require().Equal(0, len(errs))
 
 		updatedSecondEpoch, err := s.repository.GetEpoch(
