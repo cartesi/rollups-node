@@ -10,8 +10,6 @@
 //   - embed a [ServiceTemplate] struct into a new <type>Service struct.
 //   - embed a [Create] call into a new Create<type> function.
 //
-// Check DummyService, SlowService and ListService source code for examples of how to do it.
-//
 // To use a service, call its corresponding Create function with a matching CreateInfo and Service,
 // then fill in the appropriate CreateInfo fields.
 // Here are a few of the available options:
