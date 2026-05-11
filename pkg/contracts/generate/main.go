@@ -46,6 +46,10 @@ var bindings = []contractBinding{
 		typeName: "IQuorum",
 	},
 	{
+		jsonPath: rollupsContractsPath + "IQuorumFactory.sol/IQuorumFactory.json",
+		typeName: "IQuorumFactory",
+	},
+	{
 		jsonPath: rollupsContractsPath + "IApplication.sol/IApplication.json",
 		typeName: "IApplication",
 	},
@@ -72,6 +76,22 @@ var bindings = []contractBinding{
 	{
 		jsonPath: rollupsContractsPath + "DataAvailability.sol/DataAvailability.json",
 		typeName: "DataAvailability",
+	},
+	{
+		jsonPath: rollupsContractsPath + "IUsdWithdrawalOutputBuilder.sol/IUsdWithdrawalOutputBuilder.json",
+		typeName: "IUsdWithdrawalOutputBuilder",
+	},
+	{
+		jsonPath: rollupsContractsPath + "IERC20Metadata.sol/IERC20Metadata.json",
+		typeName: "IERC20Metadata",
+	},
+	{
+		jsonPath: rollupsContractsPath + "IERC20Portal.sol/IERC20Portal.json",
+		typeName: "IERC20Portal",
+	},
+	{
+		jsonPath: rollupsContractsPath + "draft-IERC6093.sol/IERC20Errors.json",
+		typeName: "IERC20Errors",
 	},
 	{
 		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/ITournament.sol/ITournament.json",

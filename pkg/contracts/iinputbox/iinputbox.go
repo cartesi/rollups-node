@@ -31,7 +31,7 @@ var (
 
 // IInputBoxMetaData contains all meta data concerning the IInputBox contract.
 var IInputBoxMetaData = &bind.MetaData{
-	ABI: "[{\"type\":\"function\",\"name\":\"addInput\",\"inputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"payload\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"getDeploymentBlockNumber\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getInputHash\",\"inputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"index\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getNumberOfInputs\",\"inputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"event\",\"name\":\"InputAdded\",\"inputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"index\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"input\",\"type\":\"bytes\",\"indexed\":false,\"internalType\":\"bytes\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"InputTooLarge\",\"inputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"inputLength\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"maxInputLength\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]}]",
+	ABI: "[{\"type\":\"function\",\"name\":\"addInput\",\"inputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"payload\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"getDeploymentBlockNumber\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getInputHash\",\"inputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"index\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getNumberOfInputs\",\"inputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"version\",\"inputs\":[],\"outputs\":[{\"name\":\"major\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"minor\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"patch\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"preRelease\",\"type\":\"string\",\"internalType\":\"string\"},{\"name\":\"buildMetadata\",\"type\":\"string\",\"internalType\":\"string\"}],\"stateMutability\":\"view\"},{\"type\":\"event\",\"name\":\"InputAdded\",\"inputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"index\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"input\",\"type\":\"bytes\",\"indexed\":false,\"internalType\":\"bytes\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"ApplicationForeclosed\",\"inputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"ApplicationNotDeployed\",\"inputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"ApplicationReverted\",\"inputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"error\",\"type\":\"bytes\",\"internalType\":\"bytes\"}]},{\"type\":\"error\",\"name\":\"IllformedApplicationReturnData\",\"inputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"data\",\"type\":\"bytes\",\"internalType\":\"bytes\"}]},{\"type\":\"error\",\"name\":\"InputTooLarge\",\"inputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"inputLength\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"maxInputLength\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]}]",
 }
 
 // IInputBoxABI is the input ABI used to generate the binding from.
@@ -271,6 +271,66 @@ func (_IInputBox *IInputBoxSession) GetNumberOfInputs(appContract common.Address
 // Solidity: function getNumberOfInputs(address appContract) view returns(uint256)
 func (_IInputBox *IInputBoxCallerSession) GetNumberOfInputs(appContract common.Address) (*big.Int, error) {
 	return _IInputBox.Contract.GetNumberOfInputs(&_IInputBox.CallOpts, appContract)
+}
+
+// Version is a free data retrieval call binding the contract method 0x54fd4d50.
+//
+// Solidity: function version() view returns(uint64 major, uint64 minor, uint64 patch, string preRelease, string buildMetadata)
+func (_IInputBox *IInputBoxCaller) Version(opts *bind.CallOpts) (struct {
+	Major         uint64
+	Minor         uint64
+	Patch         uint64
+	PreRelease    string
+	BuildMetadata string
+}, error) {
+	var out []interface{}
+	err := _IInputBox.contract.Call(opts, &out, "version")
+
+	outstruct := new(struct {
+		Major         uint64
+		Minor         uint64
+		Patch         uint64
+		PreRelease    string
+		BuildMetadata string
+	})
+	if err != nil {
+		return *outstruct, err
+	}
+
+	outstruct.Major = *abi.ConvertType(out[0], new(uint64)).(*uint64)
+	outstruct.Minor = *abi.ConvertType(out[1], new(uint64)).(*uint64)
+	outstruct.Patch = *abi.ConvertType(out[2], new(uint64)).(*uint64)
+	outstruct.PreRelease = *abi.ConvertType(out[3], new(string)).(*string)
+	outstruct.BuildMetadata = *abi.ConvertType(out[4], new(string)).(*string)
+
+	return *outstruct, err
+
+}
+
+// Version is a free data retrieval call binding the contract method 0x54fd4d50.
+//
+// Solidity: function version() view returns(uint64 major, uint64 minor, uint64 patch, string preRelease, string buildMetadata)
+func (_IInputBox *IInputBoxSession) Version() (struct {
+	Major         uint64
+	Minor         uint64
+	Patch         uint64
+	PreRelease    string
+	BuildMetadata string
+}, error) {
+	return _IInputBox.Contract.Version(&_IInputBox.CallOpts)
+}
+
+// Version is a free data retrieval call binding the contract method 0x54fd4d50.
+//
+// Solidity: function version() view returns(uint64 major, uint64 minor, uint64 patch, string preRelease, string buildMetadata)
+func (_IInputBox *IInputBoxCallerSession) Version() (struct {
+	Major         uint64
+	Minor         uint64
+	Patch         uint64
+	PreRelease    string
+	BuildMetadata string
+}, error) {
+	return _IInputBox.Contract.Version(&_IInputBox.CallOpts)
 }
 
 // AddInput is a paid mutator transaction binding the contract method 0x1789cd63.

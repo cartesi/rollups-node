@@ -31,7 +31,7 @@ var (
 
 // IAuthorityFactoryMetaData contains all meta data concerning the IAuthorityFactory contract.
 var IAuthorityFactoryMetaData = &bind.MetaData{
-	ABI: "[{\"type\":\"function\",\"name\":\"calculateAuthorityAddress\",\"inputs\":[{\"name\":\"authorityOwner\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"epochLength\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"salt\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"newAuthority\",\"inputs\":[{\"name\":\"authorityOwner\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"epochLength\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIAuthority\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"newAuthority\",\"inputs\":[{\"name\":\"authorityOwner\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"epochLength\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"salt\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIAuthority\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"event\",\"name\":\"AuthorityCreated\",\"inputs\":[{\"name\":\"authority\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"contractIAuthority\"}],\"anonymous\":false}]",
+	ABI: "[{\"type\":\"function\",\"name\":\"calculateAuthorityAddress\",\"inputs\":[{\"name\":\"authorityOwner\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"epochLength\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"claimStagingPeriod\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"salt\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"newAuthority\",\"inputs\":[{\"name\":\"authorityOwner\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"epochLength\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"claimStagingPeriod\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIAuthority\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"newAuthority\",\"inputs\":[{\"name\":\"authorityOwner\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"epochLength\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"claimStagingPeriod\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"salt\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIAuthority\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"version\",\"inputs\":[],\"outputs\":[{\"name\":\"major\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"minor\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"patch\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"preRelease\",\"type\":\"string\",\"internalType\":\"string\"},{\"name\":\"buildMetadata\",\"type\":\"string\",\"internalType\":\"string\"}],\"stateMutability\":\"view\"},{\"type\":\"event\",\"name\":\"AuthorityCreated\",\"inputs\":[{\"name\":\"authority\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"contractIAuthority\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"ZeroEpochLength\",\"inputs\":[]}]",
 }
 
 // IAuthorityFactoryABI is the input ABI used to generate the binding from.
@@ -180,12 +180,12 @@ func (_IAuthorityFactory *IAuthorityFactoryTransactorRaw) Transact(opts *bind.Tr
 	return _IAuthorityFactory.Contract.contract.Transact(opts, method, params...)
 }
 
-// CalculateAuthorityAddress is a free data retrieval call binding the contract method 0x1442f7bb.
+// CalculateAuthorityAddress is a free data retrieval call binding the contract method 0xe771e61b.
 //
-// Solidity: function calculateAuthorityAddress(address authorityOwner, uint256 epochLength, bytes32 salt) view returns(address)
-func (_IAuthorityFactory *IAuthorityFactoryCaller) CalculateAuthorityAddress(opts *bind.CallOpts, authorityOwner common.Address, epochLength *big.Int, salt [32]byte) (common.Address, error) {
+// Solidity: function calculateAuthorityAddress(address authorityOwner, uint256 epochLength, uint256 claimStagingPeriod, bytes32 salt) view returns(address)
+func (_IAuthorityFactory *IAuthorityFactoryCaller) CalculateAuthorityAddress(opts *bind.CallOpts, authorityOwner common.Address, epochLength *big.Int, claimStagingPeriod *big.Int, salt [32]byte) (common.Address, error) {
 	var out []interface{}
-	err := _IAuthorityFactory.contract.Call(opts, &out, "calculateAuthorityAddress", authorityOwner, epochLength, salt)
+	err := _IAuthorityFactory.contract.Call(opts, &out, "calculateAuthorityAddress", authorityOwner, epochLength, claimStagingPeriod, salt)
 
 	if err != nil {
 		return *new(common.Address), err
@@ -197,60 +197,120 @@ func (_IAuthorityFactory *IAuthorityFactoryCaller) CalculateAuthorityAddress(opt
 
 }
 
-// CalculateAuthorityAddress is a free data retrieval call binding the contract method 0x1442f7bb.
+// CalculateAuthorityAddress is a free data retrieval call binding the contract method 0xe771e61b.
 //
-// Solidity: function calculateAuthorityAddress(address authorityOwner, uint256 epochLength, bytes32 salt) view returns(address)
-func (_IAuthorityFactory *IAuthorityFactorySession) CalculateAuthorityAddress(authorityOwner common.Address, epochLength *big.Int, salt [32]byte) (common.Address, error) {
-	return _IAuthorityFactory.Contract.CalculateAuthorityAddress(&_IAuthorityFactory.CallOpts, authorityOwner, epochLength, salt)
+// Solidity: function calculateAuthorityAddress(address authorityOwner, uint256 epochLength, uint256 claimStagingPeriod, bytes32 salt) view returns(address)
+func (_IAuthorityFactory *IAuthorityFactorySession) CalculateAuthorityAddress(authorityOwner common.Address, epochLength *big.Int, claimStagingPeriod *big.Int, salt [32]byte) (common.Address, error) {
+	return _IAuthorityFactory.Contract.CalculateAuthorityAddress(&_IAuthorityFactory.CallOpts, authorityOwner, epochLength, claimStagingPeriod, salt)
 }
 
-// CalculateAuthorityAddress is a free data retrieval call binding the contract method 0x1442f7bb.
+// CalculateAuthorityAddress is a free data retrieval call binding the contract method 0xe771e61b.
 //
-// Solidity: function calculateAuthorityAddress(address authorityOwner, uint256 epochLength, bytes32 salt) view returns(address)
-func (_IAuthorityFactory *IAuthorityFactoryCallerSession) CalculateAuthorityAddress(authorityOwner common.Address, epochLength *big.Int, salt [32]byte) (common.Address, error) {
-	return _IAuthorityFactory.Contract.CalculateAuthorityAddress(&_IAuthorityFactory.CallOpts, authorityOwner, epochLength, salt)
+// Solidity: function calculateAuthorityAddress(address authorityOwner, uint256 epochLength, uint256 claimStagingPeriod, bytes32 salt) view returns(address)
+func (_IAuthorityFactory *IAuthorityFactoryCallerSession) CalculateAuthorityAddress(authorityOwner common.Address, epochLength *big.Int, claimStagingPeriod *big.Int, salt [32]byte) (common.Address, error) {
+	return _IAuthorityFactory.Contract.CalculateAuthorityAddress(&_IAuthorityFactory.CallOpts, authorityOwner, epochLength, claimStagingPeriod, salt)
 }
 
-// NewAuthority is a paid mutator transaction binding the contract method 0x93d7217c.
+// Version is a free data retrieval call binding the contract method 0x54fd4d50.
 //
-// Solidity: function newAuthority(address authorityOwner, uint256 epochLength) returns(address)
-func (_IAuthorityFactory *IAuthorityFactoryTransactor) NewAuthority(opts *bind.TransactOpts, authorityOwner common.Address, epochLength *big.Int) (*types.Transaction, error) {
-	return _IAuthorityFactory.contract.Transact(opts, "newAuthority", authorityOwner, epochLength)
+// Solidity: function version() view returns(uint64 major, uint64 minor, uint64 patch, string preRelease, string buildMetadata)
+func (_IAuthorityFactory *IAuthorityFactoryCaller) Version(opts *bind.CallOpts) (struct {
+	Major         uint64
+	Minor         uint64
+	Patch         uint64
+	PreRelease    string
+	BuildMetadata string
+}, error) {
+	var out []interface{}
+	err := _IAuthorityFactory.contract.Call(opts, &out, "version")
+
+	outstruct := new(struct {
+		Major         uint64
+		Minor         uint64
+		Patch         uint64
+		PreRelease    string
+		BuildMetadata string
+	})
+	if err != nil {
+		return *outstruct, err
+	}
+
+	outstruct.Major = *abi.ConvertType(out[0], new(uint64)).(*uint64)
+	outstruct.Minor = *abi.ConvertType(out[1], new(uint64)).(*uint64)
+	outstruct.Patch = *abi.ConvertType(out[2], new(uint64)).(*uint64)
+	outstruct.PreRelease = *abi.ConvertType(out[3], new(string)).(*string)
+	outstruct.BuildMetadata = *abi.ConvertType(out[4], new(string)).(*string)
+
+	return *outstruct, err
+
 }
 
-// NewAuthority is a paid mutator transaction binding the contract method 0x93d7217c.
+// Version is a free data retrieval call binding the contract method 0x54fd4d50.
 //
-// Solidity: function newAuthority(address authorityOwner, uint256 epochLength) returns(address)
-func (_IAuthorityFactory *IAuthorityFactorySession) NewAuthority(authorityOwner common.Address, epochLength *big.Int) (*types.Transaction, error) {
-	return _IAuthorityFactory.Contract.NewAuthority(&_IAuthorityFactory.TransactOpts, authorityOwner, epochLength)
+// Solidity: function version() view returns(uint64 major, uint64 minor, uint64 patch, string preRelease, string buildMetadata)
+func (_IAuthorityFactory *IAuthorityFactorySession) Version() (struct {
+	Major         uint64
+	Minor         uint64
+	Patch         uint64
+	PreRelease    string
+	BuildMetadata string
+}, error) {
+	return _IAuthorityFactory.Contract.Version(&_IAuthorityFactory.CallOpts)
 }
 
-// NewAuthority is a paid mutator transaction binding the contract method 0x93d7217c.
+// Version is a free data retrieval call binding the contract method 0x54fd4d50.
 //
-// Solidity: function newAuthority(address authorityOwner, uint256 epochLength) returns(address)
-func (_IAuthorityFactory *IAuthorityFactoryTransactorSession) NewAuthority(authorityOwner common.Address, epochLength *big.Int) (*types.Transaction, error) {
-	return _IAuthorityFactory.Contract.NewAuthority(&_IAuthorityFactory.TransactOpts, authorityOwner, epochLength)
+// Solidity: function version() view returns(uint64 major, uint64 minor, uint64 patch, string preRelease, string buildMetadata)
+func (_IAuthorityFactory *IAuthorityFactoryCallerSession) Version() (struct {
+	Major         uint64
+	Minor         uint64
+	Patch         uint64
+	PreRelease    string
+	BuildMetadata string
+}, error) {
+	return _IAuthorityFactory.Contract.Version(&_IAuthorityFactory.CallOpts)
 }
 
-// NewAuthority0 is a paid mutator transaction binding the contract method 0xec992668.
+// NewAuthority is a paid mutator transaction binding the contract method 0x6dbc5ab0.
 //
-// Solidity: function newAuthority(address authorityOwner, uint256 epochLength, bytes32 salt) returns(address)
-func (_IAuthorityFactory *IAuthorityFactoryTransactor) NewAuthority0(opts *bind.TransactOpts, authorityOwner common.Address, epochLength *big.Int, salt [32]byte) (*types.Transaction, error) {
-	return _IAuthorityFactory.contract.Transact(opts, "newAuthority0", authorityOwner, epochLength, salt)
+// Solidity: function newAuthority(address authorityOwner, uint256 epochLength, uint256 claimStagingPeriod) returns(address)
+func (_IAuthorityFactory *IAuthorityFactoryTransactor) NewAuthority(opts *bind.TransactOpts, authorityOwner common.Address, epochLength *big.Int, claimStagingPeriod *big.Int) (*types.Transaction, error) {
+	return _IAuthorityFactory.contract.Transact(opts, "newAuthority", authorityOwner, epochLength, claimStagingPeriod)
 }
 
-// NewAuthority0 is a paid mutator transaction binding the contract method 0xec992668.
+// NewAuthority is a paid mutator transaction binding the contract method 0x6dbc5ab0.
 //
-// Solidity: function newAuthority(address authorityOwner, uint256 epochLength, bytes32 salt) returns(address)
-func (_IAuthorityFactory *IAuthorityFactorySession) NewAuthority0(authorityOwner common.Address, epochLength *big.Int, salt [32]byte) (*types.Transaction, error) {
-	return _IAuthorityFactory.Contract.NewAuthority0(&_IAuthorityFactory.TransactOpts, authorityOwner, epochLength, salt)
+// Solidity: function newAuthority(address authorityOwner, uint256 epochLength, uint256 claimStagingPeriod) returns(address)
+func (_IAuthorityFactory *IAuthorityFactorySession) NewAuthority(authorityOwner common.Address, epochLength *big.Int, claimStagingPeriod *big.Int) (*types.Transaction, error) {
+	return _IAuthorityFactory.Contract.NewAuthority(&_IAuthorityFactory.TransactOpts, authorityOwner, epochLength, claimStagingPeriod)
 }
 
-// NewAuthority0 is a paid mutator transaction binding the contract method 0xec992668.
+// NewAuthority is a paid mutator transaction binding the contract method 0x6dbc5ab0.
 //
-// Solidity: function newAuthority(address authorityOwner, uint256 epochLength, bytes32 salt) returns(address)
-func (_IAuthorityFactory *IAuthorityFactoryTransactorSession) NewAuthority0(authorityOwner common.Address, epochLength *big.Int, salt [32]byte) (*types.Transaction, error) {
-	return _IAuthorityFactory.Contract.NewAuthority0(&_IAuthorityFactory.TransactOpts, authorityOwner, epochLength, salt)
+// Solidity: function newAuthority(address authorityOwner, uint256 epochLength, uint256 claimStagingPeriod) returns(address)
+func (_IAuthorityFactory *IAuthorityFactoryTransactorSession) NewAuthority(authorityOwner common.Address, epochLength *big.Int, claimStagingPeriod *big.Int) (*types.Transaction, error) {
+	return _IAuthorityFactory.Contract.NewAuthority(&_IAuthorityFactory.TransactOpts, authorityOwner, epochLength, claimStagingPeriod)
+}
+
+// NewAuthority0 is a paid mutator transaction binding the contract method 0x75855f0d.
+//
+// Solidity: function newAuthority(address authorityOwner, uint256 epochLength, uint256 claimStagingPeriod, bytes32 salt) returns(address)
+func (_IAuthorityFactory *IAuthorityFactoryTransactor) NewAuthority0(opts *bind.TransactOpts, authorityOwner common.Address, epochLength *big.Int, claimStagingPeriod *big.Int, salt [32]byte) (*types.Transaction, error) {
+	return _IAuthorityFactory.contract.Transact(opts, "newAuthority0", authorityOwner, epochLength, claimStagingPeriod, salt)
+}
+
+// NewAuthority0 is a paid mutator transaction binding the contract method 0x75855f0d.
+//
+// Solidity: function newAuthority(address authorityOwner, uint256 epochLength, uint256 claimStagingPeriod, bytes32 salt) returns(address)
+func (_IAuthorityFactory *IAuthorityFactorySession) NewAuthority0(authorityOwner common.Address, epochLength *big.Int, claimStagingPeriod *big.Int, salt [32]byte) (*types.Transaction, error) {
+	return _IAuthorityFactory.Contract.NewAuthority0(&_IAuthorityFactory.TransactOpts, authorityOwner, epochLength, claimStagingPeriod, salt)
+}
+
+// NewAuthority0 is a paid mutator transaction binding the contract method 0x75855f0d.
+//
+// Solidity: function newAuthority(address authorityOwner, uint256 epochLength, uint256 claimStagingPeriod, bytes32 salt) returns(address)
+func (_IAuthorityFactory *IAuthorityFactoryTransactorSession) NewAuthority0(authorityOwner common.Address, epochLength *big.Int, claimStagingPeriod *big.Int, salt [32]byte) (*types.Transaction, error) {
+	return _IAuthorityFactory.Contract.NewAuthority0(&_IAuthorityFactory.TransactOpts, authorityOwner, epochLength, claimStagingPeriod, salt)
 }
 
 // IAuthorityFactoryAuthorityCreatedIterator is returned from FilterAuthorityCreated and is used to iterate over the raw logs and unpacked data for AuthorityCreated events raised by the IAuthorityFactory contract.
