@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	mrand "math/rand"
 	"os"
 	"path/filepath"
@@ -935,6 +936,27 @@ func (s *AdvancerSuite) TestCreateSnapshot() {
 
 		_, statErr := os.Stat(prevPath)
 		require.True(os.IsNotExist(statErr))
+	})
+
+	s.Run("OverwritesPartialPriorAttempt", func() {
+
+		require := s.Require()
+		env, machine, tmpDir := setupCreateSnapshot()
+
+		prevPath := filepath.Join(tmpDir, "testapp_epoch0_input0")
+		require.Nil(os.MkdirAll(prevPath, 0755))
+
+		input := repotest.NewInputBuilder().WithIndex(0).WithEpochIndex(0).Build()
+		input.EpochApplicationID = env.app.Application.ID
+
+		err := env.service.createSnapshot(context.Background(), env.app.Application, machine, input)
+		require.Nil(err)
+		require.NotNil(input.SnapshotURI)
+		require.Equal(prevPath, *input.SnapshotURI)
+
+		// This works because the machine mock doesn't create directories
+		_, statErr := os.Stat(prevPath)
+		require.True(errors.Is(statErr, fs.ErrNotExist))
 	})
 
 	s.Run("CreateSnapshotError", func() {

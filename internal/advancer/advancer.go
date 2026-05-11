@@ -465,6 +465,13 @@ func (s *Service) createSnapshot(ctx context.Context, app *Application, machine 
 		"input", input.Index,
 		"path", snapshotPath)
 
+	// Guard against partial store by cleaning up before a retry
+	if _, err := os.Stat(snapshotPath); err == nil {
+		if err := s.removeSnapshot(snapshotPath, app.Name); err != nil {
+			return fmt.Errorf("failed to clean stale snapshot directory: %w", err)
+		}
+	}
+
 	// Ensure the parent directory exists
 	if err := os.MkdirAll(s.snapshotsDir, 0755); err != nil { //nolint: mnd
 		return fmt.Errorf("failed to create snapshots directory: %w", err)
