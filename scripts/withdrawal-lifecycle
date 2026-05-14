@@ -1,0 +1,406 @@
+#!/usr/bin/env bash
+# (c) Cartesi and individual authors (see AUTHORS)
+# SPDX-License-Identifier: Apache-2.0 (see LICENSE)
+#
+# Manual ERC-20 withdrawal lifecycle helper.
+# Run each step explicitly so the operator can inspect node logs, CLI reads,
+# and chain state between transitions.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+APP="${APP:-erc20-withdrawal-dapp}"
+DAPP="${DAPP:-$ROOT/applications/erc20-withdrawal-dapp}"
+ARTIFACTS="${ARTIFACTS:-$ROOT/applications/integration-artifacts/manual-$APP}"
+
+CLI="${CLI:-$ROOT/cartesi-rollups-cli}"
+NODE="${NODE:-$ROOT/cartesi-rollups-node}"
+MACHINE_TOOL="${MACHINE_TOOL:-$ROOT/cartesi-rollups-machine-tool}"
+
+RPC_URL="${CARTESI_BLOCKCHAIN_HTTP_ENDPOINT:-http://localhost:8545}"
+PORTAL="${PORTAL:-${CARTESI_DEVNET_ERC20_PORTAL_ADDRESS:-0x22E57511C30CcE6CDaa742E13CE3b774fDC663b1}}"
+TOKEN="${TOKEN:-${CARTESI_DEVNET_TEST_ERC20_ADDRESS:-0x88A2120B7068E78692C8fd12E751d610B6377E4d}}"
+
+DEPOSIT_AMOUNT="${DEPOSIT_AMOUNT:-100}"
+WITHDRAW_AMOUNT="${WITHDRAW_AMOUNT:-25}"
+TOKEN_AMOUNT="${TOKEN_AMOUNT:-1000000}"
+ETH_WEI="${ETH_WEI:-0x8ac7230489e80000}"
+GUARDIAN_INDEX="${GUARDIAN_INDEX:-1}"
+
+usage() {
+	cat <<EOF
+Usage:
+  ./scripts/withdrawal-lifecycle <command> [args]
+
+Environment defaults:
+  APP=$APP
+  ARTIFACTS=$ARTIFACTS
+  DAPP=$DAPP
+  TOKEN=$TOKEN
+  PORTAL=$PORTAL
+
+Commands:
+  vars                         Print resolved variables
+  app-address                  Resolve APP address with 'cartesi-rollups-cli app list'
+  last-accepted-epoch          Print the latest CLAIM_ACCEPTED epoch index
+  balances                     Show ETH and token balances for WALLET and APP
+  inspect-balance [address]     Inspect account-drive token balance for address/WALLET
+  deposit                      Deposit DEPOSIT_AMOUNT ERC-20 units through the portal
+  withdraw                     Send normal withdrawal input for WITHDRAW_AMOUNT units
+  execute-output <index>        Execute the normal voucher output
+  foreclose                    Foreclose APP with guardian mnemonic account GUARDIAN_INDEX
+  replay <epoch>               Replay accepted inputs through epoch into a stored snapshot
+  prove <epoch>                Generate drive-root and withdraw proofs from replay snapshot
+  generate-proofs <epoch>      Replay accepted inputs and generate proofs
+  prove-drive-root             Post the accounts-drive proof on-chain
+  emergency-withdraw           Execute post-foreclosure withdraw with generated proof
+
+Setup with Makefile targets first, then run:
+  ./scripts/withdrawal-lifecycle balances
+  ./scripts/withdrawal-lifecycle inspect-balance
+  ./scripts/withdrawal-lifecycle deposit
+  ./scripts/withdrawal-lifecycle withdraw
+  ./scripts/withdrawal-lifecycle execute-output <output-index>
+  ./scripts/withdrawal-lifecycle foreclose
+  ./scripts/withdrawal-lifecycle generate-proofs <accepted-epoch-index>
+  ./scripts/withdrawal-lifecycle prove-drive-root
+  ./scripts/withdrawal-lifecycle emergency-withdraw
+EOF
+}
+
+die() {
+	echo "ERROR: $*" >&2
+	exit 1
+}
+
+need() {
+	command -v "$1" >/dev/null 2>&1 || die "$1 not found on PATH"
+}
+
+wallet() {
+	need cast
+	need jq
+	if [ -n "${WALLET:-}" ]; then
+		echo "$WALLET"
+	else
+		cast rpc --rpc-url "$RPC_URL" eth_accounts | jq -r '.[0]'
+	fi
+}
+
+wallet_for_display() {
+	if [ -n "${WALLET:-}" ]; then
+		echo "$WALLET"
+	elif command -v cast >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+		cast rpc --rpc-url "$RPC_URL" eth_accounts 2>/dev/null | jq -r '.[0]' 2>/dev/null || echo "<unavailable>"
+	else
+		echo "<unresolved: set WALLET or install cast+jq>"
+	fi
+}
+
+ensure_artifacts() {
+	mkdir -p "$ARTIFACTS"
+}
+
+drive_start_index() {
+	need jq
+	jq -r '.config.flash_drive[] | select(.length == 4194304) | (.start / 4194304 | floor)' "$DAPP/config.json"
+}
+
+snapshot_path() {
+	local epoch="$1"
+	echo "$ARTIFACTS/snapshot-epoch-$epoch"
+}
+
+drive_proof_path() {
+	echo "$ARTIFACTS/drive-root-proof.json"
+}
+
+withdraw_proof_path() {
+	echo "$ARTIFACTS/withdraw-proof.json"
+}
+
+machine_tool_work_dir() {
+	local dir="$ARTIFACTS/machine-tool"
+	mkdir -p "$dir"
+	echo "$dir"
+}
+
+app_address() {
+	if [ -n "${APP_ADDR:-}" ]; then
+		echo "$APP_ADDR"
+	else
+		[ -x "$CLI" ] || return 0
+		"$CLI" app list | jq -r --arg app "$APP" '
+			.[] |
+			select(
+				.name == $app or
+				(.iapplication_address | ascii_downcase) == ($app | ascii_downcase)
+			) |
+			.iapplication_address
+		' | head -n 1
+	fi
+}
+
+cmd_vars() {
+	cat <<EOF
+APP=$APP
+ROOT=$ROOT
+DAPP=$DAPP
+ARTIFACTS=$ARTIFACTS
+CLI=$CLI
+NODE=$NODE
+MACHINE_TOOL=$MACHINE_TOOL
+RPC_URL=$RPC_URL
+PORTAL=$PORTAL
+TOKEN=$TOKEN
+APP_ADDR=${APP_ADDR:-<resolved by CLI app list>}
+WALLET=$(wallet_for_display)
+DEPOSIT_AMOUNT=$DEPOSIT_AMOUNT
+WITHDRAW_AMOUNT=$WITHDRAW_AMOUNT
+TOKEN_AMOUNT=$TOKEN_AMOUNT
+ETH_WEI=$ETH_WEI
+GUARDIAN_INDEX=$GUARDIAN_INDEX
+EOF
+}
+
+cmd_app_address() {
+	need jq
+	local app_addr
+	app_addr="$(app_address)"
+	[ -n "$app_addr" ] || die "application address not found for APP=$APP"
+	echo "$app_addr"
+}
+
+cmd_last_accepted_epoch() {
+	need jq
+	[ -x "$CLI" ] || die "$CLI is not executable; build it with make first"
+	local response epoch
+	response="$("$CLI" read epochs "$APP" --status CLAIM_ACCEPTED --limit 1 --descending)"
+	epoch="$(printf '%s\n' "$response" | jq -r '.data[0].index // empty')"
+	[ -n "$epoch" ] || die "no CLAIM_ACCEPTED epoch found for APP=$APP"
+	echo "$epoch"
+}
+
+cmd_balances() {
+	need cast
+	need jq
+	local account app_addr
+	account="$(wallet)"
+	app_addr="$(app_address)"
+
+	echo "Token: $TOKEN"
+	echo
+	echo "Wallet: $account"
+	echo "  ETH:   $(cast balance --rpc-url "$RPC_URL" "$account") wei"
+	echo "  TOKEN: $(cast call --rpc-url "$RPC_URL" "$TOKEN" "balanceOf(address)(uint256)" "$account")"
+
+	if [ -n "$app_addr" ] && [ "$app_addr" != "null" ]; then
+		echo
+		echo "Application: $app_addr"
+		echo "  ETH:   $(cast balance --rpc-url "$RPC_URL" "$app_addr") wei"
+		echo "  TOKEN: $(cast call --rpc-url "$RPC_URL" "$TOKEN" "balanceOf(address)(uint256)" "$app_addr")"
+	else
+		echo
+		echo "Application: <unknown>"
+		echo "Set APP_ADDR=0x... or check that '$CLI app list' can find APP=$APP."
+	fi
+}
+
+cmd_inspect_balance() {
+	need jq
+	local account response report_payload decoded_report
+	account="${1:-$(wallet)}"
+	[ -x "$CLI" ] || die "$CLI is not executable; build it with make first"
+	ensure_artifacts
+
+	response="$("$CLI" inspect "$APP" "balance $account")"
+	printf '%s\n' "$response" > "$ARTIFACTS/inspect-balance.json"
+
+	echo "Inspect account-drive balance"
+	echo "  application:  $APP"
+	echo "  address:      $account"
+	report_payload="$(printf '%s\n' "$response" | jq -r '.reports[0].payload // empty')"
+	if [ -z "$report_payload" ]; then
+		echo "  report:       <none>"
+		echo "  raw response: $ARTIFACTS/inspect-balance.json"
+		return 0
+	fi
+
+	decoded_report="$(printf '%s' "${report_payload#0x}" | xxd -r -p)"
+	if printf '%s' "$decoded_report" | jq -e . >/dev/null 2>&1; then
+		echo "  found:        $(jq -r 'if has("found") then .found else "<unknown>" end' <<<"$decoded_report")"
+		echo "  balance:      $(jq -r '.balance // "<unknown>"' <<<"$decoded_report")"
+		if jq -e 'has("account_index")' <<<"$decoded_report" >/dev/null; then
+			echo "  account idx:  $(jq -r '.account_index' <<<"$decoded_report")"
+		fi
+		if jq -e 'has("error")' <<<"$decoded_report" >/dev/null; then
+			echo "  error:        $(jq -r '.error' <<<"$decoded_report")"
+		fi
+	else
+		echo "  report:"
+		printf '%s\n' "$decoded_report"
+	fi
+	echo
+	echo "  raw response: $ARTIFACTS/inspect-balance.json"
+}
+
+cmd_deposit() {
+	ensure_artifacts
+	[ -x "$CLI" ] || die "$CLI is not executable; build it with make first"
+	"$CLI" deposit erc20 "$APP" \
+		--portal "$PORTAL" \
+		--token "$TOKEN" \
+		--amount "$DEPOSIT_AMOUNT" \
+		--approve \
+		--yes \
+		--json | tee "$ARTIFACTS/deposit.json"
+}
+
+cmd_withdraw() {
+	ensure_artifacts
+	[ -x "$CLI" ] || die "$CLI is not executable; build it with make first"
+	local payload
+	payload="$(printf '0x01%016x' "$WITHDRAW_AMOUNT")"
+	echo "Withdrawal payload: $payload"
+	"$CLI" send "$APP" "$payload" --hex --yes --json | tee "$ARTIFACTS/withdraw.json"
+}
+
+cmd_execute_output() {
+	[ $# -eq 1 ] || die "execute-output requires <output-index>"
+	[ -x "$CLI" ] || die "$CLI is not executable; build it with make first"
+	"$CLI" execute "$APP" "$1" --yes
+}
+
+cmd_foreclose() {
+	ensure_artifacts
+	[ -x "$CLI" ] || die "$CLI is not executable; build it with make first"
+	CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX="$GUARDIAN_INDEX" \
+		"$CLI" foreclose "$APP" --yes --json | tee "$ARTIFACTS/foreclose.json"
+}
+
+print_replay_summary() {
+	local epoch file
+	epoch="$1"
+	file="$2"
+	jq -r --arg epoch "$epoch" '
+		"Replay complete",
+		"  target epoch:      \($epoch)",
+		"  processed inputs:  \(.processed_inputs)",
+		"  last input index:  \(.last_input_index // "<none>")",
+		"  machine root:      \(.machine_root)",
+		"  snapshot:          \(.store)"
+	' "$file"
+	echo "  raw summary:       $file"
+}
+
+print_prove_summary() {
+	local epoch file
+	epoch="$1"
+	file="$2"
+	jq -r --arg epoch "$epoch" '
+		"Accounts-drive proofs generated",
+		"  source epoch:       \($epoch)",
+		"  account:            \(.account)",
+		"  account index:      \(.account_index)",
+		"  accounts root:      \(.accounts_drive_merkle_root)",
+		"  machine root:       \(.machine_root)",
+		"  drive-root proof:   \(.drive_root_proof_file)",
+		"  withdraw proof:     \(.withdraw_proof_file)"
+	' "$file"
+	echo "  raw summary:        $file"
+}
+
+cmd_replay() {
+	[ $# -eq 1 ] || die "replay requires <epoch>"
+	ensure_artifacts
+	[ -x "$MACHINE_TOOL" ] || die "$MACHINE_TOOL is not executable; build it with make first"
+	need jq
+	local epoch snapshot summary work_dir
+	epoch="$1"
+	snapshot="$(snapshot_path "$epoch")"
+	summary="$ARTIFACTS/replay-epoch-$epoch.json"
+	work_dir="$(machine_tool_work_dir)"
+	[ ! -e "$snapshot" ] || die "$snapshot already exists; set ARTIFACTS to a new directory or remove it"
+	(
+		cd "$work_dir"
+		"$MACHINE_TOOL" replay \
+			--template "$DAPP" \
+			--application "$APP" \
+			--to-epoch "$epoch" \
+			--store "$snapshot"
+	) > "$summary"
+	print_replay_summary "$epoch" "$summary"
+	echo "  machine artifacts: $work_dir"
+}
+
+cmd_prove() {
+	[ $# -eq 1 ] || die "prove requires <epoch>"
+	ensure_artifacts
+	[ -x "$MACHINE_TOOL" ] || die "$MACHINE_TOOL is not executable; build it with make first"
+	need jq
+	local epoch snapshot account summary
+	epoch="$1"
+	snapshot="$(snapshot_path "$epoch")"
+	account="$(wallet)"
+	summary="$ARTIFACTS/prove-epoch-$epoch.json"
+	[ -d "$snapshot" ] || die "$snapshot not found; run './scripts/withdrawal-lifecycle replay $epoch'"
+	"$MACHINE_TOOL" prove accounts-drive \
+		--snapshot "$snapshot" \
+		--accounts-drive-start-index "$(drive_start_index)" \
+		--log2-max-num-of-accounts 17 \
+		--log2-leaves-per-account 0 \
+		--account "$account" \
+		--out-drive-root-proof "$(drive_proof_path)" \
+		--out-withdraw-proof "$(withdraw_proof_path)" > "$summary"
+	print_prove_summary "$epoch" "$summary"
+}
+
+cmd_generate_proofs() {
+	[ $# -eq 1 ] || die "generate-proofs requires <epoch>"
+	cmd_replay "$1"
+	echo
+	cmd_prove "$1"
+	echo
+	echo "Next steps:"
+	echo "  ./scripts/withdrawal-lifecycle prove-drive-root"
+	echo "  ./scripts/withdrawal-lifecycle emergency-withdraw"
+}
+
+cmd_prove_drive_root() {
+	[ -x "$CLI" ] || die "$CLI is not executable; build it with make first"
+	[ -f "$(drive_proof_path)" ] || die "$(drive_proof_path) not found; run generate-proofs first"
+	"$CLI" prove-drive-root "$APP" --proof-file "$(drive_proof_path)" --yes --json | tee "$ARTIFACTS/prove-drive-root.json"
+}
+
+cmd_emergency_withdraw() {
+	[ -x "$CLI" ] || die "$CLI is not executable; build it with make first"
+	[ -f "$(withdraw_proof_path)" ] || die "$(withdraw_proof_path) not found; run generate-proofs first"
+	"$CLI" withdraw "$APP" --proof-file "$(withdraw_proof_path)" --yes --json | tee "$ARTIFACTS/emergency-withdraw.json"
+}
+
+main() {
+	local cmd="${1:-help}"
+	shift || true
+
+	case "$cmd" in
+	help|-h|--help) usage ;;
+	vars) cmd_vars ;;
+	app-address) cmd_app_address ;;
+	last-accepted-epoch) cmd_last_accepted_epoch ;;
+	balances) cmd_balances ;;
+	inspect-balance) cmd_inspect_balance "$@" ;;
+	deposit) cmd_deposit ;;
+	withdraw) cmd_withdraw ;;
+	execute-output) cmd_execute_output "$@" ;;
+	foreclose) cmd_foreclose ;;
+	replay) cmd_replay "$@" ;;
+	prove) cmd_prove "$@" ;;
+	generate-proofs) cmd_generate_proofs "$@" ;;
+	prove-drive-root) cmd_prove_drive_root ;;
+	emergency-withdraw) cmd_emergency_withdraw ;;
+	*) usage; die "unknown command: $cmd" ;;
+	esac
+}
+
+main "$@"

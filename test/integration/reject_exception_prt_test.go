@@ -7,6 +7,7 @@ package integration
 
 import (
 	"context"
+	"regexp"
 	"testing"
 	"time"
 
@@ -15,6 +16,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
+
+// prtBlockOutOfRangeAllowlist tolerates the transient Anvil
+// BlockOutOfRangeError that surfaces when PRT settlement mines hundreds of
+// blocks rapidly past the EVM reader's last polled head.
+var prtBlockOutOfRangeAllowlist = ExpectedLog{
+	Pattern: regexp.MustCompile(`BlockOutOfRangeError`),
+	Level:   LevelError,
+	Reason:  "transient Anvil error during rapid block mining in PRT settlement",
+}
 
 type RejectExceptionPrtSuite struct {
 	suite.Suite
@@ -63,6 +73,8 @@ func (s *RejectExceptionPrtSuite) TearDownTest() {
 // sends 3 inputs, and verifies that input 1 is REJECTED while inputs 0 and 2
 // are ACCEPTED. Then settles tournaments and executes outputs on L1.
 func (s *RejectExceptionPrtSuite) TestRejectInputPrt() {
+	s.SetExpectedLogs(s.T(), prtBlockOutOfRangeAllowlist)
+
 	ethClient := s.ethClient
 	prtEpoch := uint64(1)
 	appName := uniqueAppName("reject-prt-loop")
@@ -85,6 +97,8 @@ func (s *RejectExceptionPrtSuite) TestRejectInputPrt() {
 // sends 3 inputs, and verifies that input 1 is EXCEPTION while inputs 0 and 2
 // are ACCEPTED. Then settles tournaments and executes outputs on L1.
 func (s *RejectExceptionPrtSuite) TestExceptionInputPrt() {
+	s.SetExpectedLogs(s.T(), prtBlockOutOfRangeAllowlist)
+
 	ethClient := s.ethClient
 	prtEpoch := uint64(1)
 	appName := uniqueAppName("exception-prt-loop")

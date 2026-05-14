@@ -15,6 +15,10 @@ export PATH="/opt/go/bin:/build/cartesi/go/rollups-node:$PATH"
 # Smoke-check: verify the required binaries are on PATH.
 which cartesi-rollups-cli || { echo "ERROR: cartesi-rollups-cli not found on PATH"; exit 1; }
 which cartesi-rollups-node || { echo "ERROR: cartesi-rollups-node not found on PATH"; exit 1; }
+if ! command -v cartesi-rollups-machine-tool >/dev/null 2>&1; then
+  make cartesi-rollups-machine-tool
+fi
+which cartesi-rollups-machine-tool || { echo "ERROR: cartesi-rollups-machine-tool not found on PATH"; exit 1; }
 
 # Print the node log on exit so it appears in docker compose logs.
 NODE_LOG="${CARTESI_TEST_NODE_LOG_FILE:-}"

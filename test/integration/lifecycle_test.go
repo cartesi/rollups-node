@@ -149,7 +149,6 @@ func runEchoLifecycleTest(ctx context.Context, t testing.TB, require *require.As
 	// --- Consensus + L1 execution (shared phase) ---
 
 	epochIndex := outputsResp.Data[0].EpochIndex
-
 	verifyClaimAndExecute(ctx, t, require, verifyAndExecuteConfig{
 		AppName:          cfg.AppName,
 		EpochIndex:       epochIndex,
@@ -220,10 +219,10 @@ func runRejectExceptionLifecycleTest(
 	const numInputs = 3
 	for i := range numInputs {
 		payload := fmt.Sprintf("%s-payload-%d", cfg.TestName, i)
-		idx, _, err := sendInput(ctx, cfg.AppName, payload)
+		idx, blockNum, err := sendInput(ctx, cfg.AppName, payload)
 		require.NoError(err, "send input %d", i)
 		require.Equal(uint64(i), idx, "input index mismatch")
-		t.Logf("    input %d sent (payload=%q)", i, payload)
+		t.Logf("    input %d sent at block %d (payload=%q)", i, blockNum, payload)
 	}
 
 	func() {
@@ -287,7 +286,6 @@ func runRejectExceptionLifecycleTest(
 	} else {
 		epochIndex = outputsResp.Data[0].EpochIndex
 	}
-
 	// Collect outputs belonging to the claimed epoch and find a voucher + notice among them.
 	var epochOutputs []api.DecodedOutput
 	var voucherIdx, noticeIdx uint64
@@ -327,6 +325,29 @@ func runRejectExceptionLifecycleTest(
 	t.Logf("=== %s test complete: %s handling + L1 execution verified ===", cfg.TestName, cfg.FailStatus)
 }
 
+func minePastEpochBoundary(
+	ctx context.Context,
+	t testing.TB,
+	require *require.Assertions,
+	appName string,
+	epochIndex uint64,
+) {
+	t.Helper()
+
+	epoch, err := readEpoch(ctx, appName, epochIndex)
+	require.NoError(err, "read epoch %d before claim verification", epochIndex)
+
+	client := newIntegrationEthClient(ctx, t)
+	defer client.Close()
+
+	currentBlock, err := client.BlockNumber(ctx)
+	require.NoError(err, "read current block")
+	if currentBlock <= epoch.LastBlock {
+		require.NoError(anvilMine(ctx, int(epoch.LastBlock-currentBlock+1)), //nolint:gosec
+			"mine past epoch %d last block", epochIndex)
+	}
+}
+
 // verifyAndExecuteConfig describes the post-settlement verification phase:
 // wait for claim, check proofs, execute voucher, validate notice.
 type verifyAndExecuteConfig struct {
@@ -349,6 +370,8 @@ func verifyClaimAndExecute(
 	require *require.Assertions,
 	cfg verifyAndExecuteConfig,
 ) {
+	minePastEpochBoundary(ctx, t, require, cfg.AppName, cfg.EpochIndex)
+
 	// --- Consensus: wait for claim acceptance ---
 
 	func() {

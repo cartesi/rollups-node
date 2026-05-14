@@ -177,6 +177,27 @@ func (s *MultiAppSuite) TestMultiAppIsolation() {
 
 	// --- Consensus + L1 execution for both apps independently ---
 
+	client := newIntegrationEthClient(s.ctx, s.T())
+	defer client.Close()
+	var maxLastBlock uint64
+	for _, app := range []struct {
+		name    string
+		outputs *api.ListResponse[api.DecodedOutput]
+	}{
+		{s.app1Name, outputs1},
+		{s.app2Name, outputs2},
+	} {
+		epoch, err := readEpoch(s.ctx, app.name, app.outputs.Data[0].EpochIndex)
+		require.NoError(err, "read %s epoch %d before claim verification", app.name, app.outputs.Data[0].EpochIndex)
+		maxLastBlock = max(maxLastBlock, epoch.LastBlock)
+	}
+	currentBlock, err := client.BlockNumber(s.ctx)
+	require.NoError(err, "read current block")
+	if currentBlock <= maxLastBlock {
+		require.NoError(anvilMine(s.ctx, int(maxLastBlock-currentBlock+1)), //nolint:gosec
+			"mine past latest multi-app epoch")
+	}
+
 	s.T().Log("Verifying claims and executing outputs on both apps independently...")
 	for _, app := range []struct {
 		name    string

@@ -9,6 +9,8 @@ x-env: &env
   CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS: 0xC549F89cF1ca43eDDECC64Ac2208F4b283B1c483
   CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS: 0x6145C5996a71a379E030aEb0440df79D60833418
   CARTESI_CONTRACTS_DAVE_APP_FACTORY_ADDRESS: 0x33FFf0b681c90664dD048a60400AE2D827a4c5bb
+  CARTESI_DEVNET_ERC20_PORTAL_ADDRESS: 0x22E57511C30CcE6CDaa742E13CE3b774fDC663b1
+  CARTESI_DEVNET_TEST_ERC20_ADDRESS: 0x88A2120B7068E78692C8fd12E751d610B6377E4d
   CARTESI_DEVNET_WITHDRAWAL_OUTPUT_BUILDER_ADDRESS: 0x0745787835A019cd4dae8EDB541Fbc0647793d63
   CARTESI_DATABASE_CONNECTION: postgres://postgres:password@database:5432/rollupsdb?sslmode=disable
   CARTESI_AUTH_MNEMONIC: "test test test test test test test test test test test junk"
@@ -65,15 +67,20 @@ services:
       make reject-loop-dapp
       echo "Building exception-loop-dapp machine snapshot..."
       make exception-loop-dapp
+      echo "Building erc20-withdrawal-dapp machine snapshot..."
+      make erc20-withdrawal-dapp
       echo "Copying to shared volume..."
       cp -r applications/echo-dapp /dapps/echo-dapp
       cp -r applications/reject-loop-dapp /dapps/reject-loop-dapp
       cp -r applications/exception-loop-dapp /dapps/exception-loop-dapp
+      cp -r applications/erc20-withdrawal-dapp /dapps/erc20-withdrawal-dapp
       echo "DApp images built successfully."
       '
     volumes:
       - dapp_images:/dapps
       - ../downloads:/usr/share/cartesi-machine/images
+    environment:
+      <<: *env
     restart: "no"
 
   # The node is started and managed by TestMain inside the test process.
@@ -106,6 +113,7 @@ services:
       CARTESI_TEST_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/echo-dapp
       CARTESI_TEST_REJECT_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/reject-loop-dapp
       CARTESI_TEST_EXCEPTION_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/exception-loop-dapp
+      CARTESI_TEST_ERC20_WITHDRAWAL_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/erc20-withdrawal-dapp
       CARTESI_TEST_NODE_LOG_FILE: /var/lib/cartesi-rollups-node/logs/node.log
       CARTESI_INSPECT_URL: http://localhost:10012/
 

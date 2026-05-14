@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -26,7 +27,6 @@ import (
 // the node's synchronization path. When the node is externally managed
 // (Compose), those tests are skipped.
 func TestMain(m *testing.M) {
-	var createdSnapshotsDir string
 	flag.Parse()
 	if testing.Short() {
 		fmt.Fprintln(os.Stderr, "skipping integration tests in short mode")
@@ -50,6 +50,23 @@ func TestMain(m *testing.M) {
 	// In Docker Compose, the node is a separate container and is already
 	// running — we detect this by checking if port 10000 is in use.
 	if nodePortAvailable() {
+		artifactsDir, err := integrationArtifactsDir()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to prepare integration artifacts dir: %v\n", err)
+			os.Exit(1)
+		}
+		os.Setenv("CARTESI_TEST_ARTIFACTS_DIR", artifactsDir)
+		os.Setenv("CARTESI_TEST_NODE_WORKDIR", artifactsDir)
+		fmt.Fprintf(os.Stderr, "Integration artifacts dir: %s\n", artifactsDir)
+
+		// `make env` exports CARTESI_SNAPSHOTS_DIR=snapshots, which used to
+		// resolve under test/integration because the node inherited go test's
+		// package cwd. Keep user-provided custom paths, but route the default
+		// snapshot path into the integration artifacts directory.
+		if snapshotsDir := os.Getenv("CARTESI_SNAPSHOTS_DIR"); snapshotsDir == "" || snapshotsDir == "snapshots" {
+			os.Setenv("CARTESI_SNAPSHOTS_DIR", filepath.Join(artifactsDir, "snapshots"))
+		}
+
 		logPath := os.Getenv("CARTESI_TEST_NODE_LOG_FILE")
 		if logPath == "" {
 			f, err := os.CreateTemp("", "rollups-node-integration-*.log")
@@ -63,23 +80,8 @@ func TestMain(m *testing.M) {
 			os.Setenv("CARTESI_TEST_NODE_LOG_FILE", logPath)
 		}
 
-		// Use a temporary directory for snapshots so they don't pollute the
-		// repo and are cleaned up even if the test fails.
-		if os.Getenv("CARTESI_SNAPSHOTS_DIR") == "" {
-			snapshotsDir, err := os.MkdirTemp("", "rollups-node-snapshots-*")
-			if err != nil {
-				fmt.Fprintf(os.Stderr,
-					"failed to create snapshots dir: %v\n", err)
-				os.Exit(1)
-			}
-			os.Setenv("CARTESI_SNAPSHOTS_DIR", snapshotsDir)
-			createdSnapshotsDir = snapshotsDir
-			fmt.Fprintf(os.Stderr, "Snapshots dir: %s\n", snapshotsDir)
-		}
-
 		fmt.Fprintf(os.Stderr, "Starting node (log: %s)...\n", logPath)
 
-		var err error
 		sharedNode, err = startNodeWithLog(logPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to start node: %v\n", err)
@@ -110,11 +112,52 @@ func TestMain(m *testing.M) {
 		sharedNode.stop(nil)
 	}
 
-	// Clean up snapshots directory only if we created the temp dir ourselves.
-	if createdSnapshotsDir != "" {
-		fmt.Fprintf(os.Stderr, "Cleaning up snapshots dir: %s\n", createdSnapshotsDir)
-		os.RemoveAll(createdSnapshotsDir)
+	os.Exit(code)
+}
+
+func integrationArtifactsDir() (string, error) {
+	if dir := os.Getenv("CARTESI_TEST_ARTIFACTS_DIR"); dir != "" {
+		absDir, err := filepath.Abs(dir)
+		if err != nil {
+			return "", fmt.Errorf("resolve CARTESI_TEST_ARTIFACTS_DIR: %w", err)
+		}
+		if err := os.MkdirAll(absDir, 0755); err != nil { //nolint:mnd
+			return "", fmt.Errorf("create CARTESI_TEST_ARTIFACTS_DIR: %w", err)
+		}
+		return absDir, nil
 	}
 
-	os.Exit(code)
+	root, err := repositoryRoot()
+	if err != nil {
+		return "", err
+	}
+	baseDir := filepath.Join(root, "applications", "integration-artifacts")
+	if err := os.MkdirAll(baseDir, 0755); err != nil { //nolint:mnd
+		return "", fmt.Errorf("create default integration artifacts base dir: %w", err)
+	}
+	dir, err := os.MkdirTemp(baseDir, "run-*")
+	if err != nil {
+		return "", fmt.Errorf("create default integration artifacts dir: %w", err)
+	}
+	return dir, nil
+}
+
+func repositoryRoot() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("get working directory: %w", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		} else if !os.IsNotExist(err) {
+			return "", fmt.Errorf("stat go.mod: %w", err)
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("repository root not found from %s", dir)
+		}
+		dir = parent
+	}
 }

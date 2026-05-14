@@ -44,13 +44,22 @@ func stopSharedNode(t testing.TB) {
 // startSharedNode starts a new test-managed node, reusing the existing log
 // file. Call this after stopSharedNode to restart the node.
 func startSharedNode(t testing.TB) {
+	startSharedNodeWithEnv(t)
+}
+
+// startSharedNodeWithEnv is like startSharedNode but also lets the caller
+// inject extra environment variables (e.g.,
+// CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED=false to bring the node up in
+// reader mode for a single test phase). Restore default mode on test
+// teardown by stopping the node and calling startSharedNode again.
+func startSharedNodeWithEnv(t testing.TB, extraEnv ...string) {
 	if sharedNode != nil {
 		t.Fatal("cannot start node: already running")
 	}
 
 	logPath := os.Getenv("CARTESI_TEST_NODE_LOG_FILE")
 	var err error
-	sharedNode, err = startNodeWithLog(logPath)
+	sharedNode, err = startNodeWithLog(logPath, extraEnv...)
 	if err != nil {
 		t.Fatalf("failed to start node: %v", err)
 	}
@@ -85,12 +94,14 @@ type nodeProcess struct {
 // startNodeWithLog starts the node binary as a subprocess, appending output
 // to the given log file path. The node inherits the current environment
 // (database connection, blockchain endpoint, etc.) and additionally sets
-// fast polling intervals for test responsiveness.
+// fast polling intervals for test responsiveness. Any extraEnv entries are
+// appended last, so they win against the suite defaults (useful for, e.g.,
+// CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED=false reader-mode tests).
 //
 // A background `tail -f` process streams the log file to the terminal so
 // the user can see node output in real time. This must be a separate process
 // because `go test` captures the test process's stdout/stderr.
-func startNodeWithLog(logPath string) (*nodeProcess, error) {
+func startNodeWithLog(logPath string, extraEnv ...string) (*nodeProcess, error) {
 	if _, err := exec.LookPath(nodeBinary); err != nil {
 		return nil, fmt.Errorf("%s not found on PATH: %w", nodeBinary, err)
 	}
@@ -104,12 +115,20 @@ func startNodeWithLog(logPath string) (*nodeProcess, error) {
 	cmd := exec.Command(nodeBinary) //nolint:gosec
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
+	if workDir := os.Getenv("CARTESI_TEST_NODE_WORKDIR"); workDir != "" {
+		if err := os.MkdirAll(workDir, 0755); err != nil { //nolint:mnd
+			logFile.Close()
+			return nil, fmt.Errorf("create node workdir %s: %w", workDir, err)
+		}
+		cmd.Dir = workDir
+	}
 	cmd.Env = append(os.Environ(),
 		"CARTESI_ADVANCER_POLLING_INTERVAL=1",
 		"CARTESI_VALIDATOR_POLLING_INTERVAL=1",
 		"CARTESI_CLAIMER_POLLING_INTERVAL=1",
 		"CARTESI_PRT_POLLING_INTERVAL=1",
 	)
+	cmd.Env = append(cmd.Env, extraEnv...)
 
 	if err := cmd.Start(); err != nil {
 		logFile.Close()

@@ -59,7 +59,7 @@ DOCKER_PLATFORM=--platform $(BUILD_PLATFORM)
 endif
 
 # Go artifacts
-GO_ARTIFACTS := $(addprefix cartesi-rollups-,node cli evm-reader advancer validator claimer jsonrpc-api prt)
+GO_ARTIFACTS := $(addprefix cartesi-rollups-,node cli evm-reader advancer validator claimer jsonrpc-api prt machine-tool)
 
 # fixme(vfusco): path on all oses
 CGO_CFLAGS:= -I$(PREFIX)/include
@@ -129,6 +129,8 @@ env:
 	@echo export CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS="0xC549F89cF1ca43eDDECC64Ac2208F4b283B1c483"
 	@echo export CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS="0x6145C5996a71a379E030aEb0440df79D60833418"
 	@echo export CARTESI_CONTRACTS_DAVE_APP_FACTORY_ADDRESS="0x33FFf0b681c90664dD048a60400AE2D827a4c5bb"
+	@echo export CARTESI_DEVNET_ERC20_PORTAL_ADDRESS="0x22E57511C30CcE6CDaa742E13CE3b774fDC663b1"
+	@echo export CARTESI_DEVNET_TEST_ERC20_ADDRESS="0x88A2120B7068E78692C8fd12E751d610B6377E4d"
 	@echo export CARTESI_DEVNET_WITHDRAWAL_OUTPUT_BUILDER_ADDRESS="0x0745787835A019cd4dae8EDB541Fbc0647793d63"
 	@echo export CARTESI_AUTH_MNEMONIC=\"test test test test test test test test test test test junk\"
 	@echo export CARTESI_DATABASE_CONNECTION="postgres://postgres:password@localhost:5432/rollupsdb?sslmode=disable"
@@ -295,6 +297,8 @@ reject-loop-dapp: applications/reject-loop-dapp ## Reject loop dapp
 
 exception-loop-dapp: applications/exception-loop-dapp ## Exception loop dapp
 
+erc20-withdrawal-dapp: applications/erc20-withdrawal-dapp ## ERC-20 withdrawal test dapp
+
 applications/reject-loop-dapp: ## Create reject-loop-dapp test application
 	@echo "Creating reject-loop-dapp test application"
 	@mkdir -p applications
@@ -304,6 +308,18 @@ applications/exception-loop-dapp: ## Create exception-loop-dapp test application
 	@echo "Creating exception-loop-dapp test application"
 	@mkdir -p applications
 	@cartesi-machine --ram-length=128Mi --store=applications/exception-loop-dapp --final-hash -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --exception=1 --verbose=1
+
+applications/erc20-withdrawal-dapp: test/dapps/erc20-withdrawal/install.sh ## Create ERC-20 withdrawal test application
+	@echo "Creating ERC-20 withdrawal test application"
+	@mkdir -p applications
+	@PORTAL=$${CARTESI_DEVNET_ERC20_PORTAL_ADDRESS:-0x22E57511C30CcE6CDaa742E13CE3b774fDC663b1}; \
+	TOKEN=$${CARTESI_DEVNET_TEST_ERC20_ADDRESS:-0x88A2120B7068E78692C8fd12E751d610B6377E4d}; \
+	cartesi-machine --ram-length=128Mi \
+		--flash-drive=label:accounts,length:4Mi,mke2fs:false,mount:false,user:dapp \
+		--env=TRUSTED_ERC20_PORTAL=$$PORTAL \
+		--env=TRUSTED_ERC20_TOKEN=$$TOKEN \
+		--append-init-file=test/dapps/erc20-withdrawal/install.sh \
+		--store=applications/erc20-withdrawal-dapp --final-hash -- /usr/local/bin/erc20-withdrawal-dapp
 
 deploy-echo-dapp: applications/echo-dapp ## Deploy echo-dapp test application
 	@echo "Deploying echo-dapp test application"
@@ -320,6 +336,46 @@ deploy-exception-dapp: applications/exception-dapp ## Deploy exception-dapp test
 deploy-prt-echo-dapp: applications/echo-dapp ## Deploy echo-dapp test application
 	@echo "Deploying echo-dapp test application"
 	@./cartesi-rollups-cli deploy application prt-echo-dapp applications/echo-dapp/ --prt
+
+deploy-erc20-withdrawal-dapp: applications/erc20-withdrawal-dapp ## Deploy ERC-20 withdrawal test application
+	@set -e; \
+	APP=$${APP:-erc20-withdrawal-dapp}; \
+	GUARDIAN=$${GUARDIAN:-0x70997970C51812dc3A010C7d01b50e0d17dc79C8}; \
+	BUILDER=$${CARTESI_DEVNET_WITHDRAWAL_OUTPUT_BUILDER_ADDRESS:-0x0745787835A019cd4dae8EDB541Fbc0647793d63}; \
+	DRIVE_START_INDEX=$$(jq -r '.config.flash_drive[] | select(.length == 4194304) | (.start / 4194304 | floor)' \
+		applications/erc20-withdrawal-dapp/config.json); \
+	WITHDRAWAL_CONFIG=$$(jq -cn \
+		--arg guardian "$$GUARDIAN" \
+		--arg builder "$$BUILDER" \
+		--argjson drive "$$DRIVE_START_INDEX" \
+		'{guardian:$$guardian,log2_leaves_per_account:0,log2_max_num_of_accounts:17,accounts_drive_start_index:$$drive,withdrawal_output_builder:$$builder}'); \
+	echo "Deploying $$APP with accounts-drive start index $$DRIVE_START_INDEX"; \
+	./cartesi-rollups-cli deploy application "$$APP" applications/erc20-withdrawal-dapp \
+		--salt "$$(openssl rand -hex 32)" \
+		--withdrawal-config "$$WITHDRAWAL_CONFIG" \
+		--enable=false; \
+	./cartesi-rollups-cli app execution-parameters set "$$APP" snapshot_policy EVERY_EPOCH; \
+	./cartesi-rollups-cli app status "$$APP" enabled --yes
+
+fund-wallet: ## Fund the default Anvil wallet with ETH and test ERC-20
+	@set -e; \
+	RPC_URL=$${CARTESI_BLOCKCHAIN_HTTP_ENDPOINT:-http://localhost:8545}; \
+	TOKEN=$${CARTESI_DEVNET_TEST_ERC20_ADDRESS:-0x88A2120B7068E78692C8fd12E751d610B6377E4d}; \
+	WALLET=$${WALLET:-$$(cast rpc --rpc-url "$$RPC_URL" eth_accounts | jq -r '.[0]')}; \
+	ETH_WEI=$${ETH_WEI:-0x8ac7230489e80000}; \
+	TOKEN_AMOUNT=$${TOKEN_AMOUNT:-1000000}; \
+	echo "Funding $$WALLET with $$ETH_WEI wei"; \
+	cast rpc --rpc-url "$$RPC_URL" anvil_setBalance "$$WALLET" "$$ETH_WEI" >/dev/null; \
+	echo "Minting $$TOKEN_AMOUNT test ERC-20 units to $$WALLET"; \
+	cast send --rpc-url "$$RPC_URL" --from "$$WALLET" --unlocked "$$TOKEN" "mint(uint256)" "$$TOKEN_AMOUNT" >/dev/null
+
+withdraw-wallet: cartesi-rollups-cli ## Send a test withdrawal request from the current signer
+	@set -e; \
+	APP=$${APP:-erc20-withdrawal-dapp}; \
+	AMOUNT=$${AMOUNT:-25}; \
+	PAYLOAD=$$(printf '0x01%016x' "$$AMOUNT"); \
+	echo "Sending withdrawal request to $$APP: amount=$$AMOUNT payload=$$PAYLOAD"; \
+	./cartesi-rollups-cli send "$$APP" "$$PAYLOAD" --hex --yes --json
 
 # Temporary test dependencies target while we are not using distribution packages
 DOWNLOADS_DIR = test/downloads
@@ -449,7 +505,7 @@ test-with-compose: ## Run all tests using docker compose with auto-shutdown
 	@$(MAKE) unit-test-with-compose
 	@$(MAKE) integration-test-with-compose
 
-integration-test-local: build echo-dapp reject-loop-dapp exception-loop-dapp ## Run integration tests locally (requires: make start && eval $$(make env))
+integration-test-local: build cartesi-rollups-machine-tool echo-dapp reject-loop-dapp exception-loop-dapp erc20-withdrawal-dapp ## Run integration tests locally (requires: make start && eval $$(make env))
 	@cartesi-rollups-cli db init
 	@if lsof -ti:10000 >/dev/null 2>&1; then \
 		echo "Killing stale node on port 10000..."; \
@@ -459,6 +515,7 @@ integration-test-local: build echo-dapp reject-loop-dapp exception-loop-dapp ## 
 	@export CARTESI_TEST_DAPP_PATH=$(CURDIR)/applications/echo-dapp; \
 	export CARTESI_TEST_REJECT_DAPP_PATH=$(CURDIR)/applications/reject-loop-dapp; \
 	export CARTESI_TEST_EXCEPTION_DAPP_PATH=$(CURDIR)/applications/exception-loop-dapp; \
+	export CARTESI_TEST_ERC20_WITHDRAWAL_DAPP_PATH=$(CURDIR)/applications/erc20-withdrawal-dapp; \
 	$(MAKE) integration-test
 
 deploy-load-test-apps: applications/echo-dapp ## Deploy 3 echo-dapp instances for load testing
@@ -516,7 +573,7 @@ build-debian-package: install
 	dpkg-deb -Zxz --root-owner-group --build $(DESTDIR) $(DEB_FILENAME)
 
 .PHONY: \
-	build build-go $(GO_ARTIFACTS) \
+	build build-go $(GO_ARTIFACTS) cartesi-rollups-machine-tool \
 	clean clean-go clean-contracts clean-docs clean-devnet-files clean-dapps clean-test-dependencies clean-debian-packages \
 	test unit-test unit-test-with-compose integration-test integration-test-with-compose integration-test-local test-with-compose ci-test coverage-report \
 	generate generate-contracts generate-config generate-inspect check-generate generate-db \
@@ -525,4 +582,5 @@ build-debian-package: install
 	devnet image tester-image debian-packager run-with-compose shutdown-compose \
 	start start-devnet start-postgres stop stop-devnet stop-postgres restart restart-devnet restart-postgres \
 	install copy-debian-package build-debian-package \
+	deploy-erc20-withdrawal-dapp fund-wallet withdraw-wallet \
 	env help version

@@ -92,9 +92,20 @@ func isCLIExitError(err error) bool {
 // Each command is given an independent timeout (cliCommandTimeout) to prevent
 // a single hanging call from consuming the entire suite timeout.
 func runCLI(ctx context.Context, args ...string) (string, error) {
+	return runCLIWithEnv(ctx, nil, args...)
+}
+
+// runCLIWithEnv is like runCLI but allows appending environment variables
+// to the subprocess. Used for selecting a non-default signer (e.g.,
+// CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX=1 when the guardian wallet differs
+// from the node's default account).
+func runCLIWithEnv(ctx context.Context, extraEnv []string, args ...string) (string, error) {
 	cmdCtx, cancel := context.WithTimeout(ctx, cliCommandTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, cliBinary, args...)
+	if len(extraEnv) > 0 {
+		cmd.Env = append(os.Environ(), extraEnv...)
+	}
 	out, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError

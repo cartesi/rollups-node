@@ -32,6 +32,20 @@ type SnapshotPolicySuite struct {
 	appName string
 }
 
+var snapshotRestartExpectedLogs = []ExpectedLog{
+	{
+		Pattern: regexp.MustCompile(`BlockOutOfRangeError`),
+		Level:   LevelError,
+		Reason:  "transient Anvil error during rapid block mining or post-restart catchup",
+	},
+	{
+		Pattern: regexp.MustCompile(`service=evm-reader.*context canceled`),
+		Level:   LevelError,
+		Reason: "benign shutdown noise from restarting the node mid-tick; " +
+			"retryablehttp wraps the cancellation as `Post \"<url>\": context canceled`",
+	},
+}
+
 func TestSnapshotPolicy(t *testing.T) {
 	if !isNodeSelfManaged() {
 		t.Skip("skipping: node is externally managed (compose); " +
@@ -259,6 +273,10 @@ func (s *SnapshotPolicySuite) runSnapshotPolicyTest(cfg snapshotPolicyConfig) {
 // TestSnapshotPolicyEveryInput tests the EVERY_INPUT snapshot policy
 // with Authority consensus.
 func (s *SnapshotPolicySuite) TestSnapshotPolicyEveryInput() {
+	// The node restart mid-test interrupts in-flight RPC queries against
+	// Anvil; the reader-side scan can also briefly outpace block
+	// production. Tolerate the transient error class — it retries.
+	s.SetExpectedLogs(s.T(), snapshotRestartExpectedLogs...)
 	s.runSnapshotPolicyTest(snapshotPolicyConfig{
 		Policy: model.SnapshotPolicy_EveryInput,
 	})
@@ -267,6 +285,7 @@ func (s *SnapshotPolicySuite) TestSnapshotPolicyEveryInput() {
 // TestSnapshotPolicyEveryEpoch tests the EVERY_EPOCH snapshot policy
 // with Authority consensus.
 func (s *SnapshotPolicySuite) TestSnapshotPolicyEveryEpoch() {
+	s.SetExpectedLogs(s.T(), snapshotRestartExpectedLogs...)
 	s.runSnapshotPolicyTest(snapshotPolicyConfig{
 		Policy: model.SnapshotPolicy_EveryEpoch,
 	})
@@ -277,11 +296,7 @@ func (s *SnapshotPolicySuite) TestSnapshotPolicyEveryEpoch() {
 func (s *SnapshotPolicySuite) TestSnapshotPolicyEveryInputPrt() {
 	// PRT settlement mines hundreds of blocks rapidly, which can cause
 	// transient BlockOutOfRangeError in the EVM reader.
-	s.SetExpectedLogs(s.T(), ExpectedLog{
-		Pattern: regexp.MustCompile(`BlockOutOfRangeError`),
-		Level:   LevelError,
-		Reason:  "transient Anvil error during rapid block mining in PRT settlement",
-	})
+	s.SetExpectedLogs(s.T(), snapshotRestartExpectedLogs...)
 
 	endpoint := envOrDefault(
 		"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT", "http://localhost:8545")
@@ -307,11 +322,7 @@ func (s *SnapshotPolicySuite) TestSnapshotPolicyEveryInputPrt() {
 func (s *SnapshotPolicySuite) TestSnapshotPolicyEveryEpochPrt() {
 	// PRT settlement mines hundreds of blocks rapidly, which can cause
 	// transient BlockOutOfRangeError in the EVM reader.
-	s.SetExpectedLogs(s.T(), ExpectedLog{
-		Pattern: regexp.MustCompile(`BlockOutOfRangeError`),
-		Level:   LevelError,
-		Reason:  "transient Anvil error during rapid block mining in PRT settlement",
-	})
+	s.SetExpectedLogs(s.T(), snapshotRestartExpectedLogs...)
 
 	endpoint := envOrDefault(
 		"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT", "http://localhost:8545")
