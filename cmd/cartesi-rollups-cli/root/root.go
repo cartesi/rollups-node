@@ -8,11 +8,15 @@ import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/contract"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/db"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/deploy"
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/deposit"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/execute"
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/foreclose"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/inspect"
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/provedriveroot"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/send"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/validate"
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/withdraw"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/version"
 
@@ -63,9 +67,13 @@ func init() {
 	Cmd.AddCommand(inspect.Cmd)
 	Cmd.AddCommand(validate.Cmd)
 	Cmd.AddCommand(execute.Cmd)
+	Cmd.AddCommand(foreclose.Cmd)
+	Cmd.AddCommand(provedriveroot.Cmd)
+	Cmd.AddCommand(withdraw.Cmd)
 	Cmd.AddCommand(app.Cmd)
 	Cmd.AddCommand(db.Cmd)
 	Cmd.AddCommand(deploy.Cmd)
+	Cmd.AddCommand(deposit.Cmd)
 	Cmd.AddCommand(contract.Cmd)
 	Cmd.DisableAutoGenTag = true
 }
