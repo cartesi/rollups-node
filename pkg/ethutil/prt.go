@@ -62,8 +62,18 @@ func (me *PRTApplicationDeployment) deployPRT(
 		return zero, zero, fmt.Errorf("failed to instantiate contract binding: %v", err)
 	}
 
+	if err := ValidateWithdrawalConfig(me.WithdrawalConfig); err != nil {
+		return zero, zero, err
+	}
+	if err := CheckWithdrawalOutputBuilderCode(ctx, client, me.WithdrawalConfig); err != nil {
+		return zero, zero, err
+	}
+
+	// idaveappfactory has its own WithdrawalConfig type with identical fields.
+	daveWC := idaveappfactory.WithdrawalConfig(me.WithdrawalConfig)
+
 	// check if addresses are available (have no code)
-	addresses, err := factory.CalculateDaveAppAddress(nil, me.TemplateHash, me.Salt)
+	addresses, err := factory.CalculateDaveAppAddress(nil, me.TemplateHash, daveWC, me.Salt)
 	if err != nil {
 		return zero, zero, err
 	}
@@ -84,7 +94,7 @@ func (me *PRTApplicationDeployment) deployPRT(
 	}
 
 	// deploy the contracts
-	tx, err := factory.NewDaveApp(txOpts, me.TemplateHash, me.Salt)
+	tx, err := factory.NewDaveApp(txOpts, me.TemplateHash, daveWC, me.Salt)
 	if err != nil {
 		return zero, zero, fmt.Errorf("transaction failed: %v", err)
 	}
@@ -142,6 +152,10 @@ func (me *PRTApplicationDeployment) Deploy(
 	result.InputBoxAddress, result.IInputBoxBlock, err = DecodeDA(client, da)
 	if err != nil {
 		return zero, nil, fmt.Errorf("failed to decode data availability: %v", err)
+	}
+
+	if err := VerifyDeployedWithdrawalConfig(ctx, client, appAddress, me.WithdrawalConfig); err != nil {
+		return zero, nil, err
 	}
 
 	return appAddress, result, nil

@@ -20,17 +20,20 @@ type IApplicationDeployment interface {
 type IApplicationDeploymentResult interface{}
 
 type ApplicationDeployment struct {
-	FactoryAddress   common.Address `json:"factory"`
-	Consensus        common.Address `json:"consensus"`
-	OwnerAddress     common.Address `json:"owner"`
-	DataAvailability []byte         `json:"-"`
-	TemplateHash     common.Hash    `json:"template_hash"`
-	Salt             SaltBytes      `json:"salt"`
+	FactoryAddress   common.Address                       `json:"factory"`
+	Consensus        common.Address                       `json:"consensus"`
+	OwnerAddress     common.Address                       `json:"owner"`
+	DataAvailability []byte                               `json:"-"`
+	TemplateHash     common.Hash                          `json:"template_hash"`
+	WithdrawalConfig iapplicationfactory.WithdrawalConfig `json:"withdrawal_config"`
+	Salt             SaltBytes                            `json:"salt"`
 
 	// needed by model.Application
-	InputBoxAddress common.Address `json:"inputbox_address"`
-	IInputBoxBlock  uint64         `json:"inputbox_block"`
-	EpochLength     uint64         `json:"epoch_length"`
+	InputBoxAddress    common.Address `json:"inputbox_address"`
+	IInputBoxBlock     uint64         `json:"inputbox_block"`
+	EpochLength        uint64         `json:"epoch_length"`
+	ClaimStagingPeriod uint64         `json:"claim_staging_period"`
+	ConsensusType      string         `json:"consensus_type,omitempty"`
 
 	Verbose bool
 }
@@ -52,6 +55,9 @@ func (me *ApplicationDeployment) String() string {
 		result += fmt.Sprintf("\tdata availability:     0x%v\n", hex.EncodeToString(me.DataAvailability))
 		result += fmt.Sprintf("\tsalt:                  %v\n", me.Salt)
 		result += fmt.Sprintf("\tepoch length:          %v\n", me.EpochLength)
+		if me.ConsensusType != "" {
+			result += fmt.Sprintf("\tconsensus type:        %v\n", me.ConsensusType)
+		}
 	}
 	return result
 }
@@ -75,8 +81,15 @@ func (me *ApplicationDeployment) Deploy(
 		return zero, nil, fmt.Errorf("failed to instantiate contract: %v", err)
 	}
 
+	if err := ValidateWithdrawalConfig(me.WithdrawalConfig); err != nil {
+		return zero, nil, err
+	}
+	if err := CheckWithdrawalOutputBuilderCode(ctx, client, me.WithdrawalConfig); err != nil {
+		return zero, nil, err
+	}
+
 	// check if addresses are available (have no code)
-	applicationAddress, err := factory.CalculateApplicationAddress(nil, me.Consensus, me.OwnerAddress, me.TemplateHash, me.DataAvailability, me.Salt)
+	applicationAddress, err := factory.CalculateApplicationAddress(nil, me.Consensus, me.OwnerAddress, me.TemplateHash, me.DataAvailability, me.WithdrawalConfig, me.Salt)
 	if err != nil {
 		return zero, nil, err
 	}
@@ -90,7 +103,7 @@ func (me *ApplicationDeployment) Deploy(
 	}
 
 	// deploy the contracts
-	tx, err := factory.NewApplication(txOpts, me.Consensus, me.OwnerAddress, me.TemplateHash, me.DataAvailability, me.Salt)
+	tx, err := factory.NewApplication0(txOpts, me.Consensus, me.OwnerAddress, me.TemplateHash, me.DataAvailability, me.WithdrawalConfig, me.Salt)
 	if err != nil {
 		return zero, nil, fmt.Errorf("transaction failed: %v", err)
 	}
@@ -112,6 +125,9 @@ func (me *ApplicationDeployment) Deploy(
 			continue // Skip logs that don't match
 		}
 		result.ApplicationAddress = event.AppContract
+		if err := VerifyDeployedWithdrawalConfig(ctx, client, result.ApplicationAddress, me.WithdrawalConfig); err != nil {
+			return zero, nil, err
+		}
 		return result.ApplicationAddress, result, nil
 	}
 	return zero, nil, fmt.Errorf("failed to find ApplicationCreated event in receipt logs")

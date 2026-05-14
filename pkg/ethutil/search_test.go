@@ -240,6 +240,7 @@ func (s *SearchSuite) TestMonotonicViolation() {
 	previousValue := big.NewInt(3) // 3 > 2, violation
 	_, err := FindTransitions(s.ctx, 0, 1, previousValue, mockTransitionQuery(values), collectOnHit(&blocks))
 	s.Error(err)
+	s.ErrorIs(err, ErrMonotonicViolation)
 	s.Contains(err.Error(), "monotonic assumption violated")
 	s.Empty(blocks)
 }

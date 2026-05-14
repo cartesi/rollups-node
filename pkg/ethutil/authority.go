@@ -14,12 +14,13 @@ import (
 )
 
 type AuthorityDeployment struct {
-	Address        common.Address `json:"address"`
-	FactoryAddress common.Address `json:"factory"`
-	OwnerAddress   common.Address `json:"owner"`
-	EpochLength    uint64         `json:"epoch_length"`
-	Salt           SaltBytes      `json:"salt"`
-	Verbose        bool           `json:"-"`
+	Address            common.Address `json:"address"`
+	FactoryAddress     common.Address `json:"factory"`
+	OwnerAddress       common.Address `json:"owner"`
+	EpochLength        uint64         `json:"epoch_length"`
+	ClaimStagingPeriod uint64         `json:"claim_staging_period"`
+	Salt               SaltBytes      `json:"salt"`
+	Verbose            bool           `json:"-"`
 }
 
 func (me *AuthorityDeployment) String() string {
@@ -30,6 +31,7 @@ func (me *AuthorityDeployment) String() string {
 		result += fmt.Sprintf("\tfactory address:       %v\n", me.FactoryAddress)
 		result += fmt.Sprintf("\tsalt:                  %v\n", me.Salt)
 		result += fmt.Sprintf("\tepoch length:          %v\n", me.EpochLength)
+		result += fmt.Sprintf("\tclaim staging period:  %v\n", me.ClaimStagingPeriod)
 	}
 	return result
 }
@@ -46,7 +48,7 @@ func (me *AuthorityDeployment) Deploy(
 	}
 
 	// check if addresses are available (have no code)
-	authorityAddress, err := factory.CalculateAuthorityAddress(nil, me.OwnerAddress, new(big.Int).SetUint64(me.EpochLength), me.Salt)
+	authorityAddress, err := factory.CalculateAuthorityAddress(nil, me.OwnerAddress, new(big.Int).SetUint64(me.EpochLength), new(big.Int).SetUint64(me.ClaimStagingPeriod), me.Salt)
 	if err != nil {
 		return zero, err
 	}
@@ -60,7 +62,7 @@ func (me *AuthorityDeployment) Deploy(
 	}
 
 	// deploy the contracts
-	tx, err := factory.NewAuthority0(txOpts, me.OwnerAddress, new(big.Int).SetUint64(me.EpochLength), me.Salt)
+	tx, err := factory.NewAuthority0(txOpts, me.OwnerAddress, new(big.Int).SetUint64(me.EpochLength), new(big.Int).SetUint64(me.ClaimStagingPeriod), me.Salt)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("failed to create new authority: %v", err)
 	}

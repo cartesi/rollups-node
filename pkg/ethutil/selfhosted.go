@@ -18,13 +18,15 @@ import (
 )
 
 type SelfhostedApplicationDeployment struct {
-	FactoryAddress          common.Address `json:"factory_address"`
-	ApplicationOwnerAddress common.Address `json:"application_owner"`
-	AuthorityOwnerAddress   common.Address `json:"authority_owner"`
-	TemplateHash            common.Hash    `json:"template_hash"`
-	DataAvailability        []byte         `json:"-"`
-	EpochLength             uint64         `json:"epoch_length"`
-	Salt                    SaltBytes      `json:"salt"`
+	FactoryAddress          common.Address                       `json:"factory_address"`
+	ApplicationOwnerAddress common.Address                       `json:"application_owner"`
+	AuthorityOwnerAddress   common.Address                       `json:"authority_owner"`
+	TemplateHash            common.Hash                          `json:"template_hash"`
+	DataAvailability        []byte                               `json:"-"`
+	EpochLength             uint64                               `json:"epoch_length"`
+	ClaimStagingPeriod      uint64                               `json:"claim_staging_period"`
+	WithdrawalConfig        iapplicationfactory.WithdrawalConfig `json:"withdrawal_config"`
+	Salt                    SaltBytes                            `json:"salt"`
 
 	InputBoxAddress common.Address `json:"inputbox_address"`
 	IInputBoxBlock  uint64         `json:"inputbox_block"`
@@ -53,6 +55,7 @@ func (me *SelfhostedApplicationDeployment) String() string {
 		result += fmt.Sprintf("\tdata availability:     0x%v\n", hex.EncodeToString(me.DataAvailability))
 		result += fmt.Sprintf("\tsalt:                  %v\n", me.Salt)
 		result += fmt.Sprintf("\tepoch length:          %v\n", me.EpochLength)
+		result += fmt.Sprintf("\tclaim staging period:  %v\n", me.ClaimStagingPeriod)
 	}
 	return result
 }
@@ -81,8 +84,29 @@ func (me *SelfhostedApplicationDeployment) Deploy(
 		return zero, nil, err
 	}
 
+	if err := ValidateWithdrawalConfig(me.WithdrawalConfig); err != nil {
+		return zero, nil, err
+	}
+	if err := CheckWithdrawalOutputBuilderCode(ctx, client, me.WithdrawalConfig); err != nil {
+		return zero, nil, err
+	}
+
+	// The self-hosted factory binding has its own WithdrawalConfig type
+	// with identical fields; explicit conversion is required.
+	shWC := iselfhostedapplicationfactory.WithdrawalConfig(me.WithdrawalConfig)
+
 	// check if addresses are available (have no code)
-	applicationAddress, authorityAddress, err := factory.CalculateAddresses(nil, me.AuthorityOwnerAddress, new(big.Int).SetUint64(me.EpochLength), me.ApplicationOwnerAddress, me.TemplateHash, me.DataAvailability, me.Salt)
+	applicationAddress, authorityAddress, err := factory.CalculateAddresses(
+		nil,
+		me.AuthorityOwnerAddress,
+		new(big.Int).SetUint64(me.EpochLength),
+		new(big.Int).SetUint64(me.ClaimStagingPeriod),
+		me.ApplicationOwnerAddress,
+		me.TemplateHash,
+		me.DataAvailability,
+		shWC,
+		me.Salt,
+	)
 	if err != nil {
 		return zero, nil, err
 	}
@@ -115,8 +139,17 @@ func (me *SelfhostedApplicationDeployment) Deploy(
 			if err != nil {
 				return nil, fmt.Errorf("failed to retrieve authority factory address: %w", err)
 			}
-			return factory.DeployContracts(txOpts, me.AuthorityOwnerAddress, big.NewInt(0).SetUint64(me.EpochLength), me.ApplicationOwnerAddress,
-				me.TemplateHash, me.DataAvailability, me.Salt)
+			return factory.DeployContracts(
+				txOpts,
+				me.AuthorityOwnerAddress,
+				new(big.Int).SetUint64(me.EpochLength),
+				new(big.Int).SetUint64(me.ClaimStagingPeriod),
+				me.ApplicationOwnerAddress,
+				me.TemplateHash,
+				me.DataAvailability,
+				shWC,
+				me.Salt,
+			)
 		},
 	)
 	if err != nil {
@@ -155,6 +188,9 @@ applicationEventFound:
 	return zero, nil, fmt.Errorf("failed to obtain authority address during self hosted application deployment. AuthorityCreated event not found in the recipe logs")
 
 authorityEventFound:
+	if err := VerifyDeployedWithdrawalConfig(ctx, client, result.ApplicationAddress, me.WithdrawalConfig); err != nil {
+		return zero, nil, err
+	}
 	return result.ApplicationAddress, result, nil
 }
 

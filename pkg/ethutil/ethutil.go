@@ -257,6 +257,15 @@ func GetConsensus(
 	client *ethclient.Client,
 	appAddress common.Address,
 ) (common.Address, error) {
+	return GetConsensusAt(ctx, client, appAddress, nil)
+}
+
+func GetConsensusAt(
+	ctx context.Context,
+	client *ethclient.Client,
+	appAddress common.Address,
+	blockNumber *big.Int,
+) (common.Address, error) {
 	if client == nil {
 		return common.Address{}, fmt.Errorf("get consensus: client is nil")
 	}
@@ -264,7 +273,8 @@ func GetConsensus(
 	if err != nil {
 		return common.Address{}, fmt.Errorf("Failed to instantiate contract: %v", err)
 	}
-	consensus, err := app.GetOutputsMerkleRootValidator(&bind.CallOpts{Context: ctx})
+	opts := &bind.CallOpts{Context: ctx, BlockNumber: blockNumber}
+	consensus, err := app.GetOutputsMerkleRootValidator(opts)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("error retrieving application epoch length: %v", err)
 	}
@@ -307,6 +317,28 @@ func GetEpochLength(
 		return 0, fmt.Errorf("error retrieving application epoch length: %v", err)
 	}
 	return epochLengthRaw.Uint64(), nil
+}
+
+// GetClaimStagingPeriod returns the consensus contract's immutable
+// claimStagingPeriod, in blocks. Solidity guarantees this value cannot change
+// for the lifetime of the contract, so it is safe to cache locally.
+func GetClaimStagingPeriod(
+	ctx context.Context,
+	client *ethclient.Client,
+	consensusAddr common.Address,
+) (uint64, error) {
+	if client == nil {
+		return 0, fmt.Errorf("get claim staging period: client is nil")
+	}
+	consensus, err := iconsensus.NewIConsensus(consensusAddr, client)
+	if err != nil {
+		return 0, fmt.Errorf("failed to instantiate contract: %v", err)
+	}
+	raw, err := consensus.GetClaimStagingPeriod(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return 0, fmt.Errorf("error retrieving claim staging period: %v", err)
+	}
+	return raw.Uint64(), nil
 }
 
 func GetInputBoxDeploymentBlock(

@@ -5,10 +5,19 @@ package ethutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"slices"
 )
+
+// ErrMonotonicViolation is returned by FindTransitions when the seed prevValue
+// is greater than the value observed at startBlock. The queried counter is
+// assumed monotonic non-decreasing, so a seed that exceeds the on-chain value
+// means the caller's previous value is no longer consistent with the chain.
+// Callers can match it with errors.Is to distinguish this corruption signal
+// from transient query failures.
+var ErrMonotonicViolation = errors.New("monotonic assumption violated")
 
 // TransitionQueryFn for binary search
 type TransitionQueryFn func(ctx context.Context, block uint64) (*big.Int, error)
@@ -51,8 +60,8 @@ func FindTransitions(ctx context.Context, startBlock, endBlock uint64, prevValue
 	if prevValue != nil {
 		comparisonResult := prevValue.Cmp(startValue)
 		if comparisonResult > 0 {
-			return 0, fmt.Errorf("monotonic assumption violated: prevValue %s > startValue %s at block %d",
-				prevValue.String(), startValue.String(), startBlock)
+			return 0, fmt.Errorf("%w: prevValue %s > startValue %s at block %d",
+				ErrMonotonicViolation, prevValue.String(), startValue.String(), startBlock)
 		}
 		if comparisonResult < 0 {
 			transitionBlocks = append(transitionBlocks, startBlock)
