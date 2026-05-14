@@ -15,6 +15,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
@@ -122,7 +123,7 @@ func run(cmd *cobra.Command, args []string) {
 		output.RawData,
 		output.OutputHashesSiblings,
 	)
-	cobra.CheckErr(err)
+	cobra.CheckErr(cli.DecorateRevert(err, iapplication.IApplicationMetaData))
 
 	if asJSONParam {
 		result := cli.ExecuteResult{

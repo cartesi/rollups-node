@@ -13,12 +13,17 @@ import (
 	"strings"
 
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
+	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/contracts/dataavailability"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
+	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
+	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
@@ -48,6 +53,7 @@ var (
 	templatePath                 string
 	templateHash                 string
 	epochLength                  uint64
+	claimStagingPeriod           uint64
 	inputBoxBlockNumber          uint64
 	inputBoxAddressFromEnv       bool
 	dataAvailability             string
@@ -80,6 +86,11 @@ func init() {
 		"Consensus Epoch length. (DO NOT USE IN PRODUCTION)\nThis value is retrieved from the consensus contract",
 	)
 
+	Cmd.Flags().Uint64Var(&claimStagingPeriod, "claim-staging-period", 0,
+		"Consensus claim staging period in blocks (Authority/Quorum only). "+
+			"(DO NOT USE IN PRODUCTION)\nThis value is retrieved from the consensus contract",
+	)
+
 	Cmd.Flags().StringVarP(&dataAvailability, "data-availability", "D", "",
 		"Application ABI encoded Data Availability. If not provided, it will be read from the InputBox Address",
 	)
@@ -87,7 +98,7 @@ func init() {
 	Cmd.Flags().BoolVar(&inputBoxAddressFromEnv, "inputbox-from-env", false, "Read Input Box contract address from environment")
 	Cmd.Flags().Uint64Var(&inputBoxBlockNumber, "inputbox-block-number", 0, "InputBox deployment block number")
 
-	Cmd.Flags().BoolVarP(&disabled, "disabled", "d", false, "Sets the application state to disabled")
+	Cmd.Flags().BoolVarP(&disabled, "disabled", "d", false, "Registers the application with enabled=false")
 
 	Cmd.Flags().BoolVarP(&printAsJSON, "print-json", "j", false, "Prints the application data as JSON")
 
@@ -123,10 +134,7 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	defer repo.Close()
 
-	applicationState := model.ApplicationState_Enabled
-	if disabled {
-		applicationState = model.ApplicationState_Disabled
-	}
+	applicationEnabled := !disabled
 
 	address := common.HexToAddress(applicationAddress)
 
@@ -162,7 +170,8 @@ func run(cmd *cobra.Command, args []string) {
 	} else {
 		consensus, err = getConsensus(ctx, address)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to get consensus address from application: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Failed to get consensus address from application: %v\n",
+				cli.DecorateRevert(err, iapplication.IApplicationMetaData))
 			os.Exit(1)
 		}
 	}
@@ -170,9 +179,26 @@ func run(cmd *cobra.Command, args []string) {
 	if !cmd.Flags().Changed("epoch-length") && !applicationTypePRT {
 		epochLength, err = getEpochLength(ctx, consensus)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to get epoch length from consensus: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Failed to get epoch length from consensus: %v\n",
+				cli.DecorateRevert(err, iconsensus.IConsensusMetaData))
 			os.Exit(1)
 		}
+	}
+
+	if !cmd.Flags().Changed("claim-staging-period") && !applicationTypePRT {
+		claimStagingPeriod, err = getClaimStagingPeriod(ctx, consensus)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to get claim staging period from consensus: %v\n",
+				cli.DecorateRevert(err, iconsensus.IConsensusMetaData))
+			os.Exit(1)
+		}
+	}
+
+	withdrawalConfig, err := readApplicationWithdrawalConfig(ctx, address)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read withdrawal config from application: %v\n",
+			cli.DecorateRevert(err, iapplication.IApplicationMetaData))
+		os.Exit(1)
 	}
 
 	inputBoxAddress, encodedDA, err := processDataAvailability(
@@ -203,27 +229,34 @@ func run(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	consensusType := model.Consensus_Authority
-	if applicationTypePRT {
-		consensusType = model.Consensus_PRT
+	consensusType, err := getConsensusType(ctx, consensus, applicationTypePRT)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to detect consensus type: %v\n", err)
+		os.Exit(1)
 	}
 
 	application := model.Application{
-		Name:                     validName,
-		IApplicationAddress:      address,
-		IConsensusAddress:        consensus,
-		IInputBoxAddress:         *inputBoxAddress,
-		TemplateURI:              templatePath,
-		TemplateHash:             parsedTemplateHash,
-		EpochLength:              epochLength,
-		DataAvailability:         encodedDA,
-		ConsensusType:            consensusType,
-		State:                    applicationState,
-		IInputBoxBlock:           inputBoxBlockNumber,
-		LastEpochCheckBlock:      0,
-		LastInputCheckBlock:      0,
-		LastOutputCheckBlock:     0,
-		LastTournamentCheckBlock: 0,
+		Name:                              validName,
+		IApplicationAddress:               address,
+		IConsensusAddress:                 consensus,
+		IInputBoxAddress:                  *inputBoxAddress,
+		TemplateURI:                       templatePath,
+		TemplateHash:                      parsedTemplateHash,
+		EpochLength:                       epochLength,
+		ClaimStagingPeriod:                claimStagingPeriod,
+		WithdrawalConfig:                  withdrawalConfig,
+		DataAvailability:                  encodedDA,
+		ConsensusType:                     consensusType,
+		Enabled:                           applicationEnabled,
+		Status:                            model.ApplicationStatus_OK,
+		IInputBoxBlock:                    inputBoxBlockNumber,
+		LastEpochCheckBlock:               0,
+		LastInputCheckBlock:               0,
+		LastOutputCheckBlock:              0,
+		LastTournamentCheckBlock:          0,
+		LastForecloseCheckBlock:           0,
+		LastAccountsDriveProvedCheckBlock: 0,
+		LastWithdrawalCheckBlock:          0,
 	}
 
 	// load execution parameters from a file?
@@ -318,6 +351,85 @@ func getEpochLength(
 		return 0, fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
 	}
 	return ethutil.GetEpochLength(ctx, client, consensusAddr)
+}
+
+func getClaimStagingPeriod(
+	ctx context.Context,
+	consensusAddr common.Address,
+) (uint64, error) {
+	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get blockchain http endpoint address: %w", err)
+	}
+	client, err := ethclient.Dial(ethEndpoint.Raw())
+	if err != nil {
+		return 0, fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
+	}
+	return ethutil.GetClaimStagingPeriod(ctx, client, consensusAddr)
+}
+
+type quorumConsensusProbe interface {
+	NumOfValidators(opts *bind.CallOpts) (*big.Int, error)
+}
+
+func getConsensusType(
+	ctx context.Context,
+	consensusAddr common.Address,
+	applicationTypePRT bool,
+) (model.Consensus, error) {
+	if applicationTypePRT {
+		return model.Consensus_PRT, nil
+	}
+
+	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
+	if err != nil {
+		return "", fmt.Errorf("failed to get blockchain http endpoint address: %w", err)
+	}
+	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
+	if err != nil {
+		return "", fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
+	}
+	quorum, err := iquorum.NewIQuorum(consensusAddr, client)
+	if err != nil {
+		return "", err
+	}
+	return consensusTypeFromQuorumProbe(applicationTypePRT, quorum)
+}
+
+func consensusTypeFromQuorumProbe(
+	applicationTypePRT bool,
+	probe quorumConsensusProbe,
+) (model.Consensus, error) {
+	if applicationTypePRT {
+		return model.Consensus_PRT, nil
+	}
+	numOfValidators, err := probe.NumOfValidators(nil)
+	if err != nil {
+		return model.Consensus_Authority, nil
+	}
+	if numOfValidators == nil || numOfValidators.Sign() == 0 {
+		return "", fmt.Errorf("quorum consensus reports zero validators")
+	}
+	return model.Consensus_Quorum, nil
+}
+
+func readApplicationWithdrawalConfig(
+	ctx context.Context,
+	appAddr common.Address,
+) (model.WithdrawalConfig, error) {
+	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
+	if err != nil {
+		return model.WithdrawalConfig{}, fmt.Errorf("failed to get blockchain http endpoint address: %w", err)
+	}
+	client, err := ethclient.Dial(ethEndpoint.Raw())
+	if err != nil {
+		return model.WithdrawalConfig{}, fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
+	}
+	wc, err := ethutil.GetApplicationWithdrawalConfig(ctx, client, appAddr)
+	if err != nil {
+		return model.WithdrawalConfig{}, err
+	}
+	return model.WithdrawalConfig(wc), nil
 }
 
 func getInputBoxDeploymentBlock(

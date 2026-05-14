@@ -55,7 +55,8 @@ var (
 
 func init() {
 	Cmd.Flags().StringVar(&status, "status", "",
-		"Filter epochs by status (OPEN, CLOSED, INPUTS_PROCESSED, CLAIM_COMPUTED, CLAIM_SUBMITTED, CLAIM_ACCEPTED, CLAIM_REJECTED)")
+		"Filter epochs by status (OPEN, CLOSED, INPUTS_PROCESSED, CLAIM_COMPUTED, CLAIM_SUBMITTED, "+
+			"CLAIM_STAGED, CLAIM_ACCEPTED, CLAIM_REJECTED, CLAIM_FORECLOSED)")
 	Cmd.Flags().Uint64Var(&limit, "limit", 50, //nolint: mnd
 		"Maximum number of epochs to return")
 	Cmd.Flags().Uint64Var(&offset, "offset", 0,

@@ -14,6 +14,8 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
+	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -158,7 +160,7 @@ func run(cmd *cobra.Command, args []string) {
 
 	if asyncMode {
 		txHash, err := ethutil.AddInputAsync(ctx, client, txOpts, iboxAddr, app.IApplicationAddress, payload)
-		cobra.CheckErr(err)
+		cobra.CheckErr(cli.DecorateRevert(err, iinputbox.IInputBoxMetaData, iapplication.IApplicationMetaData))
 		if asJSONParam {
 			result := cli.SendResult{
 				ApplicationAddress: app.IApplicationAddress.Hex(),
@@ -174,7 +176,7 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	inputIndex, blockNumber, txHash, err := ethutil.AddInput(ctx, client, txOpts, iboxAddr, app.IApplicationAddress, payload)
-	cobra.CheckErr(err)
+	cobra.CheckErr(cli.DecorateRevert(err, iinputbox.IInputBoxMetaData, iapplication.IApplicationMetaData))
 
 	if asJSONParam {
 		result := cli.SendResult{

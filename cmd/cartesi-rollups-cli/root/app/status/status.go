@@ -20,7 +20,7 @@ var yesFlag bool
 
 var Cmd = &cobra.Command{
 	Use:     "status [app-name-or-address] [new-status]",
-	Short:   "Display or set application status (enabled or disabled)",
+	Short:   "Display application status or set the enabled flag",
 	Example: examples,
 	Args:    cobra.RangeArgs(1, 2), // nolint: mnd
 	Run:     run,
@@ -70,11 +70,28 @@ func run(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// If no new status is provided, display the current status and reason
+	// If no new status is provided, display the current status, operator
+	// enabled flag, and reason.
+	// Foreclose / drive-prove markers (zero == not observed) are surfaced
+	// so operators and integration tests can detect post-foreclosure
+	// progress without going through the JSON-RPC API.
 	if len(args) == 1 {
-		fmt.Println(app.State)
+		fmt.Println(app.Status)
+		fmt.Printf("Enabled: %t\n", app.Enabled)
 		if app.Reason != nil && *app.Reason != "" {
 			fmt.Printf("Reason: %s\n", *app.Reason)
+		}
+		if app.ForecloseBlock != 0 {
+			fmt.Printf("Foreclose block: 0x%x\n", app.ForecloseBlock)
+			if app.ForecloseTransaction != nil {
+				fmt.Printf("Foreclose transaction: %s\n", app.ForecloseTransaction.Hex())
+			}
+		}
+		if app.AccountsDriveProvedBlock != 0 {
+			fmt.Printf("Accounts drive proved block: 0x%x\n", app.AccountsDriveProvedBlock)
+			if app.AccountsDriveMerkleRoot != nil {
+				fmt.Printf("Accounts drive merkle root: %s\n", app.AccountsDriveMerkleRoot.Hex())
+			}
 		}
 		os.Exit(0)
 	}
@@ -82,45 +99,30 @@ func run(cmd *cobra.Command, args []string) {
 	// Handle status change
 	newStatus := strings.ToLower(args[1])
 
-	if app.State == model.ApplicationState_Inoperable {
-		fmt.Fprintf(os.Stderr,
-			"Error: Cannot change state of application %s. It is INOPERABLE (irrecoverable).\n",
-			app.Name)
-		if app.Reason != nil {
-			fmt.Fprintf(os.Stderr, "Reason: %s\n", *app.Reason)
-		}
-		fmt.Fprintf(os.Stderr, "Use 'app remove' to remove this application.\n")
-		os.Exit(1)
-	}
-
-	var targetState model.ApplicationState
+	var targetEnabled bool
 	switch newStatus {
 	case "enabled", "enable":
-		targetState = model.ApplicationState_Enabled
+		targetEnabled = true
 	case "disabled", "disable":
-		targetState = model.ApplicationState_Disabled
+		targetEnabled = false
 	default:
 		fmt.Fprintf(os.Stderr, "Error: Invalid status %q. Valid values are 'enabled' or 'disabled'\n", newStatus)
 		os.Exit(1)
 	}
 
-	if app.State == targetState {
-		fmt.Printf("Application %s status is already %s\n", app.Name, app.State)
+	if app.Enabled == targetEnabled && (app.Status != model.ApplicationStatus_Failed || !targetEnabled) {
+		fmt.Printf("Application %s enabled flag is already %t\n", app.Name, app.Enabled)
 		os.Exit(0)
 	}
 
-	// Changing state of a FAILED application requires confirmation
-	if app.State == model.ApplicationState_Failed &&
-		(targetState == model.ApplicationState_Enabled ||
-			targetState == model.ApplicationState_Disabled) &&
-		!yesFlag {
-		fmt.Printf("Application %q is in FAILED state.\n", app.Name)
+	// Re-enabling a FAILED application clears the failure status and requires
+	// confirmation because processing may restart from the last snapshot.
+	if app.Status == model.ApplicationStatus_Failed && targetEnabled && !yesFlag {
+		fmt.Printf("Application %q has FAILED status.\n", app.Name)
 		if app.Reason != nil {
 			fmt.Printf("Reason: %s\n", *app.Reason)
 		}
-		if targetState == model.ApplicationState_Enabled {
-			fmt.Println("Re-enabling will attempt to restart processing from the last snapshot.")
-		}
+		fmt.Println("Re-enabling will attempt to restart processing from the last snapshot.")
 		confirmed, err := cli.ConfirmPrompt("Proceed?")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
@@ -132,13 +134,18 @@ func run(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	// Show failure reason when changing state away from FAILED
-	if app.State == model.ApplicationState_Failed && app.Reason != nil && *app.Reason != "" {
+	// Show failure reason when changing status away from FAILED.
+	if app.Status == model.ApplicationStatus_Failed && app.Reason != nil && *app.Reason != "" {
 		fmt.Printf("Previous failure reason: %s\n", *app.Reason)
 	}
 
-	err = repo.UpdateApplicationState(ctx, app.ID, targetState, nil)
+	clearFailureStatus := targetEnabled && app.Status == model.ApplicationStatus_Failed
+	if clearFailureStatus {
+		err = repo.EnableApplicationAndClearFailed(ctx, app.ID)
+	} else {
+		err = repo.UpdateApplicationEnabled(ctx, app.ID, targetEnabled)
+	}
 	cobra.CheckErr(err)
 
-	fmt.Printf("Application %s status updated to %s\n", app.Name, targetState)
+	fmt.Printf("Application %s enabled flag updated to %t\n", app.Name, targetEnabled)
 }

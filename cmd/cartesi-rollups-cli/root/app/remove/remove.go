@@ -11,7 +11,6 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 )
 
@@ -66,8 +65,8 @@ func run(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	if app.State == model.ApplicationState_Enabled {
-		fmt.Fprintf(os.Stderr, "Error: Application %s is ENABLED. Must disable it first\n", app.Name)
+	if app.Enabled {
+		fmt.Fprintf(os.Stderr, "Error: Application %s has enabled=true. Must disable it first\n", app.Name)
 		os.Exit(1)
 	}
 

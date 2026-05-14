@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
+	"github.com/cartesi/rollups-node/pkg/contracts/iauthorityfactory"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -51,6 +53,8 @@ func init() {
 		command.Flags().Lookup("salt").Hidden = false
 		command.Flags().Lookup("json").Hidden = false
 		command.Flags().Lookup("verbose").Hidden = false
+		// `claim-staging-period` is exposed on `authority` since it's
+		// the parameter for the authority contract being deployed.
 		origHelpFunc(command, strings)
 	})
 }
@@ -102,7 +106,7 @@ func runDeployAuthority(cmd *cobra.Command, args []string) {
 		fmt.Fprintf(os.Stderr, "deploying authority...")
 	}
 	deployment.Address, err = deployment.Deploy(ctx, client, txOpts)
-	cobra.CheckErr(err)
+	cobra.CheckErr(cli.DecorateRevert(err, iauthorityfactory.IAuthorityFactoryMetaData))
 
 	// report
 	if verboseParam || !asJSONParam {
@@ -148,10 +152,11 @@ func buildAuthorityDeployment(cmd *cobra.Command, txOpts *bind.TransactOpts) (*e
 	}
 
 	return &ethutil.AuthorityDeployment{
-		FactoryAddress: authorityFactoryAddress,
-		OwnerAddress:   authorityOwnerAddress,
-		EpochLength:    epochLengthParam,
-		Salt:           salt,
-		Verbose:        verboseParam,
+		FactoryAddress:     authorityFactoryAddress,
+		OwnerAddress:       authorityOwnerAddress,
+		EpochLength:        epochLengthParam,
+		ClaimStagingPeriod: claimStagingPeriodParam,
+		Salt:               salt,
+		Verbose:            verboseParam,
 	}, nil
 }

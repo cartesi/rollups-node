@@ -11,10 +11,13 @@ import (
 )
 
 var (
-	epochLengthParam uint64
-	saltParam        string
-	asJSONParam      bool
-	verboseParam     bool
+	epochLengthParam            uint64
+	claimStagingPeriodParam     uint64
+	withdrawalConfigParam       string
+	withdrawalConfigFileParam   string
+	saltParam                   string
+	asJSONParam                 bool
+	verboseParam                bool
 )
 
 var Cmd = &cobra.Command{
@@ -27,6 +30,13 @@ func init() {
 	Cmd.PersistentFlags().Uint64VarP(&epochLengthParam, "epoch-length", "", 10, // nolint: mnd
 		"Epoch length")
 	Cmd.PersistentFlags().MarkHidden("epoch-length")
+	Cmd.PersistentFlags().Uint64Var(&claimStagingPeriodParam, "claim-staging-period", 0,
+		"Number of blocks between a claim being submitted and accepted (Authority/Quorum only)")
+	Cmd.PersistentFlags().StringVar(&withdrawalConfigParam, "withdrawal-config", "",
+		"Inline JSON object describing the WithdrawalConfig "+
+			"(see docs/withdrawal-config-guide.md). Omit to deploy without foreclosure.")
+	Cmd.PersistentFlags().StringVar(&withdrawalConfigFileParam, "withdrawal-config-file", "",
+		"Path to a JSON file describing the WithdrawalConfig. Mutually exclusive with --withdrawal-config.")
 	Cmd.PersistentFlags().StringVar(&saltParam, "salt", "0000000000000000000000000000000000000000000000000000000000000000",
 		"Salt value for contract deployment")
 	Cmd.PersistentFlags().MarkHidden("salt")

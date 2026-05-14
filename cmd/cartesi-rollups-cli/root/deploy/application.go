@@ -11,11 +11,17 @@ import (
 	"strings"
 
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
+	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplicationfactory"
+	"github.com/cartesi/rollups-node/pkg/contracts/iauthorityfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
+	"github.com/cartesi/rollups-node/pkg/contracts/idaveappfactory"
+	"github.com/cartesi/rollups-node/pkg/contracts/iquorumfactory"
+	"github.com/cartesi/rollups-node/pkg/contracts/iselfhostedapplicationfactory"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -186,11 +192,9 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	application := model.Application{}
 	application.Name = applicationName
 	application.TemplateURI = templateURI
-	application.State = model.ApplicationState_Disabled
+	application.Enabled = applicationEnableParam
+	application.Status = model.ApplicationStatus_OK
 	application.ConsensusType = model.Consensus_Authority
-	if applicationEnableParam {
-		application.State = model.ApplicationState_Enabled
-	}
 
 	// load execution parameters from a file?
 	withExecutionParameters := cmd.Flags().Changed("execution-parameters-file")
@@ -234,7 +238,16 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		fmt.Fprint(os.Stderr, "deploying...")
 	}
 	_, result, err := deployment.Deploy(ctx, client, txOpts)
-	cobra.CheckErr(err)
+	// The revert surface spans the variant's factory plus the constructors it
+	// invokes; selectors are content-matched, so passing every factory ABI is
+	// harmless and covers all three deployment variants.
+	cobra.CheckErr(cli.DecorateRevert(err,
+		iapplicationfactory.IApplicationFactoryMetaData,
+		iselfhostedapplicationfactory.ISelfHostedApplicationFactoryMetaData,
+		iauthorityfactory.IAuthorityFactoryMetaData,
+		iquorumfactory.IQuorumFactoryMetaData,
+		idaveappfactory.IDaveAppFactoryMetaData,
+	))
 
 	if verboseParam || !asJSONParam {
 		fmt.Fprint(os.Stderr, "success\n")
@@ -250,8 +263,10 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		application.IInputBoxAddress = res.Deployment.InputBoxAddress
 		application.TemplateHash = res.Deployment.TemplateHash
 		application.EpochLength = res.Deployment.EpochLength
+		application.ClaimStagingPeriod = res.Deployment.ClaimStagingPeriod
 		application.DataAvailability = res.Deployment.DataAvailability
 		application.IInputBoxBlock = res.Deployment.IInputBoxBlock
+		application.WithdrawalConfig = model.WithdrawalConfig(res.Deployment.WithdrawalConfig)
 
 	case *ethutil.ApplicationDeploymentResult:
 		application.IApplicationAddress = res.ApplicationAddress
@@ -259,8 +274,10 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		application.IInputBoxAddress = res.Deployment.InputBoxAddress
 		application.TemplateHash = res.Deployment.TemplateHash
 		application.EpochLength = res.Deployment.EpochLength
+		application.ClaimStagingPeriod = res.Deployment.ClaimStagingPeriod
 		application.DataAvailability = res.Deployment.DataAvailability
 		application.IInputBoxBlock = res.Deployment.IInputBoxBlock
+		application.WithdrawalConfig = model.WithdrawalConfig(res.Deployment.WithdrawalConfig)
 
 	case *ethutil.PRTApplicationDeploymentResult:
 		application.IApplicationAddress = res.ApplicationAddress
@@ -271,6 +288,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		application.DataAvailability = res.DataAvailability
 		application.IInputBoxBlock = res.IInputBoxBlock
 		application.ConsensusType = model.Consensus_PRT
+		application.WithdrawalConfig = model.WithdrawalConfig(res.Deployment.WithdrawalConfig)
 	default:
 		panic("unimplemented deployment type\n")
 	}
@@ -401,7 +419,13 @@ func buildSelfhostedApplicationDeployment(
 		return nil, fmt.Errorf("error on parameter salt: %w", err)
 	}
 
+	request.WithdrawalConfig, err = parseWithdrawalConfig(withdrawalConfigParam, withdrawalConfigFileParam)
+	if err != nil {
+		return nil, err
+	}
+
 	request.EpochLength = epochLengthParam
+	request.ClaimStagingPeriod = claimStagingPeriodParam
 	request.Verbose = verboseParam
 	return request, nil
 }
@@ -485,9 +509,14 @@ func buildApplicationOnlyDeployment(
 		return nil, fmt.Errorf("error on parameter salt: %w", err)
 	}
 
+	request.WithdrawalConfig, err = parseWithdrawalConfig(withdrawalConfigParam, withdrawalConfigFileParam)
+	if err != nil {
+		return nil, err
+	}
+
 	request.Verbose = verboseParam
 
-	request.Consensus, request.EpochLength, err = customConsensus(client, applicationConsensusAddressParam)
+	request.Consensus, request.EpochLength, request.ClaimStagingPeriod, err = customConsensus(client, applicationConsensusAddressParam)
 	if err != nil {
 		return nil, fmt.Errorf("error on parameter consensus: %w", err)
 	}
@@ -507,7 +536,7 @@ func buildPrtApplicationDeployment(
 	if !cmd.Flags().Changed("prt-factory") {
 		request.FactoryAddress, err = config.GetContractsDaveAppFactoryAddress()
 	} else {
-		request.FactoryAddress, err = parseHexAddress(factoryAddressParam)
+		request.FactoryAddress, err = parseHexAddress(prtFactoryAddressParam)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("error on parameter factory: %w", err)
@@ -531,6 +560,11 @@ func buildPrtApplicationDeployment(
 		return nil, fmt.Errorf("error on parameter salt: %w", err)
 	}
 
+	request.WithdrawalConfig, err = parseWithdrawalConfig(withdrawalConfigParam, withdrawalConfigFileParam)
+	if err != nil {
+		return nil, err
+	}
+
 	request.Verbose = verboseParam
 	return request, nil
 }
@@ -540,21 +574,26 @@ func parseHexHash(hash string) (common.Hash, error) {
 	return out, out.UnmarshalText([]byte(hash))
 }
 
-func customConsensus(client *ethclient.Client, consensusString string) (common.Address, uint64, error) {
+func customConsensus(client *ethclient.Client, consensusString string) (common.Address, uint64, uint64, error) {
 	consensusAddress, err := parseHexAddress(consensusString)
 	if err != nil {
-		return common.Address{}, 0, err
+		return common.Address{}, 0, 0, err
 	}
 
 	consensus, err := iconsensus.NewIConsensus(consensusAddress, client)
 	if err != nil {
-		return common.Address{}, 0, err
+		return common.Address{}, 0, 0, err
 	}
 
 	epochLengthBig, err := consensus.GetEpochLength(nil)
 	if err != nil {
-		return common.Address{}, 0, fmt.Errorf("failed to retrieve consensus epoch length: %v", err)
+		return common.Address{}, 0, 0, fmt.Errorf("failed to retrieve consensus epoch length: %v", err)
 	}
 
-	return consensusAddress, epochLengthBig.Uint64(), nil
+	claimStagingPeriodBig, err := consensus.GetClaimStagingPeriod(nil)
+	if err != nil {
+		return common.Address{}, 0, 0, fmt.Errorf("failed to retrieve consensus claim staging period: %v", err)
+	}
+
+	return consensusAddress, epochLengthBig.Uint64(), claimStagingPeriodBig.Uint64(), nil
 }
