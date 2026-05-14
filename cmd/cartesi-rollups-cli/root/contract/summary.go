@@ -90,7 +90,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		case consensusAuthority:
 			cResult, cErr = cc.queryAuthority(consensusAddr, contractVersion)
 		case consensusQuorum:
-			cResult, cErr = cc.queryQuorum(consensusAddr)
+			cResult, cErr = cc.queryQuorum(consensusAddr, contractVersion)
 		case consensusDave:
 			cResult, cErr = cc.queryDave(consensusAddr)
 		case consensusUnknown:
@@ -167,13 +167,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		})
 	} else if appResult != nil {
 		p.withSection(fmt.Sprintf("Application  %s", appResult.Address), func() {
-			p.field("Template Hash", appResult.TemplateHash)
-			p.field("Owner", appResult.Owner)
-			p.field("Deployment Block", fmt.Sprintf("%d", appResult.DeploymentBlock))
-			p.field("Executed Outputs", fmt.Sprintf("%d", appResult.ExecutedOutputs))
-			p.field("Consensus",
-				fmt.Sprintf("%s (%s)", appResult.ConsensusAddress, appResult.ConsensusType))
-			p.field("Data Availability", appResult.DataAvailability)
+			printAppFields(p, appResult)
 		})
 	}
 
@@ -234,6 +228,9 @@ func printConsensusSummary(p *printer, cr consensusResult) {
 				fmt.Sprintf("%d (computed: strict majority)", r.QuorumThreshold))
 			p.field("Epoch Length", fmt.Sprintf("%d blocks", r.EpochLength))
 			p.field("Accepted Claims", fmt.Sprintf("%d", r.AcceptedClaims))
+			if r.ContractVersion != "" {
+				p.field("IConsensus Version", r.ContractVersion)
+			}
 		})
 	case *DaveConsensusResult:
 		p.withSection(fmt.Sprintf("DaveConsensus  %s", r.Address), func() {
@@ -271,7 +268,7 @@ func (c *chainClient) queryAuthority(
 		return nil, err
 	}
 
-	claimsRaw, err := caller.GetNumberOfAcceptedClaims(c.callOpts)
+	claimsRaw, err := caller.GetNumberOfAcceptedClaims(c.callOpts, c.appAddr)
 	if err != nil {
 		return nil, fmt.Errorf("GetNumberOfAcceptedClaims: %w", err)
 	}
@@ -280,19 +277,39 @@ func (c *chainClient) queryAuthority(
 		return nil, err
 	}
 
+	stagingPeriodRaw, err := caller.GetClaimStagingPeriod(c.callOpts)
+	if err != nil {
+		return nil, fmt.Errorf("GetClaimStagingPeriod: %w", err)
+	}
+	stagingPeriod, err := safeUint64(stagingPeriodRaw, "claim staging period")
+	if err != nil {
+		return nil, err
+	}
+
+	stagedRaw, err := caller.GetNumberOfStagedClaims(c.callOpts, c.appAddr)
+	if err != nil {
+		return nil, fmt.Errorf("GetNumberOfStagedClaims: %w", err)
+	}
+	staged, err := safeUint64(stagedRaw, "staged claims")
+	if err != nil {
+		return nil, err
+	}
+
 	return &AuthorityConsensusResult{
-		Type:            "Authority",
-		Address:         formatAddr(addr),
-		Owner:           formatAddr(owner),
-		EpochLength:     epochLength,
-		AcceptedClaims:  claims,
-		ContractVersion: contractVersion,
+		Type:               "Authority",
+		Address:            formatAddr(addr),
+		Owner:              formatAddr(owner),
+		EpochLength:        epochLength,
+		ClaimStagingPeriod: stagingPeriod,
+		AcceptedClaims:     claims,
+		StagedClaims:       staged,
+		ContractVersion:    contractVersion,
 	}, nil
 }
 
 // queryQuorum returns a structured Quorum result.
 func (c *chainClient) queryQuorum(
-	addr common.Address,
+	addr common.Address, contractVersion string,
 ) (*QuorumConsensusResult, error) {
 	if err := c.ensureContract(addr, "Quorum"); err != nil {
 		return nil, err
@@ -311,7 +328,7 @@ func (c *chainClient) queryQuorum(
 		return nil, err
 	}
 
-	claimsRaw, err := caller.GetNumberOfAcceptedClaims(c.callOpts)
+	claimsRaw, err := caller.GetNumberOfAcceptedClaims(c.callOpts, c.appAddr)
 	if err != nil {
 		return nil, fmt.Errorf("GetNumberOfAcceptedClaims: %w", err)
 	}
@@ -346,14 +363,35 @@ func (c *chainClient) queryQuorum(
 
 	threshold := 1 + numVal/2 //nolint:mnd
 
+	stagingPeriodRaw, err := caller.GetClaimStagingPeriod(c.callOpts)
+	if err != nil {
+		return nil, fmt.Errorf("GetClaimStagingPeriod: %w", err)
+	}
+	stagingPeriod, err := safeUint64(stagingPeriodRaw, "claim staging period")
+	if err != nil {
+		return nil, err
+	}
+
+	stagedRaw, err := caller.GetNumberOfStagedClaims(c.callOpts, c.appAddr)
+	if err != nil {
+		return nil, fmt.Errorf("GetNumberOfStagedClaims: %w", err)
+	}
+	staged, err := safeUint64(stagedRaw, "staged claims")
+	if err != nil {
+		return nil, err
+	}
+
 	return &QuorumConsensusResult{
-		Type:            "Quorum",
-		Address:         formatAddr(addr),
-		NumValidators:   numVal,
-		QuorumThreshold: threshold,
-		Validators:      validators,
-		EpochLength:     epochLength,
-		AcceptedClaims:  claims,
+		Type:               "Quorum",
+		Address:            formatAddr(addr),
+		NumValidators:      numVal,
+		QuorumThreshold:    threshold,
+		Validators:         validators,
+		EpochLength:        epochLength,
+		ClaimStagingPeriod: stagingPeriod,
+		AcceptedClaims:     claims,
+		StagedClaims:       staged,
+		ContractVersion:    contractVersion,
 	}, nil
 }
 

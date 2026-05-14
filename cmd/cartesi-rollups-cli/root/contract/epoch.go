@@ -255,7 +255,7 @@ func (c *chainClient) epochHistoryAuthority(
 
 	oracle := func(ctx context.Context, block uint64) (*big.Int, error) {
 		opts := &bind.CallOpts{Context: ctx, BlockNumber: new(big.Int).SetUint64(block)}
-		return consensusCaller.GetNumberOfAcceptedClaims(opts)
+		return consensusCaller.GetNumberOfAcceptedClaims(opts, c.appAddr)
 	}
 
 	var claims []ClaimEvent
@@ -425,7 +425,7 @@ func (c *chainClient) epochHistoryQuorum(
 	// Pass 1: FindTransitions for ClaimAccepted.
 	oracle := func(ctx context.Context, block uint64) (*big.Int, error) {
 		opts := &bind.CallOpts{Context: ctx, BlockNumber: new(big.Int).SetUint64(block)}
-		return consensusCaller.GetNumberOfAcceptedClaims(opts)
+		return consensusCaller.GetNumberOfAcceptedClaims(opts, c.appAddr)
 	}
 
 	onHit := func(block uint64) error {

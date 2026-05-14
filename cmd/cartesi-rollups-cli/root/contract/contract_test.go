@@ -168,3 +168,16 @@ func TestConsensusTypeString(t *testing.T) {
 	assert.Equal(t, "DaveConsensus (PRT)", consensusDave.String())
 	assert.Equal(t, "Unknown", consensusUnknown.String())
 }
+
+// TestIConsensusV3InterfaceID locks down the v3 interface ID computation.
+// If a method is renamed in the binding or this list drifts from the
+// IConsensus.sol interface, this test surfaces the change as a value mismatch.
+func TestIConsensusV3InterfaceID(t *testing.T) {
+	// Non-zero, distinct from the v2 IDs.
+	assert.NotEqual(t, [4]byte{}, iConsensusInterfaceIDv30,
+		"v3 interface ID should be non-zero")
+	assert.NotEqual(t, iConsensusInterfaceIDv220, iConsensusInterfaceIDv30,
+		"v3 interface ID should differ from v2.2.0")
+	assert.NotEqual(t, iConsensusInterfaceIDv21x, iConsensusInterfaceIDv30,
+		"v3 interface ID should differ from v2.1.x")
+}

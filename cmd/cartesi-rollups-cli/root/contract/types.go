@@ -7,35 +7,46 @@ import "encoding/json"
 
 // AppResult is the JSON output of "contract app".
 type AppResult struct {
-	Address          string `json:"address"`
-	Owner            string `json:"owner"`
-	TemplateHash     string `json:"template_hash"`
-	DeploymentBlock  uint64 `json:"deployment_block"`
-	ExecutedOutputs  uint64 `json:"executed_outputs"`
-	ConsensusAddress string `json:"consensus_address"`
-	ConsensusType    string `json:"consensus_type"`
-	DataAvailability string `json:"data_availability"`
+	Address                 string `json:"address"`
+	Owner                   string `json:"owner"`
+	TemplateHash            string `json:"template_hash"`
+	DeploymentBlock         uint64 `json:"deployment_block"`
+	ExecutedOutputs         uint64 `json:"executed_outputs"`
+	ConsensusAddress        string `json:"consensus_address"`
+	ConsensusType           string `json:"consensus_type"`
+	DataAvailability        string `json:"data_availability"`
+	IsForeclosed            bool   `json:"is_foreclosed"`
+	Guardian                string `json:"guardian"`
+	WithdrawalOutputBuilder string `json:"withdrawal_output_builder"`
+	Log2LeavesPerAccount    uint8  `json:"log2_leaves_per_account"`
+	Log2MaxNumOfAccounts    uint8  `json:"log2_max_num_of_accounts"`
+	AccountsDriveStartIndex uint64 `json:"accounts_drive_start_index"`
 }
 
 // AuthorityConsensusResult is the JSON output for Authority consensus.
 type AuthorityConsensusResult struct {
-	Type            string `json:"type"`
-	Address         string `json:"address"`
-	Owner           string `json:"owner"`
-	EpochLength     uint64 `json:"epoch_length"`
-	AcceptedClaims  uint64 `json:"accepted_claims"`
-	ContractVersion string `json:"contract_version"`
+	Type               string `json:"type"`
+	Address            string `json:"address"`
+	Owner              string `json:"owner"`
+	EpochLength        uint64 `json:"epoch_length"`
+	ClaimStagingPeriod uint64 `json:"claim_staging_period"`
+	AcceptedClaims     uint64 `json:"accepted_claims"`
+	StagedClaims       uint64 `json:"staged_claims"`
+	ContractVersion    string `json:"contract_version"`
 }
 
 // QuorumConsensusResult is the JSON output for Quorum consensus.
 type QuorumConsensusResult struct {
-	Type            string   `json:"type"`
-	Address         string   `json:"address"`
-	NumValidators   uint64   `json:"num_validators"`
-	QuorumThreshold uint64   `json:"quorum_threshold"`
-	Validators      []string `json:"validators"`
-	EpochLength     uint64   `json:"epoch_length"`
-	AcceptedClaims  uint64   `json:"accepted_claims"`
+	Type               string   `json:"type"`
+	Address            string   `json:"address"`
+	NumValidators      uint64   `json:"num_validators"`
+	QuorumThreshold    uint64   `json:"quorum_threshold"`
+	Validators         []string `json:"validators"`
+	EpochLength        uint64   `json:"epoch_length"`
+	ClaimStagingPeriod uint64   `json:"claim_staging_period"`
+	AcceptedClaims     uint64   `json:"accepted_claims"`
+	StagedClaims       uint64   `json:"staged_claims"`
+	ContractVersion    string   `json:"contract_version"`
 }
 
 // DaveConsensusResult is the JSON output for DaveConsensus.

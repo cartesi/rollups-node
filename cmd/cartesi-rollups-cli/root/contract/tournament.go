@@ -429,10 +429,8 @@ func (c *chainClient) tournamentResult(
 
 	result, err := caller.ArbitrationResult(c.callOpts)
 	if err != nil {
-		if info, ok := ethutil.ExtractJSONErrorInfo(err); ok && info.HasData {
-			if matchesSelector(info.Data, tournamentFailedNoWinner) {
-				return true, false, [32]byte{}, [32]byte{}, nil
-			}
+		if ethutil.IsCustomError(err, itournament.ITournamentMetaData, "TournamentFailedNoWinner") {
+			return true, false, [32]byte{}, [32]byte{}, nil
 		}
 		return false, false, [32]byte{}, [32]byte{}, err
 	}

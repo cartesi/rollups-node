@@ -44,7 +44,7 @@ func runConsensus(cmd *cobra.Command, args []string) error {
 	case consensusAuthority:
 		return cc.printAuthority(consensusAddr, contractVersion)
 	case consensusQuorum:
-		return cc.printQuorum(consensusAddr)
+		return cc.printQuorum(consensusAddr, contractVersion)
 	case consensusDave:
 		return cc.printDave(consensusAddr)
 	case consensusUnknown:
@@ -67,15 +67,17 @@ func (c *chainClient) printAuthority(addr common.Address, contractVersion string
 	p.withSection(fmt.Sprintf("Authority  %s", result.Address), func() {
 		p.field("Owner (Validator)", result.Owner)
 		p.field("Epoch Length", fmt.Sprintf("%d blocks", result.EpochLength))
+		p.field("Claim Staging Period", fmt.Sprintf("%d blocks", result.ClaimStagingPeriod))
 		p.field("Accepted Claims", fmt.Sprintf("%d", result.AcceptedClaims))
+		p.field("Staged Claims", fmt.Sprintf("%d", result.StagedClaims))
 		p.field("IConsensus Version", result.ContractVersion)
 	})
 	p.footer(c.blockNum, c.chainID, c.resolveTimestamp(c.blockNum))
 	return nil
 }
 
-func (c *chainClient) printQuorum(addr common.Address) error {
-	result, err := c.queryQuorum(addr)
+func (c *chainClient) printQuorum(addr common.Address, contractVersion string) error {
+	result, err := c.queryQuorum(addr, contractVersion)
 	if err != nil {
 		return err
 	}
@@ -90,7 +92,12 @@ func (c *chainClient) printQuorum(addr common.Address) error {
 		p.field("Quorum Threshold",
 			fmt.Sprintf("%d (computed: strict majority)", result.QuorumThreshold))
 		p.field("Epoch Length", fmt.Sprintf("%d blocks", result.EpochLength))
+		p.field("Claim Staging Period", fmt.Sprintf("%d blocks", result.ClaimStagingPeriod))
 		p.field("Accepted Claims", fmt.Sprintf("%d", result.AcceptedClaims))
+		p.field("Staged Claims", fmt.Sprintf("%d", result.StagedClaims))
+		if result.ContractVersion != "" {
+			p.field("IConsensus Version", result.ContractVersion)
+		}
 		for i, v := range result.Validators {
 			p.field(fmt.Sprintf("  Validator #%d", i+1), v)
 		}

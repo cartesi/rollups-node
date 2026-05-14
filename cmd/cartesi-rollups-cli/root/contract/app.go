@@ -11,6 +11,7 @@ import (
 	"os"
 
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/spf13/cobra"
 )
@@ -91,6 +92,16 @@ func (c *chainClient) queryApp() (*AppResult, error) {
 		return nil, fmt.Errorf("GetDataAvailability: %w", err)
 	}
 
+	isForeclosed, err := app.IsForeclosed(c.callOpts)
+	if err != nil {
+		return nil, fmt.Errorf("IsForeclosed: %w", err)
+	}
+
+	wc, err := ethutil.GetApplicationWithdrawalConfig(c.callOpts.Context, c.eth, c.appAddr)
+	if err != nil {
+		return nil, fmt.Errorf("GetApplicationWithdrawalConfig: %w", err)
+	}
+
 	// Detect consensus type for display.
 	consensusLabel := consensusUnknown.String()
 	if err := c.ensureContract(consensusAddr, "consensus"); err == nil {
@@ -108,28 +119,62 @@ func (c *chainClient) queryApp() (*AppResult, error) {
 	}
 
 	return &AppResult{
-		Address:          formatAddr(c.appAddr),
-		Owner:            formatAddr(owner),
-		TemplateHash:     formatHash(templateHash),
-		DeploymentBlock:  deploymentBlock,
-		ExecutedOutputs:  executedOutputs,
-		ConsensusAddress: formatAddr(consensusAddr),
-		ConsensusType:    consensusLabel,
-		DataAvailability: "0x" + hex.EncodeToString(dataAvailability),
+		Address:                 formatAddr(c.appAddr),
+		Owner:                   formatAddr(owner),
+		TemplateHash:            formatHash(templateHash),
+		DeploymentBlock:         deploymentBlock,
+		ExecutedOutputs:         executedOutputs,
+		ConsensusAddress:        formatAddr(consensusAddr),
+		ConsensusType:           consensusLabel,
+		DataAvailability:        "0x" + hex.EncodeToString(dataAvailability),
+		IsForeclosed:            isForeclosed,
+		Guardian:                formatAddr(wc.Guardian),
+		WithdrawalOutputBuilder: formatAddr(wc.WithdrawalOutputBuilder),
+		Log2LeavesPerAccount:    wc.Log2LeavesPerAccount,
+		Log2MaxNumOfAccounts:    wc.Log2MaxNumOfAccounts,
+		AccountsDriveStartIndex: wc.AccountsDriveStartIndex,
 	}, nil
 }
 
 func printApp(r *AppResult, blockNum, chainID, blockTime uint64) {
 	p := &printer{w: os.Stdout}
 	p.withSection(fmt.Sprintf("Application  %s", r.Address), func() {
-		p.field("Template Hash", r.TemplateHash)
-		p.field("Owner", r.Owner)
-		p.field("Deployment Block", fmt.Sprintf("%d", r.DeploymentBlock))
-		p.field("Executed Outputs", fmt.Sprintf("%d", r.ExecutedOutputs))
-		p.field("Consensus", fmt.Sprintf("%s (%s)", r.ConsensusAddress, r.ConsensusType))
-		p.field("Data Availability", r.DataAvailability)
+		printAppFields(p, r)
 	})
 	p.footer(blockNum, chainID, blockTime)
+}
+
+// printAppFields renders the body of the Application section. Shared by the
+// standalone "contract app" command and "contract summary".
+func printAppFields(p *printer, r *AppResult) {
+	p.field("Template Hash", r.TemplateHash)
+	p.field("Owner", r.Owner)
+	p.field("Deployment Block", fmt.Sprintf("%d", r.DeploymentBlock))
+	p.field("Executed Outputs", fmt.Sprintf("%d", r.ExecutedOutputs))
+	p.field("Consensus", fmt.Sprintf("%s (%s)", r.ConsensusAddress, r.ConsensusType))
+	p.field("Data Availability", r.DataAvailability)
+	p.field("Foreclosed", formatBool(r.IsForeclosed))
+	// WithdrawalConfig is logically grouped — a zero guardian means
+	// no foreclosure was configured on deploy, so other fields are
+	// meaningless and we condense the display.
+	if r.Guardian == formatAddr(common.Address{}) {
+		p.field("WithdrawalConfig", "(disabled — no foreclosure)")
+	} else {
+		p.field("Guardian", r.Guardian)
+		p.field("Withdrawal Output Builder", r.WithdrawalOutputBuilder)
+		p.field("Log2 Leaves Per Account", fmt.Sprintf("%d", r.Log2LeavesPerAccount))
+		p.field("Log2 Max Num of Accounts", fmt.Sprintf("%d", r.Log2MaxNumOfAccounts))
+		p.field("Accounts Drive Start Index",
+			fmt.Sprintf("%d", r.AccountsDriveStartIndex))
+	}
+}
+
+// formatBool renders a bool as a short human-readable string.
+func formatBool(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
 }
 
 func outputJSON(v any) error {
