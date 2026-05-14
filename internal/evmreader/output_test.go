@@ -229,6 +229,193 @@ func (s *EvmReaderSuite) TestOutputExecutionOnFinalizedBlocks() {
 
 }
 
+// TestOutputExecutionContinuesForForeclosedApps verifies foreclosure does not
+// block output-execution scanning: Application.executeOutput stays callable
+// after foreclosure, so a foreclosed app's OutputExecuted events must still be
+// observed and persisted. buildBlockScanPlan routes foreclosed apps into
+// outputTargets (see block_scan_plan_test.go); this exercises the consuming
+// scan with a foreclosed app.
+func (s *EvmReaderSuite) TestOutputExecutionContinuesForForeclosedApps() {
+	s.repository = newMockRepository()
+	s.evmReader.repository = s.repository
+	applicationContract := newMockApplicationContract()
+
+	foreclosedApp := copyApplications(applications)[0]
+	foreclosedApp.ID = 1
+	foreclosedApp.ForecloseBlock = 0x12
+	foreclosedApp.LastOutputCheckBlock = 0x12
+
+	applicationContract.On("GetNumberOfExecutedOutputs", blockFrom(0x13)).
+		Return(new(big.Int).SetUint64(1), nil)
+
+	applicationContract.On("RetrieveOutputExecutionEvents",
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x13 }),
+	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil).Once()
+
+	s.repository.Unset("GetNumberOfExecutedOutputs")
+	s.repository.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		foreclosedApp.IApplicationAddress.String(),
+	).Return(uint64(0), nil).Once()
+
+	s.repository.Unset("GetOutput")
+	s.repository.On("GetOutput",
+		mock.Anything,
+		foreclosedApp.IApplicationAddress.Hex(),
+		outputExecution0.OutputIndex,
+	).Return(output0, nil).Once()
+
+	s.repository.Unset("UpdateOutputsExecution")
+	s.repository.On("UpdateOutputsExecution",
+		mock.Anything,
+		foreclosedApp.IApplicationAddress.Hex(),
+		mock.MatchedBy(func(outputs []*Output) bool {
+			return len(outputs) == 1 &&
+				outputs[0].Index == outputExecution0.OutputIndex &&
+				outputs[0].ExecutionTransactionHash != nil &&
+				*outputs[0].ExecutionTransactionHash == outputExecution0.Raw.TxHash
+		}),
+		uint64(0x13),
+	).Return(nil).Once()
+
+	s.evmReader.checkForOutputExecution(s.ctx, []appContracts{
+		{application: foreclosedApp, applicationContract: applicationContract},
+	}, 0x13)
+
+	s.repository.AssertExpectations(s.T())
+	applicationContract.AssertExpectations(s.T())
+}
+
+func (s *EvmReaderSuite) TestOutputExecutionSkipsAppsWithoutPendingExecutableOutputs() {
+	repo := newMockRepository()
+	repo.Unset("GetNumberOfPendingExecutableOutputs")
+	repo.On("GetNumberOfPendingExecutableOutputs",
+		mock.Anything,
+		app1Addr.String(),
+	).Return(uint64(0), nil).Once()
+	s.evmReader.repository = repo
+
+	applicationContract := newMockApplicationContract()
+	app := appContracts{
+		application: &Application{
+			ID:                   1,
+			Name:                 "test-app",
+			IApplicationAddress:  app1Addr,
+			LastOutputCheckBlock: 0x12,
+		},
+		applicationContract: applicationContract,
+	}
+
+	s.evmReader.checkForOutputExecution(s.ctx, []appContracts{app}, 0x13)
+
+	repo.AssertNumberOfCalls(s.T(), "GetNumberOfExecutedOutputs", 0)
+	repo.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 0)
+	repo.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 0)
+	repo.AssertExpectations(s.T())
+	applicationContract.AssertNumberOfCalls(s.T(), "GetNumberOfExecutedOutputs", 0)
+}
+
+// TestOutputExecutionWaitsWhenOutputRowMissing verifies the OutputExecuted-
+// before-its-row edge: when an OutputExecuted event is seen but the output row
+// is not yet in the DB, the scan must not advance the cursor or persist —
+// it waits so the next tick can retry once the row lands.
+func (s *EvmReaderSuite) TestOutputExecutionWaitsWhenOutputRowMissing() {
+	s.repository = newMockRepository()
+	s.evmReader.repository = s.repository
+	applicationContract := newMockApplicationContract()
+
+	foreclosedApp := copyApplications(applications)[0]
+	foreclosedApp.ID = 1
+	foreclosedApp.ForecloseBlock = 0x12
+	foreclosedApp.LastOutputCheckBlock = 0x12
+
+	applicationContract.On("GetNumberOfExecutedOutputs", blockFrom(0x13)).
+		Return(new(big.Int).SetUint64(1), nil)
+
+	applicationContract.On("RetrieveOutputExecutionEvents",
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x13 }),
+	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil).Once()
+
+	s.repository.Unset("GetNumberOfExecutedOutputs")
+	s.repository.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		foreclosedApp.IApplicationAddress.String(),
+	).Return(uint64(0), nil).Once()
+
+	s.repository.Unset("GetOutput")
+	s.repository.On("GetOutput",
+		mock.Anything,
+		foreclosedApp.IApplicationAddress.Hex(),
+		outputExecution0.OutputIndex,
+	).Return((*Output)(nil), nil).Once()
+
+	s.repository.Unset("UpdateOutputsExecution")
+	s.repository.Unset("UpdateEventLastCheckBlock")
+
+	s.evmReader.checkForOutputExecution(s.ctx, []appContracts{
+		{application: foreclosedApp, applicationContract: applicationContract},
+	}, 0x13)
+
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 0)
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 0)
+	s.repository.AssertExpectations(s.T())
+	applicationContract.AssertExpectations(s.T())
+}
+
+// TestOutputExecutionMismatchMarksApplicationDiverged verifies that an
+// OutputExecuted event whose on-chain output bytes differ from the locally
+// stored output marks the application DIVERGED (the chain executed an output
+// this node never produced).
+func (s *EvmReaderSuite) TestOutputExecutionMismatchMarksApplicationDiverged() {
+	s.repository = newMockRepository()
+	s.evmReader.repository = s.repository
+	applicationContract := newMockApplicationContract()
+
+	foreclosedApp := copyApplications(applications)[0]
+	foreclosedApp.ID = 1
+	foreclosedApp.Status = ApplicationStatus_OK
+	foreclosedApp.ForecloseBlock = 0x12
+	foreclosedApp.LastOutputCheckBlock = 0x12
+
+	mismatchedOutput := &Output{
+		Index:   outputExecution0.OutputIndex,
+		RawData: common.Hex2Bytes("FFBBCCDDEE"),
+	}
+
+	applicationContract.On("GetNumberOfExecutedOutputs", blockFrom(0x13)).
+		Return(new(big.Int).SetUint64(1), nil)
+
+	applicationContract.On("RetrieveOutputExecutionEvents",
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x13 }),
+	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil).Once()
+
+	s.repository.On("GetNumberOfExecutedOutputs",
+		mock.Anything,
+		foreclosedApp.IApplicationAddress.String(),
+	).Return(uint64(0), nil).Once()
+
+	s.repository.On("GetOutput",
+		mock.Anything,
+		foreclosedApp.IApplicationAddress.Hex(),
+		outputExecution0.OutputIndex,
+	).Return(mismatchedOutput, nil).Once()
+
+	s.repository.On("UpdateApplicationStatus",
+		mock.Anything,
+		foreclosedApp.ID,
+		ApplicationStatus_Diverged,
+		mock.Anything,
+	).Return(nil).Once()
+
+	s.evmReader.checkForOutputExecution(s.ctx, []appContracts{
+		{application: foreclosedApp, applicationContract: applicationContract},
+	}, 0x13)
+
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 0)
+	s.repository.AssertExpectations(s.T())
+	applicationContract.AssertExpectations(s.T())
+}
+
 func (s *EvmReaderSuite) TestCheckOutputFailsWhenRetrieveOutputsFails() {
 	wsClient := FakeWSEthClient{}
 	s.evmReader.wsClient = &wsClient
@@ -480,6 +667,9 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 	s.Require().NoError(err)
 
 	apps := copyApplications(applications)
+	for _, app := range apps {
+		app.LastForecloseCheckBlock = 0x100
+	}
 	s.repository.On("ListApplications",
 		mock.Anything,
 		mock.Anything,
@@ -489,6 +679,7 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 
 	apps = copyApplications(applications[1:2])
 	apps[0].LastOutputCheckBlock = 0x11
+	apps[0].LastForecloseCheckBlock = 0x100
 	s.repository.On("ListApplications",
 		mock.Anything,
 		mock.Anything,
@@ -498,6 +689,7 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 
 	apps = copyApplications(applications[1:2])
 	apps[0].LastOutputCheckBlock = 0x12
+	apps[0].LastForecloseCheckBlock = 0x100
 	s.repository.On("ListApplications",
 		mock.Anything,
 		mock.Anything,
@@ -520,6 +712,11 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 		MonitoredEvent_OutputExecuted,
 		mock.Anything,
 	).Return(nil).Times(5)
+	s.repository.On("UpdateApplicationLastForecloseCheckBlock",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+	).Return(nil).Maybe()
 
 	s.repository.On("GetNumberOfInputs",
 		mock.Anything,
@@ -552,10 +749,10 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 		mock.Anything,
 	).Return(output, nil).Once()
 
-	s.repository.On("UpdateApplicationState",
+	s.repository.On("UpdateApplicationStatus",
 		mock.Anything,
 		applications[0].ID,
-		ApplicationState_Inoperable,
+		ApplicationStatus_Diverged,
 		mock.Anything,
 	).Return(nil).Once()
 

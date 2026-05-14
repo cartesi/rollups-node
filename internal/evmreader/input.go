@@ -16,6 +16,18 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+type iConsensusInputScanUnit struct {
+	inputBoxAddress     common.Address
+	lastInputCheckBlock uint64
+	endBlock            uint64
+	apps                []appContracts
+}
+
+type iConsensusInputScanRange struct {
+	lastInputCheckBlock uint64
+	endBlock            uint64
+}
+
 // initializeNewApplicationInputSync initializes input synchronization for a new application
 // by finding the appropriate starting block and updating the database
 func (r *Service) initializeNewApplicationInputSync(
@@ -59,8 +71,7 @@ func (r *Service) initializeNewApplicationInputSync(
 	return lastInputCheckBlock, nil
 }
 
-// checkForNewInputs checks if is there new Inputs for all running Applications
-func (r *Service) checkForNewInputs(
+func (r *Service) scanIConsensusInputs(
 	ctx context.Context,
 	applications []appContracts,
 	mostRecentBlockNumber uint64,
@@ -71,6 +82,16 @@ func (r *Service) checkForNewInputs(
 
 	r.Logger.Debug("Checking for new inputs")
 
+	for _, unit := range r.buildIConsensusInputScanUnits(ctx, applications, mostRecentBlockNumber) {
+		r.scanIConsensusInputUnit(ctx, unit)
+	}
+}
+
+func (r *Service) buildIConsensusInputScanUnits(
+	ctx context.Context,
+	applications []appContracts,
+	endBlock uint64,
+) []iConsensusInputScanUnit {
 	appsByInputBox := map[common.Address][]appContracts{}
 	for _, app := range applications {
 		if !app.application.HasDataAvailabilitySelector(DataAvailability_InputBox) {
@@ -80,71 +101,121 @@ func (r *Service) checkForNewInputs(
 		appsByInputBox[key] = append(appsByInputBox[key], app)
 	}
 
+	var units []iConsensusInputScanUnit
 	for inputBoxAddress, inputBoxApps := range appsByInputBox {
 		r.Logger.Debug("Checking inputs for applications with the same InputBox",
 			"inputbox_address", inputBoxAddress,
-			"most_recent_block", mostRecentBlockNumber,
+			"most_recent_block", endBlock,
 		)
 
-		appsByLastInputCheckBlock := make(map[uint64][]appContracts)
+		appsByLastInputCheckBlock := make(map[iConsensusInputScanRange][]appContracts)
 		for _, app := range inputBoxApps {
 			lastInputCheckBlock := app.application.LastInputCheckBlock
 			if lastInputCheckBlock == 0 { // New application. Find a safe start block to scan for inputs
 				var err error
-				lastInputCheckBlock, err = r.initializeNewApplicationInputSync(ctx, &app, mostRecentBlockNumber)
+				lastInputCheckBlock, err = r.initializeNewApplicationInputSync(
+					ctx,
+					&app,
+					foreclosureBoundedEndBlock(app.application, endBlock),
+				)
 				if err != nil {
 					r.Logger.Error("Failed to initialize application input sync",
 						"application", app.application.Name,
-						"most_recent_block", mostRecentBlockNumber,
+						"most_recent_block", endBlock,
 						"error", err,
 					)
 					continue
 				}
 			}
-			appsByLastInputCheckBlock[lastInputCheckBlock] = append(appsByLastInputCheckBlock[lastInputCheckBlock], app)
-		}
-
-		for lastProcessedBlock, apps := range appsByLastInputCheckBlock {
-			appAddresses := appsToAddresses(apps)
-
-			if mostRecentBlockNumber > lastProcessedBlock {
-
-				r.Logger.Debug("Checking inputs for applications",
-					"apps", appAddresses,
-					"last_processed_block", lastProcessedBlock,
-					"most_recent_block", mostRecentBlockNumber,
-				)
-
-				err := r.readAndStoreInputs(ctx,
-					lastProcessedBlock,
-					mostRecentBlockNumber,
-					apps,
-				)
-				if err != nil {
-					r.Logger.Error("Error reading inputs",
-						"apps", appAddresses,
-						"last_processed_block", lastProcessedBlock,
-						"most_recent_block", mostRecentBlockNumber,
-						"error", err,
-					)
-					continue
-				}
-			} else if mostRecentBlockNumber < lastProcessedBlock {
+			scanEndBlock := foreclosureBoundedEndBlock(app.application, endBlock)
+			if lastInputCheckBlock > scanEndBlock {
 				r.Logger.Warn(
 					"Input search skipped: most recent block is lower than the last processed one",
-					"apps", appAddresses,
-					"last_processed_block", lastProcessedBlock,
-					"most_recent_block", mostRecentBlockNumber,
+					"application", app.application.Name,
+					"last_processed_block", lastInputCheckBlock,
+					"most_recent_block", scanEndBlock,
 				)
-			} else {
-				r.Logger.Debug("Input search skipped: already checked the most recent block",
-					"apps", appAddresses,
-					"last_processed_block", lastProcessedBlock,
-					"most_recent_block", mostRecentBlockNumber,
-				)
+				continue
 			}
+			if lastInputCheckBlock == scanEndBlock {
+				r.Logger.Debug("Input search skipped: already checked the most recent block",
+					"application", app.application.Name,
+					"last_processed_block", lastInputCheckBlock,
+					"most_recent_block", scanEndBlock,
+				)
+				continue
+			}
+
+			scanRange := iConsensusInputScanRange{
+				lastInputCheckBlock: lastInputCheckBlock,
+				endBlock:            scanEndBlock,
+			}
+			appsByLastInputCheckBlock[scanRange] = append(appsByLastInputCheckBlock[scanRange], app)
+		}
+
+		for scanRange, apps := range appsByLastInputCheckBlock {
+			units = append(units, iConsensusInputScanUnit{
+				inputBoxAddress:     inputBoxAddress,
+				lastInputCheckBlock: scanRange.lastInputCheckBlock,
+				endBlock:            scanRange.endBlock,
+				apps:                apps,
+			})
 		}
 	}
+	return units
+}
+
+func foreclosureBoundedEndBlock(app *Application, endBlock uint64) uint64 {
+	if app != nil && app.ForecloseBlock != 0 && app.ForecloseBlock < endBlock {
+		return app.ForecloseBlock
+	}
+	return endBlock
+}
+
+func (r *Service) scanIConsensusInputUnit(
+	ctx context.Context,
+	unit iConsensusInputScanUnit,
+) {
+	appAddresses := appsToAddresses(unit.apps)
+
+	if unit.endBlock > unit.lastInputCheckBlock {
+		r.Logger.Debug("Checking inputs for applications",
+			"apps", appAddresses,
+			"last_processed_block", unit.lastInputCheckBlock,
+			"most_recent_block", unit.endBlock,
+		)
+
+		err := r.readAndStoreInputs(ctx,
+			unit.lastInputCheckBlock,
+			unit.endBlock,
+			unit.apps,
+		)
+		if err != nil {
+			r.Logger.Error("Error reading inputs",
+				"apps", appAddresses,
+				"last_processed_block", unit.lastInputCheckBlock,
+				"most_recent_block", unit.endBlock,
+				"error", err,
+			)
+		}
+		return
+	}
+
+	if unit.endBlock < unit.lastInputCheckBlock {
+		r.Logger.Warn(
+			"Input search skipped: most recent block is lower than the last processed one",
+			"apps", appAddresses,
+			"last_processed_block", unit.lastInputCheckBlock,
+			"most_recent_block", unit.endBlock,
+		)
+		return
+	}
+
+	r.Logger.Debug("Input search skipped: already checked the most recent block",
+		"apps", appAddresses,
+		"last_processed_block", unit.lastInputCheckBlock,
+		"most_recent_block", unit.endBlock,
+	)
 }
 
 // ErrInputForNonOpenEpoch indicates that an input was received for an epoch
@@ -258,11 +329,11 @@ func (r *Service) readAndStoreInputs(
 
 		epochLength := app.application.EpochLength
 		if epochLength == 0 {
-			// setApplicationInoperable always returns non-nil (the reason text itself).
-			// The DB error case is already logged inside setApplicationState.
+			// setApplicationCorrupted always returns non-nil (the reason text itself).
+			// The DB error case is already logged inside setApplicationStatus.
 			// On DB success the app is marked inoperable and won't reappear next tick.
 			// On DB failure the app reappears as Enabled next tick, retrying this path.
-			_ = r.setApplicationInoperable(ctx, app.application,
+			_ = r.setApplicationCorrupted(ctx, app.application,
 				"Application has epoch length of zero")
 			continue
 		}
@@ -270,11 +341,22 @@ func (r *Service) readAndStoreInputs(
 		// Retrieves last open epoch from DB
 		currentEpoch, err := r.repository.GetEpoch(ctx, address.String(), calculateEpochIndex(epochLength, lastProcessedBlock))
 		if err != nil {
-			r.Logger.Error("Error retrieving existing current epoch",
-				"application", app.application.Name,
-				"address", address,
-				"error", err,
-			)
+			// Shutdown cancels the ctx mid-query; downgrade to Debug
+			// for the graceful-stop case. DeadlineExceeded would still
+			// flow through the Error branch.
+			if errors.Is(err, context.Canceled) {
+				r.Logger.Debug("GetEpoch canceled during shutdown",
+					"application", app.application.Name,
+					"address", address,
+					"error", err,
+				)
+			} else {
+				r.Logger.Error("Error retrieving existing current epoch",
+					"application", app.application.Name,
+					"address", address,
+					"error", err,
+				)
+			}
 			continue
 		}
 
@@ -283,7 +365,7 @@ func (r *Service) readAndStoreInputs(
 			epochLength, currentEpoch, inputs, mostRecentBlockNumber)
 		if err != nil {
 			if errors.Is(err, ErrInputForNonOpenEpoch) {
-				return r.setApplicationInoperable(ctx, app.application,
+				return r.setApplicationCorrupted(ctx, app.application,
 					"Should never happen. %v", err)
 			}
 			return fmt.Errorf("error indexing inputs: %w", err)
@@ -359,11 +441,22 @@ func (r *Service) readAndStoreInputs(
 	if len(appsToUpdate) > 0 {
 		err := r.repository.UpdateEventLastCheckBlock(ctx, appsToUpdate, MonitoredEvent_InputAdded, mostRecentBlockNumber)
 		if err != nil {
-			r.Logger.Error("Failed to update LastInputCheckBlock for applications without inputs",
-				"app_ids", appsToUpdate,
-				"block_number", mostRecentBlockNumber,
-				"error", err,
-			)
+			// Shutdown cancels the ctx mid-update; downgrade to Debug
+			// for the graceful-stop case. DeadlineExceeded would still
+			// flow through the Error branch.
+			if errors.Is(err, context.Canceled) {
+				r.Logger.Debug("UpdateEventLastCheckBlock canceled during shutdown",
+					"app_ids", appsToUpdate,
+					"block_number", mostRecentBlockNumber,
+					"error", err,
+				)
+			} else {
+				r.Logger.Error("Failed to update LastInputCheckBlock for applications without inputs",
+					"app_ids", appsToUpdate,
+					"block_number", mostRecentBlockNumber,
+					"error", err,
+				)
+			}
 			// We don't return an error here as we've already processed the inputs
 			// and this is just an update to the last check block
 		} else {
@@ -404,7 +497,7 @@ func (r *Service) readInputsFromBlockchain(
 			continue
 		}
 		prevValue := new(big.Int).SetUint64(inputCount)
-		inputs, err := r.fetchInputs(
+		inputs, endCount, err := r.fetchInputs(
 			ctx, app, startBlock, endBlock,
 			prevValue, 0, math.MaxUint64)
 		if err != nil {
@@ -417,31 +510,17 @@ func (r *Service) readInputsFromBlockchain(
 			continue
 		}
 
-		// Validate input count: the on-chain counter delta should match
-		// the number of inputs fetched. This mirrors the DaveConsensus
-		// sealed epoch validation at sealedepochs.go and guards against
-		// silent input loss from FindTransitions missing a transition.
-		endCallOpts := &bind.CallOpts{
-			Context:     ctx,
-			BlockNumber: new(big.Int).SetUint64(endBlock),
-		}
-		endCount, err := app.inputSource.GetNumberOfInputs(
-			endCallOpts, app.application.IApplicationAddress)
-		if err != nil {
-			r.Logger.Error("Error getting end-block input count",
-				"application", app.application.Name,
-				"end_block", endBlock,
-				"error", err,
-			)
-			continue
-		}
-		expectedNew := endCount.Uint64() - inputCount
+		// Validate input count: the on-chain counter delta observed during the
+		// transition walk should match the number of inputs fetched. This mirrors
+		// the DaveConsensus sealed epoch validation at sealedepochs.go and guards
+		// against silent input loss from FindTransitions missing a transition.
+		expectedNew := endCount - inputCount
 		if uint64(len(inputs)) != expectedNew {
 			r.Logger.Error(
 				"Input count mismatch: on-chain delta does not match fetched inputs",
 				"application", app.application.Name,
 				"db_count", inputCount,
-				"on_chain_end_count", endCount.Uint64(),
+				"on_chain_end_count", endCount,
 				"expected_new", expectedNew,
 				"got", len(inputs),
 				"start_block", startBlock,
@@ -461,13 +540,26 @@ func (r *Service) readInputsFromBlockchain(
 // determined: IConsensus passes prevValue from the DB input count with full
 // bounds [0, MaxUint64), while DaveConsensus sealed epochs use the epoch's
 // InputIndexLowerBound as prevValue and the epoch's own index range as bounds.
+//
+// The second return value is the input counter observed at endBlock during the
+// same transition walk, letting callers validate the on-chain count delta
+// without a second eth_call pinned to endBlock.
 func (r *Service) fetchInputs(
 	ctx context.Context,
 	app appContracts,
 	startBlock, endBlock uint64,
 	prevValue *big.Int,
 	lowerBound, upperBound uint64,
-) ([]*Input, error) {
+) ([]*Input, uint64, error) {
+	prevCount := uint64(0)
+	if prevValue != nil {
+		prevCount = prevValue.Uint64()
+	}
+	if startBlock > endBlock {
+		// Empty range: no new inputs, and the counter is unchanged from prevValue.
+		return nil, prevCount, nil
+	}
+
 	r.Logger.Debug("Fetching inputs",
 		"application", app.application.Name,
 		"start_block", startBlock,
@@ -476,6 +568,7 @@ func (r *Service) fetchInputs(
 		"upper_bound", upperBound,
 	)
 
+	var observedEndValue *big.Int
 	oracle := func(ctx context.Context, block uint64) (*big.Int, error) {
 		callOpts := &bind.CallOpts{
 			Context:     ctx,
@@ -487,6 +580,9 @@ func (r *Service) fetchInputs(
 			return nil, fmt.Errorf(
 				"failed to get number of inputs at block %d: %w",
 				block, err)
+		}
+		if block == endBlock {
+			observedEndValue = new(big.Int).Set(numInputs)
 		}
 		return numInputs, nil
 	}
@@ -537,16 +633,20 @@ func (r *Service) fetchInputs(
 	_, err := ethutil.FindTransitions(
 		ctx, startBlock, endBlock, prevValue, oracle, onHit)
 	if err != nil {
-		return nil, fmt.Errorf(
+		return nil, 0, fmt.Errorf(
 			"failed to walk input transitions: %w", err)
+	}
+	if observedEndValue == nil {
+		return nil, 0, fmt.Errorf("failed to observe input count at end block %d", endBlock)
 	}
 
 	r.Logger.Debug("Fetched inputs",
 		"application", app.application.Name,
 		"start_block", startBlock,
 		"end_block", endBlock,
-		"prev_input_count", prevValue.Uint64(),
+		"prev_input_count", prevCount,
+		"end_input_count", observedEndValue.Uint64(),
 		"new_inputs", len(sortedInputs),
 	)
-	return sortedInputs, nil
+	return sortedInputs, observedEndValue.Uint64(), nil
 }

@@ -95,7 +95,7 @@ func (s *EvmReaderSuite) TestInputReaderDisabledSkipsInputChecks() {
 	repo := newMockRepository()
 	s.evmReader.repository = repo
 
-	s.evmReader.checkForNewInputs(s.ctx, apps, 200)
+	s.evmReader.scanIConsensusInputs(s.ctx, apps, 200)
 
 	repo.AssertNumberOfCalls(s.T(), "GetNumberOfInputs", 0)
 	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
@@ -116,7 +116,7 @@ func (s *EvmReaderSuite) TestInputReaderDisabledSkipsEpochChecks() {
 	repo := newMockRepository()
 	s.evmReader.repository = repo
 
-	s.evmReader.checkForEpochsAndInputs(s.ctx, apps, 200)
+	s.evmReader.scanDaveConsensusEpochsAndInputs(s.ctx, apps, 200)
 
 	repo.AssertNumberOfCalls(s.T(), "GetLastNonOpenEpoch", 0)
 	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)

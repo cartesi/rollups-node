@@ -60,7 +60,7 @@ func (s *EvmReaderSuite) TestFetchApplicationInputsDuplicateAndOutOfOrderEvents(
 	}, nil)
 
 	prevValue := new(big.Int).SetUint64(0) // repo returns 0 inputs
-	inputs, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 0, math.MaxUint64)
+	inputs, _, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 0, math.MaxUint64)
 	s.Require().NoError(err)
 
 	// 3 unique inputs, sorted by index
@@ -107,7 +107,7 @@ func (s *EvmReaderSuite) TestFetchInputsBoundsFiltering() {
 	}, nil)
 
 	prevValue := new(big.Int).SetUint64(0)
-	inputs, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 2, 4)
+	inputs, _, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 2, 4)
 	s.Require().NoError(err)
 
 	// Only indices 2 and 3 should be included
@@ -149,7 +149,7 @@ func (s *EvmReaderSuite) TestFetchInputsEmptyBoundsRange() {
 
 	// lowerBound == upperBound == 5 → empty range
 	prevValue := new(big.Int).SetUint64(0)
-	inputs, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 5, 5)
+	inputs, _, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 5, 5)
 	s.Require().NoError(err)
 	s.Require().Empty(inputs)
 }
@@ -188,7 +188,7 @@ func (s *EvmReaderSuite) TestFetchInputsBoundaryExactness() {
 
 	// Range [1, 2): only index 1 should be included
 	prevValue := new(big.Int).SetUint64(0)
-	inputs, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 1, 2)
+	inputs, _, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 1, 2)
 	s.Require().NoError(err)
 	s.Require().Len(inputs, 1)
 	s.Require().Equal(uint64(1), inputs[0].Index)
@@ -300,7 +300,7 @@ func (s *SealedEpochsSuite) TestFetchSealedEpochInputsRetrieveFailure() {
 	).Return(([]iinputbox.IInputBoxInputAdded)(nil), errors.New("RPC timeout"))
 
 	prevValue := new(big.Int).SetUint64(epoch.InputIndexLowerBound)
-	_, err := s.evmReader.fetchInputs(s.ctx, app,
+	_, _, err := s.evmReader.fetchInputs(s.ctx, app,
 		epoch.FirstBlock, epoch.LastBlock,
 		prevValue,
 		epoch.InputIndexLowerBound, epoch.InputIndexUpperBound)
@@ -327,32 +327,38 @@ func (s *EvmReaderSuite) TestAdapterCacheInvalidationOnConfigChange() {
 	repo.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).
 		Return([]*Application{{
 			ID: 1, Name: "app",
-			IApplicationAddress:  addr,
-			IConsensusAddress:    consensusAddr1,
-			IInputBoxAddress:     inputBoxAddr,
-			LastOutputCheckBlock: 999, // > header block → skip output check
+			IApplicationAddress:     addr,
+			IConsensusAddress:       consensusAddr1,
+			IInputBoxAddress:        inputBoxAddr,
+			LastOutputCheckBlock:    999, // > header block → skip output check
+			LastForecloseCheckBlock: 999,
 		}}, uint64(1), nil).Once()
 	// Header 2: consensus address changed → cache invalidation
 	repo.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).
 		Return([]*Application{{
 			ID: 1, Name: "app",
-			IApplicationAddress:  addr,
-			IConsensusAddress:    consensusAddr2,
-			IInputBoxAddress:     inputBoxAddr,
-			LastOutputCheckBlock: 999,
+			IApplicationAddress:     addr,
+			IConsensusAddress:       consensusAddr2,
+			IInputBoxAddress:        inputBoxAddr,
+			LastOutputCheckBlock:    999,
+			LastForecloseCheckBlock: 999,
 		}}, uint64(1), nil).Once()
 	// Header 3: same config as header 2 → cache hit
 	repo.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).
 		Return([]*Application{{
 			ID: 1, Name: "app",
-			IApplicationAddress:  addr,
-			IConsensusAddress:    consensusAddr2,
-			IInputBoxAddress:     inputBoxAddr,
-			LastOutputCheckBlock: 999,
+			IApplicationAddress:     addr,
+			IConsensusAddress:       consensusAddr2,
+			IInputBoxAddress:        inputBoxAddr,
+			LastOutputCheckBlock:    999,
+			LastForecloseCheckBlock: 999,
 		}}, uint64(1), nil).Once()
 	// Catch-all for sentinel header
 	repo.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).
 		Return([]*Application{}, uint64(0), nil)
+	repo.On("UpdateApplicationLastForecloseCheckBlock",
+		mock.Anything, int64(1), mock.Anything,
+	).Return(nil).Maybe()
 	s.evmReader.repository = repo
 
 	factory := newMockAdapterFactory()

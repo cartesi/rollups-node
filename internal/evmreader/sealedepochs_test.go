@@ -179,3 +179,87 @@ func (s *SealedEpochsSuite) TestProcessSealedEpochFindsInputAtOverlapBlock() {
 	s.Require().Equal(uint64(3), storedInputs[0].Index, "input should have index 3")
 	s.Require().Equal(sealBlock0, storedInputs[0].BlockNumber, "input should be at the overlap block")
 }
+
+func (s *SealedEpochsSuite) TestCatchUpForeclosedSealedEpochsAdvancesCursor() {
+	const (
+		lastEpochCheckBlock uint64 = 50
+		forecloseBlock      uint64 = 70
+	)
+	s.evmReader.inputReaderEnabled = true
+
+	app := appContracts{
+		application: &Application{
+			ID:                   1,
+			Name:                 "test-prt-app",
+			IApplicationAddress:  app1Addr,
+			IConsensusAddress:    consensusAddr,
+			ConsensusType:        Consensus_PRT,
+			ForecloseBlock:       forecloseBlock,
+			LastEpochCheckBlock:  lastEpochCheckBlock,
+			LastInputCheckBlock:  lastEpochCheckBlock,
+			LastOutputCheckBlock: lastEpochCheckBlock,
+			DataAvailability:     DataAvailability_InputBox[:],
+		},
+		daveConsensus: s.dave,
+		inputSource:   s.inputBox,
+	}
+
+	s.repository.On("GetLastNonOpenEpoch", mock.Anything, app.application.IApplicationAddress.String()).
+		Return(&Epoch{
+			Index:     2,
+			LastBlock: lastEpochCheckBlock,
+		}, nil).Once()
+
+	currentSealedEpoch := struct {
+		EpochNumber          *big.Int
+		InputIndexLowerBound *big.Int
+		InputIndexUpperBound *big.Int
+		Tournament           common.Address
+	}{
+		EpochNumber:          big.NewInt(2),
+		InputIndexLowerBound: big.NewInt(0),
+		InputIndexUpperBound: big.NewInt(0),
+		Tournament:           common.Address{},
+	}
+	s.dave.On("GetCurrentSealedEpoch", mock.Anything).
+		Return(currentSealedEpoch, nil)
+
+	s.repository.On("UpdateEventLastCheckBlock",
+		mock.Anything,
+		[]int64{app.application.ID},
+		MonitoredEvent_EpochSealed,
+		forecloseBlock,
+	).Return(nil).Once()
+
+	s.evmReader.scanDaveConsensusEpochsAndInputs(s.ctx, []appContracts{app}, forecloseBlock+10)
+
+	s.repository.AssertExpectations(s.T())
+	s.dave.AssertExpectations(s.T())
+}
+
+func (s *SealedEpochsSuite) TestForeclosedDaveConsensusAppDoesNotProcessOpenEpoch() {
+	const forecloseBlock uint64 = 70
+	s.evmReader.inputReaderEnabled = true
+
+	app := appContracts{
+		application: &Application{
+			ID:                  1,
+			Name:                "test-prt-app",
+			IApplicationAddress: app1Addr,
+			IConsensusAddress:   consensusAddr,
+			ConsensusType:       Consensus_PRT,
+			Status:              ApplicationStatus_OK,
+			ForecloseBlock:      forecloseBlock,
+			LastEpochCheckBlock: forecloseBlock,
+			DataAvailability:    DataAvailability_InputBox[:],
+		},
+		daveConsensus: s.dave,
+		inputSource:   s.inputBox,
+	}
+
+	s.evmReader.scanDaveConsensusEpochsAndInputs(s.ctx, []appContracts{app}, forecloseBlock+10)
+
+	s.repository.AssertNumberOfCalls(s.T(), "GetLastNonOpenEpoch", 0)
+	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
+	s.dave.AssertNumberOfCalls(s.T(), "GetCurrentSealedEpoch", 0)
+}

@@ -491,3 +491,26 @@ func (s *SealedEpochsSuite) TestInitializeSealedEpochSyncSetsCheckpoint() {
 	s.Require().Equal(uint64(49), app.application.LastEpochCheckBlock)
 	s.repository.AssertExpectations(s.T())
 }
+
+func (s *SealedEpochsSuite) TestInitializeSealedEpochSyncSkipsBeforeConsensusDeployment() {
+	app := appContracts{
+		application: &Application{
+			ID:                  1,
+			Name:                "test-app",
+			IApplicationAddress: app1Addr,
+			IConsensusAddress:   consensusAddr,
+		},
+		daveConsensus: s.dave,
+	}
+
+	s.dave.On("GetDeploymentBlockNumber",
+		mock.MatchedBy(func(opts *bind.CallOpts) bool {
+			return opts.BlockNumber != nil && opts.BlockNumber.Uint64() == 90
+		}),
+	).Return(new(big.Int), bind.ErrNoCode).Once()
+
+	err := s.evmReader.processApplicationSealedEpochs(s.ctx, app, 90)
+	s.Require().NoError(err)
+	s.Require().Zero(app.application.LastEpochCheckBlock)
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 0)
+}

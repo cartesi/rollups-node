@@ -31,6 +31,19 @@ func (r *Service) initializeNewApplicationSealedEpochSync(
 	}
 	deploymentBlock, err := app.daveConsensus.GetDeploymentBlockNumber(callOpts)
 	if err != nil {
+		if errors.Is(err, bind.ErrNoCode) {
+			r.Logger.Debug("Skipping sealed epoch sync before consensus deployment",
+				"application", app.application.Name,
+				"address", app.application.IApplicationAddress,
+				"consensus_address", app.application.IConsensusAddress,
+				"block", mostRecentBlockNumber,
+			)
+			return fmt.Errorf("%w: consensus %s at block %d: %w",
+				errContractNotDeployedAtBlock,
+				app.application.IConsensusAddress,
+				mostRecentBlockNumber,
+				err)
+		}
 		r.Logger.Error("Error retrieving dave consensus deployment block number",
 			"application", app.application.Name,
 			"address", app.application.IApplicationAddress,
@@ -69,7 +82,7 @@ func (r *Service) initializeNewApplicationSealedEpochSync(
 	return nil
 }
 
-func (r *Service) checkForEpochsAndInputs(
+func (r *Service) scanDaveConsensusEpochsAndInputs(
 	ctx context.Context,
 	applications []appContracts,
 	mostRecentBlockNumber uint64,
@@ -86,7 +99,8 @@ func (r *Service) checkForEpochsAndInputs(
 			"application", app.application.Name,
 			"consensus_address", app.application.IConsensusAddress)
 
-		err := r.processApplicationSealedEpochs(ctx, app, mostRecentBlockNumber)
+		sealedEpochEndBlock := foreclosureBoundedEndBlock(app.application, mostRecentBlockNumber)
+		err := r.processApplicationSealedEpochs(ctx, app, sealedEpochEndBlock)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return // shutting down
@@ -95,6 +109,10 @@ func (r *Service) checkForEpochsAndInputs(
 				"application", app.application.Name,
 				"consensus_address", app.application.IConsensusAddress,
 				"error", err)
+			continue
+		}
+
+		if !app.application.CanExecute() {
 			continue
 		}
 
@@ -121,6 +139,9 @@ func (r *Service) processApplicationSealedEpochs(
 	if app.application.LastEpochCheckBlock == 0 {
 		err := r.initializeNewApplicationSealedEpochSync(ctx, &app, mostRecentBlockNumber)
 		if err != nil {
+			if errors.Is(err, errContractNotDeployedAtBlock) {
+				return nil
+			}
 			r.Logger.Error("Failed to initialize application sealed epoch sync",
 				"application", app.application.Name,
 				"most_recent_block", mostRecentBlockNumber,
@@ -186,7 +207,7 @@ func (r *Service) processApplicationSealedEpochs(
 		prevValue = new(big.Int).SetUint64(lastEpoch.Index)
 		// assert that the last epoch's last block is less than the next search block
 		if lastEpoch.LastBlock > nextSearchBlock {
-			return r.setApplicationInoperable(ctx, app.application,
+			return r.setApplicationCorrupted(ctx, app.application,
 				"application last non open epoch last block %d is greater than next search block %d",
 				lastEpoch.LastBlock,
 				nextSearchBlock,
@@ -342,7 +363,7 @@ func (r *Service) processSealedEpochEvent(
 	if epoch.InputIndexUpperBound > epoch.InputIndexLowerBound {
 		var err error
 		prevValue := new(big.Int).SetUint64(epoch.InputIndexLowerBound)
-		inputs, err = r.fetchInputs(ctx, app,
+		inputs, _, err = r.fetchInputs(ctx, app,
 			epoch.FirstBlock, epoch.LastBlock,
 			prevValue,
 			epoch.InputIndexLowerBound, epoch.InputIndexUpperBound)
@@ -398,7 +419,7 @@ func (r *Service) processApplicationOpenEpoch(
 		return fmt.Errorf("failed to get last non open epoch: %w", err)
 	}
 	if lastEpoch == nil {
-		return r.setApplicationInoperable(ctx, app.application,
+		return r.setApplicationCorrupted(ctx, app.application,
 			"invalid state. no non open epochs found for application")
 	}
 
@@ -432,7 +453,7 @@ func (r *Service) processApplicationOpenEpoch(
 			"failed to get number of inputs from repository: %w", err)
 	}
 	prevValue := new(big.Int).SetUint64(inputCount)
-	inputs, err := r.fetchInputs(ctx, app,
+	inputs, _, err := r.fetchInputs(ctx, app,
 		lastInputCheckBlock, mostRecentBlockNumber,
 		prevValue,
 		openEpoch.InputIndexLowerBound, math.MaxUint64)

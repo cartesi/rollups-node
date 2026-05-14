@@ -24,8 +24,32 @@ import (
 
 // Interface for the node repository
 type EvmReaderRepository interface {
+	UpdateApplicationForeclosure(
+		ctx context.Context,
+		appID int64,
+		block uint64,
+		txHash common.Hash,
+		blockNumber uint64,
+	) error
+	UpdateApplicationLastForecloseCheckBlock(ctx context.Context, appID int64, blockNumber uint64) error
+	UpdateAccountsDriveProved(
+		ctx context.Context,
+		appID int64,
+		block uint64,
+		txHash common.Hash,
+		root common.Hash,
+		blockNumber uint64,
+	) error
+	UpdateApplicationLastAccountsDriveProvedCheckBlock(ctx context.Context, appID int64, blockNumber uint64) error
+	StoreWithdrawalEvents(
+		ctx context.Context,
+		appID int64,
+		withdrawals []*Withdrawal,
+		blockNumber uint64,
+	) error
+	GetNumberOfWithdrawals(ctx context.Context, appID int64) (uint64, error)
 	ListApplications(ctx context.Context, f repository.ApplicationFilter, p repository.Pagination, descending bool) ([]*Application, uint64, error)
-	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
+	UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error
 	UpdateEventLastCheckBlock(ctx context.Context, appIDs []int64, event MonitoredEvent, blockNumber uint64) error
 	GetEventLastCheckBlock(ctx context.Context, appID int64, event MonitoredEvent) (uint64, error)
 
@@ -38,7 +62,8 @@ type EvmReaderRepository interface {
 		epochInputMap map[*Epoch][]*Input, blockNumber uint64,
 	) error
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
-	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter, p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
+	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter,
+		p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
 	UpdateEpochClaimTransactionHash(ctx context.Context, nameOrAddress string, e *Epoch) error
 	GetLastNonOpenEpoch(ctx context.Context, nameOrAddress string) (*Epoch, error)
 
@@ -48,6 +73,7 @@ type EvmReaderRepository interface {
 	GetOutput(ctx context.Context, nameOrAddress string, indexKey uint64) (*Output, error)
 	UpdateOutputsExecution(ctx context.Context, nameOrAddress string, executedOutputs []*Output, blockNumber uint64) error
 	GetNumberOfExecutedOutputs(ctx context.Context, nameOrAddress string) (uint64, error)
+	GetNumberOfPendingExecutableOutputs(ctx context.Context, nameOrAddress string) (uint64, error)
 }
 
 // EthClientInterface defines the methods we need from ethclient.Client
@@ -75,18 +101,6 @@ type appContracts struct {
 	applicationContract ApplicationContractAdapter
 	inputSource         InputSourceAdapter
 	daveConsensus       DaveConsensusAdapter
-}
-
-// cachedAdapters stores contract adapters along with the configuration fields
-// used to create them, enabling staleness detection when app config changes.
-type cachedAdapters struct {
-	applicationContract ApplicationContractAdapter
-	inputSource         InputSourceAdapter
-	daveConsensus       DaveConsensusAdapter
-	consensusAddr       common.Address
-	inputBoxAddr        common.Address
-	isDaveConsensus     bool
-	hasInputBoxDA       bool
 }
 
 func (r *Service) Run(ctx context.Context, ready chan struct{}) error {
@@ -129,15 +143,16 @@ func (r *Service) Run(ctx context.Context, ready chan struct{}) error {
 	}
 }
 
-func getAllRunningApplications(ctx context.Context, er EvmReaderRepository) ([]*Application, uint64, error) {
-	f := repository.ApplicationFilter{
-		State: Pointer(ApplicationState_Enabled),
-	}
-	return er.ListApplications(ctx, f, repository.Pagination{}, false)
+func listEnabledApplications(ctx context.Context, er EvmReaderRepository) ([]*Application, uint64, error) {
+	return er.ListApplications(ctx, repository.ApplicationFilter{Enabled: new(true)}, repository.Pagination{}, false)
 }
 
-func (r *Service) setApplicationInoperable(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
-	return appstatus.SetInoperablef(ctx, r.Logger, r.repository, app, reasonFmt, args...)
+func (r *Service) setApplicationDiverged(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
+	return appstatus.SetDivergedf(ctx, r.Logger, r.repository, app, reasonFmt, args...)
+}
+
+func (r *Service) setApplicationCorrupted(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
+	return appstatus.SetCorruptedf(ctx, r.Logger, r.repository, app, reasonFmt, args...)
 }
 
 // watchForNewBlocks subscribes to new block headers and processes them.
@@ -158,7 +173,7 @@ func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) 
 	liveness := time.NewTimer(r.wsLivenessTimeout)
 	defer liveness.Stop()
 
-	adapterCache := make(map[common.Address]cachedAdapters)
+	resolver := newApplicationAdapterResolver(r.Logger, r.adapterFactory)
 	var headersProcessed uint64
 	for {
 		var header *types.Header
@@ -197,128 +212,92 @@ func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) 
 		r.Logger.Debug("New block header received",
 			"blockNumber", header.Number, "blockHash", header.Hash())
 
-		r.Logger.Debug("Retrieving enabled applications")
-		runningApps, _, err := getAllRunningApplications(ctx, r.repository)
-		if err != nil {
-			r.Logger.Error("Error retrieving running applications",
-				"error",
-				err,
-			)
-			continue
-		}
-
-		if len(runningApps) == 0 {
-			if r.hasEnabledApps {
-				r.Logger.Info("No registered applications enabled")
-			}
-			r.hasEnabledApps = false
-			continue
-		}
-		if !r.hasEnabledApps {
-			r.Logger.Info("Found enabled applications")
-		}
-		r.hasEnabledApps = true
-
-		// Evict cache entries for applications that are no longer enabled.
-		activeAddrs := make(map[common.Address]struct{}, len(runningApps))
-		for _, app := range runningApps {
-			activeAddrs[app.IApplicationAddress] = struct{}{}
-		}
-		for addr := range adapterCache {
-			if _, active := activeAddrs[addr]; !active {
-				r.Logger.Debug("Evicting cached adapters for removed application",
-					"address", addr)
-				delete(adapterCache, addr)
-			}
-		}
-
-		// Build Contracts (adapters are cached per application address)
-		var apps []appContracts
-		var daveConsensusApps []appContracts
-		var iconsensusApps []appContracts
-		for _, app := range runningApps {
-			addr := app.IApplicationAddress
-			cached, cacheHit := adapterCache[addr]
-			if cacheHit {
-				// Invalidate cache if the app's contract configuration changed.
-				if cached.consensusAddr != app.IConsensusAddress ||
-					cached.inputBoxAddr != app.IInputBoxAddress ||
-					cached.isDaveConsensus != app.IsDaveConsensus() ||
-					cached.hasInputBoxDA !=
-						app.HasDataAvailabilitySelector(DataAvailability_InputBox) {
-					r.Logger.Info(
-						"Application contract configuration changed, recreating adapters",
-						"application", app.Name, "address", addr)
-					delete(adapterCache, addr)
-					cacheHit = false
-				}
-			}
-			if !cacheHit {
-				appContract, inputSource, daveConsensus, err :=
-					r.adapterFactory.CreateAdapters(app)
-				if err != nil {
-					r.Logger.Error("Error retrieving application contracts",
-						"app", app, "error", err)
-					continue
-				}
-				cached = cachedAdapters{
-					applicationContract: appContract,
-					inputSource:         inputSource,
-					daveConsensus:       daveConsensus,
-					consensusAddr:       app.IConsensusAddress,
-					inputBoxAddr:        app.IInputBoxAddress,
-					isDaveConsensus:     app.IsDaveConsensus(),
-					hasInputBoxDA: app.HasDataAvailabilitySelector(
-						DataAvailability_InputBox),
-				}
-				adapterCache[addr] = cached
-			}
-			aContracts := appContracts{
-				application:         app,
-				applicationContract: cached.applicationContract,
-				inputSource:         cached.inputSource,
-				daveConsensus:       cached.daveConsensus,
-			}
-
-			apps = append(apps, aContracts)
-			if app.IsDaveConsensus() {
-				daveConsensusApps = append(daveConsensusApps, aContracts)
-			} else {
-				iconsensusApps = append(iconsensusApps, aContracts)
-			}
-		}
-
-		if len(apps) == 0 {
-			r.Logger.Info("No correctly configured applications running")
-			continue
-		}
-
-		blockNumber := header.Number.Uint64()
-		if r.defaultBlock != DefaultBlock_Latest {
-			mostRecentHeader, err := r.fetchMostRecentHeader(
-				ctx,
-				r.defaultBlock,
-			)
-			if err != nil {
-				r.Logger.Error("Error fetching most recent block",
-					"default block", r.defaultBlock,
-					"error", err)
-				continue
-			}
-			blockNumber = mostRecentHeader.Number.Uint64()
-
-			r.Logger.Debug(fmt.Sprintf(
-				"Using block %d and not %d because of commitment policy: %s",
-				mostRecentHeader.Number.Uint64(),
-				header.Number.Uint64(), r.defaultBlock))
-		}
-
-		r.checkForEpochsAndInputs(ctx, daveConsensusApps, blockNumber)
-
-		r.checkForNewInputs(ctx, iconsensusApps, blockNumber)
-
-		r.checkForOutputExecution(ctx, apps, blockNumber)
+		r.processBlockCandidate(ctx, header.Number.Uint64(), resolver)
 	}
+}
+
+func (r *Service) resolveScanBlock(
+	ctx context.Context,
+	observedBlock uint64,
+) (uint64, error) {
+	if r.defaultBlock == DefaultBlock_Latest {
+		return observedBlock, nil
+	}
+
+	mostRecentHeader, err := r.fetchMostRecentHeader(ctx, r.defaultBlock)
+	if err != nil {
+		return 0, fmt.Errorf("fetch most recent block for default block %s: %w", r.defaultBlock, err)
+	}
+	blockNumber := mostRecentHeader.Number.Uint64()
+
+	r.Logger.Debug(fmt.Sprintf(
+		"Using block %d and not %d because of commitment policy: %s",
+		blockNumber,
+		observedBlock,
+		r.defaultBlock,
+	))
+	return blockNumber, nil
+}
+
+func (r *Service) processBlockCandidate(
+	ctx context.Context,
+	blockCandidate uint64,
+	resolver *applicationAdapterResolver,
+) {
+	r.Logger.Debug("Retrieving enabled applications")
+	observableApps, _, err := listEnabledApplications(ctx, r.repository)
+	if err != nil {
+		r.Logger.Error("Error retrieving L1-observable applications", "error", err)
+		return
+	}
+
+	if len(observableApps) == 0 {
+		if r.hasEnabledApps {
+			r.Logger.Info("No registered applications enabled for L1 observation")
+		}
+		r.hasEnabledApps = false
+		return
+	}
+	if !r.hasEnabledApps {
+		r.Logger.Info("Found applications enabled for L1 observation")
+	}
+	r.hasEnabledApps = true
+
+	if resolver == nil {
+		resolver = newApplicationAdapterResolver(r.Logger, r.adapterFactory)
+	}
+	apps := resolver.buildAppContracts(observableApps)
+	if len(apps) == 0 {
+		r.Logger.Info("No correctly configured applications running")
+		return
+	}
+
+	blockNumber, err := r.resolveScanBlock(ctx, blockCandidate)
+	if err != nil {
+		r.Logger.Error("Error resolving EVMReader scan block", "error", err)
+		return
+	}
+
+	r.runBlockScanners(ctx, apps, blockNumber)
+}
+
+func (r *Service) runBlockScanners(
+	ctx context.Context,
+	apps []appContracts,
+	blockNumber uint64,
+) {
+	// Detect foreclosure first so later scanners use the marker observed in this same tick.
+	r.checkForForeclosure(ctx, apps, blockNumber)
+
+	plan := buildBlockScanPlan(apps)
+
+	r.scanDaveConsensusEpochsAndInputs(ctx, plan.daveEpochTargets, blockNumber)
+	r.scanIConsensusInputs(ctx, plan.iConsensusInputTargets, blockNumber)
+
+	r.checkForOutputExecution(ctx, plan.outputTargets, blockNumber)
+
+	// Post-foreclosure observation dispatches to drive-prove discovery or withdrawal indexing.
+	r.checkPostForeclosure(ctx, plan.postForeclosureTargets, blockNumber)
 }
 
 // fetchMostRecentHeader fetches the most recent header up till the

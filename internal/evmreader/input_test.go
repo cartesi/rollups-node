@@ -228,15 +228,18 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 		mock.Anything,
 		false,
 	).Return([]*Application{{
-		Name:                 "my-app-1",
-		IApplicationAddress:  app1Addr,
-		IConsensusAddress:    consensusAddr,
-		IInputBoxAddress:     inputBoxAddr,
-		DataAvailability:     DataAvailability_InputBox[:],
-		IInputBoxBlock:       0x10,
-		EpochLength:          10,
-		LastInputCheckBlock:  0x12,
-		LastOutputCheckBlock: 0x12,
+		Name:                    "my-app-1",
+		IApplicationAddress:     app1Addr,
+		IConsensusAddress:       consensusAddr,
+		IInputBoxAddress:        inputBoxAddr,
+		DataAvailability:        DataAvailability_InputBox[:],
+		Enabled:                 true,
+		Status:                  ApplicationStatus_OK,
+		IInputBoxBlock:          0x10,
+		EpochLength:             10,
+		LastInputCheckBlock:     0x12,
+		LastOutputCheckBlock:    0x12,
+		LastForecloseCheckBlock: 0x13,
 	}}, uint64(1), nil).Once()
 	// Catch-all for sentinel / extra headers
 	s.repository.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).
@@ -328,15 +331,18 @@ func (s *EvmReaderSuite) TestItStartsWhenLastProcessedBlockIsTheMostRecentBlock(
 		mock.Anything,
 		false,
 	).Return([]*Application{{
-		Name:                 "my-app-1",
-		IApplicationAddress:  app1Addr,
-		IConsensusAddress:    consensusAddr,
-		IInputBoxAddress:     inputBoxAddr,
-		DataAvailability:     DataAvailability_InputBox[:],
-		IInputBoxBlock:       0x10,
-		EpochLength:          10,
-		LastInputCheckBlock:  0x13,
-		LastOutputCheckBlock: 0x13,
+		Name:                    "my-app-1",
+		IApplicationAddress:     app1Addr,
+		IConsensusAddress:       consensusAddr,
+		IInputBoxAddress:        inputBoxAddr,
+		DataAvailability:        DataAvailability_InputBox[:],
+		Enabled:                 true,
+		Status:                  ApplicationStatus_OK,
+		IInputBoxBlock:          0x10,
+		EpochLength:             10,
+		LastInputCheckBlock:     0x13,
+		LastOutputCheckBlock:    0x13,
+		LastForecloseCheckBlock: 0x13,
 	}}, uint64(1), nil).Once()
 	// Catch-all for sentinel / extra headers
 	s.repository.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).
@@ -383,6 +389,146 @@ func (s *EvmReaderSuite) TestItStartsWhenLastProcessedBlockIsTheMostRecentBlock(
 	s.applicationContract1.AssertExpectations(s.T())
 	s.contractFactory.AssertExpectations(s.T())
 	s.client.AssertExpectations(s.T())
+}
+
+func (s *EvmReaderSuite) TestCatchUpForeclosedInputsScansThroughForecloseBlock() {
+	app := &Application{
+		ID:                  42,
+		Name:                "foreclosed-app",
+		IApplicationAddress: app1Addr,
+		IConsensusAddress:   consensusAddr,
+		IInputBoxAddress:    inputBoxAddr,
+		DataAvailability:    DataAvailability_InputBox[:],
+		Enabled:             true,
+		Status:              ApplicationStatus_OK,
+		IInputBoxBlock:      1,
+		EpochLength:         10,
+		LastInputCheckBlock: 201,
+		ForecloseBlock:      202,
+	}
+
+	s.repository.Unset("GetNumberOfInputs")
+	s.repository.On("GetNumberOfInputs",
+		mock.Anything,
+		app.IApplicationAddress.String(),
+	).Return(uint64(0), nil).Once()
+
+	s.inputBox.Unset("GetNumberOfInputs")
+	s.inputBox.On("GetNumberOfInputs",
+		mock.Anything,
+		app.IApplicationAddress,
+	).Return(new(big.Int).SetUint64(0), nil).Maybe()
+	s.inputBox.Unset("RetrieveInputs")
+
+	s.repository.Unset("GetEpoch")
+	s.repository.On("GetEpoch",
+		mock.Anything,
+		app.IApplicationAddress.String(),
+		uint64(20),
+	).Return(nil, nil).Once()
+
+	s.repository.Unset("CreateEpochsAndInputs")
+	s.repository.Unset("UpdateEventLastCheckBlock")
+	s.repository.On("UpdateEventLastCheckBlock",
+		mock.Anything,
+		[]int64{app.ID},
+		MonitoredEvent_InputAdded,
+		app.ForecloseBlock,
+	).Return(nil).Once()
+
+	s.evmReader.scanIConsensusInputs(s.ctx, []appContracts{{
+		application: app,
+		inputSource: s.inputBox,
+	}}, app.ForecloseBlock+10)
+
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 1)
+	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
+	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 0)
+}
+
+// A successful same-block InputAdded event is valid pre-foreclosure work. If a
+// later AddInput transaction in the same block reverts after foreclosure, there
+// is no InputAdded event for the node to index.
+func (s *EvmReaderSuite) TestCatchUpForeclosedInputsStoresSameBlockInput() {
+	app := &Application{
+		ID:                  42,
+		Name:                "foreclosed-app",
+		IApplicationAddress: app1Addr,
+		IConsensusAddress:   consensusAddr,
+		IInputBoxAddress:    inputBoxAddr,
+		DataAvailability:    DataAvailability_InputBox[:],
+		Enabled:             true,
+		Status:              ApplicationStatus_OK,
+		IInputBoxBlock:      1,
+		EpochLength:         10,
+		LastInputCheckBlock: 201,
+		ForecloseBlock:      202,
+	}
+
+	sameBlockInput := makeInputEvent(app.IApplicationAddress, 0, app.ForecloseBlock)
+
+	s.repository.Unset("GetNumberOfInputs")
+	s.repository.On("GetNumberOfInputs",
+		mock.Anything,
+		app.IApplicationAddress.String(),
+	).Return(uint64(0), nil).Once()
+
+	s.inputBox.Unset("GetNumberOfInputs")
+	s.inputBox.On("GetNumberOfInputs",
+		mock.MatchedBy(func(opts *bind.CallOpts) bool {
+			return opts.BlockNumber.Uint64() == app.ForecloseBlock
+		}),
+		app.IApplicationAddress,
+	).Return(new(big.Int).SetUint64(1), nil).Twice()
+
+	s.inputBox.Unset("RetrieveInputs")
+	s.inputBox.On("RetrieveInputs",
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool {
+			return opts.Start == app.ForecloseBlock &&
+				opts.End != nil &&
+				*opts.End == app.ForecloseBlock
+		}),
+		[]common.Address{app.IApplicationAddress},
+		mock.Anything,
+	).Return([]iinputbox.IInputBoxInputAdded{sameBlockInput}, nil).Once()
+
+	s.repository.Unset("GetEpoch")
+	s.repository.On("GetEpoch",
+		mock.Anything,
+		app.IApplicationAddress.String(),
+		uint64(20),
+	).Return(nil, nil).Once()
+
+	s.repository.Unset("CreateEpochsAndInputs")
+	s.repository.On("CreateEpochsAndInputs",
+		mock.Anything,
+		app.IApplicationAddress.String(),
+		mock.Anything,
+		app.ForecloseBlock,
+	).Run(func(arguments mock.Arguments) {
+		epochInputMap, ok := arguments.Get(2).(map[*Epoch][]*Input)
+		s.Require().True(ok)
+		s.Require().Len(epochInputMap, 1)
+
+		for epoch, inputs := range epochInputMap {
+			s.Require().Equal(uint64(20), epoch.Index)
+			s.Require().Len(inputs, 1)
+			s.Require().Equal(uint64(0), inputs[0].Index)
+			s.Require().Equal(app.ForecloseBlock, inputs[0].BlockNumber)
+			s.Require().Equal(sameBlockInput.Raw.TxHash, inputs[0].TransactionReference)
+		}
+	}).Return(nil).Once()
+
+	s.repository.Unset("UpdateEventLastCheckBlock")
+
+	s.evmReader.scanIConsensusInputs(s.ctx, []appContracts{{
+		application: app,
+		inputSource: s.inputBox,
+	}}, app.ForecloseBlock+10)
+
+	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 1)
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 0)
+	s.inputBox.AssertNumberOfCalls(s.T(), "RetrieveInputs", 1)
 }
 
 // TestCheckpointNotAdvancedOnFetchFailure is a regression test for a bug where

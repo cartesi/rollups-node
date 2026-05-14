@@ -196,10 +196,10 @@ func (s *SealedEpochsSuite) TestSealedEpochFirstBlockMismatchReturnsError() {
 	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
 }
 
-// --- Priority 4: GetLastNonOpenEpoch nil → app set inoperable ---
+// --- Priority 4: GetLastNonOpenEpoch nil → app set corrupted ---
 // When processApplicationOpenEpoch finds no non-open epoch, the application
-// must be set inoperable. This is an invariant of the DaveConsensus protocol.
-func (s *SealedEpochsSuite) TestOpenEpochWithNoNonOpenEpochSetsInoperable() {
+// must be set corrupted. This is an invariant of the DaveConsensus protocol.
+func (s *SealedEpochsSuite) TestOpenEpochWithNoNonOpenEpochSetsCorrupted() {
 	app := appContracts{
 		application: &Application{
 			ID:                  1,
@@ -211,8 +211,8 @@ func (s *SealedEpochsSuite) TestOpenEpochWithNoNonOpenEpochSetsInoperable() {
 
 	s.repository.On("GetLastNonOpenEpoch", mock.Anything, mock.Anything).
 		Return(nil, nil)
-	s.repository.On("UpdateApplicationState",
-		mock.Anything, int64(1), ApplicationState_Inoperable, mock.Anything,
+	s.repository.On("UpdateApplicationStatus",
+		mock.Anything, int64(1), ApplicationStatus_Corrupted, mock.Anything,
 	).Return(nil).Once()
 
 	err := s.evmReader.processApplicationOpenEpoch(s.ctx, app, 200)
@@ -305,7 +305,7 @@ func (s *EvmReaderSuite) TestUpdateOutputsExecutionErrorDoesNotAdvanceCheckpoint
 
 // --- Priority 7: Block regression → no DB writes, warn logged ---
 // When mostRecentBlockNumber < lastProcessedBlock (chain reorg or node
-// misconfiguration), checkForNewInputs must not write to the database.
+// misconfiguration), scanIConsensusInputs must not write to the database.
 func (s *EvmReaderSuite) TestBlockRegressionDoesNotWriteToDb() {
 	app := &Application{
 		Name:                "test-app",
@@ -324,7 +324,7 @@ func (s *EvmReaderSuite) TestBlockRegressionDoesNotWriteToDb() {
 	s.evmReader.repository = repo
 
 	// mostRecentBlockNumber (90) < lastProcessedBlock (100) → block regression
-	s.evmReader.checkForNewInputs(s.ctx, apps, 90)
+	s.evmReader.scanIConsensusInputs(s.ctx, apps, 90)
 
 	// No DB writes should happen
 	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
@@ -384,6 +384,33 @@ func (s *EvmReaderSuite) TestOutputBlockRegressionDoesNotWriteToDb() {
 	repo.AssertNumberOfCalls(s.T(), "GetNumberOfExecutedOutputs", 0)
 }
 
+func (s *EvmReaderSuite) TestOutputExecutionSyncSkipsBeforeApplicationDeployment() {
+	appContract := &MockApplicationContract{}
+	appContract.On("GetDeploymentBlockNumber",
+		mock.MatchedBy(func(opts *bind.CallOpts) bool {
+			return opts.BlockNumber != nil && opts.BlockNumber.Uint64() == 90
+		}),
+	).Return(new(big.Int), bind.ErrNoCode).Once()
+
+	app := appContracts{
+		application: &Application{
+			ID:                  1,
+			Name:                "test-app",
+			IApplicationAddress: app1Addr,
+		},
+		applicationContract: appContract,
+	}
+
+	repo := newMockRepository()
+	s.evmReader.repository = repo
+
+	s.evmReader.checkForOutputExecution(s.ctx, []appContracts{app}, 90)
+
+	repo.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 0)
+	repo.AssertNumberOfCalls(s.T(), "GetNumberOfPendingExecutableOutputs", 0)
+	appContract.AssertExpectations(s.T())
+}
+
 // --- Input count mismatch in IConsensus path → app skipped, no checkpoint advance ---
 // When the on-chain counter delta at endBlock disagrees with the number of inputs
 // returned by RetrieveInputs (e.g., missing event), the app must be skipped
@@ -433,10 +460,75 @@ func (s *EvmReaderSuite) TestIConsensusInputCountMismatchSkipsApp() {
 	repo.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 0)
 }
 
-// --- EpochLength=0 sets app inoperable ---
+// The IConsensus count check must validate against the end-block counter
+// observed by the same transition walk that fetched the logs. Under normal
+// RPC semantics, a second eth_call pinned to the same block number should
+// return the same value; using the already-observed value avoids a redundant
+// call and keeps validation tied to the fetch walk's chain view.
+func (s *EvmReaderSuite) TestIConsensusInputCountValidationUsesObservedEndCount() {
+	addr := common.HexToAddress("0x7777777777777777777777777777777777777777")
+
+	inputSrc := &MockInputBox{}
+	app := &Application{
+		ID:                  1,
+		Name:                "test-app",
+		IApplicationAddress: addr,
+		IInputBoxAddress:    inputBoxAddr,
+		DataAvailability:    DataAvailability_InputBox[:],
+		EpochLength:         10,
+		LastInputCheckBlock: 100,
+	}
+
+	inputSrc.On("GetNumberOfInputs", blockRange(0, 105), addr).
+		Return(new(big.Int).SetUint64(0), nil)
+	inputSrc.On("GetNumberOfInputs", mock.MatchedBy(func(opts *bind.CallOpts) bool {
+		return opts.BlockNumber.Uint64() == 105
+	}), addr).Return(new(big.Int).SetUint64(1), nil).Once()
+
+	inputSrc.On("RetrieveInputs",
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 105 }),
+		mock.Anything, mock.Anything,
+	).Return([]iinputbox.IInputBoxInputAdded{
+		makeInputEvent(addr, 0, 105),
+	}, nil).Once()
+
+	repo := newMockRepository()
+	repo.On("GetNumberOfInputs", mock.Anything, addr.String()).
+		Return(uint64(0), nil).Once()
+	repo.On("GetEpoch", mock.Anything, addr.String(), uint64(10)).
+		Return(nil, nil).Once()
+	repo.On("CreateEpochsAndInputs",
+		mock.Anything,
+		addr.String(),
+		mock.Anything,
+		uint64(105),
+	).Run(func(arguments mock.Arguments) {
+		epochInputMap, ok := arguments.Get(2).(map[*Epoch][]*Input)
+		s.Require().True(ok)
+		s.Require().Len(epochInputMap, 1)
+		for _, inputs := range epochInputMap {
+			s.Require().Len(inputs, 1)
+			s.Require().Equal(uint64(0), inputs[0].Index)
+		}
+	}).Return(nil).Once()
+	s.evmReader.repository = repo
+
+	err := s.evmReader.readAndStoreInputs(s.ctx, 100, 105, []appContracts{{
+		application: app,
+		inputSource: inputSrc,
+	}})
+	s.Require().NoError(err)
+
+	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 1)
+	repo.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 0)
+	repo.AssertExpectations(s.T())
+	inputSrc.AssertExpectations(s.T())
+}
+
+// --- EpochLength=0 sets app corrupted ---
 // When an application with EpochLength=0 reaches the epoch indexing logic,
-// it must be set inoperable to prevent division-by-zero in calculateEpochIndex.
-func (s *EvmReaderSuite) TestEpochLengthZeroSetsAppInoperable() {
+// it must be set corrupted to prevent division-by-zero in calculateEpochIndex.
+func (s *EvmReaderSuite) TestEpochLengthZeroSetsAppCorrupted() {
 	addr := common.HexToAddress("0x5555555555555555555555555555555555555555")
 
 	inputSrc := &MockInputBox{}
@@ -451,7 +543,7 @@ func (s *EvmReaderSuite) TestEpochLengthZeroSetsAppInoperable() {
 			IApplicationAddress: addr,
 			IInputBoxAddress:    inputBoxAddr,
 			DataAvailability:    DataAvailability_InputBox[:],
-			EpochLength:         0, // will trigger inoperable
+			EpochLength:         0, // will trigger corrupted
 			LastInputCheckBlock: 100,
 		},
 		inputSource: inputSrc,
@@ -460,8 +552,8 @@ func (s *EvmReaderSuite) TestEpochLengthZeroSetsAppInoperable() {
 	repo := newMockRepository()
 	repo.On("GetNumberOfInputs", mock.Anything, mock.Anything).
 		Return(uint64(0), nil)
-	repo.On("UpdateApplicationState",
-		mock.Anything, int64(1), ApplicationState_Inoperable, mock.Anything,
+	repo.On("UpdateApplicationStatus",
+		mock.Anything, int64(1), ApplicationStatus_Corrupted, mock.Anything,
 	).Return(nil)
 	repo.On("UpdateEventLastCheckBlock",
 		mock.Anything, mock.Anything, MonitoredEvent_InputAdded, mock.Anything,
@@ -472,7 +564,7 @@ func (s *EvmReaderSuite) TestEpochLengthZeroSetsAppInoperable() {
 	s.Require().NoError(err)
 
 	// App must be set inoperable
-	repo.AssertNumberOfCalls(s.T(), "UpdateApplicationState", 1)
+	repo.AssertNumberOfCalls(s.T(), "UpdateApplicationStatus", 1)
 	// No epochs or inputs should be stored
 	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
 }

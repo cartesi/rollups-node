@@ -35,6 +35,18 @@ func (r *Service) initializeNewApplicationOutputExecutionSync(
 	}
 	deploymentBlock, err := app.applicationContract.GetDeploymentBlockNumber(callOpts)
 	if err != nil {
+		if errors.Is(err, bind.ErrNoCode) {
+			r.Logger.Debug("Skipping output execution sync before application deployment",
+				"application", app.application.Name,
+				"address", app.application.IApplicationAddress,
+				"block", mostRecentBlockNumber,
+			)
+			return 0, fmt.Errorf("%w: application %s at block %d: %w",
+				errContractNotDeployedAtBlock,
+				app.application.IApplicationAddress,
+				mostRecentBlockNumber,
+				err)
+		}
 		r.Logger.Error("Error retrieving application deployment block number",
 			"application", app.application.Name,
 			"address", app.application.IApplicationAddress,
@@ -87,6 +99,9 @@ func (r *Service) checkForOutputExecution(
 			var err error
 			lastOutputCheck, err = r.initializeNewApplicationOutputExecutionSync(ctx, &app, mostRecentBlockNumber)
 			if err != nil {
+				if errors.Is(err, errContractNotDeployedAtBlock) {
+					continue
+				}
 				r.Logger.Error("Failed to initialize application output execution sync",
 					"application", app.application.Name,
 					"most_recent_block", mostRecentBlockNumber,
@@ -97,6 +112,14 @@ func (r *Service) checkForOutputExecution(
 		}
 
 		if mostRecentBlockNumber > lastOutputCheck {
+			if !r.hasPendingExecutableOutputs(ctx, app) {
+				r.Logger.Debug("Not reading output execution: no pending executable outputs",
+					"application", app.application.Name, "address", app.application.IApplicationAddress,
+					"last_output_check_block", lastOutputCheck,
+					"most_recent_block", mostRecentBlockNumber,
+				)
+				continue
+			}
 
 			r.Logger.Debug("Checking output execution for application",
 				"application", app.application.Name, "address", app.application.IApplicationAddress,
@@ -123,6 +146,19 @@ func (r *Service) checkForOutputExecution(
 
 }
 
+func (r *Service) hasPendingExecutableOutputs(ctx context.Context, app appContracts) bool {
+	pending, err := r.repository.GetNumberOfPendingExecutableOutputs(ctx, app.application.IApplicationAddress.String())
+	if err != nil {
+		r.Logger.Error("Error counting pending executable outputs",
+			"application", app.application.Name,
+			"address", app.application.IApplicationAddress,
+			"error", err,
+		)
+		return false
+	}
+	return pending > 0
+}
+
 func (r *Service) readAndUpdateOutputs(
 	ctx context.Context, app appContracts, lastOutputCheck, mostRecentBlockNumber uint64) {
 
@@ -144,11 +180,24 @@ func (r *Service) readAndUpdateOutputs(
 		err := r.repository.UpdateEventLastCheckBlock(
 			ctx, []int64{app.application.ID}, MonitoredEvent_OutputExecuted, mostRecentBlockNumber)
 		if err != nil {
-			r.Logger.Error("Failed to update LastOutputCheckBlock for applications without inputs",
-				"application", app.application.Name, "address", app.application.IApplicationAddress,
-				"block_number", mostRecentBlockNumber,
-				"error", err,
-			)
+			// Shutdown cancels the ctx mid-update; downgrade to Debug
+			// for the graceful-stop case so it does not show up as a
+			// spurious ERR line during shutdown. DeadlineExceeded would
+			// still flow through the Error branch and demand attention.
+			if errors.Is(err, context.Canceled) {
+				r.Logger.Debug(
+					"UpdateEventLastCheckBlock canceled during shutdown",
+					"application", app.application.Name, "address", app.application.IApplicationAddress,
+					"block_number", mostRecentBlockNumber,
+					"error", err,
+				)
+			} else {
+				r.Logger.Error("Failed to update LastOutputCheckBlock for applications without inputs",
+					"application", app.application.Name, "address", app.application.IApplicationAddress,
+					"block_number", mostRecentBlockNumber,
+					"error", err,
+				)
+			}
 			// We don't return an error here as there is no output execution to process
 			// and this is just an update to the last check block
 		} else {
@@ -187,11 +236,11 @@ func (r *Service) readAndUpdateOutputs(
 		}
 
 		if !bytes.Equal(output.RawData, event.Output) {
-			// setApplicationInoperable always returns non-nil (the reason text itself).
-			// The DB error case is already logged inside setApplicationState.
+			// setApplicationDiverged always returns non-nil (the reason text itself).
+			// The DB error case is already logged inside setApplicationStatus.
 			// On DB success the app is marked inoperable and won't reappear next tick.
 			// On DB failure the app reappears as Enabled next tick, retrying this path.
-			_ = r.setApplicationInoperable(ctx, app.application,
+			_ = r.setApplicationDiverged(ctx, app.application,
 				"Output mismatch. Application is in an invalid state. Output Index %d, raw data %s != event data %s",
 				output.Index,
 				"0x"+hex.EncodeToString(output.RawData),

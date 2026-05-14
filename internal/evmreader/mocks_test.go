@@ -252,7 +252,12 @@ type MockRepository struct {
 }
 
 func newMockRepository() *MockRepository {
-	return &MockRepository{}
+	m := &MockRepository{}
+	m.On("GetNumberOfPendingExecutableOutputs",
+		mock.Anything,
+		mock.Anything,
+	).Return(uint64(1), nil).Maybe()
+	return m
 }
 
 func (m *MockRepository) SetupDefaultBehavior() *MockRepository {
@@ -299,6 +304,11 @@ func (m *MockRepository) SetupDefaultBehavior() *MockRepository {
 		MonitoredEvent_OutputExecuted,
 		mock.Anything,
 	).Return(nil).Times(8)
+	m.On("UpdateApplicationLastForecloseCheckBlock",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+	).Return(nil).Maybe()
 
 	m.On("GetNumberOfInputs",
 		mock.Anything,
@@ -317,7 +327,6 @@ func (m *MockRepository) SetupDefaultBehavior() *MockRepository {
 		mock.Anything,
 		mock.Anything,
 	).Return(uint64(0), nil).Times(6)
-
 	m.On("CreateEpochsAndInputs",
 		mock.Anything,
 		mock.Anything,
@@ -446,6 +455,13 @@ func (m *MockRepository) GetNumberOfExecutedOutputs(
 	return args.Get(0).(uint64), args.Error(1)
 }
 
+func (m *MockRepository) GetNumberOfPendingExecutableOutputs(
+	ctx context.Context, nameOrAddress string,
+) (uint64, error) {
+	args := m.Called(ctx, nameOrAddress)
+	return args.Get(0).(uint64), args.Error(1)
+}
+
 func (m *MockRepository) UpdateOutputsExecution(
 	ctx context.Context, nameOrAddress string,
 	executedOutputs []*Output, blockNumber uint64,
@@ -454,10 +470,55 @@ func (m *MockRepository) UpdateOutputsExecution(
 	return args.Error(0)
 }
 
-func (m *MockRepository) UpdateApplicationState(
-	ctx context.Context, appID int64, state ApplicationState, reason *string,
+func (m *MockRepository) UpdateApplicationStatus(
+	ctx context.Context, appID int64, state ApplicationStatus, reason *string,
 ) error {
 	args := m.Called(ctx, appID, state, reason)
+	return args.Error(0)
+}
+
+func (m *MockRepository) UpdateApplicationForeclosure(
+	ctx context.Context, appID int64, block uint64, txHash common.Hash, blockNumber uint64,
+) error {
+	args := m.Called(ctx, appID, block, txHash, blockNumber)
+	return args.Error(0)
+}
+
+func (m *MockRepository) UpdateApplicationLastForecloseCheckBlock(
+	ctx context.Context, appID int64, blockNumber uint64,
+) error {
+	args := m.Called(ctx, appID, blockNumber)
+	return args.Error(0)
+}
+
+func (m *MockRepository) UpdateAccountsDriveProved(
+	ctx context.Context, appID int64, block uint64, txHash common.Hash, root common.Hash, blockNumber uint64,
+) error {
+	args := m.Called(ctx, appID, block, txHash, root, blockNumber)
+	return args.Error(0)
+}
+
+func (m *MockRepository) UpdateApplicationLastAccountsDriveProvedCheckBlock(
+	ctx context.Context, appID int64, blockNumber uint64,
+) error {
+	args := m.Called(ctx, appID, blockNumber)
+	return args.Error(0)
+}
+
+func (m *MockRepository) StoreWithdrawalEvents(
+	ctx context.Context, appID int64, withdrawals []*Withdrawal, blockNumber uint64,
+) error {
+	args := m.Called(ctx, appID, withdrawals, blockNumber)
+	return args.Error(0)
+}
+
+func (m *MockRepository) GetNumberOfWithdrawals(ctx context.Context, appID int64) (uint64, error) {
+	args := m.Called(ctx, appID)
+	return args.Get(0).(uint64), args.Error(1)
+}
+
+func (m *MockRepository) InsertWithdrawal(ctx context.Context, w *Withdrawal) error {
+	args := m.Called(ctx, w)
 	return args.Error(0)
 }
 
@@ -485,7 +546,17 @@ type MockApplicationContract struct {
 }
 
 func newMockApplicationContract() *MockApplicationContract {
-	return &MockApplicationContract{}
+	m := &MockApplicationContract{}
+	// Foreclosure detection runs on every evmreader tick. Default to a
+	// not-foreclosed app so tests that don't care about this path don't
+	// need to wire it up. .Maybe() lets AssertExpectations pass even
+	// when these calls didn't happen (test never reached the foreclosure
+	// branch). Tests that exercise foreclosure call Unset("IsForeclosed")
+	// + re-mock with the desired behavior.
+	m.On("IsForeclosed", mock.Anything).Return(false, nil).Maybe()
+	m.On("RetrieveForeclosureEvents", mock.Anything).
+		Return([]*iapplication.IApplicationForeclosure{}, nil).Maybe()
+	return m
 }
 
 func (m *MockApplicationContract) SetupDefaultBehavior() *MockApplicationContract {
@@ -507,6 +578,13 @@ func (m *MockApplicationContract) RetrieveOutputExecutionEvents(
 	return args.Get(0).([]*iapplication.IApplicationOutputExecuted), args.Error(1)
 }
 
+func (m *MockApplicationContract) RetrieveForeclosureEvents(
+	opts *bind.FilterOpts,
+) ([]*iapplication.IApplicationForeclosure, error) {
+	args := m.Called(opts)
+	return args.Get(0).([]*iapplication.IApplicationForeclosure), args.Error(1)
+}
+
 func (m *MockApplicationContract) GetDeploymentBlockNumber(
 	opts *bind.CallOpts,
 ) (*big.Int, error) {
@@ -519,6 +597,38 @@ func (m *MockApplicationContract) GetNumberOfExecutedOutputs(
 ) (*big.Int, error) {
 	args := m.Called(opts)
 	return args.Get(0).(*big.Int), args.Error(1)
+}
+
+func (m *MockApplicationContract) GetAccountsDriveMerkleRoot(opts *bind.CallOpts) (bool, common.Hash, error) {
+	args := m.Called(opts)
+	return args.Bool(0), args.Get(1).(common.Hash), args.Error(2)
+}
+
+func (m *MockApplicationContract) IsForeclosed(opts *bind.CallOpts) (bool, error) {
+	args := m.Called(opts)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockApplicationContract) GetNumberOfWithdrawals(opts *bind.CallOpts) (*big.Int, error) {
+	args := m.Called(opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*big.Int), args.Error(1)
+}
+
+func (m *MockApplicationContract) RetrieveWithdrawalEvents(
+	opts *bind.FilterOpts,
+) ([]*iapplication.IApplicationWithdrawal, error) {
+	args := m.Called(opts)
+	return args.Get(0).([]*iapplication.IApplicationWithdrawal), args.Error(1)
+}
+
+func (m *MockApplicationContract) RetrieveAccountsDriveProvedEvents(
+	opts *bind.FilterOpts,
+) ([]*iapplication.IApplicationAccountsDriveMerkleRootProved, error) {
+	args := m.Called(opts)
+	return args.Get(0).([]*iapplication.IApplicationAccountsDriveMerkleRootProved), args.Error(1)
 }
 
 // ---------------------------------------------------------------------------
