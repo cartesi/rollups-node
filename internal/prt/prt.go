@@ -21,13 +21,17 @@ import (
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
+	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
 type prtRepository interface {
 	ListApplications(ctx context.Context, f repository.ApplicationFilter,
 		p repository.Pagination, descending bool) ([]*Application, uint64, error)
-	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
+	UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error
+	HasUndrainedEpochsBeforeBlock(ctx context.Context, appID int64, blockBound uint64) (bool, error)
+	HasUnreconciledClaimsBeforeBlock(ctx context.Context, appID int64, blockBound uint64) (bool, error)
+	UpdateEpochWithForeclosedClaim(ctx context.Context, applicationID int64, index uint64) error
 
 	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter,
 		p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
@@ -78,8 +82,15 @@ func (f *DefaultAdapterFactory) CreateDaveConsensusAdapter(addr common.Address) 
 }
 
 func getAllRunningApplications(ctx context.Context, r prtRepository) ([]*Application, uint64, error) {
-	f := repository.ApplicationFilter{State: Pointer(ApplicationState_Enabled), ConsensusType: Pointer(Consensus_PRT)}
-	return r.ListApplications(ctx, f, repository.Pagination{}, false)
+	return r.ListApplications(ctx, prtTickApplicationsFilter(), repository.Pagination{}, false)
+}
+
+func prtTickApplicationsFilter() repository.ApplicationFilter {
+	return repository.ApplicationFilter{
+		Enabled:       new(true),
+		Statuses:      []ApplicationStatus{ApplicationStatus_OK},
+		ConsensusType: new(Consensus_PRT),
+	}
 }
 
 func getAllClaimComputedEpochs(ctx context.Context, r prtRepository, nameOrAddress string) ([]*Epoch, uint64, error) {
@@ -99,8 +110,18 @@ func getAllSubTournaments(
 	return r.ListTournaments(ctx, nameOrAddress, f, repository.Pagination{}, false)
 }
 
-func (s *Service) setApplicationInoperable(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
-	return appstatus.SetInoperablef(ctx, s.Logger, s.repository, app, reasonFmt, args...)
+func (s *Service) setApplicationDiverged(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
+	return appstatus.SetDivergedf(ctx, s.Logger, s.repository, app, reasonFmt, args...)
+}
+
+func (s *Service) setApplicationCorrupted(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
+	return appstatus.SetCorruptedf(ctx, s.Logger, s.repository, app, reasonFmt, args...)
+}
+
+// setApplicationFailed marks the app FAILED (recoverable by operator action).
+// Like appstatus.SetFailedf, it returns nil on success.
+func (s *Service) setApplicationFailed(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
+	return appstatus.SetFailedf(ctx, s.Logger, s.repository, app, reasonFmt, args...)
 }
 
 func (s *Service) saveTournamentEvents(ctx context.Context, app *Application, epoch *Epoch,
@@ -262,14 +283,14 @@ func (s *Service) createTournament(
 
 		// root tournament with no winner.
 		if level == RootLevel && winnerCommitment == [32]byte{} {
-			return nil, s.setApplicationInoperable(ctx, app,
-				"Epoch %d root tournament %s has finished without winners. Setting application as inoperable.",
+			return nil, s.setApplicationDiverged(ctx, app,
+				"Epoch %d root tournament %s has finished without winners.",
 				epoch.Index, tournamentAddress.String())
 		}
 
 		if level == RootLevel && *epoch.Commitment != winnerCommitment {
-			return nil, s.setApplicationInoperable(ctx, app,
-				"Epoch %d has inconsistent commitment between off-chain (%s) and on-chain (%s). Setting application as inoperable.",
+			return nil, s.setApplicationDiverged(ctx, app,
+				"Epoch %d has inconsistent commitment between off-chain (%s) and on-chain (%s).",
 				epoch.Index, epoch.Commitment.String(), hexutil.Encode(winnerCommitment[:]))
 		}
 		winnerCommitmentPtr = new(common.Hash)
@@ -340,13 +361,13 @@ func (s *Service) updateTournamentIfFinished(
 
 	// root tournament with no winner.
 	if level == RootLevel && winnerCommitment == [32]byte{} {
-		return s.setApplicationInoperable(ctx, app,
-			"Epoch %d root tournament %s has finished without winners. Setting application as inoperable.",
+		return s.setApplicationDiverged(ctx, app,
+			"Epoch %d root tournament %s has finished without winners.",
 			epoch.Index, t.Address.String())
 	}
 
 	if level == RootLevel && *epoch.Commitment != winnerCommitment {
-		return s.setApplicationInoperable(ctx, app, "Epoch %d has inconsistent commitment between off-chain (%s) and on-chain (%s)",
+		return s.setApplicationDiverged(ctx, app, "Epoch %d has inconsistent commitment between off-chain (%s) and on-chain (%s)",
 			epoch.Index, epoch.Commitment.String(), hexutil.Encode(winnerCommitment[:]))
 	}
 	t.WinnerCommitment = new(common.Hash)
@@ -385,7 +406,7 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 	for _, epoch := range epochs {
 		if epoch.TournamentAddress == nil || epoch.Commitment == nil ||
 			epoch.MachineHash == nil || epoch.OutputsMerkleRoot == nil {
-			return s.setApplicationInoperable(ctx, app,
+			return s.setApplicationCorrupted(ctx, app,
 				"epoch %d has missing required fields for ClaimComputed status", epoch.Index)
 		}
 
@@ -425,15 +446,15 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 		}
 
 		if epoch.Index != event.EpochNumber.Uint64()-1 {
-			return s.setApplicationInoperable(ctx, app, "Epoch %d has inconsistent index between off-chain (%d) and on-chain (%d)",
+			return s.setApplicationDiverged(ctx, app, "Epoch %d has inconsistent index between off-chain (%d) and on-chain (%d)",
 				epoch.Index, epoch.Index, event.EpochNumber.Uint64()-1)
 		}
 		if *epoch.MachineHash != event.InitialMachineStateHash {
-			return s.setApplicationInoperable(ctx, app, "Epoch %d has inconsistent machine hash between off-chain (%s) and on-chain (%s)",
+			return s.setApplicationDiverged(ctx, app, "Epoch %d has inconsistent machine hash between off-chain (%s) and on-chain (%s)",
 				epoch.Index, epoch.MachineHash.String(), hexutil.Encode(event.InitialMachineStateHash[:]))
 		}
 		if *epoch.OutputsMerkleRoot != event.OutputsMerkleRoot {
-			return s.setApplicationInoperable(ctx, app, "Epoch %d has inconsistent claim hash between off-chain (%s) and on-chain (%s)",
+			return s.setApplicationDiverged(ctx, app, "Epoch %d has inconsistent claim hash between off-chain (%s) and on-chain (%s)",
 				epoch.Index, epoch.OutputsMerkleRoot.String(), hexutil.Encode(event.OutputsMerkleRoot[:]))
 		}
 
@@ -448,7 +469,7 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 			"application", app.Name,
 			"epoch", epoch.Index,
 			"event_block_number", event.Raw.BlockNumber,
-			"claim_hash", fmt.Sprintf("%x", event.OutputsMerkleRoot),
+			"outputs_merkle_root", fmt.Sprintf("%x", event.OutputsMerkleRoot),
 			"tx", epoch.ClaimTransactionHash,
 		)
 
@@ -675,7 +696,7 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 	}
 
 	if epoch.OutputsMerkleRoot == nil || epoch.OutputsMerkleProof == nil {
-		return s.setApplicationInoperable(ctx, app,
+		return s.setApplicationCorrupted(ctx, app,
 			"epoch %d has missing required fields for settlement", epoch.Index)
 	}
 
@@ -700,26 +721,136 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 	tx, err := consensus.Settle(s.txOpts, result.EpochNumber,
 		*epoch.OutputsMerkleRoot, hashSliceToByteSlice(epoch.OutputsMerkleProof))
 	if err != nil {
-		// The contract reverts with IncorrectEpochNumber when the epoch was
-		// already settled. This can happen after a restart if the on-chain
-		// check (IsEpochSettled) used a slightly stale block number, or if
-		// another entity settled the epoch concurrently.
-		if isIncorrectEpochNumberError(err) {
-			s.Logger.Info(
-				"Epoch already settled on-chain (detected via revert), "+
-					"waiting for event sync",
-				"application", app.Name,
-				"epoch_index", result.EpochNumber.Uint64())
-			return nil
-		}
-		s.Logger.Error("failed to send Settle transaction", "application", app.Name,
-			"epoch_index", result.EpochNumber.Uint64(), "error", err)
-		return err
+		return s.handleSettleRevert(ctx, app, result.EpochNumber.Uint64(), err)
 	}
 	settleTx := tx.Hash()
 	s.settleInFlight[app.ID] = &settleTx
 
 	return nil
+}
+
+// handleSettleRevert classifies a Settle error and performs the matching
+// state change. The known DaveConsensus reverts:
+//
+//   - IncorrectEpochNumber: carries (received, actual). received < actual
+//     means the epoch was already settled — after a restart when the
+//     IsEpochSettled pre-check used a slightly stale block number, or
+//     another entity settled concurrently; wait for event sync.
+//     received > actual means the local epoch index is ahead of the chain
+//     (wrong consensus address or corrupted local state) — FAILED, since
+//     waiting would stall silently forever.
+//   - TournamentNotFinishedYet: CanSettle returned true at this tick's pinned
+//     block, but the provider simulated the call against different state.
+//     Transient; retry next tick.
+//   - InvalidOutputsMerkleRootProofSize / InvalidOutputsMerkleRootProof: the
+//     locally stored outputs merkle proof does not prove the outputs root
+//     against the settled machine state — local data corruption; CORRUPTED.
+//   - ApplicationForeclosed: retry while the EVM reader records the
+//     foreclosure marker (settle runs the same foreclosure probe as the
+//     IConsensus claim methods).
+//   - ApplicationNotDeployed / ApplicationReverted /
+//     IllformedApplicationReturnData: the foreclosure probe failed — wrong
+//     application address, or a broken/adversarial application contract;
+//     FAILED, with the application's revert data preserved in the reason.
+//
+// JSON-RPC "nonce too low" broadcast rejections retry next tick; unknown
+// errors are returned to the caller unchanged, with the decoded revert name
+// in the log when one of the known ABIs declares it.
+func (s *Service) handleSettleRevert(ctx context.Context, app *Application, epochNumber uint64, err error) error {
+	switch {
+	case isDaveConsensusError(err, "IncorrectEpochNumber"):
+		if received, actual, ok := decodeIncorrectEpochNumber(err); ok &&
+			received.Cmp(actual) > 0 {
+			return s.setApplicationFailed(ctx, app,
+				"Settle reverted with IncorrectEpochNumber: the node tried to "+
+					"settle epoch %s but the chain expects epoch %s — the local "+
+					"epoch index is ahead of the DaveConsensus contract. Verify "+
+					"the consensus address configuration and local state before "+
+					"re-enabling.",
+				received, actual)
+		}
+		s.Logger.Info(
+			"Epoch already settled on-chain (detected via revert), "+
+				"waiting for event sync",
+			"application", app.Name,
+			"epoch_index", epochNumber)
+		return nil
+
+	case isDaveConsensusError(err, "TournamentNotFinishedYet"):
+		s.Logger.Warn(
+			"Settle reverted with TournamentNotFinishedYet; the provider's "+
+				"state may lag this tick's CanSettle read, retrying next tick",
+			"application", app.Name,
+			"epoch_index", epochNumber)
+		return nil
+
+	case isDaveConsensusError(err, "InvalidOutputsMerkleRootProofSize"):
+		return s.setApplicationCorrupted(ctx, app,
+			"Settle reverted with InvalidOutputsMerkleRootProofSize for epoch %d — "+
+				"the outputs merkle proof stored locally has the wrong length for "+
+				"the settled machine state.",
+			epochNumber)
+
+	case isDaveConsensusError(err, "InvalidOutputsMerkleRootProof"):
+		return s.setApplicationCorrupted(ctx, app,
+			"Settle reverted with InvalidOutputsMerkleRootProof for epoch %d — "+
+				"the outputs merkle proof stored locally does not prove the outputs "+
+				"root against the settled machine state.",
+			epochNumber)
+
+	case isDaveConsensusError(err, "ApplicationForeclosed"):
+		s.Logger.Warn("Settle reverted with ApplicationForeclosed; "+
+			"awaiting Foreclosure observer to record the foreclosure marker",
+			"application", app.Name,
+			"epoch_index", epochNumber)
+		return nil
+
+	case isDaveConsensusError(err, "ApplicationNotDeployed"):
+		return s.setApplicationFailed(ctx, app,
+			"Settle reverted with ApplicationNotDeployed for epoch %d: no "+
+				"contract code exists at the application address bound to the "+
+				"DaveConsensus contract. Verify the application address and "+
+				"that the application contract is deployed on this chain "+
+				"before re-enabling.",
+			epochNumber)
+
+	case isDaveConsensusError(err, "ApplicationReverted"):
+		return s.setApplicationFailed(ctx, app,
+			"Settle reverted with ApplicationReverted for epoch %d: the "+
+				"application contract reverted when the consensus contract "+
+				"queried it. Verify the deployed contract and its compatibility "+
+				"with the consensus contract before re-enabling.%s",
+			epochNumber, daveAppReturnDataSuffix(err, "ApplicationReverted"))
+
+	case isDaveConsensusError(err, "IllformedApplicationReturnData"):
+		return s.setApplicationFailed(ctx, app,
+			"Settle reverted with IllformedApplicationReturnData for epoch %d: "+
+				"the application contract returned malformed data when the "+
+				"consensus contract queried it. Verify the deployed contract "+
+				"and its compatibility with the consensus contract before "+
+				"re-enabling.%s",
+			epochNumber, daveAppReturnDataSuffix(err, "IllformedApplicationReturnData"))
+
+	case ethutil.IsNonceTooLowError(err):
+		// Transient broadcast race: the chain has already mined a tx with
+		// this EOA's nonce, so this attempt is rejected before execution.
+		// Most commonly hit straddling a node restart — the prior process
+		// broadcast Settle (or some other tx) that landed, but the
+		// post-restart PendingNonceAt has not yet caught up. The next tick's
+		// IsEpochSettled check reads chain state at a fresh block and
+		// short-circuits if our prior Settle actually mined; otherwise a
+		// new broadcast goes out with a fresh nonce.
+		s.Logger.Info(
+			"Settle broadcast rejected with 'nonce too low'; "+
+				"deferring to the next tick's IsEpochSettled reconciliation",
+			"application", app.Name,
+			"epoch_index", epochNumber)
+		return nil
+	}
+	s.Logger.Error("failed to send Settle transaction", "application", app.Name,
+		"epoch_index", epochNumber, "error", err,
+		"decoded_revert", describeKnownRevert(err))
+	return err
 }
 
 func (s *Service) reactToTournament(ctx context.Context, app *Application, mostRecentBlock uint64) error {
@@ -770,7 +901,7 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 
 	if epoch.TournamentAddress == nil || epoch.Commitment == nil ||
 		epoch.MachineHash == nil || epoch.CommitmentProof == nil {
-		return s.setApplicationInoperable(ctx, app,
+		return s.setApplicationCorrupted(ctx, app,
 			"epoch %d has missing required fields for tournament reaction", epoch.Index)
 	}
 
@@ -842,25 +973,118 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 	tx, err := tournamentAdapter.JoinTournament(&txOptsWithValue, *epoch.MachineHash,
 		hashSliceToByteSlice(epoch.CommitmentProof), leftNode, rightNode)
 	if err != nil {
-		// The contract reverts with "clock is initialized" (a require string
-		// from Clock.sol) when the commitment was already joined. This can
-		// happen after a restart if the on-chain check (IsCommitmentJoined)
-		// used a slightly stale block number.
-		// Matched via ABI-decoded Error(string) revert data, not err.Error().
-		if isRevertReason(err, TournamentClockInitialized) {
-			s.Logger.Info("Commitment already joined on-chain (detected via revert), waiting for event sync",
-				"application", app.Name, "epoch_index", currentEpochIndex,
-				"tournament", epoch.TournamentAddress.Hex(), "commitment", epoch.Commitment.Hex())
-			return nil
-		}
-		s.Logger.Error("failed to send join tournament transaction", "application", app.Name,
-			"epoch_index", currentEpochIndex, "error", err)
-		return err
+		return s.handleJoinTournamentRevert(ctx, app, epoch, tournamentAdapter, err)
 	}
 	joinTx := tx.Hash()
 	s.joinInFlight[app.ID] = &joinTx
 
 	return nil
+}
+
+// handleJoinTournamentRevert classifies a JoinTournament error and performs
+// the matching state change. The known tournament reverts:
+//
+//   - ClockAlreadyInitialized: this commitment already joined — after a
+//     restart when the IsCommitmentJoined pre-check used a slightly stale
+//     block number. Wait for event sync.
+//   - TournamentIsClosed: the join window is closed. The contract checks the
+//     window before the already-joined clock check, so this also fires for a
+//     commitment that DID join before the window closed; re-check
+//     IsCommitmentJoined at the latest block to tell the two apart. Truly
+//     unjoined means the node can no longer defend its claim — FAILED so the
+//     operator is alerted instead of the node retrying a permanently closed
+//     door every tick. (TournamentIsFinished is handled identically as a
+//     backstop, though join's window check fires first on a finished
+//     tournament, so it should be unreachable from join.)
+//   - CommitmentStateMismatch / CommitmentProofWrongSize: the locally stored
+//     commitment proof does not reconstruct the commitment root — local data
+//     corruption; CORRUPTED.
+//
+// JSON-RPC "nonce too low" broadcast rejections retry next tick; unknown
+// errors are returned to the caller unchanged, with the decoded revert name
+// in the log when one of the known ABIs declares it.
+func (s *Service) handleJoinTournamentRevert(
+	ctx context.Context,
+	app *Application,
+	epoch *Epoch,
+	tournamentAdapter TournamentAdapter,
+	err error,
+) error {
+	switch {
+	case isTournamentError(err, "ClockAlreadyInitialized"):
+		s.Logger.Info("Commitment already joined on-chain (detected via revert), waiting for event sync",
+			"application", app.Name, "epoch_index", epoch.Index,
+			"tournament", epoch.TournamentAddress.Hex(), "commitment", epoch.Commitment.Hex())
+		return nil
+
+	case isTournamentError(err, "TournamentIsClosed"), isTournamentError(err, "TournamentIsFinished"):
+		revertName := "TournamentIsClosed"
+		if isTournamentError(err, "TournamentIsFinished") {
+			revertName = "TournamentIsFinished"
+		}
+		// The window check precedes the already-joined check on chain, so a
+		// commitment that joined just before the window closed reverts with
+		// the window error on a rebroadcast (e.g. after a restart with a
+		// stale IsCommitmentJoined read). Re-check at the latest block before
+		// declaring the join missed.
+		joined, joinedErr := tournamentAdapter.IsCommitmentJoined(
+			&bind.CallOpts{Context: ctx}, *epoch.Commitment)
+		if joinedErr != nil {
+			s.Logger.Warn("JoinTournament reverted with "+revertName+" but the "+
+				"already-joined re-check failed; retrying next tick",
+				"application", app.Name, "epoch_index", epoch.Index,
+				"tournament", epoch.TournamentAddress.Hex(),
+				"check_error", joinedErr)
+			return err
+		}
+		if joined {
+			s.Logger.Info("Commitment already joined on-chain (window closed after the join), "+
+				"waiting for event sync",
+				"application", app.Name, "epoch_index", epoch.Index,
+				"tournament", epoch.TournamentAddress.Hex(), "commitment", epoch.Commitment.Hex())
+			return nil
+		}
+		return s.setApplicationFailed(ctx, app,
+			"JoinTournament reverted with %s for epoch %d "+
+				"(tournament %s): the tournament no longer accepts new "+
+				"commitments — the join window closed before this node joined, "+
+				"so it cannot defend its claim. Investigate node downtime or a "+
+				"lagging RPC endpoint before re-enabling.",
+			revertName, epoch.Index, epoch.TournamentAddress.Hex())
+
+	case isTournamentError(err, "CommitmentStateMismatch"):
+		return s.setApplicationCorrupted(ctx, app,
+			"JoinTournament reverted with CommitmentStateMismatch for epoch %d "+
+				"(tournament %s) — the commitment proof stored locally does not "+
+				"reconstruct the commitment root.",
+			epoch.Index, epoch.TournamentAddress.Hex())
+
+	case isTournamentError(err, "CommitmentProofWrongSize"):
+		return s.setApplicationCorrupted(ctx, app,
+			"JoinTournament reverted with CommitmentProofWrongSize for epoch %d "+
+				"(tournament %s) — the commitment proof stored locally has the "+
+				"wrong length for the tournament's tree height.",
+			epoch.Index, epoch.TournamentAddress.Hex())
+
+	case ethutil.IsNonceTooLowError(err):
+		// Transient broadcast race: a tx with this EOA's nonce is already
+		// mined. The next tick's IsCommitmentJoined check will reconcile
+		// against the propagated chain state and short-circuit if our prior
+		// JoinTournament landed; otherwise a new broadcast goes out with a
+		// fresh nonce.
+		s.Logger.Info(
+			"JoinTournament broadcast rejected with 'nonce too low'; "+
+				"deferring to the next tick's IsCommitmentJoined reconciliation",
+			"application", app.Name,
+			"epoch_index", epoch.Index,
+			"tournament", epoch.TournamentAddress.Hex(),
+			"commitment", epoch.Commitment.Hex())
+		return nil
+	}
+	s.Logger.Error("failed to send join tournament transaction", "application", app.Name,
+		"epoch_index", epoch.Index, "error", err,
+		"decoded_revert", describeKnownRevert(err))
+	return err
 }
 
 func (s *Service) validateApplication(ctx context.Context, app *Application) error {
@@ -879,6 +1103,12 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 		if err != nil {
 			return err
 		}
+		// trySettle may have marked the app FAILED (returning nil, per the
+		// appstatus contract). Stop this tick's work instead of broadcasting
+		// a bond-carrying JoinTournament for an app that was just halted.
+		if app.Status != ApplicationStatus_OK {
+			return nil
+		}
 		err = s.reactToTournament(ctx, app, mostRecentBlock)
 		if err != nil {
 			return err
@@ -887,9 +1117,63 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 	return nil
 }
 
-// isIncorrectEpochNumberError checks whether an error from Settle is an
-// IncorrectEpochNumber revert, indicating the epoch was already settled
-// on-chain (e.g., before a node restart or by another entity).
-func isIncorrectEpochNumberError(err error) bool {
-	return ethutil.IsCustomError(err, idaveconsensus.IDaveConsensusMetaData, "IncorrectEpochNumber")
+// isDaveConsensusError matches a typed Solidity error declared in the
+// IDaveConsensus ABI against an RPC revert.
+func isDaveConsensusError(err error, name string) bool {
+	return ethutil.IsCustomError(err, idaveconsensus.IDaveConsensusMetaData, name)
+}
+
+// isTournamentError matches a typed Solidity error declared in the
+// ITournament ABI against an RPC revert.
+func isTournamentError(err error, name string) bool {
+	return ethutil.IsCustomError(err, itournament.ITournamentMetaData, name)
+}
+
+// decodeIncorrectEpochNumber reads the arguments from an IncorrectEpochNumber
+// revert:
+//
+//	error IncorrectEpochNumber(uint256 receivedEpochNumber, uint256 actualEpochNumber);
+//
+// received < actual means the chain settled past us (already settled);
+// received > actual means the local epoch index is ahead of the chain.
+func decodeIncorrectEpochNumber(err error) (received, actual *big.Int, ok bool) {
+	values, ok := ethutil.UnpackRevert(err, idaveconsensus.IDaveConsensusMetaData, "IncorrectEpochNumber")
+	if !ok || len(values) < 2 {
+		return nil, nil, false
+	}
+	received, okReceived := values[0].(*big.Int)
+	actual, okActual := values[1].(*big.Int)
+	if !okReceived || !okActual {
+		return nil, nil, false
+	}
+	return received, actual, true
+}
+
+// daveAppReturnDataSuffix formats the application-provided returndata carried
+// by ApplicationReverted and IllformedApplicationReturnData reverts as a
+// reason suffix. The bytes are controlled by the application contract, so
+// they are hex-encoded to keep them inert in logs and in the database.
+// Returns "" when the revert data cannot be decoded.
+func daveAppReturnDataSuffix(err error, name string) string {
+	values, ok := ethutil.UnpackRevert(err, idaveconsensus.IDaveConsensusMetaData, name)
+	if !ok || len(values) < 2 {
+		return ""
+	}
+	data, ok := values[1].([]byte)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf(" Application return data: 0x%x.", data)
+}
+
+// describeKnownRevert renders the revert carried by err against the ABIs this
+// service interacts with, for the unknown-error log lines. Returns "" when
+// nothing matches.
+func describeKnownRevert(err error) string {
+	desc, ok := ethutil.DescribeRevert(err,
+		idaveconsensus.IDaveConsensusMetaData, itournament.ITournamentMetaData)
+	if !ok {
+		return ""
+	}
+	return desc
 }

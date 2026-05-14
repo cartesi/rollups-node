@@ -149,18 +149,147 @@ func (s *Service) Tick() []error {
 		if s.Context.Err() != nil {
 			return errs
 		}
-		if err := s.validateApplication(s.Context, apps[idx]); err != nil {
+		app := apps[idx]
+		// Foreclosed apps: run the drain path (reconcile accepted epochs,
+		// foreclose the rest) instead of normal tournament work. EVM reader is
+		// the sole writer of ForecloseBlock; the app keeps health status OK and
+		// remains enabled for L1 observation.
+		if app.ForecloseBlock != 0 {
+			if ferr := s.handleForeclosedApp(s.Context, app); ferr != nil {
+				if s.IsStopping() && errors.Is(ferr, context.Canceled) {
+					continue
+				}
+				errs = append(errs, ferr)
+			}
+			continue
+		}
+		if err := s.validateApplication(s.Context, app); err != nil {
 			// During shutdown, in-flight L1 requests see context cancellation.
 			// Suppress these to avoid spurious ERR log entries.
 			if s.IsStopping() && errors.Is(err, context.Canceled) {
 				s.Logger.Warn("Tick interrupted by shutdown",
-					"application", apps[idx].IApplicationAddress, "error", err)
+					"application", app.IApplicationAddress, "error", err)
 				continue
 			}
 			errs = append(errs, err)
 		}
 	}
 	return errs
+}
+
+// handleForeclosedApp drains a foreclosed DaveConsensus application's epochs to
+// a terminal state. Foreclosure is a lifecycle fact (foreclose_block); the
+// application keeps health status OK and stays enabled for L1 observation.
+//
+// Once the app has ingested its pre-foreclosure sealed epochs and the advancer
+// has processed their inputs, each pre-foreclosure epoch is reconciled read-only
+// against the chain: an epoch whose root tournament settled with our commitment
+// becomes CLAIM_ACCEPTED, and a mismatch marks the app DIVERGED (reproducing the
+// on-chain divergence). Every remaining epoch can no longer be accepted once the
+// app is foreclosed, so it is terminalized to CLAIM_FORECLOSED. No Settle/Join
+// transactions are sent. A freshly bootstrapped node therefore reaches the same
+// epoch states a node that ran in real time would have.
+func (s *Service) handleForeclosedApp(ctx context.Context, app *Application) error {
+	if app.ForecloseBlock == 0 {
+		return nil
+	}
+	// Bootstrap-readiness guard. The drain gate below answers "given the
+	// rows currently in the local input table, is there any pre-foreclosure
+	// input still status=NONE?". For a freshly registered PRT app against
+	// an already-foreclosed contract, evmreader's checkForForeclosure writes
+	// foreclose_block before checkForEpochsAndInputs has had a chance to
+	// ingest the historical sealed epochs (and their inputs) — so the gate
+	// would see an empty table and return false. PRT's input ingestion is
+	// driven by EpochSealed scans, so the relevant scanner cursor is
+	// last_epoch_check_block (not last_input_check_block, which the Dave
+	// path never writes) — ForeclosureScanCaughtUp branches on consensus
+	// type to consult it.
+	if !app.ForeclosureScanCaughtUp() {
+		s.Logger.Info(
+			"Foreclosed PRT application still ingesting pre-foreclosure sealed epochs",
+			"application", app.Name,
+			"address", app.IApplicationAddress,
+			"last_epoch_check_block", app.LastEpochCheckBlock,
+			"foreclose_block", app.ForecloseBlock,
+		)
+		return nil
+	}
+	undrained, err := s.repository.HasUndrainedEpochsBeforeBlock(ctx, app.ID, app.ForecloseBlock)
+	if err != nil {
+		return fmt.Errorf("foreclosed app drain check (%s): %w",
+			app.IApplicationAddress, err)
+	}
+	if undrained {
+		s.Logger.Info(
+			"Foreclosed PRT application still draining pre-foreclosure inputs",
+			"application", app.Name,
+			"address", app.IApplicationAddress,
+			"foreclose_block", app.ForecloseBlock,
+		)
+		return nil
+	}
+	// Epoch-level completion gate. Once every pre-foreclosure epoch is terminal
+	// (CLAIM_ACCEPTED or CLAIM_FORECLOSED), the drain is done and evmreader
+	// continues the post-foreclosure observation (drive-prove, withdrawals).
+	unreconciled, err := s.repository.HasUnreconciledClaimsBeforeBlock(ctx, app.ID, app.ForecloseBlock)
+	if err != nil {
+		return fmt.Errorf("foreclosed app claim-reconciliation check (%s): %w",
+			app.IApplicationAddress, err)
+	}
+	if !unreconciled {
+		return nil
+	}
+
+	// Read-only reconciliation: accept epochs whose root tournament settled with
+	// our commitment, and surface any divergence. This sends no transactions.
+	mostRecentBlock, err := s.client.BlockNumber(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching latest block for foreclosed app %s: %w",
+			app.IApplicationAddress, err)
+	}
+	if err := s.checkEpochs(ctx, app, mostRecentBlock); err != nil {
+		// A divergence detected here marks the app DIVERGED and returns the
+		// reason; propagate it like the normal validation path does.
+		return err
+	}
+
+	// Claim-computed epochs without an on-chain claim transaction can never be
+	// accepted now that the app is foreclosed: terminalize them to CLAIM_FORECLOSED.
+	return s.forecloseComputedEpochs(ctx, app)
+}
+
+// forecloseComputedEpochs transitions every unaccepted CLAIM_COMPUTED epoch of a
+// foreclosed application to CLAIM_FORECLOSED. Epochs that already have a
+// ClaimTransactionHash have an on-chain EpochSealed event to reconcile; leave
+// them CLAIM_COMPUTED so the next checkEpochs pass can accept or reject them.
+func (s *Service) forecloseComputedEpochs(ctx context.Context, app *Application) error {
+	epochs, _, err := getAllClaimComputedEpochs(ctx, s.repository, app.Name)
+	if err != nil {
+		return fmt.Errorf("listing computed epochs for foreclosed app %s: %w",
+			app.IApplicationAddress, err)
+	}
+	for _, epoch := range epochs {
+		if epoch.ClaimTransactionHash != nil {
+			s.Logger.Debug("Skipping foreclose terminalization for epoch with on-chain claim transaction",
+				"application", app.Name,
+				"address", app.IApplicationAddress,
+				"epoch_index", epoch.Index,
+				"tx", epoch.ClaimTransactionHash,
+			)
+			continue
+		}
+		if err := s.repository.UpdateEpochWithForeclosedClaim(ctx, app.ID, epoch.Index); err != nil {
+			return fmt.Errorf("foreclosing epoch %d of app %s: %w",
+				epoch.Index, app.IApplicationAddress, err)
+		}
+		s.Logger.Info("Terminalized unaccepted epoch of foreclosed application",
+			"application", app.Name,
+			"address", app.IApplicationAddress,
+			"epoch_index", epoch.Index,
+			"foreclose_block", app.ForecloseBlock,
+		)
+	}
+	return nil
 }
 
 func (s *Service) Stop(_ bool) []error {
