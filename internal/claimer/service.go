@@ -16,7 +16,6 @@ import (
 	"github.com/cartesi/rollups-node/pkg/service"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -35,13 +34,38 @@ type Service struct {
 	repository iclaimerRepository
 	blockchain iclaimerBlockchain
 
-	// submitted claims waiting for confirmation from the blockchain.
-	// only accessed from tick, so no need for a lock
-	// contains: application ID -> transaction hash, with a maximum of one
-	// key per application due to the epoch advancement logic.
-	claimsInFlight    map[int64]common.Hash
+	// submitClaim transactions waiting for confirmation from the blockchain.
+	// Tick is the only caller, so this map does not need a lock.
+	// Key: application ID. There is at most one entry per app.
+	claimsInFlight map[int64]inFlightTx
+
+	// acceptClaim transactions waiting for confirmation. This has the same map
+	// shape as claimsInFlight. It is separate because one app can have a submit
+	// transaction for a newer epoch and an accept transaction for an older one.
+	acceptsInFlight map[int64]inFlightTx
+
+	// acceptAttempts counts repeated acceptClaim attempts for one app and epoch.
+	// When the count is greater than maxAcceptAttempts, the app is marked
+	// FAILED. This prevents the node from spending gas forever on the same
+	// failing claim. The map is in memory only; restart clears it.
+	acceptAttempts map[acceptAttemptKey]uint64
+
+	// maxAcceptAttempts limits the counter above. It comes from
+	// CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS. The default is 5.
+	maxAcceptAttempts uint64
+
+	// consensusAddressChecks memoizes consensus-address drift checks during one
+	// Tick. An app can move through multiple claim stages in a single tick, and
+	// each stage guards against consensus replacement. The underlying eth_call is
+	// block-pinned, so one result per (app, block) is enough.
+	consensusAddressChecks map[consensusAddressCheckKey]error
+
 	submissionEnabled bool
 }
+
+// defaultMaxAcceptAttempts is used only when config is not supplied, mainly in
+// tests. The real env var also defaults to 5.
+const defaultMaxAcceptAttempts uint64 = 5
 
 const ClaimerConfigKey = "claimer"
 
@@ -94,7 +118,13 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 			chainId.Uint64(), nodeConfig.ChainID)
 	}
 	s.submissionEnabled = nodeConfig.ClaimSubmissionEnabled
-	s.claimsInFlight = map[int64]common.Hash{}
+	s.claimsInFlight = map[int64]inFlightTx{}
+	s.acceptsInFlight = map[int64]inFlightTx{}
+	s.acceptAttempts = map[acceptAttemptKey]uint64{}
+	s.maxAcceptAttempts = c.Config.ClaimerMaxAcceptAttempts
+	if s.maxAcceptAttempts == 0 {
+		s.maxAcceptAttempts = defaultMaxAcceptAttempts
+	}
 
 	var txOpts *bind.TransactOpts = nil
 	if s.submissionEnabled {
@@ -109,7 +139,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		logger:       s.Logger,
 		client:       c.EthConn,
 		txOpts:       txOpts,
-		defaultBlock: c.Config.BlockchainDefaultBlock,
+		defaultBlock: nodeConfig.DefaultBlock,
 	}
 
 	return s, nil
@@ -132,56 +162,8 @@ func (s *Service) Stop(bool) []error {
 	return nil
 }
 
-// NOTE: tick is not re-entrant!
-func (s *Service) Tick() []error {
-	errs := []error{}
-
-	// gather epochs pairs with open claims, either:
-	// - computed but not yet submitted
-	acceptedOrSubmittedEpochs, computedEpochs, computedApps, errSubmitted := s.repository.SelectSubmittedClaimPairsPerApp(s.Context)
-	if errSubmitted != nil {
-		errs = append(errs, errSubmitted)
-		return errs
-	}
-
-	// - submitted but not yet accepted.
-	acceptedEpochs, submittedEpochs, submittedApps, errAccepted := s.repository.SelectAcceptedClaimPairsPerApp(s.Context)
-	if errAccepted != nil {
-		errs = append(errs, errAccepted)
-		return errs
-	}
-
-	s.Logger.Debug("Processing claims for epochs",
-		"computed", len(computedEpochs),
-		"submitted", len(submittedEpochs),
-	)
-
-	// return early if there is nothing to do
-	if len(computedEpochs) == 0 && len(submittedEpochs) == 0 {
-		return nil
-	}
-
-	// we have claims to check. Get the latest/safe/finalized, etc. block
-	defaultBlockNumber, err := s.blockchain.getDefaultBlockNumber(s.Context)
-	if err != nil {
-		errs = append(errs, err)
-		return errs
-	}
-
-	submitted, submitErrs := s.submitClaimsAndUpdateDatabase(acceptedOrSubmittedEpochs, computedEpochs, computedApps, defaultBlockNumber)
-	accepted, acceptErrs := s.acceptClaimsAndUpdateDatabase(acceptedEpochs, submittedEpochs, submittedApps, defaultBlockNumber)
-	errs = append(errs, submitErrs...)
-	errs = append(errs, acceptErrs...)
-
-	// Signal reschedule whenever pipeline progress was made, even with errors.
-	// Accepting a claim frees the pipeline slot for the next epoch's submission.
-	// Confirming a submission enables the acceptance scan on the next tick.
-	// Erring apps are retried on the next tick regardless; suppressing
-	// reschedule would delay healthy apps by a full poll interval.
-	if submitted > 0 || accepted > 0 {
-		s.SignalReschedule()
-	}
-	return errs
+func (s *Service) String() string {
+	return s.Name
 }
 
 func setupPersistentConfig(

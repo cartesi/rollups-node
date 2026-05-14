@@ -145,6 +145,19 @@ description = """
 How many seconds the node will wait before trying to finish epochs for all applications."""
 used-by = ["prt", "node"]
 
+[rollups.CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS]
+default = "5"
+go-type = "uint64"
+description = """
+Maximum number of consecutive acceptClaim attempts per (application, epoch) before
+the application is marked FAILED. Bounds wasted gas on a persistently-reverting chain
+(gas misconfig, nonce gap, signer not authorised, fork inconsistency). The default
+of 5 tolerates short transient blips and escalates within ~5 ticks. High-traffic
+mainnet apps with brittle gas markets may set this higher; conservative test networks
+may set it lower. The counter is in-memory per (appID, epochIndex) and resets on
+transition to CLAIM_ACCEPTED."""
+used-by = ["claimer", "node"]
+
 [rollups.CARTESI_MAX_STARTUP_TIME]
 default = "15"
 go-type = "Duration"

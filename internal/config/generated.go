@@ -79,6 +79,7 @@ const (
 	BLOCKCHAIN_WS_LIVENESS_TIMEOUT                    = "CARTESI_BLOCKCHAIN_WS_LIVENESS_TIMEOUT"
 	BLOCKCHAIN_WS_MAX_RETRIES                         = "CARTESI_BLOCKCHAIN_WS_MAX_RETRIES"
 	BLOCKCHAIN_WS_RECONNECT_INTERVAL                  = "CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL"
+	CLAIMER_MAX_ACCEPT_ATTEMPTS                       = "CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS"
 	CLAIMER_POLLING_INTERVAL                          = "CARTESI_CLAIMER_POLLING_INTERVAL"
 	MAX_STARTUP_TIME                                  = "CARTESI_MAX_STARTUP_TIME"
 	PRT_POLLING_INTERVAL                              = "CARTESI_PRT_POLLING_INTERVAL"
@@ -215,6 +216,8 @@ func SetDefaults() {
 	viper.SetDefault(BLOCKCHAIN_WS_MAX_RETRIES, "4")
 
 	viper.SetDefault(BLOCKCHAIN_WS_RECONNECT_INTERVAL, "1")
+
+	viper.SetDefault(CLAIMER_MAX_ACCEPT_ATTEMPTS, "5")
 
 	viper.SetDefault(CLAIMER_POLLING_INTERVAL, "3")
 
@@ -456,6 +459,15 @@ type ClaimerConfig struct {
 	// Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited.
 	BlockchainMaxBlockRange uint64 `mapstructure:"CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"`
 
+	// Maximum number of consecutive acceptClaim attempts per (application, epoch) before
+	// the application is marked FAILED. Bounds wasted gas on a persistently-reverting chain
+	// (gas misconfig, nonce gap, signer not authorised, fork inconsistency). The default
+	// of 5 tolerates short transient blips and escalates within ~5 ticks. High-traffic
+	// mainnet apps with brittle gas markets may set this higher; conservative test networks
+	// may set it lower. The counter is in-memory per (appID, epochIndex) and resets on
+	// transition to CLAIM_ACCEPTED.
+	ClaimerMaxAcceptAttempts uint64 `mapstructure:"CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS"`
+
 	// How many seconds the node will wait before querying the database for new claims.
 	ClaimerPollingInterval Duration `mapstructure:"CARTESI_CLAIMER_POLLING_INTERVAL"`
 
@@ -566,6 +578,13 @@ func LoadClaimerConfig() (*ClaimerConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE is required for the claimer service: %w", err)
+	}
+
+	cfg.ClaimerMaxAcceptAttempts, err = GetClaimerMaxAcceptAttempts()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS is required for the claimer service: %w", err)
 	}
 
 	cfg.ClaimerPollingInterval, err = GetClaimerPollingInterval()
@@ -1013,6 +1032,15 @@ type NodeConfig struct {
 	// Wait time in seconds between WebSocket subscription reconnection attempts after a connection failure.
 	BlockchainWsReconnectInterval Duration `mapstructure:"CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL"`
 
+	// Maximum number of consecutive acceptClaim attempts per (application, epoch) before
+	// the application is marked FAILED. Bounds wasted gas on a persistently-reverting chain
+	// (gas misconfig, nonce gap, signer not authorised, fork inconsistency). The default
+	// of 5 tolerates short transient blips and escalates within ~5 ticks. High-traffic
+	// mainnet apps with brittle gas markets may set this higher; conservative test networks
+	// may set it lower. The counter is in-memory per (appID, epochIndex) and resets on
+	// transition to CLAIM_ACCEPTED.
+	ClaimerMaxAcceptAttempts uint64 `mapstructure:"CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS"`
+
 	// How many seconds the node will wait before querying the database for new claims.
 	ClaimerPollingInterval Duration `mapstructure:"CARTESI_CLAIMER_POLLING_INTERVAL"`
 
@@ -1251,6 +1279,13 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL is required for the node service: %w", err)
+	}
+
+	cfg.ClaimerMaxAcceptAttempts, err = GetClaimerMaxAcceptAttempts()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS is required for the node service: %w", err)
 	}
 
 	cfg.ClaimerPollingInterval, err = GetClaimerPollingInterval()
@@ -1603,6 +1638,7 @@ func (c *NodeConfig) ToClaimerConfig() *ClaimerConfig {
 		BlockchainHttpRetryMaxWait:    c.BlockchainHttpRetryMaxWait,
 		BlockchainHttpRetryMinWait:    c.BlockchainHttpRetryMinWait,
 		BlockchainMaxBlockRange:       c.BlockchainMaxBlockRange,
+		ClaimerMaxAcceptAttempts:      c.ClaimerMaxAcceptAttempts,
 		ClaimerPollingInterval:        c.ClaimerPollingInterval,
 		MaxStartupTime:                c.MaxStartupTime,
 	}
@@ -2462,6 +2498,19 @@ func GetBlockchainWsReconnectInterval() (Duration, error) {
 		return v, nil
 	}
 	return notDefinedDuration(), fmt.Errorf("%s: %w", BLOCKCHAIN_WS_RECONNECT_INTERVAL, ErrNotDefined)
+}
+
+// GetClaimerMaxAcceptAttempts returns the value for the environment variable CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS.
+func GetClaimerMaxAcceptAttempts() (uint64, error) {
+	s := viper.GetString(CLAIMER_MAX_ACCEPT_ATTEMPTS)
+	if s != "" {
+		v, err := toUint64(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", CLAIMER_MAX_ACCEPT_ATTEMPTS, err)
+		}
+		return v, nil
+	}
+	return notDefineduint64(), fmt.Errorf("%s: %w", CLAIMER_MAX_ACCEPT_ATTEMPTS, ErrNotDefined)
 }
 
 // GetClaimerPollingInterval returns the value for the environment variable CARTESI_CLAIMER_POLLING_INTERVAL.
