@@ -55,14 +55,24 @@ paths:
 
         "503":
           description: |
-            The application is registered but its Cartesi Machine instance
-            has not been initialized yet. If the application is in the
-            enabled state, the machine will be available once the advancer
-            service completes initialization.
+            The inspect request cannot be served right now.
+
+            This can happen when the application is registered but its
+            Cartesi Machine instance has not been initialized yet, when the
+            application has been foreclosed and its machine is no longer
+            available for live inspect requests, or when the application's
+            inspect capacity is exhausted.
           content:
             text/plain:
               schema:
                 $ref: "#/components/schemas/Error"
+              examples:
+                machineNotReady:
+                  value: Machine not ready
+                foreclosed:
+                  value: Application was foreclosed; machine unavailable
+                atCapacity:
+                  value: Application inspect at capacity
 
         default:
           description: Error response.

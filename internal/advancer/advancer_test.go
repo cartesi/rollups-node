@@ -261,8 +261,8 @@ func (s *AdvancerSuite) TestStep() {
 		// Step returns a combined error but the healthy app was still processed
 		require.Error(err)
 		require.Contains(err.Error(), "advance error")
-		require.Equal(1, repo.ApplicationStateUpdates)
-		require.Equal(ApplicationState_Failed, repo.LastApplicationState)
+		require.Equal(1, repo.ApplicationStatusUpdates)
+		require.Equal(ApplicationStatus_Failed, repo.LastApplicationStatus)
 
 		// app2's input was processed despite app1's failure
 		require.Len(repo.StoredResults, 1)
@@ -308,7 +308,7 @@ func (s *AdvancerSuite) TestGetUnprocessedInputs() {
 }
 
 func (s *AdvancerSuite) TestProcess() {
-	s.Run("ApplicationStateUpdate", func() {
+	s.Run("ApplicationStatusUpdate", func() {
 		require := s.Require()
 		env := s.setupOneApp()
 		inputs := []*Input{
@@ -317,19 +317,19 @@ func (s *AdvancerSuite) TestProcess() {
 
 		err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 		require.Error(err)
-		require.Equal(1, env.repo.ApplicationStateUpdates)
-		require.Equal(ApplicationState_Failed, env.repo.LastApplicationState)
-		require.NotNil(env.repo.LastApplicationStateReason)
-		require.Equal("advance error", *env.repo.LastApplicationStateReason)
+		require.Equal(1, env.repo.ApplicationStatusUpdates)
+		require.Equal(ApplicationStatus_Failed, env.repo.LastApplicationStatus)
+		require.NotNil(env.repo.LastApplicationStatusReason)
+		require.Equal("advance error", *env.repo.LastApplicationStatusReason)
 	})
 
-	s.Run("ApplicationStateUpdateError", func() {
+	s.Run("ApplicationStatusUpdateError", func() {
 		require := s.Require()
 		env := s.setupOneApp()
 		inputs := []*Input{
 			newInput(env.app.Application.ID, 0, 0, []byte("advance error")),
 		}
-		env.repo.UpdateApplicationStateError = errors.New("update state error")
+		env.repo.UpdateApplicationStatusError = errors.New("update state error")
 
 		err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 		require.Error(err)
@@ -706,8 +706,8 @@ func (s *AdvancerSuite) TestHandleEpochAfterInputsProcessed() {
 		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
 		require.Error(err)
 		require.ErrorIs(err, manager.ErrMachineClosed)
-		require.Equal(1, env.repo.ApplicationStateUpdates)
-		require.Equal(ApplicationState_Failed, env.repo.LastApplicationState)
+		require.Equal(1, env.repo.ApplicationStatusUpdates)
+		require.Equal(ApplicationStatus_Failed, env.repo.LastApplicationStatus)
 	})
 
 	s.Run("EmptyEpochIndexGt0RepeatsPreviousProof", func() {
@@ -1877,37 +1877,37 @@ func (m *MockMachineInstance) Close() error {
 // ------------------------------------------------------------------------------------------------
 
 type MockRepository struct {
-	GetEpochsReturn             map[common.Address][]*Epoch
-	GetEpochsError              error
-	GetEpochsBlock              bool
-	GetInputsReturn             map[common.Address][]*Input
-	GetInputsError              error
-	GetInputsBlock              bool
-	StoreAdvanceError           error
-	StoreAdvanceFailCount       int
-	UpdateApplicationStateError error
-	UpdateEpochsError           error
-	UpdateOutputsProofError     error
-	GetLastSnapshotReturn       *Input
-	GetLastSnapshotError        error
-	RepeatOutputsProofError     error
-	GetEpochReturn              *Epoch
-	GetEpochError               error
-	GetLastInputReturn          *Input
-	GetLastInputError           error
-	GetLastProcessedInputReturn *Input
-	GetLastProcessedInputError  error
-	UpdateSnapshotURIError      error
+	GetEpochsReturn              map[common.Address][]*Epoch
+	GetEpochsError               error
+	GetEpochsBlock               bool
+	GetInputsReturn              map[common.Address][]*Input
+	GetInputsError               error
+	GetInputsBlock               bool
+	StoreAdvanceError            error
+	StoreAdvanceFailCount        int
+	UpdateApplicationStatusError error
+	UpdateEpochsError            error
+	UpdateOutputsProofError      error
+	GetLastSnapshotReturn        *Input
+	GetLastSnapshotError         error
+	RepeatOutputsProofError      error
+	GetEpochReturn               *Epoch
+	GetEpochError                error
+	GetLastInputReturn           *Input
+	GetLastInputError            error
+	GetLastProcessedInputReturn  *Input
+	GetLastProcessedInputError   error
+	UpdateSnapshotURIError       error
 
-	StoredResults              []*AdvanceResult
-	StoredAppIDs               []int64
-	ApplicationStateUpdates    int
-	LastApplicationState       ApplicationState
-	LastApplicationStateReason *string
-	OutputsProofUpdated        bool
-	RepeatOutputsProofCalled   bool
-	SnapshotURIUpdated         bool
-	EpochInputsProcessedCount  int
+	StoredResults               []*AdvanceResult
+	StoredAppIDs                []int64
+	ApplicationStatusUpdates    int
+	LastApplicationStatus       ApplicationStatus
+	LastApplicationStatusReason *string
+	OutputsProofUpdated         bool
+	RepeatOutputsProofCalled    bool
+	SnapshotURIUpdated          bool
+	EpochInputsProcessedCount   int
 
 	mu sync.Mutex
 }
@@ -2045,16 +2045,16 @@ func (mock *MockRepository) UpdateEpochInputsProcessed(ctx context.Context, name
 	return mock.UpdateEpochsError
 }
 
-func (mock *MockRepository) UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error {
+func (mock *MockRepository) UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error {
 	// Check for context cancellation
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
-	mock.ApplicationStateUpdates++
-	mock.LastApplicationState = state
-	mock.LastApplicationStateReason = reason
-	return mock.UpdateApplicationStateError
+	mock.ApplicationStatusUpdates++
+	mock.LastApplicationStatus = status
+	mock.LastApplicationStatusReason = reason
+	return mock.UpdateApplicationStatusError
 }
 
 func (mock *MockRepository) GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error) {

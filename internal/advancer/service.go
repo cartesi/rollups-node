@@ -129,6 +129,15 @@ func (s *Service) Tick() []error {
 		s.Logger.Warn("Tick interrupted by shutdown", "error", err)
 		return nil
 	}
+	// Canceled is graceful per the project convention: code paths that
+	// wrap cancellation (e.g. handleSnapshot → createSnapshot →
+	// "failed to update input snapshot URI: %w") would otherwise surface
+	// at ERR via the framework's Tick wrapper. DeadlineExceeded remains a
+	// real failure and is propagated.
+	if errors.Is(err, context.Canceled) {
+		s.Logger.Debug("Tick cancelled (shutdown)", "error", err)
+		return nil
+	}
 	return []error{err}
 }
 

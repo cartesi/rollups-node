@@ -45,7 +45,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 			ID:                  1,
 			Name:                "App1",
 			IApplicationAddress: common.HexToAddress("0x1"),
-			State:               model.ApplicationState_Enabled,
+			Status:              model.ApplicationStatus_OK,
 			ExecutionParameters: model.ExecutionParameters{
 				AdvanceMaxDeadline:    100,
 				InspectMaxDeadline:    100,
@@ -75,6 +75,99 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 		require.True(manager.HasMachine(1))
 
 		repo.AssertCalled(s.T(), "ListApplications", mock.Anything, mock.Anything, mock.Anything, false)
+	})
+
+	s.Run("AddsMachineForForeclosedAppWithUndrainedInputs", func() {
+		require := s.Require()
+
+		repo := &MockMachineRepository{}
+		app := &model.Application{
+			ID:                  1,
+			Name:                "ForeclosedApp",
+			IApplicationAddress: common.HexToAddress("0x1"),
+			Enabled:             true,
+			Status:              model.ApplicationStatus_OK,
+			ForecloseBlock:      100,
+			// Caught up (last_input_check_block >= foreclose_block), so the
+			// drain query below is trustworthy and gets consulted.
+			LastInputCheckBlock: 100,
+			ExecutionParameters: model.ExecutionParameters{
+				AdvanceMaxDeadline:    100,
+				InspectMaxDeadline:    100,
+				MaxConcurrentInspects: 3,
+			},
+		}
+
+		// The executable filter selects OK apps that have not foreclosed; the
+		// drain filter selects OK apps that have. They are distinguished by
+		// ForeclosureRecorded, since a foreclosed app keeps status OK.
+		repo.On("ListApplications", mock.Anything, mock.MatchedBy(func(f repository.ApplicationFilter) bool {
+			return f.Status != nil && *f.Status == model.ApplicationStatus_OK &&
+				f.ForeclosureRecorded != nil && !*f.ForeclosureRecorded
+		}), repository.Pagination{}, false).Return([]*model.Application{}, uint64(0), nil).Once()
+		repo.On("ListApplications", mock.Anything, mock.MatchedBy(func(f repository.ApplicationFilter) bool {
+			return f.Status != nil && *f.Status == model.ApplicationStatus_OK &&
+				f.ForeclosureRecorded != nil && *f.ForeclosureRecorded
+		}), repository.Pagination{}, false).Return([]*model.Application{app}, uint64(1), nil).Once()
+		repo.On("HasUndrainedEpochsBeforeBlock", mock.Anything, app.ID, app.ForecloseBlock).
+			Return(true, nil).Once()
+		repo.On("GetLastSnapshot", mock.Anything, mock.Anything).Return(nil, nil)
+
+		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		mockInstance := &DummyMachineInstanceMock{application: app}
+		factory := &MockMachineInstanceFactory{Instance: mockInstance}
+		manager := NewMachineManager(repo, testLogger, false, 500, WithInstanceFactory(factory))
+
+		err := manager.UpdateMachines(context.Background())
+		require.NoError(err)
+		require.True(manager.HasMachine(app.ID))
+		repo.AssertExpectations(s.T())
+	})
+
+	s.Run("KeepsMachineForForeclosedAppBeforeScanCaughtUp", func() {
+		require := s.Require()
+
+		repo := &MockMachineRepository{}
+		// Foreclosed app whose historical scan has NOT yet reached
+		// foreclose_block (last_input_check_block < foreclose_block). The
+		// inputs/epochs table is still incomplete, so the drain query would
+		// answer "nothing to drain" on an empty table. The manager must keep
+		// the machine and must NOT consult HasUndrainedEpochsBeforeBlock yet.
+		app := &model.Application{
+			ID:                  1,
+			Name:                "ForeclosedAppBootstrapping",
+			IApplicationAddress: common.HexToAddress("0x1"),
+			Enabled:             true,
+			Status:              model.ApplicationStatus_OK,
+			ForecloseBlock:      100,
+			LastInputCheckBlock: 99,
+			ExecutionParameters: model.ExecutionParameters{
+				AdvanceMaxDeadline:    100,
+				InspectMaxDeadline:    100,
+				MaxConcurrentInspects: 3,
+			},
+		}
+
+		repo.On("ListApplications", mock.Anything, mock.MatchedBy(func(f repository.ApplicationFilter) bool {
+			return f.Status != nil && *f.Status == model.ApplicationStatus_OK &&
+				f.ForeclosureRecorded != nil && !*f.ForeclosureRecorded
+		}), repository.Pagination{}, false).Return([]*model.Application{}, uint64(0), nil).Once()
+		repo.On("ListApplications", mock.Anything, mock.MatchedBy(func(f repository.ApplicationFilter) bool {
+			return f.Status != nil && *f.Status == model.ApplicationStatus_OK &&
+				f.ForeclosureRecorded != nil && *f.ForeclosureRecorded
+		}), repository.Pagination{}, false).Return([]*model.Application{app}, uint64(1), nil).Once()
+		repo.On("GetLastSnapshot", mock.Anything, mock.Anything).Return(nil, nil)
+
+		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		mockInstance := &DummyMachineInstanceMock{application: app}
+		factory := &MockMachineInstanceFactory{Instance: mockInstance}
+		manager := NewMachineManager(repo, testLogger, false, 500, WithInstanceFactory(factory))
+
+		err := manager.UpdateMachines(context.Background())
+		require.NoError(err)
+		require.True(manager.HasMachine(app.ID), "machine kept while the scan catches up")
+		repo.AssertExpectations(s.T())
+		repo.AssertNotCalled(s.T(), "HasUndrainedEpochsBeforeBlock", mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	s.Run("RemoveDisabledMachines", func() {
@@ -220,7 +313,7 @@ func (s *MachineManagerSuite) TestRemoveDisabledMachines() {
 }
 
 func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
-	s.Run("GetEnabledApplicationsError", func() {
+	s.Run("GetExecutableApplicationsError", func() {
 		require := s.Require()
 
 		repo := &MockMachineRepository{}
@@ -242,7 +335,7 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 			ID:                  1,
 			Name:                "App1",
 			IApplicationAddress: common.HexToAddress("0x1"),
-			State:               model.ApplicationState_Enabled,
+			Status:              model.ApplicationStatus_OK,
 			ExecutionParameters: model.ExecutionParameters{
 				AdvanceMaxDeadline:    100,
 				InspectMaxDeadline:    100,
@@ -283,7 +376,7 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 			ID:                  1,
 			Name:                "App1",
 			IApplicationAddress: common.HexToAddress("0x1"),
-			State:               model.ApplicationState_Enabled,
+			Status:              model.ApplicationStatus_OK,
 			ExecutionParameters: model.ExecutionParameters{
 				AdvanceMaxDeadline:    100,
 				InspectMaxDeadline:    100,
@@ -314,7 +407,7 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 			ID:                  1,
 			Name:                "App1",
 			IApplicationAddress: common.HexToAddress("0x1"),
-			State:               model.ApplicationState_Enabled,
+			Status:              model.ApplicationStatus_OK,
 			ProcessedInputs:     3,
 			ExecutionParameters: model.ExecutionParameters{
 				AdvanceMaxDeadline:    100,
@@ -424,6 +517,15 @@ func (m *MockMachineRepository) ListApplications(
 ) ([]*model.Application, uint64, error) {
 	args := m.Called(ctx, f, p, descending)
 	return args.Get(0).([]*model.Application), args.Get(1).(uint64), args.Error(2)
+}
+
+func (m *MockMachineRepository) HasUndrainedEpochsBeforeBlock(
+	ctx context.Context,
+	appID int64,
+	blockBound uint64,
+) (bool, error) {
+	args := m.Called(ctx, appID, blockBound)
+	return args.Bool(0), args.Error(1)
 }
 
 func (m *MockMachineRepository) ListInputs(

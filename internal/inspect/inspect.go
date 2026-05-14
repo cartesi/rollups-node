@@ -32,9 +32,10 @@ const maxPayloadSize = 1 << 21 // 2 MiB
 const inspectResponseHeadroom = 30 * time.Second
 
 var (
-	ErrInvalidMachines = errors.New("machines must not be nil")
-	ErrNoApp           = errors.New("no application")
-	ErrMachineNotReady = errors.New("machine not ready for application")
+	ErrInvalidMachines        = errors.New("machines must not be nil")
+	ErrNoApp                  = errors.New("no application")
+	ErrMachineNotReady        = errors.New("machine not ready for application")
+	ErrForeclosedAppNoMachine = errors.New("application was foreclosed; machine unavailable")
 )
 
 type IInspectMachines interface {
@@ -208,6 +209,11 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Machine not ready", http.StatusServiceUnavailable)
 			return
 		}
+		if errors.Is(resolveErr, ErrForeclosedAppNoMachine) {
+			inspect.Logger.Info("Foreclosed application machine unavailable", "application", dapp, "err", resolveErr)
+			http.Error(w, "Application was foreclosed; machine unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		if errors.Is(resolveErr, ErrNoApp) {
 			inspect.Logger.Info("Application not found", "application", dapp, "err", resolveErr)
 			http.Error(w, "Application not found", http.StatusNotFound)
@@ -307,6 +313,9 @@ func (inspect *Inspector) resolveApp(
 	}
 	machine, exists := inspect.GetMachine(app.ID)
 	if !exists {
+		if app.IsForeclosed() {
+			return nil, nil, fmt.Errorf("%w %s", ErrForeclosedAppNoMachine, nameOrAddress)
+		}
 		return nil, nil, fmt.Errorf("%w %s", ErrMachineNotReady, nameOrAddress)
 	}
 	return app, machine, nil

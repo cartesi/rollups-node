@@ -27,6 +27,7 @@ var (
 type MachineRepository interface {
 	// ListApplications retrieves applications based on filter criteria
 	ListApplications(ctx context.Context, f repository.ApplicationFilter, p repository.Pagination, descending bool) ([]*Application, uint64, error)
+	HasUndrainedEpochsBeforeBlock(ctx context.Context, appID int64, blockBound uint64) (bool, error)
 
 	// ListInputs retrieves inputs based on filter criteria
 	ListInputs(ctx context.Context, nameOrAddress string, f repository.InputFilter, p repository.Pagination, descending bool) ([]*Input, uint64, error)
@@ -101,10 +102,10 @@ func NewMachineManager(
 	return m
 }
 
-// UpdateMachines refreshes the list of machines based on enabled applications
+// UpdateMachines refreshes the list of machines based on applications that
+// still need local machine work.
 func (m *MachineManager) UpdateMachines(ctx context.Context) error {
-	// Get all enabled applications
-	apps, _, err := getEnabledApplications(ctx, m.repository)
+	apps, _, err := getMachineApplications(ctx, m.repository)
 	if err != nil {
 		return err
 	}
@@ -125,9 +126,19 @@ func (m *MachineManager) UpdateMachines(ctx context.Context) error {
 		// Find the latest snapshot for this application
 		snapshot, err := m.repository.GetLastSnapshot(ctx, app.IApplicationAddress.String())
 		if err != nil {
-			m.logger.Error("Failed to find latest snapshot",
-				"application", app.Name,
-				"error", err)
+			// Shutdown cancels the ctx mid-query; downgrade to Debug so
+			// operators don't see spurious ERR lines during a graceful
+			// stop. DeadlineExceeded would still flow through the Error
+			// branch and demand investigation.
+			if errors.Is(err, context.Canceled) {
+				m.logger.Debug("GetLastSnapshot canceled during shutdown",
+					"application", app.Name,
+					"error", err)
+			} else {
+				m.logger.Error("Failed to find latest snapshot",
+					"application", app.Name,
+					"error", err)
+			}
 			// Continue with template-based initialization
 		}
 
@@ -164,9 +175,19 @@ func (m *MachineManager) UpdateMachines(ctx context.Context) error {
 		if instance == nil {
 			instance, err = m.instanceFactory.NewFromTemplate(ctx, app, m.logger, m.checkHash)
 			if err != nil {
-				m.logger.Error("Failed to create machine instance",
-					"application", app.IApplicationAddress,
-					"error", err)
+				// Shutdown cancels the ctx mid-spawn; the partially
+				// constructed machine is torn down by NewFromTemplate
+				// itself. Downgrade to Debug for the graceful-stop case
+				// so the noise doesn't drown out real spawn failures.
+				if errors.Is(err, context.Canceled) {
+					m.logger.Debug("NewFromTemplate canceled during shutdown",
+						"application", app.IApplicationAddress,
+						"error", err)
+				} else {
+					m.logger.Error("Failed to create machine instance",
+						"application", app.IApplicationAddress,
+						"error", err)
+				}
 				continue
 			}
 		}
@@ -251,11 +272,11 @@ func (m *MachineManager) removeMachines(apps []*Application) {
 	for id, machine := range m.machines {
 		if _, present := activeApps[id]; !present {
 			if m.logger != nil {
-				m.logger.Info("Application is no longer enabled, shutting down machine",
+				m.logger.Info("Application is no longer executable, shutting down machine",
 					"application", machine.Application().Name)
 			}
 			if err := machine.Close(); err != nil && m.logger != nil {
-				m.logger.Warn("Failed to close machine for non-enabled application",
+				m.logger.Warn("Failed to close machine for non-executable application",
 					"application", machine.Application().Name, "error", err)
 			}
 			delete(m.machines, id)
@@ -316,10 +337,48 @@ func (m *MachineManager) Close() error {
 	return errors.Join(errs...)
 }
 
-// Helper function to get enabled applications
-func getEnabledApplications(ctx context.Context, repo MachineRepository) ([]*Application, uint64, error) {
-	f := repository.ApplicationFilter{State: Pointer(ApplicationState_Enabled)}
-	return repo.ListApplications(ctx, f, repository.Pagination{}, false)
+func getMachineApplications(ctx context.Context, repo MachineRepository) ([]*Application, uint64, error) {
+	apps, total, err := repo.ListApplications(ctx, repository.ExecutableApplicationsFilter(), repository.Pagination{}, false)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	foreclosedApps, foreclosedTotal, err := repo.ListApplications(ctx, foreclosedMachineDrainFilter(), repository.Pagination{}, false)
+	if err != nil {
+		return nil, 0, err
+	}
+	total += foreclosedTotal
+	for _, app := range foreclosedApps {
+		if app.ForecloseBlock == 0 {
+			continue
+		}
+		// Bootstrap-readiness guard, shared with the claimer and PRT. Until the
+		// historical L1 scan reaches foreclose_block the inputs/epochs table is
+		// incomplete, so HasUndrainedEpochsBeforeBlock would return false on an
+		// empty table and the machine would be torn down before the pre-
+		// foreclosure inputs it still needs to advance are even ingested. Keep
+		// the machine until the scan has caught up.
+		if !app.ForeclosureScanCaughtUp() {
+			apps = append(apps, app)
+			continue
+		}
+		undrained, err := repo.HasUndrainedEpochsBeforeBlock(ctx, app.ID, app.ForecloseBlock)
+		if err != nil {
+			return nil, 0, err
+		}
+		if undrained {
+			apps = append(apps, app)
+		}
+	}
+	return apps, total, nil
+}
+
+func foreclosedMachineDrainFilter() repository.ApplicationFilter {
+	return repository.ApplicationFilter{
+		Enabled:             new(true),
+		Status:              new(ApplicationStatus_OK),
+		ForeclosureRecorded: new(true),
+	}
 }
 
 // getProcessedInputs retrieves processed inputs with pagination support.

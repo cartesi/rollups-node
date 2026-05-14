@@ -1201,6 +1201,14 @@ func (r *mockSyncRepository) ListApplications(
 	return nil, 0, nil
 }
 
+func (r *mockSyncRepository) HasUndrainedEpochsBeforeBlock(
+	_ context.Context,
+	_ int64,
+	_ uint64,
+) (bool, error) {
+	return false, nil
+}
+
 func (r *mockSyncRepository) ListInputs(
 	ctx context.Context,
 	_ string,

@@ -34,7 +34,7 @@ type AdvancerRepository interface {
 	UpdateEpochInputsProcessed(ctx context.Context, nameOrAddress string, epochIndex uint64) error
 	UpdateEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64, proof *OutputsProof) error
 	RepeatPreviousEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64) error
-	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
+	UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	UpdateInputSnapshotURI(ctx context.Context, appId int64, inputIndex uint64, snapshotURI string) error
 	GetLastSnapshot(ctx context.Context, nameOrAddress string) (*Input, error)
@@ -248,22 +248,31 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 		result, err := machine.Advance(ctx, input.RawData, input.EpochIndex, input.Index, app.IsDaveConsensus())
 		input.RawData = nil // allow GC to collect payload while batch continues
 		if err != nil {
-			// If there's an error, mark the application as failed
+			// Graceful shutdown: bail out quietly without marking FAILED.
+			if errors.Is(err, context.Canceled) {
+				s.Logger.Debug("Advance cancelled due to shutdown",
+					"application", app.Name,
+					"index", input.Index)
+				return err
+			}
+
+			// Anything else (including DeadlineExceeded) is a real failure.
 			s.Logger.Error("Error executing advance",
 				"application", app.Name,
 				"index", input.Index,
 				"error", err)
 
-			// If the error is due to context cancellation, don't mark as failed
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			// DeadlineExceeded is a real failure but not a state-corruption
+			// signal — let the upper layer retry rather than marking FAILED.
+			if errors.Is(err, context.DeadlineExceeded) {
 				return err
 			}
 
 			if dbErr := appstatus.SetFailed(ctx, s.Logger, s.repository, app, err.Error()); dbErr != nil {
-				s.Logger.Error("Failed to persist FAILED state — machine will be closed "+
-					"but app remains ENABLED in DB; it will be re-created from the "+
-					"last snapshot on the next tick. If the root cause persists, "+
-					"this may loop.",
+				s.Logger.Error("Failed to persist FAILED status — machine will be closed "+
+					"but the app status remains unchanged in DB; it may be re-created "+
+					"from the last snapshot on the next tick. If the root cause "+
+					"persists, this may loop.",
 					"application", app.Name, "db_error", dbErr)
 			}
 
@@ -314,11 +323,17 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 		if result.Status == InputCompletionStatus_Accepted {
 			err = s.handleSnapshot(ctx, app, machine, input)
 			if err != nil {
-				s.Logger.Error("Failed to create snapshot",
-					"application", app.Name,
-					"index", input.Index,
-					"error", err)
-				// Continue processing even if snapshot creation fails
+				if errors.Is(err, context.Canceled) {
+					s.Logger.Debug("Snapshot creation cancelled due to shutdown",
+						"application", app.Name,
+						"index", input.Index)
+				} else {
+					s.Logger.Error("Failed to create snapshot",
+						"application", app.Name,
+						"index", input.Index,
+						"error", err)
+					// Continue processing even if snapshot creation fails
+				}
 			}
 		}
 	}
@@ -394,7 +409,7 @@ func (s *Service) handleEpochAfterInputsProcessed(ctx context.Context, app *Appl
 			// mark the app as failed to avoid an infinite retry loop.
 			if errors.Is(err, manager.ErrMachineClosed) {
 				if dbErr := appstatus.SetFailed(ctx, s.Logger, s.repository, app, err.Error()); dbErr != nil {
-					s.Logger.Error("Failed to persist FAILED state for crashed machine",
+					s.Logger.Error("Failed to persist FAILED status for crashed machine",
 						"application", app.Name, "db_error", dbErr)
 				}
 			}
@@ -487,10 +502,15 @@ func (s *Service) createSnapshot(ctx context.Context, app *Application, machine 
 	// return the snapshot we just created — that would cause self-deletion.
 	previousSnapshot, err := s.repository.GetLastSnapshot(ctx, app.IApplicationAddress.String())
 	if err != nil {
-		s.Logger.Error("Failed to get previous snapshot",
-			"application", app.Name,
-			"error", err)
-		// Continue even if we can't get the previous snapshot
+		if errors.Is(err, context.Canceled) {
+			s.Logger.Debug("GetLastSnapshot cancelled due to shutdown",
+				"application", app.Name)
+		} else {
+			s.Logger.Error("Failed to get previous snapshot",
+				"application", app.Name,
+				"error", err)
+			// Continue even if we can't get the previous snapshot
+		}
 	}
 
 	// Update the input record with the snapshot URI

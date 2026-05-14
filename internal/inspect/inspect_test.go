@@ -9,6 +9,7 @@ import (
 	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -114,6 +115,39 @@ func (s *InspectSuite) TestPostMachineNotReady() {
 	s.Require().Nil(err)
 	defer respByAddr.Body.Close()
 	s.Equal(http.StatusServiceUnavailable, respByAddr.StatusCode)
+}
+
+func (s *InspectSuite) TestPostForeclosedMachineUnavailable() {
+	app := &Application{
+		ID:                  42,
+		IApplicationAddress: randomAddress(),
+		Name:                "app-foreclosed",
+		Status:              ApplicationStatus_OK,
+		ForecloseBlock:      100,
+	}
+	repo := newMockRepository()
+	repo.apps = append(repo.apps, app)
+	machines := newMockMachines()
+
+	inspect := &Inspector{
+		repository:       repo,
+		IInspectMachines: machines,
+		Logger:           service.NewLogger(slog.LevelDebug, true),
+	}
+
+	srv := s.startServer(inspect)
+	defer srv.Close()
+
+	resp, err := http.Post(fmt.Sprintf("%s/inspect/%s", srv.URL, app.Name),
+		"application/octet-stream",
+		bytes.NewBuffer([]byte("hello")))
+	s.Require().Nil(err)
+	defer resp.Body.Close()
+	s.Equal(http.StatusServiceUnavailable, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	s.Require().Nil(err)
+	s.Contains(string(body), "Application was foreclosed; machine unavailable")
 }
 
 func (s *InspectSuite) TestPostMaxPayloadSize() {
