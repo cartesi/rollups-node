@@ -28,27 +28,27 @@ func newTestApp() *Application {
 		IApplicationAddress: common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
 		IConsensusAddress:   common.HexToAddress("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"),
 		IInputBoxAddress:    common.HexToAddress("0x1111111111111111111111111111111111111111"),
-		State:               ApplicationState_Enabled,
+		Status:              ApplicationStatus_OK,
 	}
 }
 
 type mockRepo struct {
 	lastAppID  int64
-	lastState  ApplicationState
+	lastStatus ApplicationStatus
 	lastReason *string
 	err        error
 	callCount  int
 }
 
-func (m *mockRepo) UpdateApplicationState(
+func (m *mockRepo) UpdateApplicationStatus(
 	_ context.Context,
 	appID int64,
-	state ApplicationState,
+	state ApplicationStatus,
 	reason *string,
 ) error {
 	m.callCount++
 	m.lastAppID = appID
-	m.lastState = state
+	m.lastStatus = state
 	m.lastReason = reason
 	return m.err
 }
@@ -64,12 +64,12 @@ func (s *AppStatusSuite) TestSetFailed() {
 	require.NoError(err)
 	require.Equal(1, repo.callCount)
 	require.Equal(int64(42), repo.lastAppID)
-	require.Equal(ApplicationState_Failed, repo.lastState)
+	require.Equal(ApplicationStatus_Failed, repo.lastStatus)
 	require.NotNil(repo.lastReason)
 	require.Equal("machine crashed: OOM", *repo.lastReason)
 
-	// Verify in-memory state was updated
-	require.Equal(ApplicationState_Failed, app.State)
+	// Verify in-memory status was updated.
+	require.Equal(ApplicationStatus_Failed, app.Status)
 	require.NotNil(app.Reason)
 	require.Equal("machine crashed: OOM", *app.Reason)
 }
@@ -85,35 +85,58 @@ func (s *AppStatusSuite) TestSetFailedf() {
 
 	require.NoError(err)
 	require.Equal(1, repo.callCount)
-	require.Equal(ApplicationState_Failed, repo.lastState)
+	require.Equal(ApplicationStatus_Failed, repo.lastStatus)
 	require.NotNil(repo.lastReason)
 	require.Equal("epoch 5 input 42: timeout", *repo.lastReason)
 
-	// Verify in-memory state was updated
-	require.Equal(ApplicationState_Failed, app.State)
+	// Verify in-memory status was updated.
+	require.Equal(ApplicationStatus_Failed, app.Status)
 }
 
-func (s *AppStatusSuite) TestSetInoperable() {
+func (s *AppStatusSuite) TestSetDiverged() {
 	require := s.Require()
 	repo := &mockRepo{}
 	logger := slog.Default()
 	app := newTestApp()
 
-	err := SetInoperable(context.Background(), logger, repo, app, "hash mismatch: 0xaa != 0xbb")
+	err := SetDiverged(context.Background(), logger, repo, app, "hash mismatch: 0xaa != 0xbb")
 
-	// SetInoperable always returns a non-nil error (INOPERABLE is terminal)
+	// SetDiverged always returns a non-nil error (DIVERGED is terminal)
 	require.Error(err)
 	require.Contains(err.Error(), "hash mismatch: 0xaa != 0xbb")
 	require.Equal(1, repo.callCount)
 	require.Equal(int64(42), repo.lastAppID)
-	require.Equal(ApplicationState_Inoperable, repo.lastState)
+	require.Equal(ApplicationStatus_Diverged, repo.lastStatus)
 	require.NotNil(repo.lastReason)
 	require.Equal("hash mismatch: 0xaa != 0xbb", *repo.lastReason)
 
-	// Verify in-memory state was updated
-	require.Equal(ApplicationState_Inoperable, app.State)
+	// Verify in-memory status was updated.
+	require.Equal(ApplicationStatus_Diverged, app.Status)
 	require.NotNil(app.Reason)
 	require.Equal("hash mismatch: 0xaa != 0xbb", *app.Reason)
+}
+
+func (s *AppStatusSuite) TestSetCorrupted() {
+	require := s.Require()
+	repo := &mockRepo{}
+	logger := slog.Default()
+	app := newTestApp()
+
+	err := SetCorrupted(context.Background(), logger, repo, app, "machine snapshot missing")
+
+	// SetCorrupted always returns a non-nil error (CORRUPTED is terminal)
+	require.Error(err)
+	require.Contains(err.Error(), "machine snapshot missing")
+	require.Equal(1, repo.callCount)
+	require.Equal(int64(42), repo.lastAppID)
+	require.Equal(ApplicationStatus_Corrupted, repo.lastStatus)
+	require.NotNil(repo.lastReason)
+	require.Equal("machine snapshot missing", *repo.lastReason)
+
+	// Verify in-memory status was updated.
+	require.Equal(ApplicationStatus_Corrupted, app.Status)
+	require.NotNil(app.Reason)
+	require.Equal("machine snapshot missing", *app.Reason)
 }
 
 func (s *AppStatusSuite) TestSetFailedDBError() {
@@ -127,31 +150,50 @@ func (s *AppStatusSuite) TestSetFailedDBError() {
 
 	require.ErrorIs(err, dbErr)
 	require.Equal(1, repo.callCount)
-	require.Equal(ApplicationState_Failed, repo.lastState)
+	require.Equal(ApplicationStatus_Failed, repo.lastStatus)
 	require.NotNil(repo.lastReason)
 	require.Equal("process crashed", *repo.lastReason)
 
-	// In-memory state must NOT be updated on DB error to stay consistent
-	require.Equal(ApplicationState_Enabled, app.State)
+	// In-memory status must NOT be updated on DB error to stay consistent.
+	require.Equal(ApplicationStatus_OK, app.Status)
 	require.Nil(app.Reason)
 }
 
-func (s *AppStatusSuite) TestSetInoperableDBError() {
+func (s *AppStatusSuite) TestSetDivergedDBError() {
 	require := s.Require()
 	dbErr := errors.New("db connection failed")
 	repo := &mockRepo{err: dbErr}
 	logger := slog.Default()
 	app := newTestApp()
 
-	err := SetInoperable(context.Background(), logger, repo, app, "state corruption")
+	err := SetDiverged(context.Background(), logger, repo, app, "claim disagreement")
+
+	require.ErrorIs(err, dbErr)
+	require.Contains(err.Error(), "claim disagreement")
+	require.Equal(1, repo.callCount)
+	require.Equal(ApplicationStatus_Diverged, repo.lastStatus)
+
+	// In-memory status must NOT be updated on DB error to stay consistent.
+	require.Equal(ApplicationStatus_OK, app.Status)
+	require.Nil(app.Reason)
+}
+
+func (s *AppStatusSuite) TestSetCorruptedDBError() {
+	require := s.Require()
+	dbErr := errors.New("db connection failed")
+	repo := &mockRepo{err: dbErr}
+	logger := slog.Default()
+	app := newTestApp()
+
+	err := SetCorrupted(context.Background(), logger, repo, app, "state corruption")
 
 	require.ErrorIs(err, dbErr)
 	require.Contains(err.Error(), "state corruption")
 	require.Equal(1, repo.callCount)
-	require.Equal(ApplicationState_Inoperable, repo.lastState)
+	require.Equal(ApplicationStatus_Corrupted, repo.lastStatus)
 
-	// In-memory state must NOT be updated on DB error to stay consistent
-	require.Equal(ApplicationState_Enabled, app.State)
+	// In-memory status must NOT be updated on DB error to stay consistent.
+	require.Equal(ApplicationStatus_OK, app.Status)
 	require.Nil(app.Reason)
 }
 
@@ -167,44 +209,85 @@ func (s *AppStatusSuite) TestReasonStoredExactly() {
 	require.Equal("epoch 5 input 42: timeout", *repo.lastReason)
 }
 
-func (s *AppStatusSuite) TestSetInoperablef() {
+func (s *AppStatusSuite) TestSetDivergedf() {
 	require := s.Require()
 	repo := &mockRepo{}
 	logger := slog.Default()
 	app := newTestApp()
 
-	err := SetInoperablef(context.Background(), logger, repo, app,
+	err := SetDivergedf(context.Background(), logger, repo, app,
 		"epoch %d: hash mismatch %s != %s", 5, "0xaa", "0xbb")
 
-	// SetInoperablef always returns a non-nil error (INOPERABLE is terminal)
+	// SetDivergedf always returns a non-nil error (DIVERGED is terminal)
 	require.Error(err)
 	require.Contains(err.Error(), "epoch 5: hash mismatch 0xaa != 0xbb")
 	require.Equal(1, repo.callCount)
-	require.Equal(ApplicationState_Inoperable, repo.lastState)
+	require.Equal(ApplicationStatus_Diverged, repo.lastStatus)
 	require.NotNil(repo.lastReason)
 	require.Equal("epoch 5: hash mismatch 0xaa != 0xbb", *repo.lastReason)
 
-	// Verify in-memory state was updated (DB succeeded)
-	require.Equal(ApplicationState_Inoperable, app.State)
+	// Verify in-memory status was updated (DB succeeded).
+	require.Equal(ApplicationStatus_Diverged, app.Status)
 	require.NotNil(app.Reason)
 	require.Equal("epoch 5: hash mismatch 0xaa != 0xbb", *app.Reason)
 }
 
-func (s *AppStatusSuite) TestSetInoperablefDBError() {
+func (s *AppStatusSuite) TestSetCorruptedf() {
+	require := s.Require()
+	repo := &mockRepo{}
+	logger := slog.Default()
+	app := newTestApp()
+
+	err := SetCorruptedf(context.Background(), logger, repo, app,
+		"epoch %d: missing snapshot", 7)
+
+	// SetCorruptedf always returns a non-nil error (CORRUPTED is terminal)
+	require.Error(err)
+	require.Contains(err.Error(), "epoch 7: missing snapshot")
+	require.Equal(1, repo.callCount)
+	require.Equal(ApplicationStatus_Corrupted, repo.lastStatus)
+	require.NotNil(repo.lastReason)
+	require.Equal("epoch 7: missing snapshot", *repo.lastReason)
+
+	// Verify in-memory status was updated (DB succeeded).
+	require.Equal(ApplicationStatus_Corrupted, app.Status)
+	require.NotNil(app.Reason)
+	require.Equal("epoch 7: missing snapshot", *app.Reason)
+}
+
+func (s *AppStatusSuite) TestSetDivergedfDBError() {
 	require := s.Require()
 	dbErr := errors.New("db connection failed")
 	repo := &mockRepo{err: dbErr}
 	logger := slog.Default()
 	app := newTestApp()
 
-	err := SetInoperablef(context.Background(), logger, repo, app, "reason: %s", "test")
+	err := SetDivergedf(context.Background(), logger, repo, app, "reason: %s", "test")
 
 	require.Error(err)
 	require.ErrorIs(err, dbErr)
 	require.Contains(err.Error(), "reason: test")
 
-	// In-memory state must NOT be updated on DB error
-	require.Equal(ApplicationState_Enabled, app.State)
+	// In-memory status must NOT be updated on DB error.
+	require.Equal(ApplicationStatus_OK, app.Status)
+	require.Nil(app.Reason)
+}
+
+func (s *AppStatusSuite) TestSetCorruptedfDBError() {
+	require := s.Require()
+	dbErr := errors.New("db connection failed")
+	repo := &mockRepo{err: dbErr}
+	logger := slog.Default()
+	app := newTestApp()
+
+	err := SetCorruptedf(context.Background(), logger, repo, app, "reason: %s", "test")
+
+	require.Error(err)
+	require.ErrorIs(err, dbErr)
+	require.Contains(err.Error(), "reason: test")
+
+	// In-memory status must NOT be updated on DB error.
+	require.Equal(ApplicationStatus_OK, app.Status)
 	require.Nil(app.Reason)
 }
 
@@ -219,9 +302,103 @@ func (s *AppStatusSuite) TestSetFailedfDBError() {
 
 	require.ErrorIs(err, dbErr)
 	require.Equal(1, repo.callCount)
-	require.Equal(ApplicationState_Failed, repo.lastState)
+	require.Equal(ApplicationStatus_Failed, repo.lastStatus)
 	require.NotNil(repo.lastReason)
 	require.Equal("input 7: crash", *repo.lastReason)
+}
+
+// captureHandler is an slog.Handler that records every emitted Record so
+// tests can assert on log output. It is concurrency-safe enough for
+// single-goroutine test scenarios.
+type captureHandler struct {
+	records []slog.Record
+}
+
+func (h *captureHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
+func (h *captureHandler) Handle(_ context.Context, r slog.Record) error {
+	h.records = append(h.records, r)
+	return nil
+}
+func (h *captureHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+func (h *captureHandler) WithGroup(_ string) slog.Handler      { return h }
+
+// findRecord returns the first record whose message equals msg, or nil.
+func findRecord(records []slog.Record, msg string) *slog.Record {
+	for i := range records {
+		if records[i].Message == msg {
+			return &records[i]
+		}
+	}
+	return nil
+}
+
+// attrValue extracts the value of a named attribute from a record, or nil.
+func attrValue(r *slog.Record, key string) any {
+	var found any
+	r.Attrs(func(a slog.Attr) bool {
+		if a.Key == key {
+			found = a.Value.Any()
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+// TestSetDivergedDBErrorLogsBothLines asserts the logging contract
+// documented on SetDiverged: when the DB write fails, BOTH the "marking
+// application as diverged" line and the "failed to update application
+// status" line are emitted at ERROR level. This is the invariant that lets
+// callers discard the returned error with `_ =` without losing operator
+// visibility into the DB failure.
+func (s *AppStatusSuite) TestSetDivergedDBErrorLogsBothLines() {
+	require := s.Require()
+	dbErr := errors.New("db connection failed")
+	repo := &mockRepo{err: dbErr}
+	handler := &captureHandler{}
+	logger := slog.New(handler)
+	app := newTestApp()
+
+	err := SetDiverged(context.Background(), logger, repo, app, "claim disagreement")
+	require.ErrorIs(err, dbErr)
+
+	transition := findRecord(handler.records, "marking application as diverged (terminal)")
+	require.NotNil(transition, "transition log line must fire even on DB failure")
+	require.Equal(slog.LevelError, transition.Level)
+	require.Equal("claim disagreement", attrValue(transition, "reason"))
+
+	dbFailure := findRecord(handler.records, "failed to update application status")
+	require.NotNil(dbFailure, "DB-failure log line must fire so operators see the persist error")
+	require.Equal(slog.LevelError, dbFailure.Level)
+	loggedErr, ok := attrValue(dbFailure, "error").(error)
+	require.True(ok, "error attr must be an error value")
+	require.ErrorIs(loggedErr, dbErr)
+}
+
+// TestSetCorruptedDBErrorLogsBothLines mirrors the diverged logging contract
+// for the CORRUPTED terminal status.
+func (s *AppStatusSuite) TestSetCorruptedDBErrorLogsBothLines() {
+	require := s.Require()
+	dbErr := errors.New("db connection failed")
+	repo := &mockRepo{err: dbErr}
+	handler := &captureHandler{}
+	logger := slog.New(handler)
+	app := newTestApp()
+
+	err := SetCorrupted(context.Background(), logger, repo, app, "state corruption")
+	require.ErrorIs(err, dbErr)
+
+	transition := findRecord(handler.records, "marking application as corrupted (terminal)")
+	require.NotNil(transition, "transition log line must fire even on DB failure")
+	require.Equal(slog.LevelError, transition.Level)
+	require.Equal("state corruption", attrValue(transition, "reason"))
+
+	dbFailure := findRecord(handler.records, "failed to update application status")
+	require.NotNil(dbFailure, "DB-failure log line must fire so operators see the persist error")
+	require.Equal(slog.LevelError, dbFailure.Level)
+	loggedErr, ok := attrValue(dbFailure, "error").(error)
+	require.True(ok, "error attr must be an error value")
+	require.ErrorIs(loggedErr, dbErr)
 }
 
 func (s *AppStatusSuite) TestReasonTruncation() {

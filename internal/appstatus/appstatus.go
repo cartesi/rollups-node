@@ -17,9 +17,9 @@ import (
 // constraint violations from deeply-nested error chains.
 const maxReasonLength = 4000
 
-// Repository is the minimal interface needed to update application state.
+// Repository is the minimal interface needed to update application status.
 type Repository interface {
-	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
+	UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error
 }
 
 // SetFailed marks an application as FAILED (recoverable).
@@ -33,7 +33,7 @@ type Repository interface {
 //   - Synchronize() will correctly replay inputs from the snapshot point.
 //
 // The reason parameter must be a pre-formatted string describing the failure.
-// Returns the database error if the state update fails; returns nil on success.
+// Returns the database error if the status update fails; returns nil on success.
 func SetFailed(
 	ctx context.Context,
 	logger *slog.Logger,
@@ -41,12 +41,12 @@ func SetFailed(
 	app *Application,
 	reason string,
 ) error {
-	return setApplicationState(ctx, logger, repo, app, ApplicationState_Failed, reason)
+	return setApplicationStatus(ctx, logger, repo, app, ApplicationStatus_Failed, reason)
 }
 
 // SetFailedf marks an application as FAILED with a formatted reason string.
-// Returns the database error if the state update fails; returns nil on success.
-// Unlike [SetInoperablef], this intentionally returns nil on success because
+// Returns the database error if the status update fails; returns nil on success.
+// Unlike [SetDivergedf] and [SetCorruptedf], this intentionally returns nil on success because
 // FAILED is recoverable — callers typically continue with their own error.
 func SetFailedf(
 	ctx context.Context,
@@ -59,35 +59,32 @@ func SetFailedf(
 	return SetFailed(ctx, logger, repo, app, fmt.Sprintf(reasonFmt, args...))
 }
 
-// SetInoperable marks an application as INOPERABLE (irrecoverable).
-// Use for data corruption, state mismatches, invariant violations, and
-// on-chain disagreements that cannot be resolved by restarting.
+// SetDiverged marks an application DIVERGED (terminal): the node's computed
+// claim disagrees with what the chain accepted. The application produces no
+// more claims, but observation continues (it is gated on the enabled flag),
+// so withdrawals and other post-foreclosure events keep being indexed.
 //
-// The reason parameter must be a pre-formatted string describing the failure.
-// Always returns a non-nil error containing the reason because INOPERABLE is
-// a terminal state and callers should always stop processing the application.
-func SetInoperable(
+// The reason must be a pre-formatted string describing the disagreement.
+// Always returns a non-nil error containing the reason because DIVERGED is
+// terminal and callers should stop processing the application.
+//
+// Logging contract: both the reason and any DB write error are logged at
+// ERROR level via slog before the function returns. Callers that don't need
+// to propagate the failure upward (e.g. best-effort loops over multiple
+// applications) may discard the returned error with `_ =` without losing
+// operator visibility.
+func SetDiverged(
 	ctx context.Context,
 	logger *slog.Logger,
 	repo Repository,
 	app *Application,
 	reason string,
 ) error {
-	reason = truncateReason(reason)
-	dbErr := setApplicationState(ctx, logger, repo, app, ApplicationState_Inoperable, reason)
-	reasonErr := errors.New(reason)
-	if dbErr != nil {
-		return errors.Join(reasonErr, dbErr)
-	}
-	return reasonErr
+	return setTerminalStatus(ctx, logger, repo, app, ApplicationStatus_Diverged, reason)
 }
 
-// SetInoperablef marks an application as INOPERABLE with a formatted reason string.
-// It logs the transition, persists the state, and returns a non-nil error containing
-// the reason (joined with the DB error if the update failed).
-// This function always returns a non-nil error because INOPERABLE is a terminal state
-// and callers should always stop processing the application.
-func SetInoperablef(
+// SetDivergedf marks an application DIVERGED with a formatted reason string.
+func SetDivergedf(
 	ctx context.Context,
 	logger *slog.Logger,
 	repo Repository,
@@ -95,7 +92,55 @@ func SetInoperablef(
 	reasonFmt string,
 	args ...any,
 ) error {
-	return SetInoperable(ctx, logger, repo, app, fmt.Sprintf(reasonFmt, args...))
+	return SetDiverged(ctx, logger, repo, app, fmt.Sprintf(reasonFmt, args...))
+}
+
+// SetCorrupted marks an application CORRUPTED (terminal): local state is
+// missing or inconsistent and cannot be resolved by restarting. As with
+// DIVERGED, observation continues and only claim work stops.
+//
+// The reason must be a pre-formatted string. Always returns a non-nil error
+// because CORRUPTED is terminal and callers should stop.
+func SetCorrupted(
+	ctx context.Context,
+	logger *slog.Logger,
+	repo Repository,
+	app *Application,
+	reason string,
+) error {
+	return setTerminalStatus(ctx, logger, repo, app, ApplicationStatus_Corrupted, reason)
+}
+
+// SetCorruptedf marks an application CORRUPTED with a formatted reason string.
+func SetCorruptedf(
+	ctx context.Context,
+	logger *slog.Logger,
+	repo Repository,
+	app *Application,
+	reasonFmt string,
+	args ...any,
+) error {
+	return SetCorrupted(ctx, logger, repo, app, fmt.Sprintf(reasonFmt, args...))
+}
+
+// setTerminalStatus persists a terminal health status (DIVERGED or CORRUPTED)
+// and returns a non-nil error containing the reason (joined with the DB error
+// if the update failed), so callers always have a value to propagate or log.
+func setTerminalStatus(
+	ctx context.Context,
+	logger *slog.Logger,
+	repo Repository,
+	app *Application,
+	status ApplicationStatus,
+	reason string,
+) error {
+	reason = truncateReason(reason)
+	dbErr := setApplicationStatus(ctx, logger, repo, app, status, reason)
+	reasonErr := errors.New(reason)
+	if dbErr != nil {
+		return errors.Join(reasonErr, dbErr)
+	}
+	return reasonErr
 }
 
 // truncateReason truncates a reason string to maxReasonLength to avoid
@@ -107,47 +152,52 @@ func truncateReason(reason string) string {
 	return reason
 }
 
-func setApplicationState(
+func setApplicationStatus(
 	ctx context.Context,
 	logger *slog.Logger,
 	repo Repository,
 	app *Application,
-	state ApplicationState,
+	status ApplicationStatus,
 	reason string,
 ) error {
 	reason = truncateReason(reason)
 
-	switch state {
-	case ApplicationState_Failed:
+	switch status {
+	case ApplicationStatus_Failed:
 		logger.Warn("marking application as failed (recoverable)",
 			"application", app.Name,
 			"address", app.IApplicationAddress.String(),
 			"reason", reason)
-	case ApplicationState_Inoperable:
-		logger.Error("marking application as inoperable (irrecoverable)",
+	case ApplicationStatus_Diverged:
+		logger.Error("marking application as diverged (terminal)",
+			"application", app.Name,
+			"address", app.IApplicationAddress.String(),
+			"reason", reason)
+	case ApplicationStatus_Corrupted:
+		logger.Error("marking application as corrupted (terminal)",
 			"application", app.Name,
 			"address", app.IApplicationAddress.String(),
 			"reason", reason)
 	default:
-		logger.Error("marking application with unexpected state",
+		logger.Error("marking application with unexpected status",
 			"application", app.Name,
 			"address", app.IApplicationAddress.String(),
-			"state", state,
+			"status", status,
 			"reason", reason)
 	}
 
-	err := repo.UpdateApplicationState(ctx, app.ID, state, &reason)
+	err := repo.UpdateApplicationStatus(ctx, app.ID, status, &reason)
 	if err != nil {
-		logger.Error("failed to update application state",
+		logger.Error("failed to update application status",
 			"application", app.Name,
 			"address", app.IApplicationAddress.String(),
-			"target_state", state, "error", err)
+			"target_status", status, "error", err)
 		return err
 	}
 
-	// Only update in-memory state when the DB write succeeds to keep
+	// Only update in-memory status when the DB write succeeds to keep
 	// the in-memory Application consistent with the database.
-	app.State = state
+	app.Status = status
 	app.Reason = &reason
 	return nil
 }
