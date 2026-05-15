@@ -172,3 +172,130 @@ func (s *ServeSuite) TestServeExitsOnContextCancelledBeforeFirstTick() {
 	// No ticks should have fired since context was already cancelled.
 	s.Equal(int32(0), impl.tickCount.Load())
 }
+
+type delayedCloseImpl struct {
+	ServiceTemplate
+	onServeInitChan chan struct{}
+	onStopInitChan chan struct{}
+}
+
+func (s *delayedCloseImpl) OnStop(bool) []error {
+	<-s.onStopInitChan  // wait signal to initiate stop
+	return nil
+}
+
+func (s *delayedCloseImpl) OnServe(ctx context.Context) error {
+	close(s.onServeInitChan)  // signal service was initiated
+	<-ctx.Done()
+	return nil
+}
+
+func (s *ServeSuite) TestServeExitsAfterStopIsComplete() {
+	svc := &delayedCloseImpl{
+		onServeInitChan: make(chan struct{}),
+		onStopInitChan: make(chan struct{}),
+	}
+
+	// Create the service with a live context, then cancel before Serve().
+	err := InitServiceTemplate(&ServiceConfigs{
+		Name:     "stopOnChanClose",
+		LogLevel: slog.LevelError,
+	}, &svc.ServiceTemplate, svc)
+
+	onServeEndChan := make(chan error)
+	go func() {
+		err = svc.Serve()
+		onServeEndChan <- err  // signal service ended and provide error
+		close(onServeEndChan)
+	}()
+
+	onStopEndChan := make(chan []error)
+	select {
+	case <-svc.onServeInitChan:  // wait service to initiate, so can be stopped.
+		// initiate service shutdown through context cancelation
+		go func() {
+			errs := svc.Stop(true)
+			onStopEndChan <- errs  // signal stop ended and provide the errors
+			close(onStopEndChan)
+		}()
+	case <-time.After(2 * time.Second):
+		s.Fail("Serve() did not start within 2 seconds")
+	}
+
+	// Serve() nor Stop() should not exit just yet.
+	select {
+	case <-onServeEndChan:
+		s.Fail("Serve() exited before 'OnStop' completion")
+	case <-onStopEndChan:
+		s.Fail("Stop() exited before 'OnStop' completion")
+	case <-time.After(100 * time.Millisecond):
+		// OK
+	}
+
+	close(svc.onStopInitChan)  // signal that stop shall initiate and eventually complete
+
+	// Serve() should exit without errors.
+	select {
+	case err := <-onServeEndChan:
+		s.NoError(err)
+	case <-time.After(2 * time.Second):
+		s.Fail("Serve() did not exit within 2 seconds after 'OnStop' concluded")
+	}
+
+	// Stop() should exit without errors.
+	select {
+	case errs := <-onStopEndChan:
+		s.Empty(errs)
+	case <-time.After(2 * time.Second):
+		s.Fail("Stop() did not exit within 2 seconds after 'OnStop' concluded")
+	}
+}
+
+func (s *ServeSuite) TestServeExitsAfterStopIsCompleteOnContextCancelation() {
+	svc := &delayedCloseImpl{
+		onServeInitChan: make(chan struct{}),
+		onStopInitChan: make(chan struct{}),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Create the service with a live context, then cancel before Serve().
+	err := InitServiceTemplate(&ServiceConfigs{
+		Name:     "stopOnChanClose",
+		LogLevel: slog.LevelError,
+		Context:  ctx,
+		Cancel:   cancel,
+	}, &svc.ServiceTemplate, svc)
+
+	onServeEndChan := make(chan error)
+	go func() {
+		err = svc.Serve()
+		onServeEndChan <- err  // signal service ended and provide error
+		close(onServeEndChan)
+	}()
+
+	select {
+	case <-svc.onServeInitChan:  // wait service to initiate, so can be stopped.
+		cancel()  // initiate service shutdown through context cancelation
+	case <-time.After(2 * time.Second):
+		s.Fail("Serve() did not start within 2 seconds")
+	}
+
+	// Serve() should not exit just yet.
+	select {
+	case <-onServeEndChan:
+		s.Fail("Serve() exited before 'OnStop' completion")
+	case <-time.After(100 * time.Millisecond):
+		// OK
+	}
+
+	close(svc.onStopInitChan)  // signal that stop shall initiate and eventually complete
+
+	// Serve() should exit without errors.
+	select {
+	case err := <-onServeEndChan:
+		s.NoError(err)
+	case <-time.After(2 * time.Second):
+		s.Fail("Serve() did not exit within 2 seconds after 'OnStop' concluded")
+	}
+}

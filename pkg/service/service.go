@@ -114,7 +114,8 @@ type ServiceTemplate struct {
 
 	// stopped server Stop() run exactly once, even when Stop() is called
 	// multiple times (by the child's Serve() loop and by the parent orchestrator).
-	stopped atomic.Bool
+	stopped     atomic.Bool
+	stoppedChan chan struct{}
 }
 
 // ServiceConfigs stores configuration for the InitServiceTemplate function
@@ -138,6 +139,8 @@ func InitServiceTemplate(c *ServiceConfigs, s *ServiceTemplate, impl LifecycleIm
 	if c == nil || s == nil || impl == nil {
 		return ErrInvalid
 	}
+
+	s.stoppedChan = make(chan struct{})
 
 	s.lifecycleImpl = impl
 
@@ -252,6 +255,7 @@ func (s *ServiceTemplate) Stop(force bool) []error {
 	elapsed := time.Since(start)
 
 	s.cancelContext()
+	close(s.stoppedChan)
 
 	if len(errs) > 0 {
 		s.Logger.Error("Stop",
@@ -286,9 +290,12 @@ func (s *ServiceTemplate) Serve() error {
 		}
 	}()
 
-	defer s.Stop(true)
+	err := s.lifecycleImpl.OnServe(s.context)
 
-	return s.lifecycleImpl.OnServe(s.context)
+	go s.Stop(true)
+	<-s.stoppedChan
+
+	return err
 }
 
 // LogConfig logs the service configuration at debug level.
