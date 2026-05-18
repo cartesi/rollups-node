@@ -195,7 +195,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofSuccess() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&dummyEpochs[0], nil).Once()
 
-		repo.On("GetLastOutputBeforeBlock",
+		repo.On("GetOutput",
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&dummyOutputs[0], nil).Once()
 
@@ -250,7 +250,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&invalidEpoch, nil).Once()
 
-		repo.On("UpdateApplicationState",
+		repo.On("UpdateApplicationStatus",
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 		).Return(nil).Once()
 
@@ -259,17 +259,17 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 		repo.AssertExpectations(s.T())
 	})
 
-	// Fail because GetLastOutputBeforeBlock failed
-	s.Run("GetLastOutputBeforeBlockFailure", func() {
+	// Fail because GetOutput (the preceding-output lookup) failed
+	s.Run("GetOutputFailure", func() {
 		repo.On("ListOutputs",
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything, false,
-		).Return([]*Output{&dummyOutputs[0]}, uint64(1), nil).Once()
+		).Return([]*Output{{Index: 1}}, uint64(1), nil).Once()
 
 		repo.On("GetEpochByVirtualIndex",
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&dummyEpochs[0], nil).Once()
 
-		repo.On("GetLastOutputBeforeBlock",
+		repo.On("GetOutput",
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&Output{}, xerror).Once()
 
@@ -278,21 +278,21 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 		repo.AssertExpectations(s.T())
 	})
 
-	// Fail because last output somehow does not have a hash
-	s.Run("InvalidLastOutputiFailure", func() {
+	// Fail because the preceding output has no hash
+	s.Run("InvalidPreviousOutputFailure", func() {
 		repo.On("ListOutputs",
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything, false,
-		).Return([]*Output{&dummyOutputs[0]}, uint64(1), nil).Once()
+		).Return([]*Output{{Index: 1}}, uint64(1), nil).Once()
 
 		repo.On("GetEpochByVirtualIndex",
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&dummyEpochs[0], nil).Once()
 
-		repo.On("GetLastOutputBeforeBlock",
+		repo.On("GetOutput",
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&Output{}, nil).Once()
 
-		repo.On("UpdateApplicationState",
+		repo.On("UpdateApplicationStatus",
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 		).Return(nil).Once()
 
@@ -301,21 +301,21 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 		repo.AssertExpectations(s.T())
 	})
 
-	// Fail because last output and current output index are not sequential somehow
-	s.Run("OutputIndexMismatchFailure", func() {
+	// Fail because the preceding output is missing entirely
+	s.Run("MissingPreviousOutputFailure", func() {
 		repo.On("ListOutputs",
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything, false,
-		).Return([]*Output{{Index: 2}}, uint64(1), nil).Once()
+		).Return([]*Output{{Index: 1}}, uint64(1), nil).Once()
 
 		repo.On("GetEpochByVirtualIndex",
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&dummyEpochs[0], nil).Once()
 
-		repo.On("GetLastOutputBeforeBlock",
+		repo.On("GetOutput",
 			mock.Anything, mock.Anything, mock.Anything,
-		).Return(&dummyOutputs[0], nil).Once()
+		).Return((*Output)(nil), nil).Once()
 
-		repo.On("UpdateApplicationState",
+		repo.On("UpdateApplicationStatus",
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 		).Return(nil).Once()
 
@@ -366,6 +366,39 @@ func (s *ValidatorSuite) TestValidateApplicationSuccess() {
 
 		err := validator.validateApplication(ctx, &app)
 		s.ErrorIs(nil, err)
+		repo.AssertExpectations(s.T())
+	})
+
+	s.Run("SkipsForeclosedEpochAtOrAfterForecloseBlock", func() {
+		foreclosedApp := app
+		foreclosedApp.ForecloseBlock = 9
+		unacceptableEpoch := dummyEpochs[0]
+		unacceptableEpoch.LastBlock = foreclosedApp.ForecloseBlock
+
+		repo.On("ListEpochs",
+			mock.Anything, foreclosedApp.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
+		).Return([]*Epoch{&unacceptableEpoch}, uint64(1), nil).Once()
+
+		err := validator.validateApplication(ctx, &foreclosedApp)
+		s.ErrorIs(nil, err)
+		repo.AssertExpectations(s.T())
+	})
+}
+
+func (s *ValidatorSuite) TestValidationApplicationsFilterSelectsOKApps() {
+	s.Run("Filter", func() {
+		repo.On("ListApplications",
+			mock.Anything,
+			mock.MatchedBy(func(f repository.ApplicationFilter) bool {
+				return f.Enabled != nil && *f.Enabled &&
+					s.ElementsMatch([]ApplicationStatus{ApplicationStatus_OK}, f.Statuses)
+			}),
+			repository.Pagination{},
+			false,
+		).Return([]*Application{}, uint64(0), nil).Once()
+
+		_, _, err := getAllRunningApplications(context.Background(), repo)
+		s.NoError(err)
 		repo.AssertExpectations(s.T())
 	})
 }
@@ -442,7 +475,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), dummyEpochs[0].Index,
 		).Return(&input, nil).Once()
 
-		repo.On("UpdateApplicationState",
+		repo.On("UpdateApplicationStatus",
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 		).Return(nil).Once()
 
@@ -470,7 +503,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), dummyEpochs[0].Index,
 		).Return(&input, nil).Once()
 
-		repo.On("UpdateApplicationState",
+		repo.On("UpdateApplicationStatus",
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 		).Return(nil).Once()
 
@@ -537,12 +570,12 @@ func (m *Mockrepo) ListOutputs(
 	return args.Get(0).([]*Output), args.Get(1).(uint64), args.Error(2)
 }
 
-func (m *Mockrepo) GetLastOutputBeforeBlock(
+func (m *Mockrepo) GetOutput(
 	ctx context.Context,
 	nameOrAddress string,
-	block uint64,
+	outputIndex uint64,
 ) (*Output, error) {
-	args := m.Called(ctx, nameOrAddress, block)
+	args := m.Called(ctx, nameOrAddress, outputIndex)
 	return args.Get(0).(*Output), args.Error(1)
 }
 
@@ -584,7 +617,7 @@ func (m *Mockrepo) ListStateHashes(ctx context.Context, nameOrAddress string,
 	return args.Get(0).([]*StateHash), args.Get(1).(uint64), args.Error(2)
 }
 
-func (m *Mockrepo) UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error {
-	args := m.Called(ctx, appID, state, reason)
+func (m *Mockrepo) UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error {
+	args := m.Called(ctx, appID, status, reason)
 	return args.Error(0)
 }

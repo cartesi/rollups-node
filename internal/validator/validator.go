@@ -7,6 +7,7 @@ package validator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -72,6 +73,14 @@ func (s *Service) Reload() []error { return nil }
 func (s *Service) Tick() []error {
 	apps, _, err := getAllRunningApplications(s.Context, s.repository)
 	if err != nil {
+		// During shutdown the parent context is canceled and every in-
+		// flight DB query returns context.Canceled. Suppress only the
+		// graceful-shutdown case; deadline-exceeded (real failure) still
+		// propagates. Mirrors internal/prt/service.go's Tick pattern.
+		if s.IsStopping() && errors.Is(err, context.Canceled) {
+			s.Logger.Warn("Tick interrupted by shutdown", "error", err)
+			return nil
+		}
 		return []error{fmt.Errorf("failed to get running applications. %w", err)}
 	}
 
@@ -79,6 +88,12 @@ func (s *Service) Tick() []error {
 	errs := []error{}
 	for idx := range apps {
 		if err := s.validateApplication(s.Context, apps[idx]); err != nil {
+			// Same shutdown-cancellation suppression as above, per-app.
+			if s.IsStopping() && errors.Is(err, context.Canceled) {
+				s.Logger.Warn("Tick interrupted by shutdown",
+					"application", apps[idx].IApplicationAddress, "error", err)
+				continue
+			}
 			errs = append(errs, err)
 		}
 	}
@@ -99,9 +114,9 @@ const MAX_OUTPUT_TREE_HEIGHT = merkle.TREE_DEPTH //nolint: revive
 
 type ValidatorRepository interface {
 	ListApplications(ctx context.Context, f repository.ApplicationFilter, p repository.Pagination, descending bool) ([]*Application, uint64, error)
-	UpdateApplicationState(ctx context.Context, appID int64, state ApplicationState, reason *string) error
+	UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error
 	ListOutputs(ctx context.Context, nameOrAddress string, f repository.OutputFilter, p repository.Pagination, descending bool) ([]*Output, uint64, error)
-	GetLastOutputBeforeBlock(ctx context.Context, nameOrAddress string, block uint64) (*Output, error)
+	GetOutput(ctx context.Context, nameOrAddress string, outputIndex uint64) (*Output, error)
 	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter, p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
 	GetLastInput(ctx context.Context, appAddress string, epochIndex uint64) (*Input, error) // FIXME migrate to list
 	GetEpochByVirtualIndex(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
@@ -110,8 +125,14 @@ type ValidatorRepository interface {
 }
 
 func getAllRunningApplications(ctx context.Context, er ValidatorRepository) ([]*Application, uint64, error) {
-	f := repository.ApplicationFilter{State: Pointer(ApplicationState_Enabled)}
-	return er.ListApplications(ctx, f, repository.Pagination{}, false)
+	return er.ListApplications(ctx, validationApplicationsFilter(), repository.Pagination{}, false)
+}
+
+func validationApplicationsFilter() repository.ApplicationFilter {
+	return repository.ApplicationFilter{
+		Enabled:  new(true),
+		Statuses: []ApplicationStatus{ApplicationStatus_OK},
+	}
 }
 
 func getProcessedEpochs(ctx context.Context, er ValidatorRepository, address string) ([]*Epoch, uint64, error) {
@@ -119,8 +140,8 @@ func getProcessedEpochs(ctx context.Context, er ValidatorRepository, address str
 	return er.ListEpochs(ctx, address, f, repository.Pagination{}, false)
 }
 
-func (s *Service) setApplicationInoperable(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
-	return appstatus.SetInoperablef(ctx, s.Logger, s.repository, app, reasonFmt, args...)
+func (s *Service) setApplicationCorrupted(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
+	return appstatus.SetCorruptedf(ctx, s.Logger, s.repository, app, reasonFmt, args...)
 }
 
 // validateApplication calculates, validates and stores the claim and/or proofs
@@ -137,6 +158,15 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 	}
 
 	for _, epoch := range processedEpochs {
+		if app.ForecloseBlock != 0 && epoch.LastBlock >= app.ForecloseBlock {
+			s.Logger.Info("Skipping foreclosed epoch that cannot be accepted",
+				"application", appAddress,
+				"epoch_index", epoch.Index,
+				"last_block", epoch.LastBlock,
+				"foreclose_block", app.ForecloseBlock,
+			)
+			continue
+		}
 		s.Logger.Debug("Started calculating outputs merkle root",
 			"application", appAddress,
 			"epoch_index", epoch.Index,
@@ -144,7 +174,14 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 		)
 		merkleRoot, outputs, err := s.computeMerkleTreeAndProofs(ctx, app, epoch)
 		if err != nil {
-			s.Logger.Error("failed to create claim and proofs.", "error", err)
+			// Don't log shutdown-cancellation at ERR — every in-flight DB
+			// query returns context.Canceled and Tick's outer suppression
+			// (s.IsStopping() && errors.Is(err, context.Canceled)) handles
+			// the propagation. DeadlineExceeded is a real failure and
+			// must still be logged.
+			if !(s.IsStopping() && errors.Is(err, context.Canceled)) {
+				s.Logger.Error("failed to create claim and proofs.", "error", err)
+			}
 			return err
 		}
 
@@ -159,7 +196,7 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 		// last input in the epoch must match the one calculated by the Validator
 		// So we need to validate the application state.
 		if *epoch.OutputsMerkleRoot != *merkleRoot {
-			return s.setApplicationInoperable(ctx, app,
+			return s.setApplicationCorrupted(ctx, app,
 				"epoch %v outputs merkle root does not match computed one. Expected: %v, Got %v",
 				epoch.Index, *epoch.OutputsMerkleRoot, *merkleRoot)
 		}
@@ -175,20 +212,20 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 		// DaveConsensus can have empty epochs. Authority and Quorum don't.
 		if !app.IsDaveConsensus() || input != nil {
 			if input.OutputsHash == nil {
-				return s.setApplicationInoperable(ctx, app,
+				return s.setApplicationCorrupted(ctx, app,
 					"inconsistent state: epoch %v last input (%v) outputs merkle root is not defined",
 					epoch.Index, input.Index)
 			}
 
 			// ...and compare it to the hash calculated by the Validator
 			if *epoch.OutputsMerkleRoot != *input.OutputsHash {
-				return s.setApplicationInoperable(ctx, app,
+				return s.setApplicationCorrupted(ctx, app,
 					"computed outputs merkle root does not match epoch %v last input %v merkle root. Expected: %v, Got %v",
 					epoch.Index, input.Index, *input.OutputsHash, *epoch.OutputsMerkleRoot)
 			}
 
 			if *epoch.MachineHash != *input.MachineHash {
-				return s.setApplicationInoperable(ctx, app,
+				return s.setApplicationCorrupted(ctx, app,
 					"epoch %v machine hash does not match epoch last input (%v) machine hash. Expected: %v, Got %v",
 					epoch.Index, input.Index, *input.MachineHash, *epoch.MachineHash)
 			}
@@ -202,23 +239,23 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 					)
 				}
 				if *epoch.MachineHash != *previousEpoch.MachineHash {
-					return s.setApplicationInoperable(ctx, app,
+					return s.setApplicationCorrupted(ctx, app,
 						"epoch %v machine hash does not match previous epoch %v machine hash. Expected: %v, Got %v",
 						epoch.Index, previousEpoch.Index, *previousEpoch.MachineHash, *epoch.MachineHash)
 				}
 				if *epoch.OutputsMerkleRoot != *previousEpoch.OutputsMerkleRoot {
-					return s.setApplicationInoperable(ctx, app,
+					return s.setApplicationCorrupted(ctx, app,
 						"epoch %v outputs merkle root does not match previous epoch %v one. Expected: %v, Got %v",
 						epoch.Index, previousEpoch.Index, *previousEpoch.OutputsMerkleRoot, *epoch.OutputsMerkleRoot)
 				}
 			} else { // first epoch
 				if *epoch.MachineHash != app.TemplateHash {
-					return s.setApplicationInoperable(ctx, app,
+					return s.setApplicationCorrupted(ctx, app,
 						"epoch %v machine hash does not match for application template hash. Expected: %v, Got %v",
 						epoch.Index, app.TemplateHash, *epoch.MachineHash)
 				}
 				if *epoch.OutputsMerkleRoot != s.pristineRootHash {
-					return s.setApplicationInoperable(ctx, app,
+					return s.setApplicationCorrupted(ctx, app,
 						"epoch %v outputs merkle root does not match pristine root hash. Expected: %v, Got %v",
 						epoch.Index, s.pristineRootHash, *epoch.OutputsMerkleRoot)
 				}
@@ -316,11 +353,15 @@ func (s *Service) computeMerkleTreeAndProofs(
 	epoch *Epoch,
 ) (*common.Hash, []*Output, error) {
 	appAddress := app.IApplicationAddress.String()
+	// Scope the epoch's outputs by epoch index, not by block range. DaveConsensus
+	// epochs overlap on one block (a sealed epoch's last block equals the next
+	// epoch's first block), so a block-range lookup is ambiguous when inputs
+	// straddle that boundary block: it would pull in the neighbouring epoch's
+	// outputs. The epoch-index filter resolves each output through its input's
+	// epoch, which is unambiguous.
 	epochOutputs, _, err := s.repository.ListOutputs(ctx, appAddress, repository.OutputFilter{
-		BlockRange: &repository.Range{
-			Start: epoch.FirstBlock,
-			End:   epoch.LastBlock,
-		}},
+		EpochIndex: &epoch.Index,
+	},
 		repository.Pagination{},
 		false,
 	)
@@ -351,51 +392,41 @@ func (s *Service) computeMerkleTreeAndProofs(
 		}
 		// if there are no outputs and there is a previous epoch, return its claim
 		if previousEpoch.OutputsMerkleRoot == nil {
-			return nil, nil, s.setApplicationInoperable(ctx, app,
+			return nil, nil, s.setApplicationCorrupted(ctx, app,
 				"invalid application state for epoch %v (%v) of application %v. Previous epoch has no claim.",
 				epoch.Index, epoch.VirtualIndex, appAddress)
 		}
 		return previousEpoch.OutputsMerkleRoot, nil, nil
 	}
 
+	// Build the pre-context for the cumulative outputs tree from the output that
+	// immediately precedes this epoch's first output, identified by output index
+	// rather than by block. Index-based lookup is required for the same reason as
+	// the epoch-outputs query above: at the DaveConsensus epoch-boundary block a
+	// block-based "last output before this epoch" is ambiguous.
 	var pre []common.Hash
 	var index uint64
-	// it there is no previous epoch
-	if previousEpoch == nil {
-		// there are only new outputs, use a dummy pre context
+	firstOutputIndex := epochOutputs[0].Index
+	if firstOutputIndex == 0 {
+		// this epoch holds the very first output: start from a pristine context
 		pre = s.pristinePostContext
 		index = 0
 	} else {
-		// retrieve the previous output, one not existing is ok... handled below
-		lastOutput, err := s.repository.GetLastOutputBeforeBlock(ctx, appAddress, epoch.FirstBlock)
+		previousOutput, err := s.repository.GetOutput(ctx, appAddress, firstOutputIndex-1)
 		if err != nil {
 			return nil, nil, fmt.Errorf(
 				"failed to get previous output for epoch %v (%v) of application %v. %w",
 				epoch.Index, epoch.VirtualIndex, appAddress, err,
 			)
 		}
-		if lastOutput == nil {
-			// there are only new outputs, use a dummy pre context
-			pre = s.pristinePostContext
-			index = 0
-		} else {
-			// there are previous outputs, create a pre context from the last output.
-			if lastOutput.Hash == nil || len(lastOutput.OutputHashesSiblings) != merkle.TREE_DEPTH {
-				return nil, nil, s.setApplicationInoperable(ctx, app,
-					"Inconsistent application state (%v). Last output (%d) before epoch %d has no hash or invalid hash siblings.",
-					app.Name, lastOutput.Index, epoch.Index)
-			}
-			pre = merkle.CreatePreContextFromProof(lastOutput.Index, *lastOutput.Hash, lastOutput.OutputHashesSiblings)
-			index = lastOutput.Index + 1
-
-			// make sure no output got skipped
-			if index != epochOutputs[0].Index {
-				return nil, nil, s.setApplicationInoperable(ctx, app,
-					"Inconsistent application state (%v). Output index mismatch. "+
-						"Last output (%d) before epoch %d and first output (%d) are not sequential.",
-					app.Name, lastOutput.Index, epoch.Index, epochOutputs[0].Index)
-			}
+		if previousOutput == nil || previousOutput.Hash == nil ||
+			len(previousOutput.OutputHashesSiblings) != merkle.TREE_DEPTH {
+			return nil, nil, s.setApplicationCorrupted(ctx, app,
+				"Inconsistent application state (%v). Output (%d) preceding epoch %d is missing or has invalid hash siblings.",
+				app.Name, firstOutputIndex-1, epoch.Index)
 		}
+		pre = merkle.CreatePreContextFromProof(previousOutput.Index, *previousOutput.Hash, previousOutput.OutputHashesSiblings)
+		index = firstOutputIndex
 	}
 
 	// we have outputs to compute, gather the values to call ComputeSiblingsMatrix
