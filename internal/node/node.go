@@ -5,6 +5,7 @@ package node
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/cartesi/rollups-node/pkg/service"
@@ -155,10 +156,25 @@ func (me *Service) OnStop(force bool) []error {
 }
 
 func (me *Service) OnServe(ctx context.Context) error {
-	for _, s := range me.Children {
-		go s.Serve()
+	childrenCount := len(me.Children)
+	errCh := make(chan error, childrenCount)
+	for _, child := range me.Children {
+		child := child
+		go func() { errCh <- child.Serve() }()
 	}
-	<-ctx.Done()
+
+	errs := make([]error, 0)
+	for range childrenCount {
+		err := <-errCh
+		if err != nil && !errors.Is(err, context.Canceled) {
+			me.Stop(true)
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+
 	return nil
 }
 
