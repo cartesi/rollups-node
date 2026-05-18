@@ -154,8 +154,8 @@ func (s *Service) Tick(ctx context.Context) []error {
 		return errs
 	}
 
-	submitted, submitErrs := s.submitClaimsAndUpdateDatabase(acceptedOrSubmittedEpochs, computedEpochs, computedApps, defaultBlockNumber)
-	accepted, acceptErrs := s.acceptClaimsAndUpdateDatabase(acceptedEpochs, submittedEpochs, submittedApps, defaultBlockNumber)
+	submitted, submitErrs := s.submitClaimsAndUpdateDatabase(ctx, acceptedOrSubmittedEpochs, computedEpochs, computedApps, defaultBlockNumber)
+	accepted, acceptErrs := s.acceptClaimsAndUpdateDatabase(ctx, acceptedEpochs, submittedEpochs, submittedApps, defaultBlockNumber)
 	errs = append(errs, submitErrs...)
 	errs = append(errs, acceptErrs...)
 

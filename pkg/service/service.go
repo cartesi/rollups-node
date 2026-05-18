@@ -142,8 +142,8 @@ type Service struct {
 	Name          string
 	Impl          ServiceImpl
 	Logger        *slog.Logger
-	Context       context.Context
-	Cancel        context.CancelFunc
+	context       context.Context
+	cancelContext context.CancelFunc
 	Sighup        chan os.Signal // SIGHUP to reload
 	SigShutdown   chan os.Signal // SIGINT/SIGTERM to exit gracefully
 	ServeMux      *http.ServeMux
@@ -155,7 +155,7 @@ type Service struct {
 	// detect that shutdown is in progress and suppress errors that are
 	// expected during teardown (e.g., context.Canceled from in-flight RPC
 	// calls). This covers the race window between Stop() being called and
-	// ctx.Cancel() propagating.
+	// cancelContext() propagating.
 	stopping atomic.Bool
 
 	// cleanedUp server Stop() run exactly once, even when Stop() is called
@@ -186,18 +186,14 @@ func Create(ctx context.Context, c *CreateInfo, s *Service) error {
 	}
 
 	// context and cancelation
-	if s.Context == nil {
-		if c.Context == nil {
-			c.Context = context.Background()
-		}
-		s.Context = c.Context
+	if c.Context == nil {
+		c.Context = context.Background()
 	}
-	if s.Cancel == nil {
-		if c.Cancel == nil {
-			s.Context, c.Cancel = context.WithCancel(c.Context)
-		}
-		s.Cancel = c.Cancel
+	s.context = c.Context
+	if c.Cancel == nil {
+		s.context, c.Cancel = context.WithCancel(c.Context)
 	}
+	s.cancelContext = c.Cancel
 
 	// signal handling
 	if c.EnableSignalHandling {
@@ -300,7 +296,7 @@ func (s *Service) Stop(force bool) []error {
 	elapsed := time.Since(start)
 
 	s.Running.Store(false)
-	s.Cancel()
+	s.cancelContext()
 	if len(errs) > 0 {
 		s.Logger.Error("Stop",
 			"force", force,
@@ -319,7 +315,7 @@ func (s *Service) Serve() error {
 
 	// Check for context cancellation before the first tick.
 	select {
-	case <-s.Context.Done():
+	case <-s.context.Done():
 		s.Stop(true) // Stop logs errors internally.
 		return nil
 	default:
@@ -333,7 +329,7 @@ func (s *Service) Serve() error {
 			case <-s.SigShutdown:
 				s.Stop(false) // Graceful shutdown; errors are logged by Stop.
 				return
-			case <-s.Context.Done():
+			case <-s.context.Done():
 				s.Stop(true) // Stop logs errors internally.
 				return
 			}
@@ -342,7 +338,7 @@ func (s *Service) Serve() error {
 
 	defer s.Stop(false)
 
-	return s.Impl.OnServe(s.Context)
+	return s.Impl.OnServe(s.context)
 }
 
 func (s *Service) String() string {

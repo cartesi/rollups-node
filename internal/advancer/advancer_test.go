@@ -34,11 +34,30 @@ func TestAdvancer(t *testing.T) {
 
 type AdvancerSuite struct{ suite.Suite }
 
+const defaultBatchSize = 500
+
 func newMockAdvancerService(machineManager *MockMachineManager, repo *MockRepository) (*Service, error) {
-	return newMockAdvancerServiceWithBatchSize(machineManager, repo, 500)
+	return newMockAdvancerServiceWithBatchSize(machineManager, repo, defaultBatchSize)
 }
 
 func newMockAdvancerServiceWithBatchSize(
+	machineManager *MockMachineManager,
+	repo *MockRepository,
+	batchSize uint64,
+) (*Service, error) {
+	ctx, cf := context.WithCancel(context.Background())
+	return newMockAdvancerServiceWithContextAndBatchSize(
+		ctx,
+		cf,
+		machineManager,
+		repo,
+		batchSize,
+	)
+}
+
+func newMockAdvancerServiceWithContextAndBatchSize(
+	ctx context.Context,
+	cancelCtx context.CancelFunc,
 	machineManager *MockMachineManager,
 	repo *MockRepository,
 	batchSize uint64,
@@ -48,7 +67,13 @@ func newMockAdvancerServiceWithBatchSize(
 		machineManager: machineManager,
 		repository:     repo,
 	}
-	serviceArgs := &service.CreateInfo{Name: "advancer", Impl: s, EnableReschedule: true}
+	serviceArgs := &service.CreateInfo{
+		Name: "advancer",
+		Impl: s,
+		Context: ctx,
+		Cancel: cancelCtx,
+		EnableReschedule: true,
+	}
 	err := service.NewTickService(serviceArgs, &s.TickService)
 	if err != nil {
 		return nil, err
@@ -60,6 +85,7 @@ func newMockAdvancerServiceWithBatchSize(
 // the mock machine manager, and the mock repository.
 type testEnv struct {
 	service *Service
+	ctx     context.Context
 	app     *MockMachineImpl
 	mm      *MockMachineManager
 	repo    *MockRepository
@@ -68,13 +94,14 @@ type testEnv struct {
 // setupOneApp creates a standard test environment with one application.
 // The repository is empty; callers can configure it after the call.
 func (s *AdvancerSuite) setupOneApp() testEnv {
+	ctx, cf := context.WithCancel(context.Background())
 	mm := newMockMachineManager()
 	app := newMockMachine(1)
 	mm.Map[1] = newMockInstance(app)
 	repo := &MockRepository{}
-	svc, err := newMockAdvancerService(mm, repo)
+	svc, err := newMockAdvancerServiceWithContextAndBatchSize(ctx, cf, mm, repo, defaultBatchSize)
 	s.Require().NoError(err)
-	return testEnv{service: svc, app: app, mm: mm, repo: repo}
+	return testEnv{service: svc, ctx: ctx, app: app, mm: mm, repo: repo}
 }
 
 func (s *AdvancerSuite) TestServiceInterface() {
@@ -406,7 +433,7 @@ func (s *AdvancerSuite) TestProcess() {
 			require.Len(env.repo.StoredResults, 1)
 
 			// Verify that the node shutdown was triggered (context cancelled)
-			require.Error(env.service.Context.Err(), "shared context should be cancelled")
+			require.Error(env.ctx.Err(), "shared context should be cancelled")
 		})
 	})
 }
@@ -504,7 +531,7 @@ func (s *AdvancerSuite) TestErrorRecovery() {
 		err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 		require.Error(err)
 		require.Contains(err.Error(), "temporary failure")
-		require.Error(env.service.Context.Err(), "shared context should be cancelled")
+		require.Error(env.ctx.Err(), "shared context should be cancelled")
 	})
 }
 

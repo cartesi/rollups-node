@@ -140,7 +140,7 @@ func (s *Service) OnServe(ctx context.Context) error {
 		// The HTTP loop exited first. This is unexpected unless the listener
 		// failed or the server was already closed, so cancel the framework
 		// loop and wait for it to observe the cancellation before returning.
-		s.Cancel()
+		s.Stop(true)
 		<-ctx.Done()
 		if err != nil {
 			return err

@@ -306,7 +306,7 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 				"epoch", input.EpochIndex,
 				"index", input.Index,
 				"error", err)
-			s.Cancel() // triggers graceful shutdown of all services
+			s.Stop(true) // triggers graceful shutdown of all services
 			return err
 		}
 

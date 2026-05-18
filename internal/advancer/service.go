@@ -155,7 +155,7 @@ func (s *Service) OnServe(ctx context.Context) error {
 		go func() {
 			if err := s.inspector.Serve(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				s.Logger.Error("Inspect HTTP server failed — shutting down", "error", err)
-				s.Cancel()
+				s.Stop(true)
 			}
 		}()
 	}

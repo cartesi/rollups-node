@@ -132,7 +132,7 @@ func (s *Service) Tick(ctx context.Context) []error {
 		return nil
 	}
 
-	apps, _, err := getAllRunningApplications(s.Context, s.repository)
+	apps, _, err := getAllRunningApplications(ctx, s.repository)
 	if err != nil {
 		// Only suppress context errors during shutdown; surface real DB errors.
 		if s.IsStopping() && errors.Is(err, context.Canceled) {
@@ -145,10 +145,10 @@ func (s *Service) Tick(ctx context.Context) []error {
 	// validate each application
 	errs := []error{}
 	for idx := range apps {
-		if s.Context.Err() != nil {
+		if ctx.Err() != nil {
 			return errs
 		}
-		if err := s.validateApplication(s.Context, apps[idx]); err != nil {
+		if err := s.validateApplication(ctx, apps[idx]); err != nil {
 			// During shutdown, in-flight L1 requests see context cancellation.
 			// Suppress these to avoid spurious ERR log entries.
 			if s.IsStopping() && errors.Is(err, context.Canceled) {

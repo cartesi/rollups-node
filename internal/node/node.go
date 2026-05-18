@@ -54,6 +54,11 @@ func Create(ctx context.Context, c *CreateInfo) (service.IService, error) {
 		return nil, err // This returns context.Canceled or context.DeadlineExceeded.
 	}
 
+	// setup node and all child services to share the same context.
+	ctx, cancel := context.WithCancel(context.Background())
+	c.CreateInfo.Context = ctx
+	c.CreateInfo.Cancel = cancel
+
 	s := &Service{}
 	c.Impl = s
 
@@ -164,8 +169,8 @@ func newEVMReader(ctx context.Context, c *CreateInfo, s *Service) (service.IServ
 	readerArgs := evmreader.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 config.ServiceEvmReader,
-			Context:              s.Context,
-			Cancel:               s.Cancel,
+			Context:              c.CreateInfo.Context,
+			Cancel:               c.CreateInfo.Cancel,
 			LogLevel:             config.ResolveServiceLogLevel(config.ServiceEvmReader, c.Config.LogLevel),
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
@@ -189,8 +194,8 @@ func newAdvancer(ctx context.Context, c *CreateInfo, s *Service) (service.IServi
 	advancerArgs := advancer.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 config.ServiceAdvancer,
-			Context:              s.Context,
-			Cancel:               s.Cancel,
+			Context:              c.CreateInfo.Context,
+			Cancel:               c.CreateInfo.Cancel,
 			LogLevel:             config.ResolveServiceLogLevel(config.ServiceAdvancer, c.Config.LogLevel),
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
@@ -213,8 +218,8 @@ func newValidator(ctx context.Context, c *CreateInfo, s *Service) (service.IServ
 	validatorArgs := validator.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 config.ServiceValidator,
-			Context:              s.Context,
-			Cancel:               s.Cancel,
+			Context:              c.CreateInfo.Context,
+			Cancel:               c.CreateInfo.Cancel,
 			LogLevel:             config.ResolveServiceLogLevel(config.ServiceValidator, c.Config.LogLevel),
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
@@ -237,8 +242,8 @@ func newClaimer(ctx context.Context, c *CreateInfo, s *Service) (service.IServic
 	claimerArgs := claimer.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 config.ServiceClaimer,
-			Context:              s.Context,
-			Cancel:               s.Cancel,
+			Context:              c.CreateInfo.Context,
+			Cancel:               c.CreateInfo.Cancel,
 			LogLevel:             config.ResolveServiceLogLevel(config.ServiceClaimer, c.Config.LogLevel),
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
@@ -262,8 +267,8 @@ func newJsonrpc(ctx context.Context, c *CreateInfo, s *Service) (service.IServic
 	jsonrpcArgs := jsonrpc.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 config.ServiceJsonrpc,
-			Context:              s.Context,
-			Cancel:               s.Cancel,
+			Context:              c.CreateInfo.Context,
+			Cancel:               c.CreateInfo.Cancel,
 			LogLevel:             config.ResolveServiceLogLevel(config.ServiceJsonrpc, c.Config.LogLevel),
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
@@ -285,8 +290,8 @@ func newPrt(ctx context.Context, c *CreateInfo, s *Service) (service.IService, e
 	prtArgs := prt.CreateInfo{
 		CreateInfo: service.CreateInfo{
 			Name:                 config.ServicePrt,
-			Context:              s.Context,
-			Cancel:               s.Cancel,
+			Context:              c.CreateInfo.Context,
+			Cancel:               c.CreateInfo.Cancel,
 			LogLevel:             config.ResolveServiceLogLevel(config.ServicePrt, c.Config.LogLevel),
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,

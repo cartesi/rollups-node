@@ -110,6 +110,7 @@ func hashToHex(h *common.Hash) string {
 // database. The epoch is now "submitted" and no longer "computed".
 // Returns the number of confirmed transitions and any error.
 func (s *Service) checkClaimsInFlight(
+	ctx context.Context,
 	computedEpochs map[int64]*model.Epoch,
 	apps map[int64]*model.Application,
 	endBlock *big.Int,
@@ -117,7 +118,7 @@ func (s *Service) checkClaimsInFlight(
 	confirmed := 0
 	// check claims in flight. NOTE: map mutation + iteration is safe in Go
 	for key, txHash := range s.claimsInFlight {
-		ready, receipt, err := s.blockchain.pollTransaction(s.Context, txHash, endBlock)
+		ready, receipt, err := s.blockchain.pollTransaction(ctx, txHash, endBlock)
 		if err != nil {
 			s.Logger.Warn("Claim submission failed, retrying.",
 				"txHash", txHash,
@@ -139,7 +140,7 @@ func (s *Service) checkClaimsInFlight(
 		}
 		if computedEpoch, ok := computedEpochs[key]; ok {
 			err = s.repository.UpdateEpochWithSubmittedClaim(
-				s.Context,
+				ctx,
 				computedEpoch.ApplicationID,
 				computedEpoch.Index,
 				receipt.TxHash,
@@ -168,7 +169,7 @@ func (s *Service) checkClaimsInFlight(
 			// Parse the receipt to transition directly to accepted, saving a
 			// full tick round-trip. Quorum waits for a separate acceptance scan.
 			if app != nil && app.ConsensusType == model.Consensus_Authority {
-				if accepted := s.tryAcceptFromReceipt(receipt, app, computedEpoch); accepted {
+				if accepted := s.tryAcceptFromReceipt(ctx, receipt, app, computedEpoch); accepted {
 					confirmed++
 				}
 			}
@@ -194,6 +195,7 @@ func (s *Service) checkClaimsInFlight(
 // Errors are logged but not propagated — the normal acceptance scan on the
 // next tick will handle the transition if this fast path fails.
 func (s *Service) tryAcceptFromReceipt(
+	ctx context.Context,
 	receipt *types.Receipt,
 	app *model.Application,
 	epoch *model.Epoch,
@@ -213,7 +215,7 @@ func (s *Service) tryAcceptFromReceipt(
 			continue
 		}
 		err = s.repository.UpdateEpochWithAcceptedClaim(
-			s.Context, epoch.ApplicationID, epoch.Index)
+			ctx, epoch.ApplicationID, epoch.Index)
 		if err != nil {
 			s.Logger.Warn("Authority fast-accept: DB update failed, "+
 				"will retry via normal acceptance scan",
@@ -252,7 +254,7 @@ func (s *Service) findClaimSubmittedEventAndSucc(
 	err := checkEpochSequenceConstraint(prevEpoch, currEpoch)
 	if err != nil {
 		err = s.setApplicationInoperable(
-			s.Context,
+			ctx,
 			app,
 			"%v. epoch: %v (%v).",
 			err,
@@ -270,7 +272,7 @@ func (s *Service) findClaimSubmittedEventAndSucc(
 
 	if prevClaimSubmissionEvent == nil {
 		err = s.setApplicationInoperable(
-			s.Context,
+			ctx,
 			app,
 			"application has an invalid epoch: %v (%v). No claim submission event to match.",
 			prevEpoch.Index,
@@ -281,7 +283,7 @@ func (s *Service) findClaimSubmittedEventAndSucc(
 
 	if !claimSubmittedEventMatches(app, prevEpoch, prevClaimSubmissionEvent) {
 		err = s.setApplicationInoperable(
-			s.Context,
+			ctx,
 			app,
 			"application has an invalid epoch: %v (%v), missing claim submitted event (%v).",
 			prevEpoch.Index,
@@ -296,12 +298,13 @@ func (s *Service) findClaimSubmittedEventAndSucc(
 // transition epoch claims from computed to submitted.
 // Returns the number of successful transitions and any errors.
 func (s *Service) submitClaimsAndUpdateDatabase(
+	ctx context.Context,
 	acceptedOrSubmittedEpochs map[int64]*model.Epoch,
 	computedEpochs map[int64]*model.Epoch,
 	apps map[int64]*model.Application,
 	defaultBlockNumber *big.Int,
 ) (int, []error) {
-	confirmed, err := s.checkClaimsInFlight(computedEpochs, apps, defaultBlockNumber)
+	confirmed, err := s.checkClaimsInFlight(ctx, computedEpochs, apps, defaultBlockNumber)
 	if err != nil {
 		return confirmed, []error{err}
 	}
@@ -321,18 +324,18 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 		prevEpoch, prevEpochExists := acceptedOrSubmittedEpochs[key]
 
 		// check address for changes
-		if err := s.checkConsensusForAddressChange(app); err != nil {
+		if err := s.checkConsensusForAddressChange(ctx, app); err != nil {
 			delete(computedEpochs, key)
 			errs = append(errs, err)
 			continue
 		}
 		if prevEpochExists {
 			ic, _, currEvent, err = s.findClaimSubmittedEventAndSucc(
-				s.Context, app, prevEpoch, currEpoch, prevEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
+				ctx, app, prevEpoch, currEpoch, prevEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
 			)
 		} else {
 			ic, currEvent, _, err = s.blockchain.findClaimSubmittedEventAndSucc(
-				s.Context, app, currEpoch, currEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
+				ctx, app, currEpoch, currEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
 			)
 		}
 		if err != nil {
@@ -349,7 +352,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 			)
 			if !claimSubmittedEventMatches(app, currEpoch, currEvent) {
 				err = s.setApplicationInoperable(
-					s.Context,
+					ctx,
 					app,
 					"computed claim does not match event. computed_claim=%v, current_event=%v",
 					currEpoch, currEvent,
@@ -365,7 +368,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 			)
 			txHash := currEvent.Raw.TxHash
 			err = s.repository.UpdateEpochWithSubmittedClaim(
-				s.Context,
+				ctx,
 				currEpoch.ApplicationID,
 				currEpoch.Index,
 				txHash,
@@ -439,7 +442,7 @@ func (s *Service) submitClaimsAndUpdateDatabase(
 							// to be deterministic, so recomputing
 							// will produce the same divergent hash.
 							err = s.setApplicationInoperable(
-								s.Context,
+								ctx,
 								app,
 								"NotFirstClaim from Quorum consensus: "+
 									"computed claim hash %s differs from "+
@@ -535,6 +538,7 @@ func (s *Service) findClaimAcceptedEventAndSucc(
 // transition claims from submitted to accepted.
 // Returns the number of successful transitions and any errors.
 func (s *Service) acceptClaimsAndUpdateDatabase(
+	ctx context.Context,
 	acceptedEpochs map[int64]*model.Epoch,
 	submittedEpochs map[int64]*model.Epoch,
 	apps map[int64]*model.Application,
@@ -551,7 +555,7 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 		app := apps[key]
 		prevEpoch, prevEpochExists := acceptedEpochs[key]
 		// check address for changes
-		if err := s.checkConsensusForAddressChange(app); err != nil {
+		if err := s.checkConsensusForAddressChange(ctx, app); err != nil {
 			delete(submittedEpochs, key)
 			errs = append(errs, err)
 			continue
@@ -559,11 +563,11 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 
 		if prevEpochExists {
 			_, _, currEvent, err = s.findClaimAcceptedEventAndSucc(
-				s.Context, app, prevEpoch, currEpoch, prevEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
+				ctx, app, prevEpoch, currEpoch, prevEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
 			)
 		} else {
 			_, currEvent, _, err = s.blockchain.findClaimAcceptedEventAndSucc(
-				s.Context, app, currEpoch, currEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
+				ctx, app, currEpoch, currEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
 			)
 		}
 		if err != nil {
@@ -585,7 +589,7 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 					"err", ErrEventMismatch,
 				)
 				err := s.setApplicationInoperable(
-					s.Context,
+					ctx,
 					app,
 					"event mismatch for epoch %v, event tx_hash: %v",
 					currEpoch.Index,
@@ -601,7 +605,7 @@ func (s *Service) acceptClaimsAndUpdateDatabase(
 				"last_block", currEpoch.LastBlock,
 			)
 			txHash := currEvent.Raw.TxHash
-			err = s.repository.UpdateEpochWithAcceptedClaim(s.Context, currEpoch.ApplicationID, currEpoch.Index)
+			err = s.repository.UpdateEpochWithAcceptedClaim(ctx, currEpoch.ApplicationID, currEpoch.Index)
 			if err != nil {
 				delete(submittedEpochs, key)
 				errs = append(errs, err)
@@ -630,15 +634,16 @@ func (s *Service) setApplicationInoperable(
 }
 
 func (s *Service) checkConsensusForAddressChange(
+	ctx context.Context,
 	app *model.Application,
 ) error {
-	newConsensusAddress, err := s.blockchain.getConsensusAddress(s.Context, app)
+	newConsensusAddress, err := s.blockchain.getConsensusAddress(ctx, app)
 	if err != nil {
 		return fmt.Errorf("getting consensus address for app %v: %w", app.IApplicationAddress, err)
 	}
 	if app.IConsensusAddress != newConsensusAddress {
 		err = s.setApplicationInoperable(
-			s.Context,
+			ctx,
 			app,
 			"consensus change detected. application: %v.",
 			app.IApplicationAddress,
