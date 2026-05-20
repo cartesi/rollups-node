@@ -358,26 +358,44 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 				epoch.Index, app.Name, err)
 		}
 		if total < inputCount {
-			return nil, nil, fmt.Errorf("not enough state hashes for epoch %d of application %s: expected at least %d, got %d",
+			return nil, nil, s.setApplicationCorrupted(ctx, app,
+				"not enough state hashes for epoch %d of application %s: expected at least %d, got %d",
 				epoch.Index, app.Name, inputCount, total)
 		}
 		if uint64(len(statesHashes)) != total {
-			return nil, nil, fmt.Errorf("inconsistent number of state hashes for epoch %d of application %s: expected %d, got %d", epoch.Index, app.Name, total, len(statesHashes))
+			return nil, nil, s.setApplicationCorrupted(ctx, app,
+				"inconsistent number of state hashes for epoch %d of application %s: expected %d, got %d",
+				epoch.Index, app.Name, total, len(statesHashes))
 		}
 		for _, stateHash := range statesHashes {
-			builder.AppendRepeatedUint64(merkle.TreeLeaf(stateHash.MachineHash), stateHash.Repetitions)
+			if err := builder.AppendRepeatedUint64(merkle.TreeLeaf(stateHash.MachineHash), stateHash.Repetitions); err != nil {
+				return nil, nil, s.setApplicationCorrupted(ctx, app,
+					"failed to append state hash to builder for epoch %d of application %s with error: %v", epoch.Index, app.Name, err)
+			}
 		}
 	}
 
 	remainingInputs := pkgm.InputsPerEpoch - inputCount
 	remainingStrides := remainingInputs << pkgm.Log2StridesPerInput
 	if remainingStrides > 0 {
-		builder.AppendRepeatedUint64(merkle.TreeLeaf(*epoch.MachineHash), remainingStrides)
+		if err := builder.AppendRepeatedUint64(merkle.TreeLeaf(*epoch.MachineHash), remainingStrides); err != nil {
+			return nil, nil, s.setApplicationCorrupted(ctx, app,
+				"failed to append state hash to builder for epoch %d of application %s with error: %v", epoch.Index, app.Name, err)
+		}
 	}
 
-	epochCommitmentTree := builder.Build()
+	epochCommitmentTree, err := builder.Build()
+	if err != nil {
+		return nil, nil, s.setApplicationCorrupted(ctx, app,
+			"failed to build commitment for epoch %d of application %s with error: %v", epoch.Index, app.Name, err)
+	}
+
 	commitment := epochCommitmentTree.GetRootHash()
-	proof := epochCommitmentTree.ProveLast()
+	proof, err := epochCommitmentTree.ProveLast()
+	if err != nil {
+		return nil, nil, s.setApplicationCorrupted(ctx, app,
+			"failed to retrieve commitment proof for epoch %d of application %s with error: %v", epoch.Index, app.Name, err)
+	}
 	s.Logger.Info("DaveConsensus epoch commitment built",
 		"application", app.Name,
 		"epoch", epoch.Index,

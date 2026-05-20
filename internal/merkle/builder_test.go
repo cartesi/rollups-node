@@ -4,12 +4,14 @@
 package merkle
 
 import (
+	"errors"
 	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -26,68 +28,91 @@ func TestIsCountPow2(t *testing.T) {
 	assert.False(t, isCountPow2(big.NewInt(5)))
 }
 
-// repanicked
-//func TestRepeatZero(t *testing.T) {
-//	defer recover()
-//
-//	builder := Builder{}
-//	builder.AppendRepeatedUint64(TreeLeaf(zeroHash), 0)
-//}
+func TestRepeatZero(t *testing.T) {
+	zeroHash := common.Hash{}
+
+	builder := Builder{}
+	assert.ErrorIs(t, builder.AppendRepeatedUint64(TreeLeaf(zeroHash), 0), ErrBadInput)
+}
+
+func TestBuilderErrorSentinels(t *testing.T) {
+	builder := Builder{}
+	assert.ErrorIs(t, builder.Append(nil), ErrBadInput)
+	assert.ErrorIs(t, builder.AppendRepeated(TreeLeaf(zeroDigest), nil), ErrBadInput)
+
+	_, err := builder.Build()
+	assert.ErrorIs(t, err, ErrBadInput)
+
+	invalidTree := &Tree{RootHash: zeroDigest, Height: 1}
+	_, err = invalidTree.ProveLeaf(big.NewInt(0))
+	assert.ErrorIs(t, err, ErrInvariant)
+
+	proof := Proof{}
+	_, _, err = proof.BuildRootChildren()
+	assert.ErrorIs(t, err, ErrBadInput)
+
+	assert.False(t, errors.Is(ErrBadInput, ErrInvariant))
+}
 
 func TestSimple0(t *testing.T) {
 	builder := Builder{}
-	builder.Append(TreeLeaf(oneDigest))
-	treeRoot := builder.Build().RootHash
+	require.NoError(t, builder.Append(TreeLeaf(oneDigest)))
+	treeRoot, err := builder.Build()
+	require.NoError(t, err)
 	expected := oneDigest
 
-	assert.Equal(t, expected, treeRoot)
+	assert.Equal(t, expected, treeRoot.RootHash)
 }
 
 func TestSimple1(t *testing.T) {
 	builder := Builder{}
-	builder.Append(TreeLeaf(zeroDigest))
-	builder.Append(TreeLeaf(oneDigest))
-	treeRoot := builder.Build().RootHash
+	require.NoError(t, builder.Append(TreeLeaf(zeroDigest)))
+	require.NoError(t, builder.Append(TreeLeaf(oneDigest)))
+	treeRoot, err := builder.Build()
+	require.NoError(t, err)
 
 	expected := TreeLeaf(zeroDigest).Join(TreeLeaf(oneDigest)).RootHash
 
-	assert.Equal(t, expected, treeRoot)
+	assert.Equal(t, expected, treeRoot.RootHash)
 }
 
 func TestSimple2(t *testing.T) {
 	builder := Builder{}
-	builder.AppendRepeatedUint64(TreeLeaf(oneDigest), 2)
-	builder.AppendRepeatedUint64(TreeLeaf(zeroDigest), 2)
-	treeRoot := builder.Build().RootHash
+	require.NoError(t, builder.AppendRepeatedUint64(TreeLeaf(oneDigest), 2))
+	require.NoError(t, builder.AppendRepeatedUint64(TreeLeaf(zeroDigest), 2))
+	treeRoot, err := builder.Build()
+	require.NoError(t, err)
 
 	lhs := TreeLeaf(oneDigest).Join(TreeLeaf(oneDigest))
 	rhs := TreeLeaf(zeroDigest).Join(TreeLeaf(zeroDigest))
 	expected := lhs.Join(rhs).RootHash
 
-	assert.Equal(t, expected, treeRoot)
+	assert.Equal(t, expected, treeRoot.RootHash)
 }
 
 func TestSimple3(t *testing.T) {
 	builder := Builder{}
-	builder.Append(TreeLeaf(zeroDigest))
-	builder.AppendRepeatedUint64(TreeLeaf(oneDigest), 2)
-	builder.Append(TreeLeaf(zeroDigest))
-	treeRoot := builder.Build().RootHash
+	require.NoError(t, builder.Append(TreeLeaf(zeroDigest)))
+	require.NoError(t, builder.AppendRepeatedUint64(TreeLeaf(oneDigest), 2))
+	require.NoError(t, builder.Append(TreeLeaf(zeroDigest)))
+	treeRoot, err := builder.Build()
+	require.NoError(t, err)
 
 	lhs := TreeLeaf(zeroDigest).Join(TreeLeaf(oneDigest))
 	rhs := TreeLeaf(oneDigest).Join(TreeLeaf(zeroDigest))
 	expected := lhs.Join(rhs).RootHash
 
-	assert.Equal(t, expected, treeRoot)
+	assert.Equal(t, expected, treeRoot.RootHash)
 }
 
 func TestMerkleBuilder8(t *testing.T) {
 	builder := Builder{}
-	builder.AppendRepeatedUint64(TreeLeaf(zeroDigest), 2)
-	builder.AppendRepeatedUint64(TreeLeaf(zeroDigest), 6)
+	require.NoError(t, builder.AppendRepeatedUint64(TreeLeaf(zeroDigest), 2))
+	require.NoError(t, builder.AppendRepeatedUint64(TreeLeaf(zeroDigest), 6))
 	assert.True(t, builder.CanBuild())
 
-	merkle := builder.Build()
+	merkle, err := builder.Build()
+	require.NoError(t, err)
 	assert.Equal(t, merkle.RootHash, TreeLeaf(zeroDigest).Iterated(3).RootHash)
 }
 
@@ -97,11 +122,12 @@ func TestMerkleBuilder64(t *testing.T) {
 	reps := new(big.Int).Sub(new(big.Int).Lsh(one, 64), two)
 
 	builder := Builder{}
-	builder.AppendRepeatedUint64(TreeLeaf(zeroDigest), 2)
-	builder.AppendRepeated(TreeLeaf(zeroDigest), reps)
+	require.NoError(t, builder.AppendRepeatedUint64(TreeLeaf(zeroDigest), 2))
+	require.NoError(t, builder.AppendRepeated(TreeLeaf(zeroDigest), reps))
 	assert.True(t, builder.CanBuild())
 
-	merkle := builder.Build()
+	merkle, err := builder.Build()
+	require.NoError(t, err)
 	assert.Equal(t, merkle.RootHash, TreeLeaf(zeroDigest).Iterated(64).RootHash)
 }
 
@@ -110,22 +136,25 @@ func TestMerkleBuilder256(t *testing.T) {
 	reps := new(big.Int).Lsh(one, 256)
 
 	builder := Builder{}
-	builder.AppendRepeated(TreeLeaf(zeroDigest), reps)
+	require.NoError(t, builder.AppendRepeated(TreeLeaf(zeroDigest), reps))
 	assert.True(t, builder.CanBuild())
 
-	merkle := builder.Build()
+	merkle, err := builder.Build()
+	require.NoError(t, err)
 	assert.Equal(t, merkle.RootHash, TreeLeaf(zeroDigest).Iterated(256).RootHash)
 }
 
 func TestAppendAndRepeated(t *testing.T) {
 	builder := Builder{}
-	builder.Append(TreeLeaf(zeroDigest))
+	require.NoError(t, builder.Append(TreeLeaf(zeroDigest)))
 	assert.True(t, builder.CanBuild())
-	tree1 := builder.Build()
+	tree1, err := builder.Build()
+	require.NoError(t, err)
 
 	builder = Builder{}
-	builder.AppendRepeatedUint64(TreeLeaf(zeroDigest), 1)
-	tree2 := builder.Build()
+	require.NoError(t, builder.AppendRepeatedUint64(TreeLeaf(zeroDigest), 1))
+	tree2, err := builder.Build()
+	require.NoError(t, err)
 
 	assert.Equal(t, tree1, tree2)
 }
@@ -141,7 +170,7 @@ func TestBuildRootChildren1(t *testing.T) {
 	rootHash := p.BuildRoot()
 	lhs, rhs, err := p.BuildRootChildren()
 
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, rootHash, crypto.Keccak256Hash(lhs[:], rhs[:]))
 }
 
@@ -157,19 +186,25 @@ func TestBuildRootChildren2(t *testing.T) {
 	rootHash := p.BuildRoot()
 	lhs, rhs, err := p.BuildRootChildren()
 
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, rootHash, crypto.Keccak256Hash(lhs[:], rhs[:]))
 }
 
 func TestBuildRootChildrenAgainstBuilder(t *testing.T) {
 	builder := Builder{}
-	builder.AppendRepeatedUint64(TreeLeaf(common.HexToHash("0x976dc34e226f0c9803d556f26426aaa82ba7b5f96a5ed094f4f150c3c27aeaf5")), 16777216)
-	builder.AppendRepeatedUint64(TreeLeaf(common.HexToHash("0xfffeb0e2d6fc065fdcf03c25e23e9730528ca7b890308765b0e6b07586db9c6e")), 16777216)
-	builder.AppendRepeatedUint64(TreeLeaf(common.HexToHash("0x1588d343bd73f167bf4886b8ab7694b4d83b60087ddbdb445c427c16f26d2644")), 16777216)
-	builder.AppendRepeatedUint64(TreeLeaf(common.HexToHash("0x1588d343bd73f167bf4886b8ab7694b4d83b60087ddbdb445c427c16f26d2644")), 281474926379008)
+	hash0 := common.HexToHash("0x976dc34e226f0c9803d556f26426aaa82ba7b5f96a5ed094f4f150c3c27aeaf5")
+	hash1 := common.HexToHash("0xfffeb0e2d6fc065fdcf03c25e23e9730528ca7b890308765b0e6b07586db9c6e")
+	hash2 := common.HexToHash("0x1588d343bd73f167bf4886b8ab7694b4d83b60087ddbdb445c427c16f26d2644")
+	require.NoError(t, builder.AppendRepeatedUint64(TreeLeaf(hash0), 16777216))
+	require.NoError(t, builder.AppendRepeatedUint64(TreeLeaf(hash1), 16777216))
+	require.NoError(t, builder.AppendRepeatedUint64(TreeLeaf(hash2), 16777216))
+	require.NoError(t, builder.AppendRepeatedUint64(TreeLeaf(hash2), 281474926379008))
 
-	builderTree := builder.Build()
-	proofBuilder := builderTree.ProveLast()
+	builderTree, err := builder.Build()
+	require.NoError(t, err)
+
+	proofBuilder, err := builderTree.ProveLast()
+	require.NoError(t, err)
 
 	rootHashBuilder := proofBuilder.BuildRoot()
 	lhsBuilder, rhsBuilder, err := proofBuilder.BuildRootChildren()
@@ -232,7 +267,7 @@ func TestBuildRootChildrenAgainstBuilder(t *testing.T) {
 	rootHashProof := proofSiblings.BuildRoot()
 	lhsProof, rhsProof, err := proofSiblings.BuildRootChildren()
 
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, rootHashBuilder, rootHashProof)
 	assert.Equal(t, lhsProof, lhsBuilder)
 	assert.Equal(t, rhsProof, rhsBuilder)
@@ -245,11 +280,13 @@ func TestFindChildByHash(t *testing.T) {
 		builder := Builder{}
 		leaf1 := TreeLeaf(common.HexToHash("0x1"))
 		leaf2 := TreeLeaf(common.HexToHash("0x2"))
-		builder.Append(leaf1)
-		builder.Append(leaf2)
-		tree := builder.Build()
+		require.NoError(t, builder.Append(leaf1))
+		require.NoError(t, builder.Append(leaf2))
+		tree, err := builder.Build()
+		require.NoError(t, err)
 
-		child1 := tree.FindChildByHash(leaf1.RootHash)
+		child1, err := tree.FindChildByHash(leaf1.RootHash)
+		require.NoError(t, err)
 		assert.NotNil(t, child1)
 		assert.Equal(t, leaf1.RootHash, child1.RootHash)
 	})
@@ -257,10 +294,12 @@ func TestFindChildByHash(t *testing.T) {
 	t.Run("repetitions", func(t *testing.T) {
 		builder := Builder{}
 		leaf1 := TreeLeaf(common.HexToHash("0x1"))
-		builder.AppendRepeatedUint64(leaf1, 1024)
-		tree := builder.Build()
+		require.NoError(t, builder.AppendRepeatedUint64(leaf1, 1024))
+		tree, err := builder.Build()
+		require.NoError(t, err)
 
-		child1 := tree.FindChildByHash(leaf1.RootHash)
+		child1, err := tree.FindChildByHash(leaf1.RootHash)
+		require.NoError(t, err)
 		assert.NotNil(t, child1)
 		assert.Equal(t, leaf1.RootHash, child1.RootHash)
 	})
@@ -271,42 +310,45 @@ func TestFindChildByHash(t *testing.T) {
 		leaf2 := TreeLeaf(common.HexToHash("0x2"))
 		leaf3 := TreeLeaf(common.HexToHash("0x3"))
 		leaf4 := TreeLeaf(common.HexToHash("0x4"))
-		builder.Append(leaf1)
-		builder.Append(leaf2)
-		builder.Append(leaf3)
-		builder.Append(leaf4)
-		tree := builder.Build()
+		require.NoError(t, builder.Append(leaf1))
+		require.NoError(t, builder.Append(leaf2))
+		require.NoError(t, builder.Append(leaf3))
+		require.NoError(t, builder.Append(leaf4))
+		tree, err := builder.Build()
+		require.NoError(t, err)
 
-		child1 := tree.FindChildByHash(leaf1.RootHash)
+		child1, err := tree.FindChildByHash(leaf1.RootHash)
+		require.NoError(t, err)
 		assert.NotNil(t, child1)
 		assert.Equal(t, leaf1.RootHash, child1.RootHash)
 
-		child2 := tree.FindChildByHash(leaf2.RootHash)
+		child2, err := tree.FindChildByHash(leaf2.RootHash)
+		require.NoError(t, err)
 		assert.NotNil(t, child2)
 		assert.Equal(t, child2.RootHash, leaf2.RootHash)
 	})
 
 	t.Run("notfound", func(t *testing.T) {
 		builder := Builder{}
-		builder.Append(TreeLeaf(zeroDigest))
-		builder.Append(TreeLeaf(oneDigest))
-		tree := builder.Build()
+		require.NoError(t, builder.Append(TreeLeaf(zeroDigest)))
+		require.NoError(t, builder.Append(TreeLeaf(oneDigest)))
+		tree, err := builder.Build()
+		require.NoError(t, err)
 
 		missing := common.HexToHash("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
-		child := tree.FindChildByHash(missing)
+		child, err := tree.FindChildByHash(missing)
+		require.NoError(t, err)
 		assert.Nil(t, child)
 	})
 }
 
-// repanicked
-//func TestBuildNotPow2(t *testing.T) {
-//	defer recover()
-//
-//	builder := Builder{}
-//	builder.Append(TreeLeaf(zeroDigest))
-//	builder.Append(TreeLeaf(zeroDigest))
-//	builder.Append(TreeLeaf(zeroDigest))
-//	assert.False(t, builder.CanBuild())
-//
-//	builder.Build()
-//}
+func TestBuildNotPow2(t *testing.T) {
+	builder := Builder{}
+	require.NoError(t, builder.Append(TreeLeaf(zeroDigest)))
+	require.NoError(t, builder.Append(TreeLeaf(zeroDigest)))
+	require.NoError(t, builder.Append(TreeLeaf(zeroDigest)))
+	assert.False(t, builder.CanBuild())
+
+	_, err := builder.Build()
+	assert.Error(t, err)
+}
