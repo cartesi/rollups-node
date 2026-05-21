@@ -11,13 +11,13 @@ import (
 )
 
 var (
-	epochLengthParam            uint64
-	claimStagingPeriodParam     uint64
-	withdrawalConfigParam       string
-	withdrawalConfigFileParam   string
-	saltParam                   string
-	asJSONParam                 bool
-	verboseParam                bool
+	epochLengthParam          uint64
+	claimStagingPeriodParam   uint64
+	withdrawalConfigParam     string
+	withdrawalConfigFileParam string
+	saltParam                 string
+	asJSONParam               bool
+	verboseParam              bool
 )
 
 var Cmd = &cobra.Command{
@@ -49,6 +49,7 @@ func init() {
 
 	Cmd.AddCommand(applicationCmd)
 	Cmd.AddCommand(authorityCmd)
+	Cmd.AddCommand(quorumCmd)
 }
 
 func run(cmd *cobra.Command, args []string) {

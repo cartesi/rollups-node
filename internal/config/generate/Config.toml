@@ -273,6 +273,13 @@ Address of the AuthorityFactory contract. Not required, used only by the CLI and
 omit = true
 used-by = ["cli"]
 
+[contracts.CARTESI_CONTRACTS_QUORUM_FACTORY_ADDRESS]
+go-type = "Address"
+description = """
+Address of the QuorumFactory contract. Not required, used only by the CLI and tests"""
+omit = true
+used-by = ["cli"]
+
 [contracts.CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS]
 go-type = "Address"
 description = """

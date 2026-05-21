@@ -20,6 +20,7 @@ import (
 	"github.com/cartesi/rollups-node/pkg/contracts/iauthorityfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveappfactory"
+	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
 	"github.com/cartesi/rollups-node/pkg/contracts/iquorumfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iselfhostedapplicationfactory"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
@@ -277,6 +278,9 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		application.ClaimStagingPeriod = res.Deployment.ClaimStagingPeriod
 		application.DataAvailability = res.Deployment.DataAvailability
 		application.IInputBoxBlock = res.Deployment.IInputBoxBlock
+		if res.Deployment.ConsensusType != "" {
+			application.ConsensusType = model.Consensus(res.Deployment.ConsensusType)
+		}
 		application.WithdrawalConfig = model.WithdrawalConfig(res.Deployment.WithdrawalConfig)
 
 	case *ethutil.PRTApplicationDeploymentResult:
@@ -452,11 +456,6 @@ func buildApplicationOnlyDeployment(
 		return nil, fmt.Errorf("error on parameter factory: %w", err)
 	}
 
-	request.Consensus, err = parseHexAddress(applicationConsensusAddressParam)
-	if err != nil {
-		return nil, fmt.Errorf("error on parameter consensus: %w", err)
-	}
-
 	if !cmd.Flags().Changed("template-hash") {
 		if len(args) >= 2 { // args[1] is mandatory if `template-hash` was absent
 			request.TemplateHash, err = util.ReadRootHash(args[1])
@@ -516,10 +515,13 @@ func buildApplicationOnlyDeployment(
 
 	request.Verbose = verboseParam
 
-	request.Consensus, request.EpochLength, request.ClaimStagingPeriod, err = customConsensus(client, applicationConsensusAddressParam)
+	var consensusType model.Consensus
+	request.Consensus, request.EpochLength, request.ClaimStagingPeriod, consensusType, err =
+		customConsensus(client, applicationConsensusAddressParam)
 	if err != nil {
 		return nil, fmt.Errorf("error on parameter consensus: %w", err)
 	}
+	request.ConsensusType = consensusType.String()
 
 	return request, nil
 }
@@ -574,26 +576,39 @@ func parseHexHash(hash string) (common.Hash, error) {
 	return out, out.UnmarshalText([]byte(hash))
 }
 
-func customConsensus(client *ethclient.Client, consensusString string) (common.Address, uint64, uint64, error) {
+func customConsensus(client *ethclient.Client, consensusString string) (common.Address, uint64, uint64, model.Consensus, error) {
 	consensusAddress, err := parseHexAddress(consensusString)
 	if err != nil {
-		return common.Address{}, 0, 0, err
+		return common.Address{}, 0, 0, "", err
 	}
 
 	consensus, err := iconsensus.NewIConsensus(consensusAddress, client)
 	if err != nil {
-		return common.Address{}, 0, 0, err
+		return common.Address{}, 0, 0, "", err
 	}
 
 	epochLengthBig, err := consensus.GetEpochLength(nil)
 	if err != nil {
-		return common.Address{}, 0, 0, fmt.Errorf("failed to retrieve consensus epoch length: %v", err)
+		return common.Address{}, 0, 0, "", fmt.Errorf("failed to retrieve consensus epoch length: %v", err)
 	}
 
 	claimStagingPeriodBig, err := consensus.GetClaimStagingPeriod(nil)
 	if err != nil {
-		return common.Address{}, 0, 0, fmt.Errorf("failed to retrieve consensus claim staging period: %v", err)
+		return common.Address{}, 0, 0, "", fmt.Errorf("failed to retrieve consensus claim staging period: %v", err)
 	}
 
-	return consensusAddress, epochLengthBig.Uint64(), claimStagingPeriodBig.Uint64(), nil
+	consensusType := model.Consensus_Authority
+	quorum, err := iquorum.NewIQuorum(consensusAddress, client)
+	if err != nil {
+		return common.Address{}, 0, 0, "", err
+	}
+	numOfValidators, err := quorum.NumOfValidators(nil)
+	if err == nil {
+		if numOfValidators.Sign() == 0 {
+			return common.Address{}, 0, 0, "", fmt.Errorf("quorum consensus reports zero validators")
+		}
+		consensusType = model.Consensus_Quorum
+	}
+
+	return consensusAddress, epochLengthBig.Uint64(), claimStagingPeriodBig.Uint64(), consensusType, nil
 }
