@@ -15,14 +15,18 @@ var EpochStatus = &struct {
 	InputsProcessed postgres.StringExpression
 	ClaimComputed   postgres.StringExpression
 	ClaimSubmitted  postgres.StringExpression
+	ClaimStaged     postgres.StringExpression
 	ClaimAccepted   postgres.StringExpression
 	ClaimRejected   postgres.StringExpression
+	ClaimForeclosed postgres.StringExpression
 }{
 	Open:            postgres.NewEnumValue("OPEN"),
 	Closed:          postgres.NewEnumValue("CLOSED"),
 	InputsProcessed: postgres.NewEnumValue("INPUTS_PROCESSED"),
 	ClaimComputed:   postgres.NewEnumValue("CLAIM_COMPUTED"),
 	ClaimSubmitted:  postgres.NewEnumValue("CLAIM_SUBMITTED"),
+	ClaimStaged:     postgres.NewEnumValue("CLAIM_STAGED"),
 	ClaimAccepted:   postgres.NewEnumValue("CLAIM_ACCEPTED"),
 	ClaimRejected:   postgres.NewEnumValue("CLAIM_REJECTED"),
+	ClaimForeclosed: postgres.NewEnumValue("CLAIM_FORECLOSED"),
 }

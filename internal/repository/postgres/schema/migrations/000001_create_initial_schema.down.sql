@@ -3,7 +3,7 @@
 
 BEGIN;
 
-DROP TRIGGER IF EXISTS "state_hashes_set_updated_at" ON "match_advances";
+DROP TRIGGER IF EXISTS "state_hashes_set_updated_at" ON "state_hashes";
 DROP TABLE IF EXISTS "state_hashes";
 
 DROP TRIGGER IF EXISTS "match_advances_set_updated_at" ON "match_advances";
@@ -25,11 +25,15 @@ DROP INDEX IF EXISTS "tournaments_parent_match_nonroot_idx";
 DROP INDEX IF EXISTS "unique_root_per_epoch_idx";
 DROP TABLE IF EXISTS "tournaments";
 
-DROP TRIGGER IF EXISTS "node_config_set_updated_at" ON "node_config";
+DROP TRIGGER IF EXISTS "config_set_updated_at" ON "node_config";
 DROP TABLE IF EXISTS "node_config";
 
 DROP TRIGGER IF EXISTS "report_set_updated_at" ON "report";
 DROP TABLE IF EXISTS "report";
+
+DROP TRIGGER IF EXISTS "withdrawal_set_updated_at" ON "withdrawal";
+DROP INDEX IF EXISTS "withdrawal_block_number_idx";
+DROP TABLE IF EXISTS "withdrawal";
 
 DROP TRIGGER IF EXISTS "output_set_updated_at" ON "output";
 DROP INDEX IF EXISTS "output_raw_data_address_idx";
@@ -47,6 +51,7 @@ DROP TRIGGER IF EXISTS "epoch_status_transition_check" ON "epoch";
 DROP TRIGGER IF EXISTS "epoch_set_updated_at" ON "epoch";
 DROP INDEX IF EXISTS "epoch_status_idx";
 DROP INDEX IF EXISTS "epoch_last_block_idx";
+DROP INDEX IF EXISTS "epoch_unreconciled_idx";
 DROP TABLE IF EXISTS "epoch";
 
 DROP FUNCTION IF EXISTS "enforce_epoch_status_transition";
@@ -54,10 +59,13 @@ DROP FUNCTION IF EXISTS "enforce_epoch_status_transition";
 DROP TRIGGER IF EXISTS "execution_parameters_set_updated_at" ON "execution_parameters";
 DROP TABLE IF EXISTS "execution_parameters";
 
+DROP TRIGGER IF EXISTS "application_validate_status_transition" ON "application";
 DROP TRIGGER IF EXISTS "application_set_updated_at" ON "application";
 DROP INDEX IF EXISTS "application_data_availability_selector_idx";
+DROP INDEX IF EXISTS "application_foreclosed_idx";
 DROP TABLE IF EXISTS "application";
 
+DROP FUNCTION IF EXISTS "validate_application_status_transition";
 DROP FUNCTION IF EXISTS "update_updated_at_column";
 DROP FUNCTION IF EXISTS "check_hash_siblings";
 
@@ -68,7 +76,7 @@ DROP TYPE IF EXISTS "SnapshotPolicy";
 DROP TYPE IF EXISTS "EpochStatus";
 DROP TYPE IF EXISTS "DefaultBlock";
 DROP TYPE IF EXISTS "InputCompletionStatus";
-DROP TYPE IF EXISTS "ApplicationState";
+DROP TYPE IF EXISTS "ApplicationStatus";
 DROP DOMAIN IF EXISTS "data_availability";
 DROP DOMAIN IF EXISTS "hash";
 DROP DOMAIN IF EXISTS "uint64";

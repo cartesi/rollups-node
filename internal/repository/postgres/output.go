@@ -16,6 +16,11 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/table"
 )
 
+var (
+	delegateCallVoucherSelector = []byte{0x10, 0x32, 0x1e, 0x8b}
+	voucherSelector             = []byte{0x23, 0x7a, 0x81, 0x6f}
+)
+
 func (r *PostgresRepository) GetOutput(
 	ctx context.Context,
 	nameOrAddress string,
@@ -271,73 +276,6 @@ func (r *PostgresRepository) ListOutputs(
 	return outputs, total, nil
 }
 
-func (r *PostgresRepository) GetLastOutputBeforeBlock(
-	ctx context.Context,
-	nameOrAddress string,
-	block uint64,
-) (*model.Output, error) {
-
-	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
-
-	sel := table.Output.
-		SELECT(
-			table.Output.InputEpochApplicationID,
-			table.Output.InputIndex,
-			table.Output.Index,
-			table.Output.RawData,
-			table.Output.Hash,
-			table.Output.OutputHashesSiblings,
-			table.Output.ExecutionTransactionHash,
-			table.Output.CreatedAt,
-			table.Output.UpdatedAt,
-			table.Input.EpochIndex,
-		).
-		FROM(
-			table.Output.INNER_JOIN(
-				table.Application,
-				table.Output.InputEpochApplicationID.EQ(table.Application.ID),
-			).INNER_JOIN(
-				table.Input,
-				table.Output.InputEpochApplicationID.EQ(table.Input.EpochApplicationID).AND(
-					table.Output.InputIndex.EQ(table.Input.Index),
-				),
-			),
-		).
-		WHERE(
-			postgres.AND(
-				whereClause,
-				table.Input.BlockNumber.LT(uint64Expr(block)),
-				table.Input.Status.EQ(postgres.NewEnumValue(model.InputCompletionStatus_Accepted.String())),
-			),
-		).
-		ORDER_BY(table.Output.Index.DESC()).
-		LIMIT(1)
-
-	sqlStr, args := sel.Sql()
-	row := r.db.QueryRow(ctx, sqlStr, args...)
-
-	var out model.Output
-	err := row.Scan(
-		&out.InputEpochApplicationID,
-		&out.InputIndex,
-		&out.Index,
-		&out.RawData,
-		&out.Hash,
-		&out.OutputHashesSiblings,
-		&out.ExecutionTransactionHash,
-		&out.CreatedAt,
-		&out.UpdatedAt,
-		&out.EpochIndex,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
 func (r *PostgresRepository) GetNumberOfExecutedOutputs(
 	ctx context.Context,
 	nameOrAddress string,
@@ -354,6 +292,40 @@ func (r *PostgresRepository) GetNumberOfExecutedOutputs(
 				),
 		).
 		WHERE(whereClause.AND(table.Output.ExecutionTransactionHash.IS_NOT_NULL()))
+
+	sqlStr, args := sel.Sql()
+	row := r.db.QueryRow(ctx, sqlStr, args...)
+
+	var count uint64
+	err := row.Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (r *PostgresRepository) GetNumberOfPendingExecutableOutputs(
+	ctx context.Context,
+	nameOrAddress string,
+) (uint64, error) {
+
+	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
+	outputType := SubstrBytea(table.Output.RawData, 1, 4)
+
+	sel := table.Output.
+		SELECT(postgres.COUNT(postgres.STAR)).
+		FROM(
+			table.Output.
+				INNER_JOIN(table.Application,
+					table.Output.InputEpochApplicationID.EQ(table.Application.ID),
+				),
+		).
+		WHERE(
+			whereClause.
+				AND(table.Output.ExecutionTransactionHash.IS_NULL()).
+				AND(outputType.EQ(postgres.Bytea(delegateCallVoucherSelector)).
+					OR(outputType.EQ(postgres.Bytea(voucherSelector)))),
+		)
 
 	sqlStr, args := sel.Sql()
 	row := r.db.QueryRow(ctx, sqlStr, args...)

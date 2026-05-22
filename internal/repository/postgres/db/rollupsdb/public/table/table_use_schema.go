@@ -23,4 +23,5 @@ func UseSchema(schema string) {
 	SchemaMigrations = SchemaMigrations.FromSchema(schema)
 	StateHashes = StateHashes.FromSchema(schema)
 	Tournaments = Tournaments.FromSchema(schema)
+	Withdrawal = Withdrawal.FromSchema(schema)
 }

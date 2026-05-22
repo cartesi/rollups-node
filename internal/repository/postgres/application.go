@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-jet/jet/v2/postgres"
 
 	"github.com/cartesi/rollups-node/internal/model"
@@ -33,15 +34,30 @@ func (r *PostgresRepository) CreateApplication(
 			table.Application.TemplateHash,
 			table.Application.TemplateURI,
 			table.Application.EpochLength,
+			table.Application.ClaimStagingPeriod,
+			table.Application.WithdrawalGuardian,
+			table.Application.WithdrawalLog2LeavesPerAccount,
+			table.Application.WithdrawalLog2MaxNumOfAccounts,
+			table.Application.WithdrawalAccountsDriveStartIndex,
+			table.Application.WithdrawalOutputBuilder,
 			table.Application.DataAvailability,
 			table.Application.ConsensusType,
-			table.Application.State,
+			table.Application.Enabled,
+			table.Application.Status,
 			table.Application.IinputboxBlock,
 			table.Application.LastEpochCheckBlock,
 			table.Application.LastInputCheckBlock,
 			table.Application.LastOutputCheckBlock,
 			table.Application.LastTournamentCheckBlock,
+			table.Application.LastForecloseCheckBlock,
+			table.Application.LastAccountsDriveProvedCheckBlock,
+			table.Application.LastWithdrawalCheckBlock,
 			table.Application.ProcessedInputs,
+			table.Application.ForecloseBlock,
+			table.Application.ForecloseTransaction,
+			table.Application.AccountsDriveProvedBlock,
+			table.Application.AccountsDriveProvedTransaction,
+			table.Application.AccountsDriveMerkleRoot,
 		).
 		VALUES(
 			app.Name,
@@ -51,15 +67,30 @@ func (r *PostgresRepository) CreateApplication(
 			app.TemplateHash,
 			app.TemplateURI,
 			app.EpochLength,
+			app.ClaimStagingPeriod,
+			app.WithdrawalConfig.Guardian,
+			app.WithdrawalConfig.Log2LeavesPerAccount,
+			app.WithdrawalConfig.Log2MaxNumOfAccounts,
+			app.WithdrawalConfig.AccountsDriveStartIndex,
+			app.WithdrawalConfig.WithdrawalOutputBuilder,
 			app.DataAvailability,
 			app.ConsensusType,
-			app.State,
+			app.Enabled,
+			app.Status,
 			app.IInputBoxBlock,
 			app.LastEpochCheckBlock,
 			app.LastInputCheckBlock,
 			app.LastOutputCheckBlock,
 			app.LastTournamentCheckBlock,
+			app.LastForecloseCheckBlock,
+			app.LastAccountsDriveProvedCheckBlock,
+			app.LastWithdrawalCheckBlock,
 			app.ProcessedInputs,
+			app.ForecloseBlock,
+			app.ForecloseTransaction,
+			app.AccountsDriveProvedBlock,
+			app.AccountsDriveProvedTransaction,
+			app.AccountsDriveMerkleRoot,
 		).
 		RETURNING(table.Application.ID)
 
@@ -150,16 +181,31 @@ func (r *PostgresRepository) GetApplication(
 			table.Application.TemplateHash,
 			table.Application.TemplateURI,
 			table.Application.EpochLength,
+			table.Application.ClaimStagingPeriod,
+			table.Application.WithdrawalGuardian,
+			table.Application.WithdrawalLog2LeavesPerAccount,
+			table.Application.WithdrawalLog2MaxNumOfAccounts,
+			table.Application.WithdrawalAccountsDriveStartIndex,
+			table.Application.WithdrawalOutputBuilder,
 			table.Application.DataAvailability,
 			table.Application.ConsensusType,
-			table.Application.State,
+			table.Application.Enabled,
+			table.Application.Status,
 			table.Application.Reason,
 			table.Application.IinputboxBlock,
 			table.Application.LastEpochCheckBlock,
 			table.Application.LastInputCheckBlock,
 			table.Application.LastOutputCheckBlock,
 			table.Application.LastTournamentCheckBlock,
+			table.Application.LastForecloseCheckBlock,
+			table.Application.LastAccountsDriveProvedCheckBlock,
+			table.Application.LastWithdrawalCheckBlock,
 			table.Application.ProcessedInputs,
+			table.Application.ForecloseBlock,
+			table.Application.ForecloseTransaction,
+			table.Application.AccountsDriveProvedBlock,
+			table.Application.AccountsDriveProvedTransaction,
+			table.Application.AccountsDriveMerkleRoot,
 			table.Application.CreatedAt,
 			table.Application.UpdatedAt,
 			table.ExecutionParameters.ApplicationID,
@@ -200,16 +246,31 @@ func (r *PostgresRepository) GetApplication(
 		&app.TemplateHash,
 		&app.TemplateURI,
 		&app.EpochLength,
+		&app.ClaimStagingPeriod,
+		&app.WithdrawalConfig.Guardian,
+		&app.WithdrawalConfig.Log2LeavesPerAccount,
+		&app.WithdrawalConfig.Log2MaxNumOfAccounts,
+		&app.WithdrawalConfig.AccountsDriveStartIndex,
+		&app.WithdrawalConfig.WithdrawalOutputBuilder,
 		&app.DataAvailability,
 		&app.ConsensusType,
-		&app.State,
+		&app.Enabled,
+		&app.Status,
 		&app.Reason,
 		&app.IInputBoxBlock,
 		&app.LastEpochCheckBlock,
 		&app.LastInputCheckBlock,
 		&app.LastOutputCheckBlock,
 		&app.LastTournamentCheckBlock,
+		&app.LastForecloseCheckBlock,
+		&app.LastAccountsDriveProvedCheckBlock,
+		&app.LastWithdrawalCheckBlock,
 		&app.ProcessedInputs,
+		&app.ForecloseBlock,
+		&app.ForecloseTransaction,
+		&app.AccountsDriveProvedBlock,
+		&app.AccountsDriveProvedTransaction,
+		&app.AccountsDriveMerkleRoot,
 		&app.CreatedAt,
 		&app.UpdatedAt,
 		&app.ExecutionParameters.ApplicationID,
@@ -262,7 +323,12 @@ func (r *PostgresRepository) GetProcessedInputCount(
 	return processedInputs, err
 }
 
-// UpdateApplication updates an existing application row.
+// UpdateApplication updates application configuration fields.
+//
+// Status, operator intent, scanner cursors, processed input counters, and
+// foreclosure columns are deliberately excluded. Dedicated methods own those
+// fields so a stale in-memory application cannot rewind service progress or
+// move the app back into normal work while changing unrelated configuration.
 func (r *PostgresRepository) UpdateApplication(
 	ctx context.Context,
 	app *model.Application,
@@ -277,16 +343,15 @@ func (r *PostgresRepository) UpdateApplication(
 			table.Application.TemplateHash,
 			table.Application.TemplateURI,
 			table.Application.EpochLength,
+			table.Application.ClaimStagingPeriod,
+			table.Application.WithdrawalGuardian,
+			table.Application.WithdrawalLog2LeavesPerAccount,
+			table.Application.WithdrawalLog2MaxNumOfAccounts,
+			table.Application.WithdrawalAccountsDriveStartIndex,
+			table.Application.WithdrawalOutputBuilder,
 			table.Application.DataAvailability,
 			table.Application.ConsensusType,
-			table.Application.State,
-			table.Application.Reason,
 			table.Application.IinputboxBlock,
-			table.Application.LastEpochCheckBlock,
-			table.Application.LastInputCheckBlock,
-			table.Application.LastOutputCheckBlock,
-			table.Application.LastTournamentCheckBlock,
-			table.Application.ProcessedInputs,
 		).
 		SET(
 			app.Name,
@@ -296,45 +361,286 @@ func (r *PostgresRepository) UpdateApplication(
 			app.TemplateHash,
 			app.TemplateURI,
 			app.EpochLength,
+			app.ClaimStagingPeriod,
+			app.WithdrawalConfig.Guardian,
+			app.WithdrawalConfig.Log2LeavesPerAccount,
+			app.WithdrawalConfig.Log2MaxNumOfAccounts,
+			app.WithdrawalConfig.AccountsDriveStartIndex,
+			app.WithdrawalConfig.WithdrawalOutputBuilder,
 			app.DataAvailability,
 			app.ConsensusType,
-			app.State,
-			app.Reason,
 			app.IInputBoxBlock,
-			app.LastEpochCheckBlock,
-			app.LastInputCheckBlock,
-			app.LastOutputCheckBlock,
-			app.LastTournamentCheckBlock,
-			app.ProcessedInputs,
 		).
 		WHERE(table.Application.ID.EQ(postgres.Int(app.ID)))
+
+	sqlStr, args := updateStmt.Sql()
+	cmd, err := r.db.Exec(ctx, sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return repository.ErrNotFound
+	}
+	return nil
+}
+
+// UpdateApplicationEnabled changes only the operator intent bit. It must not
+// touch service-owned scanner cursors or status fields.
+func (r *PostgresRepository) UpdateApplicationEnabled(
+	ctx context.Context,
+	appID int64,
+	enabled bool,
+) error {
+	updateStmt := table.Application.
+		UPDATE(table.Application.Enabled).
+		SET(enabled).
+		WHERE(table.Application.ID.EQ(postgres.Int(appID)))
+
+	sqlStr, args := updateStmt.Sql()
+	cmd, err := r.db.Exec(ctx, sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return repository.ErrNotFound
+	}
+	return nil
+}
+
+// EnableApplicationAndClearFailed re-enables an application and clears FAILED
+// in one statement. DIVERGED/CORRUPTED statuses are left unchanged; enabling a
+// foreclosed app records operator intent but does not make it executable.
+func (r *PostgresRepository) EnableApplicationAndClearFailed(
+	ctx context.Context,
+	appID int64,
+) error {
+	updateStmt := table.Application.
+		UPDATE(
+			table.Application.Enabled,
+			table.Application.Status,
+			table.Application.Reason,
+		).
+		SET(
+			true,
+			postgres.CASE().
+				WHEN(table.Application.Status.EQ(postgres.NewEnumValue(model.ApplicationStatus_Failed.String()))).
+				THEN(postgres.NewEnumValue(model.ApplicationStatus_OK.String())).
+				ELSE(table.Application.Status),
+			postgres.CASE().
+				WHEN(table.Application.Status.EQ(postgres.NewEnumValue(model.ApplicationStatus_Failed.String()))).
+				THEN(postgres.NULL).
+				ELSE(table.Application.Reason),
+		).
+		WHERE(table.Application.ID.EQ(postgres.Int(appID)))
+
+	sqlStr, args := updateStmt.Sql()
+	cmd, err := r.db.Exec(ctx, sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return repository.ErrNotFound
+	}
+	return nil
+}
+
+// UpdateApplicationLastForecloseCheckBlock advances the per-app record
+// of how far the Foreclosure-event search has scanned. The clause
+// `WHERE last_foreclose_check_block < blockNumber` makes the write
+// strictly monotonic: out-of-order or duplicate observations from a slow
+// tick cannot rewind the value and re-cause a long-window rescan. A no-op
+// (0 rows affected) is not an error — it just means the caller's view is
+// stale.
+func (r *PostgresRepository) UpdateApplicationLastForecloseCheckBlock(
+	ctx context.Context,
+	appID int64,
+	blockNumber uint64,
+) error {
+	updateStmt := table.Application.
+		UPDATE(table.Application.LastForecloseCheckBlock).
+		SET(uint64Expr(blockNumber)).
+		WHERE(
+			table.Application.ID.EQ(postgres.Int(appID)).
+				AND(table.Application.LastForecloseCheckBlock.LT(uint64Expr(blockNumber))),
+		)
 
 	sqlStr, args := updateStmt.Sql()
 	_, err := r.db.Exec(ctx, sqlStr, args...)
 	return err
 }
 
-func (r *PostgresRepository) UpdateApplicationState(
+// UpdateApplicationForeclosure records the one-shot Foreclosure() event and
+// advances last_foreclose_check_block in the same
+// transaction. If the marker was already recorded, this is an idempotent no-op.
+func (r *PostgresRepository) UpdateApplicationForeclosure(
 	ctx context.Context,
 	appID int64,
-	state model.ApplicationState,
+	block uint64,
+	txHash common.Hash,
+	blockNumber uint64,
+) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	cmd, err := tx.Exec(ctx, `
+UPDATE "application"
+SET
+    "foreclose_block" = $1,
+    "foreclose_transaction" = $2
+WHERE "id" = $3 AND "foreclose_block" = 0
+`, block, txHash, appID)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		probeStmt := table.Application.
+			SELECT(table.Application.ID).
+			WHERE(table.Application.ID.EQ(postgres.Int(appID)))
+		psql, pargs := probeStmt.Sql()
+		var dummy int64
+		err = tx.QueryRow(ctx, psql, pargs...).Scan(&dummy)
+		if errors.Is(err, sql.ErrNoRows) {
+			return repository.ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("probing application existence (id=%d): %w", appID, err)
+		}
+		return tx.Commit(ctx)
+	}
+
+	cursorStmt := table.Application.
+		UPDATE(table.Application.LastForecloseCheckBlock).
+		SET(uint64Expr(blockNumber)).
+		WHERE(
+			table.Application.ID.EQ(postgres.Int(appID)).
+				AND(table.Application.LastForecloseCheckBlock.LT(uint64Expr(blockNumber))),
+		)
+	sqlStr, args := cursorStmt.Sql()
+	if _, err := tx.Exec(ctx, sqlStr, args...); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// UpdateAccountsDriveProved records the one-shot drive-prove transition and
+// advances the scanner cursor in the same
+// transaction. If the marker was already recorded, this is an idempotent no-op.
+func (r *PostgresRepository) UpdateAccountsDriveProved(
+	ctx context.Context,
+	appID int64,
+	block uint64,
+	txHash common.Hash,
+	root common.Hash,
+	blockNumber uint64,
+) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	updateStmt := table.Application.
+		UPDATE(
+			table.Application.AccountsDriveProvedBlock,
+			table.Application.AccountsDriveProvedTransaction,
+			table.Application.AccountsDriveMerkleRoot,
+		).
+		SET(
+			block,
+			&txHash,
+			&root,
+		).
+		WHERE(
+			table.Application.ID.EQ(postgres.Int(appID)).
+				AND(table.Application.AccountsDriveProvedBlock.EQ(uint64Expr(0))),
+		)
+
+	sqlStr, args := updateStmt.Sql()
+	cmd, err := tx.Exec(ctx, sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		probeStmt := table.Application.
+			SELECT(table.Application.ID).
+			WHERE(table.Application.ID.EQ(postgres.Int(appID)))
+		psql, pargs := probeStmt.Sql()
+		var dummy int64
+		err = tx.QueryRow(ctx, psql, pargs...).Scan(&dummy)
+		if errors.Is(err, sql.ErrNoRows) {
+			return repository.ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("probing application existence (id=%d): %w", appID, err)
+		}
+		return tx.Commit(ctx)
+	}
+
+	cursorStmt := table.Application.
+		UPDATE(table.Application.LastAccountsDriveProvedCheckBlock).
+		SET(uint64Expr(blockNumber)).
+		WHERE(
+			table.Application.ID.EQ(postgres.Int(appID)).
+				AND(table.Application.LastAccountsDriveProvedCheckBlock.LT(uint64Expr(blockNumber))),
+		)
+	sqlStr, args = cursorStmt.Sql()
+	if _, err := tx.Exec(ctx, sqlStr, args...); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// UpdateApplicationLastAccountsDriveProvedCheckBlock advances the per-app
+// scanner cursor for the getAccountsDriveMerkleRoot().wasProved observer.
+// Strictly monotonic — mirrors UpdateApplicationLastForecloseCheckBlock.
+func (r *PostgresRepository) UpdateApplicationLastAccountsDriveProvedCheckBlock(
+	ctx context.Context,
+	appID int64,
+	blockNumber uint64,
+) error {
+	updateStmt := table.Application.
+		UPDATE(table.Application.LastAccountsDriveProvedCheckBlock).
+		SET(uint64Expr(blockNumber)).
+		WHERE(
+			table.Application.ID.EQ(postgres.Int(appID)).
+				AND(table.Application.LastAccountsDriveProvedCheckBlock.LT(uint64Expr(blockNumber))),
+		)
+
+	sqlStr, args := updateStmt.Sql()
+	_, err := r.db.Exec(ctx, sqlStr, args...)
+	return err
+}
+
+func (r *PostgresRepository) UpdateApplicationStatus(
+	ctx context.Context,
+	appID int64,
+	status model.ApplicationStatus,
 	reason *string,
 ) error {
 
 	updateStmt := table.Application.
 		UPDATE(
-			table.Application.State,
+			table.Application.Status,
 			table.Application.Reason,
 		).
 		SET(
-			state,
+			status,
 			reason,
 		).
 		WHERE(table.Application.ID.EQ(postgres.Int(appID)))
 
 	sqlStr, args := updateStmt.Sql()
-	_, err := r.db.Exec(ctx, sqlStr, args...)
-	return err
+	cmd, err := r.db.Exec(ctx, sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return repository.ErrNotFound
+	}
+	return nil
 }
 
 func getColumnForEvent(event model.MonitoredEvent) (postgres.ColumnFloat, error) {
@@ -517,8 +823,18 @@ func (r *PostgresRepository) ListApplications(
 	)
 
 	conditions := []postgres.BoolExpression{}
-	if f.State != nil {
-		conditions = append(conditions, table.Application.State.EQ(postgres.NewEnumValue(f.State.String())))
+	if f.Enabled != nil {
+		conditions = append(conditions, table.Application.Enabled.EQ(postgres.Bool(*f.Enabled)))
+	}
+	if f.Status != nil {
+		conditions = append(conditions, table.Application.Status.EQ(postgres.NewEnumValue(f.Status.String())))
+	}
+	if len(f.Statuses) > 0 {
+		statuses := make([]postgres.Expression, len(f.Statuses))
+		for i, status := range f.Statuses {
+			statuses[i] = postgres.NewEnumValue(status.String())
+		}
+		conditions = append(conditions, table.Application.Status.IN(statuses...))
 	}
 	if f.DataAvailability != nil {
 		conditions = append(conditions,
@@ -527,6 +843,20 @@ func (r *PostgresRepository) ListApplications(
 	}
 	if f.ConsensusType != nil {
 		conditions = append(conditions, table.Application.ConsensusType.EQ(postgres.NewEnumValue(f.ConsensusType.String())))
+	}
+	if len(f.ConsensusTypes) > 0 {
+		consensusTypes := make([]postgres.Expression, len(f.ConsensusTypes))
+		for i, consensusType := range f.ConsensusTypes {
+			consensusTypes[i] = postgres.NewEnumValue(consensusType.String())
+		}
+		conditions = append(conditions, table.Application.ConsensusType.IN(consensusTypes...))
+	}
+	if f.ForeclosureRecorded != nil {
+		if *f.ForeclosureRecorded {
+			conditions = append(conditions, table.Application.ForecloseBlock.GT(uint64Expr(0)))
+		} else {
+			conditions = append(conditions, table.Application.ForecloseBlock.EQ(uint64Expr(0)))
+		}
 	}
 
 	tx, err := beginReadTx(ctx, r.db)
@@ -557,16 +887,31 @@ func (r *PostgresRepository) ListApplications(
 			table.Application.TemplateHash,
 			table.Application.TemplateURI,
 			table.Application.EpochLength,
+			table.Application.ClaimStagingPeriod,
+			table.Application.WithdrawalGuardian,
+			table.Application.WithdrawalLog2LeavesPerAccount,
+			table.Application.WithdrawalLog2MaxNumOfAccounts,
+			table.Application.WithdrawalAccountsDriveStartIndex,
+			table.Application.WithdrawalOutputBuilder,
 			table.Application.DataAvailability,
 			table.Application.ConsensusType,
-			table.Application.State,
+			table.Application.Enabled,
+			table.Application.Status,
 			table.Application.Reason,
 			table.Application.IinputboxBlock,
 			table.Application.LastEpochCheckBlock,
 			table.Application.LastInputCheckBlock,
 			table.Application.LastOutputCheckBlock,
 			table.Application.LastTournamentCheckBlock,
+			table.Application.LastForecloseCheckBlock,
+			table.Application.LastAccountsDriveProvedCheckBlock,
+			table.Application.LastWithdrawalCheckBlock,
 			table.Application.ProcessedInputs,
+			table.Application.ForecloseBlock,
+			table.Application.ForecloseTransaction,
+			table.Application.AccountsDriveProvedBlock,
+			table.Application.AccountsDriveProvedTransaction,
+			table.Application.AccountsDriveMerkleRoot,
 			table.Application.CreatedAt,
 			table.Application.UpdatedAt,
 			table.ExecutionParameters.ApplicationID,
@@ -623,16 +968,31 @@ func (r *PostgresRepository) ListApplications(
 			&app.TemplateHash,
 			&app.TemplateURI,
 			&app.EpochLength,
+			&app.ClaimStagingPeriod,
+			&app.WithdrawalConfig.Guardian,
+			&app.WithdrawalConfig.Log2LeavesPerAccount,
+			&app.WithdrawalConfig.Log2MaxNumOfAccounts,
+			&app.WithdrawalConfig.AccountsDriveStartIndex,
+			&app.WithdrawalConfig.WithdrawalOutputBuilder,
 			&app.DataAvailability,
 			&app.ConsensusType,
-			&app.State,
+			&app.Enabled,
+			&app.Status,
 			&app.Reason,
 			&app.IInputBoxBlock,
 			&app.LastEpochCheckBlock,
 			&app.LastInputCheckBlock,
 			&app.LastOutputCheckBlock,
 			&app.LastTournamentCheckBlock,
+			&app.LastForecloseCheckBlock,
+			&app.LastAccountsDriveProvedCheckBlock,
+			&app.LastWithdrawalCheckBlock,
 			&app.ProcessedInputs,
+			&app.ForecloseBlock,
+			&app.ForecloseTransaction,
+			&app.AccountsDriveProvedBlock,
+			&app.AccountsDriveProvedTransaction,
+			&app.AccountsDriveMerkleRoot,
 			&app.CreatedAt,
 			&app.UpdatedAt,
 			&app.ExecutionParameters.ApplicationID,

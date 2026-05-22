@@ -6,7 +6,6 @@ package repotest
 import (
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/ethereum/go-ethereum/crypto"
 )
 
 type OutputSuite struct {
@@ -148,6 +147,73 @@ func (s *OutputSuite) TestListOutputs() {
 		s.Require().NoError(err)
 		s.Len(outputs, 1)
 		s.Equal(uint64(1), total)
+	})
+
+	// Regression: DaveConsensus epochs overlap by one block — a sealed epoch's
+	// last block equals the next epoch's first block. When inputs straddle that
+	// boundary block (one in the sealed epoch, one in the open epoch, both on the
+	// shared block), a block-range output query is ambiguous and returns both
+	// epochs' outputs, while an epoch-index query stays unambiguous. The validator
+	// scopes epoch outputs by epoch index for exactly this reason.
+	s.Run("EpochIndexDisambiguatesOverlappingBoundaryBlock", func() {
+		app := NewApplicationBuilder().WithConsensus(Consensus_PRT).Create(s.Ctx, s.T(), s.Repo)
+		addr := app.IApplicationAddress.String()
+
+		const sealBlock = 100
+		sealedEpoch := NewEpochBuilder(app.ID).
+			WithIndex(1).WithStatus(EpochStatus_Closed).
+			WithBlocks(90, sealBlock).WithInputBounds(0, 1).Build()
+		openEpoch := NewEpochBuilder(app.ID).
+			WithIndex(2).WithStatus(EpochStatus_Open).
+			WithBlocks(sealBlock, 110).WithInputBounds(1, 2).Build()
+
+		// Both inputs sit on the shared seal block, one on each side of the seal.
+		inputBefore := NewInputBuilder().WithIndex(0).WithEpochIndex(1).WithBlockNumber(sealBlock).Build()
+		inputAfter := NewInputBuilder().WithIndex(1).WithEpochIndex(2).WithBlockNumber(sealBlock).Build()
+
+		err := s.Repo.CreateEpochsAndInputs(s.Ctx, addr,
+			map[*Epoch][]*Input{
+				sealedEpoch: {inputBefore},
+				openEpoch:   {inputAfter},
+			}, 111)
+		s.Require().NoError(err)
+
+		for _, e := range []struct{ epoch, input uint64 }{{1, 0}, {2, 1}} {
+			result := &AdvanceResult{
+				EpochIndex: e.epoch,
+				InputIndex: e.input,
+				Status:     InputCompletionStatus_Accepted,
+				Outputs:    [][]byte{[]byte("output-data")},
+				OutputsProof: OutputsProof{
+					OutputsHash: UniqueHash(),
+					MachineHash: UniqueHash(),
+				},
+			}
+			s.Require().NoError(s.Repo.StoreAdvanceResult(s.Ctx, app.ID, result))
+		}
+
+		// Epoch-index scoping returns exactly one output per epoch.
+		sealedIdx := uint64(1)
+		sealedOutputs, _, err := s.Repo.ListOutputs(s.Ctx, addr,
+			repository.OutputFilter{EpochIndex: &sealedIdx}, repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Len(sealedOutputs, 1, "sealed epoch must own only its own output")
+
+		openIdx := uint64(2)
+		openOutputs, _, err := s.Repo.ListOutputs(s.Ctx, addr,
+			repository.OutputFilter{EpochIndex: &openIdx}, repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Len(openOutputs, 1, "open epoch must own only its own output")
+
+		// Block-range scoping over the sealed epoch is ambiguous at the boundary:
+		// it also returns the open epoch's output, since both are on the seal block.
+		boundary := repository.Range{Start: sealedEpoch.FirstBlock, End: sealBlock}
+		rangeOutputs, _, err := s.Repo.ListOutputs(s.Ctx, addr,
+			repository.OutputFilter{BlockRange: &boundary}, repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Len(rangeOutputs, 2,
+			"block-range scoping is ambiguous at the overlap — it returns both epochs' "+
+				"outputs, which is why the validator scopes by epoch index instead")
 	})
 
 	s.Run("FilterByOutputType", func() {
@@ -396,57 +462,6 @@ func (s *OutputSuite) TestUpdateOutputsExecution() {
 	})
 }
 
-func (s *OutputSuite) TestGetLastOutputBeforeBlock() {
-	s.Run("NoOutputReturnsNil", func() {
-		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
-		got, err := s.Repo.GetLastOutputBeforeBlock(
-			s.Ctx, app.IApplicationAddress.String(), 100)
-		s.Require().NoError(err)
-		s.Nil(got)
-	})
-
-	s.Run("ReturnsLastOutputBeforeBlock", func() {
-		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
-
-		epoch := NewEpochBuilder(app.ID).
-			WithIndex(0).WithStatus(EpochStatus_Closed).
-			WithBlocks(0, 99).WithInputBounds(0, 2).Build()
-
-		input0 := NewInputBuilder().WithIndex(0).WithBlockNumber(10).Build()
-		input1 := NewInputBuilder().WithIndex(1).WithBlockNumber(50).Build()
-		input2 := NewInputBuilder().WithIndex(2).WithBlockNumber(90).Build()
-
-		err := s.Repo.CreateEpochsAndInputs(
-			s.Ctx, app.IApplicationAddress.String(),
-			map[*Epoch][]*Input{epoch: {input0, input1, input2}}, 100)
-		s.Require().NoError(err)
-
-		// Store advance results to create outputs with accepted inputs
-		for i := range uint64(3) {
-			result := &AdvanceResult{
-				EpochIndex: 0,
-				InputIndex: i,
-				Status:     InputCompletionStatus_Accepted,
-				Outputs:    [][]byte{[]byte("output-data")},
-				OutputsProof: OutputsProof{
-					OutputsHash: UniqueHash(),
-					MachineHash: crypto.Keccak256Hash([]byte("machine")),
-				},
-			}
-			err = s.Repo.StoreAdvanceResult(s.Ctx, app.ID, result)
-			s.Require().NoError(err)
-		}
-
-		// Query for outputs before block 60 (should return output from input1 at block 50)
-		got, err := s.Repo.GetLastOutputBeforeBlock(
-			s.Ctx, app.IApplicationAddress.String(), 60)
-		s.Require().NoError(err)
-		s.Require().NotNil(got)
-		// The last output before block 60 should be from input1 (index 1)
-		s.Equal(uint64(1), got.InputIndex)
-	})
-}
-
 func (s *OutputSuite) TestGetNumberOfExecutedOutputs() {
 	s.Run("ReturnsZeroWhenNone", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
@@ -482,5 +497,39 @@ func (s *OutputSuite) TestGetNumberOfExecutedOutputs() {
 			s.Ctx, seed.App.IApplicationAddress.String())
 		s.Require().NoError(err)
 		s.Equal(uint64(2), count)
+	})
+}
+
+func (s *OutputSuite) TestGetNumberOfPendingExecutableOutputs() {
+	s.Run("CountsOnlyUnexecutedVouchers", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{
+				{0x23, 0x7a, 0x81, 0x6f, 0x01}, // Voucher
+				{0x10, 0x32, 0x1e, 0x8b, 0x02}, // DelegateCallVoucher
+				{0xba, 0xad, 0xf0, 0x0d, 0x03}, // non-executable output type
+			}, nil)
+
+		count, err := s.Repo.GetNumberOfPendingExecutableOutputs(s.Ctx, seed.App.IApplicationAddress.String())
+		s.Require().NoError(err)
+		s.Equal(uint64(2), count)
+
+		txHash := UniqueHash()
+		err = s.Repo.UpdateOutputsExecution(
+			s.Ctx,
+			seed.App.IApplicationAddress.String(),
+			[]*Output{{
+				InputEpochApplicationID:  seed.App.ID,
+				Index:                    0,
+				ExecutionTransactionHash: &txHash,
+			}},
+			200,
+		)
+		s.Require().NoError(err)
+
+		count, err = s.Repo.GetNumberOfPendingExecutableOutputs(s.Ctx, seed.App.IApplicationAddress.String())
+		s.Require().NoError(err)
+		s.Equal(uint64(1), count)
 	})
 }

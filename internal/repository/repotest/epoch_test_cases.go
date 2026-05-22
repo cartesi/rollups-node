@@ -5,6 +5,7 @@ package repotest
 
 import (
 	"errors"
+	"strings"
 
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -950,6 +951,100 @@ func (s *EpochSuite) TestEpochStatusTransitionTrigger() {
 		s.Equal(EpochStatus_ClaimRejected, got.Status)
 	})
 
+	s.Run("AllowsForeclosedClaimTerminalStatus", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			seed.App.IApplicationAddress.String(), seed.Epoch,
+			EpochStatus_ClaimComputed)
+
+		seed.Epoch.Status = EpochStatus_ClaimForeclosed
+		err := s.Repo.UpdateEpochStatus(
+			s.Ctx, seed.App.IApplicationAddress.String(), seed.Epoch)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetEpoch(
+			s.Ctx, seed.App.IApplicationAddress.String(), 0)
+		s.Require().NoError(err)
+		s.Equal(EpochStatus_ClaimForeclosed, got.Status)
+	})
+
+	s.Run("AllowsForeclosedClaimFromEarlierStatuses", func() {
+		s.Run(EpochStatus_Open.String(), func() {
+			app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+			epoch := NewEpochBuilder(app.ID).
+				WithIndex(0).
+				WithStatus(EpochStatus_Open).
+				WithBlocks(0, 9).
+				WithInputBounds(0, 0).
+				Build()
+			err := s.Repo.CreateEpochsAndInputs(
+				s.Ctx,
+				app.IApplicationAddress.String(),
+				map[*Epoch][]*Input{epoch: {}},
+				5,
+			)
+			s.Require().NoError(err)
+
+			epoch.Status = EpochStatus_ClaimForeclosed
+			err = s.Repo.UpdateEpochStatus(s.Ctx, app.IApplicationAddress.String(), epoch)
+			s.Require().NoError(err)
+
+			got, err := s.Repo.GetEpoch(s.Ctx, app.IApplicationAddress.String(), 0)
+			s.Require().NoError(err)
+			s.Equal(EpochStatus_ClaimForeclosed, got.Status)
+		})
+
+		for _, target := range []EpochStatus{
+			EpochStatus_Closed,
+			EpochStatus_InputsProcessed,
+		} {
+			s.Run(target.String(), func() {
+				seed := Seed(s.Ctx, s.T(), s.Repo)
+
+				if target != EpochStatus_Closed {
+					AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+						seed.App.IApplicationAddress.String(), seed.Epoch, target)
+				}
+
+				seed.Epoch.Status = EpochStatus_ClaimForeclosed
+				err := s.Repo.UpdateEpochStatus(
+					s.Ctx, seed.App.IApplicationAddress.String(), seed.Epoch)
+				s.Require().NoError(err)
+
+				got, err := s.Repo.GetEpoch(
+					s.Ctx, seed.App.IApplicationAddress.String(), 0)
+				s.Require().NoError(err)
+				s.Equal(EpochStatus_ClaimForeclosed, got.Status)
+			})
+		}
+	})
+
+	s.Run("RejectsStagedToRejected", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			seed.App.IApplicationAddress.String(), seed.Epoch,
+			EpochStatus_ClaimComputed)
+
+		err := s.Repo.UpdateEpochWithSubmittedClaim(s.Ctx, seed.App.ID, seed.Epoch.Index, UniqueHash())
+		s.Require().NoError(err)
+
+		err = s.Repo.UpdateEpochToStaged(s.Ctx, seed.App.ID, seed.Epoch.Index, 42)
+		s.Require().NoError(err)
+
+		seed.Epoch.Status = EpochStatus_ClaimRejected
+		err = s.Repo.UpdateEpochStatus(
+			s.Ctx, seed.App.IApplicationAddress.String(), seed.Epoch)
+		s.Require().Error(err)
+		s.Contains(err.Error(), "invalid epoch status transition")
+
+		got, err := s.Repo.GetEpoch(
+			s.Ctx, seed.App.IApplicationAddress.String(), seed.Epoch.Index)
+		s.Require().NoError(err)
+		s.Equal(EpochStatus_ClaimStaged, got.Status)
+	})
+
 	s.Run("AllowsSameStatusUpdate", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
@@ -1043,5 +1138,441 @@ func (s *EpochSuite) TestEpochStatusTransitionTrigger() {
 			s.Ctx, app.IApplicationAddress.String(), epoch)
 		s.Require().Error(err)
 		s.Contains(err.Error(), "PRT")
+	})
+
+	// Verify the trigger rejects CLAIM_STAGED for PRT apps. PRT settles via
+	// tournaments and never goes through the staging contract path; an
+	// attempt to mark a PRT epoch as STAGED would be local data corruption.
+	// The trigger guard is the last line of defense against any caller
+	// that bypasses the higher-level claimer/PRT services. We advance the
+	// PRT epoch through CLAIM_SUBMITTED (a transition the trigger does
+	// permit, just never exercised in production for PRT) so that
+	// UpdateEpochToStaged sets the staged_at_block atomically and the
+	// PRT guard is the only remaining check that can reject the UPDATE.
+	s.Run("RejectsPRTStaged", func() {
+		app := NewApplicationBuilder().
+			WithConsensus(Consensus_PRT).
+			Create(s.Ctx, s.T(), s.Repo)
+
+		epoch := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 9).WithInputBounds(0, 0).
+			Build()
+		input := NewInputBuilder().WithIndex(0).WithBlockNumber(5).Build()
+
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: {input}}, 10)
+		s.Require().NoError(err)
+
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			app.IApplicationAddress.String(), epoch,
+			EpochStatus_ClaimSubmitted)
+
+		err = s.Repo.UpdateEpochToStaged(s.Ctx, app.ID, epoch.Index, 42)
+		s.Require().Error(err)
+		s.Contains(err.Error(), "PRT")
+	})
+
+	// Verify the trigger / CHECK constraint rejects any transition into
+	// CLAIM_STAGED on a row whose staged_at_block is NULL. UpdateEpochStatus
+	// only writes the Status column, so it cannot set staged_at_block
+	// atomically — that is exactly the situation this invariant is meant
+	// to catch.
+	s.Run("RejectsStagedWithoutBlock", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			seed.App.IApplicationAddress.String(), seed.Epoch,
+			EpochStatus_ClaimComputed)
+
+		// Sanity: staged_at_block is NULL on this freshly built row.
+		got, err := s.Repo.GetEpoch(
+			s.Ctx, seed.App.IApplicationAddress.String(), 0)
+		s.Require().NoError(err)
+		s.Require().Nil(got.StagedAtBlock)
+
+		seed.Epoch.Status = EpochStatus_ClaimStaged
+		err = s.Repo.UpdateEpochStatus(
+			s.Ctx, seed.App.IApplicationAddress.String(), seed.Epoch)
+		s.Require().Error(err)
+		// The trigger surfaces first with this exact phrasing; if a future
+		// refactor disables the trigger, the CHECK constraint
+		// epoch_staged_requires_block fires with "violates check constraint"
+		// — either is acceptable evidence the invariant holds.
+		errStr := err.Error()
+		s.True(
+			strings.Contains(errStr, "CLAIM_STAGED requires staged_at_block") ||
+				strings.Contains(errStr, "epoch_staged_requires_block"),
+			"unexpected error: %s", errStr,
+		)
+	})
+}
+
+// TestDrainGates exercises both foreclosure-drain gates against the same
+// fixtures so the contract difference is visible:
+//
+//	HasUndrainedEpochsBeforeBlock        (PRT — advancer/validator only)
+//	HasUnreconciledClaimsBeforeBlock     (Authority/Quorum — also claimer)
+//
+// The narrow gate must return false for any epoch whose status is at least
+// CLAIM_COMPUTED; the broad gate must continue to return true until the
+// claimer drives every pre-foreclosure epoch to CLAIM_ACCEPTED or
+// CLAIM_FORECLOSED. Both gates must ignore epochs after blockBound (the
+// foreclose block); blockBound itself is included for same-block
+// input-before-foreclosure events.
+func (s *EpochSuite) TestDrainGates() {
+	const forecloseBlock uint64 = 100
+
+	// advance creates one epoch with one input at block `first+1`. The
+	// input's status mirrors what the FSM would have produced for the
+	// target epoch status: epochs at or beyond INPUTS_PROCESSED imply the
+	// advancer has run and inputs have a non-NONE terminal status.
+	advance := func(app *Application, idx, first, last uint64, target EpochStatus) *Epoch {
+		ep := NewEpochBuilder(app.ID).
+			WithIndex(idx).
+			WithStatus(EpochStatus_Closed).
+			WithBlocks(first, last).
+			WithInputBounds(idx, idx).
+			Build()
+
+		inputStatus := InputCompletionStatus_None
+		switch target {
+		case EpochStatus_InputsProcessed,
+			EpochStatus_ClaimComputed,
+			EpochStatus_ClaimSubmitted,
+			EpochStatus_ClaimStaged,
+			EpochStatus_ClaimAccepted,
+			EpochStatus_ClaimRejected,
+			EpochStatus_ClaimForeclosed:
+			inputStatus = InputCompletionStatus_Accepted
+		}
+
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{ep: {
+				NewInputBuilder().WithIndex(idx).WithEpochIndex(idx).
+					WithBlockNumber(first + 1).WithStatus(inputStatus).Build(),
+			}}, last+1)
+		s.Require().NoError(err)
+
+		if target != EpochStatus_Closed {
+			AdvanceEpochStatus(s.Ctx, s.T(),
+				s.Repo, app.IApplicationAddress.String(), ep, target)
+		}
+		return ep
+	}
+
+	// emptyOpen creates a straddling OPEN epoch with no inputs. This
+	// mirrors a valid PRT state (empty epochs are legal on DaveConsensus);
+	// Authority/Quorum never persists empty epochs but the synthetic
+	// setup lets us pin the gate divergence on a single shared fixture.
+	emptyOpen := func(app *Application, idx, first, last uint64) *Epoch {
+		ep := NewEpochBuilder(app.ID).
+			WithIndex(idx).
+			WithStatus(EpochStatus_Open).
+			WithBlocks(first, last).
+			WithInputBounds(idx, idx).
+			Build()
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{ep: {}}, last+1)
+		s.Require().NoError(err)
+		return ep
+	}
+
+	s.Run("OpenEpochUndrainedAndUnreconciled", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		_ = advance(app, 0, 0, 9, EpochStatus_Closed)
+
+		drained, err := s.Repo.HasUndrainedEpochsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.True(drained, "CLOSED before forecloseBlock counts as undrained for PRT")
+
+		recon, err := s.Repo.HasUnreconciledClaimsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.True(recon, "CLOSED before forecloseBlock counts as unreconciled for claimer")
+	})
+
+	s.Run("ComputedEpochOnlyUnreconciled", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		_ = advance(app, 0, 0, 9, EpochStatus_ClaimComputed)
+
+		drained, err := s.Repo.HasUndrainedEpochsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.False(drained,
+			"PRT gate treats CLAIM_COMPUTED as drained — tournaments cannot settle "+
+				"under foreclosure, so waiting would stall forever")
+
+		recon, err := s.Repo.HasUnreconciledClaimsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.True(recon,
+			"claimer gate keeps the drain pending until CLAIM_ACCEPTED or CLAIM_FORECLOSED")
+	})
+
+	s.Run("AcceptedEpochClearsBothGates", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		_ = advance(app, 0, 0, 9, EpochStatus_ClaimAccepted)
+
+		drained, err := s.Repo.HasUndrainedEpochsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.False(drained)
+
+		recon, err := s.Repo.HasUnreconciledClaimsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.False(recon)
+	})
+
+	s.Run("ForeclosedClaimClearsBothGates", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		_ = advance(app, 0, 0, 9, EpochStatus_ClaimForeclosed)
+
+		drained, err := s.Repo.HasUndrainedEpochsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.False(drained)
+
+		recon, err := s.Repo.HasUnreconciledClaimsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.False(recon)
+	})
+
+	s.Run("MixedEpochsBroadGateBlocksUntilTerminal", func() {
+		// Mirrors the foreclosure-replay scenario: three pre-foreclosure
+		// epochs at increasing block ranges, partially terminal. The narrow
+		// gate has already flipped to false; the broad gate must still block
+		// until the remaining COMPUTED epoch is accepted or foreclosed.
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		_ = advance(app, 0, 0, 9, EpochStatus_ClaimAccepted)
+		_ = advance(app, 1, 10, 19, EpochStatus_ClaimForeclosed)
+		_ = advance(app, 2, 20, 29, EpochStatus_ClaimComputed)
+
+		drained, err := s.Repo.HasUndrainedEpochsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.False(drained, "no OPEN/CLOSED/INPUTS_PROCESSED rows remain")
+
+		recon, err := s.Repo.HasUnreconciledClaimsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.True(recon, "one CLAIM_COMPUTED row still needs reconciliation or foreclosure")
+	})
+
+	s.Run("PostForecloseEpochsAreIgnoredByBothGates", func() {
+		// An epoch whose first_block > forecloseBlock started entirely
+		// after the foreclosure point and has no on-chain claim to
+		// reconcile against. Both gates must exclude it via the
+		// first_block <= blockBound filter (broad gate) and the
+		// input-level block_number <= blockBound filter (narrow gate).
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		// Pre-foreclosure epoch: already accepted.
+		_ = advance(app, 0, 0, 9, EpochStatus_ClaimAccepted)
+		// Post-foreclosure epoch: first_block > forecloseBlock.
+		_ = advance(app, 1, forecloseBlock+1, forecloseBlock+9, EpochStatus_ClaimComputed)
+
+		drained, err := s.Repo.HasUndrainedEpochsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.False(drained)
+
+		recon, err := s.Repo.HasUnreconciledClaimsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.False(recon,
+			"post-foreclosure CLAIM_COMPUTED epochs must not block the drain — "+
+				"the chain emits no ClaimAccepted for them so reconciliation cannot succeed")
+	})
+
+	s.Run("SameBlockInputBeforeForeclosureIsIncluded", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		ep := NewEpochBuilder(app.ID).
+			WithIndex(0).
+			WithStatus(EpochStatus_Open).
+			WithBlocks(forecloseBlock, forecloseBlock+9).
+			WithInputBounds(0, 0).
+			Build()
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{ep: {
+				NewInputBuilder().WithIndex(0).WithEpochIndex(0).
+					WithBlockNumber(forecloseBlock).
+					Build(),
+			}}, forecloseBlock+10)
+		s.Require().NoError(err)
+
+		drained, err := s.Repo.HasUndrainedEpochsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.True(drained,
+			"valid InputAdded events in the Foreclosure block executed before Foreclosure")
+
+		recon, err := s.Repo.HasUnreconciledClaimsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.True(recon, "epoch starting at the Foreclosure block can contain a valid same-block input")
+	})
+
+	// A straddling OPEN epoch with first_block < forecloseBlock and
+	// last_block >= forecloseBlock carries pre-foreclosure inputs that
+	// drain must wait for. A predicate of last_block < blockBound would
+	// exclude such straddlers and make the app look drained while the
+	// unprocessed pre-foreclosure inputs were still in the DB.
+	s.Run("StraddlingOpenEpochWithPreFInputsCaughtByBothGates", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		ep := NewEpochBuilder(app.ID).
+			WithIndex(0).
+			WithStatus(EpochStatus_Open).
+			WithBlocks(forecloseBlock-10, forecloseBlock+10).
+			WithInputBounds(0, 0).
+			Build()
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{ep: {
+				NewInputBuilder().WithIndex(0).WithEpochIndex(0).
+					WithBlockNumber(forecloseBlock - 5). // pre-F, status defaults to NONE.
+					Build(),
+			}}, forecloseBlock+11)
+		s.Require().NoError(err)
+
+		drained, err := s.Repo.HasUndrainedEpochsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.True(drained,
+			"narrow gate must see a NONE input at block_number <= forecloseBlock — "+
+				"abandoning it would lose pre-foreclosure work")
+
+		recon, err := s.Repo.HasUnreconciledClaimsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.True(recon,
+			"broad gate must see the OPEN epoch with first_block <= forecloseBlock")
+	})
+
+	s.Run("ForecloseUnacceptedOverlappingEpochClearsGates", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		ep := NewEpochBuilder(app.ID).
+			WithIndex(0).
+			WithStatus(EpochStatus_Open).
+			WithBlocks(forecloseBlock-10, forecloseBlock+10).
+			WithInputBounds(0, 0).
+			Build()
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{ep: {
+				NewInputBuilder().WithIndex(0).WithEpochIndex(0).
+					WithBlockNumber(forecloseBlock - 5).
+					Build(),
+			}}, forecloseBlock+11)
+		s.Require().NoError(err)
+		s.Require().NoError(s.Repo.UpdateApplicationForeclosure(
+			s.Ctx, app.ID, forecloseBlock, UniqueHash(), forecloseBlock))
+
+		n, err := s.Repo.ForecloseUnacceptedEpochsAtOrAfterBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.Equal(int64(1), n)
+
+		got, err := s.Repo.GetEpoch(s.Ctx, app.IApplicationAddress.String(), 0)
+		s.Require().NoError(err)
+		s.Equal(EpochStatus_ClaimForeclosed, got.Status)
+
+		drained, err := s.Repo.HasUndrainedEpochsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.False(drained, "terminal CLAIM_FORECLOSED epochs no longer require input drain")
+
+		recon, err := s.Repo.HasUnreconciledClaimsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.False(recon)
+	})
+
+	// H1 boundary. An input that executes in the same block as foreclosure
+	// (ordered before the foreclose() tx) is valid on chain, and when
+	// foreclosure lands on an epoch boundary it opens an epoch whose first_block
+	// equals forecloseBlock. The inclusive predicate (first_block <= blockBound)
+	// must terminalize it; an exclusive bound would leave it dangling. This is
+	// the tightest counterpart to ForecloseUnacceptedOverlappingEpochClearsGates,
+	// where the input sits strictly before the bound.
+	s.Run("ForecloseUnacceptedEpochStartingAtBoundTerminalizes", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		ep := NewEpochBuilder(app.ID).
+			WithIndex(0).
+			WithStatus(EpochStatus_Closed).
+			WithBlocks(forecloseBlock, forecloseBlock+9).
+			WithInputBounds(0, 0).
+			Build()
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{ep: {
+				NewInputBuilder().WithIndex(0).WithEpochIndex(0).
+					WithBlockNumber(forecloseBlock).
+					WithStatus(InputCompletionStatus_Accepted).
+					Build(),
+			}}, forecloseBlock+10)
+		s.Require().NoError(err)
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			app.IApplicationAddress.String(), ep, EpochStatus_ClaimComputed)
+		s.Require().NoError(s.Repo.UpdateApplicationForeclosure(
+			s.Ctx, app.ID, forecloseBlock, UniqueHash(), forecloseBlock))
+
+		recon, err := s.Repo.HasUnreconciledClaimsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.True(recon, "an epoch beginning exactly at forecloseBlock is pre-foreclosure work")
+
+		n, err := s.Repo.ForecloseUnacceptedEpochsAtOrAfterBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.Equal(int64(1), n, "epoch with first_block == forecloseBlock must terminalize (inclusive bound)")
+
+		got, err := s.Repo.GetEpoch(s.Ctx, app.IApplicationAddress.String(), 0)
+		s.Require().NoError(err)
+		s.Equal(EpochStatus_ClaimForeclosed, got.Status)
+
+		recon, err = s.Repo.HasUnreconciledClaimsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.False(recon, "after terminalization the broad gate clears")
+	})
+
+	s.Run("ForecloseUnacceptedLeavesEarlierEpochForReconciliation", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		_ = advance(app, 0, 0, 9, EpochStatus_ClaimComputed)
+		s.Require().NoError(s.Repo.UpdateApplicationForeclosure(
+			s.Ctx, app.ID, forecloseBlock, UniqueHash(), forecloseBlock))
+
+		n, err := s.Repo.ForecloseUnacceptedEpochsAtOrAfterBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.Equal(int64(0), n)
+
+		got, err := s.Repo.GetEpoch(s.Ctx, app.IApplicationAddress.String(), 0)
+		s.Require().NoError(err)
+		s.Equal(EpochStatus_ClaimComputed, got.Status)
+	})
+
+	// The PRT empty-epoch invariant: a straddling OPEN epoch with zero
+	// inputs is valid for DaveConsensus and represents no pending work
+	// for the narrow gate. The broad gate, by contrast, sees the row via
+	// the first_block predicate — this divergence is correct because
+	// Authority/Quorum apps never persist empty epoch rows so the broad
+	// gate's "false positive" here can never fire in production.
+	s.Run("EmptyStraddlingEpochOnlyBlocksBroadGate", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		_ = emptyOpen(app, 0, forecloseBlock-10, forecloseBlock+10)
+
+		drained, err := s.Repo.HasUndrainedEpochsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.False(drained,
+			"narrow gate (input-level) returns false on empty straddling epoch — "+
+				"PRT's empty-epoch invariant means there is nothing to drain")
+
+		recon, err := s.Repo.HasUnreconciledClaimsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.True(recon,
+			"broad gate matches the OPEN row by first_block <= forecloseBlock; "+
+				"Authority/Quorum never persists empty epochs so this branch is "+
+				"unreachable in production but is exercised here to pin the divergence")
+	})
+
+	s.Run("SubmittedAndStagedBlockBroadGate", func() {
+		// CLAIM_SUBMITTED and CLAIM_STAGED are intermediate post-broadcast
+		// states; both must continue to register as unreconciled until a
+		// terminal CLAIM_ACCEPTED or CLAIM_FORECLOSED transition lands.
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		_ = advance(app, 0, 0, 9, EpochStatus_ClaimSubmitted)
+
+		drained, err := s.Repo.HasUndrainedEpochsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.False(drained)
+
+		recon, err := s.Repo.HasUnreconciledClaimsBeforeBlock(s.Ctx, app.ID, forecloseBlock)
+		s.Require().NoError(err)
+		s.True(recon)
 	})
 }

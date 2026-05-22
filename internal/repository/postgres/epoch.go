@@ -242,6 +242,7 @@ func (r *PostgresRepository) GetEpoch(
 			table.Epoch.ClaimTransactionHash,
 			table.Epoch.TournamentAddress,
 			table.Epoch.Status,
+			table.Epoch.StagedAtBlock,
 			table.Epoch.VirtualIndex,
 			table.Epoch.CreatedAt,
 			table.Epoch.UpdatedAt,
@@ -276,6 +277,7 @@ func (r *PostgresRepository) GetEpoch(
 		&ep.ClaimTransactionHash,
 		&ep.TournamentAddress,
 		&ep.Status,
+		&ep.StagedAtBlock,
 		&ep.VirtualIndex,
 		&ep.CreatedAt,
 		&ep.UpdatedAt,
@@ -287,6 +289,165 @@ func (r *PostgresRepository) GetEpoch(
 		return nil, err
 	}
 	return &ep, nil
+}
+
+// HasUndrainedEpochsBeforeBlock returns true while any input belonging to
+// appID has block_number <= blockBound and is still status='NONE' (i.e. not
+// yet advanced by the machine). PRT uses this to keep its post-foreclosure
+// drain pending until all pre-foreclosure inputs have been advanced.
+//
+// The check is input-level rather than epoch-level for two reasons:
+//
+//  1. It naturally catches the "straddling open epoch" case: an epoch with
+//     first_block < blockBound but last_block >= blockBound still contains
+//     pre-foreclosure inputs that must be processed before drain can
+//     complete. A predicate on epoch.last_block < blockBound would skip
+//     such an epoch.
+//  2. It correctly tolerates PRT's empty-epoch invariant — an empty open
+//     epoch straddling the foreclosure block has no inputs to wait on, so
+//     the gate returns false (whereas a predicate on
+//     epoch.first_block <= blockBound would incorrectly stall PRT drain on
+//     the empty straddler).
+//
+// The block bound is inclusive because any valid InputAdded event in the
+// Foreclosure block must have executed before Foreclosure; a later same-block
+// addInput call would revert and emit no event.
+//
+// Authority/Quorum also uses the broader
+// [PostgresRepository.HasUnreconciledClaimsBeforeBlock] gate so it waits for
+// read-only claim reconciliation or CLAIM_FORECLOSED terminalization.
+func (r *PostgresRepository) HasUndrainedEpochsBeforeBlock(
+	ctx context.Context,
+	appID int64,
+	blockBound uint64,
+) (bool, error) {
+	terminalStatuses := []postgres.Expression{
+		enum.EpochStatus.ClaimAccepted,
+		enum.EpochStatus.ClaimRejected,
+		enum.EpochStatus.ClaimForeclosed,
+	}
+	stmt := table.Input.
+		SELECT(table.Input.Index).
+		FROM(
+			table.Input.INNER_JOIN(table.Epoch,
+				table.Input.EpochApplicationID.EQ(table.Epoch.ApplicationID).
+					AND(table.Input.EpochIndex.EQ(table.Epoch.Index)),
+			),
+		).
+		WHERE(
+			table.Input.EpochApplicationID.EQ(postgres.Int(appID)).
+				AND(table.Input.BlockNumber.LT_EQ(uint64Expr(blockBound))).
+				AND(table.Input.Status.EQ(enum.InputCompletionStatus.None)).
+				AND(table.Epoch.Status.NOT_IN(terminalStatuses...)),
+		).
+		LIMIT(1)
+
+	sqlStr, args := stmt.Sql()
+	rows, err := r.db.Query(ctx, sqlStr, args...)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	return rows.Next(), rows.Err()
+}
+
+// ForecloseUnacceptedEpochsAtOrAfterBlock makes local Authority/Quorum epoch
+// rows terminal when their claim cannot be accepted because the application was
+// foreclosed before or at the epoch's last block. It leaves earlier epochs alone
+// so the claimer can still reconcile claims accepted before foreclosure.
+func (r *PostgresRepository) ForecloseUnacceptedEpochsAtOrAfterBlock(
+	ctx context.Context,
+	appID int64,
+	blockBound uint64,
+) (int64, error) {
+	statuses := []postgres.Expression{
+		enum.EpochStatus.Open,
+		enum.EpochStatus.Closed,
+		enum.EpochStatus.InputsProcessed,
+		enum.EpochStatus.ClaimComputed,
+		enum.EpochStatus.ClaimSubmitted,
+		enum.EpochStatus.ClaimStaged,
+	}
+	updateStmt := table.Epoch.
+		UPDATE(table.Epoch.Status).
+		SET(enum.EpochStatus.ClaimForeclosed).
+		FROM(table.Application).
+		WHERE(
+			table.Epoch.ApplicationID.EQ(postgres.Int64(appID)).
+				AND(table.Epoch.FirstBlock.LT_EQ(uint64Expr(blockBound))).
+				AND(table.Epoch.LastBlock.GT_EQ(uint64Expr(blockBound))).
+				AND(table.Epoch.Status.IN(statuses...)).
+				AND(table.Application.ID.EQ(table.Epoch.ApplicationID)).
+				AND(table.Application.ForecloseBlock.GT(uint64Expr(0))).
+				AND(table.Application.ConsensusType.NOT_EQ(enum.Consensus.Prt)),
+		)
+
+	sqlStr, args := updateStmt.Sql()
+	cmd, err := r.db.Exec(ctx, sqlStr, args...)
+	if err != nil {
+		return 0, fmt.Errorf("foreclosing unaccepted epochs (app=%d, block=%d): %w", appID, blockBound, err)
+	}
+	return cmd.RowsAffected(), nil
+}
+
+// HasUnreconciledClaimsBeforeBlock returns true while any epoch for appID
+// has first_block <= blockBound AND status in OPEN/CLOSED/INPUTS_PROCESSED or
+// CLAIM_COMPUTED/CLAIM_SUBMITTED/CLAIM_STAGED. The extra states ensure the
+// Authority/Quorum claimer's foreclosure drain waits for the read-only
+// CLAIM_COMPUTED → CLAIM_ACCEPTED reconciliation path, or the
+// CLAIM_* → CLAIM_FORECLOSED terminalization path, to finish. Otherwise a
+// new-node bootstrap against an already-foreclosed app could drain before
+// mirroring pre-foreclosure on-chain state into the local DB.
+//
+// The predicate is `first_block <= blockBound` (not `last_block < blockBound`)
+// to catch straddling epochs: an epoch that started before the foreclosure
+// block but extends past it is still pre-foreclosure work the claimer must
+// drive to CLAIM_ACCEPTED or CLAIM_FORECLOSED. The inclusive bound catches a
+// valid same-block input that executed before Foreclosure. Authority/Quorum
+// never creates empty epoch rows, so `first_block <= blockBound` does not
+// introduce false positives.
+// unreconciledEpochStatuses are the epoch statuses that still need claim work —
+// every EpochStatus except the terminal CLAIM_ACCEPTED / CLAIM_REJECTED /
+// CLAIM_FORECLOSED. It drives HasUnreconciledClaimsBeforeBlock's filter and
+// MUST stay in sync with the partial-index predicate of "epoch_unreconciled_idx"
+// in 000001_create_initial_schema.up.sql; if the two drift, the query silently
+// stops matching the index and falls back to a full table scan.
+// TestUnreconciledEpochStatusesAreNonTerminal guards this set when a new
+// EpochStatus is added.
+var unreconciledEpochStatuses = []model.EpochStatus{
+	model.EpochStatus_Open,
+	model.EpochStatus_Closed,
+	model.EpochStatus_InputsProcessed,
+	model.EpochStatus_ClaimComputed,
+	model.EpochStatus_ClaimSubmitted,
+	model.EpochStatus_ClaimStaged,
+}
+
+func (r *PostgresRepository) HasUnreconciledClaimsBeforeBlock(
+	ctx context.Context,
+	appID int64,
+	blockBound uint64,
+) (bool, error) {
+	statuses := make([]postgres.Expression, len(unreconciledEpochStatuses))
+	for i, s := range unreconciledEpochStatuses {
+		statuses[i] = postgres.NewEnumValue(string(s))
+	}
+	stmt := table.Epoch.
+		SELECT(table.Epoch.Index).
+		WHERE(
+			table.Epoch.ApplicationID.EQ(postgres.Int(appID)).
+				AND(table.Epoch.FirstBlock.LT_EQ(uint64Expr(blockBound))).
+				AND(table.Epoch.Status.IN(statuses...)),
+		).
+		LIMIT(1)
+
+	sqlStr, args := stmt.Sql()
+	rows, err := r.db.Query(ctx, sqlStr, args...)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	return rows.Next(), rows.Err()
 }
 
 func (r *PostgresRepository) GetLastAcceptedEpochIndex(
@@ -352,6 +513,7 @@ func (r *PostgresRepository) GetLastNonOpenEpoch(
 			table.Epoch.ClaimTransactionHash,
 			table.Epoch.TournamentAddress,
 			table.Epoch.Status,
+			table.Epoch.StagedAtBlock,
 			table.Epoch.VirtualIndex,
 			table.Epoch.CreatedAt,
 			table.Epoch.UpdatedAt,
@@ -388,6 +550,7 @@ func (r *PostgresRepository) GetLastNonOpenEpoch(
 		&ep.ClaimTransactionHash,
 		&ep.TournamentAddress,
 		&ep.Status,
+		&ep.StagedAtBlock,
 		&ep.VirtualIndex,
 		&ep.CreatedAt,
 		&ep.UpdatedAt,
@@ -425,6 +588,7 @@ func (r *PostgresRepository) GetEpochByVirtualIndex(
 			table.Epoch.ClaimTransactionHash,
 			table.Epoch.TournamentAddress,
 			table.Epoch.Status,
+			table.Epoch.StagedAtBlock,
 			table.Epoch.VirtualIndex,
 			table.Epoch.CreatedAt,
 			table.Epoch.UpdatedAt,
@@ -459,6 +623,7 @@ func (r *PostgresRepository) GetEpochByVirtualIndex(
 		&ep.ClaimTransactionHash,
 		&ep.TournamentAddress,
 		&ep.Status,
+		&ep.StagedAtBlock,
 		&ep.VirtualIndex,
 		&ep.CreatedAt,
 		&ep.UpdatedAt,
@@ -693,6 +858,7 @@ func (r *PostgresRepository) ListEpochs(
 			table.Epoch.ClaimTransactionHash,
 			table.Epoch.TournamentAddress,
 			table.Epoch.Status,
+			table.Epoch.StagedAtBlock,
 			table.Epoch.VirtualIndex,
 			table.Epoch.CreatedAt,
 			table.Epoch.UpdatedAt,
@@ -737,6 +903,7 @@ func (r *PostgresRepository) ListEpochs(
 			&ep.ClaimTransactionHash,
 			&ep.TournamentAddress,
 			&ep.Status,
+			&ep.StagedAtBlock,
 			&ep.VirtualIndex,
 			&ep.CreatedAt,
 			&ep.UpdatedAt,

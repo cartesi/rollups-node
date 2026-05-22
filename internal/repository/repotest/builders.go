@@ -16,6 +16,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// defaultWithdrawalConfig returns a deterministic, non-zero WithdrawalConfig
+// so tests detect missing-column bugs as "wrong values" rather than silently
+// passing on all-zero defaults.
+func defaultWithdrawalConfig() WithdrawalConfig {
+	return WithdrawalConfig{
+		Guardian:                common.HexToAddress("0x1111111111111111111111111111111111111111"),
+		Log2LeavesPerAccount:    0,
+		Log2MaxNumOfAccounts:    20,
+		AccountsDriveStartIndex: 33554432,
+		WithdrawalOutputBuilder: common.HexToAddress("0x2222222222222222222222222222222222222222"),
+	}
+}
+
 // counter provides unique values across all builders to avoid collisions.
 var counter atomic.Uint64
 
@@ -53,9 +66,12 @@ func NewApplicationBuilder() *ApplicationBuilder {
 			TemplateHash:        UniqueHash(),
 			TemplateURI:         fmt.Sprintf("/template/%d", id),
 			EpochLength:         10,
+			ClaimStagingPeriod:  7,
+			WithdrawalConfig:    defaultWithdrawalConfig(),
 			DataAvailability:    DataAvailability_InputBox[:],
 			ConsensusType:       Consensus_Authority,
-			State:               ApplicationState_Enabled,
+			Enabled:             true,
+			Status:              ApplicationStatus_OK,
 		},
 	}
 }
@@ -75,8 +91,13 @@ func (b *ApplicationBuilder) WithConsensus(c Consensus) *ApplicationBuilder {
 	return b
 }
 
-func (b *ApplicationBuilder) WithState(s ApplicationState) *ApplicationBuilder {
-	b.app.State = s
+func (b *ApplicationBuilder) WithStatus(s ApplicationStatus) *ApplicationBuilder {
+	b.app.Status = s
+	return b
+}
+
+func (b *ApplicationBuilder) WithEnabled(enabled bool) *ApplicationBuilder {
+	b.app.Enabled = enabled
 	return b
 }
 
@@ -85,8 +106,18 @@ func (b *ApplicationBuilder) WithEpochLength(l uint64) *ApplicationBuilder {
 	return b
 }
 
+func (b *ApplicationBuilder) WithClaimStagingPeriod(p uint64) *ApplicationBuilder {
+	b.app.ClaimStagingPeriod = p
+	return b
+}
+
 func (b *ApplicationBuilder) WithDataAvailability(da []byte) *ApplicationBuilder {
 	b.app.DataAvailability = da
+	return b
+}
+
+func (b *ApplicationBuilder) WithWithdrawalConfig(wc WithdrawalConfig) *ApplicationBuilder {
+	b.app.WithdrawalConfig = wc
 	return b
 }
 
@@ -171,6 +202,16 @@ func (b *EpochBuilder) WithClaimTransactionHash(h common.Hash) *EpochBuilder {
 
 func (b *EpochBuilder) WithMachineHash(h common.Hash) *EpochBuilder {
 	b.epoch.MachineHash = &h
+	return b
+}
+
+// WithStagedAtBlock sets the block number at which the chain staged our
+// claim. Required when Status is EpochStatus_ClaimStaged (enforced by the
+// staged_requires_block CHECK constraint at the DB). May also be set on
+// ACCEPTED/REJECTED epochs to retain the staging block historically; the
+// relaxed CHECK does not require clearing on transitions out of STAGED.
+func (b *EpochBuilder) WithStagedAtBlock(block uint64) *EpochBuilder {
+	b.epoch.StagedAtBlock = &block
 	return b
 }
 
@@ -466,10 +507,17 @@ type SeedResult struct {
 // The graph mirrors the SQL trigger enforce_epoch_status_transition:
 //
 //	OPEN → CLOSED → INPUTS_PROCESSED → CLAIM_COMPUTED
+//	OPEN → CLAIM_FORECLOSED
+//	CLOSED → CLAIM_FORECLOSED
+//	INPUTS_PROCESSED → CLAIM_FORECLOSED
 //	CLAIM_COMPUTED → CLAIM_SUBMITTED → CLAIM_ACCEPTED
 //	CLAIM_COMPUTED → CLAIM_ACCEPTED  (PRT, sync catch-up, or reader-only mode)
 //	CLAIM_COMPUTED → CLAIM_REJECTED  (rejected on-chain before node submits)
 //	CLAIM_SUBMITTED → CLAIM_REJECTED
+//	CLAIM_COMPUTED → CLAIM_FORECLOSED
+//	CLAIM_SUBMITTED → CLAIM_FORECLOSED
+//	CLAIM_STAGED → CLAIM_ACCEPTED
+//	CLAIM_STAGED → CLAIM_FORECLOSED
 func AdvanceEpochStatus(
 	ctx context.Context, t *testing.T,
 	repo repository.Repository,
@@ -481,11 +529,17 @@ func AdvanceEpochStatus(
 
 	// Adjacency list mirrors the SQL trigger's valid transitions.
 	next := map[EpochStatus][]EpochStatus{
-		EpochStatus_Open:            {EpochStatus_Closed},
-		EpochStatus_Closed:          {EpochStatus_InputsProcessed},
-		EpochStatus_InputsProcessed: {EpochStatus_ClaimComputed},
-		EpochStatus_ClaimComputed:   {EpochStatus_ClaimSubmitted, EpochStatus_ClaimAccepted, EpochStatus_ClaimRejected},
-		EpochStatus_ClaimSubmitted:  {EpochStatus_ClaimAccepted, EpochStatus_ClaimRejected},
+		EpochStatus_Open:            {EpochStatus_Closed, EpochStatus_ClaimForeclosed},
+		EpochStatus_Closed:          {EpochStatus_InputsProcessed, EpochStatus_ClaimForeclosed},
+		EpochStatus_InputsProcessed: {EpochStatus_ClaimComputed, EpochStatus_ClaimForeclosed},
+		EpochStatus_ClaimComputed: {
+			EpochStatus_ClaimSubmitted,
+			EpochStatus_ClaimAccepted,
+			EpochStatus_ClaimRejected,
+			EpochStatus_ClaimForeclosed,
+		},
+		EpochStatus_ClaimSubmitted: {EpochStatus_ClaimAccepted, EpochStatus_ClaimRejected, EpochStatus_ClaimForeclosed},
+		EpochStatus_ClaimStaged:    {EpochStatus_ClaimAccepted, EpochStatus_ClaimForeclosed},
 	}
 
 	// BFS to find shortest valid path.

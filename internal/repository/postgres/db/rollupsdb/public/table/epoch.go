@@ -31,6 +31,7 @@ type epochTable struct {
 	TournamentAddress    postgres.ColumnBytea
 	ClaimTransactionHash postgres.ColumnBytea
 	Status               postgres.ColumnString
+	StagedAtBlock        postgres.ColumnFloat
 	VirtualIndex         postgres.ColumnFloat
 	CreatedAt            postgres.ColumnTimestampz
 	UpdatedAt            postgres.ColumnTimestampz
@@ -89,11 +90,12 @@ func newEpochTableImpl(schemaName, tableName, alias string) epochTable {
 		TournamentAddressColumn    = postgres.ByteaColumn("tournament_address")
 		ClaimTransactionHashColumn = postgres.ByteaColumn("claim_transaction_hash")
 		StatusColumn               = postgres.StringColumn("status")
+		StagedAtBlockColumn        = postgres.FloatColumn("staged_at_block")
 		VirtualIndexColumn         = postgres.FloatColumn("virtual_index")
 		CreatedAtColumn            = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn            = postgres.TimestampzColumn("updated_at")
-		allColumns                 = postgres.ColumnList{ApplicationIDColumn, IndexColumn, FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, OutputsMerkleRootColumn, OutputsMerkleProofColumn, CommitmentColumn, CommitmentProofColumn, TournamentAddressColumn, ClaimTransactionHashColumn, StatusColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns             = postgres.ColumnList{FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, OutputsMerkleRootColumn, OutputsMerkleProofColumn, CommitmentColumn, CommitmentProofColumn, TournamentAddressColumn, ClaimTransactionHashColumn, StatusColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
+		allColumns                 = postgres.ColumnList{ApplicationIDColumn, IndexColumn, FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, OutputsMerkleRootColumn, OutputsMerkleProofColumn, CommitmentColumn, CommitmentProofColumn, TournamentAddressColumn, ClaimTransactionHashColumn, StatusColumn, StagedAtBlockColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns             = postgres.ColumnList{FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, OutputsMerkleRootColumn, OutputsMerkleProofColumn, CommitmentColumn, CommitmentProofColumn, TournamentAddressColumn, ClaimTransactionHashColumn, StatusColumn, StagedAtBlockColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
 		defaultColumns             = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
 	)
 
@@ -115,6 +117,7 @@ func newEpochTableImpl(schemaName, tableName, alias string) epochTable {
 		TournamentAddress:    TournamentAddressColumn,
 		ClaimTransactionHash: ClaimTransactionHashColumn,
 		Status:               StatusColumn,
+		StagedAtBlock:        StagedAtBlockColumn,
 		VirtualIndex:         VirtualIndexColumn,
 		CreatedAt:            CreatedAtColumn,
 		UpdatedAt:            UpdatedAtColumn,

@@ -17,26 +17,41 @@ type applicationTable struct {
 	postgres.Table
 
 	// Columns
-	ID                       postgres.ColumnInteger
-	Name                     postgres.ColumnString
-	IapplicationAddress      postgres.ColumnBytea
-	IconsensusAddress        postgres.ColumnBytea
-	IinputboxAddress         postgres.ColumnBytea
-	IinputboxBlock           postgres.ColumnFloat
-	TemplateHash             postgres.ColumnBytea
-	TemplateURI              postgres.ColumnString
-	EpochLength              postgres.ColumnFloat
-	DataAvailability         postgres.ColumnBytea
-	ConsensusType            postgres.ColumnString
-	State                    postgres.ColumnString
-	Reason                   postgres.ColumnString
-	LastEpochCheckBlock      postgres.ColumnFloat
-	LastInputCheckBlock      postgres.ColumnFloat
-	LastOutputCheckBlock     postgres.ColumnFloat
-	LastTournamentCheckBlock postgres.ColumnFloat
-	ProcessedInputs          postgres.ColumnFloat
-	CreatedAt                postgres.ColumnTimestampz
-	UpdatedAt                postgres.ColumnTimestampz
+	ID                                postgres.ColumnInteger
+	Name                              postgres.ColumnString
+	IapplicationAddress               postgres.ColumnBytea
+	IconsensusAddress                 postgres.ColumnBytea
+	IinputboxAddress                  postgres.ColumnBytea
+	IinputboxBlock                    postgres.ColumnFloat
+	TemplateHash                      postgres.ColumnBytea
+	TemplateURI                       postgres.ColumnString
+	EpochLength                       postgres.ColumnFloat
+	ClaimStagingPeriod                postgres.ColumnFloat
+	WithdrawalGuardian                postgres.ColumnBytea
+	WithdrawalLog2LeavesPerAccount    postgres.ColumnInteger
+	WithdrawalLog2MaxNumOfAccounts    postgres.ColumnInteger
+	WithdrawalAccountsDriveStartIndex postgres.ColumnFloat
+	WithdrawalOutputBuilder           postgres.ColumnBytea
+	DataAvailability                  postgres.ColumnBytea
+	ConsensusType                     postgres.ColumnString
+	Enabled                           postgres.ColumnBool
+	Status                            postgres.ColumnString
+	Reason                            postgres.ColumnString
+	LastEpochCheckBlock               postgres.ColumnFloat
+	LastInputCheckBlock               postgres.ColumnFloat
+	LastOutputCheckBlock              postgres.ColumnFloat
+	LastTournamentCheckBlock          postgres.ColumnFloat
+	LastForecloseCheckBlock           postgres.ColumnFloat
+	LastAccountsDriveProvedCheckBlock postgres.ColumnFloat
+	LastWithdrawalCheckBlock          postgres.ColumnFloat
+	ProcessedInputs                   postgres.ColumnFloat
+	ForecloseBlock                    postgres.ColumnFloat
+	ForecloseTransaction              postgres.ColumnBytea
+	AccountsDriveProvedBlock          postgres.ColumnFloat
+	AccountsDriveProvedTransaction    postgres.ColumnBytea
+	AccountsDriveMerkleRoot           postgres.ColumnBytea
+	CreatedAt                         postgres.ColumnTimestampz
+	UpdatedAt                         postgres.ColumnTimestampz
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
@@ -78,55 +93,85 @@ func newApplicationTable(schemaName, tableName, alias string) *ApplicationTable 
 
 func newApplicationTableImpl(schemaName, tableName, alias string) applicationTable {
 	var (
-		IDColumn                       = postgres.IntegerColumn("id")
-		NameColumn                     = postgres.StringColumn("name")
-		IapplicationAddressColumn      = postgres.ByteaColumn("iapplication_address")
-		IconsensusAddressColumn        = postgres.ByteaColumn("iconsensus_address")
-		IinputboxAddressColumn         = postgres.ByteaColumn("iinputbox_address")
-		IinputboxBlockColumn           = postgres.FloatColumn("iinputbox_block")
-		TemplateHashColumn             = postgres.ByteaColumn("template_hash")
-		TemplateURIColumn              = postgres.StringColumn("template_uri")
-		EpochLengthColumn              = postgres.FloatColumn("epoch_length")
-		DataAvailabilityColumn         = postgres.ByteaColumn("data_availability")
-		ConsensusTypeColumn            = postgres.StringColumn("consensus_type")
-		StateColumn                    = postgres.StringColumn("state")
-		ReasonColumn                   = postgres.StringColumn("reason")
-		LastEpochCheckBlockColumn      = postgres.FloatColumn("last_epoch_check_block")
-		LastInputCheckBlockColumn      = postgres.FloatColumn("last_input_check_block")
-		LastOutputCheckBlockColumn     = postgres.FloatColumn("last_output_check_block")
-		LastTournamentCheckBlockColumn = postgres.FloatColumn("last_tournament_check_block")
-		ProcessedInputsColumn          = postgres.FloatColumn("processed_inputs")
-		CreatedAtColumn                = postgres.TimestampzColumn("created_at")
-		UpdatedAtColumn                = postgres.TimestampzColumn("updated_at")
-		allColumns                     = postgres.ColumnList{IDColumn, NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, DataAvailabilityColumn, ConsensusTypeColumn, StateColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, ProcessedInputsColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns                 = postgres.ColumnList{NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, DataAvailabilityColumn, ConsensusTypeColumn, StateColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, ProcessedInputsColumn, CreatedAtColumn, UpdatedAtColumn}
-		defaultColumns                 = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
+		IDColumn                                = postgres.IntegerColumn("id")
+		NameColumn                              = postgres.StringColumn("name")
+		IapplicationAddressColumn               = postgres.ByteaColumn("iapplication_address")
+		IconsensusAddressColumn                 = postgres.ByteaColumn("iconsensus_address")
+		IinputboxAddressColumn                  = postgres.ByteaColumn("iinputbox_address")
+		IinputboxBlockColumn                    = postgres.FloatColumn("iinputbox_block")
+		TemplateHashColumn                      = postgres.ByteaColumn("template_hash")
+		TemplateURIColumn                       = postgres.StringColumn("template_uri")
+		EpochLengthColumn                       = postgres.FloatColumn("epoch_length")
+		ClaimStagingPeriodColumn                = postgres.FloatColumn("claim_staging_period")
+		WithdrawalGuardianColumn                = postgres.ByteaColumn("withdrawal_guardian")
+		WithdrawalLog2LeavesPerAccountColumn    = postgres.IntegerColumn("withdrawal_log2_leaves_per_account")
+		WithdrawalLog2MaxNumOfAccountsColumn    = postgres.IntegerColumn("withdrawal_log2_max_num_of_accounts")
+		WithdrawalAccountsDriveStartIndexColumn = postgres.FloatColumn("withdrawal_accounts_drive_start_index")
+		WithdrawalOutputBuilderColumn           = postgres.ByteaColumn("withdrawal_output_builder")
+		DataAvailabilityColumn                  = postgres.ByteaColumn("data_availability")
+		ConsensusTypeColumn                     = postgres.StringColumn("consensus_type")
+		EnabledColumn                           = postgres.BoolColumn("enabled")
+		StatusColumn                            = postgres.StringColumn("status")
+		ReasonColumn                            = postgres.StringColumn("reason")
+		LastEpochCheckBlockColumn               = postgres.FloatColumn("last_epoch_check_block")
+		LastInputCheckBlockColumn               = postgres.FloatColumn("last_input_check_block")
+		LastOutputCheckBlockColumn              = postgres.FloatColumn("last_output_check_block")
+		LastTournamentCheckBlockColumn          = postgres.FloatColumn("last_tournament_check_block")
+		LastForecloseCheckBlockColumn           = postgres.FloatColumn("last_foreclose_check_block")
+		LastAccountsDriveProvedCheckBlockColumn = postgres.FloatColumn("last_accounts_drive_proved_check_block")
+		LastWithdrawalCheckBlockColumn          = postgres.FloatColumn("last_withdrawal_check_block")
+		ProcessedInputsColumn                   = postgres.FloatColumn("processed_inputs")
+		ForecloseBlockColumn                    = postgres.FloatColumn("foreclose_block")
+		ForecloseTransactionColumn              = postgres.ByteaColumn("foreclose_transaction")
+		AccountsDriveProvedBlockColumn          = postgres.FloatColumn("accounts_drive_proved_block")
+		AccountsDriveProvedTransactionColumn    = postgres.ByteaColumn("accounts_drive_proved_transaction")
+		AccountsDriveMerkleRootColumn           = postgres.ByteaColumn("accounts_drive_merkle_root")
+		CreatedAtColumn                         = postgres.TimestampzColumn("created_at")
+		UpdatedAtColumn                         = postgres.TimestampzColumn("updated_at")
+		allColumns                              = postgres.ColumnList{IDColumn, NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, DataAvailabilityColumn, ConsensusTypeColumn, EnabledColumn, StatusColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ProcessedInputsColumn, ForecloseBlockColumn, ForecloseTransactionColumn, AccountsDriveProvedBlockColumn, AccountsDriveProvedTransactionColumn, AccountsDriveMerkleRootColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns                          = postgres.ColumnList{NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, DataAvailabilityColumn, ConsensusTypeColumn, EnabledColumn, StatusColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ProcessedInputsColumn, ForecloseBlockColumn, ForecloseTransactionColumn, AccountsDriveProvedBlockColumn, AccountsDriveProvedTransactionColumn, AccountsDriveMerkleRootColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns                          = postgres.ColumnList{ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, EnabledColumn, StatusColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ForecloseBlockColumn, AccountsDriveProvedBlockColumn, CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return applicationTable{
 		Table: postgres.NewTable(schemaName, tableName, alias, allColumns...),
 
 		//Columns
-		ID:                       IDColumn,
-		Name:                     NameColumn,
-		IapplicationAddress:      IapplicationAddressColumn,
-		IconsensusAddress:        IconsensusAddressColumn,
-		IinputboxAddress:         IinputboxAddressColumn,
-		IinputboxBlock:           IinputboxBlockColumn,
-		TemplateHash:             TemplateHashColumn,
-		TemplateURI:              TemplateURIColumn,
-		EpochLength:              EpochLengthColumn,
-		DataAvailability:         DataAvailabilityColumn,
-		ConsensusType:            ConsensusTypeColumn,
-		State:                    StateColumn,
-		Reason:                   ReasonColumn,
-		LastEpochCheckBlock:      LastEpochCheckBlockColumn,
-		LastInputCheckBlock:      LastInputCheckBlockColumn,
-		LastOutputCheckBlock:     LastOutputCheckBlockColumn,
-		LastTournamentCheckBlock: LastTournamentCheckBlockColumn,
-		ProcessedInputs:          ProcessedInputsColumn,
-		CreatedAt:                CreatedAtColumn,
-		UpdatedAt:                UpdatedAtColumn,
+		ID:                                IDColumn,
+		Name:                              NameColumn,
+		IapplicationAddress:               IapplicationAddressColumn,
+		IconsensusAddress:                 IconsensusAddressColumn,
+		IinputboxAddress:                  IinputboxAddressColumn,
+		IinputboxBlock:                    IinputboxBlockColumn,
+		TemplateHash:                      TemplateHashColumn,
+		TemplateURI:                       TemplateURIColumn,
+		EpochLength:                       EpochLengthColumn,
+		ClaimStagingPeriod:                ClaimStagingPeriodColumn,
+		WithdrawalGuardian:                WithdrawalGuardianColumn,
+		WithdrawalLog2LeavesPerAccount:    WithdrawalLog2LeavesPerAccountColumn,
+		WithdrawalLog2MaxNumOfAccounts:    WithdrawalLog2MaxNumOfAccountsColumn,
+		WithdrawalAccountsDriveStartIndex: WithdrawalAccountsDriveStartIndexColumn,
+		WithdrawalOutputBuilder:           WithdrawalOutputBuilderColumn,
+		DataAvailability:                  DataAvailabilityColumn,
+		ConsensusType:                     ConsensusTypeColumn,
+		Enabled:                           EnabledColumn,
+		Status:                            StatusColumn,
+		Reason:                            ReasonColumn,
+		LastEpochCheckBlock:               LastEpochCheckBlockColumn,
+		LastInputCheckBlock:               LastInputCheckBlockColumn,
+		LastOutputCheckBlock:              LastOutputCheckBlockColumn,
+		LastTournamentCheckBlock:          LastTournamentCheckBlockColumn,
+		LastForecloseCheckBlock:           LastForecloseCheckBlockColumn,
+		LastAccountsDriveProvedCheckBlock: LastAccountsDriveProvedCheckBlockColumn,
+		LastWithdrawalCheckBlock:          LastWithdrawalCheckBlockColumn,
+		ProcessedInputs:                   ProcessedInputsColumn,
+		ForecloseBlock:                    ForecloseBlockColumn,
+		ForecloseTransaction:              ForecloseTransactionColumn,
+		AccountsDriveProvedBlock:          AccountsDriveProvedBlockColumn,
+		AccountsDriveProvedTransaction:    AccountsDriveProvedTransactionColumn,
+		AccountsDriveMerkleRoot:           AccountsDriveMerkleRootColumn,
+		CreatedAt:                         CreatedAtColumn,
+		UpdatedAt:                         UpdatedAtColumn,
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,

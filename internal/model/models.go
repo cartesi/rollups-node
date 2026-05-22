@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -17,27 +18,153 @@ import (
 )
 
 type Application struct {
-	ID                       int64               `sql:"primary_key" json:"-"`
-	Name                     string              `json:"name"`
-	IApplicationAddress      common.Address      `json:"iapplication_address"`
-	IConsensusAddress        common.Address      `json:"iconsensus_address"`
-	IInputBoxAddress         common.Address      `json:"iinputbox_address"`
-	TemplateHash             common.Hash         `json:"template_hash"`
-	TemplateURI              string              `json:"-"`
-	EpochLength              uint64              `json:"epoch_length"`
-	DataAvailability         []byte              `json:"data_availability"`
-	ConsensusType            Consensus           `json:"consensus_type"`
-	State                    ApplicationState    `json:"state"`
-	Reason                   *string             `json:"reason"`
-	IInputBoxBlock           uint64              `json:"iinputbox_block"`
-	LastEpochCheckBlock      uint64              `json:"last_epoch_check_block"`
-	LastInputCheckBlock      uint64              `json:"last_input_check_block"`
-	LastOutputCheckBlock     uint64              `json:"last_output_check_block"`
-	LastTournamentCheckBlock uint64              `json:"last_tournament_check_block"`
-	ProcessedInputs          uint64              `json:"processed_inputs"`
-	CreatedAt                time.Time           `json:"created_at"`
-	UpdatedAt                time.Time           `json:"updated_at"`
-	ExecutionParameters      ExecutionParameters `json:"execution_parameters"`
+	ID                                int64               `sql:"primary_key" json:"-"`
+	Name                              string              `json:"name"`
+	IApplicationAddress               common.Address      `json:"iapplication_address"`
+	IConsensusAddress                 common.Address      `json:"iconsensus_address"`
+	IInputBoxAddress                  common.Address      `json:"iinputbox_address"`
+	TemplateHash                      common.Hash         `json:"template_hash"`
+	TemplateURI                       string              `json:"-"`
+	EpochLength                       uint64              `json:"epoch_length"`
+	ClaimStagingPeriod                uint64              `json:"claim_staging_period"`
+	WithdrawalConfig                  WithdrawalConfig    `json:"withdrawal_config"`
+	DataAvailability                  []byte              `json:"data_availability"`
+	ConsensusType                     Consensus           `json:"consensus_type"`
+	Enabled                           bool                `json:"enabled"`
+	Status                            ApplicationStatus   `json:"status"`
+	Reason                            *string             `json:"reason"`
+	IInputBoxBlock                    uint64              `json:"iinputbox_block"`
+	LastEpochCheckBlock               uint64              `json:"last_epoch_check_block"`
+	LastInputCheckBlock               uint64              `json:"last_input_check_block"`
+	LastOutputCheckBlock              uint64              `json:"last_output_check_block"`
+	LastTournamentCheckBlock          uint64              `json:"last_tournament_check_block"`
+	LastForecloseCheckBlock           uint64              `json:"last_foreclose_check_block"`
+	LastAccountsDriveProvedCheckBlock uint64              `json:"last_accounts_drive_proved_check_block"`
+	LastWithdrawalCheckBlock          uint64              `json:"last_withdrawal_check_block"`
+	ProcessedInputs                   uint64              `json:"processed_inputs"`
+	ForecloseBlock                    uint64              `json:"foreclose_block"`
+	ForecloseTransaction              *common.Hash        `json:"foreclose_transaction"`
+	AccountsDriveProvedBlock          uint64              `json:"accounts_drive_proved_block"`
+	AccountsDriveProvedTransaction    *common.Hash        `json:"accounts_drive_proved_transaction"`
+	AccountsDriveMerkleRoot           *common.Hash        `json:"accounts_drive_merkle_root"`
+	CreatedAt                         time.Time           `json:"created_at"`
+	UpdatedAt                         time.Time           `json:"updated_at"`
+	ExecutionParameters               ExecutionParameters `json:"execution_parameters"`
+}
+
+// IsForeclosed reports whether the node has observed an on-chain Foreclosure
+// event for this application. Block 0 is unreachable for foreclosure (the
+// contract is deployed at block >= 1), so 0 is the unambiguous "not observed
+// yet" sentinel. Once non-zero it remains so (the chain-level foreclosed
+// flag is one-way).
+func (a *Application) IsForeclosed() bool {
+	return a.ForecloseBlock != 0
+}
+
+func (a *Application) CanExecute() bool {
+	return a.Enabled && a.Status == ApplicationStatus_OK && !a.IsForeclosed()
+}
+
+func (a *Application) NeedsL1Observation() bool {
+	return a.Enabled
+}
+
+func (a *Application) NeedsForeclosureObservation() bool {
+	return a.NeedsL1Observation() && !a.IsForeclosed()
+}
+
+func (a *Application) NeedsPostForeclosureObservation() bool {
+	return a.NeedsL1Observation() && a.IsForeclosed()
+}
+
+// ForeclosureScanCaughtUp reports whether the historical L1 scan has reached
+// foreclose_block, so the pre-foreclosure drain queries — which read the
+// inputs/epochs already ingested into the DB — can be trusted.
+//
+// A freshly bootstrapped node can record foreclose_block before it has ingested
+// the historical inputs/epochs. Until the scan catches up the drain tables are
+// incomplete, and a "nothing left to drain" answer would be premature. Each
+// consensus type advances a different cursor: DaveConsensus ingestion is driven
+// by EpochSealed scans (last_epoch_check_block), while IConsensus ingestion is
+// driven by InputAdded scans (last_input_check_block). This is the single
+// definition of drain-readiness shared by the claimer, PRT, and manager.
+//
+// Only meaningful for a foreclosed app (foreclose_block != 0).
+func (a *Application) ForeclosureScanCaughtUp() bool {
+	if a.IsDaveConsensus() {
+		return a.LastEpochCheckBlock >= a.ForecloseBlock
+	}
+	return a.LastInputCheckBlock >= a.ForecloseBlock
+}
+
+// WithdrawalConfig mirrors the on-chain five-immutable layout from the
+// Application contract. Field order matches iapplicationfactory.WithdrawalConfig
+// so the two are convertible via a Go type conversion.
+type WithdrawalConfig struct {
+	Guardian                common.Address `json:"guardian"`
+	Log2LeavesPerAccount    uint8          `json:"log2_leaves_per_account"`
+	Log2MaxNumOfAccounts    uint8          `json:"log2_max_num_of_accounts"`
+	AccountsDriveStartIndex uint64         `json:"accounts_drive_start_index"`
+	WithdrawalOutputBuilder common.Address `json:"withdrawal_output_builder"`
+}
+
+func (w WithdrawalConfig) MarshalJSON() ([]byte, error) {
+	return json.Marshal(&struct {
+		Guardian                common.Address `json:"guardian"`
+		Log2LeavesPerAccount    string         `json:"log2_leaves_per_account"`
+		Log2MaxNumOfAccounts    string         `json:"log2_max_num_of_accounts"`
+		AccountsDriveStartIndex string         `json:"accounts_drive_start_index"`
+		WithdrawalOutputBuilder common.Address `json:"withdrawal_output_builder"`
+	}{
+		Guardian:                w.Guardian,
+		Log2LeavesPerAccount:    fmt.Sprintf("0x%x", w.Log2LeavesPerAccount),
+		Log2MaxNumOfAccounts:    fmt.Sprintf("0x%x", w.Log2MaxNumOfAccounts),
+		AccountsDriveStartIndex: fmt.Sprintf("0x%x", w.AccountsDriveStartIndex),
+		WithdrawalOutputBuilder: w.WithdrawalOutputBuilder,
+	})
+}
+
+func (w *WithdrawalConfig) UnmarshalJSON(data []byte) error {
+	aux := &struct {
+		Guardian                common.Address `json:"guardian"`
+		Log2LeavesPerAccount    string         `json:"log2_leaves_per_account"`
+		Log2MaxNumOfAccounts    string         `json:"log2_max_num_of_accounts"`
+		AccountsDriveStartIndex string         `json:"accounts_drive_start_index"`
+		WithdrawalOutputBuilder common.Address `json:"withdrawal_output_builder"`
+	}{}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	w.Guardian = aux.Guardian
+	w.WithdrawalOutputBuilder = aux.WithdrawalOutputBuilder
+	if aux.Log2LeavesPerAccount != "" {
+		v, err := ParseHexUint64(aux.Log2LeavesPerAccount)
+		if err != nil {
+			return fmt.Errorf("invalid log2_leaves_per_account: %w", err)
+		}
+		if v > math.MaxUint8 {
+			return fmt.Errorf("log2_leaves_per_account out of range for uint8: %d", v)
+		}
+		w.Log2LeavesPerAccount = uint8(v)
+	}
+	if aux.Log2MaxNumOfAccounts != "" {
+		v, err := ParseHexUint64(aux.Log2MaxNumOfAccounts)
+		if err != nil {
+			return fmt.Errorf("invalid log2_max_num_of_accounts: %w", err)
+		}
+		if v > math.MaxUint8 {
+			return fmt.Errorf("log2_max_num_of_accounts out of range for uint8: %d", v)
+		}
+		w.Log2MaxNumOfAccounts = uint8(v)
+	}
+	if aux.AccountsDriveStartIndex != "" {
+		v, err := ParseHexUint64(aux.AccountsDriveStartIndex)
+		if err != nil {
+			return fmt.Errorf("invalid accounts_drive_start_index: %w", err)
+		}
+		w.AccountsDriveStartIndex = v
+	}
+	return nil
 }
 
 // HasDataAvailabilitySelector checks if the application's DataAvailability
@@ -52,24 +179,36 @@ func (a *Application) MarshalJSON() ([]byte, error) {
 	// Define a new structure that embeds the alias but overrides the hex fields.
 	aux := &struct {
 		*Alias
-		DataAvailability         string `json:"data_availability"`
-		IInputBoxBlock           string `json:"iinputbox_block"`
-		LastEpochCheckBlock      string `json:"last_epoch_check_block"`
-		LastInputCheckBlock      string `json:"last_input_check_block"`
-		LastOutputCheckBlock     string `json:"last_output_check_block"`
-		LastTournamentCheckBlock string `json:"last_tournament_check_block"`
-		EpochLength              string `json:"epoch_length"`
-		ProcessedInputs          string `json:"processed_inputs"`
+		DataAvailability                  string `json:"data_availability"`
+		IInputBoxBlock                    string `json:"iinputbox_block"`
+		LastEpochCheckBlock               string `json:"last_epoch_check_block"`
+		LastInputCheckBlock               string `json:"last_input_check_block"`
+		LastOutputCheckBlock              string `json:"last_output_check_block"`
+		LastTournamentCheckBlock          string `json:"last_tournament_check_block"`
+		LastForecloseCheckBlock           string `json:"last_foreclose_check_block"`
+		LastAccountsDriveProvedCheckBlock string `json:"last_accounts_drive_proved_check_block"`
+		LastWithdrawalCheckBlock          string `json:"last_withdrawal_check_block"`
+		EpochLength                       string `json:"epoch_length"`
+		ClaimStagingPeriod                string `json:"claim_staging_period"`
+		ProcessedInputs                   string `json:"processed_inputs"`
+		ForecloseBlock                    string `json:"foreclose_block"`
+		AccountsDriveProvedBlock          string `json:"accounts_drive_proved_block"`
 	}{
-		Alias:                    (*Alias)(a),
-		DataAvailability:         "0x" + hex.EncodeToString(a.DataAvailability),
-		IInputBoxBlock:           fmt.Sprintf("0x%x", a.IInputBoxBlock),
-		LastEpochCheckBlock:      fmt.Sprintf("0x%x", a.LastEpochCheckBlock),
-		LastInputCheckBlock:      fmt.Sprintf("0x%x", a.LastInputCheckBlock),
-		LastOutputCheckBlock:     fmt.Sprintf("0x%x", a.LastOutputCheckBlock),
-		LastTournamentCheckBlock: fmt.Sprintf("0x%x", a.LastTournamentCheckBlock),
-		EpochLength:              fmt.Sprintf("0x%x", a.EpochLength),
-		ProcessedInputs:          fmt.Sprintf("0x%x", a.ProcessedInputs),
+		Alias:                             (*Alias)(a),
+		DataAvailability:                  "0x" + hex.EncodeToString(a.DataAvailability),
+		IInputBoxBlock:                    fmt.Sprintf("0x%x", a.IInputBoxBlock),
+		LastEpochCheckBlock:               fmt.Sprintf("0x%x", a.LastEpochCheckBlock),
+		LastInputCheckBlock:               fmt.Sprintf("0x%x", a.LastInputCheckBlock),
+		LastOutputCheckBlock:              fmt.Sprintf("0x%x", a.LastOutputCheckBlock),
+		LastTournamentCheckBlock:          fmt.Sprintf("0x%x", a.LastTournamentCheckBlock),
+		LastForecloseCheckBlock:           fmt.Sprintf("0x%x", a.LastForecloseCheckBlock),
+		LastAccountsDriveProvedCheckBlock: fmt.Sprintf("0x%x", a.LastAccountsDriveProvedCheckBlock),
+		LastWithdrawalCheckBlock:          fmt.Sprintf("0x%x", a.LastWithdrawalCheckBlock),
+		EpochLength:                       fmt.Sprintf("0x%x", a.EpochLength),
+		ClaimStagingPeriod:                fmt.Sprintf("0x%x", a.ClaimStagingPeriod),
+		ProcessedInputs:                   fmt.Sprintf("0x%x", a.ProcessedInputs),
+		ForecloseBlock:                    fmt.Sprintf("0x%x", a.ForecloseBlock),
+		AccountsDriveProvedBlock:          fmt.Sprintf("0x%x", a.AccountsDriveProvedBlock),
 	}
 	return json.Marshal(aux)
 }
@@ -79,14 +218,20 @@ func (a *Application) UnmarshalJSON(in []byte) error {
 	aux := &struct {
 		*Alias
 
-		DataAvailability         string `json:"data_availability"`
-		IInputBoxBlock           string `json:"iinputbox_block"`
-		LastInputCheckBlock      string `json:"last_input_check_block"`
-		LastOutputCheckBlock     string `json:"last_output_check_block"`
-		LastEpochCheckBlock      string `json:"last_epoch_check_block"`
-		LastTournamentCheckBlock string `json:"last_tournament_check_block"`
-		EpochLength              string `json:"epoch_length"`
-		ProcessedInputs          string `json:"processed_inputs"`
+		DataAvailability                  string `json:"data_availability"`
+		IInputBoxBlock                    string `json:"iinputbox_block"`
+		LastInputCheckBlock               string `json:"last_input_check_block"`
+		LastOutputCheckBlock              string `json:"last_output_check_block"`
+		LastEpochCheckBlock               string `json:"last_epoch_check_block"`
+		LastTournamentCheckBlock          string `json:"last_tournament_check_block"`
+		LastForecloseCheckBlock           string `json:"last_foreclose_check_block"`
+		LastAccountsDriveProvedCheckBlock string `json:"last_accounts_drive_proved_check_block"`
+		LastWithdrawalCheckBlock          string `json:"last_withdrawal_check_block"`
+		EpochLength                       string `json:"epoch_length"`
+		ClaimStagingPeriod                string `json:"claim_staging_period"`
+		ProcessedInputs                   string `json:"processed_inputs"`
+		ForecloseBlock                    string `json:"foreclose_block"`
+		AccountsDriveProvedBlock          string `json:"accounts_drive_proved_block"`
 	}{}
 
 	var err error
@@ -128,14 +273,54 @@ func (a *Application) UnmarshalJSON(in []byte) error {
 		return err
 	}
 
+	a.LastForecloseCheckBlock, err = ParseHexUint64(aux.LastForecloseCheckBlock)
+	if err != nil {
+		return err
+	}
+
+	if aux.LastAccountsDriveProvedCheckBlock != "" {
+		a.LastAccountsDriveProvedCheckBlock, err = ParseHexUint64(aux.LastAccountsDriveProvedCheckBlock)
+		if err != nil {
+			return err
+		}
+	}
+
+	if aux.LastWithdrawalCheckBlock != "" {
+		a.LastWithdrawalCheckBlock, err = ParseHexUint64(aux.LastWithdrawalCheckBlock)
+		if err != nil {
+			return err
+		}
+	}
+
 	a.EpochLength, err = ParseHexUint64(aux.EpochLength)
 	if err != nil {
 		return err
 	}
 
+	if aux.ClaimStagingPeriod != "" {
+		a.ClaimStagingPeriod, err = ParseHexUint64(aux.ClaimStagingPeriod)
+		if err != nil {
+			return err
+		}
+	}
+
 	a.ProcessedInputs, err = ParseHexUint64(aux.ProcessedInputs)
 	if err != nil {
 		return err
+	}
+
+	if aux.ForecloseBlock != "" {
+		a.ForecloseBlock, err = ParseHexUint64(aux.ForecloseBlock)
+		if err != nil {
+			return err
+		}
+	}
+
+	if aux.AccountsDriveProvedBlock != "" {
+		a.AccountsDriveProvedBlock, err = ParseHexUint64(aux.AccountsDriveProvedBlock)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -145,33 +330,37 @@ func (a *Application) IsDaveConsensus() bool {
 	return a.ConsensusType == Consensus_PRT
 }
 
-// ApplicationState represents the lifecycle state of an application.
+// ApplicationStatus is the node's processing-integrity health for an
+// application. It is independent of lifecycle (foreclosure lives in the
+// foreclose_block column) and of operator intent (the enabled flag).
 //
-// State machine transitions (enforced by DB trigger):
+// Transitions (enforced by DB trigger):
 //
-//	ENABLED  → DISABLED, FAILED, INOPERABLE
-//	DISABLED → ENABLED, INOPERABLE
-//	FAILED   → ENABLED, DISABLED, INOPERABLE  (recoverable by operator)
-//	INOPERABLE → (terminal, no transitions allowed)
+//	OK ⇄ FAILED              (FAILED is recoverable by the operator)
+//	OK, FAILED → DIVERGED    (terminal)
+//	OK, FAILED → CORRUPTED   (terminal)
 //
-// DISABLED → FAILED is blocked (app must be running to fail).
-type ApplicationState string
+// DIVERGED means the node's computed claim disagrees with what the chain
+// accepted; CORRUPTED means local state is missing or inconsistent. Both are
+// terminal and carry a reason. Foreclosure is orthogonal and may coexist with
+// any health value.
+type ApplicationStatus string
 
 const (
-	ApplicationState_Enabled    ApplicationState = "ENABLED"    // actively processing inputs
-	ApplicationState_Disabled   ApplicationState = "DISABLED"   // stopped by operator
-	ApplicationState_Failed     ApplicationState = "FAILED"     // recoverable failure (e.g., OOM, process crash)
-	ApplicationState_Inoperable ApplicationState = "INOPERABLE" // irrecoverable (data corruption, invariant violation)
+	ApplicationStatus_OK        ApplicationStatus = "OK"        // healthy; eligible for work when enabled and not foreclosed
+	ApplicationStatus_Failed    ApplicationStatus = "FAILED"    // recoverable failure (e.g., OOM, process crash)
+	ApplicationStatus_Diverged  ApplicationStatus = "DIVERGED"  // computed claim disagrees with the chain (terminal)
+	ApplicationStatus_Corrupted ApplicationStatus = "CORRUPTED" // local state missing or inconsistent (terminal)
 )
 
-var ApplicationStateAllValues = []ApplicationState{
-	ApplicationState_Enabled,
-	ApplicationState_Disabled,
-	ApplicationState_Failed,
-	ApplicationState_Inoperable,
+var ApplicationStatusAllValues = []ApplicationStatus{
+	ApplicationStatus_OK,
+	ApplicationStatus_Failed,
+	ApplicationStatus_Diverged,
+	ApplicationStatus_Corrupted,
 }
 
-func (e *ApplicationState) Scan(value any) error {
+func (e *ApplicationStatus) Scan(value any) error {
 	var enumValue string
 	switch val := value.(type) {
 	case string:
@@ -179,26 +368,26 @@ func (e *ApplicationState) Scan(value any) error {
 	case []byte:
 		enumValue = string(val)
 	default:
-		return errors.New("invalid value for ApplicationState enum. Enum value has to be of type string or []byte")
+		return errors.New("invalid value for ApplicationStatus enum. Enum value has to be of type string or []byte")
 	}
 
 	switch enumValue {
-	case "ENABLED":
-		*e = ApplicationState_Enabled
-	case "DISABLED":
-		*e = ApplicationState_Disabled
+	case "OK":
+		*e = ApplicationStatus_OK
 	case "FAILED":
-		*e = ApplicationState_Failed
-	case "INOPERABLE":
-		*e = ApplicationState_Inoperable
+		*e = ApplicationStatus_Failed
+	case "DIVERGED":
+		*e = ApplicationStatus_Diverged
+	case "CORRUPTED":
+		*e = ApplicationStatus_Corrupted
 	default:
-		return errors.New("invalid value '" + enumValue + "' for ApplicationState enum")
+		return errors.New("invalid value '" + enumValue + "' for ApplicationStatus enum")
 	}
 
 	return nil
 }
 
-func (e ApplicationState) String() string {
+func (e ApplicationStatus) String() string {
 	return string(e)
 }
 
@@ -588,13 +777,14 @@ type Epoch struct {
 	InputIndexLowerBound uint64          `json:"input_index_lower_bound"`
 	InputIndexUpperBound uint64          `json:"input_index_upper_bound"`
 	MachineHash          *common.Hash    `json:"machine_hash"`
-	OutputsMerkleRoot    *common.Hash    `json:"claim_hash"`
+	OutputsMerkleRoot    *common.Hash    `json:"outputs_merkle_root"`
 	OutputsMerkleProof   []common.Hash   `json:"outputs_merkle_proof,omitempty"`
 	ClaimTransactionHash *common.Hash    `json:"claim_transaction_hash"`
 	Commitment           *common.Hash    `json:"commitment"`
 	CommitmentProof      []common.Hash   `json:"commitment_proof,omitempty"`
 	TournamentAddress    *common.Address `json:"tournament_address"`
 	Status               EpochStatus     `json:"status"`
+	StagedAtBlock        *uint64         `json:"staged_at_block"`
 	VirtualIndex         uint64          `json:"virtual_index"`
 	CreatedAt            time.Time       `json:"created_at"`
 	UpdatedAt            time.Time       `json:"updated_at"`
@@ -605,12 +795,13 @@ func (e *Epoch) MarshalJSON() ([]byte, error) {
 	type Alias Epoch
 	// Define a new structure that embeds the alias but overrides the hex fields.
 	aux := &struct {
-		Index                string `json:"index"`
-		FirstBlock           string `json:"first_block"`
-		LastBlock            string `json:"last_block"`
-		InputIndexLowerBound string `json:"input_index_lower_bound"`
-		InputIndexUpperBound string `json:"input_index_upper_bound"`
-		VirtualIndex         string `json:"virtual_index"`
+		Index                string  `json:"index"`
+		FirstBlock           string  `json:"first_block"`
+		LastBlock            string  `json:"last_block"`
+		InputIndexLowerBound string  `json:"input_index_lower_bound"`
+		InputIndexUpperBound string  `json:"input_index_upper_bound"`
+		StagedAtBlock        *string `json:"staged_at_block"`
+		VirtualIndex         string  `json:"virtual_index"`
 		*Alias
 	}{
 		Index:                fmt.Sprintf("0x%x", e.Index),
@@ -621,6 +812,10 @@ func (e *Epoch) MarshalJSON() ([]byte, error) {
 		VirtualIndex:         fmt.Sprintf("0x%x", e.VirtualIndex),
 		Alias:                (*Alias)(e),
 	}
+	if e.StagedAtBlock != nil {
+		s := fmt.Sprintf("0x%x", *e.StagedAtBlock)
+		aux.StagedAtBlock = &s
+	}
 	return json.Marshal(aux)
 }
 
@@ -629,12 +824,13 @@ func (e *Epoch) UnmarshalJSON(in []byte) error {
 	aux := &struct {
 		*Alias
 
-		Index                string `json:"index"`
-		FirstBlock           string `json:"first_block"`
-		LastBlock            string `json:"last_block"`
-		InputIndexLowerBound string `json:"input_index_lower_bound"`
-		InputIndexUpperBound string `json:"input_index_upper_bound"`
-		VirtualIndex         string `json:"virtual_index"`
+		Index                string  `json:"index"`
+		FirstBlock           string  `json:"first_block"`
+		LastBlock            string  `json:"last_block"`
+		InputIndexLowerBound string  `json:"input_index_lower_bound"`
+		InputIndexUpperBound string  `json:"input_index_upper_bound"`
+		StagedAtBlock        *string `json:"staged_at_block"`
+		VirtualIndex         string  `json:"virtual_index"`
 	}{}
 
 	var err error
@@ -671,6 +867,14 @@ func (e *Epoch) UnmarshalJSON(in []byte) error {
 		return err
 	}
 
+	if aux.StagedAtBlock != nil {
+		v, err := ParseHexUint64(*aux.StagedAtBlock)
+		if err != nil {
+			return err
+		}
+		e.StagedAtBlock = &v
+	}
+
 	e.VirtualIndex, err = ParseHexUint64(aux.VirtualIndex)
 	if err != nil {
 		return err
@@ -687,8 +891,10 @@ const (
 	EpochStatus_InputsProcessed EpochStatus = "INPUTS_PROCESSED"
 	EpochStatus_ClaimComputed   EpochStatus = "CLAIM_COMPUTED"
 	EpochStatus_ClaimSubmitted  EpochStatus = "CLAIM_SUBMITTED"
+	EpochStatus_ClaimStaged     EpochStatus = "CLAIM_STAGED"
 	EpochStatus_ClaimAccepted   EpochStatus = "CLAIM_ACCEPTED"
 	EpochStatus_ClaimRejected   EpochStatus = "CLAIM_REJECTED"
+	EpochStatus_ClaimForeclosed EpochStatus = "CLAIM_FORECLOSED"
 )
 
 var EpochStatusAllValues = []EpochStatus{
@@ -697,8 +903,10 @@ var EpochStatusAllValues = []EpochStatus{
 	EpochStatus_InputsProcessed,
 	EpochStatus_ClaimComputed,
 	EpochStatus_ClaimSubmitted,
+	EpochStatus_ClaimStaged,
 	EpochStatus_ClaimAccepted,
 	EpochStatus_ClaimRejected,
+	EpochStatus_ClaimForeclosed,
 }
 
 func (e *EpochStatus) Scan(value any) error {
@@ -723,10 +931,14 @@ func (e *EpochStatus) Scan(value any) error {
 		*e = EpochStatus_ClaimComputed
 	case "CLAIM_SUBMITTED":
 		*e = EpochStatus_ClaimSubmitted
+	case "CLAIM_STAGED":
+		*e = EpochStatus_ClaimStaged
 	case "CLAIM_ACCEPTED":
 		*e = EpochStatus_ClaimAccepted
 	case "CLAIM_REJECTED":
 		*e = EpochStatus_ClaimRejected
+	case "CLAIM_FORECLOSED":
+		*e = EpochStatus_ClaimForeclosed
 	default:
 		return errors.New("invalid value '" + enumValue + "' for EpochStatus enum")
 	}
@@ -952,6 +1164,90 @@ func (o *Output) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// Withdrawal records a Withdrawal(uint64 accountIndex, bytes account, bytes output)
+// event emitted by an IApplication after the accounts drive has been proved.
+// The node observes these only for applications with a non-zero ForecloseBlock
+// and AccountsDriveProvedBlock; evmreader uses a FindTransitions scan on the
+// on-chain getNumberOfWithdrawals counter to detect them. The contract marks
+// each accountIndex as withdrawn, so the event fires at most once per slot.
+//
+// Account and Output are stored as raw bytes — the recipient encoding inside
+// Account is defined by the per-app WithdrawalOutputBuilder and is opaque to
+// the node. LogIndex is preserved (despite not being part of the primary key)
+// so audits can locate the exact log on chain without re-querying.
+type Withdrawal struct {
+	ApplicationID   int64       `sql:"primary_key" json:"-"`
+	AccountIndex    uint64      `sql:"primary_key" json:"account_index"`
+	Account         []byte      `json:"account"`
+	Output          []byte      `json:"output"`
+	BlockNumber     uint64      `json:"block_number"`
+	TransactionHash common.Hash `json:"transaction_hash"`
+	LogIndex        uint        `json:"log_index"`
+	CreatedAt       time.Time   `json:"created_at"`
+	UpdatedAt       time.Time   `json:"updated_at"`
+}
+
+func (w *Withdrawal) MarshalJSON() ([]byte, error) {
+	type Alias Withdrawal
+	aux := &struct {
+		AccountIndex string `json:"account_index"`
+		Account      string `json:"account"`
+		Output       string `json:"output"`
+		BlockNumber  string `json:"block_number"`
+		LogIndex     string `json:"log_index"`
+		*Alias
+	}{
+		AccountIndex: fmt.Sprintf("0x%x", w.AccountIndex),
+		Account:      "0x" + hex.EncodeToString(w.Account),
+		Output:       "0x" + hex.EncodeToString(w.Output),
+		BlockNumber:  fmt.Sprintf("0x%x", w.BlockNumber),
+		LogIndex:     fmt.Sprintf("0x%x", w.LogIndex),
+		Alias:        (*Alias)(w),
+	}
+	return json.Marshal(aux)
+}
+
+func (w *Withdrawal) UnmarshalJSON(data []byte) error {
+	type Alias Withdrawal
+	aux := &struct {
+		AccountIndex string `json:"account_index"`
+		Account      string `json:"account"`
+		Output       string `json:"output"`
+		BlockNumber  string `json:"block_number"`
+		LogIndex     string `json:"log_index"`
+		*Alias
+	}{Alias: (*Alias)(w)}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	*w = Withdrawal(*aux.Alias)
+
+	var err error
+	w.AccountIndex, err = ParseHexUint64(aux.AccountIndex)
+	if err != nil {
+		return fmt.Errorf("error on AccountIndex: %w", err)
+	}
+	w.Account, err = hexutil.Decode(aux.Account)
+	if err != nil {
+		return fmt.Errorf("error on Account: %w", err)
+	}
+	w.Output, err = hexutil.Decode(aux.Output)
+	if err != nil {
+		return fmt.Errorf("error on Output: %w", err)
+	}
+	w.BlockNumber, err = ParseHexUint64(aux.BlockNumber)
+	if err != nil {
+		return fmt.Errorf("error on BlockNumber: %w", err)
+	}
+	logIndex, err := ParseHexUint64(aux.LogIndex)
+	if err != nil {
+		return fmt.Errorf("error on LogIndex: %w", err)
+	}
+	w.LogIndex = uint(logIndex)
+	return nil
+}
+
 type Report struct {
 	InputEpochApplicationID int64     `sql:"primary_key" json:"-"`
 	EpochIndex              uint64    `json:"epoch_index"`
@@ -1106,16 +1402,19 @@ func (e DefaultBlock) String() string {
 type MonitoredEvent string
 
 const (
-	MonitoredEvent_InputAdded         MonitoredEvent = "InputAdded"
-	MonitoredEvent_OutputExecuted     MonitoredEvent = "OutputExecuted"
-	MonitoredEvent_ClaimSubmitted     MonitoredEvent = "ClaimSubmitted"
-	MonitoredEvent_ClaimAccepted      MonitoredEvent = "ClaimAccepted"
-	MonitoredEvent_EpochSealed        MonitoredEvent = "EpochSealed"
-	MonitoredEvent_CommitmentJoined   MonitoredEvent = "CommitmentJoined"
-	MonitoredEvent_MatchAdvanced      MonitoredEvent = "MatchAdvanced"
-	MonitoredEvent_MatchCreated       MonitoredEvent = "MatchCreated"
-	MonitoredEvent_MatchDeleted       MonitoredEvent = "MatchDeleted"
-	MonitoredEvent_NewInnerTournament MonitoredEvent = "NewInnerTournament"
+	MonitoredEvent_InputAdded                    MonitoredEvent = "InputAdded"
+	MonitoredEvent_OutputExecuted                MonitoredEvent = "OutputExecuted"
+	MonitoredEvent_Foreclosure                   MonitoredEvent = "Foreclosure"
+	MonitoredEvent_Withdrawal                    MonitoredEvent = "Withdrawal"
+	MonitoredEvent_AccountsDriveMerkleRootProved MonitoredEvent = "AccountsDriveMerkleRootProved"
+	MonitoredEvent_ClaimSubmitted                MonitoredEvent = "ClaimSubmitted"
+	MonitoredEvent_ClaimAccepted                 MonitoredEvent = "ClaimAccepted"
+	MonitoredEvent_EpochSealed                   MonitoredEvent = "EpochSealed"
+	MonitoredEvent_CommitmentJoined              MonitoredEvent = "CommitmentJoined"
+	MonitoredEvent_MatchAdvanced                 MonitoredEvent = "MatchAdvanced"
+	MonitoredEvent_MatchCreated                  MonitoredEvent = "MatchCreated"
+	MonitoredEvent_MatchDeleted                  MonitoredEvent = "MatchDeleted"
+	MonitoredEvent_NewInnerTournament            MonitoredEvent = "NewInnerTournament"
 )
 
 func (e MonitoredEvent) String() string {

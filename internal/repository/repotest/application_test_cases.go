@@ -72,8 +72,11 @@ func (s *ApplicationSuite) TestGetApplication() {
 		s.Equal(app.IInputBoxAddress, got.IInputBoxAddress)
 		s.Equal(app.TemplateHash, got.TemplateHash)
 		s.Equal(app.EpochLength, got.EpochLength)
+		s.Equal(app.ClaimStagingPeriod, got.ClaimStagingPeriod)
+		s.Equal(app.WithdrawalConfig, got.WithdrawalConfig)
 		s.Equal(app.ConsensusType, got.ConsensusType)
-		s.Equal(app.State, got.State)
+		s.Equal(app.Enabled, got.Enabled)
+		s.Equal(app.Status, got.Status)
 		s.Equal(app.DataAvailability, got.DataAvailability)
 		s.False(got.CreatedAt.IsZero(), "CreatedAt should be set")
 		s.False(got.UpdatedAt.IsZero(), "UpdatedAt should be set")
@@ -115,21 +118,23 @@ func (s *ApplicationSuite) TestListApplications() {
 		s.Equal(uint64(3), total)
 	})
 
-	s.Run("FilterByState", func() {
-		NewApplicationBuilder().WithState(ApplicationState_Enabled).Create(s.Ctx, s.T(), s.Repo)
-		NewApplicationBuilder().WithState(ApplicationState_Disabled).Create(s.Ctx, s.T(), s.Repo)
+	s.Run("FilterByStatus", func() {
+		NewApplicationBuilder().WithStatus(ApplicationStatus_OK).Create(s.Ctx, s.T(), s.Repo)
+		failed := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		reason := "machine crashed"
+		s.Require().NoError(s.Repo.UpdateApplicationStatus(s.Ctx, failed.ID, ApplicationStatus_Failed, &reason))
 
-		state := ApplicationState_Enabled
+		status := ApplicationStatus_OK
 		apps, total, err := s.Repo.ListApplications(
 			s.Ctx,
-			repository.ApplicationFilter{State: &state},
+			repository.ApplicationFilter{Status: &status},
 			repository.Pagination{Limit: 10},
 			false,
 		)
 		s.Require().NoError(err)
 		s.Len(apps, 1)
 		s.Equal(uint64(1), total)
-		s.Equal(ApplicationState_Enabled, apps[0].State)
+		s.Equal(ApplicationStatus_OK, apps[0].Status)
 	})
 
 	s.Run("FilterByConsensus", func() {
@@ -214,29 +219,31 @@ func (s *ApplicationSuite) TestListApplications() {
 	})
 
 	s.Run("CombinedFilters", func() {
-		// Create apps with different combinations of state, consensus, and DA
+		// Create apps with different combinations of enabled flag, status, consensus, and DA.
 		NewApplicationBuilder().
-			WithState(ApplicationState_Enabled).
+			WithStatus(ApplicationStatus_OK).
 			WithConsensus(Consensus_Authority).
 			WithDataAvailability(DataAvailability_InputBox[:]).
 			Create(s.Ctx, s.T(), s.Repo)
 		NewApplicationBuilder().
-			WithState(ApplicationState_Enabled).
+			WithStatus(ApplicationStatus_OK).
 			WithConsensus(Consensus_PRT).
 			WithDataAvailability(DataAvailability_InputBox[:]).
 			Create(s.Ctx, s.T(), s.Repo)
 		NewApplicationBuilder().
-			WithState(ApplicationState_Disabled).
+			WithEnabled(false).
 			WithConsensus(Consensus_Authority).
 			WithDataAvailability(DataAvailability_InputBox[:]).
 			Create(s.Ctx, s.T(), s.Repo)
 
-		state := ApplicationState_Enabled
+		enabled := true
+		status := ApplicationStatus_OK
 		consensus := Consensus_Authority
 		apps, total, err := s.Repo.ListApplications(
 			s.Ctx,
 			repository.ApplicationFilter{
-				State:         &state,
+				Enabled:       &enabled,
+				Status:        &status,
 				ConsensusType: &consensus,
 			},
 			repository.Pagination{Limit: 10},
@@ -245,28 +252,58 @@ func (s *ApplicationSuite) TestListApplications() {
 		s.Require().NoError(err)
 		s.Len(apps, 1)
 		s.Equal(uint64(1), total)
-		s.Equal(ApplicationState_Enabled, apps[0].State)
+		s.Equal(ApplicationStatus_OK, apps[0].Status)
 		s.Equal(Consensus_Authority, apps[0].ConsensusType)
+	})
+
+	// FilterByForeclosureRecorded pins the SQL behind the
+	// listEnabledForeclosedNonPRTApps query: ForecloseBlock > 0 selects only
+	// apps the evmreader has observed as foreclosed. An IS_NULL/IS_NOT_NULL
+	// swap or a GT/EQ swap in the SQL would silently disable the drain-from-
+	// idle path; the assertions here catch both directions.
+	s.Run("FilterByForeclosureRecorded", func() {
+		foreclosed := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		s.Require().NoError(s.Repo.UpdateApplicationForeclosure(
+			s.Ctx, foreclosed.ID, 1234, UniqueHash(), 1234))
+		_ = NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo) // not foreclosed
+
+		yes := true
+		got, total, err := s.Repo.ListApplications(s.Ctx,
+			repository.ApplicationFilter{ForeclosureRecorded: &yes},
+			repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Len(got, 1)
+		s.Equal(uint64(1), total)
+		s.Equal(foreclosed.ID, got[0].ID)
+
+		no := false
+		got, total, err = s.Repo.ListApplications(s.Ctx,
+			repository.ApplicationFilter{ForeclosureRecorded: &no},
+			repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Len(got, 1)
+		s.Equal(uint64(1), total)
+		s.NotEqual(foreclosed.ID, got[0].ID)
 	})
 
 	s.Run("CombinedStateAndDataAvailability", func() {
 		NewApplicationBuilder().
-			WithState(ApplicationState_Enabled).
+			WithStatus(ApplicationStatus_OK).
 			WithDataAvailability(DataAvailability_InputBox[:]).
 			Create(s.Ctx, s.T(), s.Repo)
 
 		otherDA := DataAvailabilitySelector{0xaa, 0xbb, 0xcc, 0xdd}
 		NewApplicationBuilder().
-			WithState(ApplicationState_Enabled).
+			WithStatus(ApplicationStatus_OK).
 			WithDataAvailability(otherDA[:]).
 			Create(s.Ctx, s.T(), s.Repo)
 
-		state := ApplicationState_Enabled
+		status := ApplicationStatus_OK
 		da := DataAvailability_InputBox
 		apps, total, err := s.Repo.ListApplications(
 			s.Ctx,
 			repository.ApplicationFilter{
-				State:            &state,
+				Status:           &status,
 				DataAvailability: &da,
 			},
 			repository.Pagination{Limit: 10},
@@ -279,164 +316,358 @@ func (s *ApplicationSuite) TestListApplications() {
 	})
 }
 
-func (s *ApplicationSuite) TestUpdateApplicationState() {
-	s.Run("UpdatesState", func() {
+func (s *ApplicationSuite) TestUpdateApplicationStatus() {
+	s.Run("UpdatesStatus", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
-		s.Equal(ApplicationState_Enabled, app.State)
+		s.Equal(ApplicationStatus_OK, app.Status)
 
-		err := s.Repo.UpdateApplicationState(s.Ctx, app.ID, ApplicationState_Disabled, nil)
+		reason := "machine crashed"
+		err := s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, ApplicationStatus_Failed, &reason)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Disabled, got.State)
-		s.Nil(got.Reason)
+		s.Equal(ApplicationStatus_Failed, got.Status)
+		s.Require().NotNil(got.Reason)
+		s.Equal(reason, *got.Reason)
 	})
 
-	s.Run("TriggerClearsReasonOnEnabled", func() {
-		// Even if a reason is passed, the DB trigger clears it for ENABLED/DISABLED states
+	s.Run("TriggerClearsReasonOnOK", func() {
+		// Even if a reason is passed, the DB trigger clears it for OK status.
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 
 		// First set to FAILED with a reason
 		reason := "machine crash"
-		err := s.Repo.UpdateApplicationState(s.Ctx, app.ID, ApplicationState_Failed, &reason)
+		err := s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, ApplicationStatus_Failed, &reason)
 		s.Require().NoError(err)
 
-		// Re-enable with a stale reason — trigger should clear it
+		// Recover to OK with a stale reason — trigger should clear it.
 		staleReason := "should be cleared"
-		err = s.Repo.UpdateApplicationState(s.Ctx, app.ID, ApplicationState_Enabled, &staleReason)
+		err = s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, ApplicationStatus_OK, &staleReason)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Enabled, got.State)
+		s.Equal(ApplicationStatus_OK, got.Status)
 		s.Nil(got.Reason)
+	})
+
+	s.Run("MissingApplicationReturnsNotFound", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		err := s.Repo.DeleteApplication(s.Ctx, app.ID)
+		s.Require().NoError(err)
+
+		reason := "missing app"
+		err = s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, ApplicationStatus_Failed, &reason)
+		s.Require().ErrorIs(err, repository.ErrNotFound)
 	})
 }
 
-func (s *ApplicationSuite) TestInoperableIsTerminal() {
-	// helper: create an app and transition it to INOPERABLE via UpdateApplicationState.
-	makeInoperable := func(reason string) *Application {
+func (s *ApplicationSuite) TestUpdateApplicationEnabled() {
+	s.Run("UpdatesOnlyEnabledFlag", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+
+		err := s.Repo.UpdateApplicationEnabled(s.Ctx, app.ID, false)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.False(got.Enabled)
+		s.Equal(ApplicationStatus_OK, got.Status)
+	})
+
+	s.Run("ReturnsNotFoundWhenRowMissing", func() {
+		err := s.Repo.UpdateApplicationEnabled(s.Ctx, int64(99_999_999), false)
+		s.Require().ErrorIs(err, repository.ErrNotFound)
+	})
+}
+
+func (s *ApplicationSuite) TestEnableApplicationAndClearFailed() {
+	s.Run("ClearsFailedStatusAndReason", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		s.Require().NoError(s.Repo.UpdateApplicationEnabled(s.Ctx, app.ID, false))
+		reason := "machine crashed"
+		s.Require().NoError(s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, ApplicationStatus_Failed, &reason))
+
+		err := s.Repo.EnableApplicationAndClearFailed(s.Ctx, app.ID)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.True(got.Enabled)
+		s.Equal(ApplicationStatus_OK, got.Status)
+		s.Nil(got.Reason)
+	})
+
+	s.Run("DoesNotClearCorrupted", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		s.Require().NoError(s.Repo.UpdateApplicationEnabled(s.Ctx, app.ID, false))
+		reason := "corruption"
+		s.Require().NoError(s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, ApplicationStatus_Corrupted, &reason))
+
+		err := s.Repo.EnableApplicationAndClearFailed(s.Ctx, app.ID)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.True(got.Enabled)
+		s.Equal(ApplicationStatus_Corrupted, got.Status)
+		s.Require().NotNil(got.Reason)
+		s.Equal(reason, *got.Reason)
+	})
+
+	s.Run("DoesNotClearDiverged", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		s.Require().NoError(s.Repo.UpdateApplicationEnabled(s.Ctx, app.ID, false))
+		reason := "claim disagreement"
+		s.Require().NoError(s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, ApplicationStatus_Diverged, &reason))
+
+		err := s.Repo.EnableApplicationAndClearFailed(s.Ctx, app.ID)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.True(got.Enabled)
+		s.Equal(ApplicationStatus_Diverged, got.Status)
+		s.Require().NotNil(got.Reason)
+		s.Equal(reason, *got.Reason)
+	})
+
+	s.Run("ReturnsNotFoundWhenRowMissing", func() {
+		err := s.Repo.EnableApplicationAndClearFailed(s.Ctx, int64(99_999_999))
+		s.Require().ErrorIs(err, repository.ErrNotFound)
+	})
+}
+
+func (s *ApplicationSuite) TestTerminalStatusIsTerminal() {
+	// helper: create an app and transition it to the given terminal status via
+	// UpdateApplicationStatus.
+	makeTerminal := func(status ApplicationStatus, reason string) *Application {
 		s.T().Helper()
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Inoperable, &reason)
+		err := s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, status, &reason)
 		s.Require().NoError(err)
 		return app
 	}
 
-	s.Run("CannotChangeStateFromInoperable", func() {
-		reason := "irrecoverable error"
-		app := makeInoperable(reason)
+	terminalStatuses := []ApplicationStatus{
+		ApplicationStatus_Diverged,
+		ApplicationStatus_Corrupted,
+	}
 
-		newReason := "re-enabling"
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Enabled, &newReason)
-		s.Require().Error(err)
-		s.Contains(err.Error(), "INOPERABLE")
+	for _, status := range terminalStatuses {
+		s.Run(string(status)+"CannotChangeStatus", func() {
+			reason := "irrecoverable error"
+			app := makeTerminal(status, reason)
 
-		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
-		s.Require().NoError(err)
-		s.Equal(ApplicationState_Inoperable, got.State)
-		s.Require().NotNil(got.Reason)
-		s.Equal(reason, *got.Reason)
-	})
+			newReason := "re-enabling"
+			err := s.Repo.UpdateApplicationStatus(
+				s.Ctx, app.ID, ApplicationStatus_OK, &newReason)
+			s.Require().Error(err)
+			s.Contains(err.Error(), string(status))
 
-	s.Run("CannotChangeReasonFromInoperable", func() {
-		reason := "original reason"
-		app := makeInoperable(reason)
+			got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+			s.Require().NoError(err)
+			s.Equal(status, got.Status)
+			s.Require().NotNil(got.Reason)
+			s.Equal(reason, *got.Reason)
+		})
 
-		newReason := "different reason"
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Inoperable, &newReason)
-		s.Require().Error(err)
+		s.Run(string(status)+"CannotChangeReason", func() {
+			reason := "original reason"
+			app := makeTerminal(status, reason)
 
-		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
-		s.Require().NoError(err)
-		s.Require().NotNil(got.Reason)
-		s.Equal(reason, *got.Reason)
-	})
+			newReason := "different reason"
+			err := s.Repo.UpdateApplicationStatus(
+				s.Ctx, app.ID, status, &newReason)
+			s.Require().Error(err)
 
-	s.Run("CanSetToInoperableFromOtherStates", func() {
+			got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+			s.Require().NoError(err)
+			s.Require().NotNil(got.Reason)
+			s.Equal(reason, *got.Reason)
+		})
+
+		s.Run(string(status)+"CanBeSetFromOtherStates", func() {
+			app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+
+			reason := "fatal error"
+			err := s.Repo.UpdateApplicationStatus(
+				s.Ctx, app.ID, status, &reason)
+			s.Require().NoError(err)
+
+			got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+			s.Require().NoError(err)
+			s.Equal(status, got.Status)
+			s.Require().NotNil(got.Reason)
+			s.Equal(reason, *got.Reason)
+		})
+
+		s.Run(string(status)+"ToSameStateAndReasonIsNoOp", func() {
+			reason := "irrecoverable"
+			app := makeTerminal(status, reason)
+
+			err := s.Repo.UpdateApplicationStatus(
+				s.Ctx, app.ID, status, &reason)
+			s.Require().NoError(err)
+
+			got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+			s.Require().NoError(err)
+			s.Equal(status, got.Status)
+			s.Require().NotNil(got.Reason)
+			s.Equal(reason, *got.Reason)
+		})
+	}
+}
+
+func (s *ApplicationSuite) TestForeclosedCanBecomeTerminal() {
+	s.Run("Diverged", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		block := uint64(1234)
+		s.Require().NoError(s.Repo.UpdateApplicationForeclosure(s.Ctx, app.ID, block, UniqueHash(), block))
 
-		reason := "fatal error"
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Inoperable, &reason)
+		reason := "post-foreclosure claim disagreement"
+		err := s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, ApplicationStatus_Diverged, &reason)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Inoperable, got.State)
+		s.Equal(ApplicationStatus_Diverged, got.Status)
+		s.True(got.IsForeclosed())
+		s.Equal(block, got.ForecloseBlock)
 		s.Require().NotNil(got.Reason)
 		s.Equal(reason, *got.Reason)
 	})
 
-	s.Run("InoperableToSameStateAndReasonIsNoOp", func() {
-		reason := "irrecoverable"
-		app := makeInoperable(reason)
+	s.Run("Corrupted", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		block := uint64(1234)
+		s.Require().NoError(s.Repo.UpdateApplicationForeclosure(s.Ctx, app.ID, block, UniqueHash(), block))
 
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Inoperable, &reason)
+		reason := "post-foreclosure replay mismatch"
+		err := s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, ApplicationStatus_Corrupted, &reason)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Inoperable, got.State)
+		s.Equal(ApplicationStatus_Corrupted, got.Status)
+		s.True(got.IsForeclosed())
+		s.Equal(block, got.ForecloseBlock)
 		s.Require().NotNil(got.Reason)
 		s.Equal(reason, *got.Reason)
 	})
 }
 
-func (s *ApplicationSuite) TestFailedStateLifecycle() {
+// TestForeclosedCanBecomeFailed verifies that a foreclosed application (one
+// with a non-zero foreclose_block) can still transition to FAILED with a
+// reason; the row then reads FAILED with foreclose_block preserved. Health
+// status and foreclosure live in independent columns.
+func (s *ApplicationSuite) TestForeclosedCanBecomeFailed() {
+	s.Run("Ok", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		block := uint64(1234)
+		s.Require().NoError(s.Repo.UpdateApplicationForeclosure(s.Ctx, app.ID, block, UniqueHash(), block))
+
+		reason := "machine crashed after foreclosure"
+		err := s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, ApplicationStatus_Failed, &reason)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(ApplicationStatus_Failed, got.Status)
+		s.True(got.IsForeclosed())
+		s.Equal(block, got.ForecloseBlock)
+		s.Require().NotNil(got.Reason)
+		s.Equal(reason, *got.Reason)
+	})
+}
+
+// TestApplicationStatusTriggerInvariants pins the application trigger
+// invariants exercised through the Repository interface: foreclosure is
+// one-way (a repeated call with block 0 is an idempotent no-op that leaves the
+// recorded block intact), and returning health to OK clears a stale reason.
+func (s *ApplicationSuite) TestApplicationStatusTriggerInvariants() {
+	s.Run("ForecloseBlockSurvivesIdempotentZeroCall", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		block := uint64(4242)
+		s.Require().NoError(s.Repo.UpdateApplicationForeclosure(s.Ctx, app.ID, block, UniqueHash(), block))
+
+		// A second foreclosure call is guarded on foreclose_block = 0, so it
+		// cannot overwrite the recorded block back to zero.
+		s.Require().NoError(s.Repo.UpdateApplicationForeclosure(s.Ctx, app.ID, 0, UniqueHash(), block))
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(block, got.ForecloseBlock)
+		s.True(got.IsForeclosed())
+	})
+
+	s.Run("StatusToOKClearsReason", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		reason := "machine crashed"
+		s.Require().NoError(s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, ApplicationStatus_Failed, &reason))
+
+		err := s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, ApplicationStatus_OK, &reason)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(ApplicationStatus_OK, got.Status)
+		s.Nil(got.Reason)
+	})
+}
+
+func (s *ApplicationSuite) TestFailedStatusLifecycle() {
 	// helper: create an app and transition it to FAILED.
 	makeFailed := func(reason string) *Application {
 		s.T().Helper()
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Failed, &reason)
+		err := s.Repo.UpdateApplicationStatus(
+			s.Ctx, app.ID, ApplicationStatus_Failed, &reason)
 		s.Require().NoError(err)
 		return app
 	}
 
-	s.Run("CanReEnableFromFailed", func() {
+	s.Run("CanRecoverFromFailed", func() {
 		reason := "machine crashed"
 		app := makeFailed(reason)
 
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Enabled, nil)
+		err := s.Repo.UpdateApplicationStatus(
+			s.Ctx, app.ID, ApplicationStatus_OK, nil)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Enabled, got.State)
+		s.Equal(ApplicationStatus_OK, got.Status)
 		s.Nil(got.Reason)
 	})
 
-	s.Run("CanDisableFromFailed", func() {
-		reason := "process crash"
-		app := makeFailed(reason)
-
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Disabled, nil)
-		s.Require().NoError(err)
-
-		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
-		s.Require().NoError(err)
-		s.Equal(ApplicationState_Disabled, got.State)
-	})
-
-	s.Run("CanEscalateFromFailedToInoperable", func() {
+	s.Run("CanEscalateFromFailedToCorrupted", func() {
 		app := makeFailed("machine error")
 
 		reason := "data corruption detected"
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Inoperable, &reason)
+		err := s.Repo.UpdateApplicationStatus(
+			s.Ctx, app.ID, ApplicationStatus_Corrupted, &reason)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Inoperable, got.State)
+		s.Equal(ApplicationStatus_Corrupted, got.Status)
+		s.Require().NotNil(got.Reason)
+		s.Equal(reason, *got.Reason)
+	})
+
+	s.Run("CanEscalateFromFailedToDiverged", func() {
+		app := makeFailed("machine error")
+
+		reason := "claim disagreement detected"
+		err := s.Repo.UpdateApplicationStatus(
+			s.Ctx, app.ID, ApplicationStatus_Diverged, &reason)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(ApplicationStatus_Diverged, got.Status)
 		s.Require().NotNil(got.Reason)
 		s.Equal(reason, *got.Reason)
 	})
@@ -444,13 +675,13 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 	s.Run("ReasonClearedOnReEnable", func() {
 		app := makeFailed("OOM kill")
 
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Enabled, nil)
+		err := s.Repo.UpdateApplicationStatus(
+			s.Ctx, app.ID, ApplicationStatus_OK, nil)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Enabled, got.State)
+		s.Equal(ApplicationStatus_OK, got.Status)
 		s.Nil(got.Reason)
 	})
 
@@ -458,71 +689,48 @@ func (s *ApplicationSuite) TestFailedStateLifecycle() {
 		app := makeFailed("first crash")
 
 		newReason := "second crash: different error"
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Failed, &newReason)
+		err := s.Repo.UpdateApplicationStatus(
+			s.Ctx, app.ID, ApplicationStatus_Failed, &newReason)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Failed, got.State)
+		s.Equal(ApplicationStatus_Failed, got.Status)
 		s.Require().NotNil(got.Reason)
 		s.Equal(newReason, *got.Reason)
 	})
 
 	s.Run("FullRecoveryCycle", func() {
-		// ENABLED -> FAILED -> ENABLED -> FAILED (verify full cycle works)
+		// OK -> FAILED -> OK -> FAILED (verify full cycle works)
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 
 		// First failure
 		reason1 := "crash 1"
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Failed, &reason1)
+		err := s.Repo.UpdateApplicationStatus(
+			s.Ctx, app.ID, ApplicationStatus_Failed, &reason1)
 		s.Require().NoError(err)
 
-		// Re-enable
-		err = s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Enabled, nil)
+		// Recover to OK.
+		err = s.Repo.UpdateApplicationStatus(
+			s.Ctx, app.ID, ApplicationStatus_OK, nil)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Enabled, got.State)
+		s.Equal(ApplicationStatus_OK, got.Status)
 		s.Nil(got.Reason)
 
 		// Second failure
 		reason2 := "crash 2"
-		err = s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Failed, &reason2)
+		err = s.Repo.UpdateApplicationStatus(
+			s.Ctx, app.ID, ApplicationStatus_Failed, &reason2)
 		s.Require().NoError(err)
 
 		got, err = s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
-		s.Equal(ApplicationState_Failed, got.State)
+		s.Equal(ApplicationStatus_Failed, got.Status)
 		s.Require().NotNil(got.Reason)
 		s.Equal(reason2, *got.Reason)
-	})
-}
-
-func (s *ApplicationSuite) TestDisabledToFailedBlocked() {
-	s.Run("CannotTransitionFromDisabledToFailed", func() {
-		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
-
-		// First disable the app
-		err := s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Disabled, nil)
-		s.Require().NoError(err)
-
-		// Attempt DISABLED -> FAILED should be blocked by trigger
-		reason := "should not work"
-		err = s.Repo.UpdateApplicationState(
-			s.Ctx, app.ID, ApplicationState_Failed, &reason)
-		s.Require().Error(err)
-		s.Contains(err.Error(), "DISABLED")
-
-		// Verify state unchanged
-		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
-		s.Require().NoError(err)
-		s.Equal(ApplicationState_Disabled, got.State)
 	})
 }
 
@@ -717,6 +925,330 @@ func (s *ApplicationSuite) TestUpdateApplication() {
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
 		s.Equal(uint64(20), got.EpochLength)
+	})
+
+	// UpdateApplication must not touch status or foreclosure columns. Those
+	// fields are owned by UpdateApplicationStatus and the atomic foreclosure
+	// marker+cursor write. If UpdateApplication's column list ever re-includes
+	// them, a caller with a stale in-memory app could silently clear the marker
+	// or move the app back to OK while changing unrelated configuration.
+	s.Run("DoesNotClobberStatusOrForecloseColumns", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+
+		block := uint64(12345)
+		txHash := crypto.Keccak256Hash([]byte("foreclose-tx"))
+		err := s.Repo.UpdateApplicationForeclosure(s.Ctx, app.ID, block, txHash, block)
+		s.Require().NoError(err)
+
+		// Mutate an unrelated field on an in-memory copy whose
+		// ForecloseBlock / ForecloseTransaction are zero (simulating a caller
+		// that reads, modifies, and writes back without first refreshing the
+		// foreclosure status). UpdateApplication must leave the persisted
+		// foreclose columns alone.
+		app.EpochLength = 77
+		s.Require().Zero(app.ForecloseBlock)
+		s.Require().Nil(app.ForecloseTransaction)
+		err = s.Repo.UpdateApplication(s.Ctx, app)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(uint64(77), got.EpochLength)
+		s.Require().NotZero(got.ForecloseBlock, "foreclose_block must not be cleared by UpdateApplication")
+		s.Equal(block, got.ForecloseBlock)
+		s.Require().NotNil(got.ForecloseTransaction)
+		s.Equal(txHash, *got.ForecloseTransaction)
+		s.True(got.IsForeclosed())
+	})
+
+	s.Run("DoesNotClobberServiceProgressOrEnabled", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+		app := seed.App
+		s.Require().NoError(s.Repo.UpdateApplicationEnabled(s.Ctx, app.ID, false))
+		s.Require().NoError(s.Repo.UpdateEventLastCheckBlock(
+			s.Ctx, []int64{app.ID}, MonitoredEvent_InputAdded, 42))
+		s.Require().NoError(s.Repo.UpdateEventLastCheckBlock(
+			s.Ctx, []int64{app.ID}, MonitoredEvent_OutputExecuted, 43))
+		s.Require().NoError(s.Repo.StoreAdvanceResult(s.Ctx, app.ID, &AdvanceResult{
+			EpochIndex: 0,
+			InputIndex: 0,
+			Status:     InputCompletionStatus_Accepted,
+			OutputsProof: OutputsProof{
+				MachineHash: crypto.Keccak256Hash([]byte("machine")),
+			},
+		}))
+
+		app.EpochLength = 33
+		app.Enabled = true
+		app.LastInputCheckBlock = 0
+		app.LastOutputCheckBlock = 0
+		app.ProcessedInputs = 0
+		err := s.Repo.UpdateApplication(s.Ctx, app)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(uint64(33), got.EpochLength)
+		s.False(got.Enabled)
+		s.Equal(uint64(42), got.LastInputCheckBlock)
+		s.Equal(uint64(43), got.LastOutputCheckBlock)
+		s.Equal(uint64(1), got.ProcessedInputs)
+	})
+
+	s.Run("ReturnsNotFoundWhenRowMissing", func() {
+		app := NewApplicationBuilder().Build()
+		app.ID = int64(99_999_999)
+		err := s.Repo.UpdateApplication(s.Ctx, app)
+		s.Require().ErrorIs(err, repository.ErrNotFound)
+	})
+}
+
+func (s *ApplicationSuite) TestUpdateApplicationForeclosure() {
+	s.Run("WritesMarkerAndCursor", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		block := uint64(1234)
+		head := uint64(1500)
+		txHash := UniqueHash()
+
+		err := s.Repo.UpdateApplicationForeclosure(s.Ctx, app.ID, block, txHash, head)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(block, got.ForecloseBlock)
+		s.Require().NotNil(got.ForecloseTransaction)
+		s.Equal(txHash, *got.ForecloseTransaction)
+		s.Equal(head, got.LastForecloseCheckBlock)
+		s.True(got.IsForeclosed())
+		s.Equal(ApplicationStatus_OK, got.Status)
+		s.Nil(got.Reason)
+	})
+
+	s.Run("PreservesTerminalStatusAndReason", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		reason := "divergent claim observed"
+		err := s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, ApplicationStatus_Diverged, &reason)
+		s.Require().NoError(err)
+
+		block := uint64(1234)
+		head := uint64(1500)
+		txHash := UniqueHash()
+		err = s.Repo.UpdateApplicationForeclosure(s.Ctx, app.ID, block, txHash, head)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(block, got.ForecloseBlock)
+		s.Equal(head, got.LastForecloseCheckBlock)
+		s.True(got.IsForeclosed())
+		s.Equal(ApplicationStatus_Diverged, got.Status)
+		s.Require().NotNil(got.Reason)
+		s.Equal(reason, *got.Reason)
+	})
+
+	s.Run("DoesNotRegressCursor", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		s.Require().NoError(s.Repo.UpdateApplicationLastForecloseCheckBlock(s.Ctx, app.ID, 500))
+
+		err := s.Repo.UpdateApplicationForeclosure(s.Ctx, app.ID, 300, UniqueHash(), 400)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(uint64(500), got.LastForecloseCheckBlock)
+		s.Equal(uint64(300), got.ForecloseBlock)
+	})
+
+	s.Run("IdempotentWhenAlreadyForeclosed", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		firstBlock := uint64(1234)
+		firstHead := uint64(1500)
+		firstTx := UniqueHash()
+		s.Require().NoError(
+			s.Repo.UpdateApplicationForeclosure(s.Ctx, app.ID, firstBlock, firstTx, firstHead))
+
+		err := s.Repo.UpdateApplicationForeclosure(s.Ctx, app.ID, 9999, UniqueHash(), 2000)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(firstBlock, got.ForecloseBlock)
+		s.Require().NotNil(got.ForecloseTransaction)
+		s.Equal(firstTx, *got.ForecloseTransaction)
+		s.Equal(firstHead, got.LastForecloseCheckBlock)
+	})
+
+	s.Run("ReturnsNotFoundWhenRowMissing", func() {
+		err := s.Repo.UpdateApplicationForeclosure(
+			s.Ctx, int64(99_999_999), 1, UniqueHash(), 2)
+		s.Require().ErrorIs(err, repository.ErrNotFound)
+	})
+}
+
+// TestUpdateApplicationLastForecloseCheckBlock pins the strictly monotonic
+// semantics of the write. Out-of-order or duplicate observations from a
+// slow tick must not rewind last_foreclose_check_block and re-cause a
+// full [deployment, head] rescan on the next tick.
+func (s *ApplicationSuite) TestUpdateApplicationLastForecloseCheckBlock() {
+	s.Run("AdvancesFromZero", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+
+		err := s.Repo.UpdateApplicationLastForecloseCheckBlock(s.Ctx, app.ID, 1234)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(uint64(1234), got.LastForecloseCheckBlock)
+	})
+
+	s.Run("AdvancesForward", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		s.Require().NoError(s.Repo.UpdateApplicationLastForecloseCheckBlock(s.Ctx, app.ID, 100))
+		s.Require().NoError(s.Repo.UpdateApplicationLastForecloseCheckBlock(s.Ctx, app.ID, 200))
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(uint64(200), got.LastForecloseCheckBlock)
+	})
+
+	// Out-of-order ticks: a stale call carrying a lower block number must
+	// be a silent no-op, not an error and not a regression of the stored
+	// value. The repo returns nil (matches LastInputCheckBlock-style
+	// conventions); the caller cannot distinguish "I was stale" from
+	// "I was current". That is intentional — the next tick's read will
+	// surface the true value.
+	s.Run("RejectsRegressionSilently", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		s.Require().NoError(s.Repo.UpdateApplicationLastForecloseCheckBlock(s.Ctx, app.ID, 500))
+
+		err := s.Repo.UpdateApplicationLastForecloseCheckBlock(s.Ctx, app.ID, 100)
+		s.Require().NoError(err, "regression attempts return nil; the WHERE guard makes it a no-op")
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(uint64(500), got.LastForecloseCheckBlock,
+			"last_foreclose_check_block must not regress below its previous value")
+	})
+
+	// Equal-value writes are also no-ops, mirroring the strict-less-than
+	// guard. Useful when two ticks happen to land on the same head block.
+	s.Run("RejectsEqualSilently", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		s.Require().NoError(s.Repo.UpdateApplicationLastForecloseCheckBlock(s.Ctx, app.ID, 777))
+
+		err := s.Repo.UpdateApplicationLastForecloseCheckBlock(s.Ctx, app.ID, 777)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(uint64(777), got.LastForecloseCheckBlock)
+	})
+}
+
+// TestUpdateApplicationLastAccountsDriveProvedCheckBlock mirrors the
+// LastForecloseCheckBlock contract: strictly monotonic, regression and
+// equal-value writes are silent no-ops. Out-of-order ticks must not rewind
+// the cursor and re-cause a full [foreclose_block, head] rescan.
+func (s *ApplicationSuite) TestUpdateApplicationLastAccountsDriveProvedCheckBlock() {
+	s.Run("AdvancesFromZero", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		s.Require().NoError(s.Repo.UpdateApplicationLastAccountsDriveProvedCheckBlock(s.Ctx, app.ID, 1234))
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(uint64(1234), got.LastAccountsDriveProvedCheckBlock)
+	})
+
+	s.Run("AdvancesForward", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		s.Require().NoError(s.Repo.UpdateApplicationLastAccountsDriveProvedCheckBlock(s.Ctx, app.ID, 100))
+		s.Require().NoError(s.Repo.UpdateApplicationLastAccountsDriveProvedCheckBlock(s.Ctx, app.ID, 200))
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(uint64(200), got.LastAccountsDriveProvedCheckBlock)
+	})
+
+	s.Run("RejectsRegressionSilently", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		s.Require().NoError(s.Repo.UpdateApplicationLastAccountsDriveProvedCheckBlock(s.Ctx, app.ID, 500))
+		s.Require().NoError(s.Repo.UpdateApplicationLastAccountsDriveProvedCheckBlock(s.Ctx, app.ID, 100))
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(uint64(500), got.LastAccountsDriveProvedCheckBlock,
+			"last_accounts_drive_proved_check_block must not regress below its previous value")
+	})
+
+	s.Run("RejectsEqualSilently", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		s.Require().NoError(s.Repo.UpdateApplicationLastAccountsDriveProvedCheckBlock(s.Ctx, app.ID, 777))
+		s.Require().NoError(s.Repo.UpdateApplicationLastAccountsDriveProvedCheckBlock(s.Ctx, app.ID, 777))
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(uint64(777), got.LastAccountsDriveProvedCheckBlock)
+	})
+}
+
+func (s *ApplicationSuite) TestUpdateAccountsDriveProved() {
+	s.Run("WritesMarkerAndCursor", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		block := uint64(4242)
+		head := uint64(4300)
+		txHash := UniqueHash()
+		root := UniqueHash()
+
+		err := s.Repo.UpdateAccountsDriveProved(s.Ctx, app.ID, block, txHash, root, head)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(block, got.AccountsDriveProvedBlock)
+		s.Require().NotNil(got.AccountsDriveProvedTransaction)
+		s.Equal(txHash, *got.AccountsDriveProvedTransaction)
+		s.Require().NotNil(got.AccountsDriveMerkleRoot)
+		s.Equal(root, *got.AccountsDriveMerkleRoot)
+		s.Equal(head, got.LastAccountsDriveProvedCheckBlock)
+	})
+
+	s.Run("DoesNotRegressCursor", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		s.Require().NoError(s.Repo.UpdateApplicationLastAccountsDriveProvedCheckBlock(s.Ctx, app.ID, 500))
+
+		err := s.Repo.UpdateAccountsDriveProved(
+			s.Ctx, app.ID, 300, UniqueHash(), UniqueHash(), 400)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(uint64(500), got.LastAccountsDriveProvedCheckBlock)
+		s.Equal(uint64(300), got.AccountsDriveProvedBlock)
+	})
+
+	s.Run("IdempotentWhenAlreadyProved", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		firstBlock := uint64(4242)
+		firstHead := uint64(4300)
+		firstTx := UniqueHash()
+		firstRoot := UniqueHash()
+		s.Require().NoError(s.Repo.UpdateAccountsDriveProved(
+			s.Ctx, app.ID, firstBlock, firstTx, firstRoot, firstHead))
+
+		err := s.Repo.UpdateAccountsDriveProved(
+			s.Ctx, app.ID, 9999, UniqueHash(), UniqueHash(), 5000)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+		s.Require().NoError(err)
+		s.Equal(firstBlock, got.AccountsDriveProvedBlock)
+		s.Require().NotNil(got.AccountsDriveProvedTransaction)
+		s.Equal(firstTx, *got.AccountsDriveProvedTransaction)
+		s.Require().NotNil(got.AccountsDriveMerkleRoot)
+		s.Equal(firstRoot, *got.AccountsDriveMerkleRoot)
+		s.Equal(firstHead, got.LastAccountsDriveProvedCheckBlock)
+	})
+
+	s.Run("ReturnsNotFoundWhenRowMissing", func() {
+		err := s.Repo.UpdateAccountsDriveProved(
+			s.Ctx, int64(99_999_999), 1, UniqueHash(), UniqueHash(), 2)
+		s.Require().ErrorIs(err, repository.ErrNotFound)
 	})
 }
 

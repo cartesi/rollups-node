@@ -101,4 +101,5 @@ func RunAllSuites(t *testing.T, factory RepositoryFactory) {
 	t.Run("Commitment", func(t *testing.T) { suite.Run(t, NewCommitmentSuite(factory)) })
 	t.Run("Match", func(t *testing.T) { suite.Run(t, NewMatchSuite(factory)) })
 	t.Run("MatchAdvanced", func(t *testing.T) { suite.Run(t, NewMatchAdvancedSuite(factory)) })
+	t.Run("Withdrawal", func(t *testing.T) { suite.Run(t, NewWithdrawalSuite(factory)) })
 }
