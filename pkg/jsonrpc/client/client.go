@@ -22,7 +22,6 @@ type JsonRpcClient interface {
 	Discover(ctx context.Context) (any, error)
 	ListApplications(ctx context.Context, limit, offset int64) ([]*model.Application, error)
 	GetApplication(ctx context.Context, application string) (*model.Application, error)
-	ListApplicationStates(ctx context.Context, limit, offset int64) ([]*ApplicationStateItem, error)
 	GetApplicationAddress(ctx context.Context, name string) (string, error)
 	ListEpochs(ctx context.Context, application string, status *string, limit, offset int64) ([]*model.Epoch, error)
 	GetEpoch(ctx context.Context, application string, index uint64) (*model.Epoch, error)
@@ -141,18 +140,6 @@ type ApplicationGetResult struct {
 	Application *model.Application `json:"application"`
 }
 
-// ApplicationStateItem returns minimal state info for an application.
-type ApplicationStateItem struct {
-	Name    string  `json:"name"`
-	Address string  `json:"address"`
-	State   string  `json:"state"`
-	Reason  *string `json:"reason,omitempty"`
-}
-
-type ApplicationStatesResult struct {
-	States []*ApplicationStateItem `json:"states"`
-}
-
 type GetApplicationAddressResult struct {
 	Address string `json:"address"`
 }
@@ -229,22 +216,6 @@ func (c *Client) GetApplication(ctx context.Context, application string) (*model
 		return nil, err
 	}
 	return result.Application, nil
-}
-
-// ListApplicationStates calls "cartesi_ListApplicationStates".
-func (c *Client) ListApplicationStates(ctx context.Context, limit, offset int64) ([]*ApplicationStateItem, error) {
-	if limit > 10000 {
-		limit = 10000
-	}
-	params := struct {
-		Limit  int64 `json:"limit"`
-		Offset int64 `json:"offset"`
-	}{Limit: limit, Offset: offset}
-	var result ApplicationStatesResult
-	if err := c.Call(ctx, "cartesi_listApplicationStates", params, &result); err != nil {
-		return nil, err
-	}
-	return result.States, nil
 }
 
 // GetApplicationAddress calls "cartesi_getApplicationAddress".

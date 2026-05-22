@@ -499,6 +499,93 @@
 			}
 		},
 		{
+			"name": "cartesi_listWithdrawals",
+			"summary": "List post-foreclosure withdrawals",
+			"description": "Returns a paginated list of Withdrawal events observed for a foreclosed application. Each row corresponds to one (account_index, account, output) tuple emitted on-chain by IApplication after the accounts drive has been proved. The event fires at most once per accountIndex, so listing all rows for an application enumerates every successful withdrawal.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "account_index",
+					"description": "Optional filter by accountIndex (hex encoded). When omitted, returns all withdrawals for the application.",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": false
+				},
+				{
+					"name": "limit",
+					"description": "The maximum number of withdrawals to return per page.",
+					"schema": {
+						"type": "integer",
+						"minimum": 1,
+						"default": 50
+					},
+					"required": false
+				},
+				{
+					"name": "offset",
+					"description": "The starting point for the list of withdrawals to return.",
+					"schema": {
+						"type": "integer",
+						"minimum": 0,
+						"default": 0
+					},
+					"required": false
+				},
+				{
+					"name": "descending",
+					"description": "if true, the list will be sorted in descending order by account_index.",
+					"schema": {
+						"type": "boolean",
+						"default": false
+					},
+					"required": false
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/WithdrawalListResult"
+				}
+			}
+		},
+		{
+			"name": "cartesi_getWithdrawal",
+			"summary": "Get a specific withdrawal",
+			"description": "Fetches a single Withdrawal event by application and accountIndex.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "account_index",
+					"description": "The accountIndex of the withdrawal to retrieve (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": true
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/WithdrawalGetResult"
+				}
+			}
+		},
+		{
 			"name": "cartesi_listTournaments",
 			"summary": "Retrieve a List of Tournaments",
 			"description": "Returns a paginated list of Tournaments, with options to filter by epoch index or level.",
@@ -1020,18 +1107,28 @@
 					"epoch_length": {
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
+					"claim_staging_period": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"withdrawal_config": {
+						"$ref": "#/components/schemas/WithdrawalConfig"
+					},
 					"data_availability": {
 						"$ref": "#/components/schemas/ByteArray"
 					},
 					"consensus_type": {
 						"$ref": "#/components/schemas/Consensus"
 					},
-					"state": {
-						"$ref": "#/components/schemas/ApplicationState"
+					"enabled": {
+						"type": "boolean",
+						"description": "Operator intent. True means the operator wants the node to keep observing the application and run eligible workflows."
+					},
+					"status": {
+						"$ref": "#/components/schemas/ApplicationStatus"
 					},
 					"reason": {
 						"type": ["string", "null"],
-						"description": "Human-readable failure description. Non-null when state is FAILED or INOPERABLE; null otherwise."
+						"description": "Human-readable failure description. Non-null when status is FAILED, DIVERGED, or CORRUPTED; null otherwise. Foreclosure is reported separately via foreclose_block, not via status."
 					},
 					"iinputbox_block": {
 						"$ref": "#/components/schemas/UnsignedInteger"
@@ -1048,8 +1145,39 @@
 					"last_tournament_check_block": {
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
+					"last_foreclose_check_block": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"last_accounts_drive_proved_check_block": {
+						"description": "Highest block scanned by the post-foreclosure accounts-drive-proved discovery loop. Strictly monotonic; only populated for foreclosed applications.",
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"last_withdrawal_check_block": {
+						"description": "Highest block scanned by the post-foreclosure Withdrawal-event discovery loop. Strictly monotonic; only populated once the accounts drive has been proved.",
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
 					"processed_inputs": {
 						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"foreclose_block": {
+						"description": "Block where the on-chain Foreclosure event was observed. Zero means the node has not yet observed a foreclosure (block 0 is unreachable for the event, so it is an unambiguous sentinel). Non-zero is one-way: once set, normal execution stops and evmreader transitions into post-foreclosure observation (drive-prove discovery, then Withdrawal indexing).",
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"foreclose_transaction": {
+						"description": "Transaction hash of the Foreclosure event. All-zero (0x000...0) when foreclose_block is zero; otherwise the tx that emitted the event.",
+						"$ref": "#/components/schemas/Hash"
+					},
+					"accounts_drive_proved_block": {
+						"description": "Block where the proveAccountsDriveMerkleRoot transaction landed for this foreclosed application. Zero means the drive has not yet been proved (or this application is not foreclosed). Non-zero gates withdrawal eligibility — the contract rejects withdraw() before the drive is proved.",
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"accounts_drive_proved_transaction": {
+						"description": "Transaction hash of the proveAccountsDriveMerkleRoot call. Best-effort: when the per-block tx hunt cannot identify the producing transaction, this field is the zero hash. The (block, root) tuple is canonical regardless.",
+						"$ref": "#/components/schemas/Hash"
+					},
+					"accounts_drive_merkle_root": {
+						"description": "On-chain accountsDriveMerkleRoot read at accounts_drive_proved_block. All-zero when the drive has not been proved.",
+						"$ref": "#/components/schemas/Hash"
 					},
 					"created_at": {
 						"type": "string",
@@ -1094,8 +1222,10 @@
 					"INPUTS_PROCESSED",
 					"CLAIM_COMPUTED",
 					"CLAIM_SUBMITTED",
+					"CLAIM_STAGED",
 					"CLAIM_ACCEPTED",
-					"CLAIM_REJECTED"
+					"CLAIM_REJECTED",
+					"CLAIM_FORECLOSED"
 				]
 			},
 			"Epoch": {
@@ -1145,6 +1275,9 @@
 					},
 					"status": {
 						"$ref": "#/components/schemas/EpochStatus"
+					},
+					"staged_at_block": {
+						"oneOf": [{"$ref": "#/components/schemas/UnsignedInteger"}, {"type": "null"}]
 					},
 					"virtual_index": {
 						"$ref": "#/components/schemas/UnsignedInteger"
@@ -1466,6 +1599,60 @@
 					}
 				}
 			},
+			"Withdrawal": {
+				"type": "object",
+				"description": "A Withdrawal event observed for a foreclosed IApplication after its accounts drive has been proved. account and output are stored as raw bytes; recipient encoding inside account is defined by the per-app WithdrawalOutputBuilder and is opaque to the node.",
+				"properties": {
+					"account_index": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"account": {
+						"$ref": "#/components/schemas/ByteArray"
+					},
+					"output": {
+						"$ref": "#/components/schemas/ByteArray"
+					},
+					"block_number": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"transaction_hash": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"log_index": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"updated_at": {
+						"type": "string",
+						"format": "date-time"
+					}
+				}
+			},
+			"WithdrawalListResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"type": "array",
+						"items": {
+							"$ref": "#/components/schemas/Withdrawal"
+						}
+					},
+					"pagination": {
+						"$ref": "#/components/schemas/Pagination"
+					}
+				}
+			},
+			"WithdrawalGetResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"$ref": "#/components/schemas/Withdrawal"
+					}
+				}
+			},
 			"SnapshotPolicy": {
 				"type": "string",
 				"enum": [
@@ -1551,13 +1738,13 @@
 					}
 				}
 			},
-			"ApplicationState": {
+			"ApplicationStatus": {
 				"type": "string",
 				"enum": [
-					"ENABLED",
-					"DISABLED",
+					"OK",
 					"FAILED",
-					"INOPERABLE"
+					"DIVERGED",
+					"CORRUPTED"
 				]
 			},
 			"Consensus": {
@@ -1572,6 +1759,34 @@
 				"type": "string",
 				"format": "hex-byte",
 				"pattern": "^0x[a-fA-F0-9]{40}$"
+			},
+			"WithdrawalConfig": {
+				"type": "object",
+				"description": "On-chain WithdrawalConfig mirroring the five Application contract immutables (guardian, log2_leaves_per_account, log2_max_num_of_accounts, accounts_drive_start_index, withdrawal_output_builder). The all-zero shape encodes 'no withdrawal handling configured' — applications without a guardian cannot be foreclosed.",
+				"properties": {
+					"guardian": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"log2_leaves_per_account": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"log2_max_num_of_accounts": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"accounts_drive_start_index": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"withdrawal_output_builder": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					}
+				},
+				"required": [
+					"guardian",
+					"log2_leaves_per_account",
+					"log2_max_num_of_accounts",
+					"accounts_drive_start_index",
+					"withdrawal_output_builder"
+				]
 			},
 			"Hash": {
 				"type": "string",

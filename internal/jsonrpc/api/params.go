@@ -163,3 +163,18 @@ type GetMatchAdvancedParams struct {
 	IDHash            string `json:"id_hash"`
 	Parent            string `json:"parent"`
 }
+
+// ListWithdrawalsParams aligns with the OpenRPC specification
+type ListWithdrawalsParams struct {
+	Application  string  `json:"application"`
+	AccountIndex *string `json:"account_index,omitempty"`
+	Limit        uint64  `json:"limit"`
+	Offset       uint64  `json:"offset"`
+	Descending   bool    `json:"descending,omitempty"`
+}
+
+// GetWithdrawalParams aligns with the OpenRPC specification
+type GetWithdrawalParams struct {
+	Application  string `json:"application"`
+	AccountIndex string `json:"account_index"`
+}

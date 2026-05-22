@@ -2726,6 +2726,311 @@ func TestMethod(t *testing.T) {
 		})
 	})
 
+	////////////////////////////////////////////////////////////////////////
+	// getWithdrawal
+	////////////////////////////////////////////////////////////////////////
+	t.Run("cartesi_getWithdrawal", func(t *testing.T) {
+		method := getName(t.Name())
+
+		// failure: account_index not hex encoded -> invalid params
+		t.Run("malformed", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			app := uint64(1)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getWithdrawal",
+				"params": {
+				"application": "%v",
+				"account_index": "%v"
+				},
+				"id": 0
+				}`, numberToName(app), "not-hex"))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
+		})
+
+		// failure: application missing -> resource not found.
+		// GetWithdrawal's joined SELECT returns (nil, nil) for either
+		// missing application or missing account_index; both surface as
+		// "Withdrawal not found" — the discriminator is irrelevant to
+		// callers since neither path returns a row.
+		t.Run("absentApplication", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			app := uint64(2)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getWithdrawal",
+				"params": {
+				"application": "%v",
+				"account_index": "%v"
+				},
+				"id": 0
+				}`, numberToName(app), hexutil.EncodeUint64(0)))
+
+			resp := testRPCResponse[*model.Withdrawal]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+		})
+
+		// failure: application exists but no matching account_index ->
+		// resource not found.
+		t.Run("absentAccountIndex", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(3)
+			s.newTestApplication(ctx, t, app)
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getWithdrawal",
+				"params": {
+				"application": "%v",
+				"account_index": "%v"
+				},
+				"id": 0
+				}`, numberToName(app), hexutil.EncodeUint64(99)))
+
+			resp := testRPCResponse[*model.Withdrawal]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Withdrawal not found", resp.Error.Message)
+		})
+
+		// success: account_index in DB -> return the row.
+		t.Run("success", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(4)
+			appID := s.newTestApplication(ctx, t, app)
+			w := &model.Withdrawal{
+				ApplicationID:   appID,
+				AccountIndex:    7,
+				Account:         []byte{0xaa, 0xbb},
+				Output:          []byte{0xcc, 0xdd},
+				BlockNumber:     1234,
+				TransactionHash: common.HexToHash("0xcafe"),
+				LogIndex:        2,
+			}
+			require.NoError(t, s.repository.InsertWithdrawal(ctx, w))
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getWithdrawal",
+				"params": {
+				"application": "%v",
+				"account_index": "%v"
+				},
+				"id": 0
+				}`, numberToName(app), hexutil.EncodeUint64(w.AccountIndex)))
+
+			type Result struct {
+				AccountIndex    hex64       `json:"account_index"`
+				Account         string      `json:"account"`
+				Output          string      `json:"output"`
+				BlockNumber     hex64       `json:"block_number"`
+				TransactionHash common.Hash `json:"transaction_hash"`
+				LogIndex        hex64       `json:"log_index"`
+			}
+			resp := testRPCResponse[Result]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, resp.Error)
+			assert.Equal(t, w.AccountIndex, uint64(resp.Result.Data.AccountIndex))
+			assert.Equal(t, "0x"+common.Bytes2Hex(w.Account), resp.Result.Data.Account)
+			assert.Equal(t, "0x"+common.Bytes2Hex(w.Output), resp.Result.Data.Output)
+			assert.Equal(t, w.BlockNumber, uint64(resp.Result.Data.BlockNumber))
+			assert.Equal(t, w.TransactionHash, resp.Result.Data.TransactionHash)
+			assert.Equal(t, uint64(w.LogIndex), uint64(resp.Result.Data.LogIndex))
+		})
+	})
+
+	////////////////////////////////////////////////////////////////////////
+	// listWithdrawals
+	////////////////////////////////////////////////////////////////////////
+	t.Run("cartesi_listWithdrawals", func(t *testing.T) {
+		method := getName(t.Name())
+
+		// failure: application missing -> resource not found
+		t.Run("absentApplication", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			nr := uint64(1)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listWithdrawals",
+				"params": { "application": "%v" },
+				"id": 0
+				}`, numberToName(nr)))
+
+			resp := testRPCResponse[[]model.Withdrawal]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Application not found", resp.Error.Message)
+		})
+
+		// success: application present but no withdrawals -> empty list
+		t.Run("empty", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			nr := uint64(1)
+			s.newTestApplication(ctx, t, nr)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listWithdrawals",
+				"params": { "application": "%v" },
+				"id": 0
+				}`, numberToName(nr)))
+
+			resp := testRPCResponse[[]model.Withdrawal]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, resp.Error)
+			assert.Equal(t, 0, len(resp.Result.Data))
+		})
+
+		// failure: malformed account_index filter -> invalid params
+		t.Run("malformedAccountIndex", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(2)
+			s.newTestApplication(ctx, t, app)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listWithdrawals",
+				"params": {
+				"application": "%v",
+				"account_index": "%v"
+				},
+				"id": 0
+				}`, numberToName(app), "not-hex"))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
+		})
+
+		// success: many withdrawals, ascending + descending + pagination + filter
+		t.Run("many", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(3)
+			appID := s.newTestApplication(ctx, t, app)
+
+			const many = uint64(10)
+			const limit = uint64(many / 2)
+			for i := uint64(0); i < many; i++ {
+				require.NoError(t, s.repository.InsertWithdrawal(ctx, &model.Withdrawal{
+					ApplicationID:   appID,
+					AccountIndex:    i,
+					Account:         []byte{0xaa, byte(i)},
+					Output:          []byte{0xbb, byte(i)},
+					BlockNumber:     1000 + i,
+					TransactionHash: common.HexToHash(hexutil.EncodeUint64(i)),
+					LogIndex:        uint(i % 4),
+				}))
+			}
+
+			type Result struct {
+				AccountIndex hex64 `json:"account_index"`
+			}
+
+			{ // offset == 0, descending = false → ascending account_index 0..limit-1
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listWithdrawals",
+					"params": {
+					"application": "%v",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), limit, 0, false))
+
+				resp := testRPCResponse[[]Result]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					assert.Equal(t, i, uint64(resp.Result.Data[i].AccountIndex))
+				}
+			}
+
+			{ // offset == 1, descending == false
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listWithdrawals",
+					"params": {
+					"application": "%v",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), limit, 1, false))
+
+				resp := testRPCResponse[[]Result]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					assert.Equal(t, i+1, uint64(resp.Result.Data[i].AccountIndex))
+				}
+			}
+
+			{ // offset == 0, descending = true → last index first
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listWithdrawals",
+					"params": {
+					"application": "%v",
+					"limit": %v,
+					"offset": %v,
+					"descending": %v
+					},
+					"id": 0
+					}`, numberToName(app), limit, 0, true))
+
+				resp := testRPCResponse[[]Result]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
+				for i := range limit {
+					assert.Equal(t, many-i-1, uint64(resp.Result.Data[i].AccountIndex))
+				}
+			}
+
+			{ // account_index filter → exactly one row
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listWithdrawals",
+					"params": {
+					"application": "%v",
+					"account_index": "%v"
+					},
+					"id": 0
+					}`, numberToName(app), hexutil.EncodeUint64(3)))
+
+				resp := testRPCResponse[[]Result]{}
+				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, 1, len(resp.Result.Data))
+				assert.Equal(t, uint64(3), uint64(resp.Result.Data[0].AccountIndex))
+			}
+		})
+	})
+
 	// tested methods, implemented methods and discover methods must match:
 	data, err := discoverSpec.ReadFile("jsonrpc-discover.json")
 	require.NoError(t, err)

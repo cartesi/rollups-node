@@ -57,6 +57,8 @@ var jsonrpcHandlers = dispatchTable{
 	"cartesi_getOutput":                 handleGetOutput,
 	"cartesi_listReports":               handleListReports,
 	"cartesi_getReport":                 handleGetReport,
+	"cartesi_listWithdrawals":           handleListWithdrawals,
+	"cartesi_getWithdrawal":             handleGetWithdrawal,
 	"cartesi_listTournaments":           handleListTournaments,
 	"cartesi_getTournament":             handleGetTournament,
 	"cartesi_listCommitments":           handleListCommitments,
@@ -691,6 +693,97 @@ func handleGetReport(s *Service, w http.ResponseWriter, r *http.Request, req RPC
 	}
 
 	writeRPCResult(w, req.ID, api.SingleResponse[*model.Report]{Data: report})
+}
+
+func handleListWithdrawals(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
+	var params api.ListWithdrawalsParams
+	if err := UnmarshalParams(req.Params, &params); err != nil {
+		s.Logger.Debug("Invalid parameters", "err", err)
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return
+	}
+
+	if params.Limit <= 0 {
+		params.Limit = LIST_ITEM_DEFAULT
+	}
+	if params.Limit > LIST_ITEM_LIMIT {
+		params.Limit = LIST_ITEM_LIMIT
+	}
+
+	if err := validateNameOrAddress(params.Application); err != nil {
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return
+	}
+
+	withdrawalFilter := repository.WithdrawalFilter{}
+	if params.AccountIndex != nil {
+		accountIndex, err := config.ToIndexFromString(*params.AccountIndex)
+		if err != nil {
+			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid account index: %v", err), nil)
+			return
+		}
+		withdrawalFilter.AccountIndex = &accountIndex
+	}
+
+	withdrawals, total, err := s.repository.ListWithdrawals(
+		r.Context(), params.Application, withdrawalFilter,
+		repository.Pagination{Limit: params.Limit, Offset: params.Offset},
+		params.Descending,
+	)
+	if err != nil {
+		s.Logger.Error("Unable to retrieve withdrawals from repository", "err", err)
+		writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return
+	}
+
+	if len(withdrawals) == 0 && s.applicationAbsentOrError(w, r, req, params.Application) {
+		return
+	}
+	if withdrawals == nil {
+		withdrawals = []*model.Withdrawal{}
+	}
+
+	writeRPCResult(w, req.ID, api.ListResponse[*model.Withdrawal]{
+		Data: withdrawals,
+		Pagination: api.Pagination{
+			TotalCount: total,
+			Limit:      params.Limit,
+			Offset:     params.Offset,
+		},
+	})
+}
+
+func handleGetWithdrawal(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
+	var params api.GetWithdrawalParams
+	if err := UnmarshalParams(req.Params, &params); err != nil {
+		s.Logger.Debug("Invalid parameters", "err", err)
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return
+	}
+
+	if err := validateNameOrAddress(params.Application); err != nil {
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return
+	}
+
+	accountIndex, err := config.ToIndexFromString(params.AccountIndex)
+	if err != nil {
+		writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid account index: %v", err), nil)
+		return
+	}
+
+	withdrawal, err := s.repository.GetWithdrawal(r.Context(), params.Application, accountIndex)
+	if err != nil {
+		s.Logger.Error("Unable to retrieve withdrawal from repository", "err", err)
+		writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return
+	}
+	if withdrawal == nil {
+		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Withdrawal not found", nil)
+		return
+	}
+
+	writeRPCResult(w, req.ID, api.SingleResponse[*model.Withdrawal]{Data: withdrawal})
 }
 
 func handleListTournaments(s *Service, w http.ResponseWriter, r *http.Request, req RPCRequest) {
