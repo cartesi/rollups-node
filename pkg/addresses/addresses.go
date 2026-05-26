@@ -1,6 +1,5 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
-
 // This package manages the contract addresses.
 //
 // The addresses depend on the deployment of the contracts and should be provided by the node user.
@@ -10,6 +9,7 @@
 package addresses
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -19,18 +19,46 @@ import (
 
 // List of contract addresses.
 type Book struct {
-	AuthorityHistoryPairFactory common.Address
-	CartesiDAppFactory          common.Address
-	DAppAddressRelay            common.Address
-	ERC1155BatchPortal          common.Address
-	ERC1155SinglePortal         common.Address
-	ERC20Portal                 common.Address
-	ERC721Portal                common.Address
-	EtherPortal                 common.Address
-	InputBox                    common.Address
-	CartesiDApp                 common.Address
-	HistoryAddress              common.Address
-	AuthorityAddress            common.Address
+	AuthorityHistoryPairFactory common.Address `json:"authorityHistoryPairFactory"`
+	CartesiDAppFactory          common.Address `json:"cartesiDAppFactory"`
+	DAppAddressRelay            common.Address `json:"dappAddressRelay"`
+	ERC1155BatchPortal          common.Address `json:"erc1155BatchPortal"`
+	ERC1155SinglePortal         common.Address `json:"erc1155SinglePortal"`
+	ERC20Portal                 common.Address `json:"erc20Portal"`
+	ERC721Portal                common.Address `json:"erc721Portal"`
+	EtherPortal                 common.Address `json:"etherPortal"`
+	InputBox                    common.Address `json:"inputBox"`
+	CartesiDApp                 common.Address `json:"cartesiDApp"`
+	HistoryAddress              common.Address `json:"historyAddress"`
+	AuthorityAddress            common.Address `json:"authorityAddress"`
+}
+
+// validate checks that no address in the book is a zero address.
+func (b *Book) validate() error {
+	zero := common.Address{}
+
+	fields := map[string]common.Address{
+		"AuthorityHistoryPairFactory": b.AuthorityHistoryPairFactory,
+		"CartesiDAppFactory":          b.CartesiDAppFactory,
+		"DAppAddressRelay":            b.DAppAddressRelay,
+		"ERC1155BatchPortal":          b.ERC1155BatchPortal,
+		"ERC1155SinglePortal":         b.ERC1155SinglePortal,
+		"ERC20Portal":                 b.ERC20Portal,
+		"ERC721Portal":                b.ERC721Portal,
+		"EtherPortal":                 b.EtherPortal,
+		"InputBox":                    b.InputBox,
+		"CartesiDApp":                 b.CartesiDApp,
+		"HistoryAddress":              b.HistoryAddress,
+		"AuthorityAddress":            b.AuthorityAddress,
+	}
+
+	for name, addr := range fields {
+		if addr == zero {
+			return fmt.Errorf("missing or zero address for %s", name)
+		}
+	}
+
+	return nil
 }
 
 // Get the addresses for the test environment.
@@ -58,10 +86,17 @@ func GetBookFromFile(path string) (*Book, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read address book file: %v", err)
 	}
+
 	var book Book
-	err = json.Unmarshal(data, &book)
-	if err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&book); err != nil {
 		return nil, fmt.Errorf("parse address book json: %v", err)
 	}
+
+	if err := book.validate(); err != nil {
+		return nil, fmt.Errorf("invalid address book: %v", err)
+	}
+
 	return &book, nil
 }
