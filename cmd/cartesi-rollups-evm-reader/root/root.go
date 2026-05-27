@@ -13,7 +13,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/version"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
-	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/spf13/cobra"
 )
@@ -22,8 +21,8 @@ var (
 	logLevel               string
 	logColor               bool
 	defaultBlockString     string
-	blockchainHttpEndpoint string
-	blockchainWsEndpoint   string
+	blockchainHTTPEndpoint string
+	pollInterval           string
 	databaseConnection     string
 	maxStartupTime         string
 	enableInputReader      bool
@@ -55,10 +54,10 @@ func init() {
 		"Tint the logs (colored output)")
 	cli.AddFlagStrVar(flags, &databaseConnection, "database-connection", config.DATABASE_CONNECTION,
 		"Database connection string in the URL format\n(eg.: 'postgres://user:password@hostname:port/database') ")
-	cli.AddFlagStrVar(flags, &blockchainHttpEndpoint, "blockchain-http-endpoint", config.BLOCKCHAIN_HTTP_ENDPOINT,
+	cli.AddFlagStrVar(flags, &blockchainHTTPEndpoint, "blockchain-http-endpoint", config.BLOCKCHAIN_HTTP_ENDPOINT,
 		"Blockchain http endpoint")
-	cli.AddFlagStrVar(flags, &blockchainWsEndpoint, "blockchain-ws-endpoint", config.BLOCKCHAIN_WS_ENDPOINT,
-		"Blockchain WS Endpoint")
+	cli.AddFlagStrVar(flags, &pollInterval, "poll-interval", config.EVM_READER_POLLING_INTERVAL,
+		"Poll interval")
 	cli.AddFlagStrVar(flags, &maxStartupTime, "max-startup-time", config.MAX_STARTUP_TIME,
 		"Maximum startup time in seconds")
 	cli.AddFlagBoolVar(flags, &enableInputReader, "input-reader", config.FEATURE_INPUT_READER_ENABLED,
@@ -89,6 +88,7 @@ func run(cmd *cobra.Command, args []string) {
 			EnableSignalHandling: true,
 			TelemetryCreate:      true,
 			TelemetryAddress:     cfg.EvmReaderTelemetryAddress,
+			PollInterval:         cfg.EvmReaderPollingInterval,
 		},
 		Config: *cfg,
 	}
@@ -101,19 +101,17 @@ func run(cmd *cobra.Command, args []string) {
 	createInfo.EthClient, err = ethutil.NewEthClient(
 		ctx, cfg.BlockchainHttpEndpoint.Raw(), logger,
 		ethutil.RetryConfig{
-			MaxRetries:   cfg.BlockchainHttpMaxRetries,
-			RetryMinWait: cfg.BlockchainHttpRetryMinWait,
-			RetryMaxWait: cfg.BlockchainHttpRetryMaxWait,
+			MaxRetries:     cfg.BlockchainHttpMaxRetries,
+			RetryMinWait:   cfg.BlockchainHttpRetryMinWait,
+			RetryMaxWait:   cfg.BlockchainHttpRetryMaxWait,
+			RequestTimeout: cfg.BlockchainHttpRequestTimeout,
 		}, authOpt)
 	cli.CheckErr(logger, err)
 
-	wsEndpoint := cfg.BlockchainWsEndpoint.Raw()
-	createInfo.EthWsClient, err = ethclient.DialContext(ctx, wsEndpoint)
-	cli.CheckErr(logger, ethutil.RedactEndpointFromError(err, wsEndpoint))
-
-	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
+	repo, err := factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
 	cli.CheckErr(logger, err)
-	defer createInfo.Repository.Close()
+	defer repo.Close()
+	createInfo.Repository = repo
 
 	readerService, err := evmreader.Create(ctx, &createInfo)
 	cli.CheckErr(logger, err)

@@ -13,7 +13,6 @@ import (
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -80,13 +79,11 @@ func (m *MockEthClient) SetupDefaultBehavior() *MockEthClient {
 	return m
 }
 
-func (m *MockEthClient) SetupDefaultWsBehavior() *MockEthClient {
-	m.On("ChainID", mock.Anything).Return(big.NewInt(1), nil)
-	m.On("SubscribeNewHead",
+func (m *MockEthClient) EnqueueNewHead(blknum int64) *mock.Call {
+	return m.On("HeaderByNumber",
 		mock.Anything,
 		mock.Anything,
-	).Return(subscription0, nil)
-	return m
+	).Return(&types.Header{Number: big.NewInt(blknum)}, nil)
 }
 
 func (m *MockEthClient) Unset(methodName string) {
@@ -101,81 +98,12 @@ func (m *MockEthClient) HeaderByNumber(
 	return args.Get(0).(*types.Header), args.Error(1)
 }
 
-func (m *MockEthClient) SubscribeNewHead(
-	ctx context.Context,
-	ch chan<- *types.Header,
-) (ethereum.Subscription, error) {
-	args := m.Called(ctx, ch)
-	return args.Get(0).(ethereum.Subscription), args.Error(1)
-}
-
 func (m *MockEthClient) ChainID(ctx context.Context) (*big.Int, error) {
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*big.Int), args.Error(1)
-}
-
-// ---------------------------------------------------------------------------
-// MockSubscription
-// ---------------------------------------------------------------------------
-
-type MockSubscription struct {
-	mock.Mock
-}
-
-func newMockSubscription() *MockSubscription {
-	sub := &MockSubscription{}
-	sub.On("Unsubscribe").Return()
-	sub.On("Err").Return(make(<-chan error))
-	return sub
-}
-
-func (m *MockSubscription) Unsubscribe() {
-	m.Called()
-}
-
-func (m *MockSubscription) Err() <-chan error {
-	args := m.Called()
-	return args.Get(0).(<-chan error)
-}
-
-// ---------------------------------------------------------------------------
-// FakeWSEthClient
-// ---------------------------------------------------------------------------
-
-type FakeWSEthClient struct {
-	ch chan<- *types.Header
-}
-
-func (f *FakeWSEthClient) SubscribeNewHead(
-	_ context.Context,
-	ch chan<- *types.Header,
-) (ethereum.Subscription, error) {
-	f.ch = ch
-	return newMockSubscription(), nil
-}
-
-func (f *FakeWSEthClient) HeaderByNumber(
-	_ context.Context,
-	_ *big.Int,
-) (*types.Header, error) {
-	return &header0, nil
-}
-
-func (f *FakeWSEthClient) ChainID(_ context.Context) (*big.Int, error) {
-	return big.NewInt(1), nil
-}
-
-func (f *FakeWSEthClient) fireNewHead(header *types.Header) {
-	f.ch <- header
-}
-
-// flushHeaders sends a sentinel header to guarantee that all previously sent
-// headers have been fully processed. Works because the channel is unbuffered.
-func (f *FakeWSEthClient) flushHeaders() {
-	f.ch <- &sentinelHeader
 }
 
 // ---------------------------------------------------------------------------
@@ -350,7 +278,7 @@ func (m *MockRepository) SetupDefaultBehavior() *MockRepository {
 			ClaimTransactionHash: nil,
 		}, nil).Twice()
 
-	// Catch-all: returns empty list for sentinel / extra headers (flushHeaders).
+	// Catch-all: returns empty list for extra headers.
 	m.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).
 		Return([]*Application{}, uint64(0), nil)
 

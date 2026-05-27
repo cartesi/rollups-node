@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -79,20 +78,7 @@ type EvmReaderRepository interface {
 // EthClientInterface defines the methods we need from ethclient.Client
 type EthClientInterface interface {
 	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
-	SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error)
 	ChainID(ctx context.Context) (*big.Int, error)
-}
-
-type SubscriptionError struct {
-	Cause error
-}
-
-func (e *SubscriptionError) Error() string {
-	return fmt.Sprintf("Subscription error : %v", e.Cause)
-}
-
-func (e *SubscriptionError) Unwrap() error {
-	return e.Cause
 }
 
 // Internal struct to hold application and it's contracts together
@@ -101,46 +87,6 @@ type appContracts struct {
 	applicationContract ApplicationContractAdapter
 	inputSource         InputSourceAdapter
 	daveConsensus       DaveConsensusAdapter
-}
-
-func (r *Service) Run(ctx context.Context, ready chan struct{}) error {
-	var consecutiveFailures uint64
-	for {
-		headersProcessed, err := r.watchForNewBlocks(ctx, ready)
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		r.Logger.Error("watchForNewBlocks exited",
-			"error", err, "headers_processed", headersProcessed)
-
-		// Only reset the retry counter if the connection actually processed
-		// at least one block header. This prevents infinite retries when the
-		// subscription connects but immediately fails before doing useful work.
-		if headersProcessed > 0 {
-			consecutiveFailures = 0
-		} else {
-			consecutiveFailures++
-		}
-
-		if consecutiveFailures > r.blockchainMaxRetries {
-			r.Logger.Error("Max consecutive failures reached. Exiting",
-				"consecutive_failures", consecutiveFailures,
-				"max_retries", r.blockchainMaxRetries,
-			)
-			return err
-		}
-
-		r.Logger.Info("Restarting subscription",
-			"consecutive_failures", consecutiveFailures,
-			"max_retries", r.blockchainMaxRetries,
-		)
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(r.blockchainSubscriptionRetryInterval):
-		}
-	}
 }
 
 func listEnabledApplications(ctx context.Context, er EvmReaderRepository) ([]*Application, uint64, error) {
@@ -155,93 +101,30 @@ func (r *Service) setApplicationCorrupted(ctx context.Context, app *Application,
 	return appstatus.SetCorruptedf(ctx, r.Logger, r.repository, app, reasonFmt, args...)
 }
 
-// watchForNewBlocks subscribes to new block headers and processes them.
-// Returns the number of headers processed and any error that caused it to stop.
-func (r *Service) watchForNewBlocks(ctx context.Context, ready chan<- struct{}) (uint64, error) {
-	headers := make(chan *types.Header)
-	sub, err := r.wsClient.SubscribeNewHead(ctx, headers)
+func (r *Service) Tick() []error {
+	blockNumber, err := r.fetchMostRecentHeader(r.Context, r.defaultBlock)
 	if err != nil {
-		return 0, fmt.Errorf("could not start subscription: %w", err)
-	}
-	r.Logger.Info("Subscribed to new block events")
-	select {
-	case ready <- struct{}{}:
-	default:
-	}
-	defer sub.Unsubscribe()
-
-	liveness := time.NewTimer(r.wsLivenessTimeout)
-	defer liveness.Stop()
-
-	resolver := newApplicationAdapterResolver(r.Logger, r.adapterFactory)
-	var headersProcessed uint64
-	for {
-		var header *types.Header
-		select {
-		case <-ctx.Done():
-			return headersProcessed, ctx.Err()
-		case err := <-sub.Err():
-			if err == nil {
-				err = errors.New("subscription closed unexpectedly")
-			}
-			return headersProcessed, &SubscriptionError{Cause: err}
-		case <-liveness.C:
-			// Before declaring stalled, check if a header arrived simultaneously.
-			// Go's select picks randomly when multiple cases are ready, so the
-			// liveness timer may win even though a header is available.
-			select {
-			case header = <-headers:
-			default:
-				return headersProcessed, &SubscriptionError{
-					Cause: fmt.Errorf(
-						"no new block header received for %s, assuming stalled connection",
-						r.wsLivenessTimeout,
-					),
-				}
-			}
-		case header = <-headers:
+		if errors.Is(err, context.Canceled) {
+			return nil
 		}
-
-		if header == nil {
-			continue
-		}
-		headersProcessed++
-		liveness.Reset(r.wsLivenessTimeout)
-
-		// Every time a new block arrives
-		r.Logger.Debug("New block header received",
-			"blockNumber", header.Number, "blockHash", header.Hash())
-
-		r.processBlockCandidate(ctx, header.Number.Uint64(), resolver)
+		return []error{err}
 	}
+
+	if blockNumber != r.lastBlockNumber.Load() {
+		r.lastBlockNumber.Store(blockNumber)
+		r.Logger.Info("Got new block header", "block", blockNumber, "policy", r.defaultBlock)
+	}
+
+	// Scans run under the service context: cancellable on shutdown, free to take
+	// as long as catch-up needs. Per-request bounds live on the HTTP transport.
+	r.processBlockHead(r.Context, blockNumber, r.resolver)
+
+	return nil
 }
 
-func (r *Service) resolveScanBlock(
+func (r *Service) processBlockHead(
 	ctx context.Context,
-	observedBlock uint64,
-) (uint64, error) {
-	if r.defaultBlock == DefaultBlock_Latest {
-		return observedBlock, nil
-	}
-
-	mostRecentHeader, err := r.fetchMostRecentHeader(ctx, r.defaultBlock)
-	if err != nil {
-		return 0, fmt.Errorf("fetch most recent block for default block %s: %w", r.defaultBlock, err)
-	}
-	blockNumber := mostRecentHeader.Number.Uint64()
-
-	r.Logger.Debug(fmt.Sprintf(
-		"Using block %d and not %d because of commitment policy: %s",
-		blockNumber,
-		observedBlock,
-		r.defaultBlock,
-	))
-	return blockNumber, nil
-}
-
-func (r *Service) processBlockCandidate(
-	ctx context.Context,
-	blockCandidate uint64,
+	blockNumber uint64,
 	resolver *applicationAdapterResolver,
 ) {
 	r.Logger.Debug("Retrieving enabled applications")
@@ -263,18 +146,9 @@ func (r *Service) processBlockCandidate(
 	}
 	r.hasEnabledApps = true
 
-	if resolver == nil {
-		resolver = newApplicationAdapterResolver(r.Logger, r.adapterFactory)
-	}
 	apps := resolver.buildAppContracts(observableApps)
 	if len(apps) == 0 {
 		r.Logger.Info("No correctly configured applications running")
-		return
-	}
-
-	blockNumber, err := r.resolveScanBlock(ctx, blockCandidate)
-	if err != nil {
-		r.Logger.Error("Error resolving EVMReader scan block", "error", err)
 		return
 	}
 
@@ -305,7 +179,7 @@ func (r *Service) runBlockScanners(
 func (r *Service) fetchMostRecentHeader(
 	ctx context.Context,
 	defaultBlock DefaultBlock,
-) (*types.Header, error) {
+) (uint64, error) {
 
 	var defaultBlockNumber int64
 	switch defaultBlock {
@@ -318,7 +192,7 @@ func (r *Service) fetchMostRecentHeader(
 	case DefaultBlock_Safe:
 		defaultBlockNumber = rpc.SafeBlockNumber.Int64()
 	default:
-		return nil, fmt.Errorf("default block '%v' not supported", defaultBlock)
+		return 0, fmt.Errorf("default block '%v' not supported", defaultBlock)
 	}
 
 	header, err :=
@@ -326,13 +200,16 @@ func (r *Service) fetchMostRecentHeader(
 			ctx,
 			new(big.Int).SetInt64(defaultBlockNumber))
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve header: %w", err)
+		return 0, fmt.Errorf("failed to retrieve header: %w", err)
 	}
 
 	if header == nil {
-		return nil, fmt.Errorf("returned header is nil")
+		return 0, fmt.Errorf("returned header is nil")
 	}
-	return header, nil
+	if header.Number == nil {
+		return 0, fmt.Errorf("returned header number is nil")
+	}
+	return header.Number.Uint64(), nil
 }
 
 type AdapterFactory interface {

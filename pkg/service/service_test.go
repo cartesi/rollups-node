@@ -64,6 +64,22 @@ func TestServe(t *testing.T) {
 	suite.Run(t, new(ServeSuite))
 }
 
+func TestCreateRejectsNegativePollInterval(t *testing.T) {
+	impl := &mockImpl{}
+	svc := &Service{}
+
+	require.NotPanics(t, func() {
+		err := Create(context.Background(), &CreateInfo{
+			Name:         "test-negative-poll",
+			LogLevel:     slog.LevelError,
+			Impl:         impl,
+			PollInterval: -time.Second,
+		}, svc)
+		require.ErrorContains(t, err, "PollInterval must be non-negative")
+	})
+	require.Nil(t, svc.Ticker)
+}
+
 func (s *ServeSuite) TestDisabledReschedulePreservesExistingBehavior() {
 	// With rescheduling disabled and a short poll interval,
 	// Serve() should tick only on timer fires.

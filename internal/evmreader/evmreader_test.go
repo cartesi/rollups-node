@@ -4,14 +4,17 @@
 package evmreader
 
 import (
+	"bytes"
 	"context"
-	"fmt"
+	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/service"
+
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -26,7 +29,6 @@ type EvmReaderSuite struct {
 	ctx                  context.Context
 	cancel               context.CancelFunc
 	client               *MockEthClient
-	wsClient             *MockEthClient
 	repository           *MockRepository
 	evmReader            *Service
 	contractFactory      *MockAdapterFactory
@@ -40,17 +42,12 @@ func TestEvmReaderSuite(t *testing.T) {
 }
 
 func (s *EvmReaderSuite) SetupSuite() {
-	s.ctx, s.cancel = context.WithTimeout(context.Background(), suiteTimeout)
 	config.SetDefaults()
 }
 
-func (s *EvmReaderSuite) TearDownSuite() {
-	s.cancel()
-}
-
 func (s *EvmReaderSuite) SetupTest() {
+	s.ctx, s.cancel = context.WithTimeout(context.Background(), suiteTimeout)
 	s.client = newMockEthClient().SetupDefaultBehavior()
-	s.wsClient = newMockEthClient().SetupDefaultWsBehavior()
 	s.repository = newMockRepository().SetupDefaultBehavior()
 	s.applicationContract1 = newMockApplicationContract().SetupDefaultBehavior()
 	s.applicationContract2 = newMockApplicationContract().SetupDefaultBehavior()
@@ -58,157 +55,265 @@ func (s *EvmReaderSuite) SetupTest() {
 	s.contractFactory = newMockAdapterFactory().SetupDefaultBehavior(s.applicationContract1, s.applicationContract2, s.inputBox)
 
 	s.evmReader = &Service{
-		client:                              s.client,
-		wsClient:                            s.wsClient,
-		repository:                          s.repository,
-		defaultBlock:                        DefaultBlock_Latest,
-		adapterFactory:                      s.contractFactory,
-		hasEnabledApps:                      true,
-		inputReaderEnabled:                  true,
-		blockchainMaxRetries:                0,
-		blockchainSubscriptionRetryInterval: time.Second,
-		wsLivenessTimeout:                   120 * time.Second,
+		client:             s.client,
+		repository:         s.repository,
+		defaultBlock:       DefaultBlock_Latest,
+		inputReaderEnabled: true,
+		hasEnabledApps:     true,
+		adapterFactory:     s.contractFactory,
 	}
 
 	logLevel, err := config.GetLogLevel()
 	s.Require().NoError(err)
 
-	serviceArgs := &service.CreateInfo{Name: "evm-reader", Impl: s.evmReader, LogLevel: logLevel}
+	serviceArgs := &service.CreateInfo{
+		Name:         "evm-reader",
+		Impl:         s.evmReader,
+		LogLevel:     logLevel,
+		Context:      s.ctx,
+		Cancel:       s.cancel,
+		PollInterval: 100 * time.Millisecond,
+	}
 	err = service.Create(context.Background(), serviceArgs, &s.evmReader.Service)
 	s.Require().NoError(err)
+
+	s.evmReader.resolver = newApplicationAdapterResolver(s.evmReader.Logger, s.contractFactory)
 }
 
-// Service tests
-func (s *EvmReaderSuite) TestItStopsWhenContextIsCanceled() {
-	ctx, cancel := context.WithCancel(s.ctx)
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-	go func() {
-		errChannel <- s.evmReader.Run(ctx, ready)
-	}()
-	cancel()
-
-	err := <-errChannel
-	s.Require().Equal(context.Canceled, err, "stopped for the wrong reason")
+func (s *EvmReaderSuite) TearDownTest() {
+	s.cancel()
 }
 
-func (s *EvmReaderSuite) TestItEventuallyBecomesReady() {
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-	go func() {
-		errChannel <- s.evmReader.Run(s.ctx, ready)
-	}()
+func newCallNotification(c *mock.Call) <-chan struct{} {
+	ch := make(chan struct{})
+	c.Run(func(mock.Arguments) { ch <- struct{}{} })
+	return ch
+}
 
+func newBlockedCallNotification(c *mock.Call) (<-chan struct{}, chan struct{}) {
+	called := make(chan struct{})
+	blocked := make(chan struct{})
+	c.Run(func(mock.Arguments) {
+		called <- struct{}{} // notify function was called
+		<-blocked            // block function until notified
+	})
+	return called, blocked
+}
+
+func waitNotification(ch <-chan struct{}) bool {
 	select {
-	case <-ready:
-	case err := <-errChannel:
-		s.FailNow("unexpected failure", err)
+	case <-ch:
+		return true
+	case <-time.After(2 * time.Second):
+		return false
 	}
 }
 
-func (s *EvmReaderSuite) TestItReturnsErrorWhenWebSocketStalls() {
-	s.evmReader.wsLivenessTimeout = 50 * time.Millisecond
-	ready := make(chan struct{}, 1)
-	headersProcessed, err := s.evmReader.watchForNewBlocks(s.ctx, ready)
-	s.Require().Equal(uint64(0), headersProcessed)
-	var subErr *SubscriptionError
-	s.Require().ErrorAs(err, &subErr)
-	s.Require().ErrorContains(err, "no new block header received")
+func wasntNotified(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return false
+	default:
+		return true
+	}
 }
 
-func (s *EvmReaderSuite) TestRunExhaustsRetriesOnConsecutiveConnectionFailures() {
-	s.evmReader.blockchainMaxRetries = 2
-	s.evmReader.blockchainSubscriptionRetryInterval = time.Millisecond
+// Service tests
+func (s *EvmReaderSuite) TestItStopsWhenContextIsAlreadyCanceled() {
+	done := make(chan struct{})
+	go func() {
+		s.cancel()
+		err := s.evmReader.Serve()
+		s.Require().NoError(err)
+		close(done)
+	}()
 
-	s.wsClient.Unset("SubscribeNewHead")
-	sub := &MockSubscription{}
-	s.wsClient.On("SubscribeNewHead", mock.Anything, mock.Anything).
-		Return(sub, fmt.Errorf("connection refused"))
+	s.Require().True(waitNotification(done), "evmreader did not stop after context cancelation")
+}
 
-	err := s.evmReader.Run(s.ctx, make(chan struct{}, 1))
-	s.Require().ErrorContains(err, "connection refused")
-	// 1 initial + 2 retries = 3 calls
-	s.wsClient.AssertNumberOfCalls(s.T(), "SubscribeNewHead", 3)
+func (s *EvmReaderSuite) TestItStopsWhenContextIsCanceledAfterFirstHeader() {
+	called := newCallNotification(s.client.EnqueueNewHead(100))
+
+	done := make(chan struct{})
+	go func() {
+		err := s.evmReader.Serve()
+		s.Require().NoError(err)
+		close(done)
+	}()
+
+	s.Require().True(waitNotification(called), "evmreader did not read new header")
+
+	s.cancel()
+
+	s.Require().True(waitNotification(done), "evmreader did not stop after context cancelation")
+}
+
+func (s *EvmReaderSuite) TestReadyReflectsServeLifecycle() {
+	called := newCallNotification(s.client.EnqueueNewHead(100))
+
+	s.Require().False(s.evmReader.Ready())
+
+	done := make(chan struct{})
+	go func() {
+		err := s.evmReader.Serve()
+		s.Require().NoError(err)
+		close(done)
+	}()
+
+	s.Require().True(waitNotification(called))
+	s.Require().True(s.evmReader.Ready())
+	s.Require().True(wasntNotified(done))
+
+	s.cancel()
+	s.Require().True(waitNotification(done))
+	s.Require().False(s.evmReader.Ready())
+}
+
+func (s *EvmReaderSuite) TestReadyDoesNotDependOnPollingSuccess() {
+	var hdr *types.Header
+	called := newCallNotification(s.client.On("HeaderByNumber",
+		mock.Anything,
+		mock.Anything,
+	).Return(hdr, errors.New("transient connection error")).Once())
+	s.Require().False(s.evmReader.Ready())
+
+	done := make(chan struct{})
+	go func() {
+		err := s.evmReader.Serve()
+		s.Require().NoError(err)
+		close(done)
+	}()
+
+	s.Require().True(waitNotification(called))
+	s.Require().True(s.evmReader.Ready())
+	s.Require().True(wasntNotified(done))
+
+	s.cancel()
+	s.Require().True(waitNotification(done))
+	s.Require().False(s.evmReader.Ready())
+}
+
+func (s *EvmReaderSuite) TestTickScansWithServiceContext() {
+	s.client.EnqueueNewHead(100).Once()
+
+	// reset mock calls from 'MockRepository.SetupDefaultBehavior'
+	s.repository.On(
+		"UpdateEventLastCheckBlock",
+		mock.Anything,
+		mock.Anything,
+		MonitoredEvent_InputAdded,
+		mock.Anything,
+	).Unset()
+	s.repository.On(
+		"UpdateEventLastCheckBlock",
+		mock.Anything,
+		mock.Anything,
+		MonitoredEvent_OutputExecuted,
+		mock.Anything,
+	).Unset()
+
+	assertValidContext := func(args mock.Arguments) {
+		ctx := args.Get(0).(context.Context)
+		s.Require().Equal(s.evmReader.Context, ctx)
+		s.Require().Nil(ctx.Err())
+	}
+
+	// setup mock calls expected to receive a valid context
+	s.repository.On(
+		"UpdateEventLastCheckBlock",
+		mock.Anything,
+		mock.Anything,
+		MonitoredEvent_InputAdded,
+		mock.Anything,
+	).Return(nil).Times(1).Run(assertValidContext)
+	s.repository.On(
+		"UpdateEventLastCheckBlock",
+		mock.Anything,
+		mock.Anything,
+		MonitoredEvent_OutputExecuted,
+		mock.Anything,
+	).Return(nil).Times(4).Run(assertValidContext)
+
+	s.Require().False(s.evmReader.Ready())
+
+	errs := s.evmReader.Tick()
+	s.Require().Empty(errs)
+
+	s.client.AssertCalled(s.T(), "HeaderByNumber", mock.Anything, mock.Anything)
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 5)
+}
+
+func (s *EvmReaderSuite) TestFetchMostRecentHeaderReturnsErrorWhenHeaderNumberIsNil() {
+	s.client.On("HeaderByNumber",
+		mock.Anything,
+		mock.Anything,
+	).Return(&types.Header{}, nil).Once()
+
+	blockNumber, err := s.evmReader.fetchMostRecentHeader(s.ctx, DefaultBlock_Latest)
+
+	s.Require().Error(err)
+	s.Require().ErrorContains(err, "returned header number is nil")
+	s.Require().Zero(blockNumber)
+}
+
+func (s *EvmReaderSuite) TestTickReturnsHeaderFetchErrorWithoutLocalErrorLog() {
+	var logBuffer bytes.Buffer
+	s.evmReader.Logger = slog.New(slog.NewTextHandler(&logBuffer, nil))
+
+	headerErr := errors.New("transient connection error")
+	var hdr *types.Header
+	s.client.On("HeaderByNumber",
+		mock.Anything,
+		mock.Anything,
+	).Return(hdr, headerErr).Once()
+
+	errs := s.evmReader.Tick()
+
+	s.Require().Len(errs, 1)
+	s.Require().ErrorIs(errs[0], headerErr)
+	s.Require().NotContains(logBuffer.String(), "Error fetching most recent block")
+	s.repository.AssertNumberOfCalls(s.T(), "ListApplications", 0)
+}
+
+func (s *EvmReaderSuite) TestItRunsWhenConnectionFails() {
+	var hdr *types.Header
+	called := newCallNotification(s.client.On("HeaderByNumber",
+		mock.Anything,
+		mock.Anything,
+	).Return(hdr, errors.New("transient connection error")))
+
+	done := make(chan struct{})
+	go func() {
+		err := s.evmReader.Serve()
+		s.Require().NoError(err)
+		close(done)
+	}()
+
+	s.Require().True(waitNotification(called))
+	s.Require().True(waitNotification(called))
+	s.Require().True(wasntNotified(done))
 }
 
 func (s *EvmReaderSuite) TestRunResetsRetriesAfterProcessingHeaders() {
-	s.evmReader.blockchainMaxRetries = 1
-	s.evmReader.blockchainSubscriptionRetryInterval = time.Millisecond
-	s.evmReader.wsLivenessTimeout = 100 * time.Millisecond
-
-	// First call: subscribe succeeds, deliver a header, then subscription error fires.
-	// -> headersProcessed > 0, so consecutiveFailures resets to 0
-	// Second call: subscribe fails (connection error) -> consecutiveFailures=1
-	// Third call: subscribe fails -> consecutiveFailures=2 > maxRetries(1) -> exit
-	subWithError := &MockSubscription{}
-	errCh := make(chan error, 1)
-	subWithError.On("Unsubscribe").Return()
-	subWithError.On("Err").Return((<-chan error)(errCh))
-
-	s.wsClient.Unset("SubscribeNewHead")
-	s.wsClient.On("SubscribeNewHead", mock.Anything, mock.Anything).
-		Run(func(args mock.Arguments) {
-			ch := args.Get(1).(chan<- *types.Header)
-			// Deliver a header then trigger subscription error
-			go func() {
-				ch <- &header0
-				errCh <- fmt.Errorf("connection lost")
-			}()
-		}).
-		Return(subWithError, nil).Once()
-
-	emptySub := &MockSubscription{}
-	s.wsClient.On("SubscribeNewHead", mock.Anything, mock.Anything).
-		Return(emptySub, fmt.Errorf("connection refused"))
-
-	err := s.evmReader.Run(s.ctx, make(chan struct{}, 1))
-	s.Require().ErrorContains(err, "connection refused")
-	// 1 successful + 1 retry + 1 exhausted = 3 calls
-	s.wsClient.AssertNumberOfCalls(s.T(), "SubscribeNewHead", 3)
-}
-
-func (s *EvmReaderSuite) TestRunDoesNotResetRetriesWithoutProcessingHeaders() {
-	s.evmReader.blockchainMaxRetries = 1
-	s.evmReader.blockchainSubscriptionRetryInterval = time.Millisecond
-	s.evmReader.wsLivenessTimeout = time.Millisecond
-
-	// Subscribe succeeds but no headers arrive before liveness timeout.
-	// headersProcessed=0, so consecutiveFailures increments (not reset).
-	// With maxRetries=1: first timeout -> failures=1, second timeout -> failures=2 > 1 -> exit
-	err := s.evmReader.Run(s.ctx, make(chan struct{}, 1))
-	s.Require().ErrorContains(err, "no new block header received")
-	s.wsClient.AssertNumberOfCalls(s.T(), "SubscribeNewHead", 2)
-}
-
-func (s *EvmReaderSuite) TestRunStopsDuringRetryWhenContextCanceled() {
-	s.evmReader.blockchainMaxRetries = 100
-	s.evmReader.blockchainSubscriptionRetryInterval = time.Second
-
-	s.wsClient.Unset("SubscribeNewHead")
-	sub := &MockSubscription{}
-	ctx, cancel := context.WithCancel(s.ctx)
-	s.wsClient.On("SubscribeNewHead", mock.Anything, mock.Anything).
-		Run(func(_ mock.Arguments) { cancel() }).
-		Return(sub, fmt.Errorf("connection refused"))
-
-	err := s.evmReader.Run(ctx, make(chan struct{}, 1))
-	s.Require().ErrorIs(err, context.Canceled)
-}
-
-func (s *EvmReaderSuite) TestItFailsToSubscribeForNewInputsOnStart() {
-	s.wsClient.Unset("ChainID")
-	s.wsClient.Unset("SubscribeNewHead")
-	emptySubscription := &MockSubscription{}
-	s.wsClient.On(
-		"SubscribeNewHead",
+	s.client.EnqueueNewHead(100).Once()
+	var hdr *types.Header
+	s.client.On("HeaderByNumber",
 		mock.Anything,
 		mock.Anything,
-	).Return(emptySubscription, fmt.Errorf("expected failure"))
+	).Return(hdr, errors.New("transient connection error")).Once()
+	called := newCallNotification(s.client.EnqueueNewHead(101))
 
-	err := s.evmReader.Run(s.ctx, make(chan struct{}, 1))
-	s.Require().ErrorContains(err, "expected failure")
-	s.wsClient.AssertNumberOfCalls(s.T(), "SubscribeNewHead", 1)
-	s.wsClient.AssertExpectations(s.T())
+	done := make(chan struct{})
+	go func() {
+		err := s.evmReader.Serve()
+		s.Require().NoError(err)
+		close(done)
+	}()
+
+	s.Require().True(waitNotification(called))
+	s.Require().True(wasntNotified(done))
+
+	s.client.AssertCalled(s.T(), "HeaderByNumber", mock.Anything, mock.Anything)
 }
 
 // indexApps indexes applications given a key extractor function.

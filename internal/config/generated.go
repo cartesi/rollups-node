@@ -33,7 +33,6 @@ const (
 	BLOCKCHAIN_HTTP_ENDPOINT                          = "CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"
 	BLOCKCHAIN_ID                                     = "CARTESI_BLOCKCHAIN_ID"
 	BLOCKCHAIN_LEGACY_ENABLED                         = "CARTESI_BLOCKCHAIN_LEGACY_ENABLED"
-	BLOCKCHAIN_WS_ENDPOINT                            = "CARTESI_BLOCKCHAIN_WS_ENDPOINT"
 	CONTRACTS_APPLICATION_FACTORY_ADDRESS             = "CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS"
 	CONTRACTS_AUTHORITY_FACTORY_ADDRESS               = "CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS"
 	CONTRACTS_DAVE_APP_FACTORY_ADDRESS                = "CARTESI_CONTRACTS_DAVE_APP_FACTORY_ADDRESS"
@@ -73,14 +72,13 @@ const (
 	ADVANCER_INPUT_BATCH_SIZE                         = "CARTESI_ADVANCER_INPUT_BATCH_SIZE"
 	ADVANCER_POLLING_INTERVAL                         = "CARTESI_ADVANCER_POLLING_INTERVAL"
 	BLOCKCHAIN_HTTP_MAX_RETRIES                       = "CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES"
+	BLOCKCHAIN_HTTP_REQUEST_TIMEOUT                   = "CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT"
 	BLOCKCHAIN_HTTP_RETRY_MAX_WAIT                    = "CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT"
 	BLOCKCHAIN_HTTP_RETRY_MIN_WAIT                    = "CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT"
 	BLOCKCHAIN_MAX_BLOCK_RANGE                        = "CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"
-	BLOCKCHAIN_WS_LIVENESS_TIMEOUT                    = "CARTESI_BLOCKCHAIN_WS_LIVENESS_TIMEOUT"
-	BLOCKCHAIN_WS_MAX_RETRIES                         = "CARTESI_BLOCKCHAIN_WS_MAX_RETRIES"
-	BLOCKCHAIN_WS_RECONNECT_INTERVAL                  = "CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL"
 	CLAIMER_MAX_ACCEPT_ATTEMPTS                       = "CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS"
 	CLAIMER_POLLING_INTERVAL                          = "CARTESI_CLAIMER_POLLING_INTERVAL"
+	EVM_READER_POLLING_INTERVAL                       = "CARTESI_EVM_READER_POLLING_INTERVAL"
 	MAX_STARTUP_TIME                                  = "CARTESI_MAX_STARTUP_TIME"
 	PRT_POLLING_INTERVAL                              = "CARTESI_PRT_POLLING_INTERVAL"
 	VALIDATOR_POLLING_INTERVAL                        = "CARTESI_VALIDATOR_POLLING_INTERVAL"
@@ -94,8 +92,6 @@ const (
 
 	BLOCKCHAIN_HTTP_AUTHORIZATION_FILE = "CARTESI_BLOCKCHAIN_HTTP_AUTHORIZATION_FILE"
 	BLOCKCHAIN_HTTP_ENDPOINT_FILE      = "CARTESI_BLOCKCHAIN_HTTP_ENDPOINT_FILE"
-
-	BLOCKCHAIN_WS_ENDPOINT_FILE = "CARTESI_BLOCKCHAIN_WS_ENDPOINT_FILE"
 
 	DATABASE_CONNECTION_FILE = "CARTESI_DATABASE_CONNECTION_FILE"
 )
@@ -124,8 +120,6 @@ func SetDefaults() {
 	// no default for CARTESI_BLOCKCHAIN_ID
 
 	viper.SetDefault(BLOCKCHAIN_LEGACY_ENABLED, "false")
-
-	// no default for CARTESI_BLOCKCHAIN_WS_ENDPOINT
 
 	// no default for CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS
 
@@ -205,21 +199,19 @@ func SetDefaults() {
 
 	viper.SetDefault(BLOCKCHAIN_HTTP_MAX_RETRIES, "4")
 
+	viper.SetDefault(BLOCKCHAIN_HTTP_REQUEST_TIMEOUT, "120")
+
 	viper.SetDefault(BLOCKCHAIN_HTTP_RETRY_MAX_WAIT, "60")
 
 	viper.SetDefault(BLOCKCHAIN_HTTP_RETRY_MIN_WAIT, "1")
 
 	viper.SetDefault(BLOCKCHAIN_MAX_BLOCK_RANGE, "0")
 
-	viper.SetDefault(BLOCKCHAIN_WS_LIVENESS_TIMEOUT, "120")
-
-	viper.SetDefault(BLOCKCHAIN_WS_MAX_RETRIES, "4")
-
-	viper.SetDefault(BLOCKCHAIN_WS_RECONNECT_INTERVAL, "1")
-
 	viper.SetDefault(CLAIMER_MAX_ACCEPT_ATTEMPTS, "5")
 
 	viper.SetDefault(CLAIMER_POLLING_INTERVAL, "3")
+
+	viper.SetDefault(EVM_READER_POLLING_INTERVAL, "12")
 
 	viper.SetDefault(MAX_STARTUP_TIME, "15")
 
@@ -450,6 +442,9 @@ type ClaimerConfig struct {
 	// Maximum number of retry attempts for HTTP blockchain requests after encountering an error.
 	BlockchainHttpMaxRetries uint64 `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES"`
 
+	// Maximum time in seconds allowed for each HTTP request to the blockchain provider. This prevents a single slow or stuck provider request from blocking a service indefinitely.
+	BlockchainHttpRequestTimeout Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT"`
+
 	// Maximum wait time in seconds for the exponential backoff retry policy. The delay between retries for HTTP blockchain requests will never exceed this value, regardless of the backoff calculation.
 	BlockchainHttpRetryMaxWait Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT"`
 
@@ -559,6 +554,13 @@ func LoadClaimerConfig() (*ClaimerConfig, error) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES is required for the claimer service: %w", err)
 	}
 
+	cfg.BlockchainHttpRequestTimeout, err = GetBlockchainHttpRequestTimeout()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT is required for the claimer service: %w", err)
+	}
+
 	cfg.BlockchainHttpRetryMaxWait, err = GetBlockchainHttpRetryMaxWait()
 	if err != nil && err != ErrNotDefined {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT: %w", err)
@@ -617,9 +619,6 @@ type EvmreaderConfig struct {
 	// An unique identifier representing a blockchain network.
 	BlockchainId uint64 `mapstructure:"CARTESI_BLOCKCHAIN_ID"`
 
-	// WebSocket endpoint for the blockchain RPC provider.
-	BlockchainWsEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_WS_ENDPOINT"`
-
 	// Postgres endpoint in the 'postgres://user:password@hostname:port/database' format (URL).
 	//
 	// If not set, or set to empty string, will defer the behaviour to the PG driver.
@@ -645,6 +644,9 @@ type EvmreaderConfig struct {
 	// Maximum number of retry attempts for HTTP blockchain requests after encountering an error.
 	BlockchainHttpMaxRetries uint64 `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES"`
 
+	// Maximum time in seconds allowed for each HTTP request to the blockchain provider. This prevents a single slow or stuck provider request from blocking a service indefinitely.
+	BlockchainHttpRequestTimeout Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT"`
+
 	// Maximum wait time in seconds for the exponential backoff retry policy. The delay between retries for HTTP blockchain requests will never exceed this value, regardless of the backoff calculation.
 	BlockchainHttpRetryMaxWait Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT"`
 
@@ -654,14 +656,8 @@ type EvmreaderConfig struct {
 	// Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited.
 	BlockchainMaxBlockRange uint64 `mapstructure:"CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"`
 
-	// Maximum time in seconds to wait for a new block header on the WebSocket subscription before treating the connection as stalled and reconnecting. Handles silent connection drops where no error is delivered. The default (120s) is tuned for mainnet (~12s block time). Reduce for faster chains or devnets.
-	BlockchainWsLivenessTimeout Duration `mapstructure:"CARTESI_BLOCKCHAIN_WS_LIVENESS_TIMEOUT"`
-
-	// Maximum number of consecutive WebSocket subscription failures before the service gives up and exits. A failure is counted only when a subscription attempt produces zero headers before disconnecting. Successful header processing resets the counter.
-	BlockchainWsMaxRetries uint64 `mapstructure:"CARTESI_BLOCKCHAIN_WS_MAX_RETRIES"`
-
-	// Wait time in seconds between WebSocket subscription reconnection attempts after a connection failure.
-	BlockchainWsReconnectInterval Duration `mapstructure:"CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL"`
+	// Time in seconds to wait before checking for a new block header. The default (12s) is tuned for mainnet. Reduce for faster chains or devnets.
+	EvmReaderPollingInterval Duration `mapstructure:"CARTESI_EVM_READER_POLLING_INTERVAL"`
 
 	// How many seconds the node expects services take initializing before aborting.
 	MaxStartupTime Duration `mapstructure:"CARTESI_MAX_STARTUP_TIME"`
@@ -700,13 +696,6 @@ func LoadEvmreaderConfig() (*EvmreaderConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_ID: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_ID is required for the evmreader service: %w", err)
-	}
-
-	cfg.BlockchainWsEndpoint, err = GetBlockchainWsEndpoint()
-	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_WS_ENDPOINT: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_WS_ENDPOINT is required for the evmreader service: %w", err)
 	}
 
 	cfg.DatabaseConnection, err = GetDatabaseConnection()
@@ -751,6 +740,13 @@ func LoadEvmreaderConfig() (*EvmreaderConfig, error) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES is required for the evmreader service: %w", err)
 	}
 
+	cfg.BlockchainHttpRequestTimeout, err = GetBlockchainHttpRequestTimeout()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT is required for the evmreader service: %w", err)
+	}
+
 	cfg.BlockchainHttpRetryMaxWait, err = GetBlockchainHttpRetryMaxWait()
 	if err != nil && err != ErrNotDefined {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT: %w", err)
@@ -772,25 +768,11 @@ func LoadEvmreaderConfig() (*EvmreaderConfig, error) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE is required for the evmreader service: %w", err)
 	}
 
-	cfg.BlockchainWsLivenessTimeout, err = GetBlockchainWsLivenessTimeout()
+	cfg.EvmReaderPollingInterval, err = GetEvmReaderPollingInterval()
 	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_WS_LIVENESS_TIMEOUT: %w", err)
+		return nil, fmt.Errorf("failed to get CARTESI_EVM_READER_POLLING_INTERVAL: %w", err)
 	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_WS_LIVENESS_TIMEOUT is required for the evmreader service: %w", err)
-	}
-
-	cfg.BlockchainWsMaxRetries, err = GetBlockchainWsMaxRetries()
-	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_WS_MAX_RETRIES: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_WS_MAX_RETRIES is required for the evmreader service: %w", err)
-	}
-
-	cfg.BlockchainWsReconnectInterval, err = GetBlockchainWsReconnectInterval()
-	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL is required for the evmreader service: %w", err)
+		return nil, fmt.Errorf("CARTESI_EVM_READER_POLLING_INTERVAL is required for the evmreader service: %w", err)
 	}
 
 	cfg.MaxStartupTime, err = GetMaxStartupTime()
@@ -933,9 +915,6 @@ type NodeConfig struct {
 	// (instead of EIP-1559).
 	BlockchainLegacyEnabled bool `mapstructure:"CARTESI_BLOCKCHAIN_LEGACY_ENABLED"`
 
-	// WebSocket endpoint for the blockchain RPC provider.
-	BlockchainWsEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_WS_ENDPOINT"`
-
 	// Postgres endpoint in the 'postgres://user:password@hostname:port/database' format (URL).
 	//
 	// If not set, or set to empty string, will defer the behaviour to the PG driver.
@@ -1014,6 +993,9 @@ type NodeConfig struct {
 	// Maximum number of retry attempts for HTTP blockchain requests after encountering an error.
 	BlockchainHttpMaxRetries uint64 `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES"`
 
+	// Maximum time in seconds allowed for each HTTP request to the blockchain provider. This prevents a single slow or stuck provider request from blocking a service indefinitely.
+	BlockchainHttpRequestTimeout Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT"`
+
 	// Maximum wait time in seconds for the exponential backoff retry policy. The delay between retries for HTTP blockchain requests will never exceed this value, regardless of the backoff calculation.
 	BlockchainHttpRetryMaxWait Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT"`
 
@@ -1022,15 +1004,6 @@ type NodeConfig struct {
 
 	// Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited.
 	BlockchainMaxBlockRange uint64 `mapstructure:"CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"`
-
-	// Maximum time in seconds to wait for a new block header on the WebSocket subscription before treating the connection as stalled and reconnecting. Handles silent connection drops where no error is delivered. The default (120s) is tuned for mainnet (~12s block time). Reduce for faster chains or devnets.
-	BlockchainWsLivenessTimeout Duration `mapstructure:"CARTESI_BLOCKCHAIN_WS_LIVENESS_TIMEOUT"`
-
-	// Maximum number of consecutive WebSocket subscription failures before the service gives up and exits. A failure is counted only when a subscription attempt produces zero headers before disconnecting. Successful header processing resets the counter.
-	BlockchainWsMaxRetries uint64 `mapstructure:"CARTESI_BLOCKCHAIN_WS_MAX_RETRIES"`
-
-	// Wait time in seconds between WebSocket subscription reconnection attempts after a connection failure.
-	BlockchainWsReconnectInterval Duration `mapstructure:"CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL"`
 
 	// Maximum number of consecutive acceptClaim attempts per (application, epoch) before
 	// the application is marked FAILED. Bounds wasted gas on a persistently-reverting chain
@@ -1043,6 +1016,9 @@ type NodeConfig struct {
 
 	// How many seconds the node will wait before querying the database for new claims.
 	ClaimerPollingInterval Duration `mapstructure:"CARTESI_CLAIMER_POLLING_INTERVAL"`
+
+	// Time in seconds to wait before checking for a new block header. The default (12s) is tuned for mainnet. Reduce for faster chains or devnets.
+	EvmReaderPollingInterval Duration `mapstructure:"CARTESI_EVM_READER_POLLING_INTERVAL"`
 
 	// How many seconds the node expects services take initializing before aborting.
 	MaxStartupTime Duration `mapstructure:"CARTESI_MAX_STARTUP_TIME"`
@@ -1097,13 +1073,6 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_LEGACY_ENABLED: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_LEGACY_ENABLED is required for the node service: %w", err)
-	}
-
-	cfg.BlockchainWsEndpoint, err = GetBlockchainWsEndpoint()
-	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_WS_ENDPOINT: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_WS_ENDPOINT is required for the node service: %w", err)
 	}
 
 	cfg.DatabaseConnection, err = GetDatabaseConnection()
@@ -1239,6 +1208,13 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES is required for the node service: %w", err)
 	}
 
+	cfg.BlockchainHttpRequestTimeout, err = GetBlockchainHttpRequestTimeout()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT is required for the node service: %w", err)
+	}
+
 	cfg.BlockchainHttpRetryMaxWait, err = GetBlockchainHttpRetryMaxWait()
 	if err != nil && err != ErrNotDefined {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT: %w", err)
@@ -1260,27 +1236,6 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE is required for the node service: %w", err)
 	}
 
-	cfg.BlockchainWsLivenessTimeout, err = GetBlockchainWsLivenessTimeout()
-	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_WS_LIVENESS_TIMEOUT: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_WS_LIVENESS_TIMEOUT is required for the node service: %w", err)
-	}
-
-	cfg.BlockchainWsMaxRetries, err = GetBlockchainWsMaxRetries()
-	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_WS_MAX_RETRIES: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_WS_MAX_RETRIES is required for the node service: %w", err)
-	}
-
-	cfg.BlockchainWsReconnectInterval, err = GetBlockchainWsReconnectInterval()
-	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL is required for the node service: %w", err)
-	}
-
 	cfg.ClaimerMaxAcceptAttempts, err = GetClaimerMaxAcceptAttempts()
 	if err != nil && err != ErrNotDefined {
 		return nil, fmt.Errorf("failed to get CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS: %w", err)
@@ -1293,6 +1248,13 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_CLAIMER_POLLING_INTERVAL: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_CLAIMER_POLLING_INTERVAL is required for the node service: %w", err)
+	}
+
+	cfg.EvmReaderPollingInterval, err = GetEvmReaderPollingInterval()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_EVM_READER_POLLING_INTERVAL: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_EVM_READER_POLLING_INTERVAL is required for the node service: %w", err)
 	}
 
 	cfg.MaxStartupTime, err = GetMaxStartupTime()
@@ -1367,6 +1329,9 @@ type PrtConfig struct {
 
 	// Maximum number of retry attempts for HTTP blockchain requests after encountering an error.
 	BlockchainHttpMaxRetries uint64 `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES"`
+
+	// Maximum time in seconds allowed for each HTTP request to the blockchain provider. This prevents a single slow or stuck provider request from blocking a service indefinitely.
+	BlockchainHttpRequestTimeout Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT"`
 
 	// Maximum wait time in seconds for the exponential backoff retry policy. The delay between retries for HTTP blockchain requests will never exceed this value, regardless of the backoff calculation.
 	BlockchainHttpRetryMaxWait Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT"`
@@ -1469,6 +1434,13 @@ func LoadPrtConfig() (*PrtConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES is required for the prt service: %w", err)
+	}
+
+	cfg.BlockchainHttpRequestTimeout, err = GetBlockchainHttpRequestTimeout()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT is required for the prt service: %w", err)
 	}
 
 	cfg.BlockchainHttpRetryMaxWait, err = GetBlockchainHttpRetryMaxWait()
@@ -1635,6 +1607,7 @@ func (c *NodeConfig) ToClaimerConfig() *ClaimerConfig {
 		LogColor:                      c.LogColor,
 		LogLevel:                      c.LogLevel,
 		BlockchainHttpMaxRetries:      c.BlockchainHttpMaxRetries,
+		BlockchainHttpRequestTimeout:  c.BlockchainHttpRequestTimeout,
 		BlockchainHttpRetryMaxWait:    c.BlockchainHttpRetryMaxWait,
 		BlockchainHttpRetryMinWait:    c.BlockchainHttpRetryMinWait,
 		BlockchainMaxBlockRange:       c.BlockchainMaxBlockRange,
@@ -1647,22 +1620,20 @@ func (c *NodeConfig) ToClaimerConfig() *ClaimerConfig {
 // ToEvmreaderConfig converts a NodeConfig to a EvmreaderConfig.
 func (c *NodeConfig) ToEvmreaderConfig() *EvmreaderConfig {
 	return &EvmreaderConfig{
-		BlockchainDefaultBlock:        c.BlockchainDefaultBlock,
-		BlockchainHttpEndpoint:        c.BlockchainHttpEndpoint,
-		BlockchainId:                  c.BlockchainId,
-		BlockchainWsEndpoint:          c.BlockchainWsEndpoint,
-		DatabaseConnection:            c.DatabaseConnection,
-		FeatureInputReaderEnabled:     c.FeatureInputReaderEnabled,
-		LogColor:                      c.LogColor,
-		LogLevel:                      c.LogLevel,
-		BlockchainHttpMaxRetries:      c.BlockchainHttpMaxRetries,
-		BlockchainHttpRetryMaxWait:    c.BlockchainHttpRetryMaxWait,
-		BlockchainHttpRetryMinWait:    c.BlockchainHttpRetryMinWait,
-		BlockchainMaxBlockRange:       c.BlockchainMaxBlockRange,
-		BlockchainWsLivenessTimeout:   c.BlockchainWsLivenessTimeout,
-		BlockchainWsMaxRetries:        c.BlockchainWsMaxRetries,
-		BlockchainWsReconnectInterval: c.BlockchainWsReconnectInterval,
-		MaxStartupTime:                c.MaxStartupTime,
+		BlockchainDefaultBlock:       c.BlockchainDefaultBlock,
+		BlockchainHttpEndpoint:       c.BlockchainHttpEndpoint,
+		BlockchainId:                 c.BlockchainId,
+		DatabaseConnection:           c.DatabaseConnection,
+		FeatureInputReaderEnabled:    c.FeatureInputReaderEnabled,
+		LogColor:                     c.LogColor,
+		LogLevel:                     c.LogLevel,
+		BlockchainHttpMaxRetries:     c.BlockchainHttpMaxRetries,
+		BlockchainHttpRequestTimeout: c.BlockchainHttpRequestTimeout,
+		BlockchainHttpRetryMaxWait:   c.BlockchainHttpRetryMaxWait,
+		BlockchainHttpRetryMinWait:   c.BlockchainHttpRetryMinWait,
+		BlockchainMaxBlockRange:      c.BlockchainMaxBlockRange,
+		EvmReaderPollingInterval:     c.EvmReaderPollingInterval,
+		MaxStartupTime:               c.MaxStartupTime,
 	}
 }
 
@@ -1691,6 +1662,7 @@ func (c *NodeConfig) ToPrtConfig() *PrtConfig {
 		LogColor:                      c.LogColor,
 		LogLevel:                      c.LogLevel,
 		BlockchainHttpMaxRetries:      c.BlockchainHttpMaxRetries,
+		BlockchainHttpRequestTimeout:  c.BlockchainHttpRequestTimeout,
 		BlockchainHttpRetryMaxWait:    c.BlockchainHttpRetryMaxWait,
 		BlockchainHttpRetryMinWait:    c.BlockchainHttpRetryMinWait,
 		BlockchainMaxBlockRange:       c.BlockchainMaxBlockRange,
@@ -1884,27 +1856,6 @@ func GetBlockchainLegacyEnabled() (bool, error) {
 		return v, nil
 	}
 	return notDefinedbool(), fmt.Errorf("%s: %w", BLOCKCHAIN_LEGACY_ENABLED, ErrNotDefined)
-}
-
-// GetBlockchainWsEndpoint returns the value for the environment variable CARTESI_BLOCKCHAIN_WS_ENDPOINT.
-func GetBlockchainWsEndpoint() (URL, error) {
-	s := viper.GetString(BLOCKCHAIN_WS_ENDPOINT)
-	if s == "" {
-		filename := viper.GetString(BLOCKCHAIN_WS_ENDPOINT_FILE)
-		contents, err := os.ReadFile(filename)
-		if err != nil {
-			return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_WS_ENDPOINT_FILE, err)
-		}
-		s = strings.TrimSpace(string(contents))
-	}
-	if s != "" {
-		v, err := toURL(s)
-		if err != nil {
-			return v, fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_WS_ENDPOINT, err)
-		}
-		return v, nil
-	}
-	return notDefinedURL(), fmt.Errorf("%s: %w", BLOCKCHAIN_WS_ENDPOINT, ErrNotDefined)
 }
 
 // GetContractsApplicationFactoryAddress returns the value for the environment variable CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS.
@@ -2422,6 +2373,19 @@ func GetBlockchainHttpMaxRetries() (uint64, error) {
 	return notDefineduint64(), fmt.Errorf("%s: %w", BLOCKCHAIN_HTTP_MAX_RETRIES, ErrNotDefined)
 }
 
+// GetBlockchainHttpRequestTimeout returns the value for the environment variable CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT.
+func GetBlockchainHttpRequestTimeout() (Duration, error) {
+	s := viper.GetString(BLOCKCHAIN_HTTP_REQUEST_TIMEOUT)
+	if s != "" {
+		v, err := toDuration(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_REQUEST_TIMEOUT, err)
+		}
+		return v, nil
+	}
+	return notDefinedDuration(), fmt.Errorf("%s: %w", BLOCKCHAIN_HTTP_REQUEST_TIMEOUT, ErrNotDefined)
+}
+
 // GetBlockchainHttpRetryMaxWait returns the value for the environment variable CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT.
 func GetBlockchainHttpRetryMaxWait() (Duration, error) {
 	s := viper.GetString(BLOCKCHAIN_HTTP_RETRY_MAX_WAIT)
@@ -2461,45 +2425,6 @@ func GetBlockchainMaxBlockRange() (uint64, error) {
 	return notDefineduint64(), fmt.Errorf("%s: %w", BLOCKCHAIN_MAX_BLOCK_RANGE, ErrNotDefined)
 }
 
-// GetBlockchainWsLivenessTimeout returns the value for the environment variable CARTESI_BLOCKCHAIN_WS_LIVENESS_TIMEOUT.
-func GetBlockchainWsLivenessTimeout() (Duration, error) {
-	s := viper.GetString(BLOCKCHAIN_WS_LIVENESS_TIMEOUT)
-	if s != "" {
-		v, err := toDuration(s)
-		if err != nil {
-			return v, fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_WS_LIVENESS_TIMEOUT, err)
-		}
-		return v, nil
-	}
-	return notDefinedDuration(), fmt.Errorf("%s: %w", BLOCKCHAIN_WS_LIVENESS_TIMEOUT, ErrNotDefined)
-}
-
-// GetBlockchainWsMaxRetries returns the value for the environment variable CARTESI_BLOCKCHAIN_WS_MAX_RETRIES.
-func GetBlockchainWsMaxRetries() (uint64, error) {
-	s := viper.GetString(BLOCKCHAIN_WS_MAX_RETRIES)
-	if s != "" {
-		v, err := toUint64(s)
-		if err != nil {
-			return v, fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_WS_MAX_RETRIES, err)
-		}
-		return v, nil
-	}
-	return notDefineduint64(), fmt.Errorf("%s: %w", BLOCKCHAIN_WS_MAX_RETRIES, ErrNotDefined)
-}
-
-// GetBlockchainWsReconnectInterval returns the value for the environment variable CARTESI_BLOCKCHAIN_WS_RECONNECT_INTERVAL.
-func GetBlockchainWsReconnectInterval() (Duration, error) {
-	s := viper.GetString(BLOCKCHAIN_WS_RECONNECT_INTERVAL)
-	if s != "" {
-		v, err := toDuration(s)
-		if err != nil {
-			return v, fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_WS_RECONNECT_INTERVAL, err)
-		}
-		return v, nil
-	}
-	return notDefinedDuration(), fmt.Errorf("%s: %w", BLOCKCHAIN_WS_RECONNECT_INTERVAL, ErrNotDefined)
-}
-
 // GetClaimerMaxAcceptAttempts returns the value for the environment variable CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS.
 func GetClaimerMaxAcceptAttempts() (uint64, error) {
 	s := viper.GetString(CLAIMER_MAX_ACCEPT_ATTEMPTS)
@@ -2524,6 +2449,19 @@ func GetClaimerPollingInterval() (Duration, error) {
 		return v, nil
 	}
 	return notDefinedDuration(), fmt.Errorf("%s: %w", CLAIMER_POLLING_INTERVAL, ErrNotDefined)
+}
+
+// GetEvmReaderPollingInterval returns the value for the environment variable CARTESI_EVM_READER_POLLING_INTERVAL.
+func GetEvmReaderPollingInterval() (Duration, error) {
+	s := viper.GetString(EVM_READER_POLLING_INTERVAL)
+	if s != "" {
+		v, err := toDuration(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", EVM_READER_POLLING_INTERVAL, err)
+		}
+		return v, nil
+	}
+	return notDefinedDuration(), fmt.Errorf("%s: %w", EVM_READER_POLLING_INTERVAL, ErrNotDefined)
 }
 
 // GetMaxStartupTime returns the value for the environment variable CARTESI_MAX_STARTUP_TIME.

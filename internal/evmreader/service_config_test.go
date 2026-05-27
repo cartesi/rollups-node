@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -38,6 +41,59 @@ func TestCreateWithNilEthClient(t *testing.T) {
 		CreateInfo: service.CreateInfo{Name: "evm-reader", LogLevel: logLevel},
 	})
 	require.ErrorContains(t, err, "EthClient on evmreader service Create is nil")
+}
+
+func TestCreateAcceptsRequestTimeoutBelowPollingInterval(t *testing.T) {
+	config.SetDefaults()
+	logLevel, err := config.GetLogLevel()
+	require.NoError(t, err)
+
+	const chainID = uint64(1)
+	pollInterval := 12 * time.Second
+	requestTimeout := 5 * time.Second
+
+	rpcServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x1"}`))
+	}))
+	defer rpcServer.Close()
+
+	client, err := ethclient.Dial(rpcServer.URL)
+	require.NoError(t, err)
+	defer client.Close()
+
+	rawConfig, err := json.Marshal(PersistentConfig{
+		DefaultBlock:       DefaultBlock_Finalized,
+		InputReaderEnabled: true,
+		ChainID:            chainID,
+	})
+	require.NoError(t, err)
+
+	repo := newMockRepository()
+	repo.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
+		Return(rawConfig, time.Now(), time.Now(), nil).Once()
+
+	svc, err := Create(context.Background(), &CreateInfo{
+		CreateInfo: service.CreateInfo{
+			Name:         "evm-reader",
+			LogLevel:     logLevel,
+			PollInterval: pollInterval,
+		},
+		Config: config.EvmreaderConfig{
+			BlockchainDefaultBlock:       DefaultBlock_Finalized,
+			BlockchainHttpRequestTimeout: requestTimeout,
+			BlockchainId:                 chainID,
+			EvmReaderPollingInterval:     pollInterval,
+			FeatureInputReaderEnabled:    true,
+		},
+		EthClient:  client,
+		Repository: repo,
+	})
+	require.NoError(t, err)
+	defer svc.Ticker.Stop()
+	defer svc.Cancel()
+
+	repo.AssertExpectations(t)
 }
 
 // --- fetchMostRecentHeader tests ---
@@ -74,7 +130,7 @@ func (s *EvmReaderSuite) TestFetchMostRecentHeaderSuccess() {
 
 	header, err := s.evmReader.fetchMostRecentHeader(s.ctx, DefaultBlock_Finalized)
 	s.Require().NoError(err)
-	s.Require().Equal(expected, header)
+	s.Require().Equal(expected.Number.Uint64(), header)
 }
 
 // --- inputReaderEnabled feature flag tests ---

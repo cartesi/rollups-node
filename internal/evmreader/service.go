@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"math/big"
 	"sync/atomic"
-	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	. "github.com/cartesi/rollups-node/internal/model"
@@ -24,28 +23,25 @@ type CreateInfo struct {
 
 	Config config.EvmreaderConfig
 
-	Repository repository.Repository
+	Repository EvmReaderRepository
 
-	EthClient   *ethclient.Client
-	EthWsClient EthClientInterface
+	EthClient *ethclient.Client
 }
 
 type Service struct {
 	service.Service
 
-	client                              EthClientInterface
-	wsClient                            EthClientInterface
-	adapterFactory                      AdapterFactory
-	repository                          EvmReaderRepository
-	chainId                             uint64
-	defaultBlock                        DefaultBlock
-	hasEnabledApps                      bool
-	inputReaderEnabled                  bool
-	blockchainMaxRetries                uint64
-	blockchainSubscriptionRetryInterval time.Duration
-	wsLivenessTimeout                   time.Duration
-	alive                               atomic.Bool
-	ready                               atomic.Bool
+	client             EthClientInterface
+	adapterFactory     AdapterFactory
+	resolver           *applicationAdapterResolver
+	repository         EvmReaderRepository
+	chainID            uint64
+	defaultBlock       DefaultBlock
+	hasEnabledApps     bool
+	inputReaderEnabled bool
+	lastBlockNumber    atomic.Uint64
+	alive              atomic.Bool
+	ready              atomic.Bool
 }
 
 const EvmReaderConfigKey = "evm-reader"
@@ -82,18 +78,6 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 			chainId.Uint64(), c.Config.BlockchainId)
 	}
 
-	if c.EthWsClient == nil {
-		return nil, fmt.Errorf("EthWsClient on evmreader service Create is nil")
-	}
-	chainId, err = c.EthWsClient.ChainID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if chainId.Uint64() != c.Config.BlockchainId {
-		return nil, fmt.Errorf("EthWsClient chainId mismatch: network %d != provided %d",
-			chainId.Uint64(), c.Config.BlockchainId)
-	}
-
 	s.repository = c.Repository
 	if s.repository == nil {
 		return nil, fmt.Errorf("repository on evmreader service Create is nil")
@@ -107,14 +91,10 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		return nil, fmt.Errorf("NodeConfig chainId mismatch: network %d != config %d",
 			chainId.Uint64(), nodeConfig.ChainID)
 	}
-	s.blockchainMaxRetries = c.Config.BlockchainWsMaxRetries
-	s.blockchainSubscriptionRetryInterval = c.Config.BlockchainWsReconnectInterval
-	s.wsLivenessTimeout = c.Config.BlockchainWsLivenessTimeout
 
 	s.client = c.EthClient
-	s.wsClient = c.EthWsClient
 
-	s.chainId = nodeConfig.ChainID
+	s.chainID = nodeConfig.ChainID
 	s.defaultBlock = nodeConfig.DefaultBlock
 	s.inputReaderEnabled = nodeConfig.InputReaderEnabled
 	s.hasEnabledApps = true
@@ -126,6 +106,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 			Logger:       s.Logger,
 		},
 	}
+	s.resolver = newApplicationAdapterResolver(s.Logger, s.adapterFactory)
 
 	return s, nil
 }
@@ -147,29 +128,11 @@ func (s *Service) Stop(bool) []error {
 	return nil
 }
 
-func (s *Service) Tick() []error {
-	return []error{}
-}
-
 func (s *Service) Serve() error {
 	s.alive.Store(true)
-	ready := make(chan struct{}, 1)
-	go func() {
-		defer s.alive.Store(false)
-		defer s.ready.Store(false)
-		err := s.Run(s.Context, ready)
-		if err != nil && s.Context.Err() == nil {
-			s.Logger.Error("Run exited with error", "error", err)
-		}
-		s.Cancel()
-	}()
-	go func() {
-		select {
-		case <-ready:
-			s.ready.Store(true)
-		case <-s.Context.Done():
-		}
-	}()
+	s.ready.Store(true)
+	defer s.alive.Store(false)
+	defer s.ready.Store(false)
 	return s.Service.Serve()
 }
 

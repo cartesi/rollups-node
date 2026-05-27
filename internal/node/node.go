@@ -33,11 +33,10 @@ type CreateInfo struct {
 
 	Config config.NodeConfig
 
-	PrtClient      *ethclient.Client
-	ClaimerClient  *ethclient.Client
-	ReaderClient   *ethclient.Client
-	ReaderWSClient *ethclient.Client
-	Repository     repository.Repository
+	PrtClient     *ethclient.Client
+	ClaimerClient *ethclient.Client
+	ReaderClient  *ethclient.Client
+	Repository    repository.Repository
 }
 
 type Service struct {
@@ -169,12 +168,12 @@ func newEVMReader(ctx context.Context, c *CreateInfo, s *Service) (service.IServ
 			LogColor:             c.Config.LogColor,
 			EnableSignalHandling: false,
 			TelemetryCreate:      false,
+			PollInterval:         c.Config.EvmReaderPollingInterval,
 			ServeMux:             s.ServeMux,
 		},
-		EthClient:   c.ReaderClient,
-		EthWsClient: c.ReaderWSClient,
-		Repository:  c.Repository,
-		Config:      *c.Config.ToEvmreaderConfig(),
+		EthClient:  c.ReaderClient,
+		Repository: c.Repository,
+		Config:     *c.Config.ToEvmreaderConfig(),
 	}
 
 	readerService, err := evmreader.Create(ctx, &readerArgs)

@@ -4,11 +4,9 @@
 package evmreader
 
 import (
-	"context"
 	"errors"
 	"math"
 	"math/big"
-	"time"
 
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
@@ -313,8 +311,11 @@ func (s *SealedEpochsSuite) TestFetchSealedEpochInputsRetrieveFailure() {
 // When an application's consensus address changes between block headers,
 // the adapter cache must be invalidated and adapters recreated.
 func (s *EvmReaderSuite) TestAdapterCacheInvalidationOnConfigChange() {
-	ws := &FakeWSEthClient{}
-	s.evmReader.wsClient = ws
+	// Fire 3 headers (block numbers below 999 so output check skips)
+	s.client.EnqueueNewHead(100).Once()
+	s.client.EnqueueNewHead(101).Once()
+	called := newCallNotification(s.client.EnqueueNewHead(102))
+
 	s.evmReader.inputReaderEnabled = false
 	s.evmReader.defaultBlock = DefaultBlock_Latest
 
@@ -365,77 +366,22 @@ func (s *EvmReaderSuite) TestAdapterCacheInvalidationOnConfigChange() {
 	factory.On("CreateAdapters", mock.Anything).
 		Return(newMockApplicationContract(), newMockInputBox(), nil, nil)
 	s.evmReader.adapterFactory = factory
+	s.evmReader.resolver = newApplicationAdapterResolver(s.evmReader.Logger, factory)
 
-	ctx, cancel := context.WithCancel(s.ctx)
-	ready := make(chan struct{}, 1)
-	errCh := make(chan error, 1)
+	done := make(chan struct{})
 	go func() {
-		_, err := s.evmReader.watchForNewBlocks(ctx, ready)
-		errCh <- err
+		err := s.evmReader.Serve()
+		s.Require().NoError(err)
+		close(done)
 	}()
-	<-ready
 
-	// Fire 3 headers (block numbers below 999 so output check skips)
-	ws.fireNewHead(&types.Header{Number: big.NewInt(100)})
-	ws.fireNewHead(&types.Header{Number: big.NewInt(101)})
-	ws.fireNewHead(&types.Header{Number: big.NewInt(102)})
-	ws.flushHeaders()
-
-	cancel()
-	<-errCh
+	<-called
+	s.cancel()
+	<-done
 
 	// CreateAdapters called twice:
 	// Header 1: cache miss → create
 	// Header 2: consensus changed → invalidate + recreate
 	// Header 3: cache hit → skip
 	factory.AssertNumberOfCalls(s.T(), "CreateAdapters", 2)
-}
-
-// --- #20: Liveness timer fires correctly after headers stop ---
-// After processing headers, if no new header arrives within the liveness
-// timeout, watchForNewBlocks returns a SubscriptionError. This also exercises
-// the double-select fix: headers that arrive simultaneously with the timer
-// are picked up by the inner non-blocking receive.
-func (s *EvmReaderSuite) TestLivenessTimerFiresAfterHeadersStop() {
-	ws := &FakeWSEthClient{}
-	s.evmReader.wsClient = ws
-	s.evmReader.wsLivenessTimeout = 50 * time.Millisecond
-	s.evmReader.inputReaderEnabled = false
-	s.evmReader.defaultBlock = DefaultBlock_Latest
-
-	repo := newMockRepository()
-	repo.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).
-		Return([]*Application{}, uint64(0), nil)
-	s.evmReader.repository = repo
-
-	ctx, cancel := context.WithCancel(s.ctx)
-	defer cancel()
-	ready := make(chan struct{}, 1)
-
-	type watchResult struct {
-		headersProcessed uint64
-		err              error
-	}
-	resultCh := make(chan watchResult, 1)
-	go func() {
-		hp, err := s.evmReader.watchForNewBlocks(ctx, ready)
-		resultCh <- watchResult{hp, err}
-	}()
-	<-ready
-
-	// Fire 3 headers, then stop sending
-	ws.fireNewHead(&types.Header{Number: big.NewInt(100)})
-	ws.fireNewHead(&types.Header{Number: big.NewInt(101)})
-	ws.fireNewHead(&types.Header{Number: big.NewInt(102)})
-
-	// Liveness timer should fire ~50ms after last header
-	select {
-	case r := <-resultCh:
-		s.Require().Equal(uint64(3), r.headersProcessed)
-		var subErr *SubscriptionError
-		s.Require().ErrorAs(r.err, &subErr)
-		s.Require().ErrorContains(r.err, "no new block header received")
-	case <-time.After(5 * time.Second):
-		s.FailNow("watchForNewBlocks didn't return after liveness timeout")
-	}
 }

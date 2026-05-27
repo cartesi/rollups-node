@@ -16,28 +16,14 @@ import (
 )
 
 func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocksFilteredByDA() {
-	wsClient := FakeWSEthClient{}
-	s.evmReader.wsClient = &wsClient
+	s.client.EnqueueNewHead(0x11).Once()
+	s.client.EnqueueNewHead(0x12).Once()
+	s.client.EnqueueNewHead(0x13).Once()
+	called, blocked := newBlockedCallNotification(s.client.EnqueueNewHead(0x13))
 
-	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
+	go s.evmReader.Serve() //nolint: errcheck
 
-	go func() {
-		errChannel <- s.evmReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
-	}
-
-	wsClient.fireNewHead(&header0)
-	wsClient.fireNewHead(&header1)
-	wsClient.fireNewHead(&header2)
-	wsClient.flushHeaders()
+	s.Require().True(waitNotification(called), "evmreader did not read new header")
 
 	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 3)
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 9)
@@ -49,62 +35,11 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocksFilteredByDA() {
 	s.applicationContract2.AssertExpectations(s.T())
 	s.contractFactory.AssertExpectations(s.T())
 	s.client.AssertExpectations(s.T())
-}
 
-func (s *EvmReaderSuite) TestItReadsInputsFromNewFinalizedBlocks() {
-	wsClient := FakeWSEthClient{}
-	s.evmReader.wsClient = &wsClient
-	s.evmReader.defaultBlock = DefaultBlock_Finalized
-
-	s.client.On("HeaderByNumber",
-		mock.Anything,
-		mock.Anything,
-	).Return(&header0, nil).Once()
-	s.client.On("HeaderByNumber",
-		mock.Anything,
-		mock.Anything,
-	).Return(&header1, nil).Once()
-	s.client.On("HeaderByNumber",
-		mock.Anything,
-		mock.Anything,
-	).Return(&header2, nil).Once()
-
-	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
-
-	go func() {
-		errChannel <- s.evmReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
-	}
-
-	wsClient.fireNewHead(&header3)
-	wsClient.fireNewHead(&header3)
-	wsClient.fireNewHead(&header3)
-	wsClient.flushHeaders()
-
-	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 3)
-	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 9)
-	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 0)
-	s.repository.AssertExpectations(s.T())
-
-	s.inputBox.AssertExpectations(s.T())
-	s.applicationContract1.AssertExpectations(s.T())
-	s.applicationContract2.AssertExpectations(s.T())
-	s.contractFactory.AssertExpectations(s.T())
-	s.client.AssertExpectations(s.T())
+	close(blocked) // release blocked calls
 }
 
 func (s *EvmReaderSuite) TestItUpdatesLastInputCheckBlockWhenThereIsNoInputs() {
-	wsClient := FakeWSEthClient{}
-	s.evmReader.wsClient = &wsClient
-
 	// Prepare repository
 	s.repository.Unset("UpdateEventLastCheckBlock")
 	s.repository.On("UpdateEventLastCheckBlock",
@@ -160,25 +95,15 @@ func (s *EvmReaderSuite) TestItUpdatesLastInputCheckBlockWhenThereIsNoInputs() {
 		mock.Anything,
 	).Return(new(big.Int).SetUint64(0), nil)
 
+	s.client.EnqueueNewHead(0x11).Once()
+	s.client.EnqueueNewHead(0x12).Once()
+	s.client.EnqueueNewHead(0x13).Once()
+	called, blocked := newBlockedCallNotification(s.client.EnqueueNewHead(0x13))
+
 	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
+	go s.evmReader.Serve() //nolint: errcheck
 
-	go func() {
-		errChannel <- s.evmReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
-	}
-
-	wsClient.fireNewHead(&header0)
-	wsClient.fireNewHead(&header1)
-	wsClient.fireNewHead(&header2)
-	wsClient.flushHeaders()
+	s.Require().True(waitNotification(called), "evmreader did not read new header")
 
 	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
 	s.repository.AssertExpectations(s.T())
@@ -190,13 +115,11 @@ func (s *EvmReaderSuite) TestItUpdatesLastInputCheckBlockWhenThereIsNoInputs() {
 	s.applicationContract2.AssertExpectations(s.T())
 	s.contractFactory.AssertExpectations(s.T())
 	s.client.AssertExpectations(s.T())
+
+	close(blocked) // release blocked connection
 }
 
 func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
-
-	wsClient := FakeWSEthClient{}
-	s.evmReader.wsClient = &wsClient
-
 	s.applicationContract1.Unset("GetDeploymentBlockNumber")
 	s.applicationContract1.Unset("GetNumberOfExecutedOutputs")
 	s.applicationContract1.On("GetNumberOfExecutedOutputs",
@@ -219,6 +142,7 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 
 	s.contractFactory = newMockAdapterFactory().SetupDefaultBehaviorSingleApp(s.applicationContract1, s.inputBox)
 	s.evmReader.adapterFactory = s.contractFactory
+	s.evmReader.resolver = newApplicationAdapterResolver(s.evmReader.Logger, s.contractFactory)
 
 	// Prepare Repo
 	s.repository.Unset("ListApplications")
@@ -289,24 +213,13 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 		mock.Anything,
 	).Return(uint64(0), nil).Once()
 
+	s.client.EnqueueNewHead(0x13).Once()
+	called, blocked := newBlockedCallNotification(s.client.EnqueueNewHead(0x13))
+
 	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
+	go s.evmReader.Serve() //nolint: errcheck
 
-	go func() {
-		errChannel <- s.evmReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
-	}
-
-	wsClient.fireNewHead(&header2)
-	// Give a time for
-	wsClient.flushHeaders()
+	s.Require().True(waitNotification(called), "evmreader did not read new header")
 
 	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 1)
 	s.repository.AssertExpectations(s.T())
@@ -317,12 +230,11 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 	s.applicationContract1.AssertExpectations(s.T())
 	s.contractFactory.AssertExpectations(s.T())
 	s.client.AssertExpectations(s.T())
+
+	close(blocked) // release blocked connection
 }
 
 func (s *EvmReaderSuite) TestItStartsWhenLastProcessedBlockIsTheMostRecentBlock() {
-	wsClient := FakeWSEthClient{}
-	s.evmReader.wsClient = &wsClient
-
 	// Prepare Repo
 	s.repository.Unset("ListApplications")
 	s.repository.On("ListApplications",
@@ -366,29 +278,21 @@ func (s *EvmReaderSuite) TestItStartsWhenLastProcessedBlockIsTheMostRecentBlock(
 		mock.Anything,
 	).Return(s.applicationContract1, s.inputBox, nil, nil).Once()
 
+	s.client.EnqueueNewHead(0x13).Once()
+	called, blocked := newBlockedCallNotification(s.client.EnqueueNewHead(0x13))
+
 	// Start service
-	ready := make(chan struct{}, 1)
-	errChannel := make(chan error, 1)
+	go s.evmReader.Serve() //nolint: errcheck
 
-	go func() {
-		errChannel <- s.evmReader.Run(s.ctx, ready)
-	}()
-
-	select {
-	case <-ready:
-		break
-	case err := <-errChannel:
-		s.FailNow("unexpected error signal", err)
-	}
-
-	wsClient.fireNewHead(&header2)
-	wsClient.flushHeaders()
+	s.Require().True(waitNotification(called), "evmreader did not read new header")
 
 	s.repository.AssertExpectations(s.T())
 	s.inputBox.AssertExpectations(s.T())
 	s.applicationContract1.AssertExpectations(s.T())
 	s.contractFactory.AssertExpectations(s.T())
 	s.client.AssertExpectations(s.T())
+
+	close(blocked) // release blocked connection
 }
 
 func (s *EvmReaderSuite) TestCatchUpForeclosedInputsScansThroughForecloseBlock() {

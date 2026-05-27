@@ -5,11 +5,16 @@ package ethutil
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -225,4 +230,27 @@ func TestRedactEndpointFromError(t *testing.T) {
 		require.NotContains(t, redacted.Error(), "secret-key")
 		require.Contains(t, redacted.Error(), "https://alchemy.com")
 	})
+}
+
+func TestNewEthClientRequestTimeout(t *testing.T) {
+	const requestTimeout = 25 * time.Millisecond
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(10 * requestTimeout)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x1"}`))
+	}))
+	defer server.Close()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	client, err := NewEthClient(context.Background(), server.URL, logger, RetryConfig{
+		RequestTimeout: requestTimeout,
+	})
+	require.NoError(t, err)
+
+	start := time.Now()
+	_, err = client.ChainID(context.Background())
+	elapsed := time.Since(start)
+
+	require.Error(t, err)
+	require.Less(t, elapsed, 5*requestTimeout)
 }

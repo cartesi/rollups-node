@@ -409,6 +409,27 @@ func (r *Service) processApplicationOpenEpoch(
 	app appContracts,
 	mostRecentBlockNumber uint64,
 ) error {
+	// This guard uses the tick-start application snapshot. Sealed-epoch
+	// processing earlier in this same tick can advance the DB input cursor to
+	// mostRecentBlockNumber, but the open epoch may still need to scan that
+	// boundary block. The fresh DB cursor is read below and scanned inclusively.
+	if mostRecentBlockNumber < app.application.LastInputCheckBlock {
+		r.Logger.Warn(
+			"Not checking for inputs on current open epoch: most recent block is lower than the last processed one",
+			"application", app.application.Name, "address", app.application.IApplicationAddress,
+			"last_input_check_block", app.application.LastInputCheckBlock,
+			"most_recent_block", mostRecentBlockNumber,
+		)
+		return nil
+	} else if mostRecentBlockNumber == app.application.LastInputCheckBlock {
+		r.Logger.Debug("Not checking for inputs on current open epoch: already checked the most recent blocks",
+			"application", app.application.Name, "address", app.application.IApplicationAddress,
+			"last_input_check_block", app.application.LastInputCheckBlock,
+			"most_recent_block", mostRecentBlockNumber,
+		)
+		return nil
+	}
+
 	r.Logger.Debug("Checking for inputs on current open epoch",
 		"application", app.application.Name,
 		"most_recent_block", mostRecentBlockNumber,

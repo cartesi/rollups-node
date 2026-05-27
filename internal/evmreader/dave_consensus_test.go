@@ -361,6 +361,82 @@ func (s *SealedEpochsSuite) TestOpenEpochExistingEpochAccumulatesInputs() {
 	s.Require().Equal(uint64(4), storedInputs[0].Index)
 }
 
+func (s *SealedEpochsSuite) TestOpenEpochScansBoundaryBlockAfterIntraTickCursorAdvance() {
+	const (
+		previousInputCursor uint64 = 100
+		mostRecentBlock     uint64 = 200
+	)
+
+	app := appContracts{
+		application: &Application{
+			ID:                  1,
+			Name:                "test-app",
+			IApplicationAddress: app1Addr,
+			IConsensusAddress:   consensusAddr,
+			IInputBoxAddress:    inputBoxAddr,
+			IInputBoxBlock:      10,
+			LastInputCheckBlock: previousInputCursor,
+		},
+		inputSource:   s.inputBox,
+		daveConsensus: s.dave,
+	}
+
+	s.repository.On("GetLastNonOpenEpoch", mock.Anything, mock.Anything).
+		Return(&Epoch{
+			Index:                0,
+			FirstBlock:           10,
+			LastBlock:            mostRecentBlock,
+			InputIndexLowerBound: 0,
+			InputIndexUpperBound: 4,
+		}, nil)
+
+	s.repository.On("GetEpoch", mock.Anything, mock.Anything, uint64(1)).
+		Return(nil, nil)
+
+	s.repository.On("GetEventLastCheckBlock",
+		mock.Anything, int64(1), MonitoredEvent_InputAdded,
+	).Return(mostRecentBlock, nil)
+
+	s.repository.On("GetNumberOfInputs", mock.Anything, mock.Anything).
+		Return(uint64(4), nil)
+
+	s.inputBox.On("GetNumberOfInputs",
+		mock.MatchedBy(func(opts *bind.CallOpts) bool {
+			return opts.BlockNumber.Uint64() == mostRecentBlock
+		}),
+		mock.Anything,
+	).Return(big.NewInt(5), nil)
+
+	s.inputBox.On("RetrieveInputs",
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == mostRecentBlock }),
+		mock.Anything, mock.Anything,
+	).Return([]iinputbox.IInputBoxInputAdded{makeInputEvent(app1Addr, 4, mostRecentBlock)}, nil)
+
+	var storedEpoch *Epoch
+	var storedInputs []*Input
+	s.repository.On("CreateEpochsAndInputs",
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+	).Run(func(args mock.Arguments) {
+		epochInputMap := args.Get(2).(map[*Epoch][]*Input)
+		for epoch, inputs := range epochInputMap {
+			storedEpoch = epoch
+			storedInputs = inputs
+		}
+	}).Return(nil)
+
+	err := s.evmReader.processApplicationOpenEpoch(s.ctx, app, mostRecentBlock)
+	s.Require().NoError(err)
+
+	s.Require().NotNil(storedEpoch)
+	s.Require().Equal(uint64(1), storedEpoch.Index)
+	s.Require().Equal(mostRecentBlock, storedEpoch.FirstBlock)
+	s.Require().Equal(mostRecentBlock, storedEpoch.LastBlock)
+	s.Require().Equal(uint64(5), storedEpoch.InputIndexUpperBound)
+	s.Require().Len(storedInputs, 1)
+	s.Require().Equal(uint64(4), storedInputs[0].Index)
+	s.Require().Equal(mostRecentBlock, storedInputs[0].BlockNumber)
+}
+
 // --- Test 4: Multiple EpochSealed events in one block ---
 // When two epochs are sealed in the same block, FindTransitions sees a single
 // transition, but RetrieveSealedEpochs returns both events and each is processed.

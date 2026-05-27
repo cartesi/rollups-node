@@ -19,9 +19,10 @@ import (
 
 // RetryConfig holds configuration for the retryable HTTP client.
 type RetryConfig struct {
-	MaxRetries   uint64
-	RetryMinWait time.Duration
-	RetryMaxWait time.Duration
+	MaxRetries     uint64
+	RetryMinWait   time.Duration
+	RetryMaxWait   time.Duration
+	RequestTimeout time.Duration
 }
 
 // NewEthClient creates an Ethereum JSON-RPC client with retryable HTTP transport.
@@ -39,6 +40,7 @@ func NewEthClient(
 	rclient.RetryMax = int(min(retryConfig.MaxRetries, uint64(math.MaxInt)))
 	rclient.RetryWaitMin = retryConfig.RetryMinWait
 	rclient.RetryWaitMax = retryConfig.RetryMaxWait
+	rclient.HTTPClient.Timeout = retryConfig.RequestTimeout
 
 	opts := []rpc.ClientOption{
 		rpc.WithHTTPClient(rclient.StandardClient()),

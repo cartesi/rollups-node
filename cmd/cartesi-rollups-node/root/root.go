@@ -5,6 +5,7 @@ package root
 
 import (
 	"context"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
@@ -28,9 +29,9 @@ var (
 	logLevelPrt            string
 	logLevelValidator      string
 	defaultBlockString     string
-	blockchainHttpEndpoint string
-	blockchainWsEndpoint   string
+	blockchainHTTPEndpoint string
 	databaseConnection     string
+	evmReaderPollInterval  string
 	advancerPollInterval   string
 	validatorPollInterval  string
 	claimerPollInterval    string
@@ -41,7 +42,7 @@ var (
 	enableJsonrpc          bool
 	enableSubmission       bool
 	enableMachineHashCheck bool
-	jsonrpcApiAddress      string
+	jsonrpcAPIAddress      string
 	inspectAddress         string
 	telemetryAddress       string
 	machinelogLevel        string
@@ -64,7 +65,7 @@ func init() {
 
 	cli.AddFlagStrVarP(flags, &defaultBlockString, "default-block", "d", config.BLOCKCHAIN_DEFAULT_BLOCK,
 		"Default block to be used when fetching new blocks.\nOne of 'latest', 'safe', 'pending', 'finalized'")
-	cli.AddFlagStrVar(flags, &jsonrpcApiAddress, "jsonrpc-address", config.JSONRPC_API_ADDRESS,
+	cli.AddFlagStrVar(flags, &jsonrpcAPIAddress, "jsonrpc-address", config.JSONRPC_API_ADDRESS,
 		"Jsonrpc API service address and port")
 	cli.AddFlagStrVar(flags, &inspectAddress, "inspect-address", config.INSPECT_ADDRESS,
 		"Inspect service address and port")
@@ -88,10 +89,10 @@ func init() {
 		"Override log level for the validator service (default: inherit --log-level)")
 	cli.AddFlagStrVar(flags, &databaseConnection, "database-connection", config.DATABASE_CONNECTION,
 		"Database connection string in the URL format\n(eg.: 'postgres://user:password@hostname:port/database') ")
-	cli.AddFlagStrVar(flags, &blockchainHttpEndpoint, "blockchain-http-endpoint", config.BLOCKCHAIN_HTTP_ENDPOINT,
+	cli.AddFlagStrVar(flags, &blockchainHTTPEndpoint, "blockchain-http-endpoint", config.BLOCKCHAIN_HTTP_ENDPOINT,
 		"Blockchain HTTP endpoint")
-	cli.AddFlagStrVar(flags, &blockchainWsEndpoint, "blockchain-ws-endpoint", config.BLOCKCHAIN_WS_ENDPOINT,
-		"Blockchain WS Endpoint")
+	cli.AddFlagStrVar(flags, &evmReaderPollInterval, "evm-reader-poll-interval", config.EVM_READER_POLLING_INTERVAL,
+		"EVM reader poll interval")
 	cli.AddFlagStrVar(flags, &advancerPollInterval, "advancer-poll-interval", config.ADVANCER_POLLING_INTERVAL,
 		"Advancer poll interval")
 	cli.AddFlagStrVar(flags, &validatorPollInterval, "validator-poll-interval", config.VALIDATOR_POLLING_INTERVAL,
@@ -99,7 +100,7 @@ func init() {
 	cli.AddFlagStrVar(flags, &claimerPollInterval, "claimer-poll-interval", config.CLAIMER_POLLING_INTERVAL,
 		"Claimer poll interval")
 	cli.AddFlagStrVar(flags, &prtPollInterval, "prt-poll-interval", config.PRT_POLLING_INTERVAL,
-		"Claimer poll interval")
+		"PRT poll interval")
 	cli.AddFlagStrVar(flags, &maxStartupTime, "max-startup-time", config.MAX_STARTUP_TIME,
 		"Maximum startup time in seconds")
 	cli.AddFlagBoolVar(flags, &enableInputReader, "input-reader", config.FEATURE_INPUT_READER_ENABLED,
@@ -128,7 +129,7 @@ func init() {
 	}
 }
 
-func newEthClient(ctx context.Context, svcName string) (*ethclient.Client, error) {
+func newEthClient(ctx context.Context, svcName string, requestTimeout time.Duration) (*ethclient.Client, error) {
 	level := config.ResolveServiceLogLevel(svcName, cfg.LogLevel)
 	logger := service.NewLogger(level, cfg.LogColor).With("service", svcName)
 
@@ -139,9 +140,10 @@ func newEthClient(ctx context.Context, svcName string) (*ethclient.Client, error
 
 	return ethutil.NewEthClient(ctx, cfg.BlockchainHttpEndpoint.Raw(), logger,
 		ethutil.RetryConfig{
-			MaxRetries:   cfg.BlockchainHttpMaxRetries,
-			RetryMinWait: cfg.BlockchainHttpRetryMinWait,
-			RetryMaxWait: cfg.BlockchainHttpRetryMaxWait,
+			MaxRetries:     cfg.BlockchainHttpMaxRetries,
+			RetryMinWait:   cfg.BlockchainHttpRetryMinWait,
+			RetryMaxWait:   cfg.BlockchainHttpRetryMaxWait,
+			RequestTimeout: requestTimeout,
 		}, authOpt)
 }
 
@@ -164,17 +166,13 @@ func run(cmd *cobra.Command, args []string) {
 	createInfo.CreateInfo.Logger = logger
 
 	var err error
-	createInfo.ReaderClient, err = newEthClient(ctx, config.ServiceEvmReader)
+	createInfo.ReaderClient, err = newEthClient(ctx, config.ServiceEvmReader, cfg.BlockchainHttpRequestTimeout)
 	cli.CheckErr(logger, err)
 
-	wsEndpoint := cfg.BlockchainWsEndpoint.Raw()
-	createInfo.ReaderWSClient, err = ethclient.DialContext(ctx, wsEndpoint)
-	cli.CheckErr(logger, ethutil.RedactEndpointFromError(err, wsEndpoint))
-
-	createInfo.ClaimerClient, err = newEthClient(ctx, config.ServiceClaimer)
+	createInfo.ClaimerClient, err = newEthClient(ctx, config.ServiceClaimer, 0)
 	cli.CheckErr(logger, err)
 
-	createInfo.PrtClient, err = newEthClient(ctx, config.ServicePrt)
+	createInfo.PrtClient, err = newEthClient(ctx, config.ServicePrt, 0)
 	cli.CheckErr(logger, err)
 
 	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())

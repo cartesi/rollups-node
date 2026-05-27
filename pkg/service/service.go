@@ -144,7 +144,6 @@ type Service struct {
 	Impl          ServiceImpl
 	Logger        *slog.Logger
 	Ticker        *time.Ticker
-	PollInterval  time.Duration
 	Context       context.Context
 	Cancel        context.CancelFunc
 	Sighup        chan os.Signal // SIGHUP to reload
@@ -173,6 +172,9 @@ func Create(ctx context.Context, c *CreateInfo, s *Service) error {
 	}
 	if err := ctx.Err(); err != nil {
 		return err // This returns context.Canceled or context.DeadlineExceeded.
+	}
+	if s.Ticker == nil && c.PollInterval < 0 {
+		return fmt.Errorf("PollInterval must be non-negative, got %v", c.PollInterval)
 	}
 
 	s.Running.Store(false)
@@ -204,8 +206,7 @@ func Create(ctx context.Context, c *CreateInfo, s *Service) error {
 		if c.PollInterval == 0 {
 			c.PollInterval = time.Minute
 		}
-		s.PollInterval = c.PollInterval
-		s.Ticker = time.NewTicker(s.PollInterval)
+		s.Ticker = time.NewTicker(c.PollInterval)
 	}
 
 	// self-rescheduling

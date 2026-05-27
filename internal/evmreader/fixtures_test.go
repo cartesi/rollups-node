@@ -36,14 +36,6 @@ var (
 	inputAddedEvent3 = makeInputEvent(app1Addr, 3, 0x13)
 )
 
-// sentinelHeader is sent after the real headers to flush the processing pipeline.
-// Because the subscription channel is unbuffered, fireNewHead blocks until the
-// evmreader receives the header. Sending a sentinel after the last real header
-// guarantees all real headers have been fully processed when fireNewHead returns.
-var sentinelHeader = makeHeader(0x01)
-
-var subscription0 = newMockSubscription()
-
 // applications defines the two-app setup used by most tests.
 // app1: InputBox DA (inputs are read), app2: non-InputBox DA (inputs filtered out).
 var applications = []*Application{{
