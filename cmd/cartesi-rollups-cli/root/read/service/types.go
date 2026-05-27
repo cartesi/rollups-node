@@ -27,6 +27,8 @@ type ReadService interface {
 	ListOutputs(ctx context.Context, params api.ListOutputsParams) (json.RawMessage, error)
 	GetReport(ctx context.Context, params api.GetReportParams) (json.RawMessage, error)
 	ListReports(ctx context.Context, params api.ListReportsParams) (json.RawMessage, error)
+	GetWithdrawal(ctx context.Context, params api.GetWithdrawalParams) (json.RawMessage, error)
+	ListWithdrawals(ctx context.Context, params api.ListWithdrawalsParams) (json.RawMessage, error)
 	GetTournament(ctx context.Context, params api.GetTournamentParams) (json.RawMessage, error)
 	ListTournaments(ctx context.Context, params api.ListTournamentsParams) (json.RawMessage, error)
 	GetCommitment(ctx context.Context, params api.GetCommitmentParams) (json.RawMessage, error)

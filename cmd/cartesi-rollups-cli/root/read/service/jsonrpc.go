@@ -176,6 +176,34 @@ func (s *JsonrpcReadService) ListReports(ctx context.Context, params api.ListRep
 	return resp, err
 }
 
+func (s *JsonrpcReadService) GetWithdrawal(ctx context.Context, params api.GetWithdrawalParams) (json.RawMessage, error) {
+	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
+		return nil, fmt.Errorf("invalid application: %w", err)
+	}
+	if _, err := config.ToIndexFromString(params.AccountIndex); err != nil {
+		return nil, fmt.Errorf("invalid account index: %w", err)
+	}
+
+	var resp json.RawMessage
+	err := s.Client.Call(ctx, "cartesi_getWithdrawal", params, &resp)
+	return resp, err
+}
+
+func (s *JsonrpcReadService) ListWithdrawals(ctx context.Context, params api.ListWithdrawalsParams) (json.RawMessage, error) {
+	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
+		return nil, fmt.Errorf("invalid application: %w", err)
+	}
+	if params.AccountIndex != nil {
+		if _, err := config.ToIndexFromString(*params.AccountIndex); err != nil {
+			return nil, fmt.Errorf("invalid account index: %w", err)
+		}
+	}
+
+	var resp json.RawMessage
+	err := s.Client.Call(ctx, "cartesi_listWithdrawals", params, &resp)
+	return resp, err
+}
+
 func (s *JsonrpcReadService) GetTournament(ctx context.Context, params api.GetTournamentParams) (json.RawMessage, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)

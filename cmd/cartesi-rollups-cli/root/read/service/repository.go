@@ -423,6 +423,81 @@ func (s *RepositoryReadService) ListReports(ctx context.Context, params api.List
 	return json.RawMessage(result), err
 }
 
+func (s *RepositoryReadService) GetWithdrawal(ctx context.Context, params api.GetWithdrawalParams) (json.RawMessage, error) {
+	repo := s.Repository
+	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
+	if err != nil {
+		return nil, fmt.Errorf("invalid application: %w", err)
+	}
+	accountIndex, err := config.ToIndexFromString(params.AccountIndex)
+	if err != nil {
+		return nil, fmt.Errorf("invalid account index: %w", err)
+	}
+
+	data, err := repo.GetWithdrawal(ctx, application, accountIndex)
+	if err != nil {
+		return nil, err
+	}
+	if data == nil {
+		return nil, ErrNotFound
+	}
+
+	response := map[string]any{
+		"data": data,
+	}
+
+	result, err := json.Marshal(response)
+
+	return json.RawMessage(result), err
+}
+
+func (s *RepositoryReadService) ListWithdrawals(ctx context.Context, params api.ListWithdrawalsParams) (json.RawMessage, error) {
+	repo := s.Repository
+	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
+	if err != nil {
+		return nil, fmt.Errorf("invalid application: %w", err)
+	}
+	filter := repository.WithdrawalFilter{}
+	pagination := repository.Pagination{}
+	if params.AccountIndex != nil {
+		accountIndexVal, err := config.ToIndexFromString(*params.AccountIndex)
+		if err != nil {
+			return nil, fmt.Errorf("invalid account index: %w", err)
+		}
+		filter.AccountIndex = &accountIndexVal
+	}
+	pagination.Limit = params.Limit
+	pagination.Offset = params.Offset
+
+	data, total, err := repo.ListWithdrawals(ctx, application, filter, pagination, params.Descending)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		app, err := repo.GetApplication(ctx, application)
+		if err != nil {
+			return nil, err
+		}
+		if app == nil {
+			return nil, ErrApplicationNotFound
+		}
+		data = make([]*model.Withdrawal, 0)
+	}
+
+	response := map[string]any{
+		"data": data,
+		"pagination": map[string]uint64{
+			"total_count": total,
+			"limit":       pagination.Limit,
+			"offset":      pagination.Offset,
+		},
+	}
+
+	result, err := json.Marshal(response)
+
+	return json.RawMessage(result), err
+}
+
 func (s *RepositoryReadService) GetTournament(ctx context.Context, params api.GetTournamentParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)

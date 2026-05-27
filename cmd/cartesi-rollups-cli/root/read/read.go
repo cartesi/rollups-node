@@ -12,6 +12,7 @@ import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/outputs"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/reports"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/tournaments"
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/withdrawals"
 	"github.com/cartesi/rollups-node/internal/config"
 
 	"github.com/spf13/cobra"
@@ -42,6 +43,7 @@ func init() {
 	Cmd.AddCommand(inputs.Cmd)
 	Cmd.AddCommand(outputs.Cmd)
 	Cmd.AddCommand(reports.Cmd)
+	Cmd.AddCommand(withdrawals.Cmd)
 	Cmd.AddCommand(tournaments.Cmd)
 	Cmd.AddCommand(commitments.Cmd)
 	Cmd.AddCommand(matches.Cmd)
