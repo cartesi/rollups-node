@@ -49,10 +49,10 @@ FROM common-env AS go-installer
 RUN <<EOF
     set -e
     ARCH=$(dpkg --print-architecture)
-    wget -O /tmp/go.tar.gz "https://go.dev/dl/go1.26.0.linux-${ARCH}.tar.gz"
+    wget -O /tmp/go.tar.gz "https://go.dev/dl/go1.26.3.linux-${ARCH}.tar.gz"
     case "$ARCH" in
-        amd64) echo "aac1b08a0fb0c4e0a7c1555beb7b59180b05dfc5a3d62e40e9de90cd42f88235  /tmp/go.tar.gz" | sha256sum --check ;;
-        arm64) echo "bd03b743eb6eb4193ea3c3fd3956546bf0e3ca5b7076c8226334afe6b75704cd  /tmp/go.tar.gz" | sha256sum --check ;;
+        amd64) echo "2b2cfc7148493da5e73981bffbf3353af381d5f93e789c82c79aff64962eb556  /tmp/go.tar.gz" | sha256sum --check ;;
+        arm64) echo "9d89a3ea57d141c2b22d70083f2c8459ba3890f2d9e818e7e933b75614936565  /tmp/go.tar.gz" | sha256sum --check ;;
         *) echo "unsupported architecture: $ARCH"; exit 1 ;;
     esac
     tar -C /opt -xzf /tmp/go.tar.gz
