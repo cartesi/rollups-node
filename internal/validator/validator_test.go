@@ -484,6 +484,34 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 		repo.AssertExpectations(s.T())
 	})
 
+	s.Run("NilInputMachineHash", func() {
+		input := Input{
+			EpochApplicationID: app.ID,
+			OutputsHash:        &validator.pristineRootHash,
+			MachineHash:        nil, // <- trigger nil guard
+		}
+
+		repo.On("ListEpochs",
+			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
+		).Return([]*Epoch{&dummyEpochs[0]}, uint64(1), nil).Once()
+
+		repo.On("ListOutputs",
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything, false,
+		).Return([]*Output{}, uint64(0), nil).Once()
+
+		repo.On("GetLastInput",
+			mock.Anything, app.IApplicationAddress.String(), dummyEpochs[0].Index,
+		).Return(&input, nil).Once()
+
+		repo.On("UpdateApplicationStatus",
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+		).Return(nil).Once()
+
+		err := validator.validateApplication(ctx, &app)
+		s.NotNil(err)
+		repo.AssertExpectations(s.T())
+	})
+
 	s.Run("ClaimMismatch", func() {
 		invalidClaim := common.Hash{}
 		input := Input{
@@ -537,6 +565,234 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 
 		err := validator.validateApplication(ctx, &app)
 		s.ErrorIs(err, xerror)
+		repo.AssertExpectations(s.T())
+	})
+
+	// --- nil pointer access guards added in fix/validator-hardening ---
+
+	s.Run("NilEpochMachineHash", func() {
+		epoch := Epoch{
+			Index:             0,
+			VirtualIndex:      0,
+			FirstBlock:        0,
+			LastBlock:         9,
+			OutputsMerkleRoot: &validator.pristineRootHash,
+			MachineHash:       nil, // <- nil triggers the new guard
+		}
+		repo.On("ListEpochs",
+			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
+		).Return([]*Epoch{&epoch}, uint64(1), nil).Once()
+
+		repo.On("UpdateApplicationStatus",
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+		).Return(nil).Once()
+
+		err := validator.validateApplication(ctx, &app)
+		s.NotNil(err)
+		repo.AssertExpectations(s.T())
+	})
+
+	s.Run("NilEpochOutputsMerkleRoot", func() {
+		epoch := Epoch{
+			Index:             0,
+			VirtualIndex:      0,
+			FirstBlock:        0,
+			LastBlock:         9,
+			MachineHash:       &validator.pristineRootHash,
+			OutputsMerkleRoot: nil, // <- nil triggers the new guard
+		}
+		repo.On("ListEpochs",
+			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
+		).Return([]*Epoch{&epoch}, uint64(1), nil).Once()
+
+		repo.On("UpdateApplicationStatus",
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+		).Return(nil).Once()
+
+		err := validator.validateApplication(ctx, &app)
+		s.NotNil(err)
+		repo.AssertExpectations(s.T())
+	})
+
+	s.Run("EmptyEpochInNonDaveConsensusApp", func() {
+		app := Application{
+			Name:          "dummy-application-name",
+			ConsensusType: Consensus_Authority, // non-DaveConsensus
+		}
+		epoch := Epoch{
+			Index:             0,
+			VirtualIndex:      0,
+			FirstBlock:        0,
+			LastBlock:         9,
+			MachineHash:       &validator.pristineRootHash,
+			OutputsMerkleRoot: dummyEpochs[0].OutputsMerkleRoot,
+		}
+		repo.On("ListEpochs",
+			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
+		).Return([]*Epoch{&epoch}, uint64(1), nil).Once()
+
+		// computeMerkleTreeAndProofs: no outputs, no previous epoch -> pristine claim
+		repo.On("ListOutputs",
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything, false,
+		).Return([]*Output{}, uint64(0), nil).Once()
+
+		// empty epoch (GetLastInput returns nil)
+		repo.On("GetLastInput",
+			mock.Anything, app.IApplicationAddress.String(), epoch.Index,
+		).Return((*Input)(nil), nil).Once()
+
+		repo.On("UpdateApplicationStatus",
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+		).Return(nil).Once()
+
+		err := validator.validateApplication(ctx, &app)
+		s.NotNil(err)
+		repo.AssertExpectations(s.T())
+	})
+
+	s.Run("EmptyEpochPreviousEpochIsNil", func() {
+		app := Application{
+			Name:          "dummy-application-name",
+			ConsensusType: Consensus_PRT, // DaveConsensus so !IsDaveConsensus guard passes
+		}
+		epoch := Epoch{
+			Index:             1,
+			VirtualIndex:      1,
+			FirstBlock:        10,
+			LastBlock:         19,
+			MachineHash:       &validator.pristineRootHash,
+			OutputsMerkleRoot: dummyEpochs[0].OutputsMerkleRoot,
+		}
+		repo.On("ListEpochs",
+			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
+		).Return([]*Epoch{&epoch}, uint64(1), nil).Once()
+
+		// computeMerkleTreeAndProofs: no outputs -> looks up previous epoch
+		repo.On("ListOutputs",
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything, false,
+		).Return([]*Output{}, uint64(0), nil).Once()
+
+		// 1st GetEpochByVirtualIndex (inside computeMerkleTreeAndProofs) succeeds
+		repo.On("GetEpochByVirtualIndex",
+			mock.Anything, app.IApplicationAddress.String(), uint64(0),
+		).Return(&dummyEpochs[0], nil).Once()
+
+		// empty epoch (GetLastInput returns nil)
+		repo.On("GetLastInput",
+			mock.Anything, app.IApplicationAddress.String(), epoch.Index,
+		).Return((*Input)(nil), nil).Once()
+
+		// 2nd GetEpochByVirtualIndex (inside validateApplication else branch) returns nil
+		repo.On("GetEpochByVirtualIndex",
+			mock.Anything, app.IApplicationAddress.String(), uint64(0),
+		).Return((*Epoch)(nil), nil).Once()
+
+		repo.On("UpdateApplicationStatus",
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+		).Return(nil).Once()
+
+		err := validator.validateApplication(ctx, &app)
+		s.NotNil(err)
+		repo.AssertExpectations(s.T())
+	})
+
+	s.Run("EmptyEpochPreviousEpochMachineHashNil", func() {
+		app := Application{
+			Name:          "dummy-application-name",
+			ConsensusType: Consensus_PRT,
+		}
+		epoch := Epoch{
+			Index:             1,
+			VirtualIndex:      1,
+			FirstBlock:        10,
+			LastBlock:         19,
+			MachineHash:       &validator.pristineRootHash,
+			OutputsMerkleRoot: dummyEpochs[0].OutputsMerkleRoot,
+		}
+		repo.On("ListEpochs",
+			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
+		).Return([]*Epoch{&epoch}, uint64(1), nil).Once()
+
+		repo.On("ListOutputs",
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything, false,
+		).Return([]*Output{}, uint64(0), nil).Once()
+
+		// 1st GetEpochByVirtualIndex (inside computeMerkleTreeAndProofs) succeeds
+		repo.On("GetEpochByVirtualIndex",
+			mock.Anything, app.IApplicationAddress.String(), uint64(0),
+		).Return(&dummyEpochs[0], nil).Once()
+
+		repo.On("GetLastInput",
+			mock.Anything, app.IApplicationAddress.String(), epoch.Index,
+		).Return((*Input)(nil), nil).Once()
+
+		// 2nd GetEpochByVirtualIndex: returns epoch with nil MachineHash
+		prev := Epoch{
+			Index:             0,
+			VirtualIndex:      0,
+			MachineHash:       nil, // <- nil triggers the guard
+			OutputsMerkleRoot: &validator.pristineRootHash,
+		}
+		repo.On("GetEpochByVirtualIndex",
+			mock.Anything, app.IApplicationAddress.String(), uint64(0),
+		).Return(&prev, nil).Once()
+
+		repo.On("UpdateApplicationStatus",
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+		).Return(nil).Once()
+
+		err := validator.validateApplication(ctx, &app)
+		s.NotNil(err)
+		repo.AssertExpectations(s.T())
+	})
+
+	s.Run("EmptyEpochPreviousEpochOutputsMerkleRootNil", func() {
+		app := Application{
+			Name:          "dummy-application-name",
+			ConsensusType: Consensus_PRT,
+		}
+		epoch := Epoch{
+			Index:             1,
+			VirtualIndex:      1,
+			FirstBlock:        10,
+			LastBlock:         19,
+			MachineHash:       &validator.pristineRootHash,
+			OutputsMerkleRoot: dummyEpochs[0].OutputsMerkleRoot,
+		}
+		repo.On("ListEpochs",
+			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
+		).Return([]*Epoch{&epoch}, uint64(1), nil).Once()
+
+		repo.On("ListOutputs",
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything, false,
+		).Return([]*Output{}, uint64(0), nil).Once()
+
+		// 1st GetEpochByVirtualIndex (inside computeMerkleTreeAndProofs) succeeds
+		repo.On("GetEpochByVirtualIndex",
+			mock.Anything, app.IApplicationAddress.String(), uint64(0),
+		).Return(&dummyEpochs[0], nil).Once()
+
+		repo.On("GetLastInput",
+			mock.Anything, app.IApplicationAddress.String(), epoch.Index,
+		).Return((*Input)(nil), nil).Once()
+
+		// 2nd GetEpochByVirtualIndex: MachineHash matches but OutputsMerkleRoot is nil
+		prev := Epoch{
+			Index:             0,
+			VirtualIndex:      0,
+			MachineHash:       &validator.pristineRootHash, // matches epoch.MachineHash
+			OutputsMerkleRoot: nil,                         // <- nil triggers the guard
+		}
+		repo.On("GetEpochByVirtualIndex",
+			mock.Anything, app.IApplicationAddress.String(), uint64(0),
+		).Return(&prev, nil).Once()
+
+		repo.On("UpdateApplicationStatus",
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+		).Return(nil).Once()
+
+		err := validator.validateApplication(ctx, &app)
+		s.NotNil(err)
 		repo.AssertExpectations(s.T())
 	})
 }

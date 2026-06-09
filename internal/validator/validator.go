@@ -172,6 +172,16 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 			"epoch_index", epoch.Index,
 			"last_block", epoch.LastBlock,
 		)
+
+		if epoch.MachineHash == nil {
+			return s.setApplicationCorrupted(ctx, app,
+				"epoch %v (%v) has no machine hash", epoch.Index, epoch.VirtualIndex)
+		}
+		if epoch.OutputsMerkleRoot == nil {
+			return s.setApplicationCorrupted(ctx, app,
+				"epoch %v (%v) has no outputs merkle root", epoch.Index, epoch.VirtualIndex)
+		}
+
 		merkleRoot, outputs, err := s.computeMerkleTreeAndProofs(ctx, app, epoch)
 		if err != nil {
 			// Don't log shutdown-cancellation at ERR — every in-flight DB
@@ -209,8 +219,7 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 			)
 		}
 
-		// DaveConsensus can have empty epochs. Authority and Quorum don't.
-		if !app.IsDaveConsensus() || input != nil {
+		if input != nil {
 			if input.OutputsHash == nil {
 				return s.setApplicationCorrupted(ctx, app,
 					"inconsistent state: epoch %v last input (%v) outputs merkle root is not defined",
@@ -224,12 +233,23 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 					epoch.Index, input.Index, *input.OutputsHash, *epoch.OutputsMerkleRoot)
 			}
 
+			if input.MachineHash == nil {
+				return s.setApplicationCorrupted(ctx, app,
+					"Inconsistent state: epoch %v last input (%v) machine hash is not defined.",
+					epoch.Index, input.Index)
+			}
 			if *epoch.MachineHash != *input.MachineHash {
 				return s.setApplicationCorrupted(ctx, app,
 					"epoch %v machine hash does not match epoch last input (%v) machine hash. Expected: %v, Got %v",
 					epoch.Index, input.Index, *input.MachineHash, *epoch.MachineHash)
 			}
 		} else { // empty epochs
+			// DaveConsensus can have empty epochs. Authority and Quorum can't.
+			if !app.IsDaveConsensus() {
+				return s.setApplicationCorrupted(ctx, app,
+					"epoch %v (%v) has no inputs while not DaveConsensus", epoch.Index, epoch.VirtualIndex)
+			}
+
 			if epoch.VirtualIndex > 0 {
 				previousEpoch, err := s.repository.GetEpochByVirtualIndex(ctx, appAddress, epoch.VirtualIndex-1)
 				if err != nil {
@@ -238,10 +258,25 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 						epoch.Index, epoch.VirtualIndex, appAddress, err,
 					)
 				}
+
+				// nil is a valid result from GetEpochByVirtualIndex.
+				// However it indicates some kind of corruption when combined with the epoch.VirtualIndex > 0 check.
+				if previousEpoch == nil {
+					return s.setApplicationCorrupted(ctx, app,
+						"epoch %v (%v) has no previous epoch.", epoch.Index, epoch.VirtualIndex)
+				}
+				if previousEpoch.MachineHash == nil {
+					return s.setApplicationCorrupted(ctx, app,
+						"previous epoch %v (%v) machine hash is not defined", previousEpoch.Index, previousEpoch.VirtualIndex)
+				}
 				if *epoch.MachineHash != *previousEpoch.MachineHash {
 					return s.setApplicationCorrupted(ctx, app,
 						"epoch %v machine hash does not match previous epoch %v machine hash. Expected: %v, Got %v",
 						epoch.Index, previousEpoch.Index, *previousEpoch.MachineHash, *epoch.MachineHash)
+				}
+				if previousEpoch.OutputsMerkleRoot == nil {
+					return s.setApplicationCorrupted(ctx, app,
+						"previous epoch %v (%v) outputs merkle root is not defined", previousEpoch.Index, previousEpoch.VirtualIndex)
 				}
 				if *epoch.OutputsMerkleRoot != *previousEpoch.OutputsMerkleRoot {
 					return s.setApplicationCorrupted(ctx, app,
@@ -304,7 +339,15 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 	s.Logger.Debug("DaveConsensus: Building commitment for epoch",
 		"application", app.Name,
 		"epoch", epoch.Index)
-
+	if epoch.InputIndexLowerBound > epoch.InputIndexUpperBound {
+		return nil, nil, s.setApplicationCorrupted(ctx, app,
+			"invalid epoch %v (%v): lower bound (%v) > upper bound (%v)",
+			epoch.Index, epoch.VirtualIndex, epoch.InputIndexLowerBound, epoch.InputIndexUpperBound)
+	}
+	if epoch.MachineHash == nil {
+		return nil, nil, s.setApplicationCorrupted(ctx, app,
+			"epoch %v (%v) machine hash is not defined", epoch.Index, epoch.VirtualIndex)
+	}
 	builder := merkle.Builder{}
 	inputCount := epoch.InputIndexUpperBound - epoch.InputIndexLowerBound
 	if inputCount > 0 {
