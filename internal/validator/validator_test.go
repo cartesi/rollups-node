@@ -480,7 +480,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 		).Return(nil).Once()
 
-		err := validator.validateApplication(nil, &app)
+		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
 	})
@@ -794,6 +794,19 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
+		repo.AssertExpectations(s.T())
+	})
+
+	s.Run("ContextCancellation", func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		repo.On("ListEpochs",
+			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
+		).Return([]*Epoch{&dummyEpochs[0]}, uint64(1), nil).Once()
+
+		err := validator.validateApplication(ctx, &app)
+		s.ErrorIs(err, context.Canceled)
 		repo.AssertExpectations(s.T())
 	})
 }

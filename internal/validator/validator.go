@@ -158,6 +158,9 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 	}
 
 	for _, epoch := range processedEpochs {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if app.ForecloseBlock != 0 && epoch.LastBlock >= app.ForecloseBlock {
 			s.Logger.Info("Skipping foreclosed epoch that cannot be accepted",
 				"application", appAddress,
