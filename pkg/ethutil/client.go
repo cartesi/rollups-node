@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +18,37 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/hashicorp/go-retryablehttp"
 )
+
+// parseRetryAfterHeader parses the Retry-After header and returns the
+// delay duration according to the spec: https://httpwg.org/specs/rfc7231.html#header.retry-after
+// The bool returned will be true if the header was successfully parsed.
+// Otherwise, the header was either not present, or was not parseable according to the spec.
+func parseRetryAfterHeader(headers []string) (time.Duration, bool) {
+	if len(headers) == 0 || headers[0] == "" {
+		return 0, false
+	}
+	header := headers[0]
+	// 'Retry-After' is provided in seconds.
+	if sleep, err := strconv.ParseInt(header, 10, 64); err == nil {
+		if sleep < 0 { // a negative sleep doesn't make sense
+			return 0, false
+		}
+		if sleep > int64(time.Duration(math.MaxInt64)/time.Second) {
+			return time.Duration(math.MaxInt64), true
+		}
+		return time.Second * time.Duration(sleep), true
+	}
+
+	// 'Retry-After' is provided as a date.
+	retryTime, err := time.Parse(time.RFC1123, header)
+	if err != nil {
+		return 0, false
+	}
+	if duration := time.Until(retryTime); duration > 0 {
+		return duration, true
+	}
+	return 0, true // past date
+}
 
 // RetryConfig holds configuration for the retryable HTTP client.
 type RetryConfig struct {
@@ -41,6 +74,7 @@ func NewEthClient(
 	rclient.RetryWaitMin = retryConfig.RetryMinWait
 	rclient.RetryWaitMax = retryConfig.RetryMaxWait
 	rclient.HTTPClient.Timeout = retryConfig.RequestTimeout
+	rclient.Backoff = retryBackoff
 
 	opts := []rpc.ClientOption{
 		rpc.WithHTTPClient(rclient.StandardClient()),
@@ -58,6 +92,20 @@ func NewEthClient(
 	}
 
 	return ethclient.NewClient(rpcClient), nil
+}
+
+// retryBackoff caps server-directed Retry-After delays while preserving the
+// library's default exponential backoff for every other case.
+func retryBackoff(minDuration, maxDuration time.Duration, attemptNum int, resp *http.Response) time.Duration {
+	if resp != nil {
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {
+			if sleep, ok := parseRetryAfterHeader(resp.Header["Retry-After"]); ok {
+				return min(maxDuration, sleep)
+			}
+		}
+	}
+
+	return retryablehttp.DefaultBackoff(minDuration, maxDuration, attemptNum, resp)
 }
 
 // Compile-time assertion that redactedLeveledLogger implements the LeveledLogger

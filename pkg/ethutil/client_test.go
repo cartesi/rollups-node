@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -230,6 +232,145 @@ func TestRedactEndpointFromError(t *testing.T) {
 		require.NotContains(t, redacted.Error(), "secret-key")
 		require.Contains(t, redacted.Error(), "https://alchemy.com")
 	})
+}
+
+func TestParseRetryAfterHeader(t *testing.T) {
+	maxDuration := time.Duration(math.MaxInt64)
+	overflowSeconds := strconv.FormatInt(int64(maxDuration/time.Second)+1, 10)
+	pastDate := time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC).Format(time.RFC1123)
+
+	tests := []struct {
+		name    string
+		headers []string
+		want    time.Duration
+		wantOK  bool
+	}{
+		{
+			name:   "missing header",
+			wantOK: false,
+		},
+		{
+			name:    "empty header",
+			headers: []string{""},
+			wantOK:  false,
+		},
+		{
+			name:    "invalid header",
+			headers: []string{"not-a-date-or-number"},
+			wantOK:  false,
+		},
+		{
+			name:    "negative seconds",
+			headers: []string{"-1"},
+			wantOK:  false,
+		},
+		{
+			name:    "positive seconds",
+			headers: []string{"3"},
+			want:    3 * time.Second,
+			wantOK:  true,
+		},
+		{
+			name:    "seconds overflow saturates",
+			headers: []string{overflowSeconds},
+			want:    maxDuration,
+			wantOK:  true,
+		},
+		{
+			name:    "past date",
+			headers: []string{pastDate},
+			want:    0,
+			wantOK:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := parseRetryAfterHeader(tt.headers)
+			require.Equal(t, tt.wantOK, ok)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestRetryBackoff(t *testing.T) {
+	response := func(status int, retryAfter string) *http.Response {
+		resp := &http.Response{
+			StatusCode: status,
+			Header:     http.Header{},
+		}
+		if retryAfter != "" {
+			resp.Header.Set("Retry-After", retryAfter)
+		}
+		return resp
+	}
+
+	maxDuration := time.Duration(math.MaxInt64)
+	overflowSeconds := strconv.FormatInt(int64(maxDuration/time.Second)+1, 10)
+
+	tests := []struct {
+		name        string
+		minDuration time.Duration
+		maxDuration time.Duration
+		attemptNum  int
+		resp        *http.Response
+		want        time.Duration
+	}{
+		{
+			name:        "429 retry after is capped by max duration",
+			minDuration: 100 * time.Millisecond,
+			maxDuration: 3 * time.Second,
+			attemptNum:  1,
+			resp:        response(http.StatusTooManyRequests, "10"),
+			want:        3 * time.Second,
+		},
+		{
+			name:        "503 retry after below max is honored",
+			minDuration: 100 * time.Millisecond,
+			maxDuration: 3 * time.Second,
+			attemptNum:  1,
+			resp:        response(http.StatusServiceUnavailable, "2"),
+			want:        2 * time.Second,
+		},
+		{
+			name:        "overflowing retry after is capped by max duration",
+			minDuration: 100 * time.Millisecond,
+			maxDuration: 3 * time.Second,
+			attemptNum:  1,
+			resp:        response(http.StatusTooManyRequests, overflowSeconds),
+			want:        3 * time.Second,
+		},
+		{
+			name:        "invalid retry after falls back to exponential backoff",
+			minDuration: 100 * time.Millisecond,
+			maxDuration: 3 * time.Second,
+			attemptNum:  1,
+			resp:        response(http.StatusTooManyRequests, "-1"),
+			want:        200 * time.Millisecond,
+		},
+		{
+			name:        "retry after is ignored for non retry-after status",
+			minDuration: 100 * time.Millisecond,
+			maxDuration: 3 * time.Second,
+			attemptNum:  1,
+			resp:        response(http.StatusInternalServerError, "2"),
+			want:        200 * time.Millisecond,
+		},
+		{
+			name:        "exponential overflow is capped by max duration",
+			minDuration: time.Second,
+			maxDuration: 3 * time.Second,
+			attemptNum:  100,
+			want:        3 * time.Second,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := retryBackoff(tt.minDuration, tt.maxDuration, tt.attemptNum, tt.resp)
+			require.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func TestNewEthClientRequestTimeout(t *testing.T) {
