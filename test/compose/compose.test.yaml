@@ -23,7 +23,7 @@ services:
       - 8545:8545
 
   database:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     shm_size: 128mb
     networks:
       - devnet

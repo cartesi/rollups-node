@@ -30,7 +30,7 @@ services:
       retries: 10
 
   database:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     shm_size: 128mb
     networks:
       - devnet

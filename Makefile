@@ -460,7 +460,7 @@ copy-devnet-files deployment.json: ## Copy the devnet files to the host (it must
 
 start-postgres: ## Run the PostgreSQL 16 docker container
 	@echo "Starting portgres"
-	@docker run --rm --name postgres -p 5432:5432 -d -e POSTGRES_PASSWORD=password -e POSTGRES_DB=rollupsdb -v $(CURDIR)/test/postgres/init-test-db.sh:/docker-entrypoint-initdb.d/init-test-db.sh postgres:17-alpine
+	@docker run --rm --name postgres -p 5432:5432 -d -e POSTGRES_PASSWORD=password -e POSTGRES_DB=rollupsdb -v $(CURDIR)/test/postgres/init-test-db.sh:/docker-entrypoint-initdb.d/init-test-db.sh postgres:18-alpine
 	@$(MAKE) migrate
 
 start: start-postgres start-devnet ## Start the anvil devnet and PostgreSQL 16 docker containers
