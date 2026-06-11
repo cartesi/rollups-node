@@ -109,6 +109,12 @@ services:
     restart: "no"
     environment:
       <<: *env
+      # Shard selection (empty = full suite); see scripts/run-integration-tests.sh.
+      TEST_PATTERN: ${TEST_PATTERN:-}
+      SHARD_NAME: ${SHARD_NAME:-full}
+      # testdox prints one line per completed test; standard-verbose streams
+      # go test -v output live (VERBOSE=true in the Makefile selects it).
+      GOTESTSUM_FORMAT: ${GOTESTSUM_FORMAT:-testdox}
       CARTESI_BLOCKCHAIN_DEFAULT_BLOCK: latest
       CARTESI_TEST_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/echo-dapp
       CARTESI_TEST_REJECT_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/reject-loop-dapp

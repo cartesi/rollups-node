@@ -218,10 +218,39 @@ jobs:
       - name: Run unit tests
         run: make unit-test-with-compose
 
+  # Runs the shard coverage guard and derives the integration matrix from the
+  # Makefile's INTEGRATION_SHARDS, so adding a shard never requires a workflow
+  # change and an unassigned test fails fast here.
+  integration-test-setup:
+    runs-on: ubuntu-24.04
+    outputs:
+      shards: ${{ steps.shards.outputs.shards }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check shard coverage
+        run: make integration-test-shard-check
+
+      - name: List shards
+        id: shards
+        run: echo "shards=$(make -s list-integration-shards)" >> "$GITHUB_OUTPUT"
+
   integration-test:
     runs-on: ubuntu-24.04
-    needs: [build]
+    needs: [build, integration-test-setup]
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJson(needs.integration-test-setup.outputs.shards) }}
+    env:
+      COMPOSE_PROJECT: rollups-it-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
     permissions:
       contents: read
       packages: read
@@ -257,16 +286,24 @@ jobs:
       - name: Download test dependencies
         run: make download-test-dependencies
 
-      - name: Run integration tests
-        run: make integration-test-with-compose
+      - name: Run integration shard ${{ matrix.shard }}
+        run: |
+          make integration-test-shard SHARD=${{ matrix.shard }} \
+            COMPOSE_PROJECT="$COMPOSE_PROJECT"
 
       - name: Upload integration test logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: integration-test-logs
-          path: integration-logs.txt
+          name: integration-test-logs-${{ matrix.shard }}
+          path: integration-logs-${{ matrix.shard }}.txt
           retention-days: 3
+
+      - name: Clean up compose project
+        if: always()
+        run: |
+          docker compose -p "$COMPOSE_PROJECT" \
+            -f test/compose/compose.integration.yaml down -v --remove-orphans || true
 
   publish_artifacts:
     name: Publish artifacts

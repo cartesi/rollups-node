@@ -33,6 +33,11 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 
+	// -list only builds and lists tests; skip node management entirely.
+	if l := flag.Lookup("test.list"); l != nil && l.Value.String() != "" {
+		os.Exit(m.Run())
+	}
+
 	// Enforce sequential execution — tests share blockchain state.
 	p := flag.Lookup("test.parallel")
 	if p != nil && p.Value.String() != "1" {
@@ -46,9 +51,11 @@ func TestMain(m *testing.M) {
 		}
 	}
 
-	// Start the node if none is running (local execution).
-	// In Docker Compose, the node is a separate container and is already
-	// running — we detect this by checking if port 10000 is in use.
+	// In both local and Compose runs the node is started here by TestMain
+	// (the Compose integration-test service runs this same test binary). The
+	// port check only guards against a node already running on 10000 — e.g. one
+	// a developer started by hand — in which case we attach to it and skip the
+	// restart tests rather than fighting over the port.
 	if nodePortAvailable() {
 		artifactsDir, err := integrationArtifactsDir()
 		if err != nil {

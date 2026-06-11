@@ -207,7 +207,7 @@ generate-db: ## Generate repository/db with Jet
 # Clean
 # =============================================================================
 
-clean: clean-go clean-contracts clean-docs clean-devnet-files clean-dapps clean-test-dependencies clean-debian-packages ## Clean all artifacts
+clean: clean-go clean-contracts clean-docs clean-devnet-files clean-dapps clean-test-dependencies clean-test-logs clean-debian-packages ## Clean all artifacts
 
 clean-go: ## Clean Go artifacts
 	@echo "Cleaning Go artifacts"
@@ -239,6 +239,21 @@ clean-dapps: ## Clean the dapps
 clean-test-dependencies: ## Clean the test dependencies
 	@echo "Cleaning test dependencies"
 	@rm -rf $(DOWNLOADS_DIR)
+
+clean-test-logs: ## Clean integration test log files
+	@echo "Cleaning integration test logs"
+	@rm -f integration-logs.txt integration-logs-*.txt
+
+# Reaps the deterministically-named local shard projects (and the default
+# single-project name). A SIGKILL/OOM during a local sharded run skips the
+# cleanup trap and leaks each project's anonymous Postgres volume; this is the
+# manual recovery. CI uses ephemeral runners and does not need it.
+clean-integration-compose: ## Tear down leftover integration shard compose projects and volumes
+	@echo "Cleaning integration compose projects"
+	@for s in $(INTEGRATION_SHARDS) ; do \
+		docker compose -p rollups-node-integration-$$s -f test/compose/compose.integration.yaml down -v --remove-orphans 2>/dev/null || true ; \
+	done
+	@docker compose -p rollups-node-integration -f test/compose/compose.integration.yaml down -v --remove-orphans 2>/dev/null || true
 
 # =============================================================================
 # Tests
@@ -497,9 +512,78 @@ unit-test-with-compose: $(CARTESI_TEST_MACHINE_IMAGES) ## Run unit tests using d
 lint-with-docker: ## Run linting inside Docker (no host Go needed)
 	@docker run --rm cartesi/rollups-node:tester sh -c 'make lint && make vet && make fmt-check'
 
+# =============================================================================
+# Integration test sharding
+# =============================================================================
+# Each shard runs as an isolated Docker Compose project (own Anvil, Postgres,
+# and test-managed node); tests within a shard stay sequential. The anchors
+# (^...$$) are load-bearing: go test -run matches unanchored, and several test
+# names are prefixes of others (Foreclose / ForecloseReplay / ForeclosePrt).
+# Every top-level test must match exactly one shard; this is enforced by
+# `make integration-test-shard-check`.
+#
+# Shards are grouped by semantic family, not balanced by runtime: `withdrawal`
+# is a single test while `restart` and `replay` are the heaviest. Each shard
+# gets its own CI runner and the full per-job `go test -timeout 55m`
+# (run-integration-tests.sh) budget; `restart` (multi-suite, ~25-min setup
+# contexts) is the first to watch if a shard ever approaches that ceiling.
+# Discovery (integration-test-shard-check) lists tests with a plain Go
+# toolchain, so the integration package must stay free of the Cartesi CGo
+# dependency for the check to build on the CI setup runner.
+INTEGRATION_SHARDS := basic quorum prt replay restart withdrawal
+
+INTEGRATION_SHARD_basic      := ^Test(EchoAuthority|RejectException|MultiApp|EchoAuthorityStaging)$$
+INTEGRATION_SHARD_quorum     := ^Test(EchoQuorum|SameBlockInputs)$$
+INTEGRATION_SHARD_prt        := ^Test(EchoPrt|RejectExceptionPrt|ForeclosePrt)$$
+INTEGRATION_SHARD_replay     := ^Test(Foreclose|ForecloseReplay|DivergentClaim)$$
+INTEGRATION_SHARD_restart    := ^Test(Restart|SnapshotPolicy)$$
+INTEGRATION_SHARD_withdrawal := ^TestWithdrawalLifecycle$$
+
+COMPOSE_PROJECT ?= rollups-node-integration
+INTEGRATION_LOGS ?= integration-logs.txt
+INTEGRATION_TEST_JOBS ?= 3
+
 integration-test-with-compose: $(CARTESI_TEST_MACHINE_IMAGES) ## Run integration tests using docker compose with auto-shutdown
-	@trap 'docker compose -f test/compose/compose.integration.yaml logs --no-color > integration-logs.txt 2>&1 || true; docker compose -f test/compose/compose.integration.yaml down -v || true' EXIT && \
-		docker compose -f test/compose/compose.integration.yaml run --rm --remove-orphans integration-test
+	@COMPOSE_PROJECT='$(COMPOSE_PROJECT)' INTEGRATION_LOGS='$(INTEGRATION_LOGS)' \
+		TEST_PATTERN='$(TEST_PATTERN)' SHARD_NAME='$(SHARD_NAME)' \
+		GOTESTSUM_FORMAT='$(GOTESTSUM_FORMAT)' \
+		scripts/compose-integration-run.sh
+
+# Validate SHARD at parse time so a bad invocation fails before any
+# prerequisite work (e.g. downloading test machine images).
+ifneq ($(filter integration-test-shard,$(MAKECMDGOALS)),)
+ifeq ($(strip $(SHARD)),)
+$(error SHARD is required. Known shards: $(INTEGRATION_SHARDS))
+endif
+ifeq ($(strip $(INTEGRATION_SHARD_$(SHARD))),)
+$(error unknown shard '$(SHARD)'. Known shards: $(INTEGRATION_SHARDS))
+endif
+endif
+
+integration-test-shard: $(CARTESI_TEST_MACHINE_IMAGES) ## Run one integration shard in an isolated compose project (requires SHARD=<name>)
+	@COMPOSE_PROJECT='$(if $(filter rollups-node-integration,$(COMPOSE_PROJECT)),rollups-node-integration-$(SHARD),$(COMPOSE_PROJECT))' \
+		INTEGRATION_LOGS='integration-logs-$(SHARD).txt' \
+		TEST_PATTERN='$(INTEGRATION_SHARD_$(SHARD))' \
+		SHARD_NAME='$(SHARD)' \
+		GOTESTSUM_FORMAT='$(GOTESTSUM_FORMAT)' \
+		scripts/compose-integration-run.sh
+
+integration-test-sharded-local: $(CARTESI_TEST_MACHINE_IMAGES) integration-test-shard-check ## Run all integration shards with bounded concurrency
+	@$(MAKE) -k -j $(INTEGRATION_TEST_JOBS) $(addprefix run-integration-shard-,$(INTEGRATION_SHARDS))
+
+run-integration-shard-%:
+	@$(MAKE) integration-test-shard SHARD=$*
+
+integration-test-shard-check: ## Verify every integration test belongs to exactly one shard
+	@scripts/check-integration-shards.sh \
+		$(foreach s,$(INTEGRATION_SHARDS),'$(s)=$(INTEGRATION_SHARD_$(s))')
+
+# Used by CI to build the integration matrix from the single source of truth.
+comma := ,
+empty :=
+space := $(empty) $(empty)
+list-integration-shards: ## Print integration shard names as a JSON array (for the CI matrix)
+	@echo '[$(subst $(space),$(comma),$(patsubst %,"%",$(INTEGRATION_SHARDS)))]'
 
 test-with-compose: ## Run all tests using docker compose with auto-shutdown
 	@$(MAKE) unit-test-with-compose
@@ -534,6 +618,7 @@ load-test: deploy-load-test-apps ## Deploy 3 apps and run advancer starvation lo
 
 ci-test: ## Run the full CI test pipeline locally (lint + unit + integration)
 #	@$(MAKE) lint-with-docker
+	@$(MAKE) integration-test-shard-check
 	@$(MAKE) unit-test-with-compose
 	@$(MAKE) integration-test-with-compose
 
@@ -574,8 +659,9 @@ build-debian-package: install
 
 .PHONY: \
 	build build-go $(GO_ARTIFACTS) cartesi-rollups-machine-tool \
-	clean clean-go clean-contracts clean-docs clean-devnet-files clean-dapps clean-test-dependencies clean-debian-packages \
+	clean clean-go clean-contracts clean-docs clean-devnet-files clean-dapps clean-test-dependencies clean-test-logs clean-integration-compose clean-debian-packages \
 	test unit-test unit-test-with-compose integration-test integration-test-with-compose integration-test-local test-with-compose ci-test coverage-report \
+	integration-test-shard integration-test-sharded-local integration-test-shard-check list-integration-shards \
 	generate generate-contracts generate-config generate-inspect check-generate generate-db \
 	docs generate-cli-docs generate-config-docs \
 	lint fmt fmt-check vet escape \

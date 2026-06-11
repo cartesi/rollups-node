@@ -20,8 +20,10 @@ ARG GO_BUILD_PATH
 RUN <<EOF
     set -e
     apt-get update
+    # binutils-gold provides the gold linker, required for the linux/arm64
+    # build: without it the CGo link step fails on Apple-silicon (arm64) hosts.
     apt-get install -y --no-install-recommends \
-        ca-certificates curl wget build-essential pkg-config libssl-dev
+        ca-certificates curl wget build-essential binutils binutils-gold pkg-config libssl-dev
     groupadd --system --gid 102 cartesi
     useradd --system --uid 102 --gid cartesi --shell /usr/sbin/nologin --no-create-home cartesi
     ARCH=$(dpkg --print-architecture)
