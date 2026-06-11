@@ -6,6 +6,7 @@ package validator
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/cartesi/rollups-node/internal/merkle"
@@ -32,6 +33,15 @@ var (
 	dummyEpochs  []Epoch
 	dummyOutputs []Output
 )
+
+func expectCorrupted(app *Application, reasonSubstring string) {
+	repo.On("UpdateApplicationStatus",
+		mock.Anything, app.ID, ApplicationStatus_Corrupted,
+		mock.MatchedBy(func(reason *string) bool {
+			return reason != nil && strings.Contains(*reason, reasonSubstring)
+		}),
+	).Return(nil).Once()
+}
 
 func (s *ValidatorSuite) SetupSubTest() {
 	repo = newMockrepo()
@@ -137,19 +147,22 @@ func (s *ValidatorSuite) TestCreateClaimAndProofSuccess() {
 	}
 
 	s.Run("FirstEpochNoOutputs", func() {
+		ctx := context.Background()
 		repo.On("ListOutputs",
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything, false,
 		).Return([]*Output{}, uint64(0), nil)
 
-		claimHash, _, err := validator.computeMerkleTreeAndProofs(nil, &app, &dummyEpochs[0])
+		claimHash, _, err := validator.computeMerkleTreeAndProofs(ctx, &app, &dummyEpochs[0])
+		s.NoError(err)
 		claimHashRef, _, err := merkle.CreateProofs(nil, merkle.TREE_DEPTH)
-		s.ErrorIs(nil, err)
+		s.NoError(err)
 		s.NotNil(claimHash)
 		s.Equal(claimHashRef, *claimHash)
 		repo.AssertExpectations(s.T())
 	})
 
 	s.Run("FirstEpochOneOutput", func() {
+		ctx := context.Background()
 		output := Output{
 			RawData: common.Hash{}.Bytes(),
 		}
@@ -158,13 +171,14 @@ func (s *ValidatorSuite) TestCreateClaimAndProofSuccess() {
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything, false,
 		).Return([]*Output{&output}, uint64(1), nil)
 
-		claimHash, _, err := validator.computeMerkleTreeAndProofs(nil, &app, &dummyEpochs[0])
-		s.ErrorIs(nil, err)
+		claimHash, _, err := validator.computeMerkleTreeAndProofs(ctx, &app, &dummyEpochs[0])
+		s.NoError(err)
 		s.NotNil(claimHash)
 		repo.AssertExpectations(s.T())
 	})
 
 	s.Run("SecondEpochNoOutputs", func() {
+		ctx := context.Background()
 		repo.On("ListOutputs",
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything, false,
 		).Return([]*Output{}, uint64(0), nil).Once()
@@ -173,13 +187,14 @@ func (s *ValidatorSuite) TestCreateClaimAndProofSuccess() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&dummyEpochs[0], nil).Once()
 
-		claimHash, _, err := validator.computeMerkleTreeAndProofs(nil, &app, &dummyEpochs[1])
-		s.ErrorIs(nil, err)
+		claimHash, _, err := validator.computeMerkleTreeAndProofs(ctx, &app, &dummyEpochs[1])
+		s.NoError(err)
 		s.Equal(dummyEpochs[0].OutputsMerkleRoot, claimHash)
 		repo.AssertExpectations(s.T())
 	})
 
 	s.Run("SecondEpochTwoOutputs", func() {
+		ctx := context.Background()
 		newOutput0 := Output{
 			Index:   1,
 			RawData: common.Hash{}.Bytes(),
@@ -200,8 +215,8 @@ func (s *ValidatorSuite) TestCreateClaimAndProofSuccess() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&dummyOutputs[0], nil).Once()
 
-		_, _, err := validator.computeMerkleTreeAndProofs(nil, &app, &dummyEpochs[1])
-		s.ErrorIs(nil, err)
+		_, _, err := validator.computeMerkleTreeAndProofs(ctx, &app, &dummyEpochs[1])
+		s.NoError(err)
 		repo.AssertExpectations(s.T())
 	})
 }
@@ -251,9 +266,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&invalidEpoch, nil).Once()
 
-		repo.On("UpdateApplicationStatus",
-			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-		).Return(nil).Once()
+		expectCorrupted(&app, "Previous epoch has no claim")
 
 		_, _, err := validator.computeMerkleTreeAndProofs(ctx, &app, &dummyEpochs[1])
 		s.NotNil(err)
@@ -293,9 +306,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&Output{}, nil).Once()
 
-		repo.On("UpdateApplicationStatus",
-			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-		).Return(nil).Once()
+		expectCorrupted(&app, "Output (0) preceding epoch 1 is missing or has invalid hash siblings")
 
 		_, _, err := validator.computeMerkleTreeAndProofs(ctx, &app, &dummyEpochs[1])
 		s.NotNil(err)
@@ -316,9 +327,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return((*Output)(nil), nil).Once()
 
-		repo.On("UpdateApplicationStatus",
-			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-		).Return(nil).Once()
+		expectCorrupted(&app, "Output (0) preceding epoch 1 is missing or has invalid hash siblings")
 
 		_, _, err := validator.computeMerkleTreeAndProofs(ctx, &app, &dummyEpochs[1])
 		s.NotNil(err)
@@ -338,7 +347,7 @@ func (s *ValidatorSuite) TestValidateApplicationSuccess() {
 		).Return(([]*Epoch)(nil), uint64(0), nil).Once()
 
 		err := validator.validateApplication(ctx, &app)
-		s.ErrorIs(nil, err)
+		s.NoError(err)
 		repo.AssertExpectations(s.T())
 	})
 
@@ -366,7 +375,7 @@ func (s *ValidatorSuite) TestValidateApplicationSuccess() {
 		).Return(nil).Once()
 
 		err := validator.validateApplication(ctx, &app)
-		s.ErrorIs(nil, err)
+		s.NoError(err)
 		repo.AssertExpectations(s.T())
 	})
 
@@ -381,7 +390,7 @@ func (s *ValidatorSuite) TestValidateApplicationSuccess() {
 		).Return([]*Epoch{&unacceptableEpoch}, uint64(1), nil).Once()
 
 		err := validator.validateApplication(ctx, &foreclosedApp)
-		s.ErrorIs(nil, err)
+		s.NoError(err)
 		repo.AssertExpectations(s.T())
 	})
 }
@@ -476,9 +485,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), dummyEpochs[0].Index,
 		).Return(&input, nil).Once()
 
-		repo.On("UpdateApplicationStatus",
-			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-		).Return(nil).Once()
+		expectCorrupted(&app, "outputs merkle root is not defined")
 
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
@@ -504,9 +511,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), dummyEpochs[0].Index,
 		).Return(&input, nil).Once()
 
-		repo.On("UpdateApplicationStatus",
-			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-		).Return(nil).Once()
+		expectCorrupted(&app, "machine hash is not defined")
 
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
@@ -532,9 +537,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), dummyEpochs[0].Index,
 		).Return(&input, nil).Once()
 
-		repo.On("UpdateApplicationStatus",
-			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-		).Return(nil).Once()
+		expectCorrupted(&app, "computed outputs merkle root does not match")
 
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
@@ -584,9 +587,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
 		).Return([]*Epoch{&epoch}, uint64(1), nil).Once()
 
-		repo.On("UpdateApplicationStatus",
-			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-		).Return(nil).Once()
+		expectCorrupted(&app, "has no machine hash")
 
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
@@ -606,9 +607,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
 		).Return([]*Epoch{&epoch}, uint64(1), nil).Once()
 
-		repo.On("UpdateApplicationStatus",
-			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-		).Return(nil).Once()
+		expectCorrupted(&app, "has no outputs merkle root")
 
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
@@ -642,9 +641,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), epoch.Index,
 		).Return((*Input)(nil), nil).Once()
 
-		repo.On("UpdateApplicationStatus",
-			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-		).Return(nil).Once()
+		expectCorrupted(&app, "has no inputs while not DaveConsensus")
 
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
@@ -688,9 +685,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), uint64(0),
 		).Return((*Epoch)(nil), nil).Once()
 
-		repo.On("UpdateApplicationStatus",
-			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-		).Return(nil).Once()
+		expectCorrupted(&app, "has no previous epoch")
 
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
@@ -738,9 +733,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), uint64(0),
 		).Return(&prev, nil).Once()
 
-		repo.On("UpdateApplicationStatus",
-			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-		).Return(nil).Once()
+		expectCorrupted(&app, "machine hash is not defined")
 
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
@@ -788,9 +781,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), uint64(0),
 		).Return(&prev, nil).Once()
 
-		repo.On("UpdateApplicationStatus",
-			mock.Anything, mock.Anything, mock.Anything, mock.Anything,
-		).Return(nil).Once()
+		expectCorrupted(&app, "outputs merkle root is not defined")
 
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
@@ -892,9 +883,7 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			OutputsMerkleRoot:    &validator.pristineRootHash,
 		}
 
-		repo.On("UpdateApplicationStatus",
-			mock.Anything, app.ID, ApplicationStatus_Corrupted, mock.Anything,
-		).Return(nil).Once()
+		expectCorrupted(app, "lower bound")
 
 		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
 		s.Error(err)
@@ -921,15 +910,148 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			OutputsMerkleRoot:    &validator.pristineRootHash,
 		}
 
-		repo.On("UpdateApplicationStatus",
-			mock.Anything, app.ID, ApplicationStatus_Corrupted, mock.Anything,
-		).Return(nil).Once()
+		expectCorrupted(app, "input count is too large")
 
 		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
 		s.Error(err)
 		s.Nil(commitment)
 		s.Nil(proof)
 		s.Contains(err.Error(), "input count is too large")
+		repo.AssertExpectations(s.T())
+	})
+
+	s.Run("NotEnoughStateHashes", func() {
+		app := &Application{
+			Name:          testAppName,
+			ConsensusType: Consensus_PRT,
+		}
+		epoch := &Epoch{
+			Index:                0,
+			VirtualIndex:         0,
+			InputIndexLowerBound: 0,
+			InputIndexUpperBound: 2,
+			MachineHash:          &validator.pristineRootHash,
+			OutputsMerkleRoot:    &validator.pristineRootHash,
+		}
+
+		repo.On("ListStateHashes",
+			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
+		).Return([]*StateHash{{MachineHash: validator.pristineRootHash, Repetitions: 1}}, uint64(1), nil).Once()
+		expectCorrupted(app, "not enough state hashes")
+
+		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
+		s.ErrorContains(err, "not enough state hashes")
+		s.Nil(commitment)
+		s.Nil(proof)
+		repo.AssertExpectations(s.T())
+	})
+
+	s.Run("InconsistentStateHashCount", func() {
+		app := &Application{
+			Name:          testAppName,
+			ConsensusType: Consensus_PRT,
+		}
+		epoch := &Epoch{
+			Index:                0,
+			VirtualIndex:         0,
+			InputIndexLowerBound: 0,
+			InputIndexUpperBound: 1,
+			MachineHash:          &validator.pristineRootHash,
+			OutputsMerkleRoot:    &validator.pristineRootHash,
+		}
+
+		repo.On("ListStateHashes",
+			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
+		).Return([]*StateHash{{MachineHash: validator.pristineRootHash, Repetitions: 1}}, uint64(2), nil).Once()
+		expectCorrupted(app, "inconsistent number of state hashes")
+
+		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
+		s.ErrorContains(err, "inconsistent number of state hashes")
+		s.Nil(commitment)
+		s.Nil(proof)
+		repo.AssertExpectations(s.T())
+	})
+
+	s.Run("StateHashAppendFailure", func() {
+		app := &Application{
+			Name:          testAppName,
+			ConsensusType: Consensus_PRT,
+		}
+		epoch := &Epoch{
+			Index:                0,
+			VirtualIndex:         0,
+			InputIndexLowerBound: 0,
+			InputIndexUpperBound: 1,
+			MachineHash:          &validator.pristineRootHash,
+			OutputsMerkleRoot:    &validator.pristineRootHash,
+		}
+
+		repo.On("ListStateHashes",
+			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
+		).Return([]*StateHash{{MachineHash: validator.pristineRootHash, Repetitions: 0}}, uint64(1), nil).Once()
+		expectCorrupted(app, "failed to append state hash")
+
+		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
+		s.ErrorContains(err, "failed to append state hash")
+		s.Nil(commitment)
+		s.Nil(proof)
+		repo.AssertExpectations(s.T())
+	})
+
+	s.Run("BuildFailure", func() {
+		app := &Application{
+			Name:          testAppName,
+			ConsensusType: Consensus_PRT,
+		}
+		epoch := &Epoch{
+			Index:                0,
+			VirtualIndex:         0,
+			InputIndexLowerBound: 0,
+			InputIndexUpperBound: 2,
+			MachineHash:          &validator.pristineRootHash,
+			OutputsMerkleRoot:    &validator.pristineRootHash,
+		}
+		stateHashes := []*StateHash{
+			{MachineHash: validator.pristineRootHash, Repetitions: 1},
+			{MachineHash: validator.pristineRootHash, Repetitions: 1},
+		}
+
+		repo.On("ListStateHashes",
+			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
+		).Return(stateHashes, uint64(len(stateHashes)), nil).Once()
+		expectCorrupted(app, "failed to build commitment")
+
+		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
+		s.ErrorContains(err, "failed to build commitment")
+		s.Nil(commitment)
+		s.Nil(proof)
+		repo.AssertExpectations(s.T())
+	})
+
+	s.Run("CommitmentHeightMismatch", func() {
+		app := &Application{
+			Name:          testAppName,
+			ConsensusType: Consensus_PRT,
+		}
+		epoch := &Epoch{
+			Index:                0,
+			VirtualIndex:         0,
+			InputIndexLowerBound: 0,
+			InputIndexUpperBound: 1,
+			MachineHash:          &validator.pristineRootHash,
+			OutputsMerkleRoot:    &validator.pristineRootHash,
+		}
+		repetitions := pkgm.StrideCountInEpoch + (uint64(1) << pkgm.Log2StridesPerInput)
+
+		repo.On("ListStateHashes",
+			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
+		).Return([]*StateHash{{MachineHash: validator.pristineRootHash, Repetitions: repetitions}}, uint64(1), nil).Once()
+		expectCorrupted(app, "commitment tree height")
+
+		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
+		s.ErrorContains(err, "commitment tree height")
+		s.Nil(commitment)
+		s.Nil(proof)
 		repo.AssertExpectations(s.T())
 	})
 }
