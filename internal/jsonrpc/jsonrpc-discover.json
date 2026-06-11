@@ -3,7 +3,7 @@
 	"info": {
 		"title": "Cartesi Rollups Node API",
 		"version": "2.0.0",
-		"description": "A JSON-RPC API for reading rollups data. It provides information about applications, epochs, inputs, outputs, and reports in a read-only fashion."
+		"description": "A JSON-RPC API for reading rollups data. It provides information about applications, epochs, inputs, outputs, and reports in a read-only fashion.\n\nError handling: every method documents its possible errors under `errors`, and clients can dispatch on the error code. `-32002` (application not found) means the application identifier itself is unknown to this node; for application-scoped methods, this is a configuration error that will not resolve by retrying. `-32001` (resource not found) means the requested resource does not exist in the method's scope. For application-scoped methods, `-32001` means the application is known but the nested entity is missing; for node-scoped methods, it can also report missing node resources such as EVM reader configuration. For forward-looking application resources (e.g. the next epoch, input, or output index), `-32001` is the documented \"not created yet\" signal and is safe to poll. The error message names the missing resource. `-32603` (internal error) is never used for missing resources - clients should treat it as a node-side failure and alarm or back off, not poll. The transport-level codes `-32700` (parse error), `-32600` (invalid request), and `-32601` (method not found) follow the JSON-RPC 2.0 specification."
 	},
 	"methods": [
 		{
@@ -46,7 +46,15 @@
 				"schema": {
 					"$ref": "#/components/schemas/ApplicationListResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_getApplication",
@@ -67,7 +75,18 @@
 				"schema": {
 					"$ref": "#/components/schemas/ApplicationGetResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_listEpochs",
@@ -126,7 +145,18 @@
 				"schema": {
 					"$ref": "#/components/schemas/EpochListResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_getEpoch",
@@ -155,7 +185,21 @@
 				"schema": {
 					"$ref": "#/components/schemas/EpochGetResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/EpochNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_getLastAcceptedEpochIndex",
@@ -176,7 +220,21 @@
 				"schema": {
 					"$ref": "#/components/schemas/LastAcceptedEpochIndexResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/EpochNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_listInputs",
@@ -242,7 +300,18 @@
 				"schema": {
 					"$ref": "#/components/schemas/InputListResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_getInput",
@@ -271,7 +340,21 @@
 				"schema": {
 					"$ref": "#/components/schemas/InputGetResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InputNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_getProcessedInputCount",
@@ -292,7 +375,18 @@
 				"schema": {
 					"$ref": "#/components/schemas/ProcessedInputCountResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_listOutputs",
@@ -374,7 +468,18 @@
 				"schema": {
 					"$ref": "#/components/schemas/OutputListResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_getOutput",
@@ -403,7 +508,21 @@
 				"schema": {
 					"$ref": "#/components/schemas/OutputGetResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/OutputNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_listReports",
@@ -467,7 +586,18 @@
 				"schema": {
 					"$ref": "#/components/schemas/ReportListResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_getReport",
@@ -496,7 +626,21 @@
 				"schema": {
 					"$ref": "#/components/schemas/ReportGetResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/ReportNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_listWithdrawals",
@@ -554,7 +698,18 @@
 				"schema": {
 					"$ref": "#/components/schemas/WithdrawalListResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_getWithdrawal",
@@ -583,7 +738,21 @@
 				"schema": {
 					"$ref": "#/components/schemas/WithdrawalGetResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/WithdrawalNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_listTournaments",
@@ -665,7 +834,18 @@
 				"schema": {
 					"$ref": "#/components/schemas/TournamentListResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_getTournament",
@@ -694,7 +874,21 @@
 				"schema": {
 					"$ref": "#/components/schemas/TournamentGetResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/TournamentNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_listCommitments",
@@ -760,7 +954,18 @@
 				"schema": {
 					"$ref": "#/components/schemas/CommitmentListResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_getCommitment",
@@ -805,7 +1010,21 @@
 				"schema": {
 					"$ref": "#/components/schemas/CommitmentGetResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/CommitmentNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_listMatches",
@@ -871,7 +1090,18 @@
 				"schema": {
 					"$ref": "#/components/schemas/MatchListResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_getMatch",
@@ -916,7 +1146,21 @@
 				"schema": {
 					"$ref": "#/components/schemas/MatchGetResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/MatchNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_listMatchAdvances",
@@ -990,7 +1234,18 @@
 				"schema": {
 					"$ref": "#/components/schemas/MatchAdvancedListResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_getMatchAdvanced",
@@ -1043,7 +1298,21 @@
 				"schema": {
 					"$ref": "#/components/schemas/MatchAdvancedGetResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/MatchAdvancedNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_getChainId",
@@ -1055,7 +1324,15 @@
 				"schema": {
 					"$ref": "#/components/schemas/ChainIdResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/NodeConfigNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
 		},
 		{
 			"name": "cartesi_getNodeVersion",
@@ -1127,7 +1404,10 @@
 						"$ref": "#/components/schemas/ApplicationStatus"
 					},
 					"reason": {
-						"type": ["string", "null"],
+						"type": [
+							"string",
+							"null"
+						],
 						"description": "Human-readable failure description. Non-null when status is FAILED, DIVERGED, or CORRUPTED; null otherwise. Foreclosure is reported separately via foreclose_block, not via status."
 					},
 					"iinputbox_block": {
@@ -1247,37 +1527,85 @@
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
 					"machine_hash": {
-						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"outputs_merkle_root": {
-						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"outputs_merkle_proof": {
-						"type": ["array", "null"],
+						"type": [
+							"array",
+							"null"
+						],
 						"items": {
 							"$ref": "#/components/schemas/Hash"
 						}
 					},
 					"commitment": {
-						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"commitment_proof": {
-						"type": ["array", "null"],
+						"type": [
+							"array",
+							"null"
+						],
 						"items": {
 							"$ref": "#/components/schemas/Hash"
 						}
 					},
 					"claim_transaction_hash": {
-						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"tournament_address": {
-						"oneOf": [{"$ref": "#/components/schemas/EthereumAddress"}, {"type": "null"}]
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/EthereumAddress"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"status": {
 						"$ref": "#/components/schemas/EpochStatus"
 					},
 					"staged_at_block": {
-						"oneOf": [{"$ref": "#/components/schemas/UnsignedInteger"}, {"type": "null"}]
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/UnsignedInteger"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"virtual_index": {
 						"$ref": "#/components/schemas/UnsignedInteger"
@@ -1323,6 +1651,7 @@
 					"EXCEPTION",
 					"MACHINE_HALTED",
 					"OUTPUTS_LIMIT_EXCEEDED",
+					"REPORTS_LIMIT_EXCEEDED",
 					"CYCLE_LIMIT_EXCEEDED",
 					"TIME_LIMIT_EXCEEDED",
 					"PAYLOAD_LENGTH_LIMIT_EXCEEDED"
@@ -1344,16 +1673,37 @@
 						"$ref": "#/components/schemas/ByteArray"
 					},
 					"decoded_data": {
-						"oneOf": [{"$ref": "#/components/schemas/EvmAdvance"}, {"type": "null"}]
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/EvmAdvance"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"status": {
 						"$ref": "#/components/schemas/InputCompletionStatus"
 					},
 					"machine_hash": {
-						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"outputs_hash": {
-						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"transaction_reference": {
 						"$ref": "#/components/schemas/ByteArray"
@@ -1451,19 +1801,43 @@
 						"$ref": "#/components/schemas/ByteArray"
 					},
 					"decoded_data": {
-						"oneOf": [{"$ref": "#/components/schemas/DecodedOutput"}, {"type": "null"}]
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/DecodedOutput"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"hash": {
-						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"output_hashes_siblings": {
-						"type": ["array", "null"],
+						"type": [
+							"array",
+							"null"
+						],
 						"items": {
 							"$ref": "#/components/schemas/Hash"
 						}
 					},
 					"execution_transaction_hash": {
-						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"created_at": {
 						"type": "string",
@@ -1849,10 +2223,24 @@
 						"$ref": "#/components/schemas/EthereumAddress"
 					},
 					"parent_tournament_address": {
-						"oneOf": [{"$ref": "#/components/schemas/EthereumAddress"}, {"type": "null"}]
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/EthereumAddress"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"parent_match_id_hash": {
-						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"max_level": {
 						"$ref": "#/components/schemas/UnsignedInteger"
@@ -1867,10 +2255,24 @@
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
 					"winner_commitment": {
-						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"final_state_hash": {
-						"oneOf": [{"$ref": "#/components/schemas/Hash"}, {"type": "null"}]
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"finished_at_block": {
 						"$ref": "#/components/schemas/UnsignedInteger"
@@ -2089,6 +2491,60 @@
 						"$ref": "#/components/schemas/MatchAdvanced"
 					}
 				}
+			}
+		},
+		"errors": {
+			"InvalidParams": {
+				"code": -32602,
+				"message": "Invalid parameters"
+			},
+			"InternalError": {
+				"code": -32603,
+				"message": "Internal server error"
+			},
+			"ApplicationNotFound": {
+				"code": -32002,
+				"message": "Application not found"
+			},
+			"EpochNotFound": {
+				"code": -32001,
+				"message": "Epoch not found"
+			},
+			"InputNotFound": {
+				"code": -32001,
+				"message": "Input not found"
+			},
+			"OutputNotFound": {
+				"code": -32001,
+				"message": "Output not found"
+			},
+			"ReportNotFound": {
+				"code": -32001,
+				"message": "Report not found"
+			},
+			"WithdrawalNotFound": {
+				"code": -32001,
+				"message": "Withdrawal not found"
+			},
+			"TournamentNotFound": {
+				"code": -32001,
+				"message": "Tournament not found"
+			},
+			"CommitmentNotFound": {
+				"code": -32001,
+				"message": "Commitment not found"
+			},
+			"MatchNotFound": {
+				"code": -32001,
+				"message": "Match not found"
+			},
+			"MatchAdvancedNotFound": {
+				"code": -32001,
+				"message": "Match advanced not found"
+			},
+			"NodeConfigNotFound": {
+				"code": -32001,
+				"message": "EVM Reader config not found"
 			}
 		}
 	}

@@ -134,7 +134,7 @@ func TestMethod(t *testing.T) {
 
 			resp := testRPCResponse[any]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
-			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
 
@@ -274,6 +274,28 @@ func TestMethod(t *testing.T) {
 			assert.Equal(t, "Epoch not found", resp.Error.Message)
 		})
 
+		// failure: application not in the database -> application not found
+		t.Run("absentApplication", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			nr := uint64(0xdeadbeef)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getEpoch",
+				"params": {
+				"application": "%v",
+				"epoch_index": "%v"
+				},
+				"id": 0
+				}`, numberToName(nr), hexutil.EncodeUint64(0)))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Application not found", resp.Error.Message)
+		})
+
 		// success: epoch is in the database -> retrieve epoch
 		t.Run("present", func(t *testing.T) {
 			testHistogram.inc(method)
@@ -368,6 +390,28 @@ func TestMethod(t *testing.T) {
 			assert.Equal(t, "Input not found", resp.Error.Message)
 		})
 
+		// failure: application not in the database -> application not found
+		t.Run("absentApplication", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			nr := uint64(0xdeadbeef)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getInput",
+				"params": {
+				"application": "%v",
+				"input_index": "%v"
+				},
+				"id": 0
+				}`, numberToName(nr), hexutil.EncodeUint64(0)))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Application not found", resp.Error.Message)
+		})
+
 		// success: input_index of EvmAdvance in the database -> retrieve input
 		t.Run("success", func(t *testing.T) {
 			testHistogram.inc(method)
@@ -414,12 +458,35 @@ func TestMethod(t *testing.T) {
 	t.Run("cartesi_getLastAcceptedEpochIndex", func(t *testing.T) {
 		method := getName(t.Name())
 
-		// failure: epoch not in the database -> resource not found
+		// failure: application not in the database -> application not found
 		t.Run("absent", func(t *testing.T) {
 			testHistogram.inc(method)
 			s := newTestService(t, t.Name())
 
 			nr := uint64(0xdeadbeef)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getLastAcceptedEpochIndex",
+				"params": { "application": "%v" },
+				"id": 0
+				}`, numberToName(nr)))
+
+			resp := testRPCResponse[hex64]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Application not found", resp.Error.Message)
+		})
+
+		// failure: application exists but has no accepted epoch yet ->
+		// epoch not found (the pollable "not yet" signal)
+		t.Run("no_accepted_epoch", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			nr := uint64(0)
+			s.newTestApplication(ctx, t, nr)
+
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
 				"method": "cartesi_getLastAcceptedEpochIndex",
@@ -548,6 +615,28 @@ func TestMethod(t *testing.T) {
 			assert.Equal(t, "Output not found", resp.Error.Message)
 		})
 
+		// failure: application not in the database -> application not found
+		t.Run("absentApplication", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			nr := uint64(0xdeadbeef)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getOutput",
+				"params": {
+				"application": "%v",
+				"output_index": "%v"
+				},
+				"id": 0
+				}`, numberToName(nr), hexutil.EncodeUint64(0)))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Application not found", resp.Error.Message)
+		})
+
 		// success: output_index of Voucher in the database -> retrieve output
 		t.Run("success", func(t *testing.T) {
 			testHistogram.inc(method)
@@ -621,7 +710,7 @@ func TestMethod(t *testing.T) {
 
 			resp := testRPCResponse[hex64]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
-			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
 
@@ -677,6 +766,60 @@ func TestMethod(t *testing.T) {
 			assert.Nil(t, json.Unmarshal(body, &resp))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 			assert.Equal(t, "Invalid report index: expected hex encoded value", resp.Error.Message)
+		})
+
+		// failure: report_index not in database -> absent report
+		t.Run("absent", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(2)
+			enr := uint64(1)
+			rnr := uint64(0)
+			appID := s.newTestApplication(ctx, t, app)
+			s.createTestEpoch(ctx, t, numberToName(app),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(enr).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getReport",
+				"params": {
+				"application": "%v",
+				"report_index": "%v"
+				},
+				"id": 0
+				}`, numberToName(app), hexutil.EncodeUint64(rnr)))
+
+			resp := testRPCResponse[*model.Report]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Report not found", resp.Error.Message)
+		})
+
+		// failure: application not in the database -> application not found
+		t.Run("absentApplication", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			nr := uint64(0xdeadbeef)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getReport",
+				"params": {
+				"application": "%v",
+				"report_index": "%v"
+				},
+				"id": 0
+				}`, numberToName(nr), hexutil.EncodeUint64(0)))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
 
 		// success: output_index of Voucher in the database -> retrieve output
@@ -919,7 +1062,7 @@ func TestMethod(t *testing.T) {
 
 			resp := testRPCResponse[[]model.Epoch]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
-			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
 
@@ -1096,7 +1239,7 @@ func TestMethod(t *testing.T) {
 
 			resp := testRPCResponse[[]model.Epoch]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
-			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
 
@@ -1144,7 +1287,7 @@ func TestMethod(t *testing.T) {
 
 			resp := testRPCResponse[[]model.Epoch]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
-			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
 
@@ -1318,7 +1461,7 @@ func TestMethod(t *testing.T) {
 
 			resp := testRPCResponse[[]model.Epoch]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
-			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
 
@@ -1539,6 +1682,28 @@ func TestMethod(t *testing.T) {
 			assert.Equal(t, "Tournament not found", resp.Error.Message)
 		})
 
+		// failure: application not in the database -> application not found
+		t.Run("absentApplication", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			nr := uint64(0xdeadbeef)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getTournament",
+				"params": {
+				"application": "%v",
+				"address": "0x%040x"
+				},
+				"id": 0
+				}`, numberToName(nr), 0))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Application not found", resp.Error.Message)
+		})
+
 		// success: tournament present in the database -> retrieve tournament
 		t.Run("success", func(t *testing.T) {
 			var err error
@@ -1615,7 +1780,7 @@ func TestMethod(t *testing.T) {
 
 			resp := testRPCResponse[[]model.Tournament]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
-			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
 
@@ -1637,6 +1802,59 @@ func TestMethod(t *testing.T) {
 			resp := testRPCResponse[[]model.Tournament]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
 			assert.Equal(t, 0, len(resp.Result.Data))
+		})
+
+		// failure: parent_tournament_address not a valid address -> a
+		// single invalid params error. The Unmarshal nil-check doubles as
+		// a regression guard: the handler once kept going after writing
+		// the error, producing two JSON bodies in one response, which
+		// makes Unmarshal fail with a trailing-data error.
+		t.Run("invalidParentTournamentAddress", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			nr := uint64(1)
+			s.newTestApplication(ctx, t, nr)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listTournaments",
+				"params": {
+				"application": "%v",
+				"parent_tournament_address": "0xnothex"
+				},
+				"id": 0
+				}`, numberToName(nr)))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
+			assert.Contains(t, resp.Error.Message, "Invalid parent tournament address")
+		})
+
+		// failure: parent_match_id_hash not a valid hash -> a single
+		// invalid params error (same regression guard as above).
+		t.Run("invalidParentMatchIdHash", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			nr := uint64(1)
+			s.newTestApplication(ctx, t, nr)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listTournaments",
+				"params": {
+				"application": "%v",
+				"parent_match_id_hash": "0xnothex"
+				},
+				"id": 0
+				}`, numberToName(nr)))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
+			assert.Contains(t, resp.Error.Message, "Invalid parent match ID hash")
 		})
 
 		// success: many tournaments
@@ -1820,6 +2038,30 @@ func TestMethod(t *testing.T) {
 			assert.Equal(t, "Commitment not found", resp.Error.Message)
 		})
 
+		// failure: application not in the database -> application not found
+		t.Run("absentApplication", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			nr := uint64(0xdeadbeef)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getCommitment",
+				"params": {
+				"application": "%v",
+				"epoch_index": "%v",
+				"tournament_address": "0x%020x",
+				"commitment": "0x%020x"
+				},
+				"id": 0
+				}`, numberToName(nr), hexutil.EncodeUint64(0), 0, 0))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Application not found", resp.Error.Message)
+		})
+
 		// success: commitment is in the database -> retrieve epoch
 		t.Run("present", func(t *testing.T) {
 			testHistogram.inc(method)
@@ -1933,6 +2175,30 @@ func TestMethod(t *testing.T) {
 			assert.Nil(t, json.Unmarshal(body, &resp))
 			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Match not found", resp.Error.Message)
+		})
+
+		// failure: application not in the database -> application not found
+		t.Run("absentApplication", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			nr := uint64(0xdeadbeef)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getMatch",
+				"params": {
+				"application": "%v",
+				"epoch_index": "%v",
+				"tournament_address": "0x%020x",
+				"id_hash": "0x%020x"
+				},
+				"id": 0
+				}`, numberToName(nr), hexutil.EncodeUint64(0), 0, 0))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
 
 		// success: commitment is in the database -> retrieve epoch
@@ -2063,6 +2329,31 @@ func TestMethod(t *testing.T) {
 			assert.Equal(t, "Match advanced not found", resp.Error.Message)
 		})
 
+		// failure: application not in the database -> application not found
+		t.Run("absentApplication", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			nr := uint64(0xdeadbeef)
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getMatchAdvanced",
+				"params": {
+				"application": "%v",
+				"epoch_index": "0x%020x",
+				"tournament_address": "0x%040x",
+				"id_hash": "0x%040x",
+				"parent": "0x%040x"
+				},
+				"id": 0
+				}`, numberToName(nr), 0, 0, 0, 0))
+
+			resp := testRPCResponse[any]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Application not found", resp.Error.Message)
+		})
+
 		// success: commitment is in the database -> retrieve epoch
 		t.Run("present", func(t *testing.T) {
 			testHistogram.inc(method)
@@ -2158,7 +2449,7 @@ func TestMethod(t *testing.T) {
 
 			resp := testRPCResponse[[]model.Match]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
-			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
 
@@ -2353,7 +2644,7 @@ func TestMethod(t *testing.T) {
 
 			resp := testRPCResponse[[]listMatchesResult]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
-			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
 
@@ -2573,7 +2864,7 @@ func TestMethod(t *testing.T) {
 
 			resp := testRPCResponse[[]listCommitmentResult]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
-			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
 
@@ -2753,11 +3044,11 @@ func TestMethod(t *testing.T) {
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 		})
 
-		// failure: application missing -> resource not found.
+		// failure: application missing -> application not found.
 		// GetWithdrawal's joined SELECT returns (nil, nil) for either
-		// missing application or missing account_index; both surface as
-		// "Withdrawal not found" — the discriminator is irrelevant to
-		// callers since neither path returns a row.
+		// missing application or missing account_index; the handler
+		// disambiguates by checking application existence, so an unknown
+		// application reports "Application not found".
 		t.Run("absentApplication", func(t *testing.T) {
 			testHistogram.inc(method)
 			s := newTestService(t, t.Name())
@@ -2775,7 +3066,8 @@ func TestMethod(t *testing.T) {
 
 			resp := testRPCResponse[*model.Withdrawal]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
-			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
 
 		// failure: application exists but no matching account_index ->
@@ -2874,7 +3166,7 @@ func TestMethod(t *testing.T) {
 
 			resp := testRPCResponse[[]model.Withdrawal]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
-			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
 

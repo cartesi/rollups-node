@@ -32,12 +32,20 @@ const (
 )
 
 const (
+	// Resource not found: the requested resource does not exist in the method's
+	// scope. For application-scoped methods, this means the application exists
+	// but the requested entity does not; unknown applications use
+	// JSONRPC_APPLICATION_NOT_FOUND. For forward-looking keys, this can be the
+	// "not created yet" signal and may be safe to poll depending on the method.
 	JSONRPC_RESOURCE_NOT_FOUND int = -32001 //nolint: revive
-	JSONRPC_PARSE_ERROR        int = -32700 //nolint: revive
-	JSONRPC_INVALID_REQUEST    int = -32600 //nolint: revive
-	JSONRPC_METHOD_NOT_FOUND   int = -32601 //nolint: revive
-	JSONRPC_INVALID_PARAMS     int = -32602 //nolint: revive
-	JSONRPC_INTERNAL_ERROR     int = -32603 //nolint: revive
+	// Application not found: the application identifier itself is unknown to
+	// this node. A configuration error that will not resolve by retrying.
+	JSONRPC_APPLICATION_NOT_FOUND int = -32002 //nolint: revive
+	JSONRPC_PARSE_ERROR           int = -32700 //nolint: revive
+	JSONRPC_INVALID_REQUEST       int = -32600 //nolint: revive
+	JSONRPC_METHOD_NOT_FOUND      int = -32601 //nolint: revive
+	JSONRPC_INVALID_PARAMS        int = -32602 //nolint: revive
+	JSONRPC_INTERNAL_ERROR        int = -32603 //nolint: revive
 )
 
 type rpcHandler = func(*Service, http.ResponseWriter, *http.Request, RPCRequest)
@@ -184,7 +192,7 @@ func handleGetApplication(s *Service, w http.ResponseWriter, r *http.Request, re
 		return
 	}
 	if app == nil {
-		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Application not found", nil)
+		writeRPCError(w, req.ID, JSONRPC_APPLICATION_NOT_FOUND, "Application not found", nil)
 		return
 	}
 
@@ -278,6 +286,9 @@ func handleGetEpoch(s *Service, w http.ResponseWriter, r *http.Request, req RPCR
 		return
 	}
 	if epoch == nil {
+		if s.applicationAbsentOrError(w, r, req, params.Application) {
+			return
+		}
 		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Epoch not found", nil)
 		return
 	}
@@ -301,6 +312,9 @@ func handleGetLastAcceptedEpochIndex(s *Service, w http.ResponseWriter, r *http.
 
 	index, err := s.repository.GetLastAcceptedEpochIndex(r.Context(), params.Application)
 	if errors.Is(err, repository.ErrNotFound) {
+		if s.applicationAbsentOrError(w, r, req, params.Application) {
+			return
+		}
 		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Epoch not found", nil)
 		return
 	}
@@ -416,6 +430,9 @@ func handleGetInput(s *Service, w http.ResponseWriter, r *http.Request, req RPCR
 		return
 	}
 	if input == nil {
+		if s.applicationAbsentOrError(w, r, req, params.Application) {
+			return
+		}
 		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Input not found", nil)
 		return
 	}
@@ -444,7 +461,7 @@ func handleGetProcessedInputCount(s *Service, w http.ResponseWriter, r *http.Req
 
 	processedInputs, err := s.repository.GetProcessedInputCount(r.Context(), params.Application)
 	if errors.Is(err, repository.ErrNotFound) {
-		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Application not found", nil)
+		writeRPCError(w, req.ID, JSONRPC_APPLICATION_NOT_FOUND, "Application not found", nil)
 		return
 	}
 	if err != nil {
@@ -579,6 +596,9 @@ func handleGetOutput(s *Service, w http.ResponseWriter, r *http.Request, req RPC
 		return
 	}
 	if output == nil {
+		if s.applicationAbsentOrError(w, r, req, params.Application) {
+			return
+		}
 		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Output not found", nil)
 		return
 	}
@@ -688,6 +708,9 @@ func handleGetReport(s *Service, w http.ResponseWriter, r *http.Request, req RPC
 		return
 	}
 	if report == nil {
+		if s.applicationAbsentOrError(w, r, req, params.Application) {
+			return
+		}
 		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Report not found", nil)
 		return
 	}
@@ -779,6 +802,9 @@ func handleGetWithdrawal(s *Service, w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	if withdrawal == nil {
+		if s.applicationAbsentOrError(w, r, req, params.Application) {
+			return
+		}
 		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Withdrawal not found", nil)
 		return
 	}
@@ -833,6 +859,7 @@ func handleListTournaments(s *Service, w http.ResponseWriter, r *http.Request, r
 		parentAddress, err := config.ToAddressFromString(*params.ParentTournamentAddress)
 		if err != nil {
 			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid parent tournament address: %v", err), nil)
+			return
 		}
 		tournamentFilter.ParentTournamentAddress = &parentAddress
 	}
@@ -841,6 +868,7 @@ func handleListTournaments(s *Service, w http.ResponseWriter, r *http.Request, r
 		parentMatchIDHash, err := config.ToHashFromString(*params.ParentMatchIDHash)
 		if err != nil {
 			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid parent match ID hash: %v", err), nil)
+			return
 		}
 		tournamentFilter.ParentMatchIDHash = &parentMatchIDHash
 	}
@@ -898,6 +926,9 @@ func handleGetTournament(s *Service, w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	if tournament == nil {
+		if s.applicationAbsentOrError(w, r, req, params.Application) {
+			return
+		}
 		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Tournament not found", nil)
 		return
 	}
@@ -1014,6 +1045,9 @@ func handleGetCommitment(s *Service, w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	if commitment == nil {
+		if s.applicationAbsentOrError(w, r, req, params.Application) {
+			return
+		}
 		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Commitment not found", nil)
 		return
 	}
@@ -1126,6 +1160,9 @@ func handleGetMatch(s *Service, w http.ResponseWriter, r *http.Request, req RPCR
 		return
 	}
 	if match == nil {
+		if s.applicationAbsentOrError(w, r, req, params.Application) {
+			return
+		}
 		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Match not found", nil)
 		return
 	}
@@ -1244,6 +1281,9 @@ func handleGetMatchAdvanced(s *Service, w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	if matchAdvanced == nil {
+		if s.applicationAbsentOrError(w, r, req, params.Application) {
+			return
+		}
 		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Match advanced not found", nil)
 		return
 	}
@@ -1282,7 +1322,7 @@ func (s *Service) applicationAbsentOrError(
 		writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
 		return true
 	} else if app == nil {
-		writeRPCError(w, req.ID, JSONRPC_RESOURCE_NOT_FOUND, "Application not found", nil)
+		writeRPCError(w, req.ID, JSONRPC_APPLICATION_NOT_FOUND, "Application not found", nil)
 		return true
 	}
 	return false
