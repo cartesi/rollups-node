@@ -20,7 +20,7 @@ We provide packages for debian (.deb) in **amd64** and **arm64** variants on the
 - GNU Make >= 3.81
 - Go >= 1.24.1
 
-Follow the Cartesi Machine installation instructions [here](https://github.com/cartesi/machine-emulator?tab=readme-ov-file#installation).
+Follow the [Cartesi Machine installation instructions](https://github.com/cartesi/machine-emulator?tab=readme-ov-file#installation).
 
 ##### Build
 

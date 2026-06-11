@@ -15,25 +15,22 @@ jobs:
   basic-checks:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
           fetch-depth: 0
 
       - name: Check conventional commit
-        uses: cocogitto/cocogitto-action@v3
+        uses: cocogitto/cocogitto-action@c7a74f5406bab86da17da0f0e460a69f8219a68c # v3
         id: conventional_commit_check
         with:
           check-latest-tag-only: true
 
       - name: Check license header
-        uses: viperproject/check-license-header@v2
-        with:
-          path: ./
-          config: .github/license-check/config.json
+        run: make check-license
 
       - name: Lint Markdown docs
-        uses: DavidAnson/markdownlint-cli2-action@v16
+        uses: DavidAnson/markdownlint-cli2-action@ded1f9488f68a970bc66ea5619e13e9b52e601cd # v23
         with:
           globs: |
             *.md
@@ -47,7 +44,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -55,17 +52,17 @@ jobs:
         run: echo ROLLUPS_NODE_VERSION=`make version` >> $GITHUB_ENV
 
       - name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:
           registry: ${{ env.GHCR_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Depot CLI
-        uses: depot/setup-action@v1
+        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1
 
       - name: Build rollups-node image (amd64)
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1
         with:
           file: Dockerfile
           context: .
@@ -76,7 +73,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build rollups-node image (arm64)
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1
         with:
           file: Dockerfile
           context: .
@@ -87,7 +84,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build tester image
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1
         with:
           file: Dockerfile
           context: .
@@ -99,7 +96,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build devnet image
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1
         with:
           file: test/devnet/Dockerfile
           context: .
@@ -110,7 +107,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build debian package (amd64)
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1
         with:
           file: Dockerfile
           context: .
@@ -126,7 +123,7 @@ jobs:
         run: make copy-debian-package BUILD_PLATFORM=linux/amd64 DEB_ARCH=amd64 DEB_PACKAGER_IMG=${{ github.repository_owner }}/rollups-node:debian-packager-amd64
 
       - name: Build debian package (arm64)
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1
         with:
           file: Dockerfile
           context: .
@@ -142,7 +139,7 @@ jobs:
         run: make copy-debian-package BUILD_PLATFORM=linux/arm64 DEB_ARCH=arm64 DEB_PACKAGER_IMG=${{ github.repository_owner }}/rollups-node:debian-packager-arm64
 
       - name: Upload deb artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: artifacts
           path: |
@@ -159,10 +156,10 @@ jobs:
       packages: read
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:
           registry: ${{ env.GHCR_REGISTRY }}
           username: ${{ github.actor }}
@@ -185,10 +182,10 @@ jobs:
       packages: read
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:
           registry: ${{ env.GHCR_REGISTRY }}
           username: ${{ github.actor }}
@@ -207,7 +204,7 @@ jobs:
             cartesi/rollups-node-devnet:devel
 
       - name: Cache test machine images
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: test/downloads
           key: test-deps-${{ hashFiles('test/dependencies.sha256') }}
@@ -227,10 +224,10 @@ jobs:
       shards: ${{ steps.shards.outputs.shards }}
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -256,10 +253,10 @@ jobs:
       packages: read
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:
           registry: ${{ env.GHCR_REGISTRY }}
           username: ${{ github.actor }}
@@ -278,7 +275,7 @@ jobs:
             cartesi/rollups-node-devnet:devel
 
       - name: Cache test machine images
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: test/downloads
           key: test-deps-${{ hashFiles('test/dependencies.sha256') }}
@@ -293,12 +290,16 @@ jobs:
 
       - name: Upload integration test logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: integration-test-logs-${{ matrix.shard }}
           path: integration-logs-${{ matrix.shard }}.txt
           retention-days: 3
 
+      # Redundant with the trap in compose-integration-run.sh; this is the
+      # safety net for when concurrency cancel-in-progress SIGKILLs the make
+      # process before its trap can fire, which would otherwise leak the
+      # project's containers and volumes.
       - name: Clean up compose project
         if: always()
         run: |
@@ -314,13 +315,13 @@ jobs:
       contents: write
     steps:
       - name: Checkout emulator source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
 
       - name: Upload products to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         with:
           draft: true
           files: |

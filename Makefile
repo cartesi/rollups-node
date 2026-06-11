@@ -512,6 +512,9 @@ unit-test-with-compose: $(CARTESI_TEST_MACHINE_IMAGES) ## Run unit tests using d
 lint-with-docker: ## Run linting inside Docker (no host Go needed)
 	@docker run --rm cartesi/rollups-node:tester sh -c 'make lint && make vet && make fmt-check'
 
+check-license: ## Verify license headers on Go source files
+	@scripts/check-license-header.sh
+
 # =============================================================================
 # Integration test sharding
 # =============================================================================
@@ -664,7 +667,7 @@ build-debian-package: install
 	integration-test-shard integration-test-sharded-local integration-test-shard-check list-integration-shards \
 	generate generate-contracts generate-config generate-inspect check-generate generate-db \
 	docs generate-cli-docs generate-config-docs \
-	lint fmt fmt-check vet escape \
+	lint fmt fmt-check vet escape check-license \
 	devnet image tester-image debian-packager run-with-compose shutdown-compose \
 	start start-devnet start-postgres stop stop-devnet stop-postgres restart restart-devnet restart-postgres \
 	install copy-debian-package build-debian-package \

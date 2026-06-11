@@ -1,11 +1,16 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: Clean-up Docker images
 
+# build.yml pushes ci-tagged images to GHCR on every push; this periodic sweep
+# is what keeps them from accumulating without bound.
 on:
-  pull_request:
-    branches:
-      - main
-    types: [closed]
+  schedule:
+    # Approximately every 5 days. cron has no true "every N days", so this
+    # fires on days-of-month 1,6,11,16,21,26,31 and resets at each month
+    # start (one short gap at the boundary) — fine for a cleanup with a
+    # 7-day age floor.
+    - cron: "0 3 */5 * *"
+  workflow_dispatch:
 
 jobs:
   cleanup:
@@ -19,22 +24,14 @@ jobs:
           - rollups-node
           - rollups-node-devnet
     steps:
-      # Remove PR-scoped tags immediately.
-      - name: Prune PR tags
-        uses: vlaurin/action-ghcr-prune@v0.6.0
-        with:
-          organization: cartesi
-          container: ${{ matrix.image }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          prune-untagged: false
-          keep-last: 0
-          prune-tags-regexes: |
-            ^pr-${{ github.event.number }}$
-
       # Prune stale CI images older than 7 days to avoid deleting
       # images needed by concurrently running workflows.
       - name: Prune stale CI tags
-        uses: vlaurin/action-ghcr-prune@v0.6.0
+        # Pinned to a commit: third-party action holding a packages:write
+        # token. Still node20: no node24 release exists upstream (checked
+        # 2026-06); works until the runner removes node20 (announced
+        # 2026-09-16).
+        uses: vlaurin/action-ghcr-prune@0cf7d39f88546edd31965acba78cdcb0be14d641 # v0.6.0
         with:
           organization: cartesi
           container: ${{ matrix.image }}
@@ -44,3 +41,6 @@ jobs:
           older-than: 7 days
           prune-tags-regexes: |
             ^ci-
+            ^devel-amd64-ci-
+            ^devel-arm64-ci-
+            ^tester-ci-
