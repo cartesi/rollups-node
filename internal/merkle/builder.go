@@ -265,7 +265,7 @@ func (tree *Tree) ProveLeafRec(index *big.Int) (*Proof, error) {
 		}
 		proof.PushHash(rhs.RootHash)
 		proof.Pos = index
-		return proof, err
+		return proof, nil
 	} else {
 		proof, err := rhs.ProveLeafRec(innerIndex)
 		if err != nil {
@@ -273,7 +273,7 @@ func (tree *Tree) ProveLeafRec(index *big.Int) (*Proof, error) {
 		}
 		proof.PushHash(lhs.RootHash)
 		proof.Pos = index
-		return proof, err
+		return proof, nil
 	}
 }
 

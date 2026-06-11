@@ -238,7 +238,7 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 
 			if input.MachineHash == nil {
 				return s.setApplicationCorrupted(ctx, app,
-					"Inconsistent state: epoch %v last input (%v) machine hash is not defined.",
+					"inconsistent state: epoch %v last input (%v) machine hash is not defined",
 					epoch.Index, input.Index)
 			}
 			if *epoch.MachineHash != *input.MachineHash {
@@ -399,12 +399,26 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 		return nil, nil, s.setApplicationCorrupted(ctx, app,
 			"failed to build commitment for epoch %d of application %s with error: %v", epoch.Index, app.Name, err)
 	}
+	// The commitment geometry is fixed: 2²⁴ inputs × 2²⁴ strides ⇒ height 48.
+	const expectedHeight = pkgm.Log2InputSpanToEpoch + pkgm.Log2StridesPerInput // 48
+	if uint64(epochCommitmentTree.Height) != expectedHeight {
+		return nil, nil, s.setApplicationCorrupted(ctx, app,
+			"epoch %v commitment tree height %v, expected %v — state hash repetitions are inconsistent",
+			epoch.Index, epochCommitmentTree.Height, expectedHeight)
+	}
 
 	commitment := epochCommitmentTree.GetRootHash()
 	proof, err := epochCommitmentTree.ProveLast()
 	if err != nil {
 		return nil, nil, s.setApplicationCorrupted(ctx, app,
 			"failed to retrieve commitment proof for epoch %d of application %s with error: %v", epoch.Index, app.Name, err)
+	}
+	// PRT reconstructs the root children from (epoch.MachineHash, proof).
+	// The tree's last leaf must therefore be the epoch's final machine hash.
+	if proof.Node != *epoch.MachineHash {
+		return nil, nil, s.setApplicationCorrupted(ctx, app,
+			"epoch %v commitment last leaf %v does not match machine hash %v",
+			epoch.Index, proof.Node, *epoch.MachineHash)
 	}
 	s.Logger.Info("DaveConsensus epoch commitment built",
 		"application", app.Name,
