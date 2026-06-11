@@ -339,6 +339,7 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 	s.Logger.Debug("DaveConsensus: Building commitment for epoch",
 		"application", app.Name,
 		"epoch", epoch.Index)
+
 	if epoch.InputIndexLowerBound > epoch.InputIndexUpperBound {
 		return nil, nil, s.setApplicationCorrupted(ctx, app,
 			"invalid epoch %v (%v): lower bound (%v) > upper bound (%v)",
@@ -350,6 +351,12 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 	}
 	builder := merkle.Builder{}
 	inputCount := epoch.InputIndexUpperBound - epoch.InputIndexLowerBound
+	if pkgm.InputsPerEpoch < inputCount {
+		return nil, nil, s.setApplicationCorrupted(ctx, app,
+			"input count is too large for epoch %v of application %v: max %v, got %v",
+			epoch.Index, app.Name, pkgm.InputsPerEpoch, inputCount)
+	}
+
 	if inputCount > 0 {
 		statesHashes, total, err := s.repository.ListStateHashes(ctx, app.IApplicationAddress.String(),
 			repository.StateHashFilter{EpochIndex: &epoch.Index}, repository.Pagination{}, false)

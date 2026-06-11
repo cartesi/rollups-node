@@ -11,6 +11,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/merkle"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	pkgm "github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
@@ -793,6 +794,129 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
+		repo.AssertExpectations(s.T())
+	})
+}
+
+// cover the integer overflow guards.
+func (s *ValidatorSuite) TestBuildCommitment() {
+	ctx := context.Background()
+	const testAppName = "test-app"
+
+	s.Run("ValidEpochWithInputs", func() {
+		app := &Application{
+			Name:          testAppName,
+			ConsensusType: Consensus_PRT,
+		}
+		epoch := &Epoch{
+			Index:                0,
+			VirtualIndex:         0,
+			InputIndexLowerBound: 0,
+			InputIndexUpperBound: 5,
+			MachineHash:          &validator.pristineRootHash,
+			OutputsMerkleRoot:    &validator.pristineRootHash,
+		}
+
+		// 5 inputs, each with one state hash covering the full
+		// strides-per-input count (1<<pkgm.Log2StridesPerInput) so the
+		// total stride count remains a power of two.
+		stridesPerInput := uint64(1) << pkgm.Log2StridesPerInput
+		stateHashes := make([]*StateHash, 5)
+		for i := range 5 {
+			stateHashes[i] = &StateHash{
+				MachineHash: validator.pristineRootHash,
+				Repetitions: stridesPerInput,
+			}
+		}
+
+		repo.On("ListStateHashes",
+			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
+		).Return(stateHashes, uint64(5), nil).Once()
+
+		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
+		s.NoError(err)
+		s.NotNil(commitment)
+		s.NotNil(proof)
+		repo.AssertExpectations(s.T())
+	})
+
+	s.Run("ValidEmptyEpoch", func() {
+		// Equal bounds → inputCount==0, no state hashes queried,
+		// entire epoch is filled with pristine machine-hash strides.
+		app := &Application{
+			Name:          testAppName,
+			ConsensusType: Consensus_PRT,
+		}
+		epoch := &Epoch{
+			Index:                0,
+			VirtualIndex:         0,
+			InputIndexLowerBound: 7,
+			InputIndexUpperBound: 7,
+			MachineHash:          &validator.pristineRootHash,
+			OutputsMerkleRoot:    &validator.pristineRootHash,
+		}
+
+		// No ListStateHashes call expected (inputCount==0 branch is skipped)
+
+		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
+		s.NoError(err)
+		s.NotNil(commitment)
+		s.NotNil(proof)
+		repo.AssertExpectations(s.T())
+	})
+
+	s.Run("LowerBoundExceedsUpperBound", func() {
+		app := &Application{
+			Name:          testAppName,
+			ConsensusType: Consensus_PRT,
+		}
+		epoch := &Epoch{
+			Index:                0,
+			VirtualIndex:         0,
+			InputIndexLowerBound: 5,
+			InputIndexUpperBound: 3,
+			MachineHash:          &validator.pristineRootHash,
+			OutputsMerkleRoot:    &validator.pristineRootHash,
+		}
+
+		repo.On("UpdateApplicationStatus",
+			mock.Anything, app.ID, ApplicationStatus_Corrupted, mock.Anything,
+		).Return(nil).Once()
+
+		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
+		s.Error(err)
+		s.Nil(commitment)
+		s.Nil(proof)
+		s.Contains(err.Error(), "lower bound")
+		s.Contains(err.Error(), "upper bound")
+		repo.AssertExpectations(s.T())
+	})
+
+	s.Run("InputCountExceedsMax", func() {
+		app := &Application{
+			Name:          testAppName,
+			ConsensusType: Consensus_PRT,
+		}
+		// pkgm.InputsPerEpoch = 1 << 24 = 16_777_216
+		// Set bounds so inputCount == InputsPerEpoch + 1
+		epoch := &Epoch{
+			Index:                0,
+			VirtualIndex:         0,
+			InputIndexLowerBound: 0,
+			InputIndexUpperBound: pkgm.InputsPerEpoch + 1,
+			MachineHash:          &validator.pristineRootHash,
+			OutputsMerkleRoot:    &validator.pristineRootHash,
+		}
+
+		repo.On("UpdateApplicationStatus",
+			mock.Anything, app.ID, ApplicationStatus_Corrupted, mock.Anything,
+		).Return(nil).Once()
+
+		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
+		s.Error(err)
+		s.Nil(commitment)
+		s.Nil(proof)
+		s.Contains(err.Error(), "input count is too large")
 		repo.AssertExpectations(s.T())
 	})
 }
