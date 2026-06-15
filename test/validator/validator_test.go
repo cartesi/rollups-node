@@ -23,6 +23,10 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+// The maximum height for the Merkle tree of all outputs produced
+// by an application
+const MAX_OUTPUT_TREE_HEIGHT = merkle.TREE_DEPTH //nolint: revive
+
 const testTimeout = 300 * time.Second
 
 type ValidatorRepositoryIntegrationSuite struct {
@@ -318,7 +322,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		expectedOutputHash := crypto.Keccak256Hash(outputRawData)
 		expectedClaim, expectedProofs, err := merkle.CreateProofs(
 			[]common.Hash{expectedOutputHash},
-			validator.MAX_OUTPUT_TREE_HEIGHT,
+			MAX_OUTPUT_TREE_HEIGHT,
 		)
 		s.Require().Nil(err)
 		s.Require().NotNil(expectedClaim)
@@ -359,7 +363,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		// output was updated with its hash
 		s.Equal(expectedOutputHash, *updatedOutput.Hash)
 		// output has proof
-		s.Len(updatedOutput.OutputHashesSiblings, validator.MAX_OUTPUT_TREE_HEIGHT)
+		s.Len(updatedOutput.OutputHashesSiblings, MAX_OUTPUT_TREE_HEIGHT)
 	})
 
 	s.Run("WhenThereAreOutputsAndAPreviousEpoch", func() {
@@ -419,7 +423,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		// calculate first epoch claim
 		firstEpochClaim, firstEpochProofs, err := merkle.CreateProofs(
 			[]common.Hash{firstOutputHash},
-			validator.MAX_OUTPUT_TREE_HEIGHT,
+			MAX_OUTPUT_TREE_HEIGHT,
 		)
 		s.Require().Nil(err)
 		s.Require().NotNil(firstEpochClaim)
@@ -472,7 +476,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		secondOutputHash := crypto.Keccak256Hash(secondOutputData)
 		expectedEpochClaim, expectedProofs, err := merkle.CreateProofs(
 			[]common.Hash{firstOutputHash, secondOutputHash},
-			validator.MAX_OUTPUT_TREE_HEIGHT,
+			MAX_OUTPUT_TREE_HEIGHT,
 		)
 		s.Require().Nil(err)
 		s.Require().NotNil(expectedEpochClaim)
@@ -522,6 +526,6 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		// assert output hash was updated
 		s.Equal(secondOutputHash, *updatedSecondOutput.Hash)
 		// assert output has proof
-		s.Len(updatedSecondOutput.OutputHashesSiblings, validator.MAX_OUTPUT_TREE_HEIGHT)
+		s.Len(updatedSecondOutput.OutputHashesSiblings, MAX_OUTPUT_TREE_HEIGHT)
 	})
 }

@@ -1107,17 +1107,11 @@ func (m *Mockrepo) ListEpochs(
 
 func (m *Mockrepo) GetLastInput(ctx context.Context, appAddress string, epochIndex uint64) (*Input, error) {
 	args := m.Called(ctx, appAddress, epochIndex)
-	if input, ok := args.Get(0).(*Input); ok {
-		return input, args.Error(1)
-	}
 	return args.Get(0).(*Input), args.Error(1)
 }
 
 func (m *Mockrepo) GetEpochByVirtualIndex(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error) {
 	args := m.Called(ctx, nameOrAddress, index)
-	if epoch, ok := args.Get(0).(*Epoch); ok {
-		return epoch, args.Error(1)
-	}
 	return args.Get(0).(*Epoch), args.Error(1)
 }
 

@@ -242,14 +242,12 @@ func (tree *Tree) ProveLeafRec(index *big.Int) (*Proof, error) {
 	shiftAmount := uint(tree.Height - 1)
 	isLeftLeaf := new(big.Int).Rsh(index, shiftAmount).Cmp(zero) == 0
 
-	// innerIndex = index & !(1 << shiftAmount)
-	innerIndex := new(big.Int).And(
+	// innerIndex = index & ~(1 << shiftAmount)
+	innerIndex := new(big.Int).AndNot(
 		index,
-		new(big.Int).Not(
-			new(big.Int).Lsh(
-				one,
-				shiftAmount,
-			),
+		new(big.Int).Lsh(
+			one,
+			shiftAmount,
 		),
 	)
 
@@ -329,7 +327,7 @@ func (b *Builder) AppendRepeated(leaf *Tree, reps *big.Int) error {
 		return fmt.Errorf("invalid repetitions: %v: %w", reps, ErrBadInput)
 	}
 
-	accumulatedCount, err := b.CalculateAccumulatedCount(reps)
+	accumulatedCount, err := b.calculateAccumulatedCount(reps)
 	if err != nil {
 		return err
 	}
@@ -358,13 +356,9 @@ func (b *Builder) Build() (*Tree, error) {
 	}
 }
 
-func (b *Builder) CalculateAccumulatedCount(reps *big.Int) (*big.Int, error) {
+func (b *Builder) calculateAccumulatedCount(reps *big.Int) (*big.Int, error) {
 	n := len(b.Trees)
 	if n != 0 {
-		if reps.Cmp(zero) == 0 {
-			return nil, fmt.Errorf("merkle builder is full")
-		}
-
 		accumulatedCount := new(big.Int).And(
 			new(big.Int).Add(reps, b.Trees[n-1].AccumulatedCount),
 			overflowMask,

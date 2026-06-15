@@ -108,10 +108,6 @@ func (s *Service) String() string {
 	return s.Name
 }
 
-// The maximum height for the Merkle tree of all outputs produced
-// by an application
-const MAX_OUTPUT_TREE_HEIGHT = merkle.TREE_DEPTH //nolint: revive
-
 type ValidatorRepository interface {
 	ListApplications(ctx context.Context, f repository.ApplicationFilter, p repository.Pagination, descending bool) ([]*Application, uint64, error)
 	UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error
@@ -146,6 +142,7 @@ func (s *Service) setApplicationCorrupted(ctx context.Context, app *Application,
 
 // validateApplication calculates, validates and stores the claim and/or proofs
 // for each processed epoch of the application.
+// Epochs are iterated in ascending virtual-index order as returned by getProcessedEpochs.
 func (s *Service) validateApplication(ctx context.Context, app *Application) error {
 	s.Logger.Debug("Starting validation", "application", app.Name)
 	appAddress := app.IApplicationAddress.String()
@@ -266,7 +263,7 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 				// However it indicates some kind of corruption when combined with the epoch.VirtualIndex > 0 check.
 				if previousEpoch == nil {
 					return s.setApplicationCorrupted(ctx, app,
-						"epoch %v (%v) has no previous epoch.", epoch.Index, epoch.VirtualIndex)
+						"epoch %v (%v) has no previous epoch", epoch.Index, epoch.VirtualIndex)
 				}
 				if previousEpoch.MachineHash == nil {
 					return s.setApplicationCorrupted(ctx, app,
@@ -354,7 +351,7 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 	}
 	builder := merkle.Builder{}
 	inputCount := epoch.InputIndexUpperBound - epoch.InputIndexLowerBound
-	if pkgm.InputsPerEpoch < inputCount {
+	if inputCount > pkgm.InputsPerEpoch {
 		return nil, nil, s.setApplicationCorrupted(ctx, app,
 			"input count is too large for epoch %v of application %v: max %v, got %v",
 			epoch.Index, app.Name, pkgm.InputsPerEpoch, inputCount)
@@ -386,6 +383,7 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 	}
 
 	remainingInputs := pkgm.InputsPerEpoch - inputCount
+	// Safe: inputCount ≤ InputsPerEpoch enforced above, so remainingInputs << Log2StridesPerInput won't overflow.
 	remainingStrides := remainingInputs << pkgm.Log2StridesPerInput
 	if remainingStrides > 0 {
 		if err := builder.AppendRepeatedUint64(merkle.TreeLeaf(*epoch.MachineHash), remainingStrides); err != nil {
