@@ -470,8 +470,15 @@ func (s *Service) computeMerkleTreeAndProofs(
 
 	// if there are no outputs
 	if len(epochOutputs) == 0 {
+		// and there should be a previous epoch (guard against DB corruption)
+		if epoch.VirtualIndex != 0 && previousEpoch == nil {
+			return nil, nil, s.setApplicationCorrupted(ctx, app,
+				"epoch %v (%v): previous epoch with virtual index %v is missing",
+				epoch.Index, epoch.VirtualIndex, epoch.VirtualIndex-1)
+		}
+
 		// and there is no previous epoch
-		if previousEpoch == nil {
+		if epoch.VirtualIndex == 0 {
 			// this is the first epoch, return the pristine claim
 			return &s.pristineRootHash, nil, nil
 		}
