@@ -21,7 +21,7 @@ var (
 	logLevel               string
 	logColor               bool
 	defaultBlockString     string
-	blockchainHttpEndpoint string
+	blockchainHTTPEndpoint string
 	databaseConnection     string
 	pollInterval           string
 	maxStartupTime         string
@@ -54,7 +54,7 @@ func init() {
 		"tint the logs (colored output)")
 	cli.AddFlagStrVar(flags, &databaseConnection, "database-connection", config.DATABASE_CONNECTION,
 		"Database connection string in the URL format\n(eg.: 'postgres://user:password@hostname:port/database') ")
-	cli.AddFlagStrVar(flags, &blockchainHttpEndpoint, "blockchain-http-endpoint", config.BLOCKCHAIN_HTTP_ENDPOINT,
+	cli.AddFlagStrVar(flags, &blockchainHTTPEndpoint, "blockchain-http-endpoint", config.BLOCKCHAIN_HTTP_ENDPOINT,
 		"Blockchain http endpoint")
 	cli.AddFlagStrVar(flags, &pollInterval, "poll-interval", config.CLAIMER_POLLING_INTERVAL,
 		"Poll interval")
@@ -100,9 +100,10 @@ func run(cmd *cobra.Command, args []string) {
 	createInfo.EthConn, err = ethutil.NewEthClient(
 		ctx, cfg.BlockchainHttpEndpoint.Raw(), logger,
 		ethutil.RetryConfig{
-			MaxRetries:   cfg.BlockchainHttpMaxRetries,
-			RetryMinWait: cfg.BlockchainHttpRetryMinWait,
-			RetryMaxWait: cfg.BlockchainHttpRetryMaxWait,
+			MaxRetries:     cfg.BlockchainHttpMaxRetries,
+			RetryMinWait:   cfg.BlockchainHttpRetryMinWait,
+			RetryMaxWait:   cfg.BlockchainHttpRetryMaxWait,
+			RequestTimeout: cfg.BlockchainHttpRequestTimeout,
 		}, authOpt)
 	cli.CheckErr(logger, err)
 

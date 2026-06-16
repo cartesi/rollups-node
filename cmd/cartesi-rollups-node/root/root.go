@@ -169,7 +169,7 @@ func run(cmd *cobra.Command, args []string) {
 	createInfo.ReaderClient, err = newEthClient(ctx, config.ServiceEvmReader, cfg.BlockchainHttpRequestTimeout)
 	cli.CheckErr(logger, err)
 
-	createInfo.ClaimerClient, err = newEthClient(ctx, config.ServiceClaimer, 0)
+	createInfo.ClaimerClient, err = newEthClient(ctx, config.ServiceClaimer, cfg.BlockchainHttpRequestTimeout)
 	cli.CheckErr(logger, err)
 
 	createInfo.PrtClient, err = newEthClient(ctx, config.ServicePrt, 0)
