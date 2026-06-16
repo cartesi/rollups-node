@@ -172,7 +172,7 @@ func run(cmd *cobra.Command, args []string) {
 	createInfo.ClaimerClient, err = newEthClient(ctx, config.ServiceClaimer, cfg.BlockchainHttpRequestTimeout)
 	cli.CheckErr(logger, err)
 
-	createInfo.PrtClient, err = newEthClient(ctx, config.ServicePrt, 0)
+	createInfo.PrtClient, err = newEthClient(ctx, config.ServicePrt, cfg.BlockchainHttpRequestTimeout)
 	cli.CheckErr(logger, err)
 
 	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())

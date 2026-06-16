@@ -89,9 +89,10 @@ func run(cmd *cobra.Command, args []string) {
 	createInfo.EthClient, err = ethutil.NewEthClient(
 		ctx, cfg.BlockchainHttpEndpoint.Raw(), logger,
 		ethutil.RetryConfig{
-			MaxRetries:   cfg.BlockchainHttpMaxRetries,
-			RetryMinWait: cfg.BlockchainHttpRetryMinWait,
-			RetryMaxWait: cfg.BlockchainHttpRetryMaxWait,
+			MaxRetries:     cfg.BlockchainHttpMaxRetries,
+			RetryMinWait:   cfg.BlockchainHttpRetryMinWait,
+			RetryMaxWait:   cfg.BlockchainHttpRetryMaxWait,
+			RequestTimeout: cfg.BlockchainHttpRequestTimeout,
 		}, authOpt)
 	cli.CheckErr(logger, err)
 
