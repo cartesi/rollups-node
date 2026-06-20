@@ -18,15 +18,30 @@ import (
 
 const nodeBinary = "cartesi-rollups-node"
 
-// sharedNode is the test-managed node process, started by TestMain when no
-// external node is running. All test suites share this instance. Restart
-// tests stop and restart it via stopSharedNode/startSharedNode.
-// When nil, the node is externally managed (e.g., Docker Compose) and
-// restart tests are skipped.
-var sharedNode *nodeProcess
+// nodeHandle is a running test-managed node: either the standalone all-in-one
+// process or the multiprocess set of service subprocesses. Both can be stopped
+// and restarted, so the node-lifecycle tests run under either topology.
+type nodeHandle interface {
+	stop(t testing.TB)
+	waitForHealth(ctx context.Context, t testing.TB) error
+}
 
-// isNodeSelfManaged returns true if TestMain started the node process.
-// When false, the node is externally managed and cannot be restarted.
+type nodeExitChecker interface {
+	exitedProcessError() error
+}
+
+// sharedNode is the test-managed node, started by TestMain unless an external
+// node is already running on :10000. All suites share it; lifecycle tests stop
+// and restart it via stopSharedNode/startSharedNode. nil when externally
+// managed. Its concrete type follows nodeTopology.
+var sharedNode nodeHandle
+
+// nodeTopology is the deployment TestMain manages ("standalone" or
+// "multiprocess"); it selects what startSharedNode(WithEnv) restarts.
+var nodeTopology string
+
+// isNodeSelfManaged returns true if TestMain started the node (so it can be
+// restarted). False when an external node is already running.
 func isNodeSelfManaged() bool {
 	return sharedNode != nil
 }
@@ -34,11 +49,20 @@ func isNodeSelfManaged() bool {
 // stopSharedNode stops the test-managed node. Panics if the node is
 // externally managed.
 func stopSharedNode(t testing.TB) {
+	t.Helper()
 	if sharedNode == nil {
 		t.Fatal("cannot stop node: not managed by tests (running in compose?)")
 	}
-	sharedNode.stop(t)
+	h := sharedNode
+	var exitErr error
+	if checker, ok := sharedNode.(nodeExitChecker); ok {
+		exitErr = checker.exitedProcessError()
+	}
+	h.stop(t)
 	sharedNode = nil
+	if exitErr != nil {
+		t.Fatalf("cannot stop node: managed node already exited unexpectedly: %v", exitErr)
+	}
 }
 
 // startSharedNode starts a new test-managed node, reusing the existing log
@@ -51,26 +75,34 @@ func startSharedNode(t testing.TB) {
 // inject extra environment variables (e.g.,
 // CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED=false to bring the node up in
 // reader mode for a single test phase). Restore default mode on test
-// teardown by stopping the node and calling startSharedNode again.
+// teardown by stopping the node and calling startSharedNode again. Under the
+// multiprocess topology this starts/stops the whole service set.
 func startSharedNodeWithEnv(t testing.TB, extraEnv ...string) {
 	if sharedNode != nil {
 		t.Fatal("cannot start node: already running")
 	}
 
 	logPath := os.Getenv("CARTESI_TEST_NODE_LOG_FILE")
-	var err error
-	sharedNode, err = startNodeWithLog(logPath, extraEnv...)
+	var (
+		h   nodeHandle
+		err error
+	)
+	if nodeTopology == "multiprocess" {
+		h, err = startMultiNode(logPath, extraEnv...)
+	} else {
+		h, err = startNodeWithLog(logPath, extraEnv...)
+	}
 	if err != nil {
 		t.Fatalf("failed to start node: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	if err := sharedNode.waitForHealth(ctx, t); err != nil {
-		sharedNode.stop(t)
-		sharedNode = nil
+	if err := h.waitForHealth(ctx, t); err != nil {
+		h.stop(t)
 		t.Fatalf("node failed to become healthy: %v", err)
 	}
+	sharedNode = h
 }
 
 // nodePortAvailable returns true if the node's telemetry port (10000) is free.

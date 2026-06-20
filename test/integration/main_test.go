@@ -15,17 +15,17 @@ import (
 	"time"
 )
 
-// TestMain manages the node process and enforces sequential test execution.
+// TestMain manages the node and enforces sequential test execution.
 //
-// If no node is already running on port 10000 (e.g., in Docker Compose),
-// TestMain starts the node binary as a subprocess, waits for health, and
-// stops it after all tests complete. This makes the node lifecycle
-// transparent to individual test suites — they don't need to know whether
-// the node was started by the test or by an external process.
+// Unless a node is already running on port 10000, TestMain starts the
+// test-managed node — the all-in-one process (standalone) or the service
+// subprocesses (multiprocess, NODE_TOPOLOGY=multiprocess) — waits for health,
+// and stops it after all tests complete. This keeps the node lifecycle
+// transparent to the suites.
 //
-// Restart/snapshot tests call stopSharedNode/startSharedNode to exercise
-// the node's synchronization path. When the node is externally managed
-// (Compose), those tests are skipped.
+// Restart/snapshot tests call stopSharedNode/startSharedNode to exercise the
+// node's synchronization path; this works under either topology. They are
+// skipped only when an external node is already running (not test-managed).
 func TestMain(m *testing.M) {
 	flag.Parse()
 	if testing.Short() {
@@ -51,75 +51,108 @@ func TestMain(m *testing.M) {
 		}
 	}
 
-	// In both local and Compose runs the node is started here by TestMain
-	// (the Compose integration-test service runs this same test binary). The
-	// port check only guards against a node already running on 10000 — e.g. one
-	// a developer started by hand — in which case we attach to it and skip the
-	// restart tests rather than fighting over the port.
-	if nodePortAvailable() {
-		artifactsDir, err := integrationArtifactsDir()
+	// The node is started here by TestMain (the Compose integration service runs
+	// this same test binary) unless a developer already has one running on
+	// :10000, in which case we attach and the restart tests are skipped. The
+	// multiprocess topology starts the services as subprocesses — host or inside
+	// the test container — so the lifecycle tests can restart them too.
+	nodeTopology = envOrDefault("NODE_TOPOLOGY", "standalone")
+	healthTimeout := 2 * time.Minute
+
+	mustPrepareRuntime := func() string {
+		logPath, err := prepareNodeRuntime()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to prepare integration artifacts dir: %v\n", err)
+			fmt.Fprintf(os.Stderr, "failed to prepare node runtime: %v\n", err)
 			os.Exit(1)
 		}
-		os.Setenv("CARTESI_TEST_ARTIFACTS_DIR", artifactsDir)
-		os.Setenv("CARTESI_TEST_NODE_WORKDIR", artifactsDir)
-		fmt.Fprintf(os.Stderr, "Integration artifacts dir: %s\n", artifactsDir)
+		return logPath
+	}
 
-		// `make env` exports CARTESI_SNAPSHOTS_DIR=snapshots, which used to
-		// resolve under test/integration because the node inherited go test's
-		// package cwd. Keep user-provided custom paths, but route the default
-		// snapshot path into the integration artifacts directory.
-		if snapshotsDir := os.Getenv("CARTESI_SNAPSHOTS_DIR"); snapshotsDir == "" || snapshotsDir == "snapshots" {
-			os.Setenv("CARTESI_SNAPSHOTS_DIR", filepath.Join(artifactsDir, "snapshots"))
-		}
-
-		logPath := os.Getenv("CARTESI_TEST_NODE_LOG_FILE")
-		if logPath == "" {
-			f, err := os.CreateTemp("", "rollups-node-integration-*.log")
-			if err != nil {
-				fmt.Fprintf(os.Stderr,
-					"failed to create node log file: %v\n", err)
-				os.Exit(1)
-			}
-			logPath = f.Name()
-			f.Close()
-			os.Setenv("CARTESI_TEST_NODE_LOG_FILE", logPath)
-		}
-
-		fmt.Fprintf(os.Stderr, "Starting node (log: %s)...\n", logPath)
-
-		sharedNode, err = startNodeWithLog(logPath)
+	bringUp := func(h nodeHandle, err error) {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to start node: %v\n", err)
 			os.Exit(1)
 		}
-
-		ctx, cancel := context.WithTimeout(
-			context.Background(), 2*time.Minute)
-		if err := sharedNode.waitForHealth(ctx, nil); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), healthTimeout)
+		if err := h.waitForHealth(ctx, nil); err != nil {
 			cancel()
-			sharedNode.stop(nil)
-			fmt.Fprintf(os.Stderr,
-				"node failed to become healthy: %v\n", err)
+			h.stop(nil)
+			fmt.Fprintf(os.Stderr, "node failed to become healthy: %v\n", err)
 			os.Exit(1)
 		}
 		cancel()
+		sharedNode = h
 		fmt.Fprintln(os.Stderr, "Node is healthy. Running integration tests...")
-	} else {
-		fmt.Fprintln(os.Stderr,
-			"Node already running on port 10000 (external). "+
-				"Restart tests will be skipped.")
+	}
+
+	switch nodeTopology {
+	case "multiprocess":
+		logPath := mustPrepareRuntime()
+		fmt.Fprintf(os.Stderr, "Starting multiprocess node (log: %s)...\n", logPath)
+		bringUp(startMultiNode(logPath))
+	case "standalone":
+		if nodePortAvailable() {
+			logPath := mustPrepareRuntime()
+			fmt.Fprintf(os.Stderr, "Starting node (log: %s)...\n", logPath)
+			bringUp(startNodeWithLog(logPath))
+		} else {
+			fmt.Fprintln(os.Stderr,
+				"Node already running on :10000 (external). Restart tests will be skipped.")
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "unknown NODE_TOPOLOGY %q (expected standalone or multiprocess)\n",
+			nodeTopology)
+		os.Exit(1)
 	}
 
 	code := m.Run()
 
 	if sharedNode != nil {
+		if checker, ok := sharedNode.(nodeExitChecker); ok {
+			if err := checker.exitedProcessError(); err != nil {
+				fmt.Fprintf(os.Stderr, "node subprocess exited unexpectedly: %v\n", err)
+				if code == 0 {
+					code = 1
+				}
+			}
+		}
 		fmt.Fprintln(os.Stderr, "Stopping node...")
 		sharedNode.stop(nil)
 	}
 
 	os.Exit(code)
+}
+
+// prepareNodeRuntime sets up the artifacts dir, snapshot dir, and node log
+// file shared by the standalone and host-multiprocess paths, returning the
+// log path.
+func prepareNodeRuntime() (string, error) {
+	artifactsDir, err := integrationArtifactsDir()
+	if err != nil {
+		return "", fmt.Errorf("prepare integration artifacts dir: %w", err)
+	}
+	os.Setenv("CARTESI_TEST_ARTIFACTS_DIR", artifactsDir)
+	os.Setenv("CARTESI_TEST_NODE_WORKDIR", artifactsDir)
+	fmt.Fprintf(os.Stderr, "Integration artifacts dir: %s\n", artifactsDir)
+
+	// `make env` exports CARTESI_SNAPSHOTS_DIR=snapshots, which used to resolve
+	// under test/integration because the node inherited go test's package cwd.
+	// Keep user-provided custom paths, but route the default into the artifacts dir.
+	if snapshotsDir := os.Getenv("CARTESI_SNAPSHOTS_DIR"); snapshotsDir == "" || snapshotsDir == "snapshots" {
+		os.Setenv("CARTESI_SNAPSHOTS_DIR", filepath.Join(artifactsDir, "snapshots"))
+	}
+
+	logPath := os.Getenv("CARTESI_TEST_NODE_LOG_FILE")
+	if logPath == "" {
+		f, err := os.CreateTemp("", "rollups-node-integration-*.log")
+		if err != nil {
+			return "", fmt.Errorf("create node log file: %w", err)
+		}
+		logPath = f.Name()
+		f.Close()
+		os.Setenv("CARTESI_TEST_NODE_LOG_FILE", logPath)
+	}
+	return logPath, nil
 }
 
 func integrationArtifactsDir() (string, error) {

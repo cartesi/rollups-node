@@ -86,7 +86,11 @@ endif
 
 TEST_PATTERN ?=
 ifneq ($(TEST_PATTERN),)
-	GO_TEST_FLAGS += -run $(TEST_PATTERN)
+	# Single-quote the pattern: a shard union like ^Test(A|B)$ contains shell
+	# metacharacters that would otherwise break the recipe's `go test` line.
+	# $(value ...) keeps the raw text so the trailing `$` anchor is not eaten by
+	# make's re-expansion when TEST_PATTERN arrives via a sub-make.
+	GO_TEST_FLAGS += -run '$(value TEST_PATTERN)'
 endif
 
 TEST_PACKAGES ?=
@@ -248,12 +252,22 @@ clean-test-logs: ## Clean integration test log files
 # single-project name). A SIGKILL/OOM during a local sharded run skips the
 # cleanup trap and leaks each project's anonymous Postgres volume; this is the
 # manual recovery. CI uses ephemeral runners and does not need it.
-clean-integration-compose: ## Tear down leftover integration shard compose projects and volumes
+clean-integration-compose: ## Tear down leftover integration shard×topology compose projects and volumes
 	@echo "Cleaning integration compose projects"
-	@for s in $(INTEGRATION_SHARDS) ; do \
-		docker compose -p rollups-node-integration-$$s -f test/compose/compose.integration.yaml down -v --remove-orphans 2>/dev/null || true ; \
-	done
-	@docker compose -p rollups-node-integration -f test/compose/compose.integration.yaml down -v --remove-orphans 2>/dev/null || true
+	@cleanup_project() { \
+		project="$$1"; \
+		docker rm -f "$$project-integration-test-run" >/dev/null 2>&1 || true; \
+		ids="$$(docker ps -aq --filter "label=com.docker.compose.project=$$project" --filter "label=com.docker.compose.service=integration-test" 2>/dev/null || true)"; \
+		if [ -n "$$ids" ]; then docker rm -f $$ids >/dev/null 2>&1 || true; fi; \
+		docker compose -p "$$project" -f test/compose/compose.integration.yaml down -v --remove-orphans 2>/dev/null || true; \
+	}; \
+	for t in $(INTEGRATION_TOPOLOGIES) ; do \
+		cleanup_project rollups-node-integration-all-$$t ; \
+		for s in $(INTEGRATION_SHARDS) ; do \
+			cleanup_project rollups-node-integration-$$s-$$t ; \
+		done ; \
+	done; \
+	cleanup_project rollups-node-integration
 
 # =============================================================================
 # Tests
@@ -277,6 +291,12 @@ unit-test: $(COVER_DEPS) ## Execute go unit tests
 GOTESTSUM_FORMAT ?= testdox
 ifeq ($(VERBOSE),true)
 	GOTESTSUM_FORMAT = standard-verbose
+endif
+COMPOSE_TOPOLOGY_GOTESTSUM_FORMAT = $(GOTESTSUM_FORMAT)
+ifeq ($(strip $(SHARD)),)
+ifeq ($(origin GOTESTSUM_FORMAT),file)
+	COMPOSE_TOPOLOGY_GOTESTSUM_FORMAT = standard-verbose
+endif
 endif
 
 integration-test: ## Execute e2e tests
@@ -542,68 +562,159 @@ INTEGRATION_SHARD_replay     := ^Test(Foreclose|ForecloseReplay|DivergentClaim)$
 INTEGRATION_SHARD_restart    := ^Test(Restart|SnapshotPolicy)$$
 INTEGRATION_SHARD_withdrawal := ^TestWithdrawalLifecycle$$
 
+# -----------------------------------------------------------------------------
+# Node topology axis — orthogonal to shards.
+# -----------------------------------------------------------------------------
+# A shard selects WHICH tests run; a topology selects HOW the node is deployed.
+# CI runs the (shard, topology) cells in parallel. Both topologies are
+# test-managed (TestMain starts and can restart them), so both run every shard.
+#   standalone   — the all-in-one cartesi-rollups-node process.
+#   multiprocess — one OS process per service (evm-reader, advancer, validator,
+#                  claimer, prt, jsonrpc-api) sharing Postgres, started as
+#                  subprocesses by TestMain (on the host, or inside the test
+#                  container under compose). See test/integration/multinode_helpers_test.go.
+#
+# Applicability is per-topology data (INTEGRATION_SHARDS_<topology>). multiprocess
+# runs the SAME shards as standalone — the node-lifecycle tests stop/start the
+# whole service set via the topology-aware harness. Killing a single service
+# (partial failure) is separate future fault-injection work.
+INTEGRATION_TOPOLOGIES := standalone multiprocess
+NODE_TOPOLOGY ?= standalone
+
+INTEGRATION_SHARDS_standalone   := $(INTEGRATION_SHARDS)
+INTEGRATION_SHARDS_multiprocess := $(INTEGRATION_SHARDS)
+
+# The CI matrix is the set of (shard, topology) cells, encoded "shard:topology".
+INTEGRATION_CELLS := $(foreach t,$(INTEGRATION_TOPOLOGIES),$(foreach s,$(INTEGRATION_SHARDS_$(t)),$(s):$(t)))
+
 COMPOSE_PROJECT ?= rollups-node-integration
 INTEGRATION_LOGS ?= integration-logs.txt
 INTEGRATION_TEST_JOBS ?= 3
+CLEAN_STALE_LOCAL_NODE ?= false
 
-integration-test-with-compose: $(CARTESI_TEST_MACHINE_IMAGES) ## Run integration tests using docker compose with auto-shutdown
-	@COMPOSE_PROJECT='$(COMPOSE_PROJECT)' INTEGRATION_LOGS='$(INTEGRATION_LOGS)' \
-		TEST_PATTERN='$(TEST_PATTERN)' SHARD_NAME='$(SHARD_NAME)' \
-		GOTESTSUM_FORMAT='$(GOTESTSUM_FORMAT)' \
+# String helpers for building run patterns / matrices.
+comma := ,
+empty :=
+space := $(empty) $(empty)
+
+# --- Selection driven by NODE_TOPOLOGY and SHARD ----------------------------
+# Selected topologies: NODE_TOPOLOGY (default standalone), a space-separated
+# list, or the sugar value `all`.
+TOPOLOGIES_SELECTED = $(if $(filter all,$(NODE_TOPOLOGY)),$(INTEGRATION_TOPOLOGIES),$(NODE_TOPOLOGY))
+# shards_for(topology): the SHARD filter (or all) intersected with what the
+# topology supports (INTEGRATION_SHARDS_<topology>).
+shards_for = $(filter $(if $(strip $(SHARD)),$(SHARD),$(INTEGRATION_SHARDS_$(1))),$(INTEGRATION_SHARDS_$(1)))
+# run_pattern(topology): the selected shards' -run regexes as one alternation.
+run_pattern = $(subst $(space),|,$(strip $(foreach s,$(call shards_for,$(1)),$(INTEGRATION_SHARD_$(s)))))
+# Selected (shard:topology) cells, for PARALLEL fan-out.
+SELECTED_CELLS = $(foreach t,$(TOPOLOGIES_SELECTED),$(foreach s,$(call shards_for,$(t)),$(s):$(t)))
+# Label for project/log names: the SHARD filter joined by '-', or "all".
+SUITE_LABEL = $(if $(strip $(SHARD)),$(subst $(space),-,$(strip $(SHARD))),all)
+
+# Validate NODE_TOPOLOGY / SHARD at parse time for the two entry points so a
+# bad invocation fails before any prerequisite work (downloading images, etc).
+ifneq ($(filter integration-test-with-compose integration-test-local,$(MAKECMDGOALS)),)
+$(if $(strip $(TOPOLOGIES_SELECTED)),,$(error NODE_TOPOLOGY must select at least one topology. Known topologies: $(INTEGRATION_TOPOLOGIES)))
+$(foreach t,$(TOPOLOGIES_SELECTED),$(if $(filter $(t),$(INTEGRATION_TOPOLOGIES)),,$(error unknown topology '$(t)'. Known topologies: $(INTEGRATION_TOPOLOGIES))))
+$(foreach s,$(SHARD),$(if $(filter $(s),$(INTEGRATION_SHARDS)),,$(error unknown shard '$(s)'. Known shards: $(INTEGRATION_SHARDS))))
+endif
+
+# PARALLEL is compose-only: the host node binds fixed ports. Fail at parse time,
+# before the (slow) build prerequisites of integration-test-local.
+ifneq ($(filter integration-test-local,$(MAKECMDGOALS)),)
+ifeq ($(PARALLEL),true)
+$(error PARALLEL is not supported for integration-test-local (the host node binds fixed ports 10000/10011/10012). Use 'integration-test-with-compose PARALLEL=true')
+endif
+endif
+
+# =============================================================================
+# Two entry points. Both honor:
+#   NODE_TOPOLOGY  one topology (default standalone), a list, or `all`
+#   SHARD          restrict to a subset of shards (default: all applicable)
+#   PARALLEL       =true runs cells concurrently (compose only)
+# A requested-but-inapplicable (shard, topology) is skipped with a message.
+# =============================================================================
+
+integration-test-with-compose: $(CARTESI_TEST_MACHINE_IMAGES) ## Run integration tests via docker compose (NODE_TOPOLOGY=, SHARD=, PARALLEL=true)
+ifeq ($(PARALLEL),true)
+ifeq ($(strip $(SELECTED_CELLS)),)
+	@echo "skip: no applicable integration cells selected"
+else
+	@$(MAKE) -k -j $(INTEGRATION_TEST_JOBS) $(addprefix _compose-cell-,$(SELECTED_CELLS))
+endif
+else
+	@set -e; for t in $(TOPOLOGIES_SELECTED); do $(MAKE) _compose-topology-$$t; done
+endif
+
+# One topology: the union of selected shards in one compose project, sequential.
+_compose-topology-%:
+	@pattern='$(call run_pattern,$*)'; \
+		if [ -z "$$pattern" ]; then echo "skip: no applicable shards for topology '$*' (SHARD filter excludes all)"; exit 0; fi; \
+		COMPOSE_PROJECT='$(if $(filter rollups-node-integration,$(COMPOSE_PROJECT)),rollups-node-integration-$(SUITE_LABEL)-$*,$(COMPOSE_PROJECT))' \
+		INTEGRATION_LOGS='integration-logs-$(SUITE_LABEL)-$*.txt' \
+		TEST_PATTERN="$$pattern" SHARD_NAME='$(SUITE_LABEL)-$*' NODE_TOPOLOGY='$*' \
+		GOTESTSUM_FORMAT='$(COMPOSE_TOPOLOGY_GOTESTSUM_FORMAT)' \
 		scripts/compose-integration-run.sh
 
-# Validate SHARD at parse time so a bad invocation fails before any
-# prerequisite work (e.g. downloading test machine images).
-ifneq ($(filter integration-test-shard,$(MAKECMDGOALS)),)
-ifeq ($(strip $(SHARD)),)
-$(error SHARD is required. Known shards: $(INTEGRATION_SHARDS))
-endif
-ifeq ($(strip $(INTEGRATION_SHARD_$(SHARD))),)
-$(error unknown shard '$(SHARD)'. Known shards: $(INTEGRATION_SHARDS))
-endif
-endif
-
-integration-test-shard: $(CARTESI_TEST_MACHINE_IMAGES) ## Run one integration shard in an isolated compose project (requires SHARD=<name>)
-	@COMPOSE_PROJECT='$(if $(filter rollups-node-integration,$(COMPOSE_PROJECT)),rollups-node-integration-$(SHARD),$(COMPOSE_PROJECT))' \
-		INTEGRATION_LOGS='integration-logs-$(SHARD).txt' \
-		TEST_PATTERN='$(INTEGRATION_SHARD_$(SHARD))' \
-		SHARD_NAME='$(SHARD)' \
+# One (shard:topology) cell in its own project — PARALLEL fan-out target.
+_compose-cell-%:
+	@COMPOSE_PROJECT='$(COMPOSE_PROJECT)-$(firstword $(subst :, ,$*))-$(lastword $(subst :, ,$*))' \
+		INTEGRATION_LOGS='integration-logs-$(firstword $(subst :, ,$*))-$(lastword $(subst :, ,$*)).txt' \
+		TEST_PATTERN='$(INTEGRATION_SHARD_$(firstword $(subst :, ,$*)))' \
+		SHARD_NAME='$(firstword $(subst :, ,$*))' \
+		NODE_TOPOLOGY='$(lastword $(subst :, ,$*))' \
 		GOTESTSUM_FORMAT='$(GOTESTSUM_FORMAT)' \
 		scripts/compose-integration-run.sh
-
-integration-test-sharded-local: $(CARTESI_TEST_MACHINE_IMAGES) integration-test-shard-check ## Run all integration shards with bounded concurrency
-	@$(MAKE) -k -j $(INTEGRATION_TEST_JOBS) $(addprefix run-integration-shard-,$(INTEGRATION_SHARDS))
-
-run-integration-shard-%:
-	@$(MAKE) integration-test-shard SHARD=$*
 
 integration-test-shard-check: ## Verify every integration test belongs to exactly one shard
 	@scripts/check-integration-shards.sh \
 		$(foreach s,$(INTEGRATION_SHARDS),'$(s)=$(INTEGRATION_SHARD_$(s))')
 
-# Used by CI to build the integration matrix from the single source of truth.
-comma := ,
-empty :=
-space := $(empty) $(empty)
-list-integration-shards: ## Print integration shard names as a JSON array (for the CI matrix)
+list-integration-shards: ## Print integration shard names as a JSON array
 	@echo '[$(subst $(space),$(comma),$(patsubst %,"%",$(INTEGRATION_SHARDS)))]'
+
+list-integration-cells: ## Print shard×topology cells as a JSON array of {shard,topology} (for the CI matrix)
+	@printf '['; sep=''; \
+		for cell in $(INTEGRATION_CELLS); do \
+			printf '%s{"shard":"%s","topology":"%s"}' "$$sep" "$${cell%%:*}" "$${cell##*:}"; \
+			sep=','; \
+		done; \
+		printf ']\n'
 
 test-with-compose: ## Run all tests using docker compose with auto-shutdown
 	@$(MAKE) unit-test-with-compose
 	@$(MAKE) integration-test-with-compose
 
-integration-test-local: build cartesi-rollups-machine-tool echo-dapp reject-loop-dapp exception-loop-dapp erc20-withdrawal-dapp ## Run integration tests locally (requires: make start && eval $$(make env))
-	@cartesi-rollups-cli db init
-	@if lsof -ti:10000 >/dev/null 2>&1; then \
-		echo "Killing stale node on port 10000..."; \
-		kill $$(lsof -ti:10000) 2>/dev/null || true; \
-		sleep 2; \
-	fi
-	@export CARTESI_TEST_DAPP_PATH=$(CURDIR)/applications/echo-dapp; \
-	export CARTESI_TEST_REJECT_DAPP_PATH=$(CURDIR)/applications/reject-loop-dapp; \
-	export CARTESI_TEST_EXCEPTION_DAPP_PATH=$(CURDIR)/applications/exception-loop-dapp; \
-	export CARTESI_TEST_ERC20_WITHDRAWAL_DAPP_PATH=$(CURDIR)/applications/erc20-withdrawal-dapp; \
-	$(MAKE) integration-test
+integration-test-local: build cartesi-rollups-machine-tool echo-dapp reject-loop-dapp exception-loop-dapp erc20-withdrawal-dapp ## Run integration tests on the host (NODE_TOPOLOGY=, SHARD=; requires: make start && eval $$(make env); CLEAN_STALE_LOCAL_NODE=true to stop test-port listeners)
+	@set -e; first=1; for t in $(TOPOLOGIES_SELECTED); do \
+		if [ "$$first" = 1 ]; then first=0; else echo "=== resetting dev DB + devnet between topologies ==="; $(MAKE) restart; fi; \
+		$(MAKE) _local-topology-$$t; \
+	done
+
+# One topology on the host: in-process node (standalone) or service subprocesses
+# (multiprocess, via TestMain reading NODE_TOPOLOGY).
+_local-topology-%:
+	@pattern='$(call run_pattern,$*)'; \
+		if [ -z "$$pattern" ]; then echo "skip: no applicable shards for topology '$*' (SHARD filter excludes all)"; exit 0; fi; \
+		cartesi-rollups-cli db init; \
+		test_ports="10000 10001 10002 10003 10004 10005 10006 10011 10012"; \
+		busy_pids="$$(for p in $$test_ports; do lsof -tiTCP:$$p -sTCP:LISTEN 2>/dev/null || true; done | sort -u | tr '\n' ' ')"; \
+		if [ -n "$$busy_pids" ]; then \
+			if [ "$(CLEAN_STALE_LOCAL_NODE)" = "true" ]; then \
+				echo "Stopping process(es) listening on integration test ports: $$busy_pids"; \
+				kill $$busy_pids 2>/dev/null || true; \
+				sleep 2; \
+			else \
+				echo "ERROR: integration test ports are already in use by PID(s): $$busy_pids" >&2; \
+				echo "Stop those processes, or rerun with CLEAN_STALE_LOCAL_NODE=true to stop test-port listeners." >&2; \
+				exit 1; \
+			fi; \
+		fi; \
+		export CARTESI_TEST_DAPP_PATH=$(CURDIR)/applications/echo-dapp; \
+		export CARTESI_TEST_REJECT_DAPP_PATH=$(CURDIR)/applications/reject-loop-dapp; \
+		export CARTESI_TEST_EXCEPTION_DAPP_PATH=$(CURDIR)/applications/exception-loop-dapp; \
+		export CARTESI_TEST_ERC20_WITHDRAWAL_DAPP_PATH=$(CURDIR)/applications/erc20-withdrawal-dapp; \
+		NODE_TOPOLOGY='$*' TEST_PATTERN="$$pattern" $(MAKE) integration-test
 
 deploy-load-test-apps: applications/echo-dapp ## Deploy 3 echo-dapp instances for load testing
 	@echo "Deploying load-test apps (3 echo-dapps with different salts)..."
@@ -619,11 +730,11 @@ load-test: deploy-load-test-apps ## Deploy 3 apps and run advancer starvation lo
 	@echo "NOTE: Start the node (separate terminal) with: CARTESI_ADVANCER_INPUT_BATCH_SIZE=10 cartesi-rollups-node"
 	@scripts/load-test.sh
 
-ci-test: ## Run the full CI test pipeline locally (lint + unit + integration)
+ci-test: ## Run the CI test pipeline locally (unit + integration across all topologies)
 #	@$(MAKE) lint-with-docker
 	@$(MAKE) integration-test-shard-check
 	@$(MAKE) unit-test-with-compose
-	@$(MAKE) integration-test-with-compose
+	@$(MAKE) integration-test-with-compose NODE_TOPOLOGY=all
 
 clean-test-compose-resources: ## Clean up compose resources after some unexpected test failure
 	@echo "Cleaning up Docker Compose resources..."
@@ -664,7 +775,7 @@ build-debian-package: install
 	build build-go $(GO_ARTIFACTS) cartesi-rollups-machine-tool \
 	clean clean-go clean-contracts clean-docs clean-devnet-files clean-dapps clean-test-dependencies clean-test-logs clean-integration-compose clean-debian-packages \
 	test unit-test unit-test-with-compose integration-test integration-test-with-compose integration-test-local test-with-compose ci-test coverage-report \
-	integration-test-shard integration-test-sharded-local integration-test-shard-check list-integration-shards \
+	integration-test-shard-check list-integration-shards list-integration-cells \
 	generate generate-contracts generate-config generate-inspect check-generate generate-db \
 	docs generate-cli-docs generate-config-docs \
 	lint fmt fmt-check vet escape check-license \

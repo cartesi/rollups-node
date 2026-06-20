@@ -112,6 +112,9 @@ services:
       # Shard selection (empty = full suite); see scripts/run-integration-tests.sh.
       TEST_PATTERN: ${TEST_PATTERN:-}
       SHARD_NAME: ${SHARD_NAME:-full}
+      # Node topology: standalone (all-in-one) or multiprocess (per-service
+      # subprocesses). TestMain starts and manages either in this container.
+      NODE_TOPOLOGY: ${NODE_TOPOLOGY:-standalone}
       # testdox prints one line per completed test; standard-verbose streams
       # go test -v output live (VERBOSE=true in the Makefile selects it).
       GOTESTSUM_FORMAT: ${GOTESTSUM_FORMAT:-testdox}

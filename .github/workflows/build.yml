@@ -216,12 +216,12 @@ jobs:
         run: make unit-test-with-compose
 
   # Runs the shard coverage guard and derives the integration matrix from the
-  # Makefile's INTEGRATION_SHARDS, so adding a shard never requires a workflow
-  # change and an unassigned test fails fast here.
+  # Makefile's shard × topology cells, so adding a shard or topology never
+  # requires a workflow change and an unassigned test fails fast here.
   integration-test-setup:
     runs-on: ubuntu-24.04
     outputs:
-      shards: ${{ steps.shards.outputs.shards }}
+      cells: ${{ steps.matrix.outputs.cells }}
     steps:
       - name: Checkout source code
         uses: actions/checkout@v6
@@ -234,9 +234,9 @@ jobs:
       - name: Check shard coverage
         run: make integration-test-shard-check
 
-      - name: List shards
-        id: shards
-        run: echo "shards=$(make -s list-integration-shards)" >> "$GITHUB_OUTPUT"
+      - name: List shard x topology cells
+        id: matrix
+        run: echo "cells=$(make -s list-integration-cells)" >> "$GITHUB_OUTPUT"
 
   integration-test:
     runs-on: ubuntu-24.04
@@ -245,9 +245,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJson(needs.integration-test-setup.outputs.shards) }}
+        include: ${{ fromJson(needs.integration-test-setup.outputs.cells) }}
     env:
-      COMPOSE_PROJECT: rollups-it-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+      COMPOSE_PROJECT: rollups-it-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}-${{ matrix.topology }}
     permissions:
       contents: read
       packages: read
@@ -283,17 +283,18 @@ jobs:
       - name: Download test dependencies
         run: make download-test-dependencies
 
-      - name: Run integration shard ${{ matrix.shard }}
+      - name: Run integration shard ${{ matrix.shard }} (${{ matrix.topology }})
         run: |
-          make integration-test-shard SHARD=${{ matrix.shard }} \
+          make integration-test-with-compose SHARD=${{ matrix.shard }} \
+            NODE_TOPOLOGY=${{ matrix.topology }} \
             COMPOSE_PROJECT="$COMPOSE_PROJECT"
 
       - name: Upload integration test logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: integration-test-logs-${{ matrix.shard }}
-          path: integration-logs-${{ matrix.shard }}.txt
+          name: integration-test-logs-${{ matrix.shard }}-${{ matrix.topology }}
+          path: integration-logs-${{ matrix.shard }}-${{ matrix.topology }}.txt
           retention-days: 3
 
       # Redundant with the trap in compose-integration-run.sh; this is the
@@ -303,6 +304,14 @@ jobs:
       - name: Clean up compose project
         if: always()
         run: |
+          docker rm -f "$COMPOSE_PROJECT-integration-test-run" >/dev/null 2>&1 || true
+          ids="$(docker ps -aq \
+            --filter "label=com.docker.compose.project=$COMPOSE_PROJECT" \
+            --filter "label=com.docker.compose.service=integration-test" \
+            2>/dev/null || true)"
+          if [ -n "$ids" ]; then
+            docker rm -f $ids >/dev/null 2>&1 || true
+          fi
           docker compose -p "$COMPOSE_PROJECT" \
             -f test/compose/compose.integration.yaml down -v --remove-orphans || true
 
