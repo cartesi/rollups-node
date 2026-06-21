@@ -80,24 +80,17 @@ func (s *Service) processForeclosedApps(
 			)
 			continue
 		}
-		terminalized, err := s.repository.ForecloseUnacceptedEpochsAtOrAfterBlock(
-			s.Context, app.ID, app.ForecloseBlock,
-		)
-		if err != nil {
-			errs = append(errs, fmt.Errorf(
-				"terminalizing unaccepted epochs for foreclosed app %s: %w",
-				app.IApplicationAddress, err))
-			continue
-		}
-		if terminalized > 0 {
-			s.Logger.Info(
-				"Foreclosed application terminalized epochs that cannot be accepted",
-				"application", app.Name,
-				"address", app.IApplicationAddress,
-				"foreclose_block", app.ForecloseBlock,
-				"epochs", terminalized,
-			)
-		}
+		// Drain gate FIRST, terminalize second. An input can land in the
+		// foreclose block itself (before the foreclose tx, so it is valid and is
+		// indexed up to and including foreclose_block). Terminalizing the
+		// straddling epoch before that input is advanced would flip the epoch to
+		// CLAIM_FORECLOSED, which hides its still-unprocessed input from this
+		// drain check AND from the manager's machine-drain gate
+		// (HasUndrainedEpochsBeforeBlock excludes terminal epochs) — so the
+		// machine is torn down and the input is never processed, leaving the
+		// final machine state one input behind the chain. Wait for the drain,
+		// then terminalize. PRT gates terminalization the same way
+		// (internal/prt/service.go handleForeclosedApp).
 		undrained, err := s.repository.HasUndrainedEpochsBeforeBlock(
 			s.Context, app.ID, app.ForecloseBlock,
 		)
@@ -115,6 +108,24 @@ func (s *Service) processForeclosedApps(
 				"foreclose_block", app.ForecloseBlock,
 			)
 			continue
+		}
+		terminalized, err := s.repository.ForecloseUnacceptedEpochsAtOrAfterBlock(
+			s.Context, app.ID, app.ForecloseBlock,
+		)
+		if err != nil {
+			errs = append(errs, fmt.Errorf(
+				"terminalizing unaccepted epochs for foreclosed app %s: %w",
+				app.IApplicationAddress, err))
+			continue
+		}
+		if terminalized > 0 {
+			s.Logger.Info(
+				"Foreclosed application terminalized epochs that cannot be accepted",
+				"application", app.Name,
+				"address", app.IApplicationAddress,
+				"foreclose_block", app.ForecloseBlock,
+				"epochs", terminalized,
+			)
 		}
 		unreconciled, err := s.repository.HasUnreconciledClaimsBeforeBlock(
 			s.Context, app.ID, app.ForecloseBlock,

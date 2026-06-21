@@ -149,15 +149,14 @@ func TestProcessForeclosedApps_DrainCheckErrorsAppendAndContinue(t *testing.T) {
 	app2 := foreclosedAppHelper(2, 100, model.Consensus_Authority)
 
 	for _, app := range []*model.Application{app1, app2} {
-		r.On("ForecloseUnacceptedEpochsAtOrAfterBlock",
-			mock.Anything, app.ID, app.ForecloseBlock,
-		).Return(0, nil).Once()
 		r.On("HasUndrainedEpochsBeforeBlock",
 			mock.Anything, app.ID, app.ForecloseBlock,
 		).Return(false, errors.New("db unavailable")).Once()
 	}
-	// HasUnreconciledClaimsBeforeBlock must not be reached for either app — the
-	// undrained check errored and the per-app branch `continue`d. No expectation.
+	// The drain check runs first; its error makes the per-app branch `continue`
+	// before terminalizing or reconciling. Neither
+	// ForecloseUnacceptedEpochsAtOrAfterBlock nor HasUnreconciledClaimsBeforeBlock
+	// is reached — no expectation registered for either.
 
 	errs := s.processForeclosedApps(map[int64]*model.Application{app1.ID: app1, app2.ID: app2})
 	assert.Len(t, errs, 2, "each app's drain error is appended; the pass does not abort early")
@@ -196,6 +195,15 @@ func TestProcessForeclosedApps_NoTransitionWhenDrained(t *testing.T) {
 	assert.Empty(t, errs)
 }
 
+// TestProcessForeclosedApps_DefersWhenInputsUndrained verifies the drain-gate
+// ordering that protects an input landing in the foreclose block. While any
+// pre-foreclosure input is still undrained, the pass defers WITHOUT
+// terminalizing. Terminalizing the straddling epoch first would flip it to
+// CLAIM_FORECLOSED and strand its unprocessed same-block input (it would vanish
+// from both this drain check and the manager's machine-drain gate, and the
+// machine would be torn down before advancing it). The absent
+// ForecloseUnacceptedEpochsAtOrAfterBlock expectation is the regression guard:
+// testify/mock fails on the unexpected call if terminalization runs too early.
 func TestProcessForeclosedApps_DefersWhenInputsUndrained(t *testing.T) {
 	s, r, _ := newServiceMock()
 	defer r.AssertExpectations(t)
@@ -203,35 +211,41 @@ func TestProcessForeclosedApps_DefersWhenInputsUndrained(t *testing.T) {
 	app := foreclosedAppHelper(1, 100, model.Consensus_Authority)
 	s.Context = context.Background()
 
-	r.On("ForecloseUnacceptedEpochsAtOrAfterBlock",
-		mock.Anything, app.ID, app.ForecloseBlock,
-	).Return(0, nil).Once()
 	r.On("HasUndrainedEpochsBeforeBlock",
 		mock.Anything, app.ID, app.ForecloseBlock,
 	).Return(true, nil).Once()
-	// No HasUnreconciledClaimsBeforeBlock expectation — unresolved inputs
-	// must stop the drain check before claim-state reconciliation.
+	// No ForecloseUnacceptedEpochsAtOrAfterBlock and no
+	// HasUnreconciledClaimsBeforeBlock: an undrained input defers the whole pass
+	// before terminalization and before claim reconciliation.
 
 	errs := s.processForeclosedApps(map[int64]*model.Application{app.ID: app})
 	assert.Empty(t, errs, "input-drain deferral is not an error")
 }
 
-func TestProcessForeclosedApps_TerminalizesUnacceptedOverlapBeforeDrain(t *testing.T) {
+// TestProcessForeclosedApps_TerminalizesUnacceptedOverlapAfterDrain verifies the
+// other side of the gate: once the drain check clears (no undrained inputs), the
+// straddling/after epochs that can never be accepted are terminalized to
+// CLAIM_FORECLOSED, then reconciliation completes.
+func TestProcessForeclosedApps_TerminalizesUnacceptedOverlapAfterDrain(t *testing.T) {
 	s, r, _ := newServiceMock()
 	defer r.AssertExpectations(t)
 
 	app := foreclosedAppHelper(1, 100, model.Consensus_Authority)
 	s.Context = context.Background()
 
-	r.On("ForecloseUnacceptedEpochsAtOrAfterBlock",
+	// Pin the sequence: the drain check MUST run before terminalization (else a
+	// straddling-epoch input is stranded — the bug this ordering prevents), and
+	// terminalization before the claim-reconciliation check.
+	drain := r.On("HasUndrainedEpochsBeforeBlock",
+		mock.Anything, app.ID, app.ForecloseBlock,
+	).Return(false, nil).Once()
+	terminalize := r.On("ForecloseUnacceptedEpochsAtOrAfterBlock",
 		mock.Anything, app.ID, app.ForecloseBlock,
 	).Return(2, nil).Once()
-	r.On("HasUndrainedEpochsBeforeBlock",
+	reconcile := r.On("HasUnreconciledClaimsBeforeBlock",
 		mock.Anything, app.ID, app.ForecloseBlock,
 	).Return(false, nil).Once()
-	r.On("HasUnreconciledClaimsBeforeBlock",
-		mock.Anything, app.ID, app.ForecloseBlock,
-	).Return(false, nil).Once()
+	mock.InOrder(drain, terminalize, reconcile)
 
 	errs := s.processForeclosedApps(map[int64]*model.Application{app.ID: app})
 	assert.Empty(t, errs)
