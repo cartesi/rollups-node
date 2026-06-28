@@ -254,6 +254,13 @@ description = """
 Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited."""
 used-by = ["evmreader", "claimer", "node", "prt"]
 
+[rollups.CARTESI_BLOCKCHAIN_GAS_LIMIT]
+default = "0"
+go-type = "uint64"
+description = """
+Gas limit to be used on chain transactions. Zero for the estimated limit provided by the chain. Default is zero."""
+used-by = ["cli"]
+
 #
 # Contracts
 #

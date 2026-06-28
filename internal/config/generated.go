@@ -71,6 +71,7 @@ const (
 	JSONRPC_MACHINE_LOG_LEVEL                         = "CARTESI_JSONRPC_MACHINE_LOG_LEVEL"
 	ADVANCER_INPUT_BATCH_SIZE                         = "CARTESI_ADVANCER_INPUT_BATCH_SIZE"
 	ADVANCER_POLLING_INTERVAL                         = "CARTESI_ADVANCER_POLLING_INTERVAL"
+	BLOCKCHAIN_GAS_LIMIT                              = "CARTESI_BLOCKCHAIN_GAS_LIMIT"
 	BLOCKCHAIN_HTTP_MAX_RETRIES                       = "CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES"
 	BLOCKCHAIN_HTTP_REQUEST_TIMEOUT                   = "CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT"
 	BLOCKCHAIN_HTTP_RETRY_MAX_WAIT                    = "CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT"
@@ -196,6 +197,8 @@ func SetDefaults() {
 	viper.SetDefault(ADVANCER_INPUT_BATCH_SIZE, "500")
 
 	viper.SetDefault(ADVANCER_POLLING_INTERVAL, "3")
+
+	viper.SetDefault(BLOCKCHAIN_GAS_LIMIT, "0")
 
 	viper.SetDefault(BLOCKCHAIN_HTTP_MAX_RETRIES, "4")
 
@@ -2358,6 +2361,19 @@ func GetAdvancerPollingInterval() (Duration, error) {
 		return v, nil
 	}
 	return notDefinedDuration(), fmt.Errorf("%s: %w", ADVANCER_POLLING_INTERVAL, ErrNotDefined)
+}
+
+// GetBlockchainGasLimit returns the value for the environment variable CARTESI_BLOCKCHAIN_GAS_LIMIT.
+func GetBlockchainGasLimit() (uint64, error) {
+	s := viper.GetString(BLOCKCHAIN_GAS_LIMIT)
+	if s != "" {
+		v, err := toUint64(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_GAS_LIMIT, err)
+		}
+		return v, nil
+	}
+	return notDefineduint64(), fmt.Errorf("%s: %w", BLOCKCHAIN_GAS_LIMIT, ErrNotDefined)
 }
 
 // GetBlockchainHttpMaxRetries returns the value for the environment variable CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES.

@@ -13,7 +13,6 @@ import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/config/auth"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplicationfactory"
@@ -146,7 +145,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	chainId, err := client.ChainID(ctx)
 	cobra.CheckErr(err)
 
-	txOpts, err := auth.GetTransactOpts(ctx, chainId)
+	txOpts, err := cli.GetTransactOpts(ctx, chainId)
 	cobra.CheckErr(err)
 
 	// pre deployment checks

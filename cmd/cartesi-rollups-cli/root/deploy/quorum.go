@@ -10,7 +10,6 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/config/auth"
 	"github.com/cartesi/rollups-node/pkg/contracts/iquorumfactory"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/common"
@@ -73,7 +72,7 @@ func runDeployQuorum(cmd *cobra.Command, args []string) {
 	chainID, err := client.ChainID(ctx)
 	cobra.CheckErr(err)
 
-	txOpts, err := auth.GetTransactOpts(ctx, chainID)
+	txOpts, err := cli.GetTransactOpts(ctx, chainID)
 	cobra.CheckErr(err)
 
 	deployment, err := buildQuorumDeployment(cmd)

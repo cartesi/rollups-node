@@ -12,7 +12,6 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/config/auth"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
@@ -143,7 +142,7 @@ func run(cmd *cobra.Command, args []string) {
 	chainId, err := client.ChainID(ctx)
 	cobra.CheckErr(err)
 
-	txOpts, err := auth.GetTransactOpts(ctx, chainId)
+	txOpts, err := cli.GetTransactOpts(ctx, chainId)
 	cobra.CheckErr(err)
 
 	// Ask for confirmation unless --yes flag is set

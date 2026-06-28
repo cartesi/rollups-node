@@ -10,7 +10,6 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/config/auth"
 	"github.com/cartesi/rollups-node/pkg/contracts/iauthorityfactory"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -73,7 +72,7 @@ func runDeployAuthority(cmd *cobra.Command, args []string) {
 	chainId, err := client.ChainID(ctx)
 	cobra.CheckErr(err)
 
-	txOpts, err := auth.GetTransactOpts(ctx, chainId)
+	txOpts, err := cli.GetTransactOpts(ctx, chainId)
 	cobra.CheckErr(err)
 
 	deployment, err := buildAuthorityDeployment(cmd, txOpts)

@@ -20,9 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-// Gas limit when sending transactions.
-const GasLimit = 30_000_000
-
 // Dev mnemonic used by Foundry/Anvil.
 const FoundryMnemonic = "test test test test test test test test test test test junk"
 
@@ -51,7 +48,7 @@ func AddInput(
 		return 0, 0, common.Hash{}, fmt.Errorf("failed to connect to InputBox contract: %w", err)
 	}
 	receipt, err := sendTransaction(
-		ctx, client, transactionOpts, big.NewInt(0), GasLimit,
+		ctx, client, transactionOpts, big.NewInt(0),
 		func(txOpts *bind.TransactOpts) (*types.Transaction, error) {
 			return inputBox.AddInput(txOpts, application, input)
 		},
@@ -87,7 +84,7 @@ func AddInputAsync(
 	if err != nil {
 		return common.Hash{}, fmt.Errorf("failed to connect to InputBox contract: %w", err)
 	}
-	txOpts, err := _prepareTransaction(ctx, client, transactionOpts, big.NewInt(0), GasLimit)
+	txOpts, err := _prepareTransaction(ctx, client, transactionOpts, big.NewInt(0))
 	if err != nil {
 		return common.Hash{}, fmt.Errorf("failed to prepare transaction: %w", err)
 	}
@@ -216,7 +213,7 @@ func ExecuteOutput(
 		return nil, fmt.Errorf("failed to connect to CartesiDapp contract: %w", err)
 	}
 	receipt, err := sendTransaction(
-		ctx, client, transactionOpts, big.NewInt(0), GasLimit,
+		ctx, client, transactionOpts, big.NewInt(0),
 		func(txOpts *bind.TransactOpts) (*types.Transaction, error) {
 			return app.ExecuteOutput(txOpts, output, proof)
 		},

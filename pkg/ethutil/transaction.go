@@ -24,14 +24,15 @@ func sendTransaction(
 	client *ethclient.Client,
 	txOpts *bind.TransactOpts,
 	txValue *big.Int,
-	gasLimit uint64,
 	doSend func(txOpts *bind.TransactOpts) (*types.Transaction, error),
 ) (*types.Receipt, error) {
-	txOpts, err := _prepareTransaction(ctx, client, txOpts, txValue, gasLimit)
+	txOpts, err := _prepareTransaction(ctx, client, txOpts, txValue)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare transaction: %w", err)
 	}
-	tx, err := doSend(txOpts)
+	txOptsCopy := *txOpts
+	txOptsCopy.Context = ctx
+	tx, err := doSend(&txOptsCopy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send transaction: %w", err)
 	}
@@ -48,7 +49,6 @@ func _prepareTransaction(
 	client *ethclient.Client,
 	txOpts *bind.TransactOpts,
 	txValue *big.Int,
-	gasLimit uint64,
 ) (*bind.TransactOpts, error) {
 	nonce, err := client.PendingNonceAt(ctx, txOpts.From)
 	if err != nil {
@@ -62,7 +62,6 @@ func _prepareTransaction(
 	nonceBigInt.SetUint64(nonce)
 	txOpts.Nonce = nonceBigInt
 	txOpts.Value = txValue
-	txOpts.GasLimit = gasLimit
 	txOpts.GasPrice = gasPrice
 	return txOpts, nil
 }

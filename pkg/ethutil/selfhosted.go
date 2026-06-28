@@ -129,7 +129,7 @@ func (me *SelfhostedApplicationDeployment) Deploy(
 
 	// deploy the contracts
 	receipt, err := sendTransaction(
-		ctx, client, txOpts, big.NewInt(0), GasLimit,
+		ctx, client, txOpts, big.NewInt(0),
 		func(txOpts *bind.TransactOpts) (*types.Transaction, error) {
 			result.ApplicationFactoryAddress, err = factory.GetApplicationFactory(nil)
 			if err != nil {

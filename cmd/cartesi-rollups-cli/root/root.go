@@ -34,6 +34,7 @@ var (
 	verbose            bool
 	databaseConnection string
 	blockchainEndpoint string
+	gasLimit           uint64
 	inputBoxAddress    string
 )
 
@@ -55,6 +56,12 @@ func init() {
 		"Blockchain HTTP endpoint")
 	cobra.CheckErr(viper.BindPFlag(config.BLOCKCHAIN_HTTP_ENDPOINT, Cmd.PersistentFlags().Lookup("blockchain-http-endpoint")))
 	cobra.CheckErr(Cmd.PersistentFlags().MarkHidden("blockchain-http-endpoint"))
+
+	// Blockchain gas limit
+	Cmd.PersistentFlags().Uint64Var(&gasLimit, "gas-limit", 0,
+		"Blockchain gas limit")
+	cobra.CheckErr(viper.BindPFlag(config.BLOCKCHAIN_GAS_LIMIT, Cmd.PersistentFlags().Lookup("gas-limit")))
+	cobra.CheckErr(Cmd.PersistentFlags().MarkHidden("gas-limit"))
 
 	// Input box address flag
 	Cmd.PersistentFlags().StringVar(&inputBoxAddress, "inputbox", "",
