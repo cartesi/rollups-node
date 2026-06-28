@@ -153,7 +153,7 @@ func (me *SelfhostedApplicationDeployment) Deploy(
 		},
 	)
 	if err != nil {
-		return zero, nil, fmt.Errorf("failed to create a self hosted application: execution reverted")
+		return zero, nil, fmt.Errorf("failed to create a self hosted application: %w", err)
 	}
 
 	applicationFactory, err := iapplicationfactory.NewIApplicationFactory(result.ApplicationFactoryAddress, client)

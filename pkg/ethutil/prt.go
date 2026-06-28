@@ -59,7 +59,7 @@ func (me *PRTApplicationDeployment) deployPRT(
 
 	factory, err := idaveappfactory.NewIDaveAppFactory(me.FactoryAddress, client)
 	if err != nil {
-		return zero, zero, fmt.Errorf("failed to instantiate contract binding: %v", err)
+		return zero, zero, fmt.Errorf("failed to instantiate contract binding: %w", err)
 	}
 
 	if err := ValidateWithdrawalConfig(me.WithdrawalConfig); err != nil {
@@ -96,12 +96,12 @@ func (me *PRTApplicationDeployment) deployPRT(
 	// deploy the contracts
 	tx, err := factory.NewDaveApp(txOpts, me.TemplateHash, daveWC, me.Salt)
 	if err != nil {
-		return zero, zero, fmt.Errorf("transaction failed: %v", err)
+		return zero, zero, fmt.Errorf("transaction failed: %w", err)
 	}
 
 	receipt, err := bind.WaitMined(ctx, client, tx)
 	if err != nil {
-		return zero, zero, fmt.Errorf("failed to wait for transaction mining: %v", err)
+		return zero, zero, fmt.Errorf("failed to wait for transaction mining: %w", err)
 	}
 
 	if receipt.Status != 1 {
@@ -140,18 +140,18 @@ func (me *PRTApplicationDeployment) Deploy(
 
 	application, err := iapplication.NewIApplication(appAddress, client)
 	if err != nil {
-		return zero, nil, fmt.Errorf("failed to instantiate application: %v", err)
+		return zero, nil, fmt.Errorf("failed to instantiate application: %w", err)
 	}
 
 	da, err := application.GetDataAvailability(nil)
 	if err != nil {
-		return zero, nil, fmt.Errorf("failed to retrieve data availability: %v", err)
+		return zero, nil, fmt.Errorf("failed to retrieve data availability: %w", err)
 	}
 	result.DataAvailability = da
 
 	result.InputBoxAddress, result.IInputBoxBlock, err = DecodeDA(client, da)
 	if err != nil {
-		return zero, nil, fmt.Errorf("failed to decode data availability: %v", err)
+		return zero, nil, fmt.Errorf("failed to decode data availability: %w", err)
 	}
 
 	if err := VerifyDeployedWithdrawalConfig(ctx, client, appAddress, me.WithdrawalConfig); err != nil {

@@ -29,11 +29,11 @@ func sendTransaction(
 ) (*types.Receipt, error) {
 	txOpts, err := _prepareTransaction(ctx, client, txOpts, txValue, gasLimit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare transaction: %v", err)
+		return nil, fmt.Errorf("failed to prepare transaction: %w", err)
 	}
 	tx, err := doSend(txOpts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send transaction: %v", err)
+		return nil, fmt.Errorf("failed to send transaction: %w", err)
 	}
 	receipt, err := _waitForTransaction(ctx, client, tx)
 	if err != nil {
@@ -52,11 +52,11 @@ func _prepareTransaction(
 ) (*bind.TransactOpts, error) {
 	nonce, err := client.PendingNonceAt(ctx, txOpts.From)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get nonce: %v", err)
+		return nil, fmt.Errorf("failed to get nonce: %w", err)
 	}
 	gasPrice, err := client.SuggestGasPrice(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get gas price: %v", err)
+		return nil, fmt.Errorf("failed to get gas price: %w", err)
 	}
 	nonceBigInt := &big.Int{}
 	nonceBigInt.SetUint64(nonce)
@@ -76,7 +76,7 @@ func _waitForTransaction(
 	for {
 		_, isPending, err := client.TransactionByHash(ctx, tx.Hash())
 		if err != nil {
-			return nil, fmt.Errorf("fail to recover transaction: %v", err)
+			return nil, fmt.Errorf("fail to recover transaction: %w", err)
 		}
 		if !isPending {
 			break
@@ -90,12 +90,12 @@ func _waitForTransaction(
 	}
 	receipt, err := client.TransactionReceipt(ctx, tx.Hash())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get receipt: %v", err)
+		return nil, fmt.Errorf("failed to get receipt: %w", err)
 	}
 	if receipt.Status == types.ReceiptStatusFailed {
 		reason, err := _traceTransaction(client, tx.Hash())
 		if err != nil {
-			return nil, fmt.Errorf("transaction failed; failed to get reason: %v", err)
+			return nil, fmt.Errorf("transaction failed; failed to get reason: %w", err)
 		}
 		return nil, fmt.Errorf("transaction failed: %v", reason)
 	}

@@ -78,7 +78,7 @@ func (me *ApplicationDeployment) Deploy(
 	result.Deployment = me
 	factory, err := iapplicationfactory.NewIApplicationFactory(me.FactoryAddress, client)
 	if err != nil {
-		return zero, nil, fmt.Errorf("failed to instantiate contract: %v", err)
+		return zero, nil, fmt.Errorf("failed to instantiate contract: %w", err)
 	}
 
 	if err := ValidateWithdrawalConfig(me.WithdrawalConfig); err != nil {
@@ -105,12 +105,12 @@ func (me *ApplicationDeployment) Deploy(
 	// deploy the contracts
 	tx, err := factory.NewApplication0(txOpts, me.Consensus, me.OwnerAddress, me.TemplateHash, me.DataAvailability, me.WithdrawalConfig, me.Salt)
 	if err != nil {
-		return zero, nil, fmt.Errorf("transaction failed: %v", err)
+		return zero, nil, fmt.Errorf("transaction failed: %w", err)
 	}
 
 	receipt, err := bind.WaitMined(ctx, client, tx)
 	if err != nil {
-		return zero, nil, fmt.Errorf("failed to wait for transaction mining: %v", err)
+		return zero, nil, fmt.Errorf("failed to wait for transaction mining: %w", err)
 	}
 
 	if receipt.Status != 1 {

@@ -48,7 +48,7 @@ func AddInput(
 	}
 	inputBox, err := iinputbox.NewIInputBox(inputBoxAddress, client)
 	if err != nil {
-		return 0, 0, common.Hash{}, fmt.Errorf("failed to connect to InputBox contract: %v", err)
+		return 0, 0, common.Hash{}, fmt.Errorf("failed to connect to InputBox contract: %w", err)
 	}
 	receipt, err := sendTransaction(
 		ctx, client, transactionOpts, big.NewInt(0), GasLimit,
@@ -121,7 +121,7 @@ func getInputIndex(
 		}
 		inputAdded, err := inputBox.ParseInputAdded(*log)
 		if err != nil {
-			return 0, fmt.Errorf("failed to parse input added event: %v", err)
+			return 0, fmt.Errorf("failed to parse input added event: %w", err)
 		}
 		// We assume that uint64 will fit all dapp inputs for now
 		return inputAdded.Index.Uint64(), nil
@@ -142,7 +142,7 @@ func GetInputFromInputBox(
 	}
 	inputBox, err := iinputbox.NewIInputBox(inputBoxAddress, client)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to InputBox contract: %v", err)
+		return nil, fmt.Errorf("failed to connect to InputBox contract: %w", err)
 	}
 	it, err := inputBox.FilterInputAdded(
 		nil,
@@ -150,7 +150,7 @@ func GetInputFromInputBox(
 		[]*big.Int{new(big.Int).SetUint64(inputIndex)},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to filter input added: %v", err)
+		return nil, fmt.Errorf("failed to filter input added: %w", err)
 	}
 	defer it.Close()
 	if !it.Next() {
@@ -183,7 +183,7 @@ func ValidateOutput(
 
 	app, err := iapplication.NewIApplication(appAddr, client)
 	if err != nil {
-		return fmt.Errorf("failed to connect to CartesiDapp contract: %v", err)
+		return fmt.Errorf("failed to connect to CartesiDapp contract: %w", err)
 	}
 	return app.ValidateOutput(&bind.CallOpts{Context: ctx}, output, proof)
 }
@@ -213,7 +213,7 @@ func ExecuteOutput(
 
 	app, err := iapplication.NewIApplication(appAddr, client)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to CartesiDapp contract: %v", err)
+		return nil, fmt.Errorf("failed to connect to CartesiDapp contract: %w", err)
 	}
 	receipt, err := sendTransaction(
 		ctx, client, transactionOpts, big.NewInt(0), GasLimit,
@@ -271,12 +271,12 @@ func GetConsensusAt(
 	}
 	app, err := iapplication.NewIApplication(appAddress, client)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("Failed to instantiate contract: %v", err)
+		return common.Address{}, fmt.Errorf("Failed to instantiate contract: %w", err)
 	}
 	opts := &bind.CallOpts{Context: ctx, BlockNumber: blockNumber}
 	consensus, err := app.GetOutputsMerkleRootValidator(opts)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("error retrieving application epoch length: %v", err)
+		return common.Address{}, fmt.Errorf("error retrieving application epoch length: %w", err)
 	}
 	return consensus, nil
 }
@@ -291,11 +291,11 @@ func GetDataAvailability(
 	}
 	app, err := iapplication.NewIApplication(appAddress, client)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to instantiate contract: %v", err)
+		return nil, fmt.Errorf("Failed to instantiate contract: %w", err)
 	}
 	dataAvailability, err := app.GetDataAvailability(&bind.CallOpts{Context: ctx})
 	if err != nil {
-		return nil, fmt.Errorf("error retrieving application epoch length: %v", err)
+		return nil, fmt.Errorf("error retrieving application epoch length: %w", err)
 	}
 	return dataAvailability, nil
 }
@@ -310,11 +310,11 @@ func GetEpochLength(
 	}
 	consensus, err := iconsensus.NewIConsensus(consensusAddr, client)
 	if err != nil {
-		return 0, fmt.Errorf("Failed to instantiate contract: %v", err)
+		return 0, fmt.Errorf("Failed to instantiate contract: %w", err)
 	}
 	epochLengthRaw, err := consensus.GetEpochLength(&bind.CallOpts{Context: ctx})
 	if err != nil {
-		return 0, fmt.Errorf("error retrieving application epoch length: %v", err)
+		return 0, fmt.Errorf("error retrieving application epoch length: %w", err)
 	}
 	return epochLengthRaw.Uint64(), nil
 }
@@ -332,11 +332,11 @@ func GetClaimStagingPeriod(
 	}
 	consensus, err := iconsensus.NewIConsensus(consensusAddr, client)
 	if err != nil {
-		return 0, fmt.Errorf("failed to instantiate contract: %v", err)
+		return 0, fmt.Errorf("failed to instantiate contract: %w", err)
 	}
 	raw, err := consensus.GetClaimStagingPeriod(&bind.CallOpts{Context: ctx})
 	if err != nil {
-		return 0, fmt.Errorf("error retrieving claim staging period: %v", err)
+		return 0, fmt.Errorf("error retrieving claim staging period: %w", err)
 	}
 	return raw.Uint64(), nil
 }
@@ -355,7 +355,7 @@ func GetInputBoxDeploymentBlock(
 	}
 	block, err := inputbox.GetDeploymentBlockNumber(&bind.CallOpts{Context: ctx})
 	if err != nil {
-		return nil, fmt.Errorf("error retrieving inputbox deployment block: %v", err)
+		return nil, fmt.Errorf("error retrieving inputbox deployment block: %w", err)
 	}
 	return block, nil
 }

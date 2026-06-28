@@ -45,7 +45,7 @@ func (me *QuorumDeployment) Deploy(
 	zero := common.Address{}
 	factory, err := iquorumfactory.NewIQuorumFactory(me.FactoryAddress, client)
 	if err != nil {
-		return zero, fmt.Errorf("failed to instantiate contract: %v", err)
+		return zero, fmt.Errorf("failed to instantiate contract: %w", err)
 	}
 
 	epochLength := new(big.Int).SetUint64(me.EpochLength)
@@ -71,12 +71,12 @@ func (me *QuorumDeployment) Deploy(
 
 	tx, err := factory.NewQuorum(txOpts, me.Validators, epochLength, claimStagingPeriod, me.Salt)
 	if err != nil {
-		return zero, fmt.Errorf("failed to create new quorum: %v", err)
+		return zero, fmt.Errorf("failed to create new quorum: %w", err)
 	}
 
 	receipt, err := bind.WaitMined(ctx, client, tx)
 	if err != nil {
-		return zero, fmt.Errorf("failed to mine new quorum transaction: %v", err)
+		return zero, fmt.Errorf("failed to mine new quorum transaction: %w", err)
 	}
 
 	if receipt.Status != 1 {

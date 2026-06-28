@@ -32,7 +32,7 @@ func MnemonicToPrivateKey(mnemonic string, accountIndex uint32) (*ecdsa.PrivateK
 
 	masterKey, err := bip32.NewMasterKey(seed)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate master key: %v", err)
+		return nil, fmt.Errorf("failed to generate master key: %w", err)
 	}
 
 	// get key at path m/44'/60'/0'/0/account
@@ -48,7 +48,7 @@ func MnemonicToPrivateKey(mnemonic string, accountIndex uint32) (*ecdsa.PrivateK
 	for i, level := range levels {
 		key, err = key.NewChildKey(level)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get child %v: %v", i, err)
+			return nil, fmt.Errorf("failed to get child %v: %w", i, err)
 		}
 	}
 

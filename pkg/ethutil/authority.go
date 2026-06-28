@@ -44,7 +44,7 @@ func (me *AuthorityDeployment) Deploy(
 	zero := common.Address{}
 	factory, err := iauthorityfactory.NewIAuthorityFactory(me.FactoryAddress, client)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("failed to instantiate contract: %v", err)
+		return common.Address{}, fmt.Errorf("failed to instantiate contract: %w", err)
 	}
 
 	// check if addresses are available (have no code)
@@ -64,12 +64,12 @@ func (me *AuthorityDeployment) Deploy(
 	// deploy the contracts
 	tx, err := factory.NewAuthority0(txOpts, me.OwnerAddress, new(big.Int).SetUint64(me.EpochLength), new(big.Int).SetUint64(me.ClaimStagingPeriod), me.Salt)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("failed to create new authority: %v", err)
+		return common.Address{}, fmt.Errorf("failed to create new authority: %w", err)
 	}
 
 	receipt, err := bind.WaitMined(ctx, client, tx)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("failed to mine new authority transaction: %v", err)
+		return common.Address{}, fmt.Errorf("failed to mine new authority transaction: %w", err)
 	}
 
 	if receipt.Status != 1 {
