@@ -237,7 +237,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	if verboseParam || !asJSONParam {
 		fmt.Fprint(os.Stderr, "deploying...")
 	}
-	_, result, err := deployment.Deploy(ctx, client, txOpts)
+	_, result, err := deployment.Deploy(ctx, client, ethutil.NewStaticTransactOptsFactory(txOpts))
 	// The revert surface spans the variant's factory plus the constructors it
 	// invokes; selectors are content-matched, so passing every factory ABI is
 	// harmless and covers all three deployment variants.

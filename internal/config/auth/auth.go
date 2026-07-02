@@ -21,7 +21,7 @@ import (
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
-func GetTransactOpts(ctx context.Context, chainId *big.Int) (*bind.TransactOpts, error) {
+func GetTransactOptsFactory(ctx context.Context, chainId *big.Int) (ethutil.TransactOptsFactory, error) {
 	authKind, err := GetAuthKind()
 	if err != nil {
 		return nil, err
@@ -40,7 +40,11 @@ func GetTransactOpts(ctx context.Context, chainId *big.Int) (*bind.TransactOpts,
 		if err != nil {
 			return nil, err
 		}
-		return bind.NewKeyedTransactorWithChainID(privateKey, chainId)
+		txOpts, err := bind.NewKeyedTransactorWithChainID(privateKey, chainId)
+		if err != nil {
+			return nil, err
+		}
+		return ethutil.NewStaticTransactOptsFactory(txOpts), nil
 	case AuthKindPrivateKeyVar:
 		privateKey, err := GetAuthPrivateKey()
 		if err != nil {
@@ -50,7 +54,11 @@ func GetTransactOpts(ctx context.Context, chainId *big.Int) (*bind.TransactOpts,
 		if err != nil {
 			return nil, err
 		}
-		return bind.NewKeyedTransactorWithChainID(key, chainId)
+		txOpts, err := bind.NewKeyedTransactorWithChainID(key, chainId)
+		if err != nil {
+			return nil, err
+		}
+		return ethutil.NewStaticTransactOptsFactory(txOpts), nil
 	case AuthKindAWS:
 		awsc, err := aws_cfg.LoadDefaultConfig(ctx)
 		if err != nil {
@@ -61,7 +69,7 @@ func GetTransactOpts(ctx context.Context, chainId *big.Int) (*bind.TransactOpts,
 		if err != nil {
 			return nil, err
 		}
-		return signtx.CreateAWSTransactOpts(
+		return signtx.CreateAWSTransactOptsFactory(
 			ctx,
 			kmsConfig,
 			aws.String(authAwsKmsKeyId.Value),

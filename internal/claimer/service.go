@@ -13,9 +13,9 @@ import (
 	"github.com/cartesi/rollups-node/internal/config/auth"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -126,9 +126,9 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		s.maxAcceptAttempts = defaultMaxAcceptAttempts
 	}
 
-	var txOpts *bind.TransactOpts = nil
+	var txOptsFactory ethutil.TransactOptsFactory
 	if s.submissionEnabled {
-		txOpts, err = auth.GetTransactOpts(ctx, chainId)
+		txOptsFactory, err = auth.GetTransactOptsFactory(ctx, chainId)
 		if err != nil {
 			return nil, fmt.Errorf("getting transaction options: %w", err)
 		}
@@ -136,10 +136,10 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 
 	s.repository = c.Repository
 	s.blockchain = &claimerBlockchain{
-		logger:       s.Logger,
-		client:       c.EthConn,
-		txOpts:       txOpts,
-		defaultBlock: nodeConfig.DefaultBlock,
+		logger:        s.Logger,
+		client:        c.EthConn,
+		txOptsFactory: txOptsFactory,
+		defaultBlock:  nodeConfig.DefaultBlock,
 	}
 
 	return s, nil

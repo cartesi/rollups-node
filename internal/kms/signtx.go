@@ -27,7 +27,12 @@ import (
 /* This is the signature for a function that takes a transaction, passes it
  * through a signer to obtain a message digest, creates a signature and embeds
  * it into the transaction itself. */
-type SignTxFn = func(tx *types.Transaction, s types.Signer) (*types.Transaction, error)
+type SignTxFn = func(ctx context.Context, tx *types.Transaction, s types.Signer) (*types.Transaction, error)
+
+type Client interface {
+	GetPublicKey(context.Context, *kms.GetPublicKeyInput, ...func(*kms.Options)) (*kms.GetPublicKeyOutput, error)
+	Sign(context.Context, *kms.SignInput, ...func(*kms.Options)) (*kms.SignOutput, error)
+}
 
 /* AWS sometimes reply with a `r` larger than 32bytes padded on the left with
  * zeros. Trim it down to a total of 32bytes */
@@ -90,7 +95,7 @@ func assembleSignature(r []byte, s []byte, hash []byte, key []byte) ([]byte, err
  * the signing key. */
 func CreateAWSSignTxFn(
 	ctx context.Context,
-	client *kms.Client,
+	client Client,
 	arn *string,
 ) (SignTxFn, *ecdsa.PublicKey, common.Address, error) {
 	publicKeyBytes, err := GetPublicKeyBytes(ctx, client, arn)
@@ -101,7 +106,7 @@ func CreateAWSSignTxFn(
 	if err != nil {
 		return nil, nil, common.Address{}, err
 	}
-	return func(tx *types.Transaction, signer types.Signer) (*types.Transaction, error) {
+	return func(ctx context.Context, tx *types.Transaction, signer types.Signer) (*types.Transaction, error) {
 		hash := signer.Hash(tx).Bytes()
 		signOutput, err := client.Sign(ctx, &kms.SignInput{
 			KeyId:            arn,
@@ -138,7 +143,7 @@ func CreateAWSSignTxFn(
 	}, publicKey, crypto.PubkeyToAddress(*publicKey), nil
 }
 
-func GetPublicKeyBytes(ctx context.Context, client *kms.Client, Arn *string) ([]byte, error) {
+func GetPublicKeyBytes(ctx context.Context, client Client, Arn *string) ([]byte, error) {
 	publicKeyOutput, err := client.GetPublicKey(ctx, &kms.GetPublicKeyInput{
 		KeyId: Arn,
 	})
@@ -167,29 +172,44 @@ func GetPublicKeyBytes(ctx context.Context, client *kms.Client, Arn *string) ([]
 	return asn1key.SubjectPublicKey.Bytes, nil
 }
 
-/* Wrap a KMS SignTx into a geth TransactOpts.
- *
- * similar to NewKeyedTransactorWithChainID */
-func CreateAWSTransactOpts(
+func CreateAWSTransactOptsFactory(
 	ctx context.Context,
-	client *kms.Client,
+	client Client,
 	arn *string,
 	signer types.Signer,
-) (*bind.TransactOpts, error) {
-	SignTxFn, _, keyAddress, err := CreateAWSSignTxFn(ctx, client, arn)
+) (*AWSTransactOptsFactory, error) {
+	signTxFn, _, keyAddress, err := CreateAWSSignTxFn(ctx, client, arn)
 	if err != nil {
 		return nil, err
 	}
+	return &AWSTransactOptsFactory{
+		signTxFn: signTxFn,
+		address:  keyAddress,
+		signer:   signer,
+	}, nil
+}
+
+type AWSTransactOptsFactory struct {
+	signTxFn SignTxFn
+	address  common.Address
+	signer   types.Signer
+}
+
+func (f *AWSTransactOptsFactory) From() common.Address {
+	return f.address
+}
+
+func (f *AWSTransactOptsFactory) NewTransactOpts(ctx context.Context) (*bind.TransactOpts, error) {
 	return &bind.TransactOpts{
-		From: keyAddress,
+		From: f.address,
 		Signer: func(
 			address common.Address,
 			tx *types.Transaction,
 		) (*types.Transaction, error) {
-			if address != keyAddress {
+			if address != f.address {
 				return nil, bind.ErrNotAuthorized
 			}
-			return SignTxFn(tx, signer)
+			return f.signTxFn(ctx, tx, f.signer)
 		},
 		Context: ctx,
 	}, nil

@@ -123,13 +123,18 @@ func (me *PRTApplicationDeployment) deployPRT(
 func (me *PRTApplicationDeployment) Deploy(
 	ctx context.Context,
 	client *ethclient.Client,
-	txOpts *bind.TransactOpts,
+	txOptsFactory TransactOptsFactory,
 ) (common.Address, IApplicationDeploymentResult, error) {
 	zero := common.Address{}
 	result := &PRTApplicationDeploymentResult{}
 	result.Deployment = me
 
 	var err error
+	txOpts, err := txOptsFactory.NewTransactOpts(ctx)
+	if err != nil {
+		return zero, nil, fmt.Errorf("failed to create transaction options: %w", err)
+	}
+
 	appAddress, consensusAddress, err := me.deployPRT(ctx, client, txOpts)
 	if err != nil {
 		return zero, nil, fmt.Errorf("failed to deploy Dave Application and consensus contracts: %w", err)

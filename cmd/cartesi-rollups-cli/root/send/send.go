@@ -145,6 +145,8 @@ func run(cmd *cobra.Command, args []string) {
 	txOpts, err := cli.GetTransactOpts(ctx, chainId)
 	cobra.CheckErr(err)
 
+	txOptsFactory := ethutil.NewStaticTransactOptsFactory(txOpts)
+
 	// Ask for confirmation unless --yes flag is set
 	if !skipConfirmation {
 		fmt.Printf("Preparing to send input to application %v (%v) with account %v\n",
@@ -158,7 +160,7 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	if asyncMode {
-		txHash, err := ethutil.AddInputAsync(ctx, client, txOpts, iboxAddr, app.IApplicationAddress, payload)
+		txHash, err := ethutil.AddInputAsync(ctx, client, txOptsFactory, iboxAddr, app.IApplicationAddress, payload)
 		cobra.CheckErr(cli.DecorateRevert(err, iinputbox.IInputBoxMetaData, iapplication.IApplicationMetaData))
 		if asJSONParam {
 			result := cli.SendResult{
@@ -174,7 +176,7 @@ func run(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	inputIndex, blockNumber, txHash, err := ethutil.AddInput(ctx, client, txOpts, iboxAddr, app.IApplicationAddress, payload)
+	inputIndex, blockNumber, txHash, err := ethutil.AddInput(ctx, client, txOptsFactory, iboxAddr, app.IApplicationAddress, payload)
 	cobra.CheckErr(cli.DecorateRevert(err, iinputbox.IInputBoxMetaData, iapplication.IApplicationMetaData))
 
 	if asJSONParam {

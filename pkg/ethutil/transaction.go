@@ -16,23 +16,44 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
+type TransactOptsFactory interface {
+	From() common.Address
+	NewTransactOpts(ctx context.Context) (*bind.TransactOpts, error)
+}
+
+type staticTransactOptsFactory struct {
+	opts *bind.TransactOpts
+}
+
+func (f *staticTransactOptsFactory) From() common.Address {
+	return f.opts.From
+}
+
+func (f *staticTransactOptsFactory) NewTransactOpts(ctx context.Context) (*bind.TransactOpts, error) {
+	opts := *f.opts
+	opts.Context = ctx
+	return &opts, nil
+}
+
+func NewStaticTransactOptsFactory(txOpts *bind.TransactOpts) TransactOptsFactory {
+	return &staticTransactOptsFactory{opts: txOpts}
+}
+
 const PollInterval = 500 * time.Millisecond
 
 // Prepare the transaction, send it, and wait for the receipt.
 func sendTransaction(
 	ctx context.Context,
 	client *ethclient.Client,
-	txOpts *bind.TransactOpts,
+	txOptsFactory TransactOptsFactory,
 	txValue *big.Int,
 	doSend func(txOpts *bind.TransactOpts) (*types.Transaction, error),
 ) (*types.Receipt, error) {
-	txOpts, err := _prepareTransaction(ctx, client, txOpts, txValue)
+	txOpts, err := _prepareTransaction(ctx, client, txOptsFactory, txValue)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare transaction: %w", err)
 	}
-	txOptsCopy := *txOpts
-	txOptsCopy.Context = ctx
-	tx, err := doSend(&txOptsCopy)
+	tx, err := doSend(txOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send transaction: %w", err)
 	}
@@ -47,10 +68,10 @@ func sendTransaction(
 func _prepareTransaction(
 	ctx context.Context,
 	client *ethclient.Client,
-	txOpts *bind.TransactOpts,
+	txOptsFactory TransactOptsFactory,
 	txValue *big.Int,
 ) (*bind.TransactOpts, error) {
-	nonce, err := client.PendingNonceAt(ctx, txOpts.From)
+	nonce, err := client.PendingNonceAt(ctx, txOptsFactory.From())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get nonce: %w", err)
 	}
@@ -60,6 +81,11 @@ func _prepareTransaction(
 	}
 	nonceBigInt := &big.Int{}
 	nonceBigInt.SetUint64(nonce)
+
+	txOpts, err := txOptsFactory.NewTransactOpts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction options: %w", err)
+	}
 	txOpts.Nonce = nonceBigInt
 	txOpts.Value = txValue
 	txOpts.GasPrice = gasPrice

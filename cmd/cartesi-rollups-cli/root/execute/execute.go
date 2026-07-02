@@ -116,7 +116,7 @@ func run(cmd *cobra.Command, args []string) {
 	txHash, err := ethutil.ExecuteOutput(
 		ctx,
 		client,
-		txOpts,
+		ethutil.NewStaticTransactOptsFactory(txOpts),
 		app.IApplicationAddress,
 		outputIndex,
 		output.RawData,

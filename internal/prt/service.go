@@ -15,7 +15,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
@@ -35,7 +34,7 @@ type Service struct {
 	adapterFactory    AdapterFactory
 	submissionEnabled bool
 	filter            ethutil.Filter
-	txOpts            *bind.TransactOpts
+	txOptsFactory     ethutil.TransactOptsFactory
 	currentEpochIndex map[int64]uint64       // application.ID -> epochIndex
 	settleInFlight    map[int64]*common.Hash // application.ID -> txHash
 	joinInFlight      map[int64]*common.Hash // application.ID -> txHash
@@ -112,7 +111,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	s.joinInFlight = map[int64]*common.Hash{}
 
 	if s.submissionEnabled {
-		s.txOpts, err = auth.GetTransactOpts(ctx, chainID)
+		s.txOptsFactory, err = auth.GetTransactOptsFactory(ctx, chainID)
 		if err != nil {
 			return nil, err
 		}

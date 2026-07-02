@@ -14,7 +14,12 @@ import (
 )
 
 func GetTransactOpts(ctx context.Context, chainId *big.Int) (*bind.TransactOpts, error) {
-	txOpts, err := auth.GetTransactOpts(ctx, chainId)
+	factory, err := auth.GetTransactOptsFactory(ctx, chainId)
+	if err != nil {
+		return nil, err
+	}
+
+	txOpts, err := factory.NewTransactOpts(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -27,5 +32,5 @@ func GetTransactOpts(ctx context.Context, chainId *big.Int) (*bind.TransactOpts,
 	if gasLimit > 0 {
 		txOpts.GasLimit = gasLimit
 	}
-	return txOpts, err
+	return txOpts, nil
 }

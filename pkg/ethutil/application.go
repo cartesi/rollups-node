@@ -14,7 +14,7 @@ import (
 )
 
 type IApplicationDeployment interface {
-	Deploy(ctx context.Context, client *ethclient.Client, txOpts *bind.TransactOpts) (common.Address, IApplicationDeploymentResult, error)
+	Deploy(ctx context.Context, client *ethclient.Client, txOptsFactory TransactOptsFactory) (common.Address, IApplicationDeploymentResult, error)
 	GetFactoryAddress() common.Address
 }
 type IApplicationDeploymentResult interface{}
@@ -71,7 +71,7 @@ func (me *ApplicationDeploymentResult) String() string {
 func (me *ApplicationDeployment) Deploy(
 	ctx context.Context,
 	client *ethclient.Client,
-	txOpts *bind.TransactOpts,
+	txOptsFactory TransactOptsFactory,
 ) (common.Address, IApplicationDeploymentResult, error) {
 	zero := common.Address{}
 	result := &ApplicationDeploymentResult{}
@@ -103,6 +103,11 @@ func (me *ApplicationDeployment) Deploy(
 	}
 
 	// deploy the contracts
+	txOpts, err := txOptsFactory.NewTransactOpts(ctx)
+	if err != nil {
+		return zero, nil, fmt.Errorf("failed to create transaction options: %w", err)
+	}
+
 	tx, err := factory.NewApplication0(txOpts, me.Consensus, me.OwnerAddress, me.TemplateHash, me.DataAvailability, me.WithdrawalConfig, me.Salt)
 	if err != nil {
 		return zero, nil, fmt.Errorf("transaction failed: %w", err)

@@ -74,7 +74,7 @@ func (me *SelfhostedApplicationDeploymentResult) String() string {
 func (me *SelfhostedApplicationDeployment) Deploy(
 	ctx context.Context,
 	client *ethclient.Client,
-	txOpts *bind.TransactOpts,
+	txOptsFactory TransactOptsFactory,
 ) (common.Address, IApplicationDeploymentResult, error) {
 	zero := common.Address{}
 	result := &SelfhostedApplicationDeploymentResult{}
@@ -129,7 +129,7 @@ func (me *SelfhostedApplicationDeployment) Deploy(
 
 	// deploy the contracts
 	receipt, err := sendTransaction(
-		ctx, client, txOpts, big.NewInt(0),
+		ctx, client, txOptsFactory, big.NewInt(0),
 		func(txOpts *bind.TransactOpts) (*types.Transaction, error) {
 			result.ApplicationFactoryAddress, err = factory.GetApplicationFactory(nil)
 			if err != nil {

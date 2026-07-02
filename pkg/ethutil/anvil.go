@@ -61,7 +61,7 @@ func CreateAnvilSnapshotAndDeployApp(ctx context.Context, client *ethclient.Clie
 		EpochLength:             10,
 		Salt:                    [32]byte{},
 	}
-	applicationAddress, _, err := deployment.Deploy(ctx, client, txOpts)
+	applicationAddress, _, err := deployment.Deploy(ctx, client, NewStaticTransactOptsFactory(txOpts))
 	if err != nil {
 		_ = RevertToAnvilSnapshot(client.Client(), snapshotID)
 		return zero, nil, fmt.Errorf("failed to deploy self-hosted application: %w", err)

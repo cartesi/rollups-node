@@ -52,12 +52,14 @@ type iclaimerBlockchain interface {
 	)
 
 	submitClaimToBlockchain(
+		ctx context.Context,
 		ic *iconsensus.IConsensus,
 		application *model.Application,
 		epoch *model.Epoch,
 	) (common.Hash, error)
 
 	acceptClaimOnBlockchain(
+		ctx context.Context,
 		application *model.Application,
 		epoch *model.Epoch,
 	) (common.Hash, error)
@@ -100,27 +102,28 @@ type iclaimerBlockchain interface {
 }
 
 type claimerBlockchain struct {
-	client       *ethclient.Client
-	txOpts       *bind.TransactOpts
-	logger       *slog.Logger
-	defaultBlock config.DefaultBlock
+	client        *ethclient.Client
+	txOptsFactory ethutil.TransactOptsFactory
+	logger        *slog.Logger
+	defaultBlock  config.DefaultBlock
 }
 
 func (cb *claimerBlockchain) claimSubmitterAddress() (common.Address, bool) {
-	if cb.txOpts == nil {
+	if cb.txOptsFactory == nil {
 		return common.Address{}, false
 	}
-	return cb.txOpts.From, true
+	return cb.txOptsFactory.From(), true
 }
 
 func (cb *claimerBlockchain) submitClaimToBlockchain(
+	ctx context.Context,
 	ic *iconsensus.IConsensus,
 	application *model.Application,
 	epoch *model.Epoch,
 ) (common.Hash, error) {
 	txHash := common.Hash{}
-	if cb.txOpts == nil {
-		return txHash, fmt.Errorf("txOpts is required for claim submission")
+	if cb.txOptsFactory == nil {
+		return txHash, fmt.Errorf("txOptsFactory is required for claim submission")
 	}
 	if epoch.OutputsMerkleRoot == nil {
 		return txHash, fmt.Errorf(
@@ -140,8 +143,12 @@ func (cb *claimerBlockchain) submitClaimToBlockchain(
 	for i, h := range epoch.OutputsMerkleProof {
 		proof[i] = h
 	}
+	txOpts, err := cb.txOptsFactory.NewTransactOpts(ctx)
+	if err != nil {
+		return txHash, fmt.Errorf("creating transaction options for claim submission: %w", err)
+	}
 	lastBlockNumber := new(big.Int).SetUint64(epoch.LastBlock)
-	tx, err := ic.SubmitClaim(cb.txOpts, application.IApplicationAddress,
+	tx, err := ic.SubmitClaim(txOpts, application.IApplicationAddress,
 		lastBlockNumber, *epoch.OutputsMerkleRoot, proof)
 	if err != nil {
 		cb.logger.Warn("submitClaimToBlockchain:failed",
@@ -406,11 +413,12 @@ func (cb *claimerBlockchain) getConsensusAddress(
 // ClaimStagingPeriodNotOverYet if the math is off; the caller handles that
 // revert via handleAcceptClaimRevert.
 func (cb *claimerBlockchain) acceptClaimOnBlockchain(
+	ctx context.Context,
 	application *model.Application,
 	epoch *model.Epoch,
 ) (common.Hash, error) {
 	txHash := common.Hash{}
-	if cb.txOpts == nil {
+	if cb.txOptsFactory == nil {
 		return txHash, fmt.Errorf("txOpts is required for claim acceptance")
 	}
 	if epoch.MachineHash == nil {
@@ -422,8 +430,12 @@ func (cb *claimerBlockchain) acceptClaimOnBlockchain(
 	if err != nil {
 		return txHash, fmt.Errorf("creating IConsensus binding for acceptClaim: %w", err)
 	}
+	txOpts, err := cb.txOptsFactory.NewTransactOpts(ctx)
+	if err != nil {
+		return txHash, fmt.Errorf("creating transaction options for claim acceptance: %w", err)
+	}
 	lastBlockNumber := new(big.Int).SetUint64(epoch.LastBlock)
-	tx, err := ic.AcceptClaim(cb.txOpts, application.IApplicationAddress,
+	tx, err := ic.AcceptClaim(txOpts, application.IApplicationAddress,
 		lastBlockNumber, *epoch.MachineHash)
 	if err != nil {
 		cb.logger.Warn("acceptClaimOnBlockchain:failed",

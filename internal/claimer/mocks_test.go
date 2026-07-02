@@ -297,6 +297,7 @@ func (m *claimerBlockchainMock) findClaimAcceptedEventAndSucc(
 }
 
 func (m *claimerBlockchainMock) submitClaimToBlockchain(
+	ctx context.Context,
 	instance *iconsensus.IConsensus,
 	app *model.Application,
 	epoch *model.Epoch,
@@ -306,6 +307,7 @@ func (m *claimerBlockchainMock) submitClaimToBlockchain(
 }
 
 func (m *claimerBlockchainMock) acceptClaimOnBlockchain(
+	ctx context.Context,
 	app *model.Application,
 	epoch *model.Epoch,
 ) (common.Hash, error) {

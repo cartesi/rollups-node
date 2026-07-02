@@ -35,7 +35,7 @@ func TrimHex(s string) string {
 func AddInput(
 	ctx context.Context,
 	client *ethclient.Client,
-	transactionOpts *bind.TransactOpts,
+	txOptsFactory TransactOptsFactory,
 	inputBoxAddress common.Address,
 	application common.Address,
 	input []byte,
@@ -48,7 +48,7 @@ func AddInput(
 		return 0, 0, common.Hash{}, fmt.Errorf("failed to connect to InputBox contract: %w", err)
 	}
 	receipt, err := sendTransaction(
-		ctx, client, transactionOpts, big.NewInt(0),
+		ctx, client, txOptsFactory, big.NewInt(0),
 		func(txOpts *bind.TransactOpts) (*types.Transaction, error) {
 			return inputBox.AddInput(txOpts, application, input)
 		},
@@ -72,7 +72,7 @@ func AddInput(
 func AddInputAsync(
 	ctx context.Context,
 	client *ethclient.Client,
-	transactionOpts *bind.TransactOpts,
+	txOptsFactory TransactOptsFactory,
 	inputBoxAddress common.Address,
 	application common.Address,
 	input []byte,
@@ -84,11 +84,13 @@ func AddInputAsync(
 	if err != nil {
 		return common.Hash{}, fmt.Errorf("failed to connect to InputBox contract: %w", err)
 	}
-	txOpts, err := _prepareTransaction(ctx, client, transactionOpts, big.NewInt(0))
+	txOpts, err := _prepareTransaction(ctx, client, txOptsFactory, big.NewInt(0))
 	if err != nil {
 		return common.Hash{}, fmt.Errorf("failed to prepare transaction: %w", err)
 	}
-	tx, err := inputBox.AddInput(txOpts, application, input)
+	txOptsCopy := *txOpts
+	txOptsCopy.Context = ctx
+	tx, err := inputBox.AddInput(&txOptsCopy, application, input)
 	if err != nil {
 		return common.Hash{}, fmt.Errorf("failed to send transaction: %w", err)
 	}
@@ -190,7 +192,7 @@ func ValidateOutput(
 func ExecuteOutput(
 	ctx context.Context,
 	client *ethclient.Client,
-	transactionOpts *bind.TransactOpts,
+	txOptsFactory TransactOptsFactory,
 	appAddr common.Address,
 	index uint64,
 	output []byte,
@@ -213,7 +215,7 @@ func ExecuteOutput(
 		return nil, fmt.Errorf("failed to connect to CartesiDapp contract: %w", err)
 	}
 	receipt, err := sendTransaction(
-		ctx, client, transactionOpts, big.NewInt(0),
+		ctx, client, txOptsFactory, big.NewInt(0),
 		func(txOpts *bind.TransactOpts) (*types.Transaction, error) {
 			return app.ExecuteOutput(txOpts, output, proof)
 		},

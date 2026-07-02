@@ -718,7 +718,14 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 	s.Logger.Info("Sending Settle transaction", "application", app.Name, "epoch_index", epoch.Index,
 		"outputs_merkle_root", epoch.OutputsMerkleRoot.String())
 
-	tx, err := consensus.Settle(s.txOpts, result.EpochNumber,
+	if s.txOptsFactory == nil {
+		return fmt.Errorf("txOpts is required for settlement")
+	}
+	txOpts, err := s.txOptsFactory.NewTransactOpts(ctx)
+	if err != nil {
+		return fmt.Errorf("creating transaction options for settlement: %w", err)
+	}
+	tx, err := consensus.Settle(txOpts, result.EpochNumber,
 		*epoch.OutputsMerkleRoot, hashSliceToByteSlice(epoch.OutputsMerkleProof))
 	if err != nil {
 		return s.handleSettleRevert(ctx, app, result.EpochNumber.Uint64(), err)
@@ -955,7 +962,14 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 		return err
 	}
 
-	txOptsWithValue := *s.txOpts
+	if s.txOptsFactory == nil {
+		return fmt.Errorf("txOpts is required for joining tournament")
+	}
+	txOpts, err := s.txOptsFactory.NewTransactOpts(ctx)
+	if err != nil {
+		return fmt.Errorf("creating transaction options for joining tournament: %w", err)
+	}
+	txOptsWithValue := *txOpts
 	txOptsWithValue.Value = bondValue
 
 	// FIXME move this to constants
