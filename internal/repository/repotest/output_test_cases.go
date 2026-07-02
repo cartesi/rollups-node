@@ -244,27 +244,46 @@ func (s *OutputSuite) TestListOutputs() {
 	s.Run("FilterByVoucherAddress", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
-		// VoucherAddress filter uses SUBSTR(raw_data, 17, 20)
-		// to extract a 20-byte address at bytes 17-36 (1-indexed)
+		// VoucherAddress filter matches substring(raw_data FROM 17 FOR 20)
+		// (the ABI head destination) but only on voucher-typed outputs:
+		// bytes 17-36 of other output types are arbitrary payload.
+		voucherSelector := []byte{0x23, 0x7a, 0x81, 0x6f}
+		delegateCallVoucherSelector := []byte{0x10, 0x32, 0x1e, 0x8b}
+		noticeSelector := []byte{0xc2, 0x58, 0xd6, 0xe5}
+
 		voucherAddr := UniqueAddress()
 		rawWithVoucher := make([]byte, 64)
+		copy(rawWithVoucher[0:4], voucherSelector)
 		copy(rawWithVoucher[16:36], voucherAddr.Bytes())
 
 		otherAddr := UniqueAddress()
 		rawWithOther := make([]byte, 64)
+		copy(rawWithOther[0:4], voucherSelector)
 		copy(rawWithOther[16:36], otherAddr.Bytes())
 
+		// A notice whose payload happens to contain the searched address at
+		// bytes 17-36 must not match the voucher-address filter.
+		rawNoticeLookalike := make([]byte, 64)
+		copy(rawNoticeLookalike[0:4], noticeSelector)
+		copy(rawNoticeLookalike[16:36], voucherAddr.Bytes())
+
+		// Delegate-call vouchers carry a destination too and must match.
+		rawWithDelegateCall := make([]byte, 64)
+		copy(rawWithDelegateCall[0:4], delegateCallVoucherSelector)
+		copy(rawWithDelegateCall[16:36], voucherAddr.Bytes())
+
 		s.storeAdvanceResult(seed.App.ID, 0, 0,
-			[][]byte{rawWithVoucher, rawWithOther}, nil)
+			[][]byte{rawWithVoucher, rawWithOther, rawNoticeLookalike, rawWithDelegateCall}, nil)
 
 		outputs, total, err := s.Repo.ListOutputs(
 			s.Ctx, seed.App.IApplicationAddress.String(),
 			repository.OutputFilter{VoucherAddress: &voucherAddr},
 			repository.Pagination{Limit: 10}, false)
 		s.Require().NoError(err)
-		s.Len(outputs, 1)
-		s.Equal(uint64(1), total)
+		s.Len(outputs, 2)
+		s.Equal(uint64(2), total)
 		s.Equal(rawWithVoucher, outputs[0].RawData)
+		s.Equal(rawWithDelegateCall, outputs[1].RawData)
 	})
 
 	s.Run("Pagination", func() {

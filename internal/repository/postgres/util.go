@@ -60,9 +60,22 @@ func countFromTx(ctx context.Context, tx pgx.Tx, countStmt postgres.SelectStatem
 	return total, err
 }
 
-// SubstrBytea returns a SUBSTR expression properly typed as ByteaExpression.
+// SubstrBytea returns a substring expression properly typed as ByteaExpression.
+// It must render exactly as `substring(col FROM n FOR m)` with inline literals:
+// PostgreSQL matches expression indexes structurally (by function OID and
+// argument tree), so the schema's `substring(... FROM ... FOR ...)` indexes are
+// only usable when the query emits the same function with constant arguments.
+// `SUBSTR(col, $1, $2)` is a different catalog function and bypasses them.
 func SubstrBytea(col postgres.ColumnBytea, from, count int64) postgres.ByteaExpression {
 	qualified := pgx.Identifier{col.TableName(), col.Name()}.Sanitize()
-	raw := fmt.Sprintf("SUBSTR(%s, #from, #count)", qualified)
-	return postgres.RawBytea(raw, postgres.RawArgs{"#from": from, "#count": count})
+	raw := fmt.Sprintf("substring(%s FROM %d FOR %d)", qualified, from, count)
+	return postgres.RawBytea(raw)
+}
+
+// ByteaLiteral renders b as an inline bytea literal instead of a bind
+// parameter. Inline literals are required where the planner must prove a
+// partial-index predicate at plan time (e.g. output_raw_data_address_idx):
+// a generic plan cannot prove implication from a parameterized IN list.
+func ByteaLiteral(b []byte) postgres.ByteaExpression {
+	return postgres.RawBytea(fmt.Sprintf(`'\x%x'::bytea`, b))
 }

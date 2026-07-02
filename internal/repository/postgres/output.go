@@ -193,7 +193,16 @@ func (r *PostgresRepository) ListOutputs(
 	}
 
 	if f.VoucherAddress != nil {
+		// A destination-address filter is only meaningful for output methods
+		// that carry a destination (Voucher, DelegateCallVoucher); bytes 17..36
+		// of other outputs are arbitrary payload. The selector IN list, with
+		// inline literals, is also what lets the planner prove the partial
+		// predicate of output_raw_data_address_idx.
 		conditions = append(conditions,
+			SubstrBytea(table.Output.RawData, 1, 4).IN(
+				ByteaLiteral(voucherSelector),
+				ByteaLiteral(delegateCallVoucherSelector),
+			),
 			SubstrBytea(table.Output.RawData, 17, 20).EQ(postgres.Bytea(f.VoucherAddress.Bytes())),
 		)
 	}
