@@ -4,8 +4,10 @@
 package claimer
 
 import (
+	"context"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
@@ -929,4 +931,86 @@ func TestCheckConsensusForAddressChangeCachesTickResult(t *testing.T) {
 	require.NoError(t, err)
 }
 
-////////////////////////////////////////////////////////////////////////////////
+func TestSubmitClaimTimeout(t *testing.T) {
+	m, r, b := newServiceMock(t)
+	defer r.AssertExpectations(t)
+	defer b.AssertExpectations(t)
+
+	m.submissionTimeout = 100 * time.Millisecond
+
+	endBlock := big.NewInt(40)
+	app := makeApplication()
+	currEpoch := makeComputedEpoch(app, 3)
+	var prevEvent *iconsensus.IConsensusClaimSubmitted = nil
+	var currEvent *iconsensus.IConsensusClaimSubmitted = nil
+
+	b.On("getConsensusAddress", mock.Anything, app, mock.Anything).
+		Return(app.IConsensusAddress, nil).Once()
+	expectNoForeignClaimAccepted(b, app, currEpoch, currEpoch.LastBlock+1, endBlock.Uint64())
+	b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, currEpoch, currEpoch.LastBlock+1, endBlock.Uint64()).
+		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil).Once()
+	expectGetClaimStatusUnstaged(b, app, currEpoch, endBlock)
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
+		Run(func(args mock.Arguments) {
+			ctx := args.Get(0).(context.Context)
+			select {
+			case <-ctx.Done():
+				assert.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
+			case <-time.After(2 * time.Second):
+				assert.Fail(t, "context provided did not have the expected timeout")
+			}
+		}).
+		Return(common.Hash{}, context.DeadlineExceeded).Once()
+
+	transitions, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Equal(t, 1, len(errs))
+	assert.ErrorIs(t, errs[0], context.DeadlineExceeded)
+	assert.Equal(t, 0, len(m.claimsInFlight))
+	assert.Equal(t, 0, transitions, "submitting a claim counts as a transition")
+}
+
+func TestSubmitClaimContextCanceled(t *testing.T) {
+	m, r, b := newServiceMock(t)
+	defer r.AssertExpectations(t)
+	defer b.AssertExpectations(t)
+
+	svcCtx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	m.Context = svcCtx
+	m.submissionTimeout = 2 * time.Second
+
+	endBlock := big.NewInt(40)
+	app := makeApplication()
+	currEpoch := makeComputedEpoch(app, 3)
+	var prevEvent *iconsensus.IConsensusClaimSubmitted = nil
+	var currEvent *iconsensus.IConsensusClaimSubmitted = nil
+
+	b.On("getConsensusAddress", mock.Anything, app, mock.Anything).
+		Return(app.IConsensusAddress, nil).Once()
+	expectNoForeignClaimAccepted(b, app, currEpoch, currEpoch.LastBlock+1, endBlock.Uint64())
+	b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, currEpoch, currEpoch.LastBlock+1, endBlock.Uint64()).
+		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil).Once()
+	expectGetClaimStatusUnstaged(b, app, currEpoch, endBlock)
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
+		Run(func(args mock.Arguments) {
+			ctx := args.Get(0).(context.Context)
+			select {
+			case <-ctx.Done():
+				assert.ErrorIs(t, ctx.Err(), context.Canceled)
+			case <-time.After(2 * time.Second):
+				assert.Fail(t, "context provided was not canceled")
+			}
+		}).
+		Return(common.Hash{}, context.Canceled).Once()
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	transitions, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Equal(t, 1, len(errs))
+	assert.ErrorIs(t, errs[0], context.Canceled)
+	assert.Equal(t, 0, len(m.claimsInFlight))
+	assert.Equal(t, 0, transitions, "submitting a claim counts as a transition")
+}

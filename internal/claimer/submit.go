@@ -425,7 +425,9 @@ func (s *Service) broadcastComputedClaim(
 		"outputs_merkle_root", hashToHex(currEpoch.OutputsMerkleRoot),
 		"last_block", currEpoch.LastBlock,
 	)
-	txHash, err := s.blockchain.submitClaimToBlockchain(s.Context, ic, app, currEpoch)
+	txCtx, cancel := context.WithTimeout(s.Context, s.submissionTimeout)
+	defer cancel()
+	txHash, err := s.blockchain.submitClaimToBlockchain(txCtx, ic, app, currEpoch)
 	if err != nil {
 		switch outcome, stateErr := s.handleSubmitClaimRevert(err, app, currEpoch); outcome {
 		case submitClaimAlreadyOnChain:

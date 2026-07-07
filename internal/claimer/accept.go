@@ -378,7 +378,9 @@ func (s *Service) broadcastAcceptClaimOrReconcileRevert(
 		return claimRetryLater(err)
 	}
 
-	txHash, err := s.blockchain.acceptClaimOnBlockchain(s.Context, app, currEpoch)
+	txCtx, cancel := context.WithTimeout(s.Context, s.submissionTimeout)
+	defer cancel()
+	txHash, err := s.blockchain.acceptClaimOnBlockchain(txCtx, app, currEpoch)
 	if err != nil {
 		outcome, stateErr := s.handleAcceptClaimRevert(err, app, currEpoch)
 		switch outcome {

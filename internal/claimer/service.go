@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
@@ -61,6 +62,7 @@ type Service struct {
 	consensusAddressChecks map[consensusAddressCheckKey]error
 
 	submissionEnabled bool
+	submissionTimeout time.Duration
 }
 
 // defaultMaxAcceptAttempts is used only when config is not supplied, mainly in
@@ -128,6 +130,10 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 
 	var txOptsFactory ethutil.TransactOptsFactory
 	if s.submissionEnabled {
+		s.submissionTimeout = c.Config.BlockchainHttpRequestTimeout
+		if s.submissionTimeout == 0 {
+			return nil, fmt.Errorf("BlockchainHttpRequestTimeout must be different from zero")
+		}
 		txOptsFactory, err = auth.GetTransactOptsFactory(ctx, chainId)
 		if err != nil {
 			return nil, fmt.Errorf("getting transaction options: %w", err)

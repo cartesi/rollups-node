@@ -4,10 +4,12 @@
 package claimer
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
@@ -764,3 +766,89 @@ func TestAcceptanceDivergenceReaderMode_Quorum(t *testing.T) {
 
 // TestHandleAcceptClaimRevert — exhaustive dispatch matrix for the typed
 // reverts handleAcceptClaimRevert recognises. The classifier never mutates
+
+func TestAcceptClaimTimeout(t *testing.T) {
+	m, r, b := newServiceMock(t)
+	defer r.AssertExpectations(t)
+	defer b.AssertExpectations(t)
+
+	m.submissionTimeout = 100 * time.Millisecond
+
+	endBlock := big.NewInt(100)
+	app := makeApplication()
+	app.ClaimStagingPeriod = 5
+	stagedAt := uint64(50)
+	currEpoch := makeStagedEpoch(app, 3, stagedAt)
+	attemptKey := acceptAttemptKey{currEpoch.ApplicationID, currEpoch.Index}
+
+	b.On("getConsensusAddress", mock.Anything, app, mock.Anything).
+		Return(app.IConsensusAddress, nil).Once()
+	b.On("getClaimStatus", mock.Anything, app, currEpoch, endBlock).
+		Return(makeClaimStatus(claimStatusStaged, currEpoch, stagedAt), nil).Once()
+	b.On("acceptClaimOnBlockchain", mock.Anything, app, currEpoch).
+		Run(func(args mock.Arguments) {
+			ctx := args.Get(0).(context.Context)
+			select {
+			case <-ctx.Done():
+				assert.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
+			case <-time.After(2 * time.Second):
+				assert.Fail(t, "context provided did not have the expected timeout")
+			}
+		}).
+		Return(common.Hash{}, context.DeadlineExceeded).Once()
+
+	transitions, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+
+	assert.Equal(t, 0, transitions)
+	require.Equal(t, 1, len(errs))
+	assert.ErrorIs(t, errs[0], context.DeadlineExceeded)
+	assert.Equal(t, uint64(1), m.acceptAttempts[attemptKey])
+	assert.Equal(t, 0, len(m.acceptsInFlight))
+}
+
+func TestAcceptClaimContextCanceled(t *testing.T) {
+	m, r, b := newServiceMock(t)
+	defer r.AssertExpectations(t)
+	defer b.AssertExpectations(t)
+
+	svcCtx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	m.Context = svcCtx
+	m.submissionTimeout = 2 * time.Second
+
+	endBlock := big.NewInt(100)
+	app := makeApplication()
+	app.ClaimStagingPeriod = 5
+	stagedAt := uint64(50)
+	currEpoch := makeStagedEpoch(app, 3, stagedAt)
+	attemptKey := acceptAttemptKey{currEpoch.ApplicationID, currEpoch.Index}
+
+	b.On("getConsensusAddress", mock.Anything, app, mock.Anything).
+		Return(app.IConsensusAddress, nil).Once()
+	b.On("getClaimStatus", mock.Anything, app, currEpoch, endBlock).
+		Return(makeClaimStatus(claimStatusStaged, currEpoch, stagedAt), nil).Once()
+	b.On("acceptClaimOnBlockchain", mock.Anything, app, currEpoch).
+		Run(func(args mock.Arguments) {
+			ctx := args.Get(0).(context.Context)
+			select {
+			case <-ctx.Done():
+				assert.ErrorIs(t, ctx.Err(), context.Canceled)
+			case <-time.After(2 * time.Second):
+				assert.Fail(t, "context provided was not canceled")
+			}
+		}).
+		Return(common.Hash{}, context.Canceled).Once()
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	transitions, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+
+	assert.Equal(t, 0, transitions)
+	require.Equal(t, 1, len(errs))
+	assert.ErrorIs(t, errs[0], context.Canceled)
+	assert.Equal(t, uint64(1), m.acceptAttempts[attemptKey])
+	assert.Equal(t, 0, len(m.acceptsInFlight))
+}
