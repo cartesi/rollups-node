@@ -721,7 +721,9 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 	if s.txOptsFactory == nil {
 		return fmt.Errorf("txOpts is required for settlement")
 	}
-	txOpts, err := s.txOptsFactory.NewTransactOpts(ctx)
+	txCtx, cancel := context.WithTimeout(ctx, s.submissionTimeout)
+	defer cancel()
+	txOpts, err := s.txOptsFactory.NewTransactOpts(txCtx)
 	if err != nil {
 		return fmt.Errorf("creating transaction options for settlement: %w", err)
 	}
@@ -965,7 +967,9 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 	if s.txOptsFactory == nil {
 		return fmt.Errorf("txOpts is required for joining tournament")
 	}
-	txOpts, err := s.txOptsFactory.NewTransactOpts(ctx)
+	txCtx, cancel := context.WithTimeout(ctx, s.submissionTimeout)
+	defer cancel()
+	txOpts, err := s.txOptsFactory.NewTransactOpts(txCtx)
 	if err != nil {
 		return fmt.Errorf("creating transaction options for joining tournament: %w", err)
 	}

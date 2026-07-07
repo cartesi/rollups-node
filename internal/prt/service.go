@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
@@ -33,6 +34,7 @@ type Service struct {
 	client            EthClientInterface
 	adapterFactory    AdapterFactory
 	submissionEnabled bool
+	submissionTimeout time.Duration
 	filter            ethutil.Filter
 	txOptsFactory     ethutil.TransactOptsFactory
 	currentEpochIndex map[int64]uint64       // application.ID -> epochIndex
@@ -111,6 +113,10 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	s.joinInFlight = map[int64]*common.Hash{}
 
 	if s.submissionEnabled {
+		s.submissionTimeout = c.Config.BlockchainHttpRequestTimeout
+		if s.submissionTimeout == 0 {
+			return nil, fmt.Errorf("BlockchainHttpRequestTimeout must be different from zero")
+		}
 		s.txOptsFactory, err = auth.GetTransactOptsFactory(ctx, chainID)
 		if err != nil {
 			return nil, err

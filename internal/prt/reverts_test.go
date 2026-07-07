@@ -15,9 +15,7 @@ import (
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -68,62 +66,6 @@ func tournamentRevertError(name string) error {
 		panic(fmt.Sprintf("unknown ITournament error: %s", name))
 	}
 	return &rpcDataError{code: 3, msg: "execution reverted", data: fmt.Sprintf("0x%x", abiErr.ID[:4])}
-}
-
-// tournamentAdapterMock implements TournamentAdapter for the revert-handler
-// tests. Only IsCommitmentJoined is configurable; any other call panics so a
-// test cannot silently depend on it.
-type tournamentAdapterMock struct {
-	joined    bool
-	joinedErr error
-}
-
-func (m *tournamentAdapterMock) IsCommitmentJoined(*bind.CallOpts, [32]byte) (bool, error) {
-	return m.joined, m.joinedErr
-}
-
-func (m *tournamentAdapterMock) RetrieveCommitmentJoinedEvents(*bind.FilterOpts) ([]*itournament.ITournamentCommitmentJoined, error) {
-	panic("unexpected RetrieveCommitmentJoinedEvents")
-}
-
-func (m *tournamentAdapterMock) RetrieveMatchAdvancedEvents(*bind.FilterOpts) ([]*itournament.ITournamentMatchAdvanced, error) {
-	panic("unexpected RetrieveMatchAdvancedEvents")
-}
-
-func (m *tournamentAdapterMock) RetrieveMatchCreatedEvents(*bind.FilterOpts) ([]*itournament.ITournamentMatchCreated, error) {
-	panic("unexpected RetrieveMatchCreatedEvents")
-}
-
-func (m *tournamentAdapterMock) RetrieveMatchDeletedEvents(*bind.FilterOpts) ([]*itournament.ITournamentMatchDeleted, error) {
-	panic("unexpected RetrieveMatchDeletedEvents")
-}
-
-func (m *tournamentAdapterMock) RetrieveNewInnerTournamentEvents(*bind.FilterOpts) ([]*itournament.ITournamentNewInnerTournament, error) {
-	panic("unexpected RetrieveNewInnerTournamentEvents")
-}
-
-func (m *tournamentAdapterMock) RetrieveAllEvents(*bind.FilterOpts) (*TournamentEvents, error) {
-	panic("unexpected RetrieveAllEvents")
-}
-
-func (m *tournamentAdapterMock) Result(*bind.CallOpts) (bool, [32]byte, [32]byte, error) {
-	panic("unexpected Result")
-}
-
-func (m *tournamentAdapterMock) Constants(*bind.CallOpts) (TournamentConstants, error) {
-	panic("unexpected Constants")
-}
-
-func (m *tournamentAdapterMock) TimeFinished(*bind.CallOpts) (bool, uint64, error) {
-	panic("unexpected TimeFinished")
-}
-
-func (m *tournamentAdapterMock) BondValue(*bind.CallOpts) (*big.Int, error) {
-	panic("unexpected BondValue")
-}
-
-func (m *tournamentAdapterMock) JoinTournament(*bind.TransactOpts, [32]byte, [][32]byte, [32]byte, [32]byte) (*types.Transaction, error) {
-	panic("unexpected JoinTournament")
 }
 
 func prtRevertTestApp() *model.Application {
@@ -323,9 +265,12 @@ func TestHandleJoinTournamentRevert(t *testing.T) {
 					epoch.TournamentAddress.Hex(),
 					"before re-enabling"))).
 				Return(nil).Once()
+			adapter := &tournamentAdapterMock{}
+			adapter.On("IsCommitmentJoined", mock.Anything, [32]byte(*epoch.Commitment)).Return(false, nil).Once()
 			err := s.handleJoinTournamentRevert(context.Background(), app, epoch,
-				&tournamentAdapterMock{joined: false}, tournamentRevertError(revertName))
+				adapter, tournamentRevertError(revertName))
 			assert.NoError(t, err)
+			adapter.AssertExpectations(t)
 		})
 	}
 
@@ -336,19 +281,27 @@ func TestHandleJoinTournamentRevert(t *testing.T) {
 		// prevent a false FAILED.
 		s, r := newPRTServiceMock()
 		defer r.AssertExpectations(t)
-		err := s.handleJoinTournamentRevert(context.Background(), prtRevertTestApp(), prtRevertTestEpoch(),
-			&tournamentAdapterMock{joined: true}, tournamentRevertError("TournamentIsClosed"))
+		epoch := prtRevertTestEpoch()
+		adapter := &tournamentAdapterMock{}
+		adapter.On("IsCommitmentJoined", mock.Anything, [32]byte(*epoch.Commitment)).Return(true, nil).Once()
+		err := s.handleJoinTournamentRevert(context.Background(), prtRevertTestApp(), epoch,
+			adapter, tournamentRevertError("TournamentIsClosed"))
 		assert.NoError(t, err, "an already-joined commitment must not mark the app FAILED")
+		adapter.AssertExpectations(t)
 	})
 
 	t.Run("TournamentIsClosed_recheckFails_retries", func(t *testing.T) {
 		s, r := newPRTServiceMock()
 		defer r.AssertExpectations(t)
+		epoch := prtRevertTestEpoch()
+		adapter := &tournamentAdapterMock{}
+		adapter.On("IsCommitmentJoined", mock.Anything, [32]byte(*epoch.Commitment)).Return(false, errors.New("rpc down")).Once()
 		boom := tournamentRevertError("TournamentIsClosed")
-		err := s.handleJoinTournamentRevert(context.Background(), prtRevertTestApp(), prtRevertTestEpoch(),
-			&tournamentAdapterMock{joinedErr: errors.New("rpc down")}, boom)
+		err := s.handleJoinTournamentRevert(context.Background(), prtRevertTestApp(), epoch,
+			adapter, boom)
 		assert.Equal(t, boom, err,
 			"when the re-check fails the original revert must propagate for a retry, not FAILED")
+		adapter.AssertExpectations(t)
 	})
 
 	for _, revertName := range []string{"CommitmentStateMismatch", "CommitmentProofWrongSize"} {

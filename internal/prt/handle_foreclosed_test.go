@@ -6,140 +6,15 @@ package prt
 import (
 	"context"
 	"errors"
-	"log/slog"
-	"math/big"
-	"os"
 	"testing"
-	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
-
-// prtRepositoryMock is a hand-written mock for the prtRepository interface,
-// stubbing only the methods used by handleForeclosedApp. Unused methods
-// keep zero-value Return signatures so the surface compiles; if a test
-// accidentally invokes them, testify/mock reports an unexpected call.
-type prtRepositoryMock struct {
-	mock.Mock
-}
-
-func (m *prtRepositoryMock) HasUndrainedEpochsBeforeBlock(
-	ctx context.Context, appID int64, blockBound uint64,
-) (bool, error) {
-	args := m.Called(ctx, appID, blockBound)
-	return args.Bool(0), args.Error(1)
-}
-
-func (m *prtRepositoryMock) HasUnreconciledClaimsBeforeBlock(
-	ctx context.Context, appID int64, blockBound uint64,
-) (bool, error) {
-	args := m.Called(ctx, appID, blockBound)
-	return args.Bool(0), args.Error(1)
-}
-
-func (m *prtRepositoryMock) UpdateEpochWithForeclosedClaim(
-	ctx context.Context, applicationID int64, index uint64,
-) error {
-	args := m.Called(ctx, applicationID, index)
-	return args.Error(0)
-}
-
-func (m *prtRepositoryMock) UpdateApplicationStatus(
-	ctx context.Context, appID int64, status model.ApplicationStatus, reason *string,
-) error {
-	args := m.Called(ctx, appID, status, reason)
-	return args.Error(0)
-}
-
-// Unused-by-this-suite methods. We satisfy the interface but each panics
-// loudly if invoked — handleForeclosedApp must not reach for them.
-func (m *prtRepositoryMock) ListApplications(
-	ctx context.Context, f repository.ApplicationFilter, p repository.Pagination, descending bool,
-) ([]*model.Application, uint64, error) {
-	args := m.Called(ctx, f, p, descending)
-	return args.Get(0).([]*model.Application), args.Get(1).(uint64), args.Error(2)
-}
-func (m *prtRepositoryMock) ListEpochs(
-	ctx context.Context, nameOrAddress string, f repository.EpochFilter, p repository.Pagination, descending bool,
-) ([]*model.Epoch, uint64, error) {
-	args := m.Called(ctx, nameOrAddress, f, p, descending)
-	return args.Get(0).([]*model.Epoch), args.Get(1).(uint64), args.Error(2)
-}
-func (m *prtRepositoryMock) GetEpoch(context.Context, string, uint64) (*model.Epoch, error) {
-	panic("unexpected GetEpoch")
-}
-func (m *prtRepositoryMock) UpdateEpochStatus(context.Context, string, *model.Epoch) error {
-	panic("unexpected UpdateEpochStatus")
-}
-func (m *prtRepositoryMock) CreateTournament(context.Context, string, *model.Tournament) error {
-	panic("unexpected CreateTournament")
-}
-func (m *prtRepositoryMock) GetTournament(context.Context, string, string) (*model.Tournament, error) {
-	panic("unexpected GetTournament")
-}
-func (m *prtRepositoryMock) UpdateTournament(context.Context, string, *model.Tournament) error {
-	panic("unexpected UpdateTournament")
-}
-func (m *prtRepositoryMock) ListTournaments(
-	context.Context, string, repository.TournamentFilter, repository.Pagination, bool,
-) ([]*model.Tournament, uint64, error) {
-	panic("unexpected ListTournaments")
-}
-func (m *prtRepositoryMock) StoreTournamentEvents(
-	context.Context, int64, []*model.Commitment, []*model.Match,
-	[]*model.MatchAdvanced, []*model.Match, uint64,
-) error {
-	panic("unexpected StoreTournamentEvents")
-}
-func (m *prtRepositoryMock) GetCommitment(context.Context, string, uint64, string, string) (*model.Commitment, error) {
-	panic("unexpected GetCommitment")
-}
-func (m *prtRepositoryMock) SaveNodeConfigRaw(context.Context, string, []byte) error {
-	panic("unexpected SaveNodeConfigRaw")
-}
-func (m *prtRepositoryMock) LoadNodeConfigRaw(context.Context, string) ([]byte, time.Time, time.Time, error) {
-	panic("unexpected LoadNodeConfigRaw")
-}
-
-// newPRTServiceMock builds a minimal Service wired to a prtRepositoryMock.
-// Only the fields handleForeclosedApp reaches for are populated.
-func newPRTServiceMock() (*Service, *prtRepositoryMock) {
-	repo := &prtRepositoryMock{}
-	s := &Service{
-		Service: service.Service{
-			Logger: slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})),
-		},
-		repository: repo,
-	}
-	return s, repo
-}
-
-type prtEthClientMock struct {
-	blockNumber uint64
-}
-
-func (m prtEthClientMock) BlockNumber(context.Context) (uint64, error) {
-	return m.blockNumber, nil
-}
-
-func (m prtEthClientMock) TransactionReceipt(context.Context, common.Hash) (*types.Receipt, error) {
-	panic("unexpected TransactionReceipt")
-}
-
-func (m prtEthClientMock) ChainID(context.Context) (*big.Int, error) {
-	panic("unexpected ChainID")
-}
-
-func (m prtEthClientMock) TransactionByHash(context.Context, common.Hash) (*types.Transaction, bool, error) {
-	panic("unexpected TransactionByHash")
-}
 
 func prtForeclosedApp(id int64, block uint64) *model.Application {
 	txHash := common.HexToHash("0xcafe")
@@ -331,7 +206,9 @@ func TestHandleForeclosedApp_LeavesClaimedEpochForNextReconciliationPass(t *test
 	defer r.AssertExpectations(t)
 
 	app := prtForeclosedApp(1, 100)
-	s.client = prtEthClientMock{blockNumber: 120}
+	client := &ethClientMock{}
+	client.On("BlockNumber", mock.Anything).Return(uint64(120), nil).Once()
+	s.client = client
 	claimTx := common.HexToHash("0xbeef")
 
 	r.On("HasUndrainedEpochsBeforeBlock",
@@ -351,6 +228,7 @@ func TestHandleForeclosedApp_LeavesClaimedEpochForNextReconciliationPass(t *test
 
 	require.NoError(t, s.handleForeclosedApp(context.Background(), app))
 	r.AssertNotCalled(t, "UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(1))
+	client.AssertExpectations(t)
 }
 
 // TestForecloseComputedEpochs_TerminalizesEachComputedEpoch verifies the
