@@ -20,7 +20,7 @@ import (
 )
 
 func TestDoNothing(t *testing.T) {
-	m, r, _ := newServiceMock()
+	m, r, _ := newServiceMock(t)
 	defer r.AssertExpectations(t)
 
 	prevEpochs := makeEpochMap()
@@ -32,7 +32,7 @@ func TestDoNothing(t *testing.T) {
 }
 
 func TestTickInterleavesStagesWithPinnedBlockAndReschedulesOnProgress(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 

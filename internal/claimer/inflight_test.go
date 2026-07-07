@@ -22,7 +22,7 @@ import (
 )
 
 func TestInFlightCompleted(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -64,7 +64,7 @@ func TestInFlightCompleted(t *testing.T) {
 // caller falls back to UpdateEpochWithSubmittedClaim. Epoch transitions
 // COMPUTED → SUBMITTED (not STAGED).
 func TestInFlightCompleted_QuorumNonDeciding(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -101,7 +101,7 @@ func TestInFlightCompleted_QuorumNonDeciding(t *testing.T) {
 }
 
 func TestInFlightReverted(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -138,7 +138,7 @@ func TestInFlightReverted(t *testing.T) {
 }
 
 func TestClaimInFlightMissingFromCurrClaims(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -157,7 +157,7 @@ func TestClaimInFlightMissingFromCurrClaims(t *testing.T) {
 }
 
 func TestClaimInFlightPollErrorKeepsTrackingAndStopsDuplicateSubmit(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -185,7 +185,7 @@ func TestClaimInFlightPollErrorKeepsTrackingAndStopsDuplicateSubmit(t *testing.T
 }
 
 func TestClaimInFlightPollErrorsDoNotStopOtherApps(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -220,7 +220,7 @@ func TestClaimInFlightPollErrorsDoNotStopOtherApps(t *testing.T) {
 }
 
 func TestClaimInFlightReceiptNotFoundBeforeTimeoutKeepsTrackingAndStopsDuplicateSubmit(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -248,7 +248,7 @@ func TestClaimInFlightReceiptNotFoundBeforeTimeoutKeepsTrackingAndStopsDuplicate
 }
 
 func TestClaimInFlightReceiptNotFoundAfterTimeoutClearsAndRetries(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -285,7 +285,7 @@ func TestClaimInFlightReceiptNotFoundAfterTimeoutClearsAndRetries(t *testing.T) 
 }
 
 func TestAcceptInFlightPollErrorKeepsTracking(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -310,7 +310,7 @@ func TestAcceptInFlightPollErrorKeepsTracking(t *testing.T) {
 }
 
 func TestAcceptInFlightErrorsDoNotStopOtherAppsOrDropPollErrors(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -352,7 +352,7 @@ func TestAcceptInFlightErrorsDoNotStopOtherAppsOrDropPollErrors(t *testing.T) {
 }
 
 func TestAcceptInFlightReceiptNotFoundAfterTimeoutClearsTracking(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -379,7 +379,7 @@ func TestAcceptInFlightReceiptNotFoundAfterTimeoutClearsTracking(t *testing.T) {
 }
 
 func TestAcceptInFlightSuccessUpdatesEpochAndClearsTracking(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -412,7 +412,7 @@ func TestAcceptInFlightSuccessUpdatesEpochAndClearsTracking(t *testing.T) {
 }
 
 func TestAcceptInFlightRevertedAcceptedReconcilesEpoch(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -447,7 +447,7 @@ func TestAcceptInFlightRevertedAcceptedReconcilesEpoch(t *testing.T) {
 }
 
 func TestAcceptInFlightRevertedUnstagedMarksApplicationFailed(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -486,7 +486,7 @@ func TestAcceptInFlightRevertedUnstagedMarksApplicationFailed(t *testing.T) {
 // symmetric C1 guard on the in-flight path (inflight.go:311), mirroring the
 // pre-accept guard on the accept path.
 func TestAcceptInFlightRevertedForeclosedTerminalizes(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -519,7 +519,7 @@ func TestAcceptInFlightRevertedForeclosedTerminalizes(t *testing.T) {
 }
 
 func TestCleanupOrphanedInFlight(t *testing.T) {
-	m, _, _ := newServiceMock()
+	m, _, _ := newServiceMock(t)
 
 	liveApp := makeApplication() // ID = 0
 	stagedApp := repotest.NewApplicationBuilder().

@@ -10,7 +10,7 @@ import (
 )
 
 func TestUpdateEpochStagedFromClaimStatus_NilStagingBlock_ReturnsError(t *testing.T) {
-	m, r, _ := newServiceMock()
+	m, r, _ := newServiceMock(t)
 	defer r.AssertExpectations(t)
 
 	app := makeApplication()

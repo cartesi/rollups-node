@@ -20,7 +20,7 @@ import (
 )
 
 func TestAcceptFirstClaim(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -40,7 +40,7 @@ func TestAcceptFirstClaim(t *testing.T) {
 }
 
 func TestAcceptClaimWithAntecessor(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -67,7 +67,7 @@ func TestAcceptClaimWithAntecessor(t *testing.T) {
 // Failure
 
 func TestFindClaimAcceptedEventAndSuccFailure0(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -89,7 +89,7 @@ func TestFindClaimAcceptedEventAndSuccFailure0(t *testing.T) {
 }
 
 func TestFindClaimAcceptedEventAndSuccFailure1(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -113,7 +113,7 @@ func TestFindClaimAcceptedEventAndSuccFailure1(t *testing.T) {
 
 // !claimAcceptedMatch(prevClaim, prevEvent)
 func TestAcceptClaimWithAntecessorMismatch(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -144,7 +144,7 @@ func TestAcceptClaimWithAntecessorMismatch(t *testing.T) {
 
 // !claimAcceptedMatch(currClaim, currEvent)
 func TestAcceptClaimWithEventMismatch(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -169,7 +169,7 @@ func TestAcceptClaimWithEventMismatch(t *testing.T) {
 
 // !checkClaimsConstraint(prevClaim, currClaim)
 func TestAcceptClaimWithAntecessorOutOfOrder(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -188,7 +188,7 @@ func TestAcceptClaimWithAntecessorOutOfOrder(t *testing.T) {
 }
 
 func TestErrAcceptedMissingEvent(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -211,7 +211,7 @@ func TestErrAcceptedMissingEvent(t *testing.T) {
 }
 
 func TestUpdateEpochWithAcceptedClaimFailed(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -236,7 +236,7 @@ func TestUpdateEpochWithAcceptedClaimFailed(t *testing.T) {
 }
 
 func TestConsensusAddressChangedOnAcceptedClaims(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -258,7 +258,7 @@ func TestConsensusAddressChangedOnAcceptedClaims(t *testing.T) {
 }
 
 func TestAcceptStagedFrontRunner(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -282,7 +282,7 @@ func TestAcceptStagedFrontRunner(t *testing.T) {
 }
 
 func TestAcceptStagedBroadcastsWhenClaimStillStaged(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -312,7 +312,7 @@ func TestAcceptStagedBroadcastsWhenClaimStillStaged(t *testing.T) {
 }
 
 func TestAcceptStagedFrontRunnerOutputsMismatchSetsDiverged(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -342,7 +342,7 @@ func TestAcceptStagedFrontRunnerOutputsMismatchSetsDiverged(t *testing.T) {
 // enum is 0/1/2) must escalate the app to FAILED rather than skip silently
 // every tick. No acceptClaim is broadcast.
 func TestAcceptStagedUnmodeledClaimStatusFailsClosed(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -367,7 +367,7 @@ func TestAcceptStagedUnmodeledClaimStatusFailsClosed(t *testing.T) {
 }
 
 func TestAcceptStagedForeclosesForeclosedApp(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -406,7 +406,7 @@ func TestAcceptStagedForeclosesForeclosedApp(t *testing.T) {
 // guard fires before any health-status write, so the drain is not stuck behind
 // a re-enable loop.
 func TestAcceptStagedForeclosesForeclosedAppOnUnstaged(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -443,7 +443,7 @@ func TestAcceptStagedForeclosesForeclosedAppOnUnstaged(t *testing.T) {
 // to call acceptClaim, the next entry into the per-epoch budget exhausts it
 // and the app is marked FAILED without another broadcast.
 func TestAcceptStagedCapEnforced(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -474,7 +474,7 @@ func TestAcceptStagedCapEnforced(t *testing.T) {
 }
 
 func TestAcceptStagedUnknownBroadcastErrorsIncrementAttemptsUntilCap(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -522,7 +522,7 @@ func TestAcceptStagedUnknownBroadcastErrorsIncrementAttemptsUntilCap(t *testing.
 }
 
 func TestAcceptClaimNotStagedAcceptedRechecksOutputsMismatch(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -553,7 +553,7 @@ func TestAcceptClaimNotStagedAcceptedRechecksOutputsMismatch(t *testing.T) {
 
 // TestAcceptStagedPeriodNotElapsed — current block too low; no tx issued.
 func TestAcceptStagedPeriodNotElapsed(t *testing.T) {
-	m, _, b := newServiceMock()
+	m, _, b := newServiceMock(t)
 	defer b.AssertExpectations(t)
 
 	app := makeApplication()
@@ -575,7 +575,7 @@ func TestAcceptStagedPeriodNotElapsed(t *testing.T) {
 // is ever issued even when the period has elapsed. Caller waits for
 // someone else to call acceptClaim (observed via the ClaimAccepted scan).
 func TestAcceptStagedReaderMode(t *testing.T) {
-	m, _, b := newServiceMock()
+	m, _, b := newServiceMock(t)
 	defer b.AssertExpectations(t)
 	m.submissionEnabled = false
 
@@ -599,7 +599,7 @@ func TestAcceptStagedReaderMode(t *testing.T) {
 // app without rewriting the epoch to CLAIM_REJECTED. Under Quorum this is an
 // invariant violation, not the normal outvoted path.
 func TestAcceptanceDivergence_QuorumStagedDoesNotRejectEpoch(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -632,7 +632,7 @@ func TestAcceptanceDivergence_QuorumStagedDoesNotRejectEpoch(t *testing.T) {
 }
 
 func TestAcceptanceDivergence_QuorumComputedRejectsEpoch(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -664,7 +664,7 @@ func TestAcceptanceDivergence_QuorumComputedRejectsEpoch(t *testing.T) {
 }
 
 func TestAcceptanceDivergence_AuthorityComputedSetsDivergedWithoutRejectingEpoch(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -695,7 +695,7 @@ func TestAcceptanceDivergence_AuthorityComputedSetsDivergedWithoutRejectingEpoch
 }
 
 func TestAcceptanceDivergence_AuthorityDoesNotRejectEpoch(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -730,7 +730,7 @@ func TestAcceptanceDivergence_AuthorityDoesNotRejectEpoch(t *testing.T) {
 // stage's broadcast path is unconditionally skipped, so we don't even need
 
 func TestAcceptanceDivergenceReaderMode_Quorum(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 	m.submissionEnabled = false

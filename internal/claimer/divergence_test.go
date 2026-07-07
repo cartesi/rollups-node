@@ -16,7 +16,7 @@ import (
 )
 
 func TestVerifyClaimOutputsMismatch(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 

@@ -21,7 +21,7 @@ import (
 )
 
 func TestStagingFastPathDivergence(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -68,7 +68,7 @@ func TestStagingFastPathDivergence(t *testing.T) {
 // tracking + computedEpochs entry intact so the next tick polls the
 // receipt again and retries the atomic write.
 func TestStagingFastPathDBPending(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -115,7 +115,7 @@ func TestStagingFastPathDBPending(t *testing.T) {
 // buildClaimStagedLog builds a types.Log for a ClaimStaged event with
 
 func TestStageByObservation(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -137,7 +137,7 @@ func TestStageByObservation(t *testing.T) {
 }
 
 func TestStageForeclosesSubmittedForeclosedApp(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -162,7 +162,7 @@ func TestStageForeclosesSubmittedForeclosedApp(t *testing.T) {
 // with a machineMerkleRoot != ours → CLAIM_REJECTED and DIVERGED with
 // quorum_divergence_at_staging.
 func TestStagingDivergence_Quorum(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -196,7 +196,7 @@ func TestStagingDivergence_Quorum(t *testing.T) {
 }
 
 func TestStagingDivergence_AuthorityDoesNotRejectEpoch(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -225,7 +225,7 @@ func TestStagingDivergence_AuthorityDoesNotRejectEpoch(t *testing.T) {
 }
 
 func TestStagingMatcherPreconditionFailureMarksApplicationCorrupted(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -253,7 +253,7 @@ func TestStagingMatcherPreconditionFailureMarksApplicationCorrupted(t *testing.T
 // returns ACCEPTED (status=2) before our acceptClaim → reconcile to
 
 func TestStagingDivergenceReaderMode_Quorum(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 	m.submissionEnabled = false

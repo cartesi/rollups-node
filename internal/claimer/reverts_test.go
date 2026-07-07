@@ -82,7 +82,7 @@ func TestDecodeClaimNotStagedStatus(t *testing.T) {
 // //////////////////////////////////////////////////////////////////////////////
 
 func TestNotFirstClaimHandledGracefully(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -107,7 +107,7 @@ func TestNotFirstClaimHandledGracefully(t *testing.T) {
 // Quorum raises NotFirstClaim for any prior validator vote in the epoch,
 // including a duplicate vote for the same machine root.
 func TestNotFirstClaimQuorumRetriesForEventSync(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -132,7 +132,7 @@ func TestNotFirstClaimQuorumRetriesForEventSync(t *testing.T) {
 // next tick can retry while the EVM reader records foreclosure and future
 // claim broadcasts are skipped.
 func TestApplicationForeclosedIsTransient(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -157,7 +157,7 @@ func TestApplicationForeclosedIsTransient(t *testing.T) {
 // proof-size revert is treated as local data corruption — the app moves
 // to CORRUPTED.
 func TestInvalidOutputsMerkleRootProofSizeSetsCorrupted(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -183,7 +183,7 @@ func TestInvalidOutputsMerkleRootProofSizeSetsCorrupted(t *testing.T) {
 // failure is treated as a recoverable operator-config error: FAILED, not a
 // terminal DIVERGED/CORRUPTED status.
 func TestCallerIsNotValidatorSetsFailed(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -212,7 +212,7 @@ func TestCallerIsNotValidatorSetsFailed(t *testing.T) {
 // a block newer/different from the claimer's pinned reads, so the epoch stays
 // in the work map for the next tick and no status changes.
 func TestNotPastBlockRetriesLater(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -271,7 +271,7 @@ func TestSubmitClaimRevertsSetApplicationFailed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.revertName, func(t *testing.T) {
-			m, r, b := newServiceMock()
+			m, r, b := newServiceMock(t)
 			defer r.AssertExpectations(t)
 			defer b.AssertExpectations(t)
 
@@ -320,7 +320,7 @@ func TestSubmitClaimRevertsSetApplicationFailed(t *testing.T) {
 // when the FAILED status write itself fails: the handler still returns
 // AppHalted, so the epoch is dropped and the DB error surfaces.
 func TestSubmitClaimFailedRevertWithDBError(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -410,7 +410,7 @@ func TestHandleAcceptClaimRevert(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			m, _, _ := newServiceMock()
+			m, _, _ := newServiceMock(t)
 			app := makeApplication()
 			epoch := makeStagedEpoch(app, 3, 50)
 			outcome, stateErr := m.handleAcceptClaimRevert(tc.err, app, epoch)
@@ -451,7 +451,7 @@ func TestDecodeNotPastBlockBounds(t *testing.T) {
 // do not model" (a contract newer than this node) from "decode failed" (a
 // transient malformed response), which still retries.
 func TestClaimNotStagedUnmodeledStatusFailsClosed(t *testing.T) {
-	m, r, _ := newServiceMock()
+	m, r, _ := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	app := makeApplication()
 	epoch := makeStagedEpoch(app, 3, 50)
@@ -479,7 +479,7 @@ func TestAcceptClaimRevertsSetApplicationFailed(t *testing.T) {
 		"NotEpochFinalBlock",
 	} {
 		t.Run(revertName, func(t *testing.T) {
-			m, r, _ := newServiceMock()
+			m, r, _ := newServiceMock(t)
 			defer r.AssertExpectations(t)
 			app := makeApplication()
 			epoch := makeStagedEpoch(app, 3, 50)
@@ -518,7 +518,7 @@ func TestAcceptClaimRevertsSetApplicationFailed(t *testing.T) {
 // outputs_merkle_proof does not form a valid machine-tree replacement proof,
 // so the app moves to CORRUPTED.
 func TestInvalidNodeIndexSetsCorrupted(t *testing.T) {
-	m, r, _ := newServiceMock()
+	m, r, _ := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	app := makeApplication()
 	epoch := makeComputedEpoch(app, 3)
@@ -579,7 +579,7 @@ func TestHandleSubmitClaimRevert(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			m, _, _ := newServiceMock()
+			m, _, _ := newServiceMock(t)
 			app := makeApplication()
 			// Authority is the default; NotFirstClaim returns
 			// AlreadyOnChain for it. Quorum-specific routing is

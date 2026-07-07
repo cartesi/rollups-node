@@ -42,7 +42,7 @@ func foreclosedAppHelper(id int64, block uint64, consensus model.Consensus) *mod
 // their own post-foreclosure path, so the claimer asks the repository for only
 // Authority and Quorum apps.
 func TestListEnabledForeclosedNonPRTApps_UsesAuthorityQuorumFilter(t *testing.T) {
-	s, r, _ := newServiceMock()
+	s, r, _ := newServiceMock(t)
 	defer r.AssertExpectations(t)
 
 	auth := foreclosedAppHelper(1, 100, model.Consensus_Authority)
@@ -83,7 +83,7 @@ func TestListEnabledForeclosedNonPRTApps_UsesAuthorityQuorumFilter(t *testing.T)
 // every tick. The protection lives in the selecting filter, which restricts
 // Statuses to OK, so terminal apps are never handed to processForeclosedApps.
 func TestListEnabledForeclosedNonPRTApps_ExcludesTerminalStatuses(t *testing.T) {
-	s, r, _ := newServiceMock()
+	s, r, _ := newServiceMock(t)
 	defer r.AssertExpectations(t)
 
 	r.On("ListApplications",
@@ -111,7 +111,7 @@ func TestListEnabledForeclosedNonPRTApps_ExcludesTerminalStatuses(t *testing.T) 
 // dispute; firing before claim reconciliation completes would leave the local
 // DB final state divergent from the chain.
 func TestProcessForeclosedApps_DefersWhenUnreconciled(t *testing.T) {
-	s, r, _ := newServiceMock()
+	s, r, _ := newServiceMock(t)
 	defer r.AssertExpectations(t)
 
 	app := foreclosedAppHelper(1, 100, model.Consensus_Authority)
@@ -141,7 +141,7 @@ func TestProcessForeclosedApps_DefersWhenUnreconciled(t *testing.T) {
 // failing the same gate, both errors are surfaced (proving the loop did not
 // stop after the first).
 func TestProcessForeclosedApps_DrainCheckErrorsAppendAndContinue(t *testing.T) {
-	s, r, _ := newServiceMock()
+	s, r, _ := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	s.Context = context.Background()
 
@@ -173,7 +173,7 @@ func TestProcessForeclosedApps_DrainCheckErrorsAppendAndContinue(t *testing.T) {
 // testify/mock fails the test on an unexpected call, so any regression that
 // re-introduces a terminal-state transition trips this test loudly.
 func TestProcessForeclosedApps_NoTransitionWhenDrained(t *testing.T) {
-	s, r, _ := newServiceMock()
+	s, r, _ := newServiceMock(t)
 	defer r.AssertExpectations(t)
 
 	app := foreclosedAppHelper(1, 100, model.Consensus_Authority)
@@ -205,7 +205,7 @@ func TestProcessForeclosedApps_NoTransitionWhenDrained(t *testing.T) {
 // ForecloseUnacceptedEpochsAtOrAfterBlock expectation is the regression guard:
 // testify/mock fails on the unexpected call if terminalization runs too early.
 func TestProcessForeclosedApps_DefersWhenInputsUndrained(t *testing.T) {
-	s, r, _ := newServiceMock()
+	s, r, _ := newServiceMock(t)
 	defer r.AssertExpectations(t)
 
 	app := foreclosedAppHelper(1, 100, model.Consensus_Authority)
@@ -227,7 +227,7 @@ func TestProcessForeclosedApps_DefersWhenInputsUndrained(t *testing.T) {
 // straddling/after epochs that can never be accepted are terminalized to
 // CLAIM_FORECLOSED, then reconciliation completes.
 func TestProcessForeclosedApps_TerminalizesUnacceptedOverlapAfterDrain(t *testing.T) {
-	s, r, _ := newServiceMock()
+	s, r, _ := newServiceMock(t)
 	defer r.AssertExpectations(t)
 
 	app := foreclosedAppHelper(1, 100, model.Consensus_Authority)
@@ -257,7 +257,7 @@ func TestProcessForeclosedApps_TerminalizesUnacceptedOverlapAfterDrain(t *testin
 // could feed an app with a zero ForecloseBlock here; the loop must skip it
 // silently rather than treat block 0 as a real foreclosure marker.
 func TestProcessForeclosedApps_SkipsZeroForecloseBlock(t *testing.T) {
-	s, r, _ := newServiceMock()
+	s, r, _ := newServiceMock(t)
 	defer r.AssertExpectations(t)
 
 	app := &model.Application{ID: 99, ConsensusType: model.Consensus_Authority}
@@ -281,7 +281,7 @@ func TestProcessForeclosedApps_SkipsZeroForecloseBlock(t *testing.T) {
 // UpdateApplicationStatus has an `.On` registered; testify/mock panics on an
 // unexpected call, so any reach attempt fails the test loudly.
 func TestProcessForeclosedApps_DefersWhenStillBackfilling(t *testing.T) {
-	s, r, _ := newServiceMock()
+	s, r, _ := newServiceMock(t)
 	defer r.AssertExpectations(t)
 
 	app := foreclosedAppHelper(1, 100, model.Consensus_Authority)

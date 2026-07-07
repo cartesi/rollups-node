@@ -18,7 +18,7 @@ import (
 )
 
 func TestSubmitFirstClaim(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -48,7 +48,7 @@ func TestSubmitFirstClaim(t *testing.T) {
 // checkForForeclosure has run on a foreclosed application.
 
 func TestSubmitClaimForeclosesUnstagedForeclosedApp(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -80,7 +80,7 @@ func TestSubmitClaimForeclosesUnstagedForeclosedApp(t *testing.T) {
 }
 
 func TestSubmitClaimForeclosesUnstagedForeclosedAppWhenSubmissionDisabled(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -125,7 +125,7 @@ func TestSubmitClaimForeclosesUnstagedForeclosedAppWhenSubmissionDisabled(t *tes
 //     SKIPPED so we don't burn gas on a guaranteed ApplicationForeclosed
 //     revert.
 func TestSubmitClaimForecloseMidFlight(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -193,7 +193,7 @@ func TestSubmitClaimForecloseMidFlight(t *testing.T) {
 // application would leave its last successful epoch stuck at
 // CLAIM_COMPUTED — diverging from chain reality.
 func TestSubmitClaimReconcilesAcceptedForForeclosedApp(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -224,7 +224,7 @@ func TestSubmitClaimReconcilesAcceptedForForeclosedApp(t *testing.T) {
 }
 
 func TestSubmitClaimReconcilesStagedBeforeBroadcast(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -256,7 +256,7 @@ func TestSubmitClaimReconcilesStagedBeforeBroadcast(t *testing.T) {
 }
 
 func TestReconcileBeforeSubmitAcceptedOutputsMismatchSetsDiverged(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -285,7 +285,7 @@ func TestReconcileBeforeSubmitAcceptedOutputsMismatchSetsDiverged(t *testing.T) 
 }
 
 func TestSubmitClaimWithAntecessor(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -312,7 +312,7 @@ func TestSubmitClaimWithAntecessor(t *testing.T) {
 }
 
 func TestSubmitClaimWithAcceptedAntecessorWithoutClaimTransactionHash(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -341,7 +341,7 @@ func TestSubmitClaimWithAcceptedAntecessorWithoutClaimTransactionHash(t *testing
 }
 
 func TestSkipSubmitClaimWithStagedAntecessor(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -366,7 +366,7 @@ func TestSkipSubmitClaimWithStagedAntecessor(t *testing.T) {
 }
 
 func TestSkipSubmitFirstClaim(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -390,7 +390,7 @@ func TestSkipSubmitFirstClaim(t *testing.T) {
 }
 
 func TestSkipSubmitClaimWithAntecessor(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -414,7 +414,7 @@ func TestSkipSubmitClaimWithAntecessor(t *testing.T) {
 }
 
 func TestUpdateFirstClaim(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -439,7 +439,7 @@ func TestUpdateFirstClaim(t *testing.T) {
 }
 
 func TestUpdateClaimWithAntecessor(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -464,7 +464,7 @@ func TestUpdateClaimWithAntecessor(t *testing.T) {
 }
 
 func TestQuorumSubmittedEventsIgnoresForeignDifferentOutputsAndUpdatesMatchingEvent(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -496,7 +496,7 @@ func TestQuorumSubmittedEventsIgnoresForeignDifferentOutputsAndUpdatesMatchingEv
 }
 
 func TestQuorumDifferentOutputSubmittedEventStillSubmitsLocalClaim(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -528,7 +528,7 @@ func TestQuorumDifferentOutputSubmittedEventStillSubmitsLocalClaim(t *testing.T)
 }
 
 func TestQuorumForeignMatchingSubmittedEventStillSubmitsLocalClaim(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -556,7 +556,7 @@ func TestQuorumForeignMatchingSubmittedEventStillSubmitsLocalClaim(t *testing.T)
 }
 
 func TestQuorumReaderModeRecordsForeignMatchingSubmittedEvent(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 	m.submissionEnabled = false
@@ -583,7 +583,7 @@ func TestQuorumReaderModeRecordsForeignMatchingSubmittedEvent(t *testing.T) {
 }
 
 func TestQuorumSubmittedEventsIgnoresForeignAdversarialProofAndSubmitsLocalClaim(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -623,7 +623,7 @@ func TestQuorumSubmittedEventsIgnoresForeignAdversarialProofAndSubmitsLocalClaim
 }
 
 func TestQuorumSubmittedEventsOwnMismatchSetsDiverged(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -656,7 +656,7 @@ func TestQuorumSubmittedEventsOwnMismatchSetsDiverged(t *testing.T) {
 }
 
 func TestQuorumReaderModeIgnoresNonMatchingSubmittedEvent(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 	m.submissionEnabled = false
@@ -687,7 +687,7 @@ func TestQuorumReaderModeIgnoresNonMatchingSubmittedEvent(t *testing.T) {
 }
 
 func TestSubmitClaimWithAntecessorMismatch(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -722,7 +722,7 @@ func TestSubmitClaimWithAntecessorMismatch(t *testing.T) {
 
 // !claimMatchesEvent(currClaim, currEvent)
 func TestSubmitClaimWithEventMismatch(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -751,7 +751,7 @@ func TestSubmitClaimWithEventMismatch(t *testing.T) {
 }
 
 func TestQuorumPreviousSubmittedEventsIgnoresForeignMismatchAndSubmitsCurrentClaim(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -787,7 +787,7 @@ func TestQuorumPreviousSubmittedEventsIgnoresForeignMismatchAndSubmitsCurrentCla
 }
 
 func TestQuorumPreviousSubmittedEventsOwnMismatchSetsDiverged(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -822,7 +822,7 @@ func TestQuorumPreviousSubmittedEventsOwnMismatchSetsDiverged(t *testing.T) {
 
 // !checkClaimsConstraint(prevClaim, currClaim) // epoch pair has its blocks out of order
 func TestSubmitClaimWithAntecessorOutOfOrder(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -850,7 +850,7 @@ func TestCheckEpochSequenceConstraintAllowsAcceptedPredecessorWithoutClaimTransa
 }
 
 func TestErrSubmittedMissingEvent(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -874,7 +874,7 @@ func TestErrSubmittedMissingEvent(t *testing.T) {
 }
 
 func TestConsensusAddressChangedOnSubmittedClaims(t *testing.T) {
-	m, r, b := newServiceMock()
+	m, r, b := newServiceMock(t)
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
@@ -895,7 +895,7 @@ func TestConsensusAddressChangedOnSubmittedClaims(t *testing.T) {
 }
 
 func TestCheckConsensusForAddressChangeUsesTickBlock(t *testing.T) {
-	m, _, b := newServiceMock()
+	m, _, b := newServiceMock(t)
 	defer b.AssertExpectations(t)
 
 	app := makeApplication()
@@ -912,7 +912,7 @@ func TestCheckConsensusForAddressChangeUsesTickBlock(t *testing.T) {
 }
 
 func TestCheckConsensusForAddressChangeCachesTickResult(t *testing.T) {
-	m, _, b := newServiceMock()
+	m, _, b := newServiceMock(t)
 	defer b.AssertExpectations(t)
 
 	app := makeApplication()

@@ -52,7 +52,7 @@ func newTestEthClient(t *testing.T, chainID uint64) *ethclient.Client {
 	return client
 }
 
-func newServiceMock() (*Service, *claimerRepositoryMock, *claimerBlockchainMock) {
+func newServiceMock(t *testing.T) (*Service, *claimerRepositoryMock, *claimerBlockchainMock) {
 	opts := &tint.Options{
 		Level:     slog.LevelDebug,
 		AddSource: true,
@@ -68,7 +68,8 @@ func newServiceMock() (*Service, *claimerRepositoryMock, *claimerBlockchainMock)
 
 	claimer := &Service{
 		Service: service.Service{
-			Logger: slog.New(handler),
+			Context: t.Context(),
+			Logger:  slog.New(handler),
 		},
 		submissionEnabled: true,
 		claimsInFlight:    map[int64]inFlightTx{},
