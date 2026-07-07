@@ -302,8 +302,8 @@ func (m *claimerBlockchainMock) submitClaimToBlockchain(
 	app *model.Application,
 	epoch *model.Epoch,
 ) (common.Hash, error) {
-	args := m.Called(instance, app, epoch)
-	return args.Get(0).(common.Hash), args.Error(1)
+	rets := m.Called(ctx, instance, app, epoch)
+	return rets.Get(0).(common.Hash), rets.Error(1)
 }
 
 func (m *claimerBlockchainMock) acceptClaimOnBlockchain(
@@ -311,8 +311,8 @@ func (m *claimerBlockchainMock) acceptClaimOnBlockchain(
 	app *model.Application,
 	epoch *model.Epoch,
 ) (common.Hash, error) {
-	args := m.Called(app, epoch)
-	return args.Get(0).(common.Hash), args.Error(1)
+	rets := m.Called(ctx, app, epoch)
+	return rets.Get(0).(common.Hash), rets.Error(1)
 }
 
 func (m *claimerBlockchainMock) findClaimStagedEventAndSucc(

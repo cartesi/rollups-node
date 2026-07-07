@@ -92,7 +92,7 @@ func TestNotFirstClaimHandledGracefully(t *testing.T) {
 
 	expectPreSubmitPath(b, app, currEpoch, endBlock)
 	// submitClaim reverts with NotFirstClaim (caught by eth_estimateGas).
-	b.On("submitClaimToBlockchain", mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(common.Hash{}, notFirstClaimError()).Once()
 
 	_, errs := m.submitClaimsAndUpdateDatabase(
@@ -117,7 +117,7 @@ func TestNotFirstClaimQuorumRetriesForEventSync(t *testing.T) {
 	currEpoch := makeComputedEpoch(app, 3)
 
 	expectPreSubmitPath(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(common.Hash{}, notFirstClaimError()).Once()
 
 	_, errs := m.submitClaimsAndUpdateDatabase(
@@ -141,7 +141,7 @@ func TestApplicationForeclosedIsTransient(t *testing.T) {
 	currEpoch := makeComputedEpoch(app, 3)
 
 	expectPreSubmitPath(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(common.Hash{}, consensusRevertError("ApplicationForeclosed")).Once()
 
 	currEpochs := makeEpochMap(currEpoch)
@@ -166,7 +166,7 @@ func TestInvalidOutputsMerkleRootProofSizeSetsCorrupted(t *testing.T) {
 	currEpoch := makeComputedEpoch(app, 3)
 
 	expectPreSubmitPath(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(common.Hash{}, consensusRevertError("InvalidOutputsMerkleRootProofSize")).Once()
 	r.On("UpdateApplicationStatus", mock.Anything, int64(0), model.ApplicationStatus_Corrupted, mock.Anything).
 		Return(nil).Once()
@@ -193,7 +193,7 @@ func TestCallerIsNotValidatorSetsFailed(t *testing.T) {
 	currEpoch := makeComputedEpoch(app, 3)
 
 	expectPreSubmitPath(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(common.Hash{}, consensusRevertError("CallerIsNotValidator")).Once()
 	r.On("UpdateApplicationStatus", mock.Anything, int64(0), model.ApplicationStatus_Failed, mock.Anything).
 		Return(nil).Once()
@@ -223,7 +223,7 @@ func TestNotPastBlockRetriesLater(t *testing.T) {
 	expectPreSubmitPath(b, app, currEpoch, endBlock)
 	// The revert carries the contract's (lastProcessedBlockNumber, upperBound)
 	// arguments, exercising the bounds decode in the warn path.
-	b.On("submitClaimToBlockchain", mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(common.Hash{}, notPastBlockError(currEpoch.LastBlock, currEpoch.LastBlock-1)).Once()
 
 	currEpochs := makeEpochMap(currEpoch)
@@ -280,7 +280,7 @@ func TestSubmitClaimRevertsSetApplicationFailed(t *testing.T) {
 			currEpoch := makeComputedEpoch(app, 3)
 
 			expectPreSubmitPath(b, app, currEpoch, endBlock)
-			b.On("submitClaimToBlockchain", mock.Anything, app, currEpoch).
+			b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 				Return(common.Hash{}, tc.err).Once()
 			r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed,
 				mock.MatchedBy(func(reason *string) bool {
@@ -329,7 +329,7 @@ func TestSubmitClaimFailedRevertWithDBError(t *testing.T) {
 	currEpoch := makeComputedEpoch(app, 3)
 
 	expectPreSubmitPath(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(common.Hash{}, consensusRevertError("ApplicationReverted")).Once()
 	r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed, mock.Anything).
 		Return(fmt.Errorf("db down")).Once()

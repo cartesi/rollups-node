@@ -297,7 +297,7 @@ func TestAcceptStagedBroadcastsWhenClaimStillStaged(t *testing.T) {
 		Return(app.IConsensusAddress, nil).Once()
 	b.On("getClaimStatus", mock.Anything, app, currEpoch, endBlock).
 		Return(makeClaimStatus(claimStatusStaged, currEpoch, stagedAt), nil).Once()
-	b.On("acceptClaimOnBlockchain", app, currEpoch).
+	b.On("acceptClaimOnBlockchain", mock.Anything, app, currEpoch).
 		Return(txHash, nil).Once()
 
 	transitions, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
@@ -491,7 +491,7 @@ func TestAcceptStagedUnknownBroadcastErrorsIncrementAttemptsUntilCap(t *testing.
 			Return(app.IConsensusAddress, nil).Once()
 		b.On("getClaimStatus", mock.Anything, app, currEpoch, endBlock).
 			Return(makeClaimStatus(claimStatusStaged, currEpoch, stagedAt), nil).Once()
-		b.On("acceptClaimOnBlockchain", app, currEpoch).
+		b.On("acceptClaimOnBlockchain", mock.Anything, app, currEpoch).
 			Return(common.Hash{}, broadcastErr).Once()
 
 		transitions, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
@@ -538,7 +538,7 @@ func TestAcceptClaimNotStagedAcceptedRechecksOutputsMismatch(t *testing.T) {
 		Return(app.IConsensusAddress, nil).Once()
 	b.On("getClaimStatus", mock.Anything, app, currEpoch, endBlock).
 		Return(makeClaimStatus(claimStatusStaged, currEpoch, stagedAt), nil).Once()
-	b.On("acceptClaimOnBlockchain", app, currEpoch).
+	b.On("acceptClaimOnBlockchain", mock.Anything, app, currEpoch).
 		Return(common.Hash{}, claimNotStagedError(claimStatusAccepted)).Once()
 	b.On("getClaimStatus", mock.Anything, app, currEpoch, endBlock).
 		Return(mismatch, nil).Once()

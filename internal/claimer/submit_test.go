@@ -34,7 +34,7 @@ func TestSubmitFirstClaim(t *testing.T) {
 	b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, currEpoch, currEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil).Once()
 	expectGetClaimStatusUnstaged(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(common.HexToHash("0x10"), nil).Once()
 
 	transitions, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
@@ -143,7 +143,7 @@ func TestSubmitClaimForecloseMidFlight(t *testing.T) {
 		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil).Once()
 	expectGetClaimStatusUnstaged(b, app, epochN, endBlock)
 	tick1TxHash := common.HexToHash("0xa1")
-	b.On("submitClaimToBlockchain", mock.Anything, app, epochN).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, epochN).
 		Return(tick1TxHash, nil).Once()
 
 	transitions1, errs1 := m.submitClaimsAndUpdateDatabase(
@@ -302,7 +302,7 @@ func TestSubmitClaimWithAntecessor(t *testing.T) {
 	b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, prevEpoch, prevEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil).Once()
 	expectGetClaimStatusUnstaged(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(common.HexToHash("0x10"), nil).Once()
 
 	transitions, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
@@ -330,7 +330,7 @@ func TestSubmitClaimWithAcceptedAntecessorWithoutClaimTransactionHash(t *testing
 	b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, prevEpoch, prevEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, []*iconsensus.IConsensusClaimSubmitted{prevEvent, currEvent}, nil).Once()
 	expectGetClaimStatusUnstaged(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(common.HexToHash("0x10"), nil).Once()
 
 	transitions, errs := m.submitClaimsAndUpdateDatabase(
@@ -518,7 +518,7 @@ func TestQuorumDifferentOutputSubmittedEventStillSubmitsLocalClaim(t *testing.T)
 	b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, currEpoch, currEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, []*iconsensus.IConsensusClaimSubmitted{foreignEvent}, nil).Once()
 	expectGetClaimStatusUnstaged(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(txHash, nil).Once()
 
 	transitions, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
@@ -546,7 +546,7 @@ func TestQuorumForeignMatchingSubmittedEventStillSubmitsLocalClaim(t *testing.T)
 	b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, currEpoch, currEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, []*iconsensus.IConsensusClaimSubmitted{foreignEvent}, nil).Once()
 	expectGetClaimStatusUnstaged(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(txHash, nil).Once()
 
 	transitions, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
@@ -613,7 +613,7 @@ func TestQuorumSubmittedEventsIgnoresForeignAdversarialProofAndSubmitsLocalClaim
 	b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, currEpoch, currEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, []*iconsensus.IConsensusClaimSubmitted{foreignEvent, adversarialEvent}, nil).Once()
 	expectGetClaimStatusUnstaged(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(txHash, nil).Once()
 
 	transitions, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
@@ -777,7 +777,7 @@ func TestQuorumPreviousSubmittedEventsIgnoresForeignMismatchAndSubmitsCurrentCla
 	b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, prevEpoch, prevEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, []*iconsensus.IConsensusClaimSubmitted{foreignPrevEvent, matchingPrevEvent}, nil).Once()
 	expectGetClaimStatusUnstaged(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
 		Return(txHash, nil).Once()
 
 	transitions, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(prevEpoch), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
