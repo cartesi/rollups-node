@@ -207,6 +207,9 @@ func ToAddressFromString(s string) (Address, error) {
 }
 
 func ToHashFromString(s string) (common.Hash, error) {
+	// Require exactly 32 bytes: common.BytesToHash would silently left-pad
+	// short input and keep only the last 32 bytes of long input, turning a
+	// typo'd hash parameter into an empty query result instead of an error.
 	if len(s) < 3 || (!strings.HasPrefix(s, "0x") && !strings.HasPrefix(s, "0X")) {
 		return common.Hash{}, fmt.Errorf("invalid hash '%s'", s)
 	}
@@ -214,6 +217,9 @@ func ToHashFromString(s string) (common.Hash, error) {
 	b, err := hex.DecodeString(s)
 	if err != nil {
 		return common.Hash{}, err
+	}
+	if len(b) != common.HashLength {
+		return common.Hash{}, fmt.Errorf("invalid hash '0x%s': must be %d bytes, got %d", s, common.HashLength, len(b))
 	}
 	return common.BytesToHash(b), nil
 }

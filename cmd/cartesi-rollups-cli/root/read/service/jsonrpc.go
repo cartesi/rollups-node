@@ -88,6 +88,11 @@ func (s *JsonrpcReadService) ListInputs(ctx context.Context, params api.ListInpu
 			return nil, fmt.Errorf("invalid sender: %w", err)
 		}
 	}
+	if params.TransactionHash != nil {
+		if _, err := config.ToHashFromString(*params.TransactionHash); err != nil {
+			return nil, fmt.Errorf("invalid transaction hash: %w", err)
+		}
+	}
 
 	var resp json.RawMessage
 	err := s.Client.Call(ctx, "cartesi_listInputs", params, &resp)

@@ -37,12 +37,13 @@ type GetLastAcceptedEpochIndexParams struct {
 
 // ListInputsParams aligns with the OpenRPC specification
 type ListInputsParams struct {
-	Application string  `json:"application"`
-	EpochIndex  *string `json:"epoch_index,omitempty"`
-	Sender      *string `json:"sender,omitempty"`
-	Limit       uint64  `json:"limit"`
-	Offset      uint64  `json:"offset"`
-	Descending  bool    `json:"descending,omitempty"`
+	Application     string  `json:"application"`
+	EpochIndex      *string `json:"epoch_index,omitempty"`
+	Sender          *string `json:"sender,omitempty"`
+	TransactionHash *string `json:"transaction_hash,omitempty"`
+	Limit           uint64  `json:"limit"`
+	Offset          uint64  `json:"offset"`
+	Descending      bool    `json:"descending,omitempty"`
 }
 
 // GetInputParams aligns with the OpenRPC specification

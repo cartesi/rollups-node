@@ -39,19 +39,21 @@ cartesi-rollups-cli read inputs echo-dapp 10
 # Read all inputs:
 cartesi-rollups-cli read inputs echo-dapp
 
-# Read all inputs with filter:
+# Read all inputs with filters:
 cartesi-rollups-cli read inputs echo-dapp --epoch-index 10 --sender 0x95eac57f9d67c5e0f255d5a19eb5d3fd00cafa73
+cartesi-rollups-cli read inputs echo-dapp --transaction-hash 0x0000000000000000000000000000000000000000000000000000000000abc123
 
 # Read all inputs with pagination:
 cartesi-rollups-cli read inputs echo-dapp --limit 10 --offset 10 --descending
 `
 
 var (
-	epochIndex string
-	sender     string
-	limit      uint64
-	offset     uint64
-	descending bool
+	epochIndex      string
+	sender          string
+	transactionHash string
+	limit           uint64
+	offset          uint64
+	descending      bool
 )
 
 func init() {
@@ -59,6 +61,8 @@ func init() {
 		"Filter inputs by epoch index (decimal or hex encoded)")
 	Cmd.Flags().StringVar(&sender, "sender", "",
 		"Filter inputs by sender address (hex encoded)")
+	Cmd.Flags().StringVar(&transactionHash, "transaction-hash", "",
+		"Filter inputs by transaction hash (hex encoded)")
 	Cmd.Flags().Uint64Var(&limit, "limit", 50, //nolint: mnd
 		"Maximum number of inputs to return")
 	Cmd.Flags().Uint64Var(&offset, "offset", 0,
@@ -116,6 +120,9 @@ func run(cmd *cobra.Command, args []string) {
 		// Add sender filter if provided
 		if cmd.Flags().Changed("sender") {
 			params.Sender = &sender
+		}
+		if cmd.Flags().Changed("transaction-hash") {
+			params.TransactionHash = &transactionHash
 		}
 		params.Limit = limit
 		params.Offset = offset

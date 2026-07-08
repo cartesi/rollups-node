@@ -181,6 +181,13 @@ func (s *RepositoryReadService) ListInputs(ctx context.Context, params api.ListI
 		}
 		filter.Sender = &senderVal
 	}
+	if params.TransactionHash != nil {
+		transactionHashVal, err := config.ToHashFromString(*params.TransactionHash)
+		if err != nil {
+			return nil, fmt.Errorf("invalid transaction hash: %w", err)
+		}
+		filter.TransactionHash = &transactionHashVal
+	}
 	pagination.Limit = params.Limit
 	pagination.Offset = params.Offset
 

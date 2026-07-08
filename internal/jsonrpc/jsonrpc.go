@@ -370,6 +370,14 @@ func handleListInputs(s *Service, w http.ResponseWriter, r *http.Request, req RP
 		}
 		inputFilter.Sender = &sender
 	}
+	if params.TransactionHash != nil {
+		transactionHash, err := config.ToHashFromString(*params.TransactionHash)
+		if err != nil {
+			writeRPCError(w, req.ID, JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid transaction hash: %v", err), nil)
+			return
+		}
+		inputFilter.TransactionHash = &transactionHash
+	}
 
 	inputs, total, err := s.repository.ListInputs(r.Context(), params.Application, inputFilter, repository.Pagination{
 		Limit:  params.Limit,

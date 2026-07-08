@@ -1263,7 +1263,100 @@ func TestMethod(t *testing.T) {
 			assert.Equal(t, 0, len(resp.Result.Data))
 		})
 
-		// TODO: test many inputs in the database (use createTestEpochWithInput)
+		t.Run("filterByTransactionHash", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(1)
+			appID := s.newTestApplication(ctx, t, app)
+			epoch := repotest.NewEpochBuilder(appID).
+				WithIndex(0).
+				WithStatus(model.EpochStatus_Closed).
+				WithBlocks(0, 29).
+				WithInputBounds(0, 2).
+				Build()
+			txHash := common.HexToHash("0xcafe")
+			input0 := repotest.NewInputBuilder().
+				WithIndex(0).
+				WithRawData(emptyInput()).
+				WithTransactionHash(txHash).
+				WithLogIndex(10).
+				Build()
+			input1 := repotest.NewInputBuilder().
+				WithIndex(1).
+				WithRawData(emptyInput()).
+				WithTransactionHash(repotest.UniqueHash()).
+				WithLogIndex(11).
+				Build()
+			input2 := repotest.NewInputBuilder().
+				WithIndex(2).
+				WithRawData(emptyInput()).
+				WithTransactionHash(txHash).
+				WithLogIndex(12).
+				Build()
+			err := s.repository.CreateEpochsAndInputs(ctx, numberToName(app),
+				map[*model.Epoch][]*model.Input{epoch: {input0, input1, input2}}, 30)
+			require.NoError(t, err)
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listInputs",
+				"params": {
+				"application": "%v",
+				"transaction_hash": "%v"
+				},
+				"id": 0
+				}`, numberToName(app), txHash.Hex()))
+
+			resp := testRPCResponse[[]map[string]json.RawMessage]{}
+			require.NoError(t, json.Unmarshal(body, &resp))
+			require.Nil(t, resp.Error)
+			require.Len(t, resp.Result.Data, 2)
+
+			var index0, index1 hex64
+			require.NoError(t, json.Unmarshal(resp.Result.Data[0]["index"], &index0))
+			require.NoError(t, json.Unmarshal(resp.Result.Data[1]["index"], &index1))
+			assert.Equal(t, uint64(0), uint64(index0))
+			assert.Equal(t, uint64(2), uint64(index1))
+
+			// log_index must carry the seeded values, hex-encoded like the
+			// other uint64 fields.
+			assert.JSONEq(t, `"0xa"`, string(resp.Result.Data[0]["log_index"]))
+			assert.JSONEq(t, `"0xc"`, string(resp.Result.Data[1]["log_index"]))
+
+			for _, input := range resp.Result.Data {
+				assert.JSONEq(t, fmt.Sprintf("%q", txHash.Hex()), string(input["transaction_hash"]))
+				assert.NotContains(t, input, "transaction_reference")
+			}
+		})
+
+		// failure: malformed transaction hash -> invalid params, not an
+		// empty result from a silently padded/truncated hash.
+		t.Run("invalidTransactionHash", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			nr := uint64(1)
+			s.newTestApplication(ctx, t, nr)
+			for _, malformed := range []string{"0xcafe", "not-a-hash", "0x" + strings.Repeat("ab", 33)} {
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listInputs",
+					"params": {
+					"application": "%v",
+					"transaction_hash": "%v"
+					},
+					"id": 0
+					}`, numberToName(nr), malformed))
+
+				resp := testRPCResponse[[]model.Input]{}
+				require.NoError(t, json.Unmarshal(body, &resp))
+				require.NotNil(t, resp.Error, "expected error for %q", malformed)
+				assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
+			}
+		})
 	})
 
 	////////////////////////////////////////////////////////////////////////
@@ -2027,7 +2120,7 @@ func TestMethod(t *testing.T) {
 				"application": "%v",
 				"epoch_index": "%v",
 				"tournament_address": "0x%020x",
-				"commitment": "0x%020x"
+				"commitment": "0x%064x"
 				},
 				"id": 0
 				}`, numberToName(app), hexutil.EncodeUint64(nr+1), 0, 0))
@@ -2051,7 +2144,7 @@ func TestMethod(t *testing.T) {
 				"application": "%v",
 				"epoch_index": "%v",
 				"tournament_address": "0x%020x",
-				"commitment": "0x%020x"
+				"commitment": "0x%064x"
 				},
 				"id": 0
 				}`, numberToName(nr), hexutil.EncodeUint64(0), 0, 0))
@@ -2102,7 +2195,7 @@ func TestMethod(t *testing.T) {
 				"application": "%v",
 				"epoch_index": "%v",
 				"tournament_address": "%v",
-				"commitment": "0x%020x"
+				"commitment": "0x%064x"
 				},
 				"id": 0
 				}`, numberToName(app), hexutil.EncodeUint64(nr), address, commitment))
@@ -2166,7 +2259,7 @@ func TestMethod(t *testing.T) {
 				"application": "%v",
 				"epoch_index": "%v",
 				"tournament_address": "0x%020x",
-				"id_hash": "0x%020x"
+				"id_hash": "0x%064x"
 				},
 				"id": 0
 				}`, numberToName(app), hexutil.EncodeUint64(nr+1), 0, 0))
@@ -2190,7 +2283,7 @@ func TestMethod(t *testing.T) {
 				"application": "%v",
 				"epoch_index": "%v",
 				"tournament_address": "0x%020x",
-				"id_hash": "0x%020x"
+				"id_hash": "0x%064x"
 				},
 				"id": 0
 				}`, numberToName(nr), hexutil.EncodeUint64(0), 0, 0))
@@ -2317,8 +2410,8 @@ func TestMethod(t *testing.T) {
 				"application": "%v",
 				"epoch_index": "0x%020x",
 				"tournament_address": "0x%040x",
-				"id_hash": "0x%040x",
-				"parent": "0x%040x"
+				"id_hash": "0x%064x",
+				"parent": "0x%064x"
 				},
 				"id": 0
 				}`, numberToName(app), nr+1, 0, 0, 0))
@@ -2342,8 +2435,8 @@ func TestMethod(t *testing.T) {
 				"application": "%v",
 				"epoch_index": "0x%020x",
 				"tournament_address": "0x%040x",
-				"id_hash": "0x%040x",
-				"parent": "0x%040x"
+				"id_hash": "0x%064x",
+				"parent": "0x%064x"
 				},
 				"id": 0
 				}`, numberToName(nr), 0, 0, 0, 0))
@@ -2415,8 +2508,8 @@ func TestMethod(t *testing.T) {
 				"application": "%v",
 				"epoch_index": "0x%020x",
 				"tournament_address": "0x%020x",
-				"id_hash": "0x%040x",
-				"parent": "0x%040x"
+				"id_hash": "0x%064x",
+				"parent": "0x%064x"
 				},
 				"id": 0
 				}`, numberToName(app), nr, address, idHash, parent))
@@ -2637,7 +2730,7 @@ func TestMethod(t *testing.T) {
 				"application": "%v",
 				"epoch_index": "%v",
 				"tournament_address": "0x%020x",
-				"id_hash": "0x%020x"
+				"id_hash": "0x%064x"
 				},
 				"id": 0
 				}`, numberToName(app+1), hexutil.EncodeUint64(nr), 0, 0))
@@ -2664,7 +2757,7 @@ func TestMethod(t *testing.T) {
 				"application": "%v",
 				"epoch_index": "%v",
 				"tournament_address": "0x%020x",
-				"id_hash": "0x%020x"
+				"id_hash": "0x%064x"
 				},
 				"id": 0
 				}`, numberToName(app), hexutil.EncodeUint64(nr), 0, 0))
@@ -2743,7 +2836,7 @@ func TestMethod(t *testing.T) {
 					"application": "%v",
 					"epoch_index": "0x%020x",
 					"tournament_address": "0x%020x",
-					"id_hash": "0x%020x",
+					"id_hash": "0x%064x",
 					"limit": %v,
 					"offset": %v,
 					"descending": %v
@@ -2768,7 +2861,7 @@ func TestMethod(t *testing.T) {
 					"application": "%v",
 					"epoch_index": "0x%020x",
 					"tournament_address": "0x%020x",
-					"id_hash": "0x%020x",
+					"id_hash": "0x%064x",
 					"limit": %v,
 					"offset": %v,
 					"descending": %v
@@ -2793,7 +2886,7 @@ func TestMethod(t *testing.T) {
 					"application": "%v",
 					"epoch_index": "0x%020x",
 					"tournament_address": "0x%020x",
-					"id_hash": "0x%020x",
+					"id_hash": "0x%064x",
 					"limit": %v,
 					"offset": %v,
 					"descending": %v
@@ -2818,7 +2911,7 @@ func TestMethod(t *testing.T) {
 					"application": "%v",
 					"epoch_index": "0x%020x",
 					"tournament_address": "0x%020x",
-					"id_hash": "0x%020x",
+					"id_hash": "0x%064x",
 					"limit": %v,
 					"offset": %v,
 					"descending": %v
@@ -2857,7 +2950,7 @@ func TestMethod(t *testing.T) {
 				"application": "%v",
 				"epoch_index": "%v",
 				"tournament_address": "0x%020x",
-				"id_hash": "0x%020x"
+				"id_hash": "0x%064x"
 				},
 				"id": 0
 				}`, numberToName(app+1), hexutil.EncodeUint64(nr), 0, 0))

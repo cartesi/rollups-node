@@ -239,7 +239,7 @@
 		{
 			"name": "cartesi_listInputs",
 			"summary": "Retrieve a List of Inputs",
-			"description": "Returns a paginated list of inputs, with options to filter by epoch index or input sender.",
+			"description": "Returns a paginated list of inputs, with options to filter by epoch index, input sender, or transaction hash.",
 			"params": [
 				{
 					"name": "application",
@@ -262,6 +262,14 @@
 					"description": "Filter inputs by the sender's address (hex encoded), extracted from raw data.",
 					"schema": {
 						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"required": false
+				},
+				{
+					"name": "transaction_hash",
+					"description": "Filter inputs by the L1 transaction hash that emitted the InputAdded event.",
+					"schema": {
+						"$ref": "#/components/schemas/Hash"
 					},
 					"required": false
 				},
@@ -1705,8 +1713,11 @@
 							}
 						]
 					},
-					"transaction_reference": {
-						"$ref": "#/components/schemas/ByteArray"
+					"transaction_hash": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"log_index": {
+						"$ref": "#/components/schemas/UnsignedInteger"
 					},
 					"created_at": {
 						"type": "string",
