@@ -232,11 +232,12 @@ type InputBuilder struct {
 func NewInputBuilder() *InputBuilder {
 	return &InputBuilder{
 		input: &Input{
-			Index:                0,
-			BlockNumber:          1,
-			RawData:              []byte("input-data"),
-			Status:               InputCompletionStatus_None,
-			TransactionReference: UniqueHash(),
+			Index:           0,
+			BlockNumber:     1,
+			RawData:         []byte("input-data"),
+			Status:          InputCompletionStatus_None,
+			TransactionHash: UniqueHash(),
+			LogIndex:        0,
 		},
 	}
 }
@@ -271,8 +272,13 @@ func (b *InputBuilder) WithRawData(data []byte) *InputBuilder {
 	return b
 }
 
-func (b *InputBuilder) WithTransactionReference(h common.Hash) *InputBuilder {
-	b.input.TransactionReference = h
+func (b *InputBuilder) WithTransactionHash(h common.Hash) *InputBuilder {
+	b.input.TransactionHash = h
+	return b
+}
+
+func (b *InputBuilder) WithLogIndex(i uint64) *InputBuilder {
+	b.input.LogIndex = i
 	return b
 }
 

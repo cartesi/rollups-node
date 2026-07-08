@@ -5,10 +5,12 @@ package evmreader
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
 
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -66,6 +68,149 @@ func (s *EvmReaderSuite) TestFetchApplicationInputsDuplicateAndOutOfOrderEvents(
 	s.Require().Equal(uint64(0), inputs[0].Index)
 	s.Require().Equal(uint64(1), inputs[1].Index)
 	s.Require().Equal(uint64(2), inputs[2].Index)
+}
+
+func (s *EvmReaderSuite) TestFetchInputsSameTransactionHashPreservesLogIndex() {
+	addr := common.HexToAddress("0x3333333333333333333333333333333333333333")
+
+	inputSrc := &MockInputBox{}
+	app := appContracts{
+		application: &Application{
+			Name:                "test-app",
+			IApplicationAddress: addr,
+			IInputBoxAddress:    inputBoxAddr,
+			IInputBoxBlock:      10,
+		},
+		inputSource: inputSrc,
+	}
+
+	txHash := common.HexToHash("0xfeed")
+	input0 := makeInputEvent(addr, 0, 100)
+	input0.Raw.TxHash = txHash
+	input0.Raw.Index = 7
+	input1 := makeInputEvent(addr, 1, 100)
+	input1.Raw.TxHash = txHash
+	input1.Raw.Index = 8
+
+	inputSrc.On("GetNumberOfInputs", blockRange(0, 100), mock.Anything).
+		Return(new(big.Int).SetUint64(0), nil)
+	inputSrc.On("GetNumberOfInputs", blockFrom(100), mock.Anything).
+		Return(new(big.Int).SetUint64(2), nil)
+	inputSrc.On("RetrieveInputs",
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 100 }),
+		mock.Anything, mock.Anything,
+	).Return([]iinputbox.IInputBoxInputAdded{input0, input1}, nil)
+
+	inputs, _, err := s.evmReader.fetchInputs(
+		s.ctx, app, 10, 200, new(big.Int).SetUint64(0), 0, math.MaxUint64)
+	s.Require().NoError(err)
+	s.Require().Len(inputs, 2)
+	s.Equal(txHash, inputs[0].TransactionHash)
+	s.Equal(uint64(7), inputs[0].LogIndex)
+	s.Equal(txHash, inputs[1].TransactionHash)
+	s.Equal(uint64(8), inputs[1].LogIndex)
+}
+
+// sameTransactionScanApp builds the app/mocks for a scan of block 100 that
+// finds two InputAdded events sharing one transaction hash (log indexes 7, 8).
+func (s *EvmReaderSuite) sameTransactionScanApp() (appContracts, common.Hash) {
+	addr := common.HexToAddress("0x3333333333333333333333333333333333333333")
+
+	inputSrc := &MockInputBox{}
+	app := appContracts{
+		application: &Application{
+			Name:                "test-app",
+			IApplicationAddress: addr,
+			IInputBoxAddress:    inputBoxAddr,
+			DataAvailability:    DataAvailability_InputBox[:],
+			Enabled:             true,
+			Status:              ApplicationStatus_OK,
+			IInputBoxBlock:      10,
+			EpochLength:         10,
+			LastInputCheckBlock: 99,
+		},
+		inputSource: inputSrc,
+	}
+
+	txHash := common.HexToHash("0xfeed")
+	event0 := makeInputEvent(addr, 0, 100)
+	event0.Raw.TxHash = txHash
+	event0.Raw.Index = 7
+	event1 := makeInputEvent(addr, 1, 100)
+	event1.Raw.TxHash = txHash
+	event1.Raw.Index = 8
+
+	inputSrc.On("GetNumberOfInputs",
+		mock.MatchedBy(func(opts *bind.CallOpts) bool {
+			return opts.BlockNumber.Uint64() == 100
+		}),
+		addr,
+	).Return(new(big.Int).SetUint64(2), nil)
+	inputSrc.On("RetrieveInputs",
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool {
+			return opts.Start == 100 && opts.End != nil && *opts.End == 100
+		}),
+		[]common.Address{addr}, mock.Anything,
+	).Return([]iinputbox.IInputBoxInputAdded{event0, event1}, nil).Once()
+
+	return app, txHash
+}
+
+// The same-transaction pair must survive the full scan path — fetch, sort,
+// epoch indexing — and reach CreateEpochsAndInputs with the shared
+// transaction hash and distinct log indexes.
+func (s *EvmReaderSuite) TestSameTransactionInputsReachRepository() {
+	app, txHash := s.sameTransactionScanApp()
+	addr := app.application.IApplicationAddress
+
+	repo := newMockRepository()
+	repo.On("GetNumberOfInputs", mock.Anything, addr.String()).Return(uint64(0), nil)
+	repo.On("GetEpoch", mock.Anything, addr.String(), uint64(9)).Return(nil, nil)
+	repo.On("CreateEpochsAndInputs",
+		mock.Anything, addr.String(), mock.Anything, uint64(100),
+	).Run(func(arguments mock.Arguments) {
+		epochInputMap, ok := arguments.Get(2).(map[*Epoch][]*Input)
+		s.Require().True(ok)
+		s.Require().Len(epochInputMap, 1)
+		for _, inputs := range epochInputMap {
+			s.Require().Len(inputs, 2)
+			s.Require().Equal(uint64(0), inputs[0].Index)
+			s.Require().Equal(txHash, inputs[0].TransactionHash)
+			s.Require().Equal(uint64(7), inputs[0].LogIndex)
+			s.Require().Equal(uint64(1), inputs[1].Index)
+			s.Require().Equal(txHash, inputs[1].TransactionHash)
+			s.Require().Equal(uint64(8), inputs[1].LogIndex)
+		}
+	}).Return(nil).Once()
+	s.evmReader.repository = repo
+
+	s.evmReader.scanIConsensusInputs(s.ctx, []appContracts{app}, 100)
+
+	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 1)
+}
+
+// A CreateEpochsAndInputs failure tagged ErrInputLogIdentityConflict means the
+// stored inputs diverged from rescanned chain data; the scan must escalate the
+// application to CORRUPTED instead of retrying the same insert forever.
+func (s *EvmReaderSuite) TestInputLogIdentityConflictMarksApplicationCorrupted() {
+	app, _ := s.sameTransactionScanApp()
+	addr := app.application.IApplicationAddress
+
+	repo := newMockRepository()
+	repo.On("GetNumberOfInputs", mock.Anything, addr.String()).Return(uint64(0), nil)
+	repo.On("GetEpoch", mock.Anything, addr.String(), uint64(9)).Return(nil, nil)
+	repo.On("CreateEpochsAndInputs",
+		mock.Anything, addr.String(), mock.Anything, uint64(100),
+	).Return(fmt.Errorf("insert failed: %w", repository.ErrInputLogIdentityConflict)).Once()
+	repo.On("UpdateApplicationStatus",
+		mock.Anything, app.application.ID, ApplicationStatus_Corrupted, mock.Anything,
+	).Return(nil).Once()
+	s.evmReader.repository = repo
+
+	s.evmReader.scanIConsensusInputs(s.ctx, []appContracts{app}, 100)
+
+	repo.AssertNumberOfCalls(s.T(), "UpdateApplicationStatus", 1)
+	s.Equal(ApplicationStatus_Corrupted, app.application.Status)
 }
 
 // --- Bounds filtering: inputs outside [lowerBound, upperBound) are excluded ---

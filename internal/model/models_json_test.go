@@ -57,12 +57,17 @@ func TestInputJSONRoundtrip(t *testing.T) {
 		RawData:            []byte{0xde, 0xad, 0xbe, 0xef},
 		Status:             InputCompletionStatus_Accepted,
 		MachineHash:        &machineHash,
+		TransactionHash:    common.HexToHash("0x5678"),
+		LogIndex:           11,
 		CreatedAt:          time.Now().Truncate(time.Microsecond).UTC(),
 		UpdatedAt:          time.Now().Truncate(time.Microsecond).UTC(),
 	}
 
 	data, err := json.Marshal(&original)
 	require.NoError(t, err)
+
+	// LogIndex must be hex-encoded like the other uint64 fields.
+	require.Contains(t, string(data), `"log_index":"0xb"`)
 
 	var decoded Input
 	err = json.Unmarshal(data, &decoded)
@@ -76,6 +81,49 @@ func TestInputJSONRoundtrip(t *testing.T) {
 	require.Equal(t, original.RawData, decoded.RawData)
 	require.Equal(t, original.Status, decoded.Status)
 	require.Equal(t, original.MachineHash, decoded.MachineHash)
+	require.Equal(t, original.TransactionHash, decoded.TransactionHash)
+	require.Equal(t, original.LogIndex, decoded.LogIndex)
+}
+
+func TestInputUnmarshalJSONInvalidHex(t *testing.T) {
+	validJSON := `{"epoch_index":"0x0","index":"0x0","block_number":"0x0","raw_data":"0x","log_index":"0x0"}`
+	tests := []struct {
+		name    string
+		json    string
+		wantErr string
+	}{
+		{
+			name:    "missing LogIndex",
+			json:    `{"epoch_index":"0x0","index":"0x0","block_number":"0x0","raw_data":"0x"}`,
+			wantErr: "LogIndex",
+		},
+		{
+			name:    "invalid LogIndex",
+			json:    `{"epoch_index":"0x0","index":"0x0","block_number":"0x0","raw_data":"0x","log_index":"bad"}`,
+			wantErr: "LogIndex",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var input Input
+			err := json.Unmarshal([]byte(tt.json), &input)
+			require.Error(t, err)
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+
+	t.Run("valid minimal input", func(t *testing.T) {
+		var input Input
+		require.NoError(t, json.Unmarshal([]byte(validJSON), &input))
+	})
+
+	// Regression: JSON without any alias-level field must return a parse error,
+	// not nil-dereference the embedded alias pointer.
+	t.Run("empty object does not panic", func(t *testing.T) {
+		var input Input
+		err := json.Unmarshal([]byte(`{}`), &input)
+		require.Error(t, err)
+	})
 }
 
 func TestOutputJSONRoundtrip(t *testing.T) {

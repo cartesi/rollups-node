@@ -111,11 +111,11 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
 		}
 
 		input := model.Input{
-			Index:                0,
-			BlockNumber:          9,
-			RawData:              []byte("data"),
-			Status:               model.InputCompletionStatus_None,
-			TransactionReference: common.BigToHash(big.NewInt(0)),
+			Index:           0,
+			BlockNumber:     9,
+			RawData:         []byte("data"),
+			Status:          model.InputCompletionStatus_None,
+			TransactionHash: common.BigToHash(big.NewInt(0)),
 		}
 
 		var epochInputMap = make(map[*model.Epoch][]*model.Input)
@@ -186,12 +186,12 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 		// we add an input to the epoch because they must have at least one and
 		// because without it the claim hash check will fail
 		firstEpochInput := model.Input{
-			EpochIndex:           firstEpoch.Index,
-			Index:                0,
-			BlockNumber:          9,
-			RawData:              []byte("data"),
-			Status:               model.InputCompletionStatus_None,
-			TransactionReference: common.BigToHash(big.NewInt(0)),
+			EpochIndex:      firstEpoch.Index,
+			Index:           0,
+			BlockNumber:     9,
+			RawData:         []byte("data"),
+			Status:          model.InputCompletionStatus_None,
+			TransactionHash: common.BigToHash(big.NewInt(0)),
 		}
 
 		// create the second epoch with no outputs
@@ -205,12 +205,12 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 		}
 
 		secondEpochInput := model.Input{
-			EpochIndex:           secondEpoch.Index,
-			Index:                1,
-			BlockNumber:          19,
-			RawData:              []byte("data2"),
-			Status:               model.InputCompletionStatus_None,
-			TransactionReference: common.BigToHash(big.NewInt(1)),
+			EpochIndex:      secondEpoch.Index,
+			Index:           1,
+			BlockNumber:     19,
+			RawData:         []byte("data2"),
+			Status:          model.InputCompletionStatus_None,
+			TransactionHash: common.BigToHash(big.NewInt(1)),
 		}
 
 		var epochInputMap = make(map[*model.Epoch][]*model.Input)
@@ -301,11 +301,11 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		}
 
 		input := model.Input{
-			Index:                0,
-			BlockNumber:          19,
-			RawData:              []byte("data"),
-			Status:               model.InputCompletionStatus_None,
-			TransactionReference: common.BigToHash(big.NewInt(0)),
+			Index:           0,
+			BlockNumber:     19,
+			RawData:         []byte("data"),
+			Status:          model.InputCompletionStatus_None,
+			TransactionHash: common.BigToHash(big.NewInt(0)),
 		}
 
 		var epochInputMap = make(map[*model.Epoch][]*model.Input)
@@ -392,11 +392,11 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		}
 
 		firstInput := model.Input{
-			Index:                0,
-			BlockNumber:          9,
-			RawData:              []byte("data"),
-			Status:               model.InputCompletionStatus_None,
-			TransactionReference: common.BigToHash(big.NewInt(0)),
+			Index:           0,
+			BlockNumber:     9,
+			RawData:         []byte("data"),
+			Status:          model.InputCompletionStatus_None,
+			TransactionHash: common.BigToHash(big.NewInt(0)),
 		}
 
 		var epochInputMap = make(map[*model.Epoch][]*model.Input)
@@ -458,12 +458,12 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		}
 
 		secondInput := model.Input{
-			EpochIndex:           secondEpoch.Index,
-			Index:                1,
-			BlockNumber:          19,
-			RawData:              []byte("data2"),
-			Status:               model.InputCompletionStatus_None,
-			TransactionReference: common.BigToHash(big.NewInt(1)),
+			EpochIndex:      secondEpoch.Index,
+			Index:           1,
+			BlockNumber:     19,
+			RawData:         []byte("data2"),
+			Status:          model.InputCompletionStatus_None,
+			TransactionHash: common.BigToHash(big.NewInt(1)),
 		}
 
 		epochInputMap = make(map[*model.Epoch][]*model.Input)

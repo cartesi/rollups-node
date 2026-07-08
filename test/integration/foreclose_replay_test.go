@@ -483,7 +483,8 @@ func compareReplayedInput(t testing.TB, r *require.Assertions, a, b *model.Input
 	r.Equal(a.Status, b.Status, "input %d: status", i)
 	r.Equal(a.BlockNumber, b.BlockNumber, "input %d: block number", i)
 	r.Equal(a.RawData, b.RawData, "input %d: raw data", i)
-	r.Equal(a.TransactionReference, b.TransactionReference, "input %d: tx reference", i)
+	r.Equal(a.TransactionHash, b.TransactionHash, "input %d: transaction hash", i)
+	r.Equal(a.LogIndex, b.LogIndex, "input %d: log index", i)
 }
 
 func compareReplayedEpoch(t testing.TB, r *require.Assertions, a, b *model.Epoch, ep uint64) {

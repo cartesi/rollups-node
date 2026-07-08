@@ -16,6 +16,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/table"
 	"github.com/go-jet/jet/v2/postgres"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func getEpochNextVirtualIndex(
@@ -88,7 +89,8 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 			table.Input.BlockNumber,
 			table.Input.RawData,
 			table.Input.Status,
-			table.Input.TransactionReference,
+			table.Input.TransactionHash,
+			table.Input.LogIndex,
 		)
 
 	tx, err := r.db.Begin(ctx)
@@ -174,7 +176,8 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 					uint64Expr(input.BlockNumber),
 					postgres.Bytea(input.RawData),
 					postgres.NewEnumValue(input.Status.String()),
-					postgres.Bytea(input.TransactionReference.Bytes()),
+					postgres.Bytea(input.TransactionHash.Bytes()),
+					uint64Expr(input.LogIndex),
 				).WHERE(
 					whereClause,
 				)
@@ -190,11 +193,11 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 				_, err := br.Exec()
 				if err != nil {
 					br.Close()
-					return err
+					return wrapInputLogIdentityConflict(err)
 				}
 			}
 			if err := br.Close(); err != nil {
-				return err
+				return wrapInputLogIdentityConflict(err)
 			}
 		}
 	}
@@ -216,6 +219,29 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 	}
 
 	return tx.Commit(ctx)
+}
+
+// sqlstateUniqueViolation is the PostgreSQL error code for unique constraint
+// violations (SQLSTATE 23505).
+const sqlstateUniqueViolation = "23505"
+
+// inputLogIdentityConstraint is the unique constraint enforcing the L1 log
+// identity of an input; see the input table in the initial schema migration.
+const inputLogIdentityConstraint = "input_application_id_tx_hash_log_index_unique"
+
+// wrapInputLogIdentityConflict tags unique violations of the input L1 log
+// identity constraint with repository.ErrInputLogIdentityConflict so callers
+// can distinguish stored-state divergence (unrecoverable by retry) from
+// transient insert failures. Conflicts on the input primary key never reach
+// this point — they are absorbed by the insert's ON CONFLICT DO NOTHING.
+func wrapInputLogIdentityConflict(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) &&
+		pgErr.Code == sqlstateUniqueViolation &&
+		pgErr.ConstraintName == inputLogIdentityConstraint {
+		return fmt.Errorf("%w: %w", repository.ErrInputLogIdentityConflict, err)
+	}
+	return err
 }
 
 func (r *PostgresRepository) GetEpoch(

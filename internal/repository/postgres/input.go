@@ -12,7 +12,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/table"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-jet/jet/v2/postgres"
 )
 
@@ -34,7 +33,8 @@ func (r *PostgresRepository) GetInput(
 			table.Input.Status,
 			table.Input.MachineHash,
 			table.Input.OutputsHash,
-			table.Input.TransactionReference,
+			table.Input.TransactionHash,
+			table.Input.LogIndex,
 			table.Input.SnapshotURI,
 			table.Input.CreatedAt,
 			table.Input.UpdatedAt,
@@ -63,72 +63,8 @@ func (r *PostgresRepository) GetInput(
 		&inp.Status,
 		&inp.MachineHash,
 		&inp.OutputsHash,
-		&inp.TransactionReference,
-		&inp.SnapshotURI,
-		&inp.CreatedAt,
-		&inp.UpdatedAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &inp, nil
-}
-
-func (r *PostgresRepository) GetInputByTxReference(
-	ctx context.Context,
-	nameOrAddress string,
-	ref *common.Hash,
-) (*model.Input, error) {
-
-	if ref == nil {
-		return nil, fmt.Errorf("tx reference is nil")
-	}
-
-	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
-
-	sel := table.Input.
-		SELECT(
-			table.Input.EpochApplicationID,
-			table.Input.EpochIndex,
-			table.Input.Index,
-			table.Input.BlockNumber,
-			table.Input.RawData,
-			table.Input.Status,
-			table.Input.MachineHash,
-			table.Input.OutputsHash,
-			table.Input.TransactionReference,
-			table.Input.SnapshotURI,
-			table.Input.CreatedAt,
-			table.Input.UpdatedAt,
-		).
-		FROM(
-			table.Input.
-				INNER_JOIN(table.Application,
-					table.Input.EpochApplicationID.EQ(table.Application.ID),
-				),
-		).
-		WHERE(
-			whereClause.
-				AND(table.Input.TransactionReference.EQ(postgres.Bytea(ref[:]))),
-		)
-
-	sqlStr, args := sel.Sql()
-	row := r.db.QueryRow(ctx, sqlStr, args...)
-
-	var inp model.Input
-	err := row.Scan(
-		&inp.EpochApplicationID,
-		&inp.EpochIndex,
-		&inp.Index,
-		&inp.BlockNumber,
-		&inp.RawData,
-		&inp.Status,
-		&inp.MachineHash,
-		&inp.OutputsHash,
-		&inp.TransactionReference,
+		&inp.TransactionHash,
+		&inp.LogIndex,
 		&inp.SnapshotURI,
 		&inp.CreatedAt,
 		&inp.UpdatedAt,
@@ -160,7 +96,8 @@ func (r *PostgresRepository) GetLastInput(
 			table.Input.Status,
 			table.Input.MachineHash,
 			table.Input.OutputsHash,
-			table.Input.TransactionReference,
+			table.Input.TransactionHash,
+			table.Input.LogIndex,
 			table.Input.SnapshotURI,
 			table.Input.CreatedAt,
 			table.Input.UpdatedAt,
@@ -191,7 +128,8 @@ func (r *PostgresRepository) GetLastInput(
 		&inp.Status,
 		&inp.MachineHash,
 		&inp.OutputsHash,
-		&inp.TransactionReference,
+		&inp.TransactionHash,
+		&inp.LogIndex,
 		&inp.SnapshotURI,
 		&inp.CreatedAt,
 		&inp.UpdatedAt,
@@ -222,7 +160,8 @@ func (r *PostgresRepository) GetLastProcessedInput(
 			table.Input.Status,
 			table.Input.MachineHash,
 			table.Input.OutputsHash,
-			table.Input.TransactionReference,
+			table.Input.TransactionHash,
+			table.Input.LogIndex,
 			table.Input.SnapshotURI,
 			table.Input.CreatedAt,
 			table.Input.UpdatedAt,
@@ -253,7 +192,8 @@ func (r *PostgresRepository) GetLastProcessedInput(
 		&inp.Status,
 		&inp.MachineHash,
 		&inp.OutputsHash,
-		&inp.TransactionReference,
+		&inp.TransactionHash,
+		&inp.LogIndex,
 		&inp.SnapshotURI,
 		&inp.CreatedAt,
 		&inp.UpdatedAt,
@@ -297,6 +237,11 @@ func (r *PostgresRepository) ListInputs(
 			SubstrBytea(table.Input.RawData, 81, 20).EQ(postgres.Bytea(f.Sender.Bytes())),
 		)
 	}
+	if f.TransactionHash != nil {
+		conditions = append(conditions,
+			table.Input.TransactionHash.EQ(postgres.Bytea(f.TransactionHash.Bytes())),
+		)
+	}
 
 	tx, err := beginReadTx(ctx, r.db)
 	if err != nil {
@@ -324,7 +269,8 @@ func (r *PostgresRepository) ListInputs(
 			table.Input.Status,
 			table.Input.MachineHash,
 			table.Input.OutputsHash,
-			table.Input.TransactionReference,
+			table.Input.TransactionHash,
+			table.Input.LogIndex,
 			table.Input.SnapshotURI,
 			table.Input.CreatedAt,
 			table.Input.UpdatedAt,
@@ -363,7 +309,8 @@ func (r *PostgresRepository) ListInputs(
 			&in.Status,
 			&in.MachineHash,
 			&in.OutputsHash,
-			&in.TransactionReference,
+			&in.TransactionHash,
+			&in.LogIndex,
 			&in.SnapshotURI,
 			&in.CreatedAt,
 			&in.UpdatedAt,

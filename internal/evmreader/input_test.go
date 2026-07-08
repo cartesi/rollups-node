@@ -419,7 +419,8 @@ func (s *EvmReaderSuite) TestCatchUpForeclosedInputsStoresSameBlockInput() {
 			s.Require().Len(inputs, 1)
 			s.Require().Equal(uint64(0), inputs[0].Index)
 			s.Require().Equal(app.ForecloseBlock, inputs[0].BlockNumber)
-			s.Require().Equal(sameBlockInput.Raw.TxHash, inputs[0].TransactionReference)
+			s.Require().Equal(sameBlockInput.Raw.TxHash, inputs[0].TransactionHash)
+			s.Require().Equal(uint64(sameBlockInput.Raw.Index), inputs[0].LogIndex)
 		}
 	}).Return(nil).Once()
 

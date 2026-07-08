@@ -27,7 +27,8 @@ func (s *InputSuite) TestGetInput() {
 		s.Equal(seed.Input.BlockNumber, got.BlockNumber)
 		s.Equal(seed.Input.RawData, got.RawData)
 		s.Equal(InputCompletionStatus_None, got.Status)
-		s.Equal(seed.Input.TransactionReference, got.TransactionReference)
+		s.Equal(seed.Input.TransactionHash, got.TransactionHash)
+		s.Equal(seed.Input.LogIndex, got.LogIndex)
 		s.Nil(got.MachineHash)
 		s.Nil(got.OutputsHash)
 		s.Nil(got.SnapshotURI)
@@ -38,36 +39,6 @@ func (s *InputSuite) TestGetInput() {
 	s.Run("NotFound", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 		got, err := s.Repo.GetInput(s.Ctx, app.IApplicationAddress.String(), 99)
-		s.Require().NoError(err)
-		s.Nil(got)
-	})
-}
-
-func (s *InputSuite) TestGetInputByTxReference() {
-	s.Run("NilRef", func() {
-		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
-		_, err := s.Repo.GetInputByTxReference(s.Ctx, app.IApplicationAddress.String(), nil)
-		s.Error(err)
-	})
-
-	s.Run("ExistingRef", func() {
-		seed := Seed(s.Ctx, s.T(), s.Repo)
-		ref := seed.Input.TransactionReference
-
-		got, err := s.Repo.GetInputByTxReference(
-			s.Ctx, seed.App.IApplicationAddress.String(), &ref)
-		s.Require().NoError(err)
-		s.Require().NotNil(got)
-		s.Equal(seed.Input.Index, got.Index)
-		s.Equal(ref, got.TransactionReference)
-	})
-
-	s.Run("NotFound", func() {
-		seed := Seed(s.Ctx, s.T(), s.Repo)
-		nonExistentRef := UniqueHash()
-
-		got, err := s.Repo.GetInputByTxReference(
-			s.Ctx, seed.App.IApplicationAddress.String(), &nonExistentRef)
 		s.Require().NoError(err)
 		s.Nil(got)
 	})
@@ -118,6 +89,131 @@ func (s *InputSuite) TestGetLastProcessedInput() {
 		s.Require().NoError(err)
 		s.Equal(uint64(0), got.Index)
 		s.Equal(InputCompletionStatus_Accepted, got.Status)
+	})
+}
+
+func (s *InputSuite) TestCreateEpochsAndInputsWithSameTransactionHash() {
+	s.Run("AllowsMultipleLogsFromSameTransaction", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 19).WithInputBounds(0, 1).Build()
+
+		txHash := UniqueHash()
+		input0 := NewInputBuilder().
+			WithIndex(0).
+			WithTransactionHash(txHash).
+			WithLogIndex(7).
+			Build()
+		input1 := NewInputBuilder().
+			WithIndex(1).
+			WithTransactionHash(txHash).
+			WithLogIndex(8).
+			Build()
+
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: {input0, input1}}, 20)
+		s.Require().NoError(err)
+
+		got0, err := s.Repo.GetInput(s.Ctx, app.IApplicationAddress.String(), 0)
+		s.Require().NoError(err)
+		s.Require().NotNil(got0)
+		s.Equal(txHash, got0.TransactionHash)
+		s.Equal(uint64(7), got0.LogIndex)
+
+		got1, err := s.Repo.GetInput(s.Ctx, app.IApplicationAddress.String(), 1)
+		s.Require().NoError(err)
+		s.Require().NotNil(got1)
+		s.Equal(txHash, got1.TransactionHash)
+		s.Equal(uint64(8), got1.LogIndex)
+
+		lastBlock, err := s.Repo.GetEventLastCheckBlock(s.Ctx, app.ID, MonitoredEvent_InputAdded)
+		s.Require().NoError(err)
+		s.Equal(uint64(20), lastBlock)
+
+		err = s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: {input0, input1}}, 20)
+		s.Require().NoError(err)
+
+		count, err := s.Repo.GetNumberOfInputs(s.Ctx, app.IApplicationAddress.String())
+		s.Require().NoError(err)
+		s.Equal(uint64(2), count)
+	})
+
+	s.Run("RejectsDuplicateLogIdentity", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 19).WithInputBounds(0, 1).Build()
+
+		blockBefore, blockErr := s.Repo.GetEventLastCheckBlock(s.Ctx, app.ID, MonitoredEvent_InputAdded)
+		s.Require().NoError(blockErr)
+
+		txHash := UniqueHash()
+		input0 := NewInputBuilder().
+			WithIndex(0).
+			WithTransactionHash(txHash).
+			WithLogIndex(7).
+			Build()
+		input1 := NewInputBuilder().
+			WithIndex(1).
+			WithTransactionHash(txHash).
+			WithLogIndex(7).
+			Build()
+
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: {input0, input1}}, 20)
+		s.Require().ErrorIs(err, repository.ErrInputLogIdentityConflict)
+
+		// The whole batch must roll back: no inputs, no epoch row, and the
+		// input cursor must keep its exact previous value.
+		count, countErr := s.Repo.GetNumberOfInputs(s.Ctx, app.IApplicationAddress.String())
+		s.Require().NoError(countErr)
+		s.Equal(uint64(0), count)
+
+		gotEpoch, epochErr := s.Repo.GetEpoch(s.Ctx, app.IApplicationAddress.String(), 0)
+		s.Require().NoError(epochErr)
+		s.Nil(gotEpoch)
+
+		blockAfter, blockErr := s.Repo.GetEventLastCheckBlock(s.Ctx, app.ID, MonitoredEvent_InputAdded)
+		s.Require().NoError(blockErr)
+		s.Equal(blockBefore, blockAfter)
+	})
+
+	s.Run("AllowsSameLogIdentityInDifferentApplications", func() {
+		// The L1 log identity constraint is scoped per application: the same
+		// (transaction_hash, log_index) must persist independently for two
+		// different applications.
+		appA := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		appB := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+
+		txHash := UniqueHash()
+		for _, app := range []*Application{appA, appB} {
+			epoch := NewEpochBuilder(app.ID).
+				WithIndex(0).WithStatus(EpochStatus_Closed).
+				WithBlocks(0, 19).WithInputBounds(0, 0).Build()
+			input := NewInputBuilder().
+				WithIndex(0).
+				WithTransactionHash(txHash).
+				WithLogIndex(7).
+				Build()
+
+			err := s.Repo.CreateEpochsAndInputs(
+				s.Ctx, app.IApplicationAddress.String(),
+				map[*Epoch][]*Input{epoch: {input}}, 20)
+			s.Require().NoError(err)
+		}
+
+		for _, app := range []*Application{appA, appB} {
+			got, err := s.Repo.GetInput(s.Ctx, app.IApplicationAddress.String(), 0)
+			s.Require().NoError(err)
+			s.Require().NotNil(got)
+			s.Equal(txHash, got.TransactionHash)
+			s.Equal(uint64(7), got.LogIndex)
+		}
 	})
 }
 
@@ -283,6 +379,58 @@ func (s *InputSuite) TestListInputs() {
 		s.Len(inputs, 1)
 		s.Equal(uint64(1), total)
 		s.Equal(uint64(0), inputs[0].Index)
+	})
+
+	s.Run("FilterByTransactionHash", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		otherApp := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 29).WithInputBounds(0, 2).Build()
+		otherEpoch := NewEpochBuilder(otherApp.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 9).WithInputBounds(0, 0).Build()
+
+		txHash := UniqueHash()
+		input0 := NewInputBuilder().
+			WithIndex(0).WithTransactionHash(txHash).WithLogIndex(10).Build()
+		input1 := NewInputBuilder().
+			WithIndex(1).WithTransactionHash(UniqueHash()).WithLogIndex(11).Build()
+		input2 := NewInputBuilder().
+			WithIndex(2).WithTransactionHash(txHash).WithLogIndex(12).Build()
+		otherInput := NewInputBuilder().
+			WithIndex(0).WithTransactionHash(txHash).WithLogIndex(13).Build()
+
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: {input0, input1, input2}}, 30)
+		s.Require().NoError(err)
+		err = s.Repo.CreateEpochsAndInputs(
+			s.Ctx, otherApp.IApplicationAddress.String(),
+			map[*Epoch][]*Input{otherEpoch: {otherInput}}, 10)
+		s.Require().NoError(err)
+
+		inputs, total, err := s.Repo.ListInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			repository.InputFilter{TransactionHash: &txHash},
+			repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Require().Len(inputs, 2)
+		s.Equal(uint64(2), total)
+		s.Equal(uint64(0), inputs[0].Index)
+		s.Equal(uint64(2), inputs[1].Index)
+		for _, input := range inputs {
+			s.Equal(txHash, input.TransactionHash)
+		}
+
+		missing := UniqueHash()
+		inputs, total, err = s.Repo.ListInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			repository.InputFilter{TransactionHash: &missing},
+			repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Empty(inputs)
+		s.Equal(uint64(0), total)
 	})
 
 	s.Run("Pagination", func() {

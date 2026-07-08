@@ -392,13 +392,14 @@ CREATE TABLE "input"
     "status" "InputCompletionStatus" NOT NULL,
     "machine_hash" hash,
     "outputs_hash" hash,
-    "transaction_reference" hash,
+    "transaction_hash" hash NOT NULL,
+    "log_index" uint64 NOT NULL,
     "snapshot_uri" VARCHAR(4096),
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT "input_pkey" PRIMARY KEY ("epoch_application_id", "index"),
     CONSTRAINT "input_epoch_index_unique" UNIQUE ("epoch_application_id", "epoch_index", "index"),
-    CONSTRAINT "input_application_id_tx_reference_unique" UNIQUE ("epoch_application_id", "transaction_reference"),
+    CONSTRAINT "input_application_id_tx_hash_log_index_unique" UNIQUE ("epoch_application_id", "transaction_hash", "log_index"),
     CONSTRAINT "input_epoch_id_fkey" FOREIGN KEY ("epoch_application_id", "epoch_index") REFERENCES "epoch"("application_id", "index") ON DELETE CASCADE
 );
 

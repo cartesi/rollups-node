@@ -11,6 +11,7 @@ import (
 	"math/big"
 
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -399,6 +400,17 @@ func (r *Service) readAndStoreInputs(
 				mostRecentBlockNumber,
 			)
 			if err != nil {
+				if errors.Is(err, repository.ErrInputLogIdentityConflict) {
+					// A stored input's L1 log identity disagrees with rescanned
+					// chain data. Retrying the same insert every tick cannot
+					// succeed; without escalation the app would stall silently
+					// with Status OK. See setApplicationCorrupted contract in
+					// the epochLength == 0 branch above.
+					_ = r.setApplicationCorrupted(ctx, app.application,
+						"stored input L1 log identity conflicts with rescanned chain data"+
+							" (possible reorg past the input cursor); operator reset required. %v", err)
+					continue
+				}
 				r.Logger.Error("Error storing inputs and epochs",
 					"application", app.application.Name,
 					"address", address,
@@ -610,11 +622,12 @@ func (r *Service) fetchInputs(
 				continue
 			}
 			input := &Input{
-				Index:                idx,
-				Status:               InputCompletionStatus_None,
-				RawData:              event.Input,
-				BlockNumber:          event.Raw.BlockNumber,
-				TransactionReference: event.Raw.TxHash,
+				Index:           idx,
+				Status:          InputCompletionStatus_None,
+				RawData:         event.Input,
+				BlockNumber:     event.Raw.BlockNumber,
+				TransactionHash: event.Raw.TxHash,
+				LogIndex:        uint64(event.Raw.Index),
 			}
 			var duplicate bool
 			sortedInputs, duplicate = insertSorted(

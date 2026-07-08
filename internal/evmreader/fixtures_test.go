@@ -84,6 +84,7 @@ func makeInputEvent(
 		Raw: types.Log{
 			BlockNumber: blockNum,
 			TxHash:      common.BigToHash(new(big.Int).SetUint64(blockNum*1000 + index)),
+			Index:       uint(index),
 			BlockHash:   common.BigToHash(new(big.Int).SetUint64(blockNum)),
 		},
 	}

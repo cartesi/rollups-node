@@ -17,6 +17,14 @@ import (
 var (
 	ErrNotFound = errors.New("not found")
 	ErrNoUpdate = errors.New("update did not take effect")
+
+	// ErrInputLogIdentityConflict indicates an input insert conflicted with a
+	// stored row on the L1 log identity (transaction_hash, log_index) under a
+	// different input index. On a canonical chain this cannot happen; it means
+	// the stored inputs diverged from rescanned chain data (e.g. a reorg past
+	// the input cursor). Retrying cannot succeed — callers should treat the
+	// application state as corrupted.
+	ErrInputLogIdentityConflict = errors.New("input L1 log identity conflicts with stored data")
 )
 
 type Pagination struct {
@@ -57,10 +65,11 @@ type EpochFilter struct {
 }
 
 type InputFilter struct {
-	EpochIndex *uint64
-	Status     *InputCompletionStatus
-	NotStatus  *InputCompletionStatus
-	Sender     *common.Address
+	EpochIndex      *uint64
+	Status          *InputCompletionStatus
+	NotStatus       *InputCompletionStatus
+	Sender          *common.Address
+	TransactionHash *common.Hash
 }
 
 type Range struct {
@@ -213,7 +222,6 @@ type EpochRepository interface {
 
 type InputRepository interface {
 	GetInput(ctx context.Context, nameOrAddress string, inputIndex uint64) (*Input, error)
-	GetInputByTxReference(ctx context.Context, nameOrAddress string, ref *common.Hash) (*Input, error)
 	GetLastInput(ctx context.Context, appAddress string, epochIndex uint64) (*Input, error)
 	GetLastProcessedInput(ctx context.Context, appAddress string) (*Input, error)
 	ListInputs(ctx context.Context, nameOrAddress string, f InputFilter, p Pagination, descending bool) ([]*Input, uint64, error)

@@ -951,18 +951,19 @@ func (e EpochStatus) String() string {
 }
 
 type Input struct {
-	EpochApplicationID   int64                 `sql:"primary_key" json:"-"`
-	EpochIndex           uint64                `json:"epoch_index"`
-	Index                uint64                `sql:"primary_key" json:"index"`
-	BlockNumber          uint64                `json:"block_number"`
-	RawData              []byte                `json:"raw_data"`
-	Status               InputCompletionStatus `json:"status"`
-	MachineHash          *common.Hash          `json:"machine_hash"`
-	OutputsHash          *common.Hash          `json:"outputs_hash"`
-	TransactionReference common.Hash           `json:"transaction_reference"`
-	SnapshotURI          *string               `json:"-"`
-	CreatedAt            time.Time             `json:"created_at"`
-	UpdatedAt            time.Time             `json:"updated_at"`
+	EpochApplicationID int64                 `sql:"primary_key" json:"-"`
+	EpochIndex         uint64                `json:"epoch_index"`
+	Index              uint64                `sql:"primary_key" json:"index"`
+	BlockNumber        uint64                `json:"block_number"`
+	RawData            []byte                `json:"raw_data"`
+	Status             InputCompletionStatus `json:"status"`
+	MachineHash        *common.Hash          `json:"machine_hash"`
+	OutputsHash        *common.Hash          `json:"outputs_hash"`
+	TransactionHash    common.Hash           `json:"transaction_hash"`
+	LogIndex           uint64                `json:"log_index"`
+	SnapshotURI        *string               `json:"-"`
+	CreatedAt          time.Time             `json:"created_at"`
+	UpdatedAt          time.Time             `json:"updated_at"`
 }
 
 func (i *Input) MarshalJSON() ([]byte, error) {
@@ -974,12 +975,14 @@ func (i *Input) MarshalJSON() ([]byte, error) {
 		Index       string `json:"index"`
 		BlockNumber string `json:"block_number"`
 		RawData     string `json:"raw_data"`
+		LogIndex    string `json:"log_index"`
 		*Alias
 	}{
 		EpochIndex:  fmt.Sprintf("0x%x", i.EpochIndex),
 		Index:       fmt.Sprintf("0x%x", i.Index),
 		BlockNumber: fmt.Sprintf("0x%x", i.BlockNumber),
 		RawData:     "0x" + hex.EncodeToString(i.RawData),
+		LogIndex:    fmt.Sprintf("0x%x", i.LogIndex),
 		Alias:       (*Alias)(i),
 	}
 	return json.Marshal(aux)
@@ -992,15 +995,14 @@ func (i *Input) UnmarshalJSON(in []byte) error {
 		Index       string `json:"index"`
 		BlockNumber string `json:"block_number"`
 		RawData     string `json:"raw_data"`
+		LogIndex    string `json:"log_index"`
 		*Alias
-	}{}
+	}{Alias: (*Alias)(i)}
 
 	var err error
 	if err = json.Unmarshal(in, aux); err != nil {
 		return err
 	}
-
-	*i = Input(*aux.Alias)
 
 	i.EpochIndex, err = ParseHexUint64(aux.EpochIndex)
 	if err != nil {
@@ -1020,6 +1022,11 @@ func (i *Input) UnmarshalJSON(in []byte) error {
 	i.RawData, err = hexutil.Decode(aux.RawData)
 	if err != nil {
 		return fmt.Errorf("error on RawData: %w", err)
+	}
+
+	i.LogIndex, err = ParseHexUint64(aux.LogIndex)
+	if err != nil {
+		return fmt.Errorf("error on LogIndex: %w", err)
 	}
 
 	return nil

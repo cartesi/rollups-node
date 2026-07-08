@@ -17,18 +17,19 @@ type inputTable struct {
 	postgres.Table
 
 	// Columns
-	EpochApplicationID   postgres.ColumnInteger
-	EpochIndex           postgres.ColumnFloat
-	Index                postgres.ColumnFloat
-	BlockNumber          postgres.ColumnFloat
-	RawData              postgres.ColumnBytea
-	Status               postgres.ColumnString
-	MachineHash          postgres.ColumnBytea
-	OutputsHash          postgres.ColumnBytea
-	TransactionReference postgres.ColumnBytea
-	SnapshotURI          postgres.ColumnString
-	CreatedAt            postgres.ColumnTimestampz
-	UpdatedAt            postgres.ColumnTimestampz
+	EpochApplicationID postgres.ColumnInteger
+	EpochIndex         postgres.ColumnFloat
+	Index              postgres.ColumnFloat
+	BlockNumber        postgres.ColumnFloat
+	RawData            postgres.ColumnBytea
+	Status             postgres.ColumnString
+	MachineHash        postgres.ColumnBytea
+	OutputsHash        postgres.ColumnBytea
+	TransactionHash    postgres.ColumnBytea
+	LogIndex           postgres.ColumnFloat
+	SnapshotURI        postgres.ColumnString
+	CreatedAt          postgres.ColumnTimestampz
+	UpdatedAt          postgres.ColumnTimestampz
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
@@ -70,39 +71,41 @@ func newInputTable(schemaName, tableName, alias string) *InputTable {
 
 func newInputTableImpl(schemaName, tableName, alias string) inputTable {
 	var (
-		EpochApplicationIDColumn   = postgres.IntegerColumn("epoch_application_id")
-		EpochIndexColumn           = postgres.FloatColumn("epoch_index")
-		IndexColumn                = postgres.FloatColumn("index")
-		BlockNumberColumn          = postgres.FloatColumn("block_number")
-		RawDataColumn              = postgres.ByteaColumn("raw_data")
-		StatusColumn               = postgres.StringColumn("status")
-		MachineHashColumn          = postgres.ByteaColumn("machine_hash")
-		OutputsHashColumn          = postgres.ByteaColumn("outputs_hash")
-		TransactionReferenceColumn = postgres.ByteaColumn("transaction_reference")
-		SnapshotURIColumn          = postgres.StringColumn("snapshot_uri")
-		CreatedAtColumn            = postgres.TimestampzColumn("created_at")
-		UpdatedAtColumn            = postgres.TimestampzColumn("updated_at")
-		allColumns                 = postgres.ColumnList{EpochApplicationIDColumn, EpochIndexColumn, IndexColumn, BlockNumberColumn, RawDataColumn, StatusColumn, MachineHashColumn, OutputsHashColumn, TransactionReferenceColumn, SnapshotURIColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns             = postgres.ColumnList{EpochIndexColumn, BlockNumberColumn, RawDataColumn, StatusColumn, MachineHashColumn, OutputsHashColumn, TransactionReferenceColumn, SnapshotURIColumn, CreatedAtColumn, UpdatedAtColumn}
-		defaultColumns             = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
+		EpochApplicationIDColumn = postgres.IntegerColumn("epoch_application_id")
+		EpochIndexColumn         = postgres.FloatColumn("epoch_index")
+		IndexColumn              = postgres.FloatColumn("index")
+		BlockNumberColumn        = postgres.FloatColumn("block_number")
+		RawDataColumn            = postgres.ByteaColumn("raw_data")
+		StatusColumn             = postgres.StringColumn("status")
+		MachineHashColumn        = postgres.ByteaColumn("machine_hash")
+		OutputsHashColumn        = postgres.ByteaColumn("outputs_hash")
+		TransactionHashColumn    = postgres.ByteaColumn("transaction_hash")
+		LogIndexColumn           = postgres.FloatColumn("log_index")
+		SnapshotURIColumn        = postgres.StringColumn("snapshot_uri")
+		CreatedAtColumn          = postgres.TimestampzColumn("created_at")
+		UpdatedAtColumn          = postgres.TimestampzColumn("updated_at")
+		allColumns               = postgres.ColumnList{EpochApplicationIDColumn, EpochIndexColumn, IndexColumn, BlockNumberColumn, RawDataColumn, StatusColumn, MachineHashColumn, OutputsHashColumn, TransactionHashColumn, LogIndexColumn, SnapshotURIColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns           = postgres.ColumnList{EpochIndexColumn, BlockNumberColumn, RawDataColumn, StatusColumn, MachineHashColumn, OutputsHashColumn, TransactionHashColumn, LogIndexColumn, SnapshotURIColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns           = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return inputTable{
 		Table: postgres.NewTable(schemaName, tableName, alias, allColumns...),
 
 		//Columns
-		EpochApplicationID:   EpochApplicationIDColumn,
-		EpochIndex:           EpochIndexColumn,
-		Index:                IndexColumn,
-		BlockNumber:          BlockNumberColumn,
-		RawData:              RawDataColumn,
-		Status:               StatusColumn,
-		MachineHash:          MachineHashColumn,
-		OutputsHash:          OutputsHashColumn,
-		TransactionReference: TransactionReferenceColumn,
-		SnapshotURI:          SnapshotURIColumn,
-		CreatedAt:            CreatedAtColumn,
-		UpdatedAt:            UpdatedAtColumn,
+		EpochApplicationID: EpochApplicationIDColumn,
+		EpochIndex:         EpochIndexColumn,
+		Index:              IndexColumn,
+		BlockNumber:        BlockNumberColumn,
+		RawData:            RawDataColumn,
+		Status:             StatusColumn,
+		MachineHash:        MachineHashColumn,
+		OutputsHash:        OutputsHashColumn,
+		TransactionHash:    TransactionHashColumn,
+		LogIndex:           LogIndexColumn,
+		SnapshotURI:        SnapshotURIColumn,
+		CreatedAt:          CreatedAtColumn,
+		UpdatedAt:          UpdatedAtColumn,
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,
