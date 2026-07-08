@@ -6,21 +6,32 @@
 package integration
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	_ "embed"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
+	"net/http"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -39,6 +50,19 @@ type SameBlockInputsSuite struct {
 func TestSameBlockInputs(t *testing.T) {
 	suite.Run(t, new(SameBlockInputsSuite))
 }
+
+// Generated from testdata/Spambox.sol with solc 0.8.30, no optimizer:
+//
+//	solc --abi --bin testdata/Spambox.sol
+//
+// Kept as static testdata so this integration test does not require forge or
+// solc at runtime. Regenerate both files together whenever Spambox.sol changes.
+//
+//go:embed testdata/spambox_abi.json
+var spamboxABIJSON string
+
+//go:embed testdata/spambox_bytecode.hex
+var spamboxBytecode string
 
 func (s *SameBlockInputsSuite) SetupSuite() {
 	s.ctx, s.cancel = context.WithTimeout(context.Background(), 15*time.Minute)
@@ -78,6 +102,111 @@ func (s *SameBlockInputsSuite) TestMultipleInputsOneBlockAuthority() {
 func (s *SameBlockInputsSuite) TestMultipleInputsOneBlockPRT() {
 	s.appName = uniqueAppName("same-block-inputs-prt")
 	s.runMultipleInputsOneBlock([]string{"--prt"})
+}
+
+// TestMultipleInputsOneTransactionAuthority reproduces F29's exact trigger:
+// one L1 transaction emits several InputAdded logs for the same application.
+func (s *SameBlockInputsSuite) TestMultipleInputsOneTransactionAuthority() {
+	r := s.Require()
+	s.appName = uniqueAppName("same-tx-inputs-authority")
+
+	dappPath := envOrDefault("CARTESI_TEST_DAPP_PATH", "applications/echo-dapp")
+	appAddrStr, err := deployApplication(s.ctx, s.appName, dappPath, "--salt", uniqueSalt())
+	r.NoError(err, "deploy app")
+	appAddr := common.HexToAddress(appAddrStr)
+
+	inputBoxAddr := inputBoxAddress(s.T())
+	inputBox, err := iinputbox.NewIInputBox(inputBoxAddr, s.client)
+	r.NoError(err, "bind input box")
+
+	startIndex := inputBoxInputCount(s.ctx, s.T(), s.client, inputBoxAddr, appAddr)
+	controlTx, err := inputBox.AddInput(transactorForMnemonicIndex(s.ctx, s.T(), s.client, 2),
+		appAddr, []byte("CONTROL-SINGLE"))
+	r.NoError(err, "submit control input")
+	receiptCtx, receiptCancel := context.WithTimeout(s.ctx, 30*time.Second)
+	controlReceipt := waitReceipt(receiptCtx, s.T(), s.client, controlTx)
+	receiptCancel()
+	r.Equal(uint64(1), controlReceipt.Status, "control input transaction must succeed")
+
+	controlCtx, controlCancel := context.WithTimeout(s.ctx, inputProcessingTimeout)
+	controlInput, err := waitForInputProcessed(controlCtx, s.T(), s.appName, startIndex)
+	controlCancel()
+	r.NoError(err, "wait for control input")
+	r.Equal(controlReceipt.TxHash, controlInput.TransactionHash)
+
+	spambox := deploySpambox(s.ctx, s.T(), s.client, inputBoxAddr)
+
+	const spamCount = 5
+	spamOpts := transactorForMnemonicIndex(s.ctx, s.T(), s.client, 3)
+	spamOpts.GasLimit = 3_000_000 //nolint:mnd
+	spamTx, err := spambox.Transact(spamOpts, "spam", appAddr, big.NewInt(spamCount))
+	r.NoError(err, "submit spam transaction")
+	receiptCtx, receiptCancel = context.WithTimeout(s.ctx, 30*time.Second)
+	spamReceipt := waitReceipt(receiptCtx, s.T(), s.client, spamTx)
+	receiptCancel()
+	r.Equal(uint64(1), spamReceipt.Status, "spam transaction must succeed")
+
+	logIndexByInputIndex := make(map[uint64]uint64, spamCount)
+	seenLogIndexes := make(map[uint64]struct{}, spamCount)
+	for _, rawLog := range spamReceipt.Logs {
+		event, err := inputBox.ParseInputAdded(*rawLog)
+		if err != nil || event.AppContract != appAddr {
+			continue
+		}
+		r.Equal(spamReceipt.TxHash, event.Raw.TxHash)
+		inputIndex := event.Index.Uint64()
+		logIndex := uint64(event.Raw.Index)
+		logIndexByInputIndex[inputIndex] = logIndex
+		seenLogIndexes[logIndex] = struct{}{}
+	}
+	r.Len(logIndexByInputIndex, spamCount, "spam tx must emit InputAdded logs for this app")
+	r.Len(seenLogIndexes, spamCount, "spam logs must have distinct log indexes")
+
+	for i := uint64(0); i < spamCount; i++ {
+		idx := startIndex + 1 + i
+		inputCtx, inputCancel := context.WithTimeout(s.ctx, inputProcessingTimeout)
+		input, err := waitForInputProcessed(inputCtx, s.T(), s.appName, idx)
+		inputCancel()
+		r.NoError(err, "wait for spam input %d", idx)
+		r.Equal(spamReceipt.TxHash, input.TransactionHash)
+		r.Equal(logIndexByInputIndex[idx], input.LogIndex)
+	}
+
+	s.waitForInputCursorPast(spamReceipt.BlockNumber.Uint64())
+
+	// The F29 wedge showed up as unique-violation retry noise: assert the spam
+	// transaction produced none, on top of the cursor-advance check above.
+	s.assertNoNodeLogLineContains("SQLSTATE 23505")
+
+	allInputs, err := listInputsByRPC(s.ctx, s.appName, nil)
+	r.NoError(err, "list all inputs through JSON-RPC")
+	r.Equal(startIndex+spamCount+1, uint64(len(allInputs.Data)))
+	for i, input := range allInputs.Data {
+		r.Equal(startIndex+uint64(i), input.Index)
+	}
+
+	txHash := spamReceipt.TxHash.Hex()
+	filtered, err := listInputsByRPC(s.ctx, s.appName, &txHash)
+	r.NoError(err, "list inputs by spam transaction hash through JSON-RPC")
+	r.Len(filtered.Data, spamCount)
+	for i, input := range filtered.Data {
+		expectedIndex := startIndex + 1 + uint64(i)
+		r.Equal(expectedIndex, input.Index)
+		r.Equal(spamReceipt.TxHash, input.TransactionHash)
+		r.Equal(logIndexByInputIndex[expectedIndex], input.LogIndex)
+	}
+
+	out, err := runCLI(s.ctx, "read", "inputs", s.appName, "--transaction-hash", spamReceipt.TxHash.Hex())
+	r.NoError(err, "list inputs by spam transaction hash")
+	var cliFiltered api.ListResponse[model.Input]
+	r.NoError(json.Unmarshal([]byte(out), &cliFiltered), "parse filtered inputs")
+	r.Len(cliFiltered.Data, spamCount)
+	for i, input := range cliFiltered.Data {
+		expectedIndex := startIndex + 1 + uint64(i)
+		r.Equal(expectedIndex, input.Index)
+		r.Equal(spamReceipt.TxHash, input.TransactionHash)
+		r.Equal(logIndexByInputIndex[expectedIndex], input.LogIndex)
+	}
 }
 
 // runMultipleInputsOneBlock deploys an application, batches three inputs into a
@@ -363,4 +492,144 @@ func (s *SameBlockInputsSuite) readEpochSettlementData(
 	})
 	r.NoError(err, "wait for epoch %d settlement data (outputs merkle root)", epochIndex)
 	return root, proof, consensusAddr
+}
+
+// deploySpambox deploys the Spambox helper contract and fails the test on any
+// error, matching the waitReceipt style it already depends on.
+func deploySpambox(
+	ctx context.Context,
+	t testing.TB,
+	client *ethclient.Client,
+	inputBoxAddr common.Address,
+) *bind.BoundContract {
+	t.Helper()
+	r := require.New(t)
+	parsed, err := abi.JSON(strings.NewReader(spamboxABIJSON))
+	r.NoError(err, "parse Spambox ABI")
+	opts := transactorForMnemonicIndex(ctx, t, client, 5)
+	opts.GasLimit = 3_000_000 //nolint:mnd
+	_, tx, contract, err := bind.DeployContract(
+		opts, parsed, common.FromHex(strings.TrimSpace(spamboxBytecode)), client, inputBoxAddr)
+	r.NoError(err, "deploy Spambox")
+	receiptCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	receipt := waitReceipt(receiptCtx, t, client, tx)
+	r.Equal(types.ReceiptStatusSuccessful, receipt.Status,
+		"Spambox deployment reverted in tx %s", tx.Hash())
+	return contract
+}
+
+func listInputsByRPC(
+	ctx context.Context,
+	appName string,
+	transactionHash *string,
+) (*api.ListResponse[model.Input], error) {
+	req := struct {
+		JSONRPC string `json:"jsonrpc"`
+		Method  string `json:"method"`
+		Params  any    `json:"params"`
+		ID      int    `json:"id"`
+	}{
+		JSONRPC: "2.0",
+		Method:  "cartesi_listInputs",
+		Params: api.ListInputsParams{
+			Application:     appName,
+			TransactionHash: transactionHash,
+			Limit:           50,
+		},
+		ID: 1,
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	url := envOrDefault("CARTESI_JSONRPC_API_URL", "http://localhost:10011/rpc")
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := anvilHTTPClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		payload, _ := io.ReadAll(io.LimitReader(resp.Body, 512)) //nolint:errcheck
+		return nil, fmt.Errorf("cartesi_listInputs HTTP %d: %s", resp.StatusCode, string(payload))
+	}
+
+	var rpcResp struct {
+		Result *api.ListResponse[model.Input] `json:"result"`
+		Error  *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+		return nil, err
+	}
+	if rpcResp.Error != nil {
+		return nil, fmt.Errorf("cartesi_listInputs error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+	}
+	if rpcResp.Result == nil {
+		return nil, fmt.Errorf("cartesi_listInputs returned no result")
+	}
+	return rpcResp.Result, nil
+}
+
+func (s *SameBlockInputsSuite) waitForInputCursorPast(blockNumber uint64) {
+	r := s.Require()
+	dsn, err := config.GetDatabaseConnection()
+	r.NoError(err, "get database connection")
+	repo, err := factory.NewRepositoryFromConnectionString(s.ctx, dsn.Raw())
+	r.NoError(err, "open repository")
+	defer repo.Close()
+
+	ctx, cancel := context.WithTimeout(s.ctx, inputProcessingTimeout)
+	defer cancel()
+	err = pollUntil(ctx, 2*time.Second, func() (bool, error) {
+		app, err := repo.GetApplication(ctx, s.appName)
+		if err != nil {
+			// Retry transient DB errors until the poll deadline, matching the
+			// other wait helpers; a persistent failure still times out loudly.
+			s.T().Logf("retrying GetApplication while waiting for input cursor: %v", err)
+			return false, nil
+		}
+		if app == nil {
+			return false, nil
+		}
+		return app.LastInputCheckBlock >= blockNumber, nil
+	})
+	r.NoError(err, "input cursor did not advance past block %d", blockNumber)
+}
+
+// assertNoNodeLogLineContains fails the test if any node log line emitted
+// since StartLogCapture contains the given substring, regardless of level.
+// Unlike CheckLogs, which only flags unexpected ERR lines, this pins the
+// absence of a specific marker (e.g. SQLSTATE 23505 retry noise).
+func (s *SameBlockInputsSuite) assertNoNodeLogLineContains(substr string) {
+	logFile := os.Getenv("CARTESI_TEST_NODE_LOG_FILE")
+	if logFile == "" {
+		s.T().Log("CARTESI_TEST_NODE_LOG_FILE not set, skipping node log substring scan")
+		return
+	}
+	f, err := os.Open(logFile)
+	s.Require().NoError(err, "open node log file")
+	defer f.Close()
+
+	var hits []string
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // handle long lines (stack traces, JSON)
+	for scanner.Scan() {
+		line := stripANSI(scanner.Text())
+		if ts, ok := parseLogTimestamp(line); ok && ts.Before(s.logStart) {
+			continue
+		}
+		if strings.Contains(line, substr) {
+			hits = append(hits, line)
+		}
+	}
+	s.Require().NoError(scanner.Err(), "read node log file")
+	s.Require().Empty(hits, "node logs must not contain %q", substr)
 }

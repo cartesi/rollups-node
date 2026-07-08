@@ -1,0 +1,5 @@
+[
+  {"type":"constructor","inputs":[{"name":"inputBox_","type":"address","internalType":"address"}],"stateMutability":"nonpayable"},
+  {"type":"function","name":"inputBox","inputs":[],"outputs":[{"name":"","type":"address","internalType":"contract IInputBox"}],"stateMutability":"view"},
+  {"type":"function","name":"spam","inputs":[{"name":"app","type":"address","internalType":"address"},{"name":"count","type":"uint256","internalType":"uint256"}],"outputs":[],"stateMutability":"nonpayable"}
+]
