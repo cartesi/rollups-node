@@ -110,6 +110,9 @@ func (r *Service) Tick(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
+	now := time.Now()
+	r.lastSuccessfulPoll.Store(&now)
+
 	if blockNumber != r.lastBlockNumber.Load() {
 		r.lastBlockNumber.Store(blockNumber)
 		r.Logger.Info("Got new block header", "block", blockNumber, "policy", r.defaultBlock)
@@ -120,6 +123,10 @@ func (r *Service) Tick(ctx context.Context) (bool, error) {
 	r.processBlockHead(ctx, blockNumber, r.resolver)
 
 	return false, nil
+}
+
+func (r *Service) Ready() bool {
+	return time.Since(*r.lastSuccessfulPoll.Load()) < r.pollingMaxWait
 }
 
 func (r *Service) processBlockHead(
