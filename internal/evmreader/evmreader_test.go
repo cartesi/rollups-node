@@ -55,31 +55,26 @@ func (s *EvmReaderSuite) SetupTest() {
 	s.inputBox = newMockInputBox().SetupDefaultBehavior()
 	s.contractFactory = newMockAdapterFactory().SetupDefaultBehavior(s.applicationContract1, s.applicationContract2, s.inputBox)
 
-	s.evmReader = &Service{
-		client:             s.client,
-		repository:         s.repository,
-		defaultBlock:       DefaultBlock_Latest,
-		inputReaderEnabled: true,
-		hasEnabledApps:     true,
-		adapterFactory:     s.contractFactory,
-	}
-
 	logLevel, err := config.GetLogLevel()
 	s.Require().NoError(err)
 
-	serviceArgs := &service.TickServiceConfigs{
-		BaseConfigs: service.BaseConfigs{
-			Name:     "evm-reader",
-			LogLevel: logLevel,
+	evmReader, err := Create(s.T().Context(), &CreateInfo{
+		Config: config.EvmreaderConfig{
+			LogLevel:                   logLevel,
+			BlockchainHttpRetryMaxWait: 200 * time.Millisecond,
+			BlockchainDefaultBlock:     DefaultBlock_Latest,
+			FeatureInputReaderEnabled:  true,
+			EvmReaderPollingInterval:   100 * time.Millisecond,
 		},
-		PollInterval: 100 * time.Millisecond,
-	}
-	err = service.InitTickServiceTemplate(&s.evmReader.TickServiceTemplate, serviceArgs, s.evmReader)
+		Repository:     s.repository,
+		EthClient:      s.client,
+		AdapterFactory: s.contractFactory,
+	})
 	s.Require().NoError(err)
-
-	s.evmReader.resolver = newApplicationAdapterResolver(s.evmReader.Logger, s.contractFactory)
+	s.evmReader = evmReader.(*Service)
 
 	supCfg := service.SupervisorConfigs{
+		BaseConfigs: service.BaseConfigs{LogLevel: logLevel},
 		Factories: []service.FactoryFunction{
 			func(context.Context, *service.Supervisor) (service.SupervisedService, error) {
 				return s.evmReader, nil
@@ -133,19 +128,21 @@ func wasntNotified(ch <-chan struct{}) bool {
 }
 
 // Service tests
-func (s *EvmReaderSuite) TestItStopsWhenSupervisorIsStoppedAfterFirstHeader() {
+func (s *EvmReaderSuite) TestItStopsWhenContextIsCanceled() {
 	called := newCallNotification(s.client.EnqueueNewHead(100))
+
+	ctx, cancel := context.WithCancel(s.T().Context())
 
 	done := make(chan struct{})
 	go func() {
-		err := s.supervisor.Serve()
-		s.Require().NoError(err)
+		err := s.evmReader.Serve(ctx)
+		s.Require().ErrorIs(err, context.Canceled)
 		close(done)
 	}()
 
 	s.Require().True(waitNotification(called), "evmreader did not read new header")
 
-	s.supervisor.Stop(false)
+	cancel()
 
 	s.Require().True(waitNotification(done), "evmreader did not stop after context cancelation")
 }
@@ -153,48 +150,79 @@ func (s *EvmReaderSuite) TestItStopsWhenSupervisorIsStoppedAfterFirstHeader() {
 func (s *EvmReaderSuite) TestReadyReflectsServeLifecycle() {
 	called := newCallNotification(s.client.EnqueueNewHead(100))
 
-	s.Require().False(s.supervisor.Ready())
+	s.Require().False(s.evmReader.Ready())
+
+	ctx, cancel := context.WithCancel(s.T().Context())
 
 	done := make(chan struct{})
 	go func() {
-		err := s.supervisor.Serve()
-		s.Require().NoError(err)
+		err := s.evmReader.Serve(ctx)
+		s.Require().ErrorIs(err, context.Canceled)
 		close(done)
 	}()
 
 	s.Require().True(waitNotification(called))
-	s.Require().True(s.supervisor.Ready())
-	s.Require().True(wasntNotified(done))
+	s.Require().True(s.evmReader.Ready())
 
-	s.supervisor.Stop(false)
+	s.Require().True(wasntNotified(done))
+	cancel()
 	s.Require().True(waitNotification(done))
-	s.Require().False(s.supervisor.Ready())
+
+	s.Require().True(s.evmReader.Ready())
+	time.Sleep(s.evmReader.pollingMaxWait)
+	s.Require().False(s.evmReader.Ready())
 }
 
-func (s *EvmReaderSuite) TestReadyDoesNotDependOnPollingSuccess() {
+func (s *EvmReaderSuite) TestNotReadyWhilePollingFails() {
 	var hdr *types.Header
 	called := newCallNotification(s.client.On("HeaderByNumber",
 		mock.Anything,
 		mock.Anything,
-	).Return(hdr, errors.New("transient connection error")).Once())
+	).Return(hdr, errors.New("transient connection error")))
 
-	s.Require().False(s.supervisor.Ready())
+	s.Require().False(s.evmReader.Ready())
 
-	done := make(chan struct{})
 	go func() {
-		err := s.supervisor.Serve()
-		s.Require().NoError(err)
-		close(done)
+		err := s.evmReader.Serve(s.T().Context())
+		s.Require().ErrorIs(err, context.Canceled)
 	}()
 
 	s.Require().True(waitNotification(called))
-	s.Require().True(s.supervisor.Ready())
+	s.Require().False(s.evmReader.Ready())
+}
+
+func (s *EvmReaderSuite) TestReadyIsRecoveredOnPollingSuccess() {
+	var hdr *types.Header
+	failCalled := newCallNotification(s.client.On("HeaderByNumber",
+		mock.Anything,
+		mock.Anything,
+	).Return(hdr, errors.New("transient connection error")).Once())
+	called := newCallNotification(s.client.EnqueueNewHead(100))
+
+	s.Require().False(s.evmReader.Ready())
+
+	ctx, cancel := context.WithCancel(s.T().Context())
+
+	done := make(chan struct{})
+	go func() {
+		err := s.evmReader.Serve(ctx)
+		s.Require().ErrorIs(err, context.Canceled)
+		close(done)
+	}()
+
+	s.Require().True(waitNotification(failCalled))
+	s.Require().False(s.evmReader.Ready())
+
+	s.Require().True(waitNotification(called))
+	s.Require().True(s.evmReader.Ready())
+
 	s.Require().True(wasntNotified(done))
-
-	s.supervisor.Stop(false)
-
+	cancel()
 	s.Require().True(waitNotification(done))
-	s.Require().False(s.supervisor.Ready())
+
+	s.Require().True(s.evmReader.Ready())
+	time.Sleep(s.evmReader.pollingMaxWait)
+	s.Require().False(s.evmReader.Ready())
 }
 
 func (s *EvmReaderSuite) TestTickScansWithServiceContext() {
