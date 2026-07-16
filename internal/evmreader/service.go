@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math/big"
 	"sync/atomic"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	. "github.com/cartesi/rollups-node/internal/model"
@@ -20,10 +21,11 @@ import (
 )
 
 type CreateInfo struct {
-	Config     config.EvmreaderConfig
-	Logger     *slog.Logger
-	EthClient  *ethclient.Client
-	Repository EvmReaderRepository
+	Config         config.EvmreaderConfig
+	Logger         *slog.Logger
+	Repository     EvmReaderRepository
+	EthClient      EthClientInterface
+	AdapterFactory AdapterFactory
 }
 
 type Service struct {
@@ -38,6 +40,8 @@ type Service struct {
 	hasEnabledApps     bool
 	inputReaderEnabled bool
 	lastBlockNumber    atomic.Uint64
+	lastSuccessfulPoll atomic.Pointer[time.Time]
+	pollingMaxWait     time.Duration
 }
 
 const EvmReaderConfigKey = "evm-reader"
@@ -116,15 +120,27 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 	s.defaultBlock = nodeConfig.DefaultBlock
 	s.inputReaderEnabled = nodeConfig.InputReaderEnabled
 	s.hasEnabledApps = true
-	s.adapterFactory = &DefaultAdapterFactory{
-		Client: ethClient,
-		Filter: ethutil.Filter{
-			MinChunkSize: ethutil.DefaultMinChunkSize,
-			MaxChunkSize: new(big.Int).SetUint64(c.Config.BlockchainMaxBlockRange),
-			Logger:       s.Logger,
-		},
+
+	if c.AdapterFactory != nil {
+		s.adapterFactory = c.AdapterFactory
+	} else {
+		fullEthClient, ok := ethClient.(*ethclient.Client)
+		if !ok {
+			return nil, fmt.Errorf("EthClient must be *ethclient.Client when AdapterFactory is not provided")
+		}
+		s.adapterFactory = &DefaultAdapterFactory{
+			Client: fullEthClient,
+			Filter: ethutil.Filter{
+				MinChunkSize: ethutil.DefaultMinChunkSize,
+				MaxChunkSize: new(big.Int).SetUint64(c.Config.BlockchainMaxBlockRange),
+				Logger:       s.Logger,
+			},
+		}
 	}
+
 	s.resolver = newApplicationAdapterResolver(s.Logger, s.adapterFactory)
+	s.pollingMaxWait = c.Config.BlockchainHttpRetryMaxWait
+	s.lastSuccessfulPoll.Store(&time.Time{})
 
 	s.Logger.Info("Created", "config", c.Config)
 
