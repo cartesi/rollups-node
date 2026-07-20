@@ -249,56 +249,11 @@ func (s *ImplementationSuite) TestOutputsHashProof() {
 	require.ErrorIs(err, ErrCanceled)
 }
 
-// Test WriteCheckpointHash method
-func (s *ImplementationSuite) TestWriteCheckpointHash() {
-	require := s.Require()
-	ctx := context.Background()
-
-	// Test successful write
-	mockBackend := NewMockBackend()
-	hash := randomFakeHash()
-	mockBackend.On("WriteMemory", CheckpointAddress, hash[:], mock.AnythingOfType("time.Duration")).
-		Return(nil)
-	machine := &machineImpl{
-		backend: mockBackend,
-		logger:  s.logger,
-		params: model.ExecutionParameters{
-			FastDeadline: time.Second * 5,
-		},
-	}
-
-	err := machine.WriteCheckpointHash(ctx, hash)
-	require.NoError(err)
-	mockBackend.AssertExpectations(s.T())
-
-	// Test write with backend error
-	mockBackend2 := NewMockBackend()
-	mockBackend2.On("WriteMemory", CheckpointAddress, hash[:], mock.AnythingOfType("time.Duration")).
-		Return(errors.New("write failed"))
-	machine2 := &machineImpl{
-		backend: mockBackend2,
-		logger:  s.logger,
-		params: model.ExecutionParameters{
-			FastDeadline: time.Second * 5,
-		},
-	}
-	err = machine2.WriteCheckpointHash(ctx, hash)
-	require.Error(err)
-	require.ErrorIs(err, ErrMachineInternal)
-	require.Contains(err.Error(), "could not write checkpoint hash")
-	mockBackend2.AssertExpectations(s.T())
-
-	// Test write with canceled context
-	canceledCtx, cancel := context.WithCancel(ctx)
-	cancel()
-	err = machine.WriteCheckpointHash(canceledCtx, hash)
-	require.ErrorIs(err, ErrCanceled)
-}
-
 // Test Advance method
 func (s *ImplementationSuite) TestAdvance() {
 	require := s.Require()
 	ctx := context.Background()
+	expectedHash := randomFakeHash()
 
 	// Test successful advance (accepted)
 	mockBackend := NewMockBackend()
@@ -317,7 +272,7 @@ func (s *ImplementationSuite) TestAdvance() {
 	}
 
 	input := []byte("test input")
-	resp, err := machine.Advance(ctx, input, false)
+	resp, err := machine.Advance(ctx, input, expectedHash, false)
 	require.NoError(err)
 	require.True(resp.Accepted)
 	require.Empty(resp.Outputs)
@@ -339,7 +294,7 @@ func (s *ImplementationSuite) TestAdvance() {
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	resp, err = machine2.Advance(ctx, input, false)
+	resp, err = machine2.Advance(ctx, input, expectedHash, false)
 	require.NoError(err)
 	require.False(resp.Accepted)
 	require.Empty(resp.Outputs)
@@ -361,7 +316,7 @@ func (s *ImplementationSuite) TestAdvance() {
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	resp, err = machine3.Advance(ctx, input, false)
+	resp, err = machine3.Advance(ctx, input, expectedHash, false)
 	require.ErrorIs(err, ErrException)
 	require.False(resp.Accepted)
 	require.Equal(Hash{}, resp.OutputsHash)
@@ -382,14 +337,14 @@ func (s *ImplementationSuite) TestAdvance() {
 		},
 	}
 	largeInput := make([]byte, 10)
-	_, err = machine4.Advance(ctx, largeInput, false)
+	_, err = machine4.Advance(ctx, largeInput, expectedHash, false)
 	require.ErrorIs(err, ErrPayloadLengthLimitExceeded)
 	mockBackend4.AssertExpectations(s.T())
 
 	// Test advance with invalid hash length
 	mockBackend5 := NewMockBackend()
 	mockBackend5.On("CmioRxBufferSize").Return(uint64(1024))
-	mockBackend5.On("SendCmioResponse", uint16(AdvanceStateRequest), mock.Anything, mock.AnythingOfType("time.Duration")).Return(nil)
+	mockBackend5.On("SendCmioResponse", uint16(AdvanceStateRequest), mock.Anything, expectedHash, mock.AnythingOfType("time.Duration")).Return(nil)
 	mockBackend5.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
 	mockBackend5.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
 	mockBackend5.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
@@ -405,7 +360,7 @@ func (s *ImplementationSuite) TestAdvance() {
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	_, err = machine5.Advance(ctx, input, false)
+	_, err = machine5.Advance(ctx, input, expectedHash, false)
 	require.Error(err)
 	require.ErrorIs(err, ErrHashLength)
 	mockBackend5.AssertExpectations(s.T())
@@ -994,11 +949,12 @@ func (s *ImplementationSuite) TestStep() {
 func (s *ImplementationSuite) TestProcess() {
 	require := s.Require()
 	ctx := context.Background()
+	expectedHash := randomFakeHash()
 
 	// Test successful process
 	mockBackend := NewMockBackend()
 	mockBackend.On("CmioRxBufferSize").Return(uint64(1024))
-	mockBackend.On("SendCmioResponse", mock.AnythingOfType("uint16"), mock.Anything, mock.AnythingOfType("time.Duration")).Return(nil)
+	mockBackend.On("SendCmioResponse", mock.AnythingOfType("uint16"), mock.Anything, expectedHash, mock.AnythingOfType("time.Duration")).Return(nil)
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
 	mockBackend.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
 	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
@@ -1017,7 +973,7 @@ func (s *ImplementationSuite) TestProcess() {
 	}
 
 	input := []byte("test input")
-	accepted, outputs, reports, _, _, data, err := machine.process(ctx, input, AdvanceStateRequest, false)
+	accepted, outputs, reports, _, _, data, err := machine.process(ctx, input, AdvanceStateRequest, &expectedHash, false)
 	require.NoError(err)
 	require.True(accepted)
 	require.Empty(outputs)
@@ -1039,7 +995,7 @@ func (s *ImplementationSuite) TestProcess() {
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	_, _, _, _, _, _, err = machine2.process(ctx, input, AdvanceStateRequest, false)
+	_, _, _, _, _, _, err = machine2.process(ctx, input, AdvanceStateRequest, &expectedHash, false)
 	require.ErrorIs(err, ErrPayloadLengthLimitExceeded)
 	mockBackend2.AssertExpectations(s.T())
 
@@ -1049,6 +1005,7 @@ func (s *ImplementationSuite) TestProcess() {
 	mockBackend3.On("SendCmioResponse",
 		mock.AnythingOfType("uint16"),
 		mock.Anything,
+		expectedHash,
 		mock.AnythingOfType("time.Duration"),
 	).Return(errors.New("send failed"))
 	machine3 := &machineImpl{
@@ -1062,7 +1019,7 @@ func (s *ImplementationSuite) TestProcess() {
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	_, _, _, _, _, _, err = machine3.process(ctx, input, AdvanceStateRequest, false)
+	_, _, _, _, _, _, err = machine3.process(ctx, input, AdvanceStateRequest, &expectedHash, false)
 	require.Error(err)
 	require.Contains(err.Error(), "send failed")
 	mockBackend3.AssertExpectations(s.T())
@@ -1070,7 +1027,7 @@ func (s *ImplementationSuite) TestProcess() {
 	// Test process with run error
 	mockBackend4 := NewMockBackend()
 	mockBackend4.On("CmioRxBufferSize").Return(uint64(1024))
-	mockBackend4.On("SendCmioResponse", mock.AnythingOfType("uint16"), mock.Anything, mock.AnythingOfType("time.Duration")).Return(nil)
+	mockBackend4.On("SendCmioResponse", mock.AnythingOfType("uint16"), mock.Anything, expectedHash, mock.AnythingOfType("time.Duration")).Return(nil)
 	mockBackend4.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), errors.New("read cycle failed"))
 	machine4 := &machineImpl{
 		backend: mockBackend4,
@@ -1083,7 +1040,7 @@ func (s *ImplementationSuite) TestProcess() {
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	_, _, _, _, _, _, err = machine4.process(ctx, input, AdvanceStateRequest, false)
+	_, _, _, _, _, _, err = machine4.process(ctx, input, AdvanceStateRequest, &expectedHash, false)
 	require.Error(err)
 	require.Contains(err.Error(), "read cycle failed")
 	mockBackend4.AssertExpectations(s.T())

@@ -7,7 +7,7 @@
 package emulator
 
 // #include <stdlib.h>
-// #include "cartesi-machine/jsonrpc-machine-c-api.h"
+// #include "cartesi-machine/cm-jsonrpc.h"
 import "C"
 
 import (

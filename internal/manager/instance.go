@@ -299,16 +299,8 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 	advanceCtx, cancel := context.WithTimeout(ctx, m.advanceTimeout)
 	defer cancel()
 
-	if computeHashes {
-		// write the checkpoint hash before processing
-		err = fork.WriteCheckpointHash(advanceCtx, prevMachineHash)
-		if err != nil {
-			return nil, errors.Join(err, fork.Close())
-		}
-	}
-
 	// Process the input
-	advanceResp, err := fork.Advance(advanceCtx, input, computeHashes)
+	advanceResp, err := fork.Advance(advanceCtx, input, prevMachineHash, computeHashes)
 	status, err := toInputStatus(advanceResp.Accepted, err)
 	if err != nil {
 		return nil, errors.Join(err, fork.Close())

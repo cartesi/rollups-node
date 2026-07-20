@@ -3,8 +3,6 @@
 
 local cartesi = require("cartesi")
 
-local checkpoint_address = 0xfe0
-
 local function usage(message)
     if message then io.stderr:write(message, "\n") end
     io.stderr:write(
@@ -75,16 +73,15 @@ end
 
 local function advance_one(machine, input_path, input_number)
     local checkpoint = machine:get_root_hash()
-    machine:write_memory(checkpoint_address, checkpoint)
-    machine:send_cmio_response(cartesi.CMIO_YIELD_REASON_ADVANCE_STATE, read_all(input_path))
+    machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, read_all(input_path), checkpoint)
     run_until_manual_yield(machine)
 
     local _, reason, data = machine:receive_cmio_request()
-    if reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_REJECTED then
+    if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
         error(string.format("Dave replay input %d was rejected", input_number))
-    elseif reason == cartesi.CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION then
+    elseif reason == cartesi.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION then
         error(string.format("Dave replay input %d raised an exception", input_number))
-    elseif reason ~= cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED then
+    elseif reason ~= cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
         error(string.format("Dave replay input %d ended with unexpected yield reason %s", input_number, tostring(reason)))
     end
     if #data ~= 32 then

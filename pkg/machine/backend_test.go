@@ -40,8 +40,15 @@ func (m *MockBackend) ReadMCycle(timeout time.Duration) (uint64, error) {
 	return args.Get(0).(uint64), args.Error(1)
 }
 
-func (m *MockBackend) SendCmioResponse(reason uint16, data []byte, timeout time.Duration) error {
-	args := m.Called(reason, data, timeout)
+func (m *MockBackend) SendCmioResponse(reason uint16, data []byte, revertRootHash *Hash, timeout time.Duration) error {
+	args := mock.Arguments{}
+	if requestType(reason) == AdvanceStateRequest {
+		// match hash by value on advance
+		args = m.Called(reason, data, *revertRootHash, timeout)
+	} else if requestType(reason) == InspectStateRequest {
+		// nil on inspect
+		args = m.Called(reason, data, nil, timeout)
+	}
 	return args.Error(0)
 }
 
@@ -105,7 +112,7 @@ func randomFakeHash() Hash {
 // SetupAccepted configures the mock for a successful advance/inspect operation
 func (m *MockBackend) SetupAccepted(reqType requestType) {
 	hash := randomFakeHash()
-	m.On("SendCmioResponse", uint16(reqType), mock.Anything, mock.AnythingOfType("time.Duration")).Return(nil)
+	m.On("SendCmioResponse", uint16(reqType), mock.Anything, mock.Anything, mock.AnythingOfType("time.Duration")).Return(nil)
 	m.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
 	m.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
 	m.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
@@ -116,7 +123,7 @@ func (m *MockBackend) SetupAccepted(reqType requestType) {
 // SetupRejected configures the mock for a rejected advance/inspect operation
 func (m *MockBackend) SetupRejected(reqType requestType) {
 	hash := randomFakeHash()
-	m.On("SendCmioResponse", uint16(reqType), mock.Anything, mock.AnythingOfType("time.Duration")).Return(nil)
+	m.On("SendCmioResponse", uint16(reqType), mock.Anything, mock.Anything, mock.AnythingOfType("time.Duration")).Return(nil)
 	m.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
 	m.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
 	m.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
@@ -126,7 +133,7 @@ func (m *MockBackend) SetupRejected(reqType requestType) {
 
 // SetupException configures the mock for an exception during advance/inspect
 func (m *MockBackend) SetupException(reqType requestType) {
-	m.On("SendCmioResponse", uint16(reqType), mock.Anything, mock.AnythingOfType("time.Duration")).Return(nil)
+	m.On("SendCmioResponse", uint16(reqType), mock.Anything, mock.Anything, mock.AnythingOfType("time.Duration")).Return(nil)
 	m.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
 	m.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
 	m.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(

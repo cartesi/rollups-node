@@ -67,15 +67,15 @@ type Machine interface {
 	OutputsHash(ctx context.Context) (Hash, error)
 	// OutputsHashProof returns the proof that the outputs merkle root hash is stored in the cmio tx buffer.
 	OutputsHashProof(ctx context.Context) ([]Hash, error)
-	// WriteCheckpointHash writes the given checkpoint hash to the machine memory.
-	WriteCheckpointHash(ctx context.Context, hash Hash) error
 
 	// Advance sends an input to the machine.
+	// The checkpointHash is the machine's root hash before processing the input,
+	// sent along with the request so the machine can revert to it if needed.
 	// It always returns a non-nil AdvanceResponse, even on error paths.
 	// The response contains whether the request was accepted,
 	// the corresponding outputs, reports, and the hash of the outputs.
 	// In case the request is not accepted, the response does not contain outputs.
-	Advance(ctx context.Context, input []byte, computeHashes bool) (*AdvanceResponse, error)
+	Advance(ctx context.Context, input []byte, checkpointHash Hash, computeHashes bool) (*AdvanceResponse, error)
 
 	// Inspect sends a query to the machine.
 	// It returns a boolean indicating whether or not the request was accepted

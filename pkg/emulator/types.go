@@ -7,7 +7,7 @@
 package emulator
 
 // #include <stdlib.h>
-// #include "cartesi-machine/jsonrpc-machine-c-api.h"
+// #include "cartesi-machine/cm-jsonrpc.h"
 import "C"
 import "fmt"
 
@@ -18,18 +18,18 @@ import "fmt"
 type ErrorCode int32
 
 const (
-	ErrCodeOk                ErrorCode = C.CM_ERROR_OK
-	ErrCodeInvalidArgument   ErrorCode = C.CM_ERROR_INVALID_ARGUMENT
-	ErrCodeDomainError       ErrorCode = C.CM_ERROR_DOMAIN_ERROR
-	ErrCodeLengthError       ErrorCode = C.CM_ERROR_LENGTH_ERROR
-	ErrCodeOutOfRange        ErrorCode = C.CM_ERROR_OUT_OF_RANGE
-	ErrCodeLogicError        ErrorCode = C.CM_ERROR_LOGIC_ERROR
-	ErrCodeRuntimeError      ErrorCode = C.CM_ERROR_RUNTIME_ERROR
-	ErrCodeRangeError        ErrorCode = C.CM_ERROR_RANGE_ERROR
-	ErrCodeOverflowError     ErrorCode = C.CM_ERROR_OVERFLOW_ERROR
-	ErrCodeUnderflowError    ErrorCode = C.CM_ERROR_UNDERFLOW_ERROR
-	ErrCodeRegexError        ErrorCode = C.CM_ERROR_REGEX_ERROR
-	ErrCodeSystemError       ErrorCode = C.CM_ERROR_SYSTEM_ERROR
+	ErrCodeOk              ErrorCode = C.CM_ERROR_OK
+	ErrCodeInvalidArgument ErrorCode = C.CM_ERROR_INVALID_ARGUMENT
+	ErrCodeDomainError     ErrorCode = C.CM_ERROR_DOMAIN_ERROR
+	ErrCodeLengthError     ErrorCode = C.CM_ERROR_LENGTH_ERROR
+	ErrCodeOutOfRange      ErrorCode = C.CM_ERROR_OUT_OF_RANGE
+	ErrCodeLogicError      ErrorCode = C.CM_ERROR_LOGIC_ERROR
+	ErrCodeRuntimeError    ErrorCode = C.CM_ERROR_RUNTIME_ERROR
+	ErrCodeRangeError      ErrorCode = C.CM_ERROR_RANGE_ERROR
+	ErrCodeOverflowError   ErrorCode = C.CM_ERROR_OVERFLOW_ERROR
+	ErrCodeUnderflowError  ErrorCode = C.CM_ERROR_UNDERFLOW_ERROR
+	//ErrCodeRegexError        ErrorCode = C.CM_ERROR_REGEX_ERROR
+	//ErrCodeSystemError       ErrorCode = C.CM_ERROR_SYSTEM_ERROR
 	ErrCodeBadTypeid         ErrorCode = C.CM_ERROR_BAD_TYPEID
 	ErrCodeBadCast           ErrorCode = C.CM_ERROR_BAD_CAST
 	ErrCodeBadAnyCast        ErrorCode = C.CM_ERROR_BAD_ANY_CAST
@@ -123,23 +123,23 @@ type (
 
 const (
 	// type
-	YieldAutomatic CmioYieldCommand = C.CM_CMIO_YIELD_COMMAND_AUTOMATIC
-	YieldManual    CmioYieldCommand = C.CM_CMIO_YIELD_COMMAND_MANUAL
+	YieldAutomatic CmioYieldCommand = C.CM_HTIF_YIELD_CMD_AUTOMATIC
+	YieldManual    CmioYieldCommand = C.CM_HTIF_YIELD_CMD_MANUAL
 
 	// NOTE: these values do not form an enum (e.g., automatic-progress == manual-accepted).
 
 	// reason - request
-	AutomaticYieldReasonProgress CmioYieldReason = C.CM_CMIO_YIELD_AUTOMATIC_REASON_PROGRESS
-	AutomaticYieldReasonOutput   CmioYieldReason = C.CM_CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT
-	AutomaticYieldReasonReport   CmioYieldReason = C.CM_CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT
+	AutomaticYieldReasonProgress CmioYieldReason = C.CM_HTIF_YIELD_AUTOMATIC_REASON_PROGRESS
+	AutomaticYieldReasonOutput   CmioYieldReason = C.CM_HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT
+	AutomaticYieldReasonReport   CmioYieldReason = C.CM_HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT
 
-	ManualYieldReasonAccepted  CmioYieldReason = C.CM_CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED
-	ManualYieldReasonRejected  CmioYieldReason = C.CM_CMIO_YIELD_MANUAL_REASON_RX_REJECTED
-	ManualYieldReasonException CmioYieldReason = C.CM_CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION
+	ManualYieldReasonAccepted  CmioYieldReason = C.CM_HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
+	ManualYieldReasonRejected  CmioYieldReason = C.CM_HTIF_YIELD_MANUAL_REASON_RX_REJECTED
+	ManualYieldReasonException CmioYieldReason = C.CM_HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION
 
 	// reason - reply
-	YieldReasonAdvanceState CmioYieldReason = C.CM_CMIO_YIELD_REASON_ADVANCE_STATE
-	YieldReasonInspectState CmioYieldReason = C.CM_CMIO_YIELD_REASON_INSPECT_STATE
+	YieldReasonAdvanceState CmioYieldReason = C.CM_HTIF_YIELD_REASON_ADVANCE_STATE
+	YieldReasonInspectState CmioYieldReason = C.CM_HTIF_YIELD_REASON_INSPECT_STATE
 )
 
 // cm_reg addresses/CSRs
@@ -257,41 +257,41 @@ const (
 	REG_HTIF_ICONSOLE  RegID = C.CM_REG_HTIF_ICONSOLE
 	REG_HTIF_IYIELD    RegID = C.CM_REG_HTIF_IYIELD
 	// Microarchitecture registers
-	REG_UARCH_X0        RegID = C.CM_REG_UARCH_X0
-	REG_UARCH_X1        RegID = C.CM_REG_UARCH_X1
-	REG_UARCH_X2        RegID = C.CM_REG_UARCH_X2
-	REG_UARCH_X3        RegID = C.CM_REG_UARCH_X3
-	REG_UARCH_X4        RegID = C.CM_REG_UARCH_X4
-	REG_UARCH_X5        RegID = C.CM_REG_UARCH_X5
-	REG_UARCH_X6        RegID = C.CM_REG_UARCH_X6
-	REG_UARCH_X7        RegID = C.CM_REG_UARCH_X7
-	REG_UARCH_X8        RegID = C.CM_REG_UARCH_X8
-	REG_UARCH_X9        RegID = C.CM_REG_UARCH_X9
-	REG_UARCH_X10       RegID = C.CM_REG_UARCH_X10
-	REG_UARCH_X11       RegID = C.CM_REG_UARCH_X11
-	REG_UARCH_X12       RegID = C.CM_REG_UARCH_X12
-	REG_UARCH_X13       RegID = C.CM_REG_UARCH_X13
-	REG_UARCH_X14       RegID = C.CM_REG_UARCH_X14
-	REG_UARCH_X15       RegID = C.CM_REG_UARCH_X15
-	REG_UARCH_X16       RegID = C.CM_REG_UARCH_X16
-	REG_UARCH_X17       RegID = C.CM_REG_UARCH_X17
-	REG_UARCH_X18       RegID = C.CM_REG_UARCH_X18
-	REG_UARCH_X19       RegID = C.CM_REG_UARCH_X19
-	REG_UARCH_X20       RegID = C.CM_REG_UARCH_X20
-	REG_UARCH_X21       RegID = C.CM_REG_UARCH_X21
-	REG_UARCH_X22       RegID = C.CM_REG_UARCH_X22
-	REG_UARCH_X23       RegID = C.CM_REG_UARCH_X23
-	REG_UARCH_X24       RegID = C.CM_REG_UARCH_X24
-	REG_UARCH_X25       RegID = C.CM_REG_UARCH_X25
-	REG_UARCH_X26       RegID = C.CM_REG_UARCH_X26
-	REG_UARCH_X27       RegID = C.CM_REG_UARCH_X27
-	REG_UARCH_X28       RegID = C.CM_REG_UARCH_X28
-	REG_UARCH_X29       RegID = C.CM_REG_UARCH_X29
-	REG_UARCH_X30       RegID = C.CM_REG_UARCH_X30
-	REG_UARCH_X31       RegID = C.CM_REG_UARCH_X31
-	REG_UARCH_PC        RegID = C.CM_REG_UARCH_PC
-	REG_UARCH_CYCLE     RegID = C.CM_REG_UARCH_CYCLE
-	REG_UARCH_HALT_FLAG RegID = C.CM_REG_UARCH_HALT_FLAG
+	REG_UARCH_X0    RegID = C.CM_REG_UARCH_X0
+	REG_UARCH_X1    RegID = C.CM_REG_UARCH_X1
+	REG_UARCH_X2    RegID = C.CM_REG_UARCH_X2
+	REG_UARCH_X3    RegID = C.CM_REG_UARCH_X3
+	REG_UARCH_X4    RegID = C.CM_REG_UARCH_X4
+	REG_UARCH_X5    RegID = C.CM_REG_UARCH_X5
+	REG_UARCH_X6    RegID = C.CM_REG_UARCH_X6
+	REG_UARCH_X7    RegID = C.CM_REG_UARCH_X7
+	REG_UARCH_X8    RegID = C.CM_REG_UARCH_X8
+	REG_UARCH_X9    RegID = C.CM_REG_UARCH_X9
+	REG_UARCH_X10   RegID = C.CM_REG_UARCH_X10
+	REG_UARCH_X11   RegID = C.CM_REG_UARCH_X11
+	REG_UARCH_X12   RegID = C.CM_REG_UARCH_X12
+	REG_UARCH_X13   RegID = C.CM_REG_UARCH_X13
+	REG_UARCH_X14   RegID = C.CM_REG_UARCH_X14
+	REG_UARCH_X15   RegID = C.CM_REG_UARCH_X15
+	REG_UARCH_X16   RegID = C.CM_REG_UARCH_X16
+	REG_UARCH_X17   RegID = C.CM_REG_UARCH_X17
+	REG_UARCH_X18   RegID = C.CM_REG_UARCH_X18
+	REG_UARCH_X19   RegID = C.CM_REG_UARCH_X19
+	REG_UARCH_X20   RegID = C.CM_REG_UARCH_X20
+	REG_UARCH_X21   RegID = C.CM_REG_UARCH_X21
+	REG_UARCH_X22   RegID = C.CM_REG_UARCH_X22
+	REG_UARCH_X23   RegID = C.CM_REG_UARCH_X23
+	REG_UARCH_X24   RegID = C.CM_REG_UARCH_X24
+	REG_UARCH_X25   RegID = C.CM_REG_UARCH_X25
+	REG_UARCH_X26   RegID = C.CM_REG_UARCH_X26
+	REG_UARCH_X27   RegID = C.CM_REG_UARCH_X27
+	REG_UARCH_X28   RegID = C.CM_REG_UARCH_X28
+	REG_UARCH_X29   RegID = C.CM_REG_UARCH_X29
+	REG_UARCH_X30   RegID = C.CM_REG_UARCH_X30
+	REG_UARCH_X31   RegID = C.CM_REG_UARCH_X31
+	REG_UARCH_PC    RegID = C.CM_REG_UARCH_PC
+	REG_UARCH_CYCLE RegID = C.CM_REG_UARCH_CYCLE
+	REG_UARCH_HALT  RegID = C.CM_REG_UARCH_HALT
 	// Views of registers
 	REG_HTIF_TOHOST_DEV      RegID = C.CM_REG_HTIF_TOHOST_DEV
 	REG_HTIF_TOHOST_CMD      RegID = C.CM_REG_HTIF_TOHOST_CMD

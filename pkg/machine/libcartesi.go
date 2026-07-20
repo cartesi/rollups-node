@@ -21,7 +21,7 @@ type RemoteMachineInterface interface {
 	GetRootHash() (emulator.Hash, error)
 	GetProof(address uint64, log2size int32) (string, error)
 	ReadReg(reg emulator.RegID) (uint64, error)
-	SendCmioResponse(reason uint16, data []byte) error
+	SendCmioResponse(reason uint16, data []byte, revertRootHash *emulator.Hash) error
 	ReceiveCmioRequest() (uint8, uint16, []byte, error)
 	WriteMemory(address uint64, data []byte) error
 	Store(directory string) error
@@ -167,11 +167,11 @@ func (e *LibCartesiBackend) ReadMCycle(timeout time.Duration) (uint64, error) {
 	return cycle, nil
 }
 
-func (e *LibCartesiBackend) SendCmioResponse(reason uint16, data []byte, timeout time.Duration) error {
+func (e *LibCartesiBackend) SendCmioResponse(reason uint16, data []byte, revertRootHash *Hash, timeout time.Duration) error {
 	if err := e.inner.SetTimeout(timeout.Milliseconds()); err != nil {
 		return fmt.Errorf("failed to set operation timeout: %w", err)
 	}
-	return e.inner.SendCmioResponse(reason, data)
+	return e.inner.SendCmioResponse(reason, data, revertRootHash)
 }
 
 func (e *LibCartesiBackend) ReceiveCmioRequest(timeout time.Duration) (uint8, uint16, []byte, error) {

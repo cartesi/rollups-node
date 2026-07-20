@@ -50,7 +50,6 @@ const (
 const maxOutputs = 65536 // 2^16
 const maxReports = 65536 // 2^16
 
-const CheckpointAddress uint64 = 0xfe0 // value from machine api: CM_AR_SHADOW_REVERT_ROOT_HASH_START
 const TxBufferAddress uint64 = 0x60800000
 const HashLog2Size = 5 // 32 bytes
 
@@ -165,23 +164,10 @@ func (m *machineImpl) OutputsHashProof(ctx context.Context) ([]Hash, error) {
 	return siblings, nil
 }
 
-func (m *machineImpl) WriteCheckpointHash(ctx context.Context, hash Hash) error {
-	if err := checkContext(ctx); err != nil {
-		return err
-	}
-
-	err := m.backend.WriteMemory(CheckpointAddress, hash[:], m.params.FastDeadline)
-	if err != nil {
-		err := fmt.Errorf("could not write checkpoint hash in to machine memory: %w", err)
-		return errors.Join(ErrMachineInternal, err)
-	}
-	return nil
-}
-
 // Advance sends an input to the machine and processes it
-func (m *machineImpl) Advance(ctx context.Context, input []byte, computeHashes bool) (*AdvanceResponse, error) {
+func (m *machineImpl) Advance(ctx context.Context, input []byte, checkpointHash Hash, computeHashes bool) (*AdvanceResponse, error) {
 	// TODO: return the exception reason
-	accepted, outputs, reports, hashes, remaining, data, err := m.process(ctx, input, AdvanceStateRequest, computeHashes)
+	accepted, outputs, reports, hashes, remaining, data, err := m.process(ctx, input, AdvanceStateRequest, &checkpointHash, computeHashes)
 	if err != nil {
 		return &AdvanceResponse{
 			Accepted:        accepted,
@@ -212,7 +198,8 @@ func (m *machineImpl) Advance(ctx context.Context, input []byte, computeHashes b
 // Inspect sends a query to the machine and returns the results
 func (m *machineImpl) Inspect(ctx context.Context, query []byte) (bool, []Report, error) {
 	// TODO: return the exception reason
-	accepted, _, reports, _, _, _, err := m.process(ctx, query, InspectStateRequest, false)
+	// For inspect-state requests, revert_root_hash is not checked and can be NULL/empty
+	accepted, _, reports, _, _, _, err := m.process(ctx, query, InspectStateRequest, nil, false)
 	return accepted, reports, err
 }
 
@@ -343,10 +330,12 @@ func (m *machineImpl) readMCycle(ctx context.Context) (uint64, error) {
 //
 // It expects the machine to be ready to receive requests before execution,
 // and leaves the machine in a state ready to receive requests after an execution with no errors.
+// checkpointHash is nil for inspects.
 func (m *machineImpl) process(
 	ctx context.Context,
 	request []byte,
 	reqType requestType,
+	checkpointHash *Hash,
 	computeHashes bool,
 ) (bool, []Output, []Report, []Hash, uint64, []byte, error) {
 	if err := checkContext(ctx); err != nil {
@@ -357,7 +346,7 @@ func (m *machineImpl) process(
 		return false, nil, nil, nil, 0, nil, ErrPayloadLengthLimitExceeded
 	}
 
-	err := m.backend.SendCmioResponse(uint16(reqType), request, m.params.FastDeadline)
+	err := m.backend.SendCmioResponse(uint16(reqType), request, checkpointHash, m.params.FastDeadline)
 	if err != nil {
 		return false, nil, nil, nil, 0, nil, err
 	}

@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -165,7 +166,7 @@ func replayInputsBatch(ctx context.Context, opts replayOptions, tmp string, inpu
 
 	args := []string{
 		"--quiet",
-		"--no-rollback",
+		"--no-revert",
 		"--load=" + opts.Template,
 		fmt.Sprintf("--cmio-advance-state=input:%s,input_index_begin:0,input_index_end:%d",
 			filepath.Join(tmp, "input-%i.bin"), len(inputs)),
@@ -374,7 +375,7 @@ func generateMachineProof(
 
 	args := []string{
 		"--quiet",
-		"--no-rollback",
+		"--no-revert",
 		"--load=" + snapshot,
 		fmt.Sprintf("--initial-proof=address:0x%x,log2_size:%d,filename:%s", address, log2Size, tmpPath),
 		"--",
@@ -392,6 +393,23 @@ func generateMachineProof(
 	if err := json.Unmarshal(raw, &proof); err != nil {
 		return nil, fmt.Errorf("parse machine proof: %w", err)
 	}
+
+	// convert the file hashes from base64 to hex
+	proof.RootHash, err = base64ToHex(proof.RootHash)
+	if err != nil {
+		return nil, err
+	}
+	proof.TargetHash, err = base64ToHex(proof.TargetHash)
+	if err != nil {
+		return nil, err
+	}
+	for i := range proof.SiblingHashes {
+		proof.SiblingHashes[i], err = base64ToHex(proof.SiblingHashes[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &proof, nil
 }
 
@@ -477,4 +495,15 @@ func ensure0x(s string) string {
 
 func strip0x(s string) string {
 	return strings.TrimPrefix(strings.TrimPrefix(s, "0x"), "0X")
+}
+
+func base64ToHex(s string) (string, error) {
+	raw, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return "", fmt.Errorf("expected %q to be a hash in base64. %w", s, err)
+	}
+	if len(raw) != common.HashLength {
+		return "", fmt.Errorf("expected %q to decode to %d bytes, got %d", s, common.HashLength, len(raw))
+	}
+	return common.BytesToHash(raw).Hex(), nil
 }

@@ -214,12 +214,13 @@ func (s *LibCartesiSuite) TestSendCmioResponse() {
 	require := s.Require()
 
 	data := []byte("test data")
+	expectedHash := randomFakeHash()
 
 	// Test successful send
 	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
-	s.mockRemoteMachine.On("SendCmioResponse", uint16(1), data).Return(nil)
+	s.mockRemoteMachine.On("SendCmioResponse", uint16(1), data, &expectedHash).Return(nil)
 
-	err := s.backend.SendCmioResponse(1, data, 5*time.Second)
+	err := s.backend.SendCmioResponse(1, data, &expectedHash, 5*time.Second)
 	require.NoError(err)
 	s.mockRemoteMachine.AssertExpectations(s.T())
 
@@ -228,7 +229,7 @@ func (s *LibCartesiSuite) TestSendCmioResponse() {
 	s.backend = &LibCartesiBackend{inner: s.mockRemoteMachine}
 	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(errors.New("timeout error"))
 
-	err = s.backend.SendCmioResponse(1, data, 5*time.Second)
+	err = s.backend.SendCmioResponse(1, data, &expectedHash, 5*time.Second)
 	require.Error(err)
 	require.Contains(err.Error(), "failed to set operation timeout")
 	s.mockRemoteMachine.AssertExpectations(s.T())
@@ -237,9 +238,9 @@ func (s *LibCartesiSuite) TestSendCmioResponse() {
 	s.mockRemoteMachine = new(MockRemoteMachine)
 	s.backend = &LibCartesiBackend{inner: s.mockRemoteMachine}
 	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
-	s.mockRemoteMachine.On("SendCmioResponse", uint16(1), data).Return(errors.New("send error"))
+	s.mockRemoteMachine.On("SendCmioResponse", uint16(1), data, &expectedHash).Return(errors.New("send error"))
 
-	err = s.backend.SendCmioResponse(1, data, 5*time.Second)
+	err = s.backend.SendCmioResponse(1, data, &expectedHash, 5*time.Second)
 	require.Error(err)
 	require.Contains(err.Error(), "send error")
 	s.mockRemoteMachine.AssertExpectations(s.T())
@@ -449,8 +450,8 @@ func (m *MockRemoteMachine) ReadReg(reg emulator.RegID) (uint64, error) {
 	return args.Get(0).(uint64), args.Error(1)
 }
 
-func (m *MockRemoteMachine) SendCmioResponse(reason uint16, data []byte) error {
-	args := m.Called(reason, data)
+func (m *MockRemoteMachine) SendCmioResponse(reason uint16, data []byte, revertRootHash *Hash) error {
+	args := m.Called(reason, data, revertRootHash)
 	return args.Error(0)
 }
 

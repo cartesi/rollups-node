@@ -41,7 +41,7 @@ type Backend interface {
 	IsAtManualYield(timeout time.Duration) (bool, error)
 	ReadMCycle(timeout time.Duration) (uint64, error)
 
-	SendCmioResponse(reason uint16, data []byte, timeout time.Duration) error
+	SendCmioResponse(reason uint16, data []byte, revertRootHash *Hash, timeout time.Duration) error
 	ReceiveCmioRequest(timeout time.Duration) (cmd uint8, reason uint16, data []byte, err error)
 
 	WriteMemory(address uint64, data []byte, timeout time.Duration) error

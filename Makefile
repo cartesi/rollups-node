@@ -414,13 +414,13 @@ withdraw-wallet: cartesi-rollups-cli ## Send a test withdrawal request from the 
 
 # Temporary test dependencies target while we are not using distribution packages
 DOWNLOADS_DIR = test/downloads
-CARTESI_TEST_MACHINE_IMAGES = $(DOWNLOADS_DIR)/linux.bin
+CARTESI_TEST_MACHINE_IMAGES = $(DOWNLOADS_DIR)/linux.bin $(DOWNLOADS_DIR)/rootfs.ext2
 $(CARTESI_TEST_MACHINE_IMAGES):
 	@mkdir -p $(DOWNLOADS_DIR)
 	@wget -nc -i test/dependencies -P $(DOWNLOADS_DIR)
 	@shasum -ca 256 test/dependencies.sha256
 	@cd $(DOWNLOADS_DIR) && ln -s rootfs-tools.ext2 rootfs.ext2
-	@cd $(DOWNLOADS_DIR) && ln -s linux-6.5.13-ctsi-1-v0.20.0.bin linux.bin
+	@cd $(DOWNLOADS_DIR) && ln -s linux-6.5.13-ctsi-2-v0.21.0.bin linux.bin
 
 download-test-dependencies: | $(CARTESI_TEST_MACHINE_IMAGES)
 

@@ -8,7 +8,18 @@ package emulator
 
 // #include <stdlib.h>
 // #include <string.h>
-// #include "cartesi-machine/machine-c-api.h"
+// #include "cartesi-machine/cm.h"
+//
+// static inline cm_error go_cm_send_cmio_response(
+//     cm_machine *m,
+//     uint16_t reason,
+//     const uint8_t *data,
+//     uint64_t length,
+//     const uint8_t *revert_root_hash)
+// {
+//     return cm_send_cmio_response(
+//         m, reason, data, length, (const cm_hash *) revert_root_hash);
+// }
 import "C"
 
 import (
@@ -383,16 +394,22 @@ func (m *Machine) CollectMCycleRootHashes(mcycleEnd, mcyclePeriod, mcyclePhase u
 }
 
 // collect_uarch_cycle_root_hashes
-func (m *Machine) CollectUarchCycleRootHashes(mcycleEnd uint64, log2BundleMcycleCount int32) ([]byte, error) {
+func (m *Machine) CollectUarchCycleRootHashes(mcycleEnd uint64, log2BundleUarchCycleCount int32, revertUarchTail string) ([]byte, error) {
 	var err error
 	var result []byte
 
 	m.callCAPI(func() {
 		var cResult *C.char
+		var revertUarchTailC *C.char
+		if revertUarchTail != "" {
+			revertUarchTailC = C.CString(revertUarchTail)
+			defer C.free(unsafe.Pointer(revertUarchTailC))
+		}
 		err = newError(C.cm_collect_uarch_cycle_root_hashes(
 			m.ptr,
 			C.uint64_t(mcycleEnd),
-			C.int32_t(log2BundleMcycleCount),
+			C.int32_t(log2BundleUarchCycleCount),
+			revertUarchTailC,
 			&cResult))
 		result = []byte(C.GoString(cResult))
 	})
@@ -404,7 +421,7 @@ func (m *Machine) CollectUarchCycleRootHashes(mcycleEnd uint64, log2BundleMcycle
 }
 
 // send_cmio_response
-func (m *Machine) SendCmioResponse(reason uint16, data []byte) error {
+func (m *Machine) SendCmioResponse(reason uint16, data []byte, revertRootHash *Hash) error {
 	var err error
 
 	m.callCAPI(func() {
@@ -413,9 +430,13 @@ func (m *Machine) SendCmioResponse(reason uint16, data []byte) error {
 		if sizeData > 0 {
 			ptrData = (*C.uint8_t)(unsafe.Pointer(&data[0]))
 		}
-
-		err = newError(C.cm_send_cmio_response(
+		var ptrHash *C.uint8_t
+		if revertRootHash != nil {
+			ptrHash = (*C.uint8_t)(unsafe.Pointer(revertRootHash))
+		}
+		err = newError(C.go_cm_send_cmio_response(
 			m.ptr,
+			ptrHash,
 			C.uint16_t(reason),
 			ptrData,
 			sizeData,

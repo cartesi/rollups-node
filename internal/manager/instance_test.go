@@ -507,9 +507,6 @@ func (s *MachineInstanceSuite) TestAdvance() {
 		require := s.Require()
 		inner, fork, machine := s.setupAdvance()
 
-		// Set up WriteCheckpointHash to succeed
-		fork.CheckpointHashError = nil
-
 		res, err := machine.Advance(context.Background(), []byte{}, 0, 5, true)
 		require.Nil(err)
 		require.NotNil(res)
@@ -521,20 +518,6 @@ func (s *MachineInstanceSuite) TestAdvance() {
 
 		// Verify the inner runtime was closed (accept path)
 		_ = inner
-	})
-
-	s.Run("CollectHashesWriteCheckpointError", func() {
-		require := s.Require()
-		_, fork, machine := s.setupAdvance()
-
-		errCheckpoint := errors.New("checkpoint write error")
-		fork.CheckpointHashError = errCheckpoint
-
-		res, err := machine.Advance(context.Background(), []byte{}, 0, 5, true)
-		require.Error(err)
-		require.Nil(res)
-		require.ErrorIs(err, errCheckpoint)
-		require.Equal(uint64(5), machine.processedInputs.Load())
 	})
 
 	s.Run("SequentialAdvances", func() {
@@ -1475,8 +1458,6 @@ type MockRollupsMachine struct {
 	HashReturn machine.Hash
 	HashError  error
 
-	CheckpointHashError error
-
 	AdvanceAcceptedReturn  bool
 	AdvanceOutputsReturn   []machine.Output
 	AdvanceReportsReturn   []machine.Report
@@ -1516,11 +1497,7 @@ func (m *MockRollupsMachine) OutputsHashProof(_ context.Context) ([]machine.Hash
 	return m.OutputsHashProofReturn, m.OutputsHashProofError
 }
 
-func (m *MockRollupsMachine) WriteCheckpointHash(_ context.Context, _ machine.Hash) error {
-	return m.CheckpointHashError
-}
-
-func (m *MockRollupsMachine) Advance(_ context.Context, _ []byte, _ bool) (*machine.AdvanceResponse, error) {
+func (m *MockRollupsMachine) Advance(_ context.Context, _ []byte, _ machine.Hash, _ bool) (*machine.AdvanceResponse, error) {
 	return &machine.AdvanceResponse{
 		Accepted:        m.AdvanceAcceptedReturn,
 		Outputs:         m.AdvanceOutputsReturn,

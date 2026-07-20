@@ -233,7 +233,7 @@ func (s *MachineSuite) TestMachineInterface() {
 	require.Equal(Hash{6, 7, 8, 9, 10}, outputsHash)
 
 	// Test Advance
-	advanceResp, err := machine.Advance(ctx, []byte("input"), false)
+	advanceResp, err := machine.Advance(ctx, []byte("input"), Hash{}, false)
 	require.NoError(err)
 	require.True(advanceResp.Accepted)
 	require.Len(advanceResp.Outputs, 2)
@@ -298,7 +298,7 @@ func (s *MachineSuite) TestMachineInterfaceErrors() {
 	require.Contains(err.Error(), "outputs hash error")
 
 	// Test Advance error
-	_, err = machine.Advance(ctx, []byte("input"), false)
+	_, err = machine.Advance(ctx, []byte("input"), Hash{}, false)
 	require.Error(err)
 	require.Contains(err.Error(), "advance error")
 
@@ -331,8 +331,6 @@ type MockMachine struct {
 
 	OutputsHashProofReturn []Hash
 	OutputsHashProofError  error
-
-	CheckpointHashError error
 
 	AdvanceAcceptedReturn  bool
 	AdvanceOutputsReturn   []Output
@@ -369,11 +367,7 @@ func (m *MockMachine) OutputsHashProof(_ context.Context) ([]Hash, error) {
 	return m.OutputsHashProofReturn, m.OutputsHashProofError
 }
 
-func (m *MockMachine) WriteCheckpointHash(_ context.Context, _ Hash) error {
-	return m.CheckpointHashError
-}
-
-func (m *MockMachine) Advance(_ context.Context, _ []byte, _ bool) (*AdvanceResponse, error) {
+func (m *MockMachine) Advance(_ context.Context, _ []byte, _ Hash, _ bool) (*AdvanceResponse, error) {
 	return &AdvanceResponse{
 		Accepted:        m.AdvanceAcceptedReturn,
 		Outputs:         m.AdvanceOutputsReturn,
@@ -384,9 +378,7 @@ func (m *MockMachine) Advance(_ context.Context, _ []byte, _ bool) (*AdvanceResp
 	}, m.AdvanceError
 }
 
-func (m *MockMachine) Inspect(_ context.Context,
-	_ []byte,
-) (bool, []Report, error) {
+func (m *MockMachine) Inspect(_ context.Context, _ []byte) (bool, []Report, error) {
 	return m.InspectAcceptedReturn, m.InspectReportsReturn, m.InspectError
 }
 
