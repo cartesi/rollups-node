@@ -375,6 +375,15 @@ Must be set alongside `CARTESI_AUTH_AWS_KMS_KEY_ID`."""
 omit = true
 used-by = ["claimer", "node", "cli", "prt"]
 
+[auth.CARTESI_AUTH_AWS_KMS_ENDPOINT]
+go-type = "RedactedString"
+description = """
+An AWS KMS Endpoint.
+
+When not provided, the default endpoint for the AWS region defined by `CARTESI_AUTH_AWS_KMS_REGION` is automatically used."""
+omit = true
+used-by = ["claimer", "node", "cli", "prt"]
+
 #
 # Database
 #

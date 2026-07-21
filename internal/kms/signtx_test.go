@@ -11,94 +11,14 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/cartesi/rollups-node/pkg/ethutil"
-
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient"
 
-	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	awskms "github.com/aws/aws-sdk-go-v2/service/kms"
 	kmstypes "github.com/aws/aws-sdk-go-v2/service/kms/types"
 	"github.com/stretchr/testify/require"
 )
-
-var ARN = ""
-
-/* Create a SignTxFn from a private key. Useful for testing */
-func CreateSignTxFnFromPrivateKey(privateKey *ecdsa.PrivateKey) SignTxFn {
-	return func(_ context.Context, tx *ethtypes.Transaction, s ethtypes.Signer) (*ethtypes.Transaction, error) {
-		return ethtypes.SignTx(tx, s, privateKey)
-	}
-}
-
-func sendFunds(
-	value *big.Int,
-	SignTx SignTxFn,
-	ctx context.Context,
-	sender common.Address,
-	recipient common.Address,
-) {
-	client, err := ethclient.Dial("http://127.0.0.1:8545") // anvil
-	if err != nil {
-		panic(err)
-	}
-
-	nonce, err := client.PendingNonceAt(context.Background(), sender)
-	if err != nil {
-		panic(err)
-	}
-	gasLimit := uint64(21000)
-	gasPrice, err := client.SuggestGasPrice(ctx)
-	if err != nil {
-		panic(err)
-	}
-	var data []byte
-	tx := ethtypes.NewTransaction(nonce, recipient, value, gasLimit, gasPrice, data)
-	chainID, err := client.NetworkID(context.Background())
-	if err != nil {
-		panic(err)
-	}
-	signedTx, err := SignTx(ctx, tx, ethtypes.NewEIP155Signer(chainID))
-	if err != nil {
-		panic(err)
-	}
-	err = client.SendTransaction(context.Background(), signedTx)
-	if err != nil {
-		panic(err)
-	}
-}
-
-func TestSignTx(t *testing.T) {
-	if len(ARN) == 0 {
-		t.Skip("Skipping test, ARN for KMS key is unset")
-	}
-	value20 := big.NewInt(2000000000000000000) // in wei (2 eth)
-	value10 := big.NewInt(1000000000000000000) // in wei (1 eth)
-
-	anvilPrivateKey, err := ethutil.MnemonicToPrivateKey(ethutil.FoundryMnemonic, 0)
-	if err != nil {
-		panic(err)
-	}
-	anvilPublicKey := anvilPrivateKey.Public().(*ecdsa.PublicKey)
-	anvilAddress := crypto.PubkeyToAddress(*anvilPublicKey)
-
-	config, err := awscfg.LoadDefaultConfig(context.Background())
-	if err != nil {
-		panic(err)
-	}
-	kms := awskms.NewFromConfig(config)
-	SignTx, _, KMSAddress, err := CreateAWSSignTxFn(context.Background(), kms, &ARN)
-	if err != nil {
-		panic(err)
-	}
-
-	sendFunds(value20, CreateSignTxFnFromPrivateKey(anvilPrivateKey),
-		context.Background(), anvilAddress, KMSAddress)
-	sendFunds(value10, SignTx,
-		context.Background(), KMSAddress, anvilAddress)
-}
 
 func TestAWSTransactOptsFactorySignsWithSubmitContext(t *testing.T) {
 	privateKey, err := crypto.GenerateKey()
@@ -126,6 +46,37 @@ func TestAWSTransactOptsFactorySignsWithSubmitContext(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "submit", client.signContext.Value(contextKey("phase")))
 	require.NoError(t, client.signContext.Err())
+}
+
+func TestAWSTransactOptsFactorySignsDynamicFeeTransaction(t *testing.T) {
+	privateKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+
+	chainID := big.NewInt(31337)
+	client := newFakeKMSClient(t, privateKey)
+	keyID := "alias/test-key"
+	factory, err := CreateAWSTransactOptsFactory(
+		context.Background(), client, &keyID, ethtypes.LatestSignerForChainID(chainID),
+	)
+	require.NoError(t, err)
+
+	opts, err := factory.NewTransactOpts(context.Background())
+	require.NoError(t, err)
+	tx := ethtypes.NewTx(&ethtypes.DynamicFeeTx{
+		ChainID:   chainID,
+		Nonce:     1,
+		GasTipCap: big.NewInt(1),
+		GasFeeCap: big.NewInt(2),
+		Gas:       21000,
+		To:        &common.Address{0x01},
+		Value:     big.NewInt(3),
+	})
+	signed, err := opts.Signer(opts.From, tx)
+	require.NoError(t, err)
+
+	sender, err := ethtypes.Sender(ethtypes.LatestSignerForChainID(chainID), signed)
+	require.NoError(t, err)
+	require.Equal(t, crypto.PubkeyToAddress(privateKey.PublicKey), sender)
 }
 
 type fakeKMSClient struct {

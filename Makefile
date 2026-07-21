@@ -571,7 +571,7 @@ check-license: ## Verify license headers on Go source files
 # Discovery (integration-test-shard-check) lists tests with a plain Go
 # toolchain, so the integration package must stay free of the Cartesi CGo
 # dependency for the check to build on the CI setup runner.
-INTEGRATION_SHARDS := basic quorum prt replay restart withdrawal
+INTEGRATION_SHARDS := basic quorum prt replay restart withdrawal awskms
 
 INTEGRATION_SHARD_basic      := ^Test(EchoAuthority|RejectException|MultiApp|EchoAuthorityStaging)$$
 INTEGRATION_SHARD_quorum     := ^Test(EchoQuorum|SameBlockInputs)$$
@@ -579,6 +579,7 @@ INTEGRATION_SHARD_prt        := ^Test(EchoPrt|RejectExceptionPrt|ForeclosePrt)$$
 INTEGRATION_SHARD_replay     := ^Test(Foreclose|ForecloseReplay|DivergentClaim)$$
 INTEGRATION_SHARD_restart    := ^Test(Restart|SnapshotPolicy)$$
 INTEGRATION_SHARD_withdrawal := ^TestWithdrawalLifecycle$$
+INTEGRATION_SHARD_awskms     := ^TestLocalStackAWSIntegration$$
 
 # -----------------------------------------------------------------------------
 # Node topology axis — orthogonal to shards.

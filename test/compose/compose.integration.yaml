@@ -83,6 +83,18 @@ services:
       <<: *env
     restart: "no"
 
+  localstack:
+    image: localstack/localstack:4.14.0
+    networks:
+      - devnet
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4566/_localstack/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    environment:
+      SERVICES: kms
+
   # The node is started and managed by TestMain inside the test process.
   # This ensures all tests (including restart and snapshot policy tests)
   # run with the same infrastructure in both local and CI environments.
@@ -99,6 +111,8 @@ services:
         condition: service_healthy
       dapp-builder:
         condition: service_completed_successfully
+      localstack:
+        condition: service_healthy
     volumes:
       - dapp_images:/var/lib/cartesi-rollups-node/dapps:ro
       - node_logs:/var/lib/cartesi-rollups-node/logs
@@ -125,6 +139,12 @@ services:
       CARTESI_TEST_ERC20_WITHDRAWAL_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/erc20-withdrawal-dapp
       CARTESI_TEST_NODE_LOG_FILE: /var/lib/cartesi-rollups-node/logs/node.log
       CARTESI_INSPECT_URL: http://localhost:10012/
+      # test/integration/localstack_integration_test.go
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      LOCALSTACK_KMS_ENDPOINT: http://localstack:4566
+      LOCALSTACK_KMS_REQUIRED: "true"
 
 volumes:
   dapp_images:
