@@ -516,6 +516,15 @@ start-postgres: ## Run the PostgreSQL 16 docker container
 	@docker run --rm --name postgres -p 5432:5432 -d -e POSTGRES_PASSWORD=password -e POSTGRES_DB=rollupsdb -v $(CURDIR)/test/postgres/init-test-db.sh:/docker-entrypoint-initdb.d/init-test-db.sh postgres:18-alpine
 	@$(MAKE) migrate
 
+start-awslocalstack: ## Run the AWS LocalStack docker container
+	@echo "Starting AWS localstack"
+	@docker run --rm --name awslocalstack -p 127.0.0.1:4566:4566 -d -e SERVICES=kms localstack/localstack:4.14.0
+	@echo "Add the following variables to run integration test with AWS services:"
+	@echo "  export AWS_ACCESS_KEY_ID=test"
+	@echo "  export AWS_SECRET_ACCESS_KEY=test"
+	@echo "  export LOCALSTACK_KMS_ENDPOINT=http://localhost:4566"
+	@echo "  export LOCALSTACK_KMS_REQUIRED=true"
+
 start: start-postgres start-devnet ## Start the anvil devnet and PostgreSQL 16 docker containers
 
 stop-devnet: ## Stop the anvil devnet docker container
@@ -524,7 +533,10 @@ stop-devnet: ## Stop the anvil devnet docker container
 stop-postgres: ## Stop the PostgreSQL 16 docker container
 	@docker stop postgres || true
 
-stop: stop-devnet stop-postgres ## Stop all running docker containers
+stop-awslocalstack: ## Stop the AWS LocalStack docker container
+	@docker stop awslocalstack || true
+
+stop: stop-devnet stop-postgres ## Stop the anvil devnet and PostgreSQL 16 docker containers
 
 restart-devnet: ## Restart the anvil devnet docker container
 	@$(MAKE) stop-devnet
