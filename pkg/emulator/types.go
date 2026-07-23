@@ -84,6 +84,7 @@ const (
 	BreakReasonReachedTargetMcycle  BreakReason = C.CM_BREAK_REASON_REACHED_TARGET_MCYCLE
 	BreakReasonConsoleOutput        BreakReason = C.CM_BREAK_REASON_CONSOLE_OUTPUT
 	BreakReasonConsoleInput         BreakReason = C.CM_BREAK_REASON_CONSOLE_INPUT
+	BreakReasonMcycleOverflow       BreakReason = C.CM_BREAK_REASON_MCYCLE_OVERFLOW
 )
 
 func (reason BreakReason) String() (s string) {
@@ -100,6 +101,8 @@ func (reason BreakReason) String() (s string) {
 		s = "yielded softly"
 	case BreakReasonReachedTargetMcycle:
 		s = "reached target mcycle"
+	case BreakReasonMcycleOverflow:
+		s = "mcycle overflow"
 	default:
 		return "invalid break reason"
 	}

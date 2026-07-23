@@ -4,6 +4,8 @@
 package machine
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -92,6 +94,234 @@ func (s *LibCartesiSuite) TestRun() {
 	_, err = s.backend.Run(1000, 5*time.Second)
 	require.Error(err)
 	require.Contains(err.Error(), "run error")
+	s.mockRemoteMachine.AssertExpectations(s.T())
+}
+
+func (s *LibCartesiSuite) TestRunMcycleOverflow() {
+	require := s.Require()
+
+	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
+	s.mockRemoteMachine.On("Run", uint64(1000)).Return(emulator.BreakReasonMcycleOverflow, nil)
+
+	breakReason, err := s.backend.Run(1000, 5*time.Second)
+	require.NoError(err)
+	require.Equal(McycleOverflow, breakReason)
+	s.mockRemoteMachine.AssertExpectations(s.T())
+}
+
+func (s *LibCartesiSuite) TestRunAndCollectRootHashesMcycleOverflow() {
+	require := s.Require()
+	state := &HashCollectorState{Period: 1}
+	result := []byte(`{"hashes":[],"mcycle_phase":0,"break_reason":"mcycle_overflow"}`)
+
+	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
+	s.mockRemoteMachine.On(
+		"CollectMCycleRootHashes",
+		uint64(1000),
+		uint64(0),
+		uint64(0),
+		int32(0),
+		json.RawMessage(nil),
+	).Return(result, nil)
+
+	breakReason, err := s.backend.RunAndCollectRootHashes(1000, state, 5*time.Second)
+	require.NoError(err)
+	require.Equal(McycleOverflow, breakReason)
+	require.Nil(state.PartialBundle)
+	s.mockRemoteMachine.AssertExpectations(s.T())
+}
+
+func (s *LibCartesiSuite) TestRunAndCollectRootHashesContinuesPartialBundle() {
+	require := s.Require()
+	previousPartialBundle := json.RawMessage(
+		`{"log2_max_leaves":2,"hash_function":"keccak256","leaf_count":1,"context":["AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="]}`,
+	)
+	nextPartialBundle := json.RawMessage(
+		`{"log2_max_leaves":2,"hash_function":"keccak256","leaf_count":2,"context":["AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="]}`,
+	)
+	previousHash := Hash{0x11}
+	collectedHash := Hash{0x22}
+	state := &HashCollectorState{
+		Period:        4,
+		Phase:         3,
+		BundleLog2:    2,
+		Hashes:        []Hash{previousHash},
+		PartialBundle: previousPartialBundle,
+	}
+	result, err := json.Marshal(struct {
+		Hashes        []string        `json:"hashes"`
+		MCyclePhase   uint64          `json:"mcycle_phase"`
+		BreakReason   string          `json:"break_reason"`
+		PartialBundle json.RawMessage `json:"partial_bundle"`
+	}{
+		Hashes:        []string{base64.StdEncoding.EncodeToString(collectedHash[:])},
+		MCyclePhase:   1,
+		BreakReason:   "reached_target_mcycle",
+		PartialBundle: nextPartialBundle,
+	})
+	require.NoError(err)
+
+	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
+	s.mockRemoteMachine.On(
+		"CollectMCycleRootHashes",
+		uint64(1000),
+		uint64(2),
+		uint64(3),
+		int32(2),
+		previousPartialBundle,
+	).Return(result, nil)
+
+	breakReason, err := s.backend.RunAndCollectRootHashes(1000, state, 5*time.Second)
+	require.NoError(err)
+	require.Equal(ReachedTargetMcycle, breakReason)
+	require.Equal(uint64(1), state.Phase)
+	require.Equal([]Hash{previousHash, collectedHash}, state.Hashes)
+	require.Equal(nextPartialBundle, state.PartialBundle)
+	s.mockRemoteMachine.AssertExpectations(s.T())
+}
+
+func (s *LibCartesiSuite) TestRunAndCollectRootHashesClearsPartialBundleAtFixedPoint() {
+	require := s.Require()
+	previousPartialBundle := json.RawMessage(
+		`{"log2_max_leaves":2,"hash_function":"keccak256","leaf_count":3,"context":["AwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="]}`,
+	)
+	state := &HashCollectorState{
+		Period:        4,
+		Phase:         2,
+		BundleLog2:    2,
+		PartialBundle: previousPartialBundle,
+	}
+	result := []byte(`{"hashes":[],"mcycle_phase":2,"break_reason":"halted"}`)
+
+	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
+	s.mockRemoteMachine.On(
+		"CollectMCycleRootHashes",
+		uint64(1000),
+		uint64(2),
+		uint64(2),
+		int32(2),
+		previousPartialBundle,
+	).Return(result, nil)
+
+	breakReason, err := s.backend.RunAndCollectRootHashes(1000, state, 5*time.Second)
+	require.NoError(err)
+	require.Equal(Halted, breakReason)
+	require.Nil(state.PartialBundle)
+	s.mockRemoteMachine.AssertExpectations(s.T())
+}
+
+func (s *LibCartesiSuite) TestRunAndCollectRootHashesInvalidHashLeavesStateUnchanged() {
+	require := s.Require()
+	previousPartialBundle := json.RawMessage(
+		`{"log2_max_leaves":2,"hash_function":"keccak256","leaf_count":1,"context":["AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="]}`,
+	)
+	nextPartialBundle := json.RawMessage(
+		`{"log2_max_leaves":2,"hash_function":"keccak256","leaf_count":2,"context":["AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="]}`,
+	)
+	previousHash := Hash{0x11}
+	validHash := Hash{0x22}
+	state := &HashCollectorState{
+		Period:        4,
+		Phase:         3,
+		BundleLog2:    2,
+		Hashes:        []Hash{previousHash},
+		PartialBundle: previousPartialBundle,
+	}
+	originalState := *state
+	originalState.Hashes = append([]Hash(nil), state.Hashes...)
+	originalState.PartialBundle = append(json.RawMessage(nil), state.PartialBundle...)
+	result, err := json.Marshal(struct {
+		Hashes        []string        `json:"hashes"`
+		MCyclePhase   uint64          `json:"mcycle_phase"`
+		BreakReason   string          `json:"break_reason"`
+		PartialBundle json.RawMessage `json:"partial_bundle"`
+	}{
+		Hashes: []string{
+			base64.StdEncoding.EncodeToString(validHash[:]),
+			"not-base64",
+		},
+		MCyclePhase:   1,
+		BreakReason:   "reached_target_mcycle",
+		PartialBundle: nextPartialBundle,
+	})
+	require.NoError(err)
+
+	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
+	s.mockRemoteMachine.On(
+		"CollectMCycleRootHashes",
+		uint64(1000),
+		uint64(2),
+		uint64(3),
+		int32(2),
+		previousPartialBundle,
+	).Return(result, nil)
+
+	breakReason, err := s.backend.RunAndCollectRootHashes(1000, state, 5*time.Second)
+	require.Error(err)
+	require.Equal(Failed, breakReason)
+	require.Equal(originalState, *state)
+	s.mockRemoteMachine.AssertExpectations(s.T())
+}
+
+func (s *LibCartesiSuite) TestRunAndCollectRootHashesInvalidBreakReasonLeavesStateUnchanged() {
+	require := s.Require()
+	previousHash := Hash{0x11}
+	state := &HashCollectorState{
+		Period: 4,
+		Phase:  3,
+		Hashes: []Hash{previousHash},
+	}
+	originalState := *state
+	originalState.Hashes = append([]Hash(nil), state.Hashes...)
+	result := []byte(`{"hashes":[],"mcycle_phase":1,"break_reason":"future_reason"}`)
+
+	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
+	s.mockRemoteMachine.On(
+		"CollectMCycleRootHashes",
+		uint64(1000),
+		uint64(2),
+		uint64(3),
+		int32(0),
+		json.RawMessage(nil),
+	).Return(result, nil)
+
+	breakReason, err := s.backend.RunAndCollectRootHashes(1000, state, 5*time.Second)
+	require.ErrorContains(err, "unknown break reason")
+	require.Equal(Failed, breakReason)
+	require.Equal(originalState, *state)
+	s.mockRemoteMachine.AssertExpectations(s.T())
+}
+
+func (s *LibCartesiSuite) TestRunAndCollectRootHashesInvalidResultPhaseLeavesStateUnchanged() {
+	require := s.Require()
+	state := &HashCollectorState{Period: 4, Phase: 3}
+	originalState := *state
+	result := []byte(`{"hashes":[],"mcycle_phase":4,"break_reason":"reached_target_mcycle"}`)
+
+	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
+	s.mockRemoteMachine.On(
+		"CollectMCycleRootHashes",
+		uint64(1000),
+		uint64(2),
+		uint64(3),
+		int32(0),
+		json.RawMessage(nil),
+	).Return(result, nil)
+
+	breakReason, err := s.backend.RunAndCollectRootHashes(1000, state, 5*time.Second)
+	require.ErrorContains(err, "phase 4 must be less than period 4")
+	require.Equal(Failed, breakReason)
+	require.Equal(originalState, *state)
+	s.mockRemoteMachine.AssertExpectations(s.T())
+}
+
+func (s *LibCartesiSuite) TestRunAndCollectRootHashesRejectsInvalidInputPhase() {
+	require := s.Require()
+	state := &HashCollectorState{Period: 4, Phase: 4}
+
+	breakReason, err := s.backend.RunAndCollectRootHashes(1000, state, 5*time.Second)
+	require.ErrorContains(err, "phase must be less than period")
+	require.Equal(Failed, breakReason)
 	s.mockRemoteMachine.AssertExpectations(s.T())
 }
 
@@ -485,4 +715,15 @@ func (m *MockRemoteMachine) ForkServer() (*emulator.RemoteMachine, string, uint3
 func (m *MockRemoteMachine) ShutdownServer() error {
 	args := m.Called()
 	return args.Error(0)
+}
+
+func (m *MockRemoteMachine) CollectMCycleRootHashes(
+	mcycleEnd,
+	log2McyclePeriod,
+	mcyclePhase uint64,
+	log2BundleMcycleCount int32,
+	previousPartialBundle json.RawMessage,
+) ([]byte, error) {
+	args := m.Called(mcycleEnd, log2McyclePeriod, mcyclePhase, log2BundleMcycleCount, previousPartialBundle)
+	return args.Get(0).([]byte), args.Error(1)
 }

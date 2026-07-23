@@ -27,6 +27,14 @@ func TestMachineInstance(t *testing.T) {
 
 type MachineInstanceSuite struct{ suite.Suite }
 
+func (s *MachineInstanceSuite) TestMcycleOverflowRemainsIncomplete() {
+	require := s.Require()
+
+	status, err := toInputStatus(false, machine.ErrReachedLimitMcycle)
+	require.ErrorIs(err, machine.ErrReachedLimitMcycle)
+	require.Empty(status)
+}
+
 // MockMachineRuntimeFactory implements MachineRuntimeFactory for testing
 type MockMachineRuntimeFactory struct {
 	RuntimeToReturn machine.Machine

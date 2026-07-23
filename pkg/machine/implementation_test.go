@@ -902,6 +902,23 @@ func (s *ImplementationSuite) TestStep() {
 	require.Equal(uint64(1000), cycle)
 	mockBackend4.AssertExpectations(s.T())
 
+	// Test runIncrementInterval with mcycle overflow
+	mockBackendOverflow := NewMockBackend()
+	mockBackendOverflow.On(
+		"Run",
+		mock.AnythingOfType("uint64"),
+		mock.AnythingOfType("time.Duration"),
+	).Return(McycleOverflow, nil)
+	mockBackendOverflow.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(999), nil)
+	machine.backend = mockBackendOverflow
+
+	yieldType, cycle, err = machine.runIncrementInterval(ctx, 100, 1000, nil, time.Second)
+	require.ErrorIs(err, ErrReachedLimitMcycle)
+	require.NotErrorIs(err, ErrMachineInternal)
+	require.Nil(yieldType)
+	require.Equal(uint64(999), cycle)
+	mockBackendOverflow.AssertExpectations(s.T())
+
 	// Test runIncrementInterval with halted
 	mockBackend5 := NewMockBackend()
 	mockBackend5.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(Halted, nil)

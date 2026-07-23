@@ -526,6 +526,8 @@ func (m *machineImpl) runIncrementInterval(ctx context.Context,
 		return nil, currentCycle, nil // returns with no yield type
 	case ReachedTargetMcycle:
 		return nil, currentCycle, ErrReachedTargetMcycle
+	case McycleOverflow:
+		return nil, currentCycle, ErrReachedLimitMcycle
 	case Halted:
 		return nil, currentCycle, ErrHalted
 	case Failed:

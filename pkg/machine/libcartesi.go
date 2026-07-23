@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/bits"
 	"time"
 
 	"github.com/cartesi/rollups-node/pkg/emulator"
@@ -28,6 +29,13 @@ type RemoteMachineInterface interface {
 	Delete()
 	ForkServer() (*emulator.RemoteMachine, string, uint32, error)
 	ShutdownServer() error
+	CollectMCycleRootHashes(
+		mcycleEnd,
+		log2McyclePeriod,
+		mcyclePhase uint64,
+		log2BundleMcycleCount int32,
+		previousPartialBundle json.RawMessage,
+	) ([]byte, error)
 }
 
 type proofJson struct {
@@ -230,124 +238,92 @@ func (e *LibCartesiBackend) CmioRxBufferSize() uint64 {
 	return 1 << emulator.CmioRxBufferLog2Size
 }
 
+func decodeBreakReason(s string) (BreakReason, error) {
+	switch s {
+	case "yielded_automatically":
+		return YieldedAutomatically, nil
+	case "yielded_manually":
+		return YieldedManually, nil
+	case "yielded_softly":
+		return YieldedSoftly, nil
+	case "reached_target_mcycle":
+		return ReachedTargetMcycle, nil
+	case "mcycle_overflow":
+		return McycleOverflow, nil
+	case "halted":
+		return Halted, nil
+	case "failed":
+		return Failed, nil
+	default:
+		return Failed, fmt.Errorf("unknown break reason %q", s)
+	}
+}
+
 func (e *LibCartesiBackend) RunAndCollectRootHashes(
 	mcycleEnd uint64,
 	state *HashCollectorState,
 	timeout time.Duration,
 ) (reason BreakReason, err error) {
+
 	if state == nil {
 		return Failed, errors.New("nil state")
 	}
 	if state.Period == 0 {
-		return Failed, errors.New("State.Period must be > 0")
+		return Failed, errors.New("state period must be greater than zero")
+	}
+	log2Period := uint64(bits.Len64(state.Period) - 1)
+	if uint64(1)<<log2Period != state.Period {
+		return Failed, fmt.Errorf("period must be a power of 2, got %v", state.Period)
+	}
+	if state.Phase >= state.Period {
+		return Failed, fmt.Errorf("phase must be less than period, got phase %v and period %v", state.Phase, state.Period)
+	}
+	if err := e.inner.SetTimeout(timeout.Milliseconds()); err != nil {
+		return Failed, fmt.Errorf("failed to set operation timeout: %w", err)
 	}
 
-	// Set up timeout management: calculate absolute deadline if timeout is specified
-	var deadline time.Time
-	hasDeadline := timeout > 0
-	if hasDeadline {
-		deadline = time.Now().Add(timeout)
-	}
-	remaining := func() time.Duration {
-		if !hasDeadline {
-			return 0
-		}
-		d := time.Until(deadline)
-		if d <= 0 {
-			return time.Nanosecond
-		}
-		return d
-	}
-	checkDeadline := func() error {
-		if hasDeadline && time.Now().After(deadline) {
-			return errors.New("runWithRootHashes: deadline exceeded")
-		}
-		return nil
-	}
-
-	if err := checkDeadline(); err != nil {
-		return Failed, err
-	}
-	cur, err := e.ReadMCycle(remaining())
+	rawResult, err := e.inner.CollectMCycleRootHashes(
+		mcycleEnd,
+		log2Period,
+		state.Phase,
+		state.BundleLog2,
+		state.PartialBundle,
+	)
 	if err != nil {
 		return Failed, err
 	}
+	result := struct {
+		RootHashes    []string        `json:"hashes"`
+		MCyclePhase   uint64          `json:"mcycle_phase"`
+		BreakReason   string          `json:"break_reason"`
+		PartialBundle json.RawMessage `json:"partial_bundle,omitempty"`
+	}{}
+	err = json.Unmarshal(rawResult, &result)
+	if err != nil {
+		return Failed, fmt.Errorf("failed to unmarshal CollectMCycleRootHashes result: %w", err)
+	}
+	reason, err = decodeBreakReason(result.BreakReason)
+	if err != nil {
+		return Failed, fmt.Errorf("invalid CollectMCycleRootHashes result: %w", err)
+	}
+	if result.MCyclePhase >= state.Period {
+		return Failed, fmt.Errorf(
+			"invalid CollectMCycleRootHashes result: phase %v must be less than period %v",
+			result.MCyclePhase,
+			state.Period,
+		)
+	}
 
-	collected := (uint64)(0)
-
-	for {
-		if err := checkDeadline(); err != nil {
-			return Failed, err
-		}
-		if cur >= mcycleEnd {
-			// No more cycles to execute
-			return ReachedTargetMcycle, nil
-		}
-
-		// Calculate the next collection point: distance to the next multiple of the period
-		// This ensures we collect hashes at regular intervals aligned with the period
-		var step uint64
-		if r := state.Phase % state.Period; r == 0 {
-			step = state.Period
-		} else {
-			step = state.Period - r
-		}
-
-		nextHashCycle := cur + step
-		target := min(nextHashCycle, mcycleEnd)
-
-		// Run the machine until target cycle or until it yields/halts
-		br, err := e.Run(target, remaining())
-		if err != nil {
-			return Failed, err
-		}
-
-		// Check where we stopped after the run
-		if err := checkDeadline(); err != nil {
-			return Failed, err
-		}
-		pos, err := e.ReadMCycle(remaining())
-		if err != nil {
-			return Failed, err
-		}
-
-		advanced := pos - cur
-		state.Phase = (state.Phase + advanced) % state.Period
-		cur = pos
-
-		// Only collect hash if we reached the exact boundary (pos == nextHashCycle)
-		// This ensures "hash after each complete period", matching the C API behavior
-		// and avoiding duplicate collections if the machine stops early due to yields
-		if pos == nextHashCycle {
-			if err := checkDeadline(); err != nil {
-				return Failed, err
-			}
-			h, err := e.GetRootHash(remaining())
-			if err != nil {
-				return Failed, err
-			}
-
-			state.Hashes = append(state.Hashes, h)
-
-			collected++
-			if state.MaxHashes > 0 && collected >= state.MaxHashes {
-				return YieldedSoftly, nil
-			}
-		}
-
-		switch br {
-		case ReachedTargetMcycle:
-			if cur >= mcycleEnd {
-				return ReachedTargetMcycle, nil
-			}
-		case YieldedManually:
-			return br, nil
-		case YieldedAutomatically, YieldedSoftly, Halted:
-			return br, nil
-		case Failed:
-			return Failed, errors.New("run failed")
-		default:
-			return Failed, errors.New("unknown break reason")
+	decodedHashes := make([]Hash, len(result.RootHashes))
+	for i, base64Hash := range result.RootHashes {
+		if err := decodeB64To32(&decodedHashes[i], base64Hash); err != nil {
+			return Failed, fmt.Errorf("invalid collected hash at index %v: %w", i, err)
 		}
 	}
+
+	state.Hashes = append(state.Hashes, decodedHashes...)
+	state.Phase = result.MCyclePhase
+	state.PartialBundle = result.PartialBundle
+
+	return reason, nil
 }

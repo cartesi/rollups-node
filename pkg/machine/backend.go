@@ -17,15 +17,16 @@ const (
 	YieldedAutomatically BreakReason = 0x3
 	YieldedSoftly        BreakReason = 0x4
 	ReachedTargetMcycle  BreakReason = 0x5
+	McycleOverflow       BreakReason = 0x8
 )
 
 type HashCollectorState struct {
-	Period     uint64
-	Phase      uint64
-	MaxHashes  uint64
-	BundleLog2 int32
-	Hashes     []Hash
-	BackTree   json.RawMessage
+	Period        uint64
+	Phase         uint64
+	MaxHashes     uint64
+	BundleLog2    int32
+	Hashes        []Hash
+	PartialBundle json.RawMessage
 }
 
 // This Backend interface covers the methods used from the emulator / remote machine server.
@@ -35,6 +36,9 @@ type Backend interface {
 	Store(directory string, timeout time.Duration) error
 
 	Run(mcycleEnd uint64, timeout time.Duration) (BreakReason, error)
+	// RunAndCollectRootHashes may advance the backend before returning an error.
+	// Callers must discard the backend after an error instead of retrying it with
+	// the previous HashCollectorState.
 	RunAndCollectRootHashes(mcycleEnd uint64, state *HashCollectorState, timeout time.Duration,
 	) (reason BreakReason, err error)
 

@@ -23,6 +23,7 @@ package emulator
 import "C"
 
 import (
+	"encoding/json"
 	"runtime"
 	"sync"
 	"unsafe"
@@ -32,6 +33,12 @@ const HashSize = C.sizeof_cm_hash
 
 // Common type aliases
 type Hash = [HashSize]byte
+
+// RevertUarchTail is the emulator-owned JSON array of base64-encoded state
+// hashes for the reset-delimited uarch period corresponding to a revert root.
+// It remains opaque so collector output can be passed back without decoding and
+// re-encoding every hash.
+type RevertUarchTail json.RawMessage
 
 // -----------------------------------------------------------------------------
 // Machine Methods
@@ -365,24 +372,30 @@ func (m *Machine) Run(mcycleEnd uint64) (BreakReason, error) {
 }
 
 // collect_mcycle_root_hashes
-func (m *Machine) CollectMCycleRootHashes(mcycleEnd, mcyclePeriod, mcyclePhase uint64, log2BundleMcycleCount int32, previousBackTree string) ([]byte, error) {
+func (m *Machine) CollectMCycleRootHashes(
+	mcycleEnd,
+	log2McyclePeriod,
+	mcyclePhase uint64,
+	log2BundleMcycleCount int32,
+	previousPartialBundle json.RawMessage,
+) ([]byte, error) {
 	var err error
 	var result []byte
 
 	m.callCAPI(func() {
 		var cResult *C.char
-		var previousBackTreeC *C.char
-		if previousBackTree != "" {
-			previousBackTreeC = C.CString(previousBackTree)
-			defer C.free(unsafe.Pointer(previousBackTreeC))
+		var previousPartialBundleC *C.char
+		if len(previousPartialBundle) > 0 {
+			previousPartialBundleC = C.CString(string(previousPartialBundle))
+			defer C.free(unsafe.Pointer(previousPartialBundleC))
 		}
 		err = newError(C.cm_collect_mcycle_root_hashes(
 			m.ptr,
 			C.uint64_t(mcycleEnd),
-			C.uint64_t(mcyclePeriod),
+			C.uint64_t(log2McyclePeriod),
 			C.uint64_t(mcyclePhase),
 			C.int32_t(log2BundleMcycleCount),
-			previousBackTreeC,
+			previousPartialBundleC,
 			&cResult))
 		result = []byte(C.GoString(cResult))
 	})
@@ -394,15 +407,19 @@ func (m *Machine) CollectMCycleRootHashes(mcycleEnd, mcyclePeriod, mcyclePhase u
 }
 
 // collect_uarch_cycle_root_hashes
-func (m *Machine) CollectUarchCycleRootHashes(mcycleEnd uint64, log2BundleUarchCycleCount int32, revertUarchTail string) ([]byte, error) {
+func (m *Machine) CollectUarchCycleRootHashes(
+	mcycleEnd uint64,
+	log2BundleUarchCycleCount int32,
+	revertUarchTail RevertUarchTail,
+) ([]byte, error) {
 	var err error
 	var result []byte
 
 	m.callCAPI(func() {
 		var cResult *C.char
 		var revertUarchTailC *C.char
-		if revertUarchTail != "" {
-			revertUarchTailC = C.CString(revertUarchTail)
+		if len(revertUarchTail) > 0 {
+			revertUarchTailC = C.CString(string(revertUarchTail))
 			defer C.free(unsafe.Pointer(revertUarchTailC))
 		}
 		err = newError(C.cm_collect_uarch_cycle_root_hashes(
@@ -436,10 +453,10 @@ func (m *Machine) SendCmioResponse(reason uint16, data []byte, revertRootHash *H
 		}
 		err = newError(C.go_cm_send_cmio_response(
 			m.ptr,
-			ptrHash,
 			C.uint16_t(reason),
 			ptrData,
 			sizeData,
+			ptrHash,
 		))
 	})
 
