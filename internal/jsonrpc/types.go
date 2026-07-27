@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"net/http"
+	"io"
 	"reflect"
 	"regexp"
 
@@ -38,8 +38,16 @@ type RPCError struct {
 	Data    any    `json:"data,omitempty"`
 }
 
+func (e *RPCError) Error() string {
+	return e.Message
+}
+
+func newRPCError(code int, message string, data any) error {
+	return &RPCError{Code: code, Message: message, Data: data}
+}
+
 // writeRPCError sends a generic error response for internal errors.
-func writeRPCError(w http.ResponseWriter, id any, code int, message string, data any) {
+func writeRPCError(w io.Writer, id any, code int, message string, data any) error {
 	// Hide detailed error info for internal errors.
 	if code == JSONRPC_INTERNAL_ERROR {
 		message = "Internal server error"
@@ -54,18 +62,16 @@ func writeRPCError(w http.ResponseWriter, id any, code int, message string, data
 		},
 		ID: id,
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	return json.NewEncoder(w).Encode(resp)
 }
 
-func writeRPCResult(w http.ResponseWriter, id any, result any) {
+func writeRPCResult(w io.Writer, id any, result any) error {
 	resp := RPCResponse{
 		JSONRPC: "2.0",
 		Result:  result,
 		ID:      id,
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	return json.NewEncoder(w).Encode(resp)
 }
 
 // UnmarshalParams supports both by-name (object) and by-position (array) parameter structures.

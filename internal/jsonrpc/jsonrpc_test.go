@@ -54,7 +54,10 @@ func TestInvalidJSON(t *testing.T) {
 		"id": 0,
 	}`))
 
-	assert.Equal(t, "Invalid JSON\n", string(body))
+	var resp RPCResponse
+	assert.Nil(t, json.Unmarshal(body, &resp))
+	assert.Equal(t, JSONRPC_PARSE_ERROR, resp.Error.Code)
+	assert.Equal(t, "invalid request", resp.Error.Message)
 }
 
 // failure: invalid method

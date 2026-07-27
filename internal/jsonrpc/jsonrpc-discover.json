@@ -3,7 +3,7 @@
 	"info": {
 		"title": "Cartesi Rollups Node API",
 		"version": "2.0.0",
-		"description": "A JSON-RPC API for reading rollups data. It provides information about applications, epochs, inputs, outputs, and reports in a read-only fashion.\n\nError handling: every method documents its possible errors under `errors`, and clients can dispatch on the error code. `-32002` (application not found) means the application identifier itself is unknown to this node; for application-scoped methods, this is a configuration error that will not resolve by retrying. `-32001` (resource not found) means the requested resource does not exist in the method's scope. For application-scoped methods, `-32001` means the application is known but the nested entity is missing; for node-scoped methods, it can also report missing node resources such as EVM reader configuration. For forward-looking application resources (e.g. the next epoch, input, or output index), `-32001` is the documented \"not created yet\" signal and is safe to poll. The error message names the missing resource. `-32603` (internal error) is never used for missing resources - clients should treat it as a node-side failure and alarm or back off, not poll. The transport-level codes `-32700` (parse error), `-32600` (invalid request), and `-32601` (method not found) follow the JSON-RPC 2.0 specification."
+		"description": "A JSON-RPC API for reading rollups data. It provides information about applications, epochs, inputs, outputs, and reports in a read-only fashion.\n\nBatch requests: JSON-RPC non-empty batch arrays are supported with a maximum of 100 entries per batch; batches outside that size range receive a single response with error code `-32040`. Entries execute sequentially and responses are returned in the same order as their requests. The 1 MB request-body limit applies to the whole batch array. A cumulative 10 MB response-size budget also applies; once the budget is exceeded, the remaining requests receive `-31003` error entries (consider resending the requests individually or in a smaller batch). Every batch entry receives a response. Notification suppression is not supported: entries without an ID are answered with `id: null`. This is a documented deviation from JSON-RPC 2.0, under which notifications normally produce no response. A batch response uses HTTP status 200 even when some or all of its entries are errors. Because execution is sequential and subject to the server time limit, heavy list calls should be kept outside large batches.\n\nError handling: every method documents its possible errors under `errors`, and clients can dispatch on the error code. `-31002` (application not found) means the application identifier itself is unknown to this node; for application-scoped methods, this is a configuration error that will not resolve by retrying. `-31001` (resource not found) means the requested resource does not exist in the method's scope. For application-scoped methods, `-31001` means the application is known but the nested entity is missing; for node-scoped methods, it can also report missing node resources such as EVM reader configuration. For forward-looking application resources (e.g. the next epoch, input, or output index), `-31001` is the documented \"not created yet\" signal and is safe to poll. The error message names the missing resource. `-32603` (internal error) is never used for missing resources - clients should treat it as a node-side failure and alarm or back off, not poll. `-32070` (timeout error) indicates the request was not able to be processed in the time limit available. The standard codes `-32700` (parse error), `-32600` (invalid request), and `-32601` (method not found) follow the JSON-RPC 2.0 specification."
 	},
 	"methods": [
 		{
@@ -53,6 +53,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -85,6 +91,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -155,6 +167,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -198,6 +216,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -233,6 +257,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -318,6 +348,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -361,6 +397,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -393,6 +435,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -486,6 +534,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -529,6 +583,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -604,6 +664,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -647,6 +713,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -716,6 +788,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -759,6 +837,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -852,6 +936,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -895,6 +985,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -972,6 +1068,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -1031,6 +1133,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -1108,6 +1216,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -1167,6 +1281,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -1252,6 +1372,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -1319,6 +1445,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -1339,6 +1471,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -1352,7 +1490,18 @@
 				"schema": {
 					"$ref": "#/components/schemas/NodeVersionResult"
 				}
-			}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
+				}
+			]
 		}
 	],
 	"components": {
@@ -2521,48 +2670,56 @@
 				"code": -32603,
 				"message": "Internal server error"
 			},
+			"TimeoutError": {
+				"code": -32070,
+				"message": "Request timed out"
+			},
+			"ResponseSizeLimitExceeded": {
+				"code": -31003,
+				"message": "Response size limit exceeded"
+			},
 			"ApplicationNotFound": {
-				"code": -32002,
+				"code": -31002,
 				"message": "Application not found"
 			},
 			"EpochNotFound": {
-				"code": -32001,
+				"code": -31001,
 				"message": "Epoch not found"
 			},
 			"InputNotFound": {
-				"code": -32001,
+				"code": -31001,
 				"message": "Input not found"
 			},
 			"OutputNotFound": {
-				"code": -32001,
+				"code": -31001,
 				"message": "Output not found"
 			},
 			"ReportNotFound": {
-				"code": -32001,
+				"code": -31001,
 				"message": "Report not found"
 			},
 			"WithdrawalNotFound": {
-				"code": -32001,
+				"code": -31001,
 				"message": "Withdrawal not found"
 			},
 			"TournamentNotFound": {
-				"code": -32001,
+				"code": -31001,
 				"message": "Tournament not found"
 			},
 			"CommitmentNotFound": {
-				"code": -32001,
+				"code": -31001,
 				"message": "Commitment not found"
 			},
 			"MatchNotFound": {
-				"code": -32001,
+				"code": -31001,
 				"message": "Match not found"
 			},
 			"MatchAdvancedNotFound": {
-				"code": -32001,
+				"code": -31001,
 				"message": "Match advanced not found"
 			},
 			"NodeConfigNotFound": {
-				"code": -32001,
+				"code": -31001,
 				"message": "EVM Reader config not found"
 			}
 		}
