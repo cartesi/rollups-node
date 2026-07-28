@@ -307,6 +307,7 @@ func (s *RepositoryReadService) ListOutputs(ctx context.Context, params api.List
 		}
 		filter.VoucherAddress = &voucherAddressVal
 	}
+	filter.Executed = params.Executed
 	pagination.Limit = params.Limit
 	pagination.Offset = params.Offset
 

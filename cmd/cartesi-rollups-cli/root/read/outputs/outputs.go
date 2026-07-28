@@ -39,8 +39,8 @@ cartesi-rollups-cli read outputs echo-dapp 10
 # Read all outputs:
 cartesi-rollups-cli read outputs echo-dapp
 
-# Read all outputs with filter:
-cartesi-rollups-cli read outputs echo-dapp --epoch-index 10 --input-index 10 --output-type 0x237a816f --voucher-address 0x95eac57f9d67c5e0f255d5a19eb5d3fd00cafa73
+# Read all outputs with filters:
+cartesi-rollups-cli read outputs echo-dapp --epoch-index 10 --input-index 10 --output-type 0x237a816f --output-type 0x10321e8b --executed --voucher-address 0x95eac57f9d67c5e0f255d5a19eb5d3fd00cafa73
 
 # Read all outputs with pagination:
 cartesi-rollups-cli read outputs echo-dapp --limit 10 --offset 10 --descending
@@ -49,7 +49,8 @@ cartesi-rollups-cli read outputs echo-dapp --limit 10 --offset 10 --descending
 var (
 	epochIndex     string
 	inputIndex     string
-	outputType     string
+	outputTypes    []string
+	executed       bool
 	voucherAddress string
 	limit          uint64
 	offset         uint64
@@ -61,8 +62,10 @@ func init() {
 		"Filter outputs by epoch index (decimal or hex encoded)")
 	Cmd.Flags().StringVar(&inputIndex, "input-index", "",
 		"Filter outputs by input index (decimal or hex encoded)")
-	Cmd.Flags().StringVar(&outputType, "output-type", "",
-		"Filter outputs by output type (first 4 bytes of raw data hex encoded)")
+	Cmd.Flags().StringArrayVar(&outputTypes, "output-type", nil,
+		"Filter outputs by output type (first 4 bytes of raw data hex encoded); may be specified multiple times")
+	Cmd.Flags().BoolVar(&executed, "executed", false,
+		"Filter outputs by execution status")
 	Cmd.Flags().StringVar(&voucherAddress, "voucher-address", "",
 		"Filter outputs by voucher address (hex encoded)")
 	Cmd.Flags().Uint64Var(&limit, "limit", 50, //nolint: mnd
@@ -128,7 +131,13 @@ func run(cmd *cobra.Command, args []string) {
 
 		// Add output type filter if provided
 		if cmd.Flags().Changed("output-type") {
-			params.OutputType = &api.OutputTypeSelectors{outputType}
+			selectors := api.OutputTypeSelectors(outputTypes)
+			params.OutputType = &selectors
+		}
+
+		// Add execution status filter if provided
+		if cmd.Flags().Changed("executed") {
+			params.Executed = &executed
 		}
 
 		// Add voucher address filter if provided
