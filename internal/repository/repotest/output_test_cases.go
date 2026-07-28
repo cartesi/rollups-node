@@ -247,14 +247,73 @@ func (s *OutputSuite) TestListOutputs() {
 		s.storeAdvanceResult(seed.App.ID, 0, 0,
 			[][]byte{rawWithType, rawWithOther}, nil)
 
+		targetTypes := [][]byte{targetType}
 		outputs, total, err := s.Repo.ListOutputs(
 			s.Ctx, seed.App.IApplicationAddress.String(),
-			repository.OutputFilter{OutputType: &targetType},
+			repository.OutputFilter{OutputType: &targetTypes},
 			repository.Pagination{Limit: 10}, false)
 		s.Require().NoError(err)
 		s.Len(outputs, 1)
 		s.Equal(uint64(1), total)
 		s.Equal(rawWithType, outputs[0].RawData)
+	})
+
+	s.Run("FilterByOutputTypesAndExecutionStatus", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+
+		voucherSelector := []byte{0x23, 0x7a, 0x81, 0x6f}
+		delegateCallVoucherSelector := []byte{0x10, 0x32, 0x1e, 0x8b}
+		voucher := append([]byte{}, voucherSelector...)
+		delegateCallVoucher := append([]byte{}, delegateCallVoucherSelector...)
+		notice := []byte{0xc2, 0x58, 0xd6, 0xe5}
+		executedVoucher := append([]byte{}, voucherSelector...)
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{voucher, delegateCallVoucher, notice, executedVoucher}, nil)
+
+		txHash := UniqueHash()
+		err := s.Repo.UpdateOutputsExecution(
+			s.Ctx,
+			seed.App.IApplicationAddress.String(),
+			[]*Output{{
+				InputEpochApplicationID:  seed.App.ID,
+				Index:                    3,
+				ExecutionTransactionHash: &txHash,
+			}},
+			200,
+		)
+		s.Require().NoError(err)
+
+		outputTypes := [][]byte{voucherSelector, delegateCallVoucherSelector}
+		executed := false
+		outputs, total, err := s.Repo.ListOutputs(
+			s.Ctx, seed.App.IApplicationAddress.String(),
+			repository.OutputFilter{OutputType: &outputTypes, Executed: &executed},
+			repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Require().Len(outputs, 2)
+		s.Equal(uint64(2), total)
+		s.Equal(uint64(0), outputs[0].Index)
+		s.Equal(uint64(1), outputs[1].Index)
+
+		executed = true
+		outputs, total, err = s.Repo.ListOutputs(
+			s.Ctx, seed.App.IApplicationAddress.String(),
+			repository.OutputFilter{OutputType: &outputTypes, Executed: &executed},
+			repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Require().Len(outputs, 1)
+		s.Equal(uint64(1), total)
+		s.Equal(uint64(3), outputs[0].Index)
+
+		// The validator uses the nil-filter path to reproduce epoch claims;
+		// it must continue to include every output type and execution state.
+		outputs, total, err = s.Repo.ListOutputs(
+			s.Ctx, seed.App.IApplicationAddress.String(),
+			repository.OutputFilter{},
+			repository.Pagination{}, false)
+		s.Require().NoError(err)
+		s.Len(outputs, 4)
+		s.Equal(uint64(4), total)
 	})
 
 	s.Run("FilterByVoucherAddress", func() {

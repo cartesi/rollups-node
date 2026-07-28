@@ -128,7 +128,7 @@ func run(cmd *cobra.Command, args []string) {
 
 		// Add output type filter if provided
 		if cmd.Flags().Changed("output-type") {
-			params.OutputType = &outputType
+			params.OutputType = &api.OutputTypeSelectors{outputType}
 		}
 
 		// Add voucher address filter if provided

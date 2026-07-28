@@ -550,9 +550,20 @@
 				},
 				{
 					"name": "output_type",
-					"description": "Filter outputs by output type (first 4 bytes of raw data hex encoded).",
+					"description": "Filter outputs by one or more output type selectors (the first 4 bytes of raw data, hex encoded). A single selector string is accepted for compatibility; arrays use OR semantics and must not be empty.",
 					"schema": {
-						"$ref": "#/components/schemas/FunctionSelector"
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/FunctionSelector"
+							},
+							{
+								"type": "array",
+								"minItems": 1,
+								"items": {
+									"$ref": "#/components/schemas/FunctionSelector"
+								}
+							}
+						]
 					},
 					"required": false
 				},
@@ -606,6 +617,14 @@
 					"description": "Inclusive upper bound on the output index (hex encoded).",
 					"schema": {
 						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": false
+				},
+				{
+					"name": "executed",
+					"description": "Filter by execution status: true selects outputs with an execution transaction hash; false selects outputs without one. Executions happen out of index order: an old voucher can be executed long after newer ones, appearing at a low index. Therefore, do not build a resume cursor keyed on output index or on an executed-count offset over this filter as it will silently skip such late executions.",
+					"schema": {
+						"type": "boolean"
 					},
 					"required": false
 				}

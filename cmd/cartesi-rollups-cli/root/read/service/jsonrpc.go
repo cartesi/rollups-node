@@ -130,8 +130,10 @@ func (s *JsonrpcReadService) ListOutputs(ctx context.Context, params api.ListOut
 	}
 	// Add output type filter if provided
 	if params.OutputType != nil {
-		if _, err := api.ParseOutputType(*params.OutputType); err != nil {
-			return nil, fmt.Errorf("invalid output type: %w", err)
+		for i, selector := range *params.OutputType {
+			if _, err := api.ParseOutputType(selector); err != nil {
+				return nil, fmt.Errorf("invalid output type #%d: %w", i+1, err)
+			}
 		}
 	}
 	// Add voucher address filter if provided

@@ -21,6 +21,33 @@ var (
 	voucherSelector             = []byte{0x23, 0x7a, 0x81, 0x6f}
 )
 
+func outputExecutionCondition(executed bool) postgres.BoolExpression {
+	if executed {
+		return table.Output.ExecutionTransactionHash.IS_NOT_NULL()
+	}
+	return table.Output.ExecutionTransactionHash.IS_NULL()
+}
+
+func outputTypesCondition(selectors [][]byte) postgres.BoolExpression {
+	values := make([]postgres.Expression, 0, len(selectors))
+	for _, selector := range selectors {
+		values = append(values, ByteaLiteral(selector))
+	}
+	return SubstrBytea(table.Output.RawData, 1, 4).IN(values...)
+}
+
+// outputVoucherTypesCondition uses literals so PostgreSQL can prove
+// that the condition implies output_pending_voucher_idx's predicate even when
+// pgx executes the query with a generic prepared plan.
+func outputVoucherTypesCondition() postgres.BoolExpression {
+	return outputTypesCondition(
+		[][]byte{
+			voucherSelector,
+			delegateCallVoucherSelector,
+		},
+	)
+}
+
 func (r *PostgresRepository) GetOutput(
 	ctx context.Context,
 	nameOrAddress string,
@@ -193,9 +220,11 @@ func (r *PostgresRepository) ListOutputs(
 	}
 
 	if f.OutputType != nil {
-		conditions = append(conditions,
-			SubstrBytea(table.Output.RawData, 1, 4).EQ(postgres.Bytea(*f.OutputType)),
-		)
+		conditions = append(conditions, outputTypesCondition(*f.OutputType))
+	}
+
+	if f.Executed != nil {
+		conditions = append(conditions, outputExecutionCondition(*f.Executed))
 	}
 
 	if f.VoucherAddress != nil {
@@ -205,10 +234,7 @@ func (r *PostgresRepository) ListOutputs(
 		// inline literals, is also what lets the planner prove the partial
 		// predicate of output_raw_data_address_idx.
 		conditions = append(conditions,
-			SubstrBytea(table.Output.RawData, 1, 4).IN(
-				ByteaLiteral(voucherSelector),
-				ByteaLiteral(delegateCallVoucherSelector),
-			),
+			outputVoucherTypesCondition(),
 			SubstrBytea(table.Output.RawData, 17, 20).EQ(postgres.Bytea(f.VoucherAddress.Bytes())),
 		)
 	}
@@ -325,8 +351,6 @@ func (r *PostgresRepository) GetNumberOfPendingExecutableOutputs(
 ) (uint64, error) {
 
 	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
-	outputType := SubstrBytea(table.Output.RawData, 1, 4)
-
 	sel := table.Output.
 		SELECT(postgres.COUNT(postgres.STAR)).
 		FROM(
@@ -337,9 +361,8 @@ func (r *PostgresRepository) GetNumberOfPendingExecutableOutputs(
 		).
 		WHERE(
 			whereClause.
-				AND(table.Output.ExecutionTransactionHash.IS_NULL()).
-				AND(outputType.EQ(postgres.Bytea(delegateCallVoucherSelector)).
-					OR(outputType.EQ(postgres.Bytea(voucherSelector)))),
+				AND(outputExecutionCondition(false)).
+				AND(outputVoucherTypesCondition()),
 		)
 
 	sqlStr, args := sel.Sql()

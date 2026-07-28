@@ -289,9 +289,13 @@ func (s *RepositoryReadService) ListOutputs(ctx context.Context, params api.List
 	}
 	// Add output type filter if provided
 	if params.OutputType != nil {
-		outputTypeVal, err := api.ParseOutputType(*params.OutputType)
-		if err != nil {
-			return nil, fmt.Errorf("invalid output type: %w", err)
+		outputTypeVal := make([][]byte, len(*params.OutputType))
+		for i, selector := range *params.OutputType {
+			parsed, err := api.ParseOutputType(selector)
+			if err != nil {
+				return nil, fmt.Errorf("invalid output type #%d: %w", i+1, err)
+			}
+			outputTypeVal[i] = parsed
 		}
 		filter.OutputType = &outputTypeVal
 	}

@@ -66,6 +66,21 @@ func requireRPCError(t *testing.T, response RPCResponse, id any, code int) {
 	require.Equal(t, code, response.Error.Code)
 }
 
+func TestListOutputsRejectsEmptyOutputTypeList(t *testing.T) {
+	s := newBatchTestService()
+	rr := serveRPC(t, s, []byte(`{
+		"jsonrpc":"2.0",
+		"method":"cartesi_listOutputs",
+		"params":{"application":"app","output_type":[]},
+		"id":1
+	}`))
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	response := decodeRPCResponse(t, rr.Body.Bytes())
+	requireRPCError(t, response, float64(1), JSONRPC_INVALID_PARAMS)
+	require.Equal(t, "Invalid output type: expected at least one selector", response.Error.Message)
+}
+
 func TestJSONRPCBatchRejectsEmptyBatchWithSingleObject(t *testing.T) {
 	s := newBatchTestService()
 	rr := serveRPC(t, s, []byte(`[]`))

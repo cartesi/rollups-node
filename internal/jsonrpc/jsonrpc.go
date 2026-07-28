@@ -690,12 +690,20 @@ func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error)
 
 	// Add output type filter if provided
 	if params.OutputType != nil {
-		outputType, err := api.ParseOutputType(*params.OutputType)
-		if err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid output type: %v", err))
+		if len(*params.OutputType) == 0 {
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid output type: expected at least one selector")
 		}
-		outputFilter.OutputType = &outputType
+		outputTypes := make([][]byte, 0, len(*params.OutputType))
+		for _, selector := range *params.OutputType {
+			outputType, err := api.ParseOutputType(selector)
+			if err != nil {
+				return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid output type: %v", err))
+			}
+			outputTypes = append(outputTypes, outputType)
+		}
+		outputFilter.OutputType = &outputTypes
 	}
+	outputFilter.Executed = params.Executed
 
 	// Add sender filter if provided
 	if params.VoucherAddress != nil {

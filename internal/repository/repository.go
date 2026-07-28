@@ -84,7 +84,8 @@ type OutputFilter struct {
 	InputIndex     *uint64
 	BlockRange     *Range
 	IndexRange     *Range
-	OutputType     *[]byte
+	OutputType     *[][]byte
+	Executed       *bool
 	VoucherAddress *common.Address
 }
 

@@ -3,6 +3,33 @@
 
 package api
 
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+)
+
+type OutputTypeSelectors []string
+
+func (s *OutputTypeSelectors) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) > 0 && data[0] == '"' {
+		var value string
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		*s = []string{value}
+		return nil
+	}
+
+	var values []string
+	if err := json.Unmarshal(data, &values); err != nil {
+		return fmt.Errorf("expected a string or an array of strings: %w", err)
+	}
+	*s = values
+	return nil
+}
+
 // ListApplicationsParams aligns with the OpenRPC specification
 type ListApplicationsParams struct {
 	Limit      uint64 `json:"limit"`
@@ -69,16 +96,17 @@ type GetProcessedInputCountParams struct {
 
 // ListOutputsParams aligns with the OpenRPC specification
 type ListOutputsParams struct {
-	Application    string  `json:"application"`
-	EpochIndex     *string `json:"epoch_index,omitempty"`
-	InputIndex     *string `json:"input_index,omitempty"`
-	OutputType     *string `json:"output_type,omitempty"`
-	VoucherAddress *string `json:"voucher_address,omitempty"`
-	Limit          uint64  `json:"limit"`
-	Offset         uint64  `json:"offset"`
-	Descending     bool    `json:"descending,omitempty"`
-	From           *string `json:"from,omitempty"` // inclusive lower bound on the output index (hex)
-	To             *string `json:"to,omitempty"`   // inclusive upper bound on the output index (hex)
+	Application    string               `json:"application"`
+	EpochIndex     *string              `json:"epoch_index,omitempty"`
+	InputIndex     *string              `json:"input_index,omitempty"`
+	OutputType     *OutputTypeSelectors `json:"output_type,omitempty"`
+	VoucherAddress *string              `json:"voucher_address,omitempty"`
+	Limit          uint64               `json:"limit"`
+	Offset         uint64               `json:"offset"`
+	Descending     bool                 `json:"descending,omitempty"`
+	From           *string              `json:"from,omitempty"` // inclusive lower bound on the output index (hex)
+	To             *string              `json:"to,omitempty"`   // inclusive upper bound on the output index (hex)
+	Executed       *bool                `json:"executed,omitempty"`
 }
 
 // GetOutputParams aligns with the OpenRPC specification
