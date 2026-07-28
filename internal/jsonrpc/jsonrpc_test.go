@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"time"
@@ -3676,4 +3677,53 @@ func TestMethod(t *testing.T) {
 	if len(errors) > 0 {
 		t.Errorf("Method coverage issues:\n%s", strings.Join(errors, "\n"))
 	}
+}
+
+func TestListIndexRangeValidation(t *testing.T) {
+	for _, method := range []string{
+		"cartesi_listEpochs",
+		"cartesi_listInputs",
+		"cartesi_listOutputs",
+		"cartesi_listReports",
+	} {
+		t.Run(method, func(t *testing.T) {
+			s := newBatchTestService()
+			body := []byte(fmt.Sprintf(`{
+				"jsonrpc":"2.0",
+				"method":%q,
+				"params":{"application":"app","from":"0x2","to":"0x1"},
+				"id":1
+			}`, method))
+			rr := serveRPC(t, s, body)
+
+			require.Equal(t, http.StatusOK, rr.Code)
+			response := decodeRPCResponse(t, rr.Body.Bytes())
+			requireRPCError(t, response, float64(1), JSONRPC_INVALID_PARAMS)
+			require.Equal(t, "invalid index range: from must be less than or equal to to", response.Error.Message)
+		})
+	}
+}
+
+func TestParseIndexRange(t *testing.T) {
+	from := "0x2"
+	to := "0x4"
+	indexRange, err := parseIndexRange(&from, &to)
+	require.NoError(t, err)
+	require.Equal(t, repository.Range{Start: 2, End: 4}, *indexRange)
+
+	indexRange, err = parseIndexRange(&from, nil)
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), indexRange.Start)
+	require.Equal(t, uint64(math.MaxUint64), indexRange.End)
+
+	indexRange, err = parseIndexRange(nil, &to)
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), indexRange.Start)
+	require.Equal(t, uint64(4), indexRange.End)
+
+	invalid := "2"
+	_, err = parseIndexRange(&invalid, nil)
+	require.EqualError(t, err, "invalid from index: expected hex encoded value")
+	_, err = parseIndexRange(nil, &invalid)
+	require.EqualError(t, err, "invalid to index: expected hex encoded value")
 }

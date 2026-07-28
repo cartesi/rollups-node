@@ -62,6 +62,7 @@ func ExecutableApplicationsFilter() ApplicationFilter {
 type EpochFilter struct {
 	Status      []EpochStatus
 	BeforeBlock *uint64
+	IndexRange  *Range
 }
 
 type InputFilter struct {
@@ -70,6 +71,7 @@ type InputFilter struct {
 	NotStatus       *InputCompletionStatus
 	Sender          *common.Address
 	TransactionHash *common.Hash
+	IndexRange      *Range
 }
 
 type Range struct {
@@ -81,6 +83,7 @@ type OutputFilter struct {
 	EpochIndex     *uint64
 	InputIndex     *uint64
 	BlockRange     *Range
+	IndexRange     *Range
 	OutputType     *[]byte
 	VoucherAddress *common.Address
 }
@@ -88,6 +91,7 @@ type OutputFilter struct {
 type ReportFilter struct {
 	EpochIndex *uint64
 	InputIndex *uint64
+	IndexRange *Range
 }
 
 type StateHashFilter struct {

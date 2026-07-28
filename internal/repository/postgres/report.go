@@ -90,6 +90,12 @@ func (r *PostgresRepository) ListReports(
 	)
 
 	conditions := []postgres.BoolExpression{whereClause}
+	if f.IndexRange != nil {
+		conditions = append(conditions,
+			table.Report.Index.GT_EQ(uint64Expr(f.IndexRange.Start)),
+			table.Report.Index.LT_EQ(uint64Expr(f.IndexRange.End)),
+		)
+	}
 	if f.InputIndex != nil {
 		conditions = append(conditions, table.Report.InputIndex.EQ(uint64Expr(*f.InputIndex)))
 	}

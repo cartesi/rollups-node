@@ -169,6 +169,12 @@ func (r *PostgresRepository) ListOutputs(
 	)
 
 	conditions := []postgres.BoolExpression{whereClause}
+	if f.IndexRange != nil {
+		conditions = append(conditions,
+			table.Output.Index.GT_EQ(uint64Expr(f.IndexRange.Start)),
+			table.Output.Index.LT_EQ(uint64Expr(f.IndexRange.End)),
+		)
+	}
 	if f.BlockRange != nil {
 		conditions = append(conditions, table.Input.BlockNumber.BETWEEN(
 			uint64Expr(f.BlockRange.Start),

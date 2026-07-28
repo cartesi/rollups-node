@@ -22,6 +22,8 @@ type ListEpochsParams struct {
 	Limit       uint64  `json:"limit"`
 	Offset      uint64  `json:"offset"`
 	Descending  bool    `json:"descending,omitempty"`
+	From        *string `json:"from,omitempty"` // inclusive lower bound on the epoch index (hex)
+	To          *string `json:"to,omitempty"`   // inclusive upper bound on the epoch index (hex)
 }
 
 // GetEpochParams aligns with the OpenRPC specification
@@ -50,6 +52,8 @@ type ListInputsParams struct {
 	Limit           uint64  `json:"limit"`
 	Offset          uint64  `json:"offset"`
 	Descending      bool    `json:"descending,omitempty"`
+	From            *string `json:"from,omitempty"` // inclusive lower bound on the input index (hex)
+	To              *string `json:"to,omitempty"`   // inclusive upper bound on the input index (hex)
 }
 
 // GetInputParams aligns with the OpenRPC specification
@@ -73,6 +77,8 @@ type ListOutputsParams struct {
 	Limit          uint64  `json:"limit"`
 	Offset         uint64  `json:"offset"`
 	Descending     bool    `json:"descending,omitempty"`
+	From           *string `json:"from,omitempty"` // inclusive lower bound on the output index (hex)
+	To             *string `json:"to,omitempty"`   // inclusive upper bound on the output index (hex)
 }
 
 // GetOutputParams aligns with the OpenRPC specification
@@ -89,6 +95,8 @@ type ListReportsParams struct {
 	Limit       uint64  `json:"limit"`
 	Offset      uint64  `json:"offset"`
 	Descending  bool    `json:"descending,omitempty"`
+	From        *string `json:"from,omitempty"` // inclusive lower bound on the report index (hex)
+	To          *string `json:"to,omitempty"`   // inclusive upper bound on the report index (hex)
 }
 
 // GetReportParams aligns with the OpenRPC specification

@@ -262,6 +262,30 @@ func (s *InputSuite) TestListInputs() {
 		s.Equal(uint64(3), total)
 	})
 
+	s.Run("IndexRangeComposesWithPaginationAndDescending", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 49).WithInputBounds(0, 4).Build()
+		inputs := make([]*Input, 5)
+		for i := range uint64(5) {
+			inputs[i] = NewInputBuilder().WithIndex(i).WithBlockNumber(i*10 + 5).Build()
+		}
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(), map[*Epoch][]*Input{epoch: inputs}, 50)
+		s.Require().NoError(err)
+
+		indexRange := repository.Range{Start: 1, End: 3}
+		got, total, err := s.Repo.ListInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			repository.InputFilter{IndexRange: &indexRange},
+			repository.Pagination{Limit: 1, Offset: 1}, true)
+		s.Require().NoError(err)
+		s.Require().Len(got, 1)
+		s.Equal(uint64(3), total)
+		s.Equal(uint64(2), got[0].Index)
+	})
+
 	s.Run("FilterByEpochIndex", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 

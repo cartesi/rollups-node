@@ -62,6 +62,22 @@ func (s *ReportSuite) TestListReports() {
 		s.Equal(uint64(3), total)
 	})
 
+	s.Run("IndexRangeComposesWithPaginationAndDescending", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+		s.storeAdvanceResult(seed.App.ID, 0, 0, nil,
+			[][]byte{[]byte("r0"), []byte("r1"), []byte("r2"), []byte("r3"), []byte("r4")})
+
+		indexRange := repository.Range{Start: 1, End: 3}
+		reports, total, err := s.Repo.ListReports(
+			s.Ctx, seed.App.IApplicationAddress.String(),
+			repository.ReportFilter{IndexRange: &indexRange},
+			repository.Pagination{Limit: 1, Offset: 1}, true)
+		s.Require().NoError(err)
+		s.Require().Len(reports, 1)
+		s.Equal(uint64(3), total)
+		s.Equal(uint64(2), reports[0].Index)
+	})
+
 	s.Run("FilterByEpochIndex", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 

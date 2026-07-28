@@ -229,6 +229,12 @@ func (r *PostgresRepository) ListInputs(
 		)
 
 	conditions := []postgres.BoolExpression{whereClause}
+	if f.IndexRange != nil {
+		conditions = append(conditions,
+			table.Input.Index.GT_EQ(uint64Expr(f.IndexRange.Start)),
+			table.Input.Index.LT_EQ(uint64Expr(f.IndexRange.End)),
+		)
+	}
 	if f.EpochIndex != nil {
 		conditions = append(conditions, table.Input.EpochIndex.EQ(uint64Expr(*f.EpochIndex)))
 	}

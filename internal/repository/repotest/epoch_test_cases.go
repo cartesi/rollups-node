@@ -371,6 +371,31 @@ func (s *EpochSuite) TestListEpochs() {
 		s.Equal(uint64(5), total)
 	})
 
+	s.Run("IndexRangeComposesWithPaginationAndDescending", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epochInputMap := make(map[*Epoch][]*Input)
+		for i := range uint64(5) {
+			epoch := NewEpochBuilder(app.ID).
+				WithIndex(i).WithStatus(EpochStatus_Closed).
+				WithBlocks(i*10, i*10+9).WithInputBounds(i, i).Build()
+			input := NewInputBuilder().WithIndex(i).WithEpochIndex(i).WithBlockNumber(i*10 + 5).Build()
+			epochInputMap[epoch] = []*Input{input}
+		}
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(), epochInputMap, 50)
+		s.Require().NoError(err)
+
+		indexRange := repository.Range{Start: 1, End: 3}
+		epochs, total, err := s.Repo.ListEpochs(
+			s.Ctx, app.IApplicationAddress.String(),
+			repository.EpochFilter{IndexRange: &indexRange},
+			repository.Pagination{Limit: 1, Offset: 1}, true)
+		s.Require().NoError(err)
+		s.Require().Len(epochs, 1)
+		s.Equal(uint64(3), total)
+		s.Equal(uint64(2), epochs[0].Index)
+	})
+
 	s.Run("Descending", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 

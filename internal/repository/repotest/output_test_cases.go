@@ -62,6 +62,22 @@ func (s *OutputSuite) TestListOutputs() {
 		s.Equal(uint64(3), total)
 	})
 
+	s.Run("IndexRangeComposesWithPaginationAndDescending", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{[]byte("o0"), []byte("o1"), []byte("o2"), []byte("o3"), []byte("o4")}, nil)
+
+		indexRange := repository.Range{Start: 1, End: 3}
+		outputs, total, err := s.Repo.ListOutputs(
+			s.Ctx, seed.App.IApplicationAddress.String(),
+			repository.OutputFilter{IndexRange: &indexRange},
+			repository.Pagination{Limit: 1, Offset: 1}, true)
+		s.Require().NoError(err)
+		s.Require().Len(outputs, 1)
+		s.Equal(uint64(3), total)
+		s.Equal(uint64(2), outputs[0].Index)
+	})
+
 	s.Run("FilterByEpochIndex", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 

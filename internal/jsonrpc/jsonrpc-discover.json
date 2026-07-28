@@ -149,6 +149,22 @@
 						"default": false
 					},
 					"required": false
+				},
+				{
+					"name": "from",
+					"description": "Inclusive lower bound on the epoch index (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": false
+				},
+				{
+					"name": "to",
+					"description": "Inclusive upper bound on the epoch index (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": false
 				}
 			],
 			"result": {
@@ -374,6 +390,22 @@
 						"default": false
 					},
 					"required": false
+				},
+				{
+					"name": "from",
+					"description": "Inclusive lower bound on the input index (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": false
+				},
+				{
+					"name": "to",
+					"description": "Inclusive upper bound on the input index (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": false
 				}
 			],
 			"result": {
@@ -560,6 +592,22 @@
 						"default": false
 					},
 					"required": false
+				},
+				{
+					"name": "from",
+					"description": "Inclusive lower bound on the output index (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": false
+				},
+				{
+					"name": "to",
+					"description": "Inclusive upper bound on the output index (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": false
 				}
 			],
 			"result": {
@@ -688,6 +736,22 @@
 					"schema": {
 						"type": "boolean",
 						"default": false
+					},
+					"required": false
+				},
+				{
+					"name": "from",
+					"description": "Inclusive lower bound on the report index (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": false
+				},
+				{
+					"name": "to",
+					"description": "Inclusive upper bound on the report index (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
 					},
 					"required": false
 				}

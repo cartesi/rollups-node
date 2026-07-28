@@ -842,6 +842,12 @@ func (r *PostgresRepository) ListEpochs(
 		)
 
 	conditions := []postgres.BoolExpression{whereClause}
+	if f.IndexRange != nil {
+		conditions = append(conditions,
+			table.Epoch.Index.GT_EQ(uint64Expr(f.IndexRange.Start)),
+			table.Epoch.Index.LT_EQ(uint64Expr(f.IndexRange.End)),
+		)
+	}
 	if len(f.Status) > 0 {
 		statuses := make([]postgres.Expression, 0, len(f.Status))
 		for _, status := range f.Status {

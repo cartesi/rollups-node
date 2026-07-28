@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -365,6 +366,11 @@ func handleListEpochs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 	}
 
 	var epochFilter repository.EpochFilter
+	indexRange, err := parseIndexRange(params.From, params.To)
+	if err != nil {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, err.Error())
+	}
+	epochFilter.IndexRange = indexRange
 	if params.Status != nil {
 		var status model.EpochStatus
 		if err := status.Scan(*params.Status); err != nil {
@@ -515,6 +521,11 @@ func handleListInputs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 
 	// Create input filter based on params
 	inputFilter := repository.InputFilter{}
+	indexRange, err := parseIndexRange(params.From, params.To)
+	if err != nil {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, err.Error())
+	}
+	inputFilter.IndexRange = indexRange
 	if params.EpochIndex != nil {
 		epochIndex, err := config.ToIndexFromString(*params.EpochIndex)
 		if err != nil {
@@ -656,6 +667,11 @@ func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error)
 
 	// Create output filter based on params
 	outputFilter := repository.OutputFilter{}
+	indexRange, err := parseIndexRange(params.From, params.To)
+	if err != nil {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, err.Error())
+	}
+	outputFilter.IndexRange = indexRange
 	if params.EpochIndex != nil {
 		epochIndex, err := config.ToIndexFromString(*params.EpochIndex)
 		if err != nil {
@@ -784,6 +800,11 @@ func handleListReports(s *Service, r *http.Request, req RPCRequest) (any, error)
 
 	// Create report filter based on params
 	reportFilter := repository.ReportFilter{}
+	indexRange, err := parseIndexRange(params.From, params.To)
+	if err != nil {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, err.Error())
+	}
+	reportFilter.IndexRange = indexRange
 	if params.EpochIndex != nil {
 		epochIndex, err := config.ToIndexFromString(*params.EpochIndex)
 		if err != nil {
@@ -1415,6 +1436,32 @@ func handleGetChainID(s *Service, r *http.Request, _ RPCRequest) (any, error) {
 
 func handleGetNodeVersion(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
 	return api.SingleResponse[string]{Data: version.BuildVersion}, nil
+}
+
+func parseIndexRange(from, to *string) (*repository.Range, error) {
+	if from == nil && to == nil {
+		return nil, nil
+	}
+
+	indexRange := repository.Range{End: math.MaxUint64}
+	if from != nil {
+		value, err := config.ToIndexFromString(*from)
+		if err != nil {
+			return nil, fmt.Errorf("invalid from index: %w", err)
+		}
+		indexRange.Start = value
+	}
+	if to != nil {
+		value, err := config.ToIndexFromString(*to)
+		if err != nil {
+			return nil, fmt.Errorf("invalid to index: %w", err)
+		}
+		indexRange.End = value
+	}
+	if indexRange.Start > indexRange.End {
+		return nil, fmt.Errorf("invalid index range: from must be less than or equal to to")
+	}
+	return &indexRange, nil
 }
 
 func (s *Service) applicationAbsentOrError(
