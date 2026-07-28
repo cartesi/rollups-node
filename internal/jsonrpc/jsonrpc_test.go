@@ -355,6 +355,120 @@ func TestMethod(t *testing.T) {
 	})
 
 	////////////////////////////////////////////////////////////////////////
+	// getEpochByVirtualIndex
+	////////////////////////////////////////////////////////////////////////
+	t.Run("cartesi_getEpochByVirtualIndex", func(t *testing.T) {
+		method := getName(t.Name())
+
+		// failure: virtual_index not hex encoded -> invalid param
+		t.Run("malformedVirtualIndex", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getEpochByVirtualIndex",
+				"params": {
+					"application": "%v",
+					"virtual_index": 0
+				},
+				"id": 0
+			}`, numberToName(1)))
+
+			resp := testRPCResponse[any]{}
+			require.NoError(t, json.Unmarshal(body, &resp))
+			require.NotNil(t, resp.Error)
+			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
+			assert.Equal(t, "Invalid parameters", resp.Error.Message)
+		})
+
+		// failure: virtual index not in the database -> resource not found
+		t.Run("absent", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(1)
+			appID := s.newTestApplication(ctx, t, app)
+			s.createTestEpoch(ctx, t, numberToName(app),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(5).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getEpochByVirtualIndex",
+				"params": {
+					"application": "%v",
+					"virtual_index": "%v"
+				},
+				"id": 0
+			}`, numberToName(app), hexutil.EncodeUint64(1)))
+
+			resp := testRPCResponse[any]{}
+			require.NoError(t, json.Unmarshal(body, &resp))
+			require.NotNil(t, resp.Error)
+			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Epoch not found", resp.Error.Message)
+		})
+
+		// failure: application not in the database -> application not found
+		t.Run("absentApplication", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getEpochByVirtualIndex",
+				"params": {
+					"application": "%v",
+					"virtual_index": "0x0"
+				},
+				"id": 0
+			}`, numberToName(0xdeadbeef)))
+
+			resp := testRPCResponse[any]{}
+			require.NoError(t, json.Unmarshal(body, &resp))
+			require.NotNil(t, resp.Error)
+			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "Application not found", resp.Error.Message)
+		})
+
+		// success: lookup uses the dense virtual index, not the physical epoch index
+		t.Run("presentWithDivergentPhysicalIndex", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(1)
+			appID := s.newTestApplication(ctx, t, app)
+			s.createTestEpoch(ctx, t, numberToName(app),
+				repotest.NewEpochBuilder(appID).
+					WithIndex(5).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build())
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getEpochByVirtualIndex",
+				"params": {
+					"application": "%v",
+					"virtual_index": "0x0"
+				},
+				"id": 0
+			}`, numberToName(app)))
+
+			resp := testRPCResponse[*model.Epoch]{}
+			require.NoError(t, json.Unmarshal(body, &resp))
+			require.Nil(t, resp.Error)
+			require.NotNil(t, resp.Result.Data)
+			assert.Equal(t, uint64(5), resp.Result.Data.Index)
+			assert.Equal(t, uint64(0), resp.Result.Data.VirtualIndex)
+		})
+	})
+
+	////////////////////////////////////////////////////////////////////////
 	// getInput
 	////////////////////////////////////////////////////////////////////////
 	t.Run("cartesi_getInput", func(t *testing.T) {

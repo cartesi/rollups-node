@@ -96,6 +96,7 @@ func newTestServiceFull(t *testing.T, name string, maxInflight uint64, corsOrigi
 
 	repo, err := factory.NewRepositoryFromConnectionString(ctx, dbTestEndpoint)
 	require.NoError(t, err)
+	t.Cleanup(repo.Close)
 
 	logLevel, err := config.GetLogLevel()
 	require.NoError(t, err)

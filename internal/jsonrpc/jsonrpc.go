@@ -70,6 +70,7 @@ var jsonrpcHandlers = dispatchTable{
 	"cartesi_getApplication":            handleGetApplication,
 	"cartesi_listEpochs":                handleListEpochs,
 	"cartesi_getEpoch":                  handleGetEpoch,
+	"cartesi_getEpochByVirtualIndex":    handleGetEpochByVirtualIndex,
 	"cartesi_getLastAcceptedEpochIndex": handleGetLastAcceptedEpochIndex,
 	"cartesi_listInputs":                handleListInputs,
 	"cartesi_getInput":                  handleGetInput,
@@ -417,6 +418,38 @@ func handleGetEpoch(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	}
 
 	epoch, err := s.repository.GetEpoch(r.Context(), params.Application, index)
+	if err != nil {
+		s.Logger.Error("Unable to retrieve epoch from repository", "err", err)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+	}
+	if epoch == nil {
+		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
+			return nil, err
+		}
+		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Epoch not found")
+	}
+
+	return api.SingleResponse[*model.Epoch]{Data: epoch}, nil
+}
+
+func handleGetEpochByVirtualIndex(s *Service, r *http.Request, req RPCRequest) (any, error) {
+	var params api.GetEpochByVirtualIndexParams
+	if err := UnmarshalParams(req.Params, &params); err != nil {
+		s.Logger.Debug("Invalid parameters", "err", err)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
+	}
+
+	// Validate application parameter
+	if err := validateNameOrAddress(params.Application); err != nil {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
+	}
+
+	index, err := config.ToIndexFromString(params.VirtualIndex)
+	if err != nil {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid virtual index: %v", err))
+	}
+
+	epoch, err := s.repository.GetEpochByVirtualIndex(r.Context(), params.Application, index)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve epoch from repository", "err", err)
 		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")

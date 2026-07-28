@@ -30,6 +30,12 @@ type GetEpochParams struct {
 	EpochIndex  string `json:"epoch_index"`
 }
 
+// GetEpochByVirtualIndexParams aligns with the OpenRPC specification
+type GetEpochByVirtualIndexParams struct {
+	Application  string `json:"application"`
+	VirtualIndex string `json:"virtual_index"`
+}
+
 // GetLastAcceptedEpochIndexParams with the OpenRPC specification
 type GetLastAcceptedEpochIndexParams struct {
 	Application string `json:"application"`

@@ -226,6 +226,49 @@
 			]
 		},
 		{
+			"name": "cartesi_getEpochByVirtualIndex",
+			"summary": "Get a specific epoch by its virtual index",
+			"description": "Fetches a single epoch by application and its virtual index, which is the epoch's dense insertion rank — 0, 1, 2, … with no gaps by construction.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "virtual_index",
+					"description": "The virtual index of the epoch to be retrieved (hex encoded).",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": true
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/EpochGetResult"
+				}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/EpochNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
+		},
+		{
 			"name": "cartesi_getLastAcceptedEpochIndex",
 			"summary": "Get the last accepted epoch index",
 			"description": "Fetches the latest accepted epoch index by application.",
