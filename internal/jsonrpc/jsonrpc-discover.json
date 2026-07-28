@@ -1498,9 +1498,30 @@
 			]
 		},
 		{
+			"name": "cartesi_getNodeInfo",
+			"summary": "Get node information",
+			"description": "Fetches the chain ID, semantic node version, and default blockchain block tag used by the node. `default_block` is the node's finality contract for blockchain-derived data: it identifies the block tag (`FINALIZED`, `SAFE`, `LATEST`, or `PENDING`) up to which the node reads and acts on chain state. Clients should therefore interpret data exposed by this node with the stability guarantees of that tag.",
+			"params": [],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/NodeInfoResult"
+				}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/NodeConfigNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
+		},
+		{
 			"name": "cartesi_getChainId",
 			"summary": "Get node's chain ID",
-			"description": "Fetches the chain ID that node is operating on.",
+			"description": "Fetches the chain ID that the node is operating on. Deprecated: use `cartesi_getNodeInfo`, which returns the chain ID together with the node version and default blockchain block tag.",
+			"deprecated": true,
 			"params": [],
 			"result": {
 				"name": "result",
@@ -1526,7 +1547,8 @@
 		{
 			"name": "cartesi_getNodeVersion",
 			"summary": "Get node version",
-			"description": "Fetches the semantic version of the Cartesi rollups node.",
+			"description": "Fetches the semantic version of the Cartesi rollups node. Deprecated: use `cartesi_getNodeInfo`, which returns the node version together with the chain ID and default blockchain block tag.",
+			"deprecated": true,
 			"params": [],
 			"result": {
 				"name": "result",
@@ -2310,6 +2332,37 @@
 				"properties": {
 					"data": {
 						"$ref": "#/components/schemas/UnsignedInteger"
+					}
+				}
+			},
+			"NodeInfo": {
+				"type": "object",
+				"properties": {
+					"chain_id": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"version": {
+						"type": "string",
+						"format": "semver",
+						"pattern": "^[a-zA-Z0-9_-\\.]+$"
+					},
+					"default_block": {
+						"type": "string",
+						"description": "The block tag that defines the finality/stability level of blockchain-derived data read and acted on by this node.",
+						"enum": [
+							"FINALIZED",
+							"SAFE",
+							"LATEST",
+							"PENDING"
+						]
+					}
+				}
+			},
+			"NodeInfoResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"$ref": "#/components/schemas/NodeInfo"
 					}
 				}
 			},

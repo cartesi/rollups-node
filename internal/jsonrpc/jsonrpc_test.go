@@ -186,6 +186,66 @@ func TestMethod(t *testing.T) {
 	})
 
 	////////////////////////////////////////////////////////////////////////
+	// getNodeInfo
+	////////////////////////////////////////////////////////////////////////
+	t.Run("cartesi_getNodeInfo", func(t *testing.T) {
+		method := getName(t.Name())
+
+		// failure: evm reader not configured -> resource not found
+		t.Run("absent", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			body := s.doRequest(t, 0, []byte(`{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getNodeInfo",
+				"params": {},
+				"id": 0
+			}`))
+
+			resp := testRPCResponse[any]{}
+			require.NoError(t, json.Unmarshal(body, &resp))
+			require.NotNil(t, resp.Error)
+			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
+			assert.Equal(t, "EVM Reader config not found", resp.Error.Message)
+		})
+
+		// success: combine persisted node configuration with the build version
+		t.Run("present", func(t *testing.T) {
+			testHistogram.inc(method)
+			ctx := context.Background()
+			s := newTestService(t, t.Name())
+
+			chainID := uint64(0xdeadbeef)
+			defaultBlock := model.DefaultBlock_Safe
+			err := repository.SaveNodeConfig(ctx, s.repository,
+				&model.NodeConfig[evmreader.PersistentConfig]{
+					Key: evmreader.EvmReaderConfigKey,
+					Value: evmreader.PersistentConfig{
+						ChainID:      chainID,
+						DefaultBlock: defaultBlock,
+					},
+				},
+			)
+			require.NoError(t, err)
+
+			body := s.doRequest(t, 0, []byte(`{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getNodeInfo",
+				"params": {},
+				"id": 0
+			}`))
+
+			resp := testRPCResponse[api.NodeInfo]{}
+			require.NoError(t, json.Unmarshal(body, &resp))
+			require.Nil(t, resp.Error)
+			assert.Equal(t, hexutil.EncodeUint64(chainID), resp.Result.Data.ChainID)
+			assert.Equal(t, version.BuildVersion, resp.Result.Data.Version)
+			assert.Equal(t, string(defaultBlock), resp.Result.Data.DefaultBlock)
+		})
+	})
+
+	////////////////////////////////////////////////////////////////////////
 	// getChainId
 	////////////////////////////////////////////////////////////////////////
 	t.Run("cartesi_getChainId", func(t *testing.T) {

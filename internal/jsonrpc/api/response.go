@@ -20,3 +20,9 @@ type ListResponse[T any] struct {
 type SingleResponse[T any] struct {
 	Data T `json:"data"`
 }
+
+type NodeInfo struct {
+	ChainID      string `json:"chain_id"`
+	Version      string `json:"version"`
+	DefaultBlock string `json:"default_block"` // FINALIZED | SAFE | LATEST | PENDING
+}

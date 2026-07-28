@@ -89,6 +89,7 @@ var jsonrpcHandlers = dispatchTable{
 	"cartesi_getMatch":                  handleGetMatch,
 	"cartesi_listMatchAdvances":         handleListMatchAdvances,
 	"cartesi_getMatchAdvanced":          handleGetMatchAdvanced,
+	"cartesi_getNodeInfo":               handleGetNodeInfo,
 	"cartesi_getChainId":                handleGetChainID,
 	"cartesi_getNodeVersion":            handleGetNodeVersion,
 }
@@ -1380,6 +1381,23 @@ func handleGetMatchAdvanced(s *Service, r *http.Request, req RPCRequest) (any, e
 	}
 
 	return api.SingleResponse[*model.MatchAdvanced]{Data: matchAdvanced}, nil
+}
+
+func handleGetNodeInfo(s *Service, r *http.Request, _ RPCRequest) (any, error) {
+	cfg, err := repository.LoadNodeConfig[evmreader.PersistentConfig](r.Context(), s.repository, evmreader.EvmReaderConfigKey)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "EVM Reader config not found")
+	}
+	if err != nil {
+		s.Logger.Error("Unable to retrieve evmreader config from repository", "err", err)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+	}
+
+	return api.SingleResponse[api.NodeInfo]{Data: api.NodeInfo{
+		ChainID:      fmt.Sprintf("0x%x", cfg.Value.ChainID),
+		Version:      version.BuildVersion,
+		DefaultBlock: string(cfg.Value.DefaultBlock), // FINALIZED | SAFE | LATEST | PENDING
+	}}, nil
 }
 
 func handleGetChainID(s *Service, r *http.Request, _ RPCRequest) (any, error) {
