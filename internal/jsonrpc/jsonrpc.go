@@ -111,7 +111,7 @@ func (s *Service) writeByte(w http.ResponseWriter, c byte) bool {
 
 // writeRPCError sends a generic error response for internal errors.
 func (s *Service) writeRPCError(w http.ResponseWriter, id any, code int, message string) bool {
-	err := writeRPCError(w, id, code, message, nil)
+	err := writeRPCError(w, id, code, message)
 	return s.handleWriteResponse(err)
 }
 
@@ -119,15 +119,15 @@ func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) er
 	switch req.ID.(type) {
 	case nil, string, float64:
 	default:
-		return writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "invalid request", nil)
+		return writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "invalid request")
 	}
 	if req.JSONRPC != "2.0" || req.Method == "" {
-		return writeRPCError(w, req.ID, JSONRPC_INVALID_REQUEST, "invalid request", nil)
+		return writeRPCError(w, req.ID, JSONRPC_INVALID_REQUEST, "invalid request")
 	}
 	fn, ok := jsonrpcHandlers[req.Method]
 	if !ok {
 		s.Logger.Debug("RPC method not found", "method", req.Method)
-		return writeRPCError(w, req.ID, JSONRPC_METHOD_NOT_FOUND, "Method not found", nil)
+		return writeRPCError(w, req.ID, JSONRPC_METHOD_NOT_FOUND, "Method not found")
 	}
 
 	result, err := fn(s, r, req)
@@ -139,11 +139,11 @@ func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) er
 	if errors.As(err, &rpcErr) {
 		// RPC errors describe expected client-facing failures. Do not log them at
 		// error level; unexpected failures are logged below before being hidden.
-		return writeRPCError(w, req.ID, rpcErr.Code, rpcErr.Message, rpcErr.Data)
+		return writeRPCError(w, req.ID, rpcErr.Code, rpcErr.Message)
 	}
 
 	s.Logger.Error("RPC method failed", "method", req.Method, "error", err)
-	return writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+	return writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error")
 }
 
 func (s *Service) dispatchOneRequest(w http.ResponseWriter, r *http.Request, req RPCRequest, budgetResp *budgetWriter) bool {
@@ -270,12 +270,12 @@ func handleDiscover(s *Service, _ *http.Request, _ RPCRequest) (any, error) {
 	data, err := discoverSpec.ReadFile("jsonrpc-discover.json")
 	if err != nil {
 		s.Logger.Error("Unable to read jsonrpc-discover content", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	var spec any
 	if err := json.Unmarshal(data, &spec); err != nil {
 		s.Logger.Error("Unable to unmarshal discovery spec JSON", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	return spec, nil
 }
@@ -284,7 +284,7 @@ func handleListApplications(s *Service, r *http.Request, req RPCRequest) (any, e
 	var params api.ListApplicationsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 	// Use default values if not provided
 	if params.Limit <= 0 {
@@ -301,7 +301,7 @@ func handleListApplications(s *Service, r *http.Request, req RPCRequest) (any, e
 	}, params.Descending)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve applications from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	if apps == nil {
 		apps = []*model.Application{}
@@ -321,21 +321,21 @@ func handleGetApplication(s *Service, r *http.Request, req RPCRequest) (any, err
 	var params api.GetApplicationParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	app, err := s.repository.GetApplication(r.Context(), params.Application)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve application from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	if app == nil {
-		return nil, newRPCError(JSONRPC_APPLICATION_NOT_FOUND, "Application not found", nil)
+		return nil, newRPCError(JSONRPC_APPLICATION_NOT_FOUND, "Application not found")
 	}
 
 	return api.SingleResponse[*model.Application]{Data: app}, nil
@@ -345,7 +345,7 @@ func handleListEpochs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 	var params api.ListEpochsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Use default values if not provided
@@ -359,14 +359,14 @@ func handleListEpochs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	var epochFilter repository.EpochFilter
 	if params.Status != nil {
 		var status model.EpochStatus
 		if err := status.Scan(*params.Status); err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch status: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch status: %v", err))
 		}
 		epochFilter.Status = []model.EpochStatus{status}
 	}
@@ -377,7 +377,7 @@ func handleListEpochs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 	}, params.Descending)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve epochs from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 
 	if len(epochs) == 0 {
@@ -403,29 +403,29 @@ func handleGetEpoch(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetEpochParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	index, err := config.ToIndexFromString(params.EpochIndex)
 	if err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err))
 	}
 
 	epoch, err := s.repository.GetEpoch(r.Context(), params.Application, index)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve epoch from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	if epoch == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
 			return nil, err
 		}
-		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Epoch not found", nil)
+		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Epoch not found")
 	}
 
 	return api.SingleResponse[*model.Epoch]{Data: epoch}, nil
@@ -435,12 +435,12 @@ func handleGetLastAcceptedEpochIndex(s *Service, r *http.Request, req RPCRequest
 	var params api.GetLastAcceptedEpochIndexParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	index, err := s.repository.GetLastAcceptedEpochIndex(r.Context(), params.Application)
@@ -448,11 +448,11 @@ func handleGetLastAcceptedEpochIndex(s *Service, r *http.Request, req RPCRequest
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
 			return nil, err
 		}
-		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Epoch not found", nil)
+		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Epoch not found")
 	}
 	if err != nil {
 		s.Logger.Error("Unable to retrieve epoch from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 
 	return api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", index)}, nil
@@ -462,7 +462,7 @@ func handleListInputs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 	var params api.ListInputsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Use default values if not provided
@@ -476,7 +476,7 @@ func handleListInputs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	// Create input filter based on params
@@ -484,7 +484,7 @@ func handleListInputs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 	if params.EpochIndex != nil {
 		epochIndex, err := config.ToIndexFromString(*params.EpochIndex)
 		if err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err))
 		}
 		inputFilter.EpochIndex = &epochIndex
 	}
@@ -493,14 +493,14 @@ func handleListInputs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 	if params.Sender != nil {
 		sender, err := config.ToAddressFromString(*params.Sender)
 		if err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid input sender address: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid input sender address: %v", err))
 		}
 		inputFilter.Sender = &sender
 	}
 	if params.TransactionHash != nil {
 		transactionHash, err := config.ToHashFromString(*params.TransactionHash)
 		if err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid transaction hash: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid transaction hash: %v", err))
 		}
 		inputFilter.TransactionHash = &transactionHash
 	}
@@ -511,7 +511,7 @@ func handleListInputs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 	}, params.Descending)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve inputs from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	if len(inputs) == 0 {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -542,29 +542,29 @@ func handleGetInput(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetInputParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	index, err := config.ToIndexFromString(params.InputIndex)
 	if err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid input index: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid input index: %v", err))
 	}
 
 	input, err := s.repository.GetInput(r.Context(), params.Application, index)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve input from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	if input == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
 			return nil, err
 		}
-		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Input not found", nil)
+		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Input not found")
 	}
 
 	decoded, err := api.DecodeInput(input, s.inputABI)
@@ -579,21 +579,21 @@ func handleGetProcessedInputCount(s *Service, r *http.Request, req RPCRequest) (
 	var params api.GetApplicationParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	processedInputs, err := s.repository.GetProcessedInputCount(r.Context(), params.Application)
 	if errors.Is(err, repository.ErrNotFound) {
-		return nil, newRPCError(JSONRPC_APPLICATION_NOT_FOUND, "Application not found", nil)
+		return nil, newRPCError(JSONRPC_APPLICATION_NOT_FOUND, "Application not found")
 	}
 	if err != nil {
 		s.Logger.Error("Unable to retrieve application from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 
 	return api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", processedInputs)}, nil
@@ -603,7 +603,7 @@ func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error)
 	var params api.ListOutputsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Use default values if not provided
@@ -617,7 +617,7 @@ func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error)
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	// Create output filter based on params
@@ -625,7 +625,7 @@ func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error)
 	if params.EpochIndex != nil {
 		epochIndex, err := config.ToIndexFromString(*params.EpochIndex)
 		if err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err))
 		}
 		outputFilter.EpochIndex = &epochIndex
 	}
@@ -633,7 +633,7 @@ func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error)
 	if params.InputIndex != nil {
 		inputIndex, err := config.ToIndexFromString(*params.InputIndex)
 		if err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid input index: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid input index: %v", err))
 		}
 		outputFilter.InputIndex = &inputIndex
 	}
@@ -642,7 +642,7 @@ func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error)
 	if params.OutputType != nil {
 		outputType, err := api.ParseOutputType(*params.OutputType)
 		if err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid output type: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid output type: %v", err))
 		}
 		outputFilter.OutputType = &outputType
 	}
@@ -651,7 +651,7 @@ func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error)
 	if params.VoucherAddress != nil {
 		voucherAddress, err := config.ToAddressFromString(*params.VoucherAddress)
 		if err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid voucher address: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid voucher address: %v", err))
 		}
 		outputFilter.VoucherAddress = &voucherAddress
 	}
@@ -662,7 +662,7 @@ func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error)
 	}, params.Descending)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve outputs from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 
 	resultOutputs := make([]*api.DecodedOutput, 0, len(outputs))
@@ -694,29 +694,29 @@ func handleGetOutput(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetOutputParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	index, err := config.ToIndexFromString(params.OutputIndex)
 	if err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid output index: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid output index: %v", err))
 	}
 
 	output, err := s.repository.GetOutput(r.Context(), params.Application, index)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve output from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	if output == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
 			return nil, err
 		}
-		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Output not found", nil)
+		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Output not found")
 	}
 
 	decoded, err := api.DecodeOutput(output, s.outputABI)
@@ -731,7 +731,7 @@ func handleListReports(s *Service, r *http.Request, req RPCRequest) (any, error)
 	var params api.ListReportsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Use default values if not provided
@@ -745,7 +745,7 @@ func handleListReports(s *Service, r *http.Request, req RPCRequest) (any, error)
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	// Create report filter based on params
@@ -753,7 +753,7 @@ func handleListReports(s *Service, r *http.Request, req RPCRequest) (any, error)
 	if params.EpochIndex != nil {
 		epochIndex, err := config.ToIndexFromString(*params.EpochIndex)
 		if err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err))
 		}
 		reportFilter.EpochIndex = &epochIndex
 	}
@@ -761,7 +761,7 @@ func handleListReports(s *Service, r *http.Request, req RPCRequest) (any, error)
 	if params.InputIndex != nil {
 		inputIndex, err := config.ToIndexFromString(*params.InputIndex)
 		if err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid input index: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid input index: %v", err))
 		}
 		reportFilter.InputIndex = &inputIndex
 	}
@@ -772,7 +772,7 @@ func handleListReports(s *Service, r *http.Request, req RPCRequest) (any, error)
 	}, params.Descending)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve reports from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 
 	if len(reports) == 0 {
@@ -798,29 +798,29 @@ func handleGetReport(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetReportParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	index, err := config.ToIndexFromString(params.ReportIndex)
 	if err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid report index: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid report index: %v", err))
 	}
 
 	report, err := s.repository.GetReport(r.Context(), params.Application, index)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve report from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	if report == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
 			return nil, err
 		}
-		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Report not found", nil)
+		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Report not found")
 	}
 
 	return api.SingleResponse[*model.Report]{Data: report}, nil
@@ -830,7 +830,7 @@ func handleListWithdrawals(s *Service, r *http.Request, req RPCRequest) (any, er
 	var params api.ListWithdrawalsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	if params.Limit <= 0 {
@@ -841,14 +841,14 @@ func handleListWithdrawals(s *Service, r *http.Request, req RPCRequest) (any, er
 	}
 
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	withdrawalFilter := repository.WithdrawalFilter{}
 	if params.AccountIndex != nil {
 		accountIndex, err := config.ToIndexFromString(*params.AccountIndex)
 		if err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid account index: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid account index: %v", err))
 		}
 		withdrawalFilter.AccountIndex = &accountIndex
 	}
@@ -860,7 +860,7 @@ func handleListWithdrawals(s *Service, r *http.Request, req RPCRequest) (any, er
 	)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve withdrawals from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 
 	if len(withdrawals) == 0 {
@@ -886,28 +886,28 @@ func handleGetWithdrawal(s *Service, r *http.Request, req RPCRequest) (any, erro
 	var params api.GetWithdrawalParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	accountIndex, err := config.ToIndexFromString(params.AccountIndex)
 	if err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid account index: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid account index: %v", err))
 	}
 
 	withdrawal, err := s.repository.GetWithdrawal(r.Context(), params.Application, accountIndex)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve withdrawal from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	if withdrawal == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
 			return nil, err
 		}
-		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Withdrawal not found", nil)
+		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Withdrawal not found")
 	}
 
 	return api.SingleResponse[*model.Withdrawal]{Data: withdrawal}, nil
@@ -917,7 +917,7 @@ func handleListTournaments(s *Service, r *http.Request, req RPCRequest) (any, er
 	var params api.ListTournamentsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Use default values if not provided
@@ -931,7 +931,7 @@ func handleListTournaments(s *Service, r *http.Request, req RPCRequest) (any, er
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	// Create tournament filter based on params
@@ -939,7 +939,7 @@ func handleListTournaments(s *Service, r *http.Request, req RPCRequest) (any, er
 	if params.EpochIndex != nil {
 		epochIndex, err := config.ToIndexFromString(*params.EpochIndex)
 		if err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err))
 		}
 		tournamentFilter.EpochIndex = &epochIndex
 	}
@@ -947,7 +947,7 @@ func handleListTournaments(s *Service, r *http.Request, req RPCRequest) (any, er
 	if params.Level != nil {
 		level, err := config.ToIndexFromString(*params.Level)
 		if err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid level: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid level: %v", err))
 		}
 		tournamentFilter.Level = &level
 	}
@@ -955,7 +955,7 @@ func handleListTournaments(s *Service, r *http.Request, req RPCRequest) (any, er
 	if params.ParentTournamentAddress != nil {
 		parentAddress, err := config.ToAddressFromString(*params.ParentTournamentAddress)
 		if err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid parent tournament address: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid parent tournament address: %v", err))
 		}
 		tournamentFilter.ParentTournamentAddress = &parentAddress
 	}
@@ -963,7 +963,7 @@ func handleListTournaments(s *Service, r *http.Request, req RPCRequest) (any, er
 	if params.ParentMatchIDHash != nil {
 		parentMatchIDHash, err := config.ToHashFromString(*params.ParentMatchIDHash)
 		if err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid parent match ID hash: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid parent match ID hash: %v", err))
 		}
 		tournamentFilter.ParentMatchIDHash = &parentMatchIDHash
 	}
@@ -974,7 +974,7 @@ func handleListTournaments(s *Service, r *http.Request, req RPCRequest) (any, er
 	}, params.Descending)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve tournaments from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	if len(tournaments) == 0 {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -999,29 +999,29 @@ func handleGetTournament(s *Service, r *http.Request, req RPCRequest) (any, erro
 	var params api.GetTournamentParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	// Validate tournament address
 	if _, err := config.ToAddressFromString(params.Address); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err))
 	}
 
 	tournament, err := s.repository.GetTournament(r.Context(), params.Application, params.Address)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve tournament from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	if tournament == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
 			return nil, err
 		}
-		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Tournament not found", nil)
+		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Tournament not found")
 	}
 
 	return api.SingleResponse[*model.Tournament]{Data: tournament}, nil
@@ -1031,7 +1031,7 @@ func handleListCommitments(s *Service, r *http.Request, req RPCRequest) (any, er
 	var params api.ListCommitmentsParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Use default values if not provided
@@ -1045,7 +1045,7 @@ func handleListCommitments(s *Service, r *http.Request, req RPCRequest) (any, er
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	// Create commitment filter based on params
@@ -1053,14 +1053,14 @@ func handleListCommitments(s *Service, r *http.Request, req RPCRequest) (any, er
 	if params.EpochIndex != nil {
 		epochIndex, err := config.ToIndexFromString(*params.EpochIndex)
 		if err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err))
 		}
 		commitmentFilter.EpochIndex = &epochIndex
 	}
 
 	if params.TournamentAddress != nil {
 		if _, err := config.ToAddressFromString(*params.TournamentAddress); err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err))
 		}
 		commitmentFilter.TournamentAddress = params.TournamentAddress
 	}
@@ -1071,7 +1071,7 @@ func handleListCommitments(s *Service, r *http.Request, req RPCRequest) (any, er
 	}, params.Descending)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve commitments from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	if len(commitments) == 0 {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -1096,40 +1096,40 @@ func handleGetCommitment(s *Service, r *http.Request, req RPCRequest) (any, erro
 	var params api.GetCommitmentParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	epochIndex, err := config.ToIndexFromString(params.EpochIndex)
 	if err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err))
 	}
 
 	if _, err := config.ToAddressFromString(params.TournamentAddress); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err))
 	}
 
 	if len(params.Commitment) == 0 {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid commitment hex: Empty string", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid commitment hex: Empty string")
 	}
 	if _, err := config.ToHashFromString(params.Commitment); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid commitment hex: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid commitment hex: %v", err))
 	}
 
 	commitment, err := s.repository.GetCommitment(r.Context(), params.Application, epochIndex, params.TournamentAddress, params.Commitment)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve commitment from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	if commitment == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
 			return nil, err
 		}
-		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Commitment not found", nil)
+		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Commitment not found")
 	}
 
 	return api.SingleResponse[*model.Commitment]{Data: commitment}, nil
@@ -1139,7 +1139,7 @@ func handleListMatches(s *Service, r *http.Request, req RPCRequest) (any, error)
 	var params api.ListMatchesParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Use default values if not provided
@@ -1153,7 +1153,7 @@ func handleListMatches(s *Service, r *http.Request, req RPCRequest) (any, error)
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	// Create match filter based on params
@@ -1161,14 +1161,14 @@ func handleListMatches(s *Service, r *http.Request, req RPCRequest) (any, error)
 	if params.EpochIndex != nil {
 		epochIndex, err := config.ToIndexFromString(*params.EpochIndex)
 		if err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err))
 		}
 		matchFilter.EpochIndex = &epochIndex
 	}
 
 	if params.TournamentAddress != nil {
 		if _, err := config.ToAddressFromString(*params.TournamentAddress); err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err), nil)
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err))
 		}
 		matchFilter.TournamentAddress = params.TournamentAddress
 	}
@@ -1179,7 +1179,7 @@ func handleListMatches(s *Service, r *http.Request, req RPCRequest) (any, error)
 	}, params.Descending)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve matches from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	if len(matches) == 0 {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -1204,37 +1204,37 @@ func handleGetMatch(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetMatchParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	epochIndex, err := config.ToIndexFromString(params.EpochIndex)
 	if err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err))
 	}
 
 	if _, err := config.ToAddressFromString(params.TournamentAddress); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err))
 	}
 
 	if _, err := config.ToHashFromString(params.IDHash); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid ID hash: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid ID hash: %v", err))
 	}
 
 	match, err := s.repository.GetMatch(r.Context(), params.Application, epochIndex, params.TournamentAddress, params.IDHash)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve match from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	if match == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
 			return nil, err
 		}
-		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Match not found", nil)
+		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Match not found")
 	}
 
 	return api.SingleResponse[*model.Match]{Data: match}, nil
@@ -1244,7 +1244,7 @@ func handleListMatchAdvances(s *Service, r *http.Request, req RPCRequest) (any, 
 	var params api.ListMatchAdvancesParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Use default values if not provided
@@ -1258,21 +1258,21 @@ func handleListMatchAdvances(s *Service, r *http.Request, req RPCRequest) (any, 
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	// Create match advance filter based on params
 	epochIndex, err := config.ToIndexFromString(params.EpochIndex)
 	if err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err))
 	}
 
 	if _, err := config.ToAddressFromString(params.TournamentAddress); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err))
 	}
 
 	if _, err := config.ToHashFromString(params.IDHash); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid ID hash: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid ID hash: %v", err))
 	}
 
 	pagination := repository.Pagination{
@@ -1283,7 +1283,7 @@ func handleListMatchAdvances(s *Service, r *http.Request, req RPCRequest) (any, 
 		params.TournamentAddress, params.IDHash, pagination, params.Descending)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve match advances from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	if len(matchAdvances) == 0 {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -1308,42 +1308,42 @@ func handleGetMatchAdvanced(s *Service, r *http.Request, req RPCRequest) (any, e
 	var params api.GetMatchAdvancedParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters", nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
 	// Validate application parameter
 	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
 	epochIndex, err := config.ToIndexFromString(params.EpochIndex)
 	if err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err))
 	}
 
 	if _, err := config.ToAddressFromString(params.TournamentAddress); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err))
 	}
 
 	if _, err := config.ToHashFromString(params.IDHash); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid ID hash: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid ID hash: %v", err))
 	}
 
 	if _, err := config.ToHashFromString(params.Parent); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid parent hash: %v", err), nil)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid parent hash: %v", err))
 	}
 
 	matchAdvanced, err := s.repository.GetMatchAdvanced(r.Context(), params.Application, epochIndex,
 		params.TournamentAddress, params.IDHash, params.Parent[2:]) // TODO: use parsed value
 	if err != nil {
 		s.Logger.Error("Unable to retrieve match advanced from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 	if matchAdvanced == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
 			return nil, err
 		}
-		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Match advanced not found", nil)
+		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Match advanced not found")
 	}
 
 	return api.SingleResponse[*model.MatchAdvanced]{Data: matchAdvanced}, nil
@@ -1352,11 +1352,11 @@ func handleGetMatchAdvanced(s *Service, r *http.Request, req RPCRequest) (any, e
 func handleGetChainID(s *Service, r *http.Request, _ RPCRequest) (any, error) {
 	config, err := repository.LoadNodeConfig[evmreader.PersistentConfig](r.Context(), s.repository, evmreader.EvmReaderConfigKey)
 	if errors.Is(err, repository.ErrNotFound) {
-		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "EVM Reader config not found", nil)
+		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "EVM Reader config not found")
 	}
 	if err != nil {
 		s.Logger.Error("Unable to retrieve evmreader config from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 
 	return api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", config.Value.ChainID)}, nil
@@ -1373,9 +1373,9 @@ func (s *Service) applicationAbsentOrError(
 	app, err := s.repository.GetApplication(r.Context(), validatedNameOrAddress)
 	if err != nil {
 		s.Logger.Error("Unable to retrieve application from repository", "err", err)
-		return newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
+		return newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 	} else if app == nil {
-		return newRPCError(JSONRPC_APPLICATION_NOT_FOUND, "Application not found", nil)
+		return newRPCError(JSONRPC_APPLICATION_NOT_FOUND, "Application not found")
 	}
 	return nil
 }

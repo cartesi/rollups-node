@@ -35,30 +35,27 @@ type RPCResponse struct {
 type RPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
-	Data    any    `json:"data,omitempty"`
 }
 
 func (e *RPCError) Error() string {
 	return e.Message
 }
 
-func newRPCError(code int, message string, data any) error {
-	return &RPCError{Code: code, Message: message, Data: data}
+func newRPCError(code int, message string) error {
+	return &RPCError{Code: code, Message: message}
 }
 
 // writeRPCError sends a generic error response for internal errors.
-func writeRPCError(w io.Writer, id any, code int, message string, data any) error {
+func writeRPCError(w io.Writer, id any, code int, message string) error {
 	// Hide detailed error info for internal errors.
 	if code == JSONRPC_INTERNAL_ERROR {
 		message = "Internal server error"
-		data = nil
 	}
 	resp := RPCResponse{
 		JSONRPC: "2.0",
 		Error: &RPCError{
 			Code:    code,
 			Message: message,
-			Data:    data,
 		},
 		ID: id,
 	}
