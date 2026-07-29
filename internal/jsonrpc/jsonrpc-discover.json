@@ -2126,7 +2126,7 @@
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
 					"prev_randao": {
-						"$ref": "#/components/schemas/ByteArray"
+						"$ref": "#/components/schemas/UnsignedInteger256"
 					},
 					"index": {
 						"$ref": "#/components/schemas/UnsignedInteger"
@@ -2275,7 +2275,8 @@
 						"$ref": "#/components/schemas/EthereumAddress"
 					},
 					"value": {
-						"type": "string"
+						"$ref": "#/components/schemas/UnsignedInteger256",
+						"description": "Amount of Wei transferred by the voucher's call"
 					},
 					"payload": {
 						"$ref": "#/components/schemas/ByteArray"
@@ -2614,6 +2615,12 @@
 				"type": "string",
 				"format": "hex-uint64",
 				"pattern": "^0x[a-fA-F0-9]{1,16}$"
+			},
+			"UnsignedInteger256": {
+				"type": "string",
+				"format": "hex-uint256",
+				"pattern": "^0x[a-fA-F0-9]{1,64}$",
+				"description": "256-bit unsigned integer, hex encoded (the node emits minimal hex)"
 			},
 			"FunctionSelector": {
 				"type": "string",
