@@ -103,7 +103,7 @@
 		{
 			"name": "cartesi_listEpochs",
 			"summary": "List epochs",
-			"description": "Returns a paginated list of epochs for the specified application. Can filter by epoch status.",
+			"description": "Returns a paginated list of epochs for the specified application. Can filter by one or more epoch statuses.\n\nTo synchronize epochs, request `from` equal to the next unseen epoch index and advance it as new epochs appear. Separately, repeatedly filter previously seen epochs by the non-terminal statuses `OPEN`, `CLOSED`, `INPUTS_PROCESSED`, `CLAIM_COMPUTED`, `CLAIM_SUBMITTED`, and `CLAIM_STAGED`. Terminal statuses (`CLAIM_ACCEPTED`, `CLAIM_REJECTED`, and `CLAIM_FORECLOSED`) never regress, so settled epochs can be removed from the status-refresh set while `from` continues discovering new epochs.",
 			"params": [
 				{
 					"name": "application",
@@ -115,9 +115,20 @@
 				},
 				{
 					"name": "status",
-					"description": "Filter epochs by status.",
+					"description": "Filter epochs by one status or a non-empty list of statuses. Omit this parameter to disable status filtering; an empty list is invalid.",
 					"schema": {
-						"$ref": "#/components/schemas/EpochStatus"
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/EpochStatus"
+							},
+							{
+								"type": "array",
+								"items": {
+									"$ref": "#/components/schemas/EpochStatus"
+								},
+								"minItems": 1
+							}
+						]
 					},
 					"required": false
 				},

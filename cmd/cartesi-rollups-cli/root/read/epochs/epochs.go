@@ -106,7 +106,7 @@ func run(cmd *cobra.Command, args []string) {
 
 		// Add status filter if provided
 		if cmd.Flags().Changed("status") {
-			params.Status = &status
+			params.Status = &api.StringOrList{status}
 		}
 		params.Limit = limit
 		params.Offset = offset

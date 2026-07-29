@@ -46,11 +46,13 @@ func (s *JsonrpcReadService) ListEpochs(ctx context.Context, params api.ListEpoc
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
-	// Add status filter if provided
+	// Validate status filter if provided
 	if params.Status != nil {
-		var statusVal model.EpochStatus
-		if err := statusVal.Scan(*params.Status); err != nil {
-			return nil, fmt.Errorf("invalid status: %w", err)
+		for i, status := range *params.Status {
+			var statusVal model.EpochStatus
+			if err := statusVal.Scan(status); err != nil {
+				return nil, fmt.Errorf("invalid status #%d: %w", i+1, err)
+			}
 		}
 	}
 

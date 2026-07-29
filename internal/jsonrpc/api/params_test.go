@@ -10,22 +10,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestListOutputsParamsOutputTypeSelectors(t *testing.T) {
+func TestListOutputsParamsStringOrList(t *testing.T) {
 	tests := map[string]struct {
 		input    string
-		expected OutputTypeSelectors
+		expected StringOrList
 	}{
 		"single selector": {
 			input:    `{"output_type":"0x237a816f"}`,
-			expected: OutputTypeSelectors{"0x237a816f"},
+			expected: StringOrList{"0x237a816f"},
 		},
 		"selector list": {
 			input:    `{"output_type":["0x237a816f","0x10321e8b"]}`,
-			expected: OutputTypeSelectors{"0x237a816f", "0x10321e8b"},
+			expected: StringOrList{"0x237a816f", "0x10321e8b"},
 		},
 		"empty list": {
 			input:    `{"output_type":[]}`,
-			expected: OutputTypeSelectors{},
+			expected: StringOrList{},
 		},
 	}
 
@@ -35,6 +35,35 @@ func TestListOutputsParamsOutputTypeSelectors(t *testing.T) {
 			require.NoError(t, json.Unmarshal([]byte(test.input), &params))
 			require.NotNil(t, params.OutputType)
 			require.Equal(t, test.expected, *params.OutputType)
+		})
+	}
+}
+
+func TestListEpochsParamsStringOrList(t *testing.T) {
+	tests := map[string]struct {
+		input    string
+		expected StringOrList
+	}{
+		"single status": {
+			input:    `{"status":"OPEN"}`,
+			expected: StringOrList{"OPEN"},
+		},
+		"status list": {
+			input:    `{"status":["OPEN","CLOSED"]}`,
+			expected: StringOrList{"OPEN", "CLOSED"},
+		},
+		"empty list": {
+			input:    `{"status":[]}`,
+			expected: StringOrList{},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			var params ListEpochsParams
+			require.NoError(t, json.Unmarshal([]byte(test.input), &params))
+			require.NotNil(t, params.Status)
+			require.Equal(t, test.expected, *params.Status)
 		})
 	}
 }

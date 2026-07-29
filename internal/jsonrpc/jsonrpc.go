@@ -374,11 +374,18 @@ func handleListEpochs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 	}
 	epochFilter.IndexRange = indexRange
 	if params.Status != nil {
-		var status model.EpochStatus
-		if err := status.Scan(*params.Status); err != nil {
-			return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch status: %v", err))
+		if len(*params.Status) == 0 {
+			return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid epoch status: expected at least one status")
 		}
-		epochFilter.Status = []model.EpochStatus{status}
+		statuses := make([]model.EpochStatus, 0, len(*params.Status))
+		for _, value := range *params.Status {
+			var status model.EpochStatus
+			if err := status.Scan(value); err != nil {
+				return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch status: %v", err))
+			}
+			statuses = append(statuses, status)
+		}
+		epochFilter.Status = statuses
 	}
 
 	epochs, total, err := s.repository.ListEpochs(r.Context(), params.Application, epochFilter, repository.Pagination{

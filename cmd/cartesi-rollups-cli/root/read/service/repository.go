@@ -87,11 +87,14 @@ func (s *RepositoryReadService) ListEpochs(ctx context.Context, params api.ListE
 	pagination := repository.Pagination{}
 	// Add status filter if provided
 	if params.Status != nil {
-		var statusVal model.EpochStatus
-		if err := statusVal.Scan(*params.Status); err != nil {
-			return nil, fmt.Errorf("invalid status: %w", err)
+		filter.Status = make([]model.EpochStatus, len(*params.Status))
+		for i, status := range *params.Status {
+			var statusVal model.EpochStatus
+			if err := statusVal.Scan(status); err != nil {
+				return nil, fmt.Errorf("invalid status #%d: %w", i+1, err)
+			}
+			filter.Status[i] = statusVal
 		}
-		filter.Status = []model.EpochStatus{statusVal}
 	}
 	pagination.Limit = params.Limit
 	pagination.Offset = params.Offset

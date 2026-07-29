@@ -131,7 +131,7 @@ func run(cmd *cobra.Command, args []string) {
 
 		// Add output type filter if provided
 		if cmd.Flags().Changed("output-type") {
-			selectors := api.OutputTypeSelectors(outputTypes)
+			selectors := api.StringOrList(outputTypes)
 			params.OutputType = &selectors
 		}
 

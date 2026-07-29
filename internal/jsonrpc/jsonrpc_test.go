@@ -1440,6 +1440,86 @@ func TestMethod(t *testing.T) {
 			assert.Equal(t, "Invalid epoch status: invalid value 'INVALID' for EpochStatus enum", resp.Error.Message)
 		})
 
+		// failure: any invalid status in a list -> invalid params
+		t.Run("invalidInList", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			body := s.doRequest(t, 0, []byte(`{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listEpochs",
+				"params": {
+					"application": "app",
+					"status": ["OPEN", "INVALID"]
+				},
+				"id": 0
+			}`))
+
+			resp := testRPCResponse[[]model.Epoch]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
+			assert.Equal(t, "Invalid epoch status: invalid value 'INVALID' for EpochStatus enum", resp.Error.Message)
+		})
+
+		// failure: an explicitly empty status list -> invalid params
+		t.Run("emptyStatusList", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+
+			body := s.doRequest(t, 0, []byte(`{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listEpochs",
+				"params": {
+					"application": "app",
+					"status": []
+				},
+				"id": 0
+			}`))
+
+			resp := testRPCResponse[[]model.Epoch]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
+			assert.Equal(t, "Invalid epoch status: expected at least one status", resp.Error.Message)
+		})
+
+		// success: status may contain multiple values
+		t.Run("multipleStatuses", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			nr := uint64(1)
+			appID := s.newTestApplication(ctx, t, nr)
+			for i, status := range []model.EpochStatus{
+				model.EpochStatus_Open,
+				model.EpochStatus_Closed,
+				model.EpochStatus_ClaimAccepted,
+			} {
+				s.createTestEpoch(ctx, t, numberToName(nr),
+					repotest.NewEpochBuilder(appID).
+						WithIndex(uint64(i)).
+						WithStatus(status).
+						Build())
+			}
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listEpochs",
+				"params": {
+					"application": "%v",
+					"status": ["OPEN", "CLOSED"]
+				},
+				"id": 0
+			}`, numberToName(nr)))
+
+			resp := testRPCResponse[[]model.Epoch]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, resp.Error)
+			assert.Len(t, resp.Result.Data, 2)
+			assert.Equal(t, model.EpochStatus_Open, resp.Result.Data[0].Status)
+			assert.Equal(t, model.EpochStatus_Closed, resp.Result.Data[1].Status)
+		})
+
 		// success: many epochs is in the database -> limit
 		t.Run("many", func(t *testing.T) {
 			testHistogram.inc(method)
