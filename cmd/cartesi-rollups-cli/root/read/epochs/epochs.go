@@ -40,23 +40,23 @@ cartesi-rollups-cli read epochs echo-dapp 10
 cartesi-rollups-cli read epochs echo-dapp
 
 # Read all epochs with filter:
-cartesi-rollups-cli read epochs echo-dapp --status OPEN
+cartesi-rollups-cli read epochs echo-dapp --status OPEN --status CLOSED
 
 # Read all epochs with pagination:
 cartesi-rollups-cli read epochs echo-dapp --limit 10 --offset 10 --descending
 `
 
 var (
-	status     string
+	statuses   []string
 	limit      uint64
 	offset     uint64
 	descending bool
 )
 
 func init() {
-	Cmd.Flags().StringVar(&status, "status", "",
+	Cmd.Flags().StringArrayVar(&statuses, "status", nil,
 		"Filter epochs by status (OPEN, CLOSED, INPUTS_PROCESSED, CLAIM_COMPUTED, CLAIM_SUBMITTED, "+
-			"CLAIM_STAGED, CLAIM_ACCEPTED, CLAIM_REJECTED, CLAIM_FORECLOSED)")
+			"CLAIM_STAGED, CLAIM_ACCEPTED, CLAIM_REJECTED, CLAIM_FORECLOSED); may be specified multiple times")
 	Cmd.Flags().Uint64Var(&limit, "limit", 50, //nolint: mnd
 		"Maximum number of epochs to return")
 	Cmd.Flags().Uint64Var(&offset, "offset", 0,
@@ -106,7 +106,8 @@ func run(cmd *cobra.Command, args []string) {
 
 		// Add status filter if provided
 		if cmd.Flags().Changed("status") {
-			params.Status = &api.StringOrList{status}
+			epochStatuses := api.StringOrList(statuses)
+			params.Status = &epochStatuses
 		}
 		params.Limit = limit
 		params.Offset = offset
