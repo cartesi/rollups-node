@@ -936,8 +936,137 @@ func TestMethod(t *testing.T) {
 			assert.Equal(t, uint64(0), uint64(resp.Result.Data))
 		})
 
-		// TODO: test with inputs (use createTestEpochWithInput)
+		t.Run("processedInputs", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			app := uint64(1)
+			appID := s.newTestApplication(ctx, t, app)
+			epoch := repotest.NewEpochBuilder(appID).
+				WithIndex(0).
+				WithStatus(model.EpochStatus_ClaimAccepted).
+				Build()
+			inputs := []*model.Input{
+				repotest.NewInputBuilder().WithIndex(0).WithRawData(emptyInput()).Build(),
+				repotest.NewInputBuilder().WithIndex(1).WithRawData(emptyInput()).Build(),
+			}
+			err := s.repository.CreateEpochsAndInputs(
+				ctx,
+				numberToName(app),
+				map[*model.Epoch][]*model.Input{epoch: inputs},
+				10,
+			)
+			require.NoError(t, err)
+			s.advanceInput(ctx, t, appID, 0, 0, nil, nil)
+			s.advanceInput(ctx, t, appID, 0, 1, nil, nil)
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_getProcessedInputCount",
+				"params": { "application": "%s" },
+				"id": 0
+			}`, numberToName(app)))
+
+			resp := testRPCResponse[hex64]{}
+			require.NoError(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, resp.Error)
+			assert.Equal(t, uint64(2), uint64(resp.Result.Data))
+		})
 	})
+
+	for _, methodName := range []string{
+		"cartesi_getExecutedOutputCount",
+		"cartesi_getPendingExecutableOutputCount",
+	} {
+		t.Run(methodName, func(t *testing.T) {
+			method := getName(t.Name())
+
+			t.Run("absentApplication", func(t *testing.T) {
+				testHistogram.inc(method)
+				s := newTestService(t, t.Name())
+
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "%s",
+					"params": { "application": "%s" },
+					"id": 0
+				}`, method, numberToName(1)))
+
+				resp := testRPCResponse[hex64]{}
+				require.NoError(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
+				assert.Equal(t, "Application not found", resp.Error.Message)
+			})
+
+			t.Run("existingApplicationWithNoOutputs", func(t *testing.T) {
+				testHistogram.inc(method)
+				s := newTestService(t, t.Name())
+				app := uint64(1)
+				s.newTestApplication(context.Background(), t, app)
+
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "%s",
+					"params": { "application": "%s" },
+					"id": 0
+				}`, method, numberToName(app)))
+
+				resp := testRPCResponse[hex64]{}
+				require.NoError(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, resp.Error)
+				assert.Equal(t, uint64(0), uint64(resp.Result.Data))
+			})
+
+			t.Run("outputsPresent", func(t *testing.T) {
+				testHistogram.inc(method)
+				s := newTestService(t, t.Name())
+				ctx := context.Background()
+
+				app := uint64(1)
+				appID := s.newTestApplication(ctx, t, app)
+				epoch := repotest.NewEpochBuilder(appID).
+					WithIndex(0).
+					WithStatus(model.EpochStatus_ClaimAccepted).
+					Build()
+				input := repotest.NewInputBuilder().
+					WithIndex(0).
+					WithRawData(emptyInput()).
+					Build()
+				s.createTestEpochWithInput(ctx, t, numberToName(app), epoch, input)
+				s.advanceInput(ctx, t, appID, 0, 0, [][]byte{
+					emptyVoucher(),
+					{0x10, 0x32, 0x1e, 0x8b},
+					{0xc2, 0x58, 0xd6, 0xe5},
+				}, nil)
+
+				txHash := common.HexToHash("0x1")
+				err := s.repository.UpdateOutputsExecution(
+					ctx,
+					numberToName(app),
+					[]*model.Output{{
+						InputEpochApplicationID:  appID,
+						Index:                    0,
+						ExecutionTransactionHash: &txHash,
+					}},
+					10,
+				)
+				require.NoError(t, err)
+
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "%s",
+					"params": { "application": "%s" },
+					"id": 0
+				}`, method, numberToName(app)))
+
+				resp := testRPCResponse[hex64]{}
+				require.NoError(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, resp.Error)
+				assert.Equal(t, uint64(1), uint64(resp.Result.Data))
+			})
+		})
+	}
 
 	////////////////////////////////////////////////////////////////////////
 	// getReport

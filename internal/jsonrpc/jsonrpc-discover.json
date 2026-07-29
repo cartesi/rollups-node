@@ -520,6 +520,70 @@
 			]
 		},
 		{
+			"name": "cartesi_getExecutedOutputCount",
+			"summary": "Retrieve the number of executed outputs for the application",
+			"description": "Returns a monotone change signal: an unchanged value means no new executions; not a resume cursor.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/ExecutedOutputCountResult"
+				}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
+		},
+		{
+			"name": "cartesi_getPendingExecutableOutputCount",
+			"summary": "Retrieve the number of pending executable outputs for the application",
+			"description": "Returns a non-monotone gauge (grows with new vouchers, shrinks with executions): do not use for change detection — poll the executed count instead.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/PendingExecutableOutputCountResult"
+				}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				}
+			]
+		},
+		{
 			"name": "cartesi_listOutputs",
 			"summary": "Retrieve a List of Outputs",
 			"description": "Returns a paginated list of outputs, with options to filter by epoch index, input index, output type and voucher address.",
@@ -622,7 +686,7 @@
 				},
 				{
 					"name": "executed",
-					"description": "Filter by execution status: true selects outputs with an execution transaction hash; false selects outputs without one. Executions happen out of index order: an old voucher can be executed long after newer ones, appearing at a low index. Therefore, do not build a resume cursor keyed on output index or on an executed-count offset over this filter as it will silently skip such late executions.",
+					"description": "Filter by execution status: true selects outputs with an execution transaction hash; false selects outputs without one. Executions happen out of index order: an old voucher can be executed long after newer ones, appearing at a low index. Therefore, do not build a resume cursor keyed on output index or on an executed-count offset over this filter as it will silently skip such late executions. Instead poll cartesi_getExecutedOutputCount, and on change query the bounded working set with executed=false, output_type=[...].",
 					"schema": {
 						"type": "boolean"
 					},
@@ -2092,6 +2156,22 @@
 				}
 			},
 			"ProcessedInputCountResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					}
+				}
+			},
+			"ExecutedOutputCountResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					}
+				}
+			},
+			"PendingExecutableOutputCountResult": {
 				"type": "object",
 				"properties": {
 					"data": {

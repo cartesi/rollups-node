@@ -66,33 +66,35 @@ type rpcHandler = func(*Service, *http.Request, RPCRequest) (any, error)
 type dispatchTable = map[string]rpcHandler
 
 var jsonrpcHandlers = dispatchTable{
-	"rpc.discover":                      handleDiscover,
-	"cartesi_listApplications":          handleListApplications,
-	"cartesi_getApplication":            handleGetApplication,
-	"cartesi_listEpochs":                handleListEpochs,
-	"cartesi_getEpoch":                  handleGetEpoch,
-	"cartesi_getEpochByVirtualIndex":    handleGetEpochByVirtualIndex,
-	"cartesi_getLastAcceptedEpochIndex": handleGetLastAcceptedEpochIndex,
-	"cartesi_listInputs":                handleListInputs,
-	"cartesi_getInput":                  handleGetInput,
-	"cartesi_getProcessedInputCount":    handleGetProcessedInputCount,
-	"cartesi_listOutputs":               handleListOutputs,
-	"cartesi_getOutput":                 handleGetOutput,
-	"cartesi_listReports":               handleListReports,
-	"cartesi_getReport":                 handleGetReport,
-	"cartesi_listWithdrawals":           handleListWithdrawals,
-	"cartesi_getWithdrawal":             handleGetWithdrawal,
-	"cartesi_listTournaments":           handleListTournaments,
-	"cartesi_getTournament":             handleGetTournament,
-	"cartesi_listCommitments":           handleListCommitments,
-	"cartesi_getCommitment":             handleGetCommitment,
-	"cartesi_listMatches":               handleListMatches,
-	"cartesi_getMatch":                  handleGetMatch,
-	"cartesi_listMatchAdvances":         handleListMatchAdvances,
-	"cartesi_getMatchAdvanced":          handleGetMatchAdvanced,
-	"cartesi_getNodeInfo":               handleGetNodeInfo,
-	"cartesi_getChainId":                handleGetChainID,
-	"cartesi_getNodeVersion":            handleGetNodeVersion,
+	"rpc.discover":                            handleDiscover,
+	"cartesi_listApplications":                handleListApplications,
+	"cartesi_getApplication":                  handleGetApplication,
+	"cartesi_listEpochs":                      handleListEpochs,
+	"cartesi_getEpoch":                        handleGetEpoch,
+	"cartesi_getEpochByVirtualIndex":          handleGetEpochByVirtualIndex,
+	"cartesi_getLastAcceptedEpochIndex":       handleGetLastAcceptedEpochIndex,
+	"cartesi_listInputs":                      handleListInputs,
+	"cartesi_getInput":                        handleGetInput,
+	"cartesi_getProcessedInputCount":          handleGetProcessedInputCount,
+	"cartesi_getExecutedOutputCount":          handleGetExecutedOutputCount,
+	"cartesi_getPendingExecutableOutputCount": handleGetPendingExecutableOutputCount,
+	"cartesi_listOutputs":                     handleListOutputs,
+	"cartesi_getOutput":                       handleGetOutput,
+	"cartesi_listReports":                     handleListReports,
+	"cartesi_getReport":                       handleGetReport,
+	"cartesi_listWithdrawals":                 handleListWithdrawals,
+	"cartesi_getWithdrawal":                   handleGetWithdrawal,
+	"cartesi_listTournaments":                 handleListTournaments,
+	"cartesi_getTournament":                   handleGetTournament,
+	"cartesi_listCommitments":                 handleListCommitments,
+	"cartesi_getCommitment":                   handleGetCommitment,
+	"cartesi_listMatches":                     handleListMatches,
+	"cartesi_getMatch":                        handleGetMatch,
+	"cartesi_listMatchAdvances":               handleListMatchAdvances,
+	"cartesi_getMatchAdvanced":                handleGetMatchAdvanced,
+	"cartesi_getNodeInfo":                     handleGetNodeInfo,
+	"cartesi_getChainId":                      handleGetChainID,
+	"cartesi_getNodeVersion":                  handleGetNodeVersion,
 }
 
 // -----------------------------------------------------------------------------
@@ -642,6 +644,56 @@ func handleGetProcessedInputCount(s *Service, r *http.Request, req RPCRequest) (
 	}
 
 	return api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", processedInputs)}, nil
+}
+
+func handleGetExecutedOutputCount(s *Service, r *http.Request, req RPCRequest) (any, error) {
+	var params api.GetApplicationParams
+	if err := UnmarshalParams(req.Params, &params); err != nil {
+		s.Logger.Debug("Invalid parameters", "err", err)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
+	}
+
+	if err := validateNameOrAddress(params.Application); err != nil {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
+	}
+
+	count, err := s.repository.GetNumberOfExecutedOutputs(r.Context(), params.Application)
+	if err != nil {
+		s.Logger.Error("Unable to retrieve executed output count from repository", "err", err)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+	}
+	if count == 0 {
+		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
+			return nil, err
+		}
+	}
+
+	return api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", count)}, nil
+}
+
+func handleGetPendingExecutableOutputCount(s *Service, r *http.Request, req RPCRequest) (any, error) {
+	var params api.GetApplicationParams
+	if err := UnmarshalParams(req.Params, &params); err != nil {
+		s.Logger.Debug("Invalid parameters", "err", err)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
+	}
+
+	if err := validateNameOrAddress(params.Application); err != nil {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
+	}
+
+	count, err := s.repository.GetNumberOfPendingExecutableOutputs(r.Context(), params.Application)
+	if err != nil {
+		s.Logger.Error("Unable to retrieve pending executable output count from repository", "err", err)
+		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+	}
+	if count == 0 {
+		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
+			return nil, err
+		}
+	}
+
+	return api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", count)}, nil
 }
 
 func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error) {
