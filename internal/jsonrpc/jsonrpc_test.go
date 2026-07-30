@@ -1273,6 +1273,25 @@ func TestMethod(t *testing.T) {
 			assert.Equal(t, numberToName(nr), resp.Result.Data[0].Name)
 		})
 
+		// success: 1 application is in the database (array params) -> 1
+		t.Run("emptyArrayParams", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+
+			nr := uint64(1)
+			s.newTestApplication(ctx, t, nr)
+			body := s.doRequest(t, 0, []byte(`{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listApplications",
+				"id": 0
+			}`))
+			resp := testRPCResponse[[]model.Application]{}
+			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Equal(t, 1, len(resp.Result.Data))
+			assert.Equal(t, numberToName(nr), resp.Result.Data[0].Name)
+		})
+
 		// success: many applications is in the database -> limit (many - 1)
 		t.Run("many", func(t *testing.T) {
 			testHistogram.inc(method)

@@ -287,7 +287,7 @@ func handleDiscover(s *Service, _ *http.Request, _ RPCRequest) (any, error) {
 
 func handleListApplications(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListApplicationsParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -324,7 +324,7 @@ func handleListApplications(s *Service, r *http.Request, req RPCRequest) (any, e
 
 func handleGetApplication(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetApplicationParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -348,7 +348,7 @@ func handleGetApplication(s *Service, r *http.Request, req RPCRequest) (any, err
 
 func handleListEpochs(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListEpochsParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -418,7 +418,7 @@ func handleListEpochs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 
 func handleGetEpoch(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetEpochParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -450,7 +450,7 @@ func handleGetEpoch(s *Service, r *http.Request, req RPCRequest) (any, error) {
 
 func handleGetEpochByVirtualIndex(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetEpochByVirtualIndexParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -482,7 +482,7 @@ func handleGetEpochByVirtualIndex(s *Service, r *http.Request, req RPCRequest) (
 
 func handleGetLastAcceptedEpochIndex(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetLastAcceptedEpochIndexParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -509,7 +509,7 @@ func handleGetLastAcceptedEpochIndex(s *Service, r *http.Request, req RPCRequest
 
 func handleListInputs(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListInputsParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -594,7 +594,7 @@ func handleListInputs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 
 func handleGetInput(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetInputParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -631,7 +631,7 @@ func handleGetInput(s *Service, r *http.Request, req RPCRequest) (any, error) {
 
 func handleGetProcessedInputCount(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetApplicationParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -655,7 +655,7 @@ func handleGetProcessedInputCount(s *Service, r *http.Request, req RPCRequest) (
 
 func handleGetExecutedOutputCount(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetApplicationParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -680,7 +680,7 @@ func handleGetExecutedOutputCount(s *Service, r *http.Request, req RPCRequest) (
 
 func handleGetPendingExecutableOutputCount(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetApplicationParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -705,7 +705,7 @@ func handleGetPendingExecutableOutputCount(s *Service, r *http.Request, req RPCR
 
 func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListOutputsParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -809,7 +809,7 @@ func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error)
 
 func handleGetOutput(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetOutputParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -846,7 +846,7 @@ func handleGetOutput(s *Service, r *http.Request, req RPCRequest) (any, error) {
 
 func handleListReports(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListReportsParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -918,7 +918,7 @@ func handleListReports(s *Service, r *http.Request, req RPCRequest) (any, error)
 
 func handleGetReport(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetReportParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -950,7 +950,7 @@ func handleGetReport(s *Service, r *http.Request, req RPCRequest) (any, error) {
 
 func handleListWithdrawals(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListWithdrawalsParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -1006,7 +1006,7 @@ func handleListWithdrawals(s *Service, r *http.Request, req RPCRequest) (any, er
 
 func handleGetWithdrawal(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetWithdrawalParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -1037,7 +1037,7 @@ func handleGetWithdrawal(s *Service, r *http.Request, req RPCRequest) (any, erro
 
 func handleListTournaments(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListTournamentsParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -1119,7 +1119,7 @@ func handleListTournaments(s *Service, r *http.Request, req RPCRequest) (any, er
 
 func handleGetTournament(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetTournamentParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -1151,7 +1151,7 @@ func handleGetTournament(s *Service, r *http.Request, req RPCRequest) (any, erro
 
 func handleListCommitments(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListCommitmentsParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -1216,7 +1216,7 @@ func handleListCommitments(s *Service, r *http.Request, req RPCRequest) (any, er
 
 func handleGetCommitment(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetCommitmentParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -1259,7 +1259,7 @@ func handleGetCommitment(s *Service, r *http.Request, req RPCRequest) (any, erro
 
 func handleListMatches(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListMatchesParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -1324,7 +1324,7 @@ func handleListMatches(s *Service, r *http.Request, req RPCRequest) (any, error)
 
 func handleGetMatch(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetMatchParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -1364,7 +1364,7 @@ func handleGetMatch(s *Service, r *http.Request, req RPCRequest) (any, error) {
 
 func handleListMatchAdvances(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListMatchAdvancesParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
@@ -1428,7 +1428,7 @@ func handleListMatchAdvances(s *Service, r *http.Request, req RPCRequest) (any, 
 
 func handleGetMatchAdvance(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetMatchAdvanceParams
-	if err := UnmarshalParams(req.Params, &params); err != nil {
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}

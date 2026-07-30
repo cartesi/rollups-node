@@ -4,11 +4,9 @@
 package jsonrpc
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
-	"reflect"
 	"regexp"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -69,52 +67,6 @@ func writeRPCResult(w io.Writer, id any, result any) error {
 		ID:      id,
 	}
 	return json.NewEncoder(w).Encode(resp)
-}
-
-// UnmarshalParams supports both by-name (object) and by-position (array) parameter structures.
-// If params is an object, it simply does json.Unmarshal; if it's an array, it will attempt
-// to unmarshal each positional parameter into the target struct field in declaration order.
-func UnmarshalParams(data json.RawMessage, target any) error {
-	data = bytes.TrimSpace(data)
-	if len(data) > 0 && data[0] == '[' {
-		// Unmarshal positional parameters into a slice of json.RawMessage.
-		var rawParams []json.RawMessage
-		if err := json.Unmarshal(data, &rawParams); err != nil {
-			return err
-		}
-		// Use reflection to set values in the target struct in the order they appear.
-		val := reflect.ValueOf(target)
-		if val.Kind() != reflect.Pointer || val.IsNil() {
-			return fmt.Errorf("error unmarshalling positional parameters target must be a non-nil pointer to a struct")
-		}
-		val = val.Elem()
-		if val.Kind() != reflect.Struct {
-			return fmt.Errorf("error unmarshalling positional parameters target must point to a struct")
-		}
-		typ := val.Type()
-		if len(rawParams) > typ.NumField() {
-			return fmt.Errorf("error unmarshalling positional parameters, expected %d params, got %d",
-				typ.NumField(), len(rawParams))
-		}
-		// For each field in the struct, if a positional parameter exists, unmarshal that parameter.
-		for i := 0; i < typ.NumField() && i < len(rawParams); i++ {
-			sf := typ.Field(i)
-			if sf.Tag.Get("json") == "-" {
-				continue
-			}
-			field := val.Field(i)
-			if !field.CanSet() {
-				return fmt.Errorf("error unmarshalling positional parameter field %q is not settable", typ.Field(i).Name)
-			}
-			// Unmarshal the corresponding raw parameter into the field.
-			if err := json.Unmarshal(rawParams[i], field.Addr().Interface()); err != nil {
-				return fmt.Errorf("error unmarshalling positional parameter %d for field %s: %w", i, typ.Field(i).Name, err)
-			}
-		}
-		return nil
-	}
-	// Otherwise, assume by-name structure.
-	return json.Unmarshal(data, target)
 }
 
 // -----------------------------------------------------------------------------
