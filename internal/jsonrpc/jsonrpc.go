@@ -91,7 +91,7 @@ var jsonrpcHandlers = dispatchTable{
 	"cartesi_listMatches":                     handleListMatches,
 	"cartesi_getMatch":                        handleGetMatch,
 	"cartesi_listMatchAdvances":               handleListMatchAdvances,
-	"cartesi_getMatchAdvanced":                handleGetMatchAdvanced,
+	"cartesi_getMatchAdvance":                 handleGetMatchAdvance,
 	"cartesi_getNodeInfo":                     handleGetNodeInfo,
 	"cartesi_getChainId":                      handleGetChainID,
 	"cartesi_getNodeVersion":                  handleGetNodeVersion,
@@ -1426,8 +1426,8 @@ func handleListMatchAdvances(s *Service, r *http.Request, req RPCRequest) (any, 
 	}, nil
 }
 
-func handleGetMatchAdvanced(s *Service, r *http.Request, req RPCRequest) (any, error) {
-	var params api.GetMatchAdvancedParams
+func handleGetMatchAdvance(s *Service, r *http.Request, req RPCRequest) (any, error) {
+	var params api.GetMatchAdvanceParams
 	if err := UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
@@ -1451,12 +1451,13 @@ func handleGetMatchAdvanced(s *Service, r *http.Request, req RPCRequest) (any, e
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid ID hash: %v", err))
 	}
 
-	if _, err := config.ToHashFromString(params.Parent); err != nil {
+	parent, err := config.ToHashFromString(params.Parent)
+	if err != nil {
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid parent hash: %v", err))
 	}
 
 	matchAdvanced, err := s.repository.GetMatchAdvanced(r.Context(), params.Application, epochIndex,
-		params.TournamentAddress, params.IDHash, params.Parent[2:]) // TODO: use parsed value
+		params.TournamentAddress, params.IDHash, parent.Hex()[2:])
 	if err != nil {
 		s.Logger.Error("Unable to retrieve match advanced from repository", "err", err)
 		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")

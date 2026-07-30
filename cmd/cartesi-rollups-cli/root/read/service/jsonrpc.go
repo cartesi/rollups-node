@@ -342,7 +342,7 @@ func (s *JsonrpcReadService) ListMatches(ctx context.Context, params api.ListMat
 	return resp, err
 }
 
-func (s *JsonrpcReadService) GetMatchAdvanced(ctx context.Context, params api.GetMatchAdvancedParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) GetMatchAdvanced(ctx context.Context, params api.GetMatchAdvanceParams) (json.RawMessage, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -360,7 +360,7 @@ func (s *JsonrpcReadService) GetMatchAdvanced(ctx context.Context, params api.Ge
 	}
 
 	var resp json.RawMessage
-	err := s.Client.Call(ctx, "cartesi_getMatchAdvanced", params, &resp)
+	err := s.Client.Call(ctx, "cartesi_getMatchAdvance", params, &resp)
 	return resp, err
 }
 

@@ -198,8 +198,8 @@ type ListMatchAdvancesParams struct {
 	Descending        bool   `json:"descending,omitempty"`
 }
 
-// GetMatchAdvancedParams aligns with the OpenRPC specification
-type GetMatchAdvancedParams struct {
+// GetMatchAdvanceParams aligns with the OpenRPC specification
+type GetMatchAdvanceParams struct {
 	Application       string `json:"application"`
 	EpochIndex        string `json:"epoch_index"`
 	TournamentAddress string `json:"tournament_address"`

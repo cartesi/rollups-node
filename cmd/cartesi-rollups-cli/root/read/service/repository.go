@@ -790,7 +790,7 @@ func (s *RepositoryReadService) ListMatches(ctx context.Context, params api.List
 	return json.RawMessage(result), err
 }
 
-func (s *RepositoryReadService) GetMatchAdvanced(ctx context.Context, params api.GetMatchAdvancedParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetMatchAdvanced(ctx context.Context, params api.GetMatchAdvanceParams) (json.RawMessage, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {

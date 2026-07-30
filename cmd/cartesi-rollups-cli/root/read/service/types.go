@@ -35,7 +35,7 @@ type ReadService interface {
 	ListCommitments(ctx context.Context, params api.ListCommitmentsParams) (json.RawMessage, error)
 	GetMatch(ctx context.Context, params api.GetMatchParams) (json.RawMessage, error)
 	ListMatches(ctx context.Context, params api.ListMatchesParams) (json.RawMessage, error)
-	GetMatchAdvanced(ctx context.Context, params api.GetMatchAdvancedParams) (json.RawMessage, error)
+	GetMatchAdvanced(ctx context.Context, params api.GetMatchAdvanceParams) (json.RawMessage, error)
 	ListMatchAdvances(ctx context.Context, params api.ListMatchAdvancesParams) (json.RawMessage, error)
 	Close()
 }

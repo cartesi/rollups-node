@@ -90,7 +90,7 @@ func run(cmd *cobra.Command, args []string) {
 
 	var result json.RawMessage
 	if len(args) >= 5 {
-		var params api.GetMatchAdvancedParams
+		var params api.GetMatchAdvanceParams
 		params.Application = args[0]
 		params.EpochIndex, err = config.AsHexString(args[1])
 		cobra.CheckErr(err)

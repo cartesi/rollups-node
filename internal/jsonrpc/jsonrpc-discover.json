@@ -1583,7 +1583,7 @@
 			]
 		},
 		{
-			"name": "cartesi_getMatchAdvanced",
+			"name": "cartesi_getMatchAdvance",
 			"summary": "Get a specific match advance",
 			"description": "Fetches a single match advance by application, epoch index, tournament address, ID hash and parent.",
 			"params": [

@@ -2768,9 +2768,9 @@ func TestMethod(t *testing.T) {
 	})
 
 	////////////////////////////////////////////////////////////////////////
-	// getMatchAdvanced
+	// getMatchAdvance
 	////////////////////////////////////////////////////////////////////////
-	t.Run("cartesi_getMatchAdvanced", func(t *testing.T) {
+	t.Run("cartesi_getMatchAdvance", func(t *testing.T) {
 		method := getName(t.Name())
 
 		// failure: epoch_index not hex encoded -> invalid param
@@ -2783,7 +2783,7 @@ func TestMethod(t *testing.T) {
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
-				"method": "cartesi_getMatchAdvanced",
+				"method": "cartesi_getMatchAdvance",
 				"params": {
 				"application": "%v",
 				"epoch_index": "%v"
@@ -2815,7 +2815,7 @@ func TestMethod(t *testing.T) {
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
-				"method": "cartesi_getMatchAdvanced",
+				"method": "cartesi_getMatchAdvance",
 				"params": {
 				"application": "%v",
 				"epoch_index": "0x%020x",
@@ -2840,7 +2840,7 @@ func TestMethod(t *testing.T) {
 			nr := uint64(0xdeadbeef)
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
-				"method": "cartesi_getMatchAdvanced",
+				"method": "cartesi_getMatchAdvance",
 				"params": {
 				"application": "%v",
 				"epoch_index": "0x%020x",
@@ -2867,7 +2867,8 @@ func TestMethod(t *testing.T) {
 			nr := uint64(2)
 			address := common.HexToAddress("0x03")
 			idHash := common.HexToHash("0x04")
-			parent := common.HexToHash("0x05")
+			parentHex := "0xAbCdEf0123456789aBcDeF0123456789AbCdEf0123456789aBcDeF0123456789"
+			parent := common.HexToHash(parentHex)
 
 			appID := s.newTestApplication(ctx, t, app)
 			s.createTestEpoch(ctx, t, numberToName(app),
@@ -2913,16 +2914,16 @@ func TestMethod(t *testing.T) {
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
-				"method": "cartesi_getMatchAdvanced",
+				"method": "cartesi_getMatchAdvance",
 				"params": {
 				"application": "%v",
 				"epoch_index": "0x%020x",
 				"tournament_address": "0x%020x",
 				"id_hash": "0x%064x",
-				"parent": "0x%064x"
+				"parent": "%s"
 				},
 				"id": 0
-				}`, numberToName(app), nr, address, idHash, parent))
+				}`, numberToName(app), nr, address, idHash, parentHex))
 
 			resp := testRPCResponse[getMatchAdvancedResult]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
