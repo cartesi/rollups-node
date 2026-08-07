@@ -397,7 +397,9 @@ func (m *Machine) CollectMCycleRootHashes(
 			C.int32_t(log2BundleMcycleCount),
 			previousPartialBundleC,
 			&cResult))
-		result = []byte(C.GoString(cResult))
+		if err == nil {
+			result = []byte(C.GoString(cResult))
+		}
 	})
 	if err != nil {
 		return nil, err
@@ -428,7 +430,9 @@ func (m *Machine) CollectUarchCycleRootHashes(
 			C.int32_t(log2BundleUarchCycleCount),
 			revertUarchTailC,
 			&cResult))
-		result = []byte(C.GoString(cResult))
+		if err == nil {
+			result = []byte(C.GoString(cResult))
+		}
 	})
 
 	if err != nil {
