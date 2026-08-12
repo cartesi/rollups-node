@@ -12,7 +12,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/merkle"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	pkgm "github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
@@ -822,14 +821,14 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 		}
 
 		// 5 inputs, each with one state hash covering the full
-		// strides-per-input count (1<<pkgm.Log2InputEntryCapacity) so the
-		// total stride count remains a power of two.
-		stridesPerInput := uint64(1) << pkgm.Log2InputEntryCapacity
+		// entries-per-input count so the
+		// total entry count remains a power of two.
+		entriesPerInput := InputHashCollectionCapacity
 		stateHashes := make([]*StateHash, 5)
 		for i := range 5 {
 			stateHashes[i] = &StateHash{
 				MachineHash: validator.pristineRootHash,
-				Repetitions: stridesPerInput,
+				Repetitions: entriesPerInput,
 			}
 		}
 
@@ -846,7 +845,7 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 
 	s.Run("ValidEmptyEpoch", func() {
 		// Equal bounds → inputCount==0, no state hashes queried,
-		// entire epoch is filled with pristine machine-hash strides.
+		// entire epoch is filled with pristine machine-hash entries.
 		app := &Application{
 			Name:          testAppName,
 			ConsensusType: Consensus_PRT,
@@ -899,13 +898,13 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			Name:          testAppName,
 			ConsensusType: Consensus_PRT,
 		}
-		// pkgm.MaxAdvanceStatesPerEpoch = 1 << 24 = 16_777_216
+		// MaxAdvanceStatesPerEpoch = 1 << 24 = 16_777_216
 		// Set bounds so inputCount == MaxAdvanceStatesPerEpoch + 1
 		epoch := &Epoch{
 			Index:                0,
 			VirtualIndex:         0,
 			InputIndexLowerBound: 0,
-			InputIndexUpperBound: pkgm.MaxAdvanceStatesPerEpoch + 1,
+			InputIndexUpperBound: MaxAdvanceStatesPerEpoch + 1,
 			MachineHash:          &validator.pristineRootHash,
 			OutputsMerkleRoot:    &validator.pristineRootHash,
 		}
@@ -1041,7 +1040,7 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			MachineHash:          &validator.pristineRootHash,
 			OutputsMerkleRoot:    &validator.pristineRootHash,
 		}
-		repetitions := pkgm.EpochComputationHashLeafCount + (uint64(1) << pkgm.Log2InputEntryCapacity)
+		repetitions := (uint64(1) << Log2EpochComputationHashLeafCount) + InputHashCollectionCapacity
 
 		repo.On("ListStateHashes",
 			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,

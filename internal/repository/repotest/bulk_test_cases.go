@@ -256,14 +256,15 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		hash1 := [32]byte(crypto.Keccak256Hash([]byte("state-1")))
 		hash2 := [32]byte(crypto.Keccak256Hash([]byte("state-2")))
 		hash3 := [32]byte(crypto.Keccak256Hash([]byte("state-3")))
+		hashes := [][32]byte{hash1, hash2, hash3}
 
 		result := &AdvanceResult{
 			EpochIndex:          0,
 			InputIndex:          0,
 			Status:              InputCompletionStatus_Accepted,
 			Outputs:             [][]byte{[]byte("dave-output")},
-			PeriodicStateHashes: [][32]byte{hash1, hash2, hash3},
-			PaddingRepetitions:  42,
+			PeriodicStateHashes: hashes,
+			PaddingRepetitions:  InputHashCollectionCapacity - uint64(len(hashes)),
 			IsDaveConsensus:     true,
 			OutputsProof: OutputsProof{
 				OutputsHash: outputsHash,
@@ -274,15 +275,16 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
 		s.Require().NoError(err)
 
-		// Verify state hashes were created (3 intermediate + 1 final = 4)
+		// Verify one row per intermediate hash plus the final repetition tail.
 		epochIdx := uint64(0)
 		stateHashes, total, err := s.Repo.ListStateHashes(
 			s.Ctx, seed.App.IApplicationAddress.String(),
 			repository.StateHashFilter{EpochIndex: &epochIdx},
 			repository.Pagination{Limit: 10}, false)
 		s.Require().NoError(err)
-		s.Len(stateHashes, 4)
-		s.Equal(uint64(4), total)
+		expectedStateHashRows := len(hashes) + 1
+		s.Len(stateHashes, expectedStateHashRows)
+		s.Equal(uint64(expectedStateHashRows), total)
 
 		// Verify intermediate hashes have Repetitions=1
 		s.Equal(common.Hash(hash1), stateHashes[0].MachineHash)
@@ -293,8 +295,9 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		s.Equal(uint64(1), stateHashes[2].Repetitions)
 
 		// Verify final hash has PaddingRepetitions as Repetitions
-		s.Equal(machineHash, stateHashes[3].MachineHash)
-		s.Equal(uint64(42), stateHashes[3].Repetitions)
+		tail := stateHashes[len(hashes)]
+		s.Equal(machineHash, tail.MachineHash)
+		s.Equal(result.PaddingRepetitions, tail.Repetitions)
 
 		// Verify outputs were also created
 		outputs, _, err := s.Repo.ListOutputs(
@@ -307,6 +310,105 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		input, err := s.Repo.GetInput(s.Ctx, seed.App.IApplicationAddress.String(), 0)
 		s.Require().NoError(err)
 		s.Equal(InputCompletionStatus_Accepted, input.Status)
+	})
+
+	const resultPageLimit = 10
+	const hashesAboveExtendedProtocolParameterLimit = 11_000
+
+	s.Run("DaveConsensusStreamsStateHashesAboveParameterLimit", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+		hashes := make([][32]byte, hashesAboveExtendedProtocolParameterLimit)
+		machineHash := UniqueHash()
+		result := &AdvanceResult{
+			EpochIndex:          0,
+			InputIndex:          0,
+			Status:              InputCompletionStatus_Accepted,
+			PeriodicStateHashes: hashes,
+			PaddingRepetitions:  InputHashCollectionCapacity - uint64(len(hashes)),
+			IsDaveConsensus:     true,
+			OutputsProof: OutputsProof{
+				OutputsHash: UniqueHash(),
+				MachineHash: machineHash,
+			},
+		}
+
+		s.Require().NoError(s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result))
+		epochIndex := uint64(0)
+		expectedRows := len(hashes) + 1
+		stateHashes, total, err := s.Repo.ListStateHashes(
+			s.Ctx,
+			seed.App.IApplicationAddress.String(),
+			repository.StateHashFilter{EpochIndex: &epochIndex},
+			repository.Pagination{Limit: uint64(expectedRows)},
+			false,
+		)
+		s.Require().NoError(err)
+		s.Equal(uint64(expectedRows), total)
+		s.Require().Len(stateHashes, expectedRows)
+		for _, index := range []int{0, len(hashes) / 2, len(hashes) - 1} {
+			s.Equal(common.Hash(hashes[index]), stateHashes[index].MachineHash)
+			s.Equal(uint64(index), stateHashes[index].Index)
+			s.Equal(uint64(1), stateHashes[index].Repetitions)
+		}
+		tail := stateHashes[len(hashes)]
+		s.Equal(machineHash, tail.MachineHash)
+		s.Equal(uint64(len(hashes)), tail.Index)
+		s.Equal(InputHashCollectionCapacity-uint64(len(hashes)), tail.Repetitions)
+	})
+
+	s.Run("PRTConsensusRejectsUnnormalizedExactBoundaryHashCollection", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+		result := &AdvanceResult{
+			EpochIndex:         0,
+			InputIndex:         0,
+			Status:             InputCompletionStatus_Accepted,
+			Outputs:            [][]byte{[]byte("must-roll-back")},
+			Reports:            [][]byte{[]byte("must-roll-back")},
+			PaddingRepetitions: 0,
+			IsDaveConsensus:    true,
+			OutputsProof: OutputsProof{
+				OutputsHash: UniqueHash(),
+				MachineHash: UniqueHash(),
+			},
+		}
+
+		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
+		s.Require().Error(err)
+
+		input, err := s.Repo.GetInput(s.Ctx, seed.App.IApplicationAddress.String(), 0)
+		s.Require().NoError(err)
+		s.Equal(InputCompletionStatus_None, input.Status)
+		outputs, outputCount, err := s.Repo.ListOutputs(
+			s.Ctx,
+			seed.App.IApplicationAddress.String(),
+			repository.OutputFilter{},
+			repository.Pagination{Limit: resultPageLimit},
+			false,
+		)
+		s.Require().NoError(err)
+		s.Empty(outputs)
+		s.Zero(outputCount)
+		reports, reportCount, err := s.Repo.ListReports(
+			s.Ctx,
+			seed.App.IApplicationAddress.String(),
+			repository.ReportFilter{},
+			repository.Pagination{Limit: resultPageLimit},
+			false,
+		)
+		s.Require().NoError(err)
+		s.Empty(reports)
+		s.Zero(reportCount)
+		epochIndex := uint64(0)
+		stateHashes, stateHashCount, err := s.Repo.ListStateHashes(
+			s.Ctx,
+			seed.App.IApplicationAddress.String(),
+			repository.StateHashFilter{EpochIndex: &epochIndex},
+			repository.Pagination{Limit: resultPageLimit},
+			false,
+		)
+		s.Require().NoError(err)
+		s.Empty(stateHashes)
+		s.Zero(stateHashCount)
 	})
 }
 
@@ -404,14 +506,15 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResultRollback() {
 	// a bad epoch index), all prior work (outputs, reports) is rolled back.
 	s.Run("DaveConsensusRollbackOnStateHashFailure", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
+		hashes := [][32]byte{{1}, {2}}
 
 		result := &AdvanceResult{
 			EpochIndex:          99, // non-existent epoch
 			InputIndex:          0,
 			Status:              InputCompletionStatus_Accepted,
 			Outputs:             [][]byte{[]byte("should-be-rolled-back")},
-			PeriodicStateHashes: [][32]byte{{1}, {2}},
-			PaddingRepetitions:  10,
+			PeriodicStateHashes: hashes,
+			PaddingRepetitions:  InputHashCollectionCapacity - uint64(len(hashes)),
 			IsDaveConsensus:     true,
 			OutputsProof: OutputsProof{
 				OutputsHash: UniqueHash(),

@@ -49,13 +49,14 @@ func (s *StateHashSuite) TestListStateHashes() {
 
 		hash1 := [32]byte(crypto.Keccak256Hash([]byte("list-state-1")))
 		hash2 := [32]byte(crypto.Keccak256Hash([]byte("list-state-2")))
+		collectedHashes := [][32]byte{hash1, hash2}
 
 		result := &AdvanceResult{
 			EpochIndex:          0,
 			InputIndex:          0,
 			Status:              InputCompletionStatus_Accepted,
-			PeriodicStateHashes: [][32]byte{hash1, hash2},
-			PaddingRepetitions:  10,
+			PeriodicStateHashes: collectedHashes,
+			PaddingRepetitions:  InputHashCollectionCapacity - uint64(len(collectedHashes)),
 			IsDaveConsensus:     true,
 			OutputsProof: OutputsProof{
 				OutputsHash: outputsHash,
@@ -67,12 +68,13 @@ func (s *StateHashSuite) TestListStateHashes() {
 		s.Require().NoError(err)
 
 		// List all state hashes
+		expectedRows := len(collectedHashes) + 1
 		hashes, total, err := s.Repo.ListStateHashes(
 			s.Ctx, seed.App.IApplicationAddress.String(),
 			repository.StateHashFilter{}, repository.Pagination{Limit: 10}, false)
 		s.Require().NoError(err)
-		s.Len(hashes, 3) // 2 intermediate + 1 final
-		s.Equal(uint64(3), total)
+		s.Len(hashes, expectedRows)
+		s.Equal(uint64(expectedRows), total)
 
 		// List with epoch filter
 		epochIdx := uint64(0)
@@ -81,16 +83,17 @@ func (s *StateHashSuite) TestListStateHashes() {
 			repository.StateHashFilter{EpochIndex: &epochIdx},
 			repository.Pagination{Limit: 10}, false)
 		s.Require().NoError(err)
-		s.Len(hashes, 3)
-		s.Equal(uint64(3), total)
+		s.Len(hashes, expectedRows)
+		s.Equal(uint64(expectedRows), total)
 
 		// Verify pagination
+		pageSize := uint64(len(collectedHashes))
 		hashes, total, err = s.Repo.ListStateHashes(
 			s.Ctx, seed.App.IApplicationAddress.String(),
 			repository.StateHashFilter{},
-			repository.Pagination{Limit: 2, Offset: 0}, false)
+			repository.Pagination{Limit: pageSize, Offset: 0}, false)
 		s.Require().NoError(err)
-		s.Len(hashes, 2)
-		s.Equal(uint64(3), total)
+		s.Len(hashes, len(collectedHashes))
+		s.Equal(uint64(expectedRows), total)
 	})
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -96,23 +97,24 @@ func getStateHashNextIndex(
 	epochIndex uint64,
 ) (uint64, error) {
 
-	query := table.StateHashes.SELECT(
-		postgres.COALESCE(
-			postgres.Float(1).ADD(postgres.MAXf(table.StateHashes.Index)),
-			postgres.Float(0),
-		),
-	).WHERE(
-		table.StateHashes.InputEpochApplicationID.EQ(postgres.Int64(appID)).
-			AND(table.StateHashes.EpochIndex.EQ(uint64Expr(epochIndex))),
-	)
-
+	query := table.StateHashes.SELECT(table.StateHashes.Index).
+		WHERE(
+			table.StateHashes.InputEpochApplicationID.EQ(postgres.Int64(appID)).
+				AND(table.StateHashes.EpochIndex.EQ(uint64Expr(epochIndex))),
+		).
+		ORDER_BY(table.StateHashes.Index.DESC()).
+		LIMIT(1)
 	queryStr, args := query.Sql()
-	var currentIndex uint64
-	err := tx.QueryRow(ctx, queryStr, args...).Scan(&currentIndex)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get the next state hash index: %w", err)
+	var maxIndex uint64
+	if err := tx.QueryRow(ctx, queryStr, args...).Scan(&maxIndex); errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	} else if err != nil {
+		return 0, fmt.Errorf("failed to get the last state hash index: %w", err)
 	}
-	return currentIndex, nil
+	if maxIndex == math.MaxUint64 {
+		return 0, errors.New("state hash index space is exhausted")
+	}
+	return maxIndex + 1, nil
 }
 
 func insertOutputs(
@@ -201,49 +203,114 @@ func insertStateHashes(
 	inputIndex uint64,
 	hashes [][32]byte,
 	machineHash common.Hash,
-	remainingMetaCycles uint64,
+	paddingRepetitions uint64,
 ) error {
+	rowCount, err := stateHashInsertShape(uint64(len(hashes)), paddingRepetitions)
+	if err != nil {
+		return err
+	}
 
 	nextIndex, err := getStateHashNextIndex(ctx, tx, appID, epochIndex)
 	if err != nil {
 		return err
 	}
-
-	stmt := table.StateHashes.INSERT(
-		table.StateHashes.InputEpochApplicationID,
-		table.StateHashes.EpochIndex,
-		table.StateHashes.InputIndex,
-		table.StateHashes.Index,
-		table.StateHashes.MachineHash,
-		table.StateHashes.Repetitions,
-	)
-
-	for i, h := range hashes {
-		stmt = stmt.VALUES(
-			appID,
-			epochIndex,
-			inputIndex,
-			nextIndex+uint64(i),
-			h[:],
-			1,
+	if rowCount-1 > math.MaxUint64-nextIndex {
+		return fmt.Errorf(
+			"state hash index range overflows uint64: start=%d rows=%d",
+			nextIndex,
+			rowCount,
 		)
 	}
 
-	stmt = stmt.VALUES(
-		appID,
-		epochIndex,
-		inputIndex,
-		nextIndex+uint64(len(hashes)),
-		machineHash[:],
-		remainingMetaCycles,
+	source := &stateHashCopySource{
+		appID:              appID,
+		epochIndex:         epochIndex,
+		inputIndex:         inputIndex,
+		nextIndex:          nextIndex,
+		hashes:             hashes,
+		machineHash:        machineHash,
+		paddingRepetitions: paddingRepetitions,
+		rowCount:           rowCount,
+	}
+	copied, err := tx.CopyFrom(
+		ctx,
+		pgx.Identifier{"public", "state_hashes"},
+		[]string{
+			"input_epoch_application_id",
+			"epoch_index",
+			"input_index",
+			"index",
+			"machine_hash",
+			"repetitions",
+		},
+		source,
 	)
-
-	sqlStr, args := stmt.Sql()
-	_, err = tx.Exec(ctx, sqlStr, args...)
 	if err != nil {
 		return err
 	}
+	expectedCopied := int64(rowCount) //nolint:gosec // Span validation bounds rowCount far below MaxInt64.
+	if copied != expectedCopied {
+		return fmt.Errorf("copied %d state hashes, expected %d", copied, expectedCopied)
+	}
 	return nil
+}
+
+// stateHashCopySource streams one input hash collection directly into PostgreSQL. It
+// holds only the caller's hash slice and one row of CopyFrom values, so even a
+// full input-span collection does not create a second multi-million-row object.
+type stateHashCopySource struct {
+	appID              int64
+	epochIndex         uint64
+	inputIndex         uint64
+	nextIndex          uint64
+	hashes             [][32]byte
+	machineHash        common.Hash
+	paddingRepetitions uint64
+	rowCount           uint64
+	nextRow            uint64
+	currentRow         uint64
+	values             [6]any
+}
+
+func (source *stateHashCopySource) Next() bool {
+	if source.nextRow >= source.rowCount {
+		return false
+	}
+	source.currentRow = source.nextRow
+	source.nextRow++
+	return true
+}
+
+func (source *stateHashCopySource) Values() ([]any, error) {
+	source.values[0] = source.appID
+	source.values[1] = source.epochIndex
+	source.values[2] = source.inputIndex
+	source.values[3] = source.nextIndex + source.currentRow
+	if source.currentRow < uint64(len(source.hashes)) {
+		source.values[4] = source.hashes[source.currentRow][:]
+		source.values[5] = int64(1)
+		return source.values[:], nil
+	}
+	source.values[4] = source.machineHash[:]
+	source.values[5] = source.paddingRepetitions
+	return source.values[:], nil
+}
+
+func (*stateHashCopySource) Err() error { return nil }
+
+func stateHashInsertShape(
+	hashCount uint64,
+	paddingRepetitions uint64,
+) (rowCount uint64, err error) {
+	if err := model.ValidateInputHashCollectionSpan(hashCount, paddingRepetitions); err != nil {
+		return 0, fmt.Errorf("invalid input hash collection span: %w", err)
+	}
+	if paddingRepetitions == 0 {
+		return 0, errors.New("canonical input hash collection requires a positive final repetition tail")
+	}
+	// Span validation bounds hashCount by the collection capacity, so appending the
+	// required canonical tail row cannot overflow uint64.
+	return hashCount + 1, nil
 }
 
 func updateInput(

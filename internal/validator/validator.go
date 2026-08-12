@@ -18,7 +18,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/merkle"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	pkgm "github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/cartesi/rollups-node/pkg/service"
 )
 
@@ -351,10 +350,10 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 	}
 	builder := merkle.Builder{}
 	inputCount := epoch.InputIndexUpperBound - epoch.InputIndexLowerBound
-	if inputCount > pkgm.MaxAdvanceStatesPerEpoch {
+	if inputCount > MaxAdvanceStatesPerEpoch {
 		return nil, nil, s.setApplicationCorrupted(ctx, app,
 			"input count is too large for epoch %v of application %v: max %v, got %v",
-			epoch.Index, app.Name, pkgm.MaxAdvanceStatesPerEpoch, inputCount)
+			epoch.Index, app.Name, MaxAdvanceStatesPerEpoch, inputCount)
 	}
 
 	if inputCount > 0 {
@@ -382,11 +381,11 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 		}
 	}
 
-	remainingInputs := pkgm.MaxAdvanceStatesPerEpoch - inputCount
-	// Safe: inputCount ≤ MaxAdvanceStatesPerEpoch enforced above, so remainingInputs << Log2InputEntryCapacity won't overflow.
-	remainingStrides := remainingInputs << pkgm.Log2InputEntryCapacity
-	if remainingStrides > 0 {
-		if err := builder.AppendRepeatedUint64(merkle.TreeLeaf(*epoch.MachineHash), remainingStrides); err != nil {
+	remainingInputs := MaxAdvanceStatesPerEpoch - inputCount
+	// Safe: inputCount is bounded above, so the remaining-input shift cannot overflow.
+	remainingEntries := remainingInputs << Log2InputHashCollectionCapacity
+	if remainingEntries > 0 {
+		if err := builder.AppendRepeatedUint64(merkle.TreeLeaf(*epoch.MachineHash), remainingEntries); err != nil {
 			return nil, nil, s.setApplicationCorrupted(ctx, app,
 				"failed to append state hash to builder for epoch %d of application %s with error: %v", epoch.Index, app.Name, err)
 		}
@@ -397,8 +396,8 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 		return nil, nil, s.setApplicationCorrupted(ctx, app,
 			"failed to build commitment for epoch %d of application %s with error: %v", epoch.Index, app.Name, err)
 	}
-	// The commitment geometry is fixed: 2²⁴ inputs × 2²⁴ strides ⇒ height 48.
-	const expectedHeight = pkgm.Log2MaxAdvanceStatesPerEpoch + pkgm.Log2InputEntryCapacity // 48
+	// The commitment geometry is fixed: 2²⁴ inputs × 2²⁴ entries ⇒ height 48.
+	const expectedHeight = Log2EpochComputationHashLeafCount
 	if uint64(epochCommitmentTree.Height) != expectedHeight {
 		return nil, nil, s.setApplicationCorrupted(ctx, app,
 			"epoch %v commitment tree height %v, expected %v — state hash repetitions are inconsistent",
