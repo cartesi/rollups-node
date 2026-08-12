@@ -373,7 +373,7 @@ func (r *PostgresRepository) StoreAdvanceResult(
 	}
 
 	if res.IsDaveConsensus {
-		err = insertStateHashes(ctx, tx, appID, res.EpochIndex, res.InputIndex, res.Hashes, res.MachineHash, res.RemainingMetaCycles)
+		err = insertStateHashes(ctx, tx, appID, res.EpochIndex, res.InputIndex, res.PeriodicStateHashes, res.MachineHash, res.PaddingRepetitions)
 		if err != nil {
 			return err
 		}

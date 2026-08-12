@@ -6,12 +6,14 @@ package machine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/pkg/emulator"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 )
@@ -199,25 +201,41 @@ func (s *MachineSuite) TestDefaultConfig() {
 }
 
 func (s *MachineSuite) TestConfiguredHardCycleCeilingMatchesMachineInputSpan() {
-	s.Require().Equal(BarchSpanToInput, model.MaxExecutionCycleSpan)
-	s.Require().Equal(uint64(1)<<Log2BarchSpanToInput, model.MaxExecutionCycles)
+	s.Require().Equal(uint64(1)<<Log2MaxMCyclesPerAdvanceState, model.MaxExecutionCycles)
+	// Cross-source check: the node's span must equal the constant the linked
+	// emulator exposes for its machine-enforced imcyclemax window. This is the
+	// same equality NewLibCartesiBackend refuses to start without.
+	s.Require().Equal(emulator.Log2MaxMCyclesPerAdvanceState, model.Log2MaxExecutionCycles)
 }
 
 func (s *MachineSuite) TestExecutionLimitClassification() {
-	for _, err := range []error{
+	for _, sentinel := range []error{
 		ErrPayloadLengthLimitExceeded,
 		ErrOutputsLimitExceeded,
 		ErrReportsLimitExceeded,
 		ErrReachedLimitMcycle,
 		ErrMcycleOverflow,
 	} {
-		s.True(IsExecutionLimitError(err), "%v", err)
+		s.Require().True(IsExecutionLimitError(fmt.Errorf("context: %w", sentinel)))
 	}
-	s.False(IsExecutionLimitError(ErrMachineInternal))
+	s.Require().False(IsExecutionLimitError(ErrDeadlineExceeded))
 }
 
 func (s *MachineSuite) TestMachineOverflowSharesTheExecutionLimitUmbrella() {
 	s.Require().ErrorIs(ErrMcycleOverflow, ErrReachedLimitMcycle)
+}
+
+func (s *MachineSuite) TestCompletionStatusIsCompleted() {
+	for _, status := range []CompletionStatus{
+		CompletionStatusAccepted,
+		CompletionStatusRejected,
+		CompletionStatusException,
+		CompletionStatusHalted,
+	} {
+		s.Require().True(status.IsCompleted())
+	}
+	s.Require().False(CompletionStatusUnknown.IsCompleted())
+	s.Require().False(CompletionStatus(255).IsCompleted())
 }
 
 // Test machine interface compliance
@@ -227,15 +245,17 @@ func (s *MachineSuite) TestMachineInterface() {
 
 	// Create a mock machine
 	mockMachine := &MockMachine{
-		AddressReturn:        "127.0.0.1:12345",
-		HashReturn:           Hash{1, 2, 3, 4, 5},
-		OutputsHashReturn:    Hash{6, 7, 8, 9, 10},
-		AdvanceStatusReturn:  CompletionStatusAccepted,
-		AdvanceOutputsReturn: []Output{[]byte("output1"), []byte("output2")},
-		AdvanceReportsReturn: []Report{[]byte("report1")},
-		AdvanceHashReturn:    Hash{11, 12, 13, 14, 15},
-		InspectStatusReturn:  CompletionStatusAccepted,
-		InspectReportsReturn: []Report{[]byte("inspect report")},
+		AddressReturn:          "127.0.0.1:12345",
+		HashReturn:             Hash{1, 2, 3, 4, 5},
+		OutputsHashReturn:      Hash{6, 7, 8, 9, 10},
+		CompletionStatusReturn: CompletionStatusAccepted,
+		AdvanceOutputsReturn:   []Output{[]byte("output1"), []byte("output2")},
+		AdvanceReportsReturn:   []Report{[]byte("report1")},
+		AdvanceHashReturn:      Hash{11, 12, 13, 14, 15},
+		InspectResponseReturn: &InspectResponse{
+			Status:  CompletionStatusAccepted,
+			Reports: []Report{[]byte("inspect report")},
+		},
 	}
 
 	// Test that MockMachine implements Machine interface
@@ -267,11 +287,11 @@ func (s *MachineSuite) TestMachineInterface() {
 	require.Equal(Hash{11, 12, 13, 14, 15}, advanceResp.OutputsHash)
 
 	// Test Inspect
-	inspectResp, err := machine.Inspect(ctx, []byte("query"))
+	inspectResponse, err := machine.Inspect(ctx, []byte("query"))
 	require.NoError(err)
-	require.Equal(CompletionStatusAccepted, inspectResp.Status)
-	require.Len(inspectResp.Reports, 1)
-	require.Equal([]byte("inspect report"), inspectResp.Reports[0])
+	require.Equal(CompletionStatusAccepted, inspectResponse.Status)
+	require.Len(inspectResponse.Reports, 1)
+	require.Equal([]byte("inspect report"), inspectResponse.Reports[0])
 
 	// Test Store
 	err = machine.Store(ctx, "/tmp/test")
@@ -355,7 +375,7 @@ type MockMachine struct {
 	OutputsHashProofReturn []Hash
 	OutputsHashProofError  error
 
-	AdvanceStatusReturn    CompletionStatus
+	CompletionStatusReturn CompletionStatus
 	AdvanceOutputsReturn   []Output
 	AdvanceReportsReturn   []Report
 	AdvanceHashesReturn    []Hash
@@ -363,9 +383,8 @@ type MockMachine struct {
 	AdvanceHashReturn      Hash
 	AdvanceError           error
 
-	InspectStatusReturn  CompletionStatus
-	InspectReportsReturn []Report
-	InspectError         error
+	InspectResponseReturn *InspectResponse
+	InspectError          error
 
 	StoreError error
 
@@ -395,20 +414,17 @@ func (m *MockMachine) Advance(_ context.Context, _ []byte, _ Hash, _ bool) (*Adv
 		return nil, m.AdvanceError
 	}
 	return &AdvanceResponse{
-		Status:          m.AdvanceStatusReturn,
-		Outputs:         m.AdvanceOutputsReturn,
-		Reports:         m.AdvanceReportsReturn,
-		Hashes:          m.AdvanceHashesReturn,
-		RemainingCycles: m.AdvanceRemainingReturn,
-		OutputsHash:     m.AdvanceHashReturn,
+		Status:              m.CompletionStatusReturn,
+		Outputs:             m.AdvanceOutputsReturn,
+		Reports:             m.AdvanceReportsReturn,
+		PeriodicStateHashes: m.AdvanceHashesReturn,
+		PaddingRepetitions:  m.AdvanceRemainingReturn,
+		OutputsHash:         m.AdvanceHashReturn,
 	}, nil
 }
 
 func (m *MockMachine) Inspect(_ context.Context, _ []byte) (*InspectResponse, error) {
-	if m.InspectError != nil {
-		return nil, m.InspectError
-	}
-	return &InspectResponse{Status: m.InspectStatusReturn, Reports: m.InspectReportsReturn}, nil
+	return m.InspectResponseReturn, m.InspectError
 }
 
 func (m *MockMachine) Store(_ context.Context, _ string) error {

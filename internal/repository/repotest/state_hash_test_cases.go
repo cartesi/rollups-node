@@ -54,8 +54,8 @@ func (s *StateHashSuite) TestListStateHashes() {
 			EpochIndex:          0,
 			InputIndex:          0,
 			Status:              InputCompletionStatus_Accepted,
-			Hashes:              [][32]byte{hash1, hash2},
-			RemainingMetaCycles: 10,
+			PeriodicStateHashes: [][32]byte{hash1, hash2},
+			PaddingRepetitions:  10,
 			IsDaveConsensus:     true,
 			OutputsProof: OutputsProof{
 				OutputsHash: outputsHash,

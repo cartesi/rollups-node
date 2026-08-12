@@ -12,11 +12,22 @@ import (
 
 	"github.com/cartesi/rollups-node/pkg/emulator"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
 func TestLibCartesi(t *testing.T) {
 	suite.Run(t, new(LibCartesiSuite))
+}
+
+func TestValidateEmulatorComputationHashLimits(t *testing.T) {
+	require.NoError(t, ValidateEmulatorComputationHashLimits())
+	require.NoError(t, validateEmulatorComputationHashLimit("LOG2_MAX_MCYCLES_PER_ADVANCE_STATE", 48, 48))
+
+	err := validateEmulatorComputationHashLimit("LOG2_MAX_MCYCLES_PER_ADVANCE_STATE", 48, 47)
+	require.ErrorIs(t, err, ErrMachineInternal)
+	require.ErrorContains(t, err, "node computation-hash dimension 2^48")
+	require.ErrorContains(t, err, "CM_ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE=47")
 }
 
 type LibCartesiSuite struct {
@@ -111,7 +122,7 @@ func (s *LibCartesiSuite) TestRunMcycleOverflow() {
 
 func (s *LibCartesiSuite) TestRunAndCollectRootHashesMcycleOverflow() {
 	require := s.Require()
-	state := &HashCollectorState{Period: 1}
+	state := &HashCollectorState{MCycleSamplingPeriod: 1}
 	result := []byte(`{"hashes":[],"mcycle_phase":0,"break_reason":"mcycle_overflow"}`)
 
 	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
@@ -142,22 +153,24 @@ func (s *LibCartesiSuite) TestRunAndCollectRootHashesContinuesPartialBundle() {
 	previousHash := Hash{0x11}
 	collectedHash := Hash{0x22}
 	state := &HashCollectorState{
-		Period:        4,
-		Phase:         3,
-		BundleLog2:    2,
-		Hashes:        []Hash{previousHash},
-		PartialBundle: previousPartialBundle,
+		MCycleSamplingPeriod:  4,
+		MCyclePhase:           3,
+		Log2BundleMCycleCount: 2,
+		Hashes:                []Hash{previousHash},
+		PartialBundle:         previousPartialBundle,
 	}
 	result, err := json.Marshal(struct {
-		Hashes        []string        `json:"hashes"`
-		MCyclePhase   uint64          `json:"mcycle_phase"`
-		BreakReason   string          `json:"break_reason"`
-		PartialBundle json.RawMessage `json:"partial_bundle"`
+		Hashes         []string        `json:"hashes"`
+		MCyclePhase    uint64          `json:"mcycle_phase"`
+		BreakReason    string          `json:"break_reason"`
+		PartialBundle  json.RawMessage `json:"partial_bundle"`
+		ConsoleIOError string          `json:"console_io_error"`
 	}{
-		Hashes:        []string{base64.StdEncoding.EncodeToString(collectedHash[:])},
-		MCyclePhase:   1,
-		BreakReason:   "reached_target_mcycle",
-		PartialBundle: nextPartialBundle,
+		Hashes:         []string{base64.StdEncoding.EncodeToString(collectedHash[:])},
+		MCyclePhase:    1,
+		BreakReason:    "reached_target_mcycle",
+		PartialBundle:  nextPartialBundle,
+		ConsoleIOError: "console write failed",
 	})
 	require.NoError(err)
 
@@ -174,9 +187,10 @@ func (s *LibCartesiSuite) TestRunAndCollectRootHashesContinuesPartialBundle() {
 	breakReason, err := s.backend.RunAndCollectRootHashes(1000, state, 5*time.Second)
 	require.NoError(err)
 	require.Equal(ReachedTargetMcycle, breakReason)
-	require.Equal(uint64(1), state.Phase)
+	require.Equal(uint64(1), state.MCyclePhase)
 	require.Equal([]Hash{previousHash, collectedHash}, state.Hashes)
 	require.Equal(nextPartialBundle, state.PartialBundle)
+	require.Equal("console write failed", state.ConsoleIOError)
 	s.mockRemoteMachine.AssertExpectations(s.T())
 }
 
@@ -186,10 +200,10 @@ func (s *LibCartesiSuite) TestRunAndCollectRootHashesClearsPartialBundleAtFixedP
 		`{"log2_max_leaves":2,"hash_function":"keccak256","leaf_count":3,"context":["AwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="]}`,
 	)
 	state := &HashCollectorState{
-		Period:        4,
-		Phase:         2,
-		BundleLog2:    2,
-		PartialBundle: previousPartialBundle,
+		MCycleSamplingPeriod:  4,
+		MCyclePhase:           2,
+		Log2BundleMCycleCount: 2,
+		PartialBundle:         previousPartialBundle,
 	}
 	result := []byte(`{"hashes":[],"mcycle_phase":2,"break_reason":"halted"}`)
 
@@ -221,11 +235,11 @@ func (s *LibCartesiSuite) TestRunAndCollectRootHashesInvalidHashLeavesStateUncha
 	previousHash := Hash{0x11}
 	validHash := Hash{0x22}
 	state := &HashCollectorState{
-		Period:        4,
-		Phase:         3,
-		BundleLog2:    2,
-		Hashes:        []Hash{previousHash},
-		PartialBundle: previousPartialBundle,
+		MCycleSamplingPeriod:  4,
+		MCyclePhase:           3,
+		Log2BundleMCycleCount: 2,
+		Hashes:                []Hash{previousHash},
+		PartialBundle:         previousPartialBundle,
 	}
 	originalState := *state
 	originalState.Hashes = append([]Hash(nil), state.Hashes...)
@@ -267,9 +281,9 @@ func (s *LibCartesiSuite) TestRunAndCollectRootHashesInvalidBreakReasonLeavesSta
 	require := s.Require()
 	previousHash := Hash{0x11}
 	state := &HashCollectorState{
-		Period: 4,
-		Phase:  3,
-		Hashes: []Hash{previousHash},
+		MCycleSamplingPeriod: 4,
+		MCyclePhase:          3,
+		Hashes:               []Hash{previousHash},
 	}
 	originalState := *state
 	originalState.Hashes = append([]Hash(nil), state.Hashes...)
@@ -294,7 +308,7 @@ func (s *LibCartesiSuite) TestRunAndCollectRootHashesInvalidBreakReasonLeavesSta
 
 func (s *LibCartesiSuite) TestRunAndCollectRootHashesInvalidResultPhaseLeavesStateUnchanged() {
 	require := s.Require()
-	state := &HashCollectorState{Period: 4, Phase: 3}
+	state := &HashCollectorState{MCycleSamplingPeriod: 4, MCyclePhase: 3}
 	originalState := *state
 	result := []byte(`{"hashes":[],"mcycle_phase":4,"break_reason":"reached_target_mcycle"}`)
 
@@ -317,7 +331,7 @@ func (s *LibCartesiSuite) TestRunAndCollectRootHashesInvalidResultPhaseLeavesSta
 
 func (s *LibCartesiSuite) TestRunAndCollectRootHashesRejectsInvalidInputPhase() {
 	require := s.Require()
-	state := &HashCollectorState{Period: 4, Phase: 4}
+	state := &HashCollectorState{MCycleSamplingPeriod: 4, MCyclePhase: 4}
 
 	breakReason, err := s.backend.RunAndCollectRootHashes(1000, state, 5*time.Second)
 	require.ErrorContains(err, "phase must be less than period")

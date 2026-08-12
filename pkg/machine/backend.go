@@ -21,12 +21,12 @@ const (
 )
 
 type HashCollectorState struct {
-	Period        uint64
-	Phase         uint64
-	MaxHashes     uint64
-	BundleLog2    int32
-	Hashes        []Hash
-	PartialBundle json.RawMessage
+	MCycleSamplingPeriod  uint64
+	MCyclePhase           uint64
+	Log2BundleMCycleCount int32
+	Hashes                []Hash
+	PartialBundle         json.RawMessage
+	ConsoleIOError        string
 }
 
 // This Backend interface covers the methods used from the emulator / remote machine server.

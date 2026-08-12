@@ -26,6 +26,12 @@ type ImplementationSuite struct {
 	logger *slog.Logger
 }
 
+func testExecutionBounds(start, limit uint64) executionBounds {
+	return executionBounds{
+		start: start, limit: limit, span: limit - start, configured: true,
+	}
+}
+
 func (s *ImplementationSuite) SetupSuite() {
 	s.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 }
@@ -168,6 +174,21 @@ func (s *ImplementationSuite) TestOutputsHash() {
 	require.ErrorIs(err, ErrRejected)
 	mockBackend2.AssertExpectations(s.T())
 
+	// Exception remains distinguishable through the public error taxonomy.
+	mockBackendException := NewMockBackend()
+	mockBackendException.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
+		uint8(0), uint16(ManualYieldReasonException), []byte("exception"), nil)
+	machineException := &machineImpl{
+		backend: mockBackendException,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline: time.Second * 5,
+		},
+	}
+	_, err = machineException.OutputsHash(ctx)
+	require.ErrorIs(err, ErrException)
+	mockBackendException.AssertExpectations(s.T())
+
 	// Test outputs hash with invalid length
 	mockBackend3 := NewMockBackend()
 	mockBackend3.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
@@ -264,7 +285,6 @@ func (s *ImplementationSuite) TestAdvance() {
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
 			AdvanceIncCycles:   100,
 			AdvanceIncDeadline: time.Second * 1,
 			AdvanceMaxDeadline: time.Second * 10,
@@ -274,6 +294,7 @@ func (s *ImplementationSuite) TestAdvance() {
 	input := []byte("test input")
 	resp, err := machine.Advance(ctx, input, expectedHash, false)
 	require.NoError(err)
+	require.NotNil(resp)
 	require.Equal(CompletionStatusAccepted, resp.Status)
 	require.Empty(resp.Outputs)
 	require.Empty(resp.Reports)
@@ -288,7 +309,6 @@ func (s *ImplementationSuite) TestAdvance() {
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
 			AdvanceIncCycles:   100,
 			AdvanceIncDeadline: time.Second * 1,
 			AdvanceMaxDeadline: time.Second * 10,
@@ -296,6 +316,7 @@ func (s *ImplementationSuite) TestAdvance() {
 	}
 	resp, err = machine2.Advance(ctx, input, expectedHash, false)
 	require.NoError(err)
+	require.NotNil(resp)
 	require.Equal(CompletionStatusRejected, resp.Status)
 	require.Empty(resp.Outputs)
 	require.Empty(resp.Reports)
@@ -310,7 +331,6 @@ func (s *ImplementationSuite) TestAdvance() {
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
 			AdvanceIncCycles:   100,
 			AdvanceIncDeadline: time.Second * 1,
 			AdvanceMaxDeadline: time.Second * 10,
@@ -318,10 +338,89 @@ func (s *ImplementationSuite) TestAdvance() {
 	}
 	resp, err = machine3.Advance(ctx, input, expectedHash, false)
 	require.NoError(err)
+	require.NotNil(resp)
 	require.Equal(CompletionStatusException, resp.Status)
 	require.Equal([]byte("exception data"), resp.ExceptionData)
 	require.Equal(Hash{}, resp.OutputsHash)
 	mockBackend3.AssertExpectations(s.T())
+
+	// Halting is also a completed deterministic status and retains
+	// the PRT input hash collection produced before the halt.
+	expectedHaltHash := randomFakeHash()
+	mockBackendHalted := NewMockBackend()
+	mockBackendHalted.On("CmioRxBufferSize").Return(uint64(1024))
+	mockBackendHalted.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil).Once()
+	mockBackendHalted.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(100), nil).Once()
+	mockBackendHalted.On(
+		"SendCmioResponse",
+		uint16(AdvanceStateRequest), mock.Anything, mock.Anything, mock.AnythingOfType("time.Duration"),
+	).Return(nil)
+	mockBackendHalted.On(
+		"RunAndCollectRootHashes",
+		mock.AnythingOfType("uint64"),
+		mock.AnythingOfType("*machine.HashCollectorState"),
+		mock.AnythingOfType("time.Duration"),
+	).Run(func(args mock.Arguments) {
+		state := args.Get(1).(*HashCollectorState)
+		state.Hashes = append(state.Hashes, expectedHaltHash)
+		state.MCyclePhase = 0 // halt occurred exactly at the collected boundary
+	}).Return(Halted, nil)
+	machineHalted := &machineImpl{
+		backend: mockBackendHalted,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline:       time.Second * 5,
+			AdvanceIncCycles:   100,
+			AdvanceIncDeadline: time.Second,
+			AdvanceMaxDeadline: time.Second * 10,
+		},
+	}
+	resp, err = machineHalted.Advance(ctx, input, expectedHash, true)
+	require.NoError(err)
+	require.NotNil(resp)
+	require.Equal(CompletionStatusHalted, resp.Status)
+	require.Empty(resp.PeriodicStateHashes)
+	require.Equal(InputEntryCapacity, resp.PaddingRepetitions)
+	mockBackendHalted.AssertExpectations(s.T())
+
+	// Test advance halted off a sampling boundary: 0.21 still appends the
+	// fixed-point sample (nonzero phase) and the node must still drop it.
+	offBoundaryHaltHash := randomFakeHash()
+	mockBackendHaltedOff := NewMockBackend()
+	mockBackendHaltedOff.On("CmioRxBufferSize").Return(uint64(1024))
+	mockBackendHaltedOff.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil).Once()
+	mockBackendHaltedOff.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(101), nil).Once()
+	mockBackendHaltedOff.On(
+		"SendCmioResponse",
+		uint16(AdvanceStateRequest), mock.Anything, mock.Anything, mock.AnythingOfType("time.Duration"),
+	).Return(nil)
+	mockBackendHaltedOff.On(
+		"RunAndCollectRootHashes",
+		mock.AnythingOfType("uint64"),
+		mock.AnythingOfType("*machine.HashCollectorState"),
+		mock.AnythingOfType("time.Duration"),
+	).Run(func(args mock.Arguments) {
+		state := args.Get(1).(*HashCollectorState)
+		state.Hashes = append(state.Hashes, offBoundaryHaltHash)
+		state.MCyclePhase = 5 // halt occurred between sampling boundaries
+	}).Return(Halted, nil)
+	machineHaltedOff := &machineImpl{
+		backend: mockBackendHaltedOff,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline:       time.Second * 5,
+			AdvanceIncCycles:   100,
+			AdvanceIncDeadline: time.Second,
+			AdvanceMaxDeadline: time.Second * 10,
+		},
+	}
+	resp, err = machineHaltedOff.Advance(ctx, input, expectedHash, true)
+	require.NoError(err)
+	require.NotNil(resp)
+	require.Equal(CompletionStatusHalted, resp.Status)
+	require.Empty(resp.PeriodicStateHashes)
+	require.Equal(InputEntryCapacity, resp.PaddingRepetitions)
+	mockBackendHaltedOff.AssertExpectations(s.T())
 
 	// Test advance with payload too large
 	mockBackend4 := NewMockBackend()
@@ -331,7 +430,6 @@ func (s *ImplementationSuite) TestAdvance() {
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
 			AdvanceIncCycles:   100,
 			AdvanceIncDeadline: time.Second * 1,
 			AdvanceMaxDeadline: time.Second * 10,
@@ -342,6 +440,39 @@ func (s *ImplementationSuite) TestAdvance() {
 	require.ErrorIs(err, ErrPayloadLengthLimitExceeded)
 	require.Nil(resp)
 	mockBackend4.AssertExpectations(s.T())
+
+	// A configured target beyond uint64 saturates at MaxUint64, just like the
+	// emulator's imcyclemax. If the machine reaches that endpoint, the machine
+	// overflow—not the configured-cap sentinel—explains why execution stopped.
+	mockBackendOverflow := NewMockBackend()
+	mockBackendOverflow.On("CmioRxBufferSize").Return(uint64(1024))
+	mockBackendOverflow.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+		Return(^uint64(0)-uint64(999), nil).Once()
+	mockBackendOverflow.On("SendCmioResponse", uint16(AdvanceStateRequest), input, expectedHash,
+		mock.AnythingOfType("time.Duration")).Return(nil).Once()
+	mockBackendOverflow.On("Run", ^uint64(0), mock.AnythingOfType("time.Duration")).
+		Return(McycleOverflow, nil).Once()
+	mockBackendOverflow.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+		Return(^uint64(0), nil).Once()
+	machineOverflow := &machineImpl{
+		backend: mockBackendOverflow,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline:       time.Second * 5,
+			AdvanceIncCycles:   ^uint64(0),
+			AdvanceIncDeadline: time.Second,
+			AdvanceMaxDeadline: time.Second,
+			AdvanceMaxCycles:   1000,
+		},
+	}
+	resp, err = machineOverflow.Advance(ctx, input, expectedHash, false)
+	require.ErrorIs(err, ErrReachedLimitMcycle)
+	require.ErrorIs(err, ErrMcycleOverflow)
+	require.Contains(err.Error(), "requested_span=1000")
+	require.Contains(err.Error(), "target_span=999")
+	require.Contains(err.Error(), "executed_cycles=999")
+	require.Nil(resp)
+	mockBackendOverflow.AssertExpectations(s.T())
 
 	// Test advance with invalid hash length
 	mockBackend5 := NewMockBackend()
@@ -356,7 +487,6 @@ func (s *ImplementationSuite) TestAdvance() {
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
 			AdvanceIncCycles:   100,
 			AdvanceIncDeadline: time.Second * 1,
 			AdvanceMaxDeadline: time.Second * 10,
@@ -369,100 +499,249 @@ func (s *ImplementationSuite) TestAdvance() {
 	mockBackend5.AssertExpectations(s.T())
 }
 
-// Test Inspect method
-func (s *ImplementationSuite) TestInspect() {
-	require := s.Require()
-	ctx := context.Background()
+func (s *ImplementationSuite) TestCompletedAdvanceIsIndependentOfAdequateIncrementSettings() {
+	expectedOutputsHash := randomFakeHash()
+	expectedHashes := []Hash{randomFakeHash(), randomFakeHash()}
+	configs := []model.ExecutionParameters{
+		{
+			FastDeadline:       time.Second,
+			AdvanceIncCycles:   2,
+			AdvanceIncDeadline: 10 * time.Millisecond,
+			AdvanceMaxDeadline: time.Second,
+		},
+		{
+			FastDeadline:       2 * time.Second,
+			AdvanceIncCycles:   4,
+			AdvanceIncDeadline: 100 * time.Millisecond,
+			AdvanceMaxDeadline: 2 * time.Second,
+		},
+		{
+			FastDeadline:       3 * time.Second,
+			AdvanceIncCycles:   100,
+			AdvanceIncDeadline: time.Second,
+			AdvanceMaxDeadline: 3 * time.Second,
+		},
+	}
+	expectedTargets := [][]uint64{
+		{2, 4, 5, 7, 8, 10},
+		{4, 7, 10},
+		{100, 103, 106},
+	}
 
-	// Test successful inspect (accepted)
-	mockBackend := NewMockBackend()
-	mockBackend.SetupAccepted(InspectStateRequest)
+	var baseline *AdvanceResponse
+	for i, params := range configs {
+		s.Run(fmt.Sprintf("configuration-%d", i), func() {
+			backend := &statefulAdvanceBackend{
+				outputsHash: expectedOutputsHash,
+				hashes:      expectedHashes,
+			}
+			machine := &machineImpl{backend: backend, logger: s.logger, params: params}
 
+			result, err := machine.Advance(context.Background(), []byte("stable-input"), Hash{}, true)
+			s.Require().NoError(err)
+			s.Require().NotNil(result)
+			s.Require().Equal(expectedTargets[i], backend.runTargets)
+			if baseline == nil {
+				baseline = result
+			} else {
+				s.Require().Equal(baseline, result)
+			}
+		})
+	}
+}
+
+func (s *ImplementationSuite) TestPRTHashCollectionIsIndependentOfConfiguredCycleCap() {
+	const configuredCap uint64 = 10
+	expectedOutputsHash := randomFakeHash()
+	expectedHashes := []Hash{randomFakeHash(), randomFakeHash()}
+
+	runAdvance := func(maxCycles uint64) (*AdvanceResponse, []uint64) {
+		backend := &statefulAdvanceBackend{
+			outputsHash: expectedOutputsHash,
+			hashes:      expectedHashes,
+		}
+		machine := &machineImpl{
+			backend: backend,
+			logger:  s.logger,
+			params: model.ExecutionParameters{
+				FastDeadline:       time.Second,
+				AdvanceIncCycles:   100,
+				AdvanceIncDeadline: time.Second,
+				AdvanceMaxDeadline: time.Second,
+				AdvanceMaxCycles:   maxCycles,
+			},
+		}
+
+		result, err := machine.Advance(context.Background(), []byte("stable-input"), Hash{}, true)
+		s.Require().NoError(err)
+		s.Require().NotNil(result)
+		return result, backend.runTargets
+	}
+
+	uncapped, uncappedTargets := runAdvance(0)
+	capped, cappedTargets := runAdvance(configuredCap)
+	maximumCap, maximumCapTargets := runAdvance(model.MaxExecutionCycleSpan)
+
+	s.Equal([]uint64{100, 103, 106}, uncappedTargets)
+	s.Equal([]uint64{configuredCap, configuredCap, configuredCap}, cappedTargets)
+	s.NotEqual(uncappedTargets, cappedTargets, "configured cap must alter the backend run targets")
+	s.Equal(uncapped, capped)
+	s.Equal(uncapped.PeriodicStateHashes, capped.PeriodicStateHashes)
+	s.Equal(uncapped.PaddingRepetitions, capped.PaddingRepetitions)
+	s.Equal(expectedHashes, capped.PeriodicStateHashes)
+	s.Equal(InputEntryCapacity-uint64(len(expectedHashes)), capped.PaddingRepetitions)
+	s.Equal(uncappedTargets, maximumCapTargets)
+	s.Equal(uncapped, maximumCap,
+		"the largest valid configured span must be canonically identical to no operator cap")
+}
+
+// statefulAdvanceBackend models a guest that produces an output at mcycle 3,
+// a report at mcycle 6, and its final accepted yield at mcycle 9. Small
+// increments reach intermediate targets; large increments stop early at the
+// same guest events. This makes the scheduling-invariance test exercise the
+// real run loop rather than preprogramming one yield per call.
+type statefulAdvanceBackend struct {
+	cycle       uint64
+	runTargets  []uint64
+	outputsHash Hash
+	hashes      []Hash
+}
+
+func (b *statefulAdvanceBackend) run(mcycleEnd uint64) (BreakReason, error) {
+	b.runTargets = append(b.runTargets, mcycleEnd)
+	if mcycleEnd <= b.cycle {
+		return Failed, fmt.Errorf("run target %d is not ahead of cycle %d", mcycleEnd, b.cycle)
+	}
+	var eventCycle uint64
+	var reason BreakReason
+	switch {
+	case b.cycle < 3:
+		eventCycle, reason = 3, YieldedAutomatically
+	case b.cycle < 6:
+		eventCycle, reason = 6, YieldedAutomatically
+	case b.cycle < 9:
+		eventCycle, reason = 9, YieldedManually
+	default:
+		return Failed, errors.New("scripted advance already completed")
+	}
+	if mcycleEnd < eventCycle {
+		b.cycle = mcycleEnd
+		return ReachedTargetMcycle, nil
+	}
+	b.cycle = eventCycle
+	return reason, nil
+}
+
+func (b *statefulAdvanceBackend) Load(string, string, time.Duration) error { return nil }
+func (b *statefulAdvanceBackend) Store(string, time.Duration) error        { return nil }
+func (b *statefulAdvanceBackend) Run(end uint64, _ time.Duration) (BreakReason, error) {
+	return b.run(end)
+}
+func (b *statefulAdvanceBackend) RunAndCollectRootHashes(
+	end uint64,
+	state *HashCollectorState,
+	_ time.Duration,
+) (BreakReason, error) {
+	reason, err := b.run(end)
+	if err == nil && reason == YieldedAutomatically {
+		switch b.cycle {
+		case 3:
+			state.Hashes = append(state.Hashes, b.hashes[0])
+		case 6:
+			state.Hashes = append(state.Hashes, b.hashes[1])
+		}
+	}
+	if err == nil && reason == YieldedManually {
+		// Emulator 0.21 appends the fixed-point sample whenever a collecting
+		// run stops at a manual yield, regardless of phase; the node drops
+		// exactly this final entry.
+		state.Hashes = append(state.Hashes, Hash{0xF1, 0xED})
+	}
+	return reason, err
+}
+func (b *statefulAdvanceBackend) IsAtManualYield(time.Duration) (bool, error) {
+	return b.cycle == 9, nil
+}
+func (b *statefulAdvanceBackend) ReadMCycle(time.Duration) (uint64, error) { return b.cycle, nil }
+func (b *statefulAdvanceBackend) SendCmioResponse(reason uint16, data []byte, _ *Hash, _ time.Duration) error {
+	if reason != uint16(AdvanceStateRequest) || string(data) != "stable-input" {
+		return fmt.Errorf("unexpected CMIO response reason=%d data_len=%d", reason, len(data))
+	}
+	return nil
+}
+func (b *statefulAdvanceBackend) ReceiveCmioRequest(time.Duration) (uint8, uint16, []byte, error) {
+	switch b.cycle {
+	case 3:
+		return 0, uint16(AutomaticYieldReasonOutput), []byte("stable-output"), nil
+	case 6:
+		return 0, uint16(AutomaticYieldReasonReport), []byte("stable-report"), nil
+	case 9:
+		return 0, uint16(ManualYieldReasonAccepted), b.outputsHash[:], nil
+	default:
+		return 0, 0, nil, fmt.Errorf("no CMIO request at cycle %d", b.cycle)
+	}
+}
+func (b *statefulAdvanceBackend) WriteMemory(uint64, []byte, time.Duration) error { return nil }
+func (b *statefulAdvanceBackend) GetRootHash(time.Duration) (Hash, error)         { return Hash{}, nil }
+func (b *statefulAdvanceBackend) GetProof(uint64, int32, time.Duration) ([]Hash, error) {
+	return nil, nil
+}
+func (b *statefulAdvanceBackend) Delete() {}
+func (b *statefulAdvanceBackend) ForkServer(time.Duration) (Backend, string, uint32, error) {
+	return nil, "", 0, errors.New("not implemented")
+}
+func (b *statefulAdvanceBackend) ShutdownServer(time.Duration) error { return nil }
+func (b *statefulAdvanceBackend) NewMachineRuntimeConfig() (string, error) {
+	return "{}", nil
+}
+func (b *statefulAdvanceBackend) CmioRxBufferSize() uint64 { return 1024 }
+
+func (s *ImplementationSuite) TestInterruptedAdvanceReturnsNilAndCanBeRetried() {
+	expectedOutputsHash := randomFakeHash()
+	backend := NewMockBackend()
+	backend.On("CmioRxBufferSize").Return(uint64(1024))
+	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
+	backend.On(
+		"SendCmioResponse",
+		uint16(AdvanceStateRequest),
+		[]byte("retry-input"),
+		mock.Anything,
+		mock.AnythingOfType("time.Duration"),
+	).Return(nil)
+	backend.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).
+		Return(YieldedManually, nil)
+	backend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
+		uint8(0), uint16(ManualYieldReasonAccepted), expectedOutputsHash[:], nil,
+	)
 	machine := &machineImpl{
-		backend: mockBackend,
+		backend: backend,
 		logger:  s.logger,
 		params: model.ExecutionParameters{
-			FastDeadline:       time.Second * 5,
-			InspectIncCycles:   100,
-			InspectMaxCycles:   1000,
-			InspectIncDeadline: time.Second * 1,
-			InspectMaxDeadline: time.Second * 10,
+			FastDeadline:       time.Second,
+			AdvanceIncCycles:   100,
+			AdvanceIncDeadline: time.Second,
+			AdvanceMaxDeadline: time.Second,
 		},
 	}
 
-	query := []byte("test query")
-	response, err := machine.Inspect(ctx, query)
-	require.NoError(err)
-	require.Equal(CompletionStatusAccepted, response.Status)
-	require.Empty(response.Reports)
-	mockBackend.AssertExpectations(s.T())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result, err := machine.Advance(ctx, []byte("retry-input"), Hash{}, false)
+	s.Require().ErrorIs(err, ErrCanceled)
+	s.Require().Nil(result)
 
-	// Test inspect with rejection
-	mockBackend2 := NewMockBackend()
-	mockBackend2.SetupRejected(InspectStateRequest)
-	machine2 := &machineImpl{
-		backend: mockBackend2,
-		logger:  s.logger,
-		params: model.ExecutionParameters{
-			FastDeadline:       time.Second * 5,
-			InspectIncCycles:   100,
-			InspectMaxCycles:   1000,
-			InspectIncDeadline: time.Second * 1,
-			InspectMaxDeadline: time.Second * 10,
-		},
-	}
-	response, err = machine2.Inspect(ctx, query)
-	require.NoError(err)
-	require.Equal(CompletionStatusRejected, response.Status)
-	require.Empty(response.Reports)
-	mockBackend2.AssertExpectations(s.T())
-
-	// Test inspect with exception
-	mockBackend3 := NewMockBackend()
-	mockBackend3.SetupException(InspectStateRequest)
-	machine3 := &machineImpl{
-		backend: mockBackend3,
-		logger:  s.logger,
-		params: model.ExecutionParameters{
-			FastDeadline:       time.Second * 5,
-			InspectIncCycles:   100,
-			InspectMaxCycles:   1000,
-			InspectIncDeadline: time.Second * 1,
-			InspectMaxDeadline: time.Second * 10,
-		},
-	}
-	response, err = machine3.Inspect(ctx, query)
-	require.NoError(err)
-	require.Equal(CompletionStatusException, response.Status)
-	require.Equal([]byte("exception data"), response.ExceptionData)
-	require.Empty(response.Reports)
-	mockBackend3.AssertExpectations(s.T())
-
-	// Test inspect with payload too large
-	mockBackend4 := NewMockBackend()
-	mockBackend4.On("CmioRxBufferSize").Return(uint64(5))
-	machine4 := &machineImpl{
-		backend: mockBackend4,
-		logger:  s.logger,
-		params: model.ExecutionParameters{
-			FastDeadline:       time.Second * 5,
-			InspectIncCycles:   100,
-			InspectMaxCycles:   1000,
-			InspectIncDeadline: time.Second * 1,
-			InspectMaxDeadline: time.Second * 10,
-		},
-	}
-	largeQuery := make([]byte, 10)
-	response, err = machine4.Inspect(ctx, largeQuery)
-	require.NotNil(response)
-	require.Equal(CompletionStatusUnknown, response.Status)
-	require.ErrorIs(err, ErrPayloadLengthLimitExceeded)
-	mockBackend4.AssertExpectations(s.T())
+	result, err = machine.Advance(context.Background(), []byte("retry-input"), Hash{}, false)
+	s.Require().NoError(err)
+	s.Require().NotNil(result)
+	s.Require().Equal(CompletionStatusAccepted, result.Status)
+	s.Require().Equal(expectedOutputsHash, result.OutputsHash)
+	backend.AssertExpectations(s.T())
 }
 
 func (s *ImplementationSuite) TestRunUsesHardExecutionSpanWhenMaximumIsZero() {
 	const startCycle uint64 = 7
-	const executionCycleSpan uint64 = BarchSpanToInput
+	// The fixed window mirrors the emulator's imcyclemax: 2^48 - 1 ahead.
+	const executionCycleSpan uint64 = (1 << Log2MaxMCyclesPerAdvanceState) - 1
 
 	tests := []struct {
 		name    string
@@ -497,7 +776,12 @@ func (s *ImplementationSuite) TestRunUsesHardExecutionSpanWhenMaximumIsZero() {
 			mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 				Return(startCycle+executionCycleSpan, nil).Once()
 
-			machine := &machineImpl{backend: mockBackend, logger: s.logger, params: tt.params}
+			machine := &machineImpl{
+				backend: mockBackend,
+				logger:  s.logger,
+				params:  tt.params,
+			}
+
 			_, err := machine.run(
 				context.Background(), tt.reqType, false,
 				executionBounds{
@@ -654,6 +938,7 @@ func (s *ImplementationSuite) TestProcessRejectsZeroIncrementBeforeCMIO() {
 		s.Run(test.name, func() {
 			backend := NewMockBackend()
 			backend.On("CmioRxBufferSize").Return(uint64(1024)).Maybe()
+			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(1), nil).Maybe()
 			params := model.ExecutionParameters{
 				FastDeadline:       time.Second,
 				AdvanceIncDeadline: time.Second,
@@ -667,7 +952,6 @@ func (s *ImplementationSuite) TestProcessRejectsZeroIncrementBeforeCMIO() {
 			s.Require().Error(err)
 			s.Contains(err.Error(), test.reqType.String())
 			s.Contains(err.Error(), "increment")
-			backend.AssertNotCalled(s.T(), "ReadMCycle", mock.Anything)
 			backend.AssertNotCalled(s.T(), "SendCmioResponse",
 				mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 			backend.AssertNotCalled(s.T(), "Run", mock.Anything, mock.Anything)
@@ -753,63 +1037,71 @@ func (s *ImplementationSuite) TestConfiguredCycleExhaustionFails() {
 	backend.AssertExpectations(s.T())
 }
 
-func (s *ImplementationSuite) TestAdvanceCycleExhaustionSources() {
-	for _, test := range []struct {
-		name           string
-		configuredSpan uint64
-		breakReason    BreakReason
-		wantSource     string
-	}{
-		{
-			name: "configured endpoint", configuredSpan: 9,
-			breakReason: ReachedTargetMcycle, wantSource: "configured",
-		},
-		{
-			name: "fixed window", breakReason: McycleOverflow, wantSource: "fixed",
-		},
-	} {
-		s.Run(test.name, func() {
-			const start = uint64(30)
-			span := test.configuredSpan
-			if span == 0 {
-				span = model.MaxExecutionCycleSpan
-			}
-			backend := NewMockBackend()
-			backend.On("CmioRxBufferSize").Return(uint64(1024))
-			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
-			backend.On(
-				"SendCmioResponse",
-				uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
-			).Return(nil)
-			backend.On("Run", start+span, mock.AnythingOfType("time.Duration")).Return(test.breakReason, nil)
-			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start+span, nil).Once()
-			machine := &machineImpl{backend: backend, logger: s.logger, params: model.ExecutionParameters{
-				AdvanceIncCycles:   ^uint64(0),
-				AdvanceMaxCycles:   test.configuredSpan,
-				AdvanceIncDeadline: time.Second,
-				AdvanceMaxDeadline: time.Second,
-				FastDeadline:       time.Second,
-			}}
+func (s *ImplementationSuite) TestAdvanceConfiguredCycleExhaustionReturnsNoResult() {
+	const start, span = uint64(30), uint64(9)
+	backend := NewMockBackend()
+	backend.On("CmioRxBufferSize").Return(uint64(1024))
+	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.On(
+		"SendCmioResponse",
+		uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
+	).Return(nil)
+	backend.On("Run", start+span, mock.AnythingOfType("time.Duration")).Return(ReachedTargetMcycle, nil)
+	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start+span, nil).Once()
+	machine := &machineImpl{backend: backend, logger: s.logger, params: model.ExecutionParameters{
+		AdvanceIncCycles: span + 100, AdvanceMaxCycles: span,
+		AdvanceIncDeadline: time.Second, AdvanceMaxDeadline: time.Second,
+		FastDeadline: time.Second,
+	}}
 
-			response, err := machine.Advance(context.Background(), []byte("input"), Hash{}, false)
-			s.Require().Nil(response)
-			s.Require().ErrorIs(err, ErrReachedLimitMcycle)
-			if test.breakReason == McycleOverflow {
-				s.Require().ErrorIs(err, ErrMcycleOverflow)
-			}
-			s.Contains(err.Error(), test.wantSource)
-			s.Contains(err.Error(), "cycle limit")
-			s.Contains(err.Error(), fmt.Sprintf("requested_span=%d", span))
-			backend.AssertExpectations(s.T())
-		})
-	}
+	response, err := machine.Advance(context.Background(), []byte("input"), Hash{}, false)
+	s.Require().Nil(response)
+	s.Require().ErrorIs(err, ErrReachedLimitMcycle)
+	s.Contains(err.Error(), "advance execution reached configured cycle limit")
+	s.Contains(err.Error(), "start=30 requested_span=9")
+	backend.AssertExpectations(s.T())
 }
 
-func (s *ImplementationSuite) TestConfiguredLimitTiePreservesMachineOverflowPrecedence() {
+func (s *ImplementationSuite) TestAdvanceFixedSpanExhaustionPreservesMachineOverflow() {
+	const start = uint64(30)
+	backend := NewMockBackend()
+	backend.On("CmioRxBufferSize").Return(uint64(1024))
+	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.On(
+		"SendCmioResponse",
+		uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
+	).Return(nil)
+	// With no configured cap, the emulator enforces the span itself and reports
+	// the mcycle-overflow fixed point as a break reason.
+	backend.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).
+		Return(McycleOverflow, nil)
+	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+		Return(start+model.MaxExecutionCycleSpan, nil).Once()
+	machine := &machineImpl{backend: backend, logger: s.logger, params: model.ExecutionParameters{
+		AdvanceIncCycles:   ^uint64(0),
+		AdvanceIncDeadline: time.Second, AdvanceMaxDeadline: time.Second,
+		FastDeadline: time.Second,
+	}}
+
+	response, err := machine.Advance(context.Background(), []byte("input"), Hash{}, false)
+	s.Require().Nil(response)
+	s.Require().ErrorIs(err, ErrReachedLimitMcycle)
+	s.Require().ErrorIs(err, ErrMcycleOverflow)
+	s.Contains(err.Error(), "advance execution reached fixed (machine imcyclemax) cycle limit")
+	backend.AssertExpectations(s.T())
+}
+
+func (s *ImplementationSuite) TestAdvanceConfiguredLimitTiePreservesMachineOverflowPrecedence() {
 	const start = uint64(30)
 	configuredSpan := model.MaxExecutionCycleSpan
 	limit := start + configuredSpan
 	backend := NewMockBackend()
+	backend.On("CmioRxBufferSize").Return(uint64(1024))
+	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.On(
+		"SendCmioResponse",
+		uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
+	).Return(nil).Once()
 	backend.On("Run", limit, mock.AnythingOfType("time.Duration")).Return(McycleOverflow, nil).Once()
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(limit, nil).Once()
 	machine := &machineImpl{backend: backend, logger: s.logger, params: model.ExecutionParameters{
@@ -820,16 +1112,17 @@ func (s *ImplementationSuite) TestConfiguredLimitTiePreservesMachineOverflowPrec
 		FastDeadline:       time.Second,
 	}}
 
-	_, err := machine.run(context.Background(), AdvanceStateRequest, false, executionBounds{
-		start: start, limit: limit, span: configuredSpan, configured: true,
-	})
+	response, err := machine.Advance(context.Background(), []byte("input"), Hash{}, false)
+	s.Require().Nil(response)
 	s.Require().ErrorIs(err, ErrReachedLimitMcycle)
 	s.Require().ErrorIs(err, ErrMcycleOverflow)
 	s.Contains(err.Error(), "advance execution stopped at machine imcyclemax coincident with configured target")
+	s.Contains(err.Error(), fmt.Sprintf("requested_span=%d", configuredSpan))
+	s.Contains(err.Error(), fmt.Sprintf("executed_cycles=%d", configuredSpan))
 	backend.AssertExpectations(s.T())
 }
 
-func (s *ImplementationSuite) TestExecutionStartingAtMachineMaximumPreservesOverflowOrigin() {
+func (s *ImplementationSuite) TestAdvanceStartingAtMachineMaximumPreservesOverflowOrigin() {
 	for _, test := range []struct {
 		name          string
 		configuredMax uint64
@@ -840,7 +1133,8 @@ func (s *ImplementationSuite) TestExecutionStartingAtMachineMaximumPreservesOver
 		s.Run(test.name, func() {
 			backend := NewMockBackend()
 			backend.On("CmioRxBufferSize").Return(uint64(1024))
-			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(^uint64(0), nil).Once()
+			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+				Return(^uint64(0), nil).Once()
 			backend.On(
 				"SendCmioResponse",
 				uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -861,6 +1155,11 @@ func (s *ImplementationSuite) TestExecutionStartingAtMachineMaximumPreservesOver
 			s.Require().Nil(response)
 			s.Require().ErrorIs(err, ErrReachedLimitMcycle)
 			s.Require().ErrorIs(err, ErrMcycleOverflow)
+			expectedRequestedSpan := test.configuredMax
+			if expectedRequestedSpan == 0 {
+				expectedRequestedSpan = model.MaxExecutionCycleSpan
+			}
+			s.Contains(err.Error(), fmt.Sprintf("requested_span=%d", expectedRequestedSpan))
 			s.Contains(err.Error(), "target_span=0")
 			s.Contains(err.Error(), "executed_cycles=0")
 			backend.AssertExpectations(s.T())
@@ -966,13 +1265,16 @@ func (s *ImplementationSuite) TestExecutionCycleBoundsSaturatesAtMachineMaximum(
 		configured uint64
 	}{
 		{
-			name: "configured cap beyond representable range", start: ^uint64(0) - 10, configured: 11,
+			name:  "configured cap beyond representable range",
+			start: ^uint64(0) - 10, configured: 11,
 		},
 		{
-			name: "zero cap", start: ^uint64(0) - model.MaxExecutionCycleSpan + 1,
+			name:  "zero cap",
+			start: ^uint64(0) - model.MaxExecutionCycleSpan + 1, configured: 0,
 		},
 		{
-			name: "maximum cap", start: ^uint64(0) - model.MaxExecutionCycleSpan + 1,
+			name:       "maximum cap",
+			start:      ^uint64(0) - model.MaxExecutionCycleSpan + 1,
 			configured: model.MaxExecutionCycleSpan,
 		},
 	} {
@@ -991,6 +1293,24 @@ func (s *ImplementationSuite) TestExecutionCycleBoundsSaturatesAtMachineMaximum(
 			backend.AssertExpectations(s.T())
 		})
 	}
+}
+
+func (s *ImplementationSuite) TestExecutionCycleBoundsUsesFullWindowWhenUncapped() {
+
+	s.Run("window endpoint is start plus 2^48 minus 1", func() {
+		const start = uint64(1000)
+		backend := NewMockBackend()
+		backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil)
+		machine := &machineImpl{backend: backend, logger: s.logger, params: model.ExecutionParameters{
+			AdvanceIncCycles: 1,
+		}}
+
+		bounds, err := machine.executionCycleBounds(context.Background(), AdvanceStateRequest)
+		s.Require().NoError(err)
+		s.Equal(start, bounds.start)
+		s.Equal(start+model.MaxExecutionCycleSpan, bounds.limit)
+		backend.AssertExpectations(s.T())
+	})
 }
 
 func (s *ImplementationSuite) TestExecutionResponseLimitErrorsExposeOnlyCounts() {
@@ -1013,6 +1333,7 @@ func (s *ImplementationSuite) TestExecutionResponseLimitErrorsExposeOnlyCounts()
 }
 
 func (s *ImplementationSuite) TestInspectUsesConfiguredCycleIncrement() {
+	require := s.Require()
 	const startCycle uint64 = 7
 	const inspectIncCycles uint64 = 137
 
@@ -1023,10 +1344,8 @@ func (s *ImplementationSuite) TestInspectUsesConfiguredCycleIncrement() {
 		"SendCmioResponse",
 		uint16(InspectStateRequest), mock.Anything, mock.Anything, mock.AnythingOfType("time.Duration"),
 	).Return(nil)
-	mockBackend.On("Run", startCycle+inspectIncCycles, mock.AnythingOfType("time.Duration")).
-		Return(YieldedManually, nil)
-	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
-		Return(startCycle+inspectIncCycles, nil).Once()
+	mockBackend.On("Run", startCycle+inspectIncCycles, mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
+	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(startCycle+inspectIncCycles, nil).Once()
 	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
 		uint8(0), uint16(ManualYieldReasonAccepted), []byte(nil), nil)
 
@@ -1042,9 +1361,484 @@ func (s *ImplementationSuite) TestInspectUsesConfiguredCycleIncrement() {
 	}
 
 	response, err := machine.Inspect(context.Background(), []byte("query"))
-	s.Require().NoError(err)
-	s.Require().Equal(CompletionStatusAccepted, response.Status)
+	require.NoError(err)
+	require.Equal(CompletionStatusAccepted, response.Status)
 	mockBackend.AssertExpectations(s.T())
+}
+
+// Test Inspect method
+func (s *ImplementationSuite) TestInspect() {
+	require := s.Require()
+	ctx := context.Background()
+
+	// Test successful inspect (accepted)
+	mockBackend := NewMockBackend()
+	mockBackend.SetupAccepted(InspectStateRequest)
+
+	machine := &machineImpl{
+		backend: mockBackend,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline:       time.Second * 5,
+			InspectIncCycles:   100,
+			InspectIncDeadline: time.Second * 1,
+			InspectMaxDeadline: time.Second * 10,
+		},
+	}
+
+	query := []byte("test query")
+	response, err := machine.Inspect(ctx, query)
+	require.NoError(err)
+	require.Equal(CompletionStatusAccepted, response.Status)
+	require.Empty(response.Reports)
+	mockBackend.AssertExpectations(s.T())
+
+	// Test inspect with rejection
+	mockBackend2 := NewMockBackend()
+	mockBackend2.SetupRejected(InspectStateRequest)
+	machine2 := &machineImpl{
+		backend: mockBackend2,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline:       time.Second * 5,
+			InspectIncCycles:   100,
+			InspectIncDeadline: time.Second * 1,
+			InspectMaxDeadline: time.Second * 10,
+		},
+	}
+	response, err = machine2.Inspect(ctx, query)
+	require.NoError(err)
+	require.Equal(CompletionStatusRejected, response.Status)
+	require.Empty(response.Reports)
+	mockBackend2.AssertExpectations(s.T())
+
+	// Test inspect with exception
+	mockBackend3 := NewMockBackend()
+	mockBackend3.SetupException(InspectStateRequest)
+	machine3 := &machineImpl{
+		backend: mockBackend3,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline:       time.Second * 5,
+			InspectIncCycles:   100,
+			InspectIncDeadline: time.Second * 1,
+			InspectMaxDeadline: time.Second * 10,
+		},
+	}
+	response, err = machine3.Inspect(ctx, query)
+	require.NoError(err)
+	require.Equal(CompletionStatusException, response.Status)
+	require.Equal([]byte("exception data"), response.ExceptionData)
+	require.Empty(response.Reports)
+	mockBackend3.AssertExpectations(s.T())
+
+	// A halt is a completed guest outcome. Reports emitted before the halt are
+	// part of that completed inspect response.
+	mockBackendHalted := NewMockBackend()
+	mockBackendHalted.On("CmioRxBufferSize").Return(uint64(1024))
+	mockBackendHalted.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil).Once()
+	mockBackendHalted.On("SendCmioResponse", uint16(InspectStateRequest), query, nil,
+		mock.AnythingOfType("time.Duration")).Return(nil).Once()
+	mockBackendHalted.On("Run", uint64(100), mock.AnythingOfType("time.Duration")).
+		Return(YieldedAutomatically, nil).Once()
+	mockBackendHalted.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(50), nil).Once()
+	mockBackendHalted.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).
+		Return(uint8(0), uint16(AutomaticYieldReasonReport), []byte("before halt"), nil).Once()
+	mockBackendHalted.On("Run", uint64(150), mock.AnythingOfType("time.Duration")).
+		Return(Halted, nil).Once()
+	mockBackendHalted.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(75), nil).Once()
+	machineHalted := &machineImpl{
+		backend: mockBackendHalted,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline:       time.Second * 5,
+			InspectIncCycles:   100,
+			InspectIncDeadline: time.Second,
+			InspectMaxDeadline: time.Second * 10,
+		},
+	}
+	response, err = machineHalted.Inspect(ctx, query)
+	require.NoError(err)
+	require.Equal(CompletionStatusHalted, response.Status)
+	require.Equal([]Report{[]byte("before halt")}, response.Reports)
+	mockBackendHalted.AssertExpectations(s.T())
+
+	// An internal stop is not a completed guest outcome. It returns Unknown
+	// with the partial report prefix and a typed execution error.
+	mockBackendFailed := NewMockBackend()
+	mockBackendFailed.On("CmioRxBufferSize").Return(uint64(1024))
+	mockBackendFailed.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil).Once()
+	mockBackendFailed.On("SendCmioResponse", uint16(InspectStateRequest), query, nil,
+		mock.AnythingOfType("time.Duration")).Return(nil).Once()
+	mockBackendFailed.On("Run", uint64(100), mock.AnythingOfType("time.Duration")).
+		Return(YieldedAutomatically, nil).Once()
+	mockBackendFailed.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(50), nil).Once()
+	mockBackendFailed.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).
+		Return(uint8(0), uint16(AutomaticYieldReasonReport), []byte("partial"), nil).Once()
+	mockBackendFailed.On("Run", uint64(150), mock.AnythingOfType("time.Duration")).
+		Return(Failed, nil).Once()
+	mockBackendFailed.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(75), nil).Once()
+	machineFailed := &machineImpl{
+		backend: mockBackendFailed,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline:       time.Second * 5,
+			InspectIncCycles:   100,
+			InspectIncDeadline: time.Second,
+			InspectMaxDeadline: time.Second * 10,
+		},
+	}
+	response, err = machineFailed.Inspect(ctx, query)
+	require.ErrorIs(err, ErrMachineInternal)
+	require.Equal(CompletionStatusUnknown, response.Status)
+	require.Equal([]Report{[]byte("partial")}, response.Reports)
+	mockBackendFailed.AssertExpectations(s.T())
+
+	// Test inspect with payload too large
+	mockBackend4 := NewMockBackend()
+	mockBackend4.On("CmioRxBufferSize").Return(uint64(5))
+	machine4 := &machineImpl{
+		backend: mockBackend4,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline:       time.Second * 5,
+			InspectIncCycles:   100,
+			InspectIncDeadline: time.Second * 1,
+			InspectMaxDeadline: time.Second * 10,
+		},
+	}
+	largeQuery := make([]byte, 10)
+	response, err = machine4.Inspect(ctx, largeQuery)
+	require.NotNil(response)
+	require.Equal(CompletionStatusUnknown, response.Status)
+	require.ErrorIs(err, ErrPayloadLengthLimitExceeded)
+	mockBackend4.AssertExpectations(s.T())
+
+	// Inspect uses the same saturating target as advance. Reaching MaxUint64 is
+	// reported as a machine overflow and never as a completed input result.
+	mockBackendOverflow := NewMockBackend()
+	mockBackendOverflow.On("CmioRxBufferSize").Return(uint64(1024))
+	mockBackendOverflow.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+		Return(^uint64(0)-uint64(999), nil).Once()
+	mockBackendOverflow.On("SendCmioResponse", uint16(InspectStateRequest), query, nil,
+		mock.AnythingOfType("time.Duration")).Return(nil).Once()
+	mockBackendOverflow.On("Run", ^uint64(0), mock.AnythingOfType("time.Duration")).
+		Return(McycleOverflow, nil).Once()
+	mockBackendOverflow.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+		Return(^uint64(0), nil).Once()
+	machineOverflow := &machineImpl{
+		backend: mockBackendOverflow,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline:       time.Second,
+			InspectIncCycles:   ^uint64(0),
+			InspectIncDeadline: time.Second,
+			InspectMaxDeadline: time.Second,
+			InspectMaxCycles:   1000,
+		},
+	}
+	response, err = machineOverflow.Inspect(ctx, query)
+	require.NotNil(response)
+	require.Equal(CompletionStatusUnknown, response.Status)
+	require.Empty(response.Reports)
+	require.ErrorIs(err, ErrReachedLimitMcycle)
+	require.ErrorIs(err, ErrMcycleOverflow)
+	require.Contains(err.Error(), "requested_span=1000")
+	require.Contains(err.Error(), "target_span=999")
+	require.Contains(err.Error(), "executed_cycles=999")
+	mockBackendOverflow.AssertExpectations(s.T())
+}
+
+func (s *ImplementationSuite) TestAdvanceCanonicalizesTerminalBoundaryHash() {
+	for _, test := range []struct {
+		name                 string
+		yieldReason          manualYieldReason
+		status               CompletionStatus
+		terminalAtBoundary   bool
+		sameRunPriorBoundary bool
+		immediateYield       bool
+	}{
+		{
+			name:               "accepted at first boundary",
+			yieldReason:        ManualYieldReasonAccepted,
+			status:             CompletionStatusAccepted,
+			terminalAtBoundary: true,
+		},
+		{
+			name:               "rejected at first boundary",
+			yieldReason:        ManualYieldReasonRejected,
+			status:             CompletionStatusRejected,
+			terminalAtBoundary: true,
+		},
+		{
+			name:               "exception at first boundary",
+			yieldReason:        ManualYieldReasonException,
+			status:             CompletionStatusException,
+			terminalAtBoundary: true,
+		},
+		{
+			name:               "off-boundary terminal keeps prior boundary",
+			yieldReason:        ManualYieldReasonAccepted,
+			status:             CompletionStatusAccepted,
+			terminalAtBoundary: false,
+		},
+		{
+			name:                 "same run prior boundary survives off-boundary terminal",
+			yieldReason:          ManualYieldReasonAccepted,
+			status:               CompletionStatusAccepted,
+			sameRunPriorBoundary: true,
+		},
+		{
+			name:           "immediate off-boundary yield drops its fixed-point sample",
+			yieldReason:    ManualYieldReasonAccepted,
+			status:         CompletionStatusAccepted,
+			immediateYield: true,
+		},
+	} {
+		s.Run(test.name, func() {
+			collectedHash := randomFakeHash()
+			terminalSample := randomFakeHash()
+			outputsHash := randomFakeHash()
+
+			backend := NewMockBackend()
+			backend.On("CmioRxBufferSize").Return(uint64(1024))
+			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+				Return(uint64(0), nil).Once()
+			backend.On(
+				"SendCmioResponse",
+				uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
+			).
+				Return(nil).Once()
+			switch {
+			case test.terminalAtBoundary:
+				backend.On(
+					"RunAndCollectRootHashes",
+					MCycleComputationHashPeriod,
+					mock.AnythingOfType("*machine.HashCollectorState"),
+					mock.AnythingOfType("time.Duration"),
+				).Run(func(args mock.Arguments) {
+					state := args.Get(1).(*HashCollectorState)
+					state.Hashes = append(state.Hashes, collectedHash)
+					state.MCyclePhase = 0
+				}).Return(YieldedManually, nil).Once()
+				backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+					Return(MCycleComputationHashPeriod, nil).Once()
+			case test.sameRunPriorBoundary:
+				// RunAndCollectRootHashes may cross and collect a prior
+				// boundary, then stop at a manual yield one cycle later in the
+				// same call. Emulator 0.21 also appends the off-boundary
+				// fixed-point sample; only that final entry may be dropped.
+				backend.On(
+					"RunAndCollectRootHashes",
+					2*MCycleComputationHashPeriod,
+					mock.AnythingOfType("*machine.HashCollectorState"),
+					mock.AnythingOfType("time.Duration"),
+				).Run(func(args mock.Arguments) {
+					state := args.Get(1).(*HashCollectorState)
+					state.Hashes = append(state.Hashes, collectedHash, terminalSample)
+					state.MCyclePhase = 1
+				}).Return(YieldedManually, nil).Once()
+				backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+					Return(MCycleComputationHashPeriod+1, nil).Once()
+			case test.immediateYield:
+				// Even a yield right after delivery is a fixed point: 0.21
+				// appends its sample at a nonzero phase, and the node must
+				// still drop it.
+				backend.On(
+					"RunAndCollectRootHashes",
+					MCycleComputationHashPeriod,
+					mock.AnythingOfType("*machine.HashCollectorState"),
+					mock.AnythingOfType("time.Duration"),
+				).Run(func(args mock.Arguments) {
+					state := args.Get(1).(*HashCollectorState)
+					state.Hashes = append(state.Hashes, terminalSample)
+					state.MCyclePhase = 1
+				}).Return(YieldedManually, nil).Once()
+				backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+					Return(uint64(1), nil).Once()
+			default:
+				// The first call reaches and records a real prior boundary.
+				backend.On(
+					"RunAndCollectRootHashes",
+					MCycleComputationHashPeriod,
+					mock.AnythingOfType("*machine.HashCollectorState"),
+					mock.AnythingOfType("time.Duration"),
+				).Run(func(args mock.Arguments) {
+					state := args.Get(1).(*HashCollectorState)
+					state.Hashes = append(state.Hashes, collectedHash)
+					state.MCyclePhase = 0
+				}).Return(ReachedTargetMcycle, nil).Once()
+				backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+					Return(MCycleComputationHashPeriod, nil).Once()
+				// The second call manually yields one cycle later; 0.21 appends
+				// the off-boundary fixed-point sample, which is dropped while
+				// the prior boundary remains in the collection.
+				backend.On(
+					"RunAndCollectRootHashes",
+					2*MCycleComputationHashPeriod,
+					mock.AnythingOfType("*machine.HashCollectorState"),
+					mock.AnythingOfType("time.Duration"),
+				).Run(func(args mock.Arguments) {
+					state := args.Get(1).(*HashCollectorState)
+					state.Hashes = append(state.Hashes, terminalSample)
+					state.MCyclePhase = 1
+				}).Return(YieldedManually, nil).Once()
+				backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+					Return(MCycleComputationHashPeriod+1, nil).Once()
+			}
+			backend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).
+				Return(uint8(0), uint16(test.yieldReason), outputsHash[:], nil).Once()
+
+			advanceIncrement := MCycleComputationHashPeriod
+			if test.sameRunPriorBoundary {
+				advanceIncrement = 2 * MCycleComputationHashPeriod
+			}
+			machine := &machineImpl{
+				backend: backend,
+				logger:  s.logger,
+				params: model.ExecutionParameters{
+					FastDeadline:       time.Second,
+					AdvanceIncCycles:   advanceIncrement,
+					AdvanceIncDeadline: time.Second,
+					AdvanceMaxDeadline: time.Second,
+				},
+			}
+
+			response, err := machine.Advance(context.Background(), []byte("input"), Hash{}, true)
+			s.Require().NoError(err)
+			s.Require().NotNil(response)
+			s.Equal(test.status, response.Status)
+			if test.terminalAtBoundary || test.immediateYield {
+				s.Empty(response.PeriodicStateHashes)
+				s.Equal(InputEntryCapacity, response.PaddingRepetitions)
+			} else {
+				s.Equal([]Hash{collectedHash}, response.PeriodicStateHashes)
+				s.Equal(InputEntryCapacity-1, response.PaddingRepetitions)
+			}
+			backend.AssertExpectations(s.T())
+		})
+	}
+}
+
+func (s *ImplementationSuite) TestRunDiscardsOverflowCollection() {
+	const fixedEndpoint uint64 = model.MaxExecutionCycleSpan
+	const startCycle uint64 = fixedEndpoint - mcycleComputationHashChunkSize
+	terminalSample := randomFakeHash()
+	backend := NewMockBackend()
+	backend.On(
+		"RunAndCollectRootHashes",
+		fixedEndpoint,
+		mock.AnythingOfType("*machine.HashCollectorState"),
+		mock.AnythingOfType("time.Duration"),
+	).Run(func(args mock.Arguments) {
+		state := args.Get(1).(*HashCollectorState)
+		state.Hashes = append(state.Hashes, terminalSample)
+		state.MCyclePhase = 7
+	}).Return(McycleOverflow, nil).Once()
+	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(fixedEndpoint, nil).Once()
+	machine := &machineImpl{
+		backend: backend,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			AdvanceIncCycles:   fixedEndpoint,
+			AdvanceIncDeadline: time.Second,
+			AdvanceMaxDeadline: time.Second,
+		},
+	}
+
+	result, err := machine.run(
+		context.Background(), AdvanceStateRequest, true, testExecutionBounds(startCycle, fixedEndpoint),
+	)
+
+	s.Require().ErrorIs(err, ErrMcycleOverflow)
+	s.Empty(result.outputs)
+	s.Empty(result.reports)
+	s.Empty(result.periodicStateHashes)
+	s.Zero(result.paddingRepetitions)
+	backend.AssertExpectations(s.T())
+}
+
+func (s *ImplementationSuite) TestRunCapsCollectorChunksAndPreservesCollectionState() {
+	firstPeriodicHash := randomFakeHash()
+	terminalHash := randomFakeHash()
+	backend := NewMockBackend()
+	backend.On(
+		"RunAndCollectRootHashes",
+		mcycleComputationHashChunkSize,
+		mock.AnythingOfType("*machine.HashCollectorState"),
+		mock.AnythingOfType("time.Duration"),
+	).Run(func(args mock.Arguments) {
+		state := args.Get(1).(*HashCollectorState)
+		s.Zero(state.MCyclePhase)
+		s.Empty(state.Hashes)
+		state.Hashes = append(state.Hashes, firstPeriodicHash)
+		state.MCyclePhase = 7
+	}).Return(ReachedTargetMcycle, nil).Once()
+	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+		Return(mcycleComputationHashChunkSize, nil).Once()
+	backend.On(
+		"RunAndCollectRootHashes",
+		2*mcycleComputationHashChunkSize,
+		mock.AnythingOfType("*machine.HashCollectorState"),
+		mock.AnythingOfType("time.Duration"),
+	).Run(func(args mock.Arguments) {
+		state := args.Get(1).(*HashCollectorState)
+		s.Equal(uint64(7), state.MCyclePhase)
+		s.Equal([]Hash{firstPeriodicHash}, state.Hashes)
+		state.Hashes = append(state.Hashes, terminalHash)
+		state.MCyclePhase = 11
+	}).Return(YieldedManually, nil).Once()
+	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+		Return(2*mcycleComputationHashChunkSize, nil).Once()
+	machine := &machineImpl{
+		backend: backend,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			AdvanceIncCycles:   3 * mcycleComputationHashChunkSize,
+			AdvanceIncDeadline: time.Second,
+			AdvanceMaxDeadline: time.Second,
+		},
+	}
+
+	result, err := machine.run(
+		context.Background(), AdvanceStateRequest, true,
+		testExecutionBounds(0, 3*mcycleComputationHashChunkSize),
+	)
+
+	s.Require().NoError(err)
+	s.Equal([]Hash{firstPeriodicHash}, result.periodicStateHashes)
+	s.Equal(InputEntryCapacity-1, result.paddingRepetitions)
+	backend.AssertExpectations(s.T())
+}
+
+func (s *ImplementationSuite) TestRunRejectsFixedPointWithoutAppendedHash() {
+	backend := NewMockBackend()
+	backend.On(
+		"RunAndCollectRootHashes",
+		MCycleComputationHashPeriod,
+		mock.AnythingOfType("*machine.HashCollectorState"),
+		mock.AnythingOfType("time.Duration"),
+	).Return(YieldedManually, nil).Once()
+	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+		Return(MCycleComputationHashPeriod, nil).Once()
+	machine := &machineImpl{
+		backend: backend,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			AdvanceIncCycles:   MCycleComputationHashPeriod,
+			AdvanceIncDeadline: time.Second,
+			AdvanceMaxDeadline: time.Second,
+		},
+	}
+
+	_, err := machine.run(
+		context.Background(), AdvanceStateRequest, true,
+		testExecutionBounds(0, model.MaxExecutionCycleSpan),
+	)
+
+	s.Require().ErrorIs(err, ErrMachineInternal)
+	s.Contains(err.Error(), "without appending its state hash")
+	backend.AssertExpectations(s.T())
 }
 
 // Test Store method
@@ -1293,16 +2087,15 @@ func (s *ImplementationSuite) TestRun() {
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
 			AdvanceIncCycles:   100,
 			AdvanceIncDeadline: time.Second * 1,
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
 
-	result, err := machine.run(ctx, AdvanceStateRequest, false, executionBounds{
-		start: 0, limit: 1000, span: 1000, configured: true,
-	})
+	result, err := machine.run(
+		ctx, AdvanceStateRequest, false, testExecutionBounds(0, model.MaxExecutionCycleSpan),
+	)
 	require.NoError(err)
 	require.Empty(result.outputs)
 	require.Empty(result.reports)
@@ -1317,15 +2110,14 @@ func (s *ImplementationSuite) TestRun() {
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
 			AdvanceIncCycles:   100,
 			AdvanceIncDeadline: time.Second * 1,
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	_, err = machine2.run(ctx, AdvanceStateRequest, false, executionBounds{
-		start: 0, limit: 1000, span: 1000, configured: true,
-	})
+	_, err = machine2.run(
+		ctx, AdvanceStateRequest, false, testExecutionBounds(0, model.MaxExecutionCycleSpan),
+	)
 	require.Error(err)
 	require.Contains(err.Error(), "read cycle failed")
 	mockBackend2.AssertExpectations(s.T())
@@ -1341,16 +2133,15 @@ func (s *ImplementationSuite) TestRun() {
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
 			AdvanceIncCycles:   100,
 			AdvanceIncDeadline: time.Second * 1,
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
 
-	_, err = machine3.run(ctx, AdvanceStateRequest, false, executionBounds{
-		start: 0, limit: 1000, span: 1000, configured: true,
-	})
+	_, err = machine3.run(
+		ctx, AdvanceStateRequest, false, testExecutionBounds(0, model.MaxExecutionCycleSpan),
+	)
 	require.NoError(err)
 	mockBackend3.AssertExpectations(s.T())
 
@@ -1366,16 +2157,15 @@ func (s *ImplementationSuite) TestRun() {
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
 			AdvanceIncCycles:   100,
 			AdvanceIncDeadline: time.Second * 1,
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
 
-	_, err = machine4.run(ctx, AdvanceStateRequest, false, executionBounds{
-		start: 0, limit: 1000, span: 1000, configured: true,
-	})
+	_, err = machine4.run(
+		ctx, AdvanceStateRequest, false, testExecutionBounds(0, model.MaxExecutionCycleSpan),
+	)
 	require.Error(err)
 	require.Contains(err.Error(), "could not read output/report")
 	require.Contains(err.Error(), "cmio request failed")
@@ -1396,16 +2186,15 @@ func (s *ImplementationSuite) TestRun() {
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
 			AdvanceIncCycles:   100,
 			AdvanceIncDeadline: time.Second * 1,
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
 
-	result5, err := machine5.run(ctx, AdvanceStateRequest, false, executionBounds{
-		start: 0, limit: 1000, span: 1000, configured: true,
-	})
+	result5, err := machine5.run(
+		ctx, AdvanceStateRequest, false, testExecutionBounds(0, model.MaxExecutionCycleSpan),
+	)
 	require.NoError(err)
 	require.Len(result5.outputs, 1)
 	require.Equal([]byte("output data"), []byte(result5.outputs[0]))
@@ -1427,16 +2216,15 @@ func (s *ImplementationSuite) TestRun() {
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
 			AdvanceIncCycles:   100,
 			AdvanceIncDeadline: time.Second * 1,
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
 
-	result6, err := machine6.run(ctx, AdvanceStateRequest, false, executionBounds{
-		start: 0, limit: 1000, span: 1000, configured: true,
-	})
+	result6, err := machine6.run(
+		ctx, AdvanceStateRequest, false, testExecutionBounds(0, model.MaxExecutionCycleSpan),
+	)
 	require.NoError(err)
 	require.Empty(result6.outputs)
 	require.Len(result6.reports, 1)
@@ -1447,34 +2235,39 @@ func (s *ImplementationSuite) TestRun() {
 
 func (s *ImplementationSuite) TestRunIncrementIntervalPreservesBreakReason() {
 	for _, test := range []struct {
-		name        string
-		breakReason BreakReason
-		cycle       uint64
+		name         string
+		breakReason  BreakReason
+		currentCycle uint64
 	}{
-		{"manual", YieldedManually, 150},
-		{"automatic", YieldedAutomatically, 200},
-		{"soft", YieldedSoftly, 150},
+		{"manual yield", YieldedManually, 150},
+		{"automatic yield", YieldedAutomatically, 200},
+		{"soft yield", YieldedSoftly, 150},
 		{"target", ReachedTargetMcycle, 200},
-		{"overflow", McycleOverflow, 199},
+		{"mcycle overflow", McycleOverflow, 199},
 		{"halt", Halted, 175},
-		{"failed", Failed, 160},
+		{"failure", Failed, 160},
 	} {
 		s.Run(test.name, func() {
 			backend := NewMockBackend()
-			backend.On("Run", uint64(200), mock.AnythingOfType("time.Duration")).Return(test.breakReason, nil)
-			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(test.cycle, nil)
+			backend.On("Run", uint64(200), mock.AnythingOfType("time.Duration")).
+				Return(test.breakReason, nil).Once()
+			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+				Return(test.currentCycle, nil).Once()
 			machine := &machineImpl{backend: backend, logger: s.logger}
 
 			result, err := machine.runIncrementInterval(
 				context.Background(), 100, 1000, 100, nil, time.Second,
 			)
+
 			s.Require().NoError(err)
 			s.Equal(test.breakReason, result.breakReason)
-			s.Equal(test.cycle, result.currentCycle)
+			s.Equal(test.currentCycle, result.currentCycle)
 			backend.AssertExpectations(s.T())
 		})
 	}
+}
 
+func (s *ImplementationSuite) TestRunIncrementIntervalErrors() {
 	s.Run("already at limit", func() {
 		machine := &machineImpl{backend: NewMockBackend(), logger: s.logger}
 		result, err := machine.runIncrementInterval(
@@ -1482,6 +2275,47 @@ func (s *ImplementationSuite) TestRunIncrementIntervalPreservesBreakReason() {
 		)
 		s.Require().ErrorIs(err, ErrReachedLimitMcycle)
 		s.Equal(uint64(1000), result.currentCycle)
+	})
+
+	s.Run("backend error", func() {
+		backend := NewMockBackend()
+		backend.On("Run", uint64(200), mock.AnythingOfType("time.Duration")).
+			Return(Failed, errors.New("run failed")).Once()
+		machine := &machineImpl{backend: backend, logger: s.logger}
+		_, err := machine.runIncrementInterval(
+			context.Background(), 100, 1000, 100, nil, time.Second,
+		)
+		s.Require().ErrorContains(err, "run failed")
+		backend.AssertExpectations(s.T())
+	})
+
+	s.Run("read cycle error", func() {
+		backend := NewMockBackend()
+		backend.On("Run", uint64(200), mock.AnythingOfType("time.Duration")).
+			Return(YieldedManually, nil).Once()
+		backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+			Return(uint64(0), errors.New("read cycle failed")).Once()
+		machine := &machineImpl{backend: backend, logger: s.logger}
+		_, err := machine.runIncrementInterval(
+			context.Background(), 100, 1000, 100, nil, time.Second,
+		)
+		s.Require().ErrorContains(err, "read cycle failed")
+		backend.AssertExpectations(s.T())
+	})
+
+	s.Run("unknown break reason", func() {
+		backend := NewMockBackend()
+		backend.On("Run", uint64(200), mock.AnythingOfType("time.Duration")).
+			Return(BreakReason(99), nil).Once()
+		backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+			Return(uint64(150), nil).Once()
+		machine := &machineImpl{backend: backend, logger: s.logger}
+		result, err := machine.runIncrementInterval(
+			context.Background(), 100, 1000, 100, nil, time.Second,
+		)
+		s.Require().ErrorIs(err, ErrMachineInternal)
+		s.Equal(BreakReason(99), result.breakReason)
+		backend.AssertExpectations(s.T())
 	})
 }
 
@@ -1505,7 +2339,6 @@ func (s *ImplementationSuite) TestProcess() {
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
 			AdvanceIncCycles:   100,
 			AdvanceIncDeadline: time.Second * 1,
 			AdvanceMaxDeadline: time.Second * 10,
@@ -1562,7 +2395,6 @@ func (s *ImplementationSuite) TestProcess() {
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
 			AdvanceIncCycles:   100,
 			AdvanceIncDeadline: time.Second * 1,
 			AdvanceMaxDeadline: time.Second * 10,
@@ -1570,11 +2402,15 @@ func (s *ImplementationSuite) TestProcess() {
 	}
 	_, err = machine2.process(ctx, input, AdvanceStateRequest, &expectedHash, false)
 	require.ErrorIs(err, ErrPayloadLengthLimitExceeded)
+	require.Contains(err.Error(), "advance request payload length 10")
+	require.Contains(err.Error(), "capacity 5")
+	require.NotContains(err.Error(), string(input))
 	mockBackend2.AssertExpectations(s.T())
 
 	// Test process with send error
 	mockBackend3 := NewMockBackend()
 	mockBackend3.On("CmioRxBufferSize").Return(uint64(1024))
+	mockBackend3.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
 	mockBackend3.On("SendCmioResponse",
 		mock.AnythingOfType("uint16"),
 		mock.Anything,
@@ -1586,13 +2422,11 @@ func (s *ImplementationSuite) TestProcess() {
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
 			AdvanceIncCycles:   100,
 			AdvanceIncDeadline: time.Second * 1,
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	mockBackend3.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
 	_, err = machine3.process(ctx, input, AdvanceStateRequest, &expectedHash, false)
 	require.Error(err)
 	require.Contains(err.Error(), "send failed")
@@ -1607,7 +2441,6 @@ func (s *ImplementationSuite) TestProcess() {
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
 			AdvanceIncCycles:   100,
 			AdvanceIncDeadline: time.Second * 1,
 			AdvanceMaxDeadline: time.Second * 10,
@@ -1618,84 +2451,6 @@ func (s *ImplementationSuite) TestProcess() {
 	require.Contains(err.Error(), "read cycle failed")
 	mockBackend4.AssertNotCalled(s.T(), "SendCmioResponse", mock.Anything, mock.Anything, mock.Anything)
 	mockBackend4.AssertExpectations(s.T())
-}
-
-// Test run method with automatic yields and outputs/reports
-func (s *ImplementationSuite) TestRunWithAutomaticYields() {
-	require := s.Require()
-	ctx := context.Background()
-
-	mockBackend := NewMockBackend()
-	machine := &machineImpl{
-		backend: mockBackend,
-		logger:  s.logger,
-		params: model.ExecutionParameters{
-			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
-			AdvanceIncCycles:   100,
-			AdvanceIncDeadline: time.Second * 1,
-			AdvanceMaxDeadline: time.Second * 10,
-		},
-	}
-
-	// Setup for automatic yield with output
-	mockBackend.On("Run", uint64(100), mock.AnythingOfType("time.Duration")).Return(YieldedAutomatically, nil).Once()
-	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(50), nil).Once()
-	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(AutomaticYieldReasonOutput), []byte("test output"), nil).Once()
-
-	// Setup for manual yield after automatic yield
-	mockBackend.On("Run", uint64(150), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil).Once()
-	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(100), nil).Once()
-
-	result, err := machine.run(ctx, AdvanceStateRequest, false, executionBounds{
-		start: 0, limit: 1000, span: 1000, configured: true,
-	})
-	require.NoError(err)
-	require.Len(result.outputs, 1)
-	require.Equal([]byte("test output"), result.outputs[0])
-	require.Empty(result.reports)
-
-	mockBackend.AssertExpectations(s.T())
-}
-
-// Test run method with automatic yields and reports
-func (s *ImplementationSuite) TestRunWithAutomaticYieldsReports() {
-	require := s.Require()
-	ctx := context.Background()
-
-	mockBackend := NewMockBackend()
-	machine := &machineImpl{
-		backend: mockBackend,
-		logger:  s.logger,
-		params: model.ExecutionParameters{
-			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
-			AdvanceIncCycles:   100,
-			AdvanceIncDeadline: time.Second * 1,
-			AdvanceMaxDeadline: time.Second * 10,
-		},
-	}
-
-	// Setup for automatic yield with report
-	mockBackend.On("Run", uint64(100), mock.AnythingOfType("time.Duration")).Return(YieldedAutomatically, nil).Once()
-	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(50), nil).Once()
-	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(AutomaticYieldReasonReport), []byte("test report"), nil).Once()
-
-	// Setup for manual yield after automatic yield
-	mockBackend.On("Run", uint64(150), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil).Once()
-	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(100), nil).Once()
-
-	result, err := machine.run(ctx, AdvanceStateRequest, false, executionBounds{
-		start: 0, limit: 1000, span: 1000, configured: true,
-	})
-	require.NoError(err)
-	require.Empty(result.outputs)
-	require.Len(result.reports, 1)
-	require.Equal([]byte("test report"), result.reports[0])
-
-	mockBackend.AssertExpectations(s.T())
 }
 
 // Test multiple automatic yields in sequence
@@ -1709,7 +2464,6 @@ func (s *ImplementationSuite) TestMultipleAutomaticYields() {
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline:       time.Second * 5,
-			AdvanceMaxCycles:   1000,
 			AdvanceIncCycles:   100,
 			AdvanceIncDeadline: time.Second * 1,
 			AdvanceMaxDeadline: time.Second * 10,
@@ -1751,9 +2505,9 @@ func (s *ImplementationSuite) TestMultipleAutomaticYields() {
 	mockBackend.On("Run", uint64(150), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil).Once()
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(60), nil).Once()
 
-	result, err := machine.run(ctx, AdvanceStateRequest, false, executionBounds{
-		start: 0, limit: 1000, span: 1000, configured: true,
-	})
+	result, err := machine.run(
+		ctx, AdvanceStateRequest, false, testExecutionBounds(0, model.MaxExecutionCycleSpan),
+	)
 	require.NoError(err)
 
 	require.Len(result.outputs, 2)
@@ -1792,4 +2546,53 @@ func (s *ImplementationSuite) TestCheckContext() {
 	// Test nil context (should not panic)
 	err = checkContext(nil) // nolint
 	require.NoError(err)    // nil context is valid in Go
+}
+
+func (s *ImplementationSuite) TestInputHashCollectionSpan() {
+	require := s.Require()
+
+	for _, test := range []struct {
+		name    string
+		hashes  uint64
+		padding uint64
+		wantErr bool
+	}{
+		{name: "empty collection", hashes: 0, padding: InputEntryCapacity},
+		{name: "partial collection", hashes: 2, padding: InputEntryCapacity - 2},
+		{name: "exact boundary", hashes: InputEntryCapacity, padding: 0},
+		{name: "short span", hashes: 2, padding: InputEntryCapacity - 3, wantErr: true},
+		{name: "long span", hashes: 2, padding: InputEntryCapacity - 1, wantErr: true},
+		{name: "collector overflow", hashes: InputEntryCapacity + 1, wantErr: true},
+	} {
+		s.Run(test.name, func() {
+			err := ValidateInputHashCollectionSpan(test.hashes, test.padding)
+			require.Equal(test.wantErr, err != nil)
+		})
+	}
+
+	padding, err := inputHashCollectionPaddingRepetitions(InputEntryCapacity)
+	require.NoError(err)
+	require.Zero(padding)
+	_, err = inputHashCollectionPaddingRepetitions(InputEntryCapacity + 1)
+	require.ErrorContains(err, "exceeds input entry capacity")
+
+	canonicalCount, padding, err := canonicalInputHashCollectionShape(
+		InputEntryCapacity,
+		true,
+	)
+	require.NoError(err)
+	require.Equal(InputEntryCapacity-1, canonicalCount)
+	require.Equal(uint64(1), padding)
+
+	// Validate the raw collector count before removing the terminal sample.
+	// Otherwise S+1 would be incorrectly normalized into a valid S shape.
+	_, _, err = canonicalInputHashCollectionShape(InputEntryCapacity+1, true)
+	require.ErrorContains(err, "exceeds input entry capacity")
+
+	// A malformed collection is an internal failure even when execution also
+	// reached a completed terminal state. The terminal status is context only.
+	err = invalidInputHashCollectionSpanError(ErrHalted, errors.New("overcollection"))
+	require.ErrorIs(err, ErrMachineInternal)
+	require.NotErrorIs(err, ErrHalted)
+	require.ErrorContains(err, ErrHalted.Error())
 }

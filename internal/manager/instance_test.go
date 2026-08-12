@@ -27,14 +27,6 @@ func TestMachineInstance(t *testing.T) {
 
 type MachineInstanceSuite struct{ suite.Suite }
 
-func (s *MachineInstanceSuite) TestMcycleOverflowRemainsIncomplete() {
-	require := s.Require()
-
-	status, err := toInputStatus(machine.CompletionStatusUnknown)
-	require.ErrorIs(err, ErrIncompleteAdvance)
-	require.Empty(status)
-}
-
 // MockMachineRuntimeFactory implements MachineRuntimeFactory for testing
 type MockMachineRuntimeFactory struct {
 	RuntimeToReturn machine.Machine
@@ -334,56 +326,127 @@ func (s *MachineInstanceSuite) TestAdvance() {
 
 		s.Run("Reject", func() {
 			require := s.Require()
-			inner, fork, machineInst := s.setupAdvance()
-			fork.AdvanceStatusReturn = machine.CompletionStatusRejected
+			inner, fork, instance := s.setupAdvance()
+			fork.CompletionStatusReturn = machine.CompletionStatusRejected
 			fork.CloseError = nil
 
-			res, err := machineInst.Advance(context.Background(), []byte{}, 0, 5, false)
+			res, err := instance.Advance(context.Background(), []byte{}, 0, 5, false)
 			require.Nil(err)
 			require.NotNil(res)
 
-			require.Same(inner, machineInst.runtime)
+			require.Same(inner, instance.runtime)
 			require.Equal(model.InputCompletionStatus_Rejected, res.Status)
 			require.Equal(expectedOutputs, res.Outputs)
 			require.Equal(expectedReports1, res.Reports)
 			require.Equal(newHash(1), res.OutputsHash)
 			require.Equal(newHash(2), res.MachineHash)
-			require.Equal(uint64(6), machineInst.processedInputs.Load())
+			require.Equal(uint64(6), instance.processedInputs.Load())
 		})
 
-		testCompletion := func(name string, completion machine.CompletionStatus, status model.InputCompletionStatus) {
+		testCompletedStatus := func(
+			name string,
+			machineStatus machine.CompletionStatus,
+			inputStatus model.InputCompletionStatus,
+			exceptionData []byte,
+		) {
 			s.Run(name, func() {
 				require := s.Require()
-				inner, fork, machineInst := s.setupAdvance()
-				fork.AdvanceStatusReturn = completion
-				if completion == machine.CompletionStatusException {
-					fork.AdvanceExceptionData = []byte("exception data")
-				}
-				fork.CloseError, inner.CloseError = inner.CloseError, fork.CloseError
+				inner, fork, instance := s.setupAdvance()
+				fork.CompletionStatusReturn = machineStatus
+				fork.ExceptionDataReturn = exceptionData
+				fork.CloseError = nil
 
-				res, err := machineInst.Advance(context.Background(), []byte{}, 0, 5, false)
+				res, err := instance.Advance(context.Background(), []byte{}, 0, 5, false)
 				require.Nil(err)
 				require.NotNil(res)
 
-				require.Equal(status, res.Status)
+				require.Same(inner, instance.runtime)
+				require.Equal(inputStatus, res.Status)
+				require.Equal(exceptionData, res.ExceptionData)
 				require.Equal(expectedOutputs, res.Outputs)
 				require.Equal(expectedReports1, res.Reports)
 				require.Equal(newHash(1), res.OutputsHash)
 				require.Equal(newHash(2), res.MachineHash)
-				require.Equal(uint64(6), machineInst.processedInputs.Load())
+				require.Equal(uint64(6), instance.processedInputs.Load())
 			})
 		}
 
-		testCompletion("Exception",
+		testCompletedStatus("Exception",
 			machine.CompletionStatusException,
-			model.InputCompletionStatus_Exception)
+			model.InputCompletionStatus_Exception,
+			[]byte("guest exception"))
 
-		testCompletion("Halted",
+		testCompletedStatus("Halted",
 			machine.CompletionStatusHalted,
-			model.InputCompletionStatus_MachineHalted)
+			model.InputCompletionStatus_MachineHalted,
+			nil)
 	})
 
 	s.Run("Error", func() {
+		interruptions := []struct {
+			name string
+			err  error
+		}{
+			{"OutputsLimit", machine.ErrOutputsLimitExceeded},
+			{"ReportsLimit", machine.ErrReportsLimitExceeded},
+			{"ReachedCycleLimit", machine.ErrReachedLimitMcycle},
+			{"Deadline", machine.ErrDeadlineExceeded},
+			{"Canceled", machine.ErrCanceled},
+			{"PayloadLengthLimit", machine.ErrPayloadLengthLimitExceeded},
+			{"MachineInternal", machine.ErrMachineInternal},
+		}
+		for _, interruption := range interruptions {
+			s.Run(interruption.name, func() {
+				require := s.Require()
+				inner, fork, instance := s.setupAdvance()
+				fork.AdvanceError = interruption.err
+				fork.CloseError = nil
+
+				res, err := instance.Advance(context.Background(), []byte{}, 0, 5, false)
+				require.ErrorIs(err, interruption.err)
+				require.Nil(res)
+				require.Same(inner, instance.runtime)
+				require.Equal(uint64(5), instance.processedInputs.Load())
+			})
+		}
+
+		s.Run("UnknownStatus", func() {
+			require := s.Require()
+			inner, fork, instance := s.setupAdvance()
+			fork.CompletionStatusReturn = machine.CompletionStatusUnknown
+			fork.CloseError = nil
+
+			res, err := instance.Advance(context.Background(), []byte{}, 0, 5, false)
+			require.ErrorIs(err, ErrIncompleteAdvance)
+			require.Nil(res)
+			require.Same(inner, instance.runtime)
+			require.Equal(uint64(5), instance.processedInputs.Load())
+		})
+
+		for _, test := range []struct {
+			name          string
+			status        machine.CompletionStatus
+			exceptionData []byte
+		}{
+			{"ExceptionWithoutData", machine.CompletionStatusException, nil},
+			{"AcceptedWithExceptionData", machine.CompletionStatusAccepted, []byte("unexpected")},
+		} {
+			s.Run(test.name, func() {
+				require := s.Require()
+				inner, fork, instance := s.setupAdvance()
+				fork.CompletionStatusReturn = test.status
+				fork.ExceptionDataReturn = test.exceptionData
+				fork.CloseError = nil
+
+				res, err := instance.Advance(context.Background(), []byte{}, 0, 5, false)
+				require.ErrorIs(err, ErrIncompleteAdvance)
+				require.ErrorIs(err, machine.ErrMachineInternal)
+				require.Nil(res)
+				require.Same(inner, instance.runtime)
+				require.Equal(uint64(5), instance.processedInputs.Load())
+			})
+		}
+
 		s.Run("Fork", func() {
 			require := s.Require()
 			inner, _, machine := s.setupAdvance()
@@ -481,8 +544,8 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			s.Run("Fork", func() {
 				require := s.Require()
 				_, fork, machineInst := s.setupAdvance()
-				fork.AdvanceStatusReturn = machine.CompletionStatusException
-				fork.AdvanceExceptionData = []byte("exception data")
+				fork.CompletionStatusReturn = machine.CompletionStatusException
+				fork.ExceptionDataReturn = []byte("guest exception")
 				fork.CloseError = errors.New("Close error")
 
 				// Close error on fork is logged, not propagated.
@@ -497,16 +560,18 @@ func (s *MachineInstanceSuite) TestAdvance() {
 
 	s.Run("CollectHashes", func() {
 		require := s.Require()
-		inner, fork, machineInst := s.setupAdvance()
+		inner, fork, instance := s.setupAdvance()
 
-		res, err := machineInst.Advance(context.Background(), []byte{}, 0, 5, true)
+		fork.AdvanceRemainingReturn = machine.InputEntryCapacity
+
+		res, err := instance.Advance(context.Background(), []byte{}, 0, 5, true)
 		require.Nil(err)
 		require.NotNil(res)
 
-		require.Same(fork, machineInst.runtime)
+		require.Same(fork, instance.runtime)
 		require.Equal(model.InputCompletionStatus_Accepted, res.Status)
 		require.True(res.IsDaveConsensus)
-		require.Equal(uint64(6), machineInst.processedInputs.Load())
+		require.Equal(uint64(6), instance.processedInputs.Load())
 
 		// Verify the inner runtime was closed (accept path)
 		_ = inner
@@ -517,7 +582,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 		// same machine never happens by design. This test verifies that two
 		// sequential advances correctly increment processedInputs.
 		require := s.Require()
-		inner, fork, machineInst := s.setupAdvance()
+		inner, fork, instance := s.setupAdvance()
 
 		// Allow inner.Close to succeed (old runtime close on accept)
 		inner.CloseError = nil
@@ -526,7 +591,7 @@ func (s *MachineInstanceSuite) TestAdvance() {
 		// After accept, fork becomes the new runtime.
 		// Second advance: fork from fork (processedInputs=6), fork must also fork.
 		fork2 := &MockRollupsMachine{}
-		fork2.AdvanceStatusReturn = machine.CompletionStatusAccepted
+		fork2.CompletionStatusReturn = machine.CompletionStatusAccepted
 		fork2.AdvanceOutputsReturn = expectedOutputs
 		fork2.AdvanceReportsReturn = expectedReports1
 		fork2.OutputsHashReturn = newHash(1)
@@ -537,134 +602,139 @@ func (s *MachineInstanceSuite) TestAdvance() {
 		fork.CloseError = nil // close of fork (now old runtime) in second advance
 
 		// First advance at index 5
-		res1, err := machineInst.Advance(context.Background(), []byte{}, 0, 5, false)
+		res1, err := instance.Advance(context.Background(), []byte{}, 0, 5, false)
 		require.Nil(err)
 		require.NotNil(res1)
-		require.Equal(uint64(6), machineInst.processedInputs.Load())
+		require.Equal(uint64(6), instance.processedInputs.Load())
 
 		// Second advance at index 6
-		res2, err := machineInst.Advance(context.Background(), []byte{}, 0, 6, false)
+		res2, err := instance.Advance(context.Background(), []byte{}, 0, 6, false)
 		require.Nil(err)
 		require.NotNil(res2)
-		require.Equal(uint64(7), machineInst.processedInputs.Load())
+		require.Equal(uint64(7), instance.processedInputs.Load())
 	})
 }
 
 func (s *MachineInstanceSuite) TestInspect() {
-	s.Run("Ok", func() {
-		s.Run("Accept", func() {
+	for _, test := range []struct {
+		name      string
+		status    machine.CompletionStatus
+		accepted  bool
+		resultErr error
+	}{
+		{"Accept", machine.CompletionStatusAccepted, true, nil},
+		{"Reject", machine.CompletionStatusRejected, false, nil},
+		{"Exception", machine.CompletionStatusException, false, machine.ErrException},
+		{"Halted", machine.CompletionStatusHalted, false, machine.ErrHalted},
+	} {
+		s.Run(test.name, func() {
 			require := s.Require()
-			_, fork, machine := s.setupInspect()
+			_, fork, instance := s.setupInspect()
+			fork.InspectResponseReturn.Status = test.status
 
-			res, err := machine.Inspect(context.Background(), []byte{})
-			require.Nil(err)
-			require.NotNil(res)
-
-			require.NotSame(fork, machine.runtime)
-			require.Equal(uint64(55), res.ProcessedInputs)
-			require.True(res.Accepted)
-			require.Equal(expectedReports2, res.Reports)
-			require.Nil(res.Error)
+			result, err := instance.Inspect(context.Background(), []byte{})
+			require.NoError(err)
+			require.NotNil(result)
+			require.NotSame(fork, instance.runtime)
+			require.Equal(uint64(55), result.ProcessedInputs)
+			require.Equal(test.accepted, result.Accepted)
+			require.Equal(expectedReports2, result.Reports)
+			if test.resultErr == nil {
+				require.NoError(result.Error)
+			} else {
+				require.ErrorIs(result.Error, test.resultErr)
+			}
 		})
+	}
 
-		s.Run("Reject", func() {
-			require := s.Require()
-			_, fork, machineInst := s.setupInspect()
-			fork.InspectStatusReturn = machine.CompletionStatusRejected
+	s.Run("AtCapacity", func() {
+		require := s.Require()
+		_, _, instance := s.setupInspect()
+		instance.inspectSemaphore.TryAcquire(int64(instance.maxConcurrentInspects))
+		defer instance.inspectSemaphore.Release(int64(instance.maxConcurrentInspects))
 
-			res, err := machineInst.Inspect(context.Background(), []byte{})
-			require.Nil(err)
-			require.NotNil(res)
-
-			require.NotSame(fork, machineInst.runtime)
-			require.Equal(uint64(55), res.ProcessedInputs)
-			require.False(res.Accepted)
-			require.Equal(expectedReports2, res.Reports)
-			require.Nil(res.Error)
-		})
+		result, err := instance.Inspect(context.Background(), []byte{})
+		require.ErrorIs(err, ErrInspectAtCapacity)
+		require.Nil(result)
 	})
 
-	s.Run("Error", func() {
-		s.Run("AtCapacity", func() {
+	s.Run("ForkError", func() {
+		require := s.Require()
+		inner, _, instance := s.setupInspect()
+		errFork := errors.New("Fork error")
+		inner.ForkError = errFork
+
+		result, err := instance.Inspect(context.Background(), []byte{})
+		require.ErrorIs(err, errFork)
+		require.Nil(result)
+	})
+
+	s.Run("ExecutionErrorPreservesPartialReports", func() {
+		require := s.Require()
+		_, fork, instance := s.setupInspect()
+		errInspect := errors.New("Inspect error")
+		fork.InspectError = errInspect
+
+		result, err := instance.Inspect(context.Background(), []byte{})
+		require.NoError(err)
+		require.False(result.Accepted)
+		require.Equal(expectedReports2, result.Reports)
+		require.ErrorIs(result.Error, errInspect)
+	})
+
+	for _, test := range []struct {
+		name     string
+		response *machine.InspectResponse
+	}{
+		{"NilResponse", nil},
+		{"UnknownStatus", &machine.InspectResponse{Status: machine.CompletionStatusUnknown}},
+		{"InvalidStatus", &machine.InspectResponse{Status: machine.CompletionStatus(255)}},
+	} {
+		s.Run(test.name+"FailsClosed", func() {
 			require := s.Require()
-			_, _, machine := s.setupInspect()
+			_, fork, instance := s.setupInspect()
+			fork.InspectResponseReturn = test.response
 
-			// Pre-fill all semaphore slots to simulate a saturated app
-			machine.inspectSemaphore.TryAcquire(int64(machine.maxConcurrentInspects))
-
-			// TryAcquire is non-blocking: the error is returned immediately,
-			// no context deadline required.
-			res, err := machine.Inspect(context.Background(), []byte{})
-			require.Error(err)
-			require.Nil(res)
-			require.ErrorIs(err, ErrInspectAtCapacity)
-
-			// Release the semaphore for cleanup
-			machine.inspectSemaphore.Release(int64(machine.maxConcurrentInspects))
+			result, err := instance.Inspect(context.Background(), []byte{})
+			require.NoError(err)
+			require.False(result.Accepted)
+			require.ErrorIs(result.Error, ErrIncompleteInspect)
+			require.ErrorIs(result.Error, machine.ErrMachineInternal)
 		})
+	}
 
-		s.Run("Fork", func() {
-			require := s.Require()
-			inner, _, machine := s.setupInspect()
-			errFork := errors.New("Fork error")
-			inner.ForkError = errFork
+	s.Run("CloseErrorOverridesResult", func() {
+		require := s.Require()
+		_, fork, instance := s.setupInspect()
+		errClose := errors.New("Close error")
+		fork.CloseError = errClose
 
-			res, err := machine.Inspect(context.Background(), []byte{})
-			require.Error(err)
-			require.Nil(res)
-			require.Equal(errFork, err)
-		})
-
-		s.Run("Inspect", func() {
-			require := s.Require()
-			_, fork, machine := s.setupInspect()
-			errInspect := errors.New("Inspect error")
-			fork.InspectError = errInspect
-
-			res, err := machine.Inspect(context.Background(), []byte{})
-			require.Nil(err)
-			require.NotNil(res)
-			require.Equal(errInspect, res.Error)
-		})
-
-		s.Run("Close", func() {
-			require := s.Require()
-			_, fork, machine := s.setupInspect()
-			errClose := errors.New("Close error")
-			fork.CloseError = errClose
-
-			res, err := machine.Inspect(context.Background(), []byte{})
-			require.Error(err)
-			require.Nil(res)
-			require.Equal(errClose, err)
-		})
+		result, err := instance.Inspect(context.Background(), []byte{})
+		require.ErrorIs(err, errClose)
+		require.Nil(result)
 	})
 
 	s.Run("Concurrency", func() {
 		require := s.Require()
-		_, _, machine := s.setupInspect()
-
-		// Test that we can run maxConcurrentInspects inspects concurrently
+		_, _, instance := s.setupInspect()
 		var wg sync.WaitGroup
-		errors := make(chan error, machine.maxConcurrentInspects)
+		errs := make(chan error, instance.maxConcurrentInspects)
 
-		for range int(machine.maxConcurrentInspects) {
+		for range int(instance.maxConcurrentInspects) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				_, err := machine.Inspect(context.Background(), []byte{})
+				_, err := instance.Inspect(context.Background(), []byte{})
 				if err != nil {
-					errors <- err
+					errs <- err
 				}
 			}()
 		}
 
 		wg.Wait()
-		close(errors)
-
-		// Check if any errors occurred
-		for err := range errors {
-			require.Nil(err, "Concurrent inspect failed: %v", err)
+		close(errs)
+		for err := range errs {
+			require.NoError(err)
 		}
 	})
 }
@@ -1020,7 +1090,7 @@ func (s *MachineInstanceSuite) setupAdvance() (*MockRollupsMachine, *MockRollups
 	inner.ForkReturn = fork
 	inner.CloseError = nil
 
-	fork.AdvanceStatusReturn = machine.CompletionStatusAccepted
+	fork.CompletionStatusReturn = machine.CompletionStatusAccepted
 	fork.AdvanceOutputsReturn = []machine.Output{
 		newBytes(11, 100),
 		newBytes(12, 100),
@@ -1036,12 +1106,14 @@ func (s *MachineInstanceSuite) setupAdvance() (*MockRollupsMachine, *MockRollups
 	fork.HashReturn = newHash(2)
 	fork.HashError = nil
 
-	fork.InspectStatusReturn = machine.CompletionStatusAccepted
-	fork.InspectReportsReturn = []machine.Report{
-		newBytes(31, 300),
-		newBytes(32, 300),
-		newBytes(33, 300),
-		newBytes(34, 300),
+	fork.InspectResponseReturn = &machine.InspectResponse{
+		Status: machine.CompletionStatusAccepted,
+		Reports: []machine.Report{
+			newBytes(31, 300),
+			newBytes(32, 300),
+			newBytes(33, 300),
+			newBytes(34, 300),
+		},
 	}
 	fork.InspectError = errUnreachable
 
@@ -1080,12 +1152,14 @@ func (s *MachineInstanceSuite) setupInspect() (*MockRollupsMachine, *MockRollups
 	fork.AdvanceError = errUnreachable
 	fork.HashError = errUnreachable
 
-	fork.InspectStatusReturn = machine.CompletionStatusAccepted
-	fork.InspectReportsReturn = []machine.Report{
-		newBytes(31, 300),
-		newBytes(32, 300),
-		newBytes(33, 300),
-		newBytes(34, 300),
+	fork.InspectResponseReturn = &machine.InspectResponse{
+		Status: machine.CompletionStatusAccepted,
+		Reports: []machine.Report{
+			newBytes(31, 300),
+			newBytes(32, 300),
+			newBytes(33, 300),
+			newBytes(34, 300),
+		},
 	}
 	fork.InspectError = nil
 
@@ -1220,7 +1294,7 @@ func (r *mockSyncRepository) GetLastSnapshot(
 func newForkableMock() *MockRollupsMachine {
 	m := &MockRollupsMachine{}
 	m.CloseError = nil
-	m.AdvanceStatusReturn = machine.CompletionStatusAccepted
+	m.CompletionStatusReturn = machine.CompletionStatusAccepted
 	m.HashReturn = newHash(1)
 	m.OutputsHashReturn = newHash(2)
 	m.ForkFunc = func(_ context.Context) (machine.Machine, error) {
@@ -1450,21 +1524,21 @@ type MockRollupsMachine struct {
 	HashReturn machine.Hash
 	HashError  error
 
-	AdvanceStatusReturn    machine.CompletionStatus
-	AdvanceExceptionData   []byte
-	AdvanceOutputsReturn   []machine.Output
-	AdvanceReportsReturn   []machine.Report
-	AdvanceLeafsReturn     []machine.Hash
-	AdvanceRemainingReturn uint64
-	OutputsHashReturn      machine.Hash
-	OutputsHashError       error
-	OutputsHashProofReturn []machine.Hash
-	OutputsHashProofError  error
-	AdvanceError           error
+	CompletionStatusReturn   machine.CompletionStatus
+	ExceptionDataReturn      []byte
+	AdvanceOutputsReturn     []machine.Output
+	AdvanceReportsReturn     []machine.Report
+	AdvanceLeafsReturn       []machine.Hash
+	AdvanceRemainingReturn   uint64
+	OutputsHashReturn        machine.Hash
+	OutputsHashError         error
+	OutputsHashProofReturn   []machine.Hash
+	OutputsHashProofError    error
+	AdvanceError             error
+	LastAdvanceComputeHashes bool
 
-	InspectStatusReturn  machine.CompletionStatus
-	InspectReportsReturn []machine.Report
-	InspectError         error
+	InspectResponseReturn *machine.InspectResponse
+	InspectError          error
 
 	StoreError error
 
@@ -1495,21 +1569,18 @@ func (m *MockRollupsMachine) Advance(_ context.Context, _ []byte, _ machine.Hash
 		return nil, m.AdvanceError
 	}
 	return &machine.AdvanceResponse{
-		Status:          m.AdvanceStatusReturn,
-		Outputs:         m.AdvanceOutputsReturn,
-		Reports:         m.AdvanceReportsReturn,
-		ExceptionData:   m.AdvanceExceptionData,
-		Hashes:          m.AdvanceLeafsReturn,
-		RemainingCycles: m.AdvanceRemainingReturn,
-		OutputsHash:     m.OutputsHashReturn,
+		Status:              m.CompletionStatusReturn,
+		ExceptionData:       m.ExceptionDataReturn,
+		Outputs:             m.AdvanceOutputsReturn,
+		Reports:             m.AdvanceReportsReturn,
+		PeriodicStateHashes: m.AdvanceLeafsReturn,
+		PaddingRepetitions:  m.AdvanceRemainingReturn,
+		OutputsHash:         m.OutputsHashReturn,
 	}, nil
 }
 
 func (m *MockRollupsMachine) Inspect(_ context.Context, _ []byte) (*machine.InspectResponse, error) {
-	if m.InspectError != nil {
-		return nil, m.InspectError
-	}
-	return &machine.InspectResponse{Status: m.InspectStatusReturn, Reports: m.InspectReportsReturn}, nil
+	return m.InspectResponseReturn, m.InspectError
 }
 
 func (m *MockRollupsMachine) Store(_ context.Context, _ string) error {

@@ -1,8 +1,6 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-// Package machine provides a unified interface for interacting with Cartesi machines.
-// It consolidates functionality from the previous rollupsmachine and cartesimachine packages.
 package machine
 
 import (
@@ -27,11 +25,16 @@ type (
 	Hash    = [HashSize]byte
 )
 
-// CompletionStatus identifies how a guest-machine request completed. If
-// execution does not complete, the request returns an error instead.
+// CompletionStatus identifies how a guest-machine request completed. Advance
+// and Inspect have the same completion outcomes; their callers decide whether
+// and how those outcomes affect canonical state. If execution does not
+// complete, the operation returns CompletionStatusUnknown together with an
+// error instead.
 type CompletionStatus uint8
 
 const (
+	// CompletionStatusUnknown is the zero-value sentinel. A successful request
+	// never returns it.
 	CompletionStatusUnknown CompletionStatus = iota
 	CompletionStatusAccepted
 	CompletionStatusRejected
@@ -47,6 +50,8 @@ func (s CompletionStatus) IsCompleted() bool {
 		CompletionStatusException,
 		CompletionStatusHalted:
 		return true
+	case CompletionStatusUnknown:
+		return false
 	default:
 		return false
 	}
@@ -54,18 +59,25 @@ func (s CompletionStatus) IsCompleted() bool {
 
 // AdvanceResponse contains the result of a completed advance operation.
 type AdvanceResponse struct {
-	Status          CompletionStatus
-	Outputs         []Output
-	Reports         []Report
-	ExceptionData   []byte
-	Hashes          []Hash
-	RemainingCycles uint64
-	OutputsHash     Hash
+	Status  CompletionStatus
+	Outputs []Output
+	Reports []Report
+	// ExceptionData is the raw CMIO payload supplied by the guest when Status
+	// is CompletionStatusException. It is nil for every other status; an
+	// exception with an empty payload is represented by a non-nil empty slice.
+	ExceptionData       []byte
+	PeriodicStateHashes []Hash
+	PaddingRepetitions  uint64
+	OutputsHash         Hash
 }
 
-// InspectResponse contains the result of a completed inspect operation.
+// InspectResponse contains the result of an inspect operation. On incomplete
+// execution, Reports contains any reports emitted before the failure, Status
+// is CompletionStatusUnknown, and Inspect returns a non-nil error.
 type InspectResponse struct {
-	Status        CompletionStatus
+	Status CompletionStatus
+	// ExceptionData has the same status-dependent meaning as
+	// AdvanceResponse.ExceptionData.
 	ExceptionData []byte
 	Reports       []Report
 }
@@ -87,13 +99,14 @@ var (
 	ErrReachedLimitMcycle         = errors.New("machine reached limit mcycle")
 
 	// ErrMcycleOverflow preserves the emulator-reported fact that the machine
-	// itself reached imcyclemax. It remains distinguishable from a node target
-	// because canonical overflow eligibility depends on the stop origin.
+	// itself reached imcyclemax, rather than a node target. Canonical overflow
+	// eligibility depends on that stop origin. It wraps ErrReachedLimitMcycle so
+	// existing execution-limit classification remains unchanged.
 	ErrMcycleOverflow = fmt.Errorf("machine reached imcyclemax: %w", ErrReachedLimitMcycle)
 )
 
 // IsExecutionLimitError reports whether err is an incomplete execution caused
-// by a payload, response-count, or cycle ceiling.
+// by a local payload, response-count, or cycle ceiling.
 func IsExecutionLimitError(err error) bool {
 	return errors.Is(err, ErrPayloadLengthLimitExceeded) ||
 		errors.Is(err, ErrOutputsLimitExceeded) ||
@@ -117,11 +130,17 @@ type Machine interface {
 	// Advance sends an input to the machine.
 	// The checkpointHash is the machine's root hash before processing the input,
 	// sent along with the request so the machine can revert to it if needed.
-	// A non-nil response and nil error mean execution completed with a typed
-	// status. Incomplete execution returns a nil response and a non-nil error.
+	// A non-nil response and nil error mean the machine completed with one of
+	// the four completed CompletionStatus values. Any incomplete execution—input
+	// validation, an operational limit, deadline/cancellation, or infrastructure
+	// failure—returns a nil response and a non-nil error. CompletionStatusUnknown
+	// is never returned by a successful call.
 	Advance(ctx context.Context, input []byte, checkpointHash Hash, computeHashes bool) (*AdvanceResponse, error)
 
-	// Inspect sends a query to the machine and returns its typed completion.
+	// Inspect sends a query to the machine. A nil error means the guest completed
+	// with one of the four non-unknown CompletionStatus values. On incomplete
+	// execution, the response preserves reports emitted before the failure and
+	// the error identifies why inspection could not complete.
 	Inspect(ctx context.Context, query []byte) (*InspectResponse, error)
 
 	// Store saves the machine state to the specified path.

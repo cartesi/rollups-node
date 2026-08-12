@@ -174,8 +174,8 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 			InputIndex:          0,
 			Status:              InputCompletionStatus_Accepted,
 			Outputs:             [][]byte{[]byte("dave-output")},
-			Hashes:              [][32]byte{hash1, hash2, hash3},
-			RemainingMetaCycles: 42,
+			PeriodicStateHashes: [][32]byte{hash1, hash2, hash3},
+			PaddingRepetitions:  42,
 			IsDaveConsensus:     true,
 			OutputsProof: OutputsProof{
 				OutputsHash: outputsHash,
@@ -204,7 +204,7 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		s.Equal(common.Hash(hash3), stateHashes[2].MachineHash)
 		s.Equal(uint64(1), stateHashes[2].Repetitions)
 
-		// Verify final hash has RemainingMetaCycles as Repetitions
+		// Verify final hash has PaddingRepetitions as Repetitions
 		s.Equal(machineHash, stateHashes[3].MachineHash)
 		s.Equal(uint64(42), stateHashes[3].Repetitions)
 
@@ -322,8 +322,8 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResultRollback() {
 			InputIndex:          0,
 			Status:              InputCompletionStatus_Accepted,
 			Outputs:             [][]byte{[]byte("should-be-rolled-back")},
-			Hashes:              [][32]byte{{1}, {2}},
-			RemainingMetaCycles: 10,
+			PeriodicStateHashes: [][32]byte{{1}, {2}},
+			PaddingRepetitions:  10,
 			IsDaveConsensus:     true,
 			OutputsProof: OutputsProof{
 				OutputsHash: UniqueHash(),

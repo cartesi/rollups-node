@@ -325,13 +325,16 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 		Outputs:             advanceResp.Outputs,
 		Reports:             advanceResp.Reports,
 		ExceptionData:       advanceResp.ExceptionData,
-		Hashes:              advanceResp.Hashes,
-		RemainingMetaCycles: advanceResp.RemainingCycles,
+		PeriodicStateHashes: advanceResp.PeriodicStateHashes,
+		PaddingRepetitions:  advanceResp.PaddingRepetitions,
 		IsDaveConsensus:     computeHashes,
 	}
 
-	// If the input was accepted, update the machine state
-	if result.Status == InputCompletionStatus_Accepted {
+	// Resolve the canonical result and fork disposition once. Validation below
+	// must succeed before the selected disposition mutates the live instance.
+	adoptFork := false
+	switch result.Status {
+	case InputCompletionStatus_Accepted:
 		// Get the machine hash after processing
 		result.MachineHash, err = fork.Hash(ctx)
 		if err != nil {
@@ -342,7 +345,37 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 		if err != nil {
 			return nil, errors.Join(err, fork.Close())
 		}
+		adoptFork = true
+	case InputCompletionStatus_Rejected,
+		InputCompletionStatus_Exception,
+		InputCompletionStatus_MachineHalted:
+		// Use the previous state for currently nonaccepted inputs.
+		result.MachineHash = prevMachineHash
+		result.OutputsHash = prevOutputsHash
+		result.OutputsHashProof = prevOutputsHashProof
+	case InputCompletionStatus_None:
+		return nil, errors.Join(
+			fmt.Errorf("cannot resolve advance result for status %q", result.Status),
+			fork.Close(),
+		)
+	default:
+		return nil, errors.Join(
+			fmt.Errorf("cannot resolve advance result for unknown status %q", result.Status),
+			fork.Close(),
+		)
+	}
 
+	if computeHashes {
+		err = validateCanonicalInputHashCollectionSpan(
+			uint64(len(result.PeriodicStateHashes)),
+			result.PaddingRepetitions,
+		)
+		if err != nil {
+			return nil, errors.Join(err, fork.Close())
+		}
+	}
+
+	if adoptFork {
 		// Replace the current machine with the fork
 		m.mutex.HLock()
 		oldRuntime := m.runtime
@@ -354,10 +387,6 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 			m.logger.Warn("Failed to close old machine runtime", "error", err)
 		}
 	} else {
-		// Use the previous state for rejected inputs
-		result.MachineHash = prevMachineHash
-		result.OutputsHash = prevOutputsHash
-		result.OutputsHashProof = prevOutputsHashProof
 
 		// Close the fork since we're not using it
 		if err := fork.Close(); err != nil {
@@ -371,6 +400,21 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 	}
 
 	return result, nil
+}
+
+func validateCanonicalInputHashCollectionSpan(
+	hashCount uint64,
+	paddingRepetitions uint64,
+) error {
+	if err := machine.ValidateInputHashCollectionSpan(
+		hashCount, paddingRepetitions,
+	); err != nil {
+		return fmt.Errorf("invalid canonical input hash collection span: %w", err)
+	}
+	if paddingRepetitions == 0 {
+		return errors.New("canonical input hash collection requires a positive final repetition tail")
+	}
+	return nil
 }
 
 // forkForInspect creates a copy of the machine for inspect operations
@@ -422,6 +466,10 @@ func (m *MachineInstanceImpl) Inspect(ctx context.Context, query []byte) (*Inspe
 	if inspectResponse != nil {
 		result.Reports = inspectResponse.Reports
 	}
+
+	// An execution error takes precedence over any status supplied by a Machine
+	// implementation. Inspection did not complete, but reports emitted before
+	// the failure remain useful to the caller.
 	if inspectErr != nil {
 		result.Error = inspectErr
 	} else if inspectResponse == nil || !inspectResponse.Status.IsCompleted() {
@@ -435,6 +483,8 @@ func (m *MachineInstanceImpl) Inspect(ctx context.Context, query []byte) (*Inspe
 			result.Error = machine.ErrException
 		case machine.CompletionStatusHalted:
 			result.Error = machine.ErrHalted
+		case machine.CompletionStatusUnknown:
+			result.Error = errors.Join(ErrIncompleteInspect, machine.ErrMachineInternal)
 		default:
 			result.Error = errors.Join(ErrIncompleteInspect, machine.ErrMachineInternal)
 		}
@@ -748,7 +798,8 @@ func (f *SnapshotMachineRuntimeFactory) CreateMachineRuntime(
 // Default factory instance
 var defaultFactory MachineRuntimeFactory = &DefaultMachineRuntimeFactory{}
 
-// toInputStatus converts only completed machine statuses to input statuses.
+// toInputStatus converts only completed, deterministic machine statuses to
+// canonical input statuses. Infrastructure interruptions never reach here.
 func toInputStatus(status machine.CompletionStatus) (InputCompletionStatus, error) {
 	switch status {
 	case machine.CompletionStatusAccepted:
@@ -759,9 +810,17 @@ func toInputStatus(status machine.CompletionStatus) (InputCompletionStatus, erro
 		return InputCompletionStatus_Exception, nil
 	case machine.CompletionStatusHalted:
 		return InputCompletionStatus_MachineHalted, nil
+	case machine.CompletionStatusUnknown:
+		return InputCompletionStatus_None, fmt.Errorf(
+			"unknown completed machine status %d: %w",
+			status,
+			ErrIncompleteAdvance,
+		)
 	default:
 		return InputCompletionStatus_None, fmt.Errorf(
-			"unknown completed machine status %d: %w", status, ErrIncompleteAdvance,
+			"unknown completed machine status %d: %w",
+			status,
+			ErrIncompleteAdvance,
 		)
 	}
 }
@@ -771,7 +830,11 @@ func validateCompletionExceptionData(status machine.CompletionStatus, data []byt
 	case status == machine.CompletionStatusException && data == nil:
 		return fmt.Errorf("completed exception has no exception data: %w", machine.ErrMachineInternal)
 	case status != machine.CompletionStatusException && data != nil:
-		return fmt.Errorf("completion status %d unexpectedly has exception data: %w", status, machine.ErrMachineInternal)
+		return fmt.Errorf(
+			"completion status %d unexpectedly has exception data: %w",
+			status,
+			machine.ErrMachineInternal,
+		)
 	default:
 		return nil
 	}

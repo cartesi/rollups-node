@@ -690,8 +690,8 @@ func (e *ExecutionParameters) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Log2MaxExecutionCycles is the node-side definition of the protocol
-// execution window size.
+// Log2MaxExecutionCycles is the single node-side definition of the protocol
+// execution window size. pkg/machine aliases it as Log2MaxMCyclesPerAdvanceState.
 const Log2MaxExecutionCycles uint64 = 48
 
 // MaxExecutionCycles is the number of mcycles in one machine-enforced window.
@@ -1351,8 +1351,8 @@ type AdvanceResult struct {
 	Outputs             [][]byte
 	Reports             [][]byte
 	ExceptionData       []byte
-	Hashes              [][32]byte
-	RemainingMetaCycles uint64
+	PeriodicStateHashes [][32]byte
+	PaddingRepetitions  uint64
 	IsDaveConsensus     bool
 }
 

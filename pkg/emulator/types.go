@@ -316,6 +316,13 @@ const (
 
 	CmioTxBufferStart    uint64 = C.CM_AR_CMIO_TX_BUFFER_START
 	CmioTxBufferLog2Size uint64 = C.CM_AR_CMIO_TX_BUFFER_LOG2_SIZE
+
+	// Log2MaxUarchCyclesPerMCycle omits the C API's ROLLUP_ prefix.
+	Log2MaxUarchCyclesPerMCycle uint64 = C.CM_ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE
+	// Log2MaxMCyclesPerAdvanceState omits the C API's ROLLUP_ prefix.
+	Log2MaxMCyclesPerAdvanceState uint64 = C.CM_ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE
+	// Log2MaxAdvanceStatesPerEpoch omits the C API's ROLLUP_ prefix.
+	Log2MaxAdvanceStatesPerEpoch uint64 = C.CM_ROLLUP_LOG2_MAX_ADVANCE_STATES_PER_EPOCH
 )
 
 type MachineRuntimeConfig struct {

@@ -822,9 +822,9 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 		}
 
 		// 5 inputs, each with one state hash covering the full
-		// strides-per-input count (1<<pkgm.Log2StridesPerInput) so the
+		// strides-per-input count (1<<pkgm.Log2InputEntryCapacity) so the
 		// total stride count remains a power of two.
-		stridesPerInput := uint64(1) << pkgm.Log2StridesPerInput
+		stridesPerInput := uint64(1) << pkgm.Log2InputEntryCapacity
 		stateHashes := make([]*StateHash, 5)
 		for i := range 5 {
 			stateHashes[i] = &StateHash{
@@ -899,13 +899,13 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			Name:          testAppName,
 			ConsensusType: Consensus_PRT,
 		}
-		// pkgm.InputsPerEpoch = 1 << 24 = 16_777_216
-		// Set bounds so inputCount == InputsPerEpoch + 1
+		// pkgm.MaxAdvanceStatesPerEpoch = 1 << 24 = 16_777_216
+		// Set bounds so inputCount == MaxAdvanceStatesPerEpoch + 1
 		epoch := &Epoch{
 			Index:                0,
 			VirtualIndex:         0,
 			InputIndexLowerBound: 0,
-			InputIndexUpperBound: pkgm.InputsPerEpoch + 1,
+			InputIndexUpperBound: pkgm.MaxAdvanceStatesPerEpoch + 1,
 			MachineHash:          &validator.pristineRootHash,
 			OutputsMerkleRoot:    &validator.pristineRootHash,
 		}
@@ -1041,7 +1041,7 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			MachineHash:          &validator.pristineRootHash,
 			OutputsMerkleRoot:    &validator.pristineRootHash,
 		}
-		repetitions := pkgm.StrideCountInEpoch + (uint64(1) << pkgm.Log2StridesPerInput)
+		repetitions := pkgm.EpochComputationHashLeafCount + (uint64(1) << pkgm.Log2InputEntryCapacity)
 
 		repo.On("ListStateHashes",
 			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,

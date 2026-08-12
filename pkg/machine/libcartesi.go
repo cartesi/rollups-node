@@ -103,11 +103,63 @@ func (p *proofJson) UnmarshalJSON(data []byte) error {
 }
 
 func NewLibCartesiBackend(address string, timeout time.Duration) (Backend, string, uint32, error) {
+	// Keep this defensive check even though the advancer validates the constants
+	// at startup. Other callers can construct a backend directly.
+	if err := ValidateEmulatorComputationHashLimits(); err != nil {
+		return nil, "", 0, err
+	}
 	rm, address, pid, err := emulator.SpawnServer(address, timeout)
 	if err != nil {
 		return nil, address, pid, err
 	}
 	return &LibCartesiBackend{inner: rm}, address, pid, nil
+}
+
+// ValidateEmulatorComputationHashLimits verifies that the node and compiled
+// emulator agree on the three exported rollup limits checked here. A mismatch
+// would change per-input or per-epoch computation-hash dimensions. This does
+// not validate the selected sampling period, bundle exponent, runtime library,
+// or hash algorithm.
+func ValidateEmulatorComputationHashLimits() error {
+	checks := []struct {
+		name     string
+		node     uint64
+		emulator uint64
+	}{
+		{
+			name:     "LOG2_MAX_UARCH_CYCLES_PER_MCYCLE",
+			node:     Log2MaxUarchCyclesPerMCycle,
+			emulator: emulator.Log2MaxUarchCyclesPerMCycle,
+		},
+		{
+			name:     "LOG2_MAX_MCYCLES_PER_ADVANCE_STATE",
+			node:     Log2MaxMCyclesPerAdvanceState,
+			emulator: emulator.Log2MaxMCyclesPerAdvanceState,
+		},
+		{
+			name:     "LOG2_MAX_ADVANCE_STATES_PER_EPOCH",
+			node:     Log2MaxAdvanceStatesPerEpoch,
+			emulator: emulator.Log2MaxAdvanceStatesPerEpoch,
+		},
+	}
+	for _, check := range checks {
+		if err := validateEmulatorComputationHashLimit(check.name, check.node, check.emulator); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateEmulatorComputationHashLimit takes explicit values so the mismatch
+// path can be tested without requiring a differently compiled emulator library.
+func validateEmulatorComputationHashLimit(name string, nodeLog2, emulatorLog2 uint64) error {
+	if nodeLog2 == emulatorLog2 {
+		return nil
+	}
+	return fmt.Errorf(
+		"node computation-hash dimension 2^%d does not match emulator CM_ROLLUP_%s=%d: %w",
+		nodeLog2, name, emulatorLog2, ErrMachineInternal,
+	)
 }
 
 // LibCartesiBackend is an adapter that implements Backend by wrapping a RemoteMachineInterface.
@@ -268,15 +320,20 @@ func (e *LibCartesiBackend) RunAndCollectRootHashes(
 	if state == nil {
 		return Failed, errors.New("nil state")
 	}
-	if state.Period == 0 {
+	if state.MCycleSamplingPeriod == 0 {
 		return Failed, errors.New("state period must be greater than zero")
 	}
-	log2Period := uint64(bits.Len64(state.Period) - 1)
-	if uint64(1)<<log2Period != state.Period {
-		return Failed, fmt.Errorf("period must be a power of 2, got %v", state.Period)
+	// Safe: the nonzero uint64 input makes bits.Len64 return a value in [1, 64].
+	log2Period := uint64(bits.Len64(state.MCycleSamplingPeriod) - 1) //nolint:gosec
+	if uint64(1)<<log2Period != state.MCycleSamplingPeriod {
+		return Failed, fmt.Errorf("period must be a power of 2, got %v", state.MCycleSamplingPeriod)
 	}
-	if state.Phase >= state.Period {
-		return Failed, fmt.Errorf("phase must be less than period, got phase %v and period %v", state.Phase, state.Period)
+	if state.MCyclePhase >= state.MCycleSamplingPeriod {
+		return Failed, fmt.Errorf(
+			"phase must be less than period, got phase %v and period %v",
+			state.MCyclePhase,
+			state.MCycleSamplingPeriod,
+		)
 	}
 	if err := e.inner.SetTimeout(timeout.Milliseconds()); err != nil {
 		return Failed, fmt.Errorf("failed to set operation timeout: %w", err)
@@ -285,18 +342,19 @@ func (e *LibCartesiBackend) RunAndCollectRootHashes(
 	rawResult, err := e.inner.CollectMCycleRootHashes(
 		mcycleEnd,
 		log2Period,
-		state.Phase,
-		state.BundleLog2,
+		state.MCyclePhase,
+		state.Log2BundleMCycleCount,
 		state.PartialBundle,
 	)
 	if err != nil {
 		return Failed, err
 	}
 	result := struct {
-		RootHashes    []string        `json:"hashes"`
-		MCyclePhase   uint64          `json:"mcycle_phase"`
-		BreakReason   string          `json:"break_reason"`
-		PartialBundle json.RawMessage `json:"partial_bundle,omitempty"`
+		RootHashes     []string        `json:"hashes"`
+		MCyclePhase    uint64          `json:"mcycle_phase"`
+		BreakReason    string          `json:"break_reason"`
+		PartialBundle  json.RawMessage `json:"partial_bundle,omitempty"`
+		ConsoleIOError string          `json:"console_io_error,omitempty"`
 	}{}
 	err = json.Unmarshal(rawResult, &result)
 	if err != nil {
@@ -306,11 +364,11 @@ func (e *LibCartesiBackend) RunAndCollectRootHashes(
 	if err != nil {
 		return Failed, fmt.Errorf("invalid CollectMCycleRootHashes result: %w", err)
 	}
-	if result.MCyclePhase >= state.Period {
+	if result.MCyclePhase >= state.MCycleSamplingPeriod {
 		return Failed, fmt.Errorf(
 			"invalid CollectMCycleRootHashes result: phase %v must be less than period %v",
 			result.MCyclePhase,
-			state.Period,
+			state.MCycleSamplingPeriod,
 		)
 	}
 
@@ -322,8 +380,9 @@ func (e *LibCartesiBackend) RunAndCollectRootHashes(
 	}
 
 	state.Hashes = append(state.Hashes, decodedHashes...)
-	state.Phase = result.MCyclePhase
+	state.MCyclePhase = result.MCyclePhase
 	state.PartialBundle = result.PartialBundle
+	state.ConsoleIOError = result.ConsoleIOError
 
 	return reason, nil
 }

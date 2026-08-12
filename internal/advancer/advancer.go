@@ -297,8 +297,8 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 			"status", result.Status,
 			"outputs", len(result.Outputs),
 			"reports", len(result.Reports),
-			"hashes", len(result.Hashes),
-			"remaining_cycles", result.RemainingMetaCycles,
+			"periodic_state_hashes", len(result.PeriodicStateHashes),
+			"padding_repetitions", result.PaddingRepetitions,
 		)
 
 		// Store the result in the database

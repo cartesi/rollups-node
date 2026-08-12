@@ -351,10 +351,10 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 	}
 	builder := merkle.Builder{}
 	inputCount := epoch.InputIndexUpperBound - epoch.InputIndexLowerBound
-	if inputCount > pkgm.InputsPerEpoch {
+	if inputCount > pkgm.MaxAdvanceStatesPerEpoch {
 		return nil, nil, s.setApplicationCorrupted(ctx, app,
 			"input count is too large for epoch %v of application %v: max %v, got %v",
-			epoch.Index, app.Name, pkgm.InputsPerEpoch, inputCount)
+			epoch.Index, app.Name, pkgm.MaxAdvanceStatesPerEpoch, inputCount)
 	}
 
 	if inputCount > 0 {
@@ -382,9 +382,9 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 		}
 	}
 
-	remainingInputs := pkgm.InputsPerEpoch - inputCount
-	// Safe: inputCount ≤ InputsPerEpoch enforced above, so remainingInputs << Log2StridesPerInput won't overflow.
-	remainingStrides := remainingInputs << pkgm.Log2StridesPerInput
+	remainingInputs := pkgm.MaxAdvanceStatesPerEpoch - inputCount
+	// Safe: inputCount ≤ MaxAdvanceStatesPerEpoch enforced above, so remainingInputs << Log2InputEntryCapacity won't overflow.
+	remainingStrides := remainingInputs << pkgm.Log2InputEntryCapacity
 	if remainingStrides > 0 {
 		if err := builder.AppendRepeatedUint64(merkle.TreeLeaf(*epoch.MachineHash), remainingStrides); err != nil {
 			return nil, nil, s.setApplicationCorrupted(ctx, app,
@@ -398,7 +398,7 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 			"failed to build commitment for epoch %d of application %s with error: %v", epoch.Index, app.Name, err)
 	}
 	// The commitment geometry is fixed: 2²⁴ inputs × 2²⁴ strides ⇒ height 48.
-	const expectedHeight = pkgm.Log2InputSpanToEpoch + pkgm.Log2StridesPerInput // 48
+	const expectedHeight = pkgm.Log2MaxAdvanceStatesPerEpoch + pkgm.Log2InputEntryCapacity // 48
 	if uint64(epochCommitmentTree.Height) != expectedHeight {
 		return nil, nil, s.setApplicationCorrupted(ctx, app,
 			"epoch %v commitment tree height %v, expected %v — state hash repetitions are inconsistent",
