@@ -690,6 +690,16 @@ func (e *ExecutionParameters) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// Log2MaxExecutionCycles is the node-side definition of the protocol
+// execution window size.
+const Log2MaxExecutionCycles uint64 = 48
+
+// MaxExecutionCycles is the number of mcycles in one machine-enforced window.
+const MaxExecutionCycles uint64 = 1 << Log2MaxExecutionCycles
+
+// MaxExecutionCycleSpan is the largest endpoint delta in that window.
+const MaxExecutionCycleSpan uint64 = MaxExecutionCycles - 1
+
 // validateParameters constants
 const maxDuration = 24 * time.Hour
 const maxConcurrentInspects = 1000

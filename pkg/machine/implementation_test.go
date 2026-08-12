@@ -6,6 +6,7 @@ package machine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"testing"
@@ -453,9 +454,597 @@ func (s *ImplementationSuite) TestInspect() {
 	}
 	largeQuery := make([]byte, 10)
 	response, err = machine4.Inspect(ctx, largeQuery)
+	require.NotNil(response)
+	require.Equal(CompletionStatusUnknown, response.Status)
 	require.ErrorIs(err, ErrPayloadLengthLimitExceeded)
-	require.Nil(response)
 	mockBackend4.AssertExpectations(s.T())
+}
+
+func (s *ImplementationSuite) TestRunUsesHardExecutionSpanWhenMaximumIsZero() {
+	const startCycle uint64 = 7
+	const executionCycleSpan uint64 = BarchSpanToInput
+
+	tests := []struct {
+		name    string
+		reqType requestType
+		params  model.ExecutionParameters
+	}{
+		{
+			name:    "advance",
+			reqType: AdvanceStateRequest,
+			params: model.ExecutionParameters{
+				AdvanceIncCycles:   ^uint64(0),
+				AdvanceIncDeadline: time.Second,
+				AdvanceMaxDeadline: time.Second,
+			},
+		},
+		{
+			name:    "inspect",
+			reqType: InspectStateRequest,
+			params: model.ExecutionParameters{
+				InspectIncCycles:   ^uint64(0),
+				InspectIncDeadline: time.Second,
+				InspectMaxDeadline: time.Second,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			mockBackend := NewMockBackend()
+			mockBackend.On("Run", startCycle+executionCycleSpan, mock.AnythingOfType("time.Duration")).
+				Return(McycleOverflow, nil)
+			mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+				Return(startCycle+executionCycleSpan, nil).Once()
+
+			machine := &machineImpl{backend: mockBackend, logger: s.logger, params: tt.params}
+			_, err := machine.run(
+				context.Background(), tt.reqType, false,
+				executionBounds{
+					start: startCycle, limit: startCycle + executionCycleSpan,
+					span: executionCycleSpan,
+				},
+			)
+			s.Require().ErrorIs(err, ErrReachedLimitMcycle)
+			s.Require().ErrorIs(err, ErrMcycleOverflow)
+			s.Contains(err.Error(), fmt.Sprintf("executed_cycles=%d", executionCycleSpan))
+			mockBackend.AssertExpectations(s.T())
+		})
+	}
+}
+
+func (s *ImplementationSuite) TestExecutionCycleBoundsAcceptsMaxSafeStart() {
+	const maxSafeStart uint64 = ^uint64(0) - model.MaxExecutionCycleSpan
+
+	mockBackend := NewMockBackend()
+	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(maxSafeStart, nil)
+	machine := &machineImpl{
+		backend: mockBackend,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline:     time.Second,
+			AdvanceIncCycles: 1,
+		},
+	}
+
+	bounds, err := machine.executionCycleBounds(context.Background(), AdvanceStateRequest)
+	s.Require().NoError(err)
+	s.Equal(maxSafeStart, bounds.start)
+	s.Equal(maxSafeStart+model.MaxExecutionCycleSpan, bounds.limit)
+	s.Equal(model.MaxExecutionCycleSpan, bounds.span)
+	s.False(bounds.configured)
+	mockBackend.AssertExpectations(s.T())
+}
+
+func (s *ImplementationSuite) TestExecutionCycleBoundsUsesRequestSpecificMaximum() {
+	const start uint64 = 17
+	for _, test := range []struct {
+		name    string
+		reqType requestType
+		span    uint64
+		params  model.ExecutionParameters
+	}{
+		{
+			name: "advance configured", reqType: AdvanceStateRequest, span: 101,
+			params: model.ExecutionParameters{AdvanceIncCycles: 1, AdvanceMaxCycles: 101},
+		},
+		{
+			name: "inspect configured", reqType: InspectStateRequest, span: 202,
+			params: model.ExecutionParameters{InspectIncCycles: 1, InspectMaxCycles: 202},
+		},
+		{
+			name: "advance zero uses fixed", reqType: AdvanceStateRequest, span: model.MaxExecutionCycleSpan,
+			params: model.ExecutionParameters{AdvanceIncCycles: 1},
+		},
+		{
+			name: "inspect zero uses fixed", reqType: InspectStateRequest, span: model.MaxExecutionCycleSpan,
+			params: model.ExecutionParameters{InspectIncCycles: 1},
+		},
+	} {
+		s.Run(test.name, func() {
+			backend := NewMockBackend()
+			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil)
+			machine := &machineImpl{backend: backend, logger: s.logger, params: test.params}
+
+			bounds, err := machine.executionCycleBounds(context.Background(), test.reqType)
+			s.Require().NoError(err)
+			s.Equal(start, bounds.start)
+			s.Equal(start+test.span, bounds.limit)
+			s.Equal(test.span, bounds.span)
+			if test.params.AdvanceMaxCycles != 0 || test.params.InspectMaxCycles != 0 {
+				s.True(bounds.configured)
+			} else {
+				s.False(bounds.configured)
+			}
+			backend.AssertExpectations(s.T())
+		})
+	}
+}
+
+func (s *ImplementationSuite) TestExecutionCycleBoundsRejectsMaximumAboveHardLimit() {
+	for _, reqType := range []requestType{AdvanceStateRequest, InspectStateRequest} {
+		s.Run(reqType.String(), func() {
+			backend := NewMockBackend()
+			params := model.ExecutionParameters{
+				AdvanceIncCycles: 1,
+				AdvanceMaxCycles: model.MaxExecutionCycles,
+				InspectIncCycles: 1,
+			}
+			if reqType == InspectStateRequest {
+				params.AdvanceMaxCycles = 0
+				params.InspectMaxCycles = model.MaxExecutionCycles
+			}
+			machine := &machineImpl{backend: backend, logger: s.logger, params: params}
+
+			_, err := machine.executionCycleBounds(context.Background(), reqType)
+			s.Require().ErrorIs(err, ErrReachedLimitMcycle)
+			s.Contains(err.Error(), reqType.String())
+			s.Contains(err.Error(), fmt.Sprint(model.MaxExecutionCycles))
+			backend.AssertNotCalled(s.T(), "ReadMCycle", mock.Anything)
+			backend.AssertExpectations(s.T())
+		})
+	}
+}
+
+func (s *ImplementationSuite) TestProcessRejectsInvalidMaximumBeforeCMIO() {
+	backend := NewMockBackend()
+	backend.On("CmioRxBufferSize").Return(uint64(1024))
+	machine := &machineImpl{
+		backend: backend,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			AdvanceIncCycles: 1,
+			AdvanceMaxCycles: model.MaxExecutionCycles,
+			FastDeadline:     time.Second,
+		},
+	}
+
+	response, err := machine.Advance(context.Background(), []byte("input"), Hash{}, false)
+	s.Require().Nil(response)
+	s.Require().ErrorIs(err, ErrReachedLimitMcycle)
+	backend.AssertNotCalled(s.T(), "ReadMCycle", mock.Anything)
+	backend.AssertNotCalled(s.T(), "SendCmioResponse",
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	backend.AssertExpectations(s.T())
+}
+
+func (s *ImplementationSuite) TestProcessRejectsZeroIncrementBeforeCMIO() {
+	for _, test := range []struct {
+		name    string
+		reqType requestType
+		invoke  func(*machineImpl) error
+	}{
+		{
+			name:    "advance",
+			reqType: AdvanceStateRequest,
+			invoke: func(machine *machineImpl) error {
+				_, err := machine.Advance(context.Background(), []byte("input"), Hash{}, false)
+				return err
+			},
+		},
+		{
+			name:    "inspect",
+			reqType: InspectStateRequest,
+			invoke: func(machine *machineImpl) error {
+				_, err := machine.Inspect(context.Background(), []byte("query"))
+				return err
+			},
+		},
+	} {
+		s.Run(test.name, func() {
+			backend := NewMockBackend()
+			backend.On("CmioRxBufferSize").Return(uint64(1024)).Maybe()
+			params := model.ExecutionParameters{
+				FastDeadline:       time.Second,
+				AdvanceIncDeadline: time.Second,
+				AdvanceMaxDeadline: time.Second,
+				InspectIncDeadline: time.Second,
+				InspectMaxDeadline: time.Second,
+			}
+			machine := &machineImpl{backend: backend, logger: s.logger, params: params}
+
+			err := test.invoke(machine)
+			s.Require().Error(err)
+			s.Contains(err.Error(), test.reqType.String())
+			s.Contains(err.Error(), "increment")
+			backend.AssertNotCalled(s.T(), "ReadMCycle", mock.Anything)
+			backend.AssertNotCalled(s.T(), "SendCmioResponse",
+				mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+			backend.AssertNotCalled(s.T(), "Run", mock.Anything, mock.Anything)
+			backend.AssertNotCalled(s.T(), "RunAndCollectRootHashes", mock.Anything, mock.Anything, mock.Anything)
+			backend.AssertExpectations(s.T())
+		})
+	}
+}
+
+func (s *ImplementationSuite) TestConfiguredCycleEndpointCompletionSucceeds() {
+	const start, span = uint64(10), uint64(5)
+	expectedOutputsHash := randomFakeHash()
+	backend := NewMockBackend()
+	backend.On("CmioRxBufferSize").Return(uint64(1024))
+	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.On(
+		"SendCmioResponse",
+		uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
+	).Return(nil)
+	backend.On("Run", start+span, mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
+	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start+span, nil).Once()
+	backend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
+		uint8(0), uint16(ManualYieldReasonAccepted), expectedOutputsHash[:], nil)
+	machine := &machineImpl{backend: backend, logger: s.logger, params: model.ExecutionParameters{
+		AdvanceIncCycles: span + 100, AdvanceMaxCycles: span,
+		AdvanceIncDeadline: time.Second, AdvanceMaxDeadline: time.Second,
+		FastDeadline: time.Second,
+	}}
+
+	response, err := machine.Advance(context.Background(), []byte("input"), Hash{}, false)
+	s.Require().NoError(err)
+	s.Require().Equal(CompletionStatusAccepted, response.Status)
+	backend.AssertExpectations(s.T())
+}
+
+func (s *ImplementationSuite) TestConfiguredCycleEndpointHaltSucceeds() {
+	const start, span = uint64(20), uint64(7)
+	backend := NewMockBackend()
+	backend.On("CmioRxBufferSize").Return(uint64(1024))
+	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.On(
+		"SendCmioResponse",
+		uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
+	).Return(nil)
+	backend.On("Run", start+span, mock.AnythingOfType("time.Duration")).Return(Halted, nil)
+	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start+span, nil).Once()
+	machine := &machineImpl{backend: backend, logger: s.logger, params: model.ExecutionParameters{
+		AdvanceIncCycles: span + 100, AdvanceMaxCycles: span,
+		AdvanceIncDeadline: time.Second, AdvanceMaxDeadline: time.Second,
+		FastDeadline: time.Second,
+	}}
+
+	response, err := machine.Advance(context.Background(), []byte("input"), Hash{}, false)
+	s.Require().NoError(err)
+	s.Require().Equal(CompletionStatusHalted, response.Status)
+	backend.AssertExpectations(s.T())
+}
+
+func (s *ImplementationSuite) TestConfiguredCycleExhaustionFails() {
+	const start, span = uint64(10), uint64(5)
+	backend := NewMockBackend()
+	backend.On("CmioRxBufferSize").Return(uint64(1024))
+	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.On(
+		"SendCmioResponse",
+		uint16(InspectStateRequest), []byte("query"), mock.Anything, mock.AnythingOfType("time.Duration"),
+	).Return(nil)
+	backend.On("Run", start+span, mock.AnythingOfType("time.Duration")).Return(ReachedTargetMcycle, nil)
+	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start+span, nil).Once()
+	machine := &machineImpl{backend: backend, logger: s.logger, params: model.ExecutionParameters{
+		InspectIncCycles: span + 100, InspectMaxCycles: span,
+		InspectIncDeadline: time.Second, InspectMaxDeadline: time.Second,
+		FastDeadline: time.Second,
+	}}
+
+	response, err := machine.Inspect(context.Background(), []byte("query"))
+	s.Require().NotNil(response)
+	s.Require().Equal(CompletionStatusUnknown, response.Status)
+	s.Require().Empty(response.Reports)
+	s.Require().ErrorIs(err, ErrReachedLimitMcycle)
+	s.Contains(err.Error(), "inspect execution reached configured cycle limit")
+	s.Contains(err.Error(), "start=10 requested_span=5")
+	backend.AssertExpectations(s.T())
+}
+
+func (s *ImplementationSuite) TestAdvanceCycleExhaustionSources() {
+	for _, test := range []struct {
+		name           string
+		configuredSpan uint64
+		breakReason    BreakReason
+		wantSource     string
+	}{
+		{
+			name: "configured endpoint", configuredSpan: 9,
+			breakReason: ReachedTargetMcycle, wantSource: "configured",
+		},
+		{
+			name: "fixed window", breakReason: McycleOverflow, wantSource: "fixed",
+		},
+	} {
+		s.Run(test.name, func() {
+			const start = uint64(30)
+			span := test.configuredSpan
+			if span == 0 {
+				span = model.MaxExecutionCycleSpan
+			}
+			backend := NewMockBackend()
+			backend.On("CmioRxBufferSize").Return(uint64(1024))
+			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+			backend.On(
+				"SendCmioResponse",
+				uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
+			).Return(nil)
+			backend.On("Run", start+span, mock.AnythingOfType("time.Duration")).Return(test.breakReason, nil)
+			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start+span, nil).Once()
+			machine := &machineImpl{backend: backend, logger: s.logger, params: model.ExecutionParameters{
+				AdvanceIncCycles:   ^uint64(0),
+				AdvanceMaxCycles:   test.configuredSpan,
+				AdvanceIncDeadline: time.Second,
+				AdvanceMaxDeadline: time.Second,
+				FastDeadline:       time.Second,
+			}}
+
+			response, err := machine.Advance(context.Background(), []byte("input"), Hash{}, false)
+			s.Require().Nil(response)
+			s.Require().ErrorIs(err, ErrReachedLimitMcycle)
+			if test.breakReason == McycleOverflow {
+				s.Require().ErrorIs(err, ErrMcycleOverflow)
+			}
+			s.Contains(err.Error(), test.wantSource)
+			s.Contains(err.Error(), "cycle limit")
+			s.Contains(err.Error(), fmt.Sprintf("requested_span=%d", span))
+			backend.AssertExpectations(s.T())
+		})
+	}
+}
+
+func (s *ImplementationSuite) TestConfiguredLimitTiePreservesMachineOverflowPrecedence() {
+	const start = uint64(30)
+	configuredSpan := model.MaxExecutionCycleSpan
+	limit := start + configuredSpan
+	backend := NewMockBackend()
+	backend.On("Run", limit, mock.AnythingOfType("time.Duration")).Return(McycleOverflow, nil).Once()
+	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(limit, nil).Once()
+	machine := &machineImpl{backend: backend, logger: s.logger, params: model.ExecutionParameters{
+		AdvanceIncCycles:   ^uint64(0),
+		AdvanceIncDeadline: time.Second,
+		AdvanceMaxDeadline: time.Second,
+		AdvanceMaxCycles:   configuredSpan,
+		FastDeadline:       time.Second,
+	}}
+
+	_, err := machine.run(context.Background(), AdvanceStateRequest, false, executionBounds{
+		start: start, limit: limit, span: configuredSpan, configured: true,
+	})
+	s.Require().ErrorIs(err, ErrReachedLimitMcycle)
+	s.Require().ErrorIs(err, ErrMcycleOverflow)
+	s.Contains(err.Error(), "advance execution stopped at machine imcyclemax coincident with configured target")
+	backend.AssertExpectations(s.T())
+}
+
+func (s *ImplementationSuite) TestExecutionStartingAtMachineMaximumPreservesOverflowOrigin() {
+	for _, test := range []struct {
+		name          string
+		configuredMax uint64
+	}{
+		{name: "no operator cap", configuredMax: 0},
+		{name: "configured cap also saturates", configuredMax: 1},
+	} {
+		s.Run(test.name, func() {
+			backend := NewMockBackend()
+			backend.On("CmioRxBufferSize").Return(uint64(1024))
+			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(^uint64(0), nil).Once()
+			backend.On(
+				"SendCmioResponse",
+				uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
+			).Return(nil).Once()
+			backend.On("Run", ^uint64(0), mock.AnythingOfType("time.Duration")).
+				Return(McycleOverflow, nil).Once()
+			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+				Return(^uint64(0), nil).Once()
+			machine := &machineImpl{backend: backend, logger: s.logger, params: model.ExecutionParameters{
+				AdvanceIncCycles:   1,
+				AdvanceIncDeadline: time.Second,
+				AdvanceMaxDeadline: time.Second,
+				AdvanceMaxCycles:   test.configuredMax,
+				FastDeadline:       time.Second,
+			}}
+
+			response, err := machine.Advance(context.Background(), []byte("input"), Hash{}, false)
+			s.Require().Nil(response)
+			s.Require().ErrorIs(err, ErrReachedLimitMcycle)
+			s.Require().ErrorIs(err, ErrMcycleOverflow)
+			s.Contains(err.Error(), "target_span=0")
+			s.Contains(err.Error(), "executed_cycles=0")
+			backend.AssertExpectations(s.T())
+		})
+	}
+}
+
+func (s *ImplementationSuite) TestRunRejectsNonOverflowReasonAtMachineMaximum() {
+	for _, breakReason := range []BreakReason{ReachedTargetMcycle, YieldedSoftly} {
+		s.Run(fmt.Sprintf("break reason %d", breakReason), func() {
+			backend := NewMockBackend()
+			backend.On("Run", ^uint64(0), mock.AnythingOfType("time.Duration")).
+				Return(breakReason, nil).Once()
+			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+				Return(^uint64(0), nil).Once()
+			machine := &machineImpl{backend: backend, logger: s.logger, params: model.ExecutionParameters{
+				FastDeadline: time.Second,
+			}}
+
+			result, err := machine.runIncrementInterval(
+				context.Background(), ^uint64(0), ^uint64(0), 1, nil, time.Second,
+			)
+
+			s.Equal(breakReason, result.breakReason)
+			s.Equal(^uint64(0), result.currentCycle)
+			s.Require().ErrorIs(err, ErrMachineInternal)
+			s.Contains(err.Error(), "instead of mcycle overflow at MaxUint64")
+			backend.AssertExpectations(s.T())
+		})
+	}
+}
+
+func (s *ImplementationSuite) TestInspectInheritedMcycleOverflowDoesNotClaimLocalLimitExhaustion() {
+	const start = uint64(100)
+
+	for _, test := range []struct {
+		name            string
+		configuredMax   uint64
+		requestedSpan   uint64
+		executedCycles  uint64
+		stopDescription string
+	}{
+		{
+			name:            "before configured limit",
+			configuredMax:   50,
+			requestedSpan:   50,
+			executedCycles:  7,
+			stopDescription: "stopped before configured cycle limit",
+		},
+		{
+			name:            "at configured limit",
+			configuredMax:   7,
+			requestedSpan:   7,
+			executedCycles:  7,
+			stopDescription: "stopped at machine imcyclemax coincident with configured target",
+		},
+		{
+			name:            "before zero default fixed limit",
+			requestedSpan:   model.MaxExecutionCycleSpan,
+			executedCycles:  7,
+			stopDescription: "stopped before fixed cycle limit",
+		},
+	} {
+		s.Run(test.name, func() {
+			backend := NewMockBackend()
+			backend.On("CmioRxBufferSize").Return(uint64(1024))
+			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+			backend.On(
+				"SendCmioResponse",
+				uint16(InspectStateRequest), []byte("query"), nil, mock.AnythingOfType("time.Duration"),
+			).Return(nil).Once()
+			backend.On("Run", start+test.requestedSpan, mock.AnythingOfType("time.Duration")).
+				Return(McycleOverflow, nil).Once()
+			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+				Return(start+test.executedCycles, nil).Once()
+
+			machine := &machineImpl{backend: backend, logger: s.logger, params: model.ExecutionParameters{
+				FastDeadline:       time.Second,
+				InspectIncCycles:   ^uint64(0),
+				InspectIncDeadline: time.Second,
+				InspectMaxDeadline: time.Second,
+				InspectMaxCycles:   test.configuredMax,
+			}}
+
+			response, err := machine.Inspect(context.Background(), []byte("query"))
+			s.Require().NotNil(response)
+			s.Equal(CompletionStatusUnknown, response.Status)
+			s.Empty(response.Reports)
+			s.Require().ErrorIs(err, ErrReachedLimitMcycle)
+			s.Require().ErrorIs(err, ErrMcycleOverflow)
+			s.Contains(err.Error(), test.stopDescription)
+			s.Contains(err.Error(), fmt.Sprintf("requested_span=%d", test.requestedSpan))
+			s.Contains(err.Error(), fmt.Sprintf("executed_cycles=%d", test.executedCycles))
+			backend.AssertExpectations(s.T())
+		})
+	}
+}
+
+func (s *ImplementationSuite) TestExecutionCycleBoundsSaturatesAtMachineMaximum() {
+	for _, test := range []struct {
+		name       string
+		start      uint64
+		configured uint64
+	}{
+		{
+			name: "configured cap beyond representable range", start: ^uint64(0) - 10, configured: 11,
+		},
+		{
+			name: "zero cap", start: ^uint64(0) - model.MaxExecutionCycleSpan + 1,
+		},
+		{
+			name: "maximum cap", start: ^uint64(0) - model.MaxExecutionCycleSpan + 1,
+			configured: model.MaxExecutionCycleSpan,
+		},
+	} {
+		s.Run(test.name, func() {
+			backend := NewMockBackend()
+			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(test.start, nil)
+			machine := &machineImpl{backend: backend, logger: s.logger, params: model.ExecutionParameters{
+				AdvanceIncCycles: 1,
+				AdvanceMaxCycles: test.configured,
+			}}
+
+			bounds, err := machine.executionCycleBounds(context.Background(), AdvanceStateRequest)
+			s.Require().NoError(err)
+			s.Equal(test.start, bounds.start)
+			s.Equal(^uint64(0), bounds.limit)
+			backend.AssertExpectations(s.T())
+		})
+	}
+}
+
+func (s *ImplementationSuite) TestExecutionResponseLimitErrorsExposeOnlyCounts() {
+	for _, test := range []struct {
+		kind     string
+		count    int
+		capacity int
+		sentinel error
+	}{
+		{kind: "output", count: maxOutputs + 1, capacity: maxOutputs, sentinel: ErrOutputsLimitExceeded},
+		{kind: "report", count: maxReports + 1, capacity: maxReports, sentinel: ErrReportsLimitExceeded},
+	} {
+		err := executionResponseLimitError(
+			AdvanceStateRequest, test.kind, test.count, test.capacity, test.sentinel,
+		)
+		s.Require().ErrorIs(err, test.sentinel)
+		s.Contains(err.Error(), fmt.Sprintf("advance %s count %d", test.kind, test.count))
+		s.Contains(err.Error(), fmt.Sprintf("capacity %d", test.capacity))
+	}
+}
+
+func (s *ImplementationSuite) TestInspectUsesConfiguredCycleIncrement() {
+	const startCycle uint64 = 7
+	const inspectIncCycles uint64 = 137
+
+	mockBackend := NewMockBackend()
+	mockBackend.On("CmioRxBufferSize").Return(uint64(1024))
+	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(startCycle, nil).Once()
+	mockBackend.On(
+		"SendCmioResponse",
+		uint16(InspectStateRequest), mock.Anything, mock.Anything, mock.AnythingOfType("time.Duration"),
+	).Return(nil)
+	mockBackend.On("Run", startCycle+inspectIncCycles, mock.AnythingOfType("time.Duration")).
+		Return(YieldedManually, nil)
+	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
+		Return(startCycle+inspectIncCycles, nil).Once()
+	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
+		uint8(0), uint16(ManualYieldReasonAccepted), []byte(nil), nil)
+
+	machine := &machineImpl{
+		backend: mockBackend,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline:       time.Second,
+			InspectIncCycles:   inspectIncCycles,
+			InspectIncDeadline: time.Second,
+			InspectMaxDeadline: time.Second,
+		},
+	}
+
+	response, err := machine.Inspect(context.Background(), []byte("query"))
+	s.Require().NoError(err)
+	s.Require().Equal(CompletionStatusAccepted, response.Status)
+	mockBackend.AssertExpectations(s.T())
 }
 
 // Test Store method
@@ -711,7 +1300,9 @@ func (s *ImplementationSuite) TestRun() {
 		},
 	}
 
-	result, err := machine.run(ctx, AdvanceStateRequest, false, 0, 1000)
+	result, err := machine.run(ctx, AdvanceStateRequest, false, executionBounds{
+		start: 0, limit: 1000, span: 1000, configured: true,
+	})
 	require.NoError(err)
 	require.Empty(result.outputs)
 	require.Empty(result.reports)
@@ -719,6 +1310,7 @@ func (s *ImplementationSuite) TestRun() {
 
 	// Test run with read cycle error
 	mockBackend2 := NewMockBackend()
+	mockBackend2.On("Run", uint64(100), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
 	mockBackend2.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), errors.New("read cycle failed"))
 	machine2 := &machineImpl{
 		backend: mockBackend2,
@@ -731,7 +1323,9 @@ func (s *ImplementationSuite) TestRun() {
 			AdvanceMaxDeadline: time.Second * 10,
 		},
 	}
-	_, err = machine2.run(ctx, AdvanceStateRequest, false, 0, 1000)
+	_, err = machine2.run(ctx, AdvanceStateRequest, false, executionBounds{
+		start: 0, limit: 1000, span: 1000, configured: true,
+	})
 	require.Error(err)
 	require.Contains(err.Error(), "read cycle failed")
 	mockBackend2.AssertExpectations(s.T())
@@ -754,7 +1348,9 @@ func (s *ImplementationSuite) TestRun() {
 		},
 	}
 
-	_, err = machine3.run(ctx, AdvanceStateRequest, false, 0, 1000)
+	_, err = machine3.run(ctx, AdvanceStateRequest, false, executionBounds{
+		start: 0, limit: 1000, span: 1000, configured: true,
+	})
 	require.NoError(err)
 	mockBackend3.AssertExpectations(s.T())
 
@@ -777,7 +1373,9 @@ func (s *ImplementationSuite) TestRun() {
 		},
 	}
 
-	_, err = machine4.run(ctx, AdvanceStateRequest, false, 0, 1000)
+	_, err = machine4.run(ctx, AdvanceStateRequest, false, executionBounds{
+		start: 0, limit: 1000, span: 1000, configured: true,
+	})
 	require.Error(err)
 	require.Contains(err.Error(), "could not read output/report")
 	require.Contains(err.Error(), "cmio request failed")
@@ -805,7 +1403,9 @@ func (s *ImplementationSuite) TestRun() {
 		},
 	}
 
-	result5, err := machine5.run(ctx, AdvanceStateRequest, false, 0, 1000)
+	result5, err := machine5.run(ctx, AdvanceStateRequest, false, executionBounds{
+		start: 0, limit: 1000, span: 1000, configured: true,
+	})
 	require.NoError(err)
 	require.Len(result5.outputs, 1)
 	require.Equal([]byte("output data"), []byte(result5.outputs[0]))
@@ -834,7 +1434,9 @@ func (s *ImplementationSuite) TestRun() {
 		},
 	}
 
-	result6, err := machine6.run(ctx, AdvanceStateRequest, false, 0, 1000)
+	result6, err := machine6.run(ctx, AdvanceStateRequest, false, executionBounds{
+		start: 0, limit: 1000, span: 1000, configured: true,
+	})
 	require.NoError(err)
 	require.Empty(result6.outputs)
 	require.Len(result6.reports, 1)
@@ -999,7 +1601,6 @@ func (s *ImplementationSuite) TestProcess() {
 	// Test process with run error
 	mockBackend4 := NewMockBackend()
 	mockBackend4.On("CmioRxBufferSize").Return(uint64(1024))
-	mockBackend4.On("SendCmioResponse", mock.AnythingOfType("uint16"), mock.Anything, expectedHash, mock.AnythingOfType("time.Duration")).Return(nil)
 	mockBackend4.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), errors.New("read cycle failed"))
 	machine4 := &machineImpl{
 		backend: mockBackend4,
@@ -1015,6 +1616,7 @@ func (s *ImplementationSuite) TestProcess() {
 	_, err = machine4.process(ctx, input, AdvanceStateRequest, &expectedHash, false)
 	require.Error(err)
 	require.Contains(err.Error(), "read cycle failed")
+	mockBackend4.AssertNotCalled(s.T(), "SendCmioResponse", mock.Anything, mock.Anything, mock.Anything)
 	mockBackend4.AssertExpectations(s.T())
 }
 
@@ -1046,7 +1648,9 @@ func (s *ImplementationSuite) TestRunWithAutomaticYields() {
 	mockBackend.On("Run", uint64(150), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil).Once()
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(100), nil).Once()
 
-	result, err := machine.run(ctx, AdvanceStateRequest, false, 0, 1000)
+	result, err := machine.run(ctx, AdvanceStateRequest, false, executionBounds{
+		start: 0, limit: 1000, span: 1000, configured: true,
+	})
 	require.NoError(err)
 	require.Len(result.outputs, 1)
 	require.Equal([]byte("test output"), result.outputs[0])
@@ -1083,7 +1687,9 @@ func (s *ImplementationSuite) TestRunWithAutomaticYieldsReports() {
 	mockBackend.On("Run", uint64(150), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil).Once()
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(100), nil).Once()
 
-	result, err := machine.run(ctx, AdvanceStateRequest, false, 0, 1000)
+	result, err := machine.run(ctx, AdvanceStateRequest, false, executionBounds{
+		start: 0, limit: 1000, span: 1000, configured: true,
+	})
 	require.NoError(err)
 	require.Empty(result.outputs)
 	require.Len(result.reports, 1)
@@ -1145,7 +1751,9 @@ func (s *ImplementationSuite) TestMultipleAutomaticYields() {
 	mockBackend.On("Run", uint64(150), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil).Once()
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(60), nil).Once()
 
-	result, err := machine.run(ctx, AdvanceStateRequest, false, 0, 1000)
+	result, err := machine.run(ctx, AdvanceStateRequest, false, executionBounds{
+		start: 0, limit: 1000, span: 1000, configured: true,
+	})
 	require.NoError(err)
 
 	require.Len(result.outputs, 2)

@@ -82,11 +82,24 @@ var (
 	ErrHalted                     = errors.New("machine halted")
 	ErrOutputsLimitExceeded       = errors.New("outputs limit exceeded")
 	ErrReportsLimitExceeded       = errors.New("reports limit exceeded")
-	ErrReachedTargetMcycle        = errors.New("machine reached target mcycle")
 	ErrPayloadLengthLimitExceeded = errors.New("payload length limit exceeded")
 	ErrHashLength                 = errors.New("hash does not have the exactly number of bytes")
 	ErrReachedLimitMcycle         = errors.New("machine reached limit mcycle")
+
+	// ErrMcycleOverflow preserves the emulator-reported fact that the machine
+	// itself reached imcyclemax. It remains distinguishable from a node target
+	// because canonical overflow eligibility depends on the stop origin.
+	ErrMcycleOverflow = fmt.Errorf("machine reached imcyclemax: %w", ErrReachedLimitMcycle)
 )
+
+// IsExecutionLimitError reports whether err is an incomplete execution caused
+// by a payload, response-count, or cycle ceiling.
+func IsExecutionLimitError(err error) bool {
+	return errors.Is(err, ErrPayloadLengthLimitExceeded) ||
+		errors.Is(err, ErrOutputsLimitExceeded) ||
+		errors.Is(err, ErrReportsLimitExceeded) ||
+		errors.Is(err, ErrReachedLimitMcycle)
+}
 
 // The Machine interface covers the core rollups-oriented functionalities of a cartesi
 // machine: forking, getting the merkle tree's root hash, sending advance-state requests,
@@ -137,10 +150,10 @@ func DefaultConfig(path string) *MachineConfig {
 		Address: "127.0.0.1:0",
 		Path:    path,
 		ExecutionParameters: model.ExecutionParameters{
-			AdvanceIncCycles:   1 << 22,           // nolint: mnd
-			AdvanceMaxCycles:   ^uint64(0) >> 2,   // nolint: mnd
-			InspectIncCycles:   1 << 22,           // nolint: mnd
-			InspectMaxCycles:   ^uint64(0) >> 2,   // nolint: mnd
+			AdvanceIncCycles:   1 << 22, //nolint:mnd
+			AdvanceMaxCycles:   0,
+			InspectIncCycles:   1 << 22, //nolint:mnd
+			InspectMaxCycles:   0,
 			AdvanceIncDeadline: time.Second * 10,  // nolint: mnd
 			AdvanceMaxDeadline: time.Second * 180, // nolint: mnd
 			InspectIncDeadline: time.Second * 10,  // nolint: mnd

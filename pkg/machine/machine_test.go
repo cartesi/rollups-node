@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 )
@@ -185,9 +186,9 @@ func (s *MachineSuite) TestDefaultConfig() {
 
 	// Test execution parameters are set
 	require.Greater(config.ExecutionParameters.AdvanceIncCycles, uint64(0))
-	require.Greater(config.ExecutionParameters.AdvanceMaxCycles, uint64(0))
+	require.Zero(config.ExecutionParameters.AdvanceMaxCycles)
 	require.Greater(config.ExecutionParameters.InspectIncCycles, uint64(0))
-	require.Greater(config.ExecutionParameters.InspectMaxCycles, uint64(0))
+	require.Zero(config.ExecutionParameters.InspectMaxCycles)
 	require.Greater(config.ExecutionParameters.AdvanceIncDeadline, time.Duration(0))
 	require.Greater(config.ExecutionParameters.AdvanceMaxDeadline, time.Duration(0))
 	require.Greater(config.ExecutionParameters.InspectIncDeadline, time.Duration(0))
@@ -195,6 +196,28 @@ func (s *MachineSuite) TestDefaultConfig() {
 	require.Greater(config.ExecutionParameters.LoadDeadline, time.Duration(0))
 	require.Greater(config.ExecutionParameters.StoreDeadline, time.Duration(0))
 	require.Greater(config.ExecutionParameters.FastDeadline, time.Duration(0))
+}
+
+func (s *MachineSuite) TestConfiguredHardCycleCeilingMatchesMachineInputSpan() {
+	s.Require().Equal(BarchSpanToInput, model.MaxExecutionCycleSpan)
+	s.Require().Equal(uint64(1)<<Log2BarchSpanToInput, model.MaxExecutionCycles)
+}
+
+func (s *MachineSuite) TestExecutionLimitClassification() {
+	for _, err := range []error{
+		ErrPayloadLengthLimitExceeded,
+		ErrOutputsLimitExceeded,
+		ErrReportsLimitExceeded,
+		ErrReachedLimitMcycle,
+		ErrMcycleOverflow,
+	} {
+		s.True(IsExecutionLimitError(err), "%v", err)
+	}
+	s.False(IsExecutionLimitError(ErrMachineInternal))
+}
+
+func (s *MachineSuite) TestMachineOverflowSharesTheExecutionLimitUmbrella() {
+	s.Require().ErrorIs(ErrMcycleOverflow, ErrReachedLimitMcycle)
 }
 
 // Test machine interface compliance

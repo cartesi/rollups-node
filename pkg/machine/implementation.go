@@ -45,6 +45,27 @@ type completionResult struct {
 	data   []byte
 }
 
+// executionBounds is the resolved cycle window for one request. A configured
+// span of zero is converted to the fixed machine window exactly once here;
+// downstream execution and diagnostics consume the same resolved values.
+type executionBounds struct {
+	start      Cycle
+	limit      Cycle
+	span       Cycle
+	configured bool
+}
+
+func (r requestType) String() string {
+	switch r {
+	case AdvanceStateRequest:
+		return "advance"
+	case InspectStateRequest:
+		return "inspect"
+	default:
+		return fmt.Sprintf("request_type_%d", r)
+	}
+}
+
 type automaticYieldReason uint16
 
 const (
@@ -228,19 +249,18 @@ func (m *machineImpl) Advance(ctx context.Context, input []byte, checkpointHash 
 func (m *machineImpl) Inspect(ctx context.Context, query []byte) (*InspectResponse, error) {
 	// For inspect-state requests, revert_root_hash is not checked and can be NULL/empty
 	result, err := m.process(ctx, query, InspectStateRequest, nil, false)
+	response := &InspectResponse{Reports: result.reports}
 	if err != nil {
-		return nil, err
+		return response, err
 	}
-	if !result.completion.status.IsCompleted() {
-		return nil, fmt.Errorf(
+
+	response.Status = result.completion.status
+	if !response.Status.IsCompleted() {
+		return response, fmt.Errorf(
 			"invalid completed inspect status %d: %w",
 			result.completion.status,
 			ErrMachineInternal,
 		)
-	}
-	response := &InspectResponse{
-		Status:  result.completion.status,
-		Reports: result.reports,
 	}
 	if response.Status == CompletionStatusException {
 		response.ExceptionData = append([]byte{}, result.completion.data...)
@@ -384,18 +404,20 @@ func (m *machineImpl) process(
 	if err := checkContext(ctx); err != nil {
 		return processResult{}, err
 	}
-	// Check payload length limit
-	if length := uint64(len(request)); length > m.backend.CmioRxBufferSize() {
-		return processResult{}, ErrPayloadLengthLimitExceeded
+	if length, capacity := uint64(len(request)), m.backend.CmioRxBufferSize(); length > capacity {
+		return processResult{}, fmt.Errorf(
+			"%s request payload length %d exceeds CMIO receive buffer capacity %d: %w",
+			reqType, length, capacity, ErrPayloadLengthLimitExceeded,
+		)
 	}
 
-	currentCycle, err := m.readMCycle(ctx)
-	if err != nil {
+	// Validate execution parameters before SendCmioResponse mutates the machine.
+	if err := m.validateExecutionCycleIncrement(reqType); err != nil {
 		return processResult{}, err
 	}
-	limitCycle := currentCycle + m.params.AdvanceMaxCycles
-	if reqType == InspectStateRequest {
-		limitCycle = currentCycle + m.params.InspectMaxCycles
+	bounds, err := m.executionCycleBounds(ctx, reqType)
+	if err != nil {
+		return processResult{}, err
 	}
 
 	err = m.backend.SendCmioResponse(uint16(reqType), request, checkpointHash, m.params.FastDeadline)
@@ -403,7 +425,7 @@ func (m *machineImpl) process(
 		return processResult{}, err
 	}
 
-	execution, err := m.run(ctx, reqType, computeHashes, currentCycle, limitCycle)
+	execution, err := m.run(ctx, reqType, computeHashes, bounds)
 	result := processResult{runResult: execution}
 	switch {
 	case err == nil:
@@ -426,24 +448,23 @@ func (m *machineImpl) run(
 	ctx context.Context,
 	reqType requestType,
 	computeHashes bool,
-	currentCycle uint64,
-	limitCycle uint64,
+	bounds executionBounds,
 ) (runResult, error) {
 	startTime := time.Now()
+	currentCycle := bounds.start
 
 	stepTimeout := m.params.AdvanceIncDeadline
 	runTimeout := m.params.AdvanceMaxDeadline
-	increment := m.params.AdvanceIncCycles
+	increment := m.executionCycleIncrement(reqType)
 	if reqType == InspectStateRequest {
 		stepTimeout = m.params.InspectIncDeadline
 		runTimeout = m.params.InspectMaxDeadline
-		increment = m.params.InspectIncCycles
 	}
 
 	m.logger.Debug("run",
 		"startingCycle", currentCycle,
-		"limitCycle", limitCycle,
-		"leftover", limitCycle-currentCycle)
+		"limitCycle", bounds.limit,
+		"leftover", bounds.limit-currentCycle)
 
 	result := runResult{
 		outputs: make([]Output, 0, 16), //nolint:mnd
@@ -477,10 +498,13 @@ func (m *machineImpl) run(
 		}
 
 		interval, err := m.runIncrementInterval(
-			ctx, currentCycle, limitCycle, increment, hashCollectorState, stepTimeout,
+			ctx, currentCycle, bounds.limit, increment, hashCollectorState, stepTimeout,
 		)
 		currentCycle = interval.currentCycle
 		if err != nil {
+			if errors.Is(err, ErrReachedLimitMcycle) {
+				return finish(executionLimitError(reqType, bounds, currentCycle, err))
+			}
 			return finish(err)
 		}
 
@@ -490,7 +514,7 @@ func (m *machineImpl) run(
 		case Halted:
 			return finish(ErrHalted)
 		case McycleOverflow:
-			return finish(ErrReachedLimitMcycle)
+			return finish(executionLimitError(reqType, bounds, currentCycle, ErrMcycleOverflow))
 		case ReachedTargetMcycle, YieldedSoftly:
 			continue
 		case Failed:
@@ -514,14 +538,17 @@ func (m *machineImpl) run(
 		case AutomaticYieldReasonProgress:
 			m.logger.Debug("ignoring yield reason progress", "value", fmt.Sprintf("%v", data))
 		case AutomaticYieldReasonOutput:
-			// TODO: should we remove this?
 			if len(result.outputs) == maxOutputs {
-				return finish(ErrOutputsLimitExceeded)
+				return finish(executionResponseLimitError(
+					reqType, "output", len(result.outputs)+1, maxOutputs, ErrOutputsLimitExceeded,
+				))
 			}
 			result.outputs = append(result.outputs, data)
 		case AutomaticYieldReasonReport:
 			if len(result.reports) == maxReports {
-				return finish(ErrReportsLimitExceeded)
+				return finish(executionResponseLimitError(
+					reqType, "report", len(result.reports)+1, maxReports, ErrReportsLimitExceeded,
+				))
 			}
 			result.reports = append(result.reports, data)
 		default:
@@ -529,6 +556,114 @@ func (m *machineImpl) run(
 			return finish(err)
 		}
 	}
+}
+
+func executionResponseLimitError(
+	reqType requestType,
+	responseKind string,
+	count int,
+	capacity int,
+	limitErr error,
+) error {
+	return fmt.Errorf(
+		"%s %s count %d exceeds local operational capacity %d: %w",
+		reqType, responseKind, count, capacity, limitErr,
+	)
+}
+
+// executionCycleBounds applies the request-specific configured cycle span.
+// Zero uses the machine's complete fixed window; non-representable endpoints
+// saturate at MaxUint64 to mirror emulator mcycle arithmetic.
+func (m *machineImpl) executionCycleBounds(
+	ctx context.Context,
+	reqType requestType,
+) (executionBounds, error) {
+	executionCycleSpan := m.configuredCycleSpan(reqType)
+	if executionCycleSpan > model.MaxExecutionCycleSpan {
+		return executionBounds{}, fmt.Errorf(
+			"%s execution configured cycle span exceeds hard maximum: requested_span=%d maximum_span=%d: %w",
+			reqType, executionCycleSpan, model.MaxExecutionCycleSpan, ErrReachedLimitMcycle,
+		)
+	}
+
+	currentCycle, err := m.readMCycle(ctx)
+	if err != nil {
+		return executionBounds{}, err
+	}
+	configured := executionCycleSpan != 0
+	if executionCycleSpan == 0 {
+		executionCycleSpan = BarchSpanToInput
+	}
+	limit := ^uint64(0)
+	if currentCycle <= ^uint64(0)-executionCycleSpan {
+		limit = currentCycle + executionCycleSpan
+	}
+	return executionBounds{
+		start: currentCycle, limit: limit, span: executionCycleSpan, configured: configured,
+	}, nil
+}
+
+func (m *machineImpl) validateExecutionCycleIncrement(reqType requestType) error {
+	if m.executionCycleIncrement(reqType) == 0 {
+		return fmt.Errorf("%s execution increment must be greater than zero: %w", reqType, ErrMachineInternal)
+	}
+	return nil
+}
+
+func (m *machineImpl) configuredCycleSpan(reqType requestType) uint64 {
+	if reqType == InspectStateRequest {
+		return m.params.InspectMaxCycles
+	}
+	return m.params.AdvanceMaxCycles
+}
+
+func (m *machineImpl) executionCycleIncrement(reqType requestType) uint64 {
+	if reqType == InspectStateRequest {
+		return m.params.InspectIncCycles
+	}
+	return m.params.AdvanceIncCycles
+}
+
+func executionLimitError(
+	reqType requestType,
+	bounds executionBounds,
+	current uint64,
+	origin error,
+) error {
+	targetSpan := bounds.limit - bounds.start
+	executedCycles := uint64(0)
+	if current >= bounds.start {
+		executedCycles = current - bounds.start
+	}
+	source := "fixed"
+	if bounds.configured {
+		source = "configured"
+	}
+	progress := fmt.Sprintf(
+		"start=%d requested_span=%d target_span=%d executed_cycles=%d",
+		bounds.start, bounds.span, targetSpan, executedCycles,
+	)
+
+	if current < bounds.limit {
+		return fmt.Errorf(
+			"%s execution stopped before %s cycle limit: %s: %w",
+			reqType, source, progress, origin,
+		)
+	}
+	if errors.Is(origin, ErrMcycleOverflow) && bounds.configured {
+		return fmt.Errorf(
+			"%s execution stopped at machine imcyclemax coincident with configured target: %s: %w",
+			reqType, progress, origin,
+		)
+	}
+
+	if errors.Is(origin, ErrMcycleOverflow) {
+		source += " (machine imcyclemax)"
+	}
+	return fmt.Errorf(
+		"%s execution reached %s cycle limit without completing: %s: %w",
+		reqType, source, progress, origin,
+	)
 }
 
 // runIncrementInterval runs the machine for at most incrementLimit mcycles and
@@ -542,7 +677,8 @@ func (m *machineImpl) runIncrementInterval(ctx context.Context,
 ) (incrementResult, error) {
 	startingCycle := currentCycle
 
-	if currentCycle >= limitCycle {
+	atSaturatedEndpoint := currentCycle == ^uint64(0) && limitCycle == ^uint64(0)
+	if currentCycle >= limitCycle && !atSaturatedEndpoint {
 		return incrementResult{currentCycle: currentCycle}, ErrReachedLimitMcycle
 	}
 
@@ -568,6 +704,13 @@ func (m *machineImpl) runIncrementInterval(ctx context.Context,
 		"currentCycle", currentCycle,
 		"leftover", limitCycle-currentCycle,
 		"breakReason", breakReason)
+
+	if atSaturatedEndpoint && breakReason != McycleOverflow {
+		return incrementResult{breakReason: breakReason, currentCycle: currentCycle}, fmt.Errorf(
+			"machine returned break reason %d instead of mcycle overflow at MaxUint64: %w",
+			breakReason, ErrMachineInternal,
+		)
+	}
 
 	switch breakReason {
 	case YieldedManually,
