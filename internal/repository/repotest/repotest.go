@@ -54,6 +54,9 @@ func StoreAdvanceResult(
 			MachineHash: UniqueHash(),
 		},
 	}
+	if status == InputCompletionStatus_Exception {
+		result.ExceptionData = []byte{}
+	}
 	err := repo.StoreAdvanceResult(ctx, appID, result)
 	require.NoError(t, err)
 }

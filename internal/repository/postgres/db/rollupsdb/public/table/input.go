@@ -23,6 +23,7 @@ type inputTable struct {
 	BlockNumber        postgres.ColumnFloat
 	RawData            postgres.ColumnBytea
 	Status             postgres.ColumnString
+	ExceptionData      postgres.ColumnBytea
 	MachineHash        postgres.ColumnBytea
 	OutputsHash        postgres.ColumnBytea
 	TransactionHash    postgres.ColumnBytea
@@ -77,6 +78,7 @@ func newInputTableImpl(schemaName, tableName, alias string) inputTable {
 		BlockNumberColumn        = postgres.FloatColumn("block_number")
 		RawDataColumn            = postgres.ByteaColumn("raw_data")
 		StatusColumn             = postgres.StringColumn("status")
+		ExceptionDataColumn      = postgres.ByteaColumn("exception_data")
 		MachineHashColumn        = postgres.ByteaColumn("machine_hash")
 		OutputsHashColumn        = postgres.ByteaColumn("outputs_hash")
 		TransactionHashColumn    = postgres.ByteaColumn("transaction_hash")
@@ -84,8 +86,8 @@ func newInputTableImpl(schemaName, tableName, alias string) inputTable {
 		SnapshotURIColumn        = postgres.StringColumn("snapshot_uri")
 		CreatedAtColumn          = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn          = postgres.TimestampzColumn("updated_at")
-		allColumns               = postgres.ColumnList{EpochApplicationIDColumn, EpochIndexColumn, IndexColumn, BlockNumberColumn, RawDataColumn, StatusColumn, MachineHashColumn, OutputsHashColumn, TransactionHashColumn, LogIndexColumn, SnapshotURIColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns           = postgres.ColumnList{EpochIndexColumn, BlockNumberColumn, RawDataColumn, StatusColumn, MachineHashColumn, OutputsHashColumn, TransactionHashColumn, LogIndexColumn, SnapshotURIColumn, CreatedAtColumn, UpdatedAtColumn}
+		allColumns               = postgres.ColumnList{EpochApplicationIDColumn, EpochIndexColumn, IndexColumn, BlockNumberColumn, RawDataColumn, StatusColumn, ExceptionDataColumn, MachineHashColumn, OutputsHashColumn, TransactionHashColumn, LogIndexColumn, SnapshotURIColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns           = postgres.ColumnList{EpochIndexColumn, BlockNumberColumn, RawDataColumn, StatusColumn, ExceptionDataColumn, MachineHashColumn, OutputsHashColumn, TransactionHashColumn, LogIndexColumn, SnapshotURIColumn, CreatedAtColumn, UpdatedAtColumn}
 		defaultColumns           = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
 	)
 
@@ -99,6 +101,7 @@ func newInputTableImpl(schemaName, tableName, alias string) inputTable {
 		BlockNumber:        BlockNumberColumn,
 		RawData:            RawDataColumn,
 		Status:             StatusColumn,
+		ExceptionData:      ExceptionDataColumn,
 		MachineHash:        MachineHashColumn,
 		OutputsHash:        OutputsHashColumn,
 		TransactionHash:    TransactionHashColumn,

@@ -1657,12 +1657,7 @@
 					"ACCEPTED",
 					"REJECTED",
 					"EXCEPTION",
-					"MACHINE_HALTED",
-					"OUTPUTS_LIMIT_EXCEEDED",
-					"REPORTS_LIMIT_EXCEEDED",
-					"CYCLE_LIMIT_EXCEEDED",
-					"TIME_LIMIT_EXCEEDED",
-					"PAYLOAD_LENGTH_LIMIT_EXCEEDED"
+					"MACHINE_HALTED"
 				]
 			},
 			"Input": {
@@ -1692,6 +1687,17 @@
 					},
 					"status": {
 						"$ref": "#/components/schemas/InputCompletionStatus"
+					},
+					"exception_data": {
+						"description": "Raw guest-provided CMIO exception payload. It is non-null only when status is EXCEPTION; an empty payload is encoded as 0x.",
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/ByteArray"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"machine_hash": {
 						"oneOf": [

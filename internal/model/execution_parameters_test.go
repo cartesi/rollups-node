@@ -124,3 +124,43 @@ func TestExecutionParametersRejectZeroCycleIncrements(t *testing.T) {
 		})
 	}
 }
+
+func TestInputCompletionStatusContract(t *testing.T) {
+	expected := []InputCompletionStatus{
+		InputCompletionStatus_None,
+		InputCompletionStatus_Accepted,
+		InputCompletionStatus_Rejected,
+		InputCompletionStatus_Exception,
+		InputCompletionStatus_MachineHalted,
+	}
+	require.Equal(t, expected, InputCompletionStatusAllValues)
+
+	for _, value := range expected {
+		t.Run(value.String(), func(t *testing.T) {
+			var fromString InputCompletionStatus
+			require.NoError(t, fromString.Scan(value.String()))
+			require.Equal(t, value, fromString)
+
+			var fromBytes InputCompletionStatus
+			require.NoError(t, fromBytes.Scan([]byte(value.String())))
+			require.Equal(t, value, fromBytes)
+			require.Equal(t, value != InputCompletionStatus_None, value.IsCompleted())
+		})
+	}
+
+	removedOrInvalid := []string{
+		"OUTPUTS_LIMIT_EXCEEDED",
+		"REPORTS_LIMIT_EXCEEDED",
+		"CYCLE_LIMIT_EXCEEDED",
+		"TIME_LIMIT_EXCEEDED",
+		"PAYLOAD_LENGTH_LIMIT_EXCEEDED",
+		"INVALID",
+	}
+	for _, value := range removedOrInvalid {
+		t.Run(value, func(t *testing.T) {
+			var status InputCompletionStatus
+			require.Error(t, status.Scan(value))
+			require.False(t, InputCompletionStatus(value).IsCompleted())
+		})
+	}
+}

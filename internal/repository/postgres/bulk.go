@@ -5,6 +5,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"unsafe"
 
@@ -251,6 +252,7 @@ func updateInput(
 	appID int64,
 	inputIndex uint64,
 	status model.InputCompletionStatus,
+	exceptionData []byte,
 	outputsHash common.Hash,
 	machineHash common.Hash,
 ) error {
@@ -258,11 +260,13 @@ func updateInput(
 	updStmt := table.Input.
 		UPDATE(
 			table.Input.Status,
+			table.Input.ExceptionData,
 			table.Input.MachineHash,
 			table.Input.OutputsHash,
 		).
 		SET(
 			status,
+			exceptionData,
 			machineHash[:],
 			outputsHash[:],
 		).
@@ -354,6 +358,16 @@ func (r *PostgresRepository) StoreAdvanceResult(
 	appID int64,
 	res *model.AdvanceResult,
 ) error {
+	if res == nil {
+		return errors.New("advance result must not be nil")
+	}
+	if !res.Status.IsCompleted() {
+		return fmt.Errorf("cannot store advance result with noncompleted status %q", res.Status)
+	}
+	if err := validateAdvanceExceptionData(res.Status, res.ExceptionData); err != nil {
+		return err
+	}
+
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -373,13 +387,18 @@ func (r *PostgresRepository) StoreAdvanceResult(
 	}
 
 	if res.IsDaveConsensus {
-		err = insertStateHashes(ctx, tx, appID, res.EpochIndex, res.InputIndex, res.PeriodicStateHashes, res.MachineHash, res.PaddingRepetitions)
+		err = insertStateHashes(
+			ctx, tx, appID, res.EpochIndex, res.InputIndex,
+			res.PeriodicStateHashes, res.MachineHash, res.PaddingRepetitions,
+		)
 		if err != nil {
 			return err
 		}
 	}
 
-	err = updateInput(ctx, tx, appID, res.InputIndex, res.Status, res.OutputsHash, res.MachineHash)
+	err = updateInput(
+		ctx, tx, appID, res.InputIndex, res.Status, res.ExceptionData, res.OutputsHash, res.MachineHash,
+	)
 	if err != nil {
 		return err
 	}
@@ -396,6 +415,17 @@ func (r *PostgresRepository) StoreAdvanceResult(
 	}
 
 	return tx.Commit(ctx)
+}
+
+func validateAdvanceExceptionData(status model.InputCompletionStatus, data []byte) error {
+	switch {
+	case status == model.InputCompletionStatus_Exception && data == nil:
+		return errors.New("exception advance result must include exception data")
+	case status != model.InputCompletionStatus_Exception && data != nil:
+		return fmt.Errorf("advance result with status %q must not include exception data", status)
+	default:
+		return nil
+	}
 }
 
 func updateEpochClaim(

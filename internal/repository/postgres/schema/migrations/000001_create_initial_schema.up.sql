@@ -15,12 +15,7 @@ CREATE TYPE "InputCompletionStatus" AS ENUM (
     'ACCEPTED',
     'REJECTED',
     'EXCEPTION',
-    'MACHINE_HALTED',
-    'OUTPUTS_LIMIT_EXCEEDED',
-    'REPORTS_LIMIT_EXCEEDED',
-    'CYCLE_LIMIT_EXCEEDED',
-    'TIME_LIMIT_EXCEEDED',
-    'PAYLOAD_LENGTH_LIMIT_EXCEEDED');
+    'MACHINE_HALTED');
 
 CREATE TYPE "DefaultBlock" AS ENUM ('FINALIZED', 'LATEST', 'PENDING', 'SAFE');
 
@@ -390,6 +385,7 @@ CREATE TABLE "input"
     "block_number" uint64 NOT NULL,
     "raw_data" BYTEA NOT NULL,
     "status" "InputCompletionStatus" NOT NULL,
+    "exception_data" BYTEA,
     "machine_hash" hash,
     "outputs_hash" hash,
     "transaction_hash" hash NOT NULL,
@@ -397,6 +393,11 @@ CREATE TABLE "input"
     "snapshot_uri" VARCHAR(4096),
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT "input_exception_data_check" CHECK (
+        ("status" = 'EXCEPTION' AND "exception_data" IS NOT NULL)
+        OR
+        ("status" <> 'EXCEPTION' AND "exception_data" IS NULL)
+    ),
     CONSTRAINT "input_pkey" PRIMARY KEY ("epoch_application_id", "index"),
     CONSTRAINT "input_epoch_index_unique" UNIQUE ("epoch_application_id", "epoch_index", "index"),
     CONSTRAINT "input_application_id_tx_hash_log_index_unique" UNIQUE ("epoch_application_id", "transaction_hash", "log_index"),

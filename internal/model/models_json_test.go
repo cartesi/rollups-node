@@ -55,7 +55,8 @@ func TestInputJSONRoundtrip(t *testing.T) {
 		Index:              7,
 		BlockNumber:        12345,
 		RawData:            []byte{0xde, 0xad, 0xbe, 0xef},
-		Status:             InputCompletionStatus_Accepted,
+		Status:             InputCompletionStatus_Exception,
+		ExceptionData:      []byte{0xff, 0x00, 0x80},
 		MachineHash:        &machineHash,
 		TransactionHash:    common.HexToHash("0x5678"),
 		LogIndex:           11,
@@ -68,6 +69,7 @@ func TestInputJSONRoundtrip(t *testing.T) {
 
 	// LogIndex must be hex-encoded like the other uint64 fields.
 	require.Contains(t, string(data), `"log_index":"0xb"`)
+	require.Contains(t, string(data), `"exception_data":"0xff0080"`)
 
 	var decoded Input
 	err = json.Unmarshal(data, &decoded)
@@ -80,9 +82,22 @@ func TestInputJSONRoundtrip(t *testing.T) {
 	require.Equal(t, original.BlockNumber, decoded.BlockNumber)
 	require.Equal(t, original.RawData, decoded.RawData)
 	require.Equal(t, original.Status, decoded.Status)
+	require.Equal(t, original.ExceptionData, decoded.ExceptionData)
 	require.Equal(t, original.MachineHash, decoded.MachineHash)
 	require.Equal(t, original.TransactionHash, decoded.TransactionHash)
 	require.Equal(t, original.LogIndex, decoded.LogIndex)
+}
+
+func TestInputJSONDistinguishesMissingAndEmptyExceptionData(t *testing.T) {
+	base := Input{}
+	data, err := json.Marshal(&base)
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"exception_data":null`)
+
+	base.ExceptionData = []byte{}
+	data, err = json.Marshal(&base)
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"exception_data":"0x"`)
 }
 
 func TestInputUnmarshalJSONInvalidHex(t *testing.T) {
@@ -101,6 +116,11 @@ func TestInputUnmarshalJSONInvalidHex(t *testing.T) {
 			name:    "invalid LogIndex",
 			json:    `{"epoch_index":"0x0","index":"0x0","block_number":"0x0","raw_data":"0x","log_index":"bad"}`,
 			wantErr: "LogIndex",
+		},
+		{
+			name:    "invalid ExceptionData",
+			json:    `{"epoch_index":"0x0","index":"0x0","block_number":"0x0","raw_data":"0x","exception_data":"not-hex","log_index":"0x0"}`,
+			wantErr: "ExceptionData",
 		},
 	}
 	for _, tt := range tests {

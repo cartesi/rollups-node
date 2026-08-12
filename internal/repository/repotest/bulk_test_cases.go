@@ -24,6 +24,11 @@ func NewBulkOperationsSuite(factory RepositoryFactory) *BulkOperationsSuite {
 }
 
 func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
+	s.Run("RejectsNilResult", func() {
+		err := s.Repo.StoreAdvanceResult(s.Ctx, 0, nil)
+		s.Require().EqualError(err, "advance result must not be nil")
+	})
+
 	s.Run("AcceptedInput", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 		machineHash := crypto.Keccak256Hash([]byte("machine"))
@@ -88,6 +93,89 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		s.Require().NoError(err)
 		s.Equal(InputCompletionStatus_Rejected, input.Status)
 	})
+
+	for _, status := range []InputCompletionStatus{
+		InputCompletionStatus_Exception,
+		InputCompletionStatus_MachineHalted,
+	} {
+		s.Run("CompletedStatus/"+status.String(), func() {
+			seed := Seed(s.Ctx, s.T(), s.Repo)
+			var exceptionData []byte
+			if status == InputCompletionStatus_Exception {
+				exceptionData = []byte{0xff, 0x00, 0x80}
+			}
+			result := &AdvanceResult{
+				EpochIndex:    0,
+				InputIndex:    0,
+				Status:        status,
+				ExceptionData: exceptionData,
+				OutputsProof: OutputsProof{
+					MachineHash: UniqueHash(),
+				},
+			}
+
+			err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
+			s.Require().NoError(err)
+			input, err := s.Repo.GetInput(s.Ctx, seed.App.IApplicationAddress.String(), 0)
+			s.Require().NoError(err)
+			s.Equal(status, input.Status)
+			s.Equal(exceptionData, input.ExceptionData)
+		})
+	}
+
+	for _, test := range []struct {
+		name          string
+		status        InputCompletionStatus
+		exceptionData []byte
+	}{
+		{"ExceptionWithoutData", InputCompletionStatus_Exception, nil},
+		{"AcceptedWithExceptionData", InputCompletionStatus_Accepted, []byte("unexpected")},
+	} {
+		s.Run("Rejects"+test.name, func() {
+			seed := Seed(s.Ctx, s.T(), s.Repo)
+			err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, &AdvanceResult{
+				EpochIndex:    0,
+				InputIndex:    0,
+				Status:        test.status,
+				ExceptionData: test.exceptionData,
+				OutputsProof: OutputsProof{
+					MachineHash: UniqueHash(),
+					OutputsHash: UniqueHash(),
+				},
+			})
+			s.Require().ErrorContains(err, "exception data")
+		})
+	}
+
+	invalidStatuses := []InputCompletionStatus{
+		InputCompletionStatus_None,
+		"OUTPUTS_LIMIT_EXCEEDED",
+		"REPORTS_LIMIT_EXCEEDED",
+		"CYCLE_LIMIT_EXCEEDED",
+		"TIME_LIMIT_EXCEEDED",
+		"PAYLOAD_LENGTH_LIMIT_EXCEEDED",
+		"INVALID",
+	}
+	for _, status := range invalidStatuses {
+		s.Run("RejectsNoncompletedStatus/"+status.String(), func() {
+			seed := Seed(s.Ctx, s.T(), s.Repo)
+			result := &AdvanceResult{
+				EpochIndex: 0,
+				InputIndex: 0,
+				Status:     status,
+				Outputs:    [][]byte{[]byte("must-not-be-stored")},
+				OutputsProof: OutputsProof{
+					MachineHash: UniqueHash(),
+				},
+			}
+
+			err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
+			s.Require().ErrorContains(err, "noncompleted status")
+			input, err := s.Repo.GetInput(s.Ctx, seed.App.IApplicationAddress.String(), 0)
+			s.Require().NoError(err)
+			s.Equal(InputCompletionStatus_None, input.Status)
+		})
+	}
 
 	s.Run("WithNoOutputsOrReports", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)

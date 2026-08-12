@@ -986,6 +986,7 @@ type Input struct {
 	BlockNumber        uint64                `json:"block_number"`
 	RawData            []byte                `json:"raw_data"`
 	Status             InputCompletionStatus `json:"status"`
+	ExceptionData      []byte                `json:"-"`
 	MachineHash        *common.Hash          `json:"machine_hash"`
 	OutputsHash        *common.Hash          `json:"outputs_hash"`
 	TransactionHash    common.Hash           `json:"transaction_hash"`
@@ -999,20 +1000,27 @@ func (i *Input) MarshalJSON() ([]byte, error) {
 	// Create an alias to avoid infinite recursion in MarshalJSON.
 	type Alias Input
 	// Define a new structure that embeds the alias but overrides the hex fields.
+	var exceptionData *string
+	if i.ExceptionData != nil {
+		encoded := hexutil.Encode(i.ExceptionData)
+		exceptionData = &encoded
+	}
 	aux := &struct {
-		EpochIndex  string `json:"epoch_index"`
-		Index       string `json:"index"`
-		BlockNumber string `json:"block_number"`
-		RawData     string `json:"raw_data"`
-		LogIndex    string `json:"log_index"`
+		EpochIndex    string  `json:"epoch_index"`
+		Index         string  `json:"index"`
+		BlockNumber   string  `json:"block_number"`
+		RawData       string  `json:"raw_data"`
+		ExceptionData *string `json:"exception_data"`
+		LogIndex      string  `json:"log_index"`
 		*Alias
 	}{
-		EpochIndex:  fmt.Sprintf("0x%x", i.EpochIndex),
-		Index:       fmt.Sprintf("0x%x", i.Index),
-		BlockNumber: fmt.Sprintf("0x%x", i.BlockNumber),
-		RawData:     "0x" + hex.EncodeToString(i.RawData),
-		LogIndex:    fmt.Sprintf("0x%x", i.LogIndex),
-		Alias:       (*Alias)(i),
+		EpochIndex:    fmt.Sprintf("0x%x", i.EpochIndex),
+		Index:         fmt.Sprintf("0x%x", i.Index),
+		BlockNumber:   fmt.Sprintf("0x%x", i.BlockNumber),
+		RawData:       "0x" + hex.EncodeToString(i.RawData),
+		ExceptionData: exceptionData,
+		LogIndex:      fmt.Sprintf("0x%x", i.LogIndex),
+		Alias:         (*Alias)(i),
 	}
 	return json.Marshal(aux)
 }
@@ -1020,11 +1028,12 @@ func (i *Input) MarshalJSON() ([]byte, error) {
 func (i *Input) UnmarshalJSON(in []byte) error {
 	type Alias Input
 	aux := &struct {
-		EpochIndex  string `json:"epoch_index"`
-		Index       string `json:"index"`
-		BlockNumber string `json:"block_number"`
-		RawData     string `json:"raw_data"`
-		LogIndex    string `json:"log_index"`
+		EpochIndex    string  `json:"epoch_index"`
+		Index         string  `json:"index"`
+		BlockNumber   string  `json:"block_number"`
+		RawData       string  `json:"raw_data"`
+		ExceptionData *string `json:"exception_data"`
+		LogIndex      string  `json:"log_index"`
 		*Alias
 	}{Alias: (*Alias)(i)}
 
@@ -1052,6 +1061,14 @@ func (i *Input) UnmarshalJSON(in []byte) error {
 	if err != nil {
 		return fmt.Errorf("error on RawData: %w", err)
 	}
+	if aux.ExceptionData == nil {
+		i.ExceptionData = nil
+	} else {
+		i.ExceptionData, err = hexutil.Decode(*aux.ExceptionData)
+		if err != nil {
+			return fmt.Errorf("error on ExceptionData: %w", err)
+		}
+	}
 
 	i.LogIndex, err = ParseHexUint64(aux.LogIndex)
 	if err != nil {
@@ -1064,16 +1081,11 @@ func (i *Input) UnmarshalJSON(in []byte) error {
 type InputCompletionStatus string
 
 const (
-	InputCompletionStatus_None                       InputCompletionStatus = "NONE"
-	InputCompletionStatus_Accepted                   InputCompletionStatus = "ACCEPTED"
-	InputCompletionStatus_Rejected                   InputCompletionStatus = "REJECTED"
-	InputCompletionStatus_Exception                  InputCompletionStatus = "EXCEPTION"
-	InputCompletionStatus_MachineHalted              InputCompletionStatus = "MACHINE_HALTED"
-	InputCompletionStatus_OutputsLimitExceeded       InputCompletionStatus = "OUTPUTS_LIMIT_EXCEEDED"
-	InputCompletionStatus_ReportsLimitExceeded       InputCompletionStatus = "REPORTS_LIMIT_EXCEEDED"
-	InputCompletionStatus_CycleLimitExceeded         InputCompletionStatus = "CYCLE_LIMIT_EXCEEDED"
-	InputCompletionStatus_TimeLimitExceeded          InputCompletionStatus = "TIME_LIMIT_EXCEEDED"
-	InputCompletionStatus_PayloadLengthLimitExceeded InputCompletionStatus = "PAYLOAD_LENGTH_LIMIT_EXCEEDED"
+	InputCompletionStatus_None          InputCompletionStatus = "NONE"
+	InputCompletionStatus_Accepted      InputCompletionStatus = "ACCEPTED"
+	InputCompletionStatus_Rejected      InputCompletionStatus = "REJECTED"
+	InputCompletionStatus_Exception     InputCompletionStatus = "EXCEPTION"
+	InputCompletionStatus_MachineHalted InputCompletionStatus = "MACHINE_HALTED"
 )
 
 var InputCompletionStatusAllValues = []InputCompletionStatus{
@@ -1082,11 +1094,22 @@ var InputCompletionStatusAllValues = []InputCompletionStatus{
 	InputCompletionStatus_Rejected,
 	InputCompletionStatus_Exception,
 	InputCompletionStatus_MachineHalted,
-	InputCompletionStatus_OutputsLimitExceeded,
-	InputCompletionStatus_ReportsLimitExceeded,
-	InputCompletionStatus_CycleLimitExceeded,
-	InputCompletionStatus_TimeLimitExceeded,
-	InputCompletionStatus_PayloadLengthLimitExceeded,
+}
+
+// IsCompleted reports whether the status is a deterministic completed result
+// of an advance execution. NONE represents an input that has not completed.
+func (e InputCompletionStatus) IsCompleted() bool {
+	switch e {
+	case InputCompletionStatus_Accepted,
+		InputCompletionStatus_Rejected,
+		InputCompletionStatus_Exception,
+		InputCompletionStatus_MachineHalted:
+		return true
+	case InputCompletionStatus_None:
+		return false
+	default:
+		return false
+	}
 }
 
 func (e *InputCompletionStatus) Scan(value any) error {
@@ -1111,16 +1134,6 @@ func (e *InputCompletionStatus) Scan(value any) error {
 		*e = InputCompletionStatus_Exception
 	case "MACHINE_HALTED":
 		*e = InputCompletionStatus_MachineHalted
-	case "OUTPUTS_LIMIT_EXCEEDED":
-		*e = InputCompletionStatus_OutputsLimitExceeded
-	case "REPORTS_LIMIT_EXCEEDED":
-		*e = InputCompletionStatus_ReportsLimitExceeded
-	case "CYCLE_LIMIT_EXCEEDED":
-		*e = InputCompletionStatus_CycleLimitExceeded
-	case "TIME_LIMIT_EXCEEDED":
-		*e = InputCompletionStatus_TimeLimitExceeded
-	case "PAYLOAD_LENGTH_LIMIT_EXCEEDED":
-		*e = InputCompletionStatus_PayloadLengthLimitExceeded
 	default:
 		return errors.New("invalid value '" + enumValue + "' for InputCompletionStatus enum")
 	}
