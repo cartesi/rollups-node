@@ -477,6 +477,14 @@ WHERE SUBSTRING("raw_data" FROM 1 FOR 4) IN (
     E'\\x237a816f'   -- Voucher
 );
 
+-- Serves GetNumberOfPendingExecutableOutputs and pending-voucher list queries
+-- without scanning the application's full output history.
+CREATE INDEX "output_pending_voucher_idx" ON "output" ("input_epoch_application_id")
+WHERE "execution_transaction_hash" IS NULL AND SUBSTRING("raw_data" FROM 1 FOR 4) IN (
+    E'\\x10321e8b',  -- DelegateCallVoucher
+    E'\\x237a816f'   -- Voucher
+);
+
 CREATE TRIGGER "output_set_updated_at" BEFORE UPDATE ON "output"
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 

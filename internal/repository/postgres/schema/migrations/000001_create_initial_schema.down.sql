@@ -39,6 +39,7 @@ DROP TABLE IF EXISTS "withdrawal";
 
 DROP TRIGGER IF EXISTS "output_set_updated_at" ON "output";
 DROP INDEX IF EXISTS "output_input_index_idx";
+DROP INDEX IF EXISTS "output_pending_voucher_idx";
 DROP INDEX IF EXISTS "output_raw_data_address_idx";
 DROP INDEX IF EXISTS "output_raw_data_type_idx";
 DROP TABLE IF EXISTS "output";
