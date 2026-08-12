@@ -248,25 +248,23 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 		result, err := machine.Advance(ctx, input.RawData, input.EpochIndex, input.Index, app.IsDaveConsensus())
 		input.RawData = nil // allow GC to collect payload while batch continues
 		if err != nil {
-			// Graceful shutdown: bail out quietly without marking FAILED.
-			if errors.Is(err, context.Canceled) {
-				s.Logger.Debug("Advance cancelled due to shutdown",
+			// Cancellation of this service context is the normal shutdown path,
+			// so it does not change the application's status. A returned error
+			// that happens to include context.Canceled is still a failure while
+			// the service context remains active.
+			if errors.Is(ctx.Err(), context.Canceled) {
+				s.Logger.Debug("Advance stopped because the service is shutting down",
 					"application", app.Name,
-					"index", input.Index)
+					"index", input.Index,
+					"error", err)
 				return err
 			}
 
-			// Anything else (including DeadlineExceeded) is a real failure.
+			// Anything else, including a deadline, is an execution failure.
 			s.Logger.Error("Error executing advance",
 				"application", app.Name,
 				"index", input.Index,
 				"error", err)
-
-			// DeadlineExceeded is a real failure but not a state-corruption
-			// signal — let the upper layer retry rather than marking FAILED.
-			if errors.Is(err, context.DeadlineExceeded) {
-				return err
-			}
 
 			if dbErr := appstatus.SetFailed(ctx, s.Logger, s.repository, app, err.Error()); dbErr != nil {
 				s.Logger.Error("Failed to persist FAILED status — machine will be closed "+
@@ -304,19 +302,34 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 		// Store the result in the database
 		err = s.repository.StoreAdvanceResult(ctx, input.EpochApplicationID, result)
 		if err != nil {
-			// Machine state is now ahead of the database. This desync is
-			// unrecoverable without a restart — regardless of whether the
-			// failure was a DB error or a context timeout. Shut down the
-			// node so it can restart cleanly from the last snapshot.
+			// Advance has already changed the live machine, but the transaction
+			// did not confirm that its result was saved. The database may still
+			// show this input as pending. Reusing this machine could then execute
+			// the input again from the wrong state, so StoreAdvanceResult is not
+			// retried against this live machine.
 			s.Logger.Error(
-				"FATAL: failed to store advance result after machine state "+
-					"was already updated — shutting down to prevent permanent desync",
+				"Could not confirm that the advance result was saved; "+
+					"the live machine has already advanced, so services will stop; "+
+					"after the node is restarted, execution will use persisted state",
 				"application", app.Name,
 				"epoch", input.EpochIndex,
 				"index", input.Index,
 				"error", err)
+
+			// Try to close the machine now so the already-advanced runtime cannot
+			// be used again. Cancel services even if Close fails. After the node
+			// is restarted, the machine is rebuilt from persisted state, and the
+			// database decides whether this input is still pending and needs a
+			// safe retry.
+			closeErr := machine.Close()
 			s.Cancel() // triggers graceful shutdown of all services
-			return err
+			if closeErr != nil {
+				s.Logger.Error("Could not close the machine after its advance result "+
+					"was not confirmed saved; service shutdown is still required",
+					"application", app.Name,
+					"error", closeErr)
+			}
+			return errors.Join(err, closeErr)
 		}
 
 		// Create a snapshot if needed

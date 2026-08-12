@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	mrand "math/rand"
 	"os"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/repotest"
+	pkgmachine "github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/common"
 
@@ -33,6 +35,32 @@ func TestAdvancer(t *testing.T) {
 }
 
 type AdvancerSuite struct{ suite.Suite }
+
+type advancerLogCapture struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+func (h *advancerLogCapture) Enabled(context.Context, slog.Level) bool { return true }
+func (h *advancerLogCapture) Handle(_ context.Context, record slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.records = append(h.records, record.Clone())
+	return nil
+}
+func (h *advancerLogCapture) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *advancerLogCapture) WithGroup(string) slog.Handler      { return h }
+
+func (h *advancerLogCapture) contains(level slog.Level, message string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, record := range h.records {
+		if record.Level == level && record.Message == message {
+			return true
+		}
+	}
+	return false
+}
 
 func newMockAdvancerService(machineManager *MockMachineManager, repo *MockRepository) (*Service, error) {
 	return newMockAdvancerServiceWithBatchSize(machineManager, repo, 500)
@@ -336,6 +364,37 @@ func (s *AdvancerSuite) TestProcess() {
 		require.Contains(err.Error(), "advance error")
 	})
 
+	s.Run("IncompleteAdvanceMarksFailedWithoutCanonicalResult", func() {
+		interruptions := []struct {
+			name string
+			err  error
+		}{
+			{"InternalWatchdog", pkgmachine.ErrDeadlineExceeded},
+			{"OutputLimit", pkgmachine.ErrOutputsLimitExceeded},
+			{"ReportLimit", pkgmachine.ErrReportsLimitExceeded},
+			{"PayloadLimit", pkgmachine.ErrPayloadLengthLimitExceeded},
+			{"CycleLimit", pkgmachine.ErrReachedLimitMcycle},
+		}
+
+		for _, interruption := range interruptions {
+			s.Run(interruption.name, func() {
+				require := s.Require()
+				env := s.setupOneApp()
+				env.app.AdvanceError = interruption.err
+				inputs := []*Input{
+					newInput(env.app.Application.ID, 0, 0, []byte("input")),
+				}
+
+				err := env.service.processInputs(context.Background(), env.app.Application, inputs)
+				require.ErrorIs(err, interruption.err)
+				require.Empty(env.repo.StoredResults)
+				require.Equal(1, env.repo.ApplicationStatusUpdates)
+				require.Equal(ApplicationStatus_Failed, env.repo.LastApplicationStatus)
+				require.Equal(1, env.mm.Map[env.app.Application.ID].closeCalls)
+			})
+		}
+	})
+
 	s.Run("Ok", func() {
 		require := s.Require()
 		env := s.setupOneApp()
@@ -394,19 +453,60 @@ func (s *AdvancerSuite) TestProcess() {
 		s.Run("StoreAdvance", func() {
 			require := s.Require()
 			env := s.setupOneApp()
+			pending := newInput(
+				env.app.Application.ID, 0, 0, marshal(randomAdvanceResult(0)),
+			)
 			inputs := []*Input{
-				newInput(env.app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+				pending,
 				newInput(env.app.Application.ID, 0, 1, []byte("unreachable")),
+			}
+			address := env.app.Application.IApplicationAddress
+			env.repo.GetInputsReturn = map[common.Address][]*Input{
+				address: {pending},
 			}
 			env.repo.StoreAdvanceError = errors.New("store-advance error")
 
 			err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 			require.Error(err)
 			require.Contains(err.Error(), "store-advance error")
-			require.Len(env.repo.StoredResults, 1)
+			require.Empty(env.repo.StoredResults)
+			require.Empty(env.repo.StoredAppIDs)
+			require.Equal([]*Input{pending}, env.repo.GetInputsReturn[address],
+				"an atomic store failure must leave the input pending")
 
 			// Verify that the node shutdown was triggered (context cancelled)
 			require.Error(env.service.Context.Err(), "shared context should be cancelled")
+		})
+
+		s.Run("StoreAdvanceCommitResponseLost", func() {
+			require := s.Require()
+			env := s.setupOneApp()
+			pending := newInput(
+				env.app.Application.ID, 0, 0, marshal(randomAdvanceResult(0)),
+			)
+			address := env.app.Application.IApplicationAddress
+			env.repo.GetInputsReturn = map[common.Address][]*Input{
+				address: {pending},
+			}
+			env.repo.StoreAdvanceCommitError = errors.New("commit response lost")
+
+			err := env.service.processInputs(
+				context.Background(), env.app.Application, []*Input{pending},
+			)
+			require.ErrorContains(err, "commit response lost")
+			require.Len(env.repo.StoredResults, 1)
+			require.Equal([]int64{env.app.Application.ID}, env.repo.StoredAppIDs)
+			require.Empty(env.repo.GetInputsReturn[address],
+				"a committed result and its input cursor must advance atomically")
+			require.Error(env.service.Context.Err(), "shared context should be cancelled")
+			require.Equal(1, env.mm.Map[env.app.Application.ID].closeCalls)
+
+			unprocessed, _, listErr := getUnprocessedInputs(
+				context.Background(), env.repo, address.String(), pending.EpochIndex, 500,
+			)
+			require.NoError(listErr)
+			require.Empty(unprocessed,
+				"a restart must not execute an input whose result already committed")
 		})
 	})
 }
@@ -436,6 +536,9 @@ func (s *AdvancerSuite) TestContextCancellation() {
 		case err := <-errCh:
 			require.Error(err)
 			require.ErrorIs(err, context.Canceled)
+			require.Empty(env.repo.StoredResults)
+			require.Zero(env.repo.ApplicationStatusUpdates)
+			require.Zero(env.mm.Map[env.app.Application.ID].closeCalls)
 		case <-time.After(100 * time.Millisecond):
 			require.Fail("Step operation did not respect context cancellation")
 		}
@@ -445,6 +548,8 @@ func (s *AdvancerSuite) TestContextCancellation() {
 		require := s.Require()
 		env := s.setupOneApp()
 		env.app.AdvanceBlock = true
+		logs := &advancerLogCapture{}
+		env.service.Logger = slog.New(logs)
 
 		inputs := []*Input{
 			newInput(env.app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
@@ -465,10 +570,84 @@ func (s *AdvancerSuite) TestContextCancellation() {
 		case err := <-errCh:
 			require.Error(err)
 			require.ErrorIs(err, context.Canceled)
+			require.Empty(env.repo.StoredResults)
+			require.Zero(env.repo.ApplicationStatusUpdates)
+			require.Zero(env.mm.Map[env.app.Application.ID].closeCalls)
+			require.True(logs.contains(
+				slog.LevelDebug,
+				"Advance stopped because the service is shutting down",
+			))
+			require.False(logs.contains(slog.LevelError, "Error executing advance"))
 		case <-time.After(100 * time.Millisecond):
 			require.Fail("processInputs operation did not respect context cancellation")
 		}
 	})
+
+	s.Run("DeadlineDuringProcessInputs", func() {
+		require := s.Require()
+		env := s.setupOneApp()
+		env.app.AdvanceBlock = true
+		logs := &advancerLogCapture{}
+		env.service.Logger = slog.New(logs)
+		inputs := []*Input{
+			newInput(env.app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		defer cancel()
+
+		err := env.service.processInputs(ctx, env.app.Application, inputs)
+		require.ErrorIs(err, context.DeadlineExceeded)
+		require.Empty(env.repo.StoredResults)
+		// The expired context prevents the immediate database write, so the
+		// application failure is queued for a later status-write retry.
+		require.Zero(env.repo.ApplicationStatusUpdates)
+		require.Equal(1, env.mm.Map[env.app.Application.ID].closeCalls)
+		require.True(logs.contains(slog.LevelError, "Error executing advance"))
+		require.False(logs.contains(
+			slog.LevelDebug,
+			"Advance stopped because the service is shutting down",
+		))
+	})
+
+	for _, test := range []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "LiveContextWithJoinedDeadlineAndCancellation",
+			err:  errors.Join(context.DeadlineExceeded, context.Canceled),
+		},
+		{
+			name: "LiveContextWithJoinedMachineFailureAndCancellation",
+			err:  errors.Join(pkgmachine.ErrMachineInternal, context.Canceled),
+		},
+	} {
+		s.Run(test.name, func() {
+			require := s.Require()
+			env := s.setupOneApp()
+			env.app.AdvanceError = test.err
+			logs := &advancerLogCapture{}
+			env.service.Logger = slog.New(logs)
+			inputs := []*Input{
+				newInput(env.app.Application.ID, 0, 0, []byte("input")),
+			}
+
+			ctx := context.Background()
+			err := env.service.processInputs(ctx, env.app.Application, inputs)
+
+			require.ErrorIs(err, context.Canceled)
+			require.NoError(ctx.Err(), "the caller context must remain active")
+			require.Empty(env.repo.StoredResults)
+			require.Equal(1, env.repo.ApplicationStatusUpdates)
+			require.Equal(ApplicationStatus_Failed, env.repo.LastApplicationStatus)
+			require.Equal(1, env.mm.Map[env.app.Application.ID].closeCalls)
+			require.True(logs.contains(slog.LevelError, "Error executing advance"))
+			require.False(logs.contains(
+				slog.LevelDebug,
+				"Advance stopped because the service is shutting down",
+			))
+		})
+	}
 }
 
 // TestLargeNumberOfInputs how the advancer handles large volumes of inputs
@@ -504,7 +683,11 @@ func (s *AdvancerSuite) TestErrorRecovery() {
 		err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 		require.Error(err)
 		require.Contains(err.Error(), "temporary failure")
+		require.Empty(env.repo.StoredResults)
+		require.Empty(env.repo.StoredAppIDs)
 		require.Error(env.service.Context.Err(), "shared context should be cancelled")
+		require.Equal(1, env.mm.Map[env.app.Application.ID].closeCalls,
+			"the already-advanced machine must be closed before processInputs returns")
 	})
 }
 
@@ -1819,6 +2002,7 @@ type MockMachineInstance struct {
 	application         *Application
 	machineImpl         *MockMachineImpl
 	createSnapshotError error
+	closeCalls          int
 }
 
 // Advance implements the MachineInstance interface for testing
@@ -1870,7 +2054,7 @@ func (m *MockMachineInstance) Hash(ctx context.Context) ([32]byte, error) {
 
 // Close implements the MachineInstance interface for testing
 func (m *MockMachineInstance) Close() error {
-	// Not used in advancer tests, but needed to satisfy the interface
+	m.closeCalls++
 	return nil
 }
 
@@ -1884,6 +2068,7 @@ type MockRepository struct {
 	GetInputsError               error
 	GetInputsBlock               bool
 	StoreAdvanceError            error
+	StoreAdvanceCommitError      error
 	StoreAdvanceFailCount        int
 	UpdateApplicationStatusError error
 	UpdateEpochsError            error
@@ -2004,27 +2189,33 @@ func (mock *MockRepository) StoreAdvanceResult(
 		return errors.New("temporary failure")
 	}
 
+	// Model an atomic transaction failure before commit: neither the canonical
+	// result nor the pending-input cursor changes.
+	if mock.StoreAdvanceError != nil {
+		return mock.StoreAdvanceError
+	}
+
 	mock.StoredResults = append(mock.StoredResults, res)
 	mock.StoredAppIDs = append(mock.StoredAppIDs, appID)
 
 	// Simulate real behavior: processed inputs change status and are no longer
 	// returned by queries filtering for unprocessed (Status_None) inputs.
 	// This prevents infinite loops in batched fetching.
-	if mock.StoreAdvanceError == nil {
-		for addr, inputs := range mock.GetInputsReturn {
-			for i, inp := range inputs {
-				if inp.EpochApplicationID == appID && inp.Index == res.InputIndex {
-					newInputs := make([]*Input, 0, len(inputs)-1)
-					newInputs = append(newInputs, inputs[:i]...)
-					newInputs = append(newInputs, inputs[i+1:]...)
-					mock.GetInputsReturn[addr] = newInputs
-					break
-				}
+	for addr, inputs := range mock.GetInputsReturn {
+		for i, inp := range inputs {
+			if inp.EpochApplicationID == appID && inp.Index == res.InputIndex {
+				newInputs := make([]*Input, 0, len(inputs)-1)
+				newInputs = append(newInputs, inputs[:i]...)
+				newInputs = append(newInputs, inputs[i+1:]...)
+				mock.GetInputsReturn[addr] = newInputs
+				break
 			}
 		}
 	}
 
-	return mock.StoreAdvanceError
+	// Model a committed transaction whose success response was lost. The
+	// canonical result and pending-input cursor changed together.
+	return mock.StoreAdvanceCommitError
 }
 
 func (mock *MockRepository) UpdateEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64, proof *OutputsProof) error {
