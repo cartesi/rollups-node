@@ -27,6 +27,18 @@ func TestMachineInstance(t *testing.T) {
 
 type MachineInstanceSuite struct{ suite.Suite }
 
+func (s *MachineInstanceSuite) TestMcycleOverflowRemainsIncomplete() {
+	require := s.Require()
+
+	// Cycle exhaustion surfaces as an error from machine.Advance, never as a
+	// completed CompletionStatus, so no input completion status can exist for it.
+	// The zero-value status is the closest representable input and must be
+	// rejected rather than mapped to a completed status.
+	status, err := toInputStatus(machine.CompletionStatusUnknown)
+	require.ErrorIs(err, ErrIncompleteAdvance)
+	require.Equal(model.InputCompletionStatus_None, status)
+}
+
 // MockMachineRuntimeFactory implements MachineRuntimeFactory for testing
 type MockMachineRuntimeFactory struct {
 	RuntimeToReturn machine.Machine
@@ -617,33 +629,53 @@ func (s *MachineInstanceSuite) TestAdvance() {
 
 func (s *MachineInstanceSuite) TestInspect() {
 	for _, test := range []struct {
-		name      string
-		status    machine.CompletionStatus
-		accepted  bool
-		resultErr error
+		name   string
+		status machine.CompletionStatus
 	}{
-		{"Accept", machine.CompletionStatusAccepted, true, nil},
-		{"Reject", machine.CompletionStatusRejected, false, nil},
-		{"Exception", machine.CompletionStatusException, false, machine.ErrException},
-		{"Halted", machine.CompletionStatusHalted, false, machine.ErrHalted},
+		{"Accept", machine.CompletionStatusAccepted},
+		{"Reject", machine.CompletionStatusRejected},
+		{"Exception", machine.CompletionStatusException},
+		{"Halted", machine.CompletionStatusHalted},
 	} {
 		s.Run(test.name, func() {
 			require := s.Require()
 			_, fork, instance := s.setupInspect()
 			fork.InspectResponseReturn.Status = test.status
+			if test.status == machine.CompletionStatusException {
+				fork.InspectResponseReturn.ExceptionData = []byte("guest exception")
+			}
 
 			result, err := instance.Inspect(context.Background(), []byte{})
 			require.NoError(err)
 			require.NotNil(result)
 			require.NotSame(fork, instance.runtime)
 			require.Equal(uint64(55), result.ProcessedInputs)
-			require.Equal(test.accepted, result.Accepted)
+			require.Equal(test.status, result.Status)
+			require.Equal(fork.InspectResponseReturn.ExceptionData, result.ExceptionData)
 			require.Equal(expectedReports2, result.Reports)
-			if test.resultErr == nil {
-				require.NoError(result.Error)
-			} else {
-				require.ErrorIs(result.Error, test.resultErr)
-			}
+			require.NoError(result.Error)
+		})
+	}
+
+	for _, test := range []struct {
+		name          string
+		status        machine.CompletionStatus
+		exceptionData []byte
+	}{
+		{"ExceptionWithoutData", machine.CompletionStatusException, nil},
+		{"RejectedWithExceptionData", machine.CompletionStatusRejected, []byte("unexpected")},
+	} {
+		s.Run(test.name+"FailsClosed", func() {
+			require := s.Require()
+			_, fork, instance := s.setupInspect()
+			fork.InspectResponseReturn.Status = test.status
+			fork.InspectResponseReturn.ExceptionData = test.exceptionData
+
+			result, err := instance.Inspect(context.Background(), []byte{})
+			require.NoError(err)
+			require.Equal(machine.CompletionStatusUnknown, result.Status)
+			require.ErrorIs(result.Error, ErrIncompleteInspect)
+			require.ErrorIs(result.Error, machine.ErrMachineInternal)
 		})
 	}
 
@@ -677,7 +709,7 @@ func (s *MachineInstanceSuite) TestInspect() {
 
 		result, err := instance.Inspect(context.Background(), []byte{})
 		require.NoError(err)
-		require.False(result.Accepted)
+		require.Equal(machine.CompletionStatusUnknown, result.Status)
 		require.Equal(expectedReports2, result.Reports)
 		require.ErrorIs(result.Error, errInspect)
 	})
@@ -697,7 +729,7 @@ func (s *MachineInstanceSuite) TestInspect() {
 
 			result, err := instance.Inspect(context.Background(), []byte{})
 			require.NoError(err)
-			require.False(result.Accepted)
+			require.Equal(machine.CompletionStatusUnknown, result.Status)
 			require.ErrorIs(result.Error, ErrIncompleteInspect)
 			require.ErrorIs(result.Error, machine.ErrMachineInternal)
 		})

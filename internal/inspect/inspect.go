@@ -17,6 +17,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
+	pkgmachine "github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
@@ -30,6 +31,11 @@ const maxPayloadSize = 1 << 21 // 2 MiB
 // inspectResponseHeadroom is the time budget reserved for HTTP response
 // serialization after the Cartesi Machine's inspect deadline fires.
 const inspectResponseHeadroom = 30 * time.Second
+
+const (
+	inspectStatusFailed   = "Failed"
+	inspectFailureMessage = "The node could not complete the inspection"
+)
 
 var (
 	ErrInvalidMachines        = errors.New("machines must not be nil")
@@ -67,7 +73,8 @@ type ReportResponse struct {
 
 type InspectResponse struct {
 	Status          string           `json:"status"`
-	Exception       string           `json:"exception,omitempty"`
+	Error           string           `json:"error,omitempty"`
+	ExceptionData   string           `json:"exception_data,omitempty"`
 	Reports         []ReportResponse `json:"reports"`
 	ProcessedInputs uint64           `json:"processed_input_count"`
 }
@@ -157,23 +164,16 @@ func (inspect *Inspector) Admission() *service.SemaphoreAdmission {
 }
 
 func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var (
-		dapp         string
-		payload      []byte
-		err          error
-		reports      []ReportResponse
-		status       string
-		errorMessage string
-	)
+	requestID := service.RequestIDFromContext(r.Context())
+	dapp := r.PathValue("dapp")
 
-	if r.PathValue("dapp") == "" {
+	if dapp == "" {
 		inspect.Logger.Info("Bad request",
 			"err", "Missing application address")
 		http.Error(w, "Missing application address", http.StatusBadRequest)
 		return
 	}
 
-	dapp = r.PathValue("dapp")
 	if r.Method != http.MethodPost {
 		inspect.Logger.Info("HTTP method not allowed", "application", dapp, "method", r.Method)
 		w.Header().Set("Allow", http.MethodPost)
@@ -185,7 +185,7 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// both enforces the limit and signals the server to close the connection
 	// on over-limit so clients can't pipeline further requests on it.
 	r.Body = http.MaxBytesReader(w, r.Body, maxPayloadSize)
-	payload, err = io.ReadAll(r.Body)
+	payload, err := io.ReadAll(r.Body)
 	if err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
@@ -244,27 +244,7 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, report := range result.Reports {
-		reports = append(reports, ReportResponse{Payload: hexutil.Encode(report)})
-	}
-
-	if result.Accepted {
-		status = "Accepted"
-	} else {
-		status = "Rejected"
-	}
-
-	if result.Error != nil {
-		status = "Exception"
-		errorMessage = fmt.Sprintf("Error on the machine while inspecting: %s", result.Error)
-	}
-
-	response := InspectResponse{
-		Status:          status,
-		Exception:       errorMessage,
-		Reports:         reports,
-		ProcessedInputs: result.ProcessedInputs,
-	}
+	response := inspect.buildInspectResponse(dapp, requestID, result)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
@@ -274,13 +254,81 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		inspect.Logger.Error("failed to encode inspect response",
 			"err", err,
 			"application", dapp,
-			"request_id", service.RequestIDFromContext(r.Context()),
+			"request_id", requestID,
 		)
 		return
 	}
 	inspect.Logger.Info("Request executed",
-		"status", status,
+		"status", response.Status,
 		"application", dapp)
+}
+
+// buildInspectResponse maps the manager result to the public inspect contract.
+// Machine execution details remain in trusted logs; anonymous clients receive
+// a stable sanitized failure message and any reports emitted before the stop.
+func (inspect *Inspector) buildInspectResponse(
+	dapp string,
+	requestID string,
+	result *manager.InspectResult,
+) InspectResponse {
+	response := InspectResponse{
+		Reports:         make([]ReportResponse, 0, len(result.Reports)),
+		ProcessedInputs: result.ProcessedInputs,
+	}
+	for _, report := range result.Reports {
+		response.Reports = append(response.Reports, ReportResponse{Payload: hexutil.Encode(report)})
+	}
+
+	if result.Error != nil {
+		response.Status = inspectStatusFailed
+		response.Error = inspectFailureMessage
+		// Inspect is an anonymous endpoint. Keep machine positions and local
+		// policy values in operator logs so clients cannot discover configured
+		// limits or price a resource-exhaustion input.
+		inspect.Logger.Warn("Machine failed while inspecting",
+			"application", dapp,
+			"error", result.Error,
+			"request_id", requestID,
+		)
+		return response
+	}
+
+	switch result.Status {
+	case pkgmachine.CompletionStatusAccepted:
+		response.Status = "Accepted"
+	case pkgmachine.CompletionStatusRejected:
+		response.Status = "Rejected"
+	case pkgmachine.CompletionStatusException:
+		response.Status = "Exception"
+		response.Error = "The machine raised an exception while inspecting"
+		response.ExceptionData = hexutil.Encode(result.ExceptionData)
+		inspect.Logger.Debug("Machine returned a guest inspect exception",
+			"application", dapp,
+			"request_id", requestID,
+		)
+	case pkgmachine.CompletionStatusHalted:
+		response.Status = "MachineHalted"
+		inspect.Logger.Debug("Machine halted while inspecting",
+			"application", dapp,
+			"request_id", requestID,
+		)
+	case pkgmachine.CompletionStatusUnknown:
+		response.Status = inspectStatusFailed
+		response.Error = inspectFailureMessage
+		inspect.Logger.Warn("Machine returned an incomplete inspect result",
+			"application", dapp,
+			"request_id", requestID,
+		)
+	default:
+		response.Status = inspectStatusFailed
+		response.Error = inspectFailureMessage
+		inspect.Logger.Warn("Machine returned an unknown inspect status",
+			"application", dapp,
+			"status", result.Status,
+			"request_id", requestID,
+		)
+	}
+	return response
 }
 
 func (inspect *Inspector) warnDeadlineExceedsWriteTimeout(app *Application, deadline time.Duration) {

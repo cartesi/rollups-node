@@ -8,6 +8,7 @@ import (
 	"context"
 	crand "crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,6 +19,8 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
+	inspectclient "github.com/cartesi/rollups-node/pkg/inspectclient"
+	pkgmachine "github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/cartesi/rollups-node/pkg/service"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -194,6 +197,156 @@ func (s *InspectSuite) TestPostPayloadTooLarge() {
 	s.Equal(http.StatusRequestEntityTooLarge, resp.StatusCode)
 }
 
+func (s *InspectSuite) TestPostResponseMatchesGeneratedClientContract() {
+	tests := []struct {
+		name              string
+		result            manager.InspectResult
+		wantStatus        inspectclient.CompletionStatus
+		wantError         string
+		wantExceptionData []byte
+	}{
+		{
+			name: "accepted",
+			result: manager.InspectResult{
+				Status:          pkgmachine.CompletionStatusAccepted,
+				Reports:         [][]byte{{0xde, 0xad}, {}},
+				ProcessedInputs: 17,
+			},
+			wantStatus: inspectclient.Accepted,
+		},
+		{
+			name: "rejected",
+			result: manager.InspectResult{
+				Status:          pkgmachine.CompletionStatusRejected,
+				Reports:         [][]byte{{0xbe, 0xef}},
+				ProcessedInputs: 23,
+			},
+			wantStatus: inspectclient.Rejected,
+		},
+		{
+			name: "exception",
+			result: manager.InspectResult{
+				Status:          pkgmachine.CompletionStatusException,
+				ExceptionData:   []byte{0xff, 0x00, 0x80},
+				Reports:         [][]byte{{0xca, 0xfe}},
+				ProcessedInputs: 42,
+			},
+			wantStatus:        inspectclient.Exception,
+			wantError:         "The machine raised an exception while inspecting",
+			wantExceptionData: []byte{0xff, 0x00, 0x80},
+		},
+		{
+			name: "halted",
+			result: manager.InspectResult{
+				Status:          pkgmachine.CompletionStatusHalted,
+				Reports:         [][]byte{{0xfa, 0xce}},
+				ProcessedInputs: 51,
+			},
+			wantStatus: inspectclient.MachineHalted,
+		},
+		{
+			name: "failed",
+			result: manager.InspectResult{
+				Status:          pkgmachine.CompletionStatusUnknown,
+				Reports:         [][]byte{{0xba, 0xdd}},
+				ProcessedInputs: 63,
+				Error:           errors.New("backend disconnected"),
+			},
+			wantStatus: inspectclient.Failed,
+			wantError:  "The node could not complete the inspection",
+		},
+	}
+
+	for _, test := range tests {
+		s.Run(test.name, func() {
+			inspect, app := s.setupWithInspectResult(test.result)
+			app.Status = ApplicationStatus_OK
+			request := httptest.NewRequest(http.MethodPost, "/inspect/"+app.Name,
+				bytes.NewBufferString("query"))
+			request.SetPathValue("dapp", app.Name)
+			recorder := httptest.NewRecorder()
+			inspect.ServeHTTP(recorder, request)
+			s.Equal(http.StatusOK, recorder.Code)
+
+			var got inspectclient.InspectResult
+			s.Require().NoError(json.NewDecoder(recorder.Body).Decode(&got))
+			s.Equal(test.wantStatus, got.Status)
+			s.EqualValues(test.result.ProcessedInputs, got.ProcessedInputCount)
+			s.Require().Len(got.Reports, len(test.result.Reports))
+			for i, report := range test.result.Reports {
+				s.Equal(fmt.Sprintf("0x%x", report), got.Reports[i].Payload)
+			}
+			if test.wantError == "" {
+				s.Nil(got.Error)
+			} else {
+				s.Require().NotNil(got.Error)
+				s.Equal(test.wantError, *got.Error)
+			}
+			if test.wantExceptionData == nil {
+				s.Nil(got.ExceptionData)
+			} else {
+				s.Require().NotNil(got.ExceptionData)
+				s.Equal(fmt.Sprintf("0x%x", test.wantExceptionData), *got.ExceptionData)
+			}
+			s.Equal(ApplicationStatus_OK, app.Status, "inspect limits must not change application status")
+		})
+	}
+}
+
+func (s *InspectSuite) TestCycleLimitIsSanitizedFailedResultWithoutApplicationFailure() {
+	detailedErr := fmt.Errorf(
+		"inspect stopped at absolute_mcycle=123456 with configured_cap=789: %w",
+		pkgmachine.ErrReachedLimitMcycle,
+	)
+	inspect, app := s.setupWithInspectResult(manager.InspectResult{
+		Status:          pkgmachine.CompletionStatusUnknown,
+		ProcessedInputs: 42,
+		Error:           detailedErr,
+	})
+	var logs bytes.Buffer
+	inspect.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+	app.Status = ApplicationStatus_OK
+	req := httptest.NewRequest(http.MethodPost, "/inspect/"+app.Name, bytes.NewBufferString("query"))
+	req.SetPathValue("dapp", app.Name)
+	recorder := httptest.NewRecorder()
+
+	inspect.ServeHTTP(recorder, req)
+
+	s.Equal(http.StatusOK, recorder.Code)
+	var got inspectclient.InspectResult
+	s.Require().NoError(json.NewDecoder(recorder.Body).Decode(&got))
+	s.Equal(inspectclient.Failed, got.Status)
+	s.Require().NotNil(got.Error)
+	s.Equal("The node could not complete the inspection", *got.Error)
+	s.NotContains(*got.Error, "absolute_mcycle")
+	s.NotContains(*got.Error, "configured_cap")
+	s.Contains(logs.String(), "absolute_mcycle=123456")
+	s.Contains(logs.String(), "configured_cap=789")
+	s.EqualValues(42, got.ProcessedInputCount)
+	s.Equal(ApplicationStatus_OK, app.Status)
+}
+
+func (s *InspectSuite) TestGuestExceptionUsesDebugLogLevel() {
+	inspect, app := s.setupWithInspectResult(manager.InspectResult{
+		Status:          pkgmachine.CompletionStatusException,
+		ExceptionData:   []byte("guest exception details"),
+		ProcessedInputs: 42,
+	})
+	var logs bytes.Buffer
+	inspect.Logger = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	req := httptest.NewRequest(http.MethodPost, "/inspect/"+app.Name, bytes.NewBufferString("query"))
+	req.SetPathValue("dapp", app.Name)
+	recorder := httptest.NewRecorder()
+
+	inspect.ServeHTTP(recorder, req)
+
+	s.Equal(http.StatusOK, recorder.Code)
+	s.Contains(logs.String(), "level=DEBUG")
+	s.Contains(logs.String(), "Machine returned a guest inspect exception")
+	s.NotContains(logs.String(), "level=WARN")
+	s.NotContains(logs.String(), "guest exception details")
+}
+
 func (s *InspectSuite) startServer(inspect *Inspector) *httptest.Server {
 	router := http.NewServeMux()
 	router.Handle("/inspect/{dapp}", inspect)
@@ -201,7 +354,17 @@ func (s *InspectSuite) startServer(inspect *Inspector) *httptest.Server {
 }
 
 func (s *InspectSuite) setup() (*Inspector, *Application, common.Hash) {
+	payload := randomHash()
+	inspect, app := s.setupWithInspectResult(manager.InspectResult{
+		Status:  pkgmachine.CompletionStatusAccepted,
+		Reports: [][]byte{payload.Bytes()},
+	})
+	return inspect, app, payload
+}
+
+func (s *InspectSuite) setupWithInspectResult(result manager.InspectResult) (*Inspector, *Application) {
 	m := newMockMachine(1)
+	m.inspectResult = &result
 	repo := newMockRepository()
 	repo.apps = append(repo.apps, m.application)
 	machines := newMockMachines()
@@ -211,8 +374,7 @@ func (s *InspectSuite) setup() (*Inspector, *Application, common.Hash) {
 		IInspectMachines: machines,
 		Logger:           service.NewLogger(slog.LevelDebug, true),
 	}
-	payload := randomHash()
-	return inspect, m.application, payload
+	return inspect, m.application
 }
 
 func (s *InspectSuite) assertResponse(resp *http.Response, payload string) {
@@ -251,18 +413,24 @@ func (mock *MachinesMock) GetMachine(appId int64) (manager.MachineInstance, bool
 // ------------------------------------------------------------------------------------------------
 
 type MockMachine struct {
-	application *Application
+	application   *Application
+	inspectResult *manager.InspectResult
 }
 
 func (mock *MockMachine) Inspect(
 	_ context.Context,
 	query []byte,
-) (*InspectResult, error) {
-	var res InspectResult
+) (*manager.InspectResult, error) {
+	if mock.inspectResult != nil {
+		result := *mock.inspectResult
+		return &result, nil
+	}
+
+	var res manager.InspectResult
 	var reports [][]byte
 
 	reports = append(reports, query)
-	res.Accepted = true
+	res.Status = pkgmachine.CompletionStatusAccepted
 	res.ProcessedInputs = 0
 	res.Error = nil
 	res.Reports = reports

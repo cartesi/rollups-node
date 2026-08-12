@@ -17,15 +17,18 @@ import (
 
 // Defines values for CompletionStatus.
 const (
-	Accepted           CompletionStatus = "Accepted"
-	CycleLimitExceeded CompletionStatus = "CycleLimitExceeded"
-	Exception          CompletionStatus = "Exception"
-	MachineHalted      CompletionStatus = "MachineHalted"
-	Rejected           CompletionStatus = "Rejected"
-	TimeLimitExceeded  CompletionStatus = "TimeLimitExceeded"
+	Accepted      CompletionStatus = "Accepted"
+	Exception     CompletionStatus = "Exception"
+	Failed        CompletionStatus = "Failed"
+	MachineHalted CompletionStatus = "MachineHalted"
+	Rejected      CompletionStatus = "Rejected"
 )
 
-// CompletionStatus Whether inspection completed or not (and why not)
+// CompletionStatus How inspection completed. MachineHalted means the temporary inspect
+// execution halted; the canonical application machine is unchanged.
+// Failed means the node could not complete inspection because of an
+// operational limit, cancellation, timeout, protocol error, or internal
+// failure. Reports returned with Failed may be partial.
 type CompletionStatus string
 
 // Error Detailed error message.
@@ -33,17 +36,23 @@ type Error = string
 
 // InspectResult defines model for InspectResult.
 type InspectResult struct {
-	// ExceptionPayload Payload in the Ethereum hex binary format.
-	// The first two characters are '0x' followed by pairs of hexadecimal numbers that correspond to one byte.
-	// For instance, '0xdeadbeef' corresponds to a payload with length 4 and bytes 222, 173, 190, 175.
-	// An empty payload is represented by the string '0x'.
-	ExceptionPayload Payload `json:"exception_payload"`
+	// Error Sanitized error description, present only when status is Exception or Failed
+	Error *string `json:"error,omitempty"`
+
+	// ExceptionData Raw guest-provided CMIO exception payload, present only when status is Exception
+	ExceptionData *Payload `json:"exception_data,omitempty"`
 
 	// ProcessedInputCount Number of processed inputs since genesis
-	ProcessedInputCount int      `json:"processed_input_count"`
-	Reports             []Report `json:"reports"`
+	ProcessedInputCount int `json:"processed_input_count"`
 
-	// Status Whether inspection completed or not (and why not)
+	// Reports Reports emitted before completion; for Failed, this may be only a partial prefix
+	Reports []Report `json:"reports"`
+
+	// Status How inspection completed. MachineHalted means the temporary inspect
+	// execution halted; the canonical application machine is unchanged.
+	// Failed means the node could not complete inspection because of an
+	// operational limit, cancellation, timeout, protocol error, or internal
+	// failure. Reports returned with Failed may be partial.
 	Status CompletionStatus `json:"status"`
 }
 

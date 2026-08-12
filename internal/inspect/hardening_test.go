@@ -83,7 +83,7 @@ type erroringMachine struct {
 	err   error
 }
 
-func (m *erroringMachine) Inspect(_ context.Context, _ []byte) (*InspectResult, error) {
+func (m *erroringMachine) Inspect(_ context.Context, _ []byte) (*manager.InspectResult, error) {
 	if m.err == errPanicSentinel {
 		panic("boom-from-machine")
 	}

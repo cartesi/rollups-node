@@ -2011,7 +2011,7 @@ func (m *MockMachineInstance) Advance(ctx context.Context, input []byte, epochIn
 }
 
 // Inspect implements the MachineInstance interface for testing
-func (m *MockMachineInstance) Inspect(ctx context.Context, query []byte) (*InspectResult, error) {
+func (m *MockMachineInstance) Inspect(ctx context.Context, query []byte) (*manager.InspectResult, error) {
 	// Not used in advancer tests, but needed to satisfy the interface
 	return nil, nil
 }

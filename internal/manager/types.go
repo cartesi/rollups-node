@@ -7,7 +7,19 @@ import (
 	"context"
 
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/pkg/machine"
 )
+
+// InspectResult carries a typed machine completion or an incomplete execution
+// failure. Error is non-nil only when Status is machine.CompletionStatusUnknown;
+// Reports then contains any reports emitted before the failure.
+type InspectResult struct {
+	ProcessedInputs uint64
+	Status          machine.CompletionStatus
+	ExceptionData   []byte
+	Reports         [][]byte
+	Error           error
+}
 
 // MachineInstance defines the interface for a machine instance
 type MachineInstance interface {

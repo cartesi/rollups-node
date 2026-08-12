@@ -617,7 +617,7 @@ func (m *DummyMachineInstanceMock) Advance(_ context.Context, _ []byte, _ uint64
 	return nil, nil
 }
 
-func (m *DummyMachineInstanceMock) Inspect(_ context.Context, _ []byte) (*model.InspectResult, error) {
+func (m *DummyMachineInstanceMock) Inspect(_ context.Context, _ []byte) (*InspectResult, error) {
 	return nil, nil
 }
 

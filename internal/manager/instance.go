@@ -464,6 +464,8 @@ func (m *MachineInstanceImpl) Inspect(ctx context.Context, query []byte) (*Inspe
 		ProcessedInputs: processedInputs,
 	}
 	if inspectResponse != nil {
+		result.Status = inspectResponse.Status
+		result.ExceptionData = inspectResponse.ExceptionData
 		result.Reports = inspectResponse.Reports
 	}
 
@@ -471,23 +473,14 @@ func (m *MachineInstanceImpl) Inspect(ctx context.Context, query []byte) (*Inspe
 	// implementation. Inspection did not complete, but reports emitted before
 	// the failure remain useful to the caller.
 	if inspectErr != nil {
+		result.Status = machine.CompletionStatusUnknown
 		result.Error = inspectErr
-	} else if inspectResponse == nil || !inspectResponse.Status.IsCompleted() {
+	} else if inspectResponse == nil || !result.Status.IsCompleted() {
+		result.Status = machine.CompletionStatusUnknown
 		result.Error = errors.Join(ErrIncompleteInspect, machine.ErrMachineInternal)
-	} else {
-		switch inspectResponse.Status {
-		case machine.CompletionStatusAccepted:
-			result.Accepted = true
-		case machine.CompletionStatusRejected:
-		case machine.CompletionStatusException:
-			result.Error = machine.ErrException
-		case machine.CompletionStatusHalted:
-			result.Error = machine.ErrHalted
-		case machine.CompletionStatusUnknown:
-			result.Error = errors.Join(ErrIncompleteInspect, machine.ErrMachineInternal)
-		default:
-			result.Error = errors.Join(ErrIncompleteInspect, machine.ErrMachineInternal)
-		}
+	} else if err := validateCompletionExceptionData(result.Status, result.ExceptionData); err != nil {
+		result.Status = machine.CompletionStatusUnknown
+		result.Error = errors.Join(ErrIncompleteInspect, err)
 	}
 
 	// Close the fork

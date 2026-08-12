@@ -1388,13 +1388,6 @@ type AdvanceResult struct {
 	IsDaveConsensus     bool
 }
 
-type InspectResult struct {
-	ProcessedInputs uint64
-	Accepted        bool
-	Reports         [][]byte
-	Error           error
-}
-
 // FIXME: remove this type. Migrate claim to use Application + Epoch
 type ClaimRow struct {
 	Epoch
