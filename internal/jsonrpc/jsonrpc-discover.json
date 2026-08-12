@@ -2056,12 +2056,14 @@
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
 					"advance_max_cycles": {
+						"description": "Optional advance execution delta from the starting mcycle in range 0..2^48-1; 0 imposes no operator cap and the machine's imcyclemax governs",
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
 					"inspect_inc_cycles": {
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
 					"inspect_max_cycles": {
+						"description": "Optional inspect execution delta from the starting mcycle in range 0..2^48-1; 0 imposes no operator cap and the machine's imcyclemax governs",
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
 					"advance_inc_deadline": {

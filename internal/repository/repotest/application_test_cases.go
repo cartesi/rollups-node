@@ -31,9 +31,9 @@ func (s *ApplicationSuite) TestCreateApplication() {
 		ep := ExecutionParameters{
 			SnapshotPolicy:        SnapshotPolicy_EveryEpoch,
 			AdvanceIncCycles:      1000,
-			AdvanceMaxCycles:      5000,
-			InspectIncCycles:      1000,
-			InspectMaxCycles:      5000,
+			AdvanceMaxCycles:      1500, //nolint:mnd
+			InspectIncCycles:      2000,
+			InspectMaxCycles:      2500, //nolint:mnd
 			AdvanceIncDeadline:    10 * time.Second,
 			AdvanceMaxDeadline:    60 * time.Second,
 			InspectIncDeadline:    10 * time.Second,
@@ -53,6 +53,8 @@ func (s *ApplicationSuite) TestCreateApplication() {
 		s.Equal(ep.SnapshotPolicy, got.SnapshotPolicy)
 		s.Equal(ep.AdvanceIncCycles, got.AdvanceIncCycles)
 		s.Equal(ep.AdvanceMaxCycles, got.AdvanceMaxCycles)
+		s.Equal(ep.InspectIncCycles, got.InspectIncCycles)
+		s.Equal(ep.InspectMaxCycles, got.InspectMaxCycles)
 		s.Equal(ep.MaxConcurrentInspects, got.MaxConcurrentInspects)
 	})
 }
@@ -754,6 +756,8 @@ func (s *ApplicationSuite) TestGetExecutionParameters() {
 		ep, err := s.Repo.GetExecutionParameters(s.Ctx, app.ID)
 		s.Require().NoError(err)
 		s.NotNil(ep)
+		s.Zero(ep.AdvanceMaxCycles)
+		s.Zero(ep.InspectMaxCycles)
 	})
 }
 
@@ -762,9 +766,9 @@ func (s *ApplicationSuite) TestUpdateExecutionParameters() {
 		ep := ExecutionParameters{
 			SnapshotPolicy:        SnapshotPolicy_EveryInput,
 			AdvanceIncCycles:      2000,
-			AdvanceMaxCycles:      10000,
-			InspectIncCycles:      2000,
-			InspectMaxCycles:      10000,
+			AdvanceMaxCycles:      2500, //nolint:mnd
+			InspectIncCycles:      3000,
+			InspectMaxCycles:      3500, //nolint:mnd
 			AdvanceIncDeadline:    20 * time.Second,
 			AdvanceMaxDeadline:    120 * time.Second,
 			InspectIncDeadline:    20 * time.Second,
@@ -779,13 +783,17 @@ func (s *ApplicationSuite) TestUpdateExecutionParameters() {
 			Create(s.Ctx, s.T(), s.Repo)
 
 		ep.ApplicationID = app.ID
-		ep.AdvanceMaxCycles = 99999
+		ep.AdvanceIncCycles = 99999
+		ep.AdvanceMaxCycles = MaxExecutionCycleSpan
 		err := s.Repo.UpdateExecutionParameters(s.Ctx, &ep)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetExecutionParameters(s.Ctx, app.ID)
 		s.Require().NoError(err)
-		s.Equal(uint64(99999), got.AdvanceMaxCycles)
+		s.Equal(uint64(99999), got.AdvanceIncCycles)
+		s.Equal(MaxExecutionCycleSpan, got.AdvanceMaxCycles)
+		s.Equal(ep.InspectIncCycles, got.InspectIncCycles)
+		s.Equal(ep.InspectMaxCycles, got.InspectMaxCycles)
 	})
 }
 

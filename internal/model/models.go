@@ -606,7 +606,6 @@ func (e *ExecutionParameters) UnmarshalJSON(data []byte) error {
 		}
 		e.AdvanceIncCycles = val
 	}
-
 	if aux.AdvanceMaxCycles != "" {
 		val, err := ParseHexUint64(aux.AdvanceMaxCycles)
 		if err != nil {
@@ -622,7 +621,6 @@ func (e *ExecutionParameters) UnmarshalJSON(data []byte) error {
 		}
 		e.InspectIncCycles = val
 	}
-
 	if aux.InspectMaxCycles != "" {
 		val, err := ParseHexUint64(aux.InspectMaxCycles)
 		if err != nil {
@@ -691,13 +689,21 @@ func (e *ExecutionParameters) UnmarshalJSON(data []byte) error {
 }
 
 // Log2MaxExecutionCycles is the single node-side definition of the protocol
-// execution window size. pkg/machine aliases it as Log2MaxMCyclesPerAdvanceState.
+// execution window size. pkg/machine aliases it as Log2MaxMCyclesPerAdvanceState,
+// so the execution ceiling and computation-hash dimensions cannot diverge. The
+// emulator exposes the same value as
+// CM_ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE.
 const Log2MaxExecutionCycles uint64 = 48
 
-// MaxExecutionCycles is the number of mcycles in one machine-enforced window.
+// MaxExecutionCycles is the number of cycles in one machine-enforced execution
+// window. It is the mcycle window covered by one input hash collection.
 const MaxExecutionCycles uint64 = 1 << Log2MaxExecutionCycles
 
-// MaxExecutionCycleSpan is the largest endpoint delta in that window.
+// MaxExecutionCycleSpan is the largest configurable distance between the
+// starting mcycle and the execution endpoint. The endpoint itself is included
+// in the MaxExecutionCycles-wide window, hence the subtraction by one. A
+// configured maximum of zero means no operator-imposed cap; the machine's
+// MaxExecutionCycleSpan ceiling applies instead.
 const MaxExecutionCycleSpan uint64 = MaxExecutionCycles - 1
 
 // validateParameters constants
@@ -706,6 +712,19 @@ const maxConcurrentInspects = 1000
 
 // validateParameters performs validation on the loaded parameters
 func (e *ExecutionParameters) Validate() error {
+	if e.AdvanceIncCycles == 0 {
+		return errors.New("advance_inc_cycles must be greater than 0")
+	}
+	if e.AdvanceMaxCycles > MaxExecutionCycleSpan {
+		return fmt.Errorf("advance_max_cycles must be between 0 and %d", MaxExecutionCycleSpan)
+	}
+	if e.InspectIncCycles == 0 {
+		return errors.New("inspect_inc_cycles must be greater than 0")
+	}
+	if e.InspectMaxCycles > MaxExecutionCycleSpan {
+		return fmt.Errorf("inspect_max_cycles must be between 0 and %d", MaxExecutionCycleSpan)
+	}
+
 	// Validate durations are reasonable
 	if e.AdvanceIncDeadline < 0 || e.AdvanceIncDeadline > maxDuration {
 		return fmt.Errorf("advance_inc_deadline must be between 0 and 24h")

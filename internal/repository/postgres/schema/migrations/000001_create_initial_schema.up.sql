@@ -192,9 +192,9 @@ CREATE TABLE "execution_parameters" (
     "application_id" INT PRIMARY KEY,
     "snapshot_policy" "SnapshotPolicy" NOT NULL DEFAULT 'NONE',
     "advance_inc_cycles" BIGINT NOT NULL CHECK ("advance_inc_cycles" > 0) DEFAULT 4194304, -- 1 << 22
-    "advance_max_cycles" BIGINT NOT NULL CHECK ("advance_max_cycles" > 0) DEFAULT 4611686018427387903, -- uint64 max >> 2
+    "advance_max_cycles" BIGINT NOT NULL CHECK ("advance_max_cycles" >= 0 AND "advance_max_cycles" <= 281474976710655) DEFAULT 0, -- 0 uses the machine's fixed (1 << 48) - 1 cycle span
     "inspect_inc_cycles" BIGINT NOT NULL CHECK ("inspect_inc_cycles" > 0) DEFAULT 4194304, -- 1 << 22
-    "inspect_max_cycles" BIGINT NOT NULL CHECK ("inspect_max_cycles" > 0) DEFAULT 4611686018427387903,
+    "inspect_max_cycles" BIGINT NOT NULL CHECK ("inspect_max_cycles" >= 0 AND "inspect_max_cycles" <= 281474976710655) DEFAULT 0, -- 0 uses the machine's fixed (1 << 48) - 1 cycle span
     "advance_inc_deadline" BIGINT NOT NULL CHECK ("advance_inc_deadline" > 0) DEFAULT 10000000000, -- 10s
     "advance_max_deadline" BIGINT NOT NULL CHECK ("advance_max_deadline" > 0) DEFAULT 180000000000, -- 180s
     "inspect_inc_deadline" BIGINT NOT NULL CHECK ("inspect_inc_deadline" > 0) DEFAULT 10000000000, --10s

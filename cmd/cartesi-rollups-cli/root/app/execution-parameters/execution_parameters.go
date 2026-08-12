@@ -449,17 +449,21 @@ func setParameterValue(params *model.ExecutionParameters, parameter, value strin
 }
 
 func printParameters(params *model.ExecutionParameters) {
-	fmt.Printf("snapshot_policy: %s\n", params.SnapshotPolicy)
-	fmt.Printf("advance_inc_cycles: %d\n", params.AdvanceIncCycles)
-	fmt.Printf("advance_max_cycles: %d\n", params.AdvanceMaxCycles)
-	fmt.Printf("inspect_inc_cycles: %d\n", params.InspectIncCycles)
-	fmt.Printf("inspect_max_cycles: %d\n", params.InspectMaxCycles)
-	fmt.Printf("advance_inc_deadline: %s\n", params.AdvanceIncDeadline)
-	fmt.Printf("advance_max_deadline: %s\n", params.AdvanceMaxDeadline)
-	fmt.Printf("inspect_inc_deadline: %s\n", params.InspectIncDeadline)
-	fmt.Printf("inspect_max_deadline: %s\n", params.InspectMaxDeadline)
-	fmt.Printf("load_deadline: %s\n", params.LoadDeadline)
-	fmt.Printf("store_deadline: %s\n", params.StoreDeadline)
-	fmt.Printf("fast_deadline: %s\n", params.FastDeadline)
-	fmt.Printf("max_concurrent_inspects: %d\n", params.MaxConcurrentInspects)
+	writeParameters(os.Stdout, params)
+}
+
+func writeParameters(w io.Writer, params *model.ExecutionParameters) {
+	fmt.Fprintf(w, "snapshot_policy: %s\n", params.SnapshotPolicy)
+	fmt.Fprintf(w, "advance_inc_cycles: %d\n", params.AdvanceIncCycles)
+	fmt.Fprintf(w, "advance_max_cycles: %d\n", params.AdvanceMaxCycles)
+	fmt.Fprintf(w, "inspect_inc_cycles: %d\n", params.InspectIncCycles)
+	fmt.Fprintf(w, "inspect_max_cycles: %d\n", params.InspectMaxCycles)
+	fmt.Fprintf(w, "advance_inc_deadline: %s\n", params.AdvanceIncDeadline)
+	fmt.Fprintf(w, "advance_max_deadline: %s\n", params.AdvanceMaxDeadline)
+	fmt.Fprintf(w, "inspect_inc_deadline: %s\n", params.InspectIncDeadline)
+	fmt.Fprintf(w, "inspect_max_deadline: %s\n", params.InspectMaxDeadline)
+	fmt.Fprintf(w, "load_deadline: %s\n", params.LoadDeadline)
+	fmt.Fprintf(w, "store_deadline: %s\n", params.StoreDeadline)
+	fmt.Fprintf(w, "fast_deadline: %s\n", params.FastDeadline)
+	fmt.Fprintf(w, "max_concurrent_inspects: %d\n", params.MaxConcurrentInspects)
 }

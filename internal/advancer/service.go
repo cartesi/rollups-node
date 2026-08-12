@@ -15,6 +15,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/inspect"
 	"github.com/cartesi/rollups-node/internal/manager"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/cartesi/rollups-node/pkg/service"
 )
 
@@ -49,6 +50,12 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	var err error
 	if err = ctx.Err(); err != nil {
 		return nil, err // This returns context.Canceled or context.DeadlineExceeded.
+	}
+	// This is a process-wide compatibility invariant, not an application
+	// failure. Refuse advancer startup instead of retrying every application on
+	// every tick while reporting a misleading healthy service.
+	if err = machine.ValidateEmulatorComputationHashLimits(); err != nil {
+		return nil, fmt.Errorf("invalid machine execution constants: %w", err)
 	}
 
 	s := &Service{}
