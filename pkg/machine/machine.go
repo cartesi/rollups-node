@@ -27,14 +27,47 @@ type (
 	Hash    = [HashSize]byte
 )
 
-// AdvanceResponse contains the result of an advance operation.
+// CompletionStatus identifies how a guest-machine request completed. If
+// execution does not complete, the request returns an error instead.
+type CompletionStatus uint8
+
+const (
+	CompletionStatusUnknown CompletionStatus = iota
+	CompletionStatusAccepted
+	CompletionStatusRejected
+	CompletionStatusException
+	CompletionStatusHalted
+)
+
+// IsCompleted reports whether the status is a completed guest-machine outcome.
+func (s CompletionStatus) IsCompleted() bool {
+	switch s {
+	case CompletionStatusAccepted,
+		CompletionStatusRejected,
+		CompletionStatusException,
+		CompletionStatusHalted:
+		return true
+	default:
+		return false
+	}
+}
+
+// AdvanceResponse contains the result of a completed advance operation.
 type AdvanceResponse struct {
-	Accepted        bool
+	Status          CompletionStatus
 	Outputs         []Output
 	Reports         []Report
+	ExceptionData   []byte
 	Hashes          []Hash
 	RemainingCycles uint64
 	OutputsHash     Hash
+}
+
+// InspectResponse contains the result of a completed inspect operation.
+type InspectResponse struct {
+	Status        CompletionStatus
+	ExceptionData []byte
+	Reports       []Report
 }
 
 // Common errors
@@ -71,16 +104,12 @@ type Machine interface {
 	// Advance sends an input to the machine.
 	// The checkpointHash is the machine's root hash before processing the input,
 	// sent along with the request so the machine can revert to it if needed.
-	// It always returns a non-nil AdvanceResponse, even on error paths.
-	// The response contains whether the request was accepted,
-	// the corresponding outputs, reports, and the hash of the outputs.
-	// In case the request is not accepted, the response does not contain outputs.
+	// A non-nil response and nil error mean execution completed with a typed
+	// status. Incomplete execution returns a nil response and a non-nil error.
 	Advance(ctx context.Context, input []byte, checkpointHash Hash, computeHashes bool) (*AdvanceResponse, error)
 
-	// Inspect sends a query to the machine.
-	// It returns a boolean indicating whether or not the request was accepted
-	// It also returns the corresponding reports.
-	Inspect(ctx context.Context, query []byte) (bool, []Report, error)
+	// Inspect sends a query to the machine and returns its typed completion.
+	Inspect(ctx context.Context, query []byte) (*InspectResponse, error)
 
 	// Store saves the machine state to the specified path.
 	Store(ctx context.Context, path string) error
@@ -196,13 +225,17 @@ func Load(ctx context.Context, logger *slog.Logger, config *MachineConfig) (Mach
 		return nil, ErrNotAtManualYield
 	}
 
-	// Ensures that the last request the machine received did not yield an exception.
-	accepted, _, err := machine.wasLastRequestAccepted(ctx)
+	// Ensures that the last request left the machine in an accepted manual yield.
+	manualResult, err := machine.readManualYieldResult(ctx)
 	if err != nil {
 		machine.Close()
 		return nil, err
 	}
-	if !accepted {
+	if manualResult.status == CompletionStatusException {
+		machine.Close()
+		return nil, ErrException
+	}
+	if manualResult.status != CompletionStatusAccepted {
 		machine.Close()
 		return nil, ErrRejected
 	}

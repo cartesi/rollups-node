@@ -1340,6 +1340,7 @@ type AdvanceResult struct {
 	Status              InputCompletionStatus
 	Outputs             [][]byte
 	Reports             [][]byte
+	ExceptionData       []byte
 	Hashes              [][32]byte
 	RemainingMetaCycles uint64
 	IsDaveConsensus     bool

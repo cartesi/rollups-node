@@ -204,15 +204,15 @@ func (s *MachineSuite) TestMachineInterface() {
 
 	// Create a mock machine
 	mockMachine := &MockMachine{
-		AddressReturn:         "127.0.0.1:12345",
-		HashReturn:            Hash{1, 2, 3, 4, 5},
-		OutputsHashReturn:     Hash{6, 7, 8, 9, 10},
-		AdvanceAcceptedReturn: true,
-		AdvanceOutputsReturn:  []Output{[]byte("output1"), []byte("output2")},
-		AdvanceReportsReturn:  []Report{[]byte("report1")},
-		AdvanceHashReturn:     Hash{11, 12, 13, 14, 15},
-		InspectAcceptedReturn: true,
-		InspectReportsReturn:  []Report{[]byte("inspect report")},
+		AddressReturn:        "127.0.0.1:12345",
+		HashReturn:           Hash{1, 2, 3, 4, 5},
+		OutputsHashReturn:    Hash{6, 7, 8, 9, 10},
+		AdvanceStatusReturn:  CompletionStatusAccepted,
+		AdvanceOutputsReturn: []Output{[]byte("output1"), []byte("output2")},
+		AdvanceReportsReturn: []Report{[]byte("report1")},
+		AdvanceHashReturn:    Hash{11, 12, 13, 14, 15},
+		InspectStatusReturn:  CompletionStatusAccepted,
+		InspectReportsReturn: []Report{[]byte("inspect report")},
 	}
 
 	// Test that MockMachine implements Machine interface
@@ -235,7 +235,7 @@ func (s *MachineSuite) TestMachineInterface() {
 	// Test Advance
 	advanceResp, err := machine.Advance(ctx, []byte("input"), Hash{}, false)
 	require.NoError(err)
-	require.True(advanceResp.Accepted)
+	require.Equal(CompletionStatusAccepted, advanceResp.Status)
 	require.Len(advanceResp.Outputs, 2)
 	require.Equal([]byte("output1"), advanceResp.Outputs[0])
 	require.Equal([]byte("output2"), advanceResp.Outputs[1])
@@ -244,11 +244,11 @@ func (s *MachineSuite) TestMachineInterface() {
 	require.Equal(Hash{11, 12, 13, 14, 15}, advanceResp.OutputsHash)
 
 	// Test Inspect
-	accepted, inspectReports, err := machine.Inspect(ctx, []byte("query"))
+	inspectResp, err := machine.Inspect(ctx, []byte("query"))
 	require.NoError(err)
-	require.True(accepted)
-	require.Len(inspectReports, 1)
-	require.Equal([]byte("inspect report"), inspectReports[0])
+	require.Equal(CompletionStatusAccepted, inspectResp.Status)
+	require.Len(inspectResp.Reports, 1)
+	require.Equal([]byte("inspect report"), inspectResp.Reports[0])
 
 	// Test Store
 	err = machine.Store(ctx, "/tmp/test")
@@ -303,7 +303,7 @@ func (s *MachineSuite) TestMachineInterfaceErrors() {
 	require.Contains(err.Error(), "advance error")
 
 	// Test Inspect error
-	_, _, err = machine.Inspect(ctx, []byte("query"))
+	_, err = machine.Inspect(ctx, []byte("query"))
 	require.Error(err)
 	require.Contains(err.Error(), "inspect error")
 
@@ -332,7 +332,7 @@ type MockMachine struct {
 	OutputsHashProofReturn []Hash
 	OutputsHashProofError  error
 
-	AdvanceAcceptedReturn  bool
+	AdvanceStatusReturn    CompletionStatus
 	AdvanceOutputsReturn   []Output
 	AdvanceReportsReturn   []Report
 	AdvanceHashesReturn    []Hash
@@ -340,9 +340,9 @@ type MockMachine struct {
 	AdvanceHashReturn      Hash
 	AdvanceError           error
 
-	InspectAcceptedReturn bool
-	InspectReportsReturn  []Report
-	InspectError          error
+	InspectStatusReturn  CompletionStatus
+	InspectReportsReturn []Report
+	InspectError         error
 
 	StoreError error
 
@@ -368,18 +368,24 @@ func (m *MockMachine) OutputsHashProof(_ context.Context) ([]Hash, error) {
 }
 
 func (m *MockMachine) Advance(_ context.Context, _ []byte, _ Hash, _ bool) (*AdvanceResponse, error) {
+	if m.AdvanceError != nil {
+		return nil, m.AdvanceError
+	}
 	return &AdvanceResponse{
-		Accepted:        m.AdvanceAcceptedReturn,
+		Status:          m.AdvanceStatusReturn,
 		Outputs:         m.AdvanceOutputsReturn,
 		Reports:         m.AdvanceReportsReturn,
 		Hashes:          m.AdvanceHashesReturn,
 		RemainingCycles: m.AdvanceRemainingReturn,
 		OutputsHash:     m.AdvanceHashReturn,
-	}, m.AdvanceError
+	}, nil
 }
 
-func (m *MockMachine) Inspect(_ context.Context, _ []byte) (bool, []Report, error) {
-	return m.InspectAcceptedReturn, m.InspectReportsReturn, m.InspectError
+func (m *MockMachine) Inspect(_ context.Context, _ []byte) (*InspectResponse, error) {
+	if m.InspectError != nil {
+		return nil, m.InspectError
+	}
+	return &InspectResponse{Status: m.InspectStatusReturn, Reports: m.InspectReportsReturn}, nil
 }
 
 func (m *MockMachine) Store(_ context.Context, _ string) error {

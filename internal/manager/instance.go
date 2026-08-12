@@ -24,6 +24,8 @@ import (
 var (
 	ErrMachineClosed          = errors.New("machine is closed")
 	ErrInvalidInputIndex      = errors.New("invalid input index")
+	ErrIncompleteAdvance      = errors.New("machine advance returned no completed result")
+	ErrIncompleteInspect      = errors.New("machine inspect returned no completed result")
 	ErrInvalidSnapshotPoint   = errors.New("invalid snapshot point")
 	ErrInvalidApplication     = errors.New("application must not be nil")
 	ErrInvalidAdvanceTimeout  = errors.New("advance timeout must not be negative")
@@ -301,7 +303,16 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 
 	// Process the input
 	advanceResp, err := fork.Advance(advanceCtx, input, prevMachineHash, computeHashes)
-	status, err := toInputStatus(advanceResp.Accepted, err)
+	if err != nil {
+		return nil, errors.Join(err, fork.Close())
+	}
+	if advanceResp == nil {
+		return nil, errors.Join(ErrIncompleteAdvance, fork.Close())
+	}
+	if err := validateCompletionExceptionData(advanceResp.Status, advanceResp.ExceptionData); err != nil {
+		return nil, errors.Join(ErrIncompleteAdvance, err, fork.Close())
+	}
+	status, err := toInputStatus(advanceResp.Status)
 	if err != nil {
 		return nil, errors.Join(err, fork.Close())
 	}
@@ -313,6 +324,7 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 		Status:              status,
 		Outputs:             advanceResp.Outputs,
 		Reports:             advanceResp.Reports,
+		ExceptionData:       advanceResp.ExceptionData,
 		Hashes:              advanceResp.Hashes,
 		RemainingMetaCycles: advanceResp.RemainingCycles,
 		IsDaveConsensus:     computeHashes,
@@ -401,14 +413,31 @@ func (m *MachineInstanceImpl) Inspect(ctx context.Context, query []byte) (*Inspe
 	defer cancel()
 
 	// Process the query
-	accepted, reports, inspectErr := fork.Inspect(inspectCtx, query)
+	inspectResponse, inspectErr := fork.Inspect(inspectCtx, query)
 
 	// Create the result
 	result := &InspectResult{
 		ProcessedInputs: processedInputs,
-		Accepted:        accepted,
-		Reports:         reports,
-		Error:           inspectErr,
+	}
+	if inspectResponse != nil {
+		result.Reports = inspectResponse.Reports
+	}
+	if inspectErr != nil {
+		result.Error = inspectErr
+	} else if inspectResponse == nil || !inspectResponse.Status.IsCompleted() {
+		result.Error = errors.Join(ErrIncompleteInspect, machine.ErrMachineInternal)
+	} else {
+		switch inspectResponse.Status {
+		case machine.CompletionStatusAccepted:
+			result.Accepted = true
+		case machine.CompletionStatusRejected:
+		case machine.CompletionStatusException:
+			result.Error = machine.ErrException
+		case machine.CompletionStatusHalted:
+			result.Error = machine.ErrHalted
+		default:
+			result.Error = errors.Join(ErrIncompleteInspect, machine.ErrMachineInternal)
+		}
 	}
 
 	// Close the fork
@@ -719,34 +748,31 @@ func (f *SnapshotMachineRuntimeFactory) CreateMachineRuntime(
 // Default factory instance
 var defaultFactory MachineRuntimeFactory = &DefaultMachineRuntimeFactory{}
 
-// Helper function to convert machine response to input status
-func toInputStatus(accepted bool, err error) (status InputCompletionStatus, _ error) {
-	if err == nil {
-		if accepted {
-			return InputCompletionStatus_Accepted, nil
-		} else {
-			return InputCompletionStatus_Rejected, nil
-		}
-	}
-
-	switch {
-	case errors.Is(err, machine.ErrException):
+// toInputStatus converts only completed machine statuses to input statuses.
+func toInputStatus(status machine.CompletionStatus) (InputCompletionStatus, error) {
+	switch status {
+	case machine.CompletionStatusAccepted:
+		return InputCompletionStatus_Accepted, nil
+	case machine.CompletionStatusRejected:
+		return InputCompletionStatus_Rejected, nil
+	case machine.CompletionStatusException:
 		return InputCompletionStatus_Exception, nil
-	case errors.Is(err, machine.ErrHalted):
+	case machine.CompletionStatusHalted:
 		return InputCompletionStatus_MachineHalted, nil
-	case errors.Is(err, machine.ErrOutputsLimitExceeded):
-		return InputCompletionStatus_OutputsLimitExceeded, nil
-	case errors.Is(err, machine.ErrReportsLimitExceeded):
-		return InputCompletionStatus_ReportsLimitExceeded, nil
-	case errors.Is(err, machine.ErrReachedTargetMcycle):
-		return InputCompletionStatus_CycleLimitExceeded, nil
-	case errors.Is(err, machine.ErrPayloadLengthLimitExceeded):
-		return InputCompletionStatus_PayloadLengthLimitExceeded, nil
-	case errors.Is(err, machine.ErrDeadlineExceeded):
-		return InputCompletionStatus_TimeLimitExceeded, nil
-	case errors.Is(err, machine.ErrMachineInternal):
-		fallthrough
 	default:
-		return status, err
+		return InputCompletionStatus_None, fmt.Errorf(
+			"unknown completed machine status %d: %w", status, ErrIncompleteAdvance,
+		)
+	}
+}
+
+func validateCompletionExceptionData(status machine.CompletionStatus, data []byte) error {
+	switch {
+	case status == machine.CompletionStatusException && data == nil:
+		return fmt.Errorf("completed exception has no exception data: %w", machine.ErrMachineInternal)
+	case status != machine.CompletionStatusException && data != nil:
+		return fmt.Errorf("completion status %d unexpectedly has exception data: %w", status, machine.ErrMachineInternal)
+	default:
+		return nil
 	}
 }
