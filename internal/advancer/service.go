@@ -113,8 +113,13 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 }
 
 // Service interface implementation
-func (s *Service) Alive() bool     { return true }
-func (s *Service) Ready() bool     { return true }
+func (s *Service) Alive() bool { return true }
+func (s *Service) Ready() bool {
+	// This is a local fail-closed signal while application-failure durability
+	// is unresolved. It cannot atomically revoke work already selected by a
+	// separate process before that durable status becomes visible.
+	return s.machineManager != nil && !s.machineManager.HasPendingApplicationFailures()
+}
 func (s *Service) Reload() []error { return nil }
 func (s *Service) Tick() []error {
 	hadWork, err := s.Step(s.Context)

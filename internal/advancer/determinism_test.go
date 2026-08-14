@@ -229,6 +229,12 @@ func testDeterminismCallerDeadlines(
 		require.Equal(t, uint64(1), harness.instance.ProcessedInputs())
 		require.Zero(t, repo.ApplicationStatusUpdates,
 			"the expired context prevents the immediate FAILED status write")
+		require.True(t, harness.provider.HasPendingApplicationFailures())
+		require.Equal(
+			t,
+			context.DeadlineExceeded.Error(),
+			harness.provider.failureReason(harness.app.ID),
+		)
 		require.Equal(t, predecessor, harness.factory.base.snapshot())
 		require.True(t, harness.factory.base.isClosed(),
 			"a timed-out advance must close the changed live machine")
@@ -894,7 +900,7 @@ func (p *determinismMachineProvider) Applications() []*model.Application {
 
 func (p *determinismMachineProvider) UpdateMachines(context.Context) error { return nil }
 
-func (p *determinismMachineProvider) RecordApplicationFailure(app *model.Application, reason string) {
+func (p *determinismMachineProvider) FenceApplicationFailure(app *model.Application, reason string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.failures == nil {

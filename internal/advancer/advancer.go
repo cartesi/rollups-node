@@ -81,18 +81,18 @@ func (s *Service) Step(ctx context.Context) (bool, error) {
 	}
 
 	// Update the machine manager with any new or disabled applications
-	err := s.machineManager.UpdateMachines(ctx)
-	if err != nil {
-		return false, err
+	updateErr := s.machineManager.UpdateMachines(ctx)
+	if updateErr != nil && !manager.IsOnlyApplicationFailurePersistenceErrors(updateErr) {
+		return false, updateErr
 	}
 
 	// Get all applications with active machines (returned sorted by ID).
 	apps := s.machineManager.Applications()
 	if len(apps) == 0 {
-		return false, nil
+		return false, updateErr
 	}
 	anyWork := false
-	var errs []error
+	errs := []error{updateErr}
 	for _, app := range apps {
 		hadWork, err := s.stepApp(ctx, app)
 		if err != nil {
@@ -266,13 +266,7 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 				"index", input.Index,
 				"error", err)
 
-			if dbErr := appstatus.SetFailed(ctx, s.Logger, s.repository, app, err.Error()); dbErr != nil {
-				s.Logger.Error("Failed to persist FAILED status — machine will be closed "+
-					"but the app status remains unchanged in DB; it may be re-created "+
-					"from the last snapshot on the next tick. If the root cause "+
-					"persists, this may loop.",
-					"application", app.Name, "db_error", dbErr)
-			}
+			s.markApplicationFailed(ctx, app, err.Error())
 
 			// Eagerly close the machine to release the child process.
 			// The app has failed, so no further operations will succeed.
@@ -354,6 +348,20 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 	return nil
 }
 
+// markApplicationFailed persists FAILED or installs a local fence when the
+// status write cannot be confirmed. Keeping those operations together prevents
+// a failed application from being handed more work while durability is retried.
+func (s *Service) markApplicationFailed(ctx context.Context, app *Application, reason string) {
+	if err := appstatus.SetFailed(ctx, s.Logger, s.repository, app, reason); err != nil {
+		s.machineManager.FenceApplicationFailure(app, reason)
+		s.Logger.Error(
+			"Could not persist FAILED application status; the application remains fenced until the write is retried",
+			"application", app.Name,
+			"db_error", err,
+		)
+	}
+}
+
 func (s *Service) isEpochLastInput(ctx context.Context, app *Application, input *Input) (bool, error) {
 	if app == nil || input == nil {
 		return false, fmt.Errorf("application and input must not be nil")
@@ -421,10 +429,7 @@ func (s *Service) handleEpochAfterInputsProcessed(ctx context.Context, app *Appl
 			// If the runtime was destroyed (e.g., child process crashed),
 			// mark the app as failed to avoid an infinite retry loop.
 			if errors.Is(err, manager.ErrMachineClosed) {
-				if dbErr := appstatus.SetFailed(ctx, s.Logger, s.repository, app, err.Error()); dbErr != nil {
-					s.Logger.Error("Failed to persist FAILED status for crashed machine",
-						"application", app.Name, "db_error", dbErr)
-				}
+				s.markApplicationFailed(ctx, app, err.Error())
 			}
 			return fmt.Errorf("failed to get outputs proof from machine: %w", err)
 		}

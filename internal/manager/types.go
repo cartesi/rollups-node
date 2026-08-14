@@ -44,8 +44,16 @@ type MachineProvider interface {
 	// UpdateMachines refreshes the list of machines
 	UpdateMachines(ctx context.Context) error
 
+	// FenceApplicationFailure fences an application whose initial FAILED
+	// status write could not be confirmed. It queues a later durability retry
+	// without duplicating the initial repository write.
+	FenceApplicationFailure(app *Application, reason string)
+
 	// HasMachine checks if a machine exists for the given application ID
 	HasMachine(appID int64) bool
+
+	// HasPendingApplicationFailures reports an unresolved durable-status fence.
+	HasPendingApplicationFailures() bool
 
 	// Close shuts down all machine instances and releases resources
 	Close() error

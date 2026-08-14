@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/appstatus"
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -117,6 +118,10 @@ func (s *AdvancerSuite) TestServiceInterface() {
 
 		// Test service interface methods
 		require.True(advancer.Alive())
+		require.True(advancer.Ready())
+		machineManager.PendingApplicationFailures = true
+		require.False(advancer.Ready())
+		machineManager.PendingApplicationFailures = false
 		require.True(advancer.Ready())
 		require.Empty(advancer.Reload())
 		require.Equal(advancer.Name, advancer.String())
@@ -224,6 +229,40 @@ func (s *AdvancerSuite) TestStep() {
 		require.Contains(err.Error(), "update machines error")
 	})
 
+	s.Run("Error/UnconfirmedApplicationFailureStatus", func() {
+		require := s.Require()
+		persistenceErr := &manager.ApplicationFailurePersistenceError{
+			ApplicationID: 7,
+			WriteErr:      errors.New("status write unavailable"),
+			ReadErr:       errors.New("status read unavailable"),
+		}
+		healthy := newMockMachine(8)
+		machineManager := &MockMachineManager{
+			Map: map[int64]*MockMachineInstance{
+				healthy.Application.ID: newMockInstance(healthy),
+			},
+			UpdateMachinesError:        persistenceErr,
+			PendingApplicationFailures: true,
+		}
+		repo := &MockRepository{
+			GetEpochsReturn: map[common.Address][]*Epoch{
+				healthy.Application.IApplicationAddress: {{Index: 0, Status: EpochStatus_Open}},
+			},
+			GetInputsReturn: map[common.Address][]*Input{
+				healthy.Application.IApplicationAddress: {
+					newInput(healthy.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+				},
+			},
+		}
+		advancer, err := newMockAdvancerService(machineManager, repo)
+		require.NoError(err)
+
+		_, err = advancer.Step(context.Background())
+		require.ErrorIs(err, manager.ErrApplicationFailureNotDurable)
+		require.Len(repo.StoredResults, 1, "the healthy application must still advance")
+		require.False(advancer.Ready())
+	})
+
 	s.Run("Error/GetInputs", func() {
 		require := s.Require()
 		env := s.setupOneApp()
@@ -294,6 +333,48 @@ func (s *AdvancerSuite) TestStep() {
 
 		// app2's input was processed despite app1's failure
 		require.Len(repo.StoredResults, 1)
+	})
+
+	s.Run("LiveCycleLimitWriteFailureFencesAppWithoutBlockingHealthySibling", func() {
+		require := s.Require()
+		mm := newMockMachineManager()
+		limited := newMockMachine(1)
+		healthy := newMockMachine(2)
+		limitErr := fmt.Errorf(
+			"advance execution reached configured cycle limit: %w",
+			pkgmachine.ErrReachedLimitMcycle,
+		)
+		limited.AdvanceError = limitErr
+		mm.Map[limited.Application.ID] = newMockInstance(limited)
+		mm.Map[healthy.Application.ID] = newMockInstance(healthy)
+		repo := &MockRepository{
+			GetEpochsReturn: map[common.Address][]*Epoch{
+				limited.Application.IApplicationAddress: {{Index: 0, Status: EpochStatus_Open}},
+				healthy.Application.IApplicationAddress: {{Index: 0, Status: EpochStatus_Open}},
+			},
+			GetInputsReturn: map[common.Address][]*Input{
+				limited.Application.IApplicationAddress: {
+					newInput(limited.Application.ID, 0, 0, []byte("limited input")),
+				},
+				healthy.Application.IApplicationAddress: {
+					newInput(healthy.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+				},
+			},
+			UpdateApplicationStatusError: errors.New("FAILED write unavailable"),
+		}
+		svc, err := newMockAdvancerService(mm, repo)
+		require.NoError(err)
+
+		_, err = svc.Step(context.Background())
+
+		require.ErrorIs(err, pkgmachine.ErrReachedLimitMcycle)
+		require.Equal(
+			appstatus.NormalizeReason(limitErr.Error()),
+			mm.RecordedApplicationFailures[limited.Application.ID],
+		)
+		require.False(svc.Ready(), "an unconfirmed FAILED write must fail readiness immediately")
+		require.Len(repo.StoredResults, 1, "the healthy sibling must still advance")
+		require.Equal(healthy.Application.ID, repo.StoredAppIDs[0])
 	})
 }
 
@@ -601,6 +682,11 @@ func (s *AdvancerSuite) TestContextCancellation() {
 		// The expired context prevents the immediate database write, so the
 		// application failure is queued for a later status-write retry.
 		require.Zero(env.repo.ApplicationStatusUpdates)
+		require.Equal(
+			context.DeadlineExceeded.Error(),
+			env.mm.RecordedApplicationFailures[env.app.Application.ID],
+		)
+		require.True(env.mm.PendingApplicationFailures)
 		require.Equal(1, env.mm.Map[env.app.Application.ID].closeCalls)
 		require.True(logs.contains(slog.LevelError, "Error executing advance"))
 		require.False(logs.contains(
@@ -891,6 +977,23 @@ func (s *AdvancerSuite) TestHandleEpochAfterInputsProcessed() {
 		require.ErrorIs(err, manager.ErrMachineClosed)
 		require.Equal(1, env.repo.ApplicationStatusUpdates)
 		require.Equal(ApplicationStatus_Failed, env.repo.LastApplicationStatus)
+	})
+
+	s.Run("EmptyEpochIndex0ErrMachineClosedWriteFailureQueuesDurableFence", func() {
+		require := s.Require()
+		env := s.setupOneApp()
+		env.app.OutputsProofError = manager.ErrMachineClosed
+		env.repo.UpdateApplicationStatusError = errors.New("FAILED write unavailable")
+		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 0}
+
+		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
+
+		require.ErrorIs(err, manager.ErrMachineClosed)
+		require.Equal(
+			appstatus.NormalizeReason(manager.ErrMachineClosed.Error()),
+			env.mm.RecordedApplicationFailures[env.app.Application.ID],
+		)
+		require.False(env.service.Ready())
 	})
 
 	s.Run("EmptyEpochIndexGt0RepeatsPreviousProof", func() {
@@ -1957,13 +2060,16 @@ func newMockInstance(impl *MockMachineImpl) *MockMachineInstance {
 // ------------------------------------------------------------------------------------------------
 
 type MockMachineManager struct {
-	Map                 map[int64]*MockMachineInstance
-	UpdateMachinesError error
+	Map                         map[int64]*MockMachineInstance
+	UpdateMachinesError         error
+	PendingApplicationFailures  bool
+	RecordedApplicationFailures map[int64]string
 }
 
 func newMockMachineManager() *MockMachineManager {
 	return &MockMachineManager{
-		Map: map[int64]*MockMachineInstance{},
+		Map:                         map[int64]*MockMachineInstance{},
+		RecordedApplicationFailures: map[int64]string{},
 	}
 }
 
@@ -1979,6 +2085,14 @@ func (mock *MockMachineManager) UpdateMachines(ctx context.Context) error {
 	return mock.UpdateMachinesError
 }
 
+func (mock *MockMachineManager) FenceApplicationFailure(app *Application, reason string) {
+	if mock.RecordedApplicationFailures == nil {
+		mock.RecordedApplicationFailures = map[int64]string{}
+	}
+	mock.RecordedApplicationFailures[app.ID] = appstatus.NormalizeReason(reason)
+	mock.PendingApplicationFailures = true
+}
+
 func (mock *MockMachineManager) Applications() []*Application {
 	apps := make([]*Application, 0, len(mock.Map))
 	for _, v := range mock.Map {
@@ -1991,6 +2105,10 @@ func (mock *MockMachineManager) Applications() []*Application {
 func (mock *MockMachineManager) HasMachine(appID int64) bool {
 	_, exists := mock.Map[appID]
 	return exists
+}
+
+func (mock *MockMachineManager) HasPendingApplicationFailures() bool {
+	return mock.PendingApplicationFailures
 }
 
 func (mock *MockMachineManager) Close() error {
