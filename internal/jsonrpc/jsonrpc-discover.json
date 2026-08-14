@@ -533,7 +533,7 @@
 		{
 			"name": "cartesi_getExecutedOutputCount",
 			"summary": "Retrieve the number of executed outputs for the application",
-			"description": "Returns a monotone change signal: an unchanged value means no new executions; not a resume cursor.",
+			"description": "Returns a monotone change signal for output execution. An unchanged count means that no new executions have been observed. When the count changes, re-query the bounded executable-output working set with cartesi_listOutputs using executed=false and output_type=[voucher, delegatecall_voucher], then diff that pending set against the previous result to identify executions. Do not use this count, an output index, or a pagination offset as a resume cursor: executions are observed out of output-index order, so a late execution can occur behind such a cursor. A race-free execution cursor is expected in a future ingestion API.",
 			"params": [
 				{
 					"name": "application",
@@ -565,7 +565,7 @@
 		{
 			"name": "cartesi_getPendingExecutableOutputCount",
 			"summary": "Retrieve the number of pending executable outputs for the application",
-			"description": "Returns a non-monotone gauge (grows with new vouchers, shrinks with executions): do not use for change detection — poll the executed count instead.",
+			"description": "Returns a non-monotone gauge that grows with new executable outputs and shrinks with executions. Do not use it as a change signal or resume cursor. Instead poll cartesi_getExecutedOutputCount; when that monotone count changes, re-query the bounded executable-output working set with cartesi_listOutputs using executed=false and output_type=[voucher, delegatecall_voucher], then diff the pending set against the previous result.",
 			"params": [
 				{
 					"name": "application",
@@ -597,7 +597,7 @@
 		{
 			"name": "cartesi_listOutputs",
 			"summary": "Retrieve a List of Outputs",
-			"description": "Returns a paginated list of outputs, with options to filter by epoch index, input index, output type and voucher address.",
+			"description": "Returns a paginated list of outputs, with options to filter by epoch index, input index, output type, voucher address, and execution status. Executions are observed out of output-index order: an old voucher can execute after newer outputs and therefore change behind an index- or offset-based cursor. Do not use output indexes, pagination offsets, or the executed-output count as resume cursors over the executed filter, because doing so can silently skip late executions. To synchronize executions, poll cartesi_getExecutedOutputCount; when it changes, re-query the bounded executable-output working set with executed=false and output_type=[voucher, delegatecall_voucher], then diff the pending set against the previous result. A race-free execution cursor is expected in a future ingestion API.",
 			"params": [
 				{
 					"name": "application",
@@ -697,7 +697,7 @@
 				},
 				{
 					"name": "executed",
-					"description": "Filter by execution status: true selects outputs with an execution transaction hash; false selects outputs without one. Executions happen out of index order: an old voucher can be executed long after newer ones, appearing at a low index. Therefore, do not build a resume cursor keyed on output index or on an executed-count offset over this filter as it will silently skip such late executions. Instead poll cartesi_getExecutedOutputCount, and on change query the bounded working set with executed=false, output_type=[...].",
+					"description": "Filter by execution status: true selects outputs with an execution transaction hash; false selects outputs without one. Executions are observed out of output-index order, so do not build a resume cursor over this filter from an output index, pagination offset, or executed-output count; it can silently skip late executions. Instead poll cartesi_getExecutedOutputCount and, when it changes, re-query the bounded executable-output working set with executed=false and output_type=[voucher, delegatecall_voucher], then diff the pending set against the previous result.",
 					"schema": {
 						"type": "boolean"
 					},
