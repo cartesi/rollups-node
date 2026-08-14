@@ -847,7 +847,9 @@ func (s *RepositoryReadService) ListMatchAdvances(ctx context.Context, params ap
 	pagination.Limit = params.Limit
 	pagination.Offset = params.Offset
 
-	data, total, err := repo.ListMatchAdvances(ctx, application, epochIndex, params.TournamentAddress, params.IDHash, pagination, params.Descending)
+	data, total, err := repo.ListMatchAdvances(
+		ctx, application, epochIndex, params.TournamentAddress, params.IDHash, pagination, params.Descending,
+	)
 	if err != nil {
 		return nil, err
 	}
