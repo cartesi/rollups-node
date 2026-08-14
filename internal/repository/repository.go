@@ -406,6 +406,7 @@ type ClaimerRepository interface {
 }
 
 type Repository interface {
+	ReplayRepository
 	ApplicationRepository
 	EpochRepository
 	InputRepository

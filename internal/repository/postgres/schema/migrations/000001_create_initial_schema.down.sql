@@ -4,6 +4,7 @@
 BEGIN;
 
 DROP TRIGGER IF EXISTS "state_hashes_set_updated_at" ON "state_hashes";
+DROP INDEX IF EXISTS "state_hashes_input_index_idx";
 DROP TABLE IF EXISTS "state_hashes";
 
 DROP TRIGGER IF EXISTS "match_advances_set_updated_at" ON "match_advances";
@@ -29,6 +30,7 @@ DROP TRIGGER IF EXISTS "config_set_updated_at" ON "node_config";
 DROP TABLE IF EXISTS "node_config";
 
 DROP TRIGGER IF EXISTS "report_set_updated_at" ON "report";
+DROP INDEX IF EXISTS "report_input_index_idx";
 DROP TABLE IF EXISTS "report";
 
 DROP TRIGGER IF EXISTS "withdrawal_set_updated_at" ON "withdrawal";
@@ -36,16 +38,19 @@ DROP INDEX IF EXISTS "withdrawal_block_number_idx";
 DROP TABLE IF EXISTS "withdrawal";
 
 DROP TRIGGER IF EXISTS "output_set_updated_at" ON "output";
+DROP INDEX IF EXISTS "output_input_index_idx";
 DROP INDEX IF EXISTS "output_raw_data_address_idx";
 DROP INDEX IF EXISTS "output_raw_data_type_idx";
 DROP TABLE IF EXISTS "output";
 
 DROP TRIGGER IF EXISTS "input_set_updated_at" ON "input";
+DROP TRIGGER IF EXISTS "input_completion_immutability_check" ON "input";
 DROP INDEX IF EXISTS "input_sender_idx";
 DROP INDEX IF EXISTS "input_unprocessed_idx";
 DROP INDEX IF EXISTS "input_status_idx";
 DROP INDEX IF EXISTS "input_block_number_idx";
 DROP TABLE IF EXISTS "input";
+DROP FUNCTION IF EXISTS "enforce_input_completion_immutability";
 
 DROP TRIGGER IF EXISTS "epoch_status_transition_check" ON "epoch";
 DROP TRIGGER IF EXISTS "epoch_set_updated_at" ON "epoch";

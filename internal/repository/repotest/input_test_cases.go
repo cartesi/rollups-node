@@ -68,22 +68,28 @@ func (s *InputSuite) TestGetLastInput() {
 
 func (s *InputSuite) TestGetLastProcessedInput() {
 	s.Run("ReturnsLastProcessed", func() {
+		const (
+			processedInputBlock uint64 = 5
+			pendingInputBlock   uint64 = 10
+		)
+
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 		epoch := NewEpochBuilder(app.ID).
 			WithIndex(0).WithStatus(EpochStatus_Closed).
 			WithBlocks(0, 19).WithInputBounds(0, 1).Build()
 
 		input0 := NewInputBuilder().
-			WithIndex(0).WithBlockNumber(5).
-			WithStatus(InputCompletionStatus_Accepted).Build()
+			WithIndex(0).WithBlockNumber(processedInputBlock).Build()
 		input1 := NewInputBuilder().
-			WithIndex(1).WithBlockNumber(10).
+			WithIndex(1).WithBlockNumber(pendingInputBlock).
 			WithStatus(InputCompletionStatus_None).Build()
 
 		err := s.Repo.CreateEpochsAndInputs(
 			s.Ctx, app.IApplicationAddress.String(),
 			map[*Epoch][]*Input{epoch: {input0, input1}}, 20)
 		s.Require().NoError(err)
+		StoreAdvanceResult(s.Ctx, s.T(), s.Repo, app.ID, 0, 0,
+			InputCompletionStatus_Accepted, nil, nil)
 
 		got, err := s.Repo.GetLastProcessedInput(s.Ctx, app.IApplicationAddress.String())
 		s.Require().NoError(err)
@@ -218,6 +224,11 @@ func (s *InputSuite) TestCreateEpochsAndInputsWithSameTransactionHash() {
 }
 
 func (s *InputSuite) TestListInputs() {
+	const (
+		firstFilteredInputBlock  uint64 = 5
+		secondFilteredInputBlock uint64 = 10
+	)
+
 	s.Run("EmptyResult", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 		inputs, total, err := s.Repo.ListInputs(
@@ -287,16 +298,17 @@ func (s *InputSuite) TestListInputs() {
 			WithBlocks(0, 19).WithInputBounds(0, 1).Build()
 
 		input0 := NewInputBuilder().
-			WithIndex(0).WithBlockNumber(5).
-			WithStatus(InputCompletionStatus_Accepted).Build()
+			WithIndex(0).WithBlockNumber(firstFilteredInputBlock).Build()
 		input1 := NewInputBuilder().
-			WithIndex(1).WithBlockNumber(10).
+			WithIndex(1).WithBlockNumber(secondFilteredInputBlock).
 			WithStatus(InputCompletionStatus_None).Build()
 
 		err := s.Repo.CreateEpochsAndInputs(
 			s.Ctx, app.IApplicationAddress.String(),
 			map[*Epoch][]*Input{epoch: {input0, input1}}, 20)
 		s.Require().NoError(err)
+		StoreAdvanceResult(s.Ctx, s.T(), s.Repo, app.ID, 0, 0,
+			InputCompletionStatus_Accepted, nil, nil)
 
 		status := InputCompletionStatus_Accepted
 		inputs, total, err := s.Repo.ListInputs(
@@ -316,11 +328,9 @@ func (s *InputSuite) TestListInputs() {
 			WithBlocks(0, 19).WithInputBounds(0, 2).Build()
 
 		input0 := NewInputBuilder().
-			WithIndex(0).WithBlockNumber(5).
-			WithStatus(InputCompletionStatus_Accepted).Build()
+			WithIndex(0).WithBlockNumber(firstFilteredInputBlock).Build()
 		input1 := NewInputBuilder().
-			WithIndex(1).WithBlockNumber(10).
-			WithStatus(InputCompletionStatus_Rejected).Build()
+			WithIndex(1).WithBlockNumber(secondFilteredInputBlock).Build()
 		input2 := NewInputBuilder().
 			WithIndex(2).WithBlockNumber(15).
 			WithStatus(InputCompletionStatus_None).Build()
@@ -329,6 +339,10 @@ func (s *InputSuite) TestListInputs() {
 			s.Ctx, app.IApplicationAddress.String(),
 			map[*Epoch][]*Input{epoch: {input0, input1, input2}}, 20)
 		s.Require().NoError(err)
+		StoreAdvanceResult(s.Ctx, s.T(), s.Repo, app.ID, 0, 0,
+			InputCompletionStatus_Accepted, nil, nil)
+		StoreAdvanceResult(s.Ctx, s.T(), s.Repo, app.ID, 0, 1,
+			InputCompletionStatus_Rejected, nil, nil)
 
 		notStatus := InputCompletionStatus_None
 		inputs, total, err := s.Repo.ListInputs(

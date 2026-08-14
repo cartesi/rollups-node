@@ -401,6 +401,11 @@ CREATE TABLE "input"
     CONSTRAINT "input_pkey" PRIMARY KEY ("epoch_application_id", "index"),
     CONSTRAINT "input_epoch_index_unique" UNIQUE ("epoch_application_id", "epoch_index", "index"),
     CONSTRAINT "input_application_id_tx_hash_log_index_unique" UNIQUE ("epoch_application_id", "transaction_hash", "log_index"),
+    CONSTRAINT "input_completed_hashes_check" CHECK (
+        ("status" = 'NONE' AND "machine_hash" IS NULL AND "outputs_hash" IS NULL)
+        OR
+        ("status" <> 'NONE' AND "machine_hash" IS NOT NULL AND "outputs_hash" IS NOT NULL)
+    ),
     CONSTRAINT "input_epoch_id_fkey" FOREIGN KEY ("epoch_application_id", "epoch_index") REFERENCES "epoch"("application_id", "index") ON DELETE CASCADE
 );
 
@@ -415,6 +420,33 @@ CREATE INDEX "input_sender_idx" ON "input" ("epoch_application_id", substring("r
 -- terminal value on every processed input. Lower the autovacuum threshold so
 -- dead tuples (and the shrinking partial index) are reclaimed promptly.
 ALTER TABLE "input" SET (autovacuum_vacuum_scale_factor = 0.02);
+
+CREATE FUNCTION enforce_input_completion_immutability()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.status <> 'NONE' AND (
+        NEW.epoch_application_id IS DISTINCT FROM OLD.epoch_application_id
+        OR NEW.epoch_index IS DISTINCT FROM OLD.epoch_index
+        OR NEW.index IS DISTINCT FROM OLD.index
+        OR NEW.raw_data IS DISTINCT FROM OLD.raw_data
+        OR NEW.status IS DISTINCT FROM OLD.status
+        OR NEW.exception_data IS DISTINCT FROM OLD.exception_data
+        OR NEW.machine_hash IS DISTINCT FROM OLD.machine_hash
+        OR NEW.outputs_hash IS DISTINCT FROM OLD.outputs_hash
+    ) THEN
+        RAISE EXCEPTION
+            'completed input result is immutable';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER "input_completion_immutability_check"
+    BEFORE UPDATE OF "epoch_application_id", "epoch_index", "index", "raw_data",
+        "status", "exception_data", "machine_hash", "outputs_hash" ON "input"
+    FOR EACH ROW
+    EXECUTE FUNCTION enforce_input_completion_immutability();
 
 CREATE TRIGGER "input_set_updated_at" BEFORE UPDATE ON "input"
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -436,6 +468,8 @@ CREATE TABLE "output"
 );
 
 CREATE INDEX "output_raw_data_type_idx" ON "output" ("input_epoch_application_id", substring("raw_data" FROM 1 FOR 4));
+
+CREATE INDEX "output_input_index_idx" ON "output" ("input_epoch_application_id", "input_index", "index");
 
 CREATE INDEX "output_raw_data_address_idx" ON "output" ("input_epoch_application_id", substring("raw_data" FROM 17 FOR 20))
 WHERE SUBSTRING("raw_data" FROM 1 FOR 4) IN (
@@ -485,6 +519,8 @@ CREATE TABLE "report"
     CONSTRAINT "report_pkey" PRIMARY KEY ("input_epoch_application_id", "index"),
     CONSTRAINT "report_input_id_fkey" FOREIGN KEY ("input_epoch_application_id", "input_index") REFERENCES "input"("epoch_application_id", "index") ON DELETE CASCADE
 );
+
+CREATE INDEX "report_input_index_idx" ON "report" ("input_epoch_application_id", "input_index", "index");
 
 CREATE TRIGGER "report_set_updated_at" BEFORE UPDATE ON "report"
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -659,6 +695,8 @@ CREATE TABLE "state_hashes"
     CONSTRAINT "state_hashes_pkey" PRIMARY KEY ("input_epoch_application_id", "epoch_index", "index"),
     CONSTRAINT "state_hashes_input_id_fkey" FOREIGN KEY ("input_epoch_application_id", "epoch_index", "input_index") REFERENCES "input"("epoch_application_id", "epoch_index", "index") ON DELETE CASCADE
 );
+
+CREATE INDEX "state_hashes_input_index_idx" ON "state_hashes" ("input_epoch_application_id", "input_index", "index");
 
 CREATE TRIGGER "state_hashes_set_updated_at" BEFORE UPDATE ON "state_hashes"
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

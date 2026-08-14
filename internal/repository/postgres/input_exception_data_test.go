@@ -65,4 +65,19 @@ func TestPostgresInputExceptionDataContract(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, completed.ExceptionData)
 	require.Empty(t, completed.ExceptionData)
+
+	_, err = conn.Exec(ctx, `
+		UPDATE input SET exception_data = '\x02'
+		WHERE epoch_application_id = $1 AND index = 0`, seed.App.ID)
+	require.ErrorContains(t, err, "completed input result is immutable")
+
+	_, err = conn.Exec(ctx, `
+		UPDATE input SET raw_data = '\x03'
+		WHERE epoch_application_id = $1 AND index = 0`, seed.App.ID)
+	require.ErrorContains(t, err, "completed input result is immutable")
+
+	_, err = conn.Exec(ctx, `
+		UPDATE input SET snapshot_uri = '/tmp/snapshot'
+		WHERE epoch_application_id = $1 AND index = 0`, seed.App.ID)
+	require.NoError(t, err, "snapshot metadata remains mutable after completion")
 }

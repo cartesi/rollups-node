@@ -1388,6 +1388,46 @@ type AdvanceResult struct {
 	IsDaveConsensus     bool
 }
 
+// ReplaySummary identifies the immutable completed-input prefix selected for
+// one machine replay.
+type ReplaySummary struct {
+	ApplicationID   int64
+	ProcessedInputs uint64
+	Consensus       Consensus
+}
+
+// ReplayInput is the canonical input evidence needed to verify one replayed
+// machine execution. It is deliberately narrower than Input: L1 metadata,
+// timestamps, and snapshot location do not participate in the comparison.
+type ReplayInput struct {
+	ApplicationID int64
+	EpochIndex    uint64
+	InputIndex    uint64
+	RawData       []byte
+	Status        InputCompletionStatus
+	ExceptionData []byte
+	MachineHash   *common.Hash
+	OutputsHash   *common.Hash
+}
+
+// ReplayStateHash is one persisted row of a PRT input hash collection. Keeping
+// this projection narrow matters because one input may contain millions of
+// rows.
+type ReplayStateHash struct {
+	Index       uint64
+	MachineHash common.Hash
+	Repetitions uint64
+}
+
+// ReplayRecord contains one completed input and its requested verification
+// evidence. Canonical records leave Outputs, Reports, and StateHashes empty.
+type ReplayRecord struct {
+	Input       ReplayInput
+	Outputs     [][]byte
+	Reports     [][]byte
+	StateHashes []ReplayStateHash
+}
+
 // FIXME: remove this type. Migrate claim to use Application + Epoch
 type ClaimRow struct {
 	Epoch

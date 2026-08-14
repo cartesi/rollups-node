@@ -1252,9 +1252,12 @@ func (s *EpochSuite) TestDrainGates() {
 			s.Ctx, app.IApplicationAddress.String(),
 			map[*Epoch][]*Input{ep: {
 				NewInputBuilder().WithIndex(idx).WithEpochIndex(idx).
-					WithBlockNumber(first + 1).WithStatus(inputStatus).Build(),
+					WithBlockNumber(first + 1).Build(),
 			}}, last+1)
 		s.Require().NoError(err)
+		if inputStatus.IsCompleted() {
+			StoreAdvanceResult(s.Ctx, s.T(), s.Repo, app.ID, idx, idx, inputStatus, nil, nil)
+		}
 
 		if target != EpochStatus_Closed {
 			AdvanceEpochStatus(s.Ctx, s.T(),
@@ -1494,11 +1497,11 @@ func (s *EpochSuite) TestDrainGates() {
 			s.Ctx, app.IApplicationAddress.String(),
 			map[*Epoch][]*Input{ep: {
 				NewInputBuilder().WithIndex(0).WithEpochIndex(0).
-					WithBlockNumber(forecloseBlock).
-					WithStatus(InputCompletionStatus_Accepted).
-					Build(),
+					WithBlockNumber(forecloseBlock).Build(),
 			}}, forecloseBlock+10)
 		s.Require().NoError(err)
+		StoreAdvanceResult(s.Ctx, s.T(), s.Repo, app.ID, 0, 0,
+			InputCompletionStatus_Accepted, nil, nil)
 		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
 			app.IApplicationAddress.String(), ep, EpochStatus_ClaimComputed)
 		s.Require().NoError(s.Repo.UpdateApplicationForeclosure(
