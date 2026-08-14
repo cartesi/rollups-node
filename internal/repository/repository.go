@@ -74,6 +74,7 @@ type InputFilter struct {
 	IndexRange      *Range
 }
 
+// Range defines a closed interval: both Start and End are inclusive.
 type Range struct {
 	Start uint64
 	End   uint64
