@@ -219,7 +219,7 @@ func (r *PostgresRepository) ListOutputs(
 		conditions = append(conditions, table.Output.InputIndex.EQ(uint64Expr(*f.InputIndex)))
 	}
 
-	if f.OutputType != nil {
+	if f.OutputType != nil && len(*f.OutputType) > 0 {
 		conditions = append(conditions, outputTypesCondition(*f.OutputType))
 	}
 

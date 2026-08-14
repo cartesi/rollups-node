@@ -258,6 +258,32 @@ func (s *OutputSuite) TestListOutputs() {
 		s.Equal(rawWithType, outputs[0].RawData)
 	})
 
+	s.Run("FilterByEmptyOutputType", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+
+		// OutputType filter uses SUBSTR(raw_data, 1, 4) to match the first 4 bytes
+		targetType := []byte{0xef, 0x01, 0xab, 0xcd}
+		rawWithType := make([]byte, 32)
+		copy(rawWithType[0:4], targetType)
+
+		otherType := []byte{0x00, 0x00, 0x00, 0x00}
+		rawWithOther := make([]byte, 32)
+		copy(rawWithOther[0:4], otherType)
+
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{rawWithType, rawWithOther}, nil)
+
+		outputs, total, err := s.Repo.ListOutputs(
+			s.Ctx, seed.App.IApplicationAddress.String(),
+			repository.OutputFilter{OutputType: &[][]byte{}},
+			repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Len(outputs, 2)
+		s.Equal(uint64(2), total)
+		s.Equal(rawWithType, outputs[0].RawData)
+		s.Equal(rawWithOther, outputs[1].RawData)
+	})
+
 	s.Run("FilterByOutputTypesAndExecutionStatus", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
