@@ -61,6 +61,12 @@ endif
 # Go artifacts
 GO_ARTIFACTS := $(addprefix cartesi-rollups-,node cli evm-reader advancer validator claimer jsonrpc-api prt machine-tool)
 
+# These artifacts embed the machine runtime and therefore require libcartesi.
+# Keep this list explicit: every other artifact is built with CGO_ENABLED=0, so
+# the normal build fails if a C dependency leaks into a pure service or tool.
+MACHINE_GO_ARTIFACTS := cartesi-rollups-node cartesi-rollups-advancer
+PURE_GO_ARTIFACTS := $(filter-out $(MACHINE_GO_ARTIFACTS),$(GO_ARTIFACTS))
+
 # fixme(vfusco): path on all oses
 CGO_CFLAGS:= -I$(PREFIX)/include
 CGO_LDFLAGS:= -L$(PREFIX)/lib
@@ -70,17 +76,25 @@ export CGO_LDFLAGS
 CARTESI_TEST_MACHINE_IMAGES_PATH:= $(PREFIX)/share/cartesi-machine/images/
 export CARTESI_TEST_MACHINE_IMAGES_PATH
 
-GO_BUILD_PARAMS := -ldflags "-s -w -X 'github.com/cartesi/rollups-node/internal/version.BuildVersion=$(ROLLUPS_NODE_VERSION)' -r $(PREFIX)/lib"
+GO_VERSION_LDFLAGS := -s -w -X 'github.com/cartesi/rollups-node/internal/version.BuildVersion=$(ROLLUPS_NODE_VERSION)'
+PURE_GO_BUILD_PARAMS := -ldflags "$(GO_VERSION_LDFLAGS)"
+MACHINE_GO_BUILD_PARAMS := -ldflags "$(GO_VERSION_LDFLAGS) -r $(PREFIX)/lib"
 ifeq ($(BUILD_TYPE),debug)
-	GO_BUILD_PARAMS += -gcflags "all=-N -l"
+	PURE_GO_BUILD_PARAMS += -gcflags "all=-N -l"
+	MACHINE_GO_BUILD_PARAMS += -gcflags "all=-N -l"
 endif
+
+# Tests and Go development tools cover machine packages, so retain the
+# machine-capable parameters for those existing recipes.
+GO_BUILD_PARAMS = $(MACHINE_GO_BUILD_PARAMS)
 
 GO_TEST_PACKAGES ?= ./...
 GO_TEST_FLAGS ?=
 
 VERBOSE ?=
 ifeq ($(VERBOSE),true)
-	GO_BUILD_PARAMS += -v
+	PURE_GO_BUILD_PARAMS += -v
+	MACHINE_GO_BUILD_PARAMS += -v
 	GO_TEST_FLAGS += -v
 endif
 
@@ -147,9 +161,13 @@ env:
 # =============================================================================
 # Artifacts
 # =============================================================================
-$(GO_ARTIFACTS):
+$(PURE_GO_ARTIFACTS):
+	@echo "Building pure Go artifact $@"
+	CGO_ENABLED=0 go build $(PURE_GO_BUILD_PARAMS) ./cmd/$@
+
+$(MACHINE_GO_ARTIFACTS):
 	@echo "Building Go artifact $@"
-	go build $(GO_BUILD_PARAMS) ./cmd/$@
+	CGO_ENABLED=1 go build $(MACHINE_GO_BUILD_PARAMS) ./cmd/$@
 
 tidy-go:
 	@go mod tidy
