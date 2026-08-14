@@ -28,7 +28,8 @@ var discoverSpec embed.FS
 const (
 	// Maximum allowed body size (1 MB).
 	MAX_BODY_SIZE = 1 << 20 //nolint: revive
-	// Maximum cumulative response size (10 MB).
+	// Maximum response size for a single request or cumulative response size for
+	// all entries in a batch (10 MB).
 	MAX_RESPONSE_SIZE = 10 << 20 //nolint: revive
 	// Maximum amount of request in a batch (100)
 	MAX_BATCH_SIZE = 100 //nolint: revive
@@ -57,8 +58,8 @@ const (
 	// Application not found: the application identifier itself is unknown to
 	// this node. A configuration error that will not resolve by retrying.
 	JSONRPC_APPLICATION_NOT_FOUND int = -31002 //nolint: revive
-	// Response size limit exceeded:  cumulative buffered-response budget was
-	// not enough for all responses in the batch.
+	// Response size limit exceeded: the buffered-response budget was not enough
+	// for a single response or all responses in a batch.
 	JSONRPC_RESPONSE_SIZE_LIMIT_EXCEEDED int = -31003 //nolint: revive
 )
 
