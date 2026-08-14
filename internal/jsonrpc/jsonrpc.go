@@ -272,17 +272,7 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 
 // Discovery: return the embedded specification.
 func handleDiscover(s *Service, _ *http.Request, _ RPCRequest) (any, error) {
-	data, err := discoverSpec.ReadFile("jsonrpc-discover.json")
-	if err != nil {
-		s.Logger.Error("Unable to read jsonrpc-discover content", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
-	}
-	var spec any
-	if err := json.Unmarshal(data, &spec); err != nil {
-		s.Logger.Error("Unable to unmarshal discovery spec JSON", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
-	}
-	return spec, nil
+	return s.discoverSpec, nil
 }
 
 func handleListApplications(s *Service, r *http.Request, req RPCRequest) (any, error) {

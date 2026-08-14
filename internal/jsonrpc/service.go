@@ -5,6 +5,7 @@ package jsonrpc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -37,6 +38,8 @@ type Service struct {
 	// listen opens the HTTP listener. It defaults to net.Listen and is
 	// overridden in tests so Serve() can be exercised without real sockets.
 	listen func(network, address string) (net.Listener, error)
+	// OpenAPI description for JSON-RPC API loaded from 'jsonrpc-discover.json' file
+	discoverSpec any
 }
 
 type CreateInfo struct {
@@ -64,6 +67,14 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	s.repository = c.Repository
 	if s.repository == nil {
 		return nil, fmt.Errorf("repository on validator service Create is nil")
+	}
+
+	data, err := discoverSpec.ReadFile("jsonrpc-discover.json")
+	if err != nil {
+		return nil, fmt.Errorf("unable to read jsonrpc-discover content: %w", err)
+	}
+	if err := json.Unmarshal(data, &s.discoverSpec); err != nil {
+		return nil, fmt.Errorf("unable to unmarshal discovery spec JSON: %w", err)
 	}
 
 	s.inputABI, err = inputs.InputsMetaData.GetAbi()
