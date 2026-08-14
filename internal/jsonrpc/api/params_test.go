@@ -226,6 +226,29 @@ func TestPositionalParamsDeclarationOrder(t *testing.T) {
 	}
 }
 
+func TestUnmarshalParamsEmptyRepresentationsLeaveTargetUnchanged(t *testing.T) {
+	for name, data := range map[string]json.RawMessage{
+		"omitted":     nil,
+		"null":        json.RawMessage(`null`),
+		"empty array": json.RawMessage(`[]`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			params := ListApplicationsParams{Limit: 7, Offset: 3, Descending: true}
+			expected := params
+
+			require.NoError(t, UnmarshalParams(data, &params))
+			require.Equal(t, expected, params)
+		})
+	}
+}
+
+func TestUnmarshalParamsRejectsPositionalOverArity(t *testing.T) {
+	var params GetApplicationParams
+	err := UnmarshalParams(json.RawMessage(`["app","extra"]`), &params)
+
+	require.EqualError(t, err, "error unmarshalling positional parameters, expected 1 params, got 2")
+}
+
 func TestUnmarshalParamsPositionalOrderSkipsIgnoredJSONFields(t *testing.T) {
 	type paramsWithIgnoredField struct {
 		First   string `json:"first"`
