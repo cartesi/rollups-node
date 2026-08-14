@@ -8,13 +8,14 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/manager/pmutex"
 	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/suite"
@@ -49,7 +50,6 @@ func (f *MockMachineRuntimeFactory) CreateMachineRuntime(
 	_ context.Context,
 	_ *model.Application,
 	_ *slog.Logger,
-	_ bool,
 ) (machine.Machine, error) {
 	return f.RuntimeToReturn, f.ErrorToReturn
 }
@@ -80,7 +80,6 @@ func (s *MachineInstanceSuite) TestNewMachineInstance() {
 			app,
 			0,
 			testLogger,
-			false,
 			mockFactory,
 		)
 		require.Nil(err)
@@ -108,7 +107,6 @@ func (s *MachineInstanceSuite) TestNewMachineInstance() {
 			app,
 			0,
 			testLogger,
-			false,
 			mockFactory,
 		)
 		require.Error(err)
@@ -134,7 +132,6 @@ func (s *MachineInstanceSuite) TestNewMachineInstance() {
 			app,
 			0,
 			testLogger,
-			false,
 			mockFactory,
 		)
 		require.Error(err)
@@ -160,7 +157,6 @@ func (s *MachineInstanceSuite) TestNewMachineInstance() {
 			app,
 			0,
 			testLogger,
-			false,
 			mockFactory,
 		)
 		require.Error(err)
@@ -184,7 +180,6 @@ func (s *MachineInstanceSuite) TestNewMachineInstance() {
 			app,
 			0,
 			nil,
-			false,
 			mockFactory,
 		)
 		require.Error(err)
@@ -208,19 +203,56 @@ func (s *MachineInstanceSuite) TestNewMachineInstance() {
 			app,
 			0,
 			testLogger,
-			false,
 			nil,
 		)
 		require.Error(err)
 		require.Nil(machine)
 		require.Contains(err.Error(), "factory must not be nil")
 	})
+
+	s.Run("FactoryErrorClosesPartialRuntime", func() {
+		require := s.Require()
+		factoryErr := errors.New("factory failed after creating runtime")
+		closeErr := errors.New("partial runtime close failed")
+		partial := &MockRollupsMachine{CloseError: closeErr}
+		factory := &MockMachineRuntimeFactory{RuntimeToReturn: partial, ErrorToReturn: factoryErr}
+		app := &model.Application{ExecutionParameters: model.ExecutionParameters{
+			AdvanceMaxDeadline: decisecond, InspectMaxDeadline: centisecond, MaxConcurrentInspects: 1,
+		}}
+
+		instance, err := NewMachineInstanceWithFactory(
+			context.Background(), app, 0,
+			slog.New(slog.NewTextHandler(io.Discard, nil)), factory,
+		)
+
+		require.Nil(instance)
+		require.ErrorIs(err, ErrMachineCreation)
+		require.ErrorIs(err, factoryErr)
+		require.ErrorIs(err, closeErr)
+		require.Equal(int64(1), partial.CloseCalls.Load())
+	})
+
+	s.Run("FactoryNilRuntimeIsRejected", func() {
+		require := s.Require()
+		app := &model.Application{ExecutionParameters: model.ExecutionParameters{
+			AdvanceMaxDeadline: decisecond, InspectMaxDeadline: centisecond, MaxConcurrentInspects: 1,
+		}}
+		factory := &MockMachineRuntimeFactory{}
+
+		instance, err := NewMachineInstanceWithFactory(
+			context.Background(), app, 0,
+			slog.New(slog.NewTextHandler(io.Discard, nil)), factory,
+		)
+
+		require.Nil(instance)
+		require.ErrorIs(err, ErrMachineCreation)
+		require.Contains(err.Error(), "nil runtime")
+	})
 }
 
 func (s *MachineInstanceSuite) TestNewMachineInstanceFromSnapshot() {
-	s.Run("Ok", func() {
-		require := s.Require()
-		app := &model.Application{
+	newApp := func() *model.Application {
+		return &model.Application{
 			Name: "TestApp",
 			ExecutionParameters: model.ExecutionParameters{
 				AdvanceMaxDeadline:    decisecond,
@@ -228,65 +260,95 @@ func (s *MachineInstanceSuite) TestNewMachineInstanceFromSnapshot() {
 				MaxConcurrentInspects: 3,
 			},
 		}
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		mockRuntime := &MockRollupsMachine{}
-		mockFactory := &MockMachineRuntimeFactory{
-			RuntimeToReturn: mockRuntime,
-			ErrorToReturn:   nil,
+	s.Run("MatchingHashCreatesInstanceAtNextInput", func() {
+		require := s.Require()
+		expected := newHash(7)
+		runtime := &MockRollupsMachine{HashReturn: expected}
+		loader := func(
+			_ context.Context, _ *slog.Logger, config *machine.MachineConfig,
+		) (machine.Machine, error) {
+			require.Equal("snapshot-dir", config.Path)
+			return runtime, nil
 		}
 
-		// NewMachineInstanceFromSnapshot creates a SnapshotMachineRuntimeFactory
-		// internally, so we use NewMachineInstanceWithFactory to test the same
-		// logic with a controlled factory.
-		inputIndex := uint64(5)
-
-		// The function sets processedInputs = inputIndex + 1
-		// Use the mock factory to avoid actual machine loading
-		inst, err := NewMachineInstanceWithFactory(
-			context.Background(),
-			app,
-			inputIndex+1,
-			testLogger,
-			false,
-			mockFactory,
+		instance, err := newMachineInstanceFromSnapshot(
+			context.Background(), newApp(), logger, "snapshot-dir", expected, 5, loader,
 		)
-		require.NoError(err)
-		require.NotNil(inst)
-		require.Equal(inputIndex+1, inst.ProcessedInputs())
 
-		inst.Close()
+		require.NoError(err)
+		require.Equal(uint64(6), instance.ProcessedInputs())
+		require.Equal(int64(1), runtime.HashCalls.Load())
+		require.Zero(runtime.CloseCalls.Load())
+		require.NoError(instance.Close())
 	})
 
-	s.Run("FactoryError", func() {
+	s.Run("MismatchingHashClosesRuntime", func() {
 		require := s.Require()
-		app := &model.Application{
-			Name: "TestApp",
-			ExecutionParameters: model.ExecutionParameters{
-				AdvanceMaxDeadline:    decisecond,
-				InspectMaxDeadline:    centisecond,
-				MaxConcurrentInspects: 3,
+		runtime := &MockRollupsMachine{HashReturn: newHash(8)}
+		factory := &SnapshotMachineRuntimeFactory{
+			SnapshotPath: "snapshot-dir",
+			ExpectedHash: newHash(9),
+			loader: func(context.Context, *slog.Logger, *machine.MachineConfig) (machine.Machine, error) {
+				return runtime, nil
 			},
 		}
 
-		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		mockFactory := &MockMachineRuntimeFactory{
-			RuntimeToReturn: nil,
-			ErrorToReturn:   errors.New("snapshot load failed"),
+		got, err := factory.CreateMachineRuntime(context.Background(), newApp(), logger)
+
+		require.Nil(got)
+		require.Error(err)
+		require.Contains(err.Error(), "machine hash mismatch")
+		require.Equal(int64(1), runtime.HashCalls.Load())
+		require.Equal(int64(1), runtime.CloseCalls.Load())
+	})
+
+	s.Run("HashReadErrorClosesRuntime", func() {
+		require := s.Require()
+		hashErr := errors.New("hash unavailable")
+		runtime := &MockRollupsMachine{HashError: hashErr}
+		factory := &SnapshotMachineRuntimeFactory{
+			SnapshotPath: "snapshot-dir",
+			ExpectedHash: newHash(9),
+			loader: func(context.Context, *slog.Logger, *machine.MachineConfig) (machine.Machine, error) {
+				return runtime, nil
+			},
 		}
 
-		inst, err := NewMachineInstanceWithFactory(
-			context.Background(),
-			app,
-			6,
-			testLogger,
-			false,
-			mockFactory,
+		got, err := factory.CreateMachineRuntime(context.Background(), newApp(), logger)
+
+		require.Nil(got)
+		require.ErrorIs(err, hashErr)
+		require.Equal(int64(1), runtime.HashCalls.Load())
+		require.Equal(int64(1), runtime.CloseCalls.Load())
+	})
+
+	s.Run("NilRuntimeFromLoaderIsRejected", func() {
+		require := s.Require()
+		loader := func(context.Context, *slog.Logger, *machine.MachineConfig) (machine.Machine, error) {
+			return nil, nil
+		}
+
+		instance, err := newMachineInstanceFromSnapshot(
+			context.Background(), newApp(), logger, "snapshot-dir", newHash(1), 0, loader,
 		)
-		require.Error(err)
-		require.Nil(inst)
+
+		require.Nil(instance)
 		require.ErrorIs(err, ErrMachineCreation)
-		require.Contains(err.Error(), "snapshot load failed")
+		require.Contains(err.Error(), "machine loader returned nil runtime")
+	})
+
+	s.Run("InputIndexOverflowIsRejectedBeforeLoad", func() {
+		require := s.Require()
+
+		instance, err := NewMachineInstanceFromSnapshot(
+			context.Background(), newApp(), logger, "snapshot-dir", newHash(1), math.MaxUint64,
+		)
+
+		require.Nil(instance)
+		require.ErrorIs(err, ErrInvalidSnapshotPoint)
 	})
 }
 
@@ -309,7 +371,7 @@ func (s *MachineInstanceSuite) TestApplicationAndProcessedInputs() {
 	}
 
 	inst, err := NewMachineInstanceWithFactory(
-		context.Background(), app, 42, testLogger, false, mockFactory,
+		context.Background(), app, 42, testLogger, mockFactory,
 	)
 	require.NoError(err)
 	require.Same(app, inst.Application())
@@ -1262,291 +1324,6 @@ func newBytes(n byte, size int) []byte {
 }
 
 // ------------------------------------------------------------------------------------------------
-// Synchronize tests
-// ------------------------------------------------------------------------------------------------
-
-// mockSyncRepository is a lightweight mock for Synchronize tests.
-// It simulates pagination over a slice of inputs.
-type mockSyncRepository struct {
-	inputs     []*model.Input
-	totalCount uint64
-	listErr    error
-}
-
-func (r *mockSyncRepository) ListApplications(
-	_ context.Context,
-	_ repository.ApplicationFilter,
-	_ repository.Pagination,
-	_ bool,
-) ([]*model.Application, uint64, error) {
-	return nil, 0, nil
-}
-
-func (r *mockSyncRepository) HasUndrainedEpochsBeforeBlock(
-	_ context.Context,
-	_ int64,
-	_ uint64,
-) (bool, error) {
-	return false, nil
-}
-
-func (r *mockSyncRepository) ListInputs(
-	ctx context.Context,
-	_ string,
-	_ repository.InputFilter,
-	p repository.Pagination,
-	_ bool,
-) ([]*model.Input, uint64, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, 0, err
-	}
-	if r.listErr != nil {
-		return nil, 0, r.listErr
-	}
-	start := p.Offset
-	if start >= uint64(len(r.inputs)) {
-		return nil, r.totalCount, nil
-	}
-	end := start + p.Limit
-	if p.Limit == 0 || end > uint64(len(r.inputs)) {
-		end = uint64(len(r.inputs))
-	}
-	return r.inputs[start:end], r.totalCount, nil
-}
-
-func (r *mockSyncRepository) GetLastSnapshot(
-	_ context.Context,
-	_ string,
-) (*model.Input, error) {
-	return nil, nil
-}
-
-// newForkableMock creates a mock where Fork returns a fresh mock each time,
-// properly exercising the fork/replace lifecycle in Synchronize tests.
-func newForkableMock() *MockRollupsMachine {
-	m := &MockRollupsMachine{}
-	m.CloseError = nil
-	m.CompletionStatusReturn = machine.CompletionStatusAccepted
-	m.HashReturn = newHash(1)
-	m.OutputsHashReturn = newHash(2)
-	m.ForkFunc = func(_ context.Context) (machine.Machine, error) {
-		return newForkableMock(), nil
-	}
-	return m
-}
-
-func (s *MachineInstanceSuite) newSyncMachine(processedInputs uint64, appProcessedInputs uint64) *MachineInstanceImpl {
-	runtime := newForkableMock()
-
-	inst := &MachineInstanceImpl{
-		application: &model.Application{
-			ProcessedInputs: appProcessedInputs,
-			ExecutionParameters: model.ExecutionParameters{
-				AdvanceMaxDeadline:    decisecond,
-				InspectMaxDeadline:    centisecond,
-				MaxConcurrentInspects: 3,
-			},
-		},
-		runtime:               runtime,
-		advanceTimeout:        decisecond,
-		inspectTimeout:        centisecond,
-		maxConcurrentInspects: 3,
-		closeTimeout:          defaultCloseTimeout,
-		mutex:                 pmutex.New(),
-		inspectSemaphore:      semaphore.NewWeighted(3),
-		logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}
-	inst.processedInputs.Store(processedInputs)
-	return inst
-}
-
-func makeInputs(startIndex, count uint64) []*model.Input {
-	inputs := make([]*model.Input, count)
-	for i := uint64(0); i < count; i++ {
-		inputs[i] = &model.Input{
-			Index:      startIndex + i,
-			EpochIndex: 0,
-			RawData:    []byte{byte(startIndex + i)},
-		}
-	}
-	return inputs
-}
-
-func (s *MachineInstanceSuite) TestSynchronize() {
-	s.Run("TemplateSyncAllInputs", func() {
-		require := s.Require()
-		inst := s.newSyncMachine(0, 3)
-		originalRuntime := inst.runtime
-		repo := &mockSyncRepository{
-			inputs:     makeInputs(0, 3),
-			totalCount: 3,
-		}
-
-		err := inst.Synchronize(context.Background(), repo, 1000)
-		require.NoError(err)
-		require.Equal(uint64(3), inst.processedInputs.Load())
-		// Verify the runtime was actually replaced (not self-fork)
-		require.NotSame(originalRuntime, inst.runtime)
-	})
-
-	s.Run("SnapshotSyncRemainingInputs", func() {
-		require := s.Require()
-		// Snapshot was at index 2, so processedInputs=3, but app has 5 total
-		inst := s.newSyncMachine(3, 5)
-		repo := &mockSyncRepository{
-			inputs:     makeInputs(0, 5),
-			totalCount: 5,
-		}
-
-		err := inst.Synchronize(context.Background(), repo, 1000)
-		require.NoError(err)
-		require.Equal(uint64(5), inst.processedInputs.Load())
-	})
-
-	s.Run("NoInputsToReplay", func() {
-		require := s.Require()
-		inst := s.newSyncMachine(0, 0)
-		repo := &mockSyncRepository{
-			inputs:     nil,
-			totalCount: 0,
-		}
-
-		err := inst.Synchronize(context.Background(), repo, 1000)
-		require.NoError(err)
-		require.Equal(uint64(0), inst.processedInputs.Load())
-	})
-
-	s.Run("SnapshotAlreadyCaughtUp", func() {
-		require := s.Require()
-		// Snapshot at last input — nothing to replay
-		inst := s.newSyncMachine(5, 5)
-		repo := &mockSyncRepository{
-			inputs:     makeInputs(0, 5),
-			totalCount: 5,
-		}
-
-		err := inst.Synchronize(context.Background(), repo, 1000)
-		require.NoError(err)
-		require.Equal(uint64(5), inst.processedInputs.Load())
-	})
-
-	s.Run("MachineAheadOfDB", func() {
-		require := s.Require()
-		// Machine has processed 5 inputs but DB only has 3
-		inst := s.newSyncMachine(5, 3)
-		repo := &mockSyncRepository{
-			inputs:     makeInputs(0, 3),
-			totalCount: 3,
-		}
-
-		err := inst.Synchronize(context.Background(), repo, 1000)
-		require.Error(err)
-		require.ErrorIs(err, ErrMachineSynchronization)
-		require.Contains(err.Error(), "machine has processed 5 inputs but DB only has 3")
-	})
-
-	s.Run("CountMismatch", func() {
-		require := s.Require()
-		inst := s.newSyncMachine(0, 5)
-		repo := &mockSyncRepository{
-			inputs:     makeInputs(0, 3),
-			totalCount: 3, // DB says 3 but app expects 5
-		}
-
-		err := inst.Synchronize(context.Background(), repo, 1000)
-		require.Error(err)
-		require.ErrorIs(err, ErrMachineSynchronization)
-		require.Contains(err.Error(), "count mismatch")
-	})
-
-	s.Run("ListInputsError", func() {
-		require := s.Require()
-		inst := s.newSyncMachine(0, 3)
-		listErr := errors.New("database connection lost")
-		repo := &mockSyncRepository{
-			listErr: listErr,
-		}
-
-		err := inst.Synchronize(context.Background(), repo, 1000)
-		require.Error(err)
-		require.ErrorIs(err, ErrMachineSynchronization)
-		require.Contains(err.Error(), "database connection lost")
-	})
-
-	s.Run("AdvanceErrorMidReplay", func() {
-		require := s.Require()
-		inst := s.newSyncMachine(0, 3)
-		// Make each fork return a hard error on Advance.
-		runtime := inst.runtime.(*MockRollupsMachine)
-		runtime.ForkFunc = func(_ context.Context) (machine.Machine, error) {
-			fork := newForkableMock()
-			fork.AdvanceError = errors.New("advance failed during replay")
-			return fork, nil
-		}
-
-		repo := &mockSyncRepository{
-			inputs:     makeInputs(0, 3),
-			totalCount: 3,
-		}
-
-		err := inst.Synchronize(context.Background(), repo, 1000)
-		require.Error(err)
-		require.ErrorIs(err, ErrMachineSynchronization)
-		require.Contains(err.Error(), "failed to replay input")
-	})
-
-	s.Run("BatchBoundaryCrossing", func() {
-		require := s.Require()
-		// Use batchSize=2 with 3 inputs so the loop must fetch two batches
-		// (batch 1: inputs 0-1, batch 2: input 2), exercising pagination.
-		inst := s.newSyncMachine(0, 3)
-		repo := &mockSyncRepository{
-			inputs:     makeInputs(0, 3),
-			totalCount: 3,
-		}
-
-		err := inst.Synchronize(context.Background(), repo, 2)
-		require.NoError(err)
-		require.Equal(uint64(3), inst.processedInputs.Load())
-	})
-
-	s.Run("PartialSyncDetected", func() {
-		require := s.Require()
-		// Machine has 0 processed, app has 5. But the mock only has 2 inputs,
-		// simulating rows disappearing between batches.
-		// Use batchSize=2 so the first batch returns inputs [0,1] (replayed=2),
-		// then the second batch returns 0 rows (offset=2 >= len=2).
-		// The loop must detect replayed(2) != toReplay(5) and return an error.
-		inst := s.newSyncMachine(0, 5)
-		repo := &mockSyncRepository{
-			inputs:     makeInputs(0, 2), // only 2 inputs exist
-			totalCount: 5,                // but totalCount says 5
-		}
-
-		err := inst.Synchronize(context.Background(), repo, 2)
-		require.Error(err)
-		require.ErrorIs(err, ErrMachineSynchronization)
-		require.Contains(err.Error(), "expected to replay 5 inputs but only replayed 2")
-	})
-
-	s.Run("ContextCancellation", func() {
-		require := s.Require()
-		inst := s.newSyncMachine(0, 3)
-
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel() // Cancel immediately
-
-		repo := &mockSyncRepository{
-			inputs:     makeInputs(0, 3),
-			totalCount: 3,
-		}
-
-		err := inst.Synchronize(ctx, repo, 1000)
-		require.Error(err)
-	})
-}
-
-// ------------------------------------------------------------------------------------------------
 
 type MockRollupsMachine struct {
 	ForkReturn machine.Machine
@@ -1555,6 +1332,7 @@ type MockRollupsMachine struct {
 
 	HashReturn machine.Hash
 	HashError  error
+	HashCalls  atomic.Int64
 
 	CompletionStatusReturn   machine.CompletionStatus
 	ExceptionDataReturn      []byte
@@ -1575,6 +1353,7 @@ type MockRollupsMachine struct {
 	StoreError error
 
 	CloseError error
+	CloseCalls atomic.Int64
 }
 
 func (m *MockRollupsMachine) Fork(ctx context.Context) (machine.Machine, error) {
@@ -1585,6 +1364,7 @@ func (m *MockRollupsMachine) Fork(ctx context.Context) (machine.Machine, error) 
 }
 
 func (m *MockRollupsMachine) Hash(_ context.Context) (machine.Hash, error) {
+	m.HashCalls.Add(1)
 	return m.HashReturn, m.HashError
 }
 
@@ -1596,7 +1376,8 @@ func (m *MockRollupsMachine) OutputsHashProof(_ context.Context) ([]machine.Hash
 	return m.OutputsHashProofReturn, m.OutputsHashProofError
 }
 
-func (m *MockRollupsMachine) Advance(_ context.Context, _ []byte, _ machine.Hash, _ bool) (*machine.AdvanceResponse, error) {
+func (m *MockRollupsMachine) Advance(_ context.Context, _ []byte, _ machine.Hash, computeHashes bool) (*machine.AdvanceResponse, error) {
+	m.LastAdvanceComputeHashes = computeHashes
 	if m.AdvanceError != nil {
 		return nil, m.AdvanceError
 	}
@@ -1620,6 +1401,7 @@ func (m *MockRollupsMachine) Store(_ context.Context, _ string) error {
 }
 
 func (m *MockRollupsMachine) Close() error {
+	m.CloseCalls.Add(1)
 	return m.CloseError
 }
 

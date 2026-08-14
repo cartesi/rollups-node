@@ -462,11 +462,6 @@ func (m *MockMachine) OutputsProof(ctx context.Context) (*OutputsProof, error) {
 }
 
 // Not used in inspect tests, but needed to satisfy the interface
-func (mock *MockMachine) Synchronize(ctx context.Context, repo manager.MachineRepository, batchSize uint64) error {
-	return nil
-}
-
-// Not used in inspect tests, but needed to satisfy the interface
 func (mock *MockMachine) CreateSnapshot(ctx context.Context, processedInputs uint64, path string) error {
 	return nil
 }

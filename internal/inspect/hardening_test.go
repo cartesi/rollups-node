@@ -106,9 +106,6 @@ func (m *erroringMachine) ProcessedInputs() uint64   { return m.inner.ProcessedI
 func (m *erroringMachine) OutputsProof(ctx context.Context) (*OutputsProof, error) {
 	return m.inner.OutputsProof(ctx)
 }
-func (m *erroringMachine) Synchronize(ctx context.Context, repo manager.MachineRepository, batchSize uint64) error {
-	return m.inner.Synchronize(ctx, repo, batchSize)
-}
 func (m *erroringMachine) CreateSnapshot(ctx context.Context, processedInputs uint64, path string) error {
 	return m.inner.CreateSnapshot(ctx, processedInputs, path)
 }

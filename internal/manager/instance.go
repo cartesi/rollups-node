@@ -9,13 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/manager/pmutex"
 	. "github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/ethereum/go-ethereum/common"
 	"golang.org/x/sync/semaphore"
@@ -84,9 +84,10 @@ func NewMachineInstance(
 	ctx context.Context,
 	app *Application,
 	logger *slog.Logger,
-	checkHash bool,
+	checkTemplateHash bool,
 ) (MachineInstance, error) {
-	return NewMachineInstanceWithFactory(ctx, app, 0, logger, checkHash, defaultFactory)
+	factory := &DefaultMachineRuntimeFactory{CheckTemplateHash: checkTemplateHash}
+	return NewMachineInstanceWithFactory(ctx, app, 0, logger, factory)
 }
 
 // NewMachineInstanceFromSnapshot creates a new machine instance from a snapshot
@@ -94,16 +95,33 @@ func NewMachineInstanceFromSnapshot(
 	ctx context.Context,
 	app *Application,
 	logger *slog.Logger,
-	checkHash bool,
 	snapshotPath string,
-	machineHash *common.Hash,
+	expectedHash common.Hash,
 	inputIndex uint64,
 ) (MachineInstance, error) {
+	return newMachineInstanceFromSnapshot(
+		ctx, app, logger, snapshotPath, expectedHash, inputIndex, nil,
+	)
+}
+
+func newMachineInstanceFromSnapshot(
+	ctx context.Context,
+	app *Application,
+	logger *slog.Logger,
+	snapshotPath string,
+	expectedHash common.Hash,
+	inputIndex uint64,
+	loader machineLoader,
+) (MachineInstance, error) {
+	if inputIndex == math.MaxUint64 {
+		return nil, fmt.Errorf("%w: snapshot input index cannot be incremented", ErrInvalidSnapshotPoint)
+	}
 	factory := &SnapshotMachineRuntimeFactory{
 		SnapshotPath: snapshotPath,
-		MachineHash:  machineHash,
+		ExpectedHash: expectedHash,
+		loader:       loader,
 	}
-	return NewMachineInstanceWithFactory(ctx, app, inputIndex+1, logger, checkHash, factory)
+	return NewMachineInstanceWithFactory(ctx, app, inputIndex+1, logger, factory)
 }
 
 // NewMachineInstanceWithFactory creates a new machine instance with a custom factory
@@ -112,7 +130,6 @@ func NewMachineInstanceWithFactory(
 	app *Application,
 	processedInputs uint64,
 	logger *slog.Logger,
-	checkHash bool,
 	factory MachineRuntimeFactory,
 ) (MachineInstance, error) {
 	// Validate parameters
@@ -138,9 +155,15 @@ func NewMachineInstanceWithFactory(
 	}
 
 	// Create the machine server and runtime
-	runtime, err := factory.CreateMachineRuntime(ctx, app, logger, checkHash)
+	runtime, err := factory.CreateMachineRuntime(ctx, app, logger)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrMachineCreation, err)
+		if runtime != nil {
+			err = errors.Join(err, runtime.Close())
+		}
+		return nil, fmt.Errorf("%w: %w", ErrMachineCreation, err)
+	}
+	if runtime == nil {
+		return nil, fmt.Errorf("%w: runtime factory returned nil runtime", ErrMachineCreation)
 	}
 
 	// Create the machine instance
@@ -169,82 +192,6 @@ func (m *MachineInstanceImpl) ProcessedInputs() uint64 {
 	return m.processedInputs.Load()
 }
 
-// Synchronize brings the machine up to date with processed inputs.
-// It handles both template-based instances (processedInputs == 0, replays all)
-// and snapshot-based instances (processedInputs > 0, replays only remaining).
-// Inputs are fetched in batches to bound memory usage.
-func (m *MachineInstanceImpl) Synchronize(ctx context.Context, repo MachineRepository, batchSize uint64) error {
-	appAddress := m.application.IApplicationAddress.String()
-	currentProcessed := m.processedInputs.Load()
-	m.logger.Info("Synchronizing machine with processed inputs",
-		"address", appAddress,
-		"app_processed_inputs", m.application.ProcessedInputs,
-		"machine_processed_inputs", currentProcessed)
-
-	initialProcessedInputs := currentProcessed
-	replayed := uint64(0)
-	toReplay := uint64(0)
-
-	for {
-		p := repository.Pagination{
-			Limit:  batchSize,
-			Offset: initialProcessedInputs + replayed,
-		}
-		inputs, totalCount, err := getProcessedInputs(ctx, repo, appAddress, p)
-		if err != nil {
-			return fmt.Errorf("%w: %w", ErrMachineSynchronization, err)
-		}
-
-		// Validate count on the first batch
-		if replayed == 0 {
-			if totalCount != m.application.ProcessedInputs {
-				errorMsg := fmt.Sprintf(
-					"processed inputs count mismatch: expected %d, got %d",
-					m.application.ProcessedInputs, totalCount)
-				m.logger.Error(errorMsg, "address", appAddress)
-				return fmt.Errorf("%w: %s", ErrMachineSynchronization, errorMsg)
-			}
-			if currentProcessed > totalCount {
-				return fmt.Errorf(
-					"%w: machine has processed %d inputs but DB only has %d",
-					ErrMachineSynchronization, currentProcessed, totalCount)
-			}
-			toReplay = totalCount - currentProcessed
-			if toReplay == 0 {
-				m.logger.Info("No inputs to replay during synchronization",
-					"address", appAddress)
-				return nil
-			}
-		}
-
-		for _, input := range inputs {
-			m.logger.Info("Replaying input during synchronization",
-				"address", appAddress,
-				"epoch_index", input.EpochIndex,
-				"input_index", input.Index,
-				"progress", fmt.Sprintf("%d/%d", replayed+1, toReplay))
-
-			_, err := m.Advance(ctx, input.RawData, input.EpochIndex, input.Index, false)
-			if err != nil {
-				return fmt.Errorf("%w: failed to replay input %d: %w",
-					ErrMachineSynchronization, input.Index, err)
-			}
-			replayed++
-		}
-
-		if replayed >= toReplay {
-			break
-		}
-		if len(inputs) == 0 {
-			return fmt.Errorf(
-				"%w: expected to replay %d inputs but only replayed %d",
-				ErrMachineSynchronization, toReplay, replayed)
-		}
-	}
-
-	return nil
-}
-
 // forkForAdvance creates a copy of the machine for advance operations
 // It verifies the input index and returns a forked machine
 func (m *MachineInstanceImpl) forkForAdvance(ctx context.Context, index uint64) (machine.Machine, error) {
@@ -266,7 +213,12 @@ func (m *MachineInstanceImpl) forkForAdvance(ctx context.Context, index uint64) 
 	return m.runtime.Fork(ctx)
 }
 
-// Advance processes an input and advances the machine state
+// Advance treats a machine fork as the execution transaction for one input.
+// It executes on the fork, selects the canonical root from the typed completion
+// status, and advances processedInputs exactly once for every completed input.
+// Accepted adopts the fork; currently nonaccepted completions keep the
+// predecessor runtime and close the fork. Incomplete execution returns an error
+// and adopts neither the fork nor a canonical result.
 func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIndex uint64, index uint64, computeHashes bool) (*AdvanceResult, error) {
 	// Only one advance can be active at a time
 	m.advanceMutex.Lock()
@@ -668,19 +620,25 @@ type MachineRuntimeFactory interface {
 		ctx context.Context,
 		app *Application,
 		logger *slog.Logger,
-		checkHash bool,
 	) (machine.Machine, error)
 }
+
+type machineLoader func(
+	ctx context.Context,
+	logger *slog.Logger,
+	config *machine.MachineConfig,
+) (machine.Machine, error)
 
 // createMachineRuntimeCommon contains the shared logic for creating machine runtimes
 func createMachineRuntimeCommon(
 	ctx context.Context,
 	app *Application,
 	logger *slog.Logger,
-	checkHash bool,
+	verifyExpectedHash bool,
 	machinePath string,
 	sourceType string,
 	expectedHash common.Hash,
+	loader machineLoader,
 ) (machine.Machine, error) {
 	if logger == nil {
 		return nil, ErrInvalidLogger
@@ -699,9 +657,16 @@ func createMachineRuntimeCommon(
 	config.ExecutionParameters = app.ExecutionParameters
 
 	// Create the machine
-	m, err := machine.Load(ctx, logger, config)
+	if loader == nil {
+		loader = machine.Load
+	}
+	m, err := loader(ctx, logger, config)
 	if err != nil {
-		return nil, err
+		// Preserve a partially created runtime so the caller can close it.
+		return m, err
+	}
+	if m == nil {
+		return nil, errors.New("machine loader returned nil runtime without an error")
 	}
 
 	logger.Debug(fmt.Sprintf("Machine loaded from %s", sourceType),
@@ -711,7 +676,7 @@ func createMachineRuntimeCommon(
 		"path", machinePath)
 
 	// Verify the machine hash if required
-	if checkHash {
+	if verifyExpectedHash {
 		logger.Debug("Verifying machine hash",
 			"application", app.Name,
 			"address", appAddress)
@@ -737,31 +702,37 @@ func createMachineRuntimeCommon(
 	return m, nil
 }
 
-// DefaultMachineRuntimeFactory is the standard implementation of MachineRuntimeFactory
-type DefaultMachineRuntimeFactory struct{}
+// DefaultMachineRuntimeFactory is the standard template implementation of
+// MachineRuntimeFactory. Template verification remains configurable for
+// backwards compatibility; snapshot verification is always mandatory.
+type DefaultMachineRuntimeFactory struct {
+	CheckTemplateHash bool
+	loader            machineLoader
+}
 
 // CreateMachineRuntime creates a new machine runtime for an application
 func (f *DefaultMachineRuntimeFactory) CreateMachineRuntime(
 	ctx context.Context,
 	app *Application,
 	logger *slog.Logger,
-	checkHash bool,
 ) (machine.Machine, error) {
 	return createMachineRuntimeCommon(
 		ctx,
 		app,
 		logger,
-		checkHash,
+		f.CheckTemplateHash,
 		app.TemplateURI,
 		"template",
 		app.TemplateHash,
+		f.loader,
 	)
 }
 
 // SnapshotMachineRuntimeFactory creates machine runtimes from snapshots
 type SnapshotMachineRuntimeFactory struct {
 	SnapshotPath string
-	MachineHash  *common.Hash // The hash to check against (from the input's machine_hash)
+	ExpectedHash common.Hash
+	loader       machineLoader
 }
 
 // CreateMachineRuntime creates a new machine runtime from a snapshot
@@ -769,27 +740,18 @@ func (f *SnapshotMachineRuntimeFactory) CreateMachineRuntime(
 	ctx context.Context,
 	app *Application,
 	logger *slog.Logger,
-	checkHash bool,
 ) (machine.Machine, error) {
-	// Determine which hash to check against
-	expectedHash := app.TemplateHash
-	if f.MachineHash != nil {
-		expectedHash = *f.MachineHash
-	}
-
 	return createMachineRuntimeCommon(
 		ctx,
 		app,
 		logger,
-		checkHash,
+		true,
 		f.SnapshotPath,
 		"snapshot",
-		expectedHash,
+		f.ExpectedHash,
+		f.loader,
 	)
 }
-
-// Default factory instance
-var defaultFactory MachineRuntimeFactory = &DefaultMachineRuntimeFactory{}
 
 // toInputStatus converts only completed, deterministic machine statuses to
 // canonical input statuses. Infrastructure interruptions never reach here.
@@ -804,18 +766,13 @@ func toInputStatus(status machine.CompletionStatus) (InputCompletionStatus, erro
 	case machine.CompletionStatusHalted:
 		return InputCompletionStatus_MachineHalted, nil
 	case machine.CompletionStatusUnknown:
-		return InputCompletionStatus_None, fmt.Errorf(
-			"unknown completed machine status %d: %w",
-			status,
-			ErrIncompleteAdvance,
-		)
-	default:
-		return InputCompletionStatus_None, fmt.Errorf(
-			"unknown completed machine status %d: %w",
-			status,
-			ErrIncompleteAdvance,
-		)
+		// Intentionally empty.
 	}
+	return InputCompletionStatus_None, fmt.Errorf(
+		"unknown completed machine status %d: %w",
+		status,
+		ErrIncompleteAdvance,
+	)
 }
 
 func validateCompletionExceptionData(status machine.CompletionStatus, data []byte) error {

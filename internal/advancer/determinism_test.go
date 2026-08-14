@@ -502,7 +502,7 @@ func newDeterminismHarness(
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	factory := newDeterminismRuntimeFactory(start, behaviors...)
 	instance, err := manager.NewMachineInstanceWithFactory(
-		context.Background(), app, processedInputs, logger, false, factory,
+		context.Background(), app, processedInputs, logger, factory,
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, instance.Close()) })
@@ -623,7 +623,6 @@ func (f *determinismRuntimeFactory) CreateMachineRuntime(
 	ctx context.Context,
 	_ *model.Application,
 	_ *slog.Logger,
-	_ bool,
 ) (machine.Machine, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -743,11 +742,16 @@ func (m *determinismRuntime) Advance(
 		return nil, errors.New("determinism test input must not be empty")
 	}
 
+	// The revert root rides with the advance request and must be the machine's
+	// pre-input root — the instance always passes fork.Hash(). A mismatch is a
+	// harness (or caller) bug, not a determinism scenario.
 	if checkpointHash != m.state.machineHash {
 		m.mu.Unlock()
 		return nil, errors.New("determinism test requires the checkpoint hash to equal the pre-input machine root")
 	}
 	previous := m.state.clone()
+	// Recording the request's own revert root is the first mutation of the
+	// candidate, exactly like the CMIO response.
 	m.state.checkpointHash = checkpointHash
 	status := machine.CompletionStatusAccepted
 	switch {

@@ -2035,12 +2035,6 @@ func (m *MockMachineInstance) OutputsProof(ctx context.Context) (*OutputsProof, 
 	}, nil
 }
 
-// Synchronize implements the MachineInstance interface for testing
-func (m *MockMachineInstance) Synchronize(ctx context.Context, repo manager.MachineRepository, batchSize uint64) error {
-	// Not used in advancer tests, but needed to satisfy the interface
-	return nil
-}
-
 // CreateSnapshot implements the MachineInstance interface for testing
 func (m *MockMachineInstance) CreateSnapshot(ctx context.Context, processInputs uint64, path string) error {
 	return m.createSnapshotError

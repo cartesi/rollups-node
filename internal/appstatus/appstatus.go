@@ -30,7 +30,7 @@ type Repository interface {
 // Recovery assumptions — FAILED is safe to re-enable only when:
 //   - The failure was a machine runtime error (not a DB desync).
 //   - The last snapshot is consistent with the database state.
-//   - Synchronize() will correctly replay inputs from the snapshot point.
+//   - replay.Run will correctly verify inputs from the snapshot point.
 //
 // The reason parameter must be a pre-formatted string describing the failure.
 // Returns the database error if the status update fails; returns nil on success.
@@ -134,7 +134,7 @@ func setTerminalStatus(
 	status ApplicationStatus,
 	reason string,
 ) error {
-	reason = truncateReason(reason)
+	reason = NormalizeReason(reason)
 	dbErr := setApplicationStatus(ctx, logger, repo, app, status, reason)
 	reasonErr := errors.New(reason)
 	if dbErr != nil {
@@ -143,9 +143,10 @@ func setTerminalStatus(
 	return reasonErr
 }
 
-// truncateReason truncates a reason string to maxReasonLength to avoid
-// exceeding the database VARCHAR(4096) constraint.
-func truncateReason(reason string) string {
+// NormalizeReason returns the exact reason representation persisted by status
+// helpers. Callers that compare a later readback must normalize before keeping
+// their expected value.
+func NormalizeReason(reason string) string {
 	if len(reason) > maxReasonLength {
 		return reason[:maxReasonLength] + "... (truncated)"
 	}
@@ -160,7 +161,7 @@ func setApplicationStatus(
 	status ApplicationStatus,
 	reason string,
 ) error {
-	reason = truncateReason(reason)
+	reason = NormalizeReason(reason)
 
 	switch status {
 	case ApplicationStatus_Failed:

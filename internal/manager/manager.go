@@ -8,68 +8,84 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"sort"
 	"sync"
 
+	"github.com/cartesi/rollups-node/internal/appstatus"
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/replay"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/ethereum/go-ethereum/common"
 )
 
 var (
-	ErrApplicationNotFound    = errors.New("application not found")
-	ErrMachineCreation        = errors.New("failed to create machine")
-	ErrMachineSynchronization = errors.New("failed to synchronize machine")
+	ErrApplicationNotFound = errors.New("application not found")
+	ErrMachineCreation     = errors.New("failed to create machine")
 )
 
 // MachineRepository defines the repository interface needed by the MachineManager
 type MachineRepository interface {
+	repository.ReplayRepository
+
 	// ListApplications retrieves applications based on filter criteria
 	ListApplications(ctx context.Context, f repository.ApplicationFilter, p repository.Pagination, descending bool) ([]*Application, uint64, error)
 	HasUndrainedEpochsBeforeBlock(ctx context.Context, appID int64, blockBound uint64) (bool, error)
 
-	// ListInputs retrieves inputs based on filter criteria
-	ListInputs(ctx context.Context, nameOrAddress string, f repository.InputFilter, p repository.Pagination, descending bool) ([]*Input, uint64, error)
-
 	// GetLastSnapshot retrieves the most recent input with a snapshot for the given application
 	GetLastSnapshot(ctx context.Context, nameOrAddress string) (*Input, error)
+	GetApplication(ctx context.Context, nameOrAddress string) (*Application, error)
+
+	// UpdateApplicationStatus persists an application's health status.
+	UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error
 }
 
 // MachineInstanceFactory creates MachineInstance values from applications.
 // Implementations decide whether to load from a template or snapshot.
 type MachineInstanceFactory interface {
-	NewFromTemplate(ctx context.Context, app *Application, logger *slog.Logger, checkHash bool) (MachineInstance, error)
-	NewFromSnapshot(ctx context.Context, app *Application, logger *slog.Logger, checkHash bool,
-		snapshotPath string, machineHash *common.Hash, inputIndex uint64) (MachineInstance, error)
+	NewFromTemplate(ctx context.Context, app *Application, logger *slog.Logger, checkTemplateHash bool) (MachineInstance, error)
+	NewFromSnapshot(ctx context.Context, app *Application, logger *slog.Logger,
+		snapshotPath string, expectedHash common.Hash, inputIndex uint64) (MachineInstance, error)
 }
 
 // DefaultMachineInstanceFactory delegates to NewMachineInstance / NewMachineInstanceFromSnapshot.
 type DefaultMachineInstanceFactory struct{}
 
 func (f *DefaultMachineInstanceFactory) NewFromTemplate(
-	ctx context.Context, app *Application, logger *slog.Logger, checkHash bool,
+	ctx context.Context, app *Application, logger *slog.Logger, checkTemplateHash bool,
 ) (MachineInstance, error) {
-	return NewMachineInstance(ctx, app, logger, checkHash)
+	return NewMachineInstance(ctx, app, logger, checkTemplateHash)
 }
 
 func (f *DefaultMachineInstanceFactory) NewFromSnapshot(
-	ctx context.Context, app *Application, logger *slog.Logger, checkHash bool,
-	snapshotPath string, machineHash *common.Hash, inputIndex uint64,
+	ctx context.Context, app *Application, logger *slog.Logger,
+	snapshotPath string, expectedHash common.Hash, inputIndex uint64,
 ) (MachineInstance, error) {
-	return NewMachineInstanceFromSnapshot(ctx, app, logger, checkHash, snapshotPath, machineHash, inputIndex)
+	return NewMachineInstanceFromSnapshot(ctx, app, logger, snapshotPath, expectedHash, inputIndex)
 }
 
 // MachineManager manages the lifecycle of machine instances for applications
 type MachineManager struct {
-	mutex           sync.RWMutex
-	machines        map[int64]MachineInstance
-	closed          bool
-	repository      MachineRepository
-	checkHash       bool
-	inputBatchSize  uint64
-	logger          *slog.Logger
-	instanceFactory MachineInstanceFactory
+	mutex                      sync.RWMutex
+	machines                   map[int64]MachineInstance
+	pendingApplicationFailures map[int64]*pendingApplicationFailure
+	closed                     bool
+	repository                 MachineRepository
+	checkTemplateHash          bool
+	inputBatchSize             uint64
+	logger                     *slog.Logger
+	instanceFactory            MachineInstanceFactory
+	replayRun                  func(context.Context, repository.ReplayRepository, replay.Executor, replay.Options) (replay.Result, error)
+}
+
+// pendingApplicationFailure fences an application after a FAILED status write
+// cannot be confirmed. It is deliberately private: this is a short-lived retry
+// queue, not process-local application health state.
+type pendingApplicationFailure struct {
+	application *Application
+	reason      string
 }
 
 // Option configures a MachineManager.
@@ -80,21 +96,207 @@ func WithInstanceFactory(f MachineInstanceFactory) Option {
 	return func(m *MachineManager) { m.instanceFactory = f }
 }
 
+// withReplayRun overrides replay execution for manager policy tests.
+func withReplayRun(
+	run func(context.Context, repository.ReplayRepository, replay.Executor, replay.Options) (replay.Result, error),
+) Option {
+	return func(m *MachineManager) { m.replayRun = run }
+}
+
+func snapshotProcessedInputs(app *Application, snapshot *Input) (uint64, error) {
+	if snapshot.Index == math.MaxUint64 {
+		return 0, fmt.Errorf("%w: snapshot input index cannot be incremented", ErrInvalidSnapshotPoint)
+	}
+	processedInputs := snapshot.Index + 1
+	if processedInputs > app.ProcessedInputs {
+		return 0, fmt.Errorf(
+			"%w: snapshot represents %d processed inputs, application has %d",
+			ErrInvalidSnapshotPoint, processedInputs, app.ProcessedInputs,
+		)
+	}
+	return processedInputs, nil
+}
+
+func closeMachineCandidate(
+	logger *slog.Logger,
+	candidate MachineInstance,
+	failureMessage string,
+) {
+	if candidate == nil {
+		return
+	}
+	if err := candidate.Close(); err != nil {
+		logger.Warn(failureMessage, "error", err)
+	}
+}
+
+func (m *MachineManager) tryLoadSnapshotInstance(
+	ctx context.Context,
+	app *Application,
+	logger *slog.Logger,
+) MachineInstance {
+	snapshot, err := m.repository.GetLastSnapshot(ctx, app.IApplicationAddress.String())
+	if err != nil {
+		// Shutdown cancels the query mid-flight; deadlines and repository
+		// failures still require operator attention.
+		if errors.Is(err, context.Canceled) {
+			logger.Debug("GetLastSnapshot canceled during shutdown", "error", err)
+		} else {
+			logger.Error("Failed to find latest snapshot", "error", err)
+		}
+		return nil
+	}
+	if snapshot == nil || snapshot.SnapshotURI == nil {
+		return nil
+	}
+
+	snapshotLogger := logger.With(
+		"snapshot", *snapshot.SnapshotURI,
+		"input_index", snapshot.Index,
+	)
+	if snapshot.MachineHash == nil {
+		snapshotLogger.Warn("Snapshot input has no persisted machine hash; falling back to template")
+		return nil
+	}
+
+	expectedProcessedInputs, err := snapshotProcessedInputs(app, snapshot)
+	if err != nil {
+		snapshotLogger.Warn(
+			"Snapshot input is not a valid application starting point; falling back to template",
+			"app_processed_inputs", app.ProcessedInputs,
+			"error", err,
+		)
+		return nil
+	}
+
+	if _, err := os.Stat(*snapshot.SnapshotURI); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			snapshotLogger.Warn("Snapshot path does not exist")
+		} else {
+			snapshotLogger.Error("Failed to access snapshot path", "error", err)
+		}
+		return nil
+	}
+
+	snapshotLogger.Info("Creating machine instance from snapshot")
+	candidate, err := m.instanceFactory.NewFromSnapshot(
+		ctx, app, m.logger,
+		*snapshot.SnapshotURI, *snapshot.MachineHash, snapshot.Index,
+	)
+	if err != nil {
+		snapshotLogger.Error("Failed to create machine instance from snapshot", "error", err)
+		closeMachineCandidate(snapshotLogger, candidate, "Failed to close partial snapshot machine")
+		return nil
+	}
+	if candidate == nil {
+		snapshotLogger.Error("Snapshot factory returned no machine instance")
+		return nil
+	}
+	if candidate.ProcessedInputs() != expectedProcessedInputs {
+		snapshotLogger.Error("Snapshot machine has an invalid processed-input count",
+			"expected_processed_inputs", expectedProcessedInputs,
+			"actual_processed_inputs", candidate.ProcessedInputs(),
+		)
+		closeMachineCandidate(snapshotLogger, candidate, "Failed to close invalid snapshot machine")
+		return nil
+	}
+
+	// The default snapshot factory verifies this hash while loading. Verify it
+	// again at the manager boundary because tests and alternative factories are
+	// explicit injection seams and are not required to duplicate that policy.
+	actualHash, err := candidate.Hash(ctx)
+	if err != nil {
+		snapshotLogger.Error("Failed to verify snapshot machine hash", "error", err)
+		closeMachineCandidate(snapshotLogger, candidate, "Failed to close unverifiable snapshot machine")
+		return nil
+	}
+	if common.Hash(actualHash) != *snapshot.MachineHash {
+		snapshotLogger.Error("Snapshot machine hash mismatch",
+			"expected_hash", snapshot.MachineHash.Hex(),
+			"actual_hash", common.Hash(actualHash).Hex(),
+		)
+		closeMachineCandidate(snapshotLogger, candidate, "Failed to close mismatched snapshot machine")
+		return nil
+	}
+	return candidate
+}
+
+func (m *MachineManager) tryLoadTemplateInstance(
+	ctx context.Context,
+	app *Application,
+	logger *slog.Logger,
+) MachineInstance {
+	candidate, err := m.instanceFactory.NewFromTemplate(ctx, app, m.logger, m.checkTemplateHash)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			logger.Debug("NewFromTemplate canceled during shutdown", "error", err)
+		} else {
+			logger.Error("Failed to create machine instance", "error", err)
+		}
+		closeMachineCandidate(logger, candidate, "Failed to close partial template machine")
+		return nil
+	}
+	if candidate == nil {
+		logger.Error("Template factory returned no machine instance")
+		return nil
+	}
+	return candidate
+}
+
+func replayContradictionReason(err error) string {
+	reason := replay.ErrContradiction.Error()
+	var detail *replay.ContradictionError
+	if errors.As(err, &detail) {
+		// ContradictionError represents byte values only as lengths and
+		// digests, so its text is safe to persist for operator diagnostics.
+		reason = detail.Error()
+	}
+	return reason
+}
+
+func classifyReplayFailure(err error) (reason, logMessage string, shouldFence bool) {
+	switch {
+	case errors.Is(err, replay.ErrContradiction):
+		// A contradiction proves that this local reconstruction is incompatible
+		// with the stored result, but not that the database itself is corrupt. A
+		// repaired template or runtime may recover it, so fence it as FAILED. An
+		// unresolved contradiction is detected and fenced again on re-enable.
+		return replayContradictionReason(err),
+			"Machine replay contradicts stored input result; marking application failed", true
+	case machine.IsExecutionLimitError(err):
+		return fmt.Sprintf("machine replay reached execution limit: %v", err),
+			"Machine replay reached an execution limit; marking application failed", true
+	case errors.Is(err, machine.ErrDeadlineExceeded):
+		return fmt.Sprintf("machine replay exceeded execution deadline: %v", err),
+			"Machine replay exceeded its execution deadline; marking application failed", true
+	case errors.Is(err, ErrIncompleteAdvance):
+		return fmt.Sprintf("machine replay returned an incomplete advance result: %v", err),
+			"Machine replay returned an incomplete advance result; marking application failed", true
+	case errors.Is(err, machine.ErrMachineInternal):
+		return fmt.Sprintf("machine replay failed internally: %v", err),
+			"Machine replay failed internally; marking application failed", true
+	default:
+		return "", "Failed to replay machine", false
+	}
+}
+
 // NewMachineManager creates a new machine manager.
 func NewMachineManager(
 	repo MachineRepository,
 	logger *slog.Logger,
-	checkHash bool,
+	checkTemplateHash bool,
 	inputBatchSize uint64,
 	opts ...Option,
 ) *MachineManager {
 	m := &MachineManager{
-		machines:        map[int64]MachineInstance{},
-		repository:      repo,
-		checkHash:       checkHash,
-		inputBatchSize:  inputBatchSize,
-		logger:          logger,
-		instanceFactory: &DefaultMachineInstanceFactory{},
+		machines:                   map[int64]MachineInstance{},
+		pendingApplicationFailures: map[int64]*pendingApplicationFailure{},
+		repository:                 repo,
+		checkTemplateHash:          checkTemplateHash,
+		inputBatchSize:             inputBatchSize,
+		logger:                     logger,
+		instanceFactory:            &DefaultMachineInstanceFactory{},
+		replayRun:                  replay.Run,
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -105,9 +307,20 @@ func NewMachineManager(
 // UpdateMachines refreshes the list of machines based on applications that
 // still need local machine work.
 func (m *MachineManager) UpdateMachines(ctx context.Context) error {
-	apps, _, err := getMachineApplications(ctx, m.repository)
+	// Retry failed status writes before doing any more machine work. Every app
+	// returned here remains fenced for this entire update, including when the
+	// retry succeeds but a repository read observes a stale executable row.
+	fenced, persistenceErr := m.persistPendingApplicationFailures(ctx)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return errors.Join(persistenceErr, ctxErr)
+	}
+	if persistenceErr != nil && !IsOnlyApplicationFailurePersistenceErrors(persistenceErr) {
+		return persistenceErr
+	}
+
+	apps, err := getMachineApplications(ctx, m.repository)
 	if err != nil {
-		return err
+		return errors.Join(persistenceErr, err)
 	}
 
 	// Create machines for new applications
@@ -115,95 +328,53 @@ func (m *MachineManager) UpdateMachines(ctx context.Context) error {
 		if m.HasMachine(app.ID) {
 			continue
 		}
+		if _, pending := fenced[app.ID]; pending {
+			continue
+		}
 
-		m.logger.Info("Creating new machine instance",
+		appLogger := m.logger.With(
 			"application", app.Name,
-			"address", app.IApplicationAddress)
+			"address", app.IApplicationAddress,
+		)
+		appLogger.Info("Creating new machine instance")
 
-		// Check if we have a snapshot to load from
-		var instance MachineInstance
-
-		// Find the latest snapshot for this application
-		snapshot, err := m.repository.GetLastSnapshot(ctx, app.IApplicationAddress.String())
-		if err != nil {
-			// Shutdown cancels the ctx mid-query; downgrade to Debug so
-			// operators don't see spurious ERR lines during a graceful
-			// stop. DeadlineExceeded would still flow through the Error
-			// branch and demand investigation.
-			if errors.Is(err, context.Canceled) {
-				m.logger.Debug("GetLastSnapshot canceled during shutdown",
-					"application", app.Name,
-					"error", err)
-			} else {
-				m.logger.Error("Failed to find latest snapshot",
-					"application", app.Name,
-					"error", err)
-			}
-			// Continue with template-based initialization
-		}
-
-		if snapshot != nil && snapshot.SnapshotURI != nil {
-			// Verify the snapshot path exists
-			if _, statErr := os.Stat(*snapshot.SnapshotURI); statErr == nil {
-				m.logger.Info("Creating machine instance from snapshot",
-					"application", app.Name,
-					"snapshot", *snapshot.SnapshotURI)
-
-				instance, err = m.instanceFactory.NewFromSnapshot(
-					ctx, app, m.logger, m.checkHash,
-					*snapshot.SnapshotURI, snapshot.MachineHash, snapshot.Index)
-				if err != nil {
-					m.logger.Error("Failed to create machine instance from snapshot",
-						"application", app.Name,
-						"snapshot", *snapshot.SnapshotURI,
-						"error", err)
-					// Fall back to template-based initialization below
-				}
-			} else if errors.Is(statErr, os.ErrNotExist) {
-				m.logger.Warn("Snapshot path does not exist",
-					"application", app.Name,
-					"snapshot", *snapshot.SnapshotURI)
-			} else {
-				m.logger.Error("Failed to access snapshot path",
-					"application", app.Name,
-					"snapshot", *snapshot.SnapshotURI,
-					"error", statErr)
-			}
-		}
-
-		// Fall back to template if snapshot loading failed or was unavailable
+		// Prefer a verified snapshot and fall back to the template whenever the
+		// snapshot is absent, stale, inaccessible, or invalid.
+		instance := m.tryLoadSnapshotInstance(ctx, app, appLogger)
 		if instance == nil {
-			instance, err = m.instanceFactory.NewFromTemplate(ctx, app, m.logger, m.checkHash)
-			if err != nil {
-				// Shutdown cancels the ctx mid-spawn; the partially
-				// constructed machine is torn down by NewFromTemplate
-				// itself. Downgrade to Debug for the graceful-stop case
-				// so the noise doesn't drown out real spawn failures.
-				if errors.Is(err, context.Canceled) {
-					m.logger.Debug("NewFromTemplate canceled during shutdown",
-						"application", app.IApplicationAddress,
-						"error", err)
-				} else {
-					m.logger.Error("Failed to create machine instance",
-						"application", app.IApplicationAddress,
-						"error", err)
-				}
-				continue
-			}
+			instance = m.tryLoadTemplateInstance(ctx, app, appLogger)
+		}
+		if instance == nil {
+			continue
 		}
 
-		// Synchronize the machine with processed inputs.
-		// For template instances (processedInputs=0) this replays all inputs.
-		// For snapshot instances (processedInputs=snapshotIndex+1) this replays
-		// only inputs after the snapshot.
-		err = instance.Synchronize(ctx, m.repository, m.inputBatchSize)
+		// Canonical verification is the normal reconstruction policy: replay all
+		// completed inputs after the candidate's starting point and compare each
+		// status, exception payload, machine root, and cumulative outputs root.
+		_, err = m.replayRun(ctx, m.repository, instance, replay.Options{
+			Application:      app,
+			FromInput:        instance.ProcessedInputs(),
+			ToInputExclusive: app.ProcessedInputs,
+			BatchSize:        m.inputBatchSize,
+			Verification:     repository.ReplayVerificationCanonical,
+		})
 		if err != nil {
-			m.logger.Error("Failed to synchronize machine",
-				"application", app.IApplicationAddress,
-				"error", err)
+			var appPersistenceErr error
+			reason, logMessage, shouldFence := classifyReplayFailure(err)
+			appLogger.Error(logMessage, "error", err)
+			if shouldFence {
+				m.FenceApplicationFailure(app, reason)
+				fenced[app.ID] = struct{}{}
+				appPersistenceErr = m.persistApplicationFailure(ctx, app.ID)
+			}
 			if err := instance.Close(); err != nil {
-				m.logger.Warn("Failed to close machine after synchronization failure",
-					"application", app.Name, "error", err)
+				appLogger.Warn("Failed to close machine after replay failure", "error", err)
+			}
+			if appPersistenceErr != nil {
+				persistenceErr = errors.Join(persistenceErr, appPersistenceErr)
+			}
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return errors.Join(persistenceErr, ctxErr)
 			}
 			continue
 		}
@@ -211,16 +382,146 @@ func (m *MachineManager) UpdateMachines(ctx context.Context) error {
 		// Add the machine to the manager; close if it fails
 		if !m.addMachine(app.ID, instance) {
 			if err := instance.Close(); err != nil {
-				m.logger.Warn("Failed to close duplicate machine instance",
-					"application", app.Name, "error", err)
+				appLogger.Warn("Failed to close duplicate machine instance", "error", err)
 			}
 		}
 	}
 
 	// Remove machines for non-enabled applications (disabled, failed, etc.)
-	m.removeMachines(apps)
+	m.removeMachines(excludeFencedApplications(apps, fenced))
 
+	return persistenceErr
+}
+
+func excludeFencedApplications(apps []*Application, fenced map[int64]struct{}) []*Application {
+	if len(fenced) == 0 {
+		return apps
+	}
+	active := make([]*Application, 0, len(apps))
+	for _, app := range apps {
+		if _, excluded := fenced[app.ID]; !excluded {
+			active = append(active, app)
+		}
+	}
+	return active
+}
+
+// FenceApplicationFailure immediately fences app and queues the exact
+// normalized FAILED reason for a later durability retry. Callers use this only
+// after their initial status write failed; this method does not write the
+// repository itself.
+func (m *MachineManager) FenceApplicationFailure(app *Application, reason string) {
+	reason = appstatus.NormalizeReason(reason)
+	pending := &pendingApplicationFailure{
+		application: app,
+		reason:      reason,
+	}
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if _, exists := m.pendingApplicationFailures[app.ID]; !exists {
+		m.pendingApplicationFailures[app.ID] = pending
+	}
+}
+
+// persistPendingApplicationFailures retries every pending FAILED write and
+// returns the application IDs that must remain fenced for this update.
+func (m *MachineManager) persistPendingApplicationFailures(
+	ctx context.Context,
+) (map[int64]struct{}, error) {
+	m.mutex.RLock()
+	appIDs := make([]int64, 0, len(m.pendingApplicationFailures))
+	for appID := range m.pendingApplicationFailures {
+		appIDs = append(appIDs, appID)
+	}
+	m.mutex.RUnlock()
+	sort.Slice(appIDs, func(i, j int) bool { return appIDs[i] < appIDs[j] })
+
+	fenced := make(map[int64]struct{}, len(appIDs))
+	var persistenceErrors []error
+	for _, appID := range appIDs {
+		fenced[appID] = struct{}{}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fenced, errors.Join(errors.Join(persistenceErrors...), ctxErr)
+		}
+		if err := m.persistApplicationFailure(ctx, appID); err != nil {
+			persistenceErrors = append(persistenceErrors, err)
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fenced, errors.Join(errors.Join(persistenceErrors...), ctxErr)
+		}
+	}
+	return fenced, errors.Join(persistenceErrors...)
+}
+
+func (m *MachineManager) persistApplicationFailure(ctx context.Context, appID int64) error {
+	m.mutex.RLock()
+	pending := m.pendingApplicationFailures[appID]
+	m.mutex.RUnlock()
+	if pending == nil {
+		return nil
+	}
+
+	if writeErr := appstatus.SetFailed(ctx, m.logger, m.repository, pending.application, pending.reason); writeErr != nil {
+		if errors.Is(writeErr, repository.ErrNotFound) {
+			m.deletePendingApplicationFailure(appID, pending)
+			return nil
+		}
+		// Another process may have installed a stronger terminal status, or the
+		// write may have committed even though its result was lost. Retire the
+		// fence only when the durable row proves one of those outcomes. An
+		// unrelated FAILED reason remains fenced: it does not prove that this
+		// application failure was recorded. Unknown/read failures and OK
+		// (including disabled+OK) also remain pending.
+		current, readErr := m.repository.GetApplication(
+			ctx, pending.application.IApplicationAddress.String(),
+		)
+		retire := errors.Is(readErr, repository.ErrNotFound)
+		if readErr == nil {
+			retire = current == nil ||
+				current.ID != pending.application.ID ||
+				applicationFailureAlreadyResolved(current, pending.reason)
+		}
+		if retire {
+			m.deletePendingApplicationFailure(appID, pending)
+			return nil
+		}
+		return &ApplicationFailurePersistenceError{
+			ApplicationID: appID,
+			WriteErr:      writeErr,
+			ReadErr:       readErr,
+		}
+	}
+
+	m.deletePendingApplicationFailure(appID, pending)
 	return nil
+}
+
+func applicationFailureAlreadyResolved(app *Application, reason string) bool {
+	if app == nil {
+		return false
+	}
+	switch app.Status {
+	case ApplicationStatus_Diverged, ApplicationStatus_Corrupted:
+		return true
+	case ApplicationStatus_Failed:
+		return app.Reason != nil && *app.Reason == reason
+	case ApplicationStatus_OK:
+		return false
+	default:
+		return false
+	}
+}
+
+func (m *MachineManager) deletePendingApplicationFailure(
+	appID int64,
+	pending *pendingApplicationFailure,
+) {
+	m.mutex.Lock()
+	// Remove only the pending record that this persistence attempt observed.
+	if m.pendingApplicationFailures[appID] == pending {
+		delete(m.pendingApplicationFailures, appID)
+	}
+	m.mutex.Unlock()
 }
 
 // GetMachine retrieves a machine instance for an application
@@ -237,6 +538,14 @@ func (m *MachineManager) HasMachine(appID int64) bool {
 	defer m.mutex.RUnlock()
 	_, exists := m.machines[appID]
 	return exists
+}
+
+// HasPendingApplicationFailures reports whether any local machine work is
+// fenced while its durable application status remains unconfirmed.
+func (m *MachineManager) HasPendingApplicationFailures() bool {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+	return len(m.pendingApplicationFailures) != 0
 }
 
 // addMachine adds a machine to the manager.
@@ -337,17 +646,16 @@ func (m *MachineManager) Close() error {
 	return errors.Join(errs...)
 }
 
-func getMachineApplications(ctx context.Context, repo MachineRepository) ([]*Application, uint64, error) {
-	apps, total, err := repo.ListApplications(ctx, repository.ExecutableApplicationsFilter(), repository.Pagination{}, false)
+func getMachineApplications(ctx context.Context, repo MachineRepository) ([]*Application, error) {
+	apps, _, err := repo.ListApplications(ctx, repository.ExecutableApplicationsFilter(), repository.Pagination{}, false)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	foreclosedApps, foreclosedTotal, err := repo.ListApplications(ctx, foreclosedMachineDrainFilter(), repository.Pagination{}, false)
+	foreclosedApps, _, err := repo.ListApplications(ctx, foreclosedMachineDrainFilter(), repository.Pagination{}, false)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	total += foreclosedTotal
 	for _, app := range foreclosedApps {
 		if app.ForecloseBlock == 0 {
 			continue
@@ -364,13 +672,13 @@ func getMachineApplications(ctx context.Context, repo MachineRepository) ([]*App
 		}
 		undrained, err := repo.HasUndrainedEpochsBeforeBlock(ctx, app.ID, app.ForecloseBlock)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 		if undrained {
 			apps = append(apps, app)
 		}
 	}
-	return apps, total, nil
+	return apps, nil
 }
 
 func foreclosedMachineDrainFilter() repository.ApplicationFilter {
@@ -379,15 +687,4 @@ func foreclosedMachineDrainFilter() repository.ApplicationFilter {
 		Status:              new(ApplicationStatus_OK),
 		ForeclosureRecorded: new(true),
 	}
-}
-
-// getProcessedInputs retrieves processed inputs with pagination support.
-func getProcessedInputs(
-	ctx context.Context,
-	repo MachineRepository,
-	appAddress string,
-	p repository.Pagination,
-) ([]*Input, uint64, error) {
-	f := repository.InputFilter{NotStatus: Pointer(InputCompletionStatus_None)}
-	return repo.ListInputs(ctx, appAddress, f, p, false)
 }
