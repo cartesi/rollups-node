@@ -1044,11 +1044,10 @@ func TestMethod(t *testing.T) {
 				err := s.repository.UpdateOutputsExecution(
 					ctx,
 					numberToName(app),
-					[]*model.Output{{
-						InputEpochApplicationID:  appID,
-						Index:                    0,
-						ExecutionTransactionHash: &txHash,
-					}},
+					[]*model.Output{
+						{InputEpochApplicationID: appID, Index: 0, ExecutionTransactionHash: &txHash},
+						{InputEpochApplicationID: appID, Index: 1, ExecutionTransactionHash: &txHash},
+					},
 					10,
 				)
 				require.NoError(t, err)
@@ -1063,7 +1062,11 @@ func TestMethod(t *testing.T) {
 				resp := testRPCResponse[hex64]{}
 				require.NoError(t, json.Unmarshal(body, &resp))
 				assert.Nil(t, resp.Error)
-				assert.Equal(t, uint64(1), uint64(resp.Result.Data))
+				expected := uint64(2)
+				if method == "cartesi_getPendingExecutableOutputCount" {
+					expected = 0
+				}
+				assert.Equal(t, expected, uint64(resp.Result.Data))
 			})
 		})
 	}
@@ -1644,6 +1647,22 @@ func TestMethod(t *testing.T) {
 					assert.Equal(t, nr, resp.Result.Data[i].Index)
 				}
 			}
+
+			{ // inclusive index range
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listEpochs",
+					"params": {"application": "%v", "from": "0x2", "to": "0x4"},
+					"id": 0
+				}`, numberToName(nr)))
+
+				resp := testRPCResponse[[]model.Epoch]{}
+				require.NoError(t, json.Unmarshal(body, &resp))
+				require.Len(t, resp.Result.Data, 3)
+				assert.Equal(t, []uint64{2, 3, 4}, []uint64{
+					resp.Result.Data[0].Index, resp.Result.Data[1].Index, resp.Result.Data[2].Index,
+				})
+			}
 		})
 	})
 
@@ -1758,6 +1777,18 @@ func TestMethod(t *testing.T) {
 				assert.JSONEq(t, fmt.Sprintf("%q", txHash.Hex()), string(input["transaction_hash"]))
 				assert.NotContains(t, input, "transaction_reference")
 			}
+
+			body = s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listInputs",
+				"params": {"application": "%v", "from": "0x1", "to": "0x2"},
+				"id": 0
+			}`, numberToName(app)))
+			resp = testRPCResponse[[]map[string]json.RawMessage]{}
+			require.NoError(t, json.Unmarshal(body, &resp))
+			require.Len(t, resp.Result.Data, 2)
+			assert.JSONEq(t, `"0x1"`, string(resp.Result.Data[0]["index"]))
+			assert.JSONEq(t, `"0x2"`, string(resp.Result.Data[1]["index"]))
 		})
 
 		// failure: malformed transaction hash -> invalid params, not an
@@ -1959,6 +1990,62 @@ func TestMethod(t *testing.T) {
 					assert.Equal(t, nr, uint64(resp.Result.Data[i].Index))
 				}
 			}
+
+			{ // inclusive index range
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listOutputs",
+					"params": {"application": "%v", "from": "0x2", "to": "0x4"},
+					"id": 0
+				}`, numberToName(app)))
+
+				resp := testRPCResponse[[]Result]{}
+				require.NoError(t, json.Unmarshal(body, &resp))
+				require.Len(t, resp.Result.Data, 3)
+				for i, expected := range []uint64{2, 3, 4} {
+					assert.Equal(t, expected, uint64(resp.Result.Data[i].Index))
+				}
+			}
+		})
+
+		t.Run("executedWithOutputTypeList", func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := context.Background()
+			app := uint64(4)
+			appID := s.newTestApplication(ctx, t, app)
+			epoch := repotest.NewEpochBuilder(appID).WithStatus(model.EpochStatus_ClaimAccepted).Build()
+			input := repotest.NewInputBuilder().WithRawData(emptyInput()).Build()
+			s.createTestEpochWithInput(ctx, t, numberToName(app), epoch, input)
+			s.advanceInput(ctx, t, appID, 0, 0, [][]byte{
+				emptyVoucher(),
+				{0x10, 0x32, 0x1e, 0x8b},
+				{0xc2, 0x58, 0xd6, 0xe5},
+				emptyVoucher(),
+			}, nil)
+
+			txHash := common.HexToHash("0x1")
+			err := s.repository.UpdateOutputsExecution(ctx, numberToName(app), []*model.Output{{
+				InputEpochApplicationID: appID, Index: 3, ExecutionTransactionHash: &txHash,
+			}}, 10)
+			require.NoError(t, err)
+
+			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+				"jsonrpc": "2.0",
+				"method": "cartesi_listOutputs",
+				"params": {
+					"application": "%v",
+					"executed": true,
+					"output_type": ["0x237a816f", "0x10321e8b"]
+				},
+				"id": 0
+			}`, numberToName(app)))
+
+			resp := testRPCResponse[[]model.Output]{}
+			require.NoError(t, json.Unmarshal(body, &resp))
+			require.Nil(t, resp.Error)
+			require.Len(t, resp.Result.Data, 1)
+			assert.Equal(t, uint64(3), resp.Result.Data[0].Index)
 		})
 	})
 
@@ -2129,6 +2216,22 @@ func TestMethod(t *testing.T) {
 				for i := range limit {
 					nr := many - i - 2
 					assert.Equal(t, nr, uint64(resp.Result.Data[i].Index))
+				}
+			}
+
+			{ // inclusive index range
+				body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
+					"jsonrpc": "2.0",
+					"method": "cartesi_listReports",
+					"params": {"application": "%v", "from": "0x2", "to": "0x4"},
+					"id": 0
+				}`, numberToName(app)))
+
+				resp := testRPCResponse[[]Result]{}
+				require.NoError(t, json.Unmarshal(body, &resp))
+				require.Len(t, resp.Result.Data, 3)
+				for i, expected := range []uint64{2, 3, 4} {
+					assert.Equal(t, expected, uint64(resp.Result.Data[i].Index))
 				}
 			}
 		})
