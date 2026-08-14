@@ -248,23 +248,30 @@ func UnmarshalParams(data json.RawMessage, target any) error {
 			return fmt.Errorf("error unmarshalling positional parameters target must point to a struct")
 		}
 		typ := val.Type()
-		if len(rawParams) > typ.NumField() {
-			return fmt.Errorf("error unmarshalling positional parameters, expected %d params, got %d",
-				typ.NumField(), len(rawParams))
-		}
-		// For each field in the struct, if a positional parameter exists, unmarshal that parameter.
-		for i := 0; i < typ.NumField() && i < len(rawParams); i++ {
-			sf := typ.Field(i)
-			if sf.Tag.Get("json") == "-" {
-				continue
+		fields := make([]int, 0, typ.NumField())
+		for i := 0; i < typ.NumField(); i++ {
+			if typ.Field(i).Tag.Get("json") != "-" {
+				fields = append(fields, i)
 			}
-			field := val.Field(i)
+		}
+		if len(rawParams) > len(fields) {
+			return fmt.Errorf("error unmarshalling positional parameters, expected %d params, got %d",
+				len(fields), len(rawParams))
+		}
+		// Map positional parameters to JSON-visible fields in declaration order.
+		for i, fieldIndex := range fields {
+			if i >= len(rawParams) {
+				break
+			}
+			field := val.Field(fieldIndex)
 			if !field.CanSet() {
-				return fmt.Errorf("error unmarshalling positional parameter field %q is not settable", typ.Field(i).Name)
+				return fmt.Errorf("error unmarshalling positional parameter field %q is not settable",
+					typ.Field(fieldIndex).Name)
 			}
 			// Unmarshal the corresponding raw parameter into the field.
 			if err := json.Unmarshal(rawParams[i], field.Addr().Interface()); err != nil {
-				return fmt.Errorf("error unmarshalling positional parameter %d for field %s: %w", i, typ.Field(i).Name, err)
+				return fmt.Errorf("error unmarshalling positional parameter %d for field %s: %w",
+					i, typ.Field(fieldIndex).Name, err)
 			}
 		}
 		return nil

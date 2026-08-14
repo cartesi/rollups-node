@@ -225,3 +225,22 @@ func TestPositionalParamsDeclarationOrder(t *testing.T) {
 		})
 	}
 }
+
+func TestUnmarshalParamsPositionalOrderSkipsIgnoredJSONFields(t *testing.T) {
+	type paramsWithIgnoredField struct {
+		First   string `json:"first"`
+		Ignored string `json:"-"`
+		Second  string `json:"second"`
+	}
+
+	params := paramsWithIgnoredField{Ignored: "unchanged"}
+	require.NoError(t, UnmarshalParams(json.RawMessage(`["one","two"]`), &params))
+	require.Equal(t, paramsWithIgnoredField{
+		First:   "one",
+		Ignored: "unchanged",
+		Second:  "two",
+	}, params)
+
+	err := UnmarshalParams(json.RawMessage(`["one","two","extra"]`), &params)
+	require.EqualError(t, err, "error unmarshalling positional parameters, expected 2 params, got 3")
+}
