@@ -115,7 +115,7 @@ func (s *Service) writeRPCError(w http.ResponseWriter, id any, code int, message
 	return s.handleWriteResponse(err)
 }
 
-func (s *Service) dispatchOneRequest(w io.Writer, r *http.Request, req RPCRequest) error {
+func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) error {
 	switch req.ID.(type) {
 	case nil, string, float64:
 	default:
@@ -146,6 +146,23 @@ func (s *Service) dispatchOneRequest(w io.Writer, r *http.Request, req RPCReques
 	return writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error", nil)
 }
 
+func (s *Service) dispatchOneRequest(w http.ResponseWriter, r *http.Request, req RPCRequest, budgetResp *budgetWriter) bool {
+	buffer := budgetResp.NewLimitedWriter()
+	if buffer == nil {
+		return s.writeRPCError(w, req.ID, JSONRPC_RESPONSE_SIZE_LIMIT_EXCEEDED, "Response size limit exceeded")
+	}
+	err := s.handleRequest(buffer, r, req)
+	switch {
+	case err == nil:
+		return s.handleWriteResponse(buffer.Flush())
+	case errors.Is(err, io.ErrShortBuffer):
+		return s.writeRPCError(w, req.ID, JSONRPC_RESPONSE_SIZE_LIMIT_EXCEEDED, "Response size limit exceeded")
+	default:
+		s.Logger.Error("RPC method response encode failed", "method", req.Method, "error", err)
+		return s.writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error")
+	}
+}
+
 func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 	// Limit request body size and ensure it is closed.
 	r.Body = http.MaxBytesReader(w, r.Body, MAX_BODY_SIZE)
@@ -167,6 +184,8 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	budgetResp := newBudgetWriter(w, MAX_RESPONSE_SIZE)
+
 	switch body[0] {
 	case '{':
 		var req RPCRequest
@@ -176,8 +195,7 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		s.Logger.Info("Dispatching RPC request", "method", req.Method)
-		err := s.dispatchOneRequest(w, r, req)
-		s.handleWriteResponse(err)
+		s.dispatchOneRequest(w, r, req, budgetResp)
 
 	case '[':
 		w.Header().Set("Content-Type", "application/json")
@@ -198,7 +216,6 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		budgetResp := newBudgetWriter(w, MAX_RESPONSE_SIZE)
 		for i, rawReq := range reqSeq {
 
 			if i > 0 && !s.writeByte(w, ',') {
@@ -223,21 +240,7 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 					responded = s.writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "invalid request")
 				} else {
 					s.Logger.Debug("Dispatching RPC request", "method", req.Method)
-					buffer := budgetResp.NewLimitedWriter()
-					if buffer == nil {
-						responded = s.writeRPCError(w, req.ID, JSONRPC_RESPONSE_SIZE_LIMIT_EXCEEDED, "Response size limit exceeded")
-					} else {
-						err := s.dispatchOneRequest(buffer, r, req)
-						switch {
-						case err == nil:
-							responded = s.handleWriteResponse(buffer.Flush())
-						case errors.Is(err, io.ErrShortBuffer):
-							responded = s.writeRPCError(w, req.ID, JSONRPC_RESPONSE_SIZE_LIMIT_EXCEEDED, "Response size limit exceeded")
-						default:
-							s.Logger.Error("RPC method response encode failed", "method", req.Method, "error", err)
-							responded = s.writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error")
-						}
-					}
+					responded = s.dispatchOneRequest(w, r, req, budgetResp)
 				}
 			}
 

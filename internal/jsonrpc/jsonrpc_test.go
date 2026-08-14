@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -75,6 +76,28 @@ func TestInvalidMethod(t *testing.T) {
 	assert.Nil(t, json.Unmarshal(body, &resp))
 	assert.Equal(t, JSONRPC_METHOD_NOT_FOUND, resp.Error.Code)
 	assert.Equal(t, "Method not found", resp.Error.Message)
+}
+
+func TestJSONRPCSingleRequestReplacesResponseAtResponseBudget(t *testing.T) {
+	s := newBatchTestService()
+	const method = "test_large_single_result"
+	largeResult := strings.Repeat("x", MAX_RESPONSE_SIZE)
+	var called bool
+	withTestRPCHandler(t, method, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
+		called = true
+		return largeResult, nil
+	})
+
+	body := []byte(fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":%q,"params":{"limit":10000},"id":1}`, method))
+	require.Less(t, len(body), 1<<10, "the request cap must not be mistaken for the response cap")
+	rr := serveRPC(t, s, body)
+
+	require.True(t, called, "the request handler must run before its oversized response is replaced")
+	require.Equal(t, http.StatusOK, rr.Code)
+	response := decodeRPCResponse(t, rr.Body.Bytes())
+	requireRPCError(t, response, float64(1), JSONRPC_RESPONSE_SIZE_LIMIT_EXCEEDED)
+	require.Equal(t, "Response size limit exceeded", response.Error.Message)
 }
 
 // tests for jsonrpc methods grouped by method name.
