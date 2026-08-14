@@ -16,9 +16,11 @@
 package jsonrpc
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"os"
@@ -4058,4 +4060,24 @@ func TestParseIndexRange(t *testing.T) {
 	require.EqualError(t, err, "invalid from index: expected hex encoded value")
 	_, err = parseIndexRange(nil, &invalid)
 	require.EqualError(t, err, "invalid to index: expected hex encoded value")
+}
+
+func TestRequestMethodIsInfoLogged(t *testing.T) {
+	s := newBatchTestService()
+	var logs bytes.Buffer
+	s.Logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	const method = "attacker_controlled_method"
+	serveRPC(t, s, []byte(`{"jsonrpc":"2.0","method":"attacker_controlled_method","id":1}`))
+
+	var methodLogs int
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		var record map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &record))
+		if record["method"] == method {
+			require.Equal(t, "INFO", record["level"])
+			methodLogs++
+		}
+	}
+	require.Positive(t, methodLogs)
 }
