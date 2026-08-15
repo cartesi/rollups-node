@@ -13,6 +13,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"reflect"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/evmreader"
@@ -61,6 +62,9 @@ const (
 	// Response size limit exceeded: the buffered-response budget was not enough
 	// for a single response or all responses in a batch.
 	JSONRPC_RESPONSE_SIZE_LIMIT_EXCEEDED int = -31003 //nolint: revive
+	// Batch list item limit exceeded: the cumulative effective list limits in a
+	// batch exceed the work budget allowed to one HTTP request.
+	JSONRPC_BATCH_LIST_ITEM_LIMIT_EXCEEDED int = -31004 //nolint: revive
 )
 
 type rpcHandler = func(*Service, *http.Request, RPCRequest) (any, error)
@@ -96,6 +100,63 @@ var jsonrpcHandlers = dispatchTable{
 	"cartesi_getNodeInfo":                     handleGetNodeInfo,
 	"cartesi_getChainId":                      handleGetChainID,
 	"cartesi_getNodeVersion":                  handleGetNodeVersion,
+}
+
+var listParamsTypes = map[string]reflect.Type{
+	"cartesi_listApplications":  reflect.TypeOf(api.ListApplicationsParams{}),
+	"cartesi_listEpochs":        reflect.TypeOf(api.ListEpochsParams{}),
+	"cartesi_listInputs":        reflect.TypeOf(api.ListInputsParams{}),
+	"cartesi_listOutputs":       reflect.TypeOf(api.ListOutputsParams{}),
+	"cartesi_listReports":       reflect.TypeOf(api.ListReportsParams{}),
+	"cartesi_listWithdrawals":   reflect.TypeOf(api.ListWithdrawalsParams{}),
+	"cartesi_listTournaments":   reflect.TypeOf(api.ListTournamentsParams{}),
+	"cartesi_listCommitments":   reflect.TypeOf(api.ListCommitmentsParams{}),
+	"cartesi_listMatches":       reflect.TypeOf(api.ListMatchesParams{}),
+	"cartesi_listMatchAdvances": reflect.TypeOf(api.ListMatchAdvancesParams{}),
+}
+
+// batchExceedsListItemLimit reports whether the sum of the effective limits of
+// valid list entries exceeds the amount of row-fetch work allowed to one HTTP
+// request. It performs no handler or repository work.
+//
+// Entries that cannot be decoded are left for normal dispatch, which returns
+// their appropriate JSON-RPC error without accessing the repository. Each
+// decodable limit is normalized exactly as it is by the list handlers: zero
+// selects the default and values above the per-list maximum are capped.
+func batchExceedsListItemLimit(requests []json.RawMessage) bool {
+	var total uint64
+	for _, rawRequest := range requests {
+		var request RPCRequest
+		if err := json.Unmarshal(rawRequest, &request); err != nil || request.JSONRPC != "2.0" {
+			continue
+		}
+
+		paramsType, ok := listParamsTypes[request.Method]
+		if !ok {
+			continue
+		}
+		params := reflect.New(paramsType)
+		if err := api.UnmarshalParams(request.Params, params.Interface()); err != nil {
+			continue
+		}
+
+		limitField := params.Elem().FieldByName("Limit")
+		if !limitField.IsValid() || limitField.Kind() != reflect.Uint64 {
+			return true
+		}
+		limit := limitField.Uint()
+		switch {
+		case limit == 0:
+			limit = LIST_ITEM_DEFAULT
+		case limit > LIST_ITEM_LIMIT:
+			limit = LIST_ITEM_LIMIT
+		}
+		total += limit
+		if total > LIST_ITEM_LIMIT {
+			return true
+		}
+	}
+	return false
 }
 
 // -----------------------------------------------------------------------------
@@ -214,6 +275,10 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(reqSeq) == 0 || len(reqSeq) > MAX_BATCH_SIZE {
 			s.writeRPCError(w, nil, JSONRPC_INVALID_BATCH, fmt.Sprintf("invalid request batch size (expected [1..%v])", MAX_BATCH_SIZE))
+			return
+		}
+		if batchExceedsListItemLimit(reqSeq) {
+			s.writeRPCError(w, nil, JSONRPC_BATCH_LIST_ITEM_LIMIT_EXCEEDED, "Batch list item limit exceeded")
 			return
 		}
 

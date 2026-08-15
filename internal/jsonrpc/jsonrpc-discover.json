@@ -3,6 +3,11 @@
 	"info": {
 		"title": "Cartesi Rollups Node API",
 		"version": "2.0.0",
+		"x-batch-list-work-budget": {
+			"maximum": 10000,
+			"unit": "sum of effective limit values across list entries",
+			"description": "Before dispatching any entry, the server sums the effective limit of every list operation in a batch. Omitted or zero limits count as 50, and limits above 10000 count as 10000. A total above 10000 rejects the entire batch with one error response using code -31004; no entry is dispatched. This bounds row-fetch work to that of one maximal list request. It does not bound the cost of COUNT queries, so clients should still avoid broad or unnecessary list filters."
+		},
 		"description": "A JSON-RPC API for reading rollups data. It provides information about applications, epochs, inputs, outputs, and reports in a read-only fashion.\n\nResponse limits: every HTTP request has a 10 MB response-size budget. For a single JSON-RPC request, its response must fit within that budget. For a batch, the budget is cumulative across all entries. An entry that would exceed the remaining budget is discarded without consuming it and receives error `-31003`; the budget is then closed, so every remaining batch entry also receives `-31003`, even if its response would otherwise fit. Clients can retry an affected entry individually or in a smaller batch.\n\nBatch requests: JSON-RPC non-empty batch arrays are supported with a maximum of 100 entries per batch; batches outside that size range receive a single response with error code `-32040`. Entries execute sequentially and responses are returned in the same order as their requests. The 1 MB request-body limit applies to the whole batch array. Every batch entry receives a response. Notification suppression is not supported: entries without an ID are answered with `id: null`. This is a documented deviation from JSON-RPC 2.0, under which notifications normally produce no response. A batch response uses HTTP status 200 even when some or all of its entries are errors. Because execution is sequential and subject to the server time limit, heavy list calls should be kept outside large batches.\n\nError handling: every method documents its possible errors under `errors`, and clients can dispatch on the error code. `-31002` (application not found) means the application identifier itself is unknown to this node; for application-scoped methods, this is a configuration error that will not resolve by retrying. `-31001` (resource not found) means the requested resource does not exist in the method's scope. For application-scoped methods, `-31001` means the application is known but the nested entity is missing; for node-scoped methods, it can also report missing node resources such as EVM reader configuration. For forward-looking application resources (e.g. the next epoch, input, or output index), `-31001` is the documented \"not created yet\" signal and is safe to poll. The error message names the missing resource. `-32603` (internal error) is never used for missing resources - clients should treat it as a node-side failure and alarm or back off, not poll. `-32070` (timeout error) indicates the request was not able to be processed in the time limit available. The standard codes `-32700` (parse error), `-32600` (invalid request), and `-32601` (method not found) follow the JSON-RPC 2.0 specification."
 	},
 	"methods": [
@@ -292,6 +297,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -559,6 +570,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -591,6 +608,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -1672,6 +1695,12 @@
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
 				}
 			]
 		},
@@ -2954,6 +2983,10 @@
 			"ResponseSizeLimitExceeded": {
 				"code": -31003,
 				"message": "Response size limit exceeded"
+			},
+			"BatchListItemLimitExceeded": {
+				"code": -31004,
+				"message": "Batch list item limit exceeded"
 			},
 			"ApplicationNotFound": {
 				"code": -31002,

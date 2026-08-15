@@ -14,7 +14,7 @@ operator-side network policy.
 | Surface | Default address | Purpose | Per-request cost |
 | --- | --- | --- | --- |
 | **Telemetry** (`/livez`, `/readyz`) | `:10000` | Orchestrator health checks | Trivial — a boolean check and a short response |
-| **JSON-RPC API** (`/rpc`) | `:10011` | Read-only query interface | Up to 1 MiB body, DB queries, list responses up to 10000 items |
+| **JSON-RPC API** (`/rpc`) | `:10011` | Read-only query interface | Up to 1 MiB body; one list operation, or a batch with a cumulative list limit of 10000 items; DB queries |
 | **Inspect** (`/inspect/{dapp}`) | `:10012` | Machine state query without advancing | Up to 2 MiB body, Cartesi Machine fork + execution |
 
 Telemetry is cheap by design — orchestrators (Kubernetes, Docker,
@@ -148,6 +148,29 @@ falls back to:
 - Inspect: the per-application Cartesi Machine semaphore (blocking, not
   fail-fast; deeper in the request path).
 - JSON-RPC: the PostgreSQL connection pool (blocking).
+
+### JSON-RPC batch work budget
+
+Admission counts HTTP requests, while a JSON-RPC batch can contain up to 100
+operations. To keep one admitted batch from buying substantially more row-fetch
+work than one maximal list request, the service applies a protocol-level budget
+before dispatch:
+
+- The sum of the effective `limit` values across all list entries in a batch
+  must not exceed 10000.
+- An omitted or zero `limit` counts as the default of 50. A value above the
+  per-list maximum is capped to 10000 before it is added.
+- If the sum exceeds 10000, the whole batch is rejected before any handler or
+  database query runs. The response is one JSON-RPC error object with code
+  `-31004` and message `Batch list item limit exceeded`.
+- Non-list entries do not consume this work budget. A single request retains
+  the existing per-list maximum of 10000.
+
+This restores the row-fetch bound that existed before batch support: one
+admission slot can fetch at most as many rows as one maximal list call. It does
+not bound `COUNT(*)` cost, which is independent of `limit`; selective filters,
+the pending-output partial index, proxy rate limiting, and PostgreSQL capacity
+planning remain important.
 
 ### Rejection semantics
 
