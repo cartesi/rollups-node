@@ -52,6 +52,16 @@ func TestProcessInputs_RetryFromNonzeroPredecessorMatchesUninterruptedResult(t *
 			targetPayload: []byte("halt:application-finished"),
 			wantStatus:    model.InputCompletionStatus_MachineHalted,
 		},
+		{
+			name:          "mcycle overflow",
+			targetPayload: []byte("overflow:cycle-ceiling"),
+			wantStatus:    model.InputCompletionStatus_Overflow,
+		},
+		{
+			name:          "unexpected yield",
+			targetPayload: []byte("unexpected-yield:unknown-reason"),
+			wantStatus:    model.InputCompletionStatus_UnexpectedYield,
+		},
 	}
 
 	for _, tt := range tests {
@@ -110,7 +120,12 @@ func determinismBaseline(
 	require.Len(t, repo.StoredResults, 2)
 	target := cloneDeterminismResult(repo.StoredResults[1])
 	require.Equal(t, uint64(2), harness.instance.ProcessedInputs())
-	require.Equal(t, machine.Hash(target.MachineHash), harness.runtimeHash(t))
+	if target.Status.IsTerminal() {
+		_, err := harness.instance.Hash(context.Background())
+		require.ErrorIs(t, err, manager.ErrMachineClosed)
+	} else {
+		require.Equal(t, machine.Hash(target.MachineHash), harness.runtimeHash(t))
+	}
 	return prefix, predecessor, target
 }
 
@@ -337,24 +352,38 @@ func requireDeterminismTarget(
 	require.Equal(t, uint64(1), target.InputIndex)
 	require.Equal(t, wantStatus, target.Status)
 	require.True(t, target.IsDaveConsensus)
-	require.NotEmpty(t, target.OutputsHashProof)
 	require.Len(t, target.PeriodicStateHashes, 2, "a PRT result must retain its periodic state hashes")
 	require.Equal(t, machine.InputEntryCapacity-uint64(len(target.PeriodicStateHashes)), target.PaddingRepetitions)
 
 	if wantStatus == model.InputCompletionStatus_Accepted {
+		require.True(t, target.IsComplete())
 		require.Equal(t, [][]byte{append([]byte("output:"), targetPayload...)}, target.Outputs)
 		require.Equal(t, [][]byte{append([]byte("report:"), targetPayload...)}, target.Reports)
 		require.NotEqual(t, prefix.MachineHash, target.MachineHash)
-		require.NotEqual(t, prefix.OutputsHash, target.OutputsHash)
+		require.NotEqual(t, prefix.TxBufferDataBlock, target.TxBufferDataBlock)
 		return
 	}
 
 	require.Empty(t, target.Outputs, "effects are canonical only for accepted inputs")
 	require.Empty(t, target.Reports, "effects are canonical only for accepted inputs")
-	require.Equal(t, prefix.MachineHash, target.MachineHash,
-		"a nonaccepted candidate must not replace the predecessor")
-	require.Equal(t, prefix.OutputsHash, target.OutputsHash)
-	require.Equal(t, prefix.OutputsHashProof, target.OutputsHashProof)
+	if wantStatus.IsTerminal() {
+		require.True(t, target.IsComplete(),
+			"a terminal result must preserve its actual post-run proof")
+		require.NotEqual(t, prefix.MachineHash, target.MachineHash,
+			"a terminal completion must preserve its post-run machine root")
+		require.NotEqual(t, prefix.TxBufferDataBlock, target.TxBufferDataBlock,
+			"a terminal completion must preserve its post-run TX buffer")
+	} else {
+		require.True(t, target.IsComplete())
+		require.Equal(t, prefix.MachineHash, target.MachineHash,
+			"a rejected candidate must not replace the predecessor")
+	}
+	if !wantStatus.IsTerminal() {
+		require.Equal(t, prefix.TxBufferDataBlock, target.TxBufferDataBlock)
+	}
+	if !wantStatus.IsTerminal() {
+		require.Equal(t, prefix.StateProof, target.StateProof)
+	}
 }
 
 func requireDiscardedMutatedFork(
@@ -378,11 +407,18 @@ func requireSuccessfulRetryState(
 ) {
 	t.Helper()
 	require.Equal(t, uint64(2), harness.instance.ProcessedInputs())
-	require.Equal(t, machine.Hash(wantTarget.MachineHash), harness.runtimeHash(t))
 	lastCandidate := harness.lastFork(t)
+	if wantTarget.Status.IsTerminal() {
+		_, err := harness.instance.Hash(context.Background())
+		require.ErrorIs(t, err, manager.ErrMachineClosed)
+		require.True(t, predecessor.isClosed())
+		require.True(t, lastCandidate.isClosed(), "the terminal candidate must be disposed")
+		return
+	}
+	require.Equal(t, machine.Hash(wantTarget.MachineHash), harness.runtimeHash(t))
 	if wantTarget.Status == model.InputCompletionStatus_Accepted {
 		require.True(t, predecessor.isClosed())
-		require.False(t, lastCandidate.isClosed(), "the accepted candidate must be adopted")
+		require.False(t, lastCandidate.isClosed(), "the state-producing candidate must be adopted")
 		return
 	}
 	require.False(t, predecessor.isClosed(), "rejection must keep the predecessor live")
@@ -427,7 +463,9 @@ func waitDeterminismError(t *testing.T, errCh <-chan error) error {
 
 func cloneDeterminismResult(result *model.AdvanceResult) *model.AdvanceResult {
 	clone := *result
-	clone.OutputsHashProof = append([][32]byte(nil), result.OutputsHashProof...)
+	clone.TxBufferProof = append([][32]byte(nil), result.TxBufferProof...)
+	clone.IflagsYProof = append([][32]byte(nil), result.IflagsYProof...)
+	clone.HtifTohostProof = append([][32]byte(nil), result.HtifTohostProof...)
 	clone.Outputs = cloneDeterminismBytes(result.Outputs)
 	clone.Reports = cloneDeterminismBytes(result.Reports)
 	clone.ExceptionData = append([]byte(nil), result.ExceptionData...)
@@ -528,12 +566,13 @@ func newDeterminismHarness(
 }
 
 func (h *determinismHarness) process(ctx context.Context, index uint64, payload []byte) error {
-	return h.service.processInputs(ctx, h.app, []*model.Input{{
+	_, _, err := h.service.processInputs(ctx, h.app, []*model.Input{{
 		EpochApplicationID: h.app.ID,
 		EpochIndex:         7,
 		Index:              index,
 		RawData:            append([]byte(nil), payload...),
 	}})
+	return err
 }
 
 func (h *determinismHarness) waitForMutation(t *testing.T) *determinismRuntime {
@@ -584,7 +623,6 @@ type determinismMachineState struct {
 	step           uint64
 	machineHash    machine.Hash
 	outputsHash    machine.Hash
-	outputsProof   []machine.Hash
 	checkpointHash machine.Hash
 }
 
@@ -592,14 +630,12 @@ func newDeterminismMachineState() determinismMachineState {
 	machineHash := determinismHash("base-machine")
 	outputsHash := determinismHash("base-outputs")
 	return determinismMachineState{
-		machineHash:  machineHash,
-		outputsHash:  outputsHash,
-		outputsProof: determinismProof(outputsHash),
+		machineHash: machineHash,
+		outputsHash: outputsHash,
 	}
 }
 
 func (s determinismMachineState) clone() determinismMachineState {
-	s.outputsProof = append([]machine.Hash(nil), s.outputsProof...)
 	return s
 }
 
@@ -710,22 +746,24 @@ func (m *determinismRuntime) Hash(ctx context.Context) (machine.Hash, error) {
 	return m.state.machineHash, nil
 }
 
-func (m *determinismRuntime) OutputsHash(ctx context.Context) (machine.Hash, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if err := m.checkOpenLocked(ctx); err != nil {
-		return machine.Hash{}, err
-	}
-	return m.state.outputsHash, nil
-}
-
-func (m *determinismRuntime) OutputsHashProof(ctx context.Context) ([]machine.Hash, error) {
+func (m *determinismRuntime) StateProof(ctx context.Context) (*machine.StateProof, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.checkOpenLocked(ctx); err != nil {
 		return nil, err
 	}
-	return append([]machine.Hash(nil), m.state.outputsProof...), nil
+	var iflagsYData machine.Hash
+	iflagsYData[8] = 1
+	var htifTohostData machine.Hash
+	htifTohostData[20] = 1
+	htifTohostData[22] = 1
+	htifTohostData[23] = 2
+	return &machine.StateProof{
+		MachineHash:     m.state.machineHash,
+		IflagsYProof:    determinismValidityLeaf("iflags-y", iflagsYData),
+		HtifTohostProof: determinismValidityLeaf("htif-tohost", htifTohostData),
+		TxBufferProof:   determinismValidityLeaf("tx-buffer", m.state.outputsHash),
+	}, nil
 }
 
 func (m *determinismRuntime) Advance(
@@ -767,6 +805,10 @@ func (m *determinismRuntime) Advance(
 		status = machine.CompletionStatusException
 	case bytes.HasPrefix(input, []byte("halt:")):
 		status = machine.CompletionStatusHalted
+	case bytes.HasPrefix(input, []byte("overflow:")):
+		status = machine.CompletionStatusOverflow
+	case bytes.HasPrefix(input, []byte("unexpected-yield:")):
+		status = machine.CompletionStatusUnexpectedYield
 	}
 	output := append([]byte("output:"), input...)
 	report := append([]byte("report:"), input...)
@@ -777,13 +819,11 @@ func (m *determinismRuntime) Advance(
 		"machine", previous.machineHash[:], checkpointHash[:], input,
 	)
 	m.state.outputsHash = determinismHash("outputs", previous.outputsHash[:], output)
-	m.state.outputsProof = determinismProof(m.state.outputsHash)
 	hashes := []machine.Hash{firstHash, finalHash}
 	response := &machine.AdvanceResponse{
 		Status:              status,
 		PeriodicStateHashes: hashes,
 		PaddingRepetitions:  machine.InputEntryCapacity - uint64(len(hashes)),
-		OutputsHash:         m.state.outputsHash,
 	}
 	if status == machine.CompletionStatusAccepted {
 		response.Outputs = []machine.Output{output}
@@ -873,11 +913,13 @@ func determinismHash(label string, values ...[]byte) machine.Hash {
 	return result
 }
 
-func determinismProof(outputsHash machine.Hash) []machine.Hash {
-	return []machine.Hash{
-		determinismHash("proof-0", outputsHash[:]),
-		determinismHash("proof-1", outputsHash[:]),
+func determinismValidityLeaf(label string, dataBlock machine.Hash) machine.LeafProof {
+	const canonicalMachineProofDepth = 59
+	siblings := make([]machine.Hash, canonicalMachineProofDepth)
+	for i := range siblings {
+		siblings[i] = determinismHash(label, dataBlock[:], []byte{byte(i)})
 	}
+	return machine.LeafProof{DataBlock: dataBlock, Siblings: siblings}
 }
 
 type determinismMachineProvider struct {

@@ -209,6 +209,8 @@ func (s *AdvancerSuite) TestStep() {
 		_, err := env.service.Step(context.Background())
 		require.Error(err)
 		require.Contains(err.Error(), "update epochs error")
+		require.Contains(err.Error(), env.app.Application.Name)
+		require.Contains(err.Error(), "epoch 0")
 	})
 
 	s.Run("Error/UpdateMachines", func() {
@@ -424,7 +426,7 @@ func (s *AdvancerSuite) TestProcess() {
 			newInput(env.app.Application.ID, 0, 0, []byte("advance error")),
 		}
 
-		err := env.service.processInputs(context.Background(), env.app.Application, inputs)
+		_, _, err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 		require.Error(err)
 		require.Equal(1, env.repo.ApplicationStatusUpdates)
 		require.Equal(ApplicationStatus_Failed, env.repo.LastApplicationStatus)
@@ -440,7 +442,7 @@ func (s *AdvancerSuite) TestProcess() {
 		}
 		env.repo.UpdateApplicationStatusError = errors.New("update state error")
 
-		err := env.service.processInputs(context.Background(), env.app.Application, inputs)
+		_, _, err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 		require.Error(err)
 		require.Contains(err.Error(), "advance error")
 	})
@@ -466,7 +468,7 @@ func (s *AdvancerSuite) TestProcess() {
 					newInput(env.app.Application.ID, 0, 0, []byte("input")),
 				}
 
-				err := env.service.processInputs(context.Background(), env.app.Application, inputs)
+				_, _, err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 				require.ErrorIs(err, interruption.err)
 				require.Empty(env.repo.StoredResults)
 				require.Equal(1, env.repo.ApplicationStatusUpdates)
@@ -489,9 +491,65 @@ func (s *AdvancerSuite) TestProcess() {
 			newInput(env.app.Application.ID, 2, 6, marshal(randomAdvanceResult(6))),
 		}
 
-		err := env.service.processInputs(context.Background(), env.app.Application, inputs)
+		_, _, err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 		require.Nil(err)
 		require.Len(env.repo.StoredResults, 7)
+	})
+
+	for _, status := range []InputCompletionStatus{
+		InputCompletionStatus_Exception,
+		InputCompletionStatus_MachineHalted,
+		InputCompletionStatus_Overflow,
+		InputCompletionStatus_UnexpectedYield,
+	} {
+		s.Run("StopsAfterTerminal/"+status.String(), func() {
+			require := s.Require()
+			env := s.setupOneApp()
+			accepted := randomAdvanceResult(0)
+			terminal := randomAdvanceResult(1)
+			terminal.Status = status
+			terminal.Outputs = nil
+			terminal.Reports = nil
+			if status == InputCompletionStatus_Exception {
+				terminal.ExceptionData = []byte("guest exception")
+			}
+			inputs := []*Input{
+				newInput(env.app.Application.ID, 0, 0, marshal(accepted)),
+				newInput(env.app.Application.ID, 0, 1, marshal(terminal)),
+				newInput(env.app.Application.ID, 0, 2, []byte("must not execute")),
+			}
+
+			processed, stopped, err := env.service.processInputs(
+				context.Background(), env.app.Application, inputs,
+			)
+			require.NoError(err)
+			require.Equal(uint64(2), processed)
+			require.True(stopped)
+			require.Len(env.repo.StoredResults, 2)
+			require.Equal(status, env.repo.StoredResults[1].Status)
+			require.Equal([]byte("must not execute"), inputs[2].RawData)
+		})
+	}
+
+	s.Run("RejectedDoesNotStopBatch", func() {
+		require := s.Require()
+		env := s.setupOneApp()
+		rejected := randomAdvanceResult(0)
+		rejected.Status = InputCompletionStatus_Rejected
+		rejected.Outputs = nil
+		rejected.Reports = nil
+		accepted := randomAdvanceResult(1)
+
+		processed, stopped, err := env.service.processInputs(
+			context.Background(), env.app.Application, []*Input{
+				newInput(env.app.Application.ID, 0, 0, marshal(rejected)),
+				newInput(env.app.Application.ID, 0, 1, marshal(accepted)),
+			},
+		)
+		require.NoError(err)
+		require.Equal(uint64(2), processed)
+		require.False(stopped)
+		require.Len(env.repo.StoredResults, 2)
 	})
 
 	s.Run("Noop", func() {
@@ -499,7 +557,7 @@ func (s *AdvancerSuite) TestProcess() {
 			require := s.Require()
 			env := s.setupOneApp()
 
-			err := env.service.processInputs(context.Background(), env.app.Application, []*Input{})
+			_, _, err := env.service.processInputs(context.Background(), env.app.Application, []*Input{})
 			require.Nil(err)
 		})
 	})
@@ -511,7 +569,7 @@ func (s *AdvancerSuite) TestProcess() {
 			invalidApp := Application{ID: 999}
 			inputs := randomInputs(1, 0, 3)
 
-			err := env.service.processInputs(context.Background(), &invalidApp, inputs)
+			_, _, err := env.service.processInputs(context.Background(), &invalidApp, inputs)
 			expected := fmt.Sprintf("%v: %v", ErrNoApp, invalidApp.ID)
 			require.EqualError(err, expected)
 		})
@@ -525,7 +583,7 @@ func (s *AdvancerSuite) TestProcess() {
 				newInput(env.app.Application.ID, 0, 2, []byte("unreachable")),
 			}
 
-			err := env.service.processInputs(context.Background(), env.app.Application, inputs)
+			_, _, err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 			require.Error(err)
 			require.Contains(err.Error(), "advance error")
 			require.Len(env.repo.StoredResults, 1)
@@ -547,7 +605,7 @@ func (s *AdvancerSuite) TestProcess() {
 			}
 			env.repo.StoreAdvanceError = errors.New("store-advance error")
 
-			err := env.service.processInputs(context.Background(), env.app.Application, inputs)
+			_, _, err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 			require.Error(err)
 			require.Contains(err.Error(), "store-advance error")
 			require.Empty(env.repo.StoredResults)
@@ -571,7 +629,7 @@ func (s *AdvancerSuite) TestProcess() {
 			}
 			env.repo.StoreAdvanceCommitError = errors.New("commit response lost")
 
-			err := env.service.processInputs(
+			_, _, err := env.service.processInputs(
 				context.Background(), env.app.Application, []*Input{pending},
 			)
 			require.ErrorContains(err, "commit response lost")
@@ -589,6 +647,55 @@ func (s *AdvancerSuite) TestProcess() {
 			require.Empty(unprocessed,
 				"a restart must not execute an input whose result already committed")
 		})
+
+		s.Run("StoreAdvanceApplicationNotRunnableIsAppLocal", func() {
+			require := s.Require()
+			env := s.setupOneApp()
+			pending := newInput(
+				env.app.Application.ID, 0, 0, marshal(randomAdvanceResult(0)),
+			)
+			env.repo.StoreAdvanceError = fmt.Errorf(
+				"status changed: %w", repository.ErrApplicationNotRunnable)
+
+			_, _, err := env.service.processInputs(
+				context.Background(), env.app.Application, []*Input{pending},
+			)
+			require.ErrorIs(err, repository.ErrApplicationNotRunnable)
+			require.NoError(env.service.Context.Err(),
+				"an application-local conflict must not stop unrelated services")
+			require.Equal(1, env.mm.Map[env.app.Application.ID].closeCalls)
+			require.Zero(env.repo.ApplicationStatusUpdates,
+				"the repository's durable status is already authoritative")
+		})
+	})
+
+	s.Run("SnapshotFailureCannotLeaveSilentZombie", func() {
+		require := s.Require()
+		env := s.setupOneApp()
+		env.app.Application.ExecutionParameters.SnapshotPolicy = SnapshotPolicy_EveryInput
+		env.service.snapshotsDir = s.T().TempDir()
+		instance := env.mm.Map[env.app.Application.ID]
+		instance.createSnapshotError = errors.New("snapshot runtime crashed")
+		instance.destroyAfterSnapshotError = true
+		inputs := []*Input{
+			newInput(env.app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+			newInput(env.app.Application.ID, 0, 1, marshal(randomAdvanceResult(1))),
+		}
+
+		processed, stopped, err := env.service.processInputs(
+			context.Background(),
+			env.app.Application,
+			inputs,
+		)
+		require.ErrorIs(err, manager.ErrMachineClosed)
+		require.ErrorContains(err, "snapshot runtime crashed")
+		require.Equal(uint64(1), processed)
+		require.False(stopped)
+		require.Len(env.repo.StoredResults, 1)
+		require.Equal(1, instance.advanceCalls,
+			"the destroyed runtime must not be handed the next input")
+		require.Equal(1, env.repo.ApplicationStatusUpdates)
+		require.Equal(ApplicationStatus_Failed, env.repo.LastApplicationStatus)
 	})
 }
 
@@ -639,7 +746,8 @@ func (s *AdvancerSuite) TestContextCancellation() {
 
 		errCh := make(chan error)
 		go func() {
-			errCh <- env.service.processInputs(ctx, env.app.Application, inputs)
+			_, _, err := env.service.processInputs(ctx, env.app.Application, inputs)
+			errCh <- err
 		}()
 
 		// Cancel the context after a short delay
@@ -676,7 +784,7 @@ func (s *AdvancerSuite) TestContextCancellation() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 		defer cancel()
 
-		err := env.service.processInputs(ctx, env.app.Application, inputs)
+		_, _, err := env.service.processInputs(ctx, env.app.Application, inputs)
 		require.ErrorIs(err, context.DeadlineExceeded)
 		require.Empty(env.repo.StoredResults)
 		// The expired context prevents the immediate database write, so the
@@ -719,7 +827,7 @@ func (s *AdvancerSuite) TestContextCancellation() {
 			}
 
 			ctx := context.Background()
-			err := env.service.processInputs(ctx, env.app.Application, inputs)
+			_, _, err := env.service.processInputs(ctx, env.app.Application, inputs)
 
 			require.ErrorIs(err, context.Canceled)
 			require.NoError(ctx.Err(), "the caller context must remain active")
@@ -748,7 +856,7 @@ func (s *AdvancerSuite) TestLargeNumberOfInputs() {
 			inputs[i] = newInput(env.app.Application.ID, 0, uint64(i), marshal(randomAdvanceResult(uint64(i))))
 		}
 
-		err := env.service.processInputs(context.Background(), env.app.Application, inputs)
+		_, _, err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 		require.Nil(err)
 		require.Len(env.repo.StoredResults, inputCount)
 	})
@@ -766,7 +874,7 @@ func (s *AdvancerSuite) TestErrorRecovery() {
 			newInput(env.app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
 		}
 
-		err := env.service.processInputs(context.Background(), env.app.Application, inputs)
+		_, _, err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 		require.Error(err)
 		require.Contains(err.Error(), "temporary failure")
 		require.Empty(env.repo.StoredResults)
@@ -792,7 +900,7 @@ func (s *AdvancerSuite) TestContextCancelledBeforeProcessing() {
 			newInput(env.app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
 		}
 
-		err := env.service.processInputs(ctx, env.app.Application, inputs)
+		_, _, err := env.service.processInputs(ctx, env.app.Application, inputs)
 		require.ErrorIs(err, context.Canceled)
 	})
 }
@@ -941,141 +1049,133 @@ func (s *AdvancerSuite) TestIsEpochLastInput() {
 }
 
 // ---------------------------------------------------------------------------
-// handleEpochAfterInputsProcessed tests
+// prepareEpochPublication tests
 // ---------------------------------------------------------------------------
 
-func (s *AdvancerSuite) TestHandleEpochAfterInputsProcessed() {
-	s.Run("EmptyEpochIndex0GetsOutputsProofFromMachine", func() {
-		require := s.Require()
-		env := s.setupOneApp()
+func (s *AdvancerSuite) TestPrepareEpochPublication() {
+	s.Run("EveryEmptyEpochGetsFreshMachineProof", func() {
+		for _, index := range []uint64{0, 2} {
+			env := s.setupOneApp()
+			epoch := &Epoch{Index: index, Status: EpochStatus_Closed}
 
-		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 0}
-		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
-		require.Nil(err)
-		require.True(env.repo.OutputsProofUpdated)
+			proof, err := env.service.prepareEpochPublication(
+				context.Background(), env.app.Application, epoch,
+			)
+			s.Require().NoError(err)
+			s.Require().Same(env.app.StateProofReturn, proof)
+			s.True(proof.IsComplete())
+		}
 	})
 
-	s.Run("EmptyEpochIndex0ErrorOnOutputsProof", func() {
-		require := s.Require()
+	s.Run("ProofError", func() {
 		env := s.setupOneApp()
-		env.app.OutputsProofError = errors.New("proof error")
+		env.app.StateProofError = errors.New("proof error")
 
-		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 0}
-		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
-		require.Error(err)
-		require.Contains(err.Error(), "proof error")
+		proof, err := env.service.prepareEpochPublication(
+			context.Background(), env.app.Application, &Epoch{},
+		)
+		s.Require().Nil(proof)
+		s.Require().ErrorContains(err, "proof error")
 	})
 
-	s.Run("EmptyEpochIndex0ErrMachineClosedMarksAppFailed", func() {
-		require := s.Require()
+	s.Run("IncompleteProof", func() {
 		env := s.setupOneApp()
-		env.app.OutputsProofError = manager.ErrMachineClosed
+		env.app.StateProofReturn = &StateProof{}
 
-		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 0}
-		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
-		require.Error(err)
-		require.ErrorIs(err, manager.ErrMachineClosed)
-		require.Equal(1, env.repo.ApplicationStatusUpdates)
-		require.Equal(ApplicationStatus_Failed, env.repo.LastApplicationStatus)
+		proof, err := env.service.prepareEpochPublication(
+			context.Background(), env.app.Application, &Epoch{},
+		)
+		s.Require().Nil(proof)
+		s.Require().ErrorIs(err, repository.ErrInvalidStateProof)
 	})
 
-	s.Run("EmptyEpochIndex0ErrMachineClosedWriteFailureQueuesDurableFence", func() {
-		require := s.Require()
+	s.Run("MachineClosedMarksAppFailed", func() {
 		env := s.setupOneApp()
-		env.app.OutputsProofError = manager.ErrMachineClosed
+		env.app.StateProofError = manager.ErrMachineClosed
+
+		proof, err := env.service.prepareEpochPublication(
+			context.Background(), env.app.Application, &Epoch{},
+		)
+		s.Require().Nil(proof)
+		s.Require().ErrorIs(err, manager.ErrMachineClosed)
+		s.Equal(1, env.repo.ApplicationStatusUpdates)
+		s.Equal(ApplicationStatus_Failed, env.repo.LastApplicationStatus)
+	})
+
+	s.Run("MachineClosedWriteFailureQueuesDurableFence", func() {
+		env := s.setupOneApp()
+		env.app.StateProofError = manager.ErrMachineClosed
 		env.repo.UpdateApplicationStatusError = errors.New("FAILED write unavailable")
-		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 0}
 
-		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
-
-		require.ErrorIs(err, manager.ErrMachineClosed)
-		require.Equal(
+		proof, err := env.service.prepareEpochPublication(
+			context.Background(), env.app.Application, &Epoch{},
+		)
+		s.Require().Nil(proof)
+		s.Require().ErrorIs(err, manager.ErrMachineClosed)
+		s.Equal(
 			appstatus.NormalizeReason(manager.ErrMachineClosed.Error()),
 			env.mm.RecordedApplicationFailures[env.app.Application.ID],
 		)
-		require.False(env.service.Ready())
-	})
-
-	s.Run("EmptyEpochIndexGt0RepeatsPreviousProof", func() {
-		require := s.Require()
-		env := s.setupOneApp()
-
-		epoch := &Epoch{Index: 2, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 0}
-		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
-		require.Nil(err)
-		require.True(env.repo.RepeatOutputsProofCalled)
-	})
-
-	s.Run("EmptyEpochIndexGt0RepeatError", func() {
-		require := s.Require()
-		env := s.setupOneApp()
-		env.repo.RepeatOutputsProofError = errors.New("repeat error")
-
-		epoch := &Epoch{Index: 2, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 0}
-		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
-		require.Error(err)
-		require.Contains(err.Error(), "repeat error")
+		s.False(env.service.Ready())
 	})
 
 	s.Run("NonEmptyEpochWithEveryEpochSnapshotPolicy", func() {
-		require := s.Require()
 		env := s.setupOneApp()
 		env.app.Application.ExecutionParameters.SnapshotPolicy = SnapshotPolicy_EveryEpoch
 		env.service.snapshotsDir = s.T().TempDir()
-
-		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 3}
+		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexUpperBound: 3}
 		lastInput := repotest.NewInputBuilder().WithIndex(2).WithEpochIndex(0).
 			WithStatus(InputCompletionStatus_Accepted).Build()
 		lastInput.EpochApplicationID = env.app.Application.ID
 		env.repo.GetLastProcessedInputReturn = lastInput
 		env.repo.GetLastInputReturn = lastInput
 
-		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
-		require.Nil(err)
-		require.True(env.repo.SnapshotURIUpdated)
+		proof, err := env.service.prepareEpochPublication(
+			context.Background(), env.app.Application, epoch,
+		)
+		s.Require().NoError(err)
+		s.True(proof.IsComplete())
+		s.True(env.repo.SnapshotURIUpdated)
 	})
 
 	s.Run("NonEmptyEpochNoSnapshotPolicy", func() {
-		require := s.Require()
 		env := s.setupOneApp()
 		env.app.Application.ExecutionParameters.SnapshotPolicy = SnapshotPolicy_None
+		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexUpperBound: 3}
 
-		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 3}
-		lastInput := repotest.NewInputBuilder().WithIndex(2).WithEpochIndex(0).
-			WithStatus(InputCompletionStatus_Accepted).Build()
-		lastInput.EpochApplicationID = env.app.Application.ID
-		env.repo.GetLastProcessedInputReturn = lastInput
-
-		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
-		require.Nil(err)
-		require.False(env.repo.SnapshotURIUpdated)
+		proof, err := env.service.prepareEpochPublication(
+			context.Background(), env.app.Application, epoch,
+		)
+		s.Require().NoError(err)
+		s.True(proof.IsComplete())
+		s.False(env.repo.SnapshotURIUpdated)
 	})
 
 	s.Run("NoMachineReturnsError", func() {
-		require := s.Require()
 		mm := newMockMachineManager()
 		svc, err := newMockAdvancerService(mm, &MockRepository{})
-		require.Nil(err)
-
+		s.Require().NoError(err)
 		app := repotest.NewApplicationBuilder().Build()
 		app.ID = 999
 
-		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 3}
-		err = svc.handleEpochAfterInputsProcessed(context.Background(), app, epoch)
-		require.Error(err)
-		require.ErrorIs(err, ErrNoApp)
+		proof, err := svc.prepareEpochPublication(
+			context.Background(), app, &Epoch{InputIndexUpperBound: 3},
+		)
+		s.Require().Nil(proof)
+		s.Require().ErrorIs(err, ErrNoApp)
 	})
 
 	s.Run("GetLastProcessedInputError", func() {
-		require := s.Require()
 		env := s.setupOneApp()
 		env.app.Application.ExecutionParameters.SnapshotPolicy = SnapshotPolicy_EveryEpoch
 		env.repo.GetLastProcessedInputError = errors.New("db connection lost")
 
-		epoch := &Epoch{Index: 0, Status: EpochStatus_Closed, InputIndexLowerBound: 0, InputIndexUpperBound: 3}
-		err := env.service.handleEpochAfterInputsProcessed(context.Background(), env.app.Application, epoch)
-		require.Error(err)
-		require.Contains(err.Error(), "db connection lost")
+		proof, err := env.service.prepareEpochPublication(
+			context.Background(), env.app.Application,
+			&Epoch{InputIndexUpperBound: 3},
+		)
+		s.Require().Nil(proof)
+		s.Require().ErrorContains(err, "db connection lost")
 	})
 }
 
@@ -1456,6 +1556,47 @@ func (s *AdvancerSuite) TestSingleBatchEnforcement() {
 	// Exactly one batch of 5 should have been processed, not all 20.
 	require.Equal(5, len(repo.StoredResults),
 		"should process exactly one batch (batchSize=5)")
+}
+
+func (s *AdvancerSuite) TestTerminalInputStopsEpochAndFutureTicks() {
+	require := s.Require()
+	env := s.setupOneApp()
+	terminal := randomAdvanceResult(1)
+	terminal.Status = InputCompletionStatus_MachineHalted
+	terminal.Outputs = nil
+	terminal.Reports = nil
+	address := env.app.Application.IApplicationAddress
+	env.repo.GetEpochsReturn = map[common.Address][]*Epoch{
+		address: {{
+			Index:                0,
+			Status:               EpochStatus_Closed,
+			InputIndexLowerBound: 0,
+			InputIndexUpperBound: 3,
+		}},
+	}
+	env.repo.GetInputsReturn = map[common.Address][]*Input{
+		address: {
+			newInput(env.app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+			newInput(env.app.Application.ID, 0, 1, marshal(terminal)),
+			newInput(env.app.Application.ID, 0, 2, []byte("must not execute")),
+		},
+	}
+
+	hadWork, err := env.service.Step(context.Background())
+	require.NoError(err)
+	require.False(hadWork)
+	require.Len(env.repo.StoredResults, 2)
+	require.Zero(env.repo.EpochInputsProcessedCount,
+		"a terminal epoch must remain closed because it has no accepted terminal state")
+
+	terminalAppStatus, ok := terminal.Status.TerminalApplicationStatus()
+	require.True(ok)
+	env.app.Application.Status = terminalAppStatus
+	hadWork, err = env.service.Step(context.Background())
+	require.NoError(err)
+	require.False(hadWork)
+	require.Len(env.repo.StoredResults, 2,
+		"a terminal machine must not receive work on later ticks")
 }
 
 // More-work signal accuracy.
@@ -1997,11 +2138,12 @@ type MockFullRepository struct {
 }
 
 type MockMachineImpl struct {
-	Application       *Application
-	AdvanceBlock      bool
-	AdvanceError      error
-	OutputsProofError error
-	processedInputs   uint64
+	Application      *Application
+	AdvanceBlock     bool
+	AdvanceError     error
+	StateProofReturn *StateProof
+	StateProofError  error
+	processedInputs  uint64
 }
 
 func (mock *MockMachineImpl) Advance(
@@ -2046,6 +2188,7 @@ func newMockMachine(id int64) *MockMachineImpl {
 			ID:                  id,
 			IApplicationAddress: randomAddress(),
 		},
+		StateProofReturn: randomCompleteStateProof(),
 	}
 }
 
@@ -2082,7 +2225,16 @@ func (mock *MockMachineManager) GetMachine(appID int64) (manager.MachineInstance
 }
 
 func (mock *MockMachineManager) UpdateMachines(ctx context.Context) error {
-	return mock.UpdateMachinesError
+	if mock.UpdateMachinesError != nil {
+		return mock.UpdateMachinesError
+	}
+	for id, instance := range mock.Map {
+		status := instance.application.Status
+		if status != "" && status != ApplicationStatus_OK {
+			delete(mock.Map, id)
+		}
+	}
+	return nil
 }
 
 func (mock *MockMachineManager) FenceApplicationFailure(app *Application, reason string) {
@@ -2117,14 +2269,17 @@ func (mock *MockMachineManager) Close() error {
 
 // MockMachineInstance is a test implementation of manager.MachineInstance
 type MockMachineInstance struct {
-	application         *Application
-	machineImpl         *MockMachineImpl
-	createSnapshotError error
-	closeCalls          int
+	application               *Application
+	machineImpl               *MockMachineImpl
+	createSnapshotError       error
+	destroyAfterSnapshotError bool
+	closeCalls                int
+	advanceCalls              int
 }
 
 // Advance implements the MachineInstance interface for testing
 func (m *MockMachineInstance) Advance(ctx context.Context, input []byte, epochIndex uint64, index uint64, leafs bool) (*AdvanceResult, error) {
+	m.advanceCalls++
 	return m.machineImpl.Advance(ctx, input, epochIndex, index, leafs)
 }
 
@@ -2143,18 +2298,19 @@ func (m *MockMachineInstance) ProcessedInputs() uint64 {
 	return m.machineImpl.processedInputs
 }
 
-func (m *MockMachineInstance) OutputsProof(ctx context.Context) (*OutputsProof, error) {
-	if m.machineImpl.OutputsProofError != nil {
-		return nil, m.machineImpl.OutputsProofError
+func (m *MockMachineInstance) StateProof(_ context.Context) (*StateProof, error) {
+	if m.machineImpl.StateProofError != nil {
+		return nil, m.machineImpl.StateProofError
 	}
-	return &OutputsProof{
-		OutputsHash: randomHash(),
-		MachineHash: randomHash(),
-	}, nil
+	return m.machineImpl.StateProofReturn, nil
 }
 
 // CreateSnapshot implements the MachineInstance interface for testing
 func (m *MockMachineInstance) CreateSnapshot(ctx context.Context, processInputs uint64, path string) error {
+	if m.createSnapshotError != nil && m.destroyAfterSnapshotError {
+		m.machineImpl.AdvanceError = manager.ErrMachineClosed
+		return errors.Join(manager.ErrMachineClosed, m.createSnapshotError)
+	}
 	return m.createSnapshotError
 }
 
@@ -2184,10 +2340,8 @@ type MockRepository struct {
 	StoreAdvanceFailCount        int
 	UpdateApplicationStatusError error
 	UpdateEpochsError            error
-	UpdateOutputsProofError      error
 	GetLastSnapshotReturn        *Input
 	GetLastSnapshotError         error
-	RepeatOutputsProofError      error
 	GetEpochReturn               *Epoch
 	GetEpochError                error
 	GetLastInputReturn           *Input
@@ -2201,8 +2355,7 @@ type MockRepository struct {
 	ApplicationStatusUpdates    int
 	LastApplicationStatus       ApplicationStatus
 	LastApplicationStatusReason *string
-	OutputsProofUpdated         bool
-	RepeatOutputsProofCalled    bool
+	PublishedStateProof         *StateProof
 	SnapshotURIUpdated          bool
 	EpochInputsProcessedCount   int
 
@@ -2330,21 +2483,19 @@ func (mock *MockRepository) StoreAdvanceResult(
 	return mock.StoreAdvanceCommitError
 }
 
-func (mock *MockRepository) UpdateEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64, proof *OutputsProof) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	mock.OutputsProofUpdated = true
-	return mock.UpdateOutputsProofError
-}
-
-func (mock *MockRepository) UpdateEpochInputsProcessed(ctx context.Context, nameOrAddress string, epochIndex uint64) error {
+func (mock *MockRepository) UpdateEpochInputsProcessed(
+	ctx context.Context,
+	_ string,
+	_ uint64,
+	proof *StateProof,
+) error {
 	// Check for context cancellation
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
 	mock.EpochInputsProcessedCount++
+	mock.PublishedStateProof = proof
 	return mock.UpdateEpochsError
 }
 
@@ -2444,14 +2595,6 @@ func (mock *MockRepository) GetLastSnapshot(ctx context.Context, nameOrAddress s
 	return mock.GetLastSnapshotReturn, mock.GetLastSnapshotError
 }
 
-func (mock *MockRepository) RepeatPreviousEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	mock.RepeatOutputsProofCalled = true
-	return mock.RepeatOutputsProofError
-}
-
 // ------------------------------------------------------------------------------------------------
 
 func randomAddress() common.Address {
@@ -2470,6 +2613,21 @@ func randomHash() common.Hash {
 		panic(err)
 	}
 	return common.BytesToHash(hash)
+}
+
+func randomCompleteStateProof() *StateProof {
+	proof := &StateProof{
+		TxBufferDataBlock:   randomHash(),
+		MachineHash:         randomHash(),
+		IflagsYDataBlock:    randomHash(),
+		HtifTohostDataBlock: randomHash(),
+	}
+	for range StateProofSiblingCount {
+		proof.TxBufferProof = append(proof.TxBufferProof, randomHash())
+		proof.IflagsYProof = append(proof.IflagsYProof, randomHash())
+		proof.HtifTohostProof = append(proof.HtifTohostProof, randomHash())
+	}
+	return proof
 }
 
 func randomBytes() []byte {
@@ -2514,9 +2672,9 @@ func randomAdvanceResult(inputIndex uint64) *AdvanceResult {
 		Status:     InputCompletionStatus_Accepted,
 		Outputs:    randomSliceOfBytes(),
 		Reports:    randomSliceOfBytes(),
-		OutputsProof: OutputsProof{
-			OutputsHash: randomHash(),
-			MachineHash: randomHash(),
+		StateProof: StateProof{
+			TxBufferDataBlock: randomHash(),
+			MachineHash:       randomHash(),
 		},
 	}
 	return res

@@ -94,13 +94,11 @@ func (s *RejectExceptionPrtSuite) TestRejectInputPrt() {
 }
 
 // TestExceptionInputPrt deploys an exception-loop-dapp with PRT consensus,
-// sends 3 inputs, and verifies that input 1 is EXCEPTION while inputs 0 and 2
-// are ACCEPTED. Then settles tournaments and executes outputs on L1.
+// sends 3 inputs, and verifies that input 1 terminates execution with EXCEPTION
+// before input 2 can execute.
 func (s *RejectExceptionPrtSuite) TestExceptionInputPrt() {
-	s.SetExpectedLogs(s.T(), prtBlockOutOfRangeAllowlist)
+	s.SetExpectedLogs(s.T(), terminalExecutionExpectedLog)
 
-	ethClient := s.ethClient
-	prtEpoch := uint64(1)
 	appName := uniqueAppName("exception-prt-loop")
 	s.appNames = append(s.appNames, appName)
 	runRejectExceptionLifecycleTest(s.ctx, s.T(), s.Require(), rejectExceptionLifecycleConfig{
@@ -109,10 +107,5 @@ func (s *RejectExceptionPrtSuite) TestExceptionInputPrt() {
 		TestName:        "exception",
 		FailStatus:      model.InputCompletionStatus_Exception,
 		ExtraDeployArgs: []string{"--prt"},
-		EpochIndex:      &prtEpoch,
-		PreClaimHook: func(ctx context.Context, t testing.TB, require *require.Assertions, appName string) {
-			settleTournament(ctx, t, require, ethClient, appName, 0)
-			settleTournament(ctx, t, require, ethClient, appName, 1)
-		},
 	})
 }

@@ -79,6 +79,35 @@ func waitForInputProcessed(
 	return result, err
 }
 
+// waitForInputIndexed polls until the EVM reader has stored the input, without
+// requiring the advancer to process it.
+func waitForInputIndexed(
+	ctx context.Context,
+	t testing.TB,
+	appName string,
+	inputIndex uint64,
+) (*model.Input, error) {
+	var lastErr error
+	var result *model.Input
+	err := pollUntil(ctx, 2*time.Second, func() (bool, error) {
+		input, err := readInput(ctx, appName, inputIndex)
+		if err != nil {
+			if isCLIExitError(err) {
+				lastErr = err
+				t.Logf("poll indexed input %d: %v (retrying)", inputIndex, err)
+				return false, nil
+			}
+			return false, fmt.Errorf("poll indexed input %d: %w", inputIndex, err)
+		}
+		result = input
+		return true, nil
+	})
+	if err != nil && lastErr != nil {
+		return nil, fmt.Errorf("%w (last poll error: %v)", err, lastErr)
+	}
+	return result, err
+}
+
 // waitForEpochStatus polls until the epoch at the given index reaches the
 // desired status using the CLI.
 //

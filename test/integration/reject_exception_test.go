@@ -7,12 +7,20 @@ package integration
 
 import (
 	"context"
+	"regexp"
 	"testing"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/stretchr/testify/suite"
 )
+
+var terminalExecutionExpectedLog = ExpectedLog{
+	Pattern:  regexp.MustCompile(`Application execution terminated`),
+	Level:    LevelError,
+	Reason:   "the guest exception durably terminates application execution",
+	Required: true,
+}
 
 type RejectExceptionSuite struct {
 	suite.Suite
@@ -64,9 +72,11 @@ func (s *RejectExceptionSuite) TestRejectInput() {
 }
 
 // TestExceptionInput deploys an exception-loop-dapp (ioctl-echo-loop --exception=1),
-// sends 3 inputs, and verifies that input 1 is EXCEPTION while inputs 0 and 2
-// are ACCEPTED with correct outputs and reports.
+// sends 3 inputs, and verifies that input 1 terminates execution with EXCEPTION
+// before input 2 can execute.
 func (s *RejectExceptionSuite) TestExceptionInput() {
+	s.SetExpectedLogs(s.T(), terminalExecutionExpectedLog)
+
 	appName := uniqueAppName("exception-loop")
 	s.appNames = append(s.appNames, appName)
 	runRejectExceptionLifecycleTest(s.ctx, s.T(), s.Require(), rejectExceptionLifecycleConfig{

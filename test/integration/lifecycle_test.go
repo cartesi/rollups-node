@@ -186,8 +186,9 @@ type rejectExceptionLifecycleConfig struct {
 }
 
 // runRejectExceptionLifecycleTest runs the reject/exception pipeline for a dapp
-// that rejects or throws on input index 1. Works for both Authority and PRT
-// consensus, controlled by the config.
+// that rejects or throws on input index 1. A rejection reverts that input and
+// permits input 2 to execute; an exception terminates execution before input 2.
+// Works for both Authority and PRT consensus.
 func runRejectExceptionLifecycleTest(
 	ctx context.Context,
 	t testing.TB,
@@ -215,7 +216,12 @@ func runRejectExceptionLifecycleTest(
 
 	// --- L1 -> Machine: send 3 inputs where input #1 will be rejected/exception ---
 
-	t.Logf("Sending 3 inputs — the dapp will %s input #1 while accepting #0 and #2...", cfg.FailStatus)
+	terminalStatus, terminal := cfg.FailStatus.TerminalApplicationStatus()
+	if terminal {
+		t.Logf("Sending 3 inputs — the dapp will %s input #1 and stop before executing #2...", cfg.FailStatus)
+	} else {
+		t.Logf("Sending 3 inputs — the dapp will %s input #1 while accepting #0 and #2...", cfg.FailStatus)
+	}
 	const numInputs = 3
 	for i := range numInputs {
 		payload := fmt.Sprintf("%s-payload-%d", cfg.TestName, i)
@@ -226,23 +232,41 @@ func runRejectExceptionLifecycleTest(
 	}
 
 	func() {
-		defer timed(t, "wait for input processing (3 inputs)")()
-		t.Log("Waiting for the advancer to process all 3 inputs through the Cartesi Machine...")
+		defer timed(t, "wait for input processing")()
+		t.Log("Waiting for the advancer to reach the configured input outcome...")
 		processCtx, processCancel := context.WithTimeout(ctx, inputProcessingTimeout)
 		defer processCancel()
 
 		expectedStatuses := map[uint64]model.InputCompletionStatus{
 			0: model.InputCompletionStatus_Accepted,
 			1: cfg.FailStatus,
-			2: model.InputCompletionStatus_Accepted,
+		}
+		if !terminal {
+			expectedStatuses[2] = model.InputCompletionStatus_Accepted
 		}
 
-		for i := range uint64(numInputs) {
+		processedInputs := uint64(numInputs)
+		if terminal {
+			processedInputs = 2
+		}
+		for i := range processedInputs {
 			input, err := waitForInputProcessed(processCtx, t, cfg.AppName, i)
 			require.NoError(err, "wait for input %d processing", i)
 			require.Equal(expectedStatuses[i], input.Status,
 				"input %d: expected status %s, got %s", i, expectedStatuses[i], input.Status)
 			t.Logf("    input %d: %s", i, input.Status)
+		}
+
+		if terminal {
+			require.NoError(
+				waitForApplicationStatus(processCtx, t, cfg.AppName, terminalStatus.String()),
+				"wait for terminal application status",
+			)
+			pending, err := waitForInputIndexed(processCtx, t, cfg.AppName, 2)
+			require.NoError(err, "wait for input 2 indexing")
+			require.Equal(model.InputCompletionStatus_None, pending.Status,
+				"input 2 must remain indexed but unprocessed after terminal execution")
+			t.Logf("    input 2: indexed but not executed; application status: %s", terminalStatus)
 		}
 	}()
 
@@ -253,6 +277,9 @@ func runRejectExceptionLifecycleTest(
 	outputsResp, err := readOutputs(ctx, cfg.AppName)
 	require.NoError(err, "read outputs")
 	numAccepted := uint64(2)
+	if terminal {
+		numAccepted = 1
+	}
 	require.Equal(numAccepted*rejectOutputsPerAcceptedInput, outputsResp.Pagination.TotalCount,
 		"expected %d outputs (%d per accepted input x %d accepted inputs)",
 		numAccepted*rejectOutputsPerAcceptedInput, rejectOutputsPerAcceptedInput, numAccepted)
@@ -271,6 +298,12 @@ func runRejectExceptionLifecycleTest(
 		"expected %d reports (%d per accepted input x %d accepted inputs)",
 		numAccepted*rejectReportsPerAcceptedInput, rejectReportsPerAcceptedInput, numAccepted)
 	t.Logf("    %d reports found — correct", numAccepted*rejectReportsPerAcceptedInput)
+
+	if terminal {
+		t.Logf("=== %s test complete: %s terminalized execution before the later input ===",
+			cfg.TestName, cfg.FailStatus)
+		return
+	}
 
 	// --- Optional pre-claim hook (e.g. PRT tournament settlement) ---
 
@@ -383,8 +416,8 @@ func verifyClaimAndExecute(
 		epoch, err := waitForEpochStatus(
 			claimCtx, t, cfg.AppName, cfg.EpochIndex, model.EpochStatus_ClaimAccepted)
 		require.NoError(err, "wait for claim accepted")
-		require.NotNil(epoch.OutputsMerkleRoot, "epoch claim should be set")
-		t.Logf("    epoch %d claim accepted (hash=%s)", cfg.EpochIndex, *epoch.OutputsMerkleRoot)
+		require.NotNil(epoch.TxBufferDataBlock, "epoch claim should be set")
+		t.Logf("    epoch %d claim accepted (hash=%s)", cfg.EpochIndex, *epoch.TxBufferDataBlock)
 	}()
 
 	// --- Verify Merkle proofs ---
