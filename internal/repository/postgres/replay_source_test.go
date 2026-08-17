@@ -156,6 +156,60 @@ func TestPostgresReplayVerificationLevels(t *testing.T) {
 	require.Equal(t, uint64(2), violation.CompletedInputCount)
 }
 
+func TestPostgresReplayIncludesNewTerminalStatuses(t *testing.T) {
+	endpoint, err := db.GetTestDatabaseEndpoint()
+	if err != nil {
+		t.Skipf("Skipping: %v", err)
+	}
+	require.NoError(t, db.SetupTestPostgres(endpoint))
+
+	ctx := context.Background()
+	repo, err := factory.NewRepositoryFromConnectionString(ctx, endpoint)
+	require.NoError(t, err)
+	t.Cleanup(repo.Close)
+
+	for _, status := range []model.InputCompletionStatus{
+		model.InputCompletionStatus_Overflow,
+		model.InputCompletionStatus_UnexpectedYield,
+	} {
+		t.Run(status.String(), func(t *testing.T) {
+			app := repotest.NewApplicationBuilder().Create(ctx, t, repo)
+			epoch := repotest.NewEpochBuilder(app.ID).
+				WithStatus(model.EpochStatus_Closed).
+				WithInputBounds(0, 0).
+				Build()
+			input := repotest.NewInputBuilder().WithIndex(0).Build()
+			require.NoError(t, repo.CreateEpochsAndInputs(
+				ctx,
+				app.IApplicationAddress.String(),
+				map[*model.Epoch][]*model.Input{epoch: {input}},
+				10,
+			))
+			require.NoError(t, repo.StoreAdvanceResult(ctx, app.ID, &model.AdvanceResult{
+				EpochIndex: 0,
+				InputIndex: 0,
+				Status:     status,
+				StateProof: *repotest.DummyStateProof(),
+			}))
+
+			summary, err := repo.ReplaySummary(
+				ctx, app.IApplicationAddress, repository.ReplayVerificationCanonical)
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), summary.ProcessedInputs)
+			page, err := repo.ReplayPage(ctx, repository.ReplayPageRequest{
+				ApplicationID:    summary.ApplicationID,
+				FromInput:        0,
+				ToInputExclusive: 1,
+				Limit:            1,
+				Verification:     repository.ReplayVerificationCanonical,
+			})
+			require.NoError(t, err)
+			require.Len(t, page, 1)
+			require.Equal(t, status, page[0].Input.Status)
+		})
+	}
+}
+
 func TestPostgresReplayRejectsCompletedInputGap(t *testing.T) {
 	endpoint, err := db.GetTestDatabaseEndpoint()
 	if err != nil {
