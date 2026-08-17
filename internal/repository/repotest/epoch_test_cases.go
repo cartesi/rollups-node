@@ -9,7 +9,6 @@ import (
 
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/ethereum/go-ethereum/common"
 )
 
 type EpochSuite struct {
@@ -131,7 +130,7 @@ func (s *EpochSuite) TestGetEpoch() {
 		s.Equal(EpochStatus_Closed, got.Status)
 		s.Equal(uint64(0), got.VirtualIndex)
 		s.Nil(got.MachineHash)
-		s.Nil(got.OutputsMerkleRoot)
+		s.Nil(got.TxBufferDataBlock)
 		s.Nil(got.ClaimTransactionHash)
 		s.Nil(got.Commitment)
 		s.False(got.CreatedAt.IsZero(), "CreatedAt should be set")
@@ -195,12 +194,13 @@ func (s *EpochSuite) TestGetEpochByVirtualIndex() {
 	})
 }
 
+//nolint:mnd // Numeric values are intentionally explicit repository fixtures.
 func (s *EpochSuite) TestGetLastAcceptedEpochIndex() {
 	s.Run("WithAcceptedEpoch", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 
 		epoch0 := NewEpochBuilder(app.ID).
-			WithIndex(0).WithStatus(EpochStatus_ClaimAccepted).WithBlocks(0, 9).Build()
+			WithIndex(0).WithStatus(EpochStatus_Closed).WithBlocks(0, 9).Build()
 		input0 := NewInputBuilder().WithIndex(0).WithBlockNumber(5).Build()
 
 		epoch1 := NewEpochBuilder(app.ID).
@@ -211,6 +211,10 @@ func (s *EpochSuite) TestGetLastAcceptedEpochIndex() {
 			s.Ctx, app.IApplicationAddress.String(),
 			map[*Epoch][]*Input{epoch0: {input0}, epoch1: {input1}}, 20)
 		s.Require().NoError(err)
+		AdvanceEpochStatus(
+			s.Ctx, s.T(), s.Repo, app.IApplicationAddress.String(), epoch0,
+			EpochStatus_ClaimAccepted,
+		)
 
 		idx, err := s.Repo.GetLastAcceptedEpochIndex(s.Ctx, app.IApplicationAddress.String())
 		s.Require().NoError(err)
@@ -275,6 +279,7 @@ func (s *EpochSuite) TestGetLastNonOpenEpoch() {
 	})
 }
 
+//nolint:mnd // Numeric values are intentionally explicit repository fixtures.
 func (s *EpochSuite) TestListEpochs() {
 	s.Run("EmptyResult", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
@@ -311,6 +316,40 @@ func (s *EpochSuite) TestListEpochs() {
 		s.Len(epochs, 1)
 		s.Equal(uint64(1), total)
 		s.Equal(EpochStatus_Closed, epochs[0].Status)
+	})
+
+	s.Run("ReturnsStateProofDataBlocks", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+		proof := DummyStateProof()
+		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, &AdvanceResult{
+			EpochIndex: 0,
+			InputIndex: 0,
+			Status:     InputCompletionStatus_Accepted,
+			StateProof: *proof,
+		})
+		s.Require().NoError(err)
+
+		epochs, total, err := s.Repo.ListEpochs(
+			s.Ctx,
+			seed.App.IApplicationAddress.String(),
+			repository.EpochFilter{},
+			repository.Pagination{Limit: 10},
+			false,
+		)
+		s.Require().NoError(err)
+		s.Equal(uint64(1), total)
+		s.Require().Len(epochs, 1)
+		s.Require().NotNil(epochs[0].MachineHash)
+		s.Require().NotNil(epochs[0].TxBufferDataBlock)
+		s.Require().NotNil(epochs[0].IflagsYDataBlock)
+		s.Require().NotNil(epochs[0].HtifTohostDataBlock)
+		s.Equal(proof.MachineHash, *epochs[0].MachineHash)
+		s.Equal(proof.TxBufferDataBlock, *epochs[0].TxBufferDataBlock)
+		s.Equal(proof.IflagsYDataBlock, *epochs[0].IflagsYDataBlock)
+		s.Equal(proof.HtifTohostDataBlock, *epochs[0].HtifTohostDataBlock)
+		s.Nil(epochs[0].TxBufferProof)
+		s.Nil(epochs[0].IflagsYProof)
+		s.Nil(epochs[0].HtifTohostProof)
 	})
 
 	s.Run("FilterByBeforeBlock", func() {
@@ -434,7 +473,7 @@ func (s *EpochSuite) TestListEpochs() {
 			WithIndex(1).WithStatus(EpochStatus_Closed).
 			WithBlocks(10, 19).WithInputBounds(1, 1).Build()
 		epoch2 := NewEpochBuilder(app.ID).
-			WithIndex(2).WithStatus(EpochStatus_InputsProcessed).
+			WithIndex(2).WithStatus(EpochStatus_ClaimForeclosed).
 			WithBlocks(20, 29).WithInputBounds(2, 2).Build()
 
 		input0 := NewInputBuilder().WithIndex(0).WithBlockNumber(5).Build()
@@ -446,11 +485,11 @@ func (s *EpochSuite) TestListEpochs() {
 			map[*Epoch][]*Input{epoch0: {input0}, epoch1: {input1}, epoch2: {input2}}, 30)
 		s.Require().NoError(err)
 
-		// Filter for both Closed and InputsProcessed
+		// Filter for two distinct terminal/non-open statuses.
 		epochs, total, err := s.Repo.ListEpochs(
 			s.Ctx, app.IApplicationAddress.String(),
 			repository.EpochFilter{
-				Status: []EpochStatus{EpochStatus_Closed, EpochStatus_InputsProcessed},
+				Status: []EpochStatus{EpochStatus_Closed, EpochStatus_ClaimForeclosed},
 			},
 			repository.Pagination{Limit: 10}, false)
 		s.Require().NoError(err)
@@ -458,7 +497,7 @@ func (s *EpochSuite) TestListEpochs() {
 		s.Equal(uint64(2), total)
 		for _, e := range epochs {
 			s.True(
-				e.Status == EpochStatus_Closed || e.Status == EpochStatus_InputsProcessed,
+				e.Status == EpochStatus_Closed || e.Status == EpochStatus_ClaimForeclosed,
 				"unexpected status: %s", e.Status)
 		}
 	})
@@ -468,14 +507,14 @@ func (s *EpochSuite) TestUpdateEpochStatus() {
 	s.Run("UpdatesStatus", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 		epoch := seed.Epoch
-		epoch.Status = EpochStatus_InputsProcessed
+		epoch.Status = EpochStatus_ClaimForeclosed
 
 		err := s.Repo.UpdateEpochStatus(s.Ctx, seed.App.IApplicationAddress.String(), epoch)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetEpoch(s.Ctx, seed.App.IApplicationAddress.String(), 0)
 		s.Require().NoError(err)
-		s.Equal(EpochStatus_InputsProcessed, got.Status)
+		s.Equal(EpochStatus_ClaimForeclosed, got.Status)
 	})
 
 	s.Run("NotFoundForNonExistentEpoch", func() {
@@ -489,23 +528,75 @@ func (s *EpochSuite) TestUpdateEpochStatus() {
 	})
 }
 
+//nolint:mnd // Numeric values are intentionally explicit repository fixtures.
 func (s *EpochSuite) TestUpdateEpochInputsProcessed() {
 	s.Run("MarksEpochProcessed", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
+		proof := DummyStateProof()
 
 		err := s.Repo.UpdateEpochInputsProcessed(
-			s.Ctx, seed.App.IApplicationAddress.String(), 0)
+			s.Ctx, seed.App.IApplicationAddress.String(), 0, proof)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetEpoch(s.Ctx, seed.App.IApplicationAddress.String(), 0)
 		s.Require().NoError(err)
 		s.Equal(EpochStatus_InputsProcessed, got.Status)
+		s.True(got.HasCompleteStateProof())
+		s.Equal(proof.MachineHash, *got.MachineHash)
+		s.Equal(proof.TxBufferDataBlock, *got.TxBufferDataBlock)
+		s.Equal(proofSiblingsToHashes(proof.TxBufferProof), got.TxBufferProof)
+		s.Equal(proof.IflagsYDataBlock, *got.IflagsYDataBlock)
+		s.Equal(proofSiblingsToHashes(proof.IflagsYProof), got.IflagsYProof)
+		s.Equal(proof.HtifTohostDataBlock, *got.HtifTohostDataBlock)
+		s.Equal(proofSiblingsToHashes(proof.HtifTohostProof), got.HtifTohostProof)
 	})
 
-	// The update should be a no-op when the previous epoch is still Open
+	s.Run("RejectsIncompleteProofBeforeUpdate", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+
+		err := s.Repo.UpdateEpochInputsProcessed(
+			s.Ctx, seed.App.IApplicationAddress.String(), 0, &StateProof{})
+		s.Require().ErrorIs(err, repository.ErrInvalidStateProof)
+
+		got, err := s.Repo.GetEpoch(s.Ctx, seed.App.IApplicationAddress.String(), 0)
+		s.Require().NoError(err)
+		s.Equal(EpochStatus_Closed, got.Status)
+		s.False(got.HasCompleteStateProof())
+	})
+
+	for _, status := range []ApplicationStatus{
+		ApplicationStatus_Failed,
+		ApplicationStatus_Diverged,
+		ApplicationStatus_Corrupted,
+		ApplicationStatus_GuestException,
+		ApplicationStatus_MachineHalted,
+		ApplicationStatus_McycleOverflow,
+		ApplicationStatus_UnexpectedYield,
+	} {
+		s.Run("RejectsApplicationStatus/"+status.String(), func() {
+			seed := Seed(s.Ctx, s.T(), s.Repo)
+			reason := "application cannot publish a claimable epoch"
+			err := s.Repo.UpdateApplicationStatus(
+				s.Ctx, seed.App.ID, status, &reason,
+			)
+			s.Require().NoError(err)
+
+			err = s.Repo.UpdateEpochInputsProcessed(
+				s.Ctx, seed.App.IApplicationAddress.String(), 0, DummyStateProof())
+			s.Require().ErrorIs(err, repository.ErrNoUpdate)
+
+			got, err := s.Repo.GetEpoch(
+				s.Ctx, seed.App.IApplicationAddress.String(), 0)
+			s.Require().NoError(err)
+			s.Equal(EpochStatus_Closed, got.Status)
+			s.False(got.HasCompleteStateProof())
+		})
+	}
+
+	// The update should fail when the previous epoch is still Open
 	// (i.e., not yet past Closed). The SQL condition requires that the
 	// previous epoch status is NOT IN (Open, Closed).
-	s.Run("NoOpWhenPreviousEpochStillOpen", func() {
+	s.Run("RejectsWhenPreviousEpochStillOpen", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 
 		epoch0 := NewEpochBuilder(app.ID).
@@ -524,23 +615,30 @@ func (s *EpochSuite) TestUpdateEpochInputsProcessed() {
 			map[*Epoch][]*Input{epoch0: {input0}, epoch1: {input1}}, 20)
 		s.Require().NoError(err)
 
-		// Process input1 so the inputs-present condition is satisfied
-		result := &AdvanceResult{
+		// Advance the durable cursor in order, while deliberately leaving
+		// epoch0's status Open to exercise the previous-epoch gate.
+		result0 := &AdvanceResult{
+			EpochIndex: 0,
+			InputIndex: 0,
+			Status:     InputCompletionStatus_Accepted,
+			StateProof: *DummyStateProof(),
+		}
+		err = s.Repo.StoreAdvanceResult(s.Ctx, app.ID, result0)
+		s.Require().NoError(err)
+
+		result1 := &AdvanceResult{
 			EpochIndex: 1,
 			InputIndex: 1,
 			Status:     InputCompletionStatus_Accepted,
-			OutputsProof: OutputsProof{
-				OutputsHash: UniqueHash(),
-				MachineHash: UniqueHash(),
-			},
+			StateProof: *DummyStateProof(),
 		}
-		err = s.Repo.StoreAdvanceResult(s.Ctx, app.ID, result)
+		err = s.Repo.StoreAdvanceResult(s.Ctx, app.ID, result1)
 		s.Require().NoError(err)
 
 		// Try to mark epoch1 as InputsProcessed; previous epoch0 is Open
 		err = s.Repo.UpdateEpochInputsProcessed(
-			s.Ctx, app.IApplicationAddress.String(), 1)
-		s.Require().NoError(err) // returns nil (no-op), not an error
+			s.Ctx, app.IApplicationAddress.String(), 1, DummyStateProof())
+		s.Require().ErrorIs(err, repository.ErrNoUpdate)
 
 		got, err := s.Repo.GetEpoch(s.Ctx, app.IApplicationAddress.String(), 1)
 		s.Require().NoError(err)
@@ -548,9 +646,9 @@ func (s *EpochSuite) TestUpdateEpochInputsProcessed() {
 		s.Equal(EpochStatus_Closed, got.Status)
 	})
 
-	// The update should be a no-op when the epoch still has pending
+	// The update should fail when the epoch still has pending
 	// (unprocessed) inputs. The SQL requires pending_count == 0.
-	s.Run("NoOpWhenPendingInputsRemain", func() {
+	s.Run("RejectsWhenPendingInputsRemain", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 
 		// Create a single-epoch setup with 2 inputs
@@ -571,18 +669,15 @@ func (s *EpochSuite) TestUpdateEpochInputsProcessed() {
 			EpochIndex: 0,
 			InputIndex: 0,
 			Status:     InputCompletionStatus_Accepted,
-			OutputsProof: OutputsProof{
-				OutputsHash: UniqueHash(),
-				MachineHash: UniqueHash(),
-			},
+			StateProof: *DummyStateProof(),
 		}
 		err = s.Repo.StoreAdvanceResult(s.Ctx, app.ID, result)
 		s.Require().NoError(err)
 
 		// Try to mark epoch as InputsProcessed; input1 is still pending
 		err = s.Repo.UpdateEpochInputsProcessed(
-			s.Ctx, app.IApplicationAddress.String(), 0)
-		s.Require().NoError(err) // returns nil (no-op)
+			s.Ctx, app.IApplicationAddress.String(), 0, DummyStateProof())
+		s.Require().ErrorIs(err, repository.ErrNoUpdate)
 
 		got, err := s.Repo.GetEpoch(s.Ctx, app.IApplicationAddress.String(), 0)
 		s.Require().NoError(err)
@@ -590,9 +685,9 @@ func (s *EpochSuite) TestUpdateEpochInputsProcessed() {
 		s.Equal(EpochStatus_Closed, got.Status)
 	})
 
-	// The update should be a no-op when not all expected inputs are present.
+	// The update should fail when not all expected inputs are present.
 	// total_count != (upper_bound - lower_bound).
-	s.Run("NoOpWhenInputCountDoesNotMatchBounds", func() {
+	s.Run("RejectsWhenInputCountDoesNotMatchBounds", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 
 		// Epoch expects 3 inputs (bounds 0..3) but we only provide 1.
@@ -612,18 +707,15 @@ func (s *EpochSuite) TestUpdateEpochInputsProcessed() {
 			EpochIndex: 0,
 			InputIndex: 0,
 			Status:     InputCompletionStatus_Accepted,
-			OutputsProof: OutputsProof{
-				OutputsHash: UniqueHash(),
-				MachineHash: UniqueHash(),
-			},
+			StateProof: *DummyStateProof(),
 		}
 		err = s.Repo.StoreAdvanceResult(s.Ctx, app.ID, result)
 		s.Require().NoError(err)
 
 		// Try to mark epoch as InputsProcessed
 		err = s.Repo.UpdateEpochInputsProcessed(
-			s.Ctx, app.IApplicationAddress.String(), 0)
-		s.Require().NoError(err) // returns nil (no-op)
+			s.Ctx, app.IApplicationAddress.String(), 0, DummyStateProof())
+		s.Require().ErrorIs(err, repository.ErrNoUpdate)
 
 		got, err := s.Repo.GetEpoch(s.Ctx, app.IApplicationAddress.String(), 0)
 		s.Require().NoError(err)
@@ -631,13 +723,12 @@ func (s *EpochSuite) TestUpdateEpochInputsProcessed() {
 		s.Equal(EpochStatus_Closed, got.Status)
 	})
 
-	// Non-existent epoch should be a silent no-op (returns nil).
-	s.Run("NoOpForNonExistentEpoch", func() {
+	s.Run("RejectsNonExistentEpoch", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 
 		err := s.Repo.UpdateEpochInputsProcessed(
-			s.Ctx, app.IApplicationAddress.String(), 99)
-		s.Require().NoError(err)
+			s.Ctx, app.IApplicationAddress.String(), 99, DummyStateProof())
+		s.Require().ErrorIs(err, repository.ErrNoUpdate)
 	})
 }
 
@@ -669,90 +760,11 @@ func (s *EpochSuite) TestUpdateEpochClaimTransactionHash() {
 	})
 }
 
-func (s *EpochSuite) TestUpdateEpochOutputsProof() {
-	s.Run("SetsOutputsProof", func() {
-		seed := Seed(s.Ctx, s.T(), s.Repo)
-		proof := &OutputsProof{
-			OutputsHash: UniqueHash(),
-			MachineHash: UniqueHash(),
-			OutputsHashProof: [][32]byte{
-				[32]byte(common.HexToHash("0xaabb")),
-			},
-		}
-
-		err := s.Repo.UpdateEpochOutputsProof(s.Ctx, seed.App.ID, 0, proof)
-		s.Require().NoError(err)
-
-		got, err := s.Repo.GetEpoch(s.Ctx, seed.App.IApplicationAddress.String(), 0)
-		s.Require().NoError(err)
-		s.Require().NotNil(got.OutputsMerkleRoot)
-	})
-}
-
-func (s *EpochSuite) TestRepeatPreviousEpochOutputsProof() {
-	s.Run("CopiesProofFromPreviousEpoch", func() {
-		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
-
-		epoch0 := NewEpochBuilder(app.ID).
-			WithIndex(0).WithStatus(EpochStatus_Closed).
-			WithBlocks(0, 9).WithInputBounds(0, 0).Build()
-		epoch1 := NewEpochBuilder(app.ID).
-			WithIndex(1).WithStatus(EpochStatus_Closed).
-			WithBlocks(10, 19).WithInputBounds(1, 1).Build()
-
-		input0 := NewInputBuilder().WithIndex(0).WithBlockNumber(5).Build()
-		input1 := NewInputBuilder().WithIndex(1).WithEpochIndex(1).WithBlockNumber(15).Build()
-
-		err := s.Repo.CreateEpochsAndInputs(
-			s.Ctx, app.IApplicationAddress.String(),
-			map[*Epoch][]*Input{epoch0: {input0}, epoch1: {input1}}, 20)
-		s.Require().NoError(err)
-
-		// Set proof on epoch 0
-		outputsHash := UniqueHash()
-		machineHash := UniqueHash()
-		proof := &OutputsProof{
-			OutputsHash: outputsHash,
-			MachineHash: machineHash,
-			OutputsHashProof: [][32]byte{
-				[32]byte(UniqueHash()),
-			},
-		}
-		err = s.Repo.UpdateEpochOutputsProof(s.Ctx, app.ID, 0, proof)
-		s.Require().NoError(err)
-
-		// Copy proof from epoch 0 to epoch 1
-		err = s.Repo.RepeatPreviousEpochOutputsProof(s.Ctx, app.ID, 1)
-		s.Require().NoError(err)
-
-		// Verify epoch 1 has epoch 0's proof
-		got, err := s.Repo.GetEpoch(s.Ctx, app.IApplicationAddress.String(), 1)
-		s.Require().NoError(err)
-		s.Require().NotNil(got.OutputsMerkleRoot)
-		s.Equal(outputsHash, *got.OutputsMerkleRoot)
-		s.Require().NotNil(got.MachineHash)
-		s.Equal(machineHash, *got.MachineHash)
-	})
-
-	s.Run("ErrorsForEpochZero", func() {
-		seed := Seed(s.Ctx, s.T(), s.Repo)
-
-		err := s.Repo.RepeatPreviousEpochOutputsProof(s.Ctx, seed.App.ID, 0)
-		s.Require().Error(err)
-		s.Contains(err.Error(), "epoch 0")
-	})
-
-	s.Run("ErrorsForNonExistentEpoch", func() {
-		seed := Seed(s.Ctx, s.T(), s.Repo)
-
-		err := s.Repo.RepeatPreviousEpochOutputsProof(s.Ctx, seed.App.ID, 99)
-		s.Require().Error(err)
-	})
-}
-
 // TestUpsertPreservesNonOpenEpoch verifies the CASE/WHEN crash-recovery guard
 // in CreateEpochsAndInputs: re-upserting an epoch that has advanced past OPEN
 // must preserve the existing row's fields (status, block range, input bounds).
+//
+//nolint:mnd // Numeric values are intentionally explicit repository fixtures.
 func (s *EpochSuite) TestUpsertPreservesNonOpenEpoch() {
 	s.Run("PreservesClosedEpochFields", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
@@ -794,13 +806,17 @@ func (s *EpochSuite) TestUpsertPreservesNonOpenEpoch() {
 
 		epoch := NewEpochBuilder(app.ID).
 			WithIndex(0).WithStatus(EpochStatus_Closed).
-			WithBlocks(0, 50).WithInputBounds(0, 3).Build()
+			WithBlocks(0, 50).WithInputBounds(0, 1).Build()
 		input := NewInputBuilder().WithIndex(0).WithBlockNumber(5).Build()
 
 		err := s.Repo.CreateEpochsAndInputs(
 			s.Ctx, app.IApplicationAddress.String(),
 			map[*Epoch][]*Input{epoch: {input}}, 51)
 		s.Require().NoError(err)
+		StoreAdvanceResult(
+			s.Ctx, s.T(), s.Repo, app.ID, 0, 0,
+			InputCompletionStatus_Accepted, nil, nil,
+		)
 
 		// Advance past CLOSED so it is no longer OPEN.
 		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
@@ -824,7 +840,7 @@ func (s *EpochSuite) TestUpsertPreservesNonOpenEpoch() {
 			"status should be preserved, not overwritten")
 		s.Equal(uint64(50), got.LastBlock,
 			"LastBlock should be preserved from original epoch")
-		s.Equal(uint64(3), got.InputIndexUpperBound,
+		s.Equal(uint64(1), got.InputIndexUpperBound,
 			"InputIndexUpperBound should be preserved from original epoch")
 	})
 
@@ -1079,21 +1095,21 @@ func (s *EpochSuite) TestEpochStatusTransitionTrigger() {
 		s.Require().NoError(err)
 	})
 
-	// Verify the trigger rejects CLAIM_COMPUTED when proof fields are missing.
-	s.Run("RejectsClaimComputedWithoutProofFields", func() {
+	// Verify the schema rejects publication when proof fields are missing.
+	s.Run("RejectsInputsProcessedWithoutProofFields", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
-		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
-			seed.App.IApplicationAddress.String(), seed.Epoch,
-			EpochStatus_InputsProcessed)
-
-		// Try INPUTS_PROCESSED -> CLAIM_COMPUTED without setting
-		// machine_hash, outputs_merkle_root, outputs_merkle_proof.
-		seed.Epoch.Status = EpochStatus_ClaimComputed
+		// Bypass the atomic publication API and try CLOSED ->
+		// INPUTS_PROCESSED without the three proof leaves.
+		seed.Epoch.Status = EpochStatus_InputsProcessed
 		err := s.Repo.UpdateEpochStatus(
 			s.Ctx, seed.App.IApplicationAddress.String(), seed.Epoch)
 		s.Require().Error(err)
-		s.Contains(err.Error(), "CLAIM_COMPUTED requires")
+
+		got, err := s.Repo.GetEpoch(
+			s.Ctx, seed.App.IApplicationAddress.String(), seed.Epoch.Index)
+		s.Require().NoError(err)
+		s.Equal(EpochStatus_Closed, got.Status)
 	})
 
 	// Verify CLAIM_COMPUTED succeeds when all required fields are present.
@@ -1104,18 +1120,8 @@ func (s *EpochSuite) TestEpochStatusTransitionTrigger() {
 			seed.App.IApplicationAddress.String(), seed.Epoch,
 			EpochStatus_InputsProcessed)
 
-		// Set the required proof fields.
-		proof := &OutputsProof{
-			OutputsHash:      UniqueHash(),
-			OutputsHashProof: [][32]byte{[32]byte(UniqueHash())},
-			MachineHash:      UniqueHash(),
-		}
-		err := s.Repo.UpdateEpochOutputsProof(
-			s.Ctx, seed.App.ID, seed.Epoch.Index, proof)
-		s.Require().NoError(err)
-
 		seed.Epoch.Status = EpochStatus_ClaimComputed
-		err = s.Repo.UpdateEpochStatus(
+		err := s.Repo.UpdateEpochStatus(
 			s.Ctx, seed.App.IApplicationAddress.String(), seed.Epoch)
 		s.Require().NoError(err)
 
@@ -1141,21 +1147,13 @@ func (s *EpochSuite) TestEpochStatusTransitionTrigger() {
 			map[*Epoch][]*Input{epoch: {input}}, 10)
 		s.Require().NoError(err)
 
-		// Advance to INPUTS_PROCESSED.
+		// Publish the machine proof but not the PRT commitment.
+		err = s.Repo.UpdateEpochInputsProcessed(
+			s.Ctx, app.IApplicationAddress.String(), epoch.Index,
+			DummyStateProof(),
+		)
+		s.Require().NoError(err)
 		epoch.Status = EpochStatus_InputsProcessed
-		err = s.Repo.UpdateEpochStatus(
-			s.Ctx, app.IApplicationAddress.String(), epoch)
-		s.Require().NoError(err)
-
-		// Set base proof fields but NOT commitment.
-		proof := &OutputsProof{
-			OutputsHash:      UniqueHash(),
-			OutputsHashProof: [][32]byte{[32]byte(UniqueHash())},
-			MachineHash:      UniqueHash(),
-		}
-		err = s.Repo.UpdateEpochOutputsProof(
-			s.Ctx, app.ID, epoch.Index, proof)
-		s.Require().NoError(err)
 
 		// INPUTS_PROCESSED -> CLAIM_COMPUTED without commitment — must fail.
 		epoch.Status = EpochStatus_ClaimComputed

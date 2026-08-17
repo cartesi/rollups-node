@@ -84,14 +84,14 @@ func newValidationService(t *testing.T) (*Service, *model.Application) {
 	epoch := repotest.NewEpochBuilder(app.ID).
 		WithStatus(model.EpochStatus_ClaimComputed).
 		WithMachineHash(common.HexToHash("0x6")).
-		WithOutputsMerkleRoot(common.HexToHash("0x8")).
+		WithTxBufferDataBlock(common.HexToHash("0x8")).
 		Build()
 	tournamentAddress := common.HexToAddress("0x4")
 	commitment := common.HexToHash("0x5")
 	epoch.TournamentAddress = &tournamentAddress
 	epoch.Commitment = &commitment
 	epoch.CommitmentProof = []common.Hash{common.HexToHash("0x7")}
-	epoch.OutputsMerkleProof = []common.Hash{}
+	epoch.TxBufferProof = []common.Hash{}
 
 	repo := &prtRepositoryMock{}
 	repo.On("GetEpoch", mock.Anything, app.IApplicationAddress.Hex(), uint64(0)).

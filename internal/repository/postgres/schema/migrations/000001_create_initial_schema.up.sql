@@ -8,14 +8,24 @@ CREATE DOMAIN "uint64" AS NUMERIC(20, 0) CHECK (VALUE >= 0 AND VALUE <= 18446744
 CREATE DOMAIN "hash" AS BYTEA CHECK (octet_length(VALUE) = 32);
 CREATE DOMAIN "data_availability" AS BYTEA CHECK (octet_length(VALUE) >= 4);
 
-CREATE TYPE "ApplicationStatus" AS ENUM ('OK', 'FAILED', 'DIVERGED', 'CORRUPTED');
+CREATE TYPE "ApplicationStatus" AS ENUM (
+    'OK',
+    'FAILED',
+    'DIVERGED',
+    'CORRUPTED',
+    'GUEST_EXCEPTION',
+    'MACHINE_HALTED',
+    'MCYCLE_OVERFLOW',
+    'UNEXPECTED_YIELD');
 
 CREATE TYPE "InputCompletionStatus" AS ENUM (
     'NONE',
     'ACCEPTED',
     'REJECTED',
     'EXCEPTION',
-    'MACHINE_HALTED');
+    'MACHINE_HALTED',
+    'OVERFLOW',
+    'UNEXPECTED_YIELD');
 
 CREATE TYPE "DefaultBlock" AS ENUM ('FINALIZED', 'LATEST', 'PENDING', 'SAFE');
 
@@ -57,7 +67,7 @@ BEGIN
 
     FOREACH elem IN ARRAY arr
     LOOP
-        IF octet_length(elem) <> 32 THEN
+        IF elem IS NULL OR octet_length(elem) <> 32 THEN
             RETURN FALSE; -- any element not 32 bytes => fail
         END IF;
     END LOOP;
@@ -121,7 +131,16 @@ CREATE TABLE "application"
     "accounts_drive_merkle_root" hash,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT "reason_required_for_failure_statuses" CHECK (NOT ("status" IN ('FAILED', 'DIVERGED', 'CORRUPTED') AND ("reason" IS NULL OR LENGTH("reason") = 0))),
+    CONSTRAINT "reason_required_for_failure_statuses" CHECK (NOT (
+        "status" IN (
+            'FAILED',
+            'DIVERGED',
+            'CORRUPTED',
+            'GUEST_EXCEPTION',
+            'MACHINE_HALTED',
+            'MCYCLE_OVERFLOW',
+            'UNEXPECTED_YIELD')
+        AND ("reason" IS NULL OR LENGTH("reason") = 0))),
     -- The foreclose pair is populated together by the atomic foreclosure
     -- marker+cursor repository write (set-once, first-writer-wins via WHERE
     -- foreclose_block = 0). This CHECK enforces the same invariant at the
@@ -156,11 +175,41 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE OR REPLACE FUNCTION validate_application_status_transition()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- DIVERGED and CORRUPTED are terminal: once the node detects a consensus
-    -- disagreement or local corruption, neither status nor reason may change.
-    -- Observation continues independently (it is gated on enabled, not status).
-    IF OLD.status IN ('DIVERGED'::"ApplicationStatus", 'CORRUPTED'::"ApplicationStatus")
+    -- Execution terminals are outcomes of a run from a healthy machine. They
+    -- cannot be entered from FAILED or another terminal status by an unrelated
+    -- status writer.
+    IF NEW.status IN (
+        'GUEST_EXCEPTION'::"ApplicationStatus",
+        'MACHINE_HALTED'::"ApplicationStatus",
+        'MCYCLE_OVERFLOW'::"ApplicationStatus",
+        'UNEXPECTED_YIELD'::"ApplicationStatus")
+       AND NEW.status <> OLD.status
+       AND OLD.status <> 'OK'::"ApplicationStatus"
+    THEN
+        RAISE EXCEPTION 'cannot enter execution-terminal status % from application status %', NEW.status, OLD.status;
+    END IF;
+
+    -- Integrity failures are final. A later corruption finding may supersede
+    -- a completed execution terminal because it means the stored/L1 history
+    -- itself is no longer trustworthy; the input row still preserves the
+    -- original execution outcome.
+    IF OLD.status IN (
+        'DIVERGED'::"ApplicationStatus",
+        'CORRUPTED'::"ApplicationStatus")
        AND (NEW.status <> OLD.status OR NEW.reason IS DISTINCT FROM OLD.reason)
+    THEN
+        RAISE EXCEPTION 'cannot change status or reason of a terminal (%) application', OLD.status;
+    END IF;
+
+    IF OLD.status IN (
+        'GUEST_EXCEPTION'::"ApplicationStatus",
+        'MACHINE_HALTED'::"ApplicationStatus",
+        'MCYCLE_OVERFLOW'::"ApplicationStatus",
+        'UNEXPECTED_YIELD'::"ApplicationStatus")
+       AND NOT (
+           NEW.status = 'CORRUPTED'::"ApplicationStatus"
+           OR (NEW.status = OLD.status AND NEW.reason IS NOT DISTINCT FROM OLD.reason)
+       )
     THEN
         RAISE EXCEPTION 'cannot change status or reason of a terminal (%) application', OLD.status;
     END IF;
@@ -215,8 +264,12 @@ CREATE TABLE "epoch"
     "input_index_lower_bound" uint64 NOT NULL,
     "input_index_upper_bound" uint64 NOT NULL,
     "machine_hash" hash,
-    "outputs_merkle_root" hash,
-    "outputs_merkle_proof" BYTEA[],
+    "tx_buffer_data_block" hash,
+    "tx_buffer_proof" BYTEA[],
+    "iflags_y_data_block" hash,
+    "iflags_y_proof" BYTEA[],
+    "htif_tohost_data_block" hash,
+    "htif_tohost_proof" BYTEA[],
     "commitment" hash,
     "commitment_proof" BYTEA[],
     "tournament_address" ethereum_address,
@@ -231,6 +284,55 @@ CREATE TABLE "epoch"
     CONSTRAINT "epoch_application_id_fkey" FOREIGN KEY ("application_id") REFERENCES "application"("id") ON DELETE CASCADE,
     CONSTRAINT "epoch_block_bounds_check" CHECK ("first_block" <= "last_block"),
     CONSTRAINT "epoch_input_bounds_check" CHECK ("input_index_lower_bound" <= "input_index_upper_bound"),
+    CONSTRAINT "epoch_tx_buffer_proof_elements_check" CHECK (check_hash_siblings("tx_buffer_proof")),
+    CONSTRAINT "epoch_iflags_y_proof_elements_check" CHECK (check_hash_siblings("iflags_y_proof")),
+    CONSTRAINT "epoch_htif_tohost_proof_elements_check" CHECK (check_hash_siblings("htif_tohost_proof")),
+    -- A proof is either absent or complete, even while the epoch is CLOSED.
+    -- This prevents a crash or ad-hoc write from leaving a mixed tuple that a
+    -- later reader could mistake for a usable terminal-state commitment.
+    CONSTRAINT "epoch_state_proof_tuple_check" CHECK (
+        (
+            "machine_hash" IS NULL
+            AND "tx_buffer_data_block" IS NULL
+            AND "tx_buffer_proof" IS NULL
+            AND "iflags_y_data_block" IS NULL
+            AND "iflags_y_proof" IS NULL
+            AND "htif_tohost_data_block" IS NULL
+            AND "htif_tohost_proof" IS NULL
+        )
+        OR (
+            "machine_hash" IS NOT NULL
+            AND "tx_buffer_data_block" IS NOT NULL
+            AND "tx_buffer_proof" IS NOT NULL
+            AND cardinality("tx_buffer_proof") = 59
+            AND "iflags_y_data_block" IS NOT NULL
+            AND "iflags_y_proof" IS NOT NULL
+            AND cardinality("iflags_y_proof") = 59
+            AND "htif_tohost_data_block" IS NOT NULL
+            AND "htif_tohost_proof" IS NOT NULL
+            AND cardinality("htif_tohost_proof") = 59
+        )
+    ),
+    -- Every published claim candidate carries the complete accepted-state
+    -- machine proof. CLAIM_FORECLOSED is excluded because foreclosure
+    -- may terminalize an epoch before the machine can publish a proof.
+    CONSTRAINT "epoch_published_validity_proof_check" CHECK (
+        "status" NOT IN ('INPUTS_PROCESSED', 'CLAIM_COMPUTED',
+                         'CLAIM_SUBMITTED', 'CLAIM_STAGED',
+                         'CLAIM_ACCEPTED', 'CLAIM_REJECTED')
+        OR (
+            "machine_hash" IS NOT NULL
+            AND "tx_buffer_data_block" IS NOT NULL
+            AND "tx_buffer_proof" IS NOT NULL
+            AND cardinality("tx_buffer_proof") = 59
+            AND "iflags_y_data_block" IS NOT NULL
+            AND "iflags_y_proof" IS NOT NULL
+            AND cardinality("iflags_y_proof") = 59
+            AND "htif_tohost_data_block" IS NOT NULL
+            AND "htif_tohost_proof" IS NOT NULL
+            AND cardinality("htif_tohost_proof") = 59
+        )
+    ),
     -- staged_at_block is set when an epoch is staged on chain and is then
     -- kept historically — same lifetime convention as claim_transaction_hash.
     -- We only enforce the forward direction: if you're in CLAIM_STAGED you
@@ -276,10 +378,10 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- Any other transition (including backwards) is rejected.
 -- Same-status updates are allowed (idempotent no-ops).
 --
--- When transitioning to CLAIM_COMPUTED, the trigger also verifies that
--- required proof fields are populated:
---   All apps:          machine_hash, outputs_merkle_root, outputs_merkle_proof
---   PRT (DaveConsensus): additionally commitment, commitment_proof
+-- The epoch_published_validity_proof_check table constraint requires the
+-- complete three-leaf machine proof from INPUTS_PROCESSED onward. When
+-- transitioning to CLAIM_COMPUTED, this trigger additionally requires the
+-- PRT commitment and commitment proof.
 --
 -- CLAIM_STAGED is NEVER valid for PRT apps (PRT settles via tournaments,
 -- not the staging flow). The trigger rejects this regardless of which
@@ -323,16 +425,8 @@ BEGIN
             OLD.status, NEW.status;
     END IF;
 
-    -- Enforce required fields when entering CLAIM_COMPUTED.
+    -- Enforce PRT-specific claim fields when entering CLAIM_COMPUTED.
     IF NEW.status::text = 'CLAIM_COMPUTED' THEN
-        IF NEW.machine_hash IS NULL
-           OR NEW.outputs_merkle_root IS NULL
-           OR NEW.outputs_merkle_proof IS NULL THEN
-            RAISE EXCEPTION
-                'CLAIM_COMPUTED requires machine_hash, outputs_merkle_root, '
-                'and outputs_merkle_proof to be non-null';
-        END IF;
-
         SELECT a.consensus_type::text INTO app_consensus
           FROM application a
          WHERE a.id = NEW.application_id;
@@ -387,7 +481,7 @@ CREATE TABLE "input"
     "status" "InputCompletionStatus" NOT NULL,
     "exception_data" BYTEA,
     "machine_hash" hash,
-    "outputs_hash" hash,
+    "tx_buffer_data_block" hash,
     "transaction_hash" hash NOT NULL,
     "log_index" uint64 NOT NULL,
     "snapshot_uri" VARCHAR(4096),
@@ -402,9 +496,9 @@ CREATE TABLE "input"
     CONSTRAINT "input_epoch_index_unique" UNIQUE ("epoch_application_id", "epoch_index", "index"),
     CONSTRAINT "input_application_id_tx_hash_log_index_unique" UNIQUE ("epoch_application_id", "transaction_hash", "log_index"),
     CONSTRAINT "input_completed_hashes_check" CHECK (
-        ("status" = 'NONE' AND "machine_hash" IS NULL AND "outputs_hash" IS NULL)
+        ("status" = 'NONE' AND "machine_hash" IS NULL AND "tx_buffer_data_block" IS NULL)
         OR
-        ("status" <> 'NONE' AND "machine_hash" IS NOT NULL AND "outputs_hash" IS NOT NULL)
+        ("status" <> 'NONE' AND "machine_hash" IS NOT NULL AND "tx_buffer_data_block" IS NOT NULL)
     ),
     CONSTRAINT "input_epoch_id_fkey" FOREIGN KEY ("epoch_application_id", "epoch_index") REFERENCES "epoch"("application_id", "index") ON DELETE CASCADE
 );
@@ -432,7 +526,7 @@ BEGIN
         OR NEW.status IS DISTINCT FROM OLD.status
         OR NEW.exception_data IS DISTINCT FROM OLD.exception_data
         OR NEW.machine_hash IS DISTINCT FROM OLD.machine_hash
-        OR NEW.outputs_hash IS DISTINCT FROM OLD.outputs_hash
+        OR NEW.tx_buffer_data_block IS DISTINCT FROM OLD.tx_buffer_data_block
     ) THEN
         RAISE EXCEPTION
             'completed input result is immutable';
@@ -444,7 +538,7 @@ $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER "input_completion_immutability_check"
     BEFORE UPDATE OF "epoch_application_id", "epoch_index", "index", "raw_data",
-        "status", "exception_data", "machine_hash", "outputs_hash" ON "input"
+        "status", "exception_data", "machine_hash", "tx_buffer_data_block" ON "input"
     FOR EACH ROW
     EXECUTE FUNCTION enforce_input_completion_immutability();
 

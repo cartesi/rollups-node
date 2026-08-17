@@ -603,7 +603,7 @@ func TestQuorumSubmittedEventsIgnoresForeignAdversarialProofAndSubmitsLocalClaim
 	adversarialEvent := makeSubmittedEventWithRoots(
 		app,
 		currEpoch,
-		*currEpoch.OutputsMerkleRoot,
+		*currEpoch.TxBufferDataBlock,
 		common.HexToHash("0xf003"),
 	)
 	adversarialEvent.Submitter = common.HexToAddress("0x0000000000000000000000000000000000000003")
@@ -636,7 +636,7 @@ func TestQuorumSubmittedEventsOwnMismatchSetsDiverged(t *testing.T) {
 	adversarialEvent := makeSubmittedEventWithRoots(
 		app,
 		currEpoch,
-		*currEpoch.OutputsMerkleRoot,
+		*currEpoch.TxBufferDataBlock,
 		common.HexToHash("0xf003"),
 	)
 	adversarialEvent.Submitter = b.submitterAddress
@@ -671,7 +671,7 @@ func TestQuorumReaderModeIgnoresNonMatchingSubmittedEvent(t *testing.T) {
 	foreignEvent := makeSubmittedEventWithRoots(
 		app,
 		currEpoch,
-		*currEpoch.OutputsMerkleRoot,
+		*currEpoch.TxBufferDataBlock,
 		common.HexToHash("0xf003"),
 	)
 	foreignEvent.Submitter = common.HexToAddress("0x0000000000000000000000000000000000000002")
@@ -703,7 +703,7 @@ func TestSubmitClaimWithAntecessorMismatch(t *testing.T) {
 	prevEvent := &iconsensus.IConsensusClaimSubmitted{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(prevEpoch.LastBlock + 1),
 		AppContract:              app.IApplicationAddress,
-		OutputsMerkleRoot:        *prevEpoch.OutputsMerkleRoot,
+		OutputsMerkleRoot:        *prevEpoch.TxBufferDataBlock,
 		MachineMerkleRoot:        testMachineHash(prevEpoch),
 	}
 	var currEvent *iconsensus.IConsensusClaimSubmitted = nil
@@ -765,7 +765,7 @@ func TestQuorumPreviousSubmittedEventsIgnoresForeignMismatchAndSubmitsCurrentCla
 	foreignPrevEvent := makeSubmittedEventWithRoots(
 		app,
 		prevEpoch,
-		*prevEpoch.OutputsMerkleRoot,
+		*prevEpoch.TxBufferDataBlock,
 		common.HexToHash("0xf003"),
 	)
 	foreignPrevEvent.Submitter = common.HexToAddress("0x0000000000000000000000000000000000000002")
@@ -801,7 +801,7 @@ func TestQuorumPreviousSubmittedEventsOwnMismatchSetsDiverged(t *testing.T) {
 	wrongPrevEvent := makeSubmittedEventWithRoots(
 		app,
 		prevEpoch,
-		*prevEpoch.OutputsMerkleRoot,
+		*prevEpoch.TxBufferDataBlock,
 		common.HexToHash("0xf003"),
 	)
 	wrongPrevEvent.Submitter = b.submitterAddress

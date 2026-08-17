@@ -5,6 +5,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -50,8 +51,8 @@ func (r *PostgresRepository) selectOldestClaimPerApp(
 		table.Epoch.FirstBlock,
 		table.Epoch.LastBlock,
 		table.Epoch.MachineHash,
-		table.Epoch.OutputsMerkleRoot,
-		table.Epoch.OutputsMerkleProof,
+		table.Epoch.TxBufferDataBlock,
+		table.Epoch.TxBufferProof,
 		table.Epoch.ClaimTransactionHash,
 		table.Epoch.Status,
 		table.Epoch.StagedAtBlock,
@@ -124,8 +125,8 @@ func (r *PostgresRepository) selectOldestClaimPerApp(
 			&epoch.FirstBlock,
 			&epoch.LastBlock,
 			&epoch.MachineHash,
-			&epoch.OutputsMerkleRoot,
-			&epoch.OutputsMerkleProof,
+			&epoch.TxBufferDataBlock,
+			&epoch.TxBufferProof,
 			&epoch.ClaimTransactionHash,
 			&epoch.Status,
 			&epoch.StagedAtBlock,
@@ -199,8 +200,8 @@ func (r *PostgresRepository) selectNewestClaimBarrierPerApp(
 		table.Epoch.FirstBlock,
 		table.Epoch.LastBlock,
 		table.Epoch.MachineHash,
-		table.Epoch.OutputsMerkleRoot,
-		table.Epoch.OutputsMerkleProof,
+		table.Epoch.TxBufferDataBlock,
+		table.Epoch.TxBufferProof,
 		table.Epoch.ClaimTransactionHash,
 		table.Epoch.Status,
 		table.Epoch.StagedAtBlock,
@@ -243,8 +244,8 @@ func (r *PostgresRepository) selectNewestClaimBarrierPerApp(
 			&epoch.FirstBlock,
 			&epoch.LastBlock,
 			&epoch.MachineHash,
-			&epoch.OutputsMerkleRoot,
-			&epoch.OutputsMerkleProof,
+			&epoch.TxBufferDataBlock,
+			&epoch.TxBufferProof,
 			&epoch.ClaimTransactionHash,
 			&epoch.Status,
 			&epoch.StagedAtBlock,
@@ -478,24 +479,50 @@ func (r *PostgresRepository) UpdateEpochWithForeclosedClaim(
 }
 
 // RejectEpochAndSetApplicationDiverged atomically records that the local claim
-// lost the applicable consensus/dispute process and halts the application as
-// DIVERGED. Quorum rejection is only a normal outcome before the local claim
-// has staged; once CLAIM_STAGED is recorded, a different staged or accepted
-// claim for the same epoch would violate the contract's single-staged claim
-// invariant. The epoch reject and the application halt share one transaction,
-// and the halt runs even when the epoch reject matched no row, so a detected
-// divergence can never leave the application runnable.
+// lost the applicable consensus/dispute process. Quorum rejection is only a
+// normal outcome before the local claim has staged; once CLAIM_STAGED is
+// recorded, a different staged or accepted claim for the same epoch would
+// violate the contract's single-staged claim invariant.
+//
+// Unlike an executed-output byte mismatch, losing consensus does not prove the
+// node's stored history is corrupt. An existing terminal machine outcome is
+// therefore preserved while the epoch rejection is still attempted. For a
+// non-terminal application, the DIVERGED halt runs even when the epoch reject
+// matched no row. The returned flags identify the writes that committed.
 func (r *PostgresRepository) RejectEpochAndSetApplicationDiverged(
 	ctx context.Context,
 	applicationID int64,
 	index uint64,
 	reason string,
-) error {
+) (repository.RejectEpochAndDivergeResult, error) {
+	var result repository.RejectEpochAndDivergeResult
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("beginning transaction for rejected claim update: %w", err)
+		return result, fmt.Errorf("beginning transaction for rejected claim update: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
+
+	// Take the shared aggregate lock before updating the epoch. SELECT FOR NO KEY
+	// UPDATE reads the current status without changing the application row, but
+	// its transaction-scoped row lock conflicts with concurrent application
+	// updates. Matching StoreAdvanceResult and CreateEpochsAndInputs' Application
+	// -> child-row order prevents an Epoch -> Application deadlock cycle.
+	//
+	// Commit or rollback releases the lock. PostgreSQL also aborts the
+	// transaction after detecting a lost node connection, and crash recovery
+	// discards it after a database restart. Detection can be delayed by a network
+	// failure, but the lock is not persisted independently of the transaction.
+	lockAppStmt := table.Application.
+		SELECT(table.Application.Status).
+		WHERE(table.Application.ID.EQ(postgres.Int64(applicationID))).
+		FOR(postgres.NO_KEY_UPDATE())
+	lockAppSQL, lockAppArgs := lockAppStmt.Sql()
+	var applicationStatus model.ApplicationStatus
+	if err := tx.QueryRow(ctx, lockAppSQL, lockAppArgs...).Scan(&applicationStatus); errors.Is(err, pgx.ErrNoRows) {
+		return result, repository.ErrNotFound
+	} else if err != nil {
+		return result, fmt.Errorf("locking application for rejected claim update (app=%d, index=%d): %w", applicationID, index, err)
+	}
 
 	rejectStmt := table.Epoch.
 		UPDATE(table.Epoch.Status).
@@ -510,34 +537,49 @@ func (r *PostgresRepository) RejectEpochAndSetApplicationDiverged(
 		)
 
 	// The epoch reject is best-effort: an epoch outside CLAIM_COMPUTED/
-	// CLAIM_SUBMITTED is left untouched. The application halt below does not
-	// depend on it — a detected divergence always stops the application.
+	// CLAIM_SUBMITTED is left untouched. For a non-terminal application, the
+	// DIVERGED transition below is independent of whether this update matched.
 	sqlStr, args := rejectStmt.Sql()
-	if _, err := tx.Exec(ctx, sqlStr, args...); err != nil {
-		return fmt.Errorf("executing rejected claim update (app=%d, index=%d): %w", applicationID, index, err)
-	}
-
-	appStmt := table.Application.
-		UPDATE(
-			table.Application.Status,
-			table.Application.Reason,
-		).
-		SET(
-			model.ApplicationStatus_Diverged,
-			&reason,
-		).
-		WHERE(table.Application.ID.EQ(postgres.Int64(applicationID)))
-
-	sqlStr, args = appStmt.Sql()
-	cmd, err := tx.Exec(ctx, sqlStr, args...)
+	rejectCmd, err := tx.Exec(ctx, sqlStr, args...)
 	if err != nil {
-		return fmt.Errorf("executing diverged application update (app=%d, index=%d): %w", applicationID, index, err)
+		return result, fmt.Errorf("executing rejected claim update (app=%d, index=%d): %w", applicationID, index, err)
 	}
-	if cmd.RowsAffected() == 0 {
-		return repository.ErrNotFound
+	result.EpochRejected = rejectCmd.RowsAffected() == 1
+
+	// Preserve an already-terminal cause. The best-effort epoch rejection still
+	// commits, but a later claim observation must not overwrite a stronger or
+	// earlier durable terminal status.
+	if !applicationStatus.IsTerminal() {
+		appStmt := table.Application.
+			UPDATE(
+				table.Application.Status,
+				table.Application.Reason,
+			).
+			SET(
+				model.ApplicationStatus_Diverged,
+				&reason,
+			).
+			WHERE(table.Application.ID.EQ(postgres.Int64(applicationID)))
+
+		sqlStr, args = appStmt.Sql()
+		cmd, err := tx.Exec(ctx, sqlStr, args...)
+		if err != nil {
+			return repository.RejectEpochAndDivergeResult{}, fmt.Errorf(
+				"executing diverged application update (app=%d, index=%d): %w",
+				applicationID, index, err)
+		}
+		if cmd.RowsAffected() == 0 {
+			return repository.RejectEpochAndDivergeResult{}, repository.ErrNotFound
+		}
+		result.ApplicationDiverged = true
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return repository.RejectEpochAndDivergeResult{}, fmt.Errorf(
+			"committing rejected claim update (app=%d, index=%d): %w",
+			applicationID, index, err)
+	}
+	return result, nil
 }
 
 // UpdateEpochToStaged transitions an epoch from CLAIM_SUBMITTED to

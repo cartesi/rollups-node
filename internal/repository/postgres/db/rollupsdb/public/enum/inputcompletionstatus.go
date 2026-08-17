@@ -10,15 +10,19 @@ package enum
 import "github.com/go-jet/jet/v2/postgres"
 
 var InputCompletionStatus = &struct {
-	None          postgres.StringExpression
-	Accepted      postgres.StringExpression
-	Rejected      postgres.StringExpression
-	Exception     postgres.StringExpression
-	MachineHalted postgres.StringExpression
+	None            postgres.StringExpression
+	Accepted        postgres.StringExpression
+	Rejected        postgres.StringExpression
+	Exception       postgres.StringExpression
+	MachineHalted   postgres.StringExpression
+	Overflow        postgres.StringExpression
+	UnexpectedYield postgres.StringExpression
 }{
-	None:          postgres.NewEnumValue("NONE"),
-	Accepted:      postgres.NewEnumValue("ACCEPTED"),
-	Rejected:      postgres.NewEnumValue("REJECTED"),
-	Exception:     postgres.NewEnumValue("EXCEPTION"),
-	MachineHalted: postgres.NewEnumValue("MACHINE_HALTED"),
+	None:            postgres.NewEnumValue("NONE"),
+	Accepted:        postgres.NewEnumValue("ACCEPTED"),
+	Rejected:        postgres.NewEnumValue("REJECTED"),
+	Exception:       postgres.NewEnumValue("EXCEPTION"),
+	MachineHalted:   postgres.NewEnumValue("MACHINE_HALTED"),
+	Overflow:        postgres.NewEnumValue("OVERFLOW"),
+	UnexpectedYield: postgres.NewEnumValue("UNEXPECTED_YIELD"),
 }

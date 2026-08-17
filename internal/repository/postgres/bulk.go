@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-jet/jet/v2/postgres"
@@ -19,13 +18,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/table"
 )
 
-// byteSliceToHashSlice converts [][32]byte to []common.Hash without copying.
-// This is safe because common.Hash is defined as [32]byte, so the memory layout is identical.
-func byteSliceToHashSlice(b [][32]byte) []common.Hash {
-	return *(*[]common.Hash)(unsafe.Pointer(&b))
-}
-
-func encodeSiblings(siblings []common.Hash) [][]byte {
+func encodeSiblings[T ~[32]byte](siblings []T) [][]byte {
 	arr := make([][]byte, len(siblings))
 	for i, h := range siblings {
 		arr[i] = make([]byte, len(h))
@@ -317,10 +310,11 @@ func updateInput(
 	ctx context.Context,
 	tx pgx.Tx,
 	appID int64,
+	epochIndex uint64,
 	inputIndex uint64,
 	status model.InputCompletionStatus,
 	exceptionData []byte,
-	outputsHash common.Hash,
+	txBufferDataBlock common.Hash,
 	machineHash common.Hash,
 ) error {
 
@@ -329,16 +323,17 @@ func updateInput(
 			table.Input.Status,
 			table.Input.ExceptionData,
 			table.Input.MachineHash,
-			table.Input.OutputsHash,
+			table.Input.TxBufferDataBlock,
 		).
 		SET(
 			status,
 			exceptionData,
 			machineHash[:],
-			outputsHash[:],
+			txBufferDataBlock[:],
 		).
 		WHERE(
 			table.Input.EpochApplicationID.EQ(postgres.Int64(appID)).
+				AND(table.Input.EpochIndex.EQ(uint64Expr(epochIndex))).
 				AND(table.Input.Index.EQ(uint64Expr(inputIndex))).
 				AND(table.Input.Status.EQ(postgres.NewEnumValue(model.InputCompletionStatus_None.String()))),
 		)
@@ -354,26 +349,32 @@ func updateInput(
 	return nil
 }
 
-func updateEpochOutputsMerkleProof(
+func updateEpochState(
 	ctx context.Context,
 	tx pgx.Tx,
 	appID int64,
 	epochIndex uint64,
-	outputsHash common.Hash,
-	outputsHashProof []common.Hash,
-	machineHash common.Hash,
+	proof *model.StateProof,
 ) error {
 
 	updStmt := table.Epoch.
 		UPDATE(
-			table.Epoch.OutputsMerkleRoot,
-			table.Epoch.OutputsMerkleProof,
+			table.Epoch.TxBufferDataBlock,
+			table.Epoch.TxBufferProof,
 			table.Epoch.MachineHash,
+			table.Epoch.IflagsYDataBlock,
+			table.Epoch.IflagsYProof,
+			table.Epoch.HtifTohostDataBlock,
+			table.Epoch.HtifTohostProof,
 		).
 		SET(
-			outputsHash[:],
-			encodeSiblings(outputsHashProof),
-			machineHash[:],
+			proof.TxBufferDataBlock[:],
+			encodeSiblings(proof.TxBufferProof),
+			proof.MachineHash[:],
+			proof.IflagsYDataBlock[:],
+			encodeSiblings(proof.IflagsYProof),
+			proof.HtifTohostDataBlock[:],
+			encodeSiblings(proof.HtifTohostProof),
 		).
 		WHERE(
 			table.Epoch.ApplicationID.EQ(postgres.Int64(appID)).
@@ -391,12 +392,129 @@ func updateEpochOutputsMerkleProof(
 	return nil
 }
 
+// lockAdvanceRows acquires and validates StoreAdvanceResult's lock set in the
+// shared Application -> child-row order. The application row is the aggregate
+// lock that serializes multi-row work for one application; the input row lock
+// then keeps the exact input's epoch and completion status stable until the
+// result transaction finishes.
+//
+// These are PostgreSQL transaction-scoped row locks, not Go mutexes or session
+// advisory locks. Commit or rollback releases them. If the node connection is
+// lost, PostgreSQL aborts its transaction when it detects the disconnect; if
+// PostgreSQL itself restarts, crash recovery discards the uncommitted
+// transaction. A network failure can delay release until the server detects
+// the dead connection (or a configured timeout terminates it), but the lock has
+// no lifetime independent of that transaction and server backend.
+func lockAdvanceRows(
+	ctx context.Context,
+	tx pgx.Tx,
+	appID int64,
+	epochIndex uint64,
+	inputIndex uint64,
+) error {
+	// SELECT FOR NO KEY UPDATE reads the cursor and status while taking a row
+	// lock that conflicts with concurrent updates of this application. It does
+	// not modify the row and does not block ordinary SELECTs. Because each
+	// participating multi-row writer takes this row before an input or epoch,
+	// two writers cannot form an Application <-> child-row deadlock cycle.
+	appStmt := table.Application.
+		SELECT(table.Application.ProcessedInputs, table.Application.Status).
+		WHERE(table.Application.ID.EQ(postgres.Int64(appID))).
+		FOR(postgres.NO_KEY_UPDATE())
+	appSQL, appArgs := appStmt.Sql()
+	var processedInputs uint64
+	var applicationStatus model.ApplicationStatus
+	if err := tx.QueryRow(ctx, appSQL, appArgs...).Scan(
+		&processedInputs, &applicationStatus,
+	); errors.Is(err, pgx.ErrNoRows) {
+		return repository.ErrNotFound
+	} else if err != nil {
+		return err
+	}
+	if applicationStatus != model.ApplicationStatus_OK {
+		classification := repository.ErrApplicationNotRunnable
+		if applicationStatus.IsTerminal() {
+			classification = errors.Join(classification, repository.ErrAdvanceAfterTerminal)
+		}
+		return fmt.Errorf(
+			"%w: application %d has status %q",
+			classification,
+			appID,
+			applicationStatus,
+		)
+	}
+	if processedInputs != inputIndex {
+		return fmt.Errorf(
+			"%w: application %d expects input %d, got %d",
+			repository.ErrAdvanceCursorMismatch,
+			appID,
+			processedInputs,
+			inputIndex,
+		)
+	}
+
+	// SELECT FOR UPDATE is stronger because this exact input will be updated.
+	// Taking it after the aggregate lock makes the preflight check durable: no
+	// concurrent writer can change its epoch or completion status between this
+	// validation and the result's output/proof/application writes.
+	inputStmt := table.Input.
+		SELECT(table.Input.EpochIndex, table.Input.Status).
+		WHERE(
+			table.Input.EpochApplicationID.EQ(postgres.Int64(appID)).
+				AND(table.Input.Index.EQ(uint64Expr(inputIndex))),
+		).
+		FOR(postgres.UPDATE())
+	inputSQL, inputArgs := inputStmt.Sql()
+	var storedEpochIndex uint64
+	var storedStatus model.InputCompletionStatus
+	if err := tx.QueryRow(ctx, inputSQL, inputArgs...).Scan(&storedEpochIndex, &storedStatus); errors.Is(err, pgx.ErrNoRows) {
+		return repository.ErrNotFound
+	} else if err != nil {
+		return err
+	}
+	if storedEpochIndex != epochIndex || storedStatus != model.InputCompletionStatus_None {
+		return fmt.Errorf(
+			"%w: input %d has epoch %d and status %q, result has epoch %d",
+			repository.ErrAdvanceCursorMismatch,
+			inputIndex,
+			storedEpochIndex,
+			storedStatus,
+			epochIndex,
+		)
+	}
+
+	return nil
+}
+
 func updateApp(
 	ctx context.Context,
 	tx pgx.Tx,
 	appID int64,
 	inputIndex uint64,
+	completionStatus model.InputCompletionStatus,
 ) error {
+	where := table.Application.ID.EQ(postgres.Int64(appID)).
+		AND(table.Application.ProcessedInputs.EQ(uint64Expr(inputIndex))).
+		AND(table.Application.Status.EQ(
+			postgres.NewEnumValue(model.ApplicationStatus_OK.String()),
+		))
+
+	if applicationStatus, terminal := completionStatus.TerminalApplicationStatus(); terminal {
+		reason := fmt.Sprintf("input %d completed with %s", inputIndex, completionStatus)
+		updStmt := table.Application.
+			UPDATE(
+				table.Application.ProcessedInputs,
+				table.Application.Status,
+				table.Application.Reason,
+			).
+			SET(
+				uint64Expr(inputIndex+1),
+				postgres.NewEnumValue(applicationStatus.String()),
+				reason,
+			).
+			WHERE(where)
+		return executeApplicationAdvanceUpdate(ctx, tx, updStmt)
+	}
 
 	updStmt := table.Application.
 		UPDATE(
@@ -405,17 +523,22 @@ func updateApp(
 		SET(
 			uint64Expr(inputIndex + 1),
 		).
-		WHERE(
-			table.Application.ID.EQ(postgres.Int64(appID)),
-		)
+		WHERE(where)
+	return executeApplicationAdvanceUpdate(ctx, tx, updStmt)
+}
 
+func executeApplicationAdvanceUpdate(
+	ctx context.Context,
+	tx pgx.Tx,
+	updStmt postgres.UpdateStatement,
+) error {
 	sqlStr, args := updStmt.Sql()
 	cmd, err := tx.Exec(ctx, sqlStr, args...)
 	if err != nil {
 		return err
 	}
 	if cmd.RowsAffected() == 0 {
-		return repository.ErrNotFound
+		return repository.ErrApplicationNotRunnable
 	}
 	return nil
 }
@@ -434,12 +557,30 @@ func (r *PostgresRepository) StoreAdvanceResult(
 	if err := validateAdvanceExceptionData(res.Status, res.ExceptionData); err != nil {
 		return err
 	}
-
+	if res.InputIndex == math.MaxUint64 {
+		return errors.New("cannot store an advance result at the maximum input index")
+	}
+	if res.Status != model.InputCompletionStatus_Accepted &&
+		(len(res.Outputs) != 0 || len(res.Reports) != 0) {
+		return fmt.Errorf("advance result with status %q must not contain outputs or reports", res.Status)
+	}
+	if !res.IsComplete() {
+		return repository.ErrInvalidStateProof
+	}
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
+	// Acquire and validate the transaction-scoped Application -> Input lock set
+	// before inserting any effects. Holding both rows through Commit keeps the
+	// application cursor/status and the pending input used by this result
+	// unchanged while outputs, reports, proofs, and terminal status are written.
+	// Cancellation makes the waiting query return; the deferred rollback then
+	// releases any lock that this transaction had already acquired.
+	if err := lockAdvanceRows(ctx, tx, appID, res.EpochIndex, res.InputIndex); err != nil {
+		return err
+	}
 
 	if res.Status == model.InputCompletionStatus_Accepted {
 		err = insertOutputs(ctx, tx, appID, res.InputIndex, res.Outputs)
@@ -464,19 +605,34 @@ func (r *PostgresRepository) StoreAdvanceResult(
 	}
 
 	err = updateInput(
-		ctx, tx, appID, res.InputIndex, res.Status, res.ExceptionData, res.OutputsHash, res.MachineHash,
+		ctx, tx, appID, res.EpochIndex, res.InputIndex, res.Status, res.ExceptionData,
+		res.TxBufferDataBlock, res.MachineHash,
 	)
 	if err != nil {
 		return err
 	}
 
-	err = updateEpochOutputsMerkleProof(ctx, tx, appID, res.EpochIndex, res.OutputsHash,
-		byteSliceToHashSlice(res.OutputsHashProof), res.MachineHash)
+	switch res.Status {
+	case model.InputCompletionStatus_Accepted:
+		err = updateEpochState(ctx, tx, appID, res.EpochIndex, &res.StateProof)
+	case model.InputCompletionStatus_Rejected:
+		// A rejection consumes the input but leaves the pre-input epoch state
+		// and proof tuple unchanged.
+	case model.InputCompletionStatus_Exception,
+		model.InputCompletionStatus_MachineHalted,
+		model.InputCompletionStatus_Overflow,
+		model.InputCompletionStatus_UnexpectedYield:
+		err = updateEpochState(ctx, tx, appID, res.EpochIndex, &res.StateProof)
+	case model.InputCompletionStatus_None:
+		return fmt.Errorf("unsupported noncompleted advance status %q", res.Status)
+	default:
+		return fmt.Errorf("unsupported completed advance status %q", res.Status)
+	}
 	if err != nil {
 		return err
 	}
 
-	err = updateApp(ctx, tx, appID, res.InputIndex)
+	err = updateApp(ctx, tx, appID, res.InputIndex, res.Status)
 	if err != nil {
 		return err
 	}

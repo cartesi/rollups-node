@@ -483,11 +483,11 @@ func (s *SameBlockInputsSuite) readEpochSettlementData(
 		if err != nil {
 			return false, err
 		}
-		if epoch == nil || epoch.OutputsMerkleRoot == nil {
+		if epoch == nil || epoch.TxBufferDataBlock == nil {
 			return false, nil
 		}
-		root = *epoch.OutputsMerkleRoot
-		proof = epoch.OutputsMerkleProof
+		root = *epoch.TxBufferDataBlock
+		proof = epoch.TxBufferProof
 		return true, nil
 	})
 	r.NoError(err, "wait for epoch %d settlement data (outputs merkle root)", epochIndex)

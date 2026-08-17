@@ -139,8 +139,8 @@ func (s *Service) shouldIgnoreQuorumSubmittedMismatch(
 	}
 
 	ourOutputsMerkleRoot := common.Hash{}
-	if epoch.OutputsMerkleRoot != nil {
-		ourOutputsMerkleRoot = *epoch.OutputsMerkleRoot
+	if epoch.TxBufferDataBlock != nil {
+		ourOutputsMerkleRoot = *epoch.TxBufferDataBlock
 	}
 	outputsMatch := common.Hash(event.OutputsMerkleRoot) == ourOutputsMerkleRoot
 
@@ -179,7 +179,7 @@ func (s *Service) shouldRecordMatchingClaimSubmitted(
 		"app", app.IApplicationAddress,
 		"event_submitter", event.Submitter,
 		"our_submitter", submitter,
-		"outputs_merkle_root", hashToHex(epoch.OutputsMerkleRoot),
+		"outputs_merkle_root", hashToHex(epoch.TxBufferDataBlock),
 		"last_block", epoch.LastBlock,
 	)
 	return false
@@ -260,7 +260,7 @@ func (s *Service) processComputedClaim(
 	if prevEpoch != nil && prevEpoch.Status != model.EpochStatus_ClaimAccepted {
 		s.Logger.Debug("Waiting previous claim to be accepted before submitting new one. Previous:",
 			"app", app.IApplicationAddress,
-			"outputs_merkle_root", hashToHex(prevEpoch.OutputsMerkleRoot),
+			"outputs_merkle_root", hashToHex(prevEpoch.TxBufferDataBlock),
 			"last_block", prevEpoch.LastBlock,
 		)
 		return claimNoProgress()
@@ -391,7 +391,7 @@ func (s *Service) recordSubmittedEvent(
 ) claimStepResult {
 	s.Logger.Debug("Updating claim status to submitted",
 		"app", app.IApplicationAddress,
-		"outputs_merkle_root", hashToHex(currEpoch.OutputsMerkleRoot),
+		"outputs_merkle_root", hashToHex(currEpoch.TxBufferDataBlock),
 		"last_block", currEpoch.LastBlock,
 	)
 	txHash := currEvent.Raw.TxHash
@@ -408,7 +408,7 @@ func (s *Service) recordSubmittedEvent(
 	s.Logger.Info("Claim previously submitted",
 		"app", app.IApplicationAddress,
 		"event_block_number", currEvent.Raw.BlockNumber,
-		"outputs_merkle_root", hashToHex(currEpoch.OutputsMerkleRoot),
+		"outputs_merkle_root", hashToHex(currEpoch.TxBufferDataBlock),
 		"last_block", currEpoch.LastBlock,
 	)
 	return claimProgressed(1)
@@ -422,7 +422,7 @@ func (s *Service) broadcastComputedClaim(
 ) claimStepResult {
 	s.Logger.Debug("Submitting claim to blockchain",
 		"app", app.IApplicationAddress,
-		"outputs_merkle_root", hashToHex(currEpoch.OutputsMerkleRoot),
+		"outputs_merkle_root", hashToHex(currEpoch.TxBufferDataBlock),
 		"last_block", currEpoch.LastBlock,
 	)
 	txCtx, cancel := context.WithTimeout(s.Context, s.submissionTimeout)
@@ -486,7 +486,7 @@ func (s *Service) reconcileBeforeSubmit(
 		s.Logger.Info("Claim already accepted on chain (reconciled pre-submit)",
 			"app", app.IApplicationAddress,
 			"epoch_index", currEpoch.Index,
-			"outputs_merkle_root", hashToHex(currEpoch.OutputsMerkleRoot),
+			"outputs_merkle_root", hashToHex(currEpoch.TxBufferDataBlock),
 			"last_block", currEpoch.LastBlock,
 		)
 		return true, nil
@@ -499,7 +499,7 @@ func (s *Service) reconcileBeforeSubmit(
 		s.Logger.Info("Claim already staged on chain (reconciled pre-submit)",
 			"app", app.IApplicationAddress,
 			"epoch_index", currEpoch.Index,
-			"outputs_merkle_root", hashToHex(currEpoch.OutputsMerkleRoot),
+			"outputs_merkle_root", hashToHex(currEpoch.TxBufferDataBlock),
 			"last_block", currEpoch.LastBlock,
 			"staged_at_block", stagingBlock,
 		)

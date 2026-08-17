@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -128,7 +129,7 @@ func TestAcceptClaimWithAntecessorMismatch(t *testing.T) {
 	prevEvent := &iconsensus.IConsensusClaimAccepted{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(prevEpoch.LastBlock + 1),
 		AppContract:              app.IApplicationAddress,
-		OutputsMerkleRoot:        *prevEpoch.OutputsMerkleRoot,
+		OutputsMerkleRoot:        *prevEpoch.TxBufferDataBlock,
 		MachineMerkleRoot:        testMachineHash(prevEpoch),
 	}
 	var currEvent *iconsensus.IConsensusClaimAccepted = nil
@@ -614,7 +615,7 @@ func TestAcceptanceDivergence_QuorumStagedDoesNotRejectEpoch(t *testing.T) {
 	divergent := &iconsensus.IConsensusClaimAccepted{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(currEpoch.LastBlock),
 		AppContract:              app.IApplicationAddress,
-		OutputsMerkleRoot:        *currEpoch.OutputsMerkleRoot,
+		OutputsMerkleRoot:        *currEpoch.TxBufferDataBlock,
 		MachineMerkleRoot:        common.HexToHash("0xbad"),
 	}
 
@@ -646,7 +647,7 @@ func TestAcceptanceDivergence_QuorumComputedRejectsEpoch(t *testing.T) {
 	divergent := &iconsensus.IConsensusClaimAccepted{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(currEpoch.LastBlock),
 		AppContract:              app.IApplicationAddress,
-		OutputsMerkleRoot:        *currEpoch.OutputsMerkleRoot,
+		OutputsMerkleRoot:        *currEpoch.TxBufferDataBlock,
 		MachineMerkleRoot:        common.HexToHash("0xbad"),
 	}
 
@@ -657,7 +658,10 @@ func TestAcceptanceDivergence_QuorumComputedRejectsEpoch(t *testing.T) {
 	r.On("RejectEpochAndSetApplicationDiverged", mock.Anything, app.ID, currEpoch.Index, mock.MatchedBy(func(reason string) bool {
 		return strings.Contains(reason, "quorum_divergence_at_acceptance")
 	})).
-		Return(nil).Once()
+		Return(repository.RejectEpochAndDivergeResult{
+			EpochRejected:       true,
+			ApplicationDiverged: true,
+		}, nil).Once()
 
 	_, errs := m.submitClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	assert.Equal(t, 1, len(errs))
@@ -677,7 +681,7 @@ func TestAcceptanceDivergence_AuthorityComputedSetsDivergedWithoutRejectingEpoch
 	divergent := &iconsensus.IConsensusClaimAccepted{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(currEpoch.LastBlock),
 		AppContract:              app.IApplicationAddress,
-		OutputsMerkleRoot:        *currEpoch.OutputsMerkleRoot,
+		OutputsMerkleRoot:        *currEpoch.TxBufferDataBlock,
 		MachineMerkleRoot:        common.HexToHash("0xbad"),
 	}
 
@@ -709,7 +713,7 @@ func TestAcceptanceDivergence_AuthorityDoesNotRejectEpoch(t *testing.T) {
 	divergent := &iconsensus.IConsensusClaimAccepted{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(currEpoch.LastBlock),
 		AppContract:              app.IApplicationAddress,
-		OutputsMerkleRoot:        *currEpoch.OutputsMerkleRoot,
+		OutputsMerkleRoot:        *currEpoch.TxBufferDataBlock,
 		MachineMerkleRoot:        common.HexToHash("0xbad"),
 	}
 
@@ -746,7 +750,7 @@ func TestAcceptanceDivergenceReaderMode_Quorum(t *testing.T) {
 	divergent := &iconsensus.IConsensusClaimAccepted{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(currEpoch.LastBlock),
 		AppContract:              app.IApplicationAddress,
-		OutputsMerkleRoot:        *currEpoch.OutputsMerkleRoot,
+		OutputsMerkleRoot:        *currEpoch.TxBufferDataBlock,
 		MachineMerkleRoot:        common.HexToHash("0xbad"),
 	}
 

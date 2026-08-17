@@ -115,8 +115,8 @@ func (s *Service) markSubmittedDivergence(
 	site string,
 ) error {
 	ourOutputsMerkleRoot := common.Hash{}
-	if epoch.OutputsMerkleRoot != nil {
-		ourOutputsMerkleRoot = *epoch.OutputsMerkleRoot
+	if epoch.TxBufferDataBlock != nil {
+		ourOutputsMerkleRoot = *epoch.TxBufferDataBlock
 	}
 	ourMachineMerkleRoot := common.Hash{}
 	if epoch.MachineHash != nil {
@@ -146,8 +146,8 @@ func (s *Service) markAcceptedDivergence(
 	site string,
 ) error {
 	ourOutputsMerkleRoot := common.Hash{}
-	if epoch.OutputsMerkleRoot != nil {
-		ourOutputsMerkleRoot = *epoch.OutputsMerkleRoot
+	if epoch.TxBufferDataBlock != nil {
+		ourOutputsMerkleRoot = *epoch.TxBufferDataBlock
 	}
 	ourMachineMerkleRoot := common.Hash{}
 	if epoch.MachineHash != nil {
@@ -192,12 +192,13 @@ func (s *Service) rejectEpochAndSetApplicationDiverged(
 	epoch *model.Epoch,
 	reason string,
 ) error {
-	s.Logger.Error("marking application as diverged (terminal)",
+	s.Logger.Error("claim divergence detected",
 		"application", app.Name,
 		"address", app.IApplicationAddress.String(),
+		"epoch_index", epoch.Index,
 		"reason", reason)
 
-	err := s.repository.RejectEpochAndSetApplicationDiverged(
+	result, err := s.repository.RejectEpochAndSetApplicationDiverged(
 		s.Context, app.ID, epoch.Index, reason)
 	reasonErr := errors.New(reason)
 	if err != nil {
@@ -209,9 +210,13 @@ func (s *Service) rejectEpochAndSetApplicationDiverged(
 		return errors.Join(reasonErr, err)
 	}
 
-	app.Status = model.ApplicationStatus_Diverged
-	app.Reason = &reason
-	epoch.Status = model.EpochStatus_ClaimRejected
+	if result.ApplicationDiverged {
+		app.Status = model.ApplicationStatus_Diverged
+		app.Reason = &reason
+	}
+	if result.EpochRejected {
+		epoch.Status = model.EpochStatus_ClaimRejected
+	}
 	return reasonErr
 }
 
@@ -246,13 +251,13 @@ func (s *Service) verifyClaimOutputsMatch(
 	claim iconsensus.IConsensusClaim,
 	site string,
 ) error {
-	if epoch.OutputsMerkleRoot == nil {
+	if epoch.TxBufferDataBlock == nil {
 		// Other paths mark this as a local data problem. Here we only compare
 		// outputs when the local value exists.
 		return nil
 	}
 	chainStagedOutputs := common.BytesToHash(claim.StagedOutputsMerkleRoot[:])
-	if chainStagedOutputs == *epoch.OutputsMerkleRoot {
+	if chainStagedOutputs == *epoch.TxBufferDataBlock {
 		return nil
 	}
 	status := fmt.Sprintf("status %d", claim.Status)
@@ -270,7 +275,7 @@ func (s *Service) verifyClaimOutputsMatch(
 			"machineMerkleRoot; manual remediation required.",
 		site, status,
 		chainStagedOutputs.Hex(),
-		epoch.OutputsMerkleRoot.Hex(),
+		epoch.TxBufferDataBlock.Hex(),
 		epoch.Index, epoch.LastBlock)
 }
 

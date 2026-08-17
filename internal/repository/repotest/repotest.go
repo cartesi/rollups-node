@@ -49,10 +49,7 @@ func StoreAdvanceResult(
 		Status:     status,
 		Outputs:    outputs,
 		Reports:    reports,
-		OutputsProof: OutputsProof{
-			OutputsHash: UniqueHash(),
-			MachineHash: UniqueHash(),
-		},
+		StateProof: *DummyStateProof(),
 	}
 	if status == InputCompletionStatus_Exception {
 		result.ExceptionData = []byte{}

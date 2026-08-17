@@ -139,8 +139,8 @@ func (s *EchoQuorumSuite) TestEchoQuorumLifecycle() {
 	submittedCancel()
 	r.NoError(err, "wait for node to submit quorum claim")
 
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.OutputsMerkleRoot)
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, *epoch.OutputsMerkleRoot)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.TxBufferDataBlock)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, *epoch.TxBufferDataBlock)
 	s.waitForQuorumAccepted(app.appName, epoch.Index)
 
 	verifyClaimAndExecute(s.ctx, s.T(), r, verifyAndExecuteConfig{
@@ -162,8 +162,8 @@ func (s *EchoQuorumSuite) TestNodeVoteFirstThenOtherValidatorsStageAndAccept() {
 	submittedCancel()
 	s.Require().NoError(err, "wait for node to submit quorum claim")
 
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.OutputsMerkleRoot)
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, *epoch.OutputsMerkleRoot)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.TxBufferDataBlock)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, *epoch.TxBufferDataBlock)
 
 	s.waitForQuorumAccepted(app.appName, epoch.Index)
 }
@@ -193,7 +193,7 @@ func (s *EchoQuorumSuite) TestExternalValidatorThenNodeVoteStagesAndAccepts() {
 	s.Require().Equal(model.EpochStatus_ClaimComputed, epoch.Status,
 		"node should compute the claim before the slowed claimer polling interval submits it")
 
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.OutputsMerkleRoot)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.TxBufferDataBlock)
 
 	stopSharedNode(s.T())
 	startSharedNode(s.T())
@@ -227,8 +227,8 @@ func (s *EchoQuorumSuite) TestExternalMajorityStagesBeforeNodeVoteThenNodeAccept
 	s.Require().Equal(model.EpochStatus_ClaimComputed, epoch.Status,
 		"node should compute the claim before the slowed claimer polling interval submits it")
 
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.OutputsMerkleRoot)
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, *epoch.OutputsMerkleRoot)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.TxBufferDataBlock)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, *epoch.TxBufferDataBlock)
 
 	stopSharedNode(s.T())
 	startSharedNode(s.T())
@@ -246,17 +246,17 @@ func (s *EchoQuorumSuite) TestDivergentMinorityVoteDoesNotBlockAcceptance() {
 	submittedCancel()
 	s.Require().NoError(err, "wait for node to submit quorum claim")
 
-	divergentOutputs := randomOutputsMerkleRoot(s.T(), *epoch.OutputsMerkleRoot)
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.OutputsMerkleRoot)
+	divergentOutputs := randomOutputsMerkleRoot(s.T(), *epoch.TxBufferDataBlock)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.TxBufferDataBlock)
 	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, divergentOutputs)
 
 	s.waitForQuorumAccepted(app.appName, epoch.Index)
 }
 
-func (s *EchoQuorumSuite) TestDivergentMajorityMarksApplicationInoperable() {
+func (s *EchoQuorumSuite) TestDivergentMajorityMarksApplicationDiverged() {
 	s.SetExpectedLogs(s.T(),
 		ExpectedLog{
-			Pattern: regexp.MustCompile(`marking application as diverged.*quorum_divergence_at_staging`),
+			Pattern: regexp.MustCompile(`claim divergence detected.*quorum_divergence_at_staging`),
 			Level:   LevelError,
 			Reason:  "expected DIVERGED transition after a divergent Quorum majority stages a different claim",
 		},
@@ -275,7 +275,7 @@ func (s *EchoQuorumSuite) TestDivergentMajorityMarksApplicationInoperable() {
 	submittedCancel()
 	s.Require().NoError(err, "wait for node to submit quorum claim")
 
-	divergentOutputs := randomOutputsMerkleRoot(s.T(), *epoch.OutputsMerkleRoot)
+	divergentOutputs := randomOutputsMerkleRoot(s.T(), *epoch.TxBufferDataBlock)
 	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, divergentOutputs)
 	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, divergentOutputs)
 
@@ -343,7 +343,7 @@ func (s *EchoQuorumSuite) TestForecloseQuorumClaimBeforeAcceptanceMarksClaimFore
 	epoch, err = waitForEpochStatus(foreclosedCtx, s.T(), app.appName, epoch.Index, model.EpochStatus_ClaimForeclosed)
 	foreclosedCancel()
 	r.NoError(err, "foreclosed quorum claim should become CLAIM_FORECLOSED instead of stalling in CLAIM_SUBMITTED")
-	r.NotNil(epoch.OutputsMerkleRoot, "local claim data should be preserved when terminalizing as CLAIM_FORECLOSED")
+	r.NotNil(epoch.TxBufferDataBlock, "local claim data should be preserved when terminalizing as CLAIM_FORECLOSED")
 
 	// Ordinary foreclosure keeps the app's health status OK, keeps it
 	// enabled for L1 observation, and surfaces the marker in `app status`.
@@ -377,8 +377,8 @@ func (s *EchoQuorumSuite) TestForecloseQuorumOutputExecutionAfterForeclosureIsRe
 	submittedCancel()
 	r.NoError(err, "wait for node to submit quorum claim")
 
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.OutputsMerkleRoot)
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, *epoch.OutputsMerkleRoot)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.TxBufferDataBlock)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, *epoch.TxBufferDataBlock)
 	s.waitForQuorumAccepted(app.appName, epoch.Index)
 
 	r.NoError(guardianForeclose(s.ctx, app.appName, guardianIndex), "guardian foreclose")
@@ -540,7 +540,7 @@ func (s *EchoQuorumSuite) waitForEpochWithClaim(appName string, epochIndex uint6
 			}
 			return false, fmt.Errorf("poll epoch %d claim: %w", epochIndex, err)
 		}
-		if epoch.OutputsMerkleRoot != nil && epoch.MachineHash != nil && isQuorumClaimReadyStatus(epoch.Status) {
+		if epoch.TxBufferDataBlock != nil && epoch.MachineHash != nil && isQuorumClaimReadyStatus(epoch.Status) {
 			result = epoch
 			return true, nil
 		}
@@ -601,7 +601,7 @@ func (s *EchoQuorumSuite) submitQuorumClaim(
 	outputsMerkleRoot [32]byte,
 ) common.Hash {
 	r := s.Require()
-	r.NotNil(epoch.OutputsMerkleRoot, "epoch %d missing outputs merkle root", epoch.Index)
+	r.NotNil(epoch.TxBufferDataBlock, "epoch %d missing outputs merkle root", epoch.Index)
 
 	key, err := ethutil.MnemonicToPrivateKey(ethutil.FoundryMnemonic, accountIndex)
 	r.NoError(err, "derive validator key %d", accountIndex)
@@ -615,7 +615,7 @@ func (s *EchoQuorumSuite) submitQuorumClaim(
 		app.appAddress,
 		new(big.Int).SetUint64(epoch.LastBlock),
 		outputsMerkleRoot,
-		merkleProofToBytes32(epoch.OutputsMerkleProof),
+		merkleProofToBytes32(epoch.TxBufferProof),
 	)
 	r.NoError(err, "validator %d submit quorum claim", accountIndex)
 

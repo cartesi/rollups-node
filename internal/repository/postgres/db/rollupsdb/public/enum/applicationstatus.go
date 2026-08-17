@@ -10,13 +10,21 @@ package enum
 import "github.com/go-jet/jet/v2/postgres"
 
 var ApplicationStatus = &struct {
-	Ok        postgres.StringExpression
-	Failed    postgres.StringExpression
-	Diverged  postgres.StringExpression
-	Corrupted postgres.StringExpression
+	Ok              postgres.StringExpression
+	Failed          postgres.StringExpression
+	Diverged        postgres.StringExpression
+	Corrupted       postgres.StringExpression
+	GuestException  postgres.StringExpression
+	MachineHalted   postgres.StringExpression
+	McycleOverflow  postgres.StringExpression
+	UnexpectedYield postgres.StringExpression
 }{
-	Ok:        postgres.NewEnumValue("OK"),
-	Failed:    postgres.NewEnumValue("FAILED"),
-	Diverged:  postgres.NewEnumValue("DIVERGED"),
-	Corrupted: postgres.NewEnumValue("CORRUPTED"),
+	Ok:              postgres.NewEnumValue("OK"),
+	Failed:          postgres.NewEnumValue("FAILED"),
+	Diverged:        postgres.NewEnumValue("DIVERGED"),
+	Corrupted:       postgres.NewEnumValue("CORRUPTED"),
+	GuestException:  postgres.NewEnumValue("GUEST_EXCEPTION"),
+	MachineHalted:   postgres.NewEnumValue("MACHINE_HALTED"),
+	McycleOverflow:  postgres.NewEnumValue("MCYCLE_OVERFLOW"),
+	UnexpectedYield: postgres.NewEnumValue("UNEXPECTED_YIELD"),
 }

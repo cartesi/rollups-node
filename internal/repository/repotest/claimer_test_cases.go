@@ -664,8 +664,10 @@ func (s *ClaimerSuite) TestRejectEpochAndSetApplicationDiverged() {
 		app := s.createAppWithClaimComputedEpoch()
 		reason := "quorum_divergence_at_acceptance: rejected computed epoch"
 
-		err := s.Repo.RejectEpochAndSetApplicationDiverged(s.Ctx, app.ID, 0, reason)
+		result, err := s.Repo.RejectEpochAndSetApplicationDiverged(s.Ctx, app.ID, 0, reason)
 		s.Require().NoError(err)
+		s.True(result.EpochRejected)
+		s.True(result.ApplicationDiverged)
 
 		assertRejected(app, reason)
 	})
@@ -676,11 +678,43 @@ func (s *ClaimerSuite) TestRejectEpochAndSetApplicationDiverged() {
 		s.Require().NoError(err)
 
 		reason := "quorum_divergence_at_staging: rejected submitted epoch"
-		err = s.Repo.RejectEpochAndSetApplicationDiverged(s.Ctx, app.ID, 0, reason)
+		result, err := s.Repo.RejectEpochAndSetApplicationDiverged(s.Ctx, app.ID, 0, reason)
 		s.Require().NoError(err)
+		s.True(result.EpochRejected)
+		s.True(result.ApplicationDiverged)
 
 		assertRejected(app, reason)
 	})
+
+	for _, terminalStatus := range []ApplicationStatus{
+		ApplicationStatus_MachineHalted,
+		ApplicationStatus_Corrupted,
+	} {
+		s.Run("Preserves"+terminalStatus.String()+"WhileRejectingEpoch", func() {
+			app := s.createAppWithClaimComputedEpoch()
+			originalReason := "earlier terminal cause"
+			s.Require().NoError(s.Repo.UpdateApplicationStatus(
+				s.Ctx, app.ID, terminalStatus, &originalReason))
+
+			result, err := s.Repo.RejectEpochAndSetApplicationDiverged(
+				s.Ctx, app.ID, 0, "later claim disagreement")
+			s.Require().NoError(err)
+			s.True(result.EpochRejected)
+			s.False(result.ApplicationDiverged)
+
+			gotEpoch, err := s.Repo.GetEpoch(
+				s.Ctx, app.IApplicationAddress.String(), 0)
+			s.Require().NoError(err)
+			s.Equal(EpochStatus_ClaimRejected, gotEpoch.Status)
+
+			gotApp, err := s.Repo.GetApplication(
+				s.Ctx, app.IApplicationAddress.String())
+			s.Require().NoError(err)
+			s.Equal(terminalStatus, gotApp.Status)
+			s.Require().NotNil(gotApp.Reason)
+			s.Equal(originalReason, *gotApp.Reason)
+		})
+	}
 
 	// A CLAIM_STAGED epoch is outside the COMPUTED/SUBMITTED set, so the
 	// best-effort epoch reject matches no row and the epoch stays CLAIM_STAGED.
@@ -694,8 +728,10 @@ func (s *ClaimerSuite) TestRejectEpochAndSetApplicationDiverged() {
 		s.Require().NoError(err)
 
 		reason := "quorum_divergence_at_acceptance: staged epoch is not a normal rejection source"
-		err = s.Repo.RejectEpochAndSetApplicationDiverged(s.Ctx, app.ID, 0, reason)
+		result, err := s.Repo.RejectEpochAndSetApplicationDiverged(s.Ctx, app.ID, 0, reason)
 		s.Require().NoError(err)
+		s.False(result.EpochRejected)
+		s.True(result.ApplicationDiverged)
 
 		gotEpoch, err := s.Repo.GetEpoch(s.Ctx, app.IApplicationAddress.String(), 0)
 		s.Require().NoError(err)
@@ -722,9 +758,11 @@ func (s *ClaimerSuite) TestRejectEpochAndSetApplicationDiverged() {
 		s.Require().NoError(err)
 
 		reason := "divergence detected against a non-rejectable epoch"
-		err = s.Repo.RejectEpochAndSetApplicationDiverged(
+		result, err := s.Repo.RejectEpochAndSetApplicationDiverged(
 			s.Ctx, app.ID, 0, reason)
 		s.Require().NoError(err)
+		s.False(result.EpochRejected)
+		s.True(result.ApplicationDiverged)
 
 		gotEpoch, err := s.Repo.GetEpoch(s.Ctx, app.IApplicationAddress.String(), 0)
 		s.Require().NoError(err)
@@ -740,7 +778,7 @@ func (s *ClaimerSuite) TestRejectEpochAndSetApplicationDiverged() {
 	// A missing application row surfaces ErrNotFound, distinguishing a genuine
 	// "no such app" from the best-effort epoch reject matching no row.
 	s.Run("ReturnsNotFoundWhenApplicationMissing", func() {
-		err := s.Repo.RejectEpochAndSetApplicationDiverged(
+		_, err := s.Repo.RejectEpochAndSetApplicationDiverged(
 			s.Ctx, int64(99_999_999), 0, "missing application")
 		s.Require().ErrorIs(err, repository.ErrNotFound)
 	})

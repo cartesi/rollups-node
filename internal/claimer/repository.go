@@ -85,7 +85,7 @@ type iclaimerRepository interface {
 		applicationID int64,
 		index uint64,
 		reason string,
-	) error
+	) (repository.RejectEpochAndDivergeResult, error)
 
 	UpdateApplicationStatus(
 		ctx context.Context,

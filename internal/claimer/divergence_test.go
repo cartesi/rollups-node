@@ -8,11 +8,13 @@ import (
 	"testing"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func TestVerifyClaimOutputsMismatch(t *testing.T) {
@@ -39,6 +41,53 @@ func TestVerifyClaimOutputsMismatch(t *testing.T) {
 	_, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	assert.Equal(t, 1, len(errs), "chain_claim_outputs_mismatch must surface as an error")
 	assert.Equal(t, 0, len(m.acceptsInFlight))
+}
+
+func TestRejectEpochAndSetApplicationDiverged_MirrorsAppliedWrites(t *testing.T) {
+	t.Run("preserves terminal application mirror", func(t *testing.T) {
+		service, repo, _ := newServiceMock(t)
+		defer repo.AssertExpectations(t)
+
+		app := makeApplication()
+		app.Status = model.ApplicationStatus_MachineHalted
+		originalReason := "machine halted"
+		app.Reason = &originalReason
+		epoch := makeComputedEpoch(app, 3)
+
+		repo.On("RejectEpochAndSetApplicationDiverged",
+			mock.Anything, app.ID, epoch.Index, mock.Anything).
+			Return(repository.RejectEpochAndDivergeResult{EpochRejected: true}, nil).Once()
+
+		err := service.rejectEpochAndSetApplicationDiverged(app, epoch, "later claim disagreement")
+
+		require.Error(t, err)
+		assert.Equal(t, model.ApplicationStatus_MachineHalted, app.Status)
+		require.NotNil(t, app.Reason)
+		assert.Equal(t, originalReason, *app.Reason)
+		assert.Equal(t, model.EpochStatus_ClaimRejected, epoch.Status)
+	})
+
+	t.Run("preserves epoch mirror when rejection did not apply", func(t *testing.T) {
+		service, repo, _ := newServiceMock(t)
+		defer repo.AssertExpectations(t)
+
+		app := makeApplication()
+		epoch := makeComputedEpoch(app, 3)
+		epoch.Status = model.EpochStatus_Closed
+		reason := "claim disagreement"
+
+		repo.On("RejectEpochAndSetApplicationDiverged",
+			mock.Anything, app.ID, epoch.Index, reason).
+			Return(repository.RejectEpochAndDivergeResult{ApplicationDiverged: true}, nil).Once()
+
+		err := service.rejectEpochAndSetApplicationDiverged(app, epoch, reason)
+
+		require.Error(t, err)
+		assert.Equal(t, model.ApplicationStatus_Diverged, app.Status)
+		require.NotNil(t, app.Reason)
+		assert.Equal(t, reason, *app.Reason)
+		assert.Equal(t, model.EpochStatus_Closed, epoch.Status)
+	})
 }
 
 // TestCleanupOrphanedInFlight — entries whose app is no longer in any work

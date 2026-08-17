@@ -112,7 +112,7 @@ func (s *Service) handleSubmitClaimRevert(
 			"submitClaim broadcast rejected with 'nonce too low'; "+
 				"deferring to the next tick's getClaim reconciliation",
 			"app", app.IApplicationAddress,
-			"outputs_merkle_root", hashToHex(epoch.OutputsMerkleRoot),
+			"outputs_merkle_root", hashToHex(epoch.TxBufferDataBlock),
 			"last_block", epoch.LastBlock,
 		)
 		return submitClaimRetryLater, nil
@@ -135,14 +135,14 @@ func (s *Service) handleSubmitClaimRevert(
 			s.Logger.Warn(
 				"submitClaim reverted with NotFirstClaim on Quorum; waiting for event reconciliation",
 				"app", app.IApplicationAddress,
-				"outputs_merkle_root", hashToHex(epoch.OutputsMerkleRoot),
+				"outputs_merkle_root", hashToHex(epoch.TxBufferDataBlock),
 				"last_block", epoch.LastBlock,
 			)
 			return submitClaimRetryLater, nil
 		}
 		s.Logger.Info("Claim already on-chain, waiting for event sync",
 			"app", app.IApplicationAddress,
-			"outputs_merkle_root", hashToHex(epoch.OutputsMerkleRoot),
+			"outputs_merkle_root", hashToHex(epoch.TxBufferDataBlock),
 			"last_block", epoch.LastBlock,
 		)
 		return submitClaimAlreadyOnChain, nil
@@ -155,7 +155,7 @@ func (s *Service) handleSubmitClaimRevert(
 		s.Logger.Warn("submitClaim reverted with ApplicationForeclosed; "+
 			"awaiting Foreclosure observer to record the foreclosure marker",
 			"app", app.IApplicationAddress,
-			"outputs_merkle_root", hashToHex(epoch.OutputsMerkleRoot),
+			"outputs_merkle_root", hashToHex(epoch.TxBufferDataBlock),
 			"last_block", epoch.LastBlock,
 		)
 		return submitClaimRetryLater, nil
@@ -164,7 +164,7 @@ func (s *Service) handleSubmitClaimRevert(
 		stateErr := s.setApplicationCorrupted(
 			s.Context, app,
 			"submitClaim reverted with InvalidOutputsMerkleRootProofSize for "+
-				"epoch %d (%d), last_block %d — outputs_merkle_proof in DB is "+
+				"epoch %d (%d), last_block %d — tx_buffer_proof in DB is "+
 				"the wrong length for the machine memory tree.",
 			epoch.Index, epoch.VirtualIndex, epoch.LastBlock,
 		)
@@ -190,7 +190,7 @@ func (s *Service) handleSubmitClaimRevert(
 		stateErr := s.setApplicationCorrupted(
 			s.Context, app,
 			"submitClaim reverted with InvalidNodeIndex for "+
-				"epoch %d (%d), last_block %d — outputs_merkle_proof in DB does "+
+				"epoch %d (%d), last_block %d — tx_buffer_proof in DB does "+
 				"not form a valid replacement proof for the machine memory tree.",
 			epoch.Index, epoch.VirtualIndex, epoch.LastBlock,
 		)
@@ -306,7 +306,7 @@ func (s *Service) classifySharedConsensusRevert(
 		logArgs := []any{
 			"app", app.IApplicationAddress,
 			"epoch_index", epoch.Index,
-			"outputs_merkle_root", hashToHex(epoch.OutputsMerkleRoot),
+			"outputs_merkle_root", hashToHex(epoch.TxBufferDataBlock),
 			"last_block", epoch.LastBlock,
 		}
 		if lastProcessed, upperBound, ok := decodeNotPastBlockBounds(err); ok {
@@ -358,7 +358,7 @@ func (s *Service) handleAcceptClaimRevert(
 			"acceptClaim broadcast rejected with 'nonce too low'; "+
 				"deferring to the next tick's getClaim reconciliation",
 			"app", app.IApplicationAddress,
-			"outputs_merkle_root", hashToHex(epoch.OutputsMerkleRoot),
+			"outputs_merkle_root", hashToHex(epoch.TxBufferDataBlock),
 			"last_block", epoch.LastBlock,
 		)
 		return acceptClaimRetryLater, nil
@@ -377,7 +377,7 @@ func (s *Service) handleAcceptClaimRevert(
 		case claimStatusAccepted:
 			s.Logger.Info("Claim was accepted by a front-runner; reconciling",
 				"app", app.IApplicationAddress,
-				"outputs_merkle_root", hashToHex(epoch.OutputsMerkleRoot),
+				"outputs_merkle_root", hashToHex(epoch.TxBufferDataBlock),
 				"last_block", epoch.LastBlock,
 			)
 			return acceptClaimReconciledAccepted, nil
@@ -387,7 +387,7 @@ func (s *Service) handleAcceptClaimRevert(
 				"This can happen under reorgs when reading non-final blocks; "+
 				"retry on the next tick.",
 				"app", app.IApplicationAddress,
-				"outputs_merkle_root", hashToHex(epoch.OutputsMerkleRoot),
+				"outputs_merkle_root", hashToHex(epoch.TxBufferDataBlock),
 				"last_block", epoch.LastBlock,
 			)
 			return acceptClaimRetryLater, nil
@@ -422,7 +422,7 @@ func (s *Service) handleAcceptClaimRevert(
 		s.Logger.Warn("acceptClaim reverted with ClaimStagingPeriodNotOverYet; "+
 			"local arithmetic disagrees with chain. Will retry next tick.",
 			"app", app.IApplicationAddress,
-			"outputs_merkle_root", hashToHex(epoch.OutputsMerkleRoot),
+			"outputs_merkle_root", hashToHex(epoch.TxBufferDataBlock),
 			"last_block", epoch.LastBlock,
 		)
 		return acceptClaimRetryLater, nil
@@ -431,7 +431,7 @@ func (s *Service) handleAcceptClaimRevert(
 		s.Logger.Warn("acceptClaim reverted with ApplicationForeclosed; "+
 			"awaiting Foreclosure observer to record the foreclosure marker",
 			"app", app.IApplicationAddress,
-			"outputs_merkle_root", hashToHex(epoch.OutputsMerkleRoot),
+			"outputs_merkle_root", hashToHex(epoch.TxBufferDataBlock),
 			"last_block", epoch.LastBlock,
 		)
 		return acceptClaimRetryLater, nil

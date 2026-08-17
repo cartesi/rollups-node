@@ -405,7 +405,7 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 
 	for _, epoch := range epochs {
 		if epoch.TournamentAddress == nil || epoch.Commitment == nil ||
-			epoch.MachineHash == nil || epoch.OutputsMerkleRoot == nil {
+			epoch.MachineHash == nil || epoch.TxBufferDataBlock == nil {
 			return s.setApplicationCorrupted(ctx, app,
 				"epoch %d has missing required fields for ClaimComputed status", epoch.Index)
 		}
@@ -453,9 +453,9 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 			return s.setApplicationDiverged(ctx, app, "Epoch %d has inconsistent machine hash between off-chain (%s) and on-chain (%s)",
 				epoch.Index, epoch.MachineHash.String(), hexutil.Encode(event.InitialMachineStateHash[:]))
 		}
-		if *epoch.OutputsMerkleRoot != event.OutputsMerkleRoot {
+		if *epoch.TxBufferDataBlock != event.OutputsMerkleRoot {
 			return s.setApplicationDiverged(ctx, app, "Epoch %d has inconsistent claim hash between off-chain (%s) and on-chain (%s)",
-				epoch.Index, epoch.OutputsMerkleRoot.String(), hexutil.Encode(event.OutputsMerkleRoot[:]))
+				epoch.Index, epoch.TxBufferDataBlock.String(), hexutil.Encode(event.OutputsMerkleRoot[:]))
 		}
 
 		err = s.fetchTournamentData(ctx, app, epoch, RootLevel, nil, nil, *epoch.TournamentAddress, mostRecentBlock)
@@ -695,7 +695,7 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 		return nil // nothing to do
 	}
 
-	if epoch.OutputsMerkleRoot == nil || epoch.OutputsMerkleProof == nil {
+	if epoch.TxBufferDataBlock == nil || epoch.TxBufferProof == nil {
 		return s.setApplicationCorrupted(ctx, app,
 			"epoch %d has missing required fields for settlement", epoch.Index)
 	}
@@ -716,7 +716,7 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 	}
 
 	s.Logger.Info("Sending Settle transaction", "application", app.Name, "epoch_index", epoch.Index,
-		"outputs_merkle_root", epoch.OutputsMerkleRoot.String())
+		"outputs_merkle_root", epoch.TxBufferDataBlock.String())
 
 	if s.txOptsFactory == nil {
 		return fmt.Errorf("txOpts is required for settlement")
@@ -728,7 +728,7 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 		return fmt.Errorf("creating transaction options for settlement: %w", err)
 	}
 	tx, err := consensus.Settle(txOpts, result.EpochNumber,
-		*epoch.OutputsMerkleRoot, hashSliceToByteSlice(epoch.OutputsMerkleProof))
+		*epoch.TxBufferDataBlock, hashSliceToByteSlice(epoch.TxBufferProof))
 	if err != nil {
 		return s.handleSettleRevert(ctx, app, result.EpochNumber.Uint64(), err)
 	}

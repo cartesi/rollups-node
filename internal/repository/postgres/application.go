@@ -722,7 +722,10 @@ func (r *PostgresRepository) UpdateEventLastCheckBlock(
 		SET(
 			uint64Expr(blockNumber),
 		).
-		WHERE(table.Application.ID.IN(ids...))
+		WHERE(
+			table.Application.ID.IN(ids...).
+				AND(column.LT(uint64Expr(blockNumber))),
+		)
 
 	sqlStr, args := updateStmt.Sql()
 	_, err = r.db.Exec(ctx, sqlStr, args...)
@@ -743,7 +746,7 @@ func (r *PostgresRepository) GetLastSnapshot(ctx context.Context, nameOrAddress 
 			table.Input.Status,
 			table.Input.ExceptionData,
 			table.Input.MachineHash,
-			table.Input.OutputsHash,
+			table.Input.TxBufferDataBlock,
 			table.Input.TransactionHash,
 			table.Input.LogIndex,
 			table.Input.SnapshotURI,
@@ -777,7 +780,7 @@ func (r *PostgresRepository) GetLastSnapshot(ctx context.Context, nameOrAddress 
 		&inp.Status,
 		&inp.ExceptionData,
 		&inp.MachineHash,
-		&inp.OutputsHash,
+		&inp.TxBufferDataBlock,
 		&inp.TransactionHash,
 		&inp.LogIndex,
 		&inp.SnapshotURI,

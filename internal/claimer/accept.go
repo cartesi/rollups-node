@@ -153,7 +153,7 @@ func (s *Service) processAcceptedClaimEvent(
 	}
 	s.Logger.Debug("Updating claim status to accepted",
 		"app", app.IApplicationAddress,
-		"outputs_merkle_root", hashToHex(currEpoch.OutputsMerkleRoot),
+		"outputs_merkle_root", hashToHex(currEpoch.TxBufferDataBlock),
 		"last_block", currEpoch.LastBlock,
 	)
 	txHash := currEvent.Raw.TxHash
@@ -297,7 +297,7 @@ func (s *Service) handlePreAcceptClaimStatus(
 		s.dropAcceptAttempt(acceptAttemptKey{currEpoch.ApplicationID, currEpoch.Index})
 		s.Logger.Info("Claim accepted (front-run; observed via getClaim)",
 			"app", app.IApplicationAddress,
-			"outputs_merkle_root", hashToHex(currEpoch.OutputsMerkleRoot),
+			"outputs_merkle_root", hashToHex(currEpoch.TxBufferDataBlock),
 			"last_block", currEpoch.LastBlock,
 		)
 		return claimProgressed(1), true

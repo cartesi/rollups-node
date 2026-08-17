@@ -88,10 +88,7 @@ func (s *ReportSuite) TestListReports() {
 			InputIndex: 0,
 			Status:     InputCompletionStatus_Accepted,
 			Reports:    [][]byte{[]byte("epoch-report")},
-			OutputsProof: OutputsProof{
-				OutputsHash: UniqueHash(),
-				MachineHash: UniqueHash(),
-			},
+			StateProof: *DummyStateProof(),
 		}
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
 		s.Require().NoError(err)
