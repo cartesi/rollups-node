@@ -6,7 +6,7 @@ package manager
 import (
 	"context"
 
-	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/machine"
 )
 
@@ -23,13 +23,19 @@ type InspectResult struct {
 
 // MachineInstance defines the interface for a machine instance
 type MachineInstance interface {
-	Application() *Application
-	Advance(ctx context.Context, input []byte, epochIndex uint64, inputIndex uint64, computeHashes bool) (*AdvanceResult, error)
+	Application() *model.Application
+	Advance(
+		ctx context.Context,
+		input []byte,
+		epochIndex uint64,
+		inputIndex uint64,
+		computeHashes bool,
+	) (*model.AdvanceResult, error)
 	Inspect(ctx context.Context, query []byte) (*InspectResult, error)
 	CreateSnapshot(ctx context.Context, processedInputs uint64, path string) error
 	ProcessedInputs() uint64
 	Hash(ctx context.Context) ([32]byte, error)
-	OutputsProof(ctx context.Context) (*OutputsProof, error)
+	StateProof(ctx context.Context) (*model.StateProof, error)
 	Close() error
 }
 
@@ -39,7 +45,7 @@ type MachineProvider interface {
 	GetMachine(appID int64) (MachineInstance, bool)
 
 	// Applications returns the list of applications with active machines
-	Applications() []*Application
+	Applications() []*model.Application
 
 	// UpdateMachines refreshes the list of machines
 	UpdateMachines(ctx context.Context) error
@@ -47,7 +53,7 @@ type MachineProvider interface {
 	// FenceApplicationFailure fences an application whose initial FAILED
 	// status write could not be confirmed. It queues a later durability retry
 	// without duplicating the initial repository write.
-	FenceApplicationFailure(app *Application, reason string)
+	FenceApplicationFailure(app *model.Application, reason string)
 
 	// HasMachine checks if a machine exists for the given application ID
 	HasMachine(appID int64) bool

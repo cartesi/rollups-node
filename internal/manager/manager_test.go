@@ -34,11 +34,18 @@ type MachineManagerSuite struct {
 	suite.Suite
 }
 
+const (
+	replayMachineHashField       = "machine_hash"
+	replayTxBufferDataBlockField = "tx_buffer_data_block"
+	replayExecutionLimitReason   = "execution limit"
+	testApplicationName          = "App1"
+)
+
 func newForkableMock() *MockRollupsMachine {
 	runtime := &MockRollupsMachine{
 		CompletionStatusReturn: machine.CompletionStatusAccepted,
 		HashReturn:             newHash(1),
-		OutputsHashReturn:      newHash(2),
+		StateProofReturn:       acceptedStateProof(newHash(1), newHash(2)),
 	}
 	runtime.ForkFunc = func(context.Context) (machine.Machine, error) {
 		return newForkableMock(), nil
@@ -68,6 +75,12 @@ func newTestMachineManager(
 	return NewMachineManager(
 		repo, logger, checkTemplateHash, inputBatchSize, append(opts, testRun)...,
 	)
+}
+
+func withReplayRun(
+	run func(context.Context, repository.ReplayRepository, replay.Executor, replay.Options) (replay.Result, error),
+) Option {
+	return func(m *MachineManager) { m.replayRun = run }
 }
 
 type nilSingleUnwrapperError struct{}
@@ -251,7 +264,10 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 
 		instance := &DummyMachineInstanceMock{
 			application: app,
-			replayErr:   &replay.ContradictionError{Application: app.Name, Field: "machine_hash"},
+			replayErr: &replay.ContradictionError{
+				Application: app.Name,
+				Field:       replayMachineHashField,
+			},
 		}
 		factory := &MockMachineInstanceFactory{Instance: instance}
 		manager := newTestMachineManager(
@@ -312,7 +328,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 		instance := &DummyMachineInstanceMock{
 			application: app,
 			replayErr: &replay.ContradictionError{
-				Application: app.Name, InputIndex: 9, Field: "outputs_hash",
+				Application: app.Name, InputIndex: 9, Field: replayTxBufferDataBlockField,
 				Expected: "0x01", Actual: "0x02",
 			},
 		}
@@ -370,7 +386,10 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 
 		instance := &DummyMachineInstanceMock{
 			application: app,
-			replayErr:   &replay.ContradictionError{Application: app.Name, Field: "machine_hash"},
+			replayErr: &replay.ContradictionError{
+				Application: app.Name,
+				Field:       replayMachineHashField,
+			},
 		}
 		factory := &MockMachineInstanceFactory{Instance: instance}
 		manager := newTestMachineManager(
@@ -398,7 +417,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 			repo, slog.New(slog.NewTextHandler(io.Discard, nil)), false, 10,
 		)
 		manager.FenceApplicationFailure(app, replayContradictionReason(&replay.ContradictionError{
-			Application: app.Name, Field: "machine_hash",
+			Application: app.Name, Field: replayMachineHashField,
 		}))
 
 		unrelatedReason := "machine process crashed"
@@ -429,7 +448,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 			repo, slog.New(slog.NewTextHandler(io.Discard, nil)), false, 10,
 		)
 		manager.FenceApplicationFailure(app, replayContradictionReason(&replay.ContradictionError{
-			Application: app.Name, Field: "machine_hash",
+			Application: app.Name, Field: replayMachineHashField,
 		}))
 		pending := manager.pendingApplicationFailures[app.ID]
 
@@ -460,7 +479,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 		)
 		detail := &replay.ContradictionError{
 			Application: app.Name,
-			Field:       "machine_hash",
+			Field:       replayMachineHashField,
 			Expected:    strings.Repeat("e", 5000),
 			Actual:      "different",
 		}
@@ -500,7 +519,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 			repo, slog.New(slog.NewTextHandler(io.Discard, nil)), false, 10,
 		)
 		manager.FenceApplicationFailure(app, replayContradictionReason(&replay.ContradictionError{
-			Application: app.Name, Field: "machine_hash",
+			Application: app.Name, Field: replayMachineHashField,
 		}))
 
 		repo.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed, mock.Anything).
@@ -546,7 +565,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 			repo, slog.New(slog.NewTextHandler(io.Discard, nil)), false, 10,
 		)
 		manager.FenceApplicationFailure(oldApp, replayContradictionReason(&replay.ContradictionError{
-			Application: oldApp.Name, Field: "machine_hash",
+			Application: oldApp.Name, Field: replayMachineHashField,
 		}))
 		replacement := *oldApp
 		replacement.ID = 83
@@ -588,7 +607,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 			repo, slog.New(slog.NewTextHandler(io.Discard, nil)), false, 10,
 		)
 		manager.FenceApplicationFailure(app, replayContradictionReason(&replay.ContradictionError{
-			Application: app.Name, Field: "machine_hash",
+			Application: app.Name, Field: replayMachineHashField,
 		}))
 		writeErr := errors.New("status write unavailable")
 		readErr := errors.New("status read unavailable")
@@ -806,7 +825,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 			instance := &DummyMachineInstanceMock{application: app}
 			if app.ID == badApp.ID {
 				instance.replayErr = &replay.ContradictionError{
-					Application: app.Name, InputIndex: 4, Field: "outputs_hash",
+					Application: app.Name, InputIndex: 4, Field: replayTxBufferDataBlockField,
 					Expected: "0x01", Actual: "0x02",
 				}
 			}
@@ -861,7 +880,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 			instance := &DummyMachineInstanceMock{application: app}
 			if app.ID == badApp.ID {
 				instance.replayErr = &replay.ContradictionError{
-					Application: app.Name, InputIndex: 4, Field: "outputs_hash",
+					Application: app.Name, InputIndex: 4, Field: replayTxBufferDataBlockField,
 				}
 			}
 			instances[app.ID] = instance
@@ -889,10 +908,10 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 		err            error
 		reasonContains string
 	}{
-		{"PayloadLengthLimit", machine.ErrPayloadLengthLimitExceeded, "execution limit"},
-		{"OutputsLimit", machine.ErrOutputsLimitExceeded, "execution limit"},
-		{"ReportsLimit", machine.ErrReportsLimitExceeded, "execution limit"},
-		{"McycleLimit", machine.ErrReachedLimitMcycle, "execution limit"},
+		{"PayloadLengthLimit", machine.ErrPayloadLengthLimitExceeded, replayExecutionLimitReason},
+		{"OutputsLimit", machine.ErrOutputsLimitExceeded, replayExecutionLimitReason},
+		{"ReportsLimit", machine.ErrReportsLimitExceeded, replayExecutionLimitReason},
+		{"McycleLimit", machine.ErrReachedLimitMcycle, replayExecutionLimitReason},
 		{"Deadline", machine.ErrDeadlineExceeded, "execution deadline"},
 		{"IncompleteAdvance", ErrIncompleteAdvance, "incomplete advance result"},
 		{"MachineInternal", machine.ErrMachineInternal, "failed internally"},
@@ -958,7 +977,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 		repo := &MockMachineRepository{}
 		app1 := &model.Application{
 			ID:                  1,
-			Name:                "App1",
+			Name:                testApplicationName,
 			IApplicationAddress: common.HexToAddress("0x1"),
 			Status:              model.ApplicationStatus_OK,
 			ExecutionParameters: model.ExecutionParameters{
@@ -1094,7 +1113,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 		manager := newTestMachineManager(repo, testLogger, false, 500)
 
 		// Add mock machines
-		app1 := &model.Application{ID: 1, Name: "App1"}
+		app1 := &model.Application{ID: 1, Name: testApplicationName}
 		app2 := &model.Application{ID: 2, Name: "App2"}
 		app3 := &model.Application{ID: 3, Name: "App3"}
 
@@ -1155,21 +1174,20 @@ func (s *MachineManagerSuite) TestSnapshotStartingStateVerification() {
 		repo.replayCount = app.ProcessedInputs
 		repo.replayRecords = []*model.ReplayRecord{{
 			Input: model.ReplayInput{
-				ApplicationID: app.ID,
-				EpochIndex:    0,
-				InputIndex:    0,
-				RawData:       []byte("replayed input"),
-				Status:        model.InputCompletionStatus_Accepted,
-				MachineHash:   &machineHash,
-				OutputsHash:   &outputsHash,
+				ApplicationID:     app.ID,
+				EpochIndex:        0,
+				InputIndex:        0,
+				RawData:           []byte("replayed input"),
+				Status:            model.InputCompletionStatus_Accepted,
+				MachineHash:       &machineHash,
+				TxBufferDataBlock: &outputsHash,
 			},
 		}}
 		return machineHash
 	}
 	newReplayTemplate := func(app *model.Application) MachineInstance {
 		base := &MockRollupsMachine{
-			HashReturn:        newHash(0),
-			OutputsHashReturn: newHash(0),
+			HashReturn: newHash(0),
 		}
 		base.ForkReturn = newForkableMock()
 		instance, err := NewMachineInstanceWithFactory(
@@ -1554,7 +1572,7 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 
 		app := &model.Application{
 			ID:                  1,
-			Name:                "App1",
+			Name:                testApplicationName,
 			IApplicationAddress: common.HexToAddress("0x1"),
 			Status:              model.ApplicationStatus_OK,
 			ExecutionParameters: model.ExecutionParameters{
@@ -1591,7 +1609,7 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 
 		app := &model.Application{
 			ID:                  1,
-			Name:                "App1",
+			Name:                testApplicationName,
 			IApplicationAddress: common.HexToAddress("0x1"),
 			Status:              model.ApplicationStatus_OK,
 			ExecutionParameters: model.ExecutionParameters{
@@ -1622,7 +1640,7 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 
 		app := &model.Application{
 			ID:                  1,
-			Name:                "App1",
+			Name:                testApplicationName,
 			IApplicationAddress: common.HexToAddress("0x1"),
 			Status:              model.ApplicationStatus_OK,
 			ProcessedInputs:     3,
@@ -1694,7 +1712,7 @@ func (s *MachineManagerSuite) TestApplications() {
 	manager := newTestMachineManager(repo, nil, false, 500)
 
 	// Add machines
-	app1 := &model.Application{ID: 1, Name: "App1"}
+	app1 := &model.Application{ID: 1, Name: testApplicationName}
 	app2 := &model.Application{ID: 2, Name: "App2"}
 
 	machine1 := &DummyMachineInstanceMock{application: app1}
@@ -1715,7 +1733,7 @@ func (s *MachineManagerSuite) TestApplications() {
 
 	require.Contains(appMap, int64(1))
 	require.Contains(appMap, int64(2))
-	require.Equal("App1", appMap[1].Name)
+	require.Equal(testApplicationName, appMap[1].Name)
 	require.Equal("App2", appMap[2].Name)
 }
 
@@ -1901,7 +1919,7 @@ func (m *DummyMachineInstanceMock) ProcessedInputs() uint64 {
 	return m.processedInputs
 }
 
-func (m *DummyMachineInstanceMock) OutputsProof(ctx context.Context) (*model.OutputsProof, error) {
+func (m *DummyMachineInstanceMock) StateProof(_ context.Context) (*model.StateProof, error) {
 	return nil, nil
 }
 

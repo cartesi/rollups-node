@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/manager/pmutex"
-	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/ethereum/go-ethereum/common"
 	"golang.org/x/sync/semaphore"
@@ -47,7 +47,7 @@ var (
 //     LLock for inspect (read-only fork). HLock starves LLock by design.
 //   - inspectSemaphore: Bounds concurrent inspect operations.
 type MachineInstanceImpl struct {
-	application *Application
+	application *model.Application
 	runtime     machine.Machine
 
 	// How many inputs were processed by the machine.
@@ -82,7 +82,7 @@ var (
 // NewMachineInstance creates a new machine instance for an application
 func NewMachineInstance(
 	ctx context.Context,
-	app *Application,
+	app *model.Application,
 	logger *slog.Logger,
 	checkTemplateHash bool,
 ) (MachineInstance, error) {
@@ -93,7 +93,7 @@ func NewMachineInstance(
 // NewMachineInstanceFromSnapshot creates a new machine instance from a snapshot
 func NewMachineInstanceFromSnapshot(
 	ctx context.Context,
-	app *Application,
+	app *model.Application,
 	logger *slog.Logger,
 	snapshotPath string,
 	expectedHash common.Hash,
@@ -106,7 +106,7 @@ func NewMachineInstanceFromSnapshot(
 
 func newMachineInstanceFromSnapshot(
 	ctx context.Context,
-	app *Application,
+	app *model.Application,
 	logger *slog.Logger,
 	snapshotPath string,
 	expectedHash common.Hash,
@@ -127,7 +127,7 @@ func newMachineInstanceFromSnapshot(
 // NewMachineInstanceWithFactory creates a new machine instance with a custom factory
 func NewMachineInstanceWithFactory(
 	ctx context.Context,
-	app *Application,
+	app *model.Application,
 	processedInputs uint64,
 	logger *slog.Logger,
 	factory MachineRuntimeFactory,
@@ -184,7 +184,7 @@ func NewMachineInstanceWithFactory(
 	return instance, nil
 }
 
-func (m *MachineInstanceImpl) Application() *Application {
+func (m *MachineInstanceImpl) Application() *model.Application {
 	return m.application
 }
 
@@ -201,7 +201,6 @@ func (m *MachineInstanceImpl) forkForAdvance(ctx context.Context, index uint64) 
 	if m.runtime == nil {
 		return nil, ErrMachineClosed
 	}
-
 	// Verify input index
 	current := m.processedInputs.Load()
 	if current != index {
@@ -216,10 +215,19 @@ func (m *MachineInstanceImpl) forkForAdvance(ctx context.Context, index uint64) 
 // Advance treats a machine fork as the execution transaction for one input.
 // It executes on the fork, selects the canonical root from the typed completion
 // status, and advances processedInputs exactly once for every completed input.
-// Accepted adopts the fork; currently nonaccepted completions keep the
-// predecessor runtime and close the fork. Incomplete execution returns an error
-// and adopts neither the fork nor a canonical result.
-func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIndex uint64, index uint64, computeHashes bool) (*AdvanceResult, error) {
+// Accepted completions adopt the post-run fork, rejected inputs keep the
+// predecessor runtime, and terminal completions dispose both runtimes after
+// collecting the post-run proof. Incomplete execution returns an error and
+// adopts neither the fork nor a canonical result. Disposing a terminal runtime
+// here prevents inspect from observing it before the durable application status
+// is committed by the advancer.
+func (m *MachineInstanceImpl) Advance(
+	ctx context.Context,
+	input []byte,
+	epochIndex uint64,
+	index uint64,
+	computeHashes bool,
+) (*model.AdvanceResult, error) {
 	// Only one advance can be active at a time
 	m.advanceMutex.Lock()
 	defer m.advanceMutex.Unlock()
@@ -233,18 +241,17 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 		return nil, err
 	}
 
-	// Get the machine state before processing
-	prevMachineHash, err := fork.Hash(ctx)
+	// Every input starts from the accepted state that can receive it. Keep its
+	// proof as the canonical result if the input rejects and the fork is
+	// discarded.
+	prevMachineProof, err := fork.StateProof(ctx)
 	if err != nil {
 		return nil, errors.Join(err, fork.Close())
 	}
-
-	prevOutputsHash, err := fork.OutputsHash(ctx)
-	if err != nil {
+	if err := machine.ValidateAcceptedState(prevMachineProof); err != nil {
 		return nil, errors.Join(err, fork.Close())
 	}
-
-	prevOutputsHashProof, err := fork.OutputsHashProof(ctx)
+	prevProof, err := stateProofFromMachine(prevMachineProof)
 	if err != nil {
 		return nil, errors.Join(err, fork.Close())
 	}
@@ -254,7 +261,7 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 	defer cancel()
 
 	// Process the input
-	advanceResp, err := fork.Advance(advanceCtx, input, prevMachineHash, computeHashes)
+	advanceResp, err := fork.Advance(advanceCtx, input, prevProof.MachineHash, computeHashes)
 	if err != nil {
 		return nil, errors.Join(err, fork.Close())
 	}
@@ -270,12 +277,10 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 	}
 
 	// Create the result
-	result := &AdvanceResult{
+	result := &model.AdvanceResult{
 		EpochIndex:          epochIndex,
 		InputIndex:          index,
 		Status:              status,
-		Outputs:             advanceResp.Outputs,
-		Reports:             advanceResp.Reports,
 		ExceptionData:       advanceResp.ExceptionData,
 		PeriodicStateHashes: advanceResp.PeriodicStateHashes,
 		PaddingRepetitions:  advanceResp.PaddingRepetitions,
@@ -285,27 +290,43 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 	// Resolve the canonical result and fork disposition once. Validation below
 	// must succeed before the selected disposition mutates the live instance.
 	adoptFork := false
+	terminalCompletion := false
 	switch result.Status {
-	case InputCompletionStatus_Accepted:
-		// Get the machine hash after processing
-		result.MachineHash, err = fork.Hash(ctx)
-		if err != nil {
-			return nil, errors.Join(err, fork.Close())
+	case model.InputCompletionStatus_Accepted:
+		postMachineProof, proofErr := fork.StateProof(ctx)
+		if proofErr != nil {
+			return nil, errors.Join(proofErr, fork.Close())
 		}
-		result.OutputsHash = advanceResp.OutputsHash
-		result.OutputsHashProof, err = fork.OutputsHashProof(ctx)
-		if err != nil {
-			return nil, errors.Join(err, fork.Close())
+		if proofErr := machine.ValidateAcceptedState(postMachineProof); proofErr != nil {
+			return nil, errors.Join(proofErr, fork.Close())
 		}
+		postProof, proofErr := stateProofFromMachine(postMachineProof)
+		if proofErr != nil {
+			return nil, errors.Join(proofErr, fork.Close())
+		}
+		result.StateProof = *postProof
+		result.Outputs = advanceResp.Outputs
+		result.Reports = advanceResp.Reports
 		adoptFork = true
-	case InputCompletionStatus_Rejected,
-		InputCompletionStatus_Exception,
-		InputCompletionStatus_MachineHalted:
-		// Use the previous state for currently nonaccepted inputs.
-		result.MachineHash = prevMachineHash
-		result.OutputsHash = prevOutputsHash
-		result.OutputsHashProof = prevOutputsHashProof
-	case InputCompletionStatus_None:
+	case model.InputCompletionStatus_Rejected:
+		// Rejected execution has no canonical state transition or effects.
+		result.StateProof = *prevProof
+	case model.InputCompletionStatus_Exception,
+		model.InputCompletionStatus_MachineHalted,
+		model.InputCompletionStatus_Overflow,
+		model.InputCompletionStatus_UnexpectedYield:
+		// Terminal execution preserves and proves the actual post-run state.
+		postMachineProof, proofErr := fork.StateProof(ctx)
+		if proofErr != nil {
+			return nil, errors.Join(proofErr, fork.Close())
+		}
+		postProof, proofErr := stateProofFromMachine(postMachineProof)
+		if proofErr != nil {
+			return nil, errors.Join(proofErr, fork.Close())
+		}
+		result.StateProof = *postProof
+		terminalCompletion = true
+	case model.InputCompletionStatus_None:
 		return nil, errors.Join(
 			fmt.Errorf("cannot resolve advance result for status %q", result.Status),
 			fork.Close(),
@@ -327,7 +348,27 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 		}
 	}
 
-	if adoptFork {
+	switch {
+	case terminalCompletion:
+		// A completed terminal input has no runnable successor. Make the
+		// runtime unavailable before returning so concurrent inspect requests
+		// cannot fork the terminal state while its database transaction is
+		// waiting to commit. The complete post-run proof above remains in the
+		// returned result; if persistence fails, the advancer shuts down and a
+		// restart reconstructs execution from persisted state.
+		m.mutex.HLock()
+		oldRuntime := m.runtime
+		m.runtime = nil
+		m.processedInputs.Add(1)
+		m.mutex.Unlock()
+
+		if err := oldRuntime.Close(); err != nil {
+			m.logger.Warn("Failed to close predecessor machine runtime after terminal completion", "error", err)
+		}
+		if err := fork.Close(); err != nil {
+			m.logger.Warn("Failed to close terminal machine runtime", "error", err)
+		}
+	case adoptFork:
 		// Replace the current machine with the fork
 		m.mutex.HLock()
 		oldRuntime := m.runtime
@@ -338,7 +379,7 @@ func (m *MachineInstanceImpl) Advance(ctx context.Context, input []byte, epochIn
 		if err := oldRuntime.Close(); err != nil {
 			m.logger.Warn("Failed to close old machine runtime", "error", err)
 		}
-	} else {
+	default:
 
 		// Close the fork since we're not using it
 		if err := fork.Close(); err != nil {
@@ -517,7 +558,7 @@ func (m *MachineInstanceImpl) Hash(ctx context.Context) ([32]byte, error) {
 	return hash, nil
 }
 
-func (m *MachineInstanceImpl) OutputsProof(ctx context.Context) (*OutputsProof, error) {
+func (m *MachineInstanceImpl) StateProof(ctx context.Context) (*model.StateProof, error) {
 	// Acquire the advance mutex to ensure no advance operations are in progress
 	m.advanceMutex.Lock()
 	defer m.advanceMutex.Unlock()
@@ -530,7 +571,7 @@ func (m *MachineInstanceImpl) OutputsProof(ctx context.Context) (*OutputsProof, 
 		return nil, ErrMachineClosed
 	}
 
-	m.logger.Debug("Retrieving machine hash, outputs merkle root and outputs merkle proof")
+	m.logger.Debug("Retrieving accepted machine state proof")
 
 	proofCtx, cancel := context.WithTimeout(ctx, m.application.ExecutionParameters.LoadDeadline)
 	defer cancel()
@@ -538,29 +579,44 @@ func (m *MachineInstanceImpl) OutputsProof(ctx context.Context) (*OutputsProof, 
 	// The runtime is a local child process — errors here indicate the process
 	// crashed, ran out of resources, or is otherwise unrecoverable.
 	// Close the runtime to avoid leaving a broken process alive.
-	machineHash, err := m.runtime.Hash(proofCtx)
+	machineProof, err := m.runtime.StateProof(proofCtx)
 	if err != nil {
-		return nil, m.destroyRuntime(fmt.Errorf("failed to get machine hash: %w", err))
+		return nil, m.destroyRuntime(fmt.Errorf("failed to get machine state proof: %w", err))
 	}
-
-	outputsHash, err := m.runtime.OutputsHash(proofCtx)
+	if err := machine.ValidateAcceptedState(machineProof); err != nil {
+		return nil, m.destroyRuntime(fmt.Errorf("machine is not at an accepted state: %w", err))
+	}
+	proof, err := stateProofFromMachine(machineProof)
 	if err != nil {
-		return nil, m.destroyRuntime(fmt.Errorf("failed to get outputs hash: %w", err))
+		return nil, m.destroyRuntime(err)
 	}
 
-	outputsHashProof, err := m.runtime.OutputsHashProof(proofCtx)
-	if err != nil {
-		return nil, m.destroyRuntime(fmt.Errorf("failed to get outputs hash proof: %w", err))
-	}
+	m.logger.Debug("Accepted machine state proof retrieved successfully",
+		"hash", "0x"+hex.EncodeToString(proof.MachineHash[:]))
+	return proof, nil
+}
 
-	proof := &OutputsProof{
-		MachineHash:      machineHash,
-		OutputsHash:      outputsHash,
-		OutputsHashProof: outputsHashProof,
+func stateProofFromMachine(machineProof *machine.StateProof) (*model.StateProof, error) {
+	if machineProof == nil {
+		return nil, fmt.Errorf(
+			"machine returned no state proof: %w", machine.ErrInvalidMachineProof,
+		)
 	}
-
-	m.logger.Debug("Machine hash, outputs merkle root and outputs merkle proof retrieved successfully",
-		"hash", "0x"+hex.EncodeToString(machineHash[:]))
+	proof := &model.StateProof{
+		MachineHash:         machineProof.MachineHash,
+		TxBufferDataBlock:   machineProof.TxBufferProof.DataBlock,
+		TxBufferProof:       machineProof.TxBufferProof.Siblings,
+		IflagsYDataBlock:    machineProof.IflagsYProof.DataBlock,
+		IflagsYProof:        machineProof.IflagsYProof.Siblings,
+		HtifTohostDataBlock: machineProof.HtifTohostProof.DataBlock,
+		HtifTohostProof:     machineProof.HtifTohostProof.Siblings,
+	}
+	if !proof.IsComplete() {
+		return nil, fmt.Errorf(
+			"machine returned an incomplete state proof: %w",
+			machine.ErrInvalidMachineProof,
+		)
+	}
 	return proof, nil
 }
 
@@ -606,19 +662,24 @@ func (m *MachineInstanceImpl) Close() error {
 // fail fast with ErrMachineClosed instead of talking to a broken process.
 // Must be called while holding the appropriate locks.
 func (m *MachineInstanceImpl) destroyRuntime(cause error) error {
-	if m.runtime == nil {
+	// Cancellation is checked before backend calls and does not imply that the
+	// child process is unhealthy. Preserve it for graceful shutdown/retry.
+	if errors.Is(cause, machine.ErrCanceled) {
 		return cause
+	}
+	if m.runtime == nil {
+		return errors.Join(ErrMachineClosed, cause)
 	}
 	closeErr := m.runtime.Close()
 	m.runtime = nil
-	return errors.Join(cause, closeErr)
+	return errors.Join(ErrMachineClosed, cause, closeErr)
 }
 
 // MachineRuntimeFactory defines an interface for creating machine runtimes
 type MachineRuntimeFactory interface {
 	CreateMachineRuntime(
 		ctx context.Context,
-		app *Application,
+		app *model.Application,
 		logger *slog.Logger,
 	) (machine.Machine, error)
 }
@@ -632,7 +693,7 @@ type machineLoader func(
 // createMachineRuntimeCommon contains the shared logic for creating machine runtimes
 func createMachineRuntimeCommon(
 	ctx context.Context,
-	app *Application,
+	app *model.Application,
 	logger *slog.Logger,
 	verifyExpectedHash bool,
 	machinePath string,
@@ -713,7 +774,7 @@ type DefaultMachineRuntimeFactory struct {
 // CreateMachineRuntime creates a new machine runtime for an application
 func (f *DefaultMachineRuntimeFactory) CreateMachineRuntime(
 	ctx context.Context,
-	app *Application,
+	app *model.Application,
 	logger *slog.Logger,
 ) (machine.Machine, error) {
 	return createMachineRuntimeCommon(
@@ -738,7 +799,7 @@ type SnapshotMachineRuntimeFactory struct {
 // CreateMachineRuntime creates a new machine runtime from a snapshot
 func (f *SnapshotMachineRuntimeFactory) CreateMachineRuntime(
 	ctx context.Context,
-	app *Application,
+	app *model.Application,
 	logger *slog.Logger,
 ) (machine.Machine, error) {
 	return createMachineRuntimeCommon(
@@ -755,20 +816,24 @@ func (f *SnapshotMachineRuntimeFactory) CreateMachineRuntime(
 
 // toInputStatus converts only completed, deterministic machine statuses to
 // canonical input statuses. Infrastructure interruptions never reach here.
-func toInputStatus(status machine.CompletionStatus) (InputCompletionStatus, error) {
+func toInputStatus(status machine.CompletionStatus) (model.InputCompletionStatus, error) {
 	switch status {
 	case machine.CompletionStatusAccepted:
-		return InputCompletionStatus_Accepted, nil
+		return model.InputCompletionStatus_Accepted, nil
 	case machine.CompletionStatusRejected:
-		return InputCompletionStatus_Rejected, nil
+		return model.InputCompletionStatus_Rejected, nil
 	case machine.CompletionStatusException:
-		return InputCompletionStatus_Exception, nil
+		return model.InputCompletionStatus_Exception, nil
 	case machine.CompletionStatusHalted:
-		return InputCompletionStatus_MachineHalted, nil
+		return model.InputCompletionStatus_MachineHalted, nil
+	case machine.CompletionStatusOverflow:
+		return model.InputCompletionStatus_Overflow, nil
+	case machine.CompletionStatusUnexpectedYield:
+		return model.InputCompletionStatus_UnexpectedYield, nil
 	case machine.CompletionStatusUnknown:
 		// Intentionally empty.
 	}
-	return InputCompletionStatus_None, fmt.Errorf(
+	return model.InputCompletionStatus_None, fmt.Errorf(
 		"unknown completed machine status %d: %w",
 		status,
 		ErrIncompleteAdvance,
