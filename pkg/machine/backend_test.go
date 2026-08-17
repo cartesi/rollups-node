@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+const testMachineAddress = "127.0.0.1:12345"
+
 // MockBackend is a testify mock implementation of the Backend interface
 type MockBackend struct {
 	mock.Mock
@@ -42,10 +44,11 @@ func (m *MockBackend) ReadMCycle(timeout time.Duration) (uint64, error) {
 
 func (m *MockBackend) SendCmioResponse(reason uint16, data []byte, revertRootHash *Hash, timeout time.Duration) error {
 	args := mock.Arguments{}
-	if requestType(reason) == AdvanceStateRequest {
+	switch reason {
+	case uint16(AdvanceStateRequest):
 		// match hash by value on advance
 		args = m.Called(reason, data, *revertRootHash, timeout)
-	} else if requestType(reason) == InspectStateRequest {
+	case uint16(InspectStateRequest):
 		// nil on inspect
 		args = m.Called(reason, data, nil, timeout)
 	}
@@ -65,6 +68,14 @@ func (m *MockBackend) GetRootHash(timeout time.Duration) (Hash, error) {
 func (m *MockBackend) WriteMemory(address uint64, data []byte, timeout time.Duration) error {
 	args := m.Called(address, data, timeout)
 	return args.Error(0)
+}
+
+func (m *MockBackend) ReadMemory(address uint64, length uint64, timeout time.Duration) ([]byte, error) {
+	args := m.Called(address, length, timeout)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]byte), args.Error(1)
 }
 
 func (m *MockBackend) Delete() {
@@ -91,14 +102,23 @@ func (m *MockBackend) CmioRxBufferSize() uint64 {
 	return args.Get(0).(uint64)
 }
 
-func (m *MockBackend) RunAndCollectRootHashes(mcycleEnd uint64, state *HashCollectorState, timeout time.Duration) (reason BreakReason, err error) {
+func (m *MockBackend) RunAndCollectRootHashes(
+	mcycleEnd uint64,
+	state *HashCollectorState,
+	timeout time.Duration,
+) (reason BreakReason, err error) {
 	args := m.Called(mcycleEnd, state, timeout)
 	return args.Get(0).(BreakReason), args.Error(1)
 }
 
-func (m *MockBackend) GetProof(address uint64, log2size int32, timeout time.Duration) ([]Hash, error) {
-	args := m.Called(address, log2size, timeout)
-	return args.Get(0).([]Hash), args.Error(1)
+func (m *MockBackend) GetProof(
+	address uint64,
+	log2TargetSize,
+	log2RootSize int32,
+	timeout time.Duration,
+) (MemoryProof, error) {
+	args := m.Called(address, log2TargetSize, log2RootSize, timeout)
+	return args.Get(0).(MemoryProof), args.Error(1)
 }
 
 // Helper functions for setting up common mock scenarios
@@ -185,7 +205,7 @@ func NewMockBackend() *MockBackend {
 // MockBackendFactory creates a backend factory that returns the provided mock
 func MockBackendFactory(backend *MockBackend) BackendFactory {
 	return func(_ string, _ time.Duration) (Backend, string, uint32, error) {
-		return backend, "127.0.0.1:12345", 12345, nil
+		return backend, testMachineAddress, 12345, nil
 	}
 }
 

@@ -4,6 +4,8 @@
 // This package is a binding to the emulator's C API.
 // Refer to the machine-c files in the emulator's repository for documentation
 // (mainly machine-c-api.h and jsonrpc-machine-c-api.h).
+//
+//nolint:gocritic // CGo output-parameter wrappers trigger dupSubExpr false positives.
 package emulator
 
 // #include <stdlib.h>
@@ -143,13 +145,19 @@ func (m *Machine) GetInitialConfig() (string, error) {
 }
 
 // get_proof
-func (m *Machine) GetProof(address uint64, log2size int32) (string, error) {
+func (m *Machine) GetProof(address uint64, log2TargetSize, log2RootSize int32) (string, error) {
 	var proof *C.char
 	var err error
 	var res string
 
 	m.callCAPI(func() {
-		err = newError(C.cm_get_proof(m.ptr, C.uint64_t(address), C.int32_t(log2size), C.int32_t(HashTreeLog2RootSize), &proof))
+		err = newError(C.cm_get_proof(
+			m.ptr,
+			C.uint64_t(address),
+			C.int32_t(log2TargetSize),
+			C.int32_t(log2RootSize),
+			&proof,
+		))
 		if err != nil || proof == nil {
 			return
 		}

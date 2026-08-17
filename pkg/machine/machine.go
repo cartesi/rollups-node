@@ -26,10 +26,9 @@ type (
 )
 
 // CompletionStatus identifies how a guest-machine request completed. Advance
-// and Inspect have the same completion outcomes; their callers decide whether
-// and how those outcomes affect canonical state. If execution does not
-// complete, the operation returns CompletionStatusUnknown together with an
-// error instead.
+// and Inspect share the same outcomes; their callers decide whether and how a
+// completed outcome affects canonical state. If execution does not complete,
+// the operation returns CompletionStatusUnknown with an error.
 type CompletionStatus uint8
 
 const (
@@ -40,6 +39,8 @@ const (
 	CompletionStatusRejected
 	CompletionStatusException
 	CompletionStatusHalted
+	CompletionStatusOverflow
+	CompletionStatusUnexpectedYield
 )
 
 // IsCompleted reports whether the status is a completed guest-machine outcome.
@@ -48,13 +49,33 @@ func (s CompletionStatus) IsCompleted() bool {
 	case CompletionStatusAccepted,
 		CompletionStatusRejected,
 		CompletionStatusException,
-		CompletionStatusHalted:
+		CompletionStatusHalted,
+		CompletionStatusOverflow,
+		CompletionStatusUnexpectedYield:
 		return true
 	case CompletionStatusUnknown:
 		return false
 	default:
 		return false
 	}
+}
+
+// LeafProof proves a 32-byte data block at a known machine-memory address.
+// Its shape matches the proof consumed by the released v3 contracts.
+type LeafProof struct {
+	DataBlock Hash
+	Siblings  []Hash
+}
+
+// StateProof binds the three state leaves used by the released v3 contracts to
+// one machine root. The proof is intentionally outcome-neutral: accepted and
+// terminal post-run states have the same Merkle shape, while callers that need
+// an accepted post-epoch state must additionally call ValidateAcceptedState.
+type StateProof struct {
+	MachineHash     Hash
+	IflagsYProof    LeafProof
+	HtifTohostProof LeafProof
+	TxBufferProof   LeafProof
 }
 
 // AdvanceResponse contains the result of a completed advance operation.
@@ -68,7 +89,6 @@ type AdvanceResponse struct {
 	ExceptionData       []byte
 	PeriodicStateHashes []Hash
 	PaddingRepetitions  uint64
-	OutputsHash         Hash
 }
 
 // InspectResponse contains the result of an inspect operation. On incomplete
@@ -91,12 +111,14 @@ var (
 	ErrNotAtManualYield           = errors.New("not at manual yield")
 	ErrException                  = errors.New("last request yielded an exception")
 	ErrRejected                   = errors.New("last request yielded as rejected")
+	ErrUnexpectedYield            = errors.New("last request yielded with an unsupported reason")
 	ErrHalted                     = errors.New("machine halted")
 	ErrOutputsLimitExceeded       = errors.New("outputs limit exceeded")
 	ErrReportsLimitExceeded       = errors.New("reports limit exceeded")
 	ErrPayloadLengthLimitExceeded = errors.New("payload length limit exceeded")
 	ErrHashLength                 = errors.New("hash does not have the exactly number of bytes")
 	ErrReachedLimitMcycle         = errors.New("machine reached limit mcycle")
+	ErrInvalidMachineProof        = errors.New("invalid machine validity proof")
 
 	// ErrMcycleOverflow preserves the emulator-reported fact that the machine
 	// itself reached imcyclemax, rather than a node target. Canonical overflow
@@ -122,23 +144,22 @@ type Machine interface {
 	Fork(ctx context.Context) (Machine, error)
 	// Hash returns the machine's merkle tree root hash.
 	Hash(ctx context.Context) (Hash, error)
-	// OutputsHash returns the outputs merkle root hash stored in the cmio tx buffer.
-	OutputsHash(ctx context.Context) (Hash, error)
-	// OutputsHashProof returns the proof that the outputs merkle root hash is stored in the cmio tx buffer.
-	OutputsHashProof(ctx context.Context) ([]Hash, error)
+	// StateProof returns a complete, locally verified proof of the current
+	// machine root and the three state leaves used by the rollups contracts.
+	StateProof(ctx context.Context) (*StateProof, error)
 
 	// Advance sends an input to the machine.
 	// The checkpointHash is the machine's root hash before processing the input,
 	// sent along with the request so the machine can revert to it if needed.
 	// A non-nil response and nil error mean the machine completed with one of
-	// the four completed CompletionStatus values. Any incomplete execution—input
+	// the six completed CompletionStatus values. Any incomplete execution—input
 	// validation, an operational limit, deadline/cancellation, or infrastructure
 	// failure—returns a nil response and a non-nil error. CompletionStatusUnknown
 	// is never returned by a successful call.
 	Advance(ctx context.Context, input []byte, checkpointHash Hash, computeHashes bool) (*AdvanceResponse, error)
 
 	// Inspect sends a query to the machine. A nil error means the guest completed
-	// with one of the four non-unknown CompletionStatus values. On incomplete
+	// with one of the six non-unknown CompletionStatus values. On incomplete
 	// execution, the response preserves reports emitted before the failure and
 	// the error identifies why inspection could not complete.
 	Inspect(ctx context.Context, query []byte) (*InspectResponse, error)
@@ -155,7 +176,7 @@ type Machine interface {
 }
 
 // MachineConfig contains configuration for a machine instance
-type MachineConfig struct {
+type MachineConfig struct { //nolint:revive // Keep the established public API name.
 	Address             string                    // Address to connect to the machine backend
 	Path                string                    // Path to the machine's directory
 	ExecutionParameters model.ExecutionParameters // Execution parameters for the machine
@@ -173,13 +194,13 @@ func DefaultConfig(path string) *MachineConfig {
 			AdvanceMaxCycles:   0,
 			InspectIncCycles:   1 << 22, //nolint:mnd
 			InspectMaxCycles:   0,
-			AdvanceIncDeadline: time.Second * 10,  // nolint: mnd
-			AdvanceMaxDeadline: time.Second * 180, // nolint: mnd
-			InspectIncDeadline: time.Second * 10,  // nolint: mnd
-			InspectMaxDeadline: time.Second * 180, // nolint: mnd
-			LoadDeadline:       time.Second * 300, // nolint: mnd
-			StoreDeadline:      time.Second * 180, // nolint: mnd
-			FastDeadline:       time.Second * 5,   // nolint: mnd
+			AdvanceIncDeadline: time.Second * 10,  //nolint:mnd
+			AdvanceMaxDeadline: time.Second * 180, //nolint:mnd
+			InspectIncDeadline: time.Second * 10,  //nolint:mnd
+			InspectMaxDeadline: time.Second * 180, //nolint:mnd
+			LoadDeadline:       time.Second * 300, //nolint:mnd
+			StoreDeadline:      time.Second * 180, //nolint:mnd
+			FastDeadline:       time.Second * 5,   //nolint:mnd
 		},
 		BackendFactoryFn: DefaultBackendFactory, // Use the default backend factory
 	}
@@ -263,14 +284,31 @@ func Load(ctx context.Context, logger *slog.Logger, config *MachineConfig) (Mach
 		machine.Close()
 		return nil, err
 	}
-	if manualResult.status == CompletionStatusException {
+	switch manualResult.status {
+	case CompletionStatusAccepted:
+		return machine, nil
+	case CompletionStatusException:
 		machine.Close()
 		return nil, ErrException
-	}
-	if manualResult.status != CompletionStatusAccepted {
+	case CompletionStatusRejected:
 		machine.Close()
 		return nil, ErrRejected
+	case CompletionStatusUnexpectedYield:
+		machine.Close()
+		return nil, ErrUnexpectedYield
+	case CompletionStatusUnknown, CompletionStatusHalted, CompletionStatusOverflow:
+		machine.Close()
+		return nil, fmt.Errorf(
+			"invalid initial completion status %d: %w",
+			manualResult.status,
+			ErrMachineInternal,
+		)
+	default:
+		machine.Close()
+		return nil, fmt.Errorf(
+			"unsupported initial completion status %d: %w",
+			manualResult.status,
+			ErrMachineInternal,
+		)
 	}
-
-	return machine, nil
 }

@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-const FAST_DEADLINE = 2 * time.Second
+const FAST_DEADLINE = 2 * time.Second //nolint:revive // Keep the established test helper name.
 
 func TestUtil(t *testing.T) {
 	suite.Run(t, new(UtilSuite))
@@ -61,7 +61,7 @@ func (s *UtilSuite) TestStopServer() {
 	require := s.Require()
 
 	// Test with nil logger
-	err := StopServer("127.0.0.1:12345", nil, FAST_DEADLINE)
+	err := StopServer(testMachineAddress, nil, FAST_DEADLINE)
 	require.Error(err)
 	require.Contains(err.Error(), "logger must not be nil")
 

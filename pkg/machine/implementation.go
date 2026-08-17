@@ -5,6 +5,7 @@ package machine
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 // RequestType represents the type of request to send to the machine
@@ -88,8 +90,26 @@ const (
 const maxOutputs = 65536 // 2^16
 const maxReports = 65536 // 2^16
 
-const TxBufferAddress uint64 = 0x60800000
-const HashLog2Size = 5 // 32 bytes
+const (
+	// These addresses and hash-tree sizes are defined by the Cartesi Machine
+	// emulator.
+	iflagsYAddress          uint64 = 0x308
+	htifTohostAddress       uint64 = 0x330
+	TxBufferAddress         uint64 = 0x60800000
+	HashLog2Size                   = 5 // 32-byte data block
+	machineMemoryLog2Size   int32  = 64
+	memoryProofSiblingCount        = int(machineMemoryLog2Size) - HashLog2Size
+)
+
+const (
+	// These values encode the HTIF fields proved by the accepted-state check.
+	htifDeviceYield         uint64 = 2
+	htifCommandManual       uint64 = 1
+	htifReasonInputAccepted uint64 = 1
+	htifDeviceShift                = 56
+	htifCommandShift               = 48
+	htifReasonShift                = 32
+)
 
 // machineImpl implements the Machine interface by wrapping an emulator.RemoteMachine
 type machineImpl struct {
@@ -141,51 +161,154 @@ func (m *machineImpl) Hash(ctx context.Context) (Hash, error) {
 	return hash, nil
 }
 
-// OutputsHash returns the outputs hash stored in the cmio tx buffer
-func (m *machineImpl) OutputsHash(ctx context.Context) (Hash, error) {
-	result, err := m.readManualYieldResult(ctx)
-	if err != nil {
-		err = fmt.Errorf("could not read the outputs hash: %w", err)
-		return Hash{}, err
-	}
-
-	switch result.status {
-	case CompletionStatusAccepted:
-		// Intentionally empty.
-	case CompletionStatusRejected:
-		return Hash{}, fmt.Errorf("could not read the outputs hash: %w", ErrRejected)
-	case CompletionStatusException:
-		return Hash{}, fmt.Errorf("could not read the outputs hash: %w", ErrException)
-	case CompletionStatusHalted:
-		return Hash{}, fmt.Errorf("could not read the outputs hash: %w", ErrHalted)
-	case CompletionStatusUnknown:
-		return Hash{}, fmt.Errorf(
-			"could not read the outputs hash with completion status %d: %w",
-			result.status,
-			ErrMachineInternal,
-		)
-	}
-
-	if length := len(result.data); length != HashSize {
-		err = fmt.Errorf("invalid outputs hash: %w (it has %d bytes)", ErrHashLength, length)
-		return Hash{}, err
-	}
-
-	var outputsHash Hash
-	copy(outputsHash[:], result.data)
-	return outputsHash, nil
-}
-
-func (m *machineImpl) OutputsHashProof(ctx context.Context) ([]Hash, error) {
+func (m *machineImpl) StateProof(ctx context.Context) (*StateProof, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err
 	}
-	siblings, err := m.backend.GetProof(TxBufferAddress, HashLog2Size, m.params.LoadDeadline)
+	machineHash, err := m.backend.GetRootHash(m.params.LoadDeadline)
 	if err != nil {
-		err := fmt.Errorf("could not get outputs hash machine proof: %w", err)
-		return nil, errors.Join(ErrMachineInternal, err)
+		return nil, errors.Join(
+			ErrMachineInternal,
+			fmt.Errorf("could not get the machine root for its validity proof: %w", err),
+		)
 	}
-	return siblings, nil
+
+	iflagsYProof, err := m.readLeafProof(ctx, machineHash, iflagsYAddress)
+	if err != nil {
+		return nil, fmt.Errorf("could not prove iflags_Y: %w", err)
+	}
+	htifTohostProof, err := m.readLeafProof(ctx, machineHash, htifTohostAddress)
+	if err != nil {
+		return nil, fmt.Errorf("could not prove HTIF tohost: %w", err)
+	}
+	txBufferProof, err := m.readLeafProof(ctx, machineHash, TxBufferAddress)
+	if err != nil {
+		return nil, fmt.Errorf("could not prove the CMIO TX buffer: %w", err)
+	}
+
+	return &StateProof{
+		MachineHash:     machineHash,
+		IflagsYProof:    iflagsYProof,
+		HtifTohostProof: htifTohostProof,
+		TxBufferProof:   txBufferProof,
+	}, nil
+}
+
+// ValidateAcceptedState checks the state semantics required when an epoch
+// is published through the released v3 contracts. StateProof itself remains
+// generic so the exact post-run proof can also be persisted for terminal
+// outcomes.
+func ValidateAcceptedState(proof *StateProof) error {
+	if proof == nil {
+		return fmt.Errorf("state proof is nil: %w", ErrInvalidMachineProof)
+	}
+	if readMachineWord(proof.IflagsYProof.DataBlock, iflagsYAddress) == 0 {
+		return fmt.Errorf("iflags_Y is zero: %w", ErrInvalidMachineProof)
+	}
+	tohost := readMachineWord(proof.HtifTohostProof.DataBlock, htifTohostAddress)
+	if !isAcceptedManualYield(tohost) {
+		return fmt.Errorf("HTIF tohost does not signal an accepted manual yield: %w", ErrInvalidMachineProof)
+	}
+	return nil
+}
+
+func (m *machineImpl) readLeafProof(ctx context.Context, machineHash Hash, wordAddress uint64) (LeafProof, error) {
+	if err := checkContext(ctx); err != nil {
+		return LeafProof{}, err
+	}
+	dataBlockAddress := wordAddress &^ ((uint64(1) << HashLog2Size) - 1)
+	proof, err := m.backend.GetProof(
+		dataBlockAddress,
+		int32(HashLog2Size),
+		machineMemoryLog2Size,
+		m.params.LoadDeadline,
+	)
+	if err != nil {
+		return LeafProof{}, errors.Join(ErrMachineInternal, fmt.Errorf("could not get memory proof: %w", err))
+	}
+	data, err := m.backend.ReadMemory(
+		dataBlockAddress,
+		uint64(1)<<HashLog2Size,
+		m.params.LoadDeadline,
+	)
+	if err != nil {
+		return LeafProof{}, errors.Join(ErrMachineInternal, fmt.Errorf("could not read proof data block: %w", err))
+	}
+	leafProof, err := verifyMemoryProof(machineHash, dataBlockAddress, proof, data)
+	if err != nil {
+		return LeafProof{}, errors.Join(ErrMachineInternal, err)
+	}
+	return leafProof, nil
+}
+
+func verifyMemoryProof(machineHash Hash, dataBlockAddress uint64, proof MemoryProof, data []byte) (LeafProof, error) {
+	if proof.Log2RootSize != machineMemoryLog2Size {
+		return LeafProof{}, fmt.Errorf(
+			"root log2 size is %d, expected %d: %w",
+			proof.Log2RootSize, machineMemoryLog2Size, ErrInvalidMachineProof,
+		)
+	}
+	if proof.Log2TargetSize != int32(HashLog2Size) {
+		return LeafProof{}, fmt.Errorf(
+			"target log2 size is %d, expected %d: %w",
+			proof.Log2TargetSize, HashLog2Size, ErrInvalidMachineProof,
+		)
+	}
+	if proof.TargetAddress != dataBlockAddress {
+		return LeafProof{}, fmt.Errorf(
+			"target address is %#x, expected %#x: %w",
+			proof.TargetAddress, dataBlockAddress, ErrInvalidMachineProof,
+		)
+	}
+	if proof.RootHash != machineHash {
+		return LeafProof{}, fmt.Errorf("proof root does not match the current machine root: %w", ErrInvalidMachineProof)
+	}
+	if len(proof.Siblings) != memoryProofSiblingCount {
+		return LeafProof{}, fmt.Errorf(
+			"proof has %d siblings, expected %d: %w",
+			len(proof.Siblings), memoryProofSiblingCount, ErrInvalidMachineProof,
+		)
+	}
+	if len(data) != 1<<HashLog2Size {
+		return LeafProof{}, fmt.Errorf("proof data block has %d bytes, expected %d: %w", len(data), 1<<HashLog2Size, ErrInvalidMachineProof)
+	}
+
+	var dataBlock Hash
+	copy(dataBlock[:], data)
+	targetHash := Hash(crypto.Keccak256Hash(data))
+	if proof.TargetHash != targetHash {
+		return LeafProof{}, fmt.Errorf("proof target hash does not match its data block: %w", ErrInvalidMachineProof)
+	}
+
+	root := targetHash
+	index := dataBlockAddress >> HashLog2Size
+	for _, sibling := range proof.Siblings {
+		if index&1 == 0 {
+			root = Hash(crypto.Keccak256Hash(root[:], sibling[:]))
+		} else {
+			root = Hash(crypto.Keccak256Hash(sibling[:], root[:]))
+		}
+		index >>= 1
+	}
+	if root != machineHash {
+		return LeafProof{}, fmt.Errorf("proof siblings do not reconstruct the current machine root: %w", ErrInvalidMachineProof)
+	}
+
+	return LeafProof{
+		DataBlock: dataBlock,
+		Siblings:  append([]Hash(nil), proof.Siblings...),
+	}, nil
+}
+
+func readMachineWord(dataBlock Hash, address uint64) uint64 {
+	offset := int(address & ((uint64(1) << HashLog2Size) - 1))
+	return binary.LittleEndian.Uint64(dataBlock[offset : offset+8])
+}
+
+func isAcceptedManualYield(tohost uint64) bool {
+	return tohost>>htifDeviceShift == htifDeviceYield &&
+		(tohost>>htifCommandShift)&0xff == htifCommandManual &&
+		(tohost>>htifReasonShift)&0xffff == htifReasonInputAccepted
 }
 
 // Advance sends an input to the machine and processes it
@@ -214,10 +337,11 @@ func (m *machineImpl) Advance(ctx context.Context, input []byte, checkpointHash 
 		if length := len(result.completion.data); length != HashSize {
 			return nil, fmt.Errorf("%w (it has %d bytes)", ErrHashLength, length)
 		}
-		copy(resp.OutputsHash[:], result.completion.data)
-	} else if resp.Status == CompletionStatusException {
+	}
+	if resp.Status == CompletionStatusException {
 		resp.ExceptionData = append([]byte{}, result.completion.data...)
 	}
+
 	return resp, nil
 }
 
@@ -345,8 +469,7 @@ func (m *machineImpl) readManualYieldResult(ctx context.Context) (completionResu
 	case ManualYieldReasonException:
 		return completionResult{status: CompletionStatusException, data: data}, nil
 	default:
-		err = fmt.Errorf("invalid manual yield reason: %d: %w", yieldReason, ErrMachineInternal)
-		return completionResult{}, err
+		return completionResult{status: CompletionStatusUnexpectedYield}, nil
 	}
 }
 
@@ -422,6 +545,9 @@ func (m *machineImpl) process(
 		return result, err
 	case errors.Is(err, ErrHalted):
 		result.completion.status = CompletionStatusHalted
+		return result, nil
+	case errors.Is(err, ErrMcycleOverflow):
+		result.completion.status = CompletionStatusOverflow
 		return result, nil
 	default:
 		return result, err
@@ -522,7 +648,7 @@ func (m *machineImpl) run(
 		case Halted:
 			return finish(ErrHalted, terminalHashAppended)
 		case McycleOverflow:
-			return fail(executionLimitError(reqType, bounds, currentCycle, ErrMcycleOverflow))
+			return finish(ErrMcycleOverflow, terminalHashAppended)
 		case ReachedTargetMcycle, YieldedSoftly:
 			continue
 		case Failed:
@@ -867,11 +993,12 @@ func checkContext(ctx context.Context) error {
 		return nil
 	}
 	err := ctx.Err()
-	if errors.Is(err, context.DeadlineExceeded) {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
 		return ErrDeadlineExceeded
-	} else if errors.Is(err, context.Canceled) {
+	case errors.Is(err, context.Canceled):
 		return ErrCanceled
-	} else {
+	default:
 		return err
 	}
 }
