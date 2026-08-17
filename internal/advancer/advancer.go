@@ -31,9 +31,7 @@ type AdvancerRepository interface {
 	ListInputs(ctx context.Context, nameOrAddress string, f repository.InputFilter, p repository.Pagination, descending bool) ([]*Input, uint64, error)
 	GetLastInput(ctx context.Context, appAddress string, epochIndex uint64) (*Input, error)
 	StoreAdvanceResult(ctx context.Context, appID int64, ar *AdvanceResult) error
-	UpdateEpochInputsProcessed(ctx context.Context, nameOrAddress string, epochIndex uint64) error
-	UpdateEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64, proof *OutputsProof) error
-	RepeatPreviousEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64) error
+	UpdateEpochInputsProcessed(ctx context.Context, nameOrAddress string, epochIndex uint64, proof *StateProof) error
 	UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	UpdateInputSnapshotURI(ctx context.Context, appId int64, inputIndex uint64, snapshotURI string) error
@@ -118,6 +116,9 @@ func (s *Service) Step(ctx context.Context) (bool, error) {
 // the tick even when it has many small epochs.
 func (s *Service) stepApp(ctx context.Context, app *Application) (bool, error) {
 	appAddress := app.IApplicationAddress.String()
+	if !s.machineManager.HasMachine(app.ID) {
+		return false, fmt.Errorf("%w: %d", ErrNoApp, app.ID)
+	}
 
 	epochs, _, err := getUnprocessedEpochs(ctx, s.repository, appAddress)
 	if err != nil {
@@ -126,12 +127,19 @@ func (s *Service) stepApp(ctx context.Context, app *Application) (bool, error) {
 
 	budgetRemaining := s.inputBatchSize
 	for _, epoch := range epochs {
-		moreInputs, processed, err := s.processEpochInputs(ctx, app, epoch.Index, budgetRemaining)
+		moreInputs, processed, terminal, err := s.processEpochInputs(
+			ctx, app, epoch.Index, budgetRemaining,
+		)
 		if err != nil {
 			return false, err
 		}
 
 		budgetRemaining -= processed
+		if terminal {
+			// The terminal result itself is durable, but its epoch remains CLOSED:
+			// there is no accepted state from which to publish a validity proof.
+			return false, nil
+		}
 
 		// More inputs remain in this epoch — reschedule immediately.
 		if moreInputs {
@@ -165,13 +173,19 @@ func (s *Service) finalizeEpoch(ctx context.Context, app *Application, epoch *Ep
 		return nil
 	}
 
-	if err := s.handleEpochAfterInputsProcessed(ctx, app, epoch); err != nil {
+	proof, err := s.prepareEpochPublication(ctx, app, epoch)
+	if err != nil {
 		return err
 	}
 
 	appAddress := app.IApplicationAddress.String()
-	if err := s.repository.UpdateEpochInputsProcessed(ctx, appAddress, epoch.Index); err != nil {
-		return err
+	if err := s.repository.UpdateEpochInputsProcessed(ctx, appAddress, epoch.Index, proof); err != nil {
+		return fmt.Errorf(
+			"publishing state proof for application %s epoch %d: %w",
+			app.Name,
+			epoch.Index,
+			err,
+		)
 	}
 
 	s.Logger.Info("Epoch updated to Inputs Processed",
@@ -184,24 +198,24 @@ func (s *Service) finalizeEpoch(ctx context.Context, app *Application, epoch *Ep
 // and the number of inputs actually processed.
 func (s *Service) processEpochInputs(
 	ctx context.Context, app *Application, epochIndex uint64, budget uint64,
-) (bool, uint64, error) {
+) (bool, uint64, bool, error) {
 	appAddress := app.IApplicationAddress.String()
 	inputs, total, err := getUnprocessedInputs(ctx, s.repository, appAddress, epochIndex, budget)
 	if err != nil {
-		return false, 0, err
+		return false, 0, false, err
 	}
 	if len(inputs) == 0 {
-		return false, 0, nil
+		return false, 0, false, nil
 	}
 	s.Logger.Debug("Processing inputs",
 		"application", app.Name, "epoch_index", epochIndex,
 		"count", len(inputs), "total", total)
-	if err := s.processInputs(ctx, app, inputs); err != nil {
-		return false, 0, err
+	processed, terminal, err := s.processInputs(ctx, app, inputs)
+	if err != nil {
+		return false, processed, false, err
 	}
-	processed := uint64(len(inputs))
 	// More work remains if total exceeds what we just processed.
-	return total > processed, processed, nil
+	return total > processed, processed, terminal, nil
 }
 
 func (s *Service) isAllEpochInputsProcessed(app *Application, epoch *Epoch) (bool, error) {
@@ -219,24 +233,31 @@ func (s *Service) isAllEpochInputsProcessed(app *Application, epoch *Epoch) (boo
 	return false, nil
 }
 
-// processInputs handles the processing of inputs for an application
-func (s *Service) processInputs(ctx context.Context, app *Application, inputs []*Input) error {
+// processInputs stores the completed prefix of inputs and stops immediately
+// after a terminal completion. Rejected inputs are nonterminal and therefore
+// do not truncate the batch.
+func (s *Service) processInputs(
+	ctx context.Context,
+	app *Application,
+	inputs []*Input,
+) (uint64, bool, error) {
 	// Skip if there are no inputs to process
 	if len(inputs) == 0 {
-		return nil
+		return 0, false, nil
 	}
 
 	// Get the machine instance for this application
 	machine, exists := s.machineManager.GetMachine(app.ID)
 	if !exists {
-		return fmt.Errorf("%w: %d", ErrNoApp, app.ID)
+		return 0, false, fmt.Errorf("%w: %d", ErrNoApp, app.ID)
 	}
 
+	var processed uint64
 	// Process each input sequentially
 	for _, input := range inputs {
 		// Check for context cancellation before processing each input
 		if err := ctx.Err(); err != nil {
-			return err
+			return processed, false, err
 		}
 
 		s.Logger.Info("Processing input",
@@ -257,7 +278,7 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 					"application", app.Name,
 					"index", input.Index,
 					"error", err)
-				return err
+				return processed, false, err
 			}
 
 			// Anything else, including a deadline, is an execution failure.
@@ -279,7 +300,7 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 				}
 			}
 
-			return err
+			return processed, false, err
 		}
 		// log advance result hashes
 		s.Logger.Info("Processing input finished",
@@ -296,6 +317,24 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 		// Store the result in the database
 		err = s.repository.StoreAdvanceResult(ctx, input.EpochApplicationID, result)
 		if err != nil {
+			if errors.Is(err, repository.ErrApplicationNotRunnable) {
+				// Another service durably fenced this application after the
+				// machine began its advance. Discard only this stale runtime; the
+				// database already contains the authoritative app-local outcome.
+				s.Logger.Warn("Advance result lost an application status race; closing stale machine",
+					"application", app.Name,
+					"epoch", input.EpochIndex,
+					"index", input.Index,
+					"error", err)
+				closeErr := machine.Close()
+				if closeErr != nil {
+					s.Logger.Error("Could not close stale machine after application status race",
+						"application", app.Name,
+						"error", closeErr)
+				}
+				return processed, false, errors.Join(err, closeErr)
+			}
+
 			// Advance has already changed the live machine, but the transaction
 			// did not confirm that its result was saved. The database may still
 			// show this input as pending. Reusing this machine could then execute
@@ -323,18 +362,40 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 					"application", app.Name,
 					"error", closeErr)
 			}
-			return errors.Join(err, closeErr)
+			return processed, false, errors.Join(err, closeErr)
+		}
+		processed++
+		if result.Status.IsTerminal() {
+			applicationStatus, _ := result.Status.TerminalApplicationStatus()
+			s.Logger.Error("Application execution terminated",
+				"application", app.Name,
+				"address", app.IApplicationAddress,
+				"epoch", result.EpochIndex,
+				"input", result.InputIndex,
+				"completion_status", result.Status,
+				"application_status", applicationStatus,
+			)
+			return processed, true, nil
 		}
 
 		// Create a snapshot if needed
 		if result.Status == InputCompletionStatus_Accepted {
 			err = s.handleSnapshot(ctx, app, machine, input)
 			if err != nil {
-				if errors.Is(err, context.Canceled) {
+				switch {
+				case errors.Is(ctx.Err(), context.Canceled):
 					s.Logger.Debug("Snapshot creation cancelled due to shutdown",
 						"application", app.Name,
 						"index", input.Index)
-				} else {
+					return processed, false, err
+				case errors.Is(err, manager.ErrMachineClosed):
+					s.Logger.Error("Snapshot failure destroyed the machine runtime",
+						"application", app.Name,
+						"index", input.Index,
+						"error", err)
+					s.markApplicationFailed(ctx, app, err.Error())
+					return processed, false, err
+				default:
 					s.Logger.Error("Failed to create snapshot",
 						"application", app.Name,
 						"index", input.Index,
@@ -345,7 +406,7 @@ func (s *Service) processInputs(ctx context.Context, app *Application, inputs []
 		}
 	}
 
-	return nil
+	return processed, false, nil
 }
 
 // markApplicationFailed persists FAILED or installs a local fence when the
@@ -391,60 +452,52 @@ func (s *Service) isEpochLastInput(ctx context.Context, app *Application, input 
 	return false, nil
 }
 
-// handleEpochAfterInputsProcessed handles the snapshot creation after when an epoch is closed after an input was processed
-func (s *Service) handleEpochAfterInputsProcessed(ctx context.Context, app *Application, epoch *Epoch) error {
-	// if epoch has inputs, all data is updated after advance, just check for snapshot
-	if epoch.InputIndexLowerBound != epoch.InputIndexUpperBound {
-		// Get the machine instance for this application
-		machine, exists := s.machineManager.GetMachine(app.ID)
-		if !exists {
-			return fmt.Errorf("%w: %d", ErrNoApp, app.ID)
-		}
-
-		// Check if this is the last processed input
-		lastProcessedInput, err := s.repository.GetLastProcessedInput(ctx, app.IApplicationAddress.String())
-		if err != nil {
-			return fmt.Errorf("failed to get last input: %w", err)
-		}
-
-		// Check if the application has a epoch snapshot policy
-		if lastProcessedInput != nil && app.ExecutionParameters.SnapshotPolicy == SnapshotPolicy_EveryEpoch {
-			// Handle the snapshot
-			return s.handleSnapshot(ctx, app, machine, lastProcessedInput)
-		}
-
-		return nil
+// prepareEpochPublication acquires a fresh proof from the resident accepted
+// machine state for every epoch, including empty and rejection-only epochs,
+// and performs any epoch-boundary snapshot before the proof is published.
+func (s *Service) prepareEpochPublication(
+	ctx context.Context,
+	app *Application,
+	epoch *Epoch,
+) (*StateProof, error) {
+	machine, exists := s.machineManager.GetMachine(app.ID)
+	if !exists {
+		return nil, fmt.Errorf("%w: %d", ErrNoApp, app.ID)
 	}
 
-	// if epoch has no inputs, we need to copy previous epoch Outputs Proof
-	// first epoch we need to get it from the template
-	if epoch.Index == 0 {
-		// Get the machine instance for this application
-		machine, exists := s.machineManager.GetMachine(app.ID)
-		if !exists {
-			return fmt.Errorf("%w: %d", ErrNoApp, app.ID)
+	proof, err := machine.StateProof(ctx)
+	if err != nil {
+		// If the runtime was destroyed (e.g., child process crashed), mark the
+		// app as failed to avoid an infinite retry loop.
+		if errors.Is(err, manager.ErrMachineClosed) {
+			s.markApplicationFailed(ctx, app, err.Error())
 		}
-		outputsProof, err := machine.OutputsProof(ctx)
-		if err != nil {
-			// If the runtime was destroyed (e.g., child process crashed),
-			// mark the app as failed to avoid an infinite retry loop.
-			if errors.Is(err, manager.ErrMachineClosed) {
-				s.markApplicationFailed(ctx, app, err.Error())
-			}
-			return fmt.Errorf("failed to get outputs proof from machine: %w", err)
-		}
-		err = s.repository.UpdateEpochOutputsProof(ctx, app.ID, epoch.Index, outputsProof)
-		if err != nil {
-			return fmt.Errorf("failed to store outputs proof for epoch 0: %w", err)
-		}
-	} else {
-		err := s.repository.RepeatPreviousEpochOutputsProof(ctx, app.ID, epoch.Index)
-		if err != nil {
-			return fmt.Errorf("failed to repeat previous epoch outputs proof: %w", err)
-		}
+		return nil, fmt.Errorf("failed to get final state proof from machine: %w", err)
+	}
+	if !proof.IsComplete() {
+		return nil, fmt.Errorf(
+			"machine returned an incomplete final state proof: %w",
+			repository.ErrInvalidStateProof,
+		)
 	}
 
-	return nil
+	if epoch.InputIndexLowerBound == epoch.InputIndexUpperBound ||
+		app.ExecutionParameters.SnapshotPolicy != SnapshotPolicy_EveryEpoch {
+		return proof, nil
+	}
+
+	lastProcessedInput, err := s.repository.GetLastProcessedInput(
+		ctx, app.IApplicationAddress.String(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get last input: %w", err)
+	}
+	if lastProcessedInput != nil {
+		if err := s.handleSnapshot(ctx, app, machine, lastProcessedInput); err != nil {
+			return nil, err
+		}
+	}
+	return proof, nil
 }
 
 // handleSnapshot creates a snapshot based on the application's snapshot policy
