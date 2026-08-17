@@ -153,6 +153,49 @@ func (s *InspectSuite) TestPostForeclosedMachineUnavailable() {
 	s.Contains(string(body), "Application was foreclosed; machine unavailable")
 }
 
+func (s *InspectSuite) TestPostTerminalApplicationUnavailable() {
+	for _, status := range ApplicationStatusAllValues {
+		if !status.IsTerminal() {
+			continue
+		}
+		s.Run(status.String(), func() {
+			inspect, app, _ := s.setup()
+			app.Status = status
+			request := httptest.NewRequest(
+				http.MethodPost,
+				"/inspect/"+app.Name,
+				bytes.NewBufferString("query"),
+			)
+			request.SetPathValue("dapp", app.Name)
+			recorder := httptest.NewRecorder()
+
+			inspect.ServeHTTP(recorder, request)
+
+			s.Equal(http.StatusServiceUnavailable, recorder.Code)
+			s.Contains(recorder.Body.String(), "Application is terminal; inspect unavailable")
+		})
+	}
+}
+
+func (s *InspectSuite) TestPostMachineClosedDuringInspectIsUnavailable() {
+	inspect, app, _ := s.setup()
+	machine := inspect.IInspectMachines.(*MachinesMock).Map[app.ID]
+	machine.inspectError = manager.ErrMachineClosed
+	inspect.IInspectMachines.(*MachinesMock).Map[app.ID] = machine
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/inspect/"+app.Name,
+		bytes.NewBufferString("query"),
+	)
+	request.SetPathValue("dapp", app.Name)
+	recorder := httptest.NewRecorder()
+
+	inspect.ServeHTTP(recorder, request)
+
+	s.Equal(http.StatusServiceUnavailable, recorder.Code)
+	s.Contains(recorder.Body.String(), "Machine not ready")
+}
+
 func (s *InspectSuite) TestPostMaxPayloadSize() {
 	inspect, app, _ := s.setup()
 
@@ -245,6 +288,26 @@ func (s *InspectSuite) TestPostResponseMatchesGeneratedClientContract() {
 			wantStatus: inspectclient.MachineHalted,
 		},
 		{
+			name: "overflow",
+			result: manager.InspectResult{
+				Status:          pkgmachine.CompletionStatusOverflow,
+				Reports:         [][]byte{{0xab, 0xcd}},
+				ProcessedInputs: 52,
+			},
+			wantStatus: inspectclient.Failed,
+			wantError:  inspectFailureMessage,
+		},
+		{
+			name: "unexpected yield",
+			result: manager.InspectResult{
+				Status:          pkgmachine.CompletionStatusUnexpectedYield,
+				Reports:         [][]byte{{0xab, 0xce}},
+				ProcessedInputs: 53,
+			},
+			wantStatus: inspectclient.Failed,
+			wantError:  inspectFailureMessage,
+		},
+		{
 			name: "failed",
 			result: manager.InspectResult{
 				Status:          pkgmachine.CompletionStatusUnknown,
@@ -253,7 +316,7 @@ func (s *InspectSuite) TestPostResponseMatchesGeneratedClientContract() {
 				Error:           errors.New("backend disconnected"),
 			},
 			wantStatus: inspectclient.Failed,
-			wantError:  "The node could not complete the inspection",
+			wantError:  inspectFailureMessage,
 		},
 	}
 
@@ -317,7 +380,7 @@ func (s *InspectSuite) TestCycleLimitIsSanitizedFailedResultWithoutApplicationFa
 	s.Require().NoError(json.NewDecoder(recorder.Body).Decode(&got))
 	s.Equal(inspectclient.Failed, got.Status)
 	s.Require().NotNil(got.Error)
-	s.Equal("The node could not complete the inspection", *got.Error)
+	s.Equal(inspectFailureMessage, *got.Error)
 	s.NotContains(*got.Error, "absolute_mcycle")
 	s.NotContains(*got.Error, "configured_cap")
 	s.Contains(logs.String(), "absolute_mcycle=123456")
@@ -415,12 +478,16 @@ func (mock *MachinesMock) GetMachine(appId int64) (manager.MachineInstance, bool
 type MockMachine struct {
 	application   *Application
 	inspectResult *manager.InspectResult
+	inspectError  error
 }
 
 func (mock *MockMachine) Inspect(
 	_ context.Context,
 	query []byte,
 ) (*manager.InspectResult, error) {
+	if mock.inspectError != nil {
+		return nil, mock.inspectError
+	}
 	if mock.inspectResult != nil {
 		result := *mock.inspectResult
 		return &result, nil
@@ -457,7 +524,7 @@ func (mock *MockMachine) ProcessedInputs() uint64 {
 	return 0
 }
 
-func (m *MockMachine) OutputsProof(ctx context.Context) (*OutputsProof, error) {
+func (mock *MockMachine) StateProof(_ context.Context) (*StateProof, error) {
 	return nil, nil
 }
 

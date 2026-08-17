@@ -42,6 +42,7 @@ var (
 	ErrNoApp                  = errors.New("no application")
 	ErrMachineNotReady        = errors.New("machine not ready for application")
 	ErrForeclosedAppNoMachine = errors.New("application was foreclosed; machine unavailable")
+	ErrTerminalAppNoInspect   = errors.New("application is terminal; inspect unavailable")
 )
 
 type IInspectMachines interface {
@@ -204,6 +205,12 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	app, machine, resolveErr := inspect.resolveApp(r.Context(), dapp)
 	if resolveErr != nil {
+		if errors.Is(resolveErr, ErrTerminalAppNoInspect) {
+			inspect.Logger.Info("Terminal application inspect unavailable",
+				"application", dapp, "err", resolveErr)
+			http.Error(w, "Application is terminal; inspect unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		if errors.Is(resolveErr, ErrMachineNotReady) {
 			inspect.Logger.Warn("Machine not ready", "application", dapp, "err", resolveErr)
 			http.Error(w, "Machine not ready", http.StatusServiceUnavailable)
@@ -233,10 +240,16 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	result, err := machine.Inspect(ctx, payload)
 	if err != nil {
-		if errors.Is(err, manager.ErrInspectAtCapacity) {
+		switch {
+		case errors.Is(err, manager.ErrInspectAtCapacity):
 			inspect.Logger.Info("Application inspect at capacity",
 				"application", dapp)
 			http.Error(w, "Application inspect at capacity", http.StatusServiceUnavailable)
+			return
+		case errors.Is(err, manager.ErrMachineClosed):
+			inspect.Logger.Info("Application machine unavailable",
+				"application", dapp)
+			http.Error(w, "Machine not ready", http.StatusServiceUnavailable)
 			return
 		}
 		service.WriteInternalError(ctx, w, inspect.Logger,
@@ -312,6 +325,25 @@ func (inspect *Inspector) buildInspectResponse(
 			"application", dapp,
 			"request_id", requestID,
 		)
+	case pkgmachine.CompletionStatusOverflow:
+		// The current public inspect schema predates the machine overflow
+		// condition. Preserve its sanitized failure contract until that API is
+		// versioned to expose overflow directly.
+		response.Status = inspectStatusFailed
+		response.Error = inspectFailureMessage
+		inspect.Logger.Debug("Machine reached mcycle overflow while inspecting",
+			"application", dapp,
+			"request_id", requestID,
+		)
+	case pkgmachine.CompletionStatusUnexpectedYield:
+		// As with overflow, keep the existing public inspect contract stable and
+		// expose the new outcome only through trusted logs for now.
+		response.Status = inspectStatusFailed
+		response.Error = inspectFailureMessage
+		inspect.Logger.Debug("Machine returned an unexpected manual yield while inspecting",
+			"application", dapp,
+			"request_id", requestID,
+		)
 	case pkgmachine.CompletionStatusUnknown:
 		response.Status = inspectStatusFailed
 		response.Error = inspectFailureMessage
@@ -358,6 +390,14 @@ func (inspect *Inspector) resolveApp(
 			return nil, nil, fmt.Errorf("%w %s", err, nameOrAddress)
 		}
 		return nil, nil, fmt.Errorf("%w %s", ErrNoApp, nameOrAddress)
+	}
+	if app.Status.IsTerminal() {
+		return nil, nil, fmt.Errorf(
+			"%w: application %s has status %s",
+			ErrTerminalAppNoInspect,
+			nameOrAddress,
+			app.Status,
+		)
 	}
 	machine, exists := inspect.GetMachine(app.ID)
 	if !exists {
