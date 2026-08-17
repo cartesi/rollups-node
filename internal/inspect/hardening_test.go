@@ -103,8 +103,8 @@ func (m *erroringMachine) Advance(ctx context.Context, input []byte, a, b uint64
 }
 func (m *erroringMachine) Application() *Application { return m.inner.Application() }
 func (m *erroringMachine) ProcessedInputs() uint64   { return m.inner.ProcessedInputs() }
-func (m *erroringMachine) OutputsProof(ctx context.Context) (*OutputsProof, error) {
-	return m.inner.OutputsProof(ctx)
+func (m *erroringMachine) StateProof(ctx context.Context) (*StateProof, error) {
+	return m.inner.StateProof(ctx)
 }
 func (m *erroringMachine) CreateSnapshot(ctx context.Context, processedInputs uint64, path string) error {
 	return m.inner.CreateSnapshot(ctx, processedInputs, path)
