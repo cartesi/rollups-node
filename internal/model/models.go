@@ -61,20 +61,8 @@ func (a *Application) IsForeclosed() bool {
 	return a.ForecloseBlock != 0
 }
 
-func (a *Application) CanExecute() bool {
-	return a.Enabled && a.Status == ApplicationStatus_OK && !a.IsForeclosed()
-}
-
 func (a *Application) NeedsL1Observation() bool {
 	return a.Enabled
-}
-
-func (a *Application) NeedsForeclosureObservation() bool {
-	return a.NeedsL1Observation() && !a.IsForeclosed()
-}
-
-func (a *Application) NeedsPostForeclosureObservation() bool {
-	return a.NeedsL1Observation() && a.IsForeclosed()
 }
 
 // ForeclosureScanCaughtUp reports whether the historical L1 scan has reached
@@ -84,15 +72,18 @@ func (a *Application) NeedsPostForeclosureObservation() bool {
 // A freshly bootstrapped node can record foreclose_block before it has ingested
 // the historical inputs/epochs. Until the scan catches up the drain tables are
 // incomplete, and a "nothing left to drain" answer would be premature. Each
-// consensus type advances a different cursor: DaveConsensus ingestion is driven
-// by EpochSealed scans (last_epoch_check_block), while IConsensus ingestion is
-// driven by InputAdded scans (last_input_check_block). This is the single
-// definition of drain-readiness shared by the claimer, PRT, and manager.
+// IConsensus ingestion is driven by InputAdded scans (last_input_check_block).
+// DaveConsensus has two independent scans: sealed epochs advance
+// last_epoch_check_block, while inputs in the current open epoch advance
+// last_input_check_block. Both must reach the foreclosure boundary before its
+// historical state is complete. This is the single definition of
+// drain-readiness shared by the claimer, PRT, and manager.
 //
 // Only meaningful for a foreclosed app (foreclose_block != 0).
 func (a *Application) ForeclosureScanCaughtUp() bool {
 	if a.IsDaveConsensus() {
-		return a.LastEpochCheckBlock >= a.ForecloseBlock
+		return a.LastEpochCheckBlock >= a.ForecloseBlock &&
+			a.LastInputCheckBlock >= a.ForecloseBlock
 	}
 	return a.LastInputCheckBlock >= a.ForecloseBlock
 }
@@ -391,6 +382,26 @@ func (e ApplicationStatus) IsTerminal() bool {
 		ApplicationStatus_UnexpectedYield:
 		return true
 	case ApplicationStatus_OK, ApplicationStatus_Failed:
+		return false
+	default:
+		return false
+	}
+}
+
+// IsExecutionTerminal reports whether machine execution ended deterministically
+// and must not be retried. Unlike DIVERGED and CORRUPTED, these states may still
+// escalate to CORRUPTED when later L1 observation disproves local history.
+func (e ApplicationStatus) IsExecutionTerminal() bool {
+	switch e {
+	case ApplicationStatus_GuestException,
+		ApplicationStatus_MachineHalted,
+		ApplicationStatus_McycleOverflow,
+		ApplicationStatus_UnexpectedYield:
+		return true
+	case ApplicationStatus_OK,
+		ApplicationStatus_Failed,
+		ApplicationStatus_Diverged,
+		ApplicationStatus_Corrupted:
 		return false
 	default:
 		return false

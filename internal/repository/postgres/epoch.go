@@ -227,7 +227,9 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 		}
 	}
 
-	// Update last processed block
+	// Update the input cursor monotonically. Dave sealed-epoch catch-up may
+	// revisit an older block after open-epoch ingestion has already scanned
+	// farther ahead; that historical write must not rewind drain readiness.
 	appUpdateStmt := table.Application.
 		UPDATE(
 			table.Application.LastInputCheckBlock,
@@ -235,7 +237,9 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 		SET(
 			uint64Expr(blockNumber),
 		).
-		WHERE(whereClause)
+		WHERE(whereClause.AND(
+			table.Application.LastInputCheckBlock.LT(uint64Expr(blockNumber)),
+		))
 
 	sqlStr, args := appUpdateStmt.Sql()
 	_, err = tx.Exec(ctx, sqlStr, args...)

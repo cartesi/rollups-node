@@ -8,11 +8,20 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
+
+const withdrawalLedgerDivergenceReasonPrefix = "withdrawal_ledger_divergence:"
+
+func hasWithdrawalLedgerDivergence(app *Application) bool {
+	return app.Status == ApplicationStatus_Corrupted &&
+		app.Reason != nil &&
+		strings.HasPrefix(*app.Reason, withdrawalLedgerDivergenceReasonPrefix)
+}
 
 // checkForPostForeclosureWithdrawals runs once per evmreader tick for each
 // foreclosed app whose accounts drive has been proved. It performs a
@@ -33,11 +42,11 @@ func (r *Service) checkForPostForeclosureWithdrawals(
 	app appContracts,
 	mostRecentBlockNumber uint64,
 ) {
-	// A withdrawal-count divergence (detected below) is terminal state
-	// corruption: once it has marked the app CORRUPTED, stop scanning rather
-	// than re-deriving the same divergence every tick. The local withdrawal
-	// ledger can no longer be trusted, so there is nothing left to index.
-	if app.application.Status == ApplicationStatus_Corrupted {
+	// A withdrawal-ledger divergence (detected below) means this local ledger
+	// cannot be trusted. Stop re-deriving that specific failure every tick, but
+	// keep indexing when CORRUPTED came from another subsystem: an output or
+	// sealed-epoch disagreement says nothing about the withdrawal ledger.
+	if hasWithdrawalLedgerDivergence(app.application) {
 		return
 	}
 
@@ -99,10 +108,20 @@ func (r *Service) checkForPostForeclosureWithdrawals(
 			// deliberately do not advance the cursor or re-seed from the chain;
 			// either would silently rewrite committed withdrawal history, which
 			// is never acceptable for a ledger of fund movements.
-			// setApplicationCorrupted always returns non-nil (the reason text);
-			// the DB-error case is logged inside setApplicationStatus.
+			r.Logger.Error("Withdrawal ledger divergence detected",
+				"application", app.application.Name,
+				"address", app.application.IApplicationAddress,
+				"start_block", startBlock,
+				"end_block", mostRecentBlockNumber,
+				"error", err)
+			// setApplicationCorrupted always returns non-nil (the reason text),
+			// and logs any DB failure. An existing integrity-terminal status keeps
+			// its first cause, so this branch will deliberately detect and report
+			// the withdrawal divergence again on a later tick rather than relying
+			// on process-local suppression.
 			_ = r.setApplicationCorrupted(ctx, app.application,
-				"withdrawal count divergence while scanning from block %d: %v",
+				withdrawalLedgerDivergenceReasonPrefix+
+					" local withdrawal count exceeds chain while scanning from block %d: %v",
 				startBlock, err)
 			return
 		}

@@ -27,10 +27,11 @@ func prtForeclosedApp(id int64, block uint64) *model.Application {
 		Status:               model.ApplicationStatus_OK,
 		ForecloseBlock:       block,
 		ForecloseTransaction: &txHash,
-		// LastEpochCheckBlock defaults to the foreclose block so callers
-		// who don't care about the bootstrap guard skip past it. Tests
-		// that exercise the guard override this field explicitly.
+		// Both DaveConsensus observation cursors default to the foreclose
+		// block so callers that don't care about the bootstrap guard skip it.
+		// Tests that exercise the guard override one cursor explicitly.
 		LastEpochCheckBlock: block,
+		LastInputCheckBlock: block,
 	}
 }
 
@@ -137,7 +138,7 @@ func TestHandleForeclosedApp_SurfacesDrainCheckError(t *testing.T) {
 // drain gate would then see an empty input table and incorrectly return
 // false, making the app look drained before any pre-foreclosure epoch is
 // observed locally. The guard must defer the drain check until
-// LastEpochCheckBlock >= ForecloseBlock.
+// both DaveConsensus observation cursors reach ForecloseBlock.
 //
 // The mock has no HasUndrainedEpochsBeforeBlock or UpdateApplicationStatus
 // expectation registered; testify/mock panics on an unexpected call, so

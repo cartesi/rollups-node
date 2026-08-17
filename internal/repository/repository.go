@@ -59,10 +59,7 @@ type ApplicationFilter struct {
 }
 
 // ExecutableApplicationsFilter selects apps that may run normal machine work.
-//
-// This is the repository-side equivalent of Application.CanExecute. Keep this
-// helper shared because manager and validator both need the exact same
-// database predicate before they create machines or compute claims.
+// The manager uses this exact database predicate before creating machines.
 func ExecutableApplicationsFilter() ApplicationFilter {
 	return ApplicationFilter{
 		Enabled:             new(true),

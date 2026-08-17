@@ -197,6 +197,13 @@ func TestApplicationStatusContract(t *testing.T) {
 				value != ApplicationStatus_OK && value != ApplicationStatus_Failed,
 				value.IsTerminal(),
 			)
+			require.Equal(t,
+				value == ApplicationStatus_GuestException ||
+					value == ApplicationStatus_MachineHalted ||
+					value == ApplicationStatus_McycleOverflow ||
+					value == ApplicationStatus_UnexpectedYield,
+				value.IsExecutionTerminal(),
+			)
 		})
 	}
 }
