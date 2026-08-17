@@ -4,7 +4,9 @@
 package evmreader
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"math/big"
 	"testing"
 
@@ -196,7 +198,7 @@ func (s *SealedEpochsSuite) TestCatchUpForeclosedSealedEpochsAdvancesCursor() {
 			ConsensusType:        Consensus_PRT,
 			ForecloseBlock:       forecloseBlock,
 			LastEpochCheckBlock:  lastEpochCheckBlock,
-			LastInputCheckBlock:  lastEpochCheckBlock,
+			LastInputCheckBlock:  forecloseBlock,
 			LastOutputCheckBlock: lastEpochCheckBlock,
 			DataAvailability:     DataAvailability_InputBox[:],
 		},
@@ -237,7 +239,7 @@ func (s *SealedEpochsSuite) TestCatchUpForeclosedSealedEpochsAdvancesCursor() {
 	s.dave.AssertExpectations(s.T())
 }
 
-func (s *SealedEpochsSuite) TestForeclosedDaveConsensusAppDoesNotProcessOpenEpoch() {
+func (s *SealedEpochsSuite) TestTerminalDaveConsensusAppProcessesOpenEpochToForeclosure() {
 	const forecloseBlock uint64 = 70
 	s.evmReader.inputReaderEnabled = true
 
@@ -248,18 +250,83 @@ func (s *SealedEpochsSuite) TestForeclosedDaveConsensusAppDoesNotProcessOpenEpoc
 			IApplicationAddress: app1Addr,
 			IConsensusAddress:   consensusAddr,
 			ConsensusType:       Consensus_PRT,
-			Status:              ApplicationStatus_OK,
+			Status:              ApplicationStatus_MachineHalted,
 			ForecloseBlock:      forecloseBlock,
 			LastEpochCheckBlock: forecloseBlock,
+			LastInputCheckBlock: forecloseBlock - 1,
 			DataAvailability:    DataAvailability_InputBox[:],
 		},
 		daveConsensus: s.dave,
 		inputSource:   s.inputBox,
 	}
 
+	s.repository.On("GetLastNonOpenEpoch",
+		mock.Anything, app.application.IApplicationAddress.String()).
+		Return(&Epoch{
+			Index:                2,
+			LastBlock:            50,
+			InputIndexUpperBound: 0,
+		}, nil).Once()
+	s.repository.On("GetEpoch",
+		mock.Anything, app.application.IApplicationAddress.Hex(), uint64(3)).
+		Return(nil, nil).Once()
+	s.repository.On("GetEventLastCheckBlock",
+		mock.Anything, app.application.ID, MonitoredEvent_InputAdded).
+		Return(forecloseBlock-1, nil).Once()
+	s.repository.On("GetNumberOfInputs",
+		mock.Anything, app.application.IApplicationAddress.String()).
+		Return(uint64(0), nil).Once()
+	s.inputBox.On("GetNumberOfInputs", mock.Anything, app.application.IApplicationAddress).
+		Return(big.NewInt(0), nil)
+	s.repository.On("CreateEpochsAndInputs",
+		mock.Anything,
+		app.application.IApplicationAddress.String(),
+		mock.MatchedBy(func(epochInputs map[*Epoch][]*Input) bool {
+			if len(epochInputs) != 1 {
+				return false
+			}
+			for epoch, inputs := range epochInputs {
+				return epoch.Status == EpochStatus_Open &&
+					epoch.Index == 3 &&
+					epoch.LastBlock == forecloseBlock &&
+					len(inputs) == 0
+			}
+			return false
+		}),
+		forecloseBlock,
+	).Return(nil).Once()
+
 	s.evmReader.scanDaveConsensusEpochsAndInputs(s.ctx, []appContracts{app}, forecloseBlock+10)
 
-	s.repository.AssertNumberOfCalls(s.T(), "GetLastNonOpenEpoch", 0)
-	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
+	s.repository.AssertExpectations(s.T())
+	s.inputBox.AssertExpectations(s.T())
 	s.dave.AssertNumberOfCalls(s.T(), "GetCurrentSealedEpoch", 0)
+}
+
+func (s *SealedEpochsSuite) TestDaveConsensusWithUnsupportedInputSourceDoesNotPanic() {
+	s.evmReader.inputReaderEnabled = true
+	var logs bytes.Buffer
+	s.evmReader.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+	app := appContracts{
+		application: &Application{
+			ID:                  1,
+			Name:                "unsupported-input-source-prt-app",
+			IApplicationAddress: app1Addr,
+			ConsensusType:       Consensus_PRT,
+			Status:              ApplicationStatus_OK,
+			// Alpha.6's abandoned InputBoxAndEspresso experiment. The node
+			// intentionally supports only the official InputBox source.
+			DataAvailability: []byte{0x85, 0x79, 0xfd, 0x0c},
+		},
+		daveConsensus: s.dave,
+	}
+
+	s.NotPanics(func() {
+		s.evmReader.scanDaveConsensusEpochsAndInputs(
+			s.ctx, []appContracts{app}, 100)
+	})
+	s.Contains(logs.String(), "configured input source is unsupported")
+	s.Equal(ApplicationStatus_OK, app.application.Status)
+	s.dave.AssertNotCalled(s.T(), "GetCurrentSealedEpoch")
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateApplicationStatus", 0)
 }

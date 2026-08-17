@@ -236,17 +236,37 @@ func (r *Service) readAndUpdateOutputs(
 		}
 
 		if !bytes.Equal(output.RawData, event.Output) {
-			// setApplicationDiverged always returns non-nil (the reason text itself).
-			// The DB error case is already logged inside setApplicationStatus.
-			// On DB success the app is marked inoperable and won't reappear next tick.
-			// On DB failure the app reappears as Enabled next tick, retrying this path.
-			_ = r.setApplicationDiverged(ctx, app.application,
-				"Output mismatch. Application is in an invalid state. Output Index %d, raw data %s != event data %s",
+			reasonFmt :=
+				"Output mismatch. Application is in an invalid state. Output Index %d, raw data %s != event data %s"
+			args := []any{
 				output.Index,
-				"0x"+hex.EncodeToString(output.RawData),
-				"0x"+hex.EncodeToString(event.Output),
-			)
-			return
+				"0x" + hex.EncodeToString(output.RawData),
+				"0x" + hex.EncodeToString(event.Output),
+			}
+
+			switch {
+			case app.application.Status == ApplicationStatus_OK ||
+				app.application.Status == ApplicationStatus_Failed:
+				_ = r.setApplicationDiverged(ctx, app.application, reasonFmt, args...)
+				if app.application.Status != ApplicationStatus_Diverged {
+					return // persistence failed; retry this event next tick
+				}
+			case app.application.Status.IsExecutionTerminal():
+				_ = r.setApplicationCorrupted(ctx, app.application, reasonFmt, args...)
+				if app.application.Status != ApplicationStatus_Corrupted {
+					return // persistence failed; retry this event next tick
+				}
+			case app.application.Status == ApplicationStatus_Diverged ||
+				app.application.Status == ApplicationStatus_Corrupted:
+				// The integrity failure is already durable. Do not retry an
+				// impossible status rewrite on every polling tick.
+			default:
+				r.Logger.Error("Output mismatch found for application with unknown status",
+					"application", app.application.Name,
+					"status", app.application.Status)
+				return
+			}
+			continue
 		}
 
 		r.Logger.Info("Output executed",

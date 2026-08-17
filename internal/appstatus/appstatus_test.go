@@ -93,6 +93,54 @@ func (s *AppStatusSuite) TestSetFailedf() {
 	require.Equal(ApplicationStatus_Failed, app.Status)
 }
 
+func (s *AppStatusSuite) TestSetFailedPreservesTerminalStatus() {
+	for _, status := range []ApplicationStatus{
+		ApplicationStatus_Diverged,
+		ApplicationStatus_Corrupted,
+		ApplicationStatus_GuestException,
+		ApplicationStatus_MachineHalted,
+		ApplicationStatus_McycleOverflow,
+		ApplicationStatus_UnexpectedYield,
+	} {
+		s.Run(status.String(), func() {
+			app := newTestApp()
+			app.Status = status
+			originalReason := "terminal reason"
+			app.Reason = &originalReason
+			repo := &mockRepo{}
+
+			err := SetFailed(
+				context.Background(), slog.Default(), repo, app, "later runtime failure")
+
+			s.Require().NoError(err)
+			s.Zero(repo.callCount)
+			s.Equal(status, app.Status)
+			s.Equal(originalReason, *app.Reason)
+		})
+	}
+}
+
+func (s *AppStatusSuite) TestRejectsExecutionTerminalTarget() {
+	for _, status := range []ApplicationStatus{
+		ApplicationStatus_GuestException,
+		ApplicationStatus_MachineHalted,
+		ApplicationStatus_McycleOverflow,
+		ApplicationStatus_UnexpectedYield,
+	} {
+		s.Run(status.String(), func() {
+			app := newTestApp()
+			repo := &mockRepo{}
+
+			err := setApplicationStatus(
+				context.Background(), slog.Default(), repo, app, status, "terminal outcome")
+
+			s.Require().ErrorContains(err, "must be written atomically by repository.StoreAdvanceResult")
+			s.Zero(repo.callCount)
+			s.Equal(ApplicationStatus_OK, app.Status)
+		})
+	}
+}
+
 func (s *AppStatusSuite) TestSetDiverged() {
 	require := s.Require()
 	repo := &mockRepo{}
@@ -137,6 +185,54 @@ func (s *AppStatusSuite) TestSetCorrupted() {
 	require.Equal(ApplicationStatus_Corrupted, app.Status)
 	require.NotNil(app.Reason)
 	require.Equal("machine snapshot missing", *app.Reason)
+}
+
+func (s *AppStatusSuite) TestExecutionTerminalCanEscalateOnlyToCorrupted() {
+	require := s.Require()
+	logger := slog.Default()
+
+	escalated := newTestApp()
+	escalated.Status = ApplicationStatus_MachineHalted
+	originalReason := "machine halted"
+	escalated.Reason = &originalReason
+	repo := &mockRepo{}
+	err := SetCorrupted(context.Background(), logger, repo, escalated, "L1 output mismatch")
+	require.Error(err)
+	require.Equal(1, repo.callCount)
+	require.Equal(ApplicationStatus_Corrupted, escalated.Status)
+	require.Equal("L1 output mismatch", *escalated.Reason)
+
+	preserved := newTestApp()
+	preserved.Status = ApplicationStatus_MachineHalted
+	preserved.Reason = &originalReason
+	repo = &mockRepo{}
+	err = SetDiverged(context.Background(), logger, repo, preserved, "later claim disagreement")
+	require.ErrorContains(err, "later claim disagreement")
+	require.Zero(repo.callCount)
+	require.Equal(ApplicationStatus_MachineHalted, preserved.Status)
+	require.Equal(originalReason, *preserved.Reason)
+}
+
+func (s *AppStatusSuite) TestIntegrityTerminalStatusWritesAreIdempotent() {
+	for _, current := range []ApplicationStatus{
+		ApplicationStatus_Diverged,
+		ApplicationStatus_Corrupted,
+	} {
+		s.Run(current.String(), func() {
+			app := newTestApp()
+			app.Status = current
+			originalReason := "first integrity finding"
+			app.Reason = &originalReason
+			repo := &mockRepo{}
+
+			err := SetCorrupted(
+				context.Background(), slog.Default(), repo, app, "repeated finding")
+			s.Require().ErrorContains(err, "repeated finding")
+			s.Zero(repo.callCount)
+			s.Equal(current, app.Status)
+			s.Equal(originalReason, *app.Reason)
+		})
+	}
 }
 
 func (s *AppStatusSuite) TestSetFailedDBError() {

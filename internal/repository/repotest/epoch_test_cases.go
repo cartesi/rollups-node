@@ -114,6 +114,31 @@ func (s *EpochSuite) TestCreateEpochsAndInputs() {
 		s.Require().NoError(err)
 		s.Equal(EpochStatus_Closed, got.Status)
 	})
+
+	s.Run("HistoricalCatchUpDoesNotRewindInputCursor", func() {
+		const (
+			currentBlock    uint64 = 100
+			historicalBlock uint64 = 90
+		)
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).WithBlocks(0, currentBlock-1).Build()
+
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: {}}, currentBlock)
+		s.Require().NoError(err)
+
+		err = s.Repo.CreateEpochsAndInputs(
+			s.Ctx, app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: {}}, historicalBlock)
+		s.Require().NoError(err)
+
+		block, err := s.Repo.GetEventLastCheckBlock(
+			s.Ctx, app.ID, MonitoredEvent_InputAdded)
+		s.Require().NoError(err)
+		s.Equal(currentBlock, block)
+	})
 }
 
 func (s *EpochSuite) TestGetEpoch() {

@@ -43,10 +43,18 @@ func TestBuildBlockScanPlan_RoutesScannerTargets(t *testing.T) {
 			wantOutput:    []int64{3},
 		},
 		{
-			name: "diverged app without foreclosure is not routed",
-			apps: []appContracts{planApp(4, planAppConfig{
-				status: ApplicationStatus_Diverged,
-			})},
+			name: "non-executing apps remain observable before foreclosure",
+			apps: []appContracts{
+				planApp(40, planAppConfig{status: ApplicationStatus_Failed}),
+				planApp(41, planAppConfig{status: ApplicationStatus_Diverged}),
+				planApp(42, planAppConfig{status: ApplicationStatus_Corrupted}),
+				planApp(43, planAppConfig{status: ApplicationStatus_GuestException}),
+				planApp(44, planAppConfig{status: ApplicationStatus_MachineHalted}),
+				planApp(45, planAppConfig{status: ApplicationStatus_McycleOverflow}),
+				planApp(46, planAppConfig{status: ApplicationStatus_UnexpectedYield}),
+			},
+			wantIConsensusInput: []int64{40, 41, 42, 43, 44, 45, 46},
+			wantOutput:          []int64{40, 41, 42, 43, 44, 45, 46},
 		},
 		{
 			name: "foreclosed IConsensus app with input cursor behind gets final input catch-up",
@@ -78,6 +86,18 @@ func TestBuildBlockScanPlan_RoutesScannerTargets(t *testing.T) {
 			wantDaveEpoch:       []int64{7},
 			wantOutput:          []int64{7},
 			wantPostForeclosure: []int64{7},
+		},
+		{
+			name: "foreclosed DaveConsensus app with open-input cursor behind gets input catch-up",
+			apps: []appContracts{planApp(71, planAppConfig{
+				consensus:           Consensus_PRT,
+				forecloseBlock:      100,
+				lastEpochCheckBlock: 100,
+				lastInputCheckBlock: 99,
+			})},
+			wantDaveEpoch:       []int64{71},
+			wantOutput:          []int64{71},
+			wantPostForeclosure: []int64{71},
 		},
 		{
 			name: "foreclosed diverged app still catches up pre-foreclosure work",

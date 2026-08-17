@@ -34,6 +34,11 @@ var (
 )
 
 func expectCorrupted(app *Application, reasonSubstring string) {
+	// Subtests intentionally reuse application fixtures. Reset health so each
+	// case independently exercises its own corruption transition rather than
+	// inheriting the previous subtest's now-idempotent terminal status.
+	app.Status = ApplicationStatus_OK
+	app.Reason = nil
 	repo.On("UpdateApplicationStatus",
 		mock.Anything, app.ID, ApplicationStatus_Corrupted,
 		mock.MatchedBy(func(reason *string) bool {

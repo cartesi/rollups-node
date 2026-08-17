@@ -16,7 +16,7 @@ func buildBlockScanPlan(apps []appContracts) blockScanPlan {
 	var plan blockScanPlan
 	for _, app := range apps {
 		application := app.application
-		if application == nil {
+		if application == nil || !application.NeedsL1Observation() {
 			continue
 		}
 
@@ -25,7 +25,8 @@ func buildBlockScanPlan(apps []appContracts) blockScanPlan {
 			plan.postForeclosureTargets = append(plan.postForeclosureTargets, app)
 
 			if application.IsDaveConsensus() {
-				if application.LastEpochCheckBlock < application.ForecloseBlock {
+				if application.LastEpochCheckBlock < application.ForecloseBlock ||
+					application.LastInputCheckBlock < application.ForecloseBlock {
 					plan.daveEpochTargets = append(plan.daveEpochTargets, app)
 				}
 				continue
@@ -38,13 +39,14 @@ func buildBlockScanPlan(apps []appContracts) blockScanPlan {
 			continue
 		}
 
-		if application.CanExecute() {
-			plan.outputTargets = append(plan.outputTargets, app)
-			if application.IsDaveConsensus() {
-				plan.daveEpochTargets = append(plan.daveEpochTargets, app)
-			} else {
-				plan.iConsensusInputTargets = append(plan.iConsensusInputTargets, app)
-			}
+		// Execution health controls machine work, not L1 observation. Keep
+		// indexing inputs/epochs and output executions while an external
+		// watchdog observes the durable failure and eventually forecloses.
+		plan.outputTargets = append(plan.outputTargets, app)
+		if application.IsDaveConsensus() {
+			plan.daveEpochTargets = append(plan.daveEpochTargets, app)
+		} else {
+			plan.iConsensusInputTargets = append(plan.iConsensusInputTargets, app)
 		}
 	}
 	return plan

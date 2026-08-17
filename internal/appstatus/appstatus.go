@@ -33,7 +33,11 @@ type Repository interface {
 //   - replay.Run will correctly verify inputs from the snapshot point.
 //
 // The reason parameter must be a pre-formatted string describing the failure.
-// Returns the database error if the status update fails; returns nil on success.
+// Execution-terminal and integrity-terminal statuses are preserved: execution
+// terminals are entered atomically by repository.StoreAdvanceResult, while
+// integrity terminals carry stronger evidence than a recoverable runtime
+// failure. Returns the database error if the status update fails; returns nil
+// on success or when an existing terminal status is preserved.
 func SetFailed(
 	ctx context.Context,
 	logger *slog.Logger,
@@ -41,6 +45,14 @@ func SetFailed(
 	app *Application,
 	reason string,
 ) error {
+	if app.Status.IsTerminal() {
+		logger.Debug("preserving existing terminal application status",
+			"application", app.Name,
+			"address", app.IApplicationAddress.String(),
+			"current_status", app.Status,
+			"requested_status", ApplicationStatus_Failed)
+		return nil
+	}
 	return setApplicationStatus(ctx, logger, repo, app, ApplicationStatus_Failed, reason)
 }
 
@@ -135,8 +147,24 @@ func setTerminalStatus(
 	reason string,
 ) error {
 	reason = NormalizeReason(reason)
-	dbErr := setApplicationStatus(ctx, logger, repo, app, status, reason)
 	reasonErr := errors.New(reason)
+
+	// Integrity terminals are immutable. Execution terminals preserve their
+	// deterministic machine outcome unless later observation proves local state
+	// corrupted, which is the one permitted escalation.
+	executionTerminalEscalation := app.Status.IsExecutionTerminal() &&
+		status == ApplicationStatus_Corrupted
+	preserveExistingTerminal := app.Status.IsTerminal() && !executionTerminalEscalation
+	if preserveExistingTerminal {
+		logger.Debug("preserving existing terminal application status",
+			"application", app.Name,
+			"address", app.IApplicationAddress.String(),
+			"current_status", app.Status,
+			"requested_status", status)
+		return reasonErr
+	}
+
+	dbErr := setApplicationStatus(ctx, logger, repo, app, status, reason)
 	if dbErr != nil {
 		return errors.Join(reasonErr, dbErr)
 	}
@@ -161,6 +189,12 @@ func setApplicationStatus(
 	status ApplicationStatus,
 	reason string,
 ) error {
+	if status.IsExecutionTerminal() {
+		return fmt.Errorf(
+			"execution-terminal status %s must be written atomically by repository.StoreAdvanceResult",
+			status,
+		)
+	}
 	reason = NormalizeReason(reason)
 
 	switch status {
