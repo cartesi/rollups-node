@@ -1827,7 +1827,7 @@
 							"string",
 							"null"
 						],
-						"description": "Human-readable failure description. Non-null when status is FAILED, DIVERGED, or CORRUPTED; null otherwise. Foreclosure is reported separately via foreclose_block, not via status."
+						"description": "Human-readable terminal or failure description. Null only while status is OK. Foreclosure is reported separately via foreclose_block, not via status."
 					},
 					"iinputbox_block": {
 						"$ref": "#/components/schemas/UnsignedInteger"
@@ -1955,7 +1955,8 @@
 							}
 						]
 					},
-					"outputs_merkle_root": {
+					"tx_buffer_data_block": {
+						"description": "The 32-byte CMIO TX-buffer memory block in the proved machine state.",
 						"oneOf": [
 							{
 								"$ref": "#/components/schemas/Hash"
@@ -1965,7 +1966,50 @@
 							}
 						]
 					},
-					"outputs_merkle_proof": {
+					"tx_buffer_proof": {
+						"description": "Merkle siblings proving the TX-buffer data block against machine_hash.",
+						"type": [
+							"array",
+							"null"
+						],
+						"items": {
+							"$ref": "#/components/schemas/Hash"
+						}
+					},
+					"iflags_y_data_block": {
+						"description": "The 32-byte memory block containing the machine iflags.Y register.",
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"iflags_y_proof": {
+						"description": "Merkle siblings proving the iflags.Y data block against machine_hash.",
+						"type": [
+							"array",
+							"null"
+						],
+						"items": {
+							"$ref": "#/components/schemas/Hash"
+						}
+					},
+					"htif_tohost_data_block": {
+						"description": "The 32-byte memory block containing the machine HTIF tohost register.",
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"htif_tohost_proof": {
+						"description": "Merkle siblings proving the HTIF tohost data block against machine_hash.",
 						"type": [
 							"array",
 							"null"
@@ -2068,7 +2112,9 @@
 					"ACCEPTED",
 					"REJECTED",
 					"EXCEPTION",
-					"MACHINE_HALTED"
+					"MACHINE_HALTED",
+					"OVERFLOW",
+					"UNEXPECTED_YIELD"
 				]
 			},
 			"Input": {
@@ -2120,7 +2166,7 @@
 							}
 						]
 					},
-					"outputs_hash": {
+					"tx_buffer_data_block": {
 						"oneOf": [
 							{
 								"$ref": "#/components/schemas/Hash"
@@ -2596,7 +2642,11 @@
 					"OK",
 					"FAILED",
 					"DIVERGED",
-					"CORRUPTED"
+					"CORRUPTED",
+					"GUEST_EXCEPTION",
+					"MACHINE_HALTED",
+					"MCYCLE_OVERFLOW",
+					"UNEXPECTED_YIELD"
 				]
 			},
 			"Consensus": {

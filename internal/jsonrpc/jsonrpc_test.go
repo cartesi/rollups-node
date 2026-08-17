@@ -947,7 +947,7 @@ func TestMethod(t *testing.T) {
 			appID := s.newTestApplication(ctx, t, app)
 			epoch := repotest.NewEpochBuilder(appID).
 				WithIndex(0).
-				WithStatus(model.EpochStatus_ClaimAccepted).
+				WithStatus(model.EpochStatus_Closed).
 				Build()
 			inputs := []*model.Input{
 				repotest.NewInputBuilder().WithIndex(0).WithRawData(emptyInput()).Build(),
@@ -1515,9 +1515,9 @@ func TestMethod(t *testing.T) {
 			nr := uint64(1)
 			appID := s.newTestApplication(ctx, t, nr)
 			for i, status := range []model.EpochStatus{
-				model.EpochStatus_Open,
-				model.EpochStatus_Closed,
 				model.EpochStatus_ClaimAccepted,
+				model.EpochStatus_Closed,
+				model.EpochStatus_Open,
 			} {
 				s.createTestEpoch(ctx, t, numberToName(nr),
 					repotest.NewEpochBuilder(appID).
@@ -1540,8 +1540,8 @@ func TestMethod(t *testing.T) {
 			assert.Nil(t, json.Unmarshal(body, &resp))
 			assert.Nil(t, resp.Error)
 			assert.Len(t, resp.Result.Data, 2)
-			assert.Equal(t, model.EpochStatus_Open, resp.Result.Data[0].Status)
-			assert.Equal(t, model.EpochStatus_Closed, resp.Result.Data[1].Status)
+			assert.Equal(t, model.EpochStatus_Closed, resp.Result.Data[0].Status)
+			assert.Equal(t, model.EpochStatus_Open, resp.Result.Data[1].Status)
 		})
 
 		// success: many epochs is in the database -> limit
