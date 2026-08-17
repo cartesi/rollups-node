@@ -176,7 +176,7 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 			return s.setApplicationCorrupted(ctx, app,
 				"epoch %v (%v) has no machine hash", epoch.Index, epoch.VirtualIndex)
 		}
-		if epoch.OutputsMerkleRoot == nil {
+		if epoch.TxBufferDataBlock == nil {
 			return s.setApplicationCorrupted(ctx, app,
 				"epoch %v (%v) has no outputs merkle root", epoch.Index, epoch.VirtualIndex)
 		}
@@ -204,10 +204,10 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 		// tree after each input. Therefore, the root hash calculated after the
 		// last input in the epoch must match the one calculated by the Validator
 		// So we need to validate the application state.
-		if *epoch.OutputsMerkleRoot != *merkleRoot {
+		if *epoch.TxBufferDataBlock != *merkleRoot {
 			return s.setApplicationCorrupted(ctx, app,
 				"epoch %v outputs merkle root does not match computed one. Expected: %v, Got %v",
-				epoch.Index, *epoch.OutputsMerkleRoot, *merkleRoot)
+				epoch.Index, *epoch.TxBufferDataBlock, *merkleRoot)
 		}
 
 		input, err := s.repository.GetLastInput(ctx, appAddress, epoch.Index)
@@ -219,17 +219,17 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 		}
 
 		if input != nil {
-			if input.OutputsHash == nil {
+			if input.TxBufferDataBlock == nil {
 				return s.setApplicationCorrupted(ctx, app,
 					"inconsistent state: epoch %v last input (%v) outputs merkle root is not defined",
 					epoch.Index, input.Index)
 			}
 
 			// ...and compare it to the hash calculated by the Validator
-			if *epoch.OutputsMerkleRoot != *input.OutputsHash {
+			if *epoch.TxBufferDataBlock != *input.TxBufferDataBlock {
 				return s.setApplicationCorrupted(ctx, app,
 					"computed outputs merkle root does not match epoch %v last input %v merkle root. Expected: %v, Got %v",
-					epoch.Index, input.Index, *input.OutputsHash, *epoch.OutputsMerkleRoot)
+					epoch.Index, input.Index, *input.TxBufferDataBlock, *epoch.TxBufferDataBlock)
 			}
 
 			if input.MachineHash == nil {
@@ -273,14 +273,14 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 						"epoch %v machine hash does not match previous epoch %v machine hash. Expected: %v, Got %v",
 						epoch.Index, previousEpoch.Index, *previousEpoch.MachineHash, *epoch.MachineHash)
 				}
-				if previousEpoch.OutputsMerkleRoot == nil {
+				if previousEpoch.TxBufferDataBlock == nil {
 					return s.setApplicationCorrupted(ctx, app,
 						"previous epoch %v (%v) outputs merkle root is not defined", previousEpoch.Index, previousEpoch.VirtualIndex)
 				}
-				if *epoch.OutputsMerkleRoot != *previousEpoch.OutputsMerkleRoot {
+				if *epoch.TxBufferDataBlock != *previousEpoch.TxBufferDataBlock {
 					return s.setApplicationCorrupted(ctx, app,
 						"epoch %v outputs merkle root does not match previous epoch %v one. Expected: %v, Got %v",
-						epoch.Index, previousEpoch.Index, *previousEpoch.OutputsMerkleRoot, *epoch.OutputsMerkleRoot)
+						epoch.Index, previousEpoch.Index, *previousEpoch.TxBufferDataBlock, *epoch.TxBufferDataBlock)
 				}
 			} else { // first epoch
 				if *epoch.MachineHash != app.TemplateHash {
@@ -288,10 +288,10 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 						"epoch %v machine hash does not match for application template hash. Expected: %v, Got %v",
 						epoch.Index, app.TemplateHash, *epoch.MachineHash)
 				}
-				if *epoch.OutputsMerkleRoot != s.pristineRootHash {
+				if *epoch.TxBufferDataBlock != s.pristineRootHash {
 					return s.setApplicationCorrupted(ctx, app,
 						"epoch %v outputs merkle root does not match pristine root hash. Expected: %v, Got %v",
-						epoch.Index, s.pristineRootHash, *epoch.OutputsMerkleRoot)
+						epoch.Index, s.pristineRootHash, *epoch.TxBufferDataBlock)
 				}
 			}
 		}
@@ -480,12 +480,12 @@ func (s *Service) computeMerkleTreeAndProofs(
 			return &s.pristineRootHash, nil, nil
 		}
 		// if there are no outputs and there is a previous epoch, return its claim
-		if previousEpoch.OutputsMerkleRoot == nil {
+		if previousEpoch.TxBufferDataBlock == nil {
 			return nil, nil, s.setApplicationCorrupted(ctx, app,
 				"invalid application state for epoch %v (%v) of application %v. Previous epoch has no claim.",
 				epoch.Index, epoch.VirtualIndex, appAddress)
 		}
-		return previousEpoch.OutputsMerkleRoot, nil, nil
+		return previousEpoch.TxBufferDataBlock, nil, nil
 	}
 
 	// Build the pre-context for the cumulative outputs tree from the output that
