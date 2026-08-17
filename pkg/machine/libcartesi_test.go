@@ -30,6 +30,28 @@ func TestValidateEmulatorComputationHashLimits(t *testing.T) {
 	require.ErrorContains(t, err, "CM_ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE=47")
 }
 
+func TestStateProofConstantsMatchEmulator(t *testing.T) {
+	require.EqualValues(t, emulator.CmioTxBufferStart, TxBufferAddress)
+	require.EqualValues(t, emulator.HashTreeLog2WordSize, HashLog2Size)
+	require.EqualValues(t, emulator.HashTreeLog2RootSize, machineMemoryLog2Size)
+	require.EqualValues(t, emulator.HtifDeviceYield, htifDeviceYield)
+	require.EqualValues(t, emulator.YieldManual, htifCommandManual)
+	require.EqualValues(t, emulator.ManualYieldReasonAccepted, htifReasonInputAccepted)
+	require.EqualValues(t, emulator.HtifDeviceShift, htifDeviceShift)
+	require.EqualValues(t, emulator.HtifCommandShift, htifCommandShift)
+	require.EqualValues(t, emulator.HtifReasonShift, htifReasonShift)
+
+	// cm_get_reg_address accepts a nil local machine and returns the static
+	// address defined by the linked emulator.
+	var localMachine emulator.Machine
+	actualIflagsYAddress, err := localMachine.GetRegAddress(emulator.REG_IFLAGS_Y)
+	require.NoError(t, err)
+	require.Equal(t, iflagsYAddress, actualIflagsYAddress)
+	actualHtifTohostAddress, err := localMachine.GetRegAddress(emulator.REG_HTIF_TOHOST)
+	require.NoError(t, err)
+	require.Equal(t, htifTohostAddress, actualHtifTohostAddress)
+}
+
 type LibCartesiSuite struct {
 	suite.Suite
 	mockRemoteMachine *MockRemoteMachine
@@ -375,6 +397,76 @@ func (s *LibCartesiSuite) TestGetRootHash() {
 	s.mockRemoteMachine.AssertExpectations(s.T())
 }
 
+func (s *LibCartesiSuite) TestGetProofPreservesEmulatorMetadata() {
+	require := s.Require()
+	expected := MemoryProof{
+		Log2RootSize:   64,
+		Log2TargetSize: 5,
+		RootHash:       randomFakeHash(),
+		Siblings:       []Hash{randomFakeHash(), randomFakeHash()},
+		TargetAddress:  0x60800000,
+		TargetHash:     randomFakeHash(),
+	}
+	siblingHashes := make([]string, len(expected.Siblings))
+	for i := range expected.Siblings {
+		siblingHashes[i] = base64.StdEncoding.EncodeToString(expected.Siblings[i][:])
+	}
+	encoded, err := json.Marshal(map[string]any{
+		"log2_root_size":   expected.Log2RootSize,
+		"log2_target_size": expected.Log2TargetSize,
+		"root_hash":        base64.StdEncoding.EncodeToString(expected.RootHash[:]),
+		"sibling_hashes":   siblingHashes,
+		"target_address":   expected.TargetAddress,
+		"target_hash":      base64.StdEncoding.EncodeToString(expected.TargetHash[:]),
+	})
+	require.NoError(err)
+
+	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
+	s.mockRemoteMachine.On("GetProof", expected.TargetAddress, expected.Log2TargetSize, expected.Log2RootSize).
+		Return(string(encoded), nil)
+
+	actual, err := s.backend.GetProof(
+		expected.TargetAddress,
+		expected.Log2TargetSize,
+		expected.Log2RootSize,
+		5*time.Second,
+	)
+	require.NoError(err)
+	require.Equal(expected, actual)
+	s.mockRemoteMachine.AssertExpectations(s.T())
+}
+
+func (s *LibCartesiSuite) TestReadMemory() {
+	require := s.Require()
+	expected := []byte{0xde, 0xad, 0xbe, 0xef}
+	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
+	s.mockRemoteMachine.On("ReadMemory", uint64(0x300), uint64(len(expected))).
+		Return(expected, nil)
+
+	actual, err := s.backend.ReadMemory(0x300, uint64(len(expected)), 5*time.Second)
+	require.NoError(err)
+	require.Equal(expected, actual)
+	s.mockRemoteMachine.AssertExpectations(s.T())
+
+	s.mockRemoteMachine = new(MockRemoteMachine)
+	s.backend = &LibCartesiBackend{inner: s.mockRemoteMachine}
+	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(errors.New("timeout error"))
+	actual, err = s.backend.ReadMemory(0x300, uint64(len(expected)), 5*time.Second)
+	require.Nil(actual)
+	require.ErrorContains(err, "failed to set operation timeout")
+	s.mockRemoteMachine.AssertExpectations(s.T())
+
+	s.mockRemoteMachine = new(MockRemoteMachine)
+	s.backend = &LibCartesiBackend{inner: s.mockRemoteMachine}
+	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
+	s.mockRemoteMachine.On("ReadMemory", uint64(0x300), uint64(len(expected))).
+		Return([]byte(nil), errors.New("read error"))
+	actual, err = s.backend.ReadMemory(0x300, uint64(len(expected)), 5*time.Second)
+	require.Nil(actual)
+	require.ErrorContains(err, "read error")
+	s.mockRemoteMachine.AssertExpectations(s.T())
+}
+
 func (s *LibCartesiSuite) TestIsAtManualYield() {
 	require := s.Require()
 
@@ -684,8 +776,8 @@ func (m *MockRemoteMachine) GetRootHash() (emulator.Hash, error) {
 	return args.Get(0).(Hash), args.Error(1)
 }
 
-func (m *MockRemoteMachine) GetProof(address uint64, log2size int32) (string, error) {
-	args := m.Called(address, log2size)
+func (m *MockRemoteMachine) GetProof(address uint64, log2TargetSize, log2RootSize int32) (string, error) {
+	args := m.Called(address, log2TargetSize, log2RootSize)
 	return args.Get(0).(string), args.Error(1)
 }
 
@@ -712,6 +804,14 @@ func (m *MockRemoteMachine) Store(directory string) error {
 func (m *MockRemoteMachine) WriteMemory(address uint64, data []byte) error {
 	args := m.Called(address, data)
 	return args.Error(0)
+}
+
+func (m *MockRemoteMachine) ReadMemory(address uint64, length uint64) ([]byte, error) {
+	args := m.Called(address, length)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]byte), args.Error(1)
 }
 
 func (m *MockRemoteMachine) Delete() {

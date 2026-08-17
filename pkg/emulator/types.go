@@ -4,6 +4,8 @@
 // This package is a binding to the emulator's C API.
 // Refer to the machine-c files in the emulator's repository for documentation
 // (mainly machine-c-api.h and jsonrpc-machine-c-api.h).
+//
+//nolint:revive // Exported ALL_CAPS names intentionally mirror the emulator C API.
 package emulator
 
 // #include <stdlib.h>
@@ -28,8 +30,8 @@ const (
 	ErrCodeRangeError      ErrorCode = C.CM_ERROR_RANGE_ERROR
 	ErrCodeOverflowError   ErrorCode = C.CM_ERROR_OVERFLOW_ERROR
 	ErrCodeUnderflowError  ErrorCode = C.CM_ERROR_UNDERFLOW_ERROR
-	//ErrCodeRegexError        ErrorCode = C.CM_ERROR_REGEX_ERROR
-	//ErrCodeSystemError       ErrorCode = C.CM_ERROR_SYSTEM_ERROR
+	// ErrCodeRegexError        ErrorCode = C.CM_ERROR_REGEX_ERROR
+	// ErrCodeSystemError       ErrorCode = C.CM_ERROR_SYSTEM_ERROR
 	ErrCodeBadTypeid         ErrorCode = C.CM_ERROR_BAD_TYPEID
 	ErrCodeBadCast           ErrorCode = C.CM_ERROR_BAD_CAST
 	ErrCodeBadAnyCast        ErrorCode = C.CM_ERROR_BAD_ANY_CAST
@@ -101,6 +103,10 @@ func (reason BreakReason) String() (s string) {
 		s = "yielded softly"
 	case BreakReasonReachedTargetMcycle:
 		s = "reached target mcycle"
+	case BreakReasonConsoleOutput:
+		s = "console output"
+	case BreakReasonConsoleInput:
+		s = "console input"
 	case BreakReasonMcycleOverflow:
 		s = "mcycle overflow"
 	default:
@@ -125,6 +131,11 @@ type (
 )
 
 const (
+	HtifDeviceShift  uint64 = C.CM_HTIF_DEV_SHIFT
+	HtifCommandShift uint64 = C.CM_HTIF_CMD_SHIFT
+	HtifReasonShift  uint64 = C.CM_HTIF_REASON_SHIFT
+	HtifDeviceYield  uint64 = C.CM_HTIF_DEV_YIELD
+
 	// type
 	YieldAutomatic CmioYieldCommand = C.CM_HTIF_YIELD_CMD_AUTOMATIC
 	YieldManual    CmioYieldCommand = C.CM_HTIF_YIELD_CMD_MANUAL
@@ -358,5 +369,6 @@ func NewMachineRuntimeConfig() *MachineRuntimeConfig {
 }
 
 const (
+	HashTreeLog2WordSize uint32 = C.CM_HASH_TREE_LOG2_WORD_SIZE
 	HashTreeLog2RootSize uint32 = C.CM_HASH_TREE_LOG2_ROOT_SIZE
 )

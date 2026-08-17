@@ -29,6 +29,18 @@ type HashCollectorState struct {
 	ConsoleIOError        string
 }
 
+// MemoryProof is the complete Merkle proof returned by the emulator for a
+// memory range. Keeping the root and target metadata allows callers to verify
+// that a proof was produced for the requested machine state and address.
+type MemoryProof struct {
+	Log2RootSize   int32
+	Log2TargetSize int32
+	RootHash       Hash
+	Siblings       []Hash
+	TargetAddress  uint64
+	TargetHash     Hash
+}
+
 // This Backend interface covers the methods used from the emulator / remote machine server.
 // It is to abstract the emulator package and allow for easier testing and mocking in unit tests.
 type Backend interface {
@@ -49,9 +61,10 @@ type Backend interface {
 	ReceiveCmioRequest(timeout time.Duration) (cmd uint8, reason uint16, data []byte, err error)
 
 	WriteMemory(address uint64, data []byte, timeout time.Duration) error
+	ReadMemory(address uint64, length uint64, timeout time.Duration) ([]byte, error)
 
 	GetRootHash(timeout time.Duration) (Hash, error)
-	GetProof(address uint64, log2size int32, timeout time.Duration) ([]Hash, error)
+	GetProof(address uint64, log2TargetSize, log2RootSize int32, timeout time.Duration) (MemoryProof, error)
 
 	Delete()
 	ForkServer(timeout time.Duration) (Backend, string, uint32, error)

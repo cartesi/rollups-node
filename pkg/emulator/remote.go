@@ -4,6 +4,8 @@
 // This package is a binding to the emulator's C API.
 // Refer to the machine-c files in the emulator's repository for documentation
 // (mainly machine-c-api.h and jsonrpc-machine-c-api.h).
+//
+//nolint:gocritic // CGo output-parameter wrappers trigger dupSubExpr false positives.
 package emulator
 
 // #include <stdlib.h>
