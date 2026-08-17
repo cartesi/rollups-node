@@ -330,27 +330,44 @@ func (a *Application) IsDaveConsensus() bool {
 	return a.ConsensusType == Consensus_PRT
 }
 
-// ApplicationStatus is the node's processing-integrity health for an
-// application. It is independent of lifecycle (foreclosure lives in the
-// foreclose_block column) and of operator intent (the enabled flag).
+// ApplicationStatus records why the node may no longer execute an application
+// or produce claims for it. It combines recoverable operational failures,
+// integrity failures, and deterministic terminal machine outcomes. It is
+// independent of lifecycle (foreclosure lives in the foreclose_block column)
+// and of operator intent (the enabled flag).
 //
 // Transitions (enforced by DB trigger):
 //
-//	OK ⇄ FAILED              (FAILED is recoverable by the operator)
-//	OK, FAILED → DIVERGED    (terminal)
-//	OK, FAILED → CORRUPTED   (terminal)
+//	OK ⇄ FAILED                                 (FAILED is recoverable)
+//	OK, FAILED → DIVERGED, CORRUPTED              (integrity terminal)
+//	OK         → GUEST_EXCEPTION, MACHINE_HALTED  (execution terminal)
+//	             MCYCLE_OVERFLOW, UNEXPECTED_YIELD
+//	execution terminal → CORRUPTED                 (integrity escalation)
 //
-// DIVERGED means the node's computed claim disagrees with what the chain
-// accepted; CORRUPTED means local state is missing or inconsistent. Both are
-// terminal and carry a reason. Foreclosure is orthogonal and may coexist with
-// any health value.
+// FAILED is recoverable and suspends execution, but enabled applications in
+// every status continue L1 observation. Consequently, later evidence may
+// supersede FAILED with DIVERGED or CORRUPTED. DIVERGED means the node's
+// computed claim disagrees with what the chain accepted; CORRUPTED means local
+// state or its relationship with L1 history is missing or inconsistent.
+//
+// GUEST_EXCEPTION, MACHINE_HALTED, MCYCLE_OVERFLOW, and UNEXPECTED_YIELD record
+// deterministic machine outcomes that stop execution and must not be retried.
+// Later L1 observation may supersede one with CORRUPTED when it establishes
+// that local history is untrustworthy. The input retains its original
+// completion status and terminal state proof. Foreclosure is orthogonal and
+// may coexist with any application status.
 type ApplicationStatus string
 
+//nolint:revive // Public enum names preserve the generated/API naming convention.
 const (
-	ApplicationStatus_OK        ApplicationStatus = "OK"        // healthy; eligible for work when enabled and not foreclosed
-	ApplicationStatus_Failed    ApplicationStatus = "FAILED"    // recoverable failure (e.g., OOM, process crash)
-	ApplicationStatus_Diverged  ApplicationStatus = "DIVERGED"  // computed claim disagrees with the chain (terminal)
-	ApplicationStatus_Corrupted ApplicationStatus = "CORRUPTED" // local state missing or inconsistent (terminal)
+	ApplicationStatus_OK              ApplicationStatus = "OK"        // healthy; eligible for work when enabled and not foreclosed
+	ApplicationStatus_Failed          ApplicationStatus = "FAILED"    // recoverable failure (e.g., OOM, process crash)
+	ApplicationStatus_Diverged        ApplicationStatus = "DIVERGED"  // computed claim disagrees with the chain (terminal)
+	ApplicationStatus_Corrupted       ApplicationStatus = "CORRUPTED" // local state missing or inconsistent (terminal)
+	ApplicationStatus_GuestException  ApplicationStatus = "GUEST_EXCEPTION"
+	ApplicationStatus_MachineHalted   ApplicationStatus = "MACHINE_HALTED"
+	ApplicationStatus_McycleOverflow  ApplicationStatus = "MCYCLE_OVERFLOW"
+	ApplicationStatus_UnexpectedYield ApplicationStatus = "UNEXPECTED_YIELD"
 )
 
 var ApplicationStatusAllValues = []ApplicationStatus{
@@ -358,6 +375,26 @@ var ApplicationStatusAllValues = []ApplicationStatus{
 	ApplicationStatus_Failed,
 	ApplicationStatus_Diverged,
 	ApplicationStatus_Corrupted,
+	ApplicationStatus_GuestException,
+	ApplicationStatus_MachineHalted,
+	ApplicationStatus_McycleOverflow,
+	ApplicationStatus_UnexpectedYield,
+}
+
+func (e ApplicationStatus) IsTerminal() bool {
+	switch e {
+	case ApplicationStatus_Diverged,
+		ApplicationStatus_Corrupted,
+		ApplicationStatus_GuestException,
+		ApplicationStatus_MachineHalted,
+		ApplicationStatus_McycleOverflow,
+		ApplicationStatus_UnexpectedYield:
+		return true
+	case ApplicationStatus_OK, ApplicationStatus_Failed:
+		return false
+	default:
+		return false
+	}
 }
 
 func (e *ApplicationStatus) Scan(value any) error {
@@ -380,6 +417,14 @@ func (e *ApplicationStatus) Scan(value any) error {
 		*e = ApplicationStatus_Diverged
 	case "CORRUPTED":
 		*e = ApplicationStatus_Corrupted
+	case "GUEST_EXCEPTION":
+		*e = ApplicationStatus_GuestException
+	case "MACHINE_HALTED":
+		*e = ApplicationStatus_MachineHalted
+	case "MCYCLE_OVERFLOW":
+		*e = ApplicationStatus_McycleOverflow
+	case "UNEXPECTED_YIELD":
+		*e = ApplicationStatus_UnexpectedYield
 	default:
 		return errors.New("invalid value '" + enumValue + "' for ApplicationStatus enum")
 	}
@@ -806,8 +851,12 @@ type Epoch struct {
 	InputIndexLowerBound uint64          `json:"input_index_lower_bound"`
 	InputIndexUpperBound uint64          `json:"input_index_upper_bound"`
 	MachineHash          *common.Hash    `json:"machine_hash"`
-	OutputsMerkleRoot    *common.Hash    `json:"outputs_merkle_root"`
-	OutputsMerkleProof   []common.Hash   `json:"outputs_merkle_proof,omitempty"`
+	TxBufferDataBlock    *common.Hash    `json:"tx_buffer_data_block"`
+	TxBufferProof        []common.Hash   `json:"tx_buffer_proof,omitempty"`
+	IflagsYDataBlock     *common.Hash    `json:"iflags_y_data_block"`
+	IflagsYProof         []common.Hash   `json:"iflags_y_proof,omitempty"`
+	HtifTohostDataBlock  *common.Hash    `json:"htif_tohost_data_block"`
+	HtifTohostProof      []common.Hash   `json:"htif_tohost_proof,omitempty"`
 	ClaimTransactionHash *common.Hash    `json:"claim_transaction_hash"`
 	Commitment           *common.Hash    `json:"commitment"`
 	CommitmentProof      []common.Hash   `json:"commitment_proof,omitempty"`
@@ -988,7 +1037,7 @@ type Input struct {
 	Status             InputCompletionStatus `json:"status"`
 	ExceptionData      []byte                `json:"-"`
 	MachineHash        *common.Hash          `json:"machine_hash"`
-	OutputsHash        *common.Hash          `json:"outputs_hash"`
+	TxBufferDataBlock  *common.Hash          `json:"tx_buffer_data_block"`
 	TransactionHash    common.Hash           `json:"transaction_hash"`
 	LogIndex           uint64                `json:"log_index"`
 	SnapshotURI        *string               `json:"-"`
@@ -1080,12 +1129,15 @@ func (i *Input) UnmarshalJSON(in []byte) error {
 
 type InputCompletionStatus string
 
+//nolint:revive // Public enum names preserve the generated/API naming convention.
 const (
-	InputCompletionStatus_None          InputCompletionStatus = "NONE"
-	InputCompletionStatus_Accepted      InputCompletionStatus = "ACCEPTED"
-	InputCompletionStatus_Rejected      InputCompletionStatus = "REJECTED"
-	InputCompletionStatus_Exception     InputCompletionStatus = "EXCEPTION"
-	InputCompletionStatus_MachineHalted InputCompletionStatus = "MACHINE_HALTED"
+	InputCompletionStatus_None            InputCompletionStatus = "NONE"
+	InputCompletionStatus_Accepted        InputCompletionStatus = "ACCEPTED"
+	InputCompletionStatus_Rejected        InputCompletionStatus = "REJECTED"
+	InputCompletionStatus_Exception       InputCompletionStatus = "EXCEPTION"
+	InputCompletionStatus_MachineHalted   InputCompletionStatus = "MACHINE_HALTED"
+	InputCompletionStatus_Overflow        InputCompletionStatus = "OVERFLOW"
+	InputCompletionStatus_UnexpectedYield InputCompletionStatus = "UNEXPECTED_YIELD"
 )
 
 var InputCompletionStatusAllValues = []InputCompletionStatus{
@@ -1094,6 +1146,8 @@ var InputCompletionStatusAllValues = []InputCompletionStatus{
 	InputCompletionStatus_Rejected,
 	InputCompletionStatus_Exception,
 	InputCompletionStatus_MachineHalted,
+	InputCompletionStatus_Overflow,
+	InputCompletionStatus_UnexpectedYield,
 }
 
 // IsCompleted reports whether the status is a deterministic completed result
@@ -1103,12 +1157,43 @@ func (e InputCompletionStatus) IsCompleted() bool {
 	case InputCompletionStatus_Accepted,
 		InputCompletionStatus_Rejected,
 		InputCompletionStatus_Exception,
-		InputCompletionStatus_MachineHalted:
+		InputCompletionStatus_MachineHalted,
+		InputCompletionStatus_Overflow,
+		InputCompletionStatus_UnexpectedYield:
 		return true
 	case InputCompletionStatus_None:
 		return false
 	default:
 		return false
+	}
+}
+
+// IsTerminal reports whether a completed input leaves the canonical machine
+// unable to process another advance. Rejection is completed but not terminal.
+func (e InputCompletionStatus) IsTerminal() bool {
+	_, terminal := e.TerminalApplicationStatus()
+	return terminal
+}
+
+// TerminalApplicationStatus maps an execution terminal to the durable status
+// exposed for the application. The boolean is false for pending, accepted, and
+// rejected inputs.
+func (e InputCompletionStatus) TerminalApplicationStatus() (ApplicationStatus, bool) {
+	switch e {
+	case InputCompletionStatus_Exception:
+		return ApplicationStatus_GuestException, true
+	case InputCompletionStatus_MachineHalted:
+		return ApplicationStatus_MachineHalted, true
+	case InputCompletionStatus_Overflow:
+		return ApplicationStatus_McycleOverflow, true
+	case InputCompletionStatus_UnexpectedYield:
+		return ApplicationStatus_UnexpectedYield, true
+	case InputCompletionStatus_None,
+		InputCompletionStatus_Accepted,
+		InputCompletionStatus_Rejected:
+		return "", false
+	default:
+		return "", false
 	}
 }
 
@@ -1134,6 +1219,10 @@ func (e *InputCompletionStatus) Scan(value any) error {
 		*e = InputCompletionStatus_Exception
 	case "MACHINE_HALTED":
 		*e = InputCompletionStatus_MachineHalted
+	case "OVERFLOW":
+		*e = InputCompletionStatus_Overflow
+	case "UNEXPECTED_YIELD":
+		*e = InputCompletionStatus_UnexpectedYield
 	default:
 		return errors.New("invalid value '" + enumValue + "' for InputCompletionStatus enum")
 	}
@@ -1369,14 +1458,44 @@ type NodeConfig[T any] struct {
 	UpdatedAt time.Time
 }
 
-type OutputsProof struct {
-	OutputsHash      common.Hash
-	OutputsHashProof [][32]byte
-	MachineHash      common.Hash
+type StateProof struct {
+	TxBufferDataBlock   common.Hash
+	TxBufferProof       [][32]byte
+	MachineHash         common.Hash
+	IflagsYDataBlock    common.Hash
+	IflagsYProof        [][32]byte
+	HtifTohostDataBlock common.Hash
+	HtifTohostProof     [][32]byte
+}
+
+// StateProofSiblingCount is the height of the canonical machine
+// memory tree above a 32-byte data block (64 - 5).
+const StateProofSiblingCount = 59
+
+// IsComplete reports whether all three state leaves have the canonical sibling
+// depth. Leaf contents and roots are verified by pkg/machine.
+func (p *StateProof) IsComplete() bool {
+	return p != nil &&
+		len(p.TxBufferProof) == StateProofSiblingCount &&
+		len(p.IflagsYProof) == StateProofSiblingCount &&
+		len(p.HtifTohostProof) == StateProofSiblingCount
+}
+
+// HasCompleteStateProof reports whether an epoch contains every persisted
+// component of the machine state proof.
+func (e *Epoch) HasCompleteStateProof() bool {
+	return e != nil &&
+		e.MachineHash != nil &&
+		e.TxBufferDataBlock != nil &&
+		e.IflagsYDataBlock != nil &&
+		e.HtifTohostDataBlock != nil &&
+		len(e.TxBufferProof) == StateProofSiblingCount &&
+		len(e.IflagsYProof) == StateProofSiblingCount &&
+		len(e.HtifTohostProof) == StateProofSiblingCount
 }
 
 type AdvanceResult struct {
-	OutputsProof
+	StateProof
 	EpochIndex          uint64
 	InputIndex          uint64
 	Status              InputCompletionStatus
@@ -1400,14 +1519,14 @@ type ReplaySummary struct {
 // machine execution. It is deliberately narrower than Input: L1 metadata,
 // timestamps, and snapshot location do not participate in the comparison.
 type ReplayInput struct {
-	ApplicationID int64
-	EpochIndex    uint64
-	InputIndex    uint64
-	RawData       []byte
-	Status        InputCompletionStatus
-	ExceptionData []byte
-	MachineHash   *common.Hash
-	OutputsHash   *common.Hash
+	ApplicationID     int64
+	EpochIndex        uint64
+	InputIndex        uint64
+	RawData           []byte
+	Status            InputCompletionStatus
+	ExceptionData     []byte
+	MachineHash       *common.Hash
+	TxBufferDataBlock *common.Hash
 }
 
 // ReplayStateHash is one persisted row of a PRT input hash collection. Keeping

@@ -111,7 +111,7 @@ func (s *Service) tryStageFromReceipt(
 		s.Logger.Info("Claim staged (fast path)",
 			"app", app.IApplicationAddress,
 			"epoch_index", epoch.Index,
-			"outputs_merkle_root", hashToHex(epoch.OutputsMerkleRoot),
+			"outputs_merkle_root", hashToHex(epoch.TxBufferDataBlock),
 			"last_block", epoch.LastBlock,
 			"staged_at_block", log.BlockNumber,
 			"tx", receipt.TxHash)
@@ -201,7 +201,7 @@ func (s *Service) processSubmittedClaim(
 		}
 		s.Logger.Info("Claim staged",
 			"app", app.IApplicationAddress,
-			"outputs_merkle_root", hashToHex(currEpoch.OutputsMerkleRoot),
+			"outputs_merkle_root", hashToHex(currEpoch.TxBufferDataBlock),
 			"last_block", currEpoch.LastBlock,
 			"staged_at_block", currEvent.Raw.BlockNumber,
 		)

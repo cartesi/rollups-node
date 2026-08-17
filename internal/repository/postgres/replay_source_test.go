@@ -53,19 +53,13 @@ func TestPostgresReplayVerificationLevels(t *testing.T) {
 		Status:     model.InputCompletionStatus_Accepted,
 		Outputs:    [][]byte{[]byte("output")},
 		Reports:    [][]byte{[]byte("report")},
-		OutputsProof: model.OutputsProof{
-			MachineHash: repotest.UniqueHash(),
-			OutputsHash: repotest.UniqueHash(),
-		},
+		StateProof: *repotest.DummyStateProof(),
 	}))
 	require.NoError(t, repo.StoreAdvanceResult(ctx, app.ID, &model.AdvanceResult{
 		EpochIndex: 0,
 		InputIndex: 1,
 		Status:     model.InputCompletionStatus_Rejected,
-		OutputsProof: model.OutputsProof{
-			MachineHash: repotest.UniqueHash(),
-			OutputsHash: repotest.UniqueHash(),
-		},
+		StateProof: *repotest.DummyStateProof(),
 	}))
 
 	canonical, err := repo.ReplaySummary(
@@ -200,10 +194,10 @@ func TestPostgresReplayRejectsCompletedInputGap(t *testing.T) {
 		WHERE epoch_application_id = $1 AND index = 1`, app.ID)
 	require.NoError(t, err)
 	machineHash := repotest.UniqueHash()
-	outputsHash := repotest.UniqueHash()
+	txBufferDataBlock := repotest.UniqueHash()
 	_, err = conn.Exec(ctx, `UPDATE input
-		SET status = 'ACCEPTED', machine_hash = $2, outputs_hash = $3
-		WHERE epoch_application_id = $1`, app.ID, machineHash.Bytes(), outputsHash.Bytes())
+		SET status = 'ACCEPTED', machine_hash = $2, tx_buffer_data_block = $3
+		WHERE epoch_application_id = $1`, app.ID, machineHash.Bytes(), txBufferDataBlock.Bytes())
 	require.NoError(t, err)
 	_, err = conn.Exec(ctx, `UPDATE application SET processed_inputs = 2 WHERE id = $1`, app.ID)
 	require.NoError(t, err)
@@ -255,10 +249,7 @@ func TestPostgresReplayRejectsInvalidStateHashOrdering(t *testing.T) {
 			Status:             model.InputCompletionStatus_Accepted,
 			IsDaveConsensus:    true,
 			PaddingRepetitions: 1 << 24,
-			OutputsProof: model.OutputsProof{
-				MachineHash: repotest.UniqueHash(),
-				OutputsHash: repotest.UniqueHash(),
-			},
+			StateProof:         *repotest.DummyStateProof(),
 		}))
 	}
 	_, err = repo.ReplaySummary(ctx, app.IApplicationAddress, repository.ReplayVerificationFull)

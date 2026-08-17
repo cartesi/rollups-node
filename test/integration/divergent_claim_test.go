@@ -203,11 +203,11 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	// semantic correctness, so we can splice it into the divergent payload.
 	epoch1, err := readEpoch(s.ctx, appAName, inputEpochs[1])
 	r.NoError(err, "read epoch 1")
-	r.NotEmpty(epoch1.OutputsMerkleProof,
+	r.NotEmpty(epoch1.TxBufferProof,
 		"epoch 1 must have an outputs merkle proof to reuse for the attack")
 	epochLen := epoch1.LastBlock - epoch1.FirstBlock + 1
 	s.T().Logf("    epoch length = %d blocks; epoch 1 proof = %d siblings",
-		epochLen, len(epoch1.OutputsMerkleProof))
+		epochLen, len(epoch1.TxBufferProof))
 
 	// ─── Phase 1.5: stop the node so the attacker cannot lose the race ──
 	s.T().Log("--- Phase 1.5: stop node, then send input 2 and submit divergent claim ---")
@@ -261,7 +261,7 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	r.NoError(err, "bind iauthority")
 
 	divergentOutputs := randomBytes32(s.T())
-	proof := merkleProofToBytes32(epoch1.OutputsMerkleProof)
+	proof := merkleProofToBytes32(epoch1.TxBufferProof)
 	s.T().Logf("    attacker submitting divergent claim: lpbn=%d outputs=0x%x proof_siblings=%d",
 		targetEpochLastBlock, divergentOutputs, len(proof))
 	submitTx, err := authorityBinding.SubmitClaim(attackerOpts, appAddr,

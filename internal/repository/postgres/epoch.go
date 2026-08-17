@@ -99,6 +99,31 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
+	// Participate in the same Application -> child-row order as
+	// StoreAdvanceResult and RejectEpochAndSetApplicationDiverged. SELECT FOR NO
+	// KEY UPDATE does not change the application row; it takes a
+	// transaction-scoped row lock that conflicts with application updates. L1
+	// ingestion holds it while upserting epochs and inputs and advancing the
+	// input-scan cursor, so another multi-row writer for this application waits
+	// before touching a child row instead of forming a child -> Application
+	// deadlock cycle.
+	//
+	// Commit or rollback releases the lock. A lost node connection aborts the
+	// transaction once PostgreSQL detects it (which a network failure can
+	// delay), and a PostgreSQL restart discards the uncommitted transaction
+	// during crash recovery. The lock is not persisted independently.
+	appLockStmt := table.Application.
+		SELECT(table.Application.ID).
+		WHERE(whereClause).
+		FOR(postgres.NO_KEY_UPDATE())
+	appLockSQL, appLockArgs := appLockStmt.Sql()
+	var appID int64
+	if err := tx.QueryRow(ctx, appLockSQL, appLockArgs...).Scan(&appID); errors.Is(err, pgx.ErrNoRows) {
+		return repository.ErrNotFound
+	} else if err != nil {
+		return err
+	}
+
 	epochs := orderEpochs(epochInputsMap)
 	for _, epoch := range epochs {
 		inputs := epochInputsMap[epoch]
@@ -261,8 +286,12 @@ func (r *PostgresRepository) GetEpoch(
 			table.Epoch.InputIndexLowerBound,
 			table.Epoch.InputIndexUpperBound,
 			table.Epoch.MachineHash,
-			table.Epoch.OutputsMerkleRoot,
-			table.Epoch.OutputsMerkleProof,
+			table.Epoch.TxBufferDataBlock,
+			table.Epoch.TxBufferProof,
+			table.Epoch.IflagsYDataBlock,
+			table.Epoch.IflagsYProof,
+			table.Epoch.HtifTohostDataBlock,
+			table.Epoch.HtifTohostProof,
 			table.Epoch.Commitment,
 			table.Epoch.CommitmentProof,
 			table.Epoch.ClaimTransactionHash,
@@ -296,8 +325,12 @@ func (r *PostgresRepository) GetEpoch(
 		&ep.InputIndexLowerBound,
 		&ep.InputIndexUpperBound,
 		&ep.MachineHash,
-		&ep.OutputsMerkleRoot,
-		&ep.OutputsMerkleProof,
+		&ep.TxBufferDataBlock,
+		&ep.TxBufferProof,
+		&ep.IflagsYDataBlock,
+		&ep.IflagsYProof,
+		&ep.HtifTohostDataBlock,
+		&ep.HtifTohostProof,
 		&ep.Commitment,
 		&ep.CommitmentProof,
 		&ep.ClaimTransactionHash,
@@ -532,8 +565,12 @@ func (r *PostgresRepository) GetLastNonOpenEpoch(
 			table.Epoch.InputIndexLowerBound,
 			table.Epoch.InputIndexUpperBound,
 			table.Epoch.MachineHash,
-			table.Epoch.OutputsMerkleRoot,
-			table.Epoch.OutputsMerkleProof,
+			table.Epoch.TxBufferDataBlock,
+			table.Epoch.TxBufferProof,
+			table.Epoch.IflagsYDataBlock,
+			table.Epoch.IflagsYProof,
+			table.Epoch.HtifTohostDataBlock,
+			table.Epoch.HtifTohostProof,
 			table.Epoch.Commitment,
 			table.Epoch.CommitmentProof,
 			table.Epoch.ClaimTransactionHash,
@@ -569,8 +606,12 @@ func (r *PostgresRepository) GetLastNonOpenEpoch(
 		&ep.InputIndexLowerBound,
 		&ep.InputIndexUpperBound,
 		&ep.MachineHash,
-		&ep.OutputsMerkleRoot,
-		&ep.OutputsMerkleProof,
+		&ep.TxBufferDataBlock,
+		&ep.TxBufferProof,
+		&ep.IflagsYDataBlock,
+		&ep.IflagsYProof,
+		&ep.HtifTohostDataBlock,
+		&ep.HtifTohostProof,
 		&ep.Commitment,
 		&ep.CommitmentProof,
 		&ep.ClaimTransactionHash,
@@ -607,8 +648,12 @@ func (r *PostgresRepository) GetEpochByVirtualIndex(
 			table.Epoch.InputIndexLowerBound,
 			table.Epoch.InputIndexUpperBound,
 			table.Epoch.MachineHash,
-			table.Epoch.OutputsMerkleRoot,
-			table.Epoch.OutputsMerkleProof,
+			table.Epoch.TxBufferDataBlock,
+			table.Epoch.TxBufferProof,
+			table.Epoch.IflagsYDataBlock,
+			table.Epoch.IflagsYProof,
+			table.Epoch.HtifTohostDataBlock,
+			table.Epoch.HtifTohostProof,
 			table.Epoch.Commitment,
 			table.Epoch.CommitmentProof,
 			table.Epoch.ClaimTransactionHash,
@@ -642,8 +687,12 @@ func (r *PostgresRepository) GetEpochByVirtualIndex(
 		&ep.InputIndexLowerBound,
 		&ep.InputIndexUpperBound,
 		&ep.MachineHash,
-		&ep.OutputsMerkleRoot,
-		&ep.OutputsMerkleProof,
+		&ep.TxBufferDataBlock,
+		&ep.TxBufferProof,
+		&ep.IflagsYDataBlock,
+		&ep.IflagsYProof,
+		&ep.HtifTohostDataBlock,
+		&ep.HtifTohostProof,
 		&ep.Commitment,
 		&ep.CommitmentProof,
 		&ep.ClaimTransactionHash,
@@ -698,22 +747,6 @@ func (r *PostgresRepository) UpdateEpochClaimTransactionHash(
 	return nil
 }
 
-func (r *PostgresRepository) UpdateEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64, proof *model.OutputsProof) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
-
-	err = updateEpochOutputsMerkleProof(ctx, tx, appID, epochIndex,
-		proof.OutputsHash, byteSliceToHashSlice(proof.OutputsHashProof), proof.MachineHash)
-	if err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
-}
-
 func (r *PostgresRepository) UpdateEpochStatus(
 	ctx context.Context,
 	nameOrAddress string,
@@ -753,7 +786,11 @@ func (r *PostgresRepository) UpdateEpochInputsProcessed(
 	ctx context.Context,
 	nameOrAddress string,
 	epochIndex uint64,
+	proof *model.StateProof,
 ) error {
+	if !proof.IsComplete() {
+		return repository.ErrInvalidStateProof
+	}
 
 	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
@@ -794,13 +831,33 @@ func (r *PostgresRepository) UpdateEpochInputsProcessed(
 
 	inputsCondition := hasNoInputs.OR(allInputsPresentAndProcessed)
 
-	// Update statement to set epoch status to InputsProcessed
-	updateStmt := table.Epoch.UPDATE(table.Epoch.Status).
-		SET(enum.EpochStatus.InputsProcessed).
+	// Publish the final state proof and status atomically. Readers can never
+	// observe INPUTS_PROCESSED without all three canonical proof leaves.
+	updateStmt := table.Epoch.UPDATE(
+		table.Epoch.Status,
+		table.Epoch.TxBufferDataBlock,
+		table.Epoch.TxBufferProof,
+		table.Epoch.MachineHash,
+		table.Epoch.IflagsYDataBlock,
+		table.Epoch.IflagsYProof,
+		table.Epoch.HtifTohostDataBlock,
+		table.Epoch.HtifTohostProof,
+	).
+		SET(
+			enum.EpochStatus.InputsProcessed,
+			proof.TxBufferDataBlock[:],
+			encodeSiblings(proof.TxBufferProof),
+			proof.MachineHash[:],
+			proof.IflagsYDataBlock[:],
+			encodeSiblings(proof.IflagsYProof),
+			proof.HtifTohostDataBlock[:],
+			encodeSiblings(proof.HtifTohostProof),
+		).
 		FROM(table.Application).
 		WHERE(postgres.AND(
 			table.Epoch.Status.EQ(postgres.NewEnumValue(model.EpochStatus_Closed.String())),
 			table.Epoch.ApplicationID.EQ(table.Application.ID),
+			table.Application.Status.EQ(enum.ApplicationStatus.Ok),
 			table.Epoch.Index.EQ(uint64Expr(epochIndex)),
 			whereClause,
 			prevCondition,
@@ -815,7 +872,7 @@ func (r *PostgresRepository) UpdateEpochInputsProcessed(
 	err := r.db.QueryRow(ctx, sqlStr, args...).Scan(&index)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
+			return repository.ErrNoUpdate
 		}
 		return err
 	}
@@ -885,7 +942,9 @@ func (r *PostgresRepository) ListEpochs(
 			table.Epoch.InputIndexLowerBound,
 			table.Epoch.InputIndexUpperBound,
 			table.Epoch.MachineHash,
-			table.Epoch.OutputsMerkleRoot,
+			table.Epoch.TxBufferDataBlock,
+			table.Epoch.IflagsYDataBlock,
+			table.Epoch.HtifTohostDataBlock,
 			table.Epoch.Commitment,
 			table.Epoch.ClaimTransactionHash,
 			table.Epoch.TournamentAddress,
@@ -930,7 +989,9 @@ func (r *PostgresRepository) ListEpochs(
 			&ep.InputIndexLowerBound,
 			&ep.InputIndexUpperBound,
 			&ep.MachineHash,
-			&ep.OutputsMerkleRoot,
+			&ep.TxBufferDataBlock,
+			&ep.IflagsYDataBlock,
+			&ep.HtifTohostDataBlock,
 			&ep.Commitment,
 			&ep.ClaimTransactionHash,
 			&ep.TournamentAddress,
@@ -949,46 +1010,4 @@ func (r *PostgresRepository) ListEpochs(
 		return nil, 0, err
 	}
 	return epochs, total, nil
-}
-
-func (r *PostgresRepository) RepeatPreviousEpochOutputsProof(
-	ctx context.Context,
-	appID int64,
-	epochIndex uint64,
-) error {
-	if epochIndex == 0 {
-		return fmt.Errorf("cannot repeat outputs proof for epoch 0")
-	}
-
-	e1 := table.Epoch.AS("e1")
-	e2 := table.Epoch.AS("e2")
-	updStmt := e1.
-		UPDATE(
-			e1.OutputsMerkleRoot,
-			e1.OutputsMerkleProof,
-			e1.MachineHash,
-		).
-		SET(
-			e2.OutputsMerkleRoot,
-			e2.OutputsMerkleProof,
-			e2.MachineHash,
-		).
-		FROM(e2).
-		WHERE(postgres.AND(
-			e1.ApplicationID.EQ(postgres.Int64(appID)),
-			e1.Index.EQ(uint64Expr(epochIndex)),
-			e2.ApplicationID.EQ(postgres.Int64(appID)),
-			e2.Index.EQ(uint64Expr(epochIndex-1)),
-		))
-
-	sqlStr, args := updStmt.Sql()
-
-	cmd, err := r.db.Exec(ctx, sqlStr, args...)
-	if err != nil {
-		return err
-	}
-	if cmd.RowsAffected() == 0 {
-		return repository.ErrNotFound
-	}
-	return nil
 }

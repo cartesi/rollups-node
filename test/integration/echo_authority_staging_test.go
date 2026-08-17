@@ -169,5 +169,5 @@ func (s *EchoAuthorityStagingSuite) TestEchoAuthorityForecloseStagedClaim() {
 	foreclosedCancel()
 	r.NoError(err, "foreclosed staged claim should become CLAIM_FORECLOSED without waiting for staging-period expiry")
 	r.NotNil(epoch.StagedAtBlock, "staged_at_block should be preserved after CLAIM_FORECLOSED")
-	r.NotNil(epoch.OutputsMerkleRoot, "local claim data should be preserved when terminalizing as CLAIM_FORECLOSED")
+	r.NotNil(epoch.TxBufferDataBlock, "local claim data should be preserved when terminalizing as CLAIM_FORECLOSED")
 }

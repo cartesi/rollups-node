@@ -17,6 +17,18 @@ import (
 var (
 	ErrNotFound = errors.New("not found")
 	ErrNoUpdate = errors.New("update did not take effect")
+	// ErrApplicationNotRunnable means an advance result cannot be stored because
+	// the application's durable status does not allow machine execution.
+	ErrApplicationNotRunnable = errors.New("application is not runnable")
+	// ErrAdvanceCursorMismatch means an advance result does not match the next
+	// unprocessed input selected by the application's durable cursor.
+	ErrAdvanceCursorMismatch = errors.New("advance result does not match application cursor")
+	// ErrAdvanceAfterTerminal preserves the more specific classification for a
+	// store rejected because the application's durable status is terminal.
+	ErrAdvanceAfterTerminal = errors.New("cannot store an advance result after a terminal input")
+	// ErrInvalidStateProof means an advance result or epoch publication did not
+	// include the complete three-leaf machine state proof.
+	ErrInvalidStateProof = errors.New("invalid machine state proof")
 
 	// ErrInputLogIdentityConflict indicates an input insert conflicted with a
 	// stored row on the L1 log identity (transaction_hash, log_index) under a
@@ -170,6 +182,8 @@ type ApplicationRepository interface {
 	UpdateExecutionParameters(ctx context.Context, ep *ExecutionParameters) error
 
 	GetEventLastCheckBlock(ctx context.Context, appID int64, event MonitoredEvent) (uint64, error)
+	// UpdateEventLastCheckBlock advances the event cursor monotonically. Lower
+	// or equal block numbers are no-ops.
 	UpdateEventLastCheckBlock(ctx context.Context, appIDs []int64, event MonitoredEvent, blockNumber uint64) error
 
 	GetLastSnapshot(ctx context.Context, nameOrAddress string) (*Input, error)
@@ -186,9 +200,7 @@ type EpochRepository interface {
 
 	UpdateEpochClaimTransactionHash(ctx context.Context, nameOrAddress string, e *Epoch) error
 	UpdateEpochStatus(ctx context.Context, nameOrAddress string, e *Epoch) error
-	UpdateEpochInputsProcessed(ctx context.Context, nameOrAddress string, epochIndex uint64) error
-	UpdateEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64, proof *OutputsProof) error
-	RepeatPreviousEpochOutputsProof(ctx context.Context, appID int64, epochIndex uint64) error
+	UpdateEpochInputsProcessed(ctx context.Context, nameOrAddress string, epochIndex uint64, proof *StateProof) error
 
 	ListEpochs(ctx context.Context, nameOrAddress string, f EpochFilter, p Pagination, descending bool) ([]*Epoch, uint64, error)
 
@@ -398,17 +410,25 @@ type ClaimerRepository interface {
 		applicationID int64,
 		index uint64,
 	) error
-	// RejectEpochAndSetApplicationDiverged atomically marks an epoch as
-	// CLAIM_REJECTED and the application as DIVERGED. Used when Quorum
-	// consensus stages or accepts a different claim before the local claim has
-	// staged, making the local claim unreachable. The application is always
-	// halted, even when no epoch row matched the reject.
+	// RejectEpochAndSetApplicationDiverged atomically attempts to mark an epoch
+	// as CLAIM_REJECTED and the application as DIVERGED. The returned result
+	// reports which conditional writes applied, so callers can mirror only the
+	// durable transitions. The application remains unchanged when it already
+	// has a terminal status; an epoch outside CLAIM_COMPUTED/CLAIM_SUBMITTED is
+	// likewise left unchanged.
 	RejectEpochAndSetApplicationDiverged(
 		ctx context.Context,
 		applicationID int64,
 		index uint64,
 		reason string,
-	) error
+	) (RejectEpochAndDivergeResult, error)
+}
+
+// RejectEpochAndDivergeResult describes the two conditional writes performed
+// by RejectEpochAndSetApplicationDiverged when the returned error is nil.
+type RejectEpochAndDivergeResult struct {
+	EpochRejected       bool
+	ApplicationDiverged bool
 }
 
 type Repository interface {

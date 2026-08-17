@@ -139,6 +139,33 @@ func (s *ApplicationSuite) TestListApplications() {
 		s.Equal(ApplicationStatus_OK, apps[0].Status)
 	})
 
+	s.Run("ExecutableFilterExcludesExecutionTerminalStatuses", func() {
+		const pageLimit = 10
+		healthy := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		for _, status := range []ApplicationStatus{
+			ApplicationStatus_GuestException,
+			ApplicationStatus_MachineHalted,
+			ApplicationStatus_McycleOverflow,
+			ApplicationStatus_UnexpectedYield,
+		} {
+			app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+			reason := "terminal machine outcome"
+			s.Require().NoError(s.Repo.UpdateApplicationStatus(
+				s.Ctx, app.ID, status, &reason))
+		}
+
+		apps, total, err := s.Repo.ListApplications(
+			s.Ctx,
+			repository.ExecutableApplicationsFilter(),
+			repository.Pagination{Limit: pageLimit},
+			false,
+		)
+		s.Require().NoError(err)
+		s.Equal(uint64(1), total)
+		s.Require().Len(apps, 1)
+		s.Equal(healthy.ID, apps[0].ID)
+	})
+
 	s.Run("FilterByConsensus", func() {
 		NewApplicationBuilder().WithConsensus(Consensus_Authority).Create(s.Ctx, s.T(), s.Repo)
 		NewApplicationBuilder().WithConsensus(Consensus_PRT).Create(s.Ctx, s.T(), s.Repo)
@@ -455,6 +482,10 @@ func (s *ApplicationSuite) TestTerminalStatusIsTerminal() {
 	terminalStatuses := []ApplicationStatus{
 		ApplicationStatus_Diverged,
 		ApplicationStatus_Corrupted,
+		ApplicationStatus_GuestException,
+		ApplicationStatus_MachineHalted,
+		ApplicationStatus_McycleOverflow,
+		ApplicationStatus_UnexpectedYield,
 	}
 
 	for _, status := range terminalStatuses {
@@ -558,6 +589,121 @@ func (s *ApplicationSuite) TestForeclosedCanBecomeTerminal() {
 		s.Require().NotNil(got.Reason)
 		s.Equal(reason, *got.Reason)
 	})
+}
+
+func (s *ApplicationSuite) TestExecutionTerminalCanEscalateToCorrupted() {
+	for _, status := range []ApplicationStatus{
+		ApplicationStatus_GuestException,
+		ApplicationStatus_MachineHalted,
+		ApplicationStatus_McycleOverflow,
+		ApplicationStatus_UnexpectedYield,
+	} {
+		s.Run(status.String(), func() {
+			app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+			executionReason := "guest execution terminated"
+			s.Require().NoError(s.Repo.UpdateApplicationStatus(
+				s.Ctx, app.ID, status, &executionReason))
+
+			corruptionReason := "post-foreclosure L1 history mismatch"
+			s.Require().NoError(s.Repo.UpdateApplicationStatus(
+				s.Ctx, app.ID, ApplicationStatus_Corrupted, &corruptionReason))
+
+			got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+			s.Require().NoError(err)
+			s.Equal(ApplicationStatus_Corrupted, got.Status)
+			s.Require().NotNil(got.Reason)
+			s.Equal(corruptionReason, *got.Reason)
+		})
+	}
+}
+
+func (s *ApplicationSuite) TestFailedCannotEnterExecutionTerminal() {
+	for _, status := range []ApplicationStatus{
+		ApplicationStatus_GuestException,
+		ApplicationStatus_MachineHalted,
+		ApplicationStatus_McycleOverflow,
+		ApplicationStatus_UnexpectedYield,
+	} {
+		s.Run(status.String(), func() {
+			app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+			failedReason := "runtime unavailable"
+			s.Require().NoError(s.Repo.UpdateApplicationStatus(
+				s.Ctx, app.ID, ApplicationStatus_Failed, &failedReason))
+
+			terminalReason := "must only be produced by an advance"
+			err := s.Repo.UpdateApplicationStatus(
+				s.Ctx, app.ID, status, &terminalReason)
+			s.Require().Error(err)
+
+			got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+			s.Require().NoError(err)
+			s.Equal(ApplicationStatus_Failed, got.Status)
+			s.Require().NotNil(got.Reason)
+			s.Equal(failedReason, *got.Reason)
+		})
+	}
+}
+
+func (s *ApplicationSuite) TestExecutionTerminalRejectsOtherTerminalTransitions() {
+	executionStatuses := []ApplicationStatus{
+		ApplicationStatus_GuestException,
+		ApplicationStatus_MachineHalted,
+		ApplicationStatus_McycleOverflow,
+		ApplicationStatus_UnexpectedYield,
+	}
+	for index, current := range executionStatuses {
+		for _, target := range []ApplicationStatus{
+			ApplicationStatus_Failed,
+			ApplicationStatus_Diverged,
+			executionStatuses[(index+1)%len(executionStatuses)],
+		} {
+			s.Run(current.String()+"To"+target.String(), func() {
+				app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+				originalReason := "terminal machine outcome"
+				s.Require().NoError(s.Repo.UpdateApplicationStatus(
+					s.Ctx, app.ID, current, &originalReason))
+
+				newReason := "invalid transition"
+				err := s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, target, &newReason)
+				s.Require().Error(err)
+
+				got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+				s.Require().NoError(err)
+				s.Equal(current, got.Status)
+				s.Equal(originalReason, *got.Reason)
+			})
+		}
+	}
+}
+
+func (s *ApplicationSuite) TestIntegrityTerminalRejectsExecutionTerminalTransitions() {
+	for _, current := range []ApplicationStatus{
+		ApplicationStatus_Diverged,
+		ApplicationStatus_Corrupted,
+	} {
+		for _, target := range []ApplicationStatus{
+			ApplicationStatus_GuestException,
+			ApplicationStatus_MachineHalted,
+			ApplicationStatus_McycleOverflow,
+			ApplicationStatus_UnexpectedYield,
+		} {
+			s.Run(current.String()+"To"+target.String(), func() {
+				app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+				originalReason := "integrity failure"
+				s.Require().NoError(s.Repo.UpdateApplicationStatus(
+					s.Ctx, app.ID, current, &originalReason))
+
+				newReason := "invalid execution outcome"
+				err := s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, target, &newReason)
+				s.Require().Error(err)
+
+				got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+				s.Require().NoError(err)
+				s.Equal(current, got.Status)
+				s.Equal(originalReason, *got.Reason)
+			})
+		}
+	}
 }
 
 // TestForeclosedCanBecomeFailed verifies that a foreclosed application (one
@@ -818,6 +964,26 @@ func (s *ApplicationSuite) TestEventLastCheckBlock() {
 		s.Equal(uint64(42), block)
 	})
 
+	s.Run("DoesNotRegress", func() {
+		const (
+			currentBlock = uint64(42)
+			staleBlock   = uint64(41)
+		)
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+
+		err := s.Repo.UpdateEventLastCheckBlock(
+			s.Ctx, []int64{app.ID}, MonitoredEvent_InputAdded, currentBlock)
+		s.Require().NoError(err)
+		err = s.Repo.UpdateEventLastCheckBlock(
+			s.Ctx, []int64{app.ID}, MonitoredEvent_InputAdded, staleBlock)
+		s.Require().NoError(err)
+
+		block, err := s.Repo.GetEventLastCheckBlock(
+			s.Ctx, app.ID, MonitoredEvent_InputAdded)
+		s.Require().NoError(err)
+		s.Equal(currentBlock, block)
+	})
+
 	s.Run("AllMonitoredEventTypes", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 
@@ -909,9 +1075,7 @@ func (s *ApplicationSuite) TestGetProcessedInputCount() {
 			EpochIndex: 0,
 			InputIndex: 0,
 			Status:     InputCompletionStatus_Accepted,
-			OutputsProof: OutputsProof{
-				MachineHash: crypto.Keccak256Hash([]byte("machine")),
-			},
+			StateProof: *DummyStateProof(),
 		}
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
 		s.Require().NoError(err)
@@ -981,9 +1145,7 @@ func (s *ApplicationSuite) TestUpdateApplication() {
 			EpochIndex: 0,
 			InputIndex: 0,
 			Status:     InputCompletionStatus_Accepted,
-			OutputsProof: OutputsProof{
-				MachineHash: crypto.Keccak256Hash([]byte("machine")),
-			},
+			StateProof: *DummyStateProof(),
 		}))
 
 		app.EpochLength = 33
@@ -1277,9 +1439,7 @@ func (s *ApplicationSuite) TestGetLastSnapshot() {
 			EpochIndex: 0,
 			InputIndex: 0,
 			Status:     InputCompletionStatus_Accepted,
-			OutputsProof: OutputsProof{
-				MachineHash: crypto.Keccak256Hash([]byte("machine")),
-			},
+			StateProof: *DummyStateProof(),
 		}
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
 		s.Require().NoError(err)

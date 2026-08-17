@@ -97,7 +97,7 @@ func makeEpoch(id int64, status model.EpochStatus, i uint64) *model.Epoch {
 		WithBlocks(i*10, i*10+9).
 		WithStatus(status).
 		WithClaimTransactionHash(txHash).
-		WithOutputsMerkleRoot(outputsMerkleRoot).
+		WithTxBufferDataBlock(outputsMerkleRoot).
 		WithMachineHash(machineHash).
 		Build()
 	if status == model.EpochStatus_ClaimStaged {
@@ -157,7 +157,7 @@ func makeSubmittedEventWithTxHash(
 	return &iconsensus.IConsensusClaimSubmitted{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(epoch.LastBlock),
 		AppContract:              app.IApplicationAddress,
-		OutputsMerkleRoot:        *epoch.OutputsMerkleRoot,
+		OutputsMerkleRoot:        *epoch.TxBufferDataBlock,
 		MachineMerkleRoot:        testMachineHash(epoch),
 		Raw: types.Log{
 			TxHash:      txHash,
@@ -191,7 +191,7 @@ func makeClaimStagedLog(app *model.Application, epoch *model.Epoch) types.Log {
 	}
 	data, err := event.Inputs.NonIndexed().Pack(
 		new(big.Int).SetUint64(epoch.LastBlock),
-		*epoch.OutputsMerkleRoot,
+		*epoch.TxBufferDataBlock,
 		testMachineHash(epoch),
 	)
 	if err != nil {
@@ -212,7 +212,7 @@ func makeStagedEvent(app *model.Application, epoch *model.Epoch) *iconsensus.ICo
 	return &iconsensus.IConsensusClaimStaged{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(epoch.LastBlock),
 		AppContract:              app.IApplicationAddress,
-		OutputsMerkleRoot:        *epoch.OutputsMerkleRoot,
+		OutputsMerkleRoot:        *epoch.TxBufferDataBlock,
 		MachineMerkleRoot:        testMachineHash(epoch),
 		Raw: types.Log{
 			BlockNumber: epoch.LastBlock + 5,
@@ -224,7 +224,7 @@ func makeAcceptedEvent(app *model.Application, epoch *model.Epoch) *iconsensus.I
 	return &iconsensus.IConsensusClaimAccepted{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(epoch.LastBlock),
 		AppContract:              app.IApplicationAddress,
-		OutputsMerkleRoot:        *epoch.OutputsMerkleRoot,
+		OutputsMerkleRoot:        *epoch.TxBufferDataBlock,
 		MachineMerkleRoot:        testMachineHash(epoch),
 		Raw: types.Log{
 			TxHash:      common.HexToHash(epoch.ClaimTransactionHash.Hex()),

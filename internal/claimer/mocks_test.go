@@ -96,9 +96,10 @@ func (m *claimerRepositoryMock) RejectEpochAndSetApplicationDiverged(
 	appID int64,
 	index uint64,
 	reason string,
-) error {
+) (repository.RejectEpochAndDivergeResult, error) {
 	args := m.Called(ctx, appID, index, reason)
-	return args.Error(0)
+	result, _ := args.Get(0).(repository.RejectEpochAndDivergeResult)
+	return result, args.Error(1)
 }
 
 func (m *claimerRepositoryMock) HasUnreconciledClaimsBeforeBlock(
@@ -408,8 +409,8 @@ func expectPreSubmitPath(b *claimerBlockchainMock, app *model.Application, epoch
 
 func makeClaimStatus(status uint8, epoch *model.Epoch, stagedAtBlock uint64) iconsensus.IConsensusClaim {
 	claim := iconsensus.IConsensusClaim{Status: status}
-	if epoch.OutputsMerkleRoot != nil {
-		claim.StagedOutputsMerkleRoot = *epoch.OutputsMerkleRoot
+	if epoch.TxBufferDataBlock != nil {
+		claim.StagedOutputsMerkleRoot = *epoch.TxBufferDataBlock
 	}
 	if stagedAtBlock != 0 {
 		claim.StagingBlockNumber = new(big.Int).SetUint64(stagedAtBlock)
