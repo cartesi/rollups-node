@@ -116,6 +116,16 @@ func Run(
 			); err != nil {
 				return Result{}, err
 			}
+			if input.Status.IsTerminal() && input.InputIndex != summary.ProcessedInputs-1 {
+				return Result{}, newContradiction(
+					applicationLabel,
+					knownEpochIndex(input.EpochIndex),
+					input.InputIndex,
+					"terminal_status.position",
+					summary.ProcessedInputs-1,
+					input.InputIndex,
+				)
+			}
 			replayed++
 			if expected := input.InputIndex + 1; executor.ProcessedInputs() != expected {
 				return Result{}, contradiction(

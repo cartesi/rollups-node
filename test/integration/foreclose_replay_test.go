@@ -156,7 +156,7 @@ func (s *ForecloseReplaySuite) TestForecloseReregisterReplay() {
 		epoch, err := waitForEpochStatus(claimCtx, s.T(), appAName, ep, model.EpochStatus_ClaimAccepted)
 		claimCancel()
 		r.NoError(err, "epoch %d should reach CLAIM_ACCEPTED", ep)
-		r.NotNil(epoch.OutputsMerkleRoot, "epoch %d outputs merkle root", ep)
+		r.NotNil(epoch.TxBufferDataBlock, "epoch %d outputs merkle root", ep)
 		s.T().Logf("    epoch %d accepted", ep)
 	}
 
@@ -495,7 +495,7 @@ func compareReplayedEpoch(t testing.TB, r *require.Assertions, a, b *model.Epoch
 	r.Equal(a.LastBlock, b.LastBlock, "epoch %d: last block", ep)
 	r.Equal(a.InputIndexLowerBound, b.InputIndexLowerBound, "epoch %d: input lower bound", ep)
 	r.Equal(a.InputIndexUpperBound, b.InputIndexUpperBound, "epoch %d: input upper bound", ep)
-	r.Equal(a.OutputsMerkleRoot, b.OutputsMerkleRoot, "epoch %d: outputs merkle root", ep)
+	r.Equal(a.TxBufferDataBlock, b.TxBufferDataBlock, "epoch %d: outputs merkle root", ep)
 	r.Equal(a.MachineHash, b.MachineHash, "epoch %d: machine hash", ep)
 }
 

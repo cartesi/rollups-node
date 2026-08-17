@@ -86,11 +86,11 @@ func compareRecord(
 	if actual.MachineHash != *record.Input.MachineHash {
 		return contradiction("machine_hash", record.Input.MachineHash.Hex(), actual.MachineHash.Hex())
 	}
-	if record.Input.OutputsHash == nil {
-		return contradiction("outputs_hash", "persisted hash", "missing")
+	if record.Input.TxBufferDataBlock == nil {
+		return contradiction("tx_buffer_data_block", "persisted hash", "missing")
 	}
-	if actual.OutputsHash != *record.Input.OutputsHash {
-		return contradiction("outputs_hash", record.Input.OutputsHash.Hex(), actual.OutputsHash.Hex())
+	if actual.TxBufferDataBlock != *record.Input.TxBufferDataBlock {
+		return contradiction("tx_buffer_data_block", record.Input.TxBufferDataBlock.Hex(), actual.TxBufferDataBlock.Hex())
 	}
 	if verification == repository.ReplayVerificationCanonical {
 		return nil

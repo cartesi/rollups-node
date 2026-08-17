@@ -67,6 +67,7 @@ type fakeExecutor struct {
 	computeHashes  []bool
 	wrongResultPos bool
 	fullPRTResult  bool
+	statuses       map[uint64]model.InputCompletionStatus
 }
 
 func (executor *fakeExecutor) ProcessedInputs() uint64 { return executor.processed }
@@ -96,10 +97,13 @@ func (executor *fakeExecutor) Advance(
 		EpochIndex: epochIndex,
 		InputIndex: resultIndex,
 		Status:     model.InputCompletionStatus_Accepted,
-		OutputsProof: model.OutputsProof{
-			MachineHash: common.BigToHash(newBig(inputIndex + 1)),
-			OutputsHash: common.BigToHash(newBig(inputIndex + 100)),
+		StateProof: model.StateProof{
+			MachineHash:       common.BigToHash(newBig(inputIndex + 1)),
+			TxBufferDataBlock: common.BigToHash(newBig(inputIndex + 100)),
 		},
+	}
+	if status, ok := executor.statuses[inputIndex]; ok {
+		result.Status = status
 	}
 	if executor.fullPRTResult {
 		result.PaddingRepetitions = 1 << 24
@@ -113,15 +117,15 @@ func replayRecords(count uint64) []*model.ReplayRecord {
 	records := make([]*model.ReplayRecord, count)
 	for index := range count {
 		machineHash := common.BigToHash(newBig(index + 1))
-		outputsHash := common.BigToHash(newBig(index + 100))
+		txBufferDataBlock := common.BigToHash(newBig(index + 100))
 		records[index] = &model.ReplayRecord{Input: model.ReplayInput{
-			ApplicationID: 7,
-			EpochIndex:    index / 2,
-			InputIndex:    index,
-			RawData:       []byte{byte(index)},
-			Status:        model.InputCompletionStatus_Accepted,
-			MachineHash:   &machineHash,
-			OutputsHash:   &outputsHash,
+			ApplicationID:     7,
+			EpochIndex:        index / 2,
+			InputIndex:        index,
+			RawData:           []byte{byte(index)},
+			Status:            model.InputCompletionStatus_Accepted,
+			MachineHash:       &machineHash,
+			TxBufferDataBlock: &txBufferDataBlock,
 		}}
 	}
 	return records
@@ -208,6 +212,55 @@ func TestRunCaughtUpStillValidatesSummary(t *testing.T) {
 	require.Zero(t, result.ReplayedInputs)
 	require.Equal(t, []repository.ReplayVerificationLevel{repository.ReplayVerificationCanonical}, source.summaryLevels)
 	require.Empty(t, source.pageRequests)
+}
+
+func TestRunRejectsCompletedInputAfterTerminalStatus(t *testing.T) {
+	records := replayRecords(2)
+	records[0].Input.Status = model.InputCompletionStatus_MachineHalted
+	source := &fakeSource{
+		summary: model.ReplaySummary{
+			ApplicationID: 7, ProcessedInputs: 2, Consensus: model.Consensus_Authority,
+		},
+		records: records,
+	}
+	executor := &fakeExecutor{statuses: map[uint64]model.InputCompletionStatus{
+		0: model.InputCompletionStatus_MachineHalted,
+	}}
+
+	_, err := Run(
+		context.Background(), source, executor,
+		replayOptions(model.Consensus_Authority, 0, 2),
+	)
+	require.ErrorIs(t, err, ErrContradiction)
+	var contradiction *ContradictionError
+	require.ErrorAs(t, err, &contradiction)
+	require.Equal(t, "terminal_status.position", contradiction.Field)
+	require.Equal(t, "1", contradiction.Expected)
+	require.Equal(t, "0", contradiction.Actual)
+	require.Len(t, executor.advanceCalls, 1)
+}
+
+func TestRunAcceptsTerminalStatusAtEndOfReplay(t *testing.T) {
+	records := replayRecords(2)
+	records[1].Input.Status = model.InputCompletionStatus_UnexpectedYield
+	source := &fakeSource{
+		summary: model.ReplaySummary{
+			ApplicationID: 7, ProcessedInputs: 2, Consensus: model.Consensus_Authority,
+		},
+		records: records,
+	}
+	executor := &fakeExecutor{statuses: map[uint64]model.InputCompletionStatus{
+		1: model.InputCompletionStatus_UnexpectedYield,
+	}}
+
+	result, err := Run(
+		context.Background(), source, executor,
+		replayOptions(model.Consensus_Authority, 0, 2),
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), result.ReplayedInputs)
+	require.Equal(t, uint64(2), executor.ProcessedInputs())
 }
 
 func TestRunRejectsMalformedPagesBeforeExecution(t *testing.T) {
