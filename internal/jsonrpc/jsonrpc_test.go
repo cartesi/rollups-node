@@ -4038,6 +4038,50 @@ func TestListIndexRangeValidation(t *testing.T) {
 	}
 }
 
+func TestListOffsetValidation(t *testing.T) {
+	for _, method := range []string{
+		"cartesi_listApplications",
+		"cartesi_listEpochs",
+		"cartesi_listInputs",
+		"cartesi_listOutputs",
+		"cartesi_listReports",
+		"cartesi_listWithdrawals",
+		"cartesi_listTournaments",
+		"cartesi_listCommitments",
+		"cartesi_listMatches",
+		"cartesi_listMatchAdvances",
+	} {
+		t.Run(method, func(t *testing.T) {
+			s := newBatchTestService()
+			body := []byte(fmt.Sprintf(`{
+				"jsonrpc":"2.0",
+				"method":%q,
+				"params":{"offset":9223372036854775808},
+				"id":1
+			}`, method))
+			rr := serveRPC(t, s, body)
+
+			response := decodeRPCResponse(t, rr.Body.Bytes())
+			requireRPCError(t, response, float64(1), JSONRPC_INVALID_PARAMS)
+			require.Equal(t, "Invalid offset", response.Error.Message)
+		})
+	}
+
+	t.Run("positional parameters", func(t *testing.T) {
+		s := newBatchTestService()
+		rr := serveRPC(t, s, []byte(`{
+			"jsonrpc":"2.0",
+			"method":"cartesi_listApplications",
+			"params":[50,9223372036854775808],
+			"id":1
+		}`))
+
+		response := decodeRPCResponse(t, rr.Body.Bytes())
+		requireRPCError(t, response, float64(1), JSONRPC_INVALID_PARAMS)
+		require.Equal(t, "Invalid offset", response.Error.Message)
+	})
+}
+
 func TestParseIndexRange(t *testing.T) {
 	from := "0x2"
 	to := "0x4"

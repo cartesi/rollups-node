@@ -196,7 +196,6 @@ func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) er
 		s.Logger.Debug("RPC method not found", "method", req.Method)
 		return writeRPCError(w, req.ID, JSONRPC_METHOD_NOT_FOUND, "Method not found")
 	}
-
 	result, err := fn(s, r, req)
 	if err == nil {
 		return writeRPCResult(w, req.ID, result)
@@ -353,6 +352,9 @@ func handleListApplications(s *Service, r *http.Request, req RPCRequest) (any, e
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
+	if params.Offset > math.MaxInt64 {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid offset")
+	}
 	// Use default values if not provided
 	if params.Limit <= 0 {
 		params.Limit = LIST_ITEM_DEFAULT
@@ -413,6 +415,9 @@ func handleListEpochs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
+	}
+	if params.Offset > math.MaxInt64 {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid offset")
 	}
 
 	// Use default values if not provided
@@ -574,6 +579,9 @@ func handleListInputs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
+	}
+	if params.Offset > math.MaxInt64 {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid offset")
 	}
 
 	// Use default values if not provided
@@ -771,6 +779,9 @@ func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error)
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
+	if params.Offset > math.MaxInt64 {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid offset")
+	}
 
 	// Use default values if not provided
 	if params.Limit <= 0 {
@@ -912,6 +923,9 @@ func handleListReports(s *Service, r *http.Request, req RPCRequest) (any, error)
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
+	if params.Offset > math.MaxInt64 {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid offset")
+	}
 
 	// Use default values if not provided
 	if params.Limit <= 0 {
@@ -1016,6 +1030,9 @@ func handleListWithdrawals(s *Service, r *http.Request, req RPCRequest) (any, er
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
+	if params.Offset > math.MaxInt64 {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid offset")
+	}
 
 	if params.Limit <= 0 {
 		params.Limit = LIST_ITEM_DEFAULT
@@ -1102,6 +1119,9 @@ func handleListTournaments(s *Service, r *http.Request, req RPCRequest) (any, er
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
+	}
+	if params.Offset > math.MaxInt64 {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid offset")
 	}
 
 	// Use default values if not provided
@@ -1217,6 +1237,9 @@ func handleListCommitments(s *Service, r *http.Request, req RPCRequest) (any, er
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
+	if params.Offset > math.MaxInt64 {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid offset")
+	}
 
 	// Use default values if not provided
 	if params.Limit <= 0 {
@@ -1325,6 +1348,9 @@ func handleListMatches(s *Service, r *http.Request, req RPCRequest) (any, error)
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
+	if params.Offset > math.MaxInt64 {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid offset")
+	}
 
 	// Use default values if not provided
 	if params.Limit <= 0 {
@@ -1429,6 +1455,9 @@ func handleListMatchAdvances(s *Service, r *http.Request, req RPCRequest) (any, 
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
 		s.Logger.Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
+	}
+	if params.Offset > math.MaxInt64 {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid offset")
 	}
 
 	// Use default values if not provided
