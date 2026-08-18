@@ -322,6 +322,41 @@ func TestJSONRPCBatchStopsBetweenEntriesWhenContextIsCanceled(t *testing.T) {
 	}
 }
 
+func TestJSONRPCBatchStopsSilentlyWhenRepositoryCallIsCanceled(t *testing.T) {
+	s := newBatchTestService()
+	var calls atomic.Int32
+	var logs bytes.Buffer
+	s.Logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	ctx, cancel := context.WithCancel(context.Background())
+	const method = "test_repository_cancel_batch"
+	withTestRPCHandler(t, method, func(s *Service, _ *http.Request, _ RPCRequest) (any, error) {
+		calls.Add(1)
+		cancel()
+		return nil, s.repositoryError(ctx, "Unable to retrieve test data from repository",
+			fmt.Errorf("repository query failed: %w", ctx.Err()))
+	})
+
+	body := []byte(fmt.Sprintf(`[
+		{"jsonrpc":"2.0","method":%q,"id":1},
+		{"jsonrpc":"2.0","method":%q,"id":2}
+	]`, method, method))
+	req := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(body)).WithContext(ctx)
+	rr := httptest.NewRecorder()
+	s.handleRPC(rr, req)
+
+	require.Equal(t, int32(1), calls.Load())
+	require.NotContains(t, rr.Body.String(), "Internal server error")
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		if line == "" {
+			continue
+		}
+		var record map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &record))
+		require.NotEqual(t, "ERROR", record["level"],
+			"context.Canceled must not be logged as an operator error")
+	}
+}
+
 func TestJSONRPCBatchReturnsErrorsForIDDRequestsAfterDeadline(t *testing.T) {
 	s := newBatchTestService()
 	var calls atomic.Int32
@@ -359,6 +394,44 @@ func TestJSONRPCBatchReturnsErrorsForIDDRequestsAfterDeadline(t *testing.T) {
 			require.Equal(t, "Request timed out", response.Error.Message)
 		}
 	}
+}
+
+func TestJSONRPCSingleRequestReturnsTimeoutWhenItsContextExpires(t *testing.T) {
+	s := newBatchTestService()
+	s.dispatchTimeout = 5 * time.Millisecond
+	var logs bytes.Buffer
+	s.Logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	const method = "test_single_request_timeout"
+	withTestRPCHandler(t, method, func(s *Service, r *http.Request, _ RPCRequest) (any, error) {
+		<-r.Context().Done()
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve test data from repository",
+			fmt.Errorf("repository query failed: %w", r.Context().Err()))
+	})
+
+	rr := serveRPC(t, s, []byte(fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":%q,"id":1}`, method)))
+	response := decodeRPCResponse(t, rr.Body.Bytes())
+	requireRPCError(t, response, float64(1), JSONRPC_TIMEOUT_ERROR)
+	require.Equal(t, "Request timed out", response.Error.Message)
+	require.Contains(t, logs.String(), "RPC method dispatch timeout")
+	require.NotContains(t, logs.String(), `"level":"ERROR"`)
+}
+
+func TestJSONRPCUpstreamDeadlineRemainsInternalError(t *testing.T) {
+	s := newBatchTestService()
+	var logs bytes.Buffer
+	s.Logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	const method = "test_upstream_deadline"
+	withTestRPCHandler(t, method, func(s *Service, r *http.Request, _ RPCRequest) (any, error) {
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve test data from repository",
+			fmt.Errorf("upstream deadline: %w", context.DeadlineExceeded))
+	})
+
+	rr := serveRPC(t, s, []byte(fmt.Sprintf(
+		`{"jsonrpc":"2.0","method":%q,"id":1}`, method)))
+	response := decodeRPCResponse(t, rr.Body.Bytes())
+	requireRPCError(t, response, float64(1), JSONRPC_INTERNAL_ERROR)
+	require.Contains(t, logs.String(), `"level":"ERROR"`)
 }
 
 func TestJSONRPCBatchUsesOneAdmissionPermit(t *testing.T) {

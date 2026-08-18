@@ -182,6 +182,17 @@ func (s *Service) writeRPCError(w http.ResponseWriter, id any, code int, message
 	return s.handleWriteResponse(err)
 }
 
+func (s *Service) repositoryError(ctx context.Context, message string, err error) error {
+	if errors.Is(err, context.Canceled) {
+		return err
+	}
+	if errors.Is(err, context.DeadlineExceeded) && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return err
+	}
+	s.Logger.Error(message, "err", err)
+	return newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+}
+
 func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) error {
 	switch req.ID.(type) {
 	case nil, string, float64:
@@ -199,6 +210,13 @@ func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) er
 	result, err := fn(s, r, req)
 	if err == nil {
 		return writeRPCResult(w, req.ID, result)
+	}
+	if errors.Is(err, context.Canceled) {
+		return err
+	}
+	if errors.Is(err, context.DeadlineExceeded) && errors.Is(r.Context().Err(), context.DeadlineExceeded) {
+		s.Logger.Warn("RPC method dispatch timeout", "method", req.Method)
+		return writeRPCError(w, req.ID, JSONRPC_TIMEOUT_ERROR, "Request timed out")
 	}
 
 	var rpcErr *RPCError
@@ -221,6 +239,8 @@ func (s *Service) dispatchOneRequest(w http.ResponseWriter, r *http.Request, req
 	switch {
 	case err == nil:
 		return s.handleWriteResponse(buffer.Flush())
+	case errors.Is(err, context.Canceled):
+		return false
 	case errors.Is(err, io.ErrShortBuffer):
 		return s.writeRPCError(w, req.ID, JSONRPC_RESPONSE_SIZE_LIMIT_EXCEEDED, "Response size limit exceeded")
 	default:
@@ -369,8 +389,7 @@ func handleListApplications(s *Service, r *http.Request, req RPCRequest) (any, e
 		Offset: params.Offset,
 	}, params.Descending)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve applications from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve applications from repository", err)
 	}
 	if apps == nil {
 		apps = []*model.Application{}
@@ -400,8 +419,7 @@ func handleGetApplication(s *Service, r *http.Request, req RPCRequest) (any, err
 
 	app, err := s.repository.GetApplication(r.Context(), params.Application)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve application from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve application from repository", err)
 	}
 	if app == nil {
 		return nil, newRPCError(JSONRPC_APPLICATION_NOT_FOUND, "Application not found")
@@ -460,8 +478,7 @@ func handleListEpochs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 		Offset: params.Offset,
 	}, params.Descending)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve epochs from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve epochs from repository", err)
 	}
 
 	if len(epochs) == 0 {
@@ -502,8 +519,7 @@ func handleGetEpoch(s *Service, r *http.Request, req RPCRequest) (any, error) {
 
 	epoch, err := s.repository.GetEpoch(r.Context(), params.Application, index)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve epoch from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve epoch from repository", err)
 	}
 	if epoch == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -534,8 +550,7 @@ func handleGetEpochByVirtualIndex(s *Service, r *http.Request, req RPCRequest) (
 
 	epoch, err := s.repository.GetEpochByVirtualIndex(r.Context(), params.Application, index)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve epoch from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve epoch from repository", err)
 	}
 	if epoch == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -567,8 +582,7 @@ func handleGetLastAcceptedEpochIndex(s *Service, r *http.Request, req RPCRequest
 		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Epoch not found")
 	}
 	if err != nil {
-		s.Logger.Error("Unable to retrieve epoch from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve epoch from repository", err)
 	}
 
 	return api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", index)}, nil
@@ -634,8 +648,7 @@ func handleListInputs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 		Offset: params.Offset,
 	}, params.Descending)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve inputs from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve inputs from repository", err)
 	}
 	if len(inputs) == 0 {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -681,8 +694,7 @@ func handleGetInput(s *Service, r *http.Request, req RPCRequest) (any, error) {
 
 	input, err := s.repository.GetInput(r.Context(), params.Application, index)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve input from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve input from repository", err)
 	}
 	if input == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -716,8 +728,7 @@ func handleGetProcessedInputCount(s *Service, r *http.Request, req RPCRequest) (
 		return nil, newRPCError(JSONRPC_APPLICATION_NOT_FOUND, "Application not found")
 	}
 	if err != nil {
-		s.Logger.Error("Unable to retrieve application from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve application from repository", err)
 	}
 
 	return api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", processedInputs)}, nil
@@ -736,8 +747,7 @@ func handleGetExecutedOutputCount(s *Service, r *http.Request, req RPCRequest) (
 
 	count, err := s.repository.GetNumberOfExecutedOutputs(r.Context(), params.Application)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve executed output count from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve executed output count from repository", err)
 	}
 	if count == 0 {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -761,8 +771,7 @@ func handleGetPendingExecutableOutputCount(s *Service, r *http.Request, req RPCR
 
 	count, err := s.repository.GetNumberOfPendingExecutableOutputs(r.Context(), params.Application)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve pending executable output count from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve pending executable output count from repository", err)
 	}
 	if count == 0 {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -851,8 +860,7 @@ func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error)
 		Offset: params.Offset,
 	}, params.Descending)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve outputs from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve outputs from repository", err)
 	}
 
 	resultOutputs := make([]*api.DecodedOutput, 0, len(outputs))
@@ -899,8 +907,7 @@ func handleGetOutput(s *Service, r *http.Request, req RPCRequest) (any, error) {
 
 	output, err := s.repository.GetOutput(r.Context(), params.Application, index)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve output from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve output from repository", err)
 	}
 	if output == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -969,8 +976,7 @@ func handleListReports(s *Service, r *http.Request, req RPCRequest) (any, error)
 		Offset: params.Offset,
 	}, params.Descending)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve reports from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve reports from repository", err)
 	}
 
 	if len(reports) == 0 {
@@ -1011,8 +1017,7 @@ func handleGetReport(s *Service, r *http.Request, req RPCRequest) (any, error) {
 
 	report, err := s.repository.GetReport(r.Context(), params.Application, index)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve report from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve report from repository", err)
 	}
 	if report == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -1060,8 +1065,7 @@ func handleListWithdrawals(s *Service, r *http.Request, req RPCRequest) (any, er
 		params.Descending,
 	)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve withdrawals from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve withdrawals from repository", err)
 	}
 
 	if len(withdrawals) == 0 {
@@ -1101,8 +1105,7 @@ func handleGetWithdrawal(s *Service, r *http.Request, req RPCRequest) (any, erro
 
 	withdrawal, err := s.repository.GetWithdrawal(r.Context(), params.Application, accountIndex)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve withdrawal from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve withdrawal from repository", err)
 	}
 	if withdrawal == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -1177,8 +1180,7 @@ func handleListTournaments(s *Service, r *http.Request, req RPCRequest) (any, er
 		Offset: params.Offset,
 	}, params.Descending)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve tournaments from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve tournaments from repository", err)
 	}
 	if len(tournaments) == 0 {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -1218,8 +1220,7 @@ func handleGetTournament(s *Service, r *http.Request, req RPCRequest) (any, erro
 
 	tournament, err := s.repository.GetTournament(r.Context(), params.Application, params.Address)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve tournament from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve tournament from repository", err)
 	}
 	if tournament == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -1277,8 +1278,7 @@ func handleListCommitments(s *Service, r *http.Request, req RPCRequest) (any, er
 		Offset: params.Offset,
 	}, params.Descending)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve commitments from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve commitments from repository", err)
 	}
 	if len(commitments) == 0 {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -1329,8 +1329,7 @@ func handleGetCommitment(s *Service, r *http.Request, req RPCRequest) (any, erro
 
 	commitment, err := s.repository.GetCommitment(r.Context(), params.Application, epochIndex, params.TournamentAddress, params.Commitment)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve commitment from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve commitment from repository", err)
 	}
 	if commitment == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -1388,8 +1387,7 @@ func handleListMatches(s *Service, r *http.Request, req RPCRequest) (any, error)
 		Offset: params.Offset,
 	}, params.Descending)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve matches from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve matches from repository", err)
 	}
 	if len(matches) == 0 {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -1437,8 +1435,7 @@ func handleGetMatch(s *Service, r *http.Request, req RPCRequest) (any, error) {
 
 	match, err := s.repository.GetMatch(r.Context(), params.Application, epochIndex, params.TournamentAddress, params.IDHash)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve match from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve match from repository", err)
 	}
 	if match == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -1495,8 +1492,7 @@ func handleListMatchAdvances(s *Service, r *http.Request, req RPCRequest) (any, 
 	matchAdvances, total, err := s.repository.ListMatchAdvances(r.Context(), params.Application, epochIndex,
 		params.TournamentAddress, params.IDHash, pagination, params.Descending)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve match advances from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve match advances from repository", err)
 	}
 	if len(matchAdvances) == 0 {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -1550,8 +1546,7 @@ func handleGetMatchAdvance(s *Service, r *http.Request, req RPCRequest) (any, er
 	matchAdvanced, err := s.repository.GetMatchAdvanced(r.Context(), params.Application, epochIndex,
 		params.TournamentAddress, params.IDHash, parent.Hex()[2:])
 	if err != nil {
-		s.Logger.Error("Unable to retrieve match advanced from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve match advanced from repository", err)
 	}
 	if matchAdvanced == nil {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -1569,8 +1564,7 @@ func handleGetNodeInfo(s *Service, r *http.Request, _ RPCRequest) (any, error) {
 		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "EVM Reader config not found")
 	}
 	if err != nil {
-		s.Logger.Error("Unable to retrieve evmreader config from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve evmreader config from repository", err)
 	}
 
 	return api.SingleResponse[api.NodeInfo]{Data: api.NodeInfo{
@@ -1586,8 +1580,7 @@ func handleGetChainID(s *Service, r *http.Request, _ RPCRequest) (any, error) {
 		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "EVM Reader config not found")
 	}
 	if err != nil {
-		s.Logger.Error("Unable to retrieve evmreader config from repository", "err", err)
-		return nil, newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve evmreader config from repository", err)
 	}
 
 	return api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", config.Value.ChainID)}, nil
@@ -1629,8 +1622,7 @@ func (s *Service) applicationAbsentOrError(
 ) error {
 	app, err := s.repository.GetApplication(r.Context(), validatedNameOrAddress)
 	if err != nil {
-		s.Logger.Error("Unable to retrieve application from repository", "err", err)
-		return newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
+		return s.repositoryError(r.Context(), "Unable to retrieve application from repository", err)
 	} else if app == nil {
 		return newRPCError(JSONRPC_APPLICATION_NOT_FOUND, "Application not found")
 	}
