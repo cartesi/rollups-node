@@ -86,7 +86,7 @@ func TestJSONRPCSingleRequestReplacesResponseAtResponseBudget(t *testing.T) {
 	const method = "test_large_single_result"
 	largeResult := strings.Repeat("x", MAX_RESPONSE_SIZE)
 	var called bool
-	withTestRPCHandler(t, method, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
+	withTestRPCHandler(t, s, method, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
 		called = true
 		return largeResult, nil
 	})

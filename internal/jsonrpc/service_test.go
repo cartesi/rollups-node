@@ -59,7 +59,7 @@ func TestJSONRPC_ServerHandlerAppliesBatchDispatchTimeout(t *testing.T) {
 	s.dispatchTimeout = 10 * time.Millisecond
 
 	const method = "test_server_dispatch_timeout"
-	withTestRPCHandler(t, method, func(s *Service, r *http.Request, _ RPCRequest) (any, error) {
+	withTestRPCHandler(t, s, method, func(s *Service, r *http.Request, _ RPCRequest) (any, error) {
 		<-r.Context().Done()
 		return nil, s.repositoryError(r.Context(), "Unable to retrieve test data from repository",
 			fmt.Errorf("repository query failed: %w", r.Context().Err()))

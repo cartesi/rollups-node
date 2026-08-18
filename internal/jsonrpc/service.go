@@ -43,6 +43,7 @@ type Service struct {
 	listen func(network, address string) (net.Listener, error)
 	// OpenAPI description for JSON-RPC API loaded from 'jsonrpc-discover.json' file
 	discoverSpec any
+	handlers     dispatchTable
 	// dispatchTimeout expires requests early enough to serialize a complete
 	// timeout response before the HTTP server's write deadline.
 	dispatchTimeout time.Duration
@@ -71,6 +72,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	}
 
 	s.repository = c.Repository
+	s.handlers = cloneDispatchTable(jsonrpcHandlers)
 	if s.repository == nil {
 		return nil, fmt.Errorf("repository on validator service Create is nil")
 	}

@@ -74,6 +74,14 @@ const (
 type rpcHandler = func(*Service, *http.Request, RPCRequest) (any, error)
 type dispatchTable = map[string]rpcHandler
 
+func cloneDispatchTable(source dispatchTable) dispatchTable {
+	clone := make(dispatchTable, len(source))
+	for method, handler := range source {
+		clone[method] = handler
+	}
+	return clone
+}
+
 var jsonrpcHandlers = dispatchTable{
 	"rpc.discover":                            handleDiscover,
 	"cartesi_listApplications":                handleListApplications,
@@ -215,7 +223,7 @@ func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) er
 	if req.JSONRPC != "2.0" || req.Method == "" {
 		return writeRPCError(w, req.ID, JSONRPC_INVALID_REQUEST, "invalid request")
 	}
-	fn, ok := jsonrpcHandlers[req.Method]
+	fn, ok := s.handlers[req.Method]
 	if !ok {
 		s.Logger.Debug("RPC method not found", "method", truncatedMethod(req.Method))
 		return writeRPCError(w, req.ID, JSONRPC_METHOD_NOT_FOUND, "Method not found")

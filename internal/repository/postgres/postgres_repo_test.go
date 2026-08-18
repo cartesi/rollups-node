@@ -6,6 +6,7 @@ package postgres_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/cartesi/rollups-node/internal/model"
@@ -17,6 +18,21 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	endpoint, err := db.GetTestDatabaseEndpoint()
+	if err != nil {
+		os.Exit(m.Run())
+	}
+	release, err := db.LockTestPostgres(context.Background(), endpoint)
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	code := m.Run()
+	release()
+	os.Exit(code)
+}
 
 func TestPostgresRepository(t *testing.T) {
 	endpoint, err := db.GetTestDatabaseEndpoint()

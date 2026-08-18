@@ -5,8 +5,10 @@ package validator
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -28,6 +30,21 @@ import (
 const MAX_OUTPUT_TREE_HEIGHT = merkle.TREE_DEPTH //nolint: revive
 
 const testTimeout = 300 * time.Second
+
+func TestMain(m *testing.M) {
+	endpoint, err := db.GetTestDatabaseEndpoint()
+	if err != nil {
+		os.Exit(m.Run())
+	}
+	release, err := db.LockTestPostgres(context.Background(), endpoint)
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	code := m.Run()
+	release()
+	os.Exit(code)
+}
 
 type ValidatorRepositoryIntegrationSuite struct {
 	suite.Suite

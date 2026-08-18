@@ -103,7 +103,7 @@ func TestBatchListItemLimitNormalizesLimitsLikeHandlers(t *testing.T) {
 func TestJSONRPCBatchRejectsListWorkOverLimitBeforeDispatch(t *testing.T) {
 	s := newBatchTestService()
 	var calls atomic.Int32
-	withTestRPCHandler(t, "cartesi_listApplications", func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
+	withTestRPCHandler(t, s, "cartesi_listApplications", func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
 		calls.Add(1)
 		return true, nil
 	})
@@ -123,7 +123,7 @@ func TestJSONRPCBatchRejectsListWorkOverLimitBeforeDispatch(t *testing.T) {
 func TestJSONRPCBatchAllowsListWorkAtLimit(t *testing.T) {
 	s := newBatchTestService()
 	var calls atomic.Int32
-	withTestRPCHandler(t, "cartesi_listApplications", func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
+	withTestRPCHandler(t, s, "cartesi_listApplications", func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
 		calls.Add(1)
 		return true, nil
 	})

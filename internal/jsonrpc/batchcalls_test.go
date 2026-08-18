@@ -41,6 +41,7 @@ func newBatchTestService() *Service {
 		Service: service.Service{
 			Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
 		},
+		handlers: cloneDispatchTable(jsonrpcHandlers),
 	}
 }
 
@@ -128,7 +129,7 @@ func TestJSONRPCBatchRejectsMoreThanMaximumBeforeDispatch(t *testing.T) {
 	s := newBatchTestService()
 	var calls atomic.Int32
 	const method = "test_batch_cap"
-	withTestRPCHandler(t, method, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
+	withTestRPCHandler(t, s, method, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
 		calls.Add(1)
 		return true, nil
 	})
@@ -312,7 +313,7 @@ func TestJSONRPCBatchReplacesResponsesAtCumulativeResponseBudget(t *testing.T) {
 	var calls atomic.Int32
 	const method = "test_large_batch_result"
 	largeResult := strings.Repeat("x", testLargeResultSize)
-	withTestRPCHandler(t, method, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
+	withTestRPCHandler(t, s, method, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
 		calls.Add(1)
 		return largeResult, nil
 	})
@@ -351,7 +352,7 @@ func TestJSONRPCBatchStopsBetweenEntriesWhenContextIsCanceled(t *testing.T) {
 	s.Logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	ctx, cancel := context.WithCancel(context.Background())
 	const method = "test_cancel_batch"
-	withTestRPCHandler(t, method, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
+	withTestRPCHandler(t, s, method, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
 		calls.Add(1)
 		cancel()
 		return true, nil
@@ -387,7 +388,7 @@ func TestJSONRPCBatchStopsSilentlyWhenRepositoryCallIsCanceled(t *testing.T) {
 	s.Logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	ctx, cancel := context.WithCancel(context.Background())
 	const method = "test_repository_cancel_batch"
-	withTestRPCHandler(t, method, func(s *Service, _ *http.Request, _ RPCRequest) (any, error) {
+	withTestRPCHandler(t, s, method, func(s *Service, _ *http.Request, _ RPCRequest) (any, error) {
 		calls.Add(1)
 		cancel()
 		return nil, s.repositoryError(ctx, "Unable to retrieve test data from repository",
@@ -419,7 +420,7 @@ func TestJSONRPCBatchReturnsErrorsForIDDRequestsAfterDeadline(t *testing.T) {
 	s := newBatchTestService()
 	var calls atomic.Int32
 	const method = "test_deadline_batch"
-	withTestRPCHandler(t, method, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
+	withTestRPCHandler(t, s, method, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
 		calls.Add(1)
 		return true, nil
 	})
@@ -462,7 +463,7 @@ func TestJSONRPCSingleRequestReturnsTimeoutWhenItsContextExpires(t *testing.T) {
 	var logs bytes.Buffer
 	s.Logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	const method = "test_single_request_timeout"
-	withTestRPCHandler(t, method, func(s *Service, r *http.Request, _ RPCRequest) (any, error) {
+	withTestRPCHandler(t, s, method, func(s *Service, r *http.Request, _ RPCRequest) (any, error) {
 		<-r.Context().Done()
 		return nil, s.repositoryError(r.Context(), "Unable to retrieve test data from repository",
 			fmt.Errorf("repository query failed: %w", r.Context().Err()))
@@ -482,7 +483,7 @@ func TestJSONRPCUpstreamDeadlineRemainsInternalError(t *testing.T) {
 	var logs bytes.Buffer
 	s.Logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	const method = "test_upstream_deadline"
-	withTestRPCHandler(t, method, func(s *Service, r *http.Request, _ RPCRequest) (any, error) {
+	withTestRPCHandler(t, s, method, func(s *Service, r *http.Request, _ RPCRequest) (any, error) {
 		return nil, s.repositoryError(r.Context(), "Unable to retrieve test data from repository",
 			fmt.Errorf("upstream deadline: %w", context.DeadlineExceeded))
 	})
@@ -500,10 +501,10 @@ func TestJSONRPCBatchRecoversPanicPerEntry(t *testing.T) {
 	s.Logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	panicMethod := strings.Repeat("p", MAX_LOGGED_METHOD_LEN+32)
 	const okMethod = "test_after_panic_batch"
-	withTestRPCHandler(t, panicMethod, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
+	withTestRPCHandler(t, s, panicMethod, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
 		panic("test panic")
 	})
-	withTestRPCHandler(t, okMethod, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
+	withTestRPCHandler(t, s, okMethod, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
 		return "ok", nil
 	})
 
@@ -530,7 +531,7 @@ func TestJSONRPCBatchRecoversPanicPerEntry(t *testing.T) {
 func TestJSONRPCDoesNotRecoverAbortHandler(t *testing.T) {
 	s := newBatchTestService()
 	const method = "test_abort_handler"
-	withTestRPCHandler(t, method, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
+	withTestRPCHandler(t, s, method, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
 		panic(http.ErrAbortHandler)
 	})
 
@@ -549,7 +550,7 @@ func TestJSONRPCBatchUsesOneAdmissionPermit(t *testing.T) {
 	}
 	var nestedAcquisitions atomic.Int32
 	const method = "test_batch_admission"
-	withTestRPCHandler(t, method, func(s *Service, _ *http.Request, _ RPCRequest) (any, error) {
+	withTestRPCHandler(t, s, method, func(s *Service, _ *http.Request, _ RPCRequest) (any, error) {
 		if s.admission.TryAcquire() {
 			nestedAcquisitions.Add(1)
 			s.admission.Release()
@@ -631,15 +632,31 @@ func TestJSONRPCBatchMethodLoggingIsTruncated(t *testing.T) {
 	require.True(t, found)
 }
 
-func withTestRPCHandler(t *testing.T, method string, handler rpcHandler) {
+func withTestRPCHandler(t *testing.T, service *Service, method string, handler rpcHandler) {
 	t.Helper()
-	previous, existed := jsonrpcHandlers[method]
-	jsonrpcHandlers[method] = handler
+	previous, existed := service.handlers[method]
+	service.handlers[method] = handler
 	t.Cleanup(func() {
 		if existed {
-			jsonrpcHandlers[method] = previous
+			service.handlers[method] = previous
 		} else {
-			delete(jsonrpcHandlers, method)
+			delete(service.handlers, method)
 		}
 	})
+}
+
+func TestRPCHandlerOverridesAreServiceLocal(t *testing.T) {
+	first := newBatchTestService()
+	second := newBatchTestService()
+	const method = "test_service_local_handler"
+	withTestRPCHandler(t, first, method, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
+		return true, nil
+	})
+
+	_, firstHasHandler := first.handlers[method]
+	_, secondHasHandler := second.handlers[method]
+	_, globalHasHandler := jsonrpcHandlers[method]
+	require.True(t, firstHasHandler)
+	require.False(t, secondHasHandler)
+	require.False(t, globalHasHandler)
 }
