@@ -192,7 +192,7 @@ func (s *Service) writeByte(w http.ResponseWriter, c byte) bool {
 }
 
 // writeRPCError sends a generic error response for internal errors.
-func (s *Service) writeRPCError(w http.ResponseWriter, id any, code int, message string) bool {
+func (s *Service) writeRPCError(w http.ResponseWriter, id json.RawMessage, code int, message string) bool {
 	err := writeRPCError(w, id, code, message)
 	return s.handleWriteResponse(err)
 }
@@ -209,9 +209,7 @@ func (s *Service) repositoryError(ctx context.Context, message string, err error
 }
 
 func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) error {
-	switch req.ID.(type) {
-	case nil, string, float64:
-	default:
+	if !validRPCID(req.ID) {
 		return writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "invalid request")
 	}
 	if req.JSONRPC != "2.0" || req.Method == "" {
@@ -243,6 +241,22 @@ func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) er
 
 	s.Logger.Error("RPC method failed", "method", truncatedMethod(req.Method), "error", err)
 	return writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error")
+}
+
+func validRPCID(id json.RawMessage) bool {
+	id = bytes.TrimSpace(id)
+	if len(id) == 0 || bytes.Equal(id, []byte("null")) {
+		return true
+	}
+	if id[0] == '"' {
+		var value string
+		return json.Unmarshal(id, &value) == nil
+	}
+	if (id[0] >= '0' && id[0] <= '9') || id[0] == '-' {
+		var number json.Number
+		return json.Unmarshal(id, &number) == nil
+	}
+	return false
 }
 
 func (s *Service) dispatchOneRequest(
@@ -361,6 +375,8 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 			case context.DeadlineExceeded:
 				s.Logger.Warn("RPC method dispatch timeout")
 				if err := json.Unmarshal(rawReq, &req); err != nil {
+					responded = s.writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "invalid request")
+				} else if !validRPCID(req.ID) {
 					responded = s.writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "invalid request")
 				} else {
 					responded = s.writeRPCError(w, req.ID, JSONRPC_TIMEOUT_ERROR, "Request timed out")

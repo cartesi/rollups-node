@@ -61,9 +61,16 @@ func decodeRPCBatch(t *testing.T, body []byte) []RPCResponse {
 func requireRPCError(t *testing.T, response RPCResponse, id any, code int) {
 	t.Helper()
 	require.Equal(t, "2.0", response.JSONRPC)
-	require.Equal(t, id, response.ID)
+	require.Equal(t, id, decodeRPCID(t, response.ID))
 	require.NotNil(t, response.Error)
 	require.Equal(t, code, response.Error.Code)
+}
+
+func decodeRPCID(t *testing.T, id json.RawMessage) any {
+	t.Helper()
+	var decoded any
+	require.NoError(t, json.Unmarshal(id, &decoded))
+	return decoded
 }
 
 func TestListOutputsRejectsEmptyOutputTypeList(t *testing.T) {
@@ -139,10 +146,10 @@ func TestJSONRPCBatchMalformedElementDoesNotPoisonValidSiblings(t *testing.T) {
 	responses := decodeRPCBatch(t, rr.Body.Bytes())
 	require.Len(t, responses, 3)
 	require.Nil(t, responses[0].Error)
-	require.EqualValues(t, 1, responses[0].ID)
+	require.EqualValues(t, 1, decodeRPCID(t, responses[0].ID))
 	requireRPCError(t, responses[1], nil, JSONRPC_INVALID_REQUEST)
 	require.Nil(t, responses[2].Error)
-	require.EqualValues(t, 3, responses[2].ID)
+	require.EqualValues(t, 3, decodeRPCID(t, responses[2].ID))
 }
 
 func TestJSONRPCBatchStructurallyInvalidElementsDoNotPoisonValidSiblings(t *testing.T) {
@@ -172,12 +179,12 @@ func TestJSONRPCBatchStructurallyInvalidElementsDoNotPoisonValidSiblings(t *test
 			require.Len(t, responses, 3)
 
 			require.Nil(t, responses[0].Error)
-			require.EqualValues(t, 1, responses[0].ID)
+			require.EqualValues(t, 1, decodeRPCID(t, responses[0].ID))
 
 			requireRPCError(t, responses[1], test.id, JSONRPC_INVALID_REQUEST)
 
 			require.Nil(t, responses[2].Error)
-			require.EqualValues(t, 3, responses[2].ID)
+			require.EqualValues(t, 3, decodeRPCID(t, responses[2].ID))
 		})
 	}
 }
@@ -217,6 +224,34 @@ func TestJSONRPCRejectsInvalidIDTypesWithNullID(t *testing.T) {
 	}
 }
 
+func TestRPCIDRoundTripsWithoutNumericPrecisionLoss(t *testing.T) {
+	s := newBatchTestService()
+	single := serveRPC(t, s, []byte(`{
+		"jsonrpc":"2.0",
+		"method":"cartesi_getNodeVersion",
+		"id":9007199254740993
+	}`))
+	singleResponse := decodeRPCResponse(t, single.Body.Bytes())
+	require.Nil(t, singleResponse.Error)
+	require.Equal(t, `9007199254740993`, string(singleResponse.ID))
+
+	rr := serveRPC(t, s, []byte(`[
+		{"jsonrpc":"2.0","method":"missing","id":9007199254740993},
+		{"jsonrpc":"2.0","method":"missing","id":18446744073709551616},
+		{"jsonrpc":"2.0","method":"missing","id":"request-3"}
+	]`))
+
+	responses := decodeRPCBatch(t, rr.Body.Bytes())
+	require.Len(t, responses, 3)
+	require.Equal(t, `9007199254740993`, string(responses[0].ID))
+	require.Equal(t, `18446744073709551616`, string(responses[1].ID))
+	require.Equal(t, `"request-3"`, string(responses[2].ID))
+	for _, response := range responses {
+		require.NotNil(t, response.Error)
+		require.Equal(t, JSONRPC_METHOD_NOT_FOUND, response.Error.Code)
+	}
+}
+
 func TestJSONRPCBatchNotificationsReceiveNullIDResponses(t *testing.T) {
 	s := newBatchTestService()
 	rr := serveRPC(t, s, []byte(`[
@@ -227,7 +262,7 @@ func TestJSONRPCBatchNotificationsReceiveNullIDResponses(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code)
 	responses := decodeRPCBatch(t, rr.Body.Bytes())
 	require.Len(t, responses, 2, "notifications are deliberately answered by this server")
-	require.Nil(t, responses[0].ID)
+	require.Nil(t, decodeRPCID(t, responses[0].ID))
 	require.Nil(t, responses[0].Error)
 	requireRPCError(t, responses[1], nil, JSONRPC_METHOD_NOT_FOUND)
 }
@@ -276,7 +311,7 @@ func TestJSONRPCBatchReplacesResponsesAtCumulativeResponseBudget(t *testing.T) {
 	require.LessOrEqual(t, rr.Body.Len(), (10<<20)+testResponseBudgetSlack)
 	for i := range responses[:testBatchSuccessCount] {
 		require.Equal(t, "2.0", responses[i].JSONRPC)
-		require.Equal(t, float64(i), responses[i].ID)
+		require.Equal(t, float64(i), decodeRPCID(t, responses[i].ID))
 		require.Nil(t, responses[i].Error)
 		require.Equal(t, responses[i].Result, largeResult)
 	}
@@ -371,8 +406,9 @@ func TestJSONRPCBatchReturnsErrorsForIDDRequestsAfterDeadline(t *testing.T) {
 		{"jsonrpc":"2.0","method":%q},
 		{"jsonrpc":"2.0","method":%q,"id":"three"},
 		false,
+		{"jsonrpc":"2.0","method":%q,"id":true},
 		{"jsonrpc":"2.0","method":%q,"id":null}
-	]`, method, method, method, method))
+	]`, method, method, method, method, method))
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
 	req := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(body)).WithContext(ctx)
@@ -381,14 +417,15 @@ func TestJSONRPCBatchReturnsErrorsForIDDRequestsAfterDeadline(t *testing.T) {
 
 	require.Zero(t, calls.Load(), "expired batch entries must not be dispatched")
 	responses := decodeRPCBatch(t, rr.Body.Bytes())
-	require.Len(t, responses, 5, "not all entries receive deadline errors")
+	require.Len(t, responses, 6, "not all entries receive deadline errors")
 	requireRPCError(t, responses[0], float64(1), JSONRPC_TIMEOUT_ERROR)
 	requireRPCError(t, responses[1], nil, JSONRPC_TIMEOUT_ERROR)
 	requireRPCError(t, responses[2], "three", JSONRPC_TIMEOUT_ERROR)
 	requireRPCError(t, responses[3], nil, JSONRPC_INVALID_REQUEST)
-	requireRPCError(t, responses[4], nil, JSONRPC_TIMEOUT_ERROR)
+	requireRPCError(t, responses[4], nil, JSONRPC_INVALID_REQUEST)
+	requireRPCError(t, responses[5], nil, JSONRPC_TIMEOUT_ERROR)
 	for i, response := range responses {
-		if i == 3 {
+		if i == 3 || i == 4 {
 			require.Equal(t, "invalid request", response.Error.Message)
 		} else {
 			require.Equal(t, "Request timed out", response.Error.Message)

@@ -20,14 +20,14 @@ type RPCRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
 	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params"`
-	ID      any             `json:"id"`
+	ID      json.RawMessage `json:"id"`
 }
 
 type RPCResponse struct {
-	JSONRPC string    `json:"jsonrpc"`
-	Result  any       `json:"result,omitempty"`
-	Error   *RPCError `json:"error,omitempty"`
-	ID      any       `json:"id"`
+	JSONRPC string          `json:"jsonrpc"`
+	Result  any             `json:"result,omitempty"`
+	Error   *RPCError       `json:"error,omitempty"`
+	ID      json.RawMessage `json:"id"`
 }
 
 type RPCError struct {
@@ -44,7 +44,7 @@ func newRPCError(code int, message string) error {
 }
 
 // writeRPCError sends a generic error response for internal errors.
-func writeRPCError(w io.Writer, id any, code int, message string) error {
+func writeRPCError(w io.Writer, id json.RawMessage, code int, message string) error {
 	// Hide detailed error info for internal errors.
 	if code == JSONRPC_INTERNAL_ERROR {
 		message = "Internal server error"
@@ -60,7 +60,7 @@ func writeRPCError(w io.Writer, id any, code int, message string) error {
 	return json.NewEncoder(w).Encode(resp)
 }
 
-func writeRPCResult(w io.Writer, id any, result any) error {
+func writeRPCResult(w io.Writer, id json.RawMessage, result any) error {
 	resp := RPCResponse{
 		JSONRPC: "2.0",
 		Result:  result,
