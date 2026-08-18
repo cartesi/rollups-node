@@ -243,13 +243,21 @@ pipeline additional requests on the same connection. This behavior
 depends on the internal `responseWriterTap.Unwrap()` cooperating with
 `http.MaxBytesReader`; see the hardening v3 plan for the design note.
 
-**Worst-case body buffer memory under saturation.**
+**Worst-case request and response memory under saturation.**
 Each admitted request pins its body buffer for the full request lifetime
-(up to `InspectMaxDeadline + 30s` for inspect (typically ~210s with the default 180s deadline), 30s for JSON-RPC). At default concurrency this
-means `CARTESI_INSPECT_MAX_INFLIGHT × 2 MiB = 128 MiB` for inspect and
-`CARTESI_JSONRPC_MAX_INFLIGHT × 1 MiB = 64 MiB` for JSON-RPC. Operators
-should size process RAM headroom accordingly, on top of machine state,
-database connections, and other working memory.
+(up to `InspectMaxDeadline + 30s` for inspect (typically ~210s with the default
+180s deadline), 30s for JSON-RPC). At default concurrency this means
+`CARTESI_INSPECT_MAX_INFLIGHT × 2 MiB = 128 MiB` for inspect and
+`CARTESI_JSONRPC_MAX_INFLIGHT × 1 MiB = 64 MiB` for JSON-RPC request bodies.
+
+The dominant JSON-RPC term is response buffering: each of the 64 admitted
+requests has a 10 MiB response budget, for up to `64 × 10 MiB = 640 MiB` of
+response buffers under saturation, or approximately 704 MiB including request
+bodies. The budget is enforced while encoding the response, after repository
+rows and decoded response objects have already been materialized; that working
+set is additional and is not bounded by the 10 MiB serialized-response limit.
+Operators should size process RAM headroom accordingly, on top of machine
+state, database connections, and other working memory.
 
 ## PostgreSQL pool sizing
 
