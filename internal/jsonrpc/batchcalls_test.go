@@ -88,6 +88,29 @@ func TestListOutputsRejectsEmptyOutputTypeList(t *testing.T) {
 	require.Equal(t, "Invalid output type: expected at least one selector", response.Error.Message)
 }
 
+func TestListOutputsRejectsMalformedOutputType(t *testing.T) {
+	for name, selector := range map[string]string{
+		"wrong length": "0x1234",
+		"non hex":      "0xzzzzzzzz",
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newBatchTestService()
+			body := []byte(fmt.Sprintf(`{
+				"jsonrpc":"2.0",
+				"method":"cartesi_listOutputs",
+				"params":{"application":"app","output_type":%q},
+				"id":1
+			}`, selector))
+			rr := serveRPC(t, s, body)
+
+			require.Equal(t, http.StatusOK, rr.Code)
+			response := decodeRPCResponse(t, rr.Body.Bytes())
+			requireRPCError(t, response, float64(1), JSONRPC_INVALID_PARAMS)
+			require.Contains(t, response.Error.Message, "Invalid output type")
+		})
+	}
+}
+
 func TestJSONRPCBatchRejectsEmptyBatchWithSingleObject(t *testing.T) {
 	s := newBatchTestService()
 	rr := serveRPC(t, s, []byte(`[]`))
