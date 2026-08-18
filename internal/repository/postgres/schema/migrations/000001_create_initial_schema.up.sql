@@ -485,6 +485,11 @@ WHERE "execution_transaction_hash" IS NULL AND SUBSTRING("raw_data" FROM 1 FOR 4
     E'\\x237a816f'   -- Voucher
 );
 
+-- Serves GetNumberOfExecutedOutputs without scanning the application's full
+-- output history. Outputs enter this index only after execution is observed.
+CREATE INDEX "output_executed_idx" ON "output" ("input_epoch_application_id")
+WHERE "execution_transaction_hash" IS NOT NULL;
+
 CREATE TRIGGER "output_set_updated_at" BEFORE UPDATE ON "output"
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
