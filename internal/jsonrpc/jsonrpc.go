@@ -231,6 +231,12 @@ func (s *Service) dispatchOneRequest(w http.ResponseWriter, r *http.Request, req
 }
 
 func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
+	if s.dispatchTimeout > 0 {
+		ctx, cancel := context.WithTimeout(r.Context(), s.dispatchTimeout)
+		defer cancel()
+		r = r.WithContext(ctx)
+	}
+
 	// Limit request body size and ensure it is closed.
 	r.Body = http.MaxBytesReader(w, r.Body, MAX_BODY_SIZE)
 	defer r.Body.Close()

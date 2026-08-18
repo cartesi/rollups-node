@@ -5,10 +5,13 @@ package jsonrpc
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/cartesi/rollups-node/pkg/service"
 
@@ -48,6 +51,35 @@ func TestJSONRPC_HardenedServerOptions(t *testing.T) {
 	require.Equal(t, opts.IdleTimeout, s.server.IdleTimeout)
 	require.Equal(t, opts.MaxHeaderBytes, s.server.MaxHeaderBytes)
 	require.NotNil(t, s.server.ErrorLog)
+	require.Equal(t, opts.WriteTimeout-jsonrpcWriteHeadroom, s.dispatchTimeout)
+}
+
+func TestJSONRPC_ServerHandlerAppliesBatchDispatchTimeout(t *testing.T) {
+	s := newTestService(t, "jsonrpc-dispatch-timeout")
+	s.dispatchTimeout = 10 * time.Millisecond
+
+	const method = "test_server_dispatch_timeout"
+	withTestRPCHandler(t, method, func(_ *Service, r *http.Request, _ RPCRequest) (any, error) {
+		<-r.Context().Done()
+		return true, nil
+	})
+
+	body := []byte(fmt.Sprintf(`[
+		{"jsonrpc":"2.0","method":%q,"id":1},
+		{"jsonrpc":"2.0","method":%q,"id":2},
+		{"jsonrpc":"2.0","method":%q,"id":3}
+	]`, method, method, method))
+	req := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	s.server.Handler.ServeHTTP(rr, req)
+
+	var responses []RPCResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &responses))
+	require.Len(t, responses, 3)
+	require.Nil(t, responses[0].Error)
+	requireRPCError(t, responses[1], float64(2), JSONRPC_TIMEOUT_ERROR)
+	requireRPCError(t, responses[2], float64(3), JSONRPC_TIMEOUT_ERROR)
 }
 
 // TestJSONRPC_RequestIDPropagated verifies the middleware chain echoes a

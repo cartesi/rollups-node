@@ -21,7 +21,10 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 )
 
-const jsonrpcShutdownTimeout = 5 * time.Second
+const (
+	jsonrpcShutdownTimeout = 5 * time.Second
+	jsonrpcWriteHeadroom   = 5 * time.Second
+)
 
 // -----------------------------------------------------------------------------
 // Service Implementation
@@ -40,6 +43,9 @@ type Service struct {
 	listen func(network, address string) (net.Listener, error)
 	// OpenAPI description for JSON-RPC API loaded from 'jsonrpc-discover.json' file
 	discoverSpec any
+	// dispatchTimeout expires requests early enough to serialize a complete
+	// timeout response before the HTTP server's write deadline.
+	dispatchTimeout time.Duration
 }
 
 type CreateInfo struct {
@@ -101,7 +107,9 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 			[]string{"POST", "OPTIONS"}, []string{"Content-Type"}),
 	})
 
-	s.server = service.NewHTTPServer(c.Config.JsonrpcApiAddress, handler, service.DefaultJSONRPCOptions(), s.Logger)
+	serverOpts := service.DefaultJSONRPCOptions()
+	s.dispatchTimeout = serverOpts.WriteTimeout - jsonrpcWriteHeadroom
+	s.server = service.NewHTTPServer(c.Config.JsonrpcApiAddress, handler, serverOpts, s.Logger)
 	service.StartupBindWarning(s.Logger, "jsonrpc", c.Config.JsonrpcApiAddress)
 
 	if s.listen == nil {
