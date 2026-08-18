@@ -622,6 +622,31 @@ func handleGetLastAcceptedEpochIndex(s *Service, r *http.Request, req RPCRequest
 	return api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", index)}, nil
 }
 
+func (s *Service) decodeInputs(application string, inputs []*model.Input) []*api.DecodedInput {
+	result := make([]*api.DecodedInput, 0, len(inputs))
+	failureCount := 0
+	var firstFailingIndex uint64
+	for _, input := range inputs {
+		decoded, err := api.DecodeInput(input, s.inputABI)
+		if err != nil {
+			if failureCount == 0 {
+				firstFailingIndex = input.Index
+			}
+			failureCount++
+			s.Logger.Debug("Unable to decode Input", "app", application, "index", input.Index, "err", err)
+		}
+		result = append(result, decoded)
+	}
+	if failureCount > 0 {
+		s.Logger.Warn("Unable to decode Inputs",
+			"app", application,
+			"count", failureCount,
+			"first_index", firstFailingIndex,
+		)
+	}
+	return result
+}
+
 func handleListInputs(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListInputsParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
@@ -690,14 +715,7 @@ func handleListInputs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 		}
 	}
 
-	resultInputs := make([]*api.DecodedInput, 0, len(inputs))
-	for _, in := range inputs {
-		decoded, err := api.DecodeInput(in, s.inputABI)
-		if err != nil {
-			s.Logger.Error("Unable to decode Input", "app", params.Application, "index", in.Index, "err", err)
-		}
-		resultInputs = append(resultInputs, decoded)
-	}
+	resultInputs := s.decodeInputs(params.Application, inputs)
 
 	return api.ListResponse[*api.DecodedInput]{
 		Data: resultInputs,
@@ -737,10 +755,7 @@ func handleGetInput(s *Service, r *http.Request, req RPCRequest) (any, error) {
 		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Input not found")
 	}
 
-	decoded, err := api.DecodeInput(input, s.inputABI)
-	if err != nil {
-		s.Logger.Error("Unable to decode Input", "app", params.Application, "index", input.Index, "err", err)
-	}
+	decoded := s.decodeInputs(params.Application, []*model.Input{input})[0]
 
 	return api.SingleResponse[*api.DecodedInput]{Data: decoded}, nil
 }
@@ -814,6 +829,31 @@ func handleGetPendingExecutableOutputCount(s *Service, r *http.Request, req RPCR
 	}
 
 	return api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", count)}, nil
+}
+
+func (s *Service) decodeOutputs(application string, outputs []*model.Output) []*api.DecodedOutput {
+	result := make([]*api.DecodedOutput, 0, len(outputs))
+	failureCount := 0
+	var firstFailingIndex uint64
+	for _, output := range outputs {
+		decoded, err := api.DecodeOutput(output, s.outputABI)
+		if err != nil {
+			if failureCount == 0 {
+				firstFailingIndex = output.Index
+			}
+			failureCount++
+			s.Logger.Debug("Unable to decode Output", "app", application, "index", output.Index, "err", err)
+		}
+		result = append(result, decoded)
+	}
+	if failureCount > 0 {
+		s.Logger.Warn("Unable to decode Outputs",
+			"app", application,
+			"count", failureCount,
+			"first_index", firstFailingIndex,
+		)
+	}
+	return result
 }
 
 func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error) {
@@ -897,14 +937,7 @@ func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error)
 		return nil, s.repositoryError(r.Context(), "Unable to retrieve outputs from repository", err)
 	}
 
-	resultOutputs := make([]*api.DecodedOutput, 0, len(outputs))
-	for _, out := range outputs {
-		decoded, err := api.DecodeOutput(out, s.outputABI)
-		if err != nil {
-			s.Logger.Error("Unable to decode Output", "app", params.Application, "index", out.Index, "err", err)
-		}
-		resultOutputs = append(resultOutputs, decoded)
-	}
+	resultOutputs := s.decodeOutputs(params.Application, outputs)
 
 	if len(resultOutputs) == 0 {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -950,10 +983,7 @@ func handleGetOutput(s *Service, r *http.Request, req RPCRequest) (any, error) {
 		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Output not found")
 	}
 
-	decoded, err := api.DecodeOutput(output, s.outputABI)
-	if err != nil {
-		s.Logger.Error("Unable to decode Output", "app", params.Application, "index", output.Index, "err", err)
-	}
+	decoded := s.decodeOutputs(params.Application, []*model.Output{output})[0]
 
 	return api.SingleResponse[*api.DecodedOutput]{Data: decoded}, nil
 }
