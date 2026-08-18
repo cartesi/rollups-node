@@ -168,9 +168,12 @@ before dispatch:
 
 This restores the row-fetch bound that existed before batch support: one
 admission slot can fetch at most as many rows as one maximal list call. It does
-not bound `COUNT(*)` cost, which is independent of `limit`; selective filters,
-the pending-output partial index, proxy rate limiting, and PostgreSQL capacity
-planning remain important.
+not bound `COUNT(*)` cost, which is independent of `limit`. It also does not
+meter `offset` traversal cost; that cost is bounded by the size of the filtered
+set rather than by the numeric `offset` value, but PostgreSQL may still have to
+scan and discard the matching rows before the requested page. Selective
+filters, the pending-output partial index, proxy rate limiting, and PostgreSQL
+capacity planning remain important.
 
 ### Rejection semantics
 
