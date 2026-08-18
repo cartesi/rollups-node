@@ -14,6 +14,7 @@ import (
 	"math"
 	"net/http"
 	"reflect"
+	"runtime/debug"
 	"unicode/utf8"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -244,7 +245,26 @@ func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) er
 	return writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error")
 }
 
-func (s *Service) dispatchOneRequest(w http.ResponseWriter, r *http.Request, req RPCRequest, budgetResp *budgetWriter) bool {
+func (s *Service) dispatchOneRequest(
+	w http.ResponseWriter,
+	r *http.Request,
+	req RPCRequest,
+	budgetResp *budgetWriter,
+) (responded bool) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if recovered == http.ErrAbortHandler {
+				panic(recovered)
+			}
+			s.Logger.Error("RPC method panic",
+				"method", truncatedMethod(req.Method),
+				"panic", recovered,
+				"stack", string(debug.Stack()),
+			)
+			responded = s.writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error")
+		}
+	}()
+
 	buffer := budgetResp.NewLimitedWriter()
 	if buffer == nil {
 		return s.writeRPCError(w, req.ID, JSONRPC_RESPONSE_SIZE_LIMIT_EXCEEDED, "Response size limit exceeded")

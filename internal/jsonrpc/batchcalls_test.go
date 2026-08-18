@@ -434,6 +434,52 @@ func TestJSONRPCUpstreamDeadlineRemainsInternalError(t *testing.T) {
 	require.Contains(t, logs.String(), `"level":"ERROR"`)
 }
 
+func TestJSONRPCBatchRecoversPanicPerEntry(t *testing.T) {
+	s := newBatchTestService()
+	var logs bytes.Buffer
+	s.Logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	panicMethod := strings.Repeat("p", MAX_LOGGED_METHOD_LEN+32)
+	const okMethod = "test_after_panic_batch"
+	withTestRPCHandler(t, panicMethod, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
+		panic("test panic")
+	})
+	withTestRPCHandler(t, okMethod, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
+		return "ok", nil
+	})
+
+	body := []byte(fmt.Sprintf(`[
+		{"jsonrpc":"2.0","method":%q,"id":1},
+		{"jsonrpc":"2.0","method":%q,"id":2},
+		{"jsonrpc":"2.0","method":%q,"id":3}
+	]`, okMethod, panicMethod, okMethod))
+	rr := serveRPC(t, s, body)
+
+	responses := decodeRPCBatch(t, rr.Body.Bytes())
+	require.Len(t, responses, 3)
+	require.Nil(t, responses[0].Error)
+	requireRPCError(t, responses[1], float64(2), JSONRPC_INTERNAL_ERROR)
+	require.Equal(t, "Internal server error", responses[1].Error.Message)
+	require.Nil(t, responses[2].Error, "entries after a panic must still be dispatched")
+	require.Contains(t, logs.String(), "RPC method panic")
+	require.Contains(t, logs.String(), "test panic")
+	require.Contains(t, logs.String(), "goroutine", "panic log must include a stack trace")
+	require.Contains(t, logs.String(), truncatedMethod(panicMethod))
+	require.NotContains(t, logs.String(), panicMethod)
+}
+
+func TestJSONRPCDoesNotRecoverAbortHandler(t *testing.T) {
+	s := newBatchTestService()
+	const method = "test_abort_handler"
+	withTestRPCHandler(t, method, func(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {
+		panic(http.ErrAbortHandler)
+	})
+
+	require.PanicsWithValue(t, http.ErrAbortHandler, func() {
+		serveRPC(t, s, []byte(fmt.Sprintf(
+			`{"jsonrpc":"2.0","method":%q,"id":1}`, method)))
+	})
+}
+
 func TestJSONRPCBatchUsesOneAdmissionPermit(t *testing.T) {
 	s := newBatchTestService()
 	s.admission = service.NewSemaphoreAdmission(1)
