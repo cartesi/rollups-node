@@ -71,7 +71,7 @@ func init() {
 		origHelpFunc(command, strings)
 	})
 
-	Cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+	Cmd.PreRunE = func(_ *cobra.Command, _ []string) error {
 		if limit > jsonrpc.LIST_ITEM_LIMIT {
 			return fmt.Errorf("limit cannot exceed %d", jsonrpc.LIST_ITEM_LIMIT)
 		}
@@ -93,7 +93,7 @@ func run(cmd *cobra.Command, args []string) {
 	defer readServ.Close()
 
 	var result json.RawMessage
-	if len(args) >= 2 {
+	if len(args) >= 2 { //nolint:mnd // Two positional arguments select the get operation.
 		var params api.GetWithdrawalParams
 		params.Application = args[0]
 		params.AccountIndex, err = config.AsHexString(args[1])
@@ -122,5 +122,6 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	out.WriteString("\n")
 
-	out.WriteTo(os.Stdout)
+	_, err = out.WriteTo(os.Stdout)
+	cobra.CheckErr(err)
 }

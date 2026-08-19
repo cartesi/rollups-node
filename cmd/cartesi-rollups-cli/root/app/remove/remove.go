@@ -62,11 +62,13 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	if app == nil {
 		fmt.Fprintf(os.Stderr, "application %q not found\n", nameOrAddress)
-		os.Exit(1)
+		repo.Close()
+		os.Exit(1) //nolint:gocritic // The repository is closed explicitly before exiting.
 	}
 
 	if app.Enabled {
 		fmt.Fprintf(os.Stderr, "Error: Application %s has enabled=true. Must disable it first\n", app.Name)
+		repo.Close()
 		os.Exit(1)
 	}
 

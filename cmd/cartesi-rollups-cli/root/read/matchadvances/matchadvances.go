@@ -36,6 +36,7 @@ Supported Environment Variables:
   CARTESI_DATABASE_CONNECTION                    Database connection string`,
 }
 
+//nolint:lll // Long CLI examples are kept copy-pasteable.
 const examples = `# Read specific match advanced:
 cartesi-rollups-cli read match_advances echo-dapp 10 0x0073a8637d98649717bdc02ecb439c80aa8a10d0 0xdb99c9cdb2e2070a4e4e633c2e6874648dfe3971d14da843465b3d950df3dd19 0xdb99c9cdb2e2070a4e4e633c2e6874648dfe3971d14da843465b3d950df3dd19
 
@@ -67,7 +68,7 @@ func init() {
 		origHelpFunc(command, strings)
 	})
 
-	Cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+	Cmd.PreRunE = func(_ *cobra.Command, _ []string) error {
 		if limit > jsonrpc.LIST_ITEM_LIMIT {
 			return fmt.Errorf("limit cannot exceed %d", jsonrpc.LIST_ITEM_LIMIT)
 		}
@@ -89,7 +90,7 @@ func run(cmd *cobra.Command, args []string) {
 	defer readServ.Close()
 
 	var result json.RawMessage
-	if len(args) >= 5 {
+	if len(args) >= 5 { //nolint:mnd // Five positional arguments select the get operation.
 		var params api.GetMatchAdvanceParams
 		params.Application = args[0]
 		params.EpochIndex, err = config.AsHexString(args[1])
@@ -119,5 +120,6 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	out.WriteString("\n")
 
-	out.WriteTo(os.Stdout)
+	_, err = out.WriteTo(os.Stdout)
+	cobra.CheckErr(err)
 }

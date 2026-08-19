@@ -86,10 +86,10 @@ func run(cmd *cobra.Command, args []string) {
 	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
 	cobra.CheckErr(err)
 
-	chainId, err := client.ChainID(ctx)
+	chainID, err := client.ChainID(ctx)
 	cobra.CheckErr(err)
 
-	txOpts, err := cli.GetTransactOpts(ctx, chainId)
+	txOpts, err := cli.GetTransactOpts(ctx, chainID)
 	cobra.CheckErr(err)
 
 	appContract, err := iapplication.NewIApplication(appAddr, client)

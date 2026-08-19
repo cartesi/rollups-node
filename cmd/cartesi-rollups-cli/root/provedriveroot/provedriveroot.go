@@ -146,7 +146,7 @@ func run(cmd *cobra.Command, args []string) {
 }
 
 func loadProof(path string) ([32]byte, [][32]byte, error) {
-	raw, err := os.ReadFile(path) //nolint:gosec
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return [32]byte{}, nil, fmt.Errorf("read proof file %s: %w", path, err)
 	}

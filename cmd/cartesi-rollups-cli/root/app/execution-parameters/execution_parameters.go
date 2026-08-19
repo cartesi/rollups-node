@@ -72,7 +72,7 @@ func init() {
 
 }
 
-func run(cmd *cobra.Command, args []string) {
+func run(cmd *cobra.Command, _ []string) {
 	// If no subcommand is provided, show help
 	err := cmd.Help()
 	cobra.CheckErr(err)
@@ -82,7 +82,7 @@ func run(cmd *cobra.Command, args []string) {
 var getCmd = &cobra.Command{
 	Use:   "get [application] [parameter]",
 	Short: "Get a specific configuration parameter",
-	Args:  cobra.ExactArgs(2), // nolint: mnd
+	Args:  cobra.ExactArgs(2), //nolint:mnd
 	Run:   runGet,
 	Long: `
 Supported Environment Variables:
@@ -93,7 +93,7 @@ Supported Environment Variables:
 var setCmd = &cobra.Command{
 	Use:   "set [application] [parameter] [value]",
 	Short: "Set a specific configuration parameter",
-	Args:  cobra.ExactArgs(3), // nolint: mnd
+	Args:  cobra.ExactArgs(3), //nolint:mnd
 	Run:   runSet,
 	Long: `
 Supported Environment Variables:
@@ -157,7 +157,8 @@ func runGet(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	if app == nil {
 		fmt.Fprintf(os.Stderr, "application %q not found\n", nameOrAddress)
-		os.Exit(1)
+		repo.Close()
+		os.Exit(1) //nolint:gocritic // The repository is closed explicitly before exiting.
 	}
 
 	params, err := repo.GetExecutionParameters(ctx, app.ID)
@@ -194,7 +195,8 @@ func runSet(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	if app == nil {
 		fmt.Fprintf(os.Stderr, "application %q not found\n", nameOrAddress)
-		os.Exit(1)
+		repo.Close()
+		os.Exit(1) //nolint:gocritic // The repository is closed explicitly before exiting.
 	}
 
 	params, err := repo.GetExecutionParameters(ctx, app.ID)
@@ -230,7 +232,8 @@ func runList(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	if app == nil {
 		fmt.Fprintf(os.Stderr, "application %q not found\n", nameOrAddress)
-		os.Exit(1)
+		repo.Close()
+		os.Exit(1) //nolint:gocritic // The repository is closed explicitly before exiting.
 	}
 
 	params, err := repo.GetExecutionParameters(ctx, app.ID)
@@ -256,7 +259,8 @@ func runDump(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	if app == nil {
 		fmt.Fprintf(os.Stderr, "application %q not found\n", nameOrAddress)
-		os.Exit(1)
+		repo.Close()
+		os.Exit(1) //nolint:gocritic // The repository is closed explicitly before exiting.
 	}
 
 	params, err := repo.GetExecutionParameters(ctx, app.ID)
@@ -284,7 +288,8 @@ func runLoad(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	if app == nil {
 		fmt.Fprintf(os.Stderr, "application %q not found\n", nameOrAddress)
-		os.Exit(1)
+		repo.Close()
+		os.Exit(1) //nolint:gocritic // The repository is closed explicitly before exiting.
 	}
 
 	// Read JSON from stdin with size limit to prevent memory exhaustion

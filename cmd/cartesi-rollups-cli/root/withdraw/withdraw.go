@@ -180,7 +180,7 @@ func run(cmd *cobra.Command, args []string) {
 
 func loadProof(path string) ([]byte, iapplication.AccountValidityProof, error) {
 	zero := iapplication.AccountValidityProof{}
-	raw, err := os.ReadFile(path) //nolint:gosec
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, zero, fmt.Errorf("read proof file %s: %w", path, err)
 	}

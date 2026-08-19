@@ -33,6 +33,7 @@ Supported Environment Variables:
   CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS    Authority Factory Address`,
 }
 
+//nolint:lll // Long CLI examples are kept copy-pasteable.
 const authorityExamples = `
 # deploy a new authority contract
  - cli deploy authority
@@ -58,7 +59,7 @@ func init() {
 	})
 }
 
-func runDeployAuthority(cmd *cobra.Command, args []string) {
+func runDeployAuthority(cmd *cobra.Command, _ []string) {
 	var err error
 
 	ctx := cmd.Context()
@@ -69,10 +70,10 @@ func runDeployAuthority(cmd *cobra.Command, args []string) {
 	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
 	cobra.CheckErr(err)
 
-	chainId, err := client.ChainID(ctx)
+	chainID, err := client.ChainID(ctx)
 	cobra.CheckErr(err)
 
-	txOpts, err := cli.GetTransactOpts(ctx, chainId)
+	txOpts, err := cli.GetTransactOpts(ctx, chainID)
 	cobra.CheckErr(err)
 
 	deployment, err := buildAuthorityDeployment(cmd, txOpts)
@@ -94,7 +95,7 @@ func runDeployAuthority(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 
 	if len(data) == 0 {
-		cobra.CheckErr(fmt.Errorf("No code at the factory address: %v", factoryAddress))
+		cobra.CheckErr(fmt.Errorf("no code at the factory address: %v", factoryAddress))
 	}
 	if verboseParam {
 		fmt.Fprint(os.Stderr, "success\n")

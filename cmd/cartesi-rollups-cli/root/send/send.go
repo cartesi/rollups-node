@@ -125,7 +125,8 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	if app == nil {
 		fmt.Fprintf(os.Stderr, "application %q not found\n", nameOrAddress)
-		os.Exit(1)
+		repo.Close()
+		os.Exit(1) //nolint:gocritic // The repository is closed explicitly before exiting.
 	}
 
 	// Check if stdin is being used for payload and --yes flag is not set
@@ -139,10 +140,10 @@ func run(cmd *cobra.Command, args []string) {
 	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
 	cobra.CheckErr(err)
 
-	chainId, err := client.ChainID(ctx)
+	chainID, err := client.ChainID(ctx)
 	cobra.CheckErr(err)
 
-	txOpts, err := cli.GetTransactOpts(ctx, chainId)
+	txOpts, err := cli.GetTransactOpts(ctx, chainID)
 	cobra.CheckErr(err)
 
 	txOptsFactory := ethutil.NewStaticTransactOptsFactory(txOpts)

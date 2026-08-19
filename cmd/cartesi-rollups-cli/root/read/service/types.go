@@ -47,11 +47,10 @@ func CreateReadService(ctx context.Context, useJsonrpc bool) (ReadService, error
 			return nil, err
 		}
 		return NewJsonrpcReadService(ctx, url)
-	} else {
-		dsn, err := config.GetDatabaseConnection()
-		if err != nil {
-			return nil, err
-		}
-		return NewRepositoryReadService(ctx, dsn.Raw())
 	}
+	dsn, err := config.GetDatabaseConnection()
+	if err != nil {
+		return nil, err
+	}
+	return NewRepositoryReadService(ctx, dsn.Raw())
 }

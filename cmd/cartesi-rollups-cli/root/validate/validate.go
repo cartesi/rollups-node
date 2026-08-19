@@ -22,7 +22,7 @@ var Cmd = &cobra.Command{
 	Use:     "validate [app-name-or-address] [output-index]",
 	Short:   "Validates a notice",
 	Example: examples,
-	Args:    cobra.ExactArgs(2), // nolint: mnd
+	Args:    cobra.ExactArgs(2), //nolint:mnd
 	Run:     run,
 	Long: `
 Supported Environment Variables:
@@ -74,7 +74,8 @@ func run(cmd *cobra.Command, args []string) {
 
 	if output == nil {
 		fmt.Fprintf(os.Stderr, "The output with index %d was not found in the database\n", outputIndex)
-		os.Exit(1)
+		repo.Close()
+		os.Exit(1) //nolint:gocritic // The repository is closed explicitly before exiting.
 	}
 
 	app, err := repo.GetApplication(ctx, nameOrAddress)
@@ -82,6 +83,7 @@ func run(cmd *cobra.Command, args []string) {
 
 	if len(output.OutputHashesSiblings) == 0 {
 		fmt.Fprintf(os.Stderr, "The output with index %d has no associated proof yet\n", outputIndex)
+		repo.Close()
 		os.Exit(0)
 	}
 

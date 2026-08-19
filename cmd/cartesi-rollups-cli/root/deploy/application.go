@@ -47,7 +47,7 @@ var applicationCmd = &cobra.Command{
 	Short: "Deploy a new application and register it into the database",
 
 	Args: func(cmd *cobra.Command, args []string) error {
-		if !(0 <= len(args) && len(args) <= 2) {
+		if len(args) > 2 { //nolint:mnd // The command accepts at most two positional arguments.
 			return fmt.Errorf("error on argument count. Expected at most two positional arguments")
 		}
 		return cobra.OnlyValidArgs(cmd, args)
@@ -64,6 +64,7 @@ Supported Environment Variables:
   CARTESI_CONTRACTS_DAVE_APP_FACTORY_ADDRESS                 Dave Application Factory address`,
 }
 
+//nolint:lll // Long CLI examples are kept copy-pasteable.
 const applicationExamples = `
 # deploy both application and authority contracts together via self hosted application contract, then register the application
  - cartesi-rollups-cli deploy application echo-dapp applications/echo-dapp/
@@ -142,17 +143,17 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
 	cobra.CheckErr(err)
 
-	chainId, err := client.ChainID(ctx)
+	chainID, err := client.ChainID(ctx)
 	cobra.CheckErr(err)
 
-	txOpts, err := cli.GetTransactOpts(ctx, chainId)
+	txOpts, err := cli.GetTransactOpts(ctx, chainID)
 	cobra.CheckErr(err)
 
 	// pre deployment checks
 	if len(args) >= 1 {
 		applicationName = args[0]
 	}
-	if len(args) >= 2 {
+	if len(args) >= 2 { //nolint:mnd // The optional second argument is the template path.
 		templateURI = args[1]
 	}
 
@@ -162,6 +163,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		cobra.CheckErr(err)
 
 		dsn, err := config.GetDatabaseConnection()
+		cobra.CheckErr(err)
 		repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.Raw())
 		cobra.CheckErr(err)
 		defer repo.Close()
@@ -170,7 +172,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		cobra.CheckErr(err)
 
 		if applicationInUse != nil {
-			cobra.CheckErr(fmt.Errorf("application name is already in use: %v.", applicationInUse.Name))
+			cobra.CheckErr(fmt.Errorf("application name is already in use: %v", applicationInUse.Name))
 		}
 	}
 
@@ -203,7 +205,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		if executionParametersFileParam == "-" {
 			filePath = os.Stdin.Name()
 		}
-		contents, err := os.ReadFile(filePath)
+		contents, err := os.ReadFile(filePath) //nolint:gosec // The CLI user explicitly supplies this path.
 		cobra.CheckErr(err)
 
 		decoder := json.NewDecoder(strings.NewReader(string(contents)))
@@ -227,7 +229,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 
 	if len(data) == 0 {
-		cobra.CheckErr(fmt.Errorf("No code at the factory address: %v", factoryAddress))
+		cobra.CheckErr(fmt.Errorf("no code at the factory address: %v", factoryAddress))
 	}
 	if verboseParam {
 		fmt.Fprint(os.Stderr, "success\n")
@@ -380,7 +382,7 @@ func buildSelfhostedApplicationDeployment(
 	}
 
 	if !cmd.Flags().Changed("template-hash") {
-		if len(args) >= 2 { // args[1] is mandatory if `template-hash` was absent
+		if len(args) >= 2 { //nolint:mnd // args[1] is mandatory if `template-hash` was absent
 			request.TemplateHash, err = util.ReadRootHash(args[1])
 		} else {
 			err = fmt.Errorf("missing argument. One of `template-path` or `template-hash` is required")
@@ -392,26 +394,26 @@ func buildSelfhostedApplicationDeployment(
 		return nil, fmt.Errorf("error on parameter template-hash: %w", err)
 	}
 
+	var dataAvailabilityErr error
 	if !cmd.Flags().Changed("data-availability") {
-		inputBoxAddress := common.Address{}
-		inputBoxAddress, err = config.GetContractsInputBoxAddress()
+		inputBoxAddress, err := config.GetContractsInputBoxAddress()
 		if err != nil {
 			return nil, fmt.Errorf("error on parameter data-availability: %w", err)
 		}
-		request.InputBoxAddress, request.IInputBoxBlock, request.DataAvailability, err =
+		request.InputBoxAddress, request.IInputBoxBlock, request.DataAvailability, dataAvailabilityErr =
 			ethutil.DefaultDA(client, inputBoxAddress)
 	} else {
-		request.InputBoxAddress, request.IInputBoxBlock, request.DataAvailability, err =
+		request.InputBoxAddress, request.IInputBoxBlock, request.DataAvailability, dataAvailabilityErr =
 			ethutil.CustomDA(client, applicationDataAvailabilityParam)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("error on parameter data-availability: %w", err)
+	if dataAvailabilityErr != nil {
+		return nil, fmt.Errorf("error on parameter data-availability: %w", dataAvailabilityErr)
 	}
 
 	// ensure there is a contract deployed at the input box address
 	code, err := client.CodeAt(ctx, request.InputBoxAddress, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to probe input box address for contract: %v\n", err)
+		return nil, fmt.Errorf("failed to probe input box address for contract: %v", err)
 	}
 	if len(code) == 0 {
 		return nil, fmt.Errorf("error input box address has no code: %v", request.InputBoxAddress)
@@ -456,7 +458,7 @@ func buildApplicationOnlyDeployment(
 	}
 
 	if !cmd.Flags().Changed("template-hash") {
-		if len(args) >= 2 { // args[1] is mandatory if `template-hash` was absent
+		if len(args) >= 2 { //nolint:mnd // args[1] is mandatory if `template-hash` was absent
 			request.TemplateHash, err = util.ReadRootHash(args[1])
 		} else {
 			err = fmt.Errorf("missing argument. One of `template-path` or `template-hash` is required")
@@ -477,26 +479,26 @@ func buildApplicationOnlyDeployment(
 		return nil, fmt.Errorf("error on parameter application-owner: %w", err)
 	}
 
+	var dataAvailabilityErr error
 	if !cmd.Flags().Changed("data-availability") {
-		inputBoxAddress := common.Address{}
-		inputBoxAddress, err = config.GetContractsInputBoxAddress()
+		inputBoxAddress, err := config.GetContractsInputBoxAddress()
 		if err != nil {
 			return nil, fmt.Errorf("error on parameter data-availability: %w", err)
 		}
-		request.InputBoxAddress, request.IInputBoxBlock, request.DataAvailability, err =
+		request.InputBoxAddress, request.IInputBoxBlock, request.DataAvailability, dataAvailabilityErr =
 			ethutil.DefaultDA(client, inputBoxAddress)
 	} else {
-		request.InputBoxAddress, request.IInputBoxBlock, request.DataAvailability, err =
+		request.InputBoxAddress, request.IInputBoxBlock, request.DataAvailability, dataAvailabilityErr =
 			ethutil.CustomDA(client, applicationDataAvailabilityParam)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("error on parameter data-availability: %w", err)
+	if dataAvailabilityErr != nil {
+		return nil, fmt.Errorf("error on parameter data-availability: %w", dataAvailabilityErr)
 	}
 
 	// ensure there is a contract deployed at the input box address
 	code, err := client.CodeAt(ctx, request.InputBoxAddress, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to probe input box address for contract: %v\n", err)
+		return nil, fmt.Errorf("failed to probe input box address for contract: %v", err)
 	}
 	if len(code) == 0 {
 		return nil, fmt.Errorf("error input box address has no code: %v", request.InputBoxAddress)
@@ -544,7 +546,7 @@ func buildPrtApplicationDeployment(
 	}
 
 	if !cmd.Flags().Changed("template-hash") {
-		if len(args) >= 2 { // args[1] is mandatory if `template-hash` was absent
+		if len(args) >= 2 { //nolint:mnd // args[1] is mandatory if `template-hash` was absent
 			request.TemplateHash, err = util.ReadRootHash(args[1])
 		} else {
 			err = fmt.Errorf("missing argument. One of `template-path` or `template-hash` is required")

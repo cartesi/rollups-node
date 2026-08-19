@@ -35,6 +35,7 @@ Supported Environment Variables:
   CARTESI_DATABASE_CONNECTION                    Database connection string`,
 }
 
+//nolint:lll // Long CLI examples are kept copy-pasteable.
 const examples = `# Read specific commitment:
 cartesi-rollups-cli read commitments echo-dapp 10 0x0073a8637d98649717bdc02ecb439c80aa8a10d0 0xdb99c9cdb2e2070a4e4e633c2e6874648dfe3971d14da843465b3d950df3dd19
 
@@ -75,8 +76,8 @@ func init() {
 		origHelpFunc(command, strings)
 	})
 
-	Cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
-		if len(args) > 1 && len(args) < 4 { //nolint: mnd
+	Cmd.PreRunE = func(_ *cobra.Command, args []string) error {
+		if len(args) > 1 && len(args) < 4 {
 			return fmt.Errorf(
 				"expected 1 argument (list) or 4 arguments (get), got %d", len(args))
 		}
@@ -101,7 +102,7 @@ func run(cmd *cobra.Command, args []string) {
 	defer readServ.Close()
 
 	var result json.RawMessage
-	if len(args) >= 4 {
+	if len(args) >= 4 { //nolint:mnd // Four positional arguments select the get operation.
 		var params api.GetCommitmentParams
 		params.Application = args[0]
 		params.EpochIndex, err = config.AsHexString(args[1])
@@ -138,5 +139,6 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	out.WriteString("\n")
 
-	out.WriteTo(os.Stdout)
+	_, err = out.WriteTo(os.Stdout)
+	cobra.CheckErr(err)
 }

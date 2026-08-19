@@ -161,7 +161,7 @@ func computeIConsensusV3InterfaceID() [4]byte {
 		if !ok {
 			panic(fmt.Errorf("computeIConsensusV3InterfaceID: method %q not found in IConsensus ABI", name))
 		}
-		if len(m.ID) != 4 {
+		if len(m.ID) != 4 { //nolint:mnd // ABI method selectors are exactly four bytes.
 			panic(fmt.Errorf("computeIConsensusV3InterfaceID: method %q selector is %d bytes, expected 4", name, len(m.ID)))
 		}
 		for i := range 4 {

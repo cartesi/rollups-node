@@ -217,7 +217,7 @@ func parseAmount(value string) (*big.Int, error) {
 		}
 	} else {
 		var ok bool
-		amount, ok = new(big.Int).SetString(value, 10)
+		amount, ok = new(big.Int).SetString(value, 10) //nolint:mnd // User-facing amounts are decimal.
 		if !ok {
 			return nil, fmt.Errorf("invalid amount %q", value)
 		}

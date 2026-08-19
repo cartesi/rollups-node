@@ -1,7 +1,7 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-package list
+package list //nolint:revive // The package implements the CLI's "list" subcommand.
 
 import (
 	"encoding/json"
@@ -36,7 +36,7 @@ func init() {
 	})
 }
 
-func run(cmd *cobra.Command, args []string) {
+func run(cmd *cobra.Command, _ []string) {
 	ctx := cmd.Context()
 
 	dsn, err := config.GetDatabaseConnection()

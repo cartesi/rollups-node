@@ -58,7 +58,7 @@ func init() {
 	})
 }
 
-func runDeployQuorum(cmd *cobra.Command, args []string) {
+func runDeployQuorum(cmd *cobra.Command, _ []string) {
 	var err error
 
 	ctx := cmd.Context()
@@ -92,7 +92,7 @@ func runDeployQuorum(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 
 	if len(data) == 0 {
-		cobra.CheckErr(fmt.Errorf("No code at the factory address: %v", factoryAddress))
+		cobra.CheckErr(fmt.Errorf("no code at the factory address: %v", factoryAddress))
 	}
 	if verboseParam {
 		fmt.Fprint(os.Stderr, "success\n")

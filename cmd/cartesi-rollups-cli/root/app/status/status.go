@@ -22,7 +22,7 @@ var Cmd = &cobra.Command{
 	Use:     "status [app-name-or-address] [new-status]",
 	Short:   "Display application status or set the enabled flag",
 	Example: examples,
-	Args:    cobra.RangeArgs(1, 2), // nolint: mnd
+	Args:    cobra.RangeArgs(1, 2), //nolint:mnd
 	Run:     run,
 	Long: `
 Supported Environment Variables:
@@ -67,7 +67,8 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	if app == nil {
 		fmt.Fprintf(os.Stderr, "application %q not found\n", nameOrAddress)
-		os.Exit(1)
+		repo.Close()
+		os.Exit(1) //nolint:gocritic // The repository is closed explicitly before exiting.
 	}
 
 	// If no new status is provided, display the current status, operator
@@ -93,6 +94,7 @@ func run(cmd *cobra.Command, args []string) {
 				fmt.Printf("Accounts drive merkle root: %s\n", app.AccountsDriveMerkleRoot.Hex())
 			}
 		}
+		repo.Close()
 		os.Exit(0)
 	}
 
@@ -107,11 +109,13 @@ func run(cmd *cobra.Command, args []string) {
 		targetEnabled = false
 	default:
 		fmt.Fprintf(os.Stderr, "Error: Invalid status %q. Valid values are 'enabled' or 'disabled'\n", newStatus)
+		repo.Close()
 		os.Exit(1)
 	}
 
 	if app.Enabled == targetEnabled && (app.Status != model.ApplicationStatus_Failed || !targetEnabled) {
 		fmt.Printf("Application %s enabled flag is already %t\n", app.Name, app.Enabled)
+		repo.Close()
 		os.Exit(0)
 	}
 
@@ -126,10 +130,12 @@ func run(cmd *cobra.Command, args []string) {
 		confirmed, err := cli.ConfirmPrompt("Proceed?")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
+			repo.Close()
 			os.Exit(1)
 		}
 		if !confirmed {
 			fmt.Println("Aborted.")
+			repo.Close()
 			os.Exit(0)
 		}
 	}

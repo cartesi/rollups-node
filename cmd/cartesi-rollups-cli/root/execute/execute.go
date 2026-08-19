@@ -22,7 +22,7 @@ var Cmd = &cobra.Command{
 	Use:     "execute [app-name-or-address] [output-index]",
 	Short:   "Executes a voucher",
 	Example: examples,
-	Args:    cobra.ExactArgs(2), // nolint: mnd
+	Args:    cobra.ExactArgs(2), //nolint:mnd
 	Run:     run,
 	Long: `
 Supported Environment Variables:
@@ -81,7 +81,8 @@ func run(cmd *cobra.Command, args []string) {
 
 	if output == nil {
 		fmt.Fprintf(os.Stderr, "The output with index %d was not found in the database\n", outputIndex)
-		os.Exit(1)
+		repo.Close()
+		os.Exit(1) //nolint:gocritic // The repository is closed explicitly before exiting.
 	}
 
 	app, err := repo.GetApplication(ctx, nameOrAddress)
@@ -95,10 +96,10 @@ func run(cmd *cobra.Command, args []string) {
 	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
 	cobra.CheckErr(err)
 
-	chainId, err := client.ChainID(ctx)
+	chainID, err := client.ChainID(ctx)
 	cobra.CheckErr(err)
 
-	txOpts, err := cli.GetTransactOpts(ctx, chainId)
+	txOpts, err := cli.GetTransactOpts(ctx, chainID)
 	cobra.CheckErr(err)
 
 	if !skipConfirmation {

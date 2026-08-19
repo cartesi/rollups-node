@@ -27,9 +27,9 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
-	Cmd.PersistentFlags().Uint64VarP(&epochLengthParam, "epoch-length", "", 10, // nolint: mnd
+	Cmd.PersistentFlags().Uint64VarP(&epochLengthParam, "epoch-length", "", 10, //nolint:mnd
 		"Epoch length")
-	Cmd.PersistentFlags().MarkHidden("epoch-length")
+	cobra.CheckErr(Cmd.PersistentFlags().MarkHidden("epoch-length"))
 	Cmd.PersistentFlags().Uint64Var(&claimStagingPeriodParam, "claim-staging-period", 0,
 		"Number of blocks between a claim being submitted and accepted (Authority/Quorum only)")
 	Cmd.PersistentFlags().StringVar(&withdrawalConfigParam, "withdrawal-config", "",
@@ -39,20 +39,20 @@ func init() {
 		"Path to a JSON file describing the WithdrawalConfig. Mutually exclusive with --withdrawal-config.")
 	Cmd.PersistentFlags().StringVar(&saltParam, "salt", "0000000000000000000000000000000000000000000000000000000000000000",
 		"Salt value for contract deployment")
-	Cmd.PersistentFlags().MarkHidden("salt")
+	cobra.CheckErr(Cmd.PersistentFlags().MarkHidden("salt"))
 	Cmd.PersistentFlags().BoolVarP(&asJSONParam, "json", "", false,
 		"Print results as JSON")
-	Cmd.PersistentFlags().MarkHidden("json")
+	cobra.CheckErr(Cmd.PersistentFlags().MarkHidden("json"))
 	Cmd.PersistentFlags().BoolVarP(&verboseParam, "verbose", "", false,
 		"Print extra information")
-	Cmd.PersistentFlags().MarkHidden("verbose")
+	cobra.CheckErr(Cmd.PersistentFlags().MarkHidden("verbose"))
 
 	Cmd.AddCommand(applicationCmd)
 	Cmd.AddCommand(authorityCmd)
 	Cmd.AddCommand(quorumCmd)
 }
 
-func run(cmd *cobra.Command, args []string) {
+func run(cmd *cobra.Command, _ []string) {
 	// If no subcommand is provided, show help
 	err := cmd.Help()
 	cobra.CheckErr(err)

@@ -82,7 +82,7 @@ func init() {
 		"Application template hash. (DO NOT USE IN PRODUCTION)\nThis value is retrieved from the application contract",
 	)
 
-	Cmd.Flags().Uint64VarP(&epochLength, "epoch-length", "e", 0, // nolint: mnd
+	Cmd.Flags().Uint64VarP(&epochLength, "epoch-length", "e", 0,
 		"Consensus Epoch length. (DO NOT USE IN PRODUCTION)\nThis value is retrieved from the consensus contract",
 	)
 
@@ -121,7 +121,7 @@ func init() {
 	})
 }
 
-func run(cmd *cobra.Command, args []string) {
+func run(cmd *cobra.Command, _ []string) {
 	ctx := cmd.Context()
 
 	validName, err := config.ToApplicationNameFromString(name)
@@ -181,7 +181,8 @@ func run(cmd *cobra.Command, args []string) {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to get epoch length from consensus: %v\n",
 				cli.DecorateRevert(err, iconsensus.IConsensusMetaData))
-			os.Exit(1)
+			repo.Close()
+			os.Exit(1) //nolint:gocritic // The repository is closed explicitly before exiting.
 		}
 	}
 
@@ -266,7 +267,7 @@ func run(cmd *cobra.Command, args []string) {
 		if executionParametersFileParam == "-" {
 			filePath = os.Stdin.Name()
 		}
-		contents, err := os.ReadFile(filePath)
+		contents, err := os.ReadFile(filePath) //nolint:gosec // The CLI user explicitly supplies this path.
 		cobra.CheckErr(err)
 
 		decoder := json.NewDecoder(strings.NewReader(string(contents)))

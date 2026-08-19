@@ -33,6 +33,7 @@ Supported Environment Variables:
   CARTESI_DATABASE_CONNECTION                    Database connection string`,
 }
 
+//nolint:lll // Long CLI examples are kept copy-pasteable.
 const examples = `# Read specific tournament:
 cartesi-rollups-cli read tournaments echo-dapp 0x0073a8637d98649717bdc02ecb439c80aa8a10d0
 
@@ -79,7 +80,7 @@ func init() {
 		origHelpFunc(command, strings)
 	})
 
-	Cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+	Cmd.PreRunE = func(_ *cobra.Command, _ []string) error {
 		if limit > jsonrpc.LIST_ITEM_LIMIT {
 			return fmt.Errorf("limit cannot exceed %d", jsonrpc.LIST_ITEM_LIMIT)
 		}
@@ -101,7 +102,7 @@ func run(cmd *cobra.Command, args []string) {
 	defer readServ.Close()
 
 	var result json.RawMessage
-	if len(args) >= 2 {
+	if len(args) >= 2 { //nolint:mnd // Two positional arguments select the get operation.
 		var params api.GetTournamentParams
 		params.Application = args[0]
 		params.Address = args[1]
@@ -147,5 +148,6 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	out.WriteString("\n")
 
-	out.WriteTo(os.Stdout)
+	_, err = out.WriteTo(os.Stdout)
+	cobra.CheckErr(err)
 }
