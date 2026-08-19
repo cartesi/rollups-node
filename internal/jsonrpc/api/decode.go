@@ -33,7 +33,7 @@ func ParseOutputType(s string) ([]byte, error) {
 
 // EvmAdvance represents decoded EvmAdvance input data.
 type EvmAdvance struct {
-	ChainId        string `json:"chain_id"`
+	ChainID        string `json:"chain_id"`
 	AppContract    string `json:"application_contract"`
 	MsgSender      string `json:"sender"`
 	BlockNumber    string `json:"block_number"`
@@ -52,7 +52,7 @@ type DecodedInput struct {
 // DecodeInput ABI-decodes a raw input into a DecodedInput.
 func DecodeInput(input *model.Input, parsedAbi *abi.ABI) (*DecodedInput, error) {
 	decoded := make(map[string]any)
-	if len(input.RawData) < 4 {
+	if len(input.RawData) < 4 { //nolint: mnd
 		return &DecodedInput{Input: input}, fmt.Errorf("error: input needs at least 4 bytes")
 	}
 
@@ -71,7 +71,7 @@ func DecodeInput(input *model.Input, parsedAbi *abi.ABI) (*DecodedInput, error) 
 		return &DecodedInput{Input: input}, err
 	}
 
-	chainId, ok1 := decoded["chainId"].(*big.Int)
+	chainID, ok1 := decoded["chainId"].(*big.Int)
 	appContract, ok2 := decoded["appContract"].(common.Address)
 	msgSender, ok3 := decoded["msgSender"].(common.Address)
 	blockNumber, ok4 := decoded["blockNumber"].(*big.Int)
@@ -84,7 +84,7 @@ func DecodeInput(input *model.Input, parsedAbi *abi.ABI) (*DecodedInput, error) 
 	}
 
 	evmAdvance := EvmAdvance{
-		ChainId:        fmt.Sprintf("0x%x", chainId),
+		ChainID:        fmt.Sprintf("0x%x", chainID),
 		AppContract:    appContract.Hex(),
 		MsgSender:      msgSender.Hex(),
 		BlockNumber:    fmt.Sprintf("0x%x", blockNumber),
@@ -171,7 +171,7 @@ type DecodedOutput struct {
 // DecodeOutput ABI-decodes a raw output into a DecodedOutput.
 func DecodeOutput(output *model.Output, parsedAbi *abi.ABI) (*DecodedOutput, error) {
 	decodedOutput := &DecodedOutput{Output: output}
-	if len(output.RawData) < 4 {
+	if len(output.RawData) < 4 { //nolint: mnd
 		return decodedOutput, fmt.Errorf("raw data too short")
 	}
 	method, err := parsedAbi.MethodById(output.RawData[:4])

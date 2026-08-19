@@ -32,6 +32,15 @@ linters:
       - common-false-positives
       - legacy
       - std-error-handling
+    rules:
+      - path: internal/jsonrpc/api/.*\.go
+        text: avoid meaningless package names
+        linters:
+          - revive
+      - path: internal/jsonrpc/.*\.go
+        text: avoid package names that conflict with Go standard library package names
+        linters:
+          - revive
     paths:
       - third_party$
       - builtin$
