@@ -504,6 +504,27 @@ func TestJSONRPCBatchLoggingHasOneInfoAndDebugMethods(t *testing.T) {
 	require.Len(t, debugMethods, entries)
 }
 
+func TestJSONRPCBatchMethodLoggingIsTruncated(t *testing.T) {
+	s := newBatchTestService()
+	var logs bytes.Buffer
+	s.Logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	method := strings.Repeat("b", MAX_LOGGED_METHOD_LEN+32)
+	body := []byte(fmt.Sprintf(`[{"jsonrpc":"2.0","method":%q,"id":1}]`, method))
+	serveRPC(t, s, body)
+
+	var found bool
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		var record map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &record))
+		if record["method"] == truncatedMethod(method) {
+			require.Equal(t, "DEBUG", record["level"])
+			found = true
+		}
+		require.NotEqual(t, method, record["method"])
+	}
+	require.True(t, found)
+}
+
 func withTestRPCHandler(t *testing.T, method string, handler rpcHandler) {
 	t.Helper()
 	previous, existed := jsonrpcHandlers[method]

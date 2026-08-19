@@ -4111,17 +4111,19 @@ func TestRequestMethodIsInfoLogged(t *testing.T) {
 	var logs bytes.Buffer
 	s.Logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	const method = "attacker_controlled_method"
-	serveRPC(t, s, []byte(`{"jsonrpc":"2.0","method":"attacker_controlled_method","id":1}`))
+	method := strings.Repeat("a", MAX_LOGGED_METHOD_LEN+32)
+	body := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":%q,"id":1}`, method))
+	serveRPC(t, s, body)
 
 	var methodLogs int
 	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
 		var record map[string]any
 		require.NoError(t, json.Unmarshal([]byte(line), &record))
-		if record["method"] == method {
+		if record["method"] == truncatedMethod(method) {
 			require.Equal(t, "INFO", record["level"])
 			methodLogs++
 		}
+		require.NotEqual(t, method, record["method"])
 	}
 	require.Positive(t, methodLogs)
 }

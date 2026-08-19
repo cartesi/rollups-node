@@ -14,6 +14,7 @@ import (
 	"math"
 	"net/http"
 	"reflect"
+	"unicode/utf8"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/evmreader"
@@ -38,6 +39,8 @@ const (
 	LIST_ITEM_LIMIT = 10000 //nolint: revive
 	// Default amount of item on a list (50)
 	LIST_ITEM_DEFAULT = 50 //nolint: revive
+	// Maximum number of bytes from an RPC method included in a log record.
+	MAX_LOGGED_METHOD_LEN = 64 //nolint: revive
 )
 
 const (
@@ -113,6 +116,17 @@ var listParamsTypes = map[string]reflect.Type{
 	"cartesi_listCommitments":   reflect.TypeOf(api.ListCommitmentsParams{}),
 	"cartesi_listMatches":       reflect.TypeOf(api.ListMatchesParams{}),
 	"cartesi_listMatchAdvances": reflect.TypeOf(api.ListMatchAdvancesParams{}),
+}
+
+func truncatedMethod(method string) string {
+	if len(method) <= MAX_LOGGED_METHOD_LEN {
+		return method
+	}
+	method = method[:MAX_LOGGED_METHOD_LEN]
+	for !utf8.ValidString(method) {
+		method = method[:len(method)-1]
+	}
+	return method + "…(truncated)"
 }
 
 // batchExceedsListItemLimit reports whether the sum of the effective limits of
@@ -204,7 +218,7 @@ func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) er
 	}
 	fn, ok := jsonrpcHandlers[req.Method]
 	if !ok {
-		s.Logger.Debug("RPC method not found", "method", req.Method)
+		s.Logger.Debug("RPC method not found", "method", truncatedMethod(req.Method))
 		return writeRPCError(w, req.ID, JSONRPC_METHOD_NOT_FOUND, "Method not found")
 	}
 	result, err := fn(s, r, req)
@@ -215,7 +229,7 @@ func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) er
 		return err
 	}
 	if errors.Is(err, context.DeadlineExceeded) && errors.Is(r.Context().Err(), context.DeadlineExceeded) {
-		s.Logger.Warn("RPC method dispatch timeout", "method", req.Method)
+		s.Logger.Warn("RPC method dispatch timeout", "method", truncatedMethod(req.Method))
 		return writeRPCError(w, req.ID, JSONRPC_TIMEOUT_ERROR, "Request timed out")
 	}
 
@@ -226,7 +240,7 @@ func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) er
 		return writeRPCError(w, req.ID, rpcErr.Code, rpcErr.Message)
 	}
 
-	s.Logger.Error("RPC method failed", "method", req.Method, "error", err)
+	s.Logger.Error("RPC method failed", "method", truncatedMethod(req.Method), "error", err)
 	return writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error")
 }
 
@@ -244,7 +258,7 @@ func (s *Service) dispatchOneRequest(w http.ResponseWriter, r *http.Request, req
 	case errors.Is(err, io.ErrShortBuffer):
 		return s.writeRPCError(w, req.ID, JSONRPC_RESPONSE_SIZE_LIMIT_EXCEEDED, "Response size limit exceeded")
 	default:
-		s.Logger.Error("RPC method response encode failed", "method", req.Method, "error", err)
+		s.Logger.Error("RPC method response encode failed", "method", truncatedMethod(req.Method), "error", err)
 		return s.writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 }
@@ -286,7 +300,7 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		s.Logger.Info("Dispatching RPC request", "method", req.Method)
+		s.Logger.Info("Dispatching RPC request", "method", truncatedMethod(req.Method))
 		s.dispatchOneRequest(w, r, req, budgetResp)
 
 	case '[':
@@ -335,7 +349,7 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 				if err := json.Unmarshal(rawReq, &req); err != nil {
 					responded = s.writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "invalid request")
 				} else {
-					s.Logger.Debug("Dispatching RPC request", "method", req.Method)
+					s.Logger.Debug("Dispatching RPC request", "method", truncatedMethod(req.Method))
 					responded = s.dispatchOneRequest(w, r, req, budgetResp)
 				}
 			}
