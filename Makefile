@@ -350,6 +350,12 @@ reject-loop-dapp: applications/reject-loop-dapp ## Reject loop dapp
 
 exception-loop-dapp: applications/exception-loop-dapp ## Exception loop dapp
 
+halt-loop-dapp: applications/halt-loop-dapp ## Halt loop dapp
+
+mcycle-overflow-dapp: applications/mcycle-overflow-dapp ## MCYCLE overflow dapp
+
+unexpected-yield-dapp: applications/unexpected-yield-dapp ## Unexpected-yield dapp
+
 erc20-withdrawal-dapp: applications/erc20-withdrawal-dapp ## ERC-20 withdrawal test dapp
 
 applications/reject-loop-dapp: ## Create reject-loop-dapp test application
@@ -361,6 +367,19 @@ applications/exception-loop-dapp: ## Create exception-loop-dapp test application
 	@echo "Creating exception-loop-dapp test application"
 	@mkdir -p applications
 	@cartesi-machine --ram-length=128Mi --store=applications/exception-loop-dapp --final-hash -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --exception=1 --verbose=1
+
+applications/halt-loop-dapp: ## Create halt-loop-dapp test application
+	@echo "Creating halt-loop-dapp test application"
+	@mkdir -p applications
+	@cartesi-machine --ram-length=128Mi --store=applications/halt-loop-dapp --final-hash -- "rollup accept && rollup accept"
+
+applications/mcycle-overflow-dapp: applications/echo-dapp ## Create MCYCLE overflow test application
+	@echo "Creating mcycle-overflow-dapp test application"
+	@go run $(GO_BUILD_PARAMS) ./test/tooling/terminalmachine mcycle-overflow --source=$< --output=$@
+
+applications/unexpected-yield-dapp: ## Create unexpected-yield test application
+	@echo "Creating unexpected-yield-dapp test application"
+	@go run $(GO_BUILD_PARAMS) ./test/tooling/terminalmachine unexpected-yield --output=$@
 
 applications/erc20-withdrawal-dapp: test/dapps/erc20-withdrawal/install.sh ## Create ERC-20 withdrawal test application
 	@echo "Creating ERC-20 withdrawal test application"
@@ -587,7 +606,7 @@ check-license: ## Verify license headers on Go source files
 # dependency for the check to build on the CI setup runner.
 INTEGRATION_SHARDS := basic quorum prt replay restart withdrawal awskms
 
-INTEGRATION_SHARD_basic      := ^Test(EchoAuthority|RejectException|MultiApp|EchoAuthorityStaging)$$
+INTEGRATION_SHARD_basic      := ^Test(EchoAuthority|RejectException|TerminalMachineStates|MultiApp|EchoAuthorityStaging)$$
 INTEGRATION_SHARD_quorum     := ^Test(EchoQuorum|SameBlockInputs)$$
 INTEGRATION_SHARD_prt        := ^Test(EchoPrt|RejectExceptionPrt|ForeclosePrt)$$
 INTEGRATION_SHARD_replay     := ^Test(Foreclose|ForecloseReplay|DivergentClaim)$$
@@ -723,7 +742,7 @@ test-with-compose: ## Run all tests using docker compose with auto-shutdown
 	@$(MAKE) unit-test-with-compose
 	@$(MAKE) integration-test-with-compose
 
-integration-test-local: build cartesi-rollups-machine-tool echo-dapp reject-loop-dapp exception-loop-dapp erc20-withdrawal-dapp ## Run integration tests on the host (NODE_TOPOLOGY=, SHARD=; requires: make start && eval $$(make env); CLEAN_STALE_LOCAL_NODE=true to stop test-port listeners)
+integration-test-local: build cartesi-rollups-machine-tool echo-dapp reject-loop-dapp exception-loop-dapp halt-loop-dapp mcycle-overflow-dapp unexpected-yield-dapp erc20-withdrawal-dapp ## Run integration tests on the host (NODE_TOPOLOGY=, SHARD=; requires: make start && eval $$(make env); CLEAN_STALE_LOCAL_NODE=true to stop test-port listeners)
 	@set -e; first=1; for t in $(TOPOLOGIES_SELECTED); do \
 		if [ "$$first" = 1 ]; then first=0; else echo "=== resetting dev DB + devnet between topologies ==="; $(MAKE) restart; fi; \
 		$(MAKE) _local-topology-$$t; \
@@ -759,6 +778,9 @@ _local-topology-%:
 		export CARTESI_TEST_DAPP_PATH=$(CURDIR)/applications/echo-dapp; \
 		export CARTESI_TEST_REJECT_DAPP_PATH=$(CURDIR)/applications/reject-loop-dapp; \
 		export CARTESI_TEST_EXCEPTION_DAPP_PATH=$(CURDIR)/applications/exception-loop-dapp; \
+		export CARTESI_TEST_HALT_DAPP_PATH=$(CURDIR)/applications/halt-loop-dapp; \
+		export CARTESI_TEST_MCYCLE_OVERFLOW_DAPP_PATH=$(CURDIR)/applications/mcycle-overflow-dapp; \
+		export CARTESI_TEST_UNEXPECTED_YIELD_DAPP_PATH=$(CURDIR)/applications/unexpected-yield-dapp; \
 		export CARTESI_TEST_ERC20_WITHDRAWAL_DAPP_PATH=$(CURDIR)/applications/erc20-withdrawal-dapp; \
 		NODE_TOPOLOGY='$*' TEST_PATTERN="$$pattern" $(MAKE) integration-test
 
@@ -828,5 +850,6 @@ build-debian-package: install
 	devnet image tester-image debian-packager run-with-compose shutdown-compose \
 	start start-devnet start-postgres stop stop-devnet stop-postgres restart restart-devnet restart-postgres \
 	install copy-debian-package build-debian-package \
+	mcycle-overflow-dapp unexpected-yield-dapp \
 	deploy-erc20-withdrawal-dapp fund-wallet withdraw-wallet \
 	env help version
