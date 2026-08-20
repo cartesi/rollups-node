@@ -42,7 +42,7 @@ type Service struct {
 	// overridden in tests so Serve() can be exercised without real sockets.
 	listen func(network, address string) (net.Listener, error)
 	// OpenAPI description for JSON-RPC API loaded from 'jsonrpc-discover.json' file
-	discoverSpec any
+	discoverSpec json.RawMessage
 	handlers     dispatchTable
 	// dispatchTimeout expires requests early enough to serialize a complete
 	// timeout response before the HTTP server's write deadline.

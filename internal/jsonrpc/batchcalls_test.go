@@ -166,6 +166,18 @@ func TestJSONRPCMalformedObjectReturnsJSONContentType(t *testing.T) {
 	requireRPCError(t, decodeRPCResponse(t, rr.Body.Bytes()), nil, JSONRPC_PARSE_ERROR)
 }
 
+func TestJSONRPCDiscoverPreservesLargeIntegerLiterals(t *testing.T) {
+	s := newBatchTestService()
+	data, err := discoverSpec.ReadFile("jsonrpc-discover.json")
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(data, &s.discoverSpec))
+
+	rr := serveRPC(t, s, []byte(`{"jsonrpc":"2.0","method":"rpc.discover","id":1}`))
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.Contains(t, rr.Body.String(), `"maximum":9223372036854775807`)
+}
+
 func TestJSONRPCBatchMalformedElementDoesNotPoisonValidSiblings(t *testing.T) {
 	s := newBatchTestService()
 	body := []byte(`[
