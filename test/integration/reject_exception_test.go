@@ -18,7 +18,7 @@ import (
 var terminalExecutionExpectedLog = ExpectedLog{
 	Pattern:  regexp.MustCompile(`Application execution terminated`),
 	Level:    LevelError,
-	Reason:   "the guest exception durably terminates application execution",
+	Reason:   "a durable terminal machine outcome stops application execution",
 	Required: true,
 }
 
