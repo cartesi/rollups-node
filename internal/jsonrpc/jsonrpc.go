@@ -333,6 +333,7 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	budgetResp := newBudgetWriter(w, MAX_RESPONSE_SIZE)
+	w.Header().Set("Content-Type", "application/json")
 
 	switch body[0] {
 	case '{':
@@ -341,12 +342,10 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 			s.writeRPCError(w, nil, JSONRPC_PARSE_ERROR, "invalid request")
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
 		s.Logger.Info("Dispatching RPC request", "method", truncatedMethod(req.Method))
 		s.dispatchOneRequest(w, r, req, budgetResp)
 
 	case '[':
-		w.Header().Set("Content-Type", "application/json")
 		// Keep each batch element raw so malformed requests fail independently and
 		// the list-item limit can be checked before dispatching any request.
 		var reqSeq []json.RawMessage
@@ -405,7 +404,6 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 		s.writeByte(w, ']')
 
 	default:
-		w.Header().Set("Content-Type", "application/json")
 		if json.Valid(body) {
 			s.writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "invalid request")
 		} else {

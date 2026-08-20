@@ -157,6 +157,15 @@ func TestJSONRPCMalformedBatchReturnsParseErrorObject(t *testing.T) {
 	requireRPCError(t, decodeRPCResponse(t, rr.Body.Bytes()), nil, JSONRPC_PARSE_ERROR)
 }
 
+func TestJSONRPCMalformedObjectReturnsJSONContentType(t *testing.T) {
+	s := newBatchTestService()
+	rr := serveRPC(t, s, []byte(`{"jsonrpc":"2.0"`))
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+	requireRPCError(t, decodeRPCResponse(t, rr.Body.Bytes()), nil, JSONRPC_PARSE_ERROR)
+}
+
 func TestJSONRPCBatchMalformedElementDoesNotPoisonValidSiblings(t *testing.T) {
 	s := newBatchTestService()
 	body := []byte(`[
