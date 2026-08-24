@@ -121,6 +121,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		if err != nil {
 			return nil, err
 		}
+		s.Logger.Info("PRT submitter identity", "address", s.txOptsFactory.From())
 	}
 
 	return s, nil

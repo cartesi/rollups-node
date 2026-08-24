@@ -138,6 +138,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		if err != nil {
 			return nil, fmt.Errorf("getting transaction options: %w", err)
 		}
+		s.Logger.Info("Claim submitter identity", "address", txOptsFactory.From())
 	}
 
 	s.repository = c.Repository
