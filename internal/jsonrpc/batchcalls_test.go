@@ -154,7 +154,9 @@ func TestJSONRPCMalformedBatchReturnsParseErrorObject(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.Equal(t, "application/json", rr.Header().Get("Content-Type"))
-	requireRPCError(t, decodeRPCResponse(t, rr.Body.Bytes()), nil, JSONRPC_PARSE_ERROR)
+	response := decodeRPCResponse(t, rr.Body.Bytes())
+	requireRPCError(t, response, nil, JSONRPC_PARSE_ERROR)
+	require.Equal(t, "Parse error", response.Error.Message)
 }
 
 func TestJSONRPCMalformedObjectReturnsJSONContentType(t *testing.T) {
@@ -163,7 +165,9 @@ func TestJSONRPCMalformedObjectReturnsJSONContentType(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.Equal(t, "application/json", rr.Header().Get("Content-Type"))
-	requireRPCError(t, decodeRPCResponse(t, rr.Body.Bytes()), nil, JSONRPC_PARSE_ERROR)
+	response := decodeRPCResponse(t, rr.Body.Bytes())
+	requireRPCError(t, response, nil, JSONRPC_PARSE_ERROR)
+	require.Equal(t, "Parse error", response.Error.Message)
 }
 
 func TestJSONRPCDiscoverPreservesLargeIntegerLiterals(t *testing.T) {
@@ -236,19 +240,24 @@ func TestJSONRPCBatchStructurallyInvalidElementsDoNotPoisonValidSiblings(t *test
 
 func TestJSONRPCValidationErrorsEchoValidID(t *testing.T) {
 	s := newBatchTestService()
-	tests := map[string]string{
-		"missing method":  `{"jsonrpc":"2.0","id":"request-id"}`,
-		"invalid version": `{"jsonrpc":"1.0","method":"cartesi_getNodeVersion","id":42}`,
+	tests := map[string]struct {
+		body    string
+		id      any
+		message string
+	}{
+		"missing method": {
+			body: `{"jsonrpc":"2.0","id":"request-id"}`, id: "request-id", message: "Invalid Request",
+		},
+		"invalid version": {
+			body: `{"jsonrpc":"1.0","method":"cartesi_getNodeVersion","id":42}`, id: float64(42), message: "Unsupported JSON-RPC version",
+		},
 	}
 
-	for name, body := range tests {
+	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			response := decodeRPCResponse(t, serveRPC(t, s, []byte(body)).Body.Bytes())
-			expectedID := any("request-id")
-			if name == "invalid version" {
-				expectedID = float64(42)
-			}
-			requireRPCError(t, response, expectedID, JSONRPC_INVALID_REQUEST)
+			response := decodeRPCResponse(t, serveRPC(t, s, []byte(test.body)).Body.Bytes())
+			requireRPCError(t, response, test.id, JSONRPC_INVALID_REQUEST)
+			require.Equal(t, test.message, response.Error.Message)
 		})
 	}
 }
@@ -265,6 +274,7 @@ func TestJSONRPCRejectsInvalidIDTypesWithNullID(t *testing.T) {
 				`{"jsonrpc":"2.0","method":"cartesi_getNodeVersion","id":%s}`, id))
 			response := decodeRPCResponse(t, serveRPC(t, s, body).Body.Bytes())
 			requireRPCError(t, response, nil, JSONRPC_INVALID_REQUEST)
+			require.Equal(t, "Invalid request ID", response.Error.Message)
 		})
 	}
 }
@@ -470,8 +480,10 @@ func TestJSONRPCBatchReturnsErrorsForIDDRequestsAfterDeadline(t *testing.T) {
 	requireRPCError(t, responses[4], nil, JSONRPC_INVALID_REQUEST)
 	requireRPCError(t, responses[5], nil, JSONRPC_TIMEOUT_ERROR)
 	for i, response := range responses {
-		if i == 3 || i == 4 {
-			require.Equal(t, "invalid request", response.Error.Message)
+		if i == 3 {
+			require.Equal(t, "Invalid Request", response.Error.Message)
+		} else if i == 4 {
+			require.Equal(t, "Invalid request ID", response.Error.Message)
 		} else {
 			require.Equal(t, "Request timed out", response.Error.Message)
 		}

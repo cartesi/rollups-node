@@ -218,10 +218,13 @@ func (s *Service) repositoryError(ctx context.Context, message string, err error
 
 func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) error {
 	if !validRPCID(req.ID) {
-		return writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "invalid request")
+		return writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "Invalid request ID")
 	}
-	if req.JSONRPC != "2.0" || req.Method == "" {
-		return writeRPCError(w, req.ID, JSONRPC_INVALID_REQUEST, "invalid request")
+	if req.JSONRPC != "2.0" {
+		return writeRPCError(w, req.ID, JSONRPC_INVALID_REQUEST, "Unsupported JSON-RPC version")
+	}
+	if req.Method == "" {
+		return writeRPCError(w, req.ID, JSONRPC_INVALID_REQUEST, "Invalid Request")
 	}
 	fn, ok := s.handlers[req.Method]
 	if !ok {
@@ -339,7 +342,7 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 	case '{':
 		var req RPCRequest
 		if err := json.Unmarshal(body, &req); err != nil {
-			s.writeRPCError(w, nil, JSONRPC_PARSE_ERROR, "invalid request")
+			s.writeRPCError(w, nil, JSONRPC_PARSE_ERROR, "Parse error")
 			return
 		}
 		s.Logger.Info("Dispatching RPC request", "method", truncatedMethod(req.Method))
@@ -350,7 +353,7 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 		// the list-item limit can be checked before dispatching any request.
 		var reqSeq []json.RawMessage
 		if err := json.Unmarshal(body, &reqSeq); err != nil {
-			s.writeRPCError(w, nil, JSONRPC_PARSE_ERROR, "invalid request batch")
+			s.writeRPCError(w, nil, JSONRPC_PARSE_ERROR, "Parse error")
 			return
 		}
 		if len(reqSeq) == 0 || len(reqSeq) > MAX_BATCH_SIZE {
@@ -382,15 +385,15 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 			case context.DeadlineExceeded:
 				s.Logger.Warn("RPC method dispatch timeout")
 				if err := json.Unmarshal(rawReq, &req); err != nil {
-					responded = s.writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "invalid request")
+					responded = s.writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "Invalid Request")
 				} else if !validRPCID(req.ID) {
-					responded = s.writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "invalid request")
+					responded = s.writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "Invalid request ID")
 				} else {
 					responded = s.writeRPCError(w, req.ID, JSONRPC_TIMEOUT_ERROR, "Request timed out")
 				}
 			default:
 				if err := json.Unmarshal(rawReq, &req); err != nil {
-					responded = s.writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "invalid request")
+					responded = s.writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "Invalid Request")
 				} else {
 					s.Logger.Debug("Dispatching RPC request", "method", truncatedMethod(req.Method))
 					responded = s.dispatchOneRequest(w, r, req, budgetResp)
@@ -405,7 +408,7 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 
 	default:
 		if json.Valid(body) {
-			s.writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "invalid request")
+			s.writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "Invalid Request")
 		} else {
 			s.writeRPCError(w, nil, JSONRPC_PARSE_ERROR, "Parse error")
 		}
