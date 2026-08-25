@@ -44,7 +44,8 @@ DO NOT EDIT.
 # Node Configuration
 
 The node is configurable through environment variables.
-(There is no other way to configure it.)
+Variables prefixed CARTESI_ are listed below. A few subsystems additionally read
+standard variables defined by third-party SDKs; those are listed at the end.
 
 This file documents the configuration options.
 
@@ -63,4 +64,18 @@ This file documents the configuration options.
 * **Used by:** {{range $i, $e := .UsedBy}}{{if $i}}, {{end}}{{$e}}{{end}}
 {{- end}}
 {{- end}}
+
+## Externally-provided configuration
+
+These are read by the AWS SDK, not by the node's own configuration layer, and
+apply only when CARTESI_AUTH_KIND=aws.
+
+* AWS_REGION / AWS_DEFAULT_REGION — region used to resolve the KMS key.
+* AWS_ENDPOINT_URL_KMS / AWS_ENDPOINT_URL — override the KMS endpoint
+  (VPC endpoint, PrivateLink, FIPS, or a local emulator such as LocalStack).
+* AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN — static
+  credentials. They may instead come from the shared config file, an EC2 instance
+  profile, or IRSA; the node does not require any particular source.
+
+Full resolution order is documented by AWS; the node applies no overrides.
 `

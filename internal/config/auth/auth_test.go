@@ -80,13 +80,13 @@ func setupAWSAuth(t *testing.T, endpoint string) {
 	t.Cleanup(viper.Reset)
 	viper.Set(AUTH_KIND, "aws")
 	viper.Set(AUTH_AWS_KMS_KEY_ID, "alias/test-key")
-	viper.Set(AUTH_AWS_KMS_REGION, "us-east-1")
-	viper.Set(AUTH_AWS_KMS_ENDPOINT, endpoint)
 
 	// Static dummy credentials keep the AWS SDK hermetic: it never consults
 	// shared config files, credential services, or EC2 instance metadata.
 	t.Setenv("AWS_ACCESS_KEY_ID", "test")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "test")
+	t.Setenv("AWS_REGION", "us-east-1")
+	t.Setenv("AWS_ENDPOINT_URL_KMS", endpoint)
 	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
 }
 

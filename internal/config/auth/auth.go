@@ -5,7 +5,6 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
 
@@ -65,22 +64,7 @@ func GetTransactOptsFactory(ctx context.Context, chainId *big.Int) (ethutil.Tran
 		if err != nil {
 			return nil, err
 		}
-		awsOpts := make([]func (*aws_cfg.LoadOptions) error, 0, 2)
-		kmsRegion, err := GetAuthAwsKmsRegion()
-		if !errors.Is(err, ErrNotDefined) {
-			if err != nil {
-				return nil, err
-			}
-			awsOpts = append(awsOpts, aws_cfg.WithRegion(kmsRegion.Value))
-		}
-		kmsEndpoint, err := GetAuthAwsKmsEndpoint()
-		if !errors.Is(err, ErrNotDefined) {
-			if err != nil {
-				return nil, err
-			}
-			awsOpts = append(awsOpts, aws_cfg.WithBaseEndpoint(kmsEndpoint.Value))
-		}
-		awsCfg, err := aws_cfg.LoadDefaultConfig(ctx, awsOpts...)
+		awsCfg, err := aws_cfg.LoadDefaultConfig(ctx)
 		if err != nil {
 			return nil, err
 		}

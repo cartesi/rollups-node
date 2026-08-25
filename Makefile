@@ -522,6 +522,8 @@ start-awslocalstack: ## Run the AWS LocalStack docker container
 	@echo "Add the following variables to run integration test with AWS services:"
 	@echo "  export AWS_ACCESS_KEY_ID=test"
 	@echo "  export AWS_SECRET_ACCESS_KEY=test"
+	@echo "  export AWS_REGION=us-east-1"
+	@echo "  export AWS_ENDPOINT_URL_KMS=http://localhost:4566"
 	@echo "  export LOCALSTACK_KMS_ENDPOINT=http://localhost:4566"
 	@echo "  export LOCALSTACK_KMS_REQUIRED=true"
 

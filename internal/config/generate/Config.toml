@@ -360,27 +360,17 @@ used-by = ["claimer", "node", "cli", "prt"]
 [auth.CARTESI_AUTH_AWS_KMS_KEY_ID]
 go-type = "RedactedString"
 description = """
-If set, the node will use the AWS KMS service with this key ID to sign transactions.
+An AWS KMS key ID, alias, or ARN.
 
-Must be set alongside `CARTESI_AUTH_AWS_KMS_REGION`."""
-omit = true
-used-by = ["claimer", "node", "cli", "prt"]
+If set, the node will use the AWS KMS service with this key to sign transactions.
 
-[auth.CARTESI_AUTH_AWS_KMS_REGION]
-go-type = "RedactedString"
-description = """
-An AWS KMS Region.
+Everything else about the AWS connection — region, endpoint, and credentials — is
+resolved by the AWS SDK's standard chain, not by CARTESI_ variables. See the
+"Externally-provided configuration" section for the variables involved.
 
-Must be set alongside `CARTESI_AUTH_AWS_KMS_KEY_ID`."""
-omit = true
-used-by = ["claimer", "node", "cli", "prt"]
-
-[auth.CARTESI_AUTH_AWS_KMS_ENDPOINT]
-go-type = "RedactedString"
-description = """
-An AWS KMS Endpoint.
-
-When not provided, the default endpoint for the AWS region defined by `CARTESI_AUTH_AWS_KMS_REGION` is automatically used."""
+Prefer an ARN or a bare key ID over an alias: an alias is resolved per-region, so
+the same alias in a different region names a different key and therefore a
+different signing address."""
 omit = true
 used-by = ["claimer", "node", "cli", "prt"]
 

@@ -94,8 +94,8 @@ func (s *AwsKmsIntegrationSuite) SetupSuite() {
 
 	viper.Set(config.AUTH_KIND, "aws")
 	viper.Set(config.AUTH_AWS_KMS_KEY_ID, *created.KeyMetadata.KeyId)
-	viper.Set(config.AUTH_AWS_KMS_REGION, region)
-	viper.Set(config.AUTH_AWS_KMS_ENDPOINT, endpoint)
+	t.Setenv("AWS_REGION", region)
+	t.Setenv("AWS_ENDPOINT_URL_KMS", endpoint)
 
 	s.chainID, err = ethClient.ChainID(ctx)
 	s.Require().NoError(err)

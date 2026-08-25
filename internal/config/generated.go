@@ -22,9 +22,7 @@ func init() {
 }
 
 const (
-	AUTH_AWS_KMS_ENDPOINT                             = "CARTESI_AUTH_AWS_KMS_ENDPOINT"
 	AUTH_AWS_KMS_KEY_ID                               = "CARTESI_AUTH_AWS_KMS_KEY_ID"
-	AUTH_AWS_KMS_REGION                               = "CARTESI_AUTH_AWS_KMS_REGION"
 	AUTH_KIND                                         = "CARTESI_AUTH_KIND"
 	AUTH_MNEMONIC                                     = "CARTESI_AUTH_MNEMONIC"
 	AUTH_MNEMONIC_ACCOUNT_INDEX                       = "CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX"
@@ -101,11 +99,7 @@ const (
 func SetDefaults() {
 	// Set defaults based on the TOML definitions.
 
-	// no default for CARTESI_AUTH_AWS_KMS_ENDPOINT
-
 	// no default for CARTESI_AUTH_AWS_KMS_KEY_ID
-
-	// no default for CARTESI_AUTH_AWS_KMS_REGION
 
 	viper.SetDefault(AUTH_KIND, "mnemonic")
 
@@ -1689,19 +1683,6 @@ func (c *NodeConfig) ToValidatorConfig() *ValidatorConfig {
 	}
 }
 
-// GetAuthAwsKmsEndpoint returns the value for the environment variable CARTESI_AUTH_AWS_KMS_ENDPOINT.
-func GetAuthAwsKmsEndpoint() (RedactedString, error) {
-	s := viper.GetString(AUTH_AWS_KMS_ENDPOINT)
-	if s != "" {
-		v, err := toRedactedString(s)
-		if err != nil {
-			return v, fmt.Errorf("failed to parse %s: %w", AUTH_AWS_KMS_ENDPOINT, err)
-		}
-		return v, nil
-	}
-	return notDefinedRedactedString(), fmt.Errorf("%s: %w", AUTH_AWS_KMS_ENDPOINT, ErrNotDefined)
-}
-
 // GetAuthAwsKmsKeyId returns the value for the environment variable CARTESI_AUTH_AWS_KMS_KEY_ID.
 func GetAuthAwsKmsKeyId() (RedactedString, error) {
 	s := viper.GetString(AUTH_AWS_KMS_KEY_ID)
@@ -1713,19 +1694,6 @@ func GetAuthAwsKmsKeyId() (RedactedString, error) {
 		return v, nil
 	}
 	return notDefinedRedactedString(), fmt.Errorf("%s: %w", AUTH_AWS_KMS_KEY_ID, ErrNotDefined)
-}
-
-// GetAuthAwsKmsRegion returns the value for the environment variable CARTESI_AUTH_AWS_KMS_REGION.
-func GetAuthAwsKmsRegion() (RedactedString, error) {
-	s := viper.GetString(AUTH_AWS_KMS_REGION)
-	if s != "" {
-		v, err := toRedactedString(s)
-		if err != nil {
-			return v, fmt.Errorf("failed to parse %s: %w", AUTH_AWS_KMS_REGION, err)
-		}
-		return v, nil
-	}
-	return notDefinedRedactedString(), fmt.Errorf("%s: %w", AUTH_AWS_KMS_REGION, ErrNotDefined)
 }
 
 // GetAuthKind returns the value for the environment variable CARTESI_AUTH_KIND.
