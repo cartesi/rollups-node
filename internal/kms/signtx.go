@@ -14,6 +14,7 @@ import (
 	"crypto/ecdsa"
 	"encoding/asn1"
 	"errors"
+	"fmt"
 	"math/big"
 	"reflect"
 
@@ -71,6 +72,10 @@ func normalizeS(S []byte) []byte {
  * of the values of `v` will hold ecrecover(hash, sig) == publicKey, and that
  * is the one ethereum wants. */
 func assembleSignature(r []byte, s []byte, hash []byte, key []byte) ([]byte, error) {
+	if len(r) > 32 || len(s) > 32 {
+		return nil, fmt.Errorf("malformed signature: len(r)=%d len(s)=%d", len(r), len(s))
+	}
+
 	sig := make([]byte, 65)
 
 	// align `s` and `r` in case they have less then 32bytes in size
