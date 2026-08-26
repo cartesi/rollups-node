@@ -22,6 +22,10 @@ import (
 )
 
 func GetTransactOptsFactory(ctx context.Context, chainId *big.Int) (ethutil.TransactOptsFactory, error) {
+	if chainId == nil || chainId.Sign() <= 0 {
+		return nil, bind.ErrNoChainID
+	}
+
 	authKind, err := GetAuthKind()
 	if err != nil {
 		return nil, err

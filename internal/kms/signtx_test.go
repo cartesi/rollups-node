@@ -110,21 +110,23 @@ func TestAssembleSignatureRejectsUnrecoverableKey(t *testing.T) {
 		signature[:32], signature[32:64], hash, crypto.FromECDSAPub(&otherKey.PublicKey),
 	)
 	require.EqualError(t, err, "failed to compute signature")
-	require.NotNil(t, assembled)
+	require.Nil(t, assembled)
+}
+
+func TestAssembleSignatureTriesBothRecoveryIDs(t *testing.T) {
+	assembled, err := assembleSignature(make([]byte, 32), make([]byte, 32), make([]byte, 32), nil)
+	require.Nil(t, assembled)
+	require.EqualError(t, err, "failed to compute signature")
 }
 
 func sendFunds(
+	client *ethclient.Client,
 	value *big.Int,
 	SignTx SignTxFn,
 	ctx context.Context,
 	sender common.Address,
 	recipient common.Address,
 ) {
-	client, err := ethclient.Dial("http://127.0.0.1:8545") // anvil
-	if err != nil {
-		panic(err)
-	}
-
 	nonce, err := client.PendingNonceAt(context.Background(), sender)
 	if err != nil {
 		panic(err)
@@ -135,12 +137,14 @@ func sendFunds(
 		panic(err)
 	}
 	var data []byte
-	tx := ethtypes.NewTransaction(nonce, recipient, value, gasLimit, gasPrice, data)
+	tx := ethtypes.NewTx(&ethtypes.LegacyTx{
+		Nonce: nonce, To: &recipient, Value: value, Gas: gasLimit, GasPrice: gasPrice, Data: data,
+	})
 	chainID, err := client.NetworkID(context.Background())
 	if err != nil {
 		panic(err)
 	}
-	signedTx, err := SignTx(ctx, tx, ethtypes.NewEIP155Signer(chainID))
+	signedTx, err := SignTx(ctx, tx, ethtypes.LatestSignerForChainID(chainID))
 	if err != nil {
 		panic(err)
 	}
@@ -154,8 +158,13 @@ func TestSignTx(t *testing.T) {
 	if len(ARN) == 0 {
 		t.Skip("Skipping test, ARN for KMS key is unset")
 	}
-	value20 := big.NewInt(2000000000000000000) // in wei (2 eth)
-	value10 := big.NewInt(1000000000000000000) // in wei (1 eth)
+	value20 := big.NewInt(2000000000000000000)             // in wei (2 eth)
+	value10 := big.NewInt(1000000000000000000)             // in wei (1 eth)
+	client, err := ethclient.Dial("http://127.0.0.1:8545") // anvil
+	if err != nil {
+		panic(err)
+	}
+	defer client.Close()
 
 	anvilPrivateKey, err := ethutil.MnemonicToPrivateKey(ethutil.FoundryMnemonic, 0)
 	if err != nil {
@@ -174,9 +183,9 @@ func TestSignTx(t *testing.T) {
 		panic(err)
 	}
 
-	sendFunds(value20, CreateSignTxFnFromPrivateKey(anvilPrivateKey),
+	sendFunds(client, value20, CreateSignTxFnFromPrivateKey(anvilPrivateKey),
 		context.Background(), anvilAddress, KMSAddress)
-	sendFunds(value10, SignTx,
+	sendFunds(client, value10, SignTx,
 		context.Background(), KMSAddress, anvilAddress)
 }
 
@@ -191,7 +200,7 @@ func TestAWSTransactOptsFactorySignsWithSubmitContext(t *testing.T) {
 		startupCtx,
 		client,
 		&arn,
-		ethtypes.NewEIP155Signer(big.NewInt(1)),
+		ethtypes.LatestSignerForChainID(big.NewInt(1)),
 	)
 	require.NoError(t, err)
 	cancelStartup()
@@ -246,7 +255,7 @@ func TestAWSTransactOptsFactoryRejectsUnauthorizedAddress(t *testing.T) {
 	client := newFakeKMSClient(t, privateKey)
 	arn := "alias/test-key"
 	factory, err := CreateAWSTransactOptsFactory(
-		context.Background(), client, &arn, ethtypes.NewEIP155Signer(big.NewInt(1)),
+		context.Background(), client, &arn, ethtypes.LatestSignerForChainID(big.NewInt(1)),
 	)
 	require.NoError(t, err)
 	opts, err := factory.NewTransactOpts(context.Background())
@@ -264,7 +273,7 @@ func TestAWSSignTxRejectsNonCanonicalDERComponents(t *testing.T) {
 	require.NoError(t, err)
 	arn := "alias/test-key"
 	tx := ethtypes.NewTransaction(0, common.Address{0x01}, big.NewInt(1), 21000, big.NewInt(1), nil)
-	signer := ethtypes.NewEIP155Signer(big.NewInt(1))
+	signer := ethtypes.LatestSignerForChainID(big.NewInt(1))
 
 	tests := []struct {
 		name     string

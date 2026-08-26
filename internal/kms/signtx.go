@@ -10,13 +10,13 @@
 package kms
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"encoding/asn1"
 	"errors"
 	"fmt"
 	"math/big"
-	"reflect"
 
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -86,13 +86,13 @@ func assembleSignature(r []byte, s []byte, hash []byte, key []byte) ([]byte, err
 		sig[64] = i
 		pub, err := crypto.Ecrecover(hash, sig[:])
 		if err != nil {
-			return nil, err
+			continue
 		}
-		if reflect.DeepEqual(pub, key) {
+		if bytes.Equal(pub, key) {
 			return sig, nil
 		}
 	}
-	return sig, errors.New("failed to compute signature")
+	return nil, errors.New("failed to compute signature")
 }
 
 /* Create a SignTxFn that uses the KMS infrastructure from AWS for signing.

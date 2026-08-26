@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -70,6 +71,25 @@ func TestGetTransactOptsFactoryAWSSignsDynamicFeeTransaction(t *testing.T) {
 			sender, err := types.Sender(types.LatestSignerForChainID(chainID), signed)
 			require.NoError(t, err)
 			require.Equal(t, opts.From, sender)
+		})
+	}
+}
+
+func TestGetTransactOptsFactoryRejectsInvalidChainID(t *testing.T) {
+	tests := []struct {
+		name    string
+		chainID *big.Int
+	}{
+		{name: "nil", chainID: nil},
+		{name: "zero", chainID: big.NewInt(0)},
+		{name: "negative", chainID: big.NewInt(-1)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			factory, err := GetTransactOptsFactory(t.Context(), test.chainID)
+			require.Nil(t, factory)
+			require.ErrorIs(t, err, bind.ErrNoChainID)
 		})
 	}
 }
