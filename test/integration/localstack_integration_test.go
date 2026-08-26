@@ -34,6 +34,8 @@ type AwsKmsIntegrationSuite struct {
 	suite.Suite
 	chainID   *big.Int
 	ethClient *ethclient.Client
+	kmsClient *awskms.Client
+	kmsKeyID  string
 	txOpts    *bind.TransactOpts
 }
 
@@ -106,6 +108,8 @@ func (s *AwsKmsIntegrationSuite) SetupSuite() {
 	s.Require().NoError(err)
 
 	s.ethClient = ethClient
+	s.kmsClient = client
+	s.kmsKeyID = *created.KeyMetadata.KeyId
 	s.txOpts = opts
 }
 
@@ -197,6 +201,32 @@ func (s *AwsKmsIntegrationSuite) TestLocalStackAWSTransactionOptsFactory() {
 			s.Require().Equal(s.txOpts.From, sender)
 		})
 	}
+}
+
+func (s *AwsKmsIntegrationSuite) TestWrongKeySpecIsNotTreatedAsTransient() {
+	ctx := s.T().Context()
+	created, err := s.kmsClient.CreateKey(ctx, &awskms.CreateKeyInput{
+		KeyUsage: kmstypes.KeyUsageTypeSignVerify,
+		KeySpec:  kmstypes.KeySpecRsa2048,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(created.KeyMetadata)
+	s.Require().NotNil(created.KeyMetadata.KeyId)
+	s.T().Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, _ = s.kmsClient.ScheduleKeyDeletion(cleanupCtx, &awskms.ScheduleKeyDeletionInput{
+			KeyId:               created.KeyMetadata.KeyId,
+			PendingWindowInDays: aws.Int32(1),
+		})
+		viper.Set(config.AUTH_AWS_KMS_KEY_ID, s.kmsKeyID)
+	})
+
+	viper.Set(config.AUTH_AWS_KMS_KEY_ID, *created.KeyMetadata.KeyId)
+	factory, err := auth.GetTransactOptsFactory(ctx, s.chainID)
+
+	s.Require().Nil(factory)
+	s.Require().Error(err)
 }
 
 func TestLocalStackAWSIntegration(t *testing.T) {

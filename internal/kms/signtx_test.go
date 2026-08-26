@@ -8,10 +8,12 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/asn1"
+	"errors"
 	"math/big"
 	"testing"
 
 	"github.com/cartesi/rollups-node/pkg/ethutil"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -56,6 +58,59 @@ func TestAssembleSignatureRejectsOverlongComponents(t *testing.T) {
 			require.EqualError(t, err, test.expected)
 		})
 	}
+}
+
+func TestNormalizeR(t *testing.T) {
+	t.Run("keeps components up to 32 bytes", func(t *testing.T) {
+		input := []byte{1, 2, 3}
+
+		r, err := normalizeR(input)
+		require.NoError(t, err)
+		require.Equal(t, input, r)
+	})
+
+	t.Run("trims leading zero padding", func(t *testing.T) {
+		padded := append([]byte{0}, make([]byte, 32)...)
+		padded[len(padded)-1] = 1
+
+		r, err := normalizeR(padded)
+		require.NoError(t, err)
+		require.Len(t, r, 32)
+		require.Equal(t, byte(1), r[len(r)-1])
+	})
+
+	t.Run("rejects non-padding bytes", func(t *testing.T) {
+		malformed := append([]byte{1}, make([]byte, 32)...)
+
+		r, err := normalizeR(malformed)
+		require.Nil(t, r)
+		require.EqualError(t, err, "malformed `r` component")
+	})
+}
+
+func TestNormalizeSConvertsHighSToLowS(t *testing.T) {
+	n := crypto.S256().Params().N
+	halfN := new(big.Int).Div(new(big.Int).Set(n), big.NewInt(2)) //nolint:mnd
+	highS := new(big.Int).Add(halfN, big.NewInt(1))
+	expected := new(big.Int).Sub(n, highS).Bytes()
+
+	require.Equal(t, expected, normalizeS(highS.Bytes()))
+}
+
+func TestAssembleSignatureRejectsUnrecoverableKey(t *testing.T) {
+	privateKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+	otherKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+	hash := crypto.Keccak256([]byte("test transaction"))
+	signature, err := crypto.Sign(hash, privateKey)
+	require.NoError(t, err)
+
+	assembled, err := assembleSignature(
+		signature[:32], signature[32:64], hash, crypto.FromECDSAPub(&otherKey.PublicKey),
+	)
+	require.EqualError(t, err, "failed to compute signature")
+	require.NotNil(t, assembled)
 }
 
 func sendFunds(
@@ -140,6 +195,7 @@ func TestAWSTransactOptsFactorySignsWithSubmitContext(t *testing.T) {
 	)
 	require.NoError(t, err)
 	cancelStartup()
+	require.Equal(t, crypto.PubkeyToAddress(privateKey.PublicKey), factory.From())
 
 	type contextKey string
 	submitCtx := context.WithValue(context.Background(), contextKey("phase"), "submit")
@@ -184,14 +240,178 @@ func TestAWSTransactOptsFactorySignsDynamicFeeTransaction(t *testing.T) {
 	require.Equal(t, crypto.PubkeyToAddress(privateKey.PublicKey), sender)
 }
 
+func TestAWSTransactOptsFactoryRejectsUnauthorizedAddress(t *testing.T) {
+	privateKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+	client := newFakeKMSClient(t, privateKey)
+	arn := "alias/test-key"
+	factory, err := CreateAWSTransactOptsFactory(
+		context.Background(), client, &arn, ethtypes.NewEIP155Signer(big.NewInt(1)),
+	)
+	require.NoError(t, err)
+	opts, err := factory.NewTransactOpts(context.Background())
+	require.NoError(t, err)
+	tx := ethtypes.NewTransaction(0, common.Address{0x01}, big.NewInt(1), 21000, big.NewInt(1), nil)
+
+	signed, err := opts.Signer(common.Address{0xff}, tx)
+	require.Nil(t, signed)
+	require.ErrorIs(t, err, bind.ErrNotAuthorized)
+	require.Zero(t, client.signCalls)
+}
+
+func TestAWSSignTxRejectsNonCanonicalDERComponents(t *testing.T) {
+	privateKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+	arn := "alias/test-key"
+	tx := ethtypes.NewTransaction(0, common.Address{0x01}, big.NewInt(1), 21000, big.NewInt(1), nil)
+	signer := ethtypes.NewEIP155Signer(big.NewInt(1))
+
+	tests := []struct {
+		name     string
+		r        []byte
+		s        []byte
+		expected string
+	}{
+		{
+			name: "non-padding byte in overlong r", r: append([]byte{1}, make([]byte, 32)...), s: []byte{1},
+			expected: "malformed `r` component",
+		},
+		{
+			name: "non-minimal overlong s", r: []byte{1}, s: append([]byte{0}, make([]byte, 32)...),
+			expected: "malformed signature: len(r)=1 len(s)=33",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := newFakeKMSClient(t, privateKey)
+			client.signature = marshalRawECDSASignature(test.r, test.s)
+			signTx, _, _, err := CreateAWSSignTxFn(context.Background(), client, &arn)
+			require.NoError(t, err)
+
+			signed, err := signTx(context.Background(), tx, signer)
+			require.Nil(t, signed)
+			require.EqualError(t, err, test.expected)
+		})
+	}
+}
+
+func TestAWSSignTxPropagatesKMSSignFailure(t *testing.T) {
+	privateKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+	client := newFakeKMSClient(t, privateKey)
+	signErr := errors.New("KMSInternalException")
+	client.signErr = signErr
+	keyID := testKeyID
+	signTx, _, _, err := CreateAWSSignTxFn(t.Context(), client, &keyID)
+	require.NoError(t, err)
+
+	chainID := big.NewInt(31337)
+	tx := ethtypes.NewTx(&ethtypes.DynamicFeeTx{
+		ChainID: chainID, GasTipCap: big.NewInt(1), GasFeeCap: big.NewInt(2), Gas: 21000,
+	})
+	signed, err := signTx(t.Context(), tx, ethtypes.LatestSignerForChainID(chainID))
+
+	require.Nil(t, signed)
+	require.ErrorIs(t, err, signErr)
+}
+
+func TestAWSSignTxRejectsMalformedKMSSignature(t *testing.T) {
+	privateKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+	keyID := testKeyID
+	tx := ethtypes.NewTransaction(0, common.Address{0x01}, big.NewInt(1), 21000, big.NewInt(1), nil)
+	signer := ethtypes.LatestSignerForChainID(big.NewInt(1))
+
+	for _, test := range []struct {
+		name      string
+		signature []byte
+	}{
+		{name: "not DER", signature: []byte{0xff, 0xff, 0xff}},
+		{name: "truncated sequence", signature: []byte{0x30, 0x03, 0x02, 0x01, 0x01}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := newFakeKMSClient(t, privateKey)
+			client.signature = test.signature
+			signTx, _, _, err := CreateAWSSignTxFn(t.Context(), client, &keyID)
+			require.NoError(t, err)
+
+			signed, err := signTx(t.Context(), tx, signer)
+			require.Nil(t, signed)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestCreateAWSTransactOptsFactoryPropagatesGetPublicKeyFailure(t *testing.T) {
+	privateKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+	client := newFakeKMSClient(t, privateKey)
+	getPublicKeyErr := errors.New("KeyUnavailableException")
+	client.getPublicKeyErr = getPublicKeyErr
+	keyID := testKeyID
+
+	factory, err := CreateAWSTransactOptsFactory(
+		t.Context(), client, &keyID, ethtypes.LatestSignerForChainID(big.NewInt(1)),
+	)
+
+	require.Nil(t, factory)
+	require.ErrorIs(t, err, getPublicKeyErr)
+}
+
+func TestCreateAWSTransactOptsFactoryRejectsMalformedPublicKeys(t *testing.T) {
+	privateKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+	keyID := testKeyID
+	tests := []struct {
+		name      string
+		publicKey []byte
+	}{
+		{name: "malformed DER", publicKey: []byte{0xff, 0xff}},
+		{name: "invalid secp256k1 point", publicKey: marshalSPKI(t, []byte{0x04, 0x01, 0x02})},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := newFakeKMSClient(t, privateKey)
+			client.publicKey = test.publicKey
+			factory, err := CreateAWSTransactOptsFactory(
+				t.Context(), client, &keyID, ethtypes.LatestSignerForChainID(big.NewInt(1)),
+			)
+			require.Nil(t, factory)
+			require.Error(t, err)
+		})
+	}
+}
+
+func marshalRawECDSASignature(r, s []byte) []byte {
+	content := make([]byte, 0, len(r)+len(s)+4)
+	content = append(content, 0x02, byte(len(r)))
+	content = append(content, r...)
+	content = append(content, 0x02, byte(len(s)))
+	content = append(content, s...)
+	return append([]byte{0x30, byte(len(content))}, content...)
+}
+
 type fakeKMSClient struct {
-	t           *testing.T
-	privateKey  *ecdsa.PrivateKey
-	publicKey   []byte
-	signContext context.Context
+	t               *testing.T
+	privateKey      *ecdsa.PrivateKey
+	publicKey       []byte
+	signContext     context.Context
+	signCalls       int
+	signature       []byte
+	getPublicKeyErr error
+	signErr         error
 }
 
 func newFakeKMSClient(t *testing.T, privateKey *ecdsa.PrivateKey) *fakeKMSClient {
+	t.Helper()
+	return &fakeKMSClient{
+		t: t, privateKey: privateKey, publicKey: marshalSPKI(t, crypto.FromECDSAPub(&privateKey.PublicKey)),
+	}
+}
+
+func marshalSPKI(t *testing.T, publicKeyBytes []byte) []byte {
 	t.Helper()
 	publicKey, err := asn1.Marshal(struct {
 		Algorithm struct {
@@ -207,10 +427,10 @@ func newFakeKMSClient(t *testing.T, privateKey *ecdsa.PrivateKey) *fakeKMSClient
 			Algorithm:  asn1.ObjectIdentifier{1, 2, 840, 10045, 2, 1},
 			Parameters: asn1.ObjectIdentifier{1, 3, 132, 0, 10},
 		},
-		SubjectPublicKey: asn1.BitString{Bytes: crypto.FromECDSAPub(&privateKey.PublicKey)},
+		SubjectPublicKey: asn1.BitString{Bytes: publicKeyBytes},
 	})
 	require.NoError(t, err)
-	return &fakeKMSClient{t: t, privateKey: privateKey, publicKey: publicKey}
+	return publicKey
 }
 
 func (f *fakeKMSClient) GetPublicKey(
@@ -218,6 +438,9 @@ func (f *fakeKMSClient) GetPublicKey(
 	*awskms.GetPublicKeyInput,
 	...func(*awskms.Options),
 ) (*awskms.GetPublicKeyOutput, error) {
+	if f.getPublicKeyErr != nil {
+		return nil, f.getPublicKeyErr
+	}
 	return &awskms.GetPublicKeyOutput{PublicKey: f.publicKey}, nil
 }
 
@@ -226,7 +449,14 @@ func (f *fakeKMSClient) Sign(
 	input *awskms.SignInput,
 	_ ...func(*awskms.Options),
 ) (*awskms.SignOutput, error) {
+	f.signCalls++
 	f.signContext = ctx
+	if f.signErr != nil {
+		return nil, f.signErr
+	}
+	if f.signature != nil {
+		return &awskms.SignOutput{Signature: f.signature}, nil
+	}
 	r, s, err := ecdsa.Sign(rand.Reader, f.privateKey, input.Message)
 	require.NoError(f.t, err)
 	signature, err := asn1.Marshal(struct {
