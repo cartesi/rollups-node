@@ -10,6 +10,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
@@ -18,7 +19,13 @@ func GetTransactOpts(ctx context.Context, chainId *big.Int) (*bind.TransactOpts,
 	if err != nil {
 		return nil, err
 	}
+	return GetTransactOptsFromFactory(ctx, factory)
+}
 
+func GetTransactOptsFromFactory(
+	ctx context.Context,
+	factory ethutil.TransactOptsFactory,
+) (*bind.TransactOpts, error) {
 	txOpts, err := factory.NewTransactOpts(ctx)
 	if err != nil {
 		return nil, err

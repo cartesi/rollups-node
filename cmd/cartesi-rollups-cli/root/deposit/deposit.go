@@ -13,6 +13,7 @@ import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/config/auth"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/ierc20errors"
 	"github.com/cartesi/rollups-node/pkg/contracts/ierc20metadata"
@@ -113,7 +114,7 @@ func runERC20(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	chainID, err := client.ChainID(ctx)
 	cobra.CheckErr(err)
-	txOpts, err := cli.GetTransactOpts(ctx, chainID)
+	txOptsFactory, err := auth.GetTransactOptsFactory(ctx, chainID)
 	cobra.CheckErr(err)
 
 	if !skipConfirmation {
@@ -124,7 +125,7 @@ func runERC20(cmd *cobra.Command, args []string) {
 			"  token:       %s\n"+
 			"  amount:      %s\n"+
 			"  approve:     %t\n",
-			txOpts.From, appAddr, portalAddr, tokenAddr, amount.String(), approveParam)
+			txOptsFactory.From(), appAddr, portalAddr, tokenAddr, amount.String(), approveParam)
 		confirmed, promptErr := cli.ConfirmPrompt("Do you want to continue?")
 		cobra.CheckErr(promptErr)
 		if !confirmed {
@@ -137,7 +138,7 @@ func runERC20(cmd *cobra.Command, args []string) {
 	if approveParam {
 		token, err := ierc20metadata.NewIERC20Metadata(tokenAddr, client)
 		cobra.CheckErr(err)
-		approveOpts, err := cli.GetTransactOpts(ctx, chainID)
+		approveOpts, err := cli.GetTransactOptsFromFactory(ctx, txOptsFactory)
 		cobra.CheckErr(err)
 		tx, err := token.Approve(approveOpts, portalAddr, amount)
 		cobra.CheckErr(cli.DecorateRevert(err,
@@ -153,7 +154,7 @@ func runERC20(cmd *cobra.Command, args []string) {
 
 	portal, err := ierc20portal.NewIERC20Portal(portalAddr, client)
 	cobra.CheckErr(err)
-	depositOpts, err := cli.GetTransactOpts(ctx, chainID)
+	depositOpts, err := cli.GetTransactOptsFromFactory(ctx, txOptsFactory)
 	cobra.CheckErr(err)
 	tx, err := portal.DepositERC20Tokens(depositOpts, tokenAddr, appAddr, amount, execData)
 	// The revert can come from three layers: the portal itself
