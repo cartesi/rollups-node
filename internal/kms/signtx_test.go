@@ -25,6 +25,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testKeyID = "alias/test-key"
+
 var ARN = ""
 
 /* Create a SignTxFn from a private key. Useful for testing */
@@ -90,7 +92,7 @@ func TestNormalizeR(t *testing.T) {
 
 func TestNormalizeSConvertsHighSToLowS(t *testing.T) {
 	n := crypto.S256().Params().N
-	halfN := new(big.Int).Div(new(big.Int).Set(n), big.NewInt(2)) //nolint:mnd
+	halfN := new(big.Int).Div(new(big.Int).Set(n), big.NewInt(2))
 	highS := new(big.Int).Add(halfN, big.NewInt(1))
 	expected := new(big.Int).Sub(n, highS).Bytes()
 
@@ -120,10 +122,10 @@ func TestAssembleSignatureTriesBothRecoveryIDs(t *testing.T) {
 }
 
 func sendFunds(
+	ctx context.Context,
 	client *ethclient.Client,
 	value *big.Int,
-	SignTx SignTxFn,
-	ctx context.Context,
+	signTx SignTxFn,
 	sender common.Address,
 	recipient common.Address,
 ) {
@@ -144,7 +146,7 @@ func sendFunds(
 	if err != nil {
 		panic(err)
 	}
-	signedTx, err := SignTx(ctx, tx, ethtypes.LatestSignerForChainID(chainID))
+	signedTx, err := signTx(ctx, tx, ethtypes.LatestSignerForChainID(chainID))
 	if err != nil {
 		panic(err)
 	}
@@ -183,10 +185,10 @@ func TestSignTx(t *testing.T) {
 		panic(err)
 	}
 
-	sendFunds(client, value20, CreateSignTxFnFromPrivateKey(anvilPrivateKey),
-		context.Background(), anvilAddress, KMSAddress)
-	sendFunds(client, value10, SignTx,
-		context.Background(), KMSAddress, anvilAddress)
+	sendFunds(context.Background(), client, value20, CreateSignTxFnFromPrivateKey(anvilPrivateKey),
+		anvilAddress, KMSAddress)
+	sendFunds(context.Background(), client, value10, SignTx,
+		KMSAddress, anvilAddress)
 }
 
 func TestAWSTransactOptsFactorySignsWithSubmitContext(t *testing.T) {
@@ -194,7 +196,7 @@ func TestAWSTransactOptsFactorySignsWithSubmitContext(t *testing.T) {
 	require.NoError(t, err)
 
 	client := newFakeKMSClient(t, privateKey)
-	arn := "alias/test-key"
+	arn := testKeyID
 	startupCtx, cancelStartup := context.WithCancel(context.Background())
 	factory, err := CreateAWSTransactOptsFactory(
 		startupCtx,
@@ -253,7 +255,7 @@ func TestAWSTransactOptsFactoryRejectsUnauthorizedAddress(t *testing.T) {
 	privateKey, err := crypto.GenerateKey()
 	require.NoError(t, err)
 	client := newFakeKMSClient(t, privateKey)
-	arn := "alias/test-key"
+	arn := testKeyID
 	factory, err := CreateAWSTransactOptsFactory(
 		context.Background(), client, &arn, ethtypes.LatestSignerForChainID(big.NewInt(1)),
 	)
@@ -271,7 +273,7 @@ func TestAWSTransactOptsFactoryRejectsUnauthorizedAddress(t *testing.T) {
 func TestAWSSignTxRejectsNonCanonicalDERComponents(t *testing.T) {
 	privateKey, err := crypto.GenerateKey()
 	require.NoError(t, err)
-	arn := "alias/test-key"
+	arn := testKeyID
 	tx := ethtypes.NewTransaction(0, common.Address{0x01}, big.NewInt(1), 21000, big.NewInt(1), nil)
 	signer := ethtypes.LatestSignerForChainID(big.NewInt(1))
 
@@ -394,12 +396,17 @@ func TestCreateAWSTransactOptsFactoryRejectsMalformedPublicKeys(t *testing.T) {
 }
 
 func marshalRawECDSASignature(r, s []byte) []byte {
+	const maxDERLength = 255
+	if len(r) > maxDERLength || len(s) > maxDERLength || len(r)+len(s)+4 > maxDERLength {
+		panic("test DER signature is too large for single-byte length encoding")
+	}
+
 	content := make([]byte, 0, len(r)+len(s)+4)
-	content = append(content, 0x02, byte(len(r)))
+	content = append(content, 0x02, byte(len(r))) //nolint:gosec // Length is bounded above.
 	content = append(content, r...)
-	content = append(content, 0x02, byte(len(s)))
+	content = append(content, 0x02, byte(len(s))) //nolint:gosec // Length is bounded above.
 	content = append(content, s...)
-	return append([]byte{0x30, byte(len(content))}, content...)
+	return append([]byte{0x30, byte(len(content))}, content...) //nolint:gosec // Length is bounded above.
 }
 
 type fakeKMSClient struct {

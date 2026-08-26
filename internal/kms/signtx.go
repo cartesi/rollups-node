@@ -35,31 +35,33 @@ type Client interface {
 	Sign(context.Context, *kms.SignInput, ...func(*kms.Options)) (*kms.SignOutput, error)
 }
 
+const signatureComponentSize = 32
+
 /* AWS sometimes reply with a `r` larger than 32bytes padded on the left with
  * zeros. Trim it down to a total of 32bytes */
-func normalizeR(R []byte) ([]byte, error) {
-	if len(R) <= 32 {
-		return R, nil
+func normalizeR(r []byte) ([]byte, error) {
+	if len(r) <= signatureComponentSize {
+		return r, nil
 	}
-	for i := 0; i < len(R)-32; i++ {
-		if R[i] != 0 { // must be padding
+	for i := 0; i < len(r)-signatureComponentSize; i++ {
+		if r[i] != 0 { // must be padding
 			return nil, errors.New("malformed `r` component")
 		}
 	}
-	return R[len(R)-32:], nil
+	return r[len(r)-signatureComponentSize:], nil
 }
 
 /* normalize `s` to the lower half of N according to EIP-2
  * ref. https://eips.ethereum.org/EIPS/eip-2 */
-func normalizeS(S []byte) []byte {
-	N := crypto.S256().Params().N
-	halfN := new(big.Int).Div(N, big.NewInt(2)) //nolint:mnd
-	SBI := new(big.Int).SetBytes(S)
+func normalizeS(s []byte) []byte {
+	n := crypto.S256().Params().N
+	halfN := new(big.Int).Div(n, big.NewInt(2)) //nolint:mnd
+	sBigInt := new(big.Int).SetBytes(s)
 
-	if SBI.Cmp(halfN) > 0 {
-		S = new(big.Int).Sub(N, SBI).Bytes()
+	if sBigInt.Cmp(halfN) > 0 {
+		s = new(big.Int).Sub(n, sBigInt).Bytes()
 	}
-	return S
+	return s
 }
 
 /* Compute the final component `v` of the ethereum signature, one KMS doesn't
@@ -72,19 +74,19 @@ func normalizeS(S []byte) []byte {
  * of the values of `v` will hold ecrecover(hash, sig) == publicKey, and that
  * is the one ethereum wants. */
 func assembleSignature(r []byte, s []byte, hash []byte, key []byte) ([]byte, error) {
-	if len(r) > 32 || len(s) > 32 {
+	if len(r) > signatureComponentSize || len(s) > signatureComponentSize {
 		return nil, fmt.Errorf("malformed signature: len(r)=%d len(s)=%d", len(r), len(s))
 	}
 
 	sig := make([]byte, 65)
 
 	// align `s` and `r` in case they have less then 32bytes in size
-	copy(sig[32-len(r):], r)
+	copy(sig[signatureComponentSize-len(r):], r)
 	copy(sig[64-len(s):], s)
 
 	for i := byte(0); i < 2; i++ {
 		sig[64] = i
-		pub, err := crypto.Ecrecover(hash, sig[:])
+		pub, err := crypto.Ecrecover(hash, sig)
 		if err != nil {
 			continue
 		}
@@ -144,13 +146,13 @@ func CreateAWSSignTxFn(
 		if err != nil {
 			return nil, err
 		}
-		return tx.WithSignature(signer, signature[:])
+		return tx.WithSignature(signer, signature)
 	}, publicKey, crypto.PubkeyToAddress(*publicKey), nil
 }
 
-func GetPublicKeyBytes(ctx context.Context, client Client, Arn *string) ([]byte, error) {
+func GetPublicKeyBytes(ctx context.Context, client Client, arn *string) ([]byte, error) {
 	publicKeyOutput, err := client.GetPublicKey(ctx, &kms.GetPublicKeyInput{
-		KeyId: Arn,
+		KeyId: arn,
 	})
 	if err != nil {
 		return nil, err
