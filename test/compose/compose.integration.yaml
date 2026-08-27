@@ -88,11 +88,6 @@ services:
     profiles: [awskms]
     networks:
       - devnet
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:4566/_localstack/health"]
-      interval: 2s
-      timeout: 2s
-      retries: 30
     environment:
       SERVICES: kms
 
