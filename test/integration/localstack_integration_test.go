@@ -6,10 +6,12 @@
 package integration
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"math/big"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
@@ -30,10 +32,8 @@ import (
 
 type AwsKmsIntegrationSuite struct {
 	suite.Suite
-	chainID          *big.Int
-	kmsClient        *awskms.Client
-	kmsRegisteredKey *awskms.CreateKeyOutput
-	txOpts           *bind.TransactOpts
+	chainID *big.Int
+	txOpts  *bind.TransactOpts
 }
 
 func (s *AwsKmsIntegrationSuite) SetupSuite() {
@@ -65,7 +65,19 @@ func (s *AwsKmsIntegrationSuite) SetupSuite() {
 	}
 	s.Require().NotNil(created.KeyMetadata)
 	s.Require().NotNil(created.KeyMetadata.KeyId)
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, _ = client.ScheduleKeyDeletion(cleanupCtx, &awskms.ScheduleKeyDeletionInput{
+			KeyId:               created.KeyMetadata.KeyId,
+			PendingWindowInDays: aws.Int32(1),
+		})
+	})
 
+	t.Cleanup(func() {
+		viper.Reset()
+		config.SetDefaults()
+	})
 	viper.Set(config.AUTH_KIND, "aws")
 	viper.Set(config.AUTH_AWS_KMS_KEY_ID, *created.KeyMetadata.KeyId)
 	viper.Set(config.AUTH_AWS_KMS_REGION, region)
@@ -79,20 +91,7 @@ func (s *AwsKmsIntegrationSuite) SetupSuite() {
 	opts, err := factory.NewTransactOpts(ctx)
 	s.Require().NoError(err)
 
-	s.kmsClient = client
-	s.kmsRegisteredKey = created
 	s.txOpts = opts
-}
-
-func (s *AwsKmsIntegrationSuite) TearDownSuite() {
-	_, _ = s.kmsClient.ScheduleKeyDeletion(s.T().Context(), &awskms.ScheduleKeyDeletionInput{
-		KeyId:               s.kmsRegisteredKey.KeyMetadata.KeyId,
-		PendingWindowInDays: aws.Int32(1), //nolint:mnd
-	})
-	viper.Set(config.AUTH_KIND, nil)
-	viper.Set(config.AUTH_AWS_KMS_KEY_ID, nil)
-	viper.Set(config.AUTH_AWS_KMS_REGION, nil)
-	viper.Set(config.AUTH_AWS_KMS_ENDPOINT, nil)
 }
 
 func (s *AwsKmsIntegrationSuite) sendFunds(
