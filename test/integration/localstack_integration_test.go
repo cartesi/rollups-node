@@ -138,18 +138,27 @@ func (s *AwsKmsIntegrationSuite) TestLocalStackAWSSignedTransaction() {
 
 func (s *AwsKmsIntegrationSuite) TestLocalStackAWSTransactionOptsFactory() {
 	to := common.Address{0x01}
-	tests := map[string]*types.Transaction{
-		"legacy": types.NewTx(&types.LegacyTx{
-			Nonce: 1, GasPrice: big.NewInt(2), Gas: 21000, To: &to, Value: big.NewInt(3),
-		}),
-		"dynamic fee": types.NewTx(&types.DynamicFeeTx{
-			ChainID: s.chainID, Nonce: 2, GasTipCap: big.NewInt(1), GasFeeCap: big.NewInt(2),
-			Gas: 21000, To: &to, Value: big.NewInt(3),
-		}),
+	tests := []struct {
+		name string
+		tx   *types.Transaction
+	}{
+		{
+			name: "legacy",
+			tx: types.NewTx(&types.LegacyTx{
+				Nonce: 1, GasPrice: big.NewInt(2), Gas: 21000, To: &to, Value: big.NewInt(3),
+			}),
+		},
+		{
+			name: "dynamic fee",
+			tx: types.NewTx(&types.DynamicFeeTx{
+				ChainID: s.chainID, Nonce: 2, GasTipCap: big.NewInt(1), GasFeeCap: big.NewInt(2),
+				Gas: 21000, To: &to, Value: big.NewInt(3),
+			}),
+		},
 	}
-	for name, tx := range tests {
-		s.T().Run(name, func(*testing.T) {
-			signed, err := s.txOpts.Signer(s.txOpts.From, tx)
+	for _, test := range tests {
+		s.Run(test.name, func() {
+			signed, err := s.txOpts.Signer(s.txOpts.From, test.tx)
 			s.Require().NoError(err)
 			sender, err := types.Sender(types.LatestSignerForChainID(s.chainID), signed)
 			s.Require().NoError(err)
