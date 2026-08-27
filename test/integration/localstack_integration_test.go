@@ -139,7 +139,10 @@ func (s *AwsKmsIntegrationSuite) sendFunds(
 }
 
 func (s *AwsKmsIntegrationSuite) TestLocalStackAWSSignedTransaction() {
-	anvilPrivateKey, err := ethutil.MnemonicToPrivateKey(ethutil.FoundryMnemonic, 0)
+	// Keep funding transactions isolated from the node submitter (index 0) and
+	// the guardian/quorum accounts used by the other integration suites.
+	const fundingAccountIndex uint32 = 9
+	anvilPrivateKey, err := ethutil.MnemonicToPrivateKey(ethutil.FoundryMnemonic, fundingAccountIndex)
 	s.Require().NoError(err)
 
 	anvilPublicKey := anvilPrivateKey.Public().(*ecdsa.PublicKey)
