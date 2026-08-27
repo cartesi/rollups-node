@@ -107,18 +107,36 @@ func (s *AwsKmsIntegrationSuite) sendFunds(
 	s.Require().NoError(err)
 	client, err := ethclient.Dial(ethEndpoint.Raw()) // anvil
 	s.Require().NoError(err)
+	defer client.Close()
 
 	nonce, err := client.PendingNonceAt(ctx, sender)
 	s.Require().NoError(err)
 	gasLimit := uint64(21000)
-	gasPrice, err := client.SuggestGasPrice(ctx)
+	gasTipCap, err := client.SuggestGasTipCap(ctx)
 	s.Require().NoError(err)
-	var data []byte
-	tx := types.NewTransaction(nonce, recipient, value, gasLimit, gasPrice, data)
+	header, err := client.HeaderByNumber(ctx, nil)
+	s.Require().NoError(err)
+	s.Require().NotNil(header.BaseFee)
+	gasFeeCap := new(big.Int).Add(
+		new(big.Int).Mul(header.BaseFee, big.NewInt(2)), //nolint:mnd // EIP-1559 base-fee headroom.
+		gasTipCap,
+	)
+	tx := types.NewTx(&types.DynamicFeeTx{
+		ChainID:   s.chainID,
+		Nonce:     nonce,
+		GasTipCap: gasTipCap,
+		GasFeeCap: gasFeeCap,
+		Gas:       gasLimit,
+		To:        &recipient,
+		Value:     value,
+	})
 	signedTx, err := signTx(sender, tx)
 	s.Require().NoError(err)
 	err = client.SendTransaction(ctx, signedTx)
 	s.Require().NoError(err)
+	receipt, err := bind.WaitMined(ctx, client, signedTx.Hash())
+	s.Require().NoError(err)
+	s.Require().Equal(types.ReceiptStatusSuccessful, receipt.Status)
 }
 
 func (s *AwsKmsIntegrationSuite) TestLocalStackAWSSignedTransaction() {
