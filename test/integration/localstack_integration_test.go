@@ -32,15 +32,19 @@ import (
 
 type AwsKmsIntegrationSuite struct {
 	suite.Suite
-	chainID *big.Int
-	txOpts  *bind.TransactOpts
+	chainID   *big.Int
+	ethClient *ethclient.Client
+	txOpts    *bind.TransactOpts
 }
 
 func (s *AwsKmsIntegrationSuite) SetupSuite() {
 	t := s.T()
 	ctx := t.Context()
 
-	const region = "us-east-1"
+	region := os.Getenv("AWS_REGION")
+	if region == "" {
+		region = "us-east-1"
+	}
 	endpoint := os.Getenv("LOCALSTACK_KMS_ENDPOINT")
 	if endpoint == "" {
 		t.Skip("LOCALSTACK_KMS_ENDPOINT is not set; skipping LocalStack KMS integration test")
@@ -78,6 +82,12 @@ func (s *AwsKmsIntegrationSuite) SetupSuite() {
 		viper.Reset()
 		config.SetDefaults()
 	})
+	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
+	s.Require().NoError(err)
+	ethClient, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
+	s.Require().NoError(err)
+	t.Cleanup(ethClient.Close)
+
 	viper.Set(config.AUTH_KIND, "aws")
 	viper.Set(config.AUTH_AWS_KMS_KEY_ID, *created.KeyMetadata.KeyId)
 	viper.Set(config.AUTH_AWS_KMS_REGION, region)
@@ -91,6 +101,7 @@ func (s *AwsKmsIntegrationSuite) SetupSuite() {
 	opts, err := factory.NewTransactOpts(ctx)
 	s.Require().NoError(err)
 
+	s.ethClient = ethClient
 	s.txOpts = opts
 }
 
@@ -102,18 +113,12 @@ func (s *AwsKmsIntegrationSuite) sendFunds(
 ) {
 	ctx := s.T().Context()
 
-	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
-	s.Require().NoError(err)
-	client, err := ethclient.Dial(ethEndpoint.Raw()) // anvil
-	s.Require().NoError(err)
-	defer client.Close()
-
-	nonce, err := client.PendingNonceAt(ctx, sender)
+	nonce, err := s.ethClient.PendingNonceAt(ctx, sender)
 	s.Require().NoError(err)
 	gasLimit := uint64(21000)
-	gasTipCap, err := client.SuggestGasTipCap(ctx)
+	gasTipCap, err := s.ethClient.SuggestGasTipCap(ctx)
 	s.Require().NoError(err)
-	header, err := client.HeaderByNumber(ctx, nil)
+	header, err := s.ethClient.HeaderByNumber(ctx, nil)
 	s.Require().NoError(err)
 	s.Require().NotNil(header.BaseFee)
 	gasFeeCap := new(big.Int).Add(
@@ -131,9 +136,9 @@ func (s *AwsKmsIntegrationSuite) sendFunds(
 	})
 	signedTx, err := signTx(sender, tx)
 	s.Require().NoError(err)
-	err = client.SendTransaction(ctx, signedTx)
+	err = s.ethClient.SendTransaction(ctx, signedTx)
 	s.Require().NoError(err)
-	receipt, err := bind.WaitMined(ctx, client, signedTx.Hash())
+	receipt, err := bind.WaitMined(ctx, s.ethClient, signedTx.Hash())
 	s.Require().NoError(err)
 	s.Require().Equal(types.ReceiptStatusSuccessful, receipt.Status)
 }
@@ -148,6 +153,9 @@ func (s *AwsKmsIntegrationSuite) TestLocalStackAWSSignedTransaction() {
 	anvilPublicKey := anvilPrivateKey.Public().(*ecdsa.PublicKey)
 	anvilAddress := crypto.PubkeyToAddress(*anvilPublicKey)
 	anvilSignTx := func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+		if address != anvilAddress {
+			return nil, bind.ErrNotAuthorized
+		}
 		return types.SignTx(tx, types.LatestSignerForChainID(s.chainID), anvilPrivateKey)
 	}
 	value20 := big.NewInt(2000000000000000000) // in wei (2 eth)
