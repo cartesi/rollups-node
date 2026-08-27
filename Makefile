@@ -613,7 +613,7 @@ INTEGRATION_TOPOLOGIES := standalone multiprocess
 NODE_TOPOLOGY ?= standalone
 
 INTEGRATION_SHARDS_standalone   := $(INTEGRATION_SHARDS)
-INTEGRATION_SHARDS_multiprocess := $(INTEGRATION_SHARDS)
+INTEGRATION_SHARDS_multiprocess := $(filter-out awskms,$(INTEGRATION_SHARDS))
 
 # The CI matrix is the set of (shard, topology) cells, encoded "shard:topology".
 INTEGRATION_CELLS := $(foreach t,$(INTEGRATION_TOPOLOGIES),$(foreach s,$(INTEGRATION_SHARDS_$(t)),$(s):$(t)))
@@ -637,6 +637,9 @@ TOPOLOGIES_SELECTED = $(if $(filter all,$(NODE_TOPOLOGY)),$(INTEGRATION_TOPOLOGI
 shards_for = $(filter $(if $(strip $(SHARD)),$(SHARD),$(INTEGRATION_SHARDS_$(1))),$(INTEGRATION_SHARDS_$(1)))
 # run_pattern(topology): the selected shards' -run regexes as one alternation.
 run_pattern = $(subst $(space),|,$(strip $(foreach s,$(call shards_for,$(1)),$(INTEGRATION_SHARD_$(s)))))
+# compose_profiles(topology): activate optional infrastructure required by the
+# selected shards for this topology.
+compose_profiles = $(if $(filter awskms,$(call shards_for,$(1))),awskms,)
 # Selected (shard:topology) cells, for PARALLEL fan-out.
 SELECTED_CELLS = $(foreach t,$(TOPOLOGIES_SELECTED),$(foreach s,$(call shards_for,$(t)),$(s):$(t)))
 # Label for project/log names: the SHARD filter joined by '-', or "all".
@@ -684,6 +687,7 @@ _compose-topology-%:
 		COMPOSE_PROJECT='$(if $(filter rollups-node-integration,$(COMPOSE_PROJECT)),rollups-node-integration-$(SUITE_LABEL)-$*,$(COMPOSE_PROJECT))' \
 		INTEGRATION_LOGS='integration-logs-$(SUITE_LABEL)-$*.txt' \
 		TEST_PATTERN="$$pattern" SHARD_NAME='$(SUITE_LABEL)-$*' NODE_TOPOLOGY='$*' \
+		COMPOSE_PROFILES='$(call compose_profiles,$*)' \
 		GOTESTSUM_FORMAT='$(COMPOSE_TOPOLOGY_GOTESTSUM_FORMAT)' \
 		scripts/compose-integration-run.sh
 
@@ -694,6 +698,7 @@ _compose-cell-%:
 		TEST_PATTERN='$(INTEGRATION_SHARD_$(firstword $(subst :, ,$*)))' \
 		SHARD_NAME='$(firstword $(subst :, ,$*))' \
 		NODE_TOPOLOGY='$(lastword $(subst :, ,$*))' \
+		COMPOSE_PROFILES='$(if $(filter awskms,$(firstword $(subst :, ,$*))),awskms,)' \
 		GOTESTSUM_FORMAT='$(GOTESTSUM_FORMAT)' \
 		scripts/compose-integration-run.sh
 

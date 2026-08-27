@@ -85,6 +85,7 @@ services:
 
   localstack:
     image: localstack/localstack:4.14.0
+    profiles: [awskms]
     networks:
       - devnet
     healthcheck:
@@ -113,6 +114,7 @@ services:
         condition: service_completed_successfully
       localstack:
         condition: service_healthy
+        required: false
     volumes:
       - dapp_images:/var/lib/cartesi-rollups-node/dapps:ro
       - node_logs:/var/lib/cartesi-rollups-node/logs
