@@ -60,6 +60,14 @@ This file documents the configuration options.
 {{- if .Default}}
 * **Default:** {{.Default | quote | backtick}}
 {{- end}}
+{{- if .File}}
+* **File variant:** {{printf "%s_FILE" .Name | backtick}} reads the value from a file.
+  The file must be a regular file matching one of the canonical forms:
+  {{backtick "0400"}} or {{backtick "0600"}} owned by the node's user (Compose / host files), or
+  {{backtick "0440"}} owned by root with the node's group (Kubernetes {{backtick "fsGroup"}}).
+  Symlinks, directories, FIFOs, and device nodes are rejected. The node
+  refuses to start otherwise.
+{{- end}}
 {{- if .UsedBy}}
 * **Used by:** {{range $i, $e := .UsedBy}}{{if $i}}, {{end}}{{$e}}{{end}}
 {{- end}}
