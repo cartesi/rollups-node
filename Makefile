@@ -732,6 +732,14 @@ integration-test-local: build cartesi-rollups-machine-tool echo-dapp reject-loop
 _local-topology-%:
 	@pattern='$(call run_pattern,$*)'; \
 		if [ -z "$$pattern" ]; then echo "skip: no applicable shards for topology '$*' (SHARD filter excludes all)"; exit 0; fi; \
+		if [ -n "$(filter awskms,$(SHARD))" ]; then \
+			if [ -z "$$LOCALSTACK_KMS_ENDPOINT" ]; then \
+				echo "ERROR: LOCALSTACK_KMS_ENDPOINT is required when SHARD includes awskms." >&2; \
+				echo "Run 'make start-awslocalstack' and export the variables it prints." >&2; \
+				exit 1; \
+			fi; \
+			export LOCALSTACK_KMS_REQUIRED=true; \
+		fi; \
 		cartesi-rollups-cli db init; \
 		test_ports="10000 10001 10002 10003 10004 10005 10006 10011 10012"; \
 		busy_pids="$$(for p in $$test_ports; do lsof -tiTCP:$$p -sTCP:LISTEN 2>/dev/null || true; done | sort -u | tr '\n' ' ')"; \

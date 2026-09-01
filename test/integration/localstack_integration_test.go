@@ -45,8 +45,12 @@ func (s *AwsKmsIntegrationSuite) SetupSuite() {
 	if region == "" {
 		region = "us-east-1"
 	}
+	required := os.Getenv("LOCALSTACK_KMS_REQUIRED") == "true"
 	endpoint := os.Getenv("LOCALSTACK_KMS_ENDPOINT")
 	if endpoint == "" {
+		if required {
+			t.Fatal("LOCALSTACK_KMS_ENDPOINT is required for this shard")
+		}
 		t.Skip("LOCALSTACK_KMS_ENDPOINT is not set; skipping LocalStack KMS integration test")
 	}
 	cfg, err := awscfg.LoadDefaultConfig(ctx,
@@ -62,7 +66,7 @@ func (s *AwsKmsIntegrationSuite) SetupSuite() {
 	})
 	if err != nil {
 		message := "unable to create key on LocalStack"
-		if os.Getenv("LOCALSTACK_KMS_REQUIRED") == "true" {
+		if required {
 			t.Fatalf("%s: %v", message, err)
 		}
 		t.Skipf("%s: %v", message, err)
