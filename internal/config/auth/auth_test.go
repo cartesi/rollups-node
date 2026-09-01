@@ -77,7 +77,12 @@ func TestGetTransactOptsFactoryAWSSignsDynamicFeeTransaction(t *testing.T) {
 func setupAWSAuth(t *testing.T, endpoint string) {
 	t.Helper()
 	viper.Reset()
-	t.Cleanup(viper.Reset)
+	viper.AutomaticEnv()
+	t.Cleanup(func() {
+		viper.Reset()
+		viper.AutomaticEnv()
+		SetDefaults()
+	})
 	viper.Set(AUTH_KIND, "aws")
 	viper.Set(AUTH_AWS_KMS_KEY_ID, "alias/test-key")
 

@@ -86,6 +86,7 @@ func (s *AwsKmsIntegrationSuite) SetupSuite() {
 
 	t.Cleanup(func() {
 		viper.Reset()
+		viper.AutomaticEnv()
 		config.SetDefaults()
 	})
 	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
