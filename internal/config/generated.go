@@ -8,7 +8,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -1714,7 +1713,7 @@ func GetAuthMnemonic() (RedactedString, error) {
 	s := viper.GetString(AUTH_MNEMONIC)
 	if s == "" {
 		filename := viper.GetString(AUTH_MNEMONIC_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := ReadSecretFile(filename)
 		if err != nil {
 			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", AUTH_MNEMONIC_FILE, err)
 		}
@@ -1748,7 +1747,7 @@ func GetAuthPrivateKey() (RedactedString, error) {
 	s := viper.GetString(AUTH_PRIVATE_KEY)
 	if s == "" {
 		filename := viper.GetString(AUTH_PRIVATE_KEY_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := ReadSecretFile(filename)
 		if err != nil {
 			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", AUTH_PRIVATE_KEY_FILE, err)
 		}
@@ -1782,7 +1781,7 @@ func GetBlockchainHttpAuthorization() (RedactedString, error) {
 	s := viper.GetString(BLOCKCHAIN_HTTP_AUTHORIZATION)
 	if s == "" {
 		filename := viper.GetString(BLOCKCHAIN_HTTP_AUTHORIZATION_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := ReadSecretFile(filename)
 		if err != nil {
 			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_AUTHORIZATION_FILE, err)
 		}
@@ -1803,7 +1802,7 @@ func GetBlockchainHttpEndpoint() (URL, error) {
 	s := viper.GetString(BLOCKCHAIN_HTTP_ENDPOINT)
 	if s == "" {
 		filename := viper.GetString(BLOCKCHAIN_HTTP_ENDPOINT_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := ReadSecretFile(filename)
 		if err != nil {
 			return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_ENDPOINT_FILE, err)
 		}
@@ -1928,7 +1927,7 @@ func GetDatabaseConnection() (URL, error) {
 	s := viper.GetString(DATABASE_CONNECTION)
 	if s == "" {
 		filename := viper.GetString(DATABASE_CONNECTION_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := ReadSecretFile(filename)
 		if err != nil {
 			return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", DATABASE_CONNECTION_FILE, err)
 		}
