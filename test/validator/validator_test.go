@@ -18,7 +18,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/internal/validator"
-	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/cartesi/rollups-node/test/tooling/db"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -79,13 +78,11 @@ func (s *ValidatorRepositoryIntegrationSuite) SetupSubTest() {
 	s.Require().Nil(err)
 
 	serviceArgs := validator.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:     "validator",
-			LogLevel: slog.LevelDebug,
-		},
+		Config:     config.ValidatorConfig{LogLevel: slog.LevelDebug},
 		Repository: s.repository,
 	}
-	s.validator, err = validator.Create(context.Background(), &serviceArgs)
+	srv, err := validator.Create(context.Background(), &serviceArgs)
+	s.validator = srv.(*validator.Service)
 	s.Require().Nil(err)
 }
 
@@ -153,8 +150,8 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
 		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
 
-		errs := s.validator.Tick()
-		s.Require().Equal(0, len(errs))
+		_, err = s.validator.Tick(s.ctx)
+		s.Require().NoError(err)
 
 		updatedEpoch, err := s.repository.GetEpoch(s.ctx, app.IApplicationAddress.String(), epoch.Index)
 		s.Require().Nil(err)
@@ -276,8 +273,8 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
 
-		errs := s.validator.Tick()
-		s.Require().Equal(0, len(errs))
+		_, err = s.validator.Tick(s.ctx)
+		s.Require().NoError(err)
 
 		updatedEpoch, err := s.repository.GetEpoch(s.ctx, app.IApplicationAddress.String(), secondEpoch.Index)
 		s.Require().Nil(err)
@@ -359,8 +356,8 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
 
-		errs := s.validator.Tick()
-		s.Require().Equal(0, len(errs))
+		_, err = s.validator.Tick(s.ctx)
+		s.Require().NoError(err)
 
 		updatedEpoch, err := s.repository.GetEpoch(s.ctx, app.IApplicationAddress.String(), epoch.Index)
 		s.Require().Nil(err)
@@ -513,8 +510,8 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
 		s.Require().Nil(err)
 
-		errs := s.validator.Tick()
-		s.Require().Equal(0, len(errs))
+		_, err = s.validator.Tick(s.ctx)
+		s.Require().NoError(err)
 
 		updatedSecondEpoch, err := s.repository.GetEpoch(
 			s.ctx,

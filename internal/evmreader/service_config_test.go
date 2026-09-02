@@ -16,7 +16,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/mock"
@@ -30,17 +29,6 @@ func TestCreateWithCancelledContext(t *testing.T) {
 	cancel()
 	_, err := Create(ctx, &CreateInfo{})
 	require.ErrorIs(t, err, context.Canceled)
-}
-
-func TestCreateWithNilEthClient(t *testing.T) {
-	config.SetDefaults()
-	logLevel, err := config.GetLogLevel()
-	require.NoError(t, err)
-
-	_, err = Create(context.Background(), &CreateInfo{
-		CreateInfo: service.CreateInfo{Name: "evm-reader", LogLevel: logLevel},
-	})
-	require.ErrorContains(t, err, "EthClient on evmreader service Create is nil")
 }
 
 func TestCreateAcceptsRequestTimeoutBelowPollingInterval(t *testing.T) {
@@ -73,13 +61,9 @@ func TestCreateAcceptsRequestTimeoutBelowPollingInterval(t *testing.T) {
 	repo.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
 		Return(rawConfig, time.Now(), time.Now(), nil).Once()
 
-	svc, err := Create(context.Background(), &CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:         "evm-reader",
-			LogLevel:     logLevel,
-			PollInterval: pollInterval,
-		},
+	svc, err := Create(t.Context(), &CreateInfo{
 		Config: config.EvmreaderConfig{
+			LogLevel:                     logLevel,
 			BlockchainDefaultBlock:       DefaultBlock_Finalized,
 			BlockchainHttpRequestTimeout: requestTimeout,
 			BlockchainId:                 chainID,
@@ -90,8 +74,7 @@ func TestCreateAcceptsRequestTimeoutBelowPollingInterval(t *testing.T) {
 		Repository: repo,
 	})
 	require.NoError(t, err)
-	defer svc.Ticker.Stop()
-	defer svc.Cancel()
+	defer svc.Teardown()
 
 	repo.AssertExpectations(t)
 }

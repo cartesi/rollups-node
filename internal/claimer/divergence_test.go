@@ -4,6 +4,7 @@
 package claimer
 
 import (
+	"context"
 	"math/big"
 	"testing"
 
@@ -36,8 +37,8 @@ func TestVerifyClaimOutputsMismatch(t *testing.T) {
 	r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Diverged, mock.Anything).
 		Return(nil).Once()
 
-	_, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs), "chain_claim_outputs_mismatch must surface as an error")
+	_, err := m.acceptStagedClaimsAndIssueAcceptTx(context.Background(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err, "chain_claim_outputs_mismatch must surface as an error")
 	assert.Equal(t, 0, len(m.acceptsInFlight))
 }
 

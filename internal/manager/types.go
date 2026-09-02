@@ -56,5 +56,5 @@ type MachineProvider interface {
 	HasPendingApplicationFailures() bool
 
 	// Close shuts down all machine instances and releases resources
-	Close() error
+	Close()
 }

@@ -21,16 +21,14 @@ import (
 )
 
 type CreateInfo struct {
-	service.CreateInfo
-
-	Config config.ClaimerConfig
-
+	Config     config.ClaimerConfig
+	Logger     *slog.Logger
 	EthConn    *ethclient.Client
 	Repository repository.Repository
 }
 
 type Service struct {
-	service.Service
+	service.TickServiceTemplate
 
 	repository iclaimerRepository
 	blockchain iclaimerBlockchain
@@ -77,7 +75,7 @@ type PersistentConfig struct {
 	ChainID                uint64
 }
 
-func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
+func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, error) {
 	var err error
 
 	if c == nil {
@@ -89,17 +87,39 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	if c.Repository == nil {
 		return nil, fmt.Errorf("repository on claimer service Create is nil")
 	}
-	if c.EthConn == nil {
-		return nil, fmt.Errorf("ethclient on claimer service Create is nil")
-	}
 
 	s := &Service{}
-	c.Impl = s
-	c.EnableReschedule = true
-
-	err = service.Create(ctx, &c.CreateInfo, &s.Service)
+	tickCfg := &service.TickServiceConfigs{
+		BaseConfigs: service.BaseConfigs{
+			Name:     config.ServiceClaimer,
+			Logger:   c.Logger,
+			LogLevel: c.Config.LogLevel,
+			LogColor: c.Config.LogColor,
+		},
+		PollInterval: c.Config.ClaimerPollingInterval,
+	}
+	err = service.InitTickServiceTemplate(&s.TickServiceTemplate, tickCfg, s)
 	if err != nil {
-		return nil, fmt.Errorf("creating base service: %w", err)
+		return nil, err
+	}
+
+	authOpt, err := config.HTTPAuthorizationOption()
+	if err != nil {
+		return nil, err
+	}
+
+	ethClient := c.EthConn
+	if ethClient == nil {
+		ethClient, err = ethutil.NewEthClient(ctx, c.Config.BlockchainHttpEndpoint.Raw(), s.Logger,
+			ethutil.RetryConfig{
+				MaxRetries:     c.Config.BlockchainHttpMaxRetries,
+				RetryMinWait:   c.Config.BlockchainHttpRetryMinWait,
+				RetryMaxWait:   c.Config.BlockchainHttpRetryMaxWait,
+				RequestTimeout: c.Config.BlockchainHttpRequestTimeout,
+			}, authOpt)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	nodeConfig, err := setupPersistentConfig(ctx, s.Logger, c.Repository, &c.Config)
@@ -107,7 +127,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		return nil, fmt.Errorf("setting up persistent config: %w", err)
 	}
 
-	chainId, err := c.EthConn.ChainID(ctx)
+	chainId, err := ethClient.ChainID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("querying chain ID: %w", err)
 	}
@@ -144,33 +164,14 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	s.repository = c.Repository
 	s.blockchain = &claimerBlockchain{
 		logger:        s.Logger,
-		client:        c.EthConn,
+		client:        ethClient,
 		txOptsFactory: txOptsFactory,
 		defaultBlock:  nodeConfig.DefaultBlock,
 	}
 
+	s.Logger.Info("Created", "config", c.Config)
+
 	return s, nil
-}
-
-func (s *Service) Alive() bool {
-	return true
-}
-
-func (s *Service) Ready() bool {
-	return true
-}
-
-func (s *Service) Reload() []error {
-	return nil
-}
-
-func (s *Service) Stop(bool) []error {
-	s.SetStopping()
-	return nil
-}
-
-func (s *Service) String() string {
-	return s.Name
 }
 
 func setupPersistentConfig(

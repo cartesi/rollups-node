@@ -34,10 +34,15 @@ func newPostForeclosureFixture(t *testing.T) (
 	s := &Service{
 		repository: repo,
 	}
-	require.NoError(t, service.Create(
-		context.Background(),
-		&service.CreateInfo{Name: "evm-reader", Impl: s, Logger: slog.New(slog.NewTextHandler(os.Stdout, nil))},
-		&s.Service,
+	require.NoError(t, service.InitTickServiceTemplate(
+		&s.TickServiceTemplate,
+		&service.TickServiceConfigs{
+			BaseConfigs: service.BaseConfigs{
+				Name:   "evm-reader",
+				Logger: slog.New(slog.NewTextHandler(os.Stdout, nil)),
+			},
+		},
+		s,
 	))
 	return s, appContract, repo
 }

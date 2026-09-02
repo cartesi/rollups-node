@@ -14,19 +14,21 @@ import (
 
 // newTelemetryTestService returns a *Service ready to have CreateDefaultTelemetry
 // called on it. It wires a ServeMux, a mockImpl, and a discard logger.
-func newTelemetryTestService() *Service {
-	impl := &mockImpl{}
-	return &Service{
-		Name:     "test",
-		Logger:   discardLogger(),
-		ServeMux: http.NewServeMux(),
-		Impl:     impl,
+func newTelemetryTestService() *telemetryService {
+	sup := &Supervisor{
+		Name:   "test",
+		Logger: discardLogger(),
 	}
+	sup.serving.Store(true)
+
+	svc := CreateDefaultTelemetry(sup, "localhost:0")
+
+	return svc.(*telemetryService)
 }
 
 func TestCreateDefaultTelemetry_Hardened(t *testing.T) {
 	s := newTelemetryTestService()
-	srv, _ := s.CreateDefaultTelemetry(":0")
+	srv := s.Server
 
 	opts := DefaultTelemetryOptions()
 	require.Equal(t, opts.ReadHeaderTimeout, srv.ReadHeaderTimeout)
@@ -39,7 +41,7 @@ func TestCreateDefaultTelemetry_Hardened(t *testing.T) {
 
 func TestCreateDefaultTelemetry_HandlersWired(t *testing.T) {
 	s := newTelemetryTestService()
-	srv, _ := s.CreateDefaultTelemetry(":0")
+	srv := s.Server
 
 	// /readyz: mockImpl.Ready() is true, so expect 200.
 	rr := httptest.NewRecorder()
@@ -61,7 +63,7 @@ func TestCreateDefaultTelemetry_HandlersWired(t *testing.T) {
 // greppable without the cost of crypto/rand per probe.
 func TestCreateDefaultTelemetry_StaticRequestID(t *testing.T) {
 	s := newTelemetryTestService()
-	srv, _ := s.CreateDefaultTelemetry(":0")
+	srv := s.Server
 
 	for _, path := range []string{"/livez", "/readyz"} {
 		rr := httptest.NewRecorder()
@@ -82,11 +84,11 @@ func TestCreateDefaultTelemetry_StaticRequestID(t *testing.T) {
 
 func TestCreateDefaultTelemetry_PanicRecovered(t *testing.T) {
 	s := newTelemetryTestService()
+	srv := s.Server
+
 	s.ServeMux.Handle("/boom", http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		panic("kaboom")
 	}))
-
-	srv, _ := s.CreateDefaultTelemetry(":0")
 
 	rr := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/boom", nil))
@@ -95,4 +97,18 @@ func TestCreateDefaultTelemetry_PanicRecovered(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, rr.Code)
 	require.Contains(t, rr.Body.String(), "Internal server error")
 	require.NotContains(t, rr.Body.String(), "kaboom")
+}
+
+func TestCreateDefaultTelemetry_Returns500WhenLifecycleFails(t *testing.T) {
+	s := newTelemetryTestService()
+
+	s.supervisor.serving.Store(false)
+	require.False(t, s.supervisor.Alive())
+	require.False(t, s.supervisor.Ready())
+
+	for _, path := range []string{"/readyz", "/livez"} {
+		rr := httptest.NewRecorder()
+		s.Server.Handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+		require.Equal(t, http.StatusInternalServerError, rr.Code, "path=%s", path)
+	}
 }

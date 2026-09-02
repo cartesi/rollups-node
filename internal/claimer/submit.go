@@ -5,6 +5,7 @@ package claimer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -29,7 +30,7 @@ func (s *Service) findClaimSubmittedEventAndSucc(
 	err := checkEpochSequenceConstraint(prevEpoch, currEpoch)
 	if err != nil {
 		err = s.setApplicationCorrupted(
-			s.Context,
+			ctx,
 			app,
 			"%v. epoch: %v (%v).",
 			err,
@@ -50,7 +51,7 @@ func (s *Service) findClaimSubmittedEventAndSucc(
 		if claimSubmittedEventMatchesEpoch(app, prevEpoch, event) {
 			matches, ok := claimSubmittedEventMatches(app, prevEpoch, event)
 			if !ok {
-				err = s.markMatcherPrecondFailure(app, prevEpoch, "findClaimSubmittedEventAndSucc(prev)")
+				err = s.markMatcherPrecondFailure(ctx, app, prevEpoch, "findClaimSubmittedEventAndSucc(prev)")
 				return nil, nil, err
 			}
 			if matches {
@@ -61,7 +62,7 @@ func (s *Service) findClaimSubmittedEventAndSucc(
 				continue
 			}
 			err = s.setApplicationDiverged(
-				s.Context,
+				ctx,
 				app,
 				"application has an invalid epoch: %v (%v), missing claim submitted event (%v).",
 				prevEpoch.Index,
@@ -73,7 +74,7 @@ func (s *Service) findClaimSubmittedEventAndSucc(
 	}
 	if prevClaimSubmissionEvent == nil {
 		err = s.setApplicationCorrupted(
-			s.Context,
+			ctx,
 			app,
 			"application has an invalid epoch: %v (%v). No claim submission event to match.",
 			prevEpoch.Index,
@@ -86,6 +87,7 @@ func (s *Service) findClaimSubmittedEventAndSucc(
 }
 
 func (s *Service) classifyClaimSubmittedEvents(
+	ctx context.Context,
 	app *model.Application,
 	epoch *model.Epoch,
 	events []*iconsensus.IConsensusClaimSubmitted,
@@ -106,7 +108,7 @@ func (s *Service) classifyClaimSubmittedEvents(
 		)
 		matches, ok := claimSubmittedEventMatches(app, epoch, event)
 		if !ok {
-			return nil, true, s.markMatcherPrecondFailure(app, epoch, site)
+			return nil, true, s.markMatcherPrecondFailure(ctx, app, epoch, site)
 		}
 		if matches {
 			if !s.shouldRecordMatchingClaimSubmitted(app, epoch, event) {
@@ -118,7 +120,7 @@ func (s *Service) classifyClaimSubmittedEvents(
 		if s.shouldIgnoreQuorumSubmittedMismatch(app, epoch, event, site) {
 			continue
 		}
-		return nil, true, s.markSubmittedDivergence(app, epoch, event, site)
+		return nil, true, s.markSubmittedDivergence(ctx, app, epoch, event, site)
 	}
 	return nil, false, nil
 }
@@ -189,36 +191,37 @@ func (s *Service) shouldRecordMatchingClaimSubmitted(
 // CLAIM_SUBMITTED. It returns the number of successful state changes and any
 // errors.
 func (s *Service) submitClaimsAndUpdateDatabase(
+	ctx context.Context,
 	acceptedOrSubmittedEpochs map[int64]*model.Epoch,
 	computedEpochs map[int64]*model.Epoch,
 	apps map[int64]*model.Application,
 	defaultBlockNumber *big.Int,
-) (int, []error) {
-	confirmed, err := s.checkClaimsInFlight(computedEpochs, apps, defaultBlockNumber)
+) (int, error) {
+	confirmed, err := s.checkClaimsInFlight(ctx, computedEpochs, apps, defaultBlockNumber)
 	if err != nil {
-		return confirmed, []error{err}
+		return confirmed, err
 	}
 
 	transitions := confirmed
-	errs := []error{}
 	for key, currEpoch := range computedEpochs {
-		result := s.processComputedClaim(computedClaimWork{
+		result := s.processComputedClaim(ctx, computedClaimWork{
 			app:       apps[key],
 			prevEpoch: acceptedOrSubmittedEpochs[key],
 			epoch:     currEpoch,
 		}, defaultBlockNumber)
 		transitions += result.progress
 		if result.err != nil {
-			errs = append(errs, result.err)
+			err = errors.Join(err, result.err)
 		}
 		if result.drop {
 			delete(computedEpochs, key)
 		}
 	}
-	return transitions, errs
+	return transitions, err
 }
 
 func (s *Service) processComputedClaim(
+	ctx context.Context,
 	work computedClaimWork,
 	defaultBlockNumber *big.Int,
 ) claimStepResult {
@@ -232,21 +235,21 @@ func (s *Service) processComputedClaim(
 	}
 
 	// Stop if the consensus contract address changed on chain.
-	if err := s.checkConsensusForAddressChange(app, defaultBlockNumber); err != nil {
+	if err := s.checkConsensusForAddressChange(ctx, app, defaultBlockNumber); err != nil {
 		return claimDropped(err)
 	}
 
-	if result, done := s.reconcileComputedAcceptedEvent(work, defaultBlockNumber); done {
+	if result, done := s.reconcileComputedAcceptedEvent(ctx, work, defaultBlockNumber); done {
 		return result
 	}
 
-	ic, submittedEvents, result, done := s.findSubmittedEventsForComputedClaim(work, defaultBlockNumber)
+	ic, submittedEvents, result, done := s.findSubmittedEventsForComputedClaim(ctx, work, defaultBlockNumber)
 	if done {
 		return result
 	}
 
 	currEvent, shouldDrop, err := s.classifyClaimSubmittedEvents(
-		app, currEpoch, submittedEvents, "submitClaimsAndUpdateDatabase(ClaimSubmitted)")
+		ctx, app, currEpoch, submittedEvents, "submitClaimsAndUpdateDatabase(ClaimSubmitted)")
 	if shouldDrop {
 		return claimDropped(err)
 	}
@@ -254,7 +257,7 @@ func (s *Service) processComputedClaim(
 		return claimRetryLater(err)
 	}
 	if currEvent != nil {
-		return s.recordSubmittedEvent(app, currEpoch, currEvent)
+		return s.recordSubmittedEvent(ctx, app, currEpoch, currEvent)
 	}
 
 	if prevEpoch != nil && prevEpoch.Status != model.EpochStatus_ClaimAccepted {
@@ -275,7 +278,7 @@ func (s *Service) processComputedClaim(
 		// This read also runs for foreclosed apps. A claim accepted before
 		// foreclosure must still be copied into the DB. Only the new submitClaim
 		// transaction is skipped for foreclosed apps.
-		if reconciled, err := s.reconcileBeforeSubmit(app, currEpoch, defaultBlockNumber); reconciled {
+		if reconciled, err := s.reconcileBeforeSubmit(ctx, app, currEpoch, defaultBlockNumber); reconciled {
 			if err != nil {
 				return claimDropped(err)
 			}
@@ -288,7 +291,7 @@ func (s *Service) processComputedClaim(
 		// already showed that this claim is not STAGED or ACCEPTED, so it has
 		// no remaining on-chain path.
 		if app.ForecloseBlock != 0 {
-			if ferr := s.forecloseClaim(app, currEpoch, "submitClaimsAndUpdateDatabase"); ferr != nil {
+			if ferr := s.forecloseClaim(ctx, app, currEpoch, "submitClaimsAndUpdateDatabase"); ferr != nil {
 				return claimDropped(ferr)
 			}
 			return claimWorkCompleted(1)
@@ -296,12 +299,13 @@ func (s *Service) processComputedClaim(
 	}
 
 	if s.submissionEnabled {
-		return s.broadcastComputedClaim(ic, app, currEpoch, defaultBlockNumber)
+		return s.broadcastComputedClaim(ctx, ic, app, currEpoch, defaultBlockNumber)
 	}
 	return claimNoProgress()
 }
 
 func (s *Service) reconcileComputedAcceptedEvent(
+	ctx context.Context,
 	work computedClaimWork,
 	defaultBlockNumber *big.Int,
 ) (claimStepResult, bool) {
@@ -325,7 +329,7 @@ func (s *Service) reconcileComputedAcceptedEvent(
 		acceptScanFrom = prevEpoch.LastBlock + 1
 	}
 	_, foreignAccepted, _, err := s.blockchain.findClaimAcceptedEventAndSucc(
-		s.Context, app, currEpoch, acceptScanFrom, defaultBlockNumber.Uint64(),
+		ctx, app, currEpoch, acceptScanFrom, defaultBlockNumber.Uint64(),
 	)
 	if err != nil {
 		return claimDropped(fmt.Errorf(
@@ -337,14 +341,14 @@ func (s *Service) reconcileComputedAcceptedEvent(
 	}
 	matches, ok := claimAcceptedEventMatches(app, currEpoch, foreignAccepted)
 	if !ok {
-		return claimDropped(s.markMatcherPrecondFailure(app, currEpoch, "submitClaimsAndUpdateDatabase(ClaimAccepted)")), true
+		return claimDropped(s.markMatcherPrecondFailure(ctx, app, currEpoch, "submitClaimsAndUpdateDatabase(ClaimAccepted)")), true
 	}
 	if !matches {
-		return claimDropped(s.markAcceptedDivergence(app, currEpoch, foreignAccepted, "submitClaimsAndUpdateDatabase")), true
+		return claimDropped(s.markAcceptedDivergence(ctx, app, currEpoch, foreignAccepted, "submitClaimsAndUpdateDatabase")), true
 	}
 	acceptedTxHash := foreignAccepted.Raw.TxHash
 	if err := s.repository.UpdateEpochWithAcceptedClaim(
-		s.Context, currEpoch.ApplicationID, currEpoch.Index, &acceptedTxHash); err != nil {
+		ctx, currEpoch.ApplicationID, currEpoch.Index, &acceptedTxHash); err != nil {
 		return claimDropped(fmt.Errorf(
 			"reconciling COMPUTED→ACCEPTED for epoch %d (%d): %w",
 			currEpoch.Index, currEpoch.VirtualIndex, err)), true
@@ -359,6 +363,7 @@ func (s *Service) reconcileComputedAcceptedEvent(
 }
 
 func (s *Service) findSubmittedEventsForComputedClaim(
+	ctx context.Context,
 	work computedClaimWork,
 	defaultBlockNumber *big.Int,
 ) (*iconsensus.IConsensus, []*iconsensus.IConsensusClaimSubmitted, claimStepResult, bool) {
@@ -371,11 +376,11 @@ func (s *Service) findSubmittedEventsForComputedClaim(
 	var err error
 	if prevEpoch != nil {
 		ic, submittedEvents, err = s.findClaimSubmittedEventAndSucc(
-			s.Context, app, prevEpoch, currEpoch, prevEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
+			ctx, app, prevEpoch, currEpoch, prevEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
 		)
 	} else {
 		ic, submittedEvents, err = s.blockchain.findClaimSubmittedEventAndSucc(
-			s.Context, app, currEpoch, currEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
+			ctx, app, currEpoch, currEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
 		)
 	}
 	if err != nil {
@@ -385,6 +390,7 @@ func (s *Service) findSubmittedEventsForComputedClaim(
 }
 
 func (s *Service) recordSubmittedEvent(
+	ctx context.Context,
 	app *model.Application,
 	currEpoch *model.Epoch,
 	currEvent *iconsensus.IConsensusClaimSubmitted,
@@ -396,7 +402,7 @@ func (s *Service) recordSubmittedEvent(
 	)
 	txHash := currEvent.Raw.TxHash
 	err := s.repository.UpdateEpochWithSubmittedClaim(
-		s.Context,
+		ctx,
 		currEpoch.ApplicationID,
 		currEpoch.Index,
 		txHash,
@@ -415,6 +421,7 @@ func (s *Service) recordSubmittedEvent(
 }
 
 func (s *Service) broadcastComputedClaim(
+	ctx context.Context,
 	ic *iconsensus.IConsensus,
 	app *model.Application,
 	currEpoch *model.Epoch,
@@ -425,11 +432,11 @@ func (s *Service) broadcastComputedClaim(
 		"outputs_merkle_root", hashToHex(currEpoch.OutputsMerkleRoot),
 		"last_block", currEpoch.LastBlock,
 	)
-	txCtx, cancel := context.WithTimeout(s.Context, s.submissionTimeout)
+	txCtx, cancel := context.WithTimeout(ctx, s.submissionTimeout)
 	defer cancel()
 	txHash, err := s.blockchain.submitClaimToBlockchain(txCtx, ic, app, currEpoch)
 	if err != nil {
-		switch outcome, stateErr := s.handleSubmitClaimRevert(err, app, currEpoch); outcome {
+		switch outcome, stateErr := s.handleSubmitClaimRevert(ctx, err, app, currEpoch); outcome {
 		case submitClaimAlreadyOnChain:
 			return claimNoProgress()
 		case submitClaimRetryLater:
@@ -468,18 +475,19 @@ func (s *Service) broadcastComputedClaim(
 //
 // All chain reads in one tick use the same finalized block number.
 func (s *Service) reconcileBeforeSubmit(
+	ctx context.Context,
 	app *model.Application,
 	currEpoch *model.Epoch,
 	defaultBlockNumber *big.Int,
 ) (bool, error) {
-	claim, err := s.blockchain.getClaimStatus(s.Context, app, currEpoch, defaultBlockNumber)
+	claim, err := s.blockchain.getClaimStatus(ctx, app, currEpoch, defaultBlockNumber)
 	if err != nil {
 		return false, fmt.Errorf("pre-submit getClaim (app=%v, epoch=%d): %w",
 			app.IApplicationAddress, currEpoch.Index, err)
 	}
 	switch claim.Status {
 	case claimStatusAccepted:
-		if err := s.updateEpochAcceptedFromClaimStatus(app, currEpoch, claim, "reconcileBeforeSubmit"); err != nil {
+		if err := s.updateEpochAcceptedFromClaimStatus(ctx, app, currEpoch, claim, "reconcileBeforeSubmit"); err != nil {
 			return false, fmt.Errorf("reconciling epoch %d (%d) to ACCEPTED: %w",
 				currEpoch.Index, currEpoch.VirtualIndex, err)
 		}
@@ -491,7 +499,7 @@ func (s *Service) reconcileBeforeSubmit(
 		)
 		return true, nil
 	case claimStatusStaged:
-		stagingBlock, err := s.updateEpochStagedFromClaimStatus(app, currEpoch, claim, "reconcileBeforeSubmit")
+		stagingBlock, err := s.updateEpochStagedFromClaimStatus(ctx, app, currEpoch, claim, "reconcileBeforeSubmit")
 		if err != nil {
 			return false, fmt.Errorf("reconciling epoch %d (%d) to STAGED: %w",
 				currEpoch.Index, currEpoch.VirtualIndex, err)

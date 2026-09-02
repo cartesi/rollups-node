@@ -4,6 +4,7 @@
 package claimer
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"reflect"
@@ -96,6 +97,7 @@ const (
 // ClaimNotStaged and ClaimStagingPeriodNotOverYet only come from acceptClaim,
 // so handleAcceptClaimRevert handles them.
 func (s *Service) handleSubmitClaimRevert(
+	ctx context.Context,
 	err error,
 	app *model.Application,
 	epoch *model.Epoch,
@@ -162,7 +164,7 @@ func (s *Service) handleSubmitClaimRevert(
 
 	case isCustomConsensusError(err, "InvalidOutputsMerkleRootProofSize"):
 		stateErr := s.setApplicationCorrupted(
-			s.Context, app,
+			ctx, app,
 			"submitClaim reverted with InvalidOutputsMerkleRootProofSize for "+
 				"epoch %d (%d), last_block %d — outputs_merkle_proof in DB is "+
 				"the wrong length for the machine memory tree.",
@@ -174,7 +176,7 @@ func (s *Service) handleSubmitClaimRevert(
 		// Operator configuration error: the signing key is not a Quorum
 		// validator. The operator can fix the key, so use FAILED rather than a
 		// terminal DIVERGED/CORRUPTED status.
-		stateErr := appstatus.SetFailedf(s.Context, s.Logger, s.repository, app,
+		stateErr := appstatus.SetFailedf(ctx, s.Logger, s.repository, app,
 			"submitClaim reverted with CallerIsNotValidator: the configured "+
 				"signing key is not a member of the Quorum for app %s. "+
 				"Check the validator key configuration.",
@@ -188,7 +190,7 @@ func (s *Service) handleSubmitClaimRevert(
 		// not fit the tree. Like InvalidOutputsMerkleRootProofSize, this means
 		// the proof stored locally is bad — local data corruption.
 		stateErr := s.setApplicationCorrupted(
-			s.Context, app,
+			ctx, app,
 			"submitClaim reverted with InvalidNodeIndex for "+
 				"epoch %d (%d), last_block %d — outputs_merkle_proof in DB does "+
 				"not form a valid replacement proof for the machine memory tree.",
@@ -197,7 +199,7 @@ func (s *Service) handleSubmitClaimRevert(
 		return submitClaimAppHalted, stateErr
 	}
 
-	switch action, stateErr := s.classifySharedConsensusRevert("submitClaim", err, app, epoch); action {
+	switch action, stateErr := s.classifySharedConsensusRevert(ctx, "submitClaim", err, app, epoch); action {
 	case sharedRevertAppHalted:
 		return submitClaimAppHalted, stateErr
 	case sharedRevertRetryLater:
@@ -233,6 +235,7 @@ const (
 // processed block number — NotEpochFinalBlock (FAILED) and NotPastBlock
 // (retry later). call names the reverting method in reasons and logs.
 func (s *Service) classifySharedConsensusRevert(
+	ctx context.Context,
 	call string,
 	err error,
 	app *model.Application,
@@ -245,7 +248,7 @@ func (s *Service) classifySharedConsensusRevert(
 		// from ApplicationReverted. A provider simulating against a block just
 		// before a fresh deployment could fire this transiently, but FAILED is
 		// recoverable, so that rare case only costs an operator re-enable.
-		stateErr := appstatus.SetFailedf(s.Context, s.Logger, s.repository, app,
+		stateErr := appstatus.SetFailedf(ctx, s.Logger, s.repository, app,
 			"%s reverted with ApplicationNotDeployed for app %s, "+
 				"epoch %d (%d), last_block %d: no contract code exists at the "+
 				"application address. Verify the application address and that "+
@@ -262,7 +265,7 @@ func (s *Service) classifySharedConsensusRevert(
 		// reverted — and an adversarial application contract can revert
 		// selectively (e.g. per tx.origin) to suppress a targeted validator's
 		// votes — so the reason carries it.
-		stateErr := appstatus.SetFailedf(s.Context, s.Logger, s.repository, app,
+		stateErr := appstatus.SetFailedf(ctx, s.Logger, s.repository, app,
 			"%s reverted with ApplicationReverted for app %s, "+
 				"epoch %d (%d), last_block %d: the application contract reverted "+
 				"when the consensus contract queried it. Verify the deployed "+
@@ -274,7 +277,7 @@ func (s *Service) classifySharedConsensusRevert(
 		return sharedRevertAppHalted, stateErr
 
 	case isCustomConsensusError(err, "IllformedApplicationReturnData"):
-		stateErr := appstatus.SetFailedf(s.Context, s.Logger, s.repository, app,
+		stateErr := appstatus.SetFailedf(ctx, s.Logger, s.repository, app,
 			"%s reverted with IllformedApplicationReturnData for app %s, "+
 				"epoch %d (%d), last_block %d: the application contract returned "+
 				"malformed data when the consensus contract queried it. Verify "+
@@ -286,7 +289,7 @@ func (s *Service) classifySharedConsensusRevert(
 		return sharedRevertAppHalted, stateErr
 
 	case isCustomConsensusError(err, "NotEpochFinalBlock"):
-		stateErr := appstatus.SetFailedf(s.Context, s.Logger, s.repository, app,
+		stateErr := appstatus.SetFailedf(ctx, s.Logger, s.repository, app,
 			"%s reverted with NotEpochFinalBlock for app %s, "+
 				"epoch %d (%d), last_block %d: the node submitted a "+
 				"lastProcessedBlockNumber that the consensus contract does not "+
@@ -343,6 +346,7 @@ func (s *Service) classifySharedConsensusRevert(
 // / NotEpochFinalBlock (all FAILED) and NotPastBlock (retry later) reverts —
 // classified by classifySharedConsensusRevert.
 func (s *Service) handleAcceptClaimRevert(
+	ctx context.Context,
 	err error,
 	app *model.Application,
 	epoch *model.Epoch,
@@ -410,7 +414,7 @@ func (s *Service) handleAcceptClaimRevert(
 			// newer version than this node. Surface it as FAILED (recoverable: an
 			// operator can upgrade the node and re-enable) instead of spinning
 			// silently every tick.
-			stateErr := appstatus.SetFailedf(s.Context, s.Logger, s.repository, app,
+			stateErr := appstatus.SetFailedf(ctx, s.Logger, s.repository, app,
 				"acceptClaim reverted with ClaimNotStaged carrying unmodeled ClaimStatus %d for "+
 					"epoch %d (%d) — this node models only 0/1/2. The IConsensus contract may be "+
 					"newer than this node supports; upgrade the node or verify the contract.",
@@ -437,7 +441,7 @@ func (s *Service) handleAcceptClaimRevert(
 		return acceptClaimRetryLater, nil
 	}
 
-	switch action, stateErr := s.classifySharedConsensusRevert("acceptClaim", err, app, epoch); action {
+	switch action, stateErr := s.classifySharedConsensusRevert(ctx, "acceptClaim", err, app, epoch); action {
 	case sharedRevertAppHalted:
 		return acceptClaimAppHalted, stateErr
 	case sharedRevertRetryLater:

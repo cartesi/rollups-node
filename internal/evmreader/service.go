@@ -7,8 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"sync/atomic"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	. "github.com/cartesi/rollups-node/internal/model"
@@ -19,17 +21,15 @@ import (
 )
 
 type CreateInfo struct {
-	service.CreateInfo
-
-	Config config.EvmreaderConfig
-
-	Repository EvmReaderRepository
-
-	EthClient *ethclient.Client
+	Config         config.EvmreaderConfig
+	Logger         *slog.Logger
+	Repository     EvmReaderRepository
+	EthClient      EthClientInterface
+	AdapterFactory AdapterFactory
 }
 
 type Service struct {
-	service.Service
+	service.TickServiceTemplate
 
 	client             EthClientInterface
 	adapterFactory     AdapterFactory
@@ -40,8 +40,8 @@ type Service struct {
 	hasEnabledApps     bool
 	inputReaderEnabled bool
 	lastBlockNumber    atomic.Uint64
-	alive              atomic.Bool
-	ready              atomic.Bool
+	lastSuccessfulPoll atomic.Pointer[time.Time]
+	pollingMaxWait     time.Duration
 }
 
 const EvmReaderConfigKey = "evm-reader"
@@ -52,24 +52,47 @@ type PersistentConfig struct {
 	ChainID            uint64
 }
 
-func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
-	var err error
-	if err = ctx.Err(); err != nil {
+func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, error) {
+	err := ctx.Err()
+	if err != nil {
 		return nil, err // This returns context.Canceled or context.DeadlineExceeded.
 	}
 
 	s := &Service{}
-	c.Impl = s
-
-	err = service.Create(ctx, &c.CreateInfo, &s.Service)
+	tickCfg := &service.TickServiceConfigs{
+		BaseConfigs: service.BaseConfigs{
+			Name:     config.ServiceEvmReader,
+			Logger:   c.Logger,
+			LogLevel: c.Config.LogLevel,
+			LogColor: c.Config.LogColor,
+		},
+		PollInterval: c.Config.EvmReaderPollingInterval,
+	}
+	err = service.InitTickServiceTemplate(&s.TickServiceTemplate, tickCfg, s)
 	if err != nil {
 		return nil, err
 	}
 
-	if c.EthClient == nil {
-		return nil, fmt.Errorf("EthClient on evmreader service Create is nil")
+	authOpt, err := config.HTTPAuthorizationOption()
+	if err != nil {
+		return nil, err
 	}
-	chainId, err := c.EthClient.ChainID(ctx)
+
+	ethClient := c.EthClient
+	if ethClient == nil {
+		ethClient, err = ethutil.NewEthClient(ctx, c.Config.BlockchainHttpEndpoint.Raw(), s.Logger,
+			ethutil.RetryConfig{
+				MaxRetries:     c.Config.BlockchainHttpMaxRetries,
+				RetryMinWait:   c.Config.BlockchainHttpRetryMinWait,
+				RetryMaxWait:   c.Config.BlockchainHttpRetryMaxWait,
+				RequestTimeout: c.Config.BlockchainHttpRequestTimeout,
+			}, authOpt)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	chainId, err := ethClient.ChainID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -92,52 +115,36 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 			chainId.Uint64(), nodeConfig.ChainID)
 	}
 
-	s.client = c.EthClient
-
+	s.client = ethClient
 	s.chainID = nodeConfig.ChainID
 	s.defaultBlock = nodeConfig.DefaultBlock
 	s.inputReaderEnabled = nodeConfig.InputReaderEnabled
 	s.hasEnabledApps = true
-	s.adapterFactory = &DefaultAdapterFactory{
-		Client: c.EthClient,
-		Filter: ethutil.Filter{
-			MinChunkSize: ethutil.DefaultMinChunkSize,
-			MaxChunkSize: new(big.Int).SetUint64(c.Config.BlockchainMaxBlockRange),
-			Logger:       s.Logger,
-		},
+
+	if c.AdapterFactory != nil {
+		s.adapterFactory = c.AdapterFactory
+	} else {
+		fullEthClient, ok := ethClient.(*ethclient.Client)
+		if !ok {
+			return nil, fmt.Errorf("EthClient must be *ethclient.Client when AdapterFactory is not provided")
+		}
+		s.adapterFactory = &DefaultAdapterFactory{
+			Client: fullEthClient,
+			Filter: ethutil.Filter{
+				MinChunkSize: ethutil.DefaultMinChunkSize,
+				MaxChunkSize: new(big.Int).SetUint64(c.Config.BlockchainMaxBlockRange),
+				Logger:       s.Logger,
+			},
+		}
 	}
+
 	s.resolver = newApplicationAdapterResolver(s.Logger, s.adapterFactory)
+	s.pollingMaxWait = c.Config.BlockchainHttpRetryMaxWait
+	s.lastSuccessfulPoll.Store(&time.Time{})
+
+	s.Logger.Info("Created", "config", c.Config)
 
 	return s, nil
-}
-
-func (s *Service) Alive() bool {
-	return s.alive.Load()
-}
-
-func (s *Service) Ready() bool {
-	return s.ready.Load()
-}
-
-func (s *Service) Reload() []error {
-	return nil
-}
-
-func (s *Service) Stop(bool) []error {
-	s.SetStopping()
-	return nil
-}
-
-func (s *Service) Serve() error {
-	s.alive.Store(true)
-	s.ready.Store(true)
-	defer s.alive.Store(false)
-	defer s.ready.Store(false)
-	return s.Service.Serve()
-}
-
-func (s *Service) String() string {
-	return s.Name
 }
 
 func (s *Service) setupPersistentConfig(

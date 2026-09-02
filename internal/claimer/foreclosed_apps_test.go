@@ -16,6 +16,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func unjoinError(err error) []error {
+	type unwrapper interface {
+		Unwrap() []error
+	}
+
+	if uw, ok := err.(unwrapper); ok {
+		return uw.Unwrap()
+	}
+
+	if err != nil {
+		return []error{err}
+	}
+
+	return nil
+}
+
 // foreclosedAppHelper builds a foreclosed Application instance, optionally
 // with a PRT consensus type. ForecloseBlock is non-zero, mirroring what
 // the evmreader's checkForForeclosure would have persisted.
@@ -69,7 +85,7 @@ func TestListEnabledForeclosedNonPRTApps_UsesAuthorityQuorumFilter(t *testing.T)
 		mock.Anything,
 	).Return([]*model.Application{auth, quorum}, 2, nil).Once()
 
-	got, err := s.listEnabledForeclosedNonPRTApps()
+	got, err := s.listEnabledForeclosedNonPRTApps(context.Background())
 	require.NoError(t, err)
 	require.Len(t, got, 2)
 	assert.Contains(t, got, auth.ID)
@@ -98,7 +114,7 @@ func TestListEnabledForeclosedNonPRTApps_ExcludesTerminalStatuses(t *testing.T) 
 		mock.Anything,
 	).Return([]*model.Application{}, 0, nil).Once()
 
-	got, err := s.listEnabledForeclosedNonPRTApps()
+	got, err := s.listEnabledForeclosedNonPRTApps(context.Background())
 	require.NoError(t, err)
 	require.Empty(t, got)
 }
@@ -115,7 +131,7 @@ func TestProcessForeclosedApps_DefersWhenUnreconciled(t *testing.T) {
 	defer r.AssertExpectations(t)
 
 	app := foreclosedAppHelper(1, 100, model.Consensus_Authority)
-	s.Context = context.Background()
+	ctx := context.Background()
 
 	r.On("ForecloseUnacceptedEpochsAtOrAfterBlock",
 		mock.Anything, app.ID, app.ForecloseBlock,
@@ -130,7 +146,7 @@ func TestProcessForeclosedApps_DefersWhenUnreconciled(t *testing.T) {
 	// No UpdateApplicationStatus expectation — if it fires, the mock
 	// assertion fails the test because we registered no Setup for it.
 
-	errs := s.processForeclosedApps(map[int64]*model.Application{app.ID: app})
+	errs := s.processForeclosedApps(ctx, map[int64]*model.Application{app.ID: app})
 	assert.Empty(t, errs, "deferral is not an error")
 }
 
@@ -143,7 +159,7 @@ func TestProcessForeclosedApps_DefersWhenUnreconciled(t *testing.T) {
 func TestProcessForeclosedApps_DrainCheckErrorsAppendAndContinue(t *testing.T) {
 	s, r, _ := newServiceMock(t)
 	defer r.AssertExpectations(t)
-	s.Context = context.Background()
+	ctx := context.Background()
 
 	app1 := foreclosedAppHelper(1, 100, model.Consensus_Authority)
 	app2 := foreclosedAppHelper(2, 100, model.Consensus_Authority)
@@ -158,7 +174,8 @@ func TestProcessForeclosedApps_DrainCheckErrorsAppendAndContinue(t *testing.T) {
 	// ForecloseUnacceptedEpochsAtOrAfterBlock nor HasUnreconciledClaimsBeforeBlock
 	// is reached — no expectation registered for either.
 
-	errs := s.processForeclosedApps(map[int64]*model.Application{app1.ID: app1, app2.ID: app2})
+	err := s.processForeclosedApps(ctx, map[int64]*model.Application{app1.ID: app1, app2.ID: app2})
+	errs := unjoinError(err)
 	assert.Len(t, errs, 2, "each app's drain error is appended; the pass does not abort early")
 }
 
@@ -177,7 +194,7 @@ func TestProcessForeclosedApps_NoTransitionWhenDrained(t *testing.T) {
 	defer r.AssertExpectations(t)
 
 	app := foreclosedAppHelper(1, 100, model.Consensus_Authority)
-	s.Context = context.Background()
+	ctx := context.Background()
 
 	r.On("ForecloseUnacceptedEpochsAtOrAfterBlock",
 		mock.Anything, app.ID, app.ForecloseBlock,
@@ -191,7 +208,7 @@ func TestProcessForeclosedApps_NoTransitionWhenDrained(t *testing.T) {
 
 	// No UpdateApplicationStatus expectation — the assertion is by negation.
 
-	errs := s.processForeclosedApps(map[int64]*model.Application{app.ID: app})
+	errs := s.processForeclosedApps(ctx, map[int64]*model.Application{app.ID: app})
 	assert.Empty(t, errs)
 }
 
@@ -209,7 +226,7 @@ func TestProcessForeclosedApps_DefersWhenInputsUndrained(t *testing.T) {
 	defer r.AssertExpectations(t)
 
 	app := foreclosedAppHelper(1, 100, model.Consensus_Authority)
-	s.Context = context.Background()
+	ctx := context.Background()
 
 	r.On("HasUndrainedEpochsBeforeBlock",
 		mock.Anything, app.ID, app.ForecloseBlock,
@@ -218,7 +235,7 @@ func TestProcessForeclosedApps_DefersWhenInputsUndrained(t *testing.T) {
 	// HasUnreconciledClaimsBeforeBlock: an undrained input defers the whole pass
 	// before terminalization and before claim reconciliation.
 
-	errs := s.processForeclosedApps(map[int64]*model.Application{app.ID: app})
+	errs := s.processForeclosedApps(ctx, map[int64]*model.Application{app.ID: app})
 	assert.Empty(t, errs, "input-drain deferral is not an error")
 }
 
@@ -231,7 +248,7 @@ func TestProcessForeclosedApps_TerminalizesUnacceptedOverlapAfterDrain(t *testin
 	defer r.AssertExpectations(t)
 
 	app := foreclosedAppHelper(1, 100, model.Consensus_Authority)
-	s.Context = context.Background()
+	ctx := context.Background()
 
 	// Pin the sequence: the drain check MUST run before terminalization (else a
 	// straddling-epoch input is stranded — the bug this ordering prevents), and
@@ -247,7 +264,7 @@ func TestProcessForeclosedApps_TerminalizesUnacceptedOverlapAfterDrain(t *testin
 	).Return(false, nil).Once()
 	mock.InOrder(drain, terminalize, reconcile)
 
-	errs := s.processForeclosedApps(map[int64]*model.Application{app.ID: app})
+	errs := s.processForeclosedApps(ctx, map[int64]*model.Application{app.ID: app})
 	assert.Empty(t, errs)
 }
 
@@ -261,10 +278,10 @@ func TestProcessForeclosedApps_SkipsZeroForecloseBlock(t *testing.T) {
 	defer r.AssertExpectations(t)
 
 	app := &model.Application{ID: 99, ConsensusType: model.Consensus_Authority}
-	s.Context = context.Background()
+	ctx := context.Background()
 
 	// No mock expectations — the loop must skip before any repo call.
-	errs := s.processForeclosedApps(map[int64]*model.Application{app.ID: app})
+	errs := s.processForeclosedApps(ctx, map[int64]*model.Application{app.ID: app})
 	assert.Empty(t, errs)
 }
 
@@ -286,8 +303,8 @@ func TestProcessForeclosedApps_DefersWhenStillBackfilling(t *testing.T) {
 
 	app := foreclosedAppHelper(1, 100, model.Consensus_Authority)
 	app.LastInputCheckBlock = 50 // scanner well below the foreclose block
-	s.Context = context.Background()
+	ctx := context.Background()
 
-	errs := s.processForeclosedApps(map[int64]*model.Application{app.ID: app})
+	errs := s.processForeclosedApps(ctx, map[int64]*model.Application{app.ID: app})
 	assert.Empty(t, errs, "bootstrap deferral is not an error")
 }

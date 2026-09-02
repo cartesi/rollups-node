@@ -609,7 +609,9 @@ func (m *MachineManager) Applications() []*Application {
 
 // Close shuts down all machine instances in parallel.
 // After Close returns, no new machines can be added.
-func (m *MachineManager) Close() error {
+func (m *MachineManager) Close() {
+	m.logger.Info("Closing machine manager")
+
 	// Mark as closed and take ownership of the machines map under the lock,
 	// then release it so readers (GetMachine, HasMachine, Applications)
 	// aren't blocked during the potentially slow parallel shutdown.
@@ -636,14 +638,11 @@ func (m *MachineManager) Close() error {
 	wg.Wait()
 	close(results)
 
-	var errs []error
 	for r := range results {
 		if r.err != nil {
-			errs = append(errs, fmt.Errorf("failed to close machine for app %d: %w", r.id, r.err))
+			m.logger.Error("failed to close machine for app", "app", r.id, "error", r.err)
 		}
 	}
-
-	return errors.Join(errs...)
 }
 
 func getMachineApplications(ctx context.Context, repo MachineRepository) ([]*Application, error) {

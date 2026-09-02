@@ -99,8 +99,8 @@ func (s *InspectSuite) TestPostMachineNotReady() {
 	inspect := &Inspector{
 		repository:       repo,
 		IInspectMachines: machines,
-		Logger:           service.NewLogger(slog.LevelDebug, true),
 	}
+	service.InitServiceTemplate(&inspect.BaseTemplate, &service.BaseConfigs{})
 
 	srv := s.startServer(inspect)
 	defer srv.Close()
@@ -135,8 +135,8 @@ func (s *InspectSuite) TestPostForeclosedMachineUnavailable() {
 	inspect := &Inspector{
 		repository:       repo,
 		IInspectMachines: machines,
-		Logger:           service.NewLogger(slog.LevelDebug, true),
 	}
+	service.InitServiceTemplate(&inspect.BaseTemplate, &service.BaseConfigs{})
 
 	srv := s.startServer(inspect)
 	defer srv.Close()
@@ -372,8 +372,8 @@ func (s *InspectSuite) setupWithInspectResult(result manager.InspectResult) (*In
 	inspect := &Inspector{
 		repository:       repo,
 		IInspectMachines: machines,
-		Logger:           service.NewLogger(slog.LevelDebug, true),
 	}
+	service.InitServiceTemplate(&inspect.BaseTemplate, &service.BaseConfigs{})
 	return inspect, m.application
 }
 

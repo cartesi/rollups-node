@@ -5,16 +5,20 @@ package root
 
 import (
 	"context"
-	"time"
 
+	"github.com/cartesi/rollups-node/internal/advancer"
+	"github.com/cartesi/rollups-node/internal/claimer"
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/node"
+	"github.com/cartesi/rollups-node/internal/evmreader"
+	"github.com/cartesi/rollups-node/internal/inspect"
+	"github.com/cartesi/rollups-node/internal/jsonrpc"
+	"github.com/cartesi/rollups-node/internal/manager"
+	"github.com/cartesi/rollups-node/internal/prt"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
+	"github.com/cartesi/rollups-node/internal/validator"
 	"github.com/cartesi/rollups-node/internal/version"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
-	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/spf13/cobra"
 )
@@ -129,59 +133,103 @@ func init() {
 	}
 }
 
-func newEthClient(ctx context.Context, svcName string, requestTimeout time.Duration) (*ethclient.Client, error) {
-	level := config.ResolveServiceLogLevel(svcName, cfg.LogLevel)
-	logger := service.NewLogger(level, cfg.LogColor).With("service", svcName)
-
-	authOpt, err := config.HTTPAuthorizationOption()
-	if err != nil {
-		return nil, err
-	}
-
-	return ethutil.NewEthClient(ctx, cfg.BlockchainHttpEndpoint.Raw(), logger,
-		ethutil.RetryConfig{
-			MaxRetries:     cfg.BlockchainHttpMaxRetries,
-			RetryMinWait:   cfg.BlockchainHttpRetryMinWait,
-			RetryMaxWait:   cfg.BlockchainHttpRetryMaxWait,
-			RequestTimeout: requestTimeout,
-		}, authOpt)
-}
-
 func run(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
 	defer cancel()
 
-	createInfo := node.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:                 config.ServiceNode,
-			LogLevel:             cfg.LogLevel,
-			LogColor:             cfg.LogColor,
-			EnableSignalHandling: true,
-			TelemetryCreate:      true,
-			TelemetryAddress:     cfg.NodeTelemetryAddress,
+	// Create shared components
+
+	name := config.ServiceNode
+	logger := service.NewLogger(name, cfg.LogLevel, cfg.LogColor)
+
+	repo, err := factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
+	cli.CheckErr(logger, err)
+	defer repo.Close()
+
+	// create Machine Manager using the same logger used by Advancer
+	advCfg := cfg.ToAdvancerConfig()
+	advLogger := service.NewLogger(config.ServiceAdvancer, advCfg.LogLevel, advCfg.LogColor)
+	machineManager := manager.NewMachineManager(
+		repo,
+		advLogger,
+		cfg.FeatureMachineHashCheckEnabled,
+		cfg.AdvancerInputBatchSize,
+	)
+	defer machineManager.Close()
+
+	// Create factories of services
+
+	factories := []service.FactoryFunction{
+		func(ctx context.Context, sup *service.Supervisor) (service.SupervisedService, error) {
+			return evmreader.Create(ctx, &evmreader.CreateInfo{
+				Config:     *cfg.ToEvmreaderConfig(),
+				Repository: repo,
+			})
 		},
-		Config: *cfg,
+		func(ctx context.Context, sup *service.Supervisor) (service.SupervisedService, error) {
+			adv, err := advancer.Create(ctx, &advancer.CreateInfo{
+				Config:     *advCfg,
+				Logger:     advLogger,
+				Repository: repo,
+				Machines:   machineManager,
+				Supervisor: sup,
+			})
+			return adv, err
+		},
+		func(ctx context.Context, sup *service.Supervisor) (service.SupervisedService, error) {
+			return validator.Create(ctx, &validator.CreateInfo{
+				Config:     *cfg.ToValidatorConfig(),
+				Repository: repo,
+			})
+		},
+		func(ctx context.Context, sup *service.Supervisor) (service.SupervisedService, error) {
+			return claimer.Create(ctx, &claimer.CreateInfo{
+				Config:     *cfg.ToClaimerConfig(),
+				Repository: repo,
+			})
+		},
+		func(ctx context.Context, sup *service.Supervisor) (service.SupervisedService, error) {
+			return prt.Create(ctx, &prt.CreateInfo{
+				Config:     *cfg.ToPrtConfig(),
+				Repository: repo,
+			})
+		},
 	}
-	logger := service.NewServiceLogger(&createInfo.CreateInfo)
-	createInfo.CreateInfo.Logger = logger
 
-	var err error
-	createInfo.ReaderClient, err = newEthClient(ctx, config.ServiceEvmReader, cfg.BlockchainHttpRequestTimeout)
+	if cfg.FeatureInspectEnabled {
+		factories = append(factories,
+			func(ctx context.Context, sup *service.Supervisor) (service.SupervisedService, error) {
+				return inspect.Create(ctx, &inspect.CreateInfo{
+					Config:     *advCfg,
+					Repository: repo,
+					Machines:   machineManager,
+				})
+			},
+		)
+	}
+	if cfg.FeatureJsonrpcApiEnabled {
+		factories = append(factories,
+			func(ctx context.Context, sup *service.Supervisor) (service.SupervisedService, error) {
+				cfg := jsonrpc.CreateInfo{
+					Config:     *cfg.ToJsonrpcConfig(),
+					Repository: repo,
+				}
+				return jsonrpc.Create(ctx, &cfg)
+			},
+		)
+	}
+
+	logger.Info("Created", "config", cfg)
+
+	supCfg := &service.SupervisorConfigs{
+		BaseConfigs:          service.BaseConfigs{Name: name, Logger: logger},
+		EnableSignalHandling: true,
+		TelemetryCreate:      true,
+		TelemetryAddress:     cfg.NodeTelemetryAddress,
+		Factories:            factories,
+	}
+	sup, err := service.NewSupervisor(ctx, supCfg)
 	cli.CheckErr(logger, err)
-
-	createInfo.ClaimerClient, err = newEthClient(ctx, config.ServiceClaimer, cfg.BlockchainHttpRequestTimeout)
-	cli.CheckErr(logger, err)
-
-	createInfo.PrtClient, err = newEthClient(ctx, config.ServicePrt, cfg.BlockchainHttpRequestTimeout)
-	cli.CheckErr(logger, err)
-
-	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
-	cli.CheckErr(logger, err)
-	defer createInfo.Repository.Close()
-
-	nodeService, err := node.Create(ctx, &createInfo)
-	cli.CheckErr(logger, err)
-	nodeService.LogConfig(createInfo.Config)
-
-	cli.CheckErr(logger, nodeService.Serve())
+	defer sup.Close()
+	cli.CheckErr(logger, sup.Serve())
 }

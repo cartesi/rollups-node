@@ -514,9 +514,10 @@ func newDeterminismHarness(
 	t.Cleanup(func() { require.NoError(t, instance.Close()) })
 	provider := &determinismMachineProvider{app: app, instance: instance}
 	service := &Service{
-		Service: pkgservice.Service{
-			Logger: logger,
-			Cancel: func() {},
+		TickServiceTemplate: pkgservice.TickServiceTemplate{
+			BaseTemplate: pkgservice.BaseTemplate{
+				Logger: logger,
+			},
 		},
 		inputBatchSize: 500,
 		machineManager: provider,
@@ -923,7 +924,12 @@ func (p *determinismMachineProvider) failureReason(appID int64) string {
 
 func (p *determinismMachineProvider) HasMachine(appID int64) bool { return appID == p.app.ID }
 
-func (p *determinismMachineProvider) Close() error { return p.instance.Close() }
+func (p *determinismMachineProvider) Close() {
+	err := p.instance.Close()
+	if err != nil {
+		panic(err)
+	}
+}
 
 // determinismContext makes cancellation and deadline propagation controllable
 // without relying on scheduler timing or short wall-clock deadlines.
