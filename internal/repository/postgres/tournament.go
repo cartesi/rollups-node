@@ -77,7 +77,19 @@ func (r *PostgresRepository) CreateTournament(
 		whereClause,
 	)
 
-	sqlStr, args := insertStmt.QUERY(selectQuery).Sql()
+	// Tournament addresses come from the chain and may be observed again after
+	// an interrupted shutdown. Ignore only an exact replay of the tournament
+	// identity; other conflicts, such as a different root for the same epoch,
+	// must still surface as errors.
+	sqlStr, args := insertStmt.
+		QUERY(selectQuery).
+		ON_CONFLICT(
+			table.Tournaments.ApplicationID,
+			table.Tournaments.EpochIndex,
+			table.Tournaments.Address,
+		).
+		DO_NOTHING().
+		Sql()
 	_, err := r.db.Exec(ctx, sqlStr, args...)
 
 	return err
