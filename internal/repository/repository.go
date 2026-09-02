@@ -303,6 +303,9 @@ type StateHashRepository interface {
 }
 
 type TournamentRepository interface {
+	// CreateTournament is idempotent only for an exact
+	// (application_id, epoch_index, address) replay. Other constraint conflicts
+	// remain errors.
 	CreateTournament(ctx context.Context, nameOrAddress string, t *Tournament) error
 	UpdateTournament(ctx context.Context, nameOrAddress string, t *Tournament) error
 	GetTournament(ctx context.Context, nameOrAddress string, address string) (*Tournament, error)

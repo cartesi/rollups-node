@@ -30,6 +30,40 @@ func (s *TournamentSuite) TestCreateTournament() {
 			s.Ctx, seed.App.IApplicationAddress.String(), tournament)
 		s.Require().NoError(err)
 	})
+
+	s.Run("ExactReplayIsIdempotent", func() {
+		seed := s.seedWithEpoch()
+		first := NewTournamentBuilder(seed.App.ID).
+			WithEpochIndex(0).Build()
+		s.Require().NoError(s.Repo.CreateTournament(
+			s.Ctx, seed.App.IApplicationAddress.String(), first))
+
+		replay := *first
+		replay.MaxLevel++
+		err := s.Repo.CreateTournament(
+			s.Ctx, seed.App.IApplicationAddress.String(), &replay)
+		s.Require().NoError(err)
+
+		got, err := s.Repo.GetTournament(
+			s.Ctx, seed.App.IApplicationAddress.String(), first.Address.String())
+		s.Require().NoError(err)
+		s.Require().NotNil(got)
+		s.Equal(first.MaxLevel, got.MaxLevel, "an exact replay must not overwrite the first observation")
+	})
+
+	s.Run("DifferentRootForSameEpochIsAnError", func() {
+		seed := s.seedWithEpoch()
+		first := NewTournamentBuilder(seed.App.ID).
+			WithEpochIndex(0).Build()
+		s.Require().NoError(s.Repo.CreateTournament(
+			s.Ctx, seed.App.IApplicationAddress.String(), first))
+
+		conflicting := NewTournamentBuilder(seed.App.ID).
+			WithEpochIndex(0).Build()
+		err := s.Repo.CreateTournament(
+			s.Ctx, seed.App.IApplicationAddress.String(), conflicting)
+		s.Require().Error(err, "only the exact tournament identity may be replayed")
+	})
 }
 
 func (s *TournamentSuite) TestGetTournament() {

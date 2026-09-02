@@ -131,6 +131,18 @@ func (s *Service) Alive() bool     { return true }
 func (s *Service) Ready() bool     { return true }
 func (s *Service) Reload() []error { return nil }
 
+// logErrorUnlessShutdown keeps an in-flight shutdown cancellation from being
+// reported as an operational failure. DeadlineExceeded and cancellations while
+// the service is running remain errors.
+func (s *Service) logErrorUnlessShutdown(message string, err error, args ...any) {
+	if s.IsStopping() && errors.Is(err, context.Canceled) &&
+		!errors.Is(err, context.DeadlineExceeded) {
+		return
+	}
+	args = append(args, "error", err)
+	s.Logger.Error(message, args...)
+}
+
 // Tick executes the Validator main logic of producing claims and/or proofs
 // for processed epochs of all running applications.
 func (s *Service) Tick() []error {
