@@ -519,13 +519,14 @@ start-postgres: ## Run the PostgreSQL 16 docker container
 start-awslocalstack: ## Run the AWS LocalStack docker container
 	@echo "Starting AWS localstack"
 	@docker run --rm --name awslocalstack -p 127.0.0.1:4566:4566 -d -e SERVICES=kms localstack/localstack:4.14.0
-	@echo "Add the following variables to run integration test with AWS services:"
-	@echo "  export AWS_ACCESS_KEY_ID=test"
-	@echo "  export AWS_SECRET_ACCESS_KEY=test"
-	@echo "  export AWS_REGION=us-east-1"
-	@echo "  export AWS_ENDPOINT_URL_KMS=http://localhost:4566"
-	@echo "  export LOCALSTACK_KMS_ENDPOINT=http://localhost:4566"
-	@echo "  export LOCALSTACK_KMS_REQUIRED=true"
+
+env-awslocalstack:
+	@echo export AWS_ACCESS_KEY_ID=test
+	@echo export AWS_SECRET_ACCESS_KEY=test
+	@echo export AWS_REGION=us-east-1
+	@echo export AWS_ENDPOINT_URL_KMS=http://localhost:4566
+	@echo export LOCALSTACK_KMS_ENDPOINT=http://localhost:4566
+	@echo export LOCALSTACK_KMS_REQUIRED=true
 
 start: start-postgres start-devnet ## Start the anvil devnet and PostgreSQL 16 docker containers
 
