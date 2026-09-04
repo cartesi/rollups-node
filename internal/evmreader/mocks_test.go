@@ -274,7 +274,7 @@ func (m *MockRepository) SetupDefaultBehavior() *MockRepository {
 			FirstBlock:           11,
 			LastBlock:            20,
 			Status:               EpochStatus_Open,
-			OutputsMerkleRoot:    nil,
+			TxBufferDataBlock:    nil,
 			ClaimTransactionHash: nil,
 		}, nil).Twice()
 

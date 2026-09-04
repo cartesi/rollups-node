@@ -28,16 +28,10 @@ func TestMachineInstance(t *testing.T) {
 
 type MachineInstanceSuite struct{ suite.Suite }
 
-func (s *MachineInstanceSuite) TestMcycleOverflowRemainsIncomplete() {
-	require := s.Require()
-
-	// Cycle exhaustion surfaces as an error from machine.Advance, never as a
-	// completed CompletionStatus, so no input completion status can exist for it.
-	// The zero-value status is the closest representable input and must be
-	// rejected rather than mapped to a completed status.
-	status, err := toInputStatus(machine.CompletionStatusUnknown)
-	require.ErrorIs(err, ErrIncompleteAdvance)
-	require.Equal(model.InputCompletionStatus_None, status)
+func (s *MachineInstanceSuite) TestOverflowCompletionStatusMapsToInputOverflow() {
+	status, err := toInputStatus(machine.CompletionStatusOverflow)
+	s.Require().NoError(err)
+	s.Require().Equal(model.InputCompletionStatus_Overflow, status)
 }
 
 // MockMachineRuntimeFactory implements MachineRuntimeFactory for testing
@@ -393,8 +387,9 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			require.Equal(model.InputCompletionStatus_Accepted, res.Status)
 			require.Equal(expectedOutputs, res.Outputs)
 			require.Equal(expectedReports1, res.Reports)
-			require.Equal(newHash(1), res.OutputsHash)
+			require.Equal(newHash(1), res.TxBufferDataBlock)
 			require.Equal(newHash(2), res.MachineHash)
+			require.True(res.IsComplete())
 			require.Equal(uint64(6), machine.processedInputs.Load())
 		})
 
@@ -410,10 +405,11 @@ func (s *MachineInstanceSuite) TestAdvance() {
 
 			require.Same(inner, instance.runtime)
 			require.Equal(model.InputCompletionStatus_Rejected, res.Status)
-			require.Equal(expectedOutputs, res.Outputs)
-			require.Equal(expectedReports1, res.Reports)
-			require.Equal(newHash(1), res.OutputsHash)
+			require.Empty(res.Outputs)
+			require.Empty(res.Reports)
+			require.Equal(newHash(1), res.TxBufferDataBlock)
 			require.Equal(newHash(2), res.MachineHash)
+			require.True(res.IsComplete())
 			require.Equal(uint64(6), instance.processedInputs.Load())
 		})
 
@@ -429,19 +425,35 @@ func (s *MachineInstanceSuite) TestAdvance() {
 				fork.CompletionStatusReturn = machineStatus
 				fork.ExceptionDataReturn = exceptionData
 				fork.CloseError = nil
+				preProof := fork.StateProofReturn
+				postProof := acceptedStateProof(newHash(2), newHash(1))
+				postProof.IflagsYProof.DataBlock = machine.Hash{}
+				proofCalls := 0
+				fork.StateProofFunc = func(context.Context) (*machine.StateProof, error) {
+					proofCalls++
+					if proofCalls == 1 {
+						return preProof, nil
+					}
+					return postProof, nil
+				}
 
 				res, err := instance.Advance(context.Background(), []byte{}, 0, 5, false)
 				require.Nil(err)
 				require.NotNil(res)
 
-				require.Same(inner, instance.runtime)
+				require.Nil(instance.runtime)
 				require.Equal(inputStatus, res.Status)
 				require.Equal(exceptionData, res.ExceptionData)
-				require.Equal(expectedOutputs, res.Outputs)
-				require.Equal(expectedReports1, res.Reports)
-				require.Equal(newHash(1), res.OutputsHash)
+				require.Empty(res.Outputs)
+				require.Empty(res.Reports)
+				require.Equal(newHash(1), res.TxBufferDataBlock)
 				require.Equal(newHash(2), res.MachineHash)
+				require.True(res.IsComplete())
 				require.Equal(uint64(6), instance.processedInputs.Load())
+				require.Equal(int64(1), inner.CloseCalls.Load())
+				require.Equal(int64(1), fork.CloseCalls.Load())
+				_, inspectErr := instance.Inspect(context.Background(), nil)
+				require.ErrorIs(inspectErr, ErrMachineClosed)
 			})
 		}
 
@@ -453,6 +465,16 @@ func (s *MachineInstanceSuite) TestAdvance() {
 		testCompletedStatus("Halted",
 			machine.CompletionStatusHalted,
 			model.InputCompletionStatus_MachineHalted,
+			nil)
+
+		testCompletedStatus("Overflow",
+			machine.CompletionStatusOverflow,
+			model.InputCompletionStatus_Overflow,
+			nil)
+
+		testCompletedStatus("UnexpectedYield",
+			machine.CompletionStatusUnexpectedYield,
+			model.InputCompletionStatus_UnexpectedYield,
 			nil)
 	})
 
@@ -567,37 +589,61 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			require.Equal(uint64(5), machine.processedInputs.Load())
 		})
 
-		s.Run("Hash", func() {
+		s.Run("StateProof", func() {
 			require := s.Require()
 			inner, fork, machine := s.setupAdvance()
-			errHash := errors.New("Hash error")
-			fork.HashError = errHash
+			errProof := errors.New("state proof error")
+			fork.StateProofError = errProof
 			fork.CloseError, inner.CloseError = inner.CloseError, fork.CloseError
 
 			res, err := machine.Advance(context.Background(), []byte{}, 0, 5, false)
 			require.Error(err)
 			require.Nil(res)
-			require.ErrorIs(err, errHash)
+			require.ErrorIs(err, errProof)
 			require.NotErrorIs(err, errUnreachable)
 			require.Equal(uint64(5), machine.processedInputs.Load())
 		})
 
-		s.Run("HashAndClose", func() {
+		s.Run("StateProofAndClose", func() {
 			require := s.Require()
 			inner, fork, machine := s.setupAdvance()
-			errHash := errors.New("Hash error")
+			errProof := errors.New("state proof error")
 			errClose := errors.New("Close error")
-			fork.HashError = errHash
+			fork.StateProofError = errProof
 			fork.CloseError = errClose
 			inner.CloseError = nil
 
 			res, err := machine.Advance(context.Background(), []byte{}, 0, 5, false)
 			require.Error(err)
 			require.Nil(res)
-			require.ErrorIs(err, errHash)
+			require.ErrorIs(err, errProof)
 			require.ErrorIs(err, errClose)
 			require.NotErrorIs(err, errUnreachable)
 			require.Equal(uint64(5), machine.processedInputs.Load())
+		})
+
+		s.Run("PostAdvanceStateProof", func() {
+			require := s.Require()
+			inner, fork, instance := s.setupAdvance()
+			errProof := errors.New("post-advance state proof error")
+			preProof := fork.StateProofReturn
+			proofCalls := 0
+			fork.StateProofFunc = func(context.Context) (*machine.StateProof, error) {
+				proofCalls++
+				if proofCalls == 1 {
+					return preProof, nil
+				}
+				return nil, errProof
+			}
+			fork.CloseError = nil
+
+			res, err := instance.Advance(context.Background(), nil, 0, 5, false)
+			require.Nil(res)
+			require.ErrorIs(err, errProof)
+			require.Same(inner, instance.runtime)
+			require.Equal(uint64(5), instance.processedInputs.Load())
+			require.Equal(int64(1), fork.CloseCalls.Load())
+			require.Zero(inner.CloseCalls.Load())
 		})
 
 		s.Run("Close", func() {
@@ -668,8 +714,8 @@ func (s *MachineInstanceSuite) TestAdvance() {
 		fork2.CompletionStatusReturn = machine.CompletionStatusAccepted
 		fork2.AdvanceOutputsReturn = expectedOutputs
 		fork2.AdvanceReportsReturn = expectedReports1
-		fork2.OutputsHashReturn = newHash(1)
 		fork2.HashReturn = newHash(2)
+		fork2.StateProofReturn = acceptedStateProof(newHash(2), newHash(1))
 		fork2.CloseError = errUnreachable // old runtime close for second advance
 		fork2.ForkReturn = nil
 		fork.ForkReturn = fork2
@@ -698,6 +744,8 @@ func (s *MachineInstanceSuite) TestInspect() {
 		{"Reject", machine.CompletionStatusRejected},
 		{"Exception", machine.CompletionStatusException},
 		{"Halted", machine.CompletionStatusHalted},
+		{"Overflow", machine.CompletionStatusOverflow},
+		{"UnexpectedYield", machine.CompletionStatusUnexpectedYield},
 	} {
 		s.Run(test.name, func() {
 			require := s.Require()
@@ -853,9 +901,22 @@ func (s *MachineInstanceSuite) TestCreateSnapshot() {
 		err := machine.CreateSnapshot(context.Background(), 5, "/tmp/snapshot")
 		require.Error(err)
 		require.ErrorIs(err, errStore)
+		require.ErrorIs(err, ErrMachineClosed)
 
 		// Runtime should be destroyed after a store error.
 		require.Nil(machine.runtime)
+	})
+
+	s.Run("CanceledPreservesRuntime", func() {
+		require := s.Require()
+		inner, _, machineInst := s.setupAdvance()
+		inner.StoreError = machine.ErrCanceled
+
+		err := machineInst.CreateSnapshot(context.Background(), 5, "/tmp/snapshot")
+		require.ErrorIs(err, machine.ErrCanceled)
+		require.NotErrorIs(err, ErrMachineClosed)
+		require.Same(inner, machineInst.runtime)
+		require.Zero(inner.CloseCalls.Load())
 	})
 
 	s.Run("ErrorAndCloseError", func() {
@@ -870,6 +931,7 @@ func (s *MachineInstanceSuite) TestCreateSnapshot() {
 		require.Error(err)
 		require.ErrorIs(err, errStore)
 		require.ErrorIs(err, errClose)
+		require.ErrorIs(err, ErrMachineClosed)
 		require.Nil(machine.runtime)
 	})
 
@@ -895,7 +957,7 @@ func (s *MachineInstanceSuite) TestCreateSnapshot() {
 func (s *MachineInstanceSuite) TestHash() {
 	s.Run("Ok", func() {
 		require := s.Require()
-		inner, machineInst := s.setupOutputsProof()
+		inner, machineInst := s.setupStateProof()
 
 		hash, err := machineInst.Hash(context.Background())
 		require.NoError(err)
@@ -907,7 +969,7 @@ func (s *MachineInstanceSuite) TestHash() {
 
 	s.Run("MachineClosed", func() {
 		require := s.Require()
-		_, machineInst := s.setupOutputsProof()
+		_, machineInst := s.setupStateProof()
 		machineInst.runtime = nil
 
 		hash, err := machineInst.Hash(context.Background())
@@ -918,7 +980,7 @@ func (s *MachineInstanceSuite) TestHash() {
 
 	s.Run("Error", func() {
 		require := s.Require()
-		inner, machineInst := s.setupOutputsProof()
+		inner, machineInst := s.setupStateProof()
 		errHash := errors.New("Hash error")
 		inner.HashError = errHash
 		inner.CloseError = nil
@@ -926,6 +988,7 @@ func (s *MachineInstanceSuite) TestHash() {
 		hash, err := machineInst.Hash(context.Background())
 		require.Error(err)
 		require.ErrorIs(err, errHash)
+		require.ErrorIs(err, ErrMachineClosed)
 		require.Equal([32]byte{}, hash)
 
 		// Runtime should be destroyed after a hash error.
@@ -934,7 +997,7 @@ func (s *MachineInstanceSuite) TestHash() {
 
 	s.Run("ErrorAndCloseError", func() {
 		require := s.Require()
-		inner, machineInst := s.setupOutputsProof()
+		inner, machineInst := s.setupStateProof()
 		errHash := errors.New("Hash error")
 		errClose := errors.New("Close error")
 		inner.HashError = errHash
@@ -944,23 +1007,39 @@ func (s *MachineInstanceSuite) TestHash() {
 		require.Error(err)
 		require.ErrorIs(err, errHash)
 		require.ErrorIs(err, errClose)
+		require.ErrorIs(err, ErrMachineClosed)
 		require.Equal([32]byte{}, hash)
 		require.Nil(machineInst.runtime)
 	})
+
+	s.Run("CanceledPreservesRuntime", func() {
+		require := s.Require()
+		inner, machineInst := s.setupStateProof()
+		inner.HashError = machine.ErrCanceled
+
+		hash, err := machineInst.Hash(context.Background())
+		require.Equal([32]byte{}, hash)
+		require.ErrorIs(err, machine.ErrCanceled)
+		require.NotErrorIs(err, ErrMachineClosed)
+		require.Same(inner, machineInst.runtime)
+		require.Zero(inner.CloseCalls.Load())
+	})
 }
 
-func (s *MachineInstanceSuite) TestOutputsProof() {
+func (s *MachineInstanceSuite) TestStateProof() {
 	s.Run("Ok", func() {
 		require := s.Require()
-		inner, machineInst := s.setupOutputsProof()
+		inner, machineInst := s.setupStateProof()
 
-		proof, err := machineInst.OutputsProof(context.Background())
+		proof, err := machineInst.StateProof(context.Background())
 		require.NoError(err)
 		require.NotNil(proof)
 
 		require.Equal(newHash(1), proof.MachineHash)
-		require.Equal(newHash(2), proof.OutputsHash)
-		require.Equal(expectedOutputsHashProof, proof.OutputsHashProof)
+		require.Equal(newHash(2), proof.TxBufferDataBlock)
+		require.True(proof.IsComplete())
+		require.Equal(common.Hash(inner.StateProofReturn.IflagsYProof.DataBlock), proof.IflagsYDataBlock)
+		require.Equal(common.Hash(inner.StateProofReturn.HtifTohostProof.DataBlock), proof.HtifTohostDataBlock)
 
 		// Runtime should still be alive after a successful call.
 		require.Same(inner, machineInst.runtime)
@@ -968,78 +1047,89 @@ func (s *MachineInstanceSuite) TestOutputsProof() {
 
 	s.Run("MachineClosed", func() {
 		require := s.Require()
-		_, machineInst := s.setupOutputsProof()
+		_, machineInst := s.setupStateProof()
 		machineInst.runtime = nil
 
-		proof, err := machineInst.OutputsProof(context.Background())
+		proof, err := machineInst.StateProof(context.Background())
 		require.Nil(proof)
 		require.Error(err)
 		require.Equal(ErrMachineClosed, err)
 	})
 
-	s.Run("HashError", func() {
+	s.Run("StateProofError", func() {
 		require := s.Require()
-		inner, machineInst := s.setupOutputsProof()
-		errHash := errors.New("Hash error")
-		inner.HashError = errHash
+		inner, machineInst := s.setupStateProof()
+		errProof := errors.New("state proof error")
+		inner.StateProofError = errProof
 		inner.CloseError = nil
 
-		proof, err := machineInst.OutputsProof(context.Background())
+		proof, err := machineInst.StateProof(context.Background())
 		require.Nil(proof)
 		require.Error(err)
-		require.ErrorIs(err, errHash)
+		require.ErrorIs(err, errProof)
+		require.ErrorIs(err, ErrMachineClosed)
 
-		// Runtime should be destroyed after a hash error.
+		// Runtime should be destroyed after a proof error.
 		require.Nil(machineInst.runtime)
 	})
 
-	s.Run("HashErrorAndCloseError", func() {
+	s.Run("StateProofErrorAndCloseError", func() {
 		require := s.Require()
-		inner, machineInst := s.setupOutputsProof()
-		errHash := errors.New("Hash error")
+		inner, machineInst := s.setupStateProof()
+		errProof := errors.New("state proof error")
 		errClose := errors.New("Close error")
-		inner.HashError = errHash
+		inner.StateProofError = errProof
 		inner.CloseError = errClose
 
-		proof, err := machineInst.OutputsProof(context.Background())
+		proof, err := machineInst.StateProof(context.Background())
 		require.Nil(proof)
 		require.Error(err)
-		require.ErrorIs(err, errHash)
+		require.ErrorIs(err, errProof)
 		require.ErrorIs(err, errClose)
+		require.ErrorIs(err, ErrMachineClosed)
 
 		// Runtime should be destroyed even when Close also fails.
 		require.Nil(machineInst.runtime)
 	})
 
-	s.Run("OutputsHashError", func() {
+	s.Run("CanceledPreservesRuntime", func() {
 		require := s.Require()
-		inner, machineInst := s.setupOutputsProof()
-		errOutputsHash := errors.New("OutputsHash error")
-		inner.OutputsHashError = errOutputsHash
+		inner, machineInst := s.setupStateProof()
+		inner.StateProofError = machine.ErrCanceled
+
+		proof, err := machineInst.StateProof(context.Background())
+		require.Nil(proof)
+		require.ErrorIs(err, machine.ErrCanceled)
+		require.NotErrorIs(err, ErrMachineClosed)
+		require.Same(inner, machineInst.runtime)
+		require.Zero(inner.CloseCalls.Load())
+	})
+
+	s.Run("NilStateProof", func() {
+		require := s.Require()
+		inner, machineInst := s.setupStateProof()
+		inner.StateProofReturn = nil
 		inner.CloseError = nil
 
-		proof, err := machineInst.OutputsProof(context.Background())
+		proof, err := machineInst.StateProof(context.Background())
 		require.Nil(proof)
-		require.Error(err)
-		require.ErrorIs(err, errOutputsHash)
+		require.ErrorIs(err, machine.ErrInvalidMachineProof)
+		require.ErrorIs(err, ErrMachineClosed)
 
-		// Runtime should be destroyed after an outputs hash error.
 		require.Nil(machineInst.runtime)
 	})
 
-	s.Run("OutputsHashProofError", func() {
+	s.Run("IncompleteStateProof", func() {
 		require := s.Require()
-		inner, machineInst := s.setupOutputsProof()
-		errProof := errors.New("OutputsHashProof error")
-		inner.OutputsHashProofError = errProof
+		inner, machineInst := s.setupStateProof()
+		inner.StateProofReturn.TxBufferProof.Siblings = nil
 		inner.CloseError = nil
 
-		proof, err := machineInst.OutputsProof(context.Background())
+		proof, err := machineInst.StateProof(context.Background())
 		require.Nil(proof)
-		require.Error(err)
-		require.ErrorIs(err, errProof)
+		require.ErrorIs(err, machine.ErrInvalidMachineProof)
+		require.ErrorIs(err, ErrMachineClosed)
 
-		// Runtime should be destroyed after an outputs hash proof error.
 		require.Nil(machineInst.runtime)
 	})
 }
@@ -1150,11 +1240,6 @@ var (
 		newBytes(33, 300),
 		newBytes(34, 300),
 	}
-	expectedOutputsHashProof = []machine.Hash{
-		newHash(3),
-		newHash(4),
-		newHash(5),
-	}
 )
 
 func (s *MachineInstanceSuite) setupAdvance() (*MockRollupsMachine, *MockRollupsMachine, *MachineInstanceImpl) {
@@ -1194,11 +1279,11 @@ func (s *MachineInstanceSuite) setupAdvance() (*MockRollupsMachine, *MockRollups
 		newBytes(21, 200),
 		newBytes(22, 200),
 	}
-	fork.OutputsHashReturn = newHash(1)
 	fork.AdvanceError = nil
 
 	fork.HashReturn = newHash(2)
 	fork.HashError = nil
+	fork.StateProofReturn = acceptedStateProof(newHash(2), newHash(1))
 
 	fork.InspectResponseReturn = &machine.InspectResponse{
 		Status: machine.CompletionStatusAccepted,
@@ -1262,7 +1347,7 @@ func (s *MachineInstanceSuite) setupInspect() (*MockRollupsMachine, *MockRollups
 	return inner, fork, machineInst
 }
 
-func (s *MachineInstanceSuite) setupOutputsProof() (*MockRollupsMachine, *MachineInstanceImpl) {
+func (s *MachineInstanceSuite) setupStateProof() (*MockRollupsMachine, *MachineInstanceImpl) {
 	app := &model.Application{
 		ExecutionParameters: model.ExecutionParameters{
 			AdvanceMaxDeadline:    decisecond,
@@ -1286,18 +1371,39 @@ func (s *MachineInstanceSuite) setupOutputsProof() (*MockRollupsMachine, *Machin
 	machineInst.processedInputs.Store(5)
 
 	inner.HashReturn = newHash(1)
-	inner.HashError = nil
-	inner.OutputsHashReturn = newHash(2)
-	inner.OutputsHashError = nil
-	inner.OutputsHashProofReturn = []machine.Hash{
-		newHash(3),
-		newHash(4),
-		newHash(5),
-	}
-	inner.OutputsHashProofError = nil
+	inner.StateProofReturn = acceptedStateProof(newHash(1), newHash(2))
 	inner.CloseError = errUnreachable
 
 	return inner, machineInst
+}
+
+func testValidityLeaf(dataBlock, sibling machine.Hash) machine.LeafProof {
+	siblings := make([]machine.Hash, model.StateProofSiblingCount)
+	for i := range siblings {
+		siblings[i] = sibling
+	}
+	return machine.LeafProof{DataBlock: dataBlock, Siblings: siblings}
+}
+
+func acceptedStateProof(machineHash, outputsHash machine.Hash) *machine.StateProof {
+	iflagsYData := newHash(6)
+	for index := 8; index < 16; index++ {
+		iflagsYData[index] = 0
+	}
+	iflagsYData[8] = 1
+	htifTohostData := newHash(7)
+	for index := 16; index < 24; index++ {
+		htifTohostData[index] = 0
+	}
+	htifTohostData[20] = 1
+	htifTohostData[22] = 1
+	htifTohostData[23] = 2
+	return &machine.StateProof{
+		MachineHash:     machineHash,
+		IflagsYProof:    testValidityLeaf(iflagsYData, newHash(8)),
+		HtifTohostProof: testValidityLeaf(htifTohostData, newHash(9)),
+		TxBufferProof:   testValidityLeaf(outputsHash, newHash(10)),
+	}
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -1340,10 +1446,9 @@ type MockRollupsMachine struct {
 	AdvanceReportsReturn     []machine.Report
 	AdvanceLeafsReturn       []machine.Hash
 	AdvanceRemainingReturn   uint64
-	OutputsHashReturn        machine.Hash
-	OutputsHashError         error
-	OutputsHashProofReturn   []machine.Hash
-	OutputsHashProofError    error
+	StateProofReturn         *machine.StateProof
+	StateProofError          error
+	StateProofFunc           func(context.Context) (*machine.StateProof, error)
 	AdvanceError             error
 	LastAdvanceComputeHashes bool
 
@@ -1368,12 +1473,11 @@ func (m *MockRollupsMachine) Hash(_ context.Context) (machine.Hash, error) {
 	return m.HashReturn, m.HashError
 }
 
-func (m *MockRollupsMachine) OutputsHash(_ context.Context) (machine.Hash, error) {
-	return m.OutputsHashReturn, m.OutputsHashError
-}
-
-func (m *MockRollupsMachine) OutputsHashProof(_ context.Context) ([]machine.Hash, error) {
-	return m.OutputsHashProofReturn, m.OutputsHashProofError
+func (m *MockRollupsMachine) StateProof(ctx context.Context) (*machine.StateProof, error) {
+	if m.StateProofFunc != nil {
+		return m.StateProofFunc(ctx)
+	}
+	return m.StateProofReturn, m.StateProofError
 }
 
 func (m *MockRollupsMachine) Advance(_ context.Context, _ []byte, _ machine.Hash, computeHashes bool) (*machine.AdvanceResponse, error) {
@@ -1388,7 +1492,6 @@ func (m *MockRollupsMachine) Advance(_ context.Context, _ []byte, _ machine.Hash
 		Reports:             m.AdvanceReportsReturn,
 		PeriodicStateHashes: m.AdvanceLeafsReturn,
 		PaddingRepetitions:  m.AdvanceRemainingReturn,
-		OutputsHash:         m.OutputsHashReturn,
 	}, nil
 }
 

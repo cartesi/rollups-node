@@ -45,7 +45,10 @@ func (s *StateHashSuite) TestListStateHashes() {
 	s.Run("ReturnsStateHashesFromDaveConsensus", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 		machineHash := crypto.Keccak256Hash([]byte("dave-list-machine"))
-		outputsHash := crypto.Keccak256Hash([]byte("dave-list-outputs"))
+		txBufferDataBlock := crypto.Keccak256Hash([]byte("dave-list-outputs"))
+		proof := DummyStateProof()
+		proof.MachineHash = machineHash
+		proof.TxBufferDataBlock = txBufferDataBlock
 
 		hash1 := [32]byte(crypto.Keccak256Hash([]byte("list-state-1")))
 		hash2 := [32]byte(crypto.Keccak256Hash([]byte("list-state-2")))
@@ -58,10 +61,7 @@ func (s *StateHashSuite) TestListStateHashes() {
 			PeriodicStateHashes: collectedHashes,
 			PaddingRepetitions:  InputHashCollectionCapacity - uint64(len(collectedHashes)),
 			IsDaveConsensus:     true,
-			OutputsProof: OutputsProof{
-				OutputsHash: outputsHash,
-				MachineHash: machineHash,
-			},
+			StateProof:          *proof,
 		}
 
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)

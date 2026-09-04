@@ -4,8 +4,10 @@
 package evmreader
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"math/big"
 	"testing"
 
@@ -454,15 +456,17 @@ func TestCheckForWithdrawals_CountDivergenceMarksCorrupted(t *testing.T) {
 
 	assert.Equal(t, ApplicationStatus_Corrupted, app.Status,
 		"count divergence must mark the app CORRUPTED")
+	assert.True(t, hasWithdrawalLedgerDivergence(app),
+		"the durable reason must identify withdrawal-ledger corruption")
 	assert.Equal(t, uint64(119), app.LastWithdrawalCheckBlock,
 		"cursor must not advance on a detected divergence")
 }
 
-// TestCheckForWithdrawals_SkipsAlreadyCorruptedApp verifies that once an app
-// is CORRUPTED the withdrawal scan stops entirely: no RPC, no DB read, no
-// persistence. This is what turns the previous infinite retry into a clean
-// halt. The mock has no expectations — any call trips the test.
-func TestCheckForWithdrawals_SkipsAlreadyCorruptedApp(t *testing.T) {
+// TestCheckForWithdrawals_SkipsPersistedWithdrawalLedgerDivergence verifies
+// that once this specific ledger failure is durable, the scan stops entirely:
+// no RPC, no DB read, and no persistence. The mocks have no expectations, so
+// any call trips the test.
+func TestCheckForWithdrawals_SkipsPersistedWithdrawalLedgerDivergence(t *testing.T) {
 	s, c, repo := newPostForeclosureFixture(t)
 	defer c.AssertExpectations(t)
 	defer repo.AssertExpectations(t)
@@ -470,13 +474,82 @@ func TestCheckForWithdrawals_SkipsAlreadyCorruptedApp(t *testing.T) {
 	app := postForeclosureWithdrawalApp(1, 100, 110)
 	app.LastWithdrawalCheckBlock = 119
 	app.Status = ApplicationStatus_Corrupted
+	reason := withdrawalLedgerDivergenceReasonPrefix + " test fixture"
+	app.Reason = &reason
 	const head = uint64(130)
 
 	s.checkForPostForeclosureWithdrawals(context.Background(),
 		appContracts{application: app, applicationContract: c}, head)
 
 	assert.Equal(t, uint64(119), app.LastWithdrawalCheckBlock,
-		"a corrupted app's cursor must stay frozen")
+		"the diverged withdrawal ledger's cursor must stay frozen")
+}
+
+// TestCheckForWithdrawals_ExistingIntegrityTerminalReportsLedgerDivergence
+// verifies the honest fallback when the first terminal cause is immutable:
+// preserve it, leave the cursor frozen, and report every detected fund-ledger
+// divergence rather than hiding it behind a process-local latch.
+func TestCheckForWithdrawals_ExistingIntegrityTerminalReportsLedgerDivergence(t *testing.T) {
+	for _, status := range []ApplicationStatus{
+		ApplicationStatus_Diverged,
+		ApplicationStatus_Corrupted,
+	} {
+		t.Run(status.String(), func(t *testing.T) {
+			s, c, repo := newPostForeclosureFixture(t)
+			defer c.AssertExpectations(t)
+			defer repo.AssertExpectations(t)
+
+			var logs bytes.Buffer
+			s.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+
+			app := postForeclosureWithdrawalApp(1, 100, 110)
+			app.LastWithdrawalCheckBlock = 119
+			app.Status = status
+			originalReason := "earlier integrity failure"
+			app.Reason = &originalReason
+
+			repo.On("GetNumberOfWithdrawals", mock.Anything, app.ID).
+				Return(uint64(5), nil).Once()
+			c.On("GetNumberOfWithdrawals", mock.Anything).
+				Return(big.NewInt(2), nil).Once()
+
+			s.checkForPostForeclosureWithdrawals(context.Background(),
+				appContracts{application: app, applicationContract: c}, 130)
+
+			assert.Contains(t, logs.String(), "Withdrawal ledger divergence detected")
+			assert.Equal(t, status, app.Status)
+			assert.Equal(t, originalReason, *app.Reason)
+			assert.Equal(t, uint64(119), app.LastWithdrawalCheckBlock)
+			repo.AssertNumberOfCalls(t, "UpdateApplicationStatus", 0)
+		})
+	}
+}
+
+// TestCheckForWithdrawals_OtherCorruptionCauseStillIndexes verifies that the
+// shared CORRUPTED status does not suppress a healthy withdrawal ledger when
+// another observer, such as output indexing, discovered the inconsistency.
+func TestCheckForWithdrawals_OtherCorruptionCauseStillIndexes(t *testing.T) {
+	s, c, repo := newPostForeclosureFixture(t)
+	defer c.AssertExpectations(t)
+	defer repo.AssertExpectations(t)
+
+	app := postForeclosureWithdrawalApp(1, 100, 110)
+	app.Status = ApplicationStatus_Corrupted
+	reason := "Output mismatch. Application is in an invalid state."
+	app.Reason = &reason
+	const head = uint64(130)
+
+	c.On("GetNumberOfWithdrawals", mock.Anything).Return(big.NewInt(0), nil)
+	repo.On("StoreWithdrawalEvents",
+		mock.Anything, app.ID, mock.MatchedBy(func(ws []*Withdrawal) bool {
+			return len(ws) == 0
+		}), head).Return(nil).Once()
+
+	s.checkForPostForeclosureWithdrawals(context.Background(),
+		appContracts{application: app, applicationContract: c}, head)
+
+	assert.Equal(t, head, app.LastWithdrawalCheckBlock,
+		"an unrelated corruption cause must not stop withdrawal observation")
 }
 
 // ---------------------------------------------------------------------------

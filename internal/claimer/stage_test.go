@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -37,7 +38,7 @@ func TestStagingFastPathDivergence(t *testing.T) {
 	divergent := makeStagedEvent(app, currEpoch)
 	differentMachineMerkleRoot := common.HexToHash("0xdeadbeef")
 	divergent.MachineMerkleRoot = differentMachineMerkleRoot
-	stagedLog := buildClaimStagedLog(app, currEpoch, *currEpoch.OutputsMerkleRoot, differentMachineMerkleRoot)
+	stagedLog := buildClaimStagedLog(app, currEpoch, *currEpoch.TxBufferDataBlock, differentMachineMerkleRoot)
 	receiptBlock := currEpoch.LastBlock + 1
 
 	b.On("pollTransaction", mock.Anything, txHash, endBlock).
@@ -176,7 +177,7 @@ func TestStagingDivergence_Quorum(t *testing.T) {
 	divergent := &iconsensus.IConsensusClaimStaged{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(currEpoch.LastBlock),
 		AppContract:              app.IApplicationAddress,
-		OutputsMerkleRoot:        *currEpoch.OutputsMerkleRoot,
+		OutputsMerkleRoot:        *currEpoch.TxBufferDataBlock,
 		MachineMerkleRoot:        differentMachineMerkleRoot,
 	}
 
@@ -187,7 +188,10 @@ func TestStagingDivergence_Quorum(t *testing.T) {
 	r.On("RejectEpochAndSetApplicationDiverged", mock.Anything, app.ID, currEpoch.Index, mock.MatchedBy(func(reason string) bool {
 		return strings.Contains(reason, "quorum_divergence_at_staging")
 	})).
-		Return(nil).Once()
+		Return(repository.RejectEpochAndDivergeResult{
+			EpochRejected:       true,
+			ApplicationDiverged: true,
+		}, nil).Once()
 
 	_, errs := m.stageClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	assert.Equal(t, 1, len(errs))
@@ -207,7 +211,7 @@ func TestStagingDivergence_AuthorityDoesNotRejectEpoch(t *testing.T) {
 	divergent := &iconsensus.IConsensusClaimStaged{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(currEpoch.LastBlock),
 		AppContract:              app.IApplicationAddress,
-		OutputsMerkleRoot:        *currEpoch.OutputsMerkleRoot,
+		OutputsMerkleRoot:        *currEpoch.TxBufferDataBlock,
 		MachineMerkleRoot:        common.HexToHash("0xfeed"),
 	}
 
@@ -267,7 +271,7 @@ func TestStagingDivergenceReaderMode_Quorum(t *testing.T) {
 	divergent := &iconsensus.IConsensusClaimStaged{
 		LastProcessedBlockNumber: new(big.Int).SetUint64(currEpoch.LastBlock),
 		AppContract:              app.IApplicationAddress,
-		OutputsMerkleRoot:        *currEpoch.OutputsMerkleRoot,
+		OutputsMerkleRoot:        *currEpoch.TxBufferDataBlock,
 		MachineMerkleRoot:        differentMachineMerkleRoot,
 	}
 
@@ -278,7 +282,10 @@ func TestStagingDivergenceReaderMode_Quorum(t *testing.T) {
 	r.On("RejectEpochAndSetApplicationDiverged", mock.Anything, app.ID, currEpoch.Index, mock.MatchedBy(func(reason string) bool {
 		return strings.Contains(reason, "quorum_divergence_at_staging")
 	})).
-		Return(nil).Once()
+		Return(repository.RejectEpochAndDivergeResult{
+			EpochRejected:       true,
+			ApplicationDiverged: true,
+		}, nil).Once()
 
 	_, errs := m.stageClaimsAndUpdateDatabase(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	assert.Equal(t, 1, len(errs), "divergence detection must fire in reader mode")

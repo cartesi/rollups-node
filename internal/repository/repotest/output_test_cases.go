@@ -88,10 +88,7 @@ func (s *OutputSuite) TestListOutputs() {
 			InputIndex: 0,
 			Status:     InputCompletionStatus_Accepted,
 			Outputs:    [][]byte{[]byte("epoch-output")},
-			OutputsProof: OutputsProof{
-				OutputsHash: UniqueHash(),
-				MachineHash: UniqueHash(),
-			},
+			StateProof: *DummyStateProof(),
 		}
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
 		s.Require().NoError(err)
@@ -145,10 +142,7 @@ func (s *OutputSuite) TestListOutputs() {
 				InputIndex: i,
 				Status:     InputCompletionStatus_Accepted,
 				Outputs:    [][]byte{[]byte("output-data")},
-				OutputsProof: OutputsProof{
-					OutputsHash: UniqueHash(),
-					MachineHash: UniqueHash(),
-				},
+				StateProof: *DummyStateProof(),
 			}
 			err = s.Repo.StoreAdvanceResult(s.Ctx, app.ID, result)
 			s.Require().NoError(err)
@@ -200,10 +194,7 @@ func (s *OutputSuite) TestListOutputs() {
 				InputIndex: e.input,
 				Status:     InputCompletionStatus_Accepted,
 				Outputs:    [][]byte{[]byte("output-data")},
-				OutputsProof: OutputsProof{
-					OutputsHash: UniqueHash(),
-					MachineHash: UniqueHash(),
-				},
+				StateProof: *DummyStateProof(),
 			}
 			s.Require().NoError(s.Repo.StoreAdvanceResult(s.Ctx, app.ID, result))
 		}

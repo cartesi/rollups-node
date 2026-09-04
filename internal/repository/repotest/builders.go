@@ -190,8 +190,8 @@ func (b *EpochBuilder) WithInputBounds(lower, upper uint64) *EpochBuilder {
 	return b
 }
 
-func (b *EpochBuilder) WithOutputsMerkleRoot(h common.Hash) *EpochBuilder {
-	b.epoch.OutputsMerkleRoot = &h
+func (b *EpochBuilder) WithTxBufferDataBlock(h common.Hash) *EpochBuilder {
+	b.epoch.TxBufferDataBlock = &h
 	return b
 }
 
@@ -580,12 +580,25 @@ func AdvanceEpochStatus(
 	}
 
 	for _, s := range path {
-		// The DB trigger requires proof fields to be non-null when
-		// entering CLAIM_COMPUTED.  Populate them with dummy values
-		// so tests that only care about status transitions don't need
-		// to set up proofs manually.
+		if s == EpochStatus_InputsProcessed {
+			proof := DummyStateProof()
+			err := repo.UpdateEpochInputsProcessed(
+				ctx, nameOrAddress, epoch.Index, proof,
+			)
+			require.NoError(t, err)
+			persisted, err := repo.GetEpoch(ctx, nameOrAddress, epoch.Index)
+			require.NoError(t, err)
+			require.Equal(t, EpochStatus_InputsProcessed, persisted.Status)
+			epoch.Status = s
+			applyStateProofToEpoch(epoch, proof)
+			continue
+		}
+
+		// PRT claims need dummy commitment fields when entering
+		// CLAIM_COMPUTED. The final state proof was published by the
+		// preceding INPUTS_PROCESSED transition.
 		if s == EpochStatus_ClaimComputed {
-			setDummyProofFields(ctx, t, repo, nameOrAddress, epoch)
+			setDummyClaimFields(ctx, t, repo, nameOrAddress, epoch)
 			// For PRT apps StoreClaimAndProofs already set the status
 			// to CLAIM_COMPUTED, so skip the redundant UpdateEpochStatus.
 			app, err := repo.GetApplication(ctx, nameOrAddress)
@@ -601,27 +614,51 @@ func AdvanceEpochStatus(
 	}
 }
 
-// setDummyProofFields populates the proof fields required by the DB trigger
-// for the INPUTS_PROCESSED → CLAIM_COMPUTED transition.
-// For all apps:  machine_hash, outputs_merkle_root, outputs_merkle_proof.
-// For PRT apps:  additionally commitment and commitment_proof (set via
-// StoreClaimAndProofs which also transitions the status atomically).
-func setDummyProofFields(
+func proofSiblingsToHashes(siblings [][32]byte) []common.Hash {
+	hashes := make([]common.Hash, len(siblings))
+	for i := range siblings {
+		hashes[i] = common.Hash(siblings[i])
+	}
+	return hashes
+}
+
+func applyStateProofToEpoch(epoch *Epoch, proof *StateProof) {
+	epoch.MachineHash = Pointer(proof.MachineHash)
+	epoch.TxBufferDataBlock = Pointer(proof.TxBufferDataBlock)
+	epoch.TxBufferProof = proofSiblingsToHashes(proof.TxBufferProof)
+	epoch.IflagsYDataBlock = Pointer(proof.IflagsYDataBlock)
+	epoch.IflagsYProof = proofSiblingsToHashes(proof.IflagsYProof)
+	epoch.HtifTohostDataBlock = Pointer(proof.HtifTohostDataBlock)
+	epoch.HtifTohostProof = proofSiblingsToHashes(proof.HtifTohostProof)
+}
+
+// DummyStateProof returns a structurally complete machine state proof for
+// repository tests that exercise epoch state transitions rather than proof
+// cryptography. pkg/machine tests cover proof construction and verification.
+func DummyStateProof() *StateProof {
+	proof := &StateProof{
+		TxBufferDataBlock:   UniqueHash(),
+		MachineHash:         UniqueHash(),
+		IflagsYDataBlock:    UniqueHash(),
+		HtifTohostDataBlock: UniqueHash(),
+	}
+	for range StateProofSiblingCount {
+		proof.TxBufferProof = append(proof.TxBufferProof, UniqueHash())
+		proof.IflagsYProof = append(proof.IflagsYProof, UniqueHash())
+		proof.HtifTohostProof = append(proof.HtifTohostProof, UniqueHash())
+	}
+	return proof
+}
+
+// setDummyClaimFields supplies the PRT-only fields required for the
+// INPUTS_PROCESSED → CLAIM_COMPUTED transition.
+func setDummyClaimFields(
 	ctx context.Context, t *testing.T,
 	repo repository.Repository,
 	nameOrAddress string,
 	epoch *Epoch,
 ) {
 	t.Helper()
-
-	proof := &OutputsProof{
-		OutputsHash:      UniqueHash(),
-		OutputsHashProof: [][32]byte{[32]byte(UniqueHash())},
-		MachineHash:      UniqueHash(),
-	}
-	err := repo.UpdateEpochOutputsProof(
-		ctx, epoch.ApplicationID, epoch.Index, proof)
-	require.NoError(t, err)
 
 	app, err := repo.GetApplication(ctx, nameOrAddress)
 	require.NoError(t, err)

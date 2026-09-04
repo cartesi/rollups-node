@@ -20,11 +20,12 @@ type RemoteMachineInterface interface {
 	Load(dir string, runtimeConfig string) error
 	Run(mcycleEnd uint64) (emulator.BreakReason, error)
 	GetRootHash() (emulator.Hash, error)
-	GetProof(address uint64, log2size int32) (string, error)
+	GetProof(address uint64, log2TargetSize, log2RootSize int32) (string, error)
 	ReadReg(reg emulator.RegID) (uint64, error)
 	SendCmioResponse(reason uint16, data []byte, revertRootHash *emulator.Hash) error
 	ReceiveCmioRequest() (uint8, uint16, []byte, error)
 	WriteMemory(address uint64, data []byte) error
+	ReadMemory(address uint64, length uint64) ([]byte, error)
 	Store(directory string) error
 	Delete()
 	ForkServer() (*emulator.RemoteMachine, string, uint32, error)
@@ -38,7 +39,7 @@ type RemoteMachineInterface interface {
 	) ([]byte, error)
 }
 
-type proofJson struct {
+type proofJSON struct {
 	Log2RootSize   int32  `json:"log2_root_size"`
 	Log2TargetSize int32  `json:"log2_target_size"`
 	RootHash       Hash   `json:"root_hash"`
@@ -68,7 +69,7 @@ func decodeB64To32(dst *Hash, s string) error {
 	return nil
 }
 
-func (p *proofJson) UnmarshalJSON(data []byte) error {
+func (p *proofJSON) UnmarshalJSON(data []byte) error {
 	var aux struct {
 		Log2RootSize   int32    `json:"log2_root_size"`
 		Log2TargetSize int32    `json:"log2_target_size"`
@@ -189,20 +190,32 @@ func (e *LibCartesiBackend) GetRootHash(timeout time.Duration) (Hash, error) {
 	return e.inner.GetRootHash()
 }
 
-func (e *LibCartesiBackend) GetProof(address uint64, log2size int32, timeout time.Duration) ([]Hash, error) {
+func (e *LibCartesiBackend) GetProof(
+	address uint64,
+	log2TargetSize,
+	log2RootSize int32,
+	timeout time.Duration,
+) (MemoryProof, error) {
 	if err := e.inner.SetTimeout(timeout.Milliseconds()); err != nil {
-		return nil, fmt.Errorf("failed to set operation timeout: %w", err)
+		return MemoryProof{}, fmt.Errorf("failed to set operation timeout: %w", err)
 	}
-	jsonMessage, err := e.inner.GetProof(address, log2size)
+	jsonMessage, err := e.inner.GetProof(address, log2TargetSize, log2RootSize)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get proof: %w", err)
+		return MemoryProof{}, fmt.Errorf("failed to get proof: %w", err)
 	}
-	proof := &proofJson{}
+	proof := &proofJSON{}
 	err = json.Unmarshal([]byte(jsonMessage), proof)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal proof JSON: %w", err)
+		return MemoryProof{}, fmt.Errorf("failed to unmarshal proof JSON: %w", err)
 	}
-	return proof.Siblings, nil
+	return MemoryProof{
+		Log2RootSize:   proof.Log2RootSize,
+		Log2TargetSize: proof.Log2TargetSize,
+		RootHash:       proof.RootHash,
+		Siblings:       proof.Siblings,
+		TargetAddress:  proof.TargetAddress,
+		TargetHash:     proof.TargetHash,
+	}, nil
 }
 
 func (e *LibCartesiBackend) IsAtManualYield(timeout time.Duration) (bool, error) {
@@ -253,6 +266,13 @@ func (e *LibCartesiBackend) WriteMemory(address uint64, data []byte, timeout tim
 		return fmt.Errorf("failed to set operation timeout: %w", err)
 	}
 	return e.inner.WriteMemory(address, data)
+}
+
+func (e *LibCartesiBackend) ReadMemory(address uint64, length uint64, timeout time.Duration) ([]byte, error) {
+	if err := e.inner.SetTimeout(timeout.Milliseconds()); err != nil {
+		return nil, fmt.Errorf("failed to set operation timeout: %w", err)
+	}
+	return e.inner.ReadMemory(address, length)
 }
 
 func (e *LibCartesiBackend) Delete() {

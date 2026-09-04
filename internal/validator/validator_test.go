@@ -34,6 +34,11 @@ var (
 )
 
 func expectCorrupted(app *Application, reasonSubstring string) {
+	// Subtests intentionally reuse application fixtures. Reset health so each
+	// case independently exercises its own corruption transition rather than
+	// inheriting the previous subtest's now-idempotent terminal status.
+	app.Status = ApplicationStatus_OK
+	app.Reason = nil
 	repo.On("UpdateApplicationStatus",
 		mock.Anything, app.ID, ApplicationStatus_Corrupted,
 		mock.MatchedBy(func(reason *string) bool {
@@ -53,9 +58,10 @@ func (s *ValidatorSuite) SetupSubTest() {
 	serviceArgs := &service.CreateInfo{Name: "validator", Impl: validator}
 	err := service.Create(context.Background(), serviceArgs, &validator.Service)
 	s.Require().Nil(err)
-	dummyOutputsMerkleRoot := common.HexToHash("0x0a162946e56158bac0673e6dd3bdfdc1e4a0e7744a120fdb640050c8d7abe1c6")
+	dummyTxBufferDataBlock := common.HexToHash("0x0a162946e56158bac0673e6dd3bdfdc1e4a0e7744a120fdb640050c8d7abe1c6")
 	dummyEpochs = []Epoch{
-		{Index: 0, VirtualIndex: 0, FirstBlock: 0, LastBlock: 9, OutputsMerkleRoot: &dummyOutputsMerkleRoot, MachineHash: &validator.pristineRootHash},
+		{Index: 0, VirtualIndex: 0, FirstBlock: 0, LastBlock: 9,
+			TxBufferDataBlock: &dummyTxBufferDataBlock, MachineHash: &validator.pristineRootHash},
 		{Index: 1, VirtualIndex: 1, FirstBlock: 10, LastBlock: 19},
 		{Index: 2, VirtualIndex: 2, FirstBlock: 20, LastBlock: 29},
 		{Index: 3, VirtualIndex: 3, FirstBlock: 30, LastBlock: 39},
@@ -188,7 +194,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofSuccess() {
 
 		claimHash, _, err := validator.computeMerkleTreeAndProofs(ctx, &app, &dummyEpochs[1])
 		s.NoError(err)
-		s.Equal(dummyEpochs[0].OutputsMerkleRoot, claimHash)
+		s.Equal(dummyEpochs[0].TxBufferDataBlock, claimHash)
 		repo.AssertExpectations(s.T())
 	})
 
@@ -260,7 +266,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 		).Return([]*Output{}, uint64(0), nil).Once()
 
 		invalidEpoch := dummyEpochs[0]
-		invalidEpoch.OutputsMerkleRoot = nil
+		invalidEpoch.TxBufferDataBlock = nil
 		repo.On("GetEpochByVirtualIndex",
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&invalidEpoch, nil).Once()
@@ -354,7 +360,7 @@ func (s *ValidatorSuite) TestValidateApplicationSuccess() {
 		input := Input{
 			EpochApplicationID: app.ID,
 			MachineHash:        &validator.pristineRootHash,
-			OutputsHash:        &validator.pristineRootHash,
+			TxBufferDataBlock:  &validator.pristineRootHash,
 		}
 
 		repo.On("ListEpochs",
@@ -446,7 +452,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 	s.Run("GetLastInputFailure", func() {
 		input := Input{
 			EpochApplicationID: app.ID,
-			OutputsHash:        &validator.pristineRootHash,
+			TxBufferDataBlock:  &validator.pristineRootHash,
 		}
 
 		repo.On("ListEpochs",
@@ -469,7 +475,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 	s.Run("InvalidInputFailure", func() {
 		input := Input{
 			EpochApplicationID: app.ID,
-			OutputsHash:        nil, // <- this is invalid
+			TxBufferDataBlock:  nil, // <- this is invalid
 		}
 
 		repo.On("ListEpochs",
@@ -494,7 +500,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 	s.Run("NilInputMachineHash", func() {
 		input := Input{
 			EpochApplicationID: app.ID,
-			OutputsHash:        &validator.pristineRootHash,
+			TxBufferDataBlock:  &validator.pristineRootHash,
 			MachineHash:        nil, // <- trigger nil guard
 		}
 
@@ -521,7 +527,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 		invalidClaim := common.Hash{}
 		input := Input{
 			EpochApplicationID: app.ID,
-			OutputsHash:        &invalidClaim,
+			TxBufferDataBlock:  &invalidClaim,
 		}
 
 		repo.On("ListEpochs",
@@ -546,7 +552,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 	s.Run("StoreClaimAndProofsFailure", func() {
 		input := Input{
 			EpochApplicationID: app.ID,
-			OutputsHash:        &validator.pristineRootHash,
+			TxBufferDataBlock:  &validator.pristineRootHash,
 			MachineHash:        &validator.pristineRootHash,
 		}
 
@@ -579,7 +585,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			VirtualIndex:      0,
 			FirstBlock:        0,
 			LastBlock:         9,
-			OutputsMerkleRoot: &validator.pristineRootHash,
+			TxBufferDataBlock: &validator.pristineRootHash,
 			MachineHash:       nil, // <- nil triggers the new guard
 		}
 		repo.On("ListEpochs",
@@ -593,14 +599,14 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 		repo.AssertExpectations(s.T())
 	})
 
-	s.Run("NilEpochOutputsMerkleRoot", func() {
+	s.Run("NilEpochTxBufferDataBlock", func() {
 		epoch := Epoch{
 			Index:             0,
 			VirtualIndex:      0,
 			FirstBlock:        0,
 			LastBlock:         9,
 			MachineHash:       &validator.pristineRootHash,
-			OutputsMerkleRoot: nil, // <- nil triggers the new guard
+			TxBufferDataBlock: nil, // <- nil triggers the new guard
 		}
 		repo.On("ListEpochs",
 			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
@@ -624,7 +630,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			FirstBlock:        0,
 			LastBlock:         9,
 			MachineHash:       &validator.pristineRootHash,
-			OutputsMerkleRoot: dummyEpochs[0].OutputsMerkleRoot,
+			TxBufferDataBlock: dummyEpochs[0].TxBufferDataBlock,
 		}
 		repo.On("ListEpochs",
 			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
@@ -658,7 +664,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			FirstBlock:        10,
 			LastBlock:         19,
 			MachineHash:       &validator.pristineRootHash,
-			OutputsMerkleRoot: dummyEpochs[0].OutputsMerkleRoot,
+			TxBufferDataBlock: dummyEpochs[0].TxBufferDataBlock,
 		}
 		repo.On("ListEpochs",
 			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
@@ -702,7 +708,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			FirstBlock:        10,
 			LastBlock:         19,
 			MachineHash:       &validator.pristineRootHash,
-			OutputsMerkleRoot: dummyEpochs[0].OutputsMerkleRoot,
+			TxBufferDataBlock: dummyEpochs[0].TxBufferDataBlock,
 		}
 		repo.On("ListEpochs",
 			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
@@ -726,7 +732,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			Index:             0,
 			VirtualIndex:      0,
 			MachineHash:       nil, // <- nil triggers the guard
-			OutputsMerkleRoot: &validator.pristineRootHash,
+			TxBufferDataBlock: &validator.pristineRootHash,
 		}
 		repo.On("GetEpochByVirtualIndex",
 			mock.Anything, app.IApplicationAddress.String(), uint64(0),
@@ -739,7 +745,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 		repo.AssertExpectations(s.T())
 	})
 
-	s.Run("EmptyEpochPreviousEpochOutputsMerkleRootNil", func() {
+	s.Run("EmptyEpochPreviousEpochTxBufferDataBlockNil", func() {
 		app := Application{
 			Name:          "dummy-application-name",
 			ConsensusType: Consensus_PRT,
@@ -750,7 +756,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			FirstBlock:        10,
 			LastBlock:         19,
 			MachineHash:       &validator.pristineRootHash,
-			OutputsMerkleRoot: dummyEpochs[0].OutputsMerkleRoot,
+			TxBufferDataBlock: dummyEpochs[0].TxBufferDataBlock,
 		}
 		repo.On("ListEpochs",
 			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
@@ -769,12 +775,12 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), epoch.Index,
 		).Return((*Input)(nil), nil).Once()
 
-		// 2nd GetEpochByVirtualIndex: MachineHash matches but OutputsMerkleRoot is nil
+		// 2nd GetEpochByVirtualIndex: MachineHash matches but TxBufferDataBlock is nil
 		prev := Epoch{
 			Index:             0,
 			VirtualIndex:      0,
 			MachineHash:       &validator.pristineRootHash, // matches epoch.MachineHash
-			OutputsMerkleRoot: nil,                         // <- nil triggers the guard
+			TxBufferDataBlock: nil,                         // <- nil triggers the guard
 		}
 		repo.On("GetEpochByVirtualIndex",
 			mock.Anything, app.IApplicationAddress.String(), uint64(0),
@@ -817,7 +823,7 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			InputIndexLowerBound: 0,
 			InputIndexUpperBound: 5,
 			MachineHash:          &validator.pristineRootHash,
-			OutputsMerkleRoot:    &validator.pristineRootHash,
+			TxBufferDataBlock:    &validator.pristineRootHash,
 		}
 
 		// 5 inputs, each with one state hash covering the full
@@ -856,7 +862,7 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			InputIndexLowerBound: 7,
 			InputIndexUpperBound: 7,
 			MachineHash:          &validator.pristineRootHash,
-			OutputsMerkleRoot:    &validator.pristineRootHash,
+			TxBufferDataBlock:    &validator.pristineRootHash,
 		}
 
 		// No ListStateHashes call expected (inputCount==0 branch is skipped)
@@ -879,7 +885,7 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			InputIndexLowerBound: 5,
 			InputIndexUpperBound: 3,
 			MachineHash:          &validator.pristineRootHash,
-			OutputsMerkleRoot:    &validator.pristineRootHash,
+			TxBufferDataBlock:    &validator.pristineRootHash,
 		}
 
 		expectCorrupted(app, "lower bound")
@@ -906,7 +912,7 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			InputIndexLowerBound: 0,
 			InputIndexUpperBound: MaxAdvanceStatesPerEpoch + 1,
 			MachineHash:          &validator.pristineRootHash,
-			OutputsMerkleRoot:    &validator.pristineRootHash,
+			TxBufferDataBlock:    &validator.pristineRootHash,
 		}
 
 		expectCorrupted(app, "input count is too large")
@@ -930,7 +936,7 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			InputIndexLowerBound: 0,
 			InputIndexUpperBound: 2,
 			MachineHash:          &validator.pristineRootHash,
-			OutputsMerkleRoot:    &validator.pristineRootHash,
+			TxBufferDataBlock:    &validator.pristineRootHash,
 		}
 
 		repo.On("ListStateHashes",
@@ -956,7 +962,7 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			InputIndexLowerBound: 0,
 			InputIndexUpperBound: 1,
 			MachineHash:          &validator.pristineRootHash,
-			OutputsMerkleRoot:    &validator.pristineRootHash,
+			TxBufferDataBlock:    &validator.pristineRootHash,
 		}
 
 		repo.On("ListStateHashes",
@@ -982,7 +988,7 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			InputIndexLowerBound: 0,
 			InputIndexUpperBound: 1,
 			MachineHash:          &validator.pristineRootHash,
-			OutputsMerkleRoot:    &validator.pristineRootHash,
+			TxBufferDataBlock:    &validator.pristineRootHash,
 		}
 
 		repo.On("ListStateHashes",
@@ -1008,7 +1014,7 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			InputIndexLowerBound: 0,
 			InputIndexUpperBound: 2,
 			MachineHash:          &validator.pristineRootHash,
-			OutputsMerkleRoot:    &validator.pristineRootHash,
+			TxBufferDataBlock:    &validator.pristineRootHash,
 		}
 		stateHashes := []*StateHash{
 			{MachineHash: validator.pristineRootHash, Repetitions: 1},
@@ -1038,7 +1044,7 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			InputIndexLowerBound: 0,
 			InputIndexUpperBound: 1,
 			MachineHash:          &validator.pristineRootHash,
-			OutputsMerkleRoot:    &validator.pristineRootHash,
+			TxBufferDataBlock:    &validator.pristineRootHash,
 		}
 		repetitions := (uint64(1) << Log2EpochComputationHashLeafCount) + InputHashCollectionCapacity
 

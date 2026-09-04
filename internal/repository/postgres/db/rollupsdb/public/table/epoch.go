@@ -24,8 +24,12 @@ type epochTable struct {
 	InputIndexLowerBound postgres.ColumnFloat
 	InputIndexUpperBound postgres.ColumnFloat
 	MachineHash          postgres.ColumnBytea
-	OutputsMerkleRoot    postgres.ColumnBytea
-	OutputsMerkleProof   postgres.ColumnByteaArray
+	TxBufferDataBlock    postgres.ColumnBytea
+	TxBufferProof        postgres.ColumnByteaArray
+	IflagsYDataBlock     postgres.ColumnBytea
+	IflagsYProof         postgres.ColumnByteaArray
+	HtifTohostDataBlock  postgres.ColumnBytea
+	HtifTohostProof      postgres.ColumnByteaArray
 	Commitment           postgres.ColumnBytea
 	CommitmentProof      postgres.ColumnByteaArray
 	TournamentAddress    postgres.ColumnBytea
@@ -83,8 +87,12 @@ func newEpochTableImpl(schemaName, tableName, alias string) epochTable {
 		InputIndexLowerBoundColumn = postgres.FloatColumn("input_index_lower_bound")
 		InputIndexUpperBoundColumn = postgres.FloatColumn("input_index_upper_bound")
 		MachineHashColumn          = postgres.ByteaColumn("machine_hash")
-		OutputsMerkleRootColumn    = postgres.ByteaColumn("outputs_merkle_root")
-		OutputsMerkleProofColumn   = postgres.ByteaArrayColumn("outputs_merkle_proof")
+		TxBufferDataBlockColumn    = postgres.ByteaColumn("tx_buffer_data_block")
+		TxBufferProofColumn        = postgres.ByteaArrayColumn("tx_buffer_proof")
+		IflagsYDataBlockColumn     = postgres.ByteaColumn("iflags_y_data_block")
+		IflagsYProofColumn         = postgres.ByteaArrayColumn("iflags_y_proof")
+		HtifTohostDataBlockColumn  = postgres.ByteaColumn("htif_tohost_data_block")
+		HtifTohostProofColumn      = postgres.ByteaArrayColumn("htif_tohost_proof")
 		CommitmentColumn           = postgres.ByteaColumn("commitment")
 		CommitmentProofColumn      = postgres.ByteaArrayColumn("commitment_proof")
 		TournamentAddressColumn    = postgres.ByteaColumn("tournament_address")
@@ -94,8 +102,8 @@ func newEpochTableImpl(schemaName, tableName, alias string) epochTable {
 		VirtualIndexColumn         = postgres.FloatColumn("virtual_index")
 		CreatedAtColumn            = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn            = postgres.TimestampzColumn("updated_at")
-		allColumns                 = postgres.ColumnList{ApplicationIDColumn, IndexColumn, FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, OutputsMerkleRootColumn, OutputsMerkleProofColumn, CommitmentColumn, CommitmentProofColumn, TournamentAddressColumn, ClaimTransactionHashColumn, StatusColumn, StagedAtBlockColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns             = postgres.ColumnList{FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, OutputsMerkleRootColumn, OutputsMerkleProofColumn, CommitmentColumn, CommitmentProofColumn, TournamentAddressColumn, ClaimTransactionHashColumn, StatusColumn, StagedAtBlockColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
+		allColumns                 = postgres.ColumnList{ApplicationIDColumn, IndexColumn, FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, TxBufferDataBlockColumn, TxBufferProofColumn, IflagsYDataBlockColumn, IflagsYProofColumn, HtifTohostDataBlockColumn, HtifTohostProofColumn, CommitmentColumn, CommitmentProofColumn, TournamentAddressColumn, ClaimTransactionHashColumn, StatusColumn, StagedAtBlockColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns             = postgres.ColumnList{FirstBlockColumn, LastBlockColumn, InputIndexLowerBoundColumn, InputIndexUpperBoundColumn, MachineHashColumn, TxBufferDataBlockColumn, TxBufferProofColumn, IflagsYDataBlockColumn, IflagsYProofColumn, HtifTohostDataBlockColumn, HtifTohostProofColumn, CommitmentColumn, CommitmentProofColumn, TournamentAddressColumn, ClaimTransactionHashColumn, StatusColumn, StagedAtBlockColumn, VirtualIndexColumn, CreatedAtColumn, UpdatedAtColumn}
 		defaultColumns             = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
 	)
 
@@ -110,8 +118,12 @@ func newEpochTableImpl(schemaName, tableName, alias string) epochTable {
 		InputIndexLowerBound: InputIndexLowerBoundColumn,
 		InputIndexUpperBound: InputIndexUpperBoundColumn,
 		MachineHash:          MachineHashColumn,
-		OutputsMerkleRoot:    OutputsMerkleRootColumn,
-		OutputsMerkleProof:   OutputsMerkleProofColumn,
+		TxBufferDataBlock:    TxBufferDataBlockColumn,
+		TxBufferProof:        TxBufferProofColumn,
+		IflagsYDataBlock:     IflagsYDataBlockColumn,
+		IflagsYProof:         IflagsYProofColumn,
+		HtifTohostDataBlock:  HtifTohostDataBlockColumn,
+		HtifTohostProof:      HtifTohostProofColumn,
 		Commitment:           CommitmentColumn,
 		CommitmentProof:      CommitmentProofColumn,
 		TournamentAddress:    TournamentAddressColumn,

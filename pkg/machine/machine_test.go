@@ -157,6 +157,25 @@ func (s *MachineSuite) TestLoad() {
 	require.ErrorIs(err, ErrRejected)
 	mockBackend.AssertExpectations(s.T())
 
+	// Test with an unsupported manual yield reason.
+	mockBackend = NewMockBackend()
+	mockBackend.On("NewMachineRuntimeConfig").Return(`{"concurrency":{"update_merkle_tree":1}}`, nil)
+	mockBackend.On("Load",
+		mock.AnythingOfType("string"),
+		mock.AnythingOfType("string"),
+		mock.AnythingOfType("time.Duration"),
+	).Return(nil).Once()
+	mockBackend.On("IsAtManualYield", mock.AnythingOfType("time.Duration")).Return(true, nil).Once()
+	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
+		uint8(0), uint16(9), make([]byte, HashSize), nil).Once()
+	mockBackend.SetupForCleanup()
+	config = DefaultConfig("some/path")
+	config.BackendFactoryFn = MockBackendFactory(mockBackend)
+	machine, err = Load(ctx, s.logger, config)
+	require.Nil(machine)
+	require.ErrorIs(err, ErrUnexpectedYield)
+	mockBackend.AssertExpectations(s.T())
+
 	// Test successful load
 	mockBackend = NewMockBackend()
 	mockBackend.SetupForLoad()
@@ -166,7 +185,7 @@ func (s *MachineSuite) TestLoad() {
 	machine, err = Load(ctx, s.logger, config)
 	require.NoError(err)
 	require.NotNil(machine)
-	require.Equal("127.0.0.1:12345", machine.Address())
+	require.Equal(testMachineAddress, machine.Address())
 
 	// Clean up
 	err = machine.Close()
@@ -231,6 +250,8 @@ func (s *MachineSuite) TestCompletionStatusIsCompleted() {
 		CompletionStatusRejected,
 		CompletionStatusException,
 		CompletionStatusHalted,
+		CompletionStatusOverflow,
+		CompletionStatusUnexpectedYield,
 	} {
 		s.Require().True(status.IsCompleted())
 	}
@@ -245,13 +266,14 @@ func (s *MachineSuite) TestMachineInterface() {
 
 	// Create a mock machine
 	mockMachine := &MockMachine{
-		AddressReturn:          "127.0.0.1:12345",
-		HashReturn:             Hash{1, 2, 3, 4, 5},
-		OutputsHashReturn:      Hash{6, 7, 8, 9, 10},
+		AddressReturn: testMachineAddress,
+		HashReturn:    Hash{1, 2, 3, 4, 5},
+		StateProofReturn: &StateProof{
+			MachineHash: Hash{1, 2, 3, 4, 5},
+		},
 		CompletionStatusReturn: CompletionStatusAccepted,
 		AdvanceOutputsReturn:   []Output{[]byte("output1"), []byte("output2")},
 		AdvanceReportsReturn:   []Report{[]byte("report1")},
-		AdvanceHashReturn:      Hash{11, 12, 13, 14, 15},
 		InspectResponseReturn: &InspectResponse{
 			Status:  CompletionStatusAccepted,
 			Reports: []Report{[]byte("inspect report")},
@@ -263,17 +285,17 @@ func (s *MachineSuite) TestMachineInterface() {
 
 	// Test Address
 	address := machine.Address()
-	require.Equal("127.0.0.1:12345", address)
+	require.Equal(testMachineAddress, address)
 
 	// Test Hash
 	hash, err := machine.Hash(ctx)
 	require.NoError(err)
 	require.Equal(Hash{1, 2, 3, 4, 5}, hash)
 
-	// Test OutputsHash
-	outputsHash, err := machine.OutputsHash(ctx)
+	// Test state proof
+	acceptedState, err := machine.StateProof(ctx)
 	require.NoError(err)
-	require.Equal(Hash{6, 7, 8, 9, 10}, outputsHash)
+	require.Equal(Hash{1, 2, 3, 4, 5}, acceptedState.MachineHash)
 
 	// Test Advance
 	advanceResp, err := machine.Advance(ctx, []byte("input"), Hash{}, false)
@@ -284,7 +306,6 @@ func (s *MachineSuite) TestMachineInterface() {
 	require.Equal([]byte("output2"), advanceResp.Outputs[1])
 	require.Len(advanceResp.Reports, 1)
 	require.Equal([]byte("report1"), advanceResp.Reports[0])
-	require.Equal(Hash{11, 12, 13, 14, 15}, advanceResp.OutputsHash)
 
 	// Test Inspect
 	inspectResponse, err := machine.Inspect(ctx, []byte("query"))
@@ -314,13 +335,13 @@ func (s *MachineSuite) TestMachineInterfaceErrors() {
 
 	// Create a mock machine that returns errors
 	mockMachine := &MockMachine{
-		ForkError:        errors.New("fork error"),
-		HashError:        errors.New("hash error"),
-		OutputsHashError: errors.New("outputs hash error"),
-		AdvanceError:     errors.New("advance error"),
-		InspectError:     errors.New("inspect error"),
-		StoreError:       errors.New("store error"),
-		CloseError:       errors.New("close error"),
+		ForkError:       errors.New("fork error"),
+		HashError:       errors.New("hash error"),
+		StateProofError: errors.New("state proof error"),
+		AdvanceError:    errors.New("advance error"),
+		InspectError:    errors.New("inspect error"),
+		StoreError:      errors.New("store error"),
+		CloseError:      errors.New("close error"),
 	}
 
 	var machine Machine = mockMachine
@@ -335,10 +356,10 @@ func (s *MachineSuite) TestMachineInterfaceErrors() {
 	require.Error(err)
 	require.Contains(err.Error(), "hash error")
 
-	// Test OutputsHash error
-	_, err = machine.OutputsHash(ctx)
+	// Test state proof error
+	_, err = machine.StateProof(ctx)
 	require.Error(err)
-	require.Contains(err.Error(), "outputs hash error")
+	require.Contains(err.Error(), "state proof error")
 
 	// Test Advance error
 	_, err = machine.Advance(ctx, []byte("input"), Hash{}, false)
@@ -369,18 +390,14 @@ type MockMachine struct {
 	HashReturn Hash
 	HashError  error
 
-	OutputsHashReturn Hash
-	OutputsHashError  error
-
-	OutputsHashProofReturn []Hash
-	OutputsHashProofError  error
+	StateProofReturn *StateProof
+	StateProofError  error
 
 	CompletionStatusReturn CompletionStatus
 	AdvanceOutputsReturn   []Output
 	AdvanceReportsReturn   []Report
 	AdvanceHashesReturn    []Hash
 	AdvanceRemainingReturn uint64
-	AdvanceHashReturn      Hash
 	AdvanceError           error
 
 	InspectResponseReturn *InspectResponse
@@ -401,12 +418,8 @@ func (m *MockMachine) Hash(_ context.Context) (Hash, error) {
 	return m.HashReturn, m.HashError
 }
 
-func (m *MockMachine) OutputsHash(_ context.Context) (Hash, error) {
-	return m.OutputsHashReturn, m.OutputsHashError
-}
-
-func (m *MockMachine) OutputsHashProof(_ context.Context) ([]Hash, error) {
-	return m.OutputsHashProofReturn, m.OutputsHashProofError
+func (m *MockMachine) StateProof(_ context.Context) (*StateProof, error) {
+	return m.StateProofReturn, m.StateProofError
 }
 
 func (m *MockMachine) Advance(_ context.Context, _ []byte, _ Hash, _ bool) (*AdvanceResponse, error) {
@@ -419,7 +432,6 @@ func (m *MockMachine) Advance(_ context.Context, _ []byte, _ Hash, _ bool) (*Adv
 		Reports:             m.AdvanceReportsReturn,
 		PeriodicStateHashes: m.AdvanceHashesReturn,
 		PaddingRepetitions:  m.AdvanceRemainingReturn,
-		OutputsHash:         m.AdvanceHashReturn,
 	}, nil
 }
 

@@ -14,6 +14,8 @@ import (
 
 func TestEpochJSONRoundtrip(t *testing.T) {
 	root := common.HexToHash("0xabcd")
+	iflagsY := common.HexToHash("0x1234")
+	htifTohost := common.HexToHash("0x5678")
 	original := Epoch{
 		ApplicationID:        1,
 		Index:                42,
@@ -23,13 +25,22 @@ func TestEpochJSONRoundtrip(t *testing.T) {
 		InputIndexUpperBound: 10,
 		VirtualIndex:         5,
 		Status:               EpochStatus_ClaimAccepted,
-		OutputsMerkleRoot:    &root,
+		TxBufferDataBlock:    &root,
+		TxBufferProof:        []common.Hash{common.HexToHash("0xaaaa")},
+		IflagsYDataBlock:     &iflagsY,
+		IflagsYProof:         []common.Hash{common.HexToHash("0x1111")},
+		HtifTohostDataBlock:  &htifTohost,
+		HtifTohostProof:      []common.Hash{common.HexToHash("0x2222")},
 		CreatedAt:            time.Now().Truncate(time.Microsecond).UTC(),
 		UpdatedAt:            time.Now().Truncate(time.Microsecond).UTC(),
 	}
 
 	data, err := json.Marshal(&original)
 	require.NoError(t, err)
+	require.Contains(t, string(data), `"tx_buffer_data_block"`)
+	require.Contains(t, string(data), `"tx_buffer_proof"`)
+	require.NotContains(t, string(data), `"outputs_merkle_root"`)
+	require.NotContains(t, string(data), `"outputs_merkle_proof"`)
 
 	var decoded Epoch
 	err = json.Unmarshal(data, &decoded)
@@ -44,11 +55,46 @@ func TestEpochJSONRoundtrip(t *testing.T) {
 	require.Equal(t, original.InputIndexUpperBound, decoded.InputIndexUpperBound)
 	require.Equal(t, original.VirtualIndex, decoded.VirtualIndex)
 	require.Equal(t, original.Status, decoded.Status)
-	require.Equal(t, original.OutputsMerkleRoot, decoded.OutputsMerkleRoot)
+	require.Equal(t, original.TxBufferDataBlock, decoded.TxBufferDataBlock)
+	require.Equal(t, original.TxBufferProof, decoded.TxBufferProof)
+	require.Equal(t, original.IflagsYDataBlock, decoded.IflagsYDataBlock)
+	require.Equal(t, original.IflagsYProof, decoded.IflagsYProof)
+	require.Equal(t, original.HtifTohostDataBlock, decoded.HtifTohostDataBlock)
+	require.Equal(t, original.HtifTohostProof, decoded.HtifTohostProof)
+}
+
+func TestStateProofCompleteness(t *testing.T) {
+	siblings := make([][32]byte, StateProofSiblingCount)
+	proof := &StateProof{
+		TxBufferProof:   append([][32]byte(nil), siblings...),
+		IflagsYProof:    append([][32]byte(nil), siblings...),
+		HtifTohostProof: append([][32]byte(nil), siblings...),
+	}
+	require.True(t, proof.IsComplete())
+
+	proof.HtifTohostProof = proof.HtifTohostProof[:len(proof.HtifTohostProof)-1]
+	require.False(t, proof.IsComplete())
+	require.False(t, (*StateProof)(nil).IsComplete())
+
+	hash := common.Hash{1}
+	epoch := &Epoch{
+		MachineHash:         &hash,
+		TxBufferDataBlock:   &hash,
+		TxBufferProof:       make([]common.Hash, StateProofSiblingCount),
+		IflagsYDataBlock:    &hash,
+		IflagsYProof:        make([]common.Hash, StateProofSiblingCount),
+		HtifTohostDataBlock: &hash,
+		HtifTohostProof:     make([]common.Hash, StateProofSiblingCount),
+	}
+	require.True(t, epoch.HasCompleteStateProof())
+	epoch.IflagsYDataBlock = nil
+	require.False(t, epoch.HasCompleteStateProof())
+	require.False(t, (*Epoch)(nil).HasCompleteStateProof())
 }
 
 func TestInputJSONRoundtrip(t *testing.T) {
 	machineHash := common.HexToHash("0x1234")
+	txBufferDataBlock := common.HexToHash("0xabcd")
 	original := Input{
 		EpochApplicationID: 1,
 		EpochIndex:         3,
@@ -58,6 +104,7 @@ func TestInputJSONRoundtrip(t *testing.T) {
 		Status:             InputCompletionStatus_Exception,
 		ExceptionData:      []byte{0xff, 0x00, 0x80},
 		MachineHash:        &machineHash,
+		TxBufferDataBlock:  &txBufferDataBlock,
 		TransactionHash:    common.HexToHash("0x5678"),
 		LogIndex:           11,
 		CreatedAt:          time.Now().Truncate(time.Microsecond).UTC(),
@@ -70,6 +117,8 @@ func TestInputJSONRoundtrip(t *testing.T) {
 	// LogIndex must be hex-encoded like the other uint64 fields.
 	require.Contains(t, string(data), `"log_index":"0xb"`)
 	require.Contains(t, string(data), `"exception_data":"0xff0080"`)
+	require.Contains(t, string(data), `"tx_buffer_data_block"`)
+	require.NotContains(t, string(data), `"outputs_hash"`)
 
 	var decoded Input
 	err = json.Unmarshal(data, &decoded)
@@ -84,6 +133,7 @@ func TestInputJSONRoundtrip(t *testing.T) {
 	require.Equal(t, original.Status, decoded.Status)
 	require.Equal(t, original.ExceptionData, decoded.ExceptionData)
 	require.Equal(t, original.MachineHash, decoded.MachineHash)
+	require.Equal(t, original.TxBufferDataBlock, decoded.TxBufferDataBlock)
 	require.Equal(t, original.TransactionHash, decoded.TransactionHash)
 	require.Equal(t, original.LogIndex, decoded.LogIndex)
 }

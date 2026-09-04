@@ -23,6 +23,7 @@ func NewBulkOperationsSuite(factory RepositoryFactory) *BulkOperationsSuite {
 	return &BulkOperationsSuite{BaseSuite: BaseSuite{factory: factory}}
 }
 
+//nolint:mnd // Numeric values are intentionally explicit repository fixtures.
 func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 	s.Run("RejectsNilResult", func() {
 		err := s.Repo.StoreAdvanceResult(s.Ctx, 0, nil)
@@ -32,7 +33,10 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 	s.Run("AcceptedInput", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 		machineHash := crypto.Keccak256Hash([]byte("machine"))
-		outputsHash := crypto.Keccak256Hash([]byte("outputs"))
+		txBufferDataBlock := crypto.Keccak256Hash([]byte("outputs"))
+		proof := DummyStateProof()
+		proof.MachineHash = machineHash
+		proof.TxBufferDataBlock = txBufferDataBlock
 
 		result := &AdvanceResult{
 			EpochIndex: 0,
@@ -40,10 +44,7 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 			Status:     InputCompletionStatus_Accepted,
 			Outputs:    [][]byte{[]byte("output1"), []byte("output2")},
 			Reports:    [][]byte{[]byte("report1")},
-			OutputsProof: OutputsProof{
-				OutputsHash: outputsHash,
-				MachineHash: machineHash,
-			},
+			StateProof: *proof,
 		}
 
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
@@ -55,6 +56,15 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		s.Equal(InputCompletionStatus_Accepted, input.Status)
 		s.Require().NotNil(input.MachineHash)
 		s.Equal(machineHash, *input.MachineHash)
+		epoch, err := s.Repo.GetEpoch(s.Ctx, seed.App.IApplicationAddress.String(), 0)
+		s.Require().NoError(err)
+		s.Require().NotNil(epoch.MachineHash)
+		s.Equal(machineHash, *epoch.MachineHash)
+		s.Require().NotNil(epoch.TxBufferDataBlock)
+		s.Equal(txBufferDataBlock, *epoch.TxBufferDataBlock)
+		s.True(epoch.HasCompleteStateProof())
+		s.Equal(proof.IflagsYDataBlock, *epoch.IflagsYDataBlock)
+		s.Equal(proof.HtifTohostDataBlock, *epoch.HtifTohostDataBlock)
 
 		// Verify outputs were created
 		outputs, total, err := s.Repo.ListOutputs(
@@ -76,14 +86,14 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 	s.Run("RejectedInput", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 		machineHash := crypto.Keccak256Hash([]byte("machine-rejected"))
+		proof := DummyStateProof()
+		proof.MachineHash = machineHash
 
 		result := &AdvanceResult{
 			EpochIndex: 0,
 			InputIndex: 0,
 			Status:     InputCompletionStatus_Rejected,
-			OutputsProof: OutputsProof{
-				MachineHash: machineHash,
-			},
+			StateProof: *proof,
 		}
 
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
@@ -92,11 +102,17 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		input, err := s.Repo.GetInput(s.Ctx, seed.App.IApplicationAddress.String(), 0)
 		s.Require().NoError(err)
 		s.Equal(InputCompletionStatus_Rejected, input.Status)
+		epoch, err := s.Repo.GetEpoch(s.Ctx, seed.App.IApplicationAddress.String(), 0)
+		s.Require().NoError(err)
+		s.Nil(epoch.MachineHash, "rejection must leave the pre-input epoch state unchanged")
+		s.Nil(epoch.TxBufferDataBlock)
 	})
 
 	for _, status := range []InputCompletionStatus{
 		InputCompletionStatus_Exception,
 		InputCompletionStatus_MachineHalted,
+		InputCompletionStatus_Overflow,
+		InputCompletionStatus_UnexpectedYield,
 	} {
 		s.Run("CompletedStatus/"+status.String(), func() {
 			seed := Seed(s.Ctx, s.T(), s.Repo)
@@ -104,14 +120,13 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 			if status == InputCompletionStatus_Exception {
 				exceptionData = []byte{0xff, 0x00, 0x80}
 			}
+			proof := DummyStateProof()
 			result := &AdvanceResult{
 				EpochIndex:    0,
 				InputIndex:    0,
 				Status:        status,
 				ExceptionData: exceptionData,
-				OutputsProof: OutputsProof{
-					MachineHash: UniqueHash(),
-				},
+				StateProof:    *proof,
 			}
 
 			err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
@@ -120,8 +135,129 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 			s.Require().NoError(err)
 			s.Equal(status, input.Status)
 			s.Equal(exceptionData, input.ExceptionData)
+			epoch, err := s.Repo.GetEpoch(s.Ctx, seed.App.IApplicationAddress.String(), 0)
+			s.Require().NoError(err)
+			s.Require().NotNil(epoch.MachineHash)
+			s.Equal(result.MachineHash, *epoch.MachineHash)
+			s.Require().NotNil(epoch.TxBufferDataBlock)
+			s.Equal(result.TxBufferDataBlock, *epoch.TxBufferDataBlock)
+			s.Equal(proofSiblingsToHashes(proof.TxBufferProof), epoch.TxBufferProof)
+			s.Equal(proof.IflagsYDataBlock, *epoch.IflagsYDataBlock)
+			s.Equal(proofSiblingsToHashes(proof.IflagsYProof), epoch.IflagsYProof)
+			s.Equal(proof.HtifTohostDataBlock, *epoch.HtifTohostDataBlock)
+			s.Equal(proofSiblingsToHashes(proof.HtifTohostProof), epoch.HtifTohostProof)
+			s.True(epoch.HasCompleteStateProof())
+
+			app, err := s.Repo.GetApplication(s.Ctx, seed.App.IApplicationAddress.String())
+			s.Require().NoError(err)
+			expectedStatus, ok := status.TerminalApplicationStatus()
+			s.Require().True(ok)
+			s.Equal(expectedStatus, app.Status)
+			s.Require().NotNil(app.Reason)
+			s.Contains(*app.Reason, "input 0 completed with "+status.String())
 		})
 	}
+
+	s.Run("RejectsEffectsForNonacceptedInput", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, &AdvanceResult{
+			EpochIndex: 0,
+			InputIndex: 0,
+			Status:     InputCompletionStatus_Rejected,
+			Outputs:    [][]byte{[]byte("must-not-be-stored")},
+		})
+		s.Require().ErrorContains(err, "must not contain outputs or reports")
+	})
+
+	s.Run("RejectsCursorAndEpochMismatches", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+		base := &AdvanceResult{
+			EpochIndex: 0,
+			InputIndex: 1,
+			Status:     InputCompletionStatus_Accepted,
+			StateProof: *DummyStateProof(),
+		}
+		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, base)
+		s.Require().ErrorIs(err, repository.ErrAdvanceCursorMismatch)
+
+		base.InputIndex = 0
+		base.EpochIndex = 1
+		err = s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, base)
+		s.Require().ErrorIs(err, repository.ErrAdvanceCursorMismatch)
+	})
+
+	s.Run("RejectsResultAfterTerminalInput", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 9).WithInputBounds(0, 1).Build()
+		input0 := NewInputBuilder().WithIndex(0).WithBlockNumber(5).Build()
+		input1 := NewInputBuilder().WithIndex(1).WithBlockNumber(6).Build()
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx,
+			app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{epoch: {input0, input1}},
+			10,
+		)
+		s.Require().NoError(err)
+		err = s.Repo.StoreAdvanceResult(s.Ctx, app.ID, &AdvanceResult{
+			EpochIndex: 0,
+			InputIndex: 0,
+			Status:     InputCompletionStatus_MachineHalted,
+			StateProof: *DummyStateProof(),
+		})
+		s.Require().NoError(err)
+
+		err = s.Repo.StoreAdvanceResult(s.Ctx, app.ID, &AdvanceResult{
+			EpochIndex: 0,
+			InputIndex: 1,
+			Status:     InputCompletionStatus_Accepted,
+			StateProof: *DummyStateProof(),
+		})
+		s.Require().ErrorIs(err, repository.ErrAdvanceAfterTerminal)
+		s.Require().ErrorIs(err, repository.ErrApplicationNotRunnable)
+	})
+
+	s.Run("RejectsResultWhileApplicationFailedWithoutPartialWrites", func() {
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+		reason := "runtime unavailable"
+		s.Require().NoError(s.Repo.UpdateApplicationStatus(
+			s.Ctx, seed.App.ID, ApplicationStatus_Failed, &reason))
+
+		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, &AdvanceResult{
+			EpochIndex: 0,
+			InputIndex: 0,
+			Status:     InputCompletionStatus_Accepted,
+			Outputs:    [][]byte{[]byte("must roll back")},
+			StateProof: *DummyStateProof(),
+		})
+		s.Require().ErrorIs(err, repository.ErrApplicationNotRunnable)
+		s.NotErrorIs(err, repository.ErrAdvanceAfterTerminal)
+
+		input, err := s.Repo.GetInput(
+			s.Ctx, seed.App.IApplicationAddress.String(), 0)
+		s.Require().NoError(err)
+		s.Equal(InputCompletionStatus_None, input.Status)
+		s.Nil(input.MachineHash)
+
+		epoch, err := s.Repo.GetEpoch(
+			s.Ctx, seed.App.IApplicationAddress.String(), 0)
+		s.Require().NoError(err)
+		s.Nil(epoch.MachineHash)
+		s.Nil(epoch.TxBufferDataBlock)
+
+		processed, err := s.Repo.GetProcessedInputCount(
+			s.Ctx, seed.App.IApplicationAddress.String())
+		s.Require().NoError(err)
+		s.Zero(processed)
+
+		outputs, total, err := s.Repo.ListOutputs(
+			s.Ctx, seed.App.IApplicationAddress.String(),
+			repository.OutputFilter{}, repository.Pagination{Limit: 10}, false)
+		s.Require().NoError(err)
+		s.Empty(outputs)
+		s.Zero(total)
+	})
 
 	for _, test := range []struct {
 		name          string
@@ -138,9 +274,9 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 				InputIndex:    0,
 				Status:        test.status,
 				ExceptionData: test.exceptionData,
-				OutputsProof: OutputsProof{
-					MachineHash: UniqueHash(),
-					OutputsHash: UniqueHash(),
+				StateProof: StateProof{
+					MachineHash:       UniqueHash(),
+					TxBufferDataBlock: UniqueHash(),
 				},
 			})
 			s.Require().ErrorContains(err, "exception data")
@@ -164,7 +300,7 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 				InputIndex: 0,
 				Status:     status,
 				Outputs:    [][]byte{[]byte("must-not-be-stored")},
-				OutputsProof: OutputsProof{
+				StateProof: StateProof{
 					MachineHash: UniqueHash(),
 				},
 			}
@@ -180,14 +316,14 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 	s.Run("WithNoOutputsOrReports", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 		machineHash := crypto.Keccak256Hash([]byte("machine-empty"))
+		proof := DummyStateProof()
+		proof.MachineHash = machineHash
 
 		result := &AdvanceResult{
 			EpochIndex: 0,
 			InputIndex: 0,
 			Status:     InputCompletionStatus_Accepted,
-			OutputsProof: OutputsProof{
-				MachineHash: machineHash,
-			},
+			StateProof: *proof,
 		}
 
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
@@ -198,10 +334,9 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		s.Equal(InputCompletionStatus_Accepted, input.Status)
 	})
 
-	// Verify that a failure mid-transaction rolls back all prior changes.
-	// We trigger failure by providing a non-existent epoch index, causing the
-	// epoch outputs proof update to fail after outputs and input are written.
-	s.Run("RollbackOnPartialFailure", func() {
+	// A result for the current input but a different epoch is rejected by the
+	// locked-row preflight before any child rows are inserted.
+	s.Run("RejectsEpochMismatchBeforeWrites", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
 		result := &AdvanceResult{
@@ -210,14 +345,11 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 			Status:     InputCompletionStatus_Accepted,
 			Outputs:    [][]byte{[]byte("should-be-rolled-back")},
 			Reports:    [][]byte{[]byte("should-be-rolled-back")},
-			OutputsProof: OutputsProof{
-				OutputsHash: UniqueHash(),
-				MachineHash: UniqueHash(),
-			},
+			StateProof: *DummyStateProof(),
 		}
 
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
-		s.Require().Error(err)
+		s.Require().ErrorIs(err, repository.ErrAdvanceCursorMismatch)
 
 		// Input status should remain unchanged (NONE)
 		input, err := s.Repo.GetInput(
@@ -251,7 +383,10 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 	s.Run("DaveConsensusWithStateHashes", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 		machineHash := crypto.Keccak256Hash([]byte("dave-machine"))
-		outputsHash := crypto.Keccak256Hash([]byte("dave-outputs"))
+		txBufferDataBlock := crypto.Keccak256Hash([]byte("dave-outputs"))
+		proof := DummyStateProof()
+		proof.MachineHash = machineHash
+		proof.TxBufferDataBlock = txBufferDataBlock
 
 		hash1 := [32]byte(crypto.Keccak256Hash([]byte("state-1")))
 		hash2 := [32]byte(crypto.Keccak256Hash([]byte("state-2")))
@@ -266,10 +401,7 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 			PeriodicStateHashes: hashes,
 			PaddingRepetitions:  InputHashCollectionCapacity - uint64(len(hashes)),
 			IsDaveConsensus:     true,
-			OutputsProof: OutputsProof{
-				OutputsHash: outputsHash,
-				MachineHash: machineHash,
-			},
+			StateProof:          *proof,
 		}
 
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
@@ -319,6 +451,8 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 		hashes := make([][32]byte, hashesAboveExtendedProtocolParameterLimit)
 		machineHash := UniqueHash()
+		proof := DummyStateProof()
+		proof.MachineHash = machineHash
 		result := &AdvanceResult{
 			EpochIndex:          0,
 			InputIndex:          0,
@@ -326,10 +460,7 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 			PeriodicStateHashes: hashes,
 			PaddingRepetitions:  InputHashCollectionCapacity - uint64(len(hashes)),
 			IsDaveConsensus:     true,
-			OutputsProof: OutputsProof{
-				OutputsHash: UniqueHash(),
-				MachineHash: machineHash,
-			},
+			StateProof:          *proof,
 		}
 
 		s.Require().NoError(s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result))
@@ -356,8 +487,11 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		s.Equal(InputHashCollectionCapacity-uint64(len(hashes)), tail.Repetitions)
 	})
 
-	s.Run("PRTConsensusRejectsUnnormalizedExactBoundaryHashCollection", func() {
+	s.Run("DaveConsensusRollsBackChildrenOnInvalidHashSpan", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
+		proof := DummyStateProof()
+		proof.TxBufferDataBlock = UniqueHash()
+		proof.MachineHash = UniqueHash()
 		result := &AdvanceResult{
 			EpochIndex:         0,
 			InputIndex:         0,
@@ -366,14 +500,14 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 			Reports:            [][]byte{[]byte("must-roll-back")},
 			PaddingRepetitions: 0,
 			IsDaveConsensus:    true,
-			OutputsProof: OutputsProof{
-				OutputsHash: UniqueHash(),
-				MachineHash: UniqueHash(),
-			},
+			StateProof:         *proof,
 		}
 
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
-		s.Require().Error(err)
+		s.Require().ErrorContains(err, "does not cover input hash collection capacity")
+		// The complete proof and locked rows let this transaction insert the
+		// output and report before state-hash shape validation fails. Their
+		// absence below is the rollback witness.
 
 		input, err := s.Repo.GetInput(s.Ctx, seed.App.IApplicationAddress.String(), 0)
 		s.Require().NoError(err)
@@ -409,33 +543,36 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		s.Require().NoError(err)
 		s.Empty(stateHashes)
 		s.Zero(stateHashCount)
+		epoch, err := s.Repo.GetEpoch(
+			s.Ctx, seed.App.IApplicationAddress.String(), seed.Epoch.Index)
+		s.Require().NoError(err)
+		s.False(epoch.HasCompleteStateProof())
+		app, err := s.Repo.GetApplication(s.Ctx, seed.App.IApplicationAddress.String())
+		s.Require().NoError(err)
+		s.Equal(uint64(0), app.ProcessedInputs)
+		s.Equal(ApplicationStatus_OK, app.Status)
 	})
 }
 
-func (s *BulkOperationsSuite) TestStoreAdvanceResultRollback() {
-	// Trigger rollback by referencing a non-existent input index (the input
-	// doesn't exist in the DB, so updateInput will fail with sql.ErrNoRows).
-	// This tests that outputs inserted earlier in the same transaction are
-	// rolled back when a subsequent step fails.
-	s.Run("RollbackOnInputUpdateFailure", func() {
+func (s *BulkOperationsSuite) TestStoreAdvanceResultPreflight() {
+	// The application cursor is locked and checked before any child rows are
+	// written, so an unexpected input index is a preflight rejection.
+	s.Run("RejectsUnexpectedInputIndex", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
 		result := &AdvanceResult{
 			EpochIndex: 0,
 			InputIndex: 999, // non-existent input index
 			Status:     InputCompletionStatus_Accepted,
-			Outputs:    [][]byte{[]byte("should-be-rolled-back")},
-			Reports:    [][]byte{[]byte("should-be-rolled-back")},
-			OutputsProof: OutputsProof{
-				OutputsHash: UniqueHash(),
-				MachineHash: UniqueHash(),
-			},
+			Outputs:    [][]byte{[]byte("must-not-be-inserted")},
+			Reports:    [][]byte{[]byte("must-not-be-inserted")},
+			StateProof: *DummyStateProof(),
 		}
 
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
-		s.Require().Error(err)
+		s.Require().ErrorIs(err, repository.ErrAdvanceCursorMismatch)
 
-		// Verify no outputs were persisted (rolled back)
+		// Verify the preflight rejected the result before inserting outputs.
 		outputs, total, err := s.Repo.ListOutputs(
 			s.Ctx, seed.App.IApplicationAddress.String(),
 			repository.OutputFilter{}, repository.Pagination{Limit: 10}, false)
@@ -443,7 +580,7 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResultRollback() {
 		s.Empty(outputs)
 		s.Equal(uint64(0), total)
 
-		// Verify no reports were persisted (rolled back)
+		// Verify the preflight rejected the result before inserting reports.
 		reports, total, err := s.Repo.ListReports(
 			s.Ctx, seed.App.IApplicationAddress.String(),
 			repository.ReportFilter{}, repository.Pagination{Limit: 10}, false)
@@ -464,28 +601,21 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResultRollback() {
 		s.Equal(uint64(0), count)
 	})
 
-	// Trigger rollback by providing a valid input index but a non-existent
-	// app ID, so updateApp fails. This verifies that outputs, reports, and
-	// the input status update are all rolled back.
-	s.Run("RollbackOnAppUpdateFailure", func() {
+	// Missing applications are rejected while acquiring the aggregate row.
+	s.Run("RejectsUnknownApplication", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
 		result := &AdvanceResult{
 			EpochIndex: 0,
 			InputIndex: 0,
 			Status:     InputCompletionStatus_Accepted,
-			Outputs:    [][]byte{[]byte("should-be-rolled-back")},
-			Reports:    [][]byte{[]byte("should-be-rolled-back")},
-			OutputsProof: OutputsProof{
-				OutputsHash: UniqueHash(),
-				MachineHash: UniqueHash(),
-			},
+			Outputs:    [][]byte{[]byte("must-not-be-inserted")},
+			Reports:    [][]byte{[]byte("must-not-be-inserted")},
+			StateProof: *DummyStateProof(),
 		}
 
-		// Use a non-existent app ID -- updateApp will fail
-		// because no application row matches.
 		err := s.Repo.StoreAdvanceResult(s.Ctx, 999999, result)
-		s.Require().Error(err)
+		s.Require().ErrorIs(err, repository.ErrNotFound)
 
 		// Verify the original input is untouched
 		input, err := s.Repo.GetInput(
@@ -502,9 +632,9 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResultRollback() {
 		s.Equal(uint64(0), total)
 	})
 
-	// Verify that when Dave consensus state hash insertion fails (due to
-	// a bad epoch index), all prior work (outputs, reports) is rolled back.
-	s.Run("DaveConsensusRollbackOnStateHashFailure", func() {
+	// A Dave result that names the wrong epoch is also rejected by locked-row
+	// preflight; state-hash insertion is never reached.
+	s.Run("DaveConsensusRejectsEpochMismatch", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 		hashes := [][32]byte{{1}, {2}}
 
@@ -512,20 +642,17 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResultRollback() {
 			EpochIndex:          99, // non-existent epoch
 			InputIndex:          0,
 			Status:              InputCompletionStatus_Accepted,
-			Outputs:             [][]byte{[]byte("should-be-rolled-back")},
+			Outputs:             [][]byte{[]byte("must-not-be-inserted")},
 			PeriodicStateHashes: hashes,
 			PaddingRepetitions:  InputHashCollectionCapacity - uint64(len(hashes)),
 			IsDaveConsensus:     true,
-			OutputsProof: OutputsProof{
-				OutputsHash: UniqueHash(),
-				MachineHash: UniqueHash(),
-			},
+			StateProof:          *DummyStateProof(),
 		}
 
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
-		s.Require().Error(err)
+		s.Require().ErrorIs(err, repository.ErrAdvanceCursorMismatch)
 
-		// Verify no outputs were persisted (rolled back)
+		// Verify the preflight rejected the result before inserting outputs.
 		outputs, total, err := s.Repo.ListOutputs(
 			s.Ctx, seed.App.IApplicationAddress.String(),
 			repository.OutputFilter{}, repository.Pagination{Limit: 10}, false)
@@ -545,27 +672,27 @@ func (s *BulkOperationsSuite) TestStoreClaimAndProofs() {
 	s.Run("StoresClaimAndOutputProofs", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
-		// Advance epoch to INPUTS_PROCESSED so StoreClaimAndProofs can set CLAIM_COMPUTED
-		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
-			seed.App.IApplicationAddress.String(), seed.Epoch, EpochStatus_InputsProcessed)
-
-		// First store an advance result to create outputs
+		// First store an advance result to create outputs.
 		machineHash := crypto.Keccak256Hash([]byte("machine"))
 		outputData := []byte("output-for-claim")
-		outputsHash := crypto.Keccak256Hash([]byte("outputs-merkle"))
+		txBufferDataBlock := crypto.Keccak256Hash([]byte("outputs-merkle"))
+		stateProof := DummyStateProof()
+		stateProof.MachineHash = machineHash
+		stateProof.TxBufferDataBlock = txBufferDataBlock
 
 		result := &AdvanceResult{
 			EpochIndex: 0,
 			InputIndex: 0,
 			Status:     InputCompletionStatus_Accepted,
 			Outputs:    [][]byte{outputData},
-			OutputsProof: OutputsProof{
-				OutputsHash: outputsHash,
-				MachineHash: machineHash,
-			},
+			StateProof: *stateProof,
 		}
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
 		s.Require().NoError(err)
+
+		// Publish the final state proof only after all inputs are stored.
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			seed.App.IApplicationAddress.String(), seed.Epoch, EpochStatus_InputsProcessed)
 
 		// Now store claim and proofs using Commitment/CommitmentProof fields
 		commitmentHash := crypto.Keccak256Hash([]byte("commitment"))
@@ -722,6 +849,7 @@ func (s *BulkOperationsSuite) TestStoreTournamentEvents() {
 	})
 }
 
+//nolint:mnd // Numeric values are intentionally explicit concurrency fixtures.
 func (s *BulkOperationsSuite) TestConcurrentStoreAdvanceResult() {
 	// Verify that concurrent StoreAdvanceResult calls for different
 	// applications succeed independently without corrupting data.
@@ -737,18 +865,18 @@ func (s *BulkOperationsSuite) TestConcurrentStoreAdvanceResult() {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				stateProof := DummyStateProof()
+				stateProof.TxBufferDataBlock = crypto.Keccak256Hash(
+					[]byte(fmt.Sprintf("outputs-%d", i)))
+				stateProof.MachineHash = crypto.Keccak256Hash(
+					[]byte(fmt.Sprintf("machine-%d", i)))
 				result := &AdvanceResult{
 					EpochIndex: 0,
 					InputIndex: 0,
 					Status:     InputCompletionStatus_Accepted,
 					Outputs:    [][]byte{[]byte(fmt.Sprintf("output-%d", i))},
 					Reports:    [][]byte{[]byte(fmt.Sprintf("report-%d", i))},
-					OutputsProof: OutputsProof{
-						OutputsHash: crypto.Keccak256Hash(
-							[]byte(fmt.Sprintf("outputs-%d", i))),
-						MachineHash: crypto.Keccak256Hash(
-							[]byte(fmt.Sprintf("machine-%d", i))),
-					},
+					StateProof: *stateProof,
 				}
 				errs[i] = s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
 			}()
@@ -809,17 +937,17 @@ func (s *BulkOperationsSuite) TestConcurrentStoreAdvanceResult() {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				stateProof := DummyStateProof()
+				stateProof.TxBufferDataBlock = crypto.Keccak256Hash(
+					[]byte(fmt.Sprintf("outputs-%d", i)))
+				stateProof.MachineHash = crypto.Keccak256Hash(
+					[]byte(fmt.Sprintf("machine-%d", i)))
 				result := &AdvanceResult{
 					EpochIndex: 0,
 					InputIndex: 0,
 					Status:     InputCompletionStatus_Accepted,
 					Outputs:    [][]byte{[]byte(fmt.Sprintf("output-%d", i))},
-					OutputsProof: OutputsProof{
-						OutputsHash: crypto.Keccak256Hash(
-							[]byte(fmt.Sprintf("outputs-%d", i))),
-						MachineHash: crypto.Keccak256Hash(
-							[]byte(fmt.Sprintf("machine-%d", i))),
-					},
+					StateProof: *stateProof,
 				}
 				errs[i] = s.Repo.StoreAdvanceResult(
 					s.Ctx, seed.App.ID, result)
@@ -833,8 +961,7 @@ func (s *BulkOperationsSuite) TestConcurrentStoreAdvanceResult() {
 				successCount++
 			}
 		}
-		s.GreaterOrEqual(successCount, 1,
-			"at least one concurrent store should succeed")
+		s.Equal(1, successCount, "exactly one concurrent store may advance the cursor")
 
 		// Verify data integrity: the input must be in Accepted state
 		input, err := s.Repo.GetInput(
@@ -846,7 +973,71 @@ func (s *BulkOperationsSuite) TestConcurrentStoreAdvanceResult() {
 		count, err := s.Repo.GetProcessedInputCount(
 			s.Ctx, seed.App.IApplicationAddress.String())
 		s.Require().NoError(err)
-		s.GreaterOrEqual(count, uint64(1))
+		s.Equal(uint64(1), count)
+	})
+
+	// Input ingestion and advance persistence both touch the current epoch,
+	// input rows, and application cursor. They must share a lock order so the
+	// event reader can index a later input while the advancer completes the
+	// preceding one.
+	s.Run("ConcurrentInputIngestion", func() {
+		for _, status := range []InputCompletionStatus{
+			InputCompletionStatus_Accepted,
+			InputCompletionStatus_MachineHalted,
+		} {
+			s.Run(status.String(), func() {
+				const attempts = 10
+				for range attempts {
+					seed := Seed(s.Ctx, s.T(), s.Repo)
+					nextEpoch := NewEpochBuilder(seed.App.ID).
+						WithIndex(0).
+						WithStatus(EpochStatus_Closed).
+						WithBlocks(0, 9).
+						WithInputBounds(0, 1).
+						Build()
+					nextInput := NewInputBuilder().
+						WithIndex(1).
+						WithBlockNumber(6).
+						Build()
+					result := &AdvanceResult{
+						EpochIndex: 0,
+						InputIndex: 0,
+						Status:     status,
+						StateProof: *DummyStateProof(),
+					}
+
+					start := make(chan struct{})
+					var wg sync.WaitGroup
+					errs := make([]error, 2)
+					wg.Add(2)
+					go func() {
+						defer wg.Done()
+						<-start
+						errs[0] = s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
+					}()
+					go func() {
+						defer wg.Done()
+						<-start
+						errs[1] = s.Repo.CreateEpochsAndInputs(
+							s.Ctx,
+							seed.App.IApplicationAddress.String(),
+							map[*Epoch][]*Input{nextEpoch: {nextInput}},
+							11,
+						)
+					}()
+					close(start)
+					wg.Wait()
+
+					s.Require().NoError(errs[0], "store advance result")
+					s.Require().NoError(errs[1], "index later input")
+
+					stored, err := s.Repo.GetInput(
+						s.Ctx, seed.App.IApplicationAddress.String(), nextInput.Index)
+					s.Require().NoError(err)
+					s.Equal(InputCompletionStatus_None, stored.Status)
+				}
+			})
+		}
 	})
 }
 
@@ -862,10 +1053,7 @@ func (s *BulkOperationsSuite) TestStoreClaimAndProofsRollback() {
 			InputIndex: 0,
 			Status:     InputCompletionStatus_Accepted,
 			Outputs:    [][]byte{[]byte("output")},
-			OutputsProof: OutputsProof{
-				OutputsHash: crypto.Keccak256Hash([]byte("outputs")),
-				MachineHash: crypto.Keccak256Hash([]byte("machine")),
-			},
+			StateProof: *DummyStateProof(),
 		}
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
 		s.Require().NoError(err)
@@ -895,25 +1083,21 @@ func (s *BulkOperationsSuite) TestStoreClaimAndProofsRollback() {
 	s.Run("RollbackOnOutputProofUpdateFailure", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
-		// Advance epoch to INPUTS_PROCESSED so updateEpochClaim can
-		// set CLAIM_COMPUTED (the trigger rejects other transitions).
-		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
-			seed.App.IApplicationAddress.String(), seed.Epoch,
-			EpochStatus_InputsProcessed)
-
 		// Store advance result to create one output (index 0)
 		result := &AdvanceResult{
 			EpochIndex: 0,
 			InputIndex: 0,
 			Status:     InputCompletionStatus_Accepted,
 			Outputs:    [][]byte{[]byte("real-output")},
-			OutputsProof: OutputsProof{
-				OutputsHash: crypto.Keccak256Hash([]byte("outputs")),
-				MachineHash: crypto.Keccak256Hash([]byte("machine")),
-			},
+			StateProof: *DummyStateProof(),
 		}
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
 		s.Require().NoError(err)
+
+		// Publish the final state proof only after all inputs are stored.
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			seed.App.IApplicationAddress.String(), seed.Epoch,
+			EpochStatus_InputsProcessed)
 
 		// Prepare a valid epoch claim (this part would succeed)
 		commitmentHash := crypto.Keccak256Hash([]byte("commitment"))
@@ -1094,10 +1278,7 @@ func (s *BulkOperationsSuite) TestContextCancellation() {
 			Status:     InputCompletionStatus_Accepted,
 			Outputs:    [][]byte{[]byte("should-not-persist")},
 			Reports:    [][]byte{[]byte("should-not-persist")},
-			OutputsProof: OutputsProof{
-				OutputsHash: UniqueHash(),
-				MachineHash: UniqueHash(),
-			},
+			StateProof: *DummyStateProof(),
 		}
 
 		err := s.Repo.StoreAdvanceResult(cancelledCtx, seed.App.ID, result)
@@ -1152,10 +1333,7 @@ func (s *BulkOperationsSuite) TestContextCancellation() {
 			InputIndex: 0,
 			Status:     InputCompletionStatus_Accepted,
 			Outputs:    [][]byte{[]byte("output")},
-			OutputsProof: OutputsProof{
-				OutputsHash: crypto.Keccak256Hash([]byte("outputs")),
-				MachineHash: crypto.Keccak256Hash([]byte("machine")),
-			},
+			StateProof: *DummyStateProof(),
 		}
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
 		s.Require().NoError(err)

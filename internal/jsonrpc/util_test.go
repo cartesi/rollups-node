@@ -172,9 +172,16 @@ func emptyVoucher() []byte {
 // createTestEpoch creates an epoch using production CreateEpochsAndInputs.
 func (s *Service) createTestEpoch(ctx context.Context, t *testing.T, appName string, epoch *model.Epoch) {
 	t.Helper()
+	targetStatus := epoch.Status
+	if requiresPublishedProof(targetStatus) {
+		epoch.Status = model.EpochStatus_Closed
+	}
 	err := s.repository.CreateEpochsAndInputs(ctx, appName,
 		map[*model.Epoch][]*model.Input{epoch: {}}, 10)
 	require.NoError(t, err)
+	if epoch.Status != targetStatus {
+		repotest.AdvanceEpochStatus(ctx, t, s.repository, appName, epoch, targetStatus)
+	}
 }
 
 // createTestEpochWithInput creates an epoch with one input using production CreateEpochsAndInputs.
@@ -183,9 +190,47 @@ func (s *Service) createTestEpochWithInput(
 	epoch *model.Epoch, input *model.Input,
 ) {
 	t.Helper()
+	// Inputs and outputs must be stored before the final state proof is
+	// published. These JSON-RPC fixtures do not depend on the epoch's claim
+	// status, so keep it CLOSED while advanceInput populates its contents.
+	if requiresPublishedProof(epoch.Status) {
+		epoch.Status = model.EpochStatus_Closed
+	}
+	inputs := make([]*model.Input, 0, input.Index+1)
+	for index := uint64(0); index < input.Index; index++ {
+		inputs = append(inputs, repotest.NewInputBuilder().
+			WithIndex(index).
+			WithEpochIndex(epoch.Index).
+			Build())
+	}
+	inputs = append(inputs, input)
 	err := s.repository.CreateEpochsAndInputs(ctx, appName,
-		map[*model.Epoch][]*model.Input{epoch: {input}}, 10)
+		map[*model.Epoch][]*model.Input{epoch: inputs}, 10)
 	require.NoError(t, err)
+	for index := uint64(0); index < input.Index; index++ {
+		repotest.StoreAdvanceResult(
+			ctx, t, s.repository, epoch.ApplicationID, epoch.Index, index,
+			model.InputCompletionStatus_Accepted, nil, nil,
+		)
+	}
+}
+
+func requiresPublishedProof(status model.EpochStatus) bool {
+	switch status {
+	case model.EpochStatus_InputsProcessed,
+		model.EpochStatus_ClaimComputed,
+		model.EpochStatus_ClaimSubmitted,
+		model.EpochStatus_ClaimStaged,
+		model.EpochStatus_ClaimAccepted,
+		model.EpochStatus_ClaimRejected:
+		return true
+	case model.EpochStatus_Open,
+		model.EpochStatus_Closed,
+		model.EpochStatus_ClaimForeclosed:
+		return false
+	default:
+		return false
+	}
 }
 
 // advanceInput stores an advance result (outputs/reports) for an input using production StoreAdvanceResult.

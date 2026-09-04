@@ -145,7 +145,7 @@ func (s *Service) handleConfirmedSubmitInFlight(
 		s.Logger.Info("Claim submitted (and staged in same tx)",
 			"app", appAddress,
 			"receipt_block_number", receipt.BlockNumber,
-			"outputs_merkle_root", hashToHex(computedEpoch.OutputsMerkleRoot),
+			"outputs_merkle_root", hashToHex(computedEpoch.TxBufferDataBlock),
 			"last_block", computedEpoch.LastBlock,
 			"tx", txHash)
 		s.dropClaimInFlight(appID)
@@ -199,7 +199,7 @@ func (s *Service) handleConfirmedSubmitInFlight(
 		s.Logger.Info("Claim submitted",
 			"app", appAddress,
 			"receipt_block_number", receipt.BlockNumber,
-			"outputs_merkle_root", hashToHex(computedEpoch.OutputsMerkleRoot),
+			"outputs_merkle_root", hashToHex(computedEpoch.TxBufferDataBlock),
 			"last_block", computedEpoch.LastBlock,
 			"tx", txHash)
 		s.dropClaimInFlight(appID)
@@ -322,7 +322,7 @@ func (s *Service) handleRevertedAcceptInFlight(
 		s.dropAcceptAttempt(acceptAttemptKey{stagedEpoch.ApplicationID, stagedEpoch.Index})
 		s.Logger.Info("Claim accepted by front-runner (own accept tx reverted; reconciled via getClaim)",
 			"app", appAddress, "tx", txHash,
-			"outputs_merkle_root", hashToHex(stagedEpoch.OutputsMerkleRoot),
+			"outputs_merkle_root", hashToHex(stagedEpoch.TxBufferDataBlock),
 			"last_block", stagedEpoch.LastBlock)
 		return claimWorkCompleted(1)
 	case claimStatusStaged:
@@ -372,7 +372,7 @@ func (s *Service) handleConfirmedAcceptInFlight(
 	s.Logger.Info("Claim accepted (own tx)",
 		"app", appAddress,
 		"receipt_block_number", receipt.BlockNumber,
-		"outputs_merkle_root", hashToHex(stagedEpoch.OutputsMerkleRoot),
+		"outputs_merkle_root", hashToHex(stagedEpoch.TxBufferDataBlock),
 		"last_block", stagedEpoch.LastBlock,
 		"tx", txHash)
 	s.dropAcceptInFlight(appID)

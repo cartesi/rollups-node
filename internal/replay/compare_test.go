@@ -20,26 +20,26 @@ func replayFixture(status model.InputCompletionStatus, consensus model.Consensus
 	*model.AdvanceResult,
 ) {
 	machineHash := common.HexToHash("0x11")
-	outputsHash := common.HexToHash("0x22")
+	txBufferDataBlock := common.HexToHash("0x22")
 	app := &model.Application{ID: 7, Name: "replay-app", ConsensusType: consensus}
 	record := &model.ReplayRecord{
 		Input: model.ReplayInput{
-			ApplicationID: app.ID,
-			EpochIndex:    3,
-			InputIndex:    9,
-			RawData:       []byte("input"),
-			Status:        status,
-			MachineHash:   &machineHash,
-			OutputsHash:   &outputsHash,
+			ApplicationID:     app.ID,
+			EpochIndex:        3,
+			InputIndex:        9,
+			RawData:           []byte("input"),
+			Status:            status,
+			MachineHash:       &machineHash,
+			TxBufferDataBlock: &txBufferDataBlock,
 		},
 	}
 	actual := &model.AdvanceResult{
 		EpochIndex: 3,
 		InputIndex: 9,
 		Status:     status,
-		OutputsProof: model.OutputsProof{
-			MachineHash: machineHash,
-			OutputsHash: outputsHash,
+		StateProof: model.StateProof{
+			MachineHash:       machineHash,
+			TxBufferDataBlock: txBufferDataBlock,
 		},
 	}
 	if status == model.InputCompletionStatus_Exception {
@@ -202,7 +202,7 @@ func TestCompareReplayRecordAcceptedMutationTable(t *testing.T) {
 			a.Status = model.InputCompletionStatus_Rejected
 		}},
 		{"machine-root", func(_ *model.Application, _ *model.ReplayRecord, a *model.AdvanceResult) { a.MachineHash[0]++ }},
-		{"outputs-root", func(_ *model.Application, _ *model.ReplayRecord, a *model.AdvanceResult) { a.OutputsHash[0]++ }},
+		{"tx-buffer-data-block", func(_ *model.Application, _ *model.ReplayRecord, a *model.AdvanceResult) { a.TxBufferDataBlock[0]++ }},
 		{"outputs-count", func(_ *model.Application, _ *model.ReplayRecord, a *model.AdvanceResult) {
 			a.Outputs = a.Outputs[:1]
 		}},
@@ -254,9 +254,9 @@ func TestCompareReplayRecordPersistedRecordValidation(t *testing.T) {
 			ErrContradiction,
 		)
 	})
-	t.Run("missing outputs root", func(t *testing.T) {
+	t.Run("missing TX buffer data block", func(t *testing.T) {
 		app, record, actual := replayFixture(model.InputCompletionStatus_Rejected, model.Consensus_Authority)
-		record.Input.OutputsHash = nil
+		record.Input.TxBufferDataBlock = nil
 		require.ErrorIs(t,
 			compareRecord(app.Name, app.ID, app.IsDaveConsensus(), repository.ReplayVerificationFull, record, actual),
 			ErrContradiction,

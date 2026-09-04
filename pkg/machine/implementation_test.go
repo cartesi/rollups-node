@@ -5,6 +5,7 @@ package machine
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 )
@@ -25,6 +27,11 @@ type ImplementationSuite struct {
 	suite.Suite
 	logger *slog.Logger
 }
+
+const (
+	stateProofDataBlockSize uint64 = 1 << HashLog2Size
+	stateProofDataBlockMask        = stateProofDataBlockSize - 1
+)
 
 func testExecutionBounds(start, limit uint64) executionBounds {
 	return executionBounds{
@@ -49,7 +56,7 @@ func (s *ImplementationSuite) TestFork() {
 
 	machine := &machineImpl{
 		backend: mockBackend,
-		address: "127.0.0.1:12345",
+		address: testMachineAddress,
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline: time.Second * 5,
@@ -69,7 +76,7 @@ func (s *ImplementationSuite) TestFork() {
 
 	machine2 := &machineImpl{
 		backend: mockBackend2,
-		address: "127.0.0.1:12345",
+		address: testMachineAddress,
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline: time.Second * 5,
@@ -135,139 +142,205 @@ func (s *ImplementationSuite) TestHash() {
 	require.ErrorIs(err, ErrCanceled)
 }
 
-// Test OutputsHash method
-func (s *ImplementationSuite) TestOutputsHash() {
-	require := s.Require()
-	ctx := context.Background()
+func (s *ImplementationSuite) TestStateProof() {
+	blocks := acceptedStateTestBlocks(1, acceptedTohostTestValue())
+	machine, expected := s.machineWithMemoryProofs(blocks)
 
-	// Test successful outputs hash retrieval
-	mockBackend := NewMockBackend()
-	expectedHash := randomFakeHash()
-	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(ManualYieldReasonAccepted), expectedHash[:], nil)
-
-	machine := &machineImpl{
-		backend: mockBackend,
-		logger:  s.logger,
-		params: model.ExecutionParameters{
-			FastDeadline: time.Second * 5,
-		},
-	}
-
-	hash, err := machine.OutputsHash(ctx)
-	require.NoError(err)
-	require.Equal(expectedHash, hash)
-	mockBackend.AssertExpectations(s.T())
-
-	// Test outputs hash with rejected request
-	mockBackend2 := NewMockBackend()
-	mockBackend2.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(ManualYieldReasonRejected), make([]byte, 32), nil)
-	machine2 := &machineImpl{
-		backend: mockBackend2,
-		logger:  s.logger,
-		params: model.ExecutionParameters{
-			FastDeadline: time.Second * 5,
-		},
-	}
-	_, err = machine2.OutputsHash(ctx)
-	require.ErrorIs(err, ErrRejected)
-	mockBackend2.AssertExpectations(s.T())
-
-	// Exception remains distinguishable through the public error taxonomy.
-	mockBackendException := NewMockBackend()
-	mockBackendException.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(ManualYieldReasonException), []byte("exception"), nil)
-	machineException := &machineImpl{
-		backend: mockBackendException,
-		logger:  s.logger,
-		params: model.ExecutionParameters{
-			FastDeadline: time.Second * 5,
-		},
-	}
-	_, err = machineException.OutputsHash(ctx)
-	require.ErrorIs(err, ErrException)
-	mockBackendException.AssertExpectations(s.T())
-
-	// Test outputs hash with invalid length
-	mockBackend3 := NewMockBackend()
-	mockBackend3.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(ManualYieldReasonAccepted), make([]byte, 16), nil) // Invalid length
-	machine3 := &machineImpl{
-		backend: mockBackend3,
-		logger:  s.logger,
-		params: model.ExecutionParameters{
-			FastDeadline: time.Second * 5,
-		},
-	}
-	_, err = machine3.OutputsHash(ctx)
-	require.Error(err)
-	require.ErrorIs(err, ErrHashLength)
-	mockBackend3.AssertExpectations(s.T())
-
-	// Test outputs hash with backend error
-	mockBackend4 := NewMockBackend()
-	mockBackend4.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(0), []byte{}, errors.New("receive failed"))
-	machine4 := &machineImpl{
-		backend: mockBackend4,
-		logger:  s.logger,
-		params: model.ExecutionParameters{
-			FastDeadline: time.Second * 5,
-		},
-	}
-	_, err = machine4.OutputsHash(ctx)
-	require.Error(err)
-	require.Contains(err.Error(), "could not read the outputs hash")
-	mockBackend4.AssertExpectations(s.T())
+	actual, err := machine.StateProof(context.Background())
+	s.Require().NoError(err)
+	s.Require().Equal(expected, actual)
+	machine.backend.(*MockBackend).AssertExpectations(s.T())
 }
 
-// Test OutputsHashProof method
-func (s *ImplementationSuite) TestOutputsHashProof() {
-	require := s.Require()
-	ctx := context.Background()
+func (s *ImplementationSuite) TestValidateAcceptedState() {
+	for _, test := range []struct {
+		name   string
+		iflags uint64
+		tohost uint64
+		valid  bool
+	}{
+		{name: "accepted", iflags: 1, tohost: acceptedTohostTestValue(), valid: true},
+		{name: "iflags_Y is zero", iflags: 0, tohost: acceptedTohostTestValue()},
+		{name: "wrong HTIF device", iflags: 1, tohost: uint64(3)<<56 | uint64(1)<<48 | uint64(1)<<32},
+		{name: "wrong HTIF command", iflags: 1, tohost: uint64(2)<<56 | uint64(2)<<48 | uint64(1)<<32},
+		{name: "tohost is rejected", iflags: 1, tohost: uint64(2)<<56 | uint64(1)<<48 | uint64(2)<<32},
+	} {
+		s.Run(test.name, func() {
+			blocks := acceptedStateTestBlocks(test.iflags, test.tohost)
+			machine, _ := s.machineWithMemoryProofs(blocks)
 
-	// Test successful outputs hash proof retrieval
-	mockBackend := NewMockBackend()
-	expectedProof := []Hash{randomFakeHash(), randomFakeHash(), randomFakeHash()}
-	mockBackend.On("GetProof", TxBufferAddress, int32(HashLog2Size), mock.AnythingOfType("time.Duration")).
-		Return(expectedProof, nil)
-
-	machine := &machineImpl{
-		backend: mockBackend,
-		logger:  s.logger,
-		params: model.ExecutionParameters{
-			LoadDeadline: time.Second * 5,
-		},
+			proof, err := machine.StateProof(context.Background())
+			s.Require().NoError(err)
+			err = ValidateAcceptedState(proof)
+			if test.valid {
+				s.Require().NoError(err)
+			} else {
+				s.Require().ErrorIs(err, ErrInvalidMachineProof)
+			}
+			machine.backend.(*MockBackend).AssertExpectations(s.T())
+		})
 	}
+	s.Require().ErrorIs(ValidateAcceptedState(nil), ErrInvalidMachineProof)
+}
 
-	proof, err := machine.OutputsHashProof(ctx)
-	require.NoError(err)
-	require.Equal(expectedProof, proof)
-	mockBackend.AssertExpectations(s.T())
-
-	// Test outputs hash proof with backend error
-	mockBackend2 := NewMockBackend()
-	mockBackend2.On("GetProof", TxBufferAddress, int32(HashLog2Size), mock.AnythingOfType("time.Duration")).
-		Return([]Hash(nil), errors.New("proof failed"))
-	machine2 := &machineImpl{
-		backend: mockBackend2,
-		logger:  s.logger,
-		params: model.ExecutionParameters{
-			LoadDeadline: time.Second * 5,
-		},
-	}
-	_, err = machine2.OutputsHashProof(ctx)
-	require.Error(err)
-	require.ErrorIs(err, ErrMachineInternal)
-	require.Contains(err.Error(), "could not get outputs hash machine proof")
-	mockBackend2.AssertExpectations(s.T())
-
-	// Test outputs hash proof with canceled context
-	canceledCtx, cancel := context.WithCancel(ctx)
+func (s *ImplementationSuite) TestStateProofHonorsCanceledContext() {
+	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err = machine.OutputsHashProof(canceledCtx)
-	require.ErrorIs(err, ErrCanceled)
+	machine := &machineImpl{backend: NewMockBackend()}
+
+	proof, err := machine.StateProof(ctx)
+	s.Require().Nil(proof)
+	s.Require().ErrorIs(err, ErrCanceled)
+}
+
+func (s *ImplementationSuite) TestVerifyMemoryProofRejectsMalformedProof() {
+	address := TxBufferAddress
+	block := randomFakeHash()
+	root, proofs := buildTestMemoryProofs(map[uint64]Hash{address: block})
+	data := append([]byte(nil), block[:]...)
+
+	for _, test := range []struct {
+		name   string
+		mutate func(*MemoryProof, *[]byte)
+	}{
+		{name: "root size", mutate: func(p *MemoryProof, _ *[]byte) { p.Log2RootSize-- }},
+		{name: "target size", mutate: func(p *MemoryProof, _ *[]byte) { p.Log2TargetSize-- }},
+		{name: "target address", mutate: func(p *MemoryProof, _ *[]byte) { p.TargetAddress += stateProofDataBlockSize }},
+		{name: "reported root", mutate: func(p *MemoryProof, _ *[]byte) { p.RootHash[0] ^= 0xff }},
+		{name: "sibling count", mutate: func(p *MemoryProof, _ *[]byte) { p.Siblings = p.Siblings[:len(p.Siblings)-1] }},
+		{name: "data length", mutate: func(_ *MemoryProof, data *[]byte) { *data = (*data)[:len(*data)-1] }},
+		{name: "target hash", mutate: func(p *MemoryProof, _ *[]byte) { p.TargetHash[0] ^= 0xff }},
+		{name: "sibling path", mutate: func(p *MemoryProof, _ *[]byte) { p.Siblings[0][0] ^= 0xff }},
+	} {
+		s.Run(test.name, func() {
+			proof := proofs[address]
+			proof.Siblings = append([]Hash(nil), proof.Siblings...)
+			proofData := append([]byte(nil), data...)
+			test.mutate(&proof, &proofData)
+
+			leaf, err := verifyMemoryProof(root, address, proof, proofData)
+			s.Require().Equal(LeafProof{}, leaf)
+			s.Require().ErrorIs(err, ErrInvalidMachineProof)
+		})
+	}
+}
+
+func (s *ImplementationSuite) machineWithMemoryProofs(blocks map[uint64]Hash) (*machineImpl, *StateProof) {
+	root, proofs := buildTestMemoryProofs(blocks)
+	backend := NewMockBackend()
+	backend.On("GetRootHash", mock.AnythingOfType("time.Duration")).Return(root, nil).Once()
+	for _, address := range []uint64{
+		iflagsYAddress &^ stateProofDataBlockMask,
+		htifTohostAddress &^ stateProofDataBlockMask,
+		TxBufferAddress,
+	} {
+		block := blocks[address]
+		backend.On(
+			"GetProof",
+			address,
+			int32(HashLog2Size),
+			machineMemoryLog2Size,
+			mock.AnythingOfType("time.Duration"),
+		).
+			Return(proofs[address], nil).Once()
+		backend.On("ReadMemory", address, stateProofDataBlockSize, mock.AnythingOfType("time.Duration")).
+			Return(append([]byte(nil), block[:]...), nil).Once()
+	}
+	machine := &machineImpl{
+		backend: backend,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			LoadDeadline: 5 * time.Second,
+		},
+	}
+	expected := &StateProof{
+		MachineHash:     root,
+		IflagsYProof:    LeafProof{DataBlock: blocks[iflagsYAddress&^stateProofDataBlockMask], Siblings: proofs[iflagsYAddress&^stateProofDataBlockMask].Siblings},
+		HtifTohostProof: LeafProof{DataBlock: blocks[htifTohostAddress&^stateProofDataBlockMask], Siblings: proofs[htifTohostAddress&^stateProofDataBlockMask].Siblings},
+		TxBufferProof:   LeafProof{DataBlock: blocks[TxBufferAddress], Siblings: proofs[TxBufferAddress].Siblings},
+	}
+	return machine, expected
+}
+
+func acceptedStateTestBlocks(iflags, tohost uint64) map[uint64]Hash {
+	var iflagsBlock Hash
+	binary.LittleEndian.PutUint64(iflagsBlock[iflagsYAddress&stateProofDataBlockMask:], iflags)
+	var tohostBlock Hash
+	binary.LittleEndian.PutUint64(tohostBlock[htifTohostAddress&stateProofDataBlockMask:], tohost)
+	return map[uint64]Hash{
+		iflagsYAddress &^ stateProofDataBlockMask:    iflagsBlock,
+		htifTohostAddress &^ stateProofDataBlockMask: tohostBlock,
+		TxBufferAddress: randomFakeHash(),
+	}
+}
+
+func acceptedTohostTestValue() uint64 {
+	return uint64(2)<<56 | uint64(1)<<48 | uint64(1)<<32
+}
+
+func buildTestMemoryProofs(blocks map[uint64]Hash) (Hash, map[uint64]MemoryProof) {
+	const depth = memoryProofSiblingCount
+	defaultHashes := make([]Hash, depth+1)
+	defaultHashes[0] = Hash(crypto.Keccak256Hash(make([]byte, stateProofDataBlockSize)))
+	for level := 1; level <= depth; level++ {
+		defaultHashes[level] = Hash(crypto.Keccak256Hash(
+			defaultHashes[level-1][:],
+			defaultHashes[level-1][:],
+		))
+	}
+
+	current := make(map[uint64]Hash, len(blocks))
+	indexes := make(map[uint64]uint64, len(blocks))
+	siblings := make(map[uint64][]Hash, len(blocks))
+	for address, block := range blocks {
+		index := address >> HashLog2Size
+		indexes[address] = index
+		current[index] = Hash(crypto.Keccak256Hash(block[:]))
+		siblings[address] = make([]Hash, 0, depth)
+	}
+
+	for level := 0; level < depth; level++ {
+		for address, originalIndex := range indexes {
+			index := originalIndex >> level
+			sibling, ok := current[index^1]
+			if !ok {
+				sibling = defaultHashes[level]
+			}
+			siblings[address] = append(siblings[address], sibling)
+		}
+
+		parents := make(map[uint64]struct{}, len(current))
+		for index := range current {
+			parents[index>>1] = struct{}{}
+		}
+		next := make(map[uint64]Hash, len(parents))
+		for parent := range parents {
+			left, ok := current[parent<<1]
+			if !ok {
+				left = defaultHashes[level]
+			}
+			right, ok := current[parent<<1|1]
+			if !ok {
+				right = defaultHashes[level]
+			}
+			next[parent] = Hash(crypto.Keccak256Hash(left[:], right[:]))
+		}
+		current = next
+	}
+
+	root := current[0]
+	proofs := make(map[uint64]MemoryProof, len(blocks))
+	for address, block := range blocks {
+		proofs[address] = MemoryProof{
+			Log2RootSize:   machineMemoryLog2Size,
+			Log2TargetSize: int32(HashLog2Size),
+			RootHash:       root,
+			Siblings:       siblings[address],
+			TargetAddress:  address,
+			TargetHash:     Hash(crypto.Keccak256Hash(block[:])),
+		}
+	}
+	return root, proofs
 }
 
 // Test Advance method
@@ -298,7 +371,6 @@ func (s *ImplementationSuite) TestAdvance() {
 	require.Equal(CompletionStatusAccepted, resp.Status)
 	require.Empty(resp.Outputs)
 	require.Empty(resp.Reports)
-	require.NotEqual(Hash{}, resp.OutputsHash)
 	mockBackend.AssertExpectations(s.T())
 
 	// Test advance with rejection
@@ -320,7 +392,6 @@ func (s *ImplementationSuite) TestAdvance() {
 	require.Equal(CompletionStatusRejected, resp.Status)
 	require.Empty(resp.Outputs)
 	require.Empty(resp.Reports)
-	require.Equal(Hash{}, resp.OutputsHash)
 	mockBackend2.AssertExpectations(s.T())
 
 	// Test advance with exception
@@ -341,7 +412,6 @@ func (s *ImplementationSuite) TestAdvance() {
 	require.NotNil(resp)
 	require.Equal(CompletionStatusException, resp.Status)
 	require.Equal([]byte("exception data"), resp.ExceptionData)
-	require.Equal(Hash{}, resp.OutputsHash)
 	mockBackend3.AssertExpectations(s.T())
 
 	// Halting is also a completed deterministic status and retains
@@ -442,8 +512,8 @@ func (s *ImplementationSuite) TestAdvance() {
 	mockBackend4.AssertExpectations(s.T())
 
 	// A configured target beyond uint64 saturates at MaxUint64, just like the
-	// emulator's imcyclemax. If the machine reaches that endpoint, the machine
-	// overflow—not the configured-cap sentinel—explains why execution stopped.
+	// emulator's imcyclemax. The emulator's overflow break reason completes the
+	// run even when the saturated local target is the same cycle.
 	mockBackendOverflow := NewMockBackend()
 	mockBackendOverflow.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackendOverflow.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
@@ -466,18 +536,18 @@ func (s *ImplementationSuite) TestAdvance() {
 		},
 	}
 	resp, err = machineOverflow.Advance(ctx, input, expectedHash, false)
-	require.ErrorIs(err, ErrReachedLimitMcycle)
-	require.ErrorIs(err, ErrMcycleOverflow)
-	require.Contains(err.Error(), "requested_span=1000")
-	require.Contains(err.Error(), "target_span=999")
-	require.Contains(err.Error(), "executed_cycles=999")
-	require.Nil(resp)
+	require.NoError(err)
+	require.NotNil(resp)
+	require.Equal(CompletionStatusOverflow, resp.Status)
 	mockBackendOverflow.AssertExpectations(s.T())
 
 	// Test advance with invalid hash length
 	mockBackend5 := NewMockBackend()
 	mockBackend5.On("CmioRxBufferSize").Return(uint64(1024))
-	mockBackend5.On("SendCmioResponse", uint16(AdvanceStateRequest), mock.Anything, expectedHash, mock.AnythingOfType("time.Duration")).Return(nil)
+	mockBackend5.On(
+		"SendCmioResponse", uint16(AdvanceStateRequest), mock.Anything,
+		expectedHash, mock.AnythingOfType("time.Duration"),
+	).Return(nil)
 	mockBackend5.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
 	mockBackend5.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
 	mockBackend5.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
@@ -682,9 +752,12 @@ func (b *statefulAdvanceBackend) ReceiveCmioRequest(time.Duration) (uint8, uint1
 	}
 }
 func (b *statefulAdvanceBackend) WriteMemory(uint64, []byte, time.Duration) error { return nil }
-func (b *statefulAdvanceBackend) GetRootHash(time.Duration) (Hash, error)         { return Hash{}, nil }
-func (b *statefulAdvanceBackend) GetProof(uint64, int32, time.Duration) ([]Hash, error) {
+func (b *statefulAdvanceBackend) ReadMemory(uint64, uint64, time.Duration) ([]byte, error) {
 	return nil, nil
+}
+func (b *statefulAdvanceBackend) GetRootHash(time.Duration) (Hash, error) { return Hash{}, nil }
+func (b *statefulAdvanceBackend) GetProof(uint64, int32, int32, time.Duration) (MemoryProof, error) {
+	return MemoryProof{}, nil
 }
 func (b *statefulAdvanceBackend) Delete() {}
 func (b *statefulAdvanceBackend) ForkServer(time.Duration) (Backend, string, uint32, error) {
@@ -734,7 +807,6 @@ func (s *ImplementationSuite) TestInterruptedAdvanceReturnsNilAndCanBeRetried() 
 	s.Require().NoError(err)
 	s.Require().NotNil(result)
 	s.Require().Equal(CompletionStatusAccepted, result.Status)
-	s.Require().Equal(expectedOutputsHash, result.OutputsHash)
 	backend.AssertExpectations(s.T())
 }
 
@@ -782,16 +854,16 @@ func (s *ImplementationSuite) TestRunUsesHardExecutionSpanWhenMaximumIsZero() {
 				params:  tt.params,
 			}
 
-			_, err := machine.run(
+			result, err := machine.run(
 				context.Background(), tt.reqType, false,
 				executionBounds{
 					start: startCycle, limit: startCycle + executionCycleSpan,
 					span: executionCycleSpan,
 				},
 			)
-			s.Require().ErrorIs(err, ErrReachedLimitMcycle)
 			s.Require().ErrorIs(err, ErrMcycleOverflow)
-			s.Contains(err.Error(), fmt.Sprintf("executed_cycles=%d", executionCycleSpan))
+			s.Empty(result.outputs)
+			s.Empty(result.reports)
 			mockBackend.AssertExpectations(s.T())
 		})
 	}
@@ -1062,7 +1134,7 @@ func (s *ImplementationSuite) TestAdvanceConfiguredCycleExhaustionReturnsNoResul
 	backend.AssertExpectations(s.T())
 }
 
-func (s *ImplementationSuite) TestAdvanceFixedSpanExhaustionPreservesMachineOverflow() {
+func (s *ImplementationSuite) TestAdvanceMachineOverflowCompletesRun() {
 	const start = uint64(30)
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
@@ -1084,14 +1156,13 @@ func (s *ImplementationSuite) TestAdvanceFixedSpanExhaustionPreservesMachineOver
 	}}
 
 	response, err := machine.Advance(context.Background(), []byte("input"), Hash{}, false)
-	s.Require().Nil(response)
-	s.Require().ErrorIs(err, ErrReachedLimitMcycle)
-	s.Require().ErrorIs(err, ErrMcycleOverflow)
-	s.Contains(err.Error(), "advance execution reached fixed (machine imcyclemax) cycle limit")
+	s.Require().NoError(err)
+	s.Require().NotNil(response)
+	s.Equal(CompletionStatusOverflow, response.Status)
 	backend.AssertExpectations(s.T())
 }
 
-func (s *ImplementationSuite) TestAdvanceConfiguredLimitTiePreservesMachineOverflowPrecedence() {
+func (s *ImplementationSuite) TestAdvanceConfiguredLimitTieCompletesWithMachineOverflow() {
 	const start = uint64(30)
 	configuredSpan := model.MaxExecutionCycleSpan
 	limit := start + configuredSpan
@@ -1113,16 +1184,13 @@ func (s *ImplementationSuite) TestAdvanceConfiguredLimitTiePreservesMachineOverf
 	}}
 
 	response, err := machine.Advance(context.Background(), []byte("input"), Hash{}, false)
-	s.Require().Nil(response)
-	s.Require().ErrorIs(err, ErrReachedLimitMcycle)
-	s.Require().ErrorIs(err, ErrMcycleOverflow)
-	s.Contains(err.Error(), "advance execution stopped at machine imcyclemax coincident with configured target")
-	s.Contains(err.Error(), fmt.Sprintf("requested_span=%d", configuredSpan))
-	s.Contains(err.Error(), fmt.Sprintf("executed_cycles=%d", configuredSpan))
+	s.Require().NoError(err)
+	s.Require().NotNil(response)
+	s.Equal(CompletionStatusOverflow, response.Status)
 	backend.AssertExpectations(s.T())
 }
 
-func (s *ImplementationSuite) TestAdvanceStartingAtMachineMaximumPreservesOverflowOrigin() {
+func (s *ImplementationSuite) TestAdvanceStartingAtMachineMaximumCompletesWithOverflow() {
 	for _, test := range []struct {
 		name          string
 		configuredMax uint64
@@ -1152,16 +1220,9 @@ func (s *ImplementationSuite) TestAdvanceStartingAtMachineMaximumPreservesOverfl
 			}}
 
 			response, err := machine.Advance(context.Background(), []byte("input"), Hash{}, false)
-			s.Require().Nil(response)
-			s.Require().ErrorIs(err, ErrReachedLimitMcycle)
-			s.Require().ErrorIs(err, ErrMcycleOverflow)
-			expectedRequestedSpan := test.configuredMax
-			if expectedRequestedSpan == 0 {
-				expectedRequestedSpan = model.MaxExecutionCycleSpan
-			}
-			s.Contains(err.Error(), fmt.Sprintf("requested_span=%d", expectedRequestedSpan))
-			s.Contains(err.Error(), "target_span=0")
-			s.Contains(err.Error(), "executed_cycles=0")
+			s.Require().NoError(err)
+			s.Require().NotNil(response)
+			s.Equal(CompletionStatusOverflow, response.Status)
 			backend.AssertExpectations(s.T())
 		})
 	}
@@ -1192,35 +1253,31 @@ func (s *ImplementationSuite) TestRunRejectsNonOverflowReasonAtMachineMaximum() 
 	}
 }
 
-func (s *ImplementationSuite) TestInspectInheritedMcycleOverflowDoesNotClaimLocalLimitExhaustion() {
+func (s *ImplementationSuite) TestInspectInheritedMcycleOverflowCompletesRun() {
 	const start = uint64(100)
 
 	for _, test := range []struct {
-		name            string
-		configuredMax   uint64
-		requestedSpan   uint64
-		executedCycles  uint64
-		stopDescription string
+		name           string
+		configuredMax  uint64
+		requestedSpan  uint64
+		executedCycles uint64
 	}{
 		{
-			name:            "before configured limit",
-			configuredMax:   50,
-			requestedSpan:   50,
-			executedCycles:  7,
-			stopDescription: "stopped before configured cycle limit",
+			name:           "before configured limit",
+			configuredMax:  50,
+			requestedSpan:  50,
+			executedCycles: 7,
 		},
 		{
-			name:            "at configured limit",
-			configuredMax:   7,
-			requestedSpan:   7,
-			executedCycles:  7,
-			stopDescription: "stopped at machine imcyclemax coincident with configured target",
+			name:           "at configured limit",
+			configuredMax:  7,
+			requestedSpan:  7,
+			executedCycles: 7,
 		},
 		{
-			name:            "before zero default fixed limit",
-			requestedSpan:   model.MaxExecutionCycleSpan,
-			executedCycles:  7,
-			stopDescription: "stopped before fixed cycle limit",
+			name:           "before zero default fixed limit",
+			requestedSpan:  model.MaxExecutionCycleSpan,
+			executedCycles: 7,
 		},
 	} {
 		s.Run(test.name, func() {
@@ -1246,13 +1303,9 @@ func (s *ImplementationSuite) TestInspectInheritedMcycleOverflowDoesNotClaimLoca
 
 			response, err := machine.Inspect(context.Background(), []byte("query"))
 			s.Require().NotNil(response)
-			s.Equal(CompletionStatusUnknown, response.Status)
+			s.Equal(CompletionStatusOverflow, response.Status)
 			s.Empty(response.Reports)
-			s.Require().ErrorIs(err, ErrReachedLimitMcycle)
-			s.Require().ErrorIs(err, ErrMcycleOverflow)
-			s.Contains(err.Error(), test.stopDescription)
-			s.Contains(err.Error(), fmt.Sprintf("requested_span=%d", test.requestedSpan))
-			s.Contains(err.Error(), fmt.Sprintf("executed_cycles=%d", test.executedCycles))
+			s.Require().NoError(err)
 			backend.AssertExpectations(s.T())
 		})
 	}
@@ -1514,8 +1567,8 @@ func (s *ImplementationSuite) TestInspect() {
 	require.ErrorIs(err, ErrPayloadLengthLimitExceeded)
 	mockBackend4.AssertExpectations(s.T())
 
-	// Inspect uses the same saturating target as advance. Reaching MaxUint64 is
-	// reported as a machine overflow and never as a completed input result.
+	// Inspect uses the same saturating target as advance. The emulator's overflow
+	// break reason completes the run even though this inspect fork is disposable.
 	mockBackendOverflow := NewMockBackend()
 	mockBackendOverflow.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackendOverflow.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
@@ -1539,13 +1592,9 @@ func (s *ImplementationSuite) TestInspect() {
 	}
 	response, err = machineOverflow.Inspect(ctx, query)
 	require.NotNil(response)
-	require.Equal(CompletionStatusUnknown, response.Status)
+	require.Equal(CompletionStatusOverflow, response.Status)
 	require.Empty(response.Reports)
-	require.ErrorIs(err, ErrReachedLimitMcycle)
-	require.ErrorIs(err, ErrMcycleOverflow)
-	require.Contains(err.Error(), "requested_span=1000")
-	require.Contains(err.Error(), "target_span=999")
-	require.Contains(err.Error(), "executed_cycles=999")
+	require.NoError(err)
 	mockBackendOverflow.AssertExpectations(s.T())
 }
 
@@ -1574,6 +1623,12 @@ func (s *ImplementationSuite) TestAdvanceCanonicalizesTerminalBoundaryHash() {
 			name:               "exception at first boundary",
 			yieldReason:        ManualYieldReasonException,
 			status:             CompletionStatusException,
+			terminalAtBoundary: true,
+		},
+		{
+			name:               "unexpected yield at first boundary",
+			yieldReason:        manualYieldReason(0x7f),
+			status:             CompletionStatusUnexpectedYield,
 			terminalAtBoundary: true,
 		},
 		{
@@ -1720,7 +1775,7 @@ func (s *ImplementationSuite) TestAdvanceCanonicalizesTerminalBoundaryHash() {
 	}
 }
 
-func (s *ImplementationSuite) TestRunDiscardsOverflowCollection() {
+func (s *ImplementationSuite) TestRunCanonicalizesOverflowCollection() {
 	const fixedEndpoint uint64 = model.MaxExecutionCycleSpan
 	const startCycle uint64 = fixedEndpoint - mcycleComputationHashChunkSize
 	terminalSample := randomFakeHash()
@@ -1754,7 +1809,7 @@ func (s *ImplementationSuite) TestRunDiscardsOverflowCollection() {
 	s.Empty(result.outputs)
 	s.Empty(result.reports)
 	s.Empty(result.periodicStateHashes)
-	s.Zero(result.paddingRepetitions)
+	s.Equal(uint64(InputEntryCapacity), result.paddingRepetitions)
 	backend.AssertExpectations(s.T())
 }
 
@@ -1894,7 +1949,7 @@ func (s *ImplementationSuite) TestClose() {
 	mockBackend.On("Delete").Return()
 	machine := &machineImpl{
 		backend: mockBackend,
-		address: "127.0.0.1:12345",
+		address: testMachineAddress,
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline: time.Second * 5,
@@ -1916,7 +1971,7 @@ func (s *ImplementationSuite) TestClose() {
 	mockBackend2.On("Delete").Return()
 	machine2 := &machineImpl{
 		backend: mockBackend2,
-		address: "127.0.0.1:12345",
+		address: testMachineAddress,
 		logger:  s.logger,
 		params: model.ExecutionParameters{
 			FastDeadline: time.Second * 5,
@@ -1936,11 +1991,11 @@ func (s *ImplementationSuite) TestAddress() {
 	require := s.Require()
 
 	machine := &machineImpl{
-		address: "127.0.0.1:12345",
+		address: testMachineAddress,
 	}
 
 	address := machine.Address()
-	require.Equal("127.0.0.1:12345", address)
+	require.Equal(testMachineAddress, address)
 }
 
 // Test helper methods
@@ -2028,6 +2083,22 @@ func (s *ImplementationSuite) TestHelperMethods() {
 	require.Equal(CompletionStatusException, manualResult.status)
 	require.NotNil(manualResult.data)
 	mockBackend5.AssertExpectations(s.T())
+
+	mockUnexpected := NewMockBackend()
+	mockUnexpected.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
+		uint8(0), uint16(0x7f), []byte("unexpected"), nil)
+	machineUnexpected := &machineImpl{
+		backend: mockUnexpected,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			FastDeadline: time.Second * 5,
+		},
+	}
+	manualResult, err = machineUnexpected.readManualYieldResult(ctx)
+	require.NoError(err)
+	require.Equal(CompletionStatusUnexpectedYield, manualResult.status)
+	require.Nil(manualResult.data)
+	mockUnexpected.AssertExpectations(s.T())
 
 	// Test readMCycle
 	mockBackend6 := NewMockBackend()
@@ -2328,7 +2399,10 @@ func (s *ImplementationSuite) TestProcess() {
 	// Test successful process
 	mockBackend := NewMockBackend()
 	mockBackend.On("CmioRxBufferSize").Return(uint64(1024))
-	mockBackend.On("SendCmioResponse", mock.AnythingOfType("uint16"), mock.Anything, expectedHash, mock.AnythingOfType("time.Duration")).Return(nil)
+	mockBackend.On(
+		"SendCmioResponse", mock.AnythingOfType("uint16"), mock.Anything,
+		expectedHash, mock.AnythingOfType("time.Duration"),
+	).Return(nil)
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
 	mockBackend.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
 	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
@@ -2544,7 +2618,7 @@ func (s *ImplementationSuite) TestCheckContext() {
 	require.ErrorIs(err, ErrDeadlineExceeded)
 
 	// Test nil context (should not panic)
-	err = checkContext(nil) // nolint
+	err = checkContext(nil) //nolint:staticcheck // The nil-context contract is intentional.
 	require.NoError(err)    // nil context is valid in Go
 }
 

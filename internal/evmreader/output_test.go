@@ -381,12 +381,144 @@ func (s *EvmReaderSuite) TestOutputExecutionMismatchMarksApplicationDiverged() {
 		ApplicationStatus_Diverged,
 		mock.Anything,
 	).Return(nil).Once()
+	s.repository.On("UpdateOutputsExecution",
+		mock.Anything,
+		foreclosedApp.IApplicationAddress.Hex(),
+		mock.MatchedBy(func(outputs []*Output) bool { return len(outputs) == 0 }),
+		uint64(0x13),
+	).Return(nil).Once()
 
 	s.evmReader.checkForOutputExecution(s.ctx, []appContracts{
 		{application: foreclosedApp, applicationContract: applicationContract},
 	}, 0x13)
 
+	s.Equal(ApplicationStatus_Diverged, foreclosedApp.Status)
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 1)
+	s.repository.AssertExpectations(s.T())
+	applicationContract.AssertExpectations(s.T())
+}
+
+func (s *EvmReaderSuite) TestOutputExecutionMismatchEscalatesExecutionTerminalToCorrupted() {
+	s.repository = newMockRepository()
+	s.evmReader.repository = s.repository
+	applicationContract := newMockApplicationContract()
+
+	app := copyApplications(applications)[0]
+	app.ID = 1
+	app.Status = ApplicationStatus_MachineHalted
+	app.ForecloseBlock = 0x12
+	app.LastOutputCheckBlock = 0x12
+
+	mismatchedOutput := &Output{
+		Index:   outputExecution0.OutputIndex,
+		RawData: common.Hex2Bytes("FFBBCCDDEE"),
+	}
+	applicationContract.On("GetNumberOfExecutedOutputs", blockFrom(0x13)).
+		Return(new(big.Int).SetUint64(1), nil)
+	applicationContract.On("RetrieveOutputExecutionEvents",
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x13 }),
+	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil).Once()
+	s.repository.On("GetNumberOfExecutedOutputs",
+		mock.Anything, app.IApplicationAddress.String()).Return(uint64(0), nil).Once()
+	s.repository.On("GetOutput",
+		mock.Anything, app.IApplicationAddress.Hex(), outputExecution0.OutputIndex).
+		Return(mismatchedOutput, nil).Once()
+	s.repository.On("UpdateApplicationStatus",
+		mock.Anything, app.ID, ApplicationStatus_Corrupted, mock.Anything).
+		Return(nil).Once()
+	s.repository.On("UpdateOutputsExecution",
+		mock.Anything,
+		app.IApplicationAddress.Hex(),
+		mock.MatchedBy(func(outputs []*Output) bool { return len(outputs) == 0 }),
+		uint64(0x13),
+	).Return(nil).Once()
+
+	s.evmReader.checkForOutputExecution(s.ctx, []appContracts{
+		{application: app, applicationContract: applicationContract},
+	}, 0x13)
+
+	s.Equal(ApplicationStatus_Corrupted, app.Status)
+	s.repository.AssertExpectations(s.T())
+	applicationContract.AssertExpectations(s.T())
+}
+
+func (s *EvmReaderSuite) TestOutputExecutionMismatchRetriesWhenStatusWriteFails() {
+	s.repository = newMockRepository()
+	s.evmReader.repository = s.repository
+	applicationContract := newMockApplicationContract()
+
+	app := copyApplications(applications)[0]
+	app.ID = 1
+	app.Status = ApplicationStatus_OK
+	app.ForecloseBlock = 0x12
+	app.LastOutputCheckBlock = 0x12
+	mismatchedOutput := &Output{
+		Index:   outputExecution0.OutputIndex,
+		RawData: common.Hex2Bytes("FFBBCCDDEE"),
+	}
+	dbErr := errors.New("database unavailable")
+
+	applicationContract.On("GetNumberOfExecutedOutputs", blockFrom(0x13)).
+		Return(new(big.Int).SetUint64(1), nil)
+	applicationContract.On("RetrieveOutputExecutionEvents",
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x13 }),
+	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil).Once()
+	s.repository.On("GetNumberOfExecutedOutputs",
+		mock.Anything, app.IApplicationAddress.String()).Return(uint64(0), nil).Once()
+	s.repository.On("GetOutput",
+		mock.Anything, app.IApplicationAddress.Hex(), outputExecution0.OutputIndex).
+		Return(mismatchedOutput, nil).Once()
+	s.repository.On("UpdateApplicationStatus",
+		mock.Anything, app.ID, ApplicationStatus_Diverged, mock.Anything).
+		Return(dbErr).Once()
+
+	s.evmReader.checkForOutputExecution(s.ctx, []appContracts{
+		{application: app, applicationContract: applicationContract},
+	}, 0x13)
+
+	s.Equal(ApplicationStatus_OK, app.Status)
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 0)
+	s.repository.AssertExpectations(s.T())
+	applicationContract.AssertExpectations(s.T())
+}
+
+func (s *EvmReaderSuite) TestOutputExecutionMismatchDoesNotRewriteIntegrityTerminal() {
+	s.repository = newMockRepository()
+	s.evmReader.repository = s.repository
+	applicationContract := newMockApplicationContract()
+
+	app := copyApplications(applications)[0]
+	app.ID = 1
+	app.Status = ApplicationStatus_Corrupted
+	app.ForecloseBlock = 0x12
+	app.LastOutputCheckBlock = 0x12
+
+	mismatchedOutput := &Output{
+		Index:   outputExecution0.OutputIndex,
+		RawData: common.Hex2Bytes("FFBBCCDDEE"),
+	}
+	applicationContract.On("GetNumberOfExecutedOutputs", blockFrom(0x13)).
+		Return(new(big.Int).SetUint64(1), nil)
+	applicationContract.On("RetrieveOutputExecutionEvents",
+		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x13 }),
+	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil).Once()
+	s.repository.On("GetNumberOfExecutedOutputs",
+		mock.Anything, app.IApplicationAddress.String()).Return(uint64(0), nil).Once()
+	s.repository.On("GetOutput",
+		mock.Anything, app.IApplicationAddress.Hex(), outputExecution0.OutputIndex).
+		Return(mismatchedOutput, nil).Once()
+	s.repository.On("UpdateOutputsExecution",
+		mock.Anything,
+		app.IApplicationAddress.Hex(),
+		mock.MatchedBy(func(outputs []*Output) bool { return len(outputs) == 0 }),
+		uint64(0x13),
+	).Return(nil).Once()
+
+	s.evmReader.checkForOutputExecution(s.ctx, []appContracts{
+		{application: app, applicationContract: applicationContract},
+	}, 0x13)
+
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateApplicationStatus", 0)
 	s.repository.AssertExpectations(s.T())
 	applicationContract.AssertExpectations(s.T())
 }
@@ -711,6 +843,12 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 		ApplicationStatus_Diverged,
 		mock.Anything,
 	).Return(nil).Once()
+	s.repository.On("UpdateOutputsExecution",
+		mock.Anything,
+		applications[0].IApplicationAddress.Hex(),
+		mock.MatchedBy(func(outputs []*Output) bool { return len(outputs) == 0 }),
+		uint64(0x11),
+	).Return(nil).Once()
 
 	s.applicationContract1.On("GetDeploymentBlockNumber",
 		mock.Anything,
@@ -763,7 +901,7 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenOutputMismatches() {
 
 	s.Require().True(waitNotification(called), "evmreader did not read new header")
 
-	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 0)
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 1)
 	s.repository.AssertExpectations(s.T())
 
 	s.inputBox.AssertExpectations(s.T())

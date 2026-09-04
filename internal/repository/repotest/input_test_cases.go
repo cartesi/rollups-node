@@ -30,7 +30,7 @@ func (s *InputSuite) TestGetInput() {
 		s.Equal(seed.Input.TransactionHash, got.TransactionHash)
 		s.Equal(seed.Input.LogIndex, got.LogIndex)
 		s.Nil(got.MachineHash)
-		s.Nil(got.OutputsHash)
+		s.Nil(got.TxBufferDataBlock)
 		s.Nil(got.SnapshotURI)
 		s.False(got.CreatedAt.IsZero(), "CreatedAt should be set")
 		s.False(got.UpdatedAt.IsZero(), "UpdatedAt should be set")

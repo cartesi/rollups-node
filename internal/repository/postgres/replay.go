@@ -22,6 +22,8 @@ var replayCompletedStatuses = []postgres.Expression{
 	postgres.NewEnumValue(model.InputCompletionStatus_Rejected.String()),
 	postgres.NewEnumValue(model.InputCompletionStatus_Exception.String()),
 	postgres.NewEnumValue(model.InputCompletionStatus_MachineHalted.String()),
+	postgres.NewEnumValue(model.InputCompletionStatus_Overflow.String()),
+	postgres.NewEnumValue(model.InputCompletionStatus_UnexpectedYield.String()),
 }
 
 func replayCompletedStatus(status postgres.StringExpression) postgres.BoolExpression {
@@ -361,7 +363,7 @@ func (r *PostgresRepository) ReplayPage(
 		table.Input.Status,
 		table.Input.ExceptionData,
 		table.Input.MachineHash,
-		table.Input.OutputsHash,
+		table.Input.TxBufferDataBlock,
 	).
 		WHERE(
 			whereInputApp.
@@ -441,7 +443,7 @@ func selectReplayInputs(
 			&in.Status,
 			&in.ExceptionData,
 			&in.MachineHash,
-			&in.OutputsHash,
+			&in.TxBufferDataBlock,
 		); err != nil {
 			return nil, err
 		}

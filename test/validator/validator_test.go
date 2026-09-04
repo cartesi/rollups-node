@@ -122,7 +122,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
 			ApplicationID: 1,
 			Index:         0,
 			VirtualIndex:  0,
-			Status:        model.EpochStatus_InputsProcessed,
+			Status:        model.EpochStatus_Closed,
 			FirstBlock:    0,
 			LastBlock:     9,
 		}
@@ -145,12 +145,9 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
 		advanceResult := model.AdvanceResult{
 			InputIndex: input.Index,
 			Status:     model.InputCompletionStatus_Accepted,
-			OutputsProof: model.OutputsProof{
-				OutputsHash: pristineRootHash,
-				MachineHash: machinehash1,
-			},
+			StateProof: completeStateProof(machinehash1, pristineRootHash),
 		}
-		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
+		err = s.storeAdvanceAndPublishEpoch(app, &advanceResult)
 		s.Require().Nil(err)
 
 		errs := s.validator.Tick()
@@ -159,12 +156,12 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
 		updatedEpoch, err := s.repository.GetEpoch(s.ctx, app.IApplicationAddress.String(), epoch.Index)
 		s.Require().Nil(err)
 		s.Require().NotNil(updatedEpoch)
-		s.Require().NotNil(updatedEpoch.OutputsMerkleRoot)
+		s.Require().NotNil(updatedEpoch.TxBufferDataBlock)
 
 		// epoch status was updated
 		s.Equal(model.EpochStatus_ClaimComputed, updatedEpoch.Status)
 		// claim is pristine claim
-		s.Equal(pristineRootHash, *updatedEpoch.OutputsMerkleRoot)
+		s.Equal(pristineRootHash, *updatedEpoch.TxBufferDataBlock)
 	})
 }
 
@@ -216,7 +213,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 			ApplicationID: 1,
 			Index:         1,
 			VirtualIndex:  1,
-			Status:        model.EpochStatus_InputsProcessed,
+			Status:        model.EpochStatus_Closed,
 			FirstBlock:    10,
 			LastBlock:     19,
 		}
@@ -236,27 +233,18 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 		err = s.repository.CreateEpochsAndInputs(s.ctx, app.IApplicationAddress.String(), epochInputMap, 20)
 		s.Require().Nil(err)
 
-		// Advance first epoch to INPUTS_PROCESSED so StoreClaimAndProofs can
-		// transition it to CLAIM_COMPUTED.
-		firstEpoch.Status = model.EpochStatus_InputsProcessed
-		err = s.repository.UpdateEpochStatus(s.ctx, app.IApplicationAddress.String(), &firstEpoch)
-		s.Require().Nil(err)
-
 		// Store the input advance result
 		machinehash1 := crypto.Keccak256Hash([]byte("machine-hash1"))
 		advanceResult := model.AdvanceResult{
 			EpochIndex: firstEpochInput.EpochIndex,
 			InputIndex: firstEpochInput.Index,
 			Status:     model.InputCompletionStatus_Accepted,
-			OutputsProof: model.OutputsProof{
-				OutputsHash: firstEpochClaim,
-				MachineHash: machinehash1,
-			},
+			StateProof: completeStateProof(machinehash1, firstEpochClaim),
 		}
-		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
+		err = s.storeAdvanceAndPublishEpoch(app, &advanceResult)
 		s.Require().Nil(err)
 
-		firstEpoch.OutputsMerkleRoot = &firstEpochClaim
+		firstEpoch.TxBufferDataBlock = &firstEpochClaim
 		err = s.repository.StoreClaimAndProofs(s.ctx, &firstEpoch, []*model.Output{})
 		s.Require().Nil(err)
 
@@ -267,13 +255,10 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 			InputIndex: secondEpochInput.Index,
 			Status:     model.InputCompletionStatus_Accepted,
 			// since there are no new outputs in the second epoch,
-			// the machine OutputsHash will remain the same
-			OutputsProof: model.OutputsProof{
-				OutputsHash: firstEpochClaim,
-				MachineHash: machinehash2,
-			},
+			// the machine TxBufferDataBlock will remain the same
+			StateProof: completeStateProof(machinehash2, firstEpochClaim),
 		}
-		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
+		err = s.storeAdvanceAndPublishEpoch(app, &advanceResult)
 		s.Require().Nil(err)
 
 		errs := s.validator.Tick()
@@ -282,12 +267,12 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 		updatedEpoch, err := s.repository.GetEpoch(s.ctx, app.IApplicationAddress.String(), secondEpoch.Index)
 		s.Require().Nil(err)
 		s.Require().NotNil(updatedEpoch)
-		s.Require().NotNil(updatedEpoch.OutputsMerkleRoot)
+		s.Require().NotNil(updatedEpoch.TxBufferDataBlock)
 
 		// epoch status was updated
 		s.Equal(model.EpochStatus_ClaimComputed, updatedEpoch.Status)
 		// claim is the same from previous epoch
-		s.Equal(firstEpochClaim, *updatedEpoch.OutputsMerkleRoot)
+		s.Equal(firstEpochClaim, *updatedEpoch.TxBufferDataBlock)
 	})
 }
 
@@ -312,7 +297,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			ApplicationID: 1,
 			Index:         0,
 			VirtualIndex:  0,
-			Status:        model.EpochStatus_InputsProcessed,
+			Status:        model.EpochStatus_Closed,
 			FirstBlock:    10,
 			LastBlock:     19,
 		}
@@ -351,12 +336,9 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			InputIndex: input.Index,
 			Status:     model.InputCompletionStatus_Accepted,
 			Outputs:    [][]byte{outputRawData},
-			OutputsProof: model.OutputsProof{
-				OutputsHash: expectedClaim,
-				MachineHash: machinehash1,
-			},
+			StateProof: completeStateProof(machinehash1, expectedClaim),
 		}
-		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
+		err = s.storeAdvanceAndPublishEpoch(app, &advanceResult)
 		s.Require().Nil(err)
 
 		errs := s.validator.Tick()
@@ -365,12 +347,12 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		updatedEpoch, err := s.repository.GetEpoch(s.ctx, app.IApplicationAddress.String(), epoch.Index)
 		s.Require().Nil(err)
 		s.Require().NotNil(updatedEpoch)
-		s.Require().NotNil(updatedEpoch.OutputsMerkleRoot)
+		s.Require().NotNil(updatedEpoch.TxBufferDataBlock)
 
 		// epoch status was updated
 		s.Equal(model.EpochStatus_ClaimComputed, updatedEpoch.Status)
 		// claim is the expected new claim
-		s.Equal(expectedClaim, *updatedEpoch.OutputsMerkleRoot)
+		s.Equal(expectedClaim, *updatedEpoch.TxBufferDataBlock)
 
 		updatedOutput, err := s.repository.GetOutput(s.ctx, app.IApplicationAddress.String(), output.Index)
 		s.Require().Nil(err)
@@ -421,12 +403,6 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		err = s.repository.CreateEpochsAndInputs(s.ctx, app.IApplicationAddress.String(), epochInputMap, 10)
 		s.Require().Nil(err)
 
-		// Advance first epoch to INPUTS_PROCESSED so StoreClaimAndProofs can
-		// transition it to CLAIM_COMPUTED.
-		firstEpoch.Status = model.EpochStatus_InputsProcessed
-		err = s.repository.UpdateEpochStatus(s.ctx, app.IApplicationAddress.String(), &firstEpoch)
-		s.Require().Nil(err)
-
 		firstOutputData := []byte("output1")
 		firstOutputHash := crypto.Keccak256Hash(firstOutputData)
 		firstOutput := model.Output{
@@ -450,16 +426,13 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			InputIndex: firstInput.Index,
 			Status:     model.InputCompletionStatus_Accepted,
 			Outputs:    [][]byte{firstOutputData},
-			OutputsProof: model.OutputsProof{
-				MachineHash: machinehash1,
-				OutputsHash: firstEpochClaim,
-			},
+			StateProof: completeStateProof(machinehash1, firstEpochClaim),
 		}
-		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
+		err = s.storeAdvanceAndPublishEpoch(app, &advanceResult)
 		s.Require().Nil(err)
 
 		// update epoch with its claim and insert it in the db
-		firstEpoch.OutputsMerkleRoot = &firstEpochClaim
+		firstEpoch.TxBufferDataBlock = &firstEpochClaim
 		firstOutput.OutputHashesSiblings = firstEpochProofs
 		err = s.repository.StoreClaimAndProofs(s.ctx, &firstEpoch, []*model.Output{&firstOutput})
 		s.Require().Nil(err)
@@ -469,7 +442,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			ApplicationID: 1,
 			Index:         1,
 			VirtualIndex:  1,
-			Status:        model.EpochStatus_InputsProcessed,
+			Status:        model.EpochStatus_Closed,
 			FirstBlock:    10,
 			LastBlock:     19,
 		}
@@ -505,12 +478,9 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 			InputIndex: secondInput.Index,
 			Status:     model.InputCompletionStatus_Accepted,
 			Outputs:    [][]byte{secondOutputData},
-			OutputsProof: model.OutputsProof{
-				OutputsHash: expectedEpochClaim,
-				MachineHash: machinehash2,
-			},
+			StateProof: completeStateProof(machinehash2, expectedEpochClaim),
 		}
-		err = s.repository.StoreAdvanceResult(s.ctx, 1, &advanceResult)
+		err = s.storeAdvanceAndPublishEpoch(app, &advanceResult)
 		s.Require().Nil(err)
 
 		errs := s.validator.Tick()
@@ -523,13 +493,13 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		)
 		s.Require().Nil(err)
 		s.Require().NotNil(updatedSecondEpoch)
-		s.Require().NotNil(updatedSecondEpoch.OutputsMerkleRoot)
+		s.Require().NotNil(updatedSecondEpoch.TxBufferDataBlock)
 
 		// assert epoch status was changed
 		s.Equal(model.EpochStatus_ClaimComputed, updatedSecondEpoch.Status)
 		// assert second epoch claim is a new claim
-		s.NotEqual(firstEpochClaim, *updatedSecondEpoch.OutputsMerkleRoot)
-		s.Equal(expectedEpochClaim, *updatedSecondEpoch.OutputsMerkleRoot)
+		s.NotEqual(firstEpochClaim, *updatedSecondEpoch.TxBufferDataBlock)
+		s.Equal(expectedEpochClaim, *updatedSecondEpoch.TxBufferDataBlock)
 
 		updatedSecondOutput, err := s.repository.GetOutput(
 			s.ctx,
@@ -545,4 +515,29 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		// assert output has proof
 		s.Len(updatedSecondOutput.OutputHashesSiblings, MAX_OUTPUT_TREE_HEIGHT)
 	})
+}
+
+func completeStateProof(machineHash, txBufferDataBlock common.Hash) model.StateProof {
+	return model.StateProof{
+		MachineHash:       machineHash,
+		TxBufferDataBlock: txBufferDataBlock,
+		TxBufferProof:     make([][32]byte, model.StateProofSiblingCount),
+		IflagsYProof:      make([][32]byte, model.StateProofSiblingCount),
+		HtifTohostProof:   make([][32]byte, model.StateProofSiblingCount),
+	}
+}
+
+func (s *ValidatorRepositoryIntegrationSuite) storeAdvanceAndPublishEpoch(
+	app *model.Application,
+	result *model.AdvanceResult,
+) error {
+	if err := s.repository.StoreAdvanceResult(s.ctx, 1, result); err != nil {
+		return err
+	}
+	return s.repository.UpdateEpochInputsProcessed(
+		s.ctx,
+		app.IApplicationAddress.String(),
+		result.EpochIndex,
+		&result.StateProof,
+	)
 }

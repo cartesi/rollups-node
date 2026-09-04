@@ -320,8 +320,9 @@ func (s *Service) createTournament(
 
 	err = s.repository.CreateTournament(ctx, app.IApplicationAddress.Hex(), t)
 	if err != nil {
-		s.Logger.Error("failed to create tournament in database", "level", level, "application", app.Name,
-			"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
+		s.logErrorUnlessShutdown("failed to create tournament in database", err,
+			"level", level, "application", app.Name,
+			"epoch", epoch.Index, "tournament_address", tournamentAddress.String())
 		return nil, err
 	}
 	return t, nil
@@ -405,7 +406,7 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 
 	for _, epoch := range epochs {
 		if epoch.TournamentAddress == nil || epoch.Commitment == nil ||
-			epoch.MachineHash == nil || epoch.OutputsMerkleRoot == nil {
+			epoch.MachineHash == nil || epoch.TxBufferDataBlock == nil {
 			return s.setApplicationCorrupted(ctx, app,
 				"epoch %d has missing required fields for ClaimComputed status", epoch.Index)
 		}
@@ -413,8 +414,9 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 		if epoch.ClaimTransactionHash == nil { // epoch not claimed on-chain yet
 			err = s.fetchTournamentData(ctx, app, epoch, RootLevel, nil, nil, *epoch.TournamentAddress, mostRecentBlock)
 			if err != nil {
-				s.Logger.Error("failed to fetch root tournament data", "application", app.Name,
-					"epoch", epoch.Index, "tournament", epoch.TournamentAddress.String(), "error", err)
+				s.logErrorUnlessShutdown("failed to fetch root tournament data", err,
+					"application", app.Name, "epoch", epoch.Index,
+					"tournament", epoch.TournamentAddress.String())
 				return err
 			}
 			// if this epoch is not claimed on-chain yet, all other epochs with higher index should not be claimed either, so we can
@@ -453,15 +455,16 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 			return s.setApplicationDiverged(ctx, app, "Epoch %d has inconsistent machine hash between off-chain (%s) and on-chain (%s)",
 				epoch.Index, epoch.MachineHash.String(), hexutil.Encode(event.InitialMachineStateHash[:]))
 		}
-		if *epoch.OutputsMerkleRoot != event.OutputsMerkleRoot {
+		if *epoch.TxBufferDataBlock != event.OutputsMerkleRoot {
 			return s.setApplicationDiverged(ctx, app, "Epoch %d has inconsistent claim hash between off-chain (%s) and on-chain (%s)",
-				epoch.Index, epoch.OutputsMerkleRoot.String(), hexutil.Encode(event.OutputsMerkleRoot[:]))
+				epoch.Index, epoch.TxBufferDataBlock.String(), hexutil.Encode(event.OutputsMerkleRoot[:]))
 		}
 
 		err = s.fetchTournamentData(ctx, app, epoch, RootLevel, nil, nil, *epoch.TournamentAddress, mostRecentBlock)
 		if err != nil {
-			s.Logger.Error("failed to fetch tournament data", "application", app.Name,
-				"epoch", epoch.Index, "tournament", epoch.TournamentAddress.String(), "error", err)
+			s.logErrorUnlessShutdown("failed to fetch tournament data", err,
+				"application", app.Name, "epoch", epoch.Index,
+				"tournament", epoch.TournamentAddress.String())
 			return err
 		}
 
@@ -512,8 +515,9 @@ func (s *Service) fetchTournamentData(
 		t, err = s.createTournament(ctx, app, epoch, level,
 			parentMatchIDHash, parentTournamentAddress, tournamentAddress)
 		if err != nil {
-			s.Logger.Error("failed to create new tournament", "level", level, "application", app.Name,
-				"epoch", epoch.Index, "tournament_address", tournamentAddress.String(), "error", err)
+			s.logErrorUnlessShutdown("failed to create new tournament", err,
+				"level", level, "application", app.Name,
+				"epoch", epoch.Index, "tournament_address", tournamentAddress.String())
 			return err
 		}
 	} else if t.FinishedAtBlock == 0 {
@@ -599,8 +603,9 @@ func (s *Service) fetchTournamentData(
 
 		err = s.fetchTournamentData(ctx, app, epoch, nextLevel, i.ParentMatchIDHash, &tournamentAddress, i.Address, mostRecentBlock)
 		if err != nil {
-			s.Logger.Error("failed to fetch tournament data", "level", nextLevel, "application", app.Name,
-				"tournament", i.Address.String(), "error", err)
+			s.logErrorUnlessShutdown("failed to fetch tournament data", err,
+				"level", nextLevel, "application", app.Name,
+				"tournament", i.Address.String())
 			return err
 		}
 	}
@@ -613,8 +618,9 @@ func (s *Service) fetchTournamentData(
 
 		err = s.fetchTournamentData(ctx, app, epoch, nextLevel, &hashID, &tournamentAddress, childAddress, mostRecentBlock)
 		if err != nil {
-			s.Logger.Error("failed to fetch tournament data", "level", nextLevel, "application", app.Name,
-				"tournament", childAddress.String(), "error", err)
+			s.logErrorUnlessShutdown("failed to fetch tournament data", err,
+				"level", nextLevel, "application", app.Name,
+				"tournament", childAddress.String())
 			return err
 		}
 	}
@@ -695,7 +701,7 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 		return nil // nothing to do
 	}
 
-	if epoch.OutputsMerkleRoot == nil || epoch.OutputsMerkleProof == nil {
+	if epoch.TxBufferDataBlock == nil || epoch.TxBufferProof == nil {
 		return s.setApplicationCorrupted(ctx, app,
 			"epoch %d has missing required fields for settlement", epoch.Index)
 	}
@@ -716,7 +722,7 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 	}
 
 	s.Logger.Info("Sending Settle transaction", "application", app.Name, "epoch_index", epoch.Index,
-		"outputs_merkle_root", epoch.OutputsMerkleRoot.String())
+		"outputs_merkle_root", epoch.TxBufferDataBlock.String())
 
 	if s.txOptsFactory == nil {
 		return fmt.Errorf("txOpts is required for settlement")
@@ -728,7 +734,7 @@ func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlo
 		return fmt.Errorf("creating transaction options for settlement: %w", err)
 	}
 	tx, err := consensus.Settle(txOpts, result.EpochNumber,
-		*epoch.OutputsMerkleRoot, hashSliceToByteSlice(epoch.OutputsMerkleProof))
+		*epoch.TxBufferDataBlock, hashSliceToByteSlice(epoch.TxBufferProof))
 	if err != nil {
 		return s.handleSettleRevert(ctx, app, result.EpochNumber.Uint64(), err)
 	}

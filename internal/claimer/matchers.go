@@ -20,7 +20,7 @@ func checkEpochConstraint(epoch *model.Epoch) error {
 		epoch.Status == model.EpochStatus_ClaimAccepted ||
 		epoch.Status == model.EpochStatus_ClaimComputed
 	if mustHaveOutputsMerkleRoot {
-		if epoch.OutputsMerkleRoot == nil {
+		if epoch.TxBufferDataBlock == nil {
 			return fmt.Errorf("unexpected epoch state. missing outputs_merkle_root.")
 		}
 	}
@@ -75,11 +75,11 @@ func claimSubmittedEventMatches(application *model.Application, epoch *model.Epo
 	if application == nil || epoch == nil || event == nil {
 		return false, false
 	}
-	if epoch.OutputsMerkleRoot == nil || epoch.MachineHash == nil {
+	if epoch.TxBufferDataBlock == nil || epoch.MachineHash == nil {
 		return false, false
 	}
 	return application.IApplicationAddress == event.AppContract &&
-		*epoch.OutputsMerkleRoot == event.OutputsMerkleRoot &&
+		*epoch.TxBufferDataBlock == event.OutputsMerkleRoot &&
 		*epoch.MachineHash == event.MachineMerkleRoot &&
 		epoch.LastBlock == event.LastProcessedBlockNumber.Uint64(), true
 }
@@ -88,11 +88,11 @@ func claimAcceptedEventMatches(application *model.Application, epoch *model.Epoc
 	if application == nil || epoch == nil || event == nil {
 		return false, false
 	}
-	if epoch.OutputsMerkleRoot == nil || epoch.MachineHash == nil {
+	if epoch.TxBufferDataBlock == nil || epoch.MachineHash == nil {
 		return false, false
 	}
 	return application.IApplicationAddress == event.AppContract &&
-		*epoch.OutputsMerkleRoot == event.OutputsMerkleRoot &&
+		*epoch.TxBufferDataBlock == event.OutputsMerkleRoot &&
 		*epoch.MachineHash == event.MachineMerkleRoot &&
 		epoch.LastBlock == event.LastProcessedBlockNumber.Uint64(), true
 }
@@ -128,11 +128,11 @@ func claimStagedEventMatches(application *model.Application, epoch *model.Epoch,
 	if application == nil || epoch == nil || event == nil {
 		return false, false
 	}
-	if epoch.OutputsMerkleRoot == nil || epoch.MachineHash == nil {
+	if epoch.TxBufferDataBlock == nil || epoch.MachineHash == nil {
 		return false, false
 	}
 	return application.IApplicationAddress == event.AppContract &&
-		*epoch.OutputsMerkleRoot == event.OutputsMerkleRoot &&
+		*epoch.TxBufferDataBlock == event.OutputsMerkleRoot &&
 		*epoch.MachineHash == event.MachineMerkleRoot &&
 		epoch.LastBlock == event.LastProcessedBlockNumber.Uint64(), true
 }

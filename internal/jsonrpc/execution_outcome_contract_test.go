@@ -25,13 +25,55 @@ func TestDiscoverySchemaExecutionOutcomeContract(t *testing.T) {
 		Enum []string `json:"enum"`
 	}
 	require.NoError(t, json.Unmarshal(spec.Components.Schemas["InputCompletionStatus"], &completionStatus))
-	require.Equal(t, []string{"NONE", "ACCEPTED", "REJECTED", "EXCEPTION", "MACHINE_HALTED"}, completionStatus.Enum)
+	require.Equal(t, []string{
+		"NONE",
+		"ACCEPTED",
+		"REJECTED",
+		"EXCEPTION",
+		"MACHINE_HALTED",
+		"OVERFLOW",
+		"UNEXPECTED_YIELD",
+	}, completionStatus.Enum)
+
+	var applicationStatus struct {
+		Enum []string `json:"enum"`
+	}
+	require.NoError(t, json.Unmarshal(spec.Components.Schemas["ApplicationStatus"], &applicationStatus))
+	require.Equal(t, []string{
+		"OK",
+		"FAILED",
+		"DIVERGED",
+		"CORRUPTED",
+		"GUEST_EXCEPTION",
+		"MACHINE_HALTED",
+		"MCYCLE_OVERFLOW",
+		"UNEXPECTED_YIELD",
+	}, applicationStatus.Enum)
 
 	var input struct {
 		Properties map[string]json.RawMessage `json:"properties"`
 	}
 	require.NoError(t, json.Unmarshal(spec.Components.Schemas["Input"], &input))
 	require.Contains(t, input.Properties, "exception_data")
+	require.Contains(t, input.Properties, "tx_buffer_data_block")
+	require.NotContains(t, input.Properties, "outputs_hash")
+
+	var epoch struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	require.NoError(t, json.Unmarshal(spec.Components.Schemas["Epoch"], &epoch))
+	for _, field := range []string{
+		"tx_buffer_data_block",
+		"tx_buffer_proof",
+		"iflags_y_data_block",
+		"iflags_y_proof",
+		"htif_tohost_data_block",
+		"htif_tohost_proof",
+	} {
+		require.Contains(t, epoch.Properties, field)
+	}
+	require.NotContains(t, epoch.Properties, "outputs_merkle_root")
+	require.NotContains(t, epoch.Properties, "outputs_merkle_proof")
 
 	var executionParameters struct {
 		Properties map[string]json.RawMessage `json:"properties"`

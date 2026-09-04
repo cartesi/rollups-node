@@ -351,8 +351,8 @@ func (s *WithdrawalLifecycleSuite) finalizeQuorumEpoch(
 	case model.EpochStatus_ClaimStaged:
 		return s.waitForQuorumAccepted(deployment.appName, epochIndex)
 	case model.EpochStatus_ClaimComputed, model.EpochStatus_ClaimSubmitted:
-		s.submitQuorumClaim(deployment, epoch, quorumValidatorIndexA, *epoch.OutputsMerkleRoot)
-		s.submitQuorumClaim(deployment, epoch, quorumValidatorIndexB, *epoch.OutputsMerkleRoot)
+		s.submitQuorumClaim(deployment, epoch, quorumValidatorIndexA, *epoch.TxBufferDataBlock)
+		s.submitQuorumClaim(deployment, epoch, quorumValidatorIndexB, *epoch.TxBufferDataBlock)
 		return s.waitForQuorumAccepted(deployment.appName, epochIndex)
 	default:
 		s.Require().FailNowf("unexpected quorum epoch status",
@@ -377,7 +377,7 @@ func (s *WithdrawalLifecycleSuite) waitForQuorumEpochWithClaim(appName string, e
 			}
 			return false, fmt.Errorf("poll epoch %d claim: %w", epochIndex, err)
 		}
-		if epoch.OutputsMerkleRoot != nil && epoch.MachineHash != nil && isQuorumClaimReadyStatus(epoch.Status) {
+		if epoch.TxBufferDataBlock != nil && epoch.MachineHash != nil && isQuorumClaimReadyStatus(epoch.Status) {
 			result = epoch
 			return true, nil
 		}
@@ -398,7 +398,7 @@ func (s *WithdrawalLifecycleSuite) submitQuorumClaim(
 	outputsMerkleRoot [32]byte,
 ) {
 	r := s.Require()
-	r.NotNil(epoch.OutputsMerkleRoot, "epoch %d missing outputs merkle root", epoch.Index)
+	r.NotNil(epoch.TxBufferDataBlock, "epoch %d missing outputs merkle root", epoch.Index)
 	r.NotNil(deployment.quorum, "quorum binding is required")
 
 	key, err := ethutil.MnemonicToPrivateKey(ethutil.FoundryMnemonic, accountIndex)
@@ -412,7 +412,7 @@ func (s *WithdrawalLifecycleSuite) submitQuorumClaim(
 		deployment.appAddress,
 		new(big.Int).SetUint64(epoch.LastBlock),
 		outputsMerkleRoot,
-		merkleProofToBytes32(epoch.OutputsMerkleProof),
+		merkleProofToBytes32(epoch.TxBufferProof),
 	)
 	r.NoError(err, "validator %d submit quorum claim", accountIndex)
 	receipt, err := bind.WaitMined(s.ctx, s.client, tx)

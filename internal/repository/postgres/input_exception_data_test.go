@@ -33,33 +33,33 @@ func TestPostgresInputExceptionDataContract(t *testing.T) {
 
 	seed := repotest.Seed(ctx, t, repo)
 	machineHash := repotest.UniqueHash()
-	outputsHash := repotest.UniqueHash()
+	txBufferDataBlock := repotest.UniqueHash()
 
 	_, err = conn.Exec(ctx, `
 		UPDATE input
-		SET status = 'EXCEPTION', machine_hash = $2, outputs_hash = $3
+		SET status = 'EXCEPTION', machine_hash = $2, tx_buffer_data_block = $3
 		WHERE epoch_application_id = $1 AND index = 0`,
-		seed.App.ID, machineHash[:], outputsHash[:],
+		seed.App.ID, machineHash[:], txBufferDataBlock[:],
 	)
 	requirePostgresConstraint(t, err, "input_exception_data_check")
 
 	_, err = conn.Exec(ctx, `
 		UPDATE input
-		SET status = 'ACCEPTED', exception_data = '\x01', machine_hash = $2, outputs_hash = $3
+		SET status = 'ACCEPTED', exception_data = '\x01', machine_hash = $2, tx_buffer_data_block = $3
 		WHERE epoch_application_id = $1 AND index = 0`,
-		seed.App.ID, machineHash[:], outputsHash[:],
+		seed.App.ID, machineHash[:], txBufferDataBlock[:],
 	)
 	requirePostgresConstraint(t, err, "input_exception_data_check")
 
+	proof := repotest.DummyStateProof()
+	proof.MachineHash = machineHash
+	proof.TxBufferDataBlock = txBufferDataBlock
 	require.NoError(t, repo.StoreAdvanceResult(ctx, seed.App.ID, &model.AdvanceResult{
 		EpochIndex:    seed.Epoch.Index,
 		InputIndex:    seed.Input.Index,
 		Status:        model.InputCompletionStatus_Exception,
 		ExceptionData: []byte{},
-		OutputsProof: model.OutputsProof{
-			MachineHash: machineHash,
-			OutputsHash: outputsHash,
-		},
+		StateProof:    *proof,
 	}))
 	completed, err := repo.GetInput(ctx, seed.App.IApplicationAddress.String(), seed.Input.Index)
 	require.NoError(t, err)

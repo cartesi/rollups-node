@@ -6,10 +6,12 @@
 //
 // A request that reaches a deterministic guest completion returns a response
 // value with CompletionStatusAccepted, CompletionStatusRejected,
-// CompletionStatusException, or CompletionStatusHalted. Anything that prevents
-// completion—including deadlines, local resource limits, backend failures, and
-// cycle exhaustion—returns an error. Advance then returns no response; Inspect
-// may return partial reports with CompletionStatusUnknown. In short: terminal
+// CompletionStatusException, CompletionStatusHalted,
+// CompletionStatusOverflow, or CompletionStatusUnexpectedYield. Anything that
+// prevents completion—including deadlines, local resource limits, backend
+// failures, and configured cycle exhaustion—returns an error. Advance then
+// returns no response; Inspect may return partial reports with
+// CompletionStatusUnknown. In short: terminal
 // guest outcomes travel as values; incomplete execution travels as an error.
 // Callers decide how a completed outcome affects canonical application state.
 //

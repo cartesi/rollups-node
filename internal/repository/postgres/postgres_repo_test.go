@@ -73,7 +73,35 @@ func TestPostgresSchemaExecutionOutcomeContract(t *testing.T) {
 	require.NoError(t, err)
 	labels, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	require.NoError(t, err)
-	require.Equal(t, []string{"NONE", "ACCEPTED", "REJECTED", "EXCEPTION", "MACHINE_HALTED"}, labels)
+	require.Equal(t, []string{
+		"NONE",
+		"ACCEPTED",
+		"REJECTED",
+		"EXCEPTION",
+		"MACHINE_HALTED",
+		"OVERFLOW",
+		"UNEXPECTED_YIELD",
+	}, labels)
+
+	rows, err = conn.Query(ctx, `
+		SELECT enumlabel
+		FROM pg_enum
+		JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
+		WHERE pg_type.typname = 'ApplicationStatus'
+		ORDER BY enumsortorder`)
+	require.NoError(t, err)
+	labels, err = pgx.CollectRows(rows, pgx.RowTo[string])
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"OK",
+		"FAILED",
+		"DIVERGED",
+		"CORRUPTED",
+		"GUEST_EXCEPTION",
+		"MACHINE_HALTED",
+		"MCYCLE_OVERFLOW",
+		"UNEXPECTED_YIELD",
+	}, labels)
 
 	rows, err = conn.Query(ctx, `
 		SELECT column_name
@@ -86,6 +114,22 @@ func TestPostgresSchemaExecutionOutcomeContract(t *testing.T) {
 	require.Contains(t, columns, "inspect_max_cycles")
 	require.Contains(t, columns, "advance_inc_cycles")
 	require.Contains(t, columns, "inspect_inc_cycles")
+
+	rows, err = conn.Query(ctx, `
+		SELECT column_name
+		FROM information_schema.columns
+		WHERE table_schema = 'public' AND table_name = 'epoch'`)
+	require.NoError(t, err)
+	epochColumns, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	require.NoError(t, err)
+	for _, column := range []string{
+		"iflags_y_data_block",
+		"iflags_y_proof",
+		"htif_tohost_data_block",
+		"htif_tohost_proof",
+	} {
+		require.Contains(t, epochColumns, column)
+	}
 
 	for _, column := range []string{"advance_max_cycles", "inspect_max_cycles"} {
 		var defaultValue string
@@ -128,6 +172,28 @@ func TestPostgresSchemaExecutionOutcomeContract(t *testing.T) {
 		), test.value, app.ID)
 		requirePostgresConstraint(t, err, "execution_parameters_"+test.column+"_check")
 	}
+
+	seed := repotest.Seed(ctx, t, repo)
+	zeroHash := make([]byte, 32)
+	_, err = conn.Exec(ctx, `
+		UPDATE epoch
+		SET machine_hash = $1
+		WHERE application_id = $2 AND index = $3`,
+		zeroHash, seed.App.ID, seed.Epoch.Index)
+	requirePostgresConstraint(t, err, "epoch_state_proof_tuple_check")
+
+	_, err = conn.Exec(ctx, `
+		UPDATE epoch
+		SET machine_hash = $1::bytea,
+		    tx_buffer_data_block = $1::bytea,
+		    tx_buffer_proof = ARRAY[NULL::bytea] || array_fill($1::bytea, ARRAY[58]),
+		    iflags_y_data_block = $1::bytea,
+		    iflags_y_proof = array_fill($1::bytea, ARRAY[59]),
+		    htif_tohost_data_block = $1::bytea,
+		    htif_tohost_proof = array_fill($1::bytea, ARRAY[59])
+		WHERE application_id = $2 AND index = $3`,
+		zeroHash, seed.App.ID, seed.Epoch.Index)
+	requirePostgresConstraint(t, err, "epoch_tx_buffer_proof_elements_check")
 }
 
 func requirePostgresConstraint(t *testing.T, err error, constraint string) {
@@ -135,5 +201,5 @@ func requirePostgresConstraint(t *testing.T, err error, constraint string) {
 	require.Error(t, err)
 	var pgErr *pgconn.PgError
 	require.ErrorAs(t, err, &pgErr)
-	require.Equal(t, constraint, pgErr.ConstraintName)
+	require.Equal(t, constraint, pgErr.ConstraintName, "PostgreSQL error: %s", pgErr.Message)
 }

@@ -125,22 +125,22 @@ func (cb *claimerBlockchain) submitClaimToBlockchain(
 	if cb.txOptsFactory == nil {
 		return txHash, fmt.Errorf("txOptsFactory is required for claim submission")
 	}
-	if epoch.OutputsMerkleRoot == nil {
+	if epoch.TxBufferDataBlock == nil {
 		return txHash, fmt.Errorf(
-			"epoch %d (%d) has no outputs_merkle_root; refusing to submit claim",
+			"epoch %d (%d) has no tx_buffer_data_block to supply as the contract outputs Merkle root; refusing to submit claim",
 			epoch.Index, epoch.VirtualIndex)
 	}
-	// The DB trigger checks outputs_merkle_proof when an epoch moves to
+	// The DB trigger checks tx_buffer_proof when an epoch moves to
 	// CLAIM_COMPUTED. It does not stop a later UPDATE from clearing the proof.
 	// Submitting without a proof would revert on chain, so fail here with a
 	// clear local error.
-	if epoch.OutputsMerkleProof == nil {
+	if epoch.TxBufferProof == nil {
 		return txHash, fmt.Errorf(
-			"epoch %d (%d) has no outputs_merkle_proof; refusing to submit claim",
+			"epoch %d (%d) has no tx_buffer_proof to supply as the contract outputs Merkle proof; refusing to submit claim",
 			epoch.Index, epoch.VirtualIndex)
 	}
-	proof := make([][32]byte, len(epoch.OutputsMerkleProof))
-	for i, h := range epoch.OutputsMerkleProof {
+	proof := make([][32]byte, len(epoch.TxBufferProof))
+	for i, h := range epoch.TxBufferProof {
 		proof[i] = h
 	}
 	txOpts, err := cb.txOptsFactory.NewTransactOpts(ctx)
@@ -149,18 +149,18 @@ func (cb *claimerBlockchain) submitClaimToBlockchain(
 	}
 	lastBlockNumber := new(big.Int).SetUint64(epoch.LastBlock)
 	tx, err := ic.SubmitClaim(txOpts, application.IApplicationAddress,
-		lastBlockNumber, *epoch.OutputsMerkleRoot, proof)
+		lastBlockNumber, *epoch.TxBufferDataBlock, proof)
 	if err != nil {
 		cb.logger.Warn("submitClaimToBlockchain:failed",
 			"appContractAddress", application.IApplicationAddress,
-			"claimHash", *epoch.OutputsMerkleRoot,
+			"claimHash", *epoch.TxBufferDataBlock,
 			"last_block", epoch.LastBlock,
 			"error", err)
 	} else {
 		txHash = tx.Hash()
 		cb.logger.Debug("submitClaimToBlockchain:success",
 			"appContractAddress", application.IApplicationAddress,
-			"claimHash", *epoch.OutputsMerkleRoot,
+			"claimHash", *epoch.TxBufferDataBlock,
 			"last_block", epoch.LastBlock,
 			"TxHash", txHash)
 	}

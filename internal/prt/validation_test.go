@@ -4,10 +4,13 @@
 package prt
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +24,42 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+func TestLogErrorUnlessShutdown(t *testing.T) {
+	tests := []struct {
+		name      string
+		stopping  bool
+		err       error
+		wantError bool
+	}{
+		{name: "ShutdownCancellation", stopping: true, err: context.Canceled, wantError: false},
+		{name: "ShutdownDeadline", stopping: true, err: context.DeadlineExceeded, wantError: true},
+		{
+			name:      "ShutdownCancellationWithDeadline",
+			stopping:  true,
+			err:       errors.Join(context.Canceled, context.DeadlineExceeded),
+			wantError: true,
+		},
+		{name: "RuntimeCancellation", stopping: false, err: context.Canceled, wantError: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			s := &Service{Service: service.Service{
+				Logger: slog.New(slog.NewTextHandler(&output, nil)),
+			}}
+			if test.stopping {
+				s.SetStopping()
+			}
+
+			s.logErrorUnlessShutdown("operation failed", test.err, "operation", "test")
+
+			hasError := strings.Contains(output.String(), "level=ERROR")
+			require.Equal(t, test.wantError, hasError, output.String())
+		})
+	}
+}
 
 func TestTrySettleOperationDeadlineDoesNotCancelServiceContext(t *testing.T) {
 	s, app := newValidationService(t)
@@ -84,14 +123,14 @@ func newValidationService(t *testing.T) (*Service, *model.Application) {
 	epoch := repotest.NewEpochBuilder(app.ID).
 		WithStatus(model.EpochStatus_ClaimComputed).
 		WithMachineHash(common.HexToHash("0x6")).
-		WithOutputsMerkleRoot(common.HexToHash("0x8")).
+		WithTxBufferDataBlock(common.HexToHash("0x8")).
 		Build()
 	tournamentAddress := common.HexToAddress("0x4")
 	commitment := common.HexToHash("0x5")
 	epoch.TournamentAddress = &tournamentAddress
 	epoch.Commitment = &commitment
 	epoch.CommitmentProof = []common.Hash{common.HexToHash("0x7")}
-	epoch.OutputsMerkleProof = []common.Hash{}
+	epoch.TxBufferProof = []common.Hash{}
 
 	repo := &prtRepositoryMock{}
 	repo.On("GetEpoch", mock.Anything, app.IApplicationAddress.Hex(), uint64(0)).

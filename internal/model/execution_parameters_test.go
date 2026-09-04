@@ -132,6 +132,8 @@ func TestInputCompletionStatusContract(t *testing.T) {
 		InputCompletionStatus_Rejected,
 		InputCompletionStatus_Exception,
 		InputCompletionStatus_MachineHalted,
+		InputCompletionStatus_Overflow,
+		InputCompletionStatus_UnexpectedYield,
 	}
 	require.Equal(t, expected, InputCompletionStatusAllValues)
 
@@ -145,6 +147,13 @@ func TestInputCompletionStatusContract(t *testing.T) {
 			require.NoError(t, fromBytes.Scan([]byte(value.String())))
 			require.Equal(t, value, fromBytes)
 			require.Equal(t, value != InputCompletionStatus_None, value.IsCompleted())
+			require.Equal(t,
+				value == InputCompletionStatus_Exception ||
+					value == InputCompletionStatus_MachineHalted ||
+					value == InputCompletionStatus_Overflow ||
+					value == InputCompletionStatus_UnexpectedYield,
+				value.IsTerminal(),
+			)
 		})
 	}
 
@@ -161,6 +170,63 @@ func TestInputCompletionStatusContract(t *testing.T) {
 			var status InputCompletionStatus
 			require.Error(t, status.Scan(value))
 			require.False(t, InputCompletionStatus(value).IsCompleted())
+			require.False(t, InputCompletionStatus(value).IsTerminal())
 		})
+	}
+}
+
+func TestApplicationStatusContract(t *testing.T) {
+	expected := []ApplicationStatus{
+		ApplicationStatus_OK,
+		ApplicationStatus_Failed,
+		ApplicationStatus_Diverged,
+		ApplicationStatus_Corrupted,
+		ApplicationStatus_GuestException,
+		ApplicationStatus_MachineHalted,
+		ApplicationStatus_McycleOverflow,
+		ApplicationStatus_UnexpectedYield,
+	}
+	require.Equal(t, expected, ApplicationStatusAllValues)
+
+	for _, value := range expected {
+		t.Run(value.String(), func(t *testing.T) {
+			var scanned ApplicationStatus
+			require.NoError(t, scanned.Scan(value.String()))
+			require.Equal(t, value, scanned)
+			require.Equal(t,
+				value != ApplicationStatus_OK && value != ApplicationStatus_Failed,
+				value.IsTerminal(),
+			)
+			require.Equal(t,
+				value == ApplicationStatus_GuestException ||
+					value == ApplicationStatus_MachineHalted ||
+					value == ApplicationStatus_McycleOverflow ||
+					value == ApplicationStatus_UnexpectedYield,
+				value.IsExecutionTerminal(),
+			)
+		})
+	}
+}
+
+func TestTerminalApplicationStatus(t *testing.T) {
+	expected := map[InputCompletionStatus]ApplicationStatus{
+		InputCompletionStatus_Exception:       ApplicationStatus_GuestException,
+		InputCompletionStatus_MachineHalted:   ApplicationStatus_MachineHalted,
+		InputCompletionStatus_Overflow:        ApplicationStatus_McycleOverflow,
+		InputCompletionStatus_UnexpectedYield: ApplicationStatus_UnexpectedYield,
+	}
+	for inputStatus, applicationStatus := range expected {
+		got, terminal := inputStatus.TerminalApplicationStatus()
+		require.True(t, terminal)
+		require.Equal(t, applicationStatus, got)
+	}
+	for _, inputStatus := range []InputCompletionStatus{
+		InputCompletionStatus_None,
+		InputCompletionStatus_Accepted,
+		InputCompletionStatus_Rejected,
+	} {
+		got, terminal := inputStatus.TerminalApplicationStatus()
+		require.False(t, terminal)
+		require.Empty(t, got)
 	}
 }

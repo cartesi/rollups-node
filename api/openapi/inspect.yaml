@@ -60,8 +60,9 @@ paths:
             This can happen when the application is registered but its
             Cartesi Machine instance has not been initialized yet, when the
             application has been foreclosed and its machine is no longer
-            available for live inspect requests, or when the application's
-            inspect capacity is exhausted.
+            available for live inspect requests, when application execution
+            has terminated, or when the application's inspect capacity is
+            exhausted.
           content:
             text/plain:
               schema:
@@ -71,6 +72,8 @@ paths:
                   value: Machine not ready
                 foreclosed:
                   value: Application was foreclosed; machine unavailable
+                terminal:
+                  value: Application is terminal; inspect unavailable
                 atCapacity:
                   value: Application inspect at capacity
 
