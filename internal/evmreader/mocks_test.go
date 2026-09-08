@@ -76,6 +76,7 @@ func newMockEthClient() *MockEthClient {
 }
 
 func (m *MockEthClient) SetupDefaultBehavior() *MockEthClient {
+	m.On("ChainID", mock.Anything).Return(big.NewInt(0), nil)
 	return m
 }
 
@@ -189,6 +190,10 @@ func newMockRepository() *MockRepository {
 }
 
 func (m *MockRepository) SetupDefaultBehavior() *MockRepository {
+	m.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
+		Return(([]byte)(nil), time.Time{}, time.Time{}, repository.ErrNotFound)
+	m.On("SaveNodeConfigRaw", mock.Anything, EvmReaderConfigKey, mock.Anything).
+		Return(nil)
 
 	apps := copyApplications(applications)
 	m.On("ListApplications",

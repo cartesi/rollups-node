@@ -67,10 +67,6 @@ func newServiceMock(t *testing.T) (*Service, *claimerRepositoryMock, *claimerBlo
 	}
 
 	claimer := &Service{
-		Service: service.Service{
-			Context: t.Context(),
-			Logger:  slog.New(handler),
-		},
 		submissionEnabled: true,
 		claimsInFlight:    map[int64]inFlightTx{},
 		acceptsInFlight:   map[int64]inFlightTx{},
@@ -79,6 +75,15 @@ func newServiceMock(t *testing.T) (*Service, *claimerRepositoryMock, *claimerBlo
 		repository:        repository,
 		blockchain:        blockchain,
 	}
+	service.InitTickServiceTemplate(
+		&claimer.TickServiceTemplate,
+		&service.TickServiceConfigs{
+			BaseConfigs: service.BaseConfigs{
+				Logger: slog.New(handler),
+			},
+		},
+		claimer,
+	)
 	return claimer, repository, blockchain
 }
 

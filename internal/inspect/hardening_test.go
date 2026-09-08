@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/service"
@@ -48,14 +49,19 @@ func newInspectorForTest(t *testing.T, machineErr error) (*Inspector, *Applicati
 	mm := newMockMachines()
 	mm.Map[1] = MockMachine{application: app}
 
-	insp, err := NewInspector(CreateInfo{
+	svc, err := Create(t.Context(), &CreateInfo{
+		Config: config.AdvancerConfig{
+			LogLevel:       slog.LevelError,
+			InspectAddress: "127.0.0.1:0",
+		},
 		Repository: repo,
 		Machines:   hardeningMachines{MachinesMock: mm, err: machineErr},
-		Address:    "127.0.0.1:0",
-		LogLevel:   slog.LevelError,
-		LogPretty:  false,
 	})
 	require.NoError(t, err)
+
+	insp := svc.(*Inspector)
+	require.NotNil(t, insp.Logger)
+
 	return insp, app
 }
 
@@ -118,7 +124,7 @@ func TestInspector_NewWithCreateInfo(t *testing.T) {
 	insp, _ := newInspectorForTest(t, nil)
 	// Package-internal access: the hardened http.Server is unexported and
 	// tests pin its fields directly rather than via a public accessor.
-	srv := insp.server
+	srv := insp.Server
 	require.NotNil(t, srv)
 
 	opts := service.DefaultInspectOptions()
@@ -130,10 +136,9 @@ func TestInspector_NewWithCreateInfo(t *testing.T) {
 }
 
 func TestInspector_NewRejectsNilMachines(t *testing.T) {
-	_, err := NewInspector(CreateInfo{
+	_, err := Create(t.Context(), &CreateInfo{
+		Config:     config.AdvancerConfig{InspectAddress: "127.0.0.1:0"},
 		Repository: newMockRepository(),
-		Machines:   nil,
-		Address:    "127.0.0.1:0",
 	})
 	require.ErrorIs(t, err, ErrInvalidMachines)
 }
@@ -144,7 +149,7 @@ func TestInspector_OversizedPayloadReturns413(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		fmt.Sprintf("/inspect/%s", app.Name), body)
 	rr := httptest.NewRecorder()
-	insp.ServeMux.ServeHTTP(rr, req)
+	insp.Server.Handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusRequestEntityTooLarge, rr.Code)
 	require.Contains(t, rr.Body.String(), "Payload too large")
@@ -156,7 +161,7 @@ func TestInspector_ExactBoundaryAccepted(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		fmt.Sprintf("/inspect/%s", app.Name), body)
 	rr := httptest.NewRecorder()
-	insp.ServeMux.ServeHTTP(rr, req)
+	insp.Server.Handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code, "body at exact limit must be accepted")
 }
@@ -165,7 +170,7 @@ func TestInspector_GETReturns405WithAllowHeader(t *testing.T) {
 	insp, app := newInspectorForTest(t, nil)
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/inspect/%s", app.Name), nil)
 	rr := httptest.NewRecorder()
-	insp.ServeMux.ServeHTTP(rr, req)
+	insp.Server.Handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusMethodNotAllowed, rr.Code)
 	require.Equal(t, http.MethodPost, rr.Header().Get("Allow"))
@@ -175,7 +180,7 @@ func TestInspector_PUTReturns405WithAllowHeader(t *testing.T) {
 	insp, app := newInspectorForTest(t, nil)
 	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/inspect/%s", app.Name), nil)
 	rr := httptest.NewRecorder()
-	insp.ServeMux.ServeHTTP(rr, req)
+	insp.Server.Handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusMethodNotAllowed, rr.Code)
 	require.Equal(t, http.MethodPost, rr.Header().Get("Allow"))
@@ -189,7 +194,7 @@ func TestInspector_InternalErrorBodyIsGeneric(t *testing.T) {
 		fmt.Sprintf("/inspect/%s", app.Name),
 		strings.NewReader("hello"))
 	rr := httptest.NewRecorder()
-	insp.ServeMux.ServeHTTP(rr, req)
+	insp.Server.Handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusInternalServerError, rr.Code)
 	require.Contains(t, rr.Body.String(), "Internal server error (request_id=")
@@ -205,7 +210,7 @@ func TestInspector_InternalErrorIncludesRequestID(t *testing.T) {
 		strings.NewReader("hello"))
 	req.Header.Set("X-Request-ID", "pinned-id-42")
 	rr := httptest.NewRecorder()
-	insp.ServeMux.ServeHTTP(rr, req)
+	insp.Server.Handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusInternalServerError, rr.Code)
 	require.Contains(t, rr.Body.String(), "request_id=pinned-id-42")
@@ -233,7 +238,7 @@ func TestInspector_ChainOrder_RecoverCoversRequestID(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	require.NotPanics(t, func() {
-		insp.ServeMux.ServeHTTP(rr, req)
+		insp.Server.Handler.ServeHTTP(rr, req)
 	}, "panic in handler must be caught by RecoverMiddleware, not propagate to the test")
 
 	require.Equal(t, http.StatusInternalServerError, rr.Code,
@@ -249,7 +254,7 @@ func TestInspector_HappyPathStillWorks(t *testing.T) {
 		fmt.Sprintf("/inspect/%s", app.Name),
 		strings.NewReader("hello"))
 	rr := httptest.NewRecorder()
-	insp.ServeMux.ServeHTTP(rr, req)
+	insp.Server.Handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.Contains(t, rr.Body.String(), `"status":"Accepted"`)
@@ -262,7 +267,7 @@ func TestInspector_EmptyDappPathReturns404(t *testing.T) {
 	// does not match the inspect route.
 	req := httptest.NewRequest(http.MethodPost, "/inspect/", strings.NewReader("x"))
 	rr := httptest.NewRecorder()
-	insp.ServeMux.ServeHTTP(rr, req)
+	insp.Server.Handler.ServeHTTP(rr, req)
 	require.Equal(t, http.StatusNotFound, rr.Code)
 }
 
@@ -275,7 +280,7 @@ func TestInspector_EmptyDappPathReturns404(t *testing.T) {
 func TestInspector_RealServer_PayloadTooLarge(t *testing.T) {
 	insp, app := newInspectorForTest(t, nil)
 
-	srv := httptest.NewServer(insp.ServeMux)
+	srv := httptest.NewServer(insp.Server.Handler)
 	defer srv.Close()
 
 	body := bytes.NewReader(make([]byte, maxPayloadSize+1))
@@ -298,7 +303,7 @@ func TestInspector_RealServer_PayloadTooLarge(t *testing.T) {
 // newInspectorWithAdmission is a variant of newInspectorForTest that also
 // accepts a *service.SemaphoreAdmission to exercise the admission
 // middleware in the full handler chain.
-func newInspectorWithAdmission(t *testing.T, admission *service.SemaphoreAdmission) (*Inspector, *Application) {
+func newInspectorWithAdmission(t *testing.T, maxInFlight uint64) (*Inspector, *Application) {
 	t.Helper()
 
 	app := &Application{
@@ -315,41 +320,43 @@ func newInspectorWithAdmission(t *testing.T, admission *service.SemaphoreAdmissi
 	mm := newMockMachines()
 	mm.Map[1] = MockMachine{application: app}
 
-	insp, err := NewInspector(CreateInfo{
+	svc, err := Create(t.Context(), &CreateInfo{
+		Config: config.AdvancerConfig{
+			LogLevel:           slog.LevelError,
+			InspectAddress:     "127.0.0.1:0",
+			InspectMaxInflight: maxInFlight,
+		},
 		Repository: repo,
 		Machines:   mm,
-		Address:    "127.0.0.1:0",
-		LogLevel:   slog.LevelError,
-		LogPretty:  false,
-		Admission:  admission,
 	})
 	require.NoError(t, err)
+
+	insp := svc.(*Inspector)
+
 	return insp, app
 }
 
 func TestInspector_AdmissionAccessor(t *testing.T) {
-	admission := service.NewSemaphoreAdmission(1)
-	insp, _ := newInspectorWithAdmission(t, admission)
-	require.Same(t, admission, insp.Admission(),
+	insp, _ := newInspectorWithAdmission(t, 1)
+	require.Same(t, insp.Admission, insp.Admission,
 		"Admission() must return the instance passed via CreateInfo")
 
-	inspNil, _ := newInspectorWithAdmission(t, nil)
-	require.Nil(t, inspNil.Admission(),
+	inspNil, _ := newInspectorWithAdmission(t, 0)
+	require.Nil(t, inspNil.Admission,
 		"Admission() must return nil when admission control is disabled")
 }
 
 func TestInspector_AdmissionRejectsWhenExhausted(t *testing.T) {
 	// Pre-fill a single-permit admission so every subsequent request
 	// bounces with 503 regardless of payload shape.
-	admission := service.NewSemaphoreAdmission(1)
-	admission.TryAcquire() // pre-fill the single permit
-	insp, app := newInspectorWithAdmission(t, admission)
+	insp, app := newInspectorWithAdmission(t, 1)
+	insp.Admission.TryAcquire() // pre-fill the single permit
 
 	req := httptest.NewRequest(http.MethodPost,
 		fmt.Sprintf("/inspect/%s", app.Name),
 		strings.NewReader("hello"))
 	rr := httptest.NewRecorder()
-	insp.ServeMux.ServeHTTP(rr, req)
+	insp.Server.Handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusServiceUnavailable, rr.Code)
 	retryAfter, err := strconv.Atoi(rr.Header().Get("Retry-After"))
@@ -358,36 +365,35 @@ func TestInspector_AdmissionRejectsWhenExhausted(t *testing.T) {
 	require.LessOrEqual(t, retryAfter, 3)
 	require.Contains(t, rr.Body.String(), "service at capacity")
 	require.Equal(t, "nosniff", rr.Header().Get("X-Content-Type-Options"))
-	require.Equal(t, uint64(1), admission.Rejected())
+	require.Equal(t, uint64(1), insp.Admission.Rejected())
 }
 
 func TestInspector_AdmissionDisabledWhenNil(t *testing.T) {
 	// nil Admission should disable the gate entirely. Any request
 	// should reach the handler.
-	insp, app := newInspectorWithAdmission(t, nil)
+	insp, app := newInspectorWithAdmission(t, 0)
 
 	req := httptest.NewRequest(http.MethodPost,
 		fmt.Sprintf("/inspect/%s", app.Name),
 		strings.NewReader("hello"))
 	rr := httptest.NewRecorder()
-	insp.ServeMux.ServeHTTP(rr, req)
+	insp.Server.Handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
 }
 
 func TestInspector_AdmissionPermitReleasedAfterRequest(t *testing.T) {
-	admission := service.NewSemaphoreAdmission(1)
-	insp, app := newInspectorWithAdmission(t, admission)
+	insp, app := newInspectorWithAdmission(t, 1)
 
 	for range 5 {
 		req := httptest.NewRequest(http.MethodPost,
 			fmt.Sprintf("/inspect/%s", app.Name),
 			strings.NewReader("hello"))
 		rr := httptest.NewRecorder()
-		insp.ServeMux.ServeHTTP(rr, req)
+		insp.Server.Handler.ServeHTTP(rr, req)
 		require.Equal(t, http.StatusOK, rr.Code, "sequential requests must always succeed at limit=1")
 	}
-	require.Equal(t, uint64(0), admission.Rejected())
+	require.Equal(t, uint64(0), insp.Admission.Rejected())
 }
 
 // -----------------------------------------------------------------------------
@@ -404,7 +410,7 @@ func TestInspector_PerAppCapacityReturns503(t *testing.T) {
 		fmt.Sprintf("/inspect/%s", app.Name),
 		strings.NewReader("hello"))
 	rr := httptest.NewRecorder()
-	insp.ServeMux.ServeHTTP(rr, req)
+	insp.Server.Handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusServiceUnavailable, rr.Code)
 	require.Contains(t, rr.Body.String(), "Application inspect at capacity")
@@ -428,15 +434,19 @@ func newInspectorWithCORS(t *testing.T, origins string) (*Inspector, *Applicatio
 	mm := newMockMachines()
 	mm.Map[1] = MockMachine{application: app}
 
-	insp, err := NewInspector(CreateInfo{
-		Repository:         repo,
-		Machines:           mm,
-		Address:            "127.0.0.1:0",
-		LogLevel:           slog.LevelError,
-		LogPretty:          false,
-		CORSAllowedOrigins: origins,
+	svc, err := Create(t.Context(), &CreateInfo{
+		Config: config.AdvancerConfig{
+			LogLevel:                  slog.LevelError,
+			InspectAddress:            "127.0.0.1:0",
+			InspectCorsAllowedOrigins: origins,
+		},
+		Repository: repo,
+		Machines:   mm,
 	})
 	require.NoError(t, err)
+
+	insp := svc.(*Inspector)
+
 	return insp, app
 }
 
@@ -448,7 +458,7 @@ func TestInspector_CORSDisabledByDefault(t *testing.T) {
 		strings.NewReader("hello"))
 	req.Header.Set("Origin", "http://evil.com")
 	rr := httptest.NewRecorder()
-	insp.ServeMux.ServeHTTP(rr, req)
+	insp.Server.Handler.ServeHTTP(rr, req)
 
 	require.Empty(t, rr.Header().Get("Access-Control-Allow-Origin"))
 	require.Empty(t, rr.Header().Get("Vary"))
@@ -462,7 +472,7 @@ func TestInspector_CORSAllowedOriginEchoed(t *testing.T) {
 		strings.NewReader("hello"))
 	req.Header.Set("Origin", "http://trusted.example.com")
 	rr := httptest.NewRecorder()
-	insp.ServeMux.ServeHTTP(rr, req)
+	insp.Server.Handler.ServeHTTP(rr, req)
 
 	require.Equal(t, "http://trusted.example.com", rr.Header().Get("Access-Control-Allow-Origin"))
 	require.Contains(t, rr.Header().Values("Vary"), "Origin")
@@ -476,7 +486,7 @@ func TestInspector_CORSDisallowedOriginNoGrant(t *testing.T) {
 		strings.NewReader("hello"))
 	req.Header.Set("Origin", "http://evil.com")
 	rr := httptest.NewRecorder()
-	insp.ServeMux.ServeHTTP(rr, req)
+	insp.Server.Handler.ServeHTTP(rr, req)
 
 	require.Empty(t, rr.Header().Get("Access-Control-Allow-Origin"))
 	require.Contains(t, rr.Header().Values("Vary"), "Origin")
@@ -490,7 +500,7 @@ func TestInspector_CORSPreflightShortCircuits(t *testing.T) {
 	req.Header.Set("Origin", "http://trusted.example.com")
 	req.Header.Set("Access-Control-Request-Method", "POST")
 	rr := httptest.NewRecorder()
-	insp.ServeMux.ServeHTTP(rr, req)
+	insp.Server.Handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusNoContent, rr.Code)
 	require.Equal(t, "http://trusted.example.com", rr.Header().Get("Access-Control-Allow-Origin"))
@@ -511,10 +521,10 @@ func TestInspector_ServeReturnsNilOnGracefulShutdown(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	addr := listener.Addr().String()
-	insp.listen = func(string, string) (net.Listener, error) { return listener, nil }
+	insp.HTTPServiceTemplate.Listen = func(string, string) (net.Listener, error) { return listener, nil }
 
 	serveErr := make(chan error, 1)
-	go func() { serveErr <- insp.Serve() }()
+	go func() { serveErr <- insp.Serve(t.Context()) }()
 
 	// Wait until the server is actually accepting connections before
 	// shutting down. Any HTTP response (including 404) confirms the
@@ -534,7 +544,7 @@ func TestInspector_ServeReturnsNilOnGracefulShutdown(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	require.NoError(t, insp.Shutdown(ctx))
+	require.NoError(t, insp.HTTPServiceTemplate.Server.Shutdown(ctx))
 
 	select {
 	case err := <-serveErr:

@@ -4,6 +4,8 @@
 package claimer
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
 	"github.com/cartesi/rollups-node/internal/model"
@@ -16,9 +18,9 @@ import (
 // Some foreclosed apps no longer have pending claim work, but operators still
 // need to see whether pre-foreclosure work is fully drained. This query keeps
 // those apps visible to processForeclosedApps.
-func (s *Service) listEnabledForeclosedNonPRTApps() (map[int64]*model.Application, error) {
+func (s *Service) listEnabledForeclosedNonPRTApps(ctx context.Context) (map[int64]*model.Application, error) {
 	apps, _, err := s.repository.ListApplications(
-		s.Context,
+		ctx,
 		foreclosedClaimDrainApplicationsFilter(),
 		repository.Pagination{},
 		false,
@@ -57,9 +59,10 @@ func foreclosedClaimDrainApplicationsFilter() repository.ApplicationFilter {
 // broadcasts when foreclose_block is set. Once all drain checks pass there is no
 // final action here.
 func (s *Service) processForeclosedApps(
+	ctx context.Context,
 	apps map[int64]*model.Application,
-) []error {
-	var errs []error
+) error {
+	var errs error
 	for _, app := range apps {
 		if app.ForecloseBlock == 0 {
 			// This should have been filtered by the query.
@@ -92,10 +95,10 @@ func (s *Service) processForeclosedApps(
 		// then terminalize. PRT gates terminalization the same way
 		// (internal/prt/service.go handleForeclosedApp).
 		undrained, err := s.repository.HasUndrainedEpochsBeforeBlock(
-			s.Context, app.ID, app.ForecloseBlock,
+			ctx, app.ID, app.ForecloseBlock,
 		)
 		if err != nil {
-			errs = append(errs, fmt.Errorf(
+			errs = errors.Join(errs, fmt.Errorf(
 				"checking input drain progress for foreclosed app %s: %w",
 				app.IApplicationAddress, err))
 			continue
@@ -110,10 +113,10 @@ func (s *Service) processForeclosedApps(
 			continue
 		}
 		terminalized, err := s.repository.ForecloseUnacceptedEpochsAtOrAfterBlock(
-			s.Context, app.ID, app.ForecloseBlock,
+			ctx, app.ID, app.ForecloseBlock,
 		)
 		if err != nil {
-			errs = append(errs, fmt.Errorf(
+			errs = errors.Join(errs, fmt.Errorf(
 				"terminalizing unaccepted epochs for foreclosed app %s: %w",
 				app.IApplicationAddress, err))
 			continue
@@ -128,10 +131,10 @@ func (s *Service) processForeclosedApps(
 			)
 		}
 		unreconciled, err := s.repository.HasUnreconciledClaimsBeforeBlock(
-			s.Context, app.ID, app.ForecloseBlock,
+			ctx, app.ID, app.ForecloseBlock,
 		)
 		if err != nil {
-			errs = append(errs, fmt.Errorf(
+			errs = errors.Join(errs, fmt.Errorf(
 				"checking drain progress for foreclosed app %s: %w",
 				app.IApplicationAddress, err))
 			continue
@@ -152,6 +155,7 @@ func (s *Service) processForeclosedApps(
 }
 
 func (s *Service) forecloseClaim(
+	ctx context.Context,
 	app *model.Application,
 	epoch *model.Epoch,
 	site string,
@@ -167,7 +171,7 @@ func (s *Service) forecloseClaim(
 	)
 
 	if err := s.repository.UpdateEpochWithForeclosedClaim(
-		s.Context, app.ID, epoch.Index); err != nil {
+		ctx, app.ID, epoch.Index); err != nil {
 		return fmt.Errorf("marking epoch %d (%d) CLAIM_FORECLOSED: %w",
 			epoch.Index, epoch.VirtualIndex, err)
 	}

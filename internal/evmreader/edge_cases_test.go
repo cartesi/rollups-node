@@ -515,14 +515,14 @@ func (s *EvmReaderSuite) TestAdapterCacheInvalidationOnConfigChange() {
 
 	done := make(chan struct{})
 	go func() {
-		err := s.evmReader.Serve()
+		err := s.supervisor.Serve()
 		s.Require().NoError(err)
 		close(done)
 	}()
 
-	<-called
-	s.cancel()
-	<-done
+	s.Require().True(waitNotification(called), "evmreader did not read headers")
+	s.supervisor.Stop(false)
+	s.Require().True(waitNotification(done), "evmreader did not stop after supervisor was stopped")
 
 	// CreateAdapters called twice:
 	// Header 1: cache miss → create
