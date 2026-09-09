@@ -836,6 +836,16 @@ copy-debian-package: ## Copy debian package from debian packager image
 build-debian-package: install
 	mkdir -p $(DESTDIR)/DEBIAN $(DOC_INSTALL_PATH)
 	install -m0644 LICENSE $(DOC_INSTALL_PATH)/copyright
+	install -m0644 THIRD_PARTY_LICENSES.md $(DOC_INSTALL_PATH)/
+	install -m0644 licenses/LGPL-3.0.txt $(DOC_INSTALL_PATH)/
+	install -m0644 licenses/GPL-3.0.txt $(DOC_INSTALL_PATH)/
+	{ \
+		echo ""; \
+		echo "The binaries in this package statically link third party components."; \
+		echo "They are listed with their licences in THIRD_PARTY_LICENSES.md, in this"; \
+		echo "directory. Some are covered by the GNU LGPL-3.0, whose text is in"; \
+		echo "LGPL-3.0.txt, alongside the GPL-3.0.txt it builds on."; \
+	} >> $(DOC_INSTALL_PATH)/copyright
 	sed 's|ARG_VERSION|$(ROLLUPS_NODE_VERSION)|g;s|ARG_ARCH|$(DEB_ARCH)|g' control.template > $(DESTDIR)/DEBIAN/control
 	dpkg-deb -Zxz --root-owner-group --build $(DESTDIR) $(DEB_FILENAME)
 
