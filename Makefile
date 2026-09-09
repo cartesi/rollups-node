@@ -847,8 +847,11 @@ help: ## Show help for each of the Makefile recipes
 version: ## Show the current version
 	@echo $(ROLLUPS_NODE_VERSION)
 
-THIRD_PARTY_LICENSES.md: dev/licenses.tpl go.mod ## Update the THIRD_PARTY_LICENSES.md file
-	go-licenses report --template dev/licenses.tpl ./... > $@
+# Phony, because the notices depend on more than files make can see: go.sum,
+# the imported packages, and licence URLs that go-licenses resolves online.
+THIRD_PARTY_LICENSES.md: ## Update the THIRD_PARTY_LICENSES.md file
+	dev/licenses-generate.sh > $@.tmp || { rm -f $@.tmp; exit 1; }
+	mv $@.tmp $@
 
 # =============================================================================
 # Install
@@ -877,7 +880,7 @@ build-debian-package: install
 	clean clean-go clean-contracts clean-docs clean-devnet-files clean-dapps clean-test-dependencies clean-test-logs clean-integration-compose clean-debian-packages \
 	test unit-test unit-test-with-compose integration-test integration-test-with-compose integration-test-local test-with-compose ci-test coverage-report \
 	integration-test-shard-check list-integration-shards list-integration-cells \
-	generate generate-contracts generate-config generate-inspect check-generate generate-db \
+	generate generate-contracts generate-config generate-inspect check-generate generate-db THIRD_PARTY_LICENSES.md \
 	docs generate-cli-docs generate-config-docs \
 	lint fmt fmt-check vet escape check-license \
 	devnet image tester-image debian-packager run-with-compose shutdown-compose \

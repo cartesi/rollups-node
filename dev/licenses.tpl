@@ -1,4 +1,3 @@
-# Third Party Licenses
 {{ range . }}
 ## {{ .Name }}
 

@@ -1,0 +1,17 @@
+# Corrections applied to the entries go-licenses derives from the module graph,
+# re-applied on every regeneration:
+#  - go-licenses resolves a licence from the file at the module root, which is
+#    wrong for modules that licence parts of their tree differently;
+#  - it resolves the directory of a nested major version, such as /v2, with a
+#    network request, and without network access it picks the wrong one;
+#  - when a module directory has no licence file, the module zip carries the
+#    licence at the repository root, but go-licenses links the missing file;
+#  - it does not see the C code that a package compiles with cgo.
+#
+# Tab-separated: module name, licence name, licence URL, note. {version} in the URL
+# and in the note is replaced with the resolved module version. The note is
+# optional. The script fails when a line matches no entry.
+github.com/aws/aws-sdk-go-v2/internal/endpoints/v2	Apache-2.0	https://github.com/aws/aws-sdk-go-v2/blob/internal/endpoints/{version}/internal/endpoints/v2/LICENSE.txt
+github.com/decred/dcrd/dcrec/secp256k1/v4	ISC	https://github.com/decred/dcrd/blob/dcrec/secp256k1/{version}/LICENSE
+github.com/ethereum/go-ethereum	LGPL-3.0	https://github.com/ethereum/go-ethereum/blob/{version}/COPYING.LESSER	only the library packages are used, that is, everything outside cmd/, and those are LGPL-3.0. The GPL-3.0 COPYING file at the module root covers go-ethereum's own binaries, which this project does not build or distribute.
+github.com/ethereum/go-ethereum/crypto/secp256k1	BSD-3-Clause	https://github.com/ethereum/go-ethereum/blob/{version}/crypto/secp256k1/LICENSE	built with cgo, this package also compiles the bundled libsecp256k1 C library, which is under the [MIT licence](https://github.com/ethereum/go-ethereum/blob/{version}/crypto/secp256k1/libsecp256k1/COPYING)
