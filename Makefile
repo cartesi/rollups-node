@@ -814,8 +814,8 @@ help: ## Show help for each of the Makefile recipes
 version: ## Show the current version
 	@echo $(ROLLUPS_NODE_VERSION)
 
-THIRD_PARTY_LICENSES.md: dev/licenses.tpl go.mod ## Update the THIRD_PARTY_LICENSES.md file
-	go-licenses report --template dev/licenses.tpl ./... > $@
+THIRD_PARTY_LICENSES.md: dev/licenses-generate.sh dev/licenses.tpl dev/licenses-manual.md dev/licenses-overrides.tsv go.mod ## Update the THIRD_PARTY_LICENSES.md file
+	dev/licenses-generate.sh > $@.tmp && mv $@.tmp $@
 
 # =============================================================================
 # Install

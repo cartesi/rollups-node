@@ -106,7 +106,7 @@ Note we have a [code of conduct](CODE_OF_CONDUCT.md), please follow it in all yo
 
 ## Authors
 
-The Cartesi Machine emulator is actively developed by [Cartesi](https://cartesi.io/)'s Machine Reference Unit, with significant contributions from many open-source developers.
+The Cartesi Rollups Node is actively developed by [Cartesi](https://cartesi.io/)'s Node Reference Unit, with significant contributions from many open-source developers.
 For a complete list of authors, see the [AUTHORS](AUTHORS) file.
 
 ## License
@@ -115,3 +115,8 @@ The repository and all contributions to it are licensed under the [Apache 2.0](h
 Please review our [LICENSE](LICENSE) file for the Apache 2.0 license and also the [third party licenses](THIRD_PARTY_LICENSES.md) file for information on third-party software licenses.
 
 Note: This component currently has dependencies licensed under the GNU LGPL, version 3, so you should treat this component as a whole as being under the LGPL version 3. But all Cartesi-written code in this component is licensed under the Apache License, version 2, and can be used independently under the Apache v2 license.
+
+The Cartesi Machine emulator is a dynamic library in its own package. A recipient can replace it without a new build of the node.
+go-ethereum is statically linked into every binary. Only its library packages are used, that is, everything outside `cmd/`.
+The complete source of this project is in this repository under Apache 2.0. To build the node against a different go-ethereum, add a `replace` directive for `github.com/ethereum/go-ethereum` to `go.mod` and run `make build`.
+The full text of the LGPL-3.0 and the GPL-3.0 is in [licenses/](licenses).

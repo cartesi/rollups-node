@@ -1,0 +1,8 @@
+# Corrections applied to the entries go-licenses derives from the module graph.
+# go-licenses resolves a licence from the file at the module root, which is wrong
+# for modules that licence parts of their tree differently. Listing the correction
+# here re-applies it on every regeneration.
+#
+# Tab-separated: module name, licence name, licence URL, note. {version} in the URL
+# is replaced with the resolved module version. The note is optional.
+github.com/ethereum/go-ethereum	LGPL-3.0	https://github.com/ethereum/go-ethereum/blob/{version}/COPYING.LESSER	only the library packages are used, that is, everything outside cmd/, and those are LGPL-3.0. The GPL-3.0 COPYING file at the module root covers go-ethereum's own binaries, which this project does not build or distribute.
