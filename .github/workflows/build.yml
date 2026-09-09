@@ -29,6 +29,29 @@ jobs:
       - name: Check license header
         run: make check-license
 
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install go-licenses
+        run: go install github.com/google/go-licenses@v1.6.0
+
+      # LGPL-3.0 is classified as restricted, and go-licenses reads go-ethereum's
+      # root COPYING file, so it reports the whole module as GPL-3.0. Only library
+      # packages outside cmd/ are linked, which are LGPL-3.0, and that combination
+      # is allowed here deliberately. See dev/licenses-overrides.tsv.
+      - name: Check third party licenses
+        run: |
+          go-licenses check ./... \
+            --disallowed_types=forbidden,restricted,unknown \
+            --ignore github.com/ethereum/go-ethereum
+
+      - name: Check third party notices are current
+        run: |
+          dev/licenses-generate.sh > THIRD_PARTY_LICENSES.md
+          git diff --exit-code THIRD_PARTY_LICENSES.md
+
       - name: Lint Markdown docs
         uses: DavidAnson/markdownlint-cli2-action@ded1f9488f68a970bc66ea5619e13e9b52e601cd # v23
         with:
