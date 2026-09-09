@@ -4,9 +4,11 @@
 package iauthority
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"strings"
+	"time"
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -27,6 +29,8 @@ var (
 	_ = types.BloomLookup
 	_ = event.NewSubscription
 	_ = abi.ConvertType
+	_ = time.Tick
+	_ = context.Background
 )
 
 // IConsensusClaim is an auto generated low-level Go binding around an user-defined struct.
@@ -800,6 +804,10 @@ func (_IAuthority *IAuthorityFilterer) WatchClaimAccepted(opts *bind.WatchOpts, 
 				// New log arrived, parse the event and forward to the user
 				event := new(IAuthorityClaimAccepted)
 				if err := _IAuthority.contract.UnpackLog(event, "ClaimAccepted", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -947,6 +955,10 @@ func (_IAuthority *IAuthorityFilterer) WatchClaimStaged(opts *bind.WatchOpts, si
 				// New log arrived, parse the event and forward to the user
 				event := new(IAuthorityClaimStaged)
 				if err := _IAuthority.contract.UnpackLog(event, "ClaimStaged", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -1103,6 +1115,10 @@ func (_IAuthority *IAuthorityFilterer) WatchClaimSubmitted(opts *bind.WatchOpts,
 				// New log arrived, parse the event and forward to the user
 				event := new(IAuthorityClaimSubmitted)
 				if err := _IAuthority.contract.UnpackLog(event, "ClaimSubmitted", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log

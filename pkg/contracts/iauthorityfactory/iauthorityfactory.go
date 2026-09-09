@@ -4,9 +4,11 @@
 package iauthorityfactory
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"strings"
+	"time"
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -27,6 +29,8 @@ var (
 	_ = types.BloomLookup
 	_ = event.NewSubscription
 	_ = abi.ConvertType
+	_ = time.Tick
+	_ = context.Background
 )
 
 // IAuthorityFactoryMetaData contains all meta data concerning the IAuthorityFactory contract.
@@ -415,6 +419,10 @@ func (_IAuthorityFactory *IAuthorityFactoryFilterer) WatchAuthorityCreated(opts 
 				// New log arrived, parse the event and forward to the user
 				event := new(IAuthorityFactoryAuthorityCreated)
 				if err := _IAuthorityFactory.contract.UnpackLog(event, "AuthorityCreated", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log

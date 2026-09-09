@@ -4,9 +4,11 @@
 package ierc20metadata
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"strings"
+	"time"
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -27,6 +29,8 @@ var (
 	_ = types.BloomLookup
 	_ = event.NewSubscription
 	_ = abi.ConvertType
+	_ = time.Tick
+	_ = context.Background
 )
 
 // IERC20MetadataMetaData contains all meta data concerning the IERC20Metadata contract.
@@ -551,6 +555,10 @@ func (_IERC20Metadata *IERC20MetadataFilterer) WatchApproval(opts *bind.WatchOpt
 				// New log arrived, parse the event and forward to the user
 				event := new(IERC20MetadataApproval)
 				if err := _IERC20Metadata.contract.UnpackLog(event, "Approval", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -705,6 +713,10 @@ func (_IERC20Metadata *IERC20MetadataFilterer) WatchTransfer(opts *bind.WatchOpt
 				// New log arrived, parse the event and forward to the user
 				event := new(IERC20MetadataTransfer)
 				if err := _IERC20Metadata.contract.UnpackLog(event, "Transfer", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log

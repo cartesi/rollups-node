@@ -4,9 +4,11 @@
 package idaveconsensus
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"strings"
+	"time"
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -27,6 +29,8 @@ var (
 	_ = types.BloomLookup
 	_ = event.NewSubscription
 	_ = abi.ConvertType
+	_ = time.Tick
+	_ = context.Background
 )
 
 // LeafProof is an auto generated low-level Go binding around an user-defined struct.
@@ -1082,6 +1086,10 @@ func (_IDaveConsensus *IDaveConsensusFilterer) WatchConsensusCreation(opts *bind
 				// New log arrived, parse the event and forward to the user
 				event := new(IDaveConsensusConsensusCreation)
 				if err := _IDaveConsensus.contract.UnpackLog(event, "ConsensusCreation", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -1231,6 +1239,10 @@ func (_IDaveConsensus *IDaveConsensusFilterer) WatchEpochSealed(opts *bind.Watch
 				// New log arrived, parse the event and forward to the user
 				event := new(IDaveConsensusEpochSealed)
 				if err := _IDaveConsensus.contract.UnpackLog(event, "EpochSealed", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -1377,6 +1389,10 @@ func (_IDaveConsensus *IDaveConsensusFilterer) WatchEpochStaged(opts *bind.Watch
 				// New log arrived, parse the event and forward to the user
 				event := new(IDaveConsensusEpochStaged)
 				if err := _IDaveConsensus.contract.UnpackLog(event, "EpochStaged", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -1540,6 +1556,10 @@ func (_IDaveConsensus *IDaveConsensusFilterer) WatchSentryClaim(opts *bind.Watch
 				// New log arrived, parse the event and forward to the user
 				event := new(IDaveConsensusSentryClaim)
 				if err := _IDaveConsensus.contract.UnpackLog(event, "SentryClaim", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -1702,6 +1722,10 @@ func (_IDaveConsensus *IDaveConsensusFilterer) WatchSentryRotation(opts *bind.Wa
 				// New log arrived, parse the event and forward to the user
 				event := new(IDaveConsensusSentryRotation)
 				if err := _IDaveConsensus.contract.UnpackLog(event, "SentryRotation", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log

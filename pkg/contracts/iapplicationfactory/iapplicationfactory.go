@@ -4,9 +4,11 @@
 package iapplicationfactory
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"strings"
+	"time"
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -27,6 +29,8 @@ var (
 	_ = types.BloomLookup
 	_ = event.NewSubscription
 	_ = abi.ConvertType
+	_ = time.Tick
+	_ = context.Background
 )
 
 // WithdrawalConfig is an auto generated low-level Go binding around an user-defined struct.
@@ -439,6 +443,10 @@ func (_IApplicationFactory *IApplicationFactoryFilterer) WatchApplicationCreated
 				// New log arrived, parse the event and forward to the user
 				event := new(IApplicationFactoryApplicationCreated)
 				if err := _IApplicationFactory.contract.UnpackLog(event, "ApplicationCreated", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log

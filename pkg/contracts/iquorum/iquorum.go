@@ -4,9 +4,11 @@
 package iquorum
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"strings"
+	"time"
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -27,6 +29,8 @@ var (
 	_ = types.BloomLookup
 	_ = event.NewSubscription
 	_ = abi.ConvertType
+	_ = time.Tick
+	_ = context.Background
 )
 
 // IConsensusClaim is an auto generated low-level Go binding around an user-defined struct.
@@ -944,6 +948,10 @@ func (_IQuorum *IQuorumFilterer) WatchClaimAccepted(opts *bind.WatchOpts, sink c
 				// New log arrived, parse the event and forward to the user
 				event := new(IQuorumClaimAccepted)
 				if err := _IQuorum.contract.UnpackLog(event, "ClaimAccepted", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -1091,6 +1099,10 @@ func (_IQuorum *IQuorumFilterer) WatchClaimStaged(opts *bind.WatchOpts, sink cha
 				// New log arrived, parse the event and forward to the user
 				event := new(IQuorumClaimStaged)
 				if err := _IQuorum.contract.UnpackLog(event, "ClaimStaged", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -1247,6 +1259,10 @@ func (_IQuorum *IQuorumFilterer) WatchClaimSubmitted(opts *bind.WatchOpts, sink 
 				// New log arrived, parse the event and forward to the user
 				event := new(IQuorumClaimSubmitted)
 				if err := _IQuorum.contract.UnpackLog(event, "ClaimSubmitted", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log

@@ -4,9 +4,11 @@
 package itournament
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"strings"
+	"time"
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -27,6 +29,8 @@ var (
 	_ = types.BloomLookup
 	_ = event.NewSubscription
 	_ = abi.ConvertType
+	_ = time.Tick
+	_ = context.Background
 )
 
 // ITournamentBisectingMatchView is an auto generated low-level Go binding around an user-defined struct.
@@ -1166,6 +1170,10 @@ func (_ITournament *ITournamentFilterer) WatchBondRecovered(opts *bind.WatchOpts
 				// New log arrived, parse the event and forward to the user
 				event := new(ITournamentBondRecovered)
 				if err := _ITournament.contract.UnpackLog(event, "BondRecovered", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -1322,6 +1330,10 @@ func (_ITournament *ITournamentFilterer) WatchCommitmentJoined(opts *bind.WatchO
 				// New log arrived, parse the event and forward to the user
 				event := new(ITournamentCommitmentJoined)
 				if err := _ITournament.contract.UnpackLog(event, "CommitmentJoined", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -1467,6 +1479,10 @@ func (_ITournament *ITournamentFilterer) WatchLeafMatchSealed(opts *bind.WatchOp
 				// New log arrived, parse the event and forward to the user
 				event := new(ITournamentLeafMatchSealed)
 				if err := _ITournament.contract.UnpackLog(event, "LeafMatchSealed", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -1615,6 +1631,10 @@ func (_ITournament *ITournamentFilterer) WatchMatchAdvanced(opts *bind.WatchOpts
 				// New log arrived, parse the event and forward to the user
 				event := new(ITournamentMatchAdvanced)
 				if err := _ITournament.contract.UnpackLog(event, "MatchAdvanced", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -1779,6 +1799,10 @@ func (_ITournament *ITournamentFilterer) WatchMatchCreated(opts *bind.WatchOpts,
 				// New log arrived, parse the event and forward to the user
 				event := new(ITournamentMatchCreated)
 				if err := _ITournament.contract.UnpackLog(event, "MatchCreated", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -1943,6 +1967,10 @@ func (_ITournament *ITournamentFilterer) WatchMatchDeleted(opts *bind.WatchOpts,
 				// New log arrived, parse the event and forward to the user
 				event := new(ITournamentMatchDeleted)
 				if err := _ITournament.contract.UnpackLog(event, "MatchDeleted", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -2096,6 +2124,10 @@ func (_ITournament *ITournamentFilterer) WatchNewInnerTournament(opts *bind.Watc
 				// New log arrived, parse the event and forward to the user
 				event := new(ITournamentNewInnerTournament)
 				if err := _ITournament.contract.UnpackLog(event, "NewInnerTournament", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -2252,6 +2284,10 @@ func (_ITournament *ITournamentFilterer) WatchPartialBondRefund(opts *bind.Watch
 				// New log arrived, parse the event and forward to the user
 				event := new(ITournamentPartialBondRefund)
 				if err := _ITournament.contract.UnpackLog(event, "PartialBondRefund", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log

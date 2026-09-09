@@ -4,9 +4,11 @@
 package iinputbox
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"strings"
+	"time"
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -27,6 +29,8 @@ var (
 	_ = types.BloomLookup
 	_ = event.NewSubscription
 	_ = abi.ConvertType
+	_ = time.Tick
+	_ = context.Background
 )
 
 // IInputBoxMetaData contains all meta data concerning the IInputBox contract.
@@ -476,6 +480,10 @@ func (_IInputBox *IInputBoxFilterer) WatchInputAdded(opts *bind.WatchOpts, sink 
 				// New log arrived, parse the event and forward to the user
 				event := new(IInputBoxInputAdded)
 				if err := _IInputBox.contract.UnpackLog(event, "InputAdded", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log

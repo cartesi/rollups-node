@@ -4,9 +4,11 @@
 package iapplication
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"strings"
+	"time"
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -27,6 +29,8 @@ var (
 	_ = types.BloomLookup
 	_ = event.NewSubscription
 	_ = abi.ConvertType
+	_ = time.Tick
+	_ = context.Background
 )
 
 // AccountValidityProof is an auto generated low-level Go binding around an user-defined struct.
@@ -1360,6 +1364,10 @@ func (_IApplication *IApplicationFilterer) WatchAccountsDriveMerkleRootProved(op
 				// New log arrived, parse the event and forward to the user
 				event := new(IApplicationAccountsDriveMerkleRootProved)
 				if err := _IApplication.contract.UnpackLog(event, "AccountsDriveMerkleRootProved", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -1493,6 +1501,10 @@ func (_IApplication *IApplicationFilterer) WatchForeclosure(opts *bind.WatchOpts
 				// New log arrived, parse the event and forward to the user
 				event := new(IApplicationForeclosure)
 				if err := _IApplication.contract.UnpackLog(event, "Foreclosure", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -1638,6 +1650,10 @@ func (_IApplication *IApplicationFilterer) WatchOutputExecuted(opts *bind.WatchO
 				// New log arrived, parse the event and forward to the user
 				event := new(IApplicationOutputExecuted)
 				if err := _IApplication.contract.UnpackLog(event, "OutputExecuted", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -1772,6 +1788,10 @@ func (_IApplication *IApplicationFilterer) WatchOutputsMerkleRootValidatorChange
 				// New log arrived, parse the event and forward to the user
 				event := new(IApplicationOutputsMerkleRootValidatorChanged)
 				if err := _IApplication.contract.UnpackLog(event, "OutputsMerkleRootValidatorChanged", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -1918,6 +1938,10 @@ func (_IApplication *IApplicationFilterer) WatchRefundIssued(opts *bind.WatchOpt
 				// New log arrived, parse the event and forward to the user
 				event := new(IApplicationRefundIssued)
 				if err := _IApplication.contract.UnpackLog(event, "RefundIssued", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
@@ -2064,6 +2088,10 @@ func (_IApplication *IApplicationFilterer) WatchWithdrawal(opts *bind.WatchOpts,
 				// New log arrived, parse the event and forward to the user
 				event := new(IApplicationWithdrawal)
 				if err := _IApplication.contract.UnpackLog(event, "Withdrawal", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
 					return err
 				}
 				event.Raw = log
