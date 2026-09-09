@@ -20,7 +20,6 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.1
-	github.com/tyler-smith/go-bip32 v1.0.0
 	github.com/tyler-smith/go-bip39 v1.1.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/text v0.42.0
@@ -28,8 +27,6 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
-	github.com/FactomProject/basen v0.0.0-20150613233007-fe3947df716e // indirect
-	github.com/FactomProject/btcutilecc v0.0.0-20130527213604-d3a63a5752ec // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProjectZKM/Ziren/crates/go-runtime/zkvm_runtime v0.0.0-20260904015846-89a2b745b5c2 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect

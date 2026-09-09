@@ -6,18 +6,6 @@
 * Version: v1.6.0
 * License: [MIT](https://github.com/BurntSushi/toml/blob/v1.6.0/COPYING)
 
-## github.com/FactomProject/basen
-
-* Name: github.com/FactomProject/basen
-* Version: v0.0.0-20150613233007-fe3947df716e
-* License: [MIT](https://github.com/FactomProject/basen/blob/fe3947df716e/LICENSE)
-
-## github.com/FactomProject/btcutilecc
-
-* Name: github.com/FactomProject/btcutilecc
-* Version: v0.0.0-20130527213604-d3a63a5752ec
-* License: [Unknown](Unknown)
-
 ## github.com/apapsch/go-jsonmerge/v2
 
 * Name: github.com/apapsch/go-jsonmerge/v2
@@ -437,12 +425,6 @@
 * Name: github.com/tklauser/numcpus
 * Version: v0.12.0
 * License: [Apache-2.0](https://github.com/tklauser/numcpus/blob/v0.12.0/LICENSE)
-
-## github.com/tyler-smith/go-bip32
-
-* Name: github.com/tyler-smith/go-bip32
-* Version: v1.0.0
-* License: [MIT](https://github.com/tyler-smith/go-bip32/blob/v1.0.0/LICENSE)
 
 ## github.com/tyler-smith/go-bip39
 
