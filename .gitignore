@@ -22,3 +22,9 @@ machine-snapshot/**
 /test/downloads
 /snapshots
 /integration-logs*.txt
+
+# Local development tooling, symlinked from a sibling working copy
+/.agents
+/.claude
+/CLAUDE.md
+/_temp-third-party
