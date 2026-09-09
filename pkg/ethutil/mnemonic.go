@@ -9,7 +9,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/tyler-smith/go-bip32"
 	"github.com/tyler-smith/go-bip39"
 )
 
@@ -30,13 +29,12 @@ func MnemonicToPrivateKey(mnemonic string, accountIndex uint32) (*ecdsa.PrivateK
 		return nil, err
 	}
 
-	masterKey, err := bip32.NewMasterKey(seed)
+	masterKey, err := newMasterKey(seed)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate master key: %w", err)
 	}
 
 	// get key at path m/44'/60'/0'/0/account
-	const hardenedKeyStart uint32 = 0x80000000
 	levels := []uint32{
 		hardenedKeyStart + 44,
 		hardenedKeyStart + 60,
@@ -46,11 +44,11 @@ func MnemonicToPrivateKey(mnemonic string, accountIndex uint32) (*ecdsa.PrivateK
 	}
 	key := masterKey
 	for i, level := range levels {
-		key, err = key.NewChildKey(level)
+		key, err = key.childKey(level)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get child %v: %w", i, err)
 		}
 	}
 
-	return crypto.ToECDSA(key.Key)
+	return crypto.ToECDSA(key.key)
 }
