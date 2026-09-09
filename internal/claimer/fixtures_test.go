@@ -59,7 +59,7 @@ func newServiceMock(t *testing.T) (*Service, *claimerRepositoryMock, *claimerBlo
 		// RFC3339 with milliseconds and without timezone
 		TimeFormat: "2006-01-02T15:04:05.000",
 	}
-	handler := tint.NewHandler(os.Stdout, opts)
+	handler := tint.NewTextHandler(os.Stdout, opts)
 	repository := &claimerRepositoryMock{}
 	blockchain := &claimerBlockchainMock{
 		submitterAddress: common.HexToAddress("0x0000000000000000000000000000000000000001"),
