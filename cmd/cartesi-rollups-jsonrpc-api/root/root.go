@@ -30,7 +30,7 @@ var Cmd = &cobra.Command{
 	Use:     "cartesi-rollups-" + config.ServiceJsonrpc,
 	Short:   "Runs cartesi-rollups-" + config.ServiceJsonrpc,
 	Long:    "Runs cartesi-rollups-" + config.ServiceJsonrpc + " in standalone mode",
-	Run:     run,
+	RunE:    run,
 	Version: version.BuildVersion,
 }
 
@@ -63,15 +63,20 @@ func init() {
 	}
 }
 
-func run(cmd *cobra.Command, args []string) {
+func run(cmd *cobra.Command, args []string) (runErr error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
 	defer cancel()
 
 	name := config.ServiceJsonrpc
 	logger := service.NewLogger(name, cfg.LogLevel, cfg.LogColor)
+	// Return errors to Cobra only after all resource cleanup has completed.
+	defer func() { cli.LogErr(logger, runErr) }()
+	cmd.SilenceUsage = true
 
 	repo, err := factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
-	cli.CheckErr(logger, err)
+	if err != nil {
+		return err
+	}
 	defer repo.Close()
 
 	supCfg := &service.SupervisorConfigs{
@@ -89,6 +94,8 @@ func run(cmd *cobra.Command, args []string) {
 		},
 	}
 	sup, err := service.NewSupervisor(ctx, supCfg)
-	cli.CheckErr(logger, err)
-	cli.CheckErr(logger, sup.Serve())
+	if err != nil {
+		return err
+	}
+	return sup.Serve()
 }
