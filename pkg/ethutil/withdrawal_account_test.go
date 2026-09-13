@@ -4,7 +4,8 @@
 package ethutil
 
 import (
-	"encoding/binary"
+	"bytes"
+	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -13,38 +14,47 @@ import (
 
 func TestFormatTokenAmount(t *testing.T) {
 	cases := []struct {
-		raw      uint64
+		raw      string
 		decimals uint8
 		want     string
 	}{
-		{0, 0, "0"},
-		{42, 0, "42"},
-		{1_500_000, 6, "1.5"},
-		{1_234_567, 6, "1.234567"},
-		{1_000_000, 6, "1"},
-		{1, 6, "0.000001"},
-		{1_000_000_000_000_000_000, 18, "1"},
-		{1_500_000_000_000_000_000, 18, "1.5"},
-		{999_999_999, 8, "9.99999999"},
-		{1, 18, "0.000000000000000001"},
+		{"0", 0, "0"},
+		{"42", 0, "42"},
+		{"1500000", 6, "1.5"},
+		{"1234567", 6, "1.234567"},
+		{"1000000", 6, "1"},
+		{"1", 6, "0.000001"},
+		{"1000000000000000000", 18, "1"},
+		{"1500000000000000000", 18, "1.5"},
+		{"999999999", 8, "9.99999999"},
+		{"1", 18, "0.000000000000000001"},
+		{"79228162514264337593543950335", 6, "79228162514264337593543.950335"},
 	}
 	for _, c := range cases {
-		got := formatTokenAmount(c.raw, c.decimals)
-		require.Equalf(t, c.want, got, "formatTokenAmount(%d, %d)", c.raw, c.decimals)
+		raw, ok := new(big.Int).SetString(c.raw, 10)
+		require.True(t, ok)
+		before := new(big.Int).Set(raw)
+		got := formatTokenAmount(raw, c.decimals)
+		require.Equalf(t, c.want, got, "formatTokenAmount(%s, %d)", c.raw, c.decimals)
+		require.Zero(t, before.Cmp(raw), "formatTokenAmount mutated its input")
 	}
 }
 
-func TestDecodeUSDAccount_AcceptsMinimumAndPaddedAccount(t *testing.T) {
+func TestDecodeUSDAccountExactUint96Record(t *testing.T) {
 	recipient := common.HexToAddress("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
-	account := make([]byte, 32)
-	binary.LittleEndian.PutUint64(account[:8], 75)
-	copy(account[8:28], recipient.Bytes())
+	account := common.FromHex("0x0102030405060708090a0b0cbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	before := bytes.Clone(account)
 
-	gotRecipient, gotBalance := decodeUSDAccount(account[:28])
+	gotRecipient, gotBalance, err := decodeUSDAccount(account)
+	require.NoError(t, err)
 	require.Equal(t, recipient, gotRecipient)
-	require.Equal(t, uint64(75), gotBalance)
+	require.Equal(t, "3727165692135864801209549313", gotBalance.String())
+	require.Equal(t, before, account, "decodeUSDAccount mutated its source bytes")
+}
 
-	gotRecipient, gotBalance = decodeUSDAccount(account)
-	require.Equal(t, recipient, gotRecipient)
-	require.Equal(t, uint64(75), gotBalance)
+func TestDecodeUSDAccountRequiresExactSize(t *testing.T) {
+	for _, size := range []int{0, usdAccountSize - 1, usdAccountSize + 1} {
+		_, _, err := decodeUSDAccount(make([]byte, size))
+		require.ErrorContains(t, err, "exactly 32 bytes")
+	}
 }

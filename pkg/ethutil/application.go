@@ -4,17 +4,20 @@ package ethutil
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplicationfactory"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 type IApplicationDeployment interface {
-	Deploy(ctx context.Context, client *ethclient.Client, txOptsFactory TransactOptsFactory) (common.Address, IApplicationDeploymentResult, error)
+	Deploy(context.Context, *ethclient.Client, TransactOptsFactory) (common.Address, IApplicationDeploymentResult, error)
+	DeployWithTransaction(
+		context.Context, *ethclient.Client, TransactOptsFactory, TransactionRunner,
+	) (common.Address, IApplicationDeploymentResult, error)
 	GetFactoryAddress() common.Address
 }
 type IApplicationDeploymentResult interface{}
@@ -23,7 +26,6 @@ type ApplicationDeployment struct {
 	FactoryAddress   common.Address                       `json:"factory"`
 	Consensus        common.Address                       `json:"consensus"`
 	OwnerAddress     common.Address                       `json:"owner"`
-	DataAvailability []byte                               `json:"-"`
 	TemplateHash     common.Hash                          `json:"template_hash"`
 	WithdrawalConfig iapplicationfactory.WithdrawalConfig `json:"withdrawal_config"`
 	Salt             SaltBytes                            `json:"salt"`
@@ -46,13 +48,13 @@ type ApplicationDeploymentResult struct {
 
 func (me *ApplicationDeployment) String() string {
 	result := ""
-	result += fmt.Sprintf("application deployment:\n")
+	result += "application deployment:\n"
 	result += fmt.Sprintf("\tapplication owner:     %v\n", me.OwnerAddress)
 	result += fmt.Sprintf("\tconsensus address:     %v\n", me.Consensus)
+	result += fmt.Sprintf("\tinput box address:     %v\n", me.InputBoxAddress)
 	if me.Verbose {
 		result += fmt.Sprintf("\tfactory address:       %v\n", me.FactoryAddress)
 		result += fmt.Sprintf("\ttemplate hash:         %v\n", me.TemplateHash)
-		result += fmt.Sprintf("\tdata availability:     0x%v\n", hex.EncodeToString(me.DataAvailability))
 		result += fmt.Sprintf("\tsalt:                  %v\n", me.Salt)
 		result += fmt.Sprintf("\tepoch length:          %v\n", me.EpochLength)
 		if me.ConsensusType != "" {
@@ -73,6 +75,18 @@ func (me *ApplicationDeployment) Deploy(
 	client *ethclient.Client,
 	txOptsFactory TransactOptsFactory,
 ) (common.Address, IApplicationDeploymentResult, error) {
+	return me.DeployWithTransaction(ctx, client, txOptsFactory, nil)
+}
+
+// DeployWithTransaction uses runner to submit the deployment. A broadcast-only
+// runner returns the predicted address and no confirmed deployment result.
+// The predicted address does not prove that the deployment transaction succeeded.
+func (me *ApplicationDeployment) DeployWithTransaction(
+	ctx context.Context,
+	client *ethclient.Client,
+	txOptsFactory TransactOptsFactory,
+	runner TransactionRunner,
+) (common.Address, IApplicationDeploymentResult, error) {
 	zero := common.Address{}
 	result := &ApplicationDeploymentResult{}
 	result.Deployment = me
@@ -89,7 +103,15 @@ func (me *ApplicationDeployment) Deploy(
 	}
 
 	// check if addresses are available (have no code)
-	applicationAddress, err := factory.CalculateApplicationAddress(nil, me.Consensus, me.OwnerAddress, me.TemplateHash, me.DataAvailability, me.WithdrawalConfig, me.Salt)
+	applicationAddress, err := factory.CalculateApplicationAddress(
+		&bind.CallOpts{Context: ctx},
+		me.Consensus,
+		me.OwnerAddress,
+		me.TemplateHash,
+		me.InputBoxAddress,
+		me.WithdrawalConfig,
+		me.Salt,
+	)
 	if err != nil {
 		return zero, nil, err
 	}
@@ -99,7 +121,7 @@ func (me *ApplicationDeployment) Deploy(
 		return zero, nil, err
 	}
 	if len(applicationCode) != 0 {
-		return zero, nil, fmt.Errorf("application with address: %v already exists. Try a different salt.", applicationAddress)
+		return zero, nil, fmt.Errorf("application with address %v already exists; use a different salt", applicationAddress)
 	}
 
 	// deploy the contracts
@@ -108,18 +130,23 @@ func (me *ApplicationDeployment) Deploy(
 		return zero, nil, fmt.Errorf("failed to create transaction options: %w", err)
 	}
 
-	tx, err := factory.NewApplication0(txOpts, me.Consensus, me.OwnerAddress, me.TemplateHash, me.DataAvailability, me.WithdrawalConfig, me.Salt)
+	receipt, err := runDeploymentTransaction(ctx, client, txOpts, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+		return factory.NewApplication0(
+			opts,
+			me.Consensus,
+			me.OwnerAddress,
+			me.TemplateHash,
+			me.InputBoxAddress,
+			me.WithdrawalConfig,
+			me.Salt,
+		)
+	}, runner)
 	if err != nil {
 		return zero, nil, fmt.Errorf("transaction failed: %w", err)
 	}
 
-	receipt, err := bind.WaitMined(ctx, client, tx)
-	if err != nil {
-		return zero, nil, fmt.Errorf("failed to wait for transaction mining: %w", err)
-	}
-
-	if receipt.Status != 1 {
-		return zero, nil, fmt.Errorf("transaction failed")
+	if receipt == nil {
+		return applicationAddress, nil, nil
 	}
 
 	// Look for the specific event in the receipt logs

@@ -10,6 +10,7 @@ import (
 	"github.com/cartesi/rollups-node/pkg/contracts/iauthorityfactory"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -25,7 +26,7 @@ type AuthorityDeployment struct {
 
 func (me *AuthorityDeployment) String() string {
 	result := ""
-	result += fmt.Sprintf("authority deployment:\n")
+	result += "authority deployment:\n"
 	result += fmt.Sprintf("\tauthority owner:       %v\n", me.OwnerAddress)
 	if me.Verbose {
 		result += fmt.Sprintf("\tfactory address:       %v\n", me.FactoryAddress)
@@ -41,6 +42,17 @@ func (me *AuthorityDeployment) Deploy(
 	client *ethclient.Client,
 	txOpts *bind.TransactOpts,
 ) (common.Address, error) {
+	return me.DeployWithTransaction(ctx, client, txOpts, nil)
+}
+
+// DeployWithTransaction returns a predicted address when runner does not wait for
+// a receipt. The prediction does not prove that the deployment transaction succeeded.
+func (me *AuthorityDeployment) DeployWithTransaction(
+	ctx context.Context,
+	client *ethclient.Client,
+	txOpts *bind.TransactOpts,
+	runner TransactionRunner,
+) (common.Address, error) {
 	zero := common.Address{}
 	factory, err := iauthorityfactory.NewIAuthorityFactory(me.FactoryAddress, client)
 	if err != nil {
@@ -48,7 +60,11 @@ func (me *AuthorityDeployment) Deploy(
 	}
 
 	// check if addresses are available (have no code)
-	authorityAddress, err := factory.CalculateAuthorityAddress(nil, me.OwnerAddress, new(big.Int).SetUint64(me.EpochLength), new(big.Int).SetUint64(me.ClaimStagingPeriod), me.Salt)
+	epochLength := new(big.Int).SetUint64(me.EpochLength)
+	claimStagingPeriod := new(big.Int).SetUint64(me.ClaimStagingPeriod)
+	authorityAddress, err := factory.CalculateAuthorityAddress(
+		&bind.CallOpts{Context: ctx}, me.OwnerAddress, epochLength, claimStagingPeriod, me.Salt,
+	)
 	if err != nil {
 		return zero, err
 	}
@@ -58,22 +74,19 @@ func (me *AuthorityDeployment) Deploy(
 		return zero, err
 	}
 	if len(authorityCode) != 0 {
-		return zero, fmt.Errorf("authority with address: %v already exists. Try a different salt.", authorityAddress)
+		return zero, fmt.Errorf("authority with address %v already exists; use a different salt", authorityAddress)
 	}
 
 	// deploy the contracts
-	tx, err := factory.NewAuthority0(txOpts, me.OwnerAddress, new(big.Int).SetUint64(me.EpochLength), new(big.Int).SetUint64(me.ClaimStagingPeriod), me.Salt)
+	receipt, err := runDeploymentTransaction(ctx, client, txOpts, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+		return factory.NewAuthority0(opts, me.OwnerAddress, epochLength, claimStagingPeriod, me.Salt)
+	}, runner)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("failed to create new authority: %w", err)
 	}
 
-	receipt, err := bind.WaitMined(ctx, client, tx)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("failed to mine new authority transaction: %w", err)
-	}
-
-	if receipt.Status != 1 {
-		return common.Address{}, fmt.Errorf("transaction failed")
+	if receipt == nil {
+		return authorityAddress, nil
 	}
 
 	// search for the matching event

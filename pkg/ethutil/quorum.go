@@ -11,6 +11,7 @@ import (
 	"github.com/cartesi/rollups-node/pkg/contracts/iquorumfactory"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -26,7 +27,7 @@ type QuorumDeployment struct {
 
 func (me *QuorumDeployment) String() string {
 	result := ""
-	result += fmt.Sprintf("quorum deployment:\n")
+	result += "quorum deployment:\n"
 	result += fmt.Sprintf("\tvalidators:           %v\n", me.Validators)
 	if me.Verbose {
 		result += fmt.Sprintf("\tfactory address:       %v\n", me.FactoryAddress)
@@ -42,6 +43,17 @@ func (me *QuorumDeployment) Deploy(
 	client *ethclient.Client,
 	txOpts *bind.TransactOpts,
 ) (common.Address, error) {
+	return me.DeployWithTransaction(ctx, client, txOpts, nil)
+}
+
+// DeployWithTransaction returns a predicted address when runner does not wait for
+// a receipt. The prediction does not prove that the deployment transaction succeeded.
+func (me *QuorumDeployment) DeployWithTransaction(
+	ctx context.Context,
+	client *ethclient.Client,
+	txOpts *bind.TransactOpts,
+	runner TransactionRunner,
+) (common.Address, error) {
 	zero := common.Address{}
 	factory, err := iquorumfactory.NewIQuorumFactory(me.FactoryAddress, client)
 	if err != nil {
@@ -51,7 +63,7 @@ func (me *QuorumDeployment) Deploy(
 	epochLength := new(big.Int).SetUint64(me.EpochLength)
 	claimStagingPeriod := new(big.Int).SetUint64(me.ClaimStagingPeriod)
 	quorumAddress, err := factory.CalculateQuorumAddress(
-		nil,
+		&bind.CallOpts{Context: ctx},
 		me.Validators,
 		epochLength,
 		claimStagingPeriod,
@@ -66,21 +78,18 @@ func (me *QuorumDeployment) Deploy(
 		return zero, err
 	}
 	if len(quorumCode) != 0 {
-		return zero, fmt.Errorf("quorum with address: %v already exists. Try a different salt.", quorumAddress)
+		return zero, fmt.Errorf("quorum with address %v already exists; use a different salt", quorumAddress)
 	}
 
-	tx, err := factory.NewQuorum(txOpts, me.Validators, epochLength, claimStagingPeriod, me.Salt)
+	receipt, err := runDeploymentTransaction(ctx, client, txOpts, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+		return factory.NewQuorum(opts, me.Validators, epochLength, claimStagingPeriod, me.Salt)
+	}, runner)
 	if err != nil {
 		return zero, fmt.Errorf("failed to create new quorum: %w", err)
 	}
 
-	receipt, err := bind.WaitMined(ctx, client, tx)
-	if err != nil {
-		return zero, fmt.Errorf("failed to mine new quorum transaction: %w", err)
-	}
-
-	if receipt.Status != 1 {
-		return zero, fmt.Errorf("transaction failed")
+	if receipt == nil {
+		return quorumAddress, nil
 	}
 
 	for _, vLog := range receipt.Logs {

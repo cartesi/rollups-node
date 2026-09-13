@@ -5,7 +5,6 @@ package ethutil
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"math/big"
 
@@ -17,15 +16,12 @@ import (
 	"github.com/cartesi/rollups-node/pkg/contracts/iusdwithdrawaloutputbuilder"
 )
 
-// usdAccountMinSize is the minimum byte length of the LibUsdAccount encoding consumed
+// usdAccountSize is the exact byte length of the LibUsdAccount encoding consumed
 // by every UsdWithdrawalOutputBuilder:
 //
-//	bytes 0..7   uint64 balance, little-endian
-//	bytes 8..27  20-byte user address
-//
-// The account may be larger. LibUsdAccount ignores bytes after byte 27, which
-// lets ewtools-style 32-byte account-drive records be withdrawn directly.
-const usdAccountMinSize = 28
+//	bytes 0..11  uint96 balance, little-endian
+//	bytes 12..31 20-byte user address
+const usdAccountSize = 32
 
 // DescribeWithdrawalAccount renders a multi-line human description of the
 // `account` bytes consumed by an IApplication.withdraw() call so the
@@ -36,14 +32,12 @@ const usdAccountMinSize = 28
 //  1. Call IUsdWithdrawalOutputBuilder.Token() on the on-chain builder.
 //     A revert here means the builder is not a USD-family builder; the
 //     caller should fall back to a raw-bytes display.
-//  2. Split the first 28 bytes into recipient and balance per LibUsdAccount.
-//     A shorter account is a hard error — a malformed proof against a
-//     recognized builder, not a fallback signal. Longer account records are
-//     accepted because the contract ignores trailing bytes.
+//  2. Require and split the exact 32-byte record into recipient and balance
+//     per LibUsdAccount. Any other length is a hard error.
 //  3. Best-effort fetch IERC20Metadata.Symbol() and Decimals() on the
 //     returned token address so the balance can be rendered as a
 //     fixed-point amount. If either view reverts (broken or non-standard
-//     ERC-20), the raw uint64 balance is shown unmodified.
+//     ERC-20), the raw uint96 balance is shown unmodified.
 //
 // Tri-state return:
 //
@@ -66,12 +60,10 @@ func DescribeWithdrawalAccount(
 	if err != nil {
 		return "", false, nil
 	}
-	if len(account) < usdAccountMinSize {
-		return "", true, fmt.Errorf(
-			"USD account must be at least %d bytes, got %d (token %s)",
-			usdAccountMinSize, len(account), token)
+	recipient, balance, err := decodeUSDAccount(account)
+	if err != nil {
+		return "", true, fmt.Errorf("%w (token %s)", err, token)
 	}
-	recipient, balance := decodeUSDAccount(account)
 
 	symbol, decimals, metaOK := fetchERC20Metadata(ctx, client, token)
 	tokenLine := fmt.Sprintf("  token:               %s", token)
@@ -81,12 +73,12 @@ func DescribeWithdrawalAccount(
 	var amountLine string
 	if metaOK {
 		amountLine = fmt.Sprintf(
-			"  amount:              %s %s  (raw: %d, decimals: %d)",
-			formatTokenAmount(balance, decimals), symbol, balance, decimals)
+			"  amount:              %s %s  (raw: %s, decimals: %d)",
+			formatTokenAmount(balance, decimals), symbol, balance.String(), decimals)
 	} else {
 		amountLine = fmt.Sprintf(
-			"  amount (raw uint64): %d  (token metadata unavailable)",
-			balance)
+			"  amount (raw uint96): %s  (token metadata unavailable)",
+			balance.String())
 	}
 	return fmt.Sprintf(
 		"USD-style account (recognized via IUsdWithdrawalOutputBuilder.Token)\n"+
@@ -95,11 +87,23 @@ func DescribeWithdrawalAccount(
 	), true, nil
 }
 
-func decodeUSDAccount(account []byte) (common.Address, uint64) {
-	balance := binary.LittleEndian.Uint64(account[:8])
+func decodeUSDAccount(account []byte) (common.Address, *big.Int, error) {
+	if len(account) != usdAccountSize {
+		return common.Address{}, nil, fmt.Errorf(
+			"USD account must be exactly %d bytes, got %d",
+			usdAccountSize,
+			len(account),
+		)
+	}
+
+	var balanceBytes [12]byte
+	for i := range balanceBytes {
+		balanceBytes[len(balanceBytes)-1-i] = account[i]
+	}
+	balance := new(big.Int).SetBytes(balanceBytes[:])
 	var recipient common.Address
-	copy(recipient[:], account[8:usdAccountMinSize])
-	return recipient, balance
+	copy(recipient[:], account[12:usdAccountSize])
+	return recipient, balance, nil
 }
 
 // fetchERC20Metadata best-effort-fetches the symbol and decimals of an
@@ -130,12 +134,12 @@ func fetchERC20Metadata(
 // fixed-point string (e.g. balance=1_500_000, decimals=6 → "1.5"). Trailing
 // zeros in the fractional part are trimmed so common round amounts render
 // compactly.
-func formatTokenAmount(raw uint64, decimals uint8) string {
+func formatTokenAmount(raw *big.Int, decimals uint8) string {
 	if decimals == 0 {
-		return fmt.Sprintf("%d", raw)
+		return raw.String()
 	}
 	denom := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil)
-	whole, frac := new(big.Int).QuoRem(new(big.Int).SetUint64(raw), denom, new(big.Int))
+	whole, frac := new(big.Int).QuoRem(new(big.Int).Set(raw), denom, new(big.Int))
 	if frac.Sign() == 0 {
 		return whole.String()
 	}

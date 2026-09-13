@@ -148,6 +148,22 @@ func UnpackRevert(err error, metadata *bind.MetaData, errorName string) ([]any, 
 	return values, true
 }
 
+// ApplicationReturnDataSuffix formats the bytes carried by ApplicationReverted
+// or IllformedApplicationReturnData(address, bytes). Contract-controlled bytes
+// are hex-encoded so they stay inert in logs and stored reasons. Invalid revert
+// data produces no suffix. The caller supplies its consensus ABI explicitly.
+func ApplicationReturnDataSuffix(err error, metadata *bind.MetaData, name string) string {
+	values, ok := UnpackRevert(err, metadata, name)
+	if !ok || len(values) < 2 {
+		return ""
+	}
+	data, ok := values[1].([]byte)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf(" Application return data: 0x%x.", data)
+}
+
 // DescribeRevert decodes the custom-error revert payload carried by err
 // against the given contract metadatas and renders it as
 // "Name(param=value, ...)". It returns ("", false) when err carries no revert
