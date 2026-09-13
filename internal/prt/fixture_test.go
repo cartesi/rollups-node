@@ -13,7 +13,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
-	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -97,21 +96,23 @@ func (m *prtRepositoryMock) GetEpoch(
 	return epoch, args.Error(1)
 }
 
-func (m *prtRepositoryMock) UpdateEpochStatus(
+func (m *prtRepositoryMock) UpdateEpochReconciledStaged(
 	ctx context.Context,
-	nameOrAddress string,
-	e *model.Epoch,
+	applicationID int64,
+	index uint64,
+	stagedAtBlock uint64,
 ) error {
-	args := m.Called(ctx, nameOrAddress, e)
+	args := m.Called(ctx, applicationID, index, stagedAtBlock)
 	return args.Error(0)
 }
 
-func (m *prtRepositoryMock) CreateTournament(
+func (m *prtRepositoryMock) UpdateEpochWithAcceptedClaim(
 	ctx context.Context,
-	nameOrAddress string,
-	t *model.Tournament,
+	applicationID int64,
+	index uint64,
+	txHash *common.Hash,
 ) error {
-	args := m.Called(ctx, nameOrAddress, t)
+	args := m.Called(ctx, applicationID, index, txHash)
 	return args.Error(0)
 }
 
@@ -123,15 +124,6 @@ func (m *prtRepositoryMock) GetTournament(
 	args := m.Called(ctx, nameOrAddress, address)
 	tournament, _ := args.Get(0).(*model.Tournament)
 	return tournament, args.Error(1)
-}
-
-func (m *prtRepositoryMock) UpdateTournament(
-	ctx context.Context,
-	nameOrAddress string,
-	t *model.Tournament,
-) error {
-	args := m.Called(ctx, nameOrAddress, t)
-	return args.Error(0)
 }
 
 func (m *prtRepositoryMock) ListTournaments(
@@ -149,13 +141,10 @@ func (m *prtRepositoryMock) ListTournaments(
 func (m *prtRepositoryMock) StoreTournamentEvents(
 	ctx context.Context,
 	appID int64,
-	commitments []*model.Commitment,
-	matches []*model.Match,
-	advancedMatches []*model.MatchAdvanced,
-	deletedMatches []*model.Match,
+	batches []*repository.TournamentEventBatch,
 	blockNumber uint64,
 ) error {
-	args := m.Called(ctx, appID, commitments, matches, advancedMatches, deletedMatches, blockNumber)
+	args := m.Called(ctx, appID, batches, blockNumber)
 	return args.Error(0)
 }
 
@@ -174,6 +163,20 @@ func (m *prtRepositoryMock) GetCommitment(
 func (m *prtRepositoryMock) SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error {
 	args := m.Called(ctx, key, rawJSON)
 	return args.Error(0)
+}
+
+func (m *prtRepositoryMock) ListCommitments(ctx context.Context, app string, filter repository.CommitmentFilter,
+	page repository.Pagination, descending bool) ([]*model.Commitment, uint64, error) {
+	args := m.Called(ctx, app, filter, page, descending)
+	rows, _ := args.Get(0).([]*model.Commitment)
+	return rows, args.Get(1).(uint64), args.Error(2)
+}
+
+func (m *prtRepositoryMock) ListMatches(ctx context.Context, app string, filter repository.MatchFilter,
+	page repository.Pagination, descending bool) ([]*model.Match, uint64, error) {
+	args := m.Called(ctx, app, filter, page, descending)
+	rows, _ := args.Get(0).([]*model.Match)
+	return rows, args.Get(1).(uint64), args.Error(2)
 }
 
 func (m *prtRepositoryMock) LoadNodeConfigRaw(
@@ -209,6 +212,12 @@ func (m *ethClientMock) ChainID(ctx context.Context) (*big.Int, error) {
 func (m *ethClientMock) BlockNumber(ctx context.Context) (uint64, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(uint64), args.Error(1)
+}
+
+func (m *ethClientMock) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error) {
+	args := m.Called(ctx, number)
+	header, _ := args.Get(0).(*types.Header)
+	return header, args.Error(1)
 }
 
 func (m *ethClientMock) TransactionByHash(
@@ -252,30 +261,54 @@ func (m *daveConsensusAdapterMock) ParseEpochSealed(
 	return event, args.Error(1)
 }
 
-func (m *daveConsensusAdapterMock) CanSettle(opts *bind.CallOpts) (CanSettleResult, error) {
+func (m *daveConsensusAdapterMock) TournamentLevelCount(opts *bind.CallOpts) (uint64, error) {
 	args := m.Called(opts)
-	result, _ := args.Get(0).(CanSettleResult)
+	return args.Get(0).(uint64), args.Error(1)
+}
+
+func (m *daveConsensusAdapterMock) GetCurrentSealedEpoch(opts *bind.CallOpts) (CurrentSealedEpoch, error) {
+	args := m.Called(opts)
+	result, _ := args.Get(0).(CurrentSealedEpoch)
 	return result, args.Error(1)
 }
 
-func (m *daveConsensusAdapterMock) IsEpochSettled(
+func (m *daveConsensusAdapterMock) CanStageTournamentResult(
 	opts *bind.CallOpts,
-	epochNumber uint64,
-) (bool, error) {
-	args := m.Called(opts, epochNumber)
-	return args.Bool(0), args.Error(1)
+) (CanStageTournamentResult, error) {
+	args := m.Called(opts)
+	result, _ := args.Get(0).(CanStageTournamentResult)
+	return result, args.Error(1)
 }
 
-func (m *daveConsensusAdapterMock) Settle(
+func (m *daveConsensusAdapterMock) CanAcceptStagedTournamentResult(
+	opts *bind.CallOpts,
+) (CanAcceptStagedTournamentResult, error) {
+	args := m.Called(opts)
+	result, _ := args.Get(0).(CanAcceptStagedTournamentResult)
+	return result, args.Error(1)
+}
+
+func (m *daveConsensusAdapterMock) StageTournamentResult(
 	opts *bind.TransactOpts,
-	epochNumber *big.Int,
-	outputsMerkleRoot [32]byte,
-	proof [][32]byte,
+	epochNumber uint64,
+	proof model.StateProof,
 ) (*types.Transaction, error) {
-	args := m.Called(opts, epochNumber, outputsMerkleRoot, proof)
+	args := m.Called(opts, epochNumber, proof)
 	tx, _ := args.Get(0).(*types.Transaction)
-	if fn, ok := args.Get(1).(func(*bind.TransactOpts, *big.Int, [32]byte, [][32]byte) error); ok {
-		return tx, fn(opts, epochNumber, outputsMerkleRoot, proof)
+	if fn, ok := args.Get(1).(func(*bind.TransactOpts, uint64, model.StateProof) error); ok {
+		return tx, fn(opts, epochNumber, proof)
+	}
+	return tx, args.Error(1)
+}
+
+func (m *daveConsensusAdapterMock) AcceptStagedTournamentResult(
+	opts *bind.TransactOpts,
+	epochNumber uint64,
+) (*types.Transaction, error) {
+	args := m.Called(opts, epochNumber)
+	tx, _ := args.Get(0).(*types.Transaction)
+	if fn, ok := args.Get(1).(func(*bind.TransactOpts, uint64) error); ok {
+		return tx, fn(opts, epochNumber)
 	}
 	return tx, args.Error(1)
 }
@@ -286,66 +319,40 @@ type tournamentAdapterMock struct {
 
 var _ TournamentAdapter = (*tournamentAdapterMock)(nil)
 
-func (m *tournamentAdapterMock) RetrieveCommitmentJoinedEvents(
-	opts *bind.FilterOpts,
-) ([]*itournament.ITournamentCommitmentJoined, error) {
-	args := m.Called(opts)
-	events, _ := args.Get(0).([]*itournament.ITournamentCommitmentJoined)
-	return events, args.Error(1)
-}
-
-func (m *tournamentAdapterMock) RetrieveMatchAdvancedEvents(
-	opts *bind.FilterOpts,
-) ([]*itournament.ITournamentMatchAdvanced, error) {
-	args := m.Called(opts)
-	events, _ := args.Get(0).([]*itournament.ITournamentMatchAdvanced)
-	return events, args.Error(1)
-}
-
-func (m *tournamentAdapterMock) RetrieveMatchCreatedEvents(
-	opts *bind.FilterOpts,
-) ([]*itournament.ITournamentMatchCreated, error) {
-	args := m.Called(opts)
-	events, _ := args.Get(0).([]*itournament.ITournamentMatchCreated)
-	return events, args.Error(1)
-}
-
-func (m *tournamentAdapterMock) RetrieveMatchDeletedEvents(
-	opts *bind.FilterOpts,
-) ([]*itournament.ITournamentMatchDeleted, error) {
-	args := m.Called(opts)
-	events, _ := args.Get(0).([]*itournament.ITournamentMatchDeleted)
-	return events, args.Error(1)
-}
-
-func (m *tournamentAdapterMock) RetrieveNewInnerTournamentEvents(
-	opts *bind.FilterOpts,
-) ([]*itournament.ITournamentNewInnerTournament, error) {
-	args := m.Called(opts)
-	events, _ := args.Get(0).([]*itournament.ITournamentNewInnerTournament)
-	return events, args.Error(1)
-}
-
 func (m *tournamentAdapterMock) RetrieveAllEvents(opts *bind.FilterOpts) (*TournamentEvents, error) {
 	args := m.Called(opts)
 	events, _ := args.Get(0).(*TournamentEvents)
 	return events, args.Error(1)
 }
 
-func (m *tournamentAdapterMock) Result(opts *bind.CallOpts) (bool, [32]byte, [32]byte, error) {
+func (m *tournamentAdapterMock) Descriptor(opts *bind.CallOpts) (TournamentDescriptor, error) {
 	args := m.Called(opts)
-	return args.Bool(0), args.Get(1).([32]byte), args.Get(2).([32]byte), args.Error(3)
+	result, _ := args.Get(0).(TournamentDescriptor)
+	return result, args.Error(1)
 }
 
-func (m *tournamentAdapterMock) Constants(opts *bind.CallOpts) (TournamentConstants, error) {
+func (m *tournamentAdapterMock) Standing(opts *bind.CallOpts) (TournamentStanding, error) {
 	args := m.Called(opts)
-	constants, _ := args.Get(0).(TournamentConstants)
-	return constants, args.Error(1)
+	result, _ := args.Get(0).(TournamentStanding)
+	return result, args.Error(1)
 }
 
-func (m *tournamentAdapterMock) TimeFinished(opts *bind.CallOpts) (bool, uint64, error) {
+func (m *tournamentAdapterMock) MatchSnapshot(opts *bind.CallOpts, one, two [32]byte) (ObservedMatchSnapshot, error) {
+	args := m.Called(opts, one, two)
+	result, _ := args.Get(0).(ObservedMatchSnapshot)
+	return result, args.Error(1)
+}
+
+func (m *tournamentAdapterMock) InnerResult(opts *bind.CallOpts) (InnerResult, error) {
 	args := m.Called(opts)
-	return args.Bool(0), args.Get(1).(uint64), args.Error(2)
+	result, _ := args.Get(0).(InnerResult)
+	return result, args.Error(1)
+}
+
+func (m *tournamentAdapterMock) StructuralEventCounts(opts *bind.CallOpts) (StructuralEventCounts, error) {
+	args := m.Called(opts)
+	result, _ := args.Get(0).(StructuralEventCounts)
+	return result, args.Error(1)
 }
 
 func (m *tournamentAdapterMock) BondValue(opts *bind.CallOpts) (*big.Int, error) {
@@ -354,12 +361,19 @@ func (m *tournamentAdapterMock) BondValue(opts *bind.CallOpts) (*big.Int, error)
 	return value, args.Error(1)
 }
 
-func (m *tournamentAdapterMock) IsCommitmentJoined(
+func (m *tournamentAdapterMock) BondRecovery(opts *bind.CallOpts) (BondRecovery, error) {
+	args := m.Called(opts)
+	recovery, _ := args.Get(0).(BondRecovery)
+	return recovery, args.Error(1)
+}
+
+func (m *tournamentAdapterMock) CommitmentStanding(
 	opts *bind.CallOpts,
 	commitmentRoot [32]byte,
-) (bool, error) {
+) (CommitmentStanding, error) {
 	args := m.Called(opts, commitmentRoot)
-	return args.Bool(0), args.Error(1)
+	result, _ := args.Get(0).(CommitmentStanding)
+	return result, args.Error(1)
 }
 
 func (m *tournamentAdapterMock) JoinTournament(
@@ -377,13 +391,27 @@ func (m *tournamentAdapterMock) JoinTournament(
 	return tx, args.Error(1)
 }
 
+func (m *tournamentAdapterMock) TryRecoveringBond(opts *bind.TransactOpts) (*types.Transaction, error) {
+	args := m.Called(opts)
+	tx, _ := args.Get(0).(*types.Transaction)
+	if fn, ok := args.Get(1).(func(*bind.TransactOpts) error); ok {
+		return tx, fn(opts)
+	}
+	return tx, args.Error(1)
+}
+
 func newPRTServiceMock() (*Service, *prtRepositoryMock) {
 	repo := &prtRepositoryMock{}
 	s := &Service{
 		Service: service.Service{
 			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 		},
-		repository: repo,
+		repository:          repo,
+		pendingTransactions: map[int64]pendingTournamentTransaction{},
+		disputeWarnings:     map[common.Address]struct{}{},
+		zeroStagingWarnings: map[int64]struct{}{},
+		rootBondRecoveries:  map[int64][]*rootBondRecovery{},
+		observationFailures: map[int64]tournamentObservationFailure{},
 	}
 	return s, repo
 }
