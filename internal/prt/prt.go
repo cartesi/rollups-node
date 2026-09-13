@@ -811,6 +811,127 @@ func (s *Service) observeTournamentWindow(
 	return nil
 }
 
+func (s *Service) reconcileAcceptedEpochs(
+	ctx context.Context, app *Application, epochs []*Epoch, consensus DaveConsensusAdapter, mostRecentBlock uint64,
+) (bool, error) {
+	if mostRecentBlock < app.LastTournamentCheckBlock {
+		// A stored projection from a later head cannot decide local status at
+		// this older configured head. Keep it and wait for the head to catch up.
+		return true, nil
+	}
+	for _, epoch := range epochs {
+		if epoch.Status != EpochStatus_ClaimComputed && epoch.Status != EpochStatus_ClaimStaged {
+			continue
+		}
+		if epoch.TournamentAddress == nil || epoch.Commitment == nil ||
+			epoch.MachineHash == nil || epoch.TxBufferDataBlock == nil {
+			return true, s.setApplicationCorrupted(ctx, app,
+				"epoch %d has missing required fields for pending claim processing", epoch.Index)
+		}
+
+		// Compare only after the complete root and descendant window is durable.
+		// A losing local claim must not hide the on-chain winner from clients.
+		tournament, err := s.repository.GetTournament(ctx, app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex())
+		if err != nil {
+			return true, fmt.Errorf("loading epoch %d observed tournament: %w", epoch.Index, err)
+		}
+		if tournament == nil || tournament.Snapshot.FinishedAtBlock == 0 ||
+			tournament.Snapshot.FinishedAtBlock > app.LastTournamentCheckBlock {
+			return false, nil
+		}
+		if tournament.Snapshot.WinnerCommitment != nil && *tournament.Snapshot.WinnerCommitment != *epoch.Commitment {
+			return true, s.setApplicationDiverged(ctx, app,
+				"Epoch %d has inconsistent commitment between off-chain (%s) and on-chain (%s)",
+				epoch.Index, epoch.Commitment, tournament.Snapshot.WinnerCommitment)
+		}
+		if epoch.ClaimTransactionHash == nil { // no accepting EpochSealed event observed yet
+			break
+		}
+
+		receipt, err := s.client.TransactionReceipt(ctx, *epoch.ClaimTransactionHash)
+		if err != nil {
+			s.logErrorUnlessShutdown(ctx, "failed to fetch transaction receipt for epoch", err, "application", app.Name,
+				"epoch", epoch.Index, "tx", epoch.ClaimTransactionHash)
+			return true, err
+		}
+		if receipt == nil {
+			return true, fmt.Errorf("epoch %d: acceptance transaction receipt is nil", epoch.Index)
+		}
+		if receipt.TxHash != *epoch.ClaimTransactionHash {
+			return true, fmt.Errorf("epoch %d: acceptance receipt transaction hash %s differs from observed hash %s",
+				epoch.Index, receipt.TxHash, epoch.ClaimTransactionHash)
+		}
+		receiptBlock, err := checkedUint64(receipt.BlockNumber, "acceptance receipt block")
+		if err != nil {
+			return true, fmt.Errorf("epoch %d: %w", epoch.Index, err)
+		}
+		observedBlock := min(mostRecentBlock, app.LastTournamentCheckBlock)
+		if receiptBlock > observedBlock {
+			s.Logger.Debug("Acceptance transaction is newer than the published tournament window",
+				"application", app.Name,
+				"epoch", epoch.Index,
+				"tx", epoch.ClaimTransactionHash,
+				"receipt_block", receiptBlock,
+				"snapshot_block", observedBlock)
+			return true, nil
+		}
+
+		if receipt.Status != types.ReceiptStatusSuccessful {
+			return true, fmt.Errorf("epoch %d: EpochSealed transaction hash points to failed transaction", epoch.Index)
+		}
+
+		var event *idaveconsensus.IDaveConsensusEpochSealed
+		expectedEventEpoch := new(big.Int).SetUint64(epoch.Index)
+		expectedEventEpoch.Add(expectedEventEpoch, common.Big1)
+		for _, vLog := range receipt.Logs {
+			if vLog == nil || vLog.Address != app.IConsensusAddress ||
+				vLog.TxHash != *epoch.ClaimTransactionHash || vLog.BlockNumber != receiptBlock {
+				continue
+			}
+			candidate, parseErr := consensus.ParseEpochSealed(*vLog)
+			if parseErr != nil || candidate == nil || candidate.EpochNumber == nil ||
+				candidate.EpochNumber.Cmp(expectedEventEpoch) != 0 {
+				continue // Skip logs that don't match
+			}
+			event = candidate
+			break
+		}
+		if event == nil {
+			return true, fmt.Errorf("epoch %d: failed to find EpochSealed event in receipt logs", epoch.Index)
+		}
+
+		if *epoch.MachineHash != event.InitialMachineStateHash {
+			return true, s.setApplicationDiverged(ctx, app,
+				"Epoch %d has inconsistent machine hash between off-chain (%s) and on-chain (%s)",
+				epoch.Index, epoch.MachineHash.String(), hexutil.Encode(event.InitialMachineStateHash[:]))
+		}
+		if *epoch.TxBufferDataBlock != event.OutputsMerkleRoot {
+			return true, s.setApplicationDiverged(ctx, app,
+				"Epoch %d has inconsistent claim hash between off-chain (%s) and on-chain (%s)",
+				epoch.Index, epoch.TxBufferDataBlock.String(), hexutil.Encode(event.OutputsMerkleRoot[:]))
+		}
+
+		s.Logger.Info("Found finalized epoch. OutputsMerkleRoot matched. Setting claim as accepted",
+			"application", app.Name,
+			"epoch", epoch.Index,
+			"event_block_number", event.Raw.BlockNumber,
+			"outputs_merkle_root", fmt.Sprintf("%x", event.OutputsMerkleRoot),
+			"tx", epoch.ClaimTransactionHash,
+		)
+
+		if s.submissionEnabled {
+			s.queueRootBondRecovery(app.ID, epoch.Index, *epoch.TournamentAddress)
+		}
+		err = s.repository.UpdateEpochWithAcceptedClaim(ctx, app.ID, epoch.Index, epoch.ClaimTransactionHash)
+		if err != nil {
+			s.logErrorUnlessShutdown(ctx, "failed to update epoch status to claim accepted", err,
+				"application", app.Name, "epoch", epoch.Index)
+			return true, err
+		}
+	}
+	return false, nil
+}
+
 // gatherTournamentData reads a complete subtree without storing projections,
 // events, or cursors. The returned batches have parents before their children.
 func (s *Service) gatherTournamentData(
