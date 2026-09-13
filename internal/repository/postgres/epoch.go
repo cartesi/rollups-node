@@ -384,11 +384,6 @@ func (r *PostgresRepository) HasUndrainedEpochsBeforeBlock(
 	appID int64,
 	blockBound uint64,
 ) (bool, error) {
-	terminalStatuses := []postgres.Expression{
-		enum.EpochStatus.ClaimAccepted,
-		enum.EpochStatus.ClaimRejected,
-		enum.EpochStatus.ClaimForeclosed,
-	}
 	stmt := table.Input.
 		SELECT(table.Input.Index).
 		FROM(
@@ -401,7 +396,7 @@ func (r *PostgresRepository) HasUndrainedEpochsBeforeBlock(
 			table.Input.EpochApplicationID.EQ(postgres.Int(appID)).
 				AND(table.Input.BlockNumber.LT_EQ(uint64Expr(blockBound))).
 				AND(table.Input.Status.EQ(enum.InputCompletionStatus.None)).
-				AND(table.Epoch.Status.NOT_IN(terminalStatuses...)),
+				AND(table.Epoch.Status.IN(nonTerminalEpochStatusExpressions()...)),
 		).
 		LIMIT(1)
 
@@ -423,14 +418,6 @@ func (r *PostgresRepository) ForecloseUnacceptedEpochsAtOrAfterBlock(
 	appID int64,
 	blockBound uint64,
 ) (int64, error) {
-	statuses := []postgres.Expression{
-		enum.EpochStatus.Open,
-		enum.EpochStatus.Closed,
-		enum.EpochStatus.InputsProcessed,
-		enum.EpochStatus.ClaimComputed,
-		enum.EpochStatus.ClaimSubmitted,
-		enum.EpochStatus.ClaimStaged,
-	}
 	updateStmt := table.Epoch.
 		UPDATE(table.Epoch.Status).
 		SET(enum.EpochStatus.ClaimForeclosed).
@@ -439,7 +426,7 @@ func (r *PostgresRepository) ForecloseUnacceptedEpochsAtOrAfterBlock(
 			table.Epoch.ApplicationID.EQ(postgres.Int64(appID)).
 				AND(table.Epoch.FirstBlock.LT_EQ(uint64Expr(blockBound))).
 				AND(table.Epoch.LastBlock.GT_EQ(uint64Expr(blockBound))).
-				AND(table.Epoch.Status.IN(statuses...)).
+				AND(table.Epoch.Status.IN(nonTerminalEpochStatusExpressions()...)).
 				AND(table.Application.ID.EQ(table.Epoch.ApplicationID)).
 				AND(table.Application.ForecloseBlock.GT(uint64Expr(0))).
 				AND(table.Application.ConsensusType.NOT_EQ(enum.Consensus.Prt)),
@@ -469,38 +456,17 @@ func (r *PostgresRepository) ForecloseUnacceptedEpochsAtOrAfterBlock(
 // valid same-block input that executed before Foreclosure. Authority/Quorum
 // never creates empty epoch rows, so `first_block <= blockBound` does not
 // introduce false positives.
-// unreconciledEpochStatuses are the epoch statuses that still need claim work —
-// every EpochStatus except the terminal CLAIM_ACCEPTED / CLAIM_REJECTED /
-// CLAIM_FORECLOSED. It drives HasUnreconciledClaimsBeforeBlock's filter and
-// MUST stay in sync with the partial-index predicate of "epoch_unreconciled_idx"
-// in 000001_create_initial_schema.up.sql; if the two drift, the query silently
-// stops matching the index and falls back to a full table scan.
-// TestUnreconciledEpochStatusesAreNonTerminal guards this set when a new
-// EpochStatus is added.
-var unreconciledEpochStatuses = []model.EpochStatus{
-	model.EpochStatus_Open,
-	model.EpochStatus_Closed,
-	model.EpochStatus_InputsProcessed,
-	model.EpochStatus_ClaimComputed,
-	model.EpochStatus_ClaimSubmitted,
-	model.EpochStatus_ClaimStaged,
-}
-
 func (r *PostgresRepository) HasUnreconciledClaimsBeforeBlock(
 	ctx context.Context,
 	appID int64,
 	blockBound uint64,
 ) (bool, error) {
-	statuses := make([]postgres.Expression, len(unreconciledEpochStatuses))
-	for i, s := range unreconciledEpochStatuses {
-		statuses[i] = postgres.NewEnumValue(string(s))
-	}
 	stmt := table.Epoch.
 		SELECT(table.Epoch.Index).
 		WHERE(
 			table.Epoch.ApplicationID.EQ(postgres.Int(appID)).
 				AND(table.Epoch.FirstBlock.LT_EQ(uint64Expr(blockBound))).
-				AND(table.Epoch.Status.IN(statuses...)),
+				AND(table.Epoch.Status.IN(nonTerminalEpochStatusExpressions()...)),
 		).
 		LIMIT(1)
 
@@ -511,6 +477,15 @@ func (r *PostgresRepository) HasUnreconciledClaimsBeforeBlock(
 	}
 	defer rows.Close()
 	return rows.Next(), rows.Err()
+}
+
+func nonTerminalEpochStatusExpressions() []postgres.Expression {
+	statuses := model.NonTerminalEpochStatuses()
+	expressions := make([]postgres.Expression, len(statuses))
+	for i, status := range statuses {
+		expressions[i] = postgres.NewEnumValue(status.String())
+	}
+	return expressions
 }
 
 func (r *PostgresRepository) GetLastAcceptedEpochIndex(
@@ -876,7 +851,11 @@ func (r *PostgresRepository) UpdateEpochInputsProcessed(
 	err := r.db.QueryRow(ctx, sqlStr, args...).Scan(&index)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return repository.ErrNoUpdate
+			statusQuery := table.Epoch.SELECT(table.Epoch.Status).FROM(
+				table.Epoch.INNER_JOIN(table.Application, table.Epoch.ApplicationID.EQ(table.Application.ID)),
+			).WHERE(postgres.AND(whereClause, table.Epoch.Index.EQ(uint64Expr(epochIndex))))
+			statusSQL, statusArgs := statusQuery.Sql()
+			return classifyEpochPublicationMiss(r.db.QueryRow(ctx, statusSQL, statusArgs...))
 		}
 		return err
 	}
@@ -885,6 +864,23 @@ func (r *PostgresRepository) UpdateEpochInputsProcessed(
 		return fmt.Errorf("updated epoch index mismatch: expected %d, got %d", epochIndex, index)
 	}
 	return nil
+}
+
+// classifyEpochPublicationMiss distinguishes a completed foreclosure from a
+// missing row or another rejected state transition. The caller must select the
+// status with the same application and epoch identity as the rejected update.
+func classifyEpochPublicationMiss(row pgx.Row) error {
+	var status string
+	if err := row.Scan(&status); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return repository.ErrNoUpdate
+		}
+		return fmt.Errorf("reading epoch status after rejected publication: %w", err)
+	}
+	if status == model.EpochStatus_ClaimForeclosed.String() {
+		return repository.ErrEpochForeclosed
+	}
+	return repository.ErrNoUpdate
 }
 
 func (r *PostgresRepository) ListEpochs(

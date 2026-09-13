@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-jet/jet/v2/postgres"
@@ -40,7 +41,6 @@ func (r *PostgresRepository) CreateApplication(
 			table.Application.WithdrawalLog2MaxNumOfAccounts,
 			table.Application.WithdrawalAccountsDriveStartIndex,
 			table.Application.WithdrawalOutputBuilder,
-			table.Application.DataAvailability,
 			table.Application.ConsensusType,
 			table.Application.Enabled,
 			table.Application.Status,
@@ -73,7 +73,6 @@ func (r *PostgresRepository) CreateApplication(
 			app.WithdrawalConfig.Log2MaxNumOfAccounts,
 			app.WithdrawalConfig.AccountsDriveStartIndex,
 			app.WithdrawalConfig.WithdrawalOutputBuilder,
-			app.DataAvailability,
 			app.ConsensusType,
 			app.Enabled,
 			app.Status,
@@ -187,7 +186,6 @@ func (r *PostgresRepository) GetApplication(
 			table.Application.WithdrawalLog2MaxNumOfAccounts,
 			table.Application.WithdrawalAccountsDriveStartIndex,
 			table.Application.WithdrawalOutputBuilder,
-			table.Application.DataAvailability,
 			table.Application.ConsensusType,
 			table.Application.Enabled,
 			table.Application.Status,
@@ -252,7 +250,6 @@ func (r *PostgresRepository) GetApplication(
 		&app.WithdrawalConfig.Log2MaxNumOfAccounts,
 		&app.WithdrawalConfig.AccountsDriveStartIndex,
 		&app.WithdrawalConfig.WithdrawalOutputBuilder,
-		&app.DataAvailability,
 		&app.ConsensusType,
 		&app.Enabled,
 		&app.Status,
@@ -349,7 +346,6 @@ func (r *PostgresRepository) UpdateApplication(
 			table.Application.WithdrawalLog2MaxNumOfAccounts,
 			table.Application.WithdrawalAccountsDriveStartIndex,
 			table.Application.WithdrawalOutputBuilder,
-			table.Application.DataAvailability,
 			table.Application.ConsensusType,
 			table.Application.IinputboxBlock,
 		).
@@ -367,7 +363,6 @@ func (r *PostgresRepository) UpdateApplication(
 			app.WithdrawalConfig.Log2MaxNumOfAccounts,
 			app.WithdrawalConfig.AccountsDriveStartIndex,
 			app.WithdrawalConfig.WithdrawalOutputBuilder,
-			app.DataAvailability,
 			app.ConsensusType,
 			app.IInputBoxBlock,
 		).
@@ -651,23 +646,15 @@ func getColumnForEvent(event model.MonitoredEvent) (postgres.ColumnFloat, error)
 		return table.Application.LastInputCheckBlock, nil
 	case model.MonitoredEvent_OutputExecuted:
 		return table.Application.LastOutputCheckBlock, nil
-	case model.MonitoredEvent_CommitmentJoined:
-		fallthrough
-	case model.MonitoredEvent_MatchAdvanced:
-		fallthrough
-	case model.MonitoredEvent_MatchCreated:
-		fallthrough
-	case model.MonitoredEvent_MatchDeleted:
-		fallthrough
-	case model.MonitoredEvent_NewInnerTournament:
+	case model.MonitoredEvent_CommitmentJoined, model.MonitoredEvent_MatchAdvanced,
+		model.MonitoredEvent_MatchCreated, model.MonitoredEvent_MatchDeleted, model.MonitoredEvent_NewInnerTournament,
+		model.MonitoredEvent_LeafMatchSealed, model.MonitoredEvent_PartialBondRefund, model.MonitoredEvent_BondRecovered:
 		return table.Application.LastTournamentCheckBlock, nil
-	case model.MonitoredEvent_ClaimSubmitted:
-		fallthrough
-	case model.MonitoredEvent_ClaimAccepted:
-		fallthrough
-	default:
-		return nil, fmt.Errorf("invalid monitored event type: %v", event)
+	case model.MonitoredEvent_ClaimSubmitted, model.MonitoredEvent_ClaimAccepted,
+		model.MonitoredEvent_Foreclosure, model.MonitoredEvent_Withdrawal, model.MonitoredEvent_AccountsDriveMerkleRootProved:
+		// These events use their own claim reconciliation or atomic marker writes.
 	}
+	return nil, fmt.Errorf("invalid monitored event type: %v", event)
 }
 
 func (r *PostgresRepository) GetEventLastCheckBlock(
@@ -823,6 +810,9 @@ func (r *PostgresRepository) ListApplications(
 	p repository.Pagination,
 	descending bool,
 ) ([]*model.Application, uint64, error) {
+	if p.Limit > math.MaxInt64 || p.Offset > math.MaxInt64 {
+		return nil, 0, fmt.Errorf("pagination exceeds PostgreSQL integer range")
+	}
 
 	fromClause := table.Application.INNER_JOIN(
 		table.ExecutionParameters,
@@ -842,11 +832,6 @@ func (r *PostgresRepository) ListApplications(
 			statuses[i] = postgres.NewEnumValue(status.String())
 		}
 		conditions = append(conditions, table.Application.Status.IN(statuses...))
-	}
-	if f.DataAvailability != nil {
-		conditions = append(conditions,
-			SubstrBytea(table.Application.DataAvailability, 1, 4).EQ(postgres.Bytea(f.DataAvailability[:])), //nolint:mnd
-		)
 	}
 	if f.ConsensusType != nil {
 		conditions = append(conditions, table.Application.ConsensusType.EQ(postgres.NewEnumValue(f.ConsensusType.String())))
@@ -900,7 +885,6 @@ func (r *PostgresRepository) ListApplications(
 			table.Application.WithdrawalLog2MaxNumOfAccounts,
 			table.Application.WithdrawalAccountsDriveStartIndex,
 			table.Application.WithdrawalOutputBuilder,
-			table.Application.DataAvailability,
 			table.Application.ConsensusType,
 			table.Application.Enabled,
 			table.Application.Status,
@@ -981,7 +965,6 @@ func (r *PostgresRepository) ListApplications(
 			&app.WithdrawalConfig.Log2MaxNumOfAccounts,
 			&app.WithdrawalConfig.AccountsDriveStartIndex,
 			&app.WithdrawalConfig.WithdrawalOutputBuilder,
-			&app.DataAvailability,
 			&app.ConsensusType,
 			&app.Enabled,
 			&app.Status,

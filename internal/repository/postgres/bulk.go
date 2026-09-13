@@ -682,7 +682,13 @@ func updateEpochClaim(
 		return fmt.Errorf("SetEpochClaimAndInsertProofsTransaction failed: %w", err)
 	}
 	if cmd.RowsAffected() != 1 {
-		return fmt.Errorf("failed to update application %d epoch %d: no rows affected", e.ApplicationID, e.Index)
+		statusQuery := table.Epoch.SELECT(table.Epoch.Status).WHERE(postgres.AND(
+			table.Epoch.ApplicationID.EQ(postgres.Int64(e.ApplicationID)),
+			table.Epoch.Index.EQ(uint64Expr(e.Index)),
+		))
+		statusSQL, statusArgs := statusQuery.Sql()
+		return fmt.Errorf("failed to update application %d epoch %d: %w", e.ApplicationID, e.Index,
+			classifyEpochPublicationMiss(tx.QueryRow(ctx, statusSQL, statusArgs...)))
 	}
 	return nil
 }

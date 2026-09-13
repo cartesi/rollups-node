@@ -68,7 +68,6 @@ DROP TABLE IF EXISTS "execution_parameters";
 
 DROP TRIGGER IF EXISTS "application_validate_status_transition" ON "application";
 DROP TRIGGER IF EXISTS "application_set_updated_at" ON "application";
-DROP INDEX IF EXISTS "application_data_availability_selector_idx";
 DROP INDEX IF EXISTS "application_foreclosed_idx";
 DROP TABLE IF EXISTS "application";
 
@@ -84,7 +83,6 @@ DROP TYPE IF EXISTS "EpochStatus";
 DROP TYPE IF EXISTS "DefaultBlock";
 DROP TYPE IF EXISTS "InputCompletionStatus";
 DROP TYPE IF EXISTS "ApplicationStatus";
-DROP DOMAIN IF EXISTS "data_availability";
 DROP DOMAIN IF EXISTS "hash";
 DROP DOMAIN IF EXISTS "uint64";
 DROP DOMAIN IF EXISTS "ethereum_address";
