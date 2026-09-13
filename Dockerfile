@@ -112,8 +112,8 @@ RUN make build-go
 FROM go-builder AS tester
 
 # Install golangci-lint for linting inside Docker.
-ARG GOLANGCI_LINT_VERSION=1.64.5
-RUN go install github.com/golangci/golangci-lint/cmd/golangci-lint@v${GOLANGCI_LINT_VERSION}
+ARG GOLANGCI_LINT_VERSION=2.13.2
+RUN GOTOOLCHAIN=local go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v${GOLANGCI_LINT_VERSION}
 
 # Install gotestsum for test output formatting and summaries.
 ARG GOTESTSUM_VERSION=1.13.0
