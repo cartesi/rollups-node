@@ -31,8 +31,8 @@ func TestBuildIConsensusInputScanUnits_GroupsByInputBoxAndCursor(t *testing.T) {
 		{
 			name: "same input box and cursor share one unit",
 			apps: []appContracts{
-				inputUnitApp(1, inputBoxA, 10, true),
-				inputUnitApp(2, inputBoxA, 10, true),
+				inputUnitApp(1, inputBoxA, 10),
+				inputUnitApp(2, inputBoxA, 10),
 			},
 			units: map[common.Address]map[iConsensusInputScanRange][]int64{
 				inputBoxA: {{10, 20}: {1, 2}},
@@ -41,8 +41,8 @@ func TestBuildIConsensusInputScanUnits_GroupsByInputBoxAndCursor(t *testing.T) {
 		{
 			name: "same input box and different cursor produce separate units",
 			apps: []appContracts{
-				inputUnitApp(1, inputBoxA, 10, true),
-				inputUnitApp(2, inputBoxA, 11, true),
+				inputUnitApp(1, inputBoxA, 10),
+				inputUnitApp(2, inputBoxA, 11),
 			},
 			units: map[common.Address]map[iConsensusInputScanRange][]int64{
 				inputBoxA: {{10, 20}: {1}, {11, 20}: {2}},
@@ -51,8 +51,8 @@ func TestBuildIConsensusInputScanUnits_GroupsByInputBoxAndCursor(t *testing.T) {
 		{
 			name: "different input boxes produce separate units",
 			apps: []appContracts{
-				inputUnitApp(1, inputBoxA, 10, true),
-				inputUnitApp(2, inputBoxB, 10, true),
+				inputUnitApp(1, inputBoxA, 10),
+				inputUnitApp(2, inputBoxB, 10),
 			},
 			units: map[common.Address]map[iConsensusInputScanRange][]int64{
 				inputBoxA: {{10, 20}: {1}},
@@ -60,19 +60,9 @@ func TestBuildIConsensusInputScanUnits_GroupsByInputBoxAndCursor(t *testing.T) {
 			},
 		},
 		{
-			name: "non-InputBox data availability apps are excluded",
-			apps: []appContracts{
-				inputUnitApp(1, inputBoxA, 10, true),
-				inputUnitApp(2, inputBoxA, 10, false),
-			},
-			units: map[common.Address]map[iConsensusInputScanRange][]int64{
-				inputBoxA: {{10, 20}: {1}},
-			},
-		},
-		{
 			name: "foreclosed app scans only through the foreclose block",
 			apps: []appContracts{
-				inputUnitAppWithForeclose(1, inputBoxA, 10, true, 15),
+				inputUnitAppWithForeclose(1, inputBoxA, 10, 15),
 			},
 			units: map[common.Address]map[iConsensusInputScanRange][]int64{
 				inputBoxA: {{10, 15}: {1}},
@@ -81,15 +71,15 @@ func TestBuildIConsensusInputScanUnits_GroupsByInputBoxAndCursor(t *testing.T) {
 		{
 			name: "foreclosed app already checked through foreclosure is excluded",
 			apps: []appContracts{
-				inputUnitAppWithForeclose(1, inputBoxA, 15, true, 15),
+				inputUnitAppWithForeclose(1, inputBoxA, 15, 15),
 			},
 			units: map[common.Address]map[iConsensusInputScanRange][]int64{},
 		},
 		{
 			name: "same input box and cursor split when foreclosure changes end block",
 			apps: []appContracts{
-				inputUnitApp(1, inputBoxA, 10, true),
-				inputUnitAppWithForeclose(2, inputBoxA, 10, true, 15),
+				inputUnitApp(1, inputBoxA, 10),
+				inputUnitAppWithForeclose(2, inputBoxA, 10, 15),
 			},
 			units: map[common.Address]map[iConsensusInputScanRange][]int64{
 				inputBoxA: {{10, 20}: {1}, {10, 15}: {2}},
@@ -115,7 +105,7 @@ func TestBuildIConsensusInputScanUnits_InitializesBeforeGrouping(t *testing.T) {
 		repository: repo,
 	}
 	inputBox := common.HexToAddress("0x00000000000000000000000000000000000000a1")
-	app := inputUnitApp(1, inputBox, 0, true)
+	app := inputUnitApp(1, inputBox, 0)
 	app.application.IInputBoxBlock = 7
 
 	units := reader.buildIConsensusInputScanUnits(ctx, []appContracts{app}, 20)
@@ -133,9 +123,9 @@ func TestBuildIConsensusInputScanUnits_FailedInitializationExcludesOnlyThatApp(t
 		Service: service.Service{Logger: testLogger(t)},
 	}
 	inputBox := common.HexToAddress("0x00000000000000000000000000000000000000a1")
-	broken := inputUnitApp(1, inputBox, 0, true)
+	broken := inputUnitApp(1, inputBox, 0)
 	broken.application.IInputBoxBlock = 0
-	good := inputUnitApp(2, inputBox, 10, true)
+	good := inputUnitApp(2, inputBox, 10)
 
 	units := reader.buildIConsensusInputScanUnits(ctx, []appContracts{broken, good}, 20)
 
@@ -144,28 +134,22 @@ func TestBuildIConsensusInputScanUnits_FailedInitializationExcludesOnlyThatApp(t
 	}, inputScanUnitIDs(units))
 }
 
-func inputUnitApp(id int64, inputBox common.Address, cursor uint64, hasInputBoxDA bool) appContracts {
-	return inputUnitAppWithForeclose(id, inputBox, cursor, hasInputBoxDA, 0)
+func inputUnitApp(id int64, inputBox common.Address, cursor uint64) appContracts {
+	return inputUnitAppWithForeclose(id, inputBox, cursor, 0)
 }
 
 func inputUnitAppWithForeclose(
 	id int64,
 	inputBox common.Address,
 	cursor uint64,
-	hasInputBoxDA bool,
 	forecloseBlock uint64,
 ) appContracts {
-	dataAvailability := []byte{0xff}
-	if hasInputBoxDA {
-		dataAvailability = DataAvailability_InputBox[:]
-	}
 	return appContracts{application: &Application{
 		ID:                  id,
 		Name:                "app",
 		IApplicationAddress: common.BigToAddress(big.NewInt(id)),
 		IInputBoxAddress:    inputBox,
 		IInputBoxBlock:      1,
-		DataAvailability:    dataAvailability,
 		Enabled:             true,
 		Status:              ApplicationStatus_OK,
 		LastInputCheckBlock: cursor,

@@ -37,7 +37,6 @@ var (
 	claimerPollInterval    string
 	prtPollInterval        string
 	maxStartupTime         string
-	enableInputReader      bool
 	enableInspect          bool
 	enableJsonrpc          bool
 	enableSubmission       bool
@@ -103,8 +102,6 @@ func init() {
 		"PRT poll interval")
 	cli.AddFlagStrVar(flags, &maxStartupTime, "max-startup-time", config.MAX_STARTUP_TIME,
 		"Maximum startup time in seconds")
-	cli.AddFlagBoolVar(flags, &enableInputReader, "input-reader", config.FEATURE_INPUT_READER_ENABLED,
-		"Enable or disable the input reader (for external input readers)")
 	cli.AddFlagBoolVar(flags, &enableInspect, "inspect-enabled", config.FEATURE_INSPECT_ENABLED,
 		"Enable or disable the inspect service")
 	cli.AddFlagBoolVar(flags, &enableJsonrpc, "jsonrpc-enabled", config.FEATURE_JSONRPC_API_ENABLED,

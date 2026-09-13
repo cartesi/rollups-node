@@ -311,7 +311,6 @@ func (s *EvmReaderSuite) TestBlockRegressionDoesNotWriteToDb() {
 		Name:                "test-app",
 		IApplicationAddress: app1Addr,
 		IInputBoxAddress:    inputBoxAddr,
-		DataAvailability:    DataAvailability_InputBox[:],
 		EpochLength:         10,
 		LastInputCheckBlock: 100,
 	}
@@ -424,7 +423,6 @@ func (s *EvmReaderSuite) TestIConsensusInputCountMismatchSkipsApp() {
 		Name:                "test-app",
 		IApplicationAddress: addr,
 		IInputBoxAddress:    inputBoxAddr,
-		DataAvailability:    DataAvailability_InputBox[:],
 		EpochLength:         10,
 		LastInputCheckBlock: 100,
 	}
@@ -474,7 +472,6 @@ func (s *EvmReaderSuite) TestIConsensusInputCountValidationUsesObservedEndCount(
 		Name:                "test-app",
 		IApplicationAddress: addr,
 		IInputBoxAddress:    inputBoxAddr,
-		DataAvailability:    DataAvailability_InputBox[:],
 		EpochLength:         10,
 		LastInputCheckBlock: 100,
 	}
@@ -542,7 +539,6 @@ func (s *EvmReaderSuite) TestEpochLengthZeroSetsAppCorrupted() {
 			Name:                "test-app",
 			IApplicationAddress: addr,
 			IInputBoxAddress:    inputBoxAddr,
-			DataAvailability:    DataAvailability_InputBox[:],
 			EpochLength:         0, // will trigger corrupted
 			LastInputCheckBlock: 100,
 		},

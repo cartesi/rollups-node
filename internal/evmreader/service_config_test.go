@@ -63,9 +63,8 @@ func TestCreateAcceptsRequestTimeoutBelowPollingInterval(t *testing.T) {
 	defer client.Close()
 
 	rawConfig, err := json.Marshal(PersistentConfig{
-		DefaultBlock:       DefaultBlock_Finalized,
-		InputReaderEnabled: true,
-		ChainID:            chainID,
+		DefaultBlock: DefaultBlock_Finalized,
+		ChainID:      chainID,
 	})
 	require.NoError(t, err)
 
@@ -84,7 +83,6 @@ func TestCreateAcceptsRequestTimeoutBelowPollingInterval(t *testing.T) {
 			BlockchainHttpRequestTimeout: requestTimeout,
 			BlockchainId:                 chainID,
 			EvmReaderPollingInterval:     pollInterval,
-			FeatureInputReaderEnabled:    true,
 		},
 		EthClient:  client,
 		Repository: repo,
@@ -133,83 +131,83 @@ func (s *EvmReaderSuite) TestFetchMostRecentHeaderSuccess() {
 	s.Require().Equal(expected.Number.Uint64(), header)
 }
 
-// --- inputReaderEnabled feature flag tests ---
-
-func (s *EvmReaderSuite) TestInputReaderDisabledSkipsInputChecks() {
-	s.evmReader.inputReaderEnabled = false
-
-	app := &Application{
-		Name:                "test-app",
-		IApplicationAddress: app1Addr,
-		IInputBoxAddress:    inputBoxAddr,
-		DataAvailability:    DataAvailability_InputBox[:],
-		EpochLength:         10,
-		LastInputCheckBlock: 100,
-	}
-	apps := []appContracts{{application: app}}
-
-	repo := newMockRepository()
-	s.evmReader.repository = repo
-
-	s.evmReader.scanIConsensusInputs(s.ctx, apps, 200)
-
-	repo.AssertNumberOfCalls(s.T(), "GetNumberOfInputs", 0)
-	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
-	repo.AssertNumberOfCalls(s.T(), "GetEpoch", 0)
-}
-
-func (s *EvmReaderSuite) TestInputReaderDisabledSkipsEpochChecks() {
-	s.evmReader.inputReaderEnabled = false
-
-	apps := []appContracts{{
-		application: &Application{
-			Name:                "test-app",
-			IApplicationAddress: app1Addr,
-			IConsensusAddress:   consensusAddr,
-		},
-	}}
-
-	repo := newMockRepository()
-	s.evmReader.repository = repo
-
-	s.evmReader.scanDaveConsensusEpochsAndInputs(s.ctx, apps, 200)
-
-	repo.AssertNumberOfCalls(s.T(), "GetLastNonOpenEpoch", 0)
-	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
-}
-
 // --- setupPersistentConfig tests ---
 
 func (s *EvmReaderSuite) TestSetupPersistentConfigFirstRun() {
+	initial := PersistentConfig{DefaultBlock: DefaultBlock_Finalized, ChainID: 42}
+	raw, err := json.Marshal(initial)
+	s.Require().NoError(err)
 	repo := newMockRepository()
 	repo.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
-		Return(([]byte)(nil), time.Time{}, time.Time{}, repository.ErrNotFound)
-	repo.On("SaveNodeConfigRaw", mock.Anything, EvmReaderConfigKey, mock.Anything).
-		Return(nil)
+		Return(([]byte)(nil), time.Time{}, time.Time{}, repository.ErrNotFound).Once()
+	repo.On("InitializeNodeConfigRaw", mock.Anything, EvmReaderConfigKey, raw).Return(nil).Once()
+	repo.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
+		Return(raw, time.Time{}, time.Time{}, nil).Once()
 
 	s.evmReader.repository = repo
 
 	cfg := &config.EvmreaderConfig{
-		BlockchainDefaultBlock:    DefaultBlock_Finalized,
-		FeatureInputReaderEnabled: true,
-		BlockchainId:              42,
+		BlockchainDefaultBlock: DefaultBlock_Finalized,
+		BlockchainId:           42,
 	}
 
 	result, err := s.evmReader.setupPersistentConfig(s.ctx, cfg)
 	s.Require().NoError(err)
 	s.Require().NotNil(result)
 	s.Require().Equal(DefaultBlock_Finalized, result.DefaultBlock)
-	s.Require().True(result.InputReaderEnabled)
 	s.Require().Equal(uint64(42), result.ChainID)
 
-	repo.AssertNumberOfCalls(s.T(), "SaveNodeConfigRaw", 1)
+	repo.AssertNumberOfCalls(s.T(), "SaveNodeConfigRaw", 0)
+	repo.AssertExpectations(s.T())
 }
 
-func (s *EvmReaderSuite) TestSetupPersistentConfigExistingConfigWins() {
+func (s *EvmReaderSuite) TestSetupPersistentConfigRejectsConcurrentInitializer() {
+	repo := newMockRepository()
+	repo.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
+		Return(([]byte)(nil), time.Time{}, time.Time{}, repository.ErrNotFound).Once()
+	repo.On("InitializeNodeConfigRaw", mock.Anything, EvmReaderConfigKey, mock.Anything).Return(nil).Once()
+	// A different initializer wins after our first read. Never use our unsaved request.
+	repo.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
+		Return([]byte(`{"DefaultBlock":"LATEST","ChainID":42}`), time.Time{}, time.Time{}, nil).Once()
+	s.evmReader.repository = repo
+	result, err := s.evmReader.setupPersistentConfig(s.ctx, &config.EvmreaderConfig{
+		BlockchainId: 42, BlockchainDefaultBlock: DefaultBlock_Finalized,
+	})
+	s.Require().Nil(result)
+	s.Require().ErrorContains(err, "observation policy mismatch: database=LATEST, configured=FINALIZED")
+	repo.AssertNumberOfCalls(s.T(), "SaveNodeConfigRaw", 0)
+	repo.AssertExpectations(s.T())
+}
+
+func (s *EvmReaderSuite) TestSetupPersistentConfigValidatesSavedFields() {
+	for _, test := range []struct{ raw, want string }{
+		{`{}`, "non-null DefaultBlock and ChainID"},
+		{`null`, "non-null DefaultBlock and ChainID"},
+		{`{"DefaultBlock":"FINALIZED","ChainID":0}`, "ChainID must be greater than zero"},
+		{`{"DefaultBlock":"INVALID","ChainID":42}`, "invalid DefaultBlock"},
+		{`{"DefaultBlock":"LATEST","ChainID":42}`, "database=LATEST, configured=FINALIZED"},
+	} {
+		s.Run(test.raw, func() {
+			repo := newMockRepository()
+			repo.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
+				Return([]byte(test.raw), time.Time{}, time.Time{}, nil).Once()
+			s.evmReader.repository = repo
+			result, err := s.evmReader.setupPersistentConfig(s.ctx, &config.EvmreaderConfig{
+				BlockchainId: 42, BlockchainDefaultBlock: DefaultBlock_Finalized,
+			})
+			s.Require().Nil(result)
+			s.Require().ErrorContains(err, test.want)
+			repo.AssertNumberOfCalls(s.T(), "SaveNodeConfigRaw", 0)
+			repo.AssertNumberOfCalls(s.T(), "InitializeNodeConfigRaw", 0)
+			repo.AssertExpectations(s.T())
+		})
+	}
+}
+
+func (s *EvmReaderSuite) TestSetupPersistentConfigRejectsDifferentConfig() {
 	existingJSON, err := json.Marshal(PersistentConfig{
-		DefaultBlock:       DefaultBlock_Safe,
-		InputReaderEnabled: false,
-		ChainID:            99,
+		DefaultBlock: DefaultBlock_Safe,
+		ChainID:      99,
 	})
 	s.Require().NoError(err)
 
@@ -219,20 +217,15 @@ func (s *EvmReaderSuite) TestSetupPersistentConfigExistingConfigWins() {
 
 	s.evmReader.repository = repo
 
-	// Env config has DIFFERENT values — should be ignored
+	// A restart must not silently use values different from the requested ones.
 	cfg := &config.EvmreaderConfig{
-		BlockchainDefaultBlock:    DefaultBlock_Latest,
-		FeatureInputReaderEnabled: true,
-		BlockchainId:              1,
+		BlockchainDefaultBlock: DefaultBlock_Latest,
+		BlockchainId:           1,
 	}
 
 	result, err := s.evmReader.setupPersistentConfig(s.ctx, cfg)
-	s.Require().NoError(err)
-
-	// Existing config wins
-	s.Require().Equal(DefaultBlock_Safe, result.DefaultBlock)
-	s.Require().False(result.InputReaderEnabled)
-	s.Require().Equal(uint64(99), result.ChainID)
+	s.Require().ErrorContains(err, "chain ID mismatch: database=99, configured=1")
+	s.Require().Nil(result)
 
 	// SaveNodeConfigRaw must NOT be called
 	repo.AssertNumberOfCalls(s.T(), "SaveNodeConfigRaw", 0)
@@ -245,7 +238,9 @@ func (s *EvmReaderSuite) TestSetupPersistentConfigDBError() {
 
 	s.evmReader.repository = repo
 
-	_, err := s.evmReader.setupPersistentConfig(s.ctx, &config.EvmreaderConfig{})
+	_, err := s.evmReader.setupPersistentConfig(s.ctx, &config.EvmreaderConfig{
+		BlockchainId: 42, BlockchainDefaultBlock: DefaultBlock_Finalized,
+	})
 	s.Require().Error(err)
 	s.Require().ErrorContains(err, "database unreachable")
 }

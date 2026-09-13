@@ -67,7 +67,7 @@ func (s *EvmReaderSuite) setupOutputExecution() {
 		mock.Anything,
 		MonitoredEvent_InputAdded,
 		mock.Anything,
-	).Return(nil).Times(1)
+	).Return(nil).Times(5)
 	s.repository.On("UpdateEventLastCheckBlock",
 		mock.Anything,
 		mock.Anything,
@@ -551,6 +551,7 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenRetrieveOutputsFails() {
 
 	apps = copyApplications(applications)
 	apps[0].LastInputCheckBlock = 0x11
+	apps[1].LastInputCheckBlock = 0x11
 	apps[0].LastOutputCheckBlock = 0x0F
 	apps[1].LastOutputCheckBlock = 0x11
 	s.repository.On("ListApplications",
@@ -562,6 +563,7 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenRetrieveOutputsFails() {
 
 	apps = copyApplications(applications)
 	apps[0].LastInputCheckBlock = 0x12
+	apps[1].LastInputCheckBlock = 0x12
 	apps[0].LastOutputCheckBlock = 0x0F
 	apps[1].LastOutputCheckBlock = 0x12
 	s.repository.On("ListApplications",
@@ -589,7 +591,7 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenRetrieveOutputsFails() {
 		mock.Anything,
 		MonitoredEvent_InputAdded,
 		mock.Anything,
-	).Return(nil).Times(1)
+	).Return(nil).Times(5)
 	s.repository.On("UpdateEventLastCheckBlock",
 		mock.Anything,
 		mock.Anything,
@@ -655,6 +657,7 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenGetOutputsFails() {
 
 	apps = copyApplications(applications)
 	apps[0].LastInputCheckBlock = 0x11
+	apps[1].LastInputCheckBlock = 0x11
 	apps[0].LastOutputCheckBlock = 0x0F
 	apps[1].LastOutputCheckBlock = 0x11
 	s.repository.On("ListApplications",
@@ -666,6 +669,7 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenGetOutputsFails() {
 
 	apps = copyApplications(applications)
 	apps[0].LastInputCheckBlock = 0x12
+	apps[1].LastInputCheckBlock = 0x12
 	apps[0].LastOutputCheckBlock = 0x0F
 	apps[1].LastOutputCheckBlock = 0x12
 	s.repository.On("ListApplications",
@@ -692,7 +696,7 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenGetOutputsFails() {
 		mock.Anything,
 		MonitoredEvent_InputAdded,
 		mock.Anything,
-	).Return(nil).Times(1)
+	).Return(nil).Times(5)
 	s.repository.On("UpdateEventLastCheckBlock",
 		mock.Anything,
 		mock.Anything,
@@ -730,12 +734,11 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 	s.contractFactory = newMockAdapterFactory()
 
 	s.evmReader = &Service{
-		client:             s.client,
-		repository:         s.repository,
-		defaultBlock:       DefaultBlock_Latest,
-		adapterFactory:     s.contractFactory,
-		hasEnabledApps:     true,
-		inputReaderEnabled: true,
+		client:         s.client,
+		repository:     s.repository,
+		defaultBlock:   DefaultBlock_Latest,
+		adapterFactory: s.contractFactory,
+		hasEnabledApps: true,
 	}
 
 	logLevel, err := config.GetLogLevel()
@@ -766,6 +769,7 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 	).Return(apps, uint64(2), nil).Once()
 
 	apps = copyApplications(applications[1:2])
+	apps[0].LastInputCheckBlock = 0x11
 	apps[0].LastOutputCheckBlock = 0x11
 	apps[0].LastForecloseCheckBlock = 0x100
 	s.repository.On("ListApplications",
@@ -776,6 +780,7 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 	).Return(apps, uint64(1), nil).Once()
 
 	apps = copyApplications(applications[1:2])
+	apps[0].LastInputCheckBlock = 0x12
 	apps[0].LastOutputCheckBlock = 0x12
 	apps[0].LastForecloseCheckBlock = 0x100
 	s.repository.On("ListApplications",
@@ -793,7 +798,7 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 		mock.Anything,
 		MonitoredEvent_InputAdded,
 		mock.Anything,
-	).Return(nil).Times(1)
+	).Return(nil).Times(5)
 	s.repository.On("UpdateEventLastCheckBlock",
 		mock.Anything,
 		mock.Anything,
@@ -806,10 +811,8 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 		mock.Anything,
 	).Return(nil).Maybe()
 
-	s.repository.On("GetNumberOfInputs",
-		mock.Anything,
-		mock.Anything,
-	).Once().Return(uint64(0), nil)
+	s.repository.On("GetNumberOfInputs", mock.Anything, app1Addr.String()).Once().Return(uint64(0), nil)
+	s.repository.On("GetNumberOfInputs", mock.Anything, app2Addr.String()).Return(uint64(0), nil).Times(3)
 
 	s.repository.On("GetNumberOfExecutedOutputs",
 		mock.Anything,
@@ -822,10 +825,9 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 		mock.Anything,
 		mock.Anything).Return(nil).Once()
 
-	s.repository.On("GetEpoch",
-		mock.Anything,
-		mock.Anything,
-		uint64(0)).Return(nil, nil).Once()
+	s.repository.On("GetEpoch", mock.Anything, app1Addr.String(), uint64(0)).Return(nil, nil).Once()
+	s.repository.On("GetEpoch", mock.Anything, app2Addr.String(), uint64(0)).Return(nil, nil).Once()
+	s.repository.On("GetEpoch", mock.Anything, app2Addr.String(), uint64(1)).Return(nil, nil).Twice()
 
 	output := &Output{
 		Index:   1,
@@ -866,15 +868,17 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 
 	s.inputBox.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x11 }),
-		mock.Anything,
+		[]common.Address{app1Addr},
 		mock.Anything,
 	).Return([]iinputbox.IInputBoxInputAdded{inputAddedEvent0}, nil)
 
 	// On-chain: 0 inputs before block 0x11, 1 from block 0x11
-	s.inputBox.On("GetNumberOfInputs", blockRange(0, 0x11), mock.Anything).
+	s.inputBox.On("GetNumberOfInputs", blockRange(0, 0x11), app1Addr).
 		Return(new(big.Int).SetUint64(0), nil)
-	s.inputBox.On("GetNumberOfInputs", blockFrom(0x11), mock.Anything).
+	s.inputBox.On("GetNumberOfInputs", blockFrom(0x11), app1Addr).
 		Return(new(big.Int).SetUint64(1), nil)
+	s.inputBox.On("GetNumberOfInputs", mock.Anything, app2Addr).
+		Return(new(big.Int).SetUint64(0), nil)
 
 	s.contractFactory.On("CreateAdapters",
 		mock.MatchedBy(func(app *Application) bool {
@@ -885,7 +889,7 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 		mock.MatchedBy(func(app *Application) bool {
 			return app.IApplicationAddress == applications[1].IApplicationAddress
 		}),
-	).Return(s.applicationContract2, nil, nil, nil)
+	).Return(s.applicationContract2, s.inputBox, nil, nil)
 }
 
 func (s *EvmReaderSuite) TestCheckOutputFailsWhenOutputMismatches() {

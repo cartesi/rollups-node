@@ -20,16 +20,19 @@ import (
 // Interface for DaveConsensus reading
 type DaveConsensusAdapter interface {
 	GetInputBox(opts *bind.CallOpts) (common.Address, error)
-	GetCurrentSealedEpoch(opts *bind.CallOpts) (struct {
-		EpochNumber          *big.Int
-		InputIndexLowerBound *big.Int
-		InputIndexUpperBound *big.Int
-		Tournament           common.Address
-	}, error)
+	GetCurrentSealedEpoch(opts *bind.CallOpts) (DaveCurrentSealedEpoch, error)
 	GetApplicationContract(opts *bind.CallOpts) (common.Address, error)
 	GetTournamentFactory(opts *bind.CallOpts) (common.Address, error)
 	GetDeploymentBlockNumber(opts *bind.CallOpts) (*big.Int, error)
 	RetrieveSealedEpochs(opts *bind.FilterOpts) ([]*idaveconsensus.IDaveConsensusEpochSealed, error)
+}
+
+// DaveCurrentSealedEpoch contains the fields used to observe sealed epochs.
+type DaveCurrentSealedEpoch struct {
+	EpochNumber          *big.Int
+	InputIndexLowerBound *big.Int
+	InputIndexUpperBound *big.Int
+	Tournament           common.Address
 }
 
 // DaveConsensus Wrapper
@@ -88,13 +91,17 @@ func (d *DaveConsensusAdapterImpl) GetInputBox(opts *bind.CallOpts) (common.Addr
 	return d.daveConsensus.GetInputBox(opts)
 }
 
-func (d *DaveConsensusAdapterImpl) GetCurrentSealedEpoch(opts *bind.CallOpts) (struct {
-	EpochNumber          *big.Int
-	InputIndexLowerBound *big.Int
-	InputIndexUpperBound *big.Int
-	Tournament           common.Address
-}, error) {
-	return d.daveConsensus.GetCurrentSealedEpoch(opts)
+func (d *DaveConsensusAdapterImpl) GetCurrentSealedEpoch(opts *bind.CallOpts) (DaveCurrentSealedEpoch, error) {
+	result, err := d.daveConsensus.GetCurrentSealedEpoch(opts)
+	if err != nil {
+		return DaveCurrentSealedEpoch{}, err
+	}
+	return DaveCurrentSealedEpoch{
+		EpochNumber:          result.EpochNumber,
+		InputIndexLowerBound: result.InputIndexLowerBound,
+		InputIndexUpperBound: result.InputIndexUpperBound,
+		Tournament:           result.Tournament,
+	}, nil
 }
 
 func (d *DaveConsensusAdapterImpl) GetApplicationContract(opts *bind.CallOpts) (common.Address, error) {

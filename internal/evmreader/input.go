@@ -77,10 +77,6 @@ func (r *Service) scanIConsensusInputs(
 	applications []appContracts,
 	mostRecentBlockNumber uint64,
 ) {
-	if !r.inputReaderEnabled {
-		return
-	}
-
 	r.Logger.Debug("Checking for new inputs")
 
 	for _, unit := range r.buildIConsensusInputScanUnits(ctx, applications, mostRecentBlockNumber) {
@@ -95,9 +91,6 @@ func (r *Service) buildIConsensusInputScanUnits(
 ) []iConsensusInputScanUnit {
 	appsByInputBox := map[common.Address][]appContracts{}
 	for _, app := range applications {
-		if !app.application.HasDataAvailabilitySelector(DataAvailability_InputBox) {
-			continue
-		}
 		key := app.application.IInputBoxAddress
 		appsByInputBox[key] = append(appsByInputBox[key], app)
 	}

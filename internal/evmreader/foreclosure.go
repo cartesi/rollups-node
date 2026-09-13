@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/cartesi/rollups-node/internal/appstatus"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
@@ -190,6 +191,7 @@ func (r *Service) checkForForeclosure(
 			"address", app.application.IApplicationAddress,
 			"foreclose_block", block,
 			"foreclose_transaction", txHash)
+		appstatus.WarnBlockedForeclosure(r.Logger, app.application)
 	}
 }
 

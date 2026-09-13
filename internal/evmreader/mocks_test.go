@@ -122,32 +122,34 @@ func (m *MockInputBox) SetupDefaultBehavior() *MockInputBox {
 	// RetrieveInputs: matched by Start block, not call order.
 	m.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x11 }),
-		mock.Anything,
+		[]common.Address{app1Addr},
 		mock.Anything,
 	).Return([]iinputbox.IInputBoxInputAdded{inputAddedEvent0}, nil)
 
 	m.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x12 }),
-		mock.Anything,
+		[]common.Address{app1Addr},
 		mock.Anything,
 	).Return([]iinputbox.IInputBoxInputAdded{inputAddedEvent1}, nil)
 
 	m.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x13 }),
-		mock.Anything,
+		[]common.Address{app1Addr},
 		mock.Anything,
 	).Return([]iinputbox.IInputBoxInputAdded{inputAddedEvent2, inputAddedEvent3}, nil)
 
 	// GetNumberOfInputs: block-based matching models the on-chain state.
 	// Each range returns the input count at that point in the blockchain.
-	m.On("GetNumberOfInputs", blockRange(0, 0x11), mock.Anything).
+	m.On("GetNumberOfInputs", blockRange(0, 0x11), app1Addr).
 		Return(new(big.Int).SetUint64(0), nil)
-	m.On("GetNumberOfInputs", blockRange(0x11, 0x12), mock.Anything).
+	m.On("GetNumberOfInputs", blockRange(0x11, 0x12), app1Addr).
 		Return(new(big.Int).SetUint64(1), nil)
-	m.On("GetNumberOfInputs", blockRange(0x12, 0x13), mock.Anything).
+	m.On("GetNumberOfInputs", blockRange(0x12, 0x13), app1Addr).
 		Return(new(big.Int).SetUint64(2), nil)
-	m.On("GetNumberOfInputs", blockFrom(0x13), mock.Anything).
+	m.On("GetNumberOfInputs", blockFrom(0x13), app1Addr).
 		Return(new(big.Int).SetUint64(4), nil)
+	m.On("GetNumberOfInputs", mock.Anything, app2Addr).
+		Return(new(big.Int).SetUint64(0), nil)
 	return m
 }
 
@@ -200,6 +202,7 @@ func (m *MockRepository) SetupDefaultBehavior() *MockRepository {
 
 	apps = copyApplications(applications)
 	apps[0].LastInputCheckBlock = 0x11
+	apps[1].LastInputCheckBlock = 0x11
 	apps[0].LastOutputCheckBlock = 0x11
 	apps[1].LastOutputCheckBlock = 0x11
 	m.On("ListApplications",
@@ -211,6 +214,7 @@ func (m *MockRepository) SetupDefaultBehavior() *MockRepository {
 
 	apps = copyApplications(applications)
 	apps[0].LastInputCheckBlock = 0x12
+	apps[1].LastInputCheckBlock = 0x12
 	apps[0].LastOutputCheckBlock = 0x12
 	apps[1].LastOutputCheckBlock = 0x12
 	m.On("ListApplications",
@@ -225,7 +229,7 @@ func (m *MockRepository) SetupDefaultBehavior() *MockRepository {
 		mock.Anything,
 		MonitoredEvent_InputAdded,
 		mock.Anything,
-	).Return(nil).Times(1)
+	).Return(nil).Times(5)
 	m.On("UpdateEventLastCheckBlock",
 		mock.Anything,
 		mock.Anything,
@@ -238,18 +242,10 @@ func (m *MockRepository) SetupDefaultBehavior() *MockRepository {
 		mock.Anything,
 	).Return(nil).Maybe()
 
-	m.On("GetNumberOfInputs",
-		mock.Anything,
-		mock.Anything,
-	).Once().Return(uint64(0), nil)
-	m.On("GetNumberOfInputs",
-		mock.Anything,
-		mock.Anything,
-	).Once().Return(uint64(1), nil)
-	m.On("GetNumberOfInputs",
-		mock.Anything,
-		mock.Anything,
-	).Once().Return(uint64(2), nil)
+	m.On("GetNumberOfInputs", mock.Anything, app1Addr.String()).Once().Return(uint64(0), nil)
+	m.On("GetNumberOfInputs", mock.Anything, app1Addr.String()).Once().Return(uint64(1), nil)
+	m.On("GetNumberOfInputs", mock.Anything, app1Addr.String()).Once().Return(uint64(2), nil)
+	m.On("GetNumberOfInputs", mock.Anything, app2Addr.String()).Return(uint64(0), nil).Times(3)
 
 	m.On("GetNumberOfExecutedOutputs",
 		mock.Anything,
@@ -261,14 +257,8 @@ func (m *MockRepository) SetupDefaultBehavior() *MockRepository {
 		mock.Anything,
 		mock.Anything).Return(nil)
 
-	m.On("GetEpoch",
-		mock.Anything,
-		mock.Anything,
-		uint64(0)).Return(nil, nil).Once()
-	m.On("GetEpoch",
-		mock.Anything,
-		mock.Anything,
-		uint64(1)).Return(
+	m.On("GetEpoch", mock.Anything, app1Addr.String(), uint64(0)).Return(nil, nil).Once()
+	m.On("GetEpoch", mock.Anything, app1Addr.String(), uint64(1)).Return(
 		&Epoch{
 			Index:                1,
 			FirstBlock:           11,
@@ -277,6 +267,8 @@ func (m *MockRepository) SetupDefaultBehavior() *MockRepository {
 			TxBufferDataBlock:    nil,
 			ClaimTransactionHash: nil,
 		}, nil).Twice()
+	m.On("GetEpoch", mock.Anything, app2Addr.String(), uint64(0)).Return(nil, nil).Once()
+	m.On("GetEpoch", mock.Anything, app2Addr.String(), uint64(1)).Return(nil, nil).Twice()
 
 	// Catch-all: returns empty list for extra headers.
 	m.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).
@@ -297,6 +289,11 @@ func (m *MockRepository) ListApplications(
 ) ([]*Application, uint64, error) {
 	args := m.Called(ctx, f, pagination, descending)
 	return args.Get(0).([]*Application), args.Get(1).(uint64), args.Error(2)
+}
+
+func (m *MockRepository) InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error {
+	args := m.Called(ctx, key, rawJSON)
+	return args.Error(0)
 }
 
 func (m *MockRepository) SaveNodeConfigRaw(
@@ -584,19 +581,9 @@ func (m *MockDaveConsensus) GetInputBox(
 
 func (m *MockDaveConsensus) GetCurrentSealedEpoch(
 	opts *bind.CallOpts,
-) (struct {
-	EpochNumber          *big.Int
-	InputIndexLowerBound *big.Int
-	InputIndexUpperBound *big.Int
-	Tournament           common.Address
-}, error) {
+) (DaveCurrentSealedEpoch, error) {
 	args := m.Called(opts)
-	return args.Get(0).(struct {
-		EpochNumber          *big.Int
-		InputIndexLowerBound *big.Int
-		InputIndexUpperBound *big.Int
-		Tournament           common.Address
-	}), args.Error(1)
+	return args.Get(0).(DaveCurrentSealedEpoch), args.Error(1)
 }
 
 func (m *MockDaveConsensus) GetApplicationContract(
@@ -682,7 +669,7 @@ func (m *MockAdapterFactory) SetupDefaultBehavior(
 		mock.MatchedBy(func(app *Application) bool {
 			return app.IApplicationAddress == applications[1].IApplicationAddress
 		}),
-	).Return(appContract2, nil, nil, nil)
+	).Return(appContract2, inputBox1, nil, nil)
 	return m
 }
 

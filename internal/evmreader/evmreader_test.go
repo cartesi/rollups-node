@@ -55,12 +55,11 @@ func (s *EvmReaderSuite) SetupTest() {
 	s.contractFactory = newMockAdapterFactory().SetupDefaultBehavior(s.applicationContract1, s.applicationContract2, s.inputBox)
 
 	s.evmReader = &Service{
-		client:             s.client,
-		repository:         s.repository,
-		defaultBlock:       DefaultBlock_Latest,
-		inputReaderEnabled: true,
-		hasEnabledApps:     true,
-		adapterFactory:     s.contractFactory,
+		client:         s.client,
+		repository:     s.repository,
+		defaultBlock:   DefaultBlock_Latest,
+		hasEnabledApps: true,
+		adapterFactory: s.contractFactory,
 	}
 
 	logLevel, err := config.GetLogLevel()
@@ -225,7 +224,7 @@ func (s *EvmReaderSuite) TestTickScansWithServiceContext() {
 		mock.Anything,
 		MonitoredEvent_InputAdded,
 		mock.Anything,
-	).Return(nil).Times(1).Run(assertValidContext)
+	).Return(nil).Times(3).Run(assertValidContext)
 	s.repository.On(
 		"UpdateEventLastCheckBlock",
 		mock.Anything,
@@ -240,7 +239,7 @@ func (s *EvmReaderSuite) TestTickScansWithServiceContext() {
 	s.Require().Empty(errs)
 
 	s.client.AssertCalled(s.T(), "HeaderByNumber", mock.Anything, mock.Anything)
-	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 5)
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 7)
 }
 
 func (s *EvmReaderSuite) TestFetchMostRecentHeaderReturnsErrorWhenHeaderNumberIsNil() {

@@ -52,6 +52,7 @@ type EvmReaderRepository interface {
 	UpdateEventLastCheckBlock(ctx context.Context, appIDs []int64, event MonitoredEvent, blockNumber uint64) error
 	GetEventLastCheckBlock(ctx context.Context, appID int64, event MonitoredEvent) (uint64, error)
 
+	InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
 
@@ -231,12 +232,9 @@ func (f *DefaultAdapterFactory) CreateAdapters(app *Application) (ApplicationCon
 		return nil, nil, nil, fmt.Errorf("error building application contract: %w", err)
 	}
 
-	var inputSource InputSourceAdapter
-	if app.HasDataAvailabilitySelector(DataAvailability_InputBox) {
-		inputSource, err = NewInputSourceAdapter(app.IInputBoxAddress, f.Client, f.Filter)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("error building inputbox contract: %w", err)
-		}
+	inputSource, err := NewInputSourceAdapter(app.IInputBoxAddress, f.Client, f.Filter)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("error building inputbox contract: %w", err)
 	}
 
 	var daveConsensus DaveConsensusAdapter

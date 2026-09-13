@@ -4,11 +4,13 @@
 package evmreader
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
 	"math/big"
 	"os"
+	"strings"
 	"testing"
 
 	. "github.com/cartesi/rollups-node/internal/model"
@@ -22,6 +24,34 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCheckForForeclosureWarnsForFailedApplicationOnce(t *testing.T) {
+	s, contract, repo := newForeclosureServiceFixture(t)
+	defer contract.AssertExpectations(t)
+	defer repo.AssertExpectations(t)
+	var logs bytes.Buffer
+	s.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+	app := foreclosureTestApp(1)
+	app.Status = ApplicationStatus_Failed
+	app.Reason = new("machine process crashed")
+	app.LastForecloseCheckBlock = 10
+	const head, foreclosure = uint64(100), uint64(80)
+	txHash := common.HexToHash("0xfeed")
+	contract.On("IsForeclosed", mock.Anything).Return(true, nil).Once()
+	contract.On("RetrieveForeclosureEvents", mock.Anything).
+		Return([]*iapplication.IApplicationForeclosure{makeForeclosureEvent(foreclosure, txHash)}, nil).Once()
+	repo.On("UpdateApplicationForeclosure", mock.Anything, app.ID, foreclosure, txHash, head).Return(nil).Once()
+
+	apps := []appContracts{foreclosureAppContracts(app, contract)}
+	s.checkForForeclosure(t.Context(), apps, head)
+	s.checkForForeclosure(t.Context(), apps, head+1)
+
+	require.Equal(t, 1, strings.Count(logs.String(), "failure blocks foreclosure drain"))
+	require.Contains(t, logs.String(), "foreclose_block=80")
+	require.Contains(t, logs.String(), "machine process crashed")
+	require.Contains(t, logs.String(), "repair the cause before clearing FAILED")
+	require.Equal(t, ApplicationStatus_Failed, app.Status, "the diagnostic must not clear the health gate")
+}
 
 // newForeclosureServiceFixture builds the smallest Service surface that
 // checkForForeclosure / foreclosureSearchStartBlock reach for, plus the

@@ -40,7 +40,6 @@ const (
 	CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS = "CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS"
 	DATABASE_CONNECTION                               = "CARTESI_DATABASE_CONNECTION"
 	FEATURE_CLAIM_SUBMISSION_ENABLED                  = "CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"
-	FEATURE_INPUT_READER_ENABLED                      = "CARTESI_FEATURE_INPUT_READER_ENABLED"
 	FEATURE_INSPECT_ENABLED                           = "CARTESI_FEATURE_INSPECT_ENABLED"
 	FEATURE_JSONRPC_API_ENABLED                       = "CARTESI_FEATURE_JSONRPC_API_ENABLED"
 	FEATURE_MACHINE_HASH_CHECK_ENABLED                = "CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED"
@@ -143,8 +142,6 @@ func SetDefaults() {
 	viper.SetDefault(DATABASE_CONNECTION, "")
 
 	viper.SetDefault(FEATURE_CLAIM_SUBMISSION_ENABLED, "true")
-
-	viper.SetDefault(FEATURE_INPUT_READER_ENABLED, "true")
 
 	viper.SetDefault(FEATURE_INSPECT_ENABLED, "true")
 
@@ -658,9 +655,6 @@ type EvmreaderConfig struct {
 	// for more information.
 	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
 
-	// If set to false, the node will not read inputs from the blockchain.
-	FeatureInputReaderEnabled bool `mapstructure:"CARTESI_FEATURE_INPUT_READER_ENABLED"`
-
 	// HTTP address for EVM Reader's telemetry service.
 	EvmReaderTelemetryAddress string `mapstructure:"CARTESI_EVM_READER_TELEMETRY_ADDRESS"`
 
@@ -732,13 +726,6 @@ func LoadEvmreaderConfig() (*EvmreaderConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_CONNECTION: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_DATABASE_CONNECTION is required for the evmreader service: %w", err)
-	}
-
-	cfg.FeatureInputReaderEnabled, err = GetFeatureInputReaderEnabled()
-	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_INPUT_READER_ENABLED: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_FEATURE_INPUT_READER_ENABLED is required for the evmreader service: %w", err)
 	}
 
 	cfg.EvmReaderTelemetryAddress, err = GetEvmReaderTelemetryAddress()
@@ -964,9 +951,6 @@ type NodeConfig struct {
 	// stops startup. Mode changes on an existing database are not supported.
 	FeatureClaimSubmissionEnabled bool `mapstructure:"CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"`
 
-	// If set to false, the node will not read inputs from the blockchain.
-	FeatureInputReaderEnabled bool `mapstructure:"CARTESI_FEATURE_INPUT_READER_ENABLED"`
-
 	// If set to false, the node will not start the inspect service.
 	FeatureInspectEnabled bool `mapstructure:"CARTESI_FEATURE_INSPECT_ENABLED"`
 
@@ -1123,13 +1107,6 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED is required for the node service: %w", err)
-	}
-
-	cfg.FeatureInputReaderEnabled, err = GetFeatureInputReaderEnabled()
-	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_INPUT_READER_ENABLED: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_FEATURE_INPUT_READER_ENABLED is required for the node service: %w", err)
 	}
 
 	cfg.FeatureInspectEnabled, err = GetFeatureInspectEnabled()
@@ -1667,7 +1644,6 @@ func (c *NodeConfig) ToEvmreaderConfig() *EvmreaderConfig {
 		BlockchainHttpEndpoint:       c.BlockchainHttpEndpoint,
 		BlockchainId:                 c.BlockchainId,
 		DatabaseConnection:           c.DatabaseConnection,
-		FeatureInputReaderEnabled:    c.FeatureInputReaderEnabled,
 		LogColor:                     c.LogColor,
 		LogLevel:                     c.LogLevel,
 		BlockchainHttpMaxRetries:     c.BlockchainHttpMaxRetries,
@@ -1998,19 +1974,6 @@ func GetFeatureClaimSubmissionEnabled() (bool, error) {
 		return v, nil
 	}
 	return notDefinedbool(), fmt.Errorf("%s: %w", FEATURE_CLAIM_SUBMISSION_ENABLED, ErrNotDefined)
-}
-
-// GetFeatureInputReaderEnabled returns the value for the environment variable CARTESI_FEATURE_INPUT_READER_ENABLED.
-func GetFeatureInputReaderEnabled() (bool, error) {
-	s := viper.GetString(FEATURE_INPUT_READER_ENABLED)
-	if s != "" {
-		v, err := toBool(s)
-		if err != nil {
-			return v, fmt.Errorf("failed to parse %s: %w", FEATURE_INPUT_READER_ENABLED, err)
-		}
-		return v, nil
-	}
-	return notDefinedbool(), fmt.Errorf("%s: %w", FEATURE_INPUT_READER_ENABLED, ErrNotDefined)
 }
 
 // GetFeatureInspectEnabled returns the value for the environment variable CARTESI_FEATURE_INSPECT_ENABLED.
