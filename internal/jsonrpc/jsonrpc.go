@@ -17,6 +17,8 @@ import (
 	"runtime/debug"
 	"unicode/utf8"
 
+	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
@@ -109,6 +111,8 @@ var jsonrpcHandlers = dispatchTable{
 	"cartesi_getMatch":                        handleGetMatch,
 	"cartesi_listMatchAdvances":               handleListMatchAdvances,
 	"cartesi_getMatchAdvance":                 handleGetMatchAdvance,
+	"cartesi_listBondEvents":                  handleListBondEvents,
+	"cartesi_getBondEvent":                    handleGetBondEvent,
 	"cartesi_getNodeInfo":                     handleGetNodeInfo,
 	"cartesi_getChainId":                      handleGetChainID,
 	"cartesi_getNodeVersion":                  handleGetNodeVersion,
@@ -125,6 +129,7 @@ var listParamsTypes = map[string]reflect.Type{
 	"cartesi_listCommitments":   reflect.TypeOf(api.ListCommitmentsParams{}),
 	"cartesi_listMatches":       reflect.TypeOf(api.ListMatchesParams{}),
 	"cartesi_listMatchAdvances": reflect.TypeOf(api.ListMatchAdvancesParams{}),
+	"cartesi_listBondEvents":    reflect.TypeOf(api.ListBondEventsParams{}),
 }
 
 func truncatedMethod(method string) string {
@@ -1560,26 +1565,17 @@ func handleListMatchAdvances(s *Service, r *http.Request, req RPCRequest) (any, 
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
 	}
 
-	// Create match advance filter based on params
-	epochIndex, err := config.ToIndexFromString(params.EpochIndex)
+	epochIndex, err := parseMatchScope(params.EpochIndex, params.TournamentAddress, params.IDHash)
 	if err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err))
-	}
-
-	if _, err := config.ToAddressFromString(params.TournamentAddress); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err))
-	}
-
-	if _, err := config.ToHashFromString(params.IDHash); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid ID hash: %v", err))
+		return nil, err
 	}
 
 	pagination := repository.Pagination{
 		Limit:  params.Limit,
 		Offset: params.Offset,
 	}
-	matchAdvances, total, err := s.repository.ListMatchAdvances(r.Context(), params.Application, epochIndex,
-		params.TournamentAddress, params.IDHash, pagination, params.Descending)
+	matchAdvances, total, err := s.repository.ListMatchAdvances(r.Context(), params.Application,
+		epochIndex, params.TournamentAddress, params.IDHash, pagination, params.Descending)
 	if err != nil {
 		return nil, s.repositoryError(r.Context(), "Unable to retrieve match advances from repository", err)
 	}
@@ -1609,31 +1605,16 @@ func handleGetMatchAdvance(s *Service, r *http.Request, req RPCRequest) (any, er
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
-	// Validate application parameter
-	if err := validateNameOrAddress(params.Application); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
-	}
-
-	epochIndex, err := config.ToIndexFromString(params.EpochIndex)
+	txHash, logIndex, err := parseTournamentEventIdentity(params.Application, params.TxHash, params.LogIndex)
 	if err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err))
+		return nil, err
 	}
-
-	if _, err := config.ToAddressFromString(params.TournamentAddress); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err))
-	}
-
-	if _, err := config.ToHashFromString(params.IDHash); err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid ID hash: %v", err))
-	}
-
-	parent, err := config.ToHashFromString(params.Parent)
+	epochIndex, err := parseMatchScope(params.EpochIndex, params.TournamentAddress, params.IDHash)
 	if err != nil {
-		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid parent hash: %v", err))
+		return nil, err
 	}
-
-	matchAdvanced, err := s.repository.GetMatchAdvanced(r.Context(), params.Application, epochIndex,
-		params.TournamentAddress, params.IDHash, parent.Hex()[2:])
+	matchAdvanced, err := s.repository.GetMatchAdvanced(r.Context(), params.Application,
+		epochIndex, params.TournamentAddress, params.IDHash, txHash, logIndex)
 	if err != nil {
 		return nil, s.repositoryError(r.Context(), "Unable to retrieve match advanced from repository", err)
 	}
@@ -1647,8 +1628,122 @@ func handleGetMatchAdvance(s *Service, r *http.Request, req RPCRequest) (any, er
 	return api.SingleResponse[*model.MatchAdvanced]{Data: matchAdvanced}, nil
 }
 
+func parseMatchScope(epoch, tournament, id string) (uint64, error) {
+	epochIndex, err := config.ToIndexFromString(epoch)
+	if err != nil {
+		return 0, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err))
+	}
+	if _, err := config.ToAddressFromString(tournament); err != nil {
+		return 0, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err))
+	}
+	if _, err := config.ToHashFromString(id); err != nil {
+		return 0, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid ID hash: %v", err))
+	}
+	return epochIndex, nil
+}
+
+func parseTournamentEventIdentity(application, hash, index string) (common.Hash, uint64, error) {
+	if err := validateNameOrAddress(application); err != nil {
+		return common.Hash{}, 0, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
+	}
+	txHash, err := config.ToHashFromString(hash)
+	if err != nil {
+		return common.Hash{}, 0, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid transaction hash: %v", err))
+	}
+	logIndex, err := config.ToIndexFromString(index)
+	if err != nil {
+		return common.Hash{}, 0, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid log index: %v", err))
+	}
+	return txHash, logIndex, nil
+}
+
+func parseTournamentEventFilter(epoch, tournament *string) (*uint64, *common.Address, error) {
+	var epochIndex *uint64
+	if epoch != nil {
+		value, err := config.ToIndexFromString(*epoch)
+		if err != nil {
+			return nil, nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err))
+		}
+		epochIndex = &value
+	}
+	var tournamentAddress *common.Address
+	if tournament != nil {
+		value, err := config.ToAddressFromString(*tournament)
+		if err != nil {
+			return nil, nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err))
+		}
+		tournamentAddress = &value
+	}
+	return epochIndex, tournamentAddress, nil
+}
+
+func handleListBondEvents(s *Service, r *http.Request, req RPCRequest) (any, error) {
+	var params api.ListBondEventsParams
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
+		s.Logger.Debug("Invalid parameters", "err", err)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
+	}
+	if params.Offset > math.MaxInt64 {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid offset")
+	}
+	if params.Limit == 0 {
+		params.Limit = LIST_ITEM_DEFAULT
+	}
+	if params.Limit > LIST_ITEM_LIMIT {
+		params.Limit = LIST_ITEM_LIMIT
+	}
+	if err := validateNameOrAddress(params.Application); err != nil {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
+	}
+	epochIndex, tournamentAddress, err := parseTournamentEventFilter(params.EpochIndex, params.TournamentAddress)
+	if err != nil {
+		return nil, err
+	}
+	filter := repository.BondEventFilter{EpochIndex: epochIndex, TournamentAddress: tournamentAddress}
+	pagination := repository.Pagination{Limit: params.Limit, Offset: params.Offset}
+	events, total, err := s.repository.ListBondEvents(r.Context(), params.Application, filter, pagination, params.Descending)
+	if err != nil {
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve bond events from repository", err)
+	}
+	if len(events) == 0 {
+		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
+			return nil, err
+		}
+	}
+	if events == nil {
+		events = []*model.BondEvent{}
+	}
+	return api.ListResponse[*model.BondEvent]{
+		Data:       events,
+		Pagination: api.Pagination{TotalCount: total, Limit: params.Limit, Offset: params.Offset},
+	}, nil
+}
+
+func handleGetBondEvent(s *Service, r *http.Request, req RPCRequest) (any, error) {
+	var params api.GetBondEventParams
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
+		s.Logger.Debug("Invalid parameters", "err", err)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
+	}
+	txHash, logIndex, err := parseTournamentEventIdentity(params.Application, params.TxHash, params.LogIndex)
+	if err != nil {
+		return nil, err
+	}
+	event, err := s.repository.GetBondEvent(r.Context(), params.Application, txHash, logIndex)
+	if err != nil {
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve bond event from repository", err)
+	}
+	if event == nil {
+		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
+			return nil, err
+		}
+		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Bond event not found")
+	}
+	return api.SingleResponse[*model.BondEvent]{Data: event}, nil
+}
+
 func handleGetNodeInfo(s *Service, r *http.Request, _ RPCRequest) (any, error) {
-	cfg, err := repository.LoadNodeConfig[evmreader.PersistentConfig](r.Context(), s.repository, evmreader.EvmReaderConfigKey)
+	cfg, err := repository.LoadNodeConfig[config.PersistentChainConfig](r.Context(), s.repository, evmreader.EvmReaderConfigKey)
 	if errors.Is(err, repository.ErrNotFound) {
 		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "EVM Reader config not found")
 	}
@@ -1664,7 +1759,7 @@ func handleGetNodeInfo(s *Service, r *http.Request, _ RPCRequest) (any, error) {
 }
 
 func handleGetChainID(s *Service, r *http.Request, _ RPCRequest) (any, error) {
-	config, err := repository.LoadNodeConfig[evmreader.PersistentConfig](r.Context(), s.repository, evmreader.EvmReaderConfigKey)
+	cfg, err := repository.LoadNodeConfig[config.PersistentChainConfig](r.Context(), s.repository, evmreader.EvmReaderConfigKey)
 	if errors.Is(err, repository.ErrNotFound) {
 		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "EVM Reader config not found")
 	}
@@ -1672,7 +1767,7 @@ func handleGetChainID(s *Service, r *http.Request, _ RPCRequest) (any, error) {
 		return nil, s.repositoryError(r.Context(), "Unable to retrieve evmreader config from repository", err)
 	}
 
-	return api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", config.Value.ChainID)}, nil
+	return api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", cfg.Value.ChainID)}, nil
 }
 
 func handleGetNodeVersion(_ *Service, _ *http.Request, _ RPCRequest) (any, error) {

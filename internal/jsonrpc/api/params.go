@@ -205,7 +205,25 @@ type GetMatchAdvanceParams struct {
 	EpochIndex        string `json:"epoch_index"`
 	TournamentAddress string `json:"tournament_address"`
 	IDHash            string `json:"id_hash"`
-	Parent            string `json:"parent"`
+	TxHash            string `json:"tx_hash"`
+	LogIndex          string `json:"log_index"`
+}
+
+// ListBondEventsParams selects immutable refund and recovery events.
+type ListBondEventsParams struct {
+	Application       string  `json:"application"`
+	EpochIndex        *string `json:"epoch_index,omitempty"`
+	TournamentAddress *string `json:"tournament_address,omitempty"`
+	Limit             uint64  `json:"limit"`
+	Offset            uint64  `json:"offset"`
+	Descending        bool    `json:"descending,omitempty"`
+}
+
+// GetBondEventParams identifies an event by its transaction and block log index.
+type GetBondEventParams struct {
+	Application string `json:"application"`
+	TxHash      string `json:"tx_hash"`
+	LogIndex    string `json:"log_index"`
 }
 
 // ListWithdrawalsParams aligns with the OpenRPC specification

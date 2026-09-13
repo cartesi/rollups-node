@@ -198,8 +198,20 @@ func TestPositionalParamsDeclarationOrder(t *testing.T) {
 		},
 		"GetMatchAdvanceParams": {
 			func() any { return &GetMatchAdvanceParams{} },
-			`["app","0x4","tournament","id-hash","parent"]`,
-			`{"application":"app","epoch_index":"0x4","tournament_address":"tournament","id_hash":"id-hash","parent":"parent"}`,
+			`["app","0x4","tournament","id-hash","tx-hash","0x4"]`,
+			`{"application":"app","epoch_index":"0x4","tournament_address":"tournament",` +
+				`"id_hash":"id-hash","tx_hash":"tx-hash","log_index":"0x4"}`,
+		},
+		"ListBondEventsParams": {
+			func() any { return &ListBondEventsParams{} },
+			`["app","0x4","tournament",25,3,true]`,
+			`{"application":"app","epoch_index":"0x4","tournament_address":"tournament",` +
+				`"limit":25,"offset":3,"descending":true}`,
+		},
+		"GetBondEventParams": {
+			func() any { return &GetBondEventParams{} },
+			`["app","tx-hash","0x4"]`,
+			`{"application":"app","tx_hash":"tx-hash","log_index":"0x4"}`,
 		},
 		"ListWithdrawalsParams": {
 			func() any { return &ListWithdrawalsParams{} },
