@@ -12,6 +12,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/pkg/contracts/iauthority"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
@@ -161,6 +162,66 @@ func (cb *claimerBlockchain) submitClaimToBlockchain(
 			"TxHash", txHash)
 	}
 	return txHash, err
+}
+
+// authorityOwnerMismatch carries owner evidence without depending on the
+// ownership library's revert ABI. The original submission error is preserved.
+type authorityOwnerMismatch struct {
+	signer          common.Address
+	configuredOwner common.Address
+	latestOwner     common.Address
+	submissionErr   error
+}
+
+func (e *authorityOwnerMismatch) Error() string {
+	return fmt.Sprintf("Authority owner check: signer %s, configured owner %s, latest owner %s: %v",
+		e.signer, e.configuredOwner, e.latestOwner, e.submissionErr)
+}
+
+func (e *authorityOwnerMismatch) Unwrap() error { return e.submissionErr }
+
+func (cb *claimerBlockchain) diagnoseAuthorityOwner(
+	ctx context.Context,
+	app *model.Application,
+	signer common.Address,
+	submissionErr error,
+) error {
+	if app.ConsensusType != model.Consensus_Authority {
+		return submissionErr
+	}
+	// Known submit errors already have a more specific diagnosis. Keep owner
+	// reads for otherwise-unclassified reverts, using the actual transaction signer.
+	if ethutil.IsNonceTooLowError(submissionErr) || submitClaimRevertName(submissionErr) != "" {
+		return submissionErr
+	}
+	if _, reverted := ethclient.RevertErrorData(submissionErr); !reverted {
+		return submissionErr
+	}
+	block, err := cb.getDefaultBlockNumber(ctx)
+	if err != nil {
+		return errors.Join(submissionErr, fmt.Errorf("resolving block for Authority owner check: %w", err))
+	}
+	if block == nil || block.Sign() < 0 {
+		return errors.Join(submissionErr, errors.New("authority owner check returned an invalid configured block"))
+	}
+	authority, err := iauthority.NewIAuthorityCaller(app.IConsensusAddress, cb.client)
+	if err != nil {
+		return errors.Join(submissionErr, fmt.Errorf("binding Authority for owner check: %w", err))
+	}
+	configuredOwner, err := authority.Owner(&bind.CallOpts{Context: ctx, BlockNumber: block})
+	if err != nil {
+		return errors.Join(submissionErr, fmt.Errorf("reading Authority owner at configured block %s: %w", block, err))
+	}
+	latestOwner, err := authority.Owner(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return errors.Join(submissionErr, fmt.Errorf("reading latest Authority owner: %w", err))
+	}
+	if configuredOwner == signer && latestOwner == signer {
+		return submissionErr
+	}
+	return &authorityOwnerMismatch{
+		signer: signer, configuredOwner: configuredOwner, latestOwner: latestOwner, submissionErr: submissionErr,
+	}
 }
 
 type eventIterator interface {
