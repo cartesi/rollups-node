@@ -133,7 +133,6 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 }
 
 func (s *Service) Alive() bool     { return true }
-func (s *Service) Ready() bool     { return true }
 func (s *Service) Reload() []error { return nil }
 
 // logErrorUnlessShutdown keeps an in-flight shutdown cancellation from being
