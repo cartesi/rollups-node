@@ -299,17 +299,7 @@ func (s *ForecloseReplaySuite) TestForecloseReregisterReplayReaderMode() {
 	r.NoError(disableApplication(s.ctx, appAName), "disable A before remove")
 	r.NoError(removeApplication(s.ctx, appAName), "remove A")
 
-	readerMode := false
-	defer func() {
-		if readerMode {
-			stopSharedNode(s.T())
-			startSharedNode(s.T())
-		}
-	}()
-
-	stopSharedNode(s.T())
-	startSharedNodeWithEnv(s.T(), "CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED=false")
-	readerMode = true
+	startReaderNode(s.ctx, s.T())
 
 	appBName := uniqueAppName("foreclose-reader-b")
 	r.NoError(registerApplication(s.ctx, appBName, appAddr, dappPath),
@@ -335,10 +325,6 @@ func (s *ForecloseReplaySuite) TestForecloseReregisterReplayReaderMode() {
 	r.NoError(err, "read B status")
 	r.Equal("OK", firstStatusLine(status))
 	r.Contains(status, "Enabled: true")
-
-	stopSharedNode(s.T())
-	startSharedNode(s.T())
-	readerMode = false
 }
 
 func (s *ForecloseReplaySuite) TestOutputExecutionAfterForeclosureReplaysOnReregisteredApp() {
