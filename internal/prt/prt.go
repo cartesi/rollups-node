@@ -85,21 +85,43 @@ func (f *DefaultAdapterFactory) CreateDaveConsensusAdapter(addr common.Address) 
 	return NewDaveConsensusAdapter(addr, f.client)
 }
 
-func getAllRunningApplications(ctx context.Context, r prtRepository) ([]*Application, uint64, error) {
-	return r.ListApplications(ctx, prtTickApplicationsFilter(), repository.Pagination{}, false)
-}
-
-func prtTickApplicationsFilter() repository.ApplicationFilter {
-	return repository.ApplicationFilter{
+func getObservableApplications(ctx context.Context, r prtRepository) ([]*Application, uint64, error) {
+	filter := repository.ApplicationFilter{
 		Enabled:       new(true),
-		Statuses:      []ApplicationStatus{ApplicationStatus_OK},
 		ConsensusType: new(Consensus_PRT),
 	}
+	return r.ListApplications(ctx, filter, repository.Pagination{}, false)
 }
 
-func getAllClaimComputedEpochs(ctx context.Context, r prtRepository, nameOrAddress string) ([]*Epoch, uint64, error) {
-	f := repository.EpochFilter{Status: []EpochStatus{EpochStatus_ClaimComputed}}
+func getTournamentObservationEpochs(ctx context.Context, r prtRepository, nameOrAddress string) ([]*Epoch, uint64, error) {
+	f := repository.EpochFilter{HasTournament: new(true)}
 	return r.ListEpochs(ctx, nameOrAddress, f, repository.Pagination{}, false)
+}
+
+// getDefaultBlockNumber selects the block used for stored chain state. Live
+// transaction checks use a separate latest block and cannot advance this view.
+func (s *Service) getDefaultBlockNumber(ctx context.Context) (uint64, error) {
+	var tag rpc.BlockNumber
+	switch s.defaultBlock {
+	case DefaultBlock_Pending:
+		tag = rpc.PendingBlockNumber
+	case DefaultBlock_Latest:
+		tag = rpc.LatestBlockNumber
+	case DefaultBlock_Finalized:
+		tag = rpc.FinalizedBlockNumber
+	case DefaultBlock_Safe:
+		tag = rpc.SafeBlockNumber
+	default:
+		return 0, fmt.Errorf("default block %v not supported", s.defaultBlock)
+	}
+	header, err := s.client.HeaderByNumber(ctx, big.NewInt(tag.Int64()))
+	if err != nil {
+		return 0, fmt.Errorf("fetching %s block header: %w", tag, err)
+	}
+	if header == nil {
+		return 0, fmt.Errorf("returned %s block header is nil", tag)
+	}
+	return checkedUint64(header.Number, "configured block number")
 }
 
 func getAllSubTournaments(
@@ -708,6 +730,85 @@ func (s *Service) handleSettleRevert(ctx context.Context, app *Application, epoc
 		"epoch_index", epochNumber, "error", err,
 		"decoded_revert", describeKnownRevert(err))
 	return err
+}
+
+// observeApplicationTournaments indexes chain facts without consulting local
+// claim readiness or changing application health. The returned roots are also
+// used by the separate local claim reconciliation after publication.
+func (s *Service) observeApplicationTournaments(
+	ctx context.Context, app *Application, mostRecentBlock uint64,
+) ([]*Epoch, DaveConsensusAdapter, error) {
+	epochs, _, err := getTournamentObservationEpochs(ctx, s.repository, app.Name)
+	if err != nil {
+		s.logErrorUnlessShutdown(ctx, "failed to list epochs", err, "application", app.Name)
+		return nil, nil, err
+	}
+	if len(epochs) == 0 {
+		s.Logger.Debug("No tournament roots to observe", "application", app.Name)
+		return epochs, nil, nil
+	}
+
+	consensus, err := s.adapterFactory.CreateDaveConsensusAdapter(app.IConsensusAddress)
+	if err != nil {
+		s.Logger.Error("failed to bind dave consensus contract", "application", app.Name,
+			"consensus_address", app.IConsensusAddress.String(), "error", err)
+		return nil, nil, err
+	}
+	windowEnd := min(mostRecentBlock, app.LastEpochCheckBlock)
+	if app.ForecloseBlock != 0 && app.LastEpochCheckBlock >= app.ForecloseBlock {
+		// Foreclosure ends root creation, not the existing tournament trees.
+		// Once every pre-foreclosure root is known, their events remain live.
+		windowEnd = mostRecentBlock
+	}
+
+	if windowEnd > app.LastTournamentCheckBlock {
+		if err := s.observeTournamentWindow(ctx, app, epochs, consensus, windowEnd); err != nil {
+			s.recordTournamentObservationFailure(ctx, app, mostRecentBlock, windowEnd, err)
+			return nil, nil, err
+		}
+		s.clearTournamentObservationFailure(app.ID)
+	}
+
+	return epochs, consensus, nil
+}
+
+// observeTournamentWindow publishes projections, events, and their cursor in
+// one transaction. Acceptance reconciliation and transactions are not part of
+// this operation or its readiness signal.
+func (s *Service) observeTournamentWindow(
+	ctx context.Context, app *Application, epochs []*Epoch, consensus DaveConsensusAdapter, windowEnd uint64,
+) error {
+	var roots []*Epoch
+	for _, epoch := range epochs {
+		if epoch.TournamentAddress != nil && epoch.LastBlock <= windowEnd {
+			roots = append(roots, epoch)
+		}
+	}
+	var levelCount uint64
+	if len(roots) > 0 {
+		var err error
+		levelCount, err = consensus.TournamentLevelCount(pinnedCallOpts(ctx, windowEnd))
+		if err != nil {
+			return fmt.Errorf("fetching tournament level count: %w", err)
+		}
+		if levelCount == 0 {
+			return errors.New("tournament level count is zero")
+		}
+	}
+	var batches []*repository.TournamentEventBatch
+	for _, epoch := range roots {
+		rootBatches, err := s.gatherTournamentData(ctx, app, epoch, RootLevel, nil, nil,
+			*epoch.TournamentAddress, levelCount, windowEnd)
+		if err != nil {
+			return fmt.Errorf("gathering epoch %d tournament events: %w", epoch.Index, err)
+		}
+		batches = append(batches, rootBatches...)
+	}
+	if err := s.repository.StoreTournamentEvents(ctx, app.ID, batches, windowEnd); err != nil {
+		return fmt.Errorf("storing application tournament event window: %w", err)
+	}
+	app.LastTournamentCheckBlock = windowEnd
+	return nil
 }
 
 // gatherTournamentData reads a complete subtree without storing projections,
