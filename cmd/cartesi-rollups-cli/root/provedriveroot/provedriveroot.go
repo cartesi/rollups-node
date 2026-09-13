@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
 
@@ -25,7 +27,7 @@ var Cmd = &cobra.Command{
 	Short:   "Anchor the accounts-drive Merkle root on a foreclosed application",
 	Example: examples,
 	Args:    cobra.ExactArgs(1),
-	Run:     run,
+	RunE:    run,
 	Long: `
 Calls IApplication.proveAccountsDriveMerkleRoot(accountsDriveMerkleRoot, proof).
 This must be done ONCE per foreclosed application before any user can call
@@ -72,6 +74,7 @@ func init() {
 	cobra.CheckErr(Cmd.MarkFlagRequired("proof-file"))
 	Cmd.Flags().BoolVarP(&skipConfirmation, "yes", "y", false, "Skip confirmation prompt")
 	Cmd.Flags().BoolVar(&asJSONParam, "json", false, "Print result as JSON")
+	cli.AddTransactionFlags(Cmd)
 
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
@@ -82,67 +85,107 @@ func init() {
 	})
 }
 
-func run(cmd *cobra.Command, args []string) {
+func run(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	nameOrAddress, err := config.ToApplicationNameOrAddressFromString(args[0])
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	root, proof, err := loadProof(proofFileParam)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	appAddr, err := util.ResolveApplicationAddress(ctx, nameOrAddress)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
 
 	chainID, err := client.ChainID(ctx)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 	txOpts, err := cli.GetTransactOpts(ctx, chainID)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	appContract, err := iapplication.NewIApplication(appAddr, client)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	if !skipConfirmation {
-		fmt.Printf("Preparing to prove the accounts-drive Merkle root for application %v\n"+
+		_, err := fmt.Fprintf(cmd.ErrOrStderr(), "Preparing to prove the accounts-drive Merkle root for application %v\n"+
 			"  signer:     %v\n"+
 			"  root:       0x%x\n"+
 			"  proof size: %d siblings\n",
 			appAddr, txOpts.From, root, len(proof))
-		confirmed, promptErr := cli.ConfirmPrompt("Do you want to continue?")
-		cobra.CheckErr(promptErr)
+		if err != nil {
+			return err
+		}
+		confirmed, promptErr := cli.ConfirmPromptTo(cmd.ErrOrStderr(), "Do you want to continue?")
+		if promptErr != nil {
+			return promptErr
+		}
 		if !confirmed {
-			fmt.Println("Transaction cancelled")
-			os.Exit(0)
+			_, err := fmt.Fprintln(cmd.ErrOrStderr(), "Transaction cancelled")
+			return err
 		}
 	}
 
-	tx, err := appContract.ProveAccountsDriveMerkleRoot(txOpts, root, proof)
-	// go-ethereum's binding returns (signedTx, sendErr) when signing
-	// succeeded but the broadcast/response read failed — the tx may already
-	// be in the mempool. Surface the hash on stderr so the operator can find
-	// it even when CheckErr below aborts.
-	if tx != nil {
-		fmt.Fprintf(os.Stderr, "broadcast attempt sent — tx hash %s\n", tx.Hash().Hex())
+	tx, receipt, err := cli.Transact(ctx, cmd, client, txOpts, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+		return appContract.ProveAccountsDriveMerkleRoot(opts, root, proof)
+	})
+	if err != nil {
+		return cli.DecorateRevert(err, iapplication.IApplicationMetaData)
 	}
-	cobra.CheckErr(cli.DecorateRevert(err, iapplication.IApplicationMetaData))
-	txHash := tx.Hash()
+	if receipt != nil && !hasMatchingDriveRootEvent(appContract, receipt, appAddr, root) {
+		return fmt.Errorf("transaction %s mined, but its receipt has no matching AccountsDriveMerkleRootProved event", tx.Hash())
+	}
 
 	if asJSONParam {
 		result := struct {
-			TransactionHash string         `json:"transaction_hash"`
+			cli.TransactionResult
 			ApplicationAddr common.Address `json:"application_address"`
-		}{TransactionHash: txHash.Hex(), ApplicationAddr: appAddr}
-		jsonBytes, err := json.MarshalIndent(&result, "", "  ")
-		cobra.CheckErr(err)
-		fmt.Println(string(jsonBytes))
-	} else {
-		fmt.Printf("prove-drive-root tx-hash: %v\n", txHash)
+		}{TransactionResult: cli.NewTransactionResult(tx, receipt), ApplicationAddr: appAddr}
+		encoder := json.NewEncoder(cmd.OutOrStdout())
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(result)
 	}
+	return cli.WriteTransactionResult(cmd, tx, receipt)
+}
+
+func hasMatchingDriveRootEvent(
+	application *iapplication.IApplication,
+	receipt *types.Receipt,
+	address common.Address,
+	root [32]byte,
+) bool {
+	for _, log := range receipt.Logs {
+		// The event has one non-indexed bytes32 field. Reject missing data even
+		// for a zero root; the binding otherwise leaves that field zero-valued.
+		if log == nil || log.Address != address || len(log.Data) != common.HashLength {
+			continue
+		}
+		event, err := application.ParseAccountsDriveMerkleRootProved(*log)
+		if err == nil && event.AccountsDriveMerkleRoot == root {
+			return true
+		}
+	}
+	return false
 }
 
 func loadProof(path string) ([32]byte, [][32]byte, error) {
