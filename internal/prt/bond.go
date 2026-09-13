@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -18,9 +19,62 @@ import (
 )
 
 type rootBondRecovery struct {
-	EpochIndex uint64
-	Tournament common.Address
-	TxHash     *common.Hash
+	EpochIndex        uint64
+	Tournament        common.Address
+	TxHash            *common.Hash
+	FirstMissingBlock *uint64
+}
+
+// discoverForeclosedRootBond finds the current root even when foreclosure
+// prevented an accept attempt. Only published, signer-owned recoverable bonds
+// enter the queue. Running roots remain eligible for discovery on a later tick.
+func (s *Service) discoverForeclosedRootBond(
+	ctx context.Context, app *model.Application, epochs []*model.Epoch, consensus DaveConsensusAdapter, observedBlock uint64,
+) error {
+	if !s.submissionEnabled || consensus == nil || !app.ForeclosureScanCaughtUp() ||
+		observedBlock < app.ForecloseBlock || observedBlock < app.LastTournamentCheckBlock {
+		return nil
+	}
+	sealed, err := consensus.GetCurrentSealedEpoch(pinnedCallOpts(ctx, observedBlock))
+	if err != nil {
+		return fmt.Errorf("reading foreclosed current root for bond recovery: %w", err)
+	}
+	if s.discoveredForeclosedRootBonds[app.ID] == sealed.Tournament {
+		return nil
+	}
+	for _, epoch := range epochs {
+		if epoch.Index != sealed.EpochNumber || epoch.TournamentAddress == nil ||
+			*epoch.TournamentAddress != sealed.Tournament || epoch.Commitment == nil {
+			continue
+		}
+		tournament, err := s.repository.GetTournament(ctx, app.IApplicationAddress.Hex(), sealed.Tournament.Hex())
+		if err != nil {
+			return fmt.Errorf("loading foreclosed current root for bond recovery: %w", err)
+		}
+		if tournament == nil || tournament.Snapshot.AsOfBlock > app.LastTournamentCheckBlock ||
+			tournament.Snapshot.AsOfBlock > observedBlock {
+			return nil
+		}
+		recovery := tournament.Snapshot.BondRecovery
+		if recovery.Disposition != model.BondDispositionRecoverable || recovery.Claimer == nil ||
+			*recovery.Claimer != s.txOptsFactory.From() {
+			return nil
+		}
+		s.queueRootBondRecovery(app.ID, epoch.Index, sealed.Tournament)
+		// Keep this marker after retirement: a successful transaction can have
+		// a failed payment push, which must not restart an automatic retry loop.
+		// Restart clears both the marker and the existing in-memory queue.
+		s.markForeclosedRootBondDiscovered(app.ID, sealed.Tournament)
+		return nil
+	}
+	return nil
+}
+
+func (s *Service) markForeclosedRootBondDiscovered(appID int64, tournament common.Address) {
+	if s.discoveredForeclosedRootBonds == nil {
+		s.discoveredForeclosedRootBonds = make(map[int64]common.Address)
+	}
+	s.discoveredForeclosedRootBonds[appID] = tournament
 }
 
 func (s *Service) queueRootBondRecovery(appID int64, epochIndex uint64, tournament common.Address) {
@@ -201,6 +255,7 @@ func (s *Service) broadcastRootBondRecovery(
 	}
 	txHash := tx.Hash()
 	candidate.TxHash = &txHash
+	candidate.FirstMissingBlock = nil
 	s.Logger.Info("Sent root tournament bond recovery transaction",
 		"application", app.Name,
 		"epoch_index", candidate.EpochIndex,
@@ -248,18 +303,38 @@ func (s *Service) reconcileRootBondRecoveryTransaction(
 ) error {
 	txHash := *candidate.TxHash
 	_, pending, err := s.client.TransactionByHash(ctx, txHash)
-	if err != nil {
+	missing := errors.Is(err, ethereum.NotFound)
+	if err != nil && !missing {
 		return fmt.Errorf("checking root bond recovery transaction %s: %w", txHash, err)
 	}
-	if pending {
+	if !missing {
+		candidate.FirstMissingBlock = nil
+	}
+	if !missing && pending {
 		return nil
 	}
 	receipt, err := s.client.TransactionReceipt(ctx, txHash)
+	if missing && errors.Is(err, ethereum.NotFound) {
+		if candidate.FirstMissingBlock == nil || mostRecentBlock < *candidate.FirstMissingBlock {
+			candidate.FirstMissingBlock = new(mostRecentBlock)
+			return nil
+		}
+		if mostRecentBlock-*candidate.FirstMissingBlock >= maxMissingTournamentTransactionBlocks {
+			s.Logger.Warn("Root bond recovery transaction remains missing; waiting for fresh bond state before retry",
+				"application", app.Name, "epoch_index", candidate.EpochIndex, "tournament", candidate.Tournament,
+				"tx", txHash, "missing_since_block", *candidate.FirstMissingBlock, "latest_block", mostRecentBlock)
+			candidate.TxHash, candidate.FirstMissingBlock = nil, nil
+		}
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("fetching root bond recovery receipt %s: %w", txHash, err)
 	}
-	if receipt == nil || receipt.BlockNumber == nil || receipt.BlockNumber.Sign() < 0 {
+	if receipt == nil {
 		return fmt.Errorf("root bond recovery transaction %s has an invalid receipt block", txHash)
+	}
+	if _, err := checkedUint64(receipt.BlockNumber, "root bond recovery transaction receipt block"); err != nil {
+		return err
 	}
 	if receipt.TxHash != txHash {
 		return fmt.Errorf("root bond recovery receipt hash %s differs from transaction %s", receipt.TxHash, txHash)
@@ -267,6 +342,7 @@ func (s *Service) reconcileRootBondRecoveryTransaction(
 	if receipt.Status != types.ReceiptStatusFailed && receipt.Status != types.ReceiptStatusSuccessful {
 		return fmt.Errorf("root bond recovery transaction %s has invalid receipt status %d", txHash, receipt.Status)
 	}
+	candidate.FirstMissingBlock = nil
 	callBlock := new(big.Int).SetUint64(mostRecentBlock)
 	if receipt.BlockNumber.Cmp(callBlock) > 0 {
 		callBlock.Set(receipt.BlockNumber)
@@ -327,6 +403,11 @@ func (s *Service) reconcileRootBondRecoveryTransaction(
 			"claimer", recovery.Claimer,
 			"payment", recovery.Payment,
 			"outcome", "failed_push")
+		if app.IsForeclosed() {
+			// A candidate queued before foreclosure can finish before the
+			// observation view catches up. Later discovery must not retry it.
+			s.markForeclosedRootBondDiscovered(app.ID, candidate.Tournament)
+		}
 		s.retireRootBondRecovery(app.ID, candidate)
 		return nil
 	case model.BondDispositionNoWinner:

@@ -395,7 +395,13 @@ go-type = "AuthKind"
 description = """
 One of "private_key", "private_key_file", "mnemonic", "mnemonic_file", "aws".
 
-The PRT auth variable for the kind defined here is required. Eg.: CARTESI_PRT_AUTH_MNEMONIC"""
+When claim submission is enabled, configure the PRT auth variable for the selected
+kind, for example CARTESI_PRT_AUTH_MNEMONIC. The standalone node always starts PRT,
+even when it serves only Authority or Quorum applications. CARTESI_AUTH_* does not
+replace CARTESI_PRT_AUTH_*. PRT signer credentials are not required when claim
+submission is disabled.
+
+Use distinct addresses for claimer and PRT."""
 omit = true
 used-by = ["node", "prt"]
 

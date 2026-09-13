@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/cartesi/rollups-node/internal/errutil"
 	"github.com/cartesi/rollups-node/internal/model"
 )
 
@@ -34,7 +35,7 @@ func (s *Service) Ready() bool {
 func (s *Service) recordTournamentObservationFailure(
 	ctx context.Context, app *model.Application, head, windowEnd uint64, err error,
 ) {
-	if errors.Is(ctx.Err(), context.Canceled) && errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(ctx.Err(), context.Canceled) && errutil.IsOnlyCancellation(err) {
 		return
 	}
 

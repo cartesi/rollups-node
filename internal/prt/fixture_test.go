@@ -160,6 +160,11 @@ func (m *prtRepositoryMock) GetCommitment(
 	return c, args.Error(1)
 }
 
+func (m *prtRepositoryMock) InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error {
+	args := m.Called(ctx, key, rawJSON)
+	return args.Error(0)
+}
+
 func (m *prtRepositoryMock) SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error {
 	args := m.Called(ctx, key, rawJSON)
 	return args.Error(0)
@@ -193,6 +198,12 @@ type ethClientMock struct {
 }
 
 var _ EthClientInterface = (*ethClientMock)(nil)
+
+func (m *ethClientMock) SuggestGasPrice(ctx context.Context) (*big.Int, error) {
+	args := m.Called(ctx)
+	price, _ := args.Get(0).(*big.Int)
+	return price, args.Error(1)
+}
 
 func (m *ethClientMock) TransactionReceipt(
 	ctx context.Context,

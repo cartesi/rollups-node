@@ -53,12 +53,14 @@ type prtRepository interface {
 	ListMatches(ctx context.Context, nameOrAddress string, filter repository.MatchFilter,
 		pagination repository.Pagination, descending bool) ([]*Match, uint64, error)
 
+	InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
 }
 
 // EthClientInterface defines the methods we need from ethclient.Client
 type EthClientInterface interface {
+	SuggestGasPrice(ctx context.Context) (*big.Int, error)
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
 	ChainID(ctx context.Context) (*big.Int, error)
 	BlockNumber(ctx context.Context) (uint64, error)
@@ -85,6 +87,9 @@ func (f *DefaultAdapterFactory) CreateDaveConsensusAdapter(addr common.Address) 
 	return NewDaveConsensusAdapter(addr, f.client)
 }
 
+// getObservableApplications includes unhealthy apps so tournament and dispute
+// observation can continue. Later health gates stop local claim reconciliation
+// and transaction submission; they must not remove these apps from observation.
 func getObservableApplications(ctx context.Context, r prtRepository) ([]*Application, uint64, error) {
 	filter := repository.ApplicationFilter{
 		Enabled:       new(true),
@@ -386,110 +391,18 @@ func (s *Service) updateTournamentStanding(
 	return nil
 }
 
-func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentBlock uint64) error {
-	if app.LastTournamentCheckBlock >= mostRecentBlock {
-		s.Logger.Debug("No new blocks since last tournament check", "application", app.Name,
-			"last_tournament_check_block", app.LastTournamentCheckBlock, "most_recent_block", mostRecentBlock)
-		return nil // nothing to do
-	}
-
-	epochs, _, err := getAllClaimComputedEpochs(ctx, s.repository, app.Name)
+// checkEpochs commits a complete event window before accepting any epoch.
+// A failed RPC read or database write leaves the shared cursor unchanged.
+// The first return value asks the caller to defer later PRT actions.
+func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentBlock uint64) (bool, error) {
+	epochs, consensus, err := s.observeApplicationTournaments(ctx, app, mostRecentBlock)
 	if err != nil {
-		s.Logger.Error("failed to list epochs", "application", app.Name, "error", err)
-		return err
+		return true, err
 	}
-	if len(epochs) == 0 {
-		s.Logger.Debug("No epochs with claim computed status", "application", app.Name)
-		return nil // nothing to do
+	if app.Status != ApplicationStatus_OK {
+		return true, nil
 	}
-
-	consensus, err := s.adapterFactory.CreateDaveConsensusAdapter(app.IConsensusAddress)
-	if err != nil {
-		s.Logger.Error("failed to bind dave consensus contract", "application", app.Name,
-			"consensus_address", app.IConsensusAddress.String(), "error", err)
-		return err
-	}
-
-	for _, epoch := range epochs {
-		if epoch.TournamentAddress == nil || epoch.Commitment == nil ||
-			epoch.MachineHash == nil || epoch.TxBufferDataBlock == nil {
-			return s.setApplicationCorrupted(ctx, app,
-				"epoch %d has missing required fields for ClaimComputed status", epoch.Index)
-		}
-
-		if epoch.ClaimTransactionHash == nil { // epoch not claimed on-chain yet
-			err = s.fetchTournamentData(ctx, app, epoch, RootLevel, nil, nil, *epoch.TournamentAddress, mostRecentBlock)
-			if err != nil {
-				s.logErrorUnlessShutdown(ctx, "failed to fetch root tournament data", err,
-					"application", app.Name, "epoch", epoch.Index,
-					"tournament", epoch.TournamentAddress.String())
-				return err
-			}
-			// if this epoch is not claimed on-chain yet, all other epochs with higher index should not be claimed either, so we can
-			// stop processing here.
-			break
-		}
-
-		receipt, err := s.client.TransactionReceipt(ctx, *epoch.ClaimTransactionHash)
-		if err != nil {
-			s.Logger.Error("failed to fetch transaction receipt for epoch", "application", app.Name,
-				"epoch", epoch.Index, "tx", epoch.ClaimTransactionHash, "error", err)
-			return err
-		}
-
-		if receipt.Status != 1 {
-			return fmt.Errorf("epoch %d: EpochSealed transaction hash points to failed transaction", epoch.Index)
-		}
-
-		var event *idaveconsensus.IDaveConsensusEpochSealed
-		for _, vLog := range receipt.Logs {
-			event, err = consensus.ParseEpochSealed(*vLog)
-			if err != nil {
-				continue // Skip logs that don't match
-			}
-			break
-		}
-		if event == nil {
-			return fmt.Errorf("epoch %d: failed to find EpochSealed event in receipt logs", epoch.Index)
-		}
-
-		if epoch.Index != event.EpochNumber.Uint64()-1 {
-			return s.setApplicationDiverged(ctx, app, "Epoch %d has inconsistent index between off-chain (%d) and on-chain (%d)",
-				epoch.Index, epoch.Index, event.EpochNumber.Uint64()-1)
-		}
-		if *epoch.MachineHash != event.InitialMachineStateHash {
-			return s.setApplicationDiverged(ctx, app, "Epoch %d has inconsistent machine hash between off-chain (%s) and on-chain (%s)",
-				epoch.Index, epoch.MachineHash.String(), hexutil.Encode(event.InitialMachineStateHash[:]))
-		}
-		if *epoch.TxBufferDataBlock != event.OutputsMerkleRoot {
-			return s.setApplicationDiverged(ctx, app, "Epoch %d has inconsistent claim hash between off-chain (%s) and on-chain (%s)",
-				epoch.Index, epoch.TxBufferDataBlock.String(), hexutil.Encode(event.OutputsMerkleRoot[:]))
-		}
-
-		err = s.fetchTournamentData(ctx, app, epoch, RootLevel, nil, nil, *epoch.TournamentAddress, mostRecentBlock)
-		if err != nil {
-			s.logErrorUnlessShutdown(ctx, "failed to fetch tournament data", err,
-				"application", app.Name, "epoch", epoch.Index,
-				"tournament", epoch.TournamentAddress.String())
-			return err
-		}
-
-		s.Logger.Info("Found finalized epoch. OutputsMerkleRoot matched. Setting claim as accepted",
-			"application", app.Name,
-			"epoch", epoch.Index,
-			"event_block_number", event.Raw.BlockNumber,
-			"outputs_merkle_root", fmt.Sprintf("%x", event.OutputsMerkleRoot),
-			"tx", epoch.ClaimTransactionHash,
-		)
-
-		epoch.Status = EpochStatus_ClaimAccepted
-		err = s.repository.UpdateEpochStatus(ctx, app.Name, epoch)
-		if err != nil {
-			s.Logger.Error("failed to update epoch status to claim accepted", "application", app.Name, "epoch", epoch.Index, "error", err)
-			return err
-		}
-	}
-	return nil
+	return s.reconcileAcceptedEpochs(ctx, app, epochs, consensus, mostRecentBlock)
 }
 
 // observeApplicationTournaments indexes chain facts without consulting local
@@ -1200,34 +1113,47 @@ func (s *Service) handleJoinTournamentRevert(
 	return err
 }
 
-func (s *Service) validateApplication(ctx context.Context, app *Application) error {
+func (s *Service) validateApplication(ctx context.Context, app *Application, confirmedBlock uint64) error {
 	s.Logger.Debug("Syncing PRT tournaments", "application", app.Name)
-	mostRecentBlock, err := s.client.BlockNumber(ctx)
-	if err != nil {
-		s.Logger.Error("failed to fetch latest block number", "application", app.Name, "error", err)
-		return err
-	}
-	err = s.checkEpochs(ctx, app, mostRecentBlock)
+	s.warnZeroStagingPeriod(app)
+	deferActions, err := s.checkEpochs(ctx, app, confirmedBlock)
 	if err != nil {
 		return err
 	}
+	if deferActions {
+		return nil
+	}
+	latestBlock := confirmedBlock
 	if s.submissionEnabled {
-		err = s.trySettle(ctx, app, mostRecentBlock)
+		latestBlock, err = s.client.BlockNumber(ctx)
 		if err != nil {
-			return err
+			return fmt.Errorf("fetching latest block for PRT actions: %w", err)
 		}
-		// trySettle may have marked the app FAILED (returning nil, per the
-		// appstatus contract). Stop this tick's work instead of broadcasting
-		// a bond-carrying JoinTournament for an app that was just halted.
-		if app.Status != ApplicationStatus_OK {
-			return nil
-		}
-		err = s.reactToTournament(ctx, app, mostRecentBlock)
-		if err != nil {
-			return err
+		if latestBlock < confirmedBlock {
+			return fmt.Errorf("latest block %d is behind configured block %d", latestBlock, confirmedBlock)
 		}
 	}
-	return nil
+	joinEpoch, recoveryAllowed, err := s.progressTournamentResult(ctx, app, confirmedBlock, latestBlock)
+	if err != nil {
+		return err
+	}
+	if !s.submissionEnabled || app.Status != ApplicationStatus_OK {
+		return nil
+	}
+	if joinEpoch != nil {
+		joined, err := s.reactToTournament(ctx, app, joinEpoch, latestBlock)
+		if err != nil {
+			return err
+		}
+		// The current claim's join action has priority over bond recovery.
+		recoveryAllowed = joined
+	}
+	if !recoveryAllowed {
+		return nil
+	}
+	// Bond recovery is existing in-memory transaction maintenance. It does not
+	// confirm database state or hold new tournament actions until finality.
+	return s.recoverRootBonds(ctx, app, latestBlock)
 }
 
 // isDaveConsensusError matches a typed Solidity error declared in the

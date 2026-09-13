@@ -88,6 +88,123 @@ func validateDaveConsensusSnapshot(snapshot daveConsensusSnapshot, mostRecentBlo
 	return nil
 }
 
+// progressTournamentResult records results at the published tournament block,
+// bounded by the configured head. A separate latest snapshot decides whether
+// to send a stage or accept transaction now.
+// A non-nil return value is the epoch that can be joined from that latest snapshot.
+// Recovery is allowed only during a known wait or to reconcile a sent refund.
+func (s *Service) progressTournamentResult(
+	ctx context.Context,
+	app *model.Application,
+	confirmedBlock uint64,
+	latestBlock uint64,
+) (*model.Epoch, bool, error) {
+	recovery, err := s.rootBondRecoveryInFlight(app.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	if recovery != nil {
+		if s.hasNonRecoveryMutationInFlight(app.ID) {
+			return nil, false, fmt.Errorf("application %s has bond recovery and another PRT transaction in flight",
+				app.IApplicationAddress)
+		}
+		s.Logger.Info("Tournament actions wait for pending root bond recovery",
+			"application", app.Name, "epoch_index", recovery.EpochIndex, "tx", *recovery.TxHash)
+		return nil, true, nil
+	}
+	if blocked, err := s.waitForTournamentTransaction(ctx, app, latestBlock); blocked || err != nil {
+		return nil, false, err
+	}
+
+	consensus, err := s.adapterFactory.CreateDaveConsensusAdapter(app.IConsensusAddress)
+	if err != nil {
+		return nil, false, fmt.Errorf("binding DaveConsensus for app %s: %w", app.IApplicationAddress, err)
+	}
+	observedBlock := min(confirmedBlock, app.LastTournamentCheckBlock)
+	var snapshot daveConsensusSnapshot
+	var epoch *model.Epoch
+	observedSnapshot := false
+	// Root discovery can stay behind a moving configured head. Read the result
+	// at the committed window instead of waiting for those heads to coincide.
+	// Zero means that no tournament window has been published yet.
+	if observedBlock != 0 {
+		snapshot, err = readDaveConsensusSnapshot(ctx, consensus, observedBlock)
+		if err != nil && !errors.Is(err, bind.ErrNoCode) {
+			return nil, false, fmt.Errorf("reading DaveConsensus snapshot for app %s: %w", app.IApplicationAddress, err)
+		}
+		if err == nil {
+			observedSnapshot = true
+			epoch, err = s.repository.GetEpoch(ctx, app.IApplicationAddress.Hex(), snapshot.sealed.EpochNumber)
+			if err != nil {
+				return nil, false, fmt.Errorf("loading current sealed epoch %d: %w", snapshot.sealed.EpochNumber, err)
+			}
+			if pendingTournamentResult(epoch) && (epoch.StagedAtBlock == nil || *epoch.StagedAtBlock <= observedBlock) {
+				if err := s.recordTournamentResult(ctx, app, epoch, snapshot); err != nil {
+					return nil, false, err
+				}
+			}
+		} else {
+			// A bootstrap window can precede consensus deployment. This does
+			// not prevent a submitter from checking the latest chain below.
+			s.Logger.Debug("DaveConsensus is not deployed at the published tournament block",
+				"application", app.Name, "block", observedBlock)
+		}
+	}
+	if !s.submissionEnabled {
+		return nil, false, nil
+	}
+
+	if !observedSnapshot || latestBlock != observedBlock {
+		snapshot, err = readDaveConsensusSnapshot(ctx, consensus, latestBlock)
+		if err != nil {
+			return nil, false, fmt.Errorf("reading latest DaveConsensus snapshot for app %s: %w", app.IApplicationAddress, err)
+		}
+		if epoch == nil || epoch.Index != snapshot.sealed.EpochNumber {
+			epoch, err = s.repository.GetEpoch(ctx, app.IApplicationAddress.Hex(), snapshot.sealed.EpochNumber)
+			if err != nil {
+				return nil, false, fmt.Errorf("loading latest sealed epoch %d: %w", snapshot.sealed.EpochNumber, err)
+			}
+		}
+	}
+	if !pendingTournamentResult(epoch) {
+		s.Logger.Debug("Local epoch is not ready for tournament result processing",
+			"application", app.Name,
+			"epoch_index", snapshot.sealed.EpochNumber)
+		// A failed root has no remaining join or stage action to prioritize.
+		return nil, snapshot.stage.IsTournamentFailed, nil
+	}
+	if err := s.validateResultEpoch(ctx, app, epoch, snapshot.sealed.EpochNumber); err != nil {
+		return nil, false, err
+	}
+	// Latest evidence may prevent this action, but cannot change stored epoch
+	// or application status. Re-read it on the next tick after a race or reorg.
+	if err := matchConsensusSnapshotToEpoch(epoch, snapshot); err != nil {
+		return nil, false, fmt.Errorf("latest tournament result does not match local epoch: %w", err)
+	}
+	if snapshot.stage.IsTournamentFailed {
+		return nil, true, nil
+	}
+	if snapshot.sealed.IsTournamentResultStaged {
+		if !snapshot.accept.DoAllSentriesAgreeWithStagedTournamentResult &&
+			!snapshot.accept.IsClaimStagingPeriodOver {
+			return nil, true, nil
+		}
+		return nil, false, s.broadcastAcceptTournamentResult(ctx, app, epoch, consensus, snapshot)
+	}
+
+	if epoch.Status == model.EpochStatus_ClaimStaged {
+		s.Logger.Info("Local staged epoch is not staged in the pinned DaveConsensus snapshot; waiting for synchronization",
+			"application", app.Name,
+			"epoch_index", epoch.Index,
+			"block", latestBlock)
+		return nil, false, nil
+	}
+	if !snapshot.stage.IsFinished {
+		return epoch, false, nil
+	}
+	return nil, false, s.broadcastStageTournamentResult(ctx, app, epoch, consensus)
+}
+
 func pendingTournamentResult(epoch *model.Epoch) bool {
 	return epoch != nil && (epoch.Status == model.EpochStatus_ClaimComputed || epoch.Status == model.EpochStatus_ClaimStaged)
 }

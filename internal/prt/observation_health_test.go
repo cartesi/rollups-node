@@ -192,13 +192,13 @@ func TestTournamentObservationHealthIgnoresPendingAndMissingTransactions(t *test
 				f.client.On("BlockNumber", mock.Anything).Return(head, nil).Once()
 				f.client.On("TransactionByHash", mock.Anything, hash).
 					Return((*types.Transaction)(nil), pending, lookupError).Once()
+				if !pending {
+					f.client.On("TransactionReceipt", mock.Anything, hash).
+						Return((*types.Receipt)(nil), ethereum.NotFound).Once()
+				}
 				reschedule, err := f.s.Tick(t.Context())
 				require.False(t, reschedule)
-				if pending {
-					require.NoError(t, err)
-				} else {
-					require.ErrorIs(t, err, ethereum.NotFound)
-				}
+				require.NoError(t, err)
 				require.True(t, f.s.Ready())
 				require.Empty(t, f.s.observationFailures)
 			}
@@ -235,6 +235,7 @@ func TestTournamentObservationHealthPrunesIneligibleApplications(t *testing.T) {
 }
 
 func TestTournamentObservationHealthIgnoresShutdownCancellation(t *testing.T) {
+	dbErr := errors.New("database unavailable")
 	for _, test := range []struct {
 		name     string
 		stopping bool
@@ -242,6 +243,9 @@ func TestTournamentObservationHealthIgnoresShutdownCancellation(t *testing.T) {
 		counted  bool
 	}{
 		{shutdownCancellationCase, true, context.Canceled, false},
+		{"joined shutdown cancellations", true, errors.Join(context.Canceled, fmt.Errorf("read: %w", context.Canceled)), false},
+		{"shutdown database failure", true, dbErr, true},
+		{"shutdown mixed database failure", true, fmt.Errorf("read: %w", errors.Join(context.Canceled, dbErr)), true},
 		{shutdownDeadlineCase, true, context.DeadlineExceeded, true},
 		{"shutdown joined deadline", true, errors.Join(context.Canceled, context.DeadlineExceeded), true},
 		{runningCancellationCase, false, context.Canceled, true},
