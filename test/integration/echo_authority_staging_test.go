@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -16,8 +17,11 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
+
+const claimStagingPeriodFlag = "--claim-staging-period"
 
 // EchoAuthorityStagingSuite exercises the non-fast-path claim flow by
 // deploying an Authority application with claimStagingPeriod >= 2. With a
@@ -60,24 +64,46 @@ func (s *EchoAuthorityStagingSuite) TearDownTest() {
 	s.CheckLogs(s.T())
 }
 
-// TestEchoAuthorityStagingPath deploys with --claim-staging-period 5 and
-// runs the full lifecycle. The 5-block period is large enough to make the
-// STAGED state visible in node logs (the claim sits in STAGED until anvil
-// advances 5 blocks past the staging tx) but small enough to keep the test
-// short. The chain-side acceptClaim() will revert with
-// ClaimStagingPeriodNotOverYet until the period elapses, which the claimer
-// treats as transient until the next tick — the existing retry loop drives
-// the transition once the period clears.
+// TestEchoAuthorityStagingPath deploys with a non-zero claim staging period
+// and runs the full lifecycle. The period is long enough for the test to
+// observe CLAIM_STAGED before interval mining can make the claim acceptable.
+// The test then advances the chain to the acceptance boundary.
 func (s *EchoAuthorityStagingSuite) TestEchoAuthorityStagingPath() {
 	r := s.Require()
 	dappPath := envOrDefault("CARTESI_TEST_DAPP_PATH", "applications/echo-dapp")
 	s.appName = uniqueAppName("echo-authority-staging")
+	const claimStagingPeriod uint64 = 30
 
 	runEchoLifecycleTest(s.ctx, s.T(), r, echoLifecycleConfig{
 		AppName:         s.appName,
 		DappPath:        dappPath,
 		Payload:         "hello cartesi (staging)",
-		ExtraDeployArgs: []string{"--claim-staging-period", "5"},
+		ExtraDeployArgs: []string{claimStagingPeriodFlag, strconv.FormatUint(claimStagingPeriod, 10)},
+		PreClaimHook: func(ctx context.Context, t testing.TB, require *require.Assertions, appName string) {
+			input, err := readInput(ctx, appName, 0)
+			require.NoError(err, "read input 0 to find its epoch")
+			minePastEpochBoundary(ctx, t, require, appName, input.EpochIndex)
+
+			stagedCtx, stagedCancel := context.WithTimeout(ctx, claimAcceptedTimeout)
+			defer stagedCancel()
+			epoch, err := waitForEpochStatus(
+				stagedCtx, t, appName, input.EpochIndex, model.EpochStatus_ClaimStaged)
+			require.NoError(err, "wait for authority claim to become CLAIM_STAGED")
+			require.NotNil(epoch.StagedAtBlock, "staged claim must record staged_at_block")
+
+			client := newIntegrationEthClient(ctx, t)
+			defer client.Close()
+			currentBlock, err := client.BlockNumber(ctx)
+			require.NoError(err, "read block before claim acceptance")
+			acceptanceBlock := *epoch.StagedAtBlock + claimStagingPeriod
+			if currentBlock < acceptanceBlock {
+				blocksToMine := acceptanceBlock - currentBlock
+				require.LessOrEqual(blocksToMine, claimStagingPeriod,
+					"blocks to mine must fit within the configured staging period")
+				require.NoError(anvilMine(ctx, int(blocksToMine)), //nolint:gosec // Bounded by claimStagingPeriod.
+					"mine to the authority claim acceptance boundary")
+			}
+		},
 	})
 
 	// Pin the staging-path invariant: the epoch must have gone through
@@ -128,7 +154,7 @@ func (s *EchoAuthorityStagingSuite) TestEchoAuthorityForecloseStagedClaim() {
 		s.appName,
 		dappPath,
 		"--salt", uniqueSalt(),
-		"--claim-staging-period", claimStagingPeriod,
+		claimStagingPeriodFlag, claimStagingPeriod,
 		"--withdrawal-config", withdrawalConfigJSON,
 	)
 	r.NoError(err, "deploy foreclosable authority app")

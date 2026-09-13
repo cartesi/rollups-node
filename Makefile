@@ -618,7 +618,7 @@ INTEGRATION_SHARD_basic      := ^Test(EchoAuthority|RejectException|TerminalMach
 INTEGRATION_SHARD_quorum     := ^Test(EchoQuorum|SameBlockInputs)$$
 INTEGRATION_SHARD_prt        := ^Test(EchoPrt|RejectExceptionPrt|ForeclosePrt)$$
 INTEGRATION_SHARD_replay     := ^Test(Foreclose|ForecloseReplay|DivergentClaim)$$
-INTEGRATION_SHARD_restart    := ^Test(Restart|SnapshotPolicy)$$
+INTEGRATION_SHARD_restart    := ^Test(Restart|SnapshotPolicy|NodeSubprocess)$$
 INTEGRATION_SHARD_withdrawal := ^TestWithdrawalLifecycle$$
 INTEGRATION_SHARD_awskms     := ^TestLocalStackAWSIntegration$$
 

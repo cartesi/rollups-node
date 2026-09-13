@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -159,9 +160,8 @@ func (s *SnapshotPolicySuite) runSnapshotPolicyTest(cfg snapshotPolicyConfig) {
 	// === Send first input ===
 
 	s.T().Logf("Sending first input (snap-%s-1)...", policyStr)
-	idx1, _, err := sendInput(
-		s.ctx, s.appName, "snap-"+policyStr+"-1")
-	require.NoError(err, "send first input")
+	idx1, _, _ := sendInputThroughRelay(
+		s.ctx, s.T(), common.HexToAddress(addr), "snap-"+policyStr+"-1")
 	s.T().Logf("    input sent (index=%d)", idx1)
 
 	func() {
@@ -311,8 +311,8 @@ func (s *SnapshotPolicySuite) TestSnapshotPolicyEveryInputPrt() {
 			ctx context.Context, t testing.TB,
 			require *require.Assertions, appName string,
 		) {
-			settleTournament(ctx, t, require, ethClient, appName, 0)
-			settleTournament(ctx, t, require, ethClient, appName, 1)
+			finalizePrtEpoch(ctx, t, require, ethClient, appName, 0)
+			finalizePrtEpoch(ctx, t, require, ethClient, appName, 1)
 		},
 	})
 }
@@ -337,8 +337,8 @@ func (s *SnapshotPolicySuite) TestSnapshotPolicyEveryEpochPrt() {
 			ctx context.Context, t testing.TB,
 			require *require.Assertions, appName string,
 		) {
-			settleTournament(ctx, t, require, ethClient, appName, 0)
-			settleTournament(ctx, t, require, ethClient, appName, 1)
+			finalizePrtEpoch(ctx, t, require, ethClient, appName, 0)
+			finalizePrtEpoch(ctx, t, require, ethClient, appName, 1)
 		},
 	})
 }
