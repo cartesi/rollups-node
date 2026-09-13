@@ -25,6 +25,10 @@ var Cmd = &cobra.Command{
 	Args:    cobra.RangeArgs(1, 2), //nolint:mnd
 	Run:     run,
 	Long: `
+FAILED stops local processing and foreclosure work. Repair the failure cause
+and verify snapshot/database consistency before you enable the application.
+Enabling clears FAILED. It does not repair state or cancel foreclosure.
+
 Supported Environment Variables:
   CARTESI_DATABASE_CONNECTION                    Database connection string`,
 }
@@ -36,7 +40,7 @@ cartesi-rollups-cli app status echo-dapp
 cartesi-rollups-cli app status echo-dapp enabled
 cartesi-rollups-cli app status echo-dapp disabled
 
-# Re-enable a FAILED application without confirmation prompt:
+# After repairing the cause, re-enable a FAILED application without a prompt:
 cartesi-rollups-cli app status echo-dapp enabled --yes`
 
 func init() {
@@ -84,6 +88,9 @@ func run(cmd *cobra.Command, args []string) {
 		}
 		if app.ForecloseBlock != 0 {
 			fmt.Printf("Foreclose block: 0x%x\n", app.ForecloseBlock)
+			if app.Status == model.ApplicationStatus_Failed {
+				fmt.Println("Foreclosure work is blocked by FAILED. Repair the cause before enabling the application.")
+			}
 			if app.ForecloseTransaction != nil {
 				fmt.Printf("Foreclose transaction: %s\n", app.ForecloseTransaction.Hex())
 			}
@@ -127,6 +134,7 @@ func run(cmd *cobra.Command, args []string) {
 			fmt.Printf("Reason: %s\n", *app.Reason)
 		}
 		fmt.Println("Re-enabling will attempt to restart processing from the last snapshot.")
+		fmt.Println("Repair the failure cause and verify snapshot/database consistency before you proceed.")
 		confirmed, err := cli.ConfirmPrompt("Proceed?")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
