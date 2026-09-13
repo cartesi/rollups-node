@@ -12,6 +12,33 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestApplicationJSONRoundtrip(t *testing.T) {
+	original := Application{
+		Name:                "direct-input-box",
+		IApplicationAddress: common.HexToAddress("0x1234"),
+		IConsensusAddress:   common.HexToAddress("0x5678"),
+		IInputBoxAddress:    common.HexToAddress("0x9abc"),
+		IInputBoxBlock:      10,
+		EpochLength:         20,
+		ClaimStagingPeriod:  30,
+		ConsensusType:       Consensus_Authority,
+		Enabled:             true,
+		Status:              ApplicationStatus_OK,
+	}
+
+	data, err := json.Marshal(&original)
+	require.NoError(t, err)
+
+	var fields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(data, &fields))
+	require.Contains(t, fields, "iinputbox_address")
+	require.NotContains(t, fields, "data_availability")
+
+	var decoded Application
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.Equal(t, original, decoded)
+}
+
 func TestEpochJSONRoundtrip(t *testing.T) {
 	root := common.HexToHash("0xabcd")
 	iflagsY := common.HexToHash("0x1234")
@@ -92,6 +119,50 @@ func TestStateProofCompleteness(t *testing.T) {
 	require.False(t, (*Epoch)(nil).HasCompleteStateProof())
 }
 
+func TestEpochStateProof(t *testing.T) {
+	machineHash := common.Hash{1}
+	txBufferDataBlock := common.Hash{2}
+	iflagsYDataBlock := common.Hash{3}
+	htifTohostDataBlock := common.Hash{4}
+	epoch := &Epoch{
+		MachineHash:         &machineHash,
+		TxBufferDataBlock:   &txBufferDataBlock,
+		TxBufferProof:       make([]common.Hash, StateProofSiblingCount),
+		IflagsYDataBlock:    &iflagsYDataBlock,
+		IflagsYProof:        make([]common.Hash, StateProofSiblingCount),
+		HtifTohostDataBlock: &htifTohostDataBlock,
+		HtifTohostProof:     make([]common.Hash, StateProofSiblingCount),
+	}
+	epoch.TxBufferProof[0] = common.Hash{5}
+	epoch.IflagsYProof[0] = common.Hash{6}
+	epoch.HtifTohostProof[0] = common.Hash{7}
+
+	proof, err := epoch.StateProof()
+	require.NoError(t, err)
+	require.Equal(t, machineHash, proof.MachineHash)
+	require.Equal(t, txBufferDataBlock, proof.TxBufferDataBlock)
+	require.Equal(t, iflagsYDataBlock, proof.IflagsYDataBlock)
+	require.Equal(t, htifTohostDataBlock, proof.HtifTohostDataBlock)
+	require.Equal(t, [32]byte{5}, proof.TxBufferProof[0])
+	require.Equal(t, [32]byte{6}, proof.IflagsYProof[0])
+	require.Equal(t, [32]byte{7}, proof.HtifTohostProof[0])
+
+	proof.TxBufferProof[0][0] = 8
+	proof.IflagsYProof[0][0] = 9
+	proof.HtifTohostProof[0][0] = 10
+	require.Equal(t, byte(5), epoch.TxBufferProof[0][0])
+	require.Equal(t, byte(6), epoch.IflagsYProof[0][0])
+	require.Equal(t, byte(7), epoch.HtifTohostProof[0][0])
+}
+
+func TestEpochStateProofRejectsIncompleteEpoch(t *testing.T) {
+	_, err := (&Epoch{}).StateProof()
+	require.ErrorIs(t, err, ErrIncompleteStateProof)
+
+	_, err = (*Epoch)(nil).StateProof()
+	require.ErrorIs(t, err, ErrIncompleteStateProof)
+}
+
 func TestInputJSONRoundtrip(t *testing.T) {
 	machineHash := common.HexToHash("0x1234")
 	txBufferDataBlock := common.HexToHash("0xabcd")
@@ -168,8 +239,9 @@ func TestInputUnmarshalJSONInvalidHex(t *testing.T) {
 			wantErr: "LogIndex",
 		},
 		{
-			name:    "invalid ExceptionData",
-			json:    `{"epoch_index":"0x0","index":"0x0","block_number":"0x0","raw_data":"0x","exception_data":"not-hex","log_index":"0x0"}`,
+			name: "invalid ExceptionData",
+			json: `{"epoch_index":"0x0","index":"0x0","block_number":"0x0","raw_data":"0x",` +
+				`"exception_data":"not-hex","log_index":"0x0"}`,
 			wantErr: "ExceptionData",
 		},
 	}
@@ -271,11 +343,13 @@ func TestTournamentJSONRoundtrip(t *testing.T) {
 		Level:                   2,
 		Log2Step:                16,
 		Height:                  8,
-		WinnerCommitment:        &winner,
-		FinalStateHash:          &finalState,
-		FinishedAtBlock:         9999,
-		CreatedAt:               time.Now().Truncate(time.Microsecond).UTC(),
-		UpdatedAt:               time.Now().Truncate(time.Microsecond).UTC(),
+		Snapshot: TournamentSnapshot{
+			WinnerCommitment: &winner,
+			FinalStateHash:   &finalState,
+			FinishedAtBlock:  9999,
+		},
+		CreatedAt: time.Now().Truncate(time.Microsecond).UTC(),
+		UpdatedAt: time.Now().Truncate(time.Microsecond).UTC(),
 	}
 
 	data, err := json.Marshal(&original)
@@ -295,9 +369,7 @@ func TestTournamentJSONRoundtrip(t *testing.T) {
 	require.Equal(t, original.Level, decoded.Level)
 	require.Equal(t, original.Log2Step, decoded.Log2Step)
 	require.Equal(t, original.Height, decoded.Height)
-	require.Equal(t, original.WinnerCommitment, decoded.WinnerCommitment)
-	require.Equal(t, original.FinalStateHash, decoded.FinalStateHash)
-	require.Equal(t, original.FinishedAtBlock, decoded.FinishedAtBlock)
+	require.Equal(t, original.Snapshot, decoded.Snapshot)
 }
 
 func TestCommitmentJSONRoundtrip(t *testing.T) {
