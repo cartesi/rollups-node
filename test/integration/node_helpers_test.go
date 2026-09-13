@@ -72,11 +72,9 @@ func startSharedNode(t testing.TB) {
 }
 
 // startSharedNodeWithEnv is like startSharedNode but also lets the caller
-// inject extra environment variables (e.g.,
-// CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED=false to bring the node up in
-// reader mode for a single test phase). Restore default mode on test
-// teardown by stopping the node and calling startSharedNode again. Under the
-// multiprocess topology this starts/stops the whole service set.
+// inject extra environment variables. Values must agree with saved settings;
+// use startReaderNode for isolated reader-mode fixtures. Under the multiprocess
+// topology this starts/stops the whole service set.
 func startSharedNodeWithEnv(t testing.TB, extraEnv ...string) {
 	if sharedNode != nil {
 		t.Fatal("cannot start node: already running")
@@ -117,7 +115,7 @@ func nodePortAvailable() bool {
 
 // nodeProcess represents a running node subprocess managed by the test.
 type nodeProcess struct {
-	cmd     *exec.Cmd
+	*nodeSubprocess
 	logFile *os.File
 	tail    *exec.Cmd // tail -f process for live log streaming
 	tty     *os.File  // /dev/tty FD used by tail; closed in stop()
@@ -127,8 +125,8 @@ type nodeProcess struct {
 // to the given log file path. The node inherits the current environment
 // (database connection, blockchain endpoint, etc.) and additionally sets
 // fast polling intervals for test responsiveness. Any extraEnv entries are
-// appended last, so they win against the suite defaults (useful for, e.g.,
-// CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED=false reader-mode tests).
+// appended last, so they win against the suite defaults. Saved service settings
+// must also match; environment changes alone cannot change submission mode.
 //
 // A background `tail -f` process streams the log file to the terminal so
 // the user can see node output in real time. This must be a separate process
@@ -144,7 +142,7 @@ func startNodeWithLog(logPath string, extraEnv ...string) (*nodeProcess, error) 
 		return nil, fmt.Errorf("open log file %s: %w", logPath, err)
 	}
 
-	cmd := exec.Command(nodeBinary) //nolint:gosec
+	cmd := exec.Command(nodeBinary)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	if workDir := os.Getenv("CARTESI_TEST_NODE_WORKDIR"); workDir != "" {
@@ -162,7 +160,8 @@ func startNodeWithLog(logPath string, extraEnv ...string) (*nodeProcess, error) 
 	)
 	cmd.Env = append(cmd.Env, extraEnv...)
 
-	if err := cmd.Start(); err != nil {
+	proc, err := startNodeSubprocess(nodeBinary, cmd)
+	if err != nil {
 		logFile.Close()
 		return nil, fmt.Errorf("start node: %w", err)
 	}
@@ -171,9 +170,9 @@ func startNodeWithLog(logPath string, extraEnv ...string) (*nodeProcess, error) 
 	// We write to /dev/tty to bypass go test and gotestsum's output capture,
 	// so the user sees node logs in real time just like the old Makefile did.
 	// Falls back silently if /dev/tty is not available (e.g., CI, compose).
-	tty, ttyErr := os.OpenFile("/dev/tty", os.O_WRONLY, 0) //nolint:gosec
+	tty, ttyErr := os.OpenFile("/dev/tty", os.O_WRONLY, 0)
 	if ttyErr != nil {
-		return &nodeProcess{cmd: cmd, logFile: logFile}, nil
+		return &nodeProcess{nodeSubprocess: proc, logFile: logFile}, nil
 	}
 
 	tail := exec.Command("tail", "-f", logPath) //nolint:gosec
@@ -181,10 +180,10 @@ func startNodeWithLog(logPath string, extraEnv ...string) (*nodeProcess, error) 
 	tail.Stderr = tty
 	if err := tail.Start(); err != nil {
 		tty.Close()
-		return &nodeProcess{cmd: cmd, logFile: logFile}, nil
+		return &nodeProcess{nodeSubprocess: proc, logFile: logFile}, nil
 	}
 
-	return &nodeProcess{cmd: cmd, logFile: logFile, tail: tail, tty: tty}, nil
+	return &nodeProcess{nodeSubprocess: proc, logFile: logFile, tail: tail, tty: tty}, nil
 }
 
 // waitForHealth polls the node's readyz endpoint until it responds 200 OK
@@ -192,6 +191,9 @@ func startNodeWithLog(logPath string, extraEnv ...string) (*nodeProcess, error) 
 func (n *nodeProcess) waitForHealth(ctx context.Context, t testing.TB) error {
 	client := &http.Client{Timeout: 2 * time.Second}
 	return pollUntil(ctx, 2*time.Second, func() (bool, error) {
+		if err := n.exitedProcessError(); err != nil {
+			return false, err
+		}
 		req, err := http.NewRequestWithContext(
 			ctx, "GET", "http://localhost:10000/readyz", nil)
 		if err != nil {
@@ -232,25 +234,23 @@ func (n *nodeProcess) stop(t testing.TB) {
 	}
 
 	// Send interrupt for graceful shutdown.
-	if err := n.cmd.Process.Signal(os.Interrupt); err != nil {
-		if t != nil {
-			t.Logf("    signal failed, killing: %v", err)
+	if !n.isDone() {
+		if err := n.cmd.Process.Signal(os.Interrupt); err != nil {
+			if t != nil {
+				t.Logf("    signal failed, killing: %v", err)
+			}
+			_ = n.cmd.Process.Kill()
 		}
-		_ = n.cmd.Process.Kill()
 	}
 
 	// Wait for exit with a timeout — if the node hangs during shutdown,
 	// fall back to SIGKILL so the test suite doesn't hang indefinitely.
-	done := make(chan error, 1)
-	go func() { done <- n.cmd.Wait() }()
-	select {
-	case <-done:
-	case <-time.After(30 * time.Second):
+	if !n.wait(30 * time.Second) {
 		if t != nil {
 			t.Log("    node did not exit within 30s, sending SIGKILL")
 		}
 		_ = n.cmd.Process.Kill()
-		<-done
+		<-n.done
 	}
 	n.logFile.Close()
 	if t != nil {

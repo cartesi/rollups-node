@@ -7,11 +7,15 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
+	jsonrpcclient "github.com/cartesi/rollups-node/pkg/jsonrpc/client"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -90,16 +94,33 @@ func (s *MultiAppSuite) TestMultiAppIsolation() {
 	payload2 := "input-for-app-2"
 	defer timed(s.T(), "full multi-app isolation test")()
 
+	client := newIntegrationEthClient(s.ctx, s.T())
+	defer client.Close()
+	rpc := jsonrpcclient.NewClient(envOrDefault("CARTESI_JSONRPC_API_URL", "http://localhost:10011/rpc"))
+	for _, app := range []struct{ name, address string }{
+		{s.app1Name, s.app1Addr},
+		{s.app2Name, s.app2Addr},
+	} {
+		inputBox, err := ethutil.GetInputBox(s.ctx, client, common.HexToAddress(app.address))
+		require.NoError(err, "read %s input box from the contract", app.name)
+
+		var response api.SingleResponse[map[string]json.RawMessage]
+		err = rpc.Call(s.ctx, "cartesi_getApplication", api.GetApplicationParams{Application: app.name}, &response)
+		require.NoError(err, "read %s through JSON-RPC", app.name)
+		require.NotContains(response.Data, "data_availability")
+		var storedInputBox common.Address
+		require.NoError(json.Unmarshal(response.Data["iinputbox_address"], &storedInputBox))
+		require.Equal(inputBox, storedInputBox)
+	}
+
 	// --- L1 -> Machine: send one input to each app and verify independent processing ---
 
 	s.T().Log("Sending one input to each app — they should process independently with separate input indices...")
-	idx1, _, err := sendInput(s.ctx, s.app1Name, payload1)
-	require.NoError(err, "send input to app-1")
+	idx1, _, _ := sendInputThroughRelay(s.ctx, s.T(), common.HexToAddress(s.app1Addr), payload1)
 	require.Equal(uint64(0), idx1)
 	s.T().Logf("    app-1: input sent (index=%d)", idx1)
 
-	idx2, _, err := sendInput(s.ctx, s.app2Name, payload2)
-	require.NoError(err, "send input to app-2")
+	idx2, _, _ := sendInputThroughRelay(s.ctx, s.T(), common.HexToAddress(s.app2Addr), payload2)
 	require.Equal(uint64(0), idx2, "app-2 should start at input index 0 independently")
 	s.T().Logf("    app-2: input sent (index=%d) — independent counter, also starts at 0", idx2)
 
@@ -177,8 +198,6 @@ func (s *MultiAppSuite) TestMultiAppIsolation() {
 
 	// --- Consensus + L1 execution for both apps independently ---
 
-	client := newIntegrationEthClient(s.ctx, s.T())
-	defer client.Close()
 	var maxLastBlock uint64
 	for _, app := range []struct {
 		name    string

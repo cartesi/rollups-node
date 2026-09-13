@@ -96,10 +96,11 @@ func (s *EchoQuorumSuite) TearDownTest() {
 }
 
 func (s *EchoQuorumSuite) TestEchoQuorumLifecycle() {
+	s.SetExpectedLogs(s.T(), anvilBlockOutOfRangeAllowlist)
 	r := s.Require()
 
 	app := s.deployQuorumEchoApp("echo-quorum-lifecycle")
-	epoch := s.prepareQuorumEpoch(app.appName, "hello cartesi (quorum lifecycle)")
+	epoch := s.prepareQuorumEpochThroughRelay(app, "hello cartesi (quorum lifecycle)")
 
 	outputsResp, err := readOutputs(s.ctx, app.appName)
 	r.NoError(err, "read quorum lifecycle outputs")
@@ -139,8 +140,8 @@ func (s *EchoQuorumSuite) TestEchoQuorumLifecycle() {
 	submittedCancel()
 	r.NoError(err, "wait for node to submit quorum claim")
 
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.TxBufferDataBlock)
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, *epoch.TxBufferDataBlock)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, epoch)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, epoch)
 	s.waitForQuorumAccepted(app.appName, epoch.Index)
 
 	verifyClaimAndExecute(s.ctx, s.T(), r, verifyAndExecuteConfig{
@@ -154,6 +155,7 @@ func (s *EchoQuorumSuite) TestEchoQuorumLifecycle() {
 }
 
 func (s *EchoQuorumSuite) TestNodeVoteFirstThenOtherValidatorsStageAndAccept() {
+	s.SetExpectedLogs(s.T(), anvilBlockOutOfRangeAllowlist)
 	app := s.deployQuorumEchoApp("echo-quorum-node-first")
 	epoch := s.prepareQuorumEpoch(app.appName, "hello cartesi (quorum node first)")
 
@@ -162,8 +164,8 @@ func (s *EchoQuorumSuite) TestNodeVoteFirstThenOtherValidatorsStageAndAccept() {
 	submittedCancel()
 	s.Require().NoError(err, "wait for node to submit quorum claim")
 
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.TxBufferDataBlock)
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, *epoch.TxBufferDataBlock)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, epoch)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, epoch)
 
 	s.waitForQuorumAccepted(app.appName, epoch.Index)
 }
@@ -172,11 +174,7 @@ func (s *EchoQuorumSuite) TestExternalValidatorThenNodeVoteStagesAndAccepts() {
 	if !isNodeSelfManaged() {
 		s.T().Skip("skipping: validator-order test requires test-managed node to slow claimer polling")
 	}
-	s.SetExpectedLogs(s.T(), ExpectedLog{
-		Pattern: regexp.MustCompile(`service=.*context canceled`),
-		Level:   LevelError,
-		Reason:  "benign shutdown noise from restarting the shared node with different claimer polling",
-	})
+	s.SetExpectedLogs(s.T(), anvilBlockOutOfRangeAllowlist)
 
 	stopSharedNode(s.T())
 	startSharedNodeWithEnv(s.T(), "CARTESI_CLAIMER_POLLING_INTERVAL=3600")
@@ -193,7 +191,7 @@ func (s *EchoQuorumSuite) TestExternalValidatorThenNodeVoteStagesAndAccepts() {
 	s.Require().Equal(model.EpochStatus_ClaimComputed, epoch.Status,
 		"node should compute the claim before the slowed claimer polling interval submits it")
 
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.TxBufferDataBlock)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, epoch)
 
 	stopSharedNode(s.T())
 	startSharedNode(s.T())
@@ -206,11 +204,7 @@ func (s *EchoQuorumSuite) TestExternalMajorityStagesBeforeNodeVoteThenNodeAccept
 	if !isNodeSelfManaged() {
 		s.T().Skip("skipping: external-majority test requires test-managed node to slow claimer polling")
 	}
-	s.SetExpectedLogs(s.T(), ExpectedLog{
-		Pattern: regexp.MustCompile(`service=.*context canceled`),
-		Level:   LevelError,
-		Reason:  "benign shutdown noise from restarting the shared node with different claimer polling",
-	})
+	s.SetExpectedLogs(s.T(), anvilBlockOutOfRangeAllowlist)
 
 	stopSharedNode(s.T())
 	startSharedNodeWithEnv(s.T(), "CARTESI_CLAIMER_POLLING_INTERVAL=3600")
@@ -227,8 +221,8 @@ func (s *EchoQuorumSuite) TestExternalMajorityStagesBeforeNodeVoteThenNodeAccept
 	s.Require().Equal(model.EpochStatus_ClaimComputed, epoch.Status,
 		"node should compute the claim before the slowed claimer polling interval submits it")
 
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.TxBufferDataBlock)
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, *epoch.TxBufferDataBlock)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, epoch)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, epoch)
 
 	stopSharedNode(s.T())
 	startSharedNode(s.T())
@@ -238,23 +232,23 @@ func (s *EchoQuorumSuite) TestExternalMajorityStagesBeforeNodeVoteThenNodeAccept
 }
 
 func (s *EchoQuorumSuite) TestDivergentMinorityVoteDoesNotBlockAcceptance() {
+	s.SetExpectedLogs(s.T(), anvilBlockOutOfRangeAllowlist)
 	app := s.deployQuorumEchoApp("echo-quorum-divergent-minority")
-	epoch := s.prepareQuorumEpoch(app.appName, "hello cartesi (quorum divergent minority)")
+	staleEpoch, epoch := s.prepareQuorumDivergence(
+		app,
+		"hello cartesi (quorum minority source)",
+		"hello cartesi (quorum divergent minority)",
+	)
 
-	submittedCtx, submittedCancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)
-	epoch, err := waitForEpochStatus(submittedCtx, s.T(), app.appName, epoch.Index, model.EpochStatus_ClaimSubmitted)
-	submittedCancel()
-	s.Require().NoError(err, "wait for node to submit quorum claim")
-
-	divergentOutputs := randomOutputsMerkleRoot(s.T(), *epoch.TxBufferDataBlock)
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.TxBufferDataBlock)
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, divergentOutputs)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, epoch)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, staleEpoch)
 
 	s.waitForQuorumAccepted(app.appName, epoch.Index)
 }
 
 func (s *EchoQuorumSuite) TestDivergentMajorityMarksApplicationDiverged() {
 	s.SetExpectedLogs(s.T(),
+		anvilBlockOutOfRangeAllowlist,
 		ExpectedLog{
 			Pattern: regexp.MustCompile(`claim divergence detected.*quorum_divergence_at_staging`),
 			Level:   LevelError,
@@ -268,19 +262,17 @@ func (s *EchoQuorumSuite) TestDivergentMajorityMarksApplicationDiverged() {
 	)
 
 	app := s.deployQuorumEchoApp("echo-quorum-outvoted")
-	epoch := s.prepareQuorumEpoch(app.appName, "hello cartesi (quorum outvoted)")
+	staleEpoch, epoch := s.prepareQuorumDivergence(
+		app,
+		"hello cartesi (quorum majority source)",
+		"hello cartesi (quorum outvoted)",
+	)
 
-	submittedCtx, submittedCancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)
-	epoch, err := waitForEpochStatus(submittedCtx, s.T(), app.appName, epoch.Index, model.EpochStatus_ClaimSubmitted)
-	submittedCancel()
-	s.Require().NoError(err, "wait for node to submit quorum claim")
-
-	divergentOutputs := randomOutputsMerkleRoot(s.T(), *epoch.TxBufferDataBlock)
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, divergentOutputs)
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, divergentOutputs)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, staleEpoch)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, staleEpoch)
 
 	rejectedCtx, rejectedCancel := context.WithTimeout(s.ctx, 5*time.Minute)
-	epoch, err = waitForEpochStatus(rejectedCtx, s.T(), app.appName, epoch.Index, model.EpochStatus_ClaimRejected)
+	_, err := waitForEpochStatus(rejectedCtx, s.T(), app.appName, epoch.Index, model.EpochStatus_ClaimRejected)
 	rejectedCancel()
 	s.Require().NoError(err, "wait for outvoted quorum epoch to become CLAIM_REJECTED")
 
@@ -298,6 +290,7 @@ func (s *EchoQuorumSuite) TestDivergentMajorityMarksApplicationDiverged() {
 }
 
 func (s *EchoQuorumSuite) TestForecloseQuorumClaimBeforeAcceptanceMarksClaimForeclosed() {
+	s.SetExpectedLogs(s.T(), anvilBlockOutOfRangeAllowlist)
 	r := s.Require()
 
 	builderEnv := os.Getenv("CARTESI_DEVNET_WITHDRAWAL_OUTPUT_BUILDER_ADDRESS")
@@ -359,13 +352,14 @@ func (s *EchoQuorumSuite) TestForecloseQuorumClaimBeforeAcceptanceMarksClaimFore
 }
 
 func (s *EchoQuorumSuite) TestForecloseQuorumOutputExecutionAfterForeclosureIsRecorded() {
+	s.SetExpectedLogs(s.T(), anvilBlockOutOfRangeAllowlist)
 	r := s.Require()
 
 	const guardianIndex = 1
 	withdrawalConfigJSON, _ := withdrawalConfigForGuardian(s.T(), guardianIndex)
 
 	app := s.deployQuorumEchoApp("foreclose-quorum-output", "--withdrawal-config", withdrawalConfigJSON)
-	epoch := s.prepareQuorumEpoch(app.appName, "hello cartesi (foreclose quorum output)")
+	epoch := s.prepareQuorumEpochThroughRelay(app, "hello cartesi (foreclose quorum output)")
 
 	outputsResp, err := readOutputs(s.ctx, app.appName)
 	r.NoError(err, "read outputs")
@@ -377,8 +371,8 @@ func (s *EchoQuorumSuite) TestForecloseQuorumOutputExecutionAfterForeclosureIsRe
 	submittedCancel()
 	r.NoError(err, "wait for node to submit quorum claim")
 
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, *epoch.TxBufferDataBlock)
-	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, *epoch.TxBufferDataBlock)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexA, epoch)
+	s.submitQuorumClaim(app, epoch, quorumValidatorIndexB, epoch)
 	s.waitForQuorumAccepted(app.appName, epoch.Index)
 
 	r.NoError(guardianForeclose(s.ctx, app.appName, guardianIndex), "guardian foreclose")
@@ -433,7 +427,7 @@ func (s *EchoQuorumSuite) deployQuorumEchoApp(prefix string, extraApplicationArg
 		"deploy", "quorum",
 		"--json",
 		"--salt", uniqueSalt(),
-		"--claim-staging-period", strconv.FormatUint(quorumClaimStagingPeriod, 10),
+		claimStagingPeriodFlag, strconv.FormatUint(quorumClaimStagingPeriod, 10),
 	}
 	for _, validator := range validators {
 		quorumArgs = append(quorumArgs, "--validator", validator.Hex())
@@ -480,11 +474,32 @@ func (s *EchoQuorumSuite) deployQuorumEchoApp(prefix string, extraApplicationArg
 }
 
 func (s *EchoQuorumSuite) prepareQuorumEpoch(appName string, payload string) *model.Epoch {
+	return s.prepareQuorumEpochAtInput(appName, payload, 0)
+}
+
+func (s *EchoQuorumSuite) prepareQuorumEpochAtInput(appName string, payload string, expectedInputIndex uint64) *model.Epoch {
 	r := s.Require()
 
 	inputIndex, blockNum, err := sendInput(s.ctx, appName, payload)
 	r.NoError(err, "send input")
-	r.Equal(uint64(0), inputIndex)
+	return s.completeQuorumEpochPreparation(appName, inputIndex, blockNum, expectedInputIndex)
+}
+
+func (s *EchoQuorumSuite) prepareQuorumEpochThroughRelay(app quorumAppDeployment, payload string) *model.Epoch {
+	inputIndex, blockNum, relayAddress := sendInputThroughRelay(s.ctx, s.T(), app.appAddress, payload)
+	s.T().Logf("    quorum input sent through relay %s", relayAddress)
+	return s.completeQuorumEpochPreparation(app.appName, inputIndex, blockNum, 0)
+}
+
+func (s *EchoQuorumSuite) completeQuorumEpochPreparation(
+	appName string,
+	inputIndex uint64,
+	blockNum uint64,
+	expectedInputIndex uint64,
+) *model.Epoch {
+	r := s.Require()
+
+	r.Equal(expectedInputIndex, inputIndex)
 	s.T().Logf("    quorum input accepted on-chain: index=%d block=%d", inputIndex, blockNum)
 
 	processCtx, processCancel := context.WithTimeout(s.ctx, inputProcessingTimeout)
@@ -496,6 +511,46 @@ func (s *EchoQuorumSuite) prepareQuorumEpoch(appName string, payload string) *mo
 	epoch := s.waitForEpochAvailable(appName, input.EpochIndex)
 	s.minePastBlock(epoch.LastBlock)
 	return s.waitForEpochWithClaim(appName, input.EpochIndex)
+}
+
+func (s *EchoQuorumSuite) prepareQuorumDivergence(
+	app quorumAppDeployment,
+	sourcePayload string,
+	targetPayload string,
+) (*model.Epoch, *model.Epoch) {
+	sourceEpoch := s.prepareQuorumEpoch(app.appName, sourcePayload)
+
+	sourceCtx, sourceCancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)
+	sourceEpoch, err := waitForEpochStatus(
+		sourceCtx,
+		s.T(),
+		app.appName,
+		sourceEpoch.Index,
+		model.EpochStatus_ClaimSubmitted,
+	)
+	sourceCancel()
+	s.Require().NoError(err, "wait for node to submit source quorum claim")
+
+	s.submitQuorumClaim(app, sourceEpoch, quorumValidatorIndexA, sourceEpoch)
+	s.submitQuorumClaim(app, sourceEpoch, quorumValidatorIndexB, sourceEpoch)
+	s.waitForQuorumAccepted(app.appName, sourceEpoch.Index)
+
+	targetEpoch := s.prepareQuorumEpochAtInput(app.appName, targetPayload, 1)
+	targetCtx, targetCancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)
+	targetEpoch, err = waitForEpochStatus(
+		targetCtx,
+		s.T(),
+		app.appName,
+		targetEpoch.Index,
+		model.EpochStatus_ClaimSubmitted,
+	)
+	targetCancel()
+	s.Require().NoError(err, "wait for node to submit target quorum claim")
+	s.Require().NotEqual(sourceEpoch.Index, targetEpoch.Index, "source and target claims must use different epochs")
+	s.Require().NotEqual(*sourceEpoch.MachineHash, *targetEpoch.MachineHash,
+		"source proof must diverge from the target machine root")
+
+	return sourceEpoch, targetEpoch
 }
 
 func (s *EchoQuorumSuite) waitForEpochAvailable(appName string, epochIndex uint64) *model.Epoch {
@@ -540,7 +595,7 @@ func (s *EchoQuorumSuite) waitForEpochWithClaim(appName string, epochIndex uint6
 			}
 			return false, fmt.Errorf("poll epoch %d claim: %w", epochIndex, err)
 		}
-		if epoch.TxBufferDataBlock != nil && epoch.MachineHash != nil && isQuorumClaimReadyStatus(epoch.Status) {
+		if epoch.HasCompleteStateProof() && isQuorumClaimReadyStatus(epoch.Status) {
 			result = epoch
 			return true, nil
 		}
@@ -596,12 +651,12 @@ func (s *EchoQuorumSuite) minePastBlock(block uint64) {
 
 func (s *EchoQuorumSuite) submitQuorumClaim(
 	app quorumAppDeployment,
-	epoch *model.Epoch,
+	claimedEpoch *model.Epoch,
 	accountIndex uint32,
-	outputsMerkleRoot [32]byte,
+	proofEpoch *model.Epoch,
 ) common.Hash {
 	r := s.Require()
-	r.NotNil(epoch.TxBufferDataBlock, "epoch %d missing outputs merkle root", epoch.Index)
+	machineRoot, proof := quorumMachineValidityProof(s.T(), proofEpoch)
 
 	key, err := ethutil.MnemonicToPrivateKey(ethutil.FoundryMnemonic, accountIndex)
 	r.NoError(err, "derive validator key %d", accountIndex)
@@ -613,18 +668,39 @@ func (s *EchoQuorumSuite) submitQuorumClaim(
 	tx, err := app.quorum.SubmitClaim(
 		opts,
 		app.appAddress,
-		new(big.Int).SetUint64(epoch.LastBlock),
-		outputsMerkleRoot,
-		merkleProofToBytes32(epoch.TxBufferProof),
+		new(big.Int).SetUint64(claimedEpoch.LastBlock),
+		machineRoot,
+		proof,
 	)
 	r.NoError(err, "validator %d submit quorum claim", accountIndex)
 
 	receipt, err := bind.WaitMined(s.ctx, s.client, tx)
 	r.NoError(err, "wait for validator %d quorum submit tx", accountIndex)
 	r.Equal(uint64(1), receipt.Status, "validator %d quorum submit tx must succeed", accountIndex)
-	s.T().Logf("    validator mnemonic[%d] submitClaim mined in block %d tx=%s",
-		accountIndex, receipt.BlockNumber.Uint64(), tx.Hash().Hex())
+	s.T().Logf("    validator mnemonic[%d] submitClaim mined in block %d tx=%s proof_epoch=%d",
+		accountIndex, receipt.BlockNumber.Uint64(), tx.Hash().Hex(), proofEpoch.Index)
 	return tx.Hash()
+}
+
+func quorumMachineValidityProof(t testing.TB, epoch *model.Epoch) (common.Hash, iquorum.MachineValidityProof) {
+	t.Helper()
+
+	stateProof, err := epoch.StateProof()
+	require.NoError(t, err, "epoch %d state proof", epoch.Index)
+	return stateProof.MachineHash, iquorum.MachineValidityProof{
+		IflagsYProof: iquorum.LeafProof{
+			DataBlock: stateProof.IflagsYDataBlock,
+			Siblings:  stateProof.IflagsYProof,
+		},
+		HtifTohostProof: iquorum.LeafProof{
+			DataBlock: stateProof.HtifTohostDataBlock,
+			Siblings:  stateProof.HtifTohostProof,
+		},
+		TxBufferProof: iquorum.LeafProof{
+			DataBlock: stateProof.TxBufferDataBlock,
+			Siblings:  stateProof.TxBufferProof,
+		},
+	}
 }
 
 func quorumValidatorAddresses(t testing.TB) []common.Address {
@@ -637,14 +713,4 @@ func quorumValidatorAddresses(t testing.TB) []common.Address {
 		addresses = append(addresses, crypto.PubkeyToAddress(key.PublicKey))
 	}
 	return addresses
-}
-
-func randomOutputsMerkleRoot(t testing.TB, legitimate common.Hash) [32]byte {
-	t.Helper()
-	for {
-		outputs := randomBytes32(t)
-		if common.Hash(outputs) != legitimate {
-			return outputs
-		}
-	}
 }

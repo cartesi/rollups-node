@@ -79,11 +79,19 @@ zero_record() {
 }
 
 record_address() {
-  printf '%s' "${1:16:40}"
+  printf '%s' "${1:24:40}"
 }
 
 record_balance() {
   uint64_be_to_dec "$(reverse_bytes "${1:0:16}")"
+}
+
+encode_record() {
+  local balance="$1"
+  local address="$2"
+  # This fixture limits arithmetic to positive int64 values. Store them
+  # zero-extended in the uint96 balance field required by LibUsdAccount.
+  printf '%s00000000%s' "$(uint64_dec_to_le "$balance")" "$address"
 }
 
 find_account_index() {
@@ -138,7 +146,7 @@ credit_account() {
   if (( new_balance <= 0 )); then
     return 1
   fi
-  write_record "$idx" "$(uint64_dec_to_le "$new_balance")${address}00000000"
+  write_record "$idx" "$(encode_record "$new_balance" "$address")"
 }
 
 debit_account() {
@@ -160,7 +168,7 @@ debit_account() {
 
   new_balance=$((balance - amount))
   if (( new_balance > 0 )); then
-    write_record "$idx" "$(uint64_dec_to_le "$new_balance")${address}00000000"
+    write_record "$idx" "$(encode_record "$new_balance" "$address")"
     return 0
   fi
 

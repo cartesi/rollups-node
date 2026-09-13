@@ -19,6 +19,8 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -72,11 +74,13 @@ func runEchoLifecycleTest(ctx context.Context, t testing.TB, require *require.As
 	defer timed(t, "full echo lifecycle")()
 
 	deployArgs := append([]string{"--salt", uniqueSalt()}, cfg.ExtraDeployArgs...)
+	var appAddress common.Address
 
 	func() {
 		defer timed(t, "deploy echo-dapp")()
 		appAddr, err := deployApplication(ctx, cfg.AppName, cfg.DappPath, deployArgs...)
 		require.NoError(err, "deploy echo-dapp")
+		appAddress = common.HexToAddress(appAddr)
 		t.Logf("    application deployed at %s", appAddr)
 
 		err = anvilSetBalance(ctx, appAddr, oneEtherWei)
@@ -87,10 +91,9 @@ func runEchoLifecycleTest(ctx context.Context, t testing.TB, require *require.As
 	// --- L1 -> Machine: send input and wait for processing ---
 
 	t.Logf("Sending input payload=%q to the echo-dapp on L1", cfg.Payload)
-	inputIndex, blockNum, err := sendInput(ctx, cfg.AppName, cfg.Payload)
-	require.NoError(err, "send input")
+	inputIndex, blockNum, relayAddress := sendInputThroughRelay(ctx, t, appAddress, cfg.Payload)
 	require.Equal(uint64(0), inputIndex)
-	t.Logf("    input accepted on-chain: index=%d block=%d", inputIndex, blockNum)
+	t.Logf("    input accepted on-chain through relay %s: index=%d block=%d", relayAddress, inputIndex, blockNum)
 
 	func() {
 		defer timed(t, "wait for input processing")()
@@ -123,6 +126,10 @@ func runEchoLifecycleTest(ctx context.Context, t testing.TB, require *require.As
 		case "Voucher":
 			voucherIdx = out.Index
 			voucherFound = true
+			require.Equal(relayAddress, common.HexToAddress(out.DecodedData.Destination),
+				"voucher destination must be the input relay")
+			require.Equal(hexutil.Encode([]byte(cfg.Payload)), out.DecodedData.Payload,
+				"voucher payload must match the relayed input")
 		case "DelegateCallVoucher":
 			delegateVoucherFound = true
 		case "Notice":
@@ -202,11 +209,13 @@ func runRejectExceptionLifecycleTest(
 	defer timed(t, fmt.Sprintf("full %s lifecycle", cfg.TestName))()
 
 	deployArgs := append([]string{"--salt", uniqueSalt()}, cfg.ExtraDeployArgs...)
+	var appAddress common.Address
 
 	func() {
 		defer timed(t, fmt.Sprintf("deploy %s-loop-dapp", cfg.TestName))()
 		appAddr, err := deployApplication(ctx, cfg.AppName, cfg.DappPath, deployArgs...)
 		require.NoError(err, "deploy %s-loop-dapp", cfg.TestName)
+		appAddress = common.HexToAddress(appAddr)
 		t.Logf("    application deployed at %s", appAddr)
 
 		err = anvilSetBalance(ctx, appAddr, oneEtherWei)
@@ -225,8 +234,14 @@ func runRejectExceptionLifecycleTest(
 	const numInputs = 3
 	for i := range numInputs {
 		payload := fmt.Sprintf("%s-payload-%d", cfg.TestName, i)
-		idx, blockNum, err := sendInput(ctx, cfg.AppName, payload)
-		require.NoError(err, "send input %d", i)
+		var idx, blockNum uint64
+		if i == 0 && !terminal {
+			idx, blockNum, _ = sendInputThroughRelay(ctx, t, appAddress, payload)
+		} else {
+			var err error
+			idx, blockNum, err = sendInput(ctx, cfg.AppName, payload)
+			require.NoError(err, "send input %d", i)
+		}
 		require.Equal(uint64(i), idx, "input index mismatch")
 		t.Logf("    input %d sent at block %d (payload=%q)", i, blockNum, payload)
 	}

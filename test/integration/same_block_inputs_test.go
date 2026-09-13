@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -304,20 +305,25 @@ func (s *SameBlockInputsSuite) runMultipleInputsOneBlock(extraDeployArgs []strin
 // new open epoch — the case where the two epochs overlap on one block
 // (sealed.LastBlock == open.FirstBlock).
 //
-// The seal is DaveConsensus.settle(), which the node also issues on its own.
-// We submit our own settle inside the batch (reusing the validator's computed
-// outputs root + proof from the DB) and bracket the two inputs with extreme gas
-// prices: the pre-seal input is mined first and the post-seal input last, so
-// whichever settle the block orders between them captures an input-index
-// boundary of exactly one. A duplicate node settle in the same block reverts
-// harmlessly, leaving the same boundary.
+// The seal is DaveConsensus.acceptStagedTournamentResult(), which the node also
+// issues on its own. We first let the node stage the finished tournament. We
+// then stop the node before the acceptance window. We submit our own acceptance
+// inside the batch and bracket it with inputs that use extreme gas prices. The
+// pre-seal input is mined first. The post-seal input is mined last. The stopped
+// node cannot race the controlled acceptance transaction.
 func (s *SameBlockInputsSuite) TestInputsBeforeAndAfterEpochSealedSameBlock() {
 	r := s.Require()
+	if !isNodeSelfManaged() {
+		s.T().Skip("skipping: same-block seal test requires a test-managed node")
+	}
 	s.SetExpectedLogs(s.T(), prtBlockOutOfRangeAllowlist)
 	s.appName = uniqueAppName("same-block-seal-prt")
+	const claimStagingPeriod uint64 = 300
 
 	dappPath := envOrDefault("CARTESI_TEST_DAPP_PATH", "applications/echo-dapp")
-	appAddrStr, err := deployApplication(s.ctx, s.appName, dappPath, "--salt", uniqueSalt(), "--prt")
+	appAddrStr, err := deployApplication(s.ctx, s.appName, dappPath,
+		"--salt", uniqueSalt(), "--prt",
+		claimStagingPeriodFlag, strconv.FormatUint(claimStagingPeriod, 10))
 	r.NoError(err, "deploy PRT app")
 	appAddr := common.HexToAddress(appAddrStr)
 
@@ -326,11 +332,11 @@ func (s *SameBlockInputsSuite) TestInputsBeforeAndAfterEpochSealedSameBlock() {
 		"fresh PRT app should have no inputs yet (epoch 0 is sealed empty at deploy)")
 
 	// Epoch 0 is sealed empty at deploy. Wait for the node to join its root
-	// tournament and for the validator to compute the outputs root + proof that
-	// settle(0) needs. This happens before we pass the timeout, so the node has
-	// not settled epoch 0 itself yet.
+	// tournament and for the validator to compute the machine-validity proof.
+	// This happens before we pass the timeout, so the node has not staged epoch
+	// 0 yet.
 	tournament := s.mineUntilTournamentReady(0)
-	root, proof, consensusAddr := s.readEpochSettlementData(0)
+	consensusAddr := s.readPrtConsensusAddress()
 
 	inputBox, err := iinputbox.NewIInputBox(inputBoxAddr, s.client)
 	r.NoError(err, "bind input box")
@@ -347,32 +353,66 @@ func (s *SameBlockInputsSuite) TestInputsBeforeAndAfterEpochSealedSameBlock() {
 		return &opts
 	}
 
-	// Keep mining under our control for the whole settle window so neither the
-	// timeout blocks nor the node's own settle get auto-mined out from under us.
-	setAnvilAutomine(s.ctx, s.T(), false)
-	defer setAnvilAutomine(s.ctx, s.T(), true)
-	setAnvilIntervalMining(s.ctx, s.T(), 0)
-	defer setAnvilIntervalMining(s.ctx, s.T(), 1)
-
-	// Make settle(0) valid by passing epoch 0's root-tournament timeout.
+	// Finish the root tournament while automatic mining is still active. The
+	// node must stage the machine-validity proof before acceptance is possible.
 	_, err = mineForTournamentTimeout(s.ctx, s.client, tournament.Address)
 	r.NoError(err, "mine past epoch 0 tournament timeout")
+	waitForTournamentWinner(s.ctx, s.T(), r, s.client, s.appName, 0)
 
-	root32 := [32]byte(root)
-	proof32 := make([][32]byte, len(proof))
-	for i := range proof {
-		proof32[i] = [32]byte(proof[i])
+	stagedCtx, stagedCancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)
+	stagedEpoch, err := waitForEpochStatus(
+		stagedCtx, s.T(), s.appName, 0, model.EpochStatus_ClaimStaged)
+	stagedCancel()
+	r.NoError(err, "wait for epoch 0 tournament result to be staged")
+	r.NotNil(stagedEpoch.StagedAtBlock, "staged PRT epoch must record the staging block")
+
+	// Stop the node before entering the acceptance window. Otherwise, the PRT
+	// service can submit its own valid acceptance while this test assembles the
+	// controlled input/acceptance/input block.
+	stopSharedNode(s.T())
+	nodeNeedsRestart := true
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cleanupCancel()
+		if err := anvilRPC(cleanupCtx, "evm_setAutomine", true); err != nil {
+			s.T().Errorf("restore Anvil automine: %v", err)
+		}
+		if err := anvilRPC(cleanupCtx, "evm_setIntervalMining", 1); err != nil {
+			s.T().Errorf("restore Anvil interval mining: %v", err)
+		}
+		if nodeNeedsRestart && sharedNode == nil {
+			startSharedNode(s.T())
+		}
+	}()
+
+	// Keep mining under our control for the acceptance window so neither the
+	// inputs nor our acceptance are mined before the complete batch is ready.
+	setAnvilAutomine(s.ctx, s.T(), false)
+	setAnvilIntervalMining(s.ctx, s.T(), 0)
+
+	// Mine up to the block before the staging period boundary. The batch below
+	// creates the first block in which acceptance is valid.
+	currentBlock, err := s.client.BlockNumber(s.ctx)
+	r.NoError(err, "read block before PRT acceptance batch")
+	acceptanceBlock := *stagedEpoch.StagedAtBlock + claimStagingPeriod
+	r.Less(currentBlock, acceptanceBlock,
+		"epoch must remain staged before the claim staging period ends")
+	if currentBlock+1 < acceptanceBlock {
+		blocksToMine := acceptanceBlock - currentBlock - 1
+		r.LessOrEqual(blocksToMine, claimStagingPeriod,
+			"blocks to mine must fit within the configured staging period")
+		r.NoError(anvilMine(s.ctx, int(blocksToMine)), //nolint:gosec // Bounded by claimStagingPeriod.
+			"mine to the block before the PRT staging boundary")
 	}
 
-	// One block: pre-seal input (top gas → first), seal (mid gas), post-seal
-	// input (bottom gas → last). Distinct senders avoid same-account nonce
-	// coupling. We do not assert the seal receipt status — if the node's own
-	// settle wins the in-block ordering, ours reverts, but the boundary is the
-	// same because both settles execute between the two inputs.
+	// One block: pre-seal input (top gas), accept (mid gas), post-seal input
+	// (bottom gas → last). Distinct senders avoid same-account nonce
+	// coupling. The block before this one is still inside the staging window, so
+	// the node cannot submit an earlier valid acceptance.
 	preTx, err := inputBox.AddInput(nextOpts(2, 1000), appAddr, []byte("before-seal")) //nolint:mnd
 	r.NoError(err, "submit pre-seal input")
-	_, err = consensus.Settle(nextOpts(3, 500), big.NewInt(0), root32, proof32) //nolint:mnd
-	r.NoError(err, "submit settle for epoch 0")
+	acceptTx, err := consensus.AcceptStagedTournamentResult(nextOpts(3, 500), big.NewInt(0))
+	r.NoError(err, "submit acceptance for epoch 0")
 	postTx, err := inputBox.AddInput(nextOpts(4, 1), appAddr, []byte("after-seal"))
 	r.NoError(err, "submit post-seal input")
 
@@ -381,15 +421,36 @@ func (s *SameBlockInputsSuite) TestInputsBeforeAndAfterEpochSealedSameBlock() {
 	// Both inputs must share the seal block, in order.
 	receiptCtx, receiptCancel := context.WithTimeout(s.ctx, 30*time.Second)
 	preReceipt := waitReceipt(receiptCtx, s.T(), s.client, preTx)
+	acceptReceipt := waitReceipt(receiptCtx, s.T(), s.client, acceptTx)
 	postReceipt := waitReceipt(receiptCtx, s.T(), s.client, postTx)
 	receiptCancel()
 	r.Equal(uint64(1), preReceipt.Status, "pre-seal input transaction must succeed")
+	r.Equal(uint64(1), acceptReceipt.Status, "epoch acceptance transaction must succeed")
 	r.Equal(uint64(1), postReceipt.Status, "post-seal input transaction must succeed")
 	r.Equal(preReceipt.BlockNumber.Uint64(), postReceipt.BlockNumber.Uint64(),
 		"both inputs must be mined in the same block as the seal")
+	r.Equal(preReceipt.BlockNumber.Uint64(), acceptReceipt.BlockNumber.Uint64(),
+		"acceptance transaction must be mined in the input batch")
+	r.Equal(acceptanceBlock, acceptReceipt.BlockNumber.Uint64(),
+		"acceptance must execute at the first valid staging block")
+	r.Less(preReceipt.TransactionIndex, acceptReceipt.TransactionIndex,
+		"pre-seal input must be ordered before acceptance")
+	r.Less(acceptReceipt.TransactionIndex, postReceipt.TransactionIndex,
+		"acceptance must be ordered before the post-seal input")
 	r.Less(preReceipt.TransactionIndex, postReceipt.TransactionIndex,
 		"pre-seal input must be ordered before post-seal input")
 	sealBlock := preReceipt.BlockNumber.Uint64()
+
+	// Resume normal mining and restart the node. The reader must reconcile the
+	// externally accepted epoch. The PRT service must then recover its root bond.
+	setAnvilAutomine(s.ctx, s.T(), true)
+	setAnvilIntervalMining(s.ctx, s.T(), 1)
+	startSharedNode(s.T())
+	nodeNeedsRestart = false
+	acceptedEpoch := waitForPrtEpochAcceptedAndBondRecovered(
+		s.ctx, s.T(), r, s.client, s.appName, 0, tournament.Address)
+	r.Equal(stagedEpoch.StagedAtBlock, acceptedEpoch.StagedAtBlock,
+		"acceptance must retain the previously observed staging block")
 
 	// The pre-seal input belongs to the just-sealed epoch 1; the post-seal input
 	// belongs to the new open epoch 2.
@@ -457,13 +518,9 @@ func (s *SameBlockInputsSuite) mineUntilTournamentReady(epochIndex uint64) *mode
 	return tournament
 }
 
-// readEpochSettlementData reads, from the node database, the outputs merkle root
-// and proof the validator computed for the epoch (used to drive settle ourselves)
-// and the application's DaveConsensus address. It waits until the root has been
-// computed.
-func (s *SameBlockInputsSuite) readEpochSettlementData(
-	epochIndex uint64,
-) (root common.Hash, proof []common.Hash, consensusAddr common.Address) {
+// readPrtConsensusAddress reads the deployed application's DaveConsensus
+// address from the repository.
+func (s *SameBlockInputsSuite) readPrtConsensusAddress() common.Address {
 	r := s.Require()
 	dsn, err := config.GetDatabaseConnection()
 	r.NoError(err, "get database connection")
@@ -474,24 +531,7 @@ func (s *SameBlockInputsSuite) readEpochSettlementData(
 	app, err := repo.GetApplication(s.ctx, s.appName)
 	r.NoError(err, "get application")
 	r.NotNil(app, "application must exist")
-	consensusAddr = app.IConsensusAddress
-
-	ctx, cancel := context.WithTimeout(s.ctx, inputProcessingTimeout)
-	defer cancel()
-	err = pollUntil(ctx, 2*time.Second, func() (bool, error) {
-		epoch, err := repo.GetEpoch(ctx, s.appName, epochIndex)
-		if err != nil {
-			return false, err
-		}
-		if epoch == nil || epoch.TxBufferDataBlock == nil {
-			return false, nil
-		}
-		root = *epoch.TxBufferDataBlock
-		proof = epoch.TxBufferProof
-		return true, nil
-	})
-	r.NoError(err, "wait for epoch %d settlement data (outputs merkle root)", epochIndex)
-	return root, proof, consensusAddr
+	return app.IConsensusAddress
 }
 
 // deploySpambox deploys the Spambox helper contract and fails the test on any

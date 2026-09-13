@@ -241,7 +241,7 @@ func (s *WithdrawalLifecycleSuite) deployWithdrawalApp(
 			"deploy", "quorum",
 			"--json",
 			"--salt", uniqueSalt(),
-			"--claim-staging-period", strconv.FormatUint(quorumClaimStagingPeriod, 10),
+			claimStagingPeriodFlag, strconv.FormatUint(quorumClaimStagingPeriod, 10),
 		}
 		for _, validator := range validators {
 			quorumArgs = append(quorumArgs, "--validator", validator.Hex())
@@ -314,7 +314,7 @@ func (s *WithdrawalLifecycleSuite) finalizeWithdrawalEpoch(
 		return finalEpoch
 	case withdrawalConsensusPRT:
 		for i := uint64(0); i <= targetEpochIndex; i++ {
-			settleTournament(s.ctx, s.T(), r, s.client, deployment.appName, i)
+			finalizePrtEpoch(s.ctx, s.T(), r, s.client, deployment.appName, i)
 		}
 		claimCtx, claimCancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)
 		epoch, err := waitForEpochStatus(claimCtx, s.T(), deployment.appName, targetEpochIndex, model.EpochStatus_ClaimAccepted)
@@ -351,8 +351,8 @@ func (s *WithdrawalLifecycleSuite) finalizeQuorumEpoch(
 	case model.EpochStatus_ClaimStaged:
 		return s.waitForQuorumAccepted(deployment.appName, epochIndex)
 	case model.EpochStatus_ClaimComputed, model.EpochStatus_ClaimSubmitted:
-		s.submitQuorumClaim(deployment, epoch, quorumValidatorIndexA, *epoch.TxBufferDataBlock)
-		s.submitQuorumClaim(deployment, epoch, quorumValidatorIndexB, *epoch.TxBufferDataBlock)
+		s.submitQuorumClaim(deployment, epoch, quorumValidatorIndexA)
+		s.submitQuorumClaim(deployment, epoch, quorumValidatorIndexB)
 		return s.waitForQuorumAccepted(deployment.appName, epochIndex)
 	default:
 		s.Require().FailNowf("unexpected quorum epoch status",
@@ -377,7 +377,7 @@ func (s *WithdrawalLifecycleSuite) waitForQuorumEpochWithClaim(appName string, e
 			}
 			return false, fmt.Errorf("poll epoch %d claim: %w", epochIndex, err)
 		}
-		if epoch.TxBufferDataBlock != nil && epoch.MachineHash != nil && isQuorumClaimReadyStatus(epoch.Status) {
+		if epoch.HasCompleteStateProof() && isQuorumClaimReadyStatus(epoch.Status) {
 			result = epoch
 			return true, nil
 		}
@@ -395,11 +395,10 @@ func (s *WithdrawalLifecycleSuite) submitQuorumClaim(
 	deployment withdrawalAppDeployment,
 	epoch *model.Epoch,
 	accountIndex uint32,
-	outputsMerkleRoot [32]byte,
 ) {
 	r := s.Require()
-	r.NotNil(epoch.TxBufferDataBlock, "epoch %d missing outputs merkle root", epoch.Index)
 	r.NotNil(deployment.quorum, "quorum binding is required")
+	machineRoot, proof := quorumMachineValidityProof(s.T(), epoch)
 
 	key, err := ethutil.MnemonicToPrivateKey(ethutil.FoundryMnemonic, accountIndex)
 	r.NoError(err, "derive validator key %d", accountIndex)
@@ -411,8 +410,8 @@ func (s *WithdrawalLifecycleSuite) submitQuorumClaim(
 		opts,
 		deployment.appAddress,
 		new(big.Int).SetUint64(epoch.LastBlock),
-		outputsMerkleRoot,
-		merkleProofToBytes32(epoch.TxBufferProof),
+		machineRoot,
+		proof,
 	)
 	r.NoError(err, "validator %d submit quorum claim", accountIndex)
 	receipt, err := bind.WaitMined(s.ctx, s.client, tx)

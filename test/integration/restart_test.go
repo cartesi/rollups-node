@@ -13,11 +13,13 @@ package integration
 
 import (
 	"context"
+	"os/exec"
 	"regexp"
 	"testing"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -74,6 +76,29 @@ func (s *RestartSuite) TearDownTest() {
 	s.CheckLogs(s.T())
 }
 
+func (s *RestartSuite) TestExitedNodeFailsReadiness() {
+	for _, script := range []string{"exit 0", "exit 7"} {
+		s.Run(script, func() {
+			t := s.T()
+			r := require.New(t)
+			cmd := exec.CommandContext(t.Context(), "sh", "-c", script)
+			proc, err := startNodeSubprocess("startup-probe", cmd)
+			r.NoError(err)
+			t.Cleanup(func() {
+				if !proc.isDone() {
+					_ = cmd.Process.Kill()
+				}
+				r.True(proc.wait(time.Second))
+			})
+			r.True(proc.wait(time.Second))
+			ctx, cancel := context.WithTimeout(s.ctx, time.Second)
+			defer cancel()
+			node := &nodeProcess{nodeSubprocess: proc}
+			r.ErrorContains(node.waitForHealth(ctx, t), "startup-probe exited unexpectedly")
+		})
+	}
+}
+
 // restartConfig configures the shared restart test flow.
 type restartConfig struct {
 	// ExtraDeployArgs are additional CLI flags for deploy (e.g., "--prt").
@@ -98,6 +123,7 @@ func (s *RestartSuite) runRestartTest(cfg restartConfig) {
 	// === Phase 1: Deploy two apps and process inputs ===
 
 	s.T().Log("--- Phase 1: Deploy two apps and process inputs before restart ---")
+	var app1Address common.Address
 
 	func() {
 		defer timed(s.T(), "deploy two echo-dapps")()
@@ -111,6 +137,7 @@ func (s *RestartSuite) runRestartTest(cfg restartConfig) {
 		addr1, err := deployApplication(
 			s.ctx, s.app1Name, dappPath, deployArgs1...)
 		require.NoError(err, "deploy app-1")
+		app1Address = common.HexToAddress(addr1)
 		s.T().Logf("    app-1 deployed at %s", addr1)
 
 		s.T().Logf("    deploying app-2: name=%s", s.app2Name)
@@ -127,8 +154,7 @@ func (s *RestartSuite) runRestartTest(cfg restartConfig) {
 	}()
 
 	s.T().Log("Sending one input to each app before restart...")
-	idx1, _, err := sendInput(s.ctx, s.app1Name, "pre-restart-1")
-	require.NoError(err, "send input to app-1")
+	idx1, _, _ := sendInputThroughRelay(s.ctx, s.T(), app1Address, "pre-restart-1")
 	s.T().Logf("    app-1: input sent (index=%d)", idx1)
 
 	idx2, _, err := sendInput(s.ctx, s.app2Name, "pre-restart-2")
@@ -286,7 +312,7 @@ func (s *RestartSuite) TestRestartMultiAppAuthority() {
 
 // TestRestartMultiAppPrt tests restart with PRT (Dave) consensus.
 func (s *RestartSuite) TestRestartMultiAppPrt() {
-	// PRT settlement mines hundreds of blocks rapidly, which can cause
+	// PRT finalization mines hundreds of blocks rapidly, which can cause
 	// transient BlockOutOfRangeError in the EVM reader.
 	s.SetExpectedLogs(s.T(), ExpectedLog{
 		Pattern: regexp.MustCompile(`BlockOutOfRangeError`),
@@ -304,19 +330,19 @@ func (s *RestartSuite) TestRestartMultiAppPrt() {
 	defer ethClient.Close()
 
 	s.runRestartTest(restartConfig{
-		ExtraDeployArgs: []string{"--prt"},
+		ExtraDeployArgs: []string{prtFlag},
 		PreClaimHook: func(
 			ctx context.Context, t testing.TB,
 			require *require.Assertions, _ string,
 		) {
-			// Settle tournaments for BOTH apps together. Mining blocks
+			// Finalize tournaments for BOTH apps together. Mining blocks
 			// for one app's tournament timeout also advances the shared
 			// chain, so we must ensure all apps' commitments are joined
 			// before mining — otherwise the other app's tournament can
 			// time out without a commitment ("finished without winners").
 			apps := []string{s.app1Name, s.app2Name}
 			for _, epochIdx := range []uint64{0, 1} {
-				var tournaments []*model.Tournament
+				tournaments := make([]*model.Tournament, 0, len(apps))
 				for _, name := range apps {
 					t.Logf("Waiting for %s epoch %d "+
 						"tournament and commitment...",
@@ -336,11 +362,13 @@ func (s *RestartSuite) TestRestartMultiAppPrt() {
 							blocksMined, apps[i], epochIdx)
 					}
 				}
-				for _, name := range apps {
+				for i, name := range apps {
 					waitForTournamentWinner(
-						ctx, t, require, name, epochIdx)
+						ctx, t, require, ethClient, name, epochIdx)
+					waitForPrtEpochAcceptedAndBondRecovered(
+						ctx, t, require, ethClient, name, epochIdx, tournaments[i].Address)
 				}
-				t.Logf("    epoch %d settled for both apps", epochIdx)
+				t.Logf("    epoch %d finalized for both apps", epochIdx)
 			}
 		},
 	})
