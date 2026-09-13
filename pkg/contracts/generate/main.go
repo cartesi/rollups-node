@@ -181,14 +181,20 @@ func generateBinding(b contractBinding, content []byte) {
 		checkErr("removing dir", err)
 	}
 
-	const dirMode = 0700
+	// Generated source is shared by developers in the same group. Set the
+	// final modes explicitly so the caller's umask does not remove group write.
+	const dirMode = 0775
 	err = os.Mkdir(pkg, dirMode)
 	checkErr("creating dir", err)
+	err = os.Chmod(pkg, dirMode)
+	checkErr("setting dir permissions", err)
 
-	const fileMode = 0600
+	const fileMode = 0664
 	filePath := pkg + "/" + pkg + ".go"
 	err = os.WriteFile(filePath, []byte(code), fileMode)
 	checkErr("write binding file", err)
+	err = os.Chmod(filePath, fileMode)
+	checkErr("setting binding permissions", err)
 
 	log.Print("generated binding for ", filePath)
 }
