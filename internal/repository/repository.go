@@ -348,11 +348,23 @@ type BondEventRepository interface {
 	ListBondEvents(ctx context.Context, nameOrAddress string, f BondEventFilter, p Pagination, descending bool) ([]*BondEvent, uint64, error)
 }
 
+// TournamentEventBatch contains one tournament projection and the events from
+// a completed scan window. Batches are ordered with parents before children:
+// a child tournament references a match written in its parent's batch.
+type TournamentEventBatch struct {
+	Tournament    *Tournament
+	Commitments   []*Commitment
+	Matches       []*Match
+	MatchAdvances []*MatchAdvanced
+	BondEvents    []*BondEvent
+}
+
 type BulkOperationsRepository interface {
 	StoreAdvanceResult(ctx context.Context, appID int64, result *AdvanceResult) error
 	StoreClaimAndProofs(ctx context.Context, epoch *Epoch, outputs []*Output) error
-	StoreTournamentEvents(ctx context.Context, appID int64, commitments []*Commitment, matches []*Match,
-		matchAdvanced []*MatchAdvanced, matchDeleted []*Match, lastBlock uint64) error
+	// StoreTournamentEvents commits every tournament batch and one application
+	// cursor together. Callers must finish all event reads before this call.
+	StoreTournamentEvents(ctx context.Context, appID int64, batches []*TournamentEventBatch, lastBlock uint64) error
 }
 
 type NodeConfigRepository interface {

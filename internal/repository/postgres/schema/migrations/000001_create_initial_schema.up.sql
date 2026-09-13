@@ -699,7 +699,7 @@ CREATE TABLE "tournaments"
     "address" ethereum_address NOT NULL,
     "parent_tournament_address" ethereum_address,
     "parent_match_id_hash" hash,
-    "max_level" INT NOT NULL CHECK("max_level" >= 0),
+    "max_level" INT NOT NULL CHECK("max_level" > 0),
     "level" INT NOT NULL CHECK("level" >= 0),
     "log2step" INT NOT NULL CHECK("log2step" >= 0),
     "height" INT NOT NULL CHECK("height" >= 0),
@@ -738,7 +738,7 @@ CREATE TABLE "tournaments"
         OR
         ("level" > 0 AND "parent_tournament_address" IS NOT NULL AND "parent_match_id_hash" IS NOT NULL)
       ),
-    CONSTRAINT "tournaments_max_level_gte_level_check" CHECK ("max_level" >= "level"),
+    CONSTRAINT "tournaments_max_level_gt_level_check" CHECK ("max_level" > "level"),
     CONSTRAINT "tournaments_creation_event_check" CHECK (
       ("level" = 0 AND num_nonnulls("creation_block_number", "creation_tx_hash", "creation_log_index") = 0)
       OR
