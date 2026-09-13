@@ -7,13 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/cartesi/rollups-node/internal/repository"
 	"log/slog"
 	"math/big"
 	"testing"
 	"time"
 
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -21,12 +21,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestDaveScanReportsMissingInputBox(t *testing.T) {
+	reader := &Service{}
+	reader.Logger = slog.Default()
+	apps := []appContracts{{application: &Application{
+		ID: 1, Name: "missing-input-box", IApplicationAddress: app1Addr, IInputBoxAddress: inputBoxAddr,
+		ConsensusType: Consensus_PRT,
+	}}}
+
+	require.False(t, reader.scanDaveConsensusEpochsAndInputs(t.Context(), apps, 110),
+		"a missing InputBox adapter must count as a failed observation cycle")
+}
+
 func TestReadinessTracksScanFailures(t *testing.T) {
 	for _, failure := range []string{"application list", "input counter", "input logs", "input cursor", "input store", "output query", "foreclosure query", "drive cursor", "withdrawal store"} {
 		t.Run(failure, func(t *testing.T) {
 			app := &Application{
 				ID: 1, Name: "app", Enabled: true, IApplicationAddress: app1Addr, IInputBoxAddress: inputBoxAddr,
-				DataAvailability: DataAvailability_InputBox[:], EpochLength: 10,
+				ConsensusType: Consensus_Authority, EpochLength: 10,
 				Status: ApplicationStatus_OK, LastInputCheckBlock: 100,
 				LastOutputCheckBlock: 110, LastForecloseCheckBlock: 110,
 			}
@@ -89,7 +101,7 @@ func TestReadinessTracksScanFailures(t *testing.T) {
 				recovered = []any{false, nil}
 				repo.On("UpdateApplicationLastForecloseCheckBlock", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 			}
-			r := &Service{client: client, repository: repo, inputReaderEnabled: true,
+			r := &Service{client: client, repository: repo,
 				defaultBlock: DefaultBlock_Latest, readyMaxStaleness: time.Hour}
 			r.Logger = slog.Default()
 			r.resolver = newApplicationAdapterResolver(r.Logger, newMockAdapterFactory().SetupDefaultBehaviorSingleApp(contract, input))
@@ -119,16 +131,19 @@ func TestReadinessTracksScanFailures(t *testing.T) {
 }
 
 func TestReadinessSeparatesInputCorruptionFromSharedFailures(t *testing.T) {
-	for _, failure := range []string{"recorded conflict", "status write", "RPC", "store", "epoch query", "zero epoch", "zero epoch status write", "non-open epoch", "non-open epoch status write"} {
+	for _, failure := range []string{
+		"recorded conflict", "status write", "RPC", "store", "epoch query",
+		"zero epoch", "zero epoch status write", "non-open epoch", "non-open epoch status write",
+	} {
 		t.Run(failure, func(t *testing.T) {
 			bad := &Application{ID: 1, Name: "degraded", Enabled: true,
 				IApplicationAddress: app1Addr, IInputBoxAddress: inputBoxAddr,
-				DataAvailability: DataAvailability_InputBox[:], EpochLength: 10,
+				ConsensusType: Consensus_Authority, EpochLength: 10,
 				Status: ApplicationStatus_OK, LastInputCheckBlock: 100,
 				LastOutputCheckBlock: 110, LastForecloseCheckBlock: 110}
 			good := *bad
 			good.ID, good.Name, good.IApplicationAddress = 2, "healthy", common.HexToAddress("0x2222")
-			// Terminal execution status must not prevent healthy observation.
+			// An integrity-terminal status must not prevent healthy observation.
 			good.Status = ApplicationStatus_Corrupted
 			repo := newMockRepository()
 			list := repo.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).
@@ -169,7 +184,7 @@ func TestReadinessSeparatesInputCorruptionFromSharedFailures(t *testing.T) {
 			}
 			client := newMockEthClient()
 			client.On("HeaderByNumber", mock.Anything, mock.Anything).Return(&types.Header{Number: big.NewInt(110)}, nil)
-			r := &Service{client: client, repository: repo, inputReaderEnabled: true,
+			r := &Service{client: client, repository: repo,
 				defaultBlock: DefaultBlock_Latest, readyMaxStaleness: time.Hour}
 			r.Logger = slog.Default()
 			r.resolver = newApplicationAdapterResolver(r.Logger,

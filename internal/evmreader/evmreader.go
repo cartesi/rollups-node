@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
+	"github.com/cartesi/rollups-node/internal/errutil"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
@@ -52,6 +54,7 @@ type EvmReaderRepository interface {
 	UpdateEventLastCheckBlock(ctx context.Context, appIDs []int64, event MonitoredEvent, blockNumber uint64) error
 	GetEventLastCheckBlock(ctx context.Context, appID int64, event MonitoredEvent) (uint64, error)
 
+	InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
 
@@ -142,8 +145,6 @@ func (r *Service) Ready() bool {
 // A few failed cycles tolerate transient errors without hiding persistent stalls.
 const maxConsecutiveScanFailures = 3
 
-var errScanIncomplete = errors.New("one or more applications failed to scan or persist progress")
-
 func (r *Service) processBlockHead(
 	ctx context.Context,
 	blockNumber uint64,
@@ -152,7 +153,11 @@ func (r *Service) processBlockHead(
 	r.Logger.Debug("Retrieving enabled applications")
 	observableApps, _, err := listEnabledApplications(ctx, r.repository)
 	if err != nil {
-		r.Logger.Error("Error retrieving L1-observable applications", "error", err)
+		level := slog.LevelError
+		if errors.Is(ctx.Err(), context.Canceled) && errutil.IsOnlyCancellation(err) {
+			level = slog.LevelDebug
+		}
+		r.Logger.Log(ctx, level, "Error retrieving L1-observable applications", "error", err)
 		return false
 	}
 
@@ -181,20 +186,37 @@ func (r *Service) processBlockHead(
 // Known input corruption with a persisted integrity status is application-local
 // degradation; observation still runs on later ticks. An idle scan is healthy.
 // Always run remaining scanners so one application's stall cannot block others.
+// Stop dispatching new work when the service context ends; the active scanner
+// has already handled its operation's error.
 func (r *Service) runBlockScanners(
 	ctx context.Context,
 	apps []appContracts,
 	blockNumber uint64,
 ) bool {
+	if ctx.Err() != nil {
+		return false
+	}
 	// Detect foreclosure first so later scanners use the marker observed in this same tick.
 	success := r.checkForForeclosure(ctx, apps, blockNumber)
+	if ctx.Err() != nil {
+		return false
+	}
 
 	plan := buildBlockScanPlan(apps)
 
 	success = r.scanDaveConsensusEpochsAndInputs(ctx, plan.daveEpochTargets, blockNumber) && success
+	if ctx.Err() != nil {
+		return false
+	}
 	success = r.scanIConsensusInputs(ctx, plan.iConsensusInputTargets, blockNumber) && success
+	if ctx.Err() != nil {
+		return false
+	}
 
 	success = r.checkForOutputExecution(ctx, plan.outputTargets, blockNumber) && success
+	if ctx.Err() != nil {
+		return false
+	}
 
 	// Post-foreclosure observation dispatches to drive-prove discovery or withdrawal indexing.
 	success = r.checkPostForeclosure(ctx, plan.postForeclosureTargets, blockNumber) && success
@@ -258,12 +280,9 @@ func (f *DefaultAdapterFactory) CreateAdapters(app *Application) (ApplicationCon
 		return nil, nil, nil, fmt.Errorf("error building application contract: %w", err)
 	}
 
-	var inputSource InputSourceAdapter
-	if app.HasDataAvailabilitySelector(DataAvailability_InputBox) {
-		inputSource, err = NewInputSourceAdapter(app.IInputBoxAddress, f.Client, f.Filter)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("error building inputbox contract: %w", err)
-		}
+	inputSource, err := NewInputSourceAdapter(app.IInputBoxAddress, f.Client, f.Filter)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("error building inputbox contract: %w", err)
 	}
 
 	var daveConsensus DaveConsensusAdapter

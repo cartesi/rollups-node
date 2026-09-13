@@ -9,8 +9,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 
+	"github.com/cartesi/rollups-node/internal/errutil"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
@@ -95,6 +97,9 @@ func (r *Service) checkForOutputExecution(
 	r.Logger.Debug("Checking for new Output Executed Events", "apps", appAddresses)
 
 	for _, app := range apps {
+		if ctx.Err() != nil {
+			return false
+		}
 		lastOutputCheck := app.application.LastOutputCheckBlock
 		if lastOutputCheck == 0 { // New application. Find a safe start block to scan for outputs
 			var err error
@@ -114,12 +119,21 @@ func (r *Service) checkForOutputExecution(
 		}
 
 		if mostRecentBlockNumber > lastOutputCheck {
-			pending, err := r.hasPendingExecutableOutputs(ctx, app)
+			pending, err := r.repository.GetNumberOfPendingExecutableOutputs(ctx, app.application.IApplicationAddress.Hex())
 			if err != nil {
+				level := slog.LevelError
+				if errors.Is(ctx.Err(), context.Canceled) && errutil.IsOnlyCancellation(err) {
+					level = slog.LevelDebug
+				}
+				r.Logger.Log(ctx, level, "Error counting pending executable outputs",
+					"application", app.application.Name,
+					"address", app.application.IApplicationAddress,
+					"error", err,
+				)
 				success = false
 				continue
 			}
-			if !pending {
+			if pending == 0 {
 				r.Logger.Debug("Not reading output execution: no pending executable outputs",
 					"application", app.application.Name, "address", app.application.IApplicationAddress,
 					"last_output_check_block", lastOutputCheck,
@@ -152,19 +166,6 @@ func (r *Service) checkForOutputExecution(
 	}
 
 	return success
-}
-
-func (r *Service) hasPendingExecutableOutputs(ctx context.Context, app appContracts) (bool, error) {
-	pending, err := r.repository.GetNumberOfPendingExecutableOutputs(ctx, app.application.IApplicationAddress.String())
-	if err != nil {
-		r.Logger.Error("Error counting pending executable outputs",
-			"application", app.application.Name,
-			"address", app.application.IApplicationAddress,
-			"error", err,
-		)
-		return false, err
-	}
-	return pending > 0, nil
 }
 
 func (r *Service) readAndUpdateOutputs(

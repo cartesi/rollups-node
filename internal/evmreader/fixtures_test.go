@@ -36,14 +36,13 @@ var (
 	inputAddedEvent3 = makeInputEvent(app1Addr, 3, 0x13)
 )
 
-// applications defines the two-app setup used by most tests.
-// app1: InputBox DA (inputs are read), app2: non-InputBox DA (inputs filtered out).
+// applications defines two applications that share one InputBox.
 var applications = []*Application{{
+	ID:                   1,
 	Name:                 "my-app-1",
 	IApplicationAddress:  app1Addr,
 	IConsensusAddress:    consensusAddr,
 	IInputBoxAddress:     inputBoxAddr,
-	DataAvailability:     DataAvailability_InputBox[:],
 	Enabled:              true,
 	Status:               ApplicationStatus_OK,
 	IInputBoxBlock:       0x01,
@@ -51,11 +50,11 @@ var applications = []*Application{{
 	LastInputCheckBlock:  0x00,
 	LastOutputCheckBlock: 0x00,
 }, {
+	ID:                   2,
 	Name:                 "my-app-2",
 	IApplicationAddress:  app2Addr,
 	IConsensusAddress:    consensusAddr,
 	IInputBoxAddress:     inputBoxAddr,
-	DataAvailability:     []byte{0x11, 0x32, 0x45, 0x56},
 	Enabled:              true,
 	Status:               ApplicationStatus_OK,
 	IInputBoxBlock:       0x01,

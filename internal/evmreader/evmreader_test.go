@@ -63,7 +63,7 @@ func (s *EvmReaderSuite) SetupTest() {
 			LogLevel:                   logLevel,
 			EvmReaderReadyMaxStaleness: 200 * time.Millisecond,
 			BlockchainDefaultBlock:     DefaultBlock_Latest,
-			FeatureInputReaderEnabled:  true,
+			BlockchainId:               1,
 			EvmReaderPollingInterval:   100 * time.Millisecond,
 		},
 		Repository:     s.repository,
@@ -257,7 +257,7 @@ func (s *EvmReaderSuite) TestTickScansWithServiceContext() {
 		mock.Anything,
 		MonitoredEvent_InputAdded,
 		mock.Anything,
-	).Return(nil).Times(1).Run(assertValidContext)
+	).Return(nil).Times(3).Run(assertValidContext)
 	s.repository.On(
 		"UpdateEventLastCheckBlock",
 		mock.Anything,
@@ -272,7 +272,7 @@ func (s *EvmReaderSuite) TestTickScansWithServiceContext() {
 	s.Require().NoError(err)
 
 	s.client.AssertCalled(s.T(), "HeaderByNumber", mock.Anything, mock.Anything)
-	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 5)
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 7)
 }
 
 func (s *EvmReaderSuite) TestFetchMostRecentHeaderReturnsErrorWhenHeaderNumberIsNil() {
