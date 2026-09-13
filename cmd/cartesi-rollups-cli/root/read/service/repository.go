@@ -806,11 +806,16 @@ func (s *RepositoryReadService) GetMatchAdvanced(ctx context.Context, params api
 	if _, err := config.ToHashFromString(params.IDHash); err != nil {
 		return nil, fmt.Errorf("invalid ID hash: %w", err)
 	}
-	if _, err := config.ToHashFromString(params.Parent); err != nil {
-		return nil, fmt.Errorf("invalid parent: %w", err)
+	txHash, err := config.ToHashFromString(params.TxHash)
+	if err != nil {
+		return nil, fmt.Errorf("invalid transaction hash: %w", err)
+	}
+	logIndex, err := config.ToIndexFromString(params.LogIndex)
+	if err != nil {
+		return nil, fmt.Errorf("invalid log index: %w", err)
 	}
 
-	data, err := repo.GetMatchAdvanced(ctx, application, epochIndex, params.TournamentAddress, params.IDHash, params.Parent)
+	data, err := repo.GetMatchAdvanced(ctx, application, epochIndex, params.TournamentAddress, params.IDHash, txHash, logIndex)
 	if err != nil {
 		return nil, err
 	}
