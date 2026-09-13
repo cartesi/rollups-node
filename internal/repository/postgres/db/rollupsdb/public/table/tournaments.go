@@ -26,9 +26,29 @@ type tournamentsTable struct {
 	Level                   postgres.ColumnInteger
 	Log2step                postgres.ColumnInteger
 	Height                  postgres.ColumnInteger
+	InitialHash             postgres.ColumnBytea
+	BaseCycle               postgres.ColumnFloat
+	Kind                    postgres.ColumnString
+	StartInstant            postgres.ColumnFloat
+	Allowance               postgres.ColumnFloat
+	CreationBlockNumber     postgres.ColumnFloat
+	CreationTxHash          postgres.ColumnBytea
+	CreationLogIndex        postgres.ColumnFloat
+	AsOfBlock               postgres.ColumnFloat
+	Standing                postgres.ColumnString
+	AcceptsJoins            postgres.ColumnBool
+	Candidate               postgres.ColumnBytea
 	WinnerCommitment        postgres.ColumnBytea
 	FinalStateHash          postgres.ColumnBytea
 	FinishedAtBlock         postgres.ColumnFloat
+	ParentCommitment        postgres.ColumnBytea
+	WinnerExpiresAt         postgres.ColumnFloat
+	InnerDisposition        postgres.ColumnString
+	InnerParentCommitment   postgres.ColumnBytea
+	InnerPausedAllowance    postgres.ColumnFloat
+	BondDisposition         postgres.ColumnString
+	BondClaimer             postgres.ColumnBytea
+	BondPayment             postgres.ColumnFloat
 	CreatedAt               postgres.ColumnTimestampz
 	UpdatedAt               postgres.ColumnTimestampz
 
@@ -81,13 +101,33 @@ func newTournamentsTableImpl(schemaName, tableName, alias string) tournamentsTab
 		LevelColumn                   = postgres.IntegerColumn("level")
 		Log2stepColumn                = postgres.IntegerColumn("log2step")
 		HeightColumn                  = postgres.IntegerColumn("height")
+		InitialHashColumn             = postgres.ByteaColumn("initial_hash")
+		BaseCycleColumn               = postgres.FloatColumn("base_cycle")
+		KindColumn                    = postgres.StringColumn("kind")
+		StartInstantColumn            = postgres.FloatColumn("start_instant")
+		AllowanceColumn               = postgres.FloatColumn("allowance")
+		CreationBlockNumberColumn     = postgres.FloatColumn("creation_block_number")
+		CreationTxHashColumn          = postgres.ByteaColumn("creation_tx_hash")
+		CreationLogIndexColumn        = postgres.FloatColumn("creation_log_index")
+		AsOfBlockColumn               = postgres.FloatColumn("as_of_block")
+		StandingColumn                = postgres.StringColumn("standing")
+		AcceptsJoinsColumn            = postgres.BoolColumn("accepts_joins")
+		CandidateColumn               = postgres.ByteaColumn("candidate")
 		WinnerCommitmentColumn        = postgres.ByteaColumn("winner_commitment")
 		FinalStateHashColumn          = postgres.ByteaColumn("final_state_hash")
 		FinishedAtBlockColumn         = postgres.FloatColumn("finished_at_block")
+		ParentCommitmentColumn        = postgres.ByteaColumn("parent_commitment")
+		WinnerExpiresAtColumn         = postgres.FloatColumn("winner_expires_at")
+		InnerDispositionColumn        = postgres.StringColumn("inner_disposition")
+		InnerParentCommitmentColumn   = postgres.ByteaColumn("inner_parent_commitment")
+		InnerPausedAllowanceColumn    = postgres.FloatColumn("inner_paused_allowance")
+		BondDispositionColumn         = postgres.StringColumn("bond_disposition")
+		BondClaimerColumn             = postgres.ByteaColumn("bond_claimer")
+		BondPaymentColumn             = postgres.FloatColumn("bond_payment")
 		CreatedAtColumn               = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn               = postgres.TimestampzColumn("updated_at")
-		allColumns                    = postgres.ColumnList{ApplicationIDColumn, EpochIndexColumn, AddressColumn, ParentTournamentAddressColumn, ParentMatchIDHashColumn, MaxLevelColumn, LevelColumn, Log2stepColumn, HeightColumn, WinnerCommitmentColumn, FinalStateHashColumn, FinishedAtBlockColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns                = postgres.ColumnList{ParentTournamentAddressColumn, ParentMatchIDHashColumn, MaxLevelColumn, LevelColumn, Log2stepColumn, HeightColumn, WinnerCommitmentColumn, FinalStateHashColumn, FinishedAtBlockColumn, CreatedAtColumn, UpdatedAtColumn}
+		allColumns                    = postgres.ColumnList{ApplicationIDColumn, EpochIndexColumn, AddressColumn, ParentTournamentAddressColumn, ParentMatchIDHashColumn, MaxLevelColumn, LevelColumn, Log2stepColumn, HeightColumn, InitialHashColumn, BaseCycleColumn, KindColumn, StartInstantColumn, AllowanceColumn, CreationBlockNumberColumn, CreationTxHashColumn, CreationLogIndexColumn, AsOfBlockColumn, StandingColumn, AcceptsJoinsColumn, CandidateColumn, WinnerCommitmentColumn, FinalStateHashColumn, FinishedAtBlockColumn, ParentCommitmentColumn, WinnerExpiresAtColumn, InnerDispositionColumn, InnerParentCommitmentColumn, InnerPausedAllowanceColumn, BondDispositionColumn, BondClaimerColumn, BondPaymentColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns                = postgres.ColumnList{ParentTournamentAddressColumn, ParentMatchIDHashColumn, MaxLevelColumn, LevelColumn, Log2stepColumn, HeightColumn, InitialHashColumn, BaseCycleColumn, KindColumn, StartInstantColumn, AllowanceColumn, CreationBlockNumberColumn, CreationTxHashColumn, CreationLogIndexColumn, AsOfBlockColumn, StandingColumn, AcceptsJoinsColumn, CandidateColumn, WinnerCommitmentColumn, FinalStateHashColumn, FinishedAtBlockColumn, ParentCommitmentColumn, WinnerExpiresAtColumn, InnerDispositionColumn, InnerParentCommitmentColumn, InnerPausedAllowanceColumn, BondDispositionColumn, BondClaimerColumn, BondPaymentColumn, CreatedAtColumn, UpdatedAtColumn}
 		defaultColumns                = postgres.ColumnList{FinishedAtBlockColumn, CreatedAtColumn, UpdatedAtColumn}
 	)
 
@@ -104,9 +144,29 @@ func newTournamentsTableImpl(schemaName, tableName, alias string) tournamentsTab
 		Level:                   LevelColumn,
 		Log2step:                Log2stepColumn,
 		Height:                  HeightColumn,
+		InitialHash:             InitialHashColumn,
+		BaseCycle:               BaseCycleColumn,
+		Kind:                    KindColumn,
+		StartInstant:            StartInstantColumn,
+		Allowance:               AllowanceColumn,
+		CreationBlockNumber:     CreationBlockNumberColumn,
+		CreationTxHash:          CreationTxHashColumn,
+		CreationLogIndex:        CreationLogIndexColumn,
+		AsOfBlock:               AsOfBlockColumn,
+		Standing:                StandingColumn,
+		AcceptsJoins:            AcceptsJoinsColumn,
+		Candidate:               CandidateColumn,
 		WinnerCommitment:        WinnerCommitmentColumn,
 		FinalStateHash:          FinalStateHashColumn,
 		FinishedAtBlock:         FinishedAtBlockColumn,
+		ParentCommitment:        ParentCommitmentColumn,
+		WinnerExpiresAt:         WinnerExpiresAtColumn,
+		InnerDisposition:        InnerDispositionColumn,
+		InnerParentCommitment:   InnerParentCommitmentColumn,
+		InnerPausedAllowance:    InnerPausedAllowanceColumn,
+		BondDisposition:         BondDispositionColumn,
+		BondClaimer:             BondClaimerColumn,
+		BondPayment:             BondPaymentColumn,
 		CreatedAt:               CreatedAtColumn,
 		UpdatedAt:               UpdatedAtColumn,
 

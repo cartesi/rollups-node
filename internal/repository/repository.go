@@ -32,6 +32,9 @@ var (
 	// ErrInvalidStateProof means an advance result or epoch publication did not
 	// include the complete three-leaf machine state proof.
 	ErrInvalidStateProof = errors.New("invalid machine state proof")
+	// ErrTournamentEventConflict means an observation contradicts an already
+	// stored immutable tournament fact or would replace a newer snapshot.
+	ErrTournamentEventConflict = errors.New("tournament observation conflicts with stored data")
 
 	// ErrInputLogIdentityConflict indicates an input insert conflicted with a
 	// stored row on the L1 log identity (transaction_hash, log_index) under a
@@ -71,9 +74,10 @@ func ExecutableApplicationsFilter() ApplicationFilter {
 }
 
 type EpochFilter struct {
-	Status      []EpochStatus
-	BeforeBlock *uint64
-	IndexRange  *Range
+	Status        []EpochStatus
+	BeforeBlock   *uint64
+	IndexRange    *Range
+	HasTournament *bool
 }
 
 type InputFilter struct {
@@ -126,6 +130,11 @@ type CommitmentFilter struct {
 type MatchFilter struct {
 	EpochIndex        *uint64
 	TournamentAddress *string
+}
+
+type BondEventFilter struct {
+	EpochIndex        *uint64
+	TournamentAddress *common.Address
 }
 
 type WithdrawalFilter struct {
@@ -305,11 +314,10 @@ type StateHashRepository interface {
 }
 
 type TournamentRepository interface {
-	// CreateTournament is idempotent only for an exact
-	// (application_id, epoch_index, address) replay. Other constraint conflicts
-	// remain errors.
+	// CreateTournament preserves immutable facts for an existing
+	// (application_id, epoch_index, address) and can refresh its current snapshot.
+	// Conflicting facts and older snapshots return ErrTournamentEventConflict.
 	CreateTournament(ctx context.Context, nameOrAddress string, t *Tournament) error
-	UpdateTournament(ctx context.Context, nameOrAddress string, t *Tournament) error
 	GetTournament(ctx context.Context, nameOrAddress string, address string) (*Tournament, error)
 	ListTournaments(ctx context.Context, nameOrAddress string, f TournamentFilter,
 		p Pagination, descending bool) ([]*Tournament, uint64, error)
@@ -323,15 +331,21 @@ type CommitmentRepository interface {
 
 type MatchRepository interface {
 	CreateMatch(ctx context.Context, nameOrAddress string, m *Match) error
-	UpdateMatch(ctx context.Context, nameOrAddress string, m *Match) error
 	GetMatch(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string, idHashHex string) (*Match, error)
 	ListMatches(ctx context.Context, nameOrAddress string, f MatchFilter, p Pagination, descending bool) ([]*Match, uint64, error)
 }
 
 type MatchAdvancedRepository interface {
 	CreateMatchAdvanced(ctx context.Context, nameOrAddress string, m *MatchAdvanced) error
-	GetMatchAdvanced(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string, idHashHex string, parentHex string) (*MatchAdvanced, error)
-	ListMatchAdvances(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string, idHashHex string, p Pagination, descending bool) ([]*MatchAdvanced, uint64, error)
+	GetMatchAdvanced(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string,
+		idHashHex string, txHash common.Hash, logIndex uint64) (*MatchAdvanced, error)
+	ListMatchAdvances(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string,
+		idHashHex string, p Pagination, descending bool) ([]*MatchAdvanced, uint64, error)
+}
+
+type BondEventRepository interface {
+	GetBondEvent(ctx context.Context, nameOrAddress string, txHash common.Hash, logIndex uint64) (*BondEvent, error)
+	ListBondEvents(ctx context.Context, nameOrAddress string, f BondEventFilter, p Pagination, descending bool) ([]*BondEvent, uint64, error)
 }
 
 type BulkOperationsRepository interface {
@@ -446,6 +460,7 @@ type Repository interface {
 	CommitmentRepository
 	MatchRepository
 	MatchAdvancedRepository
+	BondEventRepository
 	BulkOperationsRepository
 	NodeConfigRepository
 	ClaimerRepository
