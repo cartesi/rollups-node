@@ -156,38 +156,42 @@ func enforceSubmitterIsolation(children []service.IService) error {
 	return nil
 }
 
-func (me *Service) Alive() bool {
+func (s *Service) Alive() bool {
 	allAlive := true
-	for _, s := range me.Children {
-		allAlive = allAlive && s.Alive()
+	for _, child := range s.Children {
+		allAlive = allAlive && child.Alive()
 	}
 	return allAlive
 }
 
-func (me *Service) Ready() bool {
+func (s *Service) Ready() bool {
 	allReady := true
-	for _, s := range me.Children {
-		allReady = allReady && s.Ready()
+	for _, child := range s.Children {
+		allReady = allReady && child.Ready()
 	}
 	return allReady
 }
 
 func (s *Service) Reload() []error { return nil }
 func (s *Service) Tick() []error   { return nil }
-func (me *Service) Stop(force bool) []error {
-	me.SetStopping()
-	errs := []error{}
-	for _, s := range me.Children {
-		errs = append(errs, s.Stop(force)...)
+func (s *Service) Stop(force bool) []error {
+	s.SetStopping()
+	errs := make([]error, 0, len(s.Children))
+	for _, child := range s.Children {
+		errs = append(errs, child.Stop(force)...)
 	}
 	return errs
 }
 
-func (me *Service) Serve() error {
-	for _, s := range me.Children {
-		go s.Serve()
+func (s *Service) Serve() error {
+	for _, child := range s.Children {
+		go func() {
+			if err := child.Serve(); err != nil {
+				s.Logger.Error("Child service exited with an error", "child", child.String(), "error", err)
+			}
+		}()
 	}
-	return me.Service.Serve()
+	return s.Service.Serve()
 }
 
 // services creation
