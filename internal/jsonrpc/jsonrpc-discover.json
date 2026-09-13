@@ -1526,7 +1526,7 @@
 		{
 			"name": "cartesi_listMatchAdvances",
 			"summary": "List match advances",
-			"description": "Returns a paginated list of match advances for the specified match.",
+			"description": "Returns complete immutable advance records for one match. Application, epoch, tournament, and match are required. Events are ordered by block number and block-global log index. Each record includes its transaction hash and log index for getMatchAdvance. Repeated other-parent hashes remain distinct events.",
 			"params": [
 				{
 					"name": "application",
@@ -1538,7 +1538,7 @@
 				},
 				{
 					"name": "epoch_index",
-					"description": "Filter match advances by a specific epoch index (hex encoded).",
+					"description": "The epoch index of the match (hex encoded).",
 					"schema": {
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
@@ -1546,7 +1546,7 @@
 				},
 				{
 					"name": "tournament_address",
-					"description": "Filter match advances by tournament address (hex encoded).",
+					"description": "The tournament address of the match (hex encoded).",
 					"schema": {
 						"$ref": "#/components/schemas/EthereumAddress"
 					},
@@ -1583,7 +1583,7 @@
 				},
 				{
 					"name": "descending",
-					"description": "if true, the list will be sorted in descending order by epoch index.",
+					"description": "If true, reverse both block number and log index ordering.",
 					"schema": {
 						"type": "boolean",
 						"default": false
@@ -1618,7 +1618,7 @@
 		{
 			"name": "cartesi_getMatchAdvance",
 			"summary": "Get a specific match advance",
-			"description": "Fetches a single match advance by application, epoch index, tournament address, ID hash and parent.",
+			"description": "Returns one complete immutable advance record within the supplied application, epoch, tournament, and match. Use the transaction hash and block-global log index from listMatchAdvances. List and get return the same record fields.",
 			"params": [
 				{
 					"name": "application",
@@ -1630,7 +1630,7 @@
 				},
 				{
 					"name": "epoch_index",
-					"description": "The index of the epoch (hex encoded).",
+					"description": "The epoch index of the match (hex encoded).",
 					"schema": {
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
@@ -1638,7 +1638,7 @@
 				},
 				{
 					"name": "tournament_address",
-					"description": "The tournament address (hex encoded).",
+					"description": "The tournament address of the match (hex encoded).",
 					"schema": {
 						"$ref": "#/components/schemas/EthereumAddress"
 					},
@@ -1646,17 +1646,25 @@
 				},
 				{
 					"name": "id_hash",
-					"description": "The ID hash of the match advance (hex encoded).",
+					"description": "The ID hash of the match (hex encoded).",
 					"schema": {
 						"$ref": "#/components/schemas/Hash"
 					},
 					"required": true
 				},
 				{
-					"name": "parent",
-					"description": "The parent hash of the match advance (hex encoded).",
+					"name": "tx_hash",
+					"description": "Transaction hash of the event.",
 					"schema": {
 						"$ref": "#/components/schemas/Hash"
+					},
+					"required": true
+				},
+				{
+					"name": "log_index",
+					"description": "Block-global log index of the event, hex encoded. Zero is valid.",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
 					},
 					"required": true
 				}
@@ -1676,6 +1684,153 @@
 				},
 				{
 					"$ref": "#/components/errors/MatchAdvancedNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
+				}
+			]
+		},
+		{
+			"name": "cartesi_listBondEvents",
+			"summary": "List bond events",
+			"description": "Returns partial-refund and bond-recovery events, ordered by block number and block-global log index. A failed partial refund records the requested value, not a payment. A failed terminal bond transfer emits no BondRecovered event; it remains recoverable in the tournament snapshot.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "epoch_index",
+					"description": "Filter bond events by a specific epoch index (hex encoded).",
+					"schema": {
+						"oneOf": [
+							{"$ref": "#/components/schemas/UnsignedInteger"},
+							{"type": "null"}
+						]
+					},
+					"required": false
+				},
+				{
+					"name": "tournament_address",
+					"description": "Filter bond events by tournament address (hex encoded).",
+					"schema": {
+						"oneOf": [
+							{"$ref": "#/components/schemas/EthereumAddress"},
+							{"type": "null"}
+						]
+					},
+					"required": false
+				},
+				{
+					"name": "limit",
+					"description": "The maximum number of bond events to return per page.",
+					"schema": {
+						"type": "integer",
+						"minimum": 1,
+						"default": 50
+					},
+					"required": false
+				},
+				{
+					"name": "offset",
+					"description": "The starting point for the list of bond events to return.",
+					"schema": {
+						"type": "integer",
+						"minimum": 0,
+						"maximum": 9223372036854775807,
+						"default": 0
+					},
+					"required": false
+				},
+				{
+					"name": "descending",
+					"description": "If true, reverse both block number and log index ordering.",
+					"schema": {
+						"type": "boolean",
+						"default": false
+					},
+					"required": false
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/BondEventListResult"
+				}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
+				}
+			]
+		},
+		{
+			"name": "cartesi_getBondEvent",
+			"summary": "Get a bond event",
+			"description": "Returns one refund or recovery event by application, transaction hash, and block-global log index.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "tx_hash",
+					"description": "Transaction hash of the event.",
+					"schema": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"required": true
+				},
+				{
+					"name": "log_index",
+					"description": "Block-global log index of the event, hex encoded. Zero is valid.",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": true
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/BondEventGetResult"
+				}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/BondEventNotFound"
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
@@ -1808,9 +1963,6 @@
 					},
 					"withdrawal_config": {
 						"$ref": "#/components/schemas/WithdrawalConfig"
-					},
-					"data_availability": {
-						"$ref": "#/components/schemas/ByteArray"
 					},
 					"consensus_type": {
 						"$ref": "#/components/schemas/Consensus"
@@ -2788,29 +2940,6 @@
 					"height": {
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
-					"winner_commitment": {
-						"oneOf": [
-							{
-								"$ref": "#/components/schemas/Hash"
-							},
-							{
-								"type": "null"
-							}
-						]
-					},
-					"final_state_hash": {
-						"oneOf": [
-							{
-								"$ref": "#/components/schemas/Hash"
-							},
-							{
-								"type": "null"
-							}
-						]
-					},
-					"finished_at_block": {
-						"$ref": "#/components/schemas/UnsignedInteger"
-					},
 					"created_at": {
 						"type": "string",
 						"format": "date-time"
@@ -2818,8 +2947,58 @@
 					"updated_at": {
 						"type": "string",
 						"format": "date-time"
+					},
+					"initial_hash": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"base_cycle": {
+						"$ref": "#/components/schemas/Uint256"
+					},
+					"kind": {
+						"$ref": "#/components/schemas/TournamentKind"
+					},
+					"start_instant": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Tournament creation block."
+					},
+					"allowance": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Initial clock allowance in blocks."
+					},
+					"creation_event": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/TournamentCreationEvent"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"snapshot": {
+						"$ref": "#/components/schemas/TournamentSnapshot"
 					}
-				}
+				},
+				"description": "Immutable tournament descriptor and parent relation, with a current snapshot read at a stated block. Local epoch acceptance or application failure does not make contract state immutable.",
+				"required": [
+					"epoch_index",
+					"address",
+					"parent_tournament_address",
+					"parent_match_id_hash",
+					"max_level",
+					"level",
+					"log2step",
+					"height",
+					"created_at",
+					"updated_at",
+					"initial_hash",
+					"base_cycle",
+					"kind",
+					"start_instant",
+					"allowance",
+					"creation_event",
+					"snapshot"
+				]
 			},
 			"TournamentListResult": {
 				"type": "object",
@@ -2874,8 +3053,28 @@
 					"updated_at": {
 						"type": "string",
 						"format": "date-time"
+					},
+					"log_index": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"snapshot": {
+						"$ref": "#/components/schemas/CommitmentSnapshot"
 					}
-				}
+				},
+				"description": "Immutable joined commitment and submitter, with current claimer and clocks. Every indexed commitment has joined; retained clocks or a zero claimer do not prove liveness.",
+				"required": [
+					"epoch_index",
+					"tournament_address",
+					"commitment",
+					"final_state_hash",
+					"submitter_address",
+					"block_number",
+					"tx_hash",
+					"created_at",
+					"updated_at",
+					"log_index",
+					"snapshot"
+				]
 			},
 			"CommitmentListResult": {
 				"type": "object",
@@ -2912,13 +3111,13 @@
 						"$ref": "#/components/schemas/Hash"
 					},
 					"commitment_one": {
-						"$ref": "#/components/schemas/ByteArray"
+						"$ref": "#/components/schemas/Hash"
 					},
 					"commitment_two": {
-						"$ref": "#/components/schemas/ByteArray"
+						"$ref": "#/components/schemas/Hash"
 					},
 					"left_of_two": {
-						"$ref": "#/components/schemas/ByteArray"
+						"$ref": "#/components/schemas/Hash"
 					},
 					"block_number": {
 						"$ref": "#/components/schemas/UnsignedInteger"
@@ -2936,7 +3135,14 @@
 						"$ref": "#/components/schemas/UnsignedInteger"
 					},
 					"deletion_tx_hash": {
-						"$ref": "#/components/schemas/Hash"
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
 					},
 					"created_at": {
 						"type": "string",
@@ -2945,8 +3151,59 @@
 					"updated_at": {
 						"type": "string",
 						"format": "date-time"
+					},
+					"log_index": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"eliminable_at": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Immutable MatchCreated deadline, not the current responder deadline."
+					},
+					"leaf_seal": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/LeafMatchSeal"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"deletion_log_index": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/UnsignedInteger"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"snapshot": {
+						"$ref": "#/components/schemas/MatchSnapshot"
 					}
-				}
+				},
+				"required": [
+					"epoch_index",
+					"tournament_address",
+					"id_hash",
+					"commitment_one",
+					"commitment_two",
+					"left_of_two",
+					"block_number",
+					"tx_hash",
+					"winner_commitment",
+					"deletion_reason",
+					"deletion_block_number",
+					"deletion_tx_hash",
+					"created_at",
+					"updated_at",
+					"log_index",
+					"eliminable_at",
+					"leaf_seal",
+					"deletion_log_index",
+					"snapshot"
+				]
 			},
 			"MatchListResult": {
 				"type": "object",
@@ -2983,10 +3240,10 @@
 						"$ref": "#/components/schemas/Hash"
 					},
 					"other_parent": {
-						"$ref": "#/components/schemas/ByteArray"
+						"$ref": "#/components/schemas/Hash"
 					},
 					"left_node": {
-						"$ref": "#/components/schemas/ByteArray"
+						"$ref": "#/components/schemas/Hash"
 					},
 					"block_number": {
 						"$ref": "#/components/schemas/UnsignedInteger"
@@ -3001,8 +3258,32 @@
 					"updated_at": {
 						"type": "string",
 						"format": "date-time"
+					},
+					"log_index": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"segment_start_position": {
+						"$ref": "#/components/schemas/Uint256"
+					},
+					"eliminable_at": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Immutable both-sides elimination deadline reported by this advance."
 					}
-				}
+				},
+				"required": [
+					"epoch_index",
+					"tournament_address",
+					"id_hash",
+					"other_parent",
+					"left_node",
+					"block_number",
+					"tx_hash",
+					"created_at",
+					"updated_at",
+					"log_index",
+					"segment_start_position",
+					"eliminable_at"
+				]
 			},
 			"MatchAdvancedListResult": {
 				"type": "object",
@@ -3025,6 +3306,664 @@
 						"$ref": "#/components/schemas/MatchAdvanced"
 					}
 				}
+			},
+			"TournamentKind": {
+				"type": "string",
+				"enum": [
+					"LEAF",
+					"NON_LEAF"
+				]
+			},
+			"TournamentStandingState": {
+				"type": "string",
+				"enum": [
+					"MATCHES_ACTIVE",
+					"AWAITING_CLOSURE",
+					"ROOT_WINNER",
+					"ROOT_FAILED",
+					"INNER_WINNER",
+					"INNER_ELIMINABLE_NO_WINNER",
+					"INNER_ELIMINABLE_WINNER_EXPIRED"
+				]
+			},
+			"MatchPhase": {
+				"type": "string",
+				"enum": [
+					"UNINITIALIZED",
+					"BISECTING",
+					"READY_TO_SEAL",
+					"SEALED"
+				]
+			},
+			"CommitmentSide": {
+				"type": "string",
+				"enum": [
+					"ONE",
+					"TWO"
+				]
+			},
+			"MatchTimeoutOutcome": {
+				"type": "string",
+				"enum": [
+					"NONE",
+					"ONE_WINS",
+					"TWO_WINS",
+					"ELIMINATE_BOTH"
+				]
+			},
+			"InnerTournamentDisposition": {
+				"type": "string",
+				"enum": [
+					"UNSETTLED",
+					"WINNER",
+					"ELIMINABLE"
+				]
+			},
+			"BondDisposition": {
+				"type": "string",
+				"enum": [
+					"TOURNAMENT_RUNNING",
+					"NO_WINNER",
+					"RECOVERABLE",
+					"RECOVERED"
+				]
+			},
+			"BondEventType": {
+				"type": "string",
+				"enum": [
+					"PARTIAL_BOND_REFUND",
+					"BOND_RECOVERED"
+				]
+			},
+			"Uint256": {
+				"type": "string",
+				"pattern": "^0x(0|[1-9a-f][0-9a-f]{0,63})$",
+				"description": "An exact uint256 quantity in canonical hexadecimal form. The maximum is 2^256-1. Never a floating-point JSON number."
+			},
+			"TournamentCreationEvent": {
+				"type": "object",
+				"description": "Immutable NewInnerTournament event, emitted by the parent tournament. A root has no such event.",
+				"properties": {
+					"block_number": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"tx_hash": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"log_index": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Block-global log index. Zero is valid."
+					}
+				},
+				"required": [
+					"block_number",
+					"tx_hash",
+					"log_index"
+				]
+			},
+			"LeafMatchSeal": {
+				"type": "object",
+				"properties": {
+					"eliminable_at": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Immutable deadline from LeafMatchSealed; both sides are eliminable at this block."
+					},
+					"block_number": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"tx_hash": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"log_index": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Block-global log index. Zero is valid."
+					}
+				},
+				"required": [
+					"eliminable_at",
+					"block_number",
+					"tx_hash",
+					"log_index"
+				]
+			},
+			"TournamentInnerResult": {
+				"type": "object",
+				"properties": {
+					"disposition": {
+						"$ref": "#/components/schemas/InnerTournamentDisposition"
+					},
+					"parent_commitment": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"paused_allowance": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Remaining carryover allowance in blocks at as_of_block."
+					}
+				},
+				"required": [
+					"disposition",
+					"parent_commitment",
+					"paused_allowance"
+				]
+			},
+			"TournamentBondRecovery": {
+				"type": "object",
+				"description": "Claimer and payment are present only for RECOVERABLE. A present zero payment is valid.",
+				"properties": {
+					"disposition": {
+						"$ref": "#/components/schemas/BondDisposition"
+					},
+					"claimer": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/EthereumAddress"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"payment": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Uint256"
+							},
+							{
+								"type": "null"
+							}
+						]
+					}
+				},
+				"required": [
+					"disposition",
+					"claimer",
+					"payment"
+				]
+			},
+			"TournamentSnapshot": {
+				"type": "object",
+				"description": "Current contract state, not historical winner data. An expired inner candidate remains a candidate, but is not a current winner. Inner result is null for a root. Separate API calls do not form one database snapshot.",
+				"properties": {
+					"as_of_block": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Configured-policy block at which every view in this snapshot was read."
+					},
+					"standing": {
+						"$ref": "#/components/schemas/TournamentStandingState"
+					},
+					"accepts_joins": {
+						"type": "boolean"
+					},
+					"candidate": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"winner_commitment": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"final_state_hash": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"parent_commitment": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"finished_at_block": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Completion block, or zero while unfinished. Completion does not stop observation."
+					},
+					"winner_expires_at": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Expiry block for a live inner winner; zero for other standings."
+					},
+					"inner_result": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/TournamentInnerResult"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"bond_recovery": {
+						"$ref": "#/components/schemas/TournamentBondRecovery"
+					}
+				},
+				"required": [
+					"as_of_block",
+					"standing",
+					"accepts_joins",
+					"candidate",
+					"winner_commitment",
+					"final_state_hash",
+					"parent_commitment",
+					"finished_at_block",
+					"winner_expires_at",
+					"inner_result",
+					"bond_recovery"
+				]
+			},
+			"CommitmentSnapshot": {
+				"type": "object",
+				"properties": {
+					"as_of_block": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"claimer": {
+						"$ref": "#/components/schemas/EthereumAddress",
+						"description": "Current claimer, which can be zero after elimination or recovery. The original submitter remains an immutable join field."
+					},
+					"clock_running": {
+						"type": "boolean"
+					},
+					"clock_deadline": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Responder expiry block when running; zero when paused."
+					},
+					"clock_allowance": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Paused allowance in blocks. Clock storage alone does not prove that a commitment is live."
+					}
+				},
+				"required": [
+					"as_of_block",
+					"claimer",
+					"clock_running",
+					"clock_deadline",
+					"clock_allowance"
+				]
+			},
+			"MatchBisectionSnapshot": {
+				"type": "object",
+				"description": "Current divergence frontier. Current height is present for BISECTING and null for READY_TO_SEAL. Responder side ONE/TWO is not the deletion winner enum.",
+				"properties": {
+					"revealing_parent": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"waiting_left": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"waiting_right": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"segment_start_position": {
+						"$ref": "#/components/schemas/Uint256"
+					},
+					"segment_start_cycle": {
+						"$ref": "#/components/schemas/Uint256"
+					},
+					"current_height": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/UnsignedInteger"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"responder": {
+						"$ref": "#/components/schemas/CommitmentSide"
+					}
+				},
+				"required": [
+					"revealing_parent",
+					"waiting_left",
+					"waiting_right",
+					"segment_start_position",
+					"segment_start_cycle",
+					"current_height",
+					"responder"
+				]
+			},
+			"MatchSealedSnapshot": {
+				"type": "object",
+				"description": "Sealed values are in commitment-side order, not reveal order.",
+				"properties": {
+					"agree_state": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"divergence_position": {
+						"$ref": "#/components/schemas/Uint256"
+					},
+					"divergence_cycle": {
+						"$ref": "#/components/schemas/Uint256"
+					},
+					"final_state_one": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"final_state_two": {
+						"$ref": "#/components/schemas/Hash"
+					}
+				},
+				"required": [
+					"agree_state",
+					"divergence_position",
+					"divergence_cycle",
+					"final_state_one",
+					"final_state_two"
+				]
+			},
+			"MatchSnapshot": {
+				"type": "object",
+				"description": "Current match state. Deleted matches have UNINITIALIZED phase and no phase payload; deletion facts remain on the match. A sealed non-leaf match has no local timeout outcome because its child controls progress.",
+				"properties": {
+					"as_of_block": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"phase": {
+						"$ref": "#/components/schemas/MatchPhase"
+					},
+					"bisection": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/MatchBisectionSnapshot"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"sealed": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/MatchSealedSnapshot"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"timeout_outcome": {
+						"$ref": "#/components/schemas/MatchTimeoutOutcome"
+					},
+					"deferred_charge": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Deferred charge in blocks from the timeout classifier at as_of_block."
+					}
+				},
+				"required": [
+					"as_of_block",
+					"phase",
+					"bisection",
+					"sealed",
+					"timeout_outcome",
+					"deferred_charge"
+				],
+				"oneOf": [
+					{
+						"properties": {
+							"phase": {
+								"const": "UNINITIALIZED"
+							},
+							"bisection": {
+								"type": "null"
+							},
+							"sealed": {
+								"type": "null"
+							}
+						}
+					},
+					{
+						"properties": {
+							"phase": {
+								"const": "BISECTING"
+							},
+							"bisection": {
+								"allOf": [
+									{
+										"$ref": "#/components/schemas/MatchBisectionSnapshot"
+									},
+									{
+										"properties": {
+											"current_height": {
+												"$ref": "#/components/schemas/UnsignedInteger"
+											}
+										}
+									}
+								]
+							},
+							"sealed": {
+								"type": "null"
+							}
+						}
+					},
+					{
+						"properties": {
+							"phase": {
+								"const": "READY_TO_SEAL"
+							},
+							"bisection": {
+								"allOf": [
+									{
+										"$ref": "#/components/schemas/MatchBisectionSnapshot"
+									},
+									{
+										"properties": {
+											"current_height": {
+												"type": "null"
+											}
+										}
+									}
+								]
+							},
+							"sealed": {
+								"type": "null"
+							}
+						}
+					},
+					{
+						"properties": {
+							"phase": {
+								"const": "SEALED"
+							},
+							"bisection": {
+								"type": "null"
+							},
+							"sealed": {
+								"$ref": "#/components/schemas/MatchSealedSnapshot"
+							}
+						}
+					}
+				]
+			},
+			"PartialBondRefund": {
+				"type": "object",
+				"description": "Value is the requested refund. It was paid only if success is true.",
+				"properties": {
+					"recipient": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"value": {
+						"$ref": "#/components/schemas/Uint256"
+					},
+					"success": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"recipient",
+					"value",
+					"success"
+				]
+			},
+			"BondRecovered": {
+				"type": "object",
+				"properties": {
+					"commitment": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"claimer": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"payment": {
+						"$ref": "#/components/schemas/Uint256"
+					},
+					"burned": {
+						"$ref": "#/components/schemas/Uint256"
+					}
+				},
+				"required": [
+					"commitment",
+					"claimer",
+					"payment",
+					"burned"
+				]
+			},
+			"BondEvent": {
+				"type": "object",
+				"properties": {
+					"epoch_index": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"tournament_address": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"type": {
+						"$ref": "#/components/schemas/BondEventType"
+					},
+					"block_number": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"tx_hash": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"log_index": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Block-global log index. Zero is valid."
+					},
+					"refund": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/PartialBondRefund"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"recovery": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/BondRecovered"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"updated_at": {
+						"type": "string",
+						"format": "date-time"
+					}
+				},
+				"required": [
+					"epoch_index",
+					"tournament_address",
+					"type",
+					"block_number",
+					"tx_hash",
+					"log_index",
+					"refund",
+					"recovery",
+					"created_at",
+					"updated_at"
+				],
+				"oneOf": [
+					{
+						"properties": {
+							"type": {
+								"const": "PARTIAL_BOND_REFUND"
+							},
+							"refund": {
+								"$ref": "#/components/schemas/PartialBondRefund"
+							},
+							"recovery": {
+								"type": "null"
+							}
+						}
+					},
+					{
+						"properties": {
+							"type": {
+								"const": "BOND_RECOVERED"
+							},
+							"refund": {
+								"type": "null"
+							},
+							"recovery": {
+								"$ref": "#/components/schemas/BondRecovered"
+							}
+						}
+					}
+				]
+			},
+			"BondEventListResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"type": "array",
+						"items": {
+							"$ref": "#/components/schemas/BondEvent"
+						}
+					},
+					"pagination": {
+						"$ref": "#/components/schemas/Pagination"
+					}
+				},
+				"required": [
+					"data",
+					"pagination"
+				]
+			},
+			"BondEventGetResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"$ref": "#/components/schemas/BondEvent"
+					}
+				},
+				"required": [
+					"data"
+				]
 			}
 		},
 		"errors": {
@@ -3087,6 +4026,10 @@
 			"MatchAdvancedNotFound": {
 				"code": -31001,
 				"message": "Match advanced not found"
+			},
+			"BondEventNotFound": {
+				"code": -31001,
+				"message": "Bond event not found"
 			},
 			"NodeConfigNotFound": {
 				"code": -31001,

@@ -134,7 +134,6 @@ func (s *Service) newTestApplication(ctx context.Context, t *testing.T, i uint64
 	app := repotest.NewApplicationBuilder().
 		WithName(hex).
 		WithAddress(common.HexToAddress(hex)).
-		WithDataAvailability([]byte{0x00, 0x00, 0x00, 0x00}).
 		Create(ctx, t, s.repository)
 	return app.ID
 }
@@ -244,19 +243,17 @@ func (s *Service) advanceInput(
 }
 
 type listTournamentsResult struct {
-	EpochIndex              hex64           `json:"epoch_index"`
-	Address                 common.Address  `json:"address"`
-	ParentTournamentAddress *common.Address `json:"parent_tournament_address"`
-	ParentMatchIDHash       *common.Hash    `json:"parent_match_id_hash"`
-	MaxLevel                hex64           `json:"max_level"`
-	Level                   hex64           `json:"level"`
-	Log2Step                hex64           `json:"log2step"`
-	Height                  hex64           `json:"height"`
-	WinnerCommitment        *common.Hash    `json:"winner_commitment"`
-	FinalStateHash          *common.Hash    `json:"final_state_hash"`
-	FinishedAtBlock         hex64           `json:"finished_at_block"`
-	CreatedAt               time.Time       `json:"created_at"`
-	UpdatedAt               time.Time       `json:"updated_at"`
+	EpochIndex              hex64                    `json:"epoch_index"`
+	Address                 common.Address           `json:"address"`
+	ParentTournamentAddress *common.Address          `json:"parent_tournament_address"`
+	ParentMatchIDHash       *common.Hash             `json:"parent_match_id_hash"`
+	MaxLevel                hex64                    `json:"max_level"`
+	Level                   hex64                    `json:"level"`
+	Log2Step                hex64                    `json:"log2step"`
+	Height                  hex64                    `json:"height"`
+	Snapshot                model.TournamentSnapshot `json:"snapshot"`
+	CreatedAt               time.Time                `json:"created_at"`
+	UpdatedAt               time.Time                `json:"updated_at"`
 }
 
 type getCommitmentResult struct {
@@ -284,7 +281,7 @@ type getMatchResult struct {
 	TxHash              common.Hash               `json:"tx_hash"`
 	Winner              model.WinnerCommitment    `json:"winner_commitment"`
 	DeletionReason      model.MatchDeletionReason `json:"deletion_reason"`
-	DeletionTxHash      common.Hash               `json:"deletion_tx_hash"`
+	DeletionTxHash      *common.Hash              `json:"deletion_tx_hash"`
 	CreatedAt           time.Time                 `json:"created_at"`
 	UpdatedAt           time.Time                 `json:"updated_at"`
 }
@@ -314,7 +311,7 @@ type listMatchesResult struct {
 	TxHash              common.Hash               `json:"tx_hash"`
 	Winner              model.WinnerCommitment    `json:"winner_commitment"`
 	DeletionReason      model.MatchDeletionReason `json:"deletion_reason"`
-	DeletionTxHash      common.Hash               `json:"deletion_tx_hash"`
+	DeletionTxHash      *common.Hash              `json:"deletion_tx_hash"`
 	CreatedAt           time.Time                 `json:"created_at"`
 	UpdatedAt           time.Time                 `json:"updated_at"`
 }
