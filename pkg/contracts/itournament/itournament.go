@@ -29,41 +29,75 @@ var (
 	_ = abi.ConvertType
 )
 
-// ClockState is an auto generated low-level Go binding around an user-defined struct.
-type ClockState struct {
-	Allowance    uint64
+// ITournamentBisectingMatchView is an auto generated low-level Go binding around an user-defined struct.
+type ITournamentBisectingMatchView struct {
+	RevealingParent      [32]byte
+	WaitingLeft          [32]byte
+	WaitingRight         [32]byte
+	SegmentStartPosition *big.Int
+	SegmentStartCycle    *big.Int
+	CurrentHeight        uint64
+	Responder            uint8
+}
+
+// ITournamentCommitmentStandingView is an auto generated low-level Go binding around an user-defined struct.
+type ITournamentCommitmentStandingView struct {
+	Joined         bool
+	FinalState     [32]byte
+	Claimer        common.Address
+	ClockRunning   bool
+	ClockDeadline  uint64
+	ClockAllowance uint64
+}
+
+// ITournamentInnerResultView is an auto generated low-level Go binding around an user-defined struct.
+type ITournamentInnerResultView struct {
+	Disposition      uint8
+	ParentCommitment [32]byte
+	PausedAllowance  uint64
+}
+
+// ITournamentReadyToSealMatchView is an auto generated low-level Go binding around an user-defined struct.
+type ITournamentReadyToSealMatchView struct {
+	RevealingParent      [32]byte
+	WaitingLeft          [32]byte
+	WaitingRight         [32]byte
+	SegmentStartPosition *big.Int
+	SegmentStartCycle    *big.Int
+	Responder            uint8
+}
+
+// ITournamentSealedMatchView is an auto generated low-level Go binding around an user-defined struct.
+type ITournamentSealedMatchView struct {
+	AgreeState         [32]byte
+	DivergencePosition *big.Int
+	DivergenceCycle    *big.Int
+	FinalStateOne      [32]byte
+	FinalStateTwo      [32]byte
+}
+
+// ITournamentTournamentDescriptor is an auto generated low-level Go binding around an user-defined struct.
+type ITournamentTournamentDescriptor struct {
+	InitialHash  [32]byte
+	BaseCycle    *big.Int
+	Log2Stride   uint64
+	Height       uint64
+	Level        uint64
+	Kind         uint8
 	StartInstant uint64
+	Allowance    uint64
 }
 
-// CommitmentArguments is an auto generated low-level Go binding around an user-defined struct.
-type CommitmentArguments struct {
-	InitialHash [32]byte
-	StartCycle  *big.Int
-	Log2step    uint64
-	Height      uint64
-}
-
-// ITournamentNestedDispute is an auto generated low-level Go binding around an user-defined struct.
-type ITournamentNestedDispute struct {
-	ContestedCommitmentOne [32]byte
-	ContestedFinalStateOne [32]byte
-	ContestedCommitmentTwo [32]byte
-	ContestedFinalStateTwo [32]byte
-}
-
-// ITournamentTournamentArguments is an auto generated low-level Go binding around an user-defined struct.
-type ITournamentTournamentArguments struct {
-	CommitmentArgs    CommitmentArguments
-	Level             uint64
-	Levels            uint64
-	StartInstant      uint64
-	Allowance         uint64
-	MaxAllowance      uint64
-	MatchEffort       uint64
-	Provider          common.Address
-	NestedDispute     ITournamentNestedDispute
-	StateTransition   common.Address
-	TournamentFactory common.Address
+// ITournamentTournamentStandingView is an auto generated low-level Go binding around an user-defined struct.
+type ITournamentTournamentStandingView struct {
+	Standing         uint8
+	AcceptsJoins     bool
+	HasCandidate     bool
+	Candidate        [32]byte
+	FinalState       [32]byte
+	ParentCommitment [32]byte
+	FinishedAt       uint64
+	WinnerExpiresAt  uint64
 }
 
 // MatchId is an auto generated low-level Go binding around an user-defined struct.
@@ -72,19 +106,9 @@ type MatchId struct {
 	CommitmentTwo [32]byte
 }
 
-// MatchState is an auto generated low-level Go binding around an user-defined struct.
-type MatchState struct {
-	OtherParent         [32]byte
-	LeftNode            [32]byte
-	RightNode           [32]byte
-	RunningLeafPosition *big.Int
-	CurrentHeight       uint64
-	IsInit              bool
-}
-
 // ITournamentMetaData contains all meta data concerning the ITournament contract.
 var ITournamentMetaData = &bind.MetaData{
-	ABI: "[{\"type\":\"function\",\"name\":\"advanceMatch\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"newLeftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"newRightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"arbitrationResult\",\"inputs\":[],\"outputs\":[{\"name\":\"finished\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"winnerCommitment\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"finalState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"bondValue\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"canBeEliminated\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"canWinMatchByTimeout\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"eliminateInnerTournament\",\"inputs\":[{\"name\":\"childTournament\",\"type\":\"address\",\"internalType\":\"contractITournament\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"eliminateMatchByTimeout\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"getCommitment\",\"inputs\":[{\"name\":\"commitmentRoot\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[{\"name\":\"clock\",\"type\":\"tuple\",\"internalType\":\"structClock.State\",\"components\":[{\"name\":\"allowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"},{\"name\":\"startInstant\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"}]},{\"name\":\"finalState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getCommitmentJoinedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getMatch\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"internalType\":\"Match.IdHash\"}],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structMatch.State\",\"components\":[{\"name\":\"otherParent\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"runningLeafPosition\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"currentHeight\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"isInit\",\"type\":\"bool\",\"internalType\":\"bool\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getMatchAdvancedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getMatchCreatedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getMatchCycle\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"internalType\":\"Match.IdHash\"}],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getMatchDeletedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getNewInnerTournamentCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"innerTournamentWinner\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structClock.State\",\"components\":[{\"name\":\"allowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"},{\"name\":\"startInstant\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"isClosed\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"isFinished\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"joinTournament\",\"inputs\":[{\"name\":\"finalState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"proof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[],\"stateMutability\":\"payable\"},{\"type\":\"function\",\"name\":\"sealInnerMatchAndCreateInnerTournament\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftLeaf\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightLeaf\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"agreeHash\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"agreeHashProof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"sealLeafMatch\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftLeaf\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightLeaf\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"agreeHash\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"agreeHashProof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"timeFinished\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"tournamentArguments\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structITournament.TournamentArguments\",\"components\":[{\"name\":\"commitmentArgs\",\"type\":\"tuple\",\"internalType\":\"structCommitment.Arguments\",\"components\":[{\"name\":\"initialHash\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"startCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"log2step\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"height\",\"type\":\"uint64\",\"internalType\":\"uint64\"}]},{\"name\":\"level\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"levels\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"startInstant\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"},{\"name\":\"allowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"},{\"name\":\"maxAllowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"},{\"name\":\"matchEffort\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"},{\"name\":\"provider\",\"type\":\"address\",\"internalType\":\"contractIDataProvider\"},{\"name\":\"nestedDispute\",\"type\":\"tuple\",\"internalType\":\"structITournament.NestedDispute\",\"components\":[{\"name\":\"contestedCommitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"contestedFinalStateOne\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"contestedCommitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"contestedFinalStateTwo\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}]},{\"name\":\"stateTransition\",\"type\":\"address\",\"internalType\":\"contractIStateTransition\"},{\"name\":\"tournamentFactory\",\"type\":\"address\",\"internalType\":\"address\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"tournamentLevelConstants\",\"inputs\":[],\"outputs\":[{\"name\":\"maxLevel\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"level\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"log2step\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"height\",\"type\":\"uint64\",\"internalType\":\"uint64\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"tryRecoveringBond\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"winInnerTournament\",\"inputs\":[{\"name\":\"childTournament\",\"type\":\"address\",\"internalType\":\"contractITournament\"},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"winLeafMatch\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"proofs\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"winMatchByTimeout\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"event\",\"name\":\"CommitmentJoined\",\"inputs\":[{\"name\":\"commitment\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"finalStateHash\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Machine.Hash\"},{\"name\":\"submitter\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"MatchAdvanced\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"otherParent\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"MatchCreated\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"one\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"two\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"leftOfTwo\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"MatchDeleted\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"one\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"two\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"reason\",\"type\":\"uint8\",\"indexed\":false,\"internalType\":\"enumITournament.MatchDeletionReason\"},{\"name\":\"winnerCommitment\",\"type\":\"uint8\",\"indexed\":false,\"internalType\":\"enumITournament.WinnerCommitment\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"NewInnerTournament\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"childTournament\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"contractITournament\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"PartialBondRefund\",\"inputs\":[{\"name\":\"recipient\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"value\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"success\",\"type\":\"bool\",\"indexed\":true,\"internalType\":\"bool\"},{\"name\":\"ret\",\"type\":\"bytes\",\"indexed\":false,\"internalType\":\"bytes\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"AtLeastOneClockHasNotTimedOut\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"CannotAdvanceTimedOutClock\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ChildTournamentCannotBeEliminated\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ChildTournamentMustBeEliminated\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ChildTournamentNotFinished\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ClockAlreadyInitialized\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ClockNotInitialized\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"CommitmentProofWrongSize\",\"inputs\":[{\"name\":\"treeHeight\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"siblingsLength\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"CommitmentStateMismatch\",\"inputs\":[{\"name\":\"expected\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"computed\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"type\":\"error\",\"name\":\"IncorrectAgreeState\",\"inputs\":[{\"name\":\"initialState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"agreeState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}]},{\"type\":\"error\",\"name\":\"InitializedClockCannotHaveZeroAllowance\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InsufficientBond\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidChildrenNodes\",\"inputs\":[{\"name\":\"expectedParent\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"leftChild\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightChild\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"type\":\"error\",\"name\":\"InvalidContestedFinalState\",\"inputs\":[{\"name\":\"contestedFinalStateOne\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"contestedFinalStateTwo\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"finalState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}]},{\"type\":\"error\",\"name\":\"InvalidTournamentWinner\",\"inputs\":[{\"name\":\"winner\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"type\":\"error\",\"name\":\"InvalidWinnerCommitment\",\"inputs\":[{\"name\":\"winnerCommitment\",\"type\":\"uint8\",\"internalType\":\"enumITournament.WinnerCommitment\"}]},{\"type\":\"error\",\"name\":\"MatchCannotBeAdvanced\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchCannotBeSealed\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchDoesNotExist\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchIsNotSealed\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NeitherClockHasTimedOut\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NoWinner\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NodeDoesNotExist\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"PausedClockCannotTimeout\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ReentrancyDetected\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"RequireLeafTournament\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"RequireNonLeafTournament\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"RequireNonRootTournament\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"TournamentFailedNoWinner\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"TournamentIsClosed\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"TournamentIsFinished\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"TournamentNotFinished\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"WrongChildren\",\"inputs\":[{\"name\":\"whichCommitment\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"commitmentRoot\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"left\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"right\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"type\":\"error\",\"name\":\"WrongFinalState\",\"inputs\":[{\"name\":\"whichCommitment\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"computedPostState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"committedPostState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}]},{\"type\":\"error\",\"name\":\"WrongNodesForStep\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"WrongTournamentWinner\",\"inputs\":[{\"name\":\"commitmentRoot\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"winner\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]}]",
+	ABI: "[{\"type\":\"function\",\"name\":\"advanceMatch\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"newLeftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"newRightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"bisectingMatch\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"internalType\":\"Match.IdHash\"}],\"outputs\":[{\"name\":\"actualPhase\",\"type\":\"uint8\",\"internalType\":\"enumMatch.Phase\"},{\"name\":\"value\",\"type\":\"tuple\",\"internalType\":\"structITournament.BisectingMatchView\",\"components\":[{\"name\":\"revealingParent\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"waitingLeft\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"waitingRight\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"segmentStartPosition\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"segmentStartCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"currentHeight\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"responder\",\"type\":\"uint8\",\"internalType\":\"enumITournament.CommitmentSide\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"bondRecovery\",\"inputs\":[],\"outputs\":[{\"name\":\"disposition\",\"type\":\"uint8\",\"internalType\":\"enumITournament.BondDisposition\"},{\"name\":\"claimer\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"payment\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"bondValue\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"classifyMatchTimeout\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]}],\"outputs\":[{\"name\":\"actualPhase\",\"type\":\"uint8\",\"internalType\":\"enumMatch.Phase\"},{\"name\":\"outcome\",\"type\":\"uint8\",\"internalType\":\"enumITournament.MatchTimeoutOutcome\"},{\"name\":\"deferredCharge\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"commitmentStanding\",\"inputs\":[{\"name\":\"commitmentRoot\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structITournament.CommitmentStandingView\",\"components\":[{\"name\":\"joined\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"finalState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"claimer\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"clockRunning\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"clockDeadline\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"},{\"name\":\"clockAllowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"eliminateInnerTournament\",\"inputs\":[{\"name\":\"childTournament\",\"type\":\"address\",\"internalType\":\"contractITournament\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"eliminateMatchByTimeout\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"getCommitmentJoinedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getLeafMatchSealedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getMatchAdvancedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getMatchCreatedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getMatchDeletedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getNewInnerTournamentCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"innerResult\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structITournament.InnerResultView\",\"components\":[{\"name\":\"disposition\",\"type\":\"uint8\",\"internalType\":\"enumITournament.InnerTournamentDisposition\"},{\"name\":\"parentCommitment\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"pausedAllowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"joinTournament\",\"inputs\":[{\"name\":\"finalState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"proof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[],\"stateMutability\":\"payable\"},{\"type\":\"function\",\"name\":\"readyToSealMatch\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"internalType\":\"Match.IdHash\"}],\"outputs\":[{\"name\":\"actualPhase\",\"type\":\"uint8\",\"internalType\":\"enumMatch.Phase\"},{\"name\":\"value\",\"type\":\"tuple\",\"internalType\":\"structITournament.ReadyToSealMatchView\",\"components\":[{\"name\":\"revealingParent\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"waitingLeft\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"waitingRight\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"segmentStartPosition\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"segmentStartCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"responder\",\"type\":\"uint8\",\"internalType\":\"enumITournament.CommitmentSide\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"sealInnerMatchAndCreateInnerTournament\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftLeaf\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightLeaf\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"agreeHash\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"agreeHashProof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"sealLeafMatch\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftLeaf\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightLeaf\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"agreeHash\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"agreeHashProof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"sealedMatch\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"internalType\":\"Match.IdHash\"}],\"outputs\":[{\"name\":\"actualPhase\",\"type\":\"uint8\",\"internalType\":\"enumMatch.Phase\"},{\"name\":\"value\",\"type\":\"tuple\",\"internalType\":\"structITournament.SealedMatchView\",\"components\":[{\"name\":\"agreeState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"divergencePosition\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"divergenceCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"finalStateOne\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"finalStateTwo\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"tournamentDescriptor\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structITournament.TournamentDescriptor\",\"components\":[{\"name\":\"initialHash\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"baseCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"log2Stride\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"height\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"level\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"kind\",\"type\":\"uint8\",\"internalType\":\"enumITournament.TournamentKind\"},{\"name\":\"startInstant\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"},{\"name\":\"allowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"tournamentStanding\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structITournament.TournamentStandingView\",\"components\":[{\"name\":\"standing\",\"type\":\"uint8\",\"internalType\":\"enumITournament.TournamentStanding\"},{\"name\":\"acceptsJoins\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"hasCandidate\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"candidate\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"finalState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"parentCommitment\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"finishedAt\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"},{\"name\":\"winnerExpiresAt\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"tryRecoveringBond\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"winInnerTournament\",\"inputs\":[{\"name\":\"childTournament\",\"type\":\"address\",\"internalType\":\"contractITournament\"},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"winLeafMatch\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"proofs\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"winMatchByTimeout\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"event\",\"name\":\"BondRecovered\",\"inputs\":[{\"name\":\"commitment\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"claimer\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"payment\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"burned\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"CommitmentJoined\",\"inputs\":[{\"name\":\"commitment\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"finalStateHash\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Machine.Hash\"},{\"name\":\"submitter\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"LeafMatchSealed\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"eliminableAt\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"Time.Instant\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"MatchAdvanced\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"otherParent\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"segmentStartPosition\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"eliminableAt\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"Time.Instant\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"MatchCreated\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"one\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"two\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"leftOfTwo\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"eliminableAt\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"Time.Instant\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"MatchDeleted\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"one\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"two\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"reason\",\"type\":\"uint8\",\"indexed\":false,\"internalType\":\"enumITournament.MatchDeletionReason\"},{\"name\":\"winnerCommitment\",\"type\":\"uint8\",\"indexed\":false,\"internalType\":\"enumITournament.WinnerCommitment\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"NewInnerTournament\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"childTournament\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"contractITournament\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"PartialBondRefund\",\"inputs\":[{\"name\":\"recipient\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"value\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"success\",\"type\":\"bool\",\"indexed\":true,\"internalType\":\"bool\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"CannotAdvanceTimedOutClock\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ChildTournamentCannotBeEliminated\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ChildTournamentMustBeEliminated\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ChildTournamentNotFinished\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ClockAlreadyInitialized\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"CommitmentProofWrongSize\",\"inputs\":[{\"name\":\"treeHeight\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"siblingsLength\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"CommitmentStateMismatch\",\"inputs\":[{\"name\":\"expected\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"computed\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"type\":\"error\",\"name\":\"IncorrectAgreeState\",\"inputs\":[{\"name\":\"initialState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"agreeState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}]},{\"type\":\"error\",\"name\":\"InsufficientBond\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidChildrenNodes\",\"inputs\":[{\"name\":\"expectedParent\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"leftChild\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightChild\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"type\":\"error\",\"name\":\"InvalidContestedFinalState\",\"inputs\":[{\"name\":\"contestedFinalStateOne\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"contestedFinalStateTwo\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"finalState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}]},{\"type\":\"error\",\"name\":\"MatchCannotBeAdvanced\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchCannotBeEliminatedByTimeout\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchCannotBeSealed\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchCannotBeWonByTimeout\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchDoesNotExist\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchIsNotSealed\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NoWinner\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ReentrancyDetected\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"RequireLeafTournament\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"RequireNonLeafTournament\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"RequireNonRootTournament\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"TournamentFailedNoWinner\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"TournamentIsClosed\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"TournamentIsFinished\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"TournamentNotFinished\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"WrongChildren\",\"inputs\":[{\"name\":\"whichCommitment\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"commitmentRoot\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"left\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"right\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"type\":\"error\",\"name\":\"WrongFinalState\",\"inputs\":[{\"name\":\"whichCommitment\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"computedPostState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"committedPostState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}]},{\"type\":\"error\",\"name\":\"WrongNodesForStep\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"WrongTournamentWinner\",\"inputs\":[{\"name\":\"commitmentRoot\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"winner\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]}]",
 }
 
 // ITournamentABI is the input ABI used to generate the binding from.
@@ -233,54 +257,99 @@ func (_ITournament *ITournamentTransactorRaw) Transact(opts *bind.TransactOpts, 
 	return _ITournament.Contract.contract.Transact(opts, method, params...)
 }
 
-// ArbitrationResult is a free data retrieval call binding the contract method 0xcb2773db.
+// BisectingMatch is a free data retrieval call binding the contract method 0xb8bc3e5d.
 //
-// Solidity: function arbitrationResult() view returns(bool finished, bytes32 winnerCommitment, bytes32 finalState)
-func (_ITournament *ITournamentCaller) ArbitrationResult(opts *bind.CallOpts) (struct {
-	Finished         bool
-	WinnerCommitment [32]byte
-	FinalState       [32]byte
+// Solidity: function bisectingMatch(bytes32 matchIdHash) view returns(uint8 actualPhase, (bytes32,bytes32,bytes32,uint256,uint256,uint64,uint8) value)
+func (_ITournament *ITournamentCaller) BisectingMatch(opts *bind.CallOpts, matchIdHash [32]byte) (struct {
+	ActualPhase uint8
+	Value       ITournamentBisectingMatchView
 }, error) {
 	var out []interface{}
-	err := _ITournament.contract.Call(opts, &out, "arbitrationResult")
+	err := _ITournament.contract.Call(opts, &out, "bisectingMatch", matchIdHash)
 
 	outstruct := new(struct {
-		Finished         bool
-		WinnerCommitment [32]byte
-		FinalState       [32]byte
+		ActualPhase uint8
+		Value       ITournamentBisectingMatchView
 	})
 	if err != nil {
 		return *outstruct, err
 	}
 
-	outstruct.Finished = *abi.ConvertType(out[0], new(bool)).(*bool)
-	outstruct.WinnerCommitment = *abi.ConvertType(out[1], new([32]byte)).(*[32]byte)
-	outstruct.FinalState = *abi.ConvertType(out[2], new([32]byte)).(*[32]byte)
+	outstruct.ActualPhase = *abi.ConvertType(out[0], new(uint8)).(*uint8)
+	outstruct.Value = *abi.ConvertType(out[1], new(ITournamentBisectingMatchView)).(*ITournamentBisectingMatchView)
 
 	return *outstruct, err
 
 }
 
-// ArbitrationResult is a free data retrieval call binding the contract method 0xcb2773db.
+// BisectingMatch is a free data retrieval call binding the contract method 0xb8bc3e5d.
 //
-// Solidity: function arbitrationResult() view returns(bool finished, bytes32 winnerCommitment, bytes32 finalState)
-func (_ITournament *ITournamentSession) ArbitrationResult() (struct {
-	Finished         bool
-	WinnerCommitment [32]byte
-	FinalState       [32]byte
+// Solidity: function bisectingMatch(bytes32 matchIdHash) view returns(uint8 actualPhase, (bytes32,bytes32,bytes32,uint256,uint256,uint64,uint8) value)
+func (_ITournament *ITournamentSession) BisectingMatch(matchIdHash [32]byte) (struct {
+	ActualPhase uint8
+	Value       ITournamentBisectingMatchView
 }, error) {
-	return _ITournament.Contract.ArbitrationResult(&_ITournament.CallOpts)
+	return _ITournament.Contract.BisectingMatch(&_ITournament.CallOpts, matchIdHash)
 }
 
-// ArbitrationResult is a free data retrieval call binding the contract method 0xcb2773db.
+// BisectingMatch is a free data retrieval call binding the contract method 0xb8bc3e5d.
 //
-// Solidity: function arbitrationResult() view returns(bool finished, bytes32 winnerCommitment, bytes32 finalState)
-func (_ITournament *ITournamentCallerSession) ArbitrationResult() (struct {
-	Finished         bool
-	WinnerCommitment [32]byte
-	FinalState       [32]byte
+// Solidity: function bisectingMatch(bytes32 matchIdHash) view returns(uint8 actualPhase, (bytes32,bytes32,bytes32,uint256,uint256,uint64,uint8) value)
+func (_ITournament *ITournamentCallerSession) BisectingMatch(matchIdHash [32]byte) (struct {
+	ActualPhase uint8
+	Value       ITournamentBisectingMatchView
 }, error) {
-	return _ITournament.Contract.ArbitrationResult(&_ITournament.CallOpts)
+	return _ITournament.Contract.BisectingMatch(&_ITournament.CallOpts, matchIdHash)
+}
+
+// BondRecovery is a free data retrieval call binding the contract method 0x2cf66e56.
+//
+// Solidity: function bondRecovery() view returns(uint8 disposition, address claimer, uint256 payment)
+func (_ITournament *ITournamentCaller) BondRecovery(opts *bind.CallOpts) (struct {
+	Disposition uint8
+	Claimer     common.Address
+	Payment     *big.Int
+}, error) {
+	var out []interface{}
+	err := _ITournament.contract.Call(opts, &out, "bondRecovery")
+
+	outstruct := new(struct {
+		Disposition uint8
+		Claimer     common.Address
+		Payment     *big.Int
+	})
+	if err != nil {
+		return *outstruct, err
+	}
+
+	outstruct.Disposition = *abi.ConvertType(out[0], new(uint8)).(*uint8)
+	outstruct.Claimer = *abi.ConvertType(out[1], new(common.Address)).(*common.Address)
+	outstruct.Payment = *abi.ConvertType(out[2], new(*big.Int)).(**big.Int)
+
+	return *outstruct, err
+
+}
+
+// BondRecovery is a free data retrieval call binding the contract method 0x2cf66e56.
+//
+// Solidity: function bondRecovery() view returns(uint8 disposition, address claimer, uint256 payment)
+func (_ITournament *ITournamentSession) BondRecovery() (struct {
+	Disposition uint8
+	Claimer     common.Address
+	Payment     *big.Int
+}, error) {
+	return _ITournament.Contract.BondRecovery(&_ITournament.CallOpts)
+}
+
+// BondRecovery is a free data retrieval call binding the contract method 0x2cf66e56.
+//
+// Solidity: function bondRecovery() view returns(uint8 disposition, address claimer, uint256 payment)
+func (_ITournament *ITournamentCallerSession) BondRecovery() (struct {
+	Disposition uint8
+	Claimer     common.Address
+	Payment     *big.Int
+}, error) {
+	return _ITournament.Contract.BondRecovery(&_ITournament.CallOpts)
 }
 
 // BondValue is a free data retrieval call binding the contract method 0xd2d5862c.
@@ -314,111 +383,85 @@ func (_ITournament *ITournamentCallerSession) BondValue() (*big.Int, error) {
 	return _ITournament.Contract.BondValue(&_ITournament.CallOpts)
 }
 
-// CanBeEliminated is a free data retrieval call binding the contract method 0x95dd0e94.
+// ClassifyMatchTimeout is a free data retrieval call binding the contract method 0xdcead735.
 //
-// Solidity: function canBeEliminated() view returns(bool)
-func (_ITournament *ITournamentCaller) CanBeEliminated(opts *bind.CallOpts) (bool, error) {
-	var out []interface{}
-	err := _ITournament.contract.Call(opts, &out, "canBeEliminated")
-
-	if err != nil {
-		return *new(bool), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
-
-	return out0, err
-
-}
-
-// CanBeEliminated is a free data retrieval call binding the contract method 0x95dd0e94.
-//
-// Solidity: function canBeEliminated() view returns(bool)
-func (_ITournament *ITournamentSession) CanBeEliminated() (bool, error) {
-	return _ITournament.Contract.CanBeEliminated(&_ITournament.CallOpts)
-}
-
-// CanBeEliminated is a free data retrieval call binding the contract method 0x95dd0e94.
-//
-// Solidity: function canBeEliminated() view returns(bool)
-func (_ITournament *ITournamentCallerSession) CanBeEliminated() (bool, error) {
-	return _ITournament.Contract.CanBeEliminated(&_ITournament.CallOpts)
-}
-
-// CanWinMatchByTimeout is a free data retrieval call binding the contract method 0x6a1a140d.
-//
-// Solidity: function canWinMatchByTimeout((bytes32,bytes32) matchId) view returns(bool)
-func (_ITournament *ITournamentCaller) CanWinMatchByTimeout(opts *bind.CallOpts, matchId MatchId) (bool, error) {
-	var out []interface{}
-	err := _ITournament.contract.Call(opts, &out, "canWinMatchByTimeout", matchId)
-
-	if err != nil {
-		return *new(bool), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
-
-	return out0, err
-
-}
-
-// CanWinMatchByTimeout is a free data retrieval call binding the contract method 0x6a1a140d.
-//
-// Solidity: function canWinMatchByTimeout((bytes32,bytes32) matchId) view returns(bool)
-func (_ITournament *ITournamentSession) CanWinMatchByTimeout(matchId MatchId) (bool, error) {
-	return _ITournament.Contract.CanWinMatchByTimeout(&_ITournament.CallOpts, matchId)
-}
-
-// CanWinMatchByTimeout is a free data retrieval call binding the contract method 0x6a1a140d.
-//
-// Solidity: function canWinMatchByTimeout((bytes32,bytes32) matchId) view returns(bool)
-func (_ITournament *ITournamentCallerSession) CanWinMatchByTimeout(matchId MatchId) (bool, error) {
-	return _ITournament.Contract.CanWinMatchByTimeout(&_ITournament.CallOpts, matchId)
-}
-
-// GetCommitment is a free data retrieval call binding the contract method 0x7795820c.
-//
-// Solidity: function getCommitment(bytes32 commitmentRoot) view returns((uint64,uint64) clock, bytes32 finalState)
-func (_ITournament *ITournamentCaller) GetCommitment(opts *bind.CallOpts, commitmentRoot [32]byte) (struct {
-	Clock      ClockState
-	FinalState [32]byte
+// Solidity: function classifyMatchTimeout((bytes32,bytes32) matchId) view returns(uint8 actualPhase, uint8 outcome, uint64 deferredCharge)
+func (_ITournament *ITournamentCaller) ClassifyMatchTimeout(opts *bind.CallOpts, matchId MatchId) (struct {
+	ActualPhase    uint8
+	Outcome        uint8
+	DeferredCharge uint64
 }, error) {
 	var out []interface{}
-	err := _ITournament.contract.Call(opts, &out, "getCommitment", commitmentRoot)
+	err := _ITournament.contract.Call(opts, &out, "classifyMatchTimeout", matchId)
 
 	outstruct := new(struct {
-		Clock      ClockState
-		FinalState [32]byte
+		ActualPhase    uint8
+		Outcome        uint8
+		DeferredCharge uint64
 	})
 	if err != nil {
 		return *outstruct, err
 	}
 
-	outstruct.Clock = *abi.ConvertType(out[0], new(ClockState)).(*ClockState)
-	outstruct.FinalState = *abi.ConvertType(out[1], new([32]byte)).(*[32]byte)
+	outstruct.ActualPhase = *abi.ConvertType(out[0], new(uint8)).(*uint8)
+	outstruct.Outcome = *abi.ConvertType(out[1], new(uint8)).(*uint8)
+	outstruct.DeferredCharge = *abi.ConvertType(out[2], new(uint64)).(*uint64)
 
 	return *outstruct, err
 
 }
 
-// GetCommitment is a free data retrieval call binding the contract method 0x7795820c.
+// ClassifyMatchTimeout is a free data retrieval call binding the contract method 0xdcead735.
 //
-// Solidity: function getCommitment(bytes32 commitmentRoot) view returns((uint64,uint64) clock, bytes32 finalState)
-func (_ITournament *ITournamentSession) GetCommitment(commitmentRoot [32]byte) (struct {
-	Clock      ClockState
-	FinalState [32]byte
+// Solidity: function classifyMatchTimeout((bytes32,bytes32) matchId) view returns(uint8 actualPhase, uint8 outcome, uint64 deferredCharge)
+func (_ITournament *ITournamentSession) ClassifyMatchTimeout(matchId MatchId) (struct {
+	ActualPhase    uint8
+	Outcome        uint8
+	DeferredCharge uint64
 }, error) {
-	return _ITournament.Contract.GetCommitment(&_ITournament.CallOpts, commitmentRoot)
+	return _ITournament.Contract.ClassifyMatchTimeout(&_ITournament.CallOpts, matchId)
 }
 
-// GetCommitment is a free data retrieval call binding the contract method 0x7795820c.
+// ClassifyMatchTimeout is a free data retrieval call binding the contract method 0xdcead735.
 //
-// Solidity: function getCommitment(bytes32 commitmentRoot) view returns((uint64,uint64) clock, bytes32 finalState)
-func (_ITournament *ITournamentCallerSession) GetCommitment(commitmentRoot [32]byte) (struct {
-	Clock      ClockState
-	FinalState [32]byte
+// Solidity: function classifyMatchTimeout((bytes32,bytes32) matchId) view returns(uint8 actualPhase, uint8 outcome, uint64 deferredCharge)
+func (_ITournament *ITournamentCallerSession) ClassifyMatchTimeout(matchId MatchId) (struct {
+	ActualPhase    uint8
+	Outcome        uint8
+	DeferredCharge uint64
 }, error) {
-	return _ITournament.Contract.GetCommitment(&_ITournament.CallOpts, commitmentRoot)
+	return _ITournament.Contract.ClassifyMatchTimeout(&_ITournament.CallOpts, matchId)
+}
+
+// CommitmentStanding is a free data retrieval call binding the contract method 0xf3cb94fc.
+//
+// Solidity: function commitmentStanding(bytes32 commitmentRoot) view returns((bool,bytes32,address,bool,uint64,uint64))
+func (_ITournament *ITournamentCaller) CommitmentStanding(opts *bind.CallOpts, commitmentRoot [32]byte) (ITournamentCommitmentStandingView, error) {
+	var out []interface{}
+	err := _ITournament.contract.Call(opts, &out, "commitmentStanding", commitmentRoot)
+
+	if err != nil {
+		return *new(ITournamentCommitmentStandingView), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(ITournamentCommitmentStandingView)).(*ITournamentCommitmentStandingView)
+
+	return out0, err
+
+}
+
+// CommitmentStanding is a free data retrieval call binding the contract method 0xf3cb94fc.
+//
+// Solidity: function commitmentStanding(bytes32 commitmentRoot) view returns((bool,bytes32,address,bool,uint64,uint64))
+func (_ITournament *ITournamentSession) CommitmentStanding(commitmentRoot [32]byte) (ITournamentCommitmentStandingView, error) {
+	return _ITournament.Contract.CommitmentStanding(&_ITournament.CallOpts, commitmentRoot)
+}
+
+// CommitmentStanding is a free data retrieval call binding the contract method 0xf3cb94fc.
+//
+// Solidity: function commitmentStanding(bytes32 commitmentRoot) view returns((bool,bytes32,address,bool,uint64,uint64))
+func (_ITournament *ITournamentCallerSession) CommitmentStanding(commitmentRoot [32]byte) (ITournamentCommitmentStandingView, error) {
+	return _ITournament.Contract.CommitmentStanding(&_ITournament.CallOpts, commitmentRoot)
 }
 
 // GetCommitmentJoinedCount is a free data retrieval call binding the contract method 0x2c243a1e.
@@ -452,35 +495,35 @@ func (_ITournament *ITournamentCallerSession) GetCommitmentJoinedCount() (*big.I
 	return _ITournament.Contract.GetCommitmentJoinedCount(&_ITournament.CallOpts)
 }
 
-// GetMatch is a free data retrieval call binding the contract method 0xfcc6077d.
+// GetLeafMatchSealedCount is a free data retrieval call binding the contract method 0x87373745.
 //
-// Solidity: function getMatch(bytes32 matchIdHash) view returns((bytes32,bytes32,bytes32,uint256,uint64,bool))
-func (_ITournament *ITournamentCaller) GetMatch(opts *bind.CallOpts, matchIdHash [32]byte) (MatchState, error) {
+// Solidity: function getLeafMatchSealedCount() view returns(uint256)
+func (_ITournament *ITournamentCaller) GetLeafMatchSealedCount(opts *bind.CallOpts) (*big.Int, error) {
 	var out []interface{}
-	err := _ITournament.contract.Call(opts, &out, "getMatch", matchIdHash)
+	err := _ITournament.contract.Call(opts, &out, "getLeafMatchSealedCount")
 
 	if err != nil {
-		return *new(MatchState), err
+		return *new(*big.Int), err
 	}
 
-	out0 := *abi.ConvertType(out[0], new(MatchState)).(*MatchState)
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
 
 	return out0, err
 
 }
 
-// GetMatch is a free data retrieval call binding the contract method 0xfcc6077d.
+// GetLeafMatchSealedCount is a free data retrieval call binding the contract method 0x87373745.
 //
-// Solidity: function getMatch(bytes32 matchIdHash) view returns((bytes32,bytes32,bytes32,uint256,uint64,bool))
-func (_ITournament *ITournamentSession) GetMatch(matchIdHash [32]byte) (MatchState, error) {
-	return _ITournament.Contract.GetMatch(&_ITournament.CallOpts, matchIdHash)
+// Solidity: function getLeafMatchSealedCount() view returns(uint256)
+func (_ITournament *ITournamentSession) GetLeafMatchSealedCount() (*big.Int, error) {
+	return _ITournament.Contract.GetLeafMatchSealedCount(&_ITournament.CallOpts)
 }
 
-// GetMatch is a free data retrieval call binding the contract method 0xfcc6077d.
+// GetLeafMatchSealedCount is a free data retrieval call binding the contract method 0x87373745.
 //
-// Solidity: function getMatch(bytes32 matchIdHash) view returns((bytes32,bytes32,bytes32,uint256,uint64,bool))
-func (_ITournament *ITournamentCallerSession) GetMatch(matchIdHash [32]byte) (MatchState, error) {
-	return _ITournament.Contract.GetMatch(&_ITournament.CallOpts, matchIdHash)
+// Solidity: function getLeafMatchSealedCount() view returns(uint256)
+func (_ITournament *ITournamentCallerSession) GetLeafMatchSealedCount() (*big.Int, error) {
+	return _ITournament.Contract.GetLeafMatchSealedCount(&_ITournament.CallOpts)
 }
 
 // GetMatchAdvancedCount is a free data retrieval call binding the contract method 0xf8cb3bd0.
@@ -545,37 +588,6 @@ func (_ITournament *ITournamentCallerSession) GetMatchCreatedCount() (*big.Int, 
 	return _ITournament.Contract.GetMatchCreatedCount(&_ITournament.CallOpts)
 }
 
-// GetMatchCycle is a free data retrieval call binding the contract method 0x8acc802d.
-//
-// Solidity: function getMatchCycle(bytes32 matchIdHash) view returns(uint256)
-func (_ITournament *ITournamentCaller) GetMatchCycle(opts *bind.CallOpts, matchIdHash [32]byte) (*big.Int, error) {
-	var out []interface{}
-	err := _ITournament.contract.Call(opts, &out, "getMatchCycle", matchIdHash)
-
-	if err != nil {
-		return *new(*big.Int), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
-
-	return out0, err
-
-}
-
-// GetMatchCycle is a free data retrieval call binding the contract method 0x8acc802d.
-//
-// Solidity: function getMatchCycle(bytes32 matchIdHash) view returns(uint256)
-func (_ITournament *ITournamentSession) GetMatchCycle(matchIdHash [32]byte) (*big.Int, error) {
-	return _ITournament.Contract.GetMatchCycle(&_ITournament.CallOpts, matchIdHash)
-}
-
-// GetMatchCycle is a free data retrieval call binding the contract method 0x8acc802d.
-//
-// Solidity: function getMatchCycle(bytes32 matchIdHash) view returns(uint256)
-func (_ITournament *ITournamentCallerSession) GetMatchCycle(matchIdHash [32]byte) (*big.Int, error) {
-	return _ITournament.Contract.GetMatchCycle(&_ITournament.CallOpts, matchIdHash)
-}
-
 // GetMatchDeletedCount is a free data retrieval call binding the contract method 0xd3976945.
 //
 // Solidity: function getMatchDeletedCount() view returns(uint256)
@@ -638,218 +650,187 @@ func (_ITournament *ITournamentCallerSession) GetNewInnerTournamentCount() (*big
 	return _ITournament.Contract.GetNewInnerTournamentCount(&_ITournament.CallOpts)
 }
 
-// InnerTournamentWinner is a free data retrieval call binding the contract method 0x5145236f.
+// InnerResult is a free data retrieval call binding the contract method 0x08f0f877.
 //
-// Solidity: function innerTournamentWinner() view returns(bool, bytes32, bytes32, (uint64,uint64))
-func (_ITournament *ITournamentCaller) InnerTournamentWinner(opts *bind.CallOpts) (bool, [32]byte, [32]byte, ClockState, error) {
+// Solidity: function innerResult() view returns((uint8,bytes32,uint64))
+func (_ITournament *ITournamentCaller) InnerResult(opts *bind.CallOpts) (ITournamentInnerResultView, error) {
 	var out []interface{}
-	err := _ITournament.contract.Call(opts, &out, "innerTournamentWinner")
+	err := _ITournament.contract.Call(opts, &out, "innerResult")
 
 	if err != nil {
-		return *new(bool), *new([32]byte), *new([32]byte), *new(ClockState), err
+		return *new(ITournamentInnerResultView), err
 	}
 
-	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
-	out1 := *abi.ConvertType(out[1], new([32]byte)).(*[32]byte)
-	out2 := *abi.ConvertType(out[2], new([32]byte)).(*[32]byte)
-	out3 := *abi.ConvertType(out[3], new(ClockState)).(*ClockState)
-
-	return out0, out1, out2, out3, err
-
-}
-
-// InnerTournamentWinner is a free data retrieval call binding the contract method 0x5145236f.
-//
-// Solidity: function innerTournamentWinner() view returns(bool, bytes32, bytes32, (uint64,uint64))
-func (_ITournament *ITournamentSession) InnerTournamentWinner() (bool, [32]byte, [32]byte, ClockState, error) {
-	return _ITournament.Contract.InnerTournamentWinner(&_ITournament.CallOpts)
-}
-
-// InnerTournamentWinner is a free data retrieval call binding the contract method 0x5145236f.
-//
-// Solidity: function innerTournamentWinner() view returns(bool, bytes32, bytes32, (uint64,uint64))
-func (_ITournament *ITournamentCallerSession) InnerTournamentWinner() (bool, [32]byte, [32]byte, ClockState, error) {
-	return _ITournament.Contract.InnerTournamentWinner(&_ITournament.CallOpts)
-}
-
-// IsClosed is a free data retrieval call binding the contract method 0xc2b6b58c.
-//
-// Solidity: function isClosed() view returns(bool)
-func (_ITournament *ITournamentCaller) IsClosed(opts *bind.CallOpts) (bool, error) {
-	var out []interface{}
-	err := _ITournament.contract.Call(opts, &out, "isClosed")
-
-	if err != nil {
-		return *new(bool), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
+	out0 := *abi.ConvertType(out[0], new(ITournamentInnerResultView)).(*ITournamentInnerResultView)
 
 	return out0, err
 
 }
 
-// IsClosed is a free data retrieval call binding the contract method 0xc2b6b58c.
+// InnerResult is a free data retrieval call binding the contract method 0x08f0f877.
 //
-// Solidity: function isClosed() view returns(bool)
-func (_ITournament *ITournamentSession) IsClosed() (bool, error) {
-	return _ITournament.Contract.IsClosed(&_ITournament.CallOpts)
+// Solidity: function innerResult() view returns((uint8,bytes32,uint64))
+func (_ITournament *ITournamentSession) InnerResult() (ITournamentInnerResultView, error) {
+	return _ITournament.Contract.InnerResult(&_ITournament.CallOpts)
 }
 
-// IsClosed is a free data retrieval call binding the contract method 0xc2b6b58c.
+// InnerResult is a free data retrieval call binding the contract method 0x08f0f877.
 //
-// Solidity: function isClosed() view returns(bool)
-func (_ITournament *ITournamentCallerSession) IsClosed() (bool, error) {
-	return _ITournament.Contract.IsClosed(&_ITournament.CallOpts)
+// Solidity: function innerResult() view returns((uint8,bytes32,uint64))
+func (_ITournament *ITournamentCallerSession) InnerResult() (ITournamentInnerResultView, error) {
+	return _ITournament.Contract.InnerResult(&_ITournament.CallOpts)
 }
 
-// IsFinished is a free data retrieval call binding the contract method 0x7b352962.
+// ReadyToSealMatch is a free data retrieval call binding the contract method 0x62d0d040.
 //
-// Solidity: function isFinished() view returns(bool)
-func (_ITournament *ITournamentCaller) IsFinished(opts *bind.CallOpts) (bool, error) {
-	var out []interface{}
-	err := _ITournament.contract.Call(opts, &out, "isFinished")
-
-	if err != nil {
-		return *new(bool), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
-
-	return out0, err
-
-}
-
-// IsFinished is a free data retrieval call binding the contract method 0x7b352962.
-//
-// Solidity: function isFinished() view returns(bool)
-func (_ITournament *ITournamentSession) IsFinished() (bool, error) {
-	return _ITournament.Contract.IsFinished(&_ITournament.CallOpts)
-}
-
-// IsFinished is a free data retrieval call binding the contract method 0x7b352962.
-//
-// Solidity: function isFinished() view returns(bool)
-func (_ITournament *ITournamentCallerSession) IsFinished() (bool, error) {
-	return _ITournament.Contract.IsFinished(&_ITournament.CallOpts)
-}
-
-// TimeFinished is a free data retrieval call binding the contract method 0x39cdfaf2.
-//
-// Solidity: function timeFinished() view returns(bool, uint64)
-func (_ITournament *ITournamentCaller) TimeFinished(opts *bind.CallOpts) (bool, uint64, error) {
-	var out []interface{}
-	err := _ITournament.contract.Call(opts, &out, "timeFinished")
-
-	if err != nil {
-		return *new(bool), *new(uint64), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
-	out1 := *abi.ConvertType(out[1], new(uint64)).(*uint64)
-
-	return out0, out1, err
-
-}
-
-// TimeFinished is a free data retrieval call binding the contract method 0x39cdfaf2.
-//
-// Solidity: function timeFinished() view returns(bool, uint64)
-func (_ITournament *ITournamentSession) TimeFinished() (bool, uint64, error) {
-	return _ITournament.Contract.TimeFinished(&_ITournament.CallOpts)
-}
-
-// TimeFinished is a free data retrieval call binding the contract method 0x39cdfaf2.
-//
-// Solidity: function timeFinished() view returns(bool, uint64)
-func (_ITournament *ITournamentCallerSession) TimeFinished() (bool, uint64, error) {
-	return _ITournament.Contract.TimeFinished(&_ITournament.CallOpts)
-}
-
-// TournamentArguments is a free data retrieval call binding the contract method 0x4b3fbb10.
-//
-// Solidity: function tournamentArguments() view returns(((bytes32,uint256,uint64,uint64),uint64,uint64,uint64,uint64,uint64,uint64,address,(bytes32,bytes32,bytes32,bytes32),address,address))
-func (_ITournament *ITournamentCaller) TournamentArguments(opts *bind.CallOpts) (ITournamentTournamentArguments, error) {
-	var out []interface{}
-	err := _ITournament.contract.Call(opts, &out, "tournamentArguments")
-
-	if err != nil {
-		return *new(ITournamentTournamentArguments), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new(ITournamentTournamentArguments)).(*ITournamentTournamentArguments)
-
-	return out0, err
-
-}
-
-// TournamentArguments is a free data retrieval call binding the contract method 0x4b3fbb10.
-//
-// Solidity: function tournamentArguments() view returns(((bytes32,uint256,uint64,uint64),uint64,uint64,uint64,uint64,uint64,uint64,address,(bytes32,bytes32,bytes32,bytes32),address,address))
-func (_ITournament *ITournamentSession) TournamentArguments() (ITournamentTournamentArguments, error) {
-	return _ITournament.Contract.TournamentArguments(&_ITournament.CallOpts)
-}
-
-// TournamentArguments is a free data retrieval call binding the contract method 0x4b3fbb10.
-//
-// Solidity: function tournamentArguments() view returns(((bytes32,uint256,uint64,uint64),uint64,uint64,uint64,uint64,uint64,uint64,address,(bytes32,bytes32,bytes32,bytes32),address,address))
-func (_ITournament *ITournamentCallerSession) TournamentArguments() (ITournamentTournamentArguments, error) {
-	return _ITournament.Contract.TournamentArguments(&_ITournament.CallOpts)
-}
-
-// TournamentLevelConstants is a free data retrieval call binding the contract method 0xa1af906b.
-//
-// Solidity: function tournamentLevelConstants() view returns(uint64 maxLevel, uint64 level, uint64 log2step, uint64 height)
-func (_ITournament *ITournamentCaller) TournamentLevelConstants(opts *bind.CallOpts) (struct {
-	MaxLevel uint64
-	Level    uint64
-	Log2step uint64
-	Height   uint64
+// Solidity: function readyToSealMatch(bytes32 matchIdHash) view returns(uint8 actualPhase, (bytes32,bytes32,bytes32,uint256,uint256,uint8) value)
+func (_ITournament *ITournamentCaller) ReadyToSealMatch(opts *bind.CallOpts, matchIdHash [32]byte) (struct {
+	ActualPhase uint8
+	Value       ITournamentReadyToSealMatchView
 }, error) {
 	var out []interface{}
-	err := _ITournament.contract.Call(opts, &out, "tournamentLevelConstants")
+	err := _ITournament.contract.Call(opts, &out, "readyToSealMatch", matchIdHash)
 
 	outstruct := new(struct {
-		MaxLevel uint64
-		Level    uint64
-		Log2step uint64
-		Height   uint64
+		ActualPhase uint8
+		Value       ITournamentReadyToSealMatchView
 	})
 	if err != nil {
 		return *outstruct, err
 	}
 
-	outstruct.MaxLevel = *abi.ConvertType(out[0], new(uint64)).(*uint64)
-	outstruct.Level = *abi.ConvertType(out[1], new(uint64)).(*uint64)
-	outstruct.Log2step = *abi.ConvertType(out[2], new(uint64)).(*uint64)
-	outstruct.Height = *abi.ConvertType(out[3], new(uint64)).(*uint64)
+	outstruct.ActualPhase = *abi.ConvertType(out[0], new(uint8)).(*uint8)
+	outstruct.Value = *abi.ConvertType(out[1], new(ITournamentReadyToSealMatchView)).(*ITournamentReadyToSealMatchView)
 
 	return *outstruct, err
 
 }
 
-// TournamentLevelConstants is a free data retrieval call binding the contract method 0xa1af906b.
+// ReadyToSealMatch is a free data retrieval call binding the contract method 0x62d0d040.
 //
-// Solidity: function tournamentLevelConstants() view returns(uint64 maxLevel, uint64 level, uint64 log2step, uint64 height)
-func (_ITournament *ITournamentSession) TournamentLevelConstants() (struct {
-	MaxLevel uint64
-	Level    uint64
-	Log2step uint64
-	Height   uint64
+// Solidity: function readyToSealMatch(bytes32 matchIdHash) view returns(uint8 actualPhase, (bytes32,bytes32,bytes32,uint256,uint256,uint8) value)
+func (_ITournament *ITournamentSession) ReadyToSealMatch(matchIdHash [32]byte) (struct {
+	ActualPhase uint8
+	Value       ITournamentReadyToSealMatchView
 }, error) {
-	return _ITournament.Contract.TournamentLevelConstants(&_ITournament.CallOpts)
+	return _ITournament.Contract.ReadyToSealMatch(&_ITournament.CallOpts, matchIdHash)
 }
 
-// TournamentLevelConstants is a free data retrieval call binding the contract method 0xa1af906b.
+// ReadyToSealMatch is a free data retrieval call binding the contract method 0x62d0d040.
 //
-// Solidity: function tournamentLevelConstants() view returns(uint64 maxLevel, uint64 level, uint64 log2step, uint64 height)
-func (_ITournament *ITournamentCallerSession) TournamentLevelConstants() (struct {
-	MaxLevel uint64
-	Level    uint64
-	Log2step uint64
-	Height   uint64
+// Solidity: function readyToSealMatch(bytes32 matchIdHash) view returns(uint8 actualPhase, (bytes32,bytes32,bytes32,uint256,uint256,uint8) value)
+func (_ITournament *ITournamentCallerSession) ReadyToSealMatch(matchIdHash [32]byte) (struct {
+	ActualPhase uint8
+	Value       ITournamentReadyToSealMatchView
 }, error) {
-	return _ITournament.Contract.TournamentLevelConstants(&_ITournament.CallOpts)
+	return _ITournament.Contract.ReadyToSealMatch(&_ITournament.CallOpts, matchIdHash)
+}
+
+// SealedMatch is a free data retrieval call binding the contract method 0x6e42fc59.
+//
+// Solidity: function sealedMatch(bytes32 matchIdHash) view returns(uint8 actualPhase, (bytes32,uint256,uint256,bytes32,bytes32) value)
+func (_ITournament *ITournamentCaller) SealedMatch(opts *bind.CallOpts, matchIdHash [32]byte) (struct {
+	ActualPhase uint8
+	Value       ITournamentSealedMatchView
+}, error) {
+	var out []interface{}
+	err := _ITournament.contract.Call(opts, &out, "sealedMatch", matchIdHash)
+
+	outstruct := new(struct {
+		ActualPhase uint8
+		Value       ITournamentSealedMatchView
+	})
+	if err != nil {
+		return *outstruct, err
+	}
+
+	outstruct.ActualPhase = *abi.ConvertType(out[0], new(uint8)).(*uint8)
+	outstruct.Value = *abi.ConvertType(out[1], new(ITournamentSealedMatchView)).(*ITournamentSealedMatchView)
+
+	return *outstruct, err
+
+}
+
+// SealedMatch is a free data retrieval call binding the contract method 0x6e42fc59.
+//
+// Solidity: function sealedMatch(bytes32 matchIdHash) view returns(uint8 actualPhase, (bytes32,uint256,uint256,bytes32,bytes32) value)
+func (_ITournament *ITournamentSession) SealedMatch(matchIdHash [32]byte) (struct {
+	ActualPhase uint8
+	Value       ITournamentSealedMatchView
+}, error) {
+	return _ITournament.Contract.SealedMatch(&_ITournament.CallOpts, matchIdHash)
+}
+
+// SealedMatch is a free data retrieval call binding the contract method 0x6e42fc59.
+//
+// Solidity: function sealedMatch(bytes32 matchIdHash) view returns(uint8 actualPhase, (bytes32,uint256,uint256,bytes32,bytes32) value)
+func (_ITournament *ITournamentCallerSession) SealedMatch(matchIdHash [32]byte) (struct {
+	ActualPhase uint8
+	Value       ITournamentSealedMatchView
+}, error) {
+	return _ITournament.Contract.SealedMatch(&_ITournament.CallOpts, matchIdHash)
+}
+
+// TournamentDescriptor is a free data retrieval call binding the contract method 0x21719b1e.
+//
+// Solidity: function tournamentDescriptor() view returns((bytes32,uint256,uint64,uint64,uint64,uint8,uint64,uint64))
+func (_ITournament *ITournamentCaller) TournamentDescriptor(opts *bind.CallOpts) (ITournamentTournamentDescriptor, error) {
+	var out []interface{}
+	err := _ITournament.contract.Call(opts, &out, "tournamentDescriptor")
+
+	if err != nil {
+		return *new(ITournamentTournamentDescriptor), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(ITournamentTournamentDescriptor)).(*ITournamentTournamentDescriptor)
+
+	return out0, err
+
+}
+
+// TournamentDescriptor is a free data retrieval call binding the contract method 0x21719b1e.
+//
+// Solidity: function tournamentDescriptor() view returns((bytes32,uint256,uint64,uint64,uint64,uint8,uint64,uint64))
+func (_ITournament *ITournamentSession) TournamentDescriptor() (ITournamentTournamentDescriptor, error) {
+	return _ITournament.Contract.TournamentDescriptor(&_ITournament.CallOpts)
+}
+
+// TournamentDescriptor is a free data retrieval call binding the contract method 0x21719b1e.
+//
+// Solidity: function tournamentDescriptor() view returns((bytes32,uint256,uint64,uint64,uint64,uint8,uint64,uint64))
+func (_ITournament *ITournamentCallerSession) TournamentDescriptor() (ITournamentTournamentDescriptor, error) {
+	return _ITournament.Contract.TournamentDescriptor(&_ITournament.CallOpts)
+}
+
+// TournamentStanding is a free data retrieval call binding the contract method 0x0589deec.
+//
+// Solidity: function tournamentStanding() view returns((uint8,bool,bool,bytes32,bytes32,bytes32,uint64,uint64))
+func (_ITournament *ITournamentCaller) TournamentStanding(opts *bind.CallOpts) (ITournamentTournamentStandingView, error) {
+	var out []interface{}
+	err := _ITournament.contract.Call(opts, &out, "tournamentStanding")
+
+	if err != nil {
+		return *new(ITournamentTournamentStandingView), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(ITournamentTournamentStandingView)).(*ITournamentTournamentStandingView)
+
+	return out0, err
+
+}
+
+// TournamentStanding is a free data retrieval call binding the contract method 0x0589deec.
+//
+// Solidity: function tournamentStanding() view returns((uint8,bool,bool,bytes32,bytes32,bytes32,uint64,uint64))
+func (_ITournament *ITournamentSession) TournamentStanding() (ITournamentTournamentStandingView, error) {
+	return _ITournament.Contract.TournamentStanding(&_ITournament.CallOpts)
+}
+
+// TournamentStanding is a free data retrieval call binding the contract method 0x0589deec.
+//
+// Solidity: function tournamentStanding() view returns((uint8,bool,bool,bytes32,bytes32,bytes32,uint64,uint64))
+func (_ITournament *ITournamentCallerSession) TournamentStanding() (ITournamentTournamentStandingView, error) {
+	return _ITournament.Contract.TournamentStanding(&_ITournament.CallOpts)
 }
 
 // AdvanceMatch is a paid mutator transaction binding the contract method 0xfcc85391.
@@ -1062,6 +1043,161 @@ func (_ITournament *ITournamentTransactorSession) WinMatchByTimeout(matchId Matc
 	return _ITournament.Contract.WinMatchByTimeout(&_ITournament.TransactOpts, matchId, leftNode, rightNode)
 }
 
+// ITournamentBondRecoveredIterator is returned from FilterBondRecovered and is used to iterate over the raw logs and unpacked data for BondRecovered events raised by the ITournament contract.
+type ITournamentBondRecoveredIterator struct {
+	Event *ITournamentBondRecovered // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *ITournamentBondRecoveredIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(ITournamentBondRecovered)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(ITournamentBondRecovered)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *ITournamentBondRecoveredIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *ITournamentBondRecoveredIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// ITournamentBondRecovered represents a BondRecovered event raised by the ITournament contract.
+type ITournamentBondRecovered struct {
+	Commitment [32]byte
+	Claimer    common.Address
+	Payment    *big.Int
+	Burned     *big.Int
+	Raw        types.Log // Blockchain specific contextual infos
+}
+
+// FilterBondRecovered is a free log retrieval operation binding the contract event 0x11bda32901e3e37ab2859f6a8b7b525ecd2b67c579f173700ad8642346cabf4e.
+//
+// Solidity: event BondRecovered(bytes32 indexed commitment, address indexed claimer, uint256 payment, uint256 burned)
+func (_ITournament *ITournamentFilterer) FilterBondRecovered(opts *bind.FilterOpts, commitment [][32]byte, claimer []common.Address) (*ITournamentBondRecoveredIterator, error) {
+
+	var commitmentRule []interface{}
+	for _, commitmentItem := range commitment {
+		commitmentRule = append(commitmentRule, commitmentItem)
+	}
+	var claimerRule []interface{}
+	for _, claimerItem := range claimer {
+		claimerRule = append(claimerRule, claimerItem)
+	}
+
+	logs, sub, err := _ITournament.contract.FilterLogs(opts, "BondRecovered", commitmentRule, claimerRule)
+	if err != nil {
+		return nil, err
+	}
+	return &ITournamentBondRecoveredIterator{contract: _ITournament.contract, event: "BondRecovered", logs: logs, sub: sub}, nil
+}
+
+// WatchBondRecovered is a free log subscription operation binding the contract event 0x11bda32901e3e37ab2859f6a8b7b525ecd2b67c579f173700ad8642346cabf4e.
+//
+// Solidity: event BondRecovered(bytes32 indexed commitment, address indexed claimer, uint256 payment, uint256 burned)
+func (_ITournament *ITournamentFilterer) WatchBondRecovered(opts *bind.WatchOpts, sink chan<- *ITournamentBondRecovered, commitment [][32]byte, claimer []common.Address) (event.Subscription, error) {
+
+	var commitmentRule []interface{}
+	for _, commitmentItem := range commitment {
+		commitmentRule = append(commitmentRule, commitmentItem)
+	}
+	var claimerRule []interface{}
+	for _, claimerItem := range claimer {
+		claimerRule = append(claimerRule, claimerItem)
+	}
+
+	logs, sub, err := _ITournament.contract.WatchLogs(opts, "BondRecovered", commitmentRule, claimerRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(ITournamentBondRecovered)
+				if err := _ITournament.contract.UnpackLog(event, "BondRecovered", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseBondRecovered is a log parse operation binding the contract event 0x11bda32901e3e37ab2859f6a8b7b525ecd2b67c579f173700ad8642346cabf4e.
+//
+// Solidity: event BondRecovered(bytes32 indexed commitment, address indexed claimer, uint256 payment, uint256 burned)
+func (_ITournament *ITournamentFilterer) ParseBondRecovered(log types.Log) (*ITournamentBondRecovered, error) {
+	event := new(ITournamentBondRecovered)
+	if err := _ITournament.contract.UnpackLog(event, "BondRecovered", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
 // ITournamentCommitmentJoinedIterator is returned from FilterCommitmentJoined and is used to iterate over the raw logs and unpacked data for CommitmentJoined events raised by the ITournament contract.
 type ITournamentCommitmentJoinedIterator struct {
 	Event *ITournamentCommitmentJoined // Event containing the contract specifics and raw log
@@ -1139,15 +1275,20 @@ type ITournamentCommitmentJoined struct {
 
 // FilterCommitmentJoined is a free log retrieval operation binding the contract event 0xf8e98e9201e0caf973fa5520838a058bd8a819e0a8f5dd1fa08c3e550d4b9872.
 //
-// Solidity: event CommitmentJoined(bytes32 commitment, bytes32 finalStateHash, address indexed submitter)
-func (_ITournament *ITournamentFilterer) FilterCommitmentJoined(opts *bind.FilterOpts, submitter []common.Address) (*ITournamentCommitmentJoinedIterator, error) {
+// Solidity: event CommitmentJoined(bytes32 indexed commitment, bytes32 finalStateHash, address indexed submitter)
+func (_ITournament *ITournamentFilterer) FilterCommitmentJoined(opts *bind.FilterOpts, commitment [][32]byte, submitter []common.Address) (*ITournamentCommitmentJoinedIterator, error) {
+
+	var commitmentRule []interface{}
+	for _, commitmentItem := range commitment {
+		commitmentRule = append(commitmentRule, commitmentItem)
+	}
 
 	var submitterRule []interface{}
 	for _, submitterItem := range submitter {
 		submitterRule = append(submitterRule, submitterItem)
 	}
 
-	logs, sub, err := _ITournament.contract.FilterLogs(opts, "CommitmentJoined", submitterRule)
+	logs, sub, err := _ITournament.contract.FilterLogs(opts, "CommitmentJoined", commitmentRule, submitterRule)
 	if err != nil {
 		return nil, err
 	}
@@ -1156,15 +1297,20 @@ func (_ITournament *ITournamentFilterer) FilterCommitmentJoined(opts *bind.Filte
 
 // WatchCommitmentJoined is a free log subscription operation binding the contract event 0xf8e98e9201e0caf973fa5520838a058bd8a819e0a8f5dd1fa08c3e550d4b9872.
 //
-// Solidity: event CommitmentJoined(bytes32 commitment, bytes32 finalStateHash, address indexed submitter)
-func (_ITournament *ITournamentFilterer) WatchCommitmentJoined(opts *bind.WatchOpts, sink chan<- *ITournamentCommitmentJoined, submitter []common.Address) (event.Subscription, error) {
+// Solidity: event CommitmentJoined(bytes32 indexed commitment, bytes32 finalStateHash, address indexed submitter)
+func (_ITournament *ITournamentFilterer) WatchCommitmentJoined(opts *bind.WatchOpts, sink chan<- *ITournamentCommitmentJoined, commitment [][32]byte, submitter []common.Address) (event.Subscription, error) {
+
+	var commitmentRule []interface{}
+	for _, commitmentItem := range commitment {
+		commitmentRule = append(commitmentRule, commitmentItem)
+	}
 
 	var submitterRule []interface{}
 	for _, submitterItem := range submitter {
 		submitterRule = append(submitterRule, submitterItem)
 	}
 
-	logs, sub, err := _ITournament.contract.WatchLogs(opts, "CommitmentJoined", submitterRule)
+	logs, sub, err := _ITournament.contract.WatchLogs(opts, "CommitmentJoined", commitmentRule, submitterRule)
 	if err != nil {
 		return nil, err
 	}
@@ -1198,10 +1344,155 @@ func (_ITournament *ITournamentFilterer) WatchCommitmentJoined(opts *bind.WatchO
 
 // ParseCommitmentJoined is a log parse operation binding the contract event 0xf8e98e9201e0caf973fa5520838a058bd8a819e0a8f5dd1fa08c3e550d4b9872.
 //
-// Solidity: event CommitmentJoined(bytes32 commitment, bytes32 finalStateHash, address indexed submitter)
+// Solidity: event CommitmentJoined(bytes32 indexed commitment, bytes32 finalStateHash, address indexed submitter)
 func (_ITournament *ITournamentFilterer) ParseCommitmentJoined(log types.Log) (*ITournamentCommitmentJoined, error) {
 	event := new(ITournamentCommitmentJoined)
 	if err := _ITournament.contract.UnpackLog(event, "CommitmentJoined", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
+// ITournamentLeafMatchSealedIterator is returned from FilterLeafMatchSealed and is used to iterate over the raw logs and unpacked data for LeafMatchSealed events raised by the ITournament contract.
+type ITournamentLeafMatchSealedIterator struct {
+	Event *ITournamentLeafMatchSealed // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *ITournamentLeafMatchSealedIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(ITournamentLeafMatchSealed)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(ITournamentLeafMatchSealed)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *ITournamentLeafMatchSealedIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *ITournamentLeafMatchSealedIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// ITournamentLeafMatchSealed represents a LeafMatchSealed event raised by the ITournament contract.
+type ITournamentLeafMatchSealed struct {
+	MatchIdHash  [32]byte
+	EliminableAt uint64
+	Raw          types.Log // Blockchain specific contextual infos
+}
+
+// FilterLeafMatchSealed is a free log retrieval operation binding the contract event 0x304d9235f96c68167f2d1c8f6fbdce133d7d35b4706d00f47b40172cf96bd923.
+//
+// Solidity: event LeafMatchSealed(bytes32 indexed matchIdHash, uint64 eliminableAt)
+func (_ITournament *ITournamentFilterer) FilterLeafMatchSealed(opts *bind.FilterOpts, matchIdHash [][32]byte) (*ITournamentLeafMatchSealedIterator, error) {
+
+	var matchIdHashRule []interface{}
+	for _, matchIdHashItem := range matchIdHash {
+		matchIdHashRule = append(matchIdHashRule, matchIdHashItem)
+	}
+
+	logs, sub, err := _ITournament.contract.FilterLogs(opts, "LeafMatchSealed", matchIdHashRule)
+	if err != nil {
+		return nil, err
+	}
+	return &ITournamentLeafMatchSealedIterator{contract: _ITournament.contract, event: "LeafMatchSealed", logs: logs, sub: sub}, nil
+}
+
+// WatchLeafMatchSealed is a free log subscription operation binding the contract event 0x304d9235f96c68167f2d1c8f6fbdce133d7d35b4706d00f47b40172cf96bd923.
+//
+// Solidity: event LeafMatchSealed(bytes32 indexed matchIdHash, uint64 eliminableAt)
+func (_ITournament *ITournamentFilterer) WatchLeafMatchSealed(opts *bind.WatchOpts, sink chan<- *ITournamentLeafMatchSealed, matchIdHash [][32]byte) (event.Subscription, error) {
+
+	var matchIdHashRule []interface{}
+	for _, matchIdHashItem := range matchIdHash {
+		matchIdHashRule = append(matchIdHashRule, matchIdHashItem)
+	}
+
+	logs, sub, err := _ITournament.contract.WatchLogs(opts, "LeafMatchSealed", matchIdHashRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(ITournamentLeafMatchSealed)
+				if err := _ITournament.contract.UnpackLog(event, "LeafMatchSealed", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseLeafMatchSealed is a log parse operation binding the contract event 0x304d9235f96c68167f2d1c8f6fbdce133d7d35b4706d00f47b40172cf96bd923.
+//
+// Solidity: event LeafMatchSealed(bytes32 indexed matchIdHash, uint64 eliminableAt)
+func (_ITournament *ITournamentFilterer) ParseLeafMatchSealed(log types.Log) (*ITournamentLeafMatchSealed, error) {
+	event := new(ITournamentLeafMatchSealed)
+	if err := _ITournament.contract.UnpackLog(event, "LeafMatchSealed", log); err != nil {
 		return nil, err
 	}
 	event.Raw = log
@@ -1277,15 +1568,17 @@ func (it *ITournamentMatchAdvancedIterator) Close() error {
 
 // ITournamentMatchAdvanced represents a MatchAdvanced event raised by the ITournament contract.
 type ITournamentMatchAdvanced struct {
-	MatchIdHash [32]byte
-	OtherParent [32]byte
-	LeftNode    [32]byte
-	Raw         types.Log // Blockchain specific contextual infos
+	MatchIdHash          [32]byte
+	OtherParent          [32]byte
+	LeftNode             [32]byte
+	SegmentStartPosition *big.Int
+	EliminableAt         uint64
+	Raw                  types.Log // Blockchain specific contextual infos
 }
 
-// FilterMatchAdvanced is a free log retrieval operation binding the contract event 0xbc14010e647cf07dd4f48df2f806ec59932be73b1b969e6dff6fa55e805a1cbc.
+// FilterMatchAdvanced is a free log retrieval operation binding the contract event 0xb6135d4f6f9687ce2f55ce0fd69c7f9d77e003a036ac8e402828abdd973621b1.
 //
-// Solidity: event MatchAdvanced(bytes32 indexed matchIdHash, bytes32 otherParent, bytes32 leftNode)
+// Solidity: event MatchAdvanced(bytes32 indexed matchIdHash, bytes32 otherParent, bytes32 leftNode, uint256 segmentStartPosition, uint64 eliminableAt)
 func (_ITournament *ITournamentFilterer) FilterMatchAdvanced(opts *bind.FilterOpts, matchIdHash [][32]byte) (*ITournamentMatchAdvancedIterator, error) {
 
 	var matchIdHashRule []interface{}
@@ -1300,9 +1593,9 @@ func (_ITournament *ITournamentFilterer) FilterMatchAdvanced(opts *bind.FilterOp
 	return &ITournamentMatchAdvancedIterator{contract: _ITournament.contract, event: "MatchAdvanced", logs: logs, sub: sub}, nil
 }
 
-// WatchMatchAdvanced is a free log subscription operation binding the contract event 0xbc14010e647cf07dd4f48df2f806ec59932be73b1b969e6dff6fa55e805a1cbc.
+// WatchMatchAdvanced is a free log subscription operation binding the contract event 0xb6135d4f6f9687ce2f55ce0fd69c7f9d77e003a036ac8e402828abdd973621b1.
 //
-// Solidity: event MatchAdvanced(bytes32 indexed matchIdHash, bytes32 otherParent, bytes32 leftNode)
+// Solidity: event MatchAdvanced(bytes32 indexed matchIdHash, bytes32 otherParent, bytes32 leftNode, uint256 segmentStartPosition, uint64 eliminableAt)
 func (_ITournament *ITournamentFilterer) WatchMatchAdvanced(opts *bind.WatchOpts, sink chan<- *ITournamentMatchAdvanced, matchIdHash [][32]byte) (event.Subscription, error) {
 
 	var matchIdHashRule []interface{}
@@ -1342,9 +1635,9 @@ func (_ITournament *ITournamentFilterer) WatchMatchAdvanced(opts *bind.WatchOpts
 	}), nil
 }
 
-// ParseMatchAdvanced is a log parse operation binding the contract event 0xbc14010e647cf07dd4f48df2f806ec59932be73b1b969e6dff6fa55e805a1cbc.
+// ParseMatchAdvanced is a log parse operation binding the contract event 0xb6135d4f6f9687ce2f55ce0fd69c7f9d77e003a036ac8e402828abdd973621b1.
 //
-// Solidity: event MatchAdvanced(bytes32 indexed matchIdHash, bytes32 otherParent, bytes32 leftNode)
+// Solidity: event MatchAdvanced(bytes32 indexed matchIdHash, bytes32 otherParent, bytes32 leftNode, uint256 segmentStartPosition, uint64 eliminableAt)
 func (_ITournament *ITournamentFilterer) ParseMatchAdvanced(log types.Log) (*ITournamentMatchAdvanced, error) {
 	event := new(ITournamentMatchAdvanced)
 	if err := _ITournament.contract.UnpackLog(event, "MatchAdvanced", log); err != nil {
@@ -1423,16 +1716,17 @@ func (it *ITournamentMatchCreatedIterator) Close() error {
 
 // ITournamentMatchCreated represents a MatchCreated event raised by the ITournament contract.
 type ITournamentMatchCreated struct {
-	MatchIdHash [32]byte
-	One         [32]byte
-	Two         [32]byte
-	LeftOfTwo   [32]byte
-	Raw         types.Log // Blockchain specific contextual infos
+	MatchIdHash  [32]byte
+	One          [32]byte
+	Two          [32]byte
+	LeftOfTwo    [32]byte
+	EliminableAt uint64
+	Raw          types.Log // Blockchain specific contextual infos
 }
 
-// FilterMatchCreated is a free log retrieval operation binding the contract event 0xbaea19df0c2b83760acad299eaf042b77e11e0f362ce10d0d4bb24b09fa5296d.
+// FilterMatchCreated is a free log retrieval operation binding the contract event 0x6257204c2340779874d2f4e6f94db385ead25b228b1660535f7cbc81b492ac1e.
 //
-// Solidity: event MatchCreated(bytes32 indexed matchIdHash, bytes32 indexed one, bytes32 indexed two, bytes32 leftOfTwo)
+// Solidity: event MatchCreated(bytes32 indexed matchIdHash, bytes32 indexed one, bytes32 indexed two, bytes32 leftOfTwo, uint64 eliminableAt)
 func (_ITournament *ITournamentFilterer) FilterMatchCreated(opts *bind.FilterOpts, matchIdHash [][32]byte, one [][32]byte, two [][32]byte) (*ITournamentMatchCreatedIterator, error) {
 
 	var matchIdHashRule []interface{}
@@ -1455,9 +1749,9 @@ func (_ITournament *ITournamentFilterer) FilterMatchCreated(opts *bind.FilterOpt
 	return &ITournamentMatchCreatedIterator{contract: _ITournament.contract, event: "MatchCreated", logs: logs, sub: sub}, nil
 }
 
-// WatchMatchCreated is a free log subscription operation binding the contract event 0xbaea19df0c2b83760acad299eaf042b77e11e0f362ce10d0d4bb24b09fa5296d.
+// WatchMatchCreated is a free log subscription operation binding the contract event 0x6257204c2340779874d2f4e6f94db385ead25b228b1660535f7cbc81b492ac1e.
 //
-// Solidity: event MatchCreated(bytes32 indexed matchIdHash, bytes32 indexed one, bytes32 indexed two, bytes32 leftOfTwo)
+// Solidity: event MatchCreated(bytes32 indexed matchIdHash, bytes32 indexed one, bytes32 indexed two, bytes32 leftOfTwo, uint64 eliminableAt)
 func (_ITournament *ITournamentFilterer) WatchMatchCreated(opts *bind.WatchOpts, sink chan<- *ITournamentMatchCreated, matchIdHash [][32]byte, one [][32]byte, two [][32]byte) (event.Subscription, error) {
 
 	var matchIdHashRule []interface{}
@@ -1505,9 +1799,9 @@ func (_ITournament *ITournamentFilterer) WatchMatchCreated(opts *bind.WatchOpts,
 	}), nil
 }
 
-// ParseMatchCreated is a log parse operation binding the contract event 0xbaea19df0c2b83760acad299eaf042b77e11e0f362ce10d0d4bb24b09fa5296d.
+// ParseMatchCreated is a log parse operation binding the contract event 0x6257204c2340779874d2f4e6f94db385ead25b228b1660535f7cbc81b492ac1e.
 //
-// Solidity: event MatchCreated(bytes32 indexed matchIdHash, bytes32 indexed one, bytes32 indexed two, bytes32 leftOfTwo)
+// Solidity: event MatchCreated(bytes32 indexed matchIdHash, bytes32 indexed one, bytes32 indexed two, bytes32 leftOfTwo, uint64 eliminableAt)
 func (_ITournament *ITournamentFilterer) ParseMatchCreated(log types.Log) (*ITournamentMatchCreated, error) {
 	event := new(ITournamentMatchCreated)
 	if err := _ITournament.contract.UnpackLog(event, "MatchCreated", log); err != nil {
@@ -1906,13 +2200,12 @@ type ITournamentPartialBondRefund struct {
 	Recipient common.Address
 	Value     *big.Int
 	Success   bool
-	Ret       []byte
 	Raw       types.Log // Blockchain specific contextual infos
 }
 
-// FilterPartialBondRefund is a free log retrieval operation binding the contract event 0x938a52b87ed1353360e17d203a73343c4e92b6a9e9a0b50d0e38df31fbf14219.
+// FilterPartialBondRefund is a free log retrieval operation binding the contract event 0xeff3c62ee3695d2aab88b472c281a81d4f20bd5e8b13b775210e77a228d46926.
 //
-// Solidity: event PartialBondRefund(address indexed recipient, uint256 value, bool indexed success, bytes ret)
+// Solidity: event PartialBondRefund(address indexed recipient, uint256 value, bool indexed success)
 func (_ITournament *ITournamentFilterer) FilterPartialBondRefund(opts *bind.FilterOpts, recipient []common.Address, success []bool) (*ITournamentPartialBondRefundIterator, error) {
 
 	var recipientRule []interface{}
@@ -1932,9 +2225,9 @@ func (_ITournament *ITournamentFilterer) FilterPartialBondRefund(opts *bind.Filt
 	return &ITournamentPartialBondRefundIterator{contract: _ITournament.contract, event: "PartialBondRefund", logs: logs, sub: sub}, nil
 }
 
-// WatchPartialBondRefund is a free log subscription operation binding the contract event 0x938a52b87ed1353360e17d203a73343c4e92b6a9e9a0b50d0e38df31fbf14219.
+// WatchPartialBondRefund is a free log subscription operation binding the contract event 0xeff3c62ee3695d2aab88b472c281a81d4f20bd5e8b13b775210e77a228d46926.
 //
-// Solidity: event PartialBondRefund(address indexed recipient, uint256 value, bool indexed success, bytes ret)
+// Solidity: event PartialBondRefund(address indexed recipient, uint256 value, bool indexed success)
 func (_ITournament *ITournamentFilterer) WatchPartialBondRefund(opts *bind.WatchOpts, sink chan<- *ITournamentPartialBondRefund, recipient []common.Address, success []bool) (event.Subscription, error) {
 
 	var recipientRule []interface{}
@@ -1979,9 +2272,9 @@ func (_ITournament *ITournamentFilterer) WatchPartialBondRefund(opts *bind.Watch
 	}), nil
 }
 
-// ParsePartialBondRefund is a log parse operation binding the contract event 0x938a52b87ed1353360e17d203a73343c4e92b6a9e9a0b50d0e38df31fbf14219.
+// ParsePartialBondRefund is a log parse operation binding the contract event 0xeff3c62ee3695d2aab88b472c281a81d4f20bd5e8b13b775210e77a228d46926.
 //
-// Solidity: event PartialBondRefund(address indexed recipient, uint256 value, bool indexed success, bytes ret)
+// Solidity: event PartialBondRefund(address indexed recipient, uint256 value, bool indexed success)
 func (_ITournament *ITournamentFilterer) ParsePartialBondRefund(log types.Log) (*ITournamentPartialBondRefund, error) {
 	event := new(ITournamentPartialBondRefund)
 	if err := _ITournament.contract.UnpackLog(event, "PartialBondRefund", log); err != nil {
