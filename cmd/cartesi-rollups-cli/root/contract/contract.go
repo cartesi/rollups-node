@@ -45,8 +45,7 @@ directly from on-chain contracts and may not reflect finalized state. Verify
 critical information independently before acting on it.
 
 Supported Environment Variables:
-  CARTESI_BLOCKCHAIN_HTTP_ENDPOINT    Ethereum RPC endpoint URL
-  CARTESI_CONTRACTS_INPUT_BOX_ADDRESS InputBox contract address (optional override)`,
+  CARTESI_BLOCKCHAIN_HTTP_ENDPOINT    Ethereum RPC endpoint URL`,
 	Run: runContract,
 }
 
@@ -64,9 +63,6 @@ func init() {
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, args []string) {
 		if f := command.Flags().Lookup("blockchain-http-endpoint"); f != nil {
-			f.Hidden = false
-		}
-		if f := command.Flags().Lookup("inputbox"); f != nil {
 			f.Hidden = false
 		}
 		origHelpFunc(command, args)
