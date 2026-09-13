@@ -52,7 +52,7 @@ type WithdrawalConfig struct {
 
 // IApplicationMetaData contains all meta data concerning the IApplication contract.
 var IApplicationMetaData = &bind.MetaData{
-	ABI: "[{\"type\":\"function\",\"name\":\"executeOutput\",\"inputs\":[{\"name\":\"output\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"proof\",\"type\":\"tuple\",\"internalType\":\"structOutputValidityProof\",\"components\":[{\"name\":\"outputIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"outputHashesSiblings\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}]}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"foreclose\",\"inputs\":[],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"getAccountsDriveMerkleRoot\",\"inputs\":[],\"outputs\":[{\"name\":\"wasAccountsDriveMerkleRootProved\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"accountsDriveMerkleRoot\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getAccountsDriveStartIndex\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint64\",\"internalType\":\"uint64\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getDataAvailability\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getDeploymentBlockNumber\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getGuardian\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getLog2LeavesPerAccount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint8\",\"internalType\":\"uint8\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getLog2MaxNumOfAccounts\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint8\",\"internalType\":\"uint8\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getNumberOfExecutedOutputs\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getNumberOfWithdrawals\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getOutputsMerkleRootValidator\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIOutputsMerkleRootValidator\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getTemplateHash\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getWithdrawalConfig\",\"inputs\":[],\"outputs\":[{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getWithdrawalOutputBuilder\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"isForeclosed\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"migrateToOutputsMerkleRootValidator\",\"inputs\":[{\"name\":\"newOutputsMerkleRootValidator\",\"type\":\"address\",\"internalType\":\"contractIOutputsMerkleRootValidator\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"owner\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"proveAccountsDriveMerkleRoot\",\"inputs\":[{\"name\":\"accountsDriveMerkleRoot\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"proof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"renounceOwnership\",\"inputs\":[],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"transferOwnership\",\"inputs\":[{\"name\":\"newOwner\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"validateAccount\",\"inputs\":[{\"name\":\"account\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"proof\",\"type\":\"tuple\",\"internalType\":\"structAccountValidityProof\",\"components\":[{\"name\":\"accountIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"accountRootSiblings\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}]}],\"outputs\":[],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"validateAccountMerkleRoot\",\"inputs\":[{\"name\":\"accountMerkleRoot\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"proof\",\"type\":\"tuple\",\"internalType\":\"structAccountValidityProof\",\"components\":[{\"name\":\"accountIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"accountRootSiblings\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}]}],\"outputs\":[],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"validateOutput\",\"inputs\":[{\"name\":\"output\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"proof\",\"type\":\"tuple\",\"internalType\":\"structOutputValidityProof\",\"components\":[{\"name\":\"outputIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"outputHashesSiblings\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}]}],\"outputs\":[],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"validateOutputHash\",\"inputs\":[{\"name\":\"outputHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"proof\",\"type\":\"tuple\",\"internalType\":\"structOutputValidityProof\",\"components\":[{\"name\":\"outputIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"outputHashesSiblings\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}]}],\"outputs\":[],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"version\",\"inputs\":[],\"outputs\":[{\"name\":\"major\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"minor\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"patch\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"preRelease\",\"type\":\"string\",\"internalType\":\"string\"},{\"name\":\"buildMetadata\",\"type\":\"string\",\"internalType\":\"string\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"wasOutputExecuted\",\"inputs\":[{\"name\":\"outputIndex\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"wereAccountFundsWithdrawn\",\"inputs\":[{\"name\":\"accountIndex\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"withdraw\",\"inputs\":[{\"name\":\"account\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"proof\",\"type\":\"tuple\",\"internalType\":\"structAccountValidityProof\",\"components\":[{\"name\":\"accountIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"accountRootSiblings\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}]}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"event\",\"name\":\"AccountsDriveMerkleRootProved\",\"inputs\":[{\"name\":\"accountsDriveMerkleRoot\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"bytes32\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"Foreclosure\",\"inputs\":[],\"anonymous\":false},{\"type\":\"event\",\"name\":\"OutputExecuted\",\"inputs\":[{\"name\":\"outputIndex\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"uint64\"},{\"name\":\"output\",\"type\":\"bytes\",\"indexed\":false,\"internalType\":\"bytes\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"OutputsMerkleRootValidatorChanged\",\"inputs\":[{\"name\":\"newOutputsMerkleRootValidator\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"contractIOutputsMerkleRootValidator\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"Withdrawal\",\"inputs\":[{\"name\":\"accountIndex\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"uint64\"},{\"name\":\"account\",\"type\":\"bytes\",\"indexed\":false,\"internalType\":\"bytes\"},{\"name\":\"output\",\"type\":\"bytes\",\"indexed\":false,\"internalType\":\"bytes\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"AccountFundsAlreadyWithdrawn\",\"inputs\":[{\"name\":\"accountIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"}]},{\"type\":\"error\",\"name\":\"AccountTooShort\",\"inputs\":[{\"name\":\"attemptedAccountSize\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"minAccountSize\",\"type\":\"uint64\",\"internalType\":\"uint64\"}]},{\"type\":\"error\",\"name\":\"AccountsDriveMerkleRootAlreadyProved\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"AccountsDriveMerkleRootNotProved\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"DataBlockTooLarge\",\"inputs\":[{\"name\":\"log2DataBlockSize\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"maxLog2DataBlockSize\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"DriveSmallerThanData\",\"inputs\":[{\"name\":\"driveSize\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"dataSize\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"DriveSmallerThanDataBlock\",\"inputs\":[{\"name\":\"log2DriveSize\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"log2DataBlockSize\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"DriveTooLarge\",\"inputs\":[{\"name\":\"log2DriveSize\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"maxLog2DriveSize\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"Foreclosed\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InsufficientFunds\",\"inputs\":[{\"name\":\"value\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"balance\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"InvalidAccountRootSiblingsArrayLength\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidAccountsDriveMerkleRoot\",\"inputs\":[{\"name\":\"accountsDriveMerkleRoot\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]},{\"type\":\"error\",\"name\":\"InvalidAccountsDriveMerkleRootProofSize\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidMachineMerkleRoot\",\"inputs\":[{\"name\":\"machineMerkleRoot\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]},{\"type\":\"error\",\"name\":\"InvalidNodeIndex\",\"inputs\":[{\"name\":\"nodeIndex\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"height\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"InvalidOutputHashesSiblingsArrayLength\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidOutputsMerkleRoot\",\"inputs\":[{\"name\":\"outputsMerkleRoot\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]},{\"type\":\"error\",\"name\":\"NotForeclosed\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NotGuardian\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"OutputNotExecutable\",\"inputs\":[{\"name\":\"output\",\"type\":\"bytes\",\"internalType\":\"bytes\"}]},{\"type\":\"error\",\"name\":\"OutputNotReexecutable\",\"inputs\":[{\"name\":\"output\",\"type\":\"bytes\",\"internalType\":\"bytes\"}]},{\"type\":\"error\",\"name\":\"UnexpectedFinalStackDepth\",\"inputs\":[{\"name\":\"stackDepth\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]}]",
+	ABI: "[{\"type\":\"function\",\"name\":\"executeOutput\",\"inputs\":[{\"name\":\"output\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"proof\",\"type\":\"tuple\",\"internalType\":\"structOutputValidityProof\",\"components\":[{\"name\":\"outputIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"outputHashesSiblings\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}]}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"foreclose\",\"inputs\":[],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"getAccountsDriveMerkleRoot\",\"inputs\":[],\"outputs\":[{\"name\":\"wasAccountsDriveMerkleRootProved\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"accountsDriveMerkleRoot\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getAccountsDriveStartIndex\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint64\",\"internalType\":\"uint64\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getDeploymentBlockNumber\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getGuardian\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getInputBox\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIInputBox\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getLog2LeavesPerAccount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint8\",\"internalType\":\"uint8\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getLog2MaxNumOfAccounts\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint8\",\"internalType\":\"uint8\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getNumberOfExecutedOutputs\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getNumberOfIssuedRefunds\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getNumberOfWithdrawals\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getOutputsMerkleRootValidator\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIOutputsMerkleRootValidator\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getRefundOutputBuilder\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIRefundOutputBuilder\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getTemplateHash\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getWithdrawalConfig\",\"inputs\":[],\"outputs\":[{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getWithdrawalOutputBuilder\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"isForeclosed\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"issueRefund\",\"inputs\":[{\"name\":\"inputIndex\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"input\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"migrateToOutputsMerkleRootValidator\",\"inputs\":[{\"name\":\"newOutputsMerkleRootValidator\",\"type\":\"address\",\"internalType\":\"contractIOutputsMerkleRootValidator\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"owner\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"proveAccountsDriveMerkleRoot\",\"inputs\":[{\"name\":\"accountsDriveMerkleRoot\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"proof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"renounceOwnership\",\"inputs\":[],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"transferOwnership\",\"inputs\":[{\"name\":\"newOwner\",\"type\":\"address\",\"internalType\":\"address\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"validateAccount\",\"inputs\":[{\"name\":\"account\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"proof\",\"type\":\"tuple\",\"internalType\":\"structAccountValidityProof\",\"components\":[{\"name\":\"accountIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"accountRootSiblings\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}]}],\"outputs\":[],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"validateAccountMerkleRoot\",\"inputs\":[{\"name\":\"accountMerkleRoot\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"proof\",\"type\":\"tuple\",\"internalType\":\"structAccountValidityProof\",\"components\":[{\"name\":\"accountIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"accountRootSiblings\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}]}],\"outputs\":[],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"validateInput\",\"inputs\":[{\"name\":\"inputIndex\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"input\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[{\"name\":\"blockNumber\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"inputSender\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"inputPayload\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"validateInputHash\",\"inputs\":[{\"name\":\"inputIndex\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"inputHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"validateOutput\",\"inputs\":[{\"name\":\"output\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"proof\",\"type\":\"tuple\",\"internalType\":\"structOutputValidityProof\",\"components\":[{\"name\":\"outputIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"outputHashesSiblings\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}]}],\"outputs\":[],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"validateOutputHash\",\"inputs\":[{\"name\":\"outputHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"proof\",\"type\":\"tuple\",\"internalType\":\"structOutputValidityProof\",\"components\":[{\"name\":\"outputIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"outputHashesSiblings\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}]}],\"outputs\":[],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"version\",\"inputs\":[],\"outputs\":[{\"name\":\"major\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"minor\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"patch\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"preRelease\",\"type\":\"string\",\"internalType\":\"string\"},{\"name\":\"buildMetadata\",\"type\":\"string\",\"internalType\":\"string\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"wasOutputExecuted\",\"inputs\":[{\"name\":\"outputIndex\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"wasRefundForInputIssued\",\"inputs\":[{\"name\":\"inputIndex\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"wereAccountFundsWithdrawn\",\"inputs\":[{\"name\":\"accountIndex\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"withdraw\",\"inputs\":[{\"name\":\"account\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"proof\",\"type\":\"tuple\",\"internalType\":\"structAccountValidityProof\",\"components\":[{\"name\":\"accountIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"accountRootSiblings\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}]}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"event\",\"name\":\"AccountsDriveMerkleRootProved\",\"inputs\":[{\"name\":\"accountsDriveMerkleRoot\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"bytes32\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"Foreclosure\",\"inputs\":[],\"anonymous\":false},{\"type\":\"event\",\"name\":\"OutputExecuted\",\"inputs\":[{\"name\":\"outputIndex\",\"type\":\"uint64\",\"indexed\":true,\"internalType\":\"uint64\"},{\"name\":\"output\",\"type\":\"bytes\",\"indexed\":false,\"internalType\":\"bytes\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"OutputsMerkleRootValidatorChanged\",\"inputs\":[{\"name\":\"newOutputsMerkleRootValidator\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"contractIOutputsMerkleRootValidator\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"RefundIssued\",\"inputs\":[{\"name\":\"inputIndex\",\"type\":\"uint256\",\"indexed\":true,\"internalType\":\"uint256\"},{\"name\":\"input\",\"type\":\"bytes\",\"indexed\":false,\"internalType\":\"bytes\"},{\"name\":\"output\",\"type\":\"bytes\",\"indexed\":false,\"internalType\":\"bytes\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"Withdrawal\",\"inputs\":[{\"name\":\"accountIndex\",\"type\":\"uint64\",\"indexed\":true,\"internalType\":\"uint64\"},{\"name\":\"account\",\"type\":\"bytes\",\"indexed\":false,\"internalType\":\"bytes\"},{\"name\":\"output\",\"type\":\"bytes\",\"indexed\":false,\"internalType\":\"bytes\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"AccountFundsAlreadyWithdrawn\",\"inputs\":[{\"name\":\"accountIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"}]},{\"type\":\"error\",\"name\":\"AccountsDriveMerkleRootAlreadyProved\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"AccountsDriveMerkleRootNotProved\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"CannotRefundFinalizedInput\",\"inputs\":[{\"name\":\"inputIndex\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"DataBlockTooLarge\",\"inputs\":[{\"name\":\"log2DataBlockSize\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"maxLog2DataBlockSize\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"DriveSmallerThanData\",\"inputs\":[{\"name\":\"driveSize\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"dataSize\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"DriveSmallerThanDataBlock\",\"inputs\":[{\"name\":\"log2DriveSize\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"log2DataBlockSize\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"DriveTooLarge\",\"inputs\":[{\"name\":\"log2DriveSize\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"maxLog2DriveSize\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"Foreclosed\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"IllFormedInput\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InsufficientFunds\",\"inputs\":[{\"name\":\"value\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"balance\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"InvalidAccountRootSiblingsArrayLength\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidAccountSize\",\"inputs\":[{\"name\":\"attemptedAccountSize\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"accountSize\",\"type\":\"uint64\",\"internalType\":\"uint64\"}]},{\"type\":\"error\",\"name\":\"InvalidAccountsDriveMerkleRoot\",\"inputs\":[{\"name\":\"accountsDriveMerkleRoot\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]},{\"type\":\"error\",\"name\":\"InvalidAccountsDriveMerkleRootProofSize\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidInputHash\",\"inputs\":[{\"name\":\"storedInputHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"invalidInputHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]},{\"type\":\"error\",\"name\":\"InvalidInputIndex\",\"inputs\":[{\"name\":\"invalidInputIndex\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"numOfInputs\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"InvalidMachineMerkleRoot\",\"inputs\":[{\"name\":\"machineMerkleRoot\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]},{\"type\":\"error\",\"name\":\"InvalidNodeIndex\",\"inputs\":[{\"name\":\"nodeIndex\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"height\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"InvalidOutputHashesSiblingsArrayLength\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidOutputsMerkleRoot\",\"inputs\":[{\"name\":\"outputsMerkleRoot\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}]},{\"type\":\"error\",\"name\":\"NotDeploymentBlock\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NotForeclosed\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NotGuardian\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"OutputNotExecutable\",\"inputs\":[{\"name\":\"output\",\"type\":\"bytes\",\"internalType\":\"bytes\"}]},{\"type\":\"error\",\"name\":\"OutputNotReexecutable\",\"inputs\":[{\"name\":\"output\",\"type\":\"bytes\",\"internalType\":\"bytes\"}]},{\"type\":\"error\",\"name\":\"RefundAlreadyIssued\",\"inputs\":[{\"name\":\"inputIndex\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"TargetHasNoCode\",\"inputs\":[{\"name\":\"target\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"UnexpectedFinalStackDepth\",\"inputs\":[{\"name\":\"stackDepth\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"UnknownInputSender\",\"inputs\":[{\"name\":\"inputSender\",\"type\":\"address\",\"internalType\":\"address\"}]}]",
 }
 
 // IApplicationABI is the input ABI used to generate the binding from.
@@ -277,37 +277,6 @@ func (_IApplication *IApplicationCallerSession) GetAccountsDriveStartIndex() (ui
 	return _IApplication.Contract.GetAccountsDriveStartIndex(&_IApplication.CallOpts)
 }
 
-// GetDataAvailability is a free data retrieval call binding the contract method 0xf02478de.
-//
-// Solidity: function getDataAvailability() view returns(bytes)
-func (_IApplication *IApplicationCaller) GetDataAvailability(opts *bind.CallOpts) ([]byte, error) {
-	var out []interface{}
-	err := _IApplication.contract.Call(opts, &out, "getDataAvailability")
-
-	if err != nil {
-		return *new([]byte), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new([]byte)).(*[]byte)
-
-	return out0, err
-
-}
-
-// GetDataAvailability is a free data retrieval call binding the contract method 0xf02478de.
-//
-// Solidity: function getDataAvailability() view returns(bytes)
-func (_IApplication *IApplicationSession) GetDataAvailability() ([]byte, error) {
-	return _IApplication.Contract.GetDataAvailability(&_IApplication.CallOpts)
-}
-
-// GetDataAvailability is a free data retrieval call binding the contract method 0xf02478de.
-//
-// Solidity: function getDataAvailability() view returns(bytes)
-func (_IApplication *IApplicationCallerSession) GetDataAvailability() ([]byte, error) {
-	return _IApplication.Contract.GetDataAvailability(&_IApplication.CallOpts)
-}
-
 // GetDeploymentBlockNumber is a free data retrieval call binding the contract method 0xb3a1acd8.
 //
 // Solidity: function getDeploymentBlockNumber() view returns(uint256)
@@ -368,6 +337,37 @@ func (_IApplication *IApplicationSession) GetGuardian() (common.Address, error) 
 // Solidity: function getGuardian() view returns(address)
 func (_IApplication *IApplicationCallerSession) GetGuardian() (common.Address, error) {
 	return _IApplication.Contract.GetGuardian(&_IApplication.CallOpts)
+}
+
+// GetInputBox is a free data retrieval call binding the contract method 0x00aace9a.
+//
+// Solidity: function getInputBox() view returns(address)
+func (_IApplication *IApplicationCaller) GetInputBox(opts *bind.CallOpts) (common.Address, error) {
+	var out []interface{}
+	err := _IApplication.contract.Call(opts, &out, "getInputBox")
+
+	if err != nil {
+		return *new(common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+
+	return out0, err
+
+}
+
+// GetInputBox is a free data retrieval call binding the contract method 0x00aace9a.
+//
+// Solidity: function getInputBox() view returns(address)
+func (_IApplication *IApplicationSession) GetInputBox() (common.Address, error) {
+	return _IApplication.Contract.GetInputBox(&_IApplication.CallOpts)
+}
+
+// GetInputBox is a free data retrieval call binding the contract method 0x00aace9a.
+//
+// Solidity: function getInputBox() view returns(address)
+func (_IApplication *IApplicationCallerSession) GetInputBox() (common.Address, error) {
+	return _IApplication.Contract.GetInputBox(&_IApplication.CallOpts)
 }
 
 // GetLog2LeavesPerAccount is a free data retrieval call binding the contract method 0x28a0e3c5.
@@ -463,6 +463,37 @@ func (_IApplication *IApplicationCallerSession) GetNumberOfExecutedOutputs() (*b
 	return _IApplication.Contract.GetNumberOfExecutedOutputs(&_IApplication.CallOpts)
 }
 
+// GetNumberOfIssuedRefunds is a free data retrieval call binding the contract method 0x1118be66.
+//
+// Solidity: function getNumberOfIssuedRefunds() view returns(uint256)
+func (_IApplication *IApplicationCaller) GetNumberOfIssuedRefunds(opts *bind.CallOpts) (*big.Int, error) {
+	var out []interface{}
+	err := _IApplication.contract.Call(opts, &out, "getNumberOfIssuedRefunds")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
+}
+
+// GetNumberOfIssuedRefunds is a free data retrieval call binding the contract method 0x1118be66.
+//
+// Solidity: function getNumberOfIssuedRefunds() view returns(uint256)
+func (_IApplication *IApplicationSession) GetNumberOfIssuedRefunds() (*big.Int, error) {
+	return _IApplication.Contract.GetNumberOfIssuedRefunds(&_IApplication.CallOpts)
+}
+
+// GetNumberOfIssuedRefunds is a free data retrieval call binding the contract method 0x1118be66.
+//
+// Solidity: function getNumberOfIssuedRefunds() view returns(uint256)
+func (_IApplication *IApplicationCallerSession) GetNumberOfIssuedRefunds() (*big.Int, error) {
+	return _IApplication.Contract.GetNumberOfIssuedRefunds(&_IApplication.CallOpts)
+}
+
 // GetNumberOfWithdrawals is a free data retrieval call binding the contract method 0x0e70381b.
 //
 // Solidity: function getNumberOfWithdrawals() view returns(uint256)
@@ -523,6 +554,37 @@ func (_IApplication *IApplicationSession) GetOutputsMerkleRootValidator() (commo
 // Solidity: function getOutputsMerkleRootValidator() view returns(address)
 func (_IApplication *IApplicationCallerSession) GetOutputsMerkleRootValidator() (common.Address, error) {
 	return _IApplication.Contract.GetOutputsMerkleRootValidator(&_IApplication.CallOpts)
+}
+
+// GetRefundOutputBuilder is a free data retrieval call binding the contract method 0x8cd92074.
+//
+// Solidity: function getRefundOutputBuilder() view returns(address)
+func (_IApplication *IApplicationCaller) GetRefundOutputBuilder(opts *bind.CallOpts) (common.Address, error) {
+	var out []interface{}
+	err := _IApplication.contract.Call(opts, &out, "getRefundOutputBuilder")
+
+	if err != nil {
+		return *new(common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+
+	return out0, err
+
+}
+
+// GetRefundOutputBuilder is a free data retrieval call binding the contract method 0x8cd92074.
+//
+// Solidity: function getRefundOutputBuilder() view returns(address)
+func (_IApplication *IApplicationSession) GetRefundOutputBuilder() (common.Address, error) {
+	return _IApplication.Contract.GetRefundOutputBuilder(&_IApplication.CallOpts)
+}
+
+// GetRefundOutputBuilder is a free data retrieval call binding the contract method 0x8cd92074.
+//
+// Solidity: function getRefundOutputBuilder() view returns(address)
+func (_IApplication *IApplicationCallerSession) GetRefundOutputBuilder() (common.Address, error) {
+	return _IApplication.Contract.GetRefundOutputBuilder(&_IApplication.CallOpts)
 }
 
 // GetTemplateHash is a free data retrieval call binding the contract method 0x61b12c66.
@@ -738,6 +800,85 @@ func (_IApplication *IApplicationCallerSession) ValidateAccountMerkleRoot(accoun
 	return _IApplication.Contract.ValidateAccountMerkleRoot(&_IApplication.CallOpts, accountMerkleRoot, proof)
 }
 
+// ValidateInput is a free data retrieval call binding the contract method 0xc59319c2.
+//
+// Solidity: function validateInput(uint256 inputIndex, bytes input) view returns(uint256 blockNumber, address inputSender, bytes inputPayload)
+func (_IApplication *IApplicationCaller) ValidateInput(opts *bind.CallOpts, inputIndex *big.Int, input []byte) (struct {
+	BlockNumber  *big.Int
+	InputSender  common.Address
+	InputPayload []byte
+}, error) {
+	var out []interface{}
+	err := _IApplication.contract.Call(opts, &out, "validateInput", inputIndex, input)
+
+	outstruct := new(struct {
+		BlockNumber  *big.Int
+		InputSender  common.Address
+		InputPayload []byte
+	})
+	if err != nil {
+		return *outstruct, err
+	}
+
+	outstruct.BlockNumber = *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+	outstruct.InputSender = *abi.ConvertType(out[1], new(common.Address)).(*common.Address)
+	outstruct.InputPayload = *abi.ConvertType(out[2], new([]byte)).(*[]byte)
+
+	return *outstruct, err
+
+}
+
+// ValidateInput is a free data retrieval call binding the contract method 0xc59319c2.
+//
+// Solidity: function validateInput(uint256 inputIndex, bytes input) view returns(uint256 blockNumber, address inputSender, bytes inputPayload)
+func (_IApplication *IApplicationSession) ValidateInput(inputIndex *big.Int, input []byte) (struct {
+	BlockNumber  *big.Int
+	InputSender  common.Address
+	InputPayload []byte
+}, error) {
+	return _IApplication.Contract.ValidateInput(&_IApplication.CallOpts, inputIndex, input)
+}
+
+// ValidateInput is a free data retrieval call binding the contract method 0xc59319c2.
+//
+// Solidity: function validateInput(uint256 inputIndex, bytes input) view returns(uint256 blockNumber, address inputSender, bytes inputPayload)
+func (_IApplication *IApplicationCallerSession) ValidateInput(inputIndex *big.Int, input []byte) (struct {
+	BlockNumber  *big.Int
+	InputSender  common.Address
+	InputPayload []byte
+}, error) {
+	return _IApplication.Contract.ValidateInput(&_IApplication.CallOpts, inputIndex, input)
+}
+
+// ValidateInputHash is a free data retrieval call binding the contract method 0x191f84a8.
+//
+// Solidity: function validateInputHash(uint256 inputIndex, bytes32 inputHash) view returns()
+func (_IApplication *IApplicationCaller) ValidateInputHash(opts *bind.CallOpts, inputIndex *big.Int, inputHash [32]byte) error {
+	var out []interface{}
+	err := _IApplication.contract.Call(opts, &out, "validateInputHash", inputIndex, inputHash)
+
+	if err != nil {
+		return err
+	}
+
+	return err
+
+}
+
+// ValidateInputHash is a free data retrieval call binding the contract method 0x191f84a8.
+//
+// Solidity: function validateInputHash(uint256 inputIndex, bytes32 inputHash) view returns()
+func (_IApplication *IApplicationSession) ValidateInputHash(inputIndex *big.Int, inputHash [32]byte) error {
+	return _IApplication.Contract.ValidateInputHash(&_IApplication.CallOpts, inputIndex, inputHash)
+}
+
+// ValidateInputHash is a free data retrieval call binding the contract method 0x191f84a8.
+//
+// Solidity: function validateInputHash(uint256 inputIndex, bytes32 inputHash) view returns()
+func (_IApplication *IApplicationCallerSession) ValidateInputHash(inputIndex *big.Int, inputHash [32]byte) error {
+	return _IApplication.Contract.ValidateInputHash(&_IApplication.CallOpts, inputIndex, inputHash)
+}
+
 // ValidateOutput is a free data retrieval call binding the contract method 0xe88d39c0.
 //
 // Solidity: function validateOutput(bytes output, (uint64,bytes32[]) proof) view returns()
@@ -887,6 +1028,37 @@ func (_IApplication *IApplicationCallerSession) WasOutputExecuted(outputIndex *b
 	return _IApplication.Contract.WasOutputExecuted(&_IApplication.CallOpts, outputIndex)
 }
 
+// WasRefundForInputIssued is a free data retrieval call binding the contract method 0xcce91060.
+//
+// Solidity: function wasRefundForInputIssued(uint256 inputIndex) view returns(bool)
+func (_IApplication *IApplicationCaller) WasRefundForInputIssued(opts *bind.CallOpts, inputIndex *big.Int) (bool, error) {
+	var out []interface{}
+	err := _IApplication.contract.Call(opts, &out, "wasRefundForInputIssued", inputIndex)
+
+	if err != nil {
+		return *new(bool), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
+
+	return out0, err
+
+}
+
+// WasRefundForInputIssued is a free data retrieval call binding the contract method 0xcce91060.
+//
+// Solidity: function wasRefundForInputIssued(uint256 inputIndex) view returns(bool)
+func (_IApplication *IApplicationSession) WasRefundForInputIssued(inputIndex *big.Int) (bool, error) {
+	return _IApplication.Contract.WasRefundForInputIssued(&_IApplication.CallOpts, inputIndex)
+}
+
+// WasRefundForInputIssued is a free data retrieval call binding the contract method 0xcce91060.
+//
+// Solidity: function wasRefundForInputIssued(uint256 inputIndex) view returns(bool)
+func (_IApplication *IApplicationCallerSession) WasRefundForInputIssued(inputIndex *big.Int) (bool, error) {
+	return _IApplication.Contract.WasRefundForInputIssued(&_IApplication.CallOpts, inputIndex)
+}
+
 // WereAccountFundsWithdrawn is a free data retrieval call binding the contract method 0x8272a6aa.
 //
 // Solidity: function wereAccountFundsWithdrawn(uint256 accountIndex) view returns(bool)
@@ -958,6 +1130,27 @@ func (_IApplication *IApplicationSession) Foreclose() (*types.Transaction, error
 // Solidity: function foreclose() returns()
 func (_IApplication *IApplicationTransactorSession) Foreclose() (*types.Transaction, error) {
 	return _IApplication.Contract.Foreclose(&_IApplication.TransactOpts)
+}
+
+// IssueRefund is a paid mutator transaction binding the contract method 0xd4c4646a.
+//
+// Solidity: function issueRefund(uint256 inputIndex, bytes input) returns()
+func (_IApplication *IApplicationTransactor) IssueRefund(opts *bind.TransactOpts, inputIndex *big.Int, input []byte) (*types.Transaction, error) {
+	return _IApplication.contract.Transact(opts, "issueRefund", inputIndex, input)
+}
+
+// IssueRefund is a paid mutator transaction binding the contract method 0xd4c4646a.
+//
+// Solidity: function issueRefund(uint256 inputIndex, bytes input) returns()
+func (_IApplication *IApplicationSession) IssueRefund(inputIndex *big.Int, input []byte) (*types.Transaction, error) {
+	return _IApplication.Contract.IssueRefund(&_IApplication.TransactOpts, inputIndex, input)
+}
+
+// IssueRefund is a paid mutator transaction binding the contract method 0xd4c4646a.
+//
+// Solidity: function issueRefund(uint256 inputIndex, bytes input) returns()
+func (_IApplication *IApplicationTransactorSession) IssueRefund(inputIndex *big.Int, input []byte) (*types.Transaction, error) {
+	return _IApplication.Contract.IssueRefund(&_IApplication.TransactOpts, inputIndex, input)
 }
 
 // MigrateToOutputsMerkleRootValidator is a paid mutator transaction binding the contract method 0xbf8abff8.
@@ -1408,10 +1601,15 @@ type IApplicationOutputExecuted struct {
 
 // FilterOutputExecuted is a free log retrieval operation binding the contract event 0xcad1f361c6e84664e892230291c8e8eb9555683e0a6a5ce8ea7b204ac0ac3676.
 //
-// Solidity: event OutputExecuted(uint64 outputIndex, bytes output)
-func (_IApplication *IApplicationFilterer) FilterOutputExecuted(opts *bind.FilterOpts) (*IApplicationOutputExecutedIterator, error) {
+// Solidity: event OutputExecuted(uint64 indexed outputIndex, bytes output)
+func (_IApplication *IApplicationFilterer) FilterOutputExecuted(opts *bind.FilterOpts, outputIndex []uint64) (*IApplicationOutputExecutedIterator, error) {
 
-	logs, sub, err := _IApplication.contract.FilterLogs(opts, "OutputExecuted")
+	var outputIndexRule []interface{}
+	for _, outputIndexItem := range outputIndex {
+		outputIndexRule = append(outputIndexRule, outputIndexItem)
+	}
+
+	logs, sub, err := _IApplication.contract.FilterLogs(opts, "OutputExecuted", outputIndexRule)
 	if err != nil {
 		return nil, err
 	}
@@ -1420,10 +1618,15 @@ func (_IApplication *IApplicationFilterer) FilterOutputExecuted(opts *bind.Filte
 
 // WatchOutputExecuted is a free log subscription operation binding the contract event 0xcad1f361c6e84664e892230291c8e8eb9555683e0a6a5ce8ea7b204ac0ac3676.
 //
-// Solidity: event OutputExecuted(uint64 outputIndex, bytes output)
-func (_IApplication *IApplicationFilterer) WatchOutputExecuted(opts *bind.WatchOpts, sink chan<- *IApplicationOutputExecuted) (event.Subscription, error) {
+// Solidity: event OutputExecuted(uint64 indexed outputIndex, bytes output)
+func (_IApplication *IApplicationFilterer) WatchOutputExecuted(opts *bind.WatchOpts, sink chan<- *IApplicationOutputExecuted, outputIndex []uint64) (event.Subscription, error) {
 
-	logs, sub, err := _IApplication.contract.WatchLogs(opts, "OutputExecuted")
+	var outputIndexRule []interface{}
+	for _, outputIndexItem := range outputIndex {
+		outputIndexRule = append(outputIndexRule, outputIndexItem)
+	}
+
+	logs, sub, err := _IApplication.contract.WatchLogs(opts, "OutputExecuted", outputIndexRule)
 	if err != nil {
 		return nil, err
 	}
@@ -1457,7 +1660,7 @@ func (_IApplication *IApplicationFilterer) WatchOutputExecuted(opts *bind.WatchO
 
 // ParseOutputExecuted is a log parse operation binding the contract event 0xcad1f361c6e84664e892230291c8e8eb9555683e0a6a5ce8ea7b204ac0ac3676.
 //
-// Solidity: event OutputExecuted(uint64 outputIndex, bytes output)
+// Solidity: event OutputExecuted(uint64 indexed outputIndex, bytes output)
 func (_IApplication *IApplicationFilterer) ParseOutputExecuted(log types.Log) (*IApplicationOutputExecuted, error) {
 	event := new(IApplicationOutputExecuted)
 	if err := _IApplication.contract.UnpackLog(event, "OutputExecuted", log); err != nil {
@@ -1601,6 +1804,152 @@ func (_IApplication *IApplicationFilterer) ParseOutputsMerkleRootValidatorChange
 	return event, nil
 }
 
+// IApplicationRefundIssuedIterator is returned from FilterRefundIssued and is used to iterate over the raw logs and unpacked data for RefundIssued events raised by the IApplication contract.
+type IApplicationRefundIssuedIterator struct {
+	Event *IApplicationRefundIssued // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *IApplicationRefundIssuedIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(IApplicationRefundIssued)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(IApplicationRefundIssued)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *IApplicationRefundIssuedIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *IApplicationRefundIssuedIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// IApplicationRefundIssued represents a RefundIssued event raised by the IApplication contract.
+type IApplicationRefundIssued struct {
+	InputIndex *big.Int
+	Input      []byte
+	Output     []byte
+	Raw        types.Log // Blockchain specific contextual infos
+}
+
+// FilterRefundIssued is a free log retrieval operation binding the contract event 0x1e7ce3d695b800137b84540cdf13216ec4aa4f00374482b89ab552368e800dd9.
+//
+// Solidity: event RefundIssued(uint256 indexed inputIndex, bytes input, bytes output)
+func (_IApplication *IApplicationFilterer) FilterRefundIssued(opts *bind.FilterOpts, inputIndex []*big.Int) (*IApplicationRefundIssuedIterator, error) {
+
+	var inputIndexRule []interface{}
+	for _, inputIndexItem := range inputIndex {
+		inputIndexRule = append(inputIndexRule, inputIndexItem)
+	}
+
+	logs, sub, err := _IApplication.contract.FilterLogs(opts, "RefundIssued", inputIndexRule)
+	if err != nil {
+		return nil, err
+	}
+	return &IApplicationRefundIssuedIterator{contract: _IApplication.contract, event: "RefundIssued", logs: logs, sub: sub}, nil
+}
+
+// WatchRefundIssued is a free log subscription operation binding the contract event 0x1e7ce3d695b800137b84540cdf13216ec4aa4f00374482b89ab552368e800dd9.
+//
+// Solidity: event RefundIssued(uint256 indexed inputIndex, bytes input, bytes output)
+func (_IApplication *IApplicationFilterer) WatchRefundIssued(opts *bind.WatchOpts, sink chan<- *IApplicationRefundIssued, inputIndex []*big.Int) (event.Subscription, error) {
+
+	var inputIndexRule []interface{}
+	for _, inputIndexItem := range inputIndex {
+		inputIndexRule = append(inputIndexRule, inputIndexItem)
+	}
+
+	logs, sub, err := _IApplication.contract.WatchLogs(opts, "RefundIssued", inputIndexRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(IApplicationRefundIssued)
+				if err := _IApplication.contract.UnpackLog(event, "RefundIssued", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseRefundIssued is a log parse operation binding the contract event 0x1e7ce3d695b800137b84540cdf13216ec4aa4f00374482b89ab552368e800dd9.
+//
+// Solidity: event RefundIssued(uint256 indexed inputIndex, bytes input, bytes output)
+func (_IApplication *IApplicationFilterer) ParseRefundIssued(log types.Log) (*IApplicationRefundIssued, error) {
+	event := new(IApplicationRefundIssued)
+	if err := _IApplication.contract.UnpackLog(event, "RefundIssued", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
 // IApplicationWithdrawalIterator is returned from FilterWithdrawal and is used to iterate over the raw logs and unpacked data for Withdrawal events raised by the IApplication contract.
 type IApplicationWithdrawalIterator struct {
 	Event *IApplicationWithdrawal // Event containing the contract specifics and raw log
@@ -1678,10 +2027,15 @@ type IApplicationWithdrawal struct {
 
 // FilterWithdrawal is a free log retrieval operation binding the contract event 0xde17c4fe795586e35da70cf61f10d8b19542b1eaf30daf7670e8ae438908ba59.
 //
-// Solidity: event Withdrawal(uint64 accountIndex, bytes account, bytes output)
-func (_IApplication *IApplicationFilterer) FilterWithdrawal(opts *bind.FilterOpts) (*IApplicationWithdrawalIterator, error) {
+// Solidity: event Withdrawal(uint64 indexed accountIndex, bytes account, bytes output)
+func (_IApplication *IApplicationFilterer) FilterWithdrawal(opts *bind.FilterOpts, accountIndex []uint64) (*IApplicationWithdrawalIterator, error) {
 
-	logs, sub, err := _IApplication.contract.FilterLogs(opts, "Withdrawal")
+	var accountIndexRule []interface{}
+	for _, accountIndexItem := range accountIndex {
+		accountIndexRule = append(accountIndexRule, accountIndexItem)
+	}
+
+	logs, sub, err := _IApplication.contract.FilterLogs(opts, "Withdrawal", accountIndexRule)
 	if err != nil {
 		return nil, err
 	}
@@ -1690,10 +2044,15 @@ func (_IApplication *IApplicationFilterer) FilterWithdrawal(opts *bind.FilterOpt
 
 // WatchWithdrawal is a free log subscription operation binding the contract event 0xde17c4fe795586e35da70cf61f10d8b19542b1eaf30daf7670e8ae438908ba59.
 //
-// Solidity: event Withdrawal(uint64 accountIndex, bytes account, bytes output)
-func (_IApplication *IApplicationFilterer) WatchWithdrawal(opts *bind.WatchOpts, sink chan<- *IApplicationWithdrawal) (event.Subscription, error) {
+// Solidity: event Withdrawal(uint64 indexed accountIndex, bytes account, bytes output)
+func (_IApplication *IApplicationFilterer) WatchWithdrawal(opts *bind.WatchOpts, sink chan<- *IApplicationWithdrawal, accountIndex []uint64) (event.Subscription, error) {
 
-	logs, sub, err := _IApplication.contract.WatchLogs(opts, "Withdrawal")
+	var accountIndexRule []interface{}
+	for _, accountIndexItem := range accountIndex {
+		accountIndexRule = append(accountIndexRule, accountIndexItem)
+	}
+
+	logs, sub, err := _IApplication.contract.WatchLogs(opts, "Withdrawal", accountIndexRule)
 	if err != nil {
 		return nil, err
 	}
@@ -1727,7 +2086,7 @@ func (_IApplication *IApplicationFilterer) WatchWithdrawal(opts *bind.WatchOpts,
 
 // ParseWithdrawal is a log parse operation binding the contract event 0xde17c4fe795586e35da70cf61f10d8b19542b1eaf30daf7670e8ae438908ba59.
 //
-// Solidity: event Withdrawal(uint64 accountIndex, bytes account, bytes output)
+// Solidity: event Withdrawal(uint64 indexed accountIndex, bytes account, bytes output)
 func (_IApplication *IApplicationFilterer) ParseWithdrawal(log types.Log) (*IApplicationWithdrawal, error) {
 	event := new(IApplicationWithdrawal)
 	if err := _IApplication.contract.UnpackLog(event, "Withdrawal", log); err != nil {
