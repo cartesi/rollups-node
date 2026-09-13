@@ -208,6 +208,7 @@ func TestBuildRootChildrenAgainstBuilder(t *testing.T) {
 
 	rootHashBuilder := proofBuilder.BuildRoot()
 	lhsBuilder, rhsBuilder, err := proofBuilder.BuildRootChildren()
+	require.NoError(t, err)
 
 	proofSiblings := Proof{
 		Pos:  new(big.Int).SetUint64((1 << 48) - 1),

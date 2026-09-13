@@ -96,7 +96,7 @@ func TestIncorrectCreateProofsLevel(t *testing.T) {
 
 func TestComputSiblingsMatrixAssertions(t *testing.T) {
 	var err error
-	outputs := []common.Hash{common.Hash{}}
+	outputs := []common.Hash{{}}
 	post := CreatePostContext() // always the same
 	pre := post
 	index := uint64(0)
