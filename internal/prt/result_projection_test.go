@@ -24,8 +24,7 @@ func TestFailedRootDoesNotBlockOlderOwnedBondRecovery(t *testing.T) {
 	snapshot.stage.WinnerPostEpochMachineStateHash = common.Hash{}
 	f.expectTick(100, 100, snapshot, snapshot)
 	olderTournament := common.HexToAddress("0x900")
-	f.s.queueRootBondRecovery(f.app.ID, f.epoch.Index-1, olderTournament)
-	f.consensus.On("GetCurrentSealedEpoch", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(snapshot.sealed, nil).Once()
+	f.s.selectRootBondRecovery(f.app.ID, f.epoch.Index-1, olderTournament)
 	tournament := &tournamentAdapterMock{}
 	f.factory.On("CreateTournamentAdapter", olderTournament).Return(tournament, nil).Once()
 	tournament.On("BondRecovery", mock.MatchedBy(resultCallOptsAtBlock(100))).
@@ -34,7 +33,7 @@ func TestFailedRootDoesNotBlockOlderOwnedBondRecovery(t *testing.T) {
 	tournament.On("TryRecoveringBond", mock.Anything).Return(tx, nil).Once()
 
 	require.NoError(t, f.tick(100))
-	require.Equal(t, tx.Hash(), *f.s.rootBondRecoveries[f.app.ID][0].TxHash)
+	require.Equal(t, tx.Hash(), *f.s.rootBondRecoveries[f.app.ID].TxHash)
 	f.assertNoPermanentStatusWrite(t)
 	f.consensus.AssertNotCalled(t, "StageTournamentResult", mock.Anything, mock.Anything, mock.Anything)
 	f.consensus.AssertNotCalled(t, "AcceptStagedTournamentResult", mock.Anything, mock.Anything)
