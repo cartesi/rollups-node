@@ -5,6 +5,7 @@ package claimer
 
 import (
 	"context"
+	"errors"
 	"math/big"
 	"slices"
 
@@ -193,7 +194,21 @@ func (s *Service) handleSubmitClaimRevert(
 	case sharedRevertRetryLater:
 		return submitClaimRetryLater, nil
 	case sharedRevertNoMatch:
-		// Not a shared revert either; report unknown.
+		// No known revert matched. Check the Authority owner diagnosis below.
+	}
+	var ownerMismatch *authorityOwnerMismatch
+	if errors.As(err, &ownerMismatch) {
+		if ownerMismatch.configuredOwner != ownerMismatch.latestOwner {
+			s.Logger.Warn("Authority owner views differ after claim submission failed; waiting for confirmation",
+				"app", app.IApplicationAddress, "error", err)
+			return submitClaimRetryLater, nil
+		}
+		stateErr := appstatus.SetFailedf(ctx, s.Logger, s.repository, app,
+			"The configured signer %s is not the Authority owner %s for consensus %s. "+
+				"The configured and latest block views agree. Check CARTESI_AUTH_* against the Authority owner before re-enabling. "+
+				"Original submission error: %v",
+			ownerMismatch.signer, ownerMismatch.configuredOwner, app.IConsensusAddress, ownerMismatch.submissionErr)
+		return submitClaimAppHalted, stateErr
 	}
 	return submitClaimUnknown, nil
 }
