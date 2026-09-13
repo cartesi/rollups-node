@@ -5,7 +5,6 @@ package repotest
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"sync"
 
@@ -722,12 +721,18 @@ func (s *BulkOperationsSuite) TestStoreClaimAndProofs() {
 }
 
 func (s *BulkOperationsSuite) TestStoreTournamentEvents() {
+	const (
+		joinedEventScanEnd   uint64 = 100
+		advancedEventScanEnd uint64 = 200
+		deletedEventScanEnd  uint64 = 300
+	)
 	// setupTournamentWithMatch creates a PRT app with a tournament, two
 	// commitments, and one match, all stored via StoreTournamentEvents.
 	type tournamentSetup struct {
-		app       *Application
-		tournAddr common.Address
-		match     *Match
+		app        *Application
+		tournAddr  common.Address
+		tournament *Tournament
+		match      *Match
 	}
 	setupTournamentWithMatch := func() *tournamentSetup {
 		s.T().Helper()
@@ -767,12 +772,11 @@ func (s *BulkOperationsSuite) TestStoreTournamentEvents() {
 
 		err = s.Repo.StoreTournamentEvents(
 			s.Ctx, app.ID,
-			[]*Commitment{commitment1, commitment2},
-			[]*Match{match},
-			nil, nil, 100)
+			[]*repository.TournamentEventBatch{{Tournament: tournament,
+				Commitments: []*Commitment{commitment1, commitment2}, Matches: []*Match{match}}}, joinedEventScanEnd)
 		s.Require().NoError(err)
 
-		return &tournamentSetup{app: app, tournAddr: tournAddr, match: match}
+		return &tournamentSetup{app: app, tournAddr: tournAddr, tournament: tournament, match: match}
 	}
 
 	s.Run("StoresCommitmentsAndMatches", func() {
@@ -802,18 +806,17 @@ func (s *BulkOperationsSuite) TestStoreTournamentEvents() {
 			WithTournamentAddress(ts.tournAddr).
 			WithIDHash(ts.match.IDHash).
 			Build()
+		ts.tournament.Snapshot.AsOfBlock = advancedEventScanEnd
 
 		err := s.Repo.StoreTournamentEvents(
 			s.Ctx, ts.app.ID,
-			nil, nil,
-			[]*MatchAdvanced{ma}, nil, 200)
+			[]*repository.TournamentEventBatch{{Tournament: ts.tournament, MatchAdvances: []*MatchAdvanced{ma}}}, advancedEventScanEnd)
 		s.Require().NoError(err)
 
 		// Verify match advanced was stored
 		gotMA, err := s.Repo.GetMatchAdvanced(
 			s.Ctx, ts.app.IApplicationAddress.String(),
-			0, ts.tournAddr.String(), ts.match.IDHash.Hex(),
-			hex.EncodeToString(ma.OtherParent[:]))
+			0, ts.tournAddr.String(), ts.match.IDHash.Hex(), ma.TxHash, ma.LogIndex)
 		s.Require().NoError(err)
 		s.Require().NotNil(gotMA)
 		s.Equal(ma.OtherParent, gotMA.OtherParent)
@@ -823,20 +826,20 @@ func (s *BulkOperationsSuite) TestStoreTournamentEvents() {
 		ts := setupTournamentWithMatch()
 
 		// Mark the match as deleted (winner decided)
-		deletedMatch := &Match{
-			EpochIndex:          0,
-			TournamentAddress:   ts.tournAddr,
-			IDHash:              ts.match.IDHash,
-			Winner:              WinnerCommitment_ONE,
-			DeletionReason:      MatchDeletionReason_TIMEOUT,
-			DeletionBlockNumber: 200,
-			DeletionTxHash:      UniqueHash(),
+		deletedMatch := *ts.match
+		deletedMatch.Winner = WinnerCommitment_ONE
+		deletedMatch.DeletionReason = MatchDeletionReason_TIMEOUT
+		deletedMatch.DeletionBlockNumber = advancedEventScanEnd
+		deletedMatch.DeletionTxHash = new(UniqueHash())
+		deletedMatch.DeletionLogIndex = new(uint64(0))
+		deletedMatch.Snapshot = MatchSnapshot{
+			AsOfBlock: deletedEventScanEnd, Phase: MatchPhaseUninitialized, TimeoutOutcome: MatchTimeoutNone,
 		}
+		ts.tournament.Snapshot.AsOfBlock = deletedEventScanEnd
 
 		err := s.Repo.StoreTournamentEvents(
 			s.Ctx, ts.app.ID,
-			nil, nil, nil,
-			[]*Match{deletedMatch}, 300)
+			[]*repository.TournamentEventBatch{{Tournament: ts.tournament, Matches: []*Match{&deletedMatch}}}, deletedEventScanEnd)
 		s.Require().NoError(err)
 
 		// Verify the match was updated
@@ -846,6 +849,8 @@ func (s *BulkOperationsSuite) TestStoreTournamentEvents() {
 		s.Require().NoError(err)
 		s.Equal(WinnerCommitment_ONE, gotMatch.Winner)
 		s.Equal(MatchDeletionReason_TIMEOUT, gotMatch.DeletionReason)
+		s.Equal(deletedMatch.DeletionBlockNumber, gotMatch.DeletionBlockNumber)
+		s.Equal(deletedMatch.DeletionTxHash, gotMatch.DeletionTxHash)
 	})
 }
 
@@ -1137,8 +1142,9 @@ func (s *BulkOperationsSuite) TestStoreClaimAndProofsRollback() {
 }
 
 func (s *BulkOperationsSuite) TestStoreTournamentEventsRollback() {
+	const failedWindowEnd uint64 = 100
 	// Helper: create a PRT application with one closed epoch and a tournament.
-	setupPRTApp := func() (app *Application, tournAddr common.Address) {
+	setupPRTApp := func() (app *Application, tournament *Tournament) {
 		s.T().Helper()
 		app = NewApplicationBuilder().
 			WithConsensus(Consensus_PRT).
@@ -1153,39 +1159,38 @@ func (s *BulkOperationsSuite) TestStoreTournamentEventsRollback() {
 			map[*Epoch][]*Input{epoch: {input}}, 10)
 		s.Require().NoError(err)
 
-		tournAddr = UniqueAddress()
-		tournament := NewTournamentBuilder(app.ID).
+		tournAddr := UniqueAddress()
+		tournament = NewTournamentBuilder(app.ID).
 			WithEpochIndex(0).WithAddress(tournAddr).Build()
 		err = s.Repo.CreateTournament(
 			s.Ctx, app.IApplicationAddress.String(), tournament)
 		s.Require().NoError(err)
-		return app, tournAddr
+		return app, tournament
 	}
 
 	// Insert valid commitments + a match that references a non-existent
-	// tournament address, causing an FK violation. The commitments
+	// commitment, causing an FK violation. The commitments
 	// inserted in the same transaction must be rolled back.
 	s.Run("RollbackOnMatchInsertFailure", func() {
-		app, tournAddr := setupPRTApp()
+		app, tournament := setupPRTApp()
+		tournAddr := tournament.Address
 
 		// Valid commitment targeting the real tournament
 		commitment := NewCommitmentBuilder(app.ID).
 			WithEpochIndex(0).WithTournamentAddress(tournAddr).Build()
 
-		// Match targeting a non-existent tournament → FK violation
-		bogusAddr := UniqueAddress()
+		// Match referencing a non-existent second commitment → FK violation
 		match := NewMatchBuilder(app.ID).
 			WithEpochIndex(0).
-			WithTournamentAddress(bogusAddr).
+			WithTournamentAddress(tournAddr).
 			WithCommitmentOne(commitment.Commitment).
 			WithCommitmentTwo(UniqueHash()).
 			Build()
 
 		err := s.Repo.StoreTournamentEvents(
 			s.Ctx, app.ID,
-			[]*Commitment{commitment},
-			[]*Match{match},
-			nil, nil, 100)
+			[]*repository.TournamentEventBatch{{Tournament: tournament,
+				Commitments: []*Commitment{commitment}, Matches: []*Match{match}}}, failedWindowEnd)
 		s.Require().Error(err)
 
 		// Verify the commitment was rolled back
@@ -1196,30 +1201,27 @@ func (s *BulkOperationsSuite) TestStoreTournamentEventsRollback() {
 		s.Nil(got, "commitment should have been rolled back")
 	})
 
-	// Insert valid commitments + try to delete (update) a non-existent
-	// match. updateMatches returns an error when RowsAffected == 0.
-	// The commitments inserted earlier in the same tx must be rolled back.
-	s.Run("RollbackOnMatchDeleteFailure", func() {
-		app, tournAddr := setupPRTApp()
+	// A newly observed deleted match still needs both joined commitments.
+	// Its missing second commitment must roll back the valid first join.
+	s.Run("RollbackOnDeletedMatchInsertFailure", func() {
+		app, tournament := setupPRTApp()
+		tournAddr := tournament.Address
 
 		// Valid new commitment
 		newCommitment := NewCommitmentBuilder(app.ID).
 			WithEpochIndex(0).WithTournamentAddress(tournAddr).Build()
 
-		// Try to delete a match that doesn't exist
-		deletedMatch := &Match{
-			EpochIndex:        0,
-			TournamentAddress: tournAddr,
-			IDHash:            UniqueHash(), // doesn't exist
-			Winner:            WinnerCommitment_ONE,
-			DeletionReason:    MatchDeletionReason_TIMEOUT,
-		}
+		deletedMatch := NewMatchBuilder(app.ID).
+			WithTournamentAddress(tournAddr).
+			WithCommitmentOne(newCommitment.Commitment).
+			WithCommitmentTwo(UniqueHash()).
+			WithWinner(WinnerCommitment_ONE).
+			WithDeletion(MatchDeletionReason_TIMEOUT, failedWindowEnd, UniqueHash()).Build()
 
 		err := s.Repo.StoreTournamentEvents(
 			s.Ctx, app.ID,
-			[]*Commitment{newCommitment},
-			nil, nil,
-			[]*Match{deletedMatch}, 100)
+			[]*repository.TournamentEventBatch{{Tournament: tournament,
+				Commitments: []*Commitment{newCommitment}, Matches: []*Match{deletedMatch}}}, failedWindowEnd)
 		s.Require().Error(err)
 
 		// Verify the new commitment was rolled back
@@ -1233,7 +1235,8 @@ func (s *BulkOperationsSuite) TestStoreTournamentEventsRollback() {
 	// Insert a match advanced event for a match that doesn't exist,
 	// causing an FK violation. Commitments in the same tx should roll back.
 	s.Run("RollbackOnMatchAdvancedInsertFailure", func() {
-		app, tournAddr := setupPRTApp()
+		app, tournament := setupPRTApp()
+		tournAddr := tournament.Address
 
 		// Valid new commitment
 		newCommitment := NewCommitmentBuilder(app.ID).
@@ -1248,10 +1251,8 @@ func (s *BulkOperationsSuite) TestStoreTournamentEventsRollback() {
 
 		err := s.Repo.StoreTournamentEvents(
 			s.Ctx, app.ID,
-			[]*Commitment{newCommitment},
-			nil,
-			[]*MatchAdvanced{bogusMA},
-			nil, 100)
+			[]*repository.TournamentEventBatch{{Tournament: tournament,
+				Commitments: []*Commitment{newCommitment}, MatchAdvances: []*MatchAdvanced{bogusMA}}}, failedWindowEnd)
 		s.Require().Error(err)
 
 		// Verify the commitment was rolled back

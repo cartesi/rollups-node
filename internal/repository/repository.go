@@ -122,6 +122,13 @@ type TournamentFilter struct {
 	ParentMatchIDHash       *common.Hash
 }
 
+// RootBondRecoveryCandidate identifies an owned root bond in a published snapshot.
+// Its current disposition must be checked on chain before sending a recovery.
+type RootBondRecoveryCandidate struct {
+	EpochIndex uint64
+	Tournament common.Address
+}
+
 type CommitmentFilter struct {
 	EpochIndex        *uint64
 	TournamentAddress *string
@@ -204,6 +211,7 @@ type EpochRepository interface {
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	GetLastAcceptedEpochIndex(ctx context.Context, nameOrAddress string) (uint64, error)
 	GetLastNonOpenEpoch(ctx context.Context, nameOrAddress string) (*Epoch, error)
+	GetLastNonOpenEpochIndex(ctx context.Context, nameOrAddress string) (*uint64, error)
 	GetEpochByVirtualIndex(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 
 	UpdateEpochClaimTransactionHash(ctx context.Context, nameOrAddress string, e *Epoch) error
@@ -321,6 +329,13 @@ type TournamentRepository interface {
 	GetTournament(ctx context.Context, nameOrAddress string, address string) (*Tournament, error)
 	ListTournaments(ctx context.Context, nameOrAddress string, f TournamentFilter,
 		p Pagination, descending bool) ([]*Tournament, uint64, error)
+	// ListRecoverableRootBonds lists owned RECOVERABLE roots in ascending epoch order,
+	// regardless of local claim status or join history. observedBlock must not exceed
+	// either the configured observation head or the published application cursor.
+	// afterEpoch is exclusive (nil includes epoch zero); throughEpoch is inclusive.
+	// limit must be positive and fit in a PostgreSQL signed integer. No count is read.
+	ListRecoverableRootBonds(ctx context.Context, appID int64, claimer common.Address, observedBlock uint64,
+		afterEpoch *uint64, throughEpoch uint64, limit uint64) ([]RootBondRecoveryCandidate, error)
 }
 
 type CommitmentRepository interface {
@@ -348,11 +363,23 @@ type BondEventRepository interface {
 	ListBondEvents(ctx context.Context, nameOrAddress string, f BondEventFilter, p Pagination, descending bool) ([]*BondEvent, uint64, error)
 }
 
+// TournamentEventBatch contains one tournament projection and the events from
+// a completed scan window. Batches are ordered with parents before children:
+// a child tournament references a match written in its parent's batch.
+type TournamentEventBatch struct {
+	Tournament    *Tournament
+	Commitments   []*Commitment
+	Matches       []*Match
+	MatchAdvances []*MatchAdvanced
+	BondEvents    []*BondEvent
+}
+
 type BulkOperationsRepository interface {
 	StoreAdvanceResult(ctx context.Context, appID int64, result *AdvanceResult) error
 	StoreClaimAndProofs(ctx context.Context, epoch *Epoch, outputs []*Output) error
-	StoreTournamentEvents(ctx context.Context, appID int64, commitments []*Commitment, matches []*Match,
-		matchAdvanced []*MatchAdvanced, matchDeleted []*Match, lastBlock uint64) error
+	// StoreTournamentEvents commits every tournament batch and one application
+	// cursor together. Callers must finish all event reads before this call.
+	StoreTournamentEvents(ctx context.Context, appID int64, batches []*TournamentEventBatch, lastBlock uint64) error
 }
 
 type NodeConfigRepository interface {

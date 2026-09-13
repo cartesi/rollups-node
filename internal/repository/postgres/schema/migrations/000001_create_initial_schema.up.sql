@@ -699,7 +699,7 @@ CREATE TABLE "tournaments"
     "address" ethereum_address NOT NULL,
     "parent_tournament_address" ethereum_address,
     "parent_match_id_hash" hash,
-    "max_level" INT NOT NULL CHECK("max_level" >= 0),
+    "max_level" INT NOT NULL CHECK("max_level" > 0),
     "level" INT NOT NULL CHECK("level" >= 0),
     "log2step" INT NOT NULL CHECK("log2step" >= 0),
     "height" INT NOT NULL CHECK("height" >= 0),
@@ -738,7 +738,7 @@ CREATE TABLE "tournaments"
         OR
         ("level" > 0 AND "parent_tournament_address" IS NOT NULL AND "parent_match_id_hash" IS NOT NULL)
       ),
-    CONSTRAINT "tournaments_max_level_gte_level_check" CHECK ("max_level" >= "level"),
+    CONSTRAINT "tournaments_max_level_gt_level_check" CHECK ("max_level" > "level"),
     CONSTRAINT "tournaments_creation_event_check" CHECK (
       ("level" = 0 AND num_nonnulls("creation_block_number", "creation_tx_hash", "creation_log_index") = 0)
       OR
@@ -787,6 +787,11 @@ CREATE TABLE "tournaments"
 CREATE UNIQUE INDEX "unique_root_per_epoch_idx"
   ON "tournaments"("application_id","epoch_index")
   WHERE "level" = 0;
+
+-- Recovery scans need only this signer's unpaid roots, not all accepted history.
+CREATE INDEX "tournaments_recoverable_root_idx"
+  ON "tournaments"("application_id","bond_claimer","epoch_index")
+  WHERE "level" = 0 AND "bond_disposition" = 'RECOVERABLE';
 
 -- A tournament address identifies one epoch within an application. This key
 -- also supports tournament lookups that do not specify an epoch.

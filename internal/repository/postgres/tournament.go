@@ -11,6 +11,7 @@ import (
 
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/enum"
 	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/table"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-jet/jet/v2/postgres"
@@ -109,4 +110,48 @@ func (r *PostgresRepository) ListTournaments(
 		return nil, 0, err
 	}
 	return values, total, nil
+}
+
+func (r *PostgresRepository) ListRecoverableRootBonds(
+	ctx context.Context, appID int64, claimer common.Address, observedBlock uint64,
+	afterEpoch *uint64, throughEpoch uint64, limit uint64,
+) ([]repository.RootBondRecoveryCandidate, error) {
+	if limit == 0 || limit > math.MaxInt64 {
+		return nil, fmt.Errorf("root bond recovery limit must be between 1 and %d", int64(math.MaxInt64))
+	}
+	if afterEpoch != nil && *afterEpoch >= throughEpoch {
+		return nil, nil
+	}
+	conditions := []postgres.BoolExpression{
+		table.Tournaments.ApplicationID.EQ(postgres.Int64(appID)),
+		// Keep the root predicate literal so generic plans can use the partial root index.
+		table.Tournaments.Level.EQ(postgres.RawInt("0")),
+		table.Tournaments.BondDisposition.EQ(enum.BondDisposition.Recoverable),
+		table.Tournaments.BondClaimer.EQ(postgres.Bytea(claimer.Bytes())),
+		table.Tournaments.AsOfBlock.LT_EQ(uint64Expr(observedBlock)),
+		table.Tournaments.EpochIndex.LT_EQ(uint64Expr(throughEpoch)),
+	}
+	if afterEpoch != nil {
+		conditions = append(conditions, table.Tournaments.EpochIndex.GT(uint64Expr(*afterEpoch)))
+	}
+	stmt := table.Tournaments.SELECT(table.Tournaments.EpochIndex, table.Tournaments.Address).
+		WHERE(postgres.AND(conditions...)).ORDER_BY(table.Tournaments.EpochIndex.ASC()).LIMIT(int64(limit))
+	sqlStr, args := stmt.Sql()
+	rows, err := r.db.Query(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, fmt.Errorf("listing recoverable root bonds for application %d: %w", appID, err)
+	}
+	defer rows.Close()
+	var candidates []repository.RootBondRecoveryCandidate
+	for rows.Next() {
+		var candidate repository.RootBondRecoveryCandidate
+		if err := rows.Scan(&candidate.EpochIndex, &candidate.Tournament); err != nil {
+			return nil, fmt.Errorf("reading recoverable root bond for application %d: %w", appID, err)
+		}
+		candidates = append(candidates, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("listing recoverable root bonds for application %d: %w", appID, err)
+	}
+	return candidates, nil
 }

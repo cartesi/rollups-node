@@ -530,6 +530,26 @@ func (r *PostgresRepository) GetLastAcceptedEpochIndex(
 	return index, nil
 }
 
+// GetLastNonOpenEpochIndex returns only the sweep boundary, without epoch proofs.
+// A nil index means the application has no non-open epoch. Index zero is valid.
+func (r *PostgresRepository) GetLastNonOpenEpochIndex(ctx context.Context, nameOrAddress string) (*uint64, error) {
+	query := table.Epoch.SELECT(table.Epoch.Index).
+		FROM(table.Epoch.INNER_JOIN(table.Application, table.Epoch.ApplicationID.EQ(table.Application.ID))).
+		WHERE(getWhereClauseFromNameOrAddress(nameOrAddress).
+			AND(table.Epoch.Status.NOT_EQ(enum.EpochStatus.Open))).
+		ORDER_BY(table.Epoch.Index.DESC()).LIMIT(1)
+	queryStr, args := query.Sql()
+	var index uint64
+	err := r.db.QueryRow(ctx, queryStr, args...).Scan(&index)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get last non-open epoch index: %w", err)
+	}
+	return &index, nil
+}
+
 func (r *PostgresRepository) GetLastNonOpenEpoch(
 	ctx context.Context,
 	nameOrAddress string,
