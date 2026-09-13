@@ -132,6 +132,24 @@ func TestMatchWinner(t *testing.T) {
 	assert.Equal(t, "UNKNOWN(99)", matchWinner(99))
 }
 
+func TestMatchEnumNamesMatchSolidityOrder(t *testing.T) {
+	assert.Equal(t, "UNINITIALIZED", matchPhaseName(0))
+	assert.Equal(t, "BISECTING", matchPhaseName(1))
+	assert.Equal(t, "READY_TO_SEAL", matchPhaseName(2))
+	assert.Equal(t, "SEALED", matchPhaseName(3))
+	assert.Equal(t, "UNKNOWN(4)", matchPhaseName(4))
+
+	assert.Equal(t, "NONE", matchTimeoutOutcomeName(0))
+	assert.Equal(t, "ONE_WINS", matchTimeoutOutcomeName(1))
+	assert.Equal(t, "TWO_WINS", matchTimeoutOutcomeName(2))
+	assert.Equal(t, "ELIMINATE_BOTH", matchTimeoutOutcomeName(3))
+	assert.Equal(t, "UNKNOWN(4)", matchTimeoutOutcomeName(4))
+
+	assert.Equal(t, "ONE", commitmentSideName(0))
+	assert.Equal(t, "TWO", commitmentSideName(1))
+	assert.Equal(t, "UNKNOWN(2)", commitmentSideName(2))
+}
+
 func TestFormatBlockTime(t *testing.T) {
 	assert.Equal(t, "", formatBlockTime(0))
 	// Unix timestamp 1700000000 = 2023-11-14 22:13:20 UTC

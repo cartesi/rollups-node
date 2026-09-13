@@ -126,27 +126,58 @@ func (c *chainClient) printDave(addr common.Address) error {
 		p.field("Input Range",
 			fmt.Sprintf("[%d, %d)", result.InputLowerBound, result.InputUpperBound))
 		p.field("Root Tournament", result.RootTournament)
+		printDaveSentries(p, result)
+		printDaveStaging(p, result)
 	})
 	p.footer(c.blockNum, c.chainID, c.resolveTimestamp(c.blockNum))
 	return nil
 }
 
-// printTournamentFinished renders the IsFinished field, distinguishing winner from no-winner.
-// Note: IsFinished means the tournament has concluded, NOT that settle() can be called
-// successfully — settle() will revert if there is no winner.
+func printDaveSentries(p *printer, r *DaveConsensusResult) {
+	p.field("Sentry Manager", r.SentryManager)
+	p.field("Sentries", fmt.Sprintf("%d", r.NumSentries))
+	for _, sentry := range r.Sentries {
+		p.field(fmt.Sprintf("  Sentry #%d", sentry.ID), sentry.Address)
+	}
+}
+
+// printTournamentFinished renders the IsFinished field and distinguishes a
+// winner from a failed tournament. A failed tournament has no result to stage.
 func printTournamentFinished(p *printer, r *DaveConsensusResult) {
 	if !r.IsFinished {
 		p.field("Tournament Finished", "no")
 		return
 	}
-	if r.HasWinner != nil && !*r.HasWinner {
+	if r.IsTournamentFailed {
 		p.field("Tournament Finished", "yes (NO WINNER — all commitments eliminated)")
 		return
 	}
 	if r.WinnerCommitment != "" {
 		p.field("Tournament Finished",
 			fmt.Sprintf("yes (winner: %s)", r.WinnerCommitment))
+		if r.WinnerPostEpochMachineHash != "" {
+			p.field("Winner Machine Hash", r.WinnerPostEpochMachineHash)
+		}
 		return
 	}
 	p.field("Tournament Finished", "yes")
+}
+
+func printDaveStaging(p *printer, r *DaveConsensusResult) {
+	p.field("Claim Staging Period", fmt.Sprintf("%d blocks", r.ClaimStagingPeriod))
+	p.field("Tournament Result Staged", formatBool(r.IsTournamentResultStaged))
+	if !r.IsTournamentResultStaged {
+		return
+	}
+	if r.StagingBlock != nil {
+		p.field("Staging Block", fmt.Sprintf("%d", *r.StagingBlock))
+	}
+	p.field("Staged Machine Hash", r.StagedMachineHash)
+	p.field("Staged Outputs Root", r.StagedOutputsMerkleRoot)
+	if r.AllSentriesAgree != nil {
+		p.field("All Sentries Agree", formatBool(*r.AllSentriesAgree))
+	}
+	if r.ClaimStagingPeriodOver != nil {
+		p.field("Staging Period Over", formatBool(*r.ClaimStagingPeriodOver))
+	}
 }

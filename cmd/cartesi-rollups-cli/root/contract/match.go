@@ -20,7 +20,7 @@ import (
 
 var matchCmd = &cobra.Command{
 	Use:   "match <application-address> <match-id-hash>",
-	Short: "Inspect a specific match's bisection state",
+	Short: "Inspect a specific tournament match",
 	Args:  cobra.ExactArgs(2), //nolint:mnd
 	RunE:  runMatch,
 }
@@ -54,29 +54,31 @@ func runMatch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("bind ITournament: %w", err)
 	}
 
-	matchState, err := caller.GetMatch(cc.callOpts, [32]byte(matchIDHash))
+	bisecting, err := caller.BisectingMatch(cc.callOpts, [32]byte(matchIDHash))
 	if err != nil {
-		return fmt.Errorf("GetMatch: %w", err)
-	}
-
-	cycle, err := caller.GetMatchCycle(cc.callOpts, [32]byte(matchIDHash))
-	if err != nil {
-		return fmt.Errorf("GetMatchCycle: %w", err)
+		return fmt.Errorf("BisectingMatch: %w", err)
 	}
 
 	// Discover commitment hashes for this match from MatchCreated events.
-	// We need the two commitment hashes to call CanWinMatchByTimeout and to show players.
+	// The timeout view takes the full match ID. The event also identifies the players.
 	commitOne, commitTwo, lookupErr := cc.findMatchCommitments(
 		tournamentAddr, deployBlock, [32]byte(matchIDHash))
 	if lookupErr != nil {
-		slog.Warn("failed to look up match commitments", "error", lookupErr)
+		return fmt.Errorf("look up MatchCreated commitments: %w", lookupErr)
 	}
 
-	// Attempt CanWinMatchByTimeout if we have both commitments.
-	var canWinByTimeout bool
-	if commitOne != ([32]byte{}) && commitTwo != ([32]byte{}) {
-		canWinByTimeout, _ = caller.CanWinMatchByTimeout(cc.callOpts,
-			itournament.MatchId{CommitmentOne: commitOne, CommitmentTwo: commitTwo})
+	timeout, err := caller.ClassifyMatchTimeout(cc.callOpts,
+		itournament.MatchId{CommitmentOne: commitOne, CommitmentTwo: commitTwo})
+	if err != nil {
+		return fmt.Errorf("ClassifyMatchTimeout: %w", err)
+	}
+	if timeout.ActualPhase != bisecting.ActualPhase {
+		return fmt.Errorf(
+			"inconsistent match phase at pinned block %d: BisectingMatch=%s, ClassifyMatchTimeout=%s",
+			cc.blockNum,
+			matchPhaseName(bisecting.ActualPhase),
+			matchPhaseName(timeout.ActualPhase),
+		)
 	}
 
 	// Build commitment registry for player address resolution.
@@ -93,19 +95,48 @@ func runMatch(cmd *cobra.Command, args []string) error {
 	}
 
 	result := &MatchResult{
-		MatchIDHash:         formatHash([32]byte(matchIDHash)),
-		Tournament:          formatAddr(tournamentAddr),
-		CommitmentOne:       formatHash(commitOne),
-		CommitmentTwo:       formatHash(commitTwo),
-		PlayerOneAddr:       registry.resolve(commitOne),
-		PlayerTwoAddr:       registry.resolve(commitTwo),
-		CurrentHeight:       matchState.CurrentHeight,
-		RunningLeafPosition: matchState.RunningLeafPosition.String(),
-		MachineCycle:        cycle.String(),
-		CanWinByTimeout:     canWinByTimeout,
-		LeftNode:            formatHash(matchState.LeftNode),
-		RightNode:           formatHash(matchState.RightNode),
-		OtherParent:         formatHash(matchState.OtherParent),
+		MatchIDHash:    formatHash([32]byte(matchIDHash)),
+		Tournament:     formatAddr(tournamentAddr),
+		CommitmentOne:  formatHash(commitOne),
+		CommitmentTwo:  formatHash(commitTwo),
+		PlayerOneAddr:  registry.resolve(commitOne),
+		PlayerTwoAddr:  registry.resolve(commitTwo),
+		ActualPhase:    matchPhaseName(bisecting.ActualPhase),
+		TimeoutOutcome: matchTimeoutOutcomeName(timeout.Outcome),
+		DeferredCharge: timeout.DeferredCharge,
+	}
+
+	switch bisecting.ActualPhase {
+	case matchPhaseUninitialized:
+		// No phase payload exists.
+	case matchPhaseBisecting:
+		if err := populateBisectingMatchResult(result, bisecting.Value); err != nil {
+			return err
+		}
+	case matchPhaseReadyToSeal:
+		ready, rErr := caller.ReadyToSealMatch(cc.callOpts, [32]byte(matchIDHash))
+		if rErr != nil {
+			return fmt.Errorf("ReadyToSealMatch: %w", rErr)
+		}
+		if ready.ActualPhase != bisecting.ActualPhase {
+			return inconsistentMatchPhaseError(cc.blockNum, "ReadyToSealMatch", ready.ActualPhase, bisecting.ActualPhase)
+		}
+		if err := populateReadyToSealMatchResult(result, ready.Value); err != nil {
+			return err
+		}
+	case matchPhaseSealed:
+		sealed, sErr := caller.SealedMatch(cc.callOpts, [32]byte(matchIDHash))
+		if sErr != nil {
+			return fmt.Errorf("SealedMatch: %w", sErr)
+		}
+		if sealed.ActualPhase != bisecting.ActualPhase {
+			return inconsistentMatchPhaseError(cc.blockNum, "SealedMatch", sealed.ActualPhase, bisecting.ActualPhase)
+		}
+		if err := populateSealedMatchResult(result, sealed.Value); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unknown match phase %d", bisecting.ActualPhase)
 	}
 
 	if jsonParam {
@@ -113,20 +144,89 @@ func runMatch(cmd *cobra.Command, args []string) error {
 	}
 
 	p := &printer{w: os.Stdout}
+	printMatchResult(p, result)
+	p.footer(cc.blockNum, cc.chainID, cc.resolveTimestamp(cc.blockNum))
+	return nil
+}
+
+func populateBisectingMatchResult(result *MatchResult, value itournament.ITournamentBisectingMatchView) error {
+	if value.SegmentStartPosition == nil || value.SegmentStartCycle == nil {
+		return errors.New("BisectingMatch returned nil position or cycle in BISECTING phase")
+	}
+	currentHeight := value.CurrentHeight
+	result.CurrentHeight = &currentHeight
+	result.SegmentStartPosition = value.SegmentStartPosition.String()
+	result.SegmentStartCycle = value.SegmentStartCycle.String()
+	result.RevealingParent = formatHash(value.RevealingParent)
+	result.WaitingLeft = formatHash(value.WaitingLeft)
+	result.WaitingRight = formatHash(value.WaitingRight)
+	result.Responder = commitmentSideName(value.Responder)
+	return nil
+}
+
+func populateReadyToSealMatchResult(result *MatchResult, value itournament.ITournamentReadyToSealMatchView) error {
+	if value.SegmentStartPosition == nil || value.SegmentStartCycle == nil {
+		return errors.New("ReadyToSealMatch returned nil position or cycle in READY_TO_SEAL phase")
+	}
+	result.SegmentStartPosition = value.SegmentStartPosition.String()
+	result.SegmentStartCycle = value.SegmentStartCycle.String()
+	result.RevealingParent = formatHash(value.RevealingParent)
+	result.WaitingLeft = formatHash(value.WaitingLeft)
+	result.WaitingRight = formatHash(value.WaitingRight)
+	result.Responder = commitmentSideName(value.Responder)
+	return nil
+}
+
+func populateSealedMatchResult(result *MatchResult, value itournament.ITournamentSealedMatchView) error {
+	if value.DivergencePosition == nil || value.DivergenceCycle == nil {
+		return errors.New("SealedMatch returned nil position or cycle in SEALED phase")
+	}
+	result.AgreeState = formatHash(value.AgreeState)
+	result.DivergencePosition = value.DivergencePosition.String()
+	result.DivergenceCycle = value.DivergenceCycle.String()
+	result.FinalStateOne = formatHash(value.FinalStateOne)
+	result.FinalStateTwo = formatHash(value.FinalStateTwo)
+	return nil
+}
+
+func inconsistentMatchPhaseError(block uint64, view string, got, want uint8) error {
+	return fmt.Errorf(
+		"inconsistent match phase at pinned block %d: %s=%s, expected %s",
+		block,
+		view,
+		matchPhaseName(got),
+		matchPhaseName(want),
+	)
+}
+
+func printMatchResult(p *printer, result *MatchResult) {
 	p.withSection(fmt.Sprintf("Match  %s", result.MatchIDHash), func() {
 		p.field("Tournament", result.Tournament)
 		printMatchPlayer(p, "Player One", result.CommitmentOne, result.PlayerOneAddr)
 		printMatchPlayer(p, "Player Two", result.CommitmentTwo, result.PlayerTwoAddr)
-		p.field("Current Height", fmt.Sprintf("%d", result.CurrentHeight))
-		p.field("Running Leaf Pos", result.RunningLeafPosition)
-		p.field("Machine Cycle", result.MachineCycle)
-		p.field("Can Win by Timeout", fmt.Sprintf("%t", result.CanWinByTimeout))
-		p.field("Left Node", result.LeftNode)
-		p.field("Right Node", result.RightNode)
-		p.field("Other Parent", result.OtherParent)
+		p.field("Actual Phase", result.ActualPhase)
+		p.field("Timeout Outcome", result.TimeoutOutcome)
+		p.field("Deferred Charge", fmt.Sprintf("%d blocks", result.DeferredCharge))
+
+		switch result.ActualPhase {
+		case matchPhaseName(matchPhaseBisecting), matchPhaseName(matchPhaseReadyToSeal):
+			if result.CurrentHeight != nil {
+				p.field("Current Height", fmt.Sprintf("%d", *result.CurrentHeight))
+			}
+			p.field("Segment Start Position", result.SegmentStartPosition)
+			p.field("Segment Start Cycle", result.SegmentStartCycle)
+			p.field("Revealing Parent", result.RevealingParent)
+			p.field("Waiting Left", result.WaitingLeft)
+			p.field("Waiting Right", result.WaitingRight)
+			p.field("Responder", result.Responder)
+		case matchPhaseName(matchPhaseSealed):
+			p.field("Agree State", result.AgreeState)
+			p.field("Divergence Position", result.DivergencePosition)
+			p.field("Divergence Cycle", result.DivergenceCycle)
+			p.field("Final State One", result.FinalStateOne)
+			p.field("Final State Two", result.FinalStateTwo)
+		}
 	})
-	p.footer(cc.blockNum, cc.chainID, cc.resolveTimestamp(cc.blockNum))
-	return nil
 }
 
 func printMatchPlayer(p *printer, label, commitment, addr string) {
@@ -154,6 +254,7 @@ func (c *chainClient) findMatchCommitments(
 	}
 
 	var commitOne, commitTwo [32]byte
+	found := false
 
 	oracle := func(ctx context.Context, block uint64) (*big.Int, error) {
 		opts := &bind.CallOpts{Context: ctx, BlockNumber: new(big.Int).SetUint64(block)}
@@ -183,6 +284,7 @@ func (c *chainClient) findMatchCommitments(
 			if ev.MatchIdHash == matchIDHash {
 				commitOne = ev.One
 				commitTwo = ev.Two
+				found = true
 				return errFound
 			}
 		}
@@ -194,6 +296,14 @@ func (c *chainClient) findMatchCommitments(
 	)
 	if err != nil && !errors.Is(err, errFound) {
 		return [32]byte{}, [32]byte{}, fmt.Errorf("find match commitments: %w", err)
+	}
+	if !found {
+		return [32]byte{}, [32]byte{}, fmt.Errorf(
+			"MatchCreated event %s was not found between blocks %d and %d",
+			formatHash(matchIDHash),
+			deployBlock,
+			c.blockNum,
+		)
 	}
 	return commitOne, commitTwo, nil
 }
