@@ -5,6 +5,7 @@ package matchadvances
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -17,19 +18,31 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	listArgCount = 4
+	getArgCount  = 6
+)
+
 var Cmd = &cobra.Command{
-	Use:     "match_advances <application> <epoch index> <tournament address> <ID hash> [parent]",
+	Use:     "match_advances <application> <epoch index> <tournament address> <ID hash> [transaction hash log index]",
 	Short:   "Reads match advances",
 	Example: examples,
-	Args:    cobra.RangeArgs(4, 5), //nolint: mnd
-	Run:     run,
+	Args: func(_ *cobra.Command, args []string) error {
+		if len(args) != listArgCount && len(args) != getArgCount {
+			return fmt.Errorf("requires %d arguments to list a match's advances, or %d with transaction hash and log index to read one",
+				listArgCount, getArgCount)
+		}
+		return nil
+	},
+	Run: run,
 	Long: `
 Arguments:
 	<application>            application name or address
 	<epoch index>            decimal or hex encoded
 	<tournament address>     hex encoded
 	<ID hash>                hex encoded
-	[parent]                 hex encoded
+	[transaction hash]       hex encoded; provide together with log index
+	[log index]              decimal or hex encoded block log index
 
 Supported Environment Variables:
   CARTESI_JSONRPC_API_URL                        JSON-RPC API URL
@@ -37,10 +50,10 @@ Supported Environment Variables:
 }
 
 //nolint:lll // Long CLI examples are kept copy-pasteable.
-const examples = `# Read specific match advanced:
-cartesi-rollups-cli read match_advances echo-dapp 10 0x0073a8637d98649717bdc02ecb439c80aa8a10d0 0xdb99c9cdb2e2070a4e4e633c2e6874648dfe3971d14da843465b3d950df3dd19 0xdb99c9cdb2e2070a4e4e633c2e6874648dfe3971d14da843465b3d950df3dd19
+const examples = `# Read one match advance by transaction hash and block log index:
+cartesi-rollups-cli read match_advances echo-dapp 10 0x0073a8637d98649717bdc02ecb439c80aa8a10d0 0xdb99c9cdb2e2070a4e4e633c2e6874648dfe3971d14da843465b3d950df3dd19 0xa24a91c7ce97fb16b2f679875966dc50f84747fd54e006763ed0dd702c260370 3
 
-# Read all match advances:
+# Read all advances for one match (includes each event's transaction hash and log index):
 cartesi-rollups-cli read match_advances echo-dapp 10 0x0073a8637d98649717bdc02ecb439c80aa8a10d0 0xdb99c9cdb2e2070a4e4e633c2e6874648dfe3971d14da843465b3d950df3dd19
 
 # Read all match advances with pagination:
@@ -89,30 +102,7 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	defer readServ.Close()
 
-	var result json.RawMessage
-	if len(args) >= 5 { //nolint:mnd // Five positional arguments select the get operation.
-		var params api.GetMatchAdvanceParams
-		params.Application = args[0]
-		params.EpochIndex, err = config.AsHexString(args[1])
-		cobra.CheckErr(err)
-		params.TournamentAddress = args[2]
-		params.IDHash = args[3]
-		params.Parent = args[4]
-
-		result, err = readServ.GetMatchAdvanced(ctx, params)
-	} else {
-		var params api.ListMatchAdvancesParams
-		params.Application = args[0]
-		params.EpochIndex, err = config.AsHexString(args[1])
-		cobra.CheckErr(err)
-		params.TournamentAddress = args[2]
-		params.IDHash = args[3]
-		params.Limit = limit
-		params.Offset = offset
-		params.Descending = descending
-
-		result, err = readServ.ListMatchAdvances(ctx, params)
-	}
+	result, err := readMatchAdvances(ctx, readServ, args)
 	cobra.CheckErr(err)
 
 	var out bytes.Buffer
@@ -122,4 +112,25 @@ func run(cmd *cobra.Command, args []string) {
 
 	_, err = out.WriteTo(os.Stdout)
 	cobra.CheckErr(err)
+}
+
+func readMatchAdvances(ctx context.Context, readServ service.ReadService, args []string) (json.RawMessage, error) {
+	epochIndex, err := config.AsHexString(args[1])
+	if err != nil {
+		return nil, err
+	}
+	if len(args) == getArgCount {
+		logIndex, err := config.AsHexString(args[getArgCount-1])
+		if err != nil {
+			return nil, err
+		}
+		return readServ.GetMatchAdvanced(ctx, api.GetMatchAdvanceParams{
+			Application: args[0], EpochIndex: epochIndex, TournamentAddress: args[2], IDHash: args[3],
+			TxHash: args[listArgCount], LogIndex: logIndex,
+		})
+	}
+	return readServ.ListMatchAdvances(ctx, api.ListMatchAdvancesParams{
+		Application: args[0], EpochIndex: epochIndex, TournamentAddress: args[2], IDHash: args[3],
+		Limit: limit, Offset: offset, Descending: descending,
+	})
 }
