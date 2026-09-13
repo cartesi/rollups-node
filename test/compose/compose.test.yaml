@@ -13,6 +13,9 @@ x-env: &env
   CARTESI_DATABASE_CONNECTION: postgres://postgres:password@database:5432/rollupsdb?sslmode=disable
   CARTESI_TEST_DATABASE_CONNECTION: postgres://test_user:password@database:5432/test_rollupsdb?sslmode=disable
   CARTESI_AUTH_MNEMONIC: "test test test test test test test test test test test junk"
+  CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX: 0
+  CARTESI_PRT_AUTH_MNEMONIC: "test test test test test test test test test test test junk"
+  CARTESI_PRT_AUTH_MNEMONIC_ACCOUNT_INDEX: 6
 
 services:
   ethereum_provider:

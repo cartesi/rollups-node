@@ -8,10 +8,13 @@ import (
 	"crypto/rand"
 	"encoding/asn1"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -22,7 +25,130 @@ import (
 	"github.com/stretchr/testify/require"
 
 	. "github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
+
+func TestGetTransactOptsFactoryAcceptsVariableAndFileKinds(t *testing.T) {
+	privateKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+	privateKeyText := hex.EncodeToString(crypto.FromECDSA(privateKey))
+	privateKeyAddress := crypto.PubkeyToAddress(privateKey.PublicKey)
+
+	mnemonicKey, err := ethutil.MnemonicToPrivateKey(ethutil.FoundryMnemonic, 4)
+	require.NoError(t, err)
+	mnemonicAddress := crypto.PubkeyToAddress(mnemonicKey.PublicKey)
+
+	tests := []struct {
+		name            string
+		kind            AuthKind
+		expectedAddress common.Address
+	}{
+		{name: "private key variable", kind: AuthKindPrivateKeyVar, expectedAddress: privateKeyAddress},
+		{name: "private key file", kind: AuthKindPrivateKeyFile, expectedAddress: privateKeyAddress},
+		{name: "mnemonic variable", kind: AuthKindMnemonicVar, expectedAddress: mnemonicAddress},
+		{name: "mnemonic file", kind: AuthKindMnemonicFile, expectedAddress: mnemonicAddress},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			factory, err := getTransactOptsFactory(t.Context(), big.NewInt(31337), authGetters{
+				kind: func() (AuthKind, error) { return test.kind, nil },
+				privateKey: func() (RedactedString, error) {
+					return RedactedString{Value: privateKeyText}, nil
+				},
+				mnemonic: func() (RedactedString, error) {
+					return RedactedString{Value: ethutil.FoundryMnemonic}, nil
+				},
+				mnemonicAccountIndex: func() (RedactedUint, error) {
+					return RedactedUint{Value: 4}, nil
+				},
+				awsKMSKeyID: func() (RedactedString, error) {
+					t.Fatal("AWS KMS getter must not be called")
+					return RedactedString{}, nil
+				},
+			})
+			require.NoError(t, err)
+			require.Equal(t, test.expectedAddress, factory.From())
+		})
+	}
+}
+
+func TestGetPrtTransactOptsFactoryUsesOnlyPrtAuth(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		index string
+		want  uint32
+	}{
+		{name: "default", want: 6},
+		{name: "explicit nonzero index", index: "4", want: 4},
+		{name: "explicit zero index", index: "0"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			resetAuthConfig(t)
+			t.Setenv(PRT_AUTH_MNEMONIC_ACCOUNT_INDEX, test.index)
+			viper.Set(AUTH_KIND, "mnemonic")
+			viper.Set(AUTH_MNEMONIC, ethutil.FoundryMnemonic)
+			viper.Set(AUTH_MNEMONIC_ACCOUNT_INDEX, 0)
+			viper.Set(PRT_AUTH_KIND, "mnemonic")
+			viper.Set(PRT_AUTH_MNEMONIC, ethutil.FoundryMnemonic)
+
+			claimerFactory, err := GetTransactOptsFactory(t.Context(), big.NewInt(31337))
+			require.NoError(t, err)
+			prtFactory, err := GetPrtTransactOptsFactory(t.Context(), big.NewInt(31337))
+			require.NoError(t, err)
+			prtKey, err := ethutil.MnemonicToPrivateKey(ethutil.FoundryMnemonic, test.want)
+			require.NoError(t, err)
+			require.Equal(t, crypto.PubkeyToAddress(prtKey.PublicKey), prtFactory.From())
+			if test.want != 0 {
+				require.NotEqual(t, claimerFactory.From(), prtFactory.From())
+			} else {
+				// Operators may configure the same address for both services.
+				require.Equal(t, claimerFactory.From(), prtFactory.From())
+			}
+		})
+	}
+}
+
+func TestGetPrtTransactOptsFactoryDoesNotFallbackToGenericAuth(t *testing.T) {
+	resetAuthConfig(t)
+	privateKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+	viper.Set(AUTH_KIND, "private_key")
+	viper.Set(AUTH_PRIVATE_KEY, hex.EncodeToString(crypto.FromECDSA(privateKey)))
+	viper.Set(PRT_AUTH_KIND, "private_key")
+
+	factory, err := GetPrtTransactOptsFactory(t.Context(), big.NewInt(31337))
+	require.Nil(t, factory)
+	require.ErrorContains(t, err, PRT_AUTH_PRIVATE_KEY)
+}
+
+func TestGetPrtTransactOptsFactoryRequiresPrtMnemonic(t *testing.T) {
+	resetAuthConfig(t)
+	viper.Set(AUTH_KIND, "mnemonic")
+	viper.Set(AUTH_MNEMONIC, ethutil.FoundryMnemonic)
+	viper.Set(PRT_AUTH_KIND, "mnemonic")
+	viper.Set(PRT_AUTH_MNEMONIC, "")
+
+	factory, err := GetPrtTransactOptsFactory(t.Context(), big.NewInt(31337))
+	require.Nil(t, factory)
+	require.ErrorContains(t, err, PRT_AUTH_MNEMONIC)
+}
+
+func TestGetPrtTransactOptsFactoryReadsFileAuth(t *testing.T) {
+	privateKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+	privateKeyText := hex.EncodeToString(crypto.FromECDSA(privateKey))
+	privateKeyFile := filepath.Join(t.TempDir(), "prt-private-key")
+	require.NoError(t, os.WriteFile(privateKeyFile, []byte(privateKeyText), 0o600))
+
+	resetAuthConfig(t)
+	viper.Set(PRT_AUTH_KIND, "private_key_file")
+	viper.Set(PRT_AUTH_PRIVATE_KEY_FILE, privateKeyFile)
+
+	factory, err := GetPrtTransactOptsFactory(t.Context(), big.NewInt(31337))
+	require.NoError(t, err)
+	require.Equal(t, crypto.PubkeyToAddress(privateKey.PublicKey), factory.From())
+}
 
 func TestGetTransactOptsFactoryAWSSignsDynamicFeeTransaction(t *testing.T) {
 	server := newFakeKMSServer(t)
@@ -94,15 +220,21 @@ func TestGetTransactOptsFactoryRejectsInvalidChainID(t *testing.T) {
 	}
 }
 
-func setupAWSAuth(t *testing.T, endpoint string) {
+func resetAuthConfig(t *testing.T) {
 	t.Helper()
 	viper.Reset()
 	viper.AutomaticEnv()
+	SetDefaults()
 	t.Cleanup(func() {
 		viper.Reset()
 		viper.AutomaticEnv()
 		SetDefaults()
 	})
+}
+
+func setupAWSAuth(t *testing.T, endpoint string) {
+	t.Helper()
+	resetAuthConfig(t)
 	viper.Set(AUTH_KIND, "aws")
 	viper.Set(AUTH_AWS_KMS_KEY_ID, "alias/test-key")
 
