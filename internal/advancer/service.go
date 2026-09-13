@@ -10,6 +10,7 @@ import (
 	"log/slog"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/errutil"
 	"github.com/cartesi/rollups-node/internal/manager"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/machine"
@@ -106,23 +107,14 @@ func (s *Service) Tick(ctx context.Context) (bool, error) {
 	// Without this, one failing app delays all healthy apps by a full poll interval.
 	hadWork, err := s.Step(ctx)
 
-	if err == nil {
-		return hadWork, nil
-	}
-	// During shutdown, the machine manager is closed and GetMachine() may
-	// return ErrNoApp. Suppress this to avoid spurious ERR log entries.
-	if errors.Is(err, ErrNoApp) && ctx.Err() != nil {
-		s.Logger.Warn("Tick interrupted by shutdown", "error", err)
-		return hadWork, nil
-	}
-	// Canceled is graceful per the project convention: code paths that
-	// wrap cancellation (e.g. handleSnapshot → createSnapshot →
-	// "failed to update input snapshot URI: %w") would otherwise surface
-	// at ERR via the framework's Tick wrapper. DeadlineExceeded remains a
-	// real failure and is propagated.
-	if errors.Is(err, context.Canceled) {
-		s.Logger.Debug("Tick cancelled (shutdown)", "error", err)
-		return hadWork, nil
+	if ctx.Err() != nil {
+		hadWork = false
+		// Only cancellation caused by service shutdown is quiet. Preserve
+		// independent failures, including those joined with cancellation.
+		if errors.Is(ctx.Err(), context.Canceled) && errutil.IsOnlyCancellation(err) {
+			s.Logger.Debug("Tick canceled during shutdown", "error", err)
+			err = nil
+		}
 	}
 	return hadWork, err
 }

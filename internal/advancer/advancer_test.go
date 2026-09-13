@@ -1427,7 +1427,7 @@ func (s *AdvancerSuite) TestRemoveSnapshot() {
 
 		tmpDir := s.T().TempDir()
 		advancer := &Service{snapshotsDir: tmpDir}
-		serviceArgs := &service.TickServiceConfigs{BaseConfigs: service.BaseConfigs{Name: "advancer"}}
+		serviceArgs := &service.TickServiceConfigs{BaseConfigs: service.BaseConfigs{Name: config.ServiceAdvancer}}
 		require.Nil(service.InitTickServiceTemplate(&advancer.TickServiceTemplate, serviceArgs, advancer))
 
 		// Create a snapshot directory
@@ -1446,7 +1446,7 @@ func (s *AdvancerSuite) TestRemoveSnapshot() {
 
 		tmpDir := s.T().TempDir()
 		advancer := &Service{snapshotsDir: tmpDir}
-		serviceArgs := &service.TickServiceConfigs{BaseConfigs: service.BaseConfigs{Name: "advancer"}}
+		serviceArgs := &service.TickServiceConfigs{BaseConfigs: service.BaseConfigs{Name: config.ServiceAdvancer}}
 		require.Nil(service.InitTickServiceTemplate(&advancer.TickServiceTemplate, serviceArgs, advancer))
 
 		snapshotPath := filepath.Join(tmpDir, "myapp_epoch0_input0")
@@ -1459,7 +1459,7 @@ func (s *AdvancerSuite) TestRemoveSnapshot() {
 
 		tmpDir := s.T().TempDir()
 		advancer := &Service{snapshotsDir: tmpDir}
-		serviceArgs := &service.TickServiceConfigs{BaseConfigs: service.BaseConfigs{Name: "advancer"}}
+		serviceArgs := &service.TickServiceConfigs{BaseConfigs: service.BaseConfigs{Name: config.ServiceAdvancer}}
 		require.Nil(service.InitTickServiceTemplate(&advancer.TickServiceTemplate, serviceArgs, advancer))
 
 		// Try to traverse outside snapshotsDir
@@ -1474,7 +1474,7 @@ func (s *AdvancerSuite) TestRemoveSnapshot() {
 
 		tmpDir := s.T().TempDir()
 		advancer := &Service{snapshotsDir: tmpDir}
-		serviceArgs := &service.TickServiceConfigs{BaseConfigs: service.BaseConfigs{Name: "advancer"}}
+		serviceArgs := &service.TickServiceConfigs{BaseConfigs: service.BaseConfigs{Name: config.ServiceAdvancer}}
 		require.Nil(service.InitTickServiceTemplate(&advancer.TickServiceTemplate, serviceArgs, advancer))
 
 		snapshotPath := filepath.Join(tmpDir, "otherapp_epoch0_input0")
@@ -2064,9 +2064,7 @@ func (s *AdvancerSuite) TestNoSelfWakeOnError() {
 		"reschedule should NOT be signaled on error")
 }
 
-// Error from Step does NOT signal reschedule.
-// Uses the same pattern as FailedAppDoesNotBlockOtherApps, which
-// verifies Step returns an error when one app fails.
+// Progress in one application still requests another tick when another fails.
 func (s *AdvancerSuite) TestPartialSuccessStillReschedules() {
 	require := s.Require()
 
@@ -2289,7 +2287,7 @@ func (mock *MockMachineManager) GetMachine(appID int64) (manager.MachineInstance
 	return instance, true
 }
 
-func (mock *MockMachineManager) UpdateMachines(ctx context.Context) error {
+func (mock *MockMachineManager) UpdateMachines(_ context.Context) error {
 	if mock.UpdateMachinesError != nil {
 		return mock.UpdateMachinesError
 	}
@@ -2342,13 +2340,15 @@ type MockMachineInstance struct {
 }
 
 // Advance implements the MachineInstance interface for testing
-func (m *MockMachineInstance) Advance(ctx context.Context, input []byte, epochIndex uint64, index uint64, leafs bool) (*AdvanceResult, error) {
+func (m *MockMachineInstance) Advance(
+	ctx context.Context, input []byte, epochIndex uint64, index uint64, leafs bool,
+) (*AdvanceResult, error) {
 	m.advanceCalls++
 	return m.machineImpl.Advance(ctx, input, epochIndex, index, leafs)
 }
 
 // Inspect implements the MachineInstance interface for testing
-func (m *MockMachineInstance) Inspect(ctx context.Context, query []byte) (*manager.InspectResult, error) {
+func (m *MockMachineInstance) Inspect(_ context.Context, _ []byte) (*manager.InspectResult, error) {
 	// Not used in advancer tests, but needed to satisfy the interface
 	return nil, nil
 }
@@ -2370,7 +2370,7 @@ func (m *MockMachineInstance) StateProof(_ context.Context) (*StateProof, error)
 }
 
 // CreateSnapshot implements the MachineInstance interface for testing
-func (m *MockMachineInstance) CreateSnapshot(ctx context.Context, processInputs uint64, path string) error {
+func (m *MockMachineInstance) CreateSnapshot(_ context.Context, _ uint64, _ string) error {
 	if m.createSnapshotError != nil && m.destroyAfterSnapshotError {
 		m.machineImpl.AdvanceError = manager.ErrMachineClosed
 		return errors.Join(manager.ErrMachineClosed, m.createSnapshotError)
@@ -2379,7 +2379,7 @@ func (m *MockMachineInstance) CreateSnapshot(ctx context.Context, processInputs 
 }
 
 // Retrieves the hash of the current machine state
-func (m *MockMachineInstance) Hash(ctx context.Context) ([32]byte, error) {
+func (m *MockMachineInstance) Hash(_ context.Context) ([32]byte, error) {
 	// Not used in advancer tests, but needed to satisfy the interface
 	return [32]byte{}, nil
 }
@@ -2430,9 +2430,9 @@ type MockRepository struct {
 func (mock *MockRepository) ListEpochs(
 	ctx context.Context,
 	nameOrAddress string,
-	f repository.EpochFilter,
-	p repository.Pagination,
-	descending bool,
+	_ repository.EpochFilter,
+	_ repository.Pagination,
+	_ bool,
 ) ([]*Epoch, uint64, error) {
 	// Check for context cancellation
 	if ctx.Err() != nil {
@@ -2454,7 +2454,7 @@ func (mock *MockRepository) ListInputs(
 	nameOrAddress string,
 	f repository.InputFilter,
 	p repository.Pagination,
-	descending bool,
+	_ bool,
 ) ([]*Input, uint64, error) {
 	// Check for context cancellation
 	if ctx.Err() != nil {
@@ -2567,7 +2567,7 @@ func (mock *MockRepository) UpdateEpochInputsProcessed(
 	return mock.UpdateEpochsError
 }
 
-func (mock *MockRepository) UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error {
+func (mock *MockRepository) UpdateApplicationStatus(ctx context.Context, _ int64, status ApplicationStatus, reason *string) error {
 	// Check for context cancellation
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -2579,7 +2579,7 @@ func (mock *MockRepository) UpdateApplicationStatus(ctx context.Context, appID i
 	return mock.UpdateApplicationStatusError
 }
 
-func (mock *MockRepository) GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error) {
+func (mock *MockRepository) GetEpoch(ctx context.Context, _ string, _ uint64) (*Epoch, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -2646,7 +2646,7 @@ func (mock *MockRepository) GetLastProcessedInput(ctx context.Context, appAddres
 	return lastInput, nil
 }
 
-func (mock *MockRepository) UpdateInputSnapshotURI(ctx context.Context, appId int64, inputIndex uint64, snapshotURI string) error {
+func (mock *MockRepository) UpdateInputSnapshotURI(ctx context.Context, _ int64, _ uint64, _ string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -2654,7 +2654,7 @@ func (mock *MockRepository) UpdateInputSnapshotURI(ctx context.Context, appId in
 	return mock.UpdateSnapshotURIError
 }
 
-func (mock *MockRepository) GetLastSnapshot(ctx context.Context, nameOrAddress string) (*Input, error) {
+func (mock *MockRepository) GetLastSnapshot(ctx context.Context, _ string) (*Input, error) {
 	// Check for context cancellation
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -2717,19 +2717,19 @@ func randomSliceOfBytes() [][]byte {
 	return slice
 }
 
-func newInput(appId int64, epochIndex uint64, inputIndex uint64, data []byte) *Input {
+func newInput(appID int64, epochIndex uint64, inputIndex uint64, data []byte) *Input {
 	return &Input{
-		EpochApplicationID: appId,
+		EpochApplicationID: appID,
 		EpochIndex:         epochIndex,
 		Index:              inputIndex,
 		RawData:            data,
 	}
 }
 
-func randomInputs(appId int64, epochIndex uint64, size int) []*Input {
+func randomInputs(appID int64, epochIndex uint64, size int) []*Input {
 	slice := make([]*Input, size)
 	for i := range size {
-		slice[i] = newInput(appId, epochIndex, uint64(i), randomBytes())
+		slice[i] = newInput(appID, epochIndex, uint64(i), randomBytes())
 	}
 	return slice
 }
@@ -2770,6 +2770,11 @@ func (s *AdvancerSuite) TestStoreAdvanceShutdownClassification() {
 		{"independent cancellation", false, context.Canceled, nil, context.Canceled},
 		{"storage failure", false, storageErr, nil, storageErr},
 		{"storage failure during shutdown", true, storageErr, nil, storageErr},
+		{"mixed storage failure during shutdown", true, errors.Join(context.Canceled, storageErr), nil, storageErr},
+		{"nested storage failure during shutdown", true,
+			fmt.Errorf("store: %w", errors.Join(storageErr, context.Canceled)), nil, storageErr},
+		{"deadline during shutdown", true, errors.Join(context.Canceled, context.DeadlineExceeded), nil, context.DeadlineExceeded},
+		{"joined shutdown cancellation", true, errors.Join(context.Canceled, context.Canceled), nil, nil},
 		{"close failure during shutdown", true, context.Canceled, closeErr, closeErr},
 	} {
 		s.Run(tc.name, func() {
