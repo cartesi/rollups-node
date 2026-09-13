@@ -6,10 +6,10 @@ package foreclose
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
 
@@ -24,7 +24,7 @@ var Cmd = &cobra.Command{
 	Short:   "Foreclose an application (guardian-only)",
 	Example: examples,
 	Args:    cobra.ExactArgs(1),
-	Run:     run,
+	RunE:    run,
 	Long: `
 Calls IApplication.foreclose() on the application contract. The transaction
 must be signed by the guardian wallet configured at deploy time, otherwise it
@@ -61,6 +61,7 @@ var (
 func init() {
 	Cmd.Flags().BoolVarP(&skipConfirmation, "yes", "y", false, "Skip confirmation prompt")
 	Cmd.Flags().BoolVar(&asJSONParam, "json", false, "Print result as JSON")
+	cli.AddTransactionFlags(Cmd)
 
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
@@ -71,72 +72,92 @@ func init() {
 	})
 }
 
-func run(cmd *cobra.Command, args []string) {
+func run(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	nameOrAddress, err := config.ToApplicationNameOrAddressFromString(args[0])
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	appAddr, err := util.ResolveApplicationAddress(ctx, nameOrAddress)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
 
 	chainID, err := client.ChainID(ctx)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	txOpts, err := cli.GetTransactOpts(ctx, chainID)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	appContract, err := iapplication.NewIApplication(appAddr, client)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	// Surface the guardian / signer mismatch early as a hint, instead of letting
 	// the on-chain revert produce an opaque "NotGuardian" error.
 	guardian, err := appContract.GetGuardian(&bind.CallOpts{Context: ctx})
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 	if guardian != txOpts.From {
-		fmt.Fprintf(os.Stderr,
+		_, err := fmt.Fprintf(cmd.ErrOrStderr(),
 			"warning: signer %s does not match the application guardian %s — foreclose() will revert with NotGuardian\n",
 			txOpts.From, guardian)
-	}
-
-	if !skipConfirmation {
-		fmt.Printf("Preparing to foreclose application %v with signer %v\n",
-			appAddr, txOpts.From)
-
-		confirmed, promptErr := cli.ConfirmPrompt("Do you want to continue?")
-		cobra.CheckErr(promptErr)
-		if !confirmed {
-			fmt.Println("Transaction cancelled")
-			os.Exit(0)
+		if err != nil {
+			return err
 		}
 	}
 
-	tx, err := appContract.Foreclose(txOpts)
-	// go-ethereum's binding returns (signedTx, sendErr) when signing
-	// succeeded but the broadcast/response read failed — the tx may already
-	// be in the mempool. Surface the hash on stderr so the operator can find
-	// it even when CheckErr below aborts.
-	if tx != nil {
-		fmt.Fprintf(os.Stderr, "broadcast attempt sent — tx hash %s\n", tx.Hash().Hex())
+	if !skipConfirmation {
+		_, err := fmt.Fprintf(cmd.ErrOrStderr(), "Preparing to foreclose application %v with signer %v\n",
+			appAddr, txOpts.From)
+		if err != nil {
+			return err
+		}
+
+		confirmed, promptErr := cli.ConfirmPromptTo(cmd.ErrOrStderr(), "Do you want to continue?")
+		if promptErr != nil {
+			return promptErr
+		}
+		if !confirmed {
+			_, err := fmt.Fprintln(cmd.ErrOrStderr(), "Transaction cancelled")
+			return err
+		}
 	}
-	cobra.CheckErr(cli.DecorateRevert(err, iapplication.IApplicationMetaData))
-	txHash := tx.Hash()
+
+	tx, receipt, err := cli.Transact(ctx, cmd, client, txOpts, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+		return appContract.Foreclose(opts)
+	})
+	if err != nil {
+		return cli.DecorateRevert(err, iapplication.IApplicationMetaData)
+	}
 
 	if asJSONParam {
 		result := struct {
-			TransactionHash string         `json:"transaction_hash"`
+			cli.TransactionResult
 			ApplicationAddr common.Address `json:"application_address"`
-		}{TransactionHash: txHash.Hex(), ApplicationAddr: appAddr}
-		jsonBytes, err := json.MarshalIndent(&result, "", "  ")
-		cobra.CheckErr(err)
-		fmt.Println(string(jsonBytes))
-	} else {
-		fmt.Printf("Foreclose tx-hash: %v\n", txHash)
+		}{TransactionResult: cli.NewTransactionResult(tx, receipt), ApplicationAddr: appAddr}
+		encoder := json.NewEncoder(cmd.OutOrStdout())
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(result)
 	}
+	return cli.WriteTransactionResult(cmd, tx, receipt)
 }
