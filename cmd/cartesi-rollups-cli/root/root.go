@@ -14,6 +14,7 @@ import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/inspect"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/provedriveroot"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read"
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/refund"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/send"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/validate"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/withdraw"
@@ -76,6 +77,7 @@ func init() {
 	Cmd.AddCommand(validate.Cmd)
 	Cmd.AddCommand(execute.Cmd)
 	Cmd.AddCommand(foreclose.Cmd)
+	Cmd.AddCommand(refund.Cmd)
 	Cmd.AddCommand(provedriveroot.Cmd)
 	Cmd.AddCommand(withdraw.Cmd)
 	Cmd.AddCommand(app.Cmd)
