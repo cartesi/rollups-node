@@ -407,38 +407,7 @@ func (e ApplicationStatus) IsExecutionTerminal() bool {
 }
 
 func (e *ApplicationStatus) Scan(value any) error {
-	var enumValue string
-	switch val := value.(type) {
-	case string:
-		enumValue = val
-	case []byte:
-		enumValue = string(val)
-	default:
-		return errors.New("invalid value for ApplicationStatus enum. Enum value has to be of type string or []byte")
-	}
-
-	switch enumValue {
-	case "OK":
-		*e = ApplicationStatus_OK
-	case "FAILED":
-		*e = ApplicationStatus_Failed
-	case "DIVERGED":
-		*e = ApplicationStatus_Diverged
-	case "CORRUPTED":
-		*e = ApplicationStatus_Corrupted
-	case "GUEST_EXCEPTION":
-		*e = ApplicationStatus_GuestException
-	case "MACHINE_HALTED":
-		*e = ApplicationStatus_MachineHalted
-	case "MCYCLE_OVERFLOW":
-		*e = ApplicationStatus_McycleOverflow
-	case "UNEXPECTED_YIELD":
-		*e = ApplicationStatus_UnexpectedYield
-	default:
-		return errors.New("invalid value '" + enumValue + "' for ApplicationStatus enum")
-	}
-
-	return nil
+	return scanEnum(e, value, ApplicationStatusAllValues, "ApplicationStatus")
 }
 
 func (e ApplicationStatus) String() string {
@@ -460,28 +429,7 @@ var ConsensusAllValues = []Consensus{
 }
 
 func (e *Consensus) Scan(value any) error {
-	var enumValue string
-	switch val := value.(type) {
-	case string:
-		enumValue = val
-	case []byte:
-		enumValue = string(val)
-	default:
-		return errors.New("invalid value for ConsensusType enum. Enum value has to be of type string or []byte")
-	}
-
-	switch enumValue {
-	case "AUTHORITY":
-		*e = Consensus_Authority
-	case "QUORUM":
-		*e = Consensus_Quorum
-	case "PRT":
-		*e = Consensus_PRT
-	default:
-		return errors.New("invalid value '" + enumValue + "' for Consensus enum")
-	}
-
-	return nil
+	return scanEnum(e, value, ConsensusAllValues, "Consensus")
 }
 
 func (e Consensus) String() string {
@@ -547,28 +495,7 @@ var SnapshotPolicyAllValues = []SnapshotPolicy{
 }
 
 func (e *SnapshotPolicy) Scan(value any) error {
-	var enumValue string
-	switch val := value.(type) {
-	case string:
-		enumValue = val
-	case []byte:
-		enumValue = string(val)
-	default:
-		return errors.New("invalid scan value for SnapshotPolicy enum. Enum value has to be of type string or []byte")
-	}
-
-	switch enumValue {
-	case "NONE":
-		*e = SnapshotPolicy_None
-	case "EVERY_INPUT":
-		*e = SnapshotPolicy_EveryInput
-	case "EVERY_EPOCH":
-		*e = SnapshotPolicy_EveryEpoch
-	default:
-		return errors.New("invalid scan value '" + enumValue + "' for SnapshotPolicy enum")
-	}
-
-	return nil
+	return scanEnum(e, value, SnapshotPolicyAllValues, "SnapshotPolicy")
 }
 
 func (e SnapshotPolicy) String() string {
@@ -997,40 +924,7 @@ var EpochStatusAllValues = []EpochStatus{
 }
 
 func (e *EpochStatus) Scan(value any) error {
-	var enumValue string
-	switch val := value.(type) {
-	case string:
-		enumValue = val
-	case []byte:
-		enumValue = string(val)
-	default:
-		return errors.New("invalid value for EpochStatus enum. Enum value has to be of type string or []byte")
-	}
-
-	switch enumValue {
-	case "OPEN":
-		*e = EpochStatus_Open
-	case "CLOSED":
-		*e = EpochStatus_Closed
-	case "INPUTS_PROCESSED":
-		*e = EpochStatus_InputsProcessed
-	case "CLAIM_COMPUTED":
-		*e = EpochStatus_ClaimComputed
-	case "CLAIM_SUBMITTED":
-		*e = EpochStatus_ClaimSubmitted
-	case "CLAIM_STAGED":
-		*e = EpochStatus_ClaimStaged
-	case "CLAIM_ACCEPTED":
-		*e = EpochStatus_ClaimAccepted
-	case "CLAIM_REJECTED":
-		*e = EpochStatus_ClaimRejected
-	case "CLAIM_FORECLOSED":
-		*e = EpochStatus_ClaimForeclosed
-	default:
-		return errors.New("invalid value '" + enumValue + "' for EpochStatus enum")
-	}
-
-	return nil
+	return scanEnum(e, value, EpochStatusAllValues, "EpochStatus")
 }
 
 func (e EpochStatus) String() string {
@@ -1207,36 +1101,7 @@ func (e InputCompletionStatus) TerminalApplicationStatus() (ApplicationStatus, b
 }
 
 func (e *InputCompletionStatus) Scan(value any) error {
-	var enumValue string
-	switch val := value.(type) {
-	case string:
-		enumValue = val
-	case []byte:
-		enumValue = string(val)
-	default:
-		return errors.New("invalid value for InputCompletionStatus enum. Enum value has to be of type string or []byte")
-	}
-
-	switch enumValue {
-	case "NONE":
-		*e = InputCompletionStatus_None
-	case "ACCEPTED":
-		*e = InputCompletionStatus_Accepted
-	case "REJECTED":
-		*e = InputCompletionStatus_Rejected
-	case "EXCEPTION":
-		*e = InputCompletionStatus_Exception
-	case "MACHINE_HALTED":
-		*e = InputCompletionStatus_MachineHalted
-	case "OVERFLOW":
-		*e = InputCompletionStatus_Overflow
-	case "UNEXPECTED_YIELD":
-		*e = InputCompletionStatus_UnexpectedYield
-	default:
-		return errors.New("invalid value '" + enumValue + "' for InputCompletionStatus enum")
-	}
-
-	return nil
+	return scanEnum(e, value, InputCompletionStatusAllValues, "InputCompletionStatus")
 }
 
 func (e InputCompletionStatus) String() string {
@@ -1580,30 +1445,7 @@ var DefaultBlockAllValues = []DefaultBlock{
 }
 
 func (e *DefaultBlock) Scan(value any) error {
-	var enumValue string
-	switch val := value.(type) {
-	case string:
-		enumValue = val
-	case []byte:
-		enumValue = string(val)
-	default:
-		return errors.New("invalid value for DefaultBlock enum. Enum value has to be of type string or []byte")
-	}
-
-	switch enumValue {
-	case "FINALIZED":
-		*e = DefaultBlock_Finalized
-	case "LATEST":
-		*e = DefaultBlock_Latest
-	case "PENDING":
-		*e = DefaultBlock_Pending
-	case "SAFE":
-		*e = DefaultBlock_Safe
-	default:
-		return errors.New("invalid value '" + enumValue + "' for DefaultBlock enum")
-	}
-
-	return nil
+	return scanEnum(e, value, DefaultBlockAllValues, "DefaultBlock")
 }
 
 func (e DefaultBlock) String() string {
@@ -1855,30 +1697,7 @@ var MatchDeletionReasonAllValues = []MatchDeletionReason{
 }
 
 func (e *MatchDeletionReason) Scan(value any) error {
-	var enumValue string
-	switch val := value.(type) {
-	case string:
-		enumValue = val
-	case []byte:
-		enumValue = string(val)
-	default:
-		return errors.New("invalid value for MatchDeletionReason enum. Enum value has to be of type string or []byte")
-	}
-
-	switch enumValue {
-	case "STEP":
-		*e = MatchDeletionReason_STEP
-	case "TIMEOUT":
-		*e = MatchDeletionReason_TIMEOUT
-	case "CHILD_TOURNAMENT":
-		*e = MatchDeletionReason_CHILD_TOURNAMENT
-	case "NOT_DELETED":
-		*e = MatchDeletionReason_NOT_DELETED
-	default:
-		return errors.New("invalid value '" + enumValue + "' for MatchDeletionReason enum")
-	}
-
-	return nil
+	return scanEnum(e, value, MatchDeletionReasonAllValues, "MatchDeletionReason")
 }
 
 func (e MatchDeletionReason) String() string {
@@ -1916,28 +1735,7 @@ var WinnerCommitmentAllValues = []WinnerCommitment{
 }
 
 func (e *WinnerCommitment) Scan(value any) error {
-	var enumValue string
-	switch val := value.(type) {
-	case string:
-		enumValue = val
-	case []byte:
-		enumValue = string(val)
-	default:
-		return errors.New("invalid value for WinnerCommitment enum. Enum value has to be of type string or []byte")
-	}
-
-	switch enumValue {
-	case "NONE":
-		*e = WinnerCommitment_NONE
-	case "ONE":
-		*e = WinnerCommitment_ONE
-	case "TWO":
-		*e = WinnerCommitment_TWO
-	default:
-		return errors.New("invalid value '" + enumValue + "' for WinnerCommitment enum")
-	}
-
-	return nil
+	return scanEnum(e, value, WinnerCommitmentAllValues, "WinnerCommitment")
 }
 
 func (e WinnerCommitment) String() string {
