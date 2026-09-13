@@ -25,9 +25,10 @@ import (
 )
 
 var Cmd = &cobra.Command{
-	Use:     "cartesi-rollups-cli",
-	Short:   "Command line interface for the Cartesi Rollups Node",
-	Version: version.BuildVersion,
+	Use:          "cartesi-rollups-cli",
+	Short:        "Command line interface for the Cartesi Rollups Node",
+	Version:      version.BuildVersion,
+	SilenceUsage: true,
 }
 
 var (
@@ -59,7 +60,7 @@ func init() {
 
 	// Blockchain gas limit
 	Cmd.PersistentFlags().Uint64Var(&gasLimit, "gas-limit", 0,
-		"Blockchain gas limit")
+		"Transaction gas limit. Zero estimates gas; a nonzero value skips estimation.")
 	cobra.CheckErr(viper.BindPFlag(config.BLOCKCHAIN_GAS_LIMIT, Cmd.PersistentFlags().Lookup("gas-limit")))
 	cobra.CheckErr(Cmd.PersistentFlags().MarkHidden("gas-limit"))
 
