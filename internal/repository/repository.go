@@ -17,6 +17,9 @@ import (
 var (
 	ErrNotFound = errors.New("not found")
 	ErrNoUpdate = errors.New("update did not take effect")
+	// ErrEpochForeclosed means a stale epoch publication lost to foreclosure.
+	// The stored epoch is CLAIM_FORECLOSED; no new claim or proof was stored.
+	ErrEpochForeclosed = errors.New("epoch publication superseded by foreclosure")
 	// ErrApplicationNotRunnable means an advance result cannot be stored because
 	// the application's durable status does not allow machine execution.
 	ErrApplicationNotRunnable = errors.New("application is not runnable")
@@ -45,12 +48,11 @@ type Pagination struct {
 }
 
 type ApplicationFilter struct {
-	Enabled          *bool
-	Status           *ApplicationStatus
-	Statuses         []ApplicationStatus
-	DataAvailability *DataAvailabilitySelector
-	ConsensusType    *Consensus
-	ConsensusTypes   []Consensus
+	Enabled        *bool
+	Status         *ApplicationStatus
+	Statuses       []ApplicationStatus
+	ConsensusType  *Consensus
+	ConsensusTypes []Consensus
 	// ForeclosureRecorded filters by the foreclose_block column: when non-nil
 	// and true, returns only apps whose foreclosure has been observed and
 	// recorded by the evmreader; when non-nil and false, returns only apps
@@ -340,6 +342,7 @@ type BulkOperationsRepository interface {
 }
 
 type NodeConfigRepository interface {
+	InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
 }
@@ -466,14 +469,35 @@ func SaveNodeConfig[T any](
 	return nil
 }
 
+// InitializeNodeConfig saves only a missing key, then returns the stored value.
+// Callers must validate that value against the requested configuration. A
+// concurrent initializer may have won with a different value.
+func InitializeNodeConfig[T any](
+	ctx context.Context, repo NodeConfigRepository, nc *NodeConfig[T],
+) (*NodeConfig[T], error) {
+	data, err := json.Marshal(nc.Value)
+	if err != nil {
+		return nil, fmt.Errorf("marshal initial node_config value: %w", err)
+	}
+	if err := repo.InitializeNodeConfigRaw(ctx, nc.Key, data); err != nil {
+		return nil, fmt.Errorf("initialize node_config %q: %w", nc.Key, err)
+	}
+	return LoadNodeConfig[T](ctx, repo, nc.Key)
+}
+
+// LoadNodeConfig returns a non-nil record when err is nil. A missing JSON payload
+// is an error, even if the repository reports a successful read.
 func LoadNodeConfig[T any](
 	ctx context.Context,
 	repo NodeConfigRepository,
 	key string,
 ) (*NodeConfig[T], error) {
 	raw, createdAt, updatedAt, err := repo.LoadNodeConfigRaw(ctx, key)
-	if err != nil || raw == nil {
+	if err != nil {
 		return nil, err
+	}
+	if raw == nil {
+		return nil, fmt.Errorf("node config %q has no JSON value", key)
 	}
 	var val T
 	if err := json.Unmarshal(raw, &val); err != nil {

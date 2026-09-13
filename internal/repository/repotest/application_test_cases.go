@@ -79,7 +79,6 @@ func (s *ApplicationSuite) TestGetApplication() {
 		s.Equal(app.ConsensusType, got.ConsensusType)
 		s.Equal(app.Enabled, got.Enabled)
 		s.Equal(app.Status, got.Status)
-		s.Equal(app.DataAvailability, got.DataAvailability)
 		s.False(got.CreatedAt.IsZero(), "CreatedAt should be set")
 		s.False(got.UpdatedAt.IsZero(), "UpdatedAt should be set")
 	})
@@ -183,29 +182,6 @@ func (s *ApplicationSuite) TestListApplications() {
 		s.Equal(Consensus_PRT, apps[0].ConsensusType)
 	})
 
-	s.Run("FilterByDataAvailability", func() {
-		NewApplicationBuilder().
-			WithDataAvailability(DataAvailability_InputBox[:]).
-			Create(s.Ctx, s.T(), s.Repo)
-		// Create another app with a different DA selector
-		otherDA := DataAvailabilitySelector{0xaa, 0xbb, 0xcc, 0xdd}
-		NewApplicationBuilder().
-			WithDataAvailability(otherDA[:]).
-			Create(s.Ctx, s.T(), s.Repo)
-
-		da := DataAvailability_InputBox
-		apps, total, err := s.Repo.ListApplications(
-			s.Ctx,
-			repository.ApplicationFilter{DataAvailability: &da},
-			repository.Pagination{Limit: 10},
-			false,
-		)
-		s.Require().NoError(err)
-		s.Len(apps, 1)
-		s.Equal(uint64(1), total)
-		s.Equal(DataAvailability_InputBox[:], apps[0].DataAvailability[:4])
-	})
-
 	s.Run("Pagination", func() {
 		for range 5 {
 			NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
@@ -245,24 +221,23 @@ func (s *ApplicationSuite) TestListApplications() {
 		// Descending: second created should be first
 		s.Equal(a2.ID, apps[0].ID)
 		s.Equal(a1.ID, apps[1].ID)
+		s.Equal(a2.IInputBoxAddress, apps[0].IInputBoxAddress)
+		s.Equal(a1.IInputBoxAddress, apps[1].IInputBoxAddress)
 	})
 
 	s.Run("CombinedFilters", func() {
-		// Create apps with different combinations of enabled flag, status, consensus, and DA.
+		// Create apps with different combinations of enabled flag, status, and consensus.
 		NewApplicationBuilder().
 			WithStatus(ApplicationStatus_OK).
 			WithConsensus(Consensus_Authority).
-			WithDataAvailability(DataAvailability_InputBox[:]).
 			Create(s.Ctx, s.T(), s.Repo)
 		NewApplicationBuilder().
 			WithStatus(ApplicationStatus_OK).
 			WithConsensus(Consensus_PRT).
-			WithDataAvailability(DataAvailability_InputBox[:]).
 			Create(s.Ctx, s.T(), s.Repo)
 		NewApplicationBuilder().
 			WithEnabled(false).
 			WithConsensus(Consensus_Authority).
-			WithDataAvailability(DataAvailability_InputBox[:]).
 			Create(s.Ctx, s.T(), s.Repo)
 
 		enabled := true
@@ -313,35 +288,6 @@ func (s *ApplicationSuite) TestListApplications() {
 		s.Len(got, 1)
 		s.Equal(uint64(1), total)
 		s.NotEqual(foreclosed.ID, got[0].ID)
-	})
-
-	s.Run("CombinedStateAndDataAvailability", func() {
-		NewApplicationBuilder().
-			WithStatus(ApplicationStatus_OK).
-			WithDataAvailability(DataAvailability_InputBox[:]).
-			Create(s.Ctx, s.T(), s.Repo)
-
-		otherDA := DataAvailabilitySelector{0xaa, 0xbb, 0xcc, 0xdd}
-		NewApplicationBuilder().
-			WithStatus(ApplicationStatus_OK).
-			WithDataAvailability(otherDA[:]).
-			Create(s.Ctx, s.T(), s.Repo)
-
-		status := ApplicationStatus_OK
-		da := DataAvailability_InputBox
-		apps, total, err := s.Repo.ListApplications(
-			s.Ctx,
-			repository.ApplicationFilter{
-				Status:           &status,
-				DataAvailability: &da,
-			},
-			repository.Pagination{Limit: 10},
-			false,
-		)
-		s.Require().NoError(err)
-		s.Len(apps, 1)
-		s.Equal(uint64(1), total)
-		s.Equal(DataAvailability_InputBox[:], apps[0].DataAvailability[:4])
 	})
 }
 
@@ -1091,12 +1037,14 @@ func (s *ApplicationSuite) TestUpdateApplication() {
 	s.Run("UpdatesFields", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 		app.EpochLength = 20
+		app.IInputBoxAddress = UniqueAddress()
 		err := s.Repo.UpdateApplication(s.Ctx, app)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
 		s.Equal(uint64(20), got.EpochLength)
+		s.Equal(app.IInputBoxAddress, got.IInputBoxAddress)
 	})
 
 	// UpdateApplication must not touch status or foreclosure columns. Those
