@@ -268,7 +268,7 @@ func executeOutput(ctx context.Context, appName string, index uint64) (string, e
 	if err != nil {
 		return "", fmt.Errorf("execute: %w", err)
 	}
-	var result cli.ExecuteResult
+	var result cli.TransactionResult
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
 		return "", fmt.Errorf("parse execute output: %w", err)
 	}
