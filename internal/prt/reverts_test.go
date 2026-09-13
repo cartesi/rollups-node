@@ -15,10 +15,18 @@ import (
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+)
+
+const (
+	executionRevertedError = "execution reverted"
+	applicationForeclosed  = "ApplicationForeclosed"
 )
 
 // daveConsensusRevertError creates a typed IDaveConsensus revert carrying only
@@ -32,7 +40,7 @@ func daveConsensusRevertError(name string) error {
 	if !ok {
 		panic(fmt.Sprintf("unknown IDaveConsensus error: %s", name))
 	}
-	return &rpcDataError{code: 3, msg: "execution reverted", data: fmt.Sprintf("0x%x", abiErr.ID[:4])}
+	return &rpcDataError{code: 3, msg: executionRevertedError, data: fmt.Sprintf("0x%x", abiErr.ID[:4])}
 }
 
 // daveRevertWithArgs creates a typed IDaveConsensus revert carrying the given
@@ -51,7 +59,7 @@ func daveRevertWithArgs(name string, args ...any) error {
 		panic(err)
 	}
 	payload := append(append([]byte{}, abiErr.ID[:4]...), packed...)
-	return &rpcDataError{code: 3, msg: "execution reverted", data: fmt.Sprintf("0x%x", payload)}
+	return &rpcDataError{code: 3, msg: executionRevertedError, data: fmt.Sprintf("0x%x", payload)}
 }
 
 // tournamentRevertError creates a typed ITournament revert carrying only the
@@ -65,7 +73,7 @@ func tournamentRevertError(name string) error {
 	if !ok {
 		panic(fmt.Sprintf("unknown ITournament error: %s", name))
 	}
-	return &rpcDataError{code: 3, msg: "execution reverted", data: fmt.Sprintf("0x%x", abiErr.ID[:4])}
+	return &rpcDataError{code: 3, msg: executionRevertedError, data: fmt.Sprintf("0x%x", abiErr.ID[:4])}
 }
 
 func prtRevertTestApp() *model.Application {
@@ -73,6 +81,7 @@ func prtRevertTestApp() *model.Application {
 		ID:                  7,
 		Name:                "prt-app",
 		IApplicationAddress: common.BigToAddress(common.Big1),
+		IConsensusAddress:   common.HexToAddress("0x100"),
 		ConsensusType:       model.Consensus_PRT,
 		Status:              model.ApplicationStatus_OK,
 		Enabled:             true,
@@ -82,10 +91,12 @@ func prtRevertTestApp() *model.Application {
 func prtRevertTestEpoch() *model.Epoch {
 	tournament := common.BigToAddress(common.Big2)
 	commitment := common.HexToHash("0xabcd")
+	machineHash := common.HexToHash("0x1234")
 	return &model.Epoch{
 		Index:             3,
 		TournamentAddress: &tournament,
 		Commitment:        &commitment,
+		MachineHash:       &machineHash,
 	}
 }
 
@@ -104,142 +115,161 @@ func reasonContains(substrings ...string) func(*string) bool {
 	}
 }
 
-// TestHandleSettleRevert covers the Settle revert classification: already
-// settled and transient conditions retry silently, bad local proofs mark the
-// app CORRUPTED, a consensus/application binding mismatch marks it FAILED,
-// and unknown errors propagate unchanged.
-func TestHandleSettleRevert(t *testing.T) {
-	const epochNumber = uint64(3)
+func TestHandleStageTournamentResultRevert(t *testing.T) {
+	epoch := prtRevertTestEpoch()
 
-	t.Run("IncorrectEpochNumber_undecodable_waitsForEventSync", func(t *testing.T) {
-		s, r := newPRTServiceMock()
-		defer r.AssertExpectations(t)
-		err := s.handleSettleRevert(context.Background(), prtRevertTestApp(), epochNumber,
-			daveConsensusRevertError("IncorrectEpochNumber"))
-		assert.NoError(t, err)
-	})
-
-	t.Run("IncorrectEpochNumber_behind_waitsForEventSync", func(t *testing.T) {
-		s, r := newPRTServiceMock()
-		defer r.AssertExpectations(t)
-		// received 3 < actual 5: the chain settled past us — already settled.
-		err := s.handleSettleRevert(context.Background(), prtRevertTestApp(), epochNumber,
-			daveRevertWithArgs("IncorrectEpochNumber", big.NewInt(3), big.NewInt(5)))
-		assert.NoError(t, err)
-	})
-
-	t.Run("IncorrectEpochNumber_ahead_setsFailed", func(t *testing.T) {
-		s, r := newPRTServiceMock()
-		defer r.AssertExpectations(t)
-		app := prtRevertTestApp()
-		// received 7 > actual 5: local epoch index is ahead of the chain —
-		// waiting for event sync would stall silently forever.
-		r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed,
-			mock.MatchedBy(reasonContains(
-				"IncorrectEpochNumber", "epoch 7", "epoch 5", "ahead", "before re-enabling"))).
-			Return(nil).Once()
-		err := s.handleSettleRevert(context.Background(), app, epochNumber,
-			daveRevertWithArgs("IncorrectEpochNumber", big.NewInt(7), big.NewInt(5)))
-		assert.NoError(t, err)
-	})
-
-	t.Run("TournamentNotFinishedYet_retries", func(t *testing.T) {
-		s, r := newPRTServiceMock()
-		defer r.AssertExpectations(t)
-		err := s.handleSettleRevert(context.Background(), prtRevertTestApp(), epochNumber,
-			daveConsensusRevertError("TournamentNotFinishedYet"))
-		assert.NoError(t, err, "a CanSettle/simulation race must retry, not surface an error")
-	})
-
-	for _, revertName := range []string{
-		"InvalidOutputsMerkleRootProofSize",
-		"InvalidOutputsMerkleRootProof",
+	for _, name := range []string{
+		"TournamentResultAlreadyStaged",
+		"TournamentNotFinishedYet",
+		applicationForeclosed,
 	} {
-		t.Run(revertName+"_setsCorrupted", func(t *testing.T) {
+		t.Run(name+"_waitsForSynchronization", func(t *testing.T) {
 			s, r := newPRTServiceMock()
 			defer r.AssertExpectations(t)
-			app := prtRevertTestApp()
-			r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Corrupted,
-				mock.MatchedBy(reasonContains("Settle reverted with "+revertName, "epoch 3"))).
-				Return(nil).Once()
-			err := s.handleSettleRevert(context.Background(), app, epochNumber,
-				daveConsensusRevertError(revertName))
-			assert.Error(t, err, "CORRUPTED is terminal; the handler must return the reason error")
+			err := s.handleStageTournamentResultRevert(
+				context.Background(), prtRevertTestApp(), epoch, daveConsensusRevertError(name))
+			assert.NoError(t, err)
 		})
 	}
 
-	t.Run("ApplicationForeclosed_retries", func(t *testing.T) {
-		s, r := newPRTServiceMock()
-		defer r.AssertExpectations(t)
-		err := s.handleSettleRevert(context.Background(), prtRevertTestApp(), epochNumber,
-			daveConsensusRevertError("ApplicationForeclosed"))
-		assert.NoError(t, err, "must retry while the EVM reader records the foreclosure marker")
-	})
+	for _, name := range []string{
+		"InvalidSiblingsArrayLength",
+		"InvalidMachineMerkleProof",
+		"InvalidPostEpochMachineIflagsYRegister",
+		"InvalidPostEpochMachineHtifTohostRegister",
+	} {
+		t.Run(name+"_setsFailed", func(t *testing.T) {
+			s, r := newPRTServiceMock()
+			app := prtRevertTestApp()
+			testEpoch := epoch
+			if name == "InvalidMachineMerkleProof" {
+				testEpoch = resultTestEpoch(model.EpochStatus_ClaimComputed)
+				snapshot := resultTestSnapshot(testEpoch, false)
+				client := &ethClientMock{}
+				client.On("HeaderByNumber", mock.Anything, big.NewInt(rpc.FinalizedBlockNumber.Int64())).
+					Return(&types.Header{Number: big.NewInt(20)}, nil).Once()
+				consensus := &daveConsensusAdapterMock{}
+				opts := mock.MatchedBy(resultCallOptsAtBlock(20))
+				consensus.On("GetCurrentSealedEpoch", opts).Return(snapshot.sealed, nil).Once()
+				consensus.On("CanStageTournamentResult", opts).Return(snapshot.stage, nil).Once()
+				consensus.On("CanAcceptStagedTournamentResult", opts).Return(snapshot.accept, nil).Once()
+				factory := &adapterFactoryMock{}
+				factory.On("CreateDaveConsensusAdapter", app.IConsensusAddress).Return(consensus, nil).Once()
+				s.client = client
+				s.defaultBlock = model.DefaultBlock_Finalized
+				s.adapterFactory = factory
+				defer client.AssertExpectations(t)
+				defer consensus.AssertExpectations(t)
+				defer factory.AssertExpectations(t)
+			}
+			guidance := "Check proof serialization"
+			if name == "InvalidPostEpochMachineIflagsYRegister" || name == "InvalidPostEpochMachineHtifTohostRegister" {
+				guidance = "The proven post-epoch machine state cannot finalize"
+			}
+			r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed,
+				mock.MatchedBy(reasonContains("StageTournamentResult", name, "epoch 3", guidance))).
+				Return(nil).Once()
+			assert.NoError(t, s.handleStageTournamentResultRevert(
+				context.Background(), app, testEpoch, daveConsensusRevertError(name)))
+			r.AssertExpectations(t)
+		})
+	}
 
-	t.Run("ApplicationNotDeployed_setsFailed", func(t *testing.T) {
+	t.Run("TournamentFailedNoWinner_waitsForConfirmation", func(t *testing.T) {
 		s, r := newPRTServiceMock()
-		defer r.AssertExpectations(t)
 		app := prtRevertTestApp()
-		r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed,
-			mock.MatchedBy(reasonContains(
-				"Settle reverted with ApplicationNotDeployed", "epoch 3", "before re-enabling"))).
-			Return(nil).Once()
-		err := s.handleSettleRevert(context.Background(), app, epochNumber,
-			daveConsensusRevertError("ApplicationNotDeployed"))
-		// SetFailedf returns nil on success; the FAILED write itself is
-		// asserted by the mock expectation above.
-		assert.NoError(t, err)
+		assert.NoError(t, s.handleStageTournamentResultRevert(
+			context.Background(), app, epoch, tournamentRevertError("TournamentFailedNoWinner")))
+		assert.Equal(t, model.ApplicationStatus_OK, app.Status)
+		r.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+		r.AssertExpectations(t)
 	})
 
-	t.Run("ApplicationReverted_setsFailedWithReturnData", func(t *testing.T) {
+	t.Run("IncorrectEpochNumber_behind_waitsForSynchronization", func(t *testing.T) {
 		s, r := newPRTServiceMock()
 		defer r.AssertExpectations(t)
+		assert.NoError(t, s.handleStageTournamentResultRevert(context.Background(), prtRevertTestApp(), epoch,
+			daveRevertWithArgs("IncorrectEpochNumber", big.NewInt(3), big.NewInt(5))))
+	})
+
+	t.Run("IncorrectEpochNumber_ahead_retriesWithoutStatusChange", func(t *testing.T) {
+		s, r := newPRTServiceMock()
 		app := prtRevertTestApp()
-		r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed,
-			mock.MatchedBy(reasonContains(
-				"Settle reverted with ApplicationReverted", "epoch 3",
-				"Application return data: 0xdead", "before re-enabling"))).
-			Return(nil).Once()
-		err := s.handleSettleRevert(context.Background(), app, epochNumber,
-			daveRevertWithArgs("ApplicationReverted",
-				common.BigToAddress(common.Big1), []byte{0xde, 0xad}))
-		assert.NoError(t, err)
+		boom := daveRevertWithArgs("IncorrectEpochNumber", big.NewInt(7), big.NewInt(5))
+		assert.ErrorIs(t, s.handleStageTournamentResultRevert(context.Background(), app, epoch, boom), boom)
+		assert.Equal(t, model.ApplicationStatus_OK, app.Status)
+		r.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+		r.AssertExpectations(t)
 	})
 
-	t.Run("IllformedApplicationReturnData_setsFailed", func(t *testing.T) {
-		s, r := newPRTServiceMock()
-		defer r.AssertExpectations(t)
-		app := prtRevertTestApp()
-		r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed,
-			mock.MatchedBy(reasonContains(
-				"Settle reverted with IllformedApplicationReturnData", "epoch 3",
-				"before re-enabling"))).
-			Return(nil).Once()
-		err := s.handleSettleRevert(context.Background(), app, epochNumber,
-			daveConsensusRevertError("IllformedApplicationReturnData"))
-		assert.NoError(t, err)
-	})
+	for _, name := range []string{"ApplicationReverted", "IllformedApplicationReturnData"} {
+		t.Run(name+"_setsFailedWithReturnData", func(t *testing.T) {
+			s, r := newPRTServiceMock()
+			app := prtRevertTestApp()
+			r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed,
+				mock.MatchedBy(reasonContains("StageTournamentResult", name, "0xdead"))).
+				Return(nil).Once()
+			assert.NoError(t, s.handleStageTournamentResultRevert(context.Background(), app, epoch,
+				daveRevertWithArgs(name, common.BigToAddress(common.Big1), []byte{0xde, 0xad})))
+			assert.Equal(t, model.ApplicationStatus_Failed, app.Status)
+			r.AssertExpectations(t)
+		})
+	}
 
-	t.Run("NonceTooLow_retries", func(t *testing.T) {
+	t.Run("NonceTooLow_waitsForSynchronization", func(t *testing.T) {
 		s, r := newPRTServiceMock()
 		defer r.AssertExpectations(t)
-		err := s.handleSettleRevert(context.Background(), prtRevertTestApp(), epochNumber,
-			errors.New("nonce too low"))
-		assert.NoError(t, err)
+		assert.NoError(t, s.handleStageTournamentResultRevert(
+			context.Background(), prtRevertTestApp(), epoch, errors.New("nonce too low")))
 	})
 
 	t.Run("unknown_propagates", func(t *testing.T) {
 		s, r := newPRTServiceMock()
 		defer r.AssertExpectations(t)
 		boom := errors.New("boom")
-		err := s.handleSettleRevert(context.Background(), prtRevertTestApp(), epochNumber, boom)
-		assert.Equal(t, boom, err)
+		assert.ErrorIs(t, s.handleStageTournamentResultRevert(
+			context.Background(), prtRevertTestApp(), epoch, boom), boom)
+	})
+}
+
+func TestHandleAcceptTournamentResultRevert(t *testing.T) {
+	epoch := prtRevertTestEpoch()
+	for _, name := range []string{
+		"TournamentResultNotStaged",
+		"ClaimStagingPeriodNotOverYet",
+		applicationForeclosed,
+	} {
+		t.Run(name+"_waitsForSynchronization", func(t *testing.T) {
+			s, r := newPRTServiceMock()
+			defer r.AssertExpectations(t)
+			assert.NoError(t, s.handleAcceptTournamentResultRevert(
+				context.Background(), prtRevertTestApp(), epoch, daveConsensusRevertError(name)))
+		})
+	}
+
+	t.Run("ApplicationNotDeployed_setsFailed", func(t *testing.T) {
+		s, r := newPRTServiceMock()
+		app := prtRevertTestApp()
+		r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed,
+			mock.MatchedBy(reasonContains("AcceptStagedTournamentResult", "ApplicationNotDeployed"))).
+			Return(nil).Once()
+		assert.NoError(t, s.handleAcceptTournamentResultRevert(
+			context.Background(), app, epoch, daveConsensusRevertError("ApplicationNotDeployed")))
+		r.AssertExpectations(t)
+	})
+
+	t.Run("unknown_propagates", func(t *testing.T) {
+		s, r := newPRTServiceMock()
+		defer r.AssertExpectations(t)
+		boom := errors.New("factory failed")
+		assert.ErrorIs(t, s.handleAcceptTournamentResultRevert(
+			context.Background(), prtRevertTestApp(), epoch, boom), boom)
 	})
 }
 
 // TestHandleJoinTournamentRevert covers the JoinTournament revert
 // classification: an already-joined commitment retries silently (whether
-// detected via ClockAlreadyInitialized or via the IsCommitmentJoined re-check
+// detected via ClockAlreadyInitialized or via the CommitmentStanding re-check
 // behind a window revert), a genuinely missed join window marks the app
 // FAILED, bad local commitment proofs mark it CORRUPTED, and unknown errors
 // propagate.
@@ -253,7 +283,7 @@ func TestHandleJoinTournamentRevert(t *testing.T) {
 	})
 
 	for _, revertName := range []string{"TournamentIsClosed", "TournamentIsFinished"} {
-		t.Run(revertName+"_notJoined_setsFailed", func(t *testing.T) {
+		t.Run(revertName+"_confirmedNotJoined_setsFailed", func(t *testing.T) {
 			s, r := newPRTServiceMock()
 			defer r.AssertExpectations(t)
 			app := prtRevertTestApp()
@@ -266,11 +296,51 @@ func TestHandleJoinTournamentRevert(t *testing.T) {
 					"before re-enabling"))).
 				Return(nil).Once()
 			adapter := &tournamentAdapterMock{}
-			adapter.On("IsCommitmentJoined", mock.Anything, [32]byte(*epoch.Commitment)).Return(false, nil).Once()
+			adapter.On("CommitmentStanding", mock.MatchedBy(func(opts *bind.CallOpts) bool {
+				return opts != nil && opts.BlockNumber == nil
+			}), [32]byte(*epoch.Commitment)).
+				Return(CommitmentStanding{}, nil).Once()
+			opts := mock.MatchedBy(resultCallOptsAtBlock(20))
+			adapter.On("Standing", opts).
+				Return(TournamentStanding{State: model.TournamentStandingRootFailed, FinishedAt: 19}, nil).Once()
+			adapter.On("CommitmentStanding", opts, [32]byte(*epoch.Commitment)).
+				Return(CommitmentStanding{}, nil).Once()
+			client := &ethClientMock{}
+			client.On("HeaderByNumber", mock.Anything, big.NewInt(rpc.FinalizedBlockNumber.Int64())).
+				Return(&types.Header{Number: big.NewInt(20)}, nil).Once()
+			s.client = client
+			s.defaultBlock = model.DefaultBlock_Finalized
 			err := s.handleJoinTournamentRevert(context.Background(), app, epoch,
 				adapter, tournamentRevertError(revertName))
 			assert.NoError(t, err)
+			assert.Equal(t, model.ApplicationStatus_Failed, app.Status)
 			adapter.AssertExpectations(t)
+			client.AssertExpectations(t)
+		})
+
+		t.Run(revertName+"_configuredWindowOpen_waitsForConfirmation", func(t *testing.T) {
+			s, r := newPRTServiceMock()
+			app := prtRevertTestApp()
+			epoch := prtRevertTestEpoch()
+			adapter := &tournamentAdapterMock{}
+			adapter.On("CommitmentStanding", mock.MatchedBy(func(opts *bind.CallOpts) bool {
+				return opts != nil && opts.BlockNumber == nil
+			}), [32]byte(*epoch.Commitment)).Return(CommitmentStanding{}, nil).Once()
+			adapter.On("Standing", mock.MatchedBy(resultCallOptsAtBlock(20))).
+				Return(TournamentStanding{State: model.TournamentStandingAwaitingClosure, AcceptsJoins: true}, nil).Once()
+			client := &ethClientMock{}
+			client.On("HeaderByNumber", mock.Anything, big.NewInt(rpc.FinalizedBlockNumber.Int64())).
+				Return(&types.Header{Number: big.NewInt(20)}, nil).Once()
+			s.client = client
+			s.defaultBlock = model.DefaultBlock_Finalized
+
+			assert.NoError(t, s.handleJoinTournamentRevert(context.Background(), app, epoch,
+				adapter, tournamentRevertError(revertName)))
+			assert.Equal(t, model.ApplicationStatus_OK, app.Status)
+			r.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+			r.AssertExpectations(t)
+			adapter.AssertExpectations(t)
+			client.AssertExpectations(t)
 		})
 	}
 
@@ -283,7 +353,8 @@ func TestHandleJoinTournamentRevert(t *testing.T) {
 		defer r.AssertExpectations(t)
 		epoch := prtRevertTestEpoch()
 		adapter := &tournamentAdapterMock{}
-		adapter.On("IsCommitmentJoined", mock.Anything, [32]byte(*epoch.Commitment)).Return(true, nil).Once()
+		adapter.On("CommitmentStanding", mock.Anything, [32]byte(*epoch.Commitment)).
+			Return(CommitmentStanding{Joined: true, FinalState: *epoch.MachineHash}, nil).Once()
 		err := s.handleJoinTournamentRevert(context.Background(), prtRevertTestApp(), epoch,
 			adapter, tournamentRevertError("TournamentIsClosed"))
 		assert.NoError(t, err, "an already-joined commitment must not mark the app FAILED")
@@ -295,7 +366,8 @@ func TestHandleJoinTournamentRevert(t *testing.T) {
 		defer r.AssertExpectations(t)
 		epoch := prtRevertTestEpoch()
 		adapter := &tournamentAdapterMock{}
-		adapter.On("IsCommitmentJoined", mock.Anything, [32]byte(*epoch.Commitment)).Return(false, errors.New("rpc down")).Once()
+		adapter.On("CommitmentStanding", mock.Anything, [32]byte(*epoch.Commitment)).
+			Return(CommitmentStanding{}, errors.New("rpc down")).Once()
 		boom := tournamentRevertError("TournamentIsClosed")
 		err := s.handleJoinTournamentRevert(context.Background(), prtRevertTestApp(), epoch,
 			adapter, boom)
