@@ -68,6 +68,11 @@ const (
 	LOG_LEVEL_PRT                                     = "CARTESI_LOG_LEVEL_PRT"
 	LOG_LEVEL_VALIDATOR                               = "CARTESI_LOG_LEVEL_VALIDATOR"
 	JSONRPC_MACHINE_LOG_LEVEL                         = "CARTESI_JSONRPC_MACHINE_LOG_LEVEL"
+	PRT_AUTH_AWS_KMS_KEY_ID                           = "CARTESI_PRT_AUTH_AWS_KMS_KEY_ID"
+	PRT_AUTH_KIND                                     = "CARTESI_PRT_AUTH_KIND"
+	PRT_AUTH_MNEMONIC                                 = "CARTESI_PRT_AUTH_MNEMONIC"
+	PRT_AUTH_MNEMONIC_ACCOUNT_INDEX                   = "CARTESI_PRT_AUTH_MNEMONIC_ACCOUNT_INDEX"
+	PRT_AUTH_PRIVATE_KEY                              = "CARTESI_PRT_AUTH_PRIVATE_KEY"
 	ADVANCER_INPUT_BATCH_SIZE                         = "CARTESI_ADVANCER_INPUT_BATCH_SIZE"
 	ADVANCER_POLLING_INTERVAL                         = "CARTESI_ADVANCER_POLLING_INTERVAL"
 	BLOCKCHAIN_GAS_LIMIT                              = "CARTESI_BLOCKCHAIN_GAS_LIMIT"
@@ -94,6 +99,10 @@ const (
 	BLOCKCHAIN_HTTP_ENDPOINT_FILE      = "CARTESI_BLOCKCHAIN_HTTP_ENDPOINT_FILE"
 
 	DATABASE_CONNECTION_FILE = "CARTESI_DATABASE_CONNECTION_FILE"
+
+	PRT_AUTH_MNEMONIC_FILE = "CARTESI_PRT_AUTH_MNEMONIC_FILE"
+
+	PRT_AUTH_PRIVATE_KEY_FILE = "CARTESI_PRT_AUTH_PRIVATE_KEY_FILE"
 )
 
 func SetDefaults() {
@@ -190,6 +199,16 @@ func SetDefaults() {
 	// no default for CARTESI_LOG_LEVEL_VALIDATOR
 
 	viper.SetDefault(JSONRPC_MACHINE_LOG_LEVEL, "info")
+
+	// no default for CARTESI_PRT_AUTH_AWS_KMS_KEY_ID
+
+	viper.SetDefault(PRT_AUTH_KIND, "mnemonic")
+
+	// no default for CARTESI_PRT_AUTH_MNEMONIC
+
+	viper.SetDefault(PRT_AUTH_MNEMONIC_ACCOUNT_INDEX, "6")
+
+	// no default for CARTESI_PRT_AUTH_PRIVATE_KEY
 
 	viper.SetDefault(ADVANCER_INPUT_BATCH_SIZE, "500")
 
@@ -2343,6 +2362,87 @@ func GetJsonrpcMachineLogLevel() (string, error) {
 		return v, nil
 	}
 	return notDefinedstring(), fmt.Errorf("%s: %w", JSONRPC_MACHINE_LOG_LEVEL, ErrNotDefined)
+}
+
+// GetPrtAuthAwsKmsKeyId returns the value for the environment variable CARTESI_PRT_AUTH_AWS_KMS_KEY_ID.
+func GetPrtAuthAwsKmsKeyId() (RedactedString, error) {
+	s := viper.GetString(PRT_AUTH_AWS_KMS_KEY_ID)
+	if s != "" {
+		v, err := toRedactedString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", PRT_AUTH_AWS_KMS_KEY_ID, err)
+		}
+		return v, nil
+	}
+	return notDefinedRedactedString(), fmt.Errorf("%s: %w", PRT_AUTH_AWS_KMS_KEY_ID, ErrNotDefined)
+}
+
+// GetPrtAuthKind returns the value for the environment variable CARTESI_PRT_AUTH_KIND.
+func GetPrtAuthKind() (AuthKind, error) {
+	s := viper.GetString(PRT_AUTH_KIND)
+	if s != "" {
+		v, err := toAuthKind(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", PRT_AUTH_KIND, err)
+		}
+		return v, nil
+	}
+	return notDefinedAuthKind(), fmt.Errorf("%s: %w", PRT_AUTH_KIND, ErrNotDefined)
+}
+
+// GetPrtAuthMnemonic returns the value for the environment variable CARTESI_PRT_AUTH_MNEMONIC.
+func GetPrtAuthMnemonic() (RedactedString, error) {
+	s := viper.GetString(PRT_AUTH_MNEMONIC)
+	if s == "" {
+		filename := viper.GetString(PRT_AUTH_MNEMONIC_FILE)
+		contents, err := os.ReadFile(filename)
+		if err != nil {
+			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", PRT_AUTH_MNEMONIC_FILE, err)
+		}
+		s = strings.TrimSpace(string(contents))
+	}
+	if s != "" {
+		v, err := toRedactedString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", PRT_AUTH_MNEMONIC, err)
+		}
+		return v, nil
+	}
+	return notDefinedRedactedString(), fmt.Errorf("%s: %w", PRT_AUTH_MNEMONIC, ErrNotDefined)
+}
+
+// GetPrtAuthMnemonicAccountIndex returns the value for the environment variable CARTESI_PRT_AUTH_MNEMONIC_ACCOUNT_INDEX.
+func GetPrtAuthMnemonicAccountIndex() (RedactedUint, error) {
+	s := viper.GetString(PRT_AUTH_MNEMONIC_ACCOUNT_INDEX)
+	if s != "" {
+		v, err := toRedactedUint(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", PRT_AUTH_MNEMONIC_ACCOUNT_INDEX, err)
+		}
+		return v, nil
+	}
+	return notDefinedRedactedUint(), fmt.Errorf("%s: %w", PRT_AUTH_MNEMONIC_ACCOUNT_INDEX, ErrNotDefined)
+}
+
+// GetPrtAuthPrivateKey returns the value for the environment variable CARTESI_PRT_AUTH_PRIVATE_KEY.
+func GetPrtAuthPrivateKey() (RedactedString, error) {
+	s := viper.GetString(PRT_AUTH_PRIVATE_KEY)
+	if s == "" {
+		filename := viper.GetString(PRT_AUTH_PRIVATE_KEY_FILE)
+		contents, err := os.ReadFile(filename)
+		if err != nil {
+			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", PRT_AUTH_PRIVATE_KEY_FILE, err)
+		}
+		s = strings.TrimSpace(string(contents))
+	}
+	if s != "" {
+		v, err := toRedactedString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", PRT_AUTH_PRIVATE_KEY, err)
+		}
+		return v, nil
+	}
+	return notDefinedRedactedString(), fmt.Errorf("%s: %w", PRT_AUTH_PRIVATE_KEY, ErrNotDefined)
 }
 
 // GetAdvancerInputBatchSize returns the value for the environment variable CARTESI_ADVANCER_INPUT_BATCH_SIZE.

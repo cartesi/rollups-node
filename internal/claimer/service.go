@@ -17,6 +17,7 @@ import (
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -171,6 +172,14 @@ func (s *Service) Stop(bool) []error {
 
 func (s *Service) String() string {
 	return s.Name
+}
+
+// SubmitterAddress returns the configured claim submitter address.
+func (s *Service) SubmitterAddress() (common.Address, bool) {
+	if s.blockchain == nil {
+		return common.Address{}, false
+	}
+	return s.blockchain.claimSubmitterAddress()
 }
 
 func setupPersistentConfig(

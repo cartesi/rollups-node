@@ -14,6 +14,9 @@ x-env: &env
   CARTESI_DEVNET_TEST_ERC20_ADDRESS: "0x7a051EDffC0884cd88d4a377F4C87BE074CF6c81"
   CARTESI_DATABASE_CONNECTION: postgres://postgres:password@database:5432/rollupsdb?sslmode=disable
   CARTESI_AUTH_MNEMONIC: "test test test test test test test test test test test junk"
+  CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX: 0
+  CARTESI_PRT_AUTH_MNEMONIC: "test test test test test test test test test test test junk"
+  CARTESI_PRT_AUTH_MNEMONIC_ACCOUNT_INDEX: 6
 
 services:
   ethereum_provider:

@@ -104,15 +104,18 @@ func createServices(ctx context.Context, c *CreateInfo, s *Service) error {
 			return fmt.Errorf("failed to create services: %w", ctx.Err())
 		}
 	}
+
+	if err := enforceSubmitterIsolation(s.Children); err != nil {
+		stopChildren(s.Children)
+		return err
+	}
 	return nil
 }
 
 // stopAndDrain stops already-created children and drains remaining results
 // from the channel, stopping any successful services to prevent resource leaks.
 func stopAndDrain(children []service.IService, ch <-chan serviceResult, remaining int) {
-	for _, child := range children {
-		child.Stop(true)
-	}
+	stopChildren(children)
 	go func() {
 		for range remaining {
 			if r := <-ch; r.err == nil && r.service != nil {
@@ -120,6 +123,37 @@ func stopAndDrain(children []service.IService, ch <-chan serviceResult, remainin
 			}
 		}
 	}()
+}
+
+func stopChildren(children []service.IService) {
+	for _, child := range children {
+		child.Stop(true)
+	}
+}
+
+func enforceSubmitterIsolation(children []service.IService) error {
+	var claimerSubmitter *claimer.Service
+	var prtSubmitter *prt.Service
+	for _, child := range children {
+		switch child := child.(type) {
+		case *claimer.Service:
+			claimerSubmitter = child
+		case *prt.Service:
+			prtSubmitter = child
+		}
+	}
+	if claimerSubmitter == nil || prtSubmitter == nil {
+		return nil
+	}
+	claimerAddress, claimerEnabled := claimerSubmitter.SubmitterAddress()
+	prtAddress, prtEnabled := prtSubmitter.SubmitterAddress()
+	if !claimerEnabled || !prtEnabled {
+		return nil
+	}
+	if claimerAddress == prtAddress {
+		return fmt.Errorf("claimer and PRT submitter addresses must be different: %s", claimerAddress)
+	}
+	return nil
 }
 
 func (me *Service) Alive() bool {

@@ -117,7 +117,7 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		if s.submissionTimeout == 0 {
 			return nil, fmt.Errorf("BlockchainHttpRequestTimeout must be different from zero")
 		}
-		s.txOptsFactory, err = auth.GetTransactOptsFactory(ctx, chainID)
+		s.txOptsFactory, err = auth.GetPrtTransactOptsFactory(ctx, chainID)
 		if err != nil {
 			return nil, err
 		}
@@ -317,6 +317,14 @@ func (s *Service) Stop(_ bool) []error {
 
 func (s *Service) String() string {
 	return s.Name
+}
+
+// SubmitterAddress returns the configured PRT submitter address.
+func (s *Service) SubmitterAddress() (common.Address, bool) {
+	if s.txOptsFactory == nil {
+		return common.Address{}, false
+	}
+	return s.txOptsFactory.From(), true
 }
 
 func (s *Service) setupPersistentConfig(

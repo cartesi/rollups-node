@@ -13,10 +13,38 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/service"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSubmitterAddress(t *testing.T) {
+	address := common.HexToAddress("0x1234")
+	tests := []struct {
+		name        string
+		blockchain  iclaimerBlockchain
+		wantAddress common.Address
+		wantEnabled bool
+	}{
+		{name: "disabled"},
+		{
+			name:        "enabled",
+			blockchain:  &claimerBlockchainMock{submitterAddress: address, hasSubmitter: true},
+			wantAddress: address,
+			wantEnabled: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := &Service{blockchain: test.blockchain}
+			gotAddress, gotEnabled := s.SubmitterAddress()
+			require.Equal(t, test.wantAddress, gotAddress)
+			require.Equal(t, test.wantEnabled, gotEnabled)
+		})
+	}
+}
 
 func TestCreateUsesPersistedDefaultBlock(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

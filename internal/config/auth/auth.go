@@ -21,22 +21,54 @@ import (
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
-func GetTransactOptsFactory(ctx context.Context, chainId *big.Int) (ethutil.TransactOptsFactory, error) {
-	if chainId == nil || chainId.Sign() <= 0 {
+type authGetters struct {
+	kind                 func() (AuthKind, error)
+	privateKey           func() (RedactedString, error)
+	mnemonic             func() (RedactedString, error)
+	mnemonicAccountIndex func() (RedactedUint, error)
+	awsKMSKeyID          func() (RedactedString, error)
+}
+
+func GetTransactOptsFactory(ctx context.Context, chainID *big.Int) (ethutil.TransactOptsFactory, error) {
+	return getTransactOptsFactory(ctx, chainID, authGetters{
+		kind:                 GetAuthKind,
+		privateKey:           GetAuthPrivateKey,
+		mnemonic:             GetAuthMnemonic,
+		mnemonicAccountIndex: GetAuthMnemonicAccountIndex,
+		awsKMSKeyID:          GetAuthAwsKmsKeyId,
+	})
+}
+
+func GetPrtTransactOptsFactory(ctx context.Context, chainID *big.Int) (ethutil.TransactOptsFactory, error) {
+	return getTransactOptsFactory(ctx, chainID, authGetters{
+		kind:                 GetPrtAuthKind,
+		privateKey:           GetPrtAuthPrivateKey,
+		mnemonic:             GetPrtAuthMnemonic,
+		mnemonicAccountIndex: GetPrtAuthMnemonicAccountIndex,
+		awsKMSKeyID:          GetPrtAuthAwsKmsKeyId,
+	})
+}
+
+func getTransactOptsFactory(
+	ctx context.Context,
+	chainID *big.Int,
+	getters authGetters,
+) (ethutil.TransactOptsFactory, error) {
+	if chainID == nil || chainID.Sign() <= 0 {
 		return nil, bind.ErrNoChainID
 	}
 
-	authKind, err := GetAuthKind()
+	authKind, err := getters.kind()
 	if err != nil {
 		return nil, err
 	}
 	switch authKind {
-	case AuthKindMnemonicVar:
-		mnemonic, err := GetAuthMnemonic()
+	case AuthKindMnemonicVar, AuthKindMnemonicFile:
+		mnemonic, err := getters.mnemonic()
 		if err != nil {
 			return nil, err
 		}
-		accountIndex, err := GetAuthMnemonicAccountIndex()
+		accountIndex, err := getters.mnemonicAccountIndex()
 		if err != nil {
 			return nil, err
 		}
@@ -44,13 +76,13 @@ func GetTransactOptsFactory(ctx context.Context, chainId *big.Int) (ethutil.Tran
 		if err != nil {
 			return nil, err
 		}
-		txOpts, err := bind.NewKeyedTransactorWithChainID(privateKey, chainId)
+		txOpts, err := bind.NewKeyedTransactorWithChainID(privateKey, chainID)
 		if err != nil {
 			return nil, err
 		}
 		return ethutil.NewStaticTransactOptsFactory(txOpts), nil
-	case AuthKindPrivateKeyVar:
-		privateKey, err := GetAuthPrivateKey()
+	case AuthKindPrivateKeyVar, AuthKindPrivateKeyFile:
+		privateKey, err := getters.privateKey()
 		if err != nil {
 			return nil, err
 		}
@@ -58,13 +90,13 @@ func GetTransactOptsFactory(ctx context.Context, chainId *big.Int) (ethutil.Tran
 		if err != nil {
 			return nil, err
 		}
-		txOpts, err := bind.NewKeyedTransactorWithChainID(key, chainId)
+		txOpts, err := bind.NewKeyedTransactorWithChainID(key, chainID)
 		if err != nil {
 			return nil, err
 		}
 		return ethutil.NewStaticTransactOptsFactory(txOpts), nil
 	case AuthKindAWS:
-		keyId, err := GetAuthAwsKmsKeyId()
+		keyID, err := getters.awsKMSKeyID()
 		if err != nil {
 			return nil, err
 		}
@@ -76,8 +108,8 @@ func GetTransactOptsFactory(ctx context.Context, chainId *big.Int) (ethutil.Tran
 		return signtx.CreateAWSTransactOptsFactory(
 			ctx,
 			kmsClient,
-			aws.String(keyId.Value),
-			types.LatestSignerForChainID(chainId),
+			aws.String(keyID.Value),
+			types.LatestSignerForChainID(chainID),
 		)
 	default:
 		return nil, fmt.Errorf("no valid authentication method found")
