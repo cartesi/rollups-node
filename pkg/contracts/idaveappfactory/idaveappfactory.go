@@ -40,7 +40,7 @@ type WithdrawalConfig struct {
 
 // IDaveAppFactoryMetaData contains all meta data concerning the IDaveAppFactory contract.
 var IDaveAppFactoryMetaData = &bind.MetaData{
-	ABI: "[{\"type\":\"function\",\"name\":\"calculateDaveAppAddress\",\"inputs\":[{\"name\":\"templateHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]},{\"name\":\"salt\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"appContractAddress\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"daveConsensusAddress\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"newDaveApp\",\"inputs\":[{\"name\":\"templateHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]},{\"name\":\"salt\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"internalType\":\"contractIApplication\"},{\"name\":\"daveConsensus\",\"type\":\"address\",\"internalType\":\"contractIDaveConsensus\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"event\",\"name\":\"DaveAppCreated\",\"inputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"contractIApplication\"},{\"name\":\"daveConsensus\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"contractIDaveConsensus\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"InvalidWithdrawalConfig\",\"inputs\":[{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]}]}]",
+	ABI: "[{\"type\":\"function\",\"name\":\"calculateDaveAppAddress\",\"inputs\":[{\"name\":\"templateHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"claimStagingPeriod\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"sentryManager\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"sentries\",\"type\":\"address[]\",\"internalType\":\"address[]\"},{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]},{\"name\":\"salt\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"appContractAddress\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"daveConsensusAddress\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"newDaveApp\",\"inputs\":[{\"name\":\"templateHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"claimStagingPeriod\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"sentryManager\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"sentries\",\"type\":\"address[]\",\"internalType\":\"address[]\"},{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]},{\"name\":\"salt\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"internalType\":\"contractIApplication\"},{\"name\":\"daveConsensus\",\"type\":\"address\",\"internalType\":\"contractIDaveConsensus\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"event\",\"name\":\"DaveAppCreated\",\"inputs\":[{\"name\":\"appContract\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"contractIApplication\"},{\"name\":\"daveConsensus\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"contractIDaveConsensus\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"DuplicatedSentryAddress\",\"inputs\":[{\"name\":\"sentryId\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"sentry\",\"type\":\"address\",\"internalType\":\"address\"}]},{\"type\":\"error\",\"name\":\"InvalidWithdrawalConfig\",\"inputs\":[{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]}]},{\"type\":\"error\",\"name\":\"ZeroSentryAddress\",\"inputs\":[]}]",
 }
 
 // IDaveAppFactoryABI is the input ABI used to generate the binding from.
@@ -189,15 +189,15 @@ func (_IDaveAppFactory *IDaveAppFactoryTransactorRaw) Transact(opts *bind.Transa
 	return _IDaveAppFactory.Contract.contract.Transact(opts, method, params...)
 }
 
-// CalculateDaveAppAddress is a free data retrieval call binding the contract method 0x4d3b6acb.
+// CalculateDaveAppAddress is a free data retrieval call binding the contract method 0x5592ff8a.
 //
-// Solidity: function calculateDaveAppAddress(bytes32 templateHash, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) view returns(address appContractAddress, address daveConsensusAddress)
-func (_IDaveAppFactory *IDaveAppFactoryCaller) CalculateDaveAppAddress(opts *bind.CallOpts, templateHash [32]byte, withdrawalConfig WithdrawalConfig, salt [32]byte) (struct {
+// Solidity: function calculateDaveAppAddress(bytes32 templateHash, uint256 claimStagingPeriod, address sentryManager, address[] sentries, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) view returns(address appContractAddress, address daveConsensusAddress)
+func (_IDaveAppFactory *IDaveAppFactoryCaller) CalculateDaveAppAddress(opts *bind.CallOpts, templateHash [32]byte, claimStagingPeriod *big.Int, sentryManager common.Address, sentries []common.Address, withdrawalConfig WithdrawalConfig, salt [32]byte) (struct {
 	AppContractAddress   common.Address
 	DaveConsensusAddress common.Address
 }, error) {
 	var out []interface{}
-	err := _IDaveAppFactory.contract.Call(opts, &out, "calculateDaveAppAddress", templateHash, withdrawalConfig, salt)
+	err := _IDaveAppFactory.contract.Call(opts, &out, "calculateDaveAppAddress", templateHash, claimStagingPeriod, sentryManager, sentries, withdrawalConfig, salt)
 
 	outstruct := new(struct {
 		AppContractAddress   common.Address
@@ -214,45 +214,45 @@ func (_IDaveAppFactory *IDaveAppFactoryCaller) CalculateDaveAppAddress(opts *bin
 
 }
 
-// CalculateDaveAppAddress is a free data retrieval call binding the contract method 0x4d3b6acb.
+// CalculateDaveAppAddress is a free data retrieval call binding the contract method 0x5592ff8a.
 //
-// Solidity: function calculateDaveAppAddress(bytes32 templateHash, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) view returns(address appContractAddress, address daveConsensusAddress)
-func (_IDaveAppFactory *IDaveAppFactorySession) CalculateDaveAppAddress(templateHash [32]byte, withdrawalConfig WithdrawalConfig, salt [32]byte) (struct {
+// Solidity: function calculateDaveAppAddress(bytes32 templateHash, uint256 claimStagingPeriod, address sentryManager, address[] sentries, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) view returns(address appContractAddress, address daveConsensusAddress)
+func (_IDaveAppFactory *IDaveAppFactorySession) CalculateDaveAppAddress(templateHash [32]byte, claimStagingPeriod *big.Int, sentryManager common.Address, sentries []common.Address, withdrawalConfig WithdrawalConfig, salt [32]byte) (struct {
 	AppContractAddress   common.Address
 	DaveConsensusAddress common.Address
 }, error) {
-	return _IDaveAppFactory.Contract.CalculateDaveAppAddress(&_IDaveAppFactory.CallOpts, templateHash, withdrawalConfig, salt)
+	return _IDaveAppFactory.Contract.CalculateDaveAppAddress(&_IDaveAppFactory.CallOpts, templateHash, claimStagingPeriod, sentryManager, sentries, withdrawalConfig, salt)
 }
 
-// CalculateDaveAppAddress is a free data retrieval call binding the contract method 0x4d3b6acb.
+// CalculateDaveAppAddress is a free data retrieval call binding the contract method 0x5592ff8a.
 //
-// Solidity: function calculateDaveAppAddress(bytes32 templateHash, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) view returns(address appContractAddress, address daveConsensusAddress)
-func (_IDaveAppFactory *IDaveAppFactoryCallerSession) CalculateDaveAppAddress(templateHash [32]byte, withdrawalConfig WithdrawalConfig, salt [32]byte) (struct {
+// Solidity: function calculateDaveAppAddress(bytes32 templateHash, uint256 claimStagingPeriod, address sentryManager, address[] sentries, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) view returns(address appContractAddress, address daveConsensusAddress)
+func (_IDaveAppFactory *IDaveAppFactoryCallerSession) CalculateDaveAppAddress(templateHash [32]byte, claimStagingPeriod *big.Int, sentryManager common.Address, sentries []common.Address, withdrawalConfig WithdrawalConfig, salt [32]byte) (struct {
 	AppContractAddress   common.Address
 	DaveConsensusAddress common.Address
 }, error) {
-	return _IDaveAppFactory.Contract.CalculateDaveAppAddress(&_IDaveAppFactory.CallOpts, templateHash, withdrawalConfig, salt)
+	return _IDaveAppFactory.Contract.CalculateDaveAppAddress(&_IDaveAppFactory.CallOpts, templateHash, claimStagingPeriod, sentryManager, sentries, withdrawalConfig, salt)
 }
 
-// NewDaveApp is a paid mutator transaction binding the contract method 0xc119e684.
+// NewDaveApp is a paid mutator transaction binding the contract method 0x7ea1763b.
 //
-// Solidity: function newDaveApp(bytes32 templateHash, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) returns(address appContract, address daveConsensus)
-func (_IDaveAppFactory *IDaveAppFactoryTransactor) NewDaveApp(opts *bind.TransactOpts, templateHash [32]byte, withdrawalConfig WithdrawalConfig, salt [32]byte) (*types.Transaction, error) {
-	return _IDaveAppFactory.contract.Transact(opts, "newDaveApp", templateHash, withdrawalConfig, salt)
+// Solidity: function newDaveApp(bytes32 templateHash, uint256 claimStagingPeriod, address sentryManager, address[] sentries, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) returns(address appContract, address daveConsensus)
+func (_IDaveAppFactory *IDaveAppFactoryTransactor) NewDaveApp(opts *bind.TransactOpts, templateHash [32]byte, claimStagingPeriod *big.Int, sentryManager common.Address, sentries []common.Address, withdrawalConfig WithdrawalConfig, salt [32]byte) (*types.Transaction, error) {
+	return _IDaveAppFactory.contract.Transact(opts, "newDaveApp", templateHash, claimStagingPeriod, sentryManager, sentries, withdrawalConfig, salt)
 }
 
-// NewDaveApp is a paid mutator transaction binding the contract method 0xc119e684.
+// NewDaveApp is a paid mutator transaction binding the contract method 0x7ea1763b.
 //
-// Solidity: function newDaveApp(bytes32 templateHash, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) returns(address appContract, address daveConsensus)
-func (_IDaveAppFactory *IDaveAppFactorySession) NewDaveApp(templateHash [32]byte, withdrawalConfig WithdrawalConfig, salt [32]byte) (*types.Transaction, error) {
-	return _IDaveAppFactory.Contract.NewDaveApp(&_IDaveAppFactory.TransactOpts, templateHash, withdrawalConfig, salt)
+// Solidity: function newDaveApp(bytes32 templateHash, uint256 claimStagingPeriod, address sentryManager, address[] sentries, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) returns(address appContract, address daveConsensus)
+func (_IDaveAppFactory *IDaveAppFactorySession) NewDaveApp(templateHash [32]byte, claimStagingPeriod *big.Int, sentryManager common.Address, sentries []common.Address, withdrawalConfig WithdrawalConfig, salt [32]byte) (*types.Transaction, error) {
+	return _IDaveAppFactory.Contract.NewDaveApp(&_IDaveAppFactory.TransactOpts, templateHash, claimStagingPeriod, sentryManager, sentries, withdrawalConfig, salt)
 }
 
-// NewDaveApp is a paid mutator transaction binding the contract method 0xc119e684.
+// NewDaveApp is a paid mutator transaction binding the contract method 0x7ea1763b.
 //
-// Solidity: function newDaveApp(bytes32 templateHash, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) returns(address appContract, address daveConsensus)
-func (_IDaveAppFactory *IDaveAppFactoryTransactorSession) NewDaveApp(templateHash [32]byte, withdrawalConfig WithdrawalConfig, salt [32]byte) (*types.Transaction, error) {
-	return _IDaveAppFactory.Contract.NewDaveApp(&_IDaveAppFactory.TransactOpts, templateHash, withdrawalConfig, salt)
+// Solidity: function newDaveApp(bytes32 templateHash, uint256 claimStagingPeriod, address sentryManager, address[] sentries, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) returns(address appContract, address daveConsensus)
+func (_IDaveAppFactory *IDaveAppFactoryTransactorSession) NewDaveApp(templateHash [32]byte, claimStagingPeriod *big.Int, sentryManager common.Address, sentries []common.Address, withdrawalConfig WithdrawalConfig, salt [32]byte) (*types.Transaction, error) {
+	return _IDaveAppFactory.Contract.NewDaveApp(&_IDaveAppFactory.TransactOpts, templateHash, claimStagingPeriod, sentryManager, sentries, withdrawalConfig, salt)
 }
 
 // IDaveAppFactoryDaveAppCreatedIterator is returned from FilterDaveAppCreated and is used to iterate over the raw logs and unpacked data for DaveAppCreated events raised by the IDaveAppFactory contract.

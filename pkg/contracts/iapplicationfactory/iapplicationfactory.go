@@ -40,7 +40,7 @@ type WithdrawalConfig struct {
 
 // IApplicationFactoryMetaData contains all meta data concerning the IApplicationFactory contract.
 var IApplicationFactoryMetaData = &bind.MetaData{
-	ABI: "[{\"type\":\"function\",\"name\":\"calculateApplicationAddress\",\"inputs\":[{\"name\":\"outputsMerkleRootValidator\",\"type\":\"address\",\"internalType\":\"contractIOutputsMerkleRootValidator\"},{\"name\":\"appOwner\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"templateHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"dataAvailability\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]},{\"name\":\"salt\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"newApplication\",\"inputs\":[{\"name\":\"outputsMerkleRootValidator\",\"type\":\"address\",\"internalType\":\"contractIOutputsMerkleRootValidator\"},{\"name\":\"appOwner\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"templateHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"dataAvailability\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIApplication\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"newApplication\",\"inputs\":[{\"name\":\"outputsMerkleRootValidator\",\"type\":\"address\",\"internalType\":\"contractIOutputsMerkleRootValidator\"},{\"name\":\"appOwner\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"templateHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"dataAvailability\",\"type\":\"bytes\",\"internalType\":\"bytes\"},{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]},{\"name\":\"salt\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIApplication\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"version\",\"inputs\":[],\"outputs\":[{\"name\":\"major\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"minor\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"patch\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"preRelease\",\"type\":\"string\",\"internalType\":\"string\"},{\"name\":\"buildMetadata\",\"type\":\"string\",\"internalType\":\"string\"}],\"stateMutability\":\"view\"},{\"type\":\"event\",\"name\":\"ApplicationCreated\",\"inputs\":[{\"name\":\"outputsMerkleRootValidator\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"contractIOutputsMerkleRootValidator\"},{\"name\":\"appOwner\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"address\"},{\"name\":\"templateHash\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"bytes32\"},{\"name\":\"dataAvailability\",\"type\":\"bytes\",\"indexed\":false,\"internalType\":\"bytes\"},{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"indexed\":false,\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]},{\"name\":\"appContract\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"contractIApplication\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"InvalidWithdrawalConfig\",\"inputs\":[{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]}]}]",
+	ABI: "[{\"type\":\"function\",\"name\":\"calculateApplicationAddress\",\"inputs\":[{\"name\":\"outputsMerkleRootValidator\",\"type\":\"address\",\"internalType\":\"contractIOutputsMerkleRootValidator\"},{\"name\":\"appOwner\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"templateHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"inputBox\",\"type\":\"address\",\"internalType\":\"contractIInputBox\"},{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]},{\"name\":\"salt\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"address\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"newApplication\",\"inputs\":[{\"name\":\"outputsMerkleRootValidator\",\"type\":\"address\",\"internalType\":\"contractIOutputsMerkleRootValidator\"},{\"name\":\"appOwner\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"templateHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"inputBox\",\"type\":\"address\",\"internalType\":\"contractIInputBox\"},{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIApplication\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"newApplication\",\"inputs\":[{\"name\":\"outputsMerkleRootValidator\",\"type\":\"address\",\"internalType\":\"contractIOutputsMerkleRootValidator\"},{\"name\":\"appOwner\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"templateHash\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"},{\"name\":\"inputBox\",\"type\":\"address\",\"internalType\":\"contractIInputBox\"},{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]},{\"name\":\"salt\",\"type\":\"bytes32\",\"internalType\":\"bytes32\"}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIApplication\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"version\",\"inputs\":[],\"outputs\":[{\"name\":\"major\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"minor\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"patch\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"preRelease\",\"type\":\"string\",\"internalType\":\"string\"},{\"name\":\"buildMetadata\",\"type\":\"string\",\"internalType\":\"string\"}],\"stateMutability\":\"view\"},{\"type\":\"event\",\"name\":\"ApplicationCreated\",\"inputs\":[{\"name\":\"outputsMerkleRootValidator\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"contractIOutputsMerkleRootValidator\"},{\"name\":\"appOwner\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"address\"},{\"name\":\"templateHash\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"bytes32\"},{\"name\":\"inputBox\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"contractIInputBox\"},{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"indexed\":false,\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]},{\"name\":\"appContract\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"contractIApplication\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"InvalidWithdrawalConfig\",\"inputs\":[{\"name\":\"withdrawalConfig\",\"type\":\"tuple\",\"internalType\":\"structWithdrawalConfig\",\"components\":[{\"name\":\"guardian\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"log2LeavesPerAccount\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"log2MaxNumOfAccounts\",\"type\":\"uint8\",\"internalType\":\"uint8\"},{\"name\":\"accountsDriveStartIndex\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"withdrawalOutputBuilder\",\"type\":\"address\",\"internalType\":\"contractIWithdrawalOutputBuilder\"}]}]}]",
 }
 
 // IApplicationFactoryABI is the input ABI used to generate the binding from.
@@ -189,12 +189,12 @@ func (_IApplicationFactory *IApplicationFactoryTransactorRaw) Transact(opts *bin
 	return _IApplicationFactory.Contract.contract.Transact(opts, method, params...)
 }
 
-// CalculateApplicationAddress is a free data retrieval call binding the contract method 0xcdfe5fec.
+// CalculateApplicationAddress is a free data retrieval call binding the contract method 0xb32a00a4.
 //
-// Solidity: function calculateApplicationAddress(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, bytes dataAvailability, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) view returns(address)
-func (_IApplicationFactory *IApplicationFactoryCaller) CalculateApplicationAddress(opts *bind.CallOpts, outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, dataAvailability []byte, withdrawalConfig WithdrawalConfig, salt [32]byte) (common.Address, error) {
+// Solidity: function calculateApplicationAddress(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, address inputBox, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) view returns(address)
+func (_IApplicationFactory *IApplicationFactoryCaller) CalculateApplicationAddress(opts *bind.CallOpts, outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, inputBox common.Address, withdrawalConfig WithdrawalConfig, salt [32]byte) (common.Address, error) {
 	var out []interface{}
-	err := _IApplicationFactory.contract.Call(opts, &out, "calculateApplicationAddress", outputsMerkleRootValidator, appOwner, templateHash, dataAvailability, withdrawalConfig, salt)
+	err := _IApplicationFactory.contract.Call(opts, &out, "calculateApplicationAddress", outputsMerkleRootValidator, appOwner, templateHash, inputBox, withdrawalConfig, salt)
 
 	if err != nil {
 		return *new(common.Address), err
@@ -206,18 +206,18 @@ func (_IApplicationFactory *IApplicationFactoryCaller) CalculateApplicationAddre
 
 }
 
-// CalculateApplicationAddress is a free data retrieval call binding the contract method 0xcdfe5fec.
+// CalculateApplicationAddress is a free data retrieval call binding the contract method 0xb32a00a4.
 //
-// Solidity: function calculateApplicationAddress(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, bytes dataAvailability, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) view returns(address)
-func (_IApplicationFactory *IApplicationFactorySession) CalculateApplicationAddress(outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, dataAvailability []byte, withdrawalConfig WithdrawalConfig, salt [32]byte) (common.Address, error) {
-	return _IApplicationFactory.Contract.CalculateApplicationAddress(&_IApplicationFactory.CallOpts, outputsMerkleRootValidator, appOwner, templateHash, dataAvailability, withdrawalConfig, salt)
+// Solidity: function calculateApplicationAddress(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, address inputBox, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) view returns(address)
+func (_IApplicationFactory *IApplicationFactorySession) CalculateApplicationAddress(outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, inputBox common.Address, withdrawalConfig WithdrawalConfig, salt [32]byte) (common.Address, error) {
+	return _IApplicationFactory.Contract.CalculateApplicationAddress(&_IApplicationFactory.CallOpts, outputsMerkleRootValidator, appOwner, templateHash, inputBox, withdrawalConfig, salt)
 }
 
-// CalculateApplicationAddress is a free data retrieval call binding the contract method 0xcdfe5fec.
+// CalculateApplicationAddress is a free data retrieval call binding the contract method 0xb32a00a4.
 //
-// Solidity: function calculateApplicationAddress(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, bytes dataAvailability, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) view returns(address)
-func (_IApplicationFactory *IApplicationFactoryCallerSession) CalculateApplicationAddress(outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, dataAvailability []byte, withdrawalConfig WithdrawalConfig, salt [32]byte) (common.Address, error) {
-	return _IApplicationFactory.Contract.CalculateApplicationAddress(&_IApplicationFactory.CallOpts, outputsMerkleRootValidator, appOwner, templateHash, dataAvailability, withdrawalConfig, salt)
+// Solidity: function calculateApplicationAddress(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, address inputBox, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) view returns(address)
+func (_IApplicationFactory *IApplicationFactoryCallerSession) CalculateApplicationAddress(outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, inputBox common.Address, withdrawalConfig WithdrawalConfig, salt [32]byte) (common.Address, error) {
+	return _IApplicationFactory.Contract.CalculateApplicationAddress(&_IApplicationFactory.CallOpts, outputsMerkleRootValidator, appOwner, templateHash, inputBox, withdrawalConfig, salt)
 }
 
 // Version is a free data retrieval call binding the contract method 0x54fd4d50.
@@ -280,46 +280,46 @@ func (_IApplicationFactory *IApplicationFactoryCallerSession) Version() (struct 
 	return _IApplicationFactory.Contract.Version(&_IApplicationFactory.CallOpts)
 }
 
-// NewApplication is a paid mutator transaction binding the contract method 0x23798a9c.
+// NewApplication is a paid mutator transaction binding the contract method 0x0e116170.
 //
-// Solidity: function newApplication(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, bytes dataAvailability, (address,uint8,uint8,uint64,address) withdrawalConfig) returns(address)
-func (_IApplicationFactory *IApplicationFactoryTransactor) NewApplication(opts *bind.TransactOpts, outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, dataAvailability []byte, withdrawalConfig WithdrawalConfig) (*types.Transaction, error) {
-	return _IApplicationFactory.contract.Transact(opts, "newApplication", outputsMerkleRootValidator, appOwner, templateHash, dataAvailability, withdrawalConfig)
+// Solidity: function newApplication(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, address inputBox, (address,uint8,uint8,uint64,address) withdrawalConfig) returns(address)
+func (_IApplicationFactory *IApplicationFactoryTransactor) NewApplication(opts *bind.TransactOpts, outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, inputBox common.Address, withdrawalConfig WithdrawalConfig) (*types.Transaction, error) {
+	return _IApplicationFactory.contract.Transact(opts, "newApplication", outputsMerkleRootValidator, appOwner, templateHash, inputBox, withdrawalConfig)
 }
 
-// NewApplication is a paid mutator transaction binding the contract method 0x23798a9c.
+// NewApplication is a paid mutator transaction binding the contract method 0x0e116170.
 //
-// Solidity: function newApplication(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, bytes dataAvailability, (address,uint8,uint8,uint64,address) withdrawalConfig) returns(address)
-func (_IApplicationFactory *IApplicationFactorySession) NewApplication(outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, dataAvailability []byte, withdrawalConfig WithdrawalConfig) (*types.Transaction, error) {
-	return _IApplicationFactory.Contract.NewApplication(&_IApplicationFactory.TransactOpts, outputsMerkleRootValidator, appOwner, templateHash, dataAvailability, withdrawalConfig)
+// Solidity: function newApplication(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, address inputBox, (address,uint8,uint8,uint64,address) withdrawalConfig) returns(address)
+func (_IApplicationFactory *IApplicationFactorySession) NewApplication(outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, inputBox common.Address, withdrawalConfig WithdrawalConfig) (*types.Transaction, error) {
+	return _IApplicationFactory.Contract.NewApplication(&_IApplicationFactory.TransactOpts, outputsMerkleRootValidator, appOwner, templateHash, inputBox, withdrawalConfig)
 }
 
-// NewApplication is a paid mutator transaction binding the contract method 0x23798a9c.
+// NewApplication is a paid mutator transaction binding the contract method 0x0e116170.
 //
-// Solidity: function newApplication(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, bytes dataAvailability, (address,uint8,uint8,uint64,address) withdrawalConfig) returns(address)
-func (_IApplicationFactory *IApplicationFactoryTransactorSession) NewApplication(outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, dataAvailability []byte, withdrawalConfig WithdrawalConfig) (*types.Transaction, error) {
-	return _IApplicationFactory.Contract.NewApplication(&_IApplicationFactory.TransactOpts, outputsMerkleRootValidator, appOwner, templateHash, dataAvailability, withdrawalConfig)
+// Solidity: function newApplication(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, address inputBox, (address,uint8,uint8,uint64,address) withdrawalConfig) returns(address)
+func (_IApplicationFactory *IApplicationFactoryTransactorSession) NewApplication(outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, inputBox common.Address, withdrawalConfig WithdrawalConfig) (*types.Transaction, error) {
+	return _IApplicationFactory.Contract.NewApplication(&_IApplicationFactory.TransactOpts, outputsMerkleRootValidator, appOwner, templateHash, inputBox, withdrawalConfig)
 }
 
-// NewApplication0 is a paid mutator transaction binding the contract method 0x4ba6bf41.
+// NewApplication0 is a paid mutator transaction binding the contract method 0x62da0d80.
 //
-// Solidity: function newApplication(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, bytes dataAvailability, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) returns(address)
-func (_IApplicationFactory *IApplicationFactoryTransactor) NewApplication0(opts *bind.TransactOpts, outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, dataAvailability []byte, withdrawalConfig WithdrawalConfig, salt [32]byte) (*types.Transaction, error) {
-	return _IApplicationFactory.contract.Transact(opts, "newApplication0", outputsMerkleRootValidator, appOwner, templateHash, dataAvailability, withdrawalConfig, salt)
+// Solidity: function newApplication(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, address inputBox, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) returns(address)
+func (_IApplicationFactory *IApplicationFactoryTransactor) NewApplication0(opts *bind.TransactOpts, outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, inputBox common.Address, withdrawalConfig WithdrawalConfig, salt [32]byte) (*types.Transaction, error) {
+	return _IApplicationFactory.contract.Transact(opts, "newApplication0", outputsMerkleRootValidator, appOwner, templateHash, inputBox, withdrawalConfig, salt)
 }
 
-// NewApplication0 is a paid mutator transaction binding the contract method 0x4ba6bf41.
+// NewApplication0 is a paid mutator transaction binding the contract method 0x62da0d80.
 //
-// Solidity: function newApplication(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, bytes dataAvailability, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) returns(address)
-func (_IApplicationFactory *IApplicationFactorySession) NewApplication0(outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, dataAvailability []byte, withdrawalConfig WithdrawalConfig, salt [32]byte) (*types.Transaction, error) {
-	return _IApplicationFactory.Contract.NewApplication0(&_IApplicationFactory.TransactOpts, outputsMerkleRootValidator, appOwner, templateHash, dataAvailability, withdrawalConfig, salt)
+// Solidity: function newApplication(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, address inputBox, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) returns(address)
+func (_IApplicationFactory *IApplicationFactorySession) NewApplication0(outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, inputBox common.Address, withdrawalConfig WithdrawalConfig, salt [32]byte) (*types.Transaction, error) {
+	return _IApplicationFactory.Contract.NewApplication0(&_IApplicationFactory.TransactOpts, outputsMerkleRootValidator, appOwner, templateHash, inputBox, withdrawalConfig, salt)
 }
 
-// NewApplication0 is a paid mutator transaction binding the contract method 0x4ba6bf41.
+// NewApplication0 is a paid mutator transaction binding the contract method 0x62da0d80.
 //
-// Solidity: function newApplication(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, bytes dataAvailability, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) returns(address)
-func (_IApplicationFactory *IApplicationFactoryTransactorSession) NewApplication0(outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, dataAvailability []byte, withdrawalConfig WithdrawalConfig, salt [32]byte) (*types.Transaction, error) {
-	return _IApplicationFactory.Contract.NewApplication0(&_IApplicationFactory.TransactOpts, outputsMerkleRootValidator, appOwner, templateHash, dataAvailability, withdrawalConfig, salt)
+// Solidity: function newApplication(address outputsMerkleRootValidator, address appOwner, bytes32 templateHash, address inputBox, (address,uint8,uint8,uint64,address) withdrawalConfig, bytes32 salt) returns(address)
+func (_IApplicationFactory *IApplicationFactoryTransactorSession) NewApplication0(outputsMerkleRootValidator common.Address, appOwner common.Address, templateHash [32]byte, inputBox common.Address, withdrawalConfig WithdrawalConfig, salt [32]byte) (*types.Transaction, error) {
+	return _IApplicationFactory.Contract.NewApplication0(&_IApplicationFactory.TransactOpts, outputsMerkleRootValidator, appOwner, templateHash, inputBox, withdrawalConfig, salt)
 }
 
 // IApplicationFactoryApplicationCreatedIterator is returned from FilterApplicationCreated and is used to iterate over the raw logs and unpacked data for ApplicationCreated events raised by the IApplicationFactory contract.
@@ -394,15 +394,15 @@ type IApplicationFactoryApplicationCreated struct {
 	OutputsMerkleRootValidator common.Address
 	AppOwner                   common.Address
 	TemplateHash               [32]byte
-	DataAvailability           []byte
+	InputBox                   common.Address
 	WithdrawalConfig           WithdrawalConfig
 	AppContract                common.Address
 	Raw                        types.Log // Blockchain specific contextual infos
 }
 
-// FilterApplicationCreated is a free log retrieval operation binding the contract event 0xf57fedb261f4593784de9abb6653acfbaf45e74182818717c6e9b39c344a2a78.
+// FilterApplicationCreated is a free log retrieval operation binding the contract event 0x4486f86034ea9f9960840c03ca21cd7dae1f2d5ef3ddc06067ea9352a49a40d2.
 //
-// Solidity: event ApplicationCreated(address indexed outputsMerkleRootValidator, address appOwner, bytes32 templateHash, bytes dataAvailability, (address,uint8,uint8,uint64,address) withdrawalConfig, address appContract)
+// Solidity: event ApplicationCreated(address indexed outputsMerkleRootValidator, address appOwner, bytes32 templateHash, address inputBox, (address,uint8,uint8,uint64,address) withdrawalConfig, address appContract)
 func (_IApplicationFactory *IApplicationFactoryFilterer) FilterApplicationCreated(opts *bind.FilterOpts, outputsMerkleRootValidator []common.Address) (*IApplicationFactoryApplicationCreatedIterator, error) {
 
 	var outputsMerkleRootValidatorRule []interface{}
@@ -417,9 +417,9 @@ func (_IApplicationFactory *IApplicationFactoryFilterer) FilterApplicationCreate
 	return &IApplicationFactoryApplicationCreatedIterator{contract: _IApplicationFactory.contract, event: "ApplicationCreated", logs: logs, sub: sub}, nil
 }
 
-// WatchApplicationCreated is a free log subscription operation binding the contract event 0xf57fedb261f4593784de9abb6653acfbaf45e74182818717c6e9b39c344a2a78.
+// WatchApplicationCreated is a free log subscription operation binding the contract event 0x4486f86034ea9f9960840c03ca21cd7dae1f2d5ef3ddc06067ea9352a49a40d2.
 //
-// Solidity: event ApplicationCreated(address indexed outputsMerkleRootValidator, address appOwner, bytes32 templateHash, bytes dataAvailability, (address,uint8,uint8,uint64,address) withdrawalConfig, address appContract)
+// Solidity: event ApplicationCreated(address indexed outputsMerkleRootValidator, address appOwner, bytes32 templateHash, address inputBox, (address,uint8,uint8,uint64,address) withdrawalConfig, address appContract)
 func (_IApplicationFactory *IApplicationFactoryFilterer) WatchApplicationCreated(opts *bind.WatchOpts, sink chan<- *IApplicationFactoryApplicationCreated, outputsMerkleRootValidator []common.Address) (event.Subscription, error) {
 
 	var outputsMerkleRootValidatorRule []interface{}
@@ -459,9 +459,9 @@ func (_IApplicationFactory *IApplicationFactoryFilterer) WatchApplicationCreated
 	}), nil
 }
 
-// ParseApplicationCreated is a log parse operation binding the contract event 0xf57fedb261f4593784de9abb6653acfbaf45e74182818717c6e9b39c344a2a78.
+// ParseApplicationCreated is a log parse operation binding the contract event 0x4486f86034ea9f9960840c03ca21cd7dae1f2d5ef3ddc06067ea9352a49a40d2.
 //
-// Solidity: event ApplicationCreated(address indexed outputsMerkleRootValidator, address appOwner, bytes32 templateHash, bytes dataAvailability, (address,uint8,uint8,uint64,address) withdrawalConfig, address appContract)
+// Solidity: event ApplicationCreated(address indexed outputsMerkleRootValidator, address appOwner, bytes32 templateHash, address inputBox, (address,uint8,uint8,uint64,address) withdrawalConfig, address appContract)
 func (_IApplicationFactory *IApplicationFactoryFilterer) ParseApplicationCreated(log types.Log) (*IApplicationFactoryApplicationCreated, error) {
 	event := new(IApplicationFactoryApplicationCreated)
 	if err := _IApplicationFactory.contract.UnpackLog(event, "ApplicationCreated", log); err != nil {
