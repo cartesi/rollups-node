@@ -27,14 +27,18 @@ var (
 
 // AdvancerRepository defines the repository interface needed by the Advancer service
 type AdvancerRepository interface {
-	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter, p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
-	ListInputs(ctx context.Context, nameOrAddress string, f repository.InputFilter, p repository.Pagination, descending bool) ([]*Input, uint64, error)
+	ListEpochs(
+		ctx context.Context, nameOrAddress string, f repository.EpochFilter, p repository.Pagination, descending bool,
+	) ([]*Epoch, uint64, error)
+	ListInputs(
+		ctx context.Context, nameOrAddress string, f repository.InputFilter, p repository.Pagination, descending bool,
+	) ([]*Input, uint64, error)
 	GetLastInput(ctx context.Context, appAddress string, epochIndex uint64) (*Input, error)
 	StoreAdvanceResult(ctx context.Context, appID int64, ar *AdvanceResult) error
 	UpdateEpochInputsProcessed(ctx context.Context, nameOrAddress string, epochIndex uint64, proof *StateProof) error
 	UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
-	UpdateInputSnapshotURI(ctx context.Context, appId int64, inputIndex uint64, snapshotURI string) error
+	UpdateInputSnapshotURI(ctx context.Context, appID int64, inputIndex uint64, snapshotURI string) error
 	GetLastSnapshot(ctx context.Context, nameOrAddress string) (*Input, error)
 	GetLastProcessedInput(ctx context.Context, appAddress string) (*Input, error)
 }
@@ -180,6 +184,11 @@ func (s *Service) finalizeEpoch(ctx context.Context, app *Application, epoch *Ep
 
 	appAddress := app.IApplicationAddress.String()
 	if err := s.repository.UpdateEpochInputsProcessed(ctx, appAddress, epoch.Index, proof); err != nil {
+		if errors.Is(err, repository.ErrEpochForeclosed) {
+			s.Logger.Info("Epoch was foreclosed before state-proof publication; discarding obsolete publication",
+				"application", app.Name, "epoch_index", epoch.Index)
+			return nil
+		}
 		return fmt.Errorf(
 			"publishing state proof for application %s epoch %d: %w",
 			app.Name,
