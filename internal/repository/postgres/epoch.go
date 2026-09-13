@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 
 	"github.com/cartesi/rollups-node/internal/model"
@@ -890,6 +891,9 @@ func (r *PostgresRepository) ListEpochs(
 	p repository.Pagination,
 	descending bool,
 ) ([]*model.Epoch, uint64, error) {
+	if p.Limit > math.MaxInt64 || p.Offset > math.MaxInt64 {
+		return nil, 0, fmt.Errorf("pagination exceeds PostgreSQL integer range")
+	}
 
 	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
@@ -915,6 +919,13 @@ func (r *PostgresRepository) ListEpochs(
 
 	if f.BeforeBlock != nil {
 		conditions = append(conditions, table.Epoch.LastBlock.LT(uint64Expr(*f.BeforeBlock)))
+	}
+	if f.HasTournament != nil {
+		if *f.HasTournament {
+			conditions = append(conditions, table.Epoch.TournamentAddress.IS_NOT_NULL())
+		} else {
+			conditions = append(conditions, table.Epoch.TournamentAddress.IS_NULL())
+		}
 	}
 
 	tx, err := beginReadTx(ctx, r.db)

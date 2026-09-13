@@ -5,227 +5,57 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/go-jet/jet/v2/postgres"
-
-	"github.com/cartesi/rollups-node/internal/model"
+	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/table"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/go-jet/jet/v2/postgres"
+	"github.com/jackc/pgx/v5"
 )
 
-// ------------------------ TournamentRepository Methods ------------------------ //
-
-func (r *PostgresRepository) CreateTournament(
-	ctx context.Context,
-	nameOrAddress string,
-	t *model.Tournament,
-) error {
-
-	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
-
-	insertStmt := table.Tournaments.
-		INSERT(
-			table.Tournaments.ApplicationID,
-			table.Tournaments.EpochIndex,
-			table.Tournaments.Address,
-			table.Tournaments.ParentTournamentAddress,
-			table.Tournaments.ParentMatchIDHash,
-			table.Tournaments.MaxLevel,
-			table.Tournaments.Level,
-			table.Tournaments.Log2step,
-			table.Tournaments.Height,
-			table.Tournaments.WinnerCommitment,
-			table.Tournaments.FinalStateHash,
-			table.Tournaments.FinishedAtBlock,
-		)
-
-	parentAddress := postgres.NULL
-	if t.ParentTournamentAddress != nil {
-		parentAddress = postgres.Bytea(t.ParentTournamentAddress.Bytes())
+func (r *PostgresRepository) CreateTournament(ctx context.Context, nameOrAddress string, value *Tournament) error {
+	if value == nil {
+		return fmt.Errorf("cannot create a nil tournament")
 	}
-	parentMatch := postgres.NULL
-	if t.ParentMatchIDHash != nil {
-		parentMatch = postgres.Bytea(t.ParentMatchIDHash.Bytes())
-	}
-	winnerCommitment := postgres.NULL
-	if t.WinnerCommitment != nil {
-		winnerCommitment = postgres.Bytea(t.WinnerCommitment.Bytes())
-	}
-	finalState := postgres.NULL
-	if t.FinalStateHash != nil {
-		finalState = postgres.Bytea(t.FinalStateHash.Bytes())
-	}
-
-	selectQuery := table.Application.SELECT(
-		table.Application.ID,
-		uint64Expr(t.EpochIndex),
-		postgres.Bytea(t.Address.Bytes()),
-		parentAddress,
-		parentMatch,
-		uint64Expr(t.MaxLevel),
-		uint64Expr(t.Level),
-		uint64Expr(t.Log2Step),
-		uint64Expr(t.Height),
-		winnerCommitment,
-		finalState,
-		uint64Expr(t.FinishedAtBlock),
-	).WHERE(
-		whereClause,
-	)
-
-	// Tournament addresses come from the chain and may be observed again after
-	// an interrupted shutdown. Ignore only an exact replay of the tournament
-	// identity; other conflicts, such as a different root for the same epoch,
-	// must still surface as errors.
-	sqlStr, args := insertStmt.
-		QUERY(selectQuery).
-		ON_CONFLICT(
-			table.Tournaments.ApplicationID,
-			table.Tournaments.EpochIndex,
-			table.Tournaments.Address,
-		).
-		DO_NOTHING().
-		Sql()
-	_, err := r.db.Exec(ctx, sqlStr, args...)
-
-	return err
-}
-
-func (r *PostgresRepository) UpdateTournament(
-	ctx context.Context,
-	nameOrAddress string,
-	t *model.Tournament,
-) error {
-
-	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
-
-	winnerCommitment := postgres.NULL
-	if t.WinnerCommitment != nil {
-		winnerCommitment = postgres.Bytea(t.WinnerCommitment.Bytes())
-	}
-	finalState := postgres.NULL
-	if t.FinalStateHash != nil {
-		finalState = postgres.Bytea(t.FinalStateHash.Bytes())
-	}
-
-	updateStmt := table.Tournaments.
-		UPDATE(
-			table.Tournaments.WinnerCommitment,
-			table.Tournaments.FinalStateHash,
-			table.Tournaments.FinishedAtBlock,
-		).
-		SET(
-			winnerCommitment,
-			finalState,
-			t.FinishedAtBlock,
-		).
-		FROM(
-			table.Application,
-		).
-		WHERE(postgres.AND(
-			whereClause,
-			table.Tournaments.ApplicationID.EQ(postgres.Int(t.ApplicationID)),
-			table.Tournaments.EpochIndex.EQ(uint64Expr(t.EpochIndex)),
-			table.Tournaments.Address.EQ(postgres.Bytea(t.Address.Bytes())),
-		))
-
-	sqlStr, args := updateStmt.Sql()
-	cmd, err := r.db.Exec(ctx, sqlStr, args...)
+	applicationID := table.Application.SELECT(table.Application.ID).WHERE(getWhereClauseFromNameOrAddress(nameOrAddress))
+	stmt := tournamentUpsert(value, applicationID)
+	sqlStr, args := stmt.Sql()
+	command, err := r.db.Exec(ctx, sqlStr, args...)
 	if err != nil {
 		return err
 	}
-	if cmd.RowsAffected() == 0 {
-		return repository.ErrNotFound
+	if command.RowsAffected() == 0 {
+		return fmt.Errorf("%w: tournament %s", repository.ErrTournamentEventConflict, value.Address)
 	}
 	return nil
 }
 
-func (r *PostgresRepository) GetTournament(
-	ctx context.Context,
-	nameOrAddress string,
-	address string,
-) (*model.Tournament, error) {
-
-	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
-
-	tournamentAddress := common.HexToAddress(address)
-	sel := table.Tournaments.
-		SELECT(
-			table.Tournaments.ApplicationID,
-			table.Tournaments.EpochIndex,
-			table.Tournaments.Address,
-			table.Tournaments.ParentTournamentAddress,
-			table.Tournaments.ParentMatchIDHash,
-			table.Tournaments.MaxLevel,
-			table.Tournaments.Level,
-			table.Tournaments.Log2step,
-			table.Tournaments.Height,
-			table.Tournaments.WinnerCommitment,
-			table.Tournaments.FinalStateHash,
-			table.Tournaments.FinishedAtBlock,
-			table.Tournaments.CreatedAt,
-			table.Tournaments.UpdatedAt,
-		).
-		FROM(
-			table.Tournaments.
-				INNER_JOIN(table.Application,
-					table.Tournaments.ApplicationID.EQ(table.Application.ID),
-				),
-		).
-		WHERE(
-			whereClause.
-				AND(table.Tournaments.Address.EQ(postgres.Bytea(tournamentAddress.Bytes()))),
-		)
-
+func (r *PostgresRepository) GetTournament(ctx context.Context, nameOrAddress string, address string) (*Tournament, error) {
+	sel := table.Tournaments.SELECT(tournamentColumns, table.Tournaments.CreatedAt, table.Tournaments.UpdatedAt).
+		FROM(table.Tournaments.INNER_JOIN(table.Application, table.Tournaments.ApplicationID.EQ(table.Application.ID))).
+		WHERE(getWhereClauseFromNameOrAddress(nameOrAddress).AND(
+			table.Tournaments.Address.EQ(postgres.Bytea(common.HexToAddress(address).Bytes())),
+		))
 	sqlStr, args := sel.Sql()
-	row := r.db.QueryRow(ctx, sqlStr, args...)
-
-	var t model.Tournament
-	err := row.Scan(
-		&t.ApplicationID,
-		&t.EpochIndex,
-		&t.Address,
-		&t.ParentTournamentAddress,
-		&t.ParentMatchIDHash,
-		&t.MaxLevel,
-		&t.Level,
-		&t.Log2Step,
-		&t.Height,
-		&t.WinnerCommitment,
-		&t.FinalStateHash,
-		&t.FinishedAtBlock,
-		&t.CreatedAt,
-		&t.UpdatedAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
+	value, err := scanTournament(r.db.QueryRow(ctx, sqlStr, args...))
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-	return &t, nil
+	return value, err
 }
 
 func (r *PostgresRepository) ListTournaments(
-	ctx context.Context,
-	nameOrAddress string,
-	f repository.TournamentFilter,
-	p repository.Pagination,
-	descending bool,
-) ([]*model.Tournament, uint64, error) {
-
-	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
-
-	fromClause := table.Tournaments.
-		INNER_JOIN(table.Application,
-			table.Tournaments.ApplicationID.EQ(table.Application.ID),
-		)
-
-	conditions := []postgres.BoolExpression{whereClause}
+	ctx context.Context, nameOrAddress string, f repository.TournamentFilter, p repository.Pagination, descending bool,
+) ([]*Tournament, uint64, error) {
+	if p.Limit > math.MaxInt64 || p.Offset > math.MaxInt64 {
+		return nil, 0, fmt.Errorf("pagination exceeds PostgreSQL integer range")
+	}
+	from := table.Tournaments.INNER_JOIN(table.Application, table.Tournaments.ApplicationID.EQ(table.Application.ID))
+	conditions := []postgres.BoolExpression{getWhereClauseFromNameOrAddress(nameOrAddress)}
 	if f.EpochIndex != nil {
 		conditions = append(conditions, table.Tournaments.EpochIndex.EQ(uint64Expr(*f.EpochIndex)))
 	}
@@ -238,90 +68,45 @@ func (r *PostgresRepository) ListTournaments(
 	if f.ParentMatchIDHash != nil {
 		conditions = append(conditions, table.Tournaments.ParentMatchIDHash.EQ(postgres.Bytea(f.ParentMatchIDHash.Bytes())))
 	}
-
 	tx, err := beginReadTx(ctx, r.db)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-
-	countStmt := table.Tournaments.SELECT(postgres.COUNT(postgres.STAR)).
-		FROM(fromClause).WHERE(postgres.AND(conditions...))
+	countStmt := table.Tournaments.SELECT(postgres.COUNT(postgres.STAR)).FROM(from).WHERE(postgres.AND(conditions...))
 	total, err := countFromTx(ctx, tx, countStmt)
-	if err != nil {
-		return nil, 0, err
+	if err != nil || total == 0 {
+		return nil, total, err
 	}
-	if total == 0 {
-		return nil, 0, nil
-	}
-
-	sel := table.Tournaments.
-		SELECT(
-			table.Tournaments.ApplicationID,
-			table.Tournaments.EpochIndex,
-			table.Tournaments.Address,
-			table.Tournaments.ParentTournamentAddress,
-			table.Tournaments.ParentMatchIDHash,
-			table.Tournaments.MaxLevel,
-			table.Tournaments.Level,
-			table.Tournaments.Log2step,
-			table.Tournaments.Height,
-			table.Tournaments.WinnerCommitment,
-			table.Tournaments.FinalStateHash,
-			table.Tournaments.FinishedAtBlock,
-			table.Tournaments.CreatedAt,
-			table.Tournaments.UpdatedAt,
-		).
-		FROM(fromClause).
-		WHERE(postgres.AND(conditions...))
-
+	sel := table.Tournaments.SELECT(tournamentColumns, table.Tournaments.CreatedAt, table.Tournaments.UpdatedAt).
+		FROM(from).WHERE(postgres.AND(conditions...))
 	if descending {
-		sel = sel.ORDER_BY(table.Tournaments.EpochIndex.DESC(), table.Tournaments.Level.DESC())
+		sel = sel.ORDER_BY(table.Tournaments.EpochIndex.DESC(), table.Tournaments.Level.DESC(), table.Tournaments.Address.DESC())
 	} else {
-		sel = sel.ORDER_BY(table.Tournaments.EpochIndex.ASC(), table.Tournaments.Level.ASC())
+		sel = sel.ORDER_BY(table.Tournaments.EpochIndex.ASC(), table.Tournaments.Level.ASC(), table.Tournaments.Address.ASC())
 	}
-
 	if p.Limit > 0 {
 		sel = sel.LIMIT(int64(p.Limit))
 	}
 	if p.Offset > 0 {
 		sel = sel.OFFSET(int64(p.Offset))
 	}
-
 	sqlStr, args := sel.Sql()
 	rows, err := tx.Query(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
-
-	var tournaments []*model.Tournament
+	var values []*Tournament
 	for rows.Next() {
-		var t model.Tournament
-		err := rows.Scan(
-			&t.ApplicationID,
-			&t.EpochIndex,
-			&t.Address,
-			&t.ParentTournamentAddress,
-			&t.ParentMatchIDHash,
-			&t.MaxLevel,
-			&t.Level,
-			&t.Log2Step,
-			&t.Height,
-			&t.WinnerCommitment,
-			&t.FinalStateHash,
-			&t.FinishedAtBlock,
-			&t.CreatedAt,
-			&t.UpdatedAt,
-		)
+		value, err := scanTournament(rows)
 		if err != nil {
 			return nil, 0, err
 		}
-		tournaments = append(tournaments, &t)
+		values = append(values, value)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, 0, err
 	}
-
-	return tournaments, total, nil
+	return values, total, nil
 }

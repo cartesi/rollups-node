@@ -25,6 +25,12 @@ type commitmentsTable struct {
 	SubmitterAddress  postgres.ColumnBytea
 	BlockNumber       postgres.ColumnFloat
 	TxHash            postgres.ColumnBytea
+	LogIndex          postgres.ColumnFloat
+	AsOfBlock         postgres.ColumnFloat
+	Claimer           postgres.ColumnBytea
+	ClockRunning      postgres.ColumnBool
+	ClockDeadline     postgres.ColumnFloat
+	ClockAllowance    postgres.ColumnFloat
 	CreatedAt         postgres.ColumnTimestampz
 	UpdatedAt         postgres.ColumnTimestampz
 
@@ -76,10 +82,16 @@ func newCommitmentsTableImpl(schemaName, tableName, alias string) commitmentsTab
 		SubmitterAddressColumn  = postgres.ByteaColumn("submitter_address")
 		BlockNumberColumn       = postgres.FloatColumn("block_number")
 		TxHashColumn            = postgres.ByteaColumn("tx_hash")
+		LogIndexColumn          = postgres.FloatColumn("log_index")
+		AsOfBlockColumn         = postgres.FloatColumn("as_of_block")
+		ClaimerColumn           = postgres.ByteaColumn("claimer")
+		ClockRunningColumn      = postgres.BoolColumn("clock_running")
+		ClockDeadlineColumn     = postgres.FloatColumn("clock_deadline")
+		ClockAllowanceColumn    = postgres.FloatColumn("clock_allowance")
 		CreatedAtColumn         = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn         = postgres.TimestampzColumn("updated_at")
-		allColumns              = postgres.ColumnList{ApplicationIDColumn, EpochIndexColumn, TournamentAddressColumn, CommitmentColumn, FinalStateHashColumn, SubmitterAddressColumn, BlockNumberColumn, TxHashColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns          = postgres.ColumnList{FinalStateHashColumn, SubmitterAddressColumn, BlockNumberColumn, TxHashColumn, CreatedAtColumn, UpdatedAtColumn}
+		allColumns              = postgres.ColumnList{ApplicationIDColumn, EpochIndexColumn, TournamentAddressColumn, CommitmentColumn, FinalStateHashColumn, SubmitterAddressColumn, BlockNumberColumn, TxHashColumn, LogIndexColumn, AsOfBlockColumn, ClaimerColumn, ClockRunningColumn, ClockDeadlineColumn, ClockAllowanceColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns          = postgres.ColumnList{FinalStateHashColumn, SubmitterAddressColumn, BlockNumberColumn, TxHashColumn, LogIndexColumn, AsOfBlockColumn, ClaimerColumn, ClockRunningColumn, ClockDeadlineColumn, ClockAllowanceColumn, CreatedAtColumn, UpdatedAtColumn}
 		defaultColumns          = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
 	)
 
@@ -95,6 +107,12 @@ func newCommitmentsTableImpl(schemaName, tableName, alias string) commitmentsTab
 		SubmitterAddress:  SubmitterAddressColumn,
 		BlockNumber:       BlockNumberColumn,
 		TxHash:            TxHashColumn,
+		LogIndex:          LogIndexColumn,
+		AsOfBlock:         AsOfBlockColumn,
+		Claimer:           ClaimerColumn,
+		ClockRunning:      ClockRunningColumn,
+		ClockDeadline:     ClockDeadlineColumn,
+		ClockAllowance:    ClockAllowanceColumn,
 		CreatedAt:         CreatedAtColumn,
 		UpdatedAt:         UpdatedAtColumn,
 

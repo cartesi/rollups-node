@@ -632,6 +632,66 @@ CREATE TABLE "node_config"
 CREATE TRIGGER "config_set_updated_at" BEFORE UPDATE ON "node_config"
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+CREATE DOMAIN uint256 AS NUMERIC CHECK (
+    VALUE >= 0 AND VALUE = trunc(VALUE) AND VALUE <=
+    115792089237316195423570985008687907853269984665640564039457584007913129639935
+);
+
+CREATE TYPE "TournamentKind" AS ENUM (
+    'LEAF',
+    'NON_LEAF'
+);
+
+CREATE TYPE "TournamentStandingState" AS ENUM (
+    'MATCHES_ACTIVE',
+    'AWAITING_CLOSURE',
+    'ROOT_WINNER',
+    'ROOT_FAILED',
+    'INNER_WINNER',
+    'INNER_ELIMINABLE_NO_WINNER',
+    'INNER_ELIMINABLE_WINNER_EXPIRED'
+);
+
+CREATE TYPE "MatchPhase" AS ENUM (
+    'UNINITIALIZED',
+    'BISECTING',
+    'READY_TO_SEAL',
+    'SEALED'
+);
+
+CREATE TYPE "CommitmentSide" AS ENUM (
+    'ONE',
+    'TWO'
+);
+
+CREATE TYPE "MatchTimeoutOutcome" AS ENUM (
+    'NONE',
+    'ONE_WINS',
+    'TWO_WINS',
+    'ELIMINATE_BOTH'
+);
+
+CREATE TYPE "InnerTournamentDisposition" AS ENUM (
+    'UNSETTLED',
+    'WINNER',
+    'ELIMINABLE'
+);
+
+CREATE TYPE "BondDisposition" AS ENUM (
+    'TOURNAMENT_RUNNING',
+    'NO_WINNER',
+    'RECOVERABLE',
+    'RECOVERED'
+);
+
+CREATE TYPE "BondEventType" AS ENUM (
+    'PARTIAL_BOND_REFUND',
+    'BOND_RECOVERED'
+);
+
+-- Tournament, commitment, and match views describe current state at their
+-- as_of_block. These rows are not a historical snapshot API. Event facts are
+-- immutable and are published atomically with each current-state window.
 CREATE TABLE "tournaments"
 (
     "application_id" INT4 NOT NULL,
@@ -643,9 +703,29 @@ CREATE TABLE "tournaments"
     "level" INT NOT NULL CHECK("level" >= 0),
     "log2step" INT NOT NULL CHECK("log2step" >= 0),
     "height" INT NOT NULL CHECK("height" >= 0),
+    "initial_hash" hash NOT NULL,
+    "base_cycle" uint256 NOT NULL,
+    "kind" "TournamentKind" NOT NULL,
+    "start_instant" uint64 NOT NULL,
+    "allowance" uint64 NOT NULL,
+    "creation_block_number" uint64,
+    "creation_tx_hash" hash,
+    "creation_log_index" uint64,
+    "as_of_block" uint64 NOT NULL,
+    "standing" "TournamentStandingState" NOT NULL,
+    "accepts_joins" BOOLEAN NOT NULL,
+    "candidate" hash,
     "winner_commitment" hash,
     "final_state_hash" hash,
-    "finished_at_block" uint64 DEFAULT 0,
+    "finished_at_block" uint64 NOT NULL DEFAULT 0,
+    "parent_commitment" hash,
+    "winner_expires_at" uint64 NOT NULL,
+    "inner_disposition" "InnerTournamentDisposition",
+    "inner_parent_commitment" hash,
+    "inner_paused_allowance" uint64,
+    "bond_disposition" "BondDisposition" NOT NULL,
+    "bond_claimer" ethereum_address,
+    "bond_payment" uint256,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT "tournaments_pkey" PRIMARY KEY ("application_id","epoch_index","address"),
@@ -658,12 +738,60 @@ CREATE TABLE "tournaments"
         OR
         ("level" > 0 AND "parent_tournament_address" IS NOT NULL AND "parent_match_id_hash" IS NOT NULL)
       ),
-    CONSTRAINT "tournaments_max_level_gte_level_check" CHECK ("max_level" >= "level")
+    CONSTRAINT "tournaments_max_level_gte_level_check" CHECK ("max_level" >= "level"),
+    CONSTRAINT "tournaments_creation_event_check" CHECK (
+      ("level" = 0 AND num_nonnulls("creation_block_number", "creation_tx_hash", "creation_log_index") = 0)
+      OR
+      ("level" > 0 AND num_nonnulls("creation_block_number", "creation_tx_hash", "creation_log_index") = 3)
+    ),
+    CONSTRAINT "tournaments_current_winner_check" CHECK (
+      ("standing" IN ('ROOT_WINNER', 'INNER_WINNER') AND "candidate" IS NOT NULL
+        AND "winner_commitment" IS NOT NULL AND "winner_commitment" = "candidate" AND "final_state_hash" IS NOT NULL)
+      OR
+      ("standing" NOT IN ('ROOT_WINNER', 'INNER_WINNER') AND "winner_commitment" IS NULL AND "final_state_hash" IS NULL)
+    ),
+    CONSTRAINT "tournaments_current_result_check" CHECK (
+      ("standing" IN ('MATCHES_ACTIVE', 'AWAITING_CLOSURE') AND "finished_at_block" = 0)
+      OR
+      ("standing" NOT IN ('MATCHES_ACTIVE', 'AWAITING_CLOSURE') AND "finished_at_block" > 0
+        AND "finished_at_block" <= "as_of_block")
+    ),
+    CONSTRAINT "tournaments_inner_winner_check" CHECK (
+      ("standing" = 'INNER_WINNER' AND "level" > 0 AND "parent_commitment" IS NOT NULL
+        AND "winner_expires_at" > "as_of_block")
+      OR
+      ("standing" <> 'INNER_WINNER' AND "parent_commitment" IS NULL AND "winner_expires_at" = 0)
+    ),
+    CONSTRAINT "tournaments_standing_level_check" CHECK (
+      ("level" = 0 AND "standing" IN ('MATCHES_ACTIVE', 'AWAITING_CLOSURE', 'ROOT_WINNER', 'ROOT_FAILED'))
+      OR
+      ("level" > 0 AND "standing" NOT IN ('ROOT_WINNER', 'ROOT_FAILED'))
+    ),
+    CONSTRAINT "tournaments_inner_result_check" CHECK (
+      ("level" = 0 AND num_nonnulls("inner_disposition", "inner_parent_commitment", "inner_paused_allowance") = 0)
+      OR
+      ("level" > 0 AND "inner_disposition" IS NOT NULL AND "inner_paused_allowance" IS NOT NULL AND (
+        ("inner_disposition" = 'WINNER' AND "inner_parent_commitment" IS NOT NULL AND "inner_paused_allowance" > 0)
+        OR
+        ("inner_disposition" <> 'WINNER' AND "inner_parent_commitment" IS NULL AND "inner_paused_allowance" = 0)
+      ))
+    ),
+    CONSTRAINT "tournaments_bond_recovery_check" CHECK (
+      ("bond_disposition" = 'RECOVERABLE' AND "bond_claimer" IS NOT NULL AND "bond_payment" IS NOT NULL)
+      OR
+      ("bond_disposition" <> 'RECOVERABLE' AND "bond_claimer" IS NULL AND "bond_payment" IS NULL)
+    ),
+    CONSTRAINT "tournaments_creation_event_key" UNIQUE ("application_id", "creation_tx_hash", "creation_log_index")
 );
 
 CREATE UNIQUE INDEX "unique_root_per_epoch_idx"
   ON "tournaments"("application_id","epoch_index")
   WHERE "level" = 0;
+
+-- A tournament address identifies one epoch within an application. This key
+-- also supports tournament lookups that do not specify an epoch.
+CREATE UNIQUE INDEX "tournaments_address_idx"
+  ON "tournaments"("application_id","address");
 
 CREATE INDEX "tournaments_parent_match_nonroot_idx"
   ON "tournaments"("application_id","epoch_index","parent_tournament_address","parent_match_id_hash")
@@ -683,10 +811,18 @@ CREATE TABLE "commitments"
     "submitter_address" ethereum_address NOT NULL,
     "block_number" uint64 NOT NULL,
     "tx_hash" hash NOT NULL,
+    "log_index" uint64 NOT NULL,
+    "as_of_block" uint64 NOT NULL,
+    "claimer" ethereum_address NOT NULL,
+    "clock_running" BOOLEAN NOT NULL,
+    "clock_deadline" uint64 NOT NULL,
+    "clock_allowance" uint64 NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT "commitments_pkey"
       PRIMARY KEY ("application_id","epoch_index","tournament_address","commitment"),
+    CONSTRAINT "commitments_event_key" UNIQUE ("application_id", "tx_hash", "log_index"),
+    CONSTRAINT "commitments_paused_clock_check" CHECK ("clock_running" OR "clock_deadline" = 0),
     CONSTRAINT "commitments_tournament_fkey"
       FOREIGN KEY ("application_id","epoch_index","tournament_address")
       REFERENCES "tournaments"("application_id","epoch_index","address")
@@ -711,14 +847,67 @@ CREATE TABLE "matches"
     "left_of_two" hash NOT NULL,
     "block_number" uint64 NOT NULL,
     "tx_hash" hash NOT NULL,
+    "log_index" uint64 NOT NULL,
+    "eliminable_at" uint64 NOT NULL,
+    "seal_eliminable_at" uint64,
+    "seal_block_number" uint64,
+    "seal_tx_hash" hash,
+    "seal_log_index" uint64,
+    "as_of_block" uint64 NOT NULL,
+    "phase" "MatchPhase" NOT NULL,
+    "timeout_outcome" "MatchTimeoutOutcome" NOT NULL,
+    "deferred_charge" uint64 NOT NULL,
+    "revealing_parent" hash,
+    "waiting_left" hash,
+    "waiting_right" hash,
+    "segment_start_position" uint256,
+    "segment_start_cycle" uint256,
+    "current_height" uint64,
+    "responder" "CommitmentSide",
+    "agree_state" hash,
+    "divergence_position" uint256,
+    "divergence_cycle" uint256,
+    "final_state_one" hash,
+    "final_state_two" hash,
     "winner" "WinnerCommitment" NOT NULL,
     "deletion_reason" "MatchDeletionReason" NOT NULL,
-    "deletion_block_number" uint64 DEFAULT 0,
+    "deletion_block_number" uint64 NOT NULL DEFAULT 0,
     "deletion_tx_hash" hash,
+    "deletion_log_index" uint64,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT "matches_pkey"
       PRIMARY KEY ("application_id","epoch_index","tournament_address","id_hash"),
+
+    CONSTRAINT "matches_deletion_columns_set_together" CHECK (
+        ("deletion_reason" = 'NOT_DELETED' AND "deletion_block_number" = 0
+          AND "deletion_tx_hash" IS NULL AND "deletion_log_index" IS NULL)
+        OR
+        ("deletion_reason" <> 'NOT_DELETED' AND "deletion_block_number" > 0
+          AND "deletion_tx_hash" IS NOT NULL AND "deletion_log_index" IS NOT NULL)
+    ),
+
+    CONSTRAINT "matches_seal_tuple_check" CHECK (
+      num_nonnulls("seal_eliminable_at", "seal_block_number", "seal_tx_hash", "seal_log_index") IN (0, 4)
+    ),
+    CONSTRAINT "matches_event_key" UNIQUE ("application_id", "tx_hash", "log_index"),
+    CONSTRAINT "matches_seal_event_key" UNIQUE ("application_id", "seal_tx_hash", "seal_log_index"),
+    CONSTRAINT "matches_deletion_event_key" UNIQUE ("application_id", "deletion_tx_hash", "deletion_log_index"),
+    CONSTRAINT "matches_current_phase_check" CHECK (
+      ("phase" IN ('BISECTING', 'READY_TO_SEAL') AND "deletion_reason" = 'NOT_DELETED'
+        AND num_nonnulls("revealing_parent", "waiting_left", "waiting_right", "segment_start_position", "segment_start_cycle", "responder") = 6
+        AND num_nonnulls("agree_state", "divergence_position", "divergence_cycle", "final_state_one", "final_state_two") = 0
+        AND (("phase" = 'BISECTING' AND "current_height" IS NOT NULL)
+          OR ("phase" = 'READY_TO_SEAL' AND "current_height" IS NULL)))
+      OR
+      ("phase" = 'SEALED' AND "deletion_reason" = 'NOT_DELETED'
+        AND num_nonnulls("revealing_parent", "waiting_left", "waiting_right", "segment_start_position", "segment_start_cycle", "responder", "current_height") = 0
+        AND num_nonnulls("agree_state", "divergence_position", "divergence_cycle", "final_state_one", "final_state_two") = 5)
+      OR
+      ("phase" = 'UNINITIALIZED' AND "deletion_reason" <> 'NOT_DELETED' AND "timeout_outcome" = 'NONE' AND "deferred_charge" = 0
+        AND num_nonnulls("revealing_parent", "waiting_left", "waiting_right", "segment_start_position", "segment_start_cycle", "responder", "current_height",
+          "agree_state", "divergence_position", "divergence_cycle", "final_state_one", "final_state_two") = 0)
+    ),
 
     CONSTRAINT "matches_tournament_fkey"
       FOREIGN KEY ("application_id","epoch_index","tournament_address")
@@ -758,12 +947,15 @@ CREATE TABLE "match_advances"
     "id_hash" hash NOT NULL,   -- keccak256(abi.encode(one,two))
     "other_parent" hash NOT NULL,
     "left_node" hash NOT NULL,
+    "segment_start_position" uint256 NOT NULL,
+    "eliminable_at" uint64 NOT NULL,
     "block_number" uint64 NOT NULL,
     "tx_hash" hash NOT NULL,
+    "log_index" uint64 NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT "match_advances_pkey"
-      PRIMARY KEY ("application_id","epoch_index","tournament_address","id_hash","other_parent"),
+      PRIMARY KEY ("application_id","tx_hash","log_index"),
 
     CONSTRAINT "match_advances_matches_fkey"
       FOREIGN KEY ("application_id","epoch_index","tournament_address","id_hash")
@@ -772,10 +964,49 @@ CREATE TABLE "match_advances"
 );
 
 CREATE INDEX "match_advances_block_number_idx"
-  ON "match_advances"("application_id","epoch_index","tournament_address","id_hash","block_number");
+  ON "match_advances"("application_id","epoch_index","tournament_address","id_hash","block_number","log_index","tx_hash");
 
 CREATE TRIGGER "match_advances_set_updated_at"
 BEFORE UPDATE ON "match_advances"
+FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TABLE "bond_events"
+(
+    "application_id" INT4 NOT NULL,
+    "epoch_index" uint64 NOT NULL,
+    "tournament_address" ethereum_address NOT NULL,
+    "type" "BondEventType" NOT NULL,
+    "block_number" uint64 NOT NULL,
+    "tx_hash" hash NOT NULL,
+    "log_index" uint64 NOT NULL,
+    "recipient" ethereum_address,
+    "value" uint256,
+    "success" BOOLEAN,
+    "commitment" hash,
+    "claimer" ethereum_address,
+    "payment" uint256,
+    "burned" uint256,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT "bond_events_pkey" PRIMARY KEY ("application_id", "tx_hash", "log_index"),
+    CONSTRAINT "bond_events_tournament_fkey" FOREIGN KEY ("application_id", "epoch_index", "tournament_address")
+      REFERENCES "tournaments"("application_id", "epoch_index", "address") ON DELETE CASCADE,
+    CONSTRAINT "bond_events_variant_check" CHECK (
+      ("type" = 'PARTIAL_BOND_REFUND' AND num_nonnulls("recipient", "value", "success") = 3
+        AND num_nonnulls("commitment", "claimer", "payment", "burned") = 0)
+      OR
+      ("type" = 'BOND_RECOVERED' AND num_nonnulls("recipient", "value", "success") = 0
+        AND num_nonnulls("commitment", "claimer", "payment", "burned") = 4)
+    )
+);
+
+CREATE INDEX "bond_events_application_order_idx"
+  ON "bond_events"("application_id", "block_number", "log_index", "tx_hash");
+
+CREATE INDEX "bond_events_tournament_order_idx"
+  ON "bond_events"("application_id", "epoch_index", "tournament_address", "block_number", "log_index", "tx_hash");
+
+CREATE TRIGGER "bond_events_set_updated_at" BEFORE UPDATE ON "bond_events"
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TABLE "state_hashes"
