@@ -4,10 +4,10 @@
 package deposit
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math/big"
-	"os"
 	"strings"
 
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
@@ -34,16 +34,21 @@ var Cmd = &cobra.Command{
 
 var erc20Cmd = &cobra.Command{
 	Use:     "erc20 [app-name-or-address]",
-	Short:   "Deposit ERC-20 tokens through the ERC20Portal",
+	Short:   "Deposit ERC-20 tokens through the Erc20Portal",
 	Example: erc20Examples,
 	Args:    cobra.ExactArgs(1),
-	Run:     runERC20,
+	RunE:    runERC20,
+	PreRunE: validateERC20Flags,
 	Long: `
-Calls ERC20Portal.depositERC20Tokens(token, app, amount, execData).
+Calls Erc20Portal.depositErc20Tokens(token, app, amount, execData).
 
 The command does not approve token spending unless --approve is supplied.
 Without --approve, the signer must already have enough allowance for the
 portal.
+
+--approve cannot be combined with --no-wait. The approval must succeed
+before the deposit transaction is prepared. Submit approval separately
+if the deposit must return without waiting for mining.
 
 Supported Environment Variables:
   CARTESI_DATABASE_CONNECTION                    Database connection (only when an app name is passed)
@@ -52,10 +57,10 @@ Supported Environment Variables:
   CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX            derived account index (mnemonic auth)`,
 }
 
-const erc20Examples = `# Deposit 100 units of a token through the ERC20Portal:
+const erc20Examples = `# Deposit 100 units of a token through the Erc20Portal:
 cartesi-rollups-cli deposit erc20 echo-dapp \
-  --portal 0x22E57511C30CcE6CDaa742E13CE3b774fDC663b1 \
-  --token 0x88A2120B7068E78692C8fd12E751d610B6377E4d \
+  --portal 0x3332DE61a8BB9aC84893b2f552Fe81C9a6dC5419 \
+  --token 0x7a051EDffC0884cd88d4a377F4C87BE074CF6c81 \
   --amount 100
 
 # Approve the portal first, then deposit:
@@ -74,13 +79,14 @@ var (
 func init() {
 	Cmd.AddCommand(erc20Cmd)
 
-	erc20Cmd.Flags().StringVar(&portalParam, "portal", "", "ERC20Portal contract address")
+	erc20Cmd.Flags().StringVar(&portalParam, "portal", "", "Erc20Portal contract address")
 	erc20Cmd.Flags().StringVar(&tokenParam, "token", "", "ERC-20 token contract address")
 	erc20Cmd.Flags().StringVar(&amountParam, "amount", "", "Token amount to deposit (decimal or 0x-prefixed)")
 	erc20Cmd.Flags().StringVar(&execDataParam, "exec-data", "0x", "Extra execution-layer data")
 	erc20Cmd.Flags().BoolVar(&approveParam, "approve", false, "Approve the portal for --amount before depositing")
 	erc20Cmd.Flags().BoolVarP(&skipConfirmation, "yes", "y", false, "Skip confirmation prompt")
 	erc20Cmd.Flags().BoolVar(&asJSONParam, "json", false, "Print result as JSON")
+	cli.AddTransactionFlags(erc20Cmd)
 	cobra.CheckErr(erc20Cmd.MarkFlagRequired("portal"))
 	cobra.CheckErr(erc20Cmd.MarkFlagRequired("token"))
 	cobra.CheckErr(erc20Cmd.MarkFlagRequired("amount"))
@@ -94,31 +100,65 @@ func init() {
 	})
 }
 
-func runERC20(cmd *cobra.Command, args []string) {
+func validateERC20Flags(cmd *cobra.Command, _ []string) error {
+	approve, err := cmd.Flags().GetBool("approve")
+	if err != nil {
+		return err
+	}
+	noWait, err := cmd.Flags().GetBool("no-wait")
+	if err != nil {
+		return err
+	}
+	if approve && noWait {
+		return fmt.Errorf("--approve cannot be combined with --no-wait: the deposit requires a successful approval")
+	}
+	return nil
+}
+
+func runERC20(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	appAddr, err := util.ResolveApplicationAddress(ctx, args[0])
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 	portalAddr, err := parseAddress("portal", portalParam)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 	tokenAddr, err := parseAddress("token", tokenParam)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 	amount, err := parseAmount(amountParam)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 	execData, err := hexutil.Decode(execDataParam)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
 	chainID, err := client.ChainID(ctx)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 	txOptsFactory, err := auth.GetTransactOptsFactory(ctx, chainID)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	if !skipConfirmation {
-		fmt.Printf("Preparing ERC-20 deposit\n"+
+		_, err := fmt.Fprintf(cmd.ErrOrStderr(), "Preparing ERC-20 deposit\n"+
 			"  signer:      %s\n"+
 			"  application: %s\n"+
 			"  portal:      %s\n"+
@@ -126,79 +166,112 @@ func runERC20(cmd *cobra.Command, args []string) {
 			"  amount:      %s\n"+
 			"  approve:     %t\n",
 			txOptsFactory.From(), appAddr, portalAddr, tokenAddr, amount.String(), approveParam)
-		confirmed, promptErr := cli.ConfirmPrompt("Do you want to continue?")
-		cobra.CheckErr(promptErr)
+		if err != nil {
+			return err
+		}
+		confirmed, promptErr := cli.ConfirmPromptTo(cmd.ErrOrStderr(), "Do you want to continue?")
+		if promptErr != nil {
+			return promptErr
+		}
 		if !confirmed {
-			fmt.Println("Transaction cancelled")
-			os.Exit(0)
+			_, err := fmt.Fprintln(cmd.ErrOrStderr(), "Transaction cancelled")
+			return err
 		}
 	}
 
 	var approveHash *common.Hash
 	if approveParam {
 		token, err := ierc20metadata.NewIERC20Metadata(tokenAddr, client)
-		cobra.CheckErr(err)
+		if err != nil {
+			return err
+		}
 		approveOpts, err := cli.GetTransactOptsFromFactory(ctx, txOptsFactory)
-		cobra.CheckErr(err)
-		tx, err := token.Approve(approveOpts, portalAddr, amount)
-		cobra.CheckErr(cli.DecorateRevert(err,
-			ierc20metadata.IERC20MetadataMetaData,
-			ierc20errors.IERC20ErrorsMetaData,
-		))
-		receipt, err := bind.WaitMined(ctx, client, tx)
-		cobra.CheckErr(err)
-		cobra.CheckErr(checkReceiptStatus(receipt, "approve"))
-		hash := receipt.TxHash
+		if err != nil {
+			return err
+		}
+		tx, receipt, err := cli.Transact(ctx, cmd, client, approveOpts, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+			return token.Approve(opts, portalAddr, amount)
+		})
+		if err != nil {
+			return cli.DecorateRevert(err, ierc20metadata.IERC20MetadataMetaData, ierc20errors.IERC20ErrorsMetaData)
+		}
+		approved := false
+		for _, log := range receipt.Logs {
+			if log == nil || log.Address != tokenAddr || len(log.Data) != common.HashLength {
+				continue
+			}
+			event, err := token.ParseApproval(*log)
+			if err == nil && event.Owner == approveOpts.From && event.Spender == portalAddr && event.Value.Cmp(amount) == 0 {
+				approved = true
+				break
+			}
+		}
+		if !approved {
+			return fmt.Errorf("transaction %s mined, but its receipt has no matching Approval event", tx.Hash())
+		}
+		hash := tx.Hash()
 		approveHash = &hash
 	}
 
-	portal, err := ierc20portal.NewIERC20Portal(portalAddr, client)
-	cobra.CheckErr(err)
+	portal, err := ierc20portal.NewIErc20Portal(portalAddr, client)
+	if err != nil {
+		return err
+	}
 	depositOpts, err := cli.GetTransactOptsFromFactory(ctx, txOptsFactory)
-	cobra.CheckErr(err)
-	tx, err := portal.DepositERC20Tokens(depositOpts, tokenAddr, appAddr, amount, execData)
+	if err != nil {
+		return err
+	}
+	tx, receipt, err := cli.Transact(ctx, cmd, client, depositOpts, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+		return portal.DepositErc20Tokens(opts, tokenAddr, appAddr, amount, execData)
+	})
 	// The revert can come from three layers: the portal itself
-	// (ERC20TransferFailed), the token's transferFrom (ERC-6093 errors such
-	// as ERC20InsufficientBalance/Allowance), or the forwarded
+	// (Erc20TransferFailed or a balance-delta error), the token's transferFrom
+	// (ERC-6093 errors such as ERC20InsufficientBalance/Allowance), or the forwarded
 	// InputBox.addInput (InputTooLarge and the application foreclosure-probe
 	// family).
-	cobra.CheckErr(cli.DecorateRevert(err,
-		ierc20portal.IERC20PortalMetaData,
-		ierc20errors.IERC20ErrorsMetaData,
-		iinputbox.IInputBoxMetaData,
-		iapplication.IApplicationMetaData,
-	))
-	receipt, err := bind.WaitMined(ctx, client, tx)
-	cobra.CheckErr(err)
-	cobra.CheckErr(checkReceiptStatus(receipt, "depositERC20Tokens"))
+	if err != nil {
+		return cli.DecorateRevert(err,
+			ierc20portal.IErc20PortalMetaData,
+			ierc20errors.IERC20ErrorsMetaData,
+			iinputbox.IInputBoxMetaData,
+			iapplication.IApplicationMetaData,
+		)
+	}
+	if receipt != nil {
+		// Erc20Portal uses abi.encodePacked(token, sender, amount, execData).
+		payload := bytes.Join([][]byte{tokenAddr.Bytes(), depositOpts.From.Bytes(), common.LeftPadBytes(amount.Bytes(), common.HashLength),
+			execData}, nil)
+		if err := verifyDepositReceipt(ctx, client, receipt, appAddr, portalAddr, payload); err != nil {
+			return fmt.Errorf("transaction %s mined, but its deposit could not be confirmed: %w", tx.Hash(), err)
+		}
+	}
 
 	if asJSONParam {
 		result := struct {
+			cli.TransactionResult
 			ApplicationAddress common.Address `json:"application_address"`
 			PortalAddress      common.Address `json:"portal_address"`
 			TokenAddress       common.Address `json:"token_address"`
 			Amount             string         `json:"amount"`
 			ApproveTxHash      *common.Hash   `json:"approve_transaction_hash,omitempty"`
-			TransactionHash    common.Hash    `json:"transaction_hash"`
-			BlockNumber        string         `json:"block_number"`
 		}{
+			TransactionResult:  cli.NewTransactionResult(tx, receipt),
 			ApplicationAddress: appAddr,
 			PortalAddress:      portalAddr,
 			TokenAddress:       tokenAddr,
 			Amount:             amount.String(),
 			ApproveTxHash:      approveHash,
-			TransactionHash:    receipt.TxHash,
-			BlockNumber:        fmt.Sprintf("0x%x", receipt.BlockNumber.Uint64()),
 		}
-		jsonBytes, err := json.MarshalIndent(&result, "", "  ")
-		cobra.CheckErr(err)
-		fmt.Println(string(jsonBytes))
-	} else {
-		if approveHash != nil {
-			fmt.Printf("approve tx-hash: %s\n", approveHash.Hex())
-		}
-		fmt.Printf("deposit tx-hash: %s blockNumber: %d\n", receipt.TxHash, receipt.BlockNumber.Uint64())
+		encoder := json.NewEncoder(cmd.OutOrStdout())
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(result)
 	}
+	if approveHash != nil {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "approve tx-hash: %s\n", approveHash.Hex()); err != nil {
+			return err
+		}
+	}
+	return cli.WriteTransactionResult(cmd, tx, receipt)
 }
 
 func parseAddress(name string, value string) (common.Address, error) {
@@ -226,15 +299,9 @@ func parseAmount(value string) (*big.Int, error) {
 	if amount.Sign() <= 0 {
 		return nil, fmt.Errorf("amount must be positive")
 	}
+	const uint256Bits = 256
+	if amount.BitLen() > uint256Bits {
+		return nil, fmt.Errorf("amount must fit in uint256")
+	}
 	return amount, nil
-}
-
-func checkReceiptStatus(receipt *types.Receipt, action string) error {
-	if receipt == nil {
-		return fmt.Errorf("%s transaction has no receipt", action)
-	}
-	if receipt.Status != types.ReceiptStatusSuccessful {
-		return fmt.Errorf("%s transaction failed: %s", action, receipt.TxHash)
-	}
-	return nil
 }
