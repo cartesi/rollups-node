@@ -25,13 +25,13 @@ import (
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
 )
 
 var (
 	applicationConsensusAddressParam string
-	applicationDataAvailabilityParam string
 	applicationEnableParam           bool
 	applicationOwnerAddressParam     string
 	applicationRegisterParam         bool
@@ -54,6 +54,7 @@ var applicationCmd = &cobra.Command{
 	},
 	Example: applicationExamples,
 	Run:     runDeployApplication,
+	PreRunE: validateApplicationDeployment,
 	Long: `
 Supported Environment Variables:
   CARTESI_DATABASE_CONNECTION                                Database connection string
@@ -75,6 +76,9 @@ const applicationExamples = `
 # deploy an application contract with a PRT consensus, then register the application
  - cli deploy application echo-dapp applications/echo-dapp/ --prt
 
+# deploy a PRT application with two sentry slots and a manager that can rotate their addresses
+ - cartesi-rollups-cli deploy application echo-dapp applications/echo-dapp/ --prt --claim-staging-period=300 --sentry-manager=0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --sentries=0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB,0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
+
 # deploy but don't register into the database
  - cartesi-rollups-cli deploy application echo-dapp applications/echo-dapp/ --register=false
 
@@ -93,8 +97,6 @@ func init() {
 		"PRT Application factory address. Default value is retrieved from configuration.")
 	applicationCmd.Flags().StringVarP(&applicationOwnerAddressParam, "application-owner", "o", "",
 		"Application owner address. If not defined, it will be derived from the auth method.")
-	applicationCmd.Flags().StringVarP(&applicationDataAvailabilityParam, "data-availability", "d", "",
-		"Data availability string. Default is input box.")
 	applicationCmd.Flags().StringVarP(&applicationTemplateHashParam, "template-hash", "H", "",
 		"Template hash. If not provided, it will be read from the template path")
 	applicationCmd.Flags().BoolVarP(&applicationRegisterParam, "register", "r", true,
@@ -107,6 +109,7 @@ func init() {
 		"Authority Owner address. If not defined, it will be derived from the auth method.")
 	applicationCmd.Flags().BoolVarP(&deploymentTypePRT, "prt", "", false,
 		"Deploy a PRT application.")
+	addPRTSentryFlags(applicationCmd)
 
 	origHelpFunc := applicationCmd.HelpFunc()
 	applicationCmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
@@ -116,6 +119,29 @@ func init() {
 		command.Flags().Lookup("verbose").Hidden = false
 		origHelpFunc(command, strings)
 	})
+	cli.AddTransactionFlags(applicationCmd)
+}
+
+func validateApplicationDeployment(cmd *cobra.Command, args []string) error {
+	register, err := cmd.Flags().GetBool("register")
+	if err != nil {
+		return err
+	}
+	noWait, err := cmd.Flags().GetBool("no-wait")
+	if err != nil {
+		return err
+	}
+	if noWait && register {
+		return fmt.Errorf("--no-wait requires --register=false; registration needs a confirmed deployment")
+	}
+	if register && len(args) < 1 {
+		return fmt.Errorf("missing application name: positional argument [application-name] is required when --register=true")
+	}
+	if !cmd.Flags().Changed("template-hash") && len(args) < 2 {
+		return fmt.Errorf("missing template: provide either positional [template-path] or --template-hash")
+	}
+	_, _, err = parsePRTSentryConfig(cmd)
+	return err
 }
 
 func runDeployApplication(cmd *cobra.Command, args []string) {
@@ -124,24 +150,12 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 
 	ctx := cmd.Context()
 
-	// Validate required application name when registering
-	if applicationRegisterParam && len(args) < 1 {
-		err := cmd.Help()
-		cobra.CheckErr(err)
-		cobra.CheckErr(fmt.Errorf("missing application name: positional argument [application-name] is required when --register=true"))
-	}
-	// Validate that a template is provided either as positional [template-path] or via --template-hash
-	if cmd.Flags().Changed("template-hash") && len(args) < 2 {
-		err := cmd.Help()
-		cobra.CheckErr(err)
-		cobra.CheckErr(fmt.Errorf("missing template: provide either positional [template-path] or --template-hash"))
-	}
-
 	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
 	cobra.CheckErr(err)
 
 	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
 	cobra.CheckErr(err)
+	defer client.Close()
 
 	chainID, err := client.ChainID(ctx)
 	cobra.CheckErr(err)
@@ -205,7 +219,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		if executionParametersFileParam == "-" {
 			filePath = os.Stdin.Name()
 		}
-		contents, err := os.ReadFile(filePath) //nolint:gosec // The CLI user explicitly supplies this path.
+		contents, err := os.ReadFile(filePath)
 		cobra.CheckErr(err)
 
 		decoder := json.NewDecoder(strings.NewReader(string(contents)))
@@ -239,7 +253,16 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	if verboseParam || !asJSONParam {
 		fmt.Fprint(os.Stderr, "deploying...")
 	}
-	_, result, err := deployment.Deploy(ctx, client, ethutil.NewStaticTransactOptsFactory(txOpts))
+	var tx *types.Transaction
+	var receipt *types.Receipt
+	applicationAddress, result, err := deployment.DeployWithTransaction(ctx, client, ethutil.NewStaticTransactOptsFactory(txOpts),
+		func(
+			ctx context.Context, opts *bind.TransactOpts, build func(*bind.TransactOpts) (*types.Transaction, error),
+		) (*types.Receipt, error) {
+			var err error
+			tx, receipt, err = cli.Transact(ctx, cmd, client, opts, build)
+			return receipt, err
+		})
 	// The revert surface spans the variant's factory plus the constructors it
 	// invokes; selectors are content-matched, so passing every factory ABI is
 	// harmless and covers all three deployment variants.
@@ -250,10 +273,13 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		iquorumfactory.IQuorumFactoryMetaData,
 		idaveappfactory.IDaveAppFactoryMetaData,
 	))
+	if receipt == nil {
+		cobra.CheckErr(writeDeploymentBroadcast(cmd, tx, applicationAddress))
+		return
+	}
 
 	if verboseParam || !asJSONParam {
 		fmt.Fprint(os.Stderr, "success\n")
-		fmt.Fprint(os.Stderr, result)
 	}
 
 	// TODO(mpolitzer): can this be more concise?
@@ -266,7 +292,6 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		application.TemplateHash = res.Deployment.TemplateHash
 		application.EpochLength = res.Deployment.EpochLength
 		application.ClaimStagingPeriod = res.Deployment.ClaimStagingPeriod
-		application.DataAvailability = res.Deployment.DataAvailability
 		application.IInputBoxBlock = res.Deployment.IInputBoxBlock
 		application.WithdrawalConfig = model.WithdrawalConfig(res.Deployment.WithdrawalConfig)
 
@@ -277,7 +302,6 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		application.TemplateHash = res.Deployment.TemplateHash
 		application.EpochLength = res.Deployment.EpochLength
 		application.ClaimStagingPeriod = res.Deployment.ClaimStagingPeriod
-		application.DataAvailability = res.Deployment.DataAvailability
 		application.IInputBoxBlock = res.Deployment.IInputBoxBlock
 		if res.Deployment.ConsensusType != "" {
 			application.ConsensusType = model.Consensus(res.Deployment.ConsensusType)
@@ -290,7 +314,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		application.IInputBoxAddress = res.InputBoxAddress
 		application.TemplateHash = res.Deployment.TemplateHash
 		application.EpochLength = res.Deployment.EpochLength
-		application.DataAvailability = res.DataAvailability
+		application.ClaimStagingPeriod = res.Deployment.ClaimStagingPeriod
 		application.IInputBoxBlock = res.IInputBoxBlock
 		application.ConsensusType = model.Consensus_PRT
 		application.WithdrawalConfig = model.WithdrawalConfig(res.Deployment.WithdrawalConfig)
@@ -337,9 +361,17 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	}
 
 	if asJSONParam {
-		report, err := json.MarshalIndent(&application, "", "  ")
+		report := struct {
+			model.Application
+			Transaction cli.TransactionResult `json:"transaction"`
+		}{Application: application, Transaction: cli.NewTransactionResult(tx, receipt)}
+		encoder := json.NewEncoder(cmd.OutOrStdout())
+		encoder.SetIndent("", "  ")
+		cobra.CheckErr(encoder.Encode(report))
+	} else {
+		cobra.CheckErr(cli.WriteTransactionResult(cmd, tx, receipt))
+		_, err := fmt.Fprint(cmd.OutOrStdout(), result)
 		cobra.CheckErr(err)
-		fmt.Println(string(report))
 	}
 }
 
@@ -363,13 +395,8 @@ func buildSelfhostedApplicationDeployment(
 		return nil, fmt.Errorf("error on parameter selfhosted-factory: %w", err)
 	}
 
-	if !cmd.Flags().Changed("application-owner") {
-		request.ApplicationOwnerAddress = txOpts.From
-	} else {
-		request.ApplicationOwnerAddress, err = parseHexAddress(applicationOwnerAddressParam)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("error on parameter application-owner: %w", err)
+	if cmd.Flags().Changed("application-owner") {
+		return nil, fmt.Errorf("application-owner is not supported for self-hosted deployments; application ownership is renounced")
 	}
 
 	if !cmd.Flags().Changed("authority-owner") {
@@ -394,29 +421,9 @@ func buildSelfhostedApplicationDeployment(
 		return nil, fmt.Errorf("error on parameter template-hash: %w", err)
 	}
 
-	var dataAvailabilityErr error
-	if !cmd.Flags().Changed("data-availability") {
-		inputBoxAddress, err := config.GetContractsInputBoxAddress()
-		if err != nil {
-			return nil, fmt.Errorf("error on parameter data-availability: %w", err)
-		}
-		request.InputBoxAddress, request.IInputBoxBlock, request.DataAvailability, dataAvailabilityErr =
-			ethutil.DefaultDA(client, inputBoxAddress)
-	} else {
-		request.InputBoxAddress, request.IInputBoxBlock, request.DataAvailability, dataAvailabilityErr =
-			ethutil.CustomDA(client, applicationDataAvailabilityParam)
-	}
-	if dataAvailabilityErr != nil {
-		return nil, fmt.Errorf("error on parameter data-availability: %w", dataAvailabilityErr)
-	}
-
-	// ensure there is a contract deployed at the input box address
-	code, err := client.CodeAt(ctx, request.InputBoxAddress, nil)
+	request.InputBoxAddress, request.IInputBoxBlock, err = deploymentInputBox(ctx, client)
 	if err != nil {
-		return nil, fmt.Errorf("failed to probe input box address for contract: %v", err)
-	}
-	if len(code) == 0 {
-		return nil, fmt.Errorf("error input box address has no code: %v", request.InputBoxAddress)
+		return nil, err
 	}
 
 	request.Salt, err = ethutil.ParseSalt(saltParam)
@@ -479,29 +486,9 @@ func buildApplicationOnlyDeployment(
 		return nil, fmt.Errorf("error on parameter application-owner: %w", err)
 	}
 
-	var dataAvailabilityErr error
-	if !cmd.Flags().Changed("data-availability") {
-		inputBoxAddress, err := config.GetContractsInputBoxAddress()
-		if err != nil {
-			return nil, fmt.Errorf("error on parameter data-availability: %w", err)
-		}
-		request.InputBoxAddress, request.IInputBoxBlock, request.DataAvailability, dataAvailabilityErr =
-			ethutil.DefaultDA(client, inputBoxAddress)
-	} else {
-		request.InputBoxAddress, request.IInputBoxBlock, request.DataAvailability, dataAvailabilityErr =
-			ethutil.CustomDA(client, applicationDataAvailabilityParam)
-	}
-	if dataAvailabilityErr != nil {
-		return nil, fmt.Errorf("error on parameter data-availability: %w", dataAvailabilityErr)
-	}
-
-	// ensure there is a contract deployed at the input box address
-	code, err := client.CodeAt(ctx, request.InputBoxAddress, nil)
+	request.InputBoxAddress, request.IInputBoxBlock, err = deploymentInputBox(ctx, client)
 	if err != nil {
-		return nil, fmt.Errorf("failed to probe input box address for contract: %v", err)
-	}
-	if len(code) == 0 {
-		return nil, fmt.Errorf("error input box address has no code: %v", request.InputBoxAddress)
+		return nil, err
 	}
 
 	request.Salt, err = ethutil.ParseSalt(saltParam)
@@ -518,13 +505,37 @@ func buildApplicationOnlyDeployment(
 
 	var consensusType model.Consensus
 	request.Consensus, request.EpochLength, request.ClaimStagingPeriod, consensusType, err =
-		customConsensus(client, applicationConsensusAddressParam)
+		customConsensus(ctx, client, applicationConsensusAddressParam)
 	if err != nil {
 		return nil, fmt.Errorf("error on parameter consensus: %w", err)
 	}
 	request.ConsensusType = consensusType.String()
 
 	return request, nil
+}
+
+func deploymentInputBox(ctx context.Context, client *ethclient.Client) (common.Address, uint64, error) {
+	inputBoxAddress, err := config.GetContractsInputBoxAddress()
+	if err != nil {
+		return common.Address{}, 0, fmt.Errorf("failed to get input box address: %w", err)
+	}
+
+	code, err := client.CodeAt(ctx, inputBoxAddress, nil)
+	if err != nil {
+		return common.Address{}, 0, fmt.Errorf("failed to probe input box address for contract: %w", err)
+	}
+	if len(code) == 0 {
+		return common.Address{}, 0, fmt.Errorf("input box address has no code: %v", inputBoxAddress)
+	}
+
+	inputBoxBlock, err := ethutil.GetInputBoxDeploymentBlock(ctx, client, inputBoxAddress)
+	if err != nil {
+		return common.Address{}, 0, fmt.Errorf("failed to get input box deployment block: %w", err)
+	}
+	if !inputBoxBlock.IsUint64() {
+		return common.Address{}, 0, fmt.Errorf("input box deployment block does not fit uint64: %v", inputBoxBlock)
+	}
+	return inputBoxAddress, inputBoxBlock.Uint64(), nil
 }
 
 func buildPrtApplicationDeployment(
@@ -536,6 +547,10 @@ func buildPrtApplicationDeployment(
 ) {
 	var err error
 	request := &ethutil.PRTApplicationDeployment{}
+	request.SentryManager, request.Sentries, err = parsePRTSentryConfig(cmd)
+	if err != nil {
+		return nil, err
+	}
 	if !cmd.Flags().Changed("prt-factory") {
 		request.FactoryAddress, err = config.GetContractsDaveAppFactoryAddress()
 	} else {
@@ -568,6 +583,7 @@ func buildPrtApplicationDeployment(
 		return nil, err
 	}
 
+	request.ClaimStagingPeriod = claimStagingPeriodParam
 	request.Verbose = verboseParam
 	return request, nil
 }
@@ -577,7 +593,9 @@ func parseHexHash(hash string) (common.Hash, error) {
 	return out, out.UnmarshalText([]byte(hash))
 }
 
-func customConsensus(client *ethclient.Client, consensusString string) (common.Address, uint64, uint64, model.Consensus, error) {
+func customConsensus(
+	ctx context.Context, client *ethclient.Client, consensusString string,
+) (common.Address, uint64, uint64, model.Consensus, error) {
 	consensusAddress, err := parseHexAddress(consensusString)
 	if err != nil {
 		return common.Address{}, 0, 0, "", err
@@ -588,14 +606,15 @@ func customConsensus(client *ethclient.Client, consensusString string) (common.A
 		return common.Address{}, 0, 0, "", err
 	}
 
-	epochLengthBig, err := consensus.GetEpochLength(nil)
+	callOpts := &bind.CallOpts{Context: ctx}
+	epochLengthBig, err := consensus.GetEpochLength(callOpts)
 	if err != nil {
-		return common.Address{}, 0, 0, "", fmt.Errorf("failed to retrieve consensus epoch length: %v", err)
+		return common.Address{}, 0, 0, "", fmt.Errorf("failed to retrieve consensus epoch length: %w", err)
 	}
 
-	claimStagingPeriodBig, err := consensus.GetClaimStagingPeriod(nil)
+	claimStagingPeriodBig, err := consensus.GetClaimStagingPeriod(callOpts)
 	if err != nil {
-		return common.Address{}, 0, 0, "", fmt.Errorf("failed to retrieve consensus claim staging period: %v", err)
+		return common.Address{}, 0, 0, "", fmt.Errorf("failed to retrieve consensus claim staging period: %w", err)
 	}
 
 	consensusType := model.Consensus_Authority
@@ -603,7 +622,7 @@ func customConsensus(client *ethclient.Client, consensusString string) (common.A
 	if err != nil {
 		return common.Address{}, 0, 0, "", err
 	}
-	numOfValidators, err := quorum.NumOfValidators(nil)
+	numOfValidators, err := quorum.NumOfValidators(callOpts)
 	if err == nil {
 		if numOfValidators.Sign() == 0 {
 			return common.Address{}, 0, 0, "", fmt.Errorf("quorum consensus reports zero validators")
