@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
 	"github.com/cartesi/rollups-node/internal/merkle"
@@ -36,19 +37,21 @@ type prtRepository interface {
 	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter,
 		p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
-	UpdateEpochStatus(ctx context.Context, nameOrAddress string, e *Epoch) error
+	UpdateEpochReconciledStaged(ctx context.Context, applicationID int64, index uint64, stagedAtBlock uint64) error
+	UpdateEpochWithAcceptedClaim(ctx context.Context, applicationID int64, index uint64, txHash *common.Hash) error
 
-	CreateTournament(ctx context.Context, nameOrAddress string, t *Tournament) error
 	GetTournament(ctx context.Context, nameOrAddress string, address string) (*Tournament, error)
-	UpdateTournament(ctx context.Context, nameOrAddress string, t *Tournament) error
 	ListTournaments(ctx context.Context, nameOrAddress string, f repository.TournamentFilter,
 		p repository.Pagination, descending bool) ([]*Tournament, uint64, error)
 
-	StoreTournamentEvents(ctx context.Context, appID int64, commitments []*Commitment, matches []*Match,
-		matchAdvanced []*MatchAdvanced, matchDeleted []*Match, lastBlock uint64) error
+	StoreTournamentEvents(ctx context.Context, appID int64, batches []*repository.TournamentEventBatch, lastBlock uint64) error
 
 	GetCommitment(ctx context.Context, nameOrAddress string, epochIndex uint64,
 		tournamentAddress string, commitmentHex string) (*Commitment, error)
+	ListCommitments(ctx context.Context, nameOrAddress string, filter repository.CommitmentFilter,
+		pagination repository.Pagination, descending bool) ([]*Commitment, uint64, error)
+	ListMatches(ctx context.Context, nameOrAddress string, filter repository.MatchFilter,
+		pagination repository.Pagination, descending bool) ([]*Match, uint64, error)
 
 	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
@@ -59,6 +62,7 @@ type EthClientInterface interface {
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
 	ChainID(ctx context.Context) (*big.Int, error)
 	BlockNumber(ctx context.Context) (uint64, error)
+	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
 	TransactionByHash(ctx context.Context, hash common.Hash) (*types.Transaction, bool, error)
 }
 
