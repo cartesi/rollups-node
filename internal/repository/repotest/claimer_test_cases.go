@@ -68,6 +68,69 @@ func (s *ClaimerSuite) TestSelectClaimsToSubmitPerApp() {
 		s.Contains(apps, app.ID)
 	})
 
+	s.Run("LoadsCompleteStateProofForClaimAndBarrier", func() {
+		const (
+			firstEpochLastBlock   uint64 = 9
+			secondEpochFirstBlock uint64 = 10
+			secondEpochLastBlock  uint64 = 19
+			firstInputBlock       uint64 = 5
+			secondInputBlock      uint64 = 15
+			thirdEpochFirstBlock  uint64 = 20
+		)
+
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+
+		epoch0 := NewEpochBuilder(app.ID).
+			WithIndex(0).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, firstEpochLastBlock).WithInputBounds(0, 0).Build()
+		epoch1 := NewEpochBuilder(app.ID).
+			WithIndex(1).WithStatus(EpochStatus_Closed).
+			WithBlocks(secondEpochFirstBlock, secondEpochLastBlock).WithInputBounds(1, 1).Build()
+
+		err := s.Repo.CreateEpochsAndInputs(
+			s.Ctx,
+			app.IApplicationAddress.String(),
+			map[*Epoch][]*Input{
+				epoch0: {NewInputBuilder().WithIndex(0).WithBlockNumber(firstInputBlock).Build()},
+				epoch1: {NewInputBuilder().WithIndex(1).WithBlockNumber(secondInputBlock).Build()},
+			},
+			thirdEpochFirstBlock,
+		)
+		s.Require().NoError(err)
+
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			app.IApplicationAddress.String(), epoch0, EpochStatus_ClaimComputed)
+		err = s.Repo.UpdateEpochWithSubmittedClaim(s.Ctx, app.ID, epoch0.Index, UniqueHash())
+		s.Require().NoError(err)
+
+		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
+			app.IApplicationAddress.String(), epoch1, EpochStatus_ClaimComputed)
+
+		barriers, computed, _, err := s.Repo.SelectClaimsToSubmitPerApp(s.Ctx)
+		s.Require().NoError(err)
+		s.Require().Contains(barriers, app.ID)
+		s.Require().Contains(computed, app.ID)
+
+		assertStateProof := func(expected, actual *Epoch) {
+			s.Require().True(actual.HasCompleteStateProof())
+			s.Equal(expected.MachineHash, actual.MachineHash)
+			s.Equal(expected.TxBufferDataBlock, actual.TxBufferDataBlock)
+			s.Equal(expected.TxBufferProof, actual.TxBufferProof)
+			s.Equal(expected.IflagsYDataBlock, actual.IflagsYDataBlock)
+			s.Equal(expected.IflagsYProof, actual.IflagsYProof)
+			s.Equal(expected.HtifTohostDataBlock, actual.HtifTohostDataBlock)
+			s.Equal(expected.HtifTohostProof, actual.HtifTohostProof)
+		}
+
+		s.Equal(epoch0.Index, barriers[app.ID].Index)
+		s.Equal(EpochStatus_ClaimSubmitted, barriers[app.ID].Status)
+		assertStateProof(epoch0, barriers[app.ID])
+
+		s.Equal(epoch1.Index, computed[app.ID].Index)
+		s.Equal(EpochStatus_ClaimComputed, computed[app.ID].Status)
+		assertStateProof(epoch1, computed[app.ID])
+	})
+
 	s.Run("IncludesForeclosedComputedAppForTerminalization", func() {
 		app := s.createAppWithClaimComputedEpoch()
 		err := s.Repo.UpdateApplicationForeclosure(s.Ctx, app.ID, 100, UniqueHash(), 100)
@@ -498,6 +561,63 @@ func (s *ClaimerSuite) TestSelectClaimsToAcceptPerApp() {
 		s.Equal(EpochStatus_ClaimStaged, staged[app.ID].Status)
 		s.Require().Contains(apps, app.ID)
 		s.NotZero(apps[app.ID].ForecloseBlock)
+	})
+}
+
+//nolint:mnd // Explicit epoch and block values define the barrier ordering.
+func (s *ClaimerSuite) TestNewestBarrierFiltersStatusBeforeLimit() {
+	s.Run("PreservesProofsAndForeclosedBarriers", func() {
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		epochs := make([]*Epoch, 3)
+		inputs := make(map[*Epoch][]*Input, len(epochs))
+		for i := range epochs {
+			index := uint64(i)
+			epochs[i] = NewEpochBuilder(app.ID).WithIndex(index).WithStatus(EpochStatus_Closed).
+				WithBlocks(index*10, index*10+9).WithInputBounds(index, index).Build()
+			inputs[epochs[i]] = []*Input{NewInputBuilder().WithIndex(index).WithBlockNumber(index*10 + 5).Build()}
+		}
+		s.Require().NoError(s.Repo.CreateEpochsAndInputs(s.Ctx, app.Name, inputs, 30))
+		for _, epoch := range epochs {
+			AdvanceEpochStatus(s.Ctx, s.T(), s.Repo, app.Name, epoch, EpochStatus_ClaimComputed)
+		}
+		for index := range uint64(2) {
+			s.Require().NoError(s.Repo.UpdateEpochWithSubmittedClaim(s.Ctx, app.ID, index, UniqueHash()))
+			s.Require().NoError(s.Repo.UpdateEpochToStaged(s.Ctx, app.ID, index, 40+index))
+		}
+		acceptedTx := UniqueHash()
+		s.Require().NoError(s.Repo.UpdateEpochWithAcceptedClaim(s.Ctx, app.ID, 0, &acceptedTx))
+		s.Require().NoError(s.Repo.UpdateApplicationForeclosure(s.Ctx, app.ID, 100, UniqueHash(), 100))
+
+		submit, _, _, err := s.Repo.SelectClaimsToSubmitPerApp(s.Ctx)
+		s.Require().NoError(err)
+		stage, _, _, err := s.Repo.SelectClaimsToStagePerApp(s.Ctx)
+		s.Require().NoError(err)
+		accept, _, _, err := s.Repo.SelectClaimsToAcceptPerApp(s.Ctx)
+		s.Require().NoError(err)
+		for _, result := range []struct {
+			barriers map[int64]*Epoch
+			index    uint64
+		}{{submit, 1}, {stage, 0}, {accept, 0}} {
+			s.Require().Contains(result.barriers, app.ID)
+			actual := result.barriers[app.ID]
+			expected, err := s.Repo.GetEpoch(s.Ctx, app.Name, result.index)
+			s.Require().NoError(err)
+			s.Equal(expected.Index, actual.Index)
+			s.Equal(expected.Status, actual.Status)
+			s.Equal(expected.StagedAtBlock, actual.StagedAtBlock)
+			s.Equal(expected.ClaimTransactionHash, actual.ClaimTransactionHash)
+			s.Equal(expected.VirtualIndex, actual.VirtualIndex)
+			s.Equal(expected.CreatedAt, actual.CreatedAt)
+			s.Equal(expected.UpdatedAt, actual.UpdatedAt)
+			s.Require().True(actual.HasCompleteStateProof())
+			s.Equal(expected.MachineHash, actual.MachineHash)
+			s.Equal(expected.TxBufferDataBlock, actual.TxBufferDataBlock)
+			s.Equal(expected.TxBufferProof, actual.TxBufferProof)
+			s.Equal(expected.IflagsYDataBlock, actual.IflagsYDataBlock)
+			s.Equal(expected.IflagsYProof, actual.IflagsYProof)
+			s.Equal(expected.HtifTohostDataBlock, actual.HtifTohostDataBlock)
+			s.Equal(expected.HtifTohostProof, actual.HtifTohostProof)
+		}
 	})
 }
 

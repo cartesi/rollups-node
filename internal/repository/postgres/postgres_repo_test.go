@@ -53,6 +53,10 @@ func TestPostgresRepository(t *testing.T) {
 }
 
 func TestPostgresSchemaExecutionOutcomeContract(t *testing.T) {
+	const (
+		advanceMaxCyclesColumn = "advance_max_cycles"
+		inspectMaxCyclesColumn = "inspect_max_cycles"
+	)
 	endpoint, err := db.GetTestDatabaseEndpoint()
 	if err != nil {
 		t.Skipf("Skipping: %v", err)
@@ -63,12 +67,19 @@ func TestPostgresSchemaExecutionOutcomeContract(t *testing.T) {
 	conn, err := pgx.Connect(ctx, endpoint)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, conn.Close(ctx)) })
+	// The catalog also includes other schemas. Their enum names must not
+	// change the public schema contract checked below.
+	for _, name := range []string{"InputCompletionStatus", "ApplicationStatus", "EpochStatus"} {
+		_, err := conn.Exec(ctx, "CREATE TYPE "+pgx.Identifier{"pg_temp", name}.Sanitize()+" AS ENUM ('unrelated')")
+		require.NoError(t, err)
+	}
 
 	rows, err := conn.Query(ctx, `
 		SELECT enumlabel
 		FROM pg_enum
 		JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
-		WHERE pg_type.typname = 'InputCompletionStatus'
+		JOIN pg_namespace ON pg_namespace.oid = pg_type.typnamespace
+		WHERE pg_namespace.nspname = 'public' AND pg_type.typname = 'InputCompletionStatus'
 		ORDER BY enumsortorder`)
 	require.NoError(t, err)
 	labels, err := pgx.CollectRows(rows, pgx.RowTo[string])
@@ -87,7 +98,8 @@ func TestPostgresSchemaExecutionOutcomeContract(t *testing.T) {
 		SELECT enumlabel
 		FROM pg_enum
 		JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
-		WHERE pg_type.typname = 'ApplicationStatus'
+		JOIN pg_namespace ON pg_namespace.oid = pg_type.typnamespace
+		WHERE pg_namespace.nspname = 'public' AND pg_type.typname = 'ApplicationStatus'
 		ORDER BY enumsortorder`)
 	require.NoError(t, err)
 	labels, err = pgx.CollectRows(rows, pgx.RowTo[string])
@@ -104,14 +116,30 @@ func TestPostgresSchemaExecutionOutcomeContract(t *testing.T) {
 	}, labels)
 
 	rows, err = conn.Query(ctx, `
+		SELECT enumlabel
+		FROM pg_enum
+		JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
+		JOIN pg_namespace ON pg_namespace.oid = pg_type.typnamespace
+		WHERE pg_namespace.nspname = 'public' AND pg_type.typname = 'EpochStatus'
+		ORDER BY enumsortorder`)
+	require.NoError(t, err)
+	labels, err = pgx.CollectRows(rows, pgx.RowTo[string])
+	require.NoError(t, err)
+	expectedEpochLabels := make([]string, len(model.EpochStatusAllValues))
+	for i, status := range model.EpochStatusAllValues {
+		expectedEpochLabels[i] = status.String()
+	}
+	require.Equal(t, expectedEpochLabels, labels)
+
+	rows, err = conn.Query(ctx, `
 		SELECT column_name
 		FROM information_schema.columns
 		WHERE table_schema = 'public' AND table_name = 'execution_parameters'`)
 	require.NoError(t, err)
 	columns, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	require.NoError(t, err)
-	require.Contains(t, columns, "advance_max_cycles")
-	require.Contains(t, columns, "inspect_max_cycles")
+	require.Contains(t, columns, advanceMaxCyclesColumn)
+	require.Contains(t, columns, inspectMaxCyclesColumn)
 	require.Contains(t, columns, "advance_inc_cycles")
 	require.Contains(t, columns, "inspect_inc_cycles")
 
@@ -131,7 +159,7 @@ func TestPostgresSchemaExecutionOutcomeContract(t *testing.T) {
 		require.Contains(t, epochColumns, column)
 	}
 
-	for _, column := range []string{"advance_max_cycles", "inspect_max_cycles"} {
+	for _, column := range []string{advanceMaxCyclesColumn, inspectMaxCyclesColumn} {
 		var defaultValue string
 		err := conn.QueryRow(ctx, `
 			SELECT column_default
@@ -146,7 +174,7 @@ func TestPostgresSchemaExecutionOutcomeContract(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(repo.Close)
 	app := repotest.NewApplicationBuilder().Create(ctx, t, repo)
-	for _, column := range []string{"advance_max_cycles", "inspect_max_cycles"} {
+	for _, column := range []string{advanceMaxCyclesColumn, inspectMaxCyclesColumn} {
 		for _, value := range []int64{0, int64(model.MaxExecutionCycleSpan)} {
 			_, err := conn.Exec(ctx, fmt.Sprintf(
 				`UPDATE execution_parameters SET %s = $1 WHERE application_id = $2`,
@@ -161,10 +189,10 @@ func TestPostgresSchemaExecutionOutcomeContract(t *testing.T) {
 	}{
 		{"advance_inc_cycles", 0},
 		{"inspect_inc_cycles", 0},
-		{"advance_max_cycles", -1},
-		{"inspect_max_cycles", -1},
-		{"advance_max_cycles", int64(model.MaxExecutionCycles)},
-		{"inspect_max_cycles", int64(model.MaxExecutionCycles)},
+		{advanceMaxCyclesColumn, -1},
+		{inspectMaxCyclesColumn, -1},
+		{advanceMaxCyclesColumn, int64(model.MaxExecutionCycles)},
+		{inspectMaxCyclesColumn, int64(model.MaxExecutionCycles)},
 	} {
 		_, err := conn.Exec(ctx, fmt.Sprintf(
 			`UPDATE execution_parameters SET %s = $1 WHERE application_id = $2`,

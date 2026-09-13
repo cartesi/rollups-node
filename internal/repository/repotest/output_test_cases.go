@@ -416,27 +416,47 @@ func (s *OutputSuite) TestListOutputs() {
 }
 
 func (s *OutputSuite) TestUpdateOutputsExecution() {
-	s.Run("UpdatesExecutionHash", func() {
-		seed := Seed(s.Ctx, s.T(), s.Repo)
+	const rollbackCheckpoint = uint64(100)
+	for _, test := range []struct {
+		name           string
+		previousBlock  uint64
+		requestedBlock uint64
+		expectedBlock  uint64
+	}{
+		{"ForwardCursor", 100, 200, 200},
+		{"EqualCursor", 200, 200, 200},
+		{"OlderCursor", 200, 100, 200},
+	} {
+		s.Run(test.name, func() {
+			seed := Seed(s.Ctx, s.T(), s.Repo)
 
-		s.storeAdvanceResult(seed.App.ID, 0, 0,
-			[][]byte{[]byte("output-data")}, nil)
+			s.storeAdvanceResult(seed.App.ID, 0, 0,
+				[][]byte{[]byte("output-data")}, nil)
+			err := s.Repo.UpdateEventLastCheckBlock(
+				s.Ctx, []int64{seed.App.ID}, MonitoredEvent_OutputExecuted, test.previousBlock)
+			s.Require().NoError(err)
 
-		txHash := UniqueHash()
-		out := &Output{
-			InputEpochApplicationID:  seed.App.ID,
-			Index:                    0,
-			ExecutionTransactionHash: &txHash,
-		}
-		err := s.Repo.UpdateOutputsExecution(
-			s.Ctx, seed.App.IApplicationAddress.String(), []*Output{out}, 100)
-		s.Require().NoError(err)
+			txHash := UniqueHash()
+			out := &Output{
+				InputEpochApplicationID:  seed.App.ID,
+				Index:                    0,
+				ExecutionTransactionHash: &txHash,
+			}
+			err = s.Repo.UpdateOutputsExecution(
+				s.Ctx, seed.App.IApplicationAddress.String(), []*Output{out}, test.requestedBlock)
+			s.Require().NoError(err)
 
-		got, err := s.Repo.GetOutput(s.Ctx, seed.App.IApplicationAddress.String(), 0)
-		s.Require().NoError(err)
-		s.Require().NotNil(got.ExecutionTransactionHash)
-		s.Equal(txHash, *got.ExecutionTransactionHash)
-	})
+			got, err := s.Repo.GetOutput(s.Ctx, seed.App.IApplicationAddress.String(), 0)
+			s.Require().NoError(err)
+			s.Require().NotNil(got)
+			s.Require().NotNil(got.ExecutionTransactionHash)
+			s.Equal(txHash, *got.ExecutionTransactionHash,
+				"output updates must commit even when the cursor is already ahead")
+			block, err := s.Repo.GetEventLastCheckBlock(s.Ctx, seed.App.ID, MonitoredEvent_OutputExecuted)
+			s.Require().NoError(err)
+			s.Equal(test.expectedBlock, block)
+		})
+	}
 
 	// Regression guard: all output updates must be transactional.
 	// Verify multiple outputs are updated atomically in a single call.
@@ -497,6 +517,9 @@ func (s *OutputSuite) TestUpdateOutputsExecution() {
 
 		s.storeAdvanceResult(seed.App.ID, 0, 0,
 			[][]byte{[]byte("o0"), []byte("o1")}, nil)
+		err := s.Repo.UpdateEventLastCheckBlock(
+			s.Ctx, []int64{seed.App.ID}, MonitoredEvent_OutputExecuted, rollbackCheckpoint)
+		s.Require().NoError(err)
 
 		txHash := UniqueHash()
 		outputs := []*Output{
@@ -517,7 +540,7 @@ func (s *OutputSuite) TestUpdateOutputsExecution() {
 			},
 		}
 
-		err := s.Repo.UpdateOutputsExecution(
+		err = s.Repo.UpdateOutputsExecution(
 			s.Ctx, seed.App.IApplicationAddress.String(), outputs, 200)
 		s.Require().Error(err)
 
@@ -535,6 +558,9 @@ func (s *OutputSuite) TestUpdateOutputsExecution() {
 			s.Ctx, seed.App.IApplicationAddress.String())
 		s.Require().NoError(err)
 		s.Equal(uint64(0), count)
+		block, err := s.Repo.GetEventLastCheckBlock(s.Ctx, seed.App.ID, MonitoredEvent_OutputExecuted)
+		s.Require().NoError(err)
+		s.Equal(rollbackCheckpoint, block, "failed output updates must not advance the cursor")
 	})
 
 	// Verify that a nil hash on the second output rolls back the first
@@ -545,6 +571,9 @@ func (s *OutputSuite) TestUpdateOutputsExecution() {
 
 		s.storeAdvanceResult(seed.App.ID, 0, 0,
 			[][]byte{[]byte("o0"), []byte("o1")}, nil)
+		err := s.Repo.UpdateEventLastCheckBlock(
+			s.Ctx, []int64{seed.App.ID}, MonitoredEvent_OutputExecuted, rollbackCheckpoint)
+		s.Require().NoError(err)
 
 		txHash := UniqueHash()
 		outputs := []*Output{
@@ -560,7 +589,7 @@ func (s *OutputSuite) TestUpdateOutputsExecution() {
 			},
 		}
 
-		err := s.Repo.UpdateOutputsExecution(
+		err = s.Repo.UpdateOutputsExecution(
 			s.Ctx, seed.App.IApplicationAddress.String(), outputs, 200)
 		s.Require().Error(err)
 
@@ -570,6 +599,9 @@ func (s *OutputSuite) TestUpdateOutputsExecution() {
 		s.Require().NoError(err)
 		s.Nil(got.ExecutionTransactionHash,
 			"output 0 should not have execution hash after rollback")
+		block, err := s.Repo.GetEventLastCheckBlock(s.Ctx, seed.App.ID, MonitoredEvent_OutputExecuted)
+		s.Require().NoError(err)
+		s.Equal(rollbackCheckpoint, block, "invalid output data must not advance the cursor")
 	})
 }
 

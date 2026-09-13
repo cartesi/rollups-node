@@ -6,7 +6,6 @@ BEGIN;
 CREATE DOMAIN "ethereum_address" AS BYTEA CHECK (octet_length(VALUE) = 20);
 CREATE DOMAIN "uint64" AS NUMERIC(20, 0) CHECK (VALUE >= 0 AND VALUE <= 18446744073709551615);
 CREATE DOMAIN "hash" AS BYTEA CHECK (octet_length(VALUE) = 32);
-CREATE DOMAIN "data_availability" AS BYTEA CHECK (octet_length(VALUE) >= 4);
 
 CREATE TYPE "ApplicationStatus" AS ENUM (
     'OK',
@@ -106,7 +105,6 @@ CREATE TABLE "application"
     "withdrawal_log2_max_num_of_accounts" SMALLINT NOT NULL DEFAULT 0 CHECK ("withdrawal_log2_max_num_of_accounts" BETWEEN 0 AND 255),
     "withdrawal_accounts_drive_start_index" uint64 NOT NULL DEFAULT 0,
     "withdrawal_output_builder" ethereum_address NOT NULL DEFAULT '\x0000000000000000000000000000000000000000',
-    "data_availability" data_availability NOT NULL,
     "consensus_type" "Consensus" NOT NULL,
     "enabled" BOOLEAN NOT NULL DEFAULT true,
     "status" "ApplicationStatus" NOT NULL DEFAULT 'OK',
@@ -161,7 +159,6 @@ CREATE TABLE "application"
     CONSTRAINT "application_pkey" PRIMARY KEY ("id")
 );
 
-CREATE INDEX "application_data_availability_selector_idx" ON "application"(substring("data_availability" FROM 1 for 4));
 -- Supports ListApplications(ForeclosureRecorded = true), used by the claimer's
 -- listEnabledForeclosedNonPRTApps once per tick. The filtered set is small
 -- (foreclosed apps), so a partial index keyed on foreclose_block > 0 keeps
@@ -350,8 +347,8 @@ CREATE INDEX "epoch_status_idx" ON "epoch"("application_id", "status");
 -- scan an index-only lookup; the bare epoch_status_idx covers the status
 -- filter but adds a per-row comparison on first_block.
 --
--- The status list below MUST match unreconciledEpochStatuses in
--- internal/repository/postgres/epoch.go. If they drift, the query stops
+-- The status list below MUST match NonTerminalEpochStatuses in
+-- internal/model/models.go. If they drift, the query stops
 -- matching this partial index and silently degrades to a full table scan.
 CREATE INDEX "epoch_unreconciled_idx" ON "epoch"("application_id", "first_block")
     WHERE "status" IN ('OPEN','CLOSED','INPUTS_PROCESSED',
@@ -364,8 +361,8 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- The state machine is:
 --   OPEN → CLOSED → INPUTS_PROCESSED → CLAIM_COMPUTED
 --   CLAIM_COMPUTED → CLAIM_SUBMITTED → CLAIM_STAGED → CLAIM_ACCEPTED      (v3 normal)
---   CLAIM_COMPUTED → CLAIM_STAGED                                         (restart recovery: chain at STAGED before we submitted)
---   CLAIM_COMPUTED → CLAIM_ACCEPTED                                       (PRT skips SUBMITTED; also valid in deep reader-mode catch-up)
+--   CLAIM_COMPUTED → CLAIM_STAGED                                         (chain already staged, including Dave/PRT)
+--   CLAIM_COMPUTED → CLAIM_ACCEPTED                                       (deep reader-mode catch-up, including PRT)
 --   CLAIM_COMPUTED  → CLAIM_REJECTED                                      (conflicting Quorum claim staged/accepted before we submitted)
 --   CLAIM_SUBMITTED → CLAIM_REJECTED                                      (we submitted, then a different Quorum claim was staged/accepted)
 --   OPEN            → CLAIM_FORECLOSED                                    (guardian foreclosed before epoch could finish)
@@ -383,9 +380,9 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- transitioning to CLAIM_COMPUTED, this trigger additionally requires the
 -- PRT commitment and commitment proof.
 --
--- CLAIM_STAGED is NEVER valid for PRT apps (PRT settles via tournaments,
--- not the staging flow). The trigger rejects this regardless of which
--- transition led to it.
+-- Dave/PRT also uses CLAIM_STAGED while its tournament result waits for
+-- sentry agreement or the claim-staging period. Like Authority/Quorum, every
+-- CLAIM_STAGED row must record the corresponding on-chain staging block.
 CREATE FUNCTION enforce_epoch_status_transition() RETURNS trigger AS $$
 DECLARE
     valid_transitions text[][] := ARRAY[
@@ -441,24 +438,13 @@ BEGIN
         END IF;
     END IF;
 
-    -- Enforce CLAIM_STAGED is never valid for PRT consensus, and that
-    -- staged_at_block is set when entering CLAIM_STAGED. The
-    -- staged_requires_block table CHECK constraint also enforces the latter;
-    -- this trigger gives a clearer error message on the state-machine path.
+    -- staged_at_block is required when entering CLAIM_STAGED. The
+    -- staged_requires_block table CHECK constraint also enforces this; the
+    -- trigger gives a clearer error message on the state-machine path.
     IF NEW.status::text = 'CLAIM_STAGED' THEN
         IF NEW.staged_at_block IS NULL THEN
             RAISE EXCEPTION
                 'CLAIM_STAGED requires staged_at_block to be non-null';
-        END IF;
-
-        SELECT a.consensus_type::text INTO app_consensus
-          FROM application a
-         WHERE a.id = NEW.application_id;
-
-        IF app_consensus = 'PRT' THEN
-            RAISE EXCEPTION
-                'CLAIM_STAGED is not valid for PRT consensus '
-                '(PRT settles via tournaments, not the staging flow)';
         END IF;
     END IF;
 
@@ -493,6 +479,9 @@ CREATE TABLE "input"
         ("status" <> 'EXCEPTION' AND "exception_data" IS NULL)
     ),
     CONSTRAINT "input_pkey" PRIMARY KEY ("epoch_application_id", "index"),
+    -- The state_hashes foreign key references this exact three-column key
+    -- to verify that the input belongs to the stated epoch. A plain index
+    -- cannot replace the unique key required by that foreign key.
     CONSTRAINT "input_epoch_index_unique" UNIQUE ("epoch_application_id", "epoch_index", "index"),
     CONSTRAINT "input_application_id_tx_hash_log_index_unique" UNIQUE ("epoch_application_id", "transaction_hash", "log_index"),
     CONSTRAINT "input_completed_hashes_check" CHECK (

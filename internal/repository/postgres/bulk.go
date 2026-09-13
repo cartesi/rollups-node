@@ -657,6 +657,11 @@ func updateEpochClaim(
 	e *model.Epoch,
 ) error {
 
+	whereCriteria := postgres.AND(
+		table.Epoch.ApplicationID.EQ(postgres.Int64(e.ApplicationID)),
+		table.Epoch.Index.EQ(uint64Expr(e.Index)),
+	)
+
 	updStmt := table.Epoch.
 		UPDATE(
 			table.Epoch.Commitment,
@@ -669,11 +674,9 @@ func updateEpochClaim(
 			postgres.NewEnumValue(model.EpochStatus_ClaimComputed.String()),
 		).
 		WHERE(
-			table.Epoch.ApplicationID.EQ(postgres.Int64(e.ApplicationID)).
-				AND(table.Epoch.Index.EQ(uint64Expr(e.Index))).
-				AND(table.Epoch.Status.EQ(
-					postgres.NewEnumValue(model.EpochStatus_InputsProcessed.String()),
-				)),
+			whereCriteria.AND(table.Epoch.Status.EQ(
+				postgres.NewEnumValue(model.EpochStatus_InputsProcessed.String()),
+			)),
 		)
 
 	sqlStr, args := updStmt.Sql()
@@ -682,7 +685,9 @@ func updateEpochClaim(
 		return fmt.Errorf("SetEpochClaimAndInsertProofsTransaction failed: %w", err)
 	}
 	if cmd.RowsAffected() != 1 {
-		return fmt.Errorf("failed to update application %d epoch %d: no rows affected", e.ApplicationID, e.Index)
+		statusQuery := table.Epoch.SELECT(table.Epoch.Status).WHERE(whereCriteria)
+		return fmt.Errorf("failed to update application %d epoch %d: %w", e.ApplicationID, e.Index,
+			classifyEpochPublicationMiss(ctx, tx, statusQuery))
 	}
 	return nil
 }

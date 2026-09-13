@@ -32,7 +32,6 @@ type applicationTable struct {
 	WithdrawalLog2MaxNumOfAccounts    postgres.ColumnInteger
 	WithdrawalAccountsDriveStartIndex postgres.ColumnFloat
 	WithdrawalOutputBuilder           postgres.ColumnBytea
-	DataAvailability                  postgres.ColumnBytea
 	ConsensusType                     postgres.ColumnString
 	Enabled                           postgres.ColumnBool
 	Status                            postgres.ColumnString
@@ -108,7 +107,6 @@ func newApplicationTableImpl(schemaName, tableName, alias string) applicationTab
 		WithdrawalLog2MaxNumOfAccountsColumn    = postgres.IntegerColumn("withdrawal_log2_max_num_of_accounts")
 		WithdrawalAccountsDriveStartIndexColumn = postgres.FloatColumn("withdrawal_accounts_drive_start_index")
 		WithdrawalOutputBuilderColumn           = postgres.ByteaColumn("withdrawal_output_builder")
-		DataAvailabilityColumn                  = postgres.ByteaColumn("data_availability")
 		ConsensusTypeColumn                     = postgres.StringColumn("consensus_type")
 		EnabledColumn                           = postgres.BoolColumn("enabled")
 		StatusColumn                            = postgres.StringColumn("status")
@@ -128,8 +126,8 @@ func newApplicationTableImpl(schemaName, tableName, alias string) applicationTab
 		AccountsDriveMerkleRootColumn           = postgres.ByteaColumn("accounts_drive_merkle_root")
 		CreatedAtColumn                         = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn                         = postgres.TimestampzColumn("updated_at")
-		allColumns                              = postgres.ColumnList{IDColumn, NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, DataAvailabilityColumn, ConsensusTypeColumn, EnabledColumn, StatusColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ProcessedInputsColumn, ForecloseBlockColumn, ForecloseTransactionColumn, AccountsDriveProvedBlockColumn, AccountsDriveProvedTransactionColumn, AccountsDriveMerkleRootColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns                          = postgres.ColumnList{NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, DataAvailabilityColumn, ConsensusTypeColumn, EnabledColumn, StatusColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ProcessedInputsColumn, ForecloseBlockColumn, ForecloseTransactionColumn, AccountsDriveProvedBlockColumn, AccountsDriveProvedTransactionColumn, AccountsDriveMerkleRootColumn, CreatedAtColumn, UpdatedAtColumn}
+		allColumns                              = postgres.ColumnList{IDColumn, NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, ConsensusTypeColumn, EnabledColumn, StatusColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ProcessedInputsColumn, ForecloseBlockColumn, ForecloseTransactionColumn, AccountsDriveProvedBlockColumn, AccountsDriveProvedTransactionColumn, AccountsDriveMerkleRootColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns                          = postgres.ColumnList{NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, ConsensusTypeColumn, EnabledColumn, StatusColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ProcessedInputsColumn, ForecloseBlockColumn, ForecloseTransactionColumn, AccountsDriveProvedBlockColumn, AccountsDriveProvedTransactionColumn, AccountsDriveMerkleRootColumn, CreatedAtColumn, UpdatedAtColumn}
 		defaultColumns                          = postgres.ColumnList{ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, EnabledColumn, StatusColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ForecloseBlockColumn, AccountsDriveProvedBlockColumn, CreatedAtColumn, UpdatedAtColumn}
 	)
 
@@ -152,7 +150,6 @@ func newApplicationTableImpl(schemaName, tableName, alias string) applicationTab
 		WithdrawalLog2MaxNumOfAccounts:    WithdrawalLog2MaxNumOfAccountsColumn,
 		WithdrawalAccountsDriveStartIndex: WithdrawalAccountsDriveStartIndexColumn,
 		WithdrawalOutputBuilder:           WithdrawalOutputBuilderColumn,
-		DataAvailability:                  DataAvailabilityColumn,
 		ConsensusType:                     ConsensusTypeColumn,
 		Enabled:                           EnabledColumn,
 		Status:                            StatusColumn,

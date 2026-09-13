@@ -1188,20 +1188,10 @@ func (s *EpochSuite) TestEpochStatusTransitionTrigger() {
 		s.Contains(err.Error(), "PRT")
 	})
 
-	// Verify the trigger rejects CLAIM_STAGED for PRT apps. PRT settles via
-	// tournaments and never goes through the staging contract path; an
-	// attempt to mark a PRT epoch as STAGED would be local data corruption.
-	// The trigger guard is the last line of defense against any caller
-	// that bypasses the higher-level claimer/PRT services. We advance the
-	// PRT epoch through CLAIM_SUBMITTED (a transition the trigger does
-	// permit, just never exercised in production for PRT) so that
-	// UpdateEpochToStaged sets the staged_at_block atomically and the
-	// PRT guard is the only remaining check that can reject the UPDATE.
-	s.Run("RejectsPRTStaged", func() {
+	newPRTComputedEpoch := func() (*Application, *Epoch) {
 		app := NewApplicationBuilder().
 			WithConsensus(Consensus_PRT).
 			Create(s.Ctx, s.T(), s.Repo)
-
 		epoch := NewEpochBuilder(app.ID).
 			WithIndex(0).WithStatus(EpochStatus_Closed).
 			WithBlocks(0, 9).WithInputBounds(0, 0).
@@ -1215,11 +1205,40 @@ func (s *EpochSuite) TestEpochStatusTransitionTrigger() {
 
 		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
 			app.IApplicationAddress.String(), epoch,
-			EpochStatus_ClaimSubmitted)
+			EpochStatus_ClaimComputed)
+		return app, epoch
+	}
 
-		err = s.Repo.UpdateEpochToStaged(s.Ctx, app.ID, epoch.Index, 42)
-		s.Require().Error(err)
-		s.Contains(err.Error(), "PRT")
+	// Dave/PRT stages a finished tournament result directly from
+	// CLAIM_COMPUTED. The repository records the staging block without a
+	// transaction hash. The acceptance evidence supplies that hash later.
+	s.Run("AllowsPRTStagedThenAccepted", func() {
+		const stagedAtBlock uint64 = 42
+
+		app, epoch := newPRTComputedEpoch()
+
+		err := s.Repo.UpdateEpochReconciledStaged(s.Ctx, app.ID, epoch.Index, stagedAtBlock)
+		s.Require().NoError(err)
+
+		staged, err := s.Repo.GetEpoch(s.Ctx, app.IApplicationAddress.String(), epoch.Index)
+		s.Require().NoError(err)
+		s.Equal(EpochStatus_ClaimStaged, staged.Status)
+		s.Require().NotNil(staged.StagedAtBlock)
+		s.Equal(stagedAtBlock, *staged.StagedAtBlock)
+		s.Nil(staged.ClaimTransactionHash)
+
+		acceptanceTransactionHash := UniqueHash()
+		err = s.Repo.UpdateEpochWithAcceptedClaim(
+			s.Ctx, app.ID, epoch.Index, &acceptanceTransactionHash)
+		s.Require().NoError(err)
+
+		accepted, err := s.Repo.GetEpoch(s.Ctx, app.IApplicationAddress.String(), epoch.Index)
+		s.Require().NoError(err)
+		s.Equal(EpochStatus_ClaimAccepted, accepted.Status)
+		s.Require().NotNil(accepted.StagedAtBlock)
+		s.Equal(stagedAtBlock, *accepted.StagedAtBlock)
+		s.Require().NotNil(accepted.ClaimTransactionHash)
+		s.Equal(acceptanceTransactionHash, *accepted.ClaimTransactionHash)
 	})
 
 	// Verify the trigger / CHECK constraint rejects any transition into
@@ -1227,22 +1246,18 @@ func (s *EpochSuite) TestEpochStatusTransitionTrigger() {
 	// only writes the Status column, so it cannot set staged_at_block
 	// atomically — that is exactly the situation this invariant is meant
 	// to catch.
-	s.Run("RejectsStagedWithoutBlock", func() {
-		seed := Seed(s.Ctx, s.T(), s.Repo)
-
-		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
-			seed.App.IApplicationAddress.String(), seed.Epoch,
-			EpochStatus_ClaimComputed)
+	s.Run("RejectsPRTStagedWithoutBlock", func() {
+		app, epoch := newPRTComputedEpoch()
 
 		// Sanity: staged_at_block is NULL on this freshly built row.
 		got, err := s.Repo.GetEpoch(
-			s.Ctx, seed.App.IApplicationAddress.String(), 0)
+			s.Ctx, app.IApplicationAddress.String(), epoch.Index)
 		s.Require().NoError(err)
 		s.Require().Nil(got.StagedAtBlock)
 
-		seed.Epoch.Status = EpochStatus_ClaimStaged
+		epoch.Status = EpochStatus_ClaimStaged
 		err = s.Repo.UpdateEpochStatus(
-			s.Ctx, seed.App.IApplicationAddress.String(), seed.Epoch)
+			s.Ctx, app.IApplicationAddress.String(), epoch)
 		s.Require().Error(err)
 		// The trigger surfaces first with this exact phrasing; if a future
 		// refactor disables the trigger, the CHECK constraint
@@ -1286,6 +1301,8 @@ func (s *EpochSuite) TestDrainGates() {
 
 		inputStatus := InputCompletionStatus_None
 		switch target {
+		case EpochStatus_Open, EpochStatus_Closed:
+			// These states have no completed input.
 		case EpochStatus_InputsProcessed,
 			EpochStatus_ClaimComputed,
 			EpochStatus_ClaimSubmitted,

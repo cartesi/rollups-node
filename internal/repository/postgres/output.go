@@ -157,7 +157,7 @@ func (r *PostgresRepository) UpdateOutputsExecution(
 		}
 	}
 
-	// Update last claim check block
+	// Advance the output scan cursor without moving it backwards.
 	appUpdateStmt := table.Application.
 		UPDATE(
 			table.Application.LastOutputCheckBlock,
@@ -165,7 +165,9 @@ func (r *PostgresRepository) UpdateOutputsExecution(
 		SET(
 			uint64Expr(lastOutputCheckBlock),
 		).
-		WHERE(whereClause)
+		WHERE(
+			whereClause.AND(table.Application.LastOutputCheckBlock.LT(uint64Expr(lastOutputCheckBlock))),
+		)
 
 	sqlStr, args := appUpdateStmt.Sql()
 	_, err = tx.Exec(ctx, sqlStr, args...)

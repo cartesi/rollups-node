@@ -38,12 +38,12 @@ func nextID() uint64 {
 
 // UniqueAddress returns a unique Ethereum address for test isolation.
 func UniqueAddress() common.Address {
-	return common.BigToAddress(big.NewInt(int64(nextID())))
+	return common.BigToAddress(new(big.Int).SetUint64(nextID()))
 }
 
 // UniqueHash returns a unique hash for test isolation.
 func UniqueHash() common.Hash {
-	return common.BigToHash(big.NewInt(int64(nextID())))
+	return common.BigToHash(new(big.Int).SetUint64(nextID()))
 }
 
 // ---------------------------------------------------------------------------
@@ -68,7 +68,6 @@ func NewApplicationBuilder() *ApplicationBuilder {
 			EpochLength:         10,
 			ClaimStagingPeriod:  7,
 			WithdrawalConfig:    defaultWithdrawalConfig(),
-			DataAvailability:    DataAvailability_InputBox[:],
 			ConsensusType:       Consensus_Authority,
 			Enabled:             true,
 			Status:              ApplicationStatus_OK,
@@ -108,11 +107,6 @@ func (b *ApplicationBuilder) WithEpochLength(l uint64) *ApplicationBuilder {
 
 func (b *ApplicationBuilder) WithClaimStagingPeriod(p uint64) *ApplicationBuilder {
 	b.app.ClaimStagingPeriod = p
-	return b
-}
-
-func (b *ApplicationBuilder) WithDataAvailability(da []byte) *ApplicationBuilder {
-	b.app.DataAvailability = da
 	return b
 }
 
