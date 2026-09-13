@@ -228,6 +228,7 @@ generate-db: ## Generate repository/db with Jet
 	@rm -rf internal/repository/postgres/db
 	@go run github.com/go-jet/jet/v2/cmd/jet -dsn=$$CARTESI_DATABASE_CONNECTION -schema=public -path=./internal/repository/postgres/db
 	@rm -rf internal/repository/postgres/db/rollupsdb/public/model
+	@chmod -R g+rwX internal/repository/postgres/db
 
 # =============================================================================
 # Clean
