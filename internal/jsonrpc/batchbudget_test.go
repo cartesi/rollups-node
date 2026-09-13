@@ -53,6 +53,7 @@ func TestBatchListItemLimitSupportsNamedAndPositionalParams(t *testing.T) {
 		"cartesi_listCommitments":   `["app",null,null,10000]`,
 		"cartesi_listMatches":       `["app",null,null,10000]`,
 		"cartesi_listMatchAdvances": `["app","0x0","tournament","id",10000]`,
+		"cartesi_listBondEvents":    `["app",null,null,10000]`,
 	}
 
 	for method, positional := range positionalAtLimit {
