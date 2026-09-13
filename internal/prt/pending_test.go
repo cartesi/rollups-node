@@ -30,7 +30,14 @@ func TestPendingTournamentTransactionRetainsOrReleasesSlot(t *testing.T) {
 			wantRevert   bool
 		}{
 			{name: "pending", pending: true},
-			{name: "missing transaction", lookupError: ethereum.NotFound, wantError: true},
+			{name: "missing transaction with receipt", lookupError: ethereum.NotFound, wantRelease: true},
+			{name: "missing transaction with reverted receipt", lookupError: ethereum.NotFound,
+				mutate:      func(r *types.Receipt) *types.Receipt { r.Status = types.ReceiptStatusFailed; return r },
+				wantRelease: true, wantRevert: true},
+			{name: "missing transaction with nil receipt", lookupError: ethereum.NotFound,
+				mutate: func(*types.Receipt) *types.Receipt { return nil }, wantError: true},
+			{name: "missing transaction with wrong receipt hash", lookupError: ethereum.NotFound,
+				mutate: func(r *types.Receipt) *types.Receipt { r.TxHash = common.Hash{}; return r }, wantError: true},
 			{name: "missing receipt", receiptError: ethereum.NotFound, wantError: true},
 			{name: "nil receipt", mutate: func(*types.Receipt) *types.Receipt { return nil }, wantError: true},
 			{name: "wrong hash", mutate: func(r *types.Receipt) *types.Receipt { r.TxHash = common.Hash{}; return r }, wantError: true},
@@ -51,7 +58,7 @@ func TestPendingTournamentTransactionRetainsOrReleasesSlot(t *testing.T) {
 				client := &ethClientMock{}
 				client.On("TransactionByHash", mock.Anything, tx.Hash).
 					Return((*types.Transaction)(nil), test.pending, test.lookupError).Once()
-				if !test.pending && test.lookupError == nil {
+				if !test.pending {
 					receipt := &types.Receipt{TxHash: tx.Hash, BlockNumber: big.NewInt(21), Status: types.ReceiptStatusSuccessful}
 					if test.mutate != nil {
 						receipt = test.mutate(receipt)

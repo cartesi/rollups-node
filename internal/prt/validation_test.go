@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"math/big"
 	"strings"
@@ -67,59 +66,50 @@ func TestLogErrorUnlessShutdown(t *testing.T) {
 	}
 }
 
-func TestTrySettleOperationDeadlineDoesNotCancelServiceContext(t *testing.T) {
-	s, app := newValidationService(t)
-	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
-	defer cancel()
+func TestPRTOperationContextCancellation(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		staged   bool
+		shutdown bool
+	}{
+		{name: "AcceptResult/OperationDeadline", staged: true},
+		{name: "AcceptResult/Shutdown", staged: true, shutdown: true},
+		{name: "ReactToTournament/OperationDeadline"},
+		{name: "ReactToTournament/Shutdown", shutdown: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s, app, epoch := newValidationService(t, test.staged)
+			parentCtx, parentCancel := context.WithCancel(t.Context())
+			defer parentCancel()
+			timeout := 50 * time.Millisecond
+			if test.shutdown {
+				timeout = time.Second
+				timer := time.AfterFunc(50*time.Millisecond, parentCancel)
+				defer timer.Stop()
+			}
+			ctx, cancel := context.WithTimeout(parentCtx, timeout)
+			defer cancel()
 
-	err := s.trySettle(ctx, app, 1)
-
-	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.NoError(t, t.Context().Err())
+			start := time.Now()
+			var err error
+			if test.staged {
+				_, _, err = s.progressTournamentResult(ctx, app, 1, 1)
+			} else {
+				_, err = s.reactToTournament(ctx, app, epoch, 1)
+			}
+			if test.shutdown {
+				require.ErrorIs(t, err, context.Canceled)
+				require.ErrorIs(t, ctx.Err(), context.Canceled)
+				require.Less(t, time.Since(start), 500*time.Millisecond)
+			} else {
+				require.ErrorIs(t, err, context.DeadlineExceeded)
+				require.NoError(t, parentCtx.Err())
+			}
+		})
+	}
 }
 
-func TestTrySettleShutdownCancelsOperationContext(t *testing.T) {
-	s, app := newValidationService(t)
-	parentCtx, parentCancel := context.WithCancel(context.Background())
-	ctx, cancel := context.WithTimeout(parentCtx, time.Second)
-	defer cancel()
-
-	time.AfterFunc(50*time.Millisecond, parentCancel)
-	start := time.Now()
-	err := s.trySettle(ctx, app, 1)
-
-	require.ErrorIs(t, err, context.Canceled)
-	require.ErrorIs(t, ctx.Err(), context.Canceled)
-	require.Less(t, time.Since(start), 500*time.Millisecond)
-}
-
-func TestReactToTournamentOperationDeadlineDoesNotCancelServiceContext(t *testing.T) {
-	s, app := newValidationService(t)
-	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
-	defer cancel()
-
-	err := s.reactToTournament(ctx, app, 1)
-
-	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.NoError(t, t.Context().Err())
-}
-
-func TestReactToTournamentShutdownCancelsOperationContext(t *testing.T) {
-	s, app := newValidationService(t)
-	parentCtx, parentCancel := context.WithCancel(context.Background())
-	ctx, cancel := context.WithTimeout(parentCtx, time.Second)
-	defer cancel()
-
-	time.AfterFunc(50*time.Millisecond, parentCancel)
-	start := time.Now()
-	err := s.reactToTournament(ctx, app, 1)
-
-	require.ErrorIs(t, err, context.Canceled)
-	require.ErrorIs(t, ctx.Err(), context.Canceled)
-	require.Less(t, time.Since(start), 500*time.Millisecond)
-}
-
-func newValidationService(t *testing.T) (*Service, *model.Application) {
+func newValidationService(t *testing.T, staged bool) (*Service, *model.Application, *model.Epoch) {
 	t.Helper()
 
 	app := repotest.NewApplicationBuilder().
@@ -127,8 +117,12 @@ func newValidationService(t *testing.T) (*Service, *model.Application) {
 		Build()
 	app.IConsensusAddress = common.HexToAddress("0x3")
 
+	status := model.EpochStatus_ClaimComputed
+	if staged {
+		status = model.EpochStatus_ClaimStaged
+	}
 	epoch := repotest.NewEpochBuilder(app.ID).
-		WithStatus(model.EpochStatus_ClaimComputed).
+		WithStatus(status).
 		WithMachineHash(common.HexToHash("0x6")).
 		WithTxBufferDataBlock(common.HexToHash("0x8")).
 		Build()
@@ -137,9 +131,12 @@ func newValidationService(t *testing.T) (*Service, *model.Application) {
 	epoch.TournamentAddress = &tournamentAddress
 	epoch.Commitment = &commitment
 	epoch.CommitmentProof = []common.Hash{common.HexToHash("0x7")}
-	epoch.TxBufferProof = []common.Hash{}
+	if staged {
+		epoch.StagedAtBlock = new(uint64)
+		*epoch.StagedAtBlock = 1
+	}
 
-	repo := &prtRepositoryMock{}
+	s, repo := newPRTServiceMock()
 	repo.On("GetEpoch", mock.Anything, app.IApplicationAddress.Hex(), uint64(0)).
 		Return(epoch, nil)
 	repo.On("GetCommitment", mock.Anything, app.IApplicationAddress.Hex(), uint64(0),
@@ -148,19 +145,41 @@ func newValidationService(t *testing.T) (*Service, *model.Application) {
 		Maybe()
 
 	consensusAdapter := &daveConsensusAdapterMock{}
-	consensusAdapter.On("CanSettle", mock.Anything).
-		Return(CanSettleResult{IsFinished: true, EpochNumber: big.NewInt(0)}, nil)
-	consensusAdapter.On("IsEpochSettled", mock.Anything, uint64(0)).
-		Return(false, nil)
-	consensusAdapter.On("Settle", mock.Anything, big.NewInt(0), [32]byte(common.HexToHash("0x8")), [][32]byte{}).
-		Return((*types.Transaction)(nil), func(opts *bind.TransactOpts, _ *big.Int, _ [32]byte, _ [][32]byte) error {
+	consensusAdapter.On("GetCurrentSealedEpoch", mock.Anything).Return(CurrentSealedEpoch{
+		EpochNumber:                      0,
+		Tournament:                       tournamentAddress,
+		IsTournamentResultStaged:         true,
+		StagingBlockNumber:               1,
+		StagedPostEpochMachineStateHash:  *epoch.MachineHash,
+		StagedPostEpochOutputsMerkleRoot: *epoch.TxBufferDataBlock,
+	}, nil)
+	consensusAdapter.On("CanStageTournamentResult", mock.Anything).Return(CanStageTournamentResult{
+		IsFinished:                      true,
+		IsTournamentResultStaged:        true,
+		EpochNumber:                     0,
+		WinnerCommitment:                commitment,
+		WinnerPostEpochMachineStateHash: *epoch.MachineHash,
+	}, nil)
+	consensusAdapter.On("CanAcceptStagedTournamentResult", mock.Anything).Return(CanAcceptStagedTournamentResult{
+		IsTournamentResultStaged:         true,
+		IsClaimStagingPeriodOver:         true,
+		EpochNumber:                      0,
+		StagedPostEpochMachineStateHash:  *epoch.MachineHash,
+		StagedPostEpochOutputsMerkleRoot: *epoch.TxBufferDataBlock,
+	}, nil)
+	consensusAdapter.On("AcceptStagedTournamentResult", mock.Anything, uint64(0)).
+		Return((*types.Transaction)(nil), func(opts *bind.TransactOpts, _ uint64) error {
 			<-opts.Context.Done()
 			return opts.Context.Err()
 		})
 
 	tournamentAdapter := &tournamentAdapterMock{}
-	tournamentAdapter.On("IsCommitmentJoined", mock.Anything, [32]byte(commitment)).
-		Return(false, nil)
+	if !staged {
+		tournamentAdapter.On("Descriptor", mock.Anything).
+			Return(TournamentDescriptor{Height: model.Log2EpochComputationHashLeafCount}, nil).Once()
+	}
+	tournamentAdapter.On("CommitmentStanding", mock.Anything, [32]byte(commitment)).
+		Return(CommitmentStanding{}, nil)
 	tournamentAdapter.On("BondValue", mock.Anything).
 		Return(big.NewInt(0), nil)
 	tournamentAdapter.On("JoinTournament",
@@ -182,23 +201,11 @@ func newValidationService(t *testing.T) (*Service, *model.Application) {
 	adapterFactory.On("CreateTournamentAdapter", tournamentAddress).
 		Return(tournamentAdapter, nil)
 
-	s := &Service{
-		TickServiceTemplate: service.TickServiceTemplate{
-			BaseTemplate: service.BaseTemplate{
-				Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-			},
-		},
-		repository:        repo,
-		adapterFactory:    adapterFactory,
-		submissionEnabled: true,
-		submissionTimeout: time.Second,
-		txOptsFactory: ethutil.NewStaticTransactOptsFactory(&bind.TransactOpts{
-			From: common.HexToAddress("0x9"),
-		}),
-		currentEpochIndex: map[int64]uint64{},
-		settleInFlight:    map[int64]*common.Hash{},
-		joinInFlight:      map[int64]*common.Hash{},
-	}
-	s.currentEpochIndex[app.ID] = 0
-	return s, app
+	s.adapterFactory = adapterFactory
+	s.submissionEnabled = true
+	s.submissionTimeout = time.Second
+	s.txOptsFactory = ethutil.NewStaticTransactOptsFactory(&bind.TransactOpts{
+		From: common.HexToAddress("0x9"),
+	})
+	return s, app, epoch
 }

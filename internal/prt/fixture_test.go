@@ -96,6 +96,21 @@ func (m *prtRepositoryMock) GetEpoch(
 	return epoch, args.Error(1)
 }
 
+func (m *prtRepositoryMock) GetLastNonOpenEpochIndex(ctx context.Context, nameOrAddress string) (*uint64, error) {
+	args := m.Called(ctx, nameOrAddress)
+	index, _ := args.Get(0).(*uint64)
+	return index, args.Error(1)
+}
+
+func (m *prtRepositoryMock) ListRecoverableRootBonds(
+	ctx context.Context, appID int64, claimer common.Address, observedBlock uint64,
+	afterEpoch *uint64, throughEpoch, limit uint64,
+) ([]repository.RootBondRecoveryCandidate, error) {
+	args := m.Called(ctx, appID, claimer, observedBlock, afterEpoch, throughEpoch, limit)
+	values, _ := args.Get(0).([]repository.RootBondRecoveryCandidate)
+	return values, args.Error(1)
+}
+
 func (m *prtRepositoryMock) UpdateEpochReconciledStaged(
 	ctx context.Context,
 	applicationID int64,
@@ -160,6 +175,11 @@ func (m *prtRepositoryMock) GetCommitment(
 	return c, args.Error(1)
 }
 
+func (m *prtRepositoryMock) InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error {
+	args := m.Called(ctx, key, rawJSON)
+	return args.Error(0)
+}
+
 func (m *prtRepositoryMock) SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error {
 	args := m.Called(ctx, key, rawJSON)
 	return args.Error(0)
@@ -193,6 +213,12 @@ type ethClientMock struct {
 }
 
 var _ EthClientInterface = (*ethClientMock)(nil)
+
+func (m *ethClientMock) SuggestGasPrice(ctx context.Context) (*big.Int, error) {
+	args := m.Called(ctx)
+	price, _ := args.Get(0).(*big.Int)
+	return price, args.Error(1)
+}
 
 func (m *ethClientMock) TransactionReceipt(
 	ctx context.Context,

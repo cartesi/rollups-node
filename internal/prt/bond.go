@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -18,9 +19,98 @@ import (
 )
 
 type rootBondRecovery struct {
-	EpochIndex uint64
-	Tournament common.Address
-	TxHash     *common.Hash
+	EpochIndex        uint64
+	Tournament        common.Address
+	TxHash            *common.Hash
+	FirstMissingBlock *uint64
+}
+
+const rootBondRecoveryPageSize = 16
+
+// A sweep visits a finite epoch range, then starts again. This is a scheduling
+// position, not evidence that a bond was paid. Restart safely starts at epoch 0.
+type rootBondRecoveryScan struct {
+	ThroughEpoch uint64
+	AfterEpoch   *uint64
+}
+
+type rootBondRecoveryKey struct {
+	ApplicationID int64
+	Tournament    common.Address
+}
+
+// recoverPublishedRootBonds discovers owned roots independently of claim status.
+// observedBlock comes from the configured observation policy (finalized by
+// default). Candidate discovery is also bounded by LastTournamentCheckBlock,
+// so it uses only tournament data already published in the database.
+// latestBlock is the current chain head. Before sending, check bond ownership
+// and recovery eligibility at this block: a published candidate may already
+// have been paid. These checks do not update the published tournament data.
+// An existing attempt can retain its candidate after a missing or reverted
+// transaction so it can retry with fresh bond state.
+func (s *Service) recoverPublishedRootBonds(
+	ctx context.Context, app *model.Application, observedBlock, latestBlock uint64,
+) error {
+	if !s.submissionEnabled || app.Status != model.ApplicationStatus_OK || s.hasNonRecoveryMutationInFlight(app.ID) {
+		return nil
+	}
+	// Maintain existing hashes (or a retry cleared by receipt reconciliation)
+	// before any database read. A discovery failure must not lose a sent action.
+	if s.rootBondRecoveries[app.ID] != nil {
+		return s.recoverRootBonds(ctx, app, latestBlock)
+	}
+	observedBlock = min(observedBlock, app.LastTournamentCheckBlock)
+	s.prunePaidRootBondObservations(app.ID, observedBlock)
+	if observedBlock == 0 || (app.IsForeclosed() &&
+		(!app.ForeclosureScanCaughtUp() || observedBlock < app.ForecloseBlock)) {
+		return nil
+	}
+	if s.rootBondRecoveryScans == nil {
+		s.rootBondRecoveryScans = make(map[int64]*rootBondRecoveryScan)
+	}
+	scan := s.rootBondRecoveryScans[app.ID]
+	if scan == nil {
+		epochIndex, err := s.repository.GetLastNonOpenEpochIndex(ctx, app.IApplicationAddress.Hex())
+		if err != nil {
+			return fmt.Errorf("finding root bond recovery sweep boundary: %w", err)
+		}
+		if epochIndex == nil {
+			return nil
+		}
+		scan = &rootBondRecoveryScan{ThroughEpoch: *epochIndex}
+		s.rootBondRecoveryScans[app.ID] = scan
+	}
+	candidates, err := s.repository.ListRecoverableRootBonds(ctx, app.ID, s.txOptsFactory.From(),
+		observedBlock, scan.AfterEpoch, scan.ThroughEpoch, rootBondRecoveryPageSize)
+	if err != nil {
+		return fmt.Errorf("loading published recoverable root bonds: %w", err)
+	}
+	for _, candidate := range candidates {
+		// Include suppressed and unsuccessful candidates in scan progress. A bad
+		// recipient or RPC error on one root must not starve the later roots.
+		scan.AfterEpoch = new(candidate.EpochIndex)
+		if paidAt, paid := s.paidRootBondObservations[app.ID][candidate.Tournament]; paid {
+			s.Logger.Debug("Root bond payment awaits published observation",
+				"application", app.Name, "tournament", candidate.Tournament,
+				"paid_at_block", paidAt, "observed_block", observedBlock)
+			continue
+		}
+		if _, suppressed := s.failedRootBondPayments[rootBondRecoveryKey{app.ID, candidate.Tournament}]; suppressed {
+			continue
+		}
+		s.selectRootBondRecovery(app.ID, candidate.EpochIndex, candidate.Tournament)
+		if err := s.recoverRootBonds(ctx, app, latestBlock); err != nil {
+			return err
+		}
+		if s.rootBondRecoveries[app.ID] != nil {
+			return nil // Keep the in-flight action; do not send another mutation.
+		}
+	}
+	if len(candidates) < rootBondRecoveryPageSize ||
+		(scan.AfterEpoch != nil && *scan.AfterEpoch == scan.ThroughEpoch) {
+		delete(s.rootBondRecoveryScans, app.ID)
+	}
+	return nil
 }
 
 // These markers are temporary action guards, not published bond state. Once the
@@ -165,6 +255,7 @@ func (s *Service) broadcastRootBondRecovery(
 	}
 	txHash := tx.Hash()
 	candidate.TxHash = &txHash
+	candidate.FirstMissingBlock = nil
 	s.Logger.Info("Sent root tournament bond recovery transaction",
 		"application", app.Name,
 		"epoch_index", candidate.EpochIndex,
@@ -212,18 +303,38 @@ func (s *Service) reconcileRootBondRecoveryTransaction(
 ) error {
 	txHash := *candidate.TxHash
 	_, pending, err := s.client.TransactionByHash(ctx, txHash)
-	if err != nil {
+	missing := errors.Is(err, ethereum.NotFound)
+	if err != nil && !missing {
 		return fmt.Errorf("checking root bond recovery transaction %s: %w", txHash, err)
 	}
-	if pending {
+	if !missing {
+		candidate.FirstMissingBlock = nil
+	}
+	if !missing && pending {
 		return nil
 	}
 	receipt, err := s.client.TransactionReceipt(ctx, txHash)
+	if missing && errors.Is(err, ethereum.NotFound) {
+		if candidate.FirstMissingBlock == nil || mostRecentBlock < *candidate.FirstMissingBlock {
+			candidate.FirstMissingBlock = new(mostRecentBlock)
+			return nil
+		}
+		if mostRecentBlock-*candidate.FirstMissingBlock >= maxMissingTournamentTransactionBlocks {
+			s.Logger.Warn("Root bond recovery transaction remains missing; waiting for fresh bond state before retry",
+				"application", app.Name, "epoch_index", candidate.EpochIndex, "tournament", candidate.Tournament,
+				"tx", txHash, "missing_since_block", *candidate.FirstMissingBlock, "latest_block", mostRecentBlock)
+			candidate.TxHash, candidate.FirstMissingBlock = nil, nil
+		}
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("fetching root bond recovery receipt %s: %w", txHash, err)
 	}
-	if receipt == nil || receipt.BlockNumber == nil || receipt.BlockNumber.Sign() < 0 {
+	if receipt == nil {
 		return fmt.Errorf("root bond recovery transaction %s has an invalid receipt block", txHash)
+	}
+	if _, err := checkedUint64(receipt.BlockNumber, "root bond recovery transaction receipt block"); err != nil {
+		return err
 	}
 	if receipt.TxHash != txHash {
 		return fmt.Errorf("root bond recovery receipt hash %s differs from transaction %s", receipt.TxHash, txHash)
@@ -231,6 +342,7 @@ func (s *Service) reconcileRootBondRecoveryTransaction(
 	if receipt.Status != types.ReceiptStatusFailed && receipt.Status != types.ReceiptStatusSuccessful {
 		return fmt.Errorf("root bond recovery transaction %s has invalid receipt status %d", txHash, receipt.Status)
 	}
+	candidate.FirstMissingBlock = nil
 	callBlock := new(big.Int).SetUint64(mostRecentBlock)
 	if receipt.BlockNumber.Cmp(callBlock) > 0 {
 		callBlock.Set(receipt.BlockNumber)
@@ -292,6 +404,10 @@ func (s *Service) reconcileRootBondRecoveryTransaction(
 			"claimer", recovery.Claimer,
 			"payment", recovery.Payment,
 			"outcome", "failed_push")
+		if s.failedRootBondPayments == nil {
+			s.failedRootBondPayments = make(map[rootBondRecoveryKey]struct{})
+		}
+		s.failedRootBondPayments[rootBondRecoveryKey{app.ID, candidate.Tournament}] = struct{}{}
 		delete(s.rootBondRecoveries, app.ID)
 		return nil
 	case model.BondDispositionNoWinner:
