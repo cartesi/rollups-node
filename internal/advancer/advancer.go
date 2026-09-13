@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
+	"github.com/cartesi/rollups-node/internal/errutil"
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -27,14 +28,18 @@ var (
 
 // AdvancerRepository defines the repository interface needed by the Advancer service
 type AdvancerRepository interface {
-	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter, p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
-	ListInputs(ctx context.Context, nameOrAddress string, f repository.InputFilter, p repository.Pagination, descending bool) ([]*Input, uint64, error)
+	ListEpochs(
+		ctx context.Context, nameOrAddress string, f repository.EpochFilter, p repository.Pagination, descending bool,
+	) ([]*Epoch, uint64, error)
+	ListInputs(
+		ctx context.Context, nameOrAddress string, f repository.InputFilter, p repository.Pagination, descending bool,
+	) ([]*Input, uint64, error)
 	GetLastInput(ctx context.Context, appAddress string, epochIndex uint64) (*Input, error)
 	StoreAdvanceResult(ctx context.Context, appID int64, ar *AdvanceResult) error
 	UpdateEpochInputsProcessed(ctx context.Context, nameOrAddress string, epochIndex uint64, proof *StateProof) error
 	UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
-	UpdateInputSnapshotURI(ctx context.Context, appId int64, inputIndex uint64, snapshotURI string) error
+	UpdateInputSnapshotURI(ctx context.Context, appID int64, inputIndex uint64, snapshotURI string) error
 	GetLastSnapshot(ctx context.Context, nameOrAddress string) (*Input, error)
 	GetLastProcessedInput(ctx context.Context, appAddress string) (*Input, error)
 }
@@ -61,8 +66,8 @@ func getUnprocessedInputs(
 // order, and returns whether any application had work remaining.
 //
 // Per-app errors are accumulated so that a failure in one application does not block
-// processing of other healthy applications. Context cancellation is always propagated
-// immediately.
+// processing of other healthy applications. Cancellation stops new application work
+// and preserves errors already collected during the cycle.
 //
 // The returned boolean indicates whether any app successfully processed inputs and
 // potentially has more work. Callers use this to decide whether to re-tick immediately
@@ -88,14 +93,17 @@ func (s *Service) Step(ctx context.Context) (bool, error) {
 	anyWork := false
 	errs := []error{updateErr}
 	for _, app := range apps {
+		if err := ctx.Err(); err != nil {
+			return false, errors.Join(append(errs, err)...)
+		}
 		hadWork, err := s.stepApp(ctx, app)
 		if err != nil {
-			// Context errors (cancellation or timeout) mean no further apps will
-			// succeed — stop immediately instead of accumulating identical errors.
-			if ctx.Err() != nil {
-				return false, err
-			}
 			errs = append(errs, err)
+			// Context errors (cancellation or timeout) mean no further apps will
+			// succeed. Stop now, but retain earlier application failures.
+			if ctx.Err() != nil {
+				return false, errors.Join(errs...)
+			}
 			continue
 		}
 		if hadWork {
@@ -176,6 +184,11 @@ func (s *Service) finalizeEpoch(ctx context.Context, app *Application, epoch *Ep
 
 	appAddress := app.IApplicationAddress.String()
 	if err := s.repository.UpdateEpochInputsProcessed(ctx, appAddress, epoch.Index, proof); err != nil {
+		if errors.Is(err, repository.ErrEpochForeclosed) {
+			s.Logger.Info("Epoch was foreclosed before state-proof publication; discarding obsolete publication",
+				"application", app.Name, "epoch_index", epoch.Index)
+			return nil
+		}
 		return fmt.Errorf(
 			"publishing state proof for application %s epoch %d: %w",
 			app.Name,
@@ -315,7 +328,7 @@ func (s *Service) processInputs(
 		if err != nil {
 			var errCause string
 			switch {
-			case errors.Is(err, context.Canceled) && errors.Is(ctx.Err(), context.Canceled):
+			case errors.Is(ctx.Err(), context.Canceled) && errutil.IsOnlyCancellation(err):
 				errCause = "canceled advance result persistence"
 				// Shutdown interrupted persistence after the machine advanced.
 				// Discard that runtime; restart must recover from persisted state.
