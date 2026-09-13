@@ -31,7 +31,7 @@ func init() {
 		"Epoch length")
 	cobra.CheckErr(Cmd.PersistentFlags().MarkHidden("epoch-length"))
 	Cmd.PersistentFlags().Uint64Var(&claimStagingPeriodParam, "claim-staging-period", 0,
-		"Number of blocks between a claim being submitted and accepted (Authority/Quorum only)")
+		"Number of blocks between claim staging and acceptance. Zero permits immediate acceptance; choose the delay for your deployment.")
 	Cmd.PersistentFlags().StringVar(&withdrawalConfigParam, "withdrawal-config", "",
 		"Inline JSON object describing the WithdrawalConfig "+
 			"(see docs/withdrawal-config-guide.md). Omit to deploy without foreclosure.")

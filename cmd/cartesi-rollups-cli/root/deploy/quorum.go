@@ -4,6 +4,7 @@
 package deploy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,7 +13,9 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/pkg/contracts/iquorumfactory"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
 )
@@ -56,6 +59,7 @@ func init() {
 		command.Flags().Lookup("verbose").Hidden = false
 		origHelpFunc(command, strings)
 	})
+	cli.AddTransactionFlags(quorumCmd)
 }
 
 func runDeployQuorum(cmd *cobra.Command, _ []string) {
@@ -68,6 +72,7 @@ func runDeployQuorum(cmd *cobra.Command, _ []string) {
 
 	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
 	cobra.CheckErr(err)
+	defer client.Close()
 
 	chainID, err := client.ChainID(ctx)
 	cobra.CheckErr(err)
@@ -101,20 +106,39 @@ func runDeployQuorum(cmd *cobra.Command, _ []string) {
 	if verboseParam || !asJSONParam {
 		fmt.Fprintf(os.Stderr, "deploying quorum...")
 	}
-	deployment.Address, err = deployment.Deploy(ctx, client, txOpts)
+	var tx *types.Transaction
+	var receipt *types.Receipt
+	deployment.Address, err = deployment.DeployWithTransaction(ctx, client, txOpts,
+		func(
+			ctx context.Context, opts *bind.TransactOpts, build func(*bind.TransactOpts) (*types.Transaction, error),
+		) (*types.Receipt, error) {
+			var err error
+			tx, receipt, err = cli.Transact(ctx, cmd, client, opts, build)
+			return receipt, err
+		})
 	cobra.CheckErr(cli.DecorateRevert(err, iquorumfactory.IQuorumFactoryMetaData))
+	if receipt == nil {
+		cobra.CheckErr(writeDeploymentBroadcast(cmd, tx, deployment.Address))
+		return
+	}
 
 	if verboseParam || !asJSONParam {
 		fmt.Fprintf(os.Stderr, "success\n")
-		fmt.Fprintln(os.Stderr, "\tconsensus address:    ", deployment.Address)
-		fmt.Fprintln(os.Stderr, "\tepoch length:         ", deployment.EpochLength)
-		fmt.Fprintln(os.Stderr, "\tclaim staging period: ", deployment.ClaimStagingPeriod)
 	}
 
 	if asJSONParam {
-		report, err := json.MarshalIndent(&deployment, "", "  ")
+		report := struct {
+			*ethutil.QuorumDeployment
+			Transaction cli.TransactionResult `json:"transaction"`
+		}{QuorumDeployment: deployment, Transaction: cli.NewTransactionResult(tx, receipt)}
+		encoder := json.NewEncoder(cmd.OutOrStdout())
+		encoder.SetIndent("", "  ")
+		cobra.CheckErr(encoder.Encode(report))
+	} else {
+		cobra.CheckErr(cli.WriteTransactionResult(cmd, tx, receipt))
+		_, err := fmt.Fprintf(cmd.OutOrStdout(), "Consensus address: %s\nEpoch length: %d\nClaim staging period: %d\n",
+			deployment.Address, deployment.EpochLength, deployment.ClaimStagingPeriod)
 		cobra.CheckErr(err)
-		fmt.Println(string(report))
 	}
 }
 

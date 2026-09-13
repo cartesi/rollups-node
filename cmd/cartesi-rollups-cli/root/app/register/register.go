@@ -5,7 +5,6 @@ package register
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -17,7 +16,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
-	"github.com/cartesi/rollups-node/pkg/contracts/dataavailability"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
@@ -39,7 +37,6 @@ var Cmd = &cobra.Command{
 Supported Environment Variables:
   CARTESI_DATABASE_CONNECTION                    Database connection string
   CARTESI_BLOCKCHAIN_HTTP_ENDPOINT               Blockchain HTTP endpoint
-  CARTESI_CONTRACTS_INPUT_BOX_ADDRESS            Input Box contract address
   CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED     Enable machine hash check`,
 }
 
@@ -54,9 +51,6 @@ var (
 	templateHash                 string
 	epochLength                  uint64
 	claimStagingPeriod           uint64
-	inputBoxBlockNumber          uint64
-	inputBoxAddressFromEnv       bool
-	dataAvailability             string
 	enableMachineHashCheck       bool
 	applicationTypePRT           bool
 	disabled                     bool
@@ -87,16 +81,9 @@ func init() {
 	)
 
 	Cmd.Flags().Uint64Var(&claimStagingPeriod, "claim-staging-period", 0,
-		"Consensus claim staging period in blocks (Authority/Quorum only). "+
+		"Consensus claim staging period in blocks. "+
 			"(DO NOT USE IN PRODUCTION)\nThis value is retrieved from the consensus contract",
 	)
-
-	Cmd.Flags().StringVarP(&dataAvailability, "data-availability", "D", "",
-		"Application ABI encoded Data Availability. If not provided, it will be read from the InputBox Address",
-	)
-
-	Cmd.Flags().BoolVar(&inputBoxAddressFromEnv, "inputbox-from-env", false, "Read Input Box contract address from environment")
-	Cmd.Flags().Uint64Var(&inputBoxBlockNumber, "inputbox-block-number", 0, "InputBox deployment block number")
 
 	Cmd.Flags().BoolVarP(&disabled, "disabled", "d", false, "Registers the application with enabled=false")
 
@@ -116,7 +103,6 @@ func init() {
 		command.Flags().Lookup("verbose").Hidden = false
 		command.Flags().Lookup("database-connection").Hidden = false
 		command.Flags().Lookup("blockchain-http-endpoint").Hidden = false
-		command.Flags().Lookup("inputbox").Hidden = false
 		origHelpFunc(command, strings)
 	})
 }
@@ -186,7 +172,7 @@ func run(cmd *cobra.Command, _ []string) {
 		}
 	}
 
-	if !cmd.Flags().Changed("claim-staging-period") && !applicationTypePRT {
+	if !cmd.Flags().Changed("claim-staging-period") {
 		claimStagingPeriod, err = getClaimStagingPeriod(ctx, consensus)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to get claim staging period from consensus: %v\n",
@@ -202,31 +188,32 @@ func run(cmd *cobra.Command, _ []string) {
 		os.Exit(1)
 	}
 
-	inputBoxAddress, encodedDA, err := processDataAvailability(
-		ctx,
-		address,
-		cmd.Flags().Changed("data-availability"),
-		cmd.Flags().Changed("inputbox") || cmd.Flags().Changed("inputbox-from-env"),
-	)
-	cobra.CheckErr(err)
-
-	if !cmd.Flags().Changed("inputbox-block-number") {
-		block, err := getInputBoxDeploymentBlock(ctx, *inputBoxAddress)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to get deployment block number: %v\n", err)
-			os.Exit(1)
-		}
-		inputBoxBlockNumber = block.Uint64()
+	inputBoxAddress, err := getInputBox(ctx, address)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to get input box address from application: %v\n",
+			cli.DecorateRevert(err, iapplication.IApplicationMetaData))
+		os.Exit(1)
 	}
 
+	block, err := getInputBoxDeploymentBlock(ctx, inputBoxAddress)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to get deployment block number: %v\n", err)
+		os.Exit(1)
+	}
+	if !block.IsUint64() {
+		fmt.Fprintf(os.Stderr, "Input box deployment block does not fit uint64: %v\n", block)
+		os.Exit(1)
+	}
+	inputBoxBlockNumber := block.Uint64()
+
 	// ensure there is a contract deployed at the input box address
-	hasCode, err := hasCodeAt(ctx, *inputBoxAddress)
+	hasCode, err := hasCodeAt(ctx, inputBoxAddress)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to probe input box address for contract: %v\n", err)
 		os.Exit(1)
 	}
 	if !hasCode {
-		fmt.Fprintf(os.Stderr, "input box address has no code: %v\n", consensus)
+		fmt.Fprintf(os.Stderr, "input box address has no code: %v\n", inputBoxAddress)
 		os.Exit(1)
 	}
 
@@ -240,13 +227,12 @@ func run(cmd *cobra.Command, _ []string) {
 		Name:                              validName,
 		IApplicationAddress:               address,
 		IConsensusAddress:                 consensus,
-		IInputBoxAddress:                  *inputBoxAddress,
+		IInputBoxAddress:                  inputBoxAddress,
 		TemplateURI:                       templatePath,
 		TemplateHash:                      parsedTemplateHash,
 		EpochLength:                       epochLength,
 		ClaimStagingPeriod:                claimStagingPeriod,
 		WithdrawalConfig:                  withdrawalConfig,
-		DataAvailability:                  encodedDA,
 		ConsensusType:                     consensusType,
 		Enabled:                           applicationEnabled,
 		Status:                            model.ApplicationStatus_OK,
@@ -337,6 +323,21 @@ func getConsensus(
 		return common.Address{}, fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
 	}
 	return ethutil.GetConsensus(ctx, client, appAddress)
+}
+
+func getInputBox(
+	ctx context.Context,
+	appAddress common.Address,
+) (common.Address, error) {
+	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
+	if err != nil {
+		return common.Address{}, fmt.Errorf("failed to get blockchain http endpoint address: %w", err)
+	}
+	client, err := ethclient.Dial(ethEndpoint.Raw())
+	if err != nil {
+		return common.Address{}, fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
+	}
+	return ethutil.GetInputBox(ctx, client, appAddress)
 }
 
 func getEpochLength(
@@ -446,91 +447,4 @@ func getInputBoxDeploymentBlock(
 		return nil, fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
 	}
 	return ethutil.GetInputBoxDeploymentBlock(ctx, client, inputBoxAddress)
-}
-
-func getDataAvailability(
-	ctx context.Context,
-	appAddress common.Address,
-) ([]byte, error) {
-	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get blockchain http endpoint address: %w", err)
-	}
-	client, err := ethclient.Dial(ethEndpoint.Raw())
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
-	}
-	return ethutil.GetDataAvailability(ctx, client, appAddress)
-}
-
-func processDataAvailability(
-	ctx context.Context,
-	appAddress common.Address,
-	hasDataAvailabilityFlag bool,
-	hasInputBoxAddressFlag bool,
-) (*common.Address, []byte, error) {
-	var inputBoxAddress common.Address
-	var encodedDA []byte
-	var err error
-
-	parsedAbi, err := dataavailability.DataAvailabilityMetaData.GetAbi()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get ABI: %w", err)
-	}
-
-	if hasInputBoxAddressFlag {
-		inputBoxAddress, err = config.GetContractsInputBoxAddress()
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get input box address: %w", err)
-		}
-
-		encodedDA, err = parsedAbi.Pack("InputBox", inputBoxAddress)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to pack InputBox: %w", err)
-		}
-	} else {
-		if hasDataAvailabilityFlag {
-			if len(dataAvailability) < 3 || (!strings.HasPrefix(dataAvailability, "0x") && !strings.HasPrefix(dataAvailability, "0X")) {
-				return nil, nil, fmt.Errorf("data Availability should be an ABI encoded value")
-			}
-
-			s := dataAvailability[2:]
-			encodedDA, err = hex.DecodeString(s)
-			if err != nil {
-				return nil, nil, fmt.Errorf("error parsing Data Availability value: %w", err)
-			}
-		} else {
-			encodedDA, err = getDataAvailability(ctx, appAddress)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to get Data Availability from Application: %w", err)
-			}
-		}
-
-		if len(encodedDA) < model.DATA_AVAILABILITY_SELECTOR_SIZE {
-			return nil, nil, fmt.Errorf("invalid Data Availability")
-		}
-
-		method, err := parsedAbi.MethodById(encodedDA[:model.DATA_AVAILABILITY_SELECTOR_SIZE])
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get method by ID: %w", err)
-		}
-
-		args, err := method.Inputs.Unpack(encodedDA[model.DATA_AVAILABILITY_SELECTOR_SIZE:])
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to unpack inputs: %w", err)
-		}
-
-		if len(args) == 0 {
-			return nil, nil, fmt.Errorf("invalid Data Availability. Should at least contain InputBox Address")
-		}
-
-		switch addr := args[0].(type) {
-		case common.Address:
-			inputBoxAddress = addr
-		default:
-			return nil, nil, fmt.Errorf("first argument in Data Availability is not an address (got %T)", args[0])
-		}
-	}
-
-	return &inputBoxAddress, encodedDA, nil
 }

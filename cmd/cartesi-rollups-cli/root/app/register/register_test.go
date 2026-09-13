@@ -70,3 +70,9 @@ func TestConsensusTypeFromQuorumProbe_RejectsZeroValidatorQuorum(t *testing.T) {
 	require.ErrorContains(t, err, "zero validators")
 	require.True(t, probe.called)
 }
+
+func TestRegisterCommandDoesNotExposeLegacyInputBoxFlags(t *testing.T) {
+	require.Nil(t, Cmd.Flags().Lookup("data-availability"))
+	require.Nil(t, Cmd.Flags().Lookup("inputbox-from-env"))
+	require.Nil(t, Cmd.Flags().Lookup("inputbox-block-number"))
+}

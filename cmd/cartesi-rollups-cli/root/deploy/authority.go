@@ -4,6 +4,7 @@
 package deploy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
 )
@@ -57,6 +59,7 @@ func init() {
 		// the parameter for the authority contract being deployed.
 		origHelpFunc(command, strings)
 	})
+	cli.AddTransactionFlags(authorityCmd)
 }
 
 func runDeployAuthority(cmd *cobra.Command, _ []string) {
@@ -69,6 +72,7 @@ func runDeployAuthority(cmd *cobra.Command, _ []string) {
 
 	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
 	cobra.CheckErr(err)
+	defer client.Close()
 
 	chainID, err := client.ChainID(ctx)
 	cobra.CheckErr(err)
@@ -105,21 +109,39 @@ func runDeployAuthority(cmd *cobra.Command, _ []string) {
 	if verboseParam || !asJSONParam {
 		fmt.Fprintf(os.Stderr, "deploying authority...")
 	}
-	deployment.Address, err = deployment.Deploy(ctx, client, txOpts)
+	var tx *types.Transaction
+	var receipt *types.Receipt
+	deployment.Address, err = deployment.DeployWithTransaction(ctx, client, txOpts,
+		func(
+			ctx context.Context, opts *bind.TransactOpts, build func(*bind.TransactOpts) (*types.Transaction, error),
+		) (*types.Receipt, error) {
+			var err error
+			tx, receipt, err = cli.Transact(ctx, cmd, client, opts, build)
+			return receipt, err
+		})
 	cobra.CheckErr(cli.DecorateRevert(err, iauthorityfactory.IAuthorityFactoryMetaData))
+	if receipt == nil {
+		cobra.CheckErr(writeDeploymentBroadcast(cmd, tx, deployment.Address))
+		return
+	}
 
 	// report
 	if verboseParam || !asJSONParam {
 		fmt.Fprintf(os.Stderr, "success\n")
-		fmt.Fprintln(os.Stderr, "\tconsensus address:    ", deployment.Address)
-		fmt.Fprintln(os.Stderr, "\tepoch length:         ", deployment.EpochLength)
 	}
 
 	if asJSONParam {
-		report, err := json.MarshalIndent(&deployment, "", "  ")
-		cobra.CheckErr(err) // deployed, but fail to print
-
-		fmt.Println(string(report))
+		report := struct {
+			*ethutil.AuthorityDeployment
+			Transaction cli.TransactionResult `json:"transaction"`
+		}{AuthorityDeployment: deployment, Transaction: cli.NewTransactionResult(tx, receipt)}
+		encoder := json.NewEncoder(cmd.OutOrStdout())
+		encoder.SetIndent("", "  ")
+		cobra.CheckErr(encoder.Encode(report))
+	} else {
+		cobra.CheckErr(cli.WriteTransactionResult(cmd, tx, receipt))
+		_, err := fmt.Fprintf(cmd.OutOrStdout(), "Consensus address: %s\nEpoch length: %d\n", deployment.Address, deployment.EpochLength)
+		cobra.CheckErr(err)
 	}
 }
 
