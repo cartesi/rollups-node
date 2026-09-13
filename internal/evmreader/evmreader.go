@@ -49,7 +49,9 @@ type EvmReaderRepository interface {
 		blockNumber uint64,
 	) error
 	GetNumberOfWithdrawals(ctx context.Context, appID int64) (uint64, error)
-	ListApplications(ctx context.Context, f repository.ApplicationFilter, p repository.Pagination, descending bool) ([]*Application, uint64, error)
+	ListApplications(
+		ctx context.Context, f repository.ApplicationFilter, p repository.Pagination, descending bool,
+	) ([]*Application, uint64, error)
 	UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error
 	UpdateEventLastCheckBlock(ctx context.Context, appIDs []int64, event MonitoredEvent, blockNumber uint64) error
 	GetEventLastCheckBlock(ctx context.Context, appID int64, event MonitoredEvent) (uint64, error)
@@ -100,8 +102,13 @@ func (r *Service) setApplicationDiverged(ctx context.Context, app *Application, 
 	return appstatus.SetDivergedf(ctx, r.Logger, r.repository, app, reasonFmt, args...)
 }
 
+// The status helper logs its reason and any failed status write. Outer scan
+// loops can consume this marker without repeating those logs or continuing work.
+var errApplicationStatusReported = errors.New("application status already reported")
+
 func (r *Service) setApplicationCorrupted(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
-	return appstatus.SetCorruptedf(ctx, r.Logger, r.repository, app, reasonFmt, args...)
+	err := appstatus.SetCorruptedf(ctx, r.Logger, r.repository, app, reasonFmt, args...)
+	return fmt.Errorf("%w: %w", errApplicationStatusReported, err)
 }
 
 func (r *Service) Tick(ctx context.Context) (bool, error) {
@@ -270,7 +277,9 @@ type DefaultAdapterFactory struct {
 	Filter ethutil.Filter
 }
 
-func (f *DefaultAdapterFactory) CreateAdapters(app *Application) (ApplicationContractAdapter, InputSourceAdapter, DaveConsensusAdapter, error) {
+func (f *DefaultAdapterFactory) CreateAdapters(
+	app *Application,
+) (ApplicationContractAdapter, InputSourceAdapter, DaveConsensusAdapter, error) {
 	if app == nil {
 		return nil, nil, nil, fmt.Errorf("application reference is nil, should never happen")
 	}

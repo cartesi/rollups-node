@@ -25,7 +25,6 @@ var (
 	header0 = makeHeader(0x11)
 	header1 = makeHeader(0x12)
 	header2 = makeHeader(0x13)
-	header3 = makeHeader(0x33)
 )
 
 // Test input events — all target app1.

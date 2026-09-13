@@ -15,6 +15,19 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+const daveTestApplicationName = "test-app"
+
+// Keep scan boundaries, InputBox identity, and application status in each test.
+func newDaveAppContracts(inputSource InputSourceAdapter, daveConsensus DaveConsensusAdapter) appContracts {
+	return appContracts{
+		application: &Application{
+			ID: 1, Name: daveTestApplicationName,
+			IApplicationAddress: app1Addr, IConsensusAddress: consensusAddr,
+		},
+		inputSource: inputSource, daveConsensus: daveConsensus,
+	}
+}
+
 // makeSealedEpochResult constructs the node-owned GetCurrentSealedEpoch result.
 func makeSealedEpochResult(
 	epochNum int64,
@@ -62,19 +75,10 @@ func (s *SealedEpochsSuite) TestSealedEpochsEndToEndTwoTransitions() {
 	tournamentAddr0 := common.HexToAddress("0xA000")
 	tournamentAddr1 := common.HexToAddress("0xA001")
 
-	app := appContracts{
-		application: &Application{
-			ID:                  1,
-			Name:                "test-app",
-			IApplicationAddress: app1Addr,
-			IConsensusAddress:   consensusAddr,
-			IInputBoxAddress:    inputBoxAddr,
-			IInputBoxBlock:      inputBoxBlock,
-			LastEpochCheckBlock: searchStart,
-		},
-		inputSource:   s.inputBox,
-		daveConsensus: s.dave,
-	}
+	app := newDaveAppContracts(s.inputBox, s.dave)
+	app.application.IInputBoxAddress = inputBoxAddr
+	app.application.IInputBoxBlock = inputBoxBlock
+	app.application.LastEpochCheckBlock = searchStart
 
 	// Oracle: GetCurrentSealedEpoch returns epoch number based on block
 	s.dave.On("GetCurrentSealedEpoch",
@@ -108,10 +112,6 @@ func (s *SealedEpochsSuite) TestSealedEpochsEndToEndTwoTransitions() {
 	).Return([]*idaveconsensus.IDaveConsensusEpochSealed{
 		makeSealedEpochEvent(1, 0, 0, sealBlock1, tournamentAddr1),
 	}, nil)
-
-	// No previous sealed epochs in DB
-	s.repository.On("GetLastNonOpenEpoch", mock.Anything, mock.Anything).
-		Return(nil, nil)
 
 	// Epoch 0: first lookup → nil (new epoch)
 	s.repository.On("GetEpoch", mock.Anything, mock.Anything, uint64(0)).
@@ -180,18 +180,9 @@ func (s *SealedEpochsSuite) TestOpenEpochHappyPathCreatesNewEpoch() {
 		mostRecentBlock uint64 = 200
 	)
 
-	app := appContracts{
-		application: &Application{
-			ID:                  1,
-			Name:                "test-app",
-			IApplicationAddress: app1Addr,
-			IConsensusAddress:   consensusAddr,
-			IInputBoxAddress:    inputBoxAddr,
-			IInputBoxBlock:      10,
-		},
-		inputSource:   s.inputBox,
-		daveConsensus: s.dave,
-	}
+	app := newDaveAppContracts(s.inputBox, s.dave)
+	app.application.IInputBoxAddress = inputBoxAddr
+	app.application.IInputBoxBlock = 10
 
 	// Last sealed epoch
 	s.repository.On("GetLastNonOpenEpoch", mock.Anything, mock.Anything).
@@ -267,18 +258,9 @@ func (s *SealedEpochsSuite) TestOpenEpochHappyPathCreatesNewEpoch() {
 func (s *SealedEpochsSuite) TestOpenEpochExistingEpochAccumulatesInputs() {
 	const mostRecentBlock uint64 = 300
 
-	app := appContracts{
-		application: &Application{
-			ID:                  1,
-			Name:                "test-app",
-			IApplicationAddress: app1Addr,
-			IConsensusAddress:   consensusAddr,
-			IInputBoxAddress:    inputBoxAddr,
-			IInputBoxBlock:      10,
-		},
-		inputSource:   s.inputBox,
-		daveConsensus: s.dave,
-	}
+	app := newDaveAppContracts(s.inputBox, s.dave)
+	app.application.IInputBoxAddress = inputBoxAddr
+	app.application.IInputBoxBlock = 10
 
 	// Last sealed epoch
 	s.repository.On("GetLastNonOpenEpoch", mock.Anything, mock.Anything).
@@ -357,19 +339,10 @@ func (s *SealedEpochsSuite) TestOpenEpochScansBoundaryBlockAfterIntraTickCursorA
 		mostRecentBlock     uint64 = 200
 	)
 
-	app := appContracts{
-		application: &Application{
-			ID:                  1,
-			Name:                "test-app",
-			IApplicationAddress: app1Addr,
-			IConsensusAddress:   consensusAddr,
-			IInputBoxAddress:    inputBoxAddr,
-			IInputBoxBlock:      10,
-			LastInputCheckBlock: previousInputCursor,
-		},
-		inputSource:   s.inputBox,
-		daveConsensus: s.dave,
-	}
+	app := newDaveAppContracts(s.inputBox, s.dave)
+	app.application.IInputBoxAddress = inputBoxAddr
+	app.application.IInputBoxBlock = 10
+	app.application.LastInputCheckBlock = previousInputCursor
 
 	s.repository.On("GetLastNonOpenEpoch", mock.Anything, mock.Anything).
 		Return(&Epoch{
@@ -385,7 +358,7 @@ func (s *SealedEpochsSuite) TestOpenEpochScansBoundaryBlockAfterIntraTickCursorA
 
 	s.repository.On("GetEventLastCheckBlock",
 		mock.Anything, int64(1), MonitoredEvent_InputAdded,
-	).Return(mostRecentBlock, nil)
+	).Return(mostRecentBlock-1, nil)
 
 	s.repository.On("GetNumberOfInputs", mock.Anything, mock.Anything).
 		Return(uint64(4), nil)
@@ -439,19 +412,10 @@ func (s *SealedEpochsSuite) TestMultipleSealedEpochsInOneBlock() {
 	tournamentAddr0 := common.HexToAddress("0xA000")
 	tournamentAddr1 := common.HexToAddress("0xA001")
 
-	app := appContracts{
-		application: &Application{
-			ID:                  1,
-			Name:                "test-app",
-			IApplicationAddress: app1Addr,
-			IConsensusAddress:   consensusAddr,
-			IInputBoxAddress:    inputBoxAddr,
-			IInputBoxBlock:      10,
-			LastEpochCheckBlock: 50,
-		},
-		inputSource:   s.inputBox,
-		daveConsensus: s.dave,
-	}
+	app := newDaveAppContracts(s.inputBox, s.dave)
+	app.application.IInputBoxAddress = inputBoxAddr
+	app.application.IInputBoxBlock = 10
+	app.application.LastEpochCheckBlock = 50
 
 	// Oracle: before sealBlock → -1, from sealBlock → 1 (both sealed at same block)
 	s.dave.On("GetCurrentSealedEpoch",
@@ -473,10 +437,6 @@ func (s *SealedEpochsSuite) TestMultipleSealedEpochsInOneBlock() {
 		makeSealedEpochEvent(0, 0, 0, sealBlock, tournamentAddr0),
 		makeSealedEpochEvent(1, 0, 0, sealBlock, tournamentAddr1),
 	}, nil)
-
-	// No previous sealed epochs
-	s.repository.On("GetLastNonOpenEpoch", mock.Anything, mock.Anything).
-		Return(nil, nil)
 
 	// Epoch 0: self-lookup → nil (new)
 	s.repository.On("GetEpoch", mock.Anything, mock.Anything, uint64(0)).
@@ -528,46 +488,23 @@ func (s *SealedEpochsSuite) TestMultipleSealedEpochsInOneBlock() {
 	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 2)
 }
 
-// --- Test 5: initializeNewApplicationSealedEpochSync sets checkpoint ---
-// On first run, the deployment block is fetched from DaveConsensus and the
-// LastEpochCheckBlock is set to deploymentBlock - 1.
-func (s *SealedEpochsSuite) TestInitializeSealedEpochSyncSetsCheckpoint() {
-	app := appContracts{
-		application: &Application{
-			ID:                  1,
-			Name:                "test-app",
-			IApplicationAddress: app1Addr,
-			IConsensusAddress:   consensusAddr,
-		},
-		daveConsensus: s.dave,
-	}
+// The deployment floor does not certify a successful scan or change its cursor.
+func (s *SealedEpochsSuite) TestInitialSealedEpochSearchBlockDoesNotSetCheckpoint() {
+	app := newDaveAppContracts(nil, s.dave)
 
 	// DaveConsensus deployed at block 50
 	s.dave.On("GetDeploymentBlockNumber", mock.Anything).
 		Return(big.NewInt(50), nil)
 
-	s.repository.On("UpdateEventLastCheckBlock",
-		mock.Anything, []int64{int64(1)}, MonitoredEvent_EpochSealed, uint64(49),
-	).Return(nil)
-
-	err := s.evmReader.initializeNewApplicationSealedEpochSync(s.ctx, &app, 200)
+	block, err := s.evmReader.initialSealedEpochSearchBlock(s.ctx, app, 200)
 	s.Require().NoError(err)
-
-	// LastEpochCheckBlock set to deploymentBlock - 1
-	s.Require().Equal(uint64(49), app.application.LastEpochCheckBlock)
-	s.repository.AssertExpectations(s.T())
+	s.Equal(uint64(50), block)
+	s.Zero(app.application.LastEpochCheckBlock)
+	s.Empty(s.repository.Calls)
 }
 
 func (s *SealedEpochsSuite) TestInitializeSealedEpochSyncSkipsBeforeConsensusDeployment() {
-	app := appContracts{
-		application: &Application{
-			ID:                  1,
-			Name:                "test-app",
-			IApplicationAddress: app1Addr,
-			IConsensusAddress:   consensusAddr,
-		},
-		daveConsensus: s.dave,
-	}
+	app := newDaveAppContracts(nil, s.dave)
 
 	s.dave.On("GetDeploymentBlockNumber",
 		mock.MatchedBy(func(opts *bind.CallOpts) bool {
@@ -576,7 +513,8 @@ func (s *SealedEpochsSuite) TestInitializeSealedEpochSyncSkipsBeforeConsensusDep
 	).Return(new(big.Int), bind.ErrNoCode).Once()
 
 	err := s.evmReader.processApplicationSealedEpochs(s.ctx, app, 90)
-	s.Require().NoError(err)
+	s.Require().ErrorIs(err, errContractNotDeployedAtBlock)
+	s.Require().ErrorIs(err, bind.ErrNoCode)
 	s.Require().Zero(app.application.LastEpochCheckBlock)
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 0)
 }
