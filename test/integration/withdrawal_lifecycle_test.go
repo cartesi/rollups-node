@@ -46,9 +46,9 @@ const (
 	withdrawalPreForecloseAmount  uint64 = 25
 	withdrawalPostForecloseAmount uint64 = withdrawalDepositAmount - withdrawalPreForecloseAmount
 
-	defaultDevnetERC20PortalAddress             = "0x22E57511C30CcE6CDaa742E13CE3b774fDC663b1"
-	defaultDevnetTestERC20Address               = "0x88A2120B7068E78692C8fd12E751d610B6377E4d"
-	defaultDevnetWithdrawalOutputBuilderAddress = "0x0745787835A019cd4dae8EDB541Fbc0647793d63"
+	defaultDevnetERC20PortalAddress             = "0x3332DE61a8BB9aC84893b2f552Fe81C9a6dC5419"
+	defaultDevnetTestUsdcAddress                = "0x7a051EDffC0884cd88d4a377F4C87BE074CF6c81"
+	defaultDevnetWithdrawalOutputBuilderAddress = "0xB4D253c7a110241561B3eD6d632846dF7d4e9Af7"
 
 	accountsDriveLog2MaxNumOfAccounts = uint8(17)
 	accountsDriveLog2LeavesPerAccount = uint8(0)
@@ -139,7 +139,7 @@ func (s *WithdrawalLifecycleSuite) runWithdrawalLifecycle(consensus withdrawalCo
 
 	dappPath := envOrDefault("CARTESI_TEST_ERC20_WITHDRAWAL_DAPP_PATH", "applications/erc20-withdrawal-dapp")
 	portalAddr := devnetAddress(s.T(), "CARTESI_DEVNET_ERC20_PORTAL_ADDRESS", defaultDevnetERC20PortalAddress)
-	tokenAddr := devnetAddress(s.T(), "CARTESI_DEVNET_TEST_ERC20_ADDRESS", defaultDevnetTestERC20Address)
+	tokenAddr := devnetAddress(s.T(), "CARTESI_DEVNET_TEST_USDC_ADDRESS", defaultDevnetTestUsdcAddress)
 	userAddr := mnemonicAddress(s.T(), withdrawalUserIndex)
 	initialUserBalance := s.tokenBalance(tokenAddr, userAddr)
 
