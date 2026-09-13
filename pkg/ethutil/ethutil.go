@@ -280,23 +280,23 @@ func GetConsensusAt(
 	return consensus, nil
 }
 
-func GetDataAvailability(
+func GetInputBox(
 	ctx context.Context,
 	client *ethclient.Client,
 	appAddress common.Address,
-) ([]byte, error) {
+) (common.Address, error) {
 	if client == nil {
-		return nil, fmt.Errorf("get dataAvailability: client is nil")
+		return common.Address{}, fmt.Errorf("get input box: client is nil")
 	}
 	app, err := iapplication.NewIApplication(appAddress, client)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to instantiate contract: %w", err)
+		return common.Address{}, fmt.Errorf("failed to instantiate contract: %w", err)
 	}
-	dataAvailability, err := app.GetDataAvailability(&bind.CallOpts{Context: ctx})
+	inputBox, err := app.GetInputBox(&bind.CallOpts{Context: ctx})
 	if err != nil {
-		return nil, fmt.Errorf("error retrieving application epoch length: %w", err)
+		return common.Address{}, fmt.Errorf("error retrieving application input box: %w", err)
 	}
-	return dataAvailability, nil
+	return inputBox, nil
 }
 
 func GetEpochLength(
