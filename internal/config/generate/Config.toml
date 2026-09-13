@@ -348,7 +348,7 @@ One of "private_key", "private_key_file", "mnemonic", "mnemonic_file", "aws".
 
 The auth variable for the kind defined here is required. Eg.: CARTESI_AUTH_MNEMONIC"""
 omit = true
-used-by = ["claimer", "node", "cli", "prt"]
+used-by = ["claimer", "node", "cli"]
 
 [auth.CARTESI_AUTH_PRIVATE_KEY]
 file = true
@@ -356,7 +356,7 @@ go-type = "RedactedString"
 description = """
 The node will use this private key to sign transactions."""
 omit = true
-used-by = ["claimer", "node", "cli", "prt"]
+used-by = ["claimer", "node", "cli"]
 
 [auth.CARTESI_AUTH_MNEMONIC]
 file = true
@@ -364,7 +364,7 @@ go-type = "RedactedString"
 description = """
 The node will use the private key generated from this mnemonic to sign transactions."""
 omit = true
-used-by = ["claimer", "node", "cli", "prt"]
+used-by = ["claimer", "node", "cli"]
 
 [auth.CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX]
 default = "0"
@@ -373,7 +373,7 @@ description = """
 When using mnemonics to sign transactions,
 the node will use this account index to generate the private key."""
 omit = true
-used-by = ["claimer", "node", "cli", "prt"]
+used-by = ["claimer", "node", "cli"]
 
 [auth.CARTESI_AUTH_AWS_KMS_KEY_ID]
 go-type = "RedactedString"
@@ -390,7 +390,64 @@ Prefer an ARN or a bare key ID over an alias: an alias is resolved per-region, s
 the same alias in a different region names a different key and therefore a
 different signing address."""
 omit = true
-used-by = ["claimer", "node", "cli", "prt"]
+used-by = ["claimer", "node", "cli"]
+
+#
+# PRT Auth
+#
+
+[prt-auth.CARTESI_PRT_AUTH_KIND]
+default = "mnemonic"
+go-type = "AuthKind"
+description = """
+One of "private_key", "private_key_file", "mnemonic", "mnemonic_file", "aws".
+
+The PRT auth variable for the kind defined here is required. Eg.: CARTESI_PRT_AUTH_MNEMONIC"""
+omit = true
+used-by = ["node", "prt"]
+
+[prt-auth.CARTESI_PRT_AUTH_PRIVATE_KEY]
+file = true
+go-type = "RedactedString"
+description = """
+The PRT service will use this private key to sign transactions."""
+omit = true
+used-by = ["node", "prt"]
+
+[prt-auth.CARTESI_PRT_AUTH_MNEMONIC]
+file = true
+go-type = "RedactedString"
+description = """
+The PRT service will use the private key generated from this mnemonic to sign transactions."""
+omit = true
+used-by = ["node", "prt"]
+
+[prt-auth.CARTESI_PRT_AUTH_MNEMONIC_ACCOUNT_INDEX]
+default = "6"
+go-type = "RedactedUint"
+description = """
+When using a mnemonic to sign PRT transactions,
+the PRT service will use this account index to generate the private key.
+The resulting PRT and Claimer signer addresses must differ."""
+omit = true
+used-by = ["node", "prt"]
+
+[prt-auth.CARTESI_PRT_AUTH_AWS_KMS_KEY_ID]
+go-type = "RedactedString"
+description = """
+An AWS KMS key ID, alias, or ARN for the PRT service.
+
+If set, the PRT service will use the AWS KMS service with this key to sign transactions.
+
+Everything else about the AWS connection — region, endpoint, and credentials — is
+resolved by the AWS SDK's standard chain, not by CARTESI_ variables. See the
+"Externally-provided configuration" section for the variables involved.
+
+Prefer an ARN or a bare key ID over an alias: an alias is resolved per-region, so
+the same alias in a different region names a different key and therefore a
+different signing address."""
+omit = true
+used-by = ["node", "prt"]
 
 #
 # Database

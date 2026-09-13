@@ -125,7 +125,7 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 		if s.submissionTimeout == 0 {
 			return nil, fmt.Errorf("BlockchainHttpRequestTimeout must be different from zero")
 		}
-		s.txOptsFactory, err = auth.GetTransactOptsFactory(ctx, chainID)
+		s.txOptsFactory, err = auth.GetPrtTransactOptsFactory(ctx, chainID)
 		if err != nil {
 			return nil, err
 		}
