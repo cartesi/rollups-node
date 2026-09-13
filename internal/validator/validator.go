@@ -108,15 +108,23 @@ func (s *Service) String() string {
 }
 
 type ValidatorRepository interface {
-	ListApplications(ctx context.Context, f repository.ApplicationFilter, p repository.Pagination, descending bool) ([]*Application, uint64, error)
+	ListApplications(
+		ctx context.Context, f repository.ApplicationFilter, p repository.Pagination, descending bool,
+	) ([]*Application, uint64, error)
 	UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error
-	ListOutputs(ctx context.Context, nameOrAddress string, f repository.OutputFilter, p repository.Pagination, descending bool) ([]*Output, uint64, error)
+	ListOutputs(
+		ctx context.Context, nameOrAddress string, f repository.OutputFilter, p repository.Pagination, descending bool,
+	) ([]*Output, uint64, error)
 	GetOutput(ctx context.Context, nameOrAddress string, outputIndex uint64) (*Output, error)
-	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter, p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
+	ListEpochs(
+		ctx context.Context, nameOrAddress string, f repository.EpochFilter, p repository.Pagination, descending bool,
+	) ([]*Epoch, uint64, error)
 	GetLastInput(ctx context.Context, appAddress string, epochIndex uint64) (*Input, error) // FIXME migrate to list
 	GetEpochByVirtualIndex(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	StoreClaimAndProofs(ctx context.Context, epoch *Epoch, outputs []*Output) error
-	ListStateHashes(ctx context.Context, nameOrAddress string, f repository.StateHashFilter, p repository.Pagination, descending bool) ([]*StateHash, uint64, error)
+	ListStateHashes(
+		ctx context.Context, nameOrAddress string, f repository.StateHashFilter, p repository.Pagination, descending bool,
+	) ([]*StateHash, uint64, error)
 }
 
 func getAllRunningApplications(ctx context.Context, er ValidatorRepository) ([]*Application, uint64, error) {
@@ -188,7 +196,7 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 			// (s.IsStopping() && errors.Is(err, context.Canceled)) handles
 			// the propagation. DeadlineExceeded is a real failure and
 			// must still be logged.
-			if !(s.IsStopping() && errors.Is(err, context.Canceled)) {
+			if !s.IsStopping() || !errors.Is(err, context.Canceled) {
 				s.Logger.Error("failed to create claim and proofs.", "error", err)
 			}
 			return err
@@ -312,6 +320,11 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 		// store the epoch and proofs in the database
 		err = s.repository.StoreClaimAndProofs(ctx, epoch, outputs)
 		if err != nil {
+			if errors.Is(err, repository.ErrEpochForeclosed) {
+				s.Logger.Info("Epoch was foreclosed before claim publication; discarding obsolete claim and proofs",
+					"application", appAddress, "epoch_index", epoch.Index)
+				continue
+			}
 			return fmt.Errorf(
 				"failed to store claim and proofs for epoch %v of application %v. %w",
 				epoch.Index, appAddress, err,
@@ -396,6 +409,18 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 		return nil, nil, s.setApplicationCorrupted(ctx, app,
 			"failed to build commitment for epoch %d of application %s with error: %v", epoch.Index, app.Name, err)
 	}
+	return s.proveCommitment(ctx, app, epoch, epochCommitmentTree)
+}
+
+// proveCommitment checks the completed tree and proves its final machine state.
+// Invalid stored dimensions or hashes are corruption. A broken internal tree
+// invariant is a computation failure, not evidence that persisted data is wrong.
+func (s *Service) proveCommitment(
+	ctx context.Context,
+	app *Application,
+	epoch *Epoch,
+	epochCommitmentTree *merkle.Tree,
+) (*common.Hash, *merkle.Proof, error) {
 	// The commitment geometry is fixed: 2²⁴ inputs × 2²⁴ entries ⇒ height 48.
 	const expectedHeight = Log2EpochComputationHashLeafCount
 	if uint64(epochCommitmentTree.Height) != expectedHeight {
@@ -407,8 +432,11 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 	commitment := epochCommitmentTree.GetRootHash()
 	proof, err := epochCommitmentTree.ProveLast()
 	if err != nil {
-		return nil, nil, s.setApplicationCorrupted(ctx, app,
-			"failed to retrieve commitment proof for epoch %d of application %s with error: %v", epoch.Index, app.Name, err)
+		// ProveLast derives its own valid index. Any traversal failure in this
+		// newly built tree is an internal error, even an out-of-range child index.
+		failure := fmt.Errorf("failed to retrieve commitment proof for epoch %d of application %s: %w", epoch.Index, app.Name, err)
+		statusErr := appstatus.SetFailed(ctx, s.Logger, s.repository, app, failure.Error())
+		return nil, nil, errors.Join(failure, statusErr)
 	}
 	// PRT reconstructs the root children from (epoch.MachineHash, proof).
 	// The tree's last leaf must therefore be the epoch's final machine hash.
@@ -422,7 +450,6 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 		"epoch", epoch.Index,
 		"commitment", commitment.String())
 	return &commitment, proof, nil
-
 }
 
 // computeMerkleTreeAndProofs calculates the claim and proofs for an epoch. It returns
