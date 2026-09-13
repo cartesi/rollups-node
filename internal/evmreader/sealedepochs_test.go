@@ -76,21 +76,13 @@ func (s *SealedEpochsSuite) TestProcessSealedEpochFindsInputAtOverlapBlock() {
 
 	tournamentAddr := common.HexToAddress("0xAAAA")
 
-	app := appContracts{
-		application: &Application{
-			ID:                  1,
-			Name:                "test-app",
-			IApplicationAddress: app1Addr,
-			IConsensusAddress:   consensusAddr,
-			IInputBoxAddress:    inputBoxAddr,
-			IInputBoxBlock:      10,
-		},
-		inputSource:   s.inputBox,
-		daveConsensus: s.dave,
-	}
+	app := newDaveAppContracts(s.inputBox, s.dave)
+	app.application.IInputBoxAddress = inputBoxAddr
+	app.application.IInputBoxBlock = 10
 
 	// Epoch 0 was already stored with LastBlock=100 and InputIndexUpperBound=3.
-	// CreateEpochsAndInputs set LastInputCheckBlock=100 for this app.
+	// An earlier open-epoch scan can already have reached block 100, so its
+	// input cursor must not determine where this sealed-epoch scan starts.
 	//
 	// Now epoch 1 is sealed at block 200:
 	//   FirstBlock = prevEpoch.LastBlock = 100 (PRT overlap)
@@ -187,27 +179,13 @@ func (s *SealedEpochsSuite) TestCatchUpForeclosedSealedEpochsAdvancesCursor() {
 		forecloseBlock      uint64 = 70
 	)
 
-	app := appContracts{
-		application: &Application{
-			ID:                   1,
-			Name:                 "test-prt-app",
-			IApplicationAddress:  app1Addr,
-			IConsensusAddress:    consensusAddr,
-			ConsensusType:        Consensus_PRT,
-			ForecloseBlock:       forecloseBlock,
-			LastEpochCheckBlock:  lastEpochCheckBlock,
-			LastInputCheckBlock:  forecloseBlock,
-			LastOutputCheckBlock: lastEpochCheckBlock,
-		},
-		daveConsensus: s.dave,
-		inputSource:   s.inputBox,
-	}
-
-	s.repository.On("GetLastNonOpenEpoch", mock.Anything, app.application.IApplicationAddress.String()).
-		Return(&Epoch{
-			Index:     2,
-			LastBlock: lastEpochCheckBlock,
-		}, nil).Once()
+	app := newDaveAppContracts(s.inputBox, s.dave)
+	app.application.Name = "test-prt-app"
+	app.application.ConsensusType = Consensus_PRT
+	app.application.ForecloseBlock = forecloseBlock
+	app.application.LastEpochCheckBlock = lastEpochCheckBlock
+	app.application.LastInputCheckBlock = forecloseBlock
+	app.application.LastOutputCheckBlock = lastEpochCheckBlock
 
 	currentSealedEpoch := DaveCurrentSealedEpoch{
 		EpochNumber:          big.NewInt(2),
@@ -234,21 +212,13 @@ func (s *SealedEpochsSuite) TestCatchUpForeclosedSealedEpochsAdvancesCursor() {
 func (s *SealedEpochsSuite) TestTerminalDaveConsensusAppProcessesOpenEpochToForeclosure() {
 	const forecloseBlock uint64 = 70
 
-	app := appContracts{
-		application: &Application{
-			ID:                  1,
-			Name:                "test-prt-app",
-			IApplicationAddress: app1Addr,
-			IConsensusAddress:   consensusAddr,
-			ConsensusType:       Consensus_PRT,
-			Status:              ApplicationStatus_MachineHalted,
-			ForecloseBlock:      forecloseBlock,
-			LastEpochCheckBlock: forecloseBlock,
-			LastInputCheckBlock: forecloseBlock - 1,
-		},
-		daveConsensus: s.dave,
-		inputSource:   s.inputBox,
-	}
+	app := newDaveAppContracts(s.inputBox, s.dave)
+	app.application.Name = "test-prt-app"
+	app.application.ConsensusType = Consensus_PRT
+	app.application.Status = ApplicationStatus_MachineHalted
+	app.application.ForecloseBlock = forecloseBlock
+	app.application.LastEpochCheckBlock = forecloseBlock
+	app.application.LastInputCheckBlock = forecloseBlock - 1
 
 	s.repository.On("GetLastNonOpenEpoch",
 		mock.Anything, app.application.IApplicationAddress.String()).
@@ -316,4 +286,29 @@ func (s *SealedEpochsSuite) TestDaveConsensusWithMissingInputBoxAdapterDoesNotPa
 	s.Equal(ApplicationStatus_OK, app.application.Status)
 	s.dave.AssertNotCalled(s.T(), "GetCurrentSealedEpoch")
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateApplicationStatus", 0)
+}
+
+func (s *SealedEpochsSuite) TestSealedEpochAtGenesisDoesNotPublishCursor() {
+	event := makeSealedEpochEvent(0, 0, 0, 0, common.HexToAddress("0xAAAA"))
+	err := s.evmReader.processSealedEpochEvent(s.ctx, appContracts{}, event)
+	s.Require().ErrorContains(err, "sealed epoch event has block number zero")
+	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
+}
+
+func (s *SealedEpochsSuite) TestSealedEpochAtFirstBlockPublishesZeroCursor() {
+	app := appContracts{application: &Application{IApplicationAddress: app1Addr, IInputBoxBlock: 1}}
+	event := makeSealedEpochEvent(0, 0, 0, 1, common.HexToAddress("0xAAAA"))
+	s.repository.On("GetEpoch", mock.Anything, app1Addr.Hex(), uint64(0)).Return(nil, nil).Once()
+	s.repository.On("CreateEpochsAndInputs", mock.Anything, app1Addr.Hex(),
+		mock.MatchedBy(func(epochs map[*Epoch][]*Input) bool {
+			if len(epochs) != 1 {
+				return false
+			}
+			for epoch, inputs := range epochs {
+				return epoch.FirstBlock == 1 && epoch.LastBlock == 1 && len(inputs) == 0
+			}
+			return false
+		}), uint64(0)).Return(nil).Once()
+	s.Require().NoError(s.evmReader.processSealedEpochEvent(s.ctx, app, event))
+	s.repository.AssertExpectations(s.T())
 }
