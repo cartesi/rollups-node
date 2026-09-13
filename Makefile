@@ -606,7 +606,7 @@ check-license: ## Verify license headers on Go source files
 # `make integration-test-shard-check`.
 #
 # Shards are grouped by semantic family, not balanced by runtime: `withdrawal`
-# is a single test while `restart` and `replay` are the heaviest. Each shard
+# covers withdrawals and deposit refunds; `restart` and `replay` are the heaviest. Each shard
 # gets its own CI runner and the full per-job `go test -timeout 55m`
 # (run-integration-tests.sh) budget; `restart` (multi-suite, ~25-min setup
 # contexts) is the first to watch if a shard ever approaches that ceiling.
@@ -620,7 +620,7 @@ INTEGRATION_SHARD_quorum     := ^Test(EchoQuorum|SameBlockInputs)$$
 INTEGRATION_SHARD_prt        := ^Test(EchoPrt|RejectExceptionPrt|ForeclosePrt|PrtPassiveDisputeObserver|SparseDisputeCommitment(MatchesDenseTrees|CanonicalGeometry|RejectsOutOfRangeRequests)|PassiveObserver(CleanupPreservesRestoreOrder|Config(PreservesOriginalAndUnrelatedFields|RejectsMissingFieldsAndInvalidJSON)))$$
 INTEGRATION_SHARD_replay     := ^Test(Foreclose|ForecloseReplay|DivergentClaim)$$
 INTEGRATION_SHARD_restart    := ^Test(Restart|SnapshotPolicy|NodeSubprocess)$$
-INTEGRATION_SHARD_withdrawal := ^TestWithdrawalLifecycle$$
+INTEGRATION_SHARD_withdrawal := ^Test(WithdrawalLifecycle|RefundLifecycle)$$
 INTEGRATION_SHARD_awskms     := ^TestLocalStackAWSIntegration$$
 
 # -----------------------------------------------------------------------------
