@@ -492,246 +492,6 @@ func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentB
 	return nil
 }
 
-func (s *Service) trySettle(ctx context.Context, app *Application, mostRecentBlock uint64) error {
-	if _, exist := s.currentEpochIndex[app.ID]; !exist {
-		s.currentEpochIndex[app.ID] = 0
-	}
-	currentEpochIndex := s.currentEpochIndex[app.ID]
-
-	if tx, joinTxIsInFlight := s.joinInFlight[app.ID]; joinTxIsInFlight {
-		s.Logger.Debug("Waiting for join tournament transaction to be mined", "application", app.Name,
-			"epoch_index", currentEpochIndex, "tx", tx)
-		return nil // wait for join to be mined before settling
-	}
-
-	if tx, settleTxIsInFlight := s.settleInFlight[app.ID]; settleTxIsInFlight {
-		_, isPending, err := s.client.TransactionByHash(ctx, *tx)
-		if err != nil {
-			s.Logger.Error("failed to fetch last settle transaction status", "application", app.Name,
-				"epoch_index", currentEpochIndex, "tx", tx, "error", err)
-			return err
-		}
-		if isPending {
-			s.Logger.Debug("Previous settle transaction is still pending", "application", app.Name,
-				"epoch_index", currentEpochIndex, "tx", tx)
-			return nil
-		}
-		s.Logger.Debug("Previous settle transaction has been mined", "application", app.Name,
-			"epoch_index", currentEpochIndex, "tx", tx)
-		delete(s.settleInFlight, app.ID)
-		// Return so that the next tick's checkEpochs syncs the EpochSealed
-		// event before we re-check CanSettle. Without this, a stale
-		// mostRecentBlock snapshot could cause CanSettle to return true
-		// and trigger a duplicate Settle that reverts on-chain.
-		return nil
-	}
-
-	consensus, err := s.adapterFactory.CreateDaveConsensusAdapter(app.IConsensusAddress)
-	if err != nil {
-		s.Logger.Error("failed to bind dave consensus contract", "application", app.Name,
-			"consensus_address", app.IConsensusAddress.String(), "error", err)
-		return err
-	}
-
-	callOpts := &bind.CallOpts{
-		Context:     ctx,
-		BlockNumber: new(big.Int).SetUint64(mostRecentBlock),
-	}
-
-	result, err := consensus.CanSettle(callOpts)
-	if err != nil {
-		s.Logger.Error("failed to call CanSettle on DaveConsensus", "application", app.Name,
-			"consensus", app.IConsensusAddress.String(), "error", err)
-		return err
-	}
-
-	currentEpochIndex = result.EpochNumber.Uint64()
-	s.currentEpochIndex[app.ID] = currentEpochIndex
-
-	if !result.IsFinished {
-		s.Logger.Debug("Epoch root tournament has not finished yet. Skipping Settle",
-			"application", app.Name, "epoch_index", currentEpochIndex)
-		return nil // nothing to do
-	}
-
-	epoch, err := s.repository.GetEpoch(ctx, app.IApplicationAddress.Hex(), currentEpochIndex)
-	if err != nil {
-		s.Logger.Error("failed to list epochs", "application", app.Name, "error", err)
-		return err
-	}
-	if epoch == nil || epoch.Status != EpochStatus_ClaimComputed {
-		s.Logger.Info("Application sync has not finished. Skipping Settle", "application", app.Name,
-			"epoch_index", currentEpochIndex)
-		return nil // nothing to do
-	}
-
-	if epoch.TxBufferDataBlock == nil || epoch.TxBufferProof == nil {
-		return s.setApplicationCorrupted(ctx, app,
-			"epoch %d has missing required fields for settlement", epoch.Index)
-	}
-
-	// Check on-chain if the epoch was already settled (e.g., after a node
-	// restart where settleInFlight was lost). CanSettle only checks if
-	// the tournament has finished, not if settlement was already performed.
-	alreadySettled, err := consensus.IsEpochSettled(callOpts, currentEpochIndex)
-	if err != nil {
-		s.Logger.Error("failed to check if epoch is already settled", "application", app.Name,
-			"epoch_index", currentEpochIndex, "error", err)
-		return err
-	}
-	if alreadySettled {
-		s.Logger.Info("Epoch already settled on-chain, waiting for event sync",
-			"application", app.Name, "epoch_index", currentEpochIndex)
-		return nil
-	}
-
-	s.Logger.Info("Sending Settle transaction", "application", app.Name, "epoch_index", epoch.Index,
-		"outputs_merkle_root", epoch.TxBufferDataBlock.String())
-
-	if s.txOptsFactory == nil {
-		return fmt.Errorf("txOpts is required for settlement")
-	}
-	txCtx, cancel := context.WithTimeout(ctx, s.submissionTimeout)
-	defer cancel()
-	txOpts, err := s.txOptsFactory.NewTransactOpts(txCtx)
-	if err != nil {
-		return fmt.Errorf("creating transaction options for settlement: %w", err)
-	}
-	tx, err := consensus.Settle(txOpts, result.EpochNumber,
-		*epoch.TxBufferDataBlock, hashSliceToByteSlice(epoch.TxBufferProof))
-	if err != nil {
-		return s.handleSettleRevert(ctx, app, result.EpochNumber.Uint64(), err)
-	}
-	settleTx := tx.Hash()
-	s.settleInFlight[app.ID] = &settleTx
-
-	return nil
-}
-
-// handleSettleRevert classifies a Settle error and performs the matching
-// state change. The known DaveConsensus reverts:
-//
-//   - IncorrectEpochNumber: carries (received, actual). received < actual
-//     means the epoch was already settled — after a restart when the
-//     IsEpochSettled pre-check used a slightly stale block number, or
-//     another entity settled concurrently; wait for event sync.
-//     received > actual means the local epoch index is ahead of the chain
-//     (wrong consensus address or corrupted local state) — FAILED, since
-//     waiting would stall silently forever.
-//   - TournamentNotFinishedYet: CanSettle returned true at this tick's pinned
-//     block, but the provider simulated the call against different state.
-//     Transient; retry next tick.
-//   - InvalidOutputsMerkleRootProofSize / InvalidOutputsMerkleRootProof: the
-//     locally stored outputs merkle proof does not prove the outputs root
-//     against the settled machine state — local data corruption; CORRUPTED.
-//   - ApplicationForeclosed: retry while the EVM reader records the
-//     foreclosure marker (settle runs the same foreclosure probe as the
-//     IConsensus claim methods).
-//   - ApplicationNotDeployed / ApplicationReverted /
-//     IllformedApplicationReturnData: the foreclosure probe failed — wrong
-//     application address, or a broken/adversarial application contract;
-//     FAILED, with the application's revert data preserved in the reason.
-//
-// JSON-RPC "nonce too low" broadcast rejections retry next tick; unknown
-// errors are returned to the caller unchanged, with the decoded revert name
-// in the log when one of the known ABIs declares it.
-func (s *Service) handleSettleRevert(ctx context.Context, app *Application, epochNumber uint64, err error) error {
-	switch {
-	case isDaveConsensusError(err, "IncorrectEpochNumber"):
-		if received, actual, ok := decodeIncorrectEpochNumber(err); ok &&
-			received.Cmp(actual) > 0 {
-			return s.setApplicationFailed(ctx, app,
-				"Settle reverted with IncorrectEpochNumber: the node tried to "+
-					"settle epoch %s but the chain expects epoch %s — the local "+
-					"epoch index is ahead of the DaveConsensus contract. Verify "+
-					"the consensus address configuration and local state before "+
-					"re-enabling.",
-				received, actual)
-		}
-		s.Logger.Info(
-			"Epoch already settled on-chain (detected via revert), "+
-				"waiting for event sync",
-			"application", app.Name,
-			"epoch_index", epochNumber)
-		return nil
-
-	case isDaveConsensusError(err, "TournamentNotFinishedYet"):
-		s.Logger.Warn(
-			"Settle reverted with TournamentNotFinishedYet; the provider's "+
-				"state may lag this tick's CanSettle read, retrying next tick",
-			"application", app.Name,
-			"epoch_index", epochNumber)
-		return nil
-
-	case isDaveConsensusError(err, "InvalidOutputsMerkleRootProofSize"):
-		return s.setApplicationCorrupted(ctx, app,
-			"Settle reverted with InvalidOutputsMerkleRootProofSize for epoch %d — "+
-				"the outputs merkle proof stored locally has the wrong length for "+
-				"the settled machine state.",
-			epochNumber)
-
-	case isDaveConsensusError(err, "InvalidOutputsMerkleRootProof"):
-		return s.setApplicationCorrupted(ctx, app,
-			"Settle reverted with InvalidOutputsMerkleRootProof for epoch %d — "+
-				"the outputs merkle proof stored locally does not prove the outputs "+
-				"root against the settled machine state.",
-			epochNumber)
-
-	case isDaveConsensusError(err, "ApplicationForeclosed"):
-		s.Logger.Warn("Settle reverted with ApplicationForeclosed; "+
-			"awaiting Foreclosure observer to record the foreclosure marker",
-			"application", app.Name,
-			"epoch_index", epochNumber)
-		return nil
-
-	case isDaveConsensusError(err, "ApplicationNotDeployed"):
-		return s.setApplicationFailed(ctx, app,
-			"Settle reverted with ApplicationNotDeployed for epoch %d: no "+
-				"contract code exists at the application address bound to the "+
-				"DaveConsensus contract. Verify the application address and "+
-				"that the application contract is deployed on this chain "+
-				"before re-enabling.",
-			epochNumber)
-
-	case isDaveConsensusError(err, "ApplicationReverted"):
-		return s.setApplicationFailed(ctx, app,
-			"Settle reverted with ApplicationReverted for epoch %d: the "+
-				"application contract reverted when the consensus contract "+
-				"queried it. Verify the deployed contract and its compatibility "+
-				"with the consensus contract before re-enabling.%s",
-			epochNumber, daveAppReturnDataSuffix(err, "ApplicationReverted"))
-
-	case isDaveConsensusError(err, "IllformedApplicationReturnData"):
-		return s.setApplicationFailed(ctx, app,
-			"Settle reverted with IllformedApplicationReturnData for epoch %d: "+
-				"the application contract returned malformed data when the "+
-				"consensus contract queried it. Verify the deployed contract "+
-				"and its compatibility with the consensus contract before "+
-				"re-enabling.%s",
-			epochNumber, daveAppReturnDataSuffix(err, "IllformedApplicationReturnData"))
-
-	case ethutil.IsNonceTooLowError(err):
-		// Transient broadcast race: the chain has already mined a tx with
-		// this EOA's nonce, so this attempt is rejected before execution.
-		// Most commonly hit straddling a node restart — the prior process
-		// broadcast Settle (or some other tx) that landed, but the
-		// post-restart PendingNonceAt has not yet caught up. The next tick's
-		// IsEpochSettled check reads chain state at a fresh block and
-		// short-circuits if our prior Settle actually mined; otherwise a
-		// new broadcast goes out with a fresh nonce.
-		s.Logger.Info(
-			"Settle broadcast rejected with 'nonce too low'; "+
-				"deferring to the next tick's IsEpochSettled reconciliation",
-			"application", app.Name,
-			"epoch_index", epochNumber)
-		return nil
-	}
-	s.Logger.Error("failed to send Settle transaction", "application", app.Name,
-		"epoch_index", epochNumber, "error", err,
-		"decoded_revert", describeKnownRevert(err))
-	return err
-}
-
 // observeApplicationTournaments indexes chain facts without consulting local
 // claim readiness or changing application health. The returned roots are also
 // used by the separate local claim reconciliation after publication.
@@ -1184,127 +944,95 @@ func applyTournamentCreationEvent(child *Tournament, event *itournament.ITournam
 	return nil
 }
 
-func (s *Service) reactToTournament(ctx context.Context, app *Application, mostRecentBlock uint64) error {
-	currentEpochIndex, exist := s.currentEpochIndex[app.ID]
-	if !exist {
-		errMsg := "current epoch index not found for application. Should not happen"
-		s.Logger.Error(errMsg, "application", app.Name)
-		return errors.New(errMsg)
-	}
-	if tx, settleTxIsInFlight := s.settleInFlight[app.ID]; settleTxIsInFlight {
-		s.Logger.Debug("Waiting for settle transaction to be mined", "application", app.Name,
-			"epoch_index", currentEpochIndex, "tx", tx)
-		return nil // wait for settle to be mined
-	}
-
-	if tx, joinTxIsInFlight := s.joinInFlight[app.ID]; joinTxIsInFlight {
-		_, isPending, err := s.client.TransactionByHash(ctx, *tx)
-		if err != nil {
-			s.Logger.Error("failed to fetch last join tournament transaction status", "application", app.Name,
-				"epoch_index", currentEpochIndex, "tx", tx, "error", err)
-			return err
-		}
-		if isPending {
-			s.Logger.Debug("Previous join tournament transaction is still pending", "application", app.Name,
-				"epoch_index", currentEpochIndex, "tx", tx)
-			return nil
-		}
-		s.Logger.Debug("Previous join tournament transaction has been mined", "application", app.Name,
-			"epoch_index", currentEpochIndex, "tx", tx)
-		delete(s.joinInFlight, app.ID)
-		// Return so that the next tick's checkEpochs syncs the CommitmentJoined
-		// event before we re-check GetCommitment. Without this, a stale
-		// mostRecentBlock snapshot could cause GetCommitment to return nil
-		// and trigger a duplicate JoinTournament that reverts on-chain.
-		return nil
-	}
-
-	epoch, err := s.repository.GetEpoch(ctx, app.IApplicationAddress.Hex(), currentEpochIndex)
-	if err != nil {
-		s.Logger.Error("failed to list epochs", "application", app.Name, "error", err)
-		return err
-	}
+// reactToTournament reports true only when the commitment is already joined.
+// A deferred or newly broadcast join must not permit a new bond refund this tick.
+func (s *Service) reactToTournament(ctx context.Context, app *Application, epoch *Epoch, mostRecentBlock uint64) (bool, error) {
 	if epoch == nil || epoch.Status != EpochStatus_ClaimComputed {
-		s.Logger.Debug("Application sync has not finished. Skipping join tournament", "application", app.Name,
-			"epoch_index", currentEpochIndex)
-		return nil // nothing to do
+		s.Logger.Debug("Application sync has not finished. Skipping join tournament", "application", app.Name)
+		return false, nil
 	}
 
 	if epoch.TournamentAddress == nil || epoch.Commitment == nil ||
 		epoch.MachineHash == nil || epoch.CommitmentProof == nil {
-		return s.setApplicationCorrupted(ctx, app,
+		return false, s.setApplicationCorrupted(ctx, app,
 			"epoch %d has missing required fields for tournament reaction", epoch.Index)
 	}
 
 	commitment, err := s.repository.GetCommitment(ctx, app.IApplicationAddress.Hex(), epoch.Index,
 		epoch.TournamentAddress.Hex(), epoch.Commitment.String())
 	if err != nil {
-		s.Logger.Error("failed to get commitment from repository", "application", app.Name,
-			"epoch_index", currentEpochIndex, "tournament", epoch.TournamentAddress.Hex(),
-			"commitment", epoch.Commitment.Hex(), "error", err)
-		return err
+		s.logErrorUnlessShutdown("failed to get commitment from repository", err, "application", app.Name,
+			"epoch_index", epoch.Index, "tournament", epoch.TournamentAddress.Hex(),
+			"commitment", epoch.Commitment.Hex())
+		return false, err
 	}
 	if commitment != nil {
 		s.Logger.Debug("Commitment already joined. Skipping JoinTournament", "application", app.Name,
-			"epoch_index", currentEpochIndex, "tournament", epoch.TournamentAddress.Hex(), "commitment", epoch.Commitment.Hex())
-		return nil
+			"epoch_index", epoch.Index, "tournament", epoch.TournamentAddress.Hex(), "commitment", epoch.Commitment.Hex())
+		return true, nil
 	}
 
 	tournamentAdapter, err := s.adapterFactory.CreateTournamentAdapter(*epoch.TournamentAddress)
 	if err != nil {
 		s.Logger.Error("failed to create tournament adapter", "application", app.Name,
 			"tournament", epoch.TournamentAddress.String(), "error", err)
-		return err
+		return false, err
 	}
 
-	callOpts := &bind.CallOpts{
-		Context:     ctx,
-		BlockNumber: new(big.Int).SetUint64(mostRecentBlock),
-	}
+	callOpts := pinnedCallOpts(ctx, mostRecentBlock)
 
 	// Check on-chain if the commitment was already joined (e.g., after a node
-	// restart where joinInFlight was lost and the DB event sync hasn't caught up).
-	alreadyJoined, err := tournamentAdapter.IsCommitmentJoined(callOpts, *epoch.Commitment)
+	// restart where the pending transaction was lost and the DB event sync hasn't caught up).
+	commitmentStanding, err := tournamentAdapter.CommitmentStanding(callOpts, *epoch.Commitment)
 	if err != nil {
-		s.Logger.Error("failed to check commitment on-chain", "application", app.Name,
-			"epoch_index", currentEpochIndex, "tournament", epoch.TournamentAddress.Hex(),
-			"commitment", epoch.Commitment.Hex(), "error", err)
-		return err
+		s.logErrorUnlessShutdown("failed to check commitment on-chain", err, "application", app.Name,
+			"epoch_index", epoch.Index, "tournament", epoch.TournamentAddress.Hex(),
+			"commitment", epoch.Commitment.Hex())
+		return false, err
 	}
-	if alreadyJoined {
+	if commitmentStanding.Joined {
+		if err := s.validateJoinedCommitment(ctx, app, epoch, commitmentStanding); err != nil {
+			return false, err
+		}
 		s.Logger.Info("Commitment already joined on-chain, waiting for event sync",
-			"application", app.Name, "epoch_index", currentEpochIndex,
+			"application", app.Name, "epoch_index", epoch.Index,
 			"tournament", epoch.TournamentAddress.Hex(), "commitment", epoch.Commitment.Hex())
-		return nil
+		return true, nil
+	}
+
+	descriptor, err := tournamentAdapter.Descriptor(callOpts)
+	if err != nil {
+		return false, fmt.Errorf("reading root tournament geometry before joining: %w", err)
+	}
+	if descriptor.Level != uint64(RootLevel) || descriptor.Height != Log2EpochComputationHashLeafCount {
+		return false, s.setApplicationFailed(ctx, app,
+			"Cannot join tournament %s: root level %d and commitment height %d are required; got level %d and height %d. "+
+				"Check the tournament factory and node versions before re-enabling.",
+			epoch.TournamentAddress, RootLevel, Log2EpochComputationHashLeafCount, descriptor.Level, descriptor.Height)
 	}
 
 	bondValue, err := tournamentAdapter.BondValue(callOpts)
 	if err != nil {
-		s.Logger.Error("failed to fetch tournament bond value", "application", app.Name,
-			"epoch_index", currentEpochIndex, "tournament", epoch.TournamentAddress.Hex(),
-			"error", err)
-		return err
+		s.logErrorUnlessShutdown("failed to fetch tournament bond value", err, "application", app.Name,
+			"epoch_index", epoch.Index, "tournament", epoch.TournamentAddress.Hex())
+		return false, err
 	}
 
-	if s.txOptsFactory == nil {
-		return fmt.Errorf("txOpts is required for joining tournament")
-	}
 	txCtx, cancel := context.WithTimeout(ctx, s.submissionTimeout)
 	defer cancel()
 	txOpts, err := s.txOptsFactory.NewTransactOpts(txCtx)
 	if err != nil {
-		return fmt.Errorf("creating transaction options for joining tournament: %w", err)
+		return false, fmt.Errorf("creating transaction options for joining tournament: %w", err)
 	}
 	txOptsWithValue := *txOpts
 	txOptsWithValue.Value = bondValue
 
-	// FIXME move this to constants
-	idx := uint64(1<<48) - 1 //nolint: mnd
+	idx := uint64(1<<Log2EpochComputationHashLeafCount) - 1
 	leftNode, rightNode, err := merkle.RootChildrenFromProof(*epoch.MachineHash, epoch.CommitmentProof, idx)
 	if err != nil {
 		s.Logger.Error("failed to compute left and right nodes from commitment proof",
-			"application", app.Name, "epoch_index", currentEpochIndex, "error", err)
-		return err
+			"application", app.Name, "epoch_index", epoch.Index, "error", err)
+		return false, err
 	}
 
 	s.Logger.Info("Joining tournament", "application", app.Name, "epoch_index", epoch.Index,
@@ -1313,11 +1041,30 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 	tx, err := tournamentAdapter.JoinTournament(&txOptsWithValue, *epoch.MachineHash,
 		hashSliceToByteSlice(epoch.CommitmentProof), leftNode, rightNode)
 	if err != nil {
-		return s.handleJoinTournamentRevert(ctx, app, epoch, tournamentAdapter, err)
+		return false, s.handleJoinTournamentRevert(ctx, app, epoch, tournamentAdapter, err)
 	}
-	joinTx := tx.Hash()
-	s.joinInFlight[app.ID] = &joinTx
+	s.pendingTransactions[app.ID] = pendingTournamentTransaction{
+		Action: tournamentActionJoin, Hash: tx.Hash(), EpochIndex: epoch.Index,
+	}
 
+	return false, nil
+}
+
+func (s *Service) validateJoinedCommitment(
+	ctx context.Context,
+	app *Application,
+	epoch *Epoch,
+	standing CommitmentStanding,
+) error {
+	if epoch.MachineHash == nil {
+		return s.setApplicationCorrupted(ctx, app,
+			"epoch %d has no machine hash for joined commitment reconciliation", epoch.Index)
+	}
+	if standing.FinalState != *epoch.MachineHash {
+		return fmt.Errorf(
+			"epoch %d commitment has inconsistent final state between off-chain (%s) and on-chain (%s)",
+			epoch.Index, epoch.MachineHash.String(), standing.FinalState.String())
+	}
 	return nil
 }
 
@@ -1330,10 +1077,9 @@ func (s *Service) reactToTournament(ctx context.Context, app *Application, mostR
 //   - TournamentIsClosed: the join window is closed. The contract checks the
 //     window before the already-joined clock check, so this also fires for a
 //     commitment that DID join before the window closed; re-check
-//     IsCommitmentJoined at the latest block to tell the two apart. Truly
-//     unjoined means the node can no longer defend its claim — FAILED so the
-//     operator is alerted instead of the node retrying a permanently closed
-//     door every tick. (TournamentIsFinished is handled identically as a
+//     CommitmentStanding at the latest block to tell the two apart. Truly
+//     unjoined must also be confirmed at the configured block before marking
+//     the app FAILED. (TournamentIsFinished is handled identically as a
 //     backstop, though join's window check fires first on a finished
 //     tournament, so it should be unreachable from join.)
 //   - CommitmentStateMismatch / CommitmentProofWrongSize: the locally stored
@@ -1365,9 +1111,9 @@ func (s *Service) handleJoinTournamentRevert(
 		// The window check precedes the already-joined check on chain, so a
 		// commitment that joined just before the window closed reverts with
 		// the window error on a rebroadcast (e.g. after a restart with a
-		// stale IsCommitmentJoined read). Re-check at the latest block before
+		// stale CommitmentStanding read). Re-check at the latest block before
 		// declaring the join missed.
-		joined, joinedErr := tournamentAdapter.IsCommitmentJoined(
+		standing, joinedErr := tournamentAdapter.CommitmentStanding(
 			&bind.CallOpts{Context: ctx}, *epoch.Commitment)
 		if joinedErr != nil {
 			s.Logger.Warn("JoinTournament reverted with "+revertName+" but the "+
@@ -1377,11 +1123,35 @@ func (s *Service) handleJoinTournamentRevert(
 				"check_error", joinedErr)
 			return err
 		}
-		if joined {
+		if standing.Joined {
+			if err := s.validateJoinedCommitment(ctx, app, epoch, standing); err != nil {
+				return err
+			}
 			s.Logger.Info("Commitment already joined on-chain (window closed after the join), "+
 				"waiting for event sync",
 				"application", app.Name, "epoch_index", epoch.Index,
 				"tournament", epoch.TournamentAddress.Hex(), "commitment", epoch.Commitment.Hex())
+			return nil
+		}
+		// The revert and latest read can refer to unfinalized state. Confirm
+		// both closure and the missing join before stopping this application.
+		confirmedBlock, confirmErr := s.getDefaultBlockNumber(ctx)
+		if confirmErr != nil {
+			return confirmErr
+		}
+		confirmedOpts := pinnedCallOpts(ctx, confirmedBlock)
+		confirmedStanding, confirmErr := tournamentAdapter.Standing(confirmedOpts)
+		if confirmErr != nil {
+			return fmt.Errorf("confirming closed join window: %w", confirmErr)
+		}
+		if confirmedStanding.AcceptsJoins {
+			return nil
+		}
+		confirmedCommitment, confirmErr := tournamentAdapter.CommitmentStanding(confirmedOpts, *epoch.Commitment)
+		if confirmErr != nil {
+			return fmt.Errorf("confirming missing commitment after join window closed: %w", confirmErr)
+		}
+		if confirmedCommitment.Joined {
 			return nil
 		}
 		return s.setApplicationFailed(ctx, app,
@@ -1408,21 +1178,21 @@ func (s *Service) handleJoinTournamentRevert(
 
 	case ethutil.IsNonceTooLowError(err):
 		// Transient broadcast race: a tx with this EOA's nonce is already
-		// mined. The next tick's IsCommitmentJoined check will reconcile
+		// mined. The next tick's CommitmentStanding check will reconcile
 		// against the propagated chain state and short-circuit if our prior
 		// JoinTournament landed; otherwise a new broadcast goes out with a
 		// fresh nonce.
 		s.Logger.Info(
 			"JoinTournament broadcast rejected with 'nonce too low'; "+
-				"deferring to the next tick's IsCommitmentJoined reconciliation",
+				"deferring to the next tick's CommitmentStanding reconciliation",
 			"application", app.Name,
 			"epoch_index", epoch.Index,
 			"tournament", epoch.TournamentAddress.Hex(),
 			"commitment", epoch.Commitment.Hex())
 		return nil
 	}
-	s.Logger.Error("failed to send join tournament transaction", "application", app.Name,
-		"epoch_index", epoch.Index, "error", err,
+	s.logErrorUnlessShutdown("failed to send join tournament transaction", err, "application", app.Name,
+		"epoch_index", epoch.Index,
 		"decoded_revert", describeKnownRevert(err))
 	return err
 }
@@ -1474,7 +1244,7 @@ func isTournamentError(err error, name string) bool {
 //
 //	error IncorrectEpochNumber(uint256 receivedEpochNumber, uint256 actualEpochNumber);
 //
-// received < actual means the chain settled past us (already settled);
+// received < actual means the chain accepted past us;
 // received > actual means the local epoch index is ahead of the chain.
 func decodeIncorrectEpochNumber(err error) (received, actual *big.Int, ok bool) {
 	values, ok := ethutil.UnpackRevert(err, idaveconsensus.IDaveConsensusMetaData, "IncorrectEpochNumber")
@@ -1487,23 +1257,6 @@ func decodeIncorrectEpochNumber(err error) (received, actual *big.Int, ok bool) 
 		return nil, nil, false
 	}
 	return received, actual, true
-}
-
-// daveAppReturnDataSuffix formats the application-provided returndata carried
-// by ApplicationReverted and IllformedApplicationReturnData reverts as a
-// reason suffix. The bytes are controlled by the application contract, so
-// they are hex-encoded to keep them inert in logs and in the database.
-// Returns "" when the revert data cannot be decoded.
-func daveAppReturnDataSuffix(err error, name string) string {
-	values, ok := ethutil.UnpackRevert(err, idaveconsensus.IDaveConsensusMetaData, name)
-	if !ok || len(values) < 2 {
-		return ""
-	}
-	data, ok := values[1].([]byte)
-	if !ok {
-		return ""
-	}
-	return fmt.Sprintf(" Application return data: 0x%x.", data)
 }
 
 // describeKnownRevert renders the revert carried by err against the ABIs this
