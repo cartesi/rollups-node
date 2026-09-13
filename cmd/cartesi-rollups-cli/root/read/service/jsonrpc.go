@@ -355,8 +355,11 @@ func (s *JsonrpcReadService) GetMatchAdvanced(ctx context.Context, params api.Ge
 	if _, err := config.ToHashFromString(params.IDHash); err != nil {
 		return nil, fmt.Errorf("invalid ID hash: %w", err)
 	}
-	if _, err := config.ToHashFromString(params.Parent); err != nil {
-		return nil, fmt.Errorf("invalid parent: %w", err)
+	if _, err := config.ToHashFromString(params.TxHash); err != nil {
+		return nil, fmt.Errorf("invalid transaction hash: %w", err)
+	}
+	if _, err := config.ToIndexFromString(params.LogIndex); err != nil {
+		return nil, fmt.Errorf("invalid log index: %w", err)
 	}
 
 	var resp json.RawMessage
