@@ -11,17 +11,18 @@ import (
 	"math/big"
 
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
-func (r *Service) initializeNewApplicationSealedEpochSync(
+func (r *Service) initialSealedEpochSearchBlock(
 	ctx context.Context,
-	app *appContracts,
+	app appContracts,
 	mostRecentBlockNumber uint64,
-) error {
-	r.Logger.Info("Initializing application sealed epoch sync",
+) (uint64, error) {
+	r.Logger.Debug("Initializing application sealed epoch sync",
 		"application", app.application.Name,
 		"current_block", mostRecentBlockNumber,
 	)
@@ -38,48 +39,22 @@ func (r *Service) initializeNewApplicationSealedEpochSync(
 				"consensus_address", app.application.IConsensusAddress,
 				"block", mostRecentBlockNumber,
 			)
-			return fmt.Errorf("%w: consensus %s at block %d: %w",
+			return 0, fmt.Errorf("%w: consensus %s at block %d: %w",
 				errContractNotDeployedAtBlock,
 				app.application.IConsensusAddress,
 				mostRecentBlockNumber,
 				err)
 		}
-		r.Logger.Error("Error retrieving dave consensus deployment block number",
-			"application", app.application.Name,
-			"address", app.application.IApplicationAddress,
-			"consensus_address", app.application.IConsensusAddress,
-			"error", err,
-		)
-		return fmt.Errorf("failed to retrieve DaveConsensus deployment block: %w", err)
+		return 0, fmt.Errorf("failed to retrieve DaveConsensus deployment block: %w", err)
 	}
-	if deploymentBlock.Sign() <= 0 {
-		r.Logger.Error("Invalid dave consensus deployment block number retrieved",
-			"application", app.application.Name,
-			"address", app.application.IApplicationAddress,
-			"consensus_address", app.application.IConsensusAddress,
-			"block_number", deploymentBlock.Uint64(),
-		)
-		return errors.New("invalid dave consensus deployment block number retrieved")
+	if deploymentBlock == nil || !deploymentBlock.IsUint64() || deploymentBlock.Sign() == 0 ||
+		deploymentBlock.Uint64() > mostRecentBlockNumber {
+		return 0, fmt.Errorf("invalid DaveConsensus deployment block %v at head %d", deploymentBlock, mostRecentBlockNumber)
 	}
 
-	lastEpochCheckBlock := deploymentBlock.Uint64() - 1
-	err = r.repository.UpdateEventLastCheckBlock(ctx, []int64{app.application.ID}, MonitoredEvent_EpochSealed, lastEpochCheckBlock)
-	if err != nil {
-		r.Logger.Error("Failed to update application LastEpochCheckBlock",
-			"application", app.application.Name,
-			"last_epoch_check_block", lastEpochCheckBlock,
-			"error", err,
-		)
-		return err
-	}
-	r.Logger.Debug("Application sealed epoch sync initialized",
-		"application", app.application.Name,
-		"deployment_block", deploymentBlock.Uint64(),
-		"next_search_block", lastEpochCheckBlock+1,
-		"current_block", mostRecentBlockNumber,
-	)
-	app.application.LastEpochCheckBlock = lastEpochCheckBlock
-	return nil
+	// This is a local search floor, not evidence of a completed scan. Persisting
+	// it before the constructor seal is stored could leave a cursor with no epoch.
+	return deploymentBlock.Uint64(), nil
 }
 
 func (r *Service) scanDaveConsensusEpochsAndInputs(
@@ -111,6 +86,19 @@ func (r *Service) scanDaveConsensusEpochsAndInputs(
 			if errors.Is(err, context.Canceled) {
 				return false // shutting down
 			}
+			if errors.Is(err, errContractNotDeployedAtBlock) {
+				// Registration can precede deployment visibility at the configured
+				// block. Neither sealed nor open epochs can be observed yet.
+				continue
+			}
+			if errors.Is(err, errApplicationStatusReported) {
+				// Only a recorded integrity status makes this fault app-local.
+				// A failed escalation from an execution terminal still fails the scan.
+				if app.application.Status != ApplicationStatus_Corrupted && app.application.Status != ApplicationStatus_Diverged {
+					success = false
+				}
+				continue
+			}
 			success = false
 			r.Logger.Error("Error processing application sealed epochs",
 				"application", app.application.Name,
@@ -126,6 +114,12 @@ func (r *Service) scanDaveConsensusEpochsAndInputs(
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return false // shutting down
+			}
+			if errors.Is(err, errApplicationStatusReported) {
+				if app.application.Status != ApplicationStatus_Corrupted && app.application.Status != ApplicationStatus_Diverged {
+					success = false
+				}
+				continue
 			}
 			success = false
 			r.Logger.Error("Error processing application open epoch",
@@ -143,23 +137,23 @@ func (r *Service) processApplicationSealedEpochs(
 	app appContracts,
 	mostRecentBlockNumber uint64,
 ) error {
-	// Find the starting block for epoch search
-	if app.application.LastEpochCheckBlock == 0 {
-		err := r.initializeNewApplicationSealedEpochSync(ctx, &app, mostRecentBlockNumber)
+	lastEpochCheckBlock := app.application.LastEpochCheckBlock
+	initializing := lastEpochCheckBlock == 0
+	if initializing {
+		deploymentBlock, err := r.initialSealedEpochSearchBlock(ctx, app, mostRecentBlockNumber)
 		if err != nil {
-			if errors.Is(err, errContractNotDeployedAtBlock) {
-				return nil
-			}
-			r.Logger.Error("Failed to initialize application sealed epoch sync",
-				"application", app.application.Name,
-				"most_recent_block", mostRecentBlockNumber,
-				"error", err,
-			)
 			return fmt.Errorf("failed to determine start block for epoch search: %w", err)
 		}
+		lastEpochCheckBlock = deploymentBlock - 1
 	}
 
-	if mostRecentBlockNumber < app.application.LastEpochCheckBlock {
+	if mostRecentBlockNumber < lastEpochCheckBlock {
+		if app.application.ForecloseBlock != 0 && app.application.ForecloseBlock == mostRecentBlockNumber {
+			r.Logger.Debug("Sealed epoch scan already covers foreclosure block",
+				"application", app.application.Name, "foreclose_block", mostRecentBlockNumber,
+				"last_epoch_check_block", lastEpochCheckBlock)
+			return nil // The independent input cursor can still require a drain.
+		}
 		r.Logger.Warn(
 			"Not reading sealed epochs: most recent block is lower than the last processed one",
 			"application", app.application.Name, "address", app.application.IApplicationAddress,
@@ -167,7 +161,7 @@ func (r *Service) processApplicationSealedEpochs(
 			"most_recent_block", mostRecentBlockNumber,
 		)
 		return nil
-	} else if mostRecentBlockNumber == app.application.LastEpochCheckBlock {
+	} else if mostRecentBlockNumber == lastEpochCheckBlock {
 		r.Logger.Debug("Not reading sealed epochs: already checked the most recent blocks",
 			"application", app.application.Name, "address", app.application.IApplicationAddress,
 			"last_epoch_check_block", app.application.LastEpochCheckBlock,
@@ -176,10 +170,10 @@ func (r *Service) processApplicationSealedEpochs(
 		return nil
 	}
 
-	nextSearchBlock := app.application.LastEpochCheckBlock + 1
+	nextSearchBlock := lastEpochCheckBlock + 1
 	r.Logger.Debug("Checking sealed epochs for application",
 		"application", app.application.Name,
-		"last_epoch_check_block", app.application.LastEpochCheckBlock,
+		"last_epoch_check_block", lastEpochCheckBlock,
 		"next_search_block", nextSearchBlock,
 		"most_recent_block", mostRecentBlockNumber,
 	)
@@ -200,31 +194,27 @@ func (r *Service) processApplicationSealedEpochs(
 		return sealedEpoch.EpochNumber, nil
 	}
 
-	// Create onHit function that processes epoch transitions
-	onHit := func(block uint64) error {
-		r.Logger.Debug("Epoch transition found", "application", app.application.Name, "block", block)
-		return r.processEpochTransition(ctx, app, block)
-	}
-
+	// A failed window may already have stored a prefix of its epochs. Seed from
+	// the completed scan boundary, not the newest row, so that prefix is replayed.
 	prevValue := big.NewInt(-1)
-	lastEpoch, err := r.repository.GetLastNonOpenEpoch(ctx, app.application.IApplicationAddress.String())
-	if err != nil {
-		return fmt.Errorf("failed to get last non open epoch: %w", err)
-	}
-	if lastEpoch != nil {
-		prevValue = new(big.Int).SetUint64(lastEpoch.Index)
-		// assert that the last epoch's last block is less than the next search block
-		if lastEpoch.LastBlock > nextSearchBlock {
-			return r.setApplicationCorrupted(ctx, app.application,
-				"application last non open epoch last block %d is greater than next search block %d",
-				lastEpoch.LastBlock,
-				nextSearchBlock,
-			)
+	if !initializing {
+		var err error
+		prevValue, err = oracle(ctx, lastEpochCheckBlock)
+		if err != nil {
+			return err
 		}
+	}
+	previousTransitionValue := prevValue
+	onHit := func(block uint64) error {
+		value, err := r.processEpochTransition(ctx, app, block, previousTransitionValue)
+		if err == nil {
+			previousTransitionValue = value
+		}
+		return err
 	}
 
 	// Use FindTransitions to find epoch transitions
-	_, err = ethutil.FindTransitions(ctx, nextSearchBlock, mostRecentBlockNumber, prevValue, oracle, onHit)
+	_, err := ethutil.FindTransitions(ctx, nextSearchBlock, mostRecentBlockNumber, prevValue, oracle, onHit)
 	if err != nil {
 		return fmt.Errorf("failed to walk epoch transitions: %w", err)
 	}
@@ -233,6 +223,12 @@ func (r *Service) processApplicationSealedEpochs(
 	err = r.repository.UpdateEventLastCheckBlock(ctx, []int64{app.application.ID}, MonitoredEvent_EpochSealed, mostRecentBlockNumber)
 	if err != nil {
 		return fmt.Errorf("failed to update last epoch check block: %w", err)
+	}
+	if initializing {
+		r.Logger.Info("Application sealed epoch sync initialized",
+			"application", app.application.Name, "consensus_address", app.application.IConsensusAddress,
+			"deployment_block", nextSearchBlock,
+			"last_epoch_check_block", mostRecentBlockNumber)
 	}
 
 	r.Logger.Debug("Sealed epoch search completed", "application", app.application.Name, "most_recent_block", mostRecentBlockNumber)
@@ -244,7 +240,8 @@ func (r *Service) processEpochTransition(
 	ctx context.Context,
 	app appContracts,
 	transitionBlock uint64,
-) error {
+	previousEpochNumber *big.Int,
+) (*big.Int, error) {
 	r.Logger.Debug("Processing epoch transition", "application", app.application.Name, "block", transitionBlock)
 
 	// Get the sealed epoch information at this block
@@ -255,16 +252,8 @@ func (r *Service) processEpochTransition(
 
 	sealedEpoch, err := app.daveConsensus.GetCurrentSealedEpoch(callOpts)
 	if err != nil {
-		return fmt.Errorf("failed to get sealed epoch at transition block %d: %w", transitionBlock, err)
+		return nil, fmt.Errorf("failed to get sealed epoch at transition block %d: %w", transitionBlock, err)
 	}
-
-	r.Logger.Info("Found sealed epoch event",
-		"application", app.application.Name,
-		"block", transitionBlock,
-		"epoch_number", sealedEpoch.EpochNumber,
-		"input_lower_bound", sealedEpoch.InputIndexLowerBound,
-		"input_upper_bound", sealedEpoch.InputIndexUpperBound,
-		"tournament", sealedEpoch.Tournament)
 
 	// Retrieve the actual EpochSealed events for this transition
 	filterOpts := &bind.FilterOpts{
@@ -275,22 +264,45 @@ func (r *Service) processEpochTransition(
 
 	sealedEvents, err := app.daveConsensus.RetrieveSealedEpochs(filterOpts)
 	if err != nil {
-		return fmt.Errorf("failed to retrieve sealed epoch events at block %d: %w", transitionBlock, err)
+		return nil, fmt.Errorf("failed to retrieve sealed epoch events at block %d: %w", transitionBlock, err)
 	}
+
+	// Validate the whole block before storing any event. Several epochs can seal
+	// in one block, so a nonempty page can still omit part of the transition.
+	if sealedEpoch.EpochNumber == nil || !sealedEpoch.EpochNumber.IsUint64() {
+		return nil, fmt.Errorf("invalid sealed epoch number at block %d: %v", transitionBlock, sealedEpoch.EpochNumber)
+	}
+	expectedCount := new(big.Int).Sub(sealedEpoch.EpochNumber, previousEpochNumber)
+	if expectedCount.Sign() <= 0 || !expectedCount.IsUint64() || expectedCount.Uint64() != uint64(len(sealedEvents)) {
+		return nil, fmt.Errorf("sealed epoch event count mismatch at block %d: expected %s, got %d",
+			transitionBlock, expectedCount, len(sealedEvents))
+	}
+	expectedEpoch := new(big.Int).Set(previousEpochNumber)
+	for _, event := range sealedEvents {
+		expectedEpoch.Add(expectedEpoch, big.NewInt(1))
+		if event == nil || event.EpochNumber == nil || event.EpochNumber.Cmp(expectedEpoch) != 0 ||
+			event.Raw.BlockNumber != transitionBlock {
+			return nil, fmt.Errorf("invalid sealed epoch event sequence at block %d: expected epoch %s", transitionBlock, expectedEpoch)
+		}
+	}
+	lastEvent := sealedEvents[len(sealedEvents)-1]
+	if lastEvent.InputIndexLowerBound.Cmp(sealedEpoch.InputIndexLowerBound) != 0 ||
+		lastEvent.InputIndexUpperBound.Cmp(sealedEpoch.InputIndexUpperBound) != 0 || lastEvent.Tournament != sealedEpoch.Tournament {
+		return nil, fmt.Errorf("last sealed epoch event does not match current sealed epoch at block %d", transitionBlock)
+	}
+	r.Logger.Info("Found sealed epoch events",
+		"application", app.application.Name, "block", transitionBlock,
+		"epoch_number", sealedEpoch.EpochNumber, "count", len(sealedEvents))
 
 	// Process each sealed epoch event
 	for _, event := range sealedEvents {
 		err := r.processSealedEpochEvent(ctx, app, event)
 		if err != nil {
-			r.Logger.Error("Error processing sealed epoch event",
-				"epoch_number", event.EpochNumber,
-				"block", transitionBlock,
-				"error", err)
-			return fmt.Errorf("failed to process sealed epoch event at block %d: %w", transitionBlock, err)
+			return nil, fmt.Errorf("failed to process sealed epoch event at block %d: %w", transitionBlock, err)
 		}
 	}
 
-	return nil
+	return sealedEpoch.EpochNumber, nil
 }
 
 func (r *Service) processSealedEpochEvent(
@@ -303,6 +315,11 @@ func (r *Service) processSealedEpochEvent(
 		"input_lower_bound", event.InputIndexLowerBound,
 		"input_upper_bound", event.InputIndexUpperBound,
 		"tournament", event.Tournament)
+
+	// A seal is emitted by a transaction, so it cannot occur at genesis.
+	if event.Raw.BlockNumber == 0 {
+		return errors.New("sealed epoch event has block number zero")
+	}
 
 	firstBlock := uint64(0)
 	epochNumber := event.EpochNumber.Uint64()
@@ -354,6 +371,15 @@ func (r *Service) processSealedEpochEvent(
 		if epoch.FirstBlock != firstBlock || epoch.InputIndexLowerBound != event.InputIndexLowerBound.Uint64() {
 			return fmt.Errorf("epoch %d data mismatch with sealed event", epoch.Index)
 		}
+		if epoch.Status != EpochStatus_Open {
+			if epoch.LastBlock != event.Raw.BlockNumber || epoch.InputIndexUpperBound != event.InputIndexUpperBound.Uint64() ||
+				epoch.TournamentAddress == nil || *epoch.TournamentAddress != event.Tournament {
+				return fmt.Errorf("sealed epoch %d data mismatch with replayed event", epoch.Index)
+			}
+			// The epoch and its inputs were stored atomically. Preserve any later
+			// claim/proof progress when replaying a partially completed scan.
+			return nil
+		}
 		epoch.LastBlock = event.Raw.BlockNumber
 		epoch.InputIndexUpperBound = event.InputIndexUpperBound.Uint64()
 		epoch.TournamentAddress = &event.Tournament
@@ -388,7 +414,9 @@ func (r *Service) processSealedEpochEvent(
 				len(inputs))
 		}
 	}
-	// Store epoch and inputs
+	// The seal covers every input before its transaction, but later inputs in
+	// the same block belong to the next epoch. Publish only complete blocks;
+	// the open-epoch scan must finish this boundary block before drain is safe.
 	epochInputMap := map[*Epoch][]*Input{epoch: inputs}
 
 	r.Logger.Debug("Storing sealed epoch", "application", app.application.Name, "epoch_number", epoch.Index)
@@ -397,9 +425,13 @@ func (r *Service) processSealedEpochEvent(
 		ctx,
 		app.application.IApplicationAddress.String(),
 		epochInputMap,
-		event.Raw.BlockNumber,
+		event.Raw.BlockNumber-1,
 	)
 	if err != nil {
+		if errors.Is(err, repository.ErrInputLogIdentityConflict) {
+			return r.setApplicationCorrupted(ctx, app.application,
+				"sealed epoch %d input L1 log identity conflicts with stored data; operator reset required: %v", epoch.Index, err)
+		}
 		return fmt.Errorf("failed to store epoch and inputs: %w", err)
 	}
 
@@ -417,10 +449,8 @@ func (r *Service) processApplicationOpenEpoch(
 	app appContracts,
 	mostRecentBlockNumber uint64,
 ) error {
-	// This guard uses the tick-start application snapshot. Sealed-epoch
-	// processing earlier in this same tick can advance the DB input cursor to
-	// mostRecentBlockNumber, but the open epoch may still need to scan that
-	// boundary block. The fresh DB cursor is read below and scanned inclusively.
+	// The input cursor covers complete blocks. A sealed batch in this tick
+	// can advance it only to the block before its seal.
 	if mostRecentBlockNumber < app.application.LastInputCheckBlock {
 		r.Logger.Warn(
 			"Not checking for inputs on current open epoch: most recent block is lower than the last processed one",
@@ -473,6 +503,9 @@ func (r *Service) processApplicationOpenEpoch(
 	if err != nil {
 		return fmt.Errorf("failed to get last input check block: %w", err)
 	}
+	if lastInputCheckBlock >= mostRecentBlockNumber {
+		return nil
+	}
 
 	// Fetch inputs for this epoch from the InputBox
 	inputCount, err := r.repository.GetNumberOfInputs(
@@ -482,12 +515,16 @@ func (r *Service) processApplicationOpenEpoch(
 			"failed to get number of inputs from repository: %w", err)
 	}
 	prevValue := new(big.Int).SetUint64(inputCount)
-	inputs, _, err := r.fetchInputs(ctx, app,
-		lastInputCheckBlock, mostRecentBlockNumber,
+	inputs, endCount, err := r.fetchInputs(ctx, app,
+		lastInputCheckBlock+1, mostRecentBlockNumber,
 		prevValue,
 		openEpoch.InputIndexLowerBound, math.MaxUint64)
 	if err != nil {
 		return fmt.Errorf("failed to fetch inputs for epoch %d: %w", openEpoch.Index, err)
+	}
+	if endCount < inputCount || endCount-inputCount != uint64(len(inputs)) {
+		return fmt.Errorf("open epoch %d input count mismatch: stored %d, on-chain %d, got %d",
+			openEpoch.Index, inputCount, endCount, len(inputs))
 	}
 
 	// increase the upper bound according to the number of fetched inputs
@@ -510,6 +547,10 @@ func (r *Service) processApplicationOpenEpoch(
 	)
 
 	if err != nil {
+		if errors.Is(err, repository.ErrInputLogIdentityConflict) {
+			return r.setApplicationCorrupted(ctx, app.application,
+				"open epoch %d input L1 log identity conflicts with stored data; operator reset required: %v", openEpoch.Index, err)
+		}
 		return fmt.Errorf("failed to store epoch and inputs: %w", err)
 	}
 
