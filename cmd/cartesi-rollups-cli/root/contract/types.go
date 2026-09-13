@@ -14,7 +14,7 @@ type AppResult struct {
 	ExecutedOutputs         uint64 `json:"executed_outputs"`
 	ConsensusAddress        string `json:"consensus_address"`
 	ConsensusType           string `json:"consensus_type"`
-	DataAvailability        string `json:"data_availability"`
+	InputBox                string `json:"input_box"`
 	IsForeclosed            bool   `json:"is_foreclosed"`
 	Guardian                string `json:"guardian"`
 	WithdrawalOutputBuilder string `json:"withdrawal_output_builder"`
@@ -54,18 +54,38 @@ type QuorumConsensusResult struct {
 // tournament). Epochs 0..CurrentEpochNumber-1 have been settled; epoch CurrentEpochNumber
 // is sealed but not yet settled.
 type DaveConsensusResult struct {
-	Type               string `json:"type"`
-	Address            string `json:"address"`
-	InputBox           string `json:"inputbox"`
-	Factory            string `json:"factory"`
-	DeploymentBlock    uint64 `json:"deployment_block"`
-	IsFinished         bool   `json:"is_finished"`
-	HasWinner          *bool  `json:"has_winner,omitempty"`
-	WinnerCommitment   string `json:"winner_commitment,omitempty"`
-	CurrentEpochNumber uint64 `json:"current_epoch_number"`
-	InputLowerBound    uint64 `json:"input_lower_bound"`
-	InputUpperBound    uint64 `json:"input_upper_bound"`
-	RootTournament     string `json:"root_tournament"`
+	Type                       string  `json:"type"`
+	Address                    string  `json:"address"`
+	InputBox                   string  `json:"inputbox"`
+	Factory                    string  `json:"factory"`
+	DeploymentBlock            uint64  `json:"deployment_block"`
+	ClaimStagingPeriod         uint64  `json:"claim_staging_period"`
+	IsFinished                 bool    `json:"is_finished"`
+	IsTournamentFailed         bool    `json:"is_tournament_failed"`
+	IsTournamentResultStaged   bool    `json:"is_tournament_result_staged"`
+	HasWinner                  *bool   `json:"has_winner,omitempty"`
+	WinnerCommitment           string  `json:"winner_commitment,omitempty"`
+	WinnerPostEpochMachineHash string  `json:"winner_post_epoch_machine_hash,omitempty"`
+	CurrentEpochNumber         uint64  `json:"current_epoch_number"`
+	InputLowerBound            uint64  `json:"input_lower_bound"`
+	InputUpperBound            uint64  `json:"input_upper_bound"`
+	RootTournament             string  `json:"root_tournament"`
+	StagingBlock               *uint64 `json:"staging_block,omitempty"`
+	StagedMachineHash          string  `json:"staged_machine_hash,omitempty"`
+	StagedOutputsMerkleRoot    string  `json:"staged_outputs_merkle_root,omitempty"`
+	AllSentriesAgree           *bool   `json:"all_sentries_agree,omitempty"`
+	ClaimStagingPeriodOver     *bool   `json:"claim_staging_period_over,omitempty"`
+
+	SentryManager string         `json:"sentry_manager"`
+	NumSentries   uint64         `json:"num_sentries"`
+	Sentries      []SentryResult `json:"sentries"`
+}
+
+// SentryResult identifies a sentry slot and its address at the queried block.
+// IDs start at one and remain unchanged when the manager rotates a sentry.
+type SentryResult struct {
+	ID      uint64 `json:"id"`
+	Address string `json:"address"`
 }
 
 // InputBoxResult is the JSON output for InputBox state.
@@ -91,6 +111,7 @@ type MatchEvent struct {
 	PlayerOneAddr  string  `json:"player_one_addr,omitempty"`
 	PlayerTwoAddr  string  `json:"player_two_addr,omitempty"`
 	LeftOfTwo      string  `json:"left_of_two"`
+	EliminableAt   uint64  `json:"eliminable_at"`
 	BlockNumber    uint64  `json:"block_number"`
 	TxHash         string  `json:"tx_hash"`
 	DeletionReason string  `json:"deletion_reason,omitempty"`
@@ -102,39 +123,48 @@ type MatchEvent struct {
 
 // MatchAdvanceEvent is a match advance (bisection step) event.
 type MatchAdvanceEvent struct {
-	MatchIDHash string `json:"match_id_hash"`
-	OtherParent string `json:"other_parent"`
-	LeftNode    string `json:"left_node"`
-	BlockNumber uint64 `json:"block_number"`
-	TxHash      string `json:"tx_hash"`
+	MatchIDHash          string `json:"match_id_hash"`
+	OtherParent          string `json:"other_parent"`
+	LeftNode             string `json:"left_node"`
+	SegmentStartPosition string `json:"segment_start_position"`
+	EliminableAt         uint64 `json:"eliminable_at"`
+	BlockNumber          uint64 `json:"block_number"`
+	TxHash               string `json:"tx_hash"`
 }
 
 // TournamentResult is the JSON output for a tournament.
 type TournamentResult struct {
-	Address           string              `json:"address"`
-	Level             uint64              `json:"level"`
-	MaxLevel          uint64              `json:"max_level"`
-	Log2Step          uint64              `json:"log2step"`
-	Height            uint64              `json:"height"`
-	Closed            bool                `json:"closed"`
-	Finished          bool                `json:"finished"`
-	FinishedAtBlock   *uint64             `json:"finished_at_block,omitempty"`
-	HasWinner         *bool               `json:"has_winner,omitempty"`
-	WinnerCommitment  string              `json:"winner_commitment,omitempty"`
-	WinnerAddress     string              `json:"winner_address,omitempty"`
-	FinalMachineHash  string              `json:"final_machine_hash,omitempty"`
-	BondWei           string              `json:"bond_wei"`
-	BondETH           string              `json:"bond_eth"`
-	CommitmentsJoined uint64              `json:"commitments_joined"`
-	MatchesCreated    uint64              `json:"matches_created"`
-	MatchesAdvanced   uint64              `json:"matches_advanced"`
-	MatchesDeleted    uint64              `json:"matches_deleted"`
-	InnerTournaments  uint64              `json:"inner_tournaments"`
-	CanBeEliminated   *bool               `json:"can_be_eliminated,omitempty"`
-	Commitments       []CommitmentEvent   `json:"commitments,omitempty"`
-	Matches           []MatchEvent        `json:"matches,omitempty"`
-	Advances          []MatchAdvanceEvent `json:"advances,omitempty"`
-	Children          []*TournamentResult `json:"children,omitempty"`
+	Address            string              `json:"address"`
+	Level              uint64              `json:"level"`
+	MaxLevel           uint64              `json:"max_level"`
+	Log2Step           uint64              `json:"log2step"`
+	Height             uint64              `json:"height"`
+	Kind               string              `json:"kind"`
+	InitialMachineHash string              `json:"initial_machine_hash"`
+	BaseCycle          string              `json:"base_cycle"`
+	StartBlock         uint64              `json:"start_block"`
+	Allowance          uint64              `json:"allowance"`
+	Standing           string              `json:"standing"`
+	Closed             bool                `json:"closed"`
+	Finished           bool                `json:"finished"`
+	FinishedAtBlock    *uint64             `json:"finished_at_block,omitempty"`
+	HasWinner          *bool               `json:"has_winner,omitempty"`
+	WinnerCommitment   string              `json:"winner_commitment,omitempty"`
+	WinnerAddress      string              `json:"winner_address,omitempty"`
+	FinalMachineHash   string              `json:"final_machine_hash,omitempty"`
+	BondWei            string              `json:"bond_wei"`
+	BondETH            string              `json:"bond_eth"`
+	CommitmentsJoined  uint64              `json:"commitments_joined"`
+	MatchesCreated     uint64              `json:"matches_created"`
+	MatchesAdvanced    uint64              `json:"matches_advanced"`
+	MatchesDeleted     uint64              `json:"matches_deleted"`
+	InnerTournaments   uint64              `json:"inner_tournaments"`
+	CanBeEliminated    *bool               `json:"can_be_eliminated,omitempty"`
+	WinnerExpiresAt    *uint64             `json:"winner_expires_at,omitempty"`
+	Commitments        []CommitmentEvent   `json:"commitments,omitempty"`
+	Matches            []MatchEvent        `json:"matches,omitempty"`
+	Advances           []MatchAdvanceEvent `json:"advances,omitempty"`
+	Children           []*TournamentResult `json:"children,omitempty"`
 }
 
 // ClaimEvent is a claim event in the epoch history.
@@ -200,24 +230,36 @@ type CommitmentResult struct {
 	Commitment       string `json:"commitment"`
 	Tournament       string `json:"tournament"`
 	TournamentLevel  string `json:"tournament_level"`
+	Joined           bool   `json:"joined"`
+	Claimer          string `json:"claimer,omitempty"`
+	ClockRunning     bool   `json:"clock_running"`
 	ClockAllowance   uint64 `json:"clock_allowance"`
-	ClockStartBlock  uint64 `json:"clock_start_block"`
+	ClockDeadline    uint64 `json:"clock_deadline"`
+	BlocksRemaining  uint64 `json:"blocks_remaining"`
 	FinalMachineHash string `json:"final_machine_hash"`
 }
 
 // MatchResult is the JSON output for a match's bisection state.
 type MatchResult struct {
-	MatchIDHash         string `json:"match_id_hash"`
-	Tournament          string `json:"tournament"`
-	CommitmentOne       string `json:"commitment_one"`
-	CommitmentTwo       string `json:"commitment_two"`
-	PlayerOneAddr       string `json:"player_one_addr,omitempty"`
-	PlayerTwoAddr       string `json:"player_two_addr,omitempty"`
-	CurrentHeight       uint64 `json:"current_height"`
-	RunningLeafPosition string `json:"running_leaf_position"`
-	MachineCycle        string `json:"machine_cycle"`
-	CanWinByTimeout     bool   `json:"can_win_by_timeout"`
-	LeftNode            string `json:"left_node"`
-	RightNode           string `json:"right_node"`
-	OtherParent         string `json:"other_parent"`
+	MatchIDHash          string  `json:"match_id_hash"`
+	Tournament           string  `json:"tournament"`
+	CommitmentOne        string  `json:"commitment_one"`
+	CommitmentTwo        string  `json:"commitment_two"`
+	PlayerOneAddr        string  `json:"player_one_addr,omitempty"`
+	PlayerTwoAddr        string  `json:"player_two_addr,omitempty"`
+	ActualPhase          string  `json:"actual_phase"`
+	CurrentHeight        *uint64 `json:"current_height,omitempty"`
+	SegmentStartPosition string  `json:"segment_start_position,omitempty"`
+	SegmentStartCycle    string  `json:"segment_start_cycle,omitempty"`
+	TimeoutOutcome       string  `json:"timeout_outcome"`
+	DeferredCharge       uint64  `json:"deferred_charge"`
+	RevealingParent      string  `json:"revealing_parent,omitempty"`
+	WaitingLeft          string  `json:"waiting_left,omitempty"`
+	WaitingRight         string  `json:"waiting_right,omitempty"`
+	Responder            string  `json:"responder,omitempty"`
+	AgreeState           string  `json:"agree_state,omitempty"`
+	DivergencePosition   string  `json:"divergence_position,omitempty"`
+	DivergenceCycle      string  `json:"divergence_cycle,omitempty"`
+	FinalStateOne        string  `json:"final_state_one,omitempty"`
+	FinalStateTwo        string  `json:"final_state_two,omitempty"`
 }

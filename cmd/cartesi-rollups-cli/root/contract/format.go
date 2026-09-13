@@ -109,6 +109,40 @@ func matchWinner(winner uint8) string {
 	}
 }
 
+const (
+	matchPhaseUninitialized uint8 = iota
+	matchPhaseBisecting
+	matchPhaseReadyToSeal
+	matchPhaseSealed
+)
+
+func matchPhaseName(phase uint8) string {
+	names := [...]string{"UNINITIALIZED", "BISECTING", "READY_TO_SEAL", "SEALED"}
+	if int(phase) >= len(names) {
+		return fmt.Sprintf("UNKNOWN(%d)", phase)
+	}
+	return names[phase]
+}
+
+func matchTimeoutOutcomeName(outcome uint8) string {
+	names := [...]string{"NONE", "ONE_WINS", "TWO_WINS", "ELIMINATE_BOTH"}
+	if int(outcome) >= len(names) {
+		return fmt.Sprintf("UNKNOWN(%d)", outcome)
+	}
+	return names[outcome]
+}
+
+func commitmentSideName(side uint8) string {
+	switch side {
+	case 0:
+		return "ONE"
+	case 1:
+		return "TWO"
+	default:
+		return fmt.Sprintf("UNKNOWN(%d)", side)
+	}
+}
+
 // formatBlockTime returns " (2006-01-02 15:04:05 UTC)" if ts > 0, else "".
 func formatBlockTime(ts uint64) string {
 	if ts == 0 {

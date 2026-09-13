@@ -18,6 +18,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const daveConsensusContractName = "DaveConsensus"
+
 var summaryCmd = &cobra.Command{
 	Use:   "summary <application-address>",
 	Short: "Full diagnostic snapshot (composes app + consensus + inputbox + root tournament)",
@@ -238,6 +240,8 @@ func printConsensusSummary(p *printer, cr consensusResult) {
 			printTournamentFinished(p, r)
 			p.field("Current Sealed Epoch", fmt.Sprintf("%d", r.CurrentEpochNumber))
 			p.field("Root Tournament", r.RootTournament)
+			printDaveSentries(p, r)
+			printDaveStaging(p, r)
 		})
 	}
 }
@@ -246,7 +250,7 @@ func printConsensusSummary(p *printer, cr consensusResult) {
 func (c *chainClient) queryAuthority(
 	addr common.Address, contractVersion string,
 ) (*AuthorityConsensusResult, error) {
-	if err := c.ensureContract(addr, "Authority"); err != nil {
+	if err := c.ensureContract(addr, consensusAuthority.String()); err != nil {
 		return nil, err
 	}
 	caller, err := iauthority.NewIAuthorityCaller(addr, c.eth)
@@ -296,7 +300,7 @@ func (c *chainClient) queryAuthority(
 	}
 
 	return &AuthorityConsensusResult{
-		Type:               "Authority",
+		Type:               consensusAuthority.String(),
 		Address:            formatAddr(addr),
 		Owner:              formatAddr(owner),
 		EpochLength:        epochLength,
@@ -311,7 +315,7 @@ func (c *chainClient) queryAuthority(
 func (c *chainClient) queryQuorum(
 	addr common.Address, contractVersion string,
 ) (*QuorumConsensusResult, error) {
-	if err := c.ensureContract(addr, "Quorum"); err != nil {
+	if err := c.ensureContract(addr, consensusQuorum.String()); err != nil {
 		return nil, err
 	}
 	caller, err := iquorum.NewIQuorumCaller(addr, c.eth)
@@ -382,7 +386,7 @@ func (c *chainClient) queryQuorum(
 	}
 
 	return &QuorumConsensusResult{
-		Type:               "Quorum",
+		Type:               consensusQuorum.String(),
 		Address:            formatAddr(addr),
 		NumValidators:      numVal,
 		QuorumThreshold:    threshold,
@@ -399,7 +403,7 @@ func (c *chainClient) queryQuorum(
 func (c *chainClient) queryDave(
 	addr common.Address,
 ) (*DaveConsensusResult, error) {
-	if err := c.ensureContract(addr, "DaveConsensus"); err != nil {
+	if err := c.ensureContract(addr, daveConsensusContractName); err != nil {
 		return nil, err
 	}
 	caller, err := idaveconsensus.NewIDaveConsensusCaller(addr, c.eth)
@@ -407,9 +411,9 @@ func (c *chainClient) queryDave(
 		return nil, fmt.Errorf("bind IDaveConsensus: %w", err)
 	}
 
-	settleInfo, err := caller.CanSettle(c.callOpts)
+	stageInfo, err := caller.CanStageTournamentResult(c.callOpts)
 	if err != nil {
-		return nil, fmt.Errorf("CanSettle: %w", err)
+		return nil, fmt.Errorf("CanStageTournamentResult: %w", err)
 	}
 
 	sealed, err := caller.GetCurrentSealedEpoch(c.callOpts)
@@ -450,25 +454,85 @@ func (c *chainClient) queryDave(
 	if err != nil {
 		return nil, fmt.Errorf("GetTournamentFactory: %w", err)
 	}
+	stagingPeriodRaw, err := caller.GetClaimStagingPeriod(c.callOpts)
+	if err != nil {
+		return nil, fmt.Errorf("GetClaimStagingPeriod: %w", err)
+	}
+	stagingPeriod, err := safeUint64(stagingPeriodRaw, "claim staging period")
+	if err != nil {
+		return nil, err
+	}
 
 	result := &DaveConsensusResult{
-		Type:               "DaveConsensus",
-		Address:            formatAddr(addr),
-		InputBox:           formatAddr(inputBox),
-		Factory:            formatAddr(factory),
-		DeploymentBlock:    deployBlock,
-		IsFinished:         settleInfo.IsFinished,
-		CurrentEpochNumber: epochNumber,
-		InputLowerBound:    inputLower,
-		InputUpperBound:    inputUpper,
-		RootTournament:     formatAddr(sealed.Tournament),
+		Type:                     daveConsensusContractName,
+		Address:                  formatAddr(addr),
+		InputBox:                 formatAddr(inputBox),
+		Factory:                  formatAddr(factory),
+		DeploymentBlock:          deployBlock,
+		ClaimStagingPeriod:       stagingPeriod,
+		IsFinished:               stageInfo.IsFinished,
+		IsTournamentFailed:       stageInfo.IsTournamentFailed,
+		IsTournamentResultStaged: sealed.IsTournamentResultStaged,
+		CurrentEpochNumber:       epochNumber,
+		InputLowerBound:          inputLower,
+		InputUpperBound:          inputUpper,
+		RootTournament:           formatAddr(sealed.Tournament),
+	}
+	sentryManager, err := caller.GetSentryManager(c.callOpts)
+	if err != nil {
+		return nil, fmt.Errorf("GetSentryManager: %w", err)
+	}
+	numSentriesRaw, err := caller.GetNumberOfSentries(c.callOpts)
+	if err != nil {
+		return nil, fmt.Errorf("GetNumberOfSentries: %w", err)
+	}
+	numSentries, err := safeUint64(numSentriesRaw, "number of sentries")
+	if err != nil {
+		return nil, err
+	}
+	// Bound the work for untrusted contract addresses. Never print a partial roster.
+	const maxSentries = 10000
+	if numSentries > maxSentries {
+		return nil, fmt.Errorf("number of sentries %d exceeds inspection limit %d", numSentries, maxSentries)
+	}
+	result.SentryManager = formatAddr(sentryManager)
+	result.NumSentries = numSentries
+	result.Sentries = make([]SentryResult, 0, numSentries)
+	for id := uint64(1); id <= numSentries; id++ {
+		sentry, err := caller.GetSentryById(c.callOpts, new(big.Int).SetUint64(id))
+		if err != nil {
+			return nil, fmt.Errorf("GetSentryById(%d): %w", id, err)
+		}
+		if sentry == (common.Address{}) {
+			return nil, fmt.Errorf("GetSentryById(%d): registered sentry has zero address", id)
+		}
+		result.Sentries = append(result.Sentries, SentryResult{ID: id, Address: formatAddr(sentry)})
 	}
 	if result.IsFinished {
-		hasWinner := settleInfo.WinnerCommitment != [32]byte{}
+		hasWinner := !stageInfo.IsTournamentFailed && stageInfo.WinnerCommitment != [32]byte{}
 		result.HasWinner = &hasWinner
 		if hasWinner {
-			result.WinnerCommitment = formatHash(settleInfo.WinnerCommitment)
+			result.WinnerCommitment = formatHash(stageInfo.WinnerCommitment)
+			result.WinnerPostEpochMachineHash = formatHash(stageInfo.WinnerPostEpochMachineStateHash)
 		}
+	}
+	if sealed.IsTournamentResultStaged {
+		stagingBlock, err := safeUint64(sealed.StagingBlockNumber, "staging block")
+		if err != nil {
+			return nil, err
+		}
+		result.StagingBlock = &stagingBlock
+		result.StagedMachineHash = formatHash(sealed.StagedPostEpochMachineStateHash)
+		result.StagedOutputsMerkleRoot = formatHash(sealed.StagedPostEpochOutputsMerkleRoot)
+
+		acceptInfo, err := caller.CanAcceptStagedTournamentResult(c.callOpts)
+		if err != nil {
+			return nil, fmt.Errorf("CanAcceptStagedTournamentResult: %w", err)
+		}
+		allSentriesAgree := acceptInfo.DoAllSentriesAgreeWithStagedTournamentResult
+		claimStagingPeriodOver := acceptInfo.IsClaimStagingPeriodOver
+		result.AllSentriesAgree = &allSentriesAgree
+		result.ClaimStagingPeriodOver = &claimStagingPeriodOver
 	}
 	return result, nil
 }

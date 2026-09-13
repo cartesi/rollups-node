@@ -48,29 +48,42 @@ func runCommitment(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("bind ITournament: %w", err)
 	}
 
-	commitment, err := caller.GetCommitment(cc.callOpts, [32]byte(commitmentHash))
+	commitment, err := caller.CommitmentStanding(cc.callOpts, [32]byte(commitmentHash))
 	if err != nil {
-		return fmt.Errorf("GetCommitment: %w", err)
+		return fmt.Errorf("CommitmentStanding: %w", err)
 	}
 
-	levelConsts, err := caller.TournamentLevelConstants(cc.callOpts)
+	descriptor, err := caller.TournamentDescriptor(cc.callOpts)
 	if err != nil {
-		return fmt.Errorf("TournamentLevelConstants: %w", err)
+		return fmt.Errorf("TournamentDescriptor: %w", err)
+	}
+	maxLevel, err := cc.tournamentMaxLevel()
+	if err != nil {
+		return err
+	}
+	if descriptor.Level > maxLevel {
+		return fmt.Errorf("tournament level %d exceeds maximum level %d", descriptor.Level, maxLevel)
 	}
 
-	levelName := "root"
-	if levelConsts.Level == levelConsts.MaxLevel {
-		levelName = "leaf"
-	} else if levelConsts.Level > 0 {
-		levelName = "inner"
+	blocksRemaining := uint64(0)
+	if commitment.ClockRunning && commitment.ClockDeadline > cc.blockNum {
+		blocksRemaining = commitment.ClockDeadline - cc.blockNum
+	}
+	claimer := ""
+	if commitment.Claimer != (common.Address{}) {
+		claimer = formatAddr(commitment.Claimer)
 	}
 
 	result := &CommitmentResult{
 		Commitment:       formatHash([32]byte(commitmentHash)),
 		Tournament:       formatAddr(tournamentAddr),
-		TournamentLevel:  fmt.Sprintf("%d/%d (%s)", levelConsts.Level, levelConsts.MaxLevel, levelName),
-		ClockAllowance:   commitment.Clock.Allowance,
-		ClockStartBlock:  commitment.Clock.StartInstant,
+		TournamentLevel:  fmt.Sprintf("%d/%d (%s)", descriptor.Level, maxLevel, tournamentLevelName(descriptor.Level, descriptor.Kind)),
+		Joined:           commitment.Joined,
+		Claimer:          claimer,
+		ClockRunning:     commitment.ClockRunning,
+		ClockAllowance:   commitment.ClockAllowance,
+		ClockDeadline:    commitment.ClockDeadline,
+		BlocksRemaining:  blocksRemaining,
 		FinalMachineHash: formatHash(commitment.FinalState),
 	}
 
@@ -82,12 +95,18 @@ func runCommitment(cmd *cobra.Command, args []string) error {
 	p.withSection(fmt.Sprintf("Commitment  %s", result.Commitment), func() {
 		p.field("Tournament",
 			fmt.Sprintf("%s (level %s)", result.Tournament, result.TournamentLevel))
+		p.field("Joined", formatBool(result.Joined))
+		if result.Claimer != "" {
+			p.field("Claimer", result.Claimer)
+		}
+		p.field("Clock Running", formatBool(result.ClockRunning))
 		p.field("Clock Allowance",
-			fmt.Sprintf("%d blocks remaining", result.ClockAllowance))
-		if result.ClockStartBlock > 0 {
-			p.field("Clock Start", fmt.Sprintf("block %d", result.ClockStartBlock))
+			fmt.Sprintf("%d blocks (raw allowance)", result.ClockAllowance))
+		if result.ClockRunning {
+			p.field("Clock Deadline", fmt.Sprintf("block %d (inclusive)", result.ClockDeadline))
+			p.field("Blocks Remaining", fmt.Sprintf("%d", result.BlocksRemaining))
 		} else {
-			p.field("Clock Start", "not started")
+			p.field("Clock Deadline", "paused")
 		}
 		p.field("Final Machine Hash", result.FinalMachineHash)
 	})

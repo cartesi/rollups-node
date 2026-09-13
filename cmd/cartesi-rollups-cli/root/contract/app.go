@@ -4,7 +4,6 @@
 package contract
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -87,9 +86,9 @@ func (c *chainClient) queryApp() (*AppResult, error) {
 		return nil, fmt.Errorf("GetOutputsMerkleRootValidator: %w", err)
 	}
 
-	dataAvailability, err := app.GetDataAvailability(c.callOpts)
+	inputBox, err := app.GetInputBox(c.callOpts)
 	if err != nil {
-		return nil, fmt.Errorf("GetDataAvailability: %w", err)
+		return nil, fmt.Errorf("GetInputBox: %w", err)
 	}
 
 	isForeclosed, err := app.IsForeclosed(c.callOpts)
@@ -126,7 +125,7 @@ func (c *chainClient) queryApp() (*AppResult, error) {
 		ExecutedOutputs:         executedOutputs,
 		ConsensusAddress:        formatAddr(consensusAddr),
 		ConsensusType:           consensusLabel,
-		DataAvailability:        "0x" + hex.EncodeToString(dataAvailability),
+		InputBox:                formatAddr(inputBox),
 		IsForeclosed:            isForeclosed,
 		Guardian:                formatAddr(wc.Guardian),
 		WithdrawalOutputBuilder: formatAddr(wc.WithdrawalOutputBuilder),
@@ -152,7 +151,7 @@ func printAppFields(p *printer, r *AppResult) {
 	p.field("Deployment Block", fmt.Sprintf("%d", r.DeploymentBlock))
 	p.field("Executed Outputs", fmt.Sprintf("%d", r.ExecutedOutputs))
 	p.field("Consensus", fmt.Sprintf("%s (%s)", r.ConsensusAddress, r.ConsensusType))
-	p.field("Data Availability", r.DataAvailability)
+	p.field("InputBox", r.InputBox)
 	p.field("Foreclosed", formatBool(r.IsForeclosed))
 	// WithdrawalConfig is logically grouped — a zero guardian means
 	// no foreclosure was configured on deploy, so other fields are

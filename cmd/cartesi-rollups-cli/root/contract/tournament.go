@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
+	"github.com/cartesi/rollups-node/pkg/contracts/imultileveltournamentfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum"
@@ -299,19 +300,23 @@ func (c *chainClient) queryTournament(addr common.Address) (*TournamentResult, e
 		return nil, fmt.Errorf("bind ITournament: %w", err)
 	}
 
-	levelConsts, err := caller.TournamentLevelConstants(c.callOpts)
+	descriptor, err := caller.TournamentDescriptor(c.callOpts)
 	if err != nil {
-		return nil, fmt.Errorf("TournamentLevelConstants: %w", err)
+		return nil, fmt.Errorf("TournamentDescriptor: %w", err)
 	}
-
-	closed, err := caller.IsClosed(c.callOpts)
-	if err != nil {
-		return nil, fmt.Errorf("IsClosed: %w", err)
+	if descriptor.BaseCycle == nil || descriptor.BaseCycle.Sign() < 0 {
+		return nil, errors.New("TournamentDescriptor: invalid base cycle")
 	}
-
-	finished, err := caller.IsFinished(c.callOpts)
+	standing, err := caller.TournamentStanding(c.callOpts)
 	if err != nil {
-		return nil, fmt.Errorf("IsFinished: %w", err)
+		return nil, fmt.Errorf("TournamentStanding: %w", err)
+	}
+	maxLevel, err := c.tournamentMaxLevel()
+	if err != nil {
+		return nil, err
+	}
+	if descriptor.Level > maxLevel {
+		return nil, fmt.Errorf("tournament level %d exceeds maximum level %d", descriptor.Level, maxLevel)
 	}
 
 	bondWei, err := caller.BondValue(c.callOpts)
@@ -365,77 +370,166 @@ func (c *chainClient) queryTournament(addr common.Address) (*TournamentResult, e
 	}
 
 	result := &TournamentResult{
-		Address:           formatAddr(addr),
-		Level:             levelConsts.Level,
-		MaxLevel:          levelConsts.MaxLevel,
-		Log2Step:          levelConsts.Log2step,
-		Height:            levelConsts.Height,
-		Closed:            closed,
-		Finished:          finished,
-		BondWei:           bondWei.String(),
-		BondETH:           weiToETH(bondWei),
-		CommitmentsJoined: commitments,
-		MatchesCreated:    matchesCreated,
-		MatchesAdvanced:   matchesAdvanced,
-		MatchesDeleted:    matchesDeleted,
-		InnerTournaments:  inner,
+		Address:            formatAddr(addr),
+		Level:              descriptor.Level,
+		MaxLevel:           maxLevel,
+		Log2Step:           descriptor.Log2Stride,
+		Height:             descriptor.Height,
+		Kind:               tournamentKindName(descriptor.Kind),
+		InitialMachineHash: formatHash(descriptor.InitialHash),
+		BaseCycle:          descriptor.BaseCycle.String(),
+		StartBlock:         descriptor.StartInstant,
+		Allowance:          descriptor.Allowance,
+		BondWei:            bondWei.String(),
+		BondETH:            weiToETH(bondWei),
+		CommitmentsJoined:  commitments,
+		MatchesCreated:     matchesCreated,
+		MatchesAdvanced:    matchesAdvanced,
+		MatchesDeleted:     matchesDeleted,
+		InnerTournaments:   inner,
 	}
 
-	// Query finish details if tournament is finished.
-	if finished {
-		isFinished, finBlock, tErr := caller.TimeFinished(c.callOpts)
-		if tErr == nil && isFinished {
-			result.FinishedAtBlock = &finBlock
+	err = populateTournamentStandingResult(result, standing, func(commitment [32]byte) ([32]byte, error) {
+		commitmentStanding, cErr := caller.CommitmentStanding(c.callOpts, commitment)
+		if cErr != nil {
+			return [32]byte{}, fmt.Errorf("CommitmentStanding: %w", cErr)
 		}
-
-		isRoot := levelConsts.Level == 0
-		tFinished, hasWin, winner, finalState, tErr := c.tournamentResult(caller, isRoot)
-		if tErr == nil && tFinished {
-			result.HasWinner = &hasWin
-			if hasWin {
-				result.WinnerCommitment = formatHash(winner)
-				if finalState != [32]byte{} {
-					result.FinalMachineHash = formatHash(finalState)
-				}
-			}
-		}
-	}
-
-	// CanBeEliminated for non-root tournaments.
-	if levelConsts.Level > 0 {
-		canElim, cErr := caller.CanBeEliminated(c.callOpts)
-		if cErr == nil {
-			result.CanBeEliminated = &canElim
-		}
+		return commitmentStanding.FinalState, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return result, nil
 }
 
-// tournamentResult handles ArbitrationResult (root) or InnerTournamentWinner (non-root)
-// with TournamentFailedNoWinner revert detection.
-func (c *chainClient) tournamentResult(
-	caller *itournament.ITournamentCaller,
-	isRoot bool,
-) (finished bool, hasWinner bool, winner [32]byte, finalState [32]byte, err error) {
-	if !isRoot {
-		isFinished, _, winnerCommitment, _, iErr := caller.InnerTournamentWinner(c.callOpts)
-		if iErr != nil {
-			return false, false, [32]byte{}, [32]byte{}, iErr
-		}
-		return isFinished, isFinished && winnerCommitment != [32]byte{},
-			winnerCommitment, [32]byte{}, nil
+type commitmentFinalStateReader func(commitment [32]byte) ([32]byte, error)
+
+func populateTournamentStandingResult(
+	result *TournamentResult,
+	standing itournament.ITournamentTournamentStandingView,
+	readCommitmentFinalState commitmentFinalStateReader,
+) error {
+	result.Standing = tournamentStandingName(standing.Standing)
+	result.Closed = !standing.AcceptsJoins
+	result.Finished = standing.FinishedAt != 0
+
+	if result.Level > 0 {
+		canEliminate := standing.Standing == tournamentStandingInnerEliminableNoWinner ||
+			standing.Standing == tournamentStandingInnerEliminableWinnerExpired
+		result.CanBeEliminated = &canEliminate
+	}
+	if !result.Finished {
+		return nil
 	}
 
-	result, err := caller.ArbitrationResult(c.callOpts)
-	if err != nil {
-		if ethutil.IsCustomError(err, itournament.ITournamentMetaData, "TournamentFailedNoWinner") {
-			return true, false, [32]byte{}, [32]byte{}, nil
-		}
-		return false, false, [32]byte{}, [32]byte{}, err
+	finishedAt := standing.FinishedAt
+	result.FinishedAtBlock = &finishedAt
+	hasWinner := standing.HasCandidate
+	result.HasWinner = &hasWinner
+	if standing.WinnerExpiresAt != 0 {
+		winnerExpiresAt := standing.WinnerExpiresAt
+		result.WinnerExpiresAt = &winnerExpiresAt
 	}
-	hasWin := result.WinnerCommitment != [32]byte{}
-	return result.Finished, hasWin, result.WinnerCommitment, result.FinalState, nil
+	if !hasWinner {
+		return nil
+	}
+
+	result.WinnerCommitment = formatHash(standing.Candidate)
+	finalState := standing.FinalState
+	if finalState == ([32]byte{}) && standing.Standing == tournamentStandingInnerEliminableWinnerExpired {
+		var err error
+		finalState, err = readCommitmentFinalState(standing.Candidate)
+		if err != nil {
+			return err
+		}
+	}
+	if finalState != ([32]byte{}) {
+		result.FinalMachineHash = formatHash(finalState)
+	}
+	return nil
+}
+
+const (
+	tournamentStandingMatchesActive uint8 = iota
+	tournamentStandingAwaitingClosure
+	tournamentStandingRootWinner
+	tournamentStandingRootFailed
+	tournamentStandingInnerWinner
+	tournamentStandingInnerEliminableNoWinner
+	tournamentStandingInnerEliminableWinnerExpired
+)
+
+const (
+	tournamentKindLeaf uint8 = iota
+	tournamentKindNonLeaf
+)
+
+func tournamentStandingName(standing uint8) string {
+	names := [...]string{
+		"MATCHES_ACTIVE", "AWAITING_CLOSURE", "ROOT_WINNER", "ROOT_FAILED",
+		"INNER_WINNER", "INNER_ELIMINABLE_NO_WINNER", "INNER_ELIMINABLE_WINNER_EXPIRED",
+	}
+	if int(standing) >= len(names) {
+		return fmt.Sprintf("UNKNOWN(%d)", standing)
+	}
+	return names[standing]
+}
+
+func tournamentKindName(kind uint8) string {
+	switch kind {
+	case tournamentKindLeaf:
+		return "LEAF"
+	case tournamentKindNonLeaf:
+		return "NON_LEAF"
+	default:
+		return fmt.Sprintf("UNKNOWN(%d)", kind)
+	}
+}
+
+func tournamentLevelName(level uint64, kind uint8) string {
+	switch kind {
+	case tournamentKindLeaf:
+		return "leaf"
+	case tournamentKindNonLeaf:
+		if level == 0 {
+			return "root"
+		}
+		return "inner"
+	default:
+		return fmt.Sprintf("unknown-kind-%d", kind)
+	}
+}
+
+func maxLevelFromCount(levelCount uint64) (uint64, error) {
+	if levelCount == 0 {
+		return 0, errors.New("tournament level count is zero")
+	}
+	return levelCount - 1, nil
+}
+
+func (c *chainClient) tournamentMaxLevel() (uint64, error) {
+	consensusAddr, err := c.getConsensusAddress()
+	if err != nil {
+		return 0, fmt.Errorf("get consensus address: %w", err)
+	}
+	dave, err := idaveconsensus.NewIDaveConsensusCaller(consensusAddr, c.eth)
+	if err != nil {
+		return 0, fmt.Errorf("bind IDaveConsensus: %w", err)
+	}
+	factoryAddr, err := dave.GetTournamentFactory(c.callOpts)
+	if err != nil {
+		return 0, fmt.Errorf("GetTournamentFactory: %w", err)
+	}
+	factory, err := imultileveltournamentfactory.NewIMultiLevelTournamentFactoryCaller(factoryAddr, c.eth)
+	if err != nil {
+		return 0, fmt.Errorf("bind IMultiLevelTournamentFactory: %w", err)
+	}
+	levelCount, err := factory.TournamentLevelCount(c.callOpts)
+	if err != nil {
+		return 0, fmt.Errorf("TournamentLevelCount: %w", err)
+	}
+	return maxLevelFromCount(levelCount)
 }
 
 // commitmentRegistry maps commitment hashes to submitter addresses.
@@ -465,20 +559,23 @@ type rawCommitmentJoined struct {
 }
 
 type rawMatchCreated struct {
-	matchIDHash [32]byte
-	one         [32]byte
-	two         [32]byte
-	leftOfTwo   [32]byte
-	blockNumber uint64
-	txHash      common.Hash
+	matchIDHash  [32]byte
+	one          [32]byte
+	two          [32]byte
+	leftOfTwo    [32]byte
+	eliminableAt uint64
+	blockNumber  uint64
+	txHash       common.Hash
 }
 
 type rawMatchAdvanced struct {
-	matchIDHash [32]byte
-	otherParent [32]byte
-	leftNode    [32]byte
-	blockNumber uint64
-	txHash      common.Hash
+	matchIDHash          [32]byte
+	otherParent          [32]byte
+	leftNode             [32]byte
+	segmentStartPosition *big.Int
+	eliminableAt         uint64
+	blockNumber          uint64
+	txHash               common.Hash
 }
 
 type rawMatchDeleted struct {
@@ -550,12 +647,13 @@ func (c *chainClient) fetchTournamentEvents(
 				return false, pErr
 			}
 			events.matchesCreated = append(events.matchesCreated, rawMatchCreated{
-				matchIDHash: ev.MatchIdHash,
-				one:         ev.One,
-				two:         ev.Two,
-				leftOfTwo:   ev.LeftOfTwo,
-				blockNumber: log.BlockNumber,
-				txHash:      log.TxHash,
+				matchIDHash:  ev.MatchIdHash,
+				one:          ev.One,
+				two:          ev.Two,
+				leftOfTwo:    ev.LeftOfTwo,
+				eliminableAt: ev.EliminableAt,
+				blockNumber:  log.BlockNumber,
+				txHash:       log.TxHash,
 			})
 			return false, nil
 		},
@@ -578,11 +676,13 @@ func (c *chainClient) fetchTournamentEvents(
 				return false, pErr
 			}
 			events.matchesAdvanced = append(events.matchesAdvanced, rawMatchAdvanced{
-				matchIDHash: ev.MatchIdHash,
-				otherParent: ev.OtherParent,
-				leftNode:    ev.LeftNode,
-				blockNumber: log.BlockNumber,
-				txHash:      log.TxHash,
+				matchIDHash:          ev.MatchIdHash,
+				otherParent:          ev.OtherParent,
+				leftNode:             ev.LeftNode,
+				segmentStartPosition: ev.SegmentStartPosition,
+				eliminableAt:         ev.EliminableAt,
+				blockNumber:          log.BlockNumber,
+				txHash:               log.TxHash,
 			})
 			return false, nil
 		},
@@ -917,6 +1017,7 @@ func formatMatchEvents(
 			PlayerOneAddr: registry.resolve(r.one),
 			PlayerTwoAddr: registry.resolve(r.two),
 			LeftOfTwo:     formatHash(r.leftOfTwo),
+			EliminableAt:  r.eliminableAt,
 			BlockNumber:   r.blockNumber,
 			TxHash:        r.txHash.Hex(),
 		}
@@ -948,12 +1049,18 @@ func formatAdvanceEvents(raw []rawMatchAdvanced) []MatchAdvanceEvent {
 	}
 	out := make([]MatchAdvanceEvent, len(raw))
 	for i, r := range raw {
+		segmentStartPosition := ""
+		if r.segmentStartPosition != nil {
+			segmentStartPosition = r.segmentStartPosition.String()
+		}
 		out[i] = MatchAdvanceEvent{
-			MatchIDHash: formatHash(r.matchIDHash),
-			OtherParent: formatHash(r.otherParent),
-			LeftNode:    formatHash(r.leftNode),
-			BlockNumber: r.blockNumber,
-			TxHash:      r.txHash.Hex(),
+			MatchIDHash:          formatHash(r.matchIDHash),
+			OtherParent:          formatHash(r.otherParent),
+			LeftNode:             formatHash(r.leftNode),
+			SegmentStartPosition: segmentStartPosition,
+			EliminableAt:         r.eliminableAt,
+			BlockNumber:          r.blockNumber,
+			TxHash:               r.txHash.Hex(),
 		}
 	}
 	return out
@@ -972,6 +1079,14 @@ func printTournamentBasic(p *printer, r *TournamentResult) {
 	p.withSection(fmt.Sprintf("%s Tournament  %s  (level %d/%d)",
 		levelName, r.Address, r.Level, r.MaxLevel), func() {
 		p.field("Status", tournamentStatus(r.Closed, r.Finished))
+		p.field("Standing", r.Standing)
+		p.field("Kind", r.Kind)
+		p.field("Initial Machine Hash", r.InitialMachineHash)
+		p.field("Base Cycle", r.BaseCycle)
+		p.field("Log2 Stride", fmt.Sprintf("%d", r.Log2Step))
+		p.field("Height", fmt.Sprintf("%d", r.Height))
+		p.field("Start Block", fmt.Sprintf("%d", r.StartBlock))
+		p.field("Allowance", fmt.Sprintf("%d blocks", r.Allowance))
 		if r.Finished && r.FinishedAtBlock != nil {
 			p.field("Finished", fmt.Sprintf("yes (block %d)", *r.FinishedAtBlock))
 		}
@@ -988,6 +1103,9 @@ func printTournamentBasic(p *printer, r *TournamentResult) {
 			} else {
 				p.field("Winner", "NONE (all commitments eliminated)")
 			}
+		}
+		if r.WinnerExpiresAt != nil {
+			p.field("Winner Expires At", fmt.Sprintf("block %d (inclusive)", *r.WinnerExpiresAt))
 		}
 		p.field("Bond", r.BondETH)
 		p.field("Commitments Joined", fmt.Sprintf("%d", r.CommitmentsJoined))
@@ -1029,6 +1147,7 @@ func printTournamentEvents(p *printer, r *TournamentResult) {
 						twoInfo += fmt.Sprintf("  (%s)", m.PlayerTwoAddr)
 					}
 					p.field("Player Two", twoInfo)
+					p.field("Eliminable At", fmt.Sprintf("block %d (inclusive)", m.EliminableAt))
 					p.field("Block", fmt.Sprintf("%d", m.BlockNumber))
 					p.field("Tx", m.TxHash)
 					if m.DeletionReason != "" {
@@ -1046,6 +1165,8 @@ func printTournamentEvents(p *printer, r *TournamentResult) {
 		p.withSection("Match Advances:", func() {
 			for i, a := range r.Advances {
 				p.withSection(fmt.Sprintf("[%d] Match  %s", i+1, a.MatchIDHash), func() {
+					p.field("Segment Start Position", a.SegmentStartPosition)
+					p.field("Eliminable At", fmt.Sprintf("block %d (inclusive)", a.EliminableAt))
 					p.field("Block", fmt.Sprintf("%d", a.BlockNumber))
 					p.field("Tx", a.TxHash)
 				})
