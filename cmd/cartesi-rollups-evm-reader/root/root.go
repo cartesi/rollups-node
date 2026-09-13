@@ -25,7 +25,6 @@ var (
 	pollInterval           string
 	databaseConnection     string
 	maxStartupTime         string
-	enableInputReader      bool
 	telemetryAddress       string
 	cfg                    *config.EvmreaderConfig
 	maxBlockRange          uint64
@@ -60,8 +59,6 @@ func init() {
 		"Poll interval")
 	cli.AddFlagStrVar(flags, &maxStartupTime, "max-startup-time", config.MAX_STARTUP_TIME,
 		"Maximum startup time in seconds")
-	cli.AddFlagBoolVar(flags, &enableInputReader, "input-reader", config.FEATURE_INPUT_READER_ENABLED,
-		"Enable or disable the input reader (for external input readers)")
 	cli.AddFlagUint64Var(flags, &maxBlockRange, "max-block-range", config.BLOCKCHAIN_MAX_BLOCK_RANGE,
 		"Maximum number of blocks in a single query. large queries will be split automatically. Zero for unlimited.")
 

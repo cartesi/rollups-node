@@ -3,8 +3,6 @@
 
 package evmreader
 
-import . "github.com/cartesi/rollups-node/internal/model"
-
 type blockScanPlan struct {
 	iConsensusInputTargets []appContracts
 	daveEpochTargets       []appContracts
@@ -32,8 +30,7 @@ func buildBlockScanPlan(apps []appContracts) blockScanPlan {
 				continue
 			}
 
-			if application.LastInputCheckBlock < application.ForecloseBlock &&
-				application.HasDataAvailabilitySelector(DataAvailability_InputBox) {
+			if application.LastInputCheckBlock < application.ForecloseBlock {
 				plan.iConsensusInputTargets = append(plan.iConsensusInputTargets, app)
 			}
 			continue

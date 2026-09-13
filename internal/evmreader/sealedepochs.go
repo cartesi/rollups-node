@@ -88,24 +88,16 @@ func (r *Service) scanDaveConsensusEpochsAndInputs(
 	mostRecentBlockNumber uint64,
 ) bool {
 	success := true
-	if !r.inputReaderEnabled {
-		return success
-	}
-
 	r.Logger.Debug("Checking for new epochs and inputs", "apps", applications)
 
 	// Process each application individually since each has its own DaveConsensus contract
 	for _, app := range applications {
 		if app.inputSource == nil {
-			// Alpha.6 permits data-availability encodings that this node does not
-			// support. A missing adapter is therefore a capability mismatch, not
-			// evidence that the application's persisted state is corrupted.
 			success = false
-			r.Logger.Error("Cannot scan DaveConsensus epochs: configured input source is unsupported",
+			r.Logger.Error("Cannot scan DaveConsensus epochs: InputBox adapter is missing",
 				"application", app.application.Name,
 				"address", app.application.IApplicationAddress,
 				"input_box", app.application.IInputBoxAddress,
-				"data_availability", app.application.DataAvailability,
 			)
 			continue
 		}

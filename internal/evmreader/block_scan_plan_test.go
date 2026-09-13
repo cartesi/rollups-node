@@ -5,9 +5,11 @@ package evmreader
 
 import (
 	"fmt"
+	"math/big"
 	"testing"
 
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,14 +27,6 @@ func TestBuildBlockScanPlan_RoutesScannerTargets(t *testing.T) {
 			apps:                []appContracts{planApp(1, planAppConfig{})},
 			wantIConsensusInput: []int64{1},
 			wantOutput:          []int64{1},
-		},
-		{
-			name: "OK IConsensus app without InputBox data availability remains an input target",
-			apps: []appContracts{planApp(2, planAppConfig{
-				withoutInputBoxDA: true,
-			})},
-			wantIConsensusInput: []int64{2},
-			wantOutput:          []int64{2},
 		},
 		{
 			name: "OK DaveConsensus app is executable",
@@ -65,16 +59,6 @@ func TestBuildBlockScanPlan_RoutesScannerTargets(t *testing.T) {
 			wantIConsensusInput: []int64{5},
 			wantOutput:          []int64{5},
 			wantPostForeclosure: []int64{5},
-		},
-		{
-			name: "foreclosed IConsensus app without InputBox data availability skips input catch-up",
-			apps: []appContracts{planApp(6, planAppConfig{
-				withoutInputBoxDA:   true,
-				forecloseBlock:      100,
-				lastInputCheckBlock: 99,
-			})},
-			wantOutput:          []int64{6},
-			wantPostForeclosure: []int64{6},
 		},
 		{
 			name: "foreclosed DaveConsensus app with epoch cursor behind gets sealed-epoch catch-up",
@@ -167,7 +151,6 @@ func requireNoDuplicatePlanTargets(plan blockScanPlan) error {
 type planAppConfig struct {
 	status              ApplicationStatus
 	consensus           Consensus
-	withoutInputBoxDA   bool
 	forecloseBlock      uint64
 	lastInputCheckBlock uint64
 	lastEpochCheckBlock uint64
@@ -182,17 +165,12 @@ func planApp(id int64, cfg planAppConfig) appContracts {
 	if consensus == "" {
 		consensus = Consensus_Authority
 	}
-	dataAvailability := DataAvailability_InputBox[:]
-	if cfg.withoutInputBoxDA {
-		dataAvailability = []byte{0xff}
-	}
-
 	return appContracts{application: &Application{
 		ID:                  id,
+		IInputBoxAddress:    common.BigToAddress(big.NewInt(id)),
 		Enabled:             true,
 		Status:              status,
 		ConsensusType:       consensus,
-		DataAvailability:    dataAvailability,
 		ForecloseBlock:      cfg.forecloseBlock,
 		LastInputCheckBlock: cfg.lastInputCheckBlock,
 		LastEpochCheckBlock: cfg.lastEpochCheckBlock,

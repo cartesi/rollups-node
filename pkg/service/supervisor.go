@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"github.com/cartesi/rollups-node/internal/errutil"
 	"github.com/cartesi/rollups-node/internal/version"
 	"golang.org/x/sync/errgroup"
 )
@@ -199,7 +200,7 @@ func (s *supervisorImpl) Serve() (err error) {
 				if svcErr == nil {
 					svcErr = ErrServiceStopped
 				}
-			case svcErr == nil || isCancellationOnly(svcErr):
+			case svcErr == nil || errutil.IsOnlyCancellation(svcErr):
 				s.logger.Info("Subservice stopped",
 					"subservice", svc,
 				)
@@ -226,29 +227,6 @@ func (s *supervisorImpl) Serve() (err error) {
 	s.logger.Info("Supervisor terminated")
 
 	return errors.Join(errs...)
-}
-
-// isCancellationOnly checks every leaf before suppressing a shutdown error.
-// Matching the whole tree with errors.Is would hide failures joined with cancellation.
-func isCancellationOnly(err error) bool {
-	switch wrapped := err.(type) {
-	case interface{ Unwrap() []error }:
-		children := wrapped.Unwrap()
-		if len(children) == 0 {
-			return errors.Is(err, context.Canceled)
-		}
-		for _, child := range children {
-			if !isCancellationOnly(child) {
-				return false
-			}
-		}
-		return true
-	case interface{ Unwrap() error }:
-		if child := wrapped.Unwrap(); child != nil {
-			return isCancellationOnly(child)
-		}
-	}
-	return errors.Is(err, context.Canceled)
 }
 
 // Fatal publishes the failure before cancellation so Serve observes it even if

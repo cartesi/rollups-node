@@ -83,7 +83,6 @@ func (s *SealedEpochsSuite) TestProcessSealedEpochFindsInputAtOverlapBlock() {
 			IConsensusAddress:   consensusAddr,
 			IInputBoxAddress:    inputBoxAddr,
 			IInputBoxBlock:      10,
-			DataAvailability:    DataAvailability_InputBox[:],
 		},
 		inputSource:   s.inputBox,
 		daveConsensus: s.dave,
@@ -186,7 +185,6 @@ func (s *SealedEpochsSuite) TestCatchUpForeclosedSealedEpochsAdvancesCursor() {
 		lastEpochCheckBlock uint64 = 50
 		forecloseBlock      uint64 = 70
 	)
-	s.evmReader.inputReaderEnabled = true
 
 	app := appContracts{
 		application: &Application{
@@ -199,7 +197,6 @@ func (s *SealedEpochsSuite) TestCatchUpForeclosedSealedEpochsAdvancesCursor() {
 			LastEpochCheckBlock:  lastEpochCheckBlock,
 			LastInputCheckBlock:  forecloseBlock,
 			LastOutputCheckBlock: lastEpochCheckBlock,
-			DataAvailability:     DataAvailability_InputBox[:],
 		},
 		daveConsensus: s.dave,
 		inputSource:   s.inputBox,
@@ -211,12 +208,7 @@ func (s *SealedEpochsSuite) TestCatchUpForeclosedSealedEpochsAdvancesCursor() {
 			LastBlock: lastEpochCheckBlock,
 		}, nil).Once()
 
-	currentSealedEpoch := struct {
-		EpochNumber          *big.Int
-		InputIndexLowerBound *big.Int
-		InputIndexUpperBound *big.Int
-		Tournament           common.Address
-	}{
+	currentSealedEpoch := DaveCurrentSealedEpoch{
 		EpochNumber:          big.NewInt(2),
 		InputIndexLowerBound: big.NewInt(0),
 		InputIndexUpperBound: big.NewInt(0),
@@ -240,7 +232,6 @@ func (s *SealedEpochsSuite) TestCatchUpForeclosedSealedEpochsAdvancesCursor() {
 
 func (s *SealedEpochsSuite) TestTerminalDaveConsensusAppProcessesOpenEpochToForeclosure() {
 	const forecloseBlock uint64 = 70
-	s.evmReader.inputReaderEnabled = true
 
 	app := appContracts{
 		application: &Application{
@@ -253,7 +244,6 @@ func (s *SealedEpochsSuite) TestTerminalDaveConsensusAppProcessesOpenEpochToFore
 			ForecloseBlock:      forecloseBlock,
 			LastEpochCheckBlock: forecloseBlock,
 			LastInputCheckBlock: forecloseBlock - 1,
-			DataAvailability:    DataAvailability_InputBox[:],
 		},
 		daveConsensus: s.dave,
 		inputSource:   s.inputBox,
@@ -302,20 +292,17 @@ func (s *SealedEpochsSuite) TestTerminalDaveConsensusAppProcessesOpenEpochToFore
 	s.dave.AssertNumberOfCalls(s.T(), "GetCurrentSealedEpoch", 0)
 }
 
-func (s *SealedEpochsSuite) TestDaveConsensusWithUnsupportedInputSourceDoesNotPanic() {
-	s.evmReader.inputReaderEnabled = true
+func (s *SealedEpochsSuite) TestDaveConsensusWithMissingInputBoxAdapterDoesNotPanic() {
 	var logs bytes.Buffer
 	s.evmReader.Logger = slog.New(slog.NewTextHandler(&logs, nil))
 	app := appContracts{
 		application: &Application{
 			ID:                  1,
-			Name:                "unsupported-input-source-prt-app",
+			Name:                "missing-input-box-adapter-prt-app",
 			IApplicationAddress: app1Addr,
+			IInputBoxAddress:    inputBoxAddr,
 			ConsensusType:       Consensus_PRT,
 			Status:              ApplicationStatus_OK,
-			// Alpha.6's abandoned InputBoxAndEspresso experiment. The node
-			// intentionally supports only the official InputBox source.
-			DataAvailability: []byte{0x85, 0x79, 0xfd, 0x0c},
 		},
 		daveConsensus: s.dave,
 	}
@@ -324,7 +311,7 @@ func (s *SealedEpochsSuite) TestDaveConsensusWithUnsupportedInputSourceDoesNotPa
 		s.evmReader.scanDaveConsensusEpochsAndInputs(
 			s.ctx, []appContracts{app}, 100)
 	})
-	s.Contains(logs.String(), "configured input source is unsupported")
+	s.Contains(logs.String(), "InputBox adapter is missing")
 	s.Equal(ApplicationStatus_OK, app.application.Status)
 	s.dave.AssertNotCalled(s.T(), "GetCurrentSealedEpoch")
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateApplicationStatus", 0)

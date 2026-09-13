@@ -69,13 +69,6 @@ used-by = ["validator", "node"]
 # Features
 #
 
-[features.CARTESI_FEATURE_INPUT_READER_ENABLED]
-default = "true"
-go-type = "bool"
-description = """
-If set to false, the node will not read inputs from the blockchain."""
-used-by = ["evmreader", "node"]
-
 [features.CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED]
 default = "true"
 go-type = "bool"

@@ -15,23 +15,13 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// makeSealedEpochResult constructs the anonymous struct returned by GetCurrentSealedEpoch.
+// makeSealedEpochResult constructs the node-owned GetCurrentSealedEpoch result.
 func makeSealedEpochResult(
 	epochNum int64,
 	lowerBound, upperBound uint64,
 	tournament common.Address,
-) struct {
-	EpochNumber          *big.Int
-	InputIndexLowerBound *big.Int
-	InputIndexUpperBound *big.Int
-	Tournament           common.Address
-} {
-	return struct {
-		EpochNumber          *big.Int
-		InputIndexLowerBound *big.Int
-		InputIndexUpperBound *big.Int
-		Tournament           common.Address
-	}{
+) DaveCurrentSealedEpoch {
+	return DaveCurrentSealedEpoch{
 		EpochNumber:          big.NewInt(epochNum),
 		InputIndexLowerBound: new(big.Int).SetUint64(lowerBound),
 		InputIndexUpperBound: new(big.Int).SetUint64(upperBound),

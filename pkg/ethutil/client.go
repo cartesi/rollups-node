@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/errutil"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/hashicorp/go-retryablehttp"
@@ -147,6 +148,18 @@ func newRedactedLogger(logger *slog.Logger, endpoint string) *redactedLeveledLog
 }
 
 func (l *redactedLeveledLogger) Error(msg string, keysAndValues ...any) {
+	// retryablehttp logs canceled requests before returning their error to the
+	// caller. Cancellation is not a transport failure. Keep the diagnostic at
+	// Debug; the caller still receives the error and applies its own policy.
+	// Classify before redaction, which can turn an error into a plain string.
+	for i := 0; i+1 < len(keysAndValues); i += 2 {
+		if keysAndValues[i] == "error" {
+			if err, ok := keysAndValues[i+1].(error); ok && errutil.IsOnlyCancellation(err) {
+				l.Debug(msg, keysAndValues...)
+				return
+			}
+		}
+	}
 	l.logger.Error(l.redactString(msg), l.redactValues(keysAndValues)...)
 }
 

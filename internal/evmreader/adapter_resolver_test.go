@@ -56,12 +56,6 @@ func TestApplicationAdapterResolver_InvalidatesStaleAdapters(t *testing.T) {
 				app.ConsensusType = Consensus_PRT
 			},
 		},
-		{
-			name: "InputBox data availability changed",
-			change: func(app *Application) {
-				app.DataAvailability = []byte{0xff}
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -155,7 +149,6 @@ func resolverApp(id int64) *Application {
 		IApplicationAddress: common.BigToAddress(big.NewInt(id)),
 		IConsensusAddress:   common.HexToAddress("0x00000000000000000000000000000000000000c1"),
 		IInputBoxAddress:    common.HexToAddress("0x00000000000000000000000000000000000000b1"),
-		DataAvailability:    DataAvailability_InputBox[:],
 		ConsensusType:       Consensus_Authority,
 		Enabled:             true,
 		Status:              ApplicationStatus_OK,

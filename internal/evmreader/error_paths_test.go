@@ -62,8 +62,8 @@ func (s *EvmReaderSuite) TestCreateEpochsAndInputsErrorDoesNotAdvanceCheckpoint(
 
 	s.evmReader.repository = repo
 
-	err := s.evmReader.readAndStoreInputs(s.ctx, 100, 110, apps)
-	require.ErrorIs(err, errScanIncomplete) // per-app failure is reported after scanning
+	err := s.evmReader.readAndStoreApplicationInputs(s.ctx, 100, 110, apps[0])
+	require.ErrorContains(err, "store inputs and epochs: database connection lost")
 
 	// CreateEpochsAndInputs was attempted
 	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 1)
@@ -311,7 +311,6 @@ func (s *EvmReaderSuite) TestBlockRegressionDoesNotWriteToDb() {
 		Name:                "test-app",
 		IApplicationAddress: app1Addr,
 		IInputBoxAddress:    inputBoxAddr,
-		DataAvailability:    DataAvailability_InputBox[:],
 		EpochLength:         10,
 		LastInputCheckBlock: 100,
 	}
@@ -424,7 +423,6 @@ func (s *EvmReaderSuite) TestIConsensusInputCountMismatchSkipsApp() {
 		Name:                "test-app",
 		IApplicationAddress: addr,
 		IInputBoxAddress:    inputBoxAddr,
-		DataAvailability:    DataAvailability_InputBox[:],
 		EpochLength:         10,
 		LastInputCheckBlock: 100,
 	}
@@ -452,8 +450,8 @@ func (s *EvmReaderSuite) TestIConsensusInputCountMismatchSkipsApp() {
 		Return(uint64(0), nil)
 	s.evmReader.repository = repo
 
-	err := s.evmReader.readAndStoreInputs(s.ctx, 100, 110, apps)
-	s.Require().ErrorIs(err, errScanIncomplete) // per-app failure is reported after scanning
+	err := s.evmReader.readAndStoreApplicationInputs(s.ctx, 100, 110, apps[0])
+	s.Require().ErrorContains(err, "input count mismatch")
 
 	// App was skipped: counter says 2 new, but only 1 fetched → no DB writes
 	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
@@ -474,7 +472,6 @@ func (s *EvmReaderSuite) TestIConsensusInputCountValidationUsesObservedEndCount(
 		Name:                "test-app",
 		IApplicationAddress: addr,
 		IInputBoxAddress:    inputBoxAddr,
-		DataAvailability:    DataAvailability_InputBox[:],
 		EpochLength:         10,
 		LastInputCheckBlock: 100,
 	}
@@ -513,10 +510,10 @@ func (s *EvmReaderSuite) TestIConsensusInputCountValidationUsesObservedEndCount(
 	}).Return(nil).Once()
 	s.evmReader.repository = repo
 
-	err := s.evmReader.readAndStoreInputs(s.ctx, 100, 105, []appContracts{{
+	err := s.evmReader.readAndStoreApplicationInputs(s.ctx, 100, 105, appContracts{
 		application: app,
 		inputSource: inputSrc,
-	}})
+	})
 	s.Require().NoError(err)
 
 	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 1)
@@ -542,7 +539,6 @@ func (s *EvmReaderSuite) TestEpochLengthZeroSetsAppCorrupted() {
 			Name:                "test-app",
 			IApplicationAddress: addr,
 			IInputBoxAddress:    inputBoxAddr,
-			DataAvailability:    DataAvailability_InputBox[:],
 			EpochLength:         0, // will trigger corrupted
 			LastInputCheckBlock: 100,
 		},
@@ -550,23 +546,19 @@ func (s *EvmReaderSuite) TestEpochLengthZeroSetsAppCorrupted() {
 	}}
 
 	repo := newMockRepository()
-	repo.On("GetNumberOfInputs", mock.Anything, mock.Anything).
-		Return(uint64(0), nil)
 	repo.On("UpdateApplicationStatus",
 		mock.Anything, int64(1), ApplicationStatus_Corrupted, mock.Anything,
 	).Return(nil)
-	repo.On("UpdateEventLastCheckBlock",
-		mock.Anything, mock.Anything, MonitoredEvent_InputAdded, mock.Anything,
-	).Return(nil)
 	s.evmReader.repository = repo
 
-	err := s.evmReader.readAndStoreInputs(s.ctx, 100, 110, apps)
+	err := s.evmReader.readAndStoreApplicationInputs(s.ctx, 100, 110, apps[0])
 	s.Require().NoError(err)
 
 	// App must be set inoperable
 	repo.AssertNumberOfCalls(s.T(), "UpdateApplicationStatus", 1)
 	// No epochs or inputs should be stored
 	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
+	repo.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 0)
 }
 
 // --- Sealed epoch CreateEpochsAndInputs failure prevents checkpoint advance ---
