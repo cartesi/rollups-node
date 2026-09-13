@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -28,16 +29,20 @@ type CreateInfo struct {
 
 type Service struct {
 	service.TickServiceTemplate
-	repository        prtRepository
-	client            EthClientInterface
-	adapterFactory    AdapterFactory
-	submissionEnabled bool
-	submissionTimeout time.Duration
-	filter            ethutil.Filter
-	txOptsFactory     ethutil.TransactOptsFactory
-	currentEpochIndex map[int64]uint64       // application.ID -> epochIndex
-	settleInFlight    map[int64]*common.Hash // application.ID -> txHash
-	joinInFlight      map[int64]*common.Hash // application.ID -> txHash
+	repository          prtRepository
+	client              EthClientInterface
+	adapterFactory      AdapterFactory
+	submissionEnabled   bool
+	defaultBlock        DefaultBlock
+	submissionTimeout   time.Duration
+	filter              ethutil.Filter
+	txOptsFactory       ethutil.TransactOptsFactory            // Set by Create whenever submission is enabled.
+	pendingTransactions map[int64]pendingTournamentTransaction // application.ID -> pending action
+	disputeWarnings     map[common.Address]struct{}
+	zeroStagingWarnings map[int64]struct{}
+	rootBondRecoveries  map[int64][]*rootBondRecovery
+	observationHealthMu sync.RWMutex // Ready runs concurrently with the observation loop.
+	observationFailures map[int64]tournamentObservationFailure
 }
 
 const PrtConfigKey = "prt"
