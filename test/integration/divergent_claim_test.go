@@ -62,8 +62,9 @@ import (
 type DivergentClaimSuite struct {
 	suite.Suite
 	LogChecker
-	ctx    context.Context
-	cancel context.CancelFunc
+	ctx                      context.Context
+	cancel                   context.CancelFunc
+	readerFixtureOwnsRestart bool
 }
 
 func TestDivergentClaim(t *testing.T) {
@@ -81,15 +82,12 @@ func (s *DivergentClaimSuite) SetupSuite() {
 }
 
 func (s *DivergentClaimSuite) TearDownSuite() {
-	// Phase 2 brings the node up in reader mode. Subsequent suites expect
-	// the default (claim-submission-enabled) configuration, so always
-	// recycle the node here regardless of state.
-	if sharedNode != nil {
-		s.T().Log("Stopping reader-mode node before restoring default for subsequent suites...")
-		stopSharedNode(s.T())
+	// Reader-mode cleanup restores the node after phase 2. A failure earlier
+	// in phase 1 can leave it stopped before that cleanup is registered.
+	if sharedNode == nil && !s.readerFixtureOwnsRestart {
+		s.T().Log("Restarting shared node in default mode for subsequent suites...")
+		startSharedNode(s.T())
 	}
-	s.T().Log("Restarting shared node in default mode for subsequent suites...")
-	startSharedNode(s.T())
 	s.cancel()
 }
 
@@ -163,12 +161,12 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	// Inputs 0 and 1 go through the normal flow so we can observe both the
 	// legitimate ClaimAccepted on chain AND grab a valid machine-state proof
 	// from the second input epoch to reuse for the attack.
-	inputEpochs := make([]uint64, 0, 3) //nolint:mnd
-	for i := 0; i < 2; i++ {            //nolint:mnd
+	inputEpochs := make([]uint64, 0, 3)
+	for i := 0; i < 2; i++ {
 		payload := fmt.Sprintf("divergent-input-%d", i)
 		idx, _, err := sendInput(s.ctx, appAName, payload)
 		r.NoError(err, "send input %d", i)
-		r.Equal(uint64(i), idx) //nolint:gosec
+		r.Equal(uint64(i), idx)
 
 		procCtx, cancel := context.WithTimeout(s.ctx, inputProcessingTimeout)
 		input, err := waitForInputProcessed(procCtx, s.T(), appAName, idx)
@@ -207,7 +205,7 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	// Send input 2 — it lands at whatever block anvil mines for the tx.
 	idx2, block2, err := sendInput(s.ctx, appAName, "divergent-input-2")
 	r.NoError(err, "send input 2")
-	r.Equal(uint64(2), idx2) //nolint:mnd,gosec
+	r.Equal(uint64(2), idx2)
 	s.T().Logf("    input 2 sent at block %d", block2)
 
 	// Compute the epoch input 2 landed in from its block number relative
@@ -278,7 +276,7 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	s.T().Log("--- Phase 1: restart node and wait for divergence-driven DIVERGED ---")
 	startSharedNode(s.T())
 
-	stateCtx, stateCancel := context.WithTimeout(s.ctx, 5*time.Minute) //nolint:mnd
+	stateCtx, stateCancel := context.WithTimeout(s.ctx, 5*time.Minute)
 	r.NoError(waitForApplicationStatus(stateCtx, s.T(), appAName, "DIVERGED"),
 		"A should reach DIVERGED after observing the divergent on-chain claim")
 	stateCancel()
@@ -307,12 +305,10 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	r.NoError(disableApplication(s.ctx, appAName), "disable %s before remove", appAName)
 	r.NoError(removeApplication(s.ctx, appAName), "remove %s", appAName)
 
-	stopSharedNode(s.T())
-	// CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED=false brings the claimer up
-	// in read-only mode: it computes claims locally and runs the scan path
-	// but never broadcasts a submitClaim tx. The divergence-detection path
-	// must still fire — that is the assertion of this phase.
-	startSharedNodeWithEnv(s.T(), "CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED=false")
+	// The fixture sets matching saved/requested reader settings while stopped.
+	// This tests read-only replay, not a production submission-mode transition.
+	s.readerFixtureOwnsRestart = true
+	startReaderNode(s.ctx, s.T())
 
 	appBName := uniqueAppName("divergent-b")
 	r.NoError(registerApplication(s.ctx, appBName, appAddrStr, dappPath),
@@ -321,14 +317,14 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 
 	// B has to replay all 3 inputs locally before it reaches the epoch
 	// where the divergent claim sits. Wait for the same DIVERGED outcome.
-	for i := uint64(0); i < 3; i++ { //nolint:mnd
+	for i := uint64(0); i < 3; i++ {
 		procCtx, cancel := context.WithTimeout(s.ctx, inputProcessingTimeout)
 		input, err := waitForInputProcessed(procCtx, s.T(), appBName, i)
 		cancel()
 		r.NoError(err, "B: wait for input %d", i)
 		r.Equal(model.InputCompletionStatus_Accepted, input.Status)
 	}
-	stateCtx, stateCancel = context.WithTimeout(s.ctx, 5*time.Minute) //nolint:mnd
+	stateCtx, stateCancel = context.WithTimeout(s.ctx, 5*time.Minute)
 	r.NoError(waitForApplicationStatus(stateCtx, s.T(), appBName, "DIVERGED"),
 		"B should reach DIVERGED via the read-only scan path")
 	stateCancel()
