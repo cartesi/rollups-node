@@ -300,6 +300,16 @@ func NewTournamentBuilder(appID int64) *TournamentBuilder {
 			Level:         0,
 			Log2Step:      20,
 			Height:        2,
+			Kind:          TournamentKindNonLeaf,
+			InitialHash:   UniqueHash(),
+			StartInstant:  1,
+			Allowance:     100,
+			Snapshot: TournamentSnapshot{
+				AsOfBlock:    100,
+				Standing:     TournamentStandingAwaitingClosure,
+				AcceptsJoins: true,
+				BondRecovery: TournamentBondRecovery{Disposition: BondDispositionTournamentRunning},
+			},
 		},
 	}
 }
@@ -316,12 +326,19 @@ func (b *TournamentBuilder) WithAddress(addr common.Address) *TournamentBuilder 
 
 func (b *TournamentBuilder) WithLevel(l uint64) *TournamentBuilder {
 	b.tournament.Level = l
+	if l == b.tournament.MaxLevel-1 {
+		b.tournament.Kind = TournamentKindLeaf
+	} else {
+		b.tournament.Kind = TournamentKindNonLeaf
+	}
 	return b
 }
 
 func (b *TournamentBuilder) WithParent(addr common.Address, matchIDHash common.Hash) *TournamentBuilder {
 	b.tournament.ParentTournamentAddress = &addr
 	b.tournament.ParentMatchIDHash = &matchIDHash
+	b.tournament.CreationEvent = &TournamentCreationEvent{BlockNumber: 100, TxHash: UniqueHash()}
+	b.tournament.Snapshot.InnerResult = &TournamentInnerResult{Disposition: InnerTournamentUnsettled}
 	return b
 }
 
@@ -340,6 +357,7 @@ type CommitmentBuilder struct {
 }
 
 func NewCommitmentBuilder(appID int64) *CommitmentBuilder {
+	submitter := UniqueAddress()
 	return &CommitmentBuilder{
 		commitment: &Commitment{
 			ApplicationID:     appID,
@@ -347,9 +365,14 @@ func NewCommitmentBuilder(appID int64) *CommitmentBuilder {
 			TournamentAddress: UniqueAddress(),
 			Commitment:        UniqueHash(),
 			FinalStateHash:    UniqueHash(),
-			SubmitterAddress:  UniqueAddress(),
+			SubmitterAddress:  submitter,
 			BlockNumber:       100,
 			TxHash:            UniqueHash(),
+			Snapshot: CommitmentSnapshot{
+				AsOfBlock:      100,
+				Claimer:        submitter,
+				ClockAllowance: 100,
+			},
 		},
 	}
 }
@@ -397,6 +420,18 @@ func NewMatchBuilder(appID int64) *MatchBuilder {
 			TxHash:            UniqueHash(),
 			Winner:            WinnerCommitment_NONE,
 			DeletionReason:    MatchDeletionReason_NOT_DELETED,
+			Snapshot: MatchSnapshot{
+				AsOfBlock:      100,
+				Phase:          MatchPhaseBisecting,
+				TimeoutOutcome: MatchTimeoutNone,
+				Bisection: &MatchBisectionSnapshot{
+					RevealingParent: UniqueHash(),
+					WaitingLeft:     UniqueHash(),
+					WaitingRight:    UniqueHash(),
+					CurrentHeight:   new(uint64(2)),
+					Responder:       CommitmentSideOne,
+				},
+			},
 		},
 	}
 }
@@ -431,8 +466,14 @@ func (b *MatchBuilder) WithCommitmentTwo(h common.Hash) *MatchBuilder {
 	return b
 }
 
-func (b *MatchBuilder) WithDeletionReason(r MatchDeletionReason) *MatchBuilder {
+func (b *MatchBuilder) WithDeletion(r MatchDeletionReason, block uint64, txHash common.Hash) *MatchBuilder {
 	b.match.DeletionReason = r
+	b.match.DeletionBlockNumber = block
+	b.match.DeletionTxHash = new(txHash)
+	b.match.DeletionLogIndex = new(uint64(0))
+	b.match.Snapshot = MatchSnapshot{
+		AsOfBlock: max(b.match.Snapshot.AsOfBlock, block), Phase: MatchPhaseUninitialized, TimeoutOutcome: MatchTimeoutNone,
+	}
 	return b
 }
 

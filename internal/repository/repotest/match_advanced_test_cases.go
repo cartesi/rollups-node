@@ -4,8 +4,6 @@
 package repotest
 
 import (
-	"encoding/hex"
-
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -85,8 +83,7 @@ func (s *MatchAdvancedSuite) TestGetMatchAdvanced() {
 
 		got, err := s.Repo.GetMatchAdvanced(
 			s.Ctx, seed.App.IApplicationAddress.String(),
-			0, tournAddr.String(), matchIDHash.Hex(),
-			hex.EncodeToString(ma.OtherParent[:]))
+			0, tournAddr.String(), matchIDHash.Hex(), ma.TxHash, ma.LogIndex)
 		s.Require().NoError(err)
 		s.Equal(ma.IDHash, got.IDHash)
 		s.Equal(ma.OtherParent, got.OtherParent)
@@ -97,8 +94,7 @@ func (s *MatchAdvancedSuite) TestGetMatchAdvanced() {
 		nonExistent := UniqueHash()
 		got, err := s.Repo.GetMatchAdvanced(
 			s.Ctx, seed.App.IApplicationAddress.String(),
-			0, tournAddr.String(), matchIDHash.Hex(),
-			hex.EncodeToString(nonExistent[:]))
+			0, tournAddr.String(), matchIDHash.Hex(), nonExistent, 0)
 		s.Require().NoError(err)
 		s.Nil(got)
 	})

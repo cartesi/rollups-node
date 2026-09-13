@@ -5,241 +5,106 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
 	"errors"
+	"fmt"
+	"math"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/go-jet/jet/v2/postgres"
-
-	"github.com/cartesi/rollups-node/internal/model"
+	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/table"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/go-jet/jet/v2/postgres"
+	"github.com/jackc/pgx/v5"
 )
 
-// ------------------------ MatchAdvancedRepository Methods ------------------------ //
-
-func (r *PostgresRepository) CreateMatchAdvanced(
-	ctx context.Context,
-	nameOrAddress string,
-	m *model.MatchAdvanced,
-) error {
-
-	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
-
-	selectQuery := table.Application.SELECT(
-		table.Application.ID,
-		uint64Expr(m.EpochIndex),
-		postgres.Bytea(m.TournamentAddress.Bytes()),
-		postgres.Bytea(m.IDHash.Bytes()),
-		postgres.Bytea(m.OtherParent.Bytes()),
-		postgres.Bytea(m.LeftNode.Bytes()),
-		uint64Expr(m.BlockNumber),
-		postgres.Bytea(m.TxHash.Bytes()),
-	).WHERE(
-		whereClause,
-	)
-
-	insertStmt := table.MatchAdvances.INSERT(
-		table.MatchAdvances.ApplicationID,
-		table.MatchAdvances.EpochIndex,
-		table.MatchAdvances.TournamentAddress,
-		table.MatchAdvances.IDHash,
-		table.MatchAdvances.OtherParent,
-		table.MatchAdvances.LeftNode,
-		table.MatchAdvances.BlockNumber,
-		table.MatchAdvances.TxHash,
-	).QUERY(
-		selectQuery,
-	)
-
-	sqlStr, args := insertStmt.Sql()
+func (r *PostgresRepository) CreateMatchAdvanced(ctx context.Context, nameOrAddress string, value *MatchAdvanced) error {
+	if value == nil {
+		return fmt.Errorf("cannot create a nil matchAdvance")
+	}
+	applicationID := table.Application.SELECT(table.Application.ID).WHERE(getWhereClauseFromNameOrAddress(nameOrAddress))
+	values := matchAdvanceValues(value)
+	values[0] = applicationID
+	stmt := table.MatchAdvances.INSERT(matchAdvanceColumns).VALUES(values[0], values[1:]...)
+	sqlStr, args := stmt.Sql()
 	_, err := r.db.Exec(ctx, sqlStr, args...)
-
 	return err
 }
 
 func (r *PostgresRepository) GetMatchAdvanced(
-	ctx context.Context,
-	nameOrAddress string,
-	epochIndex uint64,
-	tournamentAddress string,
-	idHashHex string,
-	parentHex string,
-) (*model.MatchAdvanced, error) {
-
-	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
-
-	tournamentAddr := common.HexToAddress(tournamentAddress)
-	idHash := common.HexToHash(idHashHex)
-	parent := common.HexToHash(parentHex)
-
-	sel := table.MatchAdvances.
-		SELECT(
-			table.MatchAdvances.ApplicationID,
-			table.MatchAdvances.EpochIndex,
-			table.MatchAdvances.TournamentAddress,
-			table.MatchAdvances.IDHash,
-			table.MatchAdvances.OtherParent,
-			table.MatchAdvances.LeftNode,
-			table.MatchAdvances.BlockNumber,
-			table.MatchAdvances.TxHash,
-			table.MatchAdvances.CreatedAt,
-			table.MatchAdvances.UpdatedAt,
-		).
-		FROM(
-			table.MatchAdvances.
-				INNER_JOIN(table.Application,
-					table.MatchAdvances.ApplicationID.EQ(table.Application.ID),
-				),
-		).
-		WHERE(
-			whereClause.
-				AND(table.MatchAdvances.EpochIndex.EQ(uint64Expr(epochIndex))).
-				AND(table.MatchAdvances.TournamentAddress.EQ(postgres.Bytea(tournamentAddr.Bytes()))).
-				AND(table.MatchAdvances.IDHash.EQ(postgres.Bytea(idHash.Bytes()))).
-				AND(table.MatchAdvances.OtherParent.EQ(postgres.Bytea(parent.Bytes()))),
-		)
-
+	ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string,
+	idHashHex string, txHash common.Hash, logIndex uint64,
+) (*MatchAdvanced, error) {
+	sel := table.MatchAdvances.SELECT(matchAdvanceColumns, table.MatchAdvances.CreatedAt, table.MatchAdvances.UpdatedAt).
+		FROM(table.MatchAdvances.INNER_JOIN(table.Application, table.MatchAdvances.ApplicationID.EQ(table.Application.ID))).
+		WHERE(postgres.AND(
+			getWhereClauseFromNameOrAddress(nameOrAddress),
+			table.MatchAdvances.EpochIndex.EQ(uint64Expr(epochIndex)),
+			table.MatchAdvances.TournamentAddress.EQ(postgres.Bytea(common.HexToAddress(tournamentAddress).Bytes())),
+			table.MatchAdvances.IDHash.EQ(postgres.Bytea(common.HexToHash(idHashHex).Bytes())),
+			table.MatchAdvances.TxHash.EQ(postgres.Bytea(txHash.Bytes())),
+			table.MatchAdvances.LogIndex.EQ(uint64Expr(logIndex)),
+		))
 	sqlStr, args := sel.Sql()
-	row := r.db.QueryRow(ctx, sqlStr, args...)
-
-	var m model.MatchAdvanced
-	err := row.Scan(
-		&m.ApplicationID,
-		&m.EpochIndex,
-		&m.TournamentAddress,
-		&m.IDHash,
-		&m.OtherParent,
-		&m.LeftNode,
-		&m.BlockNumber,
-		&m.TxHash,
-		&m.CreatedAt,
-		&m.UpdatedAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
+	value, err := scanMatchAdvanced(r.db.QueryRow(ctx, sqlStr, args...))
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-	return &m, nil
+	return value, err
 }
 
 func (r *PostgresRepository) ListMatchAdvances(
-	ctx context.Context,
-	nameOrAddress string,
-	epochIndex uint64,
-	tournamentAddress string,
-	idHashHex string,
-	p repository.Pagination,
-	descending bool,
-) ([]*model.MatchAdvanced, uint64, error) {
-
-	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
-
-	fromClause := table.MatchAdvances.
-		INNER_JOIN(table.Application,
-			table.MatchAdvances.ApplicationID.EQ(table.Application.ID),
-		)
-
-	conditions := []postgres.BoolExpression{whereClause}
-	conditions = append(conditions, table.MatchAdvances.EpochIndex.EQ(uint64Expr(epochIndex)))
-
-	tAddr := common.HexToAddress(tournamentAddress)
-	conditions = append(conditions, table.MatchAdvances.TournamentAddress.EQ(postgres.Bytea(tAddr.Bytes())))
-
-	idHash := common.HexToHash(idHashHex)
-	conditions = append(conditions, table.MatchAdvances.IDHash.EQ(postgres.Bytea(idHash.Bytes())))
-
+	ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string,
+	idHashHex string, p repository.Pagination, descending bool,
+) ([]*MatchAdvanced, uint64, error) {
+	if p.Limit > math.MaxInt64 || p.Offset > math.MaxInt64 {
+		return nil, 0, fmt.Errorf("pagination exceeds PostgreSQL integer range")
+	}
+	from := table.MatchAdvances.INNER_JOIN(table.Application, table.MatchAdvances.ApplicationID.EQ(table.Application.ID))
+	conditions := []postgres.BoolExpression{
+		getWhereClauseFromNameOrAddress(nameOrAddress),
+		table.MatchAdvances.EpochIndex.EQ(uint64Expr(epochIndex)),
+		table.MatchAdvances.TournamentAddress.EQ(postgres.Bytea(common.HexToAddress(tournamentAddress).Bytes())),
+		table.MatchAdvances.IDHash.EQ(postgres.Bytea(common.HexToHash(idHashHex).Bytes())),
+	}
 	tx, err := beginReadTx(ctx, r.db)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-
-	countStmt := table.MatchAdvances.
-		SELECT(postgres.COUNT(postgres.STAR)).
-		FROM(fromClause).
-		WHERE(postgres.AND(conditions...))
-
+	countStmt := table.MatchAdvances.SELECT(postgres.COUNT(postgres.STAR)).FROM(from).WHERE(postgres.AND(conditions...))
 	total, err := countFromTx(ctx, tx, countStmt)
-	if err != nil {
-		return nil, 0, err
+	if err != nil || total == 0 {
+		return nil, total, err
 	}
-	if total == 0 {
-		return nil, 0, nil
-	}
-
-	sel := table.MatchAdvances.
-		SELECT(
-			table.MatchAdvances.ApplicationID,
-			table.MatchAdvances.EpochIndex,
-			table.MatchAdvances.TournamentAddress,
-			table.MatchAdvances.IDHash,
-			table.MatchAdvances.OtherParent,
-			table.MatchAdvances.LeftNode,
-			table.MatchAdvances.BlockNumber,
-			table.MatchAdvances.TxHash,
-			table.MatchAdvances.CreatedAt,
-			table.MatchAdvances.UpdatedAt,
-		).
-		FROM(fromClause).
-		WHERE(postgres.AND(conditions...))
-
+	sel := table.MatchAdvances.SELECT(matchAdvanceColumns, table.MatchAdvances.CreatedAt, table.MatchAdvances.UpdatedAt).
+		FROM(from).WHERE(postgres.AND(conditions...))
 	if descending {
-		sel = sel.ORDER_BY(
-			table.MatchAdvances.ApplicationID.DESC(),
-			table.MatchAdvances.EpochIndex.DESC(),
-			table.MatchAdvances.TournamentAddress.DESC(),
-			table.MatchAdvances.IDHash.DESC(),
-			table.MatchAdvances.OtherParent.DESC())
+		sel = sel.ORDER_BY(table.MatchAdvances.BlockNumber.DESC(), table.MatchAdvances.LogIndex.DESC(), table.MatchAdvances.TxHash.DESC())
 	} else {
-		sel = sel.ORDER_BY(
-			table.MatchAdvances.ApplicationID.ASC(),
-			table.MatchAdvances.EpochIndex.ASC(),
-			table.MatchAdvances.TournamentAddress.ASC(),
-			table.MatchAdvances.IDHash.ASC(),
-			table.MatchAdvances.OtherParent.ASC())
+		sel = sel.ORDER_BY(table.MatchAdvances.BlockNumber.ASC(), table.MatchAdvances.LogIndex.ASC(), table.MatchAdvances.TxHash.ASC())
 	}
-
-	// Apply pagination
 	if p.Limit > 0 {
 		sel = sel.LIMIT(int64(p.Limit))
 	}
 	if p.Offset > 0 {
 		sel = sel.OFFSET(int64(p.Offset))
 	}
-
 	sqlStr, args := sel.Sql()
 	rows, err := tx.Query(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
-
-	var matchAdvances []*model.MatchAdvanced
+	var values []*MatchAdvanced
 	for rows.Next() {
-		var m model.MatchAdvanced
-		err := rows.Scan(
-			&m.ApplicationID,
-			&m.EpochIndex,
-			&m.TournamentAddress,
-			&m.IDHash,
-			&m.OtherParent,
-			&m.LeftNode,
-			&m.BlockNumber,
-			&m.TxHash,
-			&m.CreatedAt,
-			&m.UpdatedAt,
-		)
+		value, err := scanMatchAdvanced(rows)
 		if err != nil {
 			return nil, 0, err
 		}
-		matchAdvances = append(matchAdvances, &m)
+		values = append(values, value)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, 0, err
 	}
-
-	return matchAdvances, total, nil
+	return values, total, nil
 }

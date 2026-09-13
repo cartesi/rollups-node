@@ -4,7 +4,6 @@
 package repotest
 
 import (
-	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -96,33 +95,6 @@ func (s *MatchSuite) TestGetMatch() {
 			0, setup.tournAddr.String(), UniqueHash().Hex())
 		s.Require().NoError(err)
 		s.Nil(got)
-	})
-}
-
-func (s *MatchSuite) TestUpdateMatch() {
-	s.Run("UpdatesWinner", func() {
-		setup := s.setupTournamentWithCommitments()
-		match := NewMatchBuilder(setup.seed.App.ID).
-			WithEpochIndex(0).
-			WithTournamentAddress(setup.tournAddr).
-			WithCommitmentOne(setup.commitHash1).
-			WithCommitmentTwo(setup.commitHash2).
-			Build()
-
-		err := s.Repo.CreateMatch(
-			s.Ctx, setup.seed.App.IApplicationAddress.String(), match)
-		s.Require().NoError(err)
-
-		match.Winner = WinnerCommitment_ONE
-		err = s.Repo.UpdateMatch(
-			s.Ctx, setup.seed.App.IApplicationAddress.String(), match)
-		s.Require().NoError(err)
-
-		got, err := s.Repo.GetMatch(
-			s.Ctx, setup.seed.App.IApplicationAddress.String(),
-			0, setup.tournAddr.String(), match.IDHash.Hex())
-		s.Require().NoError(err)
-		s.Equal(WinnerCommitment_ONE, got.Winner)
 	})
 }
 

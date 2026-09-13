@@ -39,7 +39,6 @@ func (s *TournamentSuite) TestCreateTournament() {
 			s.Ctx, seed.App.IApplicationAddress.String(), first))
 
 		replay := *first
-		replay.MaxLevel++
 		err := s.Repo.CreateTournament(
 			s.Ctx, seed.App.IApplicationAddress.String(), &replay)
 		s.Require().NoError(err)
@@ -49,6 +48,21 @@ func (s *TournamentSuite) TestCreateTournament() {
 		s.Require().NoError(err)
 		s.Require().NotNil(got)
 		s.Equal(first.MaxLevel, got.MaxLevel, "an exact replay must not overwrite the first observation")
+	})
+
+	s.Run("ConflictingDescriptorIsAnError", func() {
+		seed := s.seedWithEpoch()
+		first := NewTournamentBuilder(seed.App.ID).Build()
+		s.Require().NoError(s.Repo.CreateTournament(s.Ctx, seed.App.Name, first))
+
+		conflicting := *first
+		conflicting.MaxLevel++
+		s.Require().Error(s.Repo.CreateTournament(s.Ctx, seed.App.Name, &conflicting))
+
+		got, err := s.Repo.GetTournament(s.Ctx, seed.App.Name, first.Address.String())
+		s.Require().NoError(err)
+		s.Require().NotNil(got)
+		s.Equal(first.MaxLevel, got.MaxLevel)
 	})
 
 	s.Run("DifferentRootForSameEpochIsAnError", func() {
@@ -89,30 +103,6 @@ func (s *TournamentSuite) TestGetTournament() {
 			s.Ctx, seed.App.IApplicationAddress.String(), UniqueAddress().String())
 		s.Require().NoError(err)
 		s.Nil(got)
-	})
-}
-
-func (s *TournamentSuite) TestUpdateTournament() {
-	s.Run("UpdatesFields", func() {
-		seed := s.seedWithEpoch()
-		tournament := NewTournamentBuilder(seed.App.ID).
-			WithEpochIndex(0).Build()
-
-		err := s.Repo.CreateTournament(
-			s.Ctx, seed.App.IApplicationAddress.String(), tournament)
-		s.Require().NoError(err)
-
-		winnerHash := UniqueHash()
-		tournament.WinnerCommitment = &winnerHash
-		err = s.Repo.UpdateTournament(
-			s.Ctx, seed.App.IApplicationAddress.String(), tournament)
-		s.Require().NoError(err)
-
-		got, err := s.Repo.GetTournament(
-			s.Ctx, seed.App.IApplicationAddress.String(), tournament.Address.String())
-		s.Require().NoError(err)
-		s.Require().NotNil(got.WinnerCommitment)
-		s.Equal(winnerHash, *got.WinnerCommitment)
 	})
 }
 
