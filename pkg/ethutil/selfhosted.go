@@ -4,7 +4,6 @@ package ethutil
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"math/big"
 
@@ -18,15 +17,13 @@ import (
 )
 
 type SelfhostedApplicationDeployment struct {
-	FactoryAddress          common.Address                       `json:"factory_address"`
-	ApplicationOwnerAddress common.Address                       `json:"application_owner"`
-	AuthorityOwnerAddress   common.Address                       `json:"authority_owner"`
-	TemplateHash            common.Hash                          `json:"template_hash"`
-	DataAvailability        []byte                               `json:"-"`
-	EpochLength             uint64                               `json:"epoch_length"`
-	ClaimStagingPeriod      uint64                               `json:"claim_staging_period"`
-	WithdrawalConfig        iapplicationfactory.WithdrawalConfig `json:"withdrawal_config"`
-	Salt                    SaltBytes                            `json:"salt"`
+	FactoryAddress        common.Address                       `json:"factory_address"`
+	AuthorityOwnerAddress common.Address                       `json:"authority_owner"`
+	TemplateHash          common.Hash                          `json:"template_hash"`
+	EpochLength           uint64                               `json:"epoch_length"`
+	ClaimStagingPeriod    uint64                               `json:"claim_staging_period"`
+	WithdrawalConfig      iapplicationfactory.WithdrawalConfig `json:"withdrawal_config"`
+	Salt                  SaltBytes                            `json:"salt"`
 
 	InputBoxAddress common.Address `json:"inputbox_address"`
 	IInputBoxBlock  uint64         `json:"inputbox_block"`
@@ -46,13 +43,12 @@ type SelfhostedApplicationDeploymentResult struct {
 
 func (me *SelfhostedApplicationDeployment) String() string {
 	result := ""
-	result += fmt.Sprintf("selfhosted deployment:\n")
-	result += fmt.Sprintf("\tapplication owner:     %v\n", me.ApplicationOwnerAddress)
+	result += "selfhosted deployment:\n"
 	result += fmt.Sprintf("\tauthority owner:       %v\n", me.AuthorityOwnerAddress)
+	result += fmt.Sprintf("\tinput box address:     %v\n", me.InputBoxAddress)
 	if me.Verbose {
 		result += fmt.Sprintf("\tfactory address:       %v\n", me.FactoryAddress)
 		result += fmt.Sprintf("\ttemplate hash:         %v\n", me.TemplateHash)
-		result += fmt.Sprintf("\tdata availability:     0x%v\n", hex.EncodeToString(me.DataAvailability))
 		result += fmt.Sprintf("\tsalt:                  %v\n", me.Salt)
 		result += fmt.Sprintf("\tepoch length:          %v\n", me.EpochLength)
 		result += fmt.Sprintf("\tclaim staging period:  %v\n", me.ClaimStagingPeriod)
@@ -76,6 +72,18 @@ func (me *SelfhostedApplicationDeployment) Deploy(
 	client *ethclient.Client,
 	txOptsFactory TransactOptsFactory,
 ) (common.Address, IApplicationDeploymentResult, error) {
+	return me.DeployWithTransaction(ctx, client, txOptsFactory, nil)
+}
+
+// DeployWithTransaction returns the predicted application address and no confirmed
+// deployment result when runner does not wait for a receipt. The prediction does
+// not prove that the deployment transaction succeeded.
+func (me *SelfhostedApplicationDeployment) DeployWithTransaction(
+	ctx context.Context,
+	client *ethclient.Client,
+	txOptsFactory TransactOptsFactory,
+	runner TransactionRunner,
+) (common.Address, IApplicationDeploymentResult, error) {
 	zero := common.Address{}
 	result := &SelfhostedApplicationDeploymentResult{}
 	result.Deployment = me
@@ -97,13 +105,12 @@ func (me *SelfhostedApplicationDeployment) Deploy(
 
 	// check if addresses are available (have no code)
 	applicationAddress, authorityAddress, err := factory.CalculateAddresses(
-		nil,
+		&bind.CallOpts{Context: ctx},
 		me.AuthorityOwnerAddress,
 		new(big.Int).SetUint64(me.EpochLength),
 		new(big.Int).SetUint64(me.ClaimStagingPeriod),
-		me.ApplicationOwnerAddress,
 		me.TemplateHash,
-		me.DataAvailability,
+		me.InputBoxAddress,
 		shWC,
 		me.Salt,
 	)
@@ -116,7 +123,7 @@ func (me *SelfhostedApplicationDeployment) Deploy(
 		return zero, nil, err
 	}
 	if len(applicationCode) != 0 {
-		return zero, nil, fmt.Errorf("application with address: %v already exists. Try a different salt.", applicationAddress)
+		return zero, nil, fmt.Errorf("application with address %v already exists; use a different salt", applicationAddress)
 	}
 
 	authorityCode, err := client.CodeAt(ctx, authorityAddress, nil)
@@ -124,18 +131,30 @@ func (me *SelfhostedApplicationDeployment) Deploy(
 		return zero, nil, err
 	}
 	if len(authorityCode) != 0 {
-		return zero, nil, fmt.Errorf("authority with address: %v already exists. Try a different salt.", authorityAddress)
+		return zero, nil, fmt.Errorf("authority with address %v already exists; use a different salt", authorityAddress)
+	}
+
+	var txOpts *bind.TransactOpts
+	if runner == nil {
+		// Preserve the existing helper's preparation for non-CLI callers. The
+		// CLI runner applies its common transaction policy instead.
+		txOpts, err = _prepareTransaction(ctx, client, txOptsFactory, big.NewInt(0))
+	} else {
+		txOpts, err = txOptsFactory.NewTransactOpts(ctx)
+	}
+	if err != nil {
+		return zero, nil, fmt.Errorf("failed to create transaction options: %w", err)
 	}
 
 	// deploy the contracts
-	receipt, err := sendTransaction(
-		ctx, client, txOptsFactory, big.NewInt(0),
+	receipt, err := runDeploymentTransaction(
+		ctx, client, txOpts,
 		func(txOpts *bind.TransactOpts) (*types.Transaction, error) {
-			result.ApplicationFactoryAddress, err = factory.GetApplicationFactory(nil)
+			result.ApplicationFactoryAddress, err = factory.GetApplicationFactory(&bind.CallOpts{Context: ctx})
 			if err != nil {
 				return nil, fmt.Errorf("failed to retrieve application factory address: %w", err)
 			}
-			result.AuthorityFactoryAddress, err = factory.GetAuthorityFactory(nil)
+			result.AuthorityFactoryAddress, err = factory.GetAuthorityFactory(&bind.CallOpts{Context: ctx})
 			if err != nil {
 				return nil, fmt.Errorf("failed to retrieve authority factory address: %w", err)
 			}
@@ -144,16 +163,19 @@ func (me *SelfhostedApplicationDeployment) Deploy(
 				me.AuthorityOwnerAddress,
 				new(big.Int).SetUint64(me.EpochLength),
 				new(big.Int).SetUint64(me.ClaimStagingPeriod),
-				me.ApplicationOwnerAddress,
 				me.TemplateHash,
-				me.DataAvailability,
+				me.InputBoxAddress,
 				shWC,
 				me.Salt,
 			)
 		},
+		runner,
 	)
 	if err != nil {
 		return zero, nil, fmt.Errorf("failed to create a self hosted application: %w", err)
+	}
+	if receipt == nil {
+		return applicationAddress, nil, nil
 	}
 
 	applicationFactory, err := iapplicationfactory.NewIApplicationFactory(result.ApplicationFactoryAddress, client)
@@ -174,7 +196,7 @@ func (me *SelfhostedApplicationDeployment) Deploy(
 		result.ApplicationAddress = event.AppContract
 		goto applicationEventFound
 	}
-	return zero, nil, fmt.Errorf("failed to obtain application address during self hosted application deployment. ApplicationCreated event not found in the receipt logs")
+	return zero, nil, fmt.Errorf("self-hosted deployment receipt has no ApplicationCreated event")
 
 applicationEventFound:
 	for _, vLog := range receipt.Logs {
@@ -185,7 +207,7 @@ applicationEventFound:
 		result.AuthorityAddress = event.Authority
 		goto authorityEventFound
 	}
-	return zero, nil, fmt.Errorf("failed to obtain authority address during self hosted application deployment. AuthorityCreated event not found in the recipe logs")
+	return zero, nil, fmt.Errorf("self-hosted deployment receipt has no AuthorityCreated event")
 
 authorityEventFound:
 	if err := VerifyDeployedWithdrawalConfig(ctx, client, result.ApplicationAddress, me.WithdrawalConfig); err != nil {

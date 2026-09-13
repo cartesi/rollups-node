@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -73,9 +74,15 @@ func (s *EthUtilSuite) SetupTest() {
 	s.inputBoxAddr, err = config.GetContractsInputBoxAddress()
 	s.Require().Nil(err)
 
-	_, _, encodedDA, err := DefaultDA(s.client, s.inputBoxAddr)
 	salt := "0000000000000000000000000000000000000000000000000000000000000000"
-	s.appAddr, s.cleanup, err = CreateAnvilSnapshotAndDeployApp(s.ctx, s.client, s.selfHostedAppFactory, templateHash, encodedDA, salt)
+	s.appAddr, s.cleanup, err = CreateAnvilSnapshotAndDeployApp(
+		s.ctx,
+		s.client,
+		s.selfHostedAppFactory,
+		templateHash,
+		s.inputBoxAddr,
+		salt,
+	)
 	s.Require().Nil(err)
 }
 
@@ -177,11 +184,11 @@ func TestAddInputAsyncUsesContextForBindingTransaction(t *testing.T) {
 	)
 
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.True(t, backend.estimateGasCalled, "expected AddInputAsync to reach the binding gas-estimation boundary")
+	require.True(t, backend.estimateGasCalled.Load(), "expected AddInputAsync to reach the binding gas-estimation boundary")
 }
 
 type addInputAsyncContextBackend struct {
-	estimateGasCalled  bool
+	estimateGasCalled  atomic.Bool
 	estimateGasTimeout time.Duration
 }
 
@@ -209,7 +216,7 @@ func (b *addInputAsyncContextBackend) EstimateGas(
 	ctx context.Context,
 	_ map[string]interface{},
 ) (hexutil.Uint64, error) {
-	b.estimateGasCalled = true
+	b.estimateGasCalled.Store(true)
 	select {
 	case <-ctx.Done():
 		return 0, ctx.Err()

@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const executionRevertedMessage = "execution reverted"
+
 // rpcDataError simulates an RPC error with revert data, as returned by
 // eth_estimateGas when a contract reverts.
 type rpcDataError struct {
@@ -41,7 +43,7 @@ func TestExtractJSONErrorInfo(t *testing.T) {
 	})
 
 	t.Run("RPCDataError", func(t *testing.T) {
-		err := &rpcDataError{code: 3, msg: "execution reverted", data: "0xdeadbeef"}
+		err := &rpcDataError{code: 3, msg: executionRevertedMessage, data: "0xdeadbeef"}
 		info, ok := ExtractJSONErrorInfo(err)
 		assert.True(t, ok)
 		assert.True(t, info.HasCode)
@@ -134,7 +136,7 @@ func TestIsNonceTooLowError(t *testing.T) {
 			want: true,
 		},
 		{name: "UnrelatedError", err: errors.New("connection refused"), want: false},
-		{name: "RevertedError", err: errors.New("execution reverted"), want: false},
+		{name: "RevertedError", err: errors.New(executionRevertedMessage), want: false},
 		{
 			name: "NonceTooHigh",
 			err:  errors.New("nonce too high"),
@@ -168,7 +170,7 @@ func describeTestRevert(t *testing.T, name string, args ...any) error {
 	packed, err := abiErr.Inputs.Pack(args...)
 	require.NoError(t, err)
 	payload := append(append([]byte{}, abiErr.ID[:4]...), packed...)
-	return &rpcDataError{code: 3, msg: "execution reverted", data: fmt.Sprintf("0x%x", payload)}
+	return &rpcDataError{code: 3, msg: executionRevertedMessage, data: fmt.Sprintf("0x%x", payload)}
 }
 
 func TestDescribeRevert(t *testing.T) {
@@ -208,14 +210,14 @@ func TestDescribeRevert(t *testing.T) {
 		// Selector of a parameterized error with a truncated body.
 		id := parsed.Errors["InsufficientFunds"].ID
 		payload := append([]byte{}, id[:4]...)
-		e := &rpcDataError{code: 3, msg: "execution reverted", data: fmt.Sprintf("0x%x", payload)}
+		e := &rpcDataError{code: 3, msg: executionRevertedMessage, data: fmt.Sprintf("0x%x", payload)}
 		desc, ok := DescribeRevert(e, describeTestMetaData)
 		assert.True(t, ok)
 		assert.Equal(t, "InsufficientFunds", desc, "bare name when args do not decode")
 	})
 
 	t.Run("UnknownSelector", func(t *testing.T) {
-		e := &rpcDataError{code: 3, msg: "execution reverted", data: "0xdeadbeef"}
+		e := &rpcDataError{code: 3, msg: executionRevertedMessage, data: "0xdeadbeef"}
 		_, ok := DescribeRevert(e, describeTestMetaData)
 		assert.False(t, ok)
 	})
