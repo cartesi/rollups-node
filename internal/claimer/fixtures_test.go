@@ -13,7 +13,6 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/repotest"
-	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
 	"github.com/cartesi/rollups-node/pkg/service"
@@ -89,23 +88,36 @@ func makeApplication() *model.Application {
 }
 
 func makeEpoch(id int64, status model.EpochStatus, i uint64) *model.Epoch {
-	outputsMerkleRoot := common.HexToHash("0x01") // dummy value
-	machineHash := common.HexToHash("0x03")       // dummy value; matches events via testMachineHash
-	txHash := common.HexToHash("0x02")            // dummy value
+	outputsMerkleRoot := common.HexToHash("0x01")
+	proof := repotest.KeccakStateProof(outputsMerkleRoot)
+	txHash := common.HexToHash("0x02")
 	e := repotest.NewEpochBuilder(id).
 		WithIndex(i).
 		WithBlocks(i*10, i*10+9).
 		WithStatus(status).
 		WithClaimTransactionHash(txHash).
 		WithTxBufferDataBlock(outputsMerkleRoot).
-		WithMachineHash(machineHash).
+		WithMachineHash(proof.MachineHash).
 		Build()
+	e.TxBufferProof = stateProofHashes(proof.TxBufferProof)
+	e.IflagsYDataBlock = model.Pointer(proof.IflagsYDataBlock)
+	e.IflagsYProof = stateProofHashes(proof.IflagsYProof)
+	e.HtifTohostDataBlock = model.Pointer(proof.HtifTohostDataBlock)
+	e.HtifTohostProof = stateProofHashes(proof.HtifTohostProof)
 	if status == model.EpochStatus_ClaimStaged {
 		// CHECK constraint: staged_iff_block.
 		b := uint64(i*10 + 1)
 		e.StagedAtBlock = &b
 	}
 	return e
+}
+
+func stateProofHashes(proof [][32]byte) []common.Hash {
+	result := make([]common.Hash, len(proof))
+	for i := range proof {
+		result[i] = proof[i]
+	}
+	return result
 }
 
 func makeAcceptedEpoch(app *model.Application, i uint64) *model.Epoch {
@@ -253,7 +265,7 @@ func notFirstClaimError() error {
 	selector := fmt.Sprintf("0x%x", id[:4])
 	return &rpcDataError{
 		code: 3,
-		msg:  "execution reverted",
+		msg:  executionRevertedErrorMessage,
 		data: selector + "000000000000000000000000" +
 			"01000000000000000000000000000000000000000000000000000000000000" +
 			"0000000000000000000000000000000000000000000000000000000000000027",
@@ -262,27 +274,22 @@ func notFirstClaimError() error {
 
 // consensusRevertError creates a typed revert with only the 4-byte selector —
 // sufficient for the classifier to match by name. Looks up the error in
-// IConsensus first, then IQuorum (for Quorum-only errors like
-// CallerIsNotValidator), then IApplication (for merkle library errors like
-// InvalidNodeIndex, which consensus calls raise but only the application ABI
-// declares).
+// IConsensus first, then IQuorum for Quorum-only errors such as
+// CallerIsNotValidator.
 func consensusRevertError(errorName string) error {
 	consensusABI, _ := iconsensus.IConsensusMetaData.GetAbi()
 	quorumABI, _ := iquorum.IQuorumMetaData.GetAbi()
-	applicationABI, _ := iapplication.IApplicationMetaData.GetAbi()
 	var id common.Hash
 	if e, ok := consensusABI.Errors[errorName]; ok {
 		id = e.ID
 	} else if e, ok := quorumABI.Errors[errorName]; ok {
-		id = e.ID
-	} else if e, ok := applicationABI.Errors[errorName]; ok {
 		id = e.ID
 	} else {
 		panic(fmt.Sprintf("unknown typed error: %s", errorName))
 	}
 	return &rpcDataError{
 		code: 3,
-		msg:  "execution reverted",
+		msg:  executionRevertedErrorMessage,
 		data: fmt.Sprintf("0x%x", id[:4]),
 	}
 }
@@ -309,7 +316,7 @@ func appRevertDataError(errorName string, returndata []byte) error {
 	payload := append(append([]byte{}, abiErr.ID[:4]...), packed...)
 	return &rpcDataError{
 		code: 3,
-		msg:  "execution reverted",
+		msg:  executionRevertedErrorMessage,
 		data: fmt.Sprintf("0x%x", payload),
 	}
 }
@@ -333,7 +340,7 @@ func notPastBlockError(lastProcessed, upperBound uint64) error {
 	payload := append(append([]byte{}, abiErr.ID[:4]...), packed...)
 	return &rpcDataError{
 		code: 3,
-		msg:  "execution reverted",
+		msg:  executionRevertedErrorMessage,
 		data: fmt.Sprintf("0x%x", payload),
 	}
 }
@@ -358,37 +365,25 @@ func claimNotStagedError(status uint8) error {
 	payload := append(append([]byte{}, abiErr.ID[:4]...), packed...)
 	return &rpcDataError{
 		code: 3,
-		msg:  "execution reverted",
+		msg:  executionRevertedErrorMessage,
 		data: fmt.Sprintf("0x%x", payload),
 	}
 }
 
-// TestDecodeClaimNotStagedStatus pins the ABI-decode path used by
-// handleAcceptClaimRevert. The status byte must come from the contract's
-
+// withForeclosed returns a copy with the foreclosure block and transaction set.
 func withForeclosed(app *model.Application, block uint64) *model.Application {
-	copy := *app
-	copy.ForecloseBlock = block
+	foreclosed := *app
+	foreclosed.ForecloseBlock = block
 	txHash := common.HexToHash("0xcafe")
-	copy.ForecloseTransaction = &txHash
-	return &copy
+	foreclosed.ForecloseTransaction = &txHash
+	return &foreclosed
 }
-
-// TestSubmitClaimForeclosesUnstagedForeclosedApp verifies the
-// foreclosure-broadcast guard. A foreclosed app whose chain state is
-// UNSTAGED still goes through the pre-submit reconciliation read
-// (findClaimSubmittedEventAndSucc + getClaimStatus) — those would mirror
-// any pre-foreclosure on-chain-accepted state into the local DB — but the
-// submitClaimToBlockchain broadcast must be SKIPPED and the local claim
 
 func makeStagedEpoch(app *model.Application, i uint64, stagedAtBlock uint64) *model.Epoch {
 	e := makeEpoch(app.ID, model.EpochStatus_ClaimStaged, i)
 	e.StagedAtBlock = &stagedAtBlock
 	return e
 }
-
-// TestStagingFastPathDivergence — Authority's submitClaim receipt contains a
-// ClaimStaged event with a divergent machineMerkleRoot. The fast path detects
 
 func buildClaimStagedLog(app *model.Application, epoch *model.Epoch,
 	outputs common.Hash, machine common.Hash) types.Log {
@@ -414,6 +409,3 @@ func buildClaimStagedLog(app *model.Application, epoch *model.Epoch,
 		Data: data,
 	}
 }
-
-// TestStageByObservation — submitted epoch + ClaimStaged event observed in
-// the next-tick scan → transition to CLAIM_STAGED with staged_at_block

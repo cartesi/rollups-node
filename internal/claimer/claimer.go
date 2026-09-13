@@ -37,9 +37,8 @@
 // status OK. If it was already DIVERGED because of a divergence, EVM reader
 // preserves that status while still recording foreclose_block.
 //
-// PRT (DaveConsensus) uses a different path. PRT epochs go directly from
-// CLAIM_COMPUTED to CLAIM_ACCEPTED through tournament resolution. They never
-// reach CLAIM_STAGED, and the claimer queries exclude PRT apps.
+// PRT (DaveConsensus) stages and accepts tournament results through the PRT
+// service. The claimer queries exclude PRT apps.
 package claimer
 
 import (

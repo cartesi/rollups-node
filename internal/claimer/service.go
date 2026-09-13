@@ -72,11 +72,7 @@ const defaultMaxAcceptAttempts uint64 = 5
 
 const ClaimerConfigKey = "claimer"
 
-type PersistentConfig struct {
-	DefaultBlock           model.DefaultBlock
-	ClaimSubmissionEnabled bool
-	ChainID                uint64
-}
+type PersistentConfig = config.PersistentSubmitterConfig
 
 func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 	var err error
@@ -103,22 +99,16 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		return nil, fmt.Errorf("creating base service: %w", err)
 	}
 
-	nodeConfig, err := setupPersistentConfig(ctx, s.Logger, c.Repository, &c.Config)
-	if err != nil {
-		return nil, fmt.Errorf("setting up persistent config: %w", err)
-	}
-
-	chainId, err := c.EthConn.ChainID(ctx)
+	chainID, err := c.EthConn.ChainID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("querying chain ID: %w", err)
 	}
-	if chainId.Uint64() != c.Config.BlockchainId {
-		return nil, fmt.Errorf("chainId mismatch: network %d != provided %d", chainId.Uint64(), c.Config.BlockchainId)
+	if err := config.CheckNetworkChainID(chainID, c.Config.BlockchainId); err != nil {
+		return nil, err
 	}
-
-	if chainId.Uint64() != nodeConfig.ChainID {
-		return nil, fmt.Errorf("NodeConfig chainId mismatch: network %d != config %d",
-			chainId.Uint64(), nodeConfig.ChainID)
+	nodeConfig, err := setupPersistentConfig(ctx, s.Logger, c.Repository, &c.Config)
+	if err != nil {
+		return nil, fmt.Errorf("setting up persistent config: %w", err)
 	}
 	s.submissionEnabled = nodeConfig.ClaimSubmissionEnabled
 	s.claimsInFlight = map[int64]inFlightTx{}
@@ -135,9 +125,12 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		if s.submissionTimeout == 0 {
 			return nil, fmt.Errorf("BlockchainHttpRequestTimeout must be different from zero")
 		}
-		txOptsFactory, err = auth.GetTransactOptsFactory(ctx, chainId)
+		txOptsFactory, err = auth.GetTransactOptsFactory(ctx, chainID)
 		if err != nil {
 			return nil, fmt.Errorf("getting transaction options: %w", err)
+		}
+		if c.Config.BlockchainLegacyEnabled {
+			txOptsFactory = ethutil.WithLegacyFees(txOptsFactory, c.EthConn)
 		}
 		s.Logger.Info("Claim submitter identity", "address", txOptsFactory.From())
 	}
@@ -188,24 +181,27 @@ func setupPersistentConfig(
 	repo iclaimerRepository,
 	c *config.ClaimerConfig,
 ) (*PersistentConfig, error) {
+	requested := PersistentConfig{
+		DefaultBlock: c.BlockchainDefaultBlock, ChainID: c.BlockchainId,
+		ClaimSubmissionEnabled: c.FeatureClaimSubmissionEnabled,
+	}
+	if err := requested.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid claimer config: %w", err)
+	}
 	config, err := repository.LoadNodeConfig[PersistentConfig](ctx, repo, ClaimerConfigKey)
 	if config == nil && errors.Is(err, repository.ErrNotFound) {
 		nc := model.NodeConfig[PersistentConfig]{
-			Key: ClaimerConfigKey,
-			Value: PersistentConfig{
-				DefaultBlock:           c.BlockchainDefaultBlock,
-				ClaimSubmissionEnabled: c.FeatureClaimSubmissionEnabled,
-				ChainID:                c.BlockchainId,
-			},
+			Key:   ClaimerConfigKey,
+			Value: requested,
 		}
 		logger.Info("Initializing claimer persistent config", "config", nc.Value)
-		err = repository.SaveNodeConfig(ctx, repo, &nc)
-		if err != nil {
-			return nil, fmt.Errorf("saving claimer persistent config: %w", err)
+		config, err = repository.InitializeNodeConfig(ctx, repo, &nc)
+	}
+	if err == nil {
+		if err := config.Value.CheckRequested(requested); err != nil {
+			return nil, fmt.Errorf("claimer persistent config: %w", err)
 		}
-		return &nc.Value, nil
-	} else if err == nil {
-		logger.Info("Claimer was already configured. Using previous persistent config", "config", config.Value)
+		logger.Info("Claimer persistent config matches requested config", "config", config.Value)
 		return &config.Value, nil
 	}
 

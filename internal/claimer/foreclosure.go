@@ -49,9 +49,10 @@ func foreclosedClaimDrainApplicationsFilter() repository.ApplicationFilter {
 //
 // A foreclosed application is identified by foreclose_block, not by status: a
 // healthy foreclosed app is enabled with status=OK and foreclose_block set, and
-// is drained here. A foreclosed app that is also DIVERGED or CORRUPTED is
-// terminal and excluded by the selecting filter, but EVM reader keeps observing
-// it (drive-prove, withdrawals) because observation is gated on enabled.
+// is drained here. Any non-OK app is excluded by the selecting filter. FAILED
+// requires repair before the operator clears it and resumes the drain. Terminal
+// health statuses remain blocked. EVM reader still observes enabled apps
+// (drive-prove, withdrawals), regardless of their health.
 //
 // This function does not send transactions. Submit and accept code already skip
 // broadcasts when foreclose_block is set. Once all drain checks pass there is no
