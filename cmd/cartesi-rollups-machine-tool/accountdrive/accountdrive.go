@@ -5,10 +5,10 @@ package accountdrive
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -18,6 +18,7 @@ const (
 	Log2AccountSize       = 5
 	AccountSize           = 1 << Log2AccountSize
 	DefaultLog2MaxAccount = 17
+	usdBalanceSize        = 12
 )
 
 var (
@@ -43,43 +44,44 @@ func DriveSize(log2MaxNumOfAccounts uint8, log2LeavesPerAccount uint8) (uint64, 
 	return 1 << (Log2AccountSize + log2MaxNumOfAccounts), nil
 }
 
-func Encode(address common.Address, balance uint64) ([AccountSize]byte, error) {
+func Encode(address common.Address, balance *big.Int) ([AccountSize]byte, error) {
 	var account [AccountSize]byte
 	if address == (common.Address{}) {
 		return account, errors.New("account address must not be zero")
 	}
-	if balance == 0 {
+	if balance == nil || balance.Sign() <= 0 {
 		return account, errors.New("account balance must be positive")
 	}
-	if balance > math.MaxInt64 {
-		return account, fmt.Errorf("account balance %d exceeds int64 accounts-drive limit", balance)
+	if balance.BitLen() > 8*usdBalanceSize {
+		return account, fmt.Errorf("account balance %s exceeds uint96 accounts-drive limit", balance)
 	}
-	binary.LittleEndian.PutUint64(account[:8], balance)
-	copy(account[8:28], address.Bytes())
+	balanceBytes := balance.Bytes()
+	for i := range balanceBytes {
+		account[i] = balanceBytes[len(balanceBytes)-1-i]
+	}
+	copy(account[usdBalanceSize:], address.Bytes())
 	return account, nil
 }
 
-func Decode(account []byte) (common.Address, uint64, bool, error) {
+func Decode(account []byte) (common.Address, *big.Int, bool, error) {
 	var zero [AccountSize]byte
 	if len(account) != AccountSize {
-		return common.Address{}, 0, false, fmt.Errorf("account record must be %d bytes, got %d", AccountSize, len(account))
+		return common.Address{}, nil, false, fmt.Errorf("account record must be %d bytes, got %d", AccountSize, len(account))
 	}
 	if bytes.Equal(account, zero[:]) {
-		return common.Address{}, 0, false, nil
+		return common.Address{}, nil, false, nil
 	}
-	balance := binary.LittleEndian.Uint64(account[:8])
-	if balance == 0 {
-		return common.Address{}, 0, false, errors.New("non-empty account has zero balance")
+	var balanceBytes [usdBalanceSize]byte
+	for i := range balanceBytes {
+		balanceBytes[len(balanceBytes)-1-i] = account[i]
 	}
-	if balance > math.MaxInt64 {
-		return common.Address{}, 0, false, fmt.Errorf("account balance %d exceeds int64 accounts-drive limit", balance)
+	balance := new(big.Int).SetBytes(balanceBytes[:])
+	if balance.Sign() == 0 {
+		return common.Address{}, nil, false, errors.New("non-empty account has zero balance")
 	}
-	address := common.BytesToAddress(account[8:28])
+	address := common.BytesToAddress(account[usdBalanceSize:])
 	if address == (common.Address{}) {
-		return common.Address{}, 0, false, errors.New("non-empty account has zero address")
-	}
-	if !bytes.Equal(account[28:32], []byte{0, 0, 0, 0}) {
-		return common.Address{}, 0, false, errors.New("non-empty account has non-zero padding")
+		return common.Address{}, nil, false, errors.New("non-empty account has zero address")
 	}
 	return address, balance, true, nil
 }
