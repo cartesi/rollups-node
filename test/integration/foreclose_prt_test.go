@@ -16,6 +16,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
@@ -120,8 +121,8 @@ func (s *ForeclosePrtSuite) TestForeclosePrtLifecycle() {
 			"--withdrawal-config", withdrawalConfigJSON,
 		},
 		PreClaimHook: func(ctx context.Context, t testing.TB, r *require.Assertions, appName string) {
-			settleTournament(ctx, t, r, ethClient, appName, 0)
-			settleTournament(ctx, t, r, ethClient, appName, 1)
+			finalizePrtEpoch(ctx, t, r, ethClient, appName, 0)
+			finalizePrtEpoch(ctx, t, r, ethClient, appName, 1)
 		},
 	})
 	s.T().Log("=== Pre-foreclosure PRT lifecycle complete ===")
@@ -229,7 +230,7 @@ func (s *ForeclosePrtSuite) TestForeclosePrtBeforeTournamentSettlementStopsParti
 	// the root tournament for the input-carrying epoch, then foreclose before
 	// that tournament reaches a winner.
 	if input.EpochIndex > 0 {
-		settleTournament(s.ctx, s.T(), r, s.ethClient, s.appName, 0)
+		finalizePrtEpoch(s.ctx, s.T(), r, s.ethClient, s.appName, 0)
 	}
 	tournament := waitForTournamentAndCommitment(s.ctx, s.T(), r, s.appName, input.EpochIndex)
 
@@ -277,8 +278,8 @@ func (s *ForeclosePrtSuite) TestForeclosePrtOutputExecutionAfterForeclosureIsRec
 	r.NoError(anvilSetBalance(s.ctx, appAddr, oneEtherWei),
 		"fund application contract")
 
-	inputIndex, _, err := sendInput(s.ctx, s.appName, "foreclose PRT output execution")
-	r.NoError(err, "send input")
+	inputIndex, _, _ := sendInputThroughRelay(
+		s.ctx, s.T(), common.HexToAddress(appAddr), "foreclose PRT output execution")
 	r.Equal(uint64(0), inputIndex)
 
 	processCtx, processCancel := context.WithTimeout(s.ctx, inputProcessingTimeout)
@@ -293,7 +294,7 @@ func (s *ForeclosePrtSuite) TestForeclosePrtOutputExecutionAfterForeclosureIsRec
 	voucherIdx := firstVoucherOutputIndex(s.T(), outputsResp.Data)
 
 	for epochIndex := uint64(0); epochIndex <= input.EpochIndex; epochIndex++ {
-		settleTournament(s.ctx, s.T(), r, s.ethClient, s.appName, epochIndex)
+		finalizePrtEpoch(s.ctx, s.T(), r, s.ethClient, s.appName, epochIndex)
 	}
 
 	claimCtx, claimCancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)
@@ -347,7 +348,7 @@ func (s *ForeclosePrtSuite) TestForeclosePrtReregisterReplay() {
 	r.Equal(model.InputCompletionStatus_Accepted, inputA.Status)
 
 	for epochIndex := uint64(0); epochIndex <= inputA.EpochIndex; epochIndex++ {
-		settleTournament(s.ctx, s.T(), r, s.ethClient, appAName, epochIndex)
+		finalizePrtEpoch(s.ctx, s.T(), r, s.ethClient, appAName, epochIndex)
 	}
 
 	claimCtx, claimCancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)

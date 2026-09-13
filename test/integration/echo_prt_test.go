@@ -70,10 +70,10 @@ func (s *EchoPrtSuite) TestEchoPrtLifecycle() {
 		AppName:         s.appName,
 		DappPath:        dappPath,
 		Payload:         "prt-hello",
-		ExtraDeployArgs: []string{"--prt"},
+		ExtraDeployArgs: []string{prtFlag},
 		PreClaimHook: func(ctx context.Context, t testing.TB, require *require.Assertions, appName string) {
-			settleTournament(ctx, t, require, ethClient, appName, 0)
-			settleTournament(ctx, t, require, ethClient, appName, 1)
+			finalizePrtEpoch(ctx, t, require, ethClient, appName, 0)
+			finalizePrtEpoch(ctx, t, require, ethClient, appName, 1)
 		},
 	})
 

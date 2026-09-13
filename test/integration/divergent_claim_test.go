@@ -7,8 +7,6 @@ package integration
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"regexp"
@@ -21,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -36,8 +35,8 @@ import (
 //	  2. Send inputs 0 and 1 in distinct epochs; wait for legitimate ACCEPT.
 //	  3. Stop the node so the attacker can race the pipeline deterministically.
 //	  4. Send input 2 and mine past the 3rd epoch's last block.
-//	  5. Attacker submits a divergent claim for epoch 2 (random outputsMerkleRoot,
-//	     reusing epoch 1's proof for valid-length argument bytes). The chain
+//	  5. Attacker submits a divergent claim for the third input epoch by
+//	     reusing the second input epoch's complete machine-validity proof. The chain
 //	     emits ClaimSubmitted + ClaimStaged with the divergent machine root.
 //	     acceptClaim is intentionally NOT called — this models the realistic
 //	     attacker who pushes a single divergent claim and disappears.
@@ -53,9 +52,9 @@ import (
 //	     so the claimer cannot submit anything; only the read-only scan
 //	     pipeline runs.
 //	  9. Re-register the same on-chain address as app B.
-//	  10. The reader-mode node replays inputs 0-2, finds epochs 0/1
-//	      legitimately accepted (reconciles), reaches CLAIM_COMPUTED for
-//	      epoch 2, scans the chain, finds the divergent claim, and marks B
+//	 10. The reader-mode node replays inputs 0-2, finds the first two input
+//	     epochs legitimately accepted (reconciles), reaches CLAIM_COMPUTED for
+//	     the third input epoch, scans the chain, finds the divergent claim, and marks B
 //	      DIVERGED. The point of this phase is to confirm that the
 //	      divergence-detection path is independent of the submission path —
 //	      a node with no key (or a paranoid operator who has disabled
@@ -112,11 +111,8 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	// divergence reasons — Authority's submit-stage-accept lifecycle means
 	// whichever scan (ClaimSubmitted or ClaimAccepted) lands first wins,
 	// and both are terminal. The claimer's tick wraps the transition error
-	// and re-logs it, so we allow-list that too. Stopping the node mid-
-	// tick (Phase 1.5 and Phase 2 transitions) cancels in-flight RPC
-	// queries, producing a handful of evmreader ERR lines that are benign
-	// shutdown noise. The rapid mining can race the EVM reader's block
-	// fetcher; tolerate transient BlockOutOfRangeError.
+	// and re-logs it, so we allow-list that too. Rapid mining can race the
+	// EVM reader's block fetcher; tolerate transient BlockOutOfRangeError.
 	s.SetExpectedLogs(s.T(),
 		ExpectedLog{
 			Pattern: regexp.MustCompile(
@@ -130,12 +126,6 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 				`Tick service=claimer.*authority_divergence_at_(submission|acceptance)`),
 			Level:  LevelError,
 			Reason: "claimer Tick wraps and re-logs the divergence-induced DIVERGED error",
-		},
-		ExpectedLog{
-			Pattern: regexp.MustCompile(`service=evm-reader.*context canceled`),
-			Level:   LevelError,
-			Reason: "benign shutdown noise from stopping the node mid-tick; " +
-				"retryablehttp wraps the cancellation as `Post \"<url>\": context canceled`",
 		},
 		ExpectedLog{
 			Pattern: regexp.MustCompile(`BlockOutOfRangeError`),
@@ -157,7 +147,7 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	const guardianIndex = 1
 	withdrawalConfigJSON, _ := withdrawalConfigForGuardian(s.T(), guardianIndex)
 
-	// ─── Phase 1: deploy and run epochs 0–1 to legitimate ACCEPT ────────
+	// ─── Phase 1: accept the first two input epochs ──────────────
 	s.T().Logf("--- Phase 1: deploy %s and accept two legitimate claims ---", appAName)
 
 	appAddrStr, consensusAddrStr, err := deployApplicationWithConsensus(s.ctx,
@@ -171,8 +161,8 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 		"fund application contract")
 
 	// Inputs 0 and 1 go through the normal flow so we can observe both the
-	// legitimate ClaimAccepted on chain AND grab a valid-length
-	// outputsMerkleProof from epoch 1 to reuse for the attack.
+	// legitimate ClaimAccepted on chain AND grab a valid machine-state proof
+	// from the second input epoch to reuse for the attack.
 	inputEpochs := make([]uint64, 0, 3) //nolint:mnd
 	for i := 0; i < 2; i++ {            //nolint:mnd
 		payload := fmt.Sprintf("divergent-input-%d", i)
@@ -187,6 +177,7 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 		r.Equal(model.InputCompletionStatus_Accepted, input.Status)
 		inputEpochs = append(inputEpochs, input.EpochIndex)
 
+		minePastEpochBoundary(s.ctx, s.T(), r, appAName, input.EpochIndex)
 		claimCtx, claimCancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)
 		_, err = waitForEpochStatus(claimCtx, s.T(), appAName, input.EpochIndex,
 			model.EpochStatus_ClaimAccepted)
@@ -194,20 +185,20 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 		r.NoError(err, "epoch %d → CLAIM_ACCEPTED", input.EpochIndex)
 		s.T().Logf("    input %d processed; epoch %d ACCEPTED", i, input.EpochIndex)
 
-		// Mine to the next epoch boundary so input i+1 lands in a distinct epoch.
-		r.NoError(anvilMine(s.ctx, 15), "mine to next epoch") //nolint:mnd
+		// Advance beyond this input epoch before the next input.
+		r.NoError(anvilMine(s.ctx, 15), "advance beyond current input epoch")
 	}
 
-	// Read epoch 1 to harvest a valid-length outputsMerkleProof — the
-	// IAuthority contract validates only the proof's length, not its
-	// semantic correctness, so we can splice it into the divergent payload.
-	epoch1, err := readEpoch(s.ctx, appAName, inputEpochs[1])
-	r.NoError(err, "read epoch 1")
-	r.NotEmpty(epoch1.TxBufferProof,
-		"epoch 1 must have an outputs merkle proof to reuse for the attack")
-	epochLen := epoch1.LastBlock - epoch1.FirstBlock + 1
-	s.T().Logf("    epoch length = %d blocks; epoch 1 proof = %d siblings",
-		epochLen, len(epoch1.TxBufferProof))
+	// Read the second input epoch to harvest a complete proof for a valid accepted machine
+	// state. The attacker reuses this stale proof for a later epoch. The proof
+	// remains valid for its machine root, but it does not describe the target epoch.
+	proofSourceEpoch, err := readEpoch(s.ctx, appAName, inputEpochs[1])
+	r.NoError(err, "read second input epoch")
+	r.True(proofSourceEpoch.HasCompleteStateProof(),
+		"second input epoch must have a complete machine-state proof to reuse for the attack")
+	epochLen := proofSourceEpoch.LastBlock - proofSourceEpoch.FirstBlock + 1
+	s.T().Logf("    epoch length = %d blocks; proof source has %d siblings per leaf",
+		epochLen, len(proofSourceEpoch.TxBufferProof))
 
 	// ─── Phase 1.5: stop the node so the attacker cannot lose the race ──
 	s.T().Log("--- Phase 1.5: stop node, then send input 2 and submit divergent claim ---")
@@ -220,14 +211,14 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	s.T().Logf("    input 2 sent at block %d", block2)
 
 	// Compute the epoch input 2 landed in from its block number relative
-	// to epoch 1. Guard against the (unexpected) case where mining timing
-	// drifts and input 2 falls inside epoch 1 — that would underflow the
+	// to the proof source epoch. Guard against the unexpected case where mining
+	// timing drifts and input 2 falls inside that epoch. That would underflow the
 	// uint64 subtraction and produce a nonsense target epoch.
-	r.Greater(block2, epoch1.LastBlock,
+	r.Greater(block2, proofSourceEpoch.LastBlock,
 		"input 2 must land past epoch %d's last block (%d); got block %d",
-		inputEpochs[1], epoch1.LastBlock, block2)
-	targetEpochIndex := inputEpochs[1] + ((block2 - epoch1.LastBlock - 1) / epochLen) + 1
-	targetEpochFirstBlock := epoch1.FirstBlock + (targetEpochIndex-inputEpochs[1])*epochLen
+		inputEpochs[1], proofSourceEpoch.LastBlock, block2)
+	targetEpochIndex := inputEpochs[1] + ((block2 - proofSourceEpoch.LastBlock - 1) / epochLen) + 1
+	targetEpochFirstBlock := proofSourceEpoch.FirstBlock + (targetEpochIndex-inputEpochs[1])*epochLen
 	targetEpochLastBlock := targetEpochFirstBlock + epochLen - 1
 	r.GreaterOrEqual(block2, targetEpochFirstBlock,
 		"input 2 block %d must be inside epoch %d's window [%d, %d]",
@@ -260,12 +251,11 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	authorityBinding, err := iauthority.NewIAuthority(consensusAddr, client)
 	r.NoError(err, "bind iauthority")
 
-	divergentOutputs := randomBytes32(s.T())
-	proof := merkleProofToBytes32(epoch1.TxBufferProof)
-	s.T().Logf("    attacker submitting divergent claim: lpbn=%d outputs=0x%x proof_siblings=%d",
-		targetEpochLastBlock, divergentOutputs, len(proof))
+	machineRoot, proof := authorityMachineValidityProof(s.T(), proofSourceEpoch)
+	s.T().Logf("    attacker submitting stale machine proof: lpbn=%d machine_root=%s proof_siblings=%d",
+		targetEpochLastBlock, machineRoot.Hex(), len(proof.TxBufferProof.Siblings))
 	submitTx, err := authorityBinding.SubmitClaim(attackerOpts, appAddr,
-		new(big.Int).SetUint64(targetEpochLastBlock), divergentOutputs, proof)
+		new(big.Int).SetUint64(targetEpochLastBlock), machineRoot, proof)
 	r.NoError(err, "attacker SubmitClaim")
 	submitReceipt, err := bind.WaitMined(s.ctx, client, submitTx)
 	r.NoError(err, "wait for divergent submitClaim tx to mine")
@@ -351,53 +341,26 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	s.T().Logf("=== Phase 2 complete: %s is DIVERGED in reader mode ===\n%s", appBName, statusB)
 }
 
-// deployApplicationWithConsensus wraps deployApplication so the test also
-// gets the on-chain Authority/IConsensus address — needed to bind the
-// IAuthority contract for the attacker's direct submitClaim call.
-func deployApplicationWithConsensus(
-	ctx context.Context,
-	appName, dappPath string,
-	extraArgs ...string,
-) (appAddr string, consensusAddr string, err error) {
-	args := []string{"deploy", "application", appName, dappPath, "--json"}
-	args = append(args, extraArgs...)
-	out, err := runCLI(ctx, args...)
-	if err != nil {
-		return "", "", fmt.Errorf("deploy: %w", err)
-	}
-	var parsed struct {
-		IApplicationAddress string `json:"iapplication_address"`
-		IConsensusAddress   string `json:"iconsensus_address"`
-	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
-		return "", "", fmt.Errorf("parse deploy output: %w", err)
-	}
-	if parsed.IApplicationAddress == "" || parsed.IConsensusAddress == "" {
-		return "", "", fmt.Errorf("deploy output missing addresses: %s", out)
-	}
-	return parsed.IApplicationAddress, parsed.IConsensusAddress, nil
-}
-
-// randomBytes32 returns 32 random bytes for use as a fake outputsMerkleRoot.
-// The hash is deliberately arbitrary — the IAuthority contract performs no
-// semantic check on it, so any 32-byte value is accepted, and the resulting
-// machineMerkleRoot derived from it will not match the node's legitimate
-// computation.
-func randomBytes32(t testing.TB) [32]byte {
+func authorityMachineValidityProof(
+	t testing.TB,
+	epoch *model.Epoch,
+) (common.Hash, iauthority.MachineValidityProof) {
 	t.Helper()
-	var b [32]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		t.Fatalf("rand: %v", err)
-	}
-	return b
-}
 
-// merkleProofToBytes32 reshapes []common.Hash from the JSON-RPC API into the
-// [][32]byte the abigen IAuthority.SubmitClaim binding expects.
-func merkleProofToBytes32(in []common.Hash) [][32]byte {
-	out := make([][32]byte, len(in))
-	for i, h := range in {
-		out[i] = h
+	stateProof, err := epoch.StateProof()
+	require.NoError(t, err, "epoch %d state proof", epoch.Index)
+	return stateProof.MachineHash, iauthority.MachineValidityProof{
+		IflagsYProof: iauthority.LeafProof{
+			DataBlock: stateProof.IflagsYDataBlock,
+			Siblings:  stateProof.IflagsYProof,
+		},
+		HtifTohostProof: iauthority.LeafProof{
+			DataBlock: stateProof.HtifTohostDataBlock,
+			Siblings:  stateProof.HtifTohostProof,
+		},
+		TxBufferProof: iauthority.LeafProof{
+			DataBlock: stateProof.TxBufferDataBlock,
+			Siblings:  stateProof.TxBufferProof,
+		},
 	}
-	return out
 }

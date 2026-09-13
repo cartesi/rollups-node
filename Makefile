@@ -615,11 +615,11 @@ check-license: ## Verify license headers on Go source files
 # dependency for the check to build on the CI setup runner.
 INTEGRATION_SHARDS := basic quorum prt replay restart withdrawal awskms
 
-INTEGRATION_SHARD_basic      := ^Test(EchoAuthority|RejectException|TerminalMachineStates|MultiApp|EchoAuthorityStaging)$$
+INTEGRATION_SHARD_basic      := ^Test(EchoAuthority|RejectException|TerminalMachineStates|MultiApp|EchoAuthorityStaging|IntegrationCLI|IntegrationLogScanner)$$
 INTEGRATION_SHARD_quorum     := ^Test(EchoQuorum|SameBlockInputs)$$
 INTEGRATION_SHARD_prt        := ^Test(EchoPrt|RejectExceptionPrt|ForeclosePrt)$$
 INTEGRATION_SHARD_replay     := ^Test(Foreclose|ForecloseReplay|DivergentClaim)$$
-INTEGRATION_SHARD_restart    := ^Test(Restart|SnapshotPolicy)$$
+INTEGRATION_SHARD_restart    := ^Test(Restart|SnapshotPolicy|NodeSubprocess)$$
 INTEGRATION_SHARD_withdrawal := ^TestWithdrawalLifecycle$$
 INTEGRATION_SHARD_awskms     := ^TestLocalStackAWSIntegration$$
 
@@ -765,7 +765,7 @@ _local-topology-%:
 		if [ -n "$(filter awskms,$(SHARD))" ]; then \
 			if [ -z "$$LOCALSTACK_KMS_ENDPOINT" ]; then \
 				echo "ERROR: LOCALSTACK_KMS_ENDPOINT is required when SHARD includes awskms." >&2; \
-				echo "Run 'make start-awslocalstack' and export the variables it prints." >&2; \
+				echo "Run 'make start-awslocalstack', then eval \"\$$(make env-awslocalstack)\"." >&2; \
 				exit 1; \
 			fi; \
 			export LOCALSTACK_KMS_REQUIRED=true; \

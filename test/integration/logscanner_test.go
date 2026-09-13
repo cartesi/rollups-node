@@ -70,6 +70,15 @@ type ExpectedLog struct {
 	Required bool   // if true, absence of a matching line fails the test
 }
 
+// Opt in only for tests that mine blocks in bulk. Anvil can reject historical
+// reads while these tests advance the chain. Keep the state and receipt checks:
+// allowing this log does not prove that the node recovered from the read error.
+var anvilBlockOutOfRangeAllowlist = ExpectedLog{
+	Pattern: regexp.MustCompile(`BlockOutOfRangeError: block height is [0-9]+ but requested was [0-9]+`),
+	Level:   LevelError,
+	Reason:  "transient Anvil historical-read error during test-controlled block mining",
+}
+
 // LogChecker is an embeddable helper for test suites that captures a time
 // window and an expectation list, then scans node logs per test in
 // TearDownTest.

@@ -9,8 +9,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"testing"
 	"time"
@@ -25,7 +27,13 @@ import (
 
 // maxBlocksToMine is the sanity cap for mineForTournamentTimeout to prevent
 // hanging if the tournament contract reports an unreasonably large allowance.
-const maxBlocksToMine = 10_000
+const (
+	maxBlocksToMine                  = 10_000
+	bondDispositionTournamentRunning = 0
+	bondDispositionNoWinner          = 1
+	bondDispositionRecoverable       = 2
+	bondDispositionRecovered         = 3
+)
 
 // Anvil devnet RPC helpers.
 
@@ -115,9 +123,9 @@ func mineForTournamentTimeout(
 		return 0, fmt.Errorf("bind tournament: %w", err)
 	}
 
-	args, err := tournament.TournamentArguments(&bind.CallOpts{Context: ctx})
+	descriptor, err := tournament.TournamentDescriptor(&bind.CallOpts{Context: ctx})
 	if err != nil {
-		return 0, fmt.Errorf("tournament arguments: %w", err)
+		return 0, fmt.Errorf("tournament descriptor: %w", err)
 	}
 
 	currentBlock, err := client.BlockNumber(ctx)
@@ -125,10 +133,10 @@ func mineForTournamentTimeout(
 		return 0, fmt.Errorf("block number: %w", err)
 	}
 
-	finishBlock := args.StartInstant + args.Allowance
-	if finishBlock < args.StartInstant { // uint64 overflow
+	finishBlock := descriptor.StartInstant + descriptor.Allowance
+	if finishBlock < descriptor.StartInstant { // uint64 overflow
 		return 0, fmt.Errorf("tournament timeout overflows: start=%d allowance=%d",
-			args.StartInstant, args.Allowance)
+			descriptor.StartInstant, descriptor.Allowance)
 	}
 	if currentBlock >= finishBlock {
 		return 0, nil // Already past the timeout.
@@ -205,19 +213,20 @@ func waitForTournamentAndCommitment(
 }
 
 // waitForTournamentWinner polls until the root tournament for the given epoch
-// has a winner commitment.
+// has a winner commitment and the contract's finish block is persisted.
 func waitForTournamentWinner(
 	ctx context.Context,
 	t testing.TB,
 	require *require.Assertions,
+	client *ethclient.Client,
 	appName string,
 	epochIndex uint64,
 ) {
 	t.Helper()
 	tctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
 
 	var lastErr error
+	var winner *model.Tournament
 	err := pollUntil(tctx, 5*time.Second, func() (bool, error) {
 		resp, err := readTournaments(tctx, appName)
 		if err != nil {
@@ -229,17 +238,35 @@ func waitForTournamentWinner(
 			return false, fmt.Errorf("poll tournament winner: %w", err)
 		}
 		tournament := findRootTournament(resp.Data, epochIndex)
-		return tournament != nil && tournament.WinnerCommitment != nil, nil
+		if tournament == nil || tournament.Snapshot.WinnerCommitment == nil || tournament.Snapshot.FinishedAtBlock == 0 {
+			return false, nil
+		}
+		winner = tournament
+		return true, nil
 	})
 	if err != nil && lastErr != nil {
 		err = fmt.Errorf("%w (last poll error: %v)", err, lastErr)
 	}
+	cancel()
 	require.NoError(err, "wait for epoch %d tournament winner", epochIndex)
+
+	tournament, err := itournament.NewITournament(winner.Address, client)
+	require.NoError(err, "bind epoch %d root tournament", epochIndex)
+	descriptorCtx, descriptorCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer descriptorCancel()
+	descriptor, err := tournament.TournamentDescriptor(&bind.CallOpts{Context: descriptorCtx})
+	require.NoError(err, "read epoch %d root tournament descriptor", epochIndex)
+	expectedFinishedAt := descriptor.StartInstant + descriptor.Allowance
+	require.GreaterOrEqual(expectedFinishedAt, descriptor.StartInstant,
+		"epoch %d root tournament finish block must not overflow", epochIndex)
+	require.Equal(expectedFinishedAt, winner.Snapshot.FinishedAtBlock,
+		"epoch %d must persist the exact on-chain finish block", epochIndex)
 }
 
-// settleTournament runs the full tournament cycle for a given epoch:
-// wait for tournament+commitment, mine past the timeout, wait for winner.
-func settleTournament(
+// finalizePrtEpoch runs the uncontested PRT lifecycle for one epoch. It waits
+// for the node commitment, finishes the root tournament, waits for the staged
+// result to be accepted, and confirms recovery of the node-owned root bond.
+func finalizePrtEpoch(
 	ctx context.Context,
 	t testing.TB,
 	require *require.Assertions,
@@ -248,7 +275,7 @@ func settleTournament(
 	epochIndex uint64,
 ) {
 	t.Helper()
-	defer timed(t, fmt.Sprintf("settle tournament epoch %d", epochIndex))()
+	defer timed(t, fmt.Sprintf("finalize PRT epoch %d", epochIndex))()
 
 	t.Logf("Waiting for PRT to create a root tournament and join with a commitment for epoch %d...",
 		epochIndex)
@@ -262,10 +289,80 @@ func settleTournament(
 	require.NoError(err, "mine for epoch %d tournament timeout", epochIndex)
 	t.Logf("    mined %d blocks to reach timeout", blocksMined)
 
-	t.Logf("Waiting for the PRT service to settle epoch %d (uncontested single-commitment win)...",
+	t.Logf("Waiting for the PRT service to observe the epoch %d uncontested winner...",
 		epochIndex)
-	waitForTournamentWinner(ctx, t, require, appName, epochIndex)
-	t.Logf("    epoch %d tournament settled — winner declared", epochIndex)
+	waitForTournamentWinner(ctx, t, require, client, appName, epochIndex)
+	t.Logf("    epoch %d tournament finished — winner declared", epochIndex)
+
+	waitForPrtEpochAcceptedAndBondRecovered(ctx, t, require, client, appName, epochIndex, tournament.Address)
+}
+
+// waitForPrtEpochAcceptedAndBondRecovered verifies the new Dave settlement
+// boundary. A configured-block observation can skip the entire stage interval,
+// so acceptance does not require a locally observed CLAIM_STAGED transition.
+// The old root tournament bond must reach RECOVERED on chain.
+func waitForPrtEpochAcceptedAndBondRecovered(
+	ctx context.Context,
+	t testing.TB,
+	require *require.Assertions,
+	client *ethclient.Client,
+	appName string,
+	epochIndex uint64,
+	tournamentAddress common.Address,
+) *model.Epoch {
+	t.Helper()
+
+	acceptedCtx, acceptedCancel := context.WithTimeout(ctx, claimAcceptedTimeout)
+	accepted, err := waitForEpochStatus(
+		acceptedCtx, t, appName, epochIndex, model.EpochStatus_ClaimAccepted)
+	acceptedCancel()
+	require.NoError(err, "wait for PRT epoch %d acceptance", epochIndex)
+	require.NotNil(accepted.ClaimTransactionHash,
+		"accepted PRT epoch %d must retain its EpochSealed transaction", epochIndex)
+
+	recoveryCtx, recoveryCancel := context.WithTimeout(ctx, claimAcceptedTimeout)
+	defer recoveryCancel()
+	waitForRootBondRecovered(recoveryCtx, t, require, client, tournamentAddress)
+	t.Logf("    epoch %d accepted and root bond recovered", epochIndex)
+	return accepted
+}
+
+func waitForRootBondRecovered(
+	ctx context.Context,
+	t testing.TB,
+	require *require.Assertions,
+	client *ethclient.Client,
+	tournamentAddress common.Address,
+) {
+	t.Helper()
+	tournament, err := itournament.NewITournament(tournamentAddress, client)
+	require.NoError(err, "bind root tournament %s", tournamentAddress)
+
+	var recoveredClaimer common.Address
+	var recoveredPayment *big.Int
+	err = pollUntil(ctx, 2*time.Second, func() (bool, error) {
+		recovery, err := tournament.BondRecovery(&bind.CallOpts{Context: ctx})
+		if err != nil {
+			return false, fmt.Errorf("read root bond recovery: %w", err)
+		}
+		switch recovery.Disposition {
+		case bondDispositionRecovered:
+			recoveredClaimer = recovery.Claimer
+			recoveredPayment = recovery.Payment
+			return true, nil
+		case bondDispositionNoWinner:
+			return false, errors.New("root tournament finished without a recoverable winner")
+		case bondDispositionTournamentRunning, bondDispositionRecoverable:
+			return false, nil
+		default:
+			return false, fmt.Errorf("root tournament returned unknown bond disposition %d", recovery.Disposition)
+		}
+	})
+	require.NoError(err, "wait for root bond recovery at %s", tournamentAddress)
+	require.Equal(common.Address{}, recoveredClaimer,
+		"recovered bond must clear the claimer")
+	require.NotNil(recoveredPayment, "recovered bond must return a payment value")
+	require.Zero(recoveredPayment.Sign(), "recovered bond must clear the pending payment")
 }
 
 // findRootTournament returns the root tournament for the given epoch index,
