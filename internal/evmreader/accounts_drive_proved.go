@@ -41,7 +41,7 @@ func (r *Service) checkForDriveProved(
 	ctx context.Context,
 	app appContracts,
 	mostRecentBlockNumber uint64,
-) {
+) bool {
 	startBlock := app.application.LastAccountsDriveProvedCheckBlock + 1
 	if floor := app.application.ForecloseBlock; startBlock < floor {
 		startBlock = floor
@@ -49,7 +49,7 @@ func (r *Service) checkForDriveProved(
 	if startBlock > mostRecentBlockNumber {
 		// Cursor already past head (rare; e.g. defaultBlock policy drift).
 		// Nothing to scan; do not regress the cursor.
-		return
+		return true
 	}
 
 	proved, _, err := app.applicationContract.GetAccountsDriveMerkleRoot(&bind.CallOpts{
@@ -58,19 +58,21 @@ func (r *Service) checkForDriveProved(
 	})
 	if err != nil {
 		if abortPostForeclosureLoop(r, err, "getAccountsDriveMerkleRoot") {
-			return
+			return false
 		}
 		r.Logger.Error("Failed to query accounts drive proved state",
 			"application", app.application.Name,
 			"address", app.application.IApplicationAddress,
 			"block", mostRecentBlockNumber,
 			"error", err)
-		return
+		return false
 	}
 	if !proved {
-		r.advanceLastAccountsDriveProvedCheckBlock(ctx, app.application.ID, mostRecentBlockNumber)
+		if !r.advanceLastAccountsDriveProvedCheckBlock(ctx, app.application.ID, mostRecentBlockNumber) {
+			return false
+		}
 		app.application.LastAccountsDriveProvedCheckBlock = mostRecentBlockNumber
-		return
+		return true
 	}
 
 	events, err := app.applicationContract.RetrieveAccountsDriveProvedEvents(&bind.FilterOpts{
@@ -80,7 +82,7 @@ func (r *Service) checkForDriveProved(
 	})
 	if err != nil {
 		if abortPostForeclosureLoop(r, err, "retrieveAccountsDriveProvedEvents") {
-			return
+			return false
 		}
 		r.Logger.Error("Failed to scan accounts-drive-proved events",
 			"application", app.application.Name,
@@ -88,7 +90,7 @@ func (r *Service) checkForDriveProved(
 			"start_block", startBlock,
 			"end_block", mostRecentBlockNumber,
 			"error", err)
-		return
+		return false
 	}
 	if len(events) == 0 {
 		// proveAccountsDriveMerkleRoot is onlyForeclosed (Application.sol), so a
@@ -105,16 +107,17 @@ func (r *Service) checkForDriveProved(
 			"address", app.application.IApplicationAddress,
 			"start_block", startBlock,
 			"end_block", mostRecentBlockNumber)
-		return
+		return false
 	}
 
 	// The contract caps lifetime emissions at one; defensively take the first
 	// if more than one slipped through.
 	ev := events[0]
 	if err := r.persistDriveProved(ctx, app, ev, mostRecentBlockNumber); err != nil {
-		return
+		return false
 	}
 	app.application.LastAccountsDriveProvedCheckBlock = mostRecentBlockNumber
+	return true
 }
 
 // persistDriveProved writes the (block, txHash, root) tuple from the on-chain
@@ -173,14 +176,17 @@ func (r *Service) persistDriveProved(
 }
 
 // advanceLastAccountsDriveProvedCheckBlock persists the new cursor value
-// and logs (does not surface) any DB error. A failed write is non-fatal:
+// and reports whether it succeeded. A failed write is non-fatal:
 // the next tick will re-scan the same window, paying the cost but producing
 // correct behavior.
-func (r *Service) advanceLastAccountsDriveProvedCheckBlock(ctx context.Context, appID int64, head uint64) {
+func (r *Service) advanceLastAccountsDriveProvedCheckBlock(ctx context.Context, appID int64, head uint64) bool {
+	success := true
 	if err := r.repository.UpdateApplicationLastAccountsDriveProvedCheckBlock(ctx, appID, head); err != nil {
+		success = false
 		r.Logger.Warn("Failed to advance last_accounts_drive_proved_check_block",
 			"application_id", appID,
 			"head", head,
 			"error", err)
 	}
+	return success
 }

@@ -76,23 +76,27 @@ func (r *Service) scanIConsensusInputs(
 	ctx context.Context,
 	applications []appContracts,
 	mostRecentBlockNumber uint64,
-) {
+) bool {
+	success := true
 	if !r.inputReaderEnabled {
-		return
+		return success
 	}
 
 	r.Logger.Debug("Checking for new inputs")
 
-	for _, unit := range r.buildIConsensusInputScanUnits(ctx, applications, mostRecentBlockNumber) {
-		r.scanIConsensusInputUnit(ctx, unit)
+	units, success := r.buildIConsensusInputScanUnits(ctx, applications, mostRecentBlockNumber)
+	for _, unit := range units {
+		success = r.scanIConsensusInputUnit(ctx, unit) && success
 	}
+	return success
 }
 
 func (r *Service) buildIConsensusInputScanUnits(
 	ctx context.Context,
 	applications []appContracts,
 	endBlock uint64,
-) []iConsensusInputScanUnit {
+) ([]iConsensusInputScanUnit, bool) {
+	success := true
 	appsByInputBox := map[common.Address][]appContracts{}
 	for _, app := range applications {
 		if !app.application.HasDataAvailabilitySelector(DataAvailability_InputBox) {
@@ -120,6 +124,7 @@ func (r *Service) buildIConsensusInputScanUnits(
 					foreclosureBoundedEndBlock(app.application, endBlock),
 				)
 				if err != nil {
+					success = false
 					r.Logger.Error("Failed to initialize application input sync",
 						"application", app.application.Name,
 						"most_recent_block", endBlock,
@@ -163,7 +168,7 @@ func (r *Service) buildIConsensusInputScanUnits(
 			})
 		}
 	}
-	return units
+	return units, success
 }
 
 func foreclosureBoundedEndBlock(app *Application, endBlock uint64) uint64 {
@@ -176,7 +181,8 @@ func foreclosureBoundedEndBlock(app *Application, endBlock uint64) uint64 {
 func (r *Service) scanIConsensusInputUnit(
 	ctx context.Context,
 	unit iConsensusInputScanUnit,
-) {
+) bool {
+	success := true
 	appAddresses := appsToAddresses(unit.apps)
 
 	if unit.endBlock > unit.lastInputCheckBlock {
@@ -192,6 +198,7 @@ func (r *Service) scanIConsensusInputUnit(
 			unit.apps,
 		)
 		if err != nil {
+			success = false
 			r.Logger.Error("Error reading inputs",
 				"apps", appAddresses,
 				"last_processed_block", unit.lastInputCheckBlock,
@@ -199,7 +206,7 @@ func (r *Service) scanIConsensusInputUnit(
 				"error", err,
 			)
 		}
-		return
+		return success
 	}
 
 	if unit.endBlock < unit.lastInputCheckBlock {
@@ -209,7 +216,7 @@ func (r *Service) scanIConsensusInputUnit(
 			"last_processed_block", unit.lastInputCheckBlock,
 			"most_recent_block", unit.endBlock,
 		)
-		return
+		return success
 	}
 
 	r.Logger.Debug("Input search skipped: already checked the most recent block",
@@ -217,6 +224,7 @@ func (r *Service) scanIConsensusInputUnit(
 		"last_processed_block", unit.lastInputCheckBlock,
 		"most_recent_block", unit.endBlock,
 	)
+	return success
 }
 
 // ErrInputForNonOpenEpoch indicates that an input was received for an epoch
@@ -300,6 +308,7 @@ func (r *Service) readAndStoreInputs(
 	mostRecentBlockNumber uint64,
 	apps []appContracts,
 ) error {
+	var scanErr error
 
 	if len(apps) == 0 {
 		r.Logger.Warn("No valid running applications")
@@ -316,6 +325,9 @@ func (r *Service) readAndStoreInputs(
 			err)
 	}
 
+	if len(appInputsMap) != len(apps) {
+		scanErr = errScanIncomplete
+	}
 	addrToApp := mapAddressToApp(apps)
 
 	// Index Inputs into epochs and handle epoch finalization
@@ -325,6 +337,7 @@ func (r *Service) readAndStoreInputs(
 		if !exists {
 			r.Logger.Error("Application address on input not found",
 				"address", address)
+			scanErr = errScanIncomplete
 			continue
 		}
 
@@ -336,6 +349,7 @@ func (r *Service) readAndStoreInputs(
 			// On DB failure the app reappears as Enabled next tick, retrying this path.
 			_ = r.setApplicationCorrupted(ctx, app.application,
 				"Application has epoch length of zero")
+			scanErr = errScanIncomplete
 			continue
 		}
 
@@ -358,6 +372,7 @@ func (r *Service) readAndStoreInputs(
 					"error", err,
 				)
 			}
+			scanErr = errScanIncomplete
 			continue
 		}
 
@@ -409,6 +424,7 @@ func (r *Service) readAndStoreInputs(
 					_ = r.setApplicationCorrupted(ctx, app.application,
 						"stored input L1 log identity conflicts with rescanned chain data"+
 							" (possible reorg past the input cursor); operator reset required. %v", err)
+					scanErr = errScanIncomplete
 					continue
 				}
 				r.Logger.Error("Error storing inputs and epochs",
@@ -416,6 +432,7 @@ func (r *Service) readAndStoreInputs(
 					"address", address,
 					"error", err,
 				)
+				scanErr = errScanIncomplete
 				continue
 			}
 			r.Logger.Debug("Inputs and epochs stored successfully",
@@ -469,8 +486,7 @@ func (r *Service) readAndStoreInputs(
 					"error", err,
 				)
 			}
-			// We don't return an error here as we've already processed the inputs
-			// and this is just an update to the last check block
+			scanErr = errScanIncomplete
 		} else {
 			r.Logger.Debug("Updated LastInputCheckBlock for applications without inputs",
 				"app_ids", appsToUpdate,
@@ -479,7 +495,7 @@ func (r *Service) readAndStoreInputs(
 		}
 	}
 
-	return nil
+	return scanErr
 }
 
 // readInputsFromBlockchain fetches inputs for each application independently.

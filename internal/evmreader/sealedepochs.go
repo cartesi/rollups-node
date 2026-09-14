@@ -86,9 +86,10 @@ func (r *Service) scanDaveConsensusEpochsAndInputs(
 	ctx context.Context,
 	applications []appContracts,
 	mostRecentBlockNumber uint64,
-) {
+) bool {
+	success := true
 	if !r.inputReaderEnabled {
-		return
+		return success
 	}
 
 	r.Logger.Debug("Checking for new epochs and inputs", "apps", applications)
@@ -99,6 +100,7 @@ func (r *Service) scanDaveConsensusEpochsAndInputs(
 			// Alpha.6 permits data-availability encodings that this node does not
 			// support. A missing adapter is therefore a capability mismatch, not
 			// evidence that the application's persisted state is corrupted.
+			success = false
 			r.Logger.Error("Cannot scan DaveConsensus epochs: configured input source is unsupported",
 				"application", app.application.Name,
 				"address", app.application.IApplicationAddress,
@@ -115,8 +117,9 @@ func (r *Service) scanDaveConsensusEpochsAndInputs(
 		err := r.processApplicationSealedEpochs(ctx, app, observationEndBlock)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				return // shutting down
+				return false // shutting down
 			}
+			success = false
 			r.Logger.Error("Error processing application sealed epochs",
 				"application", app.application.Name,
 				"consensus_address", app.application.IConsensusAddress,
@@ -130,8 +133,9 @@ func (r *Service) scanDaveConsensusEpochsAndInputs(
 		err = r.processApplicationOpenEpoch(ctx, app, observationEndBlock)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				return // shutting down
+				return false // shutting down
 			}
+			success = false
 			r.Logger.Error("Error processing application open epoch",
 				"application", app.application.Name,
 				"consensus_address", app.application.IConsensusAddress,
@@ -139,6 +143,7 @@ func (r *Service) scanDaveConsensusEpochsAndInputs(
 			continue
 		}
 	}
+	return success
 }
 
 func (r *Service) processApplicationSealedEpochs(

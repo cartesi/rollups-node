@@ -666,7 +666,7 @@ type EvmreaderConfig struct {
 	// not ready. Zero automatically uses the maximum of three polling intervals, the HTTP request timeout
 	// times (1 + maximum HTTP retries), and one second. Positive values override this automatic budget;
 	// negative values are invalid. A scan refreshes readiness when it finishes, but can become stale while
-	// still running. This measures completed polling cycles, not successful ingestion by every application.
+	// still running. Readiness also fails after three consecutive scan cycles with errors and recovers after a clean cycle.
 	EvmReaderReadyMaxStaleness Duration `mapstructure:"CARTESI_EVM_READER_READY_MAX_STALENESS"`
 
 	// How many seconds the node expects services take initializing before aborting.
@@ -1041,7 +1041,7 @@ type NodeConfig struct {
 	// not ready. Zero automatically uses the maximum of three polling intervals, the HTTP request timeout
 	// times (1 + maximum HTTP retries), and one second. Positive values override this automatic budget;
 	// negative values are invalid. A scan refreshes readiness when it finishes, but can become stale while
-	// still running. This measures completed polling cycles, not successful ingestion by every application.
+	// still running. Readiness also fails after three consecutive scan cycles with errors and recovers after a clean cycle.
 	EvmReaderReadyMaxStaleness Duration `mapstructure:"CARTESI_EVM_READER_READY_MAX_STALENESS"`
 
 	// How many seconds the node expects services take initializing before aborting.

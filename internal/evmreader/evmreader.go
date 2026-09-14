@@ -117,7 +117,15 @@ func (r *Service) Tick(ctx context.Context) (bool, error) {
 
 	// Scans run under the service context: cancellable on shutdown, free to take
 	// as long as catch-up needs. Per-request bounds live on the HTTP transport.
-	r.processBlockHead(ctx, blockNumber, r.resolver)
+	scanOK := r.processBlockHead(ctx, blockNumber, r.resolver)
+	if ctx.Err() != nil {
+		return false, nil
+	}
+	if scanOK {
+		r.consecutiveScanFailures.Store(0)
+	} else if r.consecutiveScanFailures.Load() < maxConsecutiveScanFailures {
+		r.consecutiveScanFailures.Add(1)
+	}
 
 	now := time.Now()
 	r.lastSuccessfulPoll.Store(&now)
@@ -127,19 +135,25 @@ func (r *Service) Tick(ctx context.Context) (bool, error) {
 
 func (r *Service) Ready() bool {
 	lastPoll := r.lastSuccessfulPoll.Load()
-	return lastPoll != nil && !lastPoll.IsZero() && time.Since(*lastPoll) < r.readyMaxStaleness
+	return r.consecutiveScanFailures.Load() < maxConsecutiveScanFailures &&
+		lastPoll != nil && !lastPoll.IsZero() && time.Since(*lastPoll) < r.readyMaxStaleness
 }
+
+// A few failed cycles tolerate transient errors without hiding persistent stalls.
+const maxConsecutiveScanFailures = 3
+
+var errScanIncomplete = errors.New("one or more applications failed to scan or persist progress")
 
 func (r *Service) processBlockHead(
 	ctx context.Context,
 	blockNumber uint64,
 	resolver *applicationAdapterResolver,
-) {
+) bool {
 	r.Logger.Debug("Retrieving enabled applications")
 	observableApps, _, err := listEnabledApplications(ctx, r.repository)
 	if err != nil {
 		r.Logger.Error("Error retrieving L1-observable applications", "error", err)
-		return
+		return false
 	}
 
 	if len(observableApps) == 0 {
@@ -147,7 +161,7 @@ func (r *Service) processBlockHead(
 			r.Logger.Info("No registered applications enabled for L1 observation")
 		}
 		r.hasEnabledApps = false
-		return
+		return true
 	}
 	if !r.hasEnabledApps {
 		r.Logger.Info("Found applications enabled for L1 observation")
@@ -157,29 +171,33 @@ func (r *Service) processBlockHead(
 	apps := resolver.buildAppContracts(observableApps)
 	if len(apps) == 0 {
 		r.Logger.Info("No correctly configured applications running")
-		return
+		return false
 	}
 
-	r.runBlockScanners(ctx, apps, blockNumber)
+	return r.runBlockScanners(ctx, apps, blockNumber) && len(apps) == len(observableApps)
 }
 
+// runBlockScanners reports whether all scheduled observation work completed without
+// errors. An idle scan is healthy. Always run the remaining scanners after a
+// failure so one application's stall does not prevent progress elsewhere.
 func (r *Service) runBlockScanners(
 	ctx context.Context,
 	apps []appContracts,
 	blockNumber uint64,
-) {
+) bool {
 	// Detect foreclosure first so later scanners use the marker observed in this same tick.
-	r.checkForForeclosure(ctx, apps, blockNumber)
+	success := r.checkForForeclosure(ctx, apps, blockNumber)
 
 	plan := buildBlockScanPlan(apps)
 
-	r.scanDaveConsensusEpochsAndInputs(ctx, plan.daveEpochTargets, blockNumber)
-	r.scanIConsensusInputs(ctx, plan.iConsensusInputTargets, blockNumber)
+	success = r.scanDaveConsensusEpochsAndInputs(ctx, plan.daveEpochTargets, blockNumber) && success
+	success = r.scanIConsensusInputs(ctx, plan.iConsensusInputTargets, blockNumber) && success
 
-	r.checkForOutputExecution(ctx, plan.outputTargets, blockNumber)
+	success = r.checkForOutputExecution(ctx, plan.outputTargets, blockNumber) && success
 
 	// Post-foreclosure observation dispatches to drive-prove discovery or withdrawal indexing.
-	r.checkPostForeclosure(ctx, plan.postForeclosureTargets, blockNumber)
+	success = r.checkPostForeclosure(ctx, plan.postForeclosureTargets, blockNumber) && success
+	return success
 }
 
 // fetchMostRecentHeader fetches the most recent header up till the

@@ -31,17 +31,18 @@ type CreateInfo struct {
 type Service struct {
 	service.TickServiceTemplate
 
-	client             EthClientInterface
-	adapterFactory     AdapterFactory
-	resolver           *applicationAdapterResolver
-	repository         EvmReaderRepository
-	chainID            uint64
-	defaultBlock       DefaultBlock
-	hasEnabledApps     bool
-	inputReaderEnabled bool
-	lastBlockNumber    atomic.Uint64
-	lastSuccessfulPoll atomic.Pointer[time.Time]
-	readyMaxStaleness  time.Duration
+	client                  EthClientInterface
+	adapterFactory          AdapterFactory
+	resolver                *applicationAdapterResolver
+	repository              EvmReaderRepository
+	chainID                 uint64
+	defaultBlock            DefaultBlock
+	hasEnabledApps          bool
+	inputReaderEnabled      bool
+	lastBlockNumber         atomic.Uint64
+	lastSuccessfulPoll      atomic.Pointer[time.Time]
+	consecutiveScanFailures atomic.Uint32
+	readyMaxStaleness       time.Duration
 }
 
 const EvmReaderConfigKey = "evm-reader"

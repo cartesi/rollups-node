@@ -33,7 +33,8 @@ func (r *Service) checkForForeclosure(
 	ctx context.Context,
 	apps []appContracts,
 	mostRecentBlockNumber uint64,
-) {
+) bool {
+	success := true
 	for _, app := range apps {
 		if app.application.ForecloseBlock != 0 {
 			continue
@@ -44,7 +45,7 @@ func (r *Service) checkForForeclosure(
 			deploymentBlock, err = r.foreclosureSearchFloor(ctx, &app, mostRecentBlockNumber)
 			if err != nil {
 				if abortForeclosureLoop(r, err, "getDeploymentBlock") {
-					return
+					return false
 				}
 				if errors.Is(err, errContractNotDeployedAtBlock) {
 					r.Logger.Debug("Skipping foreclosure check before application deployment",
@@ -54,6 +55,7 @@ func (r *Service) checkForForeclosure(
 					)
 					continue
 				}
+				success = false
 				r.Logger.Error("Failed to compute Foreclosure search start block",
 					"application", app.application.Name,
 					"address", app.application.IApplicationAddress,
@@ -87,8 +89,9 @@ func (r *Service) checkForForeclosure(
 		)
 		if err != nil {
 			if abortForeclosureLoop(r, err, "isForeclosed") {
-				return
+				return false
 			}
+			success = false
 			r.Logger.Error("Failed to query isForeclosed",
 				"application", app.application.Name,
 				"address", app.application.IApplicationAddress,
@@ -97,7 +100,10 @@ func (r *Service) checkForForeclosure(
 		}
 		if !foreclosed {
 			if app.application.LastForecloseCheckBlock < mostRecentBlockNumber {
-				r.advanceLastForecloseCheckBlock(ctx, app.application.ID, mostRecentBlockNumber)
+				if !r.advanceLastForecloseCheckBlock(ctx, app.application.ID, mostRecentBlockNumber) {
+					success = false
+					continue
+				}
 				app.application.LastForecloseCheckBlock = mostRecentBlockNumber
 			}
 			continue
@@ -129,8 +135,9 @@ func (r *Service) checkForForeclosure(
 		)
 		if err != nil {
 			if abortForeclosureLoop(r, err, "retrieveForeclosureEvents") {
-				return
+				return false
 			}
+			success = false
 			r.Logger.Error("Failed to fetch Foreclosure events",
 				"application", app.application.Name,
 				"address", app.application.IApplicationAddress,
@@ -138,6 +145,7 @@ func (r *Service) checkForForeclosure(
 			continue
 		}
 		if len(events) == 0 {
+			success = false
 			r.Logger.Warn(
 				"isForeclosed() is true but no Foreclosure event found in search window — will retry same window next tick",
 				"application", app.application.Name,
@@ -169,6 +177,7 @@ func (r *Service) checkForForeclosure(
 			continue
 		}
 		if err != nil {
+			success = false
 			r.Logger.Error("Failed to record foreclosure",
 				"application", app.application.Name,
 				"address", app.application.IApplicationAddress,
@@ -191,18 +200,22 @@ func (r *Service) checkForForeclosure(
 			"foreclose_block", block,
 			"foreclose_transaction", txHash)
 	}
+	return success
 }
 
-// advanceLastForecloseCheckBlock persists the new value and logs (does not
-// surface) any DB error. A failed write is non-fatal: the next tick will
+// advanceLastForecloseCheckBlock persists the new value and reports success.
+// A failed write is non-fatal: the next tick will
 // re-scan the same window, paying the cost but producing correct behavior.
-func (r *Service) advanceLastForecloseCheckBlock(ctx context.Context, appID int64, head uint64) {
+func (r *Service) advanceLastForecloseCheckBlock(ctx context.Context, appID int64, head uint64) bool {
+	success := true
 	if err := r.repository.UpdateApplicationLastForecloseCheckBlock(ctx, appID, head); err != nil {
+		success = false
 		r.Logger.Warn("Failed to advance last_foreclose_check_block",
 			"application_id", appID,
 			"head", head,
 			"error", err)
 	}
+	return success
 }
 
 // abortForeclosureLoop reports whether the RPC error should abort the

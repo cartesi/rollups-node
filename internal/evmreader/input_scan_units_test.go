@@ -101,7 +101,7 @@ func TestBuildIConsensusInputScanUnits_GroupsByInputBoxAndCursor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			units := reader.buildIConsensusInputScanUnits(ctx, tt.apps, 20)
+			units, _ := reader.buildIConsensusInputScanUnits(ctx, tt.apps, 20)
 			require.Equal(t, tt.units, inputScanUnitIDs(units))
 		})
 	}
@@ -122,7 +122,7 @@ func TestBuildIConsensusInputScanUnits_InitializesBeforeGrouping(t *testing.T) {
 	app := inputUnitApp(1, inputBox, 0, true)
 	app.application.IInputBoxBlock = 7
 
-	units := reader.buildIConsensusInputScanUnits(ctx, []appContracts{app}, 20)
+	units, _ := reader.buildIConsensusInputScanUnits(ctx, []appContracts{app}, 20)
 
 	require.Equal(t, map[common.Address]map[iConsensusInputScanRange][]int64{
 		inputBox: {{6, 20}: {1}},
@@ -143,7 +143,8 @@ func TestBuildIConsensusInputScanUnits_FailedInitializationExcludesOnlyThatApp(t
 	broken.application.IInputBoxBlock = 0
 	good := inputUnitApp(2, inputBox, 10, true)
 
-	units := reader.buildIConsensusInputScanUnits(ctx, []appContracts{broken, good}, 20)
+	units, success := reader.buildIConsensusInputScanUnits(ctx, []appContracts{broken, good}, 20)
+	require.False(t, success)
 
 	require.Equal(t, map[common.Address]map[iConsensusInputScanRange][]int64{
 		inputBox: {{10, 20}: {2}},

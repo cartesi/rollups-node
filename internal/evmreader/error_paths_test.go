@@ -63,7 +63,7 @@ func (s *EvmReaderSuite) TestCreateEpochsAndInputsErrorDoesNotAdvanceCheckpoint(
 	s.evmReader.repository = repo
 
 	err := s.evmReader.readAndStoreInputs(s.ctx, 100, 110, apps)
-	require.NoError(err) // per-app failure doesn't abort
+	require.ErrorIs(err, errScanIncomplete) // per-app failure is reported after scanning
 
 	// CreateEpochsAndInputs was attempted
 	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 1)
@@ -453,7 +453,7 @@ func (s *EvmReaderSuite) TestIConsensusInputCountMismatchSkipsApp() {
 	s.evmReader.repository = repo
 
 	err := s.evmReader.readAndStoreInputs(s.ctx, 100, 110, apps)
-	s.Require().NoError(err) // per-app failure doesn't abort
+	s.Require().ErrorIs(err, errScanIncomplete) // per-app failure is reported after scanning
 
 	// App was skipped: counter says 2 new, but only 1 fetched → no DB writes
 	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
@@ -561,7 +561,7 @@ func (s *EvmReaderSuite) TestEpochLengthZeroSetsAppCorrupted() {
 	s.evmReader.repository = repo
 
 	err := s.evmReader.readAndStoreInputs(s.ctx, 100, 110, apps)
-	s.Require().NoError(err)
+	s.Require().ErrorIs(err, errScanIncomplete)
 
 	// App must be set inoperable
 	repo.AssertNumberOfCalls(s.T(), "UpdateApplicationStatus", 1)

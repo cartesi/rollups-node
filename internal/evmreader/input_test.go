@@ -510,7 +510,7 @@ func (s *EvmReaderSuite) TestCheckpointNotAdvancedOnFetchFailure() {
 	s.evmReader.repository = repo
 
 	err := s.evmReader.readAndStoreInputs(s.ctx, 100, 110, apps)
-	require.NoError(err)
+	require.ErrorIs(err, errScanIncomplete)
 
 	repo.AssertExpectations(s.T())
 }
