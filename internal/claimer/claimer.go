@@ -47,17 +47,24 @@ import (
 	"errors"
 )
 
+func (s *Service) shutdownInterrupted(ctx context.Context, stage string, err error) bool {
+	// During shutdown, the parent context is canceled and RPC/DB calls
+	// return context.Canceled. Ignore only that normal shutdown case. Other
+	// errors, such as deadline exceeded, must still be returned.
+	if ctx.Err() == nil || !errors.Is(err, context.Canceled) {
+		return false
+	}
+	s.Logger.Warn("Tick interrupted by shutdown", "stage", stage, "error", err)
+	return true
+}
+
 func (s *Service) Tick(ctx context.Context) (bool, error) {
 	// Use the same finalized block number for all chain reads in this tick.
 	// This is one RPC per tick even when there is no DB work. The call is
 	// cheap, and Tick already runs on a polling interval.
 	defaultBlockNumber, err := s.blockchain.getDefaultBlockNumber(ctx)
 	if err != nil {
-		// During shutdown, the parent context is canceled and RPC/DB calls
-		// return context.Canceled. Ignore only that normal shutdown case. Other
-		// errors, such as deadline exceeded, must still be returned.
-		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
-			s.Logger.Warn("Tick interrupted by shutdown", "stage", "getDefaultBlockNumber", "error", err)
+		if s.shutdownInterrupted(ctx, "getDefaultBlockNumber", err) {
 			return false, nil
 		}
 		return false, err
@@ -75,8 +82,7 @@ func (s *Service) Tick(ctx context.Context) (bool, error) {
 	// transaction receipt already contains ClaimStaged.
 	prevSubmittedOrStaged, computedEpochs, computedApps, errComputed := s.repository.SelectClaimsToSubmitPerApp(ctx)
 	if errComputed != nil {
-		if ctx.Err() != nil && errors.Is(errComputed, context.Canceled) {
-			s.Logger.Warn("Tick interrupted by shutdown", "stage", "SelectClaimsToSubmitPerApp", "error", errComputed)
+		if s.shutdownInterrupted(ctx, "SelectClaimsToSubmitPerApp", errComputed) {
 			return false, nil
 		}
 		return false, errComputed
@@ -86,8 +92,7 @@ func (s *Service) Tick(ctx context.Context) (bool, error) {
 	// Stage 2: stage. SUBMITTED -> STAGED. This read sees stage 1 updates.
 	prevAcceptedForSubmitted, submittedEpochs, submittedApps, errSubmitted := s.repository.SelectClaimsToStagePerApp(ctx)
 	if errSubmitted != nil {
-		if ctx.Err() != nil && errors.Is(errSubmitted, context.Canceled) {
-			s.Logger.Warn("Tick interrupted by shutdown", "stage", "SelectClaimsToStagePerApp", "error", errSubmitted)
+		if s.shutdownInterrupted(ctx, "SelectClaimsToStagePerApp", errSubmitted) {
 			return false, err // Preserve errors accumulated by stage 1.
 		}
 		return false, errors.Join(err, errSubmitted)
@@ -100,8 +105,7 @@ func (s *Service) Tick(ctx context.Context) (bool, error) {
 	// This read sees stage 1 and stage 2 updates.
 	prevAcceptedForStaged, stagedEpochs, stagedApps, errStaged := s.repository.SelectClaimsToAcceptPerApp(ctx)
 	if errStaged != nil {
-		if ctx.Err() != nil && errors.Is(errStaged, context.Canceled) {
-			s.Logger.Warn("Tick interrupted by shutdown", "stage", "SelectClaimsToAcceptPerApp", "error", errStaged)
+		if s.shutdownInterrupted(ctx, "SelectClaimsToAcceptPerApp", errStaged) {
 			return false, err // Preserve errors accumulated by earlier stages.
 		}
 		return false, errors.Join(err, errStaged)
