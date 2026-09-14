@@ -110,9 +110,6 @@ func (r *Service) Tick(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
-	now := time.Now()
-	r.lastSuccessfulPoll.Store(&now)
-
 	if blockNumber != r.lastBlockNumber.Load() {
 		r.lastBlockNumber.Store(blockNumber)
 		r.Logger.Info("Got new block header", "block", blockNumber, "policy", r.defaultBlock)
@@ -122,11 +119,15 @@ func (r *Service) Tick(ctx context.Context) (bool, error) {
 	// as long as catch-up needs. Per-request bounds live on the HTTP transport.
 	r.processBlockHead(ctx, blockNumber, r.resolver)
 
+	now := time.Now()
+	r.lastSuccessfulPoll.Store(&now)
+
 	return false, nil
 }
 
 func (r *Service) Ready() bool {
-	return time.Since(*r.lastSuccessfulPoll.Load()) < r.pollingMaxWait
+	lastPoll := r.lastSuccessfulPoll.Load()
+	return lastPoll != nil && !lastPoll.IsZero() && time.Since(*lastPoll) < r.readyMaxStaleness
 }
 
 func (r *Service) processBlockHead(

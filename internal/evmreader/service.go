@@ -41,7 +41,7 @@ type Service struct {
 	inputReaderEnabled bool
 	lastBlockNumber    atomic.Uint64
 	lastSuccessfulPoll atomic.Pointer[time.Time]
-	pollingMaxWait     time.Duration
+	readyMaxStaleness  time.Duration
 }
 
 const EvmReaderConfigKey = "evm-reader"
@@ -56,6 +56,11 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 	err := ctx.Err()
 	if err != nil {
 		return nil, err // This returns context.Canceled or context.DeadlineExceeded.
+	}
+
+	readyMaxStaleness, err := readinessBudget(&c.Config)
+	if err != nil {
+		return nil, err
 	}
 
 	s := &Service{}
@@ -139,7 +144,7 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 	}
 
 	s.resolver = newApplicationAdapterResolver(s.Logger, s.adapterFactory)
-	s.pollingMaxWait = c.Config.BlockchainHttpRetryMaxWait
+	s.readyMaxStaleness = readyMaxStaleness
 	s.lastSuccessfulPoll.Store(&time.Time{})
 
 	s.Logger.Info("Created", "config", c.Config)
@@ -174,4 +179,32 @@ func (s *Service) setupPersistentConfig(
 
 	s.Logger.Error("Could not retrieve persistent config from database", "error", err)
 	return nil, err
+}
+
+// readinessBudget is independent of the HTTP retry-backoff cap.
+func readinessBudget(c *config.EvmreaderConfig) (time.Duration, error) {
+	if c.EvmReaderReadyMaxStaleness < 0 {
+		return 0, fmt.Errorf("CARTESI_EVM_READER_READY_MAX_STALENESS must be non-negative")
+	}
+	if c.EvmReaderReadyMaxStaleness > 0 {
+		return c.EvmReaderReadyMaxStaleness, nil
+	}
+
+	// Saturate large configured durations instead of overflowing to a small budget.
+	multiply := func(d time.Duration, n uint64) time.Duration {
+		const limit = time.Duration(1<<63 - 1)
+		if d <= 0 {
+			return 0
+		}
+		if n > uint64(limit/d) {
+			return limit
+		}
+		return d * time.Duration(n)
+	}
+	requestBudget := multiply(c.BlockchainHttpRequestTimeout, c.BlockchainHttpMaxRetries)
+	const limit = time.Duration(1<<63 - 1)
+	if c.BlockchainHttpRequestTimeout > 0 {
+		requestBudget += min(c.BlockchainHttpRequestTimeout, limit-requestBudget)
+	}
+	return max(time.Second, multiply(c.EvmReaderPollingInterval, 3), requestBudget), nil
 }

@@ -61,7 +61,7 @@ func (s *EvmReaderSuite) SetupTest() {
 	evmReader, err := Create(s.T().Context(), &CreateInfo{
 		Config: config.EvmreaderConfig{
 			LogLevel:                   logLevel,
-			BlockchainHttpRetryMaxWait: 200 * time.Millisecond,
+			EvmReaderReadyMaxStaleness: 200 * time.Millisecond,
 			BlockchainDefaultBlock:     DefaultBlock_Latest,
 			FeatureInputReaderEnabled:  true,
 			EvmReaderPollingInterval:   100 * time.Millisecond,
@@ -164,14 +164,14 @@ func (s *EvmReaderSuite) TestReadyReflectsServeLifecycle() {
 	go func() { errCh <- s.evmReader.Serve(ctx) }()
 
 	s.Require().True(waitNotification(called))
-	s.Require().True(s.evmReader.Ready())
+	s.Require().Eventually(s.evmReader.Ready, time.Second, time.Millisecond)
 
 	s.Require().True(wasntNotified(errCh))
 	cancel()
 	s.Require().ErrorIs(s.waitError(errCh), context.Canceled)
 
-	s.Require().True(s.evmReader.Ready())
-	time.Sleep(s.evmReader.pollingMaxWait)
+	s.Require().Eventually(s.evmReader.Ready, time.Second, time.Millisecond)
+	time.Sleep(s.evmReader.readyMaxStaleness)
 	s.Require().False(s.evmReader.Ready())
 }
 
@@ -215,14 +215,14 @@ func (s *EvmReaderSuite) TestReadyIsRecoveredOnPollingSuccess() {
 	s.Require().False(s.evmReader.Ready())
 
 	s.Require().True(waitNotification(called))
-	s.Require().True(s.evmReader.Ready())
+	s.Require().Eventually(s.evmReader.Ready, time.Second, time.Millisecond)
 
 	s.Require().True(wasntNotified(errCh))
 	cancel()
 	s.Require().ErrorIs(s.waitError(errCh), context.Canceled)
 
-	s.Require().True(s.evmReader.Ready())
-	time.Sleep(s.evmReader.pollingMaxWait)
+	s.Require().Eventually(s.evmReader.Ready, time.Second, time.Millisecond)
+	time.Sleep(s.evmReader.readyMaxStaleness)
 	s.Require().False(s.evmReader.Ready())
 }
 

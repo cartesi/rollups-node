@@ -79,6 +79,7 @@ const (
 	CLAIMER_MAX_ACCEPT_ATTEMPTS                       = "CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS"
 	CLAIMER_POLLING_INTERVAL                          = "CARTESI_CLAIMER_POLLING_INTERVAL"
 	EVM_READER_POLLING_INTERVAL                       = "CARTESI_EVM_READER_POLLING_INTERVAL"
+	EVM_READER_READY_MAX_STALENESS                    = "CARTESI_EVM_READER_READY_MAX_STALENESS"
 	MAX_STARTUP_TIME                                  = "CARTESI_MAX_STARTUP_TIME"
 	PRT_POLLING_INTERVAL                              = "CARTESI_PRT_POLLING_INTERVAL"
 	VALIDATOR_POLLING_INTERVAL                        = "CARTESI_VALIDATOR_POLLING_INTERVAL"
@@ -212,6 +213,8 @@ func SetDefaults() {
 	viper.SetDefault(CLAIMER_POLLING_INTERVAL, "3")
 
 	viper.SetDefault(EVM_READER_POLLING_INTERVAL, "12")
+
+	viper.SetDefault(EVM_READER_READY_MAX_STALENESS, "0")
 
 	viper.SetDefault(MAX_STARTUP_TIME, "15")
 
@@ -659,6 +662,13 @@ type EvmreaderConfig struct {
 	// Time in seconds to wait before checking for a new block header. The default (12s) is tuned for mainnet. Reduce for faster chains or devnets.
 	EvmReaderPollingInterval Duration `mapstructure:"CARTESI_EVM_READER_POLLING_INTERVAL"`
 
+	// Maximum time in seconds since the EVM reader completed a poll and its block scan before it reports
+	// not ready. Zero automatically uses the maximum of three polling intervals, the HTTP request timeout
+	// times (1 + maximum HTTP retries), and one second. Positive values override this automatic budget;
+	// negative values are invalid. A scan refreshes readiness when it finishes, but can become stale while
+	// still running. This measures completed polling cycles, not successful ingestion by every application.
+	EvmReaderReadyMaxStaleness Duration `mapstructure:"CARTESI_EVM_READER_READY_MAX_STALENESS"`
+
 	// How many seconds the node expects services take initializing before aborting.
 	MaxStartupTime Duration `mapstructure:"CARTESI_MAX_STARTUP_TIME"`
 }
@@ -773,6 +783,13 @@ func LoadEvmreaderConfig() (*EvmreaderConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_EVM_READER_POLLING_INTERVAL: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_EVM_READER_POLLING_INTERVAL is required for the evmreader service: %w", err)
+	}
+
+	cfg.EvmReaderReadyMaxStaleness, err = GetEvmReaderReadyMaxStaleness()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_EVM_READER_READY_MAX_STALENESS: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_EVM_READER_READY_MAX_STALENESS is required for the evmreader service: %w", err)
 	}
 
 	cfg.MaxStartupTime, err = GetMaxStartupTime()
@@ -1020,6 +1037,13 @@ type NodeConfig struct {
 	// Time in seconds to wait before checking for a new block header. The default (12s) is tuned for mainnet. Reduce for faster chains or devnets.
 	EvmReaderPollingInterval Duration `mapstructure:"CARTESI_EVM_READER_POLLING_INTERVAL"`
 
+	// Maximum time in seconds since the EVM reader completed a poll and its block scan before it reports
+	// not ready. Zero automatically uses the maximum of three polling intervals, the HTTP request timeout
+	// times (1 + maximum HTTP retries), and one second. Positive values override this automatic budget;
+	// negative values are invalid. A scan refreshes readiness when it finishes, but can become stale while
+	// still running. This measures completed polling cycles, not successful ingestion by every application.
+	EvmReaderReadyMaxStaleness Duration `mapstructure:"CARTESI_EVM_READER_READY_MAX_STALENESS"`
+
 	// How many seconds the node expects services take initializing before aborting.
 	MaxStartupTime Duration `mapstructure:"CARTESI_MAX_STARTUP_TIME"`
 
@@ -1255,6 +1279,13 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_EVM_READER_POLLING_INTERVAL: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_EVM_READER_POLLING_INTERVAL is required for the node service: %w", err)
+	}
+
+	cfg.EvmReaderReadyMaxStaleness, err = GetEvmReaderReadyMaxStaleness()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_EVM_READER_READY_MAX_STALENESS: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_EVM_READER_READY_MAX_STALENESS is required for the node service: %w", err)
 	}
 
 	cfg.MaxStartupTime, err = GetMaxStartupTime()
@@ -1633,6 +1664,7 @@ func (c *NodeConfig) ToEvmreaderConfig() *EvmreaderConfig {
 		BlockchainHttpRetryMinWait:   c.BlockchainHttpRetryMinWait,
 		BlockchainMaxBlockRange:      c.BlockchainMaxBlockRange,
 		EvmReaderPollingInterval:     c.EvmReaderPollingInterval,
+		EvmReaderReadyMaxStaleness:   c.EvmReaderReadyMaxStaleness,
 		MaxStartupTime:               c.MaxStartupTime,
 	}
 }
@@ -2462,6 +2494,19 @@ func GetEvmReaderPollingInterval() (Duration, error) {
 		return v, nil
 	}
 	return notDefinedDuration(), fmt.Errorf("%s: %w", EVM_READER_POLLING_INTERVAL, ErrNotDefined)
+}
+
+// GetEvmReaderReadyMaxStaleness returns the value for the environment variable CARTESI_EVM_READER_READY_MAX_STALENESS.
+func GetEvmReaderReadyMaxStaleness() (Duration, error) {
+	s := viper.GetString(EVM_READER_READY_MAX_STALENESS)
+	if s != "" {
+		v, err := toDuration(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", EVM_READER_READY_MAX_STALENESS, err)
+		}
+		return v, nil
+	}
+	return notDefinedDuration(), fmt.Errorf("%s: %w", EVM_READER_READY_MAX_STALENESS, ErrNotDefined)
 }
 
 // GetMaxStartupTime returns the value for the environment variable CARTESI_MAX_STARTUP_TIME.
