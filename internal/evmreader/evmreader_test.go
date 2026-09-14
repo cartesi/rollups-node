@@ -266,7 +266,7 @@ func (s *EvmReaderSuite) TestTickScansWithServiceContext() {
 		mock.Anything,
 	).Return(nil).Times(4).Run(assertValidContext)
 
-	s.Require().False(s.supervisor.Ready())
+	s.Require().NotEmpty(s.supervisor.NotReady())
 
 	_, err := s.evmReader.Tick(context.Background())
 	s.Require().NoError(err)

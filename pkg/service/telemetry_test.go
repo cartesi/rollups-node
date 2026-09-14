@@ -4,7 +4,9 @@
 package service
 
 import (
+	"bytes"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -43,14 +45,14 @@ func TestTelemetry_HandlersWired(t *testing.T) {
 	s := newTelemetryTestService()
 	srv := s.Server
 
-	// /readyz: mockImpl.Ready() is true, so expect 200.
+	// /readyz: no services are unready, so expect 200.
 	rr := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	require.Equal(t, http.StatusOK, rr.Code)
 	body, _ := io.ReadAll(rr.Body)
 	require.Contains(t, string(body), "ready")
 
-	// /livez: mockImpl.Alive() is true, so expect 200.
+	// /livez: the supervisor is alive, so expect 200.
 	rr = httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/livez", nil))
 	require.Equal(t, http.StatusOK, rr.Code)
@@ -104,11 +106,43 @@ func TestTelemetry_LifecycleFailure(t *testing.T) {
 
 	s.supervisor.(*supervisorImpl).serving.Store(false)
 	require.False(t, s.supervisor.Alive())
-	require.False(t, s.supervisor.Ready())
+	require.Equal(t, []string{"test"}, s.supervisor.NotReady())
 
 	for _, path := range []string{"/readyz", "/livez"} {
 		rr := httptest.NewRecorder()
 		s.Server.Handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
-		require.Equal(t, http.StatusInternalServerError, rr.Code, "path=%s", path)
+		status := http.StatusInternalServerError
+		if path == "/readyz" {
+			status = http.StatusServiceUnavailable
+			require.Equal(t, "test/telemetry: ready check failed: test\n", rr.Body.String())
+		}
+		require.Equal(t, status, rr.Code, "path=%s", path)
 	}
+}
+
+func TestReadinessReportsAllFailingServicesWithoutLogging(t *testing.T) {
+	s := newTelemetryTestService()
+	sup := s.supervisor.(*supervisorImpl)
+	var logs bytes.Buffer
+	sup.logger = slog.New(slog.NewTextHandler(&logs, nil))
+	first := &testServiceImpl{BaseTemplate: BaseTemplate{Name: "evm-reader"}}
+	second := &testServiceImpl{BaseTemplate: BaseTemplate{Name: "advancer"}}
+	healthy := &testServiceImpl{BaseTemplate: BaseTemplate{Name: "jsonrpc"}, ready: true}
+	sup.services = []SupervisedService{first, healthy, second}
+
+	for range 3 {
+		require.Equal(t, []string{"advancer", "evm-reader"}, sup.NotReady())
+		rr := httptest.NewRecorder()
+		s.Server.Handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+		require.Equal(t, http.StatusServiceUnavailable, rr.Code)
+		require.Equal(t, "test/telemetry: ready check failed: advancer, evm-reader\n", rr.Body.String())
+	}
+	require.Empty(t, logs.String(), "readiness probes must not log failures")
+	first.ready = true
+	require.Equal(t, []string{"advancer"}, sup.NotReady())
+	second.ready = true
+	rr := httptest.NewRecorder()
+	s.Server.Handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.Equal(t, "test/telemetry: ready\n", rr.Body.String())
 }

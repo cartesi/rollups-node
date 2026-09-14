@@ -6,6 +6,7 @@ package service
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -45,11 +46,11 @@ func createDefaultTelemetry(supervisor Supervisor, addr string) SupervisedServic
 	return s
 }
 
-// HTTP handler for `/s.Name/readyz` that exposes the value of Ready()
+// ReadyHandler reports the names of services failing readiness.
 func (s *telemetryService) ReadyHandler(w http.ResponseWriter, _ *http.Request) {
-	if !s.supervisor.Ready() {
-		http.Error(w, s.Name+": ready check failed",
-			http.StatusInternalServerError)
+	if names := s.supervisor.NotReady(); len(names) > 0 {
+		http.Error(w, s.Name+": ready check failed: "+strings.Join(names, ", "),
+			http.StatusServiceUnavailable)
 	} else {
 		fmt.Fprintf(w, "%s: ready\n", s.Name)
 	}

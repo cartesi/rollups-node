@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"slices"
 	"sync/atomic"
 	"syscall"
 
@@ -31,7 +32,9 @@ type Supervisor interface {
 	String() string
 	Logger() *slog.Logger
 	Alive() bool
-	Ready() bool
+	// NotReady returns failing service names, or the supervisor name when not alive.
+	// An empty result means all services are ready.
+	NotReady() []string
 	Serve() error
 	Stop() bool
 }
@@ -121,17 +124,23 @@ func (s *supervisorImpl) Alive() bool {
 	return s.serving.Load() && !s.stopping.Load()
 }
 
-func (s *supervisorImpl) Ready() bool {
+func (s *supervisorImpl) NotReady() []string {
 	if !s.Alive() {
-		return false
+		name := s.Name
+		if name == "" {
+			name = "supervisor"
+		}
+		return []string{name}
 	}
+	var names []string
 	for _, svc := range s.services {
 		if !svc.Ready() {
-			s.logger.Info("Service still not ready", "service", svc.String())
-			return false
+			names = append(names, svc.String())
 		}
 	}
-	return true
+	// Initialization completes concurrently; keep probe responses deterministic.
+	slices.Sort(names)
+	return names
 }
 
 func (s *supervisorImpl) Serve() error {

@@ -232,7 +232,7 @@ func (s *SupervisorSuite) TestLifecycleIndications() {
 
 	// before serving, supervisor is not alive and not ready
 	require.False(s.T(), supervisor.Alive())
-	require.False(s.T(), supervisor.Ready())
+	require.NotEmpty(s.T(), supervisor.NotReady())
 
 	errCh := asyncCall(supervisor.Serve)
 
@@ -240,32 +240,32 @@ func (s *SupervisorSuite) TestLifecycleIndications() {
 	require.True(s.T(), waitCh(child1.started), "child-1 did not start")
 	require.True(s.T(), waitCh(child2.started), "child-2 did not start")
 	require.True(s.T(), supervisor.Alive())
-	require.False(s.T(), supervisor.Ready())
+	require.NotEmpty(s.T(), supervisor.NotReady())
 
 	// when only some services are ready, supervisor is alive and not ready.
 	child1.ready = true
 	require.True(s.T(), supervisor.Alive())
-	require.False(s.T(), supervisor.Ready())
+	require.NotEmpty(s.T(), supervisor.NotReady())
 
 	// when all services are ready, supervisor is alive and ready.
 	child2.ready = true
 	require.True(s.T(), supervisor.Alive())
-	require.True(s.T(), supervisor.Ready())
+	require.Empty(s.T(), supervisor.NotReady())
 
 	// when one service becomes not ready, supervisor becomes not ready also.
 	child2.ready = false
 	require.True(s.T(), supervisor.Alive())
-	require.False(s.T(), supervisor.Ready())
+	require.NotEmpty(s.T(), supervisor.NotReady())
 
 	// when all services become ready again, supervisor becomes ready again.
 	child2.ready = true
 	require.True(s.T(), supervisor.Alive())
-	require.True(s.T(), supervisor.Ready())
+	require.Empty(s.T(), supervisor.NotReady())
 
 	// when supervisor is stopped, it becomes not alive and not ready immediately.
 	require.True(s.T(), supervisor.Stop())
 	require.False(s.T(), supervisor.Alive())
-	require.False(s.T(), supervisor.Ready())
+	require.NotEmpty(s.T(), supervisor.NotReady())
 
 	select {
 	case err := <-errCh:

@@ -2251,9 +2251,14 @@ func (mock *MockSupervisor) Stop() bool {
 func (mock *MockSupervisor) String() string       { return "mock-supervisor" }
 func (mock *MockSupervisor) Logger() *slog.Logger { return slog.Default() }
 func (mock *MockSupervisor) Alive() bool          { return !mock.StopCalled.Load() }
-func (mock *MockSupervisor) Ready() bool          { return !mock.StopCalled.Load() }
-func (mock *MockSupervisor) Serve() error         { return nil }
-func (mock *MockSupervisor) Close()               {}
+func (mock *MockSupervisor) NotReady() []string {
+	if mock.StopCalled.Load() {
+		return []string{mock.String()}
+	}
+	return nil
+}
+func (mock *MockSupervisor) Serve() error { return nil }
+func (mock *MockSupervisor) Close()       {}
 
 type MockMachineManager struct {
 	Map                         map[int64]*MockMachineInstance
