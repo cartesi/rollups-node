@@ -5,11 +5,12 @@ package root
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/cartesi/rollups-node/internal/claimer"
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/version"
 	"github.com/cartesi/rollups-node/pkg/service"
 
@@ -75,39 +76,17 @@ func init() {
 	}
 }
 
-func run(cmd *cobra.Command, args []string) (runErr error) {
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
-	defer cancel()
-
-	name := config.ServiceClaimer
-	logger := service.NewLogger(name, cfg.LogLevel, cfg.LogColor)
-	// Return errors to Cobra only after all resource cleanup has completed.
-	defer func() { cli.LogErr(logger, runErr) }()
-	cmd.SilenceUsage = true
-
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
-	if err != nil {
-		return err
-	}
-	defer repo.Close()
-
-	supCfg := &service.SupervisorConfigs{
-		BaseConfigs:          service.BaseConfigs{Name: name, Logger: logger},
-		EnableSignalHandling: true,
-		TelemetryAddress:     cfg.ClaimerTelemetryAddress,
-		Factories: []service.FactoryFunction{
-			func(ctx context.Context, sup service.Supervisor) (service.SupervisedService, error) {
-				return claimer.Create(ctx, &claimer.CreateInfo{
-					Config:     *cfg,
-					Logger:     sup.Logger(),
-					Repository: repo,
-				})
-			},
+func run(cmd *cobra.Command, args []string) error {
+	return cli.RunSingleService(cli.SingleServiceOptions{
+		Command:            cmd,
+		Name:               config.ServiceClaimer,
+		LogLevel:           cfg.LogLevel,
+		LogColor:           cfg.LogColor,
+		MaxStartupTime:     cfg.MaxStartupTime,
+		DatabaseConnection: cfg.DatabaseConnection,
+		TelemetryAddress:   cfg.ClaimerTelemetryAddress,
+		Create: func(ctx context.Context, logger *slog.Logger, repo repository.Repository) (service.SupervisedService, error) {
+			return claimer.Create(ctx, &claimer.CreateInfo{Config: *cfg, Logger: logger, Repository: repo})
 		},
-	}
-	sup, err := service.NewSupervisor(ctx, supCfg)
-	if err != nil {
-		return err
-	}
-	return sup.Serve()
+	})
 }
