@@ -110,11 +110,11 @@ func (s *AdvancerSuite) setupOneApp() testEnv {
 	svc, err := newMockAdvancerServiceWithBatchSize(mm, repo, defaultBatchSize)
 	s.Require().NoError(err)
 	return testEnv{
-		service: svc,
+		service:    svc,
 		supervisor: svc.supervisor.(*MockSupervisor),
-		app: app,
-		mm: mm,
-		repo: repo,
+		app:        app,
+		mm:         mm,
+		repo:       repo,
 	}
 }
 
