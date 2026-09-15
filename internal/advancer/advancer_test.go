@@ -617,6 +617,9 @@ func (s *AdvancerSuite) TestProcess() {
 			_, _, err := env.service.processInputs(context.Background(), env.app.Application, inputs)
 			require.Error(err)
 			require.Contains(err.Error(), "store-advance error")
+			require.NotNil(env.supervisor.FatalError.Load())
+			require.ErrorIs(*env.supervisor.FatalError.Load(), env.repo.StoreAdvanceError)
+			require.ErrorContains(*env.supervisor.FatalError.Load(), env.app.Application.Name)
 			require.Empty(env.repo.StoredResults)
 			require.Empty(env.repo.StoredAppIDs)
 			require.Equal([]*Input{pending}, env.repo.GetInputsReturn[address],
@@ -642,6 +645,8 @@ func (s *AdvancerSuite) TestProcess() {
 				context.Background(), env.app.Application, []*Input{pending},
 			)
 			require.ErrorContains(err, "commit response lost")
+			require.NotNil(env.supervisor.FatalError.Load())
+			require.ErrorIs(*env.supervisor.FatalError.Load(), env.repo.StoreAdvanceCommitError)
 			require.Len(env.repo.StoredResults, 1)
 			require.Equal([]int64{env.app.Application.ID}, env.repo.StoredAppIDs)
 			require.Empty(env.repo.GetInputsReturn[address],
@@ -2114,11 +2119,7 @@ func newTestAdvancer(c *CreateInfo) (*Service, error) {
 		c.Config.FeatureMachineHashCheckEnabled,
 		c.Config.AdvancerInputBatchSize,
 	)
-	supervisor, err := service.NewSupervisor(context.Background(), &service.SupervisorConfigs{})
-	if err != nil {
-		return nil, err
-	}
-	c.Supervisor = supervisor
+	c.Supervisor = newMockSupervisor()
 	svc, err := Create(context.Background(), c)
 	if err != nil {
 		return nil, err
@@ -2238,10 +2239,16 @@ func newMockInstance(impl *MockMachineImpl) *MockMachineInstance {
 
 type MockSupervisor struct {
 	StopCalled atomic.Bool
+	FatalError atomic.Pointer[error]
 }
 
 func newMockSupervisor() *MockSupervisor {
 	return &MockSupervisor{}
+}
+
+func (mock *MockSupervisor) Fatal(err error) {
+	mock.FatalError.CompareAndSwap(nil, &err)
+	mock.Stop()
 }
 
 func (mock *MockSupervisor) Stop() bool {

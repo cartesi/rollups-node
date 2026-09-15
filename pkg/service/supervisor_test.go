@@ -25,7 +25,7 @@ type testServiceImpl struct {
 	duration    time.Duration
 	err         error
 
-	serveDone    chan struct{}
+	serveDone chan struct{}
 }
 
 func (s *testServiceImpl) reset() {
@@ -428,4 +428,59 @@ func TestInitializationKeepsFactoryOrder(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, []SupervisedService{first, second}, sup.(*supervisorImpl).services)
+}
+
+func TestFatalShutdownPreservesCauseAndWaitsForServices(t *testing.T) {
+	child := newTestService("child")
+	child.serveDone = make(chan struct{})
+	sup, err := NewSupervisor(t.Context(), &SupervisorConfigs{
+		BaseConfigs: BaseConfigs{Logger: discardLogger()},
+		Factories:   []FactoryFunction{func(context.Context, Supervisor) (SupervisedService, error) { return child, nil }},
+	})
+	require.NoError(t, err)
+	done := make(chan error, 1)
+	go func() { done <- sup.Serve() }()
+	require.True(t, waitCh(child.started))
+	cause := errors.New("unconfirmed advance result")
+	sup.Fatal(cause)
+	sup.Fatal(errors.New("later failure"))
+	require.False(t, sup.Alive())
+	select {
+	case <-done:
+		t.Error("Serve returned before the service finished shutdown")
+	default:
+	}
+	close(child.serveDone)
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, cause)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Serve did not finish shutdown")
+	}
+}
+
+func TestFatalBeforeServe(t *testing.T) {
+	for _, cause := range []error{errors.New("fatal initialization result"), nil} {
+		child := newTestService("child")
+		sup, err := NewSupervisor(t.Context(), &SupervisorConfigs{
+			BaseConfigs: BaseConfigs{Logger: discardLogger()},
+			Factories:   []FactoryFunction{func(context.Context, Supervisor) (SupervisedService, error) { return child, nil }},
+		})
+		require.NoError(t, err)
+		sup.Fatal(cause)
+		if cause == nil {
+			cause = ErrServiceStopped
+		}
+		require.ErrorIs(t, sup.Serve(), cause)
+		require.Empty(t, child.started)
+	}
+}
+
+func TestSupervisorRejectsEmptyFactoryList(t *testing.T) {
+	for _, telemetry := range []string{"", "localhost:0"} {
+		sup, err := NewSupervisor(t.Context(), &SupervisorConfigs{TelemetryAddress: telemetry})
+		require.Nil(t, sup)
+		require.ErrorIs(t, err, ErrServiceBadInit)
+		require.ErrorContains(t, err, "at least one service factory")
+	}
 }

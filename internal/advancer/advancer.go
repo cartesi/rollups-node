@@ -351,7 +351,7 @@ func (s *Service) processInputs(
 			// database decides whether this input is still pending and needs a
 			// safe retry.
 			closeErr := machine.Close()
-			s.supervisor.Stop() // shutdown all services
+			s.supervisor.Fatal(fmt.Errorf("unconfirmed advance result for %s: %w", app.Name, errors.Join(err, closeErr)))
 			if closeErr != nil {
 				s.Logger.Error("Could not close the machine after its advance result "+
 					"was not confirmed saved; service shutdown is still required",

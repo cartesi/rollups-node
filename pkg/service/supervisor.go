@@ -37,6 +37,8 @@ type Supervisor interface {
 	NotReady() []string
 	Serve() error
 	Stop() bool
+	// Fatal records the first fatal cause and initiates shutdown. Nil uses ErrServiceStopped.
+	Fatal(error)
 }
 
 // supervisorImpl is the default Supervisor implementation.
@@ -50,9 +52,13 @@ type supervisorImpl struct {
 
 	serving  atomic.Bool
 	stopping atomic.Bool
+	fatal    atomic.Pointer[error]
 }
 
 func NewSupervisor(ctx context.Context, c *SupervisorConfigs) (Supervisor, error) {
+	if len(c.Factories) == 0 {
+		return nil, fmt.Errorf("%w: at least one service factory is required", ErrServiceBadInit)
+	}
 	s := &supervisorImpl{}
 
 	s.context, s.cancel = context.WithCancel(context.Background())
@@ -143,7 +149,7 @@ func (s *supervisorImpl) NotReady() []string {
 	return names
 }
 
-func (s *supervisorImpl) Serve() error {
+func (s *supervisorImpl) Serve() (err error) {
 	// CAS achieves once-semantics: the second caller returns immediately
 	// (fire-and-forget) rather than blocking like sync.Once. This is safe
 	// because the orchestrator calls Cancel() after Stop() and waits for
@@ -161,6 +167,9 @@ func (s *supervisorImpl) Serve() error {
 
 	defer func() {
 		s.Stop() // make sure context is canceled
+		if fatal := s.fatal.Load(); fatal != nil {
+			err = errors.Join(err, *fatal)
+		}
 	}()
 
 	// check if we were stopped already.
@@ -169,8 +178,6 @@ func (s *supervisorImpl) Serve() error {
 	}
 
 	s.logger.Info("Supervised services started")
-
-	var err error
 
 	stopSvcCh := make(chan struct{}, len(s.services))
 	for _, svc := range s.services {
@@ -208,6 +215,16 @@ func (s *supervisorImpl) Serve() error {
 	s.logger.Info("Supervisor terminated")
 
 	return err
+}
+
+// Fatal publishes the failure before cancellation so Serve observes it even if
+// all services return context.Canceled as a result of shutdown.
+func (s *supervisorImpl) Fatal(err error) {
+	if err == nil {
+		err = ErrServiceStopped
+	}
+	s.fatal.CompareAndSwap(nil, &err)
+	s.Stop()
 }
 
 func (s *supervisorImpl) Stop() bool {
