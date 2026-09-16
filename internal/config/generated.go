@@ -406,7 +406,10 @@ func LoadAdvancerConfig() (*AdvancerConfig, error) {
 // ClaimerConfig holds configuration values for the claimer service.
 type ClaimerConfig struct {
 
-	// The default block to be used by EVM Reader and Claimer when requesting new blocks.
+	// The block used by EVM Reader, Claimer, and PRT for chain-state observations.
+	// PRT checks transaction readiness separately at 'latest'.
+	// Use 'finalized' in production. The node does not detect or roll back reorgs.
+	// The policy is saved when each service first starts. A later configuration mismatch stops startup.
 	// One of 'latest', 'pending', 'safe', 'finalized'
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
@@ -416,8 +419,10 @@ type ClaimerConfig struct {
 	// An unique identifier representing a blockchain network.
 	BlockchainId uint64 `mapstructure:"CARTESI_BLOCKCHAIN_ID"`
 
-	// If set to true the node will send transactions using the legacy gas fee model
-	// (instead of EIP-1559).
+	// If true, force the legacy transaction format with a fresh suggested gas price
+	// for each transaction. If false, select the fee format automatically: EIP-1559
+	// when the network provides a base fee, or legacy otherwise.
+	// This setting does not change gas estimation or replace pending transactions.
 	BlockchainLegacyEnabled bool `mapstructure:"CARTESI_BLOCKCHAIN_LEGACY_ENABLED"`
 
 	// Postgres endpoint in the 'postgres://user:password@hostname:port/database' format (URL).
@@ -431,6 +436,8 @@ type ClaimerConfig struct {
 	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
 
 	// If set to false, the node will not submit claims (reader mode).
+	// The mode is saved when each submitter first starts. A later configuration mismatch
+	// stops startup. Mode changes on an existing database are not supported.
 	FeatureClaimSubmissionEnabled bool `mapstructure:"CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"`
 
 	// HTTP address for Claimer's telemetry service.
@@ -612,7 +619,10 @@ func LoadClaimerConfig() (*ClaimerConfig, error) {
 // EvmreaderConfig holds configuration values for the evmreader service.
 type EvmreaderConfig struct {
 
-	// The default block to be used by EVM Reader and Claimer when requesting new blocks.
+	// The block used by EVM Reader, Claimer, and PRT for chain-state observations.
+	// PRT checks transaction readiness separately at 'latest'.
+	// Use 'finalized' in production. The node does not detect or roll back reorgs.
+	// The policy is saved when each service first starts. A later configuration mismatch stops startup.
 	// One of 'latest', 'pending', 'safe', 'finalized'
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
@@ -918,7 +928,10 @@ func LoadJsonrpcConfig() (*JsonrpcConfig, error) {
 // NodeConfig holds configuration values for the node service.
 type NodeConfig struct {
 
-	// The default block to be used by EVM Reader and Claimer when requesting new blocks.
+	// The block used by EVM Reader, Claimer, and PRT for chain-state observations.
+	// PRT checks transaction readiness separately at 'latest'.
+	// Use 'finalized' in production. The node does not detect or roll back reorgs.
+	// The policy is saved when each service first starts. A later configuration mismatch stops startup.
 	// One of 'latest', 'pending', 'safe', 'finalized'
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
@@ -928,8 +941,10 @@ type NodeConfig struct {
 	// An unique identifier representing a blockchain network.
 	BlockchainId uint64 `mapstructure:"CARTESI_BLOCKCHAIN_ID"`
 
-	// If set to true the node will send transactions using the legacy gas fee model
-	// (instead of EIP-1559).
+	// If true, force the legacy transaction format with a fresh suggested gas price
+	// for each transaction. If false, select the fee format automatically: EIP-1559
+	// when the network provides a base fee, or legacy otherwise.
+	// This setting does not change gas estimation or replace pending transactions.
 	BlockchainLegacyEnabled bool `mapstructure:"CARTESI_BLOCKCHAIN_LEGACY_ENABLED"`
 
 	// Postgres endpoint in the 'postgres://user:password@hostname:port/database' format (URL).
@@ -943,6 +958,8 @@ type NodeConfig struct {
 	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
 
 	// If set to false, the node will not submit claims (reader mode).
+	// The mode is saved when each submitter first starts. A later configuration mismatch
+	// stops startup. Mode changes on an existing database are not supported.
 	FeatureClaimSubmissionEnabled bool `mapstructure:"CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"`
 
 	// If set to false, the node will not read inputs from the blockchain.
@@ -1322,7 +1339,10 @@ func LoadNodeConfig() (*NodeConfig, error) {
 // PrtConfig holds configuration values for the prt service.
 type PrtConfig struct {
 
-	// The default block to be used by EVM Reader and Claimer when requesting new blocks.
+	// The block used by EVM Reader, Claimer, and PRT for chain-state observations.
+	// PRT checks transaction readiness separately at 'latest'.
+	// Use 'finalized' in production. The node does not detect or roll back reorgs.
+	// The policy is saved when each service first starts. A later configuration mismatch stops startup.
 	// One of 'latest', 'pending', 'safe', 'finalized'
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
@@ -1332,8 +1352,10 @@ type PrtConfig struct {
 	// An unique identifier representing a blockchain network.
 	BlockchainId uint64 `mapstructure:"CARTESI_BLOCKCHAIN_ID"`
 
-	// If set to true the node will send transactions using the legacy gas fee model
-	// (instead of EIP-1559).
+	// If true, force the legacy transaction format with a fresh suggested gas price
+	// for each transaction. If false, select the fee format automatically: EIP-1559
+	// when the network provides a base fee, or legacy otherwise.
+	// This setting does not change gas estimation or replace pending transactions.
 	BlockchainLegacyEnabled bool `mapstructure:"CARTESI_BLOCKCHAIN_LEGACY_ENABLED"`
 
 	// Postgres endpoint in the 'postgres://user:password@hostname:port/database' format (URL).
@@ -1347,6 +1369,8 @@ type PrtConfig struct {
 	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
 
 	// If set to false, the node will not submit claims (reader mode).
+	// The mode is saved when each submitter first starts. A later configuration mismatch
+	// stops startup. Mode changes on an existing database are not supported.
 	FeatureClaimSubmissionEnabled bool `mapstructure:"CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"`
 
 	// HTTP address for PRT's telemetry service.
