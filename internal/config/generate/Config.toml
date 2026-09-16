@@ -80,7 +80,9 @@ used-by = ["evmreader", "node"]
 default = "true"
 go-type = "bool"
 description = """
-If set to false, the node will not submit claims (reader mode)."""
+If set to false, the node will not submit claims (reader mode).
+The mode is saved when each submitter first starts. A later configuration mismatch
+stops startup. Mode changes on an existing database are not supported."""
 used-by = ["claimer", "node", "prt"]
 
 [features.CARTESI_FEATURE_INSPECT_ENABLED]
@@ -207,15 +209,20 @@ used-by = ["evmreader", "claimer", "node"]
 default = "false"
 go-type = "bool"
 description = """
-If set to true the node will send transactions using the legacy gas fee model
-(instead of EIP-1559)."""
+If true, force the legacy transaction format with a fresh suggested gas price
+for each transaction. If false, select the fee format automatically: EIP-1559
+when the network provides a base fee, or legacy otherwise.
+This setting does not change gas estimation or replace pending transactions."""
 used-by = ["claimer", "node", "cli", "prt"]
 
 [blockchain.CARTESI_BLOCKCHAIN_DEFAULT_BLOCK]
 default = "finalized"
 go-type = "DefaultBlock"
 description = """
-The default block to be used by EVM Reader and Claimer when requesting new blocks.
+The block used by EVM Reader, Claimer, and PRT for chain-state observations.
+PRT checks transaction readiness separately at 'latest'.
+Use 'finalized' in production. The node does not detect or roll back reorgs.
+The policy is saved when each service first starts. A later configuration mismatch stops startup.
 One of 'latest', 'pending', 'safe', 'finalized'"""
 used-by = ["evmreader", "claimer", "node", "prt"]
 
