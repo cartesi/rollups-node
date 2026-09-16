@@ -23,12 +23,12 @@ type Repository interface {
 }
 
 // SetFailed marks an application as FAILED (recoverable).
-// Use for machine runtime errors that can be resolved by operator intervention
-// (e.g., OOM kill, process crash). The operator can re-enable the application
-// after fixing the root cause.
+// Use for runtime or internal computation errors that can be resolved by
+// operator intervention (e.g., OOM kill, process crash, or a repaired software
+// defect). The operator can re-enable the application after fixing the cause.
 //
 // Recovery assumptions — FAILED is safe to re-enable only when:
-//   - The failure was a machine runtime error (not a DB desync).
+//   - The failure does not prove that persisted state is inconsistent.
 //   - The last snapshot is consistent with the database state.
 //   - replay.Run will correctly verify inputs from the snapshot point.
 //
@@ -234,5 +234,26 @@ func setApplicationStatus(
 	// the in-memory Application consistent with the database.
 	app.Status = status
 	app.Reason = &reason
+	if status == ApplicationStatus_Failed {
+		WarnBlockedForeclosure(logger, app)
+	}
 	return nil
+}
+
+// WarnBlockedForeclosure explains why FAILED prevents foreclosure work from
+// finishing. Call when failure or foreclosure is recorded, not on every tick.
+func WarnBlockedForeclosure(logger *slog.Logger, app *Application) {
+	if app.Status != ApplicationStatus_Failed || app.ForecloseBlock == 0 {
+		return
+	}
+	var reason string
+	if app.Reason != nil {
+		reason = *app.Reason
+	}
+	logger.Warn("Application failure blocks foreclosure drain; repair the cause before clearing FAILED",
+		"application", app.Name,
+		"address", app.IApplicationAddress,
+		"foreclose_block", app.ForecloseBlock,
+		"reason", reason,
+		"recovery_command", fmt.Sprintf("cartesi-rollups-cli app status %s enabled", app.IApplicationAddress.Hex()))
 }

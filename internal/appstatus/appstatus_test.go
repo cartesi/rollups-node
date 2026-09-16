@@ -4,6 +4,7 @@
 package appstatus
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
@@ -12,8 +13,40 @@ import (
 
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
+
+func TestFailedForeclosureDiagnostic(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		foreclosed bool
+		writeError error
+	}{
+		{name: "failure after foreclosure", foreclosed: true},
+		{name: "failure without foreclosure"},
+		{name: "failure not recorded", foreclosed: true, writeError: errors.New("database unavailable")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&logs, nil))
+			app := newTestApp()
+			if tc.foreclosed {
+				app.ForecloseBlock = 80
+			}
+			err := SetFailed(t.Context(), logger, &mockRepo{err: tc.writeError}, app, "machine process crashed")
+			require.ErrorIs(t, err, tc.writeError)
+			if tc.foreclosed && tc.writeError == nil {
+				require.Contains(t, logs.String(), "failure blocks foreclosure drain")
+				require.Contains(t, logs.String(), "foreclose_block=80")
+				require.Contains(t, logs.String(), "machine process crashed")
+				require.Contains(t, logs.String(), "repair the cause before clearing FAILED")
+			} else {
+				require.NotContains(t, logs.String(), "failure blocks foreclosure drain")
+			}
+		})
+	}
+}
 
 func TestAppStatus(t *testing.T) {
 	suite.Run(t, new(AppStatusSuite))
