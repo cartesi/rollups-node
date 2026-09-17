@@ -122,7 +122,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -221,7 +220,7 @@ func Get{{ toFieldName .Name }}() ({{ .GoType }}, error) {
 	{{- if .File }}
 	if s == "" {
 		filename := viper.GetString({{toConstName .Name}}_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := ReadSecretFile(filename)
 		if err != nil {
 			return notDefined{{ .GoType }}(), fmt.Errorf("failed to parse %s: %w", {{ toConstName .Name }}_FILE, err)
 		}
