@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
@@ -126,4 +127,26 @@ func TestSafeURL(t *testing.T) {
 		require.Error(t, err)
 		require.Equal(t, "[REDACTED]", safe.String())
 	})
+}
+
+func TestEvmReaderReadyMaxStaleness(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	SetDefaults()
+	budget, err := GetEvmReaderReadyMaxStaleness()
+	require.NoError(t, err)
+	require.Zero(t, budget)
+
+	viper.AutomaticEnv()
+	t.Setenv(EVM_READER_READY_MAX_STALENESS, "90")
+	budget, err = GetEvmReaderReadyMaxStaleness()
+	require.NoError(t, err)
+	require.Equal(t, 90*time.Second, budget)
+
+	cfg := &NodeConfig{EvmReaderReadyMaxStaleness: budget}
+	require.Equal(t, budget, cfg.ToEvmreaderConfig().EvmReaderReadyMaxStaleness)
+
+	t.Setenv(EVM_READER_READY_MAX_STALENESS, "invalid")
+	_, err = GetEvmReaderReadyMaxStaleness()
+	require.Error(t, err)
 }

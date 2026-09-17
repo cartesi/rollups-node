@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"time"
 
@@ -17,19 +18,16 @@ import (
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 type CreateInfo struct {
-	service.CreateInfo
-	Config         config.PrtConfig
-	Repository     repository.Repository
-	EthClient      EthClientInterface
-	AdapterFactory AdapterFactory
+	Config     config.PrtConfig
+	Logger     *slog.Logger
+	Repository repository.Repository
 }
 
 type Service struct {
-	service.Service
+	service.TickServiceTemplate
 	repository        prtRepository
 	client            EthClientInterface
 	adapterFactory    AdapterFactory
@@ -50,24 +48,44 @@ type PersistentConfig struct {
 	ChainID                uint64
 }
 
-func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
+func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, error) {
 	var err error
 	if err = ctx.Err(); err != nil {
 		return nil, err // This returns context.Canceled or context.DeadlineExceeded.
 	}
 
 	s := &Service{}
-	c.Impl = s
-
-	err = service.Create(ctx, &c.CreateInfo, &s.Service)
+	tickCfg := &service.TickServiceConfigs{
+		BaseConfigs: service.BaseConfigs{
+			Name:     config.ServicePrt,
+			Logger:   c.Logger,
+			LogLevel: c.Config.LogLevel,
+			LogColor: c.Config.LogColor,
+		},
+		PollInterval: c.Config.PrtPollingInterval,
+	}
+	err = service.InitTickServiceTemplate(&s.TickServiceTemplate, tickCfg, s)
 	if err != nil {
 		return nil, err
 	}
 
-	if c.EthClient == nil {
-		return nil, fmt.Errorf("EthClient on prt service Create is nil")
+	authOpt, err := config.HTTPAuthorizationOption()
+	if err != nil {
+		return nil, err
 	}
-	chainID, err := c.EthClient.ChainID(ctx)
+
+	ethClient, err := ethutil.NewEthClient(ctx, c.Config.BlockchainHttpEndpoint.Raw(), s.Logger,
+		ethutil.RetryConfig{
+			MaxRetries:     c.Config.BlockchainHttpMaxRetries,
+			RetryMinWait:   c.Config.BlockchainHttpRetryMinWait,
+			RetryMaxWait:   c.Config.BlockchainHttpRetryMaxWait,
+			RequestTimeout: c.Config.BlockchainHttpRequestTimeout,
+		}, authOpt)
+	if err != nil {
+		return nil, err
+	}
+
+	chainID, err := ethClient.ChainID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -90,24 +108,14 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 			chainID.Uint64(), nodeConfig.ChainID)
 	}
 
-	s.client = c.EthClient
+	s.client = ethClient
 	s.submissionEnabled = nodeConfig.ClaimSubmissionEnabled
 	s.filter = ethutil.Filter{
 		MinChunkSize: ethutil.DefaultMinChunkSize,
 		MaxChunkSize: new(big.Int).SetUint64(c.Config.BlockchainMaxBlockRange),
 		Logger:       s.Logger,
 	}
-
-	if c.AdapterFactory != nil {
-		s.adapterFactory = c.AdapterFactory
-	} else {
-		ethClient, ok := c.EthClient.(*ethclient.Client)
-		if !ok {
-			return nil, fmt.Errorf("EthClient must be *ethclient.Client when AdapterFactory is not provided")
-		}
-		s.adapterFactory = NewDefaultAdapterFactory(ethClient, s.filter)
-	}
-
+	s.adapterFactory = NewDefaultAdapterFactory(ethClient, s.filter)
 	s.currentEpochIndex = map[int64]uint64{}
 	s.settleInFlight = map[int64]*common.Hash{}
 	s.joinInFlight = map[int64]*common.Hash{}
@@ -124,19 +132,16 @@ func Create(ctx context.Context, c *CreateInfo) (*Service, error) {
 		s.Logger.Info("PRT submitter identity", "address", s.txOptsFactory.From())
 	}
 
+	s.Logger.Info("Created", "config", c.Config)
+
 	return s, nil
 }
-
-func (s *Service) Alive() bool     { return true }
-func (s *Service) Ready() bool     { return true }
-func (s *Service) Reload() []error { return nil }
 
 // logErrorUnlessShutdown keeps an in-flight shutdown cancellation from being
 // reported as an operational failure. DeadlineExceeded and cancellations while
 // the service is running remain errors.
-func (s *Service) logErrorUnlessShutdown(message string, err error, args ...any) {
-	if s.IsStopping() && errors.Is(err, context.Canceled) &&
-		!errors.Is(err, context.DeadlineExceeded) {
+func (s *Service) logErrorUnlessShutdown(ctx context.Context, message string, err error, args ...any) {
+	if errors.Is(ctx.Err(), context.Canceled) && errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		return
 	}
 	args = append(args, "error", err)
@@ -145,27 +150,27 @@ func (s *Service) logErrorUnlessShutdown(message string, err error, args ...any)
 
 // Tick executes the Validator main logic of producing claims and/or proofs
 // for processed epochs of all running applications.
-func (s *Service) Tick() []error {
+func (s *Service) Tick(ctx context.Context) (bool, error) {
 	// Check for shutdown before starting work, consistent with the advancer.
-	if s.IsStopping() {
-		return nil
+	if ctx.Err() != nil {
+		return false, nil
 	}
 
-	apps, _, err := getAllRunningApplications(s.Context, s.repository)
+	apps, _, err := getAllRunningApplications(ctx, s.repository)
 	if err != nil {
 		// Only suppress context errors during shutdown; surface real DB errors.
-		if s.IsStopping() && errors.Is(err, context.Canceled) {
+		if errors.Is(err, context.Canceled) {
 			s.Logger.Warn("Tick interrupted by shutdown", "error", err)
-			return nil
+			return false, nil
 		}
-		return []error{fmt.Errorf("failed to get running applications. %w", err)}
+		return false, fmt.Errorf("failed to get running applications. %w", err)
 	}
 
 	// validate each application
 	errs := []error{}
 	for idx := range apps {
-		if s.Context.Err() != nil {
-			return errs
+		if ctx.Err() != nil {
+			return false, errors.Join(errs...)
 		}
 		app := apps[idx]
 		// Foreclosed apps: run the drain path (reconcile accepted epochs,
@@ -173,18 +178,18 @@ func (s *Service) Tick() []error {
 		// the sole writer of ForecloseBlock; the app keeps health status OK and
 		// remains enabled for L1 observation.
 		if app.ForecloseBlock != 0 {
-			if ferr := s.handleForeclosedApp(s.Context, app); ferr != nil {
-				if s.IsStopping() && errors.Is(ferr, context.Canceled) {
+			if ferr := s.handleForeclosedApp(ctx, app); ferr != nil {
+				if errors.Is(ferr, context.Canceled) {
 					continue
 				}
 				errs = append(errs, ferr)
 			}
 			continue
 		}
-		if err := s.validateApplication(s.Context, app); err != nil {
+		if err := s.validateApplication(ctx, app); err != nil {
 			// During shutdown, in-flight L1 requests see context cancellation.
 			// Suppress these to avoid spurious ERR log entries.
-			if s.IsStopping() && errors.Is(err, context.Canceled) {
+			if errors.Is(err, context.Canceled) {
 				s.Logger.Warn("Tick interrupted by shutdown",
 					"application", app.IApplicationAddress, "error", err)
 				continue
@@ -192,7 +197,7 @@ func (s *Service) Tick() []error {
 			errs = append(errs, err)
 		}
 	}
-	return errs
+	return false, errors.Join(errs...)
 }
 
 // handleForeclosedApp drains a foreclosed DaveConsensus application's epochs to
@@ -308,15 +313,6 @@ func (s *Service) forecloseComputedEpochs(ctx context.Context, app *Application)
 		)
 	}
 	return nil
-}
-
-func (s *Service) Stop(_ bool) []error {
-	s.SetStopping()
-	return nil
-}
-
-func (s *Service) String() string {
-	return s.Name
 }
 
 func (s *Service) setupPersistentConfig(

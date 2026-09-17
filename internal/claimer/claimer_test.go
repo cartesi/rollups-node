@@ -5,6 +5,7 @@ package claimer
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -26,8 +27,8 @@ func TestDoNothing(t *testing.T) {
 	prevEpochs := makeEpochMap()
 	currEpochs := makeEpochMap()
 
-	transitions, errs := m.submitClaimsAndUpdateDatabase(prevEpochs, currEpochs, makeApplicationMap(), big.NewInt(0))
-	assert.Equal(t, 0, len(errs))
+	transitions, err := m.submitClaimsAndUpdateDatabase(context.Background(), prevEpochs, currEpochs, makeApplicationMap(), big.NewInt(0))
+	assert.NoError(t, err)
 	assert.Equal(t, 0, transitions, "no transitions when no epochs to process")
 }
 
@@ -36,23 +37,11 @@ func TestTickInterleavesStagesWithPinnedBlockAndReschedulesOnProgress(t *testing
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
-	ctx := context.Background()
-	err := service.Create(ctx, &service.CreateInfo{
-		Name:             "claimer-test",
-		Context:          ctx,
-		Impl:             m,
-		PollInterval:     time.Hour,
-		EnableReschedule: true,
-	}, &m.Service)
+	err := service.InitTickServiceTemplate(&m.TickServiceTemplate, &service.TickServiceConfigs{
+		BaseConfigs:  service.BaseConfigs{Name: "claimer-test"},
+		PollInterval: time.Hour,
+	}, m)
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		if m.Ticker != nil {
-			m.Ticker.Stop()
-		}
-		if m.Cancel != nil {
-			m.Cancel()
-		}
-	})
 
 	tickBlock := big.NewInt(100)
 	app := makeApplication()
@@ -87,8 +76,55 @@ func TestTickInterleavesStagesWithPinnedBlockAndReschedulesOnProgress(t *testing
 	}), repository.Pagination{}, false).
 		Return([]*model.Application{}, 0, nil).Once()
 
-	errs := m.Tick()
+	reschedule, err := m.Tick(context.Background())
 
-	require.Empty(t, errs)
-	assert.True(t, m.DrainReschedule(), "a successful stage transition should request an immediate follow-up tick")
+	require.NoError(t, err)
+	assert.True(t, reschedule, "a successful stage transition should request an immediate follow-up tick")
+}
+
+func TestTickCancellationRequiresCanceledServiceContext(t *testing.T) {
+	stages := []string{"getDefaultBlockNumber", "SelectClaimsToSubmitPerApp", "SelectClaimsToStagePerApp", "SelectClaimsToAcceptPerApp"}
+	for stage, name := range stages {
+		for _, canceled := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/canceled=%v", name, canceled), func(t *testing.T) {
+				m, r, b := newServiceMock(t)
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				if canceled {
+					cancel()
+				}
+				failure := fmt.Errorf("dependency: %w", context.Canceled)
+				var rpcErr error
+				if stage == 0 {
+					rpcErr = failure
+				}
+				b.On(stages[0], mock.Anything).Return(big.NewInt(100), rpcErr).Once()
+				for i := 1; i <= stage; i++ {
+					var queryErr error
+					if i == stage {
+						queryErr = failure
+					}
+					r.On(stages[i], mock.Anything).Return(makeEpochMap(), makeEpochMap(), makeApplicationMap(), queryErr).Once()
+				}
+				reschedule, err := m.Tick(ctx)
+				require.False(t, reschedule)
+				if canceled {
+					require.NoError(t, err)
+				} else {
+					require.ErrorIs(t, err, context.Canceled)
+				}
+				r.AssertExpectations(t)
+				b.AssertExpectations(t)
+			})
+		}
+	}
+}
+
+func TestShutdownInterruptedDoesNotSuppressOtherErrors(t *testing.T) {
+	m, _, _ := newServiceMock(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.False(t, m.shutdownInterrupted(ctx, "test", context.DeadlineExceeded))
+	require.False(t, m.shutdownInterrupted(ctx, "test", fmt.Errorf("database unavailable")))
+	require.False(t, m.shutdownInterrupted(ctx, "test", nil))
 }

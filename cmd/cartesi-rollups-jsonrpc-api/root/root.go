@@ -5,11 +5,12 @@ package root
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/version"
 	"github.com/cartesi/rollups-node/pkg/service"
 
@@ -30,7 +31,7 @@ var Cmd = &cobra.Command{
 	Use:     "cartesi-rollups-" + config.ServiceJsonrpc,
 	Short:   "Runs cartesi-rollups-" + config.ServiceJsonrpc,
 	Long:    "Runs cartesi-rollups-" + config.ServiceJsonrpc + " in standalone mode",
-	Run:     run,
+	RunE:    run,
 	Version: version.BuildVersion,
 }
 
@@ -63,32 +64,17 @@ func init() {
 	}
 }
 
-func run(cmd *cobra.Command, args []string) {
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
-	defer cancel()
-
-	createInfo := jsonrpc.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:                 config.ServiceJsonrpc,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServiceJsonrpc, cfg.LogLevel),
-			LogColor:             cfg.LogColor,
-			EnableSignalHandling: true,
-			TelemetryCreate:      true,
-			TelemetryAddress:     cfg.JsonrpcTelemetryAddress,
+func run(cmd *cobra.Command, args []string) error {
+	return cli.RunSingleService(cli.SingleServiceOptions{
+		Command:            cmd,
+		Name:               config.ServiceJsonrpc,
+		LogLevel:           cfg.LogLevel,
+		LogColor:           cfg.LogColor,
+		MaxStartupTime:     cfg.MaxStartupTime,
+		DatabaseConnection: cfg.DatabaseConnection,
+		TelemetryAddress:   cfg.JsonrpcTelemetryAddress,
+		Create: func(ctx context.Context, logger *slog.Logger, repo repository.Repository) (service.SupervisedService, error) {
+			return jsonrpc.Create(ctx, &jsonrpc.CreateInfo{Config: *cfg, Logger: logger, Repository: repo})
 		},
-		Config: *cfg,
-	}
-	logger := service.NewServiceLogger(&createInfo.CreateInfo)
-	createInfo.CreateInfo.Logger = logger
-
-	var err error
-	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
-	cli.CheckErr(logger, err)
-	defer createInfo.Repository.Close()
-
-	jsonrpcService, err := jsonrpc.Create(ctx, &createInfo)
-	cli.CheckErr(logger, err)
-	jsonrpcService.LogConfig(createInfo.Config)
-
-	cli.CheckErr(logger, jsonrpcService.Serve())
+	})
 }

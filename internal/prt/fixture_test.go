@@ -380,8 +380,10 @@ func (m *tournamentAdapterMock) JoinTournament(
 func newPRTServiceMock() (*Service, *prtRepositoryMock) {
 	repo := &prtRepositoryMock{}
 	s := &Service{
-		Service: service.Service{
-			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		TickServiceTemplate: service.TickServiceTemplate{
+			BaseTemplate: service.BaseTemplate{
+				Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+			},
 		},
 		repository: repo,
 	}

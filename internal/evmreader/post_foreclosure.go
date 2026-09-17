@@ -29,17 +29,19 @@ func (r *Service) checkPostForeclosure(
 	ctx context.Context,
 	apps []appContracts,
 	mostRecentBlockNumber uint64,
-) {
+) bool {
+	success := true
 	for _, app := range apps {
 		if app.application.ForecloseBlock == 0 {
 			continue
 		}
 		if app.application.AccountsDriveProvedBlock == 0 {
-			r.checkForDriveProved(ctx, app, mostRecentBlockNumber)
+			success = r.checkForDriveProved(ctx, app, mostRecentBlockNumber) && success
 		} else {
-			r.checkForPostForeclosureWithdrawals(ctx, app, mostRecentBlockNumber)
+			success = r.checkForPostForeclosureWithdrawals(ctx, app, mostRecentBlockNumber) && success
 		}
 	}
+	return success
 }
 
 // abortPostForeclosureLoop mirrors abortForeclosureLoop's

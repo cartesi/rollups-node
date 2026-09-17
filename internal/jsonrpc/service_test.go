@@ -25,7 +25,7 @@ func ensureSentinelRejects(t *testing.T, s *Service) {
 	req := httptest.NewRequest(http.MethodPost, "/rpc", http.NoBody)
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
-	s.server.Handler.ServeHTTP(rr, req)
+	s.Server.Handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusServiceUnavailable, rr.Code)
 	retryAfter, err := strconv.Atoi(rr.Header().Get("Retry-After"))
@@ -42,15 +42,15 @@ func ensureSentinelRejects(t *testing.T, s *Service) {
 // this test catches it.
 func TestJSONRPC_HardenedServerOptions(t *testing.T) {
 	s := newTestService(t, "jsonrpc-server-options")
-	require.NotNil(t, s.server)
+	require.NotNil(t, s.Server)
 
 	opts := service.DefaultJSONRPCOptions()
-	require.Equal(t, opts.ReadHeaderTimeout, s.server.ReadHeaderTimeout)
-	require.Equal(t, opts.ReadTimeout, s.server.ReadTimeout)
-	require.Equal(t, opts.WriteTimeout, s.server.WriteTimeout)
-	require.Equal(t, opts.IdleTimeout, s.server.IdleTimeout)
-	require.Equal(t, opts.MaxHeaderBytes, s.server.MaxHeaderBytes)
-	require.NotNil(t, s.server.ErrorLog)
+	require.Equal(t, opts.ReadHeaderTimeout, s.Server.ReadHeaderTimeout)
+	require.Equal(t, opts.ReadTimeout, s.Server.ReadTimeout)
+	require.Equal(t, opts.WriteTimeout, s.Server.WriteTimeout)
+	require.Equal(t, opts.IdleTimeout, s.Server.IdleTimeout)
+	require.Equal(t, opts.MaxHeaderBytes, s.Server.MaxHeaderBytes)
+	require.NotNil(t, s.Server.ErrorLog)
 	require.Equal(t, opts.WriteTimeout-jsonrpcWriteHeadroom, s.dispatchTimeout)
 }
 
@@ -73,7 +73,7 @@ func TestJSONRPC_ServerHandlerAppliesBatchDispatchTimeout(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
-	s.server.Handler.ServeHTTP(rr, req)
+	s.Server.Handler.ServeHTTP(rr, req)
 
 	var responses []RPCResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &responses))
@@ -94,7 +94,7 @@ func TestJSONRPC_RequestIDPropagated(t *testing.T) {
 	req.Header.Set("X-Request-ID", "pinned-xyz")
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
-	s.server.Handler.ServeHTTP(rr, req)
+	s.Server.Handler.ServeHTTP(rr, req)
 
 	// handleRPC will reject the empty body as a bad request, but the
 	// middleware chain still runs and must echo the header.
@@ -114,7 +114,7 @@ func TestJSONRPC_OversizedBodyReturns413(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(oversized))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
-	s.server.Handler.ServeHTTP(rr, req)
+	s.Server.Handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusRequestEntityTooLarge, rr.Code)
 	require.Contains(t, rr.Body.String(), "Payload too large")
@@ -131,12 +131,12 @@ func TestJSONRPC_AdmissionDisabledWhenZero(t *testing.T) {
 	// and confirm a basic request reaches handleRPC (which rejects
 	// an empty body with 400, not 503).
 	s := newTestServiceWithInflight(t, "jsonrpc-adm-zero", 0)
-	require.Nil(t, s.admission, "limit=0 must produce nil admission")
+	require.Nil(t, s.Admission, "limit=0 must produce nil admission")
 
 	req := httptest.NewRequest(http.MethodPost, "/rpc", http.NoBody)
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
-	s.server.Handler.ServeHTTP(rr, req)
+	s.Server.Handler.ServeHTTP(rr, req)
 	require.NotEqual(t, http.StatusServiceUnavailable, rr.Code,
 		"disabled admission must not return 503")
 }
@@ -145,8 +145,8 @@ func TestJSONRPC_AdmissionWiredWhenPositive(t *testing.T) {
 	// JsonrpcMaxInflight>0 must construct a non-nil SemaphoreAdmission
 	// with the matching limit.
 	s := newTestServiceWithInflight(t, "jsonrpc-adm-wired", 7)
-	require.NotNil(t, s.admission)
-	require.Equal(t, uint64(7), s.admission.Limit())
+	require.NotNil(t, s.Admission)
+	require.Equal(t, uint64(7), s.Admission.Limit())
 }
 
 func TestJSONRPC_AdmissionRejectsWhenExhausted(t *testing.T) {
@@ -158,31 +158,30 @@ func TestJSONRPC_AdmissionRejectsWhenExhausted(t *testing.T) {
 
 	// Swap the admission underlying the server handler for a
 	// pre-filled one to force rejection on every request.
-	s.admission = service.NewSemaphoreAdmission(1)
-	s.admission.TryAcquire() // pre-fill the single permit
-	s.server.Handler = rebuildHandlerWithAdmission(s)
+	s.Admission.TryAcquire() // pre-fill the single permit
+	s.Server.Handler = rebuildHandlerWithAdmission(s)
 
 	ensureSentinelRejects(t, s)
-	require.Equal(t, uint64(1), s.admission.Rejected())
+	require.Equal(t, uint64(1), s.Admission.Rejected())
 }
 
 func TestJSONRPC_AdmissionPermitReleasedAfterRequest(t *testing.T) {
 	// With limit=1 a sequential burst must all succeed: each request
 	// releases its permit on return.
 	s := newTestServiceWithInflight(t, "jsonrpc-adm-release", 1)
-	require.NotNil(t, s.admission)
+	require.NotNil(t, s.Admission)
 
 	for range 5 {
 		req := httptest.NewRequest(http.MethodPost, "/rpc", http.NoBody)
 		req.Header.Set("Content-Type", "application/json")
 		rr := httptest.NewRecorder()
-		s.server.Handler.ServeHTTP(rr, req)
+		s.Server.Handler.ServeHTTP(rr, req)
 		// handleRPC returns 400 on empty body; the key assertion is
 		// that we never see 503 because the permit is released each
 		// time the handler returns.
 		require.NotEqual(t, http.StatusServiceUnavailable, rr.Code)
 	}
-	require.Equal(t, uint64(0), s.admission.Rejected())
+	require.Equal(t, uint64(0), s.Admission.Rejected())
 }
 
 // rebuildHandlerWithAdmission rewraps the service's mux with only
@@ -196,7 +195,7 @@ func rebuildHandlerWithAdmission(s *Service) http.Handler {
 	mux.HandleFunc("/rpc", s.handleRPC)
 
 	var handler http.Handler = mux
-	handler = service.AdmissionMiddleware(s.admission)(handler)
+	handler = service.AdmissionMiddleware(s.Admission)(handler)
 	return handler
 }
 
@@ -211,7 +210,7 @@ func TestJSONRPC_CORSDisabledByDefault(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://evil.com")
 	rr := httptest.NewRecorder()
-	s.server.Handler.ServeHTTP(rr, req)
+	s.Server.Handler.ServeHTTP(rr, req)
 
 	require.Empty(t, rr.Header().Get("Access-Control-Allow-Origin"))
 	require.Empty(t, rr.Header().Get("Vary"))
@@ -224,7 +223,7 @@ func TestJSONRPC_CORSAllowedOriginEchoed(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://trusted.example.com")
 	rr := httptest.NewRecorder()
-	s.server.Handler.ServeHTTP(rr, req)
+	s.Server.Handler.ServeHTTP(rr, req)
 
 	require.Equal(t, "http://trusted.example.com", rr.Header().Get("Access-Control-Allow-Origin"))
 	require.Contains(t, rr.Header().Values("Vary"), "Origin")
@@ -237,7 +236,7 @@ func TestJSONRPC_CORSDisallowedOriginNoGrant(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://evil.com")
 	rr := httptest.NewRecorder()
-	s.server.Handler.ServeHTTP(rr, req)
+	s.Server.Handler.ServeHTTP(rr, req)
 
 	require.Empty(t, rr.Header().Get("Access-Control-Allow-Origin"))
 	require.Contains(t, rr.Header().Values("Vary"), "Origin")
@@ -249,7 +248,7 @@ func TestJSONRPC_CORSNoOriginPassthrough(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/rpc", http.NoBody)
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
-	s.server.Handler.ServeHTTP(rr, req)
+	s.Server.Handler.ServeHTTP(rr, req)
 
 	require.Empty(t, rr.Header().Get("Access-Control-Allow-Origin"))
 	require.NotEqual(t, http.StatusServiceUnavailable, rr.Code)

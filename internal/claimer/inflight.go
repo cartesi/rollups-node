@@ -4,6 +4,7 @@
 package claimer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -50,6 +51,7 @@ func (tx inFlightTx) ageAt(blockNumber *big.Int) uint64 {
 //
 // It returns the number of confirmed state changes and any error.
 func (s *Service) checkClaimsInFlight(
+	ctx context.Context,
 	computedEpochs map[int64]*model.Epoch,
 	apps map[int64]*model.Application,
 	endBlock *big.Int,
@@ -57,7 +59,7 @@ func (s *Service) checkClaimsInFlight(
 	confirmed := 0
 	var errs []error
 	for appID, tx := range s.claimsInFlight {
-		result := s.processSubmitInFlight(appID, tx, submitInFlightWork{
+		result := s.processSubmitInFlight(ctx, appID, tx, submitInFlightWork{
 			app:   apps[appID],
 			epoch: computedEpochs[appID],
 		}, endBlock)
@@ -73,13 +75,14 @@ func (s *Service) checkClaimsInFlight(
 }
 
 func (s *Service) processSubmitInFlight(
+	ctx context.Context,
 	appID int64,
 	tx inFlightTx,
 	work submitInFlightWork,
 	endBlock *big.Int,
 ) claimStepResult {
 	txHash := tx.txHash
-	ready, receipt, err := s.blockchain.pollTransaction(s.Context, txHash, endBlock)
+	ready, receipt, err := s.blockchain.pollTransaction(ctx, txHash, endBlock)
 	if err != nil {
 		s.Logger.Warn("Claim submission receipt lookup failed; keeping tx in flight.",
 			"txHash", txHash,
@@ -115,10 +118,11 @@ func (s *Service) processSubmitInFlight(
 		s.dropClaimInFlight(appID)
 		return claimNoProgress()
 	}
-	return s.handleConfirmedSubmitInFlight(appID, txHash, receipt, work)
+	return s.handleConfirmedSubmitInFlight(ctx, appID, txHash, receipt, work)
 }
 
 func (s *Service) handleConfirmedSubmitInFlight(
+	ctx context.Context,
 	appID int64,
 	txHash common.Hash,
 	receipt *types.Receipt,
@@ -138,7 +142,7 @@ func (s *Service) handleConfirmedSubmitInFlight(
 	outcome := stageReceiptNoMatch
 	var divErr error
 	if app != nil {
-		outcome, divErr = s.tryStageFromReceipt(receipt, app, computedEpoch)
+		outcome, divErr = s.tryStageFromReceipt(ctx, receipt, app, computedEpoch)
 	}
 	switch outcome {
 	case stageReceiptStaged:
@@ -187,7 +191,7 @@ func (s *Service) handleConfirmedSubmitInFlight(
 		return claimRetryLater(divErr)
 	case stageReceiptNoMatch:
 		err := s.repository.UpdateEpochWithSubmittedClaim(
-			s.Context,
+			ctx,
 			computedEpoch.ApplicationID,
 			computedEpoch.Index,
 			receipt.TxHash,
@@ -213,6 +217,7 @@ func (s *Service) handleConfirmedSubmitInFlight(
 // When a transaction is confirmed, the matching epoch can move to
 // CLAIM_ACCEPTED.
 func (s *Service) checkAcceptsInFlight(
+	ctx context.Context,
 	stagedEpochs map[int64]*model.Epoch,
 	apps map[int64]*model.Application,
 	endBlock *big.Int,
@@ -220,7 +225,7 @@ func (s *Service) checkAcceptsInFlight(
 	confirmed := 0
 	var errs []error
 	for appID, tx := range s.acceptsInFlight {
-		result, pollErr := s.processAcceptInFlight(appID, tx, acceptInFlightWork{
+		result, pollErr := s.processAcceptInFlight(ctx, appID, tx, acceptInFlightWork{
 			app:   apps[appID],
 			epoch: stagedEpochs[appID],
 		}, endBlock)
@@ -240,13 +245,14 @@ func (s *Service) checkAcceptsInFlight(
 }
 
 func (s *Service) processAcceptInFlight(
+	ctx context.Context,
 	appID int64,
 	tx inFlightTx,
 	work acceptInFlightWork,
 	endBlock *big.Int,
 ) (claimStepResult, error) {
 	txHash := tx.txHash
-	ready, receipt, err := s.blockchain.pollTransaction(s.Context, txHash, endBlock)
+	ready, receipt, err := s.blockchain.pollTransaction(ctx, txHash, endBlock)
 	if err != nil {
 		s.Logger.Warn("Accept submission receipt lookup failed; keeping tx in flight.",
 			"txHash", txHash, "err", err)
@@ -278,12 +284,13 @@ func (s *Service) processAcceptInFlight(
 		appAddress = work.app.IApplicationAddress
 	}
 	if receipt.Status == 0 {
-		return s.handleRevertedAcceptInFlight(appID, txHash, work, endBlock, appAddress), nil
+		return s.handleRevertedAcceptInFlight(ctx, appID, txHash, work, endBlock, appAddress), nil
 	}
-	return s.handleConfirmedAcceptInFlight(appID, txHash, receipt, work, appAddress), nil
+	return s.handleConfirmedAcceptInFlight(ctx, appID, txHash, receipt, work, appAddress), nil
 }
 
 func (s *Service) handleRevertedAcceptInFlight(
+	ctx context.Context,
 	appID int64,
 	txHash common.Hash,
 	work acceptInFlightWork,
@@ -302,7 +309,7 @@ func (s *Service) handleRevertedAcceptInFlight(
 			"id", appID, "tx", txHash)
 		return claimNoProgress()
 	}
-	claim, gerr := s.blockchain.getClaimStatus(s.Context, app, stagedEpoch, endBlock)
+	claim, gerr := s.blockchain.getClaimStatus(ctx, app, stagedEpoch, endBlock)
 	if gerr != nil {
 		s.Logger.Warn("Accept tx reverted; classifying getClaim failed, will retry next tick",
 			"app", appAddress, "tx", txHash, "err", gerr)
@@ -311,11 +318,11 @@ func (s *Service) handleRevertedAcceptInFlight(
 	if app.ForecloseBlock != 0 && claim.Status != claimStatusAccepted {
 		// Foreclosed: no on-chain path remains for a non-accepted claim, so
 		// terminalize to CLAIM_FORECLOSED rather than marking the app FAILED.
-		return s.terminalizeForeclosedStagedClaim(app, stagedEpoch)
+		return s.terminalizeForeclosedStagedClaim(ctx, app, stagedEpoch)
 	}
 	switch claim.Status {
 	case claimStatusAccepted:
-		if err := s.updateEpochAcceptedFromClaimStatus(app, stagedEpoch, claim, "checkAcceptsInFlight"); err != nil {
+		if err := s.updateEpochAcceptedFromClaimStatus(ctx, app, stagedEpoch, claim, "checkAcceptsInFlight"); err != nil {
 			return claimRetryLater(fmt.Errorf("reconciling accept-revert front-run for epoch %d (%d): %w",
 				stagedEpoch.Index, stagedEpoch.VirtualIndex, err))
 		}
@@ -328,7 +335,7 @@ func (s *Service) handleRevertedAcceptInFlight(
 	case claimStatusStaged:
 		// Our claim is still STAGED. The transaction reverted for some other
 		// reason. The next tick can send acceptClaim again.
-		if err := s.verifyClaimOutputsMatch(app, stagedEpoch, claim, "checkAcceptsInFlight"); err != nil {
+		if err := s.verifyClaimOutputsMatch(ctx, app, stagedEpoch, claim, "checkAcceptsInFlight"); err != nil {
 			return claimRetryLater(fmt.Errorf("staged-outputs mismatch on accept-revert classification: %w", err))
 		}
 		s.Logger.Warn("Accept tx reverted but claim still STAGED on chain; will retry next tick",
@@ -338,7 +345,7 @@ func (s *Service) handleRevertedAcceptInFlight(
 		// The DB says CLAIM_STAGED, but the contract says UNSTAGED. This should
 		// not happen when reading a finalized block. Mark the app FAILED so the
 		// operator can fix configuration and re-enable it.
-		if ferr := appstatus.SetFailedf(s.Context, s.Logger, s.repository, app,
+		if ferr := appstatus.SetFailedf(ctx, s.Logger, s.repository, app,
 			"accept tx %v reverted and getClaim reports UNSTAGED for our "+
 				"(app, lpbn, machine) tuple — DB inconsistent with chain; check "+
 				"default block and node_config, then re-enable",
@@ -352,6 +359,7 @@ func (s *Service) handleRevertedAcceptInFlight(
 }
 
 func (s *Service) handleConfirmedAcceptInFlight(
+	ctx context.Context,
 	appID int64,
 	txHash common.Hash,
 	receipt *types.Receipt,
@@ -362,7 +370,7 @@ func (s *Service) handleConfirmedAcceptInFlight(
 	// Normal path: claim_transaction_hash was set when the epoch moved to
 	// CLAIM_SUBMITTED. Pass nil so the repository keeps that hash.
 	err := s.repository.UpdateEpochWithAcceptedClaim(
-		s.Context, stagedEpoch.ApplicationID, stagedEpoch.Index, nil)
+		ctx, stagedEpoch.ApplicationID, stagedEpoch.Index, nil)
 	if err != nil {
 		return claimRetryLater(fmt.Errorf("updating epoch %d (%d) with accepted claim: %w",
 			stagedEpoch.Index, stagedEpoch.VirtualIndex, err))

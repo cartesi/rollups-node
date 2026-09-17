@@ -4,6 +4,7 @@
 package claimer
 
 import (
+	"context"
 	"math/big"
 	"testing"
 
@@ -38,8 +39,8 @@ func TestVerifyClaimOutputsMismatch(t *testing.T) {
 	r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Diverged, mock.Anything).
 		Return(nil).Once()
 
-	_, errs := m.acceptStagedClaimsAndIssueAcceptTx(makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
-	assert.Equal(t, 1, len(errs), "chain_claim_outputs_mismatch must surface as an error")
+	_, err := m.acceptStagedClaimsAndIssueAcceptTx(context.Background(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	assert.Error(t, err, "chain_claim_outputs_mismatch must surface as an error")
 	assert.Equal(t, 0, len(m.acceptsInFlight))
 }
 
@@ -58,7 +59,7 @@ func TestRejectEpochAndSetApplicationDiverged_MirrorsAppliedWrites(t *testing.T)
 			mock.Anything, app.ID, epoch.Index, mock.Anything).
 			Return(repository.RejectEpochAndDivergeResult{EpochRejected: true}, nil).Once()
 
-		err := service.rejectEpochAndSetApplicationDiverged(app, epoch, "later claim disagreement")
+		err := service.rejectEpochAndSetApplicationDiverged(t.Context(), app, epoch, "later claim disagreement")
 
 		require.Error(t, err)
 		assert.Equal(t, model.ApplicationStatus_MachineHalted, app.Status)
@@ -80,7 +81,7 @@ func TestRejectEpochAndSetApplicationDiverged_MirrorsAppliedWrites(t *testing.T)
 			mock.Anything, app.ID, epoch.Index, reason).
 			Return(repository.RejectEpochAndDivergeResult{ApplicationDiverged: true}, nil).Once()
 
-		err := service.rejectEpochAndSetApplicationDiverged(app, epoch, reason)
+		err := service.rejectEpochAndSetApplicationDiverged(t.Context(), app, epoch, reason)
 
 		require.Error(t, err)
 		assert.Equal(t, model.ApplicationStatus_Diverged, app.Status)

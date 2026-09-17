@@ -4,6 +4,8 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -32,8 +34,9 @@ func AddFlagStrVarP(flags *pflag.FlagSet, varRef *string, flagName string, flagS
 	cobra.CheckErr(viper.BindPFlag(cfgName, flags.Lookup(flagName)))
 }
 
-func CheckErr(logger *slog.Logger, err error, args ...any) {
-	if err == nil {
+// LogErr logs an error without exiting, so callers can finish deferred cleanup.
+func LogErr(logger *slog.Logger, err error, args ...any) {
+	if err == nil || errors.Is(err, context.Canceled) {
 		return
 	}
 
@@ -55,5 +58,4 @@ func CheckErr(logger *slog.Logger, err error, args ...any) {
 
 	args = append([]any{"error", err}, args...)
 	logger.Error(msg, args...)
-	cobra.CheckErr(err)
 }

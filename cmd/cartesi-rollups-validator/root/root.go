@@ -5,10 +5,11 @@ package root
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/validator"
 	"github.com/cartesi/rollups-node/internal/version"
 	"github.com/cartesi/rollups-node/pkg/service"
@@ -30,7 +31,7 @@ var Cmd = &cobra.Command{
 	Use:     "cartesi-rollups-" + config.ServiceValidator,
 	Short:   "Runs cartesi-rollups-" + config.ServiceValidator,
 	Long:    "Runs cartesi-rollups-" + config.ServiceValidator + " in standalone mode",
-	Run:     run,
+	RunE:    run,
 	Version: version.BuildVersion,
 }
 
@@ -63,33 +64,17 @@ func init() {
 	}
 }
 
-func run(cmd *cobra.Command, args []string) {
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
-	defer cancel()
-
-	createInfo := validator.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:                 config.ServiceValidator,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServiceValidator, cfg.LogLevel),
-			LogColor:             cfg.LogColor,
-			EnableSignalHandling: true,
-			TelemetryCreate:      true,
-			TelemetryAddress:     cfg.ValidatorTelemetryAddress,
-			PollInterval:         cfg.ValidatorPollingInterval,
+func run(cmd *cobra.Command, args []string) error {
+	return cli.RunSingleService(cli.SingleServiceOptions{
+		Command:            cmd,
+		Name:               config.ServiceValidator,
+		LogLevel:           cfg.LogLevel,
+		LogColor:           cfg.LogColor,
+		MaxStartupTime:     cfg.MaxStartupTime,
+		DatabaseConnection: cfg.DatabaseConnection,
+		TelemetryAddress:   cfg.ValidatorTelemetryAddress,
+		Create: func(ctx context.Context, logger *slog.Logger, repo repository.Repository) (service.SupervisedService, error) {
+			return validator.Create(ctx, &validator.CreateInfo{Config: *cfg, Logger: logger, Repository: repo})
 		},
-		Config: *cfg,
-	}
-	logger := service.NewServiceLogger(&createInfo.CreateInfo)
-	createInfo.CreateInfo.Logger = logger
-
-	var err error
-	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
-	cli.CheckErr(logger, err)
-	defer createInfo.Repository.Close()
-
-	validatorService, err := validator.Create(ctx, &createInfo)
-	cli.CheckErr(logger, err)
-	validatorService.LogConfig(createInfo.Config)
-
-	cli.CheckErr(logger, validatorService.Serve())
+	})
 }

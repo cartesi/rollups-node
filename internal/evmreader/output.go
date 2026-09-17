@@ -87,7 +87,8 @@ func (r *Service) checkForOutputExecution(
 	ctx context.Context,
 	apps []appContracts,
 	mostRecentBlockNumber uint64,
-) {
+) bool {
+	success := true
 
 	appAddresses := appsToAddresses(apps)
 
@@ -102,6 +103,7 @@ func (r *Service) checkForOutputExecution(
 				if errors.Is(err, errContractNotDeployedAtBlock) {
 					continue
 				}
+				success = false
 				r.Logger.Error("Failed to initialize application output execution sync",
 					"application", app.application.Name,
 					"most_recent_block", mostRecentBlockNumber,
@@ -112,7 +114,12 @@ func (r *Service) checkForOutputExecution(
 		}
 
 		if mostRecentBlockNumber > lastOutputCheck {
-			if !r.hasPendingExecutableOutputs(ctx, app) {
+			pending, err := r.hasPendingExecutableOutputs(ctx, app)
+			if err != nil {
+				success = false
+				continue
+			}
+			if !pending {
 				r.Logger.Debug("Not reading output execution: no pending executable outputs",
 					"application", app.application.Name, "address", app.application.IApplicationAddress,
 					"last_output_check_block", lastOutputCheck,
@@ -126,7 +133,7 @@ func (r *Service) checkForOutputExecution(
 				"last_output_check_block", lastOutputCheck,
 				"most_recent_block", mostRecentBlockNumber)
 
-			r.readAndUpdateOutputs(ctx, app, lastOutputCheck, mostRecentBlockNumber)
+			success = r.readAndUpdateOutputs(ctx, app, lastOutputCheck, mostRecentBlockNumber) && success
 
 		} else if mostRecentBlockNumber < lastOutputCheck {
 			r.Logger.Warn(
@@ -144,9 +151,10 @@ func (r *Service) checkForOutputExecution(
 		}
 	}
 
+	return success
 }
 
-func (r *Service) hasPendingExecutableOutputs(ctx context.Context, app appContracts) bool {
+func (r *Service) hasPendingExecutableOutputs(ctx context.Context, app appContracts) (bool, error) {
 	pending, err := r.repository.GetNumberOfPendingExecutableOutputs(ctx, app.application.IApplicationAddress.String())
 	if err != nil {
 		r.Logger.Error("Error counting pending executable outputs",
@@ -154,24 +162,24 @@ func (r *Service) hasPendingExecutableOutputs(ctx context.Context, app appContra
 			"address", app.application.IApplicationAddress,
 			"error", err,
 		)
-		return false
+		return false, err
 	}
-	return pending > 0
+	return pending > 0, nil
 }
 
 func (r *Service) readAndUpdateOutputs(
-	ctx context.Context, app appContracts, lastOutputCheck, mostRecentBlockNumber uint64) {
+	ctx context.Context, app appContracts, lastOutputCheck, mostRecentBlockNumber uint64) bool {
 
 	nextSearchBlock := lastOutputCheck + 1
 	outputExecutedEvents, err := r.readOutputExecutionsFromBlockChain(ctx, app, nextSearchBlock, mostRecentBlockNumber)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return // shutting down
+			return false // shutting down
 		}
 		r.Logger.Error("Error reading output events",
 			"application", app.application.Name, "address", app.application.IApplicationAddress,
 			"error", err)
-		return
+		return false
 	}
 
 	if len(outputExecutedEvents) == 0 {
@@ -198,15 +206,14 @@ func (r *Service) readAndUpdateOutputs(
 					"error", err,
 				)
 			}
-			// We don't return an error here as there is no output execution to process
-			// and this is just an update to the last check block
+			// The cursor write is part of a successful scan.
 		} else {
 			r.Logger.Debug("Updated LastOutputCheckBlock for applications without inputs",
 				"application", app.application.Name, "address", app.application.IApplicationAddress,
 				"block_number", mostRecentBlockNumber,
 			)
 		}
-		return
+		return err == nil
 	}
 	r.Logger.Debug("Found output executed events",
 		"application", app.application.Name,
@@ -225,14 +232,14 @@ func (r *Service) readAndUpdateOutputs(
 				"application", app.application.Name, "address", app.application.IApplicationAddress,
 				"index", event.OutputIndex,
 				"error", err)
-			return
+			return false
 		}
 
 		if output == nil {
 			r.Logger.Warn("Found OutputExecuted event but output does not exist in the database yet",
 				"application", app.application.Name, "address", app.application.IApplicationAddress,
 				"index", event.OutputIndex)
-			return
+			return false
 		}
 
 		if !bytes.Equal(output.RawData, event.Output) {
@@ -249,12 +256,12 @@ func (r *Service) readAndUpdateOutputs(
 				app.application.Status == ApplicationStatus_Failed:
 				_ = r.setApplicationDiverged(ctx, app.application, reasonFmt, args...)
 				if app.application.Status != ApplicationStatus_Diverged {
-					return // persistence failed; retry this event next tick
+					return false // persistence failed; retry this event next tick
 				}
 			case app.application.Status.IsExecutionTerminal():
 				_ = r.setApplicationCorrupted(ctx, app.application, reasonFmt, args...)
 				if app.application.Status != ApplicationStatus_Corrupted {
-					return // persistence failed; retry this event next tick
+					return false // persistence failed; retry this event next tick
 				}
 			case app.application.Status == ApplicationStatus_Diverged ||
 				app.application.Status == ApplicationStatus_Corrupted:
@@ -264,7 +271,7 @@ func (r *Service) readAndUpdateOutputs(
 				r.Logger.Error("Output mismatch found for application with unknown status",
 					"application", app.application.Name,
 					"status", app.application.Status)
-				return
+				return false
 			}
 			continue
 		}
@@ -284,6 +291,7 @@ func (r *Service) readAndUpdateOutputs(
 			"error", err)
 	}
 
+	return err == nil
 }
 
 func (r *Service) readOutputExecutionsFromBlockChain(

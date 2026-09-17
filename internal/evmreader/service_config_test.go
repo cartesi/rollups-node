@@ -16,7 +16,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/mock"
@@ -30,17 +29,6 @@ func TestCreateWithCancelledContext(t *testing.T) {
 	cancel()
 	_, err := Create(ctx, &CreateInfo{})
 	require.ErrorIs(t, err, context.Canceled)
-}
-
-func TestCreateWithNilEthClient(t *testing.T) {
-	config.SetDefaults()
-	logLevel, err := config.GetLogLevel()
-	require.NoError(t, err)
-
-	_, err = Create(context.Background(), &CreateInfo{
-		CreateInfo: service.CreateInfo{Name: "evm-reader", LogLevel: logLevel},
-	})
-	require.ErrorContains(t, err, "EthClient on evmreader service Create is nil")
 }
 
 func TestCreateAcceptsRequestTimeoutBelowPollingInterval(t *testing.T) {
@@ -73,13 +61,9 @@ func TestCreateAcceptsRequestTimeoutBelowPollingInterval(t *testing.T) {
 	repo.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
 		Return(rawConfig, time.Now(), time.Now(), nil).Once()
 
-	svc, err := Create(context.Background(), &CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:         "evm-reader",
-			LogLevel:     logLevel,
-			PollInterval: pollInterval,
-		},
+	_, err = Create(t.Context(), &CreateInfo{
 		Config: config.EvmreaderConfig{
+			LogLevel:                     logLevel,
 			BlockchainDefaultBlock:       DefaultBlock_Finalized,
 			BlockchainHttpRequestTimeout: requestTimeout,
 			BlockchainId:                 chainID,
@@ -90,8 +74,6 @@ func TestCreateAcceptsRequestTimeoutBelowPollingInterval(t *testing.T) {
 		Repository: repo,
 	})
 	require.NoError(t, err)
-	defer svc.Ticker.Stop()
-	defer svc.Cancel()
 
 	repo.AssertExpectations(t)
 }
@@ -248,4 +230,57 @@ func (s *EvmReaderSuite) TestSetupPersistentConfigDBError() {
 	_, err := s.evmReader.setupPersistentConfig(s.ctx, &config.EvmreaderConfig{})
 	s.Require().Error(err)
 	s.Require().ErrorContains(err, "database unreachable")
+}
+
+func TestReadinessBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cfg  config.EvmreaderConfig
+		want time.Duration
+	}{
+		{"floor", config.EvmreaderConfig{}, time.Second},
+		{"poll interval", config.EvmreaderConfig{EvmReaderPollingInterval: 12 * time.Second}, 36 * time.Second},
+		{"requests with retries", config.EvmreaderConfig{EvmReaderPollingInterval: 12 * time.Second, BlockchainHttpRequestTimeout: 120 * time.Second, BlockchainHttpMaxRetries: 3}, 480 * time.Second},
+		{"retry backoff ignored", config.EvmreaderConfig{BlockchainHttpRetryMaxWait: time.Hour}, time.Second},
+		{"explicit override", config.EvmreaderConfig{EvmReaderReadyMaxStaleness: 5 * time.Second, EvmReaderPollingInterval: time.Minute}, 5 * time.Second},
+		{"overflow saturates", config.EvmreaderConfig{BlockchainHttpRequestTimeout: time.Second, BlockchainHttpMaxRetries: ^uint64(0)}, time.Duration(1<<63 - 1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			budget, err := readinessBudget(&tc.cfg)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, budget)
+		})
+	}
+}
+
+func TestCreateRejectsNegativeReadinessBudget(t *testing.T) {
+	_, err := Create(t.Context(), &CreateInfo{Config: config.EvmreaderConfig{
+		EvmReaderReadyMaxStaleness: -time.Second,
+	}})
+	require.ErrorContains(t, err, "CARTESI_EVM_READER_READY_MAX_STALENESS must be non-negative")
+}
+
+func (s *EvmReaderSuite) TestReadinessRefreshesAfterScan() {
+	s.client.EnqueueNewHead(100).Once()
+	s.repository.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).Unset()
+	var scanFinished time.Time
+	s.repository.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).
+		Return([]*Application{}, uint64(0), nil).Once().Run(func(mock.Arguments) {
+		s.Require().False(s.evmReader.Ready(), "fetching a header must not mark an unfinished scan ready")
+		scanFinished = time.Now()
+	})
+	_, err := s.evmReader.Tick(s.ctx)
+	s.Require().NoError(err)
+	s.Require().False(s.evmReader.lastSuccessfulPoll.Load().Before(scanFinished))
+	s.Require().True(s.evmReader.Ready())
+
+	stale := time.Now().Add(-s.evmReader.readyMaxStaleness)
+	s.evmReader.lastSuccessfulPoll.Store(&stale)
+	s.Require().False(s.evmReader.Ready())
+	s.client.On("HeaderByNumber", mock.Anything, mock.Anything).
+		Return((*types.Header)(nil), errors.New("unavailable")).Once()
+	_, err = s.evmReader.Tick(s.ctx)
+	s.Require().Error(err)
+	s.Require().Equal(stale, *s.evmReader.lastSuccessfulPoll.Load())
+	s.Require().False(s.evmReader.Ready())
 }

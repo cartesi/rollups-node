@@ -41,13 +41,13 @@ func (r *Service) checkForPostForeclosureWithdrawals(
 	ctx context.Context,
 	app appContracts,
 	mostRecentBlockNumber uint64,
-) {
+) bool {
 	// A withdrawal-ledger divergence (detected below) means this local ledger
 	// cannot be trusted. Stop re-deriving that specific failure every tick, but
 	// keep indexing when CORRUPTED came from another subsystem: an output or
 	// sealed-epoch disagreement says nothing about the withdrawal ledger.
 	if hasWithdrawalLedgerDivergence(app.application) {
-		return
+		return true
 	}
 
 	startBlock := app.application.LastWithdrawalCheckBlock + 1
@@ -55,7 +55,7 @@ func (r *Service) checkForPostForeclosureWithdrawals(
 		startBlock = floor
 	}
 	if startBlock > mostRecentBlockNumber {
-		return
+		return true
 	}
 
 	query := func(ctx context.Context, block uint64) (*big.Int, error) {
@@ -79,14 +79,14 @@ func (r *Service) checkForPostForeclosureWithdrawals(
 	prevValue, err := r.previousWithdrawalCount(ctx, app, startBlock)
 	if err != nil {
 		if abortPostForeclosureLoop(r, err, "getPreviousWithdrawalCount") {
-			return
+			return false
 		}
 		r.Logger.Error("Failed to read previous withdrawal count",
 			"application", app.application.Name,
 			"address", app.application.IApplicationAddress,
 			"start_block", startBlock,
 			"error", err)
-		return
+		return false
 	}
 
 	_, err = ethutil.FindTransitions(
@@ -123,10 +123,10 @@ func (r *Service) checkForPostForeclosureWithdrawals(
 				withdrawalLedgerDivergenceReasonPrefix+
 					" local withdrawal count exceeds chain while scanning from block %d: %v",
 				startBlock, err)
-			return
+			return false
 		}
 		if abortPostForeclosureLoop(r, err, "findTransitionsWithdrawals") {
-			return
+			return false
 		}
 		r.Logger.Error("Failed to scan withdrawal transitions",
 			"application", app.application.Name,
@@ -134,7 +134,7 @@ func (r *Service) checkForPostForeclosureWithdrawals(
 			"start_block", startBlock,
 			"end_block", mostRecentBlockNumber,
 			"error", err)
-		return
+		return false
 	}
 
 	if err := r.repository.StoreWithdrawalEvents(
@@ -149,7 +149,7 @@ func (r *Service) checkForPostForeclosureWithdrawals(
 			"withdrawals", len(withdrawals),
 			"last_withdrawal_check_block", mostRecentBlockNumber,
 			"error", err)
-		return
+		return false
 	}
 
 	for _, w := range withdrawals {
@@ -162,6 +162,7 @@ func (r *Service) checkForPostForeclosureWithdrawals(
 		)
 	}
 	app.application.LastWithdrawalCheckBlock = mostRecentBlockNumber
+	return true
 }
 
 func (r *Service) previousWithdrawalCount(

@@ -5,13 +5,13 @@ package root
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/cartesi/rollups-node/internal/claimer"
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/version"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
 
 	"github.com/spf13/cobra"
@@ -35,7 +35,7 @@ var Cmd = &cobra.Command{
 	Use:     "cartesi-rollups-" + config.ServiceClaimer,
 	Short:   "Runs cartesi-rollups-" + config.ServiceClaimer,
 	Long:    "Runs cartesi-rollups-" + config.ServiceClaimer + " in standalone mode",
-	Run:     run,
+	RunE:    run,
 	Version: version.BuildVersion,
 }
 
@@ -76,45 +76,17 @@ func init() {
 	}
 }
 
-func run(cmd *cobra.Command, args []string) {
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxStartupTime)
-	defer cancel()
-
-	createInfo := claimer.CreateInfo{
-		CreateInfo: service.CreateInfo{
-			Name:                 config.ServiceClaimer,
-			LogLevel:             config.ResolveServiceLogLevel(config.ServiceClaimer, cfg.LogLevel),
-			LogColor:             cfg.LogColor,
-			EnableSignalHandling: true,
-			TelemetryCreate:      true,
-			TelemetryAddress:     cfg.ClaimerTelemetryAddress,
-			PollInterval:         cfg.ClaimerPollingInterval,
+func run(cmd *cobra.Command, args []string) error {
+	return cli.RunSingleService(cli.SingleServiceOptions{
+		Command:            cmd,
+		Name:               config.ServiceClaimer,
+		LogLevel:           cfg.LogLevel,
+		LogColor:           cfg.LogColor,
+		MaxStartupTime:     cfg.MaxStartupTime,
+		DatabaseConnection: cfg.DatabaseConnection,
+		TelemetryAddress:   cfg.ClaimerTelemetryAddress,
+		Create: func(ctx context.Context, logger *slog.Logger, repo repository.Repository) (service.SupervisedService, error) {
+			return claimer.Create(ctx, &claimer.CreateInfo{Config: *cfg, Logger: logger, Repository: repo})
 		},
-		Config: *cfg,
-	}
-	logger := service.NewServiceLogger(&createInfo.CreateInfo)
-	createInfo.CreateInfo.Logger = logger
-
-	authOpt, err := config.HTTPAuthorizationOption()
-	cli.CheckErr(logger, err)
-	createInfo.EthConn, err = ethutil.NewEthClient(
-		ctx, cfg.BlockchainHttpEndpoint.Raw(), logger,
-		ethutil.RetryConfig{
-			MaxRetries:     cfg.BlockchainHttpMaxRetries,
-			RetryMinWait:   cfg.BlockchainHttpRetryMinWait,
-			RetryMaxWait:   cfg.BlockchainHttpRetryMaxWait,
-			RequestTimeout: cfg.BlockchainHttpRequestTimeout,
-		}, authOpt)
-	cli.CheckErr(logger, err)
-
-	createInfo.Repository, err = factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
-	cli.CheckErr(logger, err)
-	defer createInfo.Repository.Close()
-
-	claimerService, err := claimer.Create(ctx, &createInfo)
-	cli.CheckErr(logger, err)
-	claimerService.LogConfig(createInfo.Config)
-
-	err = claimerService.Serve()
-	cli.CheckErr(logger, err)
+	})
 }
