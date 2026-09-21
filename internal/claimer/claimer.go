@@ -37,36 +37,37 @@
 // status OK. If it was already DIVERGED because of a divergence, EVM reader
 // preserves that status while still recording foreclose_block.
 //
-// PRT (DaveConsensus) uses a different path. PRT epochs go directly from
-// CLAIM_COMPUTED to CLAIM_ACCEPTED through tournament resolution. They never
-// reach CLAIM_STAGED, and the claimer queries exclude PRT apps.
+// PRT (DaveConsensus) stages and accepts tournament results through the PRT
+// service. The claimer queries exclude PRT apps.
 package claimer
 
 import (
 	"context"
 	"errors"
+
+	"github.com/cartesi/rollups-node/internal/errutil"
 )
 
-func (s *Service) shutdownInterrupted(ctx context.Context, stage string, err error) bool {
-	// During shutdown, the parent context is canceled and RPC/DB calls
-	// return context.Canceled. Ignore only that normal shutdown case. Other
-	// errors, such as deadline exceeded, must still be returned.
-	if ctx.Err() == nil || !errors.Is(err, context.Canceled) {
-		return false
-	}
-	s.Logger.Warn("Tick interrupted by shutdown", "stage", stage, "error", err)
-	return true
-}
+func (s *Service) Tick(ctx context.Context) (reschedule bool, err error) {
+	// Classify the complete result once, on every return path. Cancellation can
+	// interrupt claim writes as well as work-selection queries. Keep all causes
+	// when a real failure accompanies shutdown; never hide it behind cancellation.
+	defer func() {
+		if !errors.Is(ctx.Err(), context.Canceled) {
+			return
+		}
+		reschedule = false
+		if errutil.IsOnlyCancellation(err) {
+			s.Logger.Debug("Tick interrupted by shutdown", "error", err)
+			err = nil
+		}
+	}()
 
-func (s *Service) Tick(ctx context.Context) (bool, error) {
 	// Use the same finalized block number for all chain reads in this tick.
 	// This is one RPC per tick even when there is no DB work. The call is
 	// cheap, and Tick already runs on a polling interval.
 	defaultBlockNumber, err := s.blockchain.getDefaultBlockNumber(ctx)
 	if err != nil {
-		if s.shutdownInterrupted(ctx, "getDefaultBlockNumber", err) {
-			return false, nil
-		}
 		return false, err
 	}
 	s.consensusAddressChecks = map[consensusAddressCheckKey]error{}
@@ -82,9 +83,6 @@ func (s *Service) Tick(ctx context.Context) (bool, error) {
 	// transaction receipt already contains ClaimStaged.
 	prevSubmittedOrStaged, computedEpochs, computedApps, errComputed := s.repository.SelectClaimsToSubmitPerApp(ctx)
 	if errComputed != nil {
-		if s.shutdownInterrupted(ctx, "SelectClaimsToSubmitPerApp", errComputed) {
-			return false, nil
-		}
 		return false, errComputed
 	}
 	submitted, err := s.submitClaimsAndUpdateDatabase(ctx, prevSubmittedOrStaged, computedEpochs, computedApps, defaultBlockNumber)
@@ -92,9 +90,6 @@ func (s *Service) Tick(ctx context.Context) (bool, error) {
 	// Stage 2: stage. SUBMITTED -> STAGED. This read sees stage 1 updates.
 	prevAcceptedForSubmitted, submittedEpochs, submittedApps, errSubmitted := s.repository.SelectClaimsToStagePerApp(ctx)
 	if errSubmitted != nil {
-		if s.shutdownInterrupted(ctx, "SelectClaimsToStagePerApp", errSubmitted) {
-			return false, err // Preserve errors accumulated by stage 1.
-		}
 		return false, errors.Join(err, errSubmitted)
 	}
 	staged, stageErr := s.stageClaimsAndUpdateDatabase(ctx, prevAcceptedForSubmitted, submittedEpochs, submittedApps, defaultBlockNumber)
@@ -105,9 +100,6 @@ func (s *Service) Tick(ctx context.Context) (bool, error) {
 	// This read sees stage 1 and stage 2 updates.
 	prevAcceptedForStaged, stagedEpochs, stagedApps, errStaged := s.repository.SelectClaimsToAcceptPerApp(ctx)
 	if errStaged != nil {
-		if s.shutdownInterrupted(ctx, "SelectClaimsToAcceptPerApp", errStaged) {
-			return false, err // Preserve errors accumulated by earlier stages.
-		}
 		return false, errors.Join(err, errStaged)
 	}
 

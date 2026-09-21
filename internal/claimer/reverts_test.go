@@ -19,6 +19,14 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+const (
+	executionRevertedErrorMessage        = "execution reverted"
+	notEpochFinalBlockRevert             = "NotEpochFinalBlock"
+	applicationNotDeployedRevert         = "ApplicationNotDeployed"
+	applicationRevertedRevert            = "ApplicationReverted"
+	illformedApplicationReturnDataRevert = "IllformedApplicationReturnData"
+)
+
 func TestDecodeClaimNotStagedStatus(t *testing.T) {
 	t.Run("ValidStatuses", func(t *testing.T) {
 		for _, s := range []uint8{0, 1, 2, 3} {
@@ -40,13 +48,13 @@ func TestDecodeClaimNotStagedStatus(t *testing.T) {
 	})
 
 	t.Run("EmptyPayload", func(t *testing.T) {
-		e := &rpcDataError{code: 3, msg: "execution reverted", data: "0x"}
+		e := &rpcDataError{code: 3, msg: executionRevertedErrorMessage, data: "0x"}
 		_, ok := decodeClaimNotStagedStatus(e)
 		assert.False(t, ok)
 	})
 
 	t.Run("PayloadShorterThanSelector", func(t *testing.T) {
-		e := &rpcDataError{code: 3, msg: "execution reverted", data: "0xabcd"}
+		e := &rpcDataError{code: 3, msg: executionRevertedErrorMessage, data: "0xabcd"}
 		_, ok := decodeClaimNotStagedStatus(e)
 		assert.False(t, ok)
 	})
@@ -54,7 +62,7 @@ func TestDecodeClaimNotStagedStatus(t *testing.T) {
 	t.Run("WrongSelector", func(t *testing.T) {
 		e := &rpcDataError{
 			code: 3,
-			msg:  "execution reverted",
+			msg:  executionRevertedErrorMessage,
 			// Valid 132-byte payload, but selector is for a different error.
 			data: "0xdeadbeef" + strings.Repeat("00", 128),
 		}
@@ -70,7 +78,7 @@ func TestDecodeClaimNotStagedStatus(t *testing.T) {
 		payload := append(append([]byte{}, abiErr.ID[:4]...), make([]byte, 32)...)
 		e := &rpcDataError{
 			code: 3,
-			msg:  "execution reverted",
+			msg:  executionRevertedErrorMessage,
 			data: fmt.Sprintf("0x%x", payload),
 		}
 		_, ok := decodeClaimNotStagedStatus(e)
@@ -93,7 +101,7 @@ func TestNotFirstClaimHandledGracefully(t *testing.T) {
 
 	expectPreSubmitPath(b, app, currEpoch, endBlock)
 	// submitClaim reverts with NotFirstClaim (caught by eth_estimateGas).
-	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch, mock.Anything).
 		Return(common.Hash{}, notFirstClaimError()).Once()
 
 	_, err := m.submitClaimsAndUpdateDatabase(
@@ -118,7 +126,7 @@ func TestNotFirstClaimQuorumRetriesForEventSync(t *testing.T) {
 	currEpoch := makeComputedEpoch(app, 3)
 
 	expectPreSubmitPath(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch, mock.Anything).
 		Return(common.Hash{}, notFirstClaimError()).Once()
 
 	_, err := m.submitClaimsAndUpdateDatabase(
@@ -142,7 +150,7 @@ func TestApplicationForeclosedIsTransient(t *testing.T) {
 	currEpoch := makeComputedEpoch(app, 3)
 
 	expectPreSubmitPath(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch, mock.Anything).
 		Return(common.Hash{}, consensusRevertError("ApplicationForeclosed")).Once()
 
 	currEpochs := makeEpochMap(currEpoch)
@@ -154,30 +162,52 @@ func TestApplicationForeclosedIsTransient(t *testing.T) {
 	assert.Equal(t, 0, len(m.claimsInFlight), "no claim in flight")
 }
 
-// TestInvalidOutputsMerkleRootProofSizeSetsCorrupted verifies that a
-// proof-size revert is treated as local data corruption — the app moves
-// to CORRUPTED.
-func TestInvalidOutputsMerkleRootProofSizeSetsCorrupted(t *testing.T) {
-	m, r, b := newServiceMock(t)
-	defer r.AssertExpectations(t)
-	defer b.AssertExpectations(t)
+func TestMachineValidationRevertsSetFailed(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		register bool
+	}{
+		{name: "InvalidSiblingsArrayLength"},
+		{name: "InvalidMachineMerkleProof"},
+		{name: "InvalidPostEpochMachineIflagsYRegister", register: true},
+		{name: "InvalidPostEpochMachineHtifTohostRegister", register: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m, r, b := newServiceMock(t)
+			defer r.AssertExpectations(t)
+			defer b.AssertExpectations(t)
 
-	endBlock := big.NewInt(40)
-	app := makeApplication()
-	currEpoch := makeComputedEpoch(app, 3)
+			endBlock := big.NewInt(40)
+			app := makeApplication()
+			currEpoch := makeComputedEpoch(app, 3)
 
-	expectPreSubmitPath(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
-		Return(common.Hash{}, consensusRevertError("InvalidOutputsMerkleRootProofSize")).Once()
-	r.On("UpdateApplicationStatus", mock.Anything, int64(0), model.ApplicationStatus_Corrupted, mock.Anything).
-		Return(nil).Once()
+			expectPreSubmitPath(b, app, currEpoch, endBlock)
+			b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch, mock.Anything).
+				Return(common.Hash{}, consensusRevertError(test.name)).Once()
+			r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed,
+				mock.MatchedBy(func(reason *string) bool {
+					if reason == nil || !strings.Contains(*reason, test.name) ||
+						!strings.Contains(*reason, "node and contract versions") {
+						return false
+					}
+					if test.register {
+						return strings.Contains(*reason, "proven post-epoch machine state cannot finalize") &&
+							strings.Contains(*reason, "selected post-epoch state") &&
+							strings.Contains(*reason, "If this state is unrecoverable, consider guardian foreclosure")
+					}
+					return strings.Contains(*reason, "proof serialization, stored proof data") &&
+						!strings.Contains(*reason, "guardian foreclosure")
+				})).Return(nil).Once()
 
-	currEpochs := makeEpochMap(currEpoch)
-	_, err := m.submitClaimsAndUpdateDatabase(
-		context.Background(), makeEpochMap(), currEpochs, makeApplicationMap(app), endBlock)
-	assert.Error(t, err, "CORRUPTED transition must surface a terminal error")
-	assert.Equal(t, 0, len(currEpochs), "epoch must be dropped from work map")
-	assert.Equal(t, 0, len(m.claimsInFlight))
+			currEpochs := makeEpochMap(currEpoch)
+			_, err := m.submitClaimsAndUpdateDatabase(
+				t.Context(), makeEpochMap(), currEpochs, makeApplicationMap(app), endBlock)
+			assert.NoError(t, err, "a successful FAILED transition does not surface an error")
+			assert.Empty(t, currEpochs, "epoch must be dropped from work map")
+			assert.Empty(t, m.claimsInFlight)
+			assert.Equal(t, model.ApplicationStatus_Failed, app.Status)
+		})
+	}
 }
 
 // TestCallerIsNotValidatorSetsFailed verifies that a Quorum membership
@@ -194,7 +224,7 @@ func TestCallerIsNotValidatorSetsFailed(t *testing.T) {
 	currEpoch := makeComputedEpoch(app, 3)
 
 	expectPreSubmitPath(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch, mock.Anything).
 		Return(common.Hash{}, consensusRevertError("CallerIsNotValidator")).Once()
 	r.On("UpdateApplicationStatus", mock.Anything, int64(0), model.ApplicationStatus_Failed, mock.Anything).
 		Return(nil).Once()
@@ -224,7 +254,7 @@ func TestNotPastBlockRetriesLater(t *testing.T) {
 	expectPreSubmitPath(b, app, currEpoch, endBlock)
 	// The revert carries the contract's (lastProcessedBlockNumber, upperBound)
 	// arguments, exercising the bounds decode in the warn path.
-	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch, mock.Anything).
 		Return(common.Hash{}, notPastBlockError(currEpoch.LastBlock, currEpoch.LastBlock-1)).Once()
 
 	currEpochs := makeEpochMap(currEpoch)
@@ -252,22 +282,22 @@ func TestSubmitClaimRevertsSetApplicationFailed(t *testing.T) {
 		extraReason []string
 	}{
 		{
-			revertName:  "ApplicationReverted",
-			err:         appRevertDataError("ApplicationReverted", []byte{0xde, 0xad, 0xbe, 0xef}),
+			revertName:  applicationRevertedRevert,
+			err:         appRevertDataError(applicationRevertedRevert, []byte{0xde, 0xad, 0xbe, 0xef}),
 			extraReason: []string{"Application return data: 0xdeadbeef"},
 		},
 		{
-			revertName:  "IllformedApplicationReturnData",
-			err:         appRevertDataError("IllformedApplicationReturnData", []byte{0x01, 0x02}),
+			revertName:  illformedApplicationReturnDataRevert,
+			err:         appRevertDataError(illformedApplicationReturnDataRevert, []byte{0x01, 0x02}),
 			extraReason: []string{"Application return data: 0x0102"},
 		},
 		{
-			revertName: "NotEpochFinalBlock",
-			err:        consensusRevertError("NotEpochFinalBlock"),
+			revertName: notEpochFinalBlockRevert,
+			err:        consensusRevertError(notEpochFinalBlockRevert),
 		},
 		{
-			revertName: "ApplicationNotDeployed",
-			err:        consensusRevertError("ApplicationNotDeployed"),
+			revertName: applicationNotDeployedRevert,
+			err:        consensusRevertError(applicationNotDeployedRevert),
 		},
 	}
 	for _, tc := range cases {
@@ -281,7 +311,7 @@ func TestSubmitClaimRevertsSetApplicationFailed(t *testing.T) {
 			currEpoch := makeComputedEpoch(app, 3)
 
 			expectPreSubmitPath(b, app, currEpoch, endBlock)
-			b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
+			b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch, mock.Anything).
 				Return(common.Hash{}, tc.err).Once()
 			r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed,
 				mock.MatchedBy(func(reason *string) bool {
@@ -330,8 +360,8 @@ func TestSubmitClaimFailedRevertWithDBError(t *testing.T) {
 	currEpoch := makeComputedEpoch(app, 3)
 
 	expectPreSubmitPath(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
-		Return(common.Hash{}, consensusRevertError("ApplicationReverted")).Once()
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch, mock.Anything).
+		Return(common.Hash{}, consensusRevertError(applicationRevertedRevert)).Once()
 	r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed, mock.Anything).
 		Return(fmt.Errorf("db down")).Once()
 
@@ -438,7 +468,7 @@ func TestDecodeNotPastBlockBounds(t *testing.T) {
 	})
 
 	t.Run("WrongSelector", func(t *testing.T) {
-		_, _, ok := decodeNotPastBlockBounds(consensusRevertError("NotEpochFinalBlock"))
+		_, _, ok := decodeNotPastBlockBounds(consensusRevertError(notEpochFinalBlockRevert))
 		assert.False(t, ok)
 	})
 }
@@ -472,9 +502,9 @@ func TestClaimNotStagedUnmodeledStatusFailsClosed(t *testing.T) {
 // FAILED with a reason naming acceptClaim and carrying operational context.
 func TestAcceptClaimRevertsSetApplicationFailed(t *testing.T) {
 	for _, revertName := range []string{
-		"ApplicationNotDeployed",
-		"ApplicationReverted",
-		"IllformedApplicationReturnData",
+		applicationNotDeployedRevert,
+		applicationRevertedRevert,
+		illformedApplicationReturnDataRevert,
 		"NotEpochFinalBlock",
 	} {
 		t.Run(revertName, func(t *testing.T) {
@@ -512,29 +542,11 @@ func TestAcceptClaimRevertsSetApplicationFailed(t *testing.T) {
 	}
 }
 
-// TestInvalidNodeIndexSetsCorrupted verifies that a submitClaim revert from
-// the on-chain merkle library is treated as local data corruption: the stored
-// outputs_merkle_proof does not form a valid machine-tree replacement proof,
-// so the app moves to CORRUPTED.
-func TestInvalidNodeIndexSetsCorrupted(t *testing.T) {
-	m, r, _ := newServiceMock(t)
-	defer r.AssertExpectations(t)
-	app := makeApplication()
-	epoch := makeComputedEpoch(app, 3)
-
-	r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Corrupted, mock.Anything).
-		Return(nil).Once()
-
-	outcome, stateErr := m.handleSubmitClaimRevert(context.Background(), consensusRevertError("InvalidNodeIndex"), app, epoch)
-	assert.Equal(t, submitClaimAppHalted, outcome)
-	assert.Error(t, stateErr, "CORRUPTED is terminal; the handler must return the reason error")
-}
-
 // TestHandleSubmitClaimRevert — dispatch matrix for the non-mutating typed
 // reverts handleSubmitClaimRevert recognises plus the JSON-RPC
 // "nonce too low" broadcast rejection. The classifier mutates state only
-// for the AppHalted outcomes (InvalidOutputsMerkleRootProofSize,
-// InvalidNodeIndex, CallerIsNotValidator, ApplicationNotDeployed,
+// for the AppHalted outcomes (the four machine-validation errors,
+// CallerIsNotValidator, ApplicationNotDeployed,
 // ApplicationReverted, IllformedApplicationReturnData, NotEpochFinalBlock);
 // those paths are covered by the end-to-end submit pipeline tests above and
 // the direct dispatch tests, with repository expectations for the status
