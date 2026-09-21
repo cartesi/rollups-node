@@ -108,6 +108,7 @@ type iclaimerRepository interface {
 		descending bool,
 	) ([]*model.Application, uint64, error)
 
+	InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
 }

@@ -27,6 +27,11 @@ type claimerCreateRepositoryMock struct {
 	mock.Mock
 }
 
+func (m *claimerCreateRepositoryMock) InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error {
+	args := m.Called(ctx, key, rawJSON)
+	return args.Error(0)
+}
+
 func (m *claimerCreateRepositoryMock) SaveNodeConfigRaw(
 	ctx context.Context,
 	key string,
@@ -206,6 +211,11 @@ func (m *claimerRepositoryMock) UpdateEpochReconciledStaged(
 	return args.Error(0)
 }
 
+func (m *claimerRepositoryMock) InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error {
+	args := m.Called(ctx, key, rawJSON)
+	return args.Error(0)
+}
+
 func (m *claimerRepositoryMock) SaveNodeConfigRaw(
 	ctx context.Context,
 	key string,
@@ -299,11 +309,12 @@ func (m *claimerBlockchainMock) findClaimAcceptedEventAndSucc(
 
 func (m *claimerBlockchainMock) submitClaimToBlockchain(
 	ctx context.Context,
-	instance *iconsensus.IConsensus,
+	instance consensusClaimSubmitter,
 	app *model.Application,
 	epoch *model.Epoch,
+	proof model.StateProof,
 ) (common.Hash, error) {
-	rets := m.Called(ctx, instance, app, epoch)
+	rets := m.Called(ctx, instance, app, epoch, proof)
 	return rets.Get(0).(common.Hash), rets.Error(1)
 }
 

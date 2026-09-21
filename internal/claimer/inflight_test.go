@@ -130,7 +130,7 @@ func TestInFlightReverted(t *testing.T) {
 	b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, currEpoch, currEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, prevEvent, currEvent, nil).Once()
 	expectGetClaimStatusUnstaged(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch, mock.Anything).
 		Return(common.HexToHash("0x10"), nil).Once()
 
 	_, err := m.submitClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
@@ -272,7 +272,7 @@ func TestClaimInFlightReceiptNotFoundAfterTimeoutClearsAndRetries(t *testing.T) 
 	b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, currEpoch, currEpoch.LastBlock+1, endBlock.Uint64()).
 		Return(&iconsensus.IConsensus{}, []*iconsensus.IConsensusClaimSubmitted(nil), nil).Once()
 	expectGetClaimStatusUnstaged(b, app, currEpoch, endBlock)
-	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch).
+	b.On("submitClaimToBlockchain", mock.Anything, mock.Anything, app, currEpoch, mock.Anything).
 		Return(newTxHash, nil).Once()
 
 	transitions, errs := m.submitClaimsAndUpdateDatabase(context.Background(), makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
