@@ -2361,11 +2361,6 @@ func (m *MockMachineInstance) ProcessedInputs() uint64 {
 	return m.machineImpl.processedInputs
 }
 
-func (m *MockMachineInstance) HasRuntime() bool {
-	// Not used in advancer tests, but needed to satisfy the interface
-	return true
-}
-
 func (m *MockMachineInstance) StateProof(_ context.Context) (*StateProof, error) {
 	if m.machineImpl.StateProofError != nil {
 		return nil, m.machineImpl.StateProofError

@@ -192,12 +192,6 @@ func (m *MachineInstanceImpl) ProcessedInputs() uint64 {
 	return m.processedInputs.Load()
 }
 
-func (m *MachineInstanceImpl) HasRuntime() bool {
-	m.mutex.LLock()
-	defer m.mutex.Unlock()
-
-	return m.runtime != nil
-}
 // forkForAdvance creates a copy of the machine for advance operations
 // It verifies the input index and returns a forked machine
 func (m *MachineInstanceImpl) forkForAdvance(ctx context.Context, index uint64) (machine.Machine, error) {

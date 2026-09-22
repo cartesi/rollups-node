@@ -108,6 +108,17 @@ func runReplay(ctx context.Context, logger *slog.Logger, opts replayOptions) err
 		return err
 	}
 
+	lastInput, err := repo.GetLastProcessedInput(ctx, opts.Application)
+	if err != nil {
+		return fmt.Errorf("get last processed input: %w", err)
+	}
+	if lastInput != nil && lastInput.Status.IsTerminal() && toInputExclusive > lastInput.Index {
+		return fmt.Errorf(
+			"cannot snapshot: replay range reaches the application's terminal input 0x%x (status %s). Replay up to input 0x%x instead",
+			lastInput.Index, lastInput.Status, lastInput.Index,
+		)
+	}
+
 	instance, err := manager.NewMachineInstance(ctx, app, logger, true)
 	if err != nil {
 		return fmt.Errorf("create machine instance: %w", err)
@@ -124,10 +135,6 @@ func runReplay(ctx context.Context, logger *slog.Logger, opts replayOptions) err
 	if err != nil {
 		return fmt.Errorf("replay: %w", err)
 	}
-	if !instance.HasRuntime() {
-		return fmt.Errorf("replay completed in a terminal machine state; snapshotting is unsupported")
-	}
-
 	if err := instance.CreateSnapshot(ctx, instance.ProcessedInputs(), opts.Store); err != nil {
 		return fmt.Errorf("store machine: %w", err)
 	}

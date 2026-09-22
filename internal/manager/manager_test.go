@@ -1928,10 +1928,6 @@ func (m *DummyMachineInstanceMock) ProcessedInputs() uint64 {
 	return m.processedInputs
 }
 
-func (m *DummyMachineInstanceMock) HasRuntime() bool {
-	return true
-}
-
 func (m *DummyMachineInstanceMock) StateProof(_ context.Context) (*model.StateProof, error) {
 	return nil, nil
 }
