@@ -186,7 +186,7 @@ type tickFunc func(context.Context) (bool, error)
 
 func (f tickFunc) Tick(ctx context.Context) (bool, error) { return f(ctx) }
 
-func TestTickStopsImmediateReschedulingOnError(t *testing.T) {
+func TestTickHonorsRescheduleWithPartialProgress(t *testing.T) {
 	for _, fail := range []bool{false, true} {
 		t.Run(fmt.Sprintf("error=%v", fail), func(t *testing.T) {
 			calls := 0
@@ -194,17 +194,13 @@ func TestTickStopsImmediateReschedulingOnError(t *testing.T) {
 			s.tickImpl = tickFunc(func(context.Context) (bool, error) {
 				calls++
 				if fail {
-					// Bound even a regressed implementation so this test cannot spin.
+					// Some work progresses despite another work item failing.
 					return calls < 3, errors.New("retryable failure")
 				}
 				return calls < 3, nil
 			})
 			s.tick(t.Context())
-			if fail {
-				require.Equal(t, 1, calls, "an error must end the immediate reschedule loop")
-			} else {
-				require.Equal(t, 3, calls, "successful work should reschedule immediately")
-			}
+			require.Equal(t, 3, calls, "progress should reschedule immediately despite errors")
 		})
 	}
 }
@@ -221,7 +217,7 @@ func TestServeRetriesFailedTickOnPollingTimer(t *testing.T) {
 	s.tickImpl = tickFunc(func(context.Context) (bool, error) {
 		attempts = append(attempts, time.Now())
 		if len(attempts) == 1 {
-			return true, errors.New("retryable failure")
+			return false, errors.New("retryable failure")
 		}
 		cancel()
 		return false, nil
@@ -229,5 +225,24 @@ func TestServeRetriesFailedTickOnPollingTimer(t *testing.T) {
 	require.ErrorIs(t, s.Serve(ctx), context.Canceled)
 	require.Len(t, attempts, 2)
 	require.GreaterOrEqual(t, attempts[1].Sub(attempts[0]), interval/2,
-		"a failed tick must fall back to the polling timer")
+		"a failed tick without progress must fall back to the polling timer")
+}
+
+func TestServeReschedulesPartialProgressDespiteError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	calls := 0
+	s := &TickServiceTemplate{
+		BaseTemplate: BaseTemplate{Logger: discardLogger()},
+		interval:     time.Hour,
+	}
+	s.tickImpl = tickFunc(func(context.Context) (bool, error) {
+		calls++
+		if calls == 3 {
+			cancel()
+		}
+		return true, errors.New("another work item failed")
+	})
+	require.ErrorIs(t, s.Serve(ctx), context.Canceled)
+	require.Equal(t, 3, calls, "partial progress must continue immediately and stop on cancellation")
 }

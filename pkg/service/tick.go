@@ -14,6 +14,9 @@ import (
 )
 
 type TickImpl interface {
+	// Tick returns true when progress warrants immediate continuation, even if
+	// other work failed. Return false when no progress is possible so retries
+	// wait for the polling timer instead of spinning on an error.
 	Tick(ctx context.Context) (bool, error)
 }
 
@@ -68,9 +71,6 @@ func (s *TickServiceTemplate) tick(ctx context.Context) {
 				"reschedule", reschedule,
 				"error", err,
 			)
-			// Failed work must wait for the polling timer even if it requests
-			// an immediate retry, otherwise repeated errors can spin the CPU.
-			return
 		} else {
 			s.Logger.Debug("Tick",
 				"duration", elapsed,
