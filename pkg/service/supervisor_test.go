@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -443,7 +444,8 @@ func TestFatalShutdownPreservesCauseAndWaitsForServices(t *testing.T) {
 	require.True(t, waitCh(child.started))
 	cause := errors.New("unconfirmed advance result")
 	sup.Fatal(cause)
-	sup.Fatal(errors.New("later failure"))
+	later := errors.New("later failure")
+	sup.Fatal(later)
 	require.False(t, sup.Alive())
 	select {
 	case <-done:
@@ -454,6 +456,7 @@ func TestFatalShutdownPreservesCauseAndWaitsForServices(t *testing.T) {
 	select {
 	case err := <-done:
 		require.ErrorIs(t, err, cause)
+		require.ErrorIs(t, err, later)
 	case <-time.After(2 * time.Second):
 		t.Fatal("Serve did not finish shutdown")
 	}
@@ -482,5 +485,47 @@ func TestSupervisorRejectsEmptyFactoryList(t *testing.T) {
 		require.Nil(t, sup)
 		require.ErrorIs(t, err, ErrServiceBadInit)
 		require.ErrorContains(t, err, "at least one service factory")
+	}
+}
+
+func TestConcurrentFatalCallsPreserveAllCauses(t *testing.T) {
+	child := newTestService("child")
+	child.serveDone = make(chan struct{})
+	sup, err := NewSupervisor(t.Context(), &SupervisorConfigs{
+		BaseConfigs: BaseConfigs{Logger: discardLogger()},
+		Factories:   []FactoryFunction{func(context.Context, Supervisor) (SupervisedService, error) { return child, nil }},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { sup.Stop(); close(child.serveDone) })
+	done := make(chan error, 1)
+	go func() { done <- sup.Serve() }()
+	require.True(t, waitCh(child.started))
+
+	causes := make([]error, 64)
+	start := make(chan struct{})
+	var calls sync.WaitGroup
+	for i := range causes {
+		if i != 0 {
+			causes[i] = fmt.Errorf("fatal failure %d", i)
+		}
+		calls.Add(1)
+		go func(cause error) {
+			defer calls.Done()
+			<-start
+			sup.Fatal(cause)
+		}(causes[i])
+	}
+	close(start)
+	calls.Wait()
+	require.False(t, sup.Alive())
+	child.serveDone <- struct{}{}
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, ErrServiceStopped, "nil Fatal calls retain the default cause")
+		for _, cause := range causes[1:] {
+			require.ErrorIs(t, err, cause)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Serve did not finish shutdown")
 	}
 }

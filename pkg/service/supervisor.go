@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"syscall"
 
@@ -37,7 +38,7 @@ type Supervisor interface {
 	NotReady() []string
 	Serve() error
 	Stop() bool
-	// Fatal records the first fatal cause and initiates shutdown. Nil uses ErrServiceStopped.
+	// Fatal joins all fatal causes and initiates shutdown. Nil uses ErrServiceStopped.
 	Fatal(error)
 }
 
@@ -49,10 +50,11 @@ type supervisorImpl struct {
 	context     context.Context
 	cancel      context.CancelFunc
 	sigShutdown chan os.Signal // SIGINT/SIGTERM to exit gracefully
+	fatalErr    error
+	fatalMux    sync.RWMutex
 
 	serving  atomic.Bool
 	stopping atomic.Bool
-	fatal    atomic.Pointer[error]
 }
 
 func NewSupervisor(ctx context.Context, c *SupervisorConfigs) (Supervisor, error) {
@@ -167,8 +169,11 @@ func (s *supervisorImpl) Serve() (err error) {
 
 	defer func() {
 		s.Stop() // make sure context is canceled
-		if fatal := s.fatal.Load(); fatal != nil {
-			err = errors.Join(err, *fatal)
+
+		s.fatalMux.RLock()
+		defer s.fatalMux.RUnlock()
+		if s.fatalErr != nil {
+			err = errors.Join(err, s.fatalErr)
 		}
 	}()
 
@@ -223,7 +228,11 @@ func (s *supervisorImpl) Fatal(err error) {
 	if err == nil {
 		err = ErrServiceStopped
 	}
-	s.fatal.CompareAndSwap(nil, &err)
+	s.fatalMux.Lock()
+	defer s.fatalMux.Unlock()
+
+	s.fatalErr = errors.Join(s.fatalErr, err)
+
 	s.Stop()
 }
 

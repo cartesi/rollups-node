@@ -313,7 +313,16 @@ func (s *Service) processInputs(
 		// Store the result in the database
 		err = s.repository.StoreAdvanceResult(ctx, input.EpochApplicationID, result)
 		if err != nil {
-			if errors.Is(err, repository.ErrApplicationNotRunnable) {
+			var errCause string
+			switch {
+			case errors.Is(err, context.Canceled) && errors.Is(ctx.Err(), context.Canceled):
+				errCause = "canceled advance result persistence"
+				// Shutdown interrupted persistence after the machine advanced.
+				// Discard that runtime; restart must recover from persisted state.
+				s.Logger.Debug("Advance result persistence canceled during shutdown; closing machine",
+					"application", app.Name, "index", input.Index, "error", err)
+			case errors.Is(err, repository.ErrApplicationNotRunnable):
+				errCause = "application status race"
 				// Another service durably fenced this application after the
 				// machine began its advance. Discard only this stale runtime; the
 				// database already contains the authoritative app-local outcome.
@@ -322,28 +331,23 @@ func (s *Service) processInputs(
 					"epoch", input.EpochIndex,
 					"index", input.Index,
 					"error", err)
-				closeErr := machine.Close()
-				if closeErr != nil {
-					s.Logger.Error("Could not close stale machine after application status race",
-						"application", app.Name,
-						"error", closeErr)
-				}
-				return processed, false, errors.Join(err, closeErr)
+			default:
+				errCause = "its advance result was not confirmed saved; service shutdown is still required"
+				// Advance has already changed the live machine, but the transaction
+				// did not confirm that its result was saved. The database may still
+				// show this input as pending. Reusing this machine could then execute
+				// the input again from the wrong state, so StoreAdvanceResult is not
+				// retried against this live machine.
+				s.Logger.Error(
+					"Could not confirm that the advance result was saved; "+
+						"the live machine has already advanced, so services will stop; "+
+						"after the node is restarted, execution will use persisted state",
+					"application", app.Name,
+					"epoch", input.EpochIndex,
+					"index", input.Index,
+					"error", err)
+				s.supervisor.Fatal(fmt.Errorf("unconfirmed advance result for %s: %w", app.Name, err))
 			}
-
-			// Advance has already changed the live machine, but the transaction
-			// did not confirm that its result was saved. The database may still
-			// show this input as pending. Reusing this machine could then execute
-			// the input again from the wrong state, so StoreAdvanceResult is not
-			// retried against this live machine.
-			s.Logger.Error(
-				"Could not confirm that the advance result was saved; "+
-					"the live machine has already advanced, so services will stop; "+
-					"after the node is restarted, execution will use persisted state",
-				"application", app.Name,
-				"epoch", input.EpochIndex,
-				"index", input.Index,
-				"error", err)
 
 			// Try to close the machine now so the already-advanced runtime cannot
 			// be used again. Cancel services even if Close fails. After the node
@@ -351,12 +355,11 @@ func (s *Service) processInputs(
 			// database decides whether this input is still pending and needs a
 			// safe retry.
 			closeErr := machine.Close()
-			s.supervisor.Fatal(fmt.Errorf("unconfirmed advance result for %s: %w", app.Name, errors.Join(err, closeErr)))
 			if closeErr != nil {
-				s.Logger.Error("Could not close the machine after its advance result "+
-					"was not confirmed saved; service shutdown is still required",
+				s.Logger.Error("Could not close the machine after "+errCause,
 					"application", app.Name,
 					"error", closeErr)
+				s.supervisor.Fatal(fmt.Errorf("close machine for %s after %s: %w", app.Name, errCause, closeErr))
 			}
 			return processed, false, errors.Join(err, closeErr)
 		}

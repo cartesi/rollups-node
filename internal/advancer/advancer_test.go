@@ -2336,6 +2336,7 @@ type MockMachineInstance struct {
 	machineImpl               *MockMachineImpl
 	createSnapshotError       error
 	destroyAfterSnapshotError bool
+	closeError                error
 	closeCalls                int
 	advanceCalls              int
 }
@@ -2386,7 +2387,7 @@ func (m *MockMachineInstance) Hash(ctx context.Context) ([32]byte, error) {
 // Close implements the MachineInstance interface for testing
 func (m *MockMachineInstance) Close() error {
 	m.closeCalls++
-	return nil
+	return m.closeError
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -2398,6 +2399,7 @@ type MockRepository struct {
 	GetInputsReturn              map[common.Address][]*Input
 	GetInputsError               error
 	GetInputsBlock               bool
+	StoreAdvanceHook             func(context.Context) error
 	StoreAdvanceError            error
 	StoreAdvanceCommitError      error
 	StoreAdvanceFailCount        int
@@ -2502,6 +2504,9 @@ func (mock *MockRepository) StoreAdvanceResult(
 	appID int64,
 	res *AdvanceResult,
 ) error {
+	if mock.StoreAdvanceHook != nil {
+		return mock.StoreAdvanceHook(ctx)
+	}
 	// Check for context cancellation
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -2749,4 +2754,63 @@ func marshal(res *AdvanceResult) []byte {
 		panic(err)
 	}
 	return data
+}
+
+func (s *AdvancerSuite) TestStoreAdvanceShutdownClassification() {
+	storageErr := errors.New("storage failed")
+	closeErr := errors.New("machine close failed")
+	for _, tc := range []struct {
+		name     string
+		cancel   bool
+		storeErr error
+		closeErr error
+		fatalErr error
+	}{
+		{"shutdown cancellation", true, fmt.Errorf("store: %w", context.Canceled), nil, nil},
+		{"independent cancellation", false, context.Canceled, nil, context.Canceled},
+		{"storage failure", false, storageErr, nil, storageErr},
+		{"storage failure during shutdown", true, storageErr, nil, storageErr},
+		{"close failure during shutdown", true, context.Canceled, closeErr, closeErr},
+	} {
+		s.Run(tc.name, func() {
+			require := s.Require()
+			env := s.setupOneApp()
+			ctx, cancel := context.WithCancel(s.T().Context())
+			defer cancel()
+			machine := env.mm.Map[env.app.Application.ID]
+			machine.closeError = tc.closeErr
+			env.repo.StoreAdvanceHook = func(storeCtx context.Context) error {
+				require.NoError(storeCtx.Err(), "cancellation must happen during persistence")
+				require.Equal(1, machine.advanceCalls)
+				if tc.cancel {
+					cancel()
+				}
+				return tc.storeErr
+			}
+			pending := newInput(env.app.Application.ID, 0, 0, marshal(randomAdvanceResult(0)))
+			address := env.app.Application.IApplicationAddress
+			env.repo.GetInputsReturn = map[common.Address][]*Input{address: {pending}}
+			processed, stopped, err := env.service.processInputs(ctx, env.app.Application, []*Input{
+				pending, newInput(env.app.Application.ID, 0, 1, []byte("unreachable")),
+			})
+			require.ErrorIs(err, tc.storeErr)
+			require.Zero(processed)
+			require.False(stopped)
+			require.Equal(1, machine.closeCalls)
+			require.Equal(1, machine.advanceCalls)
+			require.Empty(env.repo.StoredResults)
+			require.Equal([]*Input{pending}, env.repo.GetInputsReturn[address])
+			fatal := env.supervisor.FatalError.Load()
+			if tc.fatalErr == nil {
+				require.Nil(fatal, "shutdown cancellation must not become fatal")
+			} else {
+				require.NotNil(fatal)
+				require.ErrorIs(*fatal, tc.fatalErr)
+				if tc.closeErr != nil {
+					require.ErrorIs(err, tc.closeErr)
+					require.NotErrorIs(*fatal, context.Canceled)
+				}
+			}
+		})
+	}
 }
