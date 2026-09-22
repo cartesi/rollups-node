@@ -524,6 +524,11 @@ func (mock *MockMachine) ProcessedInputs() uint64 {
 	return 0
 }
 
+// Not used in inspect tests, but needed to satisfy the interface
+func (mock *MockMachine) HasRuntime() bool {
+	return true
+}
+
 func (mock *MockMachine) StateProof(_ context.Context) (*StateProof, error) {
 	return nil, nil
 }

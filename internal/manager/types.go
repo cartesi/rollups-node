@@ -31,6 +31,7 @@ type MachineInstance interface {
 		inputIndex uint64,
 		computeHashes bool,
 	) (*model.AdvanceResult, error)
+	HasRuntime() bool
 	Inspect(ctx context.Context, query []byte) (*InspectResult, error)
 	CreateSnapshot(ctx context.Context, processedInputs uint64, path string) error
 	ProcessedInputs() uint64

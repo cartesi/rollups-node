@@ -191,7 +191,7 @@ func (s *WithdrawalLifecycleSuite) runWithdrawalLifecycle(consensus withdrawalCo
 	r.NoError(waitForApplicationForeclosed(forecloseCtx, s.T(), deployment.appName), "node did not record foreclosure")
 	forecloseCancel()
 
-	driveProof, withdrawProof, accountIndex := s.generateWithdrawalProofs(deployment, dappPath, finalEpoch)
+	driveProof, withdrawProof, accountIndex := s.generateWithdrawalProofs(deployment, finalEpoch)
 	_, err = runCLI(s.ctx, "prove-drive-root", deployment.appName, "--proof-file", driveProof, "--yes")
 	r.NoError(err, "prove accounts-drive root")
 	s.waitForAccountsDriveProved(deployment.appName)
@@ -561,7 +561,6 @@ func (s *WithdrawalLifecycleSuite) waitForVoucherOutput(appName string, inputInd
 
 func (s *WithdrawalLifecycleSuite) generateWithdrawalProofs(
 	deployment withdrawalAppDeployment,
-	dappPath string,
 	finalEpoch *model.Epoch,
 ) (string, string, string) {
 	r := s.Require()
@@ -571,7 +570,6 @@ func (s *WithdrawalLifecycleSuite) generateWithdrawalProofs(
 	snapshotPath := filepath.Join(tmp, "snapshot")
 	replayOut := runMachineTool(s.ctx, s.T(),
 		"replay",
-		"--template", dappPath,
 		"--application", deployment.appName,
 		"--database-connection", envOrDefault("CARTESI_DATABASE_CONNECTION", ""),
 		"--to-epoch", strconv.FormatUint(finalEpoch.Index, 10),

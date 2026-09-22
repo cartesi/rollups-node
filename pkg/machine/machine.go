@@ -148,6 +148,10 @@ type Machine interface {
 	// machine root and the three state leaves used by the rollups contracts.
 	StateProof(ctx context.Context) (*StateProof, error)
 
+	// GetProof returns a Merkle proof for the memory span starting at address
+	// with log2TargetSize, rooted at the machine memory tree of log2RootSize.
+	GetProof(ctx context.Context, address uint64, log2TargetSize, log2RootSize int32) (*MemoryProof, error)
+
 	// Advance sends an input to the machine.
 	// The checkpointHash is the machine's root hash before processing the input,
 	// sent along with the request so the machine can revert to it if needed.

@@ -109,6 +109,7 @@ func (m *erroringMachine) Advance(ctx context.Context, input []byte, a, b uint64
 }
 func (m *erroringMachine) Application() *Application { return m.inner.Application() }
 func (m *erroringMachine) ProcessedInputs() uint64   { return m.inner.ProcessedInputs() }
+func (m *erroringMachine) HasRuntime() bool          { return m.inner.HasRuntime() }
 func (m *erroringMachine) StateProof(ctx context.Context) (*StateProof, error) {
 	return m.inner.StateProof(ctx)
 }

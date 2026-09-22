@@ -194,6 +194,19 @@ func (m *machineImpl) StateProof(ctx context.Context) (*StateProof, error) {
 	}, nil
 }
 
+// GetProof returns a Merkle proof for the memory span starting at address
+// with log2TargetSize, rooted at the machine memory tree of log2RootSize.
+func (m *machineImpl) GetProof(ctx context.Context, address uint64, log2TargetSize, log2RootSize int32) (*MemoryProof, error) {
+	if err := checkContext(ctx); err != nil {
+		return nil, err
+	}
+	proof, err := m.backend.GetProof(address, log2TargetSize, log2RootSize, m.params.LoadDeadline)
+	if err != nil {
+		return nil, errors.Join(ErrMachineInternal, fmt.Errorf("could not get memory proof: %w", err))
+	}
+	return &proof, nil
+}
+
 // ValidateAcceptedState checks the state semantics required when an epoch
 // is published through the released v3 contracts. StateProof itself remains
 // generic so the exact post-run proof can also be persisted for terminal
