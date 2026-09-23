@@ -38,7 +38,7 @@ type Supervisor interface {
 	NotReady() []string
 	Serve() error
 	Stop() bool
-	// Fatal joins all fatal causes and initiates shutdown. Nil uses ErrServiceStopped.
+	// Fatal joins all fatal causes and initiates shutdown.
 	Fatal(error)
 }
 
@@ -184,7 +184,7 @@ func (s *supervisorImpl) Serve() (err error) {
 
 	s.logger.Info("Supervised services started")
 
-	stopSvcCh := make(chan struct{}, len(s.services))
+	svcErrCh := make(chan error, len(s.services))
 	for _, svc := range s.services {
 		go func() {
 			s.logger.Info("Starting subservice", "subservice", svc)
@@ -193,33 +193,39 @@ func (s *supervisorImpl) Serve() (err error) {
 			switch {
 			case unexpected:
 				s.logger.Error("Subservice stopped unexpectedly, shutting down",
-					"service", svc,
+					"subservice", svc,
 					"err", svcErr,
 				)
-				// Only the Stop winner writes err; stopSvcCh joins that write.
-				err = ErrServiceStopped
+				if svcErr == nil {
+					svcErr = ErrServiceStopped
+				}
 			case svcErr == nil || errors.Is(svcErr, context.Canceled):
 				s.logger.Info("Subservice stopped",
 					"subservice", svc,
 				)
+				svcErr = nil
 			default:
+				// Non-cancellation drain failures, including deadlines, fail shutdown.
 				s.logger.Warn("Subservice failed during shutting down",
 					"subservice", svc,
 					"err", svcErr,
 				)
 			}
-			stopSvcCh <- struct{}{}
+			svcErrCh <- svcErr
 		}()
 	}
 
-	// wait for all services to terminate
+	// Join every service and aggregate errors only in the supervisor goroutine.
+	errs := make([]error, 0, len(s.services))
 	for range s.services {
-		<-stopSvcCh
+		if err := <-svcErrCh; err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	s.logger.Info("Supervisor terminated")
 
-	return err
+	return errors.Join(errs...)
 }
 
 // Fatal publishes the failure before cancellation so Serve observes it even if

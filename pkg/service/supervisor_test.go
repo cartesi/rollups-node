@@ -188,7 +188,8 @@ func (s *SupervisorSuite) TestItLogsServiceErrors() {
 
 	select {
 	case err := <-errCh:
-		require.ErrorIs(s.T(), err, ErrServiceStopped)
+		require.ErrorContains(s.T(), err, "oops by child-1")
+		require.ErrorContains(s.T(), err, "oops by child-2")
 		logged := buf.String()
 		require.Contains(s.T(), logged, "oops by child-1")
 		require.Contains(s.T(), logged, "oops by child-2")
@@ -216,7 +217,7 @@ func (s *SupervisorSuite) TestItStopsWhenOnServiceError() {
 
 	select {
 	case err := <-errCh:
-		require.ErrorIs(s.T(), err, ErrServiceStopped)
+		require.ErrorContains(s.T(), err, "oops by error-child")
 		logged := buf.String()
 		require.Contains(s.T(), logged, "oops by error-child")
 	case <-time.After(2 * time.Second):
@@ -527,5 +528,70 @@ func TestConcurrentFatalCallsPreserveAllCauses(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Serve did not finish shutdown")
+	}
+}
+
+func (s *SupervisorSuite) TestUnexpectedExitPreservesServiceAndCause() {
+	for _, cause := range []error{nil, errors.New("bind failed"), context.Canceled} {
+		s.Run(fmt.Sprintf("cause=%v", cause), func() {
+			child := newTestService("unexpected-child")
+			child.duration = 0
+			child.err = cause
+			sup, err := s.newSupervisor(s.T(), discardLogger(), child)
+			s.Require().NoError(err)
+			err = sup.Serve()
+			if cause == nil {
+				s.Require().ErrorIs(err, ErrServiceStopped)
+			} else {
+				s.Require().ErrorIs(err, cause)
+			}
+		})
+	}
+}
+
+func (s *SupervisorSuite) TestConcurrentDrainErrorsPreserveAllCauses() {
+	for _, fatal := range []bool{false, true} {
+		s.Run(fmt.Sprintf("fatal=%v", fatal), func() {
+			children := make([]*testServiceImpl, 16)
+			release := make(chan struct{})
+			for i := range children {
+				child := newTestService(fmt.Sprintf("draining-child-%d", i))
+				child.err = fmt.Errorf("drain failure %d", i)
+				child.serveDone = release
+				children[i] = child
+			}
+			children[0].err = context.DeadlineExceeded
+			children[1].err = fmt.Errorf("normal shutdown: %w", context.Canceled)
+			sup, err := s.newSupervisor(s.T(), discardLogger(), children...)
+			s.Require().NoError(err)
+			s.T().Cleanup(func() { sup.Stop() })
+			done := make(chan error, 1)
+			go func() { done <- sup.Serve() }()
+			for _, child := range children {
+				s.Require().True(waitCh(child.started))
+			}
+			fatalCause := errors.New("fatal trigger")
+			if fatal {
+				sup.Fatal(fatalCause)
+			} else {
+				sup.Stop()
+			}
+			close(release)
+			select {
+			case err := <-done:
+				s.Require().NotErrorIs(err, context.Canceled)
+				if fatal {
+					s.Require().ErrorIs(err, fatalCause)
+				}
+				for i, child := range children {
+					if i == 1 {
+						continue
+					}
+					s.Require().ErrorIs(err, child.err)
+				}
+			case <-time.After(2 * time.Second):
+				s.T().Fatal("supervisor did not finish draining")
+			}
+		})
 	}
 }
