@@ -6,6 +6,8 @@ package evmreader
 import (
 	"context"
 	"errors"
+	"fmt"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"log/slog"
 	"math/big"
 	"testing"
@@ -112,6 +114,99 @@ func TestReadinessTracksScanFailures(t *testing.T) {
 			_, err = r.Tick(ctx)
 			require.NoError(t, err)
 			require.Equal(t, before, *r.lastSuccessfulPoll.Load())
+		})
+	}
+}
+
+func TestReadinessSeparatesInputCorruptionFromSharedFailures(t *testing.T) {
+	for _, failure := range []string{"recorded conflict", "status write", "RPC", "store", "epoch query", "zero epoch", "zero epoch status write", "non-open epoch", "non-open epoch status write"} {
+		t.Run(failure, func(t *testing.T) {
+			bad := &Application{ID: 1, Name: "degraded", Enabled: true,
+				IApplicationAddress: app1Addr, IInputBoxAddress: inputBoxAddr,
+				DataAvailability: DataAvailability_InputBox[:], EpochLength: 10,
+				Status: ApplicationStatus_OK, LastInputCheckBlock: 100,
+				LastOutputCheckBlock: 110, LastForecloseCheckBlock: 110}
+			good := *bad
+			good.ID, good.Name, good.IApplicationAddress = 2, "healthy", common.HexToAddress("0x2222")
+			// Terminal execution status must not prevent healthy observation.
+			good.Status = ApplicationStatus_Corrupted
+			repo := newMockRepository()
+			list := repo.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).
+				Return([]*Application{bad, &good}, uint64(2), nil)
+			input := newMockInputBox()
+			input.On("GetNumberOfInputs", mock.Anything, good.IApplicationAddress).Return(big.NewInt(0), nil)
+			count := input.On("GetNumberOfInputs", mock.Anything, bad.IApplicationAddress).Return(big.NewInt(1), nil)
+			input.On("RetrieveInputs", mock.Anything, mock.Anything, mock.Anything).
+				Return([]iinputbox.IInputBoxInputAdded{makeInputEvent(bad.IApplicationAddress, 0, 101)}, nil)
+			repo.On("GetNumberOfInputs", mock.Anything, mock.Anything).Return(uint64(0), nil)
+			repo.On("GetEpoch", mock.Anything, good.IApplicationAddress.String(), mock.Anything).Return((*Epoch)(nil), nil)
+			epoch := repo.On("GetEpoch", mock.Anything, bad.IApplicationAddress.String(), mock.Anything).Return((*Epoch)(nil), nil)
+			store := repo.On("CreateEpochsAndInputs", mock.Anything, bad.IApplicationAddress.String(), mock.Anything, uint64(110)).
+				Return(fmt.Errorf("insert: %w", repository.ErrInputLogIdentityConflict))
+			status := repo.On("UpdateApplicationStatus", mock.Anything, bad.ID, ApplicationStatus_Corrupted, mock.Anything).Return(nil)
+			repo.On("UpdateEventLastCheckBlock", mock.Anything, []int64{good.ID}, MonitoredEvent_InputAdded, uint64(110)).
+				Return(nil).Run(func(mock.Arguments) { good.LastInputCheckBlock = 110 })
+			infraErr := errors.New("infrastructure unavailable")
+			switch failure {
+			case "status write":
+				status.Return(infraErr)
+			case "RPC":
+				count.Return((*big.Int)(nil), infraErr)
+			case "store":
+				store.Return(infraErr)
+			case "epoch query":
+				epoch.Return((*Epoch)(nil), infraErr)
+			case "non-open epoch", "non-open epoch status write":
+				epoch.Return(&Epoch{Index: 10, Status: EpochStatus_Closed}, nil)
+				if failure == "non-open epoch status write" {
+					status.Return(infraErr)
+				}
+			case "zero epoch":
+				bad.EpochLength = 0
+			case "zero epoch status write":
+				bad.EpochLength = 0
+				status.Return(infraErr)
+			}
+			client := newMockEthClient()
+			client.On("HeaderByNumber", mock.Anything, mock.Anything).Return(&types.Header{Number: big.NewInt(110)}, nil)
+			r := &Service{client: client, repository: repo, inputReaderEnabled: true,
+				defaultBlock: DefaultBlock_Latest, readyMaxStaleness: time.Hour}
+			r.Logger = slog.Default()
+			r.resolver = newApplicationAdapterResolver(r.Logger,
+				newMockAdapterFactory().SetupDefaultBehaviorSingleApp(newMockApplicationContract(), input))
+			local := failure == "recorded conflict" || failure == "zero epoch" || failure == "non-open epoch"
+			for i := 1; i <= maxConsecutiveScanFailures+1; i++ {
+				_, err := r.Tick(t.Context())
+				require.NoError(t, err)
+				require.Equal(t, local || i < maxConsecutiveScanFailures, r.Ready())
+				require.EqualValues(t, 110, good.LastInputCheckBlock)
+				require.EqualValues(t, 100, bad.LastInputCheckBlock, "failed input observation must not advance its cursor")
+			}
+			if failure == "non-open epoch" || failure == "non-open epoch status write" {
+				repo.AssertNumberOfCalls(t, "CreateEpochsAndInputs", 0)
+			}
+			if failure == "recorded conflict" {
+				repo.AssertNumberOfCalls(t, "CreateEpochsAndInputs", maxConsecutiveScanFailures+1)
+			}
+			if local {
+				require.Equal(t, ApplicationStatus_Corrupted, bad.Status)
+				repo.AssertNumberOfCalls(t, "UpdateApplicationStatus", 1)
+			}
+			// Disabling the stalled app recovers readiness without changing its status.
+			previousStatus := bad.Status
+			bad.Enabled = false
+			list.Return([]*Application{&good}, uint64(1), nil)
+			_, err := r.Tick(t.Context())
+			require.NoError(t, err)
+			require.True(t, r.Ready())
+			require.Zero(t, r.consecutiveScanFailures.Load())
+			require.Equal(t, previousStatus, bad.Status)
+			// Both cursors at the head also constitute a healthy idle scan.
+			bad.Enabled, bad.LastInputCheckBlock = true, 110
+			list.Return([]*Application{bad, &good}, uint64(2), nil)
+			_, err = r.Tick(t.Context())
+			require.NoError(t, err)
+			require.True(t, r.Ready())
 		})
 	}
 }

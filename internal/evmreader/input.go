@@ -300,6 +300,28 @@ func indexInputsIntoEpochs(
 	return epochInputMap, nil
 }
 
+// recordInputCorruption separates a known application-local integrity failure
+// from failure to persist its status. Status helpers update app.Status only after
+// a successful write and preserve previously persisted integrity terminals.
+// Observation must continue on later ticks, including for terminal applications.
+func (r *Service) recordInputCorruption(
+	ctx context.Context,
+	app *Application,
+	reasonFmt string,
+	args ...any,
+) bool {
+	reason := fmt.Sprintf(reasonFmt, args...)
+	// setApplicationCorrupted always returns non-nil (the reason text itself).
+	// The DB error case is already logged inside setApplicationStatus.
+	// TODO: consider returning only DB errors instead of always returning an error.
+	_ = r.setApplicationCorrupted(ctx, app, "%s", reason)
+	if app.Status == ApplicationStatus_Corrupted || app.Status == ApplicationStatus_Diverged {
+		r.Logger.Warn("Input observation degraded for application", "application", app.Name, "reason", reason)
+		return true
+	}
+	return false
+}
+
 // readAndStoreInputs reads, inputs from the InputSource given specific filter options, indexes
 // them into epochs and store the indexed inputs and epochs
 func (r *Service) readAndStoreInputs(
@@ -308,8 +330,6 @@ func (r *Service) readAndStoreInputs(
 	mostRecentBlockNumber uint64,
 	apps []appContracts,
 ) error {
-	var scanErr error
-
 	if len(apps) == 0 {
 		r.Logger.Warn("No valid running applications")
 		return nil
@@ -325,8 +345,10 @@ func (r *Service) readAndStoreInputs(
 			err)
 	}
 
+	var scanIncomplete bool
+
 	if len(appInputsMap) != len(apps) {
-		scanErr = errScanIncomplete
+		scanIncomplete = true
 	}
 	addrToApp := mapAddressToApp(apps)
 
@@ -337,19 +359,15 @@ func (r *Service) readAndStoreInputs(
 		if !exists {
 			r.Logger.Error("Application address on input not found",
 				"address", address)
-			scanErr = errScanIncomplete
+			scanIncomplete = true
 			continue
 		}
 
 		epochLength := app.application.EpochLength
 		if epochLength == 0 {
-			// setApplicationCorrupted always returns non-nil (the reason text itself).
-			// The DB error case is already logged inside setApplicationStatus.
-			// On DB success the app is marked inoperable and won't reappear next tick.
-			// On DB failure the app reappears as Enabled next tick, retrying this path.
-			_ = r.setApplicationCorrupted(ctx, app.application,
+			ok := r.recordInputCorruption(ctx, app.application,
 				"Application has epoch length of zero")
-			scanErr = errScanIncomplete
+			scanIncomplete = scanIncomplete || !ok
 			continue
 		}
 
@@ -372,7 +390,7 @@ func (r *Service) readAndStoreInputs(
 					"error", err,
 				)
 			}
-			scanErr = errScanIncomplete
+			scanIncomplete = true
 			continue
 		}
 
@@ -381,8 +399,10 @@ func (r *Service) readAndStoreInputs(
 			epochLength, currentEpoch, inputs, mostRecentBlockNumber)
 		if err != nil {
 			if errors.Is(err, ErrInputForNonOpenEpoch) {
-				return r.setApplicationCorrupted(ctx, app.application,
+				ok := r.recordInputCorruption(ctx, app.application,
 					"Should never happen. %v", err)
+				scanIncomplete = scanIncomplete || !ok
+				continue
 			}
 			return fmt.Errorf("error indexing inputs: %w", err)
 		}
@@ -416,15 +436,10 @@ func (r *Service) readAndStoreInputs(
 			)
 			if err != nil {
 				if errors.Is(err, repository.ErrInputLogIdentityConflict) {
-					// A stored input's L1 log identity disagrees with rescanned
-					// chain data. Retrying the same insert every tick cannot
-					// succeed; without escalation the app would stall silently
-					// with Status OK. See setApplicationCorrupted contract in
-					// the epochLength == 0 branch above.
-					_ = r.setApplicationCorrupted(ctx, app.application,
+					ok := r.recordInputCorruption(ctx, app.application,
 						"stored input L1 log identity conflicts with rescanned chain data"+
 							" (possible reorg past the input cursor); operator reset required. %v", err)
-					scanErr = errScanIncomplete
+					scanIncomplete = scanIncomplete || !ok
 					continue
 				}
 				r.Logger.Error("Error storing inputs and epochs",
@@ -432,7 +447,7 @@ func (r *Service) readAndStoreInputs(
 					"address", address,
 					"error", err,
 				)
-				scanErr = errScanIncomplete
+				scanIncomplete = true
 				continue
 			}
 			r.Logger.Debug("Inputs and epochs stored successfully",
@@ -486,7 +501,7 @@ func (r *Service) readAndStoreInputs(
 					"error", err,
 				)
 			}
-			scanErr = errScanIncomplete
+			scanIncomplete = true
 		} else {
 			r.Logger.Debug("Updated LastInputCheckBlock for applications without inputs",
 				"app_ids", appsToUpdate,
@@ -495,7 +510,10 @@ func (r *Service) readAndStoreInputs(
 		}
 	}
 
-	return scanErr
+	if scanIncomplete {
+		return errScanIncomplete
+	}
+	return nil
 }
 
 // readInputsFromBlockchain fetches inputs for each application independently.

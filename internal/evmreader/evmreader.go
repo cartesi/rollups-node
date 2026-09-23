@@ -177,9 +177,10 @@ func (r *Service) processBlockHead(
 	return r.runBlockScanners(ctx, apps, blockNumber) && len(apps) == len(observableApps)
 }
 
-// runBlockScanners reports whether all scheduled observation work completed without
-// errors. An idle scan is healthy. Always run the remaining scanners after a
-// failure so one application's stall does not prevent progress elsewhere.
+// runBlockScanners reports whether observation completed without shared failures.
+// Known input corruption with a persisted integrity status is application-local
+// degradation; observation still runs on later ticks. An idle scan is healthy.
+// Always run remaining scanners so one application's stall cannot block others.
 func (r *Service) runBlockScanners(
 	ctx context.Context,
 	apps []appContracts,

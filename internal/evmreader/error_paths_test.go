@@ -561,7 +561,7 @@ func (s *EvmReaderSuite) TestEpochLengthZeroSetsAppCorrupted() {
 	s.evmReader.repository = repo
 
 	err := s.evmReader.readAndStoreInputs(s.ctx, 100, 110, apps)
-	s.Require().ErrorIs(err, errScanIncomplete)
+	s.Require().NoError(err)
 
 	// App must be set inoperable
 	repo.AssertNumberOfCalls(s.T(), "UpdateApplicationStatus", 1)
