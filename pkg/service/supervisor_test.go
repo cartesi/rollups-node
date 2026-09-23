@@ -595,3 +595,52 @@ func (s *SupervisorSuite) TestConcurrentDrainErrorsPreserveAllCauses() {
 		})
 	}
 }
+
+func (s *SupervisorSuite) TestShutdownSuppressesOnlyCancellationErrors() {
+	storageErr := errors.New("storage flush failed")
+	otherErr := errors.New("connection close failed")
+	wrappedCancellation := fmt.Errorf("shutdown: %w", context.Canceled)
+	for _, tc := range []struct {
+		name string
+		err  error
+		want []error
+	}{
+		{name: "nil"},
+		{name: "cancellation", err: context.Canceled},
+		{name: "wrapped cancellation", err: wrappedCancellation},
+		{name: "joined cancellations", err: errors.Join(context.Canceled, wrappedCancellation)},
+		{name: "wrapped joined cancellations", err: fmt.Errorf("drain: %w", errors.Join(context.Canceled, wrappedCancellation))},
+		{name: "storage failure", err: storageErr, want: []error{storageErr}},
+		{name: "deadline", err: context.DeadlineExceeded, want: []error{context.DeadlineExceeded}},
+		{name: "joined storage failure", err: errors.Join(context.Canceled, storageErr), want: []error{storageErr}},
+		{name: "joined deadline", err: errors.Join(context.Canceled, context.DeadlineExceeded), want: []error{context.DeadlineExceeded}},
+		{name: "nested failures", err: fmt.Errorf("drain: %w", errors.Join(wrappedCancellation, errors.Join(storageErr, otherErr))), want: []error{storageErr, otherErr}},
+		{name: "multiple wrapped causes", err: fmt.Errorf("drain: %w; storage: %w", context.Canceled, storageErr), want: []error{storageErr}},
+	} {
+		s.Run(tc.name, func() {
+			child := newTestService("draining-child")
+			child.err = tc.err
+			sup, err := s.newSupervisor(s.T(), discardLogger(), child)
+			s.Require().NoError(err)
+			s.T().Cleanup(func() { sup.Stop() })
+			done := make(chan error, 1)
+			go func() { done <- sup.Serve() }()
+			s.Require().True(waitCh(child.started))
+			sup.Stop()
+			select {
+			case err := <-done:
+				if len(tc.want) == 0 {
+					s.Require().NoError(err)
+				} else {
+					for _, cause := range tc.want {
+						s.Require().ErrorIs(err, cause)
+					}
+					// Keep the original error and its diagnostic wrapping intact.
+					s.Require().ErrorIs(err, tc.err)
+				}
+			case <-time.After(2 * time.Second):
+				s.T().Fatal("supervisor did not finish shutdown")
+			}
+		})
+	}
+}
