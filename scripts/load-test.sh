@@ -166,7 +166,7 @@ send_input() {
     fi
 
     CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX="$acct_idx" \
-        cartesi-rollups-cli send "$app" "$payload" --yes --async > /dev/null 2>&1 &
+        cartesi-rollups-cli send "$app" "$payload" --yes --no-wait > /dev/null 2>&1 &
     SENDER_PIDS[$acct_idx]=$!
 }
 

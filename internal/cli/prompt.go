@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
@@ -21,10 +22,17 @@ var ErrNonInteractive = errors.New(
 // Returns ErrNonInteractive if stdin is not a terminal (e.g. piped in a script),
 // or a wrapped I/O error if reading from stdin fails.
 func ConfirmPrompt(message string) (bool, error) {
+	return ConfirmPromptTo(os.Stdout, message)
+}
+
+// ConfirmPromptTo writes the human prompt separately from command results.
+func ConfirmPromptTo(output io.Writer, message string) (bool, error) {
 	if !IsTerminal(os.Stdin) {
 		return false, ErrNonInteractive
 	}
-	fmt.Printf("%s [y/N]: ", message)
+	if _, err := fmt.Fprintf(output, "%s [y/N]: ", message); err != nil {
+		return false, fmt.Errorf("write confirmation prompt: %w", err)
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Scan()
 	if err := scanner.Err(); err != nil {

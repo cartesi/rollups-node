@@ -17,21 +17,44 @@ type matchesTable struct {
 	postgres.Table
 
 	// Columns
-	ApplicationID       postgres.ColumnInteger
-	EpochIndex          postgres.ColumnFloat
-	TournamentAddress   postgres.ColumnBytea
-	IDHash              postgres.ColumnBytea
-	CommitmentOne       postgres.ColumnBytea
-	CommitmentTwo       postgres.ColumnBytea
-	LeftOfTwo           postgres.ColumnBytea
-	BlockNumber         postgres.ColumnFloat
-	TxHash              postgres.ColumnBytea
-	Winner              postgres.ColumnString
-	DeletionReason      postgres.ColumnString
-	DeletionBlockNumber postgres.ColumnFloat
-	DeletionTxHash      postgres.ColumnBytea
-	CreatedAt           postgres.ColumnTimestampz
-	UpdatedAt           postgres.ColumnTimestampz
+	ApplicationID        postgres.ColumnInteger
+	EpochIndex           postgres.ColumnFloat
+	TournamentAddress    postgres.ColumnBytea
+	IDHash               postgres.ColumnBytea
+	CommitmentOne        postgres.ColumnBytea
+	CommitmentTwo        postgres.ColumnBytea
+	LeftOfTwo            postgres.ColumnBytea
+	BlockNumber          postgres.ColumnFloat
+	TxHash               postgres.ColumnBytea
+	LogIndex             postgres.ColumnFloat
+	EliminableAt         postgres.ColumnFloat
+	SealEliminableAt     postgres.ColumnFloat
+	SealBlockNumber      postgres.ColumnFloat
+	SealTxHash           postgres.ColumnBytea
+	SealLogIndex         postgres.ColumnFloat
+	AsOfBlock            postgres.ColumnFloat
+	Phase                postgres.ColumnString
+	TimeoutOutcome       postgres.ColumnString
+	DeferredCharge       postgres.ColumnFloat
+	RevealingParent      postgres.ColumnBytea
+	WaitingLeft          postgres.ColumnBytea
+	WaitingRight         postgres.ColumnBytea
+	SegmentStartPosition postgres.ColumnFloat
+	SegmentStartCycle    postgres.ColumnFloat
+	CurrentHeight        postgres.ColumnFloat
+	Responder            postgres.ColumnString
+	AgreeState           postgres.ColumnBytea
+	DivergencePosition   postgres.ColumnFloat
+	DivergenceCycle      postgres.ColumnFloat
+	FinalStateOne        postgres.ColumnBytea
+	FinalStateTwo        postgres.ColumnBytea
+	Winner               postgres.ColumnString
+	DeletionReason       postgres.ColumnString
+	DeletionBlockNumber  postgres.ColumnFloat
+	DeletionTxHash       postgres.ColumnBytea
+	DeletionLogIndex     postgres.ColumnFloat
+	CreatedAt            postgres.ColumnTimestampz
+	UpdatedAt            postgres.ColumnTimestampz
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
@@ -73,45 +96,91 @@ func newMatchesTable(schemaName, tableName, alias string) *MatchesTable {
 
 func newMatchesTableImpl(schemaName, tableName, alias string) matchesTable {
 	var (
-		ApplicationIDColumn       = postgres.IntegerColumn("application_id")
-		EpochIndexColumn          = postgres.FloatColumn("epoch_index")
-		TournamentAddressColumn   = postgres.ByteaColumn("tournament_address")
-		IDHashColumn              = postgres.ByteaColumn("id_hash")
-		CommitmentOneColumn       = postgres.ByteaColumn("commitment_one")
-		CommitmentTwoColumn       = postgres.ByteaColumn("commitment_two")
-		LeftOfTwoColumn           = postgres.ByteaColumn("left_of_two")
-		BlockNumberColumn         = postgres.FloatColumn("block_number")
-		TxHashColumn              = postgres.ByteaColumn("tx_hash")
-		WinnerColumn              = postgres.StringColumn("winner")
-		DeletionReasonColumn      = postgres.StringColumn("deletion_reason")
-		DeletionBlockNumberColumn = postgres.FloatColumn("deletion_block_number")
-		DeletionTxHashColumn      = postgres.ByteaColumn("deletion_tx_hash")
-		CreatedAtColumn           = postgres.TimestampzColumn("created_at")
-		UpdatedAtColumn           = postgres.TimestampzColumn("updated_at")
-		allColumns                = postgres.ColumnList{ApplicationIDColumn, EpochIndexColumn, TournamentAddressColumn, IDHashColumn, CommitmentOneColumn, CommitmentTwoColumn, LeftOfTwoColumn, BlockNumberColumn, TxHashColumn, WinnerColumn, DeletionReasonColumn, DeletionBlockNumberColumn, DeletionTxHashColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns            = postgres.ColumnList{CommitmentOneColumn, CommitmentTwoColumn, LeftOfTwoColumn, BlockNumberColumn, TxHashColumn, WinnerColumn, DeletionReasonColumn, DeletionBlockNumberColumn, DeletionTxHashColumn, CreatedAtColumn, UpdatedAtColumn}
-		defaultColumns            = postgres.ColumnList{DeletionBlockNumberColumn, CreatedAtColumn, UpdatedAtColumn}
+		ApplicationIDColumn        = postgres.IntegerColumn("application_id")
+		EpochIndexColumn           = postgres.FloatColumn("epoch_index")
+		TournamentAddressColumn    = postgres.ByteaColumn("tournament_address")
+		IDHashColumn               = postgres.ByteaColumn("id_hash")
+		CommitmentOneColumn        = postgres.ByteaColumn("commitment_one")
+		CommitmentTwoColumn        = postgres.ByteaColumn("commitment_two")
+		LeftOfTwoColumn            = postgres.ByteaColumn("left_of_two")
+		BlockNumberColumn          = postgres.FloatColumn("block_number")
+		TxHashColumn               = postgres.ByteaColumn("tx_hash")
+		LogIndexColumn             = postgres.FloatColumn("log_index")
+		EliminableAtColumn         = postgres.FloatColumn("eliminable_at")
+		SealEliminableAtColumn     = postgres.FloatColumn("seal_eliminable_at")
+		SealBlockNumberColumn      = postgres.FloatColumn("seal_block_number")
+		SealTxHashColumn           = postgres.ByteaColumn("seal_tx_hash")
+		SealLogIndexColumn         = postgres.FloatColumn("seal_log_index")
+		AsOfBlockColumn            = postgres.FloatColumn("as_of_block")
+		PhaseColumn                = postgres.StringColumn("phase")
+		TimeoutOutcomeColumn       = postgres.StringColumn("timeout_outcome")
+		DeferredChargeColumn       = postgres.FloatColumn("deferred_charge")
+		RevealingParentColumn      = postgres.ByteaColumn("revealing_parent")
+		WaitingLeftColumn          = postgres.ByteaColumn("waiting_left")
+		WaitingRightColumn         = postgres.ByteaColumn("waiting_right")
+		SegmentStartPositionColumn = postgres.FloatColumn("segment_start_position")
+		SegmentStartCycleColumn    = postgres.FloatColumn("segment_start_cycle")
+		CurrentHeightColumn        = postgres.FloatColumn("current_height")
+		ResponderColumn            = postgres.StringColumn("responder")
+		AgreeStateColumn           = postgres.ByteaColumn("agree_state")
+		DivergencePositionColumn   = postgres.FloatColumn("divergence_position")
+		DivergenceCycleColumn      = postgres.FloatColumn("divergence_cycle")
+		FinalStateOneColumn        = postgres.ByteaColumn("final_state_one")
+		FinalStateTwoColumn        = postgres.ByteaColumn("final_state_two")
+		WinnerColumn               = postgres.StringColumn("winner")
+		DeletionReasonColumn       = postgres.StringColumn("deletion_reason")
+		DeletionBlockNumberColumn  = postgres.FloatColumn("deletion_block_number")
+		DeletionTxHashColumn       = postgres.ByteaColumn("deletion_tx_hash")
+		DeletionLogIndexColumn     = postgres.FloatColumn("deletion_log_index")
+		CreatedAtColumn            = postgres.TimestampzColumn("created_at")
+		UpdatedAtColumn            = postgres.TimestampzColumn("updated_at")
+		allColumns                 = postgres.ColumnList{ApplicationIDColumn, EpochIndexColumn, TournamentAddressColumn, IDHashColumn, CommitmentOneColumn, CommitmentTwoColumn, LeftOfTwoColumn, BlockNumberColumn, TxHashColumn, LogIndexColumn, EliminableAtColumn, SealEliminableAtColumn, SealBlockNumberColumn, SealTxHashColumn, SealLogIndexColumn, AsOfBlockColumn, PhaseColumn, TimeoutOutcomeColumn, DeferredChargeColumn, RevealingParentColumn, WaitingLeftColumn, WaitingRightColumn, SegmentStartPositionColumn, SegmentStartCycleColumn, CurrentHeightColumn, ResponderColumn, AgreeStateColumn, DivergencePositionColumn, DivergenceCycleColumn, FinalStateOneColumn, FinalStateTwoColumn, WinnerColumn, DeletionReasonColumn, DeletionBlockNumberColumn, DeletionTxHashColumn, DeletionLogIndexColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns             = postgres.ColumnList{CommitmentOneColumn, CommitmentTwoColumn, LeftOfTwoColumn, BlockNumberColumn, TxHashColumn, LogIndexColumn, EliminableAtColumn, SealEliminableAtColumn, SealBlockNumberColumn, SealTxHashColumn, SealLogIndexColumn, AsOfBlockColumn, PhaseColumn, TimeoutOutcomeColumn, DeferredChargeColumn, RevealingParentColumn, WaitingLeftColumn, WaitingRightColumn, SegmentStartPositionColumn, SegmentStartCycleColumn, CurrentHeightColumn, ResponderColumn, AgreeStateColumn, DivergencePositionColumn, DivergenceCycleColumn, FinalStateOneColumn, FinalStateTwoColumn, WinnerColumn, DeletionReasonColumn, DeletionBlockNumberColumn, DeletionTxHashColumn, DeletionLogIndexColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns             = postgres.ColumnList{DeletionBlockNumberColumn, CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return matchesTable{
 		Table: postgres.NewTable(schemaName, tableName, alias, allColumns...),
 
 		//Columns
-		ApplicationID:       ApplicationIDColumn,
-		EpochIndex:          EpochIndexColumn,
-		TournamentAddress:   TournamentAddressColumn,
-		IDHash:              IDHashColumn,
-		CommitmentOne:       CommitmentOneColumn,
-		CommitmentTwo:       CommitmentTwoColumn,
-		LeftOfTwo:           LeftOfTwoColumn,
-		BlockNumber:         BlockNumberColumn,
-		TxHash:              TxHashColumn,
-		Winner:              WinnerColumn,
-		DeletionReason:      DeletionReasonColumn,
-		DeletionBlockNumber: DeletionBlockNumberColumn,
-		DeletionTxHash:      DeletionTxHashColumn,
-		CreatedAt:           CreatedAtColumn,
-		UpdatedAt:           UpdatedAtColumn,
+		ApplicationID:        ApplicationIDColumn,
+		EpochIndex:           EpochIndexColumn,
+		TournamentAddress:    TournamentAddressColumn,
+		IDHash:               IDHashColumn,
+		CommitmentOne:        CommitmentOneColumn,
+		CommitmentTwo:        CommitmentTwoColumn,
+		LeftOfTwo:            LeftOfTwoColumn,
+		BlockNumber:          BlockNumberColumn,
+		TxHash:               TxHashColumn,
+		LogIndex:             LogIndexColumn,
+		EliminableAt:         EliminableAtColumn,
+		SealEliminableAt:     SealEliminableAtColumn,
+		SealBlockNumber:      SealBlockNumberColumn,
+		SealTxHash:           SealTxHashColumn,
+		SealLogIndex:         SealLogIndexColumn,
+		AsOfBlock:            AsOfBlockColumn,
+		Phase:                PhaseColumn,
+		TimeoutOutcome:       TimeoutOutcomeColumn,
+		DeferredCharge:       DeferredChargeColumn,
+		RevealingParent:      RevealingParentColumn,
+		WaitingLeft:          WaitingLeftColumn,
+		WaitingRight:         WaitingRightColumn,
+		SegmentStartPosition: SegmentStartPositionColumn,
+		SegmentStartCycle:    SegmentStartCycleColumn,
+		CurrentHeight:        CurrentHeightColumn,
+		Responder:            ResponderColumn,
+		AgreeState:           AgreeStateColumn,
+		DivergencePosition:   DivergencePositionColumn,
+		DivergenceCycle:      DivergenceCycleColumn,
+		FinalStateOne:        FinalStateOneColumn,
+		FinalStateTwo:        FinalStateTwoColumn,
+		Winner:               WinnerColumn,
+		DeletionReason:       DeletionReasonColumn,
+		DeletionBlockNumber:  DeletionBlockNumberColumn,
+		DeletionTxHash:       DeletionTxHashColumn,
+		DeletionLogIndex:     DeletionLogIndexColumn,
+		CreatedAt:            CreatedAtColumn,
+		UpdatedAt:            UpdatedAtColumn,
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,

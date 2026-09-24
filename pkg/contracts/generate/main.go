@@ -3,9 +3,9 @@
 
 // This binary generates the Go bindings for the Cartesi Rollups contracts.
 // This binary should be called with `go generate` in the parent dir.
-// First, it downloads the Cartesi Rollups npm package containing the contracts.
-// Then, it generates the bindings using abi-gen.
-// Finally, it stores the bindings in the current directory.
+// The Makefile extracts the release artifacts before this generator runs.
+// It reads their ABIs and generates the Go bindings with bind.Bind.
+// It stores the bindings in the current directory.
 package main
 
 import (
@@ -74,10 +74,6 @@ var bindings = []contractBinding{
 		typeName: "Outputs",
 	},
 	{
-		jsonPath: rollupsContractsPath + "DataAvailability.sol/DataAvailability.json",
-		typeName: "DataAvailability",
-	},
-	{
 		jsonPath: rollupsContractsPath + "IUsdWithdrawalOutputBuilder.sol/IUsdWithdrawalOutputBuilder.json",
 		typeName: "IUsdWithdrawalOutputBuilder",
 	},
@@ -86,8 +82,8 @@ var bindings = []contractBinding{
 		typeName: "IERC20Metadata",
 	},
 	{
-		jsonPath: rollupsContractsPath + "IERC20Portal.sol/IERC20Portal.json",
-		typeName: "IERC20Portal",
+		jsonPath: rollupsContractsPath + "IErc20Portal.sol/IErc20Portal.json",
+		typeName: "IErc20Portal",
 	},
 	{
 		jsonPath: rollupsContractsPath + "draft-IERC6093.sol/IERC20Errors.json",
@@ -96,6 +92,10 @@ var bindings = []contractBinding{
 	{
 		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/ITournament.sol/ITournament.json",
 		typeName: "ITournament",
+	},
+	{
+		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/IMultiLevelTournamentFactory.sol/IMultiLevelTournamentFactory.json",
+		typeName: "IMultiLevelTournamentFactory",
 	},
 	{
 		jsonPath: rollupsPrtContractsPath + "cartesi-rollups/contracts/out/IDaveConsensus.sol/IDaveConsensus.json",
@@ -181,14 +181,20 @@ func generateBinding(b contractBinding, content []byte) {
 		checkErr("removing dir", err)
 	}
 
-	const dirMode = 0700
+	// Generated source is shared by developers in the same group. Set the
+	// final modes explicitly so the caller's umask does not remove group write.
+	const dirMode = 0775
 	err = os.Mkdir(pkg, dirMode)
 	checkErr("creating dir", err)
+	err = os.Chmod(pkg, dirMode)
+	checkErr("setting dir permissions", err)
 
-	const fileMode = 0600
+	const fileMode = 0664
 	filePath := pkg + "/" + pkg + ".go"
 	err = os.WriteFile(filePath, []byte(code), fileMode)
 	checkErr("write binding file", err)
+	err = os.Chmod(filePath, fileMode)
+	checkErr("setting binding permissions", err)
 
 	log.Print("generated binding for ", filePath)
 }

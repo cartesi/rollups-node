@@ -7,6 +7,8 @@ DROP TRIGGER IF EXISTS "state_hashes_set_updated_at" ON "state_hashes";
 DROP INDEX IF EXISTS "state_hashes_input_index_idx";
 DROP TABLE IF EXISTS "state_hashes";
 
+DROP TABLE IF EXISTS "bond_events";
+
 DROP TRIGGER IF EXISTS "match_advances_set_updated_at" ON "match_advances";
 DROP INDEX IF EXISTS "match_advances_block_number_idx";
 DROP TABLE IF EXISTS "match_advances";
@@ -23,6 +25,7 @@ DROP TABLE IF EXISTS "commitments";
 
 DROP TRIGGER IF EXISTS "tournaments_set_updated_at" ON "tournaments";
 DROP INDEX IF EXISTS "tournaments_parent_match_nonroot_idx";
+DROP INDEX IF EXISTS "tournaments_address_idx";
 DROP INDEX IF EXISTS "unique_root_per_epoch_idx";
 DROP TABLE IF EXISTS "tournaments";
 
@@ -68,7 +71,6 @@ DROP TABLE IF EXISTS "execution_parameters";
 
 DROP TRIGGER IF EXISTS "application_validate_status_transition" ON "application";
 DROP TRIGGER IF EXISTS "application_set_updated_at" ON "application";
-DROP INDEX IF EXISTS "application_data_availability_selector_idx";
 DROP INDEX IF EXISTS "application_foreclosed_idx";
 DROP TABLE IF EXISTS "application";
 
@@ -77,6 +79,14 @@ DROP FUNCTION IF EXISTS "update_updated_at_column";
 DROP FUNCTION IF EXISTS "check_hash_siblings";
 
 DROP TYPE IF EXISTS "WinnerCommitment";
+DROP TYPE IF EXISTS "TournamentKind";
+DROP TYPE IF EXISTS "TournamentStandingState";
+DROP TYPE IF EXISTS "MatchPhase";
+DROP TYPE IF EXISTS "CommitmentSide";
+DROP TYPE IF EXISTS "MatchTimeoutOutcome";
+DROP TYPE IF EXISTS "InnerTournamentDisposition";
+DROP TYPE IF EXISTS "BondDisposition";
+DROP TYPE IF EXISTS "BondEventType";
 DROP TYPE IF EXISTS "MatchDeletionReason";
 DROP TYPE IF EXISTS "Consensus";
 DROP TYPE IF EXISTS "SnapshotPolicy";
@@ -84,9 +94,9 @@ DROP TYPE IF EXISTS "EpochStatus";
 DROP TYPE IF EXISTS "DefaultBlock";
 DROP TYPE IF EXISTS "InputCompletionStatus";
 DROP TYPE IF EXISTS "ApplicationStatus";
-DROP DOMAIN IF EXISTS "data_availability";
 DROP DOMAIN IF EXISTS "hash";
 DROP DOMAIN IF EXISTS "uint64";
+DROP DOMAIN IF EXISTS "uint256";
 DROP DOMAIN IF EXISTS "ethereum_address";
 
 COMMIT;

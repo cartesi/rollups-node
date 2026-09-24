@@ -8,14 +8,22 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-func CreateAnvilSnapshotAndDeployApp(ctx context.Context, client *ethclient.Client, factoryAddr common.Address, templateHash common.Hash, dataAvailability []byte, salt string) (common.Address, func(), error) {
+const anvilTestEpochLength uint64 = 10
+
+func CreateAnvilSnapshotAndDeployApp(
+	ctx context.Context,
+	client *ethclient.Client,
+	factoryAddr common.Address,
+	templateHash common.Hash,
+	inputBoxAddress common.Address,
+	salt string,
+) (common.Address, func(), error) {
 	zero := common.Address{}
 	if client == nil {
 		return zero, nil, fmt.Errorf("ethclient Client is nil")
@@ -45,21 +53,19 @@ func CreateAnvilSnapshotAndDeployApp(ctx context.Context, client *ethclient.Clie
 		return zero, nil, fmt.Errorf("failed to create TransactOpts: %w", err)
 	}
 
-	// build the self hosted deployment struct
-	selfHostedApplicationFactoryAddress, err := config.GetContractsSelfHostedApplicationFactoryAddress()
+	parsedSalt, err := ParseSalt(salt)
 	if err != nil {
 		_ = RevertToAnvilSnapshot(client.Client(), snapshotID)
-		return zero, nil, fmt.Errorf("failed to retrieve self hosted application factory address: %w", err)
+		return zero, nil, fmt.Errorf("failed to parse salt: %w", err)
 	}
 
 	deployment := &SelfhostedApplicationDeployment{
-		FactoryAddress:          selfHostedApplicationFactoryAddress,
-		ApplicationOwnerAddress: txOpts.From,
-		AuthorityOwnerAddress:   txOpts.From,
-		TemplateHash:            templateHash,
-		DataAvailability:        dataAvailability,
-		EpochLength:             10,
-		Salt:                    [32]byte{},
+		FactoryAddress:        factoryAddr,
+		AuthorityOwnerAddress: txOpts.From,
+		TemplateHash:          templateHash,
+		InputBoxAddress:       inputBoxAddress,
+		EpochLength:           anvilTestEpochLength,
+		Salt:                  parsedSalt,
 	}
 	applicationAddress, _, err := deployment.Deploy(ctx, client, NewStaticTransactOptsFactory(txOpts))
 	if err != nil {

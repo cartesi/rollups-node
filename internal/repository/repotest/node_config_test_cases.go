@@ -5,10 +5,80 @@ package repotest
 
 import (
 	"encoding/json"
+	"fmt"
+	"sync"
 
+	"github.com/cartesi/rollups-node/internal/config"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 )
+
+const nodeConfigTestChainID = 31337
+
+func (s *NodeConfigSuite) TestConcurrentConfigInitializationPreservesWinner() {
+	s.Run("opposite submission modes", func() {
+		const key = "concurrent-init"
+		start := make(chan struct{})
+		errs := make(chan error, 2)
+		var wg sync.WaitGroup
+		for _, enabled := range []bool{false, true} {
+			wg.Go(func() {
+				<-start
+				requested := config.PersistentSubmitterConfig{
+					DefaultBlock: DefaultBlock_Finalized, ChainID: nodeConfigTestChainID, ClaimSubmissionEnabled: enabled,
+				}
+				stored, err := repository.InitializeNodeConfig(s.Ctx, s.Repo, &NodeConfig[config.PersistentSubmitterConfig]{
+					Key: key, Value: requested,
+				})
+				if err == nil {
+					err = stored.Value.CheckRequested(requested)
+				}
+				errs <- err
+			})
+		}
+		close(start)
+		wg.Wait()
+		close(errs)
+		var successes, conflicts int
+		for err := range errs {
+			if err == nil {
+				successes++
+			} else {
+				s.Require().ErrorContains(err, "claim submission mode mismatch")
+				conflicts++
+			}
+		}
+		s.Equal(1, successes)
+		s.Equal(1, conflicts)
+		winner, err := repository.LoadNodeConfig[config.PersistentSubmitterConfig](s.Ctx, s.Repo, key)
+		s.Require().NoError(err)
+		opposite := winner.Value
+		opposite.ClaimSubmissionEnabled = !opposite.ClaimSubmissionEnabled
+		retained, err := repository.InitializeNodeConfig(s.Ctx, s.Repo, &NodeConfig[config.PersistentSubmitterConfig]{
+			Key: key, Value: opposite,
+		})
+		s.Require().NoError(err)
+		s.Equal(winner.Value, retained.Value)
+		s.Equal(winner.CreatedAt, retained.CreatedAt)
+		s.Equal(winner.UpdatedAt, retained.UpdatedAt)
+	})
+}
+
+func (s *NodeConfigSuite) TestConfigInitializationDoesNotRepairInvalidSavedValue() {
+	for i, raw := range []string{`{}`, `null`, `{"ChainID":0,"DefaultBlock":"FINALIZED"}`} {
+		s.Run(fmt.Sprint(i), func() {
+			key := fmt.Sprintf("invalid-config-%d", i)
+			s.Require().NoError(s.Repo.SaveNodeConfigRaw(s.Ctx, key, []byte(raw)))
+			_, err := repository.InitializeNodeConfig(s.Ctx, s.Repo, &NodeConfig[config.PersistentChainConfig]{
+				Key: key, Value: config.PersistentChainConfig{DefaultBlock: DefaultBlock_Finalized, ChainID: nodeConfigTestChainID},
+			})
+			s.Require().Error(err)
+			got, _, _, err := s.Repo.LoadNodeConfigRaw(s.Ctx, key)
+			s.Require().NoError(err)
+			s.JSONEq(raw, string(got))
+		})
+	}
+}
 
 type NodeConfigSuite struct {
 	BaseSuite

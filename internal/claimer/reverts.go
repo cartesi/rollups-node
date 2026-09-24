@@ -5,9 +5,9 @@ package claimer
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"math/big"
-	"reflect"
+	"slices"
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
 	"github.com/cartesi/rollups-node/internal/model"
@@ -85,9 +85,12 @@ const (
 //   - ApplicationForeclosed: retry later while EVM reader records foreclose_block.
 //     The app remains enabled for L1 observation; normal work stops once
 //     foreclose_block is recorded.
-//   - InvalidOutputsMerkleRootProofSize: CORRUPTED; local data corruption.
-//   - InvalidNodeIndex: CORRUPTED; the outputs merkle proof in the DB does not
-//     form a valid machine-tree replacement proof.
+//   - InvalidSiblingsArrayLength, InvalidMachineMerkleProof,
+//     InvalidPostEpochMachineIflagsYRegister, and
+//     InvalidPostEpochMachineHtifTohostRegister: FAILED; the deployed
+//     contract rejected a proof that the node validated when it collected it.
+//     The stored proof may be corrupt, or node and contract validation may
+//     disagree.
 //   - CallerIsNotValidator: FAILED; wrong operator key.
 //   - the reverts shared with acceptClaim (see classifySharedConsensusRevert):
 //     ApplicationNotDeployed, ApplicationReverted,
@@ -102,6 +105,7 @@ func (s *Service) handleSubmitClaimRevert(
 	app *model.Application,
 	epoch *model.Epoch,
 ) (submitClaimRevertOutcome, error) {
+	revertName := submitClaimRevertName(err)
 	switch {
 	case ethutil.IsNonceTooLowError(err):
 		// A transaction with this signer nonce was already mined. This can
@@ -119,7 +123,7 @@ func (s *Service) handleSubmitClaimRevert(
 		)
 		return submitClaimRetryLater, nil
 
-	case isCustomConsensusError(err, "NotFirstClaim"):
+	case revertName == "NotFirstClaim":
 		// Gas estimation runs the call before sending the transaction. With the
 		// default GasLimit == 0, this revert is caught before spending gas. If
 		// GasLimit were set manually, the transaction could revert on chain.
@@ -149,7 +153,7 @@ func (s *Service) handleSubmitClaimRevert(
 		)
 		return submitClaimAlreadyOnChain, nil
 
-	case isCustomConsensusError(err, "ApplicationForeclosed"):
+	case revertName == "ApplicationForeclosed":
 		// EVM reader should record foreclose_block soon. Keep the epoch for now.
 		// Later ticks will see foreclose_block and skip new broadcasts. Read-only
 		// reconciliation can still copy any already-accepted chain state into
@@ -162,17 +166,16 @@ func (s *Service) handleSubmitClaimRevert(
 		)
 		return submitClaimRetryLater, nil
 
-	case isCustomConsensusError(err, "InvalidOutputsMerkleRootProofSize"):
-		stateErr := s.setApplicationCorrupted(
-			ctx, app,
-			"submitClaim reverted with InvalidOutputsMerkleRootProofSize for "+
-				"epoch %d (%d), last_block %d — tx_buffer_proof in DB is "+
-				"the wrong length for the machine memory tree.",
-			epoch.Index, epoch.VirtualIndex, epoch.LastBlock,
+	case slices.Contains(machineValidationRevertNames[:], revertName):
+		stateErr := appstatus.SetFailedf(
+			ctx, s.Logger, s.repository, app,
+			"submitClaim rejected the persisted machine state proof with %s for epoch %d (%d), last_block %d. %s",
+			revertName, epoch.Index, epoch.VirtualIndex, epoch.LastBlock,
+			machineValidationFailureGuidance(revertName),
 		)
 		return submitClaimAppHalted, stateErr
 
-	case isCustomConsensusError(err, "CallerIsNotValidator"):
+	case revertName == "CallerIsNotValidator":
 		// Operator configuration error: the signing key is not a Quorum
 		// validator. The operator can fix the key, so use FAILED rather than a
 		// terminal DIVERGED/CORRUPTED status.
@@ -183,20 +186,6 @@ func (s *Service) handleSubmitClaimRevert(
 			app.IApplicationAddress,
 		)
 		return submitClaimAppHalted, stateErr
-
-	case isCustomApplicationError(err, "InvalidNodeIndex"):
-		// Raised by the on-chain merkle library while replacing the
-		// outputs-root leaf in the machine memory tree: the proof's shape does
-		// not fit the tree. Like InvalidOutputsMerkleRootProofSize, this means
-		// the proof stored locally is bad — local data corruption.
-		stateErr := s.setApplicationCorrupted(
-			ctx, app,
-			"submitClaim reverted with InvalidNodeIndex for "+
-				"epoch %d (%d), last_block %d — tx_buffer_proof in DB does "+
-				"not form a valid replacement proof for the machine memory tree.",
-			epoch.Index, epoch.VirtualIndex, epoch.LastBlock,
-		)
-		return submitClaimAppHalted, stateErr
 	}
 
 	switch action, stateErr := s.classifySharedConsensusRevert(ctx, "submitClaim", err, app, epoch); action {
@@ -205,9 +194,68 @@ func (s *Service) handleSubmitClaimRevert(
 	case sharedRevertRetryLater:
 		return submitClaimRetryLater, nil
 	case sharedRevertNoMatch:
-		// Not a shared revert either; report unknown.
+		// No known revert matched. Check the Authority owner diagnosis below.
+	}
+	var ownerMismatch *authorityOwnerMismatch
+	if errors.As(err, &ownerMismatch) {
+		if ownerMismatch.configuredOwner != ownerMismatch.latestOwner {
+			s.Logger.Warn("Authority owner views differ after claim submission failed; waiting for confirmation",
+				"app", app.IApplicationAddress, "error", err)
+			return submitClaimRetryLater, nil
+		}
+		stateErr := appstatus.SetFailedf(ctx, s.Logger, s.repository, app,
+			"The configured signer %s is not the Authority owner %s for consensus %s. "+
+				"The configured and latest block views agree. Check CARTESI_AUTH_* against the Authority owner before re-enabling. "+
+				"Original submission error: %v",
+			ownerMismatch.signer, ownerMismatch.configuredOwner, app.IConsensusAddress, ownerMismatch.submissionErr)
+		return submitClaimAppHalted, stateErr
 	}
 	return submitClaimUnknown, nil
+}
+
+// submitClaimRevertName recognizes only the reverts handled by the submit path.
+// An error declared in the ABI but used only by acceptClaim is not a match.
+// The handler and Authority owner probe share this side-effect-free recognizer.
+func submitClaimRevertName(err error) string {
+	for _, name := range []string{"NotFirstClaim", "ApplicationForeclosed", "CallerIsNotValidator"} {
+		if isCustomConsensusError(err, name) {
+			return name
+		}
+	}
+	if name := machineValidationRevertName(err); name != "" {
+		return name
+	}
+	return sharedConsensusRevertName(err)
+}
+
+var machineValidationRevertNames = [...]string{
+	"InvalidSiblingsArrayLength",
+	"InvalidMachineMerkleProof",
+	"InvalidPostEpochMachineIflagsYRegister",
+	"InvalidPostEpochMachineHtifTohostRegister",
+}
+
+func machineValidationRevertName(err error) string {
+	for _, name := range machineValidationRevertNames {
+		if isCustomConsensusError(err, name) {
+			return name
+		}
+	}
+	return ""
+}
+
+// Keep this guidance aligned with PRT's machine-validation diagnostics. The
+// classifiers remain separate because the two services use different ABIs.
+func machineValidationFailureGuidance(name string) string {
+	switch name {
+	case "InvalidPostEpochMachineIflagsYRegister", "InvalidPostEpochMachineHtifTohostRegister":
+		return "The proven post-epoch machine state cannot finalize. " +
+			"Check the selected post-epoch state, stored data, and node and contract versions. " +
+			"If this state is unrecoverable, consider guardian foreclosure to permit emergency withdrawals and deposit refunds."
+	default:
+		return "The node validated the proof when it collected it. " +
+			"Check proof serialization, stored proof data, and node and contract versions before re-enabling."
+	}
 }
 
 // sharedRevertAction tells the caller how to map a revert that submitClaim
@@ -228,6 +276,21 @@ const (
 	sharedRevertRetryLater
 )
 
+func sharedConsensusRevertName(err error) string {
+	for _, name := range []string{
+		"ApplicationNotDeployed",
+		"ApplicationReverted",
+		"IllformedApplicationReturnData",
+		"NotEpochFinalBlock",
+		"NotPastBlock",
+	} {
+		if isCustomConsensusError(err, name) {
+			return name
+		}
+	}
+	return ""
+}
+
 // classifySharedConsensusRevert handles the reverts that submitClaim and
 // acceptClaim have in common. Both methods run the application foreclosure
 // probe — ApplicationNotDeployed, ApplicationReverted, and
@@ -241,8 +304,8 @@ func (s *Service) classifySharedConsensusRevert(
 	app *model.Application,
 	epoch *model.Epoch,
 ) (sharedRevertAction, error) {
-	switch {
-	case isCustomConsensusError(err, "ApplicationNotDeployed"):
+	switch sharedConsensusRevertName(err) {
+	case "ApplicationNotDeployed":
 		// The consensus contract found no code at the application address —
 		// the common wrong-address case, which the contract reports separately
 		// from ApplicationReverted. A provider simulating against a block just
@@ -258,7 +321,7 @@ func (s *Service) classifySharedConsensusRevert(
 		)
 		return sharedRevertAppHalted, stateErr
 
-	case isCustomConsensusError(err, "ApplicationReverted"):
+	case "ApplicationReverted":
 		// Not a divergence (no on-chain claim disagrees with ours) and not
 		// local DB corruption — operator action can fix it, so FAILED. The
 		// application's own revert data is the only evidence of why the call
@@ -272,11 +335,11 @@ func (s *Service) classifySharedConsensusRevert(
 				"contract and its compatibility with the consensus contract "+
 				"before re-enabling.%s",
 			call, app.IApplicationAddress, epoch.Index, epoch.VirtualIndex, epoch.LastBlock,
-			appReturnDataSuffix(err, "ApplicationReverted"),
+			ethutil.ApplicationReturnDataSuffix(err, iconsensus.IConsensusMetaData, "ApplicationReverted"),
 		)
 		return sharedRevertAppHalted, stateErr
 
-	case isCustomConsensusError(err, "IllformedApplicationReturnData"):
+	case "IllformedApplicationReturnData":
 		stateErr := appstatus.SetFailedf(ctx, s.Logger, s.repository, app,
 			"%s reverted with IllformedApplicationReturnData for app %s, "+
 				"epoch %d (%d), last_block %d: the application contract returned "+
@@ -284,11 +347,11 @@ func (s *Service) classifySharedConsensusRevert(
 				"the deployed contract and its compatibility with the consensus "+
 				"contract before re-enabling.%s",
 			call, app.IApplicationAddress, epoch.Index, epoch.VirtualIndex, epoch.LastBlock,
-			appReturnDataSuffix(err, "IllformedApplicationReturnData"),
+			ethutil.ApplicationReturnDataSuffix(err, iconsensus.IConsensusMetaData, "IllformedApplicationReturnData"),
 		)
 		return sharedRevertAppHalted, stateErr
 
-	case isCustomConsensusError(err, "NotEpochFinalBlock"):
+	case "NotEpochFinalBlock":
 		stateErr := appstatus.SetFailedf(ctx, s.Logger, s.repository, app,
 			"%s reverted with NotEpochFinalBlock for app %s, "+
 				"epoch %d (%d), last_block %d: the node submitted a "+
@@ -300,7 +363,7 @@ func (s *Service) classifySharedConsensusRevert(
 		)
 		return sharedRevertAppHalted, stateErr
 
-	case isCustomConsensusError(err, "NotPastBlock"):
+	case "NotPastBlock":
 		// Can be transient: the RPC provider may simulate the call against a
 		// block newer or different from the block used by this tick's pinned
 		// reads. It is permanent when last_block is beyond the real chain head
@@ -477,36 +540,8 @@ func decodeClaimNotStagedStatus(err error) (uint8, bool) {
 	if !ok || len(values) < 4 {
 		return 0, false
 	}
-	// Use reflection instead of a direct `.(uint8)` cast. abigen returns uint8
-	// today, but a future version may return a named uint8 type. Checking the
-	// kind works for both forms.
-	v := reflect.ValueOf(values[3])
-	if !v.IsValid() || v.Kind() != reflect.Uint8 {
-		return 0, false
-	}
-	return uint8(v.Uint()), true
-}
-
-// appReturnDataSuffix formats the application-provided returndata carried by
-// ApplicationReverted and IllformedApplicationReturnData reverts as a reason
-// suffix:
-//
-//	error ApplicationReverted(address appContract, bytes returndata);
-//	error IllformedApplicationReturnData(address appContract, bytes returndata);
-//
-// The bytes are controlled by the application contract, so they are
-// hex-encoded rather than string-decoded to keep them inert in logs and in
-// the database. Returns "" when the revert data cannot be decoded.
-func appReturnDataSuffix(err error, name string) string {
-	values, ok := unpackConsensusRevert(err, name)
-	if !ok || len(values) < 2 {
-		return ""
-	}
-	data, ok := values[1].([]byte)
-	if !ok {
-		return ""
-	}
-	return fmt.Sprintf(" Application return data: 0x%x.", data)
+	status, ok := values[3].(uint8)
+	return status, ok
 }
 
 // decodeNotPastBlockBounds reads the arguments from a NotPastBlock revert:

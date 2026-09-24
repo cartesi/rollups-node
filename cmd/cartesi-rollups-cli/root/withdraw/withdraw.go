@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
 
@@ -28,7 +29,7 @@ var Cmd = &cobra.Command{
 	Short:   "Withdraw the funds of a single account from a foreclosed application",
 	Example: examples,
 	Args:    cobra.ExactArgs(1),
-	Run:     run,
+	RunE:    run,
 	Long: `
 Calls IApplication.withdraw(account, AccountValidityProof). The signer is just
 the gas-payer; the recipient of the funds is encoded inside the 'account'
@@ -79,6 +80,7 @@ func init() {
 	cobra.CheckErr(Cmd.MarkFlagRequired("proof-file"))
 	Cmd.Flags().BoolVarP(&skipConfirmation, "yes", "y", false, "Skip confirmation prompt")
 	Cmd.Flags().BoolVar(&asJSONParam, "json", false, "Print result as JSON")
+	cli.AddTransactionFlags(Cmd)
 
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
@@ -89,53 +91,77 @@ func init() {
 	})
 }
 
-func run(cmd *cobra.Command, args []string) {
+func run(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	nameOrAddress, err := config.ToApplicationNameOrAddressFromString(args[0])
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	account, proof, err := loadProof(proofFileParam)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	appAddr, err := util.ResolveApplicationAddress(ctx, nameOrAddress)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
 
 	chainID, err := client.ChainID(ctx)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 	txOpts, err := cli.GetTransactOpts(ctx, chainID)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	appContract, err := iapplication.NewIApplication(appAddr, client)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	// Identify the WithdrawalOutputBuilder and try to surface a decoded
 	// recipient + amount. A hand-edit that flips a few characters in
 	// `account` would otherwise produce a self-consistent proof against
 	// the wrong recipient and the withdraw would silently succeed.
 	builderAddr, err := appContract.GetWithdrawalOutputBuilder(&bind.CallOpts{Context: ctx})
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 	accountDesc, matched, err := ethutil.DescribeWithdrawalAccount(ctx, client, builderAddr, account)
-	cobra.CheckErr(err)
+	if err != nil {
+		return err
+	}
 
 	if !matched {
 		// Unknown builder family. Print the raw bytes so the operator can
 		// verify character-for-character, and force interactive
 		// confirmation even when --yes is set.
-		fmt.Fprintf(os.Stderr,
+		_, err := fmt.Fprintf(cmd.ErrOrStderr(),
 			"WARNING: builder %s is not a recognized WithdrawalOutputBuilder family.\n"+
 				"         The recipient cannot be auto-decoded. Verify the bytes below\n"+
 				"         match your intended account before confirming; --yes is ignored.\n%s",
 			builderAddr, hex.Dump(account))
+		if err != nil {
+			return err
+		}
 	}
 
 	if !skipConfirmation || !matched {
-		fmt.Printf("Preparing to withdraw an account from application %v\n"+
+		_, err := fmt.Fprintf(cmd.ErrOrStderr(), "Preparing to withdraw an account from application %v\n"+
 			"  gas-payer:           %v  (does NOT have to be the funds recipient)\n"+
 			"  withdrawal builder:  %v\n"+
 			"  account size:        %d bytes\n"+
@@ -143,39 +169,41 @@ func run(cmd *cobra.Command, args []string) {
 			"  proof siblings:      %d\n",
 			appAddr, txOpts.From, builderAddr,
 			len(account), proof.AccountIndex, len(proof.AccountRootSiblings))
-		if matched {
-			fmt.Println(accountDesc)
+		if err != nil {
+			return err
 		}
-		confirmed, promptErr := cli.ConfirmPrompt("Do you want to continue?")
-		cobra.CheckErr(promptErr)
+		if matched {
+			if _, err := fmt.Fprintln(cmd.ErrOrStderr(), accountDesc); err != nil {
+				return err
+			}
+		}
+		confirmed, promptErr := cli.ConfirmPromptTo(cmd.ErrOrStderr(), "Do you want to continue?")
+		if promptErr != nil {
+			return promptErr
+		}
 		if !confirmed {
-			fmt.Println("Transaction cancelled")
-			os.Exit(0)
+			_, err := fmt.Fprintln(cmd.ErrOrStderr(), "Transaction cancelled")
+			return err
 		}
 	}
 
-	tx, err := appContract.Withdraw(txOpts, account, proof)
-	// go-ethereum's binding returns (signedTx, sendErr) when signing
-	// succeeded but the broadcast/response read failed — the tx may already
-	// be in the mempool. Surface the hash on stderr so the operator can find
-	// it even when CheckErr below aborts.
-	if tx != nil {
-		fmt.Fprintf(os.Stderr, "broadcast attempt sent — tx hash %s\n", tx.Hash().Hex())
+	tx, receipt, err := cli.Transact(ctx, cmd, client, txOpts, func(opts *bind.TransactOpts) (*types.Transaction, error) {
+		return appContract.Withdraw(opts, account, proof)
+	})
+	if err != nil {
+		return cli.DecorateRevert(err, iapplication.IApplicationMetaData)
 	}
-	cobra.CheckErr(cli.DecorateRevert(err, iapplication.IApplicationMetaData))
-	txHash := tx.Hash()
 
 	if asJSONParam {
 		result := struct {
-			TransactionHash string         `json:"transaction_hash"`
+			cli.TransactionResult
 			ApplicationAddr common.Address `json:"application_address"`
-		}{TransactionHash: txHash.Hex(), ApplicationAddr: appAddr}
-		jsonBytes, err := json.MarshalIndent(&result, "", "  ")
-		cobra.CheckErr(err)
-		fmt.Println(string(jsonBytes))
-	} else {
-		fmt.Printf("withdraw tx-hash: %v\n", txHash)
+		}{TransactionResult: cli.NewTransactionResult(tx, receipt), ApplicationAddr: appAddr}
+		encoder := json.NewEncoder(cmd.OutOrStdout())
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(result)
 	}
+	return cli.WriteTransactionResult(cmd, tx, receipt)
 }
 
 func loadProof(path string) ([]byte, iapplication.AccountValidityProof, error) {

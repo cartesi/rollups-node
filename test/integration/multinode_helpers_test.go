@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"sync"
 	"testing"
 	"time"
 )
@@ -59,18 +58,9 @@ var multiNodeListenAddrs = []string{
 	":10012", // inspect API
 }
 
-type multiNodeProcess struct {
-	name string
-	cmd  *exec.Cmd
-	done chan struct{}
-
-	mu      sync.Mutex
-	waitErr error
-}
-
 // multiNode is a running host multiprocess deployment.
 type multiNode struct {
-	procs   []*multiNodeProcess
+	procs   []*nodeSubprocess
 	addrs   []string
 	logFile *os.File
 	tail    *exec.Cmd // tail -f process streaming the log to the terminal
@@ -137,18 +127,11 @@ func startMultiNode(logPath string, extraEnv ...string) (*multiNode, error) {
 			}
 			cmd.Dir = workDir
 		}
-		if err := cmd.Start(); err != nil {
+		proc, err := startNodeSubprocess(svc.name, cmd)
+		if err != nil {
 			mn.stop(nil)
 			return nil, fmt.Errorf("start %s: %w", svc.name, err)
 		}
-		proc := &multiNodeProcess{name: svc.name, cmd: cmd, done: make(chan struct{})}
-		go func() {
-			err := cmd.Wait()
-			proc.mu.Lock()
-			proc.waitErr = err
-			proc.mu.Unlock()
-			close(proc.done)
-		}()
 		fmt.Fprintf(os.Stderr, "  started %s (telemetry %s, pid %d)\n",
 			svc.name, svc.telemetryAddr, cmd.Process.Pid)
 		mn.procs = append(mn.procs, proc)
@@ -183,7 +166,7 @@ func (mn *multiNode) waitForHealth(ctx context.Context, _ testing.TB) error {
 			if err != nil {
 				return false, nil
 			}
-			resp, err := client.Do(req) //nolint:gosec // url is a fixed localhost telemetry port
+			resp, err := client.Do(req)
 			if err != nil {
 				return false, nil
 			}
@@ -200,25 +183,11 @@ func (mn *multiNode) waitForHealth(ctx context.Context, _ testing.TB) error {
 
 func (mn *multiNode) exitedProcessError() error {
 	for _, proc := range mn.procs {
-		if exited, err := proc.exitStatus(); exited {
-			if err != nil {
-				return fmt.Errorf("%s exited unexpectedly: %w", proc.name, err)
-			}
-			return fmt.Errorf("%s exited unexpectedly", proc.name)
+		if err := proc.exitedProcessError(); err != nil {
+			return err
 		}
 	}
 	return nil
-}
-
-func (p *multiNodeProcess) exitStatus() (bool, error) {
-	select {
-	case <-p.done:
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		return true, p.waitErr
-	default:
-		return false, nil
-	}
 }
 
 // stop interrupts every service subprocess (in reverse start order) and waits
@@ -258,23 +227,5 @@ func (mn *multiNode) stop(t testing.TB) {
 	}
 	if mn.logFile != nil {
 		mn.logFile.Close()
-	}
-}
-
-func (p *multiNodeProcess) isDone() bool {
-	select {
-	case <-p.done:
-		return true
-	default:
-		return false
-	}
-}
-
-func (p *multiNodeProcess) wait(timeout time.Duration) bool {
-	select {
-	case <-p.done:
-		return true
-	case <-time.After(timeout):
-		return false
 	}
 }

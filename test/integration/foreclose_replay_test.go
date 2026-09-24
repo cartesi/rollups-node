@@ -16,6 +16,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -152,6 +153,7 @@ func (s *ForecloseReplaySuite) TestForecloseReregisterReplay() {
 
 	// Wait for every epoch to reach CLAIM_ACCEPTED on chain.
 	for _, ep := range distinctEpochs {
+		minePastEpochBoundary(s.ctx, s.T(), r, appAName, ep)
 		claimCtx, claimCancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)
 		epoch, err := waitForEpochStatus(claimCtx, s.T(), appAName, ep, model.EpochStatus_ClaimAccepted)
 		claimCancel()
@@ -253,11 +255,6 @@ func (s *ForecloseReplaySuite) TestForecloseReregisterReplayReaderMode() {
 	r := s.Require()
 	s.SetExpectedLogs(s.T(),
 		ExpectedLog{
-			Pattern: regexp.MustCompile(`service=evm-reader.*context canceled`),
-			Level:   LevelError,
-			Reason:  "benign shutdown noise from switching the shared node into reader mode",
-		},
-		ExpectedLog{
 			Pattern: regexp.MustCompile(`BlockOutOfRangeError`),
 			Level:   LevelError,
 			Reason:  "transient EVM reader race against Anvil during restart catch-up",
@@ -287,6 +284,7 @@ func (s *ForecloseReplaySuite) TestForecloseReregisterReplayReaderMode() {
 	r.NoError(err, "wait for input")
 	r.Equal(model.InputCompletionStatus_Accepted, input.Status)
 
+	minePastEpochBoundary(s.ctx, s.T(), r, appAName, input.EpochIndex)
 	claimCtx, claimCancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)
 	_, err = waitForEpochStatus(claimCtx, s.T(), appAName, input.EpochIndex, model.EpochStatus_ClaimAccepted)
 	claimCancel()
@@ -301,17 +299,7 @@ func (s *ForecloseReplaySuite) TestForecloseReregisterReplayReaderMode() {
 	r.NoError(disableApplication(s.ctx, appAName), "disable A before remove")
 	r.NoError(removeApplication(s.ctx, appAName), "remove A")
 
-	readerMode := false
-	defer func() {
-		if readerMode {
-			stopSharedNode(s.T())
-			startSharedNode(s.T())
-		}
-	}()
-
-	stopSharedNode(s.T())
-	startSharedNodeWithEnv(s.T(), "CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED=false")
-	readerMode = true
+	startReaderNode(s.ctx, s.T())
 
 	appBName := uniqueAppName("foreclose-reader-b")
 	r.NoError(registerApplication(s.ctx, appBName, appAddr, dappPath),
@@ -337,10 +325,6 @@ func (s *ForecloseReplaySuite) TestForecloseReregisterReplayReaderMode() {
 	r.NoError(err, "read B status")
 	r.Equal("OK", firstStatusLine(status))
 	r.Contains(status, "Enabled: true")
-
-	stopSharedNode(s.T())
-	startSharedNode(s.T())
-	readerMode = false
 }
 
 func (s *ForecloseReplaySuite) TestOutputExecutionAfterForeclosureReplaysOnReregisteredApp() {
@@ -365,8 +349,8 @@ func (s *ForecloseReplaySuite) TestOutputExecutionAfterForeclosureReplaysOnRereg
 	r.NoError(anvilSetBalance(s.ctx, appAddr, oneEtherWei),
 		"fund application contract")
 
-	inputIndex, _, err := sendInput(s.ctx, appAName, "foreclose output replay")
-	r.NoError(err, "send input")
+	inputIndex, _, _ := sendInputThroughRelay(
+		s.ctx, s.T(), common.HexToAddress(appAddr), "foreclose output replay")
 	r.Equal(uint64(0), inputIndex)
 
 	processCtx, processCancel := context.WithTimeout(s.ctx, inputProcessingTimeout)
@@ -390,6 +374,7 @@ func (s *ForecloseReplaySuite) TestOutputExecutionAfterForeclosureReplaysOnRereg
 	}
 	r.True(voucherFound, "voucher output not found")
 
+	minePastEpochBoundary(s.ctx, s.T(), r, appAName, input.EpochIndex)
 	claimCtx, claimCancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)
 	_, err = waitForEpochStatus(claimCtx, s.T(), appAName, input.EpochIndex, model.EpochStatus_ClaimAccepted)
 	claimCancel()

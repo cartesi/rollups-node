@@ -40,7 +40,6 @@ const (
 	CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS = "CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS"
 	DATABASE_CONNECTION                               = "CARTESI_DATABASE_CONNECTION"
 	FEATURE_CLAIM_SUBMISSION_ENABLED                  = "CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"
-	FEATURE_INPUT_READER_ENABLED                      = "CARTESI_FEATURE_INPUT_READER_ENABLED"
 	FEATURE_INSPECT_ENABLED                           = "CARTESI_FEATURE_INSPECT_ENABLED"
 	FEATURE_JSONRPC_API_ENABLED                       = "CARTESI_FEATURE_JSONRPC_API_ENABLED"
 	FEATURE_MACHINE_HASH_CHECK_ENABLED                = "CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED"
@@ -68,6 +67,11 @@ const (
 	LOG_LEVEL_PRT                                     = "CARTESI_LOG_LEVEL_PRT"
 	LOG_LEVEL_VALIDATOR                               = "CARTESI_LOG_LEVEL_VALIDATOR"
 	JSONRPC_MACHINE_LOG_LEVEL                         = "CARTESI_JSONRPC_MACHINE_LOG_LEVEL"
+	PRT_AUTH_AWS_KMS_KEY_ID                           = "CARTESI_PRT_AUTH_AWS_KMS_KEY_ID"
+	PRT_AUTH_KIND                                     = "CARTESI_PRT_AUTH_KIND"
+	PRT_AUTH_MNEMONIC                                 = "CARTESI_PRT_AUTH_MNEMONIC"
+	PRT_AUTH_MNEMONIC_ACCOUNT_INDEX                   = "CARTESI_PRT_AUTH_MNEMONIC_ACCOUNT_INDEX"
+	PRT_AUTH_PRIVATE_KEY                              = "CARTESI_PRT_AUTH_PRIVATE_KEY"
 	ADVANCER_INPUT_BATCH_SIZE                         = "CARTESI_ADVANCER_INPUT_BATCH_SIZE"
 	ADVANCER_POLLING_INTERVAL                         = "CARTESI_ADVANCER_POLLING_INTERVAL"
 	BLOCKCHAIN_GAS_LIMIT                              = "CARTESI_BLOCKCHAIN_GAS_LIMIT"
@@ -95,6 +99,10 @@ const (
 	BLOCKCHAIN_HTTP_ENDPOINT_FILE      = "CARTESI_BLOCKCHAIN_HTTP_ENDPOINT_FILE"
 
 	DATABASE_CONNECTION_FILE = "CARTESI_DATABASE_CONNECTION_FILE"
+
+	PRT_AUTH_MNEMONIC_FILE = "CARTESI_PRT_AUTH_MNEMONIC_FILE"
+
+	PRT_AUTH_PRIVATE_KEY_FILE = "CARTESI_PRT_AUTH_PRIVATE_KEY_FILE"
 )
 
 func SetDefaults() {
@@ -135,8 +143,6 @@ func SetDefaults() {
 	viper.SetDefault(DATABASE_CONNECTION, "")
 
 	viper.SetDefault(FEATURE_CLAIM_SUBMISSION_ENABLED, "true")
-
-	viper.SetDefault(FEATURE_INPUT_READER_ENABLED, "true")
 
 	viper.SetDefault(FEATURE_INSPECT_ENABLED, "true")
 
@@ -191,6 +197,16 @@ func SetDefaults() {
 	// no default for CARTESI_LOG_LEVEL_VALIDATOR
 
 	viper.SetDefault(JSONRPC_MACHINE_LOG_LEVEL, "info")
+
+	// no default for CARTESI_PRT_AUTH_AWS_KMS_KEY_ID
+
+	viper.SetDefault(PRT_AUTH_KIND, "mnemonic")
+
+	// no default for CARTESI_PRT_AUTH_MNEMONIC
+
+	viper.SetDefault(PRT_AUTH_MNEMONIC_ACCOUNT_INDEX, "6")
+
+	// no default for CARTESI_PRT_AUTH_PRIVATE_KEY
 
 	viper.SetDefault(ADVANCER_INPUT_BATCH_SIZE, "500")
 
@@ -406,7 +422,10 @@ func LoadAdvancerConfig() (*AdvancerConfig, error) {
 // ClaimerConfig holds configuration values for the claimer service.
 type ClaimerConfig struct {
 
-	// The default block to be used by EVM Reader and Claimer when requesting new blocks.
+	// The block used by EVM Reader, Claimer, and PRT for chain-state observations.
+	// PRT checks transaction readiness separately at 'latest'.
+	// Use 'finalized' in production. The node does not detect or roll back reorgs.
+	// The policy is saved when each service first starts. A later configuration mismatch stops startup.
 	// One of 'latest', 'pending', 'safe', 'finalized'
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
@@ -416,8 +435,10 @@ type ClaimerConfig struct {
 	// An unique identifier representing a blockchain network.
 	BlockchainId uint64 `mapstructure:"CARTESI_BLOCKCHAIN_ID"`
 
-	// If set to true the node will send transactions using the legacy gas fee model
-	// (instead of EIP-1559).
+	// If true, force the legacy transaction format with a fresh suggested gas price
+	// for each transaction. If false, select the fee format automatically: EIP-1559
+	// when the network provides a base fee, or legacy otherwise.
+	// This setting does not change gas estimation or replace pending transactions.
 	BlockchainLegacyEnabled bool `mapstructure:"CARTESI_BLOCKCHAIN_LEGACY_ENABLED"`
 
 	// Postgres endpoint in the 'postgres://user:password@hostname:port/database' format (URL).
@@ -431,6 +452,8 @@ type ClaimerConfig struct {
 	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
 
 	// If set to false, the node will not submit claims (reader mode).
+	// The mode is saved when each submitter first starts. A later configuration mismatch
+	// stops startup. Mode changes on an existing database are not supported.
 	FeatureClaimSubmissionEnabled bool `mapstructure:"CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"`
 
 	// HTTP address for Claimer's telemetry service.
@@ -612,7 +635,10 @@ func LoadClaimerConfig() (*ClaimerConfig, error) {
 // EvmreaderConfig holds configuration values for the evmreader service.
 type EvmreaderConfig struct {
 
-	// The default block to be used by EVM Reader and Claimer when requesting new blocks.
+	// The block used by EVM Reader, Claimer, and PRT for chain-state observations.
+	// PRT checks transaction readiness separately at 'latest'.
+	// Use 'finalized' in production. The node does not detect or roll back reorgs.
+	// The policy is saved when each service first starts. A later configuration mismatch stops startup.
 	// One of 'latest', 'pending', 'safe', 'finalized'
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
@@ -631,9 +657,6 @@ type EvmreaderConfig struct {
 	// See [this](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-PASSFILE)
 	// for more information.
 	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
-
-	// If set to false, the node will not read inputs from the blockchain.
-	FeatureInputReaderEnabled bool `mapstructure:"CARTESI_FEATURE_INPUT_READER_ENABLED"`
 
 	// HTTP address for EVM Reader's telemetry service.
 	EvmReaderTelemetryAddress string `mapstructure:"CARTESI_EVM_READER_TELEMETRY_ADDRESS"`
@@ -713,13 +736,6 @@ func LoadEvmreaderConfig() (*EvmreaderConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_DATABASE_CONNECTION: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_DATABASE_CONNECTION is required for the evmreader service: %w", err)
-	}
-
-	cfg.FeatureInputReaderEnabled, err = GetFeatureInputReaderEnabled()
-	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_INPUT_READER_ENABLED: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_FEATURE_INPUT_READER_ENABLED is required for the evmreader service: %w", err)
 	}
 
 	cfg.EvmReaderTelemetryAddress, err = GetEvmReaderTelemetryAddress()
@@ -918,7 +934,10 @@ func LoadJsonrpcConfig() (*JsonrpcConfig, error) {
 // NodeConfig holds configuration values for the node service.
 type NodeConfig struct {
 
-	// The default block to be used by EVM Reader and Claimer when requesting new blocks.
+	// The block used by EVM Reader, Claimer, and PRT for chain-state observations.
+	// PRT checks transaction readiness separately at 'latest'.
+	// Use 'finalized' in production. The node does not detect or roll back reorgs.
+	// The policy is saved when each service first starts. A later configuration mismatch stops startup.
 	// One of 'latest', 'pending', 'safe', 'finalized'
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
@@ -928,8 +947,10 @@ type NodeConfig struct {
 	// An unique identifier representing a blockchain network.
 	BlockchainId uint64 `mapstructure:"CARTESI_BLOCKCHAIN_ID"`
 
-	// If set to true the node will send transactions using the legacy gas fee model
-	// (instead of EIP-1559).
+	// If true, force the legacy transaction format with a fresh suggested gas price
+	// for each transaction. If false, select the fee format automatically: EIP-1559
+	// when the network provides a base fee, or legacy otherwise.
+	// This setting does not change gas estimation or replace pending transactions.
 	BlockchainLegacyEnabled bool `mapstructure:"CARTESI_BLOCKCHAIN_LEGACY_ENABLED"`
 
 	// Postgres endpoint in the 'postgres://user:password@hostname:port/database' format (URL).
@@ -943,10 +964,9 @@ type NodeConfig struct {
 	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
 
 	// If set to false, the node will not submit claims (reader mode).
+	// The mode is saved when each submitter first starts. A later configuration mismatch
+	// stops startup. Mode changes on an existing database are not supported.
 	FeatureClaimSubmissionEnabled bool `mapstructure:"CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"`
-
-	// If set to false, the node will not read inputs from the blockchain.
-	FeatureInputReaderEnabled bool `mapstructure:"CARTESI_FEATURE_INPUT_READER_ENABLED"`
 
 	// If set to false, the node will not start the inspect service.
 	FeatureInspectEnabled bool `mapstructure:"CARTESI_FEATURE_INSPECT_ENABLED"`
@@ -1111,13 +1131,6 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED is required for the node service: %w", err)
-	}
-
-	cfg.FeatureInputReaderEnabled, err = GetFeatureInputReaderEnabled()
-	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_FEATURE_INPUT_READER_ENABLED: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_FEATURE_INPUT_READER_ENABLED is required for the node service: %w", err)
 	}
 
 	cfg.FeatureInspectEnabled, err = GetFeatureInspectEnabled()
@@ -1322,7 +1335,10 @@ func LoadNodeConfig() (*NodeConfig, error) {
 // PrtConfig holds configuration values for the prt service.
 type PrtConfig struct {
 
-	// The default block to be used by EVM Reader and Claimer when requesting new blocks.
+	// The block used by EVM Reader, Claimer, and PRT for chain-state observations.
+	// PRT checks transaction readiness separately at 'latest'.
+	// Use 'finalized' in production. The node does not detect or roll back reorgs.
+	// The policy is saved when each service first starts. A later configuration mismatch stops startup.
 	// One of 'latest', 'pending', 'safe', 'finalized'
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
@@ -1332,8 +1348,10 @@ type PrtConfig struct {
 	// An unique identifier representing a blockchain network.
 	BlockchainId uint64 `mapstructure:"CARTESI_BLOCKCHAIN_ID"`
 
-	// If set to true the node will send transactions using the legacy gas fee model
-	// (instead of EIP-1559).
+	// If true, force the legacy transaction format with a fresh suggested gas price
+	// for each transaction. If false, select the fee format automatically: EIP-1559
+	// when the network provides a base fee, or legacy otherwise.
+	// This setting does not change gas estimation or replace pending transactions.
 	BlockchainLegacyEnabled bool `mapstructure:"CARTESI_BLOCKCHAIN_LEGACY_ENABLED"`
 
 	// Postgres endpoint in the 'postgres://user:password@hostname:port/database' format (URL).
@@ -1347,6 +1365,8 @@ type PrtConfig struct {
 	DatabaseConnection URL `mapstructure:"CARTESI_DATABASE_CONNECTION"`
 
 	// If set to false, the node will not submit claims (reader mode).
+	// The mode is saved when each submitter first starts. A later configuration mismatch
+	// stops startup. Mode changes on an existing database are not supported.
 	FeatureClaimSubmissionEnabled bool `mapstructure:"CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED"`
 
 	// HTTP address for PRT's telemetry service.
@@ -1655,7 +1675,6 @@ func (c *NodeConfig) ToEvmreaderConfig() *EvmreaderConfig {
 		BlockchainHttpEndpoint:       c.BlockchainHttpEndpoint,
 		BlockchainId:                 c.BlockchainId,
 		DatabaseConnection:           c.DatabaseConnection,
-		FeatureInputReaderEnabled:    c.FeatureInputReaderEnabled,
 		LogColor:                     c.LogColor,
 		LogLevel:                     c.LogLevel,
 		BlockchainHttpMaxRetries:     c.BlockchainHttpMaxRetries,
@@ -1987,19 +2006,6 @@ func GetFeatureClaimSubmissionEnabled() (bool, error) {
 		return v, nil
 	}
 	return notDefinedbool(), fmt.Errorf("%s: %w", FEATURE_CLAIM_SUBMISSION_ENABLED, ErrNotDefined)
-}
-
-// GetFeatureInputReaderEnabled returns the value for the environment variable CARTESI_FEATURE_INPUT_READER_ENABLED.
-func GetFeatureInputReaderEnabled() (bool, error) {
-	s := viper.GetString(FEATURE_INPUT_READER_ENABLED)
-	if s != "" {
-		v, err := toBool(s)
-		if err != nil {
-			return v, fmt.Errorf("failed to parse %s: %w", FEATURE_INPUT_READER_ENABLED, err)
-		}
-		return v, nil
-	}
-	return notDefinedbool(), fmt.Errorf("%s: %w", FEATURE_INPUT_READER_ENABLED, ErrNotDefined)
 }
 
 // GetFeatureInspectEnabled returns the value for the environment variable CARTESI_FEATURE_INSPECT_ENABLED.
@@ -2351,6 +2357,87 @@ func GetJsonrpcMachineLogLevel() (string, error) {
 		return v, nil
 	}
 	return notDefinedstring(), fmt.Errorf("%s: %w", JSONRPC_MACHINE_LOG_LEVEL, ErrNotDefined)
+}
+
+// GetPrtAuthAwsKmsKeyId returns the value for the environment variable CARTESI_PRT_AUTH_AWS_KMS_KEY_ID.
+func GetPrtAuthAwsKmsKeyId() (RedactedString, error) {
+	s := viper.GetString(PRT_AUTH_AWS_KMS_KEY_ID)
+	if s != "" {
+		v, err := toRedactedString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", PRT_AUTH_AWS_KMS_KEY_ID, err)
+		}
+		return v, nil
+	}
+	return notDefinedRedactedString(), fmt.Errorf("%s: %w", PRT_AUTH_AWS_KMS_KEY_ID, ErrNotDefined)
+}
+
+// GetPrtAuthKind returns the value for the environment variable CARTESI_PRT_AUTH_KIND.
+func GetPrtAuthKind() (AuthKind, error) {
+	s := viper.GetString(PRT_AUTH_KIND)
+	if s != "" {
+		v, err := toAuthKind(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", PRT_AUTH_KIND, err)
+		}
+		return v, nil
+	}
+	return notDefinedAuthKind(), fmt.Errorf("%s: %w", PRT_AUTH_KIND, ErrNotDefined)
+}
+
+// GetPrtAuthMnemonic returns the value for the environment variable CARTESI_PRT_AUTH_MNEMONIC.
+func GetPrtAuthMnemonic() (RedactedString, error) {
+	s := viper.GetString(PRT_AUTH_MNEMONIC)
+	if s == "" {
+		filename := viper.GetString(PRT_AUTH_MNEMONIC_FILE)
+		contents, err := os.ReadFile(filename)
+		if err != nil {
+			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", PRT_AUTH_MNEMONIC_FILE, err)
+		}
+		s = strings.TrimSpace(string(contents))
+	}
+	if s != "" {
+		v, err := toRedactedString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", PRT_AUTH_MNEMONIC, err)
+		}
+		return v, nil
+	}
+	return notDefinedRedactedString(), fmt.Errorf("%s: %w", PRT_AUTH_MNEMONIC, ErrNotDefined)
+}
+
+// GetPrtAuthMnemonicAccountIndex returns the value for the environment variable CARTESI_PRT_AUTH_MNEMONIC_ACCOUNT_INDEX.
+func GetPrtAuthMnemonicAccountIndex() (RedactedUint, error) {
+	s := viper.GetString(PRT_AUTH_MNEMONIC_ACCOUNT_INDEX)
+	if s != "" {
+		v, err := toRedactedUint(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", PRT_AUTH_MNEMONIC_ACCOUNT_INDEX, err)
+		}
+		return v, nil
+	}
+	return notDefinedRedactedUint(), fmt.Errorf("%s: %w", PRT_AUTH_MNEMONIC_ACCOUNT_INDEX, ErrNotDefined)
+}
+
+// GetPrtAuthPrivateKey returns the value for the environment variable CARTESI_PRT_AUTH_PRIVATE_KEY.
+func GetPrtAuthPrivateKey() (RedactedString, error) {
+	s := viper.GetString(PRT_AUTH_PRIVATE_KEY)
+	if s == "" {
+		filename := viper.GetString(PRT_AUTH_PRIVATE_KEY_FILE)
+		contents, err := os.ReadFile(filename)
+		if err != nil {
+			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", PRT_AUTH_PRIVATE_KEY_FILE, err)
+		}
+		s = strings.TrimSpace(string(contents))
+	}
+	if s != "" {
+		v, err := toRedactedString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", PRT_AUTH_PRIVATE_KEY, err)
+		}
+		return v, nil
+	}
+	return notDefinedRedactedString(), fmt.Errorf("%s: %w", PRT_AUTH_PRIVATE_KEY, ErrNotDefined)
 }
 
 // GetAdvancerInputBatchSize returns the value for the environment variable CARTESI_ADVANCER_INPUT_BATCH_SIZE.

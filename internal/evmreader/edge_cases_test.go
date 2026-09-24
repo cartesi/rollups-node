@@ -122,7 +122,6 @@ func (s *EvmReaderSuite) sameTransactionScanApp() (appContracts, common.Hash) {
 			Name:                "test-app",
 			IApplicationAddress: addr,
 			IInputBoxAddress:    inputBoxAddr,
-			DataAvailability:    DataAvailability_InputBox[:],
 			Enabled:             true,
 			Status:              ApplicationStatus_OK,
 			IInputBoxBlock:      10,
@@ -461,7 +460,6 @@ func (s *EvmReaderSuite) TestAdapterCacheInvalidationOnConfigChange() {
 	s.client.EnqueueNewHead(101).Once()
 	called := newCallNotification(s.client.EnqueueNewHead(102))
 
-	s.evmReader.inputReaderEnabled = false
 	s.evmReader.defaultBlock = DefaultBlock_Latest
 
 	addr := common.HexToAddress("0x4444444444444444444444444444444444444444")
@@ -477,6 +475,7 @@ func (s *EvmReaderSuite) TestAdapterCacheInvalidationOnConfigChange() {
 			IConsensusAddress:       consensusAddr1,
 			IInputBoxAddress:        inputBoxAddr,
 			LastOutputCheckBlock:    999, // > header block → skip output check
+			LastInputCheckBlock:     999, // input scan is already current for this adapter test
 			LastForecloseCheckBlock: 999,
 		}}, uint64(1), nil).Once()
 	// Header 2: consensus address changed → cache invalidation
@@ -487,6 +486,7 @@ func (s *EvmReaderSuite) TestAdapterCacheInvalidationOnConfigChange() {
 			IConsensusAddress:       consensusAddr2,
 			IInputBoxAddress:        inputBoxAddr,
 			LastOutputCheckBlock:    999,
+			LastInputCheckBlock:     999,
 			LastForecloseCheckBlock: 999,
 		}}, uint64(1), nil).Once()
 	// Header 3: same config as header 2 → cache hit
@@ -497,6 +497,7 @@ func (s *EvmReaderSuite) TestAdapterCacheInvalidationOnConfigChange() {
 			IConsensusAddress:       consensusAddr2,
 			IInputBoxAddress:        inputBoxAddr,
 			LastOutputCheckBlock:    999,
+			LastInputCheckBlock:     999,
 			LastForecloseCheckBlock: 999,
 		}}, uint64(1), nil).Once()
 	// Catch-all for sentinel header

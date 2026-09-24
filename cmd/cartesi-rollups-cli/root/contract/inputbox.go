@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/spf13/cobra"
 )
@@ -50,7 +50,6 @@ func runInputBox(cmd *cobra.Command, args []string) error {
 }
 
 // queryInputBox returns the InputBox state for the application.
-// The InputBox address is auto-discovered from DaveConsensus or provided via --inputbox flag.
 func (c *chainClient) queryInputBox() (*InputBoxResult, error) {
 	inputBoxAddr, err := c.resolveInputBoxAddress()
 	if err != nil {
@@ -81,43 +80,26 @@ func (c *chainClient) queryInputBox() (*InputBoxResult, error) {
 	}, nil
 }
 
-// resolveInputBoxAddress discovers the InputBox address.
-// Priority: (1) --inputbox flag / env var, (2) DaveConsensus.GetInputBox().
+type applicationInputBoxCaller interface {
+	GetInputBox(opts *bind.CallOpts) (common.Address, error)
+}
+
+// resolveInputBoxAddress reads the InputBox selected by this application.
 func (c *chainClient) resolveInputBoxAddress() (common.Address, error) {
-	// Try config (--inputbox flag or CARTESI_CONTRACTS_INPUT_BOX_ADDRESS env var).
-	addr, err := config.GetContractsInputBoxAddress()
-	if err == nil && addr != (common.Address{}) {
-		return addr, nil
+	app, err := iapplication.NewIApplicationCaller(c.appAddr, c.eth)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("bind IApplication for InputBox discovery: %w", err)
 	}
+	return readApplicationInputBox(app, c.callOpts)
+}
 
-	// Try auto-discovery from DaveConsensus.
-	consensusAddr, cErr := c.getConsensusAddress()
-	if cErr != nil {
-		return common.Address{}, fmt.Errorf(
-			"cannot determine InputBox address: no --inputbox flag and consensus lookup failed: %w",
-			cErr)
+func readApplicationInputBox(caller applicationInputBoxCaller, opts *bind.CallOpts) (common.Address, error) {
+	inputBox, err := caller.GetInputBox(opts)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("IApplication.GetInputBox: %w", err)
 	}
-
-	cType, _, cErr := c.detectConsensus(consensusAddr)
-	if cErr != nil {
-		return common.Address{}, fmt.Errorf(
-			"cannot determine InputBox address: no --inputbox flag and consensus detection failed: %w",
-			cErr)
+	if inputBox == (common.Address{}) {
+		return common.Address{}, fmt.Errorf("IApplication.GetInputBox returned the zero address")
 	}
-
-	if cType == consensusDave {
-		daveCaller, dErr := idaveconsensus.NewIDaveConsensusCaller(consensusAddr, c.eth)
-		if dErr != nil {
-			return common.Address{}, fmt.Errorf("bind IDaveConsensus for InputBox discovery: %w", dErr)
-		}
-		inputBox, dErr := daveCaller.GetInputBox(c.callOpts)
-		if dErr != nil {
-			return common.Address{}, fmt.Errorf("IDaveConsensus.GetInputBox: %w", dErr)
-		}
-		return inputBox, nil
-	}
-
-	return common.Address{}, fmt.Errorf(
-		"cannot auto-discover InputBox address for %s consensus; "+
-			"use --inputbox flag or set CARTESI_CONTRACTS_INPUT_BOX_ADDRESS", cType)
+	return inputBox, nil
 }

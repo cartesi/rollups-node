@@ -10,15 +10,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testValidatorAddress = "0x1111111111111111111111111111111111111111"
+
 func TestParseValidatorAddresses_ValidRepeatedFlags(t *testing.T) {
 	got, err := parseValidatorAddresses([]string{
-		"0x1111111111111111111111111111111111111111",
+		testValidatorAddress,
 		"0x2222222222222222222222222222222222222222",
 	})
 
 	require.NoError(t, err)
 	require.Equal(t, []common.Address{
-		common.HexToAddress("0x1111111111111111111111111111111111111111"),
+		common.HexToAddress(testValidatorAddress),
 		common.HexToAddress("0x2222222222222222222222222222222222222222"),
 	}, got)
 }
@@ -46,8 +48,8 @@ func TestParseValidatorAddresses_RejectsZeroAddress(t *testing.T) {
 
 func TestParseValidatorAddresses_RejectsDuplicates(t *testing.T) {
 	_, err := parseValidatorAddresses([]string{
-		"0x1111111111111111111111111111111111111111",
-		"0x1111111111111111111111111111111111111111",
+		testValidatorAddress,
+		testValidatorAddress,
 	})
 
 	require.Error(t, err)

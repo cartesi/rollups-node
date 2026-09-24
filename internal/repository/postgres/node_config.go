@@ -15,6 +15,16 @@ import (
 	"github.com/go-jet/jet/v2/postgres"
 )
 
+func (r *PostgresRepository) InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error {
+	stmt := table.NodeConfig.
+		INSERT(table.NodeConfig.Key, table.NodeConfig.Value).
+		VALUES(key, postgres.Json(rawJSON)).
+		ON_CONFLICT(table.NodeConfig.Key).DO_NOTHING()
+	sqlStr, args := stmt.Sql()
+	_, err := r.db.Exec(ctx, sqlStr, args...)
+	return err
+}
+
 func (r *PostgresRepository) SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error {
 
 	insertStmt := table.NodeConfig.

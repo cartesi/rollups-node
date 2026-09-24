@@ -1,8 +1,6 @@
 // (c) Cartesi and individual authors (see AUTHORS)
 // SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 
-//go:build endtoendtests
-
 package integration
 
 import (
@@ -14,17 +12,31 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 const cliBinary = "cartesi-rollups-cli"
+
+const (
+	deployCommand = "deploy"
+	jsonFlag      = "--json"
+	prtFlag       = "--prt"
+)
+
+// The devnet funds these mnemonic accounts. Account 0 submits node claims;
+// account 6 submits node PRT actions. Account 5 pays for ordinary test CLI
+// transactions and relay calls, which the test driver runs sequentially.
+const integrationCLIAccountIndex uint32 = 5
 
 // cliCommandTimeout is the maximum time a single CLI command may run before
 // being killed. This prevents a hanging command from consuming the entire
@@ -95,17 +107,19 @@ func runCLI(ctx context.Context, args ...string) (string, error) {
 	return runCLIWithEnv(ctx, nil, args...)
 }
 
-// runCLIWithEnv is like runCLI but allows appending environment variables
-// to the subprocess. Used for selecting a non-default signer (e.g.,
-// CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX=1 when the guardian wallet differs
-// from the node's default account).
+// runCLIWithEnv keeps the test driver's transactions separate from node
+// transactions. Overrides are applied last so tests can select a guardian,
+// depositor, or other actor. The node's environment is never changed.
 func runCLIWithEnv(ctx context.Context, extraEnv []string, args ...string) (string, error) {
 	cmdCtx, cancel := context.WithTimeout(ctx, cliCommandTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, cliBinary, args...)
-	if len(extraEnv) > 0 {
-		cmd.Env = append(os.Environ(), extraEnv...)
-	}
+	cmd.Env = append(os.Environ(),
+		"CARTESI_AUTH_KIND=mnemonic",
+		"CARTESI_AUTH_MNEMONIC="+ethutil.FoundryMnemonic,
+		fmt.Sprintf("CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX=%d", integrationCLIAccountIndex),
+	)
+	cmd.Env = append(cmd.Env, extraEnv...)
 	out, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
@@ -126,11 +140,27 @@ func runCLIWithEnv(ctx context.Context, extraEnv []string, args ...string) (stri
 // the application address from the JSON output.
 // Extra CLI flags (e.g., "--salt", value, "--prt") can be appended via extraArgs.
 func deployApplication(ctx context.Context, appName, dappPath string, extraArgs ...string) (string, error) {
-	args := []string{"deploy", "application", appName, dappPath, "--json"}
-	args = append(args, extraArgs...)
+	address, _, err := deployApplicationWithConsensus(ctx, appName, dappPath, extraArgs...)
+	return address, err
+}
+
+// deployApplicationWithConsensus also returns the consensus address. The
+// Authority owner remains the devnet Claimer (account 0), not the test payer.
+// Explicit owner flags in extraArgs take precedence over this fixture default.
+func deployApplicationWithConsensus(
+	ctx context.Context,
+	appName, dappPath string,
+	extraArgs ...string,
+) (string, string, error) {
+	key, err := ethutil.MnemonicToPrivateKey(ethutil.FoundryMnemonic, 0)
+	if err != nil {
+		return "", "", fmt.Errorf("derive devnet Authority owner: %w", err)
+	}
+	args := slices.Concat([]string{deployCommand, "application", appName, dappPath, jsonFlag,
+		"--authority-owner", crypto.PubkeyToAddress(key.PublicKey).Hex()}, extraArgs)
 	out, err := runCLI(ctx, args...)
 	if err != nil {
-		return "", fmt.Errorf("deploy: %w", err)
+		return "", "", fmt.Errorf("deploy: %w", err)
 	}
 
 	var app struct {
@@ -138,9 +168,12 @@ func deployApplication(ctx context.Context, appName, dappPath string, extraArgs 
 		IConsensusAddress   string `json:"iconsensus_address"`
 	}
 	if err := json.Unmarshal([]byte(out), &app); err != nil {
-		return "", fmt.Errorf("parse deploy output: %w", err)
+		return "", "", fmt.Errorf("parse deploy output: %w", err)
 	}
-	return app.IApplicationAddress, nil
+	if app.IApplicationAddress == "" || app.IConsensusAddress == "" {
+		return "", "", fmt.Errorf("deploy output missing addresses: %s", out)
+	}
+	return app.IApplicationAddress, app.IConsensusAddress, nil
 }
 
 // disableApplication sets the application status to disabled so the node
@@ -178,7 +211,7 @@ func inspectApplication(ctx context.Context, appName, payload string) (*inspectR
 
 // sendInput sends a payload to the application and returns (inputIndex, blockNumber).
 func sendInput(ctx context.Context, appName string, payload string) (uint64, uint64, error) {
-	out, err := runCLI(ctx, "send", appName, payload, "--yes", "--json")
+	out, err := runCLI(ctx, "send", appName, payload, "--yes", jsonFlag)
 	if err != nil {
 		return 0, 0, fmt.Errorf("send: %w", err)
 	}
@@ -264,11 +297,11 @@ func readInput(ctx context.Context, appName string, inputIndex uint64) (*model.I
 
 // executeOutput executes a voucher on L1 via the CLI.
 func executeOutput(ctx context.Context, appName string, index uint64) (string, error) {
-	out, err := runCLI(ctx, "execute", appName, strconv.FormatUint(index, 10), "--yes", "--json")
+	out, err := runCLI(ctx, "execute", appName, strconv.FormatUint(index, 10), "--yes", jsonFlag)
 	if err != nil {
 		return "", fmt.Errorf("execute: %w", err)
 	}
-	var result cli.ExecuteResult
+	var result cli.TransactionResult
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
 		return "", fmt.Errorf("parse execute output: %w", err)
 	}

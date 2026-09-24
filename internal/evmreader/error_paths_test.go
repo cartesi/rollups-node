@@ -29,7 +29,7 @@ func (s *EvmReaderSuite) TestCreateEpochsAndInputsErrorDoesNotAdvanceCheckpoint(
 
 	app := &Application{
 		ID:                  1,
-		Name:                "test-app",
+		Name:                daveTestApplicationName,
 		IApplicationAddress: addr,
 		IInputBoxAddress:    inputBoxAddr,
 		EpochLength:         10,
@@ -62,8 +62,8 @@ func (s *EvmReaderSuite) TestCreateEpochsAndInputsErrorDoesNotAdvanceCheckpoint(
 
 	s.evmReader.repository = repo
 
-	err := s.evmReader.readAndStoreInputs(s.ctx, 100, 110, apps)
-	require.ErrorIs(err, errScanIncomplete) // per-app failure is reported after scanning
+	err := s.evmReader.readAndStoreApplicationInputs(s.ctx, 100, 110, apps[0])
+	require.ErrorContains(err, "store inputs and epochs: database connection lost")
 
 	// CreateEpochsAndInputs was attempted
 	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 1)
@@ -78,18 +78,9 @@ func (s *SealedEpochsSuite) TestSealedEpochInputCountMismatchReturnsError() {
 	const sealBlock uint64 = 200
 	tournamentAddr := common.HexToAddress("0xAAAA")
 
-	app := appContracts{
-		application: &Application{
-			ID:                  1,
-			Name:                "test-app",
-			IApplicationAddress: app1Addr,
-			IConsensusAddress:   consensusAddr,
-			IInputBoxAddress:    inputBoxAddr,
-			IInputBoxBlock:      10,
-		},
-		inputSource:   s.inputBox,
-		daveConsensus: s.dave,
-	}
+	app := newDaveAppContracts(s.inputBox, s.dave)
+	app.application.IInputBoxAddress = inputBoxAddr
+	app.application.IInputBoxBlock = 10
 
 	// Sealed event expects 2 inputs (indices 3 to 5), but only 1 exists on-chain.
 	event := &idaveconsensus.IDaveConsensusEpochSealed{
@@ -151,17 +142,8 @@ func (s *SealedEpochsSuite) TestSealedEpochInputCountMismatchReturnsError() {
 func (s *SealedEpochsSuite) TestSealedEpochFirstBlockMismatchReturnsError() {
 	tournamentAddr := common.HexToAddress("0xBBBB")
 
-	app := appContracts{
-		application: &Application{
-			ID:                  1,
-			Name:                "test-app",
-			IApplicationAddress: app1Addr,
-			IConsensusAddress:   consensusAddr,
-			IInputBoxAddress:    inputBoxAddr,
-		},
-		inputSource:   s.inputBox,
-		daveConsensus: s.dave,
-	}
+	app := newDaveAppContracts(s.inputBox, s.dave)
+	app.application.IInputBoxAddress = inputBoxAddr
 
 	// Epoch 1 sealed. Previous epoch (0) has LastBlock=100 → firstBlock should be 100.
 	event := &idaveconsensus.IDaveConsensusEpochSealed{
@@ -203,7 +185,7 @@ func (s *SealedEpochsSuite) TestOpenEpochWithNoNonOpenEpochSetsCorrupted() {
 	app := appContracts{
 		application: &Application{
 			ID:                  1,
-			Name:                "test-app",
+			Name:                daveTestApplicationName,
 			IApplicationAddress: app1Addr,
 		},
 		inputSource: s.inputBox,
@@ -232,7 +214,7 @@ func (s *SealedEpochsSuite) TestSealedEpoch0WithNoInputBoxBlockReturnsError() {
 	app := appContracts{
 		application: &Application{
 			ID:                  1,
-			Name:                "test-app",
+			Name:                daveTestApplicationName,
 			IApplicationAddress: app1Addr,
 			IInputBoxAddress:    inputBoxAddr,
 			IInputBoxBlock:      0, // misconfigured
@@ -278,7 +260,7 @@ func (s *EvmReaderSuite) TestUpdateOutputsExecutionErrorDoesNotAdvanceCheckpoint
 	app := appContracts{
 		application: &Application{
 			ID:                  1,
-			Name:                "test-app",
+			Name:                daveTestApplicationName,
 			IApplicationAddress: app1Addr,
 		},
 		applicationContract: appContract,
@@ -308,10 +290,9 @@ func (s *EvmReaderSuite) TestUpdateOutputsExecutionErrorDoesNotAdvanceCheckpoint
 // misconfiguration), scanIConsensusInputs must not write to the database.
 func (s *EvmReaderSuite) TestBlockRegressionDoesNotWriteToDb() {
 	app := &Application{
-		Name:                "test-app",
+		Name:                daveTestApplicationName,
 		IApplicationAddress: app1Addr,
 		IInputBoxAddress:    inputBoxAddr,
-		DataAvailability:    DataAvailability_InputBox[:],
 		EpochLength:         10,
 		LastInputCheckBlock: 100,
 	}
@@ -337,16 +318,8 @@ func (s *EvmReaderSuite) TestBlockRegressionDoesNotWriteToDb() {
 // When mostRecentBlockNumber < LastEpochCheckBlock, processApplicationSealedEpochs
 // must skip processing and not write to the database.
 func (s *SealedEpochsSuite) TestSealedEpochBlockRegressionDoesNotWriteToDb() {
-	app := appContracts{
-		application: &Application{
-			ID:                  1,
-			Name:                "test-app",
-			IApplicationAddress: app1Addr,
-			IConsensusAddress:   consensusAddr,
-			LastEpochCheckBlock: 200,
-		},
-		daveConsensus: s.dave,
-	}
+	app := newDaveAppContracts(nil, s.dave)
+	app.application.LastEpochCheckBlock = 200
 
 	// mostRecentBlockNumber (150) < LastEpochCheckBlock (200) → regression
 	err := s.evmReader.processApplicationSealedEpochs(s.ctx, app, 150)
@@ -365,7 +338,7 @@ func (s *EvmReaderSuite) TestOutputBlockRegressionDoesNotWriteToDb() {
 	app := appContracts{
 		application: &Application{
 			ID:                   1,
-			Name:                 "test-app",
+			Name:                 daveTestApplicationName,
 			IApplicationAddress:  app1Addr,
 			LastOutputCheckBlock: 100,
 		},
@@ -395,7 +368,7 @@ func (s *EvmReaderSuite) TestOutputExecutionSyncSkipsBeforeApplicationDeployment
 	app := appContracts{
 		application: &Application{
 			ID:                  1,
-			Name:                "test-app",
+			Name:                daveTestApplicationName,
 			IApplicationAddress: app1Addr,
 		},
 		applicationContract: appContract,
@@ -421,10 +394,9 @@ func (s *EvmReaderSuite) TestIConsensusInputCountMismatchSkipsApp() {
 	inputSrc := &MockInputBox{}
 	app := &Application{
 		ID:                  1,
-		Name:                "test-app",
+		Name:                daveTestApplicationName,
 		IApplicationAddress: addr,
 		IInputBoxAddress:    inputBoxAddr,
-		DataAvailability:    DataAvailability_InputBox[:],
 		EpochLength:         10,
 		LastInputCheckBlock: 100,
 	}
@@ -452,8 +424,8 @@ func (s *EvmReaderSuite) TestIConsensusInputCountMismatchSkipsApp() {
 		Return(uint64(0), nil)
 	s.evmReader.repository = repo
 
-	err := s.evmReader.readAndStoreInputs(s.ctx, 100, 110, apps)
-	s.Require().ErrorIs(err, errScanIncomplete) // per-app failure is reported after scanning
+	err := s.evmReader.readAndStoreApplicationInputs(s.ctx, 100, 110, apps[0])
+	s.Require().ErrorContains(err, "input count mismatch")
 
 	// App was skipped: counter says 2 new, but only 1 fetched → no DB writes
 	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
@@ -471,10 +443,9 @@ func (s *EvmReaderSuite) TestIConsensusInputCountValidationUsesObservedEndCount(
 	inputSrc := &MockInputBox{}
 	app := &Application{
 		ID:                  1,
-		Name:                "test-app",
+		Name:                daveTestApplicationName,
 		IApplicationAddress: addr,
 		IInputBoxAddress:    inputBoxAddr,
-		DataAvailability:    DataAvailability_InputBox[:],
 		EpochLength:         10,
 		LastInputCheckBlock: 100,
 	}
@@ -513,10 +484,10 @@ func (s *EvmReaderSuite) TestIConsensusInputCountValidationUsesObservedEndCount(
 	}).Return(nil).Once()
 	s.evmReader.repository = repo
 
-	err := s.evmReader.readAndStoreInputs(s.ctx, 100, 105, []appContracts{{
+	err := s.evmReader.readAndStoreApplicationInputs(s.ctx, 100, 105, appContracts{
 		application: app,
 		inputSource: inputSrc,
-	}})
+	})
 	s.Require().NoError(err)
 
 	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 1)
@@ -539,10 +510,9 @@ func (s *EvmReaderSuite) TestEpochLengthZeroSetsAppCorrupted() {
 	apps := []appContracts{{
 		application: &Application{
 			ID:                  1,
-			Name:                "test-app",
+			Name:                daveTestApplicationName,
 			IApplicationAddress: addr,
 			IInputBoxAddress:    inputBoxAddr,
-			DataAvailability:    DataAvailability_InputBox[:],
 			EpochLength:         0, // will trigger corrupted
 			LastInputCheckBlock: 100,
 		},
@@ -550,23 +520,19 @@ func (s *EvmReaderSuite) TestEpochLengthZeroSetsAppCorrupted() {
 	}}
 
 	repo := newMockRepository()
-	repo.On("GetNumberOfInputs", mock.Anything, mock.Anything).
-		Return(uint64(0), nil)
 	repo.On("UpdateApplicationStatus",
 		mock.Anything, int64(1), ApplicationStatus_Corrupted, mock.Anything,
 	).Return(nil)
-	repo.On("UpdateEventLastCheckBlock",
-		mock.Anything, mock.Anything, MonitoredEvent_InputAdded, mock.Anything,
-	).Return(nil)
 	s.evmReader.repository = repo
 
-	err := s.evmReader.readAndStoreInputs(s.ctx, 100, 110, apps)
+	err := s.evmReader.readAndStoreApplicationInputs(s.ctx, 100, 110, apps[0])
 	s.Require().NoError(err)
 
 	// App must be set inoperable
 	repo.AssertNumberOfCalls(s.T(), "UpdateApplicationStatus", 1)
 	// No epochs or inputs should be stored
 	repo.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
+	repo.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 0)
 }
 
 // --- Sealed epoch CreateEpochsAndInputs failure prevents checkpoint advance ---
@@ -580,19 +546,10 @@ func (s *SealedEpochsSuite) TestSealedEpochDBFailurePreventsCheckpointAdvance() 
 	)
 	tournamentAddr := common.HexToAddress("0xEEEE")
 
-	app := appContracts{
-		application: &Application{
-			ID:                  1,
-			Name:                "test-app",
-			IApplicationAddress: app1Addr,
-			IConsensusAddress:   consensusAddr,
-			IInputBoxAddress:    inputBoxAddr,
-			IInputBoxBlock:      10,
-			LastEpochCheckBlock: 50,
-		},
-		inputSource:   s.inputBox,
-		daveConsensus: s.dave,
-	}
+	app := newDaveAppContracts(s.inputBox, s.dave)
+	app.application.IInputBoxAddress = inputBoxAddr
+	app.application.IInputBoxBlock = 10
+	app.application.LastEpochCheckBlock = 50
 
 	// Oracle: before sealBlock → -1, from sealBlock → 0
 	s.dave.On("GetCurrentSealedEpoch",
@@ -612,10 +569,6 @@ func (s *SealedEpochsSuite) TestSealedEpochDBFailurePreventsCheckpointAdvance() 
 	).Return([]*idaveconsensus.IDaveConsensusEpochSealed{
 		makeSealedEpochEvent(0, 0, 0, sealBlock, tournamentAddr),
 	}, nil)
-
-	// No previous sealed epochs
-	s.repository.On("GetLastNonOpenEpoch", mock.Anything, mock.Anything).
-		Return(nil, nil)
 
 	// Epoch 0 doesn't exist
 	s.repository.On("GetEpoch", mock.Anything, mock.Anything, uint64(0)).

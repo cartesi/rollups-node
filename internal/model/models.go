@@ -28,7 +28,6 @@ type Application struct {
 	EpochLength                       uint64              `json:"epoch_length"`
 	ClaimStagingPeriod                uint64              `json:"claim_staging_period"`
 	WithdrawalConfig                  WithdrawalConfig    `json:"withdrawal_config"`
-	DataAvailability                  []byte              `json:"data_availability"`
 	ConsensusType                     Consensus           `json:"consensus_type"`
 	Enabled                           bool                `json:"enabled"`
 	Status                            ApplicationStatus   `json:"status"`
@@ -158,19 +157,12 @@ func (w *WithdrawalConfig) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// HasDataAvailabilitySelector checks if the application's DataAvailability
-// starts with the given DataAvailabilitySelector
-func (a *Application) HasDataAvailabilitySelector(selector DataAvailabilitySelector) bool {
-	return selector.MatchesBytes(a.DataAvailability)
-}
-
 func (a *Application) MarshalJSON() ([]byte, error) {
 	// Create an alias to avoid infinite recursion in MarshalJSON.
 	type Alias Application
 	// Define a new structure that embeds the alias but overrides the hex fields.
 	aux := &struct {
 		*Alias
-		DataAvailability                  string `json:"data_availability"`
 		IInputBoxBlock                    string `json:"iinputbox_block"`
 		LastEpochCheckBlock               string `json:"last_epoch_check_block"`
 		LastInputCheckBlock               string `json:"last_input_check_block"`
@@ -186,7 +178,6 @@ func (a *Application) MarshalJSON() ([]byte, error) {
 		AccountsDriveProvedBlock          string `json:"accounts_drive_proved_block"`
 	}{
 		Alias:                             (*Alias)(a),
-		DataAvailability:                  "0x" + hex.EncodeToString(a.DataAvailability),
 		IInputBoxBlock:                    fmt.Sprintf("0x%x", a.IInputBoxBlock),
 		LastEpochCheckBlock:               fmt.Sprintf("0x%x", a.LastEpochCheckBlock),
 		LastInputCheckBlock:               fmt.Sprintf("0x%x", a.LastInputCheckBlock),
@@ -209,7 +200,6 @@ func (a *Application) UnmarshalJSON(in []byte) error {
 	aux := &struct {
 		*Alias
 
-		DataAvailability                  string `json:"data_availability"`
 		IInputBoxBlock                    string `json:"iinputbox_block"`
 		LastInputCheckBlock               string `json:"last_input_check_block"`
 		LastOutputCheckBlock              string `json:"last_output_check_block"`
@@ -232,12 +222,6 @@ func (a *Application) UnmarshalJSON(in []byte) error {
 	}
 
 	*a = Application(*aux.Alias)
-
-	// manually decode the following values as hex instead of the default (base64)
-	a.DataAvailability, err = hexutil.Decode(aux.DataAvailability)
-	if err != nil {
-		return err
-	}
 
 	a.IInputBoxBlock, err = ParseHexUint64(aux.IInputBoxBlock)
 	if err != nil {
@@ -407,38 +391,7 @@ func (e ApplicationStatus) IsExecutionTerminal() bool {
 }
 
 func (e *ApplicationStatus) Scan(value any) error {
-	var enumValue string
-	switch val := value.(type) {
-	case string:
-		enumValue = val
-	case []byte:
-		enumValue = string(val)
-	default:
-		return errors.New("invalid value for ApplicationStatus enum. Enum value has to be of type string or []byte")
-	}
-
-	switch enumValue {
-	case "OK":
-		*e = ApplicationStatus_OK
-	case "FAILED":
-		*e = ApplicationStatus_Failed
-	case "DIVERGED":
-		*e = ApplicationStatus_Diverged
-	case "CORRUPTED":
-		*e = ApplicationStatus_Corrupted
-	case "GUEST_EXCEPTION":
-		*e = ApplicationStatus_GuestException
-	case "MACHINE_HALTED":
-		*e = ApplicationStatus_MachineHalted
-	case "MCYCLE_OVERFLOW":
-		*e = ApplicationStatus_McycleOverflow
-	case "UNEXPECTED_YIELD":
-		*e = ApplicationStatus_UnexpectedYield
-	default:
-		return errors.New("invalid value '" + enumValue + "' for ApplicationStatus enum")
-	}
-
-	return nil
+	return scanEnum(e, value, ApplicationStatusAllValues, "ApplicationStatus")
 }
 
 func (e ApplicationStatus) String() string {
@@ -460,76 +413,11 @@ var ConsensusAllValues = []Consensus{
 }
 
 func (e *Consensus) Scan(value any) error {
-	var enumValue string
-	switch val := value.(type) {
-	case string:
-		enumValue = val
-	case []byte:
-		enumValue = string(val)
-	default:
-		return errors.New("invalid value for ConsensusType enum. Enum value has to be of type string or []byte")
-	}
-
-	switch enumValue {
-	case "AUTHORITY":
-		*e = Consensus_Authority
-	case "QUORUM":
-		*e = Consensus_Quorum
-	case "PRT":
-		*e = Consensus_PRT
-	default:
-		return errors.New("invalid value '" + enumValue + "' for Consensus enum")
-	}
-
-	return nil
+	return scanEnum(e, value, ConsensusAllValues, "Consensus")
 }
 
 func (e Consensus) String() string {
 	return string(e)
-}
-
-const DATA_AVAILABILITY_SELECTOR_SIZE = 4
-
-type DataAvailabilitySelector [DATA_AVAILABILITY_SELECTOR_SIZE]byte
-
-// Known data availability selectors
-var (
-	// ABI encoded "InputBox(address)"
-	DataAvailability_InputBox = DataAvailabilitySelector{0xb1, 0x2c, 0x9e, 0xde}
-)
-
-func (d *DataAvailabilitySelector) MarshalJSON() ([]byte, error) {
-	return json.Marshal("0x" + hex.EncodeToString(d[:]))
-}
-
-// MatchesBytes checks if this selector matches the first bytes of the given byte slice
-func (d DataAvailabilitySelector) MatchesBytes(data []byte) bool {
-	if len(data) < DATA_AVAILABILITY_SELECTOR_SIZE {
-		return false
-	}
-	for i := range DATA_AVAILABILITY_SELECTOR_SIZE {
-		if data[i] != d[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func (d *DataAvailabilitySelector) Scan(value any) error {
-	var selector []byte
-	switch v := value.(type) {
-	case []byte:
-		selector = v
-	default:
-		return errors.New("invalid scan value for DataAvailabilitySelector. Value has to be of type []byte")
-	}
-
-	if len(selector) != DATA_AVAILABILITY_SELECTOR_SIZE {
-		return errors.New("invalid value for DataAvailabilitySelector")
-	}
-	copy(d[:], selector[:DATA_AVAILABILITY_SELECTOR_SIZE])
-
-	return nil
 }
 
 type SnapshotPolicy string
@@ -547,28 +435,7 @@ var SnapshotPolicyAllValues = []SnapshotPolicy{
 }
 
 func (e *SnapshotPolicy) Scan(value any) error {
-	var enumValue string
-	switch val := value.(type) {
-	case string:
-		enumValue = val
-	case []byte:
-		enumValue = string(val)
-	default:
-		return errors.New("invalid scan value for SnapshotPolicy enum. Enum value has to be of type string or []byte")
-	}
-
-	switch enumValue {
-	case "NONE":
-		*e = SnapshotPolicy_None
-	case "EVERY_INPUT":
-		*e = SnapshotPolicy_EveryInput
-	case "EVERY_EPOCH":
-		*e = SnapshotPolicy_EveryEpoch
-	default:
-		return errors.New("invalid scan value '" + enumValue + "' for SnapshotPolicy enum")
-	}
-
-	return nil
+	return scanEnum(e, value, SnapshotPolicyAllValues, "SnapshotPolicy")
 }
 
 func (e SnapshotPolicy) String() string {
@@ -996,41 +863,23 @@ var EpochStatusAllValues = []EpochStatus{
 	EpochStatus_ClaimForeclosed,
 }
 
+// NonTerminalEpochStatuses returns the states that still require epoch or claim
+// work. Each caller owns the returned slice.
+// Keep this set equal to the epoch_unreconciled_idx predicate in the initial
+// PostgreSQL migration (000001_create_initial_schema.up.sql).
+func NonTerminalEpochStatuses() []EpochStatus {
+	return []EpochStatus{
+		EpochStatus_Open,
+		EpochStatus_Closed,
+		EpochStatus_InputsProcessed,
+		EpochStatus_ClaimComputed,
+		EpochStatus_ClaimSubmitted,
+		EpochStatus_ClaimStaged,
+	}
+}
+
 func (e *EpochStatus) Scan(value any) error {
-	var enumValue string
-	switch val := value.(type) {
-	case string:
-		enumValue = val
-	case []byte:
-		enumValue = string(val)
-	default:
-		return errors.New("invalid value for EpochStatus enum. Enum value has to be of type string or []byte")
-	}
-
-	switch enumValue {
-	case "OPEN":
-		*e = EpochStatus_Open
-	case "CLOSED":
-		*e = EpochStatus_Closed
-	case "INPUTS_PROCESSED":
-		*e = EpochStatus_InputsProcessed
-	case "CLAIM_COMPUTED":
-		*e = EpochStatus_ClaimComputed
-	case "CLAIM_SUBMITTED":
-		*e = EpochStatus_ClaimSubmitted
-	case "CLAIM_STAGED":
-		*e = EpochStatus_ClaimStaged
-	case "CLAIM_ACCEPTED":
-		*e = EpochStatus_ClaimAccepted
-	case "CLAIM_REJECTED":
-		*e = EpochStatus_ClaimRejected
-	case "CLAIM_FORECLOSED":
-		*e = EpochStatus_ClaimForeclosed
-	default:
-		return errors.New("invalid value '" + enumValue + "' for EpochStatus enum")
-	}
-
-	return nil
+	return scanEnum(e, value, EpochStatusAllValues, "EpochStatus")
 }
 
 func (e EpochStatus) String() string {
@@ -1207,36 +1056,7 @@ func (e InputCompletionStatus) TerminalApplicationStatus() (ApplicationStatus, b
 }
 
 func (e *InputCompletionStatus) Scan(value any) error {
-	var enumValue string
-	switch val := value.(type) {
-	case string:
-		enumValue = val
-	case []byte:
-		enumValue = string(val)
-	default:
-		return errors.New("invalid value for InputCompletionStatus enum. Enum value has to be of type string or []byte")
-	}
-
-	switch enumValue {
-	case "NONE":
-		*e = InputCompletionStatus_None
-	case "ACCEPTED":
-		*e = InputCompletionStatus_Accepted
-	case "REJECTED":
-		*e = InputCompletionStatus_Rejected
-	case "EXCEPTION":
-		*e = InputCompletionStatus_Exception
-	case "MACHINE_HALTED":
-		*e = InputCompletionStatus_MachineHalted
-	case "OVERFLOW":
-		*e = InputCompletionStatus_Overflow
-	case "UNEXPECTED_YIELD":
-		*e = InputCompletionStatus_UnexpectedYield
-	default:
-		return errors.New("invalid value '" + enumValue + "' for InputCompletionStatus enum")
-	}
-
-	return nil
+	return scanEnum(e, value, InputCompletionStatusAllValues, "InputCompletionStatus")
 }
 
 func (e InputCompletionStatus) String() string {
@@ -1256,7 +1076,7 @@ type Output struct {
 	UpdatedAt                time.Time     `json:"updated_at"`
 }
 
-func (i *Output) MarshalJSON() ([]byte, error) {
+func (o *Output) MarshalJSON() ([]byte, error) {
 	// Create an alias to avoid infinite recursion in MarshalJSON.
 	type Alias Output
 	// Define a new structure that embeds the alias but overrides the hex fields.
@@ -1267,11 +1087,11 @@ func (i *Output) MarshalJSON() ([]byte, error) {
 		RawData    string `json:"raw_data"`
 		*Alias
 	}{
-		EpochIndex: fmt.Sprintf("0x%x", i.EpochIndex),
-		InputIndex: fmt.Sprintf("0x%x", i.InputIndex),
-		Index:      fmt.Sprintf("0x%x", i.Index),
-		RawData:    "0x" + hex.EncodeToString(i.RawData),
-		Alias:      (*Alias)(i),
+		EpochIndex: fmt.Sprintf("0x%x", o.EpochIndex),
+		InputIndex: fmt.Sprintf("0x%x", o.InputIndex),
+		Index:      fmt.Sprintf("0x%x", o.Index),
+		RawData:    "0x" + hex.EncodeToString(o.RawData),
+		Alias:      (*Alias)(o),
 	}
 	return json.Marshal(aux)
 }
@@ -1477,12 +1297,17 @@ type StateProof struct {
 	HtifTohostProof     [][32]byte
 }
 
+// ErrIncompleteStateProof means an epoch does not contain every persisted
+// component required to reconstruct its machine state proof.
+var ErrIncompleteStateProof = errors.New("epoch state proof is incomplete")
+
 // StateProofSiblingCount is the height of the canonical machine
 // memory tree above a 32-byte data block (64 - 5).
 const StateProofSiblingCount = 59
 
 // IsComplete reports whether all three state leaves have the canonical sibling
-// depth. Leaf contents and roots are verified by pkg/machine.
+// depth. The machine validates proof contents when it collects them. The
+// contracts validate the persisted proof when the node submits it.
 func (p *StateProof) IsComplete() bool {
 	return p != nil &&
 		len(p.TxBufferProof) == StateProofSiblingCount &&
@@ -1501,6 +1326,32 @@ func (e *Epoch) HasCompleteStateProof() bool {
 		len(e.TxBufferProof) == StateProofSiblingCount &&
 		len(e.IflagsYProof) == StateProofSiblingCount &&
 		len(e.HtifTohostProof) == StateProofSiblingCount
+}
+
+// StateProof reconstructs the persisted machine state proof owned by an
+// epoch. The returned value owns its sibling slices.
+func (e *Epoch) StateProof() (StateProof, error) {
+	if !e.HasCompleteStateProof() {
+		return StateProof{}, ErrIncompleteStateProof
+	}
+
+	return StateProof{
+		TxBufferDataBlock:   *e.TxBufferDataBlock,
+		TxBufferProof:       copyStateProofSiblings(e.TxBufferProof),
+		MachineHash:         *e.MachineHash,
+		IflagsYDataBlock:    *e.IflagsYDataBlock,
+		IflagsYProof:        copyStateProofSiblings(e.IflagsYProof),
+		HtifTohostDataBlock: *e.HtifTohostDataBlock,
+		HtifTohostProof:     copyStateProofSiblings(e.HtifTohostProof),
+	}, nil
+}
+
+func copyStateProofSiblings(siblings []common.Hash) [][32]byte {
+	result := make([][32]byte, len(siblings))
+	for i := range siblings {
+		result[i] = siblings[i]
+	}
+	return result
 }
 
 type AdvanceResult struct {
@@ -1580,30 +1431,7 @@ var DefaultBlockAllValues = []DefaultBlock{
 }
 
 func (e *DefaultBlock) Scan(value any) error {
-	var enumValue string
-	switch val := value.(type) {
-	case string:
-		enumValue = val
-	case []byte:
-		enumValue = string(val)
-	default:
-		return errors.New("invalid value for DefaultBlock enum. Enum value has to be of type string or []byte")
-	}
-
-	switch enumValue {
-	case "FINALIZED":
-		*e = DefaultBlock_Finalized
-	case "LATEST":
-		*e = DefaultBlock_Latest
-	case "PENDING":
-		*e = DefaultBlock_Pending
-	case "SAFE":
-		*e = DefaultBlock_Safe
-	default:
-		return errors.New("invalid value '" + enumValue + "' for DefaultBlock enum")
-	}
-
-	return nil
+	return scanEnum(e, value, DefaultBlockAllValues, "DefaultBlock")
 }
 
 func (e DefaultBlock) String() string {
@@ -1626,6 +1454,9 @@ const (
 	MonitoredEvent_MatchCreated                  MonitoredEvent = "MatchCreated"
 	MonitoredEvent_MatchDeleted                  MonitoredEvent = "MatchDeleted"
 	MonitoredEvent_NewInnerTournament            MonitoredEvent = "NewInnerTournament"
+	MonitoredEvent_LeafMatchSealed               MonitoredEvent = "LeafMatchSealed"
+	MonitoredEvent_PartialBondRefund             MonitoredEvent = "PartialBondRefund"
+	MonitoredEvent_BondRecovered                 MonitoredEvent = "BondRecovered"
 )
 
 func (e MonitoredEvent) String() string {
@@ -1633,142 +1464,122 @@ func (e MonitoredEvent) String() string {
 }
 
 type Tournament struct {
-	ApplicationID           int64           `sql:"primary_key" json:"-"`
-	EpochIndex              uint64          `sql:"primary_key" json:"epoch_index"`
-	Address                 common.Address  `sql:"primary_key" json:"address"`
-	ParentTournamentAddress *common.Address `json:"parent_tournament_address"`
-	ParentMatchIDHash       *common.Hash    `json:"parent_match_id_hash"`
-	MaxLevel                uint64          `json:"max_level"`
-	Level                   uint64          `json:"level"`
-	Log2Step                uint64          `json:"log2step"`
-	Height                  uint64          `json:"height"`
-	WinnerCommitment        *common.Hash    `json:"winner_commitment"`
-	FinalStateHash          *common.Hash    `json:"final_state_hash"`
-	FinishedAtBlock         uint64          `json:"finished_at_block"`
-	CreatedAt               time.Time       `json:"created_at"`
-	UpdatedAt               time.Time       `json:"updated_at"`
+	ApplicationID           int64                    `sql:"primary_key" json:"-"`
+	EpochIndex              uint64                   `sql:"primary_key" json:"epoch_index"`
+	Address                 common.Address           `sql:"primary_key" json:"address"`
+	ParentTournamentAddress *common.Address          `json:"parent_tournament_address"`
+	ParentMatchIDHash       *common.Hash             `json:"parent_match_id_hash"`
+	MaxLevel                uint64                   `json:"max_level"`
+	Level                   uint64                   `json:"level"`
+	Log2Step                uint64                   `json:"log2step"`
+	Height                  uint64                   `json:"height"`
+	InitialHash             common.Hash              `json:"initial_hash"`
+	BaseCycle               Uint256                  `json:"base_cycle"`
+	Kind                    TournamentKind           `json:"kind"`
+	StartInstant            uint64                   `json:"start_instant"`
+	Allowance               uint64                   `json:"allowance"`
+	CreationEvent           *TournamentCreationEvent `json:"creation_event"`
+	Snapshot                TournamentSnapshot       `json:"snapshot"`
+	CreatedAt               time.Time                `json:"created_at"`
+	UpdatedAt               time.Time                `json:"updated_at"`
 }
 
-func (t *Tournament) MarshalJSON() ([]byte, error) {
-	// Create an alias to avoid infinite recursion in MarshalJSON.
+func (value Tournament) MarshalJSON() ([]byte, error) {
 	type Alias Tournament
-	// Define a new structure that embeds the alias but overrides the hex fields.
-	aux := &struct {
-		EpochIndex      string `json:"epoch_index"`
-		MaxLevel        string `json:"max_level"`
-		Level           string `json:"level"`
-		Log2Step        string `json:"log2step"`
-		Height          string `json:"height"`
-		FinishedAtBlock string `json:"finished_at_block"`
+	return json.Marshal(struct {
 		*Alias
+		EpochIndex   hexutil.Uint64 `json:"epoch_index"`
+		MaxLevel     hexutil.Uint64 `json:"max_level"`
+		Level        hexutil.Uint64 `json:"level"`
+		Log2Step     hexutil.Uint64 `json:"log2step"`
+		Height       hexutil.Uint64 `json:"height"`
+		StartInstant hexutil.Uint64 `json:"start_instant"`
+		Allowance    hexutil.Uint64 `json:"allowance"`
 	}{
-		Alias:           (*Alias)(t),
-		EpochIndex:      fmt.Sprintf("0x%x", t.EpochIndex),
-		MaxLevel:        fmt.Sprintf("0x%x", t.MaxLevel),
-		Level:           fmt.Sprintf("0x%x", t.Level),
-		Log2Step:        fmt.Sprintf("0x%x", t.Log2Step),
-		Height:          fmt.Sprintf("0x%x", t.Height),
-		FinishedAtBlock: fmt.Sprintf("0x%x", t.FinishedAtBlock),
-	}
-	return json.Marshal(aux)
+		Alias:        (*Alias)(&value),
+		EpochIndex:   hexutil.Uint64(value.EpochIndex),
+		MaxLevel:     hexutil.Uint64(value.MaxLevel),
+		Level:        hexutil.Uint64(value.Level),
+		Log2Step:     hexutil.Uint64(value.Log2Step),
+		Height:       hexutil.Uint64(value.Height),
+		StartInstant: hexutil.Uint64(value.StartInstant),
+		Allowance:    hexutil.Uint64(value.Allowance),
+	})
 }
 
-func (t *Tournament) UnmarshalJSON(data []byte) error {
+func (value *Tournament) UnmarshalJSON(data []byte) error {
 	type Alias Tournament
-	aux := &struct {
-		EpochIndex      string `json:"epoch_index"`
-		MaxLevel        string `json:"max_level"`
-		Level           string `json:"level"`
-		Log2Step        string `json:"log2step"`
-		Height          string `json:"height"`
-		FinishedAtBlock string `json:"finished_at_block"`
+	var decoded Tournament
+	aux := struct {
 		*Alias
-	}{Alias: (*Alias)(t)}
-
-	if err := json.Unmarshal(data, aux); err != nil {
+		EpochIndex   hexutil.Uint64 `json:"epoch_index"`
+		MaxLevel     hexutil.Uint64 `json:"max_level"`
+		Level        hexutil.Uint64 `json:"level"`
+		Log2Step     hexutil.Uint64 `json:"log2step"`
+		Height       hexutil.Uint64 `json:"height"`
+		StartInstant hexutil.Uint64 `json:"start_instant"`
+		Allowance    hexutil.Uint64 `json:"allowance"`
+	}{Alias: (*Alias)(&decoded)}
+	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
-	*t = Tournament(*aux.Alias)
-
-	var err error
-	t.EpochIndex, err = ParseHexUint64(aux.EpochIndex)
-	if err != nil {
-		return fmt.Errorf("error on EpochIndex: %w", err)
-	}
-	t.MaxLevel, err = ParseHexUint64(aux.MaxLevel)
-	if err != nil {
-		return fmt.Errorf("error on MaxLevel: %w", err)
-	}
-	t.Level, err = ParseHexUint64(aux.Level)
-	if err != nil {
-		return fmt.Errorf("error on Level: %w", err)
-	}
-	t.Log2Step, err = ParseHexUint64(aux.Log2Step)
-	if err != nil {
-		return fmt.Errorf("error on Log2Step: %w", err)
-	}
-	t.Height, err = ParseHexUint64(aux.Height)
-	if err != nil {
-		return fmt.Errorf("error on Height: %w", err)
-	}
-	t.FinishedAtBlock, err = ParseHexUint64(aux.FinishedAtBlock)
-	if err != nil {
-		return fmt.Errorf("error on FinishedAtBlock: %w", err)
-	}
+	decoded.EpochIndex = uint64(aux.EpochIndex)
+	decoded.MaxLevel = uint64(aux.MaxLevel)
+	decoded.Level = uint64(aux.Level)
+	decoded.Log2Step = uint64(aux.Log2Step)
+	decoded.Height = uint64(aux.Height)
+	decoded.StartInstant = uint64(aux.StartInstant)
+	decoded.Allowance = uint64(aux.Allowance)
+	*value = decoded
 	return nil
 }
 
 type Commitment struct {
-	ApplicationID     int64          `sql:"primary_key" json:"-"`
-	EpochIndex        uint64         `sql:"primary_key" json:"epoch_index"`
-	TournamentAddress common.Address `sql:"primary_key" json:"tournament_address"`
-	Commitment        common.Hash    `sql:"primary_key" json:"commitment"`
-	FinalStateHash    common.Hash    `json:"final_state_hash"`
-	SubmitterAddress  common.Address `json:"submitter_address"`
-	BlockNumber       uint64         `json:"block_number"`
-	TxHash            common.Hash    `json:"tx_hash"`
-	CreatedAt         time.Time      `json:"created_at"`
-	UpdatedAt         time.Time      `json:"updated_at"`
+	ApplicationID     int64              `sql:"primary_key" json:"-"`
+	EpochIndex        uint64             `sql:"primary_key" json:"epoch_index"`
+	TournamentAddress common.Address     `sql:"primary_key" json:"tournament_address"`
+	Commitment        common.Hash        `sql:"primary_key" json:"commitment"`
+	FinalStateHash    common.Hash        `json:"final_state_hash"`
+	SubmitterAddress  common.Address     `json:"submitter_address"`
+	BlockNumber       uint64             `json:"block_number"`
+	TxHash            common.Hash        `json:"tx_hash"`
+	LogIndex          uint64             `json:"log_index"`
+	Snapshot          CommitmentSnapshot `json:"snapshot"`
+	CreatedAt         time.Time          `json:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at"`
 }
 
-func (c *Commitment) MarshalJSON() ([]byte, error) {
-	// Create an alias to avoid infinite recursion in MarshalJSON.
+func (value Commitment) MarshalJSON() ([]byte, error) {
 	type Alias Commitment
-	// Define a new structure that embeds the alias but overrides the hex fields.
-	aux := &struct {
-		EpochIndex  string `json:"epoch_index"`
-		BlockNumber string `json:"block_number"`
+	return json.Marshal(struct {
 		*Alias
+		EpochIndex  hexutil.Uint64 `json:"epoch_index"`
+		BlockNumber hexutil.Uint64 `json:"block_number"`
+		LogIndex    hexutil.Uint64 `json:"log_index"`
 	}{
-		EpochIndex:  fmt.Sprintf("0x%x", c.EpochIndex),
-		BlockNumber: fmt.Sprintf("0x%x", c.BlockNumber),
-		Alias:       (*Alias)(c),
-	}
-	return json.Marshal(aux)
+		Alias:       (*Alias)(&value),
+		EpochIndex:  hexutil.Uint64(value.EpochIndex),
+		BlockNumber: hexutil.Uint64(value.BlockNumber),
+		LogIndex:    hexutil.Uint64(value.LogIndex),
+	})
 }
 
-func (c *Commitment) UnmarshalJSON(data []byte) error {
+func (value *Commitment) UnmarshalJSON(data []byte) error {
 	type Alias Commitment
-	aux := &struct {
-		EpochIndex  string `json:"epoch_index"`
-		BlockNumber string `json:"block_number"`
+	var decoded Commitment
+	aux := struct {
 		*Alias
-	}{Alias: (*Alias)(c)}
-
-	if err := json.Unmarshal(data, aux); err != nil {
+		EpochIndex  hexutil.Uint64 `json:"epoch_index"`
+		BlockNumber hexutil.Uint64 `json:"block_number"`
+		LogIndex    hexutil.Uint64 `json:"log_index"`
+	}{Alias: (*Alias)(&decoded)}
+	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
-	*c = Commitment(*aux.Alias)
-
-	var err error
-	c.EpochIndex, err = ParseHexUint64(aux.EpochIndex)
-	if err != nil {
-		return fmt.Errorf("error on EpochIndex: %w", err)
-	}
-	c.BlockNumber, err = ParseHexUint64(aux.BlockNumber)
-	if err != nil {
-		return fmt.Errorf("error on BlockNumber: %w", err)
-	}
+	decoded.EpochIndex = uint64(aux.EpochIndex)
+	decoded.BlockNumber = uint64(aux.BlockNumber)
+	decoded.LogIndex = uint64(aux.LogIndex)
+	*value = decoded
 	return nil
 }
 
@@ -1782,59 +1593,117 @@ type Match struct {
 	LeftOfTwo           common.Hash         `json:"left_of_two"`
 	BlockNumber         uint64              `json:"block_number"`
 	TxHash              common.Hash         `json:"tx_hash"`
+	LogIndex            uint64              `json:"log_index"`
+	EliminableAt        uint64              `json:"eliminable_at"`
+	LeafSeal            *LeafMatchSeal      `json:"leaf_seal"`
 	Winner              WinnerCommitment    `json:"winner_commitment"`
 	DeletionReason      MatchDeletionReason `json:"deletion_reason"`
 	DeletionBlockNumber uint64              `json:"deletion_block_number"`
-	DeletionTxHash      common.Hash         `json:"deletion_tx_hash"`
+	DeletionTxHash      *common.Hash        `json:"deletion_tx_hash"`
+	DeletionLogIndex    *uint64             `json:"deletion_log_index"`
+	Snapshot            MatchSnapshot       `json:"snapshot"`
 	CreatedAt           time.Time           `json:"created_at"`
 	UpdatedAt           time.Time           `json:"updated_at"`
 }
 
-func (m *Match) MarshalJSON() ([]byte, error) {
-	// Create an alias to avoid infinite recursion in MarshalJSON.
+func (value Match) MarshalJSON() ([]byte, error) {
 	type Alias Match
-	// Define a new structure that embeds the alias but overrides the hex fields.
-	aux := &struct {
-		EpochIndex          string `json:"epoch_index"`
-		BlockNumber         string `json:"block_number"`
-		DeletionBlockNumber string `json:"deletion_block_number"`
+	return json.Marshal(struct {
 		*Alias
+		EpochIndex          hexutil.Uint64  `json:"epoch_index"`
+		BlockNumber         hexutil.Uint64  `json:"block_number"`
+		LogIndex            hexutil.Uint64  `json:"log_index"`
+		EliminableAt        hexutil.Uint64  `json:"eliminable_at"`
+		DeletionBlockNumber hexutil.Uint64  `json:"deletion_block_number"`
+		DeletionLogIndex    *hexutil.Uint64 `json:"deletion_log_index"`
 	}{
-		EpochIndex:          fmt.Sprintf("0x%x", m.EpochIndex),
-		BlockNumber:         fmt.Sprintf("0x%x", m.BlockNumber),
-		DeletionBlockNumber: fmt.Sprintf("0x%x", m.DeletionBlockNumber),
-		Alias:               (*Alias)(m),
+		Alias:               (*Alias)(&value),
+		EpochIndex:          hexutil.Uint64(value.EpochIndex),
+		BlockNumber:         hexutil.Uint64(value.BlockNumber),
+		LogIndex:            hexutil.Uint64(value.LogIndex),
+		EliminableAt:        hexutil.Uint64(value.EliminableAt),
+		DeletionBlockNumber: hexutil.Uint64(value.DeletionBlockNumber),
+		DeletionLogIndex:    (*hexutil.Uint64)(value.DeletionLogIndex),
+	})
+}
+
+func (value *Match) UnmarshalJSON(data []byte) error {
+	type Alias Match
+	var decoded Match
+	aux := struct {
+		*Alias
+		EpochIndex          hexutil.Uint64  `json:"epoch_index"`
+		BlockNumber         hexutil.Uint64  `json:"block_number"`
+		LogIndex            hexutil.Uint64  `json:"log_index"`
+		EliminableAt        hexutil.Uint64  `json:"eliminable_at"`
+		DeletionBlockNumber hexutil.Uint64  `json:"deletion_block_number"`
+		DeletionLogIndex    *hexutil.Uint64 `json:"deletion_log_index"`
+	}{Alias: (*Alias)(&decoded)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
 	}
-	return json.Marshal(aux)
+	decoded.EpochIndex = uint64(aux.EpochIndex)
+	decoded.BlockNumber = uint64(aux.BlockNumber)
+	decoded.LogIndex = uint64(aux.LogIndex)
+	decoded.EliminableAt = uint64(aux.EliminableAt)
+	decoded.DeletionBlockNumber = uint64(aux.DeletionBlockNumber)
+	decoded.DeletionLogIndex = (*uint64)(aux.DeletionLogIndex)
+	*value = decoded
+	return nil
 }
 
 type MatchAdvanced struct {
-	ApplicationID     int64          `sql:"primary_key" json:"-"`
-	EpochIndex        uint64         `sql:"primary_key" json:"epoch_index"`
-	TournamentAddress common.Address `sql:"primary_key" json:"tournament_address"`
-	IDHash            common.Hash    `sql:"primary_key" json:"id_hash"`
-	OtherParent       common.Hash    `json:"other_parent"`
-	LeftNode          common.Hash    `json:"left_node"`
-	BlockNumber       uint64         `json:"block_number"`
-	TxHash            common.Hash    `json:"tx_hash"`
-	CreatedAt         time.Time      `json:"created_at"`
-	UpdatedAt         time.Time      `json:"updated_at"`
+	ApplicationID        int64          `sql:"primary_key" json:"-"`
+	EpochIndex           uint64         `json:"epoch_index"`
+	TournamentAddress    common.Address `json:"tournament_address"`
+	IDHash               common.Hash    `json:"id_hash"`
+	OtherParent          common.Hash    `json:"other_parent"`
+	LeftNode             common.Hash    `json:"left_node"`
+	SegmentStartPosition Uint256        `json:"segment_start_position"`
+	EliminableAt         uint64         `json:"eliminable_at"`
+	BlockNumber          uint64         `json:"block_number"`
+	TxHash               common.Hash    `sql:"primary_key" json:"tx_hash"`
+	LogIndex             uint64         `sql:"primary_key" json:"log_index"`
+	CreatedAt            time.Time      `json:"created_at"`
+	UpdatedAt            time.Time      `json:"updated_at"`
 }
 
-func (m *MatchAdvanced) MarshalJSON() ([]byte, error) {
-	// Create an alias to avoid infinite recursion in MarshalJSON.
+func (value MatchAdvanced) MarshalJSON() ([]byte, error) {
 	type Alias MatchAdvanced
-	// Define a new structure that embeds the alias but overrides the hex fields.
-	aux := &struct {
-		EpochIndex  string `json:"epoch_index"`
-		BlockNumber string `json:"block_number"`
+	return json.Marshal(struct {
 		*Alias
+		EpochIndex   hexutil.Uint64 `json:"epoch_index"`
+		EliminableAt hexutil.Uint64 `json:"eliminable_at"`
+		BlockNumber  hexutil.Uint64 `json:"block_number"`
+		LogIndex     hexutil.Uint64 `json:"log_index"`
 	}{
-		EpochIndex:  fmt.Sprintf("0x%x", m.EpochIndex),
-		BlockNumber: fmt.Sprintf("0x%x", m.BlockNumber),
-		Alias:       (*Alias)(m),
+		Alias:        (*Alias)(&value),
+		EpochIndex:   hexutil.Uint64(value.EpochIndex),
+		EliminableAt: hexutil.Uint64(value.EliminableAt),
+		BlockNumber:  hexutil.Uint64(value.BlockNumber),
+		LogIndex:     hexutil.Uint64(value.LogIndex),
+	})
+}
+
+func (value *MatchAdvanced) UnmarshalJSON(data []byte) error {
+	type Alias MatchAdvanced
+	var decoded MatchAdvanced
+	aux := struct {
+		*Alias
+		EpochIndex   hexutil.Uint64 `json:"epoch_index"`
+		EliminableAt hexutil.Uint64 `json:"eliminable_at"`
+		BlockNumber  hexutil.Uint64 `json:"block_number"`
+		LogIndex     hexutil.Uint64 `json:"log_index"`
+	}{Alias: (*Alias)(&decoded)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
 	}
-	return json.Marshal(aux)
+	decoded.EpochIndex = uint64(aux.EpochIndex)
+	decoded.EliminableAt = uint64(aux.EliminableAt)
+	decoded.BlockNumber = uint64(aux.BlockNumber)
+	decoded.LogIndex = uint64(aux.LogIndex)
+	*value = decoded
+	return nil
 }
 
 // MatchDeletionReason represents the reason why a match was deleted
@@ -1855,48 +1724,23 @@ var MatchDeletionReasonAllValues = []MatchDeletionReason{
 }
 
 func (e *MatchDeletionReason) Scan(value any) error {
-	var enumValue string
-	switch val := value.(type) {
-	case string:
-		enumValue = val
-	case []byte:
-		enumValue = string(val)
-	default:
-		return errors.New("invalid value for MatchDeletionReason enum. Enum value has to be of type string or []byte")
-	}
-
-	switch enumValue {
-	case "STEP":
-		*e = MatchDeletionReason_STEP
-	case "TIMEOUT":
-		*e = MatchDeletionReason_TIMEOUT
-	case "CHILD_TOURNAMENT":
-		*e = MatchDeletionReason_CHILD_TOURNAMENT
-	case "NOT_DELETED":
-		*e = MatchDeletionReason_NOT_DELETED
-	default:
-		return errors.New("invalid value '" + enumValue + "' for MatchDeletionReason enum")
-	}
-
-	return nil
+	return scanEnum(e, value, MatchDeletionReasonAllValues, "MatchDeletionReason")
 }
 
 func (e MatchDeletionReason) String() string {
 	return string(e)
 }
 
-func MatchDeletionReasonFromUint8(v uint8) MatchDeletionReason {
+func MatchDeletionReasonFromUint8(v uint8) (MatchDeletionReason, error) {
 	switch v {
 	case 0:
-		return MatchDeletionReason_STEP
+		return MatchDeletionReason_STEP, nil
 	case 1:
-		return MatchDeletionReason_TIMEOUT
+		return MatchDeletionReason_TIMEOUT, nil
 	case 2: //nolint: mnd
-		return MatchDeletionReason_CHILD_TOURNAMENT
-	case 0xff: //nolint: mnd
-		return MatchDeletionReason_NOT_DELETED
+		return MatchDeletionReason_CHILD_TOURNAMENT, nil
 	default:
-		return MatchDeletionReason_STEP // default to STEP for unknown values
+		return "", fmt.Errorf("unmodelled MatchDeletionReason %d from contract", v)
 	}
 }
 
@@ -1916,44 +1760,23 @@ var WinnerCommitmentAllValues = []WinnerCommitment{
 }
 
 func (e *WinnerCommitment) Scan(value any) error {
-	var enumValue string
-	switch val := value.(type) {
-	case string:
-		enumValue = val
-	case []byte:
-		enumValue = string(val)
-	default:
-		return errors.New("invalid value for WinnerCommitment enum. Enum value has to be of type string or []byte")
-	}
-
-	switch enumValue {
-	case "NONE":
-		*e = WinnerCommitment_NONE
-	case "ONE":
-		*e = WinnerCommitment_ONE
-	case "TWO":
-		*e = WinnerCommitment_TWO
-	default:
-		return errors.New("invalid value '" + enumValue + "' for WinnerCommitment enum")
-	}
-
-	return nil
+	return scanEnum(e, value, WinnerCommitmentAllValues, "WinnerCommitment")
 }
 
 func (e WinnerCommitment) String() string {
 	return string(e)
 }
 
-func WinnerCommitmentFromUint8(v uint8) WinnerCommitment {
+func WinnerCommitmentFromUint8(v uint8) (WinnerCommitment, error) {
 	switch v {
 	case 0:
-		return WinnerCommitment_NONE
+		return WinnerCommitment_NONE, nil
 	case 1:
-		return WinnerCommitment_ONE
+		return WinnerCommitment_ONE, nil
 	case 2: //nolint: mnd
-		return WinnerCommitment_TWO
+		return WinnerCommitment_TWO, nil
 	default:
-		return WinnerCommitment_NONE // default to NONE for unknown values
+		return "", fmt.Errorf("unmodelled WinnerCommitment %d from contract", v)
 	}
 }
 

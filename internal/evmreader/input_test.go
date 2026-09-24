@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocksFilteredByDA() {
+func (s *EvmReaderSuite) TestItReadsInputsFromDirectInputBox() {
 	s.client.EnqueueNewHead(0x11).Once()
 	s.client.EnqueueNewHead(0x12).Once()
 	s.client.EnqueueNewHead(0x13).Once()
@@ -26,7 +26,13 @@ func (s *EvmReaderSuite) TestItReadsInputsFromNewBlocksFilteredByDA() {
 	s.Require().True(waitNotification(called), "evmreader did not read new header")
 
 	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 3)
-	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 9)
+	s.repository.AssertCalled(s.T(), "CreateEpochsAndInputs",
+		mock.Anything, applications[0].IApplicationAddress.String(), mock.Anything, uint64(0x13))
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 13)
+	s.repository.AssertCalled(s.T(), "UpdateEventLastCheckBlock",
+		mock.Anything, []int64{applications[0].ID}, MonitoredEvent_InputAdded, uint64(0))
+	s.repository.AssertCalled(s.T(), "UpdateEventLastCheckBlock",
+		mock.Anything, []int64{applications[1].ID}, MonitoredEvent_InputAdded, uint64(0x13))
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 0)
 	s.repository.AssertExpectations(s.T())
 
@@ -47,7 +53,7 @@ func (s *EvmReaderSuite) TestItUpdatesLastInputCheckBlockWhenThereIsNoInputs() {
 		mock.Anything,
 		MonitoredEvent_InputAdded,
 		mock.Anything,
-	).Return(nil).Times(2)
+	).Return(nil).Times(8) // Two initial cursors, then one update per app per block.
 	s.repository.On("UpdateEventLastCheckBlock",
 		mock.Anything,
 		mock.Anything,
@@ -57,21 +63,9 @@ func (s *EvmReaderSuite) TestItUpdatesLastInputCheckBlockWhenThereIsNoInputs() {
 	s.repository.On("UpdateEventLastCheckBlock",
 		mock.Anything,
 		mock.Anything,
-		MonitoredEvent_InputAdded,
-		mock.Anything,
-	).Once().Return(nil)
-	s.repository.On("UpdateEventLastCheckBlock",
-		mock.Anything,
-		mock.Anything,
 		MonitoredEvent_OutputExecuted,
 		mock.Anything,
 	).Return(nil).Times(2)
-	s.repository.On("UpdateEventLastCheckBlock",
-		mock.Anything,
-		mock.Anything,
-		MonitoredEvent_InputAdded,
-		mock.Anything,
-	).Once().Return(nil)
 	s.repository.On("UpdateEventLastCheckBlock",
 		mock.Anything,
 		mock.Anything,
@@ -83,7 +77,7 @@ func (s *EvmReaderSuite) TestItUpdatesLastInputCheckBlockWhenThereIsNoInputs() {
 	s.repository.On("GetNumberOfInputs",
 		mock.Anything,
 		mock.Anything,
-	).Return(uint64(0), nil).Times(3)
+	).Return(uint64(0), nil).Times(6)
 	s.repository.Unset("CreateEpochsAndInputs")
 
 	// Prepare sequence of inputs
@@ -156,7 +150,6 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 		IApplicationAddress:     app1Addr,
 		IConsensusAddress:       consensusAddr,
 		IInputBoxAddress:        inputBoxAddr,
-		DataAvailability:        DataAvailability_InputBox[:],
 		Enabled:                 true,
 		Status:                  ApplicationStatus_OK,
 		IInputBoxBlock:          0x10,
@@ -247,7 +240,6 @@ func (s *EvmReaderSuite) TestItStartsWhenLastProcessedBlockIsTheMostRecentBlock(
 		IApplicationAddress:     app1Addr,
 		IConsensusAddress:       consensusAddr,
 		IInputBoxAddress:        inputBoxAddr,
-		DataAvailability:        DataAvailability_InputBox[:],
 		Enabled:                 true,
 		Status:                  ApplicationStatus_OK,
 		IInputBoxBlock:          0x10,
@@ -302,7 +294,6 @@ func (s *EvmReaderSuite) TestCatchUpForeclosedInputsScansThroughForecloseBlock()
 		IApplicationAddress: app1Addr,
 		IConsensusAddress:   consensusAddr,
 		IInputBoxAddress:    inputBoxAddr,
-		DataAvailability:    DataAvailability_InputBox[:],
 		Enabled:             true,
 		Status:              ApplicationStatus_OK,
 		IInputBoxBlock:      1,
@@ -360,7 +351,6 @@ func (s *EvmReaderSuite) TestCatchUpForeclosedInputsStoresSameBlockInput() {
 		IApplicationAddress: app1Addr,
 		IConsensusAddress:   consensusAddr,
 		IInputBoxAddress:    inputBoxAddr,
-		DataAvailability:    DataAvailability_InputBox[:],
 		Enabled:             true,
 		Status:              ApplicationStatus_OK,
 		IInputBoxBlock:      1,
@@ -437,7 +427,7 @@ func (s *EvmReaderSuite) TestCatchUpForeclosedInputsStoresSameBlockInput() {
 }
 
 // TestCheckpointNotAdvancedOnFetchFailure is a regression test for a bug where
-// readInputsFromBlockchain swallowed per-app fetch errors, and the caller then
+// the input fetch swallowed per-app errors, and the caller then
 // advanced LastInputCheckBlock for failed apps — permanently skipping their inputs.
 func (s *EvmReaderSuite) TestCheckpointNotAdvancedOnFetchFailure() {
 	require := require.New(s.T())
@@ -509,8 +499,9 @@ func (s *EvmReaderSuite) TestCheckpointNotAdvancedOnFetchFailure() {
 
 	s.evmReader.repository = repo
 
-	err := s.evmReader.readAndStoreInputs(s.ctx, 100, 110, apps)
-	require.ErrorIs(err, errScanIncomplete)
+	require.False(s.evmReader.scanIConsensusInputUnit(s.ctx, iConsensusInputScanUnit{
+		lastInputCheckBlock: 100, endBlock: 110, apps: apps,
+	}))
 
 	repo.AssertExpectations(s.T())
 }

@@ -12,7 +12,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
+	"github.com/cartesi/rollups-node/pkg/contracts/iauthority"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
@@ -53,9 +53,10 @@ type iclaimerBlockchain interface {
 
 	submitClaimToBlockchain(
 		ctx context.Context,
-		ic *iconsensus.IConsensus,
+		ic consensusClaimSubmitter,
 		application *model.Application,
 		epoch *model.Epoch,
+		proof model.StateProof,
 	) (common.Hash, error)
 
 	acceptClaimOnBlockchain(
@@ -101,6 +102,16 @@ type iclaimerBlockchain interface {
 	claimSubmitterAddress() (common.Address, bool)
 }
 
+type consensusClaimSubmitter interface {
+	SubmitClaim(
+		opts *bind.TransactOpts,
+		appContract common.Address,
+		lastProcessedBlockNumber *big.Int,
+		machineMerkleRoot [32]byte,
+		proof iconsensus.MachineValidityProof,
+	) (*types.Transaction, error)
+}
+
 type claimerBlockchain struct {
 	client        *ethclient.Client
 	txOptsFactory ethutil.TransactOptsFactory
@@ -117,31 +128,14 @@ func (cb *claimerBlockchain) claimSubmitterAddress() (common.Address, bool) {
 
 func (cb *claimerBlockchain) submitClaimToBlockchain(
 	ctx context.Context,
-	ic *iconsensus.IConsensus,
+	ic consensusClaimSubmitter,
 	application *model.Application,
 	epoch *model.Epoch,
+	proof model.StateProof,
 ) (common.Hash, error) {
 	txHash := common.Hash{}
 	if cb.txOptsFactory == nil {
 		return txHash, fmt.Errorf("txOptsFactory is required for claim submission")
-	}
-	if epoch.TxBufferDataBlock == nil {
-		return txHash, fmt.Errorf(
-			"epoch %d (%d) has no tx_buffer_data_block to supply as the contract outputs Merkle root; refusing to submit claim",
-			epoch.Index, epoch.VirtualIndex)
-	}
-	// The DB trigger checks tx_buffer_proof when an epoch moves to
-	// CLAIM_COMPUTED. It does not stop a later UPDATE from clearing the proof.
-	// Submitting without a proof would revert on chain, so fail here with a
-	// clear local error.
-	if epoch.TxBufferProof == nil {
-		return txHash, fmt.Errorf(
-			"epoch %d (%d) has no tx_buffer_proof to supply as the contract outputs Merkle proof; refusing to submit claim",
-			epoch.Index, epoch.VirtualIndex)
-	}
-	proof := make([][32]byte, len(epoch.TxBufferProof))
-	for i, h := range epoch.TxBufferProof {
-		proof[i] = h
 	}
 	txOpts, err := cb.txOptsFactory.NewTransactOpts(ctx)
 	if err != nil {
@@ -149,22 +143,85 @@ func (cb *claimerBlockchain) submitClaimToBlockchain(
 	}
 	lastBlockNumber := new(big.Int).SetUint64(epoch.LastBlock)
 	tx, err := ic.SubmitClaim(txOpts, application.IApplicationAddress,
-		lastBlockNumber, *epoch.TxBufferDataBlock, proof)
+		lastBlockNumber, proof.MachineHash, consensusMachineValidityProof(proof))
 	if err != nil {
+		err = cb.diagnoseAuthorityOwner(ctx, application, txOpts.From, err)
 		cb.logger.Warn("submitClaimToBlockchain:failed",
 			"appContractAddress", application.IApplicationAddress,
-			"claimHash", *epoch.TxBufferDataBlock,
+			"machine_merkle_root", proof.MachineHash,
+			"outputs_merkle_root", proof.TxBufferDataBlock,
 			"last_block", epoch.LastBlock,
 			"error", err)
 	} else {
 		txHash = tx.Hash()
 		cb.logger.Debug("submitClaimToBlockchain:success",
 			"appContractAddress", application.IApplicationAddress,
-			"claimHash", *epoch.TxBufferDataBlock,
+			"machine_merkle_root", proof.MachineHash,
+			"outputs_merkle_root", proof.TxBufferDataBlock,
 			"last_block", epoch.LastBlock,
 			"TxHash", txHash)
 	}
 	return txHash, err
+}
+
+// authorityOwnerMismatch carries owner evidence without depending on the
+// ownership library's revert ABI. The original submission error is preserved.
+type authorityOwnerMismatch struct {
+	signer          common.Address
+	configuredOwner common.Address
+	latestOwner     common.Address
+	submissionErr   error
+}
+
+func (e *authorityOwnerMismatch) Error() string {
+	return fmt.Sprintf("Authority owner check: signer %s, configured owner %s, latest owner %s: %v",
+		e.signer, e.configuredOwner, e.latestOwner, e.submissionErr)
+}
+
+func (e *authorityOwnerMismatch) Unwrap() error { return e.submissionErr }
+
+func (cb *claimerBlockchain) diagnoseAuthorityOwner(
+	ctx context.Context,
+	app *model.Application,
+	signer common.Address,
+	submissionErr error,
+) error {
+	if app.ConsensusType != model.Consensus_Authority {
+		return submissionErr
+	}
+	// Known submit errors already have a more specific diagnosis. Keep owner
+	// reads for otherwise-unclassified reverts, using the actual transaction signer.
+	if ethutil.IsNonceTooLowError(submissionErr) || submitClaimRevertName(submissionErr) != "" {
+		return submissionErr
+	}
+	if _, reverted := ethclient.RevertErrorData(submissionErr); !reverted {
+		return submissionErr
+	}
+	block, err := cb.getDefaultBlockNumber(ctx)
+	if err != nil {
+		return errors.Join(submissionErr, fmt.Errorf("resolving block for Authority owner check: %w", err))
+	}
+	if block == nil || block.Sign() < 0 {
+		return errors.Join(submissionErr, errors.New("authority owner check returned an invalid configured block"))
+	}
+	authority, err := iauthority.NewIAuthorityCaller(app.IConsensusAddress, cb.client)
+	if err != nil {
+		return errors.Join(submissionErr, fmt.Errorf("binding Authority for owner check: %w", err))
+	}
+	configuredOwner, err := authority.Owner(&bind.CallOpts{Context: ctx, BlockNumber: block})
+	if err != nil {
+		return errors.Join(submissionErr, fmt.Errorf("reading Authority owner at configured block %s: %w", block, err))
+	}
+	latestOwner, err := authority.Owner(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return errors.Join(submissionErr, fmt.Errorf("reading latest Authority owner: %w", err))
+	}
+	if configuredOwner == signer && latestOwner == signer {
+		return submissionErr
+	}
+	return &authorityOwnerMismatch{
+		signer: signer, configuredOwner: configuredOwner, latestOwner: latestOwner, submissionErr: submissionErr,
+	}
 }
 
 type eventIterator interface {
@@ -329,11 +386,12 @@ func (cb *claimerBlockchain) findClaimStagedEventAndSucc(
 			application.IApplicationAddress, epoch.Index, epoch.VirtualIndex, err)
 	}
 
-	if len(events) == 0 {
+	switch len(events) {
+	case 0:
 		return ic, nil, nil, nil
-	} else if len(events) == 1 {
+	case 1:
 		return ic, events[0], nil, nil
-	} else {
+	default:
 		return ic, events[0], events[1], nil
 	}
 }
@@ -390,11 +448,12 @@ func (cb *claimerBlockchain) findClaimAcceptedEventAndSucc(
 			application.IApplicationAddress, epoch.Index, epoch.VirtualIndex, err)
 	}
 
-	if len(events) == 0 {
+	switch len(events) {
+	case 0:
 		return ic, nil, nil, nil
-	} else if len(events) == 1 {
+	case 1:
 		return ic, events[0], nil, nil
-	} else {
+	default:
 		return ic, events[0], events[1], nil
 	}
 }
@@ -487,15 +546,6 @@ func (cb *claimerBlockchain) getClaimStatus(
 func isCustomConsensusError(err error, name string) bool {
 	return ethutil.IsCustomError(err, iconsensus.IConsensusMetaData, name) ||
 		ethutil.IsCustomError(err, iquorum.IQuorumMetaData, name)
-}
-
-// isCustomApplicationError matches a typed Solidity error declared in the
-// IApplication ABI. The on-chain merkle library errors (e.g. InvalidNodeIndex)
-// are raised by consensus calls but are not declared in the IConsensus ABI;
-// the selector is derived from the error signature alone, so any ABI that
-// declares the error works for matching.
-func isCustomApplicationError(err error, name string) bool {
-	return ethutil.IsCustomError(err, iapplication.IApplicationMetaData, name)
 }
 
 // poll a transaction for its receipt

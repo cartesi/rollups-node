@@ -8,7 +8,6 @@ package integration
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"testing"
 	"time"
 
@@ -42,12 +41,6 @@ const (
 	terminalObservationInterval   = 500 * time.Millisecond
 	terminalObservationRPCTimeout = 2 * time.Second
 )
-
-var terminalMachineRestartExpectedLog = ExpectedLog{
-	Pattern: regexp.MustCompile(`service=(?:claimer|evm-reader).*context canceled`),
-	Level:   LevelError,
-	Reason:  "benign service cancellation while deliberately restarting the node",
-}
 
 func TestTerminalMachineStates(t *testing.T) {
 	if !isNodeSelfManaged() {
@@ -125,7 +118,7 @@ func (s *TerminalMachineStatesSuite) TestUnexpectedYieldSurvivesRestart() {
 
 func (s *TerminalMachineStatesSuite) runTerminalMachineState(tc terminalMachineStateCase) {
 	s.T().Helper()
-	s.SetExpectedLogs(s.T(), terminalExecutionExpectedLog, terminalMachineRestartExpectedLog)
+	s.SetExpectedLogs(s.T(), terminalExecutionExpectedLog)
 	require := s.Require()
 	s.appName = uniqueAppName(tc.namePrefix)
 	dappPath := envOrDefault(tc.dappPathEnv, tc.defaultDappPath)

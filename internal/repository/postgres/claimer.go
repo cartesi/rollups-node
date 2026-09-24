@@ -53,6 +53,10 @@ func (r *PostgresRepository) selectOldestClaimPerApp(
 		table.Epoch.MachineHash,
 		table.Epoch.TxBufferDataBlock,
 		table.Epoch.TxBufferProof,
+		table.Epoch.IflagsYDataBlock,
+		table.Epoch.IflagsYProof,
+		table.Epoch.HtifTohostDataBlock,
+		table.Epoch.HtifTohostProof,
 		table.Epoch.ClaimTransactionHash,
 		table.Epoch.Status,
 		table.Epoch.StagedAtBlock,
@@ -74,7 +78,6 @@ func (r *PostgresRepository) selectOldestClaimPerApp(
 		table.Application.WithdrawalLog2MaxNumOfAccounts,
 		table.Application.WithdrawalAccountsDriveStartIndex,
 		table.Application.WithdrawalOutputBuilder,
-		table.Application.DataAvailability,
 		table.Application.ConsensusType,
 		table.Application.Enabled,
 		table.Application.Status,
@@ -127,6 +130,10 @@ func (r *PostgresRepository) selectOldestClaimPerApp(
 			&epoch.MachineHash,
 			&epoch.TxBufferDataBlock,
 			&epoch.TxBufferProof,
+			&epoch.IflagsYDataBlock,
+			&epoch.IflagsYProof,
+			&epoch.HtifTohostDataBlock,
+			&epoch.HtifTohostProof,
 			&epoch.ClaimTransactionHash,
 			&epoch.Status,
 			&epoch.StagedAtBlock,
@@ -148,7 +155,6 @@ func (r *PostgresRepository) selectOldestClaimPerApp(
 			&application.WithdrawalConfig.Log2MaxNumOfAccounts,
 			&application.WithdrawalConfig.AccountsDriveStartIndex,
 			&application.WithdrawalConfig.WithdrawalOutputBuilder,
-			&application.DataAvailability,
 			&application.ConsensusType,
 			&application.Enabled,
 			&application.Status,
@@ -191,10 +197,10 @@ func (r *PostgresRepository) selectNewestClaimBarrierPerApp(
 		statusExprs = append(statusExprs, postgres.NewEnumValue(status.String()))
 	}
 
-	// NOTE(mpolitzer): DISTINCT ON is a postgres extension. To implement
-	// this in SQLite there is an alternative using GROUP BY and HAVING
-	// clauses instead.
-	stmt := table.Epoch.SELECT(
+	// Select one barrier per eligible application through the epoch primary
+	// key. Sorting every historical accepted claim makes this query grow with
+	// the application's full history instead of the number of applications.
+	barrier := postgres.LATERAL(table.Epoch.SELECT(
 		table.Epoch.ApplicationID,
 		table.Epoch.Index,
 		table.Epoch.FirstBlock,
@@ -202,31 +208,25 @@ func (r *PostgresRepository) selectNewestClaimBarrierPerApp(
 		table.Epoch.MachineHash,
 		table.Epoch.TxBufferDataBlock,
 		table.Epoch.TxBufferProof,
+		table.Epoch.IflagsYDataBlock,
+		table.Epoch.IflagsYProof,
+		table.Epoch.HtifTohostDataBlock,
+		table.Epoch.HtifTohostProof,
 		table.Epoch.ClaimTransactionHash,
 		table.Epoch.Status,
 		table.Epoch.StagedAtBlock,
 		table.Epoch.VirtualIndex,
 		table.Epoch.CreatedAt,
 		table.Epoch.UpdatedAt,
-	).
-		DISTINCT(table.Epoch.ApplicationID).
-		FROM(
-			table.Epoch.
-				INNER_JOIN(
-					table.Application,
-					table.Epoch.ApplicationID.EQ(table.Application.ID),
-				),
-		).
-		WHERE(
-			table.Epoch.Status.IN(statusExprs...).
-				AND(table.Application.Enabled.EQ(postgres.Bool(true))).
-				AND(claimableOrForeclosedApplication()).
-				AND(table.Application.ConsensusType.NOT_EQ(enum.Consensus.Prt)),
-		).
-		ORDER_BY(
-			table.Epoch.ApplicationID,
-			table.Epoch.Index.DESC(),
-		)
+	).WHERE(
+		table.Epoch.ApplicationID.EQ(table.Application.ID).
+			AND(table.Epoch.Status.IN(statusExprs...)),
+	).ORDER_BY(table.Epoch.Index.DESC()).LIMIT(1)).AS("barrier")
+	stmt := postgres.SELECT(barrier.AllColumns()).
+		FROM(table.Application.CROSS_JOIN(barrier)).
+		WHERE(table.Application.Enabled.EQ(postgres.Bool(true)).
+			AND(claimableOrForeclosedApplication()).
+			AND(table.Application.ConsensusType.NOT_EQ(enum.Consensus.Prt)))
 
 	sqlStr, args := stmt.Sql()
 	rows, err := tx.Query(ctx, sqlStr, args...)
@@ -246,6 +246,10 @@ func (r *PostgresRepository) selectNewestClaimBarrierPerApp(
 			&epoch.MachineHash,
 			&epoch.TxBufferDataBlock,
 			&epoch.TxBufferProof,
+			&epoch.IflagsYDataBlock,
+			&epoch.IflagsYProof,
+			&epoch.HtifTohostDataBlock,
+			&epoch.HtifTohostProof,
 			&epoch.ClaimTransactionHash,
 			&epoch.Status,
 			&epoch.StagedAtBlock,
@@ -374,10 +378,10 @@ func (r *PostgresRepository) UpdateEpochWithSubmittedClaim(
 // source state may be CLAIM_SUBMITTED, CLAIM_STAGED, or CLAIM_COMPUTED — the
 // trigger enforces validity per the v3 state machine:
 //
-//   - CLAIM_STAGED → CLAIM_ACCEPTED is the normal v3 path (after the staging
-//     period elapses and acceptClaim is called).
-//   - CLAIM_COMPUTED → CLAIM_ACCEPTED is the deep reader-mode catch-up path
-//     (also PRT's terminal transition; the trigger forbids PRT from STAGED).
+//   - CLAIM_STAGED → CLAIM_ACCEPTED is the normal v3 path after the staging
+//     period elapses and the consensus accepts the staged result.
+//   - CLAIM_COMPUTED → CLAIM_ACCEPTED is the deep reader-mode catch-up path,
+//     including a PRT node that first observes an already accepted result.
 //   - CLAIM_SUBMITTED → CLAIM_ACCEPTED is permitted by the trigger but not
 //     reached by the v3 happy path. Kept for resilience.
 //
@@ -455,14 +459,7 @@ func (r *PostgresRepository) UpdateEpochWithForeclosedClaim(
 		WHERE(
 			table.Epoch.ApplicationID.EQ(postgres.Int64(applicationID)).
 				AND(table.Epoch.Index.EQ(uint64Expr(index))).
-				AND(table.Epoch.Status.IN(
-					postgres.NewEnumValue(model.EpochStatus_Open.String()),
-					postgres.NewEnumValue(model.EpochStatus_Closed.String()),
-					postgres.NewEnumValue(model.EpochStatus_InputsProcessed.String()),
-					postgres.NewEnumValue(model.EpochStatus_ClaimComputed.String()),
-					postgres.NewEnumValue(model.EpochStatus_ClaimSubmitted.String()),
-					postgres.NewEnumValue(model.EpochStatus_ClaimStaged.String()),
-				)).
+				AND(table.Epoch.Status.IN(nonTerminalEpochStatusExpressions()...)).
 				AND(table.Application.ID.EQ(table.Epoch.ApplicationID)).
 				AND(table.Application.ForecloseBlock.GT(uint64Expr(0))),
 		)
@@ -698,8 +695,9 @@ func (r *PostgresRepository) UpdateEpochThroughStaging(
 
 // UpdateEpochReconciledStaged transitions an epoch from CLAIM_COMPUTED to
 // CLAIM_STAGED without setting a claim_transaction_hash. Used by the
-// pre-submit reconciliation path when getClaim() reveals the chain has
-// already staged our claim (e.g., across a restart or in reader mode).
+// chain reconciliation path when the chain has already staged the local
+// result. Authority/Quorum and PRT can use this path after a restart or in
+// reader mode.
 func (r *PostgresRepository) UpdateEpochReconciledStaged(
 	ctx context.Context,
 	applicationID int64,

@@ -7,9 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"math/big"
 
+	"github.com/cartesi/rollups-node/internal/errutil"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
@@ -42,23 +44,13 @@ func (r *Service) initializeNewApplicationInputSync(
 		"current_block", mostRecentBlockNumber,
 	)
 	if app.application.IInputBoxBlock == 0 {
-		r.Logger.Error("Application has no InputBox block number defined",
-			"application", app.application.Name,
-			"inputbox", app.application.IInputBoxAddress,
-			"iinputbox_block", app.application.IInputBoxBlock,
-		)
 		return 0, errors.New("application has no InputBox block number defined")
 	}
 	lastInputCheckBlock := app.application.IInputBoxBlock - 1
 
 	err := r.repository.UpdateEventLastCheckBlock(ctx, []int64{app.application.ID}, MonitoredEvent_InputAdded, lastInputCheckBlock)
 	if err != nil {
-		r.Logger.Error("Failed to update application LastInputCheckBlock",
-			"application", app.application.Name,
-			"last_input_check_block", lastInputCheckBlock,
-			"error", err,
-		)
-		return 0, err
+		return 0, fmt.Errorf("initialize input cursor at block %d: %w", lastInputCheckBlock, err)
 	}
 	r.Logger.Debug("Application input sync initialized",
 		"application", app.application.Name,
@@ -77,15 +69,13 @@ func (r *Service) scanIConsensusInputs(
 	applications []appContracts,
 	mostRecentBlockNumber uint64,
 ) bool {
-	success := true
-	if !r.inputReaderEnabled {
-		return success
-	}
-
 	r.Logger.Debug("Checking for new inputs")
 
 	units, success := r.buildIConsensusInputScanUnits(ctx, applications, mostRecentBlockNumber)
 	for _, unit := range units {
+		if ctx.Err() != nil {
+			return false
+		}
 		success = r.scanIConsensusInputUnit(ctx, unit) && success
 	}
 	return success
@@ -99,9 +89,6 @@ func (r *Service) buildIConsensusInputScanUnits(
 	success := true
 	appsByInputBox := map[common.Address][]appContracts{}
 	for _, app := range applications {
-		if !app.application.HasDataAvailabilitySelector(DataAvailability_InputBox) {
-			continue
-		}
 		key := app.application.IInputBoxAddress
 		appsByInputBox[key] = append(appsByInputBox[key], app)
 	}
@@ -115,6 +102,9 @@ func (r *Service) buildIConsensusInputScanUnits(
 
 		appsByLastInputCheckBlock := make(map[iConsensusInputScanRange][]appContracts)
 		for _, app := range inputBoxApps {
+			if ctx.Err() != nil {
+				return nil, false
+			}
 			lastInputCheckBlock := app.application.LastInputCheckBlock
 			if lastInputCheckBlock == 0 { // New application. Find a safe start block to scan for inputs
 				var err error
@@ -125,17 +115,19 @@ func (r *Service) buildIConsensusInputScanUnits(
 				)
 				if err != nil {
 					success = false
-					r.Logger.Error("Failed to initialize application input sync",
-						"application", app.application.Name,
-						"most_recent_block", endBlock,
-						"error", err,
-					)
+					r.reportInputScanError(ctx, app, 0, endBlock, err)
 					continue
 				}
 			}
 			scanEndBlock := foreclosureBoundedEndBlock(app.application, endBlock)
 			if lastInputCheckBlock > scanEndBlock {
-				r.Logger.Warn(
+				level := slog.LevelWarn
+				if app.application.IInputBoxBlock != 0 && lastInputCheckBlock == app.application.IInputBoxBlock-1 {
+					// Registration can initialize the cursor before deployment is
+					// visible at the configured observation block.
+					level = slog.LevelDebug
+				}
+				r.Logger.Log(ctx, level,
 					"Input search skipped: most recent block is lower than the last processed one",
 					"application", app.application.Name,
 					"last_processed_block", lastInputCheckBlock,
@@ -192,19 +184,15 @@ func (r *Service) scanIConsensusInputUnit(
 			"most_recent_block", unit.endBlock,
 		)
 
-		err := r.readAndStoreInputs(ctx,
-			unit.lastInputCheckBlock,
-			unit.endBlock,
-			unit.apps,
-		)
-		if err != nil {
-			success = false
-			r.Logger.Error("Error reading inputs",
-				"apps", appAddresses,
-				"last_processed_block", unit.lastInputCheckBlock,
-				"most_recent_block", unit.endBlock,
-				"error", err,
-			)
+		for _, app := range unit.apps {
+			if ctx.Err() != nil {
+				return false
+			}
+			err := r.readAndStoreApplicationInputs(ctx, unit.lastInputCheckBlock, unit.endBlock, app)
+			if err != nil {
+				success = false
+				r.reportInputScanError(ctx, app, unit.lastInputCheckBlock, unit.endBlock, err)
+			}
 		}
 		return success
 	}
@@ -225,6 +213,25 @@ func (r *Service) scanIConsensusInputUnit(
 		"most_recent_block", unit.endBlock,
 	)
 	return success
+}
+
+// The application scan owns operational error logging. Helpers return the cause;
+// status transitions retain their existing, separately reported diagnostics.
+func (r *Service) reportInputScanError(ctx context.Context, app appContracts, from, to uint64, err error) {
+	if errors.Is(err, errApplicationStatusReported) {
+		return
+	}
+	level := slog.LevelError
+	if ctx.Err() == context.Canceled && errutil.IsOnlyCancellation(err) {
+		level = slog.LevelDebug
+	}
+	r.Logger.Log(ctx, level, "Application input scan interrupted",
+		"application", app.application.Name,
+		"address", app.application.IApplicationAddress,
+		"last_processed_block", from,
+		"most_recent_block", to,
+		"error", err,
+	)
 }
 
 // ErrInputForNonOpenEpoch indicates that an input was received for an epoch
@@ -300,285 +307,128 @@ func indexInputsIntoEpochs(
 	return epochInputMap, nil
 }
 
-// recordInputCorruption separates a known application-local integrity failure
-// from failure to persist its status. Status helpers update app.Status only after
-// a successful write and preserve previously persisted integrity terminals.
-// Observation must continue on later ticks, including for terminal applications.
+// recordInputCorruption keeps a recorded integrity fault local to the application.
+// A failed status write still fails the scan. Status helpers update app.Status
+// only after a successful write and preserve existing integrity terminals.
 func (r *Service) recordInputCorruption(
 	ctx context.Context,
 	app *Application,
 	reasonFmt string,
 	args ...any,
-) bool {
+) error {
 	reason := fmt.Sprintf(reasonFmt, args...)
-	// setApplicationCorrupted always returns non-nil (the reason text itself).
-	// The DB error case is already logged inside setApplicationStatus.
-	// TODO: consider returning only DB errors instead of always returning an error.
-	_ = r.setApplicationCorrupted(ctx, app, "%s", reason)
+	err := r.setApplicationCorrupted(ctx, app, "%s", reason)
 	if app.Status == ApplicationStatus_Corrupted || app.Status == ApplicationStatus_Diverged {
 		r.Logger.Warn("Input observation degraded for application", "application", app.Name, "reason", reason)
-		return true
+		return nil
 	}
-	return false
+	return err
 }
 
-// readAndStoreInputs reads, inputs from the InputSource given specific filter options, indexes
-// them into epochs and store the indexed inputs and epochs
-func (r *Service) readAndStoreInputs(
+// readAndStoreApplicationInputs completes one application's scan before its
+// cursor can advance. A failed fetch, epoch lookup, or write leaves it retryable.
+func (r *Service) readAndStoreApplicationInputs(
 	ctx context.Context,
 	lastProcessedBlock uint64,
 	mostRecentBlockNumber uint64,
-	apps []appContracts,
+	app appContracts,
 ) error {
-	if len(apps) == 0 {
-		r.Logger.Warn("No valid running applications")
+	address := app.application.IApplicationAddress
+	epochLength := app.application.EpochLength
+	if epochLength == 0 {
+		return r.recordInputCorruption(ctx, app.application, "Application has epoch length of zero")
+	}
+
+	inputs, err := r.readApplicationInputs(ctx, app, lastProcessedBlock+1, mostRecentBlockNumber)
+	if err != nil {
+		return err
+	}
+	currentEpoch, err := r.repository.GetEpoch(ctx, address.String(), calculateEpochIndex(epochLength, lastProcessedBlock))
+	if err != nil {
+		return fmt.Errorf("retrieve current epoch: %w", err)
+	}
+	epochInputMap, err := indexInputsIntoEpochs(epochLength, currentEpoch, inputs, mostRecentBlockNumber)
+	if err != nil {
+		if errors.Is(err, ErrInputForNonOpenEpoch) {
+			return r.recordInputCorruption(ctx, app.application, "Should never happen. %v", err)
+		}
+		return fmt.Errorf("index inputs: %w", err)
+	}
+
+	if len(epochInputMap) == 0 {
+		// No epoch needs to be stored or closed. Only this application's
+		// successfully processed range is eligible for the cursor-only update.
+		err = r.repository.UpdateEventLastCheckBlock(
+			ctx, []int64{app.application.ID}, MonitoredEvent_InputAdded, mostRecentBlockNumber)
+		if err != nil {
+			return fmt.Errorf("update input cursor: %w", err)
+		}
 		return nil
 	}
 
-	// Retrieve Inputs from blockchain
-	nextSearchBlock := lastProcessedBlock + 1
-	appInputsMap, err := r.readInputsFromBlockchain(ctx, apps, nextSearchBlock, mostRecentBlockNumber)
+	// This transaction stores inputs, closes epochs, and advances the cursor.
+	// An epoch closure with no new inputs must use the same atomic write.
+	err = r.repository.CreateEpochsAndInputs(ctx, address.String(), epochInputMap, mostRecentBlockNumber)
 	if err != nil {
-		return fmt.Errorf("failed to read inputs from block %v to block %v. %w",
-			nextSearchBlock,
-			mostRecentBlockNumber,
-			err)
+		if errors.Is(err, repository.ErrInputLogIdentityConflict) {
+			return r.recordInputCorruption(ctx, app.application,
+				"stored input L1 log identity conflicts with rescanned chain data"+
+					" (possible reorg past the input cursor); operator reset required. %v", err)
+		}
+		return fmt.Errorf("store inputs and epochs: %w", err)
 	}
 
-	var scanIncomplete bool
-
-	if len(appInputsMap) != len(apps) {
-		scanIncomplete = true
-	}
-	addrToApp := mapAddressToApp(apps)
-
-	// Index Inputs into epochs and handle epoch finalization
-	for address, inputs := range appInputsMap {
-
-		app, exists := addrToApp[address]
-		if !exists {
-			r.Logger.Error("Application address on input not found",
-				"address", address)
-			scanIncomplete = true
-			continue
-		}
-
-		epochLength := app.application.EpochLength
-		if epochLength == 0 {
-			ok := r.recordInputCorruption(ctx, app.application,
-				"Application has epoch length of zero")
-			scanIncomplete = scanIncomplete || !ok
-			continue
-		}
-
-		// Retrieves last open epoch from DB
-		currentEpoch, err := r.repository.GetEpoch(ctx, address.String(), calculateEpochIndex(epochLength, lastProcessedBlock))
-		if err != nil {
-			// Shutdown cancels the ctx mid-query; downgrade to Debug
-			// for the graceful-stop case. DeadlineExceeded would still
-			// flow through the Error branch.
-			if errors.Is(err, context.Canceled) {
-				r.Logger.Debug("GetEpoch canceled during shutdown",
-					"application", app.application.Name,
-					"address", address,
-					"error", err,
-				)
-			} else {
-				r.Logger.Error("Error retrieving existing current epoch",
-					"application", app.application.Name,
-					"address", address,
-					"error", err,
-				)
-			}
-			scanIncomplete = true
-			continue
-		}
-
-		// Index inputs into epochs using pure function
-		epochInputMap, err := indexInputsIntoEpochs(
-			epochLength, currentEpoch, inputs, mostRecentBlockNumber)
-		if err != nil {
-			if errors.Is(err, ErrInputForNonOpenEpoch) {
-				ok := r.recordInputCorruption(ctx, app.application,
-					"Should never happen. %v", err)
-				scanIncomplete = scanIncomplete || !ok
-				continue
-			}
-			return fmt.Errorf("error indexing inputs: %w", err)
-		}
-
-		for epoch, epochInputs := range epochInputMap {
-			if epoch.Status == EpochStatus_Closed {
-				r.Logger.Info("Closing epoch",
-					"application", app.application.Name,
-					"address", address,
-					"epoch_index", epoch.Index,
-					"start", epoch.FirstBlock,
-					"end", epoch.LastBlock)
-			}
-			for _, input := range epochInputs {
-				r.Logger.Info("Found new Input",
-					"application", app.application.Name,
-					"address", address,
-					"index", input.Index,
-					"block", input.BlockNumber,
-					"epoch_index", epoch.Index)
-			}
-		}
-
-		// Store everything
-		if len(epochInputMap) > 0 {
-			err = r.repository.CreateEpochsAndInputs(
-				ctx,
-				address.String(),
-				epochInputMap,
-				mostRecentBlockNumber,
-			)
-			if err != nil {
-				if errors.Is(err, repository.ErrInputLogIdentityConflict) {
-					ok := r.recordInputCorruption(ctx, app.application,
-						"stored input L1 log identity conflicts with rescanned chain data"+
-							" (possible reorg past the input cursor); operator reset required. %v", err)
-					scanIncomplete = scanIncomplete || !ok
-					continue
-				}
-				r.Logger.Error("Error storing inputs and epochs",
-					"application", app.application.Name,
-					"address", address,
-					"error", err,
-				)
-				scanIncomplete = true
-				continue
-			}
-			r.Logger.Debug("Inputs and epochs stored successfully",
+	for epoch, epochInputs := range epochInputMap {
+		if epoch.Status == EpochStatus_Closed {
+			r.Logger.Info("Closing epoch",
 				"application", app.application.Name,
 				"address", address,
-				"start_block", nextSearchBlock,
-				"end_block", mostRecentBlockNumber,
-				"epoch_count", len(epochInputMap),
-				"input_count", len(inputs),
-			)
-		} else {
-			r.Logger.Debug("No inputs or epochs to store")
+				"epoch_index", epoch.Index,
+				"start", epoch.FirstBlock,
+				"end", epoch.LastBlock)
 		}
-
-	}
-
-	// Update LastInputCheckBlock for applications that were successfully scanned
-	// but didn't have any inputs.
-	// For apps WITH inputs, LastInputCheckBlock is already updated atomically inside
-	// CreateEpochsAndInputs (same DB transaction as the epoch/input inserts).
-	// This separate call for no-input apps is NOT in the same transaction. If the process
-	// crashes between the two, no-input apps will re-scan the block range on restart.
-	// This is benign: the re-scan finds no inputs and updates the checkpoint idempotently.
-	// Only apps present in appInputsMap were successfully scanned. Apps that failed
-	// to fetch are absent from the map and their checkpoint must NOT advance,
-	// otherwise inputs in the failed block range would be permanently skipped.
-	appsToUpdate := []int64{}
-	for _, app := range apps {
-		appAddress := app.application.IApplicationAddress
-		if inputs, exists := appInputsMap[appAddress]; exists && len(inputs) == 0 {
-			appsToUpdate = append(appsToUpdate, app.application.ID)
+		for _, input := range epochInputs {
+			r.Logger.Info("Found new Input",
+				"application", app.application.Name,
+				"address", address,
+				"index", input.Index,
+				"block", input.BlockNumber,
+				"epoch_index", epoch.Index)
 		}
 	}
-	// Update LastInputCheckBlock for applications without inputs
-	if len(appsToUpdate) > 0 {
-		err := r.repository.UpdateEventLastCheckBlock(ctx, appsToUpdate, MonitoredEvent_InputAdded, mostRecentBlockNumber)
-		if err != nil {
-			// Shutdown cancels the ctx mid-update; downgrade to Debug
-			// for the graceful-stop case. DeadlineExceeded would still
-			// flow through the Error branch.
-			if errors.Is(err, context.Canceled) {
-				r.Logger.Debug("UpdateEventLastCheckBlock canceled during shutdown",
-					"app_ids", appsToUpdate,
-					"block_number", mostRecentBlockNumber,
-					"error", err,
-				)
-			} else {
-				r.Logger.Error("Failed to update LastInputCheckBlock for applications without inputs",
-					"app_ids", appsToUpdate,
-					"block_number", mostRecentBlockNumber,
-					"error", err,
-				)
-			}
-			scanIncomplete = true
-		} else {
-			r.Logger.Debug("Updated LastInputCheckBlock for applications without inputs",
-				"app_ids", appsToUpdate,
-				"block_number", mostRecentBlockNumber,
-			)
-		}
-	}
-
-	if scanIncomplete {
-		return errScanIncomplete
-	}
+	r.Logger.Debug("Inputs and epochs stored successfully",
+		"application", app.application.Name,
+		"address", address,
+		"start_block", lastProcessedBlock+1,
+		"end_block", mostRecentBlockNumber,
+		"epoch_count", len(epochInputMap),
+		"input_count", len(inputs),
+	)
 	return nil
 }
 
-// readInputsFromBlockchain fetches inputs for each application independently.
-// On per-app failure, the failing app is omitted from the returned map (not
-// present as a key) and processing continues for the remaining apps. The error
-// return is reserved for fatal failures that prevent any work.
-// Callers must use map-key presence to distinguish success (key exists, possibly
-// with an empty slice) from failure (key absent) — apps absent from the map must
-// NOT have their checkpoint advanced.
-func (r *Service) readInputsFromBlockchain(
+// readApplicationInputs preserves the failure cause for the scan caller. It
+// validates the fetched logs against the counter observed in the same walk.
+func (r *Service) readApplicationInputs(
 	ctx context.Context,
-	apps []appContracts,
+	app appContracts,
 	startBlock, endBlock uint64,
-) (map[common.Address][]*Input, error) {
-
-	// Initialize app input map
-	var appInputsMap = make(map[common.Address][]*Input)
-
-	for _, app := range apps {
-		inputCount, err := r.repository.GetNumberOfInputs(
-			ctx, app.application.IApplicationAddress.String())
-		if err != nil {
-			r.Logger.Error("Error getting input count for application",
-				"application", app.application.Name,
-				"error", err.Error(),
-			)
-			continue
-		}
-		prevValue := new(big.Int).SetUint64(inputCount)
-		inputs, endCount, err := r.fetchInputs(
-			ctx, app, startBlock, endBlock,
-			prevValue, 0, math.MaxUint64)
-		if err != nil {
-			r.Logger.Error("Error fetching inputs for application",
-				"application", app.application.Name,
-				"start_block", startBlock,
-				"end_block", endBlock,
-				"error", err.Error(),
-			)
-			continue
-		}
-
-		// Validate input count: the on-chain counter delta observed during the
-		// transition walk should match the number of inputs fetched. This mirrors
-		// the DaveConsensus sealed epoch validation at sealedepochs.go and guards
-		// against silent input loss from FindTransitions missing a transition.
-		expectedNew := endCount - inputCount
-		if uint64(len(inputs)) != expectedNew {
-			r.Logger.Error(
-				"Input count mismatch: on-chain delta does not match fetched inputs",
-				"application", app.application.Name,
-				"db_count", inputCount,
-				"on_chain_end_count", endCount,
-				"expected_new", expectedNew,
-				"got", len(inputs),
-				"start_block", startBlock,
-				"end_block", endBlock,
-			)
-			continue
-		}
-
-		appInputsMap[app.application.IApplicationAddress] = inputs
+) ([]*Input, error) {
+	inputCount, err := r.repository.GetNumberOfInputs(ctx, app.application.IApplicationAddress.String())
+	if err != nil {
+		return nil, fmt.Errorf("get stored input count: %w", err)
 	}
-
-	return appInputsMap, nil
+	inputs, endCount, err := r.fetchInputs(
+		ctx, app, startBlock, endBlock, new(big.Int).SetUint64(inputCount), 0, math.MaxUint64)
+	if err != nil {
+		return nil, fmt.Errorf("fetch inputs: %w", err)
+	}
+	expectedNew := endCount - inputCount
+	if uint64(len(inputs)) != expectedNew {
+		return nil, fmt.Errorf("input count mismatch: stored %d, on-chain %d, expected %d new inputs, got %d",
+			inputCount, endCount, expectedNew, len(inputs))
+	}
+	return inputs, nil
 }
 
 // fetchInputs locates blocks where new inputs were added via FindTransitions

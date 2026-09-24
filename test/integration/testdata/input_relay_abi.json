@@ -1,0 +1,6 @@
+[
+  {"type":"constructor","inputs":[{"name":"inputBox_","type":"address","internalType":"address"}],"stateMutability":"nonpayable"},
+  {"type":"fallback","stateMutability":"payable"},
+  {"type":"function","name":"addInput","inputs":[{"name":"app","type":"address","internalType":"address"},{"name":"payload","type":"bytes","internalType":"bytes"}],"outputs":[{"name":"","type":"bytes32","internalType":"bytes32"}],"stateMutability":"nonpayable"},
+  {"type":"function","name":"inputBox","inputs":[],"outputs":[{"name":"","type":"address","internalType":"contract IInputBoxForInputRelay"}],"stateMutability":"view"}
+]

@@ -321,8 +321,8 @@ func (s *ForecloseSuite) TestOutputExecutionAfterForeclosureIsRecorded() {
 	require.NoError(anvilSetBalance(s.ctx, appAddr, oneEtherWei),
 		"fund application contract")
 
-	inputIndex, _, err := sendInput(s.ctx, s.appName, "execute after foreclosure")
-	require.NoError(err, "send input")
+	inputIndex, _, _ := sendInputThroughRelay(
+		s.ctx, s.T(), common.HexToAddress(appAddr), "execute after foreclosure")
 	require.Equal(uint64(0), inputIndex)
 
 	processCtx, processCancel := context.WithTimeout(s.ctx, inputProcessingTimeout)
@@ -402,8 +402,7 @@ func (s *ForecloseSuite) TestSameBlockInputForecloseAndOutputOrdering() {
 		"fund application contract")
 	appAddr := common.HexToAddress(appAddrString)
 
-	inputIndex, _, err := sendInput(s.ctx, s.appName, "same-block setup")
-	require.NoError(err, "send setup input")
+	inputIndex, _, _ := sendInputThroughRelay(s.ctx, s.T(), appAddr, "same-block setup")
 	require.Equal(uint64(0), inputIndex)
 
 	processCtx, processCancel := context.WithTimeout(s.ctx, inputProcessingTimeout)

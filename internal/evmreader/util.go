@@ -26,14 +26,6 @@ func appsToAddresses(apps []appContracts) []common.Address {
 	return addresses
 }
 
-func mapAddressToApp(apps []appContracts) map[common.Address]appContracts {
-	result := make(map[common.Address]appContracts)
-	for _, app := range apps {
-		result[app.application.IApplicationAddress] = app
-	}
-	return result
-}
-
 // sortByInputIndex is a compare function that orders Inputs
 // by index field. It is intended to be used with `insertSorted`, see insertSorted()
 func sortByInputIndex(a, b *Input) int {

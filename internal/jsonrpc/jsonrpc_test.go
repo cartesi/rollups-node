@@ -47,6 +47,8 @@ type jsonrpcSchema struct {
 	}
 }
 
+const matchDeletionBlock = uint64(101)
+
 // failure: invalid JSON (extra ',' at the end)
 func TestInvalidJSON(t *testing.T) {
 	s := newTestService(t, t.Name())
@@ -185,6 +187,11 @@ func TestMethod(t *testing.T) {
 			resp := testRPCResponse[model.Application]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
 			assert.Equal(t, nr, nameToNumber(resp.Result.Data.Name))
+
+			var raw testRPCResponse[map[string]json.RawMessage]
+			require.NoError(t, json.Unmarshal(body, &raw))
+			require.Contains(t, raw.Result.Data, "iinputbox_address")
+			require.NotContains(t, raw.Result.Data, "data_availability")
 		})
 	})
 
@@ -283,7 +290,7 @@ func TestMethod(t *testing.T) {
 				&model.NodeConfig[evmreader.PersistentConfig]{
 					Key: evmreader.EvmReaderConfigKey,
 					Value: evmreader.PersistentConfig{
-						ChainID: nr,
+						ChainID: nr, DefaultBlock: model.DefaultBlock_Finalized,
 					},
 				},
 			)
@@ -1255,6 +1262,12 @@ func TestMethod(t *testing.T) {
 			assert.Nil(t, json.Unmarshal(body, &resp))
 			assert.Equal(t, 1, len(resp.Result.Data))
 			assert.Equal(t, numberToName(nr), resp.Result.Data[0].Name)
+
+			var raw testRPCResponse[[]map[string]json.RawMessage]
+			require.NoError(t, json.Unmarshal(body, &raw))
+			require.Len(t, raw.Result.Data, 1)
+			require.Contains(t, raw.Result.Data[0], "iinputbox_address")
+			require.NotContains(t, raw.Result.Data[0], "data_availability")
 		})
 
 		// success: 1 application is in the database (array params) -> 1
@@ -2365,19 +2378,17 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), tnr))
 
 			type Result struct {
-				EpochIndex              hex64           `json:"epoch_index"`
-				Address                 common.Address  `json:"address"`
-				ParentTournamentAddress *common.Address `json:"parent_tournament_address"`
-				ParentMatchIDHash       *common.Hash    `json:"parent_match_id_hash"`
-				MaxLevel                hex64           `json:"max_level"`
-				Level                   hex64           `json:"level"`
-				Log2Step                hex64           `json:"log2step"`
-				Height                  hex64           `json:"height"`
-				WinnerCommitment        *common.Hash    `json:"winner_commitment"`
-				FinalStateHash          *common.Hash    `json:"final_state_hash"`
-				FinishedAtBlock         hex64           `json:"finished_at_block"`
-				CreatedAt               time.Time       `json:"created_at"`
-				UpdatedAt               time.Time       `json:"updated_at"`
+				EpochIndex              hex64                    `json:"epoch_index"`
+				Address                 common.Address           `json:"address"`
+				ParentTournamentAddress *common.Address          `json:"parent_tournament_address"`
+				ParentMatchIDHash       *common.Hash             `json:"parent_match_id_hash"`
+				MaxLevel                hex64                    `json:"max_level"`
+				Level                   hex64                    `json:"level"`
+				Log2Step                hex64                    `json:"log2step"`
+				Height                  hex64                    `json:"height"`
+				Snapshot                model.TournamentSnapshot `json:"snapshot"`
+				CreatedAt               time.Time                `json:"created_at"`
+				UpdatedAt               time.Time                `json:"updated_at"`
 			}
 
 			resp := testRPCResponse[Result]{}
@@ -2868,7 +2879,7 @@ func TestMethod(t *testing.T) {
 					WithCommitmentOne(commitment.Commitment).
 					WithCommitmentTwo(commitment.Commitment).
 					WithWinner(model.WinnerCommitment_NONE).
-					WithDeletionReason(model.MatchDeletionReason_TIMEOUT).
+					WithDeletion(model.MatchDeletionReason_TIMEOUT, matchDeletionBlock, repotest.UniqueHash()).
 					Build())
 			require.NoError(t, err, "failed to create match. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
 
@@ -2897,8 +2908,8 @@ func TestMethod(t *testing.T) {
 	t.Run("cartesi_getMatchAdvance", func(t *testing.T) {
 		method := getName(t.Name())
 
-		// failure: epoch_index not hex encoded -> invalid param
-		t.Run("malformedEpochIndex", func(t *testing.T) {
+		// failure: log_index not hex encoded -> invalid param
+		t.Run("malformedLogIndex", func(t *testing.T) {
 			testHistogram.inc(method)
 			s := newTestService(t, t.Name())
 
@@ -2910,18 +2921,22 @@ func TestMethod(t *testing.T) {
 				"method": "cartesi_getMatchAdvance",
 				"params": {
 				"application": "%v",
-				"epoch_index": "%v"
+				"epoch_index": "0x0",
+				"tournament_address": "0x0000000000000000000000000000000000000000",
+				"id_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+				"tx_hash": "0x%064x",
+				"log_index": "%v"
 				},
 				"id": 0
-				}`, numberToName(app), nr))
+				}`, numberToName(app), 0, nr))
 
 			resp := testRPCResponse[any]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
-			assert.Equal(t, "Invalid epoch index: expected hex encoded value", resp.Error.Message)
+			assert.Equal(t, "Invalid log index: expected hex encoded value", resp.Error.Message)
 		})
 
-		// failure: epoch not in the database -> resource not found
+		// failure: event not in the database -> resource not found
 		t.Run("absent", func(t *testing.T) {
 			testHistogram.inc(method)
 			s := newTestService(t, t.Name())
@@ -2942,13 +2957,14 @@ func TestMethod(t *testing.T) {
 				"method": "cartesi_getMatchAdvance",
 				"params": {
 				"application": "%v",
-				"epoch_index": "0x%020x",
-				"tournament_address": "0x%040x",
-				"id_hash": "0x%064x",
-				"parent": "0x%064x"
+				"epoch_index": "0x0",
+				"tournament_address": "0x0000000000000000000000000000000000000000",
+				"id_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+				"tx_hash": "0x%064x",
+				"log_index": "0x0"
 				},
 				"id": 0
-				}`, numberToName(app), nr+1, 0, 0, 0))
+				}`, numberToName(app), 0))
 
 			resp := testRPCResponse[any]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
@@ -2967,13 +2983,14 @@ func TestMethod(t *testing.T) {
 				"method": "cartesi_getMatchAdvance",
 				"params": {
 				"application": "%v",
-				"epoch_index": "0x%020x",
-				"tournament_address": "0x%040x",
-				"id_hash": "0x%064x",
-				"parent": "0x%064x"
+				"epoch_index": "0x0",
+				"tournament_address": "0x0000000000000000000000000000000000000000",
+				"id_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+				"tx_hash": "0x%064x",
+				"log_index": "0x0"
 				},
 				"id": 0
-				}`, numberToName(nr), 0, 0, 0, 0))
+				}`, numberToName(nr), 0))
 
 			resp := testRPCResponse[any]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
@@ -2981,7 +2998,7 @@ func TestMethod(t *testing.T) {
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
 
-		// success: commitment is in the database -> retrieve epoch
+		// success: event is in the database -> retrieve its full identity
 		t.Run("present", func(t *testing.T) {
 			testHistogram.inc(method)
 			s := newTestService(t, t.Name())
@@ -3023,17 +3040,17 @@ func TestMethod(t *testing.T) {
 					WithCommitmentOne(commitment.Commitment).
 					WithCommitmentTwo(commitment.Commitment).
 					WithWinner(model.WinnerCommitment_NONE).
-					WithDeletionReason(model.MatchDeletionReason_TIMEOUT).
+					WithDeletion(model.MatchDeletionReason_TIMEOUT, matchDeletionBlock, repotest.UniqueHash()).
 					Build())
 			require.NoError(t, err, "failed to create match. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
 
-			err = s.repository.CreateMatchAdvanced(ctx, numberToName(app),
-				repotest.NewMatchAdvancedBuilder(appID).
-					WithEpochIndex(nr).
-					WithTournamentAddress(address).
-					WithIDHash(idHash).
-					WithOtherParent(parent).
-					Build())
+			advance := repotest.NewMatchAdvancedBuilder(appID).
+				WithEpochIndex(nr).
+				WithTournamentAddress(address).
+				WithIDHash(idHash).
+				WithOtherParent(parent).
+				Build()
+			err = s.repository.CreateMatchAdvanced(ctx, numberToName(app), advance)
 			require.NoError(t, err, "failed to create match advanced. on test case: %v, application: %v, epoch_index: %v", 0, appID, nr)
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
@@ -3041,18 +3058,20 @@ func TestMethod(t *testing.T) {
 				"method": "cartesi_getMatchAdvance",
 				"params": {
 				"application": "%v",
-				"epoch_index": "0x%020x",
-				"tournament_address": "0x%020x",
-				"id_hash": "0x%064x",
-				"parent": "%s"
+				"epoch_index": "0x%x",
+				"tournament_address": "%s",
+				"id_hash": "%s",
+				"tx_hash": "%s",
+				"log_index": "0x%x"
 				},
 				"id": 0
-				}`, numberToName(app), nr, address, idHash, parentHex))
+				}`, numberToName(app), nr, address.Hex(), idHash.Hex(), advance.TxHash.Hex(), advance.LogIndex))
 
 			resp := testRPCResponse[getMatchAdvancedResult]{}
 			assert.Nil(t, json.Unmarshal(body, &resp))
 			assert.Equal(t, idHash, resp.Result.Data.IDHash)
 			assert.Equal(t, hex64(nr), resp.Result.Data.EpochIndex)
+			assert.Equal(t, advance.TxHash, resp.Result.Data.TxHash)
 		})
 	})
 
@@ -3150,7 +3169,7 @@ func TestMethod(t *testing.T) {
 						WithCommitmentOne(commitmentOne).
 						WithCommitmentTwo(commitmentTwo).
 						WithWinner(model.WinnerCommitment_NONE).
-						WithDeletionReason(model.MatchDeletionReason_TIMEOUT).
+						WithDeletion(model.MatchDeletionReason_TIMEOUT, matchDeletionBlock, repotest.UniqueHash()).
 						Build())
 				require.NoError(t, err, "on test case: %v, application: %v, report_index: %v", 0, appID, tnr)
 			}
@@ -3345,7 +3364,6 @@ func TestMethod(t *testing.T) {
 					WithCommitmentOne(commitment).
 					WithCommitmentTwo(commitment).
 					WithWinner(model.WinnerCommitment_NONE).
-					WithDeletionReason(model.MatchDeletionReason_NOT_DELETED).
 					Build())
 			require.NoError(t, err)
 
@@ -3951,6 +3969,54 @@ func TestMethod(t *testing.T) {
 		})
 	})
 
+	for _, method := range []string{"cartesi_getBondEvent", "cartesi_listBondEvents"} {
+		t.Run(method, func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := t.Context()
+			app := uint64(1)
+			appID := s.newTestApplication(ctx, t, app)
+			epoch := repotest.NewEpochBuilder(appID).WithStatus(model.EpochStatus_Closed).Build()
+			s.createTestEpoch(ctx, t, numberToName(app), epoch)
+			tournament := repotest.NewTournamentBuilder(appID).Build()
+			txHash := repotest.UniqueHash()
+			first := &model.BondEvent{
+				ApplicationID: appID, EpochIndex: epoch.Index, TournamentAddress: tournament.Address,
+				Type: model.BondEventPartialRefund, BlockNumber: tournament.Snapshot.AsOfBlock, TxHash: txHash,
+				Refund: &model.PartialBondRefund{Recipient: repotest.UniqueAddress(), Success: false},
+			}
+			second := *first
+			second.LogIndex = 1
+			second.Refund = &model.PartialBondRefund{Recipient: repotest.UniqueAddress(), Success: true}
+			require.NoError(t, s.repository.StoreTournamentEvents(ctx, appID, []*repository.TournamentEventBatch{{
+				Tournament: tournament, BondEvents: []*model.BondEvent{first, &second},
+			}}, tournament.Snapshot.AsOfBlock))
+			params := map[string]any{"application": numberToName(app)}
+			if method == "cartesi_getBondEvent" {
+				params["tx_hash"], params["log_index"] = txHash.Hex(), "0x1"
+			} else {
+				params["limit"], params["offset"], params["descending"] = 1, 1, false
+			}
+			request, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": method, "params": params, "id": 0})
+			require.NoError(t, err)
+			body := s.doRequest(t, 0, request)
+			if method == "cartesi_getBondEvent" {
+				var response testRPCResponse[model.BondEvent]
+				require.NoError(t, json.Unmarshal(body, &response))
+				require.Nil(t, response.Error)
+				require.Equal(t, second.LogIndex, response.Result.Data.LogIndex)
+				require.Equal(t, second.Refund, response.Result.Data.Refund)
+			} else {
+				var response testRPCResponse[[]model.BondEvent]
+				require.NoError(t, json.Unmarshal(body, &response))
+				require.Nil(t, response.Error)
+				require.Len(t, response.Result.Data, 1)
+				require.Equal(t, second.LogIndex, response.Result.Data[0].LogIndex)
+				require.Equal(t, second.Refund, response.Result.Data[0].Refund)
+			}
+		})
+	}
+
 	// tested methods, implemented methods and discover methods must match:
 	data, err := discoverSpec.ReadFile("jsonrpc-discover.json")
 	require.NoError(t, err)
@@ -4050,6 +4116,7 @@ func TestListOffsetValidation(t *testing.T) {
 		"cartesi_listCommitments",
 		"cartesi_listMatches",
 		"cartesi_listMatchAdvances",
+		"cartesi_listBondEvents",
 	} {
 		t.Run(method, func(t *testing.T) {
 			s := newBatchTestService()

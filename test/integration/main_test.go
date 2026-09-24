@@ -28,6 +28,16 @@ import (
 // skipped only when an external node is already running (not test-managed).
 func TestMain(m *testing.M) {
 	flag.Parse()
+	// Cleanup failure tests use child processes with simulated callbacks only.
+	// Never start or stop the shared node in those children.
+	if os.Getenv(observerCleanupExitEnv) != "" {
+		run := flag.Lookup("test.run")
+		if run == nil || run.Value.String() != observerCleanupTestPattern {
+			fmt.Fprintln(os.Stderr, "cleanup subprocess must select only the cleanup test")
+			os.Exit(2)
+		}
+		os.Exit(m.Run())
+	}
 	if testing.Short() {
 		fmt.Fprintln(os.Stderr, "skipping integration tests in short mode")
 		os.Exit(0)

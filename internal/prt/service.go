@@ -9,49 +9,62 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
+	"github.com/cartesi/rollups-node/internal/errutil"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 type CreateInfo struct {
-	Config     config.PrtConfig
-	Logger     *slog.Logger
-	Repository repository.Repository
+	Config         config.PrtConfig
+	Logger         *slog.Logger
+	Repository     repository.Repository
+	EthClient      EthClientInterface
+	AdapterFactory AdapterFactory
 }
 
 type Service struct {
 	service.TickServiceTemplate
-	repository        prtRepository
-	client            EthClientInterface
-	adapterFactory    AdapterFactory
-	submissionEnabled bool
-	submissionTimeout time.Duration
-	filter            ethutil.Filter
-	txOptsFactory     ethutil.TransactOptsFactory
-	currentEpochIndex map[int64]uint64       // application.ID -> epochIndex
-	settleInFlight    map[int64]*common.Hash // application.ID -> txHash
-	joinInFlight      map[int64]*common.Hash // application.ID -> txHash
+	repository          prtRepository
+	client              EthClientInterface
+	adapterFactory      AdapterFactory
+	submissionEnabled   bool
+	defaultBlock        DefaultBlock
+	submissionTimeout   time.Duration
+	filter              ethutil.Filter
+	txOptsFactory       ethutil.TransactOptsFactory            // Set by Create whenever submission is enabled.
+	pendingTransactions map[int64]pendingTournamentTransaction // application.ID -> pending action
+	disputeWarnings     map[common.Address]struct{}
+	zeroStagingWarnings map[int64]struct{}
+	rootBondRecoveries  map[int64][]*rootBondRecovery
+	observationHealthMu sync.RWMutex // Ready runs concurrently with the observation loop.
+	observationFailures map[int64]tournamentObservationFailure
+
+	discoveredForeclosedRootBonds map[int64]common.Address // Current root only; cleared on restart with the recovery queue.
 }
 
 const PrtConfigKey = "prt"
 
-type PersistentConfig struct {
-	DefaultBlock           DefaultBlock
-	ClaimSubmissionEnabled bool
-	ChainID                uint64
-}
+type PersistentConfig = config.PersistentSubmitterConfig
 
 func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, error) {
 	var err error
+	if c == nil {
+		return nil, errors.New("invalid CreateInfo is nil")
+	}
 	if err = ctx.Err(); err != nil {
 		return nil, err // This returns context.Canceled or context.DeadlineExceeded.
+	}
+	if c.Repository == nil {
+		return nil, fmt.Errorf("repository on prt service Create is nil")
 	}
 
 	s := &Service{}
@@ -69,65 +82,75 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 		return nil, err
 	}
 
-	authOpt, err := config.HTTPAuthorizationOption()
-	if err != nil {
-		return nil, err
-	}
-
-	ethClient, err := ethutil.NewEthClient(ctx, c.Config.BlockchainHttpEndpoint.Raw(), s.Logger,
-		ethutil.RetryConfig{
-			MaxRetries:     c.Config.BlockchainHttpMaxRetries,
-			RetryMinWait:   c.Config.BlockchainHttpRetryMinWait,
-			RetryMaxWait:   c.Config.BlockchainHttpRetryMaxWait,
-			RequestTimeout: c.Config.BlockchainHttpRequestTimeout,
-		}, authOpt)
-	if err != nil {
-		return nil, err
+	ethClient := c.EthClient
+	if ethClient == nil {
+		authOpt, err := config.HTTPAuthorizationOption()
+		if err != nil {
+			return nil, err
+		}
+		ethClient, err = ethutil.NewEthClient(ctx, c.Config.BlockchainHttpEndpoint.Raw(), s.Logger,
+			ethutil.RetryConfig{
+				MaxRetries:     c.Config.BlockchainHttpMaxRetries,
+				RetryMinWait:   c.Config.BlockchainHttpRetryMinWait,
+				RetryMaxWait:   c.Config.BlockchainHttpRetryMaxWait,
+				RequestTimeout: c.Config.BlockchainHttpRequestTimeout,
+			}, authOpt)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	chainID, err := ethClient.ChainID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if chainID.Uint64() != c.Config.BlockchainId {
-		return nil, fmt.Errorf("EthClient chainId mismatch: network %d != provided %d",
-			chainID.Uint64(), c.Config.BlockchainId)
+	if err := config.CheckNetworkChainID(chainID, c.Config.BlockchainId); err != nil {
+		return nil, err
 	}
 
 	s.repository = c.Repository
-	if s.repository == nil {
-		return nil, fmt.Errorf("repository on prt service Create is nil")
-	}
 
 	nodeConfig, err := s.setupPersistentConfig(ctx, &c.Config)
 	if err != nil {
 		return nil, err
 	}
-	if chainID.Uint64() != nodeConfig.ChainID {
-		return nil, fmt.Errorf("NodeConfig chainId mismatch: network %d != config %d",
-			chainID.Uint64(), nodeConfig.ChainID)
-	}
 
 	s.client = ethClient
 	s.submissionEnabled = nodeConfig.ClaimSubmissionEnabled
+	s.defaultBlock = nodeConfig.DefaultBlock
 	s.filter = ethutil.Filter{
 		MinChunkSize: ethutil.DefaultMinChunkSize,
 		MaxChunkSize: new(big.Int).SetUint64(c.Config.BlockchainMaxBlockRange),
 		Logger:       s.Logger,
 	}
-	s.adapterFactory = NewDefaultAdapterFactory(ethClient, s.filter)
-	s.currentEpochIndex = map[int64]uint64{}
-	s.settleInFlight = map[int64]*common.Hash{}
-	s.joinInFlight = map[int64]*common.Hash{}
+	if c.AdapterFactory != nil {
+		s.adapterFactory = c.AdapterFactory
+	} else {
+		concreteClient, ok := ethClient.(*ethclient.Client)
+		if !ok {
+			return nil, fmt.Errorf("EthClient must be *ethclient.Client when AdapterFactory is not provided")
+		}
+		s.adapterFactory = NewDefaultAdapterFactory(concreteClient, s.filter)
+	}
+
+	s.pendingTransactions = map[int64]pendingTournamentTransaction{}
+	s.disputeWarnings = map[common.Address]struct{}{}
+	s.zeroStagingWarnings = map[int64]struct{}{}
+	s.rootBondRecoveries = map[int64][]*rootBondRecovery{}
+	s.observationFailures = map[int64]tournamentObservationFailure{}
 
 	if s.submissionEnabled {
 		s.submissionTimeout = c.Config.BlockchainHttpRequestTimeout
 		if s.submissionTimeout == 0 {
 			return nil, fmt.Errorf("BlockchainHttpRequestTimeout must be different from zero")
 		}
-		s.txOptsFactory, err = auth.GetTransactOptsFactory(ctx, chainID)
+		s.txOptsFactory, err = auth.GetPrtTransactOptsFactory(ctx, chainID)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("PRT submission is enabled and requires signer configuration "+
+				"(CARTESI_PRT_AUTH_*); the standalone node always starts PRT: %w", err)
+		}
+		if c.Config.BlockchainLegacyEnabled {
+			s.txOptsFactory = ethutil.WithLegacyFees(s.txOptsFactory, ethClient)
 		}
 		s.Logger.Info("PRT submitter identity", "address", s.txOptsFactory.From())
 	}
@@ -141,98 +164,152 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 // reported as an operational failure. DeadlineExceeded and cancellations while
 // the service is running remain errors.
 func (s *Service) logErrorUnlessShutdown(ctx context.Context, message string, err error, args ...any) {
-	if errors.Is(ctx.Err(), context.Canceled) && errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(ctx.Err(), context.Canceled) && errutil.IsOnlyCancellation(err) {
 		return
 	}
 	args = append(args, "error", err)
 	s.Logger.Error(message, args...)
 }
 
-// Tick executes the Validator main logic of producing claims and/or proofs
-// for processed epochs of all running applications.
+// Tick observes PRT tournaments and maintains their pending actions.
 func (s *Service) Tick(ctx context.Context) (bool, error) {
 	// Check for shutdown before starting work, consistent with the advancer.
-	if ctx.Err() != nil {
-		return false, nil
-	}
-
-	apps, _, err := getAllRunningApplications(ctx, s.repository)
-	if err != nil {
-		// Only suppress context errors during shutdown; surface real DB errors.
+	if err := ctx.Err(); err != nil {
 		if errors.Is(err, context.Canceled) {
-			s.Logger.Warn("Tick interrupted by shutdown", "error", err)
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to get running applications. %w", err)
+		return false, err
 	}
 
+	apps, _, err := getObservableApplications(ctx, s.repository)
+	if err != nil {
+		// Only suppress context errors during shutdown; surface real DB errors.
+		if errors.Is(ctx.Err(), context.Canceled) && errutil.IsOnlyCancellation(err) {
+			s.Logger.Debug("Tick interrupted by shutdown", "error", err)
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to get observable applications: %w", err)
+	}
+	s.pruneTournamentObservationFailures(apps)
+
+	// Resolve observation policy once, but only when a path needs it. In
+	// particular, queued foreclosed bond recovery does not require finality.
+	observationBlock := sync.OnceValues(func() (uint64, error) {
+		return s.getDefaultBlockNumber(ctx)
+	})
 	// validate each application
 	errs := []error{}
 	for idx := range apps {
-		if ctx.Err() != nil {
+		if err := ctx.Err(); err != nil {
+			if !errors.Is(err, context.Canceled) {
+				errs = append(errs, err)
+			}
 			return false, errors.Join(errs...)
 		}
 		app := apps[idx]
-		// Foreclosed apps: run the drain path (reconcile accepted epochs,
-		// foreclose the rest) instead of normal tournament work. EVM reader is
-		// the sole writer of ForecloseBlock; the app keeps health status OK and
-		// remains enabled for L1 observation.
+		// Foreclosed apps still observe tournaments. Only healthy apps also
+		// drain local claims and recover their root tournament bonds.
+		// EVM reader is the sole writer of ForecloseBlock.
 		if app.ForecloseBlock != 0 {
-			if ferr := s.handleForeclosedApp(ctx, app); ferr != nil {
-				if errors.Is(ferr, context.Canceled) {
+			if ferr := s.handleForeclosedApp(ctx, app, observationBlock); ferr != nil {
+				if errors.Is(ctx.Err(), context.Canceled) && errutil.IsOnlyCancellation(ferr) {
 					continue
 				}
-				errs = append(errs, ferr)
+				errs = append(errs, fmt.Errorf("draining foreclosed PRT application %s: %w", app.IApplicationAddress, ferr))
 			}
 			continue
 		}
-		if err := s.validateApplication(ctx, app); err != nil {
+		confirmedBlock, err := observationBlock()
+		if err != nil {
+			if errors.Is(ctx.Err(), context.Canceled) && errutil.IsOnlyCancellation(err) {
+				return false, errors.Join(errs...)
+			}
+			errs = append(errs, fmt.Errorf("fetching configured block for application %s: %w", app.IApplicationAddress, err))
+			continue
+		}
+		if err := s.validateApplication(ctx, app, confirmedBlock); err != nil {
 			// During shutdown, in-flight L1 requests see context cancellation.
 			// Suppress these to avoid spurious ERR log entries.
-			if errors.Is(err, context.Canceled) {
-				s.Logger.Warn("Tick interrupted by shutdown",
+			if errors.Is(ctx.Err(), context.Canceled) && errutil.IsOnlyCancellation(err) {
+				s.Logger.Debug("Tick interrupted by shutdown",
 					"application", app.IApplicationAddress, "error", err)
 				continue
 			}
-			errs = append(errs, err)
+			errs = append(errs, fmt.Errorf("validating PRT application %s: %w", app.IApplicationAddress, err))
 		}
 	}
 	return false, errors.Join(errs...)
 }
 
-// handleForeclosedApp drains a foreclosed DaveConsensus application's epochs to
-// a terminal state. Foreclosure is a lifecycle fact (foreclose_block); the
-// application keeps health status OK and stays enabled for L1 observation.
+// handleForeclosedApp observes a foreclosed application's tournaments and,
+// while local processing is healthy, drains its epochs to a terminal state.
 //
 // Once the app has ingested its pre-foreclosure sealed epochs and the advancer
 // has processed their inputs, each pre-foreclosure epoch is reconciled read-only
-// against the chain: an epoch whose root tournament settled with our commitment
+// against the chain: an epoch whose accepted root result has our commitment
 // becomes CLAIM_ACCEPTED, and a mismatch marks the app DIVERGED (reproducing the
 // on-chain divergence). Every remaining epoch can no longer be accepted once the
-// app is foreclosed, so it is terminalized to CLAIM_FORECLOSED. No Settle/Join
-// transactions are sent. A freshly bootstrapped node therefore reaches the same
-// epoch states a node that ran in real time would have.
-func (s *Service) handleForeclosedApp(ctx context.Context, app *Application) error {
+// app is foreclosed, so it is terminalized to CLAIM_FORECLOSED. Join, stage,
+// and accept transactions are not sent. Root bond recovery is independent of
+// consensus foreclosure and local claim reconciliation. A freshly bootstrapped
+// node therefore reaches the same epoch states as a node that ran in real time.
+func (s *Service) handleForeclosedApp(ctx context.Context, app *Application, observationBlock func() (uint64, error)) error {
 	if app.ForecloseBlock == 0 {
 		return nil
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	mostRecentBlock, observationErr := observationBlock()
+	var epochs []*Epoch
+	var consensus DaveConsensusAdapter
+	if observationErr == nil {
+		epochs, consensus, observationErr = s.observeApplicationTournaments(ctx, app, mostRecentBlock)
+	}
+	if app.Status != ApplicationStatus_OK {
+		return observationErr
+	}
+	if err := ctx.Err(); err != nil {
+		return errors.Join(observationErr, err)
+	}
+	var discoveryErr error
+	if observationErr == nil {
+		discoveryErr = s.discoverForeclosedRootBond(ctx, app, epochs, consensus, mostRecentBlock)
+	}
+	if err := ctx.Err(); err != nil {
+		return errors.Join(observationErr, discoveryErr, err)
+	}
+	// Queued payment maintenance does not depend on a finalized-head read.
+	// A transaction wait or recovery failure must not prevent the database-only
+	// claim drain. Join the errors after both independent operations complete.
+	recoveryErr := s.recoverForeclosedRootBonds(ctx, app)
+	if observationErr != nil || ctx.Err() != nil {
+		return errors.Join(observationErr, discoveryErr, recoveryErr, ctx.Err())
+	}
+	return errors.Join(discoveryErr, recoveryErr,
+		s.drainForeclosedClaims(ctx, app, epochs, consensus, mostRecentBlock))
+}
+
+func (s *Service) drainForeclosedClaims(
+	ctx context.Context, app *Application, epochs []*Epoch, consensus DaveConsensusAdapter, mostRecentBlock uint64,
+) error {
 	// Bootstrap-readiness guard. The drain gate below answers "given the
 	// rows currently in the local input table, is there any pre-foreclosure
 	// input still status=NONE?". For a freshly registered PRT app against
 	// an already-foreclosed contract, evmreader's checkForForeclosure writes
 	// foreclose_block before checkForEpochsAndInputs has had a chance to
 	// ingest the historical sealed epochs (and their inputs) — so the gate
-	// would see an empty table and return false. PRT's input ingestion is
-	// driven by EpochSealed scans, so the relevant scanner cursor is
-	// last_epoch_check_block (not last_input_check_block, which the Dave
-	// path never writes) — ForeclosureScanCaughtUp branches on consensus
-	// type to consult it.
+	// would see an empty table and return false. Dave writes both scanner
+	// cursors. ForeclosureScanCaughtUp requires last_epoch_check_block AND
+	// last_input_check_block to reach foreclose_block: sealed-epoch coverage
+	// alone does not prove that open-epoch inputs have been ingested.
 	if !app.ForeclosureScanCaughtUp() {
 		s.Logger.Info(
-			"Foreclosed PRT application still ingesting pre-foreclosure sealed epochs",
+			"Foreclosed PRT application still ingesting pre-foreclosure sealed epochs and inputs",
 			"application", app.Name,
 			"address", app.IApplicationAddress,
 			"last_epoch_check_block", app.LastEpochCheckBlock,
+			"last_input_check_block", app.LastInputCheckBlock,
 			"foreclose_block", app.ForecloseBlock,
 		)
 		return nil
@@ -263,35 +340,59 @@ func (s *Service) handleForeclosedApp(ctx context.Context, app *Application) err
 		return nil
 	}
 
-	// Read-only reconciliation: accept epochs whose root tournament settled with
+	// Read-only reconciliation: accept epochs whose root result has
 	// our commitment, and surface any divergence. This sends no transactions.
-	mostRecentBlock, err := s.client.BlockNumber(ctx)
+	deferActions, err := s.reconcileAcceptedEpochs(ctx, app, epochs, consensus, mostRecentBlock)
 	if err != nil {
-		return fmt.Errorf("fetching latest block for foreclosed app %s: %w",
-			app.IApplicationAddress, err)
-	}
-	if err := s.checkEpochs(ctx, app, mostRecentBlock); err != nil {
 		// A divergence detected here marks the app DIVERGED and returns the
 		// reason; propagate it like the normal validation path does.
 		return err
 	}
+	if deferActions {
+		return nil
+	}
 
-	// Claim-computed epochs without an on-chain claim transaction can never be
-	// accepted now that the app is foreclosed: terminalize them to CLAIM_FORECLOSED.
-	return s.forecloseComputedEpochs(ctx, app)
+	// Pending claim epochs without an acceptance transaction can never be
+	// accepted now that the app is foreclosed. Make them CLAIM_FORECLOSED.
+	return s.foreclosePendingClaimEpochs(ctx, app)
 }
 
-// forecloseComputedEpochs transitions every unaccepted CLAIM_COMPUTED epoch of a
-// foreclosed application to CLAIM_FORECLOSED. Epochs that already have a
-// ClaimTransactionHash have an on-chain EpochSealed event to reconcile; leave
-// them CLAIM_COMPUTED so the next checkEpochs pass can accept or reject them.
-func (s *Service) forecloseComputedEpochs(ctx context.Context, app *Application) error {
-	epochs, _, err := getAllClaimComputedEpochs(ctx, s.repository, app.Name)
+func (s *Service) recoverForeclosedRootBonds(ctx context.Context, app *Application) error {
+	if !s.submissionEnabled || len(s.rootBondRecoveries[app.ID]) == 0 {
+		return nil
+	}
+	mostRecentBlock, err := s.client.BlockNumber(ctx)
 	if err != nil {
-		return fmt.Errorf("listing computed epochs for foreclosed app %s: %w",
+		return fmt.Errorf("fetching latest block for foreclosed app root bond recovery %s: %w",
+			app.IApplicationAddress, err)
+	}
+	blocked, err := s.waitForTournamentTransaction(ctx, app, mostRecentBlock)
+	if err != nil {
+		return fmt.Errorf("checking tournament transaction for foreclosed app %s: %w", app.IApplicationAddress, err)
+	}
+	if blocked {
+		return nil
+	}
+	if err := s.recoverRootBonds(ctx, app, mostRecentBlock); err != nil {
+		return fmt.Errorf("recovering queued root bonds for foreclosed app %s: %w", app.IApplicationAddress, err)
+	}
+	return nil
+}
+
+// foreclosePendingClaimEpochs terminalizes remaining pre-foreclosure epochs.
+// The caller must first confirm ingestion and input processing are complete.
+// Epochs with an acceptance transaction stay pending for claim reconciliation.
+func (s *Service) foreclosePendingClaimEpochs(ctx context.Context, app *Application) error {
+	filter := repository.EpochFilter{Status: NonTerminalEpochStatuses()}
+	epochs, _, err := s.repository.ListEpochs(ctx, app.Name, filter, repository.Pagination{}, false)
+	if err != nil {
+		return fmt.Errorf("listing pending claim epochs for foreclosed app %s: %w",
 			app.IApplicationAddress, err)
 	}
 	for _, epoch := range epochs {
+		if epoch.FirstBlock > app.ForecloseBlock {
+			continue
+		}
 		if epoch.ClaimTransactionHash != nil {
 			s.Logger.Debug("Skipping foreclose terminalization for epoch with on-chain claim transaction",
 				"application", app.Name,
@@ -319,24 +420,27 @@ func (s *Service) setupPersistentConfig(
 	ctx context.Context,
 	c *config.PrtConfig,
 ) (*PersistentConfig, error) {
+	requested := PersistentConfig{
+		DefaultBlock: c.BlockchainDefaultBlock, ChainID: c.BlockchainId,
+		ClaimSubmissionEnabled: c.FeatureClaimSubmissionEnabled,
+	}
+	if err := requested.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid prt config: %w", err)
+	}
 	config, err := repository.LoadNodeConfig[PersistentConfig](ctx, s.repository, PrtConfigKey)
 	if config == nil && errors.Is(err, repository.ErrNotFound) {
 		nc := NodeConfig[PersistentConfig]{
-			Key: PrtConfigKey,
-			Value: PersistentConfig{
-				DefaultBlock:           c.BlockchainDefaultBlock,
-				ClaimSubmissionEnabled: c.FeatureClaimSubmissionEnabled,
-				ChainID:                c.BlockchainId,
-			},
+			Key:   PrtConfigKey,
+			Value: requested,
 		}
 		s.Logger.Info("Initializing PRT persistent config", "config", nc.Value)
-		err = repository.SaveNodeConfig(ctx, s.repository, &nc)
-		if err != nil {
-			return nil, err
+		config, err = repository.InitializeNodeConfig(ctx, s.repository, &nc)
+	}
+	if err == nil {
+		if err := config.Value.CheckRequested(requested); err != nil {
+			return nil, fmt.Errorf("prt persistent config: %w", err)
 		}
-		return &nc.Value, nil
-	} else if err == nil {
-		s.Logger.Info("PRT service was already configured. Using previous persistent config", "config", config.Value)
+		s.Logger.Info("PRT persistent config matches requested config", "config", config.Value)
 		return &config.Value, nil
 	}
 

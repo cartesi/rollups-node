@@ -20,7 +20,6 @@ type cachedAdapters struct {
 	consensusAddr       common.Address
 	inputBoxAddr        common.Address
 	isDaveConsensus     bool
-	hasInputBoxDA       bool
 }
 
 type applicationAdapterResolver struct {
@@ -101,7 +100,6 @@ func (r *applicationAdapterResolver) getOrCreateAdapters(app *Application) (cach
 		consensusAddr:       app.IConsensusAddress,
 		inputBoxAddr:        app.IInputBoxAddress,
 		isDaveConsensus:     app.IsDaveConsensus(),
-		hasInputBoxDA:       app.HasDataAvailabilitySelector(DataAvailability_InputBox),
 	}
 	r.cache[addr] = cached
 	return cached, true
@@ -110,6 +108,5 @@ func (r *applicationAdapterResolver) getOrCreateAdapters(app *Application) (cach
 func adaptersAreStale(cached cachedAdapters, app *Application) bool {
 	return cached.consensusAddr != app.IConsensusAddress ||
 		cached.inputBoxAddr != app.IInputBoxAddress ||
-		cached.isDaveConsensus != app.IsDaveConsensus() ||
-		cached.hasInputBoxDA != app.HasDataAvailabilitySelector(DataAvailability_InputBox)
+		cached.isDaveConsensus != app.IsDaveConsensus()
 }

@@ -427,6 +427,19 @@ func (s *Service) broadcastComputedClaim(
 	currEpoch *model.Epoch,
 	defaultBlockNumber *big.Int,
 ) claimStepResult {
+	proof, err := currEpoch.StateProof()
+	if err != nil {
+		stateErr := s.setApplicationCorrupted(
+			ctx,
+			app,
+			"cannot submit claim for epoch %d (%d), last_block %d: persisted machine state proof is incomplete: %v",
+			currEpoch.Index,
+			currEpoch.VirtualIndex,
+			currEpoch.LastBlock,
+			err,
+		)
+		return claimDropped(stateErr)
+	}
 	s.Logger.Debug("Submitting claim to blockchain",
 		"app", app.IApplicationAddress,
 		"outputs_merkle_root", hashToHex(currEpoch.TxBufferDataBlock),
@@ -434,7 +447,7 @@ func (s *Service) broadcastComputedClaim(
 	)
 	txCtx, cancel := context.WithTimeout(ctx, s.submissionTimeout)
 	defer cancel()
-	txHash, err := s.blockchain.submitClaimToBlockchain(txCtx, ic, app, currEpoch)
+	txHash, err := s.blockchain.submitClaimToBlockchain(txCtx, ic, app, currEpoch, proof)
 	if err != nil {
 		switch outcome, stateErr := s.handleSubmitClaimRevert(ctx, err, app, currEpoch); outcome {
 		case submitClaimAlreadyOnChain:

@@ -17,16 +17,19 @@ type matchAdvancesTable struct {
 	postgres.Table
 
 	// Columns
-	ApplicationID     postgres.ColumnInteger
-	EpochIndex        postgres.ColumnFloat
-	TournamentAddress postgres.ColumnBytea
-	IDHash            postgres.ColumnBytea
-	OtherParent       postgres.ColumnBytea
-	LeftNode          postgres.ColumnBytea
-	BlockNumber       postgres.ColumnFloat
-	TxHash            postgres.ColumnBytea
-	CreatedAt         postgres.ColumnTimestampz
-	UpdatedAt         postgres.ColumnTimestampz
+	ApplicationID        postgres.ColumnInteger
+	EpochIndex           postgres.ColumnFloat
+	TournamentAddress    postgres.ColumnBytea
+	IDHash               postgres.ColumnBytea
+	OtherParent          postgres.ColumnBytea
+	LeftNode             postgres.ColumnBytea
+	SegmentStartPosition postgres.ColumnFloat
+	EliminableAt         postgres.ColumnFloat
+	BlockNumber          postgres.ColumnFloat
+	TxHash               postgres.ColumnBytea
+	LogIndex             postgres.ColumnFloat
+	CreatedAt            postgres.ColumnTimestampz
+	UpdatedAt            postgres.ColumnTimestampz
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
@@ -68,35 +71,41 @@ func newMatchAdvancesTable(schemaName, tableName, alias string) *MatchAdvancesTa
 
 func newMatchAdvancesTableImpl(schemaName, tableName, alias string) matchAdvancesTable {
 	var (
-		ApplicationIDColumn     = postgres.IntegerColumn("application_id")
-		EpochIndexColumn        = postgres.FloatColumn("epoch_index")
-		TournamentAddressColumn = postgres.ByteaColumn("tournament_address")
-		IDHashColumn            = postgres.ByteaColumn("id_hash")
-		OtherParentColumn       = postgres.ByteaColumn("other_parent")
-		LeftNodeColumn          = postgres.ByteaColumn("left_node")
-		BlockNumberColumn       = postgres.FloatColumn("block_number")
-		TxHashColumn            = postgres.ByteaColumn("tx_hash")
-		CreatedAtColumn         = postgres.TimestampzColumn("created_at")
-		UpdatedAtColumn         = postgres.TimestampzColumn("updated_at")
-		allColumns              = postgres.ColumnList{ApplicationIDColumn, EpochIndexColumn, TournamentAddressColumn, IDHashColumn, OtherParentColumn, LeftNodeColumn, BlockNumberColumn, TxHashColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns          = postgres.ColumnList{LeftNodeColumn, BlockNumberColumn, TxHashColumn, CreatedAtColumn, UpdatedAtColumn}
-		defaultColumns          = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
+		ApplicationIDColumn        = postgres.IntegerColumn("application_id")
+		EpochIndexColumn           = postgres.FloatColumn("epoch_index")
+		TournamentAddressColumn    = postgres.ByteaColumn("tournament_address")
+		IDHashColumn               = postgres.ByteaColumn("id_hash")
+		OtherParentColumn          = postgres.ByteaColumn("other_parent")
+		LeftNodeColumn             = postgres.ByteaColumn("left_node")
+		SegmentStartPositionColumn = postgres.FloatColumn("segment_start_position")
+		EliminableAtColumn         = postgres.FloatColumn("eliminable_at")
+		BlockNumberColumn          = postgres.FloatColumn("block_number")
+		TxHashColumn               = postgres.ByteaColumn("tx_hash")
+		LogIndexColumn             = postgres.FloatColumn("log_index")
+		CreatedAtColumn            = postgres.TimestampzColumn("created_at")
+		UpdatedAtColumn            = postgres.TimestampzColumn("updated_at")
+		allColumns                 = postgres.ColumnList{ApplicationIDColumn, EpochIndexColumn, TournamentAddressColumn, IDHashColumn, OtherParentColumn, LeftNodeColumn, SegmentStartPositionColumn, EliminableAtColumn, BlockNumberColumn, TxHashColumn, LogIndexColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns             = postgres.ColumnList{EpochIndexColumn, TournamentAddressColumn, IDHashColumn, OtherParentColumn, LeftNodeColumn, SegmentStartPositionColumn, EliminableAtColumn, BlockNumberColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns             = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return matchAdvancesTable{
 		Table: postgres.NewTable(schemaName, tableName, alias, allColumns...),
 
 		//Columns
-		ApplicationID:     ApplicationIDColumn,
-		EpochIndex:        EpochIndexColumn,
-		TournamentAddress: TournamentAddressColumn,
-		IDHash:            IDHashColumn,
-		OtherParent:       OtherParentColumn,
-		LeftNode:          LeftNodeColumn,
-		BlockNumber:       BlockNumberColumn,
-		TxHash:            TxHashColumn,
-		CreatedAt:         CreatedAtColumn,
-		UpdatedAt:         UpdatedAtColumn,
+		ApplicationID:        ApplicationIDColumn,
+		EpochIndex:           EpochIndexColumn,
+		TournamentAddress:    TournamentAddressColumn,
+		IDHash:               IDHashColumn,
+		OtherParent:          OtherParentColumn,
+		LeftNode:             LeftNodeColumn,
+		SegmentStartPosition: SegmentStartPositionColumn,
+		EliminableAt:         EliminableAtColumn,
+		BlockNumber:          BlockNumberColumn,
+		TxHash:               TxHashColumn,
+		LogIndex:             LogIndexColumn,
+		CreatedAt:            CreatedAtColumn,
+		UpdatedAt:            UpdatedAtColumn,
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,

@@ -18,14 +18,14 @@ TARGET_OS?=$(shell uname)
 export TARGET_OS
 
 ROLLUPS_NODE_VERSION := 2.0.0-alpha.12
-ROLLUPS_CONTRACTS_VERSION := 3.0.0-alpha.6
+ROLLUPS_CONTRACTS_VERSION := 3.0.0-alpha.10
 ROLLUPS_CONTRACTS_URL:=https://github.com/cartesi/rollups-contracts/releases/download/
-ROLLUPS_CONTRACTS_ARTIFACT:=rollups-contracts-$(ROLLUPS_CONTRACTS_VERSION)-artifacts.tar.gz
-ROLLUPS_CONTRACTS_SHA256:=ad1e0880766d25419fc6da1858ea4e7b9074b400e9d9ef68da88b12f4a8bba45
-ROLLUPS_PRT_CONTRACTS_VERSION := 3.0.0-alpha.3
+ROLLUPS_CONTRACTS_ARTIFACT:=cartesi-rollups-contracts-$(ROLLUPS_CONTRACTS_VERSION)-artifacts.tar.gz
+ROLLUPS_CONTRACTS_SHA256:=5213ce59d0f5a1c4fef4ebf17b6ef999be709c32b4b94511c320729bb2afa959
+ROLLUPS_PRT_CONTRACTS_VERSION := 3.0.0-alpha.4
 ROLLUPS_PRT_CONTRACTS_URL:=https://github.com/cartesi/dave/releases/download/
 ROLLUPS_PRT_CONTRACTS_ARTIFACT:=cartesi-rollups-prt-$(ROLLUPS_PRT_CONTRACTS_VERSION)-contract-artifacts.tar.gz
-ROLLUPS_PRT_CONTRACTS_SHA256:=240f4934df7a313dc05a4ae6cc3eee97b5c146952c4218502fec0db83f36a5a5
+ROLLUPS_PRT_CONTRACTS_SHA256:=622964166b4049b556dc20b26ef2b9a5e8621a2ad3e1f43eee0b802a085244b3
 
 IMAGE_TAG ?= devel
 
@@ -123,6 +123,8 @@ endif
 
 ROLLUPS_CONTRACTS_ABI_BASEDIR:= rollups-contracts/
 ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR:= rollups-prt-contracts/
+ROLLUPS_CONTRACTS_ABI_STAMP:= $(ROLLUPS_CONTRACTS_ABI_BASEDIR).$(ROLLUPS_CONTRACTS_VERSION)-$(ROLLUPS_CONTRACTS_SHA256).stamp
+ROLLUPS_PRT_CONTRACTS_ABI_STAMP:= $(ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR).$(ROLLUPS_PRT_CONTRACTS_VERSION)-$(ROLLUPS_PRT_CONTRACTS_SHA256).stamp
 
 all: build
 
@@ -141,16 +143,19 @@ env:
 	@echo export CARTESI_BLOCKCHAIN_HTTP_ENDPOINT="http://localhost:8545"
 	@echo export CARTESI_BLOCKCHAIN_ID="31337"
 	@echo export CARTESI_EVM_READER_POLLING_INTERVAL="1"
-	@echo export CARTESI_CONTRACTS_INPUT_BOX_ADDRESS="0x346B3df038FE9f8380071eC6514D5a83aD143939"
-	@echo export CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS="0x3C1FE01c542a88A523FF6847eD1E26176c8C4ED0"
-	@echo export CARTESI_CONTRACTS_QUORUM_FACTORY_ADDRESS="0x1f94009389F408B8D0ADfFcF8BBDCe5552BaCa5F"
-	@echo export CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS="0xC549F89cF1ca43eDDECC64Ac2208F4b283B1c483"
-	@echo export CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS="0x6145C5996a71a379E030aEb0440df79D60833418"
-	@echo export CARTESI_CONTRACTS_DAVE_APP_FACTORY_ADDRESS="0x33FFf0b681c90664dD048a60400AE2D827a4c5bb"
-	@echo export CARTESI_DEVNET_ERC20_PORTAL_ADDRESS="0x22E57511C30CcE6CDaa742E13CE3b774fDC663b1"
-	@echo export CARTESI_DEVNET_TEST_ERC20_ADDRESS="0x88A2120B7068E78692C8fd12E751d610B6377E4d"
-	@echo export CARTESI_DEVNET_WITHDRAWAL_OUTPUT_BUILDER_ADDRESS="0x0745787835A019cd4dae8EDB541Fbc0647793d63"
+	@echo export CARTESI_CONTRACTS_INPUT_BOX_ADDRESS="0xEbE9f4Dfc04ae10bBeE663859c3dc5A23f94eA3C"
+	@echo export CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS="0xB4d29c86e36385b5321a453C34D288AEB0ad11f9"
+	@echo export CARTESI_CONTRACTS_QUORUM_FACTORY_ADDRESS="0x0754D5Eb680c71bf469B39e48C5b64AB0813fdb9"
+	@echo export CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS="0x35Cd91f13141Bb6A6FC69E1eeDD241bbA1Ddd45F"
+	@echo export CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS="0x9e6866A965dC5f99f95EF6B0d8399dad18eEf98b"
+	@echo export CARTESI_CONTRACTS_DAVE_APP_FACTORY_ADDRESS="0xd34BEC37Fa5816ABA2f87BdaD2E13dd1B161370f"
+	@echo export CARTESI_DEVNET_ERC20_PORTAL_ADDRESS="0x3332DE61a8BB9aC84893b2f552Fe81C9a6dC5419"
+	@echo export CARTESI_DEVNET_TEST_ERC20_ADDRESS="0x7a051EDffC0884cd88d4a377F4C87BE074CF6c81"
+	@echo export CARTESI_DEVNET_WITHDRAWAL_OUTPUT_BUILDER_ADDRESS="0xB4D253c7a110241561B3eD6d632846dF7d4e9Af7"
 	@echo export CARTESI_AUTH_MNEMONIC=\"test test test test test test test test test test test junk\"
+	@echo export CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX="0"
+	@echo export CARTESI_PRT_AUTH_MNEMONIC=\"test test test test test test test test test test test junk\"
+	@echo export CARTESI_PRT_AUTH_MNEMONIC_ACCOUNT_INDEX="6"
 	@echo export CARTESI_DATABASE_CONNECTION="postgres://postgres:password@localhost:5432/rollupsdb?sslmode=disable"
 	@echo export CARTESI_SNAPSHOTS_DIR="snapshots"
 	@echo export CARTESI_TEST_DATABASE_CONNECTION="postgres://test_user:password@localhost:5432/test_rollupsdb?sslmode=disable"
@@ -195,10 +200,11 @@ check-generate: generate ## Check whether the generated files are in sync
 		exit 1; \
 	fi
 
-contracts: $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp $(ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR)/.stamp ## Export the contract artifacts
+contracts: $(ROLLUPS_CONTRACTS_ABI_STAMP) $(ROLLUPS_PRT_CONTRACTS_ABI_STAMP) ## Export the contract artifacts
 
-$(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp:
+$(ROLLUPS_CONTRACTS_ABI_STAMP):
 	@echo "Downloading rollups-contracts artifacts"
+	@rm -rf $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
 	@mkdir -p $(ROLLUPS_CONTRACTS_ABI_BASEDIR)
 	@curl -sSL $(ROLLUPS_CONTRACTS_URL)/v$(ROLLUPS_CONTRACTS_VERSION)/$(ROLLUPS_CONTRACTS_ARTIFACT) -o $(ROLLUPS_CONTRACTS_ARTIFACT)
 	@echo "$(ROLLUPS_CONTRACTS_SHA256)  $(ROLLUPS_CONTRACTS_ARTIFACT)" | shasum -a 256 --check > /dev/null
@@ -206,8 +212,9 @@ $(ROLLUPS_CONTRACTS_ABI_BASEDIR)/.stamp:
 	@touch $@
 	@rm -f $(ROLLUPS_CONTRACTS_ARTIFACT)
 
-$(ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR)/.stamp:
+$(ROLLUPS_PRT_CONTRACTS_ABI_STAMP):
 	@echo "Downloading rollups-prt-contracts artifacts"
+	@rm -rf $(ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR)
 	@mkdir -p $(ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR)
 	@curl -sSL $(ROLLUPS_PRT_CONTRACTS_URL)/v$(ROLLUPS_PRT_CONTRACTS_VERSION)/$(ROLLUPS_PRT_CONTRACTS_ARTIFACT) -o $(ROLLUPS_PRT_CONTRACTS_ARTIFACT)
 	@echo "$(ROLLUPS_PRT_CONTRACTS_SHA256)  $(ROLLUPS_PRT_CONTRACTS_ARTIFACT)" | shasum -a 256 --check > /dev/null
@@ -224,6 +231,7 @@ generate-db: ## Generate repository/db with Jet
 	@rm -rf internal/repository/postgres/db
 	@go run github.com/go-jet/jet/v2/cmd/jet -dsn=$$CARTESI_DATABASE_CONNECTION -schema=public -path=./internal/repository/postgres/db
 	@rm -rf internal/repository/postgres/db/rollupsdb/public/model
+	@chmod -R g+rwX internal/repository/postgres/db
 
 # =============================================================================
 # Clean
@@ -384,8 +392,8 @@ applications/unexpected-yield-dapp: ## Create unexpected-yield test application
 applications/erc20-withdrawal-dapp: test/dapps/erc20-withdrawal/install.sh ## Create ERC-20 withdrawal test application
 	@echo "Creating ERC-20 withdrawal test application"
 	@mkdir -p applications
-	@PORTAL=$${CARTESI_DEVNET_ERC20_PORTAL_ADDRESS:-0x22E57511C30CcE6CDaa742E13CE3b774fDC663b1}; \
-	TOKEN=$${CARTESI_DEVNET_TEST_ERC20_ADDRESS:-0x88A2120B7068E78692C8fd12E751d610B6377E4d}; \
+	@PORTAL=$${CARTESI_DEVNET_ERC20_PORTAL_ADDRESS:-0x3332DE61a8BB9aC84893b2f552Fe81C9a6dC5419}; \
+	TOKEN=$${CARTESI_DEVNET_TEST_ERC20_ADDRESS:-0x7a051EDffC0884cd88d4a377F4C87BE074CF6c81}; \
 	cartesi-machine --ram-length=128Mi \
 		--flash-drive=label:accounts,length:4Mi,mke2fs:false,mount:false,user:dapp \
 		--env=TRUSTED_ERC20_PORTAL=$$PORTAL \
@@ -413,7 +421,7 @@ deploy-erc20-withdrawal-dapp: applications/erc20-withdrawal-dapp ## Deploy ERC-2
 	@set -e; \
 	APP=$${APP:-erc20-withdrawal-dapp}; \
 	GUARDIAN=$${GUARDIAN:-0x70997970C51812dc3A010C7d01b50e0d17dc79C8}; \
-	BUILDER=$${CARTESI_DEVNET_WITHDRAWAL_OUTPUT_BUILDER_ADDRESS:-0x0745787835A019cd4dae8EDB541Fbc0647793d63}; \
+	BUILDER=$${CARTESI_DEVNET_WITHDRAWAL_OUTPUT_BUILDER_ADDRESS:-0xB4D253c7a110241561B3eD6d632846dF7d4e9Af7}; \
 	DRIVE_START_INDEX=$$(jq -r '.config.flash_drive[] | select(.length == 4194304) | (.start / 4194304 | floor)' \
 		applications/erc20-withdrawal-dapp/config.json); \
 	WITHDRAWAL_CONFIG=$$(jq -cn \
@@ -432,7 +440,7 @@ deploy-erc20-withdrawal-dapp: applications/erc20-withdrawal-dapp ## Deploy ERC-2
 fund-wallet: ## Fund the default Anvil wallet with ETH and test ERC-20
 	@set -e; \
 	RPC_URL=$${CARTESI_BLOCKCHAIN_HTTP_ENDPOINT:-http://localhost:8545}; \
-	TOKEN=$${CARTESI_DEVNET_TEST_ERC20_ADDRESS:-0x88A2120B7068E78692C8fd12E751d610B6377E4d}; \
+	TOKEN=$${CARTESI_DEVNET_TEST_ERC20_ADDRESS:-0x7a051EDffC0884cd88d4a377F4C87BE074CF6c81}; \
 	WALLET=$${WALLET:-$$(cast rpc --rpc-url "$$RPC_URL" eth_accounts | jq -r '.[0]')}; \
 	ETH_WEI=$${ETH_WEI:-0x8ac7230489e80000}; \
 	TOKEN_AMOUNT=$${TOKEN_AMOUNT:-1000000}; \
@@ -598,7 +606,7 @@ check-license: ## Verify license headers on Go source files
 # `make integration-test-shard-check`.
 #
 # Shards are grouped by semantic family, not balanced by runtime: `withdrawal`
-# is a single test while `restart` and `replay` are the heaviest. Each shard
+# covers withdrawals and deposit refunds; `restart` and `replay` are the heaviest. Each shard
 # gets its own CI runner and the full per-job `go test -timeout 55m`
 # (run-integration-tests.sh) budget; `restart` (multi-suite, ~25-min setup
 # contexts) is the first to watch if a shard ever approaches that ceiling.
@@ -607,12 +615,12 @@ check-license: ## Verify license headers on Go source files
 # dependency for the check to build on the CI setup runner.
 INTEGRATION_SHARDS := basic quorum prt replay restart withdrawal awskms
 
-INTEGRATION_SHARD_basic      := ^Test(EchoAuthority|RejectException|TerminalMachineStates|MultiApp|EchoAuthorityStaging)$$
+INTEGRATION_SHARD_basic      := ^Test(EchoAuthority|RejectException|TerminalMachineStates|MultiApp|EchoAuthorityStaging|IntegrationCLI|IntegrationLogScanner)$$
 INTEGRATION_SHARD_quorum     := ^Test(EchoQuorum|SameBlockInputs)$$
-INTEGRATION_SHARD_prt        := ^Test(EchoPrt|RejectExceptionPrt|ForeclosePrt)$$
+INTEGRATION_SHARD_prt        := ^Test(EchoPrt|RejectExceptionPrt|ForeclosePrt|PrtPassiveDisputeObserver|SparseDisputeCommitment(MatchesDenseTrees|CanonicalGeometry|RejectsOutOfRangeRequests)|PassiveObserver(CleanupPreservesRestoreOrder|Config(PreservesOriginalAndUnrelatedFields|RejectsMissingFieldsAndInvalidJSON)))$$
 INTEGRATION_SHARD_replay     := ^Test(Foreclose|ForecloseReplay|DivergentClaim)$$
-INTEGRATION_SHARD_restart    := ^Test(Restart|SnapshotPolicy)$$
-INTEGRATION_SHARD_withdrawal := ^TestWithdrawalLifecycle$$
+INTEGRATION_SHARD_restart    := ^Test(Restart|SnapshotPolicy|NodeSubprocess)$$
+INTEGRATION_SHARD_withdrawal := ^Test(WithdrawalLifecycle|RefundLifecycle)$$
 INTEGRATION_SHARD_awskms     := ^TestLocalStackAWSIntegration$$
 
 # -----------------------------------------------------------------------------
@@ -757,7 +765,7 @@ _local-topology-%:
 		if [ -n "$(filter awskms,$(SHARD))" ]; then \
 			if [ -z "$$LOCALSTACK_KMS_ENDPOINT" ]; then \
 				echo "ERROR: LOCALSTACK_KMS_ENDPOINT is required when SHARD includes awskms." >&2; \
-				echo "Run 'make start-awslocalstack' and export the variables it prints." >&2; \
+				echo "Run 'make start-awslocalstack', then eval \"\$$(make env-awslocalstack)\"." >&2; \
 				exit 1; \
 			fi; \
 			export LOCALSTACK_KMS_REQUIRED=true; \

@@ -4,8 +4,11 @@
 package contract
 
 import (
+	"errors"
+	"math/big"
 	"testing"
 
+	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/assert"
 )
@@ -80,12 +83,13 @@ func TestFormatMatchEvents(t *testing.T) {
 
 	created := []rawMatchCreated{
 		{
-			matchIDHash: matchID,
-			one:         commitOne,
-			two:         commitTwo,
-			leftOfTwo:   [32]byte{0x33},
-			blockNumber: 100,
-			txHash:      common.HexToHash("0xC1"),
+			matchIDHash:  matchID,
+			one:          commitOne,
+			two:          commitTwo,
+			leftOfTwo:    [32]byte{0x33},
+			eliminableAt: 120,
+			blockNumber:  100,
+			txHash:       common.HexToHash("0xC1"),
 		},
 		{
 			matchIDHash: matchID2,
@@ -117,6 +121,7 @@ func TestFormatMatchEvents(t *testing.T) {
 	assert.Equal(t, formatHash(matchID), m0.MatchIDHash)
 	assert.Equal(t, "0x1111111111111111111111111111111111111111", m0.PlayerOneAddr)
 	assert.Equal(t, "0x2222222222222222222222222222222222222222", m0.PlayerTwoAddr)
+	assert.Equal(t, uint64(120), m0.EliminableAt)
 	assert.Equal(t, "TIMEOUT", m0.DeletionReason)
 	assert.Equal(t, "ONE", m0.Winner)
 	assert.NotNil(t, m0.DeletionBlock)
@@ -184,11 +189,13 @@ func TestFormatAdvanceEvents(t *testing.T) {
 
 	raw := []rawMatchAdvanced{
 		{
-			matchIDHash: [32]byte{0xAA},
-			otherParent: [32]byte{0xBB},
-			leftNode:    [32]byte{0xCC},
-			blockNumber: 100,
-			txHash:      common.HexToHash("0xDD"),
+			matchIDHash:          [32]byte{0xAA},
+			otherParent:          [32]byte{0xBB},
+			leftNode:             [32]byte{0xCC},
+			segmentStartPosition: big.NewInt(42),
+			eliminableAt:         120,
+			blockNumber:          100,
+			txHash:               common.HexToHash("0xDD"),
 		},
 		{
 			matchIDHash: [32]byte{0xEE},
@@ -204,8 +211,165 @@ func TestFormatAdvanceEvents(t *testing.T) {
 	assert.Equal(t, formatHash(raw[0].matchIDHash), result[0].MatchIDHash)
 	assert.Equal(t, formatHash(raw[0].otherParent), result[0].OtherParent)
 	assert.Equal(t, formatHash(raw[0].leftNode), result[0].LeftNode)
+	assert.Equal(t, "42", result[0].SegmentStartPosition)
+	assert.Equal(t, uint64(120), result[0].EliminableAt)
 	assert.Equal(t, uint64(100), result[0].BlockNumber)
 	assert.Equal(t, raw[0].txHash.Hex(), result[0].TxHash)
 
 	assert.Equal(t, uint64(200), result[1].BlockNumber)
 }
+
+func TestTournamentEnumNamesMatchSolidityOrder(t *testing.T) {
+	assert.Equal(t, "MATCHES_ACTIVE", tournamentStandingName(0))
+	assert.Equal(t, "AWAITING_CLOSURE", tournamentStandingName(1))
+	assert.Equal(t, "ROOT_WINNER", tournamentStandingName(2))
+	assert.Equal(t, "ROOT_FAILED", tournamentStandingName(3))
+	assert.Equal(t, "INNER_WINNER", tournamentStandingName(4))
+	assert.Equal(t, "INNER_ELIMINABLE_NO_WINNER", tournamentStandingName(5))
+	assert.Equal(t, "INNER_ELIMINABLE_WINNER_EXPIRED", tournamentStandingName(6))
+	assert.Equal(t, "UNKNOWN(7)", tournamentStandingName(7))
+
+	assert.Equal(t, "LEAF", tournamentKindName(0))
+	assert.Equal(t, "NON_LEAF", tournamentKindName(1))
+	assert.Equal(t, "UNKNOWN(2)", tournamentKindName(2))
+	assert.Equal(t, "root", tournamentLevelName(0, tournamentKindNonLeaf))
+	assert.Equal(t, "inner", tournamentLevelName(1, tournamentKindNonLeaf))
+	assert.Equal(t, "leaf", tournamentLevelName(2, tournamentKindLeaf))
+}
+
+func TestMaxLevelFromCount(t *testing.T) {
+	maxLevel, err := maxLevelFromCount(1)
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(0), maxLevel)
+
+	maxLevel, err = maxLevelFromCount(3)
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(2), maxLevel)
+
+	_, err = maxLevelFromCount(0)
+	assert.EqualError(t, err, "tournament level count is zero")
+}
+
+func TestPopulateTournamentStandingResult(t *testing.T) {
+	candidate := [32]byte{0x11}
+	directFinalState := [32]byte{0x22}
+	recoveredFinalState := [32]byte{0x33}
+
+	tests := []struct {
+		name                    string
+		level                   uint64
+		standing                itournament.ITournamentTournamentStandingView
+		wantClosed              bool
+		wantFinished            bool
+		wantFinishedAt          *uint64
+		wantHasWinner           *bool
+		wantWinner              string
+		wantFinalState          string
+		wantWinnerExpiresAt     *uint64
+		wantCanBeEliminated     *bool
+		wantFinalStateReadCount int
+	}{
+		{
+			name: "active root",
+			standing: itournament.ITournamentTournamentStandingView{
+				Standing: tournamentStandingMatchesActive, AcceptsJoins: true,
+			},
+		},
+		{
+			name: "root winner",
+			standing: itournament.ITournamentTournamentStandingView{
+				Standing: tournamentStandingRootWinner, HasCandidate: true,
+				Candidate: candidate, FinalState: directFinalState, FinishedAt: 42,
+			},
+			wantClosed:     true,
+			wantFinished:   true,
+			wantFinishedAt: uint64Ptr(42),
+			wantHasWinner:  boolPtr(true),
+			wantWinner:     formatHash(candidate),
+			wantFinalState: formatHash(directFinalState),
+		},
+		{
+			name: "failed root",
+			standing: itournament.ITournamentTournamentStandingView{
+				Standing: tournamentStandingRootFailed, FinishedAt: 43,
+			},
+			wantClosed:     true,
+			wantFinished:   true,
+			wantFinishedAt: uint64Ptr(43),
+			wantHasWinner:  boolPtr(false),
+		},
+		{
+			name:  "inner winner",
+			level: 1,
+			standing: itournament.ITournamentTournamentStandingView{
+				Standing: tournamentStandingInnerWinner, HasCandidate: true,
+				Candidate: candidate, FinalState: directFinalState, FinishedAt: 44, WinnerExpiresAt: 60,
+			},
+			wantClosed:          true,
+			wantFinished:        true,
+			wantFinishedAt:      uint64Ptr(44),
+			wantHasWinner:       boolPtr(true),
+			wantWinner:          formatHash(candidate),
+			wantFinalState:      formatHash(directFinalState),
+			wantWinnerExpiresAt: uint64Ptr(60),
+			wantCanBeEliminated: boolPtr(false),
+		},
+		{
+			name:  "expired inner winner",
+			level: 1,
+			standing: itournament.ITournamentTournamentStandingView{
+				Standing: tournamentStandingInnerEliminableWinnerExpired, HasCandidate: true,
+				Candidate: candidate, FinishedAt: 45,
+			},
+			wantClosed:              true,
+			wantFinished:            true,
+			wantFinishedAt:          uint64Ptr(45),
+			wantHasWinner:           boolPtr(true),
+			wantWinner:              formatHash(candidate),
+			wantFinalState:          formatHash(recoveredFinalState),
+			wantCanBeEliminated:     boolPtr(true),
+			wantFinalStateReadCount: 1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := &TournamentResult{Level: test.level}
+			readCount := 0
+			err := populateTournamentStandingResult(result, test.standing, func(got [32]byte) ([32]byte, error) {
+				readCount++
+				assert.Equal(t, candidate, got)
+				return recoveredFinalState, nil
+			})
+
+			assert.NoError(t, err)
+			assert.Equal(t, test.wantClosed, result.Closed)
+			assert.Equal(t, test.wantFinished, result.Finished)
+			assert.Equal(t, test.wantFinishedAt, result.FinishedAtBlock)
+			assert.Equal(t, test.wantHasWinner, result.HasWinner)
+			assert.Equal(t, test.wantWinner, result.WinnerCommitment)
+			assert.Equal(t, test.wantFinalState, result.FinalMachineHash)
+			assert.Equal(t, test.wantWinnerExpiresAt, result.WinnerExpiresAt)
+			assert.Equal(t, test.wantCanBeEliminated, result.CanBeEliminated)
+			assert.Equal(t, test.wantFinalStateReadCount, readCount)
+		})
+	}
+}
+
+func TestPopulateTournamentStandingResultReturnsFinalStateError(t *testing.T) {
+	wantErr := errors.New("read failed")
+	result := &TournamentResult{Level: 1}
+	err := populateTournamentStandingResult(result, itournament.ITournamentTournamentStandingView{
+		Standing:     tournamentStandingInnerEliminableWinnerExpired,
+		HasCandidate: true,
+		Candidate:    [32]byte{1},
+		FinishedAt:   10,
+	}, func([32]byte) ([32]byte, error) {
+		return [32]byte{}, wantErr
+	})
+	assert.ErrorIs(t, err, wantErr)
+}
+
+func uint64Ptr(value uint64) *uint64 { return &value }
+
+func boolPtr(value bool) *bool { return &value }

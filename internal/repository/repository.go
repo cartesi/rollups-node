@@ -17,6 +17,9 @@ import (
 var (
 	ErrNotFound = errors.New("not found")
 	ErrNoUpdate = errors.New("update did not take effect")
+	// ErrEpochForeclosed means a stale epoch publication lost to foreclosure.
+	// The stored epoch is CLAIM_FORECLOSED; no new claim or proof was stored.
+	ErrEpochForeclosed = errors.New("epoch publication superseded by foreclosure")
 	// ErrApplicationNotRunnable means an advance result cannot be stored because
 	// the application's durable status does not allow machine execution.
 	ErrApplicationNotRunnable = errors.New("application is not runnable")
@@ -29,6 +32,9 @@ var (
 	// ErrInvalidStateProof means an advance result or epoch publication did not
 	// include the complete three-leaf machine state proof.
 	ErrInvalidStateProof = errors.New("invalid machine state proof")
+	// ErrTournamentEventConflict means an observation contradicts an already
+	// stored immutable tournament fact or would replace a newer snapshot.
+	ErrTournamentEventConflict = errors.New("tournament observation conflicts with stored data")
 
 	// ErrInputLogIdentityConflict indicates an input insert conflicted with a
 	// stored row on the L1 log identity (transaction_hash, log_index) under a
@@ -45,12 +51,11 @@ type Pagination struct {
 }
 
 type ApplicationFilter struct {
-	Enabled          *bool
-	Status           *ApplicationStatus
-	Statuses         []ApplicationStatus
-	DataAvailability *DataAvailabilitySelector
-	ConsensusType    *Consensus
-	ConsensusTypes   []Consensus
+	Enabled        *bool
+	Status         *ApplicationStatus
+	Statuses       []ApplicationStatus
+	ConsensusType  *Consensus
+	ConsensusTypes []Consensus
 	// ForeclosureRecorded filters by the foreclose_block column: when non-nil
 	// and true, returns only apps whose foreclosure has been observed and
 	// recorded by the evmreader; when non-nil and false, returns only apps
@@ -69,9 +74,10 @@ func ExecutableApplicationsFilter() ApplicationFilter {
 }
 
 type EpochFilter struct {
-	Status      []EpochStatus
-	BeforeBlock *uint64
-	IndexRange  *Range
+	Status        []EpochStatus
+	BeforeBlock   *uint64
+	IndexRange    *Range
+	HasTournament *bool
 }
 
 type InputFilter struct {
@@ -124,6 +130,11 @@ type CommitmentFilter struct {
 type MatchFilter struct {
 	EpochIndex        *uint64
 	TournamentAddress *string
+}
+
+type BondEventFilter struct {
+	EpochIndex        *uint64
+	TournamentAddress *common.Address
 }
 
 type WithdrawalFilter struct {
@@ -303,11 +314,10 @@ type StateHashRepository interface {
 }
 
 type TournamentRepository interface {
-	// CreateTournament is idempotent only for an exact
-	// (application_id, epoch_index, address) replay. Other constraint conflicts
-	// remain errors.
+	// CreateTournament preserves immutable facts for an existing
+	// (application_id, epoch_index, address) and can refresh its current snapshot.
+	// Conflicting facts and older snapshots return ErrTournamentEventConflict.
 	CreateTournament(ctx context.Context, nameOrAddress string, t *Tournament) error
-	UpdateTournament(ctx context.Context, nameOrAddress string, t *Tournament) error
 	GetTournament(ctx context.Context, nameOrAddress string, address string) (*Tournament, error)
 	ListTournaments(ctx context.Context, nameOrAddress string, f TournamentFilter,
 		p Pagination, descending bool) ([]*Tournament, uint64, error)
@@ -321,25 +331,44 @@ type CommitmentRepository interface {
 
 type MatchRepository interface {
 	CreateMatch(ctx context.Context, nameOrAddress string, m *Match) error
-	UpdateMatch(ctx context.Context, nameOrAddress string, m *Match) error
 	GetMatch(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string, idHashHex string) (*Match, error)
 	ListMatches(ctx context.Context, nameOrAddress string, f MatchFilter, p Pagination, descending bool) ([]*Match, uint64, error)
 }
 
 type MatchAdvancedRepository interface {
 	CreateMatchAdvanced(ctx context.Context, nameOrAddress string, m *MatchAdvanced) error
-	GetMatchAdvanced(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string, idHashHex string, parentHex string) (*MatchAdvanced, error)
-	ListMatchAdvances(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string, idHashHex string, p Pagination, descending bool) ([]*MatchAdvanced, uint64, error)
+	GetMatchAdvanced(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string,
+		idHashHex string, txHash common.Hash, logIndex uint64) (*MatchAdvanced, error)
+	ListMatchAdvances(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string,
+		idHashHex string, p Pagination, descending bool) ([]*MatchAdvanced, uint64, error)
+}
+
+type BondEventRepository interface {
+	GetBondEvent(ctx context.Context, nameOrAddress string, txHash common.Hash, logIndex uint64) (*BondEvent, error)
+	ListBondEvents(ctx context.Context, nameOrAddress string, f BondEventFilter, p Pagination, descending bool) ([]*BondEvent, uint64, error)
+}
+
+// TournamentEventBatch contains one tournament projection and the events from
+// a completed scan window. Batches are ordered with parents before children:
+// a child tournament references a match written in its parent's batch.
+type TournamentEventBatch struct {
+	Tournament    *Tournament
+	Commitments   []*Commitment
+	Matches       []*Match
+	MatchAdvances []*MatchAdvanced
+	BondEvents    []*BondEvent
 }
 
 type BulkOperationsRepository interface {
 	StoreAdvanceResult(ctx context.Context, appID int64, result *AdvanceResult) error
 	StoreClaimAndProofs(ctx context.Context, epoch *Epoch, outputs []*Output) error
-	StoreTournamentEvents(ctx context.Context, appID int64, commitments []*Commitment, matches []*Match,
-		matchAdvanced []*MatchAdvanced, matchDeleted []*Match, lastBlock uint64) error
+	// StoreTournamentEvents commits every tournament batch and one application
+	// cursor together. Callers must finish all event reads before this call.
+	StoreTournamentEvents(ctx context.Context, appID int64, batches []*TournamentEventBatch, lastBlock uint64) error
 }
 
 type NodeConfigRepository interface {
+	InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
 }
@@ -443,6 +472,7 @@ type Repository interface {
 	CommitmentRepository
 	MatchRepository
 	MatchAdvancedRepository
+	BondEventRepository
 	BulkOperationsRepository
 	NodeConfigRepository
 	ClaimerRepository
@@ -466,14 +496,35 @@ func SaveNodeConfig[T any](
 	return nil
 }
 
+// InitializeNodeConfig saves only a missing key, then returns the stored value.
+// Callers must validate that value against the requested configuration. A
+// concurrent initializer may have won with a different value.
+func InitializeNodeConfig[T any](
+	ctx context.Context, repo NodeConfigRepository, nc *NodeConfig[T],
+) (*NodeConfig[T], error) {
+	data, err := json.Marshal(nc.Value)
+	if err != nil {
+		return nil, fmt.Errorf("marshal initial node_config value: %w", err)
+	}
+	if err := repo.InitializeNodeConfigRaw(ctx, nc.Key, data); err != nil {
+		return nil, fmt.Errorf("initialize node_config %q: %w", nc.Key, err)
+	}
+	return LoadNodeConfig[T](ctx, repo, nc.Key)
+}
+
+// LoadNodeConfig returns a non-nil record when err is nil. A missing JSON payload
+// is an error, even if the repository reports a successful read.
 func LoadNodeConfig[T any](
 	ctx context.Context,
 	repo NodeConfigRepository,
 	key string,
 ) (*NodeConfig[T], error) {
 	raw, createdAt, updatedAt, err := repo.LoadNodeConfigRaw(ctx, key)
-	if err != nil || raw == nil {
+	if err != nil {
 		return nil, err
+	}
+	if raw == nil {
+		return nil, fmt.Errorf("node config %q has no JSON value", key)
 	}
 	var val T
 	if err := json.Unmarshal(raw, &val); err != nil {
