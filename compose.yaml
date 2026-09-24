@@ -37,16 +37,38 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: rollupsdb
 
+  # NOTE: compose can't override uid/gid/mode for secrets, it bind mounts them
+  # with the host credentials. The portable workaround to deal with this was to
+  # use volumes instead and manually chown/chmod the files upon creation.
+  secret-init:
+    image: cartesi/rollups-node:devel
+    user: root # required by: chown
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        cp /src/* /dst/
+        chown 102:102 /dst /dst/*
+        chmod 0400 /dst/*
+    volumes:
+      - ./test/secrets:/src:ro
+      - node_secrets:/dst
+    network_mode: "none"
+    restart: "no"
+
   migration:
     image: cartesi/rollups-node:devel
     command: cartesi-rollups-cli db init
     depends_on:
+      secret-init:
+        condition: service_completed_successfully
       database:
         condition: service_healthy
     networks:
       - devnet
-    secrets:
-      - database_connection
+    volumes:
+      - node_secrets:/run/secrets:ro
     restart: "no"
     environment:
       <<: *env
@@ -56,35 +78,27 @@ services:
     init: true
     command: cartesi-rollups-node
     depends_on:
+      secret-init:
+        condition: service_completed_successfully
       database:
         condition: service_healthy
       ethereum_provider:
         condition: service_healthy
     volumes:
       - node_data:/var/lib/cartesi-rollups-node/data
+      - node_secrets:/run/secrets:ro
     networks:
       - devnet
     ports:
       - "10000:10000" # Supervisor
       - "10011:10011" # Jsonrpc API service
       - "10012:10012" # Inspect Service
-    secrets:
-      - auth_mnemonic
-      - blockchain_http_endpoint
-      - database_connection
     environment:
       <<: *env
 
 volumes:
   node_data:
+  node_secrets:
 
 networks:
   devnet:
-
-secrets:
-  auth_mnemonic:
-    file: test/secrets/auth_mnemonic.txt
-  blockchain_http_endpoint:
-    file: test/secrets/blockchain_http_endpoint.txt
-  database_connection:
-    file: test/secrets/database_connection.txt
