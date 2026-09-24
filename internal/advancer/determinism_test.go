@@ -767,6 +767,12 @@ func (m *determinismRuntime) StateProof(ctx context.Context) (*machine.StateProo
 	}, nil
 }
 
+func (m *determinismRuntime) GetProof(ctx context.Context, _ uint64, _, _ int32) (*machine.MemoryProof, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return nil, m.checkOpenLocked(ctx)
+}
+
 func (m *determinismRuntime) Advance(
 	ctx context.Context,
 	input []byte,

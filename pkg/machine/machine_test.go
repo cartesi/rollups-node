@@ -5,15 +5,19 @@ package machine
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/emulator"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 )
@@ -191,6 +195,90 @@ func (s *MachineSuite) TestLoad() {
 	err = machine.Close()
 	require.NoError(err)
 	mockBackend.AssertExpectations(s.T())
+}
+
+// getProofYieldProgram writes the prepared manual yield request to HTIF
+// tohost, leaving the machine at the accepted manual yield that Load requires.
+var getProofYieldProgram = []uint32{
+	0x400082b7, // lui t0,0x40008: load the HTIF base address
+	0x0002b423, // sd zero,8(t0): clear fromhost
+	0x0132b023, // sd x19,0(t0): write the prepared request to tohost
+}
+
+const (
+	getProofRAMStart  = uint64(0x80000000) // RISC-V RAM base for the test guest
+	getProofRAMLength = 4096
+)
+
+// TestGetProof proves a 32-byte memory span of a real emulator machine and
+// verifies the proof against the machine root and the span's content.
+func (s *MachineSuite) TestGetProof() {
+	require := s.Require()
+	ctx := context.Background()
+
+	config, err := json.Marshal(map[string]any{
+		"processor": map[string]any{"registers": map[string]any{"pc": getProofRAMStart}},
+		"ram":       map[string]any{"length": getProofRAMLength},
+		"cmio": map[string]any{
+			"rx_buffer": map[string]any{},
+			"tx_buffer": map[string]any{},
+		},
+	})
+	require.NoError(err)
+
+	emu, err := emulator.CreateMachine(string(config), "", "")
+	require.NoError(err)
+	defer emu.Delete()
+	defer func() { _ = emu.Destroy() }()
+
+	program := make([]byte, 4*len(getProofYieldProgram))
+	for i, instruction := range getProofYieldProgram {
+		binary.LittleEndian.PutUint32(program[4*i:], instruction)
+	}
+	require.NoError(emu.WriteMemory(getProofRAMStart, program))
+
+	// The pre-set registers place the machine at the accepted manual yield
+	// that Load requires, without running the guest.
+	request := htifDeviceYield<<htifDeviceShift |
+		uint64(emulator.YieldManual)<<htifCommandShift |
+		uint64(emulator.ManualYieldReasonAccepted)<<htifReasonShift
+	registers := []struct {
+		id    emulator.RegID
+		value uint64
+	}{
+		{emulator.REG_X19, request},
+		{emulator.REG_IFLAGS_Y, 1},
+		{emulator.REG_HTIF_TOHOST_DEV, htifDeviceYield},
+		{emulator.REG_HTIF_TOHOST_CMD, uint64(emulator.YieldManual)},
+		{emulator.REG_HTIF_TOHOST_REASON, uint64(emulator.ManualYieldReasonAccepted)},
+		{emulator.REG_HTIF_TOHOST_DATA, 0},
+	}
+	for _, register := range registers {
+		require.NoError(emu.WriteReg(register.id, register.value))
+	}
+
+	dataBlockAddress := iflagsYAddress &^ ((uint64(1) << HashLog2Size) - 1)
+	dataBlock, err := emu.ReadMemory(dataBlockAddress, uint64(1)<<HashLog2Size)
+	require.NoError(err)
+
+	stored := filepath.Join(s.T().TempDir(), "stored")
+	require.NoError(emu.Store(stored))
+
+	machine, err := Load(ctx, s.logger, DefaultConfig(stored))
+	require.NoError(err)
+	defer func() { _ = machine.Close() }()
+
+	root, err := machine.Hash(ctx)
+	require.NoError(err)
+
+	proof, err := machine.GetProof(ctx, dataBlockAddress, int32(HashLog2Size), machineMemoryLog2Size)
+	require.NoError(err)
+	require.Equal(dataBlockAddress, proof.TargetAddress)
+	require.Equal(int32(HashLog2Size), proof.Log2TargetSize)
+	require.Equal(machineMemoryLog2Size, proof.Log2RootSize)
+	require.Len(proof.Siblings, memoryProofSiblingCount)
+	require.Equal(root, proof.RootHash)
+	require.Equal(Hash(crypto.Keccak256Hash(dataBlock)), proof.TargetHash)
 }
 
 // Test DefaultConfig function
@@ -393,6 +481,9 @@ type MockMachine struct {
 	StateProofReturn *StateProof
 	StateProofError  error
 
+	GetProofReturn *MemoryProof
+	GetProofError  error
+
 	CompletionStatusReturn CompletionStatus
 	AdvanceOutputsReturn   []Output
 	AdvanceReportsReturn   []Report
@@ -420,6 +511,10 @@ func (m *MockMachine) Hash(_ context.Context) (Hash, error) {
 
 func (m *MockMachine) StateProof(_ context.Context) (*StateProof, error) {
 	return m.StateProofReturn, m.StateProofError
+}
+
+func (m *MockMachine) GetProof(_ context.Context, _ uint64, _, _ int32) (*MemoryProof, error) {
+	return m.GetProofReturn, m.GetProofError
 }
 
 func (m *MockMachine) Advance(_ context.Context, _ []byte, _ Hash, _ bool) (*AdvanceResponse, error) {

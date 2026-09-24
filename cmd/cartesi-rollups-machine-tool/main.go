@@ -4,22 +4,22 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-machine-tool/accountdrive"
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/manager"
+	"github.com/cartesi/rollups-node/internal/replay"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
+	"github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/spf13/cobra"
@@ -29,63 +29,55 @@ const defaultInputPageSize = uint64(500)
 
 func main() {
 	config.SetDefaults()
-	if err := newRootCommand().ExecuteContext(context.Background()); err != nil {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	if err := newRootCommand(logger).ExecuteContext(context.Background()); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func newRootCommand() *cobra.Command {
+func newRootCommand(logger *slog.Logger) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "cartesi-rollups-machine-tool",
 		Short: "Rollups-aware helper for replaying machines and generating withdrawal proofs",
 	}
-	root.AddCommand(newReplayCommand())
-	root.AddCommand(newProveCommand())
+	root.AddCommand(newReplayCommand(logger))
+	root.AddCommand(newProveCommand(logger))
 	return root
 }
 
-func newReplayCommand() *cobra.Command {
+func newReplayCommand(logger *slog.Logger) *cobra.Command {
 	var opts replayOptions
 	cmd := &cobra.Command{
 		Use:   "replay",
-		Short: "Replay accepted inputs from the node database into a machine template",
+		Short: "Replay completed inputs from the node database into a machine template",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.HasToEpoch = cmd.Flags().Changed("to-epoch")
 			opts.HasToInputIndex = cmd.Flags().Changed("to-input-index")
-			return runReplay(cmd.Context(), opts)
+			return runReplay(cmd.Context(), logger, opts)
 		},
 	}
-	cmd.Flags().StringVar(&opts.Template, "template", "", "Stored machine template path")
 	cmd.Flags().StringVar(&opts.Application, "application", "", "Application name or address")
 	cmd.Flags().StringVar(&opts.DatabaseConnection, "database-connection", "", "Database connection string")
 	cmd.Flags().StringVar(&opts.Store, "store", "", "Output stored machine path")
-	cmd.Flags().StringVar(&opts.CartesiMachine, "cartesi-machine", "cartesi-machine", "cartesi-machine executable")
-	cmd.Flags().StringVar(&opts.Lua, "lua", "lua5.4", "Lua executable used by Dave/PRT replay")
-	cmd.Flags().StringVar(&opts.CartesiSDKRoot, "cartesi-sdk-root", "", "Cartesi SDK root used to resolve Lua modules")
-	cmd.Flags().Uint64Var(&opts.ToEpoch, "to-epoch", 0, "Replay accepted inputs in epochs up to this epoch")
-	cmd.Flags().Uint64Var(&opts.ToInputIndex, "to-input-index", 0, "Replay accepted inputs up to this input index")
-	cobra.CheckErr(cmd.MarkFlagRequired("template"))
+	cmd.Flags().Uint64Var(&opts.ToEpoch, "to-epoch", 0, "Replay completed inputs in epochs up to this epoch")
+	cmd.Flags().Uint64Var(&opts.ToInputIndex, "to-input-index", 0, "Replay completed inputs up to this input index")
 	cobra.CheckErr(cmd.MarkFlagRequired("application"))
 	cobra.CheckErr(cmd.MarkFlagRequired("store"))
 	return cmd
 }
 
 type replayOptions struct {
-	Template           string
 	Application        string
 	DatabaseConnection string
 	Store              string
-	CartesiMachine     string
-	Lua                string
-	CartesiSDKRoot     string
 	ToEpoch            uint64
 	ToInputIndex       uint64
 	HasToEpoch         bool
 	HasToInputIndex    bool
 }
 
-func runReplay(ctx context.Context, opts replayOptions) error {
+func runReplay(ctx context.Context, logger *slog.Logger, opts replayOptions) error {
 	if opts.DatabaseConnection == "" {
 		dsn, err := config.GetDatabaseConnection()
 		if err != nil {
@@ -111,124 +103,103 @@ func runReplay(ctx context.Context, opts replayOptions) error {
 		return fmt.Errorf("application %q not found", opts.Application)
 	}
 
-	inputs, lastInputIndex, err := collectReplayInputs(ctx, repo, opts)
+	toInputExclusive, err := resolveReplayUpperBound(ctx, repo, app.Name, opts)
 	if err != nil {
 		return err
 	}
 
-	tmp, err := os.MkdirTemp("", "cartesi-rollups-machine-tool-replay-*")
+	lastInput, err := repo.GetLastProcessedInput(ctx, opts.Application)
 	if err != nil {
-		return fmt.Errorf("create temp dir: %w", err)
+		return fmt.Errorf("get last processed input: %w", err)
 	}
-	defer os.RemoveAll(tmp) //nolint:errcheck
-
-	if err := replayInputs(ctx, opts, tmp, app, inputs); err != nil {
-		return err
+	if lastInput != nil && lastInput.Status.IsTerminal() && toInputExclusive > lastInput.Index {
+		return fmt.Errorf(
+			"cannot snapshot: replay range reaches the application's terminal input 0x%x (status %s). Replay up to input 0x%x instead",
+			lastInput.Index, lastInput.Status, lastInput.Index,
+		)
 	}
 
-	root, err := readStoredMachineRoot(ctx, opts.CartesiMachine, opts.Store)
+	instance, err := manager.NewMachineInstance(ctx, app, logger, true)
 	if err != nil {
-		return err
+		return fmt.Errorf("create machine instance: %w", err)
+	}
+	defer instance.Close()
+
+	result, err := replay.Run(ctx, repo, instance, replay.Options{
+		Application:      app,
+		FromInput:        0,
+		ToInputExclusive: toInputExclusive,
+		BatchSize:        defaultInputPageSize,
+		Verification:     repository.ReplayVerificationCanonical,
+	})
+	if err != nil {
+		return fmt.Errorf("replay: %w", err)
+	}
+	if err := instance.CreateSnapshot(ctx, instance.ProcessedInputs(), opts.Store); err != nil {
+		return fmt.Errorf("store machine: %w", err)
+	}
+
+	root, err := instance.Hash(ctx)
+	if err != nil {
+		return fmt.Errorf("read machine root: %w", err)
 	}
 	summary := struct {
-		ProcessedInputs int    `json:"processed_inputs"`
+		ProcessedInputs uint64 `json:"processed_inputs"`
 		LastInputIndex  string `json:"last_input_index,omitempty"`
 		MachineRoot     string `json:"machine_root"`
 		Store           string `json:"store"`
 	}{
-		ProcessedInputs: len(inputs),
-		MachineRoot:     root,
+		ProcessedInputs: result.ReplayedInputs,
+		MachineRoot:     common.BytesToHash(root[:]).Hex(),
 		Store:           opts.Store,
 	}
-	if lastInputIndex != nil {
-		summary.LastInputIndex = fmt.Sprintf("0x%x", *lastInputIndex)
+	if result.ReplayedInputs > 0 {
+		summary.LastInputIndex = fmt.Sprintf("0x%x", toInputExclusive-1)
 	}
 	return json.NewEncoder(os.Stdout).Encode(summary)
 }
 
-func replayInputs(
-	ctx context.Context,
-	opts replayOptions,
-	tmp string,
-	app *model.Application,
-	inputs []*model.Input,
-) error {
-	if app.IsDaveConsensus() && len(inputs) > 0 {
-		return replayDaveInputs(ctx, opts, tmp, inputs)
-	}
-	return replayInputsBatch(ctx, opts, tmp, inputs)
-}
-
-func replayInputsBatch(ctx context.Context, opts replayOptions, tmp string, inputs []*model.Input) error {
-	if _, err := writeReplayInputFiles(tmp, inputs); err != nil {
-		return err
-	}
-
-	args := []string{
-		"--quiet",
-		"--no-revert",
-		"--load=" + opts.Template,
-		fmt.Sprintf("--cmio-advance-state=input:%s,input_index_begin:0,input_index_end:%d",
-			filepath.Join(tmp, "input-%i.bin"), len(inputs)),
-		"--store=" + opts.Store,
-	}
-	return runCommand(ctx, opts.CartesiMachine, args...)
-}
-
-func collectReplayInputs(
+// resolveReplayUpperBound resolves the exclusive upper input bound of the
+// replay range: the end of the requested epoch, or one past the requested
+// input index.
+func resolveReplayUpperBound(
 	ctx context.Context,
 	repo repository.Repository,
+	application string,
 	opts replayOptions,
-) ([]*model.Input, *uint64, error) {
-	status := model.InputCompletionStatus_Accepted
-	filter := repository.InputFilter{Status: &status}
-	var offset uint64
-	var result []*model.Input
-	var lastInputIndex *uint64
-	for {
-		inputs, _, err := repo.ListInputs(ctx, opts.Application, filter,
-			repository.Pagination{Limit: defaultInputPageSize, Offset: offset}, false)
+) (uint64, error) {
+	if opts.HasToEpoch {
+		epoch, err := repo.GetEpoch(ctx, application, opts.ToEpoch)
 		if err != nil {
-			return nil, nil, fmt.Errorf("list inputs: %w", err)
+			return 0, fmt.Errorf("get epoch %d: %w", opts.ToEpoch, err)
 		}
-		if len(inputs) == 0 {
-			break
+		if epoch == nil {
+			return 0, fmt.Errorf("epoch %d not found for application %q", opts.ToEpoch, application)
 		}
-		for _, input := range inputs {
-			if opts.HasToEpoch && input.EpochIndex > opts.ToEpoch {
-				return result, lastInputIndex, nil
-			}
-			if opts.HasToInputIndex && input.Index > opts.ToInputIndex {
-				return result, lastInputIndex, nil
-			}
-			result = append(result, input)
-			idx := input.Index
-			lastInputIndex = &idx
-		}
-		if uint64(len(inputs)) < defaultInputPageSize {
-			break
-		}
-		offset += uint64(len(inputs))
+		return epoch.InputIndexUpperBound, nil
 	}
-	return result, lastInputIndex, nil
+	if opts.ToInputIndex == ^uint64(0) {
+		return 0, fmt.Errorf("to-input-index overflow")
+	}
+	return opts.ToInputIndex + 1, nil
 }
 
-func newProveCommand() *cobra.Command {
+func newProveCommand(logger *slog.Logger) *cobra.Command {
 	prove := &cobra.Command{
 		Use:   "prove",
 		Short: "Generate Rollups proof files from a stored machine",
 	}
-	prove.AddCommand(newProveAccountsDriveCommand())
+	prove.AddCommand(newProveAccountsDriveCommand(logger))
 	return prove
 }
 
-func newProveAccountsDriveCommand() *cobra.Command {
+func newProveAccountsDriveCommand(logger *slog.Logger) *cobra.Command {
 	var opts proveAccountsDriveOptions
 	cmd := &cobra.Command{
 		Use:   "accounts-drive",
 		Short: "Generate accounts-drive root and account withdrawal proofs",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runProveAccountsDrive(cmd.Context(), opts)
+			return runProveAccountsDrive(cmd.Context(), logger, opts)
 		},
 	}
 	cmd.Flags().StringVar(&opts.Snapshot, "snapshot", "", "Stored machine snapshot path")
@@ -239,7 +210,6 @@ func newProveAccountsDriveCommand() *cobra.Command {
 	cmd.Flags().Uint8Var(&opts.Log2LeavesPerAccount, "log2-leaves-per-account", 0, "Log2 of leaves per account")
 	cmd.Flags().StringVar(&opts.OutDriveRootProof, "out-drive-root-proof", "", "Output JSON for prove-drive-root")
 	cmd.Flags().StringVar(&opts.OutWithdrawProof, "out-withdraw-proof", "", "Output JSON for withdraw")
-	cmd.Flags().StringVar(&opts.CartesiMachine, "cartesi-machine", "cartesi-machine", "cartesi-machine executable")
 	cobra.CheckErr(cmd.MarkFlagRequired("snapshot"))
 	cobra.CheckErr(cmd.MarkFlagRequired("account"))
 	cobra.CheckErr(cmd.MarkFlagRequired("out-drive-root-proof"))
@@ -255,10 +225,9 @@ type proveAccountsDriveOptions struct {
 	Log2LeavesPerAccount    uint8
 	OutDriveRootProof       string
 	OutWithdrawProof        string
-	CartesiMachine          string
 }
 
-func runProveAccountsDrive(ctx context.Context, opts proveAccountsDriveOptions) error {
+func runProveAccountsDrive(ctx context.Context, logger *slog.Logger, opts proveAccountsDriveOptions) error {
 	if !common.IsHexAddress(opts.Account) {
 		return fmt.Errorf("invalid account address %q", opts.Account)
 	}
@@ -286,13 +255,20 @@ func runProveAccountsDrive(ctx context.Context, opts proveAccountsDriveOptions) 
 	if err != nil {
 		return err
 	}
-	machineProof, err := generateMachineProof(ctx, opts.CartesiMachine, opts.Snapshot, driveStart, log2DriveSize)
+
+	m, err := machine.Load(ctx, logger, machine.DefaultConfig(opts.Snapshot))
 	if err != nil {
-		return err
+		return fmt.Errorf("load stored machine: %w", err)
 	}
-	if !strings.EqualFold(strip0x(machineProof.TargetHash), accountProof.DriveRoot.Hex()[2:]) {
+	defer m.Close()
+
+	machineProof, err := m.GetProof(ctx, driveStart, int32(log2DriveSize), 64) //nolint:mnd // full machine memory
+	if err != nil {
+		return fmt.Errorf("get accounts-drive proof: %w", err)
+	}
+	if common.Hash(machineProof.TargetHash) != accountProof.DriveRoot {
 		return fmt.Errorf("accounts-drive root mismatch: machine proof has %s, local drive has %s",
-			ensure0x(machineProof.TargetHash), accountProof.DriveRoot.Hex())
+			common.Hash(machineProof.TargetHash).Hex(), accountProof.DriveRoot.Hex())
 	}
 
 	if err := writeDriveRootProof(opts.OutDriveRootProof, machineProof); err != nil {
@@ -313,7 +289,7 @@ func runProveAccountsDrive(ctx context.Context, opts proveAccountsDriveOptions) 
 		Account:                 account,
 		AccountIndex:            fmt.Sprintf("0x%x", accountProof.AccountIndex),
 		AccountsDriveMerkleRoot: accountProof.DriveRoot.Hex(),
-		MachineRoot:             ensure0x(machineProof.RootHash),
+		MachineRoot:             common.BytesToHash(machineProof.RootHash[:]).Hex(),
 		DriveRootProofFile:      opts.OutDriveRootProof,
 		WithdrawProofFile:       opts.OutWithdrawProof,
 	}
@@ -349,80 +325,16 @@ func findStoredDrive(snapshot string, start uint64, length uint64) (string, erro
 	return "", fmt.Errorf("accounts drive not found in stored machine: start=0x%x length=0x%x", start, length)
 }
 
-type cartesiMachineProof struct {
-	TargetAddress  uint64   `json:"target_address"`
-	Log2TargetSize uint8    `json:"log2_target_size"`
-	Log2RootSize   uint8    `json:"log2_root_size"`
-	TargetHash     string   `json:"target_hash"`
-	SiblingHashes  []string `json:"sibling_hashes"`
-	RootHash       string   `json:"root_hash"`
-}
-
-func generateMachineProof(
-	ctx context.Context,
-	cartesiMachine string,
-	snapshot string,
-	address uint64,
-	log2Size uint8,
-) (*cartesiMachineProof, error) {
-	tmp, err := os.CreateTemp("", "cartesi-rollups-machine-proof-*.json")
-	if err != nil {
-		return nil, fmt.Errorf("create proof temp file: %w", err)
-	}
-	tmpPath := tmp.Name()
-	tmp.Close()
-	defer os.Remove(tmpPath) //nolint:errcheck
-
-	args := []string{
-		"--quiet",
-		"--no-revert",
-		"--load=" + snapshot,
-		fmt.Sprintf("--initial-proof=address:0x%x,log2_size:%d,filename:%s", address, log2Size, tmpPath),
-		"--",
-		"/bin/true",
-	}
-	if err := runCommand(ctx, cartesiMachine, args...); err != nil {
-		return nil, err
-	}
-
-	raw, err := os.ReadFile(tmpPath) //nolint:gosec
-	if err != nil {
-		return nil, fmt.Errorf("read machine proof: %w", err)
-	}
-	var proof cartesiMachineProof
-	if err := json.Unmarshal(raw, &proof); err != nil {
-		return nil, fmt.Errorf("parse machine proof: %w", err)
-	}
-
-	// convert the file hashes from base64 to hex
-	proof.RootHash, err = base64ToHex(proof.RootHash)
-	if err != nil {
-		return nil, err
-	}
-	proof.TargetHash, err = base64ToHex(proof.TargetHash)
-	if err != nil {
-		return nil, err
-	}
-	for i := range proof.SiblingHashes {
-		proof.SiblingHashes[i], err = base64ToHex(proof.SiblingHashes[i])
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return &proof, nil
-}
-
-func writeDriveRootProof(path string, proof *cartesiMachineProof) error {
+func writeDriveRootProof(path string, proof *machine.MemoryProof) error {
 	out := struct {
 		AccountsDriveMerkleRoot string   `json:"accounts_drive_merkle_root"`
 		Proof                   []string `json:"proof"`
 	}{
-		AccountsDriveMerkleRoot: ensure0x(proof.TargetHash),
-		Proof:                   make([]string, len(proof.SiblingHashes)),
+		AccountsDriveMerkleRoot: common.BytesToHash(proof.TargetHash[:]).Hex(),
+		Proof:                   make([]string, len(proof.Siblings)),
 	}
-	for i, sibling := range proof.SiblingHashes {
-		out.Proof[i] = ensure0x(sibling)
+	for i, sibling := range proof.Siblings {
+		out.Proof[i] = common.BytesToHash(sibling[:]).Hex()
 	}
 	return writeJSON(path, out)
 }
@@ -453,57 +365,4 @@ func writeJSON(path string, value any) error {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
-}
-
-func runCommand(ctx context.Context, name string, args ...string) error {
-	return runCommandWithEnv(ctx, name, nil, args...)
-}
-
-func runCommandWithEnv(ctx context.Context, name string, env []string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec
-	if len(env) > 0 {
-		cmd.Env = append(os.Environ(), env...)
-	}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	cmd.Stdout = ioDiscardUnlessDebug()
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s %s failed: %w\n%s", name, strings.Join(args, " "), err, stderr.String())
-	}
-	return nil
-}
-
-func ioDiscardUnlessDebug() *bytes.Buffer {
-	return &bytes.Buffer{}
-}
-
-func readStoredMachineRoot(ctx context.Context, cartesiMachine string, store string) (string, error) {
-	const minProofLog2Size = 5
-	proof, err := generateMachineProof(ctx, cartesiMachine, store, 0, minProofLog2Size)
-	if err != nil {
-		return "", fmt.Errorf("read stored machine root: %w", err)
-	}
-	return ensure0x(proof.RootHash), nil
-}
-
-func ensure0x(s string) string {
-	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
-		return "0x" + s[2:]
-	}
-	return "0x" + s
-}
-
-func strip0x(s string) string {
-	return strings.TrimPrefix(strings.TrimPrefix(s, "0x"), "0X")
-}
-
-func base64ToHex(s string) (string, error) {
-	raw, err := base64.StdEncoding.DecodeString(s)
-	if err != nil {
-		return "", fmt.Errorf("expected %q to be a hash in base64. %w", s, err)
-	}
-	if len(raw) != common.HashLength {
-		return "", fmt.Errorf("expected %q to decode to %d bytes, got %d", s, common.HashLength, len(raw))
-	}
-	return common.BytesToHash(raw).Hex(), nil
 }
