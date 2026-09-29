@@ -10,19 +10,16 @@ import (
 )
 
 func TestApplicationObservationHelper(t *testing.T) {
-	app := &Application{Enabled: true, Status: ApplicationStatus_OK}
-
-	require.True(t, app.NeedsL1Observation())
-
-	app.ForecloseBlock = 42
-	require.True(t, app.NeedsL1Observation())
-
-	app.ForecloseBlock = 0
-	app.Status = ApplicationStatus_Diverged
-	require.True(t, app.NeedsL1Observation())
-
-	app.Enabled = false
-	require.False(t, app.NeedsL1Observation())
+	for _, status := range ApplicationStatusAllValues {
+		t.Run(status.String(), func(t *testing.T) {
+			app := &Application{Enabled: true, Status: status}
+			require.True(t, app.NeedsL1Observation())
+			app.ForecloseBlock = 42
+			require.True(t, app.NeedsL1Observation())
+			app.Enabled = false
+			require.False(t, app.NeedsL1Observation())
+		})
+	}
 }
 
 // TestForeclosureScanCaughtUp pins the single drain-readiness definition shared

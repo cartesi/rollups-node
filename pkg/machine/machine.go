@@ -26,9 +26,10 @@ type (
 )
 
 // CompletionStatus identifies how a guest-machine request completed. Advance
-// and Inspect share the same outcomes; their callers decide whether and how a
-// completed outcome affects canonical state. If execution does not complete,
-// the operation returns CompletionStatusUnknown with an error.
+// and Inspect share the execution outcomes; invalid outputs-root declarations
+// apply only to Advance. Callers decide how completion affects canonical state.
+// If execution does not complete, the operation returns CompletionStatusUnknown
+// with an error.
 type CompletionStatus uint8
 
 const (
@@ -41,6 +42,7 @@ const (
 	CompletionStatusHalted
 	CompletionStatusOverflow
 	CompletionStatusUnexpectedYield
+	CompletionStatusInvalidOutputsRoot
 )
 
 // IsCompleted reports whether the status is a completed guest-machine outcome.
@@ -51,7 +53,8 @@ func (s CompletionStatus) IsCompleted() bool {
 		CompletionStatusException,
 		CompletionStatusHalted,
 		CompletionStatusOverflow,
-		CompletionStatusUnexpectedYield:
+		CompletionStatusUnexpectedYield,
+		CompletionStatusInvalidOutputsRoot:
 		return true
 	case CompletionStatusUnknown:
 		return false
@@ -116,7 +119,6 @@ var (
 	ErrOutputsLimitExceeded       = errors.New("outputs limit exceeded")
 	ErrReportsLimitExceeded       = errors.New("reports limit exceeded")
 	ErrPayloadLengthLimitExceeded = errors.New("payload length limit exceeded")
-	ErrHashLength                 = errors.New("hash does not have the exactly number of bytes")
 	ErrReachedLimitMcycle         = errors.New("machine reached limit mcycle")
 	ErrInvalidMachineProof        = errors.New("invalid machine validity proof")
 
@@ -152,7 +154,7 @@ type Machine interface {
 	// The checkpointHash is the machine's root hash before processing the input,
 	// sent along with the request so the machine can revert to it if needed.
 	// A non-nil response and nil error mean the machine completed with one of
-	// the six completed CompletionStatus values. Any incomplete execution—input
+	// the completed CompletionStatus values. Any incomplete execution—input
 	// validation, an operational limit, deadline/cancellation, or infrastructure
 	// failure—returns a nil response and a non-nil error. CompletionStatusUnknown
 	// is never returned by a successful call.
@@ -296,7 +298,7 @@ func Load(ctx context.Context, logger *slog.Logger, config *MachineConfig) (Mach
 	case CompletionStatusUnexpectedYield:
 		machine.Close()
 		return nil, ErrUnexpectedYield
-	case CompletionStatusUnknown, CompletionStatusHalted, CompletionStatusOverflow:
+	case CompletionStatusUnknown, CompletionStatusHalted, CompletionStatusOverflow, CompletionStatusInvalidOutputsRoot:
 		machine.Close()
 		return nil, fmt.Errorf(
 			"invalid initial completion status %d: %w",

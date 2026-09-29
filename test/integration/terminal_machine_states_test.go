@@ -8,6 +8,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"testing"
 	"time"
 
@@ -34,9 +35,12 @@ type terminalMachineStateCase struct {
 	terminalInput     uint64
 	inputStatus       model.InputCompletionStatus
 	applicationStatus model.ApplicationStatus
+	reasonSuffix      string
+	deployArgs        []string
 }
 
 const (
+	terminalFixtureSaltFlag       = "--salt"
 	terminalObservationWindow     = 6 * time.Second
 	terminalObservationInterval   = 500 * time.Millisecond
 	terminalObservationRPCTimeout = 2 * time.Second
@@ -118,13 +122,17 @@ func (s *TerminalMachineStatesSuite) TestUnexpectedYieldSurvivesRestart() {
 
 func (s *TerminalMachineStatesSuite) runTerminalMachineState(tc terminalMachineStateCase) {
 	s.T().Helper()
-	s.SetExpectedLogs(s.T(), terminalExecutionExpectedLog)
 	require := s.Require()
 	s.appName = uniqueAppName(tc.namePrefix)
+	expectedLog := terminalExecutionExpectedLog
+	expectedLog.Pattern = regexp.MustCompile(`Application execution terminated.*application=` +
+		regexp.QuoteMeta(s.appName) + `\b.*completion_status=` + regexp.QuoteMeta(string(tc.inputStatus)) + `\b`)
+	s.SetExpectedLogs(s.T(), expectedLog)
 	dappPath := envOrDefault(tc.dappPathEnv, tc.defaultDappPath)
 
 	s.T().Logf("Deploying %s...", tc.description)
-	_, err := deployApplication(s.ctx, s.appName, dappPath, "--salt", uniqueSalt())
+	args := append([]string{terminalFixtureSaltFlag, uniqueSalt()}, tc.deployArgs...)
+	_, err := deployApplication(s.ctx, s.appName, dappPath, args...)
 	require.NoError(err, "deploy %s", tc.defaultDappPath)
 
 	for index := range tc.terminalInput + 1 {
@@ -152,7 +160,9 @@ func (s *TerminalMachineStatesSuite) runTerminalMachineState(tc terminalMachineS
 	app := s.getApplication(rpc)
 	require.Equal(tc.applicationStatus, app.Status)
 	require.NotNil(app.Reason)
-	require.Equal(fmt.Sprintf("input %d completed with %s", tc.terminalInput, tc.inputStatus), *app.Reason)
+	reason := fmt.Sprintf("input %d completed with %s%s", tc.terminalInput, tc.inputStatus, tc.reasonSuffix)
+	require.Equal(reason, *app.Reason)
+	require.Equal(tc.terminalInput+1, app.ProcessedInputs)
 
 	var epochResponse api.SingleResponse[*model.Epoch]
 	err = rpc.Call(s.ctx, "cartesi_getEpoch", api.GetEpochParams{
@@ -163,6 +173,12 @@ func (s *TerminalMachineStatesSuite) runTerminalMachineState(tc terminalMachineS
 	require.NotNil(epochResponse.Data)
 	require.True(epochResponse.Data.HasCompleteStateProof(),
 		"terminal epoch must expose all three machine-state proof leaves")
+	require.Equal(terminal.MachineHash, epochResponse.Data.MachineHash)
+	require.Equal(terminal.TxBufferDataBlock, epochResponse.Data.TxBufferDataBlock)
+	var stateHashes []*model.StateHash
+	if app.IsDaveConsensus() {
+		stateHashes = s.terminalStateHashes(terminal)
+	}
 
 	outputs, err := readOutputs(s.ctx, s.appName)
 	require.NoError(err, "read outputs")
@@ -177,6 +193,17 @@ func (s *TerminalMachineStatesSuite) runTerminalMachineState(tc terminalMachineS
 
 	app = s.getApplication(rpc)
 	require.Equal(tc.applicationStatus, app.Status)
+	require.Equal(&reason, app.Reason)
+	restoredEpoch, err := readEpoch(s.ctx, s.appName, terminal.EpochIndex)
+	require.NoError(err)
+	proof, err := epochResponse.Data.StateProof()
+	require.NoError(err)
+	restoredProof, err := restoredEpoch.StateProof()
+	require.NoError(err)
+	require.Equal(proof, restoredProof, "restart must preserve the terminal proof")
+	if app.IsDaveConsensus() {
+		require.Equal(stateHashes, s.terminalStateHashes(terminal), "restart must preserve the PRT collection")
+	}
 
 	inputIndex, _, err := sendInput(s.ctx, s.appName, "post-terminal-payload")
 	require.NoError(err, "send input after restart")
@@ -192,6 +219,8 @@ func (s *TerminalMachineStatesSuite) runTerminalMachineState(tc terminalMachineS
 
 	app = s.getApplication(rpc)
 	require.Equal(tc.applicationStatus, app.Status)
+	require.Equal(&reason, app.Reason)
+	require.Equal(tc.terminalInput+1, app.ProcessedInputs)
 	s.T().Logf("The %s app remained observable, but execution did not restart", tc.inputStatus)
 }
 

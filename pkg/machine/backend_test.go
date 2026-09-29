@@ -5,6 +5,7 @@ package machine
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"time"
 
 	"github.com/stretchr/testify/mock"
@@ -135,8 +136,12 @@ func (m *MockBackend) SetupAccepted(reqType requestType) {
 	m.On("SendCmioResponse", uint16(reqType), mock.Anything, mock.Anything, mock.AnythingOfType("time.Duration")).Return(nil)
 	m.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
 	m.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
-	m.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(ManualYieldReasonAccepted), hash[:], nil)
+	if reqType == AdvanceStateRequest {
+		m.SetupManualYield(ManualYieldReasonAccepted, HashSize)
+	} else {
+		m.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
+			uint8(0), uint16(ManualYieldReasonAccepted), hash[:], nil)
+	}
 	m.On("CmioRxBufferSize").Return(uint64(1024))
 }
 
@@ -149,6 +154,9 @@ func (m *MockBackend) SetupRejected(reqType requestType) {
 	m.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
 		uint8(0), uint16(ManualYieldReasonRejected), hash[:], nil)
 	m.On("CmioRxBufferSize").Return(uint64(1024))
+	if reqType == AdvanceStateRequest {
+		m.SetupManualYield(ManualYieldReasonRejected, HashSize)
+	}
 }
 
 // SetupException configures the mock for an exception during advance/inspect
@@ -159,6 +167,16 @@ func (m *MockBackend) SetupException(reqType requestType) {
 	m.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
 		uint8(0), uint16(ManualYieldReasonException), []byte("exception data"), nil)
 	m.On("CmioRxBufferSize").Return(uint64(1024))
+	if reqType == AdvanceStateRequest {
+		m.SetupManualYield(ManualYieldReasonException, uint32(len("exception data")))
+	}
+}
+
+func (m *MockBackend) SetupManualYield(reason manualYieldReason, length uint32) {
+	tohost := htifDeviceYield<<htifDeviceShift | htifCommandManual<<htifCommandShift |
+		uint64(reason)<<htifReasonShift | uint64(length)
+	data := binary.LittleEndian.AppendUint64(nil, tohost)
+	m.On("ReadMemory", htifTohostAddress, uint64(8), mock.AnythingOfType("time.Duration")).Return(data, nil)
 }
 
 // SetupForLoad configures the mock for successful machine loading

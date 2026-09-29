@@ -501,6 +501,9 @@ func updateApp(
 
 	if applicationStatus, terminal := completionStatus.TerminalApplicationStatus(); terminal {
 		reason := fmt.Sprintf("input %d completed with %s", inputIndex, completionStatus)
+		if completionStatus == model.InputCompletionStatus_InvalidOutputsRoot {
+			reason += ": an accepted yield must declare exactly 32 bytes"
+		}
 		updStmt := table.Application.
 			UPDATE(
 				table.Application.ProcessedInputs,
@@ -621,7 +624,8 @@ func (r *PostgresRepository) StoreAdvanceResult(
 	case model.InputCompletionStatus_Exception,
 		model.InputCompletionStatus_MachineHalted,
 		model.InputCompletionStatus_Overflow,
-		model.InputCompletionStatus_UnexpectedYield:
+		model.InputCompletionStatus_UnexpectedYield,
+		model.InputCompletionStatus_InvalidOutputsRoot:
 		err = updateEpochState(ctx, tx, appID, res.EpochIndex, &res.StateProof)
 	case model.InputCompletionStatus_None:
 		return fmt.Errorf("unsupported noncompleted advance status %q", res.Status)

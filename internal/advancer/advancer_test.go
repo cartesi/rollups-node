@@ -510,6 +510,7 @@ func (s *AdvancerSuite) TestProcess() {
 		InputCompletionStatus_MachineHalted,
 		InputCompletionStatus_Overflow,
 		InputCompletionStatus_UnexpectedYield,
+		InputCompletionStatus_InvalidOutputsRoot,
 	} {
 		s.Run("StopsAfterTerminal/"+status.String(), func() {
 			require := s.Require()

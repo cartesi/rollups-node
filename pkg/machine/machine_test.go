@@ -252,6 +252,7 @@ func (s *MachineSuite) TestCompletionStatusIsCompleted() {
 		CompletionStatusHalted,
 		CompletionStatusOverflow,
 		CompletionStatusUnexpectedYield,
+		CompletionStatusInvalidOutputsRoot,
 	} {
 		s.Require().True(status.IsCompleted())
 	}

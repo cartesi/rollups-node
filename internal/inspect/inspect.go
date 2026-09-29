@@ -299,10 +299,12 @@ func (inspect *Inspector) buildInspectResponse(
 			"application", dapp,
 			"request_id", requestID,
 		)
-	case pkgmachine.CompletionStatusUnknown:
+	case pkgmachine.CompletionStatusUnknown, pkgmachine.CompletionStatusInvalidOutputsRoot:
+		// InvalidOutputsRoot is advance-only. Do not expose it as an inspect
+		// result if an implementation incorrectly returns it here.
 		response.Status = inspectStatusFailed
 		response.Error = inspectFailureMessage
-		inspect.Logger.Warn("Machine returned an incomplete inspect result",
+		inspect.Logger.Warn("Machine returned an incomplete or advance-only inspect result",
 			"application", dapp,
 			"request_id", requestID,
 		)

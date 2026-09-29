@@ -315,6 +315,7 @@ func (a *Application) IsDaveConsensus() bool {
 //
 //	OK ⇄ FAILED                                 (FAILED is recoverable)
 //	OK, FAILED → DIVERGED, CORRUPTED              (integrity terminal)
+//	OK, FAILED → INVALID_OUTPUTS_ROOT            (validation terminal)
 //	OK         → GUEST_EXCEPTION, MACHINE_HALTED  (execution terminal)
 //	             MCYCLE_OVERFLOW, UNEXPECTED_YIELD
 //	execution terminal → CORRUPTED                 (integrity escalation)
@@ -331,18 +332,22 @@ func (a *Application) IsDaveConsensus() bool {
 // that local history is untrustworthy. The input retains its original
 // completion status and terminal state proof. Foreclosure is orthogonal and
 // may coexist with any application status.
+// INVALID_OUTPUTS_ROOT records a failed outputs-root rule. It can be detected
+// during an advance or later by the validator, including for an empty epoch.
+// Its status and reason are immutable; it does not establish the fault's cause.
 type ApplicationStatus string
 
 //nolint:revive // Public enum names preserve the generated/API naming convention.
 const (
-	ApplicationStatus_OK              ApplicationStatus = "OK"        // healthy; eligible for work when enabled and not foreclosed
-	ApplicationStatus_Failed          ApplicationStatus = "FAILED"    // recoverable failure (e.g., OOM, process crash)
-	ApplicationStatus_Diverged        ApplicationStatus = "DIVERGED"  // computed claim disagrees with the chain (terminal)
-	ApplicationStatus_Corrupted       ApplicationStatus = "CORRUPTED" // local state missing or inconsistent (terminal)
-	ApplicationStatus_GuestException  ApplicationStatus = "GUEST_EXCEPTION"
-	ApplicationStatus_MachineHalted   ApplicationStatus = "MACHINE_HALTED"
-	ApplicationStatus_McycleOverflow  ApplicationStatus = "MCYCLE_OVERFLOW"
-	ApplicationStatus_UnexpectedYield ApplicationStatus = "UNEXPECTED_YIELD"
+	ApplicationStatus_OK                 ApplicationStatus = "OK"        // healthy; eligible for work when enabled and not foreclosed
+	ApplicationStatus_Failed             ApplicationStatus = "FAILED"    // recoverable failure (e.g., OOM, process crash)
+	ApplicationStatus_Diverged           ApplicationStatus = "DIVERGED"  // computed claim disagrees with the chain (terminal)
+	ApplicationStatus_Corrupted          ApplicationStatus = "CORRUPTED" // local state missing or inconsistent (terminal)
+	ApplicationStatus_GuestException     ApplicationStatus = "GUEST_EXCEPTION"
+	ApplicationStatus_MachineHalted      ApplicationStatus = "MACHINE_HALTED"
+	ApplicationStatus_McycleOverflow     ApplicationStatus = "MCYCLE_OVERFLOW"
+	ApplicationStatus_UnexpectedYield    ApplicationStatus = "UNEXPECTED_YIELD"
+	ApplicationStatus_InvalidOutputsRoot ApplicationStatus = "INVALID_OUTPUTS_ROOT"
 )
 
 var ApplicationStatusAllValues = []ApplicationStatus{
@@ -354,6 +359,7 @@ var ApplicationStatusAllValues = []ApplicationStatus{
 	ApplicationStatus_MachineHalted,
 	ApplicationStatus_McycleOverflow,
 	ApplicationStatus_UnexpectedYield,
+	ApplicationStatus_InvalidOutputsRoot,
 }
 
 func (e ApplicationStatus) IsTerminal() bool {
@@ -363,7 +369,8 @@ func (e ApplicationStatus) IsTerminal() bool {
 		ApplicationStatus_GuestException,
 		ApplicationStatus_MachineHalted,
 		ApplicationStatus_McycleOverflow,
-		ApplicationStatus_UnexpectedYield:
+		ApplicationStatus_UnexpectedYield,
+		ApplicationStatus_InvalidOutputsRoot:
 		return true
 	case ApplicationStatus_OK, ApplicationStatus_Failed:
 		return false
@@ -371,9 +378,10 @@ func (e ApplicationStatus) IsTerminal() bool {
 	return false
 }
 
-// IsExecutionTerminal reports whether machine execution ended deterministically
-// and must not be retried. Unlike DIVERGED and CORRUPTED, these states may still
-// escalate to CORRUPTED when later L1 observation disproves local history.
+// IsExecutionTerminal identifies outcomes that must be stored atomically with
+// an input result. These four states may escalate to CORRUPTED. The validation
+// terminal INVALID_OUTPUTS_ROOT is separate: a validator can also set it after
+// input storage, and its original reason must be preserved.
 func (e ApplicationStatus) IsExecutionTerminal() bool {
 	switch e {
 	case ApplicationStatus_GuestException,
@@ -384,7 +392,8 @@ func (e ApplicationStatus) IsExecutionTerminal() bool {
 	case ApplicationStatus_OK,
 		ApplicationStatus_Failed,
 		ApplicationStatus_Diverged,
-		ApplicationStatus_Corrupted:
+		ApplicationStatus_Corrupted,
+		ApplicationStatus_InvalidOutputsRoot:
 		return false
 	}
 	return false
@@ -989,13 +998,14 @@ type InputCompletionStatus string
 
 //nolint:revive // Public enum names preserve the generated/API naming convention.
 const (
-	InputCompletionStatus_None            InputCompletionStatus = "NONE"
-	InputCompletionStatus_Accepted        InputCompletionStatus = "ACCEPTED"
-	InputCompletionStatus_Rejected        InputCompletionStatus = "REJECTED"
-	InputCompletionStatus_Exception       InputCompletionStatus = "EXCEPTION"
-	InputCompletionStatus_MachineHalted   InputCompletionStatus = "MACHINE_HALTED"
-	InputCompletionStatus_Overflow        InputCompletionStatus = "OVERFLOW"
-	InputCompletionStatus_UnexpectedYield InputCompletionStatus = "UNEXPECTED_YIELD"
+	InputCompletionStatus_None               InputCompletionStatus = "NONE"
+	InputCompletionStatus_Accepted           InputCompletionStatus = "ACCEPTED"
+	InputCompletionStatus_Rejected           InputCompletionStatus = "REJECTED"
+	InputCompletionStatus_Exception          InputCompletionStatus = "EXCEPTION"
+	InputCompletionStatus_MachineHalted      InputCompletionStatus = "MACHINE_HALTED"
+	InputCompletionStatus_Overflow           InputCompletionStatus = "OVERFLOW"
+	InputCompletionStatus_UnexpectedYield    InputCompletionStatus = "UNEXPECTED_YIELD"
+	InputCompletionStatus_InvalidOutputsRoot InputCompletionStatus = "INVALID_OUTPUTS_ROOT"
 )
 
 var InputCompletionStatusAllValues = []InputCompletionStatus{
@@ -1006,6 +1016,7 @@ var InputCompletionStatusAllValues = []InputCompletionStatus{
 	InputCompletionStatus_MachineHalted,
 	InputCompletionStatus_Overflow,
 	InputCompletionStatus_UnexpectedYield,
+	InputCompletionStatus_InvalidOutputsRoot,
 }
 
 // IsCompleted reports whether the status is a deterministic completed result
@@ -1017,7 +1028,8 @@ func (e InputCompletionStatus) IsCompleted() bool {
 		InputCompletionStatus_Exception,
 		InputCompletionStatus_MachineHalted,
 		InputCompletionStatus_Overflow,
-		InputCompletionStatus_UnexpectedYield:
+		InputCompletionStatus_UnexpectedYield,
+		InputCompletionStatus_InvalidOutputsRoot:
 		return true
 	case InputCompletionStatus_None:
 		return false
@@ -1046,6 +1058,8 @@ func (e InputCompletionStatus) TerminalApplicationStatus() (ApplicationStatus, b
 		return ApplicationStatus_McycleOverflow, true
 	case InputCompletionStatus_UnexpectedYield:
 		return ApplicationStatus_UnexpectedYield, true
+	case InputCompletionStatus_InvalidOutputsRoot:
+		return ApplicationStatus_InvalidOutputsRoot, true
 	case InputCompletionStatus_None,
 		InputCompletionStatus_Accepted,
 		InputCompletionStatus_Rejected:

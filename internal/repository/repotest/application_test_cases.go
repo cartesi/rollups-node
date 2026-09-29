@@ -138,7 +138,7 @@ func (s *ApplicationSuite) TestListApplications() {
 		s.Equal(ApplicationStatus_OK, apps[0].Status)
 	})
 
-	s.Run("ExecutableFilterExcludesExecutionTerminalStatuses", func() {
+	s.Run("ExecutableFilterExcludesTerminalOutcomes", func() {
 		const pageLimit = 10
 		healthy := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 		for _, status := range []ApplicationStatus{
@@ -146,6 +146,7 @@ func (s *ApplicationSuite) TestListApplications() {
 			ApplicationStatus_MachineHalted,
 			ApplicationStatus_McycleOverflow,
 			ApplicationStatus_UnexpectedYield,
+			ApplicationStatus_InvalidOutputsRoot,
 		} {
 			app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 			reason := "terminal machine outcome"
@@ -432,6 +433,7 @@ func (s *ApplicationSuite) TestTerminalStatusIsTerminal() {
 		ApplicationStatus_MachineHalted,
 		ApplicationStatus_McycleOverflow,
 		ApplicationStatus_UnexpectedYield,
+		ApplicationStatus_InvalidOutputsRoot,
 	}
 
 	for _, status := range terminalStatuses {

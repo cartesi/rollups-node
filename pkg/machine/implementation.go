@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"syscall"
 	"time"
@@ -333,11 +334,6 @@ func (m *machineImpl) Advance(ctx context.Context, input []byte, checkpointHash 
 		PaddingRepetitions:  result.paddingRepetitions,
 	}
 
-	if resp.Status == CompletionStatusAccepted {
-		if length := len(result.completion.data); length != HashSize {
-			return nil, fmt.Errorf("%w (it has %d bytes)", ErrHashLength, length)
-		}
-	}
 	if resp.Status == CompletionStatusException {
 		resp.ExceptionData = append([]byte{}, result.completion.data...)
 	}
@@ -473,7 +469,37 @@ func (m *machineImpl) readManualYieldResult(ctx context.Context) (completionResu
 	}
 }
 
-// readCycle reads the current cycle from the machine
+// readAdvanceYieldResult checks the accepted root declaration before asking the
+// emulator to retrieve a guest-sized payload. A malformed length is a completed
+// advance, including when it exceeds the TX-buffer capacity. Load and Inspect
+// do not use this advance-specific rule.
+func (m *machineImpl) readAdvanceYieldResult(ctx context.Context) (completionResult, error) {
+	if err := checkContext(ctx); err != nil {
+		return completionResult{}, err
+	}
+	const wordSize uint64 = 8
+	data, err := m.backend.ReadMemory(htifTohostAddress, wordSize, m.params.FastDeadline)
+	if err != nil {
+		return completionResult{}, errors.Join(ErrMachineInternal, fmt.Errorf("could not read HTIF tohost: %w", err))
+	}
+	if len(data) != int(wordSize) {
+		return completionResult{}, fmt.Errorf(
+			"HTIF tohost read returned %d bytes, expected %d: %w", len(data), wordSize, ErrMachineInternal,
+		)
+	}
+	tohost := binary.LittleEndian.Uint64(data)
+	if isAcceptedManualYield(tohost) {
+		// The accepted root is retained by StateProof, not by this response.
+		// HTIF's low 32 bits declare its byte length.
+		if tohost&math.MaxUint32 != HashSize {
+			return completionResult{status: CompletionStatusInvalidOutputsRoot}, nil
+		}
+		return completionResult{status: CompletionStatusAccepted}, nil
+	}
+	return m.readManualYieldResult(ctx)
+}
+
+// readMCycle reads the current cycle from the machine.
 func (m *machineImpl) readMCycle(ctx context.Context) (uint64, error) {
 	if err := checkContext(ctx); err != nil {
 		return 0, err
@@ -538,6 +564,10 @@ func (m *machineImpl) process(
 	result := processResult{runResult: execution}
 	switch {
 	case err == nil:
+		if reqType == AdvanceStateRequest {
+			result.completion, err = m.readAdvanceYieldResult(ctx)
+			return result, err
+		}
 		manualResult, err := m.readManualYieldResult(ctx)
 		result.completion = manualResult
 		return result, err

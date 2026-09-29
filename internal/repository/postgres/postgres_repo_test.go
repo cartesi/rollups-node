@@ -92,6 +92,7 @@ func TestPostgresSchemaExecutionOutcomeContract(t *testing.T) {
 		"MACHINE_HALTED",
 		"OVERFLOW",
 		"UNEXPECTED_YIELD",
+		"INVALID_OUTPUTS_ROOT",
 	}, labels)
 
 	rows, err = conn.Query(ctx, `
@@ -113,6 +114,7 @@ func TestPostgresSchemaExecutionOutcomeContract(t *testing.T) {
 		"MACHINE_HALTED",
 		"MCYCLE_OVERFLOW",
 		"UNEXPECTED_YIELD",
+		"INVALID_OUTPUTS_ROOT",
 	}, labels)
 
 	rows, err = conn.Query(ctx, `

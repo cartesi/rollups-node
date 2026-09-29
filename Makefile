@@ -364,6 +364,8 @@ mcycle-overflow-dapp: applications/mcycle-overflow-dapp ## MCYCLE overflow dapp
 
 unexpected-yield-dapp: applications/unexpected-yield-dapp ## Unexpected-yield dapp
 
+invalid-outputs-root-dapps: applications/invalid-outputs-root-dapp applications/invalid-outputs-root-length-dapp applications/invalid-template-outputs-root-dapp ## Invalid outputs-root test dapps
+
 erc20-withdrawal-dapp: applications/erc20-withdrawal-dapp ## ERC-20 withdrawal test dapp
 
 applications/reject-loop-dapp: ## Create reject-loop-dapp test application
@@ -388,6 +390,15 @@ applications/mcycle-overflow-dapp: applications/echo-dapp ## Create MCYCLE overf
 applications/unexpected-yield-dapp: ## Create unexpected-yield test application
 	@echo "Creating unexpected-yield-dapp test application"
 	@go run $(GO_BUILD_PARAMS) ./test/tooling/terminalmachine unexpected-yield --output=$@
+
+applications/invalid-outputs-root-dapp: ## Create an accepted guest with a wrong outputs root
+	@go run $(GO_BUILD_PARAMS) ./test/tooling/terminalmachine invalid-outputs-root --kind=value --output=$@
+
+applications/invalid-outputs-root-length-dapp: ## Create an accepted guest with a malformed outputs-root length
+	@go run $(GO_BUILD_PARAMS) ./test/tooling/terminalmachine invalid-outputs-root --kind=length --output=$@
+
+applications/invalid-template-outputs-root-dapp: ## Create a template with a zero outputs root
+	@go run $(GO_BUILD_PARAMS) ./test/tooling/terminalmachine invalid-outputs-root --kind=template --output=$@
 
 applications/erc20-withdrawal-dapp: test/dapps/erc20-withdrawal/install.sh ## Create ERC-20 withdrawal test application
 	@echo "Creating ERC-20 withdrawal test application"
@@ -751,7 +762,7 @@ test-with-compose: ## Run all tests using docker compose with auto-shutdown
 	@$(MAKE) unit-test-with-compose
 	@$(MAKE) integration-test-with-compose
 
-integration-test-local: build cartesi-rollups-machine-tool echo-dapp reject-loop-dapp exception-loop-dapp halt-loop-dapp mcycle-overflow-dapp unexpected-yield-dapp erc20-withdrawal-dapp ## Run integration tests on the host (NODE_TOPOLOGY=, SHARD=; requires: make start && eval $$(make env); CLEAN_STALE_LOCAL_NODE=true to stop test-port listeners)
+integration-test-local: build cartesi-rollups-machine-tool echo-dapp reject-loop-dapp exception-loop-dapp halt-loop-dapp mcycle-overflow-dapp unexpected-yield-dapp invalid-outputs-root-dapps erc20-withdrawal-dapp ## Run integration tests on the host (NODE_TOPOLOGY=, SHARD=; requires: make start && eval $$(make env); CLEAN_STALE_LOCAL_NODE=true to stop test-port listeners)
 	@set -e; first=1; for t in $(TOPOLOGIES_SELECTED); do \
 		if [ "$$first" = 1 ]; then first=0; else echo "=== resetting dev DB + devnet between topologies ==="; $(MAKE) restart; fi; \
 		$(MAKE) _local-topology-$$t; \
@@ -790,6 +801,9 @@ _local-topology-%:
 		export CARTESI_TEST_HALT_DAPP_PATH=$(CURDIR)/applications/halt-loop-dapp; \
 		export CARTESI_TEST_MCYCLE_OVERFLOW_DAPP_PATH=$(CURDIR)/applications/mcycle-overflow-dapp; \
 		export CARTESI_TEST_UNEXPECTED_YIELD_DAPP_PATH=$(CURDIR)/applications/unexpected-yield-dapp; \
+		export CARTESI_TEST_INVALID_OUTPUTS_ROOT_DAPP_PATH=$(CURDIR)/applications/invalid-outputs-root-dapp; \
+		export CARTESI_TEST_INVALID_OUTPUTS_ROOT_LENGTH_DAPP_PATH=$(CURDIR)/applications/invalid-outputs-root-length-dapp; \
+		export CARTESI_TEST_INVALID_TEMPLATE_OUTPUTS_ROOT_DAPP_PATH=$(CURDIR)/applications/invalid-template-outputs-root-dapp; \
 		export CARTESI_TEST_ERC20_WITHDRAWAL_DAPP_PATH=$(CURDIR)/applications/erc20-withdrawal-dapp; \
 		NODE_TOPOLOGY='$*' TEST_PATTERN="$$pattern" $(MAKE) integration-test
 
@@ -859,6 +873,6 @@ build-debian-package: install
 	devnet image tester-image debian-packager run-with-compose shutdown-compose \
 	start start-devnet start-postgres stop stop-devnet stop-postgres restart restart-devnet restart-postgres \
 	install copy-debian-package build-debian-package \
-	mcycle-overflow-dapp unexpected-yield-dapp \
+	mcycle-overflow-dapp unexpected-yield-dapp invalid-outputs-root-dapps \
 	deploy-erc20-withdrawal-dapp fund-wallet withdraw-wallet \
 	env help version

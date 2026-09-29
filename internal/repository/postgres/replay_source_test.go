@@ -171,6 +171,7 @@ func TestPostgresReplayIncludesNewTerminalStatuses(t *testing.T) {
 	for _, status := range []model.InputCompletionStatus{
 		model.InputCompletionStatus_Overflow,
 		model.InputCompletionStatus_UnexpectedYield,
+		model.InputCompletionStatus_InvalidOutputsRoot,
 	} {
 		t.Run(status.String(), func(t *testing.T) {
 			app := repotest.NewApplicationBuilder().Create(ctx, t, repo)

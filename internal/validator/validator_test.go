@@ -541,7 +541,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), dummyEpochs[0].Index,
 		).Return(&input, nil).Once()
 
-		expectCorrupted(&app, "computed outputs merkle root does not match")
+		expectCorrupted(&app, "outputs merkle root does not match last input")
 
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)

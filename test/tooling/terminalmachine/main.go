@@ -41,7 +41,7 @@ var unexpectedYieldProgram = []uint32{
 
 func main() {
 	if len(os.Args) < minimumArgumentCount {
-		fatalf("usage: terminalmachine <mcycle-overflow|unexpected-yield> [options]")
+		fatalf("usage: terminalmachine <mcycle-overflow|unexpected-yield|invalid-outputs-root> [options]")
 	}
 
 	var err error
@@ -50,6 +50,8 @@ func main() {
 		err = runMcycleOverflow(os.Args[2:])
 	case "unexpected-yield":
 		err = runUnexpectedYield(os.Args[2:])
+	case "invalid-outputs-root":
+		err = runInvalidOutputsRoot(os.Args[2:])
 	default:
 		err = fmt.Errorf("unknown fixture %q", os.Args[1])
 	}

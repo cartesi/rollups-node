@@ -550,8 +550,7 @@ func (s *ImplementationSuite) TestAdvance() {
 	).Return(nil)
 	mockBackend5.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
 	mockBackend5.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
-	mockBackend5.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(ManualYieldReasonAccepted), make([]byte, 16), nil) // Invalid hash length
+	mockBackend5.SetupManualYield(ManualYieldReasonAccepted, 16)
 	machine5 := &machineImpl{
 		backend: mockBackend5,
 		logger:  s.logger,
@@ -563,9 +562,9 @@ func (s *ImplementationSuite) TestAdvance() {
 		},
 	}
 	resp, err = machine5.Advance(ctx, input, expectedHash, false)
-	require.Error(err)
-	require.ErrorIs(err, ErrHashLength)
-	require.Nil(resp)
+	require.NoError(err)
+	require.NotNil(resp)
+	require.Equal(CompletionStatusInvalidOutputsRoot, resp.Status)
 	mockBackend5.AssertExpectations(s.T())
 }
 
@@ -752,8 +751,11 @@ func (b *statefulAdvanceBackend) ReceiveCmioRequest(time.Duration) (uint8, uint1
 	}
 }
 func (b *statefulAdvanceBackend) WriteMemory(uint64, []byte, time.Duration) error { return nil }
-func (b *statefulAdvanceBackend) ReadMemory(uint64, uint64, time.Duration) ([]byte, error) {
-	return nil, nil
+func (b *statefulAdvanceBackend) ReadMemory(address, length uint64, _ time.Duration) ([]byte, error) {
+	if address != htifTohostAddress || length != 8 || b.cycle != 9 {
+		return nil, errors.New("unexpected scripted memory read")
+	}
+	return binary.LittleEndian.AppendUint64(nil, acceptedTohostTestValue()|HashSize), nil
 }
 func (b *statefulAdvanceBackend) GetRootHash(time.Duration) (Hash, error) { return Hash{}, nil }
 func (b *statefulAdvanceBackend) GetProof(uint64, int32, int32, time.Duration) (MemoryProof, error) {
@@ -770,7 +772,6 @@ func (b *statefulAdvanceBackend) NewMachineRuntimeConfig() (string, error) {
 func (b *statefulAdvanceBackend) CmioRxBufferSize() uint64 { return 1024 }
 
 func (s *ImplementationSuite) TestInterruptedAdvanceReturnsNilAndCanBeRetried() {
-	expectedOutputsHash := randomFakeHash()
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
@@ -783,9 +784,7 @@ func (s *ImplementationSuite) TestInterruptedAdvanceReturnsNilAndCanBeRetried() 
 	).Return(nil)
 	backend.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).
 		Return(YieldedManually, nil)
-	backend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(ManualYieldReasonAccepted), expectedOutputsHash[:], nil,
-	)
+	backend.SetupManualYield(ManualYieldReasonAccepted, HashSize)
 	machine := &machineImpl{
 		backend: backend,
 		logger:  s.logger,
@@ -1035,7 +1034,6 @@ func (s *ImplementationSuite) TestProcessRejectsZeroIncrementBeforeCMIO() {
 
 func (s *ImplementationSuite) TestConfiguredCycleEndpointCompletionSucceeds() {
 	const start, span = uint64(10), uint64(5)
-	expectedOutputsHash := randomFakeHash()
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
@@ -1045,8 +1043,7 @@ func (s *ImplementationSuite) TestConfiguredCycleEndpointCompletionSucceeds() {
 	).Return(nil)
 	backend.On("Run", start+span, mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start+span, nil).Once()
-	backend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(ManualYieldReasonAccepted), expectedOutputsHash[:], nil)
+	backend.SetupManualYield(ManualYieldReasonAccepted, HashSize)
 	machine := &machineImpl{backend: backend, logger: s.logger, params: model.ExecutionParameters{
 		AdvanceIncCycles: span + 100, AdvanceMaxCycles: span,
 		AdvanceIncDeadline: time.Second, AdvanceMaxDeadline: time.Second,
@@ -1741,8 +1738,11 @@ func (s *ImplementationSuite) TestAdvanceCanonicalizesTerminalBoundaryHash() {
 				backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 					Return(MCycleComputationHashPeriod+1, nil).Once()
 			}
-			backend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).
-				Return(uint8(0), uint16(test.yieldReason), outputsHash[:], nil).Once()
+			backend.SetupManualYield(test.yieldReason, HashSize)
+			if test.yieldReason != ManualYieldReasonAccepted {
+				backend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).
+					Return(uint8(0), uint16(test.yieldReason), outputsHash[:], nil).Once()
+			}
 
 			advanceIncrement := MCycleComputationHashPeriod
 			if test.sameRunPriorBoundary {
@@ -2405,8 +2405,7 @@ func (s *ImplementationSuite) TestProcess() {
 	).Return(nil)
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
 	mockBackend.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
-	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(ManualYieldReasonAccepted), make([]byte, 32), nil)
+	mockBackend.SetupManualYield(ManualYieldReasonAccepted, HashSize)
 
 	machine := &machineImpl{
 		backend: mockBackend,
@@ -2425,7 +2424,7 @@ func (s *ImplementationSuite) TestProcess() {
 	require.Equal(CompletionStatusAccepted, result.completion.status)
 	require.Empty(result.outputs)
 	require.Empty(result.reports)
-	require.NotNil(result.completion.data)
+	require.Nil(result.completion.data, "the root comes from the state proof, not a copied accepted payload")
 	mockBackend.AssertExpectations(s.T())
 
 	// A halt completes the request without producing a CMIO manual yield.

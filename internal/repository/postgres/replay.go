@@ -24,6 +24,7 @@ var replayCompletedStatuses = []postgres.Expression{
 	postgres.NewEnumValue(model.InputCompletionStatus_MachineHalted.String()),
 	postgres.NewEnumValue(model.InputCompletionStatus_Overflow.String()),
 	postgres.NewEnumValue(model.InputCompletionStatus_UnexpectedYield.String()),
+	postgres.NewEnumValue(model.InputCompletionStatus_InvalidOutputsRoot.String()),
 }
 
 func replayCompletedStatus(status postgres.StringExpression) postgres.BoolExpression {

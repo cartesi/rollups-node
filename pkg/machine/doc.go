@@ -7,7 +7,9 @@
 // A request that reaches a deterministic guest completion returns a response
 // value with CompletionStatusAccepted, CompletionStatusRejected,
 // CompletionStatusException, CompletionStatusHalted,
-// CompletionStatusOverflow, or CompletionStatusUnexpectedYield. Anything that
+// CompletionStatusOverflow, or CompletionStatusUnexpectedYield. Advance can
+// also return CompletionStatusInvalidOutputsRoot when an accepted yield
+// declares a root length other than 32 bytes. Anything that
 // prevents completion—including deadlines, local resource limits, backend
 // failures, and configured cycle exhaustion—returns an error. Advance then
 // returns no response; Inspect may return partial reports with

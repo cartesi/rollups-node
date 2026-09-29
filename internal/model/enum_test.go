@@ -18,7 +18,10 @@ const (
 func TestEnumScanners(t *testing.T) {
 	checkEnumScanner(t, "ApplicationStatus", ApplicationStatusAllValues, (*ApplicationStatus).Scan,
 		"invalid value", "ApplicationStatus",
-		[]string{"OK", "FAILED", "DIVERGED", "CORRUPTED", "GUEST_EXCEPTION", "MACHINE_HALTED", "MCYCLE_OVERFLOW", "UNEXPECTED_YIELD"})
+		[]string{
+			"OK", "FAILED", "DIVERGED", "CORRUPTED", "GUEST_EXCEPTION", "MACHINE_HALTED", "MCYCLE_OVERFLOW",
+			"UNEXPECTED_YIELD", "INVALID_OUTPUTS_ROOT",
+		})
 	checkEnumScanner(t, "Consensus", ConsensusAllValues, (*Consensus).Scan,
 		"invalid value", "ConsensusType", []string{"AUTHORITY", "QUORUM", "PRT"})
 	checkEnumScanner(t, "SnapshotPolicy", SnapshotPolicyAllValues, (*SnapshotPolicy).Scan,
@@ -30,7 +33,10 @@ func TestEnumScanners(t *testing.T) {
 		})
 	checkEnumScanner(t, "InputCompletionStatus", InputCompletionStatusAllValues, (*InputCompletionStatus).Scan,
 		"invalid value", "InputCompletionStatus",
-		[]string{enumGoldenNone, "ACCEPTED", "REJECTED", "EXCEPTION", "MACHINE_HALTED", "OVERFLOW", "UNEXPECTED_YIELD"})
+		[]string{
+			enumGoldenNone, "ACCEPTED", "REJECTED", "EXCEPTION", "MACHINE_HALTED", "OVERFLOW", "UNEXPECTED_YIELD",
+			"INVALID_OUTPUTS_ROOT",
+		})
 	checkEnumScanner(t, "DefaultBlock", DefaultBlockAllValues, (*DefaultBlock).Scan,
 		"invalid value", "DefaultBlock", []string{"FINALIZED", "LATEST", "PENDING", "SAFE"})
 	checkEnumScanner(t, "MatchDeletionReason", MatchDeletionReasonAllValues, (*MatchDeletionReason).Scan,

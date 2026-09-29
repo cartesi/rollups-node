@@ -308,6 +308,14 @@ func (s *InspectSuite) TestPostResponseMatchesGeneratedClientContract() {
 			wantError:  inspectFailureMessage,
 		},
 		{
+			name: "advance-only invalid outputs root",
+			result: manager.InspectResult{
+				Status: pkgmachine.CompletionStatusInvalidOutputsRoot,
+			},
+			wantStatus: inspectclient.Failed,
+			wantError:  inspectFailureMessage,
+		},
+		{
 			name: "failed",
 			result: manager.InspectResult{
 				Status:          pkgmachine.CompletionStatusUnknown,

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,7 +34,12 @@ func TestDiscoverySchemaExecutionOutcomeContract(t *testing.T) {
 		"MACHINE_HALTED",
 		"OVERFLOW",
 		"UNEXPECTED_YIELD",
+		"INVALID_OUTPUTS_ROOT",
 	}, completionStatus.Enum)
+	require.Len(t, completionStatus.Enum, len(model.InputCompletionStatusAllValues))
+	for _, status := range model.InputCompletionStatusAllValues {
+		require.Contains(t, completionStatus.Enum, status.String())
+	}
 
 	var applicationStatus struct {
 		Enum []string `json:"enum"`
@@ -48,7 +54,12 @@ func TestDiscoverySchemaExecutionOutcomeContract(t *testing.T) {
 		"MACHINE_HALTED",
 		"MCYCLE_OVERFLOW",
 		"UNEXPECTED_YIELD",
+		"INVALID_OUTPUTS_ROOT",
 	}, applicationStatus.Enum)
+	require.Len(t, applicationStatus.Enum, len(model.ApplicationStatusAllValues))
+	for _, status := range model.ApplicationStatusAllValues {
+		require.Contains(t, applicationStatus.Enum, status.String())
+	}
 
 	var input struct {
 		Properties map[string]json.RawMessage `json:"properties"`

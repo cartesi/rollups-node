@@ -112,6 +112,7 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		InputCompletionStatus_MachineHalted,
 		InputCompletionStatus_Overflow,
 		InputCompletionStatus_UnexpectedYield,
+		InputCompletionStatus_InvalidOutputsRoot,
 	} {
 		s.Run("CompletedStatus/"+status.String(), func() {
 			seed := Seed(s.Ctx, s.T(), s.Repo)

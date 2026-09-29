@@ -246,10 +246,12 @@ func (r *Service) readAndUpdateOutputs(
 		if !bytes.Equal(output.RawData, event.Output) {
 			reasonFmt :=
 				"Output mismatch. Application is in an invalid state. Output Index %d, raw data %s != event data %s"
+			localOutput := "0x" + hex.EncodeToString(output.RawData)
+			chainOutput := "0x" + hex.EncodeToString(event.Output)
 			args := []any{
 				output.Index,
-				"0x" + hex.EncodeToString(output.RawData),
-				"0x" + hex.EncodeToString(event.Output),
+				localOutput,
+				chainOutput,
 			}
 
 			switch {
@@ -264,6 +266,16 @@ func (r *Service) readAndUpdateOutputs(
 				if app.application.Status != ApplicationStatus_Corrupted {
 					return false // persistence failed; retry this event next tick
 				}
+			case app.application.Status == ApplicationStatus_InvalidOutputsRoot:
+				// Preserve the root-validation diagnosis. The local/chain output
+				// disagreement does not establish that local storage is corrupt.
+				r.Logger.Error("Output mismatch; preserving terminal application status",
+					"application", app.application.Name,
+					"address", app.application.IApplicationAddress,
+					"index", output.Index,
+					"status", app.application.Status,
+					"local_output", localOutput,
+					"chain_output", chainOutput)
 			case app.application.Status == ApplicationStatus_Diverged ||
 				app.application.Status == ApplicationStatus_Corrupted:
 				// The integrity failure is already durable. Do not retry an

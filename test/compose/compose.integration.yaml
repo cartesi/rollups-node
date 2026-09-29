@@ -76,6 +76,8 @@ services:
       make mcycle-overflow-dapp
       echo "Building unexpected-yield-dapp machine snapshot..."
       make unexpected-yield-dapp
+      echo "Building invalid outputs-root snapshots..."
+      make invalid-outputs-root-dapps
       echo "Building erc20-withdrawal-dapp machine snapshot..."
       make erc20-withdrawal-dapp
       echo "Copying to shared volume..."
@@ -85,6 +87,9 @@ services:
       cp -r applications/halt-loop-dapp /dapps/halt-loop-dapp
       cp -r applications/mcycle-overflow-dapp /dapps/mcycle-overflow-dapp
       cp -r applications/unexpected-yield-dapp /dapps/unexpected-yield-dapp
+      cp -r applications/invalid-outputs-root-dapp /dapps/invalid-outputs-root-dapp
+      cp -r applications/invalid-outputs-root-length-dapp /dapps/invalid-outputs-root-length-dapp
+      cp -r applications/invalid-template-outputs-root-dapp /dapps/invalid-template-outputs-root-dapp
       cp -r applications/erc20-withdrawal-dapp /dapps/erc20-withdrawal-dapp
       echo "DApp images built successfully."
       '
@@ -148,6 +153,9 @@ services:
       CARTESI_TEST_HALT_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/halt-loop-dapp
       CARTESI_TEST_MCYCLE_OVERFLOW_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/mcycle-overflow-dapp
       CARTESI_TEST_UNEXPECTED_YIELD_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/unexpected-yield-dapp
+      CARTESI_TEST_INVALID_OUTPUTS_ROOT_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/invalid-outputs-root-dapp
+      CARTESI_TEST_INVALID_OUTPUTS_ROOT_LENGTH_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/invalid-outputs-root-length-dapp
+      CARTESI_TEST_INVALID_TEMPLATE_OUTPUTS_ROOT_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/invalid-template-outputs-root-dapp
       CARTESI_TEST_ERC20_WITHDRAWAL_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/erc20-withdrawal-dapp
       CARTESI_TEST_NODE_LOG_FILE: /var/lib/cartesi-rollups-node/logs/node.log
       CARTESI_INSPECT_URL: http://localhost:10012/

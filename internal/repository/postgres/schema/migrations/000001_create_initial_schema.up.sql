@@ -15,7 +15,8 @@ CREATE TYPE "ApplicationStatus" AS ENUM (
     'GUEST_EXCEPTION',
     'MACHINE_HALTED',
     'MCYCLE_OVERFLOW',
-    'UNEXPECTED_YIELD');
+    'UNEXPECTED_YIELD',
+    'INVALID_OUTPUTS_ROOT');
 
 CREATE TYPE "InputCompletionStatus" AS ENUM (
     'NONE',
@@ -24,7 +25,8 @@ CREATE TYPE "InputCompletionStatus" AS ENUM (
     'EXCEPTION',
     'MACHINE_HALTED',
     'OVERFLOW',
-    'UNEXPECTED_YIELD');
+    'UNEXPECTED_YIELD',
+    'INVALID_OUTPUTS_ROOT');
 
 CREATE TYPE "DefaultBlock" AS ENUM ('FINALIZED', 'LATEST', 'PENDING', 'SAFE');
 
@@ -137,7 +139,8 @@ CREATE TABLE "application"
             'GUEST_EXCEPTION',
             'MACHINE_HALTED',
             'MCYCLE_OVERFLOW',
-            'UNEXPECTED_YIELD')
+            'UNEXPECTED_YIELD',
+            'INVALID_OUTPUTS_ROOT')
         AND ("reason" IS NULL OR LENGTH("reason") = 0))),
     -- The foreclose pair is populated together by the atomic foreclosure
     -- marker+cursor repository write (set-once, first-writer-wins via WHERE
@@ -186,18 +189,21 @@ BEGIN
         RAISE EXCEPTION 'cannot enter execution-terminal status % from application status %', NEW.status, OLD.status;
     END IF;
 
-    -- Integrity failures are final. A later corruption finding may supersede
-    -- a completed execution terminal because it means the stored/L1 history
-    -- itself is no longer trustworthy; the input row still preserves the
-    -- original execution outcome.
+    -- Integrity failures and an invalid outputs root retain their first
+    -- diagnosis. INVALID_OUTPUTS_ROOT can be entered from OK or FAILED: the
+    -- validator checks completed execution evidence independently of input
+    -- persistence. It cannot replace another terminal status.
     IF OLD.status IN (
         'DIVERGED'::"ApplicationStatus",
-        'CORRUPTED'::"ApplicationStatus")
+        'CORRUPTED'::"ApplicationStatus",
+        'INVALID_OUTPUTS_ROOT'::"ApplicationStatus")
        AND (NEW.status <> OLD.status OR NEW.reason IS DISTINCT FROM OLD.reason)
     THEN
         RAISE EXCEPTION 'cannot change status or reason of a terminal (%) application', OLD.status;
     END IF;
 
+    -- Preserve the existing four execution-terminal escalation rules. An
+    -- invalid outputs root is not in this group and cannot become CORRUPTED.
     IF OLD.status IN (
         'GUEST_EXCEPTION'::"ApplicationStatus",
         'MACHINE_HALTED'::"ApplicationStatus",

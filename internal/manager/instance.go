@@ -314,7 +314,8 @@ func (m *MachineInstanceImpl) Advance(
 	case model.InputCompletionStatus_Exception,
 		model.InputCompletionStatus_MachineHalted,
 		model.InputCompletionStatus_Overflow,
-		model.InputCompletionStatus_UnexpectedYield:
+		model.InputCompletionStatus_UnexpectedYield,
+		model.InputCompletionStatus_InvalidOutputsRoot:
 		// Terminal execution preserves and proves the actual post-run state.
 		postMachineProof, proofErr := fork.StateProof(ctx)
 		if proofErr != nil {
@@ -830,6 +831,8 @@ func toInputStatus(status machine.CompletionStatus) (model.InputCompletionStatus
 		return model.InputCompletionStatus_Overflow, nil
 	case machine.CompletionStatusUnexpectedYield:
 		return model.InputCompletionStatus_UnexpectedYield, nil
+	case machine.CompletionStatusInvalidOutputsRoot:
+		return model.InputCompletionStatus_InvalidOutputsRoot, nil
 	case machine.CompletionStatusUnknown:
 		// Intentionally empty.
 	}

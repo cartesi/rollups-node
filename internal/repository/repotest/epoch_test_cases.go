@@ -597,6 +597,7 @@ func (s *EpochSuite) TestUpdateEpochInputsProcessed() {
 		ApplicationStatus_MachineHalted,
 		ApplicationStatus_McycleOverflow,
 		ApplicationStatus_UnexpectedYield,
+		ApplicationStatus_InvalidOutputsRoot,
 	} {
 		s.Run("RejectsApplicationStatus/"+status.String(), func() {
 			seed := Seed(s.Ctx, s.T(), s.Repo)

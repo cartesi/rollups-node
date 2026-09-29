@@ -476,6 +476,11 @@ func (s *MachineInstanceSuite) TestAdvance() {
 			machine.CompletionStatusUnexpectedYield,
 			model.InputCompletionStatus_UnexpectedYield,
 			nil)
+
+		testCompletedStatus("InvalidOutputsRoot",
+			machine.CompletionStatusInvalidOutputsRoot,
+			model.InputCompletionStatus_InvalidOutputsRoot,
+			nil)
 	})
 
 	s.Run("Error", func() {

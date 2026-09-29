@@ -809,6 +809,7 @@ func (s *ClaimerSuite) TestRejectEpochAndSetApplicationDiverged() {
 	for _, terminalStatus := range []ApplicationStatus{
 		ApplicationStatus_MachineHalted,
 		ApplicationStatus_Corrupted,
+		ApplicationStatus_InvalidOutputsRoot,
 	} {
 		s.Run("Preserves"+terminalStatus.String()+"WhileRejectingEpoch", func() {
 			app := s.createAppWithClaimComputedEpoch()

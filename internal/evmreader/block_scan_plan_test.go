@@ -46,9 +46,10 @@ func TestBuildBlockScanPlan_RoutesScannerTargets(t *testing.T) {
 				planApp(44, planAppConfig{status: ApplicationStatus_MachineHalted}),
 				planApp(45, planAppConfig{status: ApplicationStatus_McycleOverflow}),
 				planApp(46, planAppConfig{status: ApplicationStatus_UnexpectedYield}),
+				planApp(47, planAppConfig{status: ApplicationStatus_InvalidOutputsRoot}),
 			},
-			wantIConsensusInput: []int64{40, 41, 42, 43, 44, 45, 46},
-			wantOutput:          []int64{40, 41, 42, 43, 44, 45, 46},
+			wantIConsensusInput: []int64{40, 41, 42, 43, 44, 45, 46, 47},
+			wantOutput:          []int64{40, 41, 42, 43, 44, 45, 46, 47},
 		},
 		{
 			name: "foreclosed IConsensus app with input cursor behind gets final input catch-up",
@@ -93,6 +94,19 @@ func TestBuildBlockScanPlan_RoutesScannerTargets(t *testing.T) {
 			wantIConsensusInput: []int64{8},
 			wantOutput:          []int64{8},
 			wantPostForeclosure: []int64{8},
+		},
+		{
+			name: "foreclosed invalid-root Dave app remains observable",
+			apps: []appContracts{planApp(81, planAppConfig{
+				status:              ApplicationStatus_InvalidOutputsRoot,
+				consensus:           Consensus_PRT,
+				forecloseBlock:      100,
+				lastEpochCheckBlock: 99,
+				lastInputCheckBlock: 99,
+			})},
+			wantDaveEpoch:       []int64{81},
+			wantOutput:          []int64{81},
+			wantPostForeclosure: []int64{81},
 		},
 		{
 			name: "foreclosed app with cursor at foreclose block only keeps post-foreclosure observation",

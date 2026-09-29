@@ -198,16 +198,6 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 			"outputs_merkle_root", *merkleRoot,
 		)
 
-		// The Cartesi Machine calculates the root hash of the outputs Merkle
-		// tree after each input. Therefore, the root hash calculated after the
-		// last input in the epoch must match the one calculated by the Validator
-		// So we need to validate the application state.
-		if *epoch.TxBufferDataBlock != *merkleRoot {
-			return s.setApplicationCorrupted(ctx, app,
-				"epoch %v outputs merkle root does not match computed one. Expected: %v, Got %v",
-				epoch.Index, *epoch.TxBufferDataBlock, *merkleRoot)
-		}
-
 		input, err := s.repository.GetLastInput(ctx, appAddress, epoch.Index)
 		if err != nil {
 			return fmt.Errorf(
@@ -223,10 +213,11 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 					epoch.Index, input.Index)
 			}
 
-			// ...and compare it to the hash calculated by the Validator
+			// These are two stored views of the same post-input state. Check
+			// their identity before classifying the outputs-root rule below.
 			if *epoch.TxBufferDataBlock != *input.TxBufferDataBlock {
 				return s.setApplicationCorrupted(ctx, app,
-					"computed outputs merkle root does not match epoch %v last input %v merkle root. Expected: %v, Got %v",
+					"epoch %v outputs merkle root does not match last input %v merkle root. Expected: %v, Got %v",
 					epoch.Index, input.Index, *input.TxBufferDataBlock, *epoch.TxBufferDataBlock)
 			}
 
@@ -286,12 +277,17 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 						"epoch %v machine hash does not match for application template hash. Expected: %v, Got %v",
 						epoch.Index, app.TemplateHash, *epoch.MachineHash)
 				}
-				if *epoch.TxBufferDataBlock != s.pristineRootHash {
-					return s.setApplicationCorrupted(ctx, app,
-						"epoch %v outputs merkle root does not match pristine root hash. Expected: %v, Got %v",
-						epoch.Index, s.pristineRootHash, *epoch.TxBufferDataBlock)
-				}
 			}
+		}
+
+		// The guest supplies the cumulative outputs root. Compare its proved
+		// word with the root calculated from stored outputs only after checking
+		// the stored state identities. This also checks the pristine root of an
+		// empty first epoch; a mismatch alone does not establish its cause.
+		if *epoch.TxBufferDataBlock != *merkleRoot {
+			return appstatus.SetInvalidOutputsRootf(ctx, s.Logger, s.repository, app,
+				"epoch %v: declared outputs root does not match the root calculated from stored outputs; declared=%s; calculated=%s",
+				epoch.Index, epoch.TxBufferDataBlock.Hex(), merkleRoot.Hex())
 		}
 
 		if app.IsDaveConsensus() {

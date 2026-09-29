@@ -134,6 +134,7 @@ func TestInputCompletionStatusContract(t *testing.T) {
 		InputCompletionStatus_MachineHalted,
 		InputCompletionStatus_Overflow,
 		InputCompletionStatus_UnexpectedYield,
+		InputCompletionStatus_InvalidOutputsRoot,
 	}
 	require.Equal(t, expected, InputCompletionStatusAllValues)
 
@@ -151,7 +152,8 @@ func TestInputCompletionStatusContract(t *testing.T) {
 				value == InputCompletionStatus_Exception ||
 					value == InputCompletionStatus_MachineHalted ||
 					value == InputCompletionStatus_Overflow ||
-					value == InputCompletionStatus_UnexpectedYield,
+					value == InputCompletionStatus_UnexpectedYield ||
+					value == InputCompletionStatus_InvalidOutputsRoot,
 				value.IsTerminal(),
 			)
 		})
@@ -185,6 +187,7 @@ func TestApplicationStatusContract(t *testing.T) {
 		ApplicationStatus_MachineHalted,
 		ApplicationStatus_McycleOverflow,
 		ApplicationStatus_UnexpectedYield,
+		ApplicationStatus_InvalidOutputsRoot,
 	}
 	require.Equal(t, expected, ApplicationStatusAllValues)
 
@@ -210,10 +213,11 @@ func TestApplicationStatusContract(t *testing.T) {
 
 func TestTerminalApplicationStatus(t *testing.T) {
 	expected := map[InputCompletionStatus]ApplicationStatus{
-		InputCompletionStatus_Exception:       ApplicationStatus_GuestException,
-		InputCompletionStatus_MachineHalted:   ApplicationStatus_MachineHalted,
-		InputCompletionStatus_Overflow:        ApplicationStatus_McycleOverflow,
-		InputCompletionStatus_UnexpectedYield: ApplicationStatus_UnexpectedYield,
+		InputCompletionStatus_Exception:          ApplicationStatus_GuestException,
+		InputCompletionStatus_MachineHalted:      ApplicationStatus_MachineHalted,
+		InputCompletionStatus_Overflow:           ApplicationStatus_McycleOverflow,
+		InputCompletionStatus_UnexpectedYield:    ApplicationStatus_UnexpectedYield,
+		InputCompletionStatus_InvalidOutputsRoot: ApplicationStatus_InvalidOutputsRoot,
 	}
 	for inputStatus, applicationStatus := range expected {
 		got, terminal := inputStatus.TerminalApplicationStatus()

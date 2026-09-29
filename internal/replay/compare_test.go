@@ -141,6 +141,7 @@ func TestCompareReplayRecordCompletionMatrix(t *testing.T) {
 		model.InputCompletionStatus_Rejected,
 		model.InputCompletionStatus_Exception,
 		model.InputCompletionStatus_MachineHalted,
+		model.InputCompletionStatus_InvalidOutputsRoot,
 	}
 	consensuses := []model.Consensus{
 		model.Consensus_Authority,

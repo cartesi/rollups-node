@@ -97,6 +97,55 @@ func TestPassiveObservationIncludesLocalFailuresAndTerminalEpochs(t *testing.T) 
 	}
 }
 
+func TestForeclosedInvalidOutputsRootObservesWithoutDrainOrSubmission(t *testing.T) {
+	f := newObserverCheckpointFixture(t)
+	f.s.defaultBlock = model.DefaultBlock_Finalized
+	f.s.submissionEnabled = true
+	f.app.Status = model.ApplicationStatus_InvalidOutputsRoot
+	f.app.Reason = new("epoch 0: declared outputs root does not match the calculated root")
+	f.app.ForecloseBlock = 90
+	f.app.LastEpochCheckBlock, f.app.LastInputCheckBlock = 100, 100
+	require.True(t, f.app.ForeclosureScanCaughtUp(), "health, not scanner readiness, must block the drain")
+	epoch := checkpointEpoch(0, "0x100")
+	applyPRTStateProof(epoch, repotest.KeccakStateProof(common.HexToHash("0x1234")))
+	_, err := epoch.StateProof()
+	require.NoError(t, err, "claim data must not be the reason submission is blocked")
+	f.repo.On("ListApplications", mock.Anything, repository.ApplicationFilter{
+		Enabled: new(true), ConsensusType: new(model.Consensus_PRT),
+	}, repository.Pagination{}, false).Return([]*model.Application{f.app}, uint64(1), nil).Once()
+	f.client.On("HeaderByNumber", mock.Anything, big.NewInt(rpc.FinalizedBlockNumber.Int64())).
+		Return(&types.Header{Number: big.NewInt(100)}, nil).Once()
+	f.epochs(epoch)
+	f.consensus.On("TournamentLevelCount", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(uint64(1), nil).Once()
+	f.tournament(epoch, *epoch.TournamentAddress, 0, 1, 90, 100, &TournamentEvents{}, nil)
+	f.repo.On("StoreTournamentEvents", mock.Anything, f.app.ID,
+		mock.MatchedBy(func(batches []*repository.TournamentEventBatch) bool {
+			return len(batches) == 1 && batches[0].Tournament.Snapshot.AsOfBlock == 100 &&
+				batches[0].Tournament.Snapshot.BondRecovery.Disposition == model.BondDispositionRecoverable
+		}), uint64(100)).Return(nil).Once()
+
+	reschedule, err := f.s.Tick(t.Context())
+
+	require.False(t, reschedule)
+	require.NoError(t, err)
+	require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
+	require.Equal(t, model.ApplicationStatus_InvalidOutputsRoot, f.app.Status)
+	require.Equal(t, "epoch 0: declared outputs root does not match the calculated root", *f.app.Reason)
+	require.Equal(t, model.EpochStatus_ClaimComputed, epoch.Status)
+	require.Empty(t, f.s.pendingTransactions)
+	require.Empty(t, f.s.rootBondRecoveries)
+	f.repo.AssertNotCalled(t, "HasUndrainedEpochsBeforeBlock", mock.Anything, mock.Anything, mock.Anything)
+	f.repo.AssertNotCalled(t, "HasUnreconciledClaimsBeforeBlock", mock.Anything, mock.Anything, mock.Anything)
+	f.repo.AssertNotCalled(t, "GetLastNonOpenEpochIndex", mock.Anything, mock.Anything)
+	f.repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	// The strict tournament mocks permit observation only. A join or recovery
+	// broadcast would fail, as would a new latest-block read for either action.
+	f.client.AssertNotCalled(t, "BlockNumber", mock.Anything)
+	f.consensus.AssertNotCalled(t, "GetCurrentSealedEpoch", mock.Anything)
+	f.consensus.AssertNotCalled(t, "StageTournamentResult", mock.Anything, mock.Anything, mock.Anything)
+	f.consensus.AssertNotCalled(t, "AcceptStagedTournamentResult", mock.Anything, mock.Anything)
+}
+
 func TestHealthyReaderPublishesBeforeRecordingStagedClaim(t *testing.T) {
 	f := newObserverCheckpointFixture(t)
 	f.s.defaultBlock = model.DefaultBlock_Finalized

@@ -33,10 +33,10 @@ type Repository interface {
 //   - replay.Run will correctly verify inputs from the snapshot point.
 //
 // The reason parameter must be a pre-formatted string describing the failure.
-// Execution-terminal and integrity-terminal statuses are preserved: execution
-// terminals are entered atomically by repository.StoreAdvanceResult, while
-// integrity terminals carry stronger evidence than a recoverable runtime
-// failure. Returns the database error if the status update fails; returns nil
+// Existing terminal statuses are preserved. The four execution terminals are
+// entered atomically by repository.StoreAdvanceResult. Other terminal findings
+// must not become recoverable runtime failures. Returns the database error if
+// the status update fails; returns nil
 // on success or when an existing terminal status is preserved.
 func SetFailed(
 	ctx context.Context,
@@ -135,7 +135,34 @@ func SetCorruptedf(
 	return SetCorrupted(ctx, logger, repo, app, fmt.Sprintf(reasonFmt, args...))
 }
 
-// setTerminalStatus persists a terminal health status (DIVERGED or CORRUPTED)
+// SetInvalidOutputsRoot marks an application INVALID_OUTPUTS_ROOT (terminal).
+// The declared outputs root fails the node's root rule. This finding alone does
+// not identify whether the cause is the guest or inconsistent stored outputs.
+// The status and reason are immutable; observation remains enabled.
+// Always returns a non-nil error so the caller stops validation of this application.
+func SetInvalidOutputsRoot(
+	ctx context.Context,
+	logger *slog.Logger,
+	repo Repository,
+	app *Application,
+	reason string,
+) error {
+	return setTerminalStatus(ctx, logger, repo, app, ApplicationStatus_InvalidOutputsRoot, reason)
+}
+
+// SetInvalidOutputsRootf marks an application INVALID_OUTPUTS_ROOT with a formatted reason.
+func SetInvalidOutputsRootf(
+	ctx context.Context,
+	logger *slog.Logger,
+	repo Repository,
+	app *Application,
+	reasonFmt string,
+	args ...any,
+) error {
+	return SetInvalidOutputsRoot(ctx, logger, repo, app, fmt.Sprintf(reasonFmt, args...))
+}
+
+// setTerminalStatus persists a terminal health status
 // and returns a non-nil error containing the reason (joined with the DB error
 // if the update failed), so callers always have a value to propagate or log.
 func setTerminalStatus(
@@ -149,9 +176,8 @@ func setTerminalStatus(
 	reason = NormalizeReason(reason)
 	reasonErr := errors.New(reason)
 
-	// Integrity terminals are immutable. Execution terminals preserve their
-	// deterministic machine outcome unless later observation proves local state
-	// corrupted, which is the one permitted escalation.
+	// Integrity and root-validation terminals are immutable. The four execution
+	// terminals retain their existing permitted escalation to CORRUPTED.
 	executionTerminalEscalation := app.Status.IsExecutionTerminal() &&
 		status == ApplicationStatus_Corrupted
 	preserveExistingTerminal := app.Status.IsTerminal() && !executionTerminalEscalation
@@ -210,6 +236,11 @@ func setApplicationStatus(
 			"reason", reason)
 	case ApplicationStatus_Corrupted:
 		logger.Error("marking application as corrupted (terminal)",
+			"application", app.Name,
+			"address", app.IApplicationAddress.String(),
+			"reason", reason)
+	case ApplicationStatus_InvalidOutputsRoot:
+		logger.Error("marking application with invalid outputs root (terminal)",
 			"application", app.Name,
 			"address", app.IApplicationAddress.String(),
 			"reason", reason)

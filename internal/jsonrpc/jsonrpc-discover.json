@@ -2266,7 +2266,8 @@
 					"EXCEPTION",
 					"MACHINE_HALTED",
 					"OVERFLOW",
-					"UNEXPECTED_YIELD"
+					"UNEXPECTED_YIELD",
+					"INVALID_OUTPUTS_ROOT"
 				]
 			},
 			"Input": {
@@ -2798,7 +2799,8 @@
 					"GUEST_EXCEPTION",
 					"MACHINE_HALTED",
 					"MCYCLE_OVERFLOW",
-					"UNEXPECTED_YIELD"
+					"UNEXPECTED_YIELD",
+					"INVALID_OUTPUTS_ROOT"
 				]
 			},
 			"Consensus": {

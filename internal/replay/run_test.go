@@ -263,6 +263,46 @@ func TestRunAcceptsTerminalStatusAtEndOfReplay(t *testing.T) {
 	require.Equal(t, uint64(2), executor.ProcessedInputs())
 }
 
+func TestRunInvalidOutputsRoot(t *testing.T) {
+	for _, storedStatus := range []model.InputCompletionStatus{
+		model.InputCompletionStatus_InvalidOutputsRoot,
+		model.InputCompletionStatus_Accepted,
+	} {
+		t.Run(storedStatus.String(), func(t *testing.T) {
+			record := replayRecords(1)[0]
+			record.Input.Status = storedStatus
+			record.StateHashes = []model.ReplayStateHash{{
+				MachineHash: *record.Input.MachineHash,
+				Repetitions: model.InputHashCollectionCapacity,
+			}}
+			source := &fakeSource{
+				summary: model.ReplaySummary{ApplicationID: 7, ProcessedInputs: 1, Consensus: model.Consensus_PRT},
+				records: []*model.ReplayRecord{record},
+			}
+			executor := &fakeExecutor{
+				fullPRTResult: true,
+				statuses: map[uint64]model.InputCompletionStatus{
+					0: model.InputCompletionStatus_InvalidOutputsRoot,
+				},
+			}
+			opts := replayOptions(model.Consensus_PRT, 0, 1)
+			opts.Verification = repository.ReplayVerificationFull
+			result, err := Run(context.Background(), source, executor, opts)
+			if storedStatus == model.InputCompletionStatus_InvalidOutputsRoot {
+				require.NoError(t, err)
+				require.Equal(t, uint64(1), result.ReplayedInputs)
+			} else {
+				require.ErrorIs(t, err, ErrContradiction)
+				var detail *ContradictionError
+				require.ErrorAs(t, err, &detail)
+				require.Equal(t, "status", detail.Field)
+			}
+			require.Equal(t, storedStatus, record.Input.Status, "replay must not rewrite stored completion")
+			require.Equal(t, []bool{true}, executor.computeHashes)
+		})
+	}
+}
+
 func TestRunRejectsMalformedPagesBeforeExecution(t *testing.T) {
 	tests := []struct {
 		name    string
