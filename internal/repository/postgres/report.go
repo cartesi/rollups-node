@@ -102,7 +102,6 @@ func (r *PostgresRepository) ListReports(
 
 	if f.EpochIndex != nil {
 		conditions = append(conditions, table.Input.EpochIndex.EQ(uint64Expr(*f.EpochIndex)))
-		conditions = append(conditions, table.Input.Status.EQ(postgres.NewEnumValue(model.InputCompletionStatus_Accepted.String())))
 	}
 
 	tx, err := beginReadTx(ctx, r.db)

@@ -81,8 +81,6 @@ func (s *ReportSuite) TestListReports() {
 	s.Run("FilterByEpochIndex", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 
-		// EpochIndex filter also requires input.status = ACCEPTED,
-		// so use StoreAdvanceResult to create the report with accepted input.
 		result := &AdvanceResult{
 			EpochIndex: 0,
 			InputIndex: 0,
