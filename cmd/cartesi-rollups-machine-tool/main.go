@@ -92,6 +92,12 @@ func runReplay(ctx context.Context, opts replayOptions) error {
 			return fmt.Errorf("database connection is required for replay: %w", err)
 		}
 		opts.DatabaseConnection = dsn.Raw()
+	} else {
+		dsn, err := config.ToURLFromString(opts.DatabaseConnection)
+		if err != nil {
+			return fmt.Errorf("--database-connection: %w", err)
+		}
+		opts.DatabaseConnection = dsn.Raw()
 	}
 	if opts.HasToEpoch == opts.HasToInputIndex {
 		return errors.New("exactly one replay target is required: --to-epoch or --to-input-index")

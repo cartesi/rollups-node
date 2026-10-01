@@ -294,7 +294,28 @@ func ToURLFromString(s string) (SafeURL, error) {
 	if err != nil {
 		return SafeURL{}, fmt.Errorf("invalid URL [Redacted]")
 	}
+	if result.Scheme == "postgres" || result.Scheme == "postgresql" {
+		if err := checkDatabaseURL(s, result); err != nil {
+			return SafeURL{}, err
+		}
+	}
 	return NewSafeURL(result), nil
+}
+
+// checkDatabaseURL rejects the database URLs that the node's database libraries
+// read differently. From v5.11, pgx reads a URL like libpq: the last of repeated
+// parameters wins, and '#' is part of the text. net/url, and the lib/pq driver of
+// the migrations, take the first parameter and cut the URL at '#'.
+func checkDatabaseURL(raw string, u *url.URL) error {
+	if strings.Contains(raw, "#") {
+		return errors.New("invalid database URL [Redacted]: encode '#' as %23")
+	}
+	for key, values := range u.Query() {
+		if len(values) > 1 {
+			return fmt.Errorf("invalid database URL [Redacted]: parameter %q is repeated", key)
+		}
+	}
+	return nil
 }
 
 // Service name constants for per-service configuration lookup.

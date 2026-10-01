@@ -127,6 +127,31 @@ func TestSafeURL(t *testing.T) {
 		require.Error(t, err)
 		require.Equal(t, "[REDACTED]", safe.String())
 	})
+
+	t.Run("ToURLFromString rejects ambiguous database URLs", func(t *testing.T) {
+		for _, raw := range []string{
+			"postgres://user:s3cr#t@db:5432/rollups",
+			"postgres://user:s3cret@db:5432/rollups#",
+			"postgresql://user:s3cret@db:5432/rollups?sslmode=require&sslmode=disable",
+		} {
+			safe, err := ToURLFromString(raw)
+			require.Error(t, err, raw)
+			require.NotContains(t, err.Error(), "s3cr")
+			require.Equal(t, "[REDACTED]", safe.String())
+		}
+	})
+
+	t.Run("ToURLFromString accepts encoded database URLs", func(t *testing.T) {
+		safe, err := ToURLFromString("postgres://user:s3cr%23t@db:5432/rollups?sslmode=require&connect_timeout=5")
+		require.NoError(t, err)
+		require.Equal(t, "postgres://db:5432", safe.String())
+	})
+
+	t.Run("ToURLFromString keeps other schemes unchanged", func(t *testing.T) {
+		safe, err := ToURLFromString("https://host.example/path?key=a&key=b#fragment")
+		require.NoError(t, err)
+		require.Equal(t, "https://host.example", safe.String())
+	})
 }
 
 func TestEvmReaderReadyMaxStaleness(t *testing.T) {
