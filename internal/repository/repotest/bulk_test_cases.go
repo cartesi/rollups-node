@@ -92,6 +92,7 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 			EpochIndex: 0,
 			InputIndex: 0,
 			Status:     InputCompletionStatus_Rejected,
+			Reports:    [][]byte{[]byte("rejection report")},
 			StateProof: *proof,
 		}
 
@@ -101,6 +102,12 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		input, err := s.Repo.GetInput(s.Ctx, seed.App.IApplicationAddress.String(), 0)
 		s.Require().NoError(err)
 		s.Equal(InputCompletionStatus_Rejected, input.Status)
+		report, err := s.Repo.GetReport(s.Ctx, seed.App.Name, 0)
+		s.Require().NoError(err)
+		s.Require().NotNil(report)
+		s.Equal(result.Reports[0], report.RawData)
+		s.Zero(report.InputIndex)
+		s.Zero(report.EpochIndex)
 		epoch, err := s.Repo.GetEpoch(s.Ctx, seed.App.IApplicationAddress.String(), 0)
 		s.Require().NoError(err)
 		s.Nil(epoch.MachineHash, "rejection must leave the pre-input epoch state unchanged")
@@ -125,6 +132,7 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 				EpochIndex:    0,
 				InputIndex:    0,
 				Status:        status,
+				Reports:       [][]byte{[]byte("terminal report")},
 				ExceptionData: exceptionData,
 				StateProof:    *proof,
 			}
@@ -135,6 +143,12 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 			s.Require().NoError(err)
 			s.Equal(status, input.Status)
 			s.Equal(exceptionData, input.ExceptionData)
+			report, err := s.Repo.GetReport(s.Ctx, seed.App.Name, 0)
+			s.Require().NoError(err)
+			s.Require().NotNil(report)
+			s.Equal(result.Reports[0], report.RawData)
+			s.Zero(report.InputIndex)
+			s.Zero(report.EpochIndex)
 			epoch, err := s.Repo.GetEpoch(s.Ctx, seed.App.IApplicationAddress.String(), 0)
 			s.Require().NoError(err)
 			s.Require().NotNil(epoch.MachineHash)
@@ -158,7 +172,7 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		})
 	}
 
-	s.Run("RejectsEffectsForNonacceptedInput", func() {
+	s.Run("RejectsOutputsForNonacceptedInput", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, &AdvanceResult{
 			EpochIndex: 0,
@@ -166,7 +180,7 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 			Status:     InputCompletionStatus_Rejected,
 			Outputs:    [][]byte{[]byte("must-not-be-stored")},
 		})
-		s.Require().ErrorContains(err, "must not contain outputs or reports")
+		s.Require().ErrorContains(err, "must not contain outputs")
 	})
 
 	s.Run("RejectsCursorAndEpochMismatches", func() {

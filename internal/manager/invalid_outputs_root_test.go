@@ -57,7 +57,7 @@ func (s *MachineInstanceSuite) TestInvalidOutputsRootPreservesFinalEvidence() {
 			s.Equal(fork.AdvanceRemainingReturn, result.PaddingRepetitions)
 			s.Equal(collect, result.IsDaveConsensus)
 			s.Empty(result.Outputs)
-			s.Empty(result.Reports)
+			s.Equal(expectedReports1, result.Reports)
 			s.Nil(result.ExceptionData)
 			s.Equal(2, proofCalls)
 			s.Equal(uint64(6), instance.ProcessedInputs())

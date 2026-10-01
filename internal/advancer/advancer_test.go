@@ -519,7 +519,7 @@ func (s *AdvancerSuite) TestProcess() {
 			terminal := randomAdvanceResult(1)
 			terminal.Status = status
 			terminal.Outputs = nil
-			terminal.Reports = nil
+			terminal.Reports = [][]byte{[]byte("terminal report")}
 			if status == InputCompletionStatus_Exception {
 				terminal.ExceptionData = []byte("guest exception")
 			}
@@ -537,6 +537,7 @@ func (s *AdvancerSuite) TestProcess() {
 			require.True(stopped)
 			require.Len(env.repo.StoredResults, 2)
 			require.Equal(status, env.repo.StoredResults[1].Status)
+			require.Equal(terminal.Reports, env.repo.StoredResults[1].Reports)
 			require.Equal([]byte("must not execute"), inputs[2].RawData)
 		})
 	}
@@ -547,7 +548,7 @@ func (s *AdvancerSuite) TestProcess() {
 		rejected := randomAdvanceResult(0)
 		rejected.Status = InputCompletionStatus_Rejected
 		rejected.Outputs = nil
-		rejected.Reports = nil
+		rejected.Reports = [][]byte{[]byte("rejection report")}
 		accepted := randomAdvanceResult(1)
 
 		processed, stopped, err := env.service.processInputs(
@@ -560,6 +561,7 @@ func (s *AdvancerSuite) TestProcess() {
 		require.Equal(uint64(2), processed)
 		require.False(stopped)
 		require.Len(env.repo.StoredResults, 2)
+		require.Equal(rejected.Reports, env.repo.StoredResults[0].Reports)
 	})
 
 	s.Run("Noop", func() {
@@ -1581,7 +1583,7 @@ func (s *AdvancerSuite) TestTerminalInputStopsEpochAndFutureTicks() {
 	terminal := randomAdvanceResult(1)
 	terminal.Status = InputCompletionStatus_MachineHalted
 	terminal.Outputs = nil
-	terminal.Reports = nil
+	terminal.Reports = [][]byte{[]byte("terminal report")}
 	address := env.app.Application.IApplicationAddress
 	env.repo.GetEpochsReturn = map[common.Address][]*Epoch{
 		address: {{
@@ -1603,6 +1605,7 @@ func (s *AdvancerSuite) TestTerminalInputStopsEpochAndFutureTicks() {
 	require.NoError(err)
 	require.False(hadWork)
 	require.Len(env.repo.StoredResults, 2)
+	require.Equal(terminal.Reports, env.repo.StoredResults[1].Reports)
 	require.Zero(env.repo.EpochInputsProcessedCount,
 		"a terminal epoch must remain closed because it has no accepted terminal state")
 

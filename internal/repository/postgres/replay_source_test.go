@@ -59,6 +59,7 @@ func TestPostgresReplayVerificationLevels(t *testing.T) {
 		EpochIndex: 0,
 		InputIndex: 1,
 		Status:     model.InputCompletionStatus_Rejected,
+		Reports:    [][]byte{[]byte("rejection report")},
 		StateProof: *repotest.DummyStateProof(),
 	}))
 
@@ -99,6 +100,8 @@ func TestPostgresReplayVerificationLevels(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, [][]byte{[]byte("output")}, fullPage[0].Outputs)
 	require.Equal(t, [][]byte{[]byte("report")}, fullPage[0].Reports)
+	require.Empty(t, fullPage[1].Outputs)
+	require.Equal(t, [][]byte{[]byte("rejection report")}, fullPage[1].Reports)
 
 	// Poison only full evidence. Canonical reconstruction remains independent
 	// of child evidence, while a full page exposes it to replay comparison.

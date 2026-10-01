@@ -16,7 +16,7 @@ func (s *AdvancerSuite) TestInvalidOutputsRootStopsClaimPreparation() {
 	terminal := randomAdvanceResult(0)
 	terminal.Status = model.InputCompletionStatus_InvalidOutputsRoot
 	terminal.Outputs = nil
-	terminal.Reports = nil
+	terminal.Reports = [][]byte{[]byte("invalid outputs root report")}
 	address := env.app.Application.IApplicationAddress
 	env.repo.GetEpochsReturn = map[common.Address][]*model.Epoch{
 		address: {{
@@ -36,6 +36,7 @@ func (s *AdvancerSuite) TestInvalidOutputsRootStopsClaimPreparation() {
 	s.False(hadWork)
 	s.Require().Len(env.repo.StoredResults, 1)
 	s.Equal(model.InputCompletionStatus_InvalidOutputsRoot, env.repo.StoredResults[0].Status)
+	s.Equal(terminal.Reports, env.repo.StoredResults[0].Reports)
 	s.Zero(env.repo.EpochInputsProcessedCount, "the epoch must not become claim work")
 	s.Zero(env.repo.ApplicationStatusUpdates, "the status belongs to the atomic input-result write")
 
@@ -51,7 +52,7 @@ func (s *AdvancerSuite) TestInvalidOutputsRootStoreFailureStopsService() {
 	terminal := randomAdvanceResult(0)
 	terminal.Status = model.InputCompletionStatus_InvalidOutputsRoot
 	terminal.Outputs = nil
-	terminal.Reports = nil
+	terminal.Reports = [][]byte{[]byte("invalid outputs root report")}
 	pending := newInput(env.app.Application.ID, 0, 0, marshal(terminal))
 	env.repo.StoreAdvanceError = errors.New("terminal result write failed")
 

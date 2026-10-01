@@ -68,12 +68,8 @@ func getReportNextIndex(
 			postgres.Float(1).ADD(postgres.MAXf(table.Report.Index)),
 			postgres.Float(0),
 		),
-	).FROM(
-		table.Report.INNER_JOIN(table.Input, table.Input.EpochApplicationID.EQ(table.Report.InputEpochApplicationID).
-			AND(table.Input.Index.EQ(table.Report.InputIndex))),
-	).WHERE(
-		table.Report.InputEpochApplicationID.EQ(postgres.Int64(appID)).
-			AND(table.Input.Status.EQ(postgres.NewEnumValue(model.InputCompletionStatus_Accepted.String()))),
+	).FROM(table.Report).WHERE(
+		table.Report.InputEpochApplicationID.EQ(postgres.Int64(appID)),
 	)
 
 	queryStr, args := query.Sql()
@@ -591,9 +587,8 @@ func (r *PostgresRepository) StoreAdvanceResult(
 	if res.InputIndex == math.MaxUint64 {
 		return errors.New("cannot store an advance result at the maximum input index")
 	}
-	if res.Status != model.InputCompletionStatus_Accepted &&
-		(len(res.Outputs) != 0 || len(res.Reports) != 0) {
-		return fmt.Errorf("advance result with status %q must not contain outputs or reports", res.Status)
+	if res.Status != model.InputCompletionStatus_Accepted && len(res.Outputs) != 0 {
+		return fmt.Errorf("advance result with status %q must not contain outputs", res.Status)
 	}
 	if !res.IsComplete() {
 		return repository.ErrInvalidStateProof
@@ -618,11 +613,10 @@ func (r *PostgresRepository) StoreAdvanceResult(
 		if err != nil {
 			return err
 		}
-
-		err = insertReports(ctx, tx, appID, res.InputIndex, res.Reports)
-		if err != nil {
-			return err
-		}
+	}
+	// Reports are diagnostics for every completed input, independent of outputs.
+	if err := insertReports(ctx, tx, appID, res.InputIndex, res.Reports); err != nil {
+		return err
 	}
 
 	if res.IsDaveConsensus {

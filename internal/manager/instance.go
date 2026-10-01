@@ -281,6 +281,7 @@ func (m *MachineInstanceImpl) Advance(
 		EpochIndex:          epochIndex,
 		InputIndex:          index,
 		Status:              status,
+		Reports:             advanceResp.Reports,
 		ExceptionData:       advanceResp.ExceptionData,
 		PeriodicStateHashes: advanceResp.PeriodicStateHashes,
 		PaddingRepetitions:  advanceResp.PaddingRepetitions,
@@ -306,10 +307,10 @@ func (m *MachineInstanceImpl) Advance(
 		}
 		result.StateProof = *postProof
 		result.Outputs = advanceResp.Outputs
-		result.Reports = advanceResp.Reports
 		adoptFork = true
 	case model.InputCompletionStatus_Rejected:
-		// Rejected execution has no canonical state transition or effects.
+		// Rejection keeps the predecessor state and discards outputs. Reports
+		// remain available as diagnostics from the completed execution.
 		result.StateProof = *prevProof
 	case model.InputCompletionStatus_Exception,
 		model.InputCompletionStatus_MachineHalted,

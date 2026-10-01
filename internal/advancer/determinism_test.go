@@ -355,17 +355,16 @@ func requireDeterminismTarget(
 	require.Len(t, target.PeriodicStateHashes, 2, "a PRT result must retain its periodic state hashes")
 	require.Equal(t, machine.InputEntryCapacity-uint64(len(target.PeriodicStateHashes)), target.PaddingRepetitions)
 
+	require.Equal(t, [][]byte{append([]byte("report:"), targetPayload...)}, target.Reports)
 	if wantStatus == model.InputCompletionStatus_Accepted {
 		require.True(t, target.IsComplete())
 		require.Equal(t, [][]byte{append([]byte("output:"), targetPayload...)}, target.Outputs)
-		require.Equal(t, [][]byte{append([]byte("report:"), targetPayload...)}, target.Reports)
 		require.NotEqual(t, prefix.MachineHash, target.MachineHash)
 		require.NotEqual(t, prefix.TxBufferDataBlock, target.TxBufferDataBlock)
 		return
 	}
 
-	require.Empty(t, target.Outputs, "effects are canonical only for accepted inputs")
-	require.Empty(t, target.Reports, "effects are canonical only for accepted inputs")
+	require.Empty(t, target.Outputs, "outputs are canonical only for accepted inputs")
 	if wantStatus.IsTerminal() {
 		require.True(t, target.IsComplete(),
 			"a terminal result must preserve its actual post-run proof")
@@ -823,12 +822,12 @@ func (m *determinismRuntime) Advance(
 	hashes := []machine.Hash{firstHash, finalHash}
 	response := &machine.AdvanceResponse{
 		Status:              status,
+		Reports:             []machine.Report{report},
 		PeriodicStateHashes: hashes,
 		PaddingRepetitions:  machine.InputEntryCapacity - uint64(len(hashes)),
 	}
 	if status == machine.CompletionStatusAccepted {
 		response.Outputs = []machine.Output{output}
-		response.Reports = []machine.Report{report}
 	} else if status == machine.CompletionStatusException {
 		response.ExceptionData = append([]byte{}, input...)
 	}
