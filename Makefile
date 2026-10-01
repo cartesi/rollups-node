@@ -42,7 +42,7 @@ PREFIX ?= /usr
 endif
 
 BIN_RUNTIME_PATH= $(PREFIX)/bin
-DOC_RUNTIME_PATH= $(PREFIX)/doc/cartesi-rollups-node
+DOC_RUNTIME_PATH= $(PREFIX)/share/doc/cartesi-rollups-node
 
 BIN_INSTALL_PATH= $(abspath $(DESTDIR)$(BIN_RUNTIME_PATH))
 DOC_INSTALL_PATH= $(abspath $(DESTDIR)$(DOC_RUNTIME_PATH))
