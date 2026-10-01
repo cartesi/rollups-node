@@ -16,13 +16,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
 
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
 var Cmd = newCommand()
@@ -114,7 +114,7 @@ func (o *options) run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	client, err := ethclient.DialContext(ctx, endpoint.Raw())
+	client, err := ethutil.DialEthClient(ctx, endpoint.Raw())
 	if err != nil {
 		return fmt.Errorf("connect to Ethereum: %w", err)
 	}

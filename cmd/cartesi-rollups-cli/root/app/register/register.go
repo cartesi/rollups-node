@@ -23,7 +23,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -284,7 +283,7 @@ func getTemplateHash(
 ) (*common.Hash, error) {
 	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
 	cobra.CheckErr(err)
-	client, err := ethclient.Dial(ethEndpoint.Raw())
+	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
 	}
@@ -299,7 +298,7 @@ func hasCodeAt(
 	if err != nil {
 		return false, fmt.Errorf("failed to get blockchain http endpoint address: %w", err)
 	}
-	client, err := ethclient.Dial(ethEndpoint.Raw())
+	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
 	if err != nil {
 		return false, fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
 	}
@@ -318,7 +317,7 @@ func getConsensus(
 	if err != nil {
 		return common.Address{}, fmt.Errorf("failed to get blockchain http endpoint address: %w", err)
 	}
-	client, err := ethclient.Dial(ethEndpoint.Raw())
+	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
 	if err != nil {
 		return common.Address{}, fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
 	}
@@ -333,7 +332,7 @@ func getInputBox(
 	if err != nil {
 		return common.Address{}, fmt.Errorf("failed to get blockchain http endpoint address: %w", err)
 	}
-	client, err := ethclient.Dial(ethEndpoint.Raw())
+	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
 	if err != nil {
 		return common.Address{}, fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
 	}
@@ -348,7 +347,7 @@ func getEpochLength(
 	if err != nil {
 		return 0, fmt.Errorf("failed to get blockchain http endpoint address: %w", err)
 	}
-	client, err := ethclient.Dial(ethEndpoint.Raw())
+	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
 	if err != nil {
 		return 0, fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
 	}
@@ -363,7 +362,7 @@ func getClaimStagingPeriod(
 	if err != nil {
 		return 0, fmt.Errorf("failed to get blockchain http endpoint address: %w", err)
 	}
-	client, err := ethclient.Dial(ethEndpoint.Raw())
+	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
 	if err != nil {
 		return 0, fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
 	}
@@ -387,7 +386,7 @@ func getConsensusType(
 	if err != nil {
 		return "", fmt.Errorf("failed to get blockchain http endpoint address: %w", err)
 	}
-	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
+	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
 	}
@@ -423,7 +422,7 @@ func readApplicationWithdrawalConfig(
 	if err != nil {
 		return model.WithdrawalConfig{}, fmt.Errorf("failed to get blockchain http endpoint address: %w", err)
 	}
-	client, err := ethclient.Dial(ethEndpoint.Raw())
+	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
 	if err != nil {
 		return model.WithdrawalConfig{}, fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
 	}
@@ -442,7 +441,7 @@ func getInputBoxDeploymentBlock(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get blockchain http endpoint address: %w", err)
 	}
-	client, err := ethclient.Dial(ethEndpoint.Raw())
+	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
 	}

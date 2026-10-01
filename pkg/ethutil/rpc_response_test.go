@@ -93,3 +93,13 @@ func TestNewEthClientAcceptsNullError(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(16), number)
 }
+
+func TestDialEthClientAcceptsNullError(t *testing.T) {
+	server := newNullErrorServer(t)
+	client, err := DialEthClient(t.Context(), server.URL)
+	require.NoError(t, err)
+	defer client.Close()
+	number, err := client.BlockNumber(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, uint64(16), number)
+}

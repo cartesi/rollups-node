@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
 
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
@@ -113,7 +112,7 @@ func run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
+	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
 	if err != nil {
 		return err
 	}

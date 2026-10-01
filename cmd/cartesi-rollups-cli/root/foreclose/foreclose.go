@@ -10,13 +10,13 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
 
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
 var Cmd = &cobra.Command{
@@ -90,7 +90,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
+	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
 	if err != nil {
 		return err
 	}

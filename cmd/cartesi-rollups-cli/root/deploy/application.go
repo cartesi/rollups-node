@@ -153,7 +153,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
 	cobra.CheckErr(err)
 
-	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
+	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
 	cobra.CheckErr(err)
 	defer client.Close()
 

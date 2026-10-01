@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
 )
 
@@ -70,7 +69,7 @@ func runDeployAuthority(cmd *cobra.Command, _ []string) {
 	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
 	cobra.CheckErr(err)
 
-	client, err := ethclient.DialContext(ctx, ethEndpoint.Raw())
+	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
 	cobra.CheckErr(err)
 	defer client.Close()
 

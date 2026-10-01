@@ -97,6 +97,18 @@ func NewEthClient(
 	return ethclient.NewClient(rpcClient), nil
 }
 
+// DialEthClient connects to an Ethereum JSON-RPC endpoint like
+// ethclient.DialContext, and accepts a null error member in the responses like
+// NewEthClient.
+func DialEthClient(ctx context.Context, endpoint string) (*ethclient.Client, error) {
+	httpClient := &http.Client{Transport: nullErrorTransport{next: http.DefaultTransport}}
+	rpcClient, err := rpc.DialOptions(ctx, endpoint, rpc.WithHTTPClient(httpClient))
+	if err != nil {
+		return nil, err
+	}
+	return ethclient.NewClient(rpcClient), nil
+}
+
 // retryBackoff caps server-directed Retry-After delays while preserving the
 // library's default exponential backoff for every other case.
 func retryBackoff(minDuration, maxDuration time.Duration, attemptNum int, resp *http.Response) time.Duration {

@@ -189,7 +189,7 @@ func newChainClient(
 	appAddr common.Address,
 	block *big.Int,
 ) (*chainClient, error) {
-	client, err := ethclient.DialContext(ctx, endpoint)
+	client, err := ethutil.DialEthClient(ctx, endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("connect to RPC endpoint: %w", err)
 	}
