@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
+	"os"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-jet/jet/v2/postgres"
@@ -126,27 +128,9 @@ func insertOutputs(
 		return err
 	}
 
-	stmt := table.Output.INSERT(
-		table.Output.InputEpochApplicationID,
-		table.Output.InputIndex,
-		table.Output.Index,
-		table.Output.RawData,
-	)
-	for i, data := range dataArray {
-		stmt = stmt.VALUES(
-			appID,
-			inputIndex,
-			nextIndex+uint64(i),
-			data,
-		)
-	}
-
-	sqlStr, args := stmt.Sql()
-	_, err = tx.Exec(ctx, sqlStr, args...)
-	if err != nil {
-		return err
-	}
-	return nil
+	return copyAdvanceData(ctx, tx, table.Output, postgres.ColumnList{
+		table.Output.InputEpochApplicationID, table.Output.InputIndex, table.Output.Index, table.Output.RawData,
+	}, appID, inputIndex, nextIndex, dataArray)
 }
 
 func insertReports(
@@ -165,27 +149,71 @@ func insertReports(
 		return err
 	}
 
-	stmt := table.Report.INSERT(
-		table.Report.InputEpochApplicationID,
-		table.Report.InputIndex,
-		table.Report.Index,
-		table.Report.RawData,
-	)
-	for i, data := range dataArray {
-		stmt = stmt.VALUES(
-			appID,
-			inputIndex,
-			nextIndex+uint64(i),
-			data,
-		)
-	}
+	return copyAdvanceData(ctx, tx, table.Report, postgres.ColumnList{
+		table.Report.InputEpochApplicationID, table.Report.InputIndex, table.Report.Index, table.Report.RawData,
+	}, appID, inputIndex, nextIndex, dataArray)
+}
 
-	sqlStr, args := stmt.Sql()
-	_, err = tx.Exec(ctx, sqlStr, args...)
+// copyAdvanceData streams rows within the result transaction, avoiding the
+// extended protocol's parameter-count and aggregate Bind-message size limits.
+func copyAdvanceData(
+	ctx context.Context,
+	tx pgx.Tx,
+	destination postgres.Table,
+	columns postgres.ColumnList,
+	appID int64,
+	inputIndex uint64,
+	nextIndex uint64,
+	dataArray [][]byte,
+) error {
+	columnNames := make([]string, len(columns))
+	for i, column := range columns {
+		columnNames[i] = column.Name()
+	}
+	tableName := destination.TableName()
+	copied, err := tx.CopyFrom(
+		ctx,
+		pgx.Identifier{destination.SchemaName(), tableName},
+		columnNames,
+		pgx.CopyFromSlice(len(dataArray), func(i int) ([]any, error) {
+			index := nextIndex + uint64(i) //nolint:gosec // CopyFromSlice supplies nonnegative row positions.
+			return []any{appID, inputIndex, index, dataArray[i]}, nil
+		}),
+	)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to copy %s rows for application %d input %d: %w",
+			tableName, appID, inputIndex, normalizeCopyError(ctx, err))
+	}
+	if copied != int64(len(dataArray)) {
+		return fmt.Errorf("copied %d %s rows for application %d input %d, expected %d",
+			copied, tableName, appID, inputIndex, len(dataArray))
 	}
 	return nil
+}
+
+// COPY's concurrent reader and writer can report a locally closed socket after
+// cancellation sets its deadline. Normalize only local socket closure or deadline on a
+// canceled context; server errors, peer disconnections, and mixed causes remain failures.
+func normalizeCopyError(ctx context.Context, err error) error {
+	if ctx.Err() != context.Canceled || err == nil {
+		return err
+	}
+	cause := err
+	for {
+		if _, mixed := cause.(interface{ Unwrap() []error }); mixed {
+			return err
+		}
+		wrapper, ok := cause.(interface{ Unwrap() error })
+		if !ok || wrapper.Unwrap() == nil {
+			break
+		}
+		cause = wrapper.Unwrap()
+	}
+	if errors.Is(cause, net.ErrClosed) || errors.Is(cause, os.ErrDeadlineExceeded) {
+		// Preserve the transport diagnostic while exposing cancellation as the cause.
+		return fmt.Errorf("COPY interrupted (%v): %w", err, context.Canceled)
+	}
+	return err
 }
 
 func insertStateHashes(
@@ -239,7 +267,7 @@ func insertStateHashes(
 		source,
 	)
 	if err != nil {
-		return err
+		return normalizeCopyError(ctx, err)
 	}
 	expectedCopied := int64(rowCount) //nolint:gosec // Span validation bounds rowCount far below MaxInt64.
 	if copied != expectedCopied {
