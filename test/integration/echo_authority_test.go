@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -97,6 +98,7 @@ func (s *EchoAuthoritySuite) TestInspect() {
 
 	s.Require().Equal("Accepted", result.Status)
 	s.Require().Len(result.Reports, 1, "echo-dapp should return 1 report")
+	s.Equal(hexutil.Encode([]byte("hello")), result.Reports[0].Payload)
 	s.T().Logf("Inspect returned status=%s reports=%d", result.Status, len(result.Reports))
 	s.T().Log("=== Inspect happy path complete ===")
 }

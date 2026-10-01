@@ -257,8 +257,9 @@ func readOutput(ctx context.Context, appName string, index uint64) (*api.Decoded
 }
 
 // readReports lists all reports for the application.
-func readReports(ctx context.Context, appName string) (*api.ListResponse[model.Report], error) {
-	out, err := runCLI(ctx, "read", "reports", appName)
+func readReports(ctx context.Context, appName string, args ...string) (*api.ListResponse[model.Report], error) {
+	cliArgs := append([]string{"read", "reports", appName}, args...)
+	out, err := runCLI(ctx, cliArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -267,6 +268,19 @@ func readReports(ctx context.Context, appName string) (*api.ListResponse[model.R
 		return nil, fmt.Errorf("parse reports: %w", err)
 	}
 	return &resp, nil
+}
+
+func readReport(ctx context.Context, appName string, index uint64, args ...string) (*model.Report, error) {
+	cliArgs := append([]string{"read", "reports", appName, strconv.FormatUint(index, 10)}, args...)
+	out, err := runCLI(ctx, cliArgs...)
+	if err != nil {
+		return nil, err
+	}
+	var resp api.SingleResponse[model.Report]
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		return nil, fmt.Errorf("parse report: %w", err)
+	}
+	return &resp.Data, nil
 }
 
 // readEpoch reads a single epoch by index.

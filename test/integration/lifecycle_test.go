@@ -14,6 +14,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -41,7 +42,7 @@ const (
 	echoOutputsPerInput           = 3 // Voucher + DelegateCallVoucher + Notice
 	echoReportsPerInput           = 1
 	rejectOutputsPerAcceptedInput = 2 // Voucher + Notice (no DelegateCallVoucher)
-	rejectReportsPerAcceptedInput = 1
+	rejectReportsPerInput         = 1
 )
 
 // echoLifecycleConfig configures a shared echo lifecycle test that covers:
@@ -145,6 +146,16 @@ func runEchoLifecycleTest(ctx context.Context, t testing.TB, require *require.As
 	require.NoError(err, "read reports")
 	require.Equal(uint64(echoReportsPerInput), reportsResp.Pagination.TotalCount,
 		"expected %d report(s)", echoReportsPerInput)
+	require.Len(reportsResp.Data, echoReportsPerInput)
+	input, err := readInput(ctx, cfg.AppName, inputIndex)
+	require.NoError(err, "read report's input")
+	for i, report := range reportsResp.Data {
+		require.Equal(uint64(i), report.Index)
+		require.Equal(inputIndex, report.InputIndex)
+		require.Equal(input.EpochIndex, report.EpochIndex)
+		require.Equal([]byte(cfg.Payload), report.RawData)
+	}
+	verifyReportReads(ctx, require, cfg.AppName, reportsResp, reportsResp.Data[0])
 	t.Log("    all outputs and reports verified")
 
 	// --- Optional pre-claim hook (e.g. PRT tournament settlement) ---
@@ -306,13 +317,26 @@ func runRejectExceptionLifecycleTest(
 	t.Logf("    %d outputs found, none from the failed input — correct",
 		numAccepted*rejectOutputsPerAcceptedInput)
 
-	t.Log("Checking reports — same rule: only accepted inputs produce reports...")
+	t.Log("Checking reports — every completed input keeps its reports...")
 	reportsResp, err := readReports(ctx, cfg.AppName)
 	require.NoError(err, "read reports")
-	require.Equal(numAccepted*rejectReportsPerAcceptedInput, reportsResp.Pagination.TotalCount,
-		"expected %d reports (%d per accepted input x %d accepted inputs)",
-		numAccepted*rejectReportsPerAcceptedInput, rejectReportsPerAcceptedInput, numAccepted)
-	t.Logf("    %d reports found — correct", numAccepted*rejectReportsPerAcceptedInput)
+	processed := uint64(numInputs)
+	if terminal {
+		processed = 2
+	}
+	require.Equal(processed*rejectReportsPerInput, reportsResp.Pagination.TotalCount)
+	require.Len(reportsResp.Data, int(processed*rejectReportsPerInput))
+	for i, report := range reportsResp.Data {
+		inputIndex := uint64(i) / rejectReportsPerInput
+		require.Equal(uint64(i), report.Index)
+		require.Equal(inputIndex, report.InputIndex)
+		require.Equal([]byte(fmt.Sprintf("%s-payload-%d", cfg.TestName, inputIndex)), report.RawData)
+		input, err := readInput(ctx, cfg.AppName, report.InputIndex)
+		require.NoError(err, "read report's input")
+		require.Equal(input.EpochIndex, report.EpochIndex)
+	}
+	verifyReportReads(ctx, require, cfg.AppName, reportsResp, reportsResp.Data[rejectReportsPerInput])
+	t.Logf("    %d reports found — correct", reportsResp.Pagination.TotalCount)
 
 	if terminal {
 		t.Logf("=== %s test complete: %s terminalized execution before the later input ===",
@@ -371,6 +395,62 @@ func runRejectExceptionLifecycleTest(
 	})
 
 	t.Logf("=== %s test complete: %s handling + L1 execution verified ===", cfg.TestName, cfg.FailStatus)
+}
+
+// verifyReportReads checks list filters and lookup through the database and API.
+// The fixture's complete report set fits in the supplied page.
+func verifyReportReads(
+	ctx context.Context,
+	require *require.Assertions,
+	appName string,
+	all *api.ListResponse[model.Report],
+	report model.Report,
+) {
+	epochReports := make([]model.Report, 0, len(all.Data))
+	inputReports := make([]model.Report, 0, len(all.Data))
+	for _, entry := range all.Data {
+		if entry.EpochIndex == report.EpochIndex {
+			epochReports = append(epochReports, entry)
+			if entry.InputIndex == report.InputIndex {
+				inputReports = append(inputReports, entry)
+			}
+		}
+	}
+	apiArgs := []string{
+		"--jsonrpc=true", "--jsonrpc-api-url",
+		envOrDefault("CARTESI_JSONRPC_API_URL", "http://localhost:10011/rpc"),
+	}
+	apiReports, err := readReports(ctx, appName, apiArgs...)
+	require.NoError(err, "list reports through JSON-RPC")
+	require.Equal(all.Pagination, apiReports.Pagination)
+	requireReportsEqual(require, all.Data, apiReports.Data)
+	for _, transportArgs := range [][]string{nil, apiArgs} {
+		epochArgs := append([]string{"--epoch-index", strconv.FormatUint(report.EpochIndex, 10)}, transportArgs...)
+		filtered, err := readReports(ctx, appName, epochArgs...)
+		require.NoError(err, "list reports by epoch")
+		require.Equal(uint64(len(epochReports)), filtered.Pagination.TotalCount)
+		requireReportsEqual(require, epochReports, filtered.Data)
+		epochArgs = append(epochArgs, "--input-index", strconv.FormatUint(report.InputIndex, 10))
+		filtered, err = readReports(ctx, appName, epochArgs...)
+		require.NoError(err, "list reports by epoch and input")
+		require.Equal(uint64(len(inputReports)), filtered.Pagination.TotalCount)
+		requireReportsEqual(require, inputReports, filtered.Data)
+		single, err := readReport(ctx, appName, report.Index, transportArgs...)
+		require.NoError(err, "get report by index")
+		require.NotNil(single)
+		requireReportsEqual(require, []model.Report{report}, []model.Report{*single})
+	}
+}
+
+func requireReportsEqual(require *require.Assertions, expected, actual []model.Report) {
+	require.Len(actual, len(expected))
+	for i, want := range expected {
+		got := actual[i]
+		// The CLI and node can encode the same database instant in different zones.
+		want.CreatedAt, want.UpdatedAt = want.CreatedAt.UTC(), want.UpdatedAt.UTC()
+		got.CreatedAt, got.UpdatedAt = got.CreatedAt.UTC(), got.UpdatedAt.UTC()
+		require.Equal(want, got)
+	}
 }
 
 func minePastEpochBoundary(

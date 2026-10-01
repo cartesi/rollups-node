@@ -185,7 +185,7 @@ func (s *TerminalMachineStatesSuite) runTerminalMachineState(tc terminalMachineS
 	require.Zero(outputs.Pagination.TotalCount, "terminal fixture must not emit outputs")
 	reports, err := readReports(s.ctx, s.appName)
 	require.NoError(err, "read reports")
-	require.Zero(reports.Pagination.TotalCount, "terminal fixture must not emit reports")
+	require.Zero(reports.Pagination.TotalCount, "fixture emits no reports")
 
 	s.T().Logf("Restarting the node after durable %s...", tc.inputStatus)
 	stopSharedNode(s.T())
