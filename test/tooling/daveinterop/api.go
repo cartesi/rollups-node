@@ -95,6 +95,12 @@ func (a *nodeAPI) matches(ctx context.Context, app string) ([]model.Match, error
 	})
 }
 
+func (a *nodeAPI) withdrawals(ctx context.Context, app string) ([]model.Withdrawal, error) {
+	return listAll[model.Withdrawal](ctx, a, "cartesi_listWithdrawals", func(limit, offset uint64) any {
+		return api.ListWithdrawalsParams{Application: app, Limit: limit, Offset: offset}
+	})
+}
+
 func (a *nodeAPI) tournaments(ctx context.Context, app string) ([]model.Tournament, error) {
 	return listAll[model.Tournament](ctx, a, "cartesi_listTournaments", func(limit, offset uint64) any {
 		return api.ListTournamentsParams{Application: app, Limit: limit, Offset: offset}

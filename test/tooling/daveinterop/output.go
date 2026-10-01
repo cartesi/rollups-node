@@ -55,6 +55,9 @@ const (
 	ansiReset  = "\x1b[0m"
 )
 
+// ansiMagenta marks the findings of a live run.
+const ansiMagenta = "\x1b[35m"
+
 func (h *lineHandler) Enabled(_ context.Context, level slog.Level) bool { return level >= h.level }
 
 func (h *lineHandler) Handle(_ context.Context, r slog.Record) error {
@@ -179,8 +182,8 @@ func (st textStyle) paint(code, text string) string {
 	return code + text + ansiReset
 }
 
-// mark is the one-character status mark: ✔ pass, ✘ fail, ○ not tested;
-// blank when a row has no check.
+// mark is the one-character status mark: ✔ pass, ✘ fail, ○ not tested,
+// ⚑ finding; blank when a row has no check.
 func (st textStyle) mark(status checkStatus) string {
 	switch status {
 	case checkPass:
@@ -189,6 +192,8 @@ func (st textStyle) mark(status checkStatus) string {
 		return st.paint(ansiRed+ansiBold, "✘")
 	case checkNotTested:
 		return st.paint(ansiYellow, "○")
+	case checkFinding:
+		return st.paint(ansiMagenta, "⚑")
 	}
 	return " "
 }
@@ -206,7 +211,7 @@ func (st textStyle) tally(counts map[checkStatus]int) string {
 	for _, entry := range []struct {
 		status checkStatus
 		label  string
-	}{{checkPass, "passed"}, {checkFail, "failed"}, {checkNotTested, "not tested"}} {
+	}{{checkPass, "passed"}, {checkFail, "failed"}, {checkNotTested, "not tested"}, {checkFinding, "finding"}} {
 		if counts[entry.status] > 0 || entry.status == checkFail {
 			parts = append(parts, fmt.Sprintf("%s %d %s", st.mark(entry.status), counts[entry.status], entry.label))
 		}

@@ -31,6 +31,9 @@ const (
 	checkPass      checkStatus = "pass"
 	checkFail      checkStatus = "fail"
 	checkNotTested checkStatus = "not-tested"
+	// checkFinding reports a defect of the Sling node that the run observed;
+	// it does not fail the run.
+	checkFinding checkStatus = "finding"
 )
 
 // Check names that other code refers to.
@@ -145,6 +148,11 @@ type chainFacts struct {
 	// SlingJoins and SlingSentry hold the Sling node's own values.
 	SlingJoins  map[uint64]commitmentJoin
 	SlingSentry map[uint64]common.Hash
+	// Foreclosure, DriveProof, and ChainWithdrawals are the post-foreclosure
+	// facts of the application; nil or empty before foreclosure.
+	Foreclosure      *chainEvent
+	DriveProof       *driveProof
+	ChainWithdrawals []chainWithdrawal
 }
 
 // nodeFacts is the rollups node side of a snapshot, read through its API.
@@ -155,6 +163,7 @@ type nodeFacts struct {
 	Tournaments map[common.Address]model.Tournament
 	Commitments []model.Commitment
 	Matches     []model.Match
+	Withdrawals []model.Withdrawal
 }
 
 // verifyFacts is one snapshot of both sides.
@@ -217,6 +226,9 @@ func collectNodeFacts(ctx context.Context, t *verifyTarget) (*nodeFacts, error) 
 	if f.Matches, err = t.api.matches(ctx, t.app); err != nil {
 		return nil, err
 	}
+	if f.Withdrawals, err = t.api.withdrawals(ctx, t.app); err != nil {
+		return nil, err
+	}
 	return f, nil
 }
 
@@ -260,6 +272,15 @@ func collectChainFacts(ctx context.Context, t *verifyTarget, head uint64) (*chai
 		}
 		f.ChainMatches = append(f.ChainMatches, matches...)
 	}
+	if f.Foreclosure, err = c.foreclosure(ctx, t.appAddress, head); err != nil {
+		return nil, err
+	}
+	if f.DriveProof, err = c.driveProof(ctx, t.appAddress, head); err != nil {
+		return nil, err
+	}
+	if f.ChainWithdrawals, err = c.withdrawals(ctx, t.appAddress, head); err != nil {
+		return nil, err
+	}
 	if t.slingSigner != (common.Address{}) {
 		for _, sealed := range f.Sealed {
 			for _, join := range f.ChainJoins[sealed.Tournament] {
@@ -293,6 +314,14 @@ func epochRank(status model.EpochStatus) int {
 		return -1
 	}
 	return -1
+}
+
+// foreclosedEpoch reports whether a node epoch legitimately ended as
+// CLAIM_FORECLOSED: the application is foreclosed on chain and the epoch was
+// never accepted.
+func (f *verifyFacts) foreclosedEpoch(epoch model.Epoch) bool {
+	_, accepted := f.acceptance(epoch.Index)
+	return f.Foreclosure != nil && epoch.Status == model.EpochStatus_ClaimForeclosed && !accepted
 }
 
 // acceptance returns the EpochSealed event of epoch n+1: DaveConsensus seals
@@ -351,13 +380,29 @@ func completionGaps(f *verifyFacts, expected model.ApplicationStatus) (gaps []st
 			return gaps, true
 		}
 	}
-	for name, cursor := range map[string]uint64{
-		"last_input_check_block": f.App.LastInputCheckBlock, "last_epoch_check_block": f.App.LastEpochCheckBlock,
-		"last_tournament_check_block": f.App.LastTournamentCheckBlock,
+	// After foreclosure the input and epoch scans stop at the foreclosure
+	// block; tournaments are still observed.
+	scanned := f.Head
+	if f.Foreclosure != nil {
+		scanned = min(f.Head, f.Foreclosure.Block)
+	}
+	for name, want := range map[string][2]uint64{
+		"last_input_check_block":      {f.App.LastInputCheckBlock, scanned},
+		"last_epoch_check_block":      {f.App.LastEpochCheckBlock, scanned},
+		"last_tournament_check_block": {f.App.LastTournamentCheckBlock, f.Head},
 	} {
-		if cursor < f.Head {
-			gaps = append(gaps, fmt.Sprintf("%s %d < head %d", name, cursor, f.Head))
+		if want[0] < want[1] {
+			gaps = append(gaps, fmt.Sprintf("%s %d < %d", name, want[0], want[1]))
 		}
+	}
+	if f.Foreclosure != nil && f.App.ForecloseBlock == 0 {
+		gaps = append(gaps, "the foreclosure is not indexed")
+	}
+	if f.DriveProof != nil && f.App.AccountsDriveProvedBlock == 0 {
+		gaps = append(gaps, "the accounts-drive proof is not indexed")
+	}
+	if indexed, total := len(f.Withdrawals), len(f.ChainWithdrawals); indexed < total {
+		gaps = append(gaps, fmt.Sprintf("%d of %d withdrawals are indexed", indexed, total))
 	}
 	if uint64(len(f.Inputs)) < f.ChainInputCount {
 		gaps = append(gaps, fmt.Sprintf("the rollups node has %d of %d inputs", len(f.Inputs), f.ChainInputCount))
@@ -372,6 +417,7 @@ func completionGaps(f *verifyFacts, expected model.ApplicationStatus) (gaps []st
 		switch {
 		case !ok:
 			gaps = append(gaps, fmt.Sprintf("sealed epoch %d is missing", sealed.Index))
+		case f.foreclosedEpoch(epoch):
 		case epochRank(epoch.Status) < epochRank(model.EpochStatus_ClaimComputed):
 			gaps = append(gaps, fmt.Sprintf("epoch %d is %s", sealed.Index, epoch.Status))
 		case accepted && epoch.Status != model.EpochStatus_ClaimAccepted:
@@ -484,8 +530,110 @@ func evaluate(f *verifyFacts, t *verifyTarget) []checkResult {
 		checkTournaments(f),
 		checkTournamentCommitments(f),
 		checkTournamentMatches(f),
+		checkForeclosure(f),
+		checkWithdrawals(f),
 		checkStateChange(f, commitmentMatched, t.requireAgreement),
 	}
+}
+
+// checkForeclosure compares the node's view of the foreclosure and of the
+// accounts-drive proof with the application's events, both ways, and
+// requires every epoch that was never accepted to end as CLAIM_FORECLOSED.
+func checkForeclosure(f *verifyFacts) checkResult {
+	result := checkResult{Name: "application.foreclosure", Detail: "the application is not foreclosed"}
+	switch {
+	case f.Foreclosure == nil && f.App.ForecloseBlock != 0:
+		result.fail("the rollups node records a foreclosure at block %d that is not on chain", f.App.ForecloseBlock)
+		return result.settle(1)
+	case f.Foreclosure == nil:
+		return result.settle(0)
+	}
+	e := f.Foreclosure
+	if f.App.ForecloseBlock != e.Block || f.App.ForecloseTransaction == nil || *f.App.ForecloseTransaction != e.Tx {
+		result.fail("foreclosure: rollups block %d tx %v, chain block %d tx %s", f.App.ForecloseBlock,
+			f.App.ForecloseTransaction, e.Block, e.Tx)
+	}
+	result.Detail = fmt.Sprintf("foreclosed at block %d", e.Block)
+	var drained []uint64
+	for _, index := range sortedKeys(f.Epochs) {
+		epoch := f.Epochs[index]
+		if _, accepted := f.acceptance(index); accepted {
+			continue
+		}
+		if epoch.Status != model.EpochStatus_ClaimForeclosed {
+			result.fail("epoch %d is %s; an epoch never accepted must end as CLAIM_FORECLOSED", index, epoch.Status)
+			continue
+		}
+		drained = append(drained, index)
+	}
+	sealed := map[uint64]bool{}
+	for _, epoch := range f.Sealed {
+		sealed[epoch.Index] = true
+	}
+	var closedSealed, closedOpen []uint64
+	for _, index := range drained {
+		if sealed[index] {
+			closedSealed = append(closedSealed, index)
+		} else {
+			closedOpen = append(closedOpen, index)
+		}
+	}
+	switch {
+	case len(drained) == 0:
+		result.Detail += "; no epoch left to close"
+	case len(closedOpen) == 0:
+		result.Detail += fmt.Sprintf("; CLAIM_FORECLOSED: %s (sealed, never accepted)", epochsText(closedSealed))
+	case len(closedSealed) == 0:
+		result.Detail += fmt.Sprintf("; CLAIM_FORECLOSED: %s (open at the foreclosure)", epochsText(closedOpen))
+	default:
+		result.Detail += fmt.Sprintf("; CLAIM_FORECLOSED: %s (sealed, never accepted) and %s (open at the foreclosure)",
+			epochsText(closedSealed), epochsText(closedOpen))
+	}
+	switch p := f.DriveProof; {
+	case p == nil && f.App.AccountsDriveProvedBlock != 0:
+		result.fail("the rollups node records an accounts-drive proof that is not on chain")
+	case p == nil:
+		result.Detail += "; accounts drive not proved"
+	case f.App.AccountsDriveProvedBlock != p.Block || f.App.AccountsDriveProvedTransaction == nil ||
+		*f.App.AccountsDriveProvedTransaction != p.Tx || f.App.AccountsDriveMerkleRoot == nil ||
+		*f.App.AccountsDriveMerkleRoot != p.Root:
+		result.fail("accounts-drive proof: rollups block %d root %v, chain block %d root %s", f.App.AccountsDriveProvedBlock,
+			f.App.AccountsDriveMerkleRoot, p.Block, p.Root)
+	default:
+		result.Detail += fmt.Sprintf("; accounts drive proved at block %d", p.Block)
+	}
+	return result.settle(1)
+}
+
+// checkWithdrawals compares every Withdrawal event with the node's
+// withdrawals, both ways.
+func checkWithdrawals(f *verifyFacts) checkResult {
+	result := checkResult{Name: "withdrawals",
+		Detail: fmt.Sprintf("chain %d, rollups node %d", len(f.ChainWithdrawals), len(f.Withdrawals))}
+	indexed := make(map[uint64]model.Withdrawal, len(f.Withdrawals))
+	for _, withdrawal := range f.Withdrawals {
+		indexed[withdrawal.AccountIndex] = withdrawal
+	}
+	onChain := map[uint64]bool{}
+	for _, want := range f.ChainWithdrawals {
+		onChain[want.AccountIndex] = true
+		got, ok := indexed[want.AccountIndex]
+		switch {
+		case !ok:
+			result.fail("account %d: not indexed", want.AccountIndex)
+		case !bytes.Equal(got.Account, want.Account) || !bytes.Equal(got.Output, want.Output):
+			result.fail("account %d: account or output differs from the Withdrawal event", want.AccountIndex)
+		case got.BlockNumber != want.Block || got.TransactionHash != want.Tx || got.LogIndex != want.LogIndex:
+			result.fail("account %d: block %d tx %s, chain block %d tx %s", want.AccountIndex, got.BlockNumber,
+				got.TransactionHash, want.Block, want.Tx)
+		}
+	}
+	for index := range indexed {
+		if !onChain[index] {
+			result.fail("account %d: indexed but not on chain", index)
+		}
+	}
+	return result.settle(len(onChain))
 }
 
 func checkApplicationStatus(f *verifyFacts, expected model.ApplicationStatus) checkResult {
@@ -606,6 +754,7 @@ func checkSealedEpochs(f *verifyFacts) checkResult {
 			result.fail("epoch %d last block: rollups %d, EpochSealed at %d", sealed.Index, epoch.LastBlock, sealed.Block)
 		case epoch.TournamentAddress == nil || *epoch.TournamentAddress != sealed.Tournament:
 			result.fail("epoch %d tournament: rollups %v, chain %s", sealed.Index, epoch.TournamentAddress, sealed.Tournament)
+		case f.foreclosedEpoch(epoch):
 		case epoch.Commitment == nil || epoch.MachineHash == nil:
 			result.fail("epoch %d has no computed commitment (%s)", sealed.Index, epoch.Status)
 		}
@@ -617,7 +766,7 @@ func checkSealedEpochs(f *verifyFacts) checkResult {
 		case f.isSealed(index):
 		case index != last.Index+1:
 			result.fail("epoch %d is in the rollups node but not sealed on chain", index)
-		case epoch.Status != model.EpochStatus_Open:
+		case epoch.Status != model.EpochStatus_Open && !f.foreclosedEpoch(epoch):
 			result.fail("open epoch %d is %s", index, epoch.Status)
 		case epoch.InputIndexLowerBound != last.Upper || epoch.InputIndexUpperBound != f.ChainInputCount:
 			result.fail("open epoch %d bounds: rollups [%d,%d), chain [%d,%d)", index, epoch.InputIndexLowerBound,
@@ -687,7 +836,10 @@ func checkAcceptedEpochs(f *verifyFacts) checkResult {
 		}
 	}
 	result.Detail = fmt.Sprintf("%d epochs accepted on chain (%s)", len(accepted), epochsText(accepted))
-	if len(open) > 0 {
+	switch {
+	case len(open) > 0 && f.Foreclosure != nil:
+		result.Detail += fmt.Sprintf("; %s sealed, never to be accepted (foreclosed)", epochsText(open))
+	case len(open) > 0:
 		result.Detail += fmt.Sprintf("; %s sealed, not accepted yet", epochsText(open))
 	}
 	return result.settle(len(accepted))
@@ -809,10 +961,15 @@ func checkSlingFinalStates(f *verifyFacts) (checkResult, map[uint64]bool) {
 // computation agreement, because the winner can be the node's own commitment.
 func checkRootWinners(f *verifyFacts) checkResult {
 	result := checkResult{Name: "commitments.root_winner"}
-	var finished, running []uint64
+	finished := make([]uint64, 0, len(f.Standings))
+	var running, empty []uint64
 	for _, index := range sortedKeys(f.Standings) {
 		standing := f.Standings[index]
-		if !standing.HasWinner {
+		switch {
+		case !standing.HasWinner && standing.Finished:
+			empty = append(empty, index)
+			continue
+		case !standing.HasWinner:
 			running = append(running, index)
 			continue
 		}
@@ -826,6 +983,9 @@ func checkRootWinners(f *verifyFacts) checkResult {
 		len(finished)-len(result.Items), len(finished))
 	if len(running) > 0 {
 		result.Detail += fmt.Sprintf("; the root of %s has no winner yet", epochsText(running))
+	}
+	if len(empty) > 0 {
+		result.Detail += fmt.Sprintf("; the root of %s finished with no winner", epochsText(empty))
 	}
 	return result.settle(len(finished))
 }

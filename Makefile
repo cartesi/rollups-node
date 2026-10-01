@@ -341,7 +341,7 @@ interop-replay: daveinterop ## Dave interop: replay a case into a fresh rollups 
 	@$(MAKE) --no-print-directory -s build >&2
 	@$(DAVEINTEROP) replay $(ARGS)
 
-interop-live: daveinterop ## Dave interop: run the rollups node and the Sling node together (ARGS="--scenario smoke|full --order concurrent|rollups-first|sling-first")
+interop-live: daveinterop ## Dave interop: run the rollups node and the Sling node together (ARGS="--scenario smoke|full|foreclose --order concurrent|rollups-first|sling-first")
 	@$(MAKE) --no-print-directory -s build >&2
 	@$(DAVEINTEROP) live $(ARGS)
 

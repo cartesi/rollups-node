@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -23,6 +24,8 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/merkle"
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
+	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/outputs"
 )
 
@@ -344,7 +347,11 @@ func TestEvaluateConsistentFactsPass(t *testing.T) {
 	report := &verifyReport{Checks: evaluate(f, sampleTarget(sampleClaims(), true))}
 	summarize(report)
 	for _, check := range report.Checks {
-		require.Equal(t, checkPass, check.Status, "%s: %s %v", check.Name, check.Detail, check.Items)
+		want := checkPass
+		if check.Name == "application.foreclosure" || check.Name == "withdrawals" {
+			want = checkNotTested // not foreclosed
+		}
+		require.Equal(t, want, check.Status, "%s: %s %v", check.Name, check.Detail, check.Items)
 	}
 	require.True(t, report.Passed)
 	require.True(t, coverageOf(report, coverageAgreement).Tested)
@@ -440,6 +447,56 @@ func TestEvaluateDetectsMismatches(t *testing.T) {
 			claims := sampleClaims()
 			tc.mutate(f, claims)
 			require.Equal(t, checkFail, statusOf(evaluate(f, sampleTarget(claims, false)), tc.check))
+		})
+	}
+}
+
+// foreclosedFacts forecloses sampleFacts after epoch 0 was accepted: epoch 1
+// (sealed, never accepted) and the open epoch 2 end as CLAIM_FORECLOSED; the
+// input and epoch scans stop at the foreclosure block; one account withdrew.
+func foreclosedFacts() *verifyFacts {
+	f := sampleFacts()
+	foreclosure := chainEvent{Block: 60, Tx: common.HexToHash("0x60")}
+	f.Foreclosure = &foreclosure
+	f.App.ForecloseBlock, f.App.ForecloseTransaction = 60, hashPtr("0x60")
+	f.App.LastInputCheckBlock, f.App.LastEpochCheckBlock = 60, 60
+	mutateEpoch(f, 1, func(e *model.Epoch) { e.Status = model.EpochStatus_ClaimForeclosed })
+	mutateEpoch(f, 2, func(e *model.Epoch) { e.Status = model.EpochStatus_ClaimForeclosed })
+	f.DriveProof = &driveProof{chainEvent: chainEvent{Block: 70, Tx: common.HexToHash("0x70")}, Root: common.HexToHash("0xd0")}
+	f.App.AccountsDriveProvedBlock, f.App.AccountsDriveProvedTransaction = 70, hashPtr("0x70")
+	f.App.AccountsDriveMerkleRoot = hashPtr("0xd0")
+	withdrawal := chainWithdrawal{chainEvent: chainEvent{Block: 80, Tx: common.HexToHash("0x80"), LogIndex: 2}, AccountIndex: 1,
+		Account: []byte("account"), Output: []byte("output")}
+	f.ChainWithdrawals = []chainWithdrawal{withdrawal}
+	f.Withdrawals = []model.Withdrawal{{AccountIndex: 1, Account: []byte("account"), Output: []byte("output"),
+		BlockNumber: 80, TransactionHash: common.HexToHash("0x80"), LogIndex: 2}}
+	return f
+}
+
+func TestForeclosedApplicationVerifies(t *testing.T) {
+	f := foreclosedFacts()
+	gaps, _ := completionGaps(f, model.ApplicationStatus_OK)
+	require.Empty(t, gaps, "the scans may stop at the foreclosure block")
+	checks := evaluate(f, sampleTarget(sampleClaims(), false))
+	for _, name := range []string{"application.foreclosure", "withdrawals", checkNameSealed, checkNameAccepted} {
+		require.Equal(t, checkPass, statusOf(checks, name), name)
+	}
+
+	for name, mutate := range map[string]func(*verifyFacts){
+		"foreclosure not indexed": func(f *verifyFacts) { f.App.ForecloseBlock, f.App.ForecloseTransaction = 0, nil },
+		"unaccepted epoch not drained": func(f *verifyFacts) {
+			mutateEpoch(f, 1, func(e *model.Epoch) { e.Status = model.EpochStatus_ClaimComputed })
+		},
+		"wrong drive root":          func(f *verifyFacts) { f.App.AccountsDriveMerkleRoot = hashPtr("0xd1") },
+		"withdrawal not indexed":    func(f *verifyFacts) { f.Withdrawals = nil },
+		"withdrawal output differs": func(f *verifyFacts) { f.Withdrawals[0].Output = []byte("other") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := foreclosedFacts()
+			mutate(f)
+			checks := evaluate(f, sampleTarget(sampleClaims(), false))
+			failed := statusOf(checks, "application.foreclosure") == checkFail || statusOf(checks, "withdrawals") == checkFail
+			require.True(t, failed, "%v", checks)
 		})
 	}
 }
@@ -964,6 +1021,184 @@ func TestDescribeBlocks(t *testing.T) {
 	require.Equal(t, "1, 3, 5, 7, …", describeBlocks([]uint64{1, 3, 5, 7, 9, 11}))
 }
 
+func TestAccountsDriveStart(t *testing.T) {
+	config := []byte(`{"config":{"flash_drive":[{"label":"root","start":2684354560,"length":366809088},` +
+		`{"label":"accounts","start":3221225472,"length":4194304}]}}`)
+	start, err := accountsDriveStart(config)
+	require.NoError(t, err)
+	require.Equal(t, uint64(3221225472>>22), start)
+
+	_, err = accountsDriveStart([]byte(`{"config":{"flash_drive":[{"start":2684354560,"length":366809088}]}}`))
+	require.ErrorContains(t, err, "no 4194304-byte accounts drive")
+	_, err = accountsDriveStart([]byte(`{"config":{"flash_drive":[{"start":4096,"length":4194304}]}}`))
+	require.ErrorContains(t, err, "not aligned")
+}
+
+func TestWithdrawalConfigIsTheDeployJSON(t *testing.T) {
+	guardian, err := deriveTestAccount(testMnemonic, defaultGuardianIx)
+	require.NoError(t, err)
+	fc := &forecloseRun{guardian: guardian, driveStart: 768,
+		builder: common.HexToAddress("0xB4D253c7a110241561B3eD6d632846dF7d4e9Af7")}
+	var decoded struct {
+		Guardian        common.Address `json:"guardian"`
+		LeavesPerAcct   uint64         `json:"log2_leaves_per_account"`
+		MaxNumAccounts  uint64         `json:"log2_max_num_of_accounts"`
+		DriveStartIndex uint64         `json:"accounts_drive_start_index"`
+		Builder         common.Address `json:"withdrawal_output_builder"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(fc.withdrawalConfig()), &decoded))
+	// The guardian of the integration tests and the Makefile: mnemonic index 1.
+	require.Equal(t, common.HexToAddress("0x70997970C51812dc3A010C7d01b50e0d17dc79C8"), decoded.Guardian)
+	require.Equal(t, uint64(0), decoded.LeavesPerAcct)
+	require.Equal(t, uint64(17), decoded.MaxNumAccounts)
+	require.Equal(t, uint64(768), decoded.DriveStartIndex)
+	require.Equal(t, fc.builder, decoded.Builder)
+}
+
+func TestTransactionNames(t *testing.T) {
+	consensus, err := idaveconsensus.IDaveConsensusMetaData.GetAbi()
+	require.NoError(t, err)
+	stage := consensus.Methods["stageTournamentResult"]
+	require.Equal(t, "DaveConsensus.stageTournamentResult", methodName(append(stage.ID, make([]byte, 64)...)))
+	require.Equal(t, "transfer", methodName(nil))
+	require.Equal(t, "unknown 0xdeadbeef", methodName(common.FromHex("0xdeadbeef00")))
+
+	// DaveConsensus reverts with ApplicationForeclosed after a foreclosure;
+	// the Application reverts with its own errors.
+	for _, want := range []struct {
+		abi  func() (*abi.ABI, error)
+		name string
+	}{{idaveconsensus.IDaveConsensusMetaData.GetAbi, "ApplicationForeclosed"},
+		{iapplication.IApplicationMetaData.GetAbi, "RefundAlreadyIssued"}} {
+		parsed, err := want.abi()
+		require.NoError(t, err)
+		contractError, ok := parsed.Errors[want.name]
+		require.True(t, ok, want.name)
+		data := append([]byte(nil), contractError.ID[:4]...)
+		if len(contractError.Inputs) > 0 {
+			values := make([]any, 0, len(contractError.Inputs))
+			for _, input := range contractError.Inputs {
+				switch input.Type.T {
+				case abi.AddressTy:
+					values = append(values, common.HexToAddress("0x01"))
+				default:
+					values = append(values, big.NewInt(4))
+				}
+			}
+			args, err := contractError.Inputs.Pack(values...)
+			require.NoError(t, err)
+			data = append(data, args...)
+		}
+		require.True(t, strings.HasPrefix(errorName(data), want.name+"("), errorName(data))
+	}
+	require.Equal(t, "revert without data", errorName(nil))
+	require.Equal(t, "error 0xdeadbeef", errorName(common.FromHex("0xdeadbeef")))
+}
+
+func TestSummarizeTxs(t *testing.T) {
+	txs := []signerTx{
+		{Method: "DaveConsensus.stageTournamentResult", Failed: true, GasUsed: 24_000, Gas: big.NewInt(10),
+			Revert: "ApplicationForeclosed(0x0000000000000000000000000000000000000001)"},
+		{Method: "DaveConsensus.stageTournamentResult", Failed: true, GasUsed: 26_000, Gas: big.NewInt(10),
+			Revert: "ApplicationForeclosed(0x01)"},
+		{Method: "Tournament.joinTournament", GasUsed: 90_000, Gas: big.NewInt(5)},
+	}
+	summary := summarizeTxs(txs)
+	require.Equal(t, 2, summary.failed)
+	require.Equal(t, uint64(50_000), summary.gasUsed)
+	require.Equal(t, big.NewInt(20), summary.cost)
+	require.Equal(t, "DaveConsensus.stageTournamentResult reverted with ApplicationForeclosed ×2; Tournament.joinTournament ×1",
+		summary.text)
+	require.Equal(t, "2 of 3 transactions reverted, using 50,000 gas (25,000 each on average; 0.00000000000000002 ETH at "+
+		"this chain's fees)", summary.revertedText())
+}
+
+func TestGroupDigits(t *testing.T) {
+	for n, want := range map[uint64]string{0: "0", 999: "999", 1000: "1,000", 504_123: "504,123", 1_234_567: "1,234,567"} {
+		require.Equal(t, want, groupDigits(n))
+	}
+}
+
+func TestExpectRevert(t *testing.T) {
+	require.Equal(t, checkPass, expectRevert("", "RefundAlreadyIssued", func() error {
+		return errors.New("refund: decoded revert: RefundAlreadyIssued(4)")
+	}).Status)
+	require.Equal(t, checkFail, expectRevert("", "RefundAlreadyIssued", func() error { return nil }).Status)
+	require.Equal(t, checkFail, expectRevert("", "RefundAlreadyIssued", func() error {
+		return errors.New("connection refused")
+	}).Status)
+}
+
+// sampleForecloseReport is the report of an operator run of the foreclose
+// scenario, shortened.
+func sampleForecloseReport() *liveReport {
+	return &liveReport{
+		RunDir: "_interop/live/20260930T203506Z", Scenario: scenarioForeclose, Order: orderConcurrent, InputEpoch: 1,
+		Program: "erc20-withdrawal-dapp", SlingSentry: true, Passed: true,
+		OrderChecked: checkResult{Name: "join_order", Status: checkNotTested,
+			Detail: "first join by rollups (concurrent start; order not controlled)"},
+		Epochs: []liveEpoch{
+			{Index: 0, Plan: epoch0Plan, Inputs: "none", JoinedBy: []string{partyRollups}, Chain: "accepted by sling",
+				Node: "CLAIM_ACCEPTED", Status: checkPass},
+			{Index: 1, Plan: "A, B and C deposit; A withdraws", Inputs: "4 accepted", JoinedBy: []string{partyRollups},
+				Chain: "accepted by sling", Node: "CLAIM_ACCEPTED", Status: checkPass},
+			{Index: 2, Plan: "B and C deposit; the foreclosure", Inputs: "2 accepted", JoinedBy: []string{partySling},
+				Chain: "sealed, never accepted", Node: "CLAIM_FORECLOSED", Status: checkPass},
+			{Index: 3, Plan: "open at the foreclosure", Inputs: "none", Chain: "open, never sealed", Node: "CLAIM_FORECLOSED",
+				Status: checkPass},
+		},
+		Steps: []continuationStep{
+			{Name: "foreclosure", Status: checkPass, Detail: "the guardian foreclosed the application at block 654; epoch 1 " +
+				"accepted, epoch 2 sealed and never accepted"},
+			{Name: "tokens back", Status: checkPass, Detail: "TestUsdc after everything: A 100, B 221, C 330, application 0; " +
+				"every depositor has all its tokens back"},
+			{Name: "rollups node closes the epochs", Status: checkPass, Group: groupNodes,
+				Detail: "epoch 2 (sealed, never accepted) and epoch 3 (open at the foreclosure) are CLAIM_FORECLOSED"},
+			{Name: "rollups node transactions", Status: checkPass, Group: groupNodes,
+				Detail: "1 transaction, none reverted, in blocks 655 to 1063: Tournament.tryRecoveringBond ×1"},
+			{Name: "Sling node transactions", Status: checkFinding, Group: groupNodes,
+				Detail: "21 of 23 transactions reverted, costing 0.0001 ETH of gas, in blocks 655 to 1063: " +
+					"DaveConsensus.submitSentryClaim reverted with ApplicationForeclosed ×21; Tournament.joinTournament ×1; " +
+					"Tournament.tryRecoveringBond ×1. The Sling node does not check for the foreclosure."},
+			{Name: "epoch 2", Status: checkPass, Group: groupBonds,
+				Detail: "1 join × 0.3335 ETH bond; 0.3335 ETH to the winner's joiner sling; empty afterwards"},
+		},
+		Verify: &verifyReport{Application: "interop-live-foreclose-concurrent", Head: 1063, Passed: true,
+			Checks: []checkResult{{Name: "application.status", Status: checkPass, Detail: "status OK (expected OK)"},
+				{Name: "tournaments.matches", Status: checkNotTested, Detail: "chain 0, rollups node 0"}},
+			Coverage: []coverageItem{{Name: coverageAgreement, Tested: true, Detail: "epochs 1, 2 match the Sling node"}}},
+	}
+}
+
+func TestLiveReportLayout(t *testing.T) {
+	var out strings.Builder
+	sampleForecloseReport().writeText(&out)
+	text := out.String()
+	require.NotContains(t, text, "\x1b[", "no colors outside a terminal")
+	require.True(t, strings.HasPrefix(text, "live foreclose · concurrent  PASS · 1 finding about the Sling node (see the end)\n"),
+		text)
+	require.Contains(t, text, "✔ 10 passed   ✘ 0 failed   ○ 2 not tested   ⚑ 1 finding")
+
+	// Sections in order, the findings last; the finding's facts only there.
+	last := -1
+	for _, title := range []string{"\nEpochs\n", "\nScenario\n", "\nNodes after the foreclosure\n", "\nBonds\n",
+		"\nVerification  PASS", "\nFindings for the Dave team\n"} {
+		at := strings.Index(text, title)
+		require.Greater(t, at, last, "section %q out of order:\n%s", title, text)
+		last = at
+	}
+	require.Equal(t, 1, strings.Count(text, "21 of 23 transactions reverted"))
+	require.Greater(t, strings.Index(text, "21 of 23 transactions reverted"), last)
+
+	// The epochs table explains the open epoch.
+	require.Contains(t, text, "Epoch 3 opened when epoch 2 was sealed")
+	require.Regexp(t, `✔  3 +open at the foreclosure +none +– +open, never sealed +CLAIM_FORECLOSED`, text)
+
+	for _, line := range strings.Split(text, "\n") {
+		require.LessOrEqual(t, textWidth(line), reportWidth, "line too long: %q", line)
+	}
+}
+
 func TestWrapWords(t *testing.T) {
 	require.Equal(t, []string{"one two", "three", "0x0123456789abcdef0123", "four"},
 		wrapWords("one two three 0x0123456789abcdef0123 four", 9))
@@ -993,6 +1228,13 @@ func TestEpochExpectationCheck(t *testing.T) {
 	status, detail = plan.check(1, inputs, inEpoch, true, true)
 	require.Equal(t, checkFail, status)
 	require.Equal(t, "input 1 is REJECTED in epoch 1, planned ACCEPTED; input 0 was not planned in this epoch", detail)
+
+	open := epochExpectation{open: true}
+	status, _ = open.check(3, inputs, nil, false, false)
+	require.Equal(t, checkPass, status)
+	status, detail = open.check(3, inputs, nil, true, false)
+	require.Equal(t, checkFail, status)
+	require.Equal(t, "sealed on chain, planned to stay open", detail)
 }
 
 func TestInputCounts(t *testing.T) {
@@ -1000,4 +1242,11 @@ func TestInputCounts(t *testing.T) {
 	require.Equal(t, "2 accepted, 1 rejected", inputCounts([]model.Input{
 		{Status: model.InputCompletionStatus_Accepted}, {Status: model.InputCompletionStatus_Rejected},
 		{Status: model.InputCompletionStatus_Accepted}}))
+}
+
+func TestPrintSampleLiveReport(t *testing.T) {
+	if os.Getenv("DAVEINTEROP_PRINT_SAMPLE") == "" {
+		t.Skip("set DAVEINTEROP_PRINT_SAMPLE=1 to print the sample report")
+	}
+	sampleForecloseReport().writeText(os.Stdout)
 }

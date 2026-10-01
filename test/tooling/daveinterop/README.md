@@ -48,6 +48,8 @@ to stdout and the progress to stderr; `--json` prints the result as JSON, and
 
 Every check reports `pass` (✔), `fail` (✘), or `not-tested` (○), and a run
 passes when no check fails.
+A `live` run can also report a `finding` (⚑): a defect of the Sling node that
+does not fail the run.
 The text report uses colors on a terminal (`NO_COLOR` turns them off), wraps
 at 110 columns (`COLUMNS` changes it), and `--json` gives the full report. Two
 **coverage** lines say whether the run exercised the properties we care about
@@ -212,7 +214,7 @@ anything.
 | `application.status` | `OK` (or `--expect-status`) |
 | `application.identity` | The node's application, consensus, and template equal the application contract's |
 | `inputs` | Every `InputAdded` event is indexed with the same payload, block, transaction, log index, and epoch; all are processed |
-| `epochs.sealed` | Every sealed epoch has the same bounds, last block, and tournament, and a computed commitment; every other node epoch is the open one, with the right bounds |
+| `epochs.sealed` | Every sealed epoch has the same bounds, last block, and tournament, and a computed commitment (or `CLAIM_FORECLOSED` for a foreclosed application); every other node epoch is the open one, with the right bounds |
 | `epochs.staged` | Final state, outputs root, and block equal `EpochStaged`; every epoch the node calls staged is staged on chain |
 | `epochs.accepted` | Every accepted epoch is `CLAIM_ACCEPTED` with the accepting transaction, and the reverse |
 | `commitments.sling` | Commitments equal the Sling node's stage claims and joins. The Sling node logs its commitment only when it stages, and a commitment is joined only once, so an epoch that the rollups node joined first has no Sling commitment; the detail lists those epochs as not compared |
@@ -221,6 +223,8 @@ anything.
 | `tournaments` | Every tournament, with its parent and epoch |
 | `tournaments.commitments` | Every `CommitmentJoined` event, with final state, submitter, block, and transaction |
 | `tournaments.matches` | Every `MatchCreated` event, with its commitments, block, and transaction, and every `MatchDeleted` |
+| `application.foreclosure` | The node's foreclosure block and transaction equal the `Foreclosure` event, every epoch never accepted is `CLAIM_FORECLOSED`, and the accounts-drive proof equals `AccountsDriveMerkleRootProved`; not tested when the application is not foreclosed |
+| `withdrawals` | Every `Withdrawal` event is indexed with the same account, output, block, transaction, and log index, and the reverse |
 | `agreement.state_change` | At least one epoch matches the Sling node (commitment or final state) and changes state; the detail lists the epochs that changed and those that did not (`--require-agreement` makes "not tested" a failure) |
 
 The wait ends early when the application reaches another status than
@@ -245,6 +249,8 @@ first (`cast rpc anvil_setIntervalMining 0`), or pin the block with
 ./daveinterop live --program honeypot        # echo is the default; --template DIR for any other
 make interop-live-dapp                       # once, for the full scenario
 ./daveinterop live --scenario full           # five planned epochs, a fake commitment, every output
+make erc20-withdrawal-dapp build             # once, for the foreclose scenario (and its machine tool)
+./daveinterop live --scenario foreclose      # deposits, a foreclosure, and every token back
 ```
 
 `live` starts Anvil from `$DAVE_ROOT/cartesi-rollups/contracts/state.json`,
@@ -301,13 +307,63 @@ valid proof. It never moves, so it should lose by timeout. The rollups node
 does not play matches, so the Sling node must defend the honest commitment,
 also when the rollups node joined it; the report says who joined it.
 
+`--scenario foreclose` (about 5 min) uses the ERC-20 withdrawal dapp of
+`make erc20-withdrawal-dapp` (`test/dapps/erc20-withdrawal`; it must be built
+for the TestUsdc and ERC-20 portal of the devnet bundle), deployed with a
+withdrawal config: guardian account 1, the bundle's
+`TestUsdWithdrawalOutputBuilder`, and the accounts drive of the template. It
+mints TestUsdc to depositors A (account 2), B (8) and C (9), then:
+
+| Epoch | Inputs | After the foreclosure |
+| --- | --- | --- |
+| 0 | none | accepted |
+| 1 | A deposits 100, B 200, C 300; A withdraws its 100 | accepted; A's voucher is executed, B and C withdraw from the accounts drive |
+| 2 | B deposits 20, C 30 | sealed, never accepted; both deposits are refunded |
+
+The guardian forecloses the application as soon as epoch 2 is sealed. Then:
+
+- a deposit after the foreclosure must revert with `ApplicationForeclosed`;
+- A's voucher is executed, and the rollups node must record the execution;
+- `cartesi-rollups-machine-tool replay --to-epoch 1` rebuilds the machine of
+  epoch 1, whose root must equal the node's epoch 1 machine hash and
+  `getLastFinalizedMachineMerkleRoot`; `prove accounts-drive` proves B and C,
+  and must find no account for A, who withdrew everything;
+- `cartesi-rollups-cli prove-drive-root` proves the drive root (a second proof
+  must revert with `AccountsDriveMerkleRootAlreadyProved`), and B and C
+  `withdraw` (a second withdrawal must revert with
+  `AccountFundsAlreadyWithdrawn`); the rollups node must index both;
+- `cartesi-rollups-cli refund` refunds inputs 4 and 5; refunding epoch 1's
+  input 0 must revert with `CannotRefundFinalizedInput`, and refunding input 4
+  again with `RefundAlreadyIssued`;
+- every depositor must end with its TestUsdc balance after the mint, and the
+  application with none;
+- the rollups node must close epoch 2 (sealed, never accepted) and epoch 3
+  as `CLAIM_FORECLOSED`. Epoch 3 opened when epoch 2 was sealed and was still
+  open, with no inputs, at the foreclosure; it can never be sealed.
+
+Epoch 2's tournament goes on after the foreclosure: the rollups node does not
+join it, but the Sling node does. The test waits until it ends (about a
+minute), because only then do the nodes try to settle the epoch, which the
+foreclosure forbids, and only then must its joiner get the bond back. After
+20 more seconds, the chain is frozen, and every transaction that each node
+sent after the foreclosure is listed with its revert reason. A reverted transaction of the rollups node
+fails the run. Reverted transactions of the Sling node are reported with the
+status `finding` and do not fail the run: the Sling node does not handle
+foreclosure and keeps sending settlement calls that revert, which should be
+reported to the Dave team. The bonds of epochs 0 to 2 and the usual two-way
+verification follow; it accepts `CLAIM_FORECLOSED` for a foreclosed
+application and checks the foreclosure, the drive proof, and the withdrawals
+that the rollups node indexed.
+
 The `live` report starts with the verdict and the count of checks, then an
 epochs table (the plan, the inputs as the rollups node processed them, who
 joined, the epoch on chain, and the rollups node's status; a planned epoch is
 checked against its plan), the scenario's sections, and the verification.
+Findings for the Dave team come last.
 
-Signers on the test chain: CLI and deployer 0, input sender 3, funder 4, fake
-commitment 5, rollups node PRT 6, Sling node 7.
+Signers on the test chain: CLI and deployer 0, guardian 1, depositor A 2,
+input sender 3, funder 4, fake commitment 5, rollups node PRT 6, Sling node 7,
+depositors B 8 and C 9.
 
 ## Manual session on the devnet
 

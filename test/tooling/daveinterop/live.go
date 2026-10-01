@@ -69,6 +69,7 @@ type liveOptions struct {
 	slingSentry      bool
 	slingIndex       int
 	timeout          time.Duration
+	machineToolBin   string
 }
 
 type liveJoin struct {
@@ -104,7 +105,7 @@ type liveReport struct {
 func newLiveCommand() *cobra.Command {
 	opts := &liveOptions{}
 	cmd := &cobra.Command{
-		Use:   "live [--scenario smoke|full] [--order concurrent|rollups-first|sling-first]",
+		Use:   "live [--scenario smoke|full|foreclose] [--order concurrent|rollups-first|sling-first]",
 		Short: "Run the rollups node and the Sling node together on a test-owned chain",
 		Long: `live starts a test-owned Anvil from the Dave devnet bundle (mining off; this
 command mines), deploys a PRT application with the rollups CLI, starts the
@@ -126,6 +127,15 @@ Scenarios:
          application is funded, every voucher (1 gwei to the input sender) is
          executed and every notice validated, and the balances, gas included,
          and the bonds of every root tournament are checked. About 10 minutes.
+  foreclose  the ERC-20 withdrawal dapp of "make erc20-withdrawal-dapp", with
+         a guardian. Epoch 0 has no inputs; in epoch 1, A, B and C deposit
+         TestUsdc and A withdraws all of it; in epoch 2, B and C deposit
+         again, and the guardian forecloses the application before epoch 2
+         is accepted. Then A's voucher is executed, the machine tool rebuilds
+         epoch 1 and proves the accounts drive, B and C withdraw, the epoch 2
+         deposits are refunded, and every account must have all its tokens
+         back. Transactions that the Sling node sends after the foreclosure
+         and that revert are reported as a finding, not a failure.
 
 Orders (the first epoch with inputs):
   concurrent     start both nodes before the inputs
@@ -136,8 +146,9 @@ Only one participant can join a given commitment. With rollups-first, the
 Sling node's evidence for that epoch comes from its sentry claim
 (--sling-sentry, the default) or its stage log.
 
-Signers (test mnemonic, chain 31337): CLI and deployer 0, input sender 3,
-funder 4, fake commitment 5, rollups node PRT 6, Sling node 7.`,
+Signers (test mnemonic, chain 31337): CLI and deployer 0, guardian 1,
+depositor A 2, input sender 3, funder 4, fake commitment 5, rollups node
+PRT 6, Sling node 7, depositors B 8 and C 9.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if opts.scenario != scenarioSmoke && cmd.Flags().Changed("program") {
 				return withExitCode(exitUsage, fmt.Errorf("--program selects a Dave program for --scenario smoke; "+
@@ -151,16 +162,17 @@ funder 4, fake commitment 5, rollups node PRT 6, Sling node 7.`,
 		},
 	}
 	flags := cmd.Flags()
-	flags.StringVar(&opts.scenario, "scenario", scenarioSmoke, "smoke or full")
+	flags.StringVar(&opts.scenario, "scenario", scenarioSmoke, "smoke, full, or foreclose")
 	flags.StringVar(&opts.daveRoot, "dave-root", os.Getenv("DAVE_ROOT"), "prepared Dave tree for the devnet bundle and the program images")
 	flags.StringVar(&opts.slingBin, "sling-bin", defaultSlingBin(),
 		"Sling node executable (default: $DAVE_NODE_BIN, or its build in the Dave tree)")
 	flags.StringVar(&opts.program, "program", programEcho,
 		"smoke: Dave test program, echo or honeypot (<dave-root>/test/programs/<program>/machine-image)")
 	flags.StringVar(&opts.template, "template", "",
-		"application template directory (smoke: overrides --program; full: default "+defaultLiveDapp+")")
+		"application template directory (smoke: overrides --program; full: default "+defaultLiveDapp+
+			"; foreclose: default "+defaultForecloseDapp+")")
 	flags.StringVar(&opts.requireAgreement, "require-agreement", "auto",
-		"fail when computation agreement is not tested: true, false, or auto (true for echo and full)")
+		"fail when computation agreement is not tested: true, false, or auto (true for echo, full, and foreclose)")
 	flags.StringVar(&opts.anvilState, "anvil-state", "", "devnet state (default: <dave-root>/cartesi-rollups/contracts/state.json)")
 	flags.StringVar(&opts.order, "order", orderConcurrent, "start order: concurrent, rollups-first, or sling-first")
 	flags.IntVar(&opts.inputs, "inputs", 5, "smoke: number of inputs")                                 //nolint:mnd
@@ -178,6 +190,7 @@ funder 4, fake commitment 5, rollups node PRT 6, Sling node 7.`,
 	flags.DurationVar(&opts.wait, "wait", 5*time.Minute, "deadline for the verification predicates") //nolint:mnd
 	flags.StringVar(&opts.nodeBin, "node-bin", "./cartesi-rollups-node", "rollups node binary")
 	flags.StringVar(&opts.cliBin, "cli-bin", "./cartesi-rollups-cli", "rollups CLI binary")
+	flags.StringVar(&opts.machineToolBin, "machine-tool-bin", "./cartesi-rollups-machine-tool", "foreclose: rollups machine tool binary")
 	flags.Uint64Var(&opts.mineStep, "mine-step", 5, "blocks mined per step") //nolint:mnd
 	addAnvilFlags(flags, &opts.replayOptions)
 	flags.DurationVar(&opts.mineInterval, "mine-interval", time.Second, "time between mining steps")
@@ -187,9 +200,9 @@ funder 4, fake commitment 5, rollups node PRT 6, Sling node 7.`,
 //nolint:gocyclo,funlen // one linear procedure is easier to follow than scattered helpers
 func runLive(ctx context.Context, cmd *cobra.Command, opts *liveOptions) error {
 	switch opts.scenario {
-	case scenarioSmoke, scenarioFull:
+	case scenarioSmoke, scenarioFull, scenarioForeclose:
 	default:
-		return withExitCode(exitUsage, fmt.Errorf("unknown scenario %q (smoke or full)", opts.scenario))
+		return withExitCode(exitUsage, fmt.Errorf("unknown scenario %q (smoke, full, or foreclose)", opts.scenario))
 	}
 	switch opts.order {
 	case orderConcurrent, orderRollupsFirst, orderSlingFirst:
@@ -223,6 +236,12 @@ func runLive(ctx context.Context, cmd *cobra.Command, opts *liveOptions) error {
 		opts.template, opts.program = defaultLiveDapp, filepath.Base(defaultLiveDapp)
 		if !fileExists(opts.template) {
 			return withExitCode(exitPrerequisites, fmt.Errorf("%s is missing; build it with make interop-live-dapp", opts.template))
+		}
+	case opts.scenario == scenarioForeclose && opts.template == "":
+		opts.template, opts.program = defaultForecloseDapp, filepath.Base(defaultForecloseDapp)
+		if !fileExists(opts.template) {
+			return withExitCode(exitPrerequisites, fmt.Errorf("%s is missing; build it with make erc20-withdrawal-dapp",
+				opts.template))
 		}
 	case opts.template != "":
 		opts.program = "custom template"
@@ -304,6 +323,8 @@ type liveRun struct {
 	stopMiner     func()
 	// full holds what the full scenario did, for its checks.
 	full *fullRun
+	// foreclose holds the configuration and progress of the foreclose scenario.
+	foreclose *forecloseRun
 }
 
 func (s *session) runLive(ctx context.Context, opts *liveOptions, report *liveReport) error {
@@ -318,6 +339,8 @@ func (s *session) runLive(ctx context.Context, opts *liveOptions, report *liveRe
 	switch opts.scenario {
 	case scenarioFull:
 		head, err = s.liveFull(ctx, run)
+	case scenarioForeclose:
+		head, err = s.liveForeclose(ctx, run)
 	default:
 		head, err = s.liveSmoke(ctx, run)
 	}
@@ -386,6 +409,16 @@ func (s *session) setupLive(ctx context.Context, opts *liveOptions, report *live
 	if err := readDeployments(opts.daveRoot, s.manifest); err != nil {
 		return nil, withExitCode(exitPrerequisites, err)
 	}
+	var foreclose *forecloseRun
+	if opts.scenario == scenarioForeclose {
+		if err := resolveBinaries(&opts.machineToolBin); err != nil {
+			return nil, err
+		}
+		var err error
+		if foreclose, err = newForecloseRun(opts.daveRoot, opts.template); err != nil {
+			return nil, withExitCode(exitPrerequisites, err)
+		}
+	}
 	step("live", "starting Anvil on port %d from %s", opts.anvilPort, displayPath(opts.anvilState))
 	if err := s.startAnvil(ctx, opts.anvilState, false); err != nil {
 		return nil, err
@@ -408,7 +441,7 @@ func (s *session) setupLive(ctx context.Context, opts *liveOptions, report *live
 		s.mine(minerCtx)
 	}()
 	var once sync.Once
-	run := &liveRun{opts: opts, report: report, chainID: chainID, stopMiner: func() {
+	run := &liveRun{opts: opts, report: report, chainID: chainID, foreclose: foreclose, stopMiner: func() {
 		once.Do(func() {
 			cancelMiner()
 			miner.Wait()
@@ -454,6 +487,9 @@ func (s *session) setupLive(ctx context.Context, opts *liveOptions, report *live
 		"--claim-staging-period", strconv.FormatUint(opts.stagingPeriod, 10), "--json"}
 	if opts.slingSentry {
 		deployArgs = append(deployArgs, "--sentries", run.sling.Address.Hex())
+	}
+	if foreclose != nil {
+		deployArgs = append(deployArgs, "--withdrawal-config", foreclose.withdrawalConfig())
 	}
 	out, err := s.runCLI(ctx, deployArgs...)
 	if err != nil {

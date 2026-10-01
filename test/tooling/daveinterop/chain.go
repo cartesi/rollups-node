@@ -557,6 +557,129 @@ func (c *chain) bondRecoveries(ctx context.Context, tournament common.Address, t
 	return recoveries, it.Error()
 }
 
+// chainEvent locates a log.
+type chainEvent struct {
+	Block    uint64      `json:"block"`
+	Tx       common.Hash `json:"transaction_hash"`
+	LogIndex uint        `json:"log_index"`
+}
+
+func eventOf(log types.Log) chainEvent {
+	return chainEvent{Block: log.BlockNumber, Tx: log.TxHash, LogIndex: log.Index}
+}
+
+// foreclosure returns the Foreclosure event of an application, or nil.
+func (c *chain) foreclosure(ctx context.Context, app common.Address, to uint64) (*chainEvent, error) {
+	contract, err := iapplication.NewIApplication(app, c.eth)
+	if err != nil {
+		return nil, err
+	}
+	it, err := contract.FilterForeclosure(filterTo(ctx, 0, to))
+	if err != nil {
+		return nil, fmt.Errorf("reading Foreclosure: %w", err)
+	}
+	defer it.Close()
+	var found *chainEvent
+	for it.Next() {
+		event := eventOf(it.Event.Raw)
+		found = &event
+	}
+	return found, it.Error()
+}
+
+// driveProof is an AccountsDriveMerkleRootProved event.
+type driveProof struct {
+	chainEvent
+	Root common.Hash `json:"root"`
+}
+
+func (c *chain) driveProof(ctx context.Context, app common.Address, to uint64) (*driveProof, error) {
+	contract, err := iapplication.NewIApplication(app, c.eth)
+	if err != nil {
+		return nil, err
+	}
+	it, err := contract.FilterAccountsDriveMerkleRootProved(filterTo(ctx, 0, to))
+	if err != nil {
+		return nil, fmt.Errorf("reading AccountsDriveMerkleRootProved: %w", err)
+	}
+	defer it.Close()
+	var found *driveProof
+	for it.Next() {
+		found = &driveProof{chainEvent: eventOf(it.Event.Raw), Root: it.Event.AccountsDriveMerkleRoot}
+	}
+	return found, it.Error()
+}
+
+// chainWithdrawal is a Withdrawal event.
+type chainWithdrawal struct {
+	chainEvent
+	AccountIndex uint64
+	Account      []byte
+	Output       []byte
+}
+
+func (c *chain) withdrawals(ctx context.Context, app common.Address, to uint64) ([]chainWithdrawal, error) {
+	contract, err := iapplication.NewIApplication(app, c.eth)
+	if err != nil {
+		return nil, err
+	}
+	it, err := contract.FilterWithdrawal(filterTo(ctx, 0, to), nil)
+	if err != nil {
+		return nil, fmt.Errorf("reading Withdrawal: %w", err)
+	}
+	defer it.Close()
+	var withdrawals []chainWithdrawal
+	for it.Next() {
+		withdrawals = append(withdrawals, chainWithdrawal{chainEvent: eventOf(it.Event.Raw), AccountIndex: it.Event.AccountIndex,
+			Account: it.Event.Account, Output: it.Event.Output})
+	}
+	return withdrawals, it.Error()
+}
+
+// refundsIssued returns the RefundIssued events of an application by input index.
+func (c *chain) refundsIssued(ctx context.Context, app common.Address, to uint64) (map[uint64]chainEvent, error) {
+	contract, err := iapplication.NewIApplication(app, c.eth)
+	if err != nil {
+		return nil, err
+	}
+	it, err := contract.FilterRefundIssued(filterTo(ctx, 0, to), nil)
+	if err != nil {
+		return nil, fmt.Errorf("reading RefundIssued: %w", err)
+	}
+	defer it.Close()
+	refunds := map[uint64]chainEvent{}
+	for it.Next() {
+		refunds[it.Event.InputIndex.Uint64()] = eventOf(it.Event.Raw)
+	}
+	return refunds, it.Error()
+}
+
+func (c *chain) isForeclosed(ctx context.Context, app common.Address, block uint64) (bool, error) {
+	contract, err := iapplication.NewIApplication(app, c.eth)
+	if err != nil {
+		return false, err
+	}
+	foreclosed, err := contract.IsForeclosed(callAt(ctx, block))
+	if err != nil {
+		return false, fmt.Errorf("reading isForeclosed: %w", err)
+	}
+	return foreclosed, nil
+}
+
+// lastFinalizedMachineRoot is the machine state that the accounts-drive proof
+// must reproduce: the post-state of the last accepted epoch.
+func (c *chain) lastFinalizedMachineRoot(ctx context.Context, consensus, app common.Address, block uint64) (common.Hash, error) {
+	contract, err := idaveconsensus.NewIDaveConsensus(consensus, c.eth)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	root, err := contract.GetLastFinalizedMachineMerkleRoot(callAt(ctx, block), app)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("reading getLastFinalizedMachineMerkleRoot: %w", err)
+	}
+	return root, nil
+}
+
 // chainInput is one InputAdded event.
 type chainInput struct {
 	Index    uint64

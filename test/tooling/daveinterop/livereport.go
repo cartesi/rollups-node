@@ -17,13 +17,14 @@ const (
 	groupScenario  = "Scenario"
 	groupOutputs   = "Outputs"
 	groupFake      = "Fake commitment"
+	groupNodes     = "Nodes after the foreclosure"
 	groupBonds     = "Bonds"
 	epoch0Plan     = "no inputs (sealed at deployment)"
 	textNoValue    = "–"
 	epochTableRule = "  "
 )
 
-var groupOrder = []string{groupScenario, groupOutputs, groupFake, groupBonds}
+var groupOrder = []string{groupScenario, groupOutputs, groupFake, groupNodes, groupBonds}
 
 // liveEpoch is one row of the epochs table of a live report: what the
 // scenario planned, what the chain shows, and the rollups node's status.
@@ -39,11 +40,13 @@ type liveEpoch struct {
 }
 
 // epochExpectation is what a scenario planned for one epoch: its inputs and
-// their outcome, and whether it is accepted.
+// their outcome, and whether it is accepted, sealed but never accepted, or
+// still open at the end.
 type epochExpectation struct {
 	plan     string
 	inputs   map[uint64]model.InputCompletionStatus
 	accepted bool
+	open     bool
 }
 
 // epochTable reads every epoch that the chain or the rollups node knows at
@@ -62,6 +65,10 @@ func (s *session) epochTable(ctx context.Context, run *liveRun, head uint64, exp
 		return nil, err
 	}
 	inputs, err := s.api.inputs(ctx, s.appName)
+	if err != nil {
+		return nil, err
+	}
+	foreclosed, err := s.chain.isForeclosed(ctx, run.app, head)
 	if err != nil {
 		return nil, err
 	}
@@ -104,8 +111,12 @@ func (s *session) epochTable(ctx context.Context, run *liveRun, head uint64, exp
 			if sender, err := s.chain.txSender(ctx, acceptance.Tx); err == nil {
 				row.Chain = "accepted by " + run.party(sender)
 			}
+		case isSealed && foreclosed:
+			row.Chain = "sealed, never accepted"
 		case isSealed:
 			row.Chain = "sealed"
+		case foreclosed:
+			row.Chain = "open, never sealed"
 		default:
 			row.Chain = "open"
 		}
@@ -130,7 +141,7 @@ func (s *session) epochTable(ctx context.Context, run *liveRun, head uint64, exp
 // sealed is not tested until it is.
 func (e epochExpectation) check(index uint64, byIndex map[uint64]model.Input, inEpoch []model.Input, isSealed, accepted bool,
 ) (checkStatus, string) {
-	if !isSealed {
+	if !e.open && !isSealed {
 		return checkNotTested, "not sealed"
 	}
 	var problems []string
@@ -149,8 +160,13 @@ func (e epochExpectation) check(index uint64, byIndex map[uint64]model.Input, in
 			problems = append(problems, fmt.Sprintf("input %d was not planned in this epoch", input.Index))
 		}
 	}
-	if e.accepted && !accepted {
+	switch {
+	case e.open && isSealed:
+		problems = append(problems, "sealed on chain, planned to stay open")
+	case e.accepted && !accepted:
 		problems = append(problems, "not accepted on chain")
+	case !e.accepted && accepted:
+		problems = append(problems, "accepted on chain, planned never to be")
 	}
 	if len(problems) > 0 {
 		return checkFail, strings.Join(problems, "; ")
@@ -162,6 +178,9 @@ func (e epochExpectation) check(index uint64, byIndex map[uint64]model.Input, in
 func (run *liveRun) epochExpectations() map[uint64]epochExpectation {
 	if run.full != nil {
 		return run.full.expectations()
+	}
+	if run.foreclose != nil {
+		return run.foreclose.expectations()
 	}
 	return nil
 }
@@ -185,11 +204,30 @@ func (full *fullRun) expectations() map[uint64]epochExpectation {
 	return expect
 }
 
+func (fc *forecloseRun) expectations() map[uint64]epochExpectation {
+	expect := map[uint64]epochExpectation{
+		0: {plan: epoch0Plan, accepted: true},
+		1: {plan: "A, B and C deposit; A withdraws", accepted: true, inputs: map[uint64]model.InputCompletionStatus{}},
+		2: {plan: "B and C deposit; the foreclosure", inputs: map[uint64]model.InputCompletionStatus{}},
+		3: {plan: "open at the foreclosure", open: true},
+	}
+	for _, input := range fc.inputs {
+		expect[input.Epoch].inputs[input.Index] = model.InputCompletionStatus_Accepted
+	}
+	return expect
+}
+
 // writeText is the text form of a live run: a header with the verdict and
-// counts, the epochs table, the scenario's sections, and the verification.
+// counts, the epochs table, the scenario's sections, the verification, and
+// last the findings about the Sling node.
 func (r *liveReport) writeText(w io.Writer) {
 	st := newTextStyle(w)
+	findings := r.findings()
 	verdict := st.verdict(r.Passed)
+	if len(findings) > 0 {
+		verdict += st.paint(ansiMagenta, fmt.Sprintf(" · %d %s about the Sling node (see the end)", len(findings),
+			plural(len(findings), "finding", "findings")))
+	}
 	st.heading(w, fmt.Sprintf("live %s · %s", r.Scenario, r.Order), verdict)
 	st.field(w, "checks", st.tally(r.statuses()))
 	st.field(w, "run dir", displayPath(r.RunDir))
@@ -212,11 +250,23 @@ func (r *liveReport) writeText(w io.Writer) {
 		st.section(w, group.name, "")
 		width := nameWidth(group.steps)
 		for _, s := range group.steps {
-			st.row(w, s.Status, s.Name, width, s.Detail)
+			detail := s.Detail
+			if s.Status == checkFinding {
+				detail = "a finding; see the end of the report"
+			}
+			st.row(w, s.Status, s.Name, width, detail)
 		}
 	}
 	if r.Verify != nil {
 		r.Verify.writeSection(w, st, "Verification", "the rollups node against the chain and the Sling node's evidence")
+	}
+	if len(findings) > 0 {
+		st.section(w, "Findings for the Dave team", "")
+		st.note(w, "Defects of the Sling node that the run observed. They do not fail the run; report them to the Dave team.")
+		width := nameWidth(findings)
+		for _, s := range findings {
+			st.row(w, s.Status, s.Name, width, s.Detail)
+		}
 	}
 }
 
@@ -253,11 +303,30 @@ func (r *liveReport) writeEpochs(w io.Writer, st textStyle) {
 			}
 		}
 	}
+	for _, e := range r.Epochs {
+		if e.Chain == "open, never sealed" {
+			fmt.Fprintln(w)
+			st.note(w, fmt.Sprintf("Epoch %d opened when epoch %d was sealed, and was still open, collecting inputs, when the "+
+				"application was foreclosed. It can never be sealed or take an input, so the rollups node closes it as "+
+				"CLAIM_FORECLOSED, like every epoch that was never accepted.", e.Index, e.Index-1))
+		}
+	}
 	if r.OrderChecked.Name != "" {
 		fmt.Fprintln(w)
 		detail := strings.Replace(r.OrderChecked.Detail, "first join by", fmt.Sprintf("first join of epoch %d by", r.InputEpoch), 1)
 		st.row(w, r.OrderChecked.Status, "join order", textWidth("join order"), detail)
 	}
+}
+
+// findings are the steps that report a defect of the Sling node.
+func (r *liveReport) findings() []continuationStep {
+	var findings []continuationStep
+	for _, s := range r.Steps {
+		if s.Status == checkFinding {
+			findings = append(findings, s)
+		}
+	}
+	return findings
 }
 
 // statuses counts every check of the report, for the header.
@@ -307,6 +376,11 @@ func stepGroups(steps []continuationStep) []stepGroup {
 		}
 	}
 	return groups
+}
+
+// countText is "1 transaction" or "3 transactions".
+func countText(n int, noun string) string {
+	return fmt.Sprintf("%d %s", n, plural(n, noun, noun+"s"))
 }
 
 func plural(n int, one, many string) string {

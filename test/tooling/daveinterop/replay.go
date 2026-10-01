@@ -603,6 +603,12 @@ func (s *session) runCLI(ctx context.Context, args ...string) (string, error) {
 	return s.runTool(ctx, s.opts.cliBin, "cli.log", s.env, args...)
 }
 
+// runCLIAs runs the rollups CLI signing with another test-mnemonic account.
+func (s *session) runCLIAs(ctx context.Context, account uint32, args ...string) (string, error) {
+	env := mergeEnvironment(s.env, nil, map[string]string{"CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX": strconv.FormatUint(uint64(account), 10)})
+	return s.runTool(ctx, s.opts.cliBin, "cli.log", env, args...)
+}
+
 // runTool runs a rollups tool. Its stderr goes to the log file; its stdout is
 // returned.
 func (s *session) runTool(ctx context.Context, bin, logName string, env []string, args ...string) (string, error) {

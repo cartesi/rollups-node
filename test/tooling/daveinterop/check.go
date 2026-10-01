@@ -27,6 +27,8 @@ type checkOptions struct {
 	dbAdmin    string
 	nodeBin    string
 	cliBin     string
+	// machineToolBin serves --scenario foreclose of live.
+	machineToolBin string
 }
 
 type preflightItem struct {
@@ -60,6 +62,7 @@ func newCheckCommand() *cobra.Command {
 	flags.StringVar(&opts.dbAdmin, "db-admin", defaultDatabaseURL(), "Postgres URL for replay")
 	flags.StringVar(&opts.nodeBin, "node-bin", "./cartesi-rollups-node", "rollups node binary")
 	flags.StringVar(&opts.cliBin, "cli-bin", "./cartesi-rollups-cli", "rollups CLI binary")
+	flags.StringVar(&opts.machineToolBin, "machine-tool-bin", "./cartesi-rollups-machine-tool", "rollups machine tool binary")
 	return cmd
 }
 
@@ -137,6 +140,14 @@ func runCheck(ctx context.Context, cmd *cobra.Command, opts *checkOptions) error
 			err = fmt.Errorf("%s is missing; make interop-live-dapp builds it (--scenario full)", defaultLiveDapp)
 		}
 		add("full scenario dapp", false, err, defaultLiveDapp)
+		_, err = os.Stat(defaultForecloseDapp)
+		if err != nil {
+			err = fmt.Errorf("%s is missing; make erc20-withdrawal-dapp builds it (--scenario foreclose)", defaultForecloseDapp)
+		}
+		add("foreclose scenario dapp", false, err, defaultForecloseDapp)
+		_, err = exec.LookPath(opts.machineToolBin)
+		add("machine tool (--scenario foreclose)", false, err, opts.machineToolBin)
+		tool("lua5.4", false)
 	case "run-sling":
 		sling()
 		checkRPC(ctx, opts.rpc, add)

@@ -225,7 +225,9 @@ func (s *session) cliSigner() (*testAccount, error) {
 }
 
 // waitBondRecoveries waits, while the chain still moves, until the root
-// tournament of every epoch from 0 to last has recovered its bond.
+// tournament of every epoch from 0 to last has recovered its bond, or has
+// finished with nobody joined (after a foreclosure, the rollups node does
+// not join).
 func (s *session) waitBondRecoveries(ctx context.Context, run *liveRun, last uint64) error {
 	ctx, cancel := context.WithTimeout(ctx, run.opts.timeout)
 	defer cancel()
@@ -246,7 +248,13 @@ func (s *session) waitBondRecoveries(ctx context.Context, run *liveRun, last uin
 				return false, nil
 			}
 			recoveries, err := s.chain.bondRecoveries(ctx, epoch.Tournament, head)
-			if err != nil || len(recoveries) == 0 {
+			if err != nil {
+				return false, err
+			}
+			if len(recoveries) > 0 {
+				continue
+			}
+			if done, err := s.finishedEmpty(ctx, epoch.Tournament, head); err != nil || !done {
 				return false, err
 			}
 		}
@@ -310,6 +318,15 @@ func (s *session) bondStep(ctx context.Context, run *liveRun, index uint64, tour
 		return result
 	}
 
+	if len(joins) == 0 {
+		if standing.Finished && len(recoveries) == 0 && left.Sign() == 0 {
+			result.Status, result.Detail = checkPass, "nobody joined; no bond to recover"
+		} else {
+			result.Detail = fmt.Sprintf("nobody joined, but finished %t, %d BondRecovered events, %s held",
+				standing.Finished, len(recoveries), formatWei(left))
+		}
+		return result
+	}
 	wantPayment, wantBurned := bondPayout(bond, len(joins), refunded)
 	winnerJoiner := common.Address{}
 	for _, join := range joins {
@@ -356,6 +373,16 @@ func (s *session) bondStep(ctx context.Context, run *liveRun, index uint64, tour
 	result.Status = checkPass
 	result.Detail += "; empty afterwards"
 	return result
+}
+
+// finishedEmpty tells whether a root tournament finished with nobody joined.
+func (s *session) finishedEmpty(ctx context.Context, tournament common.Address, head uint64) (bool, error) {
+	joins, err := s.chain.joins(ctx, tournament, head)
+	if err != nil || len(joins) > 0 {
+		return false, err
+	}
+	standing, err := s.chain.rootStanding(ctx, tournament, head)
+	return standing.Finished, err
 }
 
 // bondPayout is Tournament.tryRecoveringBond: of the balance left after the
