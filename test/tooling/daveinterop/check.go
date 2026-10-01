@@ -45,14 +45,14 @@ type preflightReport struct {
 func newCheckCommand() *cobra.Command {
 	opts := &checkOptions{}
 	cmd := &cobra.Command{
-		Use:   "check [--for capture|replay|suite|run-sling]",
+		Use:   "check [--for capture|replay|live|suite|run-sling]",
 		Short: "Check the prerequisites of one capability; install nothing",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runCheck(cmd.Context(), cmd, opts)
 		},
 	}
 	flags := cmd.Flags()
-	flags.StringVar(&opts.capability, "for", "replay", "capability to check: capture, replay, suite, or run-sling")
+	flags.StringVar(&opts.capability, "for", "replay", "capability to check: capture, replay, live, suite, or run-sling")
 	flags.StringVar(&opts.daveRoot, "dave-root", os.Getenv("DAVE_ROOT"), "prepared Dave tree (default: $DAVE_ROOT)")
 	flags.StringVar(&opts.slingBin, "sling-bin", defaultSlingBin(),
 		"Sling node executable (default: $DAVE_NODE_BIN, or its build in the Dave tree)")
@@ -127,6 +127,11 @@ func runCheck(ctx context.Context, cmd *cobra.Command, opts *checkOptions) error
 		tool("cartesi-machine-stored-hash", false)
 		capture()
 		replay()
+	case "live":
+		tool("anvil", true)
+		checkDaveRoot(opts.daveRoot, add)
+		replay()
+		sling()
 	case "run-sling":
 		sling()
 		checkRPC(ctx, opts.rpc, add)

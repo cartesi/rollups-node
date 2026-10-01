@@ -200,9 +200,28 @@ func (st textStyle) verdict(passed bool) string {
 	return st.paint(ansiRed+ansiBold, "FAIL")
 }
 
+// tally is the header's count of checks, which also explains the marks.
+func (st textStyle) tally(counts map[checkStatus]int) string {
+	parts := make([]string, 0, len(counts))
+	for _, entry := range []struct {
+		status checkStatus
+		label  string
+	}{{checkPass, "passed"}, {checkFail, "failed"}, {checkNotTested, "not tested"}} {
+		if counts[entry.status] > 0 || entry.status == checkFail {
+			parts = append(parts, fmt.Sprintf("%s %d %s", st.mark(entry.status), counts[entry.status], entry.label))
+		}
+	}
+	return strings.Join(parts, "   ")
+}
+
 // heading is the first line of a report: a bold title and the verdict.
 func (st textStyle) heading(w io.Writer, title, verdict string) {
 	fmt.Fprintf(w, "%s  %s\n", st.paint(ansiBold, title), verdict)
+}
+
+// field is one "  label   value" line of a report header.
+func (st textStyle) field(w io.Writer, label, value string) {
+	fmt.Fprintf(w, "  %s %s\n", st.paint(ansiDim, pad(label, 9)), value) //nolint:mnd // label column
 }
 
 // section starts a section: a blank line, the bold title, and a rule.

@@ -55,6 +55,7 @@ func main() {
 chains, replays them into a fresh rollups node, and verifies the rollups node
 against the chain and the Sling node's evidence.
 It can then continue a replayed chain with the rollups node alone.
+It also runs both nodes together on a live chain.
 
 Run "eval $(make env)" first. See test/tooling/daveinterop/README.md.`,
 		SilenceUsage:  true,
@@ -74,6 +75,7 @@ Run "eval $(make env)" first. See test/tooling/daveinterop/README.md.`,
 		newReplayCommand(),
 		newVerifyCommand(),
 		newRunSlingCommand(),
+		newLiveCommand(),
 		newSuiteCommand(),
 	)
 	for _, cmd := range root.Commands() {

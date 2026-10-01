@@ -192,6 +192,11 @@ func anvilEnvironment(dir string) ([]string, error) {
 	return mergeEnvironment(os.Environ(), nil, map[string]string{"HOME": home}), nil
 }
 
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 func isMissingOrEmpty(dir string) bool {
 	entries, err := os.ReadDir(dir)
 	return errors.Is(err, os.ErrNotExist) || (err == nil && len(entries) == 0)

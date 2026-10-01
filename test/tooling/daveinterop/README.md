@@ -79,10 +79,11 @@ winner can be the rollups node's own commitment.
 | Command | What it does |
 | --- | --- |
 | `suite` | Captures (or reuses), replays, and verifies a list of scenarios without interaction. `--list` prints the sets. |
-| `check --for capture\|replay\|suite\|run-sling` | Reports the prerequisites of one capability. Installs nothing. |
+| `check --for capture\|replay\|live\|suite\|run-sling` | Reports the prerequisites of one capability. Installs nothing. |
 | `capture` | Runs a Dave harness scenario and records its chain as a case directory. |
 | `replay` | Loads a case into a test-owned Anvil, attaches a fresh rollups node, and verifies it. `--then` continues on the same chain. |
 | `verify` | Compares a running rollups node with the chain and the Sling node's evidence. |
+| `live` | Runs the rollups node and the Sling node together on a test-owned chain. |
 | `run-sling` | Attaches the Sling node to an existing chain in the foreground, for manual sessions. |
 
 `make daveinterop` builds `./daveinterop`; the `make interop-*` targets build
@@ -94,6 +95,7 @@ it first and pass `ARGS`:
 | `make interop-check ARGS="--for replay"` | `check` |
 | `make interop-capture ARGS="..."` | `capture` |
 | `make interop-replay ARGS="--case DIR"` | `replay` (builds the node first) |
+| `make interop-live ARGS="--order rollups-first"` | `live` (builds the node first) |
 | `make interop-verify ARGS="--app NAME ..."` | `verify` |
 | `make interop-sling ARGS="..."` | `run-sling` |
 
@@ -231,6 +233,34 @@ first (`cast rpc anvil_setIntervalMining 0`), or pin the block with
 ./daveinterop verify --app <name> --rpc http://127.0.0.1:8545 --api http://127.0.0.1:10011/rpc \
   --sling-log <sling.log> --wait 5m
 ```
+
+## live
+
+```bash
+./daveinterop live --order concurrent        # start both nodes before the inputs
+./daveinterop live --order rollups-first     # start the Sling node after the rollups node joined
+./daveinterop live --order sling-first       # start the rollups node after the Sling node joined
+./daveinterop live --program honeypot        # echo is the default; --template DIR for any other
+```
+
+`live` starts Anvil from `$DAVE_ROOT/cartesi-rollups/contracts/state.json`,
+deploys a PRT application with the rollups CLI (the Sling node's signer is its
+only sentry, unless `--sling-sentry=false`), starts the nodes in the selected
+order, sends inputs from account 3, waits until their epochs are accepted,
+freezes the chain, and verifies. Only one participant can join a given
+commitment, so a second join by the two nodes means that they computed
+different commitments. Both nodes poll every second, so the races between them
+(join, stage, accept) are fair. Waits log a line every 30 s.
+
+`--scenario smoke` (the default) sends five inputs into one epoch.
+
+The `live` report starts with the verdict and the count of checks, then an
+epochs table (the plan, the inputs as the rollups node processed them, who
+joined, the epoch on chain, and the rollups node's status; a planned epoch is
+checked against its plan), the scenario's sections, and the verification.
+
+Signers on the test chain: CLI and deployer 0, input sender 3, rollups node
+PRT 6, Sling node 7.
 
 ## Manual session on the devnet
 

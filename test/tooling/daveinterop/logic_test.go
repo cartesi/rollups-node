@@ -676,6 +676,18 @@ func TestSuiteEstimates(t *testing.T) {
 	require.Contains(t, plans[1].text, "reuse the case")
 }
 
+func TestCheckJoinOrder(t *testing.T) {
+	rollups := liveJoin{Party: partyRollups}
+	sling := liveJoin{Party: partySling}
+	require.Equal(t, checkPass, checkJoinOrder(orderRollupsFirst, []liveJoin{rollups}).Status)
+	require.Equal(t, checkFail, checkJoinOrder(orderRollupsFirst, []liveJoin{sling}).Status)
+	require.Equal(t, checkPass, checkJoinOrder(orderSlingFirst, []liveJoin{sling}).Status)
+	require.Equal(t, checkNotTested, checkJoinOrder(orderConcurrent, []liveJoin{rollups}).Status)
+	require.Equal(t, checkFail, checkJoinOrder(orderConcurrent, nil).Status, "nobody joined")
+	require.Equal(t, checkFail, checkJoinOrder(orderRollupsFirst, []liveJoin{rollups, sling}).Status,
+		"a second join means different commitments")
+}
+
 // pagedAPI serves cartesi_listInputs from pages; total is the reported count.
 func pagedAPI(t *testing.T, total uint64, pages [][]model.Input) *nodeAPI {
 	t.Helper()
@@ -817,6 +829,31 @@ func TestWrapWords(t *testing.T) {
 	require.Equal(t, []string{"one two", "three", "0x0123456789abcdef0123", "four"},
 		wrapWords("one two three 0x0123456789abcdef0123 four", 9))
 	require.Empty(t, wrapWords("   ", 10))
+}
+
+func TestEpochExpectationCheck(t *testing.T) {
+	inputs := map[uint64]model.Input{
+		0: {Index: 0, EpochIndex: 1, Status: model.InputCompletionStatus_Accepted},
+		1: {Index: 1, EpochIndex: 1, Status: model.InputCompletionStatus_Rejected},
+	}
+	inEpoch := []model.Input{inputs[0], inputs[1]}
+	plan := epochExpectation{accepted: true, inputs: map[uint64]model.InputCompletionStatus{
+		0: model.InputCompletionStatus_Accepted, 1: model.InputCompletionStatus_Rejected}}
+	status, detail := plan.check(1, inputs, inEpoch, true, true)
+	require.Equal(t, checkPass, status, detail)
+
+	status, _ = plan.check(1, inputs, inEpoch, false, false)
+	require.Equal(t, checkNotTested, status)
+
+	status, detail = plan.check(1, inputs, inEpoch, true, false)
+	require.Equal(t, checkFail, status)
+	require.Equal(t, "not accepted on chain", detail)
+
+	plan.inputs[1] = model.InputCompletionStatus_Accepted
+	delete(plan.inputs, 0)
+	status, detail = plan.check(1, inputs, inEpoch, true, true)
+	require.Equal(t, checkFail, status)
+	require.Equal(t, "input 1 is REJECTED in epoch 1, planned ACCEPTED; input 0 was not planned in this epoch", detail)
 }
 
 func TestInputCounts(t *testing.T) {

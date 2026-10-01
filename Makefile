@@ -327,7 +327,7 @@ unit-test: $(COVER_DEPS) ## Execute go unit tests
 # targets that run the rollups node build it first.
 DAVEINTEROP = ./daveinterop
 
-interop-check: daveinterop ## Dave interop: check prerequisites (ARGS="--for capture|replay|suite|run-sling")
+interop-check: daveinterop ## Dave interop: check prerequisites (ARGS="--for capture|replay|live|suite|run-sling")
 	@$(DAVEINTEROP) check $(ARGS)
 
 interop-suite: daveinterop ## Dave interop: capture, replay, and verify scenarios unattended (ARGS="--scenarios smoke|all|...")
@@ -340,6 +340,10 @@ interop-capture: daveinterop ## Dave interop: capture one harness scenario as a 
 interop-replay: daveinterop ## Dave interop: replay a case into a fresh rollups node and verify it (ARGS="--case DIR")
 	@$(MAKE) --no-print-directory -s build >&2
 	@$(DAVEINTEROP) replay $(ARGS)
+
+interop-live: daveinterop ## Dave interop: run the rollups node and the Sling node together (ARGS="--order concurrent|rollups-first|sling-first")
+	@$(MAKE) --no-print-directory -s build >&2
+	@$(DAVEINTEROP) live $(ARGS)
 
 interop-verify: daveinterop ## Dave interop: verify a running rollups node against the chain and the Sling node (ARGS="--app NAME ...")
 	@$(DAVEINTEROP) verify $(ARGS)
@@ -899,7 +903,7 @@ build-debian-package: install
 	build build-go $(GO_ARTIFACTS) cartesi-rollups-machine-tool \
 	clean clean-go clean-contracts clean-docs clean-devnet-files clean-dapps clean-test-dependencies clean-test-logs clean-integration-compose clean-debian-packages \
 	test unit-test unit-test-with-compose integration-test integration-test-with-compose integration-test-local test-with-compose ci-test coverage-report \
-	daveinterop interop-check interop-suite interop-capture interop-replay interop-verify interop-sling \
+	daveinterop interop-check interop-suite interop-capture interop-replay interop-live interop-verify interop-sling \
 	integration-test-shard-check list-integration-shards list-integration-cells \
 	generate generate-contracts generate-config generate-inspect check-generate generate-db \
 	docs generate-cli-docs generate-config-docs \

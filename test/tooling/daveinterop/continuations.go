@@ -37,6 +37,8 @@ type continuationStep struct {
 	Tx     string      `json:"transaction_hash,omitempty"`
 	Block  uint64      `json:"block,omitempty"`
 	Sender string      `json:"sender,omitempty"`
+	// Group is the section of a live report; empty means the scenario.
+	Group string `json:"group,omitempty"`
 }
 
 type continuationReport struct {
