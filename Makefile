@@ -174,6 +174,12 @@ $(MACHINE_GO_ARTIFACTS):
 	@echo "Building Go artifact $@"
 	CGO_ENABLED=1 go build $(MACHINE_GO_BUILD_PARAMS) ./cmd/$@
 
+# Development tool, not a release artifact (build and install skip it). It
+# reports to stderr so that the interop-* targets keep stdout for the result.
+daveinterop: ## Build the Dave interop development tool (test/tooling/daveinterop)
+	@echo "Building development tool $@" >&2
+	@CGO_ENABLED=0 go build $(PURE_GO_BUILD_PARAMS) -o $@ ./test/tooling/$@
+
 tidy-go:
 	@go mod tidy
 
@@ -242,7 +248,7 @@ clean: clean-go clean-contracts clean-docs clean-devnet-files clean-dapps clean-
 clean-go: ## Clean Go artifacts
 	@echo "Cleaning Go artifacts"
 	@go clean -i -r -cache
-	@rm -f $(GO_ARTIFACTS)
+	@rm -f $(GO_ARTIFACTS) daveinterop
 	@rm -rf $(COVERAGE_DIR)
 
 clean-contracts: ## Clean contract artifacts
@@ -313,6 +319,33 @@ unit-test: $(COVER_DEPS) ## Execute go unit tests
 	@go clean -testcache
 	@go test -p 1 $(GO_BUILD_PARAMS) $(GO_TEST_FLAGS) $(GO_TEST_PACKAGES)
 	@$(if $(COVER_REPORT),$(MAKE) $(COVER_REPORT))
+
+# Dave interoperability (test/tooling/daveinterop/README.md). Thin wrappers:
+# pass the command arguments in ARGS, for example
+#   make interop-replay ARGS="--case _interop/cases/echo-simple"
+# The result goes to stdout; build output and progress go to stderr. The
+# targets that run the rollups node build it first.
+DAVEINTEROP = ./daveinterop
+
+interop-check: daveinterop ## Dave interop: check prerequisites (ARGS="--for capture|replay|suite|run-sling")
+	@$(DAVEINTEROP) check $(ARGS)
+
+interop-suite: daveinterop ## Dave interop: capture, replay, and verify scenarios unattended (ARGS="--scenarios smoke|all|...")
+	@$(MAKE) --no-print-directory -s build >&2
+	@$(DAVEINTEROP) suite $(ARGS)
+
+interop-capture: daveinterop ## Dave interop: capture one harness scenario as a case (ARGS="--program P --scenario S --out DIR")
+	@$(DAVEINTEROP) capture $(ARGS)
+
+interop-replay: daveinterop ## Dave interop: replay a case into a fresh rollups node and verify it (ARGS="--case DIR")
+	@$(MAKE) --no-print-directory -s build >&2
+	@$(DAVEINTEROP) replay $(ARGS)
+
+interop-verify: daveinterop ## Dave interop: verify a running rollups node against the chain and the Sling node (ARGS="--app NAME ...")
+	@$(DAVEINTEROP) verify $(ARGS)
+
+interop-sling: daveinterop ## Dave interop: attach the Sling node to an existing chain (ARGS="--app A --template DIR --state-dir DIR ...")
+	@$(DAVEINTEROP) run-sling $(ARGS)
 
 GOTESTSUM_FORMAT ?= testdox
 ifeq ($(VERBOSE),true)
@@ -866,6 +899,7 @@ build-debian-package: install
 	build build-go $(GO_ARTIFACTS) cartesi-rollups-machine-tool \
 	clean clean-go clean-contracts clean-docs clean-devnet-files clean-dapps clean-test-dependencies clean-test-logs clean-integration-compose clean-debian-packages \
 	test unit-test unit-test-with-compose integration-test integration-test-with-compose integration-test-local test-with-compose ci-test coverage-report \
+	daveinterop interop-check interop-suite interop-capture interop-replay interop-verify interop-sling \
 	integration-test-shard-check list-integration-shards list-integration-cells \
 	generate generate-contracts generate-config generate-inspect check-generate generate-db \
 	docs generate-cli-docs generate-config-docs \

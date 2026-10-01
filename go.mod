@@ -23,6 +23,7 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/holiman/uint256 v1.3.2
 	github.com/jackc/pgx/v5 v5.10.0
+	github.com/klauspost/compress v1.17.9
 	github.com/lmittmann/tint v1.1.3
 	github.com/oapi-codegen/runtime v1.4.1
 	github.com/spf13/pflag v1.0.10
@@ -83,7 +84,6 @@ require (
 	github.com/jackc/pgx/v4 v4.18.3 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
-	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/lib/pq v1.12.3 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-sqlite3 v1.14.44 // indirect

@@ -16,6 +16,10 @@ machine-snapshot/**
 /cartesi-rollups-jsonrpc-api
 /cartesi-rollups-prt
 /cartesi-rollups-machine-tool
+/daveinterop
+/test/tooling/daveinterop/daveinterop
+# daveinterop cases and run directories
+/_interop/
 /rollups-contracts
 /rollups-prt-contracts
 /applications
