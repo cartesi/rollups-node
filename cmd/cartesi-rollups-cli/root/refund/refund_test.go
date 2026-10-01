@@ -172,7 +172,9 @@ func (r *refundRPC) EstimateGas(context.Context, map[string]json.RawMessage) (he
 	return testGasLimit, r.estimateErr
 }
 
-func (r *refundRPC) GetTransactionReceipt(_ context.Context, hash common.Hash) (*types.Receipt, error) {
+// The result is any so that a pending receipt is an untyped nil. The RPC server
+// calls MarshalJSON directly, and a nil *types.Receipt makes it panic.
+func (r *refundRPC) GetTransactionReceipt(_ context.Context, hash common.Hash) (any, error) {
 	r.receipts.Add(1)
 	if r.pending {
 		return nil, nil
