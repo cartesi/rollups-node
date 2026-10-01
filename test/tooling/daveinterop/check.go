@@ -132,6 +132,11 @@ func runCheck(ctx context.Context, cmd *cobra.Command, opts *checkOptions) error
 		checkDaveRoot(opts.daveRoot, add)
 		replay()
 		sling()
+		_, err := os.Stat(defaultLiveDapp)
+		if err != nil {
+			err = fmt.Errorf("%s is missing; make interop-live-dapp builds it (--scenario full)", defaultLiveDapp)
+		}
+		add("full scenario dapp", false, err, defaultLiveDapp)
 	case "run-sling":
 		sling()
 		checkRPC(ctx, opts.rpc, add)

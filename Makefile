@@ -341,7 +341,7 @@ interop-replay: daveinterop ## Dave interop: replay a case into a fresh rollups 
 	@$(MAKE) --no-print-directory -s build >&2
 	@$(DAVEINTEROP) replay $(ARGS)
 
-interop-live: daveinterop ## Dave interop: run the rollups node and the Sling node together (ARGS="--order concurrent|rollups-first|sling-first")
+interop-live: daveinterop ## Dave interop: run the rollups node and the Sling node together (ARGS="--scenario smoke|full --order concurrent|rollups-first|sling-first")
 	@$(MAKE) --no-print-directory -s build >&2
 	@$(DAVEINTEROP) live $(ARGS)
 
@@ -408,6 +408,8 @@ invalid-outputs-root-dapps: applications/invalid-outputs-root-dapp applications/
 
 erc20-withdrawal-dapp: applications/erc20-withdrawal-dapp ## ERC-20 withdrawal test dapp
 
+interop-live-dapp: applications/interop-live-dapp ## Test dapp of the daveinterop live full scenario
+
 applications/reject-loop-dapp: ## Create reject-loop-dapp test application
 	@echo "Creating reject-loop-dapp test application"
 	@mkdir -p applications
@@ -451,6 +453,14 @@ applications/erc20-withdrawal-dapp: test/dapps/erc20-withdrawal/install.sh ## Cr
 		--env=TRUSTED_ERC20_TOKEN=$$TOKEN \
 		--append-init-file=test/dapps/erc20-withdrawal/install.sh \
 		--store=applications/erc20-withdrawal-dapp --final-hash -- /usr/local/bin/erc20-withdrawal-dapp
+
+applications/interop-live-dapp: test/dapps/interop-live/install.sh ## Create the daveinterop live test application
+	@echo "Creating daveinterop live test application"
+	@mkdir -p applications
+	@rm -rf $@
+	@cartesi-machine --ram-length=128Mi \
+		--append-init-file=test/dapps/interop-live/install.sh \
+		--store=$@ --final-hash -- /usr/local/bin/interop-live-dapp
 
 deploy-echo-dapp: applications/echo-dapp ## Deploy echo-dapp test application
 	@echo "Deploying echo-dapp test application"
@@ -914,6 +924,6 @@ build-debian-package: install
 	devnet image tester-image debian-packager run-with-compose shutdown-compose \
 	start start-devnet start-postgres stop stop-devnet stop-postgres restart restart-devnet restart-postgres \
 	install copy-debian-package build-debian-package \
-	mcycle-overflow-dapp unexpected-yield-dapp invalid-outputs-root-dapps \
+	mcycle-overflow-dapp unexpected-yield-dapp invalid-outputs-root-dapps interop-live-dapp \
 	deploy-erc20-withdrawal-dapp fund-wallet withdraw-wallet \
 	env help version

@@ -104,7 +104,7 @@ type liveReport struct {
 func newLiveCommand() *cobra.Command {
 	opts := &liveOptions{}
 	cmd := &cobra.Command{
-		Use:   "live [--scenario smoke] [--order concurrent|rollups-first|sling-first]",
+		Use:   "live [--scenario smoke|full] [--order concurrent|rollups-first|sling-first]",
 		Short: "Run the rollups node and the Sling node together on a test-owned chain",
 		Long: `live starts a test-owned Anvil from the Dave devnet bundle (mining off; this
 command mines), deploys a PRT application with the rollups CLI, starts the
@@ -119,6 +119,13 @@ Scenarios:
          honeypot selects the Dave test program; --template DIR any other.
          echo accepts the inputs, so computation agreement is required;
          honeypot rejects them.
+  full   the test dapp of "make interop-live-dapp" (test/dapps/interop-live;
+         a payload that starts with "reject" is rejected) and five epochs:
+         all accepted, accepted and rejected, all rejected, no inputs, and all
+         accepted with a fake commitment that must lose by timeout. Then the
+         application is funded, every voucher (1 gwei to the input sender) is
+         executed and every notice validated, and the balances, gas included,
+         and the bonds of every root tournament are checked. About 10 minutes.
 
 Orders (the first epoch with inputs):
   concurrent     start both nodes before the inputs
@@ -130,22 +137,30 @@ Sling node's evidence for that epoch comes from its sentry claim
 (--sling-sentry, the default) or its stage log.
 
 Signers (test mnemonic, chain 31337): CLI and deployer 0, input sender 3,
-rollups node PRT 6, Sling node 7.`,
+funder 4, fake commitment 5, rollups node PRT 6, Sling node 7.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if opts.scenario != scenarioSmoke && cmd.Flags().Changed("program") {
+				return withExitCode(exitUsage, fmt.Errorf("--program selects a Dave program for --scenario smoke; "+
+					"--scenario %s uses its own test dapp (or --template)", opts.scenario))
+			}
+			if opts.scenario != scenarioSmoke && cmd.Flags().Changed("inputs") {
+				return withExitCode(exitUsage, fmt.Errorf("--inputs applies to --scenario smoke; %s plans its own inputs",
+					opts.scenario))
+			}
 			return runLive(cmd.Context(), cmd, opts)
 		},
 	}
 	flags := cmd.Flags()
-	flags.StringVar(&opts.scenario, "scenario", scenarioSmoke, "smoke")
+	flags.StringVar(&opts.scenario, "scenario", scenarioSmoke, "smoke or full")
 	flags.StringVar(&opts.daveRoot, "dave-root", os.Getenv("DAVE_ROOT"), "prepared Dave tree for the devnet bundle and the program images")
 	flags.StringVar(&opts.slingBin, "sling-bin", defaultSlingBin(),
 		"Sling node executable (default: $DAVE_NODE_BIN, or its build in the Dave tree)")
 	flags.StringVar(&opts.program, "program", programEcho,
 		"smoke: Dave test program, echo or honeypot (<dave-root>/test/programs/<program>/machine-image)")
 	flags.StringVar(&opts.template, "template", "",
-		"application template directory (smoke: overrides --program)")
+		"application template directory (smoke: overrides --program; full: default "+defaultLiveDapp+")")
 	flags.StringVar(&opts.requireAgreement, "require-agreement", "auto",
-		"fail when computation agreement is not tested: true, false, or auto (true for echo)")
+		"fail when computation agreement is not tested: true, false, or auto (true for echo and full)")
 	flags.StringVar(&opts.anvilState, "anvil-state", "", "devnet state (default: <dave-root>/cartesi-rollups/contracts/state.json)")
 	flags.StringVar(&opts.order, "order", orderConcurrent, "start order: concurrent, rollups-first, or sling-first")
 	flags.IntVar(&opts.inputs, "inputs", 5, "smoke: number of inputs")                                 //nolint:mnd
@@ -172,9 +187,9 @@ rollups node PRT 6, Sling node 7.`,
 //nolint:gocyclo,funlen // one linear procedure is easier to follow than scattered helpers
 func runLive(ctx context.Context, cmd *cobra.Command, opts *liveOptions) error {
 	switch opts.scenario {
-	case scenarioSmoke:
+	case scenarioSmoke, scenarioFull:
 	default:
-		return withExitCode(exitUsage, fmt.Errorf("unknown scenario %q (smoke)", opts.scenario))
+		return withExitCode(exitUsage, fmt.Errorf("unknown scenario %q (smoke or full)", opts.scenario))
 	}
 	switch opts.order {
 	case orderConcurrent, orderRollupsFirst, orderSlingFirst:
@@ -204,6 +219,11 @@ func runLive(ctx context.Context, cmd *cobra.Command, opts *liveOptions) error {
 		return withExitCode(exitPrerequisites, errors.New("no Postgres URL: set CARTESI_DATABASE_CONNECTION or --db-admin"))
 	}
 	switch {
+	case opts.scenario == scenarioFull && opts.template == "":
+		opts.template, opts.program = defaultLiveDapp, filepath.Base(defaultLiveDapp)
+		if !fileExists(opts.template) {
+			return withExitCode(exitPrerequisites, fmt.Errorf("%s is missing; build it with make interop-live-dapp", opts.template))
+		}
 	case opts.template != "":
 		opts.program = "custom template"
 	case opts.program == programYield:
@@ -282,6 +302,8 @@ type liveRun struct {
 	startSling    func() error
 	startRollups  func() error
 	stopMiner     func()
+	// full holds what the full scenario did, for its checks.
+	full *fullRun
 }
 
 func (s *session) runLive(ctx context.Context, opts *liveOptions, report *liveReport) error {
@@ -292,12 +314,21 @@ func (s *session) runLive(ctx context.Context, opts *liveOptions, report *liveRe
 	if err != nil {
 		return err
 	}
-	head, err := s.liveSmoke(ctx, run)
+	var head uint64
+	switch opts.scenario {
+	case scenarioFull:
+		head, err = s.liveFull(ctx, run)
+	default:
+		head, err = s.liveSmoke(ctx, run)
+	}
 	if err != nil {
 		// Show how far the scenario got.
 		if ctx.Err() == nil {
 			if header, headErr := s.chain.head(ctx); headErr == nil {
 				s.recordEpochs(ctx, run, header.Number.Uint64())
+				if run.full != nil {
+					report.Steps = append(report.Steps, s.fullPlanSteps(ctx, run, header.Number.Uint64())...)
+				}
 			}
 		}
 		return err
@@ -305,13 +336,19 @@ func (s *session) runLive(ctx context.Context, opts *liveOptions, report *liveRe
 	// After verification, which waits for the rollups node to catch up.
 	err = s.liveVerify(ctx, run, head)
 	s.recordEpochs(ctx, run, head)
-	return err
+	if err != nil {
+		return err
+	}
+	if run.full != nil {
+		report.Steps = append(report.Steps, s.fullPlanSteps(ctx, run, head)...)
+	}
+	return nil
 }
 
 // recordEpochs fills the epochs table of the report; a read error becomes a
 // failed step.
 func (s *session) recordEpochs(ctx context.Context, run *liveRun, head uint64) {
-	epochs, err := s.epochTable(ctx, run, head, nil)
+	epochs, err := s.epochTable(ctx, run, head, run.epochExpectations())
 	if err != nil {
 		run.report.Steps = append(run.report.Steps, continuationStep{Name: "epochs table", Status: checkFail, Detail: err.Error()})
 		return
@@ -598,6 +635,9 @@ func (run *liveRun) party(signer common.Address) string {
 	case run.sling.Address:
 		return partySling
 	}
+	if run.full != nil && run.full.fake != nil && signer == run.full.fake.Signer {
+		return partyFake
+	}
 	return signer.Hex()
 }
 
@@ -605,7 +645,7 @@ func (run *liveRun) party(signer common.Address) string {
 // node's evidence.
 func (s *session) liveVerify(ctx context.Context, run *liveRun, head uint64) error {
 	opts, report := run.opts, run.report
-	requireAgreement := opts.program == programEcho
+	requireAgreement := opts.scenario != scenarioSmoke || opts.program == programEcho
 	switch opts.requireAgreement {
 	case flagTrue:
 		requireAgreement = true

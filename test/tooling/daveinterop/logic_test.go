@@ -23,6 +23,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/merkle"
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/pkg/contracts/outputs"
 )
 
 // The empty-tree root of the height-63 outputs tree, as written by libcmt.
@@ -775,6 +776,120 @@ func TestSlingArgsKeepTheKeyOffTheCommandLine(t *testing.T) {
 	require.Contains(t, args, "--web3-private-key-file")
 	require.Equal(t, "/state/key", args[len(args)-1])
 	require.Contains(t, args, "31337")
+}
+
+// The fake commitment must be structurally valid: its final state and proof
+// rebuild its root, as the tournament contract checks on join.
+func TestFakeCommitmentProofRebuildsTheRoot(t *testing.T) {
+	const height = 48
+	finalState, proof, left, right := fakeCommitmentNodes(height)
+	require.Len(t, proof, height)
+	node := finalState
+	for _, sibling := range proof {
+		// The final state is the last leaf: every sibling is on the left.
+		node = crypto.Keccak256Hash(sibling[:], node.Bytes())
+	}
+	require.Equal(t, crypto.Keccak256Hash(left.Bytes(), right.Bytes()), node)
+}
+
+func TestOutputKind(t *testing.T) {
+	parsed, err := outputs.OutputsMetaData.GetAbi()
+	require.NoError(t, err)
+	voucher, err := parsed.Pack("Voucher", common.HexToAddress("0x01"), big.NewInt(0), []byte("x"))
+	require.NoError(t, err)
+	notice, err := parsed.Pack("Notice", []byte("x"))
+	require.NoError(t, err)
+	require.Equal(t, outputVoucher, outputKind(voucher))
+	require.Equal(t, outputNotice, outputKind(notice))
+	require.Equal(t, textUnknown, outputKind([]byte{1, 2}))
+}
+
+func TestFullEpochPlans(t *testing.T) {
+	plans := fullEpochPlans()
+	require.Len(t, plans, 5)
+	count := func(plan epochPlan) (accepted, rejected int) {
+		for _, payload := range plan.payloads {
+			if plannedAccept(payload) {
+				accepted++
+			} else {
+				rejected++
+			}
+		}
+		return accepted, rejected
+	}
+	for i, want := range [][2]int{{3, 0}, {2, 2}, {0, 3}, {0, 0}, {3, 0}} {
+		accepted, rejected := count(plans[i])
+		require.Equal(t, want, [2]int{accepted, rejected}, plans[i].name)
+		require.Equal(t, i == 4, plans[i].fake, plans[i].name)
+	}
+}
+
+func TestDecodeVoucher(t *testing.T) {
+	parsed, err := outputs.OutputsMetaData.GetAbi()
+	require.NoError(t, err)
+	to := common.HexToAddress("0x90F79bf6EB2c4f870365E785982E1f101E93b906")
+	voucher, err := parsed.Pack("Voucher", to, big.NewInt(1_000_000_000), []byte{})
+	require.NoError(t, err)
+	destination, value, err := decodeVoucher(voucher)
+	require.NoError(t, err)
+	require.Equal(t, to, destination)
+	require.Equal(t, int64(1_000_000_000), value.Int64())
+	notice, err := parsed.Pack("Notice", []byte("x"))
+	require.NoError(t, err)
+	_, _, err = decodeVoucher(notice)
+	require.Error(t, err)
+}
+
+// The expected balance changes: the application passes the funding on to
+// the voucher destination; the funder pays funding and gas; the executor
+// pays gas.
+func TestLedgerExpectedChanges(t *testing.T) {
+	app, sender := common.HexToAddress("0xa0"), common.HexToAddress("0x03")
+	funder, executor := common.HexToAddress("0x04"), common.HexToAddress("0x00")
+	l := &voucherLedger{funder: funder, executor: executor, funded: big.NewInt(3_000), fundingGas: big.NewInt(21),
+		transferred: map[common.Address]*big.Int{}, executorGas: new(big.Int)}
+	for range 2 { // two of three vouchers executed; one failed after paying gas
+		l.addExecution(&types.Receipt{Status: types.ReceiptStatusSuccessful, GasUsed: 10, EffectiveGasPrice: big.NewInt(2)},
+			mustVoucher(t, sender, 1_000))
+	}
+	l.addExecution(&types.Receipt{Status: types.ReceiptStatusFailed, GasUsed: 5, EffectiveGasPrice: big.NewInt(2)},
+		mustVoucher(t, sender, 1_000))
+	want := l.expectedChanges(app)
+	require.Equal(t, int64(1_000), want[app].Int64(), "one unexecuted voucher's value stays")
+	require.Equal(t, int64(2_000), want[sender].Int64())
+	require.Equal(t, int64(-3_021), want[funder].Int64())
+	require.Equal(t, int64(-50), want[executor].Int64(), "the failed execution's gas counts too")
+	require.Equal(t, 2, l.executions)
+}
+
+func mustVoucher(t *testing.T, to common.Address, value int64) []byte {
+	t.Helper()
+	parsed, err := outputs.OutputsMetaData.GetAbi()
+	require.NoError(t, err)
+	raw, err := parsed.Pack("Voucher", to, big.NewInt(value), []byte{})
+	require.NoError(t, err)
+	return raw
+}
+
+func TestBondPayout(t *testing.T) {
+	bond := big.NewInt(1_000)
+	payment, burned := bondPayout(bond, 1, big.NewInt(0))
+	require.Equal(t, []int64{1_000, 0}, []int64{payment.Int64(), burned.Int64()}, "one join: the bond back")
+	// Two joins, 200 refunded for dispute gas: 1,800 left; the winner gets one
+	// bond and a tenth of the other 800; 720 burns.
+	payment, burned = bondPayout(bond, 2, big.NewInt(200))
+	require.Equal(t, []int64{1_080, 720}, []int64{payment.Int64(), burned.Int64()})
+	// At most one bond left: all of it.
+	payment, burned = bondPayout(bond, 2, big.NewInt(1_500))
+	require.Equal(t, []int64{500, 0}, []int64{payment.Int64(), burned.Int64()})
+}
+
+func TestFormatWei(t *testing.T) {
+	require.Equal(t, "8 gwei", formatWei(big.NewInt(8_000_000_000)))
+	require.Equal(t, "0.3335 ETH", formatWei(big.NewInt(333_500_000_000_000_000)))
+	require.Equal(t, "0.000021000000000123 ETH", formatWei(big.NewInt(21_000_000_000_123)))
+	require.Equal(t, "-8 gwei", signedWei(big.NewInt(-8_000_000_000)))
+	require.Equal(t, "+8 gwei", signedWei(big.NewInt(8_000_000_000)))
 }
 
 func TestIndicesText(t *testing.T) {

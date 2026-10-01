@@ -15,12 +15,15 @@ import (
 // Step groups: the sections of a live report, in display order.
 const (
 	groupScenario  = "Scenario"
+	groupOutputs   = "Outputs"
+	groupFake      = "Fake commitment"
+	groupBonds     = "Bonds"
 	epoch0Plan     = "no inputs (sealed at deployment)"
 	textNoValue    = "–"
 	epochTableRule = "  "
 )
 
-var groupOrder = []string{groupScenario}
+var groupOrder = []string{groupScenario, groupOutputs, groupFake, groupBonds}
 
 // liveEpoch is one row of the epochs table of a live report: what the
 // scenario planned, what the chain shows, and the rollups node's status.
@@ -155,6 +158,33 @@ func (e epochExpectation) check(index uint64, byIndex map[uint64]model.Input, in
 	return checkPass, ""
 }
 
+// epochExpectations is what the scenario of the run planned for each epoch.
+func (run *liveRun) epochExpectations() map[uint64]epochExpectation {
+	if run.full != nil {
+		return run.full.expectations()
+	}
+	return nil
+}
+
+func (full *fullRun) expectations() map[uint64]epochExpectation {
+	expect := map[uint64]epochExpectation{0: {plan: epoch0Plan, accepted: true}}
+	for i, plan := range full.plans {
+		epoch := uint64(i + 1)
+		e := epochExpectation{plan: plan.name, accepted: true, inputs: map[uint64]model.InputCompletionStatus{}}
+		for _, input := range full.inputs {
+			if input.Epoch != epoch {
+				continue
+			}
+			e.inputs[input.Index] = model.InputCompletionStatus_Rejected
+			if plannedAccept(input.Payload) {
+				e.inputs[input.Index] = model.InputCompletionStatus_Accepted
+			}
+		}
+		expect[epoch] = e
+	}
+	return expect
+}
+
 // writeText is the text form of a live run: a header with the verdict and
 // counts, the epochs table, the scenario's sections, and the verification.
 func (r *liveReport) writeText(w io.Writer) {
@@ -277,4 +307,11 @@ func stepGroups(steps []continuationStep) []stepGroup {
 		}
 	}
 	return groups
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }

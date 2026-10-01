@@ -243,6 +243,8 @@ first (`cast rpc anvil_setIntervalMining 0`), or pin the block with
 ./daveinterop live --order rollups-first     # start the Sling node after the rollups node joined
 ./daveinterop live --order sling-first       # start the rollups node after the Sling node joined
 ./daveinterop live --program honeypot        # echo is the default; --template DIR for any other
+make interop-live-dapp                       # once, for the full scenario
+./daveinterop live --scenario full           # five planned epochs, a fake commitment, every output
 ```
 
 `live` starts Anvil from `$DAVE_ROOT/cartesi-rollups/contracts/state.json`,
@@ -256,13 +258,56 @@ different commitments. Both nodes poll every second, so the races between them
 
 `--scenario smoke` (the default) sends five inputs into one epoch.
 
+`--scenario full` (about 10 min) uses the test dapp in `test/dapps/interop-live`
+(`make interop-live-dapp` builds it into `applications/interop-live-dapp`). A
+payload that starts with `reject` is rejected with a report; any other emits a
+voucher (1 gwei to the sender, empty payload), a notice, and a report, and is
+accepted. The scenario plans five epochs and sends each epoch's inputs while
+it is open:
+
+| Epoch | Inputs | Checks |
+| --- | --- | --- |
+| 1 | 3 accepted | statuses as planned; who joined, who accepted |
+| 2 | 2 accepted, 2 rejected, interleaved | same |
+| 3 | 3 rejected | same |
+| 4 | none | same |
+| 5 | 3 accepted, and a fake commitment from account 5 | the fake commitment joins against the honest one, loses its match, and the honest commitment wins the root |
+
+Then test account 4 funds the application with the total value of its
+vouchers, every voucher is executed with `cartesi-rollups-cli execute`
+(checking `OutputExecuted` and that the rollups node records the execution),
+and every notice is validated with `cartesi-rollups-cli validate`. Balances
+are read before the funding and after the last execution, and every change
+must be exact: the application ends where it started, the input sender gains
+the vouchers' value, the funder loses the funding plus its gas, and the CLI
+signer loses exactly the gas of its execute transactions (`gasUsed` times
+`effectiveGasPrice`).
+
+Bonds: for the root tournament of every epoch from 0 to 5, there must be one
+`BondRecovered`, for the root winner, paid to the account that joined it. The
+payment and the burned remainder must follow `Tournament.tryRecoveringBond`:
+of the joins' bonds minus the gas refunds (`PartialBondRefund`), the winner's
+joiner gets everything up to one bond, and one bond plus a tenth of the rest
+above it; the rest is burned, and the tournament ends empty. The fake
+commitment's bond therefore pays the defender's gas refunds, a tenth goes to
+the winner, and the rest burns.
+
+The outputs root of every staged epoch must equal the independently computed
+root of the outputs so far. Last, the usual two-way verification runs at the
+frozen head.
+
+The fake commitment is Dave's `bad_commitment` recipe: all-zero states with a
+valid proof. It never moves, so it should lose by timeout. The rollups node
+does not play matches, so the Sling node must defend the honest commitment,
+also when the rollups node joined it; the report says who joined it.
+
 The `live` report starts with the verdict and the count of checks, then an
 epochs table (the plan, the inputs as the rollups node processed them, who
 joined, the epoch on chain, and the rollups node's status; a planned epoch is
 checked against its plan), the scenario's sections, and the verification.
 
-Signers on the test chain: CLI and deployer 0, input sender 3, rollups node
-PRT 6, Sling node 7.
+Signers on the test chain: CLI and deployer 0, input sender 3, funder 4, fake
+commitment 5, rollups node PRT 6, Sling node 7.
 
 ## Manual session on the devnet
 

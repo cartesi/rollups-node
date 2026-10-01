@@ -487,6 +487,48 @@ func (c *chain) matches(ctx context.Context, tournament common.Address, to uint6
 	return matches, deleted.Error()
 }
 
+// fakeCommitmentNodes builds a structurally valid commitment whose states
+// are all zero, as Dave's bad_commitment scenario does: the final state is
+// zero, and its proof is height-1 zero siblings followed by the left node.
+func fakeCommitmentNodes(height uint64) (finalState common.Hash, proof [][32]byte, left, right common.Hash) {
+	for i := uint64(1); i < height; i++ {
+		right = crypto.Keccak256Hash(common.Hash{}.Bytes(), right.Bytes())
+		proof = append(proof, [32]byte{})
+	}
+	proof = append(proof, left)
+	return finalState, proof, left, right
+}
+
+// joinFakeCommitment joins a fake commitment in a tournament and returns it
+// with the join transaction. It pays the tournament's bond.
+func (c *chain) joinFakeCommitment(ctx context.Context, tournament common.Address, account *testAccount,
+) (common.Hash, common.Hash, error) {
+	contract, err := itournament.NewITournament(tournament, c.eth)
+	if err != nil {
+		return common.Hash{}, common.Hash{}, err
+	}
+	descriptor, err := contract.TournamentDescriptor(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return common.Hash{}, common.Hash{}, fmt.Errorf("reading the tournament descriptor: %w", err)
+	}
+	bond, err := contract.BondValue(&bind.CallOpts{Context: ctx})
+	if err != nil {
+		return common.Hash{}, common.Hash{}, fmt.Errorf("reading the bond value: %w", err)
+	}
+	finalState, proof, left, right := fakeCommitmentNodes(descriptor.Height)
+	opts, err := c.transactor(ctx, account)
+	if err != nil {
+		return common.Hash{}, common.Hash{}, err
+	}
+	opts.GasLimit = 0 // estimate: the join also creates a match
+	opts.Value = bond
+	tx, err := contract.JoinTournament(opts, finalState, proof, left, right)
+	if err != nil {
+		return common.Hash{}, common.Hash{}, fmt.Errorf("sending joinTournament: %w", err)
+	}
+	return crypto.Keccak256Hash(left.Bytes(), right.Bytes()), tx.Hash(), nil
+}
+
 type bondRecovery struct {
 	Commitment common.Hash    `json:"commitment"`
 	Claimer    common.Address `json:"claimer"`
@@ -542,6 +584,81 @@ func (c *chain) inputsAdded(ctx context.Context, inputBox, app common.Address, t
 	}
 	sort.Slice(inputs, func(i, j int) bool { return inputs[i].Index < inputs[j].Index })
 	return inputs, it.Error()
+}
+
+// partialRefunds returns the total that a tournament paid out as gas
+// refunds (successful PartialBondRefund events), and to whom.
+func (c *chain) partialRefunds(ctx context.Context, tournament common.Address, to uint64,
+) (*big.Int, map[common.Address]*big.Int, error) {
+	contract, err := itournament.NewITournament(tournament, c.eth)
+	if err != nil {
+		return nil, nil, err
+	}
+	it, err := contract.FilterPartialBondRefund(filterTo(ctx, 0, to), nil, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading PartialBondRefund: %w", err)
+	}
+	defer it.Close()
+	total, byRecipient := new(big.Int), map[common.Address]*big.Int{}
+	for it.Next() {
+		if !it.Event.Success {
+			continue // the value stays in the tournament
+		}
+		total.Add(total, it.Event.Value)
+		if byRecipient[it.Event.Recipient] == nil {
+			byRecipient[it.Event.Recipient] = new(big.Int)
+		}
+		byRecipient[it.Event.Recipient].Add(byRecipient[it.Event.Recipient], it.Event.Value)
+	}
+	return total, byRecipient, it.Error()
+}
+
+func (c *chain) bondValue(ctx context.Context, tournament common.Address, block uint64) (*big.Int, error) {
+	contract, err := itournament.NewITournament(tournament, c.eth)
+	if err != nil {
+		return nil, err
+	}
+	bond, err := contract.BondValue(callAt(ctx, block))
+	if err != nil {
+		return nil, fmt.Errorf("reading the bond value of %s: %w", tournament, err)
+	}
+	return bond, nil
+}
+
+func (c *chain) balanceAt(ctx context.Context, account common.Address, block uint64) (*big.Int, error) {
+	balance, err := c.eth.BalanceAt(ctx, account, new(big.Int).SetUint64(block))
+	if err != nil {
+		return nil, fmt.Errorf("reading the balance of %s at block %d: %w", account, block, err)
+	}
+	return balance, nil
+}
+
+// receiveABI declares a payable receive function. The binding refuses a
+// plain transfer to a contract whose ABI does not declare one.
+const receiveABI = `[{"type":"receive","stateMutability":"payable"}]`
+
+// sendValue sends a plain ETH transfer to an account or to a contract with a
+// receive function.
+func (c *chain) sendValue(ctx context.Context, account *testAccount, to common.Address, value *big.Int) (common.Hash, error) {
+	parsed, err := abi.JSON(strings.NewReader(receiveABI))
+	if err != nil {
+		return common.Hash{}, err
+	}
+	opts, err := c.transactor(ctx, account)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	opts.Value = value
+	tx, err := bind.NewBoundContract(to, parsed, c.eth, c.eth, c.eth).Transfer(opts)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("sending %s wei to %s: %w", value, to, err)
+	}
+	return tx.Hash(), nil
+}
+
+// gasCost is what a mined transaction cost its sender in gas.
+func gasCost(receipt *types.Receipt) *big.Int {
+	return new(big.Int).Mul(new(big.Int).SetUint64(receipt.GasUsed), receipt.EffectiveGasPrice)
 }
 
 func (c *chain) inputCount(ctx context.Context, inputBox, app common.Address, block uint64) (uint64, error) {
