@@ -629,6 +629,30 @@ func TestPrepareCaseDir(t *testing.T) {
 	require.NotEmpty(t, aside)
 }
 
+func TestCleanKeepsCasesAndRemovesFailedCaptures(t *testing.T) {
+	root := t.TempDir()
+	cases := filepath.Join(root, "cases")
+	for _, dir := range []string{"echo-simple/runs/r1", "echo-simple.failed-20260929T120000Z", "honeypot-stf_all"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(cases, dir), 0o755))
+	}
+	live := filepath.Join(root, "live", "l1")
+	require.NoError(t, os.MkdirAll(live, 0o755))
+
+	result, err := runClean(context.Background(), &cleanOptions{casesDir: cases, liveDir: filepath.Join(root, "live")})
+	require.NoError(t, err)
+	require.Len(t, result.Paths, 3)
+	require.DirExists(t, filepath.Join(cases, "echo-simple"), "captured cases stay")
+	require.DirExists(t, filepath.Join(cases, "honeypot-stf_all"))
+	require.NoDirExists(t, filepath.Join(cases, "echo-simple", "runs"))
+	require.NoDirExists(t, filepath.Join(cases, "echo-simple.failed-20260929T120000Z"))
+	require.NoDirExists(t, filepath.Join(root, "live"))
+
+	result, err = runClean(context.Background(), &cleanOptions{casesDir: cases, liveDir: filepath.Join(root, "live"), cases: true})
+	require.NoError(t, err)
+	require.Len(t, result.Paths, 2)
+	require.NoDirExists(t, filepath.Join(cases, "honeypot-stf_all"))
+}
+
 func TestEstimateTexts(t *testing.T) {
 	require.Equal(t, "about 40 s", aboutText(40*time.Second))
 	require.Equal(t, "about 9 min", aboutText(9*time.Minute+20*time.Second))

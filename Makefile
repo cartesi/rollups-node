@@ -351,6 +351,9 @@ interop-verify: daveinterop ## Dave interop: verify a running rollups node again
 interop-sling: daveinterop ## Dave interop: attach the Sling node to an existing chain (ARGS="--app A --template DIR --state-dir DIR ...")
 	@$(DAVEINTEROP) run-sling $(ARGS)
 
+clean-interop: ## Dave interop: remove _interop/ (captured cases included; ./daveinterop clean keeps them and drops interop_* databases)
+	@rm -rf _interop
+
 GOTESTSUM_FORMAT ?= testdox
 ifeq ($(VERBOSE),true)
 	GOTESTSUM_FORMAT = standard-verbose
@@ -903,7 +906,7 @@ build-debian-package: install
 	build build-go $(GO_ARTIFACTS) cartesi-rollups-machine-tool \
 	clean clean-go clean-contracts clean-docs clean-devnet-files clean-dapps clean-test-dependencies clean-test-logs clean-integration-compose clean-debian-packages \
 	test unit-test unit-test-with-compose integration-test integration-test-with-compose integration-test-local test-with-compose ci-test coverage-report \
-	daveinterop interop-check interop-suite interop-capture interop-replay interop-live interop-verify interop-sling \
+	daveinterop interop-check interop-suite interop-capture interop-replay interop-live interop-verify interop-sling clean-interop \
 	integration-test-shard-check list-integration-shards list-integration-cells \
 	generate generate-contracts generate-config generate-inspect check-generate generate-db \
 	docs generate-cli-docs generate-config-docs \

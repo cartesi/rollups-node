@@ -77,6 +77,7 @@ Run "eval $(make env)" first. See test/tooling/daveinterop/README.md.`,
 		newRunSlingCommand(),
 		newLiveCommand(),
 		newSuiteCommand(),
+		newCleanCommand(),
 	)
 	for _, cmd := range root.Commands() {
 		run := cmd.RunE

@@ -85,6 +85,7 @@ winner can be the rollups node's own commitment.
 | `verify` | Compares a running rollups node with the chain and the Sling node's evidence. |
 | `live` | Runs the rollups node and the Sling node together on a test-owned chain. |
 | `run-sling` | Attaches the Sling node to an existing chain in the foreground, for manual sessions. |
+| `clean` | Removes run directories and failed captures, keeps captured cases (unless `--cases`), and drops `interop_*` databases. |
 
 `make daveinterop` builds `./daveinterop`; the `make interop-*` targets build
 it first and pass `ARGS`:
@@ -98,6 +99,7 @@ it first and pass `ARGS`:
 | `make interop-live ARGS="--order rollups-first"` | `live` (builds the node first) |
 | `make interop-verify ARGS="--app NAME ..."` | `verify` |
 | `make interop-sling ARGS="..."` | `run-sling` |
+| `make clean-interop` | removes all of `_interop/`, captured cases included; drops no database |
 
 Exit codes: 0 pass, 1 a check or an operation failed, 2 invalid arguments,
 3 a missing prerequisite. `run-sling` passes the Sling node's exit code
@@ -306,3 +308,7 @@ second, so dispute clocks keep running while you read logs.
   including the machine servers of the rollups node and what the harness
   leaves running. Ctrl-C, SIGTERM, and SIGHUP stop a run cleanly and still
   write its report.
+- `make clean-interop` removes all of `_interop/`, including the captured
+  cases (a full `--scenarios all` capture takes about an hour). It drops no
+  database. `./daveinterop clean` keeps the captured cases (unless `--cases`)
+  and drops the `interop_*` databases, except those with open connections.
