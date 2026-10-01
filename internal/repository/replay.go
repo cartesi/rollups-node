@@ -32,7 +32,10 @@ const (
 	// roots. It is the inexpensive default for normal machine reconstruction.
 	ReplayVerificationCanonical ReplayVerificationLevel = iota
 
-	// ReplayVerificationFull additionally reads accepted outputs and reports.
+	// ReplayVerificationFull additionally reads outputs of accepted inputs and
+	// reports of every completed input. Missing reports fail Full verification
+	// with a reports.count contradiction and are never backfilled. Canonical
+	// reconstruction does not compare reports and remains compatible.
 	// For PRT applications, it also reads the compressed per-input state-hash
 	// collections used to reconstruct and verify the epoch computation hash.
 	// Outputs and reports are audit evidence and do not participate in that hash.

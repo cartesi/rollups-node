@@ -68,6 +68,7 @@ type fakeExecutor struct {
 	wrongResultPos bool
 	fullPRTResult  bool
 	statuses       map[uint64]model.InputCompletionStatus
+	reports        map[uint64][][]byte
 }
 
 func (executor *fakeExecutor) ProcessedInputs() uint64 { return executor.processed }
@@ -97,6 +98,7 @@ func (executor *fakeExecutor) Advance(
 		EpochIndex: epochIndex,
 		InputIndex: resultIndex,
 		Status:     model.InputCompletionStatus_Accepted,
+		Reports:    executor.reports[inputIndex],
 		StateProof: model.StateProof{
 			MachineHash:       common.BigToHash(newBig(inputIndex + 1)),
 			TxBufferDataBlock: common.BigToHash(newBig(inputIndex + 100)),

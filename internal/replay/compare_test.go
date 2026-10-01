@@ -141,6 +141,8 @@ func TestCompareReplayRecordCompletionMatrix(t *testing.T) {
 		model.InputCompletionStatus_Rejected,
 		model.InputCompletionStatus_Exception,
 		model.InputCompletionStatus_MachineHalted,
+		model.InputCompletionStatus_Overflow,
+		model.InputCompletionStatus_UnexpectedYield,
 		model.InputCompletionStatus_InvalidOutputsRoot,
 	}
 	consensuses := []model.Consensus{
@@ -154,7 +156,8 @@ func TestCompareReplayRecordCompletionMatrix(t *testing.T) {
 				app, record, actual := replayFixture(status, consensus)
 				if status != model.InputCompletionStatus_Accepted {
 					actual.Outputs = [][]byte{[]byte("noncanonical diagnostic output")}
-					actual.Reports = [][]byte{[]byte("noncanonical diagnostic report")}
+					record.Reports = [][]byte{[]byte("diagnostic report")}
+					actual.Reports = [][]byte{[]byte("diagnostic report")}
 				}
 				if consensus == model.Consensus_PRT {
 					checkpoint := common.HexToHash("0x33")
@@ -271,26 +274,22 @@ func TestCompareReplayRecordPersistedRecordValidation(t *testing.T) {
 			ErrContradiction,
 		)
 	})
-	for _, effect := range []string{"output", "report"} {
-		t.Run("nonaccepted persisted "+effect, func(t *testing.T) {
-			app, record, actual := replayFixture(model.InputCompletionStatus_Rejected, model.Consensus_Authority)
-			if effect == "output" {
-				record.Outputs = [][]byte{[]byte("illegal")}
-			} else {
-				record.Reports = [][]byte{[]byte("illegal")}
-			}
-			// Replay diagnostics are ignored, but persisted effects are corruption.
-			actual.Outputs = [][]byte{[]byte("diagnostic")}
-			actual.Reports = [][]byte{[]byte("diagnostic")}
-			require.ErrorIs(t,
-				compareRecord(app.Name, app.ID, app.IsDaveConsensus(), repository.ReplayVerificationFull, record, actual),
-				ErrContradiction,
-			)
-		})
-	}
-	t.Run("nonaccepted replay diagnostics ignored", func(t *testing.T) {
+	t.Run("nonaccepted persisted output", func(t *testing.T) {
+		app, record, actual := replayFixture(model.InputCompletionStatus_Rejected, model.Consensus_Authority)
+		record.Outputs = [][]byte{[]byte("illegal")}
+		actual.Outputs = [][]byte{[]byte("diagnostic")}
+		record.Reports = [][]byte{[]byte("diagnostic")}
+		actual.Reports = [][]byte{[]byte("diagnostic")}
+		err := compareRecord(app.Name, app.ID, app.IsDaveConsensus(), repository.ReplayVerificationFull, record, actual)
+		require.ErrorIs(t, err, ErrContradiction)
+		var detail *ContradictionError
+		require.ErrorAs(t, err, &detail)
+		require.Equal(t, "outputs.count", detail.Field)
+	})
+	t.Run("nonaccepted replay outputs ignored", func(t *testing.T) {
 		app, record, actual := replayFixture(model.InputCompletionStatus_Exception, model.Consensus_Authority)
 		actual.Outputs = [][]byte{[]byte("diagnostic")}
+		record.Reports = [][]byte{[]byte("diagnostic")}
 		actual.Reports = [][]byte{[]byte("diagnostic")}
 		require.NoError(t, compareRecord(app.Name, app.ID, app.IsDaveConsensus(), repository.ReplayVerificationFull, record, actual))
 	})

@@ -100,17 +100,14 @@ func compareRecord(
 		if err := compareBytes("outputs", record.Outputs, actual.Outputs, contradiction); err != nil {
 			return err
 		}
-		if err := compareBytes("reports", record.Reports, actual.Reports, contradiction); err != nil {
-			return err
-		}
 	} else {
-		// Effects of nonaccepted executions are diagnostics, not canonical.
+		// Outputs from nonaccepted executions must not be persisted.
 		if len(record.Outputs) != 0 {
 			return contradiction("outputs.count", 0, len(record.Outputs))
 		}
-		if len(record.Reports) != 0 {
-			return contradiction("reports.count", 0, len(record.Reports))
-		}
+	}
+	if err := compareBytes("reports", record.Reports, actual.Reports, contradiction); err != nil {
+		return err
 	}
 
 	if !isPRT {
