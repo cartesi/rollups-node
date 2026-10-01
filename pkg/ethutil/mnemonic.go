@@ -5,6 +5,7 @@ package ethutil
 
 import (
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -24,6 +25,10 @@ func PrivateKeyToAddress(privateKey *ecdsa.PrivateKey) (common.Address, error) {
 // Create the private key from mnemonic and account index based on the BIP44 standard.
 // For more info on BIP44, see https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki
 func MnemonicToPrivateKey(mnemonic string, accountIndex uint32) (*ecdsa.PrivateKey, error) {
+	// An index from 2^31 up selects a hardened child, which is a different path.
+	if accountIndex >= hardenedKeyStart {
+		return nil, errors.New("account index must be below 2^31")
+	}
 	seed, err := bip39.NewSeedWithErrorChecking(mnemonic, "")
 	if err != nil {
 		return nil, err

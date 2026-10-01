@@ -4,6 +4,8 @@
 package ethutil
 
 import (
+	"math"
+	"strconv"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -58,4 +60,14 @@ func TestMnemonicToPrivateKeyRejectsBadMnemonic(t *testing.T) {
 func TestPrivateKeyToAddressRejectsNil(t *testing.T) {
 	_, err := PrivateKeyToAddress(nil)
 	require.Error(t, err)
+}
+
+func TestMnemonicToPrivateKeyRejectsHardenedIndex(t *testing.T) {
+	for _, index := range []uint32{hardenedKeyStart, hardenedKeyStart + 6, math.MaxUint32} {
+		_, err := MnemonicToPrivateKey(FoundryMnemonic, index)
+		require.Error(t, err, "index %v", index)
+		require.NotContains(t, err.Error(), strconv.FormatUint(uint64(index), 10))
+	}
+	_, err := MnemonicToPrivateKey(FoundryMnemonic, hardenedKeyStart-1)
+	require.NoError(t, err)
 }
