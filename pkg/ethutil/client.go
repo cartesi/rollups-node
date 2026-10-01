@@ -77,8 +77,10 @@ func NewEthClient(
 	rclient.HTTPClient.Timeout = retryConfig.RequestTimeout
 	rclient.Backoff = retryBackoff
 
+	httpClient := rclient.StandardClient()
+	httpClient.Transport = nullErrorTransport{next: httpClient.Transport}
 	opts := []rpc.ClientOption{
-		rpc.WithHTTPClient(rclient.StandardClient()),
+		rpc.WithHTTPClient(httpClient),
 	}
 	for _, opt := range rpcOptions {
 		if opt != nil {
