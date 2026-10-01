@@ -120,6 +120,13 @@ ifeq ($(COVER),true)
 	COVER_REPORT := coverage-report
 endif
 
+# The pure Go artifacts are built without cgo, which changes what they link:
+# go-ethereum, for one, uses a pure Go secp256k1 instead of libsecp256k1. The
+# unit tests of the packages they link also run that way, without coverage.
+PURE_GO_TEST_PACKAGES = $(filter $(shell go list $(GO_TEST_PACKAGES)), \
+	$(shell CGO_ENABLED=0 go list -deps $(addprefix ./cmd/,$(PURE_GO_ARTIFACTS))))
+PURE_GO_TEST_FLAGS = $(filter-out -coverprofile=% -covermode=% -coverpkg=%,$(GO_TEST_FLAGS))
+
 
 ROLLUPS_CONTRACTS_ABI_BASEDIR:= rollups-contracts/
 ROLLUPS_PRT_CONTRACTS_ABI_BASEDIR:= rollups-prt-contracts/
@@ -312,6 +319,9 @@ unit-test: $(COVER_DEPS) ## Execute go unit tests
 	@echo "Running go unit tests"
 	@go clean -testcache
 	@go test -p 1 $(GO_BUILD_PARAMS) $(GO_TEST_FLAGS) $(GO_TEST_PACKAGES)
+	@echo "Running go unit tests of the pure Go artifacts without cgo"
+	@packages="$(PURE_GO_TEST_PACKAGES)"; [ -z "$$packages" ] || \
+		CGO_ENABLED=0 go test -p 1 $(PURE_GO_BUILD_PARAMS) $(PURE_GO_TEST_FLAGS) $$packages
 	@$(if $(COVER_REPORT),$(MAKE) $(COVER_REPORT))
 
 GOTESTSUM_FORMAT ?= testdox
